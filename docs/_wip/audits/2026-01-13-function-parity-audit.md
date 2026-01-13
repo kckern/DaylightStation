@@ -15,9 +15,9 @@
 | Health | 52 | 44 | 8 | 85% |
 | Finance | 35 | 22 | 13 | 63% |
 | Messaging | 2 | 2 | 0 | 100% |
+| Scheduling | 15 | 15 | 0 | 100% |
 | Config | TBD | TBD | TBD | TBD |
 | Playback | TBD | TBD | TBD | TBD |
-| Scheduling | TBD | TBD | TBD | TBD |
 | User | TBD | TBD | TBD | TBD |
 
 ---
@@ -1634,10 +1634,280 @@ While raw parity is 100%, the DDD implementation provides substantially more fun
 
 ---
 
+## 6. Scheduling Domain
+
+### Legacy Files
+
+| File | Path | Purpose |
+|------|------|---------|
+| cron.mjs | `backend/_legacy/routers/cron.mjs` | Cron scheduler router with job execution |
+| TaskRegistry.mjs | `backend/_legacy/lib/cron/TaskRegistry.mjs` | Job definition loading and legacy migration |
+
+### DDD Files
+
+| File | Path | Purpose |
+|------|------|---------|
+| Job.mjs | `backend/src/1_domains/scheduling/entities/Job.mjs` | Job entity |
+| JobExecution.mjs | `backend/src/1_domains/scheduling/entities/JobExecution.mjs` | Execution tracking entity |
+| JobState.mjs | `backend/src/1_domains/scheduling/entities/JobState.mjs` | Runtime state entity |
+| IJobStore.mjs | `backend/src/1_domains/scheduling/ports/IJobStore.mjs` | Job storage interface |
+| IStateStore.mjs | `backend/src/1_domains/scheduling/ports/IStateStore.mjs` | State storage interface |
+| SchedulerService.mjs | `backend/src/1_domains/scheduling/services/SchedulerService.mjs` | Core scheduling service |
+| YamlJobStore.mjs | `backend/src/2_adapters/scheduling/YamlJobStore.mjs` | YAML job store implementation |
+| YamlStateStore.mjs | `backend/src/2_adapters/scheduling/YamlStateStore.mjs` | YAML state store implementation |
+| TaskRegistry.mjs | `backend/src/0_infrastructure/scheduling/TaskRegistry.mjs` | Task registration infrastructure |
+| Scheduler.mjs | `backend/src/0_infrastructure/scheduling/Scheduler.mjs` | Scheduler loop infrastructure |
+
+---
+
+### Legacy Functions: cron.mjs (Router)
+
+| Function | Lines | Purpose | DDD Equivalent | Status |
+|----------|-------|---------|----------------|--------|
+| `md5(string)` | 136-138 | Generate MD5 hash for window offset | `SchedulerService.md5()` | ✅ |
+| `windowOffset(str)` | 140-145 | Calculate window offset for jitter | `SchedulerService.windowOffset()` | ✅ |
+| `computeNextRun(job, fromMoment)` | 147-156 | Compute next run time with window | `SchedulerService.computeNextRun()` | ✅ |
+| `loadCronJobs()` | 159-166 | Load job definitions from registry | `YamlJobStore.loadJobs()` | ✅ |
+| `loadCronState()` | 169-183 | Load runtime state with backup fallback | `YamlStateStore.loadStates()` | ✅ |
+| `loadCronConfig()` | 186-202 | Merge job definitions with state | `SchedulerService.loadJobsWithState()` | ✅ |
+| `saveCronState(cronJobs)` | 206-218 | Save runtime state to file | `YamlStateStore.saveState()` | ✅ |
+| `backupCronState(cronJobs)` | 221-237 | Backup runtime state | `YamlStateStore.backup()` | ✅ |
+| `cronContinuous()` | 239-398 | Main scheduler loop | `SchedulerService.runDueJobs()` + `Scheduler.tick()` | ✅ |
+
+**Total Legacy cron.mjs functions:** 9 functions
+
+---
+
+### Legacy Router Endpoints: cron.mjs
+
+| Method | Endpoint | Lines | Purpose | DDD Equivalent | Status |
+|--------|----------|-------|---------|----------------|--------|
+| GET | `/status` | 53-64 | Get all jobs with state | `SchedulerService.getStatus()` | ✅ |
+| POST | `/run/:jobId` | 66-96 | Manual job trigger | `SchedulerService.triggerJob()` | ✅ |
+| GET | `/:bucket` | 98-132 | Dynamic bucket endpoints | `SchedulerService.triggerJob()` (via bucket) | ✅ |
+
+**Total Legacy Router Endpoints:** 3 endpoints
+
+---
+
+### Legacy Functions: TaskRegistry.mjs
+
+| Function | Lines | Purpose | DDD Equivalent | Status |
+|----------|-------|---------|----------------|--------|
+| `load()` | 18-43 | Load jobs from system/jobs.yml | `YamlJobStore.loadJobs()` | ✅ |
+| `migrateLegacy(legacyJobs)` | 49-106 | Migrate bucket format to modern | `YamlJobStore.migrateLegacyJobs()` | ✅ |
+| `getJobs()` | 108-110 | Return loaded jobs | `YamlJobStore.loadJobs()` (cached) | ✅ |
+
+**Total Legacy TaskRegistry.mjs functions:** 3 functions
+
+---
+
+### DDD Functions: Domain Layer
+
+#### Job.mjs (Job class)
+| Function | Lines | Purpose |
+|----------|-------|---------|
+| `constructor(props)` | 5-26 | Create job with all fields |
+| `hasDependencies()` | 31-33 | Check if job has dependencies |
+| `validate()` | 38-43 | Validate job configuration |
+| `toJSON()` | 48-60 | Serialize to plain object |
+| `static fromObject(obj)` | 65-78 | Create Job from plain object |
+
+**Total Job.mjs:** 5 methods
+
+#### JobExecution.mjs (JobExecution class)
+| Function | Lines | Purpose |
+|----------|-------|---------|
+| `constructor(props)` | 5-23 | Create execution with fields |
+| `start()` | 28-32 | Mark execution as started |
+| `succeed()` | 37-42 | Mark execution as successful |
+| `fail(error)` | 47-53 | Mark execution as failed |
+| `timeout()` | 58-64 | Mark execution as timed out |
+| `isRunning()` | 69-71 | Check if still running |
+| `isSuccess()` | 76-78 | Check if completed successfully |
+| `toJSON()` | 83-94 | Serialize to plain object |
+| `static create(jobId, executionId, manual)` | 99-105 | Create new execution |
+
+**Total JobExecution.mjs:** 9 methods
+
+#### JobState.mjs (JobState class)
+| Function | Lines | Purpose |
+|----------|-------|---------|
+| `constructor(props)` | 5-18 | Create state with fields |
+| `updateAfterExecution(execution, nextRun)` | 24-31 | Update state after execution |
+| `secondsUntilNextRun(now)` | 36-40 | Calculate seconds until next run |
+| `needsToRun(now)` | 45-49 | Check if job needs to run |
+| `toJSON()` | 54-62 | Serialize for persistence |
+| `static fromObject(jobId, obj)` | 67-76 | Create from persisted state |
+
+**Total JobState.mjs:** 6 methods
+
+#### SchedulerService.mjs
+| Function | Lines | Purpose |
+|----------|-------|---------|
+| `constructor(config)` | 17-29 | Initialize with stores |
+| `generateExecutionId()` | 34-36 | Generate short execution ID |
+| `md5(str)` | 41-43 | Compute MD5 hash |
+| `windowOffset(str)` | 48-52 | Calculate window offset |
+| `computeNextRun(job, fromDate)` | 60-83 | Compute next run time |
+| `formatDate(date)` | 88-99 | Format date for persistence |
+| `parseDate(dateStr)` | 104-108 | Parse date string |
+| `loadJobsWithState()` | 113-122 | Load all jobs with states |
+| `initializeStates(jobsWithState, now)` | 127-135 | Initialize job states |
+| `checkDependencies(job, allStates)` | 143-157 | Check dependency satisfaction |
+| `getJobsDueToRun(now)` | 162-185 | Get jobs that need to run |
+| `executeJob(job, executionId, manual)` | 194-255 | Execute single job |
+| `runJob(job, state, manual)` | 264-279 | Run job and update state |
+| `runDueJobs()` | 285-302 | Run all due jobs |
+| `triggerJob(jobId)` | 309-320 | Manually trigger job |
+| `getStatus()` | 326-351 | Get status of all jobs |
+| `isJobRunning(jobId)` | 356-358 | Check if job is running |
+
+**Total SchedulerService.mjs:** 17 methods
+
+---
+
+### DDD Functions: Adapter Layer
+
+#### YamlJobStore.mjs
+| Function | Lines | Purpose |
+|----------|-------|---------|
+| `constructor(config)` | 45-50 | Initialize with loadFile |
+| `migrateLegacyJobs(legacyJobs)` | 55-78 | Migrate bucket format |
+| `loadJobs()` | 84-122 | Load all job definitions |
+| `getJob(jobId)` | 129-132 | Get specific job by ID |
+| `clearCache()` | 137-139 | Clear jobs cache |
+
+**Total YamlJobStore.mjs:** 5 methods
+
+#### YamlStateStore.mjs
+| Function | Lines | Purpose |
+|----------|-------|---------|
+| `constructor(config)` | 11-19 | Initialize with file helpers |
+| `loadRawState()` | 24-46 | Load raw state from file |
+| `loadStates()` | 52-61 | Load all job states as Map |
+| `getState(jobId)` | 68-71 | Get state for specific job |
+| `saveState(jobId, state)` | 79-92 | Save state for specific job |
+| `saveAllStates(states)` | 99-113 | Save all job states |
+| `backup()` | 119-130 | Backup current state |
+
+**Total YamlStateStore.mjs:** 7 methods
+
+---
+
+### DDD Functions: Infrastructure Layer
+
+#### TaskRegistry.mjs
+| Function | Lines | Purpose |
+|----------|-------|---------|
+| `constructor()` | 6-9 | Initialize task maps |
+| `register(name, config)` | 19-32 | Register a task |
+| `unregister(name)` | 37-39 | Unregister a task |
+| `getAll()` | 44-46 | Get all registered tasks |
+| `get(name)` | 51-53 | Get specific task |
+| `execute(name)` | 58-83 | Execute task by name |
+| `setEnabled(name, enabled)` | 88-93 | Enable/disable task |
+| `isRunning(name)` | 98-100 | Check if task running |
+| `getStatus(name)` | 105-116 | Get task status |
+
+**Total TaskRegistry.mjs:** 9 methods
+
+#### Scheduler.mjs
+| Function | Lines | Purpose |
+|----------|-------|---------|
+| `constructor(config)` | 11-22 | Initialize scheduler |
+| `static shouldEnable()` | 27-30 | Check if should enable |
+| `start()` | 35-60 | Start scheduler loop |
+| `stop()` | 65-71 | Stop scheduler loop |
+| `initialize()` | 76-87 | Initialize job states |
+| `tick()` | 92-112 | Single tick of scheduler |
+| `getStatus()` | 117-124 | Get scheduler status |
+
+**Total Scheduler.mjs:** 7 methods
+
+---
+
+### Gap Analysis: Scheduling Domain
+
+| Legacy Function | DDD Status | Notes |
+|-----------------|------------|-------|
+| `md5(string)` | ✅ | `SchedulerService.md5()` |
+| `windowOffset(str)` | ✅ | `SchedulerService.windowOffset()` |
+| `computeNextRun(job, fromMoment)` | ✅ | `SchedulerService.computeNextRun()` |
+| `loadCronJobs()` | ✅ | `YamlJobStore.loadJobs()` |
+| `loadCronState()` | ✅ | `YamlStateStore.loadStates()` |
+| `loadCronConfig()` | ✅ | `SchedulerService.loadJobsWithState()` |
+| `saveCronState(cronJobs)` | ✅ | `YamlStateStore.saveState()` |
+| `backupCronState(cronJobs)` | ✅ | `YamlStateStore.backup()` |
+| `cronContinuous()` | ✅ | `SchedulerService.runDueJobs()` + `Scheduler.tick()` |
+| `GET /status` | ✅ | `SchedulerService.getStatus()` |
+| `POST /run/:jobId` | ✅ | `SchedulerService.triggerJob()` |
+| `GET /:bucket` | ✅ | `SchedulerService.triggerJob()` (dynamic bucket lookup) |
+| `TaskRegistry.load()` | ✅ | `YamlJobStore.loadJobs()` |
+| `TaskRegistry.migrateLegacy()` | ✅ | `YamlJobStore.migrateLegacyJobs()` |
+| `TaskRegistry.getJobs()` | ✅ | `YamlJobStore.loadJobs()` (cached) |
+
+**Summary:**
+- Legacy cron.mjs functions: 9
+- Legacy TaskRegistry functions: 3
+- Legacy router endpoints: 3
+- **Total Legacy:** 15 functions/endpoints
+
+- DDD domain layer methods: 37 (Job + JobExecution + JobState + SchedulerService)
+- DDD adapter layer methods: 12 (YamlJobStore + YamlStateStore)
+- DDD infrastructure methods: 16 (TaskRegistry + Scheduler)
+- **Total DDD:** 65 functions/methods
+
+- Gaps: 0
+- **Parity: 100%** (15 of 15 functions have DDD equivalents)
+
+**Key Findings:**
+
+1. **Full Parity Achieved:** All legacy scheduling functions have DDD equivalents
+2. **Significant Enhancement:** DDD provides 65 methods vs 15 legacy functions (4.3x more)
+3. **Better Architecture:**
+   - Clean separation into entities (Job, JobExecution, JobState)
+   - Port interfaces (IJobStore, IStateStore) for testability
+   - Infrastructure layer (TaskRegistry, Scheduler) for runtime concerns
+4. **New Capabilities:**
+   - Proper execution tracking with JobExecution entity
+   - Explicit state management with JobState entity
+   - Dependency checking in SchedulerService
+   - Job validation in Job entity
+
+**DDD Improvements Over Legacy:**
+
+| Feature | Legacy | DDD |
+|---------|--------|-----|
+| Job Definition | Plain object | Job entity with validation |
+| Execution Tracking | Inline logging | JobExecution entity with status |
+| State Management | Inline state object | JobState entity with methods |
+| Persistence | Direct loadFile/saveFile calls | Adapter layer with interfaces |
+| Testability | Coupled to file system | Dependency injection via ports |
+| Dependency Check | Inline in cronContinuous | `checkDependencies()` method |
+| Running Job Check | Global variable | `runningJobs` Map in service |
+
+---
+
+## Parity Summary
+
+| Domain | Legacy Functions | DDD Equivalents | Gaps | Parity % |
+|--------|------------------|-----------------|------|----------|
+| Content | 66 | 54 | 12 | 82% |
+| Fitness | 41 | 32 | 9 | 78% |
+| Health | 52 | 44 | 8 | 85% |
+| Finance | 35 | 22 | 13 | 63% |
+| Messaging | 2 | 2 | 0 | 100% |
+| **Scheduling** | **15** | **15** | **0** | **100%** |
+| Config | TBD | TBD | TBD | TBD |
+| Playback | TBD | TBD | TBD | TBD |
+| User | TBD | TBD | TBD | TBD |
+
+---
+
 ## Next Steps
 
-1. **Task 1.6:** Audit Playback domain
-2. **Task 1.7:** Audit Scheduling domain
-3. **Task 1.8:** Audit User domain
-4. **Task 1.9:** Audit Config domain
-5. **Task 2.x:** Implement missing functions by priority
+1. **Task 1.7:** Audit Playback domain
+2. **Task 1.8:** Audit Config domain
+3. **Task 1.9:** Audit User domain
+4. **Task 2.x:** Implement missing functions by priority
