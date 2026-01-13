@@ -120,6 +120,21 @@ export class PlexAdapter {
   }
 
   /**
+   * Get raw Plex metadata for a rating key
+   * @param {string} ratingKey - Plex rating key
+   * @returns {Promise<Object|null>} Raw Plex metadata
+   */
+  async getMetadata(ratingKey) {
+    try {
+      const metadata = await this.client.getMetadata(ratingKey);
+      return metadata || null;
+    } catch (err) {
+      console.error('[PlexAdapter] getMetadata error:', err.message);
+      return null;
+    }
+  }
+
+  /**
    * Get a single item by ID
    * @param {string} id - Compound ID (plex:660440) or local ID
    * @returns {Promise<PlayableItem|ListableItem|null>}
