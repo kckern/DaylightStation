@@ -602,8 +602,11 @@ async function main() {
   app.get('/exe/ws/restart', (req, res) => res.redirect(307, '/admin/ws/restart'));
   app.post('/exe/ws/restart', (req, res) => res.redirect(307, '/admin/ws/restart'));
 
+  // WebSocket broadcast redirect
+  app.all('/exe/ws', (req, res) => res.redirect(307, '/admin/ws/broadcast'));
+
   logger.info('legacy.redirects.mounted', {
-    count: 17,
+    count: 18,
     categories: ['content', 'home', 'health', 'tv', 'websocket']
   });
 
