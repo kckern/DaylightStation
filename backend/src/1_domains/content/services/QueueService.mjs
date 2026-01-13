@@ -2,6 +2,18 @@
 import { PlayableItem } from '../capabilities/Playable.mjs';
 
 /**
+ * Day-of-week presets mapping strings to ISO weekday numbers.
+ * ISO: 1=Monday, 7=Sunday
+ */
+const DAY_PRESETS = {
+  'Weekdays': [1, 2, 3, 4, 5],
+  'Weekend': [6, 7],
+  'M•W•F': [1, 3, 5],
+  'T•Th': [2, 4],
+  'M•W': [1, 3]
+};
+
+/**
  * Priority ordering for queue items.
  * Lower numbers = higher priority.
  */
@@ -154,6 +166,35 @@ export class QueueService {
       if (item.watched) return false;
       if ((item.percent || 0) >= WATCHED_THRESHOLD) return false;
       return true;
+    });
+  }
+
+  /**
+   * Filter items by day of week.
+   * Items can have a `days` property that's either:
+   * - An array of ISO weekday numbers [1-7] where 1=Monday, 7=Sunday
+   * - A preset string like "Weekdays", "Weekend", "M•W•F"
+   * Items without days field are always included.
+   *
+   * @param {Array} items - Items with optional days field
+   * @param {Date} [now] - Current date for testing
+   * @returns {Array} Filtered items (new array, original unchanged)
+   */
+  static filterByDayOfWeek(items, now = new Date()) {
+    // ISO weekday: 1=Monday, 7=Sunday
+    // JS getDay(): 0=Sunday, 1=Monday, etc.
+    const jsDay = now.getDay();
+    const dayOfWeek = jsDay === 0 ? 7 : jsDay; // Convert Sunday from 0 to 7
+
+    return items.filter(item => {
+      if (!item.days) return true;
+
+      let allowedDays = item.days;
+      if (typeof allowedDays === 'string') {
+        allowedDays = DAY_PRESETS[allowedDays] || [];
+      }
+
+      return allowedDays.includes(dayOfWeek);
     });
   }
 
