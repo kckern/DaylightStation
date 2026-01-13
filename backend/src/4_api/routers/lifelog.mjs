@@ -3,6 +3,7 @@
  *
  * Endpoints:
  * - GET /api/lifelog - Get aggregated lifelog data for a user and date
+ * - GET /api/lifelog/aggregate/:username/:date - Get aggregated data by path params
  * - GET /api/lifelog/sources - List available extractor sources
  *
  * @module api/routers/lifelog
@@ -11,16 +12,28 @@
 import express from 'express';
 
 /**
+ * Validate date format (YYYY-MM-DD)
+ * @param {string} dateStr
+ * @returns {boolean}
+ */
+function isValidDate(dateStr) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(dateStr) && !isNaN(Date.parse(dateStr));
+}
+
+/**
  * Create lifelog API router
  *
  * @param {Object} config
- * @param {import('../../1_domains/lifelog/services/LifelogAggregator.mjs').LifelogAggregator} config.lifelogAggregator
- * @param {Object} config.configService - ConfigService for user lookup
+ * @param {import('../../1_domains/lifelog/services/LifelogAggregator.mjs').LifelogAggregator} [config.lifelogAggregator]
+ * @param {import('../../1_domains/lifelog/services/LifelogAggregator.mjs').LifelogAggregator} [config.aggregator] - Alias for lifelogAggregator
+ * @param {Object} [config.configService] - ConfigService for user lookup
  * @param {Object} [config.logger] - Logger instance
  * @returns {express.Router}
  */
 export function createLifelogRouter(config) {
-  const { lifelogAggregator, configService, logger = console } = config;
+  // Support both 'aggregator' and 'lifelogAggregator' config keys
+  const aggregator = config.aggregator || config.lifelogAggregator;
+  const { configService, logger = console } = config;
   const router = express.Router();
 
   /**
@@ -46,7 +59,7 @@ export function createLifelogRouter(config) {
 
       logger.info?.('lifelog.aggregate.request', { username, date });
 
-      const data = await lifelogAggregator.aggregate(username, date);
+      const data = await aggregator.aggregate(username, date);
 
       res.json({
         status: 'success',
@@ -58,6 +71,29 @@ export function createLifelogRouter(config) {
         status: 'error',
         error: error.message
       });
+    }
+  });
+
+  /**
+   * GET /api/lifelog/aggregate/:username/:date - Aggregate lifelog data by path params
+   *
+   * Path params:
+   * - username: System username
+   * - date: ISO date YYYY-MM-DD
+   */
+  router.get('/aggregate/:username/:date', async (req, res) => {
+    try {
+      const { username, date } = req.params;
+
+      if (!isValidDate(date)) {
+        return res.status(400).json({ error: 'Invalid date format. Use YYYY-MM-DD' });
+      }
+
+      const result = await aggregator.aggregate(username, date);
+      res.json(result);
+    } catch (err) {
+      console.error('[lifelog] Aggregate error:', err);
+      res.status(500).json({ error: err.message });
     }
   });
 
@@ -103,7 +139,7 @@ export function createLifelogRouter(config) {
       const username = req.query.user || getDefaultUsername();
       const date = req.query.date || null;
 
-      const data = await lifelogAggregator.aggregate(username, date);
+      const data = await aggregator.aggregate(username, date);
 
       res.json({
         status: 'success',
