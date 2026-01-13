@@ -484,15 +484,64 @@ export class FitnessSyncerAdapter {
    * @private
    */
   #cleanErrorMessage(error) {
+    return FitnessSyncerAdapter.cleanErrorMessage(error);
+  }
+
+  /**
+   * Extract clean error message from error object
+   *
+   * Static version for external use and testing.
+   * Handles HTML error responses, extracts meaningful text,
+   * and truncates long messages.
+   *
+   * @param {Error|string|*} error - Error object, string, or any value
+   * @returns {string} Cleaned error message, truncated to 200 chars
+   * @static
+   */
+  static cleanErrorMessage(error) {
     const errorStr = error?.message || String(error);
 
+    // Check for ERROR code pattern (e.g., "ERROR: (429), TooManyRequests")
+    const codeMatch = errorStr.match(/ERROR:\s*\((\d+)\),\s*([^,"]+)/);
+    if (codeMatch) {
+      const [, code, type] = codeMatch;
+      return `HTTP ${code} ${type}`;
+    }
+
     // Check for HTML in error message
-    if (errorStr.includes('<!DOCTYPE') || errorStr.includes('<html')) {
-      const codeMatch = errorStr.match(/ERROR:\s*\((\d+)\),\s*([^,"]+)/);
-      if (codeMatch) {
-        const [, code, type] = codeMatch;
-        return `HTTP ${code} ${type}`;
+    if (errorStr.includes('<!DOCTYPE') || errorStr.includes('<html') || errorStr.includes('<body')) {
+      // Try to extract text from common tags
+      const extracted = [];
+
+      // Extract from <title>
+      const titleMatch = errorStr.match(/<title>([^<]+)<\/title>/i);
+      if (titleMatch && titleMatch[1]) {
+        extracted.push(titleMatch[1].trim());
       }
+
+      // Extract from <h1>
+      const h1Match = errorStr.match(/<h1[^>]*>([^<]+)<\/h1>/i);
+      if (h1Match && h1Match[1]) {
+        extracted.push(h1Match[1].trim());
+      }
+
+      // Extract from <p>
+      const pMatches = errorStr.matchAll(/<p[^>]*>([^<]+)<\/p>/gi);
+      for (const match of pMatches) {
+        if (match[1]) {
+          extracted.push(match[1].trim());
+        }
+      }
+
+      // If we found structured content, use it
+      if (extracted.length > 0) {
+        const result = extracted.join(' - ');
+        return result.length > 200 ? result.substring(0, 200) + '...' : result;
+      }
+
+      // Fallback: strip all HTML tags
+      const stripped = errorStr.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+      return stripped.length > 200 ? stripped.substring(0, 200) + '...' : stripped;
     }
 
     return errorStr.length > 200 ? errorStr.substring(0, 200) + '...' : errorStr;
