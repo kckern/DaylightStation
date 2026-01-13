@@ -4,14 +4,25 @@
 
 ## Executive Summary
 
+This audit compares data schemas between legacy code structures and DDD implementations across three dimensions: entity definitions, YAML file structures, and API request/response shapes. The goal is to ensure the refactored domain entities correctly capture all properties from legacy data structures and maintain frontend compatibility.
+
 ### Phase Summary
 
-| Phase | Scope | Parity | Status |
-|-------|-------|--------|--------|
-| Phase 1: Entity Schemas | 28 entities across 11 domains | 89% | :white_check_mark: Good |
-| Phase 2: YAML Data Schemas | ~37 file types | 93% | :white_check_mark: Good |
-| Phase 3: API Request/Response | 53 endpoints across 7 domains | 92% | :white_check_mark: Good |
-| **Overall** | **All schemas** | **91%** | :white_check_mark: Good |
+| Phase | Scope | Items Audited | Parity | Status |
+|-------|-------|---------------|--------|--------|
+| Phase 1: Entity Schemas | Domain entity definitions | 28 entities across 11 domains | 89% | :white_check_mark: Good |
+| Phase 2: YAML Data Schemas | File persistence formats | ~37 file types across 13 categories | 93% | :white_check_mark: Good |
+| Phase 3: API Request/Response | Endpoint response shapes | 53 endpoints across 7 domains | 92% | :white_check_mark: Good |
+| **Overall** | **All schemas** | **118 schema definitions** | **91%** | :white_check_mark: Good |
+
+### Gap Summary by Priority
+
+| Priority | Count | Description |
+|----------|-------|-------------|
+| High | 3 | Journaling entity gaps, Message entity features, Finance API shape |
+| Medium | 6 | Session format documentation, field aliases, envelope patterns |
+| Low | 7 | Archive path consistency, backup naming, field consolidation |
+| **Total Gaps** | **16** | Across all three phases |
 
 ### Phase 1: Entity Domain Parity
 
@@ -1653,3 +1664,199 @@ The DDD refactoring successfully maintains API compatibility through:
 - Legacy shim middleware for deprecated paths
 - Consistent field naming conventions
 - Additive-only changes (new fields, not removed fields)
+
+---
+
+## Conclusions
+
+### Overall Schema Migration Status
+
+The schema parity audit reveals **91% overall compatibility** between legacy and DDD implementations, which is excellent for a major architectural refactoring effort. The migration successfully preserves data compatibility while introducing cleaner domain boundaries.
+
+**Key Statistics:**
+- 28 entity schemas audited with 89% parity
+- 37 YAML file types audited with 93% parity
+- 53 API endpoints audited with 92% parity
+- 16 total gaps identified (3 high, 6 medium, 7 low priority)
+
+### Key Compatibility Mechanisms
+
+The DDD implementation employs several mechanisms to ensure backward compatibility:
+
+#### 1. Legacy Shims (API Layer)
+Three middleware shims handle deprecated endpoint paths:
+- `legacyListShim.mjs` - Transforms `/data/list/*` to `/api/list/*`
+- `legacyPlayShim.mjs` - Transforms `/media/*/info/*` to `/api/play/*`
+- `legacyLocalContentShim.mjs` - Transforms `/data/scripture/*`, `/data/talk/*`, etc.
+
+#### 2. fromLegacy() Factory Methods (Entity Layer)
+Several entities include `fromLegacy()` methods for data transformation:
+- `NutriLog.fromLegacy()` - Unwraps `food_data` envelope
+- `FoodItem.fromLegacy()` - Maps `item`->`name`, `noom_color`->`color`
+- `Session.fromLegacy()` - Handles V2 `participants` to V3 `roster` synthesis
+
+#### 3. Field Aliasing (Adapter Layer)
+YAML adapters normalize field names on read:
+- `YamlNutriListStore.#normalizeItem()` - Maps snake_case to camelCase
+- `YamlJobStore` - Accepts both `cron_tab` and `schedule`
+- `YamlSessionStore` - Parses both human-readable and unix ms timestamps
+
+#### 4. Response Field Preservation
+Entity `toJSON()` methods preserve legacy field names:
+- `media_key`, `media_url` - snake_case preserved for frontend
+- `resume_position`, `resume_percent` - Legacy aliases maintained
+- Additional fields are additive (new data, not removed fields)
+
+### Frontend Compatibility Assessment
+
+**Impact Level: Low**
+
+The frontend can continue to use existing endpoints and data shapes with minimal changes:
+
+| Component | Compatibility | Notes |
+|-----------|---------------|-------|
+| Media Player | :white_check_mark: Full | All play/log endpoints compatible |
+| List Views | :white_check_mark: Full | Legacy shim transforms `source`->`kind` |
+| Fitness Sessions | :white_check_mark: Full | Same response shape, timestamps normalized |
+| Health Dashboard | :yellow_circle: Minor | Some endpoints now use `{message, data}` envelope |
+| Finance Views | :white_check_mark: Full | Legacy `/data` endpoints preserved |
+| Scheduling Admin | :white_check_mark: Full | Additional `scheduler` field is additive |
+
+**Recommended Frontend Updates:**
+1. Migrate from `/data/list/*` to `/api/list/*` (shim will be deprecated)
+2. Use `source` instead of `kind` for content type identification
+3. Handle optional `{message, data}` envelope in health endpoints
+
+### Data Migration Safety Assessment
+
+**Migration Risk: Low**
+
+The DDD implementation is designed for safe, non-destructive data handling:
+
+1. **Read Compatibility**: All legacy YAML files are readable by DDD adapters without modification
+2. **Write Format**: DDD writes use normalized field names but legacy fields remain valid
+3. **Archive Preservation**: No changes to archive file structures
+4. **Rollback Safety**: Legacy code can still read files written by DDD (additive changes only)
+
+**Zero-Migration Strategy Validated:**
+- Session files work in both V2 and V3 formats
+- Nutrition files work with both `food_data` envelope and flat structure
+- Watch state files work with any field naming convention
+
+---
+
+## Cross-Reference: Function Parity Audit
+
+The Schema Parity Audit correlates with the Function Parity Audit (2026-01-13) as follows:
+
+### Correlation Analysis
+
+| Area | Schema Parity | Function Parity | Correlation |
+|------|---------------|-----------------|-------------|
+| Content Domain | 95% | 82% | Schema ahead - functions have more gaps |
+| Fitness Domain | 90% | 78% | Schema ahead - session normalizer covers gaps |
+| Health Domain | 85% | 85% | Aligned - similar gap profile |
+| Finance Domain | 80% | 63% | Schema ahead - Buxfer adapter needs work |
+| Messaging Domain | 90% | 100% | Functions complete, schema has feature gaps |
+| Scheduling Domain | 95% | 100% | Fully aligned - excellent parity |
+
+### Key Observations
+
+1. **Schema parity generally exceeds function parity** (91% vs 87%) because schemas define data structures while functions implement behavior. The DDD entities capture legacy shapes even when some functions are not yet implemented.
+
+2. **Finance domain is the weakest in both audits** - Buxfer API adapter has 63% function parity and 80% schema parity. This is the highest priority area for completion.
+
+3. **Content domain discrepancy** - 95% schema parity but only 82% function parity. The `mediaMemoryValidator.mjs` functions (9 functions, all gaps) are not critical for runtime operation.
+
+4. **Scheduling domain is fully aligned** - 95% schema parity and 100% function parity indicates complete migration for this domain.
+
+### Recommendations Alignment
+
+Both audits identify the same high-priority areas:
+- Finance/Buxfer adapter completion
+- Garmin adapter function gaps
+- Message entity feature enrichment
+
+---
+
+## Recommendations
+
+### High Priority (Complete Before Production)
+
+| Item | Domain | Effort | Impact |
+|------|--------|--------|--------|
+| 1. Add `prompts` and `attachments` to JournalEntry entity | Journaling | Small | Enables full journaling feature set |
+| 2. Align Message entity with legacy chatbots Message | Messaging | Medium | Supports `direction` and `attachments` |
+| 3. Complete Buxfer API response mapping in Account entity | Finance | Medium | Fixes 80% parity to 95%+ |
+
+### Medium Priority (Complete Within 30 Days)
+
+| Item | Domain | Effort | Impact |
+|------|--------|--------|--------|
+| 4. Document V2/V3 session format compatibility in entity comments | Fitness | Small | Developer clarity |
+| 5. Add JSDoc comments in adapters listing legacy field names | All | Small | Maintainability |
+| 6. Standardize timestamp format in YAML files to ISO 8601 | All | Medium | Consistency |
+| 7. Standardize envelope pattern across Health endpoints | Health | Medium | API consistency |
+| 8. Add `accountName` alias to Transaction entity | Finance | Small | Backward compat |
+| 9. Add error codes alongside error messages in responses | API | Small | Error handling |
+
+### Low Priority (Backlog)
+
+| Item | Domain | Effort | Impact |
+|------|--------|--------|--------|
+| 10. Standardize archive path convention | All | Small | Consistency |
+| 11. Standardize backup file naming (`_bak` vs `_backup`) | All | Small | Consistency |
+| 12. Consolidate watch progress fields (`percent`/`watchProgress`/`resume_percent`) | Content | Medium | API cleanliness |
+| 13. Document adapter-specific WatchState extensions | Content | Small | Extensibility |
+| 14. Add summary computation documentation to HealthMetric | Health | Small | Developer clarity |
+| 15. Fully standardize JobState on camelCase | Scheduling | Small | Consistency |
+| 16. Remove legacy field aliases after frontend migration | All | Medium | Technical debt |
+
+### Deprecation Timeline Recommendations
+
+| Component | Current State | Target State | Timeline |
+|-----------|---------------|--------------|----------|
+| `/data/list/*` endpoints | Active via shim | Deprecated | Q2 2026 |
+| `/media/*/info/*` endpoints | Active via shim | Deprecated | Q2 2026 |
+| `/data/scripture/*`, `/data/talk/*` endpoints | Active via shim | Deprecated | Q2 2026 |
+| `kind` response field | Aliased to `source` | Removed | Q3 2026 |
+| `food_data` envelope in nutrilog | Readable via fromLegacy | Write normalized only | Q3 2026 |
+| V2 session `participants` format | Readable via synthesis | Write V3 only | Q4 2026 |
+
+### Quick Wins (Can Complete in <2 Hours Each)
+
+1. Add JSDoc `@legacy` annotations to entities with field aliases
+2. Add `accountName` getter alias in Transaction entity
+3. Document V2/V3 session format in Session.mjs header comment
+4. Add `prompts` array property to JournalEntry entity
+5. Standardize `_bak` suffix for all backup files
+
+---
+
+## Appendix: Schema Audit Methodology
+
+### Entity Schema Comparison
+Each entity was compared field-by-field against:
+1. Legacy JavaScript class definitions
+2. Actual YAML file contents in production data
+3. API response shapes returned to frontend
+
+### YAML File Analysis
+YAML schemas were audited by:
+1. Reading actual files from `data/` directories
+2. Comparing against adapter `loadFile()`/`saveFile()` expectations
+3. Verifying `fromJSON()`/`toJSON()` round-trip compatibility
+
+### API Response Verification
+API response shapes were verified by:
+1. Reading router endpoint implementations
+2. Comparing legacy vs DDD response construction
+3. Testing shim transformations for deprecated paths
+
+### Parity Calculation
+Parity percentages were calculated as:
+```
+Parity = (Matching Fields + Aliased Fields) / Total Legacy Fields * 100
+```
+
+Fields marked as "New" (present in DDD but not legacy) do not reduce parity as they represent additive enhancements.
