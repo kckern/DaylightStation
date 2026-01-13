@@ -148,6 +148,7 @@ export function createContentRegistry(config) {
   if (config.watchlistPath) {
     registry.register(new FolderAdapter({
       watchlistPath: config.watchlistPath,
+      historyPath: config.mediaMemoryPath || null,
       registry
     }));
   }
