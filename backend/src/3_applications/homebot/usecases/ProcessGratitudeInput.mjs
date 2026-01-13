@@ -27,6 +27,11 @@ export class ProcessGratitudeInput {
    * @param {Object} [config.logger] - Logger instance
    */
   constructor(config) {
+    if (!config.messagingGateway) throw new Error('messagingGateway is required');
+    if (!config.aiGateway) throw new Error('aiGateway is required');
+    if (!config.conversationStateStore) throw new Error('conversationStateStore is required');
+    if (!config.householdService) throw new Error('householdService is required');
+
     this.#messagingGateway = config.messagingGateway;
     this.#aiGateway = config.aiGateway;
     this.#conversationStateStore = config.conversationStateStore;
@@ -81,13 +86,15 @@ export class ProcessGratitudeInput {
       const { messageId } = await this.#sendConfirmationUI(conversationId, items, category, members);
 
       // 5. Save state for callback handling
-      const stateKey = `gratitude:${conversationId}`;
-      await this.#conversationStateStore?.set?.(stateKey, {
-        items,
-        category,
-        messageId,
-        createdAt: Date.now()
-      });
+      await this.#conversationStateStore.set(conversationId, {
+        activeFlow: 'gratitude_input',
+        flowState: {
+          items,
+          category,
+          confirmationMessageId: messageId,
+          originalText: inputText
+        }
+      }, messageId);
 
       this.#logger.info?.('processGratitude.complete', {
         conversationId,
@@ -215,28 +222,29 @@ Example output: { "items": [{ "text": "Good health" }, { "text": "Supportive fam
 
     const messageText = `I found these ${category} items:\n\n${itemsList}\n\nWho should these be attributed to?`;
 
-    // Build member selection buttons
-    const memberButtons = members.slice(0, 4).map(member => ({
-      text: member.displayName || member.username,
-      callback_data: JSON.stringify({ cmd: 'assign', user: member.username })
-    }));
-
-    // Build action buttons
-    const actionButtons = [
-      { text: 'Confirm All', callback_data: JSON.stringify({ cmd: 'confirm' }) },
-      { text: 'Cancel', callback_data: JSON.stringify({ cmd: 'cancel' }) }
+    // Build choices array with structured button format
+    const choices = [
+      // Category toggle button
+      [{
+        label: category === 'gratitude' ? '🔄 Switch to Hopes' : '🔄 Switch to Gratitude',
+        data: `category:${category === 'gratitude' ? 'hopes' : 'gratitude'}`
+      }],
+      // Member buttons
+      ...members.slice(0, 4).map(member => [{
+        label: member.displayName || member.username,
+        data: `user:${member.username}`
+      }]),
+      // Action buttons
+      [
+        { label: '✅ Confirm', data: 'confirm' },
+        { label: '❌ Cancel', data: 'cancel' }
+      ]
     ];
-
-    const keyboard = [];
-    if (memberButtons.length > 0) {
-      keyboard.push(memberButtons);
-    }
-    keyboard.push(actionButtons);
 
     const result = await this.#messagingGateway.sendMessage(
       conversationId,
       messageText,
-      { choices: keyboard, inline: true }
+      { choices, inline: true }
     );
 
     return { messageId: result.messageId };
