@@ -18,6 +18,7 @@
  * @property {Object} [metadata] - Additional metadata
  * @property {ItemActions} [actions] - Available actions for this item
  * @property {string} [media_key] - Optional override for media key (defaults to id)
+ * @property {string} [label] - Short display label (falls back to title)
  */
 
 /**
@@ -42,6 +43,7 @@ export class Item {
     this.metadata = props.metadata ?? {};
     this.actions = props.actions ?? null;
     this._media_key = props.media_key ?? null;
+    this._label = props.label ?? null;
   }
 
   /**
@@ -62,6 +64,14 @@ export class Item {
       return this.getLocalId();
     }
     return this.metadata?.plex ?? null;
+  }
+
+  /**
+   * Get display label (falls back to title)
+   * @returns {string}
+   */
+  get label() {
+    return this._label || this.metadata?.label || this.title;
   }
 
   /**
