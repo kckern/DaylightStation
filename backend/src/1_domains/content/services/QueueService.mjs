@@ -24,6 +24,11 @@ const URGENCY_DAYS = 8;
 const WAIT_LOOKAHEAD_DAYS = 2;
 
 /**
+ * Threshold percentage for considering an item as watched
+ */
+const WATCHED_THRESHOLD = 90;
+
+/**
  * QueueService handles play vs queue logic with watch state awareness.
  *
  * Key distinction:
@@ -123,6 +128,32 @@ export class QueueService {
       if (!item.wait_until) return true;
       const waitDate = new Date(item.wait_until);
       return waitDate <= lookaheadDate;
+    });
+  }
+
+  /**
+   * Filter out items that are on hold.
+   * Items without a hold field are included.
+   *
+   * @param {Array} items - Items with optional hold field
+   * @returns {Array} Filtered items (new array, original unchanged)
+   */
+  static filterByHold(items) {
+    return items.filter(item => !item.hold);
+  }
+
+  /**
+   * Filter out items that are watched (>= 90% or explicitly marked).
+   * Items without percent or watched fields are included.
+   *
+   * @param {Array} items - Items with optional watched and percent fields
+   * @returns {Array} Filtered items (new array, original unchanged)
+   */
+  static filterByWatched(items) {
+    return items.filter(item => {
+      if (item.watched) return false;
+      if ((item.percent || 0) >= WATCHED_THRESHOLD) return false;
+      return true;
     });
   }
 
