@@ -18,6 +18,7 @@
 | Scheduling | 15 | 15 | 0 | 100% |
 | **AI/LLM** | **24** | **30** | **0** | **100%+** |
 | **Home Automation** | **5** | **36** | **0** | **100%+** |
+| **Hardware** | **29** | **53** | **1** | **97%** |
 | Config | TBD | TBD | TBD | TBD |
 | Playback | TBD | TBD | TBD | TBD |
 | User | TBD | TBD | TBD | TBD |
@@ -2591,10 +2592,248 @@ The `exe.mjs` router in legacy now serves as a **thin bridge** to DDD adapters:
 
 ---
 
+## Hardware Adapters
+
+### Overview
+
+Hardware adapters provide control interfaces for physical devices:
+- Thermal printers (ESC/POS protocol)
+- MQTT sensors (vibration sensors)
+- Text-to-speech (OpenAI TTS API)
+- Ambient LED control (via Home Assistant scenes)
+
+### Legacy Files
+
+| File | Path | Purpose |
+|------|------|---------|
+| thermalprint.mjs | `backend/_legacy/lib/thermalprint.mjs` | ESC/POS thermal printer control |
+| mqtt.mjs | `backend/_legacy/lib/mqtt.mjs` | MQTT sensor subscription (now delegates to DDD) |
+| mqtt.constants.mjs | `backend/_legacy/lib/mqtt.constants.mjs` | MQTT configuration constants |
+| tts.mjs | `backend/_legacy/routers/tts.mjs` | TTS router (now delegates to DDD) |
+| printer.mjs | `backend/_legacy/routers/printer.mjs` | Printer router (now delegates to DDD) |
+
+### DDD Files
+
+| File | Path | Purpose |
+|------|------|---------|
+| ThermalPrinterAdapter.mjs | `backend/src/2_adapters/hardware/thermal-printer/ThermalPrinterAdapter.mjs` | ESC/POS thermal printer adapter |
+| TTSAdapter.mjs | `backend/src/2_adapters/hardware/tts/TTSAdapter.mjs` | OpenAI Text-to-Speech adapter |
+| MQTTSensorAdapter.mjs | `backend/src/2_adapters/hardware/mqtt-sensor/MQTTSensorAdapter.mjs` | MQTT vibration sensor adapter |
+| AmbientLedAdapter.mjs | `backend/src/2_adapters/fitness/AmbientLedAdapter.mjs` | Fitness zone LED control |
+| index.mjs | `backend/src/2_adapters/hardware/index.mjs` | Hardware adapter exports |
+
+---
+
+### Legacy Functions: thermalprint.mjs
+
+| Function | Lines | Purpose | DDD Equivalent | DDD File | Status |
+|----------|-------|---------|----------------|----------|--------|
+| `thermalPrint(printObject)` | 155-172 | Main print function with queue | `print(printJob)` | ThermalPrinterAdapter.mjs | ✅ |
+| `executePrintJob(printObject)` | 174-299 | Execute queued print job | `#executePrintJob(printJob)` | ThermalPrinterAdapter.mjs | ✅ |
+| `processItem(item, config)` | 307-348 | Process individual print item | `#processItem(item, config)` | ThermalPrinterAdapter.mjs | ✅ |
+| `processTextItem(item, config)` | 356-414 | Process text item with styles | `#processTextItem(item)` | ThermalPrinterAdapter.mjs | ✅ |
+| `processImageItem(item, config)` | 422-475 | Process image item | `#processImageItem(item)` | ThermalPrinterAdapter.mjs | ✅ |
+| `processBarcodeItem(item, config)` | 483-536 | Process barcode item | `#processBarcodeItem(item)` | ThermalPrinterAdapter.mjs | ✅ |
+| `processLineItem(item, config)` | 544-564 | Process horizontal line | `#processLineItem(item)` | ThermalPrinterAdapter.mjs | ✅ |
+| `processSpaceItem(item, config)` | 572-581 | Process blank space | `#processSpaceItem(item)` | ThermalPrinterAdapter.mjs | ✅ |
+| `processFeedButtonItem(item, config)` | 589-600 | Control feed button | `setFeedButton(enabled)` | ThermalPrinterAdapter.mjs | ✅ |
+| `convertToMonochrome(canvas, threshold)` | 608-631 | Convert image to B&W bitmap | `#convertToMonochrome(canvas, threshold)` | ThermalPrinterAdapter.mjs | ✅ |
+| `convertBitmapToEscPos(bitmap, width, height)` | 640-666 | Convert bitmap to ESC/POS | `#convertBitmapToEscPos(bitmap, width, height)` | ThermalPrinterAdapter.mjs | ✅ |
+| `createTextPrint(text, options)` | 674-688 | Helper: create text print job | `createTextPrint(text, options)` | ThermalPrinterAdapter.mjs | ✅ |
+| `createUpsideDownPrint(printObject)` | 695-703 | Helper: wrap for upside-down mode | Config option in constructor | ThermalPrinterAdapter.mjs | ✅ |
+| `createImagePrint(imagePath, options)` | 711-738 | Helper: create image print job | `createImagePrint(imagePath, options)` | ThermalPrinterAdapter.mjs | ✅ |
+| `createReceiptPrint(receiptData)` | 745-809 | Helper: create receipt print job | `createReceiptPrint(receiptData)` | ThermalPrinterAdapter.mjs | ✅ |
+| `createTablePrint(tableData)` | 816-967 | Helper: create table print job | `createTablePrint(tableData)` | ThermalPrinterAdapter.mjs | ✅ |
+| `queryPrinterStatus(config)` | 974-1068 | Query printer status | `getStatus()` | ThermalPrinterAdapter.mjs | ✅ |
+| `parseStatusResponses(responses)` | 1075-1119 | Parse status response bytes | `#parseStatusResponses(responses)` | ThermalPrinterAdapter.mjs | ✅ |
+| `testFeedButton(config)` | 1126-1166 | Test feed button functionality | - | - | ❌ Gap (P3) |
+| `setFeedButton(enabled, config)` | 1174-1185 | Helper: control feed button | `setFeedButton(enabled)` | ThermalPrinterAdapter.mjs | ✅ |
+| `pingPrinter(config)` | 1192-1245 | Check printer reachability | `ping()` | ThermalPrinterAdapter.mjs | ✅ |
+
+**Legacy thermalprint.mjs Total:** 21 functions
+**DDD Equivalents:** 20
+**Gaps:** 1 (testFeedButton - test utility)
+**Parity:** 20/21 = **95%**
+
+---
+
+### Legacy Functions: mqtt.mjs (Bridge Module)
+
+| Function | Lines | Purpose | DDD Equivalent | DDD File | Status |
+|----------|-------|---------|----------------|----------|--------|
+| `getMQTTAdapter()` | 23-41 | Get/create MQTT adapter | Factory function | MQTTSensorAdapter.mjs | ✅ |
+| `validateVibrationPayload(data)` | 48-50 | Validate sensor payload | `validatePayload(data)` | MQTTSensorAdapter.mjs | ✅ |
+| `buildSensorTopicMap(equipment)` | 57-78 | Build topic-to-equipment map | `#buildSensorTopicMap(equipment)` | MQTTSensorAdapter.mjs | ✅ |
+| `initMqttSubscriber(equipment)` | 85-89 | Initialize MQTT subscriber | `init(equipment)` | MQTTSensorAdapter.mjs | ✅ |
+| `closeMqttConnection()` | 94-99 | Close MQTT connection | `close()` | MQTTSensorAdapter.mjs | ✅ |
+| `getMqttStatus()` | 105-115 | Get connection status | `getStatus()` | MQTTSensorAdapter.mjs | ✅ |
+
+**Note:** Legacy `mqtt.mjs` is now a thin bridge that delegates to DDD `MQTTSensorAdapter`.
+
+**Legacy mqtt.mjs Total:** 6 functions
+**DDD Equivalents:** 6
+**Gaps:** 0
+**Parity:** 6/6 = **100%**
+
+---
+
+### DDD Functions: MQTTSensorAdapter.mjs
+
+| Function | Lines | Purpose | Legacy Equivalent | Status |
+|----------|-------|---------|-------------------|--------|
+| `constructor(config, options)` | 84-102 | Initialize adapter | - | ✅ |
+| `isConfigured()` | 108-110 | Check if host is configured | - | ✅ NEW |
+| `isConnected()` | 116-118 | Check if connected to broker | - | ✅ NEW |
+| `getStatus()` | 124-132 | Get connection status | `getMqttStatus()` | ✅ |
+| `init(equipment)` | 139-163 | Initialize and connect | `initMqttSubscriber()` | ✅ |
+| `close()` | 168-183 | Close connection | `closeMqttConnection()` | ✅ |
+| `validatePayload(data)` | 190-213 | Validate sensor payload | `validateVibrationPayload()` | ✅ |
+| `setMessageCallback(callback)` | 219-221 | Set message callback | - | ✅ NEW |
+| `#buildSensorTopicMap(equipment)` | 227-247 | Build topic map | `buildSensorTopicMap()` | ✅ |
+| `#shouldThrottle(topic)` | 249-257 | Throttle broadcasts | - | ✅ NEW |
+| `#scheduleReconnect(brokerUrl)` | 259-287 | Schedule reconnect with backoff | - | ✅ NEW |
+| `#connectToBroker(brokerUrl)` | 289-405 | Connect to MQTT broker | - | ✅ NEW |
+| `createMQTTSensorAdapter(options)` | 413-419 | Factory from env config | - | ✅ NEW |
+
+**DDD MQTTSensorAdapter Total:** 13 functions (6 legacy + 7 new)
+
+---
+
+### Legacy Functions: tts.mjs (Router - Bridge Module)
+
+| Function | Lines | Purpose | DDD Equivalent | DDD File | Status |
+|----------|-------|---------|----------------|----------|--------|
+| `getTTSAdapter()` | 34-45 | Get/create TTS adapter | Factory function | TTSAdapter.mjs | ✅ |
+| `POST /story` | 51-105 | Story telling with TTS | - | - | ⚠️ Story logic only |
+| `POST /generate` | 111-117 | Generate speech | `generateSpeech(text, options)` | TTSAdapter.mjs | ✅ |
+| `respondWithAudio(input, res)` | 123-149 | Stream audio response | - | - | ⚠️ Router helper |
+
+**Note:** Legacy `tts.mjs` router delegates TTS generation to DDD `TTSAdapter`. The `/story` endpoint uses GPT for story generation (separate concern).
+
+---
+
+### DDD Functions: TTSAdapter.mjs
+
+| Function | Lines | Purpose | Legacy Equivalent | Status |
+|----------|-------|---------|-------------------|--------|
+| `constructor(config, options)` | 38-44 | Initialize adapter | - | ✅ |
+| `isConfigured()` | 50-52 | Check if API key present | - | ✅ NEW |
+| `getAvailableVoices()` | 58-60 | Get supported voices | - | ✅ NEW |
+| `getAvailableModels()` | 66-68 | Get supported models | - | ✅ NEW |
+| `generateSpeech(text, options)` | 80-139 | Generate speech stream | Legacy `/generate` | ✅ |
+| `generateSpeechBuffer(text, options)` | 147-156 | Generate speech as buffer | - | ✅ NEW |
+| `getStatus()` | 162-169 | Get adapter status | - | ✅ NEW |
+| `createTTSAdapter(options)` | 177-183 | Factory from env config | - | ✅ NEW |
+
+**DDD TTSAdapter Total:** 8 functions (1 legacy + 7 new)
+
+---
+
+### DDD Functions: ThermalPrinterAdapter.mjs
+
+| Function | Lines | Purpose | Legacy Equivalent | Status |
+|----------|-------|---------|-------------------|--------|
+| `constructor(config, options)` | 68-76 | Initialize adapter | DEFAULT_CONFIG | ✅ |
+| `isConfigured()` | 82-84 | Check if host configured | - | ✅ NEW |
+| `getHost()` | 90-92 | Get printer host | - | ✅ NEW |
+| `getPort()` | 98-100 | Get printer port | - | ✅ NEW |
+| `ping()` | 106-153 | Ping printer | `pingPrinter()` | ✅ |
+| `getStatus()` | 159-218 | Query printer status | `queryPrinterStatus()` | ✅ |
+| `print(printJob)` | 225-239 | Print job with queue | `thermalPrint()` | ✅ |
+| `createTextPrint(text, options)` | 247-259 | Create text print job | `createTextPrint()` | ✅ |
+| `createImagePrint(imagePath, options)` | 267-280 | Create image print job | `createImagePrint()` | ✅ |
+| `createReceiptPrint(receiptData)` | 287-346 | Create receipt print job | `createReceiptPrint()` | ✅ |
+| `createTablePrint(tableData)` | 353-444 | Create table print job | `createTablePrint()` | ✅ |
+| `setFeedButton(enabled)` | 451-456 | Set feed button state | `setFeedButton()` | ✅ |
+| `#executePrintJob(printJob)` | 462-561 | Execute print job | `executePrintJob()` | ✅ |
+| `#processItem(item, config)` | 563-597 | Process print item | `processItem()` | ✅ |
+| `#processTextItem(item)` | 599-650 | Process text item | `processTextItem()` | ✅ |
+| `#processImageItem(item)` | 652-691 | Process image item | `processImageItem()` | ✅ |
+| `#processBarcodeItem(item)` | 693-726 | Process barcode item | `processBarcodeItem()` | ✅ |
+| `#processLineItem(item)` | 728-744 | Process line item | `processLineItem()` | ✅ |
+| `#processSpaceItem(item)` | 746-755 | Process space item | `processSpaceItem()` | ✅ |
+| `#convertToMonochrome(canvas, threshold)` | 757-778 | Convert to B&W | `convertToMonochrome()` | ✅ |
+| `#convertBitmapToEscPos(bitmap, width, height)` | 780-804 | Convert to ESC/POS | `convertBitmapToEscPos()` | ✅ |
+| `#parseStatusResponses(responses)` | 806-842 | Parse status responses | `parseStatusResponses()` | ✅ |
+| `createThermalPrinterAdapter(options)` | 850-855 | Factory from env config | - | ✅ NEW |
+
+**DDD ThermalPrinterAdapter Total:** 23 functions (20 legacy + 3 new)
+
+---
+
+### DDD Functions: AmbientLedAdapter.mjs
+
+| Function | Lines | Purpose | Legacy Equivalent | Status |
+|----------|-------|---------|-------------------|--------|
+| `constructor(config)` | 45-82 | Initialize with gateway | - | ✅ NEW |
+| `normalizeZoneId(zoneId)` | 87-91 | Normalize zone identifier | - | ✅ NEW |
+| `#isEnabled(fitnessConfig)` | 97-106 | Check if feature enabled | - | ✅ NEW |
+| `#resolveSceneFromConfig(sceneConfig, zoneKey)` | 112-130 | Resolve scene with fallback | - | ✅ NEW |
+| `#resolveTargetScene(zones, sessionEnded, sceneConfig)` | 136-158 | Determine target scene | - | ✅ NEW |
+| `syncZone(params)` | 163-321 | Sync LED to zone state | `activateScene()` (HA) | ✅ |
+| `getStatus(householdId)` | 326-342 | Get controller status | - | ✅ NEW |
+| `getMetrics()` | 347-395 | Get detailed metrics | - | ✅ NEW |
+| `reset()` | 400-415 | Reset controller state | - | ✅ NEW |
+
+**Note:** AmbientLedAdapter is a DDD-only addition that orchestrates zone-based LED control using HomeAssistantAdapter for scene activation. Legacy code used direct `activateScene()` calls without zone orchestration logic.
+
+**DDD AmbientLedAdapter Total:** 9 functions (1 partial legacy equivalent + 8 new)
+
+---
+
+### Summary: Hardware Adapters
+
+| Device Type | Legacy Functions | DDD Equivalents | Gaps | Parity % |
+|-------------|------------------|-----------------|------|----------|
+| Thermal Printer | 21 | 23 | 1 | 95% |
+| MQTT Sensors | 6 | 13 | 0 | 100%+ |
+| Text-to-Speech | 2 | 8 | 0 | 100%+ |
+| Ambient LED | 0 | 9 | 0 | NEW |
+| **TOTAL** | **29** | **53** | **1** | **97%** |
+
+### Overall Hardware Adapters Parity: **97%** (28/29 legacy + 24 DDD additions)
+
+---
+
+### Gaps
+
+| Gap | Description | Priority | Notes |
+|-----|-------------|----------|-------|
+| `testFeedButton()` | Feed button test utility | P3 | Test helper, not core functionality |
+
+---
+
+### Key DDD Improvements
+
+1. **Clean Architecture:** All hardware adapters follow consistent adapter pattern with constructor injection
+2. **Metrics Tracking:** All adapters include built-in metrics for monitoring operations
+3. **Factory Functions:** `createXxxAdapter()` functions for easy instantiation from environment
+4. **Status Endpoints:** All adapters expose `getStatus()` for observability
+5. **Bridge Pattern:** Legacy code (mqtt.mjs, printer.mjs, tts.mjs) now delegates to DDD adapters
+6. **New Orchestration:** AmbientLedAdapter adds zone-based LED control with:
+   - Rate limiting to prevent excessive calls
+   - Circuit breaker for failure protection
+   - Deduplication to skip redundant scene changes
+   - Session start/end tracking
+7. **Enhanced MQTT:** Auto-reconnect with exponential backoff, throttled broadcasts, graceful shutdown
+8. **Enhanced TTS:** Buffer output, voice/model enumeration, configuration validation
+
+### Architecture Notes
+
+The legacy hardware modules have been **refactored as bridges** to DDD adapters:
+- `backend/_legacy/lib/mqtt.mjs` → delegates to `MQTTSensorAdapter`
+- `backend/_legacy/routers/tts.mjs` → delegates to `TTSAdapter`
+- `backend/_legacy/routers/printer.mjs` → delegates to `ThermalPrinterAdapter`
+
+This pattern maintains backward compatibility while centralizing logic in DDD adapters.
+
+---
+
 ## Next Steps
 
 1. ~~**Task 2.3:** Audit Home Automation adapters~~ ✅ COMPLETE (100%+ parity)
-2. **Task 1.7:** Audit Playback domain
-3. **Task 1.8:** Audit Config domain
-4. **Task 1.9:** Audit User domain
-5. **Task 2.x:** Implement missing functions by priority
+2. ~~**Task 2.4:** Audit Hardware adapters~~ ✅ COMPLETE (97% parity)
+3. **Task 1.7:** Audit Playback domain
+4. **Task 1.8:** Audit Config domain
+5. **Task 1.9:** Audit User domain
+6. **Task 2.x:** Implement missing functions by priority
