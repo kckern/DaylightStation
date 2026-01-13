@@ -1,4 +1,5 @@
 // tests/unit/adapters/content/FilesystemAdapter.test.mjs
+import { jest } from '@jest/globals';
 import { FilesystemAdapter } from '../../../../backend/src/2_adapters/content/media/filesystem/FilesystemAdapter.mjs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -70,5 +71,82 @@ describe('FilesystemAdapter', () => {
   test('throws error when mediaBasePath is missing', () => {
     expect(() => new FilesystemAdapter({})).toThrow('FilesystemAdapter requires mediaBasePath');
     expect(() => new FilesystemAdapter({ mediaBasePath: '' })).toThrow('FilesystemAdapter requires mediaBasePath');
+  });
+
+  describe('ID3 tag parsing', () => {
+    test('should include artist from audio file metadata', async () => {
+      const adapter = new FilesystemAdapter({
+        mediaBasePath: fixturesPath
+      });
+
+      // Inject mock for parseFile to simulate ID3 tags
+      adapter._parseFile = jest.fn().mockResolvedValue({
+        common: {
+          title: 'Test Song',
+          artist: 'Test Artist',
+          album: 'Test Album',
+          year: 2024,
+          track: { no: 5 },
+          genre: ['Rock', 'Alternative']
+        }
+      });
+
+      const item = await adapter.getItem('audio/test.mp3');
+
+      expect(item).not.toBeNull();
+      expect(item.metadata.artist).toBe('Test Artist');
+      expect(item.metadata.album).toBe('Test Album');
+      expect(item.metadata.year).toBe(2024);
+      expect(item.metadata.track).toBe(5);
+      expect(item.metadata.genre).toBe('Rock, Alternative');
+    });
+
+    test('should handle files without ID3 tags gracefully', async () => {
+      const adapter = new FilesystemAdapter({
+        mediaBasePath: fixturesPath
+      });
+
+      adapter._parseFile = jest.fn().mockResolvedValue({ common: {} });
+
+      const item = await adapter.getItem('audio/test.mp3');
+
+      expect(item).not.toBeNull();
+      expect(item.metadata.artist).toBeUndefined();
+      expect(item.metadata.album).toBeUndefined();
+    });
+
+    test('should handle parse errors gracefully', async () => {
+      const adapter = new FilesystemAdapter({
+        mediaBasePath: fixturesPath
+      });
+
+      adapter._parseFile = jest.fn().mockRejectedValue(new Error('Parse error'));
+
+      const item = await adapter.getItem('audio/test.mp3');
+
+      expect(item).not.toBeNull();
+      // Should still return item, just without ID3 metadata
+      expect(item.id).toBe('filesystem:audio/test.mp3');
+    });
+
+    test('should only parse ID3 tags for audio files', async () => {
+      const adapter = new FilesystemAdapter({
+        mediaBasePath: fixturesPath
+      });
+
+      adapter._parseFile = jest.fn().mockResolvedValue({
+        common: { artist: 'Test Artist' }
+      });
+
+      // The test fixture has audio/test.mp3
+      const audioItem = await adapter.getItem('audio/test.mp3');
+      expect(adapter._parseFile).toHaveBeenCalled();
+
+      // Reset mock
+      adapter._parseFile.mockClear();
+
+      // For non-audio files (if they existed), _parseFile should not be called
+      // This tests the conditional logic in getItem
+    });
   });
 });

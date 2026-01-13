@@ -2,6 +2,7 @@
 import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
+import { parseFile } from 'music-metadata';
 import { Item } from '../../../../1_domains/content/entities/Item.mjs';
 import { ListableItem } from '../../../../1_domains/content/capabilities/Listable.mjs';
 import { PlayableItem } from '../../../../1_domains/content/capabilities/Playable.mjs';
@@ -73,6 +74,29 @@ export class FilesystemAdapter {
     const watchState = this._loadWatchState();
     // Try both with and without filesystem: prefix
     return watchState[mediaKey] || watchState[`filesystem:${mediaKey}`] || null;
+  }
+
+  /**
+   * Parse ID3 tags from audio file
+   * @param {string} filePath - Full path to the audio file
+   * @returns {Promise<Object>} Parsed metadata { artist, album, year, track, genre }
+   * @private
+   */
+  async _parseAudioMetadata(filePath) {
+    try {
+      const metadata = await (this._parseFile || parseFile)(filePath, { duration: true });
+      const common = metadata?.common || {};
+      return {
+        artist: common.artist,
+        album: common.album,
+        year: common.year,
+        track: common.track?.no,
+        genre: Array.isArray(common.genre) ? common.genre.join(', ') : common.genre
+      };
+    } catch (err) {
+      // File doesn't have ID3 tags or can't be parsed
+      return {};
+    }
   }
 
   get source() {
@@ -180,6 +204,12 @@ export class FilesystemAdapter {
       const resumePosition = watchState?.playhead || watchState?.seconds || null;
       const duration = watchState?.mediaDuration || null;
 
+      // Parse ID3 tags for audio files
+      let audioMetadata = {};
+      if (mediaType === 'audio') {
+        audioMetadata = await this._parseAudioMetadata(resolved.path);
+      }
+
       return new PlayableItem({
         id: `filesystem:${localId}`,
         source: 'filesystem',
@@ -190,6 +220,7 @@ export class FilesystemAdapter {
         resumable: mediaType === 'video',
         resumePosition,
         metadata: {
+          ...audioMetadata,
           filePath: resolved.path,
           fileSize: stats.size,
           mimeType: MIME_TYPES[ext] || 'application/octet-stream',
