@@ -1,7 +1,7 @@
 /**
  * FitnessSyncerAdapter
  *
- * Adapter for FitnessSyncer OAuth token and source management.
+ * Adapter for FitnessSyncer OAuth token, source management, and activity harvesting.
  * Handles token caching, refresh, and circuit breaker resilience.
  *
  * Features:
@@ -10,6 +10,8 @@
  * - Circuit breaker for rate limiting resilience
  * - 5-minute buffer before token expiry
  * - Source ID lookup and caching
+ * - Activity fetching with date range filtering
+ * - Harvest interface for standardized activity transformation
  *
  * @module harvester/fitness/FitnessSyncerAdapter
  */
@@ -326,6 +328,155 @@ export class FitnessSyncerAdapter {
    */
   setSourceId(providerKey, sourceId) {
     this.#sourceCache.set(providerKey, sourceId);
+  }
+
+  /**
+   * Fetch activities from FitnessSyncer API
+   *
+   * @param {Object} options - Fetch options
+   * @param {number} [options.daysBack=7] - Number of days back to fetch
+   * @param {string} [options.sourceKey='GarminWellness'] - Provider key to fetch activities from
+   * @returns {Promise<Array>} Raw activity array from API
+   * @throws {Error} If circuit breaker is in cooldown
+   * @throws {Error} If no access token is available
+   * @throws {Error} If source ID cannot be resolved
+   */
+  async getActivities({ daysBack = 7, sourceKey = 'GarminWellness' } = {}) {
+    // Check circuit breaker first
+    if (this.#circuitBreaker.isOpen()) {
+      const cooldown = this.#circuitBreaker.getCooldownStatus();
+      throw new Error(
+        `Circuit breaker is in cooldown (${cooldown?.remainingMins} minutes remaining)`
+      );
+    }
+
+    try {
+      // Get access token
+      const token = await this.getAccessToken();
+      if (!token) {
+        throw new Error('No access token available');
+      }
+
+      // Get source ID for provider
+      const sourceId = await this.getSourceId(sourceKey);
+      if (!sourceId) {
+        throw new Error(`Could not resolve source ID for ${sourceKey}`);
+      }
+
+      // Calculate date range
+      const endDate = new Date();
+      const startDate = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000);
+
+      const startDateStr = startDate.toISOString().split('T')[0];
+      const endDateStr = endDate.toISOString().split('T')[0];
+
+      // Fetch activities from API
+      const url = `https://www.fitnesssyncer.com/api/activities?sourceId=${sourceId}&startDate=${startDateStr}&endDate=${endDateStr}`;
+
+      const response = await this.#httpClient.get(url, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const activities = response.data?.items || [];
+
+      // Record success
+      this.#circuitBreaker.recordSuccess();
+
+      this.#logger.debug?.('fitsync.activities.fetched', {
+        count: activities.length,
+        sourceKey,
+        daysBack,
+      });
+
+      return activities;
+
+    } catch (error) {
+      // Record failure for circuit breaker
+      this.#circuitBreaker.recordFailure(error);
+
+      this.#logger.error?.('fitsync.activities.fetch_failed', {
+        error: this.#cleanErrorMessage(error),
+        sourceKey,
+        daysBack,
+      });
+
+      throw error;
+    }
+  }
+
+  /**
+   * Harvest activities and transform to standardized format
+   *
+   * Implements IHarvester interface pattern.
+   *
+   * @param {Object} options - Harvest options
+   * @param {string} [options.jobId] - Job ID for logging
+   * @param {number} [options.daysBack=7] - Number of days back to fetch
+   * @returns {Promise<Object>} Harvest result with items and metadata
+   */
+  async harvest({ jobId, daysBack = 7 } = {}) {
+    // Check circuit breaker first - return skipped status instead of throwing
+    if (this.#circuitBreaker.isOpen()) {
+      const cooldown = this.#circuitBreaker.getCooldownStatus();
+      this.#logger.debug?.('fitsync.harvest.skipped', {
+        jobId,
+        reason: 'Circuit breaker active',
+        remainingMins: cooldown?.remainingMins,
+      });
+      return {
+        status: 'skipped',
+        reason: 'cooldown',
+        remainingMins: cooldown?.remainingMins,
+      };
+    }
+
+    try {
+      // Fetch raw activities
+      const activities = await this.getActivities({ daysBack });
+
+      // Transform to standardized format
+      const items = activities.map((activity) => ({
+        source: 'fitsync',
+        externalId: activity.id,
+        startTime: activity.startTime,
+        type: activity.type,
+        title: activity.name || activity.type,
+        duration: activity.duration,
+        calories: activity.calories,
+        distance: activity.distance,
+        avgHr: activity.avgHeartRate,
+        maxHr: activity.maxHeartRate,
+        raw: activity,
+      }));
+
+      this.#logger.info?.('fitsync.harvest.complete', {
+        jobId,
+        count: items.length,
+        daysBack,
+      });
+
+      return {
+        items,
+        metadata: {
+          source: 'fitsync',
+          harvestedAt: new Date().toISOString(),
+          daysBack,
+        },
+      };
+
+    } catch (error) {
+      this.#logger.error?.('fitsync.harvest.failed', {
+        jobId,
+        error: this.#cleanErrorMessage(error),
+      });
+
+      return {
+        status: 'error',
+        error: this.#cleanErrorMessage(error),
+      };
+    }
   }
 
   /**
