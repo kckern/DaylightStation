@@ -564,6 +564,47 @@ async function main() {
   app.post('/harvest/budget', (req, res) => res.redirect(307, '/api/finance/refresh'));
 
   // ==========================================================================
+  // Legacy Compatibility Redirects (Phase 4)
+  // ==========================================================================
+  // These redirect legacy paths to DDD equivalents while keeping backwards compatibility
+
+  // Content/Media redirects
+  app.use('/media/plex/list', (req, res) => res.redirect(307, `/api/list/plex${req.url}`));
+  app.use('/data/list', (req, res) => res.redirect(307, `/api/list/folder${req.url}`));
+  // Note: /media/log is handled by legacyShims.mediaLog earlier in the middleware chain
+  app.get('/media/plex/info/:id', (req, res) => res.redirect(307, `/api/content/plex/info/${req.params.id}`));
+  app.get('/media/plex/mpd/:id', (req, res) => res.redirect(307, `/api/play/plex/mpd/${req.params.id}`));
+  app.post('/harvest/watchlist', (req, res) => res.redirect(307, '/api/content/refresh-watchlist'));
+
+  // Home/Calendar redirects
+  app.get('/home/entropy', (req, res) => res.redirect(307, '/api/entropy'));
+  app.get('/home/calendar', (req, res) => res.redirect(307, '/api/calendar/events'));
+  app.get('/data/events', (req, res) => res.redirect(307, '/api/calendar/events'));
+
+  // Health redirects
+  app.get('/data/lifelog/weight', (req, res) => res.redirect(307, '/api/health/weight'));
+
+  // Menu logging redirect
+  app.post('/data/menu_log', (req, res) => res.redirect(307, '/api/content/menu-log'));
+
+  // TV/Volume control redirects
+  app.get('/exe/tv/off', (req, res) => res.redirect(307, '/api/home/tv/power?action=off'));
+  app.get('/exe/office_tv/off', (req, res) => res.redirect(307, '/api/home/office-tv/power?action=off'));
+  app.get('/exe/vol/up', (req, res) => res.redirect(307, '/api/home/volume/up'));
+  app.get('/exe/vol/down', (req, res) => res.redirect(307, '/api/home/volume/down'));
+  app.get('/exe/vol/mute', (req, res) => res.redirect(307, '/api/home/volume/mute'));
+  app.get('/exe/vol/cycle', (req, res) => res.redirect(307, '/api/home/volume/cycle'));
+
+  // WebSocket restart redirect
+  app.get('/exe/ws/restart', (req, res) => res.redirect(307, '/admin/ws/restart'));
+  app.post('/exe/ws/restart', (req, res) => res.redirect(307, '/admin/ws/restart'));
+
+  logger.info('legacy.redirects.mounted', {
+    count: 17,
+    categories: ['content', 'home', 'health', 'tv', 'websocket']
+  });
+
+  // ==========================================================================
   // Legacy Router Integration
   // ==========================================================================
 
