@@ -10,10 +10,10 @@
 
 | Metric | Value |
 |--------|-------|
-| DDD Routers | 18 |
+| DDD Routers | 19 |
 | DDD Endpoints | 87+ |
 | Legacy Mount Points | 8 |
-| Compatibility Redirects | 18 |
+| Compatibility Redirects | 24 |
 | Parity Tests | 10/10 Passing |
 
 ---
@@ -182,12 +182,24 @@
 | gratitude | `/api/gratitude` | 14 | `routers/gratitude.mjs` |
 | nutribot | `/api/nutribot` | 5+ | `routers/nutribot.mjs` |
 | journalist | `/api/journalist` | 3+ | `routers/journalist.mjs` |
+| scheduling | `/api/scheduling` | 7 | `routers/scheduling.mjs` |
+
+#### Scheduling Router (`/api/scheduling`)
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/scheduling/status` | Get status of all jobs with runtime state |
+| POST | `/api/scheduling/run/:jobId` | Manually trigger a specific job |
+| GET | `/api/scheduling/jobs` | List all registered jobs |
+| GET | `/api/scheduling/running` | Get currently running jobs |
+| GET | `/api/scheduling/cron10Mins` | Run 10-minute bucket jobs |
+| GET | `/api/scheduling/cronHourly` | Run hourly bucket jobs |
+| GET | `/api/scheduling/cronDaily` | Run daily bucket jobs |
 
 ---
 
 ## Legacy Compatibility Layer
 
-### Redirects (18 total)
+### Redirects (24 total)
 
 | Legacy Path | DDD Path | Method |
 |-------------|----------|--------|
@@ -209,6 +221,12 @@
 | `/exe/vol/cycle` | `/api/home/volume/cycle` | GET |
 | `/exe/ws/restart` | `/admin/ws/restart` | GET/POST |
 | `/exe/ws` | `/admin/ws/broadcast` | any |
+| `/cron/status` | `/api/scheduling/status` | GET |
+| `/cron/run/:jobId` | `/api/scheduling/run/:jobId` | POST |
+| `/cron/cron10Mins` | `/api/scheduling/cron10Mins` | GET |
+| `/cron/cronHourly` | `/api/scheduling/cronHourly` | GET |
+| `/cron/cronDaily` | `/api/scheduling/cronDaily` | GET |
+| `/cron/cronWeekly` | `/api/scheduling/cronWeekly` | GET |
 
 ### Legacy Mounts (tracked)
 
@@ -242,7 +260,7 @@ Monitor usage at `/admin/legacy` to identify when legacy routes can be removed.
 | Calendar | ✅ Fully Migrated | Returns array for legacy parity |
 | Lifelog | ✅ Fully Migrated | Aggregator working |
 | Chatbots | ✅ Fully Migrated | Nutribot/Journalist have DDD routers |
-| Cron | ❌ Legacy Only | No DDD equivalent yet |
+| Cron/Scheduling | ✅ Fully Migrated | Full DDD rewrite with domain services |
 | Media Images | ❌ Legacy Only | Static router partial replacement |
 
 ---

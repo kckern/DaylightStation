@@ -75,6 +75,13 @@ import { createEventBusRouter } from './4_api/routers/admin/eventbus.mjs';
 import { getLegacyTracker } from './4_api/middleware/legacyTracker.mjs';
 import { createLegacyAdminRouter } from './4_api/routers/admin/legacy.mjs';
 
+// Scheduling domain
+import { SchedulerService } from './1_domains/scheduling/services/SchedulerService.mjs';
+import { YamlJobStore } from './2_adapters/scheduling/YamlJobStore.mjs';
+import { YamlStateStore } from './2_adapters/scheduling/YamlStateStore.mjs';
+import { Scheduler } from './0_infrastructure/scheduling/Scheduler.mjs';
+import { createSchedulingRouter } from './4_api/routers/scheduling.mjs';
+
 const __dirname = path.dirname(new URL(import.meta.url).pathname);
 const isDocker = existsSync('/.dockerenv');
 
@@ -560,6 +567,41 @@ async function main() {
   }));
   logger.info('journalist.mounted', { path: '/api/journalist', telegramConfigured: !!messagingServices.telegramAdapter });
 
+  // Scheduling domain - DDD replacement for legacy /cron
+  const schedulingJobStore = new YamlJobStore({
+    loadFile,
+    logger: logger.child({ module: 'scheduling-jobs' })
+  });
+
+  const schedulingStateStore = new YamlStateStore({
+    loadFile,
+    saveFile,
+    logger: logger.child({ module: 'scheduling-state' })
+  });
+
+  const schedulerService = new SchedulerService({
+    jobStore: schedulingJobStore,
+    stateStore: schedulingStateStore,
+    timezone: 'America/Los_Angeles',
+    logger: logger.child({ module: 'scheduler-service' })
+  });
+
+  const scheduler = new Scheduler({
+    schedulerService,
+    intervalMs: 5000,
+    logger: logger.child({ module: 'scheduler' })
+  });
+
+  // Start scheduler (only runs in production/Docker unless ENABLE_CRON=true)
+  scheduler.start();
+
+  app.use('/api/scheduling', createSchedulingRouter({
+    schedulerService,
+    scheduler,
+    logger: logger.child({ module: 'scheduling-api' })
+  }));
+  logger.info('scheduling.mounted', { path: '/api/scheduling', schedulerEnabled: scheduler.enabled });
+
   // Legacy finance endpoint shims
   app.get('/data/budget', (req, res) => res.redirect(307, '/api/finance/data'));
   app.get('/data/budget/daytoday', (req, res) => res.redirect(307, '/api/finance/data/daytoday'));
@@ -605,9 +647,17 @@ async function main() {
   // WebSocket broadcast redirect
   app.all('/exe/ws', (req, res) => res.redirect(307, '/admin/ws/broadcast'));
 
+  // Cron/Scheduling redirects
+  app.get('/cron/status', (req, res) => res.redirect(307, '/api/scheduling/status'));
+  app.post('/cron/run/:jobId', (req, res) => res.redirect(307, `/api/scheduling/run/${req.params.jobId}`));
+  app.get('/cron/cron10Mins', (req, res) => res.redirect(307, '/api/scheduling/cron10Mins'));
+  app.get('/cron/cronHourly', (req, res) => res.redirect(307, '/api/scheduling/cronHourly'));
+  app.get('/cron/cronDaily', (req, res) => res.redirect(307, '/api/scheduling/cronDaily'));
+  app.get('/cron/cronWeekly', (req, res) => res.redirect(307, '/api/scheduling/cronWeekly'));
+
   logger.info('legacy.redirects.mounted', {
-    count: 18,
-    categories: ['content', 'home', 'health', 'tv', 'websocket']
+    count: 24,
+    categories: ['content', 'home', 'health', 'tv', 'websocket', 'cron']
   });
 
   // ==========================================================================
