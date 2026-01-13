@@ -103,6 +103,26 @@ export function useCommonMediaController({
   const mountDiagnostics = bridgeRemountDiagnostics || null;
   const containerRef = useRef(null);
   const mediaElementRef = useRef(null);
+  const onEndRef = useRef(onEnd);
+  const onMediaRefRef = useRef(onMediaRef);
+  const onProgressRef = useRef(onProgress);
+  const playbackRateRef = useRef(playbackRate);
+  const volumeRef = useRef(volume);
+  const metaRef = useRef(meta);
+  const startRef = useRef(start);
+  const resolveWatchedDurationRef = useRef(resolveWatchedDuration);
+
+  // Keep refs updated with latest values
+  useEffect(() => {
+    onEndRef.current = onEnd;
+    onMediaRefRef.current = onMediaRef;
+    onProgressRef.current = onProgress;
+    playbackRateRef.current = playbackRate;
+    volumeRef.current = volume;
+    metaRef.current = meta;
+    startRef.current = start;
+    resolveWatchedDurationRef.current = resolveWatchedDuration;
+  }, [onEnd, onMediaRef, onProgress, playbackRate, volume, meta, start, resolveWatchedDuration]);
   const [seconds, setSeconds] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isSeeking, setIsSeeking] = useState(false);
@@ -416,10 +436,10 @@ export function useCommonMediaController({
           lastLoggedTimeRef.current = now;
           const secs = mediaEl.currentTime || 0;
           if (secs > 10) {
-            const title = meta.title + (meta.show ? ` (${meta.show} - ${meta.season})` : '');
-            const logType = (meta.plex || /^\d+$/.test(String(media_key))) ? 'plex' : type;
+            const title = metaRef.current?.title + (metaRef.current?.show ? ` (${metaRef.current.show} - ${metaRef.current.season})` : '');
+            const logType = (metaRef.current?.plex || /^\d+$/.test(String(media_key))) ? 'plex' : type;
             const logPayload = { title, type: logType, media_key, seconds: secs, percent: pct };
-            const watchedDurationSeconds = resolveWatchedDuration();
+            const watchedDurationSeconds = resolveWatchedDurationRef.current?.();
             if (watchedDurationSeconds != null) {
               logPayload.watched_duration = Number(watchedDurationSeconds.toFixed(3));
             }
@@ -436,12 +456,12 @@ export function useCommonMediaController({
         catch (_) { /* ignore cache write failures */ }
         logProgress();
 
-        if (onProgress) {
-          onProgress({
+        if (onProgressRef.current) {
+          onProgressRef.current({
             currentTime: current,
             duration: mediaEl.duration || 0,
             paused: mediaEl.paused,
-            media: meta,
+            media: metaRef.current,
             percent: getProgressPercent(mediaEl.currentTime, mediaEl.duration)
           });
         }
@@ -465,7 +485,7 @@ export function useCommonMediaController({
       const onEnded = () => {
         lastLoggedTimeRef.current = 0;
         logProgress();
-        onEnd();
+        onEndRef.current?.();
       };
 
       const onLoadedMetadata = () => {
@@ -475,7 +495,7 @@ export function useCommonMediaController({
           ? pendingAutoSeekRef.current
           : null;
         const hasAppliedForKey = !!useCommonMediaController.__appliedStartByKey[media_key];
-        const processedVolumeRaw = Number(volume ?? 100);
+        const processedVolumeRaw = Number(volumeRef.current ?? 100);
         const processedVolume = Number.isFinite(processedVolumeRaw) ? processedVolumeRaw : 100;
         const normalizedVolume = processedVolume > 1 ? processedVolume / 100 : processedVolume;
         const adjustedVolume = Math.min(1, Math.max(0, normalizedVolume));
@@ -489,7 +509,7 @@ export function useCommonMediaController({
           lastLoggedMetadataKeyRef.current = logKey;
         }
 
-        const explicitResume = meta?.resume;
+        const explicitResume = metaRef.current?.resume;
         const forceStart = explicitResume === false;
 
         if (!alreadyLoggedMetadata) {
@@ -497,7 +517,7 @@ export function useCommonMediaController({
             media_key,
             explicitResume,
             forceStart,
-            start,
+            start: startRef.current,
             duration: durationValue,
             isInitial: isInitialLoadRef.current,
             hasApplied: hasAppliedForKey
@@ -506,7 +526,7 @@ export function useCommonMediaController({
 
         if ((isInitialLoadRef.current && !hasAppliedForKey) || forceStart) {
           const shouldApplyStart = (durationValue > 12 * 60) || isVideoEl || forceStart;
-          desiredStart = shouldApplyStart ? start : 0;
+          desiredStart = shouldApplyStart ? startRef.current : 0;
 
           const initialDecision = shouldRestartFromBeginning(durationValue, desiredStart);
 
@@ -520,7 +540,7 @@ export function useCommonMediaController({
           }, { level: 'debug' });
 
           if (initialDecision.restart || forceStart) {
-            desiredStart = forceStart ? start : 0;
+            desiredStart = forceStart ? startRef.current : 0;
             clearResumeHistoryForKey(media_key);
             lastSeekIntentRef.current = null;
             lastPlaybackPosRef.current = 0;
@@ -636,15 +656,15 @@ export function useCommonMediaController({
           }, { level: 'warn' });
         }
 
-        const queueLength = meta.queueLength || 0;
+        const queueLength = metaRef.current?.queueLength || 0;
         const shouldLoop = queueLength === 1
-          || (queueLength === 0 && meta.continuous)
+          || (queueLength === 0 && metaRef.current?.continuous)
           || (queueLength === 0 && isVideoEl && durationValue < 20);
         mediaEl.loop = shouldLoop;
 
         if (isVideoEl || isDash) {
           mediaEl.controls = false;
-          const applyRate = () => { mediaEl.playbackRate = playbackRate; };
+          const applyRate = () => { mediaEl.playbackRate = playbackRateRef.current; };
           mediaEl.addEventListener('play', applyRate);
           mediaEl.addEventListener('seeked', applyRate);
           rateCleanup = () => {
@@ -652,7 +672,7 @@ export function useCommonMediaController({
             mediaEl.removeEventListener('seeked', applyRate);
           };
         } else {
-          mediaEl.playbackRate = playbackRate;
+          mediaEl.playbackRate = playbackRateRef.current;
           rateCleanup = null;
         }
 
@@ -706,9 +726,9 @@ export function useCommonMediaController({
         rateCleanup?.();
       };
 
-      if (onMediaRef) {
+      if (onMediaRefRef.current) {
         try {
-          onMediaRef(mediaEl);
+          onMediaRefRef.current(mediaEl);
         } catch (_) {
           // ignore consumer errors; diagnostics handled elsewhere
         }
@@ -724,14 +744,14 @@ export function useCommonMediaController({
       }
       cleanup();
     };
-  }, [formatWaitKeyForLogs, getMediaEl, isDash, media_key, meta, onEnd, onMediaRef, onProgress, playbackRate, resolveWatchedDuration, resolvedInstanceKey, start, type, volume]);
+  }, [formatWaitKeyForLogs, getMediaEl, isDash, media_key, resolvedInstanceKey, start, type]);
 
   useEffect(() => {
     const mediaEl = getMediaEl();
-    if (mediaEl && onMediaRef) {
-      onMediaRef(mediaEl);
+    if (mediaEl && onMediaRefRef.current) {
+      onMediaRefRef.current(mediaEl);
     }
-  }, [getMediaEl, onMediaRef, media_key, resolvedInstanceKey]);
+  }, [getMediaEl, media_key, resolvedInstanceKey]);
 
   const mediaElementSnapshot = getMediaEl();
   const isPausedValue = mediaElementSnapshot ? Boolean(mediaElementSnapshot.paused) : false;
@@ -844,7 +864,7 @@ export function useCommonMediaController({
     };
 
     onController(controllerPayload);
-  }, [getPlaybackState, mergedControllerExtras, onController, resolvedInstanceKey, transport]);
+  }, [mergedControllerExtras, onController, resolvedInstanceKey, transport]);
 
   return {
     containerRef,

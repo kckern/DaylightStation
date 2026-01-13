@@ -261,9 +261,11 @@ async function main() {
   app.use('/admin/ws', createEventBusRouter({ eventBus, logger }));
 
   // Content domain
+  // Get Plex auth from ConfigService (same source as legacy)
+  const plexAuth = configService.getHouseholdAuth('plex') || {};
   const plexConfig = process.env.media?.plex ? {
-    host: process.env.media.plex.host,
-    token: process.env.media.plex.token
+    host: plexAuth.server_url || process.env.media.plex.host,
+    token: plexAuth.token || process.env.media.plex.token
   } : null;
 
   const watchlistPath = `${householdDir}/state/lists.yml`;

@@ -498,7 +498,7 @@ export function VideoPlayer({
     }
 
     return null;
-  }, [containerRef]);
+  }, []);
 
   const shakaPlayerRef = useRef(null);
   useEffect(() => {

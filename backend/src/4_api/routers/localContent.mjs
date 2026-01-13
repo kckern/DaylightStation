@@ -67,9 +67,12 @@ export function createLocalContentRouter(config) {
       }
 
       // Legacy parity: use hymn_num, legacy mediaUrl format
+      const hymnNumber = item.metadata.number || parseInt(number, 10);
       res.json({
         title: item.title,
-        hymn_num: item.metadata.number || parseInt(number, 10),
+        number: hymnNumber,
+        hymn_num: hymnNumber,
+        media_key: item.id,
         verses: item.metadata.verses,
         mediaUrl: `/media/audio/songs/hymn/_ldsgc/${number}`,
         duration: item.duration || item.metadata.duration || 0
@@ -99,9 +102,11 @@ export function createLocalContentRouter(config) {
       }
 
       // Legacy parity: use song_number, legacy mediaUrl format
+      const songNumber = item.metadata.number || parseInt(number, 10);
       res.json({
         title: item.title,
-        song_number: item.metadata.number || parseInt(number, 10),
+        number: songNumber,
+        song_number: songNumber,
         verses: item.metadata.verses,
         mediaUrl: `/media/audio/songs/primary/${number}`,
         duration: item.duration || item.metadata.duration || 0
