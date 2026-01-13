@@ -285,13 +285,16 @@ export function createFitnessRouter(config) {
   });
 
   // =============================================================================
-  // Zone LED Endpoints
+  // Zone LED Endpoints (require Home Assistant configuration)
   // =============================================================================
 
   /**
    * POST /api/fitness/zone_led - Sync ambient LED with zone state
    */
   router.post('/zone_led', async (req, res) => {
+    if (!zoneLedController) {
+      return res.status(503).json({ ok: false, error: 'Zone LED controller not configured (Home Assistant required)' });
+    }
     try {
       const { zones = [], sessionEnded = false, householdId } = req.body;
       const result = await zoneLedController.syncZone({ zones, sessionEnded, householdId });
@@ -306,7 +309,7 @@ export function createFitnessRouter(config) {
       return res.status(500).json({
         ok: false,
         error: error.message,
-        failureCount: zoneLedController.failureCount
+        failureCount: zoneLedController?.failureCount
       });
     }
   });
@@ -315,6 +318,9 @@ export function createFitnessRouter(config) {
    * GET /api/fitness/zone_led/status - Get LED controller status
    */
   router.get('/zone_led/status', (req, res) => {
+    if (!zoneLedController) {
+      return res.status(503).json({ ok: false, error: 'Zone LED controller not configured' });
+    }
     const { householdId } = req.query;
     res.json(zoneLedController.getStatus(householdId));
   });
@@ -323,6 +329,9 @@ export function createFitnessRouter(config) {
    * GET /api/fitness/zone_led/metrics - Get LED controller metrics
    */
   router.get('/zone_led/metrics', (req, res) => {
+    if (!zoneLedController) {
+      return res.status(503).json({ ok: false, error: 'Zone LED controller not configured' });
+    }
     res.json(zoneLedController.getMetrics());
   });
 
@@ -330,6 +339,9 @@ export function createFitnessRouter(config) {
    * POST /api/fitness/zone_led/reset - Reset LED controller state
    */
   router.post('/zone_led/reset', (req, res) => {
+    if (!zoneLedController) {
+      return res.status(503).json({ ok: false, error: 'Zone LED controller not configured' });
+    }
     const result = zoneLedController.reset();
     result.resetBy = req.ip || 'unknown';
     res.json(result);

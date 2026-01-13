@@ -20,6 +20,7 @@ import { resolveConfigPaths, getConfigFilePaths } from '../_legacy/lib/config/pa
 import { loadAllConfig, logConfigSummary } from '../_legacy/lib/config/loader.mjs';
 import { initConfigService, ConfigValidationError, configService } from '../_legacy/lib/config/index.mjs';
 import { userDataService } from '../_legacy/lib/config/UserDataService.mjs';
+import { userService } from '../_legacy/lib/config/UserService.mjs';
 import { hydrateProcessEnvFromConfigs } from '../_legacy/lib/logging/config.js';
 
 // Logging system
@@ -297,6 +298,26 @@ async function main() {
     logger: logger.child({ module: 'gratitude' })
   });
 
+  // Fitness domain
+  const homeAssistantConfig = process.env.home_assistant || {};
+  const loadFitnessConfig = (hid) => {
+    const householdId = hid || configService.getDefaultHouseholdId();
+    return userDataService.readHouseholdAppData(householdId, 'fitness', 'config');
+  };
+
+  const fitnessServices = createFitnessServices({
+    dataRoot: dataBasePath,
+    mediaRoot: mediaBasePath,
+    defaultHouseholdId: householdId,
+    homeAssistant: {
+      baseUrl: homeAssistantConfig.base_url || homeAssistantConfig.host || '',
+      token: homeAssistantConfig.token || ''
+    },
+    loadFitnessConfig,
+    openaiApiKey: process.env.OPENAI_API_KEY || '',
+    logger: logger.child({ module: 'fitness' })
+  });
+
   // ==========================================================================
   // Mount API Routers
   // ==========================================================================
@@ -350,6 +371,16 @@ async function main() {
     logger: logger.child({ module: 'gratitude-api' })
   }));
   logger.info('gratitude.mounted', { path: '/api/gratitude' });
+
+  // Fitness domain router
+  app.use('/api/fitness', createFitnessApiRouter({
+    fitnessServices,
+    userService,
+    userDataService,
+    configService,
+    logger: logger.child({ module: 'fitness-api' })
+  }));
+  logger.info('fitness.mounted', { path: '/api/fitness' });
 
   // Legacy finance endpoint shims
   app.get('/data/budget', (req, res) => res.redirect(307, '/api/finance/data'));
