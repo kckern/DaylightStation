@@ -303,4 +303,55 @@ describe('QueueService', () => {
       expect(filtered.length).toBe(1);
     });
   });
+
+  describe('day-of-week filtering', () => {
+    test('should filter by specific weekday', () => {
+      // Note: Jan 13 2026 is a Tuesday (day 2 in ISO)
+      // Use (year, monthIndex, day) format for local date
+      const tuesday = new Date(2026, 0, 13);
+      const items = [
+        { id: '1', title: 'Monday Only', days: [1] },
+        { id: '2', title: 'Tuesday Only', days: [2] },
+        { id: '3', title: 'Any Day', days: null }
+      ];
+      const filtered = QueueService.filterByDayOfWeek(items, tuesday);
+      expect(filtered.map(i => i.id)).toEqual(['2', '3']);
+    });
+
+    test('should handle Weekdays preset', () => {
+      const friday = new Date(2026, 0, 16); // Friday, day 5
+      const saturday = new Date(2026, 0, 17); // Saturday, day 6
+      const items = [
+        { id: '1', title: 'Weekdays', days: 'Weekdays' }
+      ];
+      expect(QueueService.filterByDayOfWeek(items, friday).length).toBe(1);
+      expect(QueueService.filterByDayOfWeek(items, saturday).length).toBe(0);
+    });
+
+    test('should handle Weekend preset', () => {
+      const friday = new Date(2026, 0, 16);
+      const saturday = new Date(2026, 0, 17);
+      const items = [
+        { id: '1', title: 'Weekend', days: 'Weekend' }
+      ];
+      expect(QueueService.filterByDayOfWeek(items, friday).length).toBe(0);
+      expect(QueueService.filterByDayOfWeek(items, saturday).length).toBe(1);
+    });
+
+    test('should handle M•W•F preset', () => {
+      const wed = new Date(2026, 0, 14); // Wednesday, day 3
+      const items = [
+        { id: '1', title: 'MWF', days: 'M•W•F' }
+      ];
+      expect(QueueService.filterByDayOfWeek(items, wed).length).toBe(1);
+    });
+
+    test('should keep items without days field', () => {
+      const items = [
+        { id: '1', title: 'No Days' }
+      ];
+      const filtered = QueueService.filterByDayOfWeek(items, new Date());
+      expect(filtered.length).toBe(1);
+    });
+  });
 });
