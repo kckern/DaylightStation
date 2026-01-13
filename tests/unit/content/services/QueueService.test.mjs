@@ -262,4 +262,45 @@ describe('QueueService', () => {
       expect(filtered.length).toBe(1);
     });
   });
+
+  describe('hold and watched filtering', () => {
+    test('should skip items on hold', () => {
+      const items = [
+        { id: '1', title: 'Active', hold: false },
+        { id: '2', title: 'On Hold', hold: true },
+        { id: '3', title: 'No Hold Field' }
+      ];
+      const filtered = QueueService.filterByHold(items);
+      expect(filtered.map(i => i.id)).toEqual(['1', '3']);
+    });
+
+    test('should skip items marked as watched', () => {
+      const items = [
+        { id: '1', title: 'Unwatched', watched: false, percent: 0 },
+        { id: '2', title: 'Watched Flag', watched: true, percent: 50 },
+        { id: '3', title: 'Watched by Percent', watched: false, percent: 95 },
+        { id: '4', title: 'In Progress', watched: false, percent: 50 }
+      ];
+      const filtered = QueueService.filterByWatched(items);
+      expect(filtered.map(i => i.id)).toEqual(['1', '4']);
+    });
+
+    test('should use 90% threshold for watched detection', () => {
+      const items = [
+        { id: '1', percent: 89 },
+        { id: '2', percent: 90 },
+        { id: '3', percent: 91 }
+      ];
+      const filtered = QueueService.filterByWatched(items);
+      expect(filtered.map(i => i.id)).toEqual(['1']);
+    });
+
+    test('should keep items without percent field', () => {
+      const items = [
+        { id: '1', title: 'No Percent' }
+      ];
+      const filtered = QueueService.filterByWatched(items);
+      expect(filtered.length).toBe(1);
+    });
+  });
 });
