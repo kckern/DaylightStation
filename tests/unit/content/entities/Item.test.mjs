@@ -116,4 +116,54 @@ describe('Item entity', () => {
       expect(item.actions).toBeNull();
     });
   });
+
+  describe('media identifiers', () => {
+    it('should extract plex key from compound ID', () => {
+      const item = new Item({
+        id: 'plex:12345',
+        source: 'plex',
+        title: 'Test'
+      });
+      expect(item.plex).toBe('12345');
+      expect(item.media_key).toBe('plex:12345');
+    });
+
+    it('should extract filesystem path from compound ID', () => {
+      const item = new Item({
+        id: 'filesystem:audio/music/song.mp3',
+        source: 'filesystem',
+        title: 'Song'
+      });
+      expect(item.media_key).toBe('filesystem:audio/music/song.mp3');
+    });
+
+    it('should allow explicit media_key override', () => {
+      const item = new Item({
+        id: 'plex:123',
+        source: 'plex',
+        title: 'Test',
+        media_key: 'custom-key'
+      });
+      expect(item.media_key).toBe('custom-key');
+    });
+
+    it('should return null for plex if not a plex item', () => {
+      const item = new Item({
+        id: 'filesystem:test.mp3',
+        source: 'filesystem',
+        title: 'Test'
+      });
+      expect(item.plex).toBeNull();
+    });
+
+    it('should check metadata.plex as fallback', () => {
+      const item = new Item({
+        id: 'folder:tvapp',
+        source: 'folder',
+        title: 'Test',
+        metadata: { plex: '99999' }
+      });
+      expect(item.plex).toBe('99999');
+    });
+  });
 });
