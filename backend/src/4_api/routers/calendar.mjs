@@ -102,6 +102,8 @@ export function createCalendarRouter(config) {
    * GET /api/calendar/events - Get upcoming calendar events
    * Query params:
    * - days: Number of days to look ahead (default 14)
+   *
+   * Returns array directly for legacy parity with /data/events
    */
   router.get('/events', (req, res) => {
     try {
@@ -117,16 +119,8 @@ export function createCalendarRouter(config) {
         .map(e => formatEvent(e, timezone))
         .sort((a, b) => new Date(a.start) - new Date(b.start));
 
-      res.json({
-        status: 'success',
-        count: upcomingEvents.length,
-        range: {
-          start: now.format('YYYY-MM-DD'),
-          end: endDate.format('YYYY-MM-DD')
-        },
-        events: upcomingEvents,
-        _household: householdId
-      });
+      // Return array directly for legacy parity with /data/events
+      res.json(upcomingEvents);
     } catch (error) {
       logger.error?.('calendar.events.error', { error: error.message });
       res.status(500).json({ status: 'error', error: error.message });

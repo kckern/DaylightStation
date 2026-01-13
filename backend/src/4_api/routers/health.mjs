@@ -126,16 +126,14 @@ export function createHealthRouter(config) {
 
   /**
    * GET /health/weight
-   * Get weight data
+   * Get weight data (legacy parity: returns data directly, keyed by date)
    */
   router.get('/weight', asyncHandler(async (req, res) => {
     const username = getDefaultUsername();
     const weightData = await healthStore.loadWeightData(username);
 
-    res.json({
-      message: 'Weight data retrieved successfully',
-      data: weightData
-    });
+    // Return data directly to match legacy /data/lifelog/weight response
+    res.json(weightData || {});
   }));
 
   /**
