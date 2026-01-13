@@ -1012,4 +1012,120 @@ describe('FitnessSyncerAdapter', () => {
       expect(activity.title).toBe('Walking'); // Falls back to type
     });
   });
+
+  describe('static cleanErrorMessage', () => {
+    test('returns error.message for plain Error objects', () => {
+      const error = new Error('Something went wrong');
+      const result = FitnessSyncerAdapter.cleanErrorMessage(error);
+      expect(result).toBe('Something went wrong');
+    });
+
+    test('handles string errors', () => {
+      const result = FitnessSyncerAdapter.cleanErrorMessage('Plain string error');
+      expect(result).toBe('Plain string error');
+    });
+
+    test('handles null input', () => {
+      const result = FitnessSyncerAdapter.cleanErrorMessage(null);
+      expect(result).toBe('null');
+    });
+
+    test('handles undefined input', () => {
+      const result = FitnessSyncerAdapter.cleanErrorMessage(undefined);
+      expect(result).toBe('undefined');
+    });
+
+    test('truncates long messages to 200 chars', () => {
+      const longMessage = 'A'.repeat(300);
+      const error = new Error(longMessage);
+      const result = FitnessSyncerAdapter.cleanErrorMessage(error);
+      expect(result.length).toBe(203); // 200 + '...'
+      expect(result).toBe('A'.repeat(200) + '...');
+    });
+
+    test('does not truncate messages at exactly 200 chars', () => {
+      const exactMessage = 'B'.repeat(200);
+      const error = new Error(exactMessage);
+      const result = FitnessSyncerAdapter.cleanErrorMessage(error);
+      expect(result).toBe(exactMessage);
+      expect(result.length).toBe(200);
+    });
+
+    test('extracts text from HTML error responses with <!DOCTYPE', () => {
+      const htmlError = new Error(`<!DOCTYPE html><html><head><title>Service Unavailable</title></head><body><h1>503 Error</h1><p>The server is temporarily unavailable.</p></body></html>`);
+      const result = FitnessSyncerAdapter.cleanErrorMessage(htmlError);
+      // Should extract meaningful text, not raw HTML
+      expect(result).not.toContain('<!DOCTYPE');
+      expect(result).not.toContain('<html>');
+      expect(result.length).toBeLessThanOrEqual(203);
+    });
+
+    test('extracts text from HTML error responses with <html tag', () => {
+      const htmlError = new Error(`<html><head><title>Bad Gateway</title></head><body><h1>502 Bad Gateway</h1></body></html>`);
+      const result = FitnessSyncerAdapter.cleanErrorMessage(htmlError);
+      expect(result).not.toContain('<html>');
+      expect(result.length).toBeLessThanOrEqual(203);
+    });
+
+    test('extracts text from <p> tags in HTML error', () => {
+      const htmlError = new Error(`<!DOCTYPE html><html><body><p>Connection refused by upstream server.</p></body></html>`);
+      const result = FitnessSyncerAdapter.cleanErrorMessage(htmlError);
+      expect(result).toContain('Connection refused');
+    });
+
+    test('extracts text from <h1> tags in HTML error', () => {
+      const htmlError = new Error(`<!DOCTYPE html><html><body><h1>Internal Server Error</h1></body></html>`);
+      const result = FitnessSyncerAdapter.cleanErrorMessage(htmlError);
+      expect(result).toContain('Internal Server Error');
+    });
+
+    test('extracts text from <title> tags in HTML error', () => {
+      const htmlError = new Error(`<!DOCTYPE html><html><head><title>Gateway Timeout</title></head><body></body></html>`);
+      const result = FitnessSyncerAdapter.cleanErrorMessage(htmlError);
+      expect(result).toContain('Gateway Timeout');
+    });
+
+    test('falls back to stripping all HTML tags when no structured content found', () => {
+      const htmlError = new Error(`<html><body><div><span>Some nested error text</span></div></body></html>`);
+      const result = FitnessSyncerAdapter.cleanErrorMessage(htmlError);
+      // Should not contain HTML tags
+      expect(result).not.toMatch(/<[^>]+>/);
+      expect(result).toContain('Some nested error text');
+    });
+
+    test('truncates extracted HTML content to 200 chars', () => {
+      const longHtmlError = new Error(`<!DOCTYPE html><html><body><p>${'X'.repeat(300)}</p></body></html>`);
+      const result = FitnessSyncerAdapter.cleanErrorMessage(longHtmlError);
+      expect(result.length).toBeLessThanOrEqual(203);
+    });
+
+    test('handles ERROR code pattern from legacy implementation', () => {
+      const errorWithCode = new Error(`ERROR: (429), TooManyRequests, some other stuff`);
+      const result = FitnessSyncerAdapter.cleanErrorMessage(errorWithCode);
+      expect(result).toContain('HTTP 429');
+      expect(result).toContain('TooManyRequests');
+    });
+
+    test('handles objects without message property', () => {
+      const result = FitnessSyncerAdapter.cleanErrorMessage({ code: 'ERR_NETWORK' });
+      expect(result).toBe('[object Object]');
+    });
+
+    test('handles numbers', () => {
+      const result = FitnessSyncerAdapter.cleanErrorMessage(42);
+      expect(result).toBe('42');
+    });
+
+    test('handles empty string', () => {
+      const result = FitnessSyncerAdapter.cleanErrorMessage('');
+      expect(result).toBe('');
+    });
+
+    test('handles Error with empty message', () => {
+      const error = new Error('');
+      const result = FitnessSyncerAdapter.cleanErrorMessage(error);
+      // When error.message is empty (falsy), String(error) returns "Error"
+      expect(result).toBe('Error');
+    });
+  });
 });
