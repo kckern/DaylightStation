@@ -1,5 +1,6 @@
 // tests/unit/infrastructure/bootstrap.test.mjs
-import { createContentRegistry } from '../../../backend/src/0_infrastructure/bootstrap.mjs';
+import { jest } from '@jest/globals';
+import { createContentRegistry, createFitnessSyncerAdapter } from '../../../backend/src/0_infrastructure/bootstrap.mjs';
 
 describe('bootstrap', () => {
   describe('createContentRegistry', () => {
@@ -86,6 +87,85 @@ describe('bootstrap', () => {
 
       const adapter = registry.get('local-content');
       expect(adapter).toBeUndefined();
+    });
+  });
+
+  describe('createFitnessSyncerAdapter', () => {
+    const mockHttpClient = {
+      get: jest.fn(),
+      post: jest.fn()
+    };
+
+    const mockAuthStore = {
+      get: jest.fn(),
+      set: jest.fn()
+    };
+
+    const mockLogger = {
+      info: jest.fn(),
+      debug: jest.fn(),
+      warn: jest.fn(),
+      error: jest.fn()
+    };
+
+    it('creates FitnessSyncerAdapter with required dependencies', () => {
+      const adapter = createFitnessSyncerAdapter({
+        httpClient: mockHttpClient,
+        authStore: mockAuthStore,
+        logger: mockLogger
+      });
+
+      expect(adapter).toBeDefined();
+      expect(typeof adapter.getAccessToken).toBe('function');
+      expect(typeof adapter.harvest).toBe('function');
+      expect(typeof adapter.getSourceId).toBe('function');
+    });
+
+    it('creates adapter with optional OAuth credentials', () => {
+      const adapter = createFitnessSyncerAdapter({
+        httpClient: mockHttpClient,
+        authStore: mockAuthStore,
+        clientId: 'test-client-id',
+        clientSecret: 'test-client-secret',
+        logger: mockLogger
+      });
+
+      expect(adapter).toBeDefined();
+    });
+
+    it('creates adapter with custom cooldown', () => {
+      const adapter = createFitnessSyncerAdapter({
+        httpClient: mockHttpClient,
+        authStore: mockAuthStore,
+        cooldownMinutes: 10,
+        logger: mockLogger
+      });
+
+      expect(adapter).toBeDefined();
+      // Cooldown is internal, but adapter should be created without error
+    });
+
+    it('uses default logger if not provided', () => {
+      const adapter = createFitnessSyncerAdapter({
+        httpClient: mockHttpClient,
+        authStore: mockAuthStore
+      });
+
+      expect(adapter).toBeDefined();
+    });
+
+    it('throws if httpClient is missing', () => {
+      expect(() => createFitnessSyncerAdapter({
+        authStore: mockAuthStore,
+        logger: mockLogger
+      })).toThrow('FitnessSyncerAdapter requires httpClient');
+    });
+
+    it('throws if authStore is missing', () => {
+      expect(() => createFitnessSyncerAdapter({
+        httpClient: mockHttpClient,
+        logger: mockLogger
+      })).toThrow('FitnessSyncerAdapter requires authStore');
     });
   });
 });
