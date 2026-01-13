@@ -50,7 +50,7 @@ export function createLocalContentRouter(config) {
 
   /**
    * GET /api/local-content/hymn/:number
-   * Returns hymn with lyrics for ContentScroller
+   * Returns hymn with lyrics (legacy parity with /data/hymn/:number)
    */
   router.get('/hymn/:number', async (req, res) => {
     try {
@@ -66,14 +66,13 @@ export function createLocalContentRouter(config) {
         return res.status(404).json({ error: 'Hymn not found', number });
       }
 
+      // Legacy parity: use hymn_num, legacy mediaUrl format
       res.json({
         title: item.title,
-        number: item.metadata.number,
-        media_key: item.id,
-        mediaUrl: item.mediaUrl,
-        duration: item.duration,
+        hymn_num: item.metadata.number || parseInt(number, 10),
         verses: item.metadata.verses,
-        lyrics: item.metadata.lyrics
+        mediaUrl: `/media/audio/songs/hymn/_ldsgc/${number}`,
+        duration: item.duration || item.metadata.duration || 0
       });
     } catch (err) {
       console.error('[localContent] hymn error:', err);
@@ -83,7 +82,7 @@ export function createLocalContentRouter(config) {
 
   /**
    * GET /api/local-content/primary/:number
-   * Returns primary song with lyrics
+   * Returns primary song with lyrics (legacy parity with /data/primary/:number)
    */
   router.get('/primary/:number', async (req, res) => {
     try {
@@ -99,14 +98,13 @@ export function createLocalContentRouter(config) {
         return res.status(404).json({ error: 'Primary song not found', number });
       }
 
+      // Legacy parity: use song_number, legacy mediaUrl format
       res.json({
         title: item.title,
-        number: item.metadata.number,
-        media_key: item.id,
-        mediaUrl: item.mediaUrl,
-        duration: item.duration,
+        song_number: item.metadata.number || parseInt(number, 10),
         verses: item.metadata.verses,
-        lyrics: item.metadata.lyrics
+        mediaUrl: `/media/audio/songs/primary/${number}`,
+        duration: item.duration || item.metadata.duration || 0
       });
     } catch (err) {
       console.error('[localContent] primary error:', err);
