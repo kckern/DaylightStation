@@ -11,6 +11,7 @@
 | Domain | Legacy Functions | DDD Equivalents | Gaps | Parity % |
 |--------|------------------|-----------------|------|----------|
 | Content | 66 | 54 | 12 | 82% |
+| Fitness | 41 | 32 | 9 | 78% |
 | Config | TBD | TBD | TBD | TBD |
 | Playback | TBD | TBD | TBD | TBD |
 | Scheduling | TBD | TBD | TBD | TBD |
@@ -375,10 +376,321 @@
 
 ---
 
+## 2. Fitness Domain
+
+### Legacy Files
+
+| File | Path | Purpose |
+|------|------|---------|
+| fitsync.mjs | `backend/_legacy/lib/fitsync.mjs` | FitnessSyncer API integration for Garmin data |
+| fitness.mjs | `backend/_legacy/routers/fitness.mjs` | Fitness API router with session management |
+
+### DDD Files
+
+| File | Path | Purpose |
+|------|------|---------|
+| Session.mjs | `backend/src/1_domains/fitness/entities/Session.mjs` | Session entity |
+| Participant.mjs | `backend/src/1_domains/fitness/entities/Participant.mjs` | Participant entity |
+| Zone.mjs | `backend/src/1_domains/fitness/entities/Zone.mjs` | Heart rate zone entity |
+| SessionService.mjs | `backend/src/1_domains/fitness/services/SessionService.mjs` | Session CRUD operations |
+| TimelineService.mjs | `backend/src/1_domains/fitness/services/TimelineService.mjs` | Timeline encoding/decoding |
+| ZoneService.mjs | `backend/src/1_domains/fitness/services/ZoneService.mjs` | Zone resolution service |
+| ISessionStore.mjs | `backend/src/1_domains/fitness/ports/ISessionStore.mjs` | Session storage interface |
+| IZoneLedController.mjs | `backend/src/1_domains/fitness/ports/IZoneLedController.mjs` | Zone LED controller interface |
+| AmbientLedAdapter.mjs | `backend/src/2_adapters/fitness/AmbientLedAdapter.mjs` | Ambient LED controller implementation |
+| VoiceMemoTranscriptionService.mjs | `backend/src/2_adapters/fitness/VoiceMemoTranscriptionService.mjs` | Voice memo transcription |
+| transcriptionContext.mjs | `backend/src/2_adapters/fitness/transcriptionContext.mjs` | Whisper context builder |
+| fitness.mjs | `backend/src/4_api/routers/fitness.mjs` | DDD Fitness API router |
+
+---
+
+### Legacy Functions: fitsync.mjs
+
+| Function | Lines | Purpose | DDD Equivalent |
+|----------|-------|---------|----------------|
+| `cleanErrorMessage(error)` | 25-47 | Extract clean error from HTML responses | **GAP** |
+| `isInCooldown()` | 62-72 | Check circuit breaker cooldown state | `AmbientLedAdapter` (internal logic) |
+| `recordFailure(error)` | 77-95 | Record failure for circuit breaker | `AmbientLedAdapter` (internal logic) |
+| `recordSuccess()` | 100-106 | Reset circuit breaker on success | `AmbientLedAdapter` (internal logic) |
+| `getDefaultUsername()` | 109-112 | Get head of household username | **GAP** (config lookup) |
+| `getAccessToken()` | 117-215 | Refresh OAuth token for FitnessSyncer | **GAP** |
+| `baseAPI(endpoint)` | 217-246 | FitnessSyncer API base request | **GAP** |
+| `setSourceId(sourceKey)` | 251-256 | Find source ID by provider type | **GAP** |
+| `getSourceId(sourceKey)` | 258-263 | Find source ID by provider type | **GAP** |
+| `getActivities()` | 265-336 | Fetch activities from Garmin via FitnessSyncer | **GAP** |
+| `harvestActivities(job_id)` | 338-417 | Main harvest function with circuit breaker | **GAP** |
+| `isFitsyncInCooldown` (export) | 419 | Export cooldown check function | **GAP** |
+
+**Total Legacy fitsync.mjs:** 12 functions
+
+---
+
+### Legacy Router Endpoints: fitness.mjs
+
+| Method | Endpoint | Lines | Purpose | DDD Equivalent |
+|--------|----------|-------|---------|----------------|
+| GET | `/` | 293-305 | Get fitness config (hydrated) | `GET /api/fitness` |
+| GET | `/sessions/dates` | 308-317 | List all session dates | `GET /api/fitness/sessions/dates` |
+| GET | `/sessions` | 320-330 | List sessions for a date | `GET /api/fitness/sessions` |
+| GET | `/sessions/:sessionId` | 333-345 | Get session detail | `GET /api/fitness/sessions/:sessionId` |
+| POST | `/save_session` | 348-390 | Save session data | `POST /api/fitness/save_session` |
+| POST | `/save_screenshot` | 405-489 | Save session screenshot | `POST /api/fitness/save_screenshot` |
+| POST | `/voice_memo` | 494-595 | Transcribe voice memo | `POST /api/fitness/voice_memo` |
+| POST | `/zone_led` | 724-885 | Sync ambient LED state | `POST /api/fitness/zone_led` |
+| GET | `/zone_led/status` | 891-908 | Get LED controller status | `GET /api/fitness/zone_led/status` |
+| GET | `/zone_led/metrics` | 914-963 | Get LED controller metrics | `GET /api/fitness/zone_led/metrics` |
+| POST | `/zone_led/reset` | 984-1002 | Reset LED controller state | `POST /api/fitness/zone_led/reset` |
+
+**Total Legacy Router Endpoints:** 11 endpoints
+
+---
+
+### Legacy Functions: fitness.mjs (Router Helpers)
+
+| Function | Lines | Purpose | DDD Equivalent |
+|----------|-------|---------|----------------|
+| `parseToUnixMs(value, timezone)` | 31-38 | Parse timestamp to unix ms | `TimelineService.parseToUnixMs()` |
+| `deriveSessionDate(sessionId)` | 40-43 | Derive date from session ID | `Session.getDate()` |
+| `resolveMediaRoot()` | 45-50 | Get media root path | `SessionService.getStoragePaths()` |
+| `resolveHouseholdId(explicit)` | 52 | Resolve household ID | `SessionService.resolveHouseholdId()` |
+| `isAllNullSeriesJson(parsed)` | 64-76 | Check if series is all nulls | `TimelineService.isAllNullSeries()` |
+| `decodeSeries(series)` | 78-125 | Decode RLE series | `TimelineService.decodeSeries()` |
+| `listSessionsForDate(date, householdId)` | 127-150 | List sessions for a date | `SessionService.listSessionsByDate()` |
+| `loadSessionDetail(sessionId, householdId)` | 152-203 | Load full session detail | `SessionService.getSession()` |
+| `listSessionDates(householdId)` | 205-211 | List all session dates | `SessionService.listDates()` |
+| `getSessionStoragePaths(sessionId)` | 213-236 | Get storage paths for session | `SessionService.getStoragePaths()` |
+| `ensureDirectory(dirPath)` | 238-243 | Create directory if missing | Inline in router |
+| `loadFitnessConfig(householdId)` | 255-289 | Load fitness config | `createFitnessRouter.loadFitnessConfig()` |
+| `sanitizeSessionId(value)` | 399-403 | Sanitize session ID | `Session.sanitizeSessionId()` |
+| `normalizeZoneId(zoneId)` | 640-644 | Normalize zone ID | `AmbientLedAdapter.normalizeZoneId()` |
+| `isAmbientLedEnabled(fitnessConfig)` | 651-660 | Check if LED feature enabled | `AmbientLedAdapter.#isEnabled()` |
+| `resolveSceneFromConfig(sceneConfig, zoneKey)` | 667-686 | Resolve scene with fallback | `AmbientLedAdapter.#resolveSceneFromConfig()` |
+| `resolveTargetScene(zones, sessionEnded, sceneConfig)` | 693-717 | Resolve target scene | `AmbientLedAdapter.#resolveTargetScene()` |
+| `formatDuration(ms)` | 968-978 | Format duration human-readable | `AmbientLedAdapter.formatDuration()` |
+
+**Total Legacy Router Helpers:** 18 functions
+
+---
+
+### DDD Functions: Domain Layer
+
+#### Session.mjs (Session class)
+| Function | Lines | Purpose |
+|----------|-------|---------|
+| `constructor(props)` | 10-30 | Create session with all fields |
+| `getDurationMs()` | 37-43 | Get session duration |
+| `getDurationMinutes()` | 48-51 | Get duration in minutes |
+| `isActive()` | 56-58 | Check if session is active |
+| `isCompleted()` | 63-65 | Check if session is completed |
+| `getParticipant(name)` | 70-72 | Get participant by name |
+| `getPrimaryParticipant()` | 77-79 | Get primary participant |
+| `getRosterCount()` | 84-86 | Get roster count |
+| `addParticipant(participant)` | 91-95 | Add participant to roster |
+| `removeParticipant(name)` | 100-102 | Remove participant |
+| `end(endTime)` | 107-110 | End the session |
+| `addHeartRate(participantName, value)` | 115-119 | Add HR value to series |
+| `addEvent(type, data)` | 124-130 | Add timeline event |
+| `addSnapshot(capture)` | 135-142 | Add snapshot/screenshot |
+| `getDate()` | 147-150 | Get session date (YYYY-MM-DD) |
+| `toSummary()` | 155-163 | Create session summary |
+| `toJSON()` | 168-180 | Serialize to plain object |
+| `static fromJSON(data)` | 185-192 | Create from plain object |
+| `static generateSessionId(date)` | 198-209 | Generate session ID |
+| `static isValidSessionId(id)` | 214-218 | Validate session ID format |
+| `static sanitizeSessionId(id)` | 223-227 | Sanitize session ID |
+
+**Total Session.mjs:** 21 methods
+
+#### Participant.mjs (Participant class)
+| Function | Lines | Purpose |
+|----------|-------|---------|
+| `constructor(props)` | 7-18 | Create participant |
+| `hasHrDevice()` | 24-26 | Check if has HR device |
+| `setAsPrimary()` | 31-33 | Set as primary participant |
+| `setAsGuest(isGuest)` | 38-40 | Set guest status |
+| `assignHrDevice(deviceId)` | 45-47 | Assign HR device |
+| `removeHrDevice()` | 52-54 | Remove HR device |
+| `toJSON()` | 59-66 | Serialize to object |
+| `static fromJSON(data)` | 71-73 | Create from object |
+
+**Total Participant.mjs:** 8 methods
+
+#### Zone.mjs (Zone class + utilities)
+| Function | Lines | Purpose |
+|----------|-------|---------|
+| `constructor(props)` | 17-31 | Create zone with bounds |
+| `getPriority()` | 36-38 | Get zone priority |
+| `containsHeartRate(hr)` | 43-45 | Check if HR in zone |
+| `isHigherThan(otherZone)` | 50-52 | Compare zones |
+| `isLowerThan(otherZone)` | 54-56 | Compare zones |
+| `toJSON()` | 61-68 | Serialize to object |
+| `static fromJSON(data)` | 73-75 | Create from object |
+| `resolveZone(hr, thresholds)` | 84-91 | Resolve zone for HR |
+| `getHigherZone(zone1, zone2)` | 96-98 | Get higher priority zone |
+| `createDefaultZones(maxHr)` | 103-111 | Create default zones |
+
+**Total Zone.mjs:** 10 methods
+
+#### SessionService.mjs
+| Function | Lines | Purpose |
+|----------|-------|---------|
+| `constructor(config)` | 12-15 | Initialize with store |
+| `resolveHouseholdId(explicit)` | 20-22 | Resolve household ID |
+| `async createSession(data, householdId)` | 29-45 | Create new session |
+| `async getSession(sessionId, householdId, options)` | 53-70 | Get session by ID |
+| `async listDates(householdId)` | 77-80 | List all session dates |
+| `async listSessionsByDate(date, householdId)` | 87-94 | List sessions by date |
+| `async listSessionsInRange(startDate, endDate, householdId)` | 102-106 | List sessions in range |
+| `async saveSession(sessionData, householdId)` | 113-140 | Save/update session |
+| `async endSession(sessionId, householdId, endTime)` | 148-158 | End a session |
+| `async addParticipant(sessionId, participant, householdId)` | 166-175 | Add participant |
+| `async addSnapshot(sessionId, capture, householdId)` | 183-204 | Add snapshot |
+| `async getActiveSessions(householdId)` | 210-214 | Get active sessions |
+| `async deleteSession(sessionId, householdId)` | 221-224 | Delete session |
+| `getStoragePaths(sessionId, householdId)` | 231-236 | Get storage paths |
+
+**Total SessionService.mjs:** 14 methods
+
+#### TimelineService.mjs
+| Function | Lines | Purpose |
+|----------|-------|---------|
+| `isPlainObject(value)` | 14-16 | Check if plain object |
+| `isAllNullSeries(parsed)` | 23-35 | Check if all null series |
+| `decodeSingleSeries(encoded)` | 42-70 | Decode single RLE series |
+| `decodeSeries(series)` | 77-97 | Decode all series |
+| `encodeToRLE(arr)` | 105-132 | Encode array to RLE |
+| `encodeSingleSeries(arr)` | 139-142 | Encode single series to JSON |
+| `encodeSeries(series)` | 149-161 | Encode all series |
+| `parseToUnixMs(value, timezone)` | 170-189 | Parse timestamp |
+| `formatTimestamp(ms, timezone)` | 197-201 | Format unix ms |
+| `prepareTimelineForApi(timeline, timezone)` | 209-230 | Prepare for API response |
+| `prepareTimelineForStorage(timeline)` | 237-246 | Prepare for file storage |
+
+**Total TimelineService.mjs:** 11 methods
+
+#### ZoneService.mjs
+| Function | Lines | Purpose |
+|----------|-------|---------|
+| `constructor(config)` | 8-10 | Initialize with config |
+| `resolveZone(hr, thresholds)` | 17-20 | Resolve zone for HR |
+| `getGroupZone(heartRates, thresholds)` | 27-35 | Get max zone from group |
+| `getZonePriority(zoneName)` | 40-42 | Get zone priority |
+| `compareZones(zone1, zone2)` | 47-51 | Compare two zones |
+| `getDefaultThresholds(maxHr)` | 56-64 | Get default thresholds |
+| `createZonesForDisplay(maxHr)` | 69-71 | Create zones for display |
+| `getZoneColor(zoneName)` | 76-85 | Get zone color |
+
+**Total ZoneService.mjs:** 8 methods
+
+---
+
+### DDD Functions: Adapter Layer
+
+#### AmbientLedAdapter.mjs
+| Function | Lines | Purpose |
+|----------|-------|---------|
+| `formatDuration(ms)` | 22-32 | Format duration (utility) |
+| `constructor(config)` | 44-82 | Initialize adapter |
+| `normalizeZoneId(zoneId)` | 87-91 | Normalize zone ID |
+| `#isEnabled(fitnessConfig)` | 97-106 | Check if enabled |
+| `#resolveSceneFromConfig(sceneConfig, zoneKey)` | 112-130 | Resolve scene |
+| `#resolveTargetScene(zones, sessionEnded, sceneConfig)` | 136-158 | Resolve target scene |
+| `async syncZone(params)` | 163-321 | Main sync method |
+| `getStatus(householdId)` | 326-342 | Get current status |
+| `getMetrics()` | 347-395 | Get detailed metrics |
+| `reset()` | 400-415 | Reset controller state |
+
+**Total AmbientLedAdapter.mjs:** 10 methods
+
+#### VoiceMemoTranscriptionService.mjs
+| Function | Lines | Purpose |
+|----------|-------|---------|
+| `constructor(config)` | 21-27 | Initialize with OpenAI adapter |
+| `async transcribeVoiceMemo(params)` | 41-124 | Main transcription method |
+| `#resolveExtension(mimeType)` | 130-138 | Resolve file extension |
+| `isConfigured()` | 143-145 | Check if service configured |
+
+**Total VoiceMemoTranscriptionService.mjs:** 4 methods
+
+#### transcriptionContext.mjs
+| Function | Lines | Purpose |
+|----------|-------|---------|
+| `buildTranscriptionContext(sessionData)` | 18-72 | Build Whisper prompt |
+
+**Total transcriptionContext.mjs:** 1 function
+
+---
+
+### DDD Router: fitness.mjs
+
+| Method | Endpoint | Lines | Purpose |
+|--------|----------|-------|---------|
+| GET | `/` | 68-81 | Get fitness config (hydrated) |
+| GET | `/sessions/dates` | 86-98 | List all session dates |
+| GET | `/sessions` | 103-119 | List sessions for a date |
+| GET | `/sessions/:sessionId` | 124-142 | Get session detail |
+| POST | `/save_session` | 147-166 | Save session data |
+| POST | `/save_screenshot` | 171-238 | Save session screenshot |
+| POST | `/voice_memo` | 243-285 | Transcribe voice memo |
+| POST | `/zone_led` | 294-315 | Sync ambient LED state |
+| GET | `/zone_led/status` | 320-326 | Get LED controller status |
+| GET | `/zone_led/metrics` | 331-336 | Get LED controller metrics |
+| POST | `/zone_led/reset` | 341-348 | Reset LED controller state |
+
+**Total DDD Router Endpoints:** 11 endpoints (100% parity with legacy)
+
+---
+
+### Gap Analysis: Fitness Domain
+
+| Legacy Function | DDD Status | Notes |
+|-----------------|------------|-------|
+| `cleanErrorMessage(error)` | MISSING | Error message extraction from HTML |
+| `getDefaultUsername()` | MISSING | Get head of household (use configService) |
+| `getAccessToken()` | MISSING | FitnessSyncer OAuth token refresh |
+| `baseAPI(endpoint)` | MISSING | FitnessSyncer API client |
+| `setSourceId(sourceKey)` | MISSING | FitnessSyncer source lookup |
+| `getSourceId(sourceKey)` | MISSING | FitnessSyncer source lookup |
+| `getActivities()` | MISSING | Fetch Garmin activities |
+| `harvestActivities(job_id)` | MISSING | Main harvest cron job |
+| `isFitsyncInCooldown` | MISSING | Cooldown check export |
+
+**Summary:**
+- Legacy fitsync.mjs functions: 12
+- DDD equivalents: 3 (circuit breaker logic in AmbientLedAdapter)
+- Gaps: 9
+- **fitsync.mjs Parity: 25%**
+
+- Legacy router endpoints: 11
+- DDD router endpoints: 11
+- **Router Parity: 100%**
+
+- Legacy router helpers: 18
+- DDD equivalents: 18
+- **Router Helpers Parity: 100%**
+
+- **Overall Fitness Domain Parity: 78%** (32 of 41 functions)
+
+**Critical Gaps:**
+1. **FitnessSyncer Integration** - Entire Garmin data harvest pipeline not in DDD
+   - OAuth token management
+   - API client
+   - Activity harvesting
+   - Incremental merge logic
+
+**Analysis:**
+The router layer has achieved 100% parity - all endpoints exist in DDD with equivalent functionality. The domain layer (Session, Participant, Zone entities and services) is complete and well-structured with proper separation of concerns.
+
+The gap is entirely in the **fitsync.mjs** library which handles FitnessSyncer/Garmin integration. This is a cron job dependency rather than a core API feature. The DDD architecture could benefit from:
+- A `FitnessSyncerAdapter` in `backend/src/2_adapters/fitness/`
+- An `IFitnessDataSource` port for external fitness data providers
+
+---
+
 ## Next Steps
 
-1. **Task 1.2:** Audit Config domain
-2. **Task 1.3:** Audit Playback domain
-3. **Task 1.4:** Audit Scheduling domain
-4. **Task 1.5:** Audit User domain
+1. **Task 1.3:** Audit Playback domain
+2. **Task 1.4:** Audit Scheduling domain
+3. **Task 1.5:** Audit User domain
+4. **Task 1.6:** Audit Config domain
 5. **Task 2.x:** Implement missing functions by priority
