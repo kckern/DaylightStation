@@ -655,9 +655,16 @@ async function main() {
   app.get('/cron/cronDaily', (req, res) => res.redirect(307, '/api/scheduling/cronDaily'));
   app.get('/cron/cronWeekly', (req, res) => res.redirect(307, '/api/scheduling/cronWeekly'));
 
+  // Media/Image redirects - route to DDD static router
+  app.get('/media/img/entropy/:icon', (req, res) => res.redirect(307, `/api/static/entropy/${req.params.icon}`));
+  app.get('/media/img/art/*', (req, res) => res.redirect(307, `/api/static/art/${req.params[0]}`));
+  app.get('/media/img/users/:id', (req, res) => res.redirect(307, `/api/static/users/${req.params.id}`));
+  app.get('/media/img/equipment/:id', (req, res) => res.redirect(307, `/api/static/equipment/${req.params.id}`));
+  app.get('/media/img/*', (req, res) => res.redirect(307, `/api/static/img/${req.params[0]}`));
+
   logger.info('legacy.redirects.mounted', {
-    count: 24,
-    categories: ['content', 'home', 'health', 'tv', 'websocket', 'cron']
+    count: 29,
+    categories: ['content', 'home', 'health', 'tv', 'websocket', 'cron', 'media']
   });
 
   // ==========================================================================
