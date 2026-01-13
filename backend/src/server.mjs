@@ -382,6 +382,47 @@ async function main() {
   }));
   logger.info('fitness.mounted', { path: '/api/fitness' });
 
+  // Home automation domain
+  const kioskConfig = process.env.kiosk || {};
+  const taskerConfig = process.env.tasker || {};
+  const remoteExecConfig = process.env.remote_exec || process.env.remoteExec || {};
+  const homeAutomationAdapters = createHomeAutomationAdapters({
+    homeAssistant: {
+      baseUrl: homeAssistantConfig.base_url || homeAssistantConfig.host || '',
+      token: homeAssistantConfig.token || ''
+    },
+    kiosk: {
+      host: kioskConfig.host || '',
+      port: kioskConfig.port || 5000,
+      password: kioskConfig.password || '',
+      daylightHost: kioskConfig.daylightHost || `http://localhost:${process.env.PORT || 3112}`
+    },
+    tasker: {
+      host: taskerConfig.host || '',
+      port: taskerConfig.port || 1821
+    },
+    remoteExec: {
+      host: remoteExecConfig.host || '',
+      user: remoteExecConfig.user || '',
+      port: remoteExecConfig.port || 22,
+      privateKey: remoteExecConfig.privateKey || remoteExecConfig.private_key || '',
+      knownHostsPath: remoteExecConfig.knownHostsPath || remoteExecConfig.known_hosts_path || ''
+    },
+    logger: logger.child({ module: 'home-automation' })
+  });
+
+  // Import IO functions for state persistence
+  const { loadFile, saveFile } = await import('../_legacy/lib/io.mjs');
+
+  app.use('/api/home', createHomeAutomationApiRouter({
+    adapters: homeAutomationAdapters,
+    loadFile,
+    saveFile,
+    householdId,
+    logger: logger.child({ module: 'home-automation-api' })
+  }));
+  logger.info('homeAutomation.mounted', { path: '/api/home' });
+
   // Legacy finance endpoint shims
   app.get('/data/budget', (req, res) => res.redirect(307, '/api/finance/data'));
   app.get('/data/budget/daytoday', (req, res) => res.redirect(307, '/api/finance/data/daytoday'));

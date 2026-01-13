@@ -47,6 +47,10 @@ export function createHomeAutomationRouter(config) {
    * Control living room TV power
    */
   router.get('/tv/:state(on|off|toggle)', async (req, res) => {
+    if (!tvAdapter) {
+      return res.status(503).json({ error: 'TV control not configured (Home Assistant required)' });
+    }
+
     const { state } = req.params;
     logger.info?.('homeAutomation.tv.request', { state });
 
@@ -68,6 +72,10 @@ export function createHomeAutomationRouter(config) {
    * Control office TV power
    */
   router.get('/office_tv/:state(on|off|toggle)', async (req, res) => {
+    if (!tvAdapter) {
+      return res.status(503).json({ error: 'TV control not configured (Home Assistant required)' });
+    }
+
     const { state } = req.params;
     logger.info?.('homeAutomation.officeTv.request', { state });
 
@@ -89,6 +97,16 @@ export function createHomeAutomationRouter(config) {
    * Turn on TV and load Daylight TV app
    */
   router.get('/tv', async (req, res) => {
+    if (!tvAdapter) {
+      return res.status(503).json({ error: 'TV control not configured (Home Assistant required)' });
+    }
+    if (!taskerAdapter) {
+      return res.status(503).json({ error: 'Tasker adapter not configured' });
+    }
+    if (!kioskAdapter) {
+      return res.status(503).json({ error: 'Kiosk adapter not configured' });
+    }
+
     try {
       const tvResult = await tvAdapter.turnOn();
       const taskerResult = await taskerAdapter.showBlank();
@@ -121,6 +139,10 @@ export function createHomeAutomationRouter(config) {
   router.get('/volume/:level', handleVolumeRequest);
 
   async function handleVolumeRequest(req, res) {
+    if (!remoteExecAdapter) {
+      return res.status(503).json({ error: 'Volume control not configured (Remote exec adapter required)' });
+    }
+
     const { level } = req.params;
     const volumeStateFile = `households/${householdId}/history/hardware/volLevel`;
     const cycleLevels = [70, 50, 30, 20, 10, 0];
@@ -189,6 +211,10 @@ export function createHomeAutomationRouter(config) {
    * Set audio output device
    */
   router.get('/audio/:device', async (req, res) => {
+    if (!remoteExecAdapter) {
+      return res.status(503).json({ error: 'Audio device control not configured (Remote exec adapter required)' });
+    }
+
     const { device } = req.params;
 
     try {
@@ -209,6 +235,10 @@ export function createHomeAutomationRouter(config) {
    * Execute arbitrary command on remote host
    */
   router.post('/cmd', async (req, res) => {
+    if (!remoteExecAdapter) {
+      return res.status(503).json({ error: 'Remote command not configured (Remote exec adapter required)' });
+    }
+
     const { cmd } = { ...req.body, ...req.query };
 
     if (!cmd) {

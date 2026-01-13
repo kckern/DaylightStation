@@ -582,20 +582,29 @@ export function createExternalProxyApiRouter(config) {
 export function createHomeAutomationAdapters(config) {
   const { logger = console } = config;
 
-  // Home Assistant gateway
-  const haGateway = new HomeAssistantAdapter(
-    {
-      baseUrl: config.homeAssistant.baseUrl,
-      token: config.homeAssistant.token
-    },
-    { logger }
-  );
+  // Home Assistant gateway (optional - requires baseUrl and token)
+  let haGateway = null;
+  let tvAdapter = null;
 
-  // TV control adapter (uses HA gateway)
-  const tvAdapter = new TVControlAdapter(
-    { gateway: haGateway },
-    { logger }
-  );
+  if (config.homeAssistant?.baseUrl && config.homeAssistant?.token) {
+    haGateway = new HomeAssistantAdapter(
+      {
+        baseUrl: config.homeAssistant.baseUrl,
+        token: config.homeAssistant.token
+      },
+      { logger }
+    );
+
+    // TV control adapter (uses HA gateway)
+    tvAdapter = new TVControlAdapter(
+      { gateway: haGateway },
+      { logger }
+    );
+  } else {
+    logger.warn?.('homeAutomation.homeassistant.disabled', {
+      reason: 'Missing baseUrl or token configuration'
+    });
+  }
 
   // Kiosk adapter (optional)
   let kioskAdapter = null;
