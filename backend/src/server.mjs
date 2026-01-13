@@ -260,10 +260,11 @@ async function main() {
   } : null;
 
   const watchlistPath = `${householdDir}/state/lists.yml`;
+  const contentPath = `${dataBasePath}/content`;  // LocalContentAdapter expects content/ subdirectory
   const contentRegistry = createContentRegistry({
     mediaBasePath,
     plex: plexConfig,
-    dataPath: dataBasePath,
+    dataPath: contentPath,
     watchlistPath
   });
 
