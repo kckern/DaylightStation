@@ -34,6 +34,8 @@ export class FilesystemAdapter {
    * @param {Object} config
    * @param {string} config.mediaBasePath - Base path for media files
    * @param {string} [config.historyPath] - Path to media_memory directory for watch state
+   * @param {string} [config.householdId] - Household ID for scoped watch state
+   * @param {string} [config.householdsBasePath] - Base path for household data directories
    */
   constructor(config) {
     if (!config.mediaBasePath) {
@@ -41,11 +43,14 @@ export class FilesystemAdapter {
     }
     this.mediaBasePath = config.mediaBasePath;
     this.historyPath = config.historyPath || null;
+    this.householdId = config.householdId || null;
+    this.householdsBasePath = config.householdsBasePath || null;
     this._watchStateCache = null;
   }
 
   /**
    * Load watch state from media_memory YAML file
+   * Tries household-specific path first, then falls back to global path.
    * @returns {Object} Watch state map { mediaKey: { percent, seconds, playhead, mediaDuration } }
    * @private
    */
@@ -53,10 +58,29 @@ export class FilesystemAdapter {
     if (!this.historyPath) return {};
     if (this._watchStateCache) return this._watchStateCache;
 
+    // Use injectable functions for testability
+    const existsSync = this._existsSync || fs.existsSync;
+    const readFileSync = this._readFileSync || ((p) => fs.readFileSync(p, 'utf8'));
+
     try {
+      // Try household-specific path first
+      if (this.householdId && this.householdsBasePath) {
+        const householdPath = path.join(
+          this.householdsBasePath,
+          this.householdId,
+          'history/media_memory/media.yml'
+        );
+        if (existsSync(householdPath)) {
+          const content = readFileSync(householdPath);
+          this._watchStateCache = yaml.load(content) || {};
+          return this._watchStateCache;
+        }
+      }
+
+      // Fall back to global path
       const filePath = path.join(this.historyPath, 'media.yml');
-      if (!fs.existsSync(filePath)) return {};
-      const content = fs.readFileSync(filePath, 'utf8');
+      if (!existsSync(filePath)) return {};
+      const content = readFileSync(filePath);
       this._watchStateCache = yaml.load(content) || {};
       return this._watchStateCache;
     } catch (err) {

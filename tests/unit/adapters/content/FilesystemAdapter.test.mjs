@@ -149,4 +149,72 @@ describe('FilesystemAdapter', () => {
       // This tests the conditional logic in getItem
     });
   });
+
+  describe('household-scoped watch state', () => {
+    test('should accept householdId in constructor', () => {
+      const adapter = new FilesystemAdapter({
+        mediaBasePath: '/test/media',
+        historyPath: '/test/history/media',
+        householdId: 'test-household',
+        householdsBasePath: '/test/households'
+      });
+
+      expect(adapter.householdId).toBe('test-household');
+      expect(adapter.householdsBasePath).toBe('/test/households');
+    });
+
+    test('should try household path first for watch state', () => {
+      const adapter = new FilesystemAdapter({
+        mediaBasePath: '/test/media',
+        historyPath: '/test/history/media',
+        householdId: 'test-household',
+        householdsBasePath: '/test/households'
+      });
+
+      const existsCalls = [];
+      // Use injection pattern for testing - inject mock implementations
+      adapter._existsSync = (p) => {
+        existsCalls.push(p);
+        return p.includes('test-household');
+      };
+      adapter._readFileSync = () => `
+song.mp3:
+  playhead: 120
+  percent: 50
+`;
+
+      adapter._watchStateCache = null; // Clear cache
+      const watchState = adapter._loadWatchState();
+
+      expect(existsCalls[0]).toContain('test-household');
+      expect(watchState['song.mp3'].playhead).toBe(120);
+    });
+
+    test('should fall back to global path when household path missing', () => {
+      const adapter = new FilesystemAdapter({
+        mediaBasePath: '/test/media',
+        historyPath: '/test/history/media',
+        householdId: 'test-household',
+        householdsBasePath: '/test/households'
+      });
+
+      const existsCalls = [];
+      // Use injection pattern for testing
+      adapter._existsSync = (p) => {
+        existsCalls.push(p);
+        // Household path doesn't exist, global does
+        return p === '/test/history/media/media.yml';
+      };
+      adapter._readFileSync = () => `
+track.mp3:
+  playhead: 60
+`;
+
+      adapter._watchStateCache = null;
+      const watchState = adapter._loadWatchState();
+
+      expect(existsCalls.length).toBeGreaterThanOrEqual(2);
+      expect(watchState['track.mp3'].playhead).toBe(60);
+    });
+  });
 });
