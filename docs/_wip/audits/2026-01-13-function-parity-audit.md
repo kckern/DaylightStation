@@ -1891,6 +1891,8 @@ While raw parity is 100%, the DDD implementation provides substantially more fun
 
 ## Parity Summary
 
+### Phase 1: Domain Layers
+
 | Domain | Legacy Functions | DDD Equivalents | Gaps | Parity % |
 |--------|------------------|-----------------|------|----------|
 | Content | 66 | 54 | 12 | 82% |
@@ -1902,6 +1904,313 @@ While raw parity is 100%, the DDD implementation provides substantially more fun
 | Config | TBD | TBD | TBD | TBD |
 | Playback | TBD | TBD | TBD | TBD |
 | User | TBD | TBD | TBD | TBD |
+
+### Phase 2: Third-Party API Adapters
+
+| Service | Legacy Functions | DDD Equivalents | Gaps | Parity % |
+|---------|------------------|-----------------|------|----------|
+| Plex | 47 | 42 | 1 | 98% |
+| Strava | 9 | 8 | 1 | 89% |
+| Withings | 8 | 8 | 0 | 100% |
+| Garmin | 16 | 9 | 7 | 56% |
+| Buxfer | 10 | 7 | 3 | 70% |
+| ClickUp | 3 | 3 | 0 | 100% |
+| Google Calendar | 3 | 3 | 0 | 100% |
+| Gmail | 2 | 2 | 0 | 100% |
+| **TOTAL** | **98** | **82** | **12** | **84%** |
+
+---
+
+---
+
+# Phase 2: Third-Party API Adapters
+
+**Scope:** External service integrations including Plex, Withings, Strava, Garmin, Buxfer, ClickUp, Google Calendar, Gmail, and other third-party APIs.
+
+---
+
+## 7. Plex API Integration
+
+### Legacy: plex.mjs
+
+| Legacy Function | Lines | Purpose | DDD Equivalent | DDD File | Status |
+|-----------------|-------|---------|----------------|----------|--------|
+| `constructor()` | 22-32 | Initialize Plex client | `PlexAdapter.constructor()` | PlexAdapter.mjs | ✅ |
+| `fetch(paramString)` | 33-45 | Generic Plex API fetch | `PlexClient.request()` | PlexClient.mjs | ✅ |
+| `requestTranscodeDecision(key, opts)` | 77-205 | Request transcode decision | `PlexAdapter.requestTranscodeDecision()` | PlexAdapter.mjs | ✅ |
+| `loadmedia_url(itemData, attempt, opts)` | 207-310 | Generate streaming URL | `PlexAdapter.loadMediaUrl()` | PlexAdapter.mjs | ✅ |
+| `_buildTranscodeUrl(...)` | 316-337 | Build transcode URL | `PlexAdapter._buildTranscodeUrl()` | PlexAdapter.mjs | ✅ |
+| `loadMeta(plex, type)` | 339-350 | Load item metadata | `PlexClient.getMetadata()` | PlexClient.mjs | ✅ |
+| `loadChildrenFromKey(plex, playable, shuffle)` | 351-362 | Load container with children | `PlexAdapter.getContainerWithChildren()` | PlexAdapter.mjs | ✅ |
+| `loadListFromKey(plex, playable, shuffle)` | 364-379 | Load list from container | `PlexAdapter.getList()` | PlexAdapter.mjs | ✅ |
+| `loadListKeys(input, path)` | 381-431 | Load list with metadata | `PlexAdapter._toListableItem()` | PlexAdapter.mjs | ✅ |
+| `loadImgFromKey(plex)` | 432-438 | Get thumbnail URLs | - | - | ❌ Gap |
+| `loadListFromAlbum(plex)` | 440-442 | Load tracks from album | `PlexAdapter.getList()` (type detection) | PlexAdapter.mjs | ✅ |
+| `loadListFromSeason(plex)` | 443-445 | Load episodes from season | `PlexAdapter.getList()` (type detection) | PlexAdapter.mjs | ✅ |
+| `loadListFromCollection(plex, playable)` | 446-466 | Load items from collection | `PlexAdapter.getList()` (type detection) | PlexAdapter.mjs | ✅ |
+| `loadListFromShow(plex, playable)` | 467-469 | Load from show | `PlexAdapter.getList()` (type detection) | PlexAdapter.mjs | ✅ |
+| `loadListFromArtist(plex, playable)` | 470-472 | Load from artist | `PlexAdapter.getList()` (type detection) | PlexAdapter.mjs | ✅ |
+| `loadListFromPlaylist(plex)` | 473-513 | Load from playlist | `PlexAdapter.getList()` (type detection) | PlexAdapter.mjs | ✅ |
+| `loadListKeysFromPlaylist(plex)` | 514-517 | Load just keys from playlist | - | - | ⚠️ Not needed |
+| `determinemedia_type(type)` | 519-525 | Determine media type | `PlexAdapter._determineMediaType()` | PlexAdapter.mjs | ✅ |
+| `buildPlayableObject(itemData, ...)` | 530-577 | Build playable item | `PlexAdapter._toPlayableItem()` | PlexAdapter.mjs | ✅ |
+| `loadPlayableItemFromKey(key, shuffle, opts)` | 580-602 | Load single playable with selection | `PlexAdapter.loadPlayableItemFromKey()` | PlexAdapter.mjs | ✅ |
+| `isPlayableType(type)` | 604-608 | Check if type is playable | Inline in `_toPlayableItem()` | PlexAdapter.mjs | ✅ |
+| `loadPlayableQueueFromKey(key, shuffle)` | 611-633 | Load queue of playables | `PlexAdapter.loadPlayableQueueFromKey()` | PlexAdapter.mjs | ✅ |
+| `getMediaArray(item)` | 635-638 | Normalize media array | - | - | ⚠️ Not needed |
+| `loadSingleFromCollection(key, shuffle)` | 640-645 | Select from collection | `PlexAdapter.selectKeyToPlay()` | PlexAdapter.mjs | ✅ |
+| `loadSingleFromArtist(key, shuffle)` | 647-652 | Select from artist | `PlexAdapter.selectKeyToPlay()` | PlexAdapter.mjs | ✅ |
+| `loadSingleFromAlbum(key, shuffle)` | 654-659 | Select from album | `PlexAdapter.selectKeyToPlay()` | PlexAdapter.mjs | ✅ |
+| `loadSingleFromSeason(key, shuffle)` | 661-666 | Select from season | `PlexAdapter.selectKeyToPlay()` | PlexAdapter.mjs | ✅ |
+| `loadSingleFromPlaylist(key, shuffle)` | 668-674 | Select from playlist | `PlexAdapter.selectKeyToPlay()` | PlexAdapter.mjs | ✅ |
+| `loadSingleFromShow(key, shuffle)` | 676-681 | Select from show | `PlexAdapter.selectKeyToPlay()` | PlexAdapter.mjs | ✅ |
+| `selectKeyToPlay(keys, shuffle)` | 682-699 | Select next item | `PlexAdapter.selectKeyToPlay()` | PlexAdapter.mjs | ✅ |
+| `loadPlexViewingHistory()` | 701-721 | Load viewing history | `PlexAdapter._loadViewingHistory()` | PlexAdapter.mjs | ✅ |
+| `selectEpisodeByPriority(...)` | 723-750 | Select by priority rules | `PlexAdapter._selectEpisodeByPriority()` | PlexAdapter.mjs | ✅ |
+| `loadSingleFromWatchlist(watchlist)` | 752-809 | Select from watchlist | `PlexAdapter.loadSingleFromWatchlist()` | PlexAdapter.mjs | ✅ |
+| `loadEpisode(key)` | 811-817 | Load single episode | `PlexAdapter.getItem()` | PlexAdapter.mjs | ✅ |
+| `loadMovie(key)` | 819-825 | Load single movie | `PlexAdapter.getItem()` | PlexAdapter.mjs | ✅ |
+| `loadAudioTrack(key)` | 827-837 | Load single audio track | `PlexAdapter.getItem()` | PlexAdapter.mjs | ✅ |
+| `loadShow(key)` | 839-877 | Load show with seasons | `PlexAdapter.getContainerInfo()` | PlexAdapter.mjs | ✅ |
+| `artUrl(item, id, type)` | 879-882 | Build art URL | Inline in adapters | PlexAdapter.mjs | ✅ |
+| `thumbUrl(paramString)` | 883-892 | Build thumbnail URL | Inline (proxy path) | PlexAdapter.mjs | ✅ |
+| `pruneArray(arr, blacklist)` | 894-899 | Remove keys from object | - | - | ⚠️ Not needed |
+| `pickArray(array, whitelist)` | 901-910 | Pick keys from object | - | - | ⚠️ Not needed |
+| `flattenTags(items, leaf)` | 912-920 | Flatten tag arrays | - | - | ⚠️ Not needed |
+| `loadSinglePlayableItem(metadataId)` | 922-928 | Load playable by type | `PlexAdapter.getItem()` | PlexAdapter.mjs | ✅ |
+| `loadArtistAlbums(metadataId)` | 930-933 | Load albums for artist | `PlexAdapter.getList()` | PlexAdapter.mjs | ✅ |
+| `loadArtist(metadataId)` | 935-941 | Load artist with tracks | `PlexAdapter.getItem()` + `getList()` | PlexAdapter.mjs | ✅ |
+| `loadTrack(track, artistId)` | 943-962 | Transform track metadata | `PlexAdapter._toPlayableItem()` | PlexAdapter.mjs | ✅ |
+| `loadTracks(tracks, artistId)` | 964-971 | Transform multiple tracks | `PlexAdapter._toPlayableItem()` | PlexAdapter.mjs | ✅ |
+
+**Legacy Total:** 47 functions
+**DDD Equivalents:** 42
+**Gaps:** 1 (loadImgFromKey)
+**Not Needed:** 4 (utility functions)
+**Parity:** 42/43 = **98%** (excluding helper utilities)
+
+---
+
+## 8. Strava API Integration
+
+### Legacy: strava.mjs
+
+| Legacy Function | Lines | Purpose | DDD Equivalent | DDD File | Status |
+|-----------------|-------|---------|----------------|----------|--------|
+| `cleanErrorMessage(error)` | 25-49 | Extract clean error from HTML | `StravaHarvester.#cleanErrorMessage()` | StravaHarvester.mjs | ✅ |
+| `isInCooldown()` | 64-75 | Circuit breaker check | `CircuitBreaker.isOpen()` | CircuitBreaker.mjs | ✅ |
+| `recordFailure(error)` | 81-101 | Record failure for circuit | `CircuitBreaker.recordFailure()` | CircuitBreaker.mjs | ✅ |
+| `recordSuccess()` | 106-112 | Reset circuit breaker | `CircuitBreaker.recordSuccess()` | CircuitBreaker.mjs | ✅ |
+| `getAccessToken(logger, username)` | 114-157 | Refresh OAuth token | `StravaHarvester.#refreshAccessToken()` | StravaHarvester.mjs | ✅ |
+| `reauthSequence()` | 159-165 | Generate reauth URL | - | - | ❌ Gap (P2) |
+| `baseAPI(endpoint, logger)` | 167-200 | Make Strava API request | `StravaClient.getActivities()` (injected) | StravaHarvester.mjs | ✅ |
+| `getActivities(logger, daysBack)` | 202-291 | Fetch activities with HR | `StravaHarvester.#fetchActivities()` + `#enrichWithHeartRate()` | StravaHarvester.mjs | ✅ |
+| `harvestActivities(logger, job_id, daysBack)` | 293-449 | Main harvest function | `StravaHarvester.harvest()` | StravaHarvester.mjs | ✅ |
+
+**Legacy Total:** 9 functions
+**DDD Equivalents:** 8
+**Gaps:** 1 (reauthSequence - OAuth reauthorization flow)
+**Parity:** 8/9 = **89%**
+
+---
+
+## 9. Withings API Integration
+
+### Legacy: withings.mjs
+
+| Legacy Function | Lines | Purpose | DDD Equivalent | DDD File | Status |
+|-----------------|-------|---------|----------------|----------|--------|
+| `cleanErrorMessage(error)` | 41-63 | Extract clean error | `WithingsHarvester.#cleanErrorMessage()` | WithingsHarvester.mjs | ✅ |
+| `isInCooldown()` | 69-79 | Circuit breaker check | `CircuitBreaker.isOpen()` | CircuitBreaker.mjs | ✅ |
+| `recordFailure(error)` | 84-102 | Record failure | `CircuitBreaker.recordFailure()` | CircuitBreaker.mjs | ✅ |
+| `recordSuccess()` | 107-113 | Reset circuit | `CircuitBreaker.recordSuccess()` | CircuitBreaker.mjs | ✅ |
+| `resolveSecrets()` | 28-34 | Get API credentials | Inline in `#refreshAccessToken()` | WithingsHarvester.mjs | ✅ |
+| `getAccessToken(username, authData)` | 115-205 | Refresh OAuth token | `WithingsHarvester.#refreshAccessToken()` | WithingsHarvester.mjs | ✅ |
+| `getWeightData(job_id)` | 207-317 | Main harvest function | `WithingsHarvester.harvest()` | WithingsHarvester.mjs | ✅ |
+| `round(value, decimals)` | 322-324 | Round to decimals | `WithingsHarvester.#round()` | WithingsHarvester.mjs | ✅ |
+
+**Legacy Total:** 8 functions
+**DDD Equivalents:** 8
+**Gaps:** 0
+**Parity:** 8/8 = **100%**
+
+---
+
+## 10. Garmin API Integration
+
+### Legacy: garmin.mjs
+
+| Legacy Function | Lines | Purpose | DDD Equivalent | DDD File | Status |
+|-----------------|-------|---------|----------------|----------|--------|
+| `cleanErrorMessage(error)` | 17-41 | Extract clean error | `GarminHarvester.#cleanErrorMessage()` | GarminHarvester.mjs | ✅ |
+| `getGarminClient(targetUsername)` | 63-87 | Get/create client | `GarminHarvester.#garminClientFactory()` (injected) | GarminHarvester.mjs | ✅ |
+| `isInCooldown()` | 106-117 | Circuit breaker check | `CircuitBreaker.isOpen()` | CircuitBreaker.mjs | ✅ |
+| `recordFailure(error)` | 123-143 | Record failure | `CircuitBreaker.recordFailure()` | CircuitBreaker.mjs | ✅ |
+| `recordSuccess()` | 148-154 | Reset circuit | `CircuitBreaker.recordSuccess()` | CircuitBreaker.mjs | ✅ |
+| `login()` | 156-165 | Authenticate with Garmin | `GarminHarvester.#getAuthenticatedClient()` | GarminHarvester.mjs | ✅ |
+| `getActivities(start, limit, ...)` | 170-174 | Fetch activities | `GarminHarvester.harvest()` (via client) | GarminHarvester.mjs | ✅ |
+| `getActivityDetails(activityId)` | 176-180 | Get activity details | - | - | ❌ Gap (P2) |
+| `downloadActivityData(activityId, dir)` | 182-186 | Download activity file | - | - | ❌ Gap (P2) |
+| `uploadActivityFile(filePath)` | 188-192 | Upload activity file | - | - | ❌ Gap (P2) |
+| `uploadActivityImage(activityId, imagePath)` | 194-199 | Upload activity image | - | - | ❌ Gap (P2) |
+| `deleteActivityImage(activityId, imageId)` | 201-205 | Delete activity image | - | - | ❌ Gap (P2) |
+| `getSteps(date)` | 207-211 | Get steps for date | - | - | ❌ Gap (P2) |
+| `getHeartRate(date)` | 214-218 | Get heart rate for date | - | - | ❌ Gap (P2) |
+| `harvestActivities()` | 220-269 | Main harvest function | `GarminHarvester.harvest()` | GarminHarvester.mjs | ✅ |
+| `simplifyActivity(activity)` | 272-302 | Simplify activity object | `GarminHarvester.#simplifyActivity()` | GarminHarvester.mjs | ✅ |
+
+**Legacy Total:** 16 functions
+**DDD Equivalents:** 9
+**Gaps:** 7 (detailed activity operations - P2 priority)
+**Parity:** 9/16 = **56%**
+
+---
+
+## 11. Buxfer API Integration
+
+### Legacy: buxfer.mjs
+
+| Legacy Function | Lines | Purpose | DDD Equivalent | DDD File | Status |
+|-----------------|-------|---------|----------------|----------|--------|
+| `getCredentials()` | 18-42 | Get API credentials | `BuxferAdapter.getCredentials()` (injected) | BuxferAdapter.mjs | ✅ |
+| `getToken()` | 44-63 | Authenticate and get token | `BuxferAdapter.getToken()` | BuxferAdapter.mjs | ✅ |
+| `getTransactions({...})` | 64-98 | Fetch transactions | `BuxferAdapter.getTransactions()` | BuxferAdapter.mjs | ✅ |
+| `deleteTransactions({...})` | 102-121 | Delete matching transactions | - | - | ❌ Gap (P2) |
+| `deleteTransaction(id)` | 123-133 | Delete single transaction | `BuxferAdapter.deleteTransaction()` | BuxferAdapter.mjs | ✅ |
+| `processMortgageTransactions({...})` | 135-143 | Process mortgage transactions | - | - | ❌ Gap (P2) |
+| `getAccountBalances({accounts})` | 146-154 | Get account balances | `BuxferAdapter.getAccountBalances()` | BuxferAdapter.mjs | ✅ |
+| `processTransactions({...})` | 157-208 | Process and categorize | - | - | ❌ Gap (P1) |
+| `updateTransaction(id, desc, tags, memo)` | 210-224 | Update transaction | `BuxferAdapter.updateTransaction()` | BuxferAdapter.mjs | ✅ |
+| `addTransaction({...})` | 226-239 | Add new transaction | `BuxferAdapter.addTransaction()` | BuxferAdapter.mjs | ✅ |
+
+**Legacy Total:** 10 functions
+**DDD Equivalents:** 7
+**Gaps:** 3 (batch operations and AI categorization)
+**Parity:** 7/10 = **70%**
+
+---
+
+## 12. ClickUp API Integration
+
+### Legacy: clickup.mjs
+
+| Legacy Function | Lines | Purpose | DDD Equivalent | DDD File | Status |
+|-----------------|-------|---------|----------------|----------|--------|
+| `getClickUpAuth()` | 20-27 | Get auth credentials | ConfigService integration | ClickUpHarvester.mjs | ✅ |
+| `mergeTasksByDate(existing, newTasks)` | 36-54 | Merge tasks by date | `ClickUpHarvester.#mergeTasksByDate()` | ClickUpHarvester.mjs | ✅ |
+| `getTickets()` | 56-231 | Main harvest function | `ClickUpHarvester.harvest()` | ClickUpHarvester.mjs | ✅ |
+
+**Legacy Total:** 3 exported functions
+**DDD Equivalents:** 3
+**Gaps:** 0
+**Parity:** 3/3 = **100%**
+
+---
+
+## 13. Google Calendar API Integration
+
+### Legacy: gcal.mjs
+
+| Legacy Function | Lines | Purpose | DDD Equivalent | DDD File | Status |
+|-----------------|-------|---------|----------------|----------|--------|
+| `formatEvent(event, calendarName)` | 19-36 | Format calendar event | `GCalHarvester.#formatEvent()` | GCalHarvester.mjs | ✅ |
+| `mergeEventsByDate(existing, newEvents)` | 44-62 | Merge events by date | `GCalHarvester.#mergeEventsByDate()` | GCalHarvester.mjs | ✅ |
+| `listCalendarEvents(logger, job_id, username)` | 64-149 | Main harvest function | `GCalHarvester.harvest()` | GCalHarvester.mjs | ✅ |
+
+**Legacy Total:** 3 exported functions
+**DDD Equivalents:** 3
+**Gaps:** 0
+**Parity:** 3/3 = **100%**
+
+---
+
+## 14. Gmail API Integration
+
+### Legacy: gmail.mjs
+
+| Legacy Function | Lines | Purpose | DDD Equivalent | DDD File | Status |
+|-----------------|-------|---------|----------------|----------|--------|
+| `createGmailClient(username)` | 29-46 | Create OAuth client | `GmailAdapter.getClient()` | GmailAdapter.mjs | ✅ |
+| `listMails(logger, job_id, username)` | 57-114 | Main harvest function | `GmailAdapter.harvestEmails()` | GmailAdapter.mjs | ✅ |
+
+**Legacy Total:** 2 exported functions
+**DDD Equivalents:** 2
+**Gaps:** 0
+**Parity:** 2/2 = **100%**
+
+---
+
+## Third-Party API Adapter Summary
+
+### Parity by Service
+
+| Service | Legacy Functions | DDD Equivalents | Gaps | Parity % | Priority |
+|---------|------------------|-----------------|------|----------|----------|
+| Plex | 47 | 42 | 1 | 98% | P1 |
+| Strava | 9 | 8 | 1 | 89% | P2 |
+| Withings | 8 | 8 | 0 | 100% | - |
+| Garmin | 16 | 9 | 7 | 56% | P2 |
+| Buxfer | 10 | 7 | 3 | 70% | P1/P2 |
+| ClickUp | 3 | 3 | 0 | 100% | - |
+| Google Calendar | 3 | 3 | 0 | 100% | - |
+| Gmail | 2 | 2 | 0 | 100% | - |
+| **TOTAL** | **98** | **82** | **12** | **84%** | - |
+
+### Overall Third-Party API Parity: **84%** (82/98 functions)
+
+---
+
+### Gaps by Priority
+
+**P0 - Critical (Blocks Core Features):** None
+
+**P1 - High (Important Features):**
+| Service | Function | Purpose | Notes |
+|---------|----------|---------|-------|
+| Buxfer | `processTransactions()` | AI categorization of transactions | Requires GPT integration |
+| Plex | `loadImgFromKey()` | Get thumbnail URLs for item | Used for UI display |
+
+**P2 - Medium (Extended Features):**
+| Service | Function | Purpose | Notes |
+|---------|----------|---------|-------|
+| Strava | `reauthSequence()` | Generate OAuth reauth URL | One-time setup flow |
+| Garmin | `getActivityDetails()` | Get single activity details | Detailed view |
+| Garmin | `downloadActivityData()` | Download activity file | Export feature |
+| Garmin | `uploadActivityFile()` | Upload activity file | Import feature |
+| Garmin | `uploadActivityImage()` | Upload activity image | Social feature |
+| Garmin | `deleteActivityImage()` | Delete activity image | Social feature |
+| Garmin | `getSteps()` | Get daily steps | Daily health tracking |
+| Garmin | `getHeartRate()` | Get daily heart rate | Daily health tracking |
+| Buxfer | `deleteTransactions()` | Batch delete transactions | Cleanup operations |
+| Buxfer | `processMortgageTransactions()` | Process mortgage data | Specialized finance |
+
+---
+
+### DDD Architectural Improvements
+
+| Feature | Legacy | DDD |
+|---------|--------|-----|
+| **Circuit Breaker** | Inline per-service | Shared `CircuitBreaker.mjs` class |
+| **OAuth Token Caching** | Inline per-service | Standardized in harvesters |
+| **Error Handling** | Copy-paste `cleanErrorMessage` | Shared pattern in harvesters |
+| **Rate Limiting** | Ad-hoc delays | Configurable `rateLimitDelayMs` |
+| **Testability** | Direct HTTP calls | Injected clients via constructor |
+| **Lifelog Storage** | Direct file ops | `YamlLifelogStore` adapter |
+| **Auth Storage** | Direct file ops | `YamlAuthStore` adapter |
+| **Interface Contracts** | None | `IHarvester` port interface |
+
+---
+
+### DDD-Only Additions
+
+The DDD implementation includes significant new infrastructure not present in legacy:
+
+1. **CircuitBreaker.mjs** - Reusable circuit breaker pattern
+2. **IHarvester.mjs** - Port interface for all harvesters
+3. **YamlLifelogStore.mjs** - Standardized lifelog persistence
+4. **YamlAuthStore.mjs** - Standardized auth persistence
+5. **HarvesterCategory enum** - Service categorization (FITNESS, PRODUCTIVITY, etc.)
+6. **Additional harvesters:** TodoistHarvester, GitHubHarvester, FoursquareHarvester, GoodreadsHarvester, LastfmHarvester, LetterboxdHarvester, RedditHarvester, ShoppingHarvester, ScriptureHarvester, WeatherHarvester
 
 ---
 
