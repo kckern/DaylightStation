@@ -188,4 +188,46 @@ describe('QueueService', () => {
       expect(sorted[2].id).toBe('3'); // low
     });
   });
+
+  describe('skip_after filtering', () => {
+    test('should skip items past their skip_after date', () => {
+      const now = new Date('2026-01-13');
+      const items = [
+        { id: '1', title: 'Current', skip_after: '2026-12-31' },
+        { id: '2', title: 'Expired', skip_after: '2025-01-01' },
+        { id: '3', title: 'No Deadline', skip_after: null }
+      ];
+      const filtered = QueueService.filterBySkipAfter(items, now);
+      expect(filtered.map(i => i.id)).toEqual(['1', '3']);
+    });
+
+    test('should mark items as urgent if skip_after within 8 days', () => {
+      const now = new Date('2026-01-13');
+      const items = [
+        { id: '1', title: 'Urgent', skip_after: '2026-01-20', priority: 'medium' }, // 7 days
+        { id: '2', title: 'Not Urgent', skip_after: '2026-01-25', priority: 'medium' } // 12 days
+      ];
+      const enriched = QueueService.applyUrgency(items, now);
+      expect(enriched[0].priority).toBe('urgent');
+      expect(enriched[1].priority).toBe('medium');
+    });
+
+    test('should not upgrade in_progress to urgent', () => {
+      const now = new Date('2026-01-13');
+      const items = [
+        { id: '1', title: 'In Progress', skip_after: '2026-01-15', priority: 'in_progress' }
+      ];
+      const enriched = QueueService.applyUrgency(items, now);
+      expect(enriched[0].priority).toBe('in_progress'); // stays in_progress
+    });
+
+    test('should handle items without skip_after date', () => {
+      const now = new Date('2026-01-13');
+      const items = [
+        { id: '1', title: 'No Deadline', priority: 'medium' }
+      ];
+      const enriched = QueueService.applyUrgency(items, now);
+      expect(enriched[0].priority).toBe('medium'); // unchanged
+    });
+  });
 });

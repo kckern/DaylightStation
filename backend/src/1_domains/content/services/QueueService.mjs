@@ -14,6 +14,11 @@ const PRIORITY_ORDER = {
 };
 
 /**
+ * Number of days before skip_after to mark as urgent
+ */
+const URGENCY_DAYS = 8;
+
+/**
  * QueueService handles play vs queue logic with watch state awareness.
  *
  * Key distinction:
@@ -56,6 +61,44 @@ export class QueueService {
     });
 
     return indexed.map(({ item }) => item);
+  }
+
+  /**
+   * Filter items that are past their skip_after deadline.
+   * Items without skip_after are always included.
+   *
+   * @param {Array} items - Items with optional skip_after field
+   * @param {Date} [now] - Current date for testing
+   * @returns {Array} Filtered items (new array, original unchanged)
+   */
+  static filterBySkipAfter(items, now = new Date()) {
+    return items.filter(item => {
+      if (!item.skip_after) return true;
+      const deadline = new Date(item.skip_after);
+      return deadline >= now;
+    });
+  }
+
+  /**
+   * Mark items as urgent if skip_after is within URGENCY_DAYS.
+   * Does not upgrade in_progress items (they already have top priority).
+   *
+   * @param {Array} items - Items with optional skip_after and priority fields
+   * @param {Date} [now] - Current date for testing
+   * @returns {Array} Items with updated priority (new array, original unchanged)
+   */
+  static applyUrgency(items, now = new Date()) {
+    const urgencyThreshold = new Date(now);
+    urgencyThreshold.setDate(urgencyThreshold.getDate() + URGENCY_DAYS);
+
+    return items.map(item => {
+      if (!item.skip_after) return item;
+      const deadline = new Date(item.skip_after);
+      if (deadline <= urgencyThreshold && item.priority !== 'in_progress') {
+        return { ...item, priority: 'urgent' };
+      }
+      return item;
+    });
   }
   /**
    * @param {Object} config
