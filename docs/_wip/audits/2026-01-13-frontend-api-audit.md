@@ -7,12 +7,18 @@
 
 ## Executive Summary
 
-The frontend expects **47 unique API endpoints** across 8 categories. Currently:
-- **12 endpoints** are served by DDD routers (mounted)
-- **12 endpoints** have DDD routers but are **NOT MOUNTED** (gap!)
-- **23 endpoints** are legacy-only with no DDD equivalent
+The frontend expects **37 unique API endpoints**. Currently:
+- **15 endpoints** → ✅ DDD path working
+- **22 endpoints** → ❌ DDD path missing (hitting legacy code)
 
-**Critical Issue:** The `/api/fitness/*` endpoints are actively used by frontend but the DDD router exists and is NOT mounted, causing requests to fall through to legacy.
+Additionally, **8 legacy paths** have been deprecated (frontend migrated, backend redirects exist).
+
+**Breakdown of ❌ gaps:**
+- **11 endpoints** need routers mounted (fitness, nutribot, journalist, homeAutomation)
+- **3 endpoints** need routers created (lifelog, static, calendar)
+- **8 endpoints** need to be added to existing mounted routers (play, content, health, admin)
+
+See Section 7 for complete mapping table.
 
 ---
 
@@ -348,47 +354,66 @@ const { registerPayloadCallback } = useWebSocket();
 
 ## 7. Complete Endpoint Mapping Table
 
-| # | Frontend Path | Target DDD Path | Router | Status |
-|---|--------------|-----------------|--------|--------|
-| 1 | `/api/list/plex/*` | `/api/list/plex/*` | list.mjs | ✅ Mounted |
-| 2 | `/api/list/folder/*` | `/api/list/folder/*` | list.mjs | ✅ Mounted |
-| 3 | `/api/content/*` | `/api/content/*` | content.mjs | ✅ Mounted |
-| 4 | `/api/play/*` | `/api/play/*` | play.mjs | ✅ Mounted |
-| 5 | `/api/local-content/*` | `/api/local-content/*` | localContent.mjs | ✅ Mounted |
-| 6 | `/api/health/*` | `/api/health/*` | health.mjs | ✅ Mounted |
-| 7 | `/api/finance/*` | `/api/finance/*` | finance.mjs | ✅ Mounted |
-| 8 | `/api/entropy` | `/api/entropy` | entropy.mjs | ✅ Mounted |
-| 9 | `/api/gratitude/*` | `/api/gratitude/*` | gratitude.mjs | ✅ Mounted |
-| 10 | `/proxy/*` | `/proxy/*` | proxy.mjs | ✅ Mounted |
-| 11 | `/api/fitness/*` | `/api/fitness/*` | fitness.mjs | ❌ Not mounted |
-| 12 | `/api/lifelog` | `/api/lifelog` | lifelog.mjs | ❌ Router missing |
-| 13 | `/api/foodlog` | `/api/nutribot/webhook` | nutribot.mjs | ❌ Not mounted |
-| 14 | `/api/journalist` | `/api/journalist/webhook` | journalist.mjs | ❌ Not mounted |
-| 15 | `/media/log` | `/api/play/log` | play.mjs | ❌ Endpoint missing |
-| 16 | `/media/plex/img/*` | `/api/content/plex/image/*` | content.mjs | ❌ Endpoint missing |
-| 17 | `/media/plex/info/*` | `/api/content/plex/info/*` | content.mjs | ❌ Endpoint missing |
-| 18 | `/media/plex/mpd/*` | `/api/play/plex/mpd/*` | play.mjs | ❌ Endpoint missing |
-| 19 | `/media/img/*` | `/api/static/*` | static.mjs | ❌ Router missing |
-| 20 | `/data/events` | `/api/calendar/events` | calendar.mjs | ❌ Router missing |
-| 21 | `/home/calendar` | `/api/calendar/events` | calendar.mjs | ❌ Router missing |
-| 22 | `/home/entropy` | `/api/entropy` | entropy.mjs | ⚠️ Frontend needs update |
-| 23 | `/data/lifelog/weight` | `/api/health/weight` | health.mjs | ❌ Endpoint missing |
-| 24 | `/data/menu_log` | `/api/content/menu-log` | content.mjs | ❌ Endpoint missing |
-| 25 | `/data/keyboard/*` | `/api/home/keyboard/*` | homeAutomation.mjs | ❌ Not mounted |
-| 26 | `/data/weather` | `/api/home/weather` | homeAutomation.mjs | ❌ Not mounted |
-| 27 | `/harvest/watchlist` | `/api/content/refresh-watchlist` | content.mjs | ❌ Endpoint missing |
-| 28 | `/exe/tv/off` | `/api/home/tv/power` | homeAutomation.mjs | ❌ Not mounted |
-| 29 | `/exe/office_tv/off` | `/api/home/office-tv/power` | homeAutomation.mjs | ❌ Not mounted |
-| 30 | `/exe/ws/restart` | `/api/admin/ws/restart` | admin.mjs | ❌ Endpoint missing |
-| 31 | `/ws` | `/ws` | WebSocketEventBus | ✅ Working |
-| 32 | `/api/ping` | `/api/ping` | server.mjs | ✅ Working |
-| 33 | `/api/status` | `/api/status` | server.mjs | ✅ Working |
+| # | Frontend Path | Legacy Handler | DDD Path | DDD Handler | Notes |
+|---|---------------|----------------|----------|-------------|-------|
+| 1 | `/api/list/plex/*` | — | ✅ same | list.mjs | DDD-native |
+| 2 | `/api/list/folder/*` | — | ✅ same | list.mjs | DDD-native |
+| 3 | `/api/content/*` | — | ✅ same | content.mjs | DDD-native |
+| 4 | `/api/play/*` | — | ✅ same | play.mjs | DDD-native |
+| 5 | `/api/local-content/*` | — | ✅ same | localContent.mjs | DDD-native |
+| 6 | `/api/health/*` | health.mjs | ✅ same | health.mjs | Migrated |
+| 7 | `/api/finance/*` | — | ✅ same | finance.mjs | DDD-native |
+| 8 | `/api/entropy` | — | ✅ same | entropy.mjs | DDD-native |
+| 9 | `/api/gratitude/*` | gratitude.mjs | ✅ same | gratitude.mjs | Migrated |
+| 10 | `/proxy/*` | — | ✅ same | proxy.mjs | DDD-native |
+| 11 | `/api/fitness/*` | fitness.mjs | ❌ not mounted | fitness.mjs | |
+| 12 | `/api/lifelog` | lifelog.mjs | ❌ router missing | lifelog.mjs | |
+| 13 | `/api/foodlog` | api.mjs | ❌ not mounted | nutribot.mjs | |
+| 14 | `/api/journalist` | api.mjs | ❌ not mounted | journalist.mjs | |
+| 15 | `/media/log` | media.mjs | ❌ `/api/play/log` | play.mjs | |
+| 16 | `/media/plex/img/*` | media.mjs | ❌ `/api/content/plex/image/*` | content.mjs | |
+| 17 | `/media/plex/info/*` | media.mjs | ❌ `/api/content/plex/info/*` | content.mjs | |
+| 18 | `/media/plex/mpd/*` | media.mjs | ❌ `/api/play/plex/mpd/*` | play.mjs | |
+| 19 | `/media/img/*` | media.mjs | ❌ `/api/static/*` | static.mjs | |
+| 20 | `/data/events` | fetch.mjs | ❌ `/api/calendar/events` | calendar.mjs | |
+| 21 | `/home/calendar` | home.mjs | ❌ `/api/calendar/events` | calendar.mjs | |
+| 22 | `/home/entropy` | home.mjs | ✅ `/api/entropy` | entropy.mjs | FE needs update |
+| 23 | `/data/lifelog/weight` | fetch.mjs | ❌ `/api/health/weight` | health.mjs | |
+| 24 | `/data/menu_log` | fetch.mjs | ❌ `/api/content/menu-log` | content.mjs | |
+| 25 | `/data/keyboard/*` | fetch.mjs | ❌ `/api/home/keyboard/*` | homeAutomation.mjs | |
+| 26 | `/data/weather` | fetch.mjs | ❌ `/api/home/weather` | homeAutomation.mjs | |
+| 27 | `/harvest/watchlist` | harvest.mjs | ❌ `/api/content/refresh` | content.mjs | |
+| 28 | `/exe/tv/off` | exe.mjs | ❌ `/api/home/tv/power` | homeAutomation.mjs | |
+| 29 | `/exe/office_tv/off` | exe.mjs | ❌ `/api/home/office-tv/power` | homeAutomation.mjs | |
+| 30 | `/exe/ws/restart` | exe.mjs | ❌ `/api/admin/ws/restart` | admin.mjs | |
+| 31 | `/exe/vol/+` | exe.mjs | ❌ `/api/home/volume/up` | homeAutomation.mjs | |
+| 32 | `/exe/vol/-` | exe.mjs | ❌ `/api/home/volume/down` | homeAutomation.mjs | |
+| 33 | `/exe/vol/togglemute` | exe.mjs | ❌ `/api/home/volume/mute` | homeAutomation.mjs | |
+| 34 | `/exe/vol/cycle` | exe.mjs | ❌ `/api/home/volume/cycle` | homeAutomation.mjs | |
+| 35 | `/ws` | websocket.mjs | ✅ same | WebSocketEventBus | Shim delegates |
+| 36 | `/api/ping` | index.js | ✅ same | server.mjs | Both have it |
+| 37 | `/api/status` | index.js | ✅ same | server.mjs | Both have it |
 
-**Summary:** 12 working, 18 need work, 3 frontend-only updates
+### 7.1 Deprecated Legacy Paths (frontend already migrated)
+
+These legacy paths still exist in the backend but frontend has already been updated:
+
+| Legacy Path | Legacy Handler | Migrated To | Status |
+|-------------|----------------|-------------|--------|
+| `/media/plex/list/*` | media.mjs | `/api/list/plex/*` | ✅ FE migrated |
+| `/media/plex/list/*/playable` | media.mjs | `/api/list/plex/*/playable` | ✅ FE migrated |
+| `/data/list/*` | fetch.mjs | `/api/list/folder/*` | ✅ FE migrated |
+| `/data/list/*/playable` | fetch.mjs | `/api/list/folder/*/playable` | ✅ FE migrated |
+| `/data/list/*/recent_on_top` | fetch.mjs | `/api/list/folder/*/recent_on_top` | ✅ FE migrated |
+| `/data/budget` | fetch.mjs | `/api/finance/data` | ✅ Redirect exists |
+| `/data/budget/daytoday` | fetch.mjs | `/api/finance/data/daytoday` | ✅ Redirect exists |
+| `/harvest/budget` | harvest.mjs | `/api/finance/refresh` | ✅ Redirect exists |
+
+**Summary:** 15 ✅ DDD, 22 ❌ Legacy
 
 ---
 
-## 7. Appendix: Full Endpoint Inventory
+## 8. Appendix: Full Endpoint Inventory
 
 ### DDD Routers Available (20)
 ```
