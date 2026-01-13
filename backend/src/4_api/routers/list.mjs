@@ -95,7 +95,13 @@ export function createListRouter(config) {
         // Grandparent (show) fields
         showId, grandparent, showThumbUrl, grandparentThumb,
         // Rating fields for FitnessMenu sorting
-        rating, userRating, year
+        rating, userRating, year,
+        // FolderAdapter watch state fields
+        percent, seconds, priority,
+        // FolderAdapter scheduling fields
+        hold, skip_after, wait_until,
+        // FolderAdapter grouping and legacy fields
+        program, src, media_key, shuffle, continuous, playable, uid
       } = item.metadata;
 
       if (plex !== undefined) base.plex = plex;
@@ -135,6 +141,23 @@ export function createListRouter(config) {
       if (rating !== undefined) base.rating = rating;
       if (userRating !== undefined) base.userRating = userRating;
       if (year !== undefined) base.year = year;
+
+      // FolderAdapter watch state fields
+      if (percent !== undefined) base.percent = percent;
+      if (seconds !== undefined) base.seconds = seconds;
+      if (priority !== undefined) base.priority = priority;
+      // FolderAdapter scheduling fields
+      if (hold !== undefined) base.hold = hold;
+      if (skip_after !== undefined) base.skip_after = skip_after;
+      if (wait_until !== undefined) base.wait_until = wait_until;
+      // FolderAdapter grouping and legacy fields
+      if (program !== undefined) base.program = program;
+      if (src !== undefined) base.src = src;
+      if (media_key !== undefined) base.media_key = media_key;
+      if (shuffle !== undefined) base.shuffle = shuffle;
+      if (continuous !== undefined) base.continuous = continuous;
+      if (playable !== undefined) base.playable = playable;
+      if (uid !== undefined) base.uid = uid;
 
       // Duration from PlayableItem
       if (item.duration !== undefined) base.duration = item.duration;
