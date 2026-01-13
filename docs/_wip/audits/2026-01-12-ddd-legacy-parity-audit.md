@@ -13,7 +13,7 @@
 | DDD Routers | 19 |
 | DDD Endpoints | 87+ |
 | Legacy Mount Points | 8 |
-| Compatibility Redirects | 24 |
+| Compatibility Redirects | 29 |
 | Parity Tests | 10/10 Passing |
 
 ---
@@ -199,7 +199,7 @@
 
 ## Legacy Compatibility Layer
 
-### Redirects (24 total)
+### Redirects (29 total)
 
 | Legacy Path | DDD Path | Method |
 |-------------|----------|--------|
@@ -227,6 +227,11 @@
 | `/cron/cronHourly` | `/api/scheduling/cronHourly` | GET |
 | `/cron/cronDaily` | `/api/scheduling/cronDaily` | GET |
 | `/cron/cronWeekly` | `/api/scheduling/cronWeekly` | GET |
+| `/media/img/entropy/:icon` | `/api/static/entropy/:icon` | GET |
+| `/media/img/art/*` | `/api/static/art/*` | GET |
+| `/media/img/users/:id` | `/api/static/users/:id` | GET |
+| `/media/img/equipment/:id` | `/api/static/equipment/:id` | GET |
+| `/media/img/*` | `/api/static/img/*` | GET |
 
 ### Legacy Mounts (tracked)
 
@@ -261,7 +266,7 @@ Monitor usage at `/admin/legacy` to identify when legacy routes can be removed.
 | Lifelog | ✅ Fully Migrated | Aggregator working |
 | Chatbots | ✅ Fully Migrated | Nutribot/Journalist have DDD routers |
 | Cron/Scheduling | ✅ Fully Migrated | Full DDD rewrite with domain services |
-| Media Images | ❌ Legacy Only | Static router partial replacement |
+| Media Images | ✅ Fully Migrated | Static router with legacy redirects |
 
 ---
 
