@@ -1218,6 +1218,7 @@ export function createHealthServices(config) {
     userDataService,
     userResolver,
     configService,
+    dataRoot,
     logger = console
   } = config;
 
@@ -1235,9 +1236,19 @@ export function createHealthServices(config) {
     logger
   });
 
+  // NutriList store for nutrilist endpoints (optional, requires dataRoot)
+  let nutriListStore = null;
+  if (dataRoot) {
+    nutriListStore = new YamlNutriListStore({
+      dataRoot,
+      logger
+    });
+  }
+
   return {
     healthStore,
-    healthService
+    healthService,
+    nutriListStore
   };
 }
 
@@ -1259,6 +1270,7 @@ export function createHealthApiRouter(config) {
   return createHealthRouter({
     healthService: healthServices.healthService,
     healthStore: healthServices.healthStore,
+    nutriListStore: healthServices.nutriListStore,
     configService,
     logger
   });

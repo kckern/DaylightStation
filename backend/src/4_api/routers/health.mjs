@@ -8,6 +8,7 @@
  */
 
 import express from 'express';
+import { v4 as uuidv4 } from 'uuid';
 
 /**
  * Create Health API router
@@ -16,11 +17,12 @@ import express from 'express';
  * @param {Object} config.healthService - HealthAggregationService instance
  * @param {Object} config.healthStore - YamlHealthStore instance
  * @param {Object} config.configService - ConfigService for user lookup
+ * @param {Object} [config.nutriListStore] - YamlNutriListStore for nutrilist operations
  * @param {Object} [config.logger] - Logger instance
  * @returns {express.Router}
  */
 export function createHealthRouter(config) {
-  const { healthService, healthStore, configService, logger = console } = config;
+  const { healthService, healthStore, configService, nutriListStore, logger = console } = config;
   const router = express.Router();
 
   // JSON parsing middleware
@@ -33,6 +35,22 @@ export function createHealthRouter(config) {
     return configService?.getHeadOfHousehold?.() ||
            configService?.getDefaultUsername?.() ||
            'default';
+  };
+
+  /**
+   * Get default household ID for nutrilist operations
+   */
+  const getDefaultHouseholdId = () => {
+    return configService?.getDefaultHouseholdId?.() ||
+           process.env.household_id ||
+           'default';
+  };
+
+  /**
+   * Get today's date in YYYY-MM-DD format
+   */
+  const getToday = () => {
+    return new Date().toISOString().split('T')[0];
   };
 
   // ==========================================================================
@@ -213,10 +231,197 @@ export function createHealthRouter(config) {
         'GET /fitness - Get fitness tracking data',
         'GET /nutrition - Get nutrition data',
         'GET /coaching - Get health coaching messages',
+        'GET /nutrilist - Get today\'s nutrilist items',
+        'GET /nutrilist/:date - Get nutrilist items for date',
+        'GET /nutrilist/item/:uuid - Get single nutrilist item',
+        'POST /nutrilist - Create nutrilist item',
+        'PUT /nutrilist/:uuid - Update nutrilist item',
+        'DELETE /nutrilist/:uuid - Delete nutrilist item',
         'GET /status - This endpoint'
       ]
     });
   }));
+
+  // ==========================================================================
+  // NutriList Endpoints (Legacy Parity)
+  // ==========================================================================
+
+  if (nutriListStore) {
+    /**
+     * GET /health/nutrilist
+     * Get today's nutrilist items
+     */
+    router.get('/nutrilist', asyncHandler(async (req, res) => {
+      const hid = getDefaultHouseholdId();
+      const today = getToday();
+
+      logger.debug?.('health.nutrilist.today', { hid, date: today });
+
+      const items = await nutriListStore.findByDate(hid, today);
+
+      res.json({
+        message: "Today's nutrilist items retrieved successfully",
+        data: items,
+        date: today,
+        count: items.length
+      });
+    }));
+
+    /**
+     * GET /health/nutrilist/item/:uuid
+     * Get a single nutrilist item by UUID
+     */
+    router.get('/nutrilist/item/:uuid', asyncHandler(async (req, res) => {
+      const { uuid } = req.params;
+      const hid = getDefaultHouseholdId();
+
+      logger.debug?.('health.nutrilist.item', { hid, uuid });
+
+      const item = await nutriListStore.findByUuid(hid, uuid);
+
+      if (!item) {
+        return res.status(404).json({ error: 'Nutrilist item not found' });
+      }
+
+      res.json({
+        message: 'Nutrilist item retrieved successfully',
+        data: item
+      });
+    }));
+
+    /**
+     * GET /health/nutrilist/:date
+     * Get nutrilist items for a specific date
+     */
+    router.get('/nutrilist/:date', asyncHandler(async (req, res) => {
+      const { date } = req.params;
+      const hid = getDefaultHouseholdId();
+
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        return res.status(400).json({ error: 'Invalid date format. Use YYYY-MM-DD' });
+      }
+
+      logger.debug?.('health.nutrilist.byDate', { hid, date });
+
+      const items = await nutriListStore.findByDate(hid, date);
+
+      res.json({
+        message: 'Nutrilist items retrieved successfully',
+        data: items,
+        date,
+        count: items.length
+      });
+    }));
+
+    /**
+     * POST /health/nutrilist
+     * Create a new nutrilist item
+     */
+    router.post('/nutrilist', asyncHandler(async (req, res) => {
+      const hid = getDefaultHouseholdId();
+      const itemData = req.body;
+
+      if (!itemData.item && !itemData.name) {
+        return res.status(400).json({ error: 'Item name is required' });
+      }
+
+      const newItem = {
+        uuid: uuidv4(),
+        userId: hid,
+        item: itemData.item || itemData.name,
+        name: itemData.name || itemData.item,
+        unit: itemData.unit || 'g',
+        amount: itemData.amount || itemData.grams || 0,
+        grams: itemData.grams || itemData.amount || 0,
+        noom_color: itemData.noom_color || itemData.color || 'yellow',
+        color: itemData.color || itemData.noom_color || 'yellow',
+        calories: itemData.calories || 0,
+        fat: itemData.fat || 0,
+        carbs: itemData.carbs || 0,
+        protein: itemData.protein || 0,
+        fiber: itemData.fiber || 0,
+        sugar: itemData.sugar || 0,
+        sodium: itemData.sodium || 0,
+        cholesterol: itemData.cholesterol || 0,
+        date: itemData.date || getToday(),
+        log_uuid: itemData.log_uuid || 'MANUAL'
+      };
+
+      logger.debug?.('health.nutrilist.create', { hid, item: newItem.item });
+
+      await nutriListStore.saveMany([newItem]);
+
+      res.status(201).json({
+        message: 'Nutrilist item created successfully',
+        data: newItem
+      });
+    }));
+
+    /**
+     * PUT /health/nutrilist/:uuid
+     * Update a nutrilist item
+     */
+    router.put('/nutrilist/:uuid', asyncHandler(async (req, res) => {
+      const { uuid } = req.params;
+      const hid = getDefaultHouseholdId();
+      const updateData = req.body;
+
+      // Check if item exists
+      const existingItem = await nutriListStore.findByUuid(hid, uuid);
+      if (!existingItem) {
+        return res.status(404).json({ error: 'Nutrilist item not found' });
+      }
+
+      // Filter allowed fields
+      const allowedFields = [
+        'item', 'name', 'unit', 'amount', 'grams', 'noom_color', 'color',
+        'calories', 'fat', 'carbs', 'protein', 'fiber', 'sugar', 'sodium', 'cholesterol', 'date'
+      ];
+      const filteredUpdate = {};
+      Object.keys(updateData).forEach(key => {
+        if (allowedFields.includes(key)) {
+          filteredUpdate[key] = updateData[key];
+        }
+      });
+
+      logger.debug?.('health.nutrilist.update', { hid, uuid, fields: Object.keys(filteredUpdate) });
+
+      const updatedItem = await nutriListStore.update(hid, uuid, filteredUpdate);
+
+      res.json({
+        message: 'Nutrilist item updated successfully',
+        data: updatedItem
+      });
+    }));
+
+    /**
+     * DELETE /health/nutrilist/:uuid
+     * Delete a nutrilist item
+     */
+    router.delete('/nutrilist/:uuid', asyncHandler(async (req, res) => {
+      const { uuid } = req.params;
+      const hid = getDefaultHouseholdId();
+
+      // Check if item exists
+      const existingItem = await nutriListStore.findByUuid(hid, uuid);
+      if (!existingItem) {
+        return res.status(404).json({ error: 'Nutrilist item not found' });
+      }
+
+      logger.debug?.('health.nutrilist.delete', { hid, uuid });
+
+      const result = await nutriListStore.deleteById(hid, uuid);
+
+      if (result) {
+        res.json({
+          message: 'Nutrilist item deleted successfully',
+          uuid
+        });
+      } else {
+        res.status(500).json({ error: 'Failed to delete nutrilist item' });
+      }
+    }));
+  }
 
   // ==========================================================================
   // Error Handler Middleware
