@@ -73,6 +73,45 @@ DaylightStation/
     └── plans/                   # Implementation plans
 ```
 
+## DDD Architecture (New)
+
+The backend uses Domain-Driven Design with layered architecture:
+
+```
+backend/src/
+├── 0_infrastructure/       # Bootstrap, config, scheduling
+│   ├── bootstrap.mjs       # Dependency injection setup
+│   └── scheduling/         # Cron/job infrastructure
+├── 1_domains/              # Domain layer (entities, services, ports)
+│   ├── content/            # Media content domain
+│   ├── fitness/            # Fitness tracking domain
+│   ├── gratitude/          # Gratitude items domain
+│   ├── health/             # Health metrics domain
+│   ├── lifelog/            # Lifelog extractors (15 extractors)
+│   ├── messaging/          # Conversation state, notifications
+│   ├── nutrition/          # Nutrition tracking domain
+│   └── scheduling/         # Job scheduling domain
+├── 2_adapters/             # External service adapters
+│   ├── content/            # Plex, filesystem adapters
+│   ├── harvester/          # 15+ data harvesters (Withings, Strava, etc.)
+│   ├── messaging/          # Telegram, Gmail adapters
+│   └── scheduling/         # YamlJobStore, YamlStateStore
+├── 3_applications/         # Application layer (use cases)
+│   ├── homebot/            # Gratitude bot (4 use cases)
+│   ├── journalist/         # Lifelog bot
+│   └── nutribot/           # Nutrition bot (31 use cases)
+├── 4_api/                  # API layer (routers)
+│   └── routers/            # Express routers
+└── server.mjs              # Express server with DI wiring
+```
+
+### Key Patterns
+
+- **Ports & Adapters:** Interfaces in `ports/`, implementations in `adapters/`
+- **Dependency Injection:** Via bootstrap.mjs, containers, and server.mjs
+- **Use Cases:** Single-responsibility handlers in `applications/{app}/usecases/`
+- **Event Routing:** EventRouter classes route incoming events to use cases
+
 ## Data Flow Patterns
 
 ### Frontend ↔ Backend Communication

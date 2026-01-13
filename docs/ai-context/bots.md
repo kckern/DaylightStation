@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Chatbot framework for conversational interfaces. Includes journalist (lifelog), nutribot (nutrition), and extensible bot architecture.
+Chatbot framework for conversational interfaces. Includes journalist (lifelog), nutribot (nutrition), homebot (gratitude), and extensible bot architecture.
 
 ## Key Concepts
 
@@ -12,6 +12,9 @@ Chatbot framework for conversational interfaces. Includes journalist (lifelog), 
 | **Adapter** | Protocol translator (HTTP, Canvas, Telegram) |
 | **Message Builder** | Formats bot responses for different platforms |
 | **ConfigProvider** | Manages bot-specific configuration |
+| **Container** | DDD dependency injection container for bots |
+| **Use Case** | Single-responsibility action handler (DDD pattern) |
+| **EventRouter** | Routes incoming events to appropriate use cases |
 
 ## Exports
 
@@ -19,7 +22,8 @@ Chatbot framework for conversational interfaces. Includes journalist (lifelog), 
 |--------|----------|---------|
 | Bot framework | `chatbots/` | All bots |
 | Journalist bot | `chatbots/bots/journalist/` | LifelogApp |
-| Nutribot | `chatbots/bots/nutribot/` | HealthApp |
+| Nutribot | `backend/src/3_applications/nutribot/` | HealthApp (DDD) |
+| Homebot | `backend/src/3_applications/homebot/` | Gratitude tracking (DDD) |
 
 ## Imports
 
@@ -93,9 +97,42 @@ class JournalistBot extends BaseBot {
 - `docs/design/nutrition-goals-source-of-truth.md`
 - `docs/ops/nutribot-data-migration.md`
 
+## DDD Bot Applications (New Architecture)
+
+The following bots use DDD architecture with dependency injection:
+
+### Homebot (Gratitude Tracking)
+
+**Purpose:** Collect and manage gratitude/hopes items via Telegram.
+
+**Location:** `backend/src/3_applications/homebot/`
+
+**Components:**
+- `HomeBotContainer.mjs` - DI container with lazy-loaded use cases
+- `HomeBotEventRouter.mjs` - Routes Telegram events to use cases
+- `usecases/` - Use case implementations:
+  - `ProcessGratitudeInput.mjs` - AI extraction of gratitude items
+  - `AssignItemToUser.mjs` - Assign items to household member
+  - `ToggleCategory.mjs` - Switch between gratitude/hopes
+  - `CancelGratitudeInput.mjs` - Cancel flow
+
+**Ports Used:**
+- `IConversationStateStore` - Message-keyed session state
+- `IMessagingGateway` - Telegram message sending
+- `IAIGateway` - LLM for item extraction
+
+### Nutribot (DDD Version)
+
+**Location:** `backend/src/3_applications/nutribot/`
+
+**Components:**
+- `NutribotContainer.mjs` - DI container
+- 31 use cases for nutrition tracking
+
 ## Common Tasks
 
-- **Add new bot:** Create in `chatbots/bots/`, register adapter
-- **Modify response format:** Update message builder
-- **Add data extractor:** Create in `lib/lifelog-extractors/`
-- **Debug conversation:** Check bot logs, verify context passing
+- **Add new bot:** Create in `backend/src/3_applications/{botname}/`, implement Container and EventRouter
+- **Add use case:** Create in `usecases/`, register in Container lazy getter
+- **Add data extractor:** Create in `backend/src/1_domains/lifelog/extractors/`
+- **Debug conversation:** Check bot logs, verify state store
+- **Modify response format:** Update message builder or use case response handling
