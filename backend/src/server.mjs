@@ -423,6 +423,52 @@ async function main() {
   }));
   logger.info('homeAutomation.mounted', { path: '/api/home' });
 
+  // Messaging domain (provides telegramAdapter for chatbots)
+  const telegramConfig = process.env.telegram || {};
+  const gmailConfig = process.env.gmail || {};
+  const messagingServices = createMessagingServices({
+    userDataService,
+    telegram: {
+      token: telegramConfig.token || ''
+    },
+    gmail: gmailConfig.credentials ? {
+      credentials: gmailConfig.credentials,
+      token: gmailConfig.token
+    } : null,
+    logger: logger.child({ module: 'messaging' })
+  });
+
+  // NutriBot application
+  const nutribotConfig = process.env.nutribot || {};
+  const openaiApiKey = process.env.OPENAI_API_KEY || process.env.openai?.api_key || '';
+
+  // Create AI adapter for nutribot (optional)
+  let nutribotAiGateway = null;
+  if (openaiApiKey) {
+    const { OpenAIAdapter } = await import('./2_adapters/ai/OpenAIAdapter.mjs');
+    nutribotAiGateway = new OpenAIAdapter({ apiKey: openaiApiKey }, { logger: logger.child({ module: 'nutribot-ai' }) });
+  }
+
+  const nutribotServices = createNutribotServices({
+    dataRoot: dataBasePath,
+    telegramAdapter: messagingServices.telegramAdapter,
+    aiGateway: nutribotAiGateway,
+    upcGateway: null,  // TODO: Add UPC gateway when available
+    googleImageGateway: null,  // TODO: Add Google Image gateway when available
+    conversationStateStore: null,  // Uses in-memory by default
+    reportRenderer: null,  // Uses default renderer
+    nutribotConfig,
+    logger: logger.child({ module: 'nutribot' })
+  });
+
+  app.use('/api/nutribot', createNutribotApiRouter({
+    nutribotServices,
+    botId: nutribotConfig.telegram?.botId || telegramConfig.botId || '',
+    gateway: messagingServices.telegramAdapter,
+    logger: logger.child({ module: 'nutribot-api' })
+  }));
+  logger.info('nutribot.mounted', { path: '/api/nutribot', telegramConfigured: !!messagingServices.telegramAdapter });
+
   // Legacy finance endpoint shims
   app.get('/data/budget', (req, res) => res.redirect(307, '/api/finance/data'));
   app.get('/data/budget/daytoday', (req, res) => res.redirect(307, '/api/finance/data/daytoday'));

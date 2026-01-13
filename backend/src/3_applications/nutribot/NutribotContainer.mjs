@@ -309,6 +309,7 @@ export class NutribotContainer {
   getGetReportAsJSON() {
     if (!this.#getReportAsJSON) {
       this.#getReportAsJSON = new GetReportAsJSON({
+        foodLogStore: this.#foodLogStore,
         nutriListStore: this.#nutriListStore,
         config: this.#config,
         logger: this.#logger,
