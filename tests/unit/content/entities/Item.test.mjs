@@ -75,4 +75,45 @@ describe('Item entity', () => {
 
     expect(item.getLocalId()).toBe('simpleId');
   });
+
+  describe('action properties', () => {
+    it('should support play action', () => {
+      const item = new Item({
+        id: 'plex:123',
+        source: 'plex',
+        title: 'Test',
+        actions: { play: { plex: '123' } }
+      });
+      expect(item.actions.play).toEqual({ plex: '123' });
+    });
+
+    it('should support queue action', () => {
+      const item = new Item({
+        id: 'folder:tvapp',
+        source: 'folder',
+        title: 'TV App',
+        actions: { queue: { playlist: 'tvapp' } }
+      });
+      expect(item.actions.queue).toEqual({ playlist: 'tvapp' });
+    });
+
+    it('should support list action', () => {
+      const item = new Item({
+        id: 'plex:456',
+        source: 'plex',
+        title: 'Shows',
+        actions: { list: { plex: '456' } }
+      });
+      expect(item.actions.list).toEqual({ plex: '456' });
+    });
+
+    it('should default to null when no actions provided', () => {
+      const item = new Item({
+        id: 'plex:789',
+        source: 'plex',
+        title: 'No Actions'
+      });
+      expect(item.actions).toBeNull();
+    });
+  });
 });

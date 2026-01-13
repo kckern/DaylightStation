@@ -1,6 +1,13 @@
 // backend/src/domains/content/entities/Item.mjs
 
 /**
+ * @typedef {Object} ItemActions
+ * @property {Object} [play] - Play action parameters
+ * @property {Object} [queue] - Queue action parameters
+ * @property {Object} [list] - List action parameters
+ */
+
+/**
  * @typedef {Object} ItemProps
  * @property {string} id - Compound ID: "source:localId"
  * @property {string} source - Adapter source name
@@ -9,6 +16,7 @@
  * @property {string} [thumbnail] - Proxied thumbnail URL
  * @property {string} [description] - Item description
  * @property {Object} [metadata] - Additional metadata
+ * @property {ItemActions} [actions] - Available actions for this item
  */
 
 /**
@@ -31,6 +39,7 @@ export class Item {
     this.thumbnail = props.thumbnail ?? null;
     this.description = props.description ?? null;
     this.metadata = props.metadata ?? {};
+    this.actions = props.actions ?? null;
   }
 
   /**
