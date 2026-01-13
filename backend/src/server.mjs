@@ -65,6 +65,7 @@ import {
 import { loadRoutingConfig, ShimMetrics } from './0_infrastructure/routing/index.mjs';
 import { allShims } from './4_api/shims/index.mjs';
 import { createShimsRouter } from './4_api/routers/admin/shims.mjs';
+import { createEventBusRouter } from './4_api/routers/admin/eventbus.mjs';
 
 // Legacy tracking
 import { getLegacyTracker } from './4_api/middleware/legacyTracker.mjs';
@@ -245,6 +246,9 @@ async function main() {
     logger
   });
 
+  // EventBus admin router (requires eventBus to be created first)
+  app.use('/admin/ws', createEventBusRouter({ eventBus, logger }));
+
   // Content domain
   const plexConfig = process.env.media?.plex ? {
     host: process.env.media.plex.host,
@@ -262,7 +266,17 @@ async function main() {
   const watchStatePath = process.env.path?.watchState || process.env.WATCH_STATE_PATH || '/data/media_memory';
   const watchStore = createWatchStore({ watchStatePath });
 
-  const contentRouters = createApiRouters({ registry: contentRegistry, watchStore });
+  // Import IO functions for content domain
+  const { loadFile: contentLoadFile, saveFile: contentSaveFile } = await import('../_legacy/lib/io.mjs');
+
+  const contentRouters = createApiRouters({
+    registry: contentRegistry,
+    watchStore,
+    loadFile: contentLoadFile,
+    saveFile: contentSaveFile,
+    cacheBasePath: mediaBasePath ? `${mediaBasePath}/img/cache` : null,
+    logger: logger.child({ module: 'content' })
+  });
 
   // Health domain
   const healthServices = createHealthServices({
@@ -363,11 +377,21 @@ async function main() {
   }));
   logger.info('entropy.mounted', { path: '/api/entropy' });
 
-  // Gratitude domain router
+  // Gratitude domain router - import legacy canvas function for card generation
+  let createPrayerCardCanvas = null;
+  try {
+    const printerModule = await import('../_legacy/routers/printer.mjs');
+    createPrayerCardCanvas = printerModule.createCanvasTypographyDemo;
+  } catch (e) {
+    logger.warn?.('gratitude.canvas.import_failed', { error: e.message });
+  }
+
   app.use('/api/gratitude', createGratitudeApiRouter({
     gratitudeServices,
     configService,
     broadcastToWebsockets: broadcastEvent,
+    createPrayerCardCanvas,
+    // printerAdapter will be added when hardware adapters are wired up
     logger: logger.child({ module: 'gratitude-api' })
   }));
   logger.info('gratitude.mounted', { path: '/api/gratitude' });
