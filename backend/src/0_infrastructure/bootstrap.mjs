@@ -96,6 +96,16 @@ import { EntropyService } from '../1_domains/entropy/services/EntropyService.mjs
 import { YamlEntropyReader } from '../2_adapters/entropy/YamlEntropyReader.mjs';
 import { createEntropyRouter } from '../4_api/routers/entropy.mjs';
 
+// Lifelog domain imports
+import { LifelogAggregator } from '../1_domains/lifelog/services/LifelogAggregator.mjs';
+import { createLifelogRouter } from '../4_api/routers/lifelog.mjs';
+
+// Static assets router
+import { createStaticRouter } from '../4_api/routers/static.mjs';
+
+// Calendar router
+import { createCalendarRouter } from '../4_api/routers/calendar.mjs';
+
 /**
  * Create and configure the content registry
  * @param {Object} config
@@ -1315,4 +1325,82 @@ export function createEntropyApiRouter(config) {
     configService,
     logger
   });
+}
+
+// =============================================================================
+// Lifelog Domain Bootstrap
+// =============================================================================
+
+/**
+ * Create lifelog domain services
+ * @param {Object} config
+ * @param {Function} config.userLoadFile - Function to load user files
+ * @param {Object} [config.logger] - Logger instance
+ * @returns {Object} Lifelog services
+ */
+export function createLifelogServices(config) {
+  const { userLoadFile, logger = console } = config;
+
+  const lifelogAggregator = new LifelogAggregator({
+    userLoadFile,
+    logger
+  });
+
+  return {
+    lifelogAggregator
+  };
+}
+
+/**
+ * Create lifelog API router
+ * @param {Object} config
+ * @param {Object} config.lifelogServices - Services from createLifelogServices
+ * @param {Object} config.configService - ConfigService for user lookup
+ * @param {Object} [config.logger] - Logger instance
+ * @returns {express.Router}
+ */
+export function createLifelogApiRouter(config) {
+  const {
+    lifelogServices,
+    configService,
+    logger = console
+  } = config;
+
+  return createLifelogRouter({
+    lifelogAggregator: lifelogServices.lifelogAggregator,
+    configService,
+    logger
+  });
+}
+
+// =============================================================================
+// Static Assets Bootstrap
+// =============================================================================
+
+/**
+ * Create static assets API router
+ * @param {Object} config
+ * @param {string} config.imgBasePath - Base path for images
+ * @param {string} config.dataBasePath - Base path for data files
+ * @param {Object} [config.logger] - Logger instance
+ * @returns {express.Router}
+ */
+export function createStaticApiRouter(config) {
+  return createStaticRouter(config);
+}
+
+// =============================================================================
+// Calendar Domain Bootstrap
+// =============================================================================
+
+/**
+ * Create calendar API router
+ * @param {Object} config
+ * @param {Object} config.userDataService - UserDataService for reading shared data
+ * @param {Object} config.configService - ConfigService for household lookup
+ * @param {Object} [config.logger] - Logger instance
+ * @returns {express.Router}
+ */
+export function createCalendarApiRouter(config) {
+  return createCalendarRouter(config);
 }
