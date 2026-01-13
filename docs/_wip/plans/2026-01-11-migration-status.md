@@ -1,7 +1,7 @@
 # Backend Migration Status
 
 **Last Updated:** 2026-01-12
-**Test Status:** 1214 tests passing (92 suites)
+**Test Status:** 1175 tests passing (86 unit + assembly suites)
 **Detailed Workplan:** [migration-workplan.md](./2026-01-11-migration-workplan.md)
 
 ---
@@ -43,11 +43,11 @@
 | 4c | Fitness App | ✅ Complete | 100% |
 | 4d | Finance App | ✅ Complete | 100% |
 | **4** | **Applications** | **✅ 4 of 4 done** | **100%** |
-| 5a | Server Entry | ⬜ Not Started | 0% |
+| 5a | Server Entry | ✅ Complete | 100% |
 | 5b | Router Migration (15→5) | 🔄 Content + Fitness + Finance + Messaging + Nutrition + Journaling + AI | 70% |
 | 5c | Webhook Server | ⬜ Not Started | 0% |
 | 5d | Legacy Shims | 🔄 Content + Finance | 50% |
-| **5** | **API Layer** | **🔄 In Progress** | **30%** |
+| **5** | **API Layer** | **🔄 In Progress** | **55%** |
 | 6 | Cleanup | ⬜ Blocked | 0% |
 
 ---
@@ -470,11 +470,35 @@ All harvesters implement `IHarvester` interface with:
 
 ---
 
+### Phase 5a: Server Entry Point ✅
+
+**Server** (`src/server.mjs`)
+- [x] Clean entry point replacing `_legacy/index.js`
+- [x] Configuration loading via ConfigService v2
+- [x] Logging system initialization (console, file, Loggly transports)
+- [x] Express app with CORS, JSON parsing, body-parser
+- [x] EventBus/WebSocket initialization
+- [x] Content domain bootstrap (registry, watch store, routers)
+- [x] Health domain bootstrap (services, router)
+- [x] Finance domain bootstrap (services, router)
+- [x] Entropy domain bootstrap (services, router)
+- [x] Gratitude domain bootstrap (services, router)
+- [x] Legacy router integration (fetch, harvest, home, media, cron, plexProxy, exe, api)
+- [x] Routing toggle system with shim metrics
+- [x] Frontend static file serving with SPA fallback
+
+**Key Pattern:**
+- Uses bootstrap.mjs factory functions for DI
+- Mounts new DDD routers alongside legacy routers
+- Gradual migration via routing toggle system
+
+---
+
 ## Next Priority: API Layer (Phase 5)
 
-All applications complete. Focus now on:
+Server entry point complete. Focus now on:
 
-1. **Server Entry Point (5a)** - Create `src/server.mjs` to replace `_legacy/index.js`
+1. ~~**Server Entry Point (5a)** - Create `src/server.mjs` to replace `_legacy/index.js`~~ ✅
 2. **Router Migration (5b)** - Remaining routers (health, lifelog, home, cron, harvest)
 3. **Webhook Server (5c)** - Separate webhook app on port 3119
 4. **Legacy Shims (5d)** - Add shims for remaining legacy endpoints

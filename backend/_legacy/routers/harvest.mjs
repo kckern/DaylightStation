@@ -67,7 +67,7 @@ import {
 import { saveFile } from '../lib/io.mjs';
 import garminLib from 'garmin-connect';
 const { GarminConnect } = garminLib;
-import axios from './http.mjs';
+import axios from '../lib/http.mjs';
 import { TodoistApi } from '@doist/todoist-api-typescript';
 import Parser from 'rss-parser';
 
