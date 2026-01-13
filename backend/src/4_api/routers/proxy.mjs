@@ -34,6 +34,14 @@ export function createProxyRouter(config) {
       const stat = fs.statSync(fullPath);
       const mimeType = item.metadata.mimeType || 'application/octet-stream';
 
+      // Common headers for caching and security
+      const commonHeaders = {
+        'Cache-Control': 'public, max-age=31536000',
+        'X-Content-Type-Options': 'nosniff',
+        'X-Frame-Options': 'DENY',
+        'Access-Control-Allow-Origin': '*'
+      };
+
       // Handle range requests for video seeking
       const range = req.headers.range;
       if (range) {
@@ -43,6 +51,7 @@ export function createProxyRouter(config) {
         const chunkSize = end - start + 1;
 
         res.writeHead(206, {
+          ...commonHeaders,
           'Content-Range': `bytes ${start}-${end}/${stat.size}`,
           'Accept-Ranges': 'bytes',
           'Content-Length': chunkSize,
@@ -52,6 +61,7 @@ export function createProxyRouter(config) {
         fs.createReadStream(fullPath, { start, end }).pipe(res);
       } else {
         res.writeHead(200, {
+          ...commonHeaders,
           'Content-Length': stat.size,
           'Content-Type': mimeType
         });
@@ -132,6 +142,14 @@ export function createProxyRouter(config) {
       const ext = nodePath.extname(fullPath).toLowerCase();
       const mimeType = ext === '.mp3' ? 'audio/mpeg' : 'audio/mp4';
 
+      // Common headers for caching and security
+      const commonHeaders = {
+        'Cache-Control': 'public, max-age=31536000',
+        'X-Content-Type-Options': 'nosniff',
+        'X-Frame-Options': 'DENY',
+        'Access-Control-Allow-Origin': '*'
+      };
+
       // Handle range requests for audio seeking
       const range = req.headers.range;
       if (range) {
@@ -141,6 +159,7 @@ export function createProxyRouter(config) {
         const chunkSize = end - start + 1;
 
         res.writeHead(206, {
+          ...commonHeaders,
           'Content-Range': `bytes ${start}-${end}/${stat.size}`,
           'Accept-Ranges': 'bytes',
           'Content-Length': chunkSize,
@@ -150,6 +169,7 @@ export function createProxyRouter(config) {
         fs.createReadStream(fullPath, { start, end }).pipe(res);
       } else {
         res.writeHead(200, {
+          ...commonHeaders,
           'Content-Length': stat.size,
           'Content-Type': mimeType
         });

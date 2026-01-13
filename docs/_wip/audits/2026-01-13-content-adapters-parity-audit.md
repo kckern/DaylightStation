@@ -13,7 +13,7 @@
 | **PlexAdapter** | ~85% | (Fixed in previous commit) | Done |
 | **FolderAdapter** | ~90% | (Fixed: watch state, metadata, priority) | Done |
 | **LocalContentAdapter** | ~95% | (Fixed: scripture version, talk type/mediaType) | Done |
-| **FilesystemAdapter** | ~50% | Watch state, HTTP headers, images, errors | Needs Work |
+| **FilesystemAdapter** | ~85% | (Fixed: watch state, HTTP headers) Images, errors remain | Mostly Done |
 | **Content Domain** | ~85% | (FolderAdapter fixed, scheduling metadata added) | Mostly Done |
 | **Apps Adapter** | 0% | Not implemented (no legacy either) | Greenfield |
 | **Games Adapter** | 0% | Not implemented (no legacy either) | Greenfield |
@@ -149,23 +149,33 @@ All P1 issues have been resolved:
 
 ### Critical Gaps
 
-#### P0-1: No Watch State Integration
+#### P0-1: No Watch State Integration - RESOLVED
 **Severity:** CRITICAL
+**Status:** Fixed - Added `_loadWatchState()` and `_getWatchState()` methods
 
-- `duration` never populated (would need metadata parsing)
-- `resumePosition` never populated (requires watch state integration)
-- Watch history fields (`playCount`, `lastPlayed`, `playhead`, `watchTime`) missing
+- `duration` now populated from watch state (mediaDuration)
+- `resumePosition` now populated from watch state (playhead/seconds)
+- Watch history fields (percent, playhead, watchTime) included in metadata
+- `historyPath` config added to constructor and bootstrap.mjs
 
-#### P0-2: Missing HTTP Headers
+```javascript
+// Now includes watch state in getItem()
+const watchState = this._getWatchState(localId);
+const resumePosition = watchState?.playhead || watchState?.seconds || null;
+const duration = watchState?.mediaDuration || null;
+```
+
+#### P0-2: Missing HTTP Headers - RESOLVED
 **Severity:** HIGH
+**Status:** Fixed - Added headers to proxy router
 
-Legacy provides comprehensive HTTP headers for caching and security:
+Now provides comprehensive HTTP headers for caching and security:
 - `Cache-Control: public, max-age=31536000`
 - `X-Content-Type-Options: nosniff`
 - `X-Frame-Options: DENY`
 - `Access-Control-Allow-Origin: *`
 
-DDD proxy provides minimal headers only.
+Headers added to both filesystem and local-content streaming endpoints.
 
 #### P1-3: No Error Fallback
 **Severity:** MEDIUM
@@ -186,9 +196,9 @@ Legacy serves `sfx/error.mp3` for missing files. DDD returns 404 JSON.
 |---------|--------|-----|--------|
 | File Streaming | Yes | Yes (via proxy) | OK |
 | Range Requests | Yes | Yes (via proxy) | OK |
-| Watch History | Yes | No | MISSING |
-| Resume Position | Yes | No | MISSING |
-| HTTP Headers | Full | Minimal | INCOMPLETE |
+| Watch History | Yes | Yes | OK (FIXED) |
+| Resume Position | Yes | Yes | OK (FIXED) |
+| HTTP Headers | Full | Full | OK (FIXED) |
 | Image Service | Yes | No | MISSING |
 | Error Fallback | Yes | No | MISSING |
 | Path Security | No | Yes | DDD BETTER |
@@ -274,22 +284,22 @@ These are greenfield implementations when needed.
 
 ### P0 - Critical (Blocks Core Functionality)
 
-| ID | Component | Issue | Effort |
-|----|-----------|-------|--------|
-| P0-1 | FolderAdapter | No watch state integration | Medium |
-| P0-2 | FolderAdapter | Missing resolvePlayables() | Small |
-| P0-3 | FilesystemAdapter | No watch state integration | Medium |
-| P0-4 | QueueService | Missing priority/deadline logic | Medium |
+| ID | Component | Issue | Effort | Status |
+|----|-----------|-------|--------|--------|
+| P0-1 | FolderAdapter | No watch state integration | Medium | DONE |
+| P0-2 | FolderAdapter | Missing resolvePlayables() | Small | DONE |
+| P0-3 | FilesystemAdapter | No watch state integration | Medium | DONE |
+| P0-4 | QueueService | Missing priority/deadline logic | Medium | DONE (in FolderAdapter) |
 
 ### P1 - High Priority (Feature Gaps)
 
-| ID | Component | Issue | Effort |
-|----|-----------|-------|--------|
-| P1-1 | LocalContentAdapter | Scripture missing version | Small |
-| P1-2 | LocalContentAdapter | Talk type/mediaType wrong | Small |
-| P1-3 | FolderAdapter | Metadata not flattened | Small |
-| P1-4 | FilesystemAdapter | Missing HTTP headers | Small |
-| P1-5 | Item entity | Missing scheduling fields | Medium |
+| ID | Component | Issue | Effort | Status |
+|----|-----------|-------|--------|--------|
+| P1-1 | LocalContentAdapter | Scripture missing version | Small | DONE |
+| P1-2 | LocalContentAdapter | Talk type/mediaType wrong | Small | DONE |
+| P1-3 | FolderAdapter | Metadata not flattened | Small | DONE |
+| P1-4 | FilesystemAdapter | Missing HTTP headers | Small | DONE |
+| P1-5 | Item entity | Missing scheduling fields | Medium | DONE (in FolderAdapter metadata) |
 
 ### P2 - Medium Priority (Quality)
 
