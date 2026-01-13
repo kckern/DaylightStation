@@ -2,7 +2,7 @@
 import { jest } from '@jest/globals';
 import express from 'express';
 import request from 'supertest';
-import { createListRouter } from '../../../../backend/src/4_api/routers/list.mjs';
+import { createListRouter, toListItem } from '../../../../backend/src/4_api/routers/list.mjs';
 
 describe('List API Router', () => {
   let app;
@@ -117,6 +117,122 @@ describe('List API Router', () => {
 
       expect(res.status).toBe(200);
       expect(res.body.image).toBe('/proxy/plex/thumb/12345');
+    });
+  });
+
+  describe('toListItem field flattening', () => {
+    it('should include action properties at top level', () => {
+      const item = {
+        id: 'plex:123',
+        title: 'Test',
+        actions: { play: { plex: '123' }, queue: { playlist: 'plex:123' } }
+      };
+      const result = toListItem(item);
+      expect(result.play).toEqual({ plex: '123' });
+      expect(result.queue).toEqual({ playlist: 'plex:123' });
+    });
+
+    it('should prefer item.actions over computed defaults', () => {
+      const item = {
+        id: 'plex:123',
+        title: 'Test',
+        mediaUrl: '/media/test.mp4', // would normally create { media: 'plex:123' }
+        itemType: 'container', // would normally create { playlist: 'plex:123' }
+        actions: { play: { custom: 'action' }, queue: { custom: 'queue' } }
+      };
+      const result = toListItem(item);
+      expect(result.play).toEqual({ custom: 'action' });
+      expect(result.queue).toEqual({ custom: 'queue' });
+    });
+
+    it('should include label property from top-level item', () => {
+      const item = {
+        id: 'test:1',
+        title: 'Full Title',
+        label: 'Short'
+      };
+      const result = toListItem(item);
+      expect(result.label).toBe('Short');
+    });
+
+    it('should prefer top-level label over metadata.label', () => {
+      const item = {
+        id: 'test:1',
+        title: 'Full Title',
+        label: 'Top Level',
+        metadata: { label: 'Metadata Level' }
+      };
+      const result = toListItem(item);
+      expect(result.label).toBe('Top Level');
+    });
+
+    it('should include media_key and plex properties from top-level item', () => {
+      const item = {
+        id: 'plex:123',
+        title: 'Test',
+        plex: '123',
+        media_key: 'plex:123'
+      };
+      const result = toListItem(item);
+      expect(result.plex).toBe('123');
+      expect(result.media_key).toBe('plex:123');
+    });
+
+    it('should prefer top-level plex over metadata.plex', () => {
+      const item = {
+        id: 'plex:123',
+        title: 'Test',
+        plex: 'top-level-plex',
+        metadata: { plex: 'metadata-plex' }
+      };
+      const result = toListItem(item);
+      expect(result.plex).toBe('top-level-plex');
+    });
+
+    it('should include watch state fields from PlayableItem', () => {
+      const item = {
+        id: 'plex:123',
+        title: 'Test',
+        watchProgress: 45,
+        watchSeconds: 1350,
+        lastPlayed: '2025-01-10T14:30:00Z',
+        playCount: 3
+      };
+      const result = toListItem(item);
+      expect(result.watchProgress).toBe(45);
+      expect(result.watchSeconds).toBe(1350);
+      expect(result.lastPlayed).toBe('2025-01-10T14:30:00Z');
+      expect(result.playCount).toBe(3);
+    });
+
+    it('should include behavior flags from Item', () => {
+      const item = {
+        id: 'folder:playlist',
+        title: 'Test Playlist',
+        shuffle: true,
+        continuous: true,
+        resume: false,
+        active: true
+      };
+      const result = toListItem(item);
+      expect(result.shuffle).toBe(true);
+      expect(result.continuous).toBe(true);
+      expect(result.resume).toBe(false);
+      expect(result.active).toBe(true);
+    });
+
+    it('should include list and open actions', () => {
+      const item = {
+        id: 'plex:show123',
+        title: 'TV Show',
+        actions: {
+          list: { path: '/api/list/plex/show123' },
+          open: { url: '/tv/plex/show123' }
+        }
+      };
+      const result = toListItem(item);
+      expect(result.list).toEqual({ path: '/api/list/plex/show123' });
+      expect(result.open).toEqual({ url: '/tv/plex/show123' });
     });
   });
 });
