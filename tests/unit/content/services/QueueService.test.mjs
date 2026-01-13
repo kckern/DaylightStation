@@ -354,4 +354,48 @@ describe('QueueService', () => {
       expect(filtered.length).toBe(1);
     });
   });
+
+  describe('filter pipeline', () => {
+    it('should apply all filters in order', () => {
+      const items = [
+        { id: '1', title: 'Good', percent: 0, hold: false },
+        { id: '2', title: 'On Hold', percent: 0, hold: true },
+        { id: '3', title: 'Watched', percent: 95, hold: false },
+        { id: '4', title: 'Expired', percent: 0, hold: false, skip_after: '2020-01-01' },
+        { id: '5', title: 'In Progress', percent: 50, hold: false }
+      ];
+      const filtered = QueueService.applyFilters(items);
+      expect(filtered.map(i => i.id)).toEqual(['1', '5']);
+    });
+
+    it('should support fallback cascade when empty', () => {
+      const items = [
+        { id: '1', title: 'Watched', percent: 95, hold: false }
+      ];
+      // First pass returns empty because item is watched, fallback ignores watched status
+      const filtered = QueueService.applyFilters(items, { allowFallback: true });
+      expect(filtered.map(i => i.id)).toEqual(['1']);
+    });
+
+    it('should apply urgency before sorting', () => {
+      const now = new Date('2026-01-13');
+      const items = [
+        { id: '1', title: 'Normal', percent: 0, priority: 'medium' },
+        { id: '2', title: 'Deadline Soon', percent: 0, priority: 'medium', skip_after: '2026-01-18' }
+      ];
+      const result = QueueService.buildQueue(items, { now });
+      expect(result[0].id).toBe('2'); // Urgent first
+      expect(result[0].priority).toBe('urgent');
+    });
+
+    it('should return prioritized and filtered queue', () => {
+      const items = [
+        { id: '1', title: 'Low Priority', percent: 0, priority: 'low' },
+        { id: '2', title: 'In Progress', percent: 50, priority: 'in_progress' },
+        { id: '3', title: 'High Priority', percent: 0, priority: 'high' }
+      ];
+      const result = QueueService.buildQueue(items);
+      expect(result.map(i => i.id)).toEqual(['2', '3', '1']);
+    });
+  });
 });

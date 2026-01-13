@@ -199,6 +199,75 @@ export class QueueService {
   }
 
   /**
+   * Apply all filters to items
+   * @param {Array} items
+   * @param {Object} options
+   * @param {boolean} [options.ignoreSkips=false]
+   * @param {boolean} [options.ignoreWatchStatus=false]
+   * @param {boolean} [options.ignoreWait=false]
+   * @param {boolean} [options.allowFallback=false]
+   * @param {Date} [options.now]
+   * @returns {Array}
+   */
+  static applyFilters(items, options = {}) {
+    const { ignoreSkips, ignoreWatchStatus, ignoreWait, allowFallback, now } = options;
+
+    let result = [...items];
+
+    // Apply filters based on ignore flags
+    if (!ignoreSkips) {
+      result = this.filterByHold(result);
+      result = this.filterBySkipAfter(result, now);
+    }
+
+    if (!ignoreWatchStatus) {
+      result = this.filterByWatched(result);
+    }
+
+    if (!ignoreWait) {
+      result = this.filterByWaitUntil(result, now);
+    }
+
+    result = this.filterByDayOfWeek(result, now);
+
+    // Fallback cascade if empty
+    if (result.length === 0 && allowFallback) {
+      if (!ignoreSkips) {
+        return this.applyFilters(items, { ...options, ignoreSkips: true });
+      }
+      if (!ignoreWatchStatus) {
+        return this.applyFilters(items, { ...options, ignoreSkips: true, ignoreWatchStatus: true });
+      }
+      if (!ignoreWait) {
+        return this.applyFilters(items, { ...options, ignoreSkips: true, ignoreWatchStatus: true, ignoreWait: true });
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Build a prioritized, filtered queue from items
+   * @param {Array} items
+   * @param {Object} options
+   * @returns {Array}
+   */
+  static buildQueue(items, options = {}) {
+    const { now } = options;
+
+    // Apply urgency based on deadlines
+    let result = this.applyUrgency(items, now);
+
+    // Apply filters with fallback
+    result = this.applyFilters(result, { ...options, allowFallback: true });
+
+    // Sort by priority
+    result = this.sortByPriority(result);
+
+    return result;
+  }
+
+  /**
    * @param {Object} config
    * @param {import('../ports/IWatchStateStore.mjs').IWatchStateStore} config.watchStore
    */
