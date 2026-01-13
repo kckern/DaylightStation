@@ -8,6 +8,8 @@ export class PlexClient {
    * @param {Object} config
    * @param {string} config.host - Plex server URL (e.g., http://10.0.0.10:32400)
    * @param {string} [config.token] - Plex auth token
+   * @param {string} [config.protocol] - Streaming protocol (default: 'dash')
+   * @param {string} [config.platform] - Client platform (default: 'Chrome')
    */
   constructor(config) {
     if (!config.host) {
@@ -15,19 +17,29 @@ export class PlexClient {
     }
     this.host = config.host.replace(/\/$/, '');
     this.token = config.token || '';
+    this.protocol = config.protocol || 'dash';
+    this.platform = config.platform || 'Chrome';
   }
 
   /**
    * Make authenticated request to Plex API
    * @param {string} path - API endpoint path
+   * @param {Object} [options] - Request options
+   * @param {boolean} [options.includeToken] - Whether to append token as query param (default: false, uses header)
    * @returns {Promise<Object>} JSON response
    */
-  async request(path) {
-    const url = `${this.host}${path}`;
+  async request(path, options = {}) {
+    let url = `${this.host}${path}`;
     const headers = {
       'Accept': 'application/json',
       'X-Plex-Token': this.token
     };
+
+    // Some endpoints need token as query param instead of header
+    if (options.includeToken) {
+      const separator = url.includes('?') ? '&' : '?';
+      url = `${url}${separator}X-Plex-Token=${this.token}`;
+    }
 
     const response = await fetch(url, { headers });
     if (!response.ok) {
@@ -35,6 +47,16 @@ export class PlexClient {
     }
 
     return response.json();
+  }
+
+  /**
+   * Make a raw request and return the full URL (for redirect/proxy scenarios)
+   * @param {string} path - API endpoint path
+   * @returns {string} Full URL with token
+   */
+  buildUrl(path) {
+    const separator = path.includes('?') ? '&' : '?';
+    return `${this.host}${path}${separator}X-Plex-Token=${this.token}`;
   }
 
   /**

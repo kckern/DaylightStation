@@ -131,7 +131,8 @@ export function createContentRegistry(config) {
   if (config.plex?.host) {
     registry.register(new PlexAdapter({
       host: config.plex.host,
-      token: config.plex.token
+      token: config.plex.token,
+      historyPath: config.mediaMemoryPath ? `${config.mediaMemoryPath}/plex` : null
     }));
   }
 
