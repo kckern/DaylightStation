@@ -13,6 +13,7 @@
 | Content | 66 | 54 | 12 | 82% |
 | Fitness | 41 | 32 | 9 | 78% |
 | Health | 52 | 44 | 8 | 85% |
+| Finance | 35 | 22 | 13 | 63% |
 | Config | TBD | TBD | TBD | TBD |
 | Playback | TBD | TBD | TBD | TBD |
 | Scheduling | TBD | TBD | TBD | TBD |
@@ -1018,10 +1019,449 @@ None - all core functionality is present. The missing functions are advanced Gar
 
 ---
 
+## 4. Finance Domain
+
+### Legacy Files
+
+| File | Path | Purpose |
+|------|------|---------|
+| buxfer.mjs | `backend/_legacy/lib/buxfer.mjs` | Buxfer API integration for transactions |
+| budget.mjs | `backend/_legacy/lib/budget.mjs` | Budget compilation and mortgage processing |
+| shopping.mjs | `backend/_legacy/lib/shopping.mjs` | Gmail receipt harvesting with AI extraction |
+| build_budget.mjs | `backend/_legacy/lib/budgetlib/build_budget.mjs` | Budget building with surplus allocation |
+| monthly_budget.mjs | `backend/_legacy/lib/budgetlib/monthly_budget.mjs` | Monthly budget calculations |
+| transactions.mjs | `backend/_legacy/lib/budgetlib/transactions.mjs` | Transaction bucket classification |
+
+### DDD Files
+
+| File | Path | Purpose |
+|------|------|---------|
+| Account.mjs | `backend/src/1_domains/finance/entities/Account.mjs` | Account entity |
+| Budget.mjs | `backend/src/1_domains/finance/entities/Budget.mjs` | Budget entity |
+| Mortgage.mjs | `backend/src/1_domains/finance/entities/Mortgage.mjs` | Mortgage entity |
+| Transaction.mjs | `backend/src/1_domains/finance/entities/Transaction.mjs` | Transaction entity |
+| BudgetService.mjs | `backend/src/1_domains/finance/services/BudgetService.mjs` | Budget CRUD operations |
+| MortgageService.mjs | `backend/src/1_domains/finance/services/MortgageService.mjs` | Mortgage management |
+| MortgageCalculator.mjs | `backend/src/1_domains/finance/services/MortgageCalculator.mjs` | Mortgage projection calculations |
+| TransactionClassifier.mjs | `backend/src/1_domains/finance/services/TransactionClassifier.mjs` | Transaction bucket classification |
+| ITransactionSource.mjs | `backend/src/1_domains/finance/ports/ITransactionSource.mjs` | Transaction source interface |
+| BuxferAdapter.mjs | `backend/src/2_adapters/finance/BuxferAdapter.mjs` | Buxfer API adapter |
+| BudgetCompilationService.mjs | `backend/src/3_applications/finance/BudgetCompilationService.mjs` | Budget compilation orchestrator |
+| FinanceHarvestService.mjs | `backend/src/3_applications/finance/FinanceHarvestService.mjs` | Finance data harvest orchestrator |
+| TransactionCategorizationService.mjs | `backend/src/3_applications/finance/TransactionCategorizationService.mjs` | AI transaction categorization |
+| finance.mjs | `backend/src/4_api/routers/finance.mjs` | Finance API router |
+
+---
+
+### Legacy Functions: buxfer.mjs
+
+| Function | Lines | Purpose | DDD Equivalent |
+|----------|-------|---------|----------------|
+| `getCredentials()` | 18-42 | Load Buxfer credentials from config/secrets | `BuxferAdapter.getCredentials()` (via constructor) |
+| `getToken()` | 44-63 | Authenticate and get API token | `BuxferAdapter.getToken()` |
+| `getTransactions(options)` | 64-98 | Fetch transactions with pagination | `BuxferAdapter.getTransactions()` |
+| `deleteTransactions(options)` | 102-121 | Batch delete transactions by match string | **GAP** |
+| `deleteTransaction(id)` | 123-133 | Delete single transaction | `BuxferAdapter.deleteTransaction()` |
+| `processMortgageTransactions(options)` | 135-143 | Fetch mortgage transactions | `FinanceHarvestService.#fetchMortgageTransactions()` |
+| `getAccountBalances(options)` | 146-154 | Get account balances | `BuxferAdapter.getAccountBalances()` |
+| `processTransactions(options)` | 157-208 | Fetch and auto-categorize transactions | `FinanceHarvestService.harvest()` + `TransactionCategorizationService` |
+| `updateTransaction(id, description, tags, memo)` | 210-224 | Update transaction details | `BuxferAdapter.updateTransaction()` |
+| `addTransaction(options)` | 226-239 | Add new transaction | `BuxferAdapter.addTransaction()` |
+
+**Total Legacy buxfer.mjs:** 10 functions
+
+---
+
+### Legacy Functions: budget.mjs
+
+| Function | Lines | Purpose | DDD Equivalent |
+|----------|-------|---------|----------------|
+| `payrollSyncJob(key, req)` | 25 | Payroll sync cron job | **GAP** (separate job) |
+| `processMortgagePaymentPlans(plans, balance, rate, minPmt, capital)` | 27-122 | Calculate payment plan projections | `MortgageCalculator.calculatePaymentPlans()` |
+| `processMortgage(mortgage, accountBalances, transactions)` | 124-189 | Full mortgage status calculation | `MortgageCalculator.calculateMortgageStatus()` |
+| `compileBudget()` | 191-222 | Main budget compilation function | `BudgetCompilationService.compile()` |
+| `refreshFinancialData(noDL)` | 224-258 | Full data refresh + compile | `FinanceHarvestService.harvest()` |
+
+**Total Legacy budget.mjs:** 5 functions
+
+---
+
+### Legacy Functions: budgetlib/build_budget.mjs
+
+| Function | Lines | Purpose | DDD Equivalent |
+|----------|-------|---------|----------------|
+| `buildBudget(config, transactions)` | 6-133 | Build complete budget with allocations | `BudgetCompilationService.#compileBudgetPeriod()` |
+
+**Total Legacy build_budget.mjs:** 1 function
+
+---
+
+### Legacy Functions: budgetlib/monthly_budget.mjs
+
+| Function | Lines | Purpose | DDD Equivalent |
+|----------|-------|---------|----------------|
+| `getMonthlyBudget(config, transactions)` | 6-41 | Calculate monthly budget breakdown | `BudgetCompilationService.#getMonthlyBudget()` |
+| `futureMonthlyBudget(options)` | 43-148 | Calculate future month projections | `BudgetCompilationService.#futureMonthlyBudget()` |
+| `currentMonthlyBudget(options)` | 149-253 | Calculate current month (hybrid actual + anticipated) | `BudgetCompilationService.#currentMonthlyBudget()` |
+| `pastMonthlyBudget(options)` | 256-324 | Calculate past month (actual data) | `BudgetCompilationService.#pastMonthlyBudget()` |
+| `dayToDayBudgetReducer(acc, month, monthlyBudget, config)` | 327-437 | Build day-to-day budget with daily balances | `BudgetCompilationService.#buildDayToDayBudget()` |
+| `transferTransactionsReducer(acc, month, monthlyBudget)` | 439-448 | Build transfer transaction summary | `BudgetCompilationService.#buildTransferSummary()` |
+| `shortTermBudgetReducer(acc, month, monthlyBudget, config)` | 449-481 | Build short-term bucket allocations | `BudgetCompilationService.#buildShortTermBuckets()` |
+
+**Total Legacy monthly_budget.mjs:** 7 functions
+
+---
+
+### Legacy Functions: budgetlib/transactions.mjs
+
+| Function | Lines | Purpose | DDD Equivalent |
+|----------|-------|---------|----------------|
+| `findBucket(buckets, transaction)` | 1-51 | Classify transaction into budget bucket | `TransactionClassifier.classify()` |
+
+**Total Legacy transactions.mjs:** 1 function
+
+---
+
+### Legacy Functions: shopping.mjs
+
+| Function | Lines | Purpose | DDD Equivalent |
+|----------|-------|---------|----------------|
+| `loadShoppingConfig(username)` | 137-152 | Load shopping config for household | **GAP** |
+| `buildReceiptQuery(options)` | 163-193 | Build Gmail search query | **GAP** |
+| `extractHeader(message, headerName)` | 201-205 | Extract header from Gmail message | **GAP** |
+| `extractBody(message)` | 212-258 | Extract email body as text | **GAP** |
+| `parseEmailContent(message)` | 265-275 | Parse email for processing | **GAP** |
+| `identifyRetailer(email, retailers)` | 283-295 | Match email to retailer config | **GAP** |
+| `extractReceiptData(email, retailerName, logger)` | 304-358 | AI extraction of receipt data | **GAP** |
+| `generateReceiptId(source, date, orderId)` | 367-370 | Generate unique receipt ID | **GAP** |
+| `mergeReceipts(existing, incoming)` | 378-384 | Merge and dedupe receipts | **GAP** |
+| `formatLocalTimestamp(date, timezone)` | 393-403 | Format timestamp in user timezone | **GAP** |
+| `harvestShopping(logger, guidId, req)` | 412-654 | Main harvest function | **GAP** |
+
+**Total Legacy shopping.mjs:** 11 functions
+
+---
+
+### DDD Functions: Domain Layer
+
+#### Account.mjs (Account class)
+| Function | Lines | Purpose |
+|----------|-------|---------|
+| `constructor(data)` | 6-24 | Create account with fields |
+| `isAsset()` | 29-31 | Check if account is asset type |
+| `isLiability()` | 36-38 | Check if account is liability type |
+| `updateBalance(newBalance)` | 43-46 | Update account balance |
+| `applyTransaction(amount)` | 51-54 | Apply transaction to balance |
+| `getAbsoluteBalance()` | 59-61 | Get absolute balance value |
+| `toJSON()` | 63-74 | Serialize to plain object |
+| `static fromJSON(data)` | 76-78 | Create from stored data |
+
+**Total Account.mjs:** 8 methods
+
+#### Budget.mjs (Budget class)
+| Function | Lines | Purpose |
+|----------|-------|---------|
+| `constructor(data)` | 6-22 | Create budget with fields |
+| `getRemaining()` | 27-29 | Get remaining budget amount |
+| `getPercentSpent()` | 34-37 | Get percentage spent |
+| `isOverBudget()` | 42-44 | Check if over budget |
+| `addSpending(amount)` | 49-51 | Add spending to budget |
+| `reset()` | 56-58 | Reset spent amount |
+| `isAtWarningLevel()` | 63-65 | Check if at warning level (>80%) |
+| `toJSON()` | 67-78 | Serialize to plain object |
+| `static fromJSON(data)` | 80-82 | Create from stored data |
+
+**Total Budget.mjs:** 9 methods
+
+#### Mortgage.mjs (Mortgage class)
+| Function | Lines | Purpose |
+|----------|-------|---------|
+| `constructor(data)` | 6-26 | Create mortgage with fields |
+| `calculateMonthlyPayment()` | 31-44 | Calculate P&I payment |
+| `getTotalMonthlyPayment()` | 49-52 | Get total with escrow |
+| `getPayoffDate()` | 57-61 | Calculate payoff date |
+| `getRemainingMonths()` | 66-72 | Get remaining term |
+| `getLTV(homeValue)` | 77-79 | Get loan-to-value ratio |
+| `getTotalInterest()` | 84-88 | Calculate total interest |
+| `makePayment(principalAmount)` | 93-96 | Apply payment to balance |
+| `toJSON()` | 98-109 | Serialize to plain object |
+| `static fromJSON(data)` | 111-113 | Create from stored data |
+
+**Total Mortgage.mjs:** 10 methods
+
+#### Transaction.mjs (Transaction class)
+| Function | Lines | Purpose |
+|----------|-------|---------|
+| `constructor(data)` | 6-26 | Create transaction with fields |
+| `isExpense()` | 31-33 | Check if expense type |
+| `isIncome()` | 38-40 | Check if income type |
+| `isTransfer()` | 45-47 | Check if transfer type |
+| `getSignedAmount()` | 52-54 | Get signed amount |
+| `getDateString()` | 59-61 | Get date as YYYY-MM-DD |
+| `addTag(tag)` | 66-70 | Add tag to transaction |
+| `removeTag(tag)` | 75-77 | Remove tag from transaction |
+| `toJSON()` | 79-90 | Serialize to plain object |
+| `static fromJSON(data)` | 92-94 | Create from stored data |
+
+**Total Transaction.mjs:** 10 methods
+
+#### BudgetService.mjs
+| Function | Lines | Purpose |
+|----------|-------|---------|
+| `constructor(config)` | 8-11 | Initialize with stores |
+| `getAllBudgets()` | 16-19 | Get all budgets |
+| `getBudget(id)` | 24-27 | Get budget by ID |
+| `createBudget(data)` | 32-36 | Create new budget |
+| `updateBudget(id, updates)` | 41-48 | Update existing budget |
+| `deleteBudget(id)` | 53-55 | Delete budget |
+| `syncBudgetSpending(budgetId, startDate, endDate)` | 60-77 | Sync spending from transactions |
+| `getBudgetSummary()` | 82-98 | Get budget summary |
+| `getBudgetsByCategory(category)` | 103-106 | Get budgets by category |
+
+**Total BudgetService.mjs:** 9 methods
+
+#### MortgageService.mjs
+| Function | Lines | Purpose |
+|----------|-------|---------|
+| `constructor(config)` | 8-10 | Initialize with store |
+| `getMortgage(id)` | 15-18 | Get mortgage by ID |
+| `getAllMortgages()` | 23-26 | Get all mortgages |
+| `createMortgage(data)` | 31-36 | Create new mortgage |
+| `updateBalance(id, newBalance)` | 41-48 | Update mortgage balance |
+| `recordPayment(id, principalPaid)` | 53-60 | Record payment |
+| `calculateAmortizationSchedule(mortgage, numPayments)` | 65-86 | Generate amortization schedule |
+| `getMortgageSummary(id)` | 91-104 | Get mortgage summary |
+
+**Total MortgageService.mjs:** 8 methods
+
+#### MortgageCalculator.mjs
+| Function | Lines | Purpose |
+|----------|-------|---------|
+| `calculatePaymentPlans(params)` | 85-108 | Calculate payment plan projections |
+| `calculateMortgageStatus(params)` | 125-199 | Calculate full mortgage status |
+| `#calculateSinglePlan(params)` | 205-326 | Calculate single plan projection |
+| `#findPayoffRange(paymentPlans)` | 332-352 | Find earliest/latest payoff |
+| `#monthsDiff(start, end)` | 358-363 | Calculate months between dates |
+| `#formatYearMonth(date)` | 369-374 | Format date as YYYY-MM |
+| `#formatPayoffDate(ym)` | 380-387 | Format payoff as "Month YYYY" |
+| `#parsePayoffDate(payoffStr)` | 393-409 | Parse payoff date string |
+| `#round(num)` | 415-417 | Round to 2 decimal places |
+
+**Total MortgageCalculator.mjs:** 9 methods
+
+#### TransactionClassifier.mjs
+| Function | Lines | Purpose |
+|----------|-------|---------|
+| `constructor(config)` | 51-77 | Initialize with bucket config |
+| `classify(transaction)` | 84-118 | Classify single transaction |
+| `classifyAll(transactions)` | 125-141 | Classify multiple transactions |
+| `groupByLabel(transactions, bucketType)` | 149-163 | Group by labels within bucket |
+| `getConfiguredLabels()` | 169-174 | Get all configured labels |
+| `#isTransfer(txnType, mainTag)` | 180-182 | Check if transfer |
+| `#normalizeTags(tagNames)` | 188-191 | Normalize tags to array |
+| `#arraysOverlap(a, b)` | 197-199 | Check array overlap |
+
+**Total TransactionClassifier.mjs:** 8 methods
+
+---
+
+### DDD Functions: Adapter Layer
+
+#### BuxferAdapter.mjs
+| Function | Lines | Purpose |
+|----------|-------|---------|
+| `constructor(config)` | 12-26 | Initialize adapter |
+| `getToken()` | 32-69 | Get/refresh API token |
+| `request(endpoint, params, method)` | 79-101 | Make authenticated request |
+| `findByCategory(category, startDate, endDate)` | 112-119 | Find transactions by category |
+| `findInRange(startDate, endDate)` | 128-131 | Find transactions in range |
+| `findByAccount(accountName)` | 138-143 | Find transactions by account |
+| `getTransactions(options)` | 156-201 | Fetch transactions with pagination |
+| `getAccounts()` | 207-210 | Get all accounts |
+| `getAccountBalances(accountNames)` | 217-233 | Get account balances |
+| `updateTransaction(id, updates)` | 241-255 | Update transaction |
+| `addTransaction(data)` | 262-294 | Add new transaction |
+| `deleteTransaction(id)` | 301-310 | Delete transaction |
+| `mapToTransaction(raw)` | 319-335 | Map to Transaction entity |
+| `inferTransactionType(raw)` | 342-346 | Infer transaction type |
+| `mapAccountType(buxferType)` | 353-364 | Map account type |
+| `getDefaultStartDate()` | 370-374 | Get default start date |
+| `getDefaultEndDate()` | 380-382 | Get default end date |
+| `getMetrics()` | 388-404 | Get adapter metrics |
+| `formatDuration(ms)` | 411-416 | Format duration |
+| `isConfigured()` | 422-425 | Check if configured |
+
+**Total BuxferAdapter.mjs:** 20 methods
+
+---
+
+### DDD Functions: Application Layer
+
+#### BudgetCompilationService.mjs
+| Function | Lines | Purpose |
+|----------|-------|---------|
+| `constructor(deps)` | 28-35 | Initialize with dependencies |
+| `compile(householdId)` | 43-88 | Main compilation method |
+| `#compileBudgetPeriod(config, transactions)` | 97-128 | Compile single budget period |
+| `#getMonthlyBudget(config, transactions, classifier)` | 133-162 | Get monthly breakdown |
+| `#futureMonthlyBudget(month, config)` | 167-213 | Calculate future projections |
+| `#pastMonthlyBudget(month, config, transactions, classifier)` | 218-301 | Calculate past actuals |
+| `#currentMonthlyBudget(month, config, transactions, classifier)` | 306-401 | Calculate current hybrid |
+| `#buildDayToDayBudget(monthList, monthlyBudget, config)` | 406-470 | Build day-to-day budget |
+| `#calculateDailyBalances(month, transactions, budget)` | 475-518 | Calculate daily balances |
+| `#buildTransferSummary(monthList, monthlyBudget)` | 523-539 | Build transfer summary |
+| `#buildShortTermBuckets(monthList, monthlyBudget, config)` | 544-586 | Build short-term buckets |
+| `#allocateSurplus(monthlyBudget, shortTermBuckets, config)` | 591-683 | Allocate surplus to flex buckets |
+| `#calculateShortTermStatus(shortTermBuckets)` | 688-702 | Calculate short-term totals |
+| `#compileMortgage(config, accountBalances, transactions)` | 707-719 | Compile mortgage status |
+| `#loadAllTransactions(budgetStartDates, householdId)` | 725-734 | Load all transactions |
+| `#calculateTotalBudget(monthlyBudget)` | 736-744 | Calculate total budget |
+| `#calculateMonthlyCategories(monthly, month, cutoff, paycheckCount)` | 746-778 | Calculate monthly categories |
+| `#getExtraIncomeForMonth(extraConfig, month, cutoff)` | 780-791 | Get extra income |
+| `#generatePaycheckDates(firstPaycheckDate, count, frequencyDays)` | 793-802 | Generate paycheck dates |
+| `#generateMonthList(firstMonth, lastMonth)` | 804-822 | Generate month list |
+| `#getCurrentMonth()` | 824-827 | Get current month |
+| `#getEndOfMonth(month)` | 829-833 | Get end of month date |
+| `#getDaysInMonth(month)` | 835-838 | Get days in month |
+| `#toDateString(date)` | 840-842 | Convert to date string |
+| `#round(num)` | 844-846 | Round to 2 decimals |
+| `#log(level, message, data)` | 848-852 | Log helper |
+
+**Total BudgetCompilationService.mjs:** 26 methods
+
+#### FinanceHarvestService.mjs
+| Function | Lines | Purpose |
+|----------|-------|---------|
+| `constructor(deps)` | 33-51 | Initialize with dependencies |
+| `harvest(householdId, options)` | 62-162 | Main harvest method |
+| `refreshPeriod(startDate, endDate, accounts, householdId)` | 173-180 | Refresh single period |
+| `refreshBalances(accounts, householdId)` | 189-193 | Refresh account balances |
+| `refreshMortgage(accounts, startDate, householdId)` | 203-207 | Refresh mortgage transactions |
+| `categorizeAll(householdId)` | 215-226 | Run categorization on all |
+| `#fetchTransactions(startDate, endDate, accounts)` | 235-246 | Fetch transactions |
+| `#fetchAccountBalances(accounts)` | 251-261 | Fetch balances |
+| `#fetchMortgageTransactions(accounts, startDate)` | 266-275 | Fetch mortgage transactions |
+| `#runCategorization(householdId, budgets)` | 280-312 | Run categorization |
+| `#toDateString(date)` | 314-316 | Convert to date string |
+| `#getCurrentDate()` | 318-320 | Get current date |
+| `#log(level, message, data)` | 322-326 | Log helper |
+
+**Total FinanceHarvestService.mjs:** 13 methods
+
+#### TransactionCategorizationService.mjs
+| Function | Lines | Purpose |
+|----------|-------|---------|
+| `constructor(deps)` | 39-53 | Initialize with dependencies |
+| `categorize(transactions, householdId)` | 62-152 | Main categorization method |
+| `preview(transactions, householdId)` | 162-206 | Preview categorization (dry-run) |
+| `#needsCategorization(transaction)` | 214-218 | Check if needs categorization |
+| `#hasRawDescription(description)` | 226-229 | Check for raw patterns |
+| `#categorizeTransaction(transaction, validTags, chatTemplate)` | 239-294 | Categorize single transaction |
+| `addRawDescriptionPatterns(patterns)` | 301-303 | Add custom patterns |
+| `getUncategorized(transactions)` | 311-313 | Get uncategorized list |
+| `#log(level, message, data)` | 315-319 | Log helper |
+
+**Total TransactionCategorizationService.mjs:** 9 methods
+
+---
+
+### DDD Router: finance.mjs
+
+| Method | Endpoint | Lines | Purpose |
+|--------|----------|-------|---------|
+| GET | `/` | 63-84 | Get finance config overview |
+| GET | `/data` | 94-108 | Get compiled finances (legacy compat) |
+| GET | `/data/daytoday` | 114-141 | Get current day-to-day budget |
+| GET | `/accounts` | 150-176 | Get account balances |
+| GET | `/transactions` | 185-225 | Get transactions |
+| POST | `/transactions/:id` | 230-249 | Update transaction |
+| GET | `/budgets` | 258-284 | Get all budgets |
+| GET | `/budgets/:budgetId` | 289-313 | Get specific budget |
+| GET | `/mortgage` | 322-339 | Get mortgage data |
+| POST | `/refresh` | 349-382 | Trigger full refresh |
+| POST | `/compile` | 387-413 | Trigger compilation only |
+| POST | `/categorize` | 418-463 | Trigger AI categorization |
+| POST | `/memos/:transactionId` | 472-484 | Save transaction memo |
+| GET | `/memos` | 489-499 | Get all memos |
+| GET | `/metrics` | 508-522 | Get adapter metrics |
+
+**Total DDD Router Endpoints:** 15 endpoints
+
+---
+
+### Gap Analysis: Finance Domain
+
+| Legacy Function | DDD Status | Notes |
+|-----------------|------------|-------|
+| `deleteTransactions(options)` | MISSING | Batch delete by match string (admin/cleanup) |
+| `payrollSyncJob(key, req)` | MISSING | Separate payroll sync cron job |
+| `loadShoppingConfig(username)` | MISSING | Shopping receipt harvest config |
+| `buildReceiptQuery(options)` | MISSING | Gmail query builder |
+| `extractHeader(message, headerName)` | MISSING | Gmail parsing |
+| `extractBody(message)` | MISSING | Gmail body extraction |
+| `parseEmailContent(message)` | MISSING | Gmail message parsing |
+| `identifyRetailer(email, retailers)` | MISSING | Retailer matching |
+| `extractReceiptData(email, retailerName)` | MISSING | AI receipt extraction |
+| `generateReceiptId(source, date, orderId)` | MISSING | Receipt ID generation |
+| `mergeReceipts(existing, incoming)` | MISSING | Receipt deduplication |
+| `formatLocalTimestamp(date, timezone)` | MISSING | Timestamp formatting |
+| `harvestShopping(logger, guidId, req)` | MISSING | Main shopping harvest cron |
+
+**Summary:**
+- Legacy buxfer.mjs functions: 10
+- Legacy budget.mjs functions: 5
+- Legacy budgetlib functions: 9
+- Legacy shopping.mjs functions: 11
+- **Total Legacy:** 35 functions
+
+- DDD domain entities methods: 37 (Account + Budget + Mortgage + Transaction)
+- DDD domain services methods: 34 (BudgetService + MortgageService + MortgageCalculator + TransactionClassifier)
+- DDD adapter methods: 20 (BuxferAdapter)
+- DDD application services methods: 48 (BudgetCompilationService + FinanceHarvestService + TransactionCategorizationService)
+- DDD router endpoints: 15
+- **Total DDD:** 154 functions/methods
+
+- Gaps: 13 (primarily shopping.mjs entire module + 2 admin functions)
+- **Parity: 63%** (22 of 35 core functions have DDD equivalents)
+
+**Critical Gaps:**
+1. **Shopping Receipt Harvester** - Entire Gmail receipt harvesting module not in DDD (11 functions)
+   - Gmail integration
+   - AI receipt extraction
+   - Receipt deduplication
+
+2. **Admin Functions** - Less critical batch operations
+   - `deleteTransactions()` - Batch delete for cleanup
+   - `payrollSyncJob()` - Payroll sync cron job
+
+**Analysis:**
+The core finance functionality (Buxfer integration, budget compilation, mortgage calculations) is fully implemented in DDD with proper separation of concerns. The DDD architecture actually provides MORE functionality than legacy through:
+- Proper domain entities with validation
+- Application services for orchestration
+- Clean adapter interfaces
+
+The gap is entirely in the **shopping.mjs** module which is a Gmail-based receipt harvesting feature. This is an optional cron job feature that:
+- Scans Gmail for shopping receipts
+- Uses AI to extract itemized data
+- Saves structured YAML for budget analysis
+
+This feature could be implemented as:
+- A `ShoppingHarvester` adapter in `backend/src/2_adapters/harvester/finance/`
+- An `IEmailSource` port for Gmail integration
+
+**Parity Calculation Note:**
+While raw parity is 63%, the DDD implementation provides significantly more functionality:
+- 154 DDD methods vs 35 legacy functions
+- Better testability through dependency injection
+- Clean separation between domain logic and infrastructure
+- Comprehensive API with 15 endpoints
+
+---
+
 ## Next Steps
 
-1. **Task 1.4:** Audit Playback domain
-2. **Task 1.5:** Audit Scheduling domain
-3. **Task 1.6:** Audit User domain
-4. **Task 1.7:** Audit Config domain
+1. **Task 1.5:** Audit Playback domain
+2. **Task 1.6:** Audit Scheduling domain
+3. **Task 1.7:** Audit User domain
+4. **Task 1.8:** Audit Config domain
 5. **Task 2.x:** Implement missing functions by priority
