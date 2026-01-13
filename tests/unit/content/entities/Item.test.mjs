@@ -117,6 +117,37 @@ describe('Item entity', () => {
     });
   });
 
+  describe('label property', () => {
+    it('should return explicit label if provided', () => {
+      const item = new Item({
+        id: 'test:1',
+        source: 'test',
+        title: 'Full Title',
+        label: 'Short'
+      });
+      expect(item.label).toBe('Short');
+    });
+
+    it('should fall back to title if no label', () => {
+      const item = new Item({
+        id: 'test:1',
+        source: 'test',
+        title: 'Full Title'
+      });
+      expect(item.label).toBe('Full Title');
+    });
+
+    it('should check metadata.label as fallback', () => {
+      const item = new Item({
+        id: 'test:1',
+        source: 'test',
+        title: 'Full Title',
+        metadata: { label: 'Meta Label' }
+      });
+      expect(item.label).toBe('Meta Label');
+    });
+  });
+
   describe('media identifiers', () => {
     it('should extract plex key from compound ID', () => {
       const item = new Item({
