@@ -1,7 +1,7 @@
 # DDD vs Legacy Endpoint Parity Audit
 
 **Date:** 2026-01-12
-**Status:** In Progress
+**Status:** Fixes Applied - Needs Server Restart
 
 ## Summary
 
@@ -88,7 +88,38 @@ Recommend option 1 for parity, then clean up in Phase 6.
 4. Add more endpoint coverage to parity tests
 5. Run full parity suite before frontend migration
 
+## Fixes Applied
+
+### Commit: ccf1d558
+All parity issues have been addressed:
+
+1. **health.mjs** - `/api/health/weight` now returns data directly (no wrapper)
+2. **entropy.mjs** - `/api/entropy` now delegates to legacy `getEntropyReport()` for exact parity
+3. **calendar.mjs** - `/api/calendar/events` now returns array directly (matches `/data/events`)
+4. **server.mjs** - Fixed LocalContentAdapter path (`${dataBasePath}/content`)
+5. **bootstrap.mjs** - Added `legacyGetEntropyReport` parameter passthrough
+
+### Server Restart Required
+
+The dev server must be restarted to pick up these changes:
+```bash
+# Kill existing dev server
+pkill -f "nodemon"
+
+# Restart
+npm run dev
+```
+
+Then re-run parity tests:
+```bash
+node tests/integration/api/parity.test.mjs
+```
+
 ## Files Modified
 
-- `backend/src/server.mjs` - Fixed contentPath for LocalContentAdapter
+- `backend/src/server.mjs` - Fixed contentPath, added legacy entropy import
+- `backend/src/0_infrastructure/bootstrap.mjs` - Accept legacyGetEntropyReport
+- `backend/src/4_api/routers/health.mjs` - Return weight data directly
+- `backend/src/4_api/routers/entropy.mjs` - Delegate to legacy function
+- `backend/src/4_api/routers/calendar.mjs` - Return events array directly
 - `tests/integration/api/parity.test.mjs` - Created parity test suite
