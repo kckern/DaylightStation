@@ -662,6 +662,25 @@ export class PlexAdapter {
   }
 
   /**
+   * Get container metadata bundled with its children
+   * @param {string} id - Compound ID
+   * @returns {Promise<{container: Object, children: Array}|null>}
+   */
+  async getContainerWithChildren(id) {
+    const [container, children] = await Promise.all([
+      this.getContainerInfo(id),
+      this.getList(id)
+    ]);
+
+    if (!container) return null;
+
+    return {
+      container,
+      children: children || []
+    };
+  }
+
+  /**
    * Get extended container metadata for FitnessShow info panel
    * Returns raw Plex metadata including summary, labels, studio, etc.
    * @param {string} id - Container ID (show, collection, etc.)
