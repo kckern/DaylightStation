@@ -1,4 +1,5 @@
 // tests/unit/adapters/content/PlexAdapter.test.mjs
+import { jest } from '@jest/globals';
 import { PlexAdapter } from '../../../../backend/src/2_adapters/content/media/plex/PlexAdapter.mjs';
 import { PlexClient } from '../../../../backend/src/2_adapters/content/media/plex/PlexClient.mjs';
 
@@ -34,6 +35,66 @@ describe('PlexAdapter', () => {
       });
       const storagePath = await adapter.getStoragePath('12345');
       expect(storagePath).toBe('plex');
+    });
+  });
+
+  describe('getMetadata', () => {
+    it('should return raw Plex metadata for rating key', async () => {
+      const adapter = new PlexAdapter({
+        host: 'http://localhost:32400',
+        token: 'test-token'
+      });
+
+      // Mock the client
+      adapter.client = {
+        getMetadata: jest.fn().mockResolvedValue({
+          ratingKey: '12345',
+          title: 'Test Movie',
+          type: 'movie',
+          year: 2024,
+          duration: 7200000,
+          summary: 'A test movie',
+          thumb: '/library/metadata/12345/thumb',
+          Media: [{ Part: [{ file: '/path/to/movie.mp4' }] }]
+        })
+      };
+
+      const result = await adapter.getMetadata('12345');
+
+      expect(result.ratingKey).toBe('12345');
+      expect(result.title).toBe('Test Movie');
+      expect(result.type).toBe('movie');
+      expect(result.year).toBe(2024);
+      expect(result.duration).toBe(7200000);
+      expect(result.Media).toBeDefined();
+    });
+
+    it('should return null for non-existent item', async () => {
+      const adapter = new PlexAdapter({
+        host: 'http://localhost:32400',
+        token: 'test-token'
+      });
+
+      adapter.client = {
+        getMetadata: jest.fn().mockResolvedValue(null)
+      };
+
+      const result = await adapter.getMetadata('99999');
+      expect(result).toBeNull();
+    });
+
+    it('should handle client errors gracefully', async () => {
+      const adapter = new PlexAdapter({
+        host: 'http://localhost:32400',
+        token: 'test-token'
+      });
+
+      adapter.client = {
+        getMetadata: jest.fn().mockRejectedValue(new Error('Network error'))
+      };
+
+      const result = await adapter.getMetadata('12345');
+      expect(result).toBeNull();
     });
   });
 });
