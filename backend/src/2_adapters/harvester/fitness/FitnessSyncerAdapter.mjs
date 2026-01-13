@@ -1,7 +1,7 @@
 /**
  * FitnessSyncerAdapter
  *
- * Adapter for FitnessSyncer OAuth token management.
+ * Adapter for FitnessSyncer OAuth token and source management.
  * Handles token caching, refresh, and circuit breaker resilience.
  *
  * Features:
@@ -9,6 +9,7 @@
  * - In-memory and persistent token storage
  * - Circuit breaker for rate limiting resilience
  * - 5-minute buffer before token expiry
+ * - Source ID lookup and caching
  *
  * @module harvester/fitness/FitnessSyncerAdapter
  */
@@ -32,6 +33,7 @@ export class FitnessSyncerAdapter {
   #clientSecret;
   #circuitBreaker;
   #tokenCache;
+  #sourceCache;
 
   /**
    * @param {Object} config
@@ -68,6 +70,9 @@ export class FitnessSyncerAdapter {
       token: null,
       expiresAt: null,
     };
+
+    // Source ID cache (providerKey -> sourceId)
+    this.#sourceCache = new Map();
 
     // Circuit breaker for rate limiting resilience
     this.#circuitBreaker = new CircuitBreaker({
@@ -254,6 +259,73 @@ export class FitnessSyncerAdapter {
    */
   getStatus() {
     return this.#circuitBreaker.getStatus();
+  }
+
+  /**
+   * Get source ID for a provider
+   *
+   * Returns cached source ID if available, otherwise fetches from API.
+   * Caches all sources from response for subsequent lookups.
+   *
+   * @param {string} providerKey - Provider key (e.g., 'GarminWellness', 'Strava')
+   * @returns {Promise<string|null>} Source ID or null if not found
+   */
+  async getSourceId(providerKey) {
+    // Check cache first
+    if (this.#sourceCache.has(providerKey)) {
+      return this.#sourceCache.get(providerKey);
+    }
+
+    // Get access token
+    const token = await this.getAccessToken();
+    if (!token) {
+      return null;
+    }
+
+    try {
+      const response = await this.#httpClient.get(
+        'https://www.fitnesssyncer.com/api/sources',
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      const items = response.data?.items;
+      if (!items || !Array.isArray(items)) {
+        return null;
+      }
+
+      // Cache all sources from response
+      for (const source of items) {
+        if (source.providerType && source.id) {
+          this.#sourceCache.set(source.providerType, source.id);
+        }
+      }
+
+      // Return the requested source (may be null if not found)
+      return this.#sourceCache.get(providerKey) ?? null;
+
+    } catch (error) {
+      this.#logger.error?.('fitsync.sources.fetch_failed', {
+        error: this.#cleanErrorMessage(error),
+        providerKey,
+      });
+      return null;
+    }
+  }
+
+  /**
+   * Manually set/override source ID in cache
+   *
+   * Useful for testing and manual configuration.
+   *
+   * @param {string} providerKey - Provider key (e.g., 'GarminWellness', 'Strava')
+   * @param {string} sourceId - Source ID to cache
+   */
+  setSourceId(providerKey, sourceId) {
+    this.#sourceCache.set(providerKey, sourceId);
   }
 
   /**

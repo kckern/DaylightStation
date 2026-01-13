@@ -495,4 +495,181 @@ describe('FitnessSyncerAdapter', () => {
       expect(storedData.expires_at).toBeLessThan(expectedExpiry + 1000);
     });
   });
+
+  describe('getSourceId', () => {
+    const mockSourcesResponse = {
+      data: {
+        items: [
+          { id: 'src-123', providerType: 'GarminWellness', name: 'Garmin' },
+          { id: 'src-456', providerType: 'Strava', name: 'Strava' },
+          { id: 'src-789', providerType: 'Fitbit', name: 'Fitbit' },
+        ],
+      },
+    };
+
+    beforeEach(() => {
+      // Setup valid token for API calls
+      const futureExpiry = Date.now() + 10 * 60 * 1000;
+      mockAuthStore.get.mockResolvedValue({
+        access_token: 'valid-token',
+        expires_at: futureExpiry,
+        refresh: 'test-refresh-token',
+      });
+    });
+
+    test('fetches sources from API and returns matching source ID', async () => {
+      mockHttpClient.get.mockResolvedValue(mockSourcesResponse);
+
+      const sourceId = await adapter.getSourceId('GarminWellness');
+
+      expect(sourceId).toBe('src-123');
+      expect(mockHttpClient.get).toHaveBeenCalledWith(
+        'https://www.fitnesssyncer.com/api/sources',
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            Authorization: 'Bearer valid-token',
+          }),
+        })
+      );
+    });
+
+    test('returns null for unknown provider', async () => {
+      mockHttpClient.get.mockResolvedValue(mockSourcesResponse);
+
+      const sourceId = await adapter.getSourceId('UnknownProvider');
+
+      expect(sourceId).toBeNull();
+    });
+
+    test('caches sources and returns from cache on subsequent calls', async () => {
+      mockHttpClient.get.mockResolvedValue(mockSourcesResponse);
+
+      // First call - fetches from API
+      const sourceId1 = await adapter.getSourceId('GarminWellness');
+      expect(sourceId1).toBe('src-123');
+      expect(mockHttpClient.get).toHaveBeenCalledTimes(1);
+
+      // Second call - should use cache
+      const sourceId2 = await adapter.getSourceId('Strava');
+      expect(sourceId2).toBe('src-456');
+      expect(mockHttpClient.get).toHaveBeenCalledTimes(1); // Still 1, used cache
+
+      // Third call - same provider, still cached
+      const sourceId3 = await adapter.getSourceId('GarminWellness');
+      expect(sourceId3).toBe('src-123');
+      expect(mockHttpClient.get).toHaveBeenCalledTimes(1);
+    });
+
+    test('returns null when API call fails', async () => {
+      mockHttpClient.get.mockRejectedValue(new Error('Network error'));
+
+      const sourceId = await adapter.getSourceId('GarminWellness');
+
+      expect(sourceId).toBeNull();
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        'fitsync.sources.fetch_failed',
+        expect.objectContaining({
+          error: expect.any(String),
+        })
+      );
+    });
+
+    test('returns null when no access token available', async () => {
+      mockAuthStore.get.mockResolvedValue(null);
+
+      const sourceId = await adapter.getSourceId('GarminWellness');
+
+      expect(sourceId).toBeNull();
+      expect(mockHttpClient.get).not.toHaveBeenCalled();
+    });
+
+    test('returns null when API returns empty items array', async () => {
+      mockHttpClient.get.mockResolvedValue({ data: { items: [] } });
+
+      const sourceId = await adapter.getSourceId('GarminWellness');
+
+      expect(sourceId).toBeNull();
+    });
+
+    test('returns null when API returns no items property', async () => {
+      mockHttpClient.get.mockResolvedValue({ data: {} });
+
+      const sourceId = await adapter.getSourceId('GarminWellness');
+
+      expect(sourceId).toBeNull();
+    });
+  });
+
+  describe('setSourceId', () => {
+    test('sets source ID in cache', () => {
+      adapter.setSourceId('GarminWellness', 'manual-src-123');
+
+      // Verify by calling getSourceId - should not make API call
+      // We need to verify the cache was set
+    });
+
+    test('allows retrieving manually set source ID without API call', async () => {
+      // Setup valid token
+      const futureExpiry = Date.now() + 10 * 60 * 1000;
+      mockAuthStore.get.mockResolvedValue({
+        access_token: 'valid-token',
+        expires_at: futureExpiry,
+        refresh: 'test-refresh-token',
+      });
+
+      // Manually set source ID
+      adapter.setSourceId('GarminWellness', 'manual-src-123');
+
+      // Get should return cached value without API call
+      const sourceId = await adapter.getSourceId('GarminWellness');
+
+      expect(sourceId).toBe('manual-src-123');
+      expect(mockHttpClient.get).not.toHaveBeenCalled();
+    });
+
+    test('overrides previously cached source ID', async () => {
+      // Setup valid token
+      const futureExpiry = Date.now() + 10 * 60 * 1000;
+      mockAuthStore.get.mockResolvedValue({
+        access_token: 'valid-token',
+        expires_at: futureExpiry,
+        refresh: 'test-refresh-token',
+      });
+
+      // First, fetch from API to populate cache
+      mockHttpClient.get.mockResolvedValue({
+        data: {
+          items: [
+            { id: 'api-src-123', providerType: 'GarminWellness', name: 'Garmin' },
+          ],
+        },
+      });
+
+      const sourceId1 = await adapter.getSourceId('GarminWellness');
+      expect(sourceId1).toBe('api-src-123');
+
+      // Now manually override
+      adapter.setSourceId('GarminWellness', 'manual-override-456');
+
+      const sourceId2 = await adapter.getSourceId('GarminWellness');
+      expect(sourceId2).toBe('manual-override-456');
+    });
+
+    test('sets source ID for provider not in API response', async () => {
+      // Setup valid token
+      const futureExpiry = Date.now() + 10 * 60 * 1000;
+      mockAuthStore.get.mockResolvedValue({
+        access_token: 'valid-token',
+        expires_at: futureExpiry,
+        refresh: 'test-refresh-token',
+      });
+
+      // Set source ID for a provider that wouldn't be in API
+      adapter.setSourceId('CustomProvider', 'custom-src-999');
+
+      const sourceId = await adapter.getSourceId('CustomProvider');
+      expect(sourceId).toBe('custom-src-999');
+      expect(mockHttpClient.get).not.toHaveBeenCalled();
+    });
+  });
 });
