@@ -294,6 +294,7 @@ async function main() {
   const healthServices = createHealthServices({
     userDataService,
     configService,
+    dataRoot: dataBasePath,
     logger
   });
 
@@ -422,6 +423,55 @@ async function main() {
   }));
   logger.info('calendar.mounted', { path: '/api/calendar' });
 
+  // Hardware adapters (printer, TTS, MQTT sensors)
+  const printerConfig = process.env.printer || {};
+  const mqttConfig = process.env.mqtt || {};
+  const ttsApiKey = process.env.OPENAI_API_KEY || process.env.openai?.api_key || '';
+
+  const hardwareAdapters = createHardwareAdapters({
+    printer: {
+      host: printerConfig.host || '',
+      port: printerConfig.port || 9100,
+      timeout: printerConfig.timeout || 5000,
+      upsideDown: printerConfig.upsideDown !== false
+    },
+    mqtt: {
+      host: mqttConfig.host || '',
+      port: mqttConfig.port || 1883
+    },
+    tts: {
+      apiKey: ttsApiKey,
+      model: 'tts-1',
+      defaultVoice: 'alloy'
+    },
+    onMqttMessage: (payload) => {
+      // Broadcast MQTT sensor messages to WebSocket clients
+      broadcastEvent('sensor', payload);
+    },
+    logger: logger.child({ module: 'hardware' })
+  });
+
+  // Initialize MQTT sensor adapter if configured
+  if (hardwareAdapters.mqttAdapter?.isConfigured()) {
+    // Load equipment with vibration sensors for MQTT topic mapping
+    const fitnessConfig = userDataService.readHouseholdAppData(householdId, 'fitness', 'config') || {};
+    const equipment = fitnessConfig.equipment || [];
+    if (hardwareAdapters.mqttAdapter.init(equipment)) {
+      logger.info('mqtt.initialized', {
+        sensorCount: hardwareAdapters.mqttAdapter.getStatus().sensorCount,
+        topics: hardwareAdapters.mqttAdapter.getStatus().topics
+      });
+    }
+  } else if (mqttConfig.host) {
+    logger.warn?.('mqtt.disabled', { reason: 'MQTT configured but adapter not initialized' });
+  }
+
+  logger.info('hardware.initialized', {
+    printer: hardwareAdapters.printerAdapter?.isConfigured() || false,
+    tts: hardwareAdapters.ttsAdapter?.isConfigured() || false,
+    mqtt: hardwareAdapters.mqttAdapter?.isConfigured() || false
+  });
+
   // Gratitude domain router - import legacy canvas function for card generation
   let createPrayerCardCanvas = null;
   try {
@@ -436,7 +486,7 @@ async function main() {
     configService,
     broadcastToWebsockets: broadcastEvent,
     createPrayerCardCanvas,
-    // printerAdapter will be added when hardware adapters are wired up
+    printerAdapter: hardwareAdapters.printerAdapter,
     logger: logger.child({ module: 'gratitude-api' })
   }));
   logger.info('gratitude.mounted', { path: '/api/gratitude' });
@@ -625,6 +675,12 @@ async function main() {
   app.get('/home/entropy', (req, res) => res.redirect(307, '/api/entropy'));
   app.get('/home/calendar', (req, res) => res.redirect(307, '/api/calendar/events'));
   app.get('/data/events', (req, res) => res.redirect(307, '/api/calendar/events'));
+
+  // Weather data redirect (was in legacy index.js, redirects to household data file)
+  app.get('/data/weather', (req, res) => {
+    const hid = configService?.getDefaultHouseholdId?.() || process.env.household_id || 'default';
+    res.redirect(307, `/data/households/${hid}/shared/weather`);
+  });
 
   // Health redirects
   app.get('/data/lifelog/weight', (req, res) => res.redirect(307, '/api/health/weight'));

@@ -1,8 +1,8 @@
 # DDD vs Legacy Endpoint Parity Audit
 
-**Date:** 2026-01-12
-**Status:** Complete - All Parity Tests Passing
-**Branch:** backend-refactor
+**Date:** 2026-01-12 (Updated: 2026-01-13)
+**Status:** Complete - All Gaps Fixed ✅
+**Branch:** main
 
 ---
 
@@ -11,9 +11,9 @@
 | Metric | Value |
 |--------|-------|
 | DDD Routers | 19 |
-| DDD Endpoints | 87+ |
+| DDD Endpoints | 93+ |
 | Legacy Mount Points | 8 |
-| Compatibility Redirects | 29 |
+| Compatibility Redirects | 30 |
 | Parity Tests | 10/10 Passing |
 
 ---
@@ -109,7 +109,7 @@
 
 | Router | Mount Path | Endpoints | Handler File |
 |--------|------------|-----------|--------------|
-| health | `/api/health` | 9 | `routers/health.mjs` |
+| health | `/api/health` | 15 | `routers/health.mjs` |
 
 #### Health Router (`/api/health`)
 | Method | Path | Description |
@@ -122,6 +122,12 @@
 | GET | `/api/health/fitness` | Fitness tracking data |
 | GET | `/api/health/nutrition` | Nutrition data |
 | GET | `/api/health/coaching` | Health coaching messages |
+| GET | `/api/health/nutrilist` | Today's nutrilist items |
+| GET | `/api/health/nutrilist/:date` | Nutrilist items for date |
+| GET | `/api/health/nutrilist/item/:uuid` | Single nutrilist item |
+| POST | `/api/health/nutrilist` | Create nutrilist item |
+| PUT | `/api/health/nutrilist/:uuid` | Update nutrilist item |
+| DELETE | `/api/health/nutrilist/:uuid` | Delete nutrilist item |
 | GET | `/api/health/status` | Router status |
 
 ---
@@ -199,7 +205,7 @@
 
 ## Legacy Compatibility Layer
 
-### Redirects (29 total)
+### Redirects (30 total)
 
 | Legacy Path | DDD Path | Method |
 |-------------|----------|--------|
@@ -211,6 +217,7 @@
 | `/home/entropy` | `/api/entropy` | GET |
 | `/home/calendar` | `/api/calendar/events` | GET |
 | `/data/events` | `/api/calendar/events` | GET |
+| `/data/weather` | `/data/households/{hid}/shared/weather` | GET |
 | `/data/lifelog/weight` | `/api/health/weight` | GET |
 | `/data/menu_log` | `/api/content/menu-log` | POST |
 | `/exe/tv/off` | `/api/home/tv/power?action=off` | GET |
@@ -258,7 +265,7 @@ Monitor usage at `/admin/legacy` to identify when legacy routes can be removed.
 |--------|--------|-------|
 | Content | ✅ Fully Migrated | All endpoints have DDD equivalents |
 | Fitness | ✅ Fully Migrated | Full parity with legacy |
-| Health | ✅ Fully Migrated | Weight endpoint has legacy parity |
+| Health | ✅ Fully Migrated | Weight parity ✅, Nutrilist CRUD ✅ |
 | Finance | ✅ Fully Migrated | Budget endpoints have legacy parity |
 | Home Automation | ✅ Fully Migrated | TV/volume/WS broadcast/restart all migrated |
 | Entropy | ✅ Fully Migrated | Uses legacy function for parity |
@@ -316,13 +323,109 @@ PARITY_TEST_URL=http://localhost:3112 node tests/integration/api/parity.test.mjs
 
 ---
 
+## Identified Gaps (2026-01-13 Audit)
+
+### Critical Gaps
+
+| Gap | Frontend Usage | Priority | Resolution |
+|-----|----------------|----------|------------|
+| `/api/health/nutrilist/*` | 7 calls in Nutrition.jsx, NutritionDay.jsx | ✅ FIXED | Nutrilist endpoints added to DDD health router |
+| `/data/weather` | 1 call in OfficeApp.jsx | ✅ FIXED | Redirect added to server.mjs |
+
+### Gap Details
+
+#### 1. Nutrilist Endpoints (HIGH Priority)
+
+**Problem:** Frontend components call `/api/health/nutrilist/:date` but DDD health router doesn't have these endpoints. The legacy health router has them but DDD router is mounted first at `/api/health`.
+
+**Frontend Calls:**
+- `frontend/src/modules/Health/Nutrition.jsx:46` - GET `/api/health/nutrilist/:date`
+- `frontend/src/modules/Health/Nutrition.jsx:81` - GET `/api/health/nutrilist/:date`
+- `frontend/src/modules/Health/Nutrition.jsx:261` - GET `/api/health/nutrilist/:date`
+- `frontend/src/modules/Health/NutritionDay.jsx:71` - DELETE `health/nutrilist/:uuid`
+- `frontend/src/modules/Health/NutritionDay.jsx:143` - PUT `health/nutrilist/:uuid`
+
+**Options:**
+1. Add nutrilist CRUD endpoints to DDD health router (mirror legacy)
+2. Add redirects from `/api/health/nutrilist/*` to `/api/nutrition/logs/*` (requires frontend update)
+3. Update frontend to use DDD nutrition router directly
+
+#### 2. Weather Data (MEDIUM Priority)
+
+**Problem:** `/data/weather` was defined in legacy `index.js` but never extracted to a router. It's a simple redirect to household data file.
+
+**Frontend Call:**
+- `frontend/src/Apps/OfficeApp.jsx:153` - GET `/data/weather`
+
+**Resolution:**
+Add to server.mjs:
+```javascript
+app.get('/data/weather', (req, res) => {
+  const hid = process.env.household_id || 'default';
+  res.redirect(307, `/data/households/${hid}/shared/weather`);
+});
+```
+
+### Verified Working
+
+All 30 legacy redirects verified working:
+- Content/Media: 5 redirects ✅
+- Home/Entropy: 2 redirects ✅
+- Weather/Health: 2 redirects ✅
+- TV/Volume: 6 redirects ✅
+- WebSocket: 2 redirects ✅
+- Cron/Scheduling: 6 redirects ✅
+- Media Images: 5 redirects ✅
+- Menu/List: 2 redirects ✅
+
+All 7 scheduling endpoints verified working:
+- GET `/api/scheduling/status` ✅
+- POST `/api/scheduling/run/:jobId` ✅
+- GET `/api/scheduling/jobs` ✅
+- GET `/api/scheduling/running` ✅
+- GET `/api/scheduling/cron10Mins` ✅
+- GET `/api/scheduling/cronHourly` ✅
+- GET `/api/scheduling/cronDaily` ✅
+
+---
+
+## Hardware Adapters
+
+All hardware adapters are now fully wired up in `server.mjs`:
+
+| Adapter | Config Source | Status | Notes |
+|---------|---------------|--------|-------|
+| ThermalPrinterAdapter | `process.env.printer` | ✅ Wired | ESC/POS thermal printing for gratitude cards |
+| MQTTSensorAdapter | `process.env.mqtt` | ✅ Wired | Vibration sensor monitoring (fitness equipment) |
+| TTSAdapter | `OPENAI_API_KEY` | ✅ Wired | Text-to-speech for voice memos |
+
+### MQTT Sensor Topics
+
+Connected to broker at `mqtt://10.0.0.10:1883` with subscriptions:
+- `zigbee2mqtt-usb/Garage Punching Bag Vibration Sensor`
+- `zigbee2mqtt-usb/Garage Step Vibration Sensor`
+- `zigbee2mqtt-usb/Garage Pull-up Bar Vibration Sensor`
+
+MQTT messages are broadcast to WebSocket clients via `broadcastEvent('sensor', payload)`.
+
+### Gratitude Print Endpoint
+
+`GET /api/gratitude/card/print` - Now functional with `printerAdapter` properly passed to router.
+
+---
+
 ## Next Steps
 
-1. **Phase 5: Frontend Migration**
+1. ~~**Fix Identified Gaps**~~ ✅ COMPLETED
+   - ~~Add nutrilist endpoints to health router~~ ✅
+   - ~~Add /data/weather redirect~~ ✅
+   - ~~Wire up hardware adapters~~ ✅
+
+2. **Phase 5: Frontend Migration**
    - Update frontend API calls to use DDD endpoints
    - See `/admin/legacy` for remaining legacy usage
 
-2. **Phase 6: Legacy Cleanup**
+3. **Phase 6: Legacy Cleanup**
    - Monitor `/admin/legacy` for zero-hit routes
    - Remove legacy routers when safe
    - Archive `backend/_legacy/` folder
