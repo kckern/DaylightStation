@@ -57,6 +57,10 @@ import {
   createJournalistApiRouter,
   createNutribotServices,
   createNutribotApiRouter,
+  createLifelogServices,
+  createLifelogApiRouter,
+  createStaticApiRouter,
+  createCalendarApiRouter,
   createEventBus,
   broadcastEvent
 } from './0_infrastructure/bootstrap.mjs';
@@ -306,6 +310,12 @@ async function main() {
     logger: logger.child({ module: 'entropy' })
   });
 
+  // Lifelog domain
+  const lifelogServices = createLifelogServices({
+    userLoadFile,
+    logger: logger.child({ module: 'lifelog' })
+  });
+
   // Gratitude domain
   const gratitudeServices = createGratitudeServices({
     userDataService,
@@ -376,6 +386,31 @@ async function main() {
     logger: logger.child({ module: 'entropy-api' })
   }));
   logger.info('entropy.mounted', { path: '/api/entropy' });
+
+  // Lifelog domain router
+  app.use('/api/lifelog', createLifelogApiRouter({
+    lifelogServices,
+    configService,
+    logger: logger.child({ module: 'lifelog-api' })
+  }));
+  logger.info('lifelog.mounted', { path: '/api/lifelog' });
+
+  // Static assets router
+  const imgBasePath = process.env.path?.img || `${mediaBasePath}/img`;
+  app.use('/api/static', createStaticApiRouter({
+    imgBasePath,
+    dataBasePath,
+    logger: logger.child({ module: 'static-api' })
+  }));
+  logger.info('static.mounted', { path: '/api/static' });
+
+  // Calendar domain router
+  app.use('/api/calendar', createCalendarApiRouter({
+    userDataService,
+    configService,
+    logger: logger.child({ module: 'calendar-api' })
+  }));
+  logger.info('calendar.mounted', { path: '/api/calendar' });
 
   // Gratitude domain router - import legacy canvas function for card generation
   let createPrayerCardCanvas = null;
