@@ -672,4 +672,344 @@ describe('FitnessSyncerAdapter', () => {
       expect(mockHttpClient.get).not.toHaveBeenCalled();
     });
   });
+
+  describe('getActivities', () => {
+    const mockActivitiesResponse = {
+      data: {
+        items: [
+          {
+            id: 'act-001',
+            startTime: '2026-01-10T08:00:00Z',
+            type: 'Running',
+            name: 'Morning Run',
+            duration: 1800,
+            calories: 350,
+            distance: 5000,
+            avgHeartRate: 145,
+            maxHeartRate: 175,
+          },
+          {
+            id: 'act-002',
+            startTime: '2026-01-11T09:30:00Z',
+            type: 'Cycling',
+            name: 'Commute',
+            duration: 2400,
+            calories: 450,
+            distance: 12000,
+            avgHeartRate: 130,
+            maxHeartRate: 160,
+          },
+        ],
+      },
+    };
+
+    beforeEach(() => {
+      // Setup valid token for API calls
+      const futureExpiry = Date.now() + 10 * 60 * 1000;
+      mockAuthStore.get.mockResolvedValue({
+        access_token: 'valid-token',
+        expires_at: futureExpiry,
+        refresh: 'test-refresh-token',
+      });
+
+      // Pre-cache source ID to avoid extra API calls
+      adapter.setSourceId('GarminWellness', 'src-garmin-123');
+    });
+
+    test('throws if circuit breaker is in cooldown', async () => {
+      // Open the circuit breaker
+      for (let i = 0; i < 3; i++) {
+        adapter.recordFailure(new Error('Test error'));
+      }
+      expect(adapter.isInCooldown()).toBe(true);
+
+      await expect(adapter.getActivities({ daysBack: 7 }))
+        .rejects.toThrow('Circuit breaker is in cooldown');
+    });
+
+    test('fetches activities from API with correct parameters', async () => {
+      mockHttpClient.get.mockResolvedValue(mockActivitiesResponse);
+
+      const result = await adapter.getActivities({ daysBack: 7 });
+
+      // Should have called activities API
+      expect(mockHttpClient.get).toHaveBeenCalledWith(
+        expect.stringMatching(/https:\/\/www\.fitnesssyncer\.com\/api\/activities\?sourceId=src-garmin-123&startDate=.*&endDate=.*/),
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            Authorization: 'Bearer valid-token',
+          }),
+        })
+      );
+
+      expect(result).toEqual(mockActivitiesResponse.data.items);
+    });
+
+    test('uses default sourceKey of GarminWellness when not specified', async () => {
+      mockHttpClient.get.mockResolvedValue(mockActivitiesResponse);
+
+      await adapter.getActivities({ daysBack: 7 });
+
+      expect(mockHttpClient.get).toHaveBeenCalledWith(
+        expect.stringContaining('sourceId=src-garmin-123'),
+        expect.any(Object)
+      );
+    });
+
+    test('uses provided sourceKey when specified', async () => {
+      adapter.setSourceId('Strava', 'src-strava-456');
+      mockHttpClient.get.mockResolvedValue(mockActivitiesResponse);
+
+      await adapter.getActivities({ daysBack: 7, sourceKey: 'Strava' });
+
+      expect(mockHttpClient.get).toHaveBeenCalledWith(
+        expect.stringContaining('sourceId=src-strava-456'),
+        expect.any(Object)
+      );
+    });
+
+    test('throws if source ID cannot be resolved', async () => {
+      // Clear the cached source ID and make API return empty
+      const newAdapter = new FitnessSyncerAdapter({
+        httpClient: mockHttpClient,
+        authStore: mockAuthStore,
+        logger: mockLogger,
+        clientId: validConfig.clientId,
+        clientSecret: validConfig.clientSecret,
+      });
+
+      mockHttpClient.get.mockResolvedValue({ data: { items: [] } });
+
+      await expect(newAdapter.getActivities({ daysBack: 7 }))
+        .rejects.toThrow('Could not resolve source ID for GarminWellness');
+    });
+
+    test('returns empty array when API returns no activities', async () => {
+      mockHttpClient.get.mockResolvedValue({ data: { items: [] } });
+
+      const result = await adapter.getActivities({ daysBack: 7 });
+
+      expect(result).toEqual([]);
+    });
+
+    test('records success to circuit breaker on successful fetch', async () => {
+      // First add a failure
+      adapter.recordFailure(new Error('Previous error'));
+      expect(adapter.getStatus().failures).toBe(1);
+
+      mockHttpClient.get.mockResolvedValue(mockActivitiesResponse);
+
+      await adapter.getActivities({ daysBack: 7 });
+
+      // Circuit breaker should have recorded success
+      expect(adapter.getStatus().failures).toBe(0);
+    });
+
+    test('records failure to circuit breaker on API error', async () => {
+      mockHttpClient.get.mockRejectedValue(new Error('API error'));
+
+      await expect(adapter.getActivities({ daysBack: 7 })).rejects.toThrow('API error');
+
+      expect(adapter.getStatus().failures).toBe(1);
+    });
+
+    test('throws when no access token available', async () => {
+      mockAuthStore.get.mockResolvedValue(null);
+
+      await expect(adapter.getActivities({ daysBack: 7 }))
+        .rejects.toThrow('No access token available');
+    });
+
+    test('calculates date range from daysBack parameter', async () => {
+      mockHttpClient.get.mockResolvedValue(mockActivitiesResponse);
+
+      await adapter.getActivities({ daysBack: 30 });
+
+      const callUrl = mockHttpClient.get.mock.calls[0][0];
+      const url = new URL(callUrl);
+      const startDate = url.searchParams.get('startDate');
+      const endDate = url.searchParams.get('endDate');
+
+      // Start date should be ~30 days ago
+      const expectedStart = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      const actualStart = new Date(startDate);
+      const diffDays = Math.abs((actualStart - expectedStart) / (24 * 60 * 60 * 1000));
+      expect(diffDays).toBeLessThan(1);
+
+      // End date should be today
+      const actualEnd = new Date(endDate);
+      const diffEndDays = Math.abs((actualEnd - new Date()) / (24 * 60 * 60 * 1000));
+      expect(diffEndDays).toBeLessThan(1);
+    });
+
+    test('defaults to 7 days back when daysBack not specified', async () => {
+      mockHttpClient.get.mockResolvedValue(mockActivitiesResponse);
+
+      await adapter.getActivities({});
+
+      const callUrl = mockHttpClient.get.mock.calls[0][0];
+      const url = new URL(callUrl);
+      const startDate = url.searchParams.get('startDate');
+
+      // Start date should be ~7 days ago
+      const expectedStart = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      const actualStart = new Date(startDate);
+      const diffDays = Math.abs((actualStart - expectedStart) / (24 * 60 * 60 * 1000));
+      expect(diffDays).toBeLessThan(1);
+    });
+  });
+
+  describe('harvest', () => {
+    const mockActivitiesResponse = {
+      data: {
+        items: [
+          {
+            id: 'act-001',
+            startTime: '2026-01-10T08:00:00Z',
+            type: 'Running',
+            name: 'Morning Run',
+            duration: 1800,
+            calories: 350,
+            distance: 5000,
+            avgHeartRate: 145,
+            maxHeartRate: 175,
+          },
+          {
+            id: 'act-002',
+            startTime: '2026-01-11T09:30:00Z',
+            type: 'Cycling',
+            name: null, // Test fallback to type
+            duration: 2400,
+            calories: 450,
+            distance: 12000,
+            avgHeartRate: 130,
+            maxHeartRate: 160,
+          },
+        ],
+      },
+    };
+
+    beforeEach(() => {
+      // Setup valid token for API calls
+      const futureExpiry = Date.now() + 10 * 60 * 1000;
+      mockAuthStore.get.mockResolvedValue({
+        access_token: 'valid-token',
+        expires_at: futureExpiry,
+        refresh: 'test-refresh-token',
+      });
+
+      // Pre-cache source ID
+      adapter.setSourceId('GarminWellness', 'src-garmin-123');
+
+      // Setup activities response
+      mockHttpClient.get.mockResolvedValue(mockActivitiesResponse);
+    });
+
+    test('returns standardized format with items and metadata', async () => {
+      const result = await adapter.harvest({ jobId: 'job-123', daysBack: 7 });
+
+      expect(result).toHaveProperty('items');
+      expect(result).toHaveProperty('metadata');
+      expect(result.metadata).toHaveProperty('source', 'fitsync');
+      expect(result.metadata).toHaveProperty('harvestedAt');
+      expect(result.metadata).toHaveProperty('daysBack', 7);
+    });
+
+    test('transforms activities to standardized format', async () => {
+      const result = await adapter.harvest({ jobId: 'job-123', daysBack: 7 });
+
+      expect(result.items).toHaveLength(2);
+
+      // Check first activity transformation
+      const firstActivity = result.items[0];
+      expect(firstActivity).toEqual({
+        source: 'fitsync',
+        externalId: 'act-001',
+        startTime: '2026-01-10T08:00:00Z',
+        type: 'Running',
+        title: 'Morning Run',
+        duration: 1800,
+        calories: 350,
+        distance: 5000,
+        avgHr: 145,
+        maxHr: 175,
+        raw: mockActivitiesResponse.data.items[0],
+      });
+    });
+
+    test('uses activity type as title when name is missing', async () => {
+      const result = await adapter.harvest({ jobId: 'job-123', daysBack: 7 });
+
+      const secondActivity = result.items[1];
+      expect(secondActivity.title).toBe('Cycling');
+    });
+
+    test('defaults daysBack to 7 when not specified', async () => {
+      const result = await adapter.harvest({ jobId: 'job-123' });
+
+      expect(result.metadata.daysBack).toBe(7);
+    });
+
+    test('returns skipped status when circuit breaker is open', async () => {
+      // Open the circuit breaker
+      for (let i = 0; i < 3; i++) {
+        adapter.recordFailure(new Error('Test error'));
+      }
+
+      const result = await adapter.harvest({ jobId: 'job-123', daysBack: 7 });
+
+      expect(result).toHaveProperty('status', 'skipped');
+      expect(result).toHaveProperty('reason', 'cooldown');
+      expect(result).toHaveProperty('remainingMins');
+    });
+
+    test('returns empty items array when no activities found', async () => {
+      mockHttpClient.get.mockResolvedValue({ data: { items: [] } });
+
+      const result = await adapter.harvest({ jobId: 'job-123', daysBack: 7 });
+
+      expect(result.items).toEqual([]);
+      expect(result.metadata.source).toBe('fitsync');
+    });
+
+    test('handles API errors gracefully', async () => {
+      mockHttpClient.get.mockRejectedValue(new Error('Network failure'));
+
+      const result = await adapter.harvest({ jobId: 'job-123', daysBack: 7 });
+
+      expect(result).toHaveProperty('status', 'error');
+      expect(result).toHaveProperty('error');
+    });
+
+    test('metadata harvestedAt is a valid ISO timestamp', async () => {
+      const result = await adapter.harvest({ jobId: 'job-123', daysBack: 7 });
+
+      const harvestedAt = new Date(result.metadata.harvestedAt);
+      expect(harvestedAt).toBeInstanceOf(Date);
+      expect(isNaN(harvestedAt.getTime())).toBe(false);
+    });
+
+    test('handles activities with missing optional fields', async () => {
+      mockHttpClient.get.mockResolvedValue({
+        data: {
+          items: [
+            {
+              id: 'act-minimal',
+              startTime: '2026-01-10T08:00:00Z',
+              type: 'Walking',
+              // name, duration, calories, distance, avgHeartRate, maxHeartRate all missing
+            },
+          ],
+        },
+      });
+
+      const result = await adapter.harvest({ jobId: 'job-123', daysBack: 7 });
+
+      const activity = result.items[0];
+      expect(activity.source).toBe('fitsync');
+      expect(activity.externalId).toBe('act-minimal');
+      expect(activity.type).toBe('Walking');
+      expect(activity.title).toBe('Walking'); // Falls back to type
+    });
+  });
 });
