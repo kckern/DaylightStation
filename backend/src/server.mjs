@@ -380,10 +380,12 @@ async function main() {
   }));
   logger.info('finance.mounted', { path: '/api/finance', buxferConfigured: !!financeServices.buxferAdapter });
 
-  // Entropy domain router
+  // Entropy domain router - import legacy function for parity
+  const { getEntropyReport: legacyGetEntropyReport } = await import('../_legacy/lib/entropy.mjs');
   app.use('/api/entropy', createEntropyApiRouter({
     entropyServices,
     configService,
+    legacyGetEntropyReport,
     logger: logger.child({ module: 'entropy-api' })
   }));
   logger.info('entropy.mounted', { path: '/api/entropy' });
