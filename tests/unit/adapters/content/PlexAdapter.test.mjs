@@ -97,6 +97,65 @@ describe('PlexAdapter', () => {
       expect(result).toBeNull();
     });
   });
+
+  describe('getContainerWithChildren', () => {
+    it('should return container info bundled with children', async () => {
+      const adapter = new PlexAdapter({
+        host: 'http://localhost:32400',
+        token: 'test-token'
+      });
+
+      // Mock getContainerInfo and getList
+      adapter.getContainerInfo = jest.fn().mockResolvedValue({
+        title: 'Season 1',
+        image: '/thumb/123',
+        type: 'season',
+        childCount: 10
+      });
+
+      adapter.getList = jest.fn().mockResolvedValue([
+        { id: 'plex:1', title: 'Episode 1' },
+        { id: 'plex:2', title: 'Episode 2' }
+      ]);
+
+      const result = await adapter.getContainerWithChildren('plex:123');
+
+      expect(result.container.title).toBe('Season 1');
+      expect(result.container.childCount).toBe(10);
+      expect(result.children.length).toBe(2);
+      expect(result.children[0].title).toBe('Episode 1');
+    });
+
+    it('should return null if container not found', async () => {
+      const adapter = new PlexAdapter({
+        host: 'http://localhost:32400',
+        token: 'test-token'
+      });
+
+      adapter.getContainerInfo = jest.fn().mockResolvedValue(null);
+      adapter.getList = jest.fn().mockResolvedValue([]);
+
+      const result = await adapter.getContainerWithChildren('plex:99999');
+      expect(result).toBeNull();
+    });
+
+    it('should return empty children array if no children', async () => {
+      const adapter = new PlexAdapter({
+        host: 'http://localhost:32400',
+        token: 'test-token'
+      });
+
+      adapter.getContainerInfo = jest.fn().mockResolvedValue({
+        title: 'Empty Season',
+        type: 'season'
+      });
+      adapter.getList = jest.fn().mockResolvedValue(null);
+
+      const result = await adapter.getContainerWithChildren('plex:123');
+      expect(result.container.title).toBe('Empty Season');
+      expect(result.children).toEqual([]);
+    });
+  });
 });
 
 describe('PlexClient', () => {
