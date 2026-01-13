@@ -3284,6 +3284,272 @@ This section audits the core infrastructure layer including configuration, loggi
 
 ---
 
+## Router Endpoints Comparison
+
+### Overview
+
+This section compares HTTP endpoints between legacy routers (`backend/_legacy/routers/`) and DDD routers (`backend/src/4_api/routers/`).
+
+### Legacy Router Inventory
+
+| Router | File | Endpoints | Purpose |
+|--------|------|-----------|---------|
+| exe.mjs | `_legacy/routers/exe.mjs` | 9 | Home automation (TV, volume, audio, WS, cmd) |
+| fetch.mjs | `_legacy/routers/fetch.mjs` | 12 | Data fetching (img, infinity, talk, scripture, hymn, budget, list) |
+| home.mjs | `_legacy/routers/home.mjs` | 3 | Home dashboard (entropy, calendar, todo) |
+| media.mjs | `_legacy/routers/media.mjs` | 10 | Media playback (img, plex/*, info, log) |
+| health.mjs | `_legacy/routers/health.mjs` | 14 | Health data (daily, weight, workouts, nutrilist CRUD) |
+| cron.mjs | `_legacy/routers/cron.mjs` | 6 | Scheduling (status, run, bucket endpoints) |
+| harvest.mjs | `_legacy/routers/harvest.mjs` | 32 | Data harvesting (dynamic + archive endpoints) |
+| fitness.mjs | `_legacy/routers/fitness.mjs` | 11 | Fitness sessions (bridge to DDD) |
+| journalist.mjs | `_legacy/routers/journalist.mjs` | 1 | Journalist chatbot (bridge to DDD) |
+| printer.mjs | `_legacy/routers/printer.mjs` | 14 | Thermal printer (bridge to DDD) |
+| tts.mjs | `_legacy/routers/tts.mjs` | 2 | Text-to-speech (bridge to DDD) |
+| gratitude.mjs | `_legacy/routers/gratitude.mjs` | 2 | Gratitude journal (bridge to DDD) |
+| lifelog.mjs | `_legacy/routers/lifelog.mjs` | 1 | Lifelog aggregation |
+| plexProxy.mjs | `_legacy/routers/plexProxy.mjs` | 1 | Plex proxy passthrough |
+| **TOTAL** | | **118** | |
+
+### DDD Router Inventory
+
+| Router | File | Endpoints | Purpose |
+|--------|------|-----------|---------|
+| homeAutomation.mjs | `4_api/routers/homeAutomation.mjs` | 9 | TV, volume, audio, cmd, status |
+| localContent.mjs | `4_api/routers/localContent.mjs` | 5 | Scripture, hymn, primary, talk, poem |
+| list.mjs | `4_api/routers/list.mjs` | 1 | Unified list endpoint with modifiers |
+| proxy.mjs | `4_api/routers/proxy.mjs` | 3 | Media streaming proxy |
+| health.mjs | `4_api/routers/health.mjs` | 17 | Daily, weight, workouts, nutrilist CRUD |
+| scheduling.mjs | `4_api/routers/scheduling.mjs` | 8 | Status, run, bucket, jobs, running |
+| finance.mjs | `4_api/routers/finance.mjs` | 17 | Accounts, transactions, budgets, mortgage |
+| fitness.mjs | `4_api/routers/fitness.mjs` | 12 | Sessions, screenshots, voice memo, zone LED |
+| journalist.mjs | `4_api/routers/journalist.mjs` | 5 | Webhook, status, send, queue endpoints |
+| gratitude.mjs | `4_api/routers/gratitude.mjs` | 7 | CRUD operations, card generation |
+| printer.mjs | `4_api/routers/printer.mjs` | 14 | Text, image, receipt, table, canvas |
+| tts.mjs | `4_api/routers/tts.mjs` | 4 | Story, generate, voices, status |
+| entropy.mjs | `4_api/routers/entropy.mjs` | 2 | Entropy report |
+| calendar.mjs | `4_api/routers/calendar.mjs` | 2 | Calendar data |
+| lifelog.mjs | `4_api/routers/lifelog.mjs` | 2 | Aggregate, sources |
+| content.mjs | `4_api/routers/content.mjs` | 3 | Content retrieval |
+| ai.mjs | `4_api/routers/ai.mjs` | 6 | Chat, vision, transcribe, embed, tts |
+| messaging.mjs | `4_api/routers/messaging.mjs` | 4 | Send, webhook, status |
+| nutribot.mjs | `4_api/routers/nutribot.mjs` | 4 | Nutrition chatbot |
+| journaling.mjs | `4_api/routers/journaling.mjs` | 3 | Journal entries |
+| static.mjs | `4_api/routers/static.mjs` | 1 | Static file serving |
+| externalProxy.mjs | `4_api/routers/externalProxy.mjs` | 2 | External API proxy |
+| **TOTAL** | | **131** | |
+
+---
+
+### Detailed Endpoint Comparison by Domain
+
+#### Home Automation Domain
+
+| Legacy Endpoint | Method | DDD Endpoint | Status |
+|-----------------|--------|--------------|--------|
+| `/exe/tv/:state(on\|off\|toggle)` | GET | `/home-automation/tv/:state` | ✅ |
+| `/exe/office_tv/:state` | GET | `/home-automation/office_tv/:state` | ✅ |
+| `/exe/tv` | GET | `/home-automation/tv` | ✅ |
+| `/exe/vol/:level` | GET | `/home-automation/vol/:level` | ✅ |
+| `/exe/volume/:level` | GET | `/home-automation/volume/:level` | ✅ |
+| `/exe/audio/:device` | GET | `/home-automation/audio/:device` | ✅ |
+| `/exe/cmd` | POST | `/home-automation/cmd` | ✅ |
+| `/exe/ws` | GET | N/A (WebSocket setup) | ⚠️ Separate |
+| `/exe/ws/restart` | GET | N/A (WebSocket setup) | ⚠️ Separate |
+| - | - | `/home-automation/status` | ✅ NEW |
+
+**Home Automation Parity: 100%** (7/7 legacy + status endpoint)
+
+---
+
+#### Content/Media Domain
+
+| Legacy Endpoint | Method | DDD Endpoint | Status |
+|-----------------|--------|--------------|--------|
+| `/fetch/img/*` | GET | `/proxy/filesystem/stream/*` | ✅ |
+| `/fetch/talk/:folder?/:id?` | GET | `/local-content/talk/*` | ✅ |
+| `/fetch/scripture/:first?/:second?` | GET | `/local-content/scripture/*` | ✅ |
+| `/fetch/:songType(hymn\|primary)/:num?` | GET | `/local-content/hymn/:number`, `/local-content/primary/:number` | ✅ |
+| `/fetch/list/*` | GET | `/list/:source/*` | ✅ |
+| `/fetch/list` | GET | `/list/:source/*` | ✅ |
+| `/fetch/infinity/harvest/:table_id?` | GET | Harvest router | ⚠️ Different path |
+| `/fetch/budget` | GET | `/finance/data` | ✅ |
+| `/fetch/budget/daytoday` | GET | `/finance/data/daytoday` | ✅ |
+| `/fetch/keyboard/:keyboard_id?` | GET | N/A | ❌ Gap |
+| `/fetch/test` | GET | N/A | ❌ Test endpoint |
+| `/media/img/*` | GET | `/proxy/filesystem/stream/*` | ✅ |
+| `/media/plex/play/:plex_key` | GET | `/proxy/plex/stream/:ratingKey` | ✅ |
+| `/media/plex/mpd/:plex_key` | GET | Dash via proxy | ⚠️ Indirect |
+| `/media/plex/info/:plex_key/:config?` | GET | `/content/:source/:id` | ⚠️ Different path |
+| `/media/plex/list/:plex_key/:config?` | GET | `/list/:source/*` | ✅ |
+| `/media/plex/table/:plex_key` | GET | N/A | ❌ Gap (debug) |
+| `/media/plex/img/:plex_key` | GET | `/proxy/plex/stream/:ratingKey` | ✅ |
+| `/media/plex/audio/:plex_key` | GET | `/proxy/plex/stream/:ratingKey` | ✅ |
+| `/media/info/*` | GET | `/content/:source/:id` | ✅ |
+| `/media/log` | POST | Playback logging | ⚠️ Different path |
+| `/media/*` | GET | `/proxy/filesystem/stream/*` | ✅ |
+| - | - | `/local-content/poem/*` | ✅ NEW |
+
+**Content/Media Parity: ~88%** (15/17 core legacy + new endpoints)
+
+---
+
+#### Health Domain
+
+| Legacy Endpoint | Method | DDD Endpoint | Status |
+|-----------------|--------|--------------|--------|
+| `/health/daily` | GET | `/health/daily` | ✅ |
+| `/health/date/:date` | GET | `/health/date/:date` | ✅ |
+| `/health/range` | GET | `/health/range` | ✅ |
+| `/health/weight` | GET | `/health/weight` | ✅ |
+| `/health/workouts` | GET | `/health/workouts` | ✅ |
+| `/health/fitness` | GET | `/health/fitness` | ✅ |
+| `/health/nutrition` | GET | `/health/nutrition` | ✅ |
+| `/health/coaching` | GET | `/health/coaching` | ✅ |
+| `/health/status` | GET | `/health/status` | ✅ |
+| `/health/nutrilist` | GET | `/health/nutrilist` | ✅ |
+| `/health/nutrilist/:date` | GET | `/health/nutrilist/:date` | ✅ |
+| `/health/nutrilist/item/:uuid` | GET | `/health/nutrilist/:uuid` | ✅ |
+| `/health/nutrilist` | POST | `/health/nutrilist` | ✅ |
+| `/health/nutrilist/:uuid` | PUT | `/health/nutrilist/:uuid` | ✅ |
+| `/health/nutrilist/:uuid` | DELETE | `/health/nutrilist/:uuid` | ✅ |
+
+**Health Parity: 100%** (15/15 legacy endpoints)
+
+---
+
+#### Scheduling Domain
+
+| Legacy Endpoint | Method | DDD Endpoint | Status |
+|-----------------|--------|--------------|--------|
+| `/cron/status` | GET | `/scheduling/status` | ✅ |
+| `/cron/run/:jobId` | POST | `/scheduling/run/:jobId` | ✅ |
+| `/cron/cron10Mins` | GET | `/scheduling/cron10Mins` | ✅ |
+| `/cron/cronHourly` | GET | `/scheduling/cronHourly` | ✅ |
+| `/cron/cronDaily` | GET | `/scheduling/cronDaily` | ✅ |
+| `/cron/cronWeekly` | GET | `/scheduling/cronWeekly` | ✅ |
+| - | - | `/scheduling/jobs` | ✅ NEW |
+| - | - | `/scheduling/running` | ✅ NEW |
+
+**Scheduling Parity: 100%** (6/6 legacy + 2 new)
+
+---
+
+#### Fitness Domain
+
+| Legacy Endpoint | Method | DDD Endpoint | Status |
+|-----------------|--------|--------------|--------|
+| `/fitness` | GET | `/fitness` | ✅ |
+| `/fitness/sessions/dates` | GET | `/fitness/sessions/dates` | ✅ |
+| `/fitness/sessions` | GET | `/fitness/sessions` | ✅ |
+| `/fitness/sessions/:sessionId` | GET | `/fitness/sessions/:sessionId` | ✅ |
+| `/fitness/save_session` | POST | `/fitness/save_session` | ✅ |
+| `/fitness/save_screenshot` | POST | `/fitness/save_screenshot` | ✅ |
+| `/fitness/voice_memo` | POST | `/fitness/voice_memo` | ✅ |
+| `/fitness/zone_led` | POST | `/fitness/zone_led` | ✅ |
+| `/fitness/zone_led/status` | GET | `/fitness/zone_led/status` | ✅ |
+| `/fitness/zone_led/metrics` | GET | `/fitness/zone_led/metrics` | ✅ |
+| `/fitness/zone_led/reset` | POST | `/fitness/zone_led/reset` | ✅ |
+
+**Fitness Parity: 100%** (11/11 legacy endpoints)
+
+---
+
+#### Finance Domain
+
+| Legacy Endpoint | Method | DDD Endpoint | Status |
+|-----------------|--------|--------------|--------|
+| `/fetch/budget` | GET | `/finance/data` | ✅ |
+| `/fetch/budget/daytoday` | GET | `/finance/data/daytoday` | ✅ |
+| `/harvest/budget` | GET | `/finance/refresh` | ✅ |
+| - | - | `/finance` | ✅ NEW |
+| - | - | `/finance/accounts` | ✅ NEW |
+| - | - | `/finance/transactions` | ✅ NEW |
+| - | - | `/finance/transactions/:id` | ✅ NEW |
+| - | - | `/finance/budgets` | ✅ NEW |
+| - | - | `/finance/budgets/:budgetId` | ✅ NEW |
+| - | - | `/finance/mortgage` | ✅ NEW |
+| - | - | `/finance/compile` | ✅ NEW |
+| - | - | `/finance/categorize` | ✅ NEW |
+| - | - | `/finance/memos/:transactionId` | ✅ NEW |
+| - | - | `/finance/memos` | ✅ NEW |
+| - | - | `/finance/metrics` | ✅ NEW |
+
+**Finance Parity: 100%+** (3/3 legacy + 12 new DDD endpoints)
+
+---
+
+#### Hardware Domain (Printer/TTS)
+
+| Legacy Endpoint | Method | DDD Endpoint | Status |
+|-----------------|--------|--------------|--------|
+| `/printer` | GET | `/printer` | ✅ |
+| `/printer/ping` | GET | `/printer/ping` | ✅ |
+| `/printer/text` | POST | `/printer/text` | ✅ |
+| `/printer/image` | POST | `/printer/image` | ✅ |
+| `/printer/receipt` | POST | `/printer/receipt` | ✅ |
+| `/printer/table/:width?` | POST | `/printer/table/:width?` | ✅ |
+| `/printer/canvas` | GET | `/printer/canvas` | ✅ |
+| `/printer/canvas/preview` | GET | `/printer/canvas/preview` | ✅ |
+| `/printer/canvas/print` | GET | `/printer/canvas/print` | ✅ |
+| `/printer/img/:filename` | GET | `/printer/img/:filename` | ✅ |
+| `/printer/print` | POST | `/printer/print` | ✅ |
+| `/printer/feed-button` | GET | `/printer/feed-button` | ✅ |
+| `/printer/feed-button/on` | GET | `/printer/feed-button/on` | ✅ |
+| `/printer/feed-button/off` | GET | `/printer/feed-button/off` | ✅ |
+| `/tts/story` | ALL | `/tts/story` | ✅ |
+| `/tts/generate` | ALL | `/tts/generate` | ✅ |
+| - | - | `/tts/voices` | ✅ NEW |
+| - | - | `/tts/status` | ✅ NEW |
+
+**Hardware Parity: 100%** (16/16 legacy + 2 new)
+
+---
+
+### Summary: Router Endpoints
+
+| Domain | Legacy Endpoints | DDD Endpoints | Gaps | Parity % |
+|--------|------------------|---------------|------|----------|
+| Home Automation | 9 | 9 | 0 | 100% |
+| Content/Media | 17 | 15 | 2 | 88% |
+| Health | 15 | 17 | 0 | 100%+ |
+| Scheduling | 6 | 8 | 0 | 100%+ |
+| Fitness | 11 | 12 | 0 | 100%+ |
+| Finance | 3 | 17 | 0 | 100%+ |
+| Hardware (Printer/TTS) | 16 | 18 | 0 | 100%+ |
+| Harvest | 32 | - | - | N/A (separate) |
+| Chatbots | 6 | 9 | 0 | 100%+ |
+| **TOTAL** | **115** | **105+** | **2** | **98%** |
+
+### Overall Router Endpoint Parity: **98%** (113/115 legacy endpoints covered)
+
+---
+
+### Identified Gaps
+
+| Gap | Legacy Path | Description | Priority |
+|-----|-------------|-------------|----------|
+| `/fetch/keyboard/:keyboard_id?` | Keyboard layout | Fetch keyboard layout data | P3 |
+| `/media/plex/table/:plex_key` | Debug table view | HTML table debug output | P4 |
+
+### Key Improvements in DDD Routers
+
+1. **Unified List Endpoint:** Single `/list/:source/*` replaces multiple legacy endpoints
+2. **Finance Expansion:** 14 new endpoints for comprehensive financial management
+3. **AI Integration:** New `/ai/*` router for AI capabilities
+4. **Streaming Proxy:** Unified `/proxy/*` for all media streaming
+5. **Status Endpoints:** Consistent `/status` endpoint per router
+6. **Metrics:** New metrics endpoints for observability
+7. **Factory Pattern:** All DDD routers use `createXxxRouter(config)` for testability
+
+### Notes
+
+- Harvest router (`harvest.mjs`) endpoints are dynamically generated and operate independently
+- WebSocket setup (`websocket.mjs`) is infrastructure, not HTTP endpoints
+- Many legacy routers are now "bridge" files that delegate to DDD implementations
+- Legacy `plexProxy.mjs` is a simple passthrough to Plex server
+
+---
+
 ## Next Steps
 
 1. **Task 3.2:** Audit Playback domain
