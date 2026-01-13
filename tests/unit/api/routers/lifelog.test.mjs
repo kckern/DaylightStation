@@ -5,7 +5,8 @@ import request from 'supertest';
 
 // Mock the LifelogAggregator
 const mockAggregator = {
-  aggregate: jest.fn()
+  aggregate: jest.fn(),
+  getAvailableSources: jest.fn()
 };
 
 describe('lifelog router', () => {
@@ -13,6 +14,8 @@ describe('lifelog router', () => {
 
   beforeEach(async () => {
     jest.resetModules();
+    mockAggregator.aggregate.mockReset();
+    mockAggregator.getAvailableSources.mockReset();
     const { createLifelogRouter } = await import('../../../../backend/src/4_api/routers/lifelog.mjs');
     app = express();
     app.use('/lifelog', createLifelogRouter({ aggregator: mockAggregator }));
@@ -35,5 +38,13 @@ describe('lifelog router', () => {
   it('should return 400 for invalid date format', async () => {
     const res = await request(app).get('/lifelog/aggregate/testuser/invalid-date');
     expect(res.status).toBe(400);
+  });
+
+  it('should return sources list', async () => {
+    mockAggregator.getAvailableSources.mockReturnValue(['weight', 'steps']);
+
+    const res = await request(app).get('/lifelog/sources');
+    expect(res.status).toBe(200);
+    expect(res.body.sources).toEqual(['weight', 'steps']);
   });
 });

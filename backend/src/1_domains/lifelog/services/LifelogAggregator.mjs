@@ -16,6 +16,9 @@ export class LifelogAggregator {
   #logger;
   #userLoadFile;
 
+  // Store extractors reference for runtime access
+  extractors = extractors;
+
   /**
    * @param {Object} deps
    * @param {Object} deps.logger - Logger instance
@@ -24,6 +27,14 @@ export class LifelogAggregator {
   constructor(deps = {}) {
     this.#logger = deps.logger;
     this.#userLoadFile = deps.userLoadFile;
+  }
+
+  /**
+   * Get list of available extractor sources
+   * @returns {string[]} Array of source names
+   */
+  getAvailableSources() {
+    return this.extractors.map((e) => e.source);
   }
 
   /**
