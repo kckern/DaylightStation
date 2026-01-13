@@ -19,6 +19,11 @@ const PRIORITY_ORDER = {
 const URGENCY_DAYS = 8;
 
 /**
+ * Number of days to look ahead for wait_until filtering
+ */
+const WAIT_LOOKAHEAD_DAYS = 2;
+
+/**
  * QueueService handles play vs queue logic with watch state awareness.
  *
  * Key distinction:
@@ -100,6 +105,27 @@ export class QueueService {
       return item;
     });
   }
+
+  /**
+   * Filter items that have wait_until more than WAIT_LOOKAHEAD_DAYS in future.
+   * Items without wait_until are always included.
+   * Items with wait_until in the past or within lookahead window are included.
+   *
+   * @param {Array} items - Items with optional wait_until field
+   * @param {Date} [now] - Current date for testing
+   * @returns {Array} Filtered items (new array, original unchanged)
+   */
+  static filterByWaitUntil(items, now = new Date()) {
+    const lookaheadDate = new Date(now);
+    lookaheadDate.setDate(lookaheadDate.getDate() + WAIT_LOOKAHEAD_DAYS);
+
+    return items.filter(item => {
+      if (!item.wait_until) return true;
+      const waitDate = new Date(item.wait_until);
+      return waitDate <= lookaheadDate;
+    });
+  }
+
   /**
    * @param {Object} config
    * @param {import('../ports/IWatchStateStore.mjs').IWatchStateStore} config.watchStore

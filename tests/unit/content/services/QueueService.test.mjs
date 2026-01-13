@@ -230,4 +230,36 @@ describe('QueueService', () => {
       expect(enriched[0].priority).toBe('medium'); // unchanged
     });
   });
+
+  describe('wait_until filtering', () => {
+    test('should skip items with wait_until more than 2 days in future', () => {
+      const now = new Date('2026-01-13');
+      const items = [
+        { id: '1', title: 'Available Now', wait_until: '2026-01-12' },
+        { id: '2', title: 'Soon Available', wait_until: '2026-01-15' }, // 2 days
+        { id: '3', title: 'Not Yet', wait_until: '2026-01-20' }, // 7 days
+        { id: '4', title: 'No Wait', wait_until: null }
+      ];
+      const filtered = QueueService.filterByWaitUntil(items, now);
+      expect(filtered.map(i => i.id)).toEqual(['1', '2', '4']);
+    });
+
+    test('should include items with wait_until exactly 2 days ahead', () => {
+      const now = new Date('2026-01-13');
+      const items = [
+        { id: '1', title: 'Boundary', wait_until: '2026-01-15' } // exactly 2 days
+      ];
+      const filtered = QueueService.filterByWaitUntil(items, now);
+      expect(filtered.length).toBe(1);
+    });
+
+    test('should include items with past wait_until dates', () => {
+      const now = new Date('2026-01-13');
+      const items = [
+        { id: '1', title: 'Past', wait_until: '2026-01-01' }
+      ];
+      const filtered = QueueService.filterByWaitUntil(items, now);
+      expect(filtered.length).toBe(1);
+    });
+  });
 });
