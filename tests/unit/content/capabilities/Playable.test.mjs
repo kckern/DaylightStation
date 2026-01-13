@@ -227,4 +227,122 @@ describe('Playable capability', () => {
       expect(item.resumePosition).toBeNull();
     });
   });
+
+  describe('watch state fields', () => {
+    test('should include watch progress percentage', () => {
+      const item = new PlayableItem({
+        id: 'plex:123',
+        source: 'plex',
+        title: 'Movie',
+        mediaType: 'video',
+        mediaUrl: '/stream/123',
+        duration: 7200,
+        resumable: true,
+        resumePosition: 3600,
+        watchProgress: 50
+      });
+      expect(item.watchProgress).toBe(50);
+    });
+
+    test('should calculate watchProgress from resumePosition/duration', () => {
+      const item = new PlayableItem({
+        id: 'plex:123',
+        source: 'plex',
+        title: 'Movie',
+        mediaType: 'video',
+        mediaUrl: '/stream/123',
+        duration: 7200,
+        resumable: true,
+        resumePosition: 3600
+      });
+      expect(item.watchProgress).toBe(50);
+    });
+
+    test('should include watchSeconds alias for resumePosition', () => {
+      const item = new PlayableItem({
+        id: 'plex:123',
+        source: 'plex',
+        title: 'Movie',
+        mediaType: 'video',
+        mediaUrl: '/stream/123',
+        resumable: true,
+        resumePosition: 3600
+      });
+      expect(item.watchSeconds).toBe(3600);
+    });
+
+    test('should include lastPlayed timestamp', () => {
+      const item = new PlayableItem({
+        id: 'plex:123',
+        source: 'plex',
+        title: 'Movie',
+        mediaType: 'video',
+        mediaUrl: '/stream/123',
+        resumable: true,
+        lastPlayed: '2026-01-13T14:30:00Z'
+      });
+      expect(item.lastPlayed).toBe('2026-01-13T14:30:00Z');
+    });
+
+    test('should include playCount', () => {
+      const item = new PlayableItem({
+        id: 'plex:123',
+        source: 'plex',
+        title: 'Movie',
+        mediaType: 'video',
+        mediaUrl: '/stream/123',
+        resumable: true,
+        playCount: 3
+      });
+      expect(item.playCount).toBe(3);
+    });
+
+    test('watchProgress returns null when no resumePosition or duration', () => {
+      const item = new PlayableItem({
+        id: 'plex:123',
+        source: 'plex',
+        title: 'Movie',
+        mediaType: 'video',
+        mediaUrl: '/stream/123',
+        resumable: true
+      });
+      expect(item.watchProgress).toBeNull();
+    });
+
+    test('watchSeconds returns null when no resumePosition', () => {
+      const item = new PlayableItem({
+        id: 'plex:123',
+        source: 'plex',
+        title: 'Movie',
+        mediaType: 'video',
+        mediaUrl: '/stream/123',
+        resumable: true
+      });
+      expect(item.watchSeconds).toBeNull();
+    });
+
+    test('lastPlayed defaults to null', () => {
+      const item = new PlayableItem({
+        id: 'plex:123',
+        source: 'plex',
+        title: 'Movie',
+        mediaType: 'video',
+        mediaUrl: '/stream/123',
+        resumable: true
+      });
+      expect(item.lastPlayed).toBeNull();
+    });
+
+    test('playCount defaults to 0', () => {
+      const item = new PlayableItem({
+        id: 'plex:123',
+        source: 'plex',
+        title: 'Movie',
+        mediaType: 'video',
+        mediaUrl: '/stream/123',
+        resumable: true
+      });
+      expect(item.playCount).toBe(0);
+    });
+  });
 });

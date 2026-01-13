@@ -23,6 +23,9 @@ export class PlayableItem extends Item {
    * @param {string} [props.thumbnail] - Proxied thumbnail URL
    * @param {string} [props.description] - Item description
    * @param {Object} [props.metadata] - Additional metadata
+   * @param {string} [props.lastPlayed] - ISO timestamp of last play
+   * @param {number} [props.playCount] - Number of times played
+   * @param {number} [props.watchProgress] - Explicit watch progress percentage (0-100)
    */
   constructor(props) {
     super(props);
@@ -32,6 +35,30 @@ export class PlayableItem extends Item {
     this.resumable = props.resumable;
     this.resumePosition = props.resumePosition ?? null;
     this.playbackRate = props.playbackRate ?? 1.0;
+    this.lastPlayed = props.lastPlayed ?? null;
+    this.playCount = props.playCount ?? 0;
+    this._watchProgress = props.watchProgress ?? null;
+  }
+
+  /**
+   * Get watch progress percentage (0-100)
+   * Returns explicit watchProgress if provided, otherwise calculates from resumePosition/duration
+   * @returns {number|null}
+   */
+  get watchProgress() {
+    if (this._watchProgress !== null) return this._watchProgress;
+    if (this.resumePosition && this.duration) {
+      return Math.round((this.resumePosition / this.duration) * 100);
+    }
+    return null;
+  }
+
+  /**
+   * Alias for resumePosition (legacy compatibility)
+   * @returns {number|null}
+   */
+  get watchSeconds() {
+    return this.resumePosition;
   }
 
   /**
