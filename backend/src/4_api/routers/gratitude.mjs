@@ -29,6 +29,8 @@ import express from 'express';
  * @param {import('../../1_domains/gratitude/services/GratitudeService.mjs').GratitudeService} config.gratitudeService
  * @param {Object} config.configService - ConfigService for household data
  * @param {Function} config.broadcastToWebsockets - WebSocket broadcast function
+ * @param {Object} [config.printerAdapter] - ThermalPrinterAdapter for card printing
+ * @param {Function} [config.createPrayerCardCanvas] - Function to create prayer card canvas
  * @param {Object} [config.logger] - Logger instance
  * @returns {express.Router}
  */
@@ -37,6 +39,8 @@ export function createGratitudeRouter(config) {
     gratitudeService,
     configService,
     broadcastToWebsockets,
+    printerAdapter,
+    createPrayerCardCanvas,
     logger = console
   } = config;
 
@@ -506,6 +510,129 @@ export function createGratitudeRouter(config) {
     } catch (error) {
       logger.error?.('gratitude.print.mark.error', { error: error.message });
       res.status(500).json({ error: 'Failed to mark as printed' });
+    }
+  });
+
+  // ===========================================================================
+  // Prayer Card Endpoints
+  // ===========================================================================
+
+  /**
+   * GET /api/gratitude/card - Preview prayer card as PNG image
+   * Query params:
+   *   - upsidedown: 'true' to flip for mounted printer
+   *
+   * Note: The createPrayerCardCanvas function fetches selections internally
+   * using the legacy bridge which delegates to the DDD GratitudeService.
+   */
+  router.get('/card', async (req, res) => {
+    if (!createPrayerCardCanvas) {
+      return res.status(501).json({
+        error: 'Prayer card generation not configured'
+      });
+    }
+
+    try {
+      const upsidedown = req.query.upsidedown === 'true';
+
+      // Generate canvas (function fetches selections internally)
+      const { canvas } = await createPrayerCardCanvas(upsidedown);
+
+      // Convert to PNG buffer
+      const buffer = canvas.toBuffer('image/png');
+
+      res.setHeader('Content-Type', 'image/png');
+      res.setHeader('Content-Length', buffer.length);
+      res.setHeader('Content-Disposition', 'inline; filename="prayer-card.png"');
+      res.send(buffer);
+    } catch (error) {
+      logger.error?.('gratitude.card.error', { error: error.message });
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  /**
+   * GET /api/gratitude/card/print - Generate and print prayer card
+   * Only marks items as printed if print succeeds
+   * Query params:
+   *   - upsidedown: 'true' to flip for mounted printer (default: true for print)
+   *
+   * Note: The createPrayerCardCanvas function returns selectedIds that were
+   * included in the generated card, which are then marked as printed.
+   */
+  router.get('/card/print', async (req, res) => {
+    if (!createPrayerCardCanvas) {
+      return res.status(501).json({
+        error: 'Prayer card generation not configured',
+        success: false
+      });
+    }
+
+    if (!printerAdapter) {
+      return res.status(501).json({
+        error: 'Printer not configured',
+        success: false
+      });
+    }
+
+    try {
+      const fs = await import('fs');
+      const householdId = getHouseholdId(req);
+      const upsidedown = req.query.upsidedown !== 'false'; // default true for print
+
+      // Generate canvas (function fetches selections internally and returns selectedIds)
+      const { canvas, width, height, selectedIds } = await createPrayerCardCanvas(upsidedown);
+
+      // Save to temp file
+      const buffer = canvas.toBuffer('image/png');
+      const tempPath = `/tmp/prayer_card_${Date.now()}.png`;
+      fs.writeFileSync(tempPath, buffer);
+
+      // Create and execute print job
+      const printJob = printerAdapter.createImagePrint(tempPath, {
+        width,
+        height,
+        align: 'left',
+        threshold: 128
+      });
+
+      const success = await printerAdapter.print(printJob);
+
+      // Clean up temp file
+      try {
+        fs.unlinkSync(tempPath);
+      } catch {
+        /* ignore cleanup errors */
+      }
+
+      // Mark as printed only if print succeeded
+      const printed = { gratitude: [], hopes: [] };
+
+      if (success && selectedIds) {
+        if (selectedIds.gratitude?.length > 0) {
+          await gratitudeService.markAsPrinted(householdId, 'gratitude', selectedIds.gratitude);
+          printed.gratitude = selectedIds.gratitude;
+        }
+        if (selectedIds.hopes?.length > 0) {
+          await gratitudeService.markAsPrinted(householdId, 'hopes', selectedIds.hopes);
+          printed.hopes = selectedIds.hopes;
+        }
+      }
+
+      res.json({
+        success,
+        message: success ? 'Prayer card printed successfully' : 'Print failed',
+        printed,
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      logger.error?.('gratitude.card.print.error', { error: error.message });
+      res.status(500).json({
+        success: false,
+        message: 'Print error',
+        error: error.message,
+        printed: { gratitude: [], hopes: [] }
+      });
     }
   });
 

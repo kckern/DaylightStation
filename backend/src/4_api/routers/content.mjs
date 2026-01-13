@@ -1,14 +1,32 @@
 // backend/src/4_api/routers/content.mjs
 import express from 'express';
+import fs from 'fs';
+import path from 'path';
 import { WatchState } from '../../1_domains/content/entities/WatchState.mjs';
 
 /**
  * Create content API router
+ *
+ * Endpoints:
+ * - GET /api/content/list/:source/* - List items from source
+ * - GET /api/content/item/:source/* - Get single item info
+ * - GET /api/content/playables/:source/* - Resolve to playable items
+ * - POST /api/content/progress/:source/* - Update watch progress
+ * - GET /api/content/plex/image/:id - Get Plex thumbnail image
+ * - GET /api/content/plex/info/:id - Get Plex item metadata
+ * - POST /api/content/menu-log - Log menu navigation
+ *
  * @param {import('../../1_domains/content/services/ContentSourceRegistry.mjs').ContentSourceRegistry} registry
  * @param {import('../../2_adapters/persistence/yaml/YamlWatchStateStore.mjs').YamlWatchStateStore} [watchStore=null] - Optional watch state store
+ * @param {Object} [options] - Additional options
+ * @param {Function} [options.loadFile] - Function to load YAML files
+ * @param {Function} [options.saveFile] - Function to save YAML files
+ * @param {string} [options.cacheBasePath] - Base path for image cache
+ * @param {Object} [options.logger] - Logger instance
  * @returns {express.Router}
  */
-export function createContentRouter(registry, watchStore = null) {
+export function createContentRouter(registry, watchStore = null, options = {}) {
+  const { loadFile, saveFile, cacheBasePath, logger = console } = options;
   const router = express.Router();
 
   /**
@@ -142,6 +160,127 @@ export function createContentRouter(registry, watchStore = null) {
       });
     } catch (err) {
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ==========================================================================
+  // Plex-specific Routes
+  // ==========================================================================
+
+  /**
+   * GET /api/content/plex/image/:id - Get Plex thumbnail image
+   *
+   * Proxies and caches Plex thumbnail images.
+   */
+  router.get('/plex/image/:id', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const plexAdapter = registry.get('plex');
+
+      if (!plexAdapter) {
+        return res.status(503).json({ error: 'Plex adapter not configured' });
+      }
+
+      // Check cache if available
+      if (cacheBasePath) {
+        const cacheDir = path.join(cacheBasePath, 'plex');
+        const cacheFile = path.join(cacheDir, `${id}.jpg`);
+
+        if (fs.existsSync(cacheFile)) {
+          return res.sendFile(cacheFile);
+        }
+      }
+
+      // Get thumbnail URL from adapter
+      let thumbnailUrl;
+      if (typeof plexAdapter.getThumbnailUrl === 'function') {
+        thumbnailUrl = await plexAdapter.getThumbnailUrl(id);
+      } else if (typeof plexAdapter.getItem === 'function') {
+        const item = await plexAdapter.getItem(`plex:${id}`);
+        thumbnailUrl = item?.thumbnail;
+      }
+
+      if (!thumbnailUrl) {
+        return res.status(404).json({ error: 'Thumbnail not found', id });
+      }
+
+      // Redirect to proxy for the actual image fetch
+      const proxyUrl = thumbnailUrl.replace(/https?:\/\/[^\/]+/, '/proxy/plex');
+      res.redirect(proxyUrl);
+    } catch (error) {
+      logger.error?.('content.plex.image.error', { id: req.params.id, error: error.message });
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  /**
+   * GET /api/content/plex/info/:id - Get Plex item metadata
+   *
+   * Returns full metadata for a Plex item.
+   */
+  router.get('/plex/info/:id', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const plexAdapter = registry.get('plex');
+
+      if (!plexAdapter) {
+        return res.status(503).json({ error: 'Plex adapter not configured' });
+      }
+
+      const item = await plexAdapter.getItem(`plex:${id}`);
+      if (!item) {
+        return res.status(404).json({ error: 'Item not found', id });
+      }
+
+      res.json({
+        id: item.id,
+        title: item.title,
+        itemType: item.itemType,
+        mediaType: item.mediaType,
+        duration: item.duration,
+        thumbnail: item.thumbnail,
+        metadata: item.metadata
+      });
+    } catch (error) {
+      logger.error?.('content.plex.info.error', { id: req.params.id, error: error.message });
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==========================================================================
+  // Menu Navigation Logging
+  // ==========================================================================
+
+  /**
+   * POST /api/content/menu-log - Log menu navigation
+   *
+   * Tracks when menu items are accessed for sorting purposes.
+   * Body: { media_key: string }
+   */
+  router.post('/menu-log', async (req, res) => {
+    try {
+      const { media_key } = req.body;
+
+      if (!media_key) {
+        return res.status(400).json({ error: 'media_key is required' });
+      }
+
+      if (!loadFile || !saveFile) {
+        return res.status(501).json({ error: 'Menu logging not configured' });
+      }
+
+      const menuPath = 'state/menu_memory';
+      const menuLog = loadFile(menuPath) || {};
+      const nowUnix = Math.floor(Date.now() / 1000);
+
+      menuLog[media_key] = nowUnix;
+      saveFile(menuPath, menuLog);
+
+      logger.info?.('content.menu-log.updated', { media_key });
+      res.json({ [media_key]: nowUnix });
+    } catch (error) {
+      logger.error?.('content.menu-log.error', { error: error.message });
+      res.status(500).json({ error: error.message });
     }
   });
 

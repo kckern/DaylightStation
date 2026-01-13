@@ -161,16 +161,20 @@ export function createWatchStore(config) {
  * @param {Object} config
  * @param {ContentSourceRegistry} config.registry - Content source registry
  * @param {YamlWatchStateStore} config.watchStore - Watch state store
+ * @param {Function} [config.loadFile] - Function to load YAML files
+ * @param {Function} [config.saveFile] - Function to save YAML files
+ * @param {string} [config.cacheBasePath] - Base path for image cache
+ * @param {Object} [config.logger] - Logger instance
  * @returns {Object} Router configuration
  */
 export function createApiRouters(config) {
-  const { registry, watchStore } = config;
+  const { registry, watchStore, loadFile, saveFile, cacheBasePath, logger = console } = config;
 
   return {
-    content: createContentRouter(registry, watchStore),
+    content: createContentRouter(registry, watchStore, { loadFile, saveFile, cacheBasePath, logger }),
     proxy: createProxyRouter({ registry }),
     localContent: createLocalContentRouter({ registry }),
-    play: createPlayRouter({ registry, watchStore }),
+    play: createPlayRouter({ registry, watchStore, logger }),
     list: createListRouter({ registry }),
     legacyShims: {
       play: createLegacyPlayShim(),
@@ -858,6 +862,8 @@ export function createGratitudeServices(config) {
  * @param {Object} config.gratitudeServices - Services from createGratitudeServices
  * @param {Object} config.configService - ConfigService for household lookup
  * @param {Function} config.broadcastToWebsockets - WebSocket broadcast function
+ * @param {Object} [config.printerAdapter] - ThermalPrinterAdapter for card printing
+ * @param {Function} [config.createPrayerCardCanvas] - Function to generate prayer card canvas
  * @param {Object} [config.logger] - Logger instance
  * @returns {express.Router}
  */
@@ -866,6 +872,8 @@ export function createGratitudeApiRouter(config) {
     gratitudeServices,
     configService,
     broadcastToWebsockets,
+    printerAdapter,
+    createPrayerCardCanvas,
     logger = console
   } = config;
 
@@ -873,6 +881,8 @@ export function createGratitudeApiRouter(config) {
     gratitudeService: gratitudeServices.gratitudeService,
     configService,
     broadcastToWebsockets,
+    printerAdapter,
+    createPrayerCardCanvas,
     logger
   });
 }
