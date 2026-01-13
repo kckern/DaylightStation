@@ -221,21 +221,30 @@ export function createFitnessServices(config) {
     defaultHouseholdId
   });
 
-  // Home automation gateway
-  const haGateway = new HomeAssistantAdapter(
-    {
-      baseUrl: homeAssistant.baseUrl,
-      token: homeAssistant.token
-    },
-    { logger }
-  );
+  // Home automation gateway (optional - requires baseUrl and token)
+  let haGateway = null;
+  let ambientLedController = null;
 
-  // Ambient LED controller (uses home automation gateway)
-  const ambientLedController = new AmbientLedAdapter({
-    gateway: haGateway,
-    loadFitnessConfig,
-    logger
-  });
+  if (homeAssistant?.baseUrl && homeAssistant?.token) {
+    haGateway = new HomeAssistantAdapter(
+      {
+        baseUrl: homeAssistant.baseUrl,
+        token: homeAssistant.token
+      },
+      { logger }
+    );
+
+    // Ambient LED controller (uses home automation gateway)
+    ambientLedController = new AmbientLedAdapter({
+      gateway: haGateway,
+      loadFitnessConfig,
+      logger
+    });
+  } else {
+    logger.warn?.('fitness.homeassistant.disabled', {
+      reason: 'Missing baseUrl or token configuration'
+    });
+  }
 
   // Voice memo transcription (optional - requires OpenAI API key)
   let transcriptionService = null;
