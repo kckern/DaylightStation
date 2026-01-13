@@ -26,6 +26,7 @@ import { YamlSessionStore } from '../2_adapters/persistence/yaml/YamlSessionStor
 import { AmbientLedAdapter } from '../2_adapters/fitness/AmbientLedAdapter.mjs';
 import { VoiceMemoTranscriptionService } from '../2_adapters/fitness/VoiceMemoTranscriptionService.mjs';
 import { OpenAIAdapter } from '../2_adapters/ai/OpenAIAdapter.mjs';
+import { FitnessSyncerAdapter } from '../2_adapters/harvester/fitness/FitnessSyncerAdapter.mjs';
 import { createFitnessRouter } from '../4_api/routers/fitness.mjs';
 
 // Home automation imports
@@ -312,6 +313,41 @@ export function createFitnessApiRouter(config) {
     userDataService,
     configService,
     logger
+  });
+}
+
+/**
+ * Create FitnessSyncer adapter for OAuth token management and activity harvesting
+ *
+ * The adapter expects an authStore with get/set methods for a single service.
+ * Create a scoped auth store wrapper if using the multi-service YamlAuthStore.
+ *
+ * @param {Object} config
+ * @param {Object} config.httpClient - HTTP client with get/post methods (e.g., axios)
+ * @param {Object} config.authStore - Auth store with get(service)/set(service, data) interface
+ * @param {string} [config.clientId] - OAuth client ID (can also be in authStore)
+ * @param {string} [config.clientSecret] - OAuth client secret (can also be in authStore)
+ * @param {number} [config.cooldownMinutes=5] - Base cooldown in minutes for circuit breaker
+ * @param {Object} [config.logger] - Logger instance
+ * @returns {FitnessSyncerAdapter}
+ */
+export function createFitnessSyncerAdapter(config) {
+  const {
+    httpClient,
+    authStore,
+    clientId,
+    clientSecret,
+    cooldownMinutes = 5,
+    logger = console
+  } = config;
+
+  return new FitnessSyncerAdapter({
+    httpClient,
+    authStore,
+    logger,
+    clientId,
+    clientSecret,
+    cooldownMinutes
   });
 }
 

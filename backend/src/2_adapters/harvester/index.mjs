@@ -18,6 +18,7 @@ export { YamlAuthStore } from './YamlAuthStore.mjs';
 export { GarminHarvester } from './fitness/GarminHarvester.mjs';
 export { StravaHarvester } from './fitness/StravaHarvester.mjs';
 export { WithingsHarvester } from './fitness/WithingsHarvester.mjs';
+export { FitnessSyncerAdapter } from './fitness/FitnessSyncerAdapter.mjs';
 
 // Productivity Harvesters
 export { TodoistHarvester } from './productivity/TodoistHarvester.mjs';
