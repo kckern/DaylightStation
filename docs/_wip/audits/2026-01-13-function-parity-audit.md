@@ -17,6 +17,7 @@
 | Messaging | 2 | 2 | 0 | 100% |
 | Scheduling | 15 | 15 | 0 | 100% |
 | **AI/LLM** | **24** | **30** | **0** | **100%+** |
+| **Home Automation** | **5** | **36** | **0** | **100%+** |
 | Config | TBD | TBD | TBD | TBD |
 | Playback | TBD | TBD | TBD | TBD |
 | User | TBD | TBD | TBD | TBD |
@@ -2408,9 +2409,192 @@ The AI/LLM subsystem provides integrations with OpenAI and Anthropic APIs for:
 
 ---
 
+## Home Automation Adapters
+
+### Legacy Files
+
+| File | Path | Purpose |
+|------|------|---------|
+| homeassistant.mjs | `backend/_legacy/lib/homeassistant.mjs` | Home Assistant API client |
+| exe.mjs | `backend/_legacy/routers/exe.mjs` | Command execution router (now delegates to DDD) |
+
+### DDD Files
+
+| File | Path | Purpose |
+|------|------|---------|
+| IHomeAutomationGateway.mjs | `backend/src/1_domains/home-automation/ports/IHomeAutomationGateway.mjs` | Port interface for home automation |
+| HomeAssistantAdapter.mjs | `backend/src/2_adapters/home-automation/homeassistant/HomeAssistantAdapter.mjs` | Home Assistant implementation |
+| TVControlAdapter.mjs | `backend/src/2_adapters/home-automation/tv/TVControlAdapter.mjs` | TV power control orchestration |
+| KioskAdapter.mjs | `backend/src/2_adapters/home-automation/kiosk/KioskAdapter.mjs` | Fully Kiosk Browser control |
+| TaskerAdapter.mjs | `backend/src/2_adapters/home-automation/tasker/TaskerAdapter.mjs` | Android Tasker control |
+| RemoteExecAdapter.mjs | `backend/src/2_adapters/home-automation/remote-exec/RemoteExecAdapter.mjs` | SSH remote command execution |
+
+---
+
+### Legacy Functions: homeassistant.mjs
+
+| Function | Lines | Purpose | DDD Equivalent | DDD File | Status |
+|----------|-------|---------|----------------|----------|--------|
+| `getHomeAssistantAuth()` | 11-17 | Get HA auth from ConfigService | Constructor config injection | HomeAssistantAdapter.mjs | ✅ |
+| `HomeAPI(path, data)` | 19-41 | Generic POST to HA API | `#apiPost()` / `#apiRequest()` | HomeAssistantAdapter.mjs | ✅ |
+| `turnOnTVPlug()` | 44-51 | Turn on TV plug switch | `callService('switch', 'turn_on', {...})` | HomeAssistantAdapter.mjs | ✅ |
+| `activateScene(sceneName)` | 58-84 | Activate a Home Assistant scene | `activateScene(sceneId)` | HomeAssistantAdapter.mjs | ✅ |
+| `getEntityState(entityId)` | 91-112 | Get current state of entity | `getState(entityId)` | HomeAssistantAdapter.mjs | ✅ |
+
+**Legacy homeassistant.mjs Parity: 100%** (5/5 functions)
+
+---
+
+### DDD HomeAssistantAdapter Functions (Full List)
+
+| Function | Lines | Purpose | Legacy Equivalent | Status |
+|----------|-------|---------|-------------------|--------|
+| `constructor(config, deps)` | 30-51 | Initialize with baseUrl, token | `getHomeAssistantAuth()` | ✅ |
+| `getState(entityId)` | 62-80 | Get entity state | `getEntityState()` | ✅ |
+| `callService(domain, service, data)` | 88-109 | Call any HA service | `HomeAPI()` | ✅ |
+| `activateScene(sceneId)` | 116-126 | Activate scene | `activateScene()` | ✅ |
+| `runScript(scriptId)` | 132-143 | Run a script | - | ✅ NEW |
+| `waitForState(entityId, desiredState, options)` | 152-177 | Poll until state reached | - | ✅ NEW |
+| `isConnected()` | 183-185 | Check if configured | - | ✅ NEW |
+| `getProviderName()` | 191-193 | Return 'homeassistant' | - | ✅ NEW |
+| `turnOn(entityId)` | 204-207 | Turn on any entity | Partial via `turnOnTVPlug()` | ✅ |
+| `turnOff(entityId)` | 213-216 | Turn off any entity | - | ✅ NEW |
+| `toggle(entityId)` | 222-227 | Toggle any entity | - | ✅ NEW |
+| `getMetrics()` | 233-248 | Get adapter metrics | - | ✅ NEW |
+
+**DDD HomeAssistantAdapter: 12 functions** (5 legacy + 7 new)
+
+---
+
+### DDD TVControlAdapter Functions
+
+| Function | Lines | Purpose | Used By | Status |
+|----------|-------|---------|---------|--------|
+| `constructor(config, deps)` | 70-94 | Initialize with gateway, locations | exe.mjs router | ✅ |
+| `turnOn(location)` | 105-161 | Turn on TV at location | `/exe/tv/on` | ✅ |
+| `turnOff(location)` | 168-219 | Turn off TV at location | `/exe/tv/off` | ✅ |
+| `toggle(location)` | 226-255 | Toggle TV power | `/exe/tv/toggle` | ✅ |
+| `getState(location)` | 262-274 | Get TV power state | Internal | ✅ |
+| `setVolume(location)` | 281-309 | Run volume script | Internal | ✅ |
+| `getLocations()` | 315-317 | List configured locations | Internal | ✅ |
+| `getMetrics()` | 323-334 | Get operation metrics | Internal | ✅ |
+
+**DDD TVControlAdapter: 8 functions** (all new orchestration layer)
+
+---
+
+### DDD KioskAdapter Functions
+
+| Function | Lines | Purpose | Used By | Status |
+|----------|-------|---------|---------|--------|
+| `constructor(config, deps)` | 39-54 | Initialize with host, port, password | exe.mjs router | ✅ |
+| `waitForKiosk(options)` | 67-99 | Wait for kiosk to be ready | `/exe/tv` | ✅ |
+| `loadUrl(path, query, options)` | 109-112 | Load URL in kiosk browser | `/exe/tv` | ✅ |
+| `waitForUrl(needle, options)` | 122-151 | Wait for specific URL to load | Internal | ✅ |
+| `waitForBlank(options)` | 159-170 | Wait for blank page | `/exe/tv` | ✅ |
+| `sendCommand(cmd, params)` | 178-199 | Send raw kiosk command | Internal | ✅ |
+| `isConfigured()` | 205-207 | Check if configured | Internal | ✅ |
+| `getMetrics()` | 213-229 | Get adapter metrics | Internal | ✅ |
+
+**DDD KioskAdapter: 8 functions** (all new - extracted from inline exe.mjs logic)
+
+---
+
+### DDD TaskerAdapter Functions
+
+| Function | Lines | Purpose | Used By | Status |
+|----------|-------|---------|---------|--------|
+| `constructor(config, deps)` | 34-47 | Initialize with host, port | exe.mjs router | ✅ |
+| `sendCommand(command, options)` | 61-66 | Send command with retry | Internal | ✅ |
+| `showBlank()` | 72-74 | Show blank screen | `/exe/tv` | ✅ |
+| `screenOn()` | 80-82 | Turn screen on | Internal | ✅ |
+| `screenOff()` | 88-90 | Turn screen off | Internal | ✅ |
+| `isConfigured()` | 96-98 | Check if configured | Internal | ✅ |
+| `getMetrics()` | 104-121 | Get command metrics | Internal | ✅ |
+
+**DDD TaskerAdapter: 7 functions** (all new - extracted from inline exe.mjs logic)
+
+---
+
+### DDD RemoteExecAdapter Functions
+
+| Function | Lines | Purpose | Used By | Status |
+|----------|-------|---------|---------|--------|
+| `constructor(config, deps)` | 44-59 | Initialize with SSH config | exe.mjs router | ✅ |
+| `execute(command)` | 70-112 | Execute remote command via SSH | `/exe/cmd` | ✅ |
+| `setVolume(level)` | 118-132 | Set system volume (mute/unmute/level) | `/exe/vol/:level` | ✅ |
+| `setAudioDevice(device)` | 139-142 | Set audio output device | `/exe/audio/:device` | ✅ |
+| `isConfigured()` | 148-150 | Check if configured | Internal | ✅ |
+| `getMetrics()` | 156-173 | Get execution metrics | Internal | ✅ |
+
+**DDD RemoteExecAdapter: 6 functions** (all new - extracted from inline exe.mjs logic)
+
+---
+
+### DDD IHomeAutomationGateway Port Interface
+
+| Function | Lines | Purpose | Implementations | Status |
+|----------|-------|---------|-----------------|--------|
+| `isHomeAutomationGateway(obj)` | 34-41 | Type guard for interface | HomeAssistantAdapter | ✅ |
+| `assertHomeAutomationGateway(obj)` | 48-52 | Assertion for interface | HomeAssistantAdapter | ✅ |
+| `createNoOpGateway()` | 110-134 | No-op gateway for testing | Testing | ✅ |
+
+**Port Interface: 3 utility functions**
+
+---
+
+### Summary: Home Automation Adapters
+
+| Adapter | Legacy Functions | DDD Functions | Gaps | Parity % |
+|---------|------------------|---------------|------|----------|
+| HomeAssistantAdapter | 5 | 12 | 0 | 100%+ |
+| TVControlAdapter | 0 | 8 | 0 | NEW |
+| KioskAdapter | 0 | 8 | 0 | NEW |
+| TaskerAdapter | 0 | 7 | 0 | NEW |
+| RemoteExecAdapter | 0 | 6 | 0 | NEW |
+| Port Interface | 0 | 3 | 0 | NEW |
+| **TOTAL** | **5** | **36** | **0** | **100%+** |
+
+### Overall Home Automation Parity: **100%+** (36/5 - DDD significantly exceeds legacy)
+
+---
+
+### Key DDD Improvements
+
+1. **Clean Architecture:** Separated into port interface (IHomeAutomationGateway) and adapter implementations
+2. **Specialized Adapters:** Each device type (TV, Kiosk, Tasker, SSH) has dedicated adapter
+3. **Metrics Tracking:** All adapters include built-in metrics for monitoring
+4. **Orchestration Layer:** TVControlAdapter orchestrates multi-step TV power sequences
+5. **Dependency Injection:** Adapters accept logger and httpClient via constructor
+6. **State Polling:** `waitForState()` enables reliable device control with timeouts
+7. **Multi-Location Support:** TVControlAdapter supports multiple TV locations (living_room, office)
+8. **Testable:** All adapters designed for easy mocking and testing
+
+### Architecture Notes
+
+The `exe.mjs` router in legacy now serves as a **thin bridge** to DDD adapters:
+- Routes remain in `backend/_legacy/routers/exe.mjs` for backward compatibility
+- All business logic delegated to `backend/src/2_adapters/home-automation/` adapters
+- Volume state persisted via legacy `io.mjs` (planned migration to DDD storage)
+- WebSocket functionality remains in legacy `websocket.mjs` (separate migration scope)
+
+### Gaps (None)
+
+| Gap | Description | Priority | Notes |
+|-----|-------------|----------|-------|
+| - | - | - | No gaps identified |
+
+**Recommendation:** The Home Automation adapters are fully migrated with significant enhancements. The legacy `exe.mjs` router successfully delegates to DDD adapters while maintaining API compatibility. Consider:
+1. Migrating volume state storage from `io.mjs` to a DDD-based state store
+2. Migrating WebSocket functionality to DDD infrastructure (separate scope)
+3. Eventually retiring the legacy router once all consumers updated
+
+---
+
 ## Next Steps
 
-1. **Task 1.7:** Audit Playback domain
-2. **Task 1.8:** Audit Config domain
-3. **Task 1.9:** Audit User domain
-4. **Task 2.x:** Implement missing functions by priority
+1. ~~**Task 2.3:** Audit Home Automation adapters~~ ✅ COMPLETE (100%+ parity)
+2. **Task 1.7:** Audit Playback domain
+3. **Task 1.8:** Audit Config domain
+4. **Task 1.9:** Audit User domain
+5. **Task 2.x:** Implement missing functions by priority
