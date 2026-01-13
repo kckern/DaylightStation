@@ -150,6 +150,39 @@ describe('FilesystemAdapter', () => {
     });
   });
 
+  describe('image MIME types', () => {
+    it('should detect SVG files', () => {
+      const adapter = new FilesystemAdapter({ mediaBasePath: '/test' });
+      expect(adapter.getMimeType('.svg')).toBe('image/svg+xml');
+    });
+
+    it('should detect GIF files', () => {
+      const adapter = new FilesystemAdapter({ mediaBasePath: '/test' });
+      expect(adapter.getMimeType('.gif')).toBe('image/gif');
+    });
+
+    it('should detect WebP files', () => {
+      const adapter = new FilesystemAdapter({ mediaBasePath: '/test' });
+      expect(adapter.getMimeType('.webp')).toBe('image/webp');
+    });
+
+    it('should include image type in getMediaType', () => {
+      const adapter = new FilesystemAdapter({ mediaBasePath: '/test' });
+      expect(adapter.getMediaType('.svg')).toBe('image');
+      expect(adapter.getMediaType('.gif')).toBe('image');
+      expect(adapter.getMediaType('.webp')).toBe('image');
+      expect(adapter.getMediaType('.jpg')).toBe('image');
+      expect(adapter.getMediaType('.png')).toBe('image');
+    });
+
+    it('should detect existing image formats', () => {
+      const adapter = new FilesystemAdapter({ mediaBasePath: '/test' });
+      expect(adapter.getMimeType('.jpg')).toBe('image/jpeg');
+      expect(adapter.getMimeType('.jpeg')).toBe('image/jpeg');
+      expect(adapter.getMimeType('.png')).toBe('image/png');
+    });
+  });
+
   describe('household-scoped watch state', () => {
     test('should accept householdId in constructor', () => {
       const adapter = new FilesystemAdapter({

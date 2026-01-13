@@ -13,16 +13,23 @@ const MIME_TYPES = {
   '.mp3': 'audio/mpeg',
   '.m4a': 'audio/mp4',
   '.wav': 'audio/wav',
+  '.flac': 'audio/flac',
+  '.ogg': 'audio/ogg',
   '.mp4': 'video/mp4',
   '.webm': 'video/webm',
   '.mkv': 'video/x-matroska',
+  '.avi': 'video/x-msvideo',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
-  '.png': 'image/png'
+  '.png': 'image/png',
+  '.gif': 'image/gif',
+  '.svg': 'image/svg+xml',
+  '.webp': 'image/webp'
 };
 
 const AUDIO_EXTS = ['.mp3', '.m4a', '.wav', '.flac', '.ogg'];
 const VIDEO_EXTS = ['.mp4', '.webm', '.mkv', '.avi'];
+const IMAGE_EXTS = ['.jpg', '.jpeg', '.png', '.gif', '.svg', '.webp'];
 
 /**
  * Filesystem adapter for raw media files.
@@ -187,15 +194,25 @@ export class FilesystemAdapter {
   }
 
   /**
-   * Get media type from extension
-   * @param {string} ext
-   * @returns {'audio'|'video'|'image'}
+   * Get MIME type for extension
+   * @param {string} ext - File extension including dot
+   * @returns {string}
+   */
+  getMimeType(ext) {
+    return MIME_TYPES[ext.toLowerCase()] || 'application/octet-stream';
+  }
+
+  /**
+   * Get media type category for extension
+   * @param {string} ext - File extension
+   * @returns {'audio'|'video'|'image'|'unknown'}
    */
   getMediaType(ext) {
     ext = ext.toLowerCase();
     if (AUDIO_EXTS.includes(ext)) return 'audio';
     if (VIDEO_EXTS.includes(ext)) return 'video';
-    return 'image';
+    if (IMAGE_EXTS.includes(ext)) return 'image';
+    return 'unknown';
   }
 
   /**
