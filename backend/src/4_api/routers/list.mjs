@@ -64,11 +64,14 @@ export function createListRouter(config) {
 
   /**
    * Transform item to list response format
+   * Flattens metadata properties to top level for FitnessShow compatibility
    */
   function toListItem(item) {
-    return {
+    const base = {
       id: item.id,
       title: item.title,
+      // Include 'label' for legacy FitnessShow compatibility
+      label: item.metadata?.label || item.title,
       itemType: item.itemType || (item.children ? 'container' : 'leaf'),
       childCount: item.childCount || item.children?.length,
       thumbnail: item.thumbnail,
@@ -78,6 +81,77 @@ export function createListRouter(config) {
       play: item.mediaUrl ? { media: item.id } : undefined,
       queue: item.itemType === 'container' ? { playlist: item.id } : undefined
     };
+
+    // Flatten episode-specific metadata to top level for FitnessShow compatibility
+    if (item.metadata) {
+      const {
+        plex, key, seasonId, seasonName, seasonNumber, seasonThumbUrl,
+        episodeNumber, index, summary, tagline, studio, thumb_id, type,
+        artist, albumArtist, album, albumId, artistId, grandparentTitle,
+        // TV show fields
+        show, season,
+        // Parent (season) fields
+        parent, parentTitle, parentIndex, parentThumb,
+        // Grandparent (show) fields
+        showId, grandparent, showThumbUrl, grandparentThumb,
+        // Rating fields for FitnessMenu sorting
+        rating, userRating, year
+      } = item.metadata;
+
+      if (plex !== undefined) base.plex = plex;
+      if (key !== undefined) base.key = key;
+      if (seasonId !== undefined) base.seasonId = seasonId;
+      if (seasonName !== undefined) base.seasonName = seasonName;
+      if (seasonNumber !== undefined) base.seasonNumber = seasonNumber;
+      if (seasonThumbUrl !== undefined) base.seasonThumbUrl = seasonThumbUrl;
+      if (episodeNumber !== undefined) base.episodeNumber = episodeNumber;
+      if (index !== undefined) base.index = index;
+      if (summary !== undefined) base.summary = summary;
+      if (tagline !== undefined) base.tagline = tagline;
+      if (studio !== undefined) base.studio = studio;
+      if (thumb_id !== undefined) base.thumb_id = thumb_id;
+      if (type !== undefined) base.type = type;
+      // Music fields
+      if (artist !== undefined) base.artist = artist;
+      if (albumArtist !== undefined) base.albumArtist = albumArtist;
+      if (album !== undefined) base.album = album;
+      if (albumId !== undefined) base.albumId = albumId;
+      if (artistId !== undefined) base.artistId = artistId;
+      if (grandparentTitle !== undefined) base.grandparentTitle = grandparentTitle;
+      // TV show fields
+      if (show !== undefined) base.show = show;
+      if (season !== undefined) base.season = season;
+      // Parent (season) fields
+      if (parent !== undefined) base.parent = parent;
+      if (parentTitle !== undefined) base.parentTitle = parentTitle;
+      if (parentIndex !== undefined) base.parentIndex = parentIndex;
+      if (parentThumb !== undefined) base.parentThumb = parentThumb;
+      // Grandparent (show) fields
+      if (showId !== undefined) base.showId = showId;
+      if (grandparent !== undefined) base.grandparent = grandparent;
+      if (showThumbUrl !== undefined) base.showThumbUrl = showThumbUrl;
+      if (grandparentThumb !== undefined) base.grandparentThumb = grandparentThumb;
+      // Rating fields for FitnessMenu sorting
+      if (rating !== undefined) base.rating = rating;
+      if (userRating !== undefined) base.userRating = userRating;
+      if (year !== undefined) base.year = year;
+
+      // Duration from PlayableItem
+      if (item.duration !== undefined) base.duration = item.duration;
+    }
+
+    // Progress/resume fields from PlayableItem
+    if (item.resumePosition !== undefined && item.resumePosition !== null) {
+      base.resumePosition = item.resumePosition;
+      base.resumeSeconds = item.resumePosition;
+      base.watchSeconds = item.resumePosition;
+      // Calculate watchProgress percentage
+      if (item.duration && item.duration > 0) {
+        base.watchProgress = Math.round((item.resumePosition / item.duration) * 100);
+      }
+    }
+
+    return base;
   }
 
   /**
@@ -127,12 +201,41 @@ export function createListRouter(config) {
       const compoundId = source === 'folder' ? localId : `${source}:${localId}`;
       const containerInfo = adapter.getItem ? await adapter.getItem(compoundId) : null;
 
+      // Build info object for FitnessShow compatibility
+      let info = null;
+      if (modifiers.playable && adapter.getContainerInfo) {
+        info = await adapter.getContainerInfo(compoundId);
+      }
+
+      // Build seasons map from items' season metadata
+      let seasons = null;
+      if (modifiers.playable && items.length > 0) {
+        const seasonsMap = {};
+        for (const item of items) {
+          const seasonId = item.metadata?.seasonId || item.metadata?.parent;
+          if (seasonId && !seasonsMap[seasonId]) {
+            seasonsMap[seasonId] = {
+              id: seasonId,
+              title: item.metadata?.seasonName || item.metadata?.parentTitle || `Season`,
+              index: item.metadata?.seasonNumber ?? item.metadata?.parentIndex,
+              thumbnail: item.metadata?.seasonThumbUrl || item.metadata?.parentThumb
+            };
+          }
+        }
+        // Only include seasons if we found any
+        if (Object.keys(seasonsMap).length > 0) {
+          seasons = seasonsMap;
+        }
+      }
+
       res.json({
         source,
         path: localId,
         title: containerInfo?.title || localId,
         label: containerInfo?.title || localId,
         image: containerInfo?.thumbnail,
+        info,
+        seasons,
         items: items.map(toListItem)
       });
     } catch (err) {
