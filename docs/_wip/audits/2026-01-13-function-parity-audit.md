@@ -12,6 +12,7 @@
 |--------|------------------|-----------------|------|----------|
 | Content | 66 | 54 | 12 | 82% |
 | Fitness | 41 | 32 | 9 | 78% |
+| Health | 52 | 44 | 8 | 85% |
 | Config | TBD | TBD | TBD | TBD |
 | Playback | TBD | TBD | TBD | TBD |
 | Scheduling | TBD | TBD | TBD | TBD |
@@ -687,10 +688,340 @@ The gap is entirely in the **fitsync.mjs** library which handles FitnessSyncer/G
 
 ---
 
+## 3. Health Domain
+
+### Legacy Files
+
+| File | Path | Purpose |
+|------|------|---------|
+| health.mjs | `backend/_legacy/lib/health.mjs` | Daily health data aggregation |
+| withings.mjs | `backend/_legacy/lib/withings.mjs` | Withings weight data integration |
+| strava.mjs | `backend/_legacy/lib/strava.mjs` | Strava activity integration |
+| garmin.mjs | `backend/_legacy/lib/garmin.mjs` | Garmin Connect integration |
+| health.mjs (router) | `backend/_legacy/routers/health.mjs` | Health API router (bridge to DDD) |
+
+### DDD Files
+
+| File | Path | Purpose |
+|------|------|---------|
+| HealthMetric.mjs | `backend/src/1_domains/health/entities/HealthMetric.mjs` | Daily health metric entity |
+| WorkoutEntry.mjs | `backend/src/1_domains/health/entities/WorkoutEntry.mjs` | Workout entry entity |
+| HealthAggregationService.mjs | `backend/src/1_domains/health/services/HealthAggregationService.mjs` | Health data aggregation service |
+| IHealthDataStore.mjs | `backend/src/1_domains/health/ports/IHealthDataStore.mjs` | Health data store interface |
+| YamlHealthStore.mjs | `backend/src/2_adapters/persistence/yaml/YamlHealthStore.mjs` | YAML-based health persistence |
+| StravaHarvester.mjs | `backend/src/2_adapters/harvester/fitness/StravaHarvester.mjs` | Strava data harvester |
+| WithingsHarvester.mjs | `backend/src/2_adapters/harvester/fitness/WithingsHarvester.mjs` | Withings weight harvester |
+| GarminHarvester.mjs | `backend/src/2_adapters/harvester/fitness/GarminHarvester.mjs` | Garmin data harvester |
+| health.mjs | `backend/src/4_api/routers/health.mjs` | DDD Health API router |
+
+---
+
+### Legacy Functions: health.mjs (Lib)
+
+| Function | Lines | Purpose | DDD Equivalent |
+|----------|-------|---------|----------------|
+| `getDefaultUsername()` | 14-17 | Get head of household username | `YamlHealthStore.#getDefaultUsername()` |
+| `md5(string)` | 19-22 | Generate MD5 hash | Not needed in DDD |
+| `dailyHealth(jobId, daysBack)` | 24-223 | Main aggregation function | `HealthAggregationService.aggregateDailyHealth()` |
+
+**Total Legacy health.mjs (lib):** 3 functions
+
+---
+
+### Legacy Functions: withings.mjs
+
+| Function | Lines | Purpose | DDD Equivalent |
+|----------|-------|---------|----------------|
+| `resolveSecrets()` | 28-34 | Load Withings OAuth credentials | `WithingsHarvester.#refreshAccessToken()` |
+| `cleanErrorMessage(error)` | 41-63 | Extract clean error from HTML | `WithingsHarvester.#cleanErrorMessage()` |
+| `isInCooldown()` | 69-79 | Check circuit breaker state | `WithingsHarvester.getStatus()` (via CircuitBreaker) |
+| `recordFailure(error)` | 84-102 | Record failure for circuit breaker | `CircuitBreaker.recordFailure()` |
+| `recordSuccess()` | 107-113 | Reset circuit breaker on success | `CircuitBreaker.recordSuccess()` |
+| `getAccessToken(username, authData)` | 115-205 | OAuth token refresh with cache | `WithingsHarvester.#refreshAccessToken()` |
+| `getWeightData(job_id)` | 207-316 | Main harvest function | `WithingsHarvester.harvest()` |
+| `round(value, decimals)` | 322-324 | Round to decimal places | `WithingsHarvester.#round()` |
+| `isWithingsInCooldown` (export) | 319 | Export cooldown check | `WithingsHarvester.getStatus()` |
+
+**Total Legacy withings.mjs:** 9 functions
+
+---
+
+### Legacy Functions: strava.mjs
+
+| Function | Lines | Purpose | DDD Equivalent |
+|----------|-------|---------|----------------|
+| `cleanErrorMessage(error)` | 25-48 | Extract clean error from HTML | `StravaHarvester.#cleanErrorMessage()` |
+| `isInCooldown()` | 64-74 | Check circuit breaker state | `StravaHarvester.getStatus()` |
+| `recordFailure(error)` | 81-101 | Record failure for circuit breaker | `CircuitBreaker.recordFailure()` |
+| `recordSuccess()` | 106-112 | Reset circuit breaker on success | `CircuitBreaker.recordSuccess()` |
+| `getAccessToken(logger, username)` | 114-157 | OAuth token refresh | `StravaHarvester.#refreshAccessToken()` |
+| `reauthSequence()` | 159-165 | Generate reauth URL | **GAP** |
+| `baseAPI(endpoint, logger)` | 167-200 | Strava API base request | `StravaHarvester (via stravaClient)` |
+| `getActivities(logger, daysBack)` | 202-291 | Fetch activities with HR enrichment | `StravaHarvester.#fetchActivities()` + `#enrichWithHeartRate()` |
+| `harvestActivities(logger, job_id, daysBack)` | 293-448 | Main harvest function | `StravaHarvester.harvest()` |
+| `isStravaInCooldown` (export) | 451 | Export cooldown check | `StravaHarvester.getStatus()` |
+
+**Total Legacy strava.mjs:** 10 functions
+
+---
+
+### Legacy Functions: garmin.mjs
+
+| Function | Lines | Purpose | DDD Equivalent |
+|----------|-------|---------|----------------|
+| `cleanErrorMessage(error)` | 17-41 | Extract clean error from HTML | `GarminHarvester.#cleanErrorMessage()` |
+| `getGarminClient(targetUsername)` | 63-87 | Lazy-load Garmin client | `GarminHarvester.#getAuthenticatedClient()` |
+| `isInCooldown()` | 106-117 | Check circuit breaker state | `GarminHarvester.getStatus()` |
+| `recordFailure(error)` | 123-143 | Record failure for circuit breaker | `CircuitBreaker.recordFailure()` |
+| `recordSuccess()` | 148-154 | Reset circuit breaker on success | `CircuitBreaker.recordSuccess()` |
+| `login()` | 156-164 | Login to Garmin Connect | `GarminHarvester.#getAuthenticatedClient()` |
+| `getActivities(start, limit, activityType, subActivityType)` | 170-174 | Fetch activities | `GarminHarvester.harvest()` (via client) |
+| `getActivityDetails(activityId)` | 176-180 | Get activity detail | **GAP** |
+| `downloadActivityData(activityId, directoryPath)` | 182-186 | Download activity data | **GAP** |
+| `uploadActivityFile(filePath)` | 188-192 | Upload activity file | **GAP** |
+| `uploadActivityImage(activityId, imagePath)` | 194-199 | Upload activity image | **GAP** |
+| `deleteActivityImage(activityId, imageId)` | 201-205 | Delete activity image | **GAP** |
+| `getSteps(date)` | 207-211 | Get steps for date | **GAP** |
+| `getHeartRate(date)` | 214-218 | Get heart rate for date | **GAP** |
+| `harvestActivities()` | 220-268 | Main harvest function | `GarminHarvester.harvest()` |
+| `simplifyActivity(activity)` | 272-302 | Transform activity to summary | `GarminHarvester.#simplifyActivity()` |
+| `isGarminInCooldown` (export) | 304 | Export cooldown check | `GarminHarvester.getStatus()` |
+
+**Total Legacy garmin.mjs:** 17 functions
+
+---
+
+### Legacy Router: health.mjs (Bridge)
+
+| Method | Endpoint | Lines | Purpose | DDD Equivalent |
+|--------|----------|-------|---------|----------------|
+| GET | `/daily` | 86-110 | Get daily health data | `GET /health/daily` |
+| GET | `/weight` | 115-132 | Get weight data | `GET /health/weight` |
+| GET | `/workouts` | 137-154 | Get Strava workout data | `GET /health/workouts` |
+| GET | `/fitness` | 159-176 | Get fitness tracking data | `GET /health/fitness` |
+| GET | `/nutrition` | 181-205 | Get nutrition data | `GET /health/nutrition` |
+| GET | `/coaching` | 210-227 | Get coaching data | `GET /health/coaching` |
+| GET | `/nutrilist/:date` | 233-252 | Get nutrilist by date | `GET /health/nutrilist/:date` |
+| GET | `/nutrilist` | 254-269 | Get today's nutrilist | `GET /health/nutrilist` |
+| GET | `/nutrilist/item/:uuid` | 271-284 | Get nutrilist item | `GET /health/nutrilist/item/:uuid` |
+| POST | `/nutrilist` | 286-323 | Create nutrilist item | `POST /health/nutrilist` |
+| PUT | `/nutrilist/:uuid` | 325-356 | Update nutrilist item | `PUT /health/nutrilist/:uuid` |
+| DELETE | `/nutrilist/:uuid` | 358-377 | Delete nutrilist item | `DELETE /health/nutrilist/:uuid` |
+| GET | `/status` | 383-404 | Get router status | `GET /health/status` |
+
+**Total Legacy Router Endpoints:** 13 endpoints
+
+---
+
+### DDD Functions: Domain Layer
+
+#### HealthMetric.mjs (HealthMetric class)
+| Function | Lines | Purpose |
+|----------|-------|---------|
+| `constructor(data)` | 35-42 | Create health metric with fields |
+| `getWorkoutSummary()` | 48-54 | Calculate workout summary |
+| `hasWeight()` | 60-62 | Check if has weight data |
+| `hasNutrition()` | 68-70 | Check if has nutrition data |
+| `hasWorkouts()` | 76-78 | Check if has workouts |
+| `toJSON()` | 84-98 | Serialize to plain object |
+| `static fromJSON(data)` | 105-107 | Create from stored data |
+
+**Total HealthMetric.mjs:** 7 methods
+
+#### WorkoutEntry.mjs (WorkoutEntry class)
+| Function | Lines | Purpose |
+|----------|-------|---------|
+| `constructor(data)` | 38-54 | Create workout entry |
+| `hasStrava()` | 60-62 | Check if includes Strava |
+| `hasGarmin()` | 68-70 | Check if includes Garmin |
+| `isMerged()` | 76-78 | Check if merged from sources |
+| `toJSON()` | 84-102 | Serialize to plain object |
+| `static fromJSON(data)` | 110-112 | Create from stored data |
+
+**Total WorkoutEntry.mjs:** 6 methods
+
+#### HealthAggregationService.mjs
+| Function | Lines | Purpose |
+|----------|-------|---------|
+| `constructor(config)` | 22-28 | Initialize with store |
+| `aggregateDailyHealth(userId, daysBack)` | 36-82 | Main aggregation method |
+| `getHealthForDate(userId, date)` | 90-94 | Get health for specific date |
+| `getHealthForRange(userId, startDate, endDate)` | 103-114 | Get health for date range |
+| `#generateDateRange(daysBack)` | 124-135 | Generate date array |
+| `#aggregateDayMetrics(date, sources)` | 141-183 | Aggregate single day |
+| `#mergeWorkouts(strava, garmin, fitness)` | 189-300 | Merge workouts from sources |
+| `#mergeHealthData(existing, newData)` | 306-321 | Merge health data |
+
+**Total HealthAggregationService.mjs:** 8 methods
+
+#### IHealthDataStore.mjs (Interface)
+| Method | Lines | Purpose |
+|--------|-------|---------|
+| `loadWeightData(userId)` | 18-20 | Load weight data |
+| `loadStravaData(userId)` | 27-29 | Load Strava data |
+| `loadGarminData(userId)` | 36-38 | Load Garmin data |
+| `loadFitnessData(userId)` | 45-47 | Load fitness data |
+| `loadNutritionData(userId)` | 54-56 | Load nutrition data |
+| `loadHealthData(userId)` | 63-65 | Load aggregated health |
+| `saveHealthData(userId, healthData)` | 72-74 | Save health data |
+| `loadCoachingData(userId)` | 81-83 | Load coaching data |
+| `saveCoachingData(userId, coachingData)` | 90-92 | Save coaching data |
+
+**Total IHealthDataStore.mjs:** 9 methods
+
+---
+
+### DDD Functions: Adapter Layer
+
+#### YamlHealthStore.mjs
+| Function | Lines | Purpose |
+|----------|-------|---------|
+| `constructor(config)` | 32-41 | Initialize with services |
+| `#resolveUsername(userId)` | 51-56 | Resolve user ID to username |
+| `#getDefaultUsername()` | 62-66 | Get default username |
+| `#loadUserFile(userId, path)` | 72-76 | Load user lifelog file |
+| `#saveUserFile(userId, path, data)` | 82-85 | Save user lifelog file |
+| `loadWeightData(userId)` | 96-99 | Load weight data |
+| `loadStravaData(userId)` | 106-109 | Load Strava data |
+| `loadGarminData(userId)` | 116-119 | Load Garmin data |
+| `loadFitnessData(userId)` | 126-129 | Load fitness data |
+| `loadNutritionData(userId)` | 136-139 | Load nutrition data |
+| `loadHealthData(userId)` | 146-149 | Load aggregated health |
+| `saveHealthData(userId, healthData)` | 157-160 | Save health data |
+| `loadCoachingData(userId)` | 167-170 | Load coaching data |
+| `saveCoachingData(userId, coachingData)` | 178-181 | Save coaching data |
+| `getWeightForDate(userId, date)` | 193-196 | Get weight for date |
+| `getWorkoutsForDate(userId, date)` | 203-216 | Get workouts for date |
+| `getHealthForRange(userId, startDate, endDate)` | 224-236 | Get health for range |
+
+**Total YamlHealthStore.mjs:** 17 methods
+
+#### StravaHarvester.mjs
+| Function | Lines | Purpose |
+|----------|-------|---------|
+| `constructor(config)` | 48-80 | Initialize harvester |
+| `get serviceId()` | 82-84 | Return service ID |
+| `get category()` | 86-88 | Return harvester category |
+| `harvest(username, options)` | 99-183 | Main harvest method |
+| `getStatus()` | 185-187 | Get circuit breaker status |
+| `#refreshAccessToken(username)` | 193-223 | Refresh OAuth token |
+| `#fetchActivities(username, daysBack)` | 229-248 | Fetch activities with pagination |
+| `#enrichWithHeartRate(username, activities)` | 254-306 | Enrich with HR data |
+| `#saveToArchives(username, activities)` | 312-331 | Save full data to archives |
+| `#generateAndSaveSummary(username, activities)` | 337-374 | Generate and save summary |
+| `#createSummaryObject(activity, type)` | 380-407 | Create summary object |
+| `#cleanLegacyData(summary)` | 413-426 | Clean legacy data |
+| `#sortByDate(summary)` | 432-443 | Sort by date |
+| `#delay(ms)` | 449-451 | Delay helper |
+| `#cleanErrorMessage(error)` | 457-469 | Clean error message |
+
+**Total StravaHarvester.mjs:** 15 methods
+
+#### WithingsHarvester.mjs
+| Function | Lines | Purpose |
+|----------|-------|---------|
+| `constructor(config)` | 55-90 | Initialize harvester |
+| `get serviceId()` | 92-94 | Return service ID |
+| `get category()` | 96-98 | Return harvester category |
+| `harvest(username, options)` | 108-177 | Main harvest method |
+| `getStatus()` | 179-181 | Get circuit breaker status |
+| `#refreshAccessToken(username)` | 187-270 | Refresh OAuth token |
+| `#fetchMeasurements(accessToken, yearsBack)` | 276-332 | Fetch measurements |
+| `#round(value, decimals)` | 338-340 | Round to decimals |
+| `#cleanErrorMessage(error)` | 346-358 | Clean error message |
+
+**Total WithingsHarvester.mjs:** 9 methods
+
+#### GarminHarvester.mjs
+| Function | Lines | Purpose |
+|----------|-------|---------|
+| `constructor(config)` | 34-62 | Initialize harvester |
+| `get serviceId()` | 64-66 | Return service ID |
+| `get category()` | 68-70 | Return harvester category |
+| `harvest(username, options)` | 80-148 | Main harvest method |
+| `getStatus()` | 150-152 | Get circuit breaker status |
+| `#getAuthenticatedClient(username)` | 158-162 | Get authenticated client |
+| `#simplifyActivity(activity)` | 168-216 | Simplify activity data |
+| `#aggregateByDate(activities)` | 222-236 | Aggregate by date |
+| `#mergeAndSort(data)` | 242-251 | Merge and sort data |
+| `#cleanErrorMessage(error)` | 257-278 | Clean error message |
+
+**Total GarminHarvester.mjs:** 10 methods
+
+---
+
+### DDD Router: health.mjs
+
+| Method | Endpoint | Lines | Purpose |
+|--------|----------|-------|---------|
+| GET | `/daily` | 72-90 | Get daily health data |
+| GET | `/date/:date` | 96-114 | Get health for specific date |
+| GET | `/range` | 120-139 | Get health for date range |
+| GET | `/weight` | 149-155 | Get weight data |
+| GET | `/workouts` | 161-169 | Get Strava workout data |
+| GET | `/fitness` | 175-183 | Get fitness tracking data |
+| GET | `/nutrition` | 189-197 | Get nutrition data |
+| GET | `/coaching` | 203-211 | Get coaching data |
+| GET | `/status` | 221-243 | Get router status |
+| GET | `/nutrilist` | 254-268 | Get today's nutrilist |
+| GET | `/nutrilist/item/:uuid` | 274-290 | Get nutrilist item |
+| GET | `/nutrilist/:date` | 296-314 | Get nutrilist by date |
+| POST | `/nutrilist` | 320-358 | Create nutrilist item |
+| PUT | `/nutrilist/:uuid` | 364-395 | Update nutrilist item |
+| DELETE | `/nutrilist/:uuid` | 401-423 | Delete nutrilist item |
+
+**Total DDD Router Endpoints:** 15 endpoints (includes 2 new: `/date/:date` and `/range`)
+
+---
+
+### Gap Analysis: Health Domain
+
+| Legacy Function | DDD Status | Notes |
+|-----------------|------------|-------|
+| `reauthSequence()` (strava.mjs) | MISSING | Generate Strava reauth URL |
+| `getActivityDetails(activityId)` (garmin.mjs) | MISSING | Get single activity detail |
+| `downloadActivityData(activityId, directoryPath)` (garmin.mjs) | MISSING | Download activity data file |
+| `uploadActivityFile(filePath)` (garmin.mjs) | MISSING | Upload activity file |
+| `uploadActivityImage(activityId, imagePath)` (garmin.mjs) | MISSING | Upload activity image |
+| `deleteActivityImage(activityId, imageId)` (garmin.mjs) | MISSING | Delete activity image |
+| `getSteps(date)` (garmin.mjs) | MISSING | Get steps for specific date |
+| `getHeartRate(date)` (garmin.mjs) | MISSING | Get heart rate for specific date |
+
+**Summary:**
+- Legacy health.mjs (lib) functions: 3
+- Legacy withings.mjs functions: 9
+- Legacy strava.mjs functions: 10
+- Legacy garmin.mjs functions: 17
+- Legacy router endpoints: 13
+- **Total Legacy:** 52 functions/endpoints
+
+- DDD domain layer methods: 30 (HealthMetric + WorkoutEntry + Service + Port)
+- DDD adapter layer methods: 51 (YamlHealthStore + 3 Harvesters)
+- DDD router endpoints: 15 (includes 2 new endpoints)
+- **Total DDD:** 96 functions/methods
+
+- Gaps: 8 (all in Garmin advanced features and Strava reauth)
+- **Parity: 85%** (44 of 52 functions have DDD equivalents)
+
+**Critical Gaps:**
+None - all core functionality is present. The missing functions are advanced Garmin features not used in daily operations:
+1. **Garmin Activity Management** - Upload/download/delete activity data (rarely used)
+2. **Garmin Daily Metrics** - Steps and heart rate by date (can use harvest data)
+3. **Strava Reauth** - OAuth reauthorization flow (admin feature)
+
+**DDD Improvements Over Legacy:**
+1. **New endpoints:** `/date/:date` and `/range` for flexible date queries
+2. **Clean separation:** Domain entities (HealthMetric, WorkoutEntry) encapsulate business logic
+3. **Testable:** All harvesters implement IHarvester interface with dependency injection
+4. **Resilient:** CircuitBreaker class provides consistent rate limiting across all harvesters
+5. **Consistent:** All harvesters use same pattern for error handling, logging, and status reporting
+
+---
+
 ## Next Steps
 
-1. **Task 1.3:** Audit Playback domain
-2. **Task 1.4:** Audit Scheduling domain
-3. **Task 1.5:** Audit User domain
-4. **Task 1.6:** Audit Config domain
+1. **Task 1.4:** Audit Playback domain
+2. **Task 1.5:** Audit Scheduling domain
+3. **Task 1.6:** Audit User domain
+4. **Task 1.7:** Audit Config domain
 5. **Task 2.x:** Implement missing functions by priority
