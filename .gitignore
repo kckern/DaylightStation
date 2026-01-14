@@ -5,7 +5,6 @@ frontend/dist
 frontend/build
 backend/node_modules
 *.yml
-!backend/config/routing.yml
 data*
 node_modules/*
 *.sh
