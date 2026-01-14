@@ -545,3 +545,67 @@
     font-size: 0.65rem;
     opacity: 0.85;
 }
+
+// =============================================================================
+// Upscale Effects - CRT Overlay
+// =============================================================================
+
+// Smooth filter transitions on video element
+.video-player video,
+.video-player dash-video video {
+  transition: filter 400ms ease;
+}
+
+// CRT overlay container
+.upscale-crt-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: var(--player-layer-crt, 36);
+  opacity: 0;
+  transition: opacity 400ms ease;
+
+  &.active {
+    opacity: 1;
+  }
+}
+
+// Scanline layer
+.upscale-crt-overlay::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.10) 0,
+    rgba(255, 255, 255, 0.10) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  mix-blend-mode: screen;
+  animation: crt-scanline-scroll 2s linear infinite;
+}
+
+// Noise layer (SVG-based, no external asset)
+.upscale-crt-overlay::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 256px 256px;
+  opacity: 0.06;
+  mix-blend-mode: screen;
+  animation: crt-noise-flicker 150ms steps(4) infinite;
+}
+
+@keyframes crt-scanline-scroll {
+  to {
+    background-position: 0 12px;
+  }
+}
+
+@keyframes crt-noise-flicker {
+  to {
+    background-position: 256px 256px;
+  }
+}
