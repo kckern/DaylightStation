@@ -754,6 +754,7 @@ export function useCommonMediaController({
           media: meta,
           percent: getProgressPercent(mediaEl.currentTime, mediaEl.duration),
           stalled: isStalled,
+          isSeeking,
           recoveryAttempt: stallSnapshot.attemptIndex,
           lastStrategy: stallSnapshot.strategy,
           stallState: stallSnapshot,
