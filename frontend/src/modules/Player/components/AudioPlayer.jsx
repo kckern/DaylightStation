@@ -1,8 +1,9 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { formatTime } from '../lib/helpers.js';
 import { useCommonMediaController } from '../hooks/useCommonMediaController.js';
 import { ProgressBar } from './ProgressBar.jsx';
+import { getLogger } from '../../../lib/logging/Logger.js';
 
 /**
  * Audio player component for playing audio tracks
@@ -73,6 +74,16 @@ export function AudioPlayer({
   const shaderState = percent < 0.1 || seconds > duration - 2 ? 'on' : 'off';
   const footer = `${title}${albumArtist && albumArtist !== artist ? ` (${albumArtist})` : ''}`;
 
+  // Prod telemetry: cover image loaded
+  const handleCoverLoad = useCallback(() => {
+    const logger = getLogger();
+    logger.info('playback.cover-loaded', {
+      title,
+      mediaKey: media?.media_key || media?.key || media?.plex,
+      loadedTs: Date.now()
+    });
+  }, [title, media?.media_key, media?.key, media?.plex]);
+
   return (
     <div className={`audio-player ${shader}`}>
       <div className={`shader ${shaderState}`} />
@@ -81,7 +92,7 @@ export function AudioPlayer({
         <div className="image-container">
           {image && (
             <>
-              <img src={image} alt={title} className="cover" />
+              <img src={image} alt={title} className="cover" onLoad={handleCoverLoad} />
               <div className="image-backdrop" />
             </>
           )}
