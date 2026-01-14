@@ -255,6 +255,47 @@ export function createHomeAutomationRouter(config) {
   });
 
   // ===========================================================================
+  // Keyboard Configuration Endpoint
+  // ===========================================================================
+
+  /**
+   * GET /home-automation/keyboard/:keyboard_id?
+   * Get keyboard configuration data for a specific keyboard
+   * Returns key mappings with labels, functions, and parameters
+   */
+  router.get('/keyboard/:keyboard_id?', async (req, res) => {
+    if (!loadFile) {
+      return res.status(503).json({ error: 'State file loading not configured' });
+    }
+
+    const { keyboard_id } = req.params;
+
+    try {
+      const keyboardData = loadFile('state/keyboard') || [];
+      const filtered = keyboardData.filter(k =>
+        k.folder?.replace(/\s+/g, '').toLowerCase() === keyboard_id?.replace(/\s+/g, '').toLowerCase()
+      );
+
+      if (!filtered?.length) {
+        return res.status(404).json({ error: 'Keyboard not found', keyboard_id });
+      }
+
+      const result = filtered.reduce((acc, k) => {
+        const { key, label, function: func, params, secondary } = k;
+        if (key && !!func) {
+          acc[key] = { label, function: func, params, secondary };
+        }
+        return acc;
+      }, {});
+
+      res.json(result);
+    } catch (error) {
+      logger.error?.('homeAutomation.keyboard.error', { keyboard_id, error: error.message });
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ===========================================================================
   // Status Endpoints
   // ===========================================================================
 

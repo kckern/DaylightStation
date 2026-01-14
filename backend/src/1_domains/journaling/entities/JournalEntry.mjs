@@ -12,6 +12,8 @@ export class JournalEntry {
     mood = null,
     tags = [],
     gratitudeItems = [],
+    prompts = [],
+    attachments = [],
     createdAt,
     updatedAt = null,
     metadata = {}
@@ -24,6 +26,8 @@ export class JournalEntry {
     this.mood = mood; // 'great', 'good', 'okay', 'bad', 'awful'
     this.tags = tags;
     this.gratitudeItems = gratitudeItems;
+    this.prompts = prompts; // Array of prompt objects used to generate entry
+    this.attachments = attachments; // Array of attachment objects (photos, voice memos)
     this.createdAt = createdAt || new Date().toISOString();
     this.updatedAt = updatedAt;
     this.metadata = metadata;
@@ -95,6 +99,8 @@ export class JournalEntry {
       mood: this.mood,
       tags: this.tags,
       gratitudeItems: this.gratitudeItems,
+      prompts: this.prompts,
+      attachments: this.attachments,
       createdAt: this.createdAt,
       updatedAt: this.updatedAt,
       metadata: this.metadata

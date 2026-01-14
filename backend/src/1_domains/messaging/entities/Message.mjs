@@ -3,6 +3,7 @@
  */
 
 export const MESSAGE_TYPES = ['text', 'voice', 'image', 'document', 'callback'];
+export const MESSAGE_DIRECTIONS = ['incoming', 'outgoing'];
 
 export class Message {
   constructor({
@@ -11,7 +12,9 @@ export class Message {
     senderId,
     recipientId,
     type = 'text',
+    direction = null, // 'incoming' or 'outgoing'
     content,
+    attachments = [], // Array of attachment objects (photos, voice memos, documents)
     timestamp,
     metadata = {}
   }) {
@@ -20,7 +23,9 @@ export class Message {
     this.senderId = senderId;
     this.recipientId = recipientId;
     this.type = type;
+    this.direction = direction;
     this.content = content;
+    this.attachments = attachments;
     this.timestamp = timestamp || new Date().toISOString();
     this.metadata = metadata;
   }
@@ -51,6 +56,27 @@ export class Message {
    */
   isCallback() {
     return this.type === 'callback';
+  }
+
+  /**
+   * Check if message is incoming
+   */
+  isIncoming() {
+    return this.direction === 'incoming';
+  }
+
+  /**
+   * Check if message is outgoing
+   */
+  isOutgoing() {
+    return this.direction === 'outgoing';
+  }
+
+  /**
+   * Check if message has attachments
+   */
+  hasAttachments() {
+    return this.attachments && this.attachments.length > 0;
   }
 
   /**
@@ -98,7 +124,9 @@ export class Message {
       senderId: this.senderId,
       recipientId: this.recipientId,
       type: this.type,
+      direction: this.direction,
       content: this.content,
+      attachments: this.attachments,
       timestamp: this.timestamp,
       metadata: this.metadata
     };
@@ -111,14 +139,16 @@ export class Message {
   /**
    * Create a text message
    */
-  static createText({ conversationId, senderId, recipientId, text, metadata = {} }) {
+  static createText({ conversationId, senderId, recipientId, text, direction = null, metadata = {} }) {
     return new Message({
       id: Message.generateId(),
       conversationId,
       senderId,
       recipientId,
       type: 'text',
+      direction,
       content: text,
+      attachments: [],
       metadata
     });
   }
@@ -126,14 +156,16 @@ export class Message {
   /**
    * Create a voice message
    */
-  static createVoice({ conversationId, senderId, recipientId, fileId, duration, metadata = {} }) {
+  static createVoice({ conversationId, senderId, recipientId, fileId, duration, direction = null, metadata = {} }) {
     return new Message({
       id: Message.generateId(),
       conversationId,
       senderId,
       recipientId,
       type: 'voice',
+      direction,
       content: { fileId, duration },
+      attachments: [{ type: 'voice', fileId, duration }],
       metadata
     });
   }
@@ -141,14 +173,16 @@ export class Message {
   /**
    * Create an image message
    */
-  static createImage({ conversationId, senderId, recipientId, fileId, caption, metadata = {} }) {
+  static createImage({ conversationId, senderId, recipientId, fileId, caption, direction = null, metadata = {} }) {
     return new Message({
       id: Message.generateId(),
       conversationId,
       senderId,
       recipientId,
       type: 'image',
+      direction,
       content: { fileId },
+      attachments: [{ type: 'image', fileId, caption }],
       metadata: { ...metadata, caption }
     });
   }
@@ -156,14 +190,16 @@ export class Message {
   /**
    * Create a callback message (button press)
    */
-  static createCallback({ conversationId, senderId, recipientId, callbackData, metadata = {} }) {
+  static createCallback({ conversationId, senderId, recipientId, callbackData, direction = null, metadata = {} }) {
     return new Message({
       id: Message.generateId(),
       conversationId,
       senderId,
       recipientId,
       type: 'callback',
+      direction,
       content: callbackData,
+      attachments: [],
       metadata
     });
   }
