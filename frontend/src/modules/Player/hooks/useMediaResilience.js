@@ -51,7 +51,10 @@ export function useMediaResilience({
   message,
   mediaTypeHint,
   playerFlavorHint,
-  externalPauseReason = null
+  externalPauseReason = null,
+  // External stall state from useCommonMediaController - if provided, trust this instead of internal detection
+  externalStalled = null,
+  externalStallState = null
 }) {
   const { monitorSettings, recoveryConfig } = useResilienceConfig({ configOverrides });
   const {
@@ -204,7 +207,9 @@ export function useMediaResilience({
   }, [targetTimeSeconds]);
 
   // Presentation logic
-  const isStalled = status === STATUS.stalling;
+  // If externalStalled is provided (from useCommonMediaController), trust it over internal detection
+  const internalStalled = status === STATUS.stalling;
+  const isStalled = externalStalled !== null ? externalStalled : internalStalled;
   const isRecovering = status === STATUS.recovering;
   const isStartup = status === STATUS.startup;
   const isUserPaused = userIntent === USER_INTENT.paused;
