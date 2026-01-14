@@ -51,7 +51,8 @@ export function SinglePlayer(props = {}) {
     playbackRate,
     onProgress,
     onMediaRef,
-    media_key: mediaKeyProp
+    media_key: mediaKeyProp,
+    upscaleEffects
   } = play || {};
   
   // Prepare common props for content scroller components
@@ -298,7 +299,8 @@ export function SinglePlayer(props = {}) {
             resilienceBridge,
             maxVideoBitrate: mediaInfo?.maxVideoBitrate ?? play?.maxVideoBitrate ?? null,
             maxResolution: mediaInfo?.maxResolution ?? play?.maxResolution ?? null,
-            watchedDurationProvider: getWatchedDuration
+            watchedDurationProvider: getWatchedDuration,
+            upscaleEffects
           }
         )
       )}
@@ -371,5 +373,6 @@ SinglePlayer.propTypes = {
   }),
   suppressLocalOverlay: PropTypes.bool,
   maxVideoBitrate: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
-  maxResolution: PropTypes.oneOfType([PropTypes.number, PropTypes.string])
+  maxResolution: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
+  upscaleEffects: PropTypes.oneOf(['auto', 'blur-only', 'crt-only', 'aggressive', 'none'])
 };
