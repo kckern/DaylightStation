@@ -86,9 +86,12 @@ const emit = (level, eventName, data = {}, options = {}) => {
     devOutput(level, `${event.event}${dataStr ? ' ' + dataStr : ''}`);
   }
 
-  // WebSocket transport (batched)
+  // WebSocket transport (uses shared transport)
   if (config.websocketEnabled) {
-    enqueue(event);
+    const transport = ensureTransport();
+    if (transport) {
+      transport.send(event);
+    }
   }
 };
 
@@ -150,10 +153,7 @@ export const getConfig = () => ({ ...config });
 
 /**
  * Get WebSocket state (for debugging/health checks)
- */
-export const getStatus = () => ({
-  connected: wsState.socket?.readyState === WebSocket.OPEN,
-   Note: Now delegates to shared transport
+ * Note: Now delegates to shared transport
  */
 export const getStatus = () => {
   const transport = wsTransport;
@@ -170,10 +170,7 @@ export const getStatus = () => {
     queueLength: 0, // Queue is internal to transport
     reconnecting: false
   };
-}port default getLogger;
-uses shared transport)
-  if (config.websocketEnabled) {
-    const transport = ensureTransport();
-    if (transport) {
-      transport.send(event);
-    }
+};
+
+// Compatibility exports
+export default getLogger;
