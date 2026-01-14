@@ -33,6 +33,11 @@ export default defineConfig(({ command }) => ({
     }
   },
   server: {
+    host: process.env.VITE_HOST || 'localhost',
+    watch: {
+      usePolling: process.env.CHOKIDAR_USEPOLLING === 'true',
+      interval: 500
+    },
     proxy: {
       // Proxy API and media requests to backend
       '/api': `http://localhost:${BACKEND_PORT}`,

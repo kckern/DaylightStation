@@ -371,7 +371,8 @@ async function initializeApp() {
   // Start HTTP server
   // Start HTTP server - bind to 0.0.0.0 to ensure IPv4 compatibility
   // This prevents IPv6-only processes from intercepting localhost requests
-  const port = process.env.PORT || 3112;
+  // Use 3111 in prod (Docker), 3112 in dev (Vite proxies to it)
+  const port = process.env.PORT || (isDocker ? 3111 : 3112);
   const host = '0.0.0.0';
   server.listen(port, host, () => {
     rootLogger.info('server.started', { 

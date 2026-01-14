@@ -2,6 +2,10 @@
 ARG NODE_VERSION=20.11.0
 FROM node:${NODE_VERSION}-alpine
 
+# Build metadata
+ARG BUILD_TIME
+ARG COMMIT_HASH
+
 # Set work directory to /usr/src/app
 WORKDIR /usr/src/app
 
@@ -50,6 +54,10 @@ RUN touch /usr/src/app/known_hosts \
     && mkdir -p /home/node/.cache/yt-dlp \
     && chown -R node:node /home/node/.cache
 
+# Write build metadata to /build.txt
+RUN echo "Build Time: ${BUILD_TIME:-unknown}" > /build.txt \
+    && echo "Commit: ${COMMIT_HASH:-unknown}" >> /build.txt
+
 USER node
 
 # Test that yt-dlp works as the node user
@@ -58,7 +66,7 @@ RUN yt-dlp --version && echo "YouTube extraction verified during image build"
 # Set production environment
 ENV NODE_ENV=production
 
-EXPOSE 3112
+EXPOSE 3111
 EXPOSE 3119
 
 # Set the entrypoint script as the command to run when the container starts

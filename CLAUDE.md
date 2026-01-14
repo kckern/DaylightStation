@@ -77,6 +77,36 @@ ssh {hosts.prod} 'echo "content" > /path/to/file'
 
 ---
 
+## Branch Management
+
+**Clean git branches is key.** Keep the branch list minimal and tidy.
+
+### Workflow
+
+1. **Use worktrees for feature work** - Prefer `git worktree` over regular branches for isolation
+2. **Merge directly into main** - No pull requests; merge when work is complete and tested
+3. **Delete branches after merge** - Don't let merged branches linger
+
+### Deleting Stale Branches
+
+Before deleting any branch, document it for potential restoration:
+
+1. Record the branch name and commit hash in `docs/_archive/deleted-branches.md`
+2. Format: `| YYYY-MM-DD | branch-name | commit-hash | brief description |`
+3. Then delete: `git branch -d branch-name` (or `-D` if unmerged)
+
+Example entry:
+```markdown
+| 2026-01-14 | feature/shader-redesign | a1b2c3d4 | Player shader system cleanup |
+```
+
+To restore a deleted branch:
+```bash
+git checkout -b branch-name <commit-hash>
+```
+
+---
+
 ## Documentation Management
 
 IMPORTANT: Always update docs when changing code!

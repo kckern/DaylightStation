@@ -132,7 +132,7 @@ const getAccessToken = async (username, authData) => {
     }
 
     const { clientId, clientSecret, redirectUri } = resolveSecrets();
-    const refresh = authData?.refresh || authData?.refresh_token;
+    const refresh = authData?.refresh_token || authData?.refresh;
     // Allow seeded access token with expiry from auth file for immediate reuse
     if (!accessTokenCache.token && authData?.access_token) {
         const expiresInSeed = authData?.expires_in ? Number(authData.expires_in) : null;
@@ -175,8 +175,22 @@ const getAccessToken = async (username, authData) => {
         const expiresIn = auth_data.expires_in || 3600;
         const expiresAt = moment().add(Math.max(60, expiresIn - tokenBufferSeconds), 'seconds');
 
+        // Save full auth response for persistence across restarts
+        const updatedAuth = {
+            ...authData,
+            access_token,
+            expires_in: expiresIn,
+            refresh_token: refresh_token || refresh, // Keep old refresh if not provided
+            updated_at: new Date().toISOString()
+        };
+        // Remove old 'refresh' field if it exists
+        delete updatedAuth.refresh;
+        
         if (refresh_token) {
-            userSaveAuth(username, 'withings', { ...authData, refresh: refresh_token });
+            userSaveAuth(username, 'withings', updatedAuth);
+        } else if (access_token) {
+            // Even without new refresh token, save the access token
+            userSaveAuth(username, 'withings', updatedAuth);
         }
 
         if (!access_token) {
@@ -191,11 +205,26 @@ const getAccessToken = async (username, authData) => {
         withingsLogger.info('withings.auth.token_refreshed', { username, expiresAt: expiresAt.toISOString() });
         return access_token;
     } catch (error) {
+        const statusCode = error.response?.status;
+        const isAuthError = statusCode === 401 || statusCode === 403;
+        
         withingsLogger.error('withings.auth.refresh_failed', {
             error: cleanErrorMessage(error),
-            statusCode: error.response?.status,
-            code: error.code
+            statusCode,
+            code: error.code,
+            username,
+            isAuthExpired: isAuthError
         });
+        
+        // Alert if refresh token has expired (needs re-authorization)
+        if (isAuthError) {
+            withingsLogger.error('withings.auth.expired', {
+                message: 'Refresh token expired or invalid - re-authorization required',
+                username,
+                statusCode
+            });
+        }
+        
         accessTokenCache.token = null;
         accessTokenCache.expiresAt = null;
         delete process.env.WITHINGS_ACCESS_TOKEN;
@@ -229,8 +258,14 @@ const getWeightData = async (job_id) => {
         const access_token = await getAccessToken(username, authData);
 
         if (!access_token) {
+            withingsLogger.warn('withings.harvest.no_token', {
+                username,
+                message: 'No access token available - refresh token may have expired',
+                action: 'Using cached data',
+                reAuthUrl: 'https://account.withings.com/oauth2_user/authorize2'
+            });
             processWeight(job_id);
-            return { error: 'No access token. Refresh token may have expired.' };
+            return { error: 'No access token. Refresh token may have expired. Re-authorization required.' };
         }
 
     const params = {
@@ -247,6 +282,24 @@ const getWeightData = async (job_id) => {
     data = data.data;
 
     let measurements = {};
+
+    // Check if the response has the expected structure
+    if (!data || !data.body || !data.body.measuregrps) {
+        const errorDetails = {
+            status: data?.status,
+            error: data?.error,
+            message: data?.message,
+            response: JSON.stringify(data, null, 2).substring(0, 500)
+        };
+        withingsLogger.error('withings.api.invalid_response', errorDetails);
+        
+        // Check for auth errors in the response
+        if (data?.status === 401 || data?.error?.includes('invalid_token')) {
+            throw new Error(`Withings API authentication failed (${data.status}): ${data.error || 'Invalid or expired token'}`);
+        }
+        
+        throw new Error(`Invalid Withings API response: ${data?.status} - ${data?.error || 'No measuregrps data'}`);
+    }
 
     data['body']['measuregrps'].forEach(measure => {
         const date = new Date(measure['date'] * 1000).toISOString().split('T')[0];
