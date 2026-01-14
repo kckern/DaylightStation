@@ -111,7 +111,10 @@ export class PlexClient {
       for (const item of hub.Metadata || []) {
         results.push({
           ratingKey: item.ratingKey,
+          id: item.ratingKey, // Legacy alias
           title: item.title,
+          parent: item.parentTitle || null, // For TV episodes: season name
+          grandparent: item.grandparentTitle || null, // For TV episodes: show name
           year: item.year,
           type: item.type,
           guid: item.guid
