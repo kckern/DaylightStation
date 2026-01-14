@@ -54,6 +54,18 @@ export function createWebsocketServer(server) {
               ...data
             });
             logger.info('Broadcasted fitness payload', { topic: 'fitness', source: data.source });
+          } else if (data.source === 'piano' && data.topic === 'heartbeat') {
+            // Handle heartbeat ping from piano recorder - respond with pong
+            if (data.type === 'ping') {
+              ws.send(JSON.stringify({
+                topic: 'heartbeat',
+                type: 'pong',
+                timestamp: Date.now(),
+                originalTimestamp: data.timestamp
+              }));
+              // Debug level - don't log every heartbeat
+              logger.debug('Heartbeat pong sent to piano', { source: data.source });
+            }
           } else if (data.source === 'piano' && data.topic === 'midi') {
             // Handle MIDI events from piano recorder
             if (!data.type || !data.timestamp) {
