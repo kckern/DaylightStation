@@ -794,7 +794,6 @@ const FitnessChartApp = ({ mode, onClose, config, onMount }) => {
 	}, [participants, presentEntries, absentEntries, allEntries]);
 	
 	const { width: chartWidth, height: chartHeight } = chartSize;
-	const intervalMs = Number(timebase?.intervalMs) > 0 ? Number(timebase.intervalMs) : 5000;
 	const effectiveTicks = Math.max(MIN_VISIBLE_TICKS, maxIndex + 1, 1);
 	// Ensure paddedMaxValue provides enough range for MIN_GRID_LINES when maxValue is 0 or small
 	const paddedMaxValue = maxValue > 0 ? maxValue + 2 : Y_SCALE_BASE * MIN_GRID_LINES;
@@ -1045,7 +1044,10 @@ const FitnessChartApp = ({ mode, onClose, config, onMount }) => {
 	}, [paddedMaxValue, lowestAvatarValue, chartWidth, scaleY, allEntries.length]);
 
 	const xTicks = useMemo(() => {
-		const totalMs = effectiveTicks * intervalMs;
+		// Defensive: calculate intervalMs inside useMemo to ensure it's always in scope
+		// This prevents potential ReferenceError under heavy GC pressure
+		const intervalMsLocal = Number(timebase?.intervalMs) > 0 ? Number(timebase.intervalMs) : 5000;
+		const totalMs = effectiveTicks * intervalMsLocal;
 		const positions = [0, 0.25, 0.5, 0.75, 1];
 		const innerWidth = Math.max(1, chartWidth - CHART_MARGIN.left - CHART_MARGIN.right);
 		return positions.map((p) => {
@@ -1053,7 +1055,7 @@ const FitnessChartApp = ({ mode, onClose, config, onMount }) => {
 			const label = formatDuration(totalMs * p);
 			return { x, label };
 		});
-	}, [effectiveTicks, intervalMs, chartWidth]);
+	}, [effectiveTicks, timebase?.intervalMs, chartWidth]);
 
 	const leaderValue = useMemo(() => {
 		const vals = avatars.map((a) => a.value).filter((v) => Number.isFinite(v));
