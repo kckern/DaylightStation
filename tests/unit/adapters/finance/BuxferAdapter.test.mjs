@@ -448,4 +448,312 @@ describe('BuxferAdapter', () => {
       expect(adapter.formatDuration(0)).toBe('0h 0m 0s');
     });
   });
+
+  describe('processTransactions', () => {
+    let mockAiGateway;
+
+    beforeEach(() => {
+      adapter.token = 'test-token';
+      adapter.tokenExpiresAt = Date.now() + 3600000;
+
+      mockAiGateway = {
+        categorize: jest.fn()
+      };
+    });
+
+    test('filters transactions needing processing (no tags)', async () => {
+      // When accounts provided, getAccounts is NOT called - transactions fetched directly
+      mockHttpClient.get
+        .mockResolvedValueOnce({
+          data: {
+            response: {
+              transactions: [
+                { id: 1, date: '2026-01-01', amount: -50, description: 'Grocery Store', tagNames: ['Food'] },
+                { id: 2, date: '2026-01-02', amount: -30, description: 'Unknown Purchase', tagNames: [] }
+              ]
+            }
+          }
+        })
+        .mockResolvedValue({ data: { response: { transactions: [] } } });
+
+      mockAiGateway.categorize.mockResolvedValue({
+        category: 'Food',
+        friendlyName: 'Grocery Shopping',
+        memo: 'Weekly groceries'
+      });
+
+      mockHttpClient.post.mockResolvedValue({ data: { response: { success: true } } });
+
+      await adapter.processTransactions({
+        startDate: '2026-01-01',
+        endDate: '2026-01-31',
+        accounts: ['Checking'],
+        validTags: ['Food', 'Transport'],
+        aiGateway: mockAiGateway
+      });
+
+      // Only transaction without tags should be processed
+      expect(mockAiGateway.categorize).toHaveBeenCalledTimes(1);
+      expect(mockAiGateway.categorize).toHaveBeenCalledWith('Unknown Purchase');
+    });
+
+    test('filters transactions with raw descriptions matching patterns', async () => {
+      mockHttpClient.get
+        .mockResolvedValueOnce({
+          data: {
+            response: {
+              transactions: [
+                { id: 1, date: '2026-01-01', amount: -50, description: 'RAWPAYMENT123', tagNames: ['Income'] },
+                { id: 2, date: '2026-01-02', amount: -30, description: 'Clean Description', tagNames: ['Food'] }
+              ]
+            }
+          }
+        })
+        .mockResolvedValue({ data: { response: { transactions: [] } } });
+
+      mockAiGateway.categorize.mockResolvedValue({
+        category: 'Income',
+        friendlyName: 'Paycheck',
+        memo: null
+      });
+
+      mockHttpClient.post.mockResolvedValue({ data: { response: { success: true } } });
+
+      await adapter.processTransactions({
+        startDate: '2026-01-01',
+        endDate: '2026-01-31',
+        accounts: ['Checking'],
+        validTags: ['Food', 'Income'],
+        rawDescriptionPatterns: ['^RAW', 'PAYMENT'],
+        aiGateway: mockAiGateway
+      });
+
+      // Transaction matching raw pattern should be processed even with tags
+      expect(mockAiGateway.categorize).toHaveBeenCalledTimes(1);
+      expect(mockAiGateway.categorize).toHaveBeenCalledWith('RAWPAYMENT123');
+    });
+
+    test('updates transaction after successful AI categorization', async () => {
+      mockHttpClient.get
+        .mockResolvedValueOnce({
+          data: {
+            response: {
+              transactions: [
+                { id: 123, date: '2026-01-01', amount: -50, description: 'Messy Description', tagNames: [] }
+              ]
+            }
+          }
+        })
+        .mockResolvedValue({ data: { response: { transactions: [] } } });
+
+      mockAiGateway.categorize.mockResolvedValue({
+        category: 'Food',
+        friendlyName: 'Restaurant Meal',
+        memo: 'Dinner out'
+      });
+
+      mockHttpClient.post.mockResolvedValue({ data: { response: { success: true } } });
+
+      await adapter.processTransactions({
+        startDate: '2026-01-01',
+        endDate: '2026-01-31',
+        accounts: ['Checking'],
+        validTags: ['Food', 'Transport'],
+        aiGateway: mockAiGateway
+      });
+
+      expect(mockHttpClient.post).toHaveBeenCalledWith(
+        expect.stringContaining('transaction_edit'),
+        expect.objectContaining({
+          id: 123,
+          description: 'Restaurant Meal',
+          tags: 'Food',
+          memo: 'Dinner out'
+        })
+      );
+    });
+
+    test('skips update when AI returns invalid category', async () => {
+      mockHttpClient.get
+        .mockResolvedValueOnce({
+          data: {
+            response: {
+              transactions: [
+                { id: 123, date: '2026-01-01', amount: -50, description: 'Unknown', tagNames: [] }
+              ]
+            }
+          }
+        })
+        .mockResolvedValue({ data: { response: { transactions: [] } } });
+
+      mockAiGateway.categorize.mockResolvedValue({
+        category: 'InvalidCategory',
+        friendlyName: 'Something',
+        memo: null
+      });
+
+      await adapter.processTransactions({
+        startDate: '2026-01-01',
+        endDate: '2026-01-31',
+        accounts: ['Checking'],
+        validTags: ['Food', 'Transport'],
+        aiGateway: mockAiGateway
+      });
+
+      // Should not call transaction_edit for invalid category
+      expect(mockHttpClient.post).not.toHaveBeenCalledWith(
+        expect.stringContaining('transaction_edit'),
+        expect.anything()
+      );
+    });
+
+    test('handles AI categorization failure gracefully', async () => {
+      mockHttpClient.get
+        .mockResolvedValueOnce({
+          data: {
+            response: {
+              transactions: [
+                { id: 123, date: '2026-01-01', amount: -50, description: 'Unknown', tagNames: [] }
+              ]
+            }
+          }
+        })
+        .mockResolvedValue({ data: { response: { transactions: [] } } });
+
+      mockAiGateway.categorize.mockRejectedValue(new Error('AI service unavailable'));
+
+      // Should not throw, just log error and continue
+      const result = await adapter.processTransactions({
+        startDate: '2026-01-01',
+        endDate: '2026-01-31',
+        accounts: ['Checking'],
+        validTags: ['Food'],
+        aiGateway: mockAiGateway
+      });
+
+      expect(mockLogger.error).toHaveBeenCalled();
+      expect(Array.isArray(result)).toBe(true);
+    });
+
+    test('deletes transactions matching autoDeleteRules', async () => {
+      const testAccountId = 999;
+
+      mockHttpClient.get
+        .mockResolvedValueOnce({
+          data: {
+            response: {
+              transactions: [
+                { id: 1, date: '2026-01-01', amount: -50, description: 'Normal', tagNames: ['Food'], accountId: testAccountId },
+                { id: 2, date: '2026-01-02', amount: 0.01, description: 'AUTO_DELETE_ME', tagNames: [], accountId: testAccountId },
+                { id: 3, date: '2026-01-03', amount: 0.01, description: 'AUTO_DELETE_ME', tagNames: [], accountId: 123 }
+              ]
+            }
+          }
+        })
+        .mockResolvedValue({ data: { response: { transactions: [] } } });
+
+      mockHttpClient.post.mockResolvedValue({ data: { response: { success: true } } });
+
+      const result = await adapter.processTransactions({
+        startDate: '2026-01-01',
+        endDate: '2026-01-31',
+        accounts: ['Investment'],
+        autoDeleteRules: [
+          { descriptionPattern: 'AUTO_DELETE', accountId: testAccountId }
+        ]
+      });
+
+      // Only id:2 should be deleted (matches pattern AND accountId)
+      expect(mockHttpClient.post).toHaveBeenCalledWith(
+        expect.stringContaining('transaction_delete'),
+        { id: 2 }
+      );
+      // id:3 should NOT be deleted (wrong accountId)
+      expect(mockHttpClient.post).not.toHaveBeenCalledWith(
+        expect.stringContaining('transaction_delete'),
+        { id: 3 }
+      );
+      // Deleted transaction excluded from result
+      expect(result.find(t => t.id === 2)).toBeUndefined();
+      expect(result.find(t => t.id === 3)).toBeDefined();
+    });
+
+    test('returns all transactions when no processing needed', async () => {
+      mockHttpClient.get
+        .mockResolvedValueOnce({
+          data: {
+            response: {
+              transactions: [
+                { id: 1, date: '2026-01-01', amount: -50, description: 'Groceries', tagNames: ['Food'] },
+                { id: 2, date: '2026-01-02', amount: -30, description: 'Gas Station', tagNames: ['Transport'] }
+              ]
+            }
+          }
+        })
+        .mockResolvedValue({ data: { response: { transactions: [] } } });
+
+      const result = await adapter.processTransactions({
+        startDate: '2026-01-01',
+        endDate: '2026-01-31',
+        accounts: ['Checking'],
+        validTags: ['Food', 'Transport']
+      });
+
+      expect(result).toHaveLength(2);
+    });
+
+    test('works without AI gateway (skips categorization)', async () => {
+      // When accounts are provided, getAccounts is NOT called
+      mockHttpClient.get
+        .mockResolvedValueOnce({
+          data: {
+            response: {
+              transactions: [
+                { id: 1, date: '2026-01-01', amount: -50, description: 'Test', tagNames: [] }
+              ]
+            }
+          }
+        })
+        .mockResolvedValue({ data: { response: { transactions: [] } } });
+
+      const result = await adapter.processTransactions({
+        startDate: '2026-01-01',
+        endDate: '2026-01-31',
+        accounts: ['Checking'],
+        validTags: ['Food']
+        // No aiGateway provided
+      });
+
+      // Should return transactions without attempting categorization
+      expect(result).toHaveLength(1);
+      expect(mockHttpClient.post).not.toHaveBeenCalledWith(
+        expect.stringContaining('transaction_edit'),
+        expect.anything()
+      );
+    });
+
+    test('uses empty arrays as defaults for optional config', async () => {
+      // When accounts are provided, getAccounts is NOT called
+      mockHttpClient.get
+        .mockResolvedValueOnce({
+          data: {
+            response: {
+              transactions: [
+                { id: 1, date: '2026-01-01', amount: -50, description: 'Test', tagNames: ['Food'] }
+              ]
+            }
+          }
+        })
+        .mockResolvedValue({ data: { response: { transactions: [] } } });
+
+      // Call with minimal config - should not throw
+      const result = await adapter.processTransactions({
+        startDate: '2026-01-01',
+        endDate: '2026-01-31',
+        accounts: ['Checking']
+      });
+
+      expect(result).toHaveLength(1);
+    });
+  });
 });

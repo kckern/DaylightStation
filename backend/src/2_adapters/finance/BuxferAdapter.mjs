@@ -309,6 +309,126 @@ export class BuxferAdapter {
     }
   }
 
+  // ============ Batch Processing ============
+
+  /**
+   * Process transactions: categorize via AI and delete matching rules
+   * All configuration is passed as parameters - no hardcoded values.
+   *
+   * @param {Object} options - Processing options
+   * @param {string} options.startDate - Start date (YYYY-MM-DD)
+   * @param {string} options.endDate - End date (YYYY-MM-DD)
+   * @param {string[]} options.accounts - Account names to process
+   * @param {string[]} [options.validTags=[]] - Valid category tags for AI categorization
+   * @param {string[]} [options.rawDescriptionPatterns=[]] - Regex patterns indicating raw descriptions needing cleanup
+   * @param {Object[]} [options.autoDeleteRules=[]] - Rules for auto-deleting transactions
+   * @param {string} options.autoDeleteRules[].descriptionPattern - Regex pattern to match description
+   * @param {number} options.autoDeleteRules[].accountId - Account ID to match
+   * @param {Object} [options.aiGateway] - AI gateway with categorize(description) method
+   * @returns {Promise<Object[]>} Processed transactions (excluding deleted ones)
+   */
+  async processTransactions({
+    startDate,
+    endDate,
+    accounts,
+    validTags = [],
+    rawDescriptionPatterns = [],
+    autoDeleteRules = [],
+    aiGateway = null
+  }) {
+    this.logger.info?.('buxfer.processTransactions.start', { startDate, endDate, accounts });
+
+    // Fetch all transactions
+    const transactions = await this.getTransactions({ startDate, endDate, accounts });
+
+    // Build regex for raw description detection
+    const rawPatternRegex = rawDescriptionPatterns.length > 0
+      ? new RegExp(rawDescriptionPatterns.join('|'), 'i')
+      : null;
+
+    // Identify transactions needing AI categorization
+    const needsProcessing = (txn) => {
+      const noTags = !txn.tagNames || txn.tagNames.length === 0;
+      const hasRawDescription = rawPatternRegex && rawPatternRegex.test(txn.description);
+      return noTags || hasRawDescription;
+    };
+
+    // Process transactions with AI if gateway provided
+    if (aiGateway && validTags.length > 0) {
+      const toProcess = transactions.filter(needsProcessing);
+      this.logger.info?.('buxfer.processTransactions.categorizing', { count: toProcess.length });
+
+      for (const txn of toProcess) {
+        try {
+          const result = await aiGateway.categorize(txn.description);
+          const { category, friendlyName, memo } = result || {};
+
+          if (friendlyName && validTags.includes(category)) {
+            await this.updateTransaction(txn.id, {
+              description: friendlyName,
+              tags: category,
+              memo
+            });
+
+            // Update local copy
+            txn.description = friendlyName;
+            txn.tagNames = [category];
+            this.logger.info?.('buxfer.processTransactions.categorized', {
+              id: txn.id,
+              category,
+              friendlyName
+            });
+          } else {
+            this.logger.warn?.('buxfer.processTransactions.invalidCategory', {
+              id: txn.id,
+              category,
+              validTags
+            });
+          }
+        } catch (error) {
+          this.logger.error?.('buxfer.processTransactions.aiError', {
+            id: txn.id,
+            error: error.message
+          });
+        }
+      }
+    }
+
+    // Apply auto-delete rules
+    const deleteIds = new Set();
+    for (const rule of autoDeleteRules) {
+      const pattern = new RegExp(rule.descriptionPattern, 'i');
+      for (const txn of transactions) {
+        if (pattern.test(txn.description) && txn.accountId === rule.accountId) {
+          deleteIds.add(txn.id);
+        }
+      }
+    }
+
+    // Delete matching transactions
+    for (const id of deleteIds) {
+      try {
+        await this.deleteTransaction(id);
+        this.logger.info?.('buxfer.processTransactions.deleted', { id });
+      } catch (error) {
+        this.logger.error?.('buxfer.processTransactions.deleteError', {
+          id,
+          error: error.message
+        });
+      }
+    }
+
+    // Return transactions excluding deleted ones
+    const result = transactions.filter(txn => !deleteIds.has(txn.id));
+    this.logger.info?.('buxfer.processTransactions.complete', {
+      total: transactions.length,
+      deleted: deleteIds.size,
+      returned: result.length
+    });
+
+    return result;
+  }
+
   // ============ Helper Methods ============
 
   /**
