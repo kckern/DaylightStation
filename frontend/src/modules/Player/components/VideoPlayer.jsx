@@ -147,9 +147,6 @@ export function VideoPlayer({
 
   return (
     <div className={`video-player ${shader}`}>
-      <h2>
-        {heading} {`(${playbackRate}×)`}
-      </h2>
       <ProgressBar percent={percent} onClick={handleProgressClick} />
       {(seconds === 0 || isStalled || isSeeking || isAdapting) && (
         <LoadingOverlay
