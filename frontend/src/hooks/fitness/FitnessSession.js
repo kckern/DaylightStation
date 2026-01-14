@@ -2235,7 +2235,7 @@ export class FitnessSession {
       const elapsed = this.startTime ? Date.now() - this.startTime : 0;
       console.error(`💾 AUTOSAVE [${this._debugAutosaveCount}/3]: ${this.sessionId} at ${elapsed}ms`);
     }
-    getLogger().warn('fitness.session.autosave', { sessionId: this.sessionId, force });
+    getLogger().debug('fitness.session.autosave', { sessionId: this.sessionId, force });
     this._maybeTickTimeline();
     const snapshot = this.summary;
     if (!snapshot) return;

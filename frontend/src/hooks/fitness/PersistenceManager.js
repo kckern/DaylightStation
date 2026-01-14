@@ -444,7 +444,7 @@ export class PersistenceManager {
     }
 
     const validation = this.validateSessionPayload(sessionData);
-    getLogger().warn('fitness.persistence.validation', { validation });
+    getLogger().debug('fitness.persistence.validation', { validation });
     if (!validation?.ok) {
       // DEBUG: Always log validation failures
       console.error(`⚠️ VALIDATION_FAIL: ${sessionData?.sessionId}, reason="${validation?.reason}"`, validation);
@@ -557,7 +557,7 @@ export class PersistenceManager {
     const seriesSample = persistSessionData.timeline?.series
       ? Object.entries(persistSessionData.timeline.series).slice(0, 2)
       : [];
-    getLogger().warn('fitness.persistence.pre_api', {
+    getLogger().debug('fitness.persistence.pre_api', {
       sessionId: persistSessionData.sessionId,
       hasTimeline: !!persistSessionData.timeline,
       seriesKeys: persistSessionData.timeline?.series ? Object.keys(persistSessionData.timeline.series).length : 0,
