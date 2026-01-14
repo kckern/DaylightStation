@@ -7,6 +7,41 @@
 
 import { getDaylightLogger } from './singleton.js';
 
+// Track recent network errors to prevent cascade logging
+const recentNetworkErrors = {
+  count: 0,
+  resetTime: 0,
+  THRESHOLD: 3,      // After 3 errors in window, suppress
+  WINDOW_MS: 2000    // 2 second window
+};
+
+/**
+ * Check if this is a network error we should suppress to prevent cascades
+ * @param {*} reason - Error reason
+ * @returns {boolean} True if should suppress
+ */
+function shouldSuppressNetworkError(reason) {
+  const message = reason?.message || String(reason);
+  
+  // Only suppress "Failed to fetch" type errors
+  if (!message.includes('Failed to fetch') && !message.includes('NetworkError')) {
+    return false;
+  }
+  
+  const now = Date.now();
+  
+  // Reset counter if window expired
+  if (now >= recentNetworkErrors.resetTime) {
+    recentNetworkErrors.count = 0;
+    recentNetworkErrors.resetTime = now + recentNetworkErrors.WINDOW_MS;
+  }
+  
+  recentNetworkErrors.count++;
+  
+  // Suppress if we've seen too many in this window
+  return recentNetworkErrors.count > recentNetworkErrors.THRESHOLD;
+}
+
 /**
  * Set up global error handlers
  * @returns {Function} Cleanup function to remove handlers
@@ -38,6 +73,11 @@ export function setupGlobalErrorHandlers() {
   // Capture unhandled promise rejections
   const onUnhandledRejection = (event) => {
     const reason = event.reason;
+
+    // Suppress cascading network errors to prevent log spam
+    if (shouldSuppressNetworkError(reason)) {
+      return;
+    }
 
     logger.error('unhandledrejection', {
       reason: reason?.message || String(reason),

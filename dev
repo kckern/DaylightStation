@@ -5,6 +5,9 @@ lsof -ti:3111 2>/dev/null | xargs kill -9 2>/dev/null || true
 lsof -ti:3112 2>/dev/null | xargs kill -9 2>/dev/null || true
 lsof -ti:3119 2>/dev/null | xargs kill -9 2>/dev/null || true
 
+## clear dev.log
+> ./dev.log
+
 # Check if --background flag is provided
 if [[ "$1" == "--background" ]]; then
     npm run dev > /dev/null 2>&1 &
