@@ -106,8 +106,7 @@ export function PlexMenuRouter({ plexId, depth, onSelect, onEscape, list }) {
     async function fetchAndRoute() {
       try {
         // Fetch minimal data to determine type (don't need full recent_on_top for routing)
-        // Migrated from legacy: data/list/${plexId}
-        const data = await DaylightAPI(`api/list/folder/${plexId}`);
+        const data = await DaylightAPI(`data/list/${plexId}`);
         
         if (!canceled) {
           setRouteInfo({

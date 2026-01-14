@@ -30,6 +30,7 @@
     "abcjs": "^6.5.2",
     "crypto": "^1.0.1",
     "crypto-js": "^4.2.0",
+    "dash-video-element": "^0.3.1",
     "dayjs": "^1.11.11",
     "embla-carousel-react": "^8.1.6",
     "highcharts": "^11.4.6",
@@ -46,6 +47,7 @@
     "react-router-dom": "^6.24.0",
     "recharts": "^2.12.7",
     "scripture-guide": "^1.0.62",
+    "shaka-player": "^4.16.12",
     "video.js": "^8.22.0",
     "videojs-hotkeys": "^0.2.30",
     "vimond-replay": "^4.0.0"

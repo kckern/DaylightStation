@@ -82,14 +82,12 @@ export function useQueueController({ play, queue, clear }) {
       } else if ((play && typeof play === 'object') || (queue && typeof queue === 'object')) {
         const queue_media_key = play?.playlist || play?.queue || queue?.playlist || queue?.queue || queue?.media;
         if (queue_media_key) {
-          // Migrated from legacy: data/list/${queue_media_key}/playable
-          const { items } = await DaylightAPI(`api/list/folder/${queue_media_key}/playable${isShuffle ? ',shuffle' : ''}`);
+          const { items } = await DaylightAPI(`data/list/${queue_media_key}/playable${isShuffle ? ',shuffle' : ''}`);
           const flattened = await flattenQueueItems(items);
           newQueue = flattened.map(item => ({ ...item, ...item.play, ...itemOverrides, guid: guid() }));
         } else if (queue?.plex || play?.plex) {
           const plexId = queue?.plex || play?.plex;
-          // Migrated from legacy: media/plex/list/${plexId}/playable
-          const { items } = await DaylightAPI(`api/list/plex/${plexId}/playable${isShuffle ? ',shuffle' : ''}`);
+          const { items } = await DaylightAPI(`media/plex/list/${plexId}/playable${isShuffle ? ',shuffle' : ''}`);
           const flattened = await flattenQueueItems(items);
           newQueue = flattened.map(item => ({ ...item, ...item.play, ...itemOverrides, guid: guid() }));
         }
