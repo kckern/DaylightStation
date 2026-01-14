@@ -1,32 +1,70 @@
-**/.classpath
-**/.dockerignore
-**/.env
+# Git and IDE
 **/.git
+**/.github
 **/.gitignore
+**/.vscode
+**/.idea
 **/.project
 **/.settings
+**/.classpath
+**/.dockerignore
 **/.toolstarget
 **/.vs
-**/.vscode
 **/.next
 **/.cache
 **/*.*proj.user
 **/*.dbmdl
 **/*.jfm
+
+# Dependencies (installed in container)
+**/node_modules
+**/.npm
+**/npm-debug.log
+
+# Build outputs (rebuilt in container)
+**/build
+**/dist
+./frontend/dist
+./frontend/dist/*
+
+# Documentation and tests (not needed in production)
+docs/
+tests/
+test-results/
+**/*.md
+LICENSE
+CONTRIBUTING.md
+CLAUDE.md
+AGENTS.md
+
+# Local development files
+**/.env
+**/.env.*
+*.yml
+!config/*.yml
+secrets.dev.yaml
+values.dev.yaml
 **/charts
 **/docker-compose*
 **/compose*
-**/node_modules
-**/npm-debug.log
 **/obj
-**/secrets.dev.yaml
-**/values.dev.yaml
-**/build
-**/dist
-*.yml
+
+# Data and logs (mounted at runtime)
 ./data
 ./data/*
-./frontend/dist
-./frontend/dist/*
-LICENSE
-README.md
+logs/
+*.log
+
+# Dev tools
+playwright.config.js
+jest.config.js
+babel.config.js
+nodemon.json
+dev
+sandbox.sh
+Dockerfile.dev
+docker-compose.dev.yml
+
+# Extensions (separate build)
+_extensions/
+_extentions/
