@@ -35,6 +35,7 @@ class MidiWebSocketBroadcaster:
     DEFAULT_QUEUE_MAX_SIZE = 1000   # Max queued messages during disconnect
     DEFAULT_POLL_INTERVAL = 0.01    # Queue poll interval (seconds)
     DEFAULT_FLUSH_TIMEOUT = 2.0     # Timeout for flushing on shutdown
+    DEFAULT_HEARTBEAT_INTERVAL = 15 # Heartbeat ping interval (seconds)
 
     def __init__(
         self,
@@ -62,7 +63,10 @@ class MidiWebSocketBroadcaster:
             'messages_dropped': 0,
             'reconnect_count': 0,
             'last_connected': None,
-            'last_error': None
+            'last_error': None,
+            'heartbeats_sent': 0,
+            'heartbeats_received': 0,
+            'last_heartbeat': None
         }
 
     @property
@@ -171,9 +175,25 @@ class MidiWebSocketBroadcaster:
 
                     logger.info(f"Connected to WebSocket: {self.server_url}")
 
-                    while self._running and not self._stop_event.is_set():
-                        await self._send_queued_messages(ws)
-                        await asyncio.sleep(self.DEFAULT_POLL_INTERVAL)
+                    # Start heartbeat task
+                    heartbeat_task = asyncio.create_task(self._heartbeat_loop(ws))
+                    receive_task = asyncio.create_task(self._receive_loop(ws))
+
+                    try:
+                        while self._running and not self._stop_event.is_set():
+                            await self._send_queued_messages(ws)
+                            await asyncio.sleep(self.DEFAULT_POLL_INTERVAL)
+                    finally:
+                        heartbeat_task.cancel()
+                        receive_task.cancel()
+                        try:
+                            await heartbeat_task
+                        except asyncio.CancelledError:
+                            pass
+                        try:
+                            await receive_task
+                        except asyncio.CancelledError:
+                            pass
 
             except asyncio.CancelledError:
                 break
@@ -194,6 +214,41 @@ class MidiWebSocketBroadcaster:
                 reconnect_delay = min(reconnect_delay * 2, self.reconnect_max)
 
         self._connected = False
+
+    async def _heartbeat_loop(self, ws) -> None:
+        """Send periodic heartbeat pings to keep connection warm."""
+        while self._running and not self._stop_event.is_set():
+            try:
+                heartbeat_msg = {
+                    'source': 'piano',
+                    'topic': 'heartbeat',
+                    'type': 'ping',
+                    'timestamp': time.time()
+                }
+                await ws.send(json.dumps(heartbeat_msg))
+                self._stats['heartbeats_sent'] += 1
+                self._stats['last_heartbeat'] = time.time()
+                logger.debug("Heartbeat ping sent")
+            except Exception as e:
+                logger.warning(f"Failed to send heartbeat: {e}")
+                break
+            await asyncio.sleep(self.DEFAULT_HEARTBEAT_INTERVAL)
+
+    async def _receive_loop(self, ws) -> None:
+        """Listen for incoming messages (pong responses)."""
+        try:
+            async for message in ws:
+                try:
+                    data = json.loads(message)
+                    if data.get('topic') == 'heartbeat' and data.get('type') == 'pong':
+                        self._stats['heartbeats_received'] += 1
+                        logger.debug("Heartbeat pong received")
+                except json.JSONDecodeError:
+                    pass
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.debug(f"Receive loop ended: {e}")
 
     async def _send_queued_messages(self, ws) -> None:
         """Send all currently queued messages."""
