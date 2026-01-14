@@ -63,6 +63,10 @@ export function MenuStack({ rootMenu }) {
       const media = selection.play || selection.queue?.[0] || selection;
       logger.info('playback.intent', {
         title: media.title || media.name || media.label,
+        artist: media.artist,
+        album: media.album,
+        show: media.show,
+        season: media.season,
         mediaKey: media.media_key || media.key || media.plex || media.id,
         mediaType: media.type || media.media_type,
         isQueue: !!selection.queue,
