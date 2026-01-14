@@ -150,7 +150,7 @@ export function SinglePlayer(props = {}) {
       onPlaybackMetrics({
         seconds: payload?.currentTime,
         isPaused: payload?.paused,
-        isSeeking: false, // Will be updated by seeking events if needed
+        isSeeking: payload?.isSeeking ?? false,
         stalled: payload?.stalled,
         stallState: payload?.stallState
       });
