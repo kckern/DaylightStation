@@ -144,15 +144,16 @@ export class PlexAdapter {
     try {
       const metadata = await this.client.getMetadata(ratingKey);
       const item = metadata?.MediaContainer?.Metadata?.[0];
-      if (!item) return [null, null, null];
+      if (!item) return ['', '', ''];
 
       const { thumb, parentThumb, grandparentThumb } = item;
+      // Legacy returns empty string "" for missing thumbs
       return [thumb, parentThumb, grandparentThumb].map(
-        t => t ? `/plex_proxy${t}` : null
+        t => t ? `/plex_proxy${t}` : ''
       );
     } catch (err) {
       console.error('[PlexAdapter] loadImgFromKey error:', err.message);
-      return [null, null, null];
+      return ['', '', ''];
     }
   }
 

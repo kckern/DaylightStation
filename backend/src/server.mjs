@@ -698,6 +698,13 @@ async function main() {
   app.get('/exe/vol/mute', (req, res) => res.redirect(307, '/api/home/volume/mute'));
   app.get('/exe/vol/cycle', (req, res) => res.redirect(307, '/api/home/volume/cycle'));
 
+  // Keyboard configuration redirect (legacy path -> DDD path)
+  app.get('/data/keyboard/:keyboard_id?', (req, res) => {
+    const { keyboard_id } = req.params;
+    const newPath = keyboard_id ? `/api/home/keyboard/${keyboard_id}` : '/api/home/keyboard';
+    res.redirect(307, newPath);
+  });
+
   // WebSocket restart redirect
   app.get('/exe/ws/restart', (req, res) => res.redirect(307, '/admin/ws/restart'));
   app.post('/exe/ws/restart', (req, res) => res.redirect(307, '/admin/ws/restart'));

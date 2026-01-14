@@ -458,7 +458,7 @@ export class ThermalPrinterAdapter {
   /**
    * Test feed button functionality
    * Migrated from: thermalprint.mjs:1126-1156
-   * @returns {Promise<{success: boolean, error?: string}>}
+   * @returns {Promise<{success: boolean, message?: string, steps?: Object, note?: string, error?: string, details?: string}>}
    */
   async testFeedButton() {
     try {
@@ -467,23 +467,34 @@ export class ThermalPrinterAdapter {
       // Step 1: Disable feed button
       const disableResult = await this.print(this.setFeedButton(false));
       if (!disableResult) {
-        return { success: false, error: 'Failed to disable feed button' };
+        return { success: false, error: 'Feed button test failed', details: 'Failed to disable feed button' };
       }
 
-      // Wait a moment
+      // Wait a moment (legacy uses 1000ms)
       await new Promise(resolve => setTimeout(resolve, 1000));
 
       // Step 2: Enable feed button
       const enableResult = await this.print(this.setFeedButton(true));
       if (!enableResult) {
-        return { success: false, error: 'Failed to enable feed button' };
+        return { success: false, error: 'Feed button test failed', details: 'Failed to enable feed button' };
       }
 
       this.#logger.info?.('thermalPrinter.testFeedButton.complete');
-      return { success: true, message: 'Feed button test completed successfully' };
+
+      // Match legacy return shape with steps and note
+      return {
+        success: true,
+        message: 'Feed button test completed successfully',
+        steps: {
+          disable: disableResult,
+          enable: enableResult
+        },
+        note: 'Check printer physically to verify feed button response'
+      };
     } catch (error) {
       this.#logger.error?.('thermalPrinter.testFeedButton.error', { error: error.message });
-      return { success: false, error: error.message };
+      // Match legacy error shape with 'error' and 'details' fields
+      return { success: false, error: 'Feed button test failed', details: error.message };
     }
   }
 
