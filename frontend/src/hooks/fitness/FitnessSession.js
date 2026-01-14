@@ -2069,22 +2069,116 @@ export class FitnessSession {
     this._stopTickTimer();
     const interval = this.timeline?.timebase.intervalMs || this._tickIntervalMs;
     if (!(interval > 0)) return;
+
+    // TELEMETRY: Track timer lifecycle for memory leak debugging
+    this._tickTimerStartedAt = Date.now();
+    this._tickTimerTickCount = 0;
+    getLogger().info('fitness.tick_timer.started', {
+      sessionId: this.sessionId,
+      intervalMs: interval
+    });
+
     this._tickTimer = setInterval(() => {
+      this._tickTimerTickCount++;
       try {
         this._collectTimelineTick();
         // 6A: Check for empty roster timeout after each tick
         this._checkEmptyRosterTimeout();
-      } catch (_) {
-        // swallow to keep timer alive
+      } catch (err) {
+        // Log error instead of silent swallow - helps debug freeze issues
+        getLogger().error('fitness.tick_timer.error', {
+          sessionId: this.sessionId,
+          tick: this._tickTimerTickCount,
+          error: err?.message,
+          stack: err?.stack?.split('\n').slice(0, 3).join(' | ')
+        });
+      }
+
+      // TELEMETRY: Health check every 60 ticks (~5 min at 5s interval)
+      if (this._tickTimerTickCount % 60 === 0) {
+        this._logTickTimerHealth();
       }
     }, interval);
   }
 
   _stopTickTimer() {
     if (this._tickTimer) {
+      // TELEMETRY: Log timer stop for memory leak debugging
+      getLogger().info('fitness.tick_timer.stopped', {
+        sessionId: this.sessionId,
+        tickCount: this._tickTimerTickCount || 0,
+        ranForMs: Date.now() - (this._tickTimerStartedAt || Date.now())
+      });
       clearInterval(this._tickTimer);
       this._tickTimer = null;
     }
+  }
+
+  /**
+   * TELEMETRY: Log health metrics for memory leak debugging.
+   * Called every 60 ticks (~5 min) during active session.
+   */
+  _logTickTimerHealth() {
+    const stats = this.getMemoryStats();
+    getLogger().info('fitness.tick_timer.health', {
+      sessionId: this.sessionId,
+      tickCount: this._tickTimerTickCount,
+      runningForMs: Date.now() - (this._tickTimerStartedAt || Date.now()),
+      ...stats
+    });
+  }
+
+  /**
+   * TELEMETRY: Get memory/data structure stats for profiling.
+   * Can be called externally (e.g., from FitnessApp 30-second profiler).
+   * @returns {Object} Stats about internal data structure sizes
+   */
+  getMemoryStats() {
+    const timelineSeries = this.timeline?.series || {};
+    const seriesKeys = Object.keys(timelineSeries);
+    const totalSeriesPoints = seriesKeys.reduce((sum, key) => {
+      const arr = timelineSeries[key];
+      return sum + (Array.isArray(arr) ? arr.length : 0);
+    }, 0);
+
+    // Find max series length (potential unbounded growth indicator)
+    const maxSeriesLength = seriesKeys.reduce((max, key) => {
+      const arr = timelineSeries[key];
+      return Math.max(max, Array.isArray(arr) ? arr.length : 0);
+    }, 0);
+
+    return {
+      // Session state
+      sessionActive: !!this.sessionId,
+      tickTimerRunning: !!this._tickTimer,
+
+      // Data structure sizes
+      rosterSize: this.roster?.length || 0,
+      deviceCount: this.deviceManager?.devices?.size || 0,
+      userCount: this.userManager?.users?.size || 0,
+      eventLogSize: this.eventLog?.length || 0,
+
+      // Timeline stats
+      seriesCount: seriesKeys.length,
+      totalSeriesPoints,
+      maxSeriesLength,
+      timelineTicks: this.timeline?.timebase?.tickCount || 0,
+
+      // Cumulative trackers
+      cumulativeBeatsSize: this._cumulativeBeats?.size || 0,
+      cumulativeRotationsSize: this._cumulativeRotations?.size || 0,
+
+      // Entity tracking
+      entityCount: this.entityRegistry?.getAll?.()?.length || 0,
+
+      // TreasureBox
+      treasureBoxUsers: this.treasureBox?.perUser?.size || 0,
+
+      // Heap (if available - Chrome only)
+      heapUsedMB: typeof performance !== 'undefined' && performance.memory
+        ? Math.round(performance.memory.usedJSHeapSize / 1024 / 1024 * 10) / 10
+        : null
+    };
   }
 
   _maybeLogTimelineTelemetry() {

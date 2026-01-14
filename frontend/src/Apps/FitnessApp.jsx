@@ -46,6 +46,107 @@ const FitnessApp = () => {
   useEffect(() => {
     logger.info('fitness-kiosk-state', { kiosk: kioskUI });
   }, [kioskUI, logger]);
+
+  // Memory/timer profiling for crash debugging
+  useEffect(() => {
+    const startTime = Date.now();
+    let sampleCount = 0;
+    let baselineMemory = null;
+    let baselineTimers = null;
+
+    // Count active intervals (approximate via window inspection)
+    const countTimers = () => {
+      // Use timer tracker if available, otherwise estimate
+      if (window.__timerTracker) {
+        return window.__timerTracker.getStats?.() || { activeIntervals: -1, activeTimeouts: -1 };
+      }
+      return { activeIntervals: -1, activeTimeouts: -1 };
+    };
+
+    const getMemoryMB = () => {
+      const mem = performance.memory;
+      if (!mem) return null;
+      return {
+        usedMB: Math.round(mem.usedJSHeapSize / 1024 / 1024 * 10) / 10,
+        totalMB: Math.round(mem.totalJSHeapSize / 1024 / 1024 * 10) / 10,
+        limitMB: Math.round(mem.jsHeapSizeLimit / 1024 / 1024)
+      };
+    };
+
+    const logProfile = () => {
+      sampleCount++;
+      const elapsed = Math.round((Date.now() - startTime) / 1000);
+      const mem = getMemoryMB();
+      const timers = countTimers();
+
+      // Capture baseline on first sample
+      if (!baselineMemory && mem) baselineMemory = mem.usedMB;
+      if (!baselineTimers) baselineTimers = timers.activeIntervals;
+
+      const growthMB = mem ? Math.round((mem.usedMB - baselineMemory) * 10) / 10 : null;
+      const timerGrowth = timers.activeIntervals >= 0 ? timers.activeIntervals - baselineTimers : null;
+
+      // Get session-level stats (exposed via window for cross-component access)
+      const sessionStats = window.__fitnessSession?.getMemoryStats?.() || {};
+      const chartStats = window.__fitnessChartStats?.() || {};
+
+      logger.info('fitness-profile', {
+        sample: sampleCount,
+        elapsedSec: elapsed,
+        heapMB: mem?.usedMB,
+        heapGrowthMB: growthMB,
+        timers: timers.activeIntervals,
+        timerGrowth,
+        timeouts: timers.activeTimeouts,
+        // Session stats
+        sessionActive: sessionStats.sessionActive,
+        tickTimerRunning: sessionStats.tickTimerRunning,
+        rosterSize: sessionStats.rosterSize,
+        deviceCount: sessionStats.deviceCount,
+        seriesCount: sessionStats.seriesCount,
+        totalSeriesPoints: sessionStats.totalSeriesPoints,
+        maxSeriesLength: sessionStats.maxSeriesLength,
+        eventLogSize: sessionStats.eventLogSize,
+        // Chart stats (if exposed)
+        chartCacheSize: chartStats.participantCacheSize,
+        chartDropoutMarkers: chartStats.dropoutMarkerCount
+      });
+
+      // Warn if growth is concerning
+      if (growthMB > 30) {
+        logger.warn('fitness-profile-memory-warning', { growthMB, elapsed });
+      }
+      if (timerGrowth > 5) {
+        logger.warn('fitness-profile-timer-warning', { timerGrowth, elapsed });
+      }
+      // Warn if session data growing unexpectedly
+      if (sessionStats.maxSeriesLength > 2500) {
+        logger.warn('fitness-profile-series-warning', {
+          maxSeriesLength: sessionStats.maxSeriesLength,
+          seriesCount: sessionStats.seriesCount
+        });
+      }
+      // Warn if tick timer running without active session (potential leak)
+      if (sessionStats.tickTimerRunning && !sessionStats.sessionActive) {
+        logger.error('fitness-profile-orphan-timer', {
+          tickTimerRunning: true,
+          sessionActive: false,
+          elapsed
+        });
+      }
+    };
+
+    // Log immediately, then every 30 seconds
+    logProfile();
+    const intervalId = setInterval(logProfile, 30000);
+
+    logger.info('fitness-profile-started', { intervalSec: 30 });
+
+    return () => {
+      clearInterval(intervalId);
+      logger.info('fitness-profile-stopped', { samples: sampleCount });
+    };
+  }, [logger]);
   
   // In kiosk mode, block right-click/context menu and secondary button actions
   useEffect(() => {
