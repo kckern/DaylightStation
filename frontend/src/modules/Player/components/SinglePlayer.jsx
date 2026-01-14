@@ -144,13 +144,24 @@ export function SinglePlayer(props = {}) {
         }
       }
     }
+    // Forward playback metrics to Player.jsx for resilience tracking
+    // This bridges useCommonMediaController's stall state to useMediaResilience
+    if (typeof onPlaybackMetrics === 'function') {
+      onPlaybackMetrics({
+        seconds: payload?.currentTime,
+        isPaused: payload?.paused,
+        isSeeking: false, // Will be updated by seeking events if needed
+        stalled: payload?.stalled,
+        stallState: payload?.stallState
+      });
+    }
     if (typeof onProgress === 'function') {
       onProgress({
         ...payload,
         watchedDuration
       });
     }
-  }, [accumulateWatchedDuration, onProgress, playbackSessionKey]);
+  }, [accumulateWatchedDuration, onPlaybackMetrics, onProgress, playbackSessionKey]);
 
   useEffect(() => {
     if (!playbackSessionKey || typeof window === 'undefined') {

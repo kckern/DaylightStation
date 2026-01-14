@@ -56,7 +56,9 @@ const createDefaultPlaybackMetrics = () => ({
   isSeeking: false,
   pauseIntent: null,
   diagnostics: null,
-  diagnosticsVersion: 0
+  diagnosticsVersion: 0,
+  stalled: false,
+  stallState: null
 });
 
 /**
@@ -249,7 +251,9 @@ const Player = forwardRef(function Player(props, ref) {
         isSeeking: typeof metrics.isSeeking === 'boolean' ? metrics.isSeeking : prev.isSeeking,
         pauseIntent: nextPauseIntent,
         diagnostics: nextDiagnostics,
-        diagnosticsVersion: nextDiagnosticsVersion
+        diagnosticsVersion: nextDiagnosticsVersion,
+        stalled: typeof metrics.stalled === 'boolean' ? metrics.stalled : prev.stalled,
+        stallState: metrics.stallState !== undefined ? metrics.stallState : prev.stallState
       };
       if (
         prev.seconds === next.seconds
@@ -258,6 +262,8 @@ const Player = forwardRef(function Player(props, ref) {
         && prev.pauseIntent === next.pauseIntent
         && prev.diagnostics === next.diagnostics
         && prev.diagnosticsVersion === next.diagnosticsVersion
+        && prev.stalled === next.stalled
+        && prev.stallState === next.stallState
       ) {
         return prev;
       }
@@ -530,7 +536,10 @@ const Player = forwardRef(function Player(props, ref) {
     playbackSessionKey,
     debugContext: { scope: 'player', mediaGuid: currentMediaGuid || null },
     externalPauseReason: pauseDecision?.reason,
-    externalPauseActive: pauseDecision?.paused
+    externalPauseActive: pauseDecision?.paused,
+    // Pass stall state from useCommonMediaController to avoid duplicate detection
+    externalStalled: effectiveMeta ? playbackMetrics.stalled : null,
+    externalStallState: effectiveMeta ? playbackMetrics.stallState : null
   });
 
   // Get playback rate from the current item, falling back to queue/play level, then default
