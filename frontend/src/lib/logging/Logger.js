@@ -54,12 +54,15 @@ const isLevelEnabled = (targetLevel) => {
   return tgt >= cur;
 };
 
+// Adaptive throttling for logger WebSocket: 1s, 2s, 5s, 15s, 1min, 5min, 15min (terminal)
+const LOGGER_RECONNECT_DELAYS = [1000, 2000, 5000, 15000, 60000, 300000, 900000];
+
 // WebSocket transport state
 const wsState = {
   socket: null,
   connecting: false,
   queue: [],
-  reconnectDelay: DEFAULT_OPTIONS.reconnectBaseDelay,
+  reconnectTier: 0,
   reconnectTimer: null,
   flushTimer: null
 };
@@ -106,10 +109,18 @@ const scheduleFlush = () => {
 
 const scheduleReconnect = () => {
   if (wsState.reconnectTimer) return;
-  const delay = Math.min(wsState.reconnectDelay, config.reconnectMaxDelay);
+  
+  const delay = LOGGER_RECONNECT_DELAYS[
+    Math.min(wsState.reconnectTier, LOGGER_RECONNECT_DELAYS.length - 1)
+  ];
+  
+  const tierLabel = wsState.reconnectTier < LOGGER_RECONNECT_DELAYS.length ? `tier ${wsState.reconnectTier}` : 'terminal';
+  const delayLabel = delay >= 60000 ? `${delay / 60000}min` : `${delay / 1000}s`;
+  devOutput('debug', `Logger reconnecting in ${delayLabel} (${tierLabel})`);
+  
   wsState.reconnectTimer = setTimeout(() => {
     wsState.reconnectTimer = null;
-    wsState.reconnectDelay = Math.min(delay * 2, config.reconnectMaxDelay);
+    wsState.reconnectTier++;
     ensureWebSocket();
   }, delay);
 };
@@ -133,7 +144,7 @@ const ensureWebSocket = () => {
     
     wsState.socket.onopen = () => {
       wsState.connecting = false;
-      wsState.reconnectDelay = config.reconnectBaseDelay;
+      wsState.reconnectTier = 0; // Reset tier on successful connection
       devOutput('debug', 'WebSocket connected');
       flush();
     };

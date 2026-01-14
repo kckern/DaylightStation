@@ -54,15 +54,16 @@ function createWebSocketTransport(options = {}) {
   const {
     url = null,
     topic = 'logging',
-    maxQueue = 200,
-    reconnectBaseDelay = 800,
-    reconnectMaxDelay = 6000
+    maxQueue = 200
   } = options;
+
+  // Adaptive throttling: 1s, 2s, 5s, 15s, 1min, 5min, 15min (terminal)
+  const RECONNECT_DELAYS = [1000, 2000, 5000, 15000, 60000, 300000, 900000];
 
   let socket = null;
   let connecting = false;
   let queue = [];
-  let reconnectDelay = reconnectBaseDelay;
+  let reconnectTier = 0;
   let timer = null;
 
   const resolveUrl = () => {
@@ -86,10 +87,10 @@ function createWebSocketTransport(options = {}) {
 
   const scheduleReconnect = () => {
     if (timer) return;
-    const delay = Math.min(reconnectDelay, reconnectMaxDelay);
+    const delay = RECONNECT_DELAYS[Math.min(reconnectTier, RECONNECT_DELAYS.length - 1)];
     timer = setTimeout(() => {
       timer = null;
-      reconnectDelay = Math.min(delay * 2, reconnectMaxDelay);
+      reconnectTier++;
       ensure();
     }, delay);
   };
@@ -103,7 +104,7 @@ function createWebSocketTransport(options = {}) {
       socket = new WebSocket(target);
       socket.onopen = () => {
         connecting = false;
-        reconnectDelay = reconnectBaseDelay;
+        reconnectTier = 0; // Reset on successful connection
         flush();
       };
       socket.onclose = () => {
@@ -145,16 +146,17 @@ function createBufferingWebSocketTransport(options = {}) {
     url = null,
     topic = 'logging',
     maxQueue = 500,
-    reconnectBaseDelay = 800,
-    reconnectMaxDelay = 6000,
     batchSize = 20,
     flushInterval = 1000
   } = options;
 
+  // Adaptive throttling: 1s, 2s, 5s, 15s, 1min, 5min, 15min (terminal)
+  const RECONNECT_DELAYS = [1000, 2000, 5000, 15000, 60000, 300000, 900000];
+
   let socket = null;
   let connecting = false;
   let queue = [];
-  let reconnectDelay = reconnectBaseDelay;
+  let reconnectTier = 0;
   let flushTimer = null;
   let reconnectTimer = null;
 
@@ -194,10 +196,10 @@ function createBufferingWebSocketTransport(options = {}) {
 
   const scheduleReconnect = () => {
     if (reconnectTimer) return;
-    const delay = Math.min(reconnectDelay, reconnectMaxDelay);
+    const delay = RECONNECT_DELAYS[Math.min(reconnectTier, RECONNECT_DELAYS.length - 1)];
     reconnectTimer = setTimeout(() => {
       reconnectTimer = null;
-      reconnectDelay = Math.min(delay * 2, reconnectMaxDelay);
+      reconnectTier++;
       ensure();
     }, delay);
   };
@@ -211,7 +213,7 @@ function createBufferingWebSocketTransport(options = {}) {
       socket = new WebSocket(target);
       socket.onopen = () => {
         connecting = false;
-        reconnectDelay = reconnectBaseDelay;
+        reconnectTier = 0; // Reset on successful connection
         flush();
       };
       socket.onclose = () => {
