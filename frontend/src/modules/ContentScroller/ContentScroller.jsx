@@ -443,9 +443,8 @@ import { useMediaReporter } from '../Player/hooks/useMediaReporter.js';
         return;
       }
       
-      // Migrated from legacy: data/scripture/${scripture}
-      console.log('Making API call to:', `api/local-content/scripture/${scripture}`);
-      DaylightAPI(`api/local-content/scripture/${scripture}`).then(({reference, media_key,mediaUrl, verses}) => {
+      console.log('Making API call to:', `data/scripture/${scripture}`);
+      DaylightAPI(`data/scripture/${scripture}`).then(({reference, media_key,mediaUrl, verses}) => {
         console.log('Scripture API response:', {reference, media_key, mediaUrl, verses: verses?.length});
         setScriptureTextData(verses);
         setTitleHeader(reference);
@@ -555,8 +554,7 @@ import { useMediaReporter } from '../Player/hooks/useMediaReporter.js';
 
     useEffect(() => {
         console.log(`Loading hymn: raw=${hymn} normalized=${normalizedHymn} from folder: ${folder}`);
-        // Migrated from legacy: data/${folder}/${normalizedHymn}
-        const path = normalizedHymn === true ? `api/local-content/${folder}` : `api/local-content/${folder}/${normalizedHymn}`;
+        const path = normalizedHymn === true ? `data/${folder}` : `data/${folder}/${normalizedHymn}`;
         DaylightAPI(path).then((response) => {
           console.log(`Hymn API response:`, response);
           const {title, hymn_num, song_number, mediaUrl, verses, duration} = response;
@@ -775,8 +773,8 @@ import { useMediaReporter } from '../Player/hooks/useMediaReporter.js';
     const [media_key, setMediaKey] = useState(null);
 
     useEffect(() => {
-      // Migrated from legacy: data/talk/${talk}
-      DaylightAPI(`api/local-content/talk/${talk}`).then(({title, speaker, media_key, mediaUrl, content}) => {
+
+      DaylightAPI(`data/talk/${talk}`).then(({title, speaker, media_key, mediaUrl, content}) => {
         setTitle(title);
         setSubtitle(speaker);
         setVideoUrl(mediaUrl);
@@ -908,10 +906,9 @@ import { useMediaReporter } from '../Player/hooks/useMediaReporter.js';
         poem_id = (poem_id + "/" + randomSuffix).replace("//", "/");
       }
       
-      // Migrated from legacy: data/poetry/${poem_id}
-      console.log('Making API call to:', `api/local-content/poem/${poem_id}`);
-
-      DaylightAPI(`api/local-content/poem/${poem_id}`).then(({title, author, condition, also_suitable_for, poem_id: apiPoemId, verses, duration}) => {
+      console.log('Making API call to:', `data/poetry/${poem_id}`);
+      
+      DaylightAPI(`data/poetry/${poem_id}`).then(({title, author, condition, also_suitable_for, poem_id: apiPoemId, verses, duration}) => {
         console.log('Poetry API response:', {title, poem_id: apiPoemId, verses: verses?.length, duration});
         
         // Use the API poem_id if available, otherwise fall back to our calculated poem_id

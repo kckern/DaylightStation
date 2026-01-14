@@ -15,13 +15,11 @@ export async function flattenQueueItems(items, level = 1) {
       const shuffle = !!item.queue.shuffle || item.shuffle || false;
       if (item.queue.playlist || item.queue.queue) {
         const queueKey = item.queue.playlist ?? item.queue.queue;
-        // Migrated from legacy: data/list/${queueKey}/playable
-        const { items: nestedItems } = await DaylightAPI(`api/list/folder/${queueKey}/playable${shuffle ? ',shuffle' : ''}`);
+        const { items: nestedItems } = await DaylightAPI(`data/list/${queueKey}/playable${shuffle ? ',shuffle' : ''}`);
         const nestedFlattened = await flattenQueueItems(nestedItems, level + 1);
         flattened.push(...nestedFlattened);
       } else if (item.queue.plex) {
-        // Migrated from legacy: media/plex/list/${item.queue.plex}/playable
-        const { items: plexItems } = await DaylightAPI(`api/list/plex/${item.queue.plex}/playable${shuffle ? ',shuffle' : ''}`);
+        const { items: plexItems } = await DaylightAPI(`media/plex/list/${item.queue.plex}/playable${shuffle ? ',shuffle' : ''}`);
         const nestedFlattened = await flattenQueueItems(plexItems, level + 1);
         flattened.push(...nestedFlattened);
       }
@@ -69,14 +67,12 @@ export async function fetchMediaInfo({ plex, media, shuffle, maxVideoBitrate, ma
   }
 
   if (plex) {
-    // Migrated from legacy: media/plex/info/${plex}
-    const base = shuffle ? `api/play/plex/${plex}/shuffle` : `api/play/plex/${plex}`;
+    const base = shuffle ? `media/plex/info/${plex}/shuffle` : `media/plex/info/${plex}`;
     const url = buildUrl(base, queryCommon);
     const infoResponse = await DaylightAPI(url);
     return { ...infoResponse, media_key: infoResponse.plex };
   } else if (media) {
-    // Migrated from legacy: media/info/${media}
-    const url = buildUrl(`api/play/filesystem/${media}`, { shuffle });
+    const url = buildUrl(`media/info/${media}`, { shuffle });
     const infoResponse = await DaylightAPI(url);
     return infoResponse;
   }
@@ -100,8 +96,7 @@ export async function initializeQueue(play, queue) {
     const queue_media_key = play?.playlist || play?.queue || queue?.playlist || queue?.queue || queue?.media;
     if (queue_media_key) {
       const shuffle = !!play?.shuffle || !!queue?.shuffle || false;
-      // Migrated from legacy: data/list/${queue_media_key}/playable
-      const { items } = await DaylightAPI(`api/list/folder/${queue_media_key}/playable${shuffle ? ',shuffle' : ''}`);
+      const { items } = await DaylightAPI(`data/list/${queue_media_key}/playable${shuffle ? ',shuffle' : ''}`);
       const flatItems = await flattenQueueItems(items);
       newQueue = flatItems.map(item => ({ ...item, guid: guid() }));
     } else {
