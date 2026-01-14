@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useMemo } from 'react';
 import { usePersistentVolume } from './usePersistentVolume.js';
 
 const DEFAULT_VIDEO_IDS = {
@@ -7,7 +7,10 @@ const DEFAULT_VIDEO_IDS = {
   trackId: 'video'
 };
 
-// Shared hook that owns the video volume state once and wires it to the player ref.
+/**
+ * Shared hook that owns the video volume state and wires it to the player ref.
+ * Volume application is delegated to useVolumeSync in the consuming component.
+ */
 export function useFitnessVolumeControls({
   videoPlayerRef,
   videoShowId,
@@ -20,11 +23,6 @@ export function useFitnessVolumeControls({
     trackId: videoTrackId || DEFAULT_VIDEO_IDS.trackId,
     playerRef: videoPlayerRef
   });
-
-  useEffect(() => {
-    // Re-apply whenever identity changes so late-bound media elements pick up the state.
-    videoVolume.applyToPlayer();
-  }, [videoVolume, videoTrackId]);
 
   return useMemo(() => ({
     videoVolume
