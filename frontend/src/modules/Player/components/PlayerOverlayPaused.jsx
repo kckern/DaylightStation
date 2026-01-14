@@ -14,8 +14,13 @@ export function PlayerOverlayPaused({
   stalled = false,
   waitingToPlay = false,
   togglePauseOverlay,
-  playerPositionDisplay
+  playerPositionDisplay,
+  suppressForBlackout = false
 }) {
+  // In blackout mode, keep screen completely dark (TV appears off)
+  if (suppressForBlackout) {
+    return null;
+  }
   const isInitialPlayback = seconds === 0 && !stalled;
   const shouldShowPauseOverlay = shouldRender
     && isVisible
@@ -104,7 +109,8 @@ PlayerOverlayPaused.propTypes = {
   stalled: PropTypes.bool,
   waitingToPlay: PropTypes.bool,
   togglePauseOverlay: PropTypes.func,
-  playerPositionDisplay: PropTypes.string
+  playerPositionDisplay: PropTypes.string,
+  suppressForBlackout: PropTypes.bool
 };
 
 export default PlayerOverlayPaused;

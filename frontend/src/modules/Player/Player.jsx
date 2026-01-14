@@ -654,10 +654,12 @@ const Player = forwardRef(function Player(props, ref) {
 
   useEffect(() => () => clearRemountTimer(), [clearRemountTimer]);
 
+  const suppressOverlaysForBlackout = effectiveShader === 'blackout';
+
   const overlayElements = overlayProps ? (
     <>
-      <PlayerOverlayLoading {...overlayProps} />
-      <PlayerOverlayPaused {...overlayProps} />
+      <PlayerOverlayLoading {...overlayProps} suppressForBlackout={suppressOverlaysForBlackout} />
+      <PlayerOverlayPaused {...overlayProps} suppressForBlackout={suppressOverlaysForBlackout} />
       <PlayerOverlayStateDebug {...overlayProps} />
     </>
   ) : null;
@@ -713,6 +715,7 @@ const Player = forwardRef(function Player(props, ref) {
         togglePauseOverlay={() => {}}
         plexId={plexId}
         debugContext={{ scope: 'idle' }}
+        suppressForBlackout={suppressOverlaysForBlackout}
       />
       <PlayerOverlayPaused
         shouldRender
@@ -722,6 +725,7 @@ const Player = forwardRef(function Player(props, ref) {
         stalled={false}
         waitingToPlay
         togglePauseOverlay={() => {}}
+        suppressForBlackout={suppressOverlaysForBlackout}
       />
     </div>
   );

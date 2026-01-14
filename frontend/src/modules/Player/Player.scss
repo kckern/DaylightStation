@@ -234,19 +234,25 @@
 
 
 
-///['regular', 'minimal', 'night', 'screensaver', 'dark']
+// Shader modes: ['default', 'focused', 'night', 'blackout']
 
 .player{
     background-color: #151515;
     width: 100%;
     height: 100%;
-    .regular{
-        // Leave headings visible so shader overrides can hide them explicitly when needed
-    }
-    .dark {
+
+    // .default: no special styles, progress bar visible by default
+
+    .focused {
         background-color: #000000;
-        *{filter: brightness(0); }
-    } 
+        .progress-bar{display: none;}
+        p,h2,h3,.progress-bar{display: none;}
+        img.cover{
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            object-fit: contain;
+        }
+    }
+
     .night {
         background-color: #000000;
         *{color: #FF000022;}
@@ -267,32 +273,20 @@
             img {
             filter: grayscale(1);
             mix-blend-mode: multiply;
-            z-index: 1; /* Ensure img is on top */
+            z-index: 1;
             }
             .image-backdrop {
             background-color: rgb(39, 12, 12);
-            z-index: 0; /* Ensure backdrop is below img */
+            z-index: 0;
             border-radius: 1rem;
             }
         }
-
-    
         .video-element{ --player-video-filter-base: sepia(1) brightness(0.15) hue-rotate(-35deg); }
-        
     }
-    .minimal {
+
+    .blackout {
         background-color: #000000;
-        .progress-bar{display: none;}
-        p,h2,h3,.progress-bar{display: none;}
-        img.cover{
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            object-fit: contain;
-        }
-    }
-    .screensaver {
-        background-color: #000000;
-        .video-element{ scale: 1.5}
-        *{filter: grayscale(1) sepia(1) brightness(0.5) blur(0.2ex);}
+        *{filter: brightness(0); }
     }
   }
 
