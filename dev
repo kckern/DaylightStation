@@ -1,8 +1,17 @@
 #!/bin/bash
 
 # KILL ANY PROCESS USING PORT 3111 or 3112 or 3119  
-lsof -ti:3111 | xargs --no-run-if-empty kill -9
-lsof -ti:3112 | xargs --no-run-if-empty kill -9
-lsof -ti:3119 | xargs --no-run-if-empty kill -9
+lsof -ti:3111 2>/dev/null | xargs kill -9 2>/dev/null || true
+lsof -ti:3112 2>/dev/null | xargs kill -9 2>/dev/null || true
+lsof -ti:3119 2>/dev/null | xargs kill -9 2>/dev/null || true
 
-npm run dev
+# Check if --background flag is provided
+if [[ "$1" == "--background" ]]; then
+    npm run dev > /dev/null 2>&1 &
+    PID=$!
+    echo "Dev server started in background with PID: $PID"
+    echo "Check logs at ./dev.log"
+    echo $PID
+else
+    npm run dev
+fi
