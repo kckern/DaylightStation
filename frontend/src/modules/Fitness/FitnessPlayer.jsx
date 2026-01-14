@@ -14,6 +14,7 @@ import { resolvePause, PAUSE_REASON } from '../Player/utils/pauseArbiter.js';
 import FitnessChart from './FitnessSidebar/FitnessChart.jsx';
 import { useMediaAmplifier } from './components/useMediaAmplifier.js';
 import { FitnessPlayerFrame } from './frames';
+import { useVolumeSync } from './hooks/useVolumeSync.js';
 
 const DEBUG_FITNESS_INTERACTIONS = false;
 
@@ -539,13 +540,13 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     videoTrackId: currentMediaIdentity
   });
 
-  // Apply persisted volume when media element becomes available
-  // This fixes the race condition where useLayoutEffect runs before playerRef is set
-  useEffect(() => {
-    if (mediaElement && videoVolume?.applyToPlayer) {
-      videoVolume.applyToPlayer();
-    }
-  }, [mediaElement, videoVolume]);
+  // Apply persisted volume when media element becomes available or after recovery
+  // This fixes race conditions and ensures volume persists after stall/restart
+  useVolumeSync({
+    mediaElement,
+    resilienceStatus: resilienceState?.status,
+    applyVolume: videoVolume?.applyToPlayer
+  });
 
   const logFitnessEvent = useCallback((event, details = {}, options = {}) => {
     if (!DEBUG_FITNESS_INTERACTIONS) return;
@@ -1002,10 +1003,6 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   }, [enhancedCurrentItem, videoVolume.volume, videoVolume.volumeRef, currentItem?.playbackRate, currentItem?.labels, currentItem?.type, governedLabelSet, governedTypeSet, governance]);
 
   const autoplayEnabled = Boolean(playObject?.autoplay);
-
-  useEffect(() => {
-    videoVolume.applyToPlayer();
-  }, [videoVolume, currentMediaIdentity]);
 
   useEffect(() => {
     const session = fitnessSessionInstance;
