@@ -191,11 +191,18 @@ export default function SingleThumbnailButton({
       return;
     }
 
+    // If tap was on time label, it's a zoom gesture (handled by pointer events)
+    // Don't seek!
+    if (enableZoom && isTimeLabel(e)) {
+      emitTelemetry('touch-end', { action: 'skip-seek-for-label-zoom' });
+      return;
+    }
+
     // No long press - treat as seek
     const target = getSeekTarget();
     onSeek?.(target);
     emitTelemetry('touch-end', { action: 'seek', seekTarget: target });
-  }, [clearLongPress, getSeekTarget, onSeek, emitTelemetry]);
+  }, [clearLongPress, getSeekTarget, onSeek, emitTelemetry, enableZoom, isTimeLabel]);
 
   /**
    * Handle touch cancel
