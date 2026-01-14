@@ -4,6 +4,7 @@ import 'dash-video-element';
 import { useCommonMediaController } from '../hooks/useCommonMediaController.js';
 import { ProgressBar } from './ProgressBar.jsx';
 import { LoadingOverlay } from './LoadingOverlay.jsx';
+import { useUpscaleEffects } from '../hooks/useUpscaleEffects.js';
 import { getLogger } from '../../../lib/logging/Logger.js';
 
 /**
@@ -28,7 +29,8 @@ export function VideoPlayer({
   showQuality,
   stallConfig,
   keyboardOverrides,
-  onController
+  onController,
+  upscaleEffects = 'auto'
 }) {
   // console.log('[VideoPlayer] Received keyboardOverrides:', keyboardOverrides ? Object.keys(keyboardOverrides) : 'undefined');
   const isPlex = ['dash_video'].includes(media.media_type);
@@ -91,6 +93,12 @@ export function VideoPlayer({
         setTimeout(() => { setIsAdapting(false); setAdaptMessage(undefined); }, 5000);
       }
     }, [fetchVideoInfo])
+  });
+
+  // Upscale detection and effects
+  const { effectStyles, overlayProps } = useUpscaleEffects({
+    mediaRef: containerRef,
+    preset: upscaleEffects
   });
 
   const { show, season, title, media_url } = media;
@@ -182,6 +190,7 @@ export function VideoPlayer({
           class={`video-element ${displayReady ? 'show' : ''}`}
           src={media_url}
           autoplay=""
+          style={effectStyles}
         />
       ) : (
         <video
@@ -190,9 +199,13 @@ export function VideoPlayer({
           ref={containerRef}
           className={`video-element ${displayReady ? 'show' : ''}`}
           src={media_url}
+          style={effectStyles}
           onCanPlay={() => { setDisplayReady(true); setIsAdapting(false); setAdaptMessage(undefined); }}
           onPlaying={() => { setDisplayReady(true); setIsAdapting(false); setAdaptMessage(undefined); }}
         />
+      )}
+      {overlayProps.showCRT && (
+        <div className={overlayProps.className} />
       )}
       {showQuality && quality?.supported && (
         <QualityOverlay stats={quality} capKbps={currentMaxKbps} avgPct={droppedFramePct} />
@@ -243,5 +256,6 @@ VideoPlayer.propTypes = {
   onMediaRef: PropTypes.func,
   showQuality: PropTypes.bool,
   stallConfig: PropTypes.object,
-  onController: PropTypes.func
+  onController: PropTypes.func,
+  upscaleEffects: PropTypes.oneOf(['auto', 'blur-only', 'crt-only', 'aggressive', 'none'])
 };
