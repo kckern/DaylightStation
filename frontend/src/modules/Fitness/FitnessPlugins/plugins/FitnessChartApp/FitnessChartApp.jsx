@@ -713,6 +713,21 @@ const FitnessChartApp = ({ mode, onClose, config, onMount }) => {
 		{ activityMonitor, zoneConfig, sessionId }
 	);
 
+	// TELEMETRY: Expose chart stats for memory leak profiling
+	useEffect(() => {
+		window.__fitnessChartStats = () => ({
+			participantCacheSize: allEntries.length,
+			dropoutMarkerCount: dropoutMarkers?.length || 0,
+			presentEntriesCount: presentEntries?.length || 0,
+			absentEntriesCount: absentEntries?.length || 0,
+			maxValue,
+			maxIndex
+		});
+		return () => {
+			delete window.__fitnessChartStats;
+		};
+	}, [allEntries.length, dropoutMarkers?.length, presentEntries?.length, absentEntries?.length, maxValue, maxIndex]);
+
 	// Diagnostic logging to dev.log to understand warmup failures without spamming
 	useEffect(() => {
 		const rosterCount = Array.isArray(participants) ? participants.length : 0;
