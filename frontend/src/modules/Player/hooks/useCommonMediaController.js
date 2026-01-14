@@ -1189,7 +1189,37 @@ export function useCommonMediaController({
         stallState,
         readStallState,
         getMediaEl,
-        elementKey
+        elementKey,
+        // Transport-compatible API for Player.jsx seek functionality
+        seek: (targetSeconds) => {
+          const mediaEl = getMediaEl();
+          if (mediaEl && Number.isFinite(targetSeconds)) {
+            mediaEl.currentTime = Math.max(0, targetSeconds);
+          }
+        },
+        play: () => {
+          const mediaEl = getMediaEl();
+          if (mediaEl) mediaEl.play?.();
+        },
+        pause: () => {
+          const mediaEl = getMediaEl();
+          if (mediaEl) mediaEl.pause?.();
+        },
+        toggle: () => {
+          const mediaEl = getMediaEl();
+          if (mediaEl) {
+            if (mediaEl.paused) mediaEl.play?.();
+            else mediaEl.pause?.();
+          }
+        },
+        getCurrentTime: () => {
+          const mediaEl = getMediaEl();
+          return mediaEl?.currentTime || 0;
+        },
+        getDuration: () => {
+          const mediaEl = getMediaEl();
+          return mediaEl?.duration || 0;
+        }
       });
     }
   }, [onController, recoveryApi, stallState, readStallState, getMediaEl, elementKey]);

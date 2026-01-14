@@ -135,7 +135,7 @@ export default function useSeekState({
     }
 
     const normalizedTarget = Math.max(0, targetSeconds);
-    
+
     logSeekEvent('commit', {
       target: normalizedTarget,
       currentTime,
@@ -146,10 +146,10 @@ export default function useSeekState({
     // Record intent
     setIntentTime(normalizedTarget);
     awaitingSettleRef.current = true;
-    pendingMetaRef.current = { 
-      target: normalizedTarget, 
-      startedAt: nowTs(), 
-      settledAt: 0 
+    pendingMetaRef.current = {
+      target: normalizedTarget,
+      startedAt: nowTs(),
+      settledAt: 0
     };
     lastSeekRef.current.time = normalizedTarget;
 
