@@ -1,9 +1,10 @@
-import React, { useMemo, useCallback } from 'react';
+import React, { useMemo, useCallback, useRef } from 'react';
 import PropTypes from 'prop-types';
 import { formatTime } from '../lib/helpers.js';
 import { useCommonMediaController } from '../hooks/useCommonMediaController.js';
 import { ProgressBar } from './ProgressBar.jsx';
 import { getLogger } from '../../../lib/logging/Logger.js';
+import { useImageUpscaleBlur } from '../hooks/useImageUpscaleBlur.js';
 
 /**
  * Audio player component for playing audio tracks
@@ -74,6 +75,10 @@ export function AudioPlayer({
   const shaderState = percent < 0.1 || seconds > duration - 2 ? 'on' : 'off';
   const footer = `${title}${albumArtist && albumArtist !== artist ? ` (${albumArtist})` : ''}`;
 
+  // Image upscale blur for album art
+  const coverImageRef = useRef(null);
+  const { blurStyle: coverBlurStyle } = useImageUpscaleBlur(coverImageRef);
+
   // Prod telemetry: cover image loaded
   const handleCoverLoad = useCallback(() => {
     const logger = getLogger();
@@ -94,7 +99,14 @@ export function AudioPlayer({
         <div className="image-container">
           {image && (
             <>
-              <img src={image} alt={title} className="cover" onLoad={handleCoverLoad} />
+              <img
+                ref={coverImageRef}
+                src={image}
+                alt={title}
+                className="cover"
+                style={coverBlurStyle}
+                onLoad={handleCoverLoad}
+              />
               <div className="image-backdrop" />
             </>
           )}
