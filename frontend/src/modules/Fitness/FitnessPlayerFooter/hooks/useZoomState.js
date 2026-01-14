@@ -161,6 +161,17 @@ export default function useZoomState({
   }, [isZoomed, onZoomChange]);
 
   /**
+   * Cancel any pending zoom reset
+   */
+  const cancelZoomReset = useCallback(() => {
+    if (pendingResetRef.current) {
+      clearTimeout(pendingResetRef.current);
+      pendingResetRef.current = null;
+      logger.info('zoom-reset-cancelled');
+    }
+  }, []);
+
+  /**
    * Get the current zoom stack snapshot (for navigation)
    */
   const getActiveSnapshot = useCallback(() => {
@@ -272,17 +283,6 @@ export default function useZoomState({
     zoomStackRef.current = [];
     setZoomRange(null);
   }, [zoomRange]);
-
-  /**
-   * Cancel any pending zoom reset
-   */
-  const cancelZoomReset = useCallback(() => {
-    if (pendingResetRef.current) {
-      clearTimeout(pendingResetRef.current);
-      pendingResetRef.current = null;
-      logger.info('zoom-reset-cancelled');
-    }
-  }, []);
 
   /**
    * Schedule a zoom reset after a delay (e.g., after seek completes)
