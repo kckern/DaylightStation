@@ -84,4 +84,41 @@ export class PlexClient {
   async getMetadata(ratingKey) {
     return this.request(`/library/metadata/${ratingKey}`);
   }
+
+  /**
+   * Search Plex hub for media items
+   * Migrated from: mediaMemoryValidator.mjs:66-84
+   * @param {string} query - Search query
+   * @param {Object} [options] - Search options
+   * @param {string} [options.libraryId] - Filter by library section ID
+   * @param {number} [options.limit] - Max results per hub (default: 10)
+   * @returns {Promise<{results: Array}>} Flattened search results
+   */
+  async hubSearch(query, options = {}) {
+    const { libraryId, limit = 10 } = options;
+
+    let path = `/hubs/search?query=${encodeURIComponent(query)}&limit=${limit}`;
+    if (libraryId) {
+      path += `&sectionId=${libraryId}`;
+    }
+
+    const response = await this.request(path);
+    const container = response.MediaContainer || {};
+
+    // Flatten results from all hubs
+    const results = [];
+    for (const hub of container.Hub || []) {
+      for (const item of hub.Metadata || []) {
+        results.push({
+          ratingKey: item.ratingKey,
+          title: item.title,
+          year: item.year,
+          type: item.type,
+          guid: item.guid
+        });
+      }
+    }
+
+    return { results };
+  }
 }
