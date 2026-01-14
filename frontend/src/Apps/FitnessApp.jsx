@@ -86,6 +86,10 @@ const FitnessApp = () => {
       const growthMB = mem ? Math.round((mem.usedMB - baselineMemory) * 10) / 10 : null;
       const timerGrowth = timers.activeIntervals >= 0 ? timers.activeIntervals - baselineTimers : null;
 
+      // Get session-level stats (exposed via window for cross-component access)
+      const sessionStats = window.__fitnessSession?.getMemoryStats?.() || {};
+      const chartStats = window.__fitnessChartStats?.() || {};
+
       logger.info('fitness-profile', {
         sample: sampleCount,
         elapsedSec: elapsed,
@@ -93,7 +97,19 @@ const FitnessApp = () => {
         heapGrowthMB: growthMB,
         timers: timers.activeIntervals,
         timerGrowth,
-        timeouts: timers.activeTimeouts
+        timeouts: timers.activeTimeouts,
+        // Session stats
+        sessionActive: sessionStats.sessionActive,
+        tickTimerRunning: sessionStats.tickTimerRunning,
+        rosterSize: sessionStats.rosterSize,
+        deviceCount: sessionStats.deviceCount,
+        seriesCount: sessionStats.seriesCount,
+        totalSeriesPoints: sessionStats.totalSeriesPoints,
+        maxSeriesLength: sessionStats.maxSeriesLength,
+        eventLogSize: sessionStats.eventLogSize,
+        // Chart stats (if exposed)
+        chartCacheSize: chartStats.participantCacheSize,
+        chartDropoutMarkers: chartStats.dropoutMarkerCount
       });
 
       // Warn if growth is concerning
@@ -102,6 +118,21 @@ const FitnessApp = () => {
       }
       if (timerGrowth > 5) {
         logger.warn('fitness-profile-timer-warning', { timerGrowth, elapsed });
+      }
+      // Warn if session data growing unexpectedly
+      if (sessionStats.maxSeriesLength > 2500) {
+        logger.warn('fitness-profile-series-warning', {
+          maxSeriesLength: sessionStats.maxSeriesLength,
+          seriesCount: sessionStats.seriesCount
+        });
+      }
+      // Warn if tick timer running without active session (potential leak)
+      if (sessionStats.tickTimerRunning && !sessionStats.sessionActive) {
+        logger.error('fitness-profile-orphan-timer', {
+          tickTimerRunning: true,
+          sessionActive: false,
+          elapsed
+        });
       }
     };
 
