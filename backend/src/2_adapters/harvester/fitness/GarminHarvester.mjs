@@ -152,6 +152,103 @@ export class GarminHarvester extends IHarvester {
   }
 
   /**
+   * Get detailed activity by ID
+   * Migrated from: garmin.mjs:176-180
+   * @param {string} username - User to authenticate as
+   * @param {number} activityId - Garmin activity ID
+   * @returns {Promise<Object>} Activity details
+   */
+  async getActivityDetails(username, activityId) {
+    if (this.#circuitBreaker.isOpen()) {
+      const cooldown = this.#circuitBreaker.getCooldownStatus();
+      return { status: 'skipped', reason: 'cooldown', remainingMins: cooldown?.remainingMins };
+    }
+
+    try {
+      const client = await this.#getAuthenticatedClient(username);
+      const activityDetails = await client.getActivity({ activityId });
+      this.#circuitBreaker.recordSuccess();
+      return activityDetails;
+    } catch (error) {
+      this.#circuitBreaker.recordFailure(error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get steps for a specific date
+   * Migrated from: garmin.mjs:207-211
+   * @param {string} username - User to authenticate as
+   * @param {Date} [date] - Date to get steps for (defaults to today)
+   * @returns {Promise<Object>} Steps data
+   */
+  async getSteps(username, date = new Date()) {
+    if (this.#circuitBreaker.isOpen()) {
+      const cooldown = this.#circuitBreaker.getCooldownStatus();
+      return { status: 'skipped', reason: 'cooldown', remainingMins: cooldown?.remainingMins };
+    }
+
+    try {
+      const client = await this.#getAuthenticatedClient(username);
+      const steps = await client.getSteps(date);
+      this.#circuitBreaker.recordSuccess();
+      return steps;
+    } catch (error) {
+      this.#circuitBreaker.recordFailure(error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get heart rate data for a specific date
+   * Migrated from: garmin.mjs:214-218
+   * @param {string} username - User to authenticate as
+   * @param {Date} [date] - Date to get heart rate for (defaults to today)
+   * @returns {Promise<Object>} Heart rate data
+   */
+  async getHeartRate(username, date = new Date()) {
+    if (this.#circuitBreaker.isOpen()) {
+      const cooldown = this.#circuitBreaker.getCooldownStatus();
+      return { status: 'skipped', reason: 'cooldown', remainingMins: cooldown?.remainingMins };
+    }
+
+    try {
+      const client = await this.#getAuthenticatedClient(username);
+      const heartRateData = await client.getHeartRate(date);
+      this.#circuitBreaker.recordSuccess();
+      return heartRateData;
+    } catch (error) {
+      this.#circuitBreaker.recordFailure(error);
+      throw error;
+    }
+  }
+
+  /**
+   * Download original activity data (FIT file)
+   * Migrated from: garmin.mjs:182-186
+   * @param {string} username - User to authenticate as
+   * @param {number} activityId - Activity ID to download
+   * @param {string} [directoryPath] - Directory to save file to
+   * @returns {Promise<void>}
+   */
+  async downloadActivityData(username, activityId, directoryPath = './') {
+    if (this.#circuitBreaker.isOpen()) {
+      const cooldown = this.#circuitBreaker.getCooldownStatus();
+      return { status: 'skipped', reason: 'cooldown', remainingMins: cooldown?.remainingMins };
+    }
+
+    try {
+      const client = await this.#getAuthenticatedClient(username);
+      const activity = await client.getActivity({ activityId });
+      await client.downloadOriginalActivityData(activity, directoryPath);
+      this.#circuitBreaker.recordSuccess();
+    } catch (error) {
+      this.#circuitBreaker.recordFailure(error);
+      throw error;
+    }
+  }
+
+  /**
    * Get authenticated Garmin client
    * @private
    */
