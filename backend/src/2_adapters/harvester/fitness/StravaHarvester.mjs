@@ -187,6 +187,31 @@ export class StravaHarvester extends IHarvester {
   }
 
   /**
+   * Generate reauthorization URL for OAuth flow
+   * Migrated from: strava.mjs:159-165
+   * @param {Object} [options] - Options
+   * @param {string} [options.redirectUri] - OAuth callback URL
+   * @returns {Object} Object with authorization URL
+   */
+  reauthSequence(options = {}) {
+    const clientId = this.#configService?.getEnv?.('STRAVA_CLIENT_ID') ||
+                     process.env.STRAVA_CLIENT_ID;
+    const defaultRedirectUri = this.#configService?.getEnv?.('STRAVA_URL') ||
+                               process.env.STRAVA_URL ||
+                               'http://localhost:3000/api/auth/strava/callback';
+    const redirectUri = options.redirectUri || defaultRedirectUri;
+
+    const url = `https://www.strava.com/oauth/authorize?` +
+      `client_id=${clientId}&` +
+      `response_type=code&` +
+      `redirect_uri=${encodeURIComponent(redirectUri)}&` +
+      `approval_prompt=force&` +
+      `scope=read,activity:read_all`;
+
+    return { url };
+  }
+
+  /**
    * Refresh OAuth access token
    * @private
    */
