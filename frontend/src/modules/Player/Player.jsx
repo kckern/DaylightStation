@@ -159,6 +159,15 @@ const Player = forwardRef(function Player(props, ref) {
     if (resolvedMaxResolution != null && cloned.maxResolution == null) {
       cloned.maxResolution = resolvedMaxResolution;
     }
+
+    // Resolve upscaleEffects from item, play, or queue level
+    const resolvedUpscaleEffects =
+      cloned.upscaleEffects
+      ?? rootPlay?.upscaleEffects
+      ?? rootQueue?.upscaleEffects
+      ?? 'auto';
+    cloned.upscaleEffects = resolvedUpscaleEffects;
+
     return cloned;
   }, [activeSource, currentMediaGuid, play, queue, maxVideoBitrate, maxResolution]);
 
