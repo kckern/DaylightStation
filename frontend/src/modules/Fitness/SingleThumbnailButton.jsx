@@ -122,10 +122,10 @@ export default function SingleThumbnailButton({
   const handlePointerDown = useCallback((e) => {
     const isTimeLabelClick = isTimeLabel(e);
     const isRightClick = e.button === 2;
-    
+
     // Determine if this is a ZOOM gesture
     const isZoomGesture = enableZoom && (isRightClick || isTimeLabelClick);
-    
+
     emitTelemetry('pointer-down', {
       pointerType: e.pointerType || 'mouse',
       button: e.button,
@@ -143,9 +143,9 @@ export default function SingleThumbnailButton({
       e.stopPropagation();
       const bounds = getZoomBounds();
       onZoom?.(bounds);
-      emitTelemetry('zoom-trigger', { 
-        source: isTimeLabelClick ? 'time-label' : 'right-click', 
-        zoomBounds: bounds 
+      emitTelemetry('zoom-trigger', {
+        source: isTimeLabelClick ? 'time-label' : 'right-click',
+        zoomBounds: bounds
       });
       return;
     }
