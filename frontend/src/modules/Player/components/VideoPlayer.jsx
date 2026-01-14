@@ -1,9 +1,10 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import PropTypes from 'prop-types';
 import 'dash-video-element';
 import { useCommonMediaController } from '../hooks/useCommonMediaController.js';
 import { ProgressBar } from './ProgressBar.jsx';
 import { LoadingOverlay } from './LoadingOverlay.jsx';
+import { getLogger } from '../../../lib/logging/Logger.js';
 
 /**
  * Video player component for playing video content (including DASH video)
@@ -34,6 +35,7 @@ export function VideoPlayer({
   const [displayReady, setDisplayReady] = useState(false);
   const [isAdapting, setIsAdapting] = useState(false);
   const [adaptMessage, setAdaptMessage] = useState(undefined);
+  const displayReadyLoggedRef = useRef(false);
   
   const {
     isDash,
@@ -96,6 +98,7 @@ export function VideoPlayer({
   // If the media_url (or its effective bitrate cap) changes, reset display readiness so UI transitions are correct
   useEffect(() => {
     setDisplayReady(false);
+    displayReadyLoggedRef.current = false;
   }, [media_url, media?.maxVideoBitrate]);
 
   // Handle dash-video custom element events (web components don't support React synthetic events)
@@ -108,6 +111,18 @@ export function VideoPlayer({
       setDisplayReady(true);
       setIsAdapting(false);
       setAdaptMessage(undefined);
+      // Prod telemetry: video display ready (one-time per media)
+      if (!displayReadyLoggedRef.current) {
+        displayReadyLoggedRef.current = true;
+        const logger = getLogger();
+        logger.info('playback.video-ready', {
+          title: media?.title,
+          show: media?.show,
+          season: media?.season,
+          mediaKey: media?.media_key || media?.key || media?.plex,
+          readyTs: Date.now()
+        });
+      }
     };
 
     el.addEventListener('canplay', handleReady);
