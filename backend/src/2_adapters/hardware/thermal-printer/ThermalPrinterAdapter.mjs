@@ -455,6 +455,38 @@ export class ThermalPrinterAdapter {
     };
   }
 
+  /**
+   * Test feed button functionality
+   * Migrated from: thermalprint.mjs:1126-1156
+   * @returns {Promise<{success: boolean, error?: string}>}
+   */
+  async testFeedButton() {
+    try {
+      this.#logger.info?.('thermalPrinter.testFeedButton.start');
+
+      // Step 1: Disable feed button
+      const disableResult = await this.print(this.setFeedButton(false));
+      if (!disableResult) {
+        return { success: false, error: 'Failed to disable feed button' };
+      }
+
+      // Wait a moment
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // Step 2: Enable feed button
+      const enableResult = await this.print(this.setFeedButton(true));
+      if (!enableResult) {
+        return { success: false, error: 'Failed to enable feed button' };
+      }
+
+      this.#logger.info?.('thermalPrinter.testFeedButton.complete');
+      return { success: true, message: 'Feed button test completed successfully' };
+    } catch (error) {
+      this.#logger.error?.('thermalPrinter.testFeedButton.error', { error: error.message });
+      return { success: false, error: error.message };
+    }
+  }
+
   // ============================================================================
   // Private Methods
   // ============================================================================

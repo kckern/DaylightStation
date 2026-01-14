@@ -135,6 +135,28 @@ export class PlexAdapter {
   }
 
   /**
+   * Get thumbnail URLs from a Plex rating key
+   * Migrated from: plex.mjs:432-438
+   * @param {string} ratingKey - Plex rating key
+   * @returns {Promise<string[]>} Array of thumbnail URLs [thumb, parentThumb, grandparentThumb]
+   */
+  async loadImgFromKey(ratingKey) {
+    try {
+      const metadata = await this.client.getMetadata(ratingKey);
+      const item = metadata?.MediaContainer?.Metadata?.[0];
+      if (!item) return [null, null, null];
+
+      const { thumb, parentThumb, grandparentThumb } = item;
+      return [thumb, parentThumb, grandparentThumb].map(
+        t => t ? `/plex_proxy${t}` : null
+      );
+    } catch (err) {
+      console.error('[PlexAdapter] loadImgFromKey error:', err.message);
+      return [null, null, null];
+    }
+  }
+
+  /**
    * Get a single item by ID
    * @param {string} id - Compound ID (plex:660440) or local ID
    * @returns {Promise<PlayableItem|ListableItem|null>}
