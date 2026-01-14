@@ -14,8 +14,10 @@
   position: relative;
   width: 100%;
   height: 100%;
-  clip-path: inset(0); // Clips content but allows filter effects (glow) to extend outside
-  isolation: isolate;
+  overflow: visible; // Explicitly allow overflow for spark
+  // Clip path removed to fix ProgressFrame overflow bug (spark glow was getting cut off)
+  // clip-path: inset(0); 
+  // isolation: isolate;
 }
 
 .seek-thumbnail-stack {
