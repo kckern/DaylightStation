@@ -653,6 +653,10 @@ export function useCommonMediaController({
         const logger = getLogger();
         logger.warn('playback.stalled', {
           title: meta?.title || meta?.name,
+          artist: meta?.artist,
+          album: meta?.album,
+          show: meta?.show,
+          season: meta?.season,
           mediaKey: media_key,
           currentTime: mediaEl.currentTime,
           duration: mediaEl.duration,
@@ -984,6 +988,10 @@ export function useCommonMediaController({
           const logger = getLogger();
           logger.info('playback.started', {
             title: meta?.title || meta?.name,
+            artist: meta?.artist,
+            album: meta?.album,
+            show: meta?.show,
+            season: meta?.season,
             mediaKey: media_key,
             mediaType: isAudio ? 'audio' : isVideo ? 'video' : 'unknown',
             currentTime: el.currentTime,
@@ -1001,6 +1009,10 @@ export function useCommonMediaController({
           const logger = getLogger();
           logger.info('playback.paused', {
             title: meta?.title || meta?.name,
+            artist: meta?.artist,
+            album: meta?.album,
+            show: meta?.show,
+            season: meta?.season,
             mediaKey: media_key,
             currentTime: el.currentTime,
             duration: el.duration
@@ -1013,6 +1025,10 @@ export function useCommonMediaController({
           const logger = getLogger();
           logger.info('playback.resumed', {
             title: meta?.title || meta?.name,
+            artist: meta?.artist,
+            album: meta?.album,
+            show: meta?.show,
+            season: meta?.season,
             mediaKey: media_key,
             currentTime: el.currentTime,
             duration: el.duration

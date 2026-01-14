@@ -79,10 +79,12 @@ export function AudioPlayer({
     const logger = getLogger();
     logger.info('playback.cover-loaded', {
       title,
+      artist,
+      album,
       mediaKey: media?.media_key || media?.key || media?.plex,
       loadedTs: Date.now()
     });
-  }, [title, media?.media_key, media?.key, media?.plex]);
+  }, [title, artist, album, media?.media_key, media?.key, media?.plex]);
 
   return (
     <div className={`audio-player ${shader}`}>
