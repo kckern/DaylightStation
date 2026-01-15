@@ -16,7 +16,7 @@ This document defines how ClickUp is used as the primary interface for designing
 | **Journalist / Lifelog** | `901606966817` | `backend/chatbots/bots/journalist/`, `backend/lib/` | Journaling bot, lifelog data collection, API integrations |
 | **Nutribot / Health** | `901606966820` | `backend/chatbots/bots/nutribot/`, `frontend/src/apps/health/` | Nutrition tracking, coaching, health data visualization |
 | **Fitness** | `901610284012` | `_extentions/fitness/`, `backend/lib/fitsync.mjs` | FitnessApp on garage, workout programs, challenges, metrics |
-| **Admin / Config** | `901612664297` | `backend/lib/config/`, `config/` | System configuration, shared services, admin interfaces |
+| **System and Admin** | `901612664297` | `backend/src/`, `config/` | DDD backend architecture, system configuration, shared services |
 
 ---
 
