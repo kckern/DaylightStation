@@ -31,8 +31,12 @@ describe('governance phase change logging', () => {
 
   test('does not log null to null transitions', () => {
     const engine = new GovernanceEngine();
-    // Initial phase is null
-    engine._setPhase(null); // null -> null (no-op)
+    // Set phase to null first (constructor sets it to 'pending')
+    engine._setPhase(null);
+    mockSampled.mockClear();
+
+    // Now try null -> null (should not log)
+    engine._setPhase(null);
 
     expect(mockSampled).not.toHaveBeenCalled();
   });
