@@ -28,6 +28,15 @@ Read `.claude/settings.local.json` and look at the `env` section for all environ
     },
     "docker": {
       "container": "daylight"
+    },
+    "production": {
+      "access_command": "ssh user@host ...",
+      "logs_command": "ssh user@host ...",
+      "mounts": {
+        "data": "...",
+        "media": "..."
+      },
+      "docker_compose_path": "..."
     }
   }
 }
@@ -42,6 +51,7 @@ If `env` values show `[object Object]`, the file is corrupted and needs manual r
 - **Prod host:** SSH target (`env.hosts.prod`)
 - **Dev ports:** Frontend, backend, API (`env.ports.*`)
 - **Docker container:** Container name (`env.docker.container`)
+- **Prod commands:** Access/Login (`env.production.*`)
 
 ### Dev Workflow
 
@@ -52,11 +62,11 @@ If `env` values show `[object Object]`, the file is corrupted and needs manual r
 ### Prod Access
 
 ```bash
-# SSH to prod (use host from settings)
-ssh {hosts.prod}
+# SSH to prod (use command from settings)
+{env.production.access_command}
 
 # View prod logs
-ssh {hosts.prod} 'docker logs {docker.container} -f'
+{env.production.logs_command}
 ```
 
 ### Mount Permissions
