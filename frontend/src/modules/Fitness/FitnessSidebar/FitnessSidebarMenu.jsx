@@ -443,7 +443,7 @@ const FitnessSidebarMenu = ({
 
         {/* Filtered options based on selected tab */}
         {guestOptions.filteredOptions.length > 0 && (
-          <div className="menu-section">
+          <div className="menu-section guest-grid">
             {guestOptions.filteredOptions.map(renderOption)}
           </div>
         )}

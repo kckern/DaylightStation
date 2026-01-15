@@ -422,6 +422,7 @@
       /* scrollable description */
       @include scrollbar-hide;
       display: flex;
+      padding-left: 1rem;
       flex-direction: column;
       gap: 0.5rem;
 

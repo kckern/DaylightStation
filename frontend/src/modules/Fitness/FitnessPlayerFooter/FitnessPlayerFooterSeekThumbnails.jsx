@@ -96,7 +96,9 @@ const FitnessPlayerFooterSeekThumbnails = ({
     zoomIn,
     zoomOut,
     stepBackward,
-    stepForward
+    stepForward,
+    scheduleZoomReset,
+    cancelZoomReset
   } = useZoomState({
     baseDuration,
     baseRange: range,
@@ -115,6 +117,25 @@ const FitnessPlayerFooterSeekThumbnails = ({
       clearIntent('zoom-change');
     }
   }, [zoomRange, clearIntent]);
+
+  // --- AUTO-RESET ZOOM AFTER SEEK COMPLETES ---
+  // When a seek completes and playback resumes, schedule zoom reset to base level
+  const prevSeekPendingRef = useRef(isSeekPending);
+  useEffect(() => {
+    const wasSeekPending = prevSeekPendingRef.current;
+    prevSeekPendingRef.current = isSeekPending;
+
+    // Detect seek completion: was pending, now not pending, and we're zoomed
+    if (wasSeekPending && !isSeekPending && isZoomed) {
+      logger.info('seek-completed-scheduling-zoom-reset', { isZoomed, zoomRange });
+      scheduleZoomReset(800);
+    }
+
+    // Cancel zoom reset when a new seek starts
+    if (!wasSeekPending && isSeekPending) {
+      cancelZoomReset();
+    }
+  }, [isSeekPending, isZoomed, zoomRange, scheduleZoomReset, cancelZoomReset]);
 
   // --- EXPOSE REFS TO PARENT ---
   useEffect(() => {

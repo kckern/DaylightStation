@@ -2,6 +2,7 @@ import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { getProgressPercent } from '../lib/helpers.js';
 import { useMediaKeyboardHandler } from '../../../lib/Player/useMediaKeyboardHandler.js';
+import { getLogger } from '../../../lib/logging/Logger.js';
 
 const DEFAULT_STRATEGY_PIPELINE = [
   { name: 'nudge', maxAttempts: 2 },
@@ -62,7 +63,10 @@ export function useCommonMediaController({
   
   // Track the last seek intent (what time user tried to seek to)
   const lastSeekIntentRef = useRef(null);
-  
+
+  // Track if playback.started has been logged for this media (one-time per track)
+  const playbackStartedRef = useRef(false);
+
   // Stall detection refs
   const stallStateRef = useRef({
     lastProgressTs: 0,
@@ -305,6 +309,8 @@ export function useCommonMediaController({
     stableBelowMsRef.current = 0;
     // Reset initial load flag when media changes
     isInitialLoadRef.current = true;
+    // Reset playback started flag for new media
+    playbackStartedRef.current = false;
     // Do not reset currentMaxKbps here; it seeds from meta.maxVideoBitrate effect above
   }, [media_key]);
 
@@ -642,7 +648,20 @@ export function useCommonMediaController({
       const diff = Date.now() - s.lastProgressTs;
       
       if (diff >= softMs) {
-  if (DEBUG_MEDIA) console.log('[Stall] DETECTED (soft)', { diff, softMs, hardMs, mode, currentTime: mediaEl.currentTime, duration: mediaEl.duration, droppedFramePct, quality });
+        if (DEBUG_MEDIA) console.log('[Stall] DETECTED (soft)', { diff, softMs, hardMs, mode, currentTime: mediaEl.currentTime, duration: mediaEl.duration, droppedFramePct, quality });
+        // Prod telemetry: stall detected
+        const logger = getLogger();
+        logger.warn('playback.stalled', {
+          title: meta?.title || meta?.name,
+          artist: meta?.artist,
+          album: meta?.album,
+          show: meta?.show,
+          season: meta?.season,
+          mediaKey: media_key,
+          currentTime: mediaEl.currentTime,
+          duration: mediaEl.duration,
+          stallDurationMs: diff
+        });
         s.isStalled = true;
         if (!s.sinceTs) s.sinceTs = Date.now();
         s.status = 'stalled';
@@ -960,16 +979,69 @@ export function useCommonMediaController({
         if (DEBUG_MEDIA) console.log('[Media] stalled event', { currentTime: el?.currentTime, duration: el?.duration });
         scheduleStallDetection(); 
       };
-      const onPlaying = () => { 
+      const onPlaying = () => {
         const el = getMediaEl();
         if (DEBUG_MEDIA) console.log('[Media] playing event', { currentTime: el?.currentTime, duration: el?.duration });
-        scheduleStallDetection(); 
+        // Prod telemetry: playback actually started
+        if (el && !playbackStartedRef.current) {
+          playbackStartedRef.current = true;
+          const logger = getLogger();
+          logger.info('playback.started', {
+            title: meta?.title || meta?.name,
+            artist: meta?.artist,
+            album: meta?.album,
+            show: meta?.show,
+            season: meta?.season,
+            mediaKey: media_key,
+            mediaType: isAudio ? 'audio' : isVideo ? 'video' : 'unknown',
+            currentTime: el.currentTime,
+            duration: el.duration,
+            startedTs: Date.now()
+          });
+        }
+        scheduleStallDetection();
       };
       
+      // Prod telemetry: pause/resume events
+      const onPause = () => {
+        const el = getMediaEl();
+        if (el && !el.ended) {
+          const logger = getLogger();
+          logger.info('playback.paused', {
+            title: meta?.title || meta?.name,
+            artist: meta?.artist,
+            album: meta?.album,
+            show: meta?.show,
+            season: meta?.season,
+            mediaKey: media_key,
+            currentTime: el.currentTime,
+            duration: el.duration
+          });
+        }
+      };
+      const onResume = () => {
+        const el = getMediaEl();
+        if (el && playbackStartedRef.current) {
+          const logger = getLogger();
+          logger.info('playback.resumed', {
+            title: meta?.title || meta?.name,
+            artist: meta?.artist,
+            album: meta?.album,
+            show: meta?.show,
+            season: meta?.season,
+            mediaKey: media_key,
+            currentTime: el.currentTime,
+            duration: el.duration
+          });
+        }
+      };
+
       mediaEl.addEventListener('waiting', onWaiting);
       mediaEl.addEventListener('stalled', onStalled);
       mediaEl.addEventListener('playing', onPlaying);
-      
+      mediaEl.addEventListener('pause', onPause);
+      mediaEl.addEventListener('play', onResume);
+
       return () => {
         mediaEl.removeEventListener('timeupdate', onTimeUpdate);
         mediaEl.removeEventListener('durationchange', onDurationChange);
@@ -978,6 +1050,8 @@ export function useCommonMediaController({
         mediaEl.removeEventListener('waiting', onWaiting);
         mediaEl.removeEventListener('stalled', onStalled);
         mediaEl.removeEventListener('playing', onPlaying);
+        mediaEl.removeEventListener('pause', onPause);
+        mediaEl.removeEventListener('play', onResume);
         mediaEl.removeEventListener('seeking', handleSeeking);
         mediaEl.removeEventListener('seeked', clearSeeking);
       };

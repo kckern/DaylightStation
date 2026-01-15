@@ -33,6 +33,7 @@ export default function SingleThumbnailButton({
 }) {
   const longPressTimeout = useRef(null);
   const longPressTriggered = useRef(false);
+  const gestureHandledRef = useRef(false);
   
   // Determine if we have a valid zoom range
   const hasValidRange = enableZoom && 
@@ -120,6 +121,11 @@ export default function SingleThumbnailButton({
    * Handle pointer down - determines SEEK vs ZOOM
    */
   const handlePointerDown = useCallback((e) => {
+    // Reset handling state if not a touch gesture (handled by touchStart)
+    if (e.pointerType !== 'touch') {
+      gestureHandledRef.current = false;
+    }
+
     const isTimeLabelClick = isTimeLabel(e);
     const isRightClick = e.button === 2;
 
@@ -141,6 +147,7 @@ export default function SingleThumbnailButton({
       // ZOOM PATH - No seek!
       e.preventDefault();
       e.stopPropagation();
+      gestureHandledRef.current = true;
       const bounds = getZoomBounds();
       onZoom?.(bounds);
       emitTelemetry('zoom-trigger', {
@@ -150,7 +157,13 @@ export default function SingleThumbnailButton({
       return;
     }
 
+    // IF TOUCH: Defer seek to touchEnd (to allow long press)
+    if (e.pointerType === 'touch') {
+      return;
+    }
+
     // SEEK PATH - No zoom!
+    gestureHandledRef.current = true;
     const target = getSeekTarget();
     onSeek?.(target);
     emitTelemetry('seek-trigger', { seekTarget: target });
@@ -174,6 +187,7 @@ export default function SingleThumbnailButton({
   const handleTouchStart = useCallback((e) => {
     if (!enableZoom) return;
     longPressTriggered.current = false;
+    gestureHandledRef.current = false;
     startLongPress();
     emitTelemetry('touch-start', { rangeStart, rangeEnd });
   }, [enableZoom, startLongPress, emitTelemetry, rangeStart, rangeEnd]);
@@ -184,10 +198,17 @@ export default function SingleThumbnailButton({
   const handleTouchEnd = useCallback((e) => {
     clearLongPress();
     
-    // If long press triggered zoom, don't also seek
-    if (longPressTriggered.current) {
+    // If already handled (by pointerdown or long press), ignore
+    if (gestureHandledRef.current || longPressTriggered.current) {
       longPressTriggered.current = false;
-      emitTelemetry('touch-end', { action: 'zoom-completed' });
+      emitTelemetry('touch-end', { action: 'handled-or-cancelled', gestureHandled: gestureHandledRef.current });
+      return;
+    }
+
+    // If tap was on time label, it's a zoom gesture (handled by pointer events)
+    // Don't seek!
+    if (enableZoom && isTimeLabel(e)) {
+      emitTelemetry('touch-end', { action: 'skip-seek-for-label-zoom' });
       return;
     }
 
@@ -195,7 +216,7 @@ export default function SingleThumbnailButton({
     const target = getSeekTarget();
     onSeek?.(target);
     emitTelemetry('touch-end', { action: 'seek', seekTarget: target });
-  }, [clearLongPress, getSeekTarget, onSeek, emitTelemetry]);
+  }, [clearLongPress, getSeekTarget, onSeek, emitTelemetry, enableZoom, isTimeLabel]);
 
   /**
    * Handle touch cancel

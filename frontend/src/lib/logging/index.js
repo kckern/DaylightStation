@@ -52,74 +52,38 @@ function createWebSocketTransport(options = {}) {
   if (typeof window === 'undefined') return null;
 
   const {
-    url = null,
     topic = 'logging',
-    maxQueue = 200,
-    reconnectBaseDelay = 800,
-    reconnectMaxDelay = 6000
+    maxQueue = 200
   } = options;
 
-  let socket = null;
-  let connecting = false;
+  let wsServiceInstance = null;
   let queue = [];
-  let reconnectDelay = reconnectBaseDelay;
-  let timer = null;
 
-  const resolveUrl = () => {
-    if (url) return url;
-    if (!window.location?.origin) return null;
-    return window.location.origin.replace(/^http/, 'ws') + '/ws';
+  // Dynamically import shared WebSocketService to avoid circular deps
+  const getWsService = async () => {
+    if (wsServiceInstance) return wsServiceInstance;
+    try {
+      const { wsService } = await import('../../services/WebSocketService.js');
+      wsServiceInstance = wsService;
+      return wsServiceInstance;
+    } catch (err) {
+      devOutput('error', '[DaylightLogger] Failed to load WebSocketService', err);
+      return null;
+    }
   };
 
-  const flush = () => {
-    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+  const flush = async () => {
+    const ws = await getWsService();
+    if (!ws) return;
+    
     while (queue.length) {
       const payload = queue.shift();
       try {
-        socket.send(JSON.stringify(payload));
+        ws.send(payload);
       } catch (err) {
         devOutput('warn', '[DaylightLogger] WS send failed', err);
         break;
       }
-    }
-  };
-
-  const scheduleReconnect = () => {
-    if (timer) return;
-    const delay = Math.min(reconnectDelay, reconnectMaxDelay);
-    timer = setTimeout(() => {
-      timer = null;
-      reconnectDelay = Math.min(delay * 2, reconnectMaxDelay);
-      ensure();
-    }, delay);
-  };
-
-  const ensure = () => {
-    if (connecting) return;
-    const target = resolveUrl();
-    if (!target) return;
-    connecting = true;
-    try {
-      socket = new WebSocket(target);
-      socket.onopen = () => {
-        connecting = false;
-        reconnectDelay = reconnectBaseDelay;
-        flush();
-      };
-      socket.onclose = () => {
-        connecting = false;
-        socket = null;
-        scheduleReconnect();
-      };
-      socket.onerror = () => {
-        connecting = false;
-        socket = null;
-        scheduleReconnect();
-      };
-    } catch (err) {
-      connecting = false;
-      socket = null;
-      scheduleReconnect();
     }
   };
 
@@ -131,7 +95,6 @@ function createWebSocketTransport(options = {}) {
         if (queue.length >= maxQueue) queue.shift();
         queue.push(payload);
       }
-      ensure();
       flush();
     }
   };
@@ -142,44 +105,47 @@ function createBufferingWebSocketTransport(options = {}) {
   if (typeof window === 'undefined') return null;
 
   const {
-    url = null,
     topic = 'logging',
     maxQueue = 500,
-    reconnectBaseDelay = 800,
-    reconnectMaxDelay = 6000,
     batchSize = 20,
     flushInterval = 1000
   } = options;
 
-  let socket = null;
-  let connecting = false;
+  let wsServiceInstance = null;
   let queue = [];
-  let reconnectDelay = reconnectBaseDelay;
   let flushTimer = null;
-  let reconnectTimer = null;
 
-  const resolveUrl = () => {
-    if (url) return url;
-    if (!window.location?.origin) return null;
-    return window.location.origin.replace(/^http/, 'ws') + '/ws';
+  // Dynamically import shared WebSocketService to avoid circular deps
+  const getWsService = async () => {
+    if (wsServiceInstance) return wsServiceInstance;
+    try {
+      const { wsService } = await import('../../services/WebSocketService.js');
+      wsServiceInstance = wsService;
+      return wsServiceInstance;
+    } catch (err) {
+      devOutput('error', '[DaylightLogger] Failed to load WebSocketService', err);
+      return null;
+    }
   };
 
-  const sendBatch = (batch) => {
-    if (!socket || socket.readyState !== WebSocket.OPEN || !batch.length) return;
+  const sendBatch = async (batch) => {
+    if (!batch.length) return;
+    const ws = await getWsService();
+    if (!ws) return;
+    
     try {
-      socket.send(JSON.stringify({ topic, events: batch }));
+      ws.send({ topic, events: batch });
     } catch (err) {
       devOutput('warn', '[DaylightLogger] WS batch send failed', err);
     }
   };
 
-  const flush = () => {
-    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+  const flush = async () => {
     if (!queue.length) return;
     const batch = queue.splice(0, batchSize);
-    sendBatch(batch);
+    await sendBatch(batch);
     if (queue.length) {
-      // keep flushing until drained or socket closes
+      // keep flushing until drained
       flush();
     }
   };
@@ -192,45 +158,6 @@ function createBufferingWebSocketTransport(options = {}) {
     }, flushInterval);
   };
 
-  const scheduleReconnect = () => {
-    if (reconnectTimer) return;
-    const delay = Math.min(reconnectDelay, reconnectMaxDelay);
-    reconnectTimer = setTimeout(() => {
-      reconnectTimer = null;
-      reconnectDelay = Math.min(delay * 2, reconnectMaxDelay);
-      ensure();
-    }, delay);
-  };
-
-  const ensure = () => {
-    if (connecting) return;
-    const target = resolveUrl();
-    if (!target) return;
-    connecting = true;
-    try {
-      socket = new WebSocket(target);
-      socket.onopen = () => {
-        connecting = false;
-        reconnectDelay = reconnectBaseDelay;
-        flush();
-      };
-      socket.onclose = () => {
-        connecting = false;
-        socket = null;
-        scheduleReconnect();
-      };
-      socket.onerror = () => {
-        connecting = false;
-        socket = null;
-        scheduleReconnect();
-      };
-    } catch (err) {
-      connecting = false;
-      socket = null;
-      scheduleReconnect();
-    }
-  };
-
   return {
     name: 'ws-buffered',
     send: (evt) => {
@@ -238,7 +165,6 @@ function createBufferingWebSocketTransport(options = {}) {
         if (queue.length >= maxQueue) queue.shift();
         queue.push({ event: evt });
       }
-      ensure();
       if (queue.length >= batchSize) {
         flush();
       } else {

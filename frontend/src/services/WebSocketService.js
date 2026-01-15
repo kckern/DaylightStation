@@ -21,9 +21,22 @@
  * useEffect(() => unsubscribe, []);
  */
 
-const MAX_RECONNECT_ATTEMPTS = 10;
-const BASE_RECONNECT_DELAY_MS = 1000;
-const MAX_RECONNECT_DELAY_MS = 30000;
+// Adaptive throttling: progressive delays that never give up
+// Tiers: 1s, 2s, 4s, 8s, 15s, 30s, 1min, 5min, 15min, 1hr (terminal)
+const RECONNECT_DELAYS = [
+  1000,      // Tier 0: 1 second (initial fast retry)
+  2000,      // Tier 1: 2 seconds
+  4000,      // Tier 2: 4 seconds
+  8000,      // Tier 3: 8 seconds
+  15000,     // Tier 4: 15 seconds
+  30000,     // Tier 5: 30 seconds
+  60000,     // Tier 6: 1 minute (enters degraded mode)
+  300000,    // Tier 7: 5 minutes
+  900000,    // Tier 8: 15 minutes
+  3600000    // Tier 9: 1 hour (terminal - stays here)
+];
+
+const DEGRADED_MODE_TIER = 6; // 1 minute mark
 
 class WebSocketService {
   constructor() {
@@ -31,7 +44,8 @@ class WebSocketService {
     this.subscribers = new Map(); // key -> { filter, callbacks: Set }
     this.connected = false;
     this.connecting = false;
-    this.reconnectAttempts = 0;
+    this.reconnectTier = 0; // Current reconnection tier (0-9)
+    this.degradedMode = false; // True when tier >= DEGRADED_MODE_TIER
     this.reconnectTimeout = null;
     this.messageQueue = []; // Buffer messages during disconnect
     this.statusListeners = new Set(); // Connection status observers
@@ -67,7 +81,8 @@ class WebSocketService {
       console.log('[WebSocketService] Connected');
       this.connected = true;
       this.connecting = false;
-      this.reconnectAttempts = 0;
+      this.reconnectTier = 0; // Reset tier on successful connection
+      this.degradedMode = false;
       this._notifyStatusListeners();
       this._syncSubscriptions(); // Inform backend of our interests
       this._flushMessageQueue();
@@ -115,28 +130,32 @@ class WebSocketService {
 
     this.connected = false;
     this.connecting = false;
-    this.reconnectAttempts = 0;
+    this.reconnectTier = 0;
+    this.degradedMode = false;
     this._notifyStatusListeners();
   }
 
   /**
-   * Schedule a reconnection attempt with exponential backoff
+   * Schedule a reconnection attempt with adaptive throttling.
+   * Uses progressive delays that never give up, backing off to hourly attempts.
    */
   _scheduleReconnect() {
-    if (this.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-      console.error('[WebSocketService] Max reconnection attempts reached');
-      return;
+    const delay = RECONNECT_DELAYS[Math.min(this.reconnectTier, RECONNECT_DELAYS.length - 1)];
+    const wasDegraded = this.degradedMode;
+    this.degradedMode = this.reconnectTier >= DEGRADED_MODE_TIER;
+    
+    // Notify subscribers when entering or exiting degraded mode
+    if (this.degradedMode !== wasDegraded) {
+      console.log(`[WebSocketService] ${this.degradedMode ? 'Entering' : 'Exiting'} degraded mode (tier ${this.reconnectTier})`);
+      this._notifyStatusListeners();
     }
-
-    const delay = Math.min(
-      BASE_RECONNECT_DELAY_MS * Math.pow(2, this.reconnectAttempts),
-      MAX_RECONNECT_DELAY_MS
-    );
-
-    console.log(`[WebSocketService] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts + 1}/${MAX_RECONNECT_ATTEMPTS})`);
+    
+    const tierLabel = this.reconnectTier < RECONNECT_DELAYS.length ? `tier ${this.reconnectTier}` : 'terminal';
+    const delayLabel = delay >= 3600000 ? `${delay / 3600000}hr` : delay >= 60000 ? `${delay / 60000}min` : `${delay / 1000}s`;
+    console.log(`[WebSocketService] Reconnecting in ${delayLabel} (${tierLabel})`);
 
     this.reconnectTimeout = setTimeout(() => {
-      this.reconnectAttempts++;
+      this.reconnectTier++;
       this.connect();
     }, delay);
   }
@@ -302,7 +321,12 @@ class WebSocketService {
    * Notify all status listeners of a change
    */
   _notifyStatusListeners() {
-    const status = { connected: this.connected, connecting: this.connecting };
+    const status = { 
+      connected: this.connected, 
+      connecting: this.connecting,
+      degraded: this.degradedMode,
+      reconnectTier: this.reconnectTier
+    };
     for (const listener of this.statusListeners) {
       try {
         listener(status);
@@ -319,7 +343,8 @@ class WebSocketService {
     return {
       connected: this.connected,
       connecting: this.connecting,
-      reconnectAttempts: this.reconnectAttempts,
+      degraded: this.degradedMode,
+      reconnectTier: this.reconnectTier,
       subscriberCount: this.subscribers.size,
       queuedMessages: this.messageQueue.length
     };

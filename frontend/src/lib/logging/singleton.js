@@ -1,4 +1,5 @@
-import createLogger, { consoleTransport, createBufferingWebSocketTransport } from './index';
+import createLogger, { consoleTransport } from './index';
+import { getSharedWsTransport } from './sharedTransport.js';
 
 let singleton = null;
 let cachedOptions = {};
@@ -27,7 +28,8 @@ const buildTransports = (opts = {}) => {
   }
   const wsDisabled = coerceBoolean(opts.websocket) === false;
   if (!wsDisabled) {
-    const ws = createBufferingWebSocketTransport({
+    // Use shared transport to prevent duplicate connections
+    const ws = getSharedWsTransport({
       url: opts.wsUrl || opts.websocketUrl,
       topic: opts.topic || opts.websocketTopic || defaultTopic(),
       maxQueue: opts.wsMaxQueue || opts.websocketMaxQueue,

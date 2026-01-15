@@ -234,19 +234,25 @@
 
 
 
-///['regular', 'minimal', 'night', 'screensaver', 'dark']
+// Shader modes: ['default', 'focused', 'night', 'blackout']
 
 .player{
     background-color: #151515;
     width: 100%;
     height: 100%;
-    .regular{
-        // Leave headings visible so shader overrides can hide them explicitly when needed
-    }
-    .dark {
+
+    // .default: no special styles, progress bar visible by default
+
+    .focused {
         background-color: #000000;
-        *{filter: brightness(0); }
-    } 
+        .progress-bar{display: none;}
+        p,h2,h3,.progress-bar{display: none;}
+        img.cover{
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            object-fit: contain;
+        }
+    }
+
     .night {
         background-color: #000000;
         *{color: #FF000022;}
@@ -267,32 +273,20 @@
             img {
             filter: grayscale(1);
             mix-blend-mode: multiply;
-            z-index: 1; /* Ensure img is on top */
+            z-index: 1;
             }
             .image-backdrop {
             background-color: rgb(39, 12, 12);
-            z-index: 0; /* Ensure backdrop is below img */
+            z-index: 0;
             border-radius: 1rem;
             }
         }
-
-    
         .video-element{ --player-video-filter-base: sepia(1) brightness(0.15) hue-rotate(-35deg); }
-        
     }
-    .minimal {
+
+    .blackout {
         background-color: #000000;
-        .progress-bar{display: none;}
-        p,h2,h3,.progress-bar{display: none;}
-        img.cover{
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            object-fit: contain;
-        }
-    }
-    .screensaver {
-        background-color: #000000;
-        .video-element{ scale: 1.5}
-        *{filter: grayscale(1) sepia(1) brightness(0.5) blur(0.2ex);}
+        *{filter: brightness(0); }
     }
   }
 
@@ -550,4 +544,69 @@
 .player-debug-overlay__metrics {
     font-size: 0.65rem;
     opacity: 0.85;
+}
+
+// =============================================================================
+// Upscale Effects - CRT Overlay
+// =============================================================================
+
+// Smooth filter transitions on video element
+.video-player video,
+.video-player dash-video video {
+  transition: filter 400ms ease;
+}
+
+// CRT overlay container
+.upscale-crt-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: var(--player-layer-crt, 36);
+  opacity: 0;
+  transition: opacity 400ms ease;
+
+  &.active {
+    opacity: 1;
+  }
+}
+
+// Scanline layer
+.upscale-crt-overlay::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.08) 0,
+    rgba(255, 255, 255, 0.08) 1px,
+    transparent 5px,
+    transparent 10px
+  );
+  mix-blend-mode: overlay;
+  opacity: 0.4;
+  animation: crt-scanline-scroll 2s linear infinite;
+}
+
+// Noise layer (SVG-based, no external asset)
+.upscale-crt-overlay::after {
+  content: '';
+  position: absolute;
+inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 256px 256px;
+  opacity: 0.06;
+  mix-blend-mode: screen;
+  animation: crt-noise-flicker 150ms steps(4) infinite;
+}
+
+@keyframes crt-scanline-scroll {
+  to {
+    background-position: 0 10px;
+  }
+}
+
+@keyframes crt-noise-flicker {
+  to {
+    background-position: 256px 256px;
+  }
 }
