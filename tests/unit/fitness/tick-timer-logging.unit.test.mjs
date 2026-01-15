@@ -1,14 +1,16 @@
 import { jest } from '@jest/globals';
 
 const mockInfo = jest.fn();
+const mockSampled = jest.fn();
 jest.unstable_mockModule('../../../frontend/src/lib/logging/Logger.js', () => ({
-  default: () => ({ info: mockInfo, error: jest.fn() }),
-  getLogger: () => ({ info: mockInfo, error: jest.fn() })
+  default: () => ({ info: mockInfo, sampled: mockSampled, error: jest.fn() }),
+  getLogger: () => ({ info: mockInfo, sampled: mockSampled, error: jest.fn() })
 }));
 
 describe('tick timer logging', () => {
   beforeEach(() => {
     mockInfo.mockClear();
+    mockSampled.mockClear();
   });
 
   test('does not log stopped events for zero-tick short timers', async () => {
@@ -60,5 +62,23 @@ describe('tick timer logging', () => {
       call => call[0] === 'fitness.tick_timer.stopped'
     );
     expect(stoppedCalls).toHaveLength(1);
+  });
+
+  test('uses sampled logging for timer start events', async () => {
+    const { FitnessSession } = await import('../../../frontend/src/hooks/fitness/FitnessSession.js');
+
+    const session = new FitnessSession();
+    session.timeline = { timebase: { intervalMs: 5000 } };
+    session._tickIntervalMs = 5000;
+
+    session._startTickTimer();
+
+    expect(mockSampled).toHaveBeenCalledWith(
+      'fitness.tick_timer.started',
+      expect.objectContaining({ intervalMs: 5000 }),
+      expect.objectContaining({ maxPerMinute: expect.any(Number) })
+    );
+
+    session._stopTickTimer();
   });
 });
