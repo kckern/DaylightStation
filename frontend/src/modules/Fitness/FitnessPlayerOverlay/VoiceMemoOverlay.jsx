@@ -400,12 +400,24 @@ const VoiceMemoOverlay = ({
       autoStartRef.current = false;
       return;
     }
+
+    // Detect and reset stale state (e.g., stuck in 'processing' from previous session)
+    if (recorderState !== 'idle' && recorderState !== 'recording' && !isProcessing) {
+      logVoiceMemo('overlay-open-stale-state-reset', {
+        previousState: recorderState,
+        mode: overlayState?.mode
+      });
+      setRecorderState('idle');
+      autoStartRef.current = false;
+      return; // Let next render handle auto-start
+    }
+
     // Auto-start recording in redo mode (whether new capture or redoing existing memo)
     if (!isRecording && !isProcessing && !isRecorderErrored && !autoStartRef.current) {
       autoStartRef.current = true;
       handleStartRedoRecording();
     }
-  }, [overlayState?.open, overlayState?.mode, isRecording, isProcessing, isRecorderErrored, handleStartRedoRecording]);
+  }, [overlayState?.open, overlayState?.mode, isRecording, isProcessing, isRecorderErrored, handleStartRedoRecording, logVoiceMemo, recorderState]);
 
   useEffect(() => {
     if (!overlayState?.open) return;
