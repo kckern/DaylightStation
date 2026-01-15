@@ -543,6 +543,14 @@ const useVoiceMemoRecorder = ({
   useEffect(() => () => {
     clearDurationTimer();
     cleanupStream();
+
+    // Abort any in-flight upload on unmount
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    cancelledRef.current = false;
+
     try {
       mediaRecorderRef.current?.stop();
     } catch (_) {
