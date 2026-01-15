@@ -138,10 +138,28 @@ async function initializeApp() {
     });
 
     // Populate process.env with merged config
-    process.env = { 
-      ...process.env, 
-      isDocker, 
-      ...configResult.config
+    // Use spread for nested objects to avoid [object Object] stringification
+    const config = configResult.config;
+    process.env = {
+      ...process.env,
+      isDocker,
+      ...config,
+      // Spread nested objects individually
+      path: { ...config.path },
+      mqtt: { ...config.mqtt },
+      plex: { ...config.plex },
+      weather: { ...config.weather },
+      hardware: { ...config.hardware },
+      cmd: { ...config.cmd },
+      printer: { ...config.printer },
+      tv: { ...config.tv },
+      home_assistant: { ...config.home_assistant },
+      infinity: { ...config.infinity },
+      buxfer: { ...config.buxfer },
+      scripture: { ...config.scripture },
+      media: { ...config.media },
+      clickup: { ...config.clickup },
+      resilience: { ...config.resilience }
     };
     
     loggingConfig = loadLoggingConfig();
