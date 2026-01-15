@@ -3,6 +3,7 @@ import { PianoKeyboard } from './components/PianoKeyboard';
 import { NoteWaterfall } from './components/NoteWaterfall';
 import { CurrentChordStaff } from './components/CurrentChordStaff';
 import { useMidiSubscription } from './useMidiSubscription';
+import { DaylightAPI } from '../../lib/api.mjs';
 import './PianoVisualizer.scss';
 
 const GRACE_PERIOD_MS = 10000; // 10 seconds before countdown starts
@@ -33,6 +34,37 @@ export function PianoVisualizer({ onClose, onSessionEnd }) {
   const sessionStartRef = useRef(null);
   const timerRef = useRef(null);
   const [showPlaceholder, setShowPlaceholder] = useState(false);
+  const pianoConfigRef = useRef(null); // Cache piano config for cleanup
+
+  // On mount: Load piano config and run HA script if configured
+  useEffect(() => {
+    const initPiano = async () => {
+      try {
+        // Load piano config from household
+        const config = await DaylightAPI('data/households/default/apps/piano/config');
+        pianoConfigRef.current = config;
+        
+        // Run on_open HA script if configured
+        if (config?.on_open?.ha_script) {
+          DaylightAPI(`exe/ha/script/${config.on_open.ha_script}`, {}, 'POST')
+            .then(() => console.debug('[Piano] HA on_open script executed'))
+            .catch(err => console.debug('[Piano] HA on_open script failed:', err.message));
+        }
+      } catch (err) {
+        console.debug('[Piano] Config load failed (non-blocking):', err.message);
+      }
+    };
+    initPiano();
+
+    // Cleanup: Run on_close HA script if configured
+    return () => {
+      const config = pianoConfigRef.current;
+      if (config?.on_close?.ha_script) {
+        DaylightAPI(`exe/ha/script/${config.on_close.ha_script}`, {}, 'POST')
+          .catch(err => console.debug('[Piano] HA on_close script failed:', err.message));
+      }
+    };
+  }, []);
 
   // Track when all notes are released (for inactivity timer)
   useEffect(() => {
