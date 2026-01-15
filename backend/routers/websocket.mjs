@@ -53,7 +53,6 @@ export function createWebsocketServer(server) {
               topic: 'fitness',
               ...data
             });
-            logger.info('Broadcasted fitness payload', { topic: 'fitness', source: data.source });
           } else if (data.source === 'piano' && data.topic === 'heartbeat') {
             // Handle heartbeat ping from piano recorder - respond with pong
             if (data.type === 'ping') {
@@ -195,11 +194,9 @@ export function broadcastToWebsockets(data) {
     }
   });
   
-  logger.info('websocket.broadcast.sent', { 
-    sentCount, 
-    clientCount, 
-    topic: data.topic, 
-    action: data.action,
-    summary: data.topic ? null : msg.substring(0, 100)
-  });
+  logger.sampled('websocket.broadcast.sent', {
+    sentCount,
+    clientCount,
+    topic: data.topic
+  }, { maxPerMinute: 20 });
 }
