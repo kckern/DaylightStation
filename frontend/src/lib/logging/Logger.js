@@ -174,6 +174,7 @@ const child = (childContext = {}) => {
     info: (eventName, data, opts) => emit('info', eventName, data, { ...opts, context: { ...parentContext, ...childContext, ...(opts?.context || {}) } }),
     warn: (eventName, data, opts) => emit('warn', eventName, data, { ...opts, context: { ...parentContext, ...childContext, ...(opts?.context || {}) } }),
     error: (eventName, data, opts) => emit('error', eventName, data, { ...opts, context: { ...parentContext, ...childContext, ...(opts?.context || {}) } }),
+    sampled: emitSampled,
     child: (ctx) => child({ ...parentContext, ...childContext, ...ctx })
   };
 };
