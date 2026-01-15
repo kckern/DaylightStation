@@ -315,7 +315,7 @@ export const buildBeatsSeries = (rosterEntry, getSeries, timebase = {}, options 
  * @returns {Object[]} Array of segment objects
  */
 export const buildSegments = (beats = [], zones = [], active = [], options = {}) => {
-  const { isCurrentlyActive, currentTick, zoneConfig } = options;
+  const { isCurrentlyActive, currentTick, zoneConfig, intervalMs = 5000 } = options;
   const segments = [];
   let current = null;
   let lastZone = null;
