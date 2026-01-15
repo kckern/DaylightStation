@@ -2103,12 +2103,19 @@ export class FitnessSession {
 
   _stopTickTimer() {
     if (this._tickTimer) {
-      // TELEMETRY: Log timer stop for memory leak debugging
-      getLogger().info('fitness.tick_timer.stopped', {
-        sessionId: this.sessionId,
-        tickCount: this._tickTimerTickCount || 0,
-        ranForMs: Date.now() - (this._tickTimerStartedAt || Date.now())
-      });
+      const tickCount = this._tickTimerTickCount || 0;
+      const ranForMs = Date.now() - (this._tickTimerStartedAt || Date.now());
+
+      // Only log meaningful timer stops (had ticks OR ran for >2s)
+      // Zero-tick short timers are just restarts with no work done
+      if (tickCount > 0 || ranForMs >= 2000) {
+        getLogger().info('fitness.tick_timer.stopped', {
+          sessionId: this.sessionId,
+          tickCount,
+          ranForMs
+        });
+      }
+
       clearInterval(this._tickTimer);
       this._tickTimer = null;
     }
