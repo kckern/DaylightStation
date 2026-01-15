@@ -19,6 +19,7 @@ import { TVControlAdapter } from '../../src/2_adapters/home-automation/tv/index.
 import { KioskAdapter } from '../../src/2_adapters/home-automation/kiosk/index.mjs';
 import { TaskerAdapter } from '../../src/2_adapters/home-automation/tasker/index.mjs';
 import { RemoteExecAdapter } from '../../src/2_adapters/home-automation/remote-exec/index.mjs';
+import { HomeAssistantAdapter } from '../../src/2_adapters/home-automation/homeassistant/index.mjs';
 
 const exeLogger = createLogger({ source: 'backend', app: 'exe' });
 const exeRouter = express.Router();
@@ -34,6 +35,7 @@ let tvAdapter = null;
 let kioskAdapter = null;
 let taskerAdapter = null;
 let remoteExecAdapter = null;
+let homeAssistantAdapter = null;
 
 /**
  * Get or create TV control adapter
@@ -106,6 +108,24 @@ function getRemoteExecAdapter() {
 
   exeLogger.info('exe.remoteExecAdapter.initialized');
   return remoteExecAdapter;
+}
+
+/**
+ * Get or create Home Assistant adapter
+ * @returns {HomeAssistantAdapter}
+ */
+function getHomeAssistantAdapter() {
+  if (homeAssistantAdapter) return homeAssistantAdapter;
+
+  const auth = configService.getHouseholdAuth('homeassistant') || {};
+  homeAssistantAdapter = new HomeAssistantAdapter({
+    host: auth.host || auth.base_url || process.env.home_assistant?.host,
+    port: auth.port || process.env.home_assistant?.port,
+    token: auth.token
+  }, { logger: exeLogger });
+
+  exeLogger.info('exe.homeAssistantAdapter.initialized');
+  return homeAssistantAdapter;
 }
 
 // ============================================================================
@@ -327,6 +347,25 @@ exeRouter.post('/cmd', async (req, res) => {
   } catch (error) {
     exeLogger.error('exe.cmd.failed', { error: serializeError(error) });
     res.status(500).json({ error: error.message || 'Internal Server Error' });
+  }
+});
+
+// ============================================================================
+// Home Assistant Script Route
+// ============================================================================
+
+// Run a Home Assistant script by entity ID
+// POST /exe/ha/script/:scriptId
+exeRouter.post('/ha/script/:scriptId', async (req, res) => {
+  try {
+    const { scriptId } = req.params;
+    const entityId = scriptId.startsWith('script.') ? scriptId : `script.${scriptId}`;
+    exeLogger.info('exe.ha.script.running', { entityId });
+    const result = await getHomeAssistantAdapter().runScript(entityId);
+    res.json({ ok: true, entityId, result });
+  } catch (error) {
+    exeLogger.error('exe.ha.script.failed', { scriptId: req.params.scriptId, error: error.message });
+    res.status(500).json({ ok: false, error: error.message });
   }
 });
 
