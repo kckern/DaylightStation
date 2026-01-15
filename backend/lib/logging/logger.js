@@ -26,6 +26,10 @@ export function createLogger({ source = 'backend', app = 'default', context = {}
     ...context
   };
 
+  // Sampling state for rate-limited logging
+  const samplingState = new Map();
+  const WINDOW_MS = 60_000;
+
   /**
    * Internal log function
    * @param {string} level - 'debug' | 'info' | 'warn' | 'error'
@@ -120,8 +124,70 @@ export function createLogger({ source = 'backend', app = 'default', context = {}
      */
     getContext() {
       return { ...baseContext };
+    },
+
+    /**
+     * Log with rate limiting and aggregation
+     * @param {string} event - Event name
+     * @param {Object} data - Event data
+     * @param {Object} options - { maxPerMinute?: number, aggregate?: boolean }
+     */
+    sampled(event, data = {}, options = {}) {
+      const { maxPerMinute = 20, aggregate = true } = options;
+      const now = Date.now();
+
+      let state = samplingState.get(event);
+
+      // New window or first call
+      if (!state || now - state.windowStart >= WINDOW_MS) {
+        // Flush previous window's aggregate
+        if (state?.skipped > 0 && aggregate) {
+          log('info', `${event}.aggregated`, {
+            sampledCount: state.count,
+            skippedCount: state.skipped,
+            window: '60s',
+            aggregated: state.aggregated
+          });
+        }
+        state = { count: 0, skipped: 0, aggregated: {}, windowStart: now };
+        samplingState.set(event, state);
+      }
+
+      // Within budget: log normally
+      if (state.count < maxPerMinute) {
+        state.count++;
+        log('info', event, data);
+        return;
+      }
+
+      // Over budget: accumulate for summary
+      state.skipped++;
+      if (aggregate) {
+        accumulateData(state.aggregated, data);
+      }
     }
   };
+}
+
+/**
+ * Accumulate data for aggregation
+ * @param {Object} aggregated - Accumulator object
+ * @param {Object} data - New data to merge
+ */
+function accumulateData(aggregated, data) {
+  for (const [key, value] of Object.entries(data)) {
+    if (typeof value === 'number') {
+      aggregated[key] = (aggregated[key] || 0) + value;
+    } else if (typeof value === 'string') {
+      if (!aggregated[key]) aggregated[key] = {};
+      const counts = aggregated[key];
+      if (Object.keys(counts).length < 20) {
+        counts[value] = (counts[value] || 0) + 1;
+      } else {
+        counts['__other__'] = (counts['__other__'] || 0) + 1;
+      }
+    }
+  }
 }
 
 export default createLogger;
