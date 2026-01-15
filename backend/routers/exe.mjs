@@ -567,4 +567,19 @@ exeRouter.post('/cmd', async (req, res) => {
     }
 });
 
+// Run a Home Assistant script by entity ID
+// POST /exe/ha/script/:scriptId
+exeRouter.post('/ha/script/:scriptId', async (req, res) => {
+    try {
+        const { scriptId } = req.params;
+        const entityId = scriptId.startsWith('script.') ? scriptId : `script.${scriptId}`;
+        exeLogger.info('exe.ha.script.running', { entityId });
+        const result = await ensureHomeAssistant().runScript(entityId);
+        res.json({ ok: true, entityId, result });
+    } catch (error) {
+        exeLogger.error('exe.ha.script.failed', { scriptId: req.params.scriptId, error: error.message });
+        res.status(500).json({ ok: false, error: error.message });
+    }
+});
+
 export default exeRouter;
