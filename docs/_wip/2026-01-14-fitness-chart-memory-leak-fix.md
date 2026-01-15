@@ -104,6 +104,47 @@ const xTicks = useMemo(() => {
 }, [effectiveTicks, timebase?.intervalMs, chartWidth]);
 ```
 
+### Fix 4: Series Point Safety Caps
+
+Added hard limits to prevent unbounded data accumulation:
+
+```javascript
+const MAX_SERIES_POINTS = 1000;  // ~83 minutes at 5s intervals
+const MAX_TOTAL_POINTS = 50000;  // Global cap across all series
+
+// In useRaceChartData - trim per series
+if (beats.length > MAX_SERIES_POINTS) {
+  beats = beats.slice(-MAX_SERIES_POINTS);
+  zones = zones.slice(-MAX_SERIES_POINTS);
+  active = active.slice(-MAX_SERIES_POINTS);
+}
+```
+
+### Fix 5: Throttled Warnings
+
+Prevent hot path console.warn penalty:
+
+```javascript
+const throttledWarn = useCallback((key, message) => {
+  const now = Date.now();
+  if (!warnThrottleRef.current[key] || now - warnThrottleRef.current[key] > 5000) {
+    console.warn(message);
+    warnThrottleRef.current[key] = now;
+  }
+}, []);
+```
+
+### Fix 6: Object Creation Optimization
+
+Only create new objects when status actually differs:
+
+```javascript
+if (entry.status === correctStatus) {
+  return entry; // Same reference - no re-render triggered
+}
+return { ...entry, status: correctStatus };
+```
+
 ## Expected Impact
 
 | Metric | Before | After |
