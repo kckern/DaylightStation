@@ -4,8 +4,12 @@ MIDI Message Converter Module
 Converts mido MIDI messages to JSON format for WebSocket broadcasting.
 """
 
+import os
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional
+
+# Minimum session duration in seconds to keep recordings
+MIN_SESSION_DURATION_SECONDS = 30
 
 # MIDI note names
 NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
@@ -136,6 +140,12 @@ def create_session_end_message(
     file_path: Optional[str] = None
 ) -> Dict[str, Any]:
     """Create a session end message."""
+    deleted = False
+    
+    # Delete short recordings (under MIN_SESSION_DURATION_SECONDS)
+    if duration < MIN_SESSION_DURATION_SECONDS and file_path:
+        deleted = delete_short_recording(file_path, duration)
+    
     return {
         "topic": "midi",
         "source": "piano",
@@ -147,6 +157,43 @@ def create_session_end_message(
             "sessionId": session_id,
             "duration": round(duration, 2),
             "noteCount": note_count,
-            "filePath": file_path
+            "filePath": None if deleted else file_path,
+            "deleted": deleted
         }
     }
+
+
+def delete_short_recording(file_path: str, duration: float) -> bool:
+    """
+    Delete MIDI and associated MP3 files for recordings under minimum duration.
+    
+    Args:
+        file_path: Path to the MIDI file
+        duration: Recording duration in seconds
+        
+    Returns:
+        True if files were deleted, False otherwise
+    """
+    deleted_any = False
+    
+    # Delete MIDI file
+    if file_path and os.path.exists(file_path):
+        try:
+            os.remove(file_path)
+            print(f"[MIDI] Deleted short recording ({duration:.1f}s < {MIN_SESSION_DURATION_SECONDS}s): {file_path}")
+            deleted_any = True
+        except OSError as e:
+            print(f"[MIDI] Failed to delete {file_path}: {e}")
+    
+    # Delete associated MP3 file (same name, different extension)
+    if file_path:
+        mp3_path = os.path.splitext(file_path)[0] + '.mp3'
+        if os.path.exists(mp3_path):
+            try:
+                os.remove(mp3_path)
+                print(f"[MIDI] Deleted associated MP3: {mp3_path}")
+                deleted_any = True
+            except OSError as e:
+                print(f"[MIDI] Failed to delete {mp3_path}: {e}")
+    
+    return deleted_any

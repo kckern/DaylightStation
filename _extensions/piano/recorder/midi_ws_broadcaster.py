@@ -162,7 +162,12 @@ class MidiWebSocketBroadcaster:
         reconnect_delay = self.reconnect_base
 
         while self._running and not self._stop_event.is_set():
+            ws = None
+            heartbeat_task = None
+            receive_task = None
+            
             try:
+                logger.info(f"Connecting to WebSocket: {self.server_url}")
                 async with websockets.connect(
                     self.server_url,
                     ping_interval=20,
@@ -184,18 +189,28 @@ class MidiWebSocketBroadcaster:
                             await self._send_queued_messages(ws)
                             await asyncio.sleep(self.DEFAULT_POLL_INTERVAL)
                     finally:
-                        heartbeat_task.cancel()
-                        receive_task.cancel()
+                        # Clean up tasks
+                        if heartbeat_task and not heartbeat_task.done():
+                            heartbeat_task.cancel()
+                        if receive_task and not receive_task.done():
+                            receive_task.cancel()
                         try:
-                            await heartbeat_task
+                            if heartbeat_task:
+                                await heartbeat_task
                         except asyncio.CancelledError:
                             pass
+                        except Exception:
+                            pass
                         try:
-                            await receive_task
+                            if receive_task:
+                                await receive_task
                         except asyncio.CancelledError:
+                            pass
+                        except Exception:
                             pass
 
             except asyncio.CancelledError:
+                logger.info("Broadcaster cancelled")
                 break
             except Exception as e:
                 self._connected = False
@@ -203,17 +218,24 @@ class MidiWebSocketBroadcaster:
                 self._stats['reconnect_count'] += 1
 
                 logger.warning(
-                    f"WebSocket error: {e}. Reconnecting in {reconnect_delay}s..."
+                    f"WebSocket disconnected: {e}. Reconnecting in {reconnect_delay}s..."
                 )
 
-                # Interruptible wait
-                await asyncio.sleep(min(reconnect_delay, 1))
+                # Interruptible wait with smaller chunks for responsiveness
+                wait_remaining = reconnect_delay
+                while wait_remaining > 0 and not self._stop_event.is_set():
+                    chunk = min(wait_remaining, 1)
+                    await asyncio.sleep(chunk)
+                    wait_remaining -= chunk
+                
                 if self._stop_event.is_set():
                     break
 
                 reconnect_delay = min(reconnect_delay * 2, self.reconnect_max)
+                continue
 
         self._connected = False
+        logger.info("WebSocket connection loop ended")
 
     async def _heartbeat_loop(self, ws) -> None:
         """Send periodic heartbeat pings to keep connection warm."""
@@ -228,7 +250,9 @@ class MidiWebSocketBroadcaster:
                 await ws.send(json.dumps(heartbeat_msg))
                 self._stats['heartbeats_sent'] += 1
                 self._stats['last_heartbeat'] = time.time()
-                logger.debug("Heartbeat ping sent")
+                # Log every 10th heartbeat to avoid spam
+                if self._stats['heartbeats_sent'] % 10 == 0:
+                    logger.info(f"Heartbeat: {self._stats['heartbeats_sent']} pings sent, {self._stats['heartbeats_received']} pongs received")
             except Exception as e:
                 logger.warning(f"Failed to send heartbeat: {e}")
                 break
@@ -242,7 +266,6 @@ class MidiWebSocketBroadcaster:
                     data = json.loads(message)
                     if data.get('topic') == 'heartbeat' and data.get('type') == 'pong':
                         self._stats['heartbeats_received'] += 1
-                        logger.debug("Heartbeat pong received")
                 except json.JSONDecodeError:
                     pass
         except asyncio.CancelledError:
@@ -264,6 +287,11 @@ class MidiWebSocketBroadcaster:
             except Empty:
                 break
             except Exception as e:
-                logger.error(f"Failed to send message: {e}")
-                self._stats['messages_dropped'] += 1
-                break
+                # Put message back in queue if connection failed
+                try:
+                    self._queue.put_nowait(message)
+                except (Full, NameError):
+                    self._stats['messages_dropped'] += 1
+                logger.debug(f"Failed to send message: {e}")
+                # Re-raise to trigger reconnection
+                raise
