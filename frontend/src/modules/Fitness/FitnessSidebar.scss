@@ -2231,6 +2231,14 @@
           letter-spacing: 0.5px;
         }
 
+        // Grid layout for filtered guest options
+        &.guest-grid {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          column-gap: 0.5rem;
+          row-gap: 0.35rem;
+        }
+
         .menu-item {
           width: 100%;
           
@@ -2648,11 +2656,11 @@
           position: relative;
           display: flex;
           align-items: center;
-          gap: 0.6rem;
+          gap: 0.5rem;
           background: rgba(20, 20, 20, 0.85);
           border: 1px solid rgba(255, 255, 255, 0.08);
           border-radius: 8px;
-          padding: 0.5rem 0.65rem;
+          padding: 0.5rem 0.6rem;
           transition: border 0.2s ease, transform 0.15s ease, box-shadow 0.15s ease;
           width: 100%;
           box-shadow: 0 4px 12px rgba(0, 0, 0, 0.32);
@@ -2674,9 +2682,9 @@
           }
 
           .guest-option-avatar {
-            width: 38px;
-            height: 38px;
-            border-radius: 8px;
+            width: 36px;
+            height: 36px;
+            border-radius: 6px;
             overflow: hidden;
             flex: 0 0 auto;
             position: relative;
@@ -2714,26 +2722,31 @@
             display: flex;
             flex-direction: column;
             align-items: flex-start;
-            gap: 0.2rem;
+            gap: 0.15rem;
             flex: 1;
+            min-width: 0;
 
             .guest-option-name {
               font-weight: 600;
-              font-size: 0.9rem;
+              font-size: 0.8rem;
               color: rgba(255, 255, 255, 0.95);
-              letter-spacing: 0.2px;
+              letter-spacing: 0.1px;
               line-height: 1.1;
               display: block;
+              white-space: nowrap;
+              overflow: hidden;
+              text-overflow: ellipsis;
+              width: 100%;
             }
 
             .guest-option-source {
-              font-size: 0.6rem;
+              font-size: 0.55rem;
               text-transform: uppercase;
-              letter-spacing: 0.55px;
-              color: rgba(255, 255, 255, 0.7);
-              background: rgba(255, 255, 255, 0.1);
+              letter-spacing: 0.4px;
+              color: rgba(255, 255, 255, 0.65);
+              background: rgba(255, 255, 255, 0.08);
               border-radius: 999px;
-              padding: 0.15rem 0.45rem;
+              padding: 0.1rem 0.35rem;
             }
           }
 
