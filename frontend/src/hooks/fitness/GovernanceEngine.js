@@ -1027,9 +1027,15 @@ export class GovernanceEngine {
       }
     });
 
-    const requiredCount = this._normalizeRequiredCount(rule, totalCount);
+    const requiredCount = this._normalizeRequiredCount(rule, totalCount, activeParticipants);
     const satisfied = metUsers.length >= requiredCount;
-    const missingUsers = activeParticipants.filter((participantId) => !metUsers.includes(participantId));
+    // Missing users should only list non-exempt users, unless satisfied is true (then who cares)
+    // But conceptually, an exempt user can be missing but not cause failure.
+    // However, if we fail, we only want to "blame" non-exempt users.
+    const exemptUsers = (this.config.exemptions || []).map(u => normalizeName(u));
+    const missingUsers = activeParticipants.filter((participantId) => 
+      !metUsers.includes(participantId) && !exemptUsers.includes(normalizeName(participantId))
+    );
     const zoneInfo = zoneInfoMap[zoneId];
 
     return {
@@ -1048,28 +1054,37 @@ export class GovernanceEngine {
     };
   }
 
-  _normalizeRequiredCount(rule, totalCount) {
+  _normalizeRequiredCount(rule, totalCount, activeParticipants = []) {
+    // If exemptions are configured, filter the active participants (who are subject to counts)
+    let effectiveCount = totalCount;
+    if (this.config.exemptions && Array.isArray(this.config.exemptions) && activeParticipants.length > 0) {
+      // Exempt users do not count towards the denominator (total number of people required)
+      const exemptUsers = this.config.exemptions.map(u => normalizeName(u));
+      const subjectParticipants = activeParticipants.filter(p => !exemptUsers.includes(normalizeName(p)));
+      effectiveCount = subjectParticipants.length;
+    }
+
     if (typeof rule === 'number' && Number.isFinite(rule)) {
-      return Math.min(Math.max(0, Math.round(rule)), totalCount);
+      return Math.min(Math.max(0, Math.round(rule)), effectiveCount);
     }
     if (typeof rule === 'string') {
       const normalized = rule.toLowerCase().trim();
-      if (normalized === 'all') return totalCount;
+      if (normalized === 'all') return effectiveCount;
       if (normalized === 'majority' || normalized === 'most') {
-        return Math.max(1, Math.ceil(totalCount * 0.5));
+        return Math.max(1, Math.ceil(effectiveCount * 0.5));
       }
       if (normalized === 'some') {
-        return Math.max(1, Math.ceil(totalCount * 0.3));
+        return Math.max(1, Math.ceil(effectiveCount * 0.3));
       }
       if (normalized === 'any') {
         return 1;
       }
       const numeric = Number(rule);
       if (Number.isFinite(numeric)) {
-        return Math.min(Math.max(0, Math.round(numeric)), totalCount);
+        return Math.min(Math.max(0, Math.round(numeric)), effectiveCount);
       }
     }
-    return totalCount;
+    return effectiveCount;
   }
 
   _describeRule(rule, requiredCount) {
@@ -1249,7 +1264,7 @@ export class GovernanceEngine {
       const expiresAt = startedAt + timeLimitSeconds * 1000;
       const requiredCount = Number.isFinite(preview.requiredCount) && preview.requiredCount > 0
         ? preview.requiredCount
-        : this._normalizeRequiredCount(preview.rule, totalCount);
+        : this._normalizeRequiredCount(preview.rule, totalCount, activeParticipants);
 
       this.challengeState.activeChallenge = {
         id: `${challengeConfig.id}_${startedAt}`,
@@ -1280,6 +1295,17 @@ export class GovernanceEngine {
       }
 
       this.challengeState.forceStartRequest = null;
+      
+      getLogger().info('governance.challenge.started', {
+        id: this.challengeState.activeChallenge.id,
+        policyId: activePolicy.id,
+        zone: this.challengeState.activeChallenge.zone,
+        selectionLabel: this.challengeState.activeChallenge.selectionLabel,
+        requiredCount: this.challengeState.activeChallenge.requiredCount,
+        timeLimitSeconds: this.challengeState.activeChallenge.timeLimitSeconds,
+        forced
+      });
+
       this._schedulePulse(Math.max(50, expiresAt - startedAt));
       return true;
     };
@@ -1372,6 +1398,14 @@ export class GovernanceEngine {
               challenge.historyRecorded = true;
             }
             this.challengeState.videoLocked = false;
+
+            getLogger().info('governance.challenge.completed', {
+              id: challenge.id,
+              zone: challenge.zone,
+              durationMs: now - challenge.startedAt,
+              participants: activeParticipants.map(uid => ({ userId: uid, zone: userZoneMap[uid] || null }))
+            });
+
             const nextDelay = this._pickIntervalMs(challengeConfig.intervalRangeSeconds);
             queueNextChallenge(nextDelay);
             this._schedulePulse(50);
@@ -1382,6 +1416,15 @@ export class GovernanceEngine {
             challenge.pausedAt = null;
             challenge.pausedRemainingMs = null;
             challenge.summary = buildChallengeSummary(challenge);
+            
+            getLogger().info('governance.challenge.failed', {
+              id: challenge.id,
+              zone: challenge.zone,
+              requiredCount: challenge.requiredCount,
+              actualCount: challenge.summary?.actualCount,
+              missingUsers: challenge.summary?.missingUsers
+            });
+
             this.challengeState.videoLocked = true;
             this.challengeState.nextChallenge = null;
             this.challengeState.nextChallengeAt = null;
@@ -1440,6 +1483,14 @@ export class GovernanceEngine {
                 }
                 challenge.historyRecorded = true;
               }
+              
+              getLogger().info('governance.challenge.recovered', {
+                id: challenge.id,
+                zone: challenge.zone,
+                durationMs: now - challenge.startedAt,
+                participants: activeParticipants.map(uid => ({ userId: uid, zone: userZoneMap[uid] || null }))
+              });
+
               const nextDelay = this._pickIntervalMs(challengeConfig.intervalRangeSeconds);
               queueNextChallenge(nextDelay);
               this._schedulePulse(50);
