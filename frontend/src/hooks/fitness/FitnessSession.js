@@ -2073,10 +2073,10 @@ export class FitnessSession {
     // TELEMETRY: Track timer lifecycle for memory leak debugging
     this._tickTimerStartedAt = Date.now();
     this._tickTimerTickCount = 0;
-    getLogger().info('fitness.tick_timer.started', {
+    getLogger().sampled('fitness.tick_timer.started', {
       sessionId: this.sessionId,
       intervalMs: interval
-    });
+    }, { maxPerMinute: 10 });
 
     this._tickTimer = setInterval(() => {
       this._tickTimerTickCount++;
