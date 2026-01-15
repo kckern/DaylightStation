@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect, useRef, useLayoutEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef, useLayoutEffect, useCallback } from 'react';
 import useFitnessPlugin from '../../useFitnessPlugin';
 import { DaylightMediaPath } from '../../../../../lib/api.mjs';
 import './FitnessChartApp.scss';
@@ -52,6 +52,10 @@ const formatDuration = (ms) => {
 	return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 };
 
+// Safety limits to prevent unbounded memory growth
+const MAX_SERIES_POINTS = 1000; // Max points per series (at 5s intervals = ~83 minutes)
+const MAX_TOTAL_POINTS = 50000; // Global safety cap across all series
+
 /**
  * Hook to build race chart data from roster and timeline series.
  * @param {Array} roster - Current participant roster
@@ -71,7 +75,15 @@ const useRaceChartData = (roster, getSeries, timebase, options = {}) => {
 
 		// Build chart entries from roster
 		const debugItems = roster.map((entry, idx) => {
-			const { beats, zones, active } = buildBeatsSeries(entry, getSeries, timebase, { activityMonitor });
+			let { beats, zones, active } = buildBeatsSeries(entry, getSeries, timebase, { activityMonitor });
+			
+			// Safety: Trim series to prevent unbounded memory growth
+			if (beats.length > MAX_SERIES_POINTS) {
+				beats = beats.slice(-MAX_SERIES_POINTS);
+				zones = zones.slice(-MAX_SERIES_POINTS);
+				active = active.slice(-MAX_SERIES_POINTS);
+			}
+			
 			const maxVal = Math.max(0, ...beats.filter((v) => Number.isFinite(v)));
 			// Pass zoneConfig and intervalMs to buildSegments for zone-based slope enforcement (fixes sawtooth)
 			const intervalMs = Number(timebase?.intervalMs) > 0 ? Number(timebase.intervalMs) : 5000;
@@ -125,6 +137,12 @@ const useRaceChartData = (roster, getSeries, timebase, options = {}) => {
 				filterReason: segments.length === 0 ? 'no_segments' : (maxVal <= 0 ? 'no_beats' : null)
 			};
 		});
+
+		// Global safety cap - if total points exceed limit, log warning
+		const totalPoints = debugItems.reduce((sum, e) => sum + (e.beats?.length || 0), 0);
+		if (totalPoints > MAX_TOTAL_POINTS) {
+			console.warn(`[FitnessChart] Global cap warning: ${totalPoints} total points across ${debugItems.length} entries`);
+		}
 
 		// Allow entries with zero beats to display - they'll accumulate over time
 		// Only filter out entries with no segments (no HR data at all)
@@ -407,6 +425,16 @@ const useRaceChartWithHistory = (roster, getSeries, timebase, historicalParticip
 
 	const allEntries = useMemo(() => Object.values(participantCache).filter((e) => e && (e.segments?.length || 0) > 0), [participantCache]);
 	
+	// Throttle console warnings to prevent hot path performance penalty
+	const warnThrottleRef = useRef({});
+	const throttledWarn = useCallback((key, message) => {
+		const now = Date.now();
+		if (!warnThrottleRef.current[key] || now - warnThrottleRef.current[key] > 5000) {
+			console.warn(message);
+			warnThrottleRef.current[key] = now;
+		}
+	}, []);
+	
 	// SINGLE SOURCE OF TRUTH: Use isActive from roster (set by DeviceManager.inactiveSince)
 	// Segments are for RENDERING only - they control line style (solid/dotted)
 	// isActive controls avatar visibility (present vs absent)
@@ -417,19 +445,17 @@ const useRaceChartWithHistory = (roster, getSeries, timebase, historicalParticip
 			const isActiveFromRoster = entry.isActive !== false;
 			const correctStatus = isActiveFromRoster ? ParticipantStatus.ACTIVE : ParticipantStatus.IDLE;
 			
-			// Log if there's a mismatch (for debugging, but we trust isActive)
-			if (entry.status !== correctStatus) {
-				console.warn('[FitnessChart] Status corrected from roster.isActive', {
-					id: entry.id,
-					wasStatus: entry.status,
-					nowStatus: correctStatus,
-					isActive: entry.isActive
-				});
+			// Only create new object if status actually differs
+			if (entry.status === correctStatus) {
+				return entry; // Return original object - same reference
 			}
+			
+			// Log if there's a mismatch (throttled to prevent hot path penalty)
+			throttledWarn(`status-${entry.id}`, `[FitnessChart] Status corrected: ${entry.id} (${entry.status} → ${correctStatus})`);
 			
 			return { ...entry, status: correctStatus };
 		});
-	}, [allEntries]);
+	}, [allEntries, throttledWarn]);
 	
 	// Use isActive (from roster) for present/absent split - SINGLE SOURCE OF TRUTH
 	const present = useMemo(() => validatedEntries.filter((e) => e.isActive !== false), [validatedEntries]);
