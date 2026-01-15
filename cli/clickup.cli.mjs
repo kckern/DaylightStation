@@ -368,7 +368,7 @@ const DAYLIGHT_LISTS = {
     'Journalist / Lifelog': '901606966817',
     'Nutribot / Health': '901606966820',
     'Fitness': '901610284012',
-    'Admin / Config': '901612664297'
+    'System and Admin': '901612664297'
 };
 
 /**
