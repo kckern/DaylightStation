@@ -233,6 +233,15 @@ const VoiceMemoOverlay = ({
   }, [logVoiceMemo, onRemoveMemo, voiceMemos, onClose]);
 
   const handleRedoCaptured = useCallback((memo) => {
+    // Guard: Don't process if overlay was already closed
+    if (!overlayState?.open) {
+      logVoiceMemo('overlay-redo-captured-orphaned', {
+        memoId: memo?.memoId,
+        reason: 'overlay_closed'
+      });
+      return;
+    }
+
     if (!memo) {
       logVoiceMemo('overlay-redo-cancel');
       onClose?.();
@@ -261,7 +270,7 @@ const VoiceMemoOverlay = ({
     } else {
       onClose?.();
     }
-  }, [logVoiceMemo, overlayState?.memoId, onReplaceMemo, onAddMemo, onOpenReview, onClose]);
+  }, [logVoiceMemo, onAddMemo, onClose, onOpenReview, onReplaceMemo, overlayState?.memoId, overlayState?.open]);
 
   const [recorderState, setRecorderState] = useState('idle'); // idle|recording|processing|ready|error
   const {
