@@ -455,15 +455,17 @@ export class GovernanceEngine {
       const oldPhase = this.phase;
       this.phase = newPhase;
       this._invalidateStateCache(); // Invalidate cache on phase change
-      
-      // Log phase transitions for debugging (visible in dev.log)
-      getLogger().info('governance.phase_change', {
-        from: oldPhase,
-        to: newPhase,
-        mediaId: this.media?.id,
-        deadline: this.meta?.deadline,
-        satisfiedOnce: this.meta?.satisfiedOnce
-      });
+
+      // Skip logging for null-to-null (no-op) transitions
+      if (oldPhase !== null || newPhase !== null) {
+        getLogger().sampled('governance.phase_change', {
+          from: oldPhase,
+          to: newPhase,
+          mediaId: this.media?.id,
+          deadline: this.meta?.deadline,
+          satisfiedOnce: this.meta?.satisfiedOnce
+        }, { maxPerMinute: 30 });
+      }
       
       if (this.callbacks.onPhaseChange) {
         this.callbacks.onPhaseChange(newPhase);
