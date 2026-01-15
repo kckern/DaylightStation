@@ -73,8 +73,9 @@ const useRaceChartData = (roster, getSeries, timebase, options = {}) => {
 		const debugItems = roster.map((entry, idx) => {
 			const { beats, zones, active } = buildBeatsSeries(entry, getSeries, timebase, { activityMonitor });
 			const maxVal = Math.max(0, ...beats.filter((v) => Number.isFinite(v)));
-			// Pass zoneConfig to buildSegments for zone-based slope enforcement (fixes sawtooth)
-			const segments = buildSegments(beats, zones, active, { zoneConfig });
+			// Pass zoneConfig and intervalMs to buildSegments for zone-based slope enforcement (fixes sawtooth)
+			const intervalMs = Number(timebase?.intervalMs) > 0 ? Number(timebase.intervalMs) : 5000;
+			const segments = buildSegments(beats, zones, active, { zoneConfig, intervalMs });
 			const profileId = entry.profileId || entry.hrDeviceId || slugifyId(entry.name || entry.displayLabel || entry.id || idx);
 			const entryId = entry.id || profileId || entry.hrDeviceId || slugifyId(entry.name || entry.displayLabel || idx, `anon-${idx}`);
 			
@@ -277,8 +278,9 @@ const useRaceChartWithHistory = (roster, getSeries, timebase, historicalParticip
 				const { beats, zones, active } = buildBeatsSeries({ profileId: slug, name: slug }, getSeries, timebase, { activityMonitor });
 				if (!beats.length) return;
 
-				// Pass zoneConfig for zone-based slope enforcement
-				const segments = buildSegments(beats, zones, active, { zoneConfig });
+				// Pass zoneConfig and intervalMs for zone-based slope enforcement
+				const intervalMs = Number(timebase?.intervalMs) > 0 ? Number(timebase.intervalMs) : 5000;
+				const segments = buildSegments(beats, zones, active, { zoneConfig, intervalMs });
 				if (!segments.length) return;
 				
 				// Skip non-HR devices (no accumulated beats)
