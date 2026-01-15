@@ -515,6 +515,31 @@ const useVoiceMemoRecorder = ({
     emitLevel(null);
   }, [cleanupStream, clearDurationTimer, emitLevel, emitState, logVoiceMemo, onResumeMusic, playerRef]);
 
+  const cancelUpload = useCallback(() => {
+    // Set cancelled flag to prevent handleRecordingStop from processing
+    cancelledRef.current = true;
+
+    // Abort any in-flight API request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+
+    // Discard any pending chunks
+    const chunksDiscarded = chunksRef.current.length;
+    chunksRef.current = [];
+
+    // Reset state
+    setUploading(false);
+    emitState('idle');
+
+    logVoiceMemo('recording-cancelled', {
+      reason: 'user_cancel',
+      chunksDiscarded,
+      wasUploading: uploading
+    });
+  }, [emitState, logVoiceMemo, uploading]);
+
   useEffect(() => () => {
     clearDurationTimer();
     cleanupStream();
@@ -533,7 +558,8 @@ const useVoiceMemoRecorder = ({
     error,
     setError,
     startRecording,
-    stopRecording
+    stopRecording,
+    cancelUpload
   };
 };
 
