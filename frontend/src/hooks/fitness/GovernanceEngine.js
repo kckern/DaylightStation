@@ -598,6 +598,57 @@ export class GovernanceEngine {
     this._stateCacheVersion = -1; // Track which version the cache represents
   }
 
+  /**
+   * Reset to idle state (null phase) without double phase transitions.
+   * Use this instead of reset() + _setPhase(null) to avoid triggering
+   * two separate phase change callbacks.
+   */
+  _resetToIdle() {
+    this._clearTimers();
+    this.meta = {
+      satisfiedOnce: false,
+      deadline: null,
+      gracePeriodTotal: null
+    };
+    this.challengeState = {
+      activePolicyId: null,
+      activePolicyName: null,
+      selectionCursor: {},
+      activeChallenge: null,
+      nextChallengeAt: null,
+      nextChallengeRemainingMs: null,
+      nextChallenge: null,
+      videoLocked: false,
+      forceStartRequest: null,
+      selectionRandomBag: {},
+      challengeHistory: []
+    };
+    this.requirementSummary = {
+      policyId: null,
+      targetUserCount: null,
+      requirements: [],
+      activeCount: 0
+    };
+    this._latestInputs = {
+      activeParticipants: [],
+      userZoneMap: {},
+      zoneRankMap: {},
+      zoneInfoMap: {},
+      totalCount: 0
+    };
+    this._lastEvaluationTs = null;
+    this._stateCache = null;
+    this._stateCacheTs = 0;
+    this._stateCacheThrottleMs = 200;
+    this._stateVersion = 0;
+    this._stateCacheVersion = -1;
+    
+    // Only set phase if actually changing to avoid unnecessary callbacks
+    if (this.phase !== null) {
+      this._setPhase(null);
+    }
+  }
+
   get state() {
     return this._getCachedState();
   }
@@ -812,8 +863,7 @@ export class GovernanceEngine {
         hasMedia: !!(this.media && this.media.id),
         hasGovernanceRules
       });
-      this.reset();
-      this._setPhase(null);
+      this._resetToIdle();
       return;
     }
 
@@ -822,8 +872,7 @@ export class GovernanceEngine {
       getLogger().warn('governance.evaluate.media_not_governed', {
         mediaId: this.media?.id
       });
-      this.reset();
-      this._setPhase(null);
+      this._resetToIdle();
       return;
     }
 
