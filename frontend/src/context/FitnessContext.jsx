@@ -359,11 +359,17 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       if (!Array.isArray(list)) return;
       list.forEach((entry) => {
         if (!entry?.name) return;
-        // Use explicit ID or profileId
         const id = entry.id || entry.profileId || entry.name;
         const label = entry.group_label ?? entry.groupLabel ?? null;
+
+        // Index by ID/profileId
         if (id && label && !map.has(id)) {
           map.set(id, label);
+        }
+
+        // Also index by display name for lookups that use name instead of ID
+        if (entry.name && label && entry.name !== id && !map.has(entry.name)) {
+          map.set(entry.name, label);
         }
       });
     };
