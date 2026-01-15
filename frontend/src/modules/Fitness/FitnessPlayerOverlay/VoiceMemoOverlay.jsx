@@ -146,14 +146,40 @@ const VoiceMemoOverlay = ({
   const panelRef = React.useRef(null);
 
   const handleClose = useCallback(() => {
-    logVoiceMemo('overlay-close-request', { mode: overlayState?.mode, memoId: overlayState?.memoId });
+    const wasRecording = isRecording;
+    const wasProcessing = isProcessing || recorderState === 'processing';
+
+    logVoiceMemo('overlay-close-request', {
+      mode: overlayState?.mode,
+      memoId: overlayState?.memoId,
+      wasRecording,
+      wasProcessing,
+      recorderState,
+      reason: 'user_cancel'
+    });
+
+    // Cancel any in-flight upload first
+    if (wasProcessing) {
+      cancelUpload?.();
+    }
+
+    // Stop recording if active (this will NOT trigger handleRecordingStop
+    // because cancelledRef is now set)
+    if (wasRecording) {
+      stopRecording();
+    }
+
+    // Force reset recorder state to idle
+    setRecorderState('idle');
+
     // If closing during review mode, discard the pending memo
     if (overlayState?.mode === 'review' && overlayState?.memoId) {
       logVoiceMemo('overlay-close-discard', { memoId: overlayState.memoId });
       onRemoveMemo?.(overlayState.memoId);
     }
+
     onClose?.();
-  }, [logVoiceMemo, onClose, onRemoveMemo, overlayState?.mode, overlayState?.memoId]);
+  }, [cancelUpload, isProcessing, isRecording, logVoiceMemo, onClose, onRemoveMemo, overlayState?.mode, overlayState?.memoId, recorderState, stopRecording]);
 
   const handleAccept = useCallback(() => {
     logVoiceMemo('overlay-accept', { memoId: overlayState?.memoId || null });
