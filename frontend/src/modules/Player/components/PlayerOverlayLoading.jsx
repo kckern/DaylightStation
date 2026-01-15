@@ -26,8 +26,13 @@ export function PlayerOverlayLoading({
   overlayLogLabel = null,
   waitKey,
   overlayRevealDelayMs = 0,
-  mediaDetails: mediaDetailsProp = null
+  mediaDetails: mediaDetailsProp = null,
+  suppressForBlackout = false
 }) {
+  // In blackout mode, keep screen completely dark (TV appears off)
+  if (suppressForBlackout) {
+    return null;
+  }
   const overlayDisplayActive = shouldRender && isVisible && !pauseOverlayActive;
 
   const logIntervalRef = useRef(null);
@@ -286,7 +291,8 @@ PlayerOverlayLoading.propTypes = {
     readyState: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
     networkState: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
     paused: PropTypes.bool
-  })
+  }),
+  suppressForBlackout: PropTypes.bool
 };
 
 export default PlayerOverlayLoading;

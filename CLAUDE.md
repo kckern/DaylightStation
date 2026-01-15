@@ -28,6 +28,15 @@ Read `.claude/settings.local.json` and look at the `env` section for all environ
     },
     "docker": {
       "container": "daylight"
+    },
+    "production": {
+      "access_command": "ssh user@host ...",
+      "logs_command": "ssh user@host ...",
+      "mounts": {
+        "data": "...",
+        "media": "..."
+      },
+      "docker_compose_path": "..."
     }
   }
 }
@@ -42,6 +51,7 @@ If `env` values show `[object Object]`, the file is corrupted and needs manual r
 - **Prod host:** SSH target (`env.hosts.prod`)
 - **Dev ports:** Frontend, backend, API (`env.ports.*`)
 - **Docker container:** Container name (`env.docker.container`)
+- **Prod commands:** Access/Login (`env.production.*`)
 
 ### Dev Workflow
 
@@ -52,11 +62,11 @@ If `env` values show `[object Object]`, the file is corrupted and needs manual r
 ### Prod Access
 
 ```bash
-# SSH to prod (use host from settings)
-ssh {hosts.prod}
+# SSH to prod (use command from settings)
+{env.production.access_command}
 
 # View prod logs
-ssh {hosts.prod} 'docker logs {docker.container} -f'
+{env.production.logs_command}
 ```
 
 ### Mount Permissions
@@ -74,6 +84,36 @@ ssh {hosts.prod} 'echo "content" > /path/to/file'
 - **Do NOT run deploy.sh automatically** - User must run manually
 - **Keep docs in /docs folder** - In appropriate subfolder
 - **Check dev server** - Before starting new one
+
+---
+
+## Branch Management
+
+**Clean git branches is key.** Keep the branch list minimal and tidy.
+
+### Workflow
+
+1. **Use worktrees for feature work** - Prefer `git worktree` over regular branches for isolation
+2. **Merge directly into main** - No pull requests; merge when work is complete and tested
+3. **Delete branches after merge** - Don't let merged branches linger
+
+### Deleting Stale Branches
+
+Before deleting any branch, document it for potential restoration:
+
+1. Record the branch name and commit hash in `docs/_archive/deleted-branches.md`
+2. Format: `| YYYY-MM-DD | branch-name | commit-hash | brief description |`
+3. Then delete: `git branch -d branch-name` (or `-D` if unmerged)
+
+Example entry:
+```markdown
+| 2026-01-14 | feature/shader-redesign | a1b2c3d4 | Player shader system cleanup |
+```
+
+To restore a deleted branch:
+```bash
+git checkout -b branch-name <commit-hash>
+```
 
 ---
 

@@ -204,10 +204,10 @@ export const buildBeatsSeries = (rosterEntry, getSeries, timebase = {}, options 
   };
 
   const intervalMs = Number(timebase?.intervalMs) > 0 ? Number(timebase.intervalMs) : 5000;
-  const zones = getSeriesForParticipant('zone_id', { clone: true });
+  const zones = getSeriesForParticipant('zone_id');
   
   // Get heart_rate to detect actual device activity (has nulls during dropout)
-  const heartRate = getSeriesForParticipant('heart_rate', { clone: true });
+  const heartRate = getSeriesForParticipant('heart_rate');
   
   // HR nulls tracking (silent - only log at debug level if needed)
   const hrNullCount = heartRate.filter(v => v == null).length;
@@ -253,7 +253,7 @@ export const buildBeatsSeries = (rosterEntry, getSeries, timebase = {}, options 
 
   // Primary source: coins_total from TreasureBox (single source of truth)
   // Phase 5: Uses entity series when available
-  const coinsRaw = getSeriesForParticipant('coins_total', { clone: true });
+  const coinsRaw = getSeriesForParticipant('coins_total');
   
   if (Array.isArray(coinsRaw) && coinsRaw.length > 0) {
     // Apply Math.floor for consistency with TreasureBox accumulator
@@ -263,7 +263,7 @@ export const buildBeatsSeries = (rosterEntry, getSeries, timebase = {}, options 
   }
 
   // Secondary source: pre-computed heart_beats if available
-  const beatsRaw = getSeriesForParticipant('heart_beats', { clone: true });
+  const beatsRaw = getSeriesForParticipant('heart_beats');
   if (Array.isArray(beatsRaw) && beatsRaw.length > 0) {
     // Apply Math.floor for consistency
     // Use startAtZero to anchor cumulative values to origin (0,0)
@@ -315,7 +315,7 @@ export const buildBeatsSeries = (rosterEntry, getSeries, timebase = {}, options 
  * @returns {Object[]} Array of segment objects
  */
 export const buildSegments = (beats = [], zones = [], active = [], options = {}) => {
-  const { isCurrentlyActive, currentTick, zoneConfig } = options;
+  const { isCurrentlyActive, currentTick, zoneConfig, intervalMs = 5000 } = options;
   const segments = [];
   let current = null;
   let lastZone = null;

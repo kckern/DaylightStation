@@ -1,9 +1,11 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import PropTypes from 'prop-types';
 import 'dash-video-element';
 import { useCommonMediaController } from '../hooks/useCommonMediaController.js';
 import { ProgressBar } from './ProgressBar.jsx';
 import { LoadingOverlay } from './LoadingOverlay.jsx';
+import { useUpscaleEffects } from '../hooks/useUpscaleEffects.js';
+import { getLogger } from '../../../lib/logging/Logger.js';
 
 /**
  * Video player component for playing video content (including DASH video)
@@ -27,13 +29,15 @@ export function VideoPlayer({
   showQuality,
   stallConfig,
   keyboardOverrides,
-  onController
+  onController,
+  upscaleEffects = 'auto'
 }) {
   // console.log('[VideoPlayer] Received keyboardOverrides:', keyboardOverrides ? Object.keys(keyboardOverrides) : 'undefined');
   const isPlex = ['dash_video'].includes(media.media_type);
   const [displayReady, setDisplayReady] = useState(false);
   const [isAdapting, setIsAdapting] = useState(false);
   const [adaptMessage, setAdaptMessage] = useState(undefined);
+  const displayReadyLoggedRef = useRef(false);
   
   const {
     isDash,
@@ -91,11 +95,18 @@ export function VideoPlayer({
     }, [fetchVideoInfo])
   });
 
+  // Upscale detection and effects
+  const { effectStyles, overlayProps } = useUpscaleEffects({
+    mediaRef: containerRef,
+    preset: upscaleEffects
+  });
+
   const { show, season, title, media_url } = media;
 
   // If the media_url (or its effective bitrate cap) changes, reset display readiness so UI transitions are correct
   useEffect(() => {
     setDisplayReady(false);
+    displayReadyLoggedRef.current = false;
   }, [media_url, media?.maxVideoBitrate]);
 
   // Handle dash-video custom element events (web components don't support React synthetic events)
@@ -108,6 +119,18 @@ export function VideoPlayer({
       setDisplayReady(true);
       setIsAdapting(false);
       setAdaptMessage(undefined);
+      // Prod telemetry: video display ready (one-time per media)
+      if (!displayReadyLoggedRef.current) {
+        displayReadyLoggedRef.current = true;
+        const logger = getLogger();
+        logger.info('playback.video-ready', {
+          title: media?.title,
+          show: media?.show,
+          season: media?.season,
+          mediaKey: media?.media_key || media?.key || media?.plex,
+          readyTs: Date.now()
+        });
+      }
     };
 
     el.addEventListener('canplay', handleReady);
@@ -124,7 +147,7 @@ export function VideoPlayer({
   
   const heading = !!show && !!season && !!title
     ? `${show} - ${season}: ${title}`
-    : !!show && !!season
+    : !!show && !!seasonc
     ? `${show} - ${season}`
     : !!show
     ? show
@@ -132,9 +155,6 @@ export function VideoPlayer({
 
   return (
     <div className={`video-player ${shader}`}>
-      <h2>
-        {heading} {`(${playbackRate}×)`}
-      </h2>
       <ProgressBar percent={percent} onClick={handleProgressClick} />
       {(seconds === 0 || isStalled || isSeeking || isAdapting) && (
         <LoadingOverlay
@@ -170,6 +190,7 @@ export function VideoPlayer({
           class={`video-element ${displayReady ? 'show' : ''}`}
           src={media_url}
           autoplay=""
+          style={effectStyles}
         />
       ) : (
         <video
@@ -178,9 +199,13 @@ export function VideoPlayer({
           ref={containerRef}
           className={`video-element ${displayReady ? 'show' : ''}`}
           src={media_url}
+          style={effectStyles}
           onCanPlay={() => { setDisplayReady(true); setIsAdapting(false); setAdaptMessage(undefined); }}
           onPlaying={() => { setDisplayReady(true); setIsAdapting(false); setAdaptMessage(undefined); }}
         />
+      )}
+      {overlayProps.showCRT && (
+        <div className={overlayProps.className} />
       )}
       {showQuality && quality?.supported && (
         <QualityOverlay stats={quality} capKbps={currentMaxKbps} avgPct={droppedFramePct} />
@@ -231,5 +256,6 @@ VideoPlayer.propTypes = {
   onMediaRef: PropTypes.func,
   showQuality: PropTypes.bool,
   stallConfig: PropTypes.object,
-  onController: PropTypes.func
+  onController: PropTypes.func,
+  upscaleEffects: PropTypes.oneOf(['auto', 'blur-only', 'crt-only', 'aggressive', 'none'])
 };

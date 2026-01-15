@@ -159,6 +159,15 @@ const Player = forwardRef(function Player(props, ref) {
     if (resolvedMaxResolution != null && cloned.maxResolution == null) {
       cloned.maxResolution = resolvedMaxResolution;
     }
+
+    // Resolve upscaleEffects from item, play, or queue level
+    const resolvedUpscaleEffects =
+      cloned.upscaleEffects
+      ?? rootPlay?.upscaleEffects
+      ?? rootQueue?.upscaleEffects
+      ?? 'auto';
+    cloned.upscaleEffects = resolvedUpscaleEffects;
+
     return cloned;
   }, [activeSource, currentMediaGuid, play, queue, maxVideoBitrate, maxResolution]);
 
@@ -654,10 +663,12 @@ const Player = forwardRef(function Player(props, ref) {
 
   useEffect(() => () => clearRemountTimer(), [clearRemountTimer]);
 
+  const suppressOverlaysForBlackout = effectiveShader === 'blackout';
+
   const overlayElements = overlayProps ? (
     <>
-      <PlayerOverlayLoading {...overlayProps} />
-      <PlayerOverlayPaused {...overlayProps} />
+      <PlayerOverlayLoading {...overlayProps} suppressForBlackout={suppressOverlaysForBlackout} />
+      <PlayerOverlayPaused {...overlayProps} suppressForBlackout={suppressOverlaysForBlackout} />
       <PlayerOverlayStateDebug {...overlayProps} />
     </>
   ) : null;
@@ -713,6 +724,7 @@ const Player = forwardRef(function Player(props, ref) {
         togglePauseOverlay={() => {}}
         plexId={plexId}
         debugContext={{ scope: 'idle' }}
+        suppressForBlackout={suppressOverlaysForBlackout}
       />
       <PlayerOverlayPaused
         shouldRender
@@ -722,6 +734,7 @@ const Player = forwardRef(function Player(props, ref) {
         stalled={false}
         waitingToPlay
         togglePauseOverlay={() => {}}
+        suppressForBlackout={suppressOverlaysForBlackout}
       />
     </div>
   );

@@ -318,13 +318,13 @@ export class FitnessTreasureBox {
       
       if (!acc.currentIntervalStart) { acc.currentIntervalStart = now; continue; }
       const elapsed = now - acc.currentIntervalStart;
-      this._log('interval_check', { accKey, elapsed, coinTimeUnitMs: this.coinTimeUnitMs, hasHighestZone: !!acc.highestZone });
+      this._log('interval_check', { accKey, elapsed, coinTimeUnitMs: this.coinTimeUnitMs, hasHighestZone: !!acc.highestZone }, 'debug');
       if (elapsed >= this.coinTimeUnitMs) {
         if (acc.highestZone) {
           this._log('awarding_coins', { accKey, zone: { id: acc.highestZone.id, name: acc.highestZone.name, coins: acc.highestZone.coins } });
           this._awardCoins(accKey, acc.highestZone);
         } else {
-          this._log('no_highest_zone', { accKey });
+          this._log('no_highest_zone', { accKey }, 'debug');
         }
         acc.currentIntervalStart = now;
         acc.highestZone = null;
@@ -543,7 +543,7 @@ export class FitnessTreasureBox {
     
     // Debug: Log the entity mapping state
     if (!entityId && options.fallbackUserId) {
-      getLogger().warn('fitness.treasure.no_entity_mapped', {
+      getLogger().debug('fitness.treasure.no_entity_mapped', {
         deviceId: key,
         fallbackUserId: options.fallbackUserId,
         mapSize: this._deviceEntityMap.size,

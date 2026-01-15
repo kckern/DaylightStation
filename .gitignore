@@ -36,3 +36,4 @@ tests/runtime/
 /_extensions/fitness/config
 /test-results
 .claude/ralph-loop.local.md
+/logs

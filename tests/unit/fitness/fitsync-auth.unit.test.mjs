@@ -14,9 +14,8 @@ const mockLogger = { info: jest.fn(), debug: jest.fn(), warn: jest.fn(), error: 
 const mockAxiosPost = jest.fn();
 
 const mockModules = () => {
-  jest.unstable_mockModule('../../../backend/_legacy/lib/config/index.mjs', () => ({ configService: mockConfigService }));
-  jest.unstable_mockModule('../../../backend/_legacy/lib/config/UserDataService.mjs', () => ({ userDataService: {} }));
-  jest.unstable_mockModule('../../../backend/_legacy/lib/io.mjs', () => ({
+  jest.unstable_mockModule('../../../backend/lib/config/index.mjs', () => ({ configService: mockConfigService }));
+  jest.unstable_mockModule('../../../backend/lib/io.mjs', () => ({
     userSaveAuth: mockUserSaveAuth,
     userLoadFile: jest.fn(),
     userSaveFile: jest.fn(),

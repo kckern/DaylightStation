@@ -3,6 +3,7 @@ import { useMenuNavigationContext } from '../../context/MenuNavigationContext';
 import { TVMenu } from './Menu';
 import { PlayerOverlayLoading } from '../Player/Player';
 import { PlexMenuRouter } from './PlexMenuRouter';
+import { getLogger } from '../../lib/logging/Logger.js';
 
 // Lazy load components that may be rendered from the stack
 const Player = lazy(() => import('../Player/Player').then(m => ({ default: m.default || m.Player })));
@@ -57,6 +58,22 @@ export function MenuStack({ rootMenu }) {
     if (selection.list || selection.menu) {
       push({ type: 'menu', props: selection });
     } else if (selection.play || selection.queue) {
+      // Log playback intent - user initiated playback from menu
+      const logger = getLogger();
+      const media = selection.play || selection.queue?.[0] || selection;
+      logger.info('playback.intent', {
+        title: media.title || media.name || media.label,
+        artist: media.artist,
+        album: media.album,
+        show: media.show,
+        season: media.season,
+        mediaKey: media.media_key || media.key || media.plex || media.id,
+        mediaType: media.type || media.media_type,
+        isQueue: !!selection.queue,
+        queueLength: selection.queue?.length || 1,
+        source: 'menu-selection',
+        intentTs: Date.now()
+      });
       push({ type: 'player', props: selection });
     } else if (selection.open) {
       push({ type: 'app', props: selection });

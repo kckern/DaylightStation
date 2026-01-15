@@ -40,11 +40,12 @@ export default function useZoomState({
 }) {
   // Core state
   const [zoomRange, setZoomRange] = useState(null);
-  
+
   // Refs for state that shouldn't trigger re-renders
   const zoomStackRef = useRef([]);
   const unzoomedPositionsRef = useRef([]);
   const lastViewSnapshotRef = useRef(null);
+  const pendingResetRef = useRef(null);
 
   /**
    * Compute the effective visible range
@@ -160,6 +161,17 @@ export default function useZoomState({
   }, [isZoomed, onZoomChange]);
 
   /**
+   * Cancel any pending zoom reset
+   */
+  const cancelZoomReset = useCallback(() => {
+    if (pendingResetRef.current) {
+      clearTimeout(pendingResetRef.current);
+      pendingResetRef.current = null;
+      logger.info('zoom-reset-cancelled');
+    }
+  }, []);
+
+  /**
    * Get the current zoom stack snapshot (for navigation)
    */
   const getActiveSnapshot = useCallback(() => {
@@ -231,18 +243,21 @@ export default function useZoomState({
   const zoomIn = useCallback((bounds) => {
     if (disabled) return;
     if (!Array.isArray(bounds) || bounds.length !== 2) return;
-    
+
     const [start, end] = bounds;
     if (!Number.isFinite(start) || !Number.isFinite(end)) return;
-    
+
     // Check for duplicate
-    if (zoomRange && 
-        Math.abs((zoomRange[0] ?? 0) - start) < 0.0001 && 
+    if (zoomRange &&
+        Math.abs((zoomRange[0] ?? 0) - start) < 0.0001 &&
         Math.abs((zoomRange[1] ?? 0) - end) < 0.0001) {
       logger.info('zoom-request-duplicate', { bounds, currentZoom: zoomRange });
       return;
     }
-    
+
+    // Cancel any pending zoom reset - user is actively navigating
+    cancelZoomReset();
+
     logger.info('zoom-in', { bounds, currentZoom: zoomRange, currentRange: [rangeStart, rangeEnd] });
     
     // Push current view to stack
@@ -258,7 +273,7 @@ export default function useZoomState({
     }
     
     setZoomRange(bounds);
-  }, [disabled, zoomRange, rangeStart, rangeEnd]);
+  }, [disabled, zoomRange, rangeStart, rangeEnd, cancelZoomReset]);
 
   /**
    * Zoom OUT completely (back to full timeline)
@@ -270,41 +285,63 @@ export default function useZoomState({
   }, [zoomRange]);
 
   /**
+   * Schedule a zoom reset after a delay (e.g., after seek completes)
+   * @param {number} delayMs - Delay before resetting (default 800ms)
+   */
+  const scheduleZoomReset = useCallback((delayMs = 800) => {
+    if (!zoomRange) return; // Already at base level
+    cancelZoomReset();
+    logger.info('zoom-reset-scheduled', { delayMs, currentZoom: zoomRange });
+    pendingResetRef.current = setTimeout(() => {
+      logger.info('zoom-reset-executing');
+      zoomStackRef.current = [];
+      setZoomRange(null);
+      pendingResetRef.current = null;
+    }, delayMs);
+  }, [zoomRange, cancelZoomReset]);
+
+  /**
    * Step backward in zoom view (shift left)
    */
   const stepBackward = useCallback(() => {
     if (disabled || !isZoomed) return;
-    
+
+    // Cancel any pending zoom reset - user is actively navigating
+    cancelZoomReset();
+
     const idx = resolveCurrentIndex();
-    logger.info('zoom-step-backward', { 
-      currentIndex: idx, 
+    logger.info('zoom-step-backward', {
+      currentIndex: idx,
       stackSize: zoomStackRef.current.length,
-      currentZoom: zoomRange 
+      currentZoom: zoomRange
     });
-    
+
     if (idx <= 0) return;
     setZoomToIndex(idx - 1);
-  }, [disabled, isZoomed, resolveCurrentIndex, setZoomToIndex, zoomRange]);
+  }, [disabled, isZoomed, resolveCurrentIndex, setZoomToIndex, zoomRange, cancelZoomReset]);
 
   /**
    * Step forward in zoom view (shift right)
    */
   const stepForward = useCallback(() => {
     if (disabled || !isZoomed) return;
-    
+
+    // Cancel any pending zoom reset - user is actively navigating
+    cancelZoomReset();
+
     const snapshot = getActiveSnapshot();
     const positions = snapshot?.positions || [];
     const idx = resolveCurrentIndex();
-    
+
     logger.info('zoom-step-forward', {
       currentIndex: idx,
       maxIndex: positions.length - 1,
       currentZoom: zoomRange
     });
-    
+
     if (idx < 0 || idx >= positions.length - 1) return;
     setZoomToIndex(idx + 1);
-  }, [disabled, isZoomed, getActiveSnapshot, resolveCurrentIndex, setZoomToIndex, zoomRange]);
+  }, [disabled, isZoomed, getActiveSnapshot, resolveCurrentIndex, setZoomToIndex, zoomRange, cancelZoomReset]);
 
   /**
    * Compute navigation capabilities
@@ -373,5 +410,9 @@ export default function useZoomState({
     zoomOut,          // Zoom out to full timeline
     stepBackward,     // Pan zoom window left
     stepForward,      // Pan zoom window right
+
+    // Auto-reset after seek
+    scheduleZoomReset,  // Schedule zoom reset after delay
+    cancelZoomReset,    // Cancel pending zoom reset
   };
 }

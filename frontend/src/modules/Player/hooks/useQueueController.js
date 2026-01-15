@@ -9,8 +9,17 @@ import { playbackLog } from '../lib/playbackLogger.js';
  * Handles queue initialization, advancement, and shader management
  */
 export function useQueueController({ play, queue, clear }) {
-  const classes = ['regular', 'minimal', 'night', 'screensaver', 'dark'];
-  const [shader, setShader] = useState(play?.shader || queue?.shader || classes[0]);
+  const classes = ['default', 'focused', 'night', 'blackout'];
+  // Legacy aliases: multiple old names can map to the same canonical shader
+  const shaderAliases = {
+    dark: 'blackout',
+    minimal: 'focused',
+    regular: 'default',
+    screensaver: 'focused' // screensaver removed, map to focused
+  };
+  const rawShader = play?.shader || queue?.shader || 'default';
+  const resolvedShader = shaderAliases[rawShader] ?? rawShader;
+  const [shader, setShader] = useState(classes.includes(resolvedShader) ? resolvedShader : 'default');
   const [volume] = useState(play?.volume || queue?.volume || 1);
   const [isContinuous] = useState(!!queue?.continuous || !!play?.continuous || false);
   const [playQueue, setQueue] = useState([]);

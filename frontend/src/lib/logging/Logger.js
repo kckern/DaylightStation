@@ -1,9 +1,11 @@
 /**
  * Logger - Frontend logging module
  * 
- * Single entry point for all frontend logging. Batches events and sends
- * via WebSocket to backend, which normalizes and forwards to Loggly.
+ * Single entry point for all frontend logging. Uses shared WebSocket transport
+ * from sharedTransport.js to prevent duplicate connections.
  */
+
+import { getSharedWsTransport } from './sharedTransport.js';
 
 const LEVELS = ['debug', 'info', 'warn', 'error'];
 const LEVEL_PRIORITY = LEVELS.reduce((acc, level, idx) => ({ ...acc, [level]: idx }), {});
@@ -13,11 +15,6 @@ const DEFAULT_OPTIONS = Object.freeze({
   level: 'info',
   context: {},
   topic: 'logging',
-  maxQueue: 500,
-  batchSize: 20,
-  flushInterval: 1000,
-  reconnectBaseDelay: 800,
-  reconnectMaxDelay: 6000,
   consoleEnabled: true,
   websocketEnabled: true
 });
@@ -25,6 +22,7 @@ const DEFAULT_OPTIONS = Object.freeze({
 // Module-level state
 let singleton = null;
 let config = { ...DEFAULT_OPTIONS };
+let wsTransport = null;
 
 const formatArg = (arg) => {
   if (typeof arg === 'string') return arg;
@@ -54,124 +52,15 @@ const isLevelEnabled = (targetLevel) => {
   return tgt >= cur;
 };
 
-// WebSocket transport state
-const wsState = {
-  socket: null,
-  connecting: false,
-  queue: [],
-  reconnectDelay: DEFAULT_OPTIONS.reconnectBaseDelay,
-  reconnectTimer: null,
-  flushTimer: null
-};
-
-const resolveWebSocketUrl = () => {
-  if (config.websocketUrl) return config.websocketUrl;
-  if (typeof window === 'undefined' || !window.location?.origin) return null;
-  return window.location.origin.replace(/^http/, 'ws') + '/ws';
-};
-
-const sendBatch = (batch) => {
-  if (!wsState.socket || wsState.socket.readyState !== WebSocket.OPEN || !batch.length) return;
-  try {
-    // Send batch to backend ingestion service
-    wsState.socket.send(JSON.stringify({ 
-      topic: config.topic, 
-      events: batch 
-    }));
-  } catch (err) {
-    devOutput('warn', 'WebSocket batch send failed', err);
+const ensureTransport = () => {
+  if (!config.websocketEnabled) return null;
+  if (!wsTransport) {
+    wsTransport = getSharedWsTransport({
+      topic: config.topic,
+      url: config.websocketUrl
+    });
   }
-};
-
-const flush = () => {
-  if (!wsState.socket || wsState.socket.readyState !== WebSocket.OPEN) return;
-  if (!wsState.queue.length) return;
-  
-  const batch = wsState.queue.splice(0, config.batchSize);
-  sendBatch(batch);
-  
-  // Keep flushing if more in queue
-  if (wsState.queue.length) {
-    flush();
-  }
-};
-
-const scheduleFlush = () => {
-  if (wsState.flushTimer) return;
-  wsState.flushTimer = setTimeout(() => {
-    wsState.flushTimer = null;
-    flush();
-  }, config.flushInterval);
-};
-
-const scheduleReconnect = () => {
-  if (wsState.reconnectTimer) return;
-  const delay = Math.min(wsState.reconnectDelay, config.reconnectMaxDelay);
-  wsState.reconnectTimer = setTimeout(() => {
-    wsState.reconnectTimer = null;
-    wsState.reconnectDelay = Math.min(delay * 2, config.reconnectMaxDelay);
-    ensureWebSocket();
-  }, delay);
-};
-
-const ensureWebSocket = () => {
-  if (!config.websocketEnabled) return;
-  if (typeof window === 'undefined' || typeof WebSocket === 'undefined') return;
-  if (wsState.connecting) return;
-  if (wsState.socket?.readyState === WebSocket.OPEN) {
-    flush();
-    return;
-  }
-  if (wsState.socket?.readyState === WebSocket.CONNECTING) return;
-
-  const url = resolveWebSocketUrl();
-  if (!url) return;
-
-  wsState.connecting = true;
-  try {
-    wsState.socket = new WebSocket(url);
-    
-    wsState.socket.onopen = () => {
-      wsState.connecting = false;
-      wsState.reconnectDelay = config.reconnectBaseDelay;
-      devOutput('debug', 'WebSocket connected');
-      flush();
-    };
-    
-    wsState.socket.onclose = () => {
-      wsState.connecting = false;
-      wsState.socket = null;
-      scheduleReconnect();
-    };
-    
-    wsState.socket.onerror = () => {
-      wsState.connecting = false;
-      wsState.socket = null;
-      scheduleReconnect();
-    };
-  } catch (err) {
-    wsState.connecting = false;
-    wsState.socket = null;
-    devOutput('warn', 'Failed to open WebSocket', err);
-    scheduleReconnect();
-  }
-};
-
-const enqueue = (event) => {
-  if (config.maxQueue > 0) {
-    if (wsState.queue.length >= config.maxQueue) {
-      wsState.queue.shift(); // Drop oldest
-    }
-    wsState.queue.push(event);
-  }
-  
-  ensureWebSocket();
-  
-  if (wsState.queue.length >= config.batchSize) {
-    flush();
-  } else {
-    scheduleFlush();
-  }
+  return wsTransport;
 };
 
 /**
@@ -197,9 +86,12 @@ const emit = (level, eventName, data = {}, options = {}) => {
     devOutput(level, `${event.event}${dataStr ? ' ' + dataStr : ''}`);
   }
 
-  // WebSocket transport (batched)
+  // WebSocket transport (uses shared transport)
   if (config.websocketEnabled) {
-    enqueue(event);
+    const transport = ensureTransport();
+    if (transport) {
+      transport.send(event);
+    }
   }
 };
 
@@ -228,12 +120,9 @@ export const configure = (options = {}) => {
     context: { ...config.context, ...(options.context || {}) }
   };
   
-  // Reset WebSocket if URL changed
-  if (options.websocketUrl !== undefined) {
-    if (wsState.socket) {
-      wsState.socket.close();
-      wsState.socket = null;
-    }
+  // Reset transport if URL or topic changed
+  if (options.websocketUrl !== undefined || options.topic !== undefined) {
+    wsTransport = null;
   }
   
   return getLogger();
@@ -264,12 +153,24 @@ export const getConfig = () => ({ ...config });
 
 /**
  * Get WebSocket state (for debugging/health checks)
+ * Note: Now delegates to shared transport
  */
-export const getStatus = () => ({
-  connected: wsState.socket?.readyState === WebSocket.OPEN,
-  queueLength: wsState.queue.length,
-  reconnecting: !!wsState.reconnectTimer
-});
+export const getStatus = () => {
+  const transport = wsTransport;
+  if (!transport) {
+    return {
+      connected: false,
+      queueLength: 0,
+      reconnecting: false
+    };
+  }
+  // Transport doesn't expose internal state, so return basic info
+  return {
+    connected: true, // If transport exists, assume it's managing connection
+    queueLength: 0, // Queue is internal to transport
+    reconnecting: false
+  };
+};
 
 // Compatibility exports
 export default getLogger;

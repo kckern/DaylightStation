@@ -2,7 +2,22 @@
 
 **Severity:** High
 **Area:** Playback
-**Status:** Open
+**Status:** Resolved
+**Resolution Date:** 2026-01-14
+
+## Resolution
+
+Created `useVolumeSync` hook that listens for:
+1. `canplay` media event - ensures volume applied when media becomes ready
+2. Resilience status transition (`recovering` -> `playing`) - re-applies after stall recovery
+3. Component remount - resets tracking and re-applies when media ready
+
+**Files Changed:**
+- Created: `frontend/src/modules/Fitness/hooks/useVolumeSync.js`
+- Modified: `frontend/src/modules/Fitness/FitnessPlayer.jsx`
+- Modified: `frontend/src/modules/Fitness/useFitnessVolumeControls.js`
+
+---
 
 ## Summary
 
