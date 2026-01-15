@@ -245,7 +245,8 @@ const VoiceMemoOverlay = ({
     error: recorderError,
     setError: setRecorderError,
     startRecording,
-    stopRecording
+    stopRecording,
+    cancelUpload
   } = useVoiceMemoRecorder({
     sessionId,
     playerRef,
