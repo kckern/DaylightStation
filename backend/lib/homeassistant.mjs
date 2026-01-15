@@ -67,7 +67,7 @@ export const activateScene = async (sceneName) => {
     const data = { entity_id: entityId };
     
     try {
-        haLogger.debug('homeassistant.scene.activating', { entityId });
+        haLogger.sampled('homeassistant.scene.activating', { entityId }, { maxPerMinute: 30 });
         const result = await HomeAPI('services/scene/turn_on', data);
         
         if (result) {
