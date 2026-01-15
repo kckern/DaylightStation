@@ -141,6 +141,50 @@ export function VideoPlayer({
       el.removeEventListener('playing', handleReady);
     };
   }, [isDash, media_url, elementKey]);
+
+  // FPS logging every 10 seconds during playback
+  useEffect(() => {
+    // Only log if video is playing (not paused, not stalled, has started)
+    if (isPaused || isStalled || seconds === 0 || !displayReady || !quality?.supported) {
+      return;
+    }
+
+    const intervalId = setInterval(() => {
+      const logger = getLogger();
+      const mediaEl = (containerRef.current?.shadowRoot?.querySelector('video')) || containerRef.current;
+      
+      // Calculate instantaneous FPS if available
+      let estimatedFps = null;
+      if (mediaEl && typeof mediaEl.requestVideoFrameCallback === 'function') {
+        // Modern browsers support this for precise frame timing
+        estimatedFps = 'supported';
+      } else if (quality.totalVideoFrames > 0 && duration > 0) {
+        // Fallback: estimate from total frames / duration
+        estimatedFps = Math.round((quality.totalVideoFrames / duration) * 100) / 100;
+      }
+
+      logger.info('playback.fps_stats', {
+        title: media?.title,
+        show: media?.show,
+        season: media?.season,
+        mediaKey: media?.media_key || media?.key || media?.plex,
+        currentTime: Math.round(seconds * 10) / 10,
+        duration: Math.round(duration * 10) / 10,
+        droppedFrames: quality.droppedVideoFrames,
+        totalFrames: quality.totalVideoFrames,
+        droppedPct: quality.droppedPct?.toFixed(2),
+        avgDroppedPct: droppedFramePct ? (droppedFramePct * 100).toFixed(2) : null,
+        bitrateCapKbps: currentMaxKbps,
+        estimatedFps,
+        playbackRate: media.playbackRate || 1,
+        isDash,
+        shader
+      });
+    }, 10000); // 10 seconds
+
+    return () => clearInterval(intervalId);
+  }, [isPaused, isStalled, seconds, displayReady, quality, droppedFramePct, currentMaxKbps, duration, media, isDash, shader, containerRef]);
+
   const percent = duration ? ((seconds / duration) * 100).toFixed(1) : 0;
   const plexIdValue = media?.media_key || media?.key || media?.plex || null;
   
