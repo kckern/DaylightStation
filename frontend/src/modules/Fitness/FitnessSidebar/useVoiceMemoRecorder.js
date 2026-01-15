@@ -165,6 +165,8 @@ const useVoiceMemoRecorder = ({
   const wasPlayingBeforeRecordingRef = useRef(false);
   const durationIntervalRef = useRef(null);
   const lastStateRef = useRef(null);
+  const abortControllerRef = useRef(null);
+  const cancelledRef = useRef(false);
 
   const [isRecording, setIsRecording] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
