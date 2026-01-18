@@ -2126,6 +2126,11 @@ You now have three options for a logging auditor agent:
 
 The backend scheduler runs individual jobs defined in `data/system/jobs.yml`. Runtime state is stored in `data/system/state/cron-runtime.yml` with per-job keys (`last_run`, `nextRun`, `status`, `duration_ms`).
 
+**API Endpoints:**
+- `GET /cron/status` - View all jobs and their schedules
+- `POST /cron/run/:jobId` - Manually trigger a job
+- Note: Cron routes are mounted at `/cron` (port 3111), not `/api/cron`
+
 ### Legacy State Migration
 
 If a legacy bucket-based state file is detected (keys like `cron10Mins`, `cronHourly`, `cronDaily`, `cronWeekly`), the scheduler:
