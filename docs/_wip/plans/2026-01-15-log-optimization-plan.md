@@ -931,3 +931,266 @@ After implementation, verify:
 | `tests/unit/fitness/governance-phase-logging.unit.test.mjs` | Phase change logging |
 | `tests/unit/fitness/tick-timer-logging.unit.test.mjs` | Timer logging filters |
 | `tests/unit/logging/homeassistant-logging.unit.test.mjs` | HA logging sampling |
+
+---
+
+## Addendum: Additional Issues from Production Log Analysis (2026-01-17)
+
+> **Source:** Analysis of `logs/prod-logs-20260117-175301.txt` (24,433 lines, ~10 MB, 30-minute window)
+
+The following issues were discovered during production log analysis and are **not addressed** by the original optimization plan. These are primarily **operational bugs** rather than log volume issues.
+
+---
+
+### Issue A1: Archive Config Path Typo
+
+**Severity:** Medium  
+**Log Entry:**
+```
+archive.config.notFound: /Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStationconfig/archive.yml
+```
+
+**Problem:** Missing `/` between `DaylightStation` and `config` in path construction.
+
+**Impact:** Archive rotation may not be functioning, leading to unbounded data growth.
+
+**Fix Location:** `backend/lib/ArchiveService.mjs` or config path resolution logic
+
+**Fix:**
+```javascript
+// Before (incorrect)
+const configPath = `${baseDir}config/archive.yml`;
+
+// After (correct)
+const configPath = `${baseDir}/config/archive.yml`;
+```
+
+---
+
+### Issue A2: Memory Growth in Fitness Profile Component
+
+**Severity:** High  
+**Status:** ✅ PARTIALLY FIXED (2026-01-17)
+
+**Log Entries:**
+```
+fitness-profile-memory-warning: {"growthMB":41.5,"elapsed":150}
+fitness-profile-memory-warning: {"growthMB":45.3,"elapsed":180}
+```
+
+**Problem:** ~45 MB memory growth in 3 minutes during fitness session.
+
+**Root Cause Analysis:**
+Production profile data showed 672 series points but ~73MB heap growth - disproportionate to data size.
+Investigation found `snapshot.participantSeries` (Map) was not being pruned, unlike `timeline.series` which has `MAX_SERIES_LENGTH = 2000`.
+
+**Fix Applied (2026-01-17):**
+- Added pruning to `snapshot.participantSeries` in [FitnessSession.js#L1454-1461](frontend/src/hooks/fitness/FitnessSession.js#L1454-L1461)
+- Added `snapshotSeriesPoints` and `maxSnapshotSeriesLength` to memory profiling stats
+- Added warning for snapshot series growth > 2500
+
+**Remaining Investigation:**
+The memory growth may still exceed expectations due to React closure accumulation from 115+ hooks in FitnessContext.
+If memory warnings persist after this fix:
+1. Profile `FitnessContext.jsx` for closure leaks
+2. Consider throttling `forceUpdate()` calls from governance/treasureBox
+3. Add React DevTools profiling to identify excessive re-renders
+
+**Impact:** Partial fix - will require monitoring in next production deployment
+
+---
+
+### Issue A3: Playback Transport Capability Missing
+
+**Severity:** Low-Medium  
+**Log Entries (7 occurrences):**
+```
+playback.transport-capability-missing: {"capability":"getMediaEl"}
+```
+
+**Problem:** Media player initialization race condition - `getMediaEl` called before element is mounted.
+
+**Impact:** Possible playback issues; currently appears to self-recover.
+
+**Fix Location:** `frontend/src/hooks/playback/usePlaybackTransport.js` or similar
+
+**Suggested Fix:**
+```javascript
+// Add defensive check or wait for mount
+const getMediaEl = useCallback(() => {
+  if (!mediaRef.current) {
+    logger.debug('playback.transport-capability-deferred', { capability: 'getMediaEl' });
+    return null;
+  }
+  return mediaRef.current;
+}, []);
+```
+
+---
+
+### Issue A4: Fitness Chart Initialization Warnings
+
+**Severity:** Low  
+**Log Entries:**
+```
+[FitnessChart] Avatar mismatch
+[FitnessChart] Participant count mismatch
+fitness_chart.no_series_data: {"filterReason":"no_segments"}
+```
+
+**Problem:** Chart renders before data is available during session warmup.
+
+**Impact:** Visual flicker/mismatch during first 5-10 seconds of session.
+
+**Note:** These may be acceptable UX during warmup. Consider:
+1. Adding loading state during warmup phase
+2. Or suppressing warnings for first 10 seconds of session
+
+**Suggested Fix:** Add warmup grace period to chart rendering logic.
+
+---
+
+### Issue A5: Docker Entrypoint SSH Key Warnings
+
+**Severity:** Low  
+**Log Entries:**
+```
+chown: host_private_key: No such file or directory
+chmod: host_private_key: No such file or directory
+```
+
+**Problem:** `entrypoint.sh` attempts to set permissions on optional SSH key file.
+
+**Impact:** Cosmetic warning; SSH key functionality may not work if needed.
+
+**Fix Location:** `docker/entrypoint.sh`
+
+**Fix:**
+```bash
+# Before
+chown root:root host_private_key
+chmod 600 host_private_key
+
+# After
+if [ -f host_private_key ]; then
+  chown root:root host_private_key
+  chmod 600 host_private_key
+fi
+```
+
+---
+
+### Issue A6: Node.js Circular Dependency Warning
+
+**Severity:** Low  
+**Log Entry:**
+```
+(node:9) Warning: Accessing non-existent property 'padLevels' of module exports inside circular dependency
+```
+
+**Problem:** Circular import in logging or winston-related module.
+
+**Impact:** Currently harmless but may cause issues with future Node.js versions.
+
+**Investigation:** Run `node --trace-warnings backend/index.js` to identify source file.
+
+---
+
+## Priority Matrix for Addendum Issues
+
+| Issue | Severity | Effort | Priority | Status |
+|-------|----------|--------|----------|--------|
+| A2: Memory Growth | High | Medium | **P1** | ✅ Partial fix applied |
+| A1: Archive Config Path | Medium | Low | **P2** | 🔴 Open |
+| A3: Playback Capability | Low-Medium | Low | P3 | 🔴 Open |
+| A4: Chart Warmup | Low | Medium | P4 | 🔴 Open |
+| A5: SSH Key Warning | Low | Low | P4 | 🔴 Open |
+| A6: Circular Dependency | Low | Medium | P5 | 🔴 Open |
+
+---
+
+## Recommended Next Steps
+
+1. **Immediate:** Fix archive config path (A1) - 5 minute fix
+2. **This Sprint:** Investigate and fix memory leak (A2) - prevents production crashes
+3. **Backlog:** Add to technical debt tracker: A3, A4, A5, A6
+
+---
+
+## Appendix: Memory Leak Logging Audit (2026-01-17)
+
+### Current Coverage Assessment
+
+The `fitness-profile` event (logged every 30s) now tracks:
+
+| Metric | Source | Threshold Warning |
+|--------|--------|-------------------|
+| `heapMB` / `heapGrowthMB` | performance.memory | >30 MB |
+| `sessionActive` | FitnessSession | orphan timer |
+| `tickTimerRunning` | FitnessSession | orphan timer |
+| `rosterSize` | FitnessSession | - |
+| `deviceCount` | DeviceManager | - |
+| `seriesCount` / `totalSeriesPoints` | Timeline | - |
+| `maxSeriesLength` | Timeline | >2500 |
+| `snapshotSeriesPoints` / `maxSnapshotSeriesLength` | snapshot.participantSeries | >2500 |
+| `treasureBoxCumulativeLen` / `treasureBoxPerColorPoints` | TreasureBox | >1500 |
+| `cumulativeBeatsSize` / `cumulativeRotationsSize` | FitnessSession | - |
+| `voiceMemoCount` | VoiceMemoManager | - |
+| `chartCacheSize` / `chartDropoutMarkers` | FitnessChartApp | - |
+| `forceUpdateCount` / `renderCount` | FitnessContext | >100 in 30s |
+
+### Warnings Automatically Triggered
+
+| Event | Condition | Detects |
+|-------|-----------|---------|
+| `fitness-profile-memory-warning` | heapGrowthMB > 30 | General heap leak |
+| `fitness-profile-timer-warning` | timerGrowth > 5 | Timer leak |
+| `fitness-profile-series-warning` | maxSeriesLength > 2500 | Timeline pruning failure |
+| `fitness-profile-snapshot-series-warning` | maxSnapshotSeriesLength > 2500 | Snapshot pruning failure |
+| `fitness-profile-treasurebox-warning` | cumulativeLen > 1500 | TreasureBox pruning failure |
+| `fitness-profile-orphan-timer` | tickTimerRunning && !sessionActive | Orphaned tick timer |
+| `fitness-profile-excessive-renders` | forceUpdateCount > 100 | React closure accumulation |
+
+### Adequacy Assessment: ✅ ADEQUATE (with caveats)
+
+The logging is now adequate to:
+
+1. **Detect unbounded data growth** in all major data structures:
+   - Timeline series ✅
+   - Snapshot participantSeries ✅
+   - TreasureBox timelines ✅
+   - Event log (capped at 500) ✅
+
+2. **Detect timer/interval leaks** via:
+   - timerGrowth counter ✅
+   - orphan timer detection ✅
+
+3. **Detect React closure accumulation** via:
+   - forceUpdateCount ✅
+   - renderCount ✅
+   - Excessive render warning ✅
+
+4. **Correlate heap growth with data** via:
+   - Side-by-side heap + data structure metrics ✅
+   - 30-second sampling interval ✅
+
+### Remaining Gaps (Low Risk)
+
+| Gap | Risk | Mitigation |
+|-----|------|------------|
+| MutationObserver tracking | Low | Only in kiosk mode, cleanup is logged |
+| Event listener count | Low | Fixed count (~5), cleanup logged |
+| WebSocket connection state | Low | Backend logs connection counts |
+| Individual Map/Set sizes (82 total) | Medium | Top-level sizes tracked, specific breakdowns not needed unless issue identified |
+
+### Recommendation
+
+The current logging is **sufficient to identify the source of memory leaks** in production. When a `fitness-profile-memory-warning` fires, correlate with:
+
+1. Check which data structure metrics are growing
+2. If `forceUpdateCount` is high → React closure issue
+3. If `maxSeriesLength` or `maxSnapshotSeriesLength` high → pruning failure
+4. If `treasureBoxCumulativeLen` high → TreasureBox leak
+5. If `timerGrowth` > 0 → timer leak
+
+If heap grows but all tracked metrics are stable, escalate to Chrome DevTools heap snapshot for deeper investigation.

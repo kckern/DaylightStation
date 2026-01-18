@@ -1453,6 +1453,15 @@ export class FitnessSession {
 
         ensureSeriesCapacity(series, intervalIndex);
         series[intervalIndex] = hrValue > 0 ? hrValue : null;
+        
+        // MEMORY LEAK FIX: Prune old data from participantSeries to prevent unbounded growth
+        // Keep at most 2000 points (~2.7 hours at 5-second intervals)
+        const MAX_SNAPSHOT_SERIES_LENGTH = 2000;
+        if (series.length > MAX_SNAPSHOT_SERIES_LENGTH) {
+          const removeCount = series.length - MAX_SNAPSHOT_SERIES_LENGTH;
+          series.splice(0, removeCount);
+        }
+        
         this.snapshot.participantSeries.set(userId, series);
       });
 
@@ -2154,6 +2163,21 @@ export class FitnessSession {
       return Math.max(max, Array.isArray(arr) ? arr.length : 0);
     }, 0);
 
+    // Snapshot series stats (separate from timeline - used for legacy compatibility)
+    let snapshotSeriesPoints = 0;
+    let maxSnapshotSeriesLength = 0;
+    if (this.snapshot?.participantSeries instanceof Map) {
+      for (const arr of this.snapshot.participantSeries.values()) {
+        if (Array.isArray(arr)) {
+          snapshotSeriesPoints += arr.length;
+          maxSnapshotSeriesLength = Math.max(maxSnapshotSeriesLength, arr.length);
+        }
+      }
+    }
+
+    // TreasureBox stats (if available)
+    const treasureBoxStats = this.treasureBox?.getMemoryStats?.() || {};
+
     return {
       // Session state
       sessionActive: !!this.sessionId,
@@ -2171,6 +2195,10 @@ export class FitnessSession {
       maxSeriesLength,
       timelineTicks: this.timeline?.timebase?.tickCount || 0,
 
+      // Snapshot series stats (memory leak indicator)
+      snapshotSeriesPoints,
+      maxSnapshotSeriesLength,
+
       // Cumulative trackers
       cumulativeBeatsSize: this._cumulativeBeats?.size || 0,
       cumulativeRotationsSize: this._cumulativeRotations?.size || 0,
@@ -2178,8 +2206,13 @@ export class FitnessSession {
       // Entity tracking
       entityCount: this.entityRegistry?.getAll?.()?.length || 0,
 
-      // TreasureBox
+      // TreasureBox (detailed stats)
       treasureBoxUsers: this.treasureBox?.perUser?.size || 0,
+      treasureBoxCumulativeLen: treasureBoxStats.cumulativeTimelineLength || 0,
+      treasureBoxPerColorPoints: treasureBoxStats.perColorTotalPoints || 0,
+      
+      // VoiceMemo
+      voiceMemoCount: this.voiceMemoManager?.getMemos?.()?.length || 0,
 
       // Heap (if available - Chrome only)
       heapUsedMB: typeof performance !== 'undefined' && performance.memory

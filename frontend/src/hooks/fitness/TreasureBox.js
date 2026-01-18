@@ -770,4 +770,42 @@ export class FitnessTreasureBox {
     });
     return snapshot;
   }
+
+  /**
+   * Get memory statistics for leak detection profiling.
+   * Called by FitnessApp 30-second profiler via window.__fitnessSession.
+   *
+   * @returns {Object} Memory stats for all TreasureBox data structures
+   */
+  getMemoryStats() {
+    // Calculate total points in perColor timelines
+    let perColorTotalPoints = 0;
+    let maxColorSeriesLength = 0;
+    this._timeline.perColor.forEach((series) => {
+      if (Array.isArray(series)) {
+        perColorTotalPoints += series.length;
+        maxColorSeriesLength = Math.max(maxColorSeriesLength, series.length);
+      }
+    });
+
+    return {
+      // User accumulators
+      perUserCount: this.perUser.size,
+      
+      // Timeline data
+      cumulativeTimelineLength: this._timeline.cumulative.length,
+      perColorCount: this._timeline.perColor.size,
+      perColorTotalPoints,
+      maxColorSeriesLength,
+      timelineLastIndex: this._timeline.lastIndex,
+      
+      // Entity mapping
+      deviceEntityMapSize: this._deviceEntityMap.size,
+      
+      // Configuration (should be stable)
+      userOverridesCount: this.usersConfigOverrides.size,
+      globalZonesCount: this.globalZones.length,
+      bucketCount: Object.keys(this.buckets).length
+    };
+  }
 }

@@ -145,42 +145,6 @@ const VoiceMemoOverlay = ({
   const overlayRef = React.useRef(null);
   const panelRef = React.useRef(null);
 
-  const handleClose = useCallback(() => {
-    const wasRecording = isRecording;
-    const wasProcessing = isProcessing || recorderState === 'processing';
-
-    logVoiceMemo('overlay-close-request', {
-      mode: overlayState?.mode,
-      memoId: overlayState?.memoId,
-      wasRecording,
-      wasProcessing,
-      recorderState,
-      reason: 'user_cancel'
-    });
-
-    // Cancel any in-flight upload first
-    if (wasProcessing) {
-      cancelUpload?.();
-    }
-
-    // Stop recording if active (this will NOT trigger handleRecordingStop
-    // because cancelledRef is now set)
-    if (wasRecording) {
-      stopRecording();
-    }
-
-    // Force reset recorder state to idle
-    setRecorderState('idle');
-
-    // If closing during review mode, discard the pending memo
-    if (overlayState?.mode === 'review' && overlayState?.memoId) {
-      logVoiceMemo('overlay-close-discard', { memoId: overlayState.memoId });
-      onRemoveMemo?.(overlayState.memoId);
-    }
-
-    onClose?.();
-  }, [cancelUpload, isProcessing, isRecording, logVoiceMemo, onClose, onRemoveMemo, overlayState?.mode, overlayState?.memoId, recorderState, stopRecording]);
-
   const handleAccept = useCallback(() => {
     logVoiceMemo('overlay-accept', { memoId: overlayState?.memoId || null });
     onClose?.();
@@ -304,6 +268,42 @@ const VoiceMemoOverlay = ({
   const recorderErrorMessage = typeof recorderError === 'string' ? recorderError : recorderError?.message;
   const recorderErrorRetryable = recorderError?.retryable !== false;
   const isRecorderErrored = recorderState === 'error' || Boolean(recorderError);
+
+  const handleClose = useCallback(() => {
+    const wasRecording = isRecording;
+    const wasProcessing = isProcessing || recorderState === 'processing';
+
+    logVoiceMemo('overlay-close-request', {
+      mode: overlayState?.mode,
+      memoId: overlayState?.memoId,
+      wasRecording,
+      wasProcessing,
+      recorderState,
+      reason: 'user_cancel'
+    });
+
+    // Cancel any in-flight upload first
+    if (wasProcessing) {
+      cancelUpload?.();
+    }
+
+    // Stop recording if active (this will NOT trigger handleRecordingStop
+    // because cancelledRef is now set)
+    if (wasRecording) {
+      stopRecording();
+    }
+
+    // Force reset recorder state to idle
+    setRecorderState('idle');
+
+    // If closing during review mode, discard the pending memo
+    if (overlayState?.mode === 'review' && overlayState?.memoId) {
+      logVoiceMemo('overlay-close-discard', { memoId: overlayState.memoId });
+      onRemoveMemo?.(overlayState.memoId);
+    }
+
+    onClose?.();
+  }, [cancelUpload, isProcessing, isRecording, logVoiceMemo, onClose, onRemoveMemo, overlayState?.mode, overlayState?.memoId, recorderState, setRecorderState, stopRecording]);
 
   const handleStartRedoRecording = useCallback(() => {
     setRecorderError(null);

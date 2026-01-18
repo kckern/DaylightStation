@@ -89,6 +89,9 @@ const FitnessApp = () => {
       // Get session-level stats (exposed via window for cross-component access)
       const sessionStats = window.__fitnessSession?.getMemoryStats?.() || {};
       const chartStats = window.__fitnessChartStats?.() || {};
+      
+      // React render frequency tracking (exposed by FitnessContext if available)
+      const renderStats = window.__fitnessRenderStats?.() || {};
 
       logger.info('fitness-profile', {
         sample: sampleCount,
@@ -107,9 +110,22 @@ const FitnessApp = () => {
         totalSeriesPoints: sessionStats.totalSeriesPoints,
         maxSeriesLength: sessionStats.maxSeriesLength,
         eventLogSize: sessionStats.eventLogSize,
+        // Snapshot series stats (memory leak indicator)
+        snapshotSeriesPoints: sessionStats.snapshotSeriesPoints,
+        maxSnapshotSeriesLength: sessionStats.maxSnapshotSeriesLength,
+        // TreasureBox stats (memory leak indicator)
+        treasureBoxCumulativeLen: sessionStats.treasureBoxCumulativeLen,
+        treasureBoxPerColorPoints: sessionStats.treasureBoxPerColorPoints,
+        voiceMemoCount: sessionStats.voiceMemoCount,
+        // Cumulative trackers
+        cumulativeBeatsSize: sessionStats.cumulativeBeatsSize,
+        cumulativeRotationsSize: sessionStats.cumulativeRotationsSize,
         // Chart stats (if exposed)
         chartCacheSize: chartStats.participantCacheSize,
-        chartDropoutMarkers: chartStats.dropoutMarkerCount
+        chartDropoutMarkers: chartStats.dropoutMarkerCount,
+        // React render stats (if exposed)
+        forceUpdateCount: renderStats.forceUpdateCount,
+        renderCount: renderStats.renderCount
       });
 
       // Warn if growth is concerning
@@ -126,11 +142,33 @@ const FitnessApp = () => {
           seriesCount: sessionStats.seriesCount
         });
       }
+      // Warn if snapshot series growing unexpectedly (indicates pruning not working)
+      if (sessionStats.maxSnapshotSeriesLength > 2500) {
+        logger.warn('fitness-profile-snapshot-series-warning', {
+          maxSnapshotSeriesLength: sessionStats.maxSnapshotSeriesLength,
+          snapshotSeriesPoints: sessionStats.snapshotSeriesPoints
+        });
+      }
+      // Warn if TreasureBox timeline growing unexpectedly
+      if (sessionStats.treasureBoxCumulativeLen > 1500) {
+        logger.warn('fitness-profile-treasurebox-warning', {
+          cumulativeLen: sessionStats.treasureBoxCumulativeLen,
+          perColorPoints: sessionStats.treasureBoxPerColorPoints
+        });
+      }
       // Warn if tick timer running without active session (potential leak)
       if (sessionStats.tickTimerRunning && !sessionStats.sessionActive) {
         logger.error('fitness-profile-orphan-timer', {
           tickTimerRunning: true,
           sessionActive: false,
+          elapsed
+        });
+      }
+      // Warn if forceUpdate rate is excessive (>100 in 30s = ~3/sec)
+      if (renderStats.forceUpdateCount > 100) {
+        logger.warn('fitness-profile-excessive-renders', {
+          forceUpdateCount: renderStats.forceUpdateCount,
+          renderCount: renderStats.renderCount,
           elapsed
         });
       }

@@ -220,9 +220,31 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const rosterCacheRef = useRef({ signature: null, value: emptyRosterRef.current });
   const [version, setVersion] = useState(0); // Trigger re-render
   const scheduledUpdateRef = useRef(false);
+  
+  // MEMORY LEAK TRACKING: Count forceUpdate calls and renders for profiling
+  const renderStatsRef = useRef({ forceUpdateCount: 0, renderCount: 0, lastResetTime: Date.now() });
 
   const forceUpdate = React.useCallback(() => {
+    renderStatsRef.current.forceUpdateCount++;
     setVersion((v) => v + 1);
+  }, []);
+  
+  // Track render count
+  renderStatsRef.current.renderCount++;
+  
+  // Expose render stats for profiling (auto-resets every 30s when read)
+  useEffect(() => {
+    window.__fitnessRenderStats = () => {
+      const stats = { ...renderStatsRef.current };
+      // Reset counters when read (30-second window)
+      renderStatsRef.current.forceUpdateCount = 0;
+      renderStatsRef.current.renderCount = 0;
+      renderStatsRef.current.lastResetTime = Date.now();
+      return stats;
+    };
+    return () => {
+      delete window.__fitnessRenderStats;
+    };
   }, []);
 
   // Logging helpers scoped after session ref so sessionId is available
