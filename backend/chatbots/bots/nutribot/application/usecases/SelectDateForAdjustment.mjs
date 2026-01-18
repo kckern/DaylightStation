@@ -109,14 +109,30 @@ export class SelectDateForAdjustment {
   }
 
   /**
-   * Get date string from days ago (local time)
+   * Get date string from days ago (in user's timezone)
    * @private
    */
   #getDateFromDaysAgo(daysAgo) {
-    const date = new Date();
-    date.setDate(date.getDate() - daysAgo);
-    // Use local date format YYYY-MM-DD
-    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    // Get user timezone (defaults to America/Los_Angeles)
+    let timezone = 'America/Los_Angeles';
+    try {
+      if (this.#config?.getDefaultTimezone) {
+        timezone = this.#config.getDefaultTimezone();
+      }
+    } catch (e) {
+      this.#logger.warn('adjustment.timezone.error', { error: e.message });
+    }
+
+    // Get today's date in the user's timezone
+    const now = new Date();
+    const todayInTz = now.toLocaleDateString('en-CA', { timeZone: timezone });
+    
+    // Calculate target date by subtracting days
+    const targetDate = new Date(todayInTz);
+    targetDate.setDate(targetDate.getDate() - daysAgo);
+    
+    // Format as YYYY-MM-DD
+    return targetDate.toISOString().split('T')[0];
   }
 
   /**
@@ -125,7 +141,21 @@ export class SelectDateForAdjustment {
    */
   #buildDateKeyboard() {
     const keyboard = [];
-    const today = new Date();
+    
+    // Get user timezone (defaults to America/Los_Angeles)
+    let timezone = 'America/Los_Angeles';
+    try {
+      if (this.#config?.getDefaultTimezone) {
+        timezone = this.#config.getDefaultTimezone();
+      }
+    } catch (e) {
+      // Use default
+    }
+
+    // Get today's date in the user's timezone
+    const now = new Date();
+    const todayInTz = now.toLocaleDateString('en-CA', { timeZone: timezone });
+    const today = new Date(todayInTz);
 
     keyboard.push([
       { text: '☀️ Today', callback_data: encodeCallback('dt', { d: 0 }) },
@@ -136,7 +166,7 @@ export class SelectDateForAdjustment {
     for (let i = 2; i <= 4; i++) {
       const date = new Date(today);
       date.setDate(date.getDate() - i);
-      const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
+      const dayName = date.toLocaleDateString('en-US', { weekday: 'short', timeZone: timezone });
       row2.push({ text: dayName, callback_data: encodeCallback('dt', { d: i }) });
     }
     keyboard.push(row2);
