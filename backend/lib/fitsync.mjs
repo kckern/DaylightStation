@@ -383,6 +383,7 @@ const harvestActivities = async (job_id) => {
                     startTime: activity.date ? moment(activity.date).tz(timezone).format('hh:mm a') : '',
                     endTime: activity.endDate ? moment(activity.endDate).tz(timezone).format('hh:mm a') : '',
                     avgHeartrate: parseFloat((activity.avgHeartrate || 0).toFixed(2)),
+                    steps: activity.steps || 0,
                 });
             }
             // Write after each activity (safe for small batches)
