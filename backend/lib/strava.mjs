@@ -208,7 +208,7 @@ export const getActivities = async (logger, daysBack = 90) => {
     let page = 1;
     const perPage = 100; // Adjust perPage as needed
     const startTime = moment().subtract(daysBack, 'days').startOf('day');
-    const before = moment().startOf('day').unix();
+    const before = moment().endOf('day').unix();
     const after = startTime.unix();
 
     while (true) {
