@@ -134,19 +134,22 @@ const getAccessToken = async (username, authData) => {
     const { clientId, clientSecret, redirectUri } = resolveSecrets();
     const refresh = authData?.refresh_token || authData?.refresh;
     // Allow seeded access token with expiry from auth file for immediate reuse
+    // IMPORTANT: Only use expires_at (absolute timestamp), not expires_in (relative seconds)
     if (!accessTokenCache.token && authData?.access_token) {
-        const expiresInSeed = authData?.expires_in ? Number(authData.expires_in) : null;
-        if (expiresInSeed && expiresInSeed > 60) {
-            const seededExpiry = moment().add(Math.max(60, expiresInSeed - tokenBufferSeconds), 'seconds');
+        const expiresAt = authData?.expires_at ? moment(authData.expires_at) : null;
+        if (expiresAt && expiresAt.isValid() && expiresAt.isAfter(now.clone().add(tokenBufferSeconds, 'seconds'))) {
             accessTokenCache.token = authData.access_token;
-            accessTokenCache.expiresAt = seededExpiry;
+            accessTokenCache.expiresAt = expiresAt;
             process.env.WITHINGS_ACCESS_TOKEN = authData.access_token;
-            process.env.WITHINGS_ACCESS_TOKEN_EXPIRES_AT = seededExpiry.toISOString();
-            withingsLogger.debug('withings.auth.seed_token_loaded', { expiresAt: seededExpiry.toISOString() });
-            if (accessTokenCache.expiresAt && now.isBefore(accessTokenCache.expiresAt)) {
-                return accessTokenCache.token;
-            }
+            process.env.WITHINGS_ACCESS_TOKEN_EXPIRES_AT = expiresAt.toISOString();
+            withingsLogger.debug('withings.auth.seed_token_loaded', { expiresAt: expiresAt.toISOString() });
+            return accessTokenCache.token;
         }
+        // No valid seeded token - will fall through to refresh
+        withingsLogger.debug('withings.auth.seed_token_expired', { 
+            expiresAt: expiresAt?.toISOString() || 'missing',
+            hasRefreshToken: !!refresh
+        });
     }
 
     if (!clientId || !clientSecret) {
@@ -176,15 +179,17 @@ const getAccessToken = async (username, authData) => {
         const expiresAt = moment().add(Math.max(60, expiresIn - tokenBufferSeconds), 'seconds');
 
         // Save full auth response for persistence across restarts
+        // Use expires_at (absolute timestamp) instead of expires_in (relative seconds)
         const updatedAuth = {
             ...authData,
             access_token,
-            expires_in: expiresIn,
+            expires_at: expiresAt.toISOString(),
             refresh_token: refresh_token || refresh, // Keep old refresh if not provided
             updated_at: new Date().toISOString()
         };
-        // Remove old 'refresh' field if it exists
+        // Remove legacy fields
         delete updatedAuth.refresh;
+        delete updatedAuth.expires_in;
         
         if (refresh_token) {
             userSaveAuth(username, 'withings', updatedAuth);
@@ -250,8 +255,8 @@ const getWeightData = async (job_id) => {
 
     const { clientId, clientSecret, redirectUri } = resolveSecrets();
     const username = getDefaultUsername();
-    // Load from user-namespaced auth
-    const authData = configService.getUserAuth('withings', username) || {};
+    // Load auth fresh from disk (not cached ConfigService) to get latest tokens
+    const authData = loadFile(`users/${username}/auth/withings`) || {};
     const { refresh } = authData;
     
     try {
