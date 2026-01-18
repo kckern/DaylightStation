@@ -336,7 +336,7 @@ mv /Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStation/data/system/c
 Create a simple health endpoint:
 
 ```javascript
-// GET /api/cron/health
+// GET /cron/health (Note: cron routes are mounted at /cron, not /api/cron)
 apiRouter.get('/health', (req, res) => {
   const jobs = loadCronConfig();
   const now = moment().tz(timeZone);
@@ -368,7 +368,7 @@ Add cron health check to Home Assistant or uptime monitoring:
 sensor:
   - platform: rest
     name: DaylightStation Cron Health
-    resource: http://daylight-station:3000/api/cron/health
+    resource: http://daylight-station:3111/cron/health
     value_template: "{{ value_json.status }}"
     scan_interval: 300
 ```
@@ -461,8 +461,8 @@ If Phase 1 recovery fails:
 
 2. Manually trigger critical jobs via API:
    ```bash
-   curl -X POST http://daylight-station:3000/api/cron/run/weather
-   curl -X POST http://daylight-station:3000/api/cron/run/gcal
+   curl -X POST http://daylight-station:3111/cron/run/weather
+   curl -X POST http://daylight-station:3111/cron/run/gcal
    ```
 
 3. Investigate further with debug logging enabled
@@ -499,8 +499,11 @@ ssh homeserver.local -t 'docker exec daylight-station sh -c "cat /usr/src/app/da
 # View recent cron logs
 ssh homeserver.local 'docker logs --tail 100 daylight-station 2>&1' | grep -E 'cron\.'
 
-# Manually trigger a job
-curl -X POST http://daylight-station:3000/api/cron/run/weather
+# Manually trigger a job (from inside container)
+ssh homeserver.local 'docker exec -u root daylight-station curl -s -X POST http://localhost:3111/cron/run/weather'
+
+# Check cron status endpoint
+ssh homeserver.local 'docker exec -u root daylight-station curl -s http://localhost:3111/cron/status'
 
 # Check job definitions
 ssh homeserver.local -t 'docker exec daylight-station sh -c "cat /usr/src/app/data/system/jobs.yml"'

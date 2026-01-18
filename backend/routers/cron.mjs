@@ -337,6 +337,7 @@ export const cronContinuous = async () => {
 
   // Track if any job actually ran (to avoid unnecessary saves)
   let jobsRan = false;
+  let needsInitialSave = false;
 
   for (const job of cronJobs) {
     if (typeof job !== "object" || job === null) {
@@ -355,6 +356,7 @@ export const cronContinuous = async () => {
       job.secondsUntil = nextMoment.unix() - now.unix();
       job.needsToRun = false;
       job.last_run = job.last_run || 0;
+      needsInitialSave = true;
     } else {
       // echo countdown to job.nextRun
       // console.log(`Job ${job.name} next run in ${job.secondsUntil} seconds`);
@@ -485,11 +487,15 @@ export const cronContinuous = async () => {
     }
   }
 
-  // Only save state when jobs actually ran (reduces writes from every 5s to only when needed)
-  if (jobsRan) {
+  // Save state when jobs ran OR when initial schedules were computed
+  if (jobsRan || needsInitialSave) {
     saveCronState(cronJobs);
     backupCronState(cronJobs);
-    cronLogger.debug('cron.state.saved', { jobsRan: runNow.map(j => j.name) });
+    if (jobsRan) {
+      cronLogger.debug('cron.state.saved', { jobsRan: runNow.map(j => j.name) });
+    } else {
+      cronLogger.info('cron.state.initialized', { scheduledJobs: cronJobs.length });
+    }
   }
 };
 
