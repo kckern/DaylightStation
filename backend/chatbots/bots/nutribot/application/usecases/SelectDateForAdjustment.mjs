@@ -93,11 +93,20 @@ export class SelectDateForAdjustment {
       const message = this.#buildItemsMessage(date, items);
 
       // 7. Update photo caption with items list (not send new message)
-      await this.#messagingGateway.updateMessage(conversationId, originMessageId, {
-        caption: message,
-        parseMode: 'HTML',
-        choices: keyboard,
-      });
+      try {
+        await this.#messagingGateway.updateMessage(conversationId, originMessageId, {
+          caption: message,
+          parseMode: 'HTML',
+          choices: keyboard,
+        });
+      } catch (updateError) {
+        // Ignore "message not modified" errors from Telegram
+        if (updateError.message?.includes('message is not modified')) {
+          this.#logger.debug('adjustment.messageUnchanged', { userId, date });
+        } else {
+          throw updateError;
+        }
+      }
 
       this.#logger.info('adjustment.dateSelected', { userId, date, itemCount: items.length, message });
 
