@@ -77,6 +77,7 @@ const dailyHealth = async (jobId, daysBack = 15) => {
                     calories: Math.max(s.calories || 0, fitnessMatch.calories || 0),
                     avgHr: s.avgHeartrate || fitnessMatch.avgHeartrate,
                     maxHr: s.maxHeartrate,
+                    steps: fitnessMatch.steps,
                     strava: s,
                     fitness: fitnessMatch
                 });
@@ -108,6 +109,7 @@ const dailyHealth = async (jobId, daysBack = 15) => {
                     distance: f.distance,
                     startTime: f.startTime,
                     endTime: f.endTime,
+                    steps: f.steps,
                     fitness: f
                 });
             }

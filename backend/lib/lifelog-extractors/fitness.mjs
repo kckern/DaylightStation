@@ -38,7 +38,8 @@ export const fitnessExtractor = {
         duration: Math.round(a.minutes),
         calories: a.calories,
         distance: a.distance,
-        avgHR: a.avgHeartrate
+        avgHR: a.avgHeartrate,
+        steps: a.steps
       }));
     }
     
