@@ -2117,3 +2117,21 @@ You now have three options for a logging auditor agent:
 3. Configure alert thresholds
 4. Set up production monitoring
 5. Integrate with notification system (email/Slack)
+
+---
+
+## Cron Scheduler (Backend)
+
+**Related code:** `backend/routers/cron.mjs`, `backend/lib/cron/TaskRegistry.mjs`, `data/system/jobs.yml`
+
+The backend scheduler runs individual jobs defined in `data/system/jobs.yml`. Runtime state is stored in `data/system/state/cron-runtime.yml` with per-job keys (`last_run`, `nextRun`, `status`, `duration_ms`).
+
+### Legacy State Migration
+
+If a legacy bucket-based state file is detected (keys like `cron10Mins`, `cronHourly`, `cronDaily`, `cronWeekly`), the scheduler:
+
+- Infers the bucket for each job from its `schedule` (or `bucket` if provided).
+- Copies `last_run` to each job and clears `nextRun` to force recomputation.
+- Removes legacy bucket keys and persists the migrated state.
+
+This prevents stalled schedules after upgrades from bucket-based to per-job scheduling.
