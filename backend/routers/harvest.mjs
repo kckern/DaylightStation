@@ -45,7 +45,6 @@ import youtube_dl from '../lib/youtube.mjs';
 import health from '../lib/health.mjs';
 import fitness from '../lib/fitsync.mjs';
 import strava from '../lib/strava.mjs';
-import garmin from '../lib/garmin.mjs';
 import foursquare from '../lib/foursquare.mjs';
 import shopping from '../lib/shopping.mjs';
 import { refreshFinancialData as budget, payrollSyncJob } from '../lib/budget.mjs';
@@ -81,7 +80,6 @@ const harvesters = {
     fitness: (_logger, guidId, username) => fitness(guidId, { targetUsername: username }),
     strava: (logger, guidId, username) => strava(logger, guidId, 90),
     health: (_logger, guidId, username) => health(guidId, { targetUsername: username }),
-    garmin: (_logger, guidId, username) => garmin(guidId, { targetUsername: username }),
     foursquare: (_logger, guidId, username) => foursquare(guidId, { targetUsername: username }),
     payroll: (...args) => payrollSyncJob(...args),
     shopping: (logger, guidId, username) => shopping(logger, guidId, username)
@@ -95,7 +93,6 @@ const HARVEST_TIMEOUT = 120000; // 2 minutes default
 const HARVEST_TIMEOUTS = {
     fitness: 180000,    // 3 minutes for fitness sync
     strava: 180000,     // 3 minutes for strava
-    garmin: 180000,     // 3 minutes for garmin
     health: 180000,     // 3 minutes for health data aggregation
     budget: 240000,     // 4 minutes for budget compilation
     gmail: 180000,      // 3 minutes for gmail
