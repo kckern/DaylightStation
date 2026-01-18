@@ -136,7 +136,8 @@ export const getAccessToken = async () => {
     }
 
     const username = getDefaultUsername();
-    const authData = configService.getUserAuth('fitnesssyncer', username) || {};
+    // Load auth fresh from disk (not cached ConfigService) to get latest tokens
+    const authData = loadFile(`users/${username}/auth/fitnesssyncer`) || {};
     const { refresh, client_id, client_secret } = authData;
     
     // Get credentials from user auth file (personal OAuth app)
@@ -179,11 +180,14 @@ export const getAccessToken = async () => {
         const nextRefreshToken = refreshToken || refresh;
         if (nextRefreshToken) {
             // Preserve any existing auth fields while updating tokens/credentials
+            // Use expires_at (absolute timestamp) for accurate expiry tracking across restarts
             userSaveAuth(username, 'fitnesssyncer', {
                 ...authData,
                 refresh: nextRefreshToken,
                 client_id: FITSYNC_CLIENT_ID,
-                client_secret: FITSYNC_CLIENT_SECRET
+                client_secret: FITSYNC_CLIENT_SECRET,
+                expires_at: expiresAt.toISOString(),
+                updated_at: new Date().toISOString()
             });
         }
 

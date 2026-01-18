@@ -268,3 +268,18 @@ After fix:
 | Jan 17 | Cron scheduler fixed, withings job attempts to run |
 | Jan 17 | Auth failure discovered (`invalid_token`) |
 | Jan 17 | This audit created |
+| Jan 17 | Fix applied to withings.mjs - now uses `expires_at` and loads fresh from disk |
+| Jan 17 | Same fix applied to fitsync.mjs for consistency |
+
+---
+
+## Also Fixed: fitsync.mjs
+
+The same issues existed in `backend/lib/fitsync.mjs`:
+1. Used `configService.getUserAuth()` (cached) instead of loading fresh from disk
+2. Didn't save `expires_at` when refreshing tokens
+
+Both files now:
+- Load auth fresh from disk via `loadFile()` instead of cached ConfigService
+- Save `expires_at` (absolute timestamp) instead of relying on `expires_in`
+- Save `updated_at` for tracking

@@ -117,8 +117,8 @@ export const getAccessToken = async (logger, username = null) => {
 
     const { STRAVA_CLIENT_ID, STRAVA_CLIENT_SECRET } = process.env;
     const user = username || getDefaultUsername();
-    // Load from user-namespaced auth
-    const authData = configService.getUserAuth('strava', user) || {};
+    // Load auth fresh from disk (not cached ConfigService) to get latest tokens
+    const authData = loadFile(`users/${user}/auth/strava`) || {};
     const { refresh } = authData;
 
     try {
@@ -141,7 +141,8 @@ export const getAccessToken = async (logger, username = null) => {
                 ...authData,
                 refresh: refreshToken,
                 access_token: accessToken,
-                expires_at: expiresAt
+                expires_at: expiresAt,
+                updated_at: new Date().toISOString()
             };
             userSaveAuth(user, 'strava', newAuthData);
         }
