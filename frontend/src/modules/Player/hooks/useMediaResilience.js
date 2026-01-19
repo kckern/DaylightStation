@@ -5,7 +5,6 @@ import { usePlaybackHealth } from './usePlaybackHealth.js';
 import { useResilienceConfig } from './useResilienceConfig.js';
 import { useResilienceState, RESILIENCE_STATUS } from './useResilienceState.js';
 import { usePlaybackSession } from './usePlaybackSession.js';
-import { resolveMediaIdentity } from '../utils/mediaIdentity.js';
 import { formatTime } from '../lib/helpers.js';
 
 export { DEFAULT_MEDIA_RESILIENCE_CONFIG, MediaResilienceConfigContext, mergeMediaResilienceConfig } from './useResilienceConfig.js';
@@ -18,14 +17,6 @@ const USER_INTENT = Object.freeze({
   paused: 'paused',
   seeking: 'seeking'
 });
-
-const useLatest = (value) => {
-  const ref = useRef(value);
-  useEffect(() => {
-    ref.current = value;
-  }, [value]);
-  return ref;
-};
 
 /**
  * Simplified Media Resilience Hook
@@ -56,11 +47,9 @@ export function useMediaResilience({
   externalStalled = null,
   externalStallState = null
 }) {
-  const { monitorSettings, recoveryConfig } = useResilienceConfig({ configOverrides });
+  const { monitorSettings } = useResilienceConfig({ configOverrides });
   const {
     epsilonSeconds,
-    stallDetectionThresholdMs,
-    hardRecoverAfterStalledForMs,
     hardRecoverLoadingGraceMs,
     recoveryCooldownMs
   } = monitorSettings;
@@ -69,10 +58,8 @@ export function useMediaResilience({
   
   const [showPauseOverlay, setShowPauseOverlay] = useState(true);
   const [lastReloadAt, setLastReloadAt] = useState(0);
-  const [stallCountdown, setStallCountdown] = useState(null);
 
   const logWaitKey = useMemo(() => getLogWaitKey(waitKey), [waitKey]);
-  const mediaIdentity = useMemo(() => resolveMediaIdentity(meta), [meta]);
 
   const playbackHealth = usePlaybackHealth({
     seconds,
@@ -99,10 +86,7 @@ export function useMediaResilience({
     }
   }, [isPaused, isSeeking, pauseIntent]);
 
-  // Main Watchdog Timers
-  const stallTimerRef = useRef(null);
-  const recoveryTimerRef = useRef(null);
-  const lastProgressTokenRef = useRef(-1);
+  // Startup deadline timer (for initial load grace period)
   const startupDeadlineRef = useRef(null);
   // Track if video has ever successfully played (for loop/buffering grace detection)
   const hasEverPlayedRef = useRef(false);
@@ -128,59 +112,33 @@ export function useMediaResilience({
   useEffect(() => {
     if (userIntent === USER_INTENT.paused) {
       if (status !== STATUS.paused) actions.setStatus(STATUS.paused);
-      clearTimeout(stallTimerRef.current);
-      clearTimeout(recoveryTimerRef.current);
       return;
     }
 
-    const hasProgress = playbackHealth.progressToken !== lastProgressTokenRef.current;
-    
-    if (hasProgress) {
-      lastProgressTokenRef.current = playbackHealth.progressToken;
+    // Check if we have progress (used to track hasEverPlayed and clear startup deadline)
+    if (playbackHealth.progressToken > 0) {
       if (status !== STATUS.playing) actions.setStatus(STATUS.playing);
       // Mark that we've successfully played (used for loop detection)
       hasEverPlayedRef.current = true;
-      clearTimeout(stallTimerRef.current);
-      clearTimeout(recoveryTimerRef.current);
       clearTimeout(startupDeadlineRef.current);
-      setStallCountdown(null);
+      startupDeadlineRef.current = null;
       return;
     }
 
-    // No progress...
-    if (status === STATUS.playing) {
-      if (!stallTimerRef.current) {
-        stallTimerRef.current = setTimeout(() => {
-          actions.setStatus(STATUS.stalling);
-          stallTimerRef.current = null;
-        }, stallDetectionThresholdMs);
+    // Startup/recovering: set a deadline for initial load
+    if (status === STATUS.startup || status === STATUS.recovering) {
+      if (!startupDeadlineRef.current) {
+        startupDeadlineRef.current = setTimeout(() => {
+          triggerRecovery('startup-deadline-exceeded');
+          startupDeadlineRef.current = null;
+        }, hardRecoverLoadingGraceMs);
       }
-    } else if (status === STATUS.stalling) {
-      if (!recoveryTimerRef.current) {
-        recoveryTimerRef.current = setTimeout(() => {
-          triggerRecovery('stall-deadline-exceeded');
-          recoveryTimerRef.current = null;
-        }, hardRecoverAfterStalledForMs);
-      }
-    } else if (status === STATUS.startup || status === STATUS.recovering) {
-       if (!startupDeadlineRef.current) {
-         startupDeadlineRef.current = setTimeout(() => {
-           triggerRecovery('startup-deadline-exceeded');
-           startupDeadlineRef.current = null;
-         }, hardRecoverLoadingGraceMs);
-       }
     }
-
-    return () => {
-      // Cleanup is handled by the effect dependencies or next run
-    };
-  }, [status, playbackHealth.progressToken, userIntent, actions, stallDetectionThresholdMs, hardRecoverAfterStalledForMs, triggerRecovery, hardRecoverLoadingGraceMs]);
+  }, [status, playbackHealth.progressToken, userIntent, actions, triggerRecovery, hardRecoverLoadingGraceMs]);
 
   // Clean up timers on unmount or waitKey change
   useEffect(() => {
     return () => {
-      clearTimeout(stallTimerRef.current);
-      clearTimeout(recoveryTimerRef.current);
       clearTimeout(startupDeadlineRef.current);
     };
   }, [waitKey]);
@@ -211,9 +169,8 @@ export function useMediaResilience({
   }, [targetTimeSeconds]);
 
   // Presentation logic
-  // If externalStalled is provided (from useCommonMediaController), trust it over internal detection
-  const internalStalled = status === STATUS.stalling;
-  const isStalled = externalStalled !== null ? externalStalled : internalStalled;
+  // Stall detection is now handled externally by useCommonMediaController
+  const isStalled = externalStalled === true;
   const isRecovering = status === STATUS.recovering;
   const isStartup = status === STATUS.startup;
   const isUserPaused = userIntent === USER_INTENT.paused;
