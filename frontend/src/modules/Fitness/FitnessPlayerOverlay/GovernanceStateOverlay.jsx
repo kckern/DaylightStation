@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import PropTypes from 'prop-types';
 import { DaylightMediaPath } from '../../../lib/api.mjs';
+import { useDeadlineCountdown } from '../shared';
 import GovernanceAudioPlayer from './GovernanceAudioPlayer.jsx';
 import './GovernanceStateOverlay.scss';
 
@@ -309,6 +310,12 @@ const GovernanceStateOverlay = ({ overlay = null, lockRows = [], warningOffender
   const overlayShow = Boolean(overlay?.show);
   const overlayCategory = overlay?.category || null;
   const overlayStatus = typeof overlay?.status === 'string' ? overlay.status.toLowerCase() : '';
+
+  // Self-updating countdown from deadline - only runs interval when deadline is set
+  const { remaining: countdown } = useDeadlineCountdown(
+    overlay?.deadline,
+    overlay?.countdownTotal || 30
+  );
   
   // Determine which audio track to play (or null for none)
   const audioTrackKey = useMemo(() => {
@@ -333,7 +340,7 @@ const GovernanceStateOverlay = ({ overlay = null, lockRows = [], warningOffender
       <>
         <GovernanceAudioPlayer trackKey={audioTrackKey} />
         <GovernanceWarningOverlay
-          countdown={overlay.countdown}
+          countdown={countdown}
           countdownTotal={overlay.countdownTotal}
           offenders={warningOffenders}
         />
@@ -365,7 +372,7 @@ GovernanceStateOverlay.propTypes = {
   overlay: PropTypes.shape({
     show: PropTypes.bool,
     category: PropTypes.string,
-    countdown: PropTypes.number,
+    deadline: PropTypes.number,
     countdownTotal: PropTypes.number,
     status: PropTypes.string,
     title: PropTypes.string,

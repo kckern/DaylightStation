@@ -142,9 +142,14 @@ export class GovernanceEngine {
     this.media = null;
     this.phase = 'pending'; // pending, unlocked, warning, locked
     this.pulse = 0;
-    
+
+    // Hysteresis: require satisfaction for minimum duration before unlocking
+    // This prevents rapid phase cycling when HR hovers around threshold
+    this._hysteresisMs = 500;
+
     this.meta = {
       satisfiedOnce: false,
+      satisfiedSince: null,  // Timestamp when requirements first became satisfied
       deadline: null,
       gracePeriodTotal: null
     };
@@ -529,6 +534,7 @@ export class GovernanceEngine {
     this._clearTimers();
     this.meta = {
       satisfiedOnce: false,
+      satisfiedSince: null,
       deadline: null,
       gracePeriodTotal: null
     };
@@ -578,6 +584,7 @@ export class GovernanceEngine {
     this._clearTimers();
     this.meta = {
       satisfiedOnce: false,
+      satisfiedSince: null,
       deadline: null,
       gracePeriodTotal: null
     };
@@ -646,15 +653,7 @@ export class GovernanceEngine {
       && this._stateCacheVersion === this._stateVersion;
     
     if (cacheValid) {
-      // Update countdown in-place without full recomputation
-      // This allows smooth countdown display while throttling expensive parts
-      if (this._stateCache.countdownSecondsRemaining != null && this.meta?.deadline) {
-        const remaining = Math.max(0, Math.round((this.meta.deadline - now) / 1000));
-        if (remaining !== this._stateCache.countdownSecondsRemaining) {
-          // Shallow copy to update countdown without mutating cache
-          this._stateCache = { ...this._stateCache, countdownSecondsRemaining: remaining };
-        }
-      }
+      // Components now compute countdown from deadline timestamp themselves
       return this._stateCache;
     }
     
@@ -775,6 +774,7 @@ export class GovernanceEngine {
       watchers,
       countdownSecondsRemaining,
       countdownSecondsTotal: gracePeriodTotal,
+      deadline: this.meta?.deadline || null,
       gracePeriodTotal,
       videoLocked: !!(this.challengeState && this.challengeState.videoLocked),
       challengePaused: challengeSnapshot ? Boolean(challengeSnapshot.paused) : false,
@@ -921,18 +921,37 @@ export class GovernanceEngine {
       if (this.timers.governance) clearTimeout(this.timers.governance);
       this.meta.deadline = null;
       this.meta.gracePeriodTotal = null;
+      this.meta.satisfiedSince = null;
       this._setPhase('locked');
     } else if (allSatisfied) {
-      this.meta.satisfiedOnce = true;
-      this.meta.deadline = null;
-      this.meta.gracePeriodTotal = null;
-      this._setPhase('unlocked');
+      // Hysteresis: require satisfaction to persist for minimum duration
+      // This prevents rapid phase cycling when HR hovers around threshold
+      if (!this.meta.satisfiedSince) {
+        this.meta.satisfiedSince = now;
+      }
+      const satisfiedDuration = now - this.meta.satisfiedSince;
+      if (satisfiedDuration >= this._hysteresisMs) {
+        // Satisfied long enough - transition to unlocked
+        this.meta.satisfiedOnce = true;
+        this.meta.deadline = null;
+        this.meta.gracePeriodTotal = null;
+        this._setPhase('unlocked');
+      } else {
+        // Not satisfied long enough yet - stay in current phase, schedule re-check
+        const remainingHysteresis = this._hysteresisMs - satisfiedDuration;
+        if (this.timers.governance) clearTimeout(this.timers.governance);
+        this.timers.governance = setTimeout(() => this._triggerPulse(), remainingHysteresis);
+        // Don't change phase yet - keep warning/pending until hysteresis passes
+      }
     } else if (!this.meta.satisfiedOnce) {
+      // Not satisfied - reset hysteresis tracking
+      this.meta.satisfiedSince = null;
       this.meta.deadline = null;
       this.meta.gracePeriodTotal = null;
       this._setPhase('pending');
     } else {
-      // Grace period logic
+      // Grace period logic - requirements not satisfied, reset hysteresis
+      this.meta.satisfiedSince = null;
       let graceSeconds = baseGraceSeconds;
       if (!Number.isFinite(graceSeconds) || graceSeconds <= 0) {
         if (this.timers.governance) clearTimeout(this.timers.governance);

@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import PropTypes from 'prop-types';
 import { useFitnessContext } from '../../../context/FitnessContext.jsx';
-import { StripedProgressBar } from '../shared';
+import { StripedProgressBar, useDeadlineCountdown } from '../shared';
 import './FitnessGovernance.scss';
 
 const STATUS_PRIORITY = ['locked', 'red', 'warning', 'yellow', 'unlocked', 'green', 'init', 'idle', 'off', 'pending'];
@@ -17,6 +17,12 @@ const STRIPE_SPEEDS = {
 const FitnessGovernance = () => {
   const { governanceState } = useFitnessContext();
 
+  // Self-updating countdown from deadline - only runs interval when deadline is set
+  const { progress: graceProgress } = useDeadlineCountdown(
+    governanceState?.deadline,
+    governanceState?.gracePeriodTotal || 30
+  );
+
   if (!governanceState?.isGoverned) {
     return null;
   }
@@ -24,14 +30,6 @@ const FitnessGovernance = () => {
   const summary = useMemo(() => {
     const state = governanceState || {};
     const status = STATUS_PRIORITY.includes(state.status) ? state.status : 'idle';
-    
-    // Calculate grace period progress (0-100%)
-    let graceProgress = 0;
-    if (status === 'yellow' && state.countdownSecondsRemaining != null) {
-      const graceSeconds = state.gracePeriodTotal || 30;
-      const remaining = state.countdownSecondsRemaining;
-      graceProgress = Math.max(0, Math.min(100, (remaining / graceSeconds) * 100));
-    }
 
     const nextChallenge = state.nextChallenge || null;
     const nextChallengeRemaining = Number.isFinite(nextChallenge?.remainingSeconds)
@@ -40,7 +38,6 @@ const FitnessGovernance = () => {
 
     return {
       status,
-      graceProgress,
       nextChallengeRemaining
     };
   }, [governanceState]);
@@ -94,7 +91,7 @@ const FitnessGovernance = () => {
           {(summary.status === 'unlocked' || summary.status === 'warning' || summary.status === 'locked' ||
             summary.status === 'green' || summary.status === 'yellow' || summary.status === 'red' || summary.status === 'init') && (
             <StripedProgressBar
-              value={(summary.status === 'warning' || summary.status === 'yellow') ? summary.graceProgress : 100}
+              value={(summary.status === 'warning' || summary.status === 'yellow') ? graceProgress : 100}
               max={100}
               color={statusColor}
               speed={stripeSpeed}

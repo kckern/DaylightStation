@@ -38,3 +38,4 @@ tests/runtime/
 .claude/ralph-loop.local.md
 /logs
 /.playwright-mcp
+/coverage
