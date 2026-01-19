@@ -579,8 +579,16 @@ const Player = forwardRef(function Player(props, ref) {
   }, [effectivePlaybackRate, setSessionPlaybackRate]);
 
   // Get shader from the current item, falling back to queue/play level, then default
+  // Looped videos default to 'focused' shader (hides progress bar) unless explicitly set
+  // Loop conditions: single-item queue, continuous flag, or short videos (<20s which we can't know yet)
+  // For single videos without queue, default to 'focused' since short clips will loop
   const currentItemShader = effectiveMeta?.shader;
-  const effectiveShader = currentItemShader || queueShader;
+  const explicitShader = play?.shader || queue?.shader || currentItemShader;
+  const isSingleVideo = !isQueue && singlePlayerProps && ['video', 'dash_video'].includes(effectiveMeta?.media_type);
+  const willLoop = (isQueue && playQueue?.length === 1) ||
+                   (!isQueue && singlePlayerProps?.continuous) ||
+                   isSingleVideo;  // Single videos loop if short, default to focused
+  const effectiveShader = explicitShader || (willLoop ? 'focused' : queueShader);
 
   // Create appropriate advance function for single continuous items
   const singleAdvance = useCallback(() => {
