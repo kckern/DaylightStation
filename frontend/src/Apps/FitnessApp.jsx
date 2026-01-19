@@ -15,6 +15,8 @@ import { sortNavItems } from '../modules/Fitness/lib/navigationUtils.js';
 import VoiceMemoOverlay from '../modules/Fitness/FitnessPlayerOverlay/VoiceMemoOverlay.jsx';
 import { useFitnessContext } from '../context/FitnessContext.jsx';
 import { FitnessFrame } from '../modules/Fitness/frames';
+import { useFitnessUrlParams } from '../hooks/fitness/useFitnessUrlParams.js';
+import { useNavigate, useLocation } from 'react-router-dom';
 
 const FitnessApp = () => {
   // NOTE: This app targets a large touchscreen TV device. To reduce perceived latency
@@ -39,6 +41,12 @@ const FitnessApp = () => {
   });
   const viewportRef = useRef(null);
   const logger = useMemo(() => getLogger().child({ app: 'fitness' }), []);
+
+  // URL-based navigation
+  const { urlState } = useFitnessUrlParams();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [urlInitialized, setUrlInitialized] = useState(false);
 
   useEffect(() => {
     logger.info('fitness-app-mount');
@@ -423,81 +431,125 @@ const FitnessApp = () => {
     return Array.isArray(src) ? src : [];
   }, [fitnessConfiguration]);
 
+  // Handle /fitness/play/:id route
+  const handlePlayFromUrl = async (episodeId) => {
+    try {
+      const response = await fetch(`/api/plex/metadata/${episodeId}`);
+      if (!response.ok) {
+        logger.error('fitness-play-url-fetch-failed', { episodeId, status: response.status });
+        navigate('/fitness', { replace: true });
+        return;
+      }
+
+      const metadata = await response.json();
+      const queueItem = {
+        id: episodeId,
+        plex: episodeId,
+        type: metadata.type || 'episode',
+        title: metadata.title,
+        showId: metadata.grandparentRatingKey || metadata.parentRatingKey,
+        thumb: metadata.thumb
+      };
+
+      setFitnessPlayQueue([queueItem]);
+      logger.info('fitness-play-url-started', { episodeId, showId: queueItem.showId });
+    } catch (err) {
+      logger.error('fitness-play-url-error', { episodeId, error: err.message });
+      navigate('/fitness', { replace: true });
+    }
+  };
+
   const handleNavigate = (type, target, item) => {
     logger.info('fitness-navigate', { type, target });
-    
+
     switch (type) {
       case 'plex_collection':
         setActiveCollection(target.collection_id);
         setActivePlugin(null);
         setCurrentView('menu');
         setSelectedShow(null);
+        navigate(`/fitness/menu/${target.collection_id}`, { replace: true });
         break;
-        
+
       case 'plex_collection_group':
         setActiveCollection(target.collection_ids);
         setActivePlugin(null);
         setCurrentView('menu');
         setSelectedShow(null);
+        navigate(`/fitness/menu/${target.collection_ids.join(',')}`, { replace: true });
         break;
-        
+
       case 'plugin_menu':
         setActiveCollection(target.menu_id);
         setActivePlugin(null);
         setCurrentView('menu');
         setSelectedShow(null);
+        navigate(`/fitness/menu/${target.menu_id}`, { replace: true });
         break;
-        
+
       case 'plugin_direct':
-        setActivePlugin({ 
-          id: target.plugin_id, 
-          ...(target.config || {}) 
+        setActivePlugin({
+          id: target.plugin_id,
+          ...(target.config || {})
         });
         setActiveCollection(null);
         setCurrentView('plugin');
         setSelectedShow(null);
+        navigate(`/fitness/plugin/${target.plugin_id}`, { replace: true });
         break;
 
       case 'plugin':
         // Launched from FitnessPluginMenu
-        setActivePlugin({ 
-          id: target.id, 
-          ...(target || {}) 
+        setActivePlugin({
+          id: target.id,
+          ...(target || {})
         });
         setActiveCollection(null);
         setCurrentView('plugin');
         setSelectedShow(null);
+        navigate(`/fitness/plugin/${target.id}`, { replace: true });
         break;
-        
+
       case 'view_direct':
         setActiveCollection(null);
         setActivePlugin(null);
         setCurrentView(target.view);
         setSelectedShow(null);
+        if (target.view === 'users') {
+          navigate('/fitness/users', { replace: true });
+        }
         break;
 
       case 'show':
         setSelectedShow(target.plex || target.id);
         setCurrentView('show');
+        navigate(`/fitness/show/${target.plex || target.id}`, { replace: true });
         break;
 
       case 'movie':
         //send directly to player queue
         setFitnessPlayQueue(prev => [...prev, target]);
+        navigate(`/fitness/play/${target.plex || target.id}`, { replace: true });
         break;
-        
+
       case 'custom_action':
         logger.warn('custom_action not implemented', { action: target.action });
         break;
-        
+
       default:
         logger.warn('fitness-navigate-unknown', { type });
     }
   };
 
   const handleBackToMenu = () => {
-    setCurrentView('menu'); // Switch back to menu view
+    setCurrentView('menu');
     setSelectedShow(null);
+    if (activeCollection) {
+      const colId = Array.isArray(activeCollection) ? activeCollection.join(',') : activeCollection;
+      navigate(`/fitness/menu/${colId}`, { replace: true });
+    } else {
+      navigate('/fitness', { replace: true });
+    }
   };
 
   useEffect(() => {
@@ -557,27 +609,92 @@ const FitnessApp = () => {
     return () => clearTimeout(timeoutId);
   }, [logger]);
 
+  // Initialize state from URL on mount
+  useEffect(() => {
+    if (urlInitialized || loading) return;
+
+    const { view, id, ids, music, fullscreen, simulate } = urlState;
+
+    logger.info('fitness-url-init', { view, id, ids, music, fullscreen, simulate });
+
+    // Handle simulation trigger
+    if (simulate) {
+      if (simulate.stop) {
+        fetch('/api/fitness/simulate', { method: 'DELETE' })
+          .then(r => r.json())
+          .then(data => logger.info('fitness-simulate-stopped', data))
+          .catch(err => logger.error('fitness-simulate-stop-failed', { error: err.message }));
+      } else {
+        fetch('/api/fitness/simulate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(simulate)
+        })
+          .then(r => r.json())
+          .then(data => logger.info('fitness-simulate-started', data))
+          .catch(err => logger.error('fitness-simulate-start-failed', { error: err.message }));
+      }
+
+      // Clear simulate param from URL after triggering
+      const newParams = new URLSearchParams(location.search);
+      newParams.delete('simulate');
+      const newUrl = newParams.toString() ? `${location.pathname}?${newParams}` : location.pathname;
+      navigate(newUrl, { replace: true });
+    }
+
+    // Handle fullscreen
+    if (fullscreen && document.documentElement.requestFullscreen) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    }
+
+    // Set view based on URL
+    if (view === 'users') {
+      setCurrentView('users');
+    } else if (view === 'show' && id) {
+      setSelectedShow(id);
+      setCurrentView('show');
+    } else if (view === 'plugin' && id) {
+      setActivePlugin({ id });
+      setCurrentView('plugin');
+    } else if (view === 'play' && id) {
+      handlePlayFromUrl(id);
+    } else if (view === 'menu' && ids) {
+      if (ids.length === 1) {
+        setActiveCollection(ids[0]);
+      } else {
+        setActiveCollection(ids);
+      }
+      setCurrentView('menu');
+    }
+
+    setUrlInitialized(true);
+  }, [urlState, loading, urlInitialized, navigate, location]);
+
   // Initialize to the first nav item once navItems arrive
   useEffect(() => {
     // Don't auto-navigate if we're on a special view like 'users' or 'show'
     if (currentView === 'users' || currentView === 'show') {
       return;
     }
+    // Don't auto-navigate if URL already set up the initial state
+    if (urlInitialized && (urlState.view !== 'menu' || urlState.id || urlState.ids)) {
+      return;
+    }
     if (activeCollection == null && activePlugin == null && navItems.length > 0) {
       // Sort items to match navbar display order
       const sortedItems = sortNavItems(navItems);
       const firstItem = sortedItems[0];
-      
+
       if (firstItem) {
-        logger.info('fitness-nav-init', { 
-          type: firstItem.type, 
+        logger.info('fitness-nav-init', {
+          type: firstItem.type,
           name: firstItem.name,
-          target: firstItem.target 
+          target: firstItem.target
         });
         handleNavigate(firstItem.type, firstItem.target, firstItem);
       }
     }
-  }, [navItems, activeCollection, activePlugin, currentView]);
+  }, [navItems, activeCollection, activePlugin, currentView, urlInitialized, urlState]);
 
   const queueSize = fitnessPlayQueue.length;
   useEffect(() => {
