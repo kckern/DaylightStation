@@ -88,7 +88,7 @@ export function useMediaResilience({
 
   // Startup deadline timer (for initial load grace period)
   const startupDeadlineRef = useRef(null);
-  // Track if video has ever successfully played (for loop/buffering grace detection)
+  // Track if video has ever successfully played (for loop detection)
   const hasEverPlayedRef = useRef(false);
 
   const triggerRecovery = useCallback((reason) => {
@@ -176,41 +176,6 @@ export function useMediaResilience({
   const isUserPaused = userIntent === USER_INTENT.paused;
   const isBuffering = playbackHealth.isWaiting || playbackHealth.isStalledEvent;
 
-  // Track whether buffering has exceeded grace period (500ms)
-  // Only show overlay after grace period to avoid flashes during loop transitions
-  const [bufferingPastGrace, setBufferingPastGrace] = useState(false);
-  const bufferingGraceTimerRef = useRef(null);
-
-  useEffect(() => {
-    if (isBuffering && hasEverPlayedRef.current) {
-      // Start grace period timer - only show overlay after 500ms of buffering
-      if (!bufferingGraceTimerRef.current) {
-        bufferingGraceTimerRef.current = setTimeout(() => {
-          setBufferingPastGrace(true);
-          bufferingGraceTimerRef.current = null;
-        }, 500);
-      }
-    } else {
-      // Clear timer and reset state when not buffering
-      if (bufferingGraceTimerRef.current) {
-        clearTimeout(bufferingGraceTimerRef.current);
-        bufferingGraceTimerRef.current = null;
-      }
-      if (bufferingPastGrace) {
-        setBufferingPastGrace(false);
-      }
-    }
-    return () => {
-      if (bufferingGraceTimerRef.current) {
-        clearTimeout(bufferingGraceTimerRef.current);
-      }
-    };
-  }, [isBuffering, bufferingPastGrace]);
-
-  // Suppress overlay for brief buffering after we've started playing
-  // Show buffering overlay only if: not yet played, OR buffering has lasted past grace period
-  const isBriefBuffering = hasEverPlayedRef.current && isBuffering && !bufferingPastGrace && !isStalled && !isRecovering;
-
   // Detect loop transition: video has loop=true, we've played before, and we're near the start
   // This check runs synchronously during render to prevent overlay flash on loop
   const isLoopTransition = (() => {
@@ -227,21 +192,22 @@ export function useMediaResilience({
   // The overlay should appear if:
   // - We are in a resilience error state (stalling, recovering, startup)
   // - We are actively seeking
-  // - The media element is reporting 'waiting' or 'buffering' (except for brief buffering or loop transitions)
+  // - We are buffering (CSS 300ms delay handles brief buffering)
   // - The user has paused the video (and wants the overlay shown)
-  const shouldShowOverlay = !isLoopTransition && (isStalled || isRecovering || (isStartup && !hasEverPlayedRef.current) || isSeeking || (isBuffering && !isBriefBuffering) || isUserPaused);
+  // Note: isLoopTransition still handles loop restart case
+  const shouldShowOverlay = !isLoopTransition && (isStalled || isRecovering || (isStartup && !hasEverPlayedRef.current) || isSeeking || isBuffering || isUserPaused);
 
   const overlayProps = useMemo(() => ({
     status: isSeeking ? 'seeking' : status,
     isVisible: shouldShowOverlay && (isUserPaused ? showPauseOverlay : true),
     shouldRender: shouldShowOverlay,
-    waitingToPlay: isStartup || isRecovering || (isBuffering && !isStalled),
+    waitingToPlay: isStartup || isRecovering || isBuffering,
     isPaused: isUserPaused,
     userIntent,
-    systemHealth: (isStalled || (isBuffering && status === STATUS.playing)) ? 'stalled' : 'ok',
+    systemHealth: (isStalled || isBuffering) ? 'stalled' : 'ok',
     pauseOverlayActive: isUserPaused && showPauseOverlay,
     seconds,
-    stalled: isStalled || (isBuffering && status === STATUS.playing),
+    stalled: isStalled || isBuffering,
     showPauseOverlay,
     showDebug: isStalled || isRecovering || isSeeking,
     initialStart,
@@ -265,26 +231,26 @@ export function useMediaResilience({
       paused: playbackHealth.elementSignals.paused
     }
   }), [
-    status, 
-    isStalled, 
-    isRecovering, 
-    isStartup, 
-    isSeeking, 
-    isBuffering, 
-    isUserPaused, 
-    shouldShowOverlay, 
-    showPauseOverlay, 
-    userIntent, 
-    seconds, 
-    initialStart, 
-    message, 
-    plexId, 
-    debugContext, 
-    playbackHealth, 
-    logWaitKey, 
-    triggerRecovery, 
-    targetTimeSeconds, 
-    playerPositionUpdatedAt, 
+    status,
+    isStalled,
+    isRecovering,
+    isStartup,
+    isSeeking,
+    isBuffering,
+    isUserPaused,
+    shouldShowOverlay,
+    showPauseOverlay,
+    userIntent,
+    seconds,
+    initialStart,
+    message,
+    plexId,
+    debugContext,
+    playbackHealth,
+    logWaitKey,
+    triggerRecovery,
+    targetTimeSeconds,
+    playerPositionUpdatedAt,
     intentPositionUpdatedAt
   ]);
 
