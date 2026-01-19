@@ -81,4 +81,22 @@ describe('tick timer logging', () => {
 
     session._stopTickTimer();
   });
+
+  test('uses sampled logging for timer health checks', async () => {
+    const { FitnessSession } = await import('../../../frontend/src/hooks/fitness/FitnessSession.js');
+
+    const session = new FitnessSession();
+    session.sessionId = 'test-session';
+    session._tickTimerStartedAt = Date.now();
+    session._tickTimerTickCount = 60;
+    session.getMemoryStats = () => ({ rosterSize: 2, deviceCount: 3 });
+
+    session._logTickTimerHealth();
+
+    expect(mockSampled).toHaveBeenCalledWith(
+      'fitness.tick_timer.health',
+      expect.any(Object),
+      expect.objectContaining({ maxPerMinute: expect.any(Number) })
+    );
+  });
 });

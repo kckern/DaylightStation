@@ -2136,12 +2136,12 @@ export class FitnessSession {
    */
   _logTickTimerHealth() {
     const stats = this.getMemoryStats();
-    getLogger().info('fitness.tick_timer.health', {
+    getLogger().sampled('fitness.tick_timer.health', {
       sessionId: this.sessionId,
       tickCount: this._tickTimerTickCount,
       runningForMs: Date.now() - (this._tickTimerStartedAt || Date.now()),
       ...stats
-    });
+    }, { maxPerMinute: 5 });
   }
 
   /**
