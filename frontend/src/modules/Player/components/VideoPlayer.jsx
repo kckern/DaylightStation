@@ -53,7 +53,9 @@ export function VideoPlayer({
     droppedFramePct,
     currentMaxKbps,
     stallState,
-    elementKey
+    elementKey,
+    getMediaEl,
+    getContainerEl
   } = useCommonMediaController({
     start: media.seconds,
     playbackRate: playbackRate || media.playbackRate || 1,
@@ -102,22 +104,25 @@ export function VideoPlayer({
     preset: upscaleEffects
   });
 
-  // Register media element with resilience bridge for overlay loop detection
+  // Register accessors with resilience bridge
   useEffect(() => {
-    if (typeof resilienceBridge?.onRegisterMediaAccess !== 'function') return;
-    const getMediaEl = () => {
-      const el = containerRef.current;
-      if (!el) return null;
-      // For dash-video custom element, get the inner video
-      return el.shadowRoot?.querySelector('video') || el;
+    if (resilienceBridge?.registerAccessors) {
+      resilienceBridge.registerAccessors({ getMediaEl, getContainerEl });
+    }
+    // Also register with legacy onRegisterMediaAccess for backward compatibility
+    if (typeof resilienceBridge?.onRegisterMediaAccess === 'function') {
+      resilienceBridge.onRegisterMediaAccess({
+        getMediaEl,
+        hardReset: null,
+        fetchVideoInfo: fetchVideoInfo || null
+      });
+    }
+    return () => {
+      if (typeof resilienceBridge?.onRegisterMediaAccess === 'function') {
+        resilienceBridge.onRegisterMediaAccess({});
+      }
     };
-    resilienceBridge.onRegisterMediaAccess({
-      getMediaEl,
-      hardReset: null,
-      fetchVideoInfo: fetchVideoInfo || null
-    });
-    return () => { resilienceBridge.onRegisterMediaAccess({}); };
-  }, [resilienceBridge, fetchVideoInfo]);
+  }, [resilienceBridge, getMediaEl, getContainerEl, fetchVideoInfo]);
 
   const { show, season, title, media_url } = media;
 
@@ -169,7 +174,7 @@ export function VideoPlayer({
 
     const intervalId = setInterval(() => {
       const logger = getLogger();
-      const mediaEl = (containerRef.current?.shadowRoot?.querySelector('video')) || containerRef.current;
+      const mediaEl = getMediaEl();
       
       // Calculate instantaneous FPS if available
       let estimatedFps = null;
@@ -201,7 +206,7 @@ export function VideoPlayer({
     }, 10000); // 10 seconds
 
     return () => clearInterval(intervalId);
-  }, [isPaused, isStalled, seconds, displayReady, quality, droppedFramePct, currentMaxKbps, duration, media, isDash, shader, containerRef]);
+  }, [isPaused, isStalled, seconds, displayReady, quality, droppedFramePct, currentMaxKbps, duration, media, isDash, shader, getMediaEl]);
 
   const percent = duration ? ((seconds / duration) * 100).toFixed(1) : 0;
   const plexIdValue = media?.media_key || media?.key || media?.plex || null;
@@ -239,10 +244,7 @@ export function VideoPlayer({
             shader,
             stallState
           }}
-          getMediaEl={() => {
-            const el = (containerRef.current?.shadowRoot?.querySelector('video')) || containerRef.current;
-            return el || null;
-          }}
+          getMediaEl={getMediaEl}
         />
       )}
       {isDash ? (
