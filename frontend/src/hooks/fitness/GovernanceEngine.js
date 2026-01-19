@@ -487,52 +487,21 @@ export class GovernanceEngine {
   }
 
   /**
-   * Evaluate governance state directly from TreasureBox snapshot.
-   * Called reactively when zone state changes - no polling delay.
-   * This is the preferred evaluation path for responsive governance.
+   * DEPRECATED: Reactive evaluation from TreasureBox removed.
+   * Governance now evaluates on tick boundaries using ZoneProfileStore.
+   *
+   * @deprecated Use evaluate() called from session tick instead
    */
   _evaluateFromTreasureBox() {
-    const box = this.session?.treasureBox;
-    if (!box) {
-      // Fallback to roster-based evaluation if no TreasureBox
-      if (this.session?.roster) {
-        this.evaluate();
-      }
-      return;
-    }
-
-    const snapshot = box.getLiveSnapshot();
-
-    const activeParticipants = snapshot
-      .filter(s => s.isActive)
-      .map(s => s.userId);
-
-    const userZoneMap = {};
-    snapshot.forEach(s => {
-      if (s.userId) {
-        userZoneMap[s.userId] = s.zoneId;
-      }
+    // No-op: Reactive evaluation removed
+    // Governance now runs on tick boundaries via session._collectTimelineTick()
+    // and reads stable zone state from ZoneProfileStore
+    getLogger().warn('governance.evaluate_from_treasurebox_deprecated', {
+      message: 'Governance now tick-driven via ZoneProfileStore'
     });
 
-    // Build zoneRankMap and zoneInfoMap from session's zone config
-    const zoneRankMap = {};
-    const zoneInfoMap = {};
-    const zoneConfig = this.session?.snapshot?.zoneConfig;
-    if (Array.isArray(zoneConfig)) {
-      zoneConfig.forEach((z, idx) => {
-        const zid = String(z.id || z.name).toLowerCase();
-        zoneRankMap[zid] = idx;
-        zoneInfoMap[zid] = z;
-      });
-    }
-
-    this.evaluate({
-      activeParticipants,
-      userZoneMap,
-      zoneRankMap,
-      zoneInfoMap,
-      totalCount: activeParticipants.length
-    });
+    // Fallback: Just call regular evaluate() if someone still calls this
+    this.evaluate();
   }
 
   _schedulePulse(delayMs) {
