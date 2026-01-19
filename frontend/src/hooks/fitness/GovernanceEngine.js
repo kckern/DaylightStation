@@ -859,6 +859,17 @@ export class GovernanceEngine {
     zoneInfoMap = zoneInfoMap || {};
     totalCount = totalCount || activeParticipants.length;
 
+    // NEW: Populate userZoneMap from ZoneProfileStore (stable, tick-aligned zone state)
+    // This overrides any volatile zone data with the stable source used by UI
+    if (this.session?.zoneProfileStore) {
+      activeParticipants.forEach((participantId) => {
+        const profile = this.session.zoneProfileStore.getProfile(participantId);
+        if (profile?.currentZoneId) {
+          userZoneMap[participantId] = profile.currentZoneId.toLowerCase();
+        }
+      });
+    }
+
     // 1. Check if media is governed
     if (!this.media || !this.media.id || !hasGovernanceRules) {
       getLogger().warn('governance.evaluate.no_media_or_rules', {
