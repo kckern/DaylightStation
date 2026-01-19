@@ -32,7 +32,9 @@ export function useQueueController({ play, queue, clear }) {
     setShader((prevClass) => {
       const currentIndex = classes.indexOf(prevClass);
       const newIndex = (currentIndex + upOrDownInt + classes.length) % classes.length;
-      return classes[newIndex];
+      const nextClass = classes[newIndex];
+      playbackLog('shader-changed', { from: prevClass, to: nextClass });
+      return nextClass;
     });
   }, []);
 
