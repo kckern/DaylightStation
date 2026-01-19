@@ -6,7 +6,7 @@ test.describe('Video Player', () => {
     await page.goto('/tv');
 
     // Wait for page to load
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Check if player or media content exists
     const hasPlayer = await page.locator('.player, video, [class*="player"]').count();
@@ -21,7 +21,7 @@ test.describe('Video Player', () => {
     page.on('pageerror', error => errors.push(error.message));
 
     await page.goto('/tv');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Allow for non-critical errors, but log them
     if (errors.length > 0) {

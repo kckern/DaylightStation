@@ -8,6 +8,9 @@ export default defineConfig({
     baseURL: 'http://localhost:3111',
     headless: true,
     screenshot: 'only-on-failure',
+    launchOptions: {
+      args: ['--autoplay-policy=no-user-gesture-required'],
+    },
   },
   webServer: {
     command: 'npm run dev',

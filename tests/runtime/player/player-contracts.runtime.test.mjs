@@ -11,7 +11,7 @@ test.describe('Player Contract Tests', () => {
   test('VideoPlayer reports playback metrics to parent', async ({ page }) => {
     // Navigate to TV app (has video player)
     await page.goto('/tv');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Wait for potential metrics capture
     await page.waitForTimeout(3000);
@@ -33,7 +33,7 @@ test.describe('Player Contract Tests', () => {
 
   test('Parent can access media element via test hook', async ({ page }) => {
     await page.goto('/tv');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Wait for media access to be registered
     await page.waitForTimeout(3000);
