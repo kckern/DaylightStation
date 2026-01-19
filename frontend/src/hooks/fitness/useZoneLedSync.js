@@ -13,6 +13,7 @@
 
 import { useRef, useCallback, useEffect } from 'react';
 import { DaylightAPI } from '../../lib/api.mjs';
+import { getLogger } from '../../lib/logging/Logger.js';
 
 const THROTTLE_MS = 5000; // Minimum interval between LED updates
 const DEBOUNCE_MS = 1000; // Wait for zone stability before sending
@@ -78,6 +79,15 @@ export function useZoneLedSync({
         timestamp: Date.now()
       };
       
+      // Log zone LED activation (sampled to reduce volume)
+      const activeZones = payload.zones.filter(z => z.isActive && z.zoneId);
+      getLogger().sampled('fitness.zone_led.activated', {
+        zoneCount: activeZones.length,
+        zoneIds: activeZones.map(z => z.zoneId),
+        sessionEnded,
+        householdId
+      }, { maxPerMinute: 20 });
+
       // Fire and forget - don't block on response
       DaylightAPI('api/fitness/zone_led', payload, 'POST').catch(err => {
         // Silent failure - LED sync should never interrupt workout
