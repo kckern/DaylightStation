@@ -13,26 +13,21 @@ test.describe('Player Contract Tests', () => {
     await page.goto('/tv');
     await page.waitForLoadState('networkidle');
 
-    // Wait for metrics to be captured (may need to click a show/video first)
-    // Give it some time for the player to initialize and report metrics
+    // Wait for potential metrics capture
     await page.waitForTimeout(3000);
 
     // Check if metrics were captured
     const metrics = await page.evaluate(() => window.__TEST_LAST_METRICS__);
 
-    // If no metrics yet, the test documents this gap
-    // In a real scenario with video playing, metrics should exist
     if (metrics) {
-      // Verify metrics shape
+      // Verify metrics shape - these assertions are real contracts
       expect(metrics).toHaveProperty('seconds');
       expect(metrics).toHaveProperty('isPaused');
       expect(typeof metrics.seconds).toBe('number');
       expect(typeof metrics.isPaused).toBe('boolean');
     } else {
-      // Log for visibility - metrics may not flow without active playback
-      console.log('No metrics captured - may need video playback to trigger');
-      // Test passes but documents the gap
-      expect(true).toBe(true);
+      // Skip test when no player is active - this is expected without video playback
+      test.skip(true, 'No active player - metrics not captured without video playback');
     }
   });
 
@@ -58,12 +53,11 @@ test.describe('Player Contract Tests', () => {
     });
 
     if (hasMediaAccess.hasAccess && hasMediaAccess.hasElement) {
-      // Verify element is a media element
+      // Verify element is a media element - this is the real contract
       expect(['VIDEO', 'AUDIO', 'DASH-VIDEO']).toContain(hasMediaAccess.tagName);
     } else {
-      // Log for visibility - media access may not be registered without player mount
-      console.log('Media access not registered - may need active player');
-      expect(true).toBe(true);
+      // Skip test when no player is mounted - this is expected on TV landing
+      test.skip(true, 'No active player - media access not registered without player mount');
     }
   });
 });
