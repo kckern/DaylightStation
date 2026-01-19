@@ -200,10 +200,18 @@ export function useUpscaleEffects({
     className: `upscale-crt-overlay ${isActive && shouldCRT ? 'active' : ''}`
   };
 
+  // Calculate effective dimensions for debug (repeat logic for debug output)
+  const srcAspect = srcDimensions.width / srcDimensions.height || 1;
+  const displayAspect = displayDimensions.width / displayDimensions.height || 1;
+  const effectiveDimensions = srcAspect > displayAspect
+    ? { width: displayDimensions.width, height: Math.round(displayDimensions.width / srcAspect) }
+    : { width: Math.round(displayDimensions.height * srcAspect), height: displayDimensions.height };
+
   // Debug info for development
   const debug = {
     srcDimensions,
     displayDimensions,
+    effectiveDimensions,
     upscaleRatio: upscaleRatio.toFixed(2),
     blurPx: blurPx.toFixed(2),
     shouldBlur,
