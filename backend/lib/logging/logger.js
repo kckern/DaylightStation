@@ -6,7 +6,9 @@
  */
 
 import os from 'os';
+import moment from 'moment-timezone';
 import { getDispatcher, isLoggingInitialized } from './dispatcher.js';
+import { configService } from '../config/index.mjs';
 
 const hostname = os.hostname();
 
@@ -52,8 +54,24 @@ export function createLogger({ source = 'backend', app = 'default', context = {}
     }
 
     const dispatcher = getDispatcher();
+    
+    let timestamp;
+    try {
+      if (configService && typeof configService.isReady === 'function' && configService.isReady()) {
+        const tz = configService.getHouseholdTimezone ? configService.getHouseholdTimezone() : 'UTC';
+        timestamp = moment().tz(tz).format();
+      }
+    } catch (err) {
+      // Fallback to UTC if config is not ready or throws
+      // Do not log the error here as it would cause an infinite loop
+    }
+    
+    if (!timestamp) {
+      timestamp = new Date().toISOString();
+    }
+
     dispatcher.dispatch({
-      ts: new Date().toISOString(),
+      ts: timestamp,
       level,
       event,
       message: options.message,

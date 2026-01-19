@@ -52,6 +52,7 @@ class HomeAssistant {
             method,
             url,
             headers,
+            timeout: 5000,
         };
         if (data) {
             options.data = data;
@@ -156,7 +157,7 @@ class Kiosk {
 
         while (attempts < maxAttempts) {
             try {
-                const response = await axios.get(url);
+                const response = await axios.get(url, { timeout: 2000 });
                 if (response.status === 200) {
                     const secondsTaken = Math.floor((Date.now() - startTime) / 1000);
                     exeLogger.info('exe.kiosk.ready', { secondsTaken });
@@ -186,7 +187,7 @@ class Kiosk {
         const encodedUrl = encodeURIComponent(dst_url);
         const startTime = Date.now();
         const url = `http://${this.host}:${this.port}/?cmd=loadUrl&password=${this.password}&url=${encodedUrl}`;
-        await axios.get(url);
+        await axios.get(url, { timeout: 5000 });
         const isLoaded = await this.waitForUrl(dst_url);
         exeLogger.debug('exe.kiosk.loadUrl', { isLoaded, dst_url });
         const secondsToLoadUrl = Math.floor((Date.now() - startTime) / 1000);
@@ -206,7 +207,7 @@ class Kiosk {
 
         while (attempts === null || tries < attempts) {
             try {
-                const { data: haystack } = await axios.get(haystack_url);
+                const { data: haystack } = await axios.get(haystack_url, { timeout: 2000 });
                 if (haystack.includes(testString)) {
                     return true;
                 }
@@ -242,10 +243,15 @@ class Tasker {
         if(attempt > 10) return false;
         start = start || Date.now();
         const url = `http://${this.host}:${this.port}/${command}`;
-        const response = await axios.get(url);
-        const isOK = /OK/.test(response.data);
-        if(!isOK) await this.sendCommand(command, start, attempt + 1);
-        return  Math.floor((Date.now() - start) / 1000);
+        try {
+            const response = await axios.get(url, { timeout: 2000 });
+            const isOK = /OK/.test(response.data);
+            if(!isOK) throw new Error('Not OK');
+            return Math.floor((Date.now() - start) / 1000);
+        } catch (error) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+            return this.sendCommand(command, start, attempt + 1);
+        }
     }
 }
 

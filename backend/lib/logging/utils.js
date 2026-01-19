@@ -30,7 +30,7 @@ export const serializeError = (error) => {
   if (typeof error === 'object') {
     return {
       name: error.name ?? null,
-      message: error.message ?? error.shortMessage ?? String(error),
+      message: error.message || error.shortMessage || error.code || String(error),
       stack: error.stack ?? null,
       code: error.code ?? null,
       // Preserve response data for HTTP errors
