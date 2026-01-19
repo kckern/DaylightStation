@@ -213,7 +213,7 @@ export function VideoPlayer({
   
   const heading = !!show && !!season && !!title
     ? `${show} - ${season}: ${title}`
-    : !!show && !!seasonc
+    : !!show && !!season
     ? `${show} - ${season}`
     : !!show
     ? show
