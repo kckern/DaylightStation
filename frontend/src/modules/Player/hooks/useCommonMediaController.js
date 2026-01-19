@@ -275,10 +275,19 @@ export function useCommonMediaController({
 
   const getStrategyStep = useCallback((index) => strategySteps[index] || null, [strategySteps]);
 
+  const getContainerEl = useCallback(() => {
+    return containerRef.current;
+  }, []);
+
   const getMediaEl = useCallback(() => {
-    const mediaEl = containerRef.current?.shadowRoot?.querySelector('video') || containerRef.current;
-    if (!mediaEl) return null;
-    return mediaEl;
+    const container = containerRef.current;
+    if (!container) return null;
+    // If container has shadow DOM (dash-video), get the inner video/audio
+    if (container.shadowRoot) {
+      return container.shadowRoot.querySelector('video, audio');
+    }
+    // Otherwise container IS the media element
+    return container;
   }, []);
 
   const isDash = meta.media_type === 'dash_video';
@@ -1314,6 +1323,8 @@ export function useCommonMediaController({
     currentMaxKbps,
     stallState,
     recovery: recoveryApi,
-    elementKey
+    elementKey,
+    getMediaEl,
+    getContainerEl
   };
 }
