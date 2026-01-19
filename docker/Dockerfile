@@ -5,7 +5,11 @@ FROM node:${NODE_VERSION}-alpine
 WORKDIR /usr/src/app
 
 # Layer 1: System dependencies - stable, rarely changes
-RUN apk add --no-cache openssh-client git curl ffmpeg
+RUN apk add --no-cache openssh-client git curl ffmpeg tzdata yq
+
+# Set System Timezone
+ARG TZ=America/Los_Angeles
+ENV TZ=${TZ}
 
 # Layer 2: Build tools for native modules (canvas, etc.)
 RUN apk add --no-cache cairo-dev jpeg-dev pango-dev giflib-dev g++ build-base
