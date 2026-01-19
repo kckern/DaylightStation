@@ -36,8 +36,7 @@ export class FitnessTreasureBox {
     // External mutation callback (set by context) to trigger UI re-render
     this._mutationCb = null;
     this._autoInterval = null; // timer id
-    // Governance callback for reactive zone change notifications
-    this._governanceCb = null;
+    // REMOVED: _governanceCb - governance now reads from ZoneProfileStore on tick boundaries
   }
 
   _log(event, data = {}, level = 'warn') { // Default to warn to match legacy behavior
@@ -496,18 +495,13 @@ export class FitnessTreasureBox {
       zone: zone ? { id: zone.id, name: zone.name, min: zone.min, coins: zone.coins } : null 
     });
     if (zone) {
-      const previousZoneId = acc.lastZoneId;
       if (!acc.highestZone || zone.min > acc.highestZone.min) {
         this._log('update_highest_zone', { accKey, zone: { id: zone.id, name: zone.name } });
         acc.highestZone = zone;
         acc.currentColor = zone.color;
         acc.lastColor = zone.color; // update persistent last color
         acc.lastZoneId = zone.id || zone.name || null;
-
-        // Notify governance if zone changed (for reactive evaluation)
-        if (acc.lastZoneId !== previousZoneId) {
-          this._notifyGovernance();
-        }
+        // REMOVED: _notifyGovernance() call - governance now reads from ZoneProfileStore on tick boundaries
       }
     }
     acc.lastHR = hr;
@@ -702,20 +696,25 @@ export class FitnessTreasureBox {
   }
 
   /**
-   * Set callback for governance engine to react to zone changes.
-   * Called when any user's zone changes for reactive governance evaluation.
+   * DEPRECATED: Governance callback removed.
+   * Governance now reads zone state from ZoneProfileStore on tick boundaries.
+   * Keeping method stub for backward compatibility.
    *
    * @param {Function|null} callback
+   * @deprecated
    */
   setGovernanceCallback(callback) {
-    this._governanceCb = typeof callback === 'function' ? callback : null;
-  }
-
-  _notifyGovernance() {
-    if (this._governanceCb) {
-      try { this._governanceCb(); } catch (_) { /* ignore */ }
+    // No-op: Governance callback removed - now tick-driven via ZoneProfileStore
+    if (callback) {
+      getLogger().warn('treasurebox.governance_callback_deprecated', {
+        message: 'Governance now reads from ZoneProfileStore on tick boundaries'
+      });
     }
   }
+
+  // REMOVED: _notifyGovernance() - no longer needed
+  // Governance now runs on tick boundaries via session._collectTimelineTick()
+  // and reads stable zone state from ZoneProfileStore
 
   /**
    * Get real-time interval progress for a user.
