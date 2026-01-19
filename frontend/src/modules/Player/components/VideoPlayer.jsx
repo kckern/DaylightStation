@@ -10,27 +10,28 @@ import { getLogger } from '../../../lib/logging/Logger.js';
 /**
  * Video player component for playing video content (including DASH video)
  */
-export function VideoPlayer({ 
-  media, 
-  advance, 
-  clear, 
-  shader, 
-  volume, 
+export function VideoPlayer({
+  media,
+  advance,
+  clear,
+  shader,
+  volume,
   playbackRate,
-  setShader, 
-  cycleThroughClasses, 
-  classes, 
+  setShader,
+  cycleThroughClasses,
+  classes,
   playbackKeys,
-  queuePosition, 
-  fetchVideoInfo, 
-  ignoreKeys, 
-  onProgress, 
-  onMediaRef, 
+  queuePosition,
+  fetchVideoInfo,
+  ignoreKeys,
+  onProgress,
+  onMediaRef,
   showQuality,
   stallConfig,
   keyboardOverrides,
   onController,
-  upscaleEffects = 'auto'
+  upscaleEffects = 'auto',
+  resilienceBridge
 }) {
   // console.log('[VideoPlayer] Received keyboardOverrides:', keyboardOverrides ? Object.keys(keyboardOverrides) : 'undefined');
   const isPlex = ['dash_video'].includes(media.media_type);
@@ -100,6 +101,23 @@ export function VideoPlayer({
     mediaRef: containerRef,
     preset: upscaleEffects
   });
+
+  // Register media element with resilience bridge for overlay loop detection
+  useEffect(() => {
+    if (typeof resilienceBridge?.onRegisterMediaAccess !== 'function') return;
+    const getMediaEl = () => {
+      const el = containerRef.current;
+      if (!el) return null;
+      // For dash-video custom element, get the inner video
+      return el.shadowRoot?.querySelector('video') || el;
+    };
+    resilienceBridge.onRegisterMediaAccess({
+      getMediaEl,
+      hardReset: null,
+      fetchVideoInfo: fetchVideoInfo || null
+    });
+    return () => { resilienceBridge.onRegisterMediaAccess({}); };
+  }, [resilienceBridge, fetchVideoInfo]);
 
   const { show, season, title, media_url } = media;
 
@@ -200,7 +218,7 @@ export function VideoPlayer({
   return (
     <div className={`video-player ${shader}`}>
       <ProgressBar percent={percent} onClick={handleProgressClick} />
-      {(seconds === 0 || isStalled || isSeeking || isAdapting) && (
+      {((seconds === 0 && isPaused) || isStalled || isSeeking || isAdapting) && (
         <LoadingOverlay
           seconds={seconds}
           isPaused={isPaused}
@@ -301,5 +319,12 @@ VideoPlayer.propTypes = {
   showQuality: PropTypes.bool,
   stallConfig: PropTypes.object,
   onController: PropTypes.func,
-  upscaleEffects: PropTypes.oneOf(['auto', 'blur-only', 'crt-only', 'aggressive', 'none'])
+  upscaleEffects: PropTypes.oneOf(['auto', 'blur-only', 'crt-only', 'aggressive', 'none']),
+  resilienceBridge: PropTypes.shape({
+    onPlaybackMetrics: PropTypes.func,
+    onRegisterMediaAccess: PropTypes.func,
+    seekToIntentSeconds: PropTypes.number,
+    onSeekRequestConsumed: PropTypes.func,
+    onStartupSignal: PropTypes.func
+  })
 };
