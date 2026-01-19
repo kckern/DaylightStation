@@ -1,3 +1,12 @@
+# URL Routing
+
+**Related code:**
+- `frontend/src/hooks/fitness/useFitnessUrlParams.js` - URL parsing hook
+- `frontend/src/Apps/FitnessApp.jsx` - URL integration
+- `backend/routers/fitness.mjs` - Simulation API endpoints
+
+---
+
 # Fitness App URL Routing Design
 
 ## Overview

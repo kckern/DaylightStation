@@ -16,6 +16,7 @@ Index of all feature documentation in the Fitness domain.
 | [voice-memos](features/voice-memos.md) | Stable | Voice memo recording, transcription, and lifecycle |
 | [pose-tracking](features/pose-tracking.md) | Experimental | Pose detection data layer architecture |
 | [vibration-sensors](features/vibration-sensors.md) | Experimental | Bike/elliptical vibration sensor integration |
+| [url-routing](features/url-routing.md) | Stable | Deep linking and URL-based navigation |
 
 ---
 
@@ -30,5 +31,14 @@ reference/fitness/features/
 ├── navigation.md                  # Navigation system redesign
 ├── voice-memos.md                 # Voice memo capture and transcription
 ├── pose-tracking.md               # Pose data layers
-└── vibration-sensors.md           # Vibration sensor integration
+├── vibration-sensors.md           # Vibration sensor integration
+└── url-routing.md                 # Deep linking and URL-based navigation
 ```
+
+## URL Routing
+
+Deep linking support for bookmarkable views and testing shortcuts.
+
+- **Doc:** `features/url-routing.md`
+- **Routes:** `/fitness`, `/fitness/menu/:id`, `/fitness/show/:id`, `/fitness/play/:id`, `/fitness/plugin/:id`, `/fitness/users`
+- **Query params:** `?music=on|off`, `?fullscreen=1`, `?simulate=duration,users,rpm`
