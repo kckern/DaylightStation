@@ -111,6 +111,49 @@ export function AudioPlayer({
     shaderState
   });
 
+  // Enhanced blackout diagnostics - log all layer dimensions
+  useEffect(() => {
+    if (shader !== 'blackout') return;
+    const logger = getLogger();
+    const logBlackoutDimensions = () => {
+      const audioPlayer = audioPlayerRef.current;
+      const playerParent = audioPlayer?.closest('.player');
+      const shaderEl = shaderRef.current;
+      const viewport = { w: window.innerWidth, h: window.innerHeight };
+
+      const getRect = (el) => {
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return { x: r.x, y: r.y, w: r.width, h: r.height, bottom: r.bottom, right: r.right };
+      };
+
+      const playerRect = getRect(playerParent);
+      const audioRect = getRect(audioPlayer);
+      const shaderRect = getRect(shaderEl);
+
+      logger.warn('blackout.dimensions', {
+        viewport,
+        player: playerRect,
+        audioPlayer: audioRect,
+        shader: shaderRect,
+        gaps: playerRect ? {
+          top: playerRect.y,
+          left: playerRect.x,
+          bottom: viewport.h - playerRect.bottom,
+          right: viewport.w - playerRect.right
+        } : null
+      });
+    };
+
+    // Log on mount and resize
+    const timeoutId = setTimeout(logBlackoutDimensions, 200);
+    window.addEventListener('resize', logBlackoutDimensions);
+    return () => {
+      clearTimeout(timeoutId);
+      window.removeEventListener('resize', logBlackoutDimensions);
+    };
+  }, [shader]);
+
   // Prod telemetry: cover image loaded
   const handleCoverLoad = useCallback(() => {
     const logger = getLogger();
