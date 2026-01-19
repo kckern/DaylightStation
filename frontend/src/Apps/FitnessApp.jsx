@@ -10,7 +10,7 @@ import FitnessPlayer from '../modules/Fitness/FitnessPlayer.jsx';
 import FitnessPluginContainer from '../modules/Fitness/FitnessPlugins/FitnessPluginContainer.jsx';
 import { VolumeProvider } from '../modules/Fitness/VolumeProvider.jsx';
 import { FitnessProvider } from '../context/FitnessContext.jsx';
-import { getChildLogger } from '../lib/logging/singleton.js';
+import getLogger from '../lib/logging/Logger.js';
 import { sortNavItems } from '../modules/Fitness/lib/navigationUtils.js';
 import VoiceMemoOverlay from '../modules/Fitness/FitnessPlayerOverlay/VoiceMemoOverlay.jsx';
 import { useFitnessContext } from '../context/FitnessContext.jsx';
@@ -38,7 +38,7 @@ const FitnessApp = () => {
     return isFirefox;
   });
   const viewportRef = useRef(null);
-  const logger = useMemo(() => getChildLogger({ app: 'fitness' }), []);
+  const logger = useMemo(() => getLogger().child({ app: 'fitness' }), []);
 
   useEffect(() => {
     logger.info('fitness-app-mount');
@@ -93,7 +93,7 @@ const FitnessApp = () => {
       // React render frequency tracking (exposed by FitnessContext if available)
       const renderStats = window.__fitnessRenderStats?.() || {};
 
-      logger.info('fitness-profile', {
+      logger.sampled('fitness-profile', {
         sample: sampleCount,
         elapsedSec: elapsed,
         heapMB: mem?.usedMB,
@@ -126,7 +126,7 @@ const FitnessApp = () => {
         // React render stats (if exposed)
         forceUpdateCount: renderStats.forceUpdateCount,
         renderCount: renderStats.renderCount
-      });
+      }, { maxPerMinute: 2 });
 
       // Warn if growth is concerning
       if (growthMB > 30) {
