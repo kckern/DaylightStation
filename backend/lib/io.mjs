@@ -101,6 +101,53 @@ export const saveImage = async (url, folder, uid) => {
     }
 };
 
+/**
+ * Load a file by numeric prefix from a directory
+ * Matches files like "0017-some-title.yml" when given prefix "17" or "0017"
+ * @param {string} folder - The folder path relative to data directory (e.g., 'content/songs/hymn')
+ * @param {string} prefix - The numeric prefix to match (e.g., '17', '0017', '017')
+ * @returns {object|null} The parsed file content or null if not found
+ */
+export const loadFileByPrefix = (folder, prefix) => {
+    const dataPath = getDataPath();
+    const fullPath = `${dataPath}/${folder}`;
+
+    if (!fs.existsSync(fullPath)) {
+        ioLogger.warn('io.loadFileByPrefix.folderMissing', { path: fullPath });
+        return null;
+    }
+
+    // Normalize prefix: strip leading zeros for comparison
+    const normalizedPrefix = String(prefix).replace(/^0+/, '') || '0';
+
+    const files = fs.readdirSync(fullPath).filter(file =>
+        (file.endsWith('.yml') || file.endsWith('.yaml')) && !file.startsWith('._')
+    );
+
+    // Find first file where leading number matches
+    const matchingFile = files.find(file => {
+        const match = file.match(/^(\d+)/);
+        if (!match) return false;
+        const fileNum = match[1].replace(/^0+/, '') || '0';
+        return fileNum === normalizedPrefix;
+    });
+
+    if (!matchingFile) {
+        return null;
+    }
+
+    const filePath = `${fullPath}/${matchingFile}`;
+    const fileData = fs.readFileSync(filePath, 'utf8').toString().trim();
+
+    try {
+        const object = yaml.load(fileData);
+        return object || null;
+    } catch (e) {
+        ioLogger.error('io.loadFileByPrefix.parseError', { filePath, message: e?.message || e });
+        return null;
+    }
+};
+
 export const loadRandom = (folder) => {
     const path = `${getDataPath()}/${folder}`;
     if (!fs.existsSync(path)) {
@@ -649,9 +696,9 @@ const getDefaultUsername = (householdId = null) => {
 };
 
 
-export { 
-    loadFile, 
-    saveFile, 
+export {
+    loadFile,
+    saveFile,
     sanitize, 
     // User-level helpers
     userLoadFile, 
