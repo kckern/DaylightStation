@@ -37,3 +37,4 @@ tests/runtime/
 /test-results
 .claude/ralph-loop.local.md
 /logs
+/.playwright-mcp
