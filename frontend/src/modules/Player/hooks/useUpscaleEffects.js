@@ -40,6 +40,7 @@ export function useUpscaleEffects({
   const [srcDimensions, setSrcDimensions] = useState({ width: 0, height: 0 });
   const [displayDimensions, setDisplayDimensions] = useState({ width: 0, height: 0 });
   const [isStabilized, setIsStabilized] = useState(false);
+  const [isLooping, setIsLooping] = useState(false);
   const stabilizeTimerRef = useRef(null);
   const resizeObserverRef = useRef(null);
 
@@ -141,6 +142,38 @@ export function useUpscaleEffects({
     };
   }, [getVideoElement, updateDisplayDimensions]);
 
+  // Track loop state - looped videos should skip upscale effects to avoid performance issues
+  useEffect(() => {
+    const videoEl = getVideoElement();
+    if (!videoEl) return;
+
+    const checkLoop = () => {
+      setIsLooping(videoEl.loop === true);
+    };
+
+    // Check initially and on play (loop is often set after loadedmetadata)
+    checkLoop();
+    videoEl.addEventListener('play', checkLoop);
+    videoEl.addEventListener('loadedmetadata', checkLoop);
+
+    // MutationObserver to catch loop attribute changes
+    const observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        if (mutation.attributeName === 'loop') {
+          checkLoop();
+          break;
+        }
+      }
+    });
+    observer.observe(videoEl, { attributes: true, attributeFilter: ['loop'] });
+
+    return () => {
+      videoEl.removeEventListener('play', checkLoop);
+      videoEl.removeEventListener('loadedmetadata', checkLoop);
+      observer.disconnect();
+    };
+  }, [getVideoElement]);
+
   // Calculate upscale ratio and effects
   const { upscaleRatio, blurPx, shouldBlur, shouldCRT } = (() => {
     if (srcDimensions.width === 0 || srcDimensions.height === 0) {
@@ -186,7 +219,8 @@ export function useUpscaleEffects({
     };
   })();
 
-  const isActive = isStabilized && (shouldBlur || shouldCRT);
+  // Disable effects for looped videos (performance optimization for continuous playback)
+  const isActive = isStabilized && !isLooping && (shouldBlur || shouldCRT);
 
   // Build effect styles for video element
   const effectStyles = {};
@@ -217,6 +251,7 @@ export function useUpscaleEffects({
     shouldBlur,
     shouldCRT,
     isStabilized,
+    isLooping,
     preset,
     presetConfig
   };
