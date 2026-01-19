@@ -12,6 +12,9 @@ export { RESILIENCE_STATUS } from './useResilienceState.js';
 
 const STATUS = RESILIENCE_STATUS;
 
+// Stable no-op function to avoid creating new function references on each render
+const NOOP = () => {};
+
 const USER_INTENT = Object.freeze({
   playing: 'playing',
   paused: 'paused',
@@ -269,6 +272,6 @@ export function useMediaResilience({
   return {
     overlayProps,
     state: resilienceState,
-    onStartupSignal: () => {} // No-op for now, simplified
+    onStartupSignal: NOOP // Stable reference to avoid re-render cascades
   };
 }
