@@ -265,6 +265,10 @@ const Player = forwardRef(function Player(props, ref) {
         stalled: typeof metrics.stalled === 'boolean' ? metrics.stalled : prev.stalled,
         stallState: metrics.stallState !== undefined ? metrics.stallState : prev.stallState
       };
+      // Test hook for contract tests
+      if (typeof window !== 'undefined' && window.__TEST_CAPTURE_METRICS__) {
+        window.__TEST_LAST_METRICS__ = next;
+      }
       if (
         prev.seconds === next.seconds
         && prev.isPaused === next.isPaused
@@ -282,13 +286,18 @@ const Player = forwardRef(function Player(props, ref) {
   }, []);
 
   const handleRegisterMediaAccess = useCallback((access = {}) => {
-    setMediaAccess({
+    const newMediaAccess = {
       getMediaEl: typeof access.getMediaEl === 'function' ? access.getMediaEl : null,
       hardReset: typeof access.hardReset === 'function' ? access.hardReset : null,
       fetchVideoInfo: typeof access.fetchVideoInfo === 'function' ? access.fetchVideoInfo : null,
       nudgePlayback: typeof access.nudgePlayback === 'function' ? access.nudgePlayback : null,
       getTroubleDiagnostics: typeof access.getTroubleDiagnostics === 'function' ? access.getTroubleDiagnostics : null
-    });
+    };
+    setMediaAccess(newMediaAccess);
+    // Test hook for contract tests
+    if (typeof window !== 'undefined' && window.__TEST_CAPTURE_METRICS__) {
+      window.__TEST_MEDIA_ACCESS__ = newMediaAccess;
+    }
   }, []);
 
   const handleRegisterResilienceBridge = useCallback((bridge) => {
