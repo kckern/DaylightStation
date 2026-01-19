@@ -1,4 +1,4 @@
-import React, { useMemo, useCallback, useRef } from 'react';
+import React, { useMemo, useCallback, useRef, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { formatTime } from '../lib/helpers.js';
 import { useCommonMediaController } from '../hooks/useCommonMediaController.js';
@@ -41,6 +41,7 @@ export function AudioPlayer({
     handleProgressClick,
     mediaInstanceKey,
     getMediaEl,
+    getContainerEl,
     isPaused,
     isSeeking,
     hardReset
@@ -70,6 +71,26 @@ export function AudioPlayer({
     resilienceBridge,
     watchedDurationProvider
   });
+
+  // Register accessors with resilience bridge
+  useEffect(() => {
+    if (resilienceBridge?.registerAccessors) {
+      resilienceBridge.registerAccessors({ getMediaEl, getContainerEl });
+    }
+    if (typeof resilienceBridge?.onRegisterMediaAccess === 'function') {
+      resilienceBridge.onRegisterMediaAccess({
+        getMediaEl,
+        hardReset,
+        fetchVideoInfo: fetchVideoInfo || null
+      });
+    }
+    return () => {
+      if (typeof resilienceBridge?.onRegisterMediaAccess === 'function') {
+        resilienceBridge.onRegisterMediaAccess({});
+      }
+    };
+  }, [resilienceBridge, getMediaEl, getContainerEl, hardReset, fetchVideoInfo]);
+
   const percent = duration ? ((seconds / duration) * 100).toFixed(1) : 0;
   const header = !!artist && !!album ? `${artist} - ${album}` : !!artist ? artist : !!album ? album : media_url;
   const shaderState = percent < 0.1 || seconds > duration - 2 ? 'on' : 'off';
