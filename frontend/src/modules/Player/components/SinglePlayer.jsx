@@ -244,13 +244,27 @@ export function SinglePlayer(props = {}) {
   
   // Calculate plexId from available sources - plex prop is passed directly from Player
   const initialPlexId = plex || media || mediaInfo?.media_key || mediaInfo?.key || mediaInfo?.plex || null;
+
+  // Create ref to hold registered accessors
+  const mediaAccessorsRef = useRef({ getMediaEl: () => null, getContainerEl: () => null });
+
   const resilienceBridge = useMemo(() => ({
     onPlaybackMetrics,
     onRegisterMediaAccess,
     seekToIntentSeconds,
     onSeekRequestConsumed,
     remountDiagnostics,
-    onStartupSignal
+    onStartupSignal,
+    // New: accessor registration for children
+    registerAccessors: ({ getMediaEl, getContainerEl }) => {
+      mediaAccessorsRef.current = {
+        getMediaEl: getMediaEl || (() => null),
+        getContainerEl: getContainerEl || (() => null)
+      };
+    },
+    // New: accessors that delegate to registered functions
+    getMediaEl: () => mediaAccessorsRef.current.getMediaEl(),
+    getContainerEl: () => mediaAccessorsRef.current.getContainerEl()
   }), [onPlaybackMetrics, onRegisterMediaAccess, seekToIntentSeconds, onSeekRequestConsumed, remountDiagnostics, onStartupSignal]);
   
   const playerBody = (
