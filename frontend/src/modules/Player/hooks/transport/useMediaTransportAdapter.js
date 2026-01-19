@@ -162,12 +162,19 @@ const guard = (label, fn) => (...args) => {
   }
 };
 
-export function useMediaTransportAdapter({ controllerRef, mediaAccess }) {
+export function useMediaTransportAdapter({ controllerRef, mediaAccess, resilienceBridge }) {
   const warnedMissingMediaRef = useRef(false);
 
   const getMediaEl = useCallback(() => {
+    // Prefer resilience bridge (canonical path)
+    if (typeof resilienceBridge?.getMediaEl === 'function') {
+      const el = resilienceBridge.getMediaEl();
+      if (el) return el;
+    }
+    // Fallback to legacy mediaAccess
     const accessEl = typeof mediaAccess?.getMediaEl === 'function' ? mediaAccess.getMediaEl() : null;
     if (accessEl) return accessEl;
+    // Final fallback to controllerRef transport
     const transportEl = controllerRef?.current?.transport?.getMediaEl;
     if (typeof transportEl === 'function') {
       try {
@@ -178,16 +185,26 @@ export function useMediaTransportAdapter({ controllerRef, mediaAccess }) {
       }
     }
     return null;
-  }, [controllerRef, mediaAccess]);
+  }, [controllerRef, mediaAccess, resilienceBridge]);
+
+  const getContainerEl = useCallback(() => {
+    if (typeof resilienceBridge?.getContainerEl === 'function') {
+      return resilienceBridge.getContainerEl();
+    }
+    return null;
+  }, [resilienceBridge]);
 
   useEffect(() => {
     if (warnedMissingMediaRef.current) return;
-    const hasMediaEl = typeof mediaAccess?.getMediaEl === 'function' || typeof controllerRef?.current?.transport?.getMediaEl === 'function';
+    const hasMediaEl =
+      typeof resilienceBridge?.getMediaEl === 'function' ||
+      typeof mediaAccess?.getMediaEl === 'function' ||
+      typeof controllerRef?.current?.transport?.getMediaEl === 'function';
     if (!hasMediaEl) {
       warnedMissingMediaRef.current = true;
       playbackLog('transport-capability-missing', { capability: 'getMediaEl' }, { level: 'warn' });
     }
-  }, [controllerRef, mediaAccess]);
+  }, [controllerRef, mediaAccess, resilienceBridge]);
 
   const play = useMemo(() => guard('play', () => controllerRef?.current?.transport?.play?.()), [controllerRef]);
   const pause = useMemo(() => guard('pause', () => controllerRef?.current?.transport?.pause?.()), [controllerRef]);
@@ -216,6 +233,7 @@ export function useMediaTransportAdapter({ controllerRef, mediaAccess }) {
 
   return {
     getMediaEl,
+    getContainerEl,
     play,
     pause,
     seek,
