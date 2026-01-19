@@ -5,6 +5,7 @@ import { useCommonMediaController } from '../hooks/useCommonMediaController.js';
 import { ProgressBar } from './ProgressBar.jsx';
 import { getLogger } from '../../../lib/logging/Logger.js';
 import { useImageUpscaleBlur } from '../hooks/useImageUpscaleBlur.js';
+import { useShaderDiagnostics } from '../hooks/useShaderDiagnostics.js';
 
 /**
  * Audio player component for playing audio tracks
@@ -100,6 +101,16 @@ export function AudioPlayer({
   const coverImageRef = useRef(null);
   const { blurStyle: coverBlurStyle } = useImageUpscaleBlur(coverImageRef);
 
+  // Shader diagnostics - track dimensions for debugging coverage issues
+  const shaderRef = useRef(null);
+  const audioPlayerRef = useRef(null);
+  useShaderDiagnostics({
+    shaderRef,
+    containerRef: audioPlayerRef,
+    label: 'audio-shader',
+    shaderState
+  });
+
   // Prod telemetry: cover image loaded
   const handleCoverLoad = useCallback(() => {
     const logger = getLogger();
@@ -113,8 +124,8 @@ export function AudioPlayer({
   }, [title, artist, album, media?.media_key, media?.key, media?.plex]);
 
   return (
-    <div className={`audio-player ${shader}`}>
-      <div className={`shader ${shaderState}`} />
+    <div ref={audioPlayerRef} className={`audio-player ${shader}`}>
+      <div ref={shaderRef} className={`shader ${shaderState}`} />
       <ProgressBar percent={percent} onClick={handleProgressClick} />
       <div className="audio-content">
         <div className="image-container">

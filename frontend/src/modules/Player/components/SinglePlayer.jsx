@@ -6,6 +6,7 @@ import { fetchMediaInfo } from '../lib/api.js';
 import { AudioPlayer } from './AudioPlayer.jsx';
 import { VideoPlayer } from './VideoPlayer.jsx';
 import { PlayerOverlayLoading } from './PlayerOverlayLoading.jsx';
+import { useShaderDiagnostics } from '../hooks/useShaderDiagnostics.js';
 
 /**
  * Single player component that handles different media types
@@ -73,6 +74,19 @@ export function SinglePlayer(props = {}) {
     remountDiagnostics,
     onStartupSignal
   };
+
+  // Shader diagnostics for loading state - must be called before early returns
+  const loadingShaderRef = useRef(null);
+  const playerContainerRef = useRef(null);
+  // Content scroller types don't use the shader, so disable for them
+  const isContentScrollerType = !!(scripture || hymn || primary || talk || poem);
+  useShaderDiagnostics({
+    shaderRef: loadingShaderRef,
+    containerRef: playerContainerRef,
+    label: 'loading-shader',
+    shaderState: 'on',
+    enabled: !isContentScrollerType && !suppressLocalOverlay
+  });
 
   if (!!scripture) return <Scriptures {...contentProps} {...contentScrollerBridge} />;
   if (!!hymn) return <Hymns {...contentProps} {...contentScrollerBridge} />;
@@ -283,7 +297,7 @@ export function SinglePlayer(props = {}) {
   const playerBody = (
     <>
       {!isReady && !suppressLocalOverlay && (
-        <div className={`shader on notReady ${shader}`}>
+        <div ref={loadingShaderRef} className={`shader on notReady ${shader}`}>
           <PlayerOverlayLoading
             shouldRender
             isVisible
@@ -344,7 +358,7 @@ export function SinglePlayer(props = {}) {
   }
 
   return (
-    <div className={`player ${playerType || ''}`}>
+    <div ref={playerContainerRef} className={`player ${playerType || ''}`}>
       {playerBody}
     </div>
   );
