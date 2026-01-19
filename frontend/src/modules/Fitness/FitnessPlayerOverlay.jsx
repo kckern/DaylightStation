@@ -56,7 +56,7 @@ export const useGovernanceOverlay = (governanceState, participantRoster = []) =>
       descriptions: [],
       requirements: [],
       highlightUsers: [],
-      countdown: null,
+      deadline: null,
       countdownTotal: null,
       allowGenericAny: false
     };
@@ -179,7 +179,7 @@ export const useGovernanceOverlay = (governanceState, participantRoster = []) =>
       ].filter(Boolean),
       requirements: combinedRequirements,
       highlightUsers: combinedMissingUsers,
-      countdown: null,
+      deadline: null,
       countdownTotal: null,
       allowGenericAny: challengeRequiredCount === 1
     };
@@ -195,16 +195,15 @@ export const useGovernanceOverlay = (governanceState, participantRoster = []) =>
       descriptions: [],
       requirements: [],
       highlightUsers: [],
-      countdown: null,
+      deadline: null,
       countdownTotal: null,
       allowGenericAny: false
     };
   }
 
   if (normalizedStatus === 'warning') {
-    const countdown = Number.isFinite(governanceState.countdownSecondsRemaining)
-      ? governanceState.countdownSecondsRemaining
-      : null;
+    // Pass deadline timestamp instead of computed countdown - consumer uses useDeadlineCountdown
+    const deadline = governanceState.deadline || null;
     const countdownTotal = Number.isFinite(governanceState.gracePeriodTotal)
       ? Math.max(1, governanceState.gracePeriodTotal)
       : Number.isFinite(governanceState.countdownSecondsTotal)
@@ -227,7 +226,7 @@ export const useGovernanceOverlay = (governanceState, participantRoster = []) =>
         descriptions: [],
         requirements: [],
         highlightUsers: [],
-        countdown,
+        deadline,
         countdownTotal,
         allowGenericAny: false
       };
@@ -242,7 +241,7 @@ export const useGovernanceOverlay = (governanceState, participantRoster = []) =>
       descriptions: [],
       requirements: [],
       highlightUsers: warningHighlights,
-      countdown,
+      deadline,
       countdownTotal,
       allowGenericAny: false
     };
@@ -274,7 +273,7 @@ export const useGovernanceOverlay = (governanceState, participantRoster = []) =>
         ...challengeMissingUsers,
         ...missingUsers
       ])),
-      countdown: null,
+      deadline: null,
       countdownTotal: null,
       allowGenericAny: false
     };
