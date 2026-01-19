@@ -104,6 +104,8 @@ export function useMediaResilience({
   const recoveryTimerRef = useRef(null);
   const lastProgressTokenRef = useRef(-1);
   const startupDeadlineRef = useRef(null);
+  // Track if video has ever successfully played (for loop/buffering grace detection)
+  const hasEverPlayedRef = useRef(false);
 
   const triggerRecovery = useCallback((reason) => {
     const now = Date.now();
@@ -136,6 +138,8 @@ export function useMediaResilience({
     if (hasProgress) {
       lastProgressTokenRef.current = playbackHealth.progressToken;
       if (status !== STATUS.playing) actions.setStatus(STATUS.playing);
+      // Mark that we've successfully played (used for loop detection)
+      hasEverPlayedRef.current = true;
       clearTimeout(stallTimerRef.current);
       clearTimeout(recoveryTimerRef.current);
       clearTimeout(startupDeadlineRef.current);
@@ -215,12 +219,60 @@ export function useMediaResilience({
   const isUserPaused = userIntent === USER_INTENT.paused;
   const isBuffering = playbackHealth.isWaiting || playbackHealth.isStalledEvent;
 
+  // Track whether buffering has exceeded grace period (500ms)
+  // Only show overlay after grace period to avoid flashes during loop transitions
+  const [bufferingPastGrace, setBufferingPastGrace] = useState(false);
+  const bufferingGraceTimerRef = useRef(null);
+
+  useEffect(() => {
+    if (isBuffering && hasEverPlayedRef.current) {
+      // Start grace period timer - only show overlay after 500ms of buffering
+      if (!bufferingGraceTimerRef.current) {
+        bufferingGraceTimerRef.current = setTimeout(() => {
+          setBufferingPastGrace(true);
+          bufferingGraceTimerRef.current = null;
+        }, 500);
+      }
+    } else {
+      // Clear timer and reset state when not buffering
+      if (bufferingGraceTimerRef.current) {
+        clearTimeout(bufferingGraceTimerRef.current);
+        bufferingGraceTimerRef.current = null;
+      }
+      if (bufferingPastGrace) {
+        setBufferingPastGrace(false);
+      }
+    }
+    return () => {
+      if (bufferingGraceTimerRef.current) {
+        clearTimeout(bufferingGraceTimerRef.current);
+      }
+    };
+  }, [isBuffering, bufferingPastGrace]);
+
+  // Suppress overlay for brief buffering after we've started playing
+  // Show buffering overlay only if: not yet played, OR buffering has lasted past grace period
+  const isBriefBuffering = hasEverPlayedRef.current && isBuffering && !bufferingPastGrace && !isStalled && !isRecovering;
+
+  // Detect loop transition: video has loop=true, we've played before, and we're near the start
+  // This check runs synchronously during render to prevent overlay flash on loop
+  const isLoopTransition = (() => {
+    if (!hasEverPlayedRef.current) return false;
+    if (seconds >= 1) return false; // Not near start
+    try {
+      const mediaEl = getMediaEl?.();
+      return mediaEl?.loop === true;
+    } catch {
+      return false;
+    }
+  })();
+
   // The overlay should appear if:
   // - We are in a resilience error state (stalling, recovering, startup)
   // - We are actively seeking
-  // - The media element is reporting 'waiting' or 'buffering'
+  // - The media element is reporting 'waiting' or 'buffering' (except for brief buffering or loop transitions)
   // - The user has paused the video (and wants the overlay shown)
-  const shouldShowOverlay = isStalled || isRecovering || isStartup || isSeeking || isBuffering || isUserPaused;
+  const shouldShowOverlay = !isLoopTransition && (isStalled || isRecovering || (isStartup && !hasEverPlayedRef.current) || isSeeking || (isBuffering && !isBriefBuffering) || isUserPaused);
 
   const overlayProps = useMemo(() => ({
     status: isSeeking ? 'seeking' : status,

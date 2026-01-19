@@ -221,13 +221,20 @@ export function PlayerOverlayLoading({
     return null;
   }
 
+  // Use different transition delay for showing vs hiding
+  // When appearing, add 300ms delay to avoid flashing during brief buffering
+  // When disappearing, no delay for instant feedback
+  const transitionStyle = isVisible
+    ? 'opacity 0.3s ease-in-out 0.3s' // 0.3s delay before showing
+    : 'opacity 0.2s ease-in-out 0s';  // No delay when hiding
+
   return (
     <div
       className="loading-overlay loading"
       data-no-fullscreen="true"
       style={{
         opacity: isVisible ? 1 : 0,
-        transition: 'opacity 0.3s ease-in-out'
+        transition: transitionStyle
       }}
       onDoubleClick={togglePauseOverlay}
       onPointerDownCapture={blockFullscreenToggle}
