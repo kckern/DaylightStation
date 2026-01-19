@@ -111,46 +111,96 @@ export function AudioPlayer({
     shaderState
   });
 
-  // Enhanced blackout diagnostics - log all layer dimensions
+  // Enhanced blackout diagnostics - log all layer dimensions for prod debugging
   useEffect(() => {
     if (shader !== 'blackout') return;
     const logger = getLogger();
-    const logBlackoutDimensions = () => {
+
+    const logBlackoutDimensions = (trigger = 'mount') => {
       const audioPlayer = audioPlayerRef.current;
       const playerParent = audioPlayer?.closest('.player');
+      const tvApp = audioPlayer?.closest('.tv-app');
       const shaderEl = shaderRef.current;
-      const viewport = { w: window.innerWidth, h: window.innerHeight };
 
-      const getRect = (el) => {
-        if (!el) return null;
-        const r = el.getBoundingClientRect();
-        return { x: r.x, y: r.y, w: r.width, h: r.height, bottom: r.bottom, right: r.right };
+      // Viewport and document dimensions
+      const viewport = {
+        innerW: window.innerWidth,
+        innerH: window.innerHeight,
+        clientW: document.documentElement.clientWidth,
+        clientH: document.documentElement.clientHeight,
+        scrollY: window.scrollY,
+        scrollX: window.scrollX,
+        dpr: window.devicePixelRatio || 1
       };
 
-      const playerRect = getRect(playerParent);
-      const audioRect = getRect(audioPlayer);
-      const shaderRect = getRect(shaderEl);
+      const body = {
+        scrollH: document.body.scrollHeight,
+        clientH: document.body.clientHeight,
+        offsetH: document.body.offsetHeight
+      };
+
+      const getRect = (el, label) => {
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        const style = window.getComputedStyle(el);
+        return {
+          x: Math.round(r.x * 100) / 100,
+          y: Math.round(r.y * 100) / 100,
+          w: Math.round(r.width * 100) / 100,
+          h: Math.round(r.height * 100) / 100,
+          bottom: Math.round(r.bottom * 100) / 100,
+          right: Math.round(r.right * 100) / 100,
+          position: style.position,
+          overflow: style.overflow
+        };
+      };
+
+      const tvAppRect = getRect(tvApp, 'tvApp');
+      const playerRect = getRect(playerParent, 'player');
+      const audioRect = getRect(audioPlayer, 'audioPlayer');
+      const shaderRect = getRect(shaderEl, 'shader');
+
+      // Calculate gaps from each layer to viewport edge
+      const calcGaps = (rect) => rect ? {
+        top: Math.round(rect.y * 100) / 100,
+        left: Math.round(rect.x * 100) / 100,
+        bottom: Math.round((viewport.innerH - rect.bottom) * 100) / 100,
+        right: Math.round((viewport.innerW - rect.right) * 100) / 100
+      } : null;
 
       logger.warn('blackout.dimensions', {
+        trigger,
+        env: process.env.NODE_ENV || 'unknown',
         viewport,
-        player: playerRect,
-        audioPlayer: audioRect,
-        shader: shaderRect,
-        gaps: playerRect ? {
-          top: playerRect.y,
-          left: playerRect.x,
-          bottom: viewport.h - playerRect.bottom,
-          right: viewport.w - playerRect.right
-        } : null
+        body,
+        layers: {
+          tvApp: tvAppRect,
+          player: playerRect,
+          audioPlayer: audioRect,
+          shader: shaderRect
+        },
+        gaps: {
+          tvApp: calcGaps(tvAppRect),
+          player: calcGaps(playerRect),
+          audioPlayer: calcGaps(audioRect),
+          shader: calcGaps(shaderRect)
+        },
+        ts: Date.now()
       });
     };
 
-    // Log on mount and resize
-    const timeoutId = setTimeout(logBlackoutDimensions, 200);
-    window.addEventListener('resize', logBlackoutDimensions);
+    // Log on mount, resize, and orientation change
+    const timeoutId = setTimeout(() => logBlackoutDimensions('mount'), 200);
+    const handleResize = () => logBlackoutDimensions('resize');
+    const handleOrientation = () => logBlackoutDimensions('orientation');
+
+    window.addEventListener('resize', handleResize);
+    window.addEventListener('orientationchange', handleOrientation);
+
     return () => {
       clearTimeout(timeoutId);
-      window.removeEventListener('resize', logBlackoutDimensions);
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('orientationchange', handleOrientation);
     };
   }, [shader]);
 
