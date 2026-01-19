@@ -144,6 +144,8 @@ const VoiceMemoOverlay = ({
   const autoStartRef = React.useRef(false);
   const overlayRef = React.useRef(null);
   const panelRef = React.useRef(null);
+  // Stale state reset cooldown to prevent render loops (see audit 2026-01-19)
+  const staleResetCooldownRef = React.useRef({ lastReset: 0, recentResets: [] });
 
   const handleAccept = useCallback(() => {
     logVoiceMemo('overlay-accept', { memoId: overlayState?.memoId || null });
@@ -403,6 +405,36 @@ const VoiceMemoOverlay = ({
 
     // Detect and reset stale state (e.g., stuck in 'processing' from previous session)
     if (recorderState !== 'idle' && recorderState !== 'recording' && !isProcessing) {
+      const now = Date.now();
+      const cooldown = staleResetCooldownRef.current;
+      const COOLDOWN_MS = 500;
+      const WARNING_WINDOW_MS = 5000;
+      const WARNING_THRESHOLD = 3;
+
+      // Enforce cooldown to prevent render loop (see audit 2026-01-19)
+      if (now - cooldown.lastReset < COOLDOWN_MS) {
+        logVoiceMemo('overlay-open-stale-state-reset-blocked', {
+          previousState: recorderState,
+          mode: overlayState?.mode,
+          timeSinceLastReset: now - cooldown.lastReset
+        });
+        return; // Skip reset - too soon
+      }
+
+      // Track reset frequency for monitoring
+      cooldown.recentResets = cooldown.recentResets.filter(t => now - t < WARNING_WINDOW_MS);
+      cooldown.recentResets.push(now);
+
+      if (cooldown.recentResets.length >= WARNING_THRESHOLD) {
+        logVoiceMemo('overlay-open-stale-state-reset-warning', {
+          resetCount: cooldown.recentResets.length,
+          windowMs: WARNING_WINDOW_MS,
+          message: 'Frequent stale state resets detected - possible loop'
+        });
+      }
+
+      cooldown.lastReset = now;
+
       logVoiceMemo('overlay-open-stale-state-reset', {
         previousState: recorderState,
         mode: overlayState?.mode
