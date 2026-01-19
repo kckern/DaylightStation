@@ -1,9 +1,31 @@
 # Bug Report: Voice Memo Cancel Does Not Abort Background Processing
 
-**Date:** 2026-01-15  
-**Severity:** Medium  
-**Status:** Open  
+**Date:** 2026-01-15
+**Severity:** Medium
+**Status:** Fixed (2026-01-18)
 **Related code:** [useVoiceMemoRecorder.js](frontend/src/modules/Fitness/FitnessSidebar/useVoiceMemoRecorder.js), [VoiceMemoOverlay.jsx](frontend/src/modules/Fitness/FitnessPlayerOverlay/VoiceMemoOverlay.jsx), [FitnessContext.jsx](frontend/src/context/FitnessContext.jsx)
+
+## Fix Implementation
+
+**Plan:** [docs/plans/2026-01-15-voice-memo-cancel-abort.md](../plans/2026-01-15-voice-memo-cancel-abort.md)
+
+**Commits (8 total):**
+- `f5c2ae48` - Add abortControllerRef and cancelledRef
+- `a00a1a37` - Wire AbortController into handleRecordingStop
+- `c69cc0c2` - Add cancelUpload function
+- `5e03d056` - Destructure cancelUpload in VoiceMemoOverlay
+- `16200743` - Wire cancelUpload into handleClose
+- `fd57998d` - Guard handleRedoCaptured against closed overlay
+- `de66ece3` - Reset stale state on overlay open
+- `d31f008f` - Cleanup abortController on unmount
+
+**Key changes:**
+1. **AbortController pipeline** - Upload can now be aborted mid-flight when user cancels
+2. **cancelUpload function** - Sets cancelledRef, aborts controller, discards chunks, resets state
+3. **handleClose wiring** - Calls cancelUpload on close, stops recording, resets recorderState
+4. **handleRedoCaptured guard** - Returns early if overlay already closed (defense-in-depth)
+5. **Stale state recovery** - Detects and resets stuck recorderState on overlay open
+6. **Unmount cleanup** - Aborts controller and resets refs when hook unmounts
 
 ## Summary
 
