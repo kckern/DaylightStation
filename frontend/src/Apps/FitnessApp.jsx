@@ -137,14 +137,14 @@ const FitnessApp = () => {
       }, { maxPerMinute: 2 });
 
       // Warn if growth is concerning
-      if (growthMB > 30) {
+      if (growthMB > 20) {
         logger.warn('fitness-profile-memory-warning', { growthMB, elapsed });
       }
       if (timerGrowth > 5) {
         logger.warn('fitness-profile-timer-warning', { timerGrowth, elapsed });
       }
       // Warn if session data growing unexpectedly
-      if (sessionStats.maxSeriesLength > 2500) {
+      if (sessionStats.maxSeriesLength > 1500) {
         logger.warn('fitness-profile-series-warning', {
           maxSeriesLength: sessionStats.maxSeriesLength,
           seriesCount: sessionStats.seriesCount
@@ -158,7 +158,7 @@ const FitnessApp = () => {
         });
       }
       // Warn if TreasureBox timeline growing unexpectedly
-      if (sessionStats.treasureBoxCumulativeLen > 1500) {
+      if (sessionStats.treasureBoxCumulativeLen > 800) {
         logger.warn('fitness-profile-treasurebox-warning', {
           cumulativeLen: sessionStats.treasureBoxCumulativeLen,
           perColorPoints: sessionStats.treasureBoxPerColorPoints
