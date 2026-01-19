@@ -3,7 +3,6 @@ import PropTypes from 'prop-types';
 import 'dash-video-element';
 import { useCommonMediaController } from '../hooks/useCommonMediaController.js';
 import { ProgressBar } from './ProgressBar.jsx';
-import { LoadingOverlay } from './LoadingOverlay.jsx';
 import { useUpscaleEffects } from '../hooks/useUpscaleEffects.js';
 import { getLogger } from '../../../lib/logging/Logger.js';
 
@@ -223,30 +222,6 @@ export function VideoPlayer({
   return (
     <div className={`video-player ${shader}`}>
       <ProgressBar percent={percent} onClick={handleProgressClick} />
-      {((seconds === 0 && isPaused) || isStalled || isSeeking || isAdapting) && (
-        <LoadingOverlay
-          seconds={seconds}
-          isPaused={isPaused}
-          fetchVideoInfo={fetchVideoInfo}
-          stalled={isStalled}
-          initialStart={media.seconds || 0}
-          plexId={plexIdValue}
-          message={isAdapting ? adaptMessage : undefined}
-          debugContext={{
-            scope: 'video',
-            mediaType: media?.media_type,
-            title,
-            show,
-            season,
-            url: media_url,
-            media_key: media?.media_key || media?.key || media?.plex,
-            isDash,
-            shader,
-            stallState
-          }}
-          getMediaEl={getMediaEl}
-        />
-      )}
       {isDash ? (
         <dash-video
           key={`${media_url || ''}:${media?.maxVideoBitrate ?? 'unlimited'}:${elementKey}`}
