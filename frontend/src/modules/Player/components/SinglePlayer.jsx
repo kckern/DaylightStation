@@ -16,6 +16,7 @@ export function SinglePlayer(props = {}) {
     onResolvedMeta,
     onPlaybackMetrics,
     onRegisterMediaAccess,
+    onRegisterResilienceBridge,
     onStartupSignal,
     seekToIntentSeconds = null,
     onSeekRequestConsumed,
@@ -266,7 +267,19 @@ export function SinglePlayer(props = {}) {
     getMediaEl: () => mediaAccessorsRef.current.getMediaEl(),
     getContainerEl: () => mediaAccessorsRef.current.getContainerEl()
   }), [onPlaybackMetrics, onRegisterMediaAccess, seekToIntentSeconds, onSeekRequestConsumed, remountDiagnostics, onStartupSignal]);
-  
+
+  // Register the resilienceBridge with the parent Player component
+  useEffect(() => {
+    if (typeof onRegisterResilienceBridge === 'function') {
+      onRegisterResilienceBridge(resilienceBridge);
+    }
+    return () => {
+      if (typeof onRegisterResilienceBridge === 'function') {
+        onRegisterResilienceBridge(null);
+      }
+    };
+  }, [resilienceBridge, onRegisterResilienceBridge]);
+
   const playerBody = (
     <>
       {!isReady && !suppressLocalOverlay && (
@@ -372,6 +385,7 @@ SinglePlayer.propTypes = {
   onResolvedMeta: PropTypes.func,
   onPlaybackMetrics: PropTypes.func,
   onRegisterMediaAccess: PropTypes.func,
+  onRegisterResilienceBridge: PropTypes.func,
   onStartupSignal: PropTypes.func,
   seekToIntentSeconds: PropTypes.number,
   onSeekRequestConsumed: PropTypes.func,

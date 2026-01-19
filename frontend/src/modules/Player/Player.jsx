@@ -175,6 +175,7 @@ const Player = forwardRef(function Player(props, ref) {
   const [mediaAccess, setMediaAccess] = useState(() => createDefaultMediaAccess());
   const [playbackMetrics, setPlaybackMetrics] = useState(() => createDefaultPlaybackMetrics());
   const [remountState, setRemountState] = useState(() => ({ guid: currentMediaGuid || null, nonce: 0, context: null }));
+  const resilienceBridgeRef = useRef(null);
   const remountInfoRef = useRef(remountState);
   const remountTimerRef = useRef(null);
 
@@ -288,6 +289,10 @@ const Player = forwardRef(function Player(props, ref) {
       nudgePlayback: typeof access.nudgePlayback === 'function' ? access.nudgePlayback : null,
       getTroubleDiagnostics: typeof access.getTroubleDiagnostics === 'function' ? access.getTroubleDiagnostics : null
     });
+  }, []);
+
+  const handleRegisterResilienceBridge = useCallback((bridge) => {
+    resilienceBridgeRef.current = bridge || null;
   }, []);
 
   const handleSeekRequestConsumed = useCallback(() => {
@@ -454,7 +459,7 @@ const Player = forwardRef(function Player(props, ref) {
 
   const resilienceControllerRef = resolvedResilience.controllerRef;
 
-  const transportAdapter = useMediaTransportAdapter({ controllerRef, mediaAccess });
+  const transportAdapter = useMediaTransportAdapter({ controllerRef, mediaAccess, resilienceBridge: resilienceBridgeRef.current });
 
   const resolvedResilienceOnState = resolvedResilience.onStateChange;
 
@@ -700,6 +705,7 @@ const Player = forwardRef(function Player(props, ref) {
     onResolvedMeta: handleResolvedMeta,
     onPlaybackMetrics: handlePlaybackMetrics,
     onRegisterMediaAccess: handleRegisterMediaAccess,
+    onRegisterResilienceBridge: handleRegisterResilienceBridge,
     onStartupSignal,
     seekToIntentSeconds: targetTimeSeconds,
     onSeekRequestConsumed: handleSeekRequestConsumed,
