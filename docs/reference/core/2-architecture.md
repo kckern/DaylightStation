@@ -1411,3 +1411,185 @@ sources:
 | **Entropy** | Mixed sources | Explicit `dataSource: lifelog|current` |
 
 This bifurcation cleanly separates temporal concerns while maintaining backward compatibility during migration.
+
+---
+
+# Frontend Logging Infrastructure
+
+**Version:** 1.0
+**Date:** January 2026
+**Status:** Implemented
+
+---
+
+## Overview
+
+Frontend logs are captured in the browser and relayed to the backend via WebSocket for centralized logging. This enables debugging production issues, monitoring playback behavior, and capturing errors that occur in users' browsers.
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     Frontend (Browser)                           │
+├─────────────────────────────────────────────────────────────────┤
+│  Logger.info()  │  console.warn()  │  window.onerror            │
+│        ↓        │        ↓         │        ↓                   │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │           Buffering WebSocket Transport                   │   │
+│  │  (batch 20 events, flush every 1s)                       │   │
+│  └──────────────────────────────────────────────────────────┘   │
+│                          ↓                                       │
+│              WebSocketService.send()                             │
+└─────────────────────────────────────────────────────────────────┘
+                           ↓ WebSocket
+┌─────────────────────────────────────────────────────────────────┐
+│                     Backend (Node.js)                            │
+├─────────────────────────────────────────────────────────────────┤
+│  WebSocket handler receives { topic: 'logging', ... }           │
+│                          ↓                                       │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │              Environment Check                            │   │
+│  │  Dev → write to dev.log                                  │   │
+│  │  Prod → write to stdout (Docker captures)                │   │
+│  └──────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Log Sources
+
+Frontend logging captures three types of events:
+
+### 1. Explicit Logger Calls
+
+Application code using the Logger framework:
+
+```javascript
+import { getLogger } from '../lib/logging/Logger.js';
+const logger = getLogger();
+
+logger.info('playback.started', { title, mediaKey });
+logger.warn('playback.stalled', { currentTime, duration });
+logger.error('playback.failed', { error: err.message });
+```
+
+### 2. Console Interception
+
+All `console.log/warn/error` calls are captured and forwarded, including from third-party libraries. Rate-limited to prevent spam (50-200 events/second per level).
+
+| Console Method | Event Type | Level |
+|----------------|------------|-------|
+| `console.log` | `console.log` | debug |
+| `console.warn` | `console.warn` | warn |
+| `console.error` | `console.error` | error |
+
+### 3. Global Error Handlers
+
+Uncaught errors are automatically captured:
+
+| Handler | Event Type | Purpose |
+|---------|------------|---------|
+| `window.onerror` | `window.onerror` | JavaScript runtime errors |
+| `unhandledrejection` | `unhandledrejection` | Unhandled Promise rejections |
+| Error events | `error` | Global error events |
+
+---
+
+## Log Destinations
+
+| Environment | Destination | Access |
+|-------------|-------------|--------|
+| **Development** | `dev.log` file | `tail -f dev.log` or `grep` |
+| **Production** | Docker stdout/stderr | `docker logs <container>` |
+
+---
+
+## Log Structure
+
+All logs follow this JSON structure:
+
+```json
+{
+  "ts": "2026-01-19T07:30:57.253Z",
+  "level": "info",
+  "event": "playback.started",
+  "data": {
+    "title": "Song Name",
+    "mediaKey": "123456"
+  },
+  "context": {
+    "source": "frontend",
+    "app": "frontend",
+    "ip": "172.18.0.53",
+    "userAgent": "Mozilla/5.0..."
+  },
+  "tags": []
+}
+```
+
+---
+
+## Key Components
+
+| File | Purpose |
+|------|---------|
+| `frontend/src/lib/logging/index.js` | Logger factory, transports (console, WebSocket buffered) |
+| `frontend/src/lib/logging/Logger.js` | Singleton logger instance, `getLogger()` |
+| `frontend/src/lib/logging/errorHandlers.js` | Global error capture (`window.onerror`, `unhandledrejection`) |
+| `frontend/src/lib/logging/consoleInterceptor.js` | Console method interception with rate limiting |
+| `frontend/src/main.jsx` | Logging initialization on app start |
+| `backend/lib/websocket.mjs` | WebSocket log ingestion, writes to dev.log or stdout |
+
+---
+
+## Initialization Flow
+
+```javascript
+// frontend/src/main.jsx
+import { getLogger } from './lib/logging/Logger.js';
+import { initializeErrorHandlers } from './lib/logging/errorHandlers.js';
+import { initializeConsoleInterceptor } from './lib/logging/consoleInterceptor.js';
+
+// Initialize on app start
+const logger = getLogger();
+initializeErrorHandlers(logger);
+initializeConsoleInterceptor(logger);
+
+logger.info('frontend-start');
+```
+
+---
+
+## Buffering Strategy
+
+The WebSocket transport buffers logs before sending:
+
+- **Batch size:** 20 events
+- **Flush interval:** 1 second
+- **Behavior:** Flushes when batch is full OR interval elapsed, whichever comes first
+
+This reduces WebSocket traffic while maintaining reasonable latency for debugging.
+
+---
+
+## Rate Limiting
+
+Console interception applies per-level rate limits to prevent runaway logging:
+
+| Level | Max Events/Second |
+|-------|-------------------|
+| debug | 50 |
+| info | 100 |
+| warn | 100 |
+| error | 200 |
+
+When limits are exceeded, additional logs are dropped silently.
+
+---
+
+## Related Documentation
+
+- **Runbook:** `docs/runbooks/frontend-logging-debugging.md` - Operational guide for checking and troubleshooting logs

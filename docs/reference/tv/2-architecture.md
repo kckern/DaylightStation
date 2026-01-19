@@ -726,3 +726,339 @@ User presses Enter
 ## Conclusion
 
 The current architecture's complexity led directly to a user-facing bug. The proposed refactor eliminates the categories of bugs that can occur (stale closures, manual element cloning, prop drilling) rather than patching individual instances. The investment in refactoring will pay dividends in reduced debugging time and safer feature development.
+
+---
+
+# Player Architecture
+
+**Version:** 1.0
+**Date:** January 2026
+**Status:** Implemented
+
+---
+
+## Overview
+
+The Player system handles video and audio playback with unified overlay handling, cross-component communication, and resilience features. Key architectural patterns include the overlay system, ResilienceBridge for state coordination, and accessor registration for media element access.
+
+---
+
+## Overlay System
+
+### Component: PlayerOverlayLoading
+
+A unified overlay component that handles loading, paused, and stalled states with CSS-driven visibility (no JS timers).
+
+```
+┌────────────────────────────────────────────────────────────┐
+│                    PlayerOverlayLoading                     │
+├────────────────────────────────────────────────────────────┤
+│  Props:                                                     │
+│  ├── shouldRender: boolean    (mount/unmount control)      │
+│  ├── isVisible: boolean       (opacity control)            │
+│  ├── isPaused: boolean        (pause icon state)           │
+│  ├── stalled: boolean         (stall indicator)            │
+│  └── waitingToPlay: boolean   (initial loading state)      │
+├────────────────────────────────────────────────────────────┤
+│  Visibility Logic:                                          │
+│  ├── Initial load: waitingToPlay=true → shows spinner      │
+│  ├── Paused: isPaused=true → shows pause icon              │
+│  ├── Stalled: stalled=true → shows stall indicator         │
+│  └── Playing: all false → overlay hidden via CSS opacity   │
+└────────────────────────────────────────────────────────────┘
+```
+
+### CSS-Driven Visibility
+
+The overlay uses CSS transitions for smooth show/hide, avoiding JS timer complexity:
+
+```css
+.loading-overlay {
+  opacity: 0;
+  transition: opacity 0.3s ease-in-out;
+  pointer-events: none;
+}
+
+.loading-overlay.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+```
+
+### State Derivation
+
+Overlay visibility is derived from playback metrics, not managed separately:
+
+```javascript
+// In SinglePlayer.jsx
+const overlayVisible = waitingToPlay || isPaused || stalled;
+
+<PlayerOverlayLoading
+  shouldRender={true}
+  isVisible={overlayVisible}
+  isPaused={isPaused}
+  stalled={stalled}
+  waitingToPlay={waitingToPlay}
+/>
+```
+
+---
+
+## ResilienceBridge Pattern
+
+### Purpose
+
+Cross-component communication without prop drilling. Allows Player to coordinate with SinglePlayer, which coordinates with AudioPlayer/VideoPlayer.
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                           Player                                 │
+│  ┌────────────────────────────────────────────────────────────┐ │
+│  │ Creates resilienceBridge object                            │ │
+│  │ Receives: playback metrics, startup signals, media access  │ │
+│  └─────────────────────────────────┬──────────────────────────┘ │
+│                                    │ props.resilienceBridge      │
+│                                    ▼                             │
+│  ┌────────────────────────────────────────────────────────────┐ │
+│  │                       SinglePlayer                          │ │
+│  │ Connects resilienceBridge callbacks to useMediaResilience  │ │
+│  │ Passes bridge down to media players                        │ │
+│  └─────────────────────────────────┬──────────────────────────┘ │
+│                                    │ props.resilienceBridge      │
+│                       ┌────────────┴────────────┐               │
+│                       ▼                         ▼                │
+│  ┌──────────────────────────┐  ┌──────────────────────────────┐ │
+│  │      AudioPlayer         │  │       VideoPlayer             │ │
+│  │ Reports metrics          │  │ Reports metrics               │ │
+│  │ Registers media accessors│  │ Registers media accessors    │ │
+│  └──────────────────────────┘  └──────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Key Callbacks
+
+| Callback | Direction | Purpose |
+|----------|-----------|---------|
+| `onPlaybackMetrics` | Child → Parent | Report seconds, paused state, stall state |
+| `onRegisterMediaAccess` | Child → Parent | Register getMediaEl, hardReset, fetchVideoInfo |
+| `seekToIntentSeconds` | Parent → Child | Coordinate seek requests |
+| `onSeekRequestConsumed` | Child → Parent | Acknowledge seek completion |
+| `onStartupSignal` | Child → Parent | Notify playback started |
+
+### Stability Requirement
+
+**All callbacks must be memoized to prevent re-render loops:**
+
+```javascript
+// In useMediaResilience.js
+// Stable no-op function to avoid creating new function references on each render
+const NOOP = () => {};
+
+return {
+  overlayProps,
+  state: resilienceState,
+  onStartupSignal: NOOP // Stable reference to avoid re-render cascades
+};
+```
+
+Without stable references, a child receiving a new callback reference triggers re-render, which creates another new callback, causing an infinite loop.
+
+---
+
+## Media Element Access Pattern
+
+### Problem
+
+Parent components need access to child's media element for operations like:
+- Seeking
+- Getting current time
+- Hard reset
+- Fetching video info
+
+### Solution: Accessor Registration
+
+Child components register accessor functions with the parent via resilienceBridge:
+
+```javascript
+// In AudioPlayer.jsx / VideoPlayer.jsx
+useEffect(() => {
+  if (resilienceBridge?.registerAccessors) {
+    resilienceBridge.registerAccessors({
+      getMediaEl: () => mediaRef.current,
+      getContainerEl: () => containerRef.current,
+      hardReset: () => { /* reset logic */ },
+      fetchVideoInfo: () => { /* return video metadata */ }
+    });
+  }
+}, [resilienceBridge]);
+```
+
+### Hook: useCommonMediaController
+
+Shared media control logic extracted into a reusable hook:
+
+```javascript
+// In useCommonMediaController.js
+export function useCommonMediaController({
+  resilienceBridge,
+  mediaRef,
+  containerRef,
+}) {
+  // Register accessors with parent
+  useEffect(() => {
+    resilienceBridge?.registerAccessors?.({
+      getMediaEl: () => mediaRef.current,
+      getContainerEl: () => containerRef.current,
+    });
+  }, [resilienceBridge, mediaRef, containerRef]);
+
+  // Common playback controls
+  const play = useCallback(() => mediaRef.current?.play(), []);
+  const pause = useCallback(() => mediaRef.current?.pause(), []);
+  const seek = useCallback((time) => {
+    if (mediaRef.current) mediaRef.current.currentTime = time;
+  }, []);
+
+  return { play, pause, seek };
+}
+```
+
+### Access Pattern
+
+Parent accesses child's media element through registered accessors:
+
+```javascript
+// In Player.jsx
+const handleSeek = (targetSeconds) => {
+  const mediaEl = resilienceBridge.getMediaEl?.();
+  if (mediaEl) {
+    mediaEl.currentTime = targetSeconds;
+  }
+};
+```
+
+---
+
+## Shader Diagnostics
+
+### Purpose
+
+Debug blackout shader coverage issues by logging viewport and layer dimensions.
+
+### Hook: useShaderDiagnostics
+
+```javascript
+// In useShaderDiagnostics.js
+export function useShaderDiagnostics(containerRef, enabled = false) {
+  const logger = getLogger();
+
+  useEffect(() => {
+    if (!enabled || !containerRef.current) return;
+
+    const logDimensions = () => {
+      const container = containerRef.current;
+      const layers = container.querySelectorAll('.blackout-layer');
+
+      logger.info('blackout.dimensions', {
+        viewport: {
+          width: window.innerWidth,
+          height: window.innerHeight,
+        },
+        container: {
+          width: container.offsetWidth,
+          height: container.offsetHeight,
+        },
+        layers: Array.from(layers).map(layer => ({
+          width: layer.offsetWidth,
+          height: layer.offsetHeight,
+          top: layer.offsetTop,
+          left: layer.offsetLeft,
+        })),
+      });
+    };
+
+    logDimensions();
+    window.addEventListener('resize', logDimensions);
+    return () => window.removeEventListener('resize', logDimensions);
+  }, [enabled, containerRef, logger]);
+}
+```
+
+### Event: blackout.dimensions
+
+Logged when shader diagnostics are enabled:
+
+```json
+{
+  "event": "blackout.dimensions",
+  "data": {
+    "viewport": { "width": 1920, "height": 1080 },
+    "container": { "width": 1920, "height": 1080 },
+    "layers": [
+      { "width": 1920, "height": 1080, "top": 0, "left": 0 }
+    ]
+  }
+}
+```
+
+### Usage
+
+Enable via prop or query parameter for debugging production issues:
+
+```javascript
+// In AudioPlayer.jsx
+useShaderDiagnostics(containerRef, enableDiagnostics);
+```
+
+---
+
+## useMediaResilience Hook
+
+### Purpose
+
+Simplified stall recovery and overlay state management.
+
+### Responsibilities
+
+- Track playback state (playing, paused, stalled, waitingToPlay)
+- Derive overlay visibility from playback state
+- Provide stable callbacks to avoid re-render loops
+
+### Interface
+
+```javascript
+const {
+  overlayProps,  // { shouldRender, isVisible, isPaused, stalled, waitingToPlay }
+  state,         // { playing, paused, stalled, waitingToPlay }
+  onStartupSignal, // Stable callback (NOOP)
+} = useMediaResilience({
+  onPlaybackMetrics, // Callback to report metrics to parent
+});
+```
+
+### State Machine
+
+```
+┌─────────────────┐
+│  waitingToPlay  │  ← Initial state
+└────────┬────────┘
+         │ (media starts playing)
+         ▼
+┌─────────────────┐
+│     playing     │  ← Normal playback
+└────────┬────────┘
+         │ (user pauses)    (stall detected)
+         ▼                       ▼
+┌─────────────────┐    ┌─────────────────┐
+│     paused      │    │     stalled     │
+└─────────────────┘    └─────────────────┘
+```
+
+---
+
+## Related Documentation
+
+- **Codebase Reference:** `docs/reference/tv/4-codebase.md` - File locations and function reference
+- **Runbook:** `docs/runbooks/frontend-logging-debugging.md` - Debugging playback issues via logs
