@@ -8,8 +8,8 @@
  *   OR LETTERBOXD_USER in secrets.yml/environment
  */
 
-import { configService } from '../../../backend/lib/config/ConfigService.mjs';
-import getMovies from '../../../backend/lib/letterboxd.mjs';
+import { configService } from '../../../backend/_legacy/lib/config/index.mjs';
+import getMovies from '../../../backend/_legacy/lib/letterboxd.mjs';
 
 describe('Letterboxd Live Integration', () => {
   beforeAll(() => {

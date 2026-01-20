@@ -1,0 +1,327 @@
+/**
+ * Log Food From UPC Use Case
+ * @module nutribot/usecases/LogFoodFromUPC
+ *
+ * Looks up product by UPC barcode and creates a pending log.
+ */
+
+import { NutriLog } from '../../../1_domains/nutrition/entities/NutriLog.mjs';
+
+/**
+ * Log food from UPC use case
+ */
+export class LogFoodFromUPC {
+  #messagingGateway;
+  #upcGateway;
+  #aiGateway;
+  #googleImageGateway;
+  #foodLogStore;
+  #conversationStateStore;
+  #config;
+  #logger;
+  #encodeCallback;
+  #foodIconsString;
+  #barcodeGenerator;
+
+  constructor(deps) {
+    if (!deps.messagingGateway) throw new Error('messagingGateway is required');
+
+    this.#messagingGateway = deps.messagingGateway;
+    this.#upcGateway = deps.upcGateway;
+    this.#aiGateway = deps.aiGateway;
+    this.#googleImageGateway = deps.googleImageGateway;
+    this.#foodLogStore = deps.foodLogStore;
+    this.#conversationStateStore = deps.conversationStateStore;
+    this.#config = deps.config;
+    this.#logger = deps.logger || console;
+    this.#encodeCallback = deps.encodeCallback || ((cmd, data) => JSON.stringify({ cmd, ...data }));
+    this.#foodIconsString = deps.foodIconsString || 'apple banana bread cheese chicken default';
+    this.#barcodeGenerator = deps.barcodeGenerator; // Optional: for generating barcode images
+  }
+
+  /**
+   * Execute the use case
+   */
+  async execute(input) {
+    const { userId, conversationId, upc, messageId } = input;
+
+    this.#logger.debug?.('logUPC.start', { conversationId, upc });
+
+    let statusMsgId = null;
+
+    try {
+      // 1. Delete original user message
+      if (messageId) {
+        try {
+          await this.#messagingGateway.deleteMessage(conversationId, messageId);
+        } catch (e) {
+          this.#logger.warn?.('logUPC.deleteOriginalFailed', { error: e.message });
+        }
+      }
+
+      // 2. Send "Looking up..." message
+      const statusMsg = await this.#messagingGateway.sendMessage(conversationId, `🔍 Looking up barcode ${upc}...`);
+      statusMsgId = statusMsg.messageId;
+
+      // 3. Call UPC gateway
+      let product = null;
+      if (this.#upcGateway) {
+        product = await this.#upcGateway.lookup(upc);
+      }
+
+      if (!product) {
+        await this.#messagingGateway.updateMessage(conversationId, statusMsgId, {
+          text: `❓ Product not found for barcode: ${upc}\n\nYou can describe the food instead.`,
+        });
+        return { success: false, error: 'Product not found' };
+      }
+
+      // 4. Classify product if AI available
+      let classification = { icon: 'default', noomColor: 'yellow' };
+      if (this.#aiGateway) {
+        try {
+          classification = await this.#classifyProduct(product);
+        } catch (e) {}
+
+        if (!classification?.icon || classification.icon === 'default') {
+          try {
+            const icon = await this.#selectIconFromList(product);
+            classification.icon = icon || 'default';
+          } catch (e) {}
+        }
+      }
+
+      // 5. Create food item from product
+      const grams = Number(product.serving?.size) || 100;
+      const foodItem = {
+        label: product.name,
+        icon: classification.icon,
+        grams: grams > 0 ? grams : 100,
+        unit: product.serving?.unit || 'serving',
+        amount: 1,
+        color: classification.noomColor,
+        calories: Number(product.nutrition?.calories) || 0,
+        protein: Number(product.nutrition?.protein) || 0,
+        carbs: Number(product.nutrition?.carbs) || 0,
+        fat: Number(product.nutrition?.fat) || 0,
+        fiber: Number(product.nutrition?.fiber) || 0,
+        sugar: Number(product.nutrition?.sugar) || 0,
+        sodium: Number(product.nutrition?.sodium) || 0,
+        cholesterol: Number(product.nutrition?.cholesterol) || 0,
+      };
+
+      // 6. Create NutriLog entity
+      const extractedUserId = conversationId.split('_').pop();
+      const timezone = this.#config?.getUserTimezone?.(extractedUserId) || 'America/Los_Angeles';
+      const nutriLog = NutriLog.create({
+        userId: extractedUserId,
+        conversationId,
+        items: [foodItem],
+        metadata: {
+          source: 'upc',
+          sourceUpc: upc,
+        },
+        timezone,
+      });
+
+      // 7. Save NutriLog
+      if (this.#foodLogStore) {
+        await this.#foodLogStore.save(nutriLog);
+      }
+
+      // 8. Build portion selection message
+      const caption = this.#buildProductCaption(product, foodItem);
+      const portionButtons = this.#buildPortionButtons(nutriLog.id);
+
+      // 9. Delete status message
+      await this.#messagingGateway.deleteMessage(conversationId, statusMsgId);
+
+      // 10. Get product image or generate barcode
+      let imagePath = null;
+      if (product.imageUrl && this.#barcodeGenerator?.downloadImage) {
+        try {
+          imagePath = await this.#barcodeGenerator.downloadImage(product.imageUrl, upc);
+        } catch (e) {
+          this.#logger.warn?.('logUPC.imageFetchFailed', { error: e.message });
+        }
+      }
+
+      if (!imagePath && this.#barcodeGenerator?.generateBarcode) {
+        try {
+          imagePath = await this.#barcodeGenerator.generateBarcode(upc, product.name);
+        } catch (e) {
+          this.#logger.warn?.('logUPC.barcodeGenFailed', { error: e.message });
+        }
+      }
+
+      // 11. Send photo message
+      let photoMsgId;
+      if (imagePath) {
+        const result = await this.#messagingGateway.sendPhoto(conversationId, imagePath, {
+          caption,
+          choices: portionButtons,
+          inline: true,
+        });
+        photoMsgId = result.messageId;
+      } else {
+        const result = await this.#messagingGateway.sendMessage(conversationId, caption, {
+          choices: portionButtons,
+          inline: true,
+        });
+        photoMsgId = result.messageId;
+      }
+
+      // Update NutriLog with messageId
+      if (this.#foodLogStore && photoMsgId) {
+        const updatedLog = nutriLog.with({
+          metadata: { ...nutriLog.metadata, messageId: String(photoMsgId) },
+        });
+        await this.#foodLogStore.save(updatedLog);
+      }
+
+      this.#logger.info?.('logUPC.complete', {
+        conversationId,
+        upc,
+        productName: product.name,
+        logUuid: nutriLog.id,
+      });
+
+      return {
+        success: true,
+        nutrilogUuid: nutriLog.id,
+        product,
+      };
+    } catch (error) {
+      this.#logger.error?.('logUPC.error', { conversationId, upc, error: error.message });
+
+      if (statusMsgId) {
+        try {
+          const isNetworkError = error.code === 'ETIMEDOUT' || error.code === 'ECONNRESET' || error.code === 'EAI_AGAIN';
+          const errorMsg = isNetworkError ? `⚠️ Network timeout looking up barcode ${upc}\n\nPlease try again.` : `❌ Error looking up barcode ${upc}\n\n${error.message}`;
+          await this.#messagingGateway.updateMessage(conversationId, statusMsgId, { text: errorMsg });
+        } catch (e) {}
+      }
+
+      throw error;
+    }
+  }
+
+  /**
+   * Select icon from list
+   * @private
+   */
+  async #selectIconFromList(product) {
+    if (!this.#aiGateway) return 'default';
+
+    const availableIcons = this.#foodIconsString.split(' ');
+
+    const prompt = [
+      {
+        role: 'system',
+        content: `Pick the best matching icon filename for the product from this list:
+${this.#foodIconsString}
+
+Respond ONLY as JSON: { "icon": "<filename>" }`,
+      },
+      {
+        role: 'user',
+        content: `Product: ${product.name}${product.brand ? ` by ${product.brand}` : ''}
+Calories: ${product.nutrition?.calories ?? 'unknown'}`,
+      },
+    ];
+
+    const response = await this.#aiGateway.chat(prompt, { maxTokens: 40 });
+    const match = response.match(/\{[\s\S]*\}/);
+    if (!match) return 'default';
+    const parsed = JSON.parse(match[0]);
+    const icon = parsed.icon;
+    if (availableIcons.includes(icon)) return icon;
+    return 'default';
+  }
+
+  /**
+   * Classify product using AI
+   * @private
+   */
+  async #classifyProduct(product) {
+    const availableIcons = this.#foodIconsString.split(' ');
+
+    const prompt = [
+      {
+        role: 'system',
+        content: `You are matching food products to icon filenames. Available icons:
+${this.#foodIconsString}
+
+Choose the MOST relevant icon filename for the product and assign a Noom color:
+- green: whole fruits, vegetables, leafy greens
+- yellow: lean proteins, whole grains, legumes
+- orange: processed foods, high-calorie items
+
+Respond ONLY in JSON: { "icon": "apple", "noomColor": "green" }`,
+      },
+      {
+        role: 'user',
+        content: `Product: ${product.name}${product.brand ? ` by ${product.brand}` : ''}\nCalories: ${product.nutrition?.calories || 'unknown'}`,
+      },
+    ];
+
+    const response = await this.#aiGateway.chat(prompt, { maxTokens: 100 });
+    const match = response.match(/\{[\s\S]*\}/);
+    if (match) {
+      const parsed = JSON.parse(match[0]);
+      if (!availableIcons.includes(parsed.icon)) {
+        parsed.icon = 'default';
+      }
+      return parsed;
+    }
+    return { icon: 'default', noomColor: 'yellow' };
+  }
+
+  /**
+   * Build product caption
+   * @private
+   */
+  #buildProductCaption(product, foodItem) {
+    const servingSize = product.serving?.size || 100;
+    const servingUnit = product.serving?.unit || 'g';
+    const brandAlreadyInName = product.brand && product.name.toLowerCase().includes(product.brand.toLowerCase());
+    const brandSuffix = product.brand && !brandAlreadyInName ? ` (${product.brand})` : '';
+    const colorEmoji = { green: '🟢', yellow: '🟡', orange: '🟠' }[foodItem.color] || '🟡';
+
+    return [
+      `${colorEmoji} ${servingSize}${servingUnit} ${product.name}${brandSuffix}`,
+      '',
+      `🔥 Calories: ${foodItem.calories}`,
+      `🍖 Protein: ${foodItem.protein}g`,
+      `🍏 Carbs: ${foodItem.carbs}g`,
+      `🧀 Fat: ${foodItem.fat}g`,
+    ].join('\n');
+  }
+
+  /**
+   * Build portion selection buttons
+   * @private
+   */
+  #buildPortionButtons(logUuid) {
+    return [
+      [{ text: '1 serving', callback_data: this.#encodeCallback('p', { id: logUuid, f: 1 }) }],
+      [
+        { text: '¼', callback_data: this.#encodeCallback('p', { id: logUuid, f: 0.25 }) },
+        { text: '⅓', callback_data: this.#encodeCallback('p', { id: logUuid, f: 0.33 }) },
+        { text: '½', callback_data: this.#encodeCallback('p', { id: logUuid, f: 0.5 }) },
+        { text: '⅔', callback_data: this.#encodeCallback('p', { id: logUuid, f: 0.67 }) },
+        { text: '¾', callback_data: this.#encodeCallback('p', { id: logUuid, f: 0.75 }) },
+      ],
+      [
+        { text: '×1¼', callback_data: this.#encodeCallback('p', { id: logUuid, f: 1.25 }) },
+        { text: '×1½', callback_data: this.#encodeCallback('p', { id: logUuid, f: 1.5 }) },
+        { text: '×2', callback_data: this.#encodeCallback('p', { id: logUuid, f: 2 }) },
+        { text: '×3', callback_data: this.#encodeCallback('p', { id: logUuid, f: 3 }) },
+        { text: '×4', callback_data: this.#encodeCallback('p', { id: logUuid, f: 4 }) },
+      ],
+      [{ text: '❌ Cancel', callback_data: this.#encodeCallback('x', { id: logUuid }) }],
+    ];
+  }
+}
+
+export default LogFoodFromUPC;

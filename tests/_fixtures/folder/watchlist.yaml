@@ -1,0 +1,11 @@
+# tests/_fixtures/folder/watchlist.yaml
+# Format expected by FolderAdapter: flat list with folder field and input field
+- folder: "Morning Shows"
+  input: "plex: 12345"
+  label: "Show One"
+- folder: "Morning Shows"
+  input: "plex: 67890"
+  label: "Show Two"
+- folder: "Evening Talks"
+  input: "talk: general/talk1"
+  label: "Talk One"

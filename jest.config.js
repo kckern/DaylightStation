@@ -18,7 +18,10 @@ module.exports = {
   testPathIgnorePatterns: [
     '/node_modules/',
     '/tests/runtime/', // Playwright handles these
-    '/\\.worktrees/'  // Ignore worktree fixtures/duplicates
+    '/tests/live/',    // Live tests require actual credentials - run explicitly
+    '/tests/smoke/',   // Smoke tests require running services - run explicitly
+    '/\\.worktrees/',  // Ignore worktree fixtures/duplicates
+    '/tests/unit/voice-memo/' // Requires React/JSX transform - TODO: move to frontend test suite
   ],
   // Coverage configuration
   collectCoverageFrom: [

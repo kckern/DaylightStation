@@ -9,8 +9,8 @@ describe('ConfigService assembly', () => {
   let configService;
 
   beforeAll(async () => {
-    // Set test data path before importing
-    const testDataPath = path.join(__dirname, '../_fixtures/data');
+    // Set test data path before importing - use unit test fixtures which have system config
+    const testDataPath = path.join(__dirname, '../unit/config/fixtures');
     process.env = {
       ...process.env,
       path: {
@@ -19,26 +19,28 @@ describe('ConfigService assembly', () => {
       }
     };
 
-    const mod = await import('../../backend/lib/config/ConfigService.mjs');
-    configService = mod.configService;
-    configService.init({ dataDir: testDataPath });
+    const { createConfigService } = await import('../../backend/_legacy/lib/config/index.mjs');
+    configService = createConfigService(testDataPath);
   });
 
-  it('loads _test household config', () => {
-    const config = configService.getHouseholdConfig('_test');
-    expect(config).toBeDefined();
-    expect(config.id).toBe('_test');
-    expect(config.head).toBe('_alice');
+  it('returns default household id', () => {
+    const hid = configService.getDefaultHouseholdId();
+    expect(hid).toBe('test-household');
   });
 
-  it('loads _alice user profile', () => {
-    const profile = configService.getUserProfile('_alice');
+  it('returns head of household', () => {
+    const head = configService.getHeadOfHousehold('test-household');
+    expect(head).toBe('testuser');
+  });
+
+  it('loads testuser user profile', () => {
+    const profile = configService.getUserProfile('testuser');
     expect(profile).toBeDefined();
-    expect(profile.id).toBe('_alice');
+    expect(profile.name).toBe('Test User');
   });
 
-  it('returns null for non-existent household', () => {
-    const config = configService.getHouseholdConfig('nonexistent');
-    expect(config).toBeNull();
+  it('returns null for non-existent user', () => {
+    const profile = configService.getUserProfile('nonexistent');
+    expect(profile).toBeNull();
   });
 });

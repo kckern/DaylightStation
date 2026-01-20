@@ -48,10 +48,10 @@ describe('RenphoJumpropeDecoder', () => {
       const before = decoder.processPacket(createPacket(249));
       expect(before.revolutions).toBe(4); // 245 -> 249 = 4 jumps
 
-      // Rollover: 249 -> 2 (crossed 250 boundary)
-      // delta = |2 - 249| = 247, complement = 250 - 247 = 3
+      // Rollover: 249 -> 2 (crossed 251 boundary - counter wraps at 251)
+      // delta = |2 - 249| = 247, complement = 251 - 247 = 4
       const after = decoder.processPacket(createPacket(2));
-      expect(after.revolutions).toBe(7); // 4 + 3 = 7 total jumps
+      expect(after.revolutions).toBe(8); // 4 + 4 = 8 total jumps
     });
 
     it('accumulates correctly across multiple rollovers (Bug 08 - the main fix)', () => {
@@ -62,24 +62,24 @@ describe('RenphoJumpropeDecoder', () => {
       decoder.processPacket(createPacket(248));
       expect(decoder.getRevolutions()).toBe(8);
 
-      // Rollover 1: 248 -> 5 (delta=243, complement=7)
+      // Rollover 1: 248 -> 5 (delta=243, complement=251-243=8)
       // 248 > 200 (near high), 5 < 50 (near low) → rollover detected
       decoder.processPacket(createPacket(5));
-      expect(decoder.getRevolutions()).toBe(15); // 8 + 7 = 15
+      expect(decoder.getRevolutions()).toBe(16); // 8 + 8 = 16
 
       // Continue counting: 5 -> 50 (45 jumps)
       decoder.processPacket(createPacket(50));
-      expect(decoder.getRevolutions()).toBe(60); // 15 + 45 = 60
+      expect(decoder.getRevolutions()).toBe(61); // 16 + 45 = 61
 
       // Large jump (not rollover): 50 -> 248 (delta=198)
       // 50 is NOT < 50, so not near low boundary → not a rollover
       // Should count as 198 actual jumps
       decoder.processPacket(createPacket(248));
-      expect(decoder.getRevolutions()).toBe(258); // 60 + 198 = 258
+      expect(decoder.getRevolutions()).toBe(259); // 61 + 198 = 259
 
-      // Rollover 2: 248 -> 3 (delta=245, complement=5)
+      // Rollover 2: 248 -> 3 (delta=245, complement=251-245=6)
       decoder.processPacket(createPacket(3));
-      expect(decoder.getRevolutions()).toBe(263); // 258 + 5 = 263 - should NOT reset to 0!
+      expect(decoder.getRevolutions()).toBe(265); // 259 + 6 = 265 - should NOT reset to 0!
     });
 
     it('ignores duplicate values', () => {

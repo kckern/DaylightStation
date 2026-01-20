@@ -1,0 +1,22 @@
+/**
+ * Fitness Domain
+ */
+
+// Entities
+export { Session } from './entities/Session.mjs';
+export { Participant } from './entities/Participant.mjs';
+export {
+  Zone,
+  ZONE_NAMES,
+  ZONE_PRIORITY,
+  resolveZone,
+  getHigherZone,
+  createDefaultZones
+} from './entities/Zone.mjs';
+
+// Services
+export { SessionService } from './services/SessionService.mjs';
+export { ZoneService } from './services/ZoneService.mjs';
+
+// Ports
+export { ISessionStore } from './ports/ISessionStore.mjs';
