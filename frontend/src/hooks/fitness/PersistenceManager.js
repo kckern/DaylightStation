@@ -135,6 +135,12 @@ const sanitizeRosterForPersist = (roster) => {
 
 /**
  * Convert roster + assignment snapshots into a keyed participant object.
+ *
+ * Logic for is_guest/is_primary:
+ * - If entry.isGuest is explicitly true → is_guest: true
+ * - If entry.isPrimary is explicitly true → is_primary: true, is_guest omitted
+ * - If neither is set, default to is_primary: true (assume registered user, not guest)
+ *
  * @param {Array} roster
  * @param {Array} deviceAssignments
  * @returns {Record<string, Object>}
@@ -161,11 +167,19 @@ const buildParticipantsForPersist = (roster, deviceAssignments) => {
     const assignment = assignmentBySlug.get(participantId) || null;
     const hrDevice = entry.hrDeviceId ?? assignment?.deviceId ?? null;
 
+    // Determine guest vs primary status
+    const isExplicitlyGuest = entry.isGuest === true;
+    const isExplicitlyPrimary = entry.isPrimary === true;
+
+    // Default to primary user if neither is set (registered users aren't guests)
+    const isPrimary = isExplicitlyPrimary || (!isExplicitlyGuest && !isExplicitlyPrimary);
+    const isGuest = isExplicitlyGuest && !isExplicitlyPrimary;
+
     participants[participantId] = {
       ...(name ? { display_name: name } : {}),
       ...(hrDevice != null ? { hr_device: String(hrDevice) } : {}),
-      ...(entry.isPrimary === true ? { is_primary: true } : {}),
-      ...(entry.isGuest === true ? { is_guest: true } : {}),
+      ...(isPrimary ? { is_primary: true } : {}),
+      ...(isGuest ? { is_guest: true } : {}),
       ...(entry.baseUserName ? { base_user: String(entry.baseUserName) } : {})
     };
   });
@@ -174,16 +188,77 @@ const buildParticipantsForPersist = (roster, deviceAssignments) => {
 };
 
 /**
- * Map series keys for persistence (kebab-case transformation).
+ * Map series keys to v2 compact format for persistence.
+ *
+ * Transformations:
+ * - user:alan:heart_rate -> alan:hr
+ * - user:alan:zone_id -> alan:zone
+ * - user:alan:heart_beats -> alan:beats
+ * - user:alan:coins_total -> alan:coins
+ * - device:7138:rpm -> bike:7138:rpm (equipment metrics)
+ * - device:device_7138:rpm -> bike:7138:rpm (fix double-prefix)
+ * - global:coins-total -> global:coins
+ *
  * @param {Object} series
  * @returns {Object}
  */
 const mapSeriesKeysForPersist = (series) => {
   if (!series || typeof series !== 'object') return {};
+
+  const METRIC_MAP = {
+    'heart_rate': 'hr',
+    'heart-rate': 'hr',
+    'zone_id': 'zone',
+    'zone-id': 'zone',
+    'heart_beats': 'beats',
+    'heart-beats': 'beats',
+    'coins_total': 'coins',
+    'coins-total': 'coins'
+  };
+
+  const EQUIPMENT_METRICS = new Set(['rpm', 'rotations', 'power', 'distance']);
+
   const mapped = {};
   Object.entries(series).forEach(([key, value]) => {
-    // Convert underscores to hyphens for consistency
-    const mappedKey = key.replace(/_/g, '-');
+    if (!key || typeof key !== 'string') {
+      mapped[key] = value;
+      return;
+    }
+
+    const parts = key.split(':');
+    let mappedKey = key;
+
+    if (parts[0] === 'user' && parts.length >= 3) {
+      // user:slug:metric -> slug:compactMetric
+      const slug = parts[1];
+      const metric = parts.slice(2).join(':');
+      const compactMetric = METRIC_MAP[metric] || metric.replace(/_/g, '-');
+      mappedKey = `${slug}:${compactMetric}`;
+    } else if (parts[0] === 'device' && parts.length >= 3) {
+      // device:id:metric -> bike:id:metric (for equipment) or device:id:metric (for wearables)
+      let id = parts[1];
+      // Fix double-prefix: device_7138 -> 7138
+      if (id && id.startsWith('device_')) {
+        id = id.slice('device_'.length);
+      }
+      const metric = parts.slice(2).join(':');
+      const compactMetric = metric.replace(/_/g, '-');
+
+      if (EQUIPMENT_METRICS.has(metric) || EQUIPMENT_METRICS.has(compactMetric)) {
+        mappedKey = `bike:${id}:${compactMetric}`;
+      } else {
+        mappedKey = `device:${id}:${compactMetric}`;
+      }
+    } else if (parts[0] === 'global' && parts.length >= 2) {
+      // global:coins-total -> global:coins
+      const metric = parts.slice(1).join(':');
+      const compactMetric = METRIC_MAP[metric] || metric.replace(/_/g, '-');
+      mappedKey = `global:${compactMetric}`;
+    } else {
+      // Fallback: just convert underscores to hyphens
+      mappedKey = key.replace(/_/g, '-');
+    }
+
     mapped[mappedKey] = value;
   });
   return mapped;
@@ -320,6 +395,12 @@ export class PersistenceManager {
 
       // Empty-series filtering: do not persist all-null/empty series
       if (!arr.length || arr.every((v) => v == null)) {
+        return;
+      }
+
+      // All-zero series filtering: do not persist series where every value is 0
+      // (e.g., device:40475:rotations = [[0, 163]] when no rotations recorded)
+      if (arr.every((v) => v === 0)) {
         return;
       }
 
@@ -488,17 +569,25 @@ export class PersistenceManager {
     // Convert event timestamps and build v2 events array
     const v2Events = this._buildV2Events(sessionData, timezone);
 
-    // Move voice memos into events
+    // Move voice memos into events (skip if already in events from timeline)
+    const existingMemoIds = this._lastVoiceMemoIds || new Set();
     const voiceMemos = Array.isArray(sessionData.voiceMemos) ? sessionData.voiceMemos : [];
     voiceMemos.forEach((memo) => {
       if (!memo || typeof memo !== 'object') return;
+
+      // Skip if this memo was already added from timeline events
+      const memoId = memo.memoId ?? memo.id;
+      if (memoId && existingMemoIds.has(memoId)) {
+        return;
+      }
+
       const rawTs = Number(memo.createdAt ?? memo.startedAt ?? memo.endedAt);
       const at = Number.isFinite(rawTs) ? toReadable(rawTs, timezone) : null;
       v2Events.push({
         ...(at ? { at } : {}),
         type: 'voice_memo',
         data: {
-          id: memo.memoId ?? null,
+          id: memoId ?? null,
           duration_seconds: Number.isFinite(memo.durationSeconds) ? memo.durationSeconds : null,
           transcript: memo.transcriptClean ?? memo.transcript ?? null
         }
@@ -516,13 +605,38 @@ export class PersistenceManager {
       persistSessionData.timeline.interval_seconds = Number.isFinite(intervalMs) ? Math.round(intervalMs / 1000) : null;
       persistSessionData.timeline.tick_count = Number.isFinite(tickCount) ? tickCount : null;
       persistSessionData.timeline.encoding = 'rle';
+
+      // Remove timeline.events to avoid duplicate storage (events are at root level)
+      delete persistSessionData.timeline.events;
     }
 
-    // Remove legacy duplicates
+    // Add entities array (session participation segments)
+    if (Array.isArray(sessionData.entities) && sessionData.entities.length > 0) {
+      persistSessionData.entities = sessionData.entities.map((entity) => {
+        if (!entity || typeof entity !== 'object') return null;
+        return {
+          entityId: entity.entityId || null,
+          profileId: entity.profileId || null,
+          deviceId: entity.deviceId || null,
+          startTime: entity.startTime || null,
+          endTime: entity.endTime || null,
+          status: entity.status || 'active',
+          coins: entity.coins || 0
+        };
+      }).filter(Boolean);
+    }
+
+    // Remove legacy duplicates - use session.* as canonical source
     delete persistSessionData.roster;
     delete persistSessionData.voiceMemos;
     delete persistSessionData.deviceAssignments;
     delete persistSessionData.timebase;
+
+    // Remove root-level duplicates of session.* fields
+    delete persistSessionData.sessionId;
+    delete persistSessionData.startTime;
+    delete persistSessionData.endTime;
+    delete persistSessionData.durationMs;
 
     // Encode series
     if (persistSessionData.timeline?.series) {
@@ -604,9 +718,24 @@ export class PersistenceManager {
 
   _buildV2Events(sessionData, timezone) {
     const v2Events = [];
+
+    // Track voice memo IDs to avoid duplicates (voice_memo_start + voice_memo for same memo)
+    const voiceMemoIds = new Set();
+
     if (sessionData.timeline && Array.isArray(sessionData.timeline.events)) {
       sessionData.timeline.events.forEach((evt) => {
         if (!evt || typeof evt !== 'object') return;
+
+        // Skip voice_memo_start events - voice_memo is the final consolidated version
+        if (evt.type === 'voice_memo_start') {
+          return;
+        }
+
+        // Track voice_memo IDs to dedupe with voiceMemos array
+        if (evt.type === 'voice_memo' && evt.data?.memoId) {
+          voiceMemoIds.add(evt.data.memoId);
+        }
+
         const rawTs = Number(evt.timestamp);
         const readableTs = Number.isFinite(rawTs) ? toReadable(rawTs, timezone) : null;
         if (readableTs) {
@@ -618,6 +747,9 @@ export class PersistenceManager {
         }
       });
     }
+
+    // Store voiceMemoIds on this for use by persistSession
+    this._lastVoiceMemoIds = voiceMemoIds;
     return v2Events;
   }
 }
