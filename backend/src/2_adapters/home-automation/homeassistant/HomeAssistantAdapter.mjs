@@ -120,7 +120,8 @@ export class HomeAssistantAdapter {
 
     const entityId = this.#normalizeEntityId(sceneId, 'scene');
 
-    this.#logger.debug?.('ha.activateScene', { sceneId, entityId });
+    // Use sampled logging to reduce log spam during frequent scene activations
+    this.#logger.sampled?.('ha.scene.activating', { entityId }, { maxPerMinute: 30 });
 
     return this.callService('scene', 'turn_on', { entity_id: entityId });
   }
