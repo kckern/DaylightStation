@@ -114,6 +114,7 @@ Extract all Express app setup, export the app without calling `listen()`.
 2. **Shared state** - Config, logging, MQTT initialized once in index.js
 3. **Secondary API (port 3119)** - Stays on legacy, not toggled
 4. **Cold start** - Both backends initialize at startup, no delay on switch
+5. **Cron jobs** - Follow the toggle (when toggle=new, `/cron/*` goes to new backend)
 
 ## Out of Scope
 
