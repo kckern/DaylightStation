@@ -7,7 +7,6 @@
 
 // Source icon mapping
 const SOURCE_ICONS = {
-  garmin: '⌚',
   strava: '🏋️',
   fitness: '🏃',
   weight: '⚖️',

@@ -2,7 +2,7 @@
  * WorkoutEntry Entity
  *
  * Represents a workout entry merged from multiple data sources
- * (Strava, Garmin, FitnessSyncer).
+ * (Strava, FitnessSyncer).
  *
  * @module domains/health/entities
  */
@@ -13,15 +13,13 @@ export class WorkoutEntry {
    */
   static SOURCES = {
     STRAVA: 'strava',
-    GARMIN: 'garmin',
     FITNESS: 'fitness',
-    STRAVA_GARMIN: 'strava+garmin',
     STRAVA_FITNESS: 'strava+fitness'
   };
 
   /**
    * @param {Object} data
-   * @param {string} data.source - Data source(s) (e.g., 'strava', 'garmin', 'strava+garmin')
+   * @param {string} data.source - Data source(s) (e.g., 'strava', 'fitness', 'strava+fitness')
    * @param {string} data.title - Workout title
    * @param {string} data.type - Activity type (e.g., 'Run', 'Ride')
    * @param {number} [data.duration] - Duration in minutes
@@ -32,7 +30,6 @@ export class WorkoutEntry {
    * @param {string} [data.startTime] - Start time
    * @param {string} [data.endTime] - End time
    * @param {Object} [data.strava] - Raw Strava data
-   * @param {Object} [data.garmin] - Raw Garmin data
    * @param {Object} [data.fitness] - Raw FitnessSyncer data
    */
   constructor(data) {
@@ -49,7 +46,6 @@ export class WorkoutEntry {
 
     // Raw source data
     this.strava = data.strava || null;
-    this.garmin = data.garmin || null;
     this.fitness = data.fitness || null;
   }
 
@@ -59,14 +55,6 @@ export class WorkoutEntry {
    */
   hasStrava() {
     return this.source.includes('strava');
-  }
-
-  /**
-   * Check if workout includes Garmin data
-   * @returns {boolean}
-   */
-  hasGarmin() {
-    return this.source.includes('garmin');
   }
 
   /**
@@ -96,7 +84,6 @@ export class WorkoutEntry {
     if (this.startTime) result.startTime = this.startTime;
     if (this.endTime) result.endTime = this.endTime;
     if (this.strava) result.strava = this.strava;
-    if (this.garmin) result.garmin = this.garmin;
     if (this.fitness) result.fitness = this.fitness;
 
     return result;

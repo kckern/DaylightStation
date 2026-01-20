@@ -171,7 +171,7 @@ export class LifelogAggregator {
   /**
    * Get data for a specific source
    * @param {Object} aggregated - Result from aggregate()
-   * @param {string} source - Source name (e.g., 'garmin', 'strava')
+   * @param {string} source - Source name (e.g., 'strava', 'weight')
    * @returns {Object|null} Extracted data or null
    */
   static getSourceData(aggregated, source) {

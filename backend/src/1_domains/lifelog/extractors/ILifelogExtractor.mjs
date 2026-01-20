@@ -29,7 +29,7 @@ export const ExtractorCategory = {
  */
 export class ILifelogExtractor {
   /**
-   * Source identifier (e.g., 'garmin', 'strava')
+   * Source identifier (e.g., 'strava', 'weight')
    * @type {string}
    */
   get source() {

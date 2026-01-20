@@ -29,15 +29,6 @@ export class IHealthDataStore {
   }
 
   /**
-   * Load Garmin activity data for a user
-   * @param {string} userId
-   * @returns {Promise<Object>} Garmin data keyed by date
-   */
-  async loadGarminData(userId) {
-    throw new Error('Not implemented');
-  }
-
-  /**
    * Load FitnessSyncer data for a user
    * @param {string} userId
    * @returns {Promise<Object>} Fitness data keyed by date

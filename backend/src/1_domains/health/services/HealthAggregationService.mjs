@@ -1,7 +1,7 @@
 /**
  * HealthAggregationService
  *
- * Aggregates health data from multiple sources (weight, Strava, Garmin,
+ * Aggregates health data from multiple sources (weight, Strava,
  * FitnessSyncer, nutrition) into unified daily health metrics.
  *
  * @module domains/health/services
@@ -37,11 +37,10 @@ export class HealthAggregationService {
     this.#logger.debug?.('health.aggregate.start', { userId, daysBack });
 
     // Load all data sources in parallel
-    const [weightData, stravaData, garminData, fitnessData, nutritionData, existingHealth, coachingData] =
+    const [weightData, stravaData, fitnessData, nutritionData, existingHealth, coachingData] =
       await Promise.all([
         this.#healthStore.loadWeightData(userId),
         this.#healthStore.loadStravaData(userId),
-        this.#healthStore.loadGarminData(userId),
         this.#healthStore.loadFitnessData(userId),
         this.#healthStore.loadNutritionData(userId),
         this.#healthStore.loadHealthData(userId),
@@ -57,7 +56,6 @@ export class HealthAggregationService {
       const metric = this.#aggregateDayMetrics(date, {
         weight: weightData[date],
         strava: stravaData[date] || [],
-        garmin: garminData[date] || [],
         fitness: fitnessData[date],
         nutrition: nutritionData[date],
         coaching: coachingData[date]
@@ -139,10 +137,10 @@ export class HealthAggregationService {
    * @private
    */
   #aggregateDayMetrics(date, sources) {
-    const { weight, strava, garmin, fitness, nutrition, coaching } = sources;
+    const { weight, strava, fitness, nutrition, coaching } = sources;
 
     // Merge workouts from all sources
-    const workouts = this.#mergeWorkouts(strava, garmin, fitness?.activities || []);
+    const workouts = this.#mergeWorkouts(strava, fitness?.activities || []);
 
     // Build weight data
     const weightData = weight ? {
@@ -183,46 +181,22 @@ export class HealthAggregationService {
   }
 
   /**
-   * Merge workouts from Strava, Garmin, and FitnessSyncer
+   * Merge workouts from Strava and FitnessSyncer
    * @private
    */
-  #mergeWorkouts(stravaActivities, garminActivities, fitnessActivities) {
+  #mergeWorkouts(stravaActivities, fitnessActivities) {
     const mergedWorkouts = [];
-    const usedGarminIds = new Set();
     const usedFitnessIds = new Set();
 
     // Duration tolerance for matching (5 minutes)
     const DURATION_TOLERANCE = 5;
 
-    // Process Strava activities and try to match with Garmin or FitnessSyncer
+    // Process Strava activities and try to match with FitnessSyncer
     for (const s of stravaActivities) {
       // Normalize heart rate data
       const stravaData = { ...s };
       if (Array.isArray(stravaData.heartRateOverTime)) {
         stravaData.heartRateOverTime = stravaData.heartRateOverTime.join('|');
-      }
-
-      // Try to match with Garmin
-      const garminMatch = garminActivities.find(g => {
-        if (usedGarminIds.has(g.activityId)) return false;
-        const durationDiff = Math.abs((s.minutes || 0) - (g.duration || 0));
-        return durationDiff < DURATION_TOLERANCE;
-      });
-
-      if (garminMatch) {
-        usedGarminIds.add(garminMatch.activityId);
-        mergedWorkouts.push(new WorkoutEntry({
-          source: WorkoutEntry.SOURCES.STRAVA_GARMIN,
-          title: s.title,
-          type: s.type || garminMatch.activityName,
-          duration: s.minutes,
-          calories: Math.max(s.calories || 0, garminMatch.calories || 0),
-          avgHr: s.avgHeartrate || garminMatch.averageHR,
-          maxHr: s.maxHeartrate || garminMatch.maxHR,
-          strava: stravaData,
-          garmin: garminMatch
-        }));
-        continue;
       }
 
       // Try to match with FitnessSyncer
@@ -260,22 +234,6 @@ export class HealthAggregationService {
         maxHr: s.maxHeartrate,
         strava: stravaData
       }));
-    }
-
-    // Add remaining Garmin activities
-    for (const g of garminActivities) {
-      if (!usedGarminIds.has(g.activityId)) {
-        mergedWorkouts.push(new WorkoutEntry({
-          source: WorkoutEntry.SOURCES.GARMIN,
-          title: g.activityName,
-          type: g.activityName,
-          duration: g.duration,
-          calories: g.calories,
-          avgHr: g.averageHR,
-          maxHr: g.maxHR,
-          garmin: g
-        }));
-      }
     }
 
     // Add remaining FitnessSyncer activities
