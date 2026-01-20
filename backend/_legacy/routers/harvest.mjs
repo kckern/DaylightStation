@@ -26,12 +26,9 @@ const harvestRouter = express.Router();
 import crypto from 'crypto';
 import { createLogger } from '../lib/logging/logger.js';
 import { configService } from '../lib/config/index.mjs';
-import { userLoadFile, userSaveFile, userSaveAuth } from '../lib/io.mjs';
 
 import todoist from '../lib/todoist.mjs';
 import gmail from '../lib/gmail.mjs';
-import { google } from 'googleapis';
-import { getAIGateway } from '../lib/ai/index.mjs';
 import gcal from '../lib/gcal.mjs';
 import withings from '../lib/withings.mjs';
 import weather from '../lib/weather.mjs';
@@ -47,242 +44,12 @@ import scripture from '../lib/scriptureguide.mjs';
 import youtube_dl from '../lib/youtube.mjs';
 import health from '../lib/health.mjs';
 import fitness from '../lib/fitsync.mjs';
-// strava: Now using StravaHarvester from src/2_adapters/harvester/
+import strava from '../lib/strava.mjs';
 import foursquare from '../lib/foursquare.mjs';
 import shopping from '../lib/shopping.mjs';
 import { refreshFinancialData as budget, payrollSyncJob } from '../lib/budget.mjs';
 import ArchiveService from '../lib/ArchiveService.mjs';
 import archiveRotation from '../lib/archiveRotation.mjs';
-
-// New DDD Harvesters (Phase 3f migration)
-import {
-    GarminHarvester, StravaHarvester, WithingsHarvester,
-    TodoistHarvester, ClickUpHarvester, GitHubHarvester,
-    LastfmHarvester, RedditHarvester, LetterboxdHarvester, GoodreadsHarvester, FoursquareHarvester,
-    GmailHarvester, GCalHarvester,
-    ShoppingHarvester,
-    WeatherHarvester, ScriptureHarvester,
-    YamlLifelogStore, YamlAuthStore
-} from '../../src/2_adapters/harvester/index.mjs';
-import { saveFile } from '../lib/io.mjs';
-import garminLib from 'garmin-connect';
-const { GarminConnect } = garminLib;
-import axios from '../lib/http.mjs';
-import { TodoistApi } from '@doist/todoist-api-typescript';
-import Parser from 'rss-parser';
-
-// Create shared lifelog store
-const lifelogStore = new YamlLifelogStore({
-    io: { userLoadFile, userSaveFile },
-    logger: createLogger({ source: 'backend', app: 'lifelogStore' }),
-});
-
-// Factory function for Garmin client
-const createGarminClient = (username) => {
-    const auth = configService.getUserAuth('garmin', username) || {};
-    const garminUser = auth.username || configService.getSecret('GARMIN_USERNAME');
-    const garminPass = auth.password || configService.getSecret('GARMIN_PASSWORD');
-
-    if (!garminUser || !garminPass) {
-        throw new Error(`Garmin credentials not found for user: ${username}`);
-    }
-
-    return new GarminConnect({ username: garminUser, password: garminPass });
-};
-
-// Create shared auth store
-const authStore = new YamlAuthStore({
-    io: { userSaveAuth },
-    logger: createLogger({ source: 'backend', app: 'authStore' }),
-});
-
-// Instantiate new harvesters
-const garminHarvester = new GarminHarvester({
-    garminClientFactory: createGarminClient,
-    lifelogStore,
-    configService,
-    logger: createLogger({ source: 'backend', app: 'garmin' }),
-});
-
-// Strava client wrapper
-const stravaClient = {
-    accessToken: null,
-
-    async refreshToken(refreshToken) {
-        const { STRAVA_CLIENT_ID, STRAVA_CLIENT_SECRET } = process.env;
-        const response = await axios.post('https://www.strava.com/oauth/token',
-            new URLSearchParams({
-                grant_type: 'refresh_token',
-                refresh_token: refreshToken,
-                client_id: STRAVA_CLIENT_ID,
-                client_secret: STRAVA_CLIENT_SECRET
-            }),
-            { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
-        );
-        this.accessToken = response.data.access_token;
-        return response.data;
-    },
-
-    async getActivities({ before, after, page, perPage }) {
-        const url = `https://www.strava.com/api/v3/athlete/activities?before=${before}&after=${after}&page=${page}&per_page=${perPage}`;
-        const response = await axios.get(url, {
-            headers: { 'Authorization': `Bearer ${this.accessToken}` }
-        });
-        return response.data;
-    },
-
-    async getActivityStreams(activityId, keys) {
-        const url = `https://www.strava.com/api/v3/activities/${activityId}/streams?keys=${keys.join(',')}&key_by_type=true`;
-        const response = await axios.get(url, {
-            headers: { 'Authorization': `Bearer ${this.accessToken}` }
-        });
-        return response.data;
-    }
-};
-
-const stravaHarvester = new StravaHarvester({
-    stravaClient,
-    lifelogStore,
-    authStore,
-    configService,
-    logger: createLogger({ source: 'backend', app: 'strava' }),
-});
-
-const withingsHarvester = new WithingsHarvester({
-    httpClient: axios,
-    lifelogStore,
-    authStore,
-    configService,
-    logger: createLogger({ source: 'backend', app: 'withings' }),
-});
-
-// Wave 2: Productivity Harvesters
-const todoistHarvester = new TodoistHarvester({
-    todoistApi: null, // Will be created per-request with user token
-    httpClient: axios,
-    lifelogStore,
-    currentStore: {
-        load: (username) => userLoadFile(username, 'todoist/current.yml'),
-        save: (username, data) => userSaveFile(username, 'todoist/current.yml', data),
-    },
-    configService,
-    logger: createLogger({ source: 'backend', app: 'todoist' }),
-});
-
-const clickupHarvester = new ClickUpHarvester({
-    httpClient: axios,
-    lifelogStore,
-    currentStore: {
-        load: (username) => userLoadFile(username, 'clickup/current.yml'),
-        save: (username, data) => userSaveFile(username, 'clickup/current.yml', data),
-    },
-    configService,
-    logger: createLogger({ source: 'backend', app: 'clickup' }),
-});
-
-const githubHarvester = new GitHubHarvester({
-    httpClient: axios,
-    lifelogStore,
-    configService,
-    logger: createLogger({ source: 'backend', app: 'github' }),
-});
-
-// Wave 3: Social Harvesters
-const lastfmHarvester = new LastfmHarvester({
-    httpClient: axios,
-    lifelogStore,
-    configService,
-    logger: createLogger({ source: 'backend', app: 'lastfm' }),
-});
-
-const redditHarvester = new RedditHarvester({
-    httpClient: axios,
-    lifelogStore,
-    configService,
-    logger: createLogger({ source: 'backend', app: 'reddit' }),
-});
-
-const letterboxdHarvester = new LetterboxdHarvester({
-    httpClient: axios,
-    lifelogStore,
-    configService,
-    logger: createLogger({ source: 'backend', app: 'letterboxd' }),
-});
-
-const goodreadsHarvester = new GoodreadsHarvester({
-    rssParser: new Parser(),
-    lifelogStore,
-    configService,
-    logger: createLogger({ source: 'backend', app: 'goodreads' }),
-});
-
-const foursquareHarvester = new FoursquareHarvester({
-    httpClient: axios,
-    lifelogStore,
-    authStore,
-    configService,
-    logger: createLogger({ source: 'backend', app: 'foursquare' }),
-});
-
-// Wave 4: Communication Harvesters
-const gmailHarvester = new GmailHarvester({
-    lifelogStore,
-    currentStore: {
-        save: (username, data) => userSaveFile(username, 'gmail/current.yml', data),
-    },
-    configService,
-    logger: createLogger({ source: 'backend', app: 'gmail' }),
-});
-
-const gcalHarvester = new GCalHarvester({
-    lifelogStore,
-    currentStore: {
-        save: (username, data) => userSaveFile(username, 'calendar/current.yml', data),
-    },
-    configService,
-    logger: createLogger({ source: 'backend', app: 'gcal' }),
-});
-
-// Wave 5: Other Harvesters
-const hid = process.env.household_id || 'default';
-const weatherHarvester = new WeatherHarvester({
-    sharedStore: {
-        save: (data) => saveFile(`households/${hid}/shared/weather`, data),
-    },
-    configService,
-    logger: createLogger({ source: 'backend', app: 'weather' }),
-});
-
-const scriptureHarvester = new ScriptureHarvester({
-    httpClient: axios,
-    contentStore: {
-        save: (volume, version, verseId, data) => saveFile(`content/scripture/${volume}/${version}/${verseId}`, data),
-    },
-    logger: createLogger({ source: 'backend', app: 'scripture' }),
-});
-
-// Gmail client factory for ShoppingHarvester
-const createGmailClient = (username) => {
-    const { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI } = process.env;
-    const auth = configService.getUserAuth('google', username) || {};
-    const refreshToken = auth.refresh_token || process.env.GOOGLE_REFRESH_TOKEN;
-
-    if (!(GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET && GOOGLE_REDIRECT_URI && refreshToken)) {
-        throw new Error('Gmail credentials not found for shopping harvester');
-    }
-
-    const oAuth2Client = new google.auth.OAuth2(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI);
-    oAuth2Client.setCredentials({ refresh_token: refreshToken });
-    return google.gmail({ version: 'v1', auth: oAuth2Client });
-};
-
-const shoppingHarvester = new ShoppingHarvester({
-    gmailClientFactory: createGmailClient,
-    aiGateway: getAIGateway(),
-    lifelogStore,
-    configService,
-    logger: createLogger({ source: 'backend', app: 'shopping' }),
-});
 
 const harvestRootLogger = () => createLogger({
     source: 'backend',
@@ -295,44 +62,27 @@ const harvesters = {
         fn[i] = (_logger, _guidId, username) => Infinity.loadData(i, { targetUsername: username });
         return fn;
     }, {}),
-    // todoist: Uses new DDD harvester (Phase 3f Wave 2)
-    todoist: (_logger, _guidId, username) => todoistHarvester.harvest(username),
-    // gmail: Uses new DDD harvester (Phase 3f Wave 4)
-    gmail: (_logger, _guidId, username) => gmailHarvester.harvest(username),
-    // gcal: Uses new DDD harvester (Phase 3f Wave 4)
-    gcal: (_logger, _guidId, username) => gcalHarvester.harvest(username),
-    // withings: Uses new DDD harvester (Phase 3f Wave 1)
-    withings: (_logger, _guidId, username) => withingsHarvester.harvest(username),
+    todoist: (logger, guidId, username) => todoist(logger, guidId, username),
+    gmail: (logger, guidId, username) => gmail(logger, guidId, username),
+    gcal: (logger, guidId, username) => gcal(logger, guidId, username),
+    withings: (_logger, guidId, username) => withings(guidId, { targetUsername: username }),
     // ldsgc: (_logger, guidId, username) => ldsgc(guidId, { targetUsername: username }),
-    // weather: Uses new DDD harvester (Phase 3f Wave 5)
-    weather: (_logger, _guidId, username) => weatherHarvester.harvest(username),
-    // scripture: Uses new DDD harvester (Phase 3f Wave 5)
-    scripture: (_logger, _guidId, username, options) => scriptureHarvester.harvest(username, options),
-    // clickup: Uses new DDD harvester (Phase 3f Wave 2)
-    clickup: (_logger, _guidId, username) => clickupHarvester.harvest(username),
-    // lastfm: Uses new DDD harvester (Phase 3f Wave 3)
-    lastfm: (_logger, _guidId, username) => lastfmHarvester.harvest(username),
-    // letterboxd: Uses new DDD harvester (Phase 3f Wave 3)
-    letterboxd: (_logger, _guidId, username) => letterboxdHarvester.harvest(username),
-    // goodreads: Uses new DDD harvester (Phase 3f Wave 3)
-    goodreads: (_logger, _guidId, username) => goodreadsHarvester.harvest(username),
-    // github: Uses new DDD harvester (Phase 3f Wave 2)
-    github: (_logger, _guidId, username) => githubHarvester.harvest(username),
-    // reddit: Uses new DDD harvester (Phase 3f Wave 3)
-    reddit: (_logger, _guidId, username) => redditHarvester.harvest(username),
+    weather: (_logger, guidId, username) => weather(guidId, { targetUsername: username }),
+    scripture: (_logger, guidId, username) => scripture(guidId, { targetUsername: username }),
+    clickup: (_logger, guidId, username) => clickup(guidId, { targetUsername: username }),
+    lastfm: (_logger, guidId, username) => lastfm(guidId, { targetUsername: username }),
+    letterboxd: (_logger, guidId, username) => letterboxd(username),
+    goodreads: (_logger, guidId, username) => goodreads(username),
+    github: (_logger, guidId, username) => github(guidId, { targetUsername: username }),
+    reddit: (_logger, guidId, username) => reddit(guidId, { targetUsername: username }),
     budget: (_logger, guidId, username) => budget(guidId, { targetUsername: username }),
     youtube_dl: (_logger, guidId, username) => youtube_dl(guidId, { targetUsername: username }),
     fitness: (_logger, guidId, username) => fitness(guidId, { targetUsername: username }),
-    // strava: Uses new DDD harvester (Phase 3f)
-    strava: (_logger, _guidId, username) => stravaHarvester.harvest(username),
+    strava: (logger, guidId, username) => strava(logger, guidId, 90),
     health: (_logger, guidId, username) => health(guidId, { targetUsername: username }),
-    // garmin: Uses new DDD harvester (Phase 3f)
-    garmin: (_logger, _guidId, username) => garminHarvester.harvest(username),
-    // foursquare: Uses new DDD harvester (Phase 3f Wave 3)
-    foursquare: (_logger, _guidId, username) => foursquareHarvester.harvest(username),
+    foursquare: (_logger, guidId, username) => foursquare(guidId, { targetUsername: username }),
     payroll: (...args) => payrollSyncJob(...args),
-    // shopping: Uses new DDD harvester (Phase 3f)
-    shopping: (_logger, _guidId, username) => shoppingHarvester.harvest(username)
+    shopping: (logger, guidId, username) => shopping(logger, guidId, username)
 }
 
 const harvestKeys = Object.keys(harvesters);
@@ -343,7 +93,6 @@ const HARVEST_TIMEOUT = 120000; // 2 minutes default
 const HARVEST_TIMEOUTS = {
     fitness: 180000,    // 3 minutes for fitness sync
     strava: 180000,     // 3 minutes for strava
-    garmin: 180000,     // 3 minutes for garmin
     health: 180000,     // 3 minutes for health data aggregation
     budget: 240000,     // 4 minutes for budget compilation
     gmail: 180000,      // 3 minutes for gmail

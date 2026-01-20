@@ -280,6 +280,7 @@ export const getEntropyReport = async () => {
                 id,
                 name: sourceConfig.name,
                 icon: sourceConfig.icon,
+                weight: sourceConfig.weight,
                 status,
                 value,
                 label,

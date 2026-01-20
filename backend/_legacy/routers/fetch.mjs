@@ -1,7 +1,7 @@
 import express from 'express';
 const apiRouter = express.Router();
 import Infinity from '../lib/infinity.mjs';
-import { loadFile, loadRandom, saveFile } from '../lib/io.mjs';
+import { loadFile, loadFileByPrefix, loadRandom, saveFile } from '../lib/io.mjs';
 import { readFileSync, readdirSync } from 'fs';
 import test from '../jobs/weight.mjs';
 import yaml, { load } from 'js-yaml';
@@ -374,31 +374,45 @@ apiRouter.get('/scripture/:first_term?/:second_term?', async (req, res, next) =>
     }
 });
 
+// Helper to find media file by numeric prefix
+const findMediaFileByPrefix = (dir, prefix) => {
+    if (!fs.existsSync(dir)) return null;
+    const normalizedPrefix = String(prefix).replace(/^0+/, '') || '0';
+    const files = fs.readdirSync(dir).filter(f => f.endsWith('.mp3') && !f.startsWith('._'));
+    const match = files.find(file => {
+        const m = file.match(/^(\d+)/);
+        if (!m) return false;
+        const fileNum = m[1].replace(/^0+/, '') || '0';
+        return fileNum === normalizedPrefix;
+    });
+    return match ? `${dir}/${match}` : null;
+};
+
 // Unified endpoint for /hymn/:hymn_num? and /primary/:hymn_num?
 apiRouter.get('/:songType(hymn|primary)/:hymn_num?', async (req, res, next) => {
     try {
         const { songType, hymn_num } = req.params;
         const preferences = ["_ldsgc", ""];
         const basePath = `content/songs/${songType}`;
-        const hymnData = hymn_num ? loadFile(`${basePath}/${hymn_num}`) : loadRandom(basePath);
-        const hymnNumStr = String(hymn_num || hymnData?.hymn_num || '').padStart(3, '0');
+        const hymnData = hymn_num ? loadFileByPrefix(basePath, hymn_num) : loadRandom(basePath);
+
+        if (!hymnData) {
+            return res.status(404).json({ error: `Hymn not found: ${hymn_num}` });
+        }
+
+        const hymnNumForMedia = hymnData?.hymn_num || hymn_num;
         const { mediaFilePath, mediaUrl } = preferences.reduce((result, prf) => {
             if (result) return result;
-            prf = prf ? `${prf}/` : '';
-            const mediaFilePath = `${mediaPath}/audio/songs/${songType}/${prf}${hymnNumStr}.mp3`;
-            const host = process.env.host || "";
-            try {
-                if (fs.existsSync(mediaFilePath)) {
-                    return {
-                        mediaUrl: `${host}/media/audio/songs/${songType}/${prf}${hymnNumStr}`,
-                        mediaFilePath
-                    };
-                }else{
-                    fetchLogger.warn('fetch.song.file_not_found', { mediaFilePath });
-                    return null;
-                }
-            } catch (err) {
-                console.error(`Error checking file path: ${mediaFilePath}`, err.message);
+            const subDir = prf ? `${prf}/` : '';
+            const searchDir = `${mediaPath}/audio/songs/${songType}/${subDir}`.replace(/\/$/, '');
+            const foundPath = findMediaFileByPrefix(searchDir, hymnNumForMedia);
+            if (foundPath) {
+                const host = process.env.host || "";
+                const filename = path.basename(foundPath, '.mp3');
+                return {
+                    mediaUrl: `${host}/media/audio/songs/${songType}/${subDir}${filename}`,
+                    mediaFilePath: foundPath
+                };
             }
             return null;
         }, null) || {};

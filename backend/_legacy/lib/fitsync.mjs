@@ -136,7 +136,8 @@ export const getAccessToken = async () => {
     }
 
     const username = getDefaultUsername();
-    const authData = configService.getUserAuth('fitnesssyncer', username) || {};
+    // Load auth fresh from disk (not cached ConfigService) to get latest tokens
+    const authData = loadFile(`users/${username}/auth/fitnesssyncer`) || {};
     const { refresh, client_id, client_secret } = authData;
     
     // Get credentials from user auth file (personal OAuth app)
@@ -179,11 +180,14 @@ export const getAccessToken = async () => {
         const nextRefreshToken = refreshToken || refresh;
         if (nextRefreshToken) {
             // Preserve any existing auth fields while updating tokens/credentials
+            // Use expires_at (absolute timestamp) for accurate expiry tracking across restarts
             userSaveAuth(username, 'fitnesssyncer', {
                 ...authData,
                 refresh: nextRefreshToken,
                 client_id: FITSYNC_CLIENT_ID,
-                client_secret: FITSYNC_CLIENT_SECRET
+                client_secret: FITSYNC_CLIENT_SECRET,
+                expires_at: expiresAt.toISOString(),
+                updated_at: new Date().toISOString()
             });
         }
 
@@ -379,6 +383,7 @@ const harvestActivities = async (job_id) => {
                     startTime: activity.date ? moment(activity.date).tz(timezone).format('hh:mm a') : '',
                     endTime: activity.endDate ? moment(activity.endDate).tz(timezone).format('hh:mm a') : '',
                     avgHeartrate: parseFloat((activity.avgHeartrate || 0).toFixed(2)),
+                    steps: activity.steps || 0,
                 });
             }
             // Write after each activity (safe for small batches)

@@ -145,7 +145,11 @@ function windowOffset(str) {
 }
 
 function computeNextRun(job, fromMoment) {
-  const rawNext = CronExpressionParser.parse(job.cron_tab, {
+  const cronTab = job.cron_tab || job.schedule;
+  if (!cronTab) {
+    throw new Error('Missing cron schedule');
+  }
+  const rawNext = CronExpressionParser.parse(cronTab, {
     currentDate: fromMoment.toDate(),
     tz: timeZone
   }).next().toDate();
@@ -154,6 +158,54 @@ function computeNextRun(job, fromMoment) {
     : 0;
   return moment(rawNext).add(offsetMinutes, "minutes").tz(timeZone);
 }
+
+const legacyBuckets = new Set(['cron10Mins', 'cronHourly', 'cronDaily', 'cronWeekly']);
+
+const inferBucketFromSchedule = (schedule) => {
+  if (!schedule || typeof schedule !== 'string') {
+    return null;
+  }
+  const parts = schedule.trim().split(/\s+/);
+  if (parts.length < 5) {
+    return null;
+  }
+  const [minute, hour, , , dayOfWeek] = parts;
+  if (minute.includes('*/10')) {
+    return 'cron10Mins';
+  }
+  if (dayOfWeek && dayOfWeek !== '*' && dayOfWeek !== '?') {
+    return 'cronWeekly';
+  }
+  if (hour === '*') {
+    return 'cronHourly';
+  }
+  return 'cronDaily';
+};
+
+const migrateLegacyCronState = (legacyState, jobs) => {
+  const migrated = {};
+  if (!legacyState || typeof legacyState !== 'object' || !Array.isArray(jobs)) {
+    return migrated;
+  }
+  for (const job of jobs) {
+    const jobKey = job.id || job.name;
+    const bucket = job.bucket || inferBucketFromSchedule(job.schedule || job.cron_tab);
+    if (!bucket) {
+      continue;
+    }
+    const legacy = legacyState[bucket];
+    if (!legacy) {
+      continue;
+    }
+    migrated[jobKey] = {
+      last_run: legacy.last_run || null,
+      nextRun: null,
+      status: legacy.status || 'migrated',
+      duration_ms: legacy.duration_ms || 0
+    };
+  }
+  return migrated;
+};
 
 // Load job definitions from registry (uses cached jobs, not re-loading from disk)
 const loadCronJobs = () => {
@@ -179,7 +231,46 @@ const loadCronState = () => {
     }
     return {};
   }
-  return state;
+  const hasLegacyKeys = Object.keys(state).some((key) => legacyBuckets.has(key));
+  if (!hasLegacyKeys) {
+    return state;
+  }
+
+  const jobs = loadCronJobs();
+  const migrated = migrateLegacyCronState(state, jobs);
+  const nextState = { ...state };
+  legacyBuckets.forEach((key) => {
+    if (Object.prototype.hasOwnProperty.call(nextState, key)) {
+      delete nextState[key];
+    }
+  });
+
+  Object.entries(migrated).forEach(([jobKey, jobState]) => {
+    const existing = nextState[jobKey];
+    if (!existing) {
+      nextState[jobKey] = jobState;
+      return;
+    }
+    if (!existing.last_run && jobState.last_run) {
+      existing.last_run = jobState.last_run;
+    }
+    if (!existing.status && jobState.status) {
+      existing.status = jobState.status;
+    }
+    if (!existing.duration_ms && jobState.duration_ms) {
+      existing.duration_ms = jobState.duration_ms;
+    }
+    if (!existing.nextRun) {
+      existing.nextRun = jobState.nextRun;
+    }
+  });
+
+  cronLogger.warn('cron.state.legacy_detected', {
+    keys: Object.keys(state).filter((key) => legacyBuckets.has(key)),
+    migratedJobs: Object.keys(migrated).length
+  });
+  saveFile("system/state/cron-runtime", nextState);
+  return nextState;
 };
 
 // Merge job definitions with runtime state
@@ -246,6 +337,7 @@ export const cronContinuous = async () => {
 
   // Track if any job actually ran (to avoid unnecessary saves)
   let jobsRan = false;
+  let needsInitialSave = false;
 
   for (const job of cronJobs) {
     if (typeof job !== "object" || job === null) {
@@ -253,12 +345,18 @@ export const cronContinuous = async () => {
       continue; // Skip invalid jobs
     }
     if (!job.nextRun) {
+      job.cron_tab = job.cron_tab || job.schedule;
+      if (!job.cron_tab) {
+        cronLogger.error('cron.schedule.missing', { job: job.id || job.name });
+        job.needsToRun = false;
+        continue;
+      }
       const nextMoment = computeNextRun(job, now);
       job.nextRun = nextMoment.format("YYYY-MM-DD HH:mm:ss");
-      job.cron_tab = job.cron_tab || job.schedule; // Ensure cron_tab exists for computeNextRun
       job.secondsUntil = nextMoment.unix() - now.unix();
       job.needsToRun = false;
       job.last_run = job.last_run || 0;
+      needsInitialSave = true;
     } else {
       // echo countdown to job.nextRun
       // console.log(`Job ${job.name} next run in ${job.secondsUntil} seconds`);
@@ -389,11 +487,15 @@ export const cronContinuous = async () => {
     }
   }
 
-  // Only save state when jobs actually ran (reduces writes from every 5s to only when needed)
-  if (jobsRan) {
+  // Save state when jobs ran OR when initial schedules were computed
+  if (jobsRan || needsInitialSave) {
     saveCronState(cronJobs);
     backupCronState(cronJobs);
-    cronLogger.debug('cron.state.saved', { jobsRan: runNow.map(j => j.name) });
+    if (jobsRan) {
+      cronLogger.debug('cron.state.saved', { jobsRan: runNow.map(j => j.name) });
+    } else {
+      cronLogger.info('cron.state.initialized', { scheduledJobs: cronJobs.length });
+    }
   }
 };
 
