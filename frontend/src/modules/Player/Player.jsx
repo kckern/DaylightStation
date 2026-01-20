@@ -175,6 +175,7 @@ const Player = forwardRef(function Player(props, ref) {
   const [mediaAccess, setMediaAccess] = useState(() => createDefaultMediaAccess());
   const [playbackMetrics, setPlaybackMetrics] = useState(() => createDefaultPlaybackMetrics());
   const [remountState, setRemountState] = useState(() => ({ guid: currentMediaGuid || null, nonce: 0, context: null }));
+  const resilienceBridgeRef = useRef(null);
   const remountInfoRef = useRef(remountState);
   const remountTimerRef = useRef(null);
 
@@ -264,6 +265,10 @@ const Player = forwardRef(function Player(props, ref) {
         stalled: typeof metrics.stalled === 'boolean' ? metrics.stalled : prev.stalled,
         stallState: metrics.stallState !== undefined ? metrics.stallState : prev.stallState
       };
+      // Test hook for contract tests
+      if (typeof window !== 'undefined' && window.__TEST_CAPTURE_METRICS__) {
+        window.__TEST_LAST_METRICS__ = next;
+      }
       if (
         prev.seconds === next.seconds
         && prev.isPaused === next.isPaused
@@ -281,13 +286,22 @@ const Player = forwardRef(function Player(props, ref) {
   }, []);
 
   const handleRegisterMediaAccess = useCallback((access = {}) => {
-    setMediaAccess({
+    const newMediaAccess = {
       getMediaEl: typeof access.getMediaEl === 'function' ? access.getMediaEl : null,
       hardReset: typeof access.hardReset === 'function' ? access.hardReset : null,
       fetchVideoInfo: typeof access.fetchVideoInfo === 'function' ? access.fetchVideoInfo : null,
       nudgePlayback: typeof access.nudgePlayback === 'function' ? access.nudgePlayback : null,
       getTroubleDiagnostics: typeof access.getTroubleDiagnostics === 'function' ? access.getTroubleDiagnostics : null
-    });
+    };
+    setMediaAccess(newMediaAccess);
+    // Test hook for contract tests
+    if (typeof window !== 'undefined' && window.__TEST_CAPTURE_METRICS__) {
+      window.__TEST_MEDIA_ACCESS__ = newMediaAccess;
+    }
+  }, []);
+
+  const handleRegisterResilienceBridge = useCallback((bridge) => {
+    resilienceBridgeRef.current = bridge || null;
   }, []);
 
   const handleSeekRequestConsumed = useCallback(() => {
@@ -454,7 +468,7 @@ const Player = forwardRef(function Player(props, ref) {
 
   const resilienceControllerRef = resolvedResilience.controllerRef;
 
-  const transportAdapter = useMediaTransportAdapter({ controllerRef, mediaAccess });
+  const transportAdapter = useMediaTransportAdapter({ controllerRef, mediaAccess, resilienceBridge: resilienceBridgeRef.current });
 
   const resolvedResilienceOnState = resolvedResilience.onStateChange;
 
@@ -579,8 +593,15 @@ const Player = forwardRef(function Player(props, ref) {
   }, [effectivePlaybackRate, setSessionPlaybackRate]);
 
   // Get shader from the current item, falling back to queue/play level, then default
+  // Looped videos default to 'focused' shader (hides progress bar) unless explicitly set
+  // Loop conditions: single-item queue or continuous flag
+  // Note: short videos (<20s) loop automatically but we can't determine duration at render time
+  // Use continuous=true in URL params for short clips that should hide progress bar
   const currentItemShader = effectiveMeta?.shader;
-  const effectiveShader = currentItemShader || queueShader;
+  const explicitShader = play?.shader || queue?.shader || currentItemShader;
+  const willLoop = (isQueue && playQueue?.length === 1) ||
+                   (!isQueue && singlePlayerProps?.continuous);
+  const effectiveShader = explicitShader || (willLoop ? 'focused' : queueShader);
 
   // Create appropriate advance function for single continuous items
   const singleAdvance = useCallback(() => {
@@ -693,6 +714,7 @@ const Player = forwardRef(function Player(props, ref) {
     onResolvedMeta: handleResolvedMeta,
     onPlaybackMetrics: handlePlaybackMetrics,
     onRegisterMediaAccess: handleRegisterMediaAccess,
+    onRegisterResilienceBridge: handleRegisterResilienceBridge,
     onStartupSignal,
     seekToIntentSeconds: targetTimeSeconds,
     onSeekRequestConsumed: handleSeekRequestConsumed,

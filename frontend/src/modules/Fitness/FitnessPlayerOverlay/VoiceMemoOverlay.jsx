@@ -144,16 +144,8 @@ const VoiceMemoOverlay = ({
   const autoStartRef = React.useRef(false);
   const overlayRef = React.useRef(null);
   const panelRef = React.useRef(null);
-
-  const handleClose = useCallback(() => {
-    logVoiceMemo('overlay-close-request', { mode: overlayState?.mode, memoId: overlayState?.memoId });
-    // If closing during review mode, discard the pending memo
-    if (overlayState?.mode === 'review' && overlayState?.memoId) {
-      logVoiceMemo('overlay-close-discard', { memoId: overlayState.memoId });
-      onRemoveMemo?.(overlayState.memoId);
-    }
-    onClose?.();
-  }, [logVoiceMemo, onClose, onRemoveMemo, overlayState?.mode, overlayState?.memoId]);
+  // Stale state reset cooldown to prevent render loops (see audit 2026-01-19)
+  const staleResetCooldownRef = React.useRef({ lastReset: 0, recentResets: [] });
 
   const handleAccept = useCallback(() => {
     logVoiceMemo('overlay-accept', { memoId: overlayState?.memoId || null });
@@ -207,6 +199,15 @@ const VoiceMemoOverlay = ({
   }, [logVoiceMemo, onRemoveMemo, voiceMemos, onClose]);
 
   const handleRedoCaptured = useCallback((memo) => {
+    // Guard: Don't process if overlay was already closed
+    if (!overlayState?.open) {
+      logVoiceMemo('overlay-redo-captured-orphaned', {
+        memoId: memo?.memoId,
+        reason: 'overlay_closed'
+      });
+      return;
+    }
+
     if (!memo) {
       logVoiceMemo('overlay-redo-cancel');
       onClose?.();
@@ -235,7 +236,7 @@ const VoiceMemoOverlay = ({
     } else {
       onClose?.();
     }
-  }, [logVoiceMemo, overlayState?.memoId, onReplaceMemo, onAddMemo, onOpenReview, onClose]);
+  }, [logVoiceMemo, onAddMemo, onClose, onOpenReview, onReplaceMemo, overlayState?.memoId, overlayState?.open]);
 
   const [recorderState, setRecorderState] = useState('idle'); // idle|recording|processing|ready|error
   const {
@@ -245,7 +246,8 @@ const VoiceMemoOverlay = ({
     error: recorderError,
     setError: setRecorderError,
     startRecording,
-    stopRecording
+    stopRecording,
+    cancelUpload
   } = useVoiceMemoRecorder({
     sessionId,
     playerRef,
@@ -268,6 +270,42 @@ const VoiceMemoOverlay = ({
   const recorderErrorMessage = typeof recorderError === 'string' ? recorderError : recorderError?.message;
   const recorderErrorRetryable = recorderError?.retryable !== false;
   const isRecorderErrored = recorderState === 'error' || Boolean(recorderError);
+
+  const handleClose = useCallback(() => {
+    const wasRecording = isRecording;
+    const wasProcessing = isProcessing || recorderState === 'processing';
+
+    logVoiceMemo('overlay-close-request', {
+      mode: overlayState?.mode,
+      memoId: overlayState?.memoId,
+      wasRecording,
+      wasProcessing,
+      recorderState,
+      reason: 'user_cancel'
+    });
+
+    // Cancel any in-flight upload first
+    if (wasProcessing) {
+      cancelUpload?.();
+    }
+
+    // Stop recording if active (this will NOT trigger handleRecordingStop
+    // because cancelledRef is now set)
+    if (wasRecording) {
+      stopRecording();
+    }
+
+    // Force reset recorder state to idle
+    setRecorderState('idle');
+
+    // If closing during review mode, discard the pending memo
+    if (overlayState?.mode === 'review' && overlayState?.memoId) {
+      logVoiceMemo('overlay-close-discard', { memoId: overlayState.memoId });
+      onRemoveMemo?.(overlayState.memoId);
+    }
+
+    onClose?.();
+  }, [cancelUpload, isProcessing, isRecording, logVoiceMemo, onClose, onRemoveMemo, overlayState?.mode, overlayState?.memoId, recorderState, setRecorderState, stopRecording]);
 
   const handleStartRedoRecording = useCallback(() => {
     setRecorderError(null);
@@ -364,12 +402,54 @@ const VoiceMemoOverlay = ({
       autoStartRef.current = false;
       return;
     }
+
+    // Detect and reset stale state (e.g., stuck in 'processing' from previous session)
+    if (recorderState !== 'idle' && recorderState !== 'recording' && !isProcessing) {
+      const now = Date.now();
+      const cooldown = staleResetCooldownRef.current;
+      const COOLDOWN_MS = 500;
+      const WARNING_WINDOW_MS = 5000;
+      const WARNING_THRESHOLD = 3;
+
+      // Enforce cooldown to prevent render loop (see audit 2026-01-19)
+      if (now - cooldown.lastReset < COOLDOWN_MS) {
+        logVoiceMemo('overlay-open-stale-state-reset-blocked', {
+          previousState: recorderState,
+          mode: overlayState?.mode,
+          timeSinceLastReset: now - cooldown.lastReset
+        });
+        return; // Skip reset - too soon
+      }
+
+      // Track reset frequency for monitoring
+      cooldown.recentResets = cooldown.recentResets.filter(t => now - t < WARNING_WINDOW_MS);
+      cooldown.recentResets.push(now);
+
+      if (cooldown.recentResets.length >= WARNING_THRESHOLD) {
+        logVoiceMemo('overlay-open-stale-state-reset-warning', {
+          resetCount: cooldown.recentResets.length,
+          windowMs: WARNING_WINDOW_MS,
+          message: 'Frequent stale state resets detected - possible loop'
+        });
+      }
+
+      cooldown.lastReset = now;
+
+      logVoiceMemo('overlay-open-stale-state-reset', {
+        previousState: recorderState,
+        mode: overlayState?.mode
+      });
+      setRecorderState('idle');
+      autoStartRef.current = false;
+      return; // Let next render handle auto-start
+    }
+
     // Auto-start recording in redo mode (whether new capture or redoing existing memo)
     if (!isRecording && !isProcessing && !isRecorderErrored && !autoStartRef.current) {
       autoStartRef.current = true;
       handleStartRedoRecording();
     }
-  }, [overlayState?.open, overlayState?.mode, isRecording, isProcessing, isRecorderErrored, handleStartRedoRecording]);
+  }, [overlayState?.open, overlayState?.mode, isRecording, isProcessing, isRecorderErrored, handleStartRedoRecording, logVoiceMemo, recorderState]);
 
   useEffect(() => {
     if (!overlayState?.open) return;

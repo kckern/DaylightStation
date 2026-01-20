@@ -65,6 +65,10 @@ function createWebSocketTransport(options = {}) {
     try {
       const { wsService } = await import('../../services/WebSocketService.js');
       wsServiceInstance = wsService;
+      // Ensure connection is established for logging transport
+      if (typeof wsService.connect === 'function') {
+        wsService.connect();
+      }
       return wsServiceInstance;
     } catch (err) {
       devOutput('error', '[DaylightLogger] Failed to load WebSocketService', err);
@@ -121,6 +125,10 @@ function createBufferingWebSocketTransport(options = {}) {
     try {
       const { wsService } = await import('../../services/WebSocketService.js');
       wsServiceInstance = wsService;
+      // Ensure connection is established for logging transport
+      if (typeof wsService.connect === 'function') {
+        wsService.connect();
+      }
       return wsServiceInstance;
     } catch (err) {
       devOutput('error', '[DaylightLogger] Failed to load WebSocketService', err);

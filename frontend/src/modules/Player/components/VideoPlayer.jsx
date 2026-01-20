@@ -3,34 +3,34 @@ import PropTypes from 'prop-types';
 import 'dash-video-element';
 import { useCommonMediaController } from '../hooks/useCommonMediaController.js';
 import { ProgressBar } from './ProgressBar.jsx';
-import { LoadingOverlay } from './LoadingOverlay.jsx';
 import { useUpscaleEffects } from '../hooks/useUpscaleEffects.js';
 import { getLogger } from '../../../lib/logging/Logger.js';
 
 /**
  * Video player component for playing video content (including DASH video)
  */
-export function VideoPlayer({ 
-  media, 
-  advance, 
-  clear, 
-  shader, 
-  volume, 
+export function VideoPlayer({
+  media,
+  advance,
+  clear,
+  shader,
+  volume,
   playbackRate,
-  setShader, 
-  cycleThroughClasses, 
-  classes, 
+  setShader,
+  cycleThroughClasses,
+  classes,
   playbackKeys,
-  queuePosition, 
-  fetchVideoInfo, 
-  ignoreKeys, 
-  onProgress, 
-  onMediaRef, 
+  queuePosition,
+  fetchVideoInfo,
+  ignoreKeys,
+  onProgress,
+  onMediaRef,
   showQuality,
   stallConfig,
   keyboardOverrides,
   onController,
-  upscaleEffects = 'auto'
+  upscaleEffects = 'auto',
+  resilienceBridge
 }) {
   // console.log('[VideoPlayer] Received keyboardOverrides:', keyboardOverrides ? Object.keys(keyboardOverrides) : 'undefined');
   const isPlex = ['dash_video'].includes(media.media_type);
@@ -52,7 +52,9 @@ export function VideoPlayer({
     droppedFramePct,
     currentMaxKbps,
     stallState,
-    elementKey
+    elementKey,
+    getMediaEl,
+    getContainerEl
   } = useCommonMediaController({
     start: media.seconds,
     playbackRate: playbackRate || media.playbackRate || 1,
@@ -101,6 +103,26 @@ export function VideoPlayer({
     preset: upscaleEffects
   });
 
+  // Register accessors with resilience bridge
+  useEffect(() => {
+    if (resilienceBridge?.registerAccessors) {
+      resilienceBridge.registerAccessors({ getMediaEl, getContainerEl });
+    }
+    // Also register with legacy onRegisterMediaAccess for backward compatibility
+    if (typeof resilienceBridge?.onRegisterMediaAccess === 'function') {
+      resilienceBridge.onRegisterMediaAccess({
+        getMediaEl,
+        hardReset: null,
+        fetchVideoInfo: fetchVideoInfo || null
+      });
+    }
+    return () => {
+      if (typeof resilienceBridge?.onRegisterMediaAccess === 'function') {
+        resilienceBridge.onRegisterMediaAccess({});
+      }
+    };
+  }, [resilienceBridge, getMediaEl, getContainerEl, fetchVideoInfo]);
+
   const { show, season, title, media_url } = media;
 
   // If the media_url (or its effective bitrate cap) changes, reset display readiness so UI transitions are correct
@@ -141,13 +163,57 @@ export function VideoPlayer({
       el.removeEventListener('playing', handleReady);
     };
   }, [isDash, media_url, elementKey]);
+
+  // FPS logging every 10 seconds during playback
+  useEffect(() => {
+    // Only log if video is playing (not paused, not stalled, has started)
+    if (isPaused || isStalled || seconds === 0 || !displayReady || !quality?.supported) {
+      return;
+    }
+
+    const intervalId = setInterval(() => {
+      const logger = getLogger();
+      const mediaEl = getMediaEl();
+      
+      // Calculate instantaneous FPS if available
+      let estimatedFps = null;
+      if (mediaEl && typeof mediaEl.requestVideoFrameCallback === 'function') {
+        // Modern browsers support this for precise frame timing
+        estimatedFps = 'supported';
+      } else if (quality.totalVideoFrames > 0 && duration > 0) {
+        // Fallback: estimate from total frames / duration
+        estimatedFps = Math.round((quality.totalVideoFrames / duration) * 100) / 100;
+      }
+
+      logger.info('playback.fps_stats', {
+        title: media?.title,
+        show: media?.show,
+        season: media?.season,
+        mediaKey: media?.media_key || media?.key || media?.plex,
+        currentTime: Math.round(seconds * 10) / 10,
+        duration: Math.round(duration * 10) / 10,
+        droppedFrames: quality.droppedVideoFrames,
+        totalFrames: quality.totalVideoFrames,
+        droppedPct: quality.droppedPct?.toFixed(2),
+        avgDroppedPct: droppedFramePct ? (droppedFramePct * 100).toFixed(2) : null,
+        bitrateCapKbps: currentMaxKbps,
+        estimatedFps,
+        playbackRate: media.playbackRate || 1,
+        isDash,
+        shader
+      });
+    }, 10000); // 10 seconds
+
+    return () => clearInterval(intervalId);
+  }, [isPaused, isStalled, seconds, displayReady, quality, droppedFramePct, currentMaxKbps, duration, media, isDash, shader, getMediaEl]);
+
   const percent = duration ? ((seconds / duration) * 100).toFixed(1) : 0;
   const plexIdValue = media?.media_key || media?.key || media?.plex || null;
   
   
   const heading = !!show && !!season && !!title
     ? `${show} - ${season}: ${title}`
-    : !!show && !!seasonc
+    : !!show && !!season
     ? `${show} - ${season}`
     : !!show
     ? show
@@ -156,33 +222,6 @@ export function VideoPlayer({
   return (
     <div className={`video-player ${shader}`}>
       <ProgressBar percent={percent} onClick={handleProgressClick} />
-      {(seconds === 0 || isStalled || isSeeking || isAdapting) && (
-        <LoadingOverlay
-          seconds={seconds}
-          isPaused={isPaused}
-          fetchVideoInfo={fetchVideoInfo}
-          stalled={isStalled}
-          initialStart={media.seconds || 0}
-          plexId={plexIdValue}
-          message={isAdapting ? adaptMessage : undefined}
-          debugContext={{
-            scope: 'video',
-            mediaType: media?.media_type,
-            title,
-            show,
-            season,
-            url: media_url,
-            media_key: media?.media_key || media?.key || media?.plex,
-            isDash,
-            shader,
-            stallState
-          }}
-          getMediaEl={() => {
-            const el = (containerRef.current?.shadowRoot?.querySelector('video')) || containerRef.current;
-            return el || null;
-          }}
-        />
-      )}
       {isDash ? (
         <dash-video
           key={`${media_url || ''}:${media?.maxVideoBitrate ?? 'unlimited'}:${elementKey}`}
@@ -257,5 +296,12 @@ VideoPlayer.propTypes = {
   showQuality: PropTypes.bool,
   stallConfig: PropTypes.object,
   onController: PropTypes.func,
-  upscaleEffects: PropTypes.oneOf(['auto', 'blur-only', 'crt-only', 'aggressive', 'none'])
+  upscaleEffects: PropTypes.oneOf(['auto', 'blur-only', 'crt-only', 'aggressive', 'none']),
+  resilienceBridge: PropTypes.shape({
+    onPlaybackMetrics: PropTypes.func,
+    onRegisterMediaAccess: PropTypes.func,
+    seekToIntentSeconds: PropTypes.number,
+    onSeekRequestConsumed: PropTypes.func,
+    onStartupSignal: PropTypes.func
+  })
 };

@@ -165,6 +165,8 @@ const useVoiceMemoRecorder = ({
   const wasPlayingBeforeRecordingRef = useRef(false);
   const durationIntervalRef = useRef(null);
   const lastStateRef = useRef(null);
+  const abortControllerRef = useRef(null);
+  const cancelledRef = useRef(false);
 
   const [isRecording, setIsRecording] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
@@ -304,12 +306,28 @@ const useVoiceMemoRecorder = ({
   }, [emitLevel, logVoiceMemo, onLevel]);
 
   const handleRecordingStop = useCallback(async () => {
+    // Guard: If already cancelled, discard chunks and exit
+    if (cancelledRef.current) {
+      logVoiceMemo('recording-stop-cancelled', {
+        chunksDiscarded: chunksRef.current.length,
+        reason: 'user_cancel'
+      });
+      chunksRef.current = [];
+      cancelledRef.current = false;
+      return;
+    }
+
     if (!chunksRef.current.length) return;
 
     logVoiceMemo('recording-stop', { chunks: chunksRef.current.length });
 
     const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
     chunksRef.current = [];
+
+    // Create abort controller for this upload
+    abortControllerRef.current = new AbortController();
+    const { signal } = abortControllerRef.current;
+
     let timedOut = false;
     const timeoutPromise = new Promise((_, reject) => {
       setTimeout(() => {
@@ -322,6 +340,13 @@ const useVoiceMemoRecorder = ({
       setUploading(true);
       emitState('processing');
       const base64 = await blobToBase64(blob);
+
+      // Check if aborted during base64 conversion
+      if (signal.aborted) {
+        logVoiceMemo('recording-upload-aborted', { reason: 'user_cancel', phase: 'base64' });
+        return;
+      }
+
       const payload = {
         audioBase64: base64,
         mimeType: blob.type,
@@ -342,6 +367,12 @@ const useVoiceMemoRecorder = ({
         timeoutPromise
       ]);
 
+      // Check if aborted during API call
+      if (signal.aborted) {
+        logVoiceMemo('recording-upload-aborted', { reason: 'user_cancel', phase: 'api' });
+        return;
+      }
+
       if (!resp?.ok) {
         emitError(resp?.error || 'Transcription failed', 'Transcription failed', 'transcription_failed', true);
         return;
@@ -352,6 +383,16 @@ const useVoiceMemoRecorder = ({
       }
 
       const memo = resp.memo || null;
+
+      // Final abort check before triggering callback
+      if (signal.aborted) {
+        logVoiceMemo('recording-callback-suppressed', {
+          reason: 'overlay_closed',
+          memoId: memo?.memoId
+        });
+        return;
+      }
+
       if (memo && onMemoCaptured) {
         onMemoCaptured(memo);
       }
@@ -362,6 +403,11 @@ const useVoiceMemoRecorder = ({
       }
       emitState('ready');
     } catch (err) {
+      // Don't emit error if aborted
+      if (signal.aborted) {
+        logVoiceMemo('recording-upload-aborted', { reason: 'user_cancel', phase: 'error' });
+        return;
+      }
       emitError(err, timedOut ? 'Processing timed out' : 'Upload failed', timedOut ? 'processing_timeout' : 'upload_failed', true);
       logVoiceMemo('recording-upload-error', {
         error: err?.message || String(err),
@@ -369,6 +415,7 @@ const useVoiceMemoRecorder = ({
       }, { level: 'warn' });
     } finally {
       setUploading(false);
+      abortControllerRef.current = null;
     }
   }, [emitError, emitState, logVoiceMemo, onMemoCaptured, sessionId]);
 
@@ -468,9 +515,42 @@ const useVoiceMemoRecorder = ({
     emitLevel(null);
   }, [cleanupStream, clearDurationTimer, emitLevel, emitState, logVoiceMemo, onResumeMusic, playerRef]);
 
+  const cancelUpload = useCallback(() => {
+    // Set cancelled flag to prevent handleRecordingStop from processing
+    cancelledRef.current = true;
+
+    // Abort any in-flight API request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+
+    // Discard any pending chunks
+    const chunksDiscarded = chunksRef.current.length;
+    chunksRef.current = [];
+
+    // Reset state
+    setUploading(false);
+    emitState('idle');
+
+    logVoiceMemo('recording-cancelled', {
+      reason: 'user_cancel',
+      chunksDiscarded,
+      wasUploading: uploading
+    });
+  }, [emitState, logVoiceMemo, uploading]);
+
   useEffect(() => () => {
     clearDurationTimer();
     cleanupStream();
+
+    // Abort any in-flight upload on unmount
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    cancelledRef.current = false;
+
     try {
       mediaRecorderRef.current?.stop();
     } catch (_) {
@@ -486,7 +566,8 @@ const useVoiceMemoRecorder = ({
     error,
     setError,
     startRecording,
-    stopRecording
+    stopRecording,
+    cancelUpload
   };
 };
 

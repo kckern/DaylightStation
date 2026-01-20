@@ -58,14 +58,22 @@ const EntropyPanel = () => {
     );
   }
 
+  // Sort items by weight (descending), then by id as fallback
+  const sortedItems = [...report.items].sort((a, b) => {
+    const weightA = a.weight ?? 0;
+    const weightB = b.weight ?? 0;
+    if (weightB !== weightA) return weightB - weightA;
+    return (a.id || '').localeCompare(b.id || '');
+  });
+
   // Calculate grid dimensions to be as square as possible
-  const numItems = report.items.length;
+  const numItems = sortedItems.length;
   const cols = Math.ceil(Math.sqrt(numItems));
 
   return (
     <div className="entropy-panel">
       <div className="entropy-grid" style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}>
-        {report.items.map(item => {
+        {sortedItems.map(item => {
           const isSvg = item.icon && item.icon.endsWith('.svg');
           const content = (
             <>

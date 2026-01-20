@@ -172,7 +172,25 @@ export class PlexAdapter {
         const data = await this.client.getMetadata(localId);
         const item = data.MediaContainer?.Metadata?.[0];
         if (!item) return null;
-        return this._toPlayableItem(item);
+
+        // For episodes, also fetch show-level labels (governance labels are typically on the show)
+        let showLabels = [];
+        if (item.type === 'episode' && item.grandparentRatingKey) {
+          try {
+            const showData = await this.client.getMetadata(item.grandparentRatingKey);
+            const show = showData?.MediaContainer?.Metadata?.[0];
+            if (show?.Label && Array.isArray(show.Label)) {
+              for (const label of show.Label) {
+                if (typeof label === 'string') showLabels.push(label.toLowerCase());
+                else if (label?.tag) showLabels.push(label.tag.toLowerCase());
+              }
+            }
+          } catch (err) {
+            // Silently continue if show metadata fails - we still have episode labels
+          }
+        }
+
+        return this._toPlayableItem(item, { showLabels });
       }
 
       // Otherwise treat as container path
@@ -325,10 +343,12 @@ export class PlexAdapter {
   /**
    * Convert Plex metadata to PlayableItem (or ListableItem for containers)
    * @param {Object} item - Plex metadata object
+   * @param {Object} [opts] - Options
+   * @param {string[]} [opts.showLabels] - Pre-fetched show-level labels for episodes
    * @returns {PlayableItem|ListableItem}
    * @private
    */
-  _toPlayableItem(item) {
+  _toPlayableItem(item, opts = {}) {
     const isVideo = ['movie', 'episode', 'clip'].includes(item.type);
     const isAudio = ['track'].includes(item.type);
 
@@ -342,6 +362,21 @@ export class PlexAdapter {
         childCount: item.leafCount || 0,
         thumbnail: item.thumb ? `/plex_proxy${item.thumb}` : null
       });
+    }
+
+    // Extract labels from item
+    const itemLabels = [];
+    if (Array.isArray(item.Label)) {
+      for (const label of item.Label) {
+        if (typeof label === 'string') itemLabels.push(label.toLowerCase());
+        else if (label?.tag) itemLabels.push(label.tag.toLowerCase());
+      }
+    }
+
+    // Merge with show-level labels if provided (for episodes)
+    let allLabels = itemLabels;
+    if (opts.showLabels && Array.isArray(opts.showLabels)) {
+      allLabels = [...new Set([...itemLabels, ...opts.showLabels])];
     }
 
     // Build extended metadata for episodes/tracks
@@ -359,7 +394,9 @@ export class PlexAdapter {
       studio: item.studio || null,
       thumb_id: item.ratingKey,
       // Media info from Plex (for audio direct stream)
-      Media: item.Media
+      Media: item.Media,
+      // Labels for governance (merged item + show labels for episodes)
+      labels: allLabels.length > 0 ? allLabels : null
     };
 
     // Add episode-specific fields (TV shows)

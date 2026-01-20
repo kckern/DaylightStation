@@ -6,6 +6,7 @@ import { fetchMediaInfo } from '../lib/api.js';
 import { AudioPlayer } from './AudioPlayer.jsx';
 import { VideoPlayer } from './VideoPlayer.jsx';
 import { PlayerOverlayLoading } from './PlayerOverlayLoading.jsx';
+import { useShaderDiagnostics } from '../hooks/useShaderDiagnostics.js';
 
 /**
  * Single player component that handles different media types
@@ -16,6 +17,7 @@ export function SinglePlayer(props = {}) {
     onResolvedMeta,
     onPlaybackMetrics,
     onRegisterMediaAccess,
+    onRegisterResilienceBridge,
     onStartupSignal,
     seekToIntentSeconds = null,
     onSeekRequestConsumed,
@@ -72,6 +74,19 @@ export function SinglePlayer(props = {}) {
     remountDiagnostics,
     onStartupSignal
   };
+
+  // Shader diagnostics for loading state - must be called before early returns
+  const loadingShaderRef = useRef(null);
+  const playerContainerRef = useRef(null);
+  // Content scroller types don't use the shader, so disable for them
+  const isContentScrollerType = !!(scripture || hymn || primary || talk || poem);
+  useShaderDiagnostics({
+    shaderRef: loadingShaderRef,
+    containerRef: playerContainerRef,
+    label: 'loading-shader',
+    shaderState: 'on',
+    enabled: !isContentScrollerType && !suppressLocalOverlay
+  });
 
   if (!!scripture) return <Scriptures {...contentProps} {...contentScrollerBridge} />;
   if (!!hymn) return <Hymns {...contentProps} {...contentScrollerBridge} />;
@@ -244,19 +259,45 @@ export function SinglePlayer(props = {}) {
   
   // Calculate plexId from available sources - plex prop is passed directly from Player
   const initialPlexId = plex || media || mediaInfo?.media_key || mediaInfo?.key || mediaInfo?.plex || null;
+
+  // Create ref to hold registered accessors
+  const mediaAccessorsRef = useRef({ getMediaEl: () => null, getContainerEl: () => null });
+
   const resilienceBridge = useMemo(() => ({
     onPlaybackMetrics,
     onRegisterMediaAccess,
     seekToIntentSeconds,
     onSeekRequestConsumed,
     remountDiagnostics,
-    onStartupSignal
+    onStartupSignal,
+    // New: accessor registration for children
+    registerAccessors: ({ getMediaEl, getContainerEl }) => {
+      mediaAccessorsRef.current = {
+        getMediaEl: getMediaEl || (() => null),
+        getContainerEl: getContainerEl || (() => null)
+      };
+    },
+    // New: accessors that delegate to registered functions
+    getMediaEl: () => mediaAccessorsRef.current.getMediaEl(),
+    getContainerEl: () => mediaAccessorsRef.current.getContainerEl()
   }), [onPlaybackMetrics, onRegisterMediaAccess, seekToIntentSeconds, onSeekRequestConsumed, remountDiagnostics, onStartupSignal]);
-  
+
+  // Register the resilienceBridge with the parent Player component
+  useEffect(() => {
+    if (typeof onRegisterResilienceBridge === 'function') {
+      onRegisterResilienceBridge(resilienceBridge);
+    }
+    return () => {
+      if (typeof onRegisterResilienceBridge === 'function') {
+        onRegisterResilienceBridge(null);
+      }
+    };
+  }, [resilienceBridge, onRegisterResilienceBridge]);
+
   const playerBody = (
     <>
       {!isReady && !suppressLocalOverlay && (
-        <div className={`shader on notReady ${shader}`}>
+        <div ref={loadingShaderRef} className={`shader on notReady ${shader}`}>
           <PlayerOverlayLoading
             shouldRender
             isVisible
@@ -317,7 +358,7 @@ export function SinglePlayer(props = {}) {
   }
 
   return (
-    <div className={`player ${playerType || ''}`}>
+    <div ref={playerContainerRef} className={`player ${playerType || ''}`}>
       {playerBody}
     </div>
   );
@@ -358,6 +399,7 @@ SinglePlayer.propTypes = {
   onResolvedMeta: PropTypes.func,
   onPlaybackMetrics: PropTypes.func,
   onRegisterMediaAccess: PropTypes.func,
+  onRegisterResilienceBridge: PropTypes.func,
   onStartupSignal: PropTypes.func,
   seekToIntentSeconds: PropTypes.number,
   onSeekRequestConsumed: PropTypes.func,

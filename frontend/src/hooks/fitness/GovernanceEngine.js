@@ -142,9 +142,14 @@ export class GovernanceEngine {
     this.media = null;
     this.phase = 'pending'; // pending, unlocked, warning, locked
     this.pulse = 0;
-    
+
+    // Hysteresis: require satisfaction for minimum duration before unlocking
+    // This prevents rapid phase cycling when HR hovers around threshold
+    this._hysteresisMs = 500;
+
     this.meta = {
       satisfiedOnce: false,
+      satisfiedSince: null,  // Timestamp when requirements first became satisfied
       deadline: null,
       gracePeriodTotal: null
     };
@@ -190,6 +195,66 @@ export class GovernanceEngine {
       totalCount: 0
     };
     this._lastEvaluationTs = null;
+
+    // Production logging: track zone changes and warning duration
+    this._previousUserZoneMap = {};
+    this._warningStartTime = null;
+    this._lockStartTime = null;
+
+    // Expose governance state globally for cross-component correlation
+    this._updateGlobalState();
+  }
+
+  /**
+   * Update global window state for cross-component logging correlation
+   */
+  _updateGlobalState() {
+    if (typeof window !== 'undefined') {
+      window.__fitnessGovernance = {
+        phase: this.phase,
+        warningDuration: this._warningStartTime ? Date.now() - this._warningStartTime : 0,
+        lockDuration: this._lockStartTime ? Date.now() - this._lockStartTime : 0,
+        activeChallenge: this.challengeState?.activeChallenge?.id || null,
+        videoLocked: this.challengeState?.videoLocked || false,
+        mediaId: this.media?.id || null
+      };
+    }
+  }
+
+  /**
+   * Detect and log zone changes for participants
+   */
+  _logZoneChanges(userZoneMap, zoneInfoMap) {
+    const logger = getLogger();
+    const now = Date.now();
+
+    for (const [userId, newZone] of Object.entries(userZoneMap)) {
+      const prevZone = this._previousUserZoneMap[userId];
+      if (prevZone !== newZone && prevZone !== undefined) {
+        // Get roster entry for HR data
+        const rosterEntry = this.session?.roster?.find(
+          e => (e.id || e.profileId) === userId
+        );
+        const hr = rosterEntry?.hr?.value || rosterEntry?.heartRate || null;
+        const hrPercent = rosterEntry?.hr?.percent || rosterEntry?.hrPercent || null;
+
+        logger.sampled('governance.user_zone_change', {
+          oderId: userId,
+          odeName: rosterEntry?.name || rosterEntry?.displayName || userId,
+          fromZone: prevZone || 'none',
+          toZone: newZone || 'none',
+          fromZoneLabel: zoneInfoMap[prevZone]?.name || prevZone,
+          toZoneLabel: zoneInfoMap[newZone]?.name || newZone,
+          hr,
+          hrPercent,
+          governancePhase: this.phase,
+          mediaId: this.media?.id
+        }, { maxPerMinute: 30 });
+      }
+    }
+
+    // Update previous map
+    this._previousUserZoneMap = { ...userZoneMap };
   }
 
   _buildChallengeSnapshot(now) {
@@ -294,14 +359,23 @@ export class GovernanceEngine {
     const activeParticipants = Array.isArray(payload.activeParticipants)
       ? Array.from(new Set(payload.activeParticipants))
       : [];
+    const userZoneMap = { ...(payload.userZoneMap || {}) };
+    const zoneInfoMap = { ...(payload.zoneInfoMap || {}) };
+
+    // Log zone changes before updating latestInputs
+    this._logZoneChanges(userZoneMap, zoneInfoMap);
+
     this._latestInputs = {
       activeParticipants,
-      userZoneMap: { ...(payload.userZoneMap || {}) },
+      userZoneMap,
       zoneRankMap: { ...(payload.zoneRankMap || {}) },
-      zoneInfoMap: { ...(payload.zoneInfoMap || {}) },
+      zoneInfoMap,
       totalCount: Number.isFinite(payload.totalCount) ? payload.totalCount : activeParticipants.length
     };
     this._lastEvaluationTs = Date.now();
+
+    // Update global state on each evaluation
+    this._updateGlobalState();
   }
 
   configure(config, policies) {
@@ -453,22 +527,110 @@ export class GovernanceEngine {
   _setPhase(newPhase) {
     if (this.phase !== newPhase) {
       const oldPhase = this.phase;
+      const now = Date.now();
       this.phase = newPhase;
       this._invalidateStateCache(); // Invalidate cache on phase change
-      
-      // Log phase transitions for debugging (visible in dev.log)
-      getLogger().info('governance.phase_change', {
-        from: oldPhase,
-        to: newPhase,
-        mediaId: this.media?.id,
-        deadline: this.meta?.deadline,
-        satisfiedOnce: this.meta?.satisfiedOnce
-      });
-      
+
+      // Track warning/lock timing for production correlation
+      if (newPhase === 'warning' && oldPhase !== 'warning') {
+        this._warningStartTime = now;
+      } else if (newPhase !== 'warning') {
+        this._warningStartTime = null;
+      }
+
+      if (newPhase === 'locked' && oldPhase !== 'locked') {
+        this._lockStartTime = now;
+      } else if (newPhase !== 'locked') {
+        this._lockStartTime = null;
+      }
+
+      const logger = getLogger();
+
+      // Skip logging for null-to-null (no-op) transitions
+      if (oldPhase !== null || newPhase !== null) {
+        logger.sampled('governance.phase_change', {
+          from: oldPhase,
+          to: newPhase,
+          mediaId: this.media?.id,
+          deadline: this.meta?.deadline,
+          satisfiedOnce: this.meta?.satisfiedOnce
+        }, { maxPerMinute: 30 });
+      }
+
+      // Enhanced production logging for specific transitions
+      if (newPhase === 'warning' && oldPhase !== 'warning') {
+        const participantsBelowThreshold = this._getParticipantsBelowThreshold();
+        logger.info('governance.warning_started', {
+          mediaId: this.media?.id,
+          deadline: this.meta?.deadline,
+          gracePeriodTotal: this.meta?.gracePeriodTotal,
+          participantsBelowThreshold,
+          participantCount: this._latestInputs.activeParticipants?.length || 0,
+          requirements: this.requirementSummary?.requirements?.slice(0, 5) // Limit for log size
+        });
+      }
+
+      if (newPhase === 'locked') {
+        const timeSinceWarning = oldPhase === 'warning' && this._warningStartTime
+          ? now - this._warningStartTime
+          : null;
+        logger.info('governance.lock_triggered', {
+          mediaId: this.media?.id,
+          reason: this.challengeState?.activeChallenge?.status === 'failed' ? 'challenge_failed' : 'requirements_not_met',
+          timeSinceWarningMs: timeSinceWarning,
+          participantStates: this._getParticipantStates(),
+          challengeActive: !!this.challengeState?.activeChallenge,
+          challengeId: this.challengeState?.activeChallenge?.id || null
+        });
+      }
+
+      // Update global state for cross-component correlation
+      this._updateGlobalState();
+
       if (this.callbacks.onPhaseChange) {
         this.callbacks.onPhaseChange(newPhase);
       }
     }
+  }
+
+  /**
+   * Get participants below threshold for warning logging
+   */
+  _getParticipantsBelowThreshold() {
+    const requirements = this.requirementSummary?.requirements || [];
+    const below = [];
+    for (const req of requirements) {
+      if (Array.isArray(req.missingUsers)) {
+        below.push(...req.missingUsers.map(name => ({
+          name,
+          zone: req.zone || req.zoneLabel,
+          required: req.requiredCount
+        })));
+      }
+    }
+    return below.slice(0, 10); // Limit for log size
+  }
+
+  /**
+   * Get participant states for lock logging
+   */
+  _getParticipantStates() {
+    const userZoneMap = this._latestInputs.userZoneMap || {};
+    const zoneInfoMap = this._latestInputs.zoneInfoMap || {};
+    const states = [];
+    for (const [userId, zoneId] of Object.entries(userZoneMap)) {
+      const rosterEntry = this.session?.roster?.find(
+        e => (e.id || e.profileId) === userId
+      );
+      states.push({
+        id: userId,
+        name: rosterEntry?.name || rosterEntry?.displayName || userId,
+        zone: zoneId,
+        zoneLabel: zoneInfoMap[zoneId]?.name || zoneId,
+        hr: rosterEntry?.hr?.value || rosterEntry?.heartRate || null
+      });
+    }
+    return states.slice(0, 10); // Limit for log size
   }
 
   _triggerPulse() {
@@ -485,52 +647,21 @@ export class GovernanceEngine {
   }
 
   /**
-   * Evaluate governance state directly from TreasureBox snapshot.
-   * Called reactively when zone state changes - no polling delay.
-   * This is the preferred evaluation path for responsive governance.
+   * DEPRECATED: Reactive evaluation from TreasureBox removed.
+   * Governance now evaluates on tick boundaries using ZoneProfileStore.
+   *
+   * @deprecated Use evaluate() called from session tick instead
    */
   _evaluateFromTreasureBox() {
-    const box = this.session?.treasureBox;
-    if (!box) {
-      // Fallback to roster-based evaluation if no TreasureBox
-      if (this.session?.roster) {
-        this.evaluate();
-      }
-      return;
-    }
-
-    const snapshot = box.getLiveSnapshot();
-
-    const activeParticipants = snapshot
-      .filter(s => s.isActive)
-      .map(s => s.userId);
-
-    const userZoneMap = {};
-    snapshot.forEach(s => {
-      if (s.userId) {
-        userZoneMap[s.userId] = s.zoneId;
-      }
+    // No-op: Reactive evaluation removed
+    // Governance now runs on tick boundaries via session._collectTimelineTick()
+    // and reads stable zone state from ZoneProfileStore
+    getLogger().warn('governance.evaluate_from_treasurebox_deprecated', {
+      message: 'Governance now tick-driven via ZoneProfileStore'
     });
 
-    // Build zoneRankMap and zoneInfoMap from session's zone config
-    const zoneRankMap = {};
-    const zoneInfoMap = {};
-    const zoneConfig = this.session?.snapshot?.zoneConfig;
-    if (Array.isArray(zoneConfig)) {
-      zoneConfig.forEach((z, idx) => {
-        const zid = String(z.id || z.name).toLowerCase();
-        zoneRankMap[zid] = idx;
-        zoneInfoMap[zid] = z;
-      });
-    }
-
-    this.evaluate({
-      activeParticipants,
-      userZoneMap,
-      zoneRankMap,
-      zoneInfoMap,
-      totalCount: activeParticipants.length
-    });
+    // Fallback: Just call regular evaluate() if someone still calls this
+    this.evaluate();
   }
 
   _schedulePulse(delayMs) {
@@ -558,6 +689,7 @@ export class GovernanceEngine {
     this._clearTimers();
     this.meta = {
       satisfiedOnce: false,
+      satisfiedSince: null,
       deadline: null,
       gracePeriodTotal: null
     };
@@ -598,6 +730,58 @@ export class GovernanceEngine {
     this._stateCacheVersion = -1; // Track which version the cache represents
   }
 
+  /**
+   * Reset to idle state (null phase) without double phase transitions.
+   * Use this instead of reset() + _setPhase(null) to avoid triggering
+   * two separate phase change callbacks.
+   */
+  _resetToIdle() {
+    this._clearTimers();
+    this.meta = {
+      satisfiedOnce: false,
+      satisfiedSince: null,
+      deadline: null,
+      gracePeriodTotal: null
+    };
+    this.challengeState = {
+      activePolicyId: null,
+      activePolicyName: null,
+      selectionCursor: {},
+      activeChallenge: null,
+      nextChallengeAt: null,
+      nextChallengeRemainingMs: null,
+      nextChallenge: null,
+      videoLocked: false,
+      forceStartRequest: null,
+      selectionRandomBag: {},
+      challengeHistory: []
+    };
+    this.requirementSummary = {
+      policyId: null,
+      targetUserCount: null,
+      requirements: [],
+      activeCount: 0
+    };
+    this._latestInputs = {
+      activeParticipants: [],
+      userZoneMap: {},
+      zoneRankMap: {},
+      zoneInfoMap: {},
+      totalCount: 0
+    };
+    this._lastEvaluationTs = null;
+    this._stateCache = null;
+    this._stateCacheTs = 0;
+    this._stateCacheThrottleMs = 200;
+    this._stateVersion = 0;
+    this._stateCacheVersion = -1;
+    
+    // Only set phase if actually changing to avoid unnecessary callbacks
+    if (this.phase !== null) {
+      this._setPhase(null);
+    }
+  }
+
   get state() {
     return this._getCachedState();
   }
@@ -624,15 +808,7 @@ export class GovernanceEngine {
       && this._stateCacheVersion === this._stateVersion;
     
     if (cacheValid) {
-      // Update countdown in-place without full recomputation
-      // This allows smooth countdown display while throttling expensive parts
-      if (this._stateCache.countdownSecondsRemaining != null && this.meta?.deadline) {
-        const remaining = Math.max(0, Math.round((this.meta.deadline - now) / 1000));
-        if (remaining !== this._stateCache.countdownSecondsRemaining) {
-          // Shallow copy to update countdown without mutating cache
-          this._stateCache = { ...this._stateCache, countdownSecondsRemaining: remaining };
-        }
-      }
+      // Components now compute countdown from deadline timestamp themselves
       return this._stateCache;
     }
     
@@ -753,6 +929,7 @@ export class GovernanceEngine {
       watchers,
       countdownSecondsRemaining,
       countdownSecondsTotal: gracePeriodTotal,
+      deadline: this.meta?.deadline || null,
       gracePeriodTotal,
       videoLocked: !!(this.challengeState && this.challengeState.videoLocked),
       challengePaused: challengeSnapshot ? Boolean(challengeSnapshot.paused) : false,
@@ -806,14 +983,24 @@ export class GovernanceEngine {
     zoneInfoMap = zoneInfoMap || {};
     totalCount = totalCount || activeParticipants.length;
 
+    // NEW: Populate userZoneMap from ZoneProfileStore (stable, tick-aligned zone state)
+    // This overrides any volatile zone data with the stable source used by UI
+    if (this.session?.zoneProfileStore) {
+      activeParticipants.forEach((participantId) => {
+        const profile = this.session.zoneProfileStore.getProfile(participantId);
+        if (profile?.currentZoneId) {
+          userZoneMap[participantId] = profile.currentZoneId.toLowerCase();
+        }
+      });
+    }
+
     // 1. Check if media is governed
     if (!this.media || !this.media.id || !hasGovernanceRules) {
       getLogger().warn('governance.evaluate.no_media_or_rules', {
         hasMedia: !!(this.media && this.media.id),
         hasGovernanceRules
       });
-      this.reset();
-      this._setPhase(null);
+      this._resetToIdle();
       return;
     }
 
@@ -822,8 +1009,7 @@ export class GovernanceEngine {
       getLogger().warn('governance.evaluate.media_not_governed', {
         mediaId: this.media?.id
       });
-      this.reset();
-      this._setPhase(null);
+      this._resetToIdle();
       return;
     }
 
@@ -890,18 +1076,37 @@ export class GovernanceEngine {
       if (this.timers.governance) clearTimeout(this.timers.governance);
       this.meta.deadline = null;
       this.meta.gracePeriodTotal = null;
+      this.meta.satisfiedSince = null;
       this._setPhase('locked');
     } else if (allSatisfied) {
-      this.meta.satisfiedOnce = true;
-      this.meta.deadline = null;
-      this.meta.gracePeriodTotal = null;
-      this._setPhase('unlocked');
+      // Hysteresis: require satisfaction to persist for minimum duration
+      // This prevents rapid phase cycling when HR hovers around threshold
+      if (!this.meta.satisfiedSince) {
+        this.meta.satisfiedSince = now;
+      }
+      const satisfiedDuration = now - this.meta.satisfiedSince;
+      if (satisfiedDuration >= this._hysteresisMs) {
+        // Satisfied long enough - transition to unlocked
+        this.meta.satisfiedOnce = true;
+        this.meta.deadline = null;
+        this.meta.gracePeriodTotal = null;
+        this._setPhase('unlocked');
+      } else {
+        // Not satisfied long enough yet - stay in current phase, schedule re-check
+        const remainingHysteresis = this._hysteresisMs - satisfiedDuration;
+        if (this.timers.governance) clearTimeout(this.timers.governance);
+        this.timers.governance = setTimeout(() => this._triggerPulse(), remainingHysteresis);
+        // Don't change phase yet - keep warning/pending until hysteresis passes
+      }
     } else if (!this.meta.satisfiedOnce) {
+      // Not satisfied - reset hysteresis tracking
+      this.meta.satisfiedSince = null;
       this.meta.deadline = null;
       this.meta.gracePeriodTotal = null;
       this._setPhase('pending');
     } else {
-      // Grace period logic
+      // Grace period logic - requirements not satisfied, reset hysteresis
+      this.meta.satisfiedSince = null;
       let graceSeconds = baseGraceSeconds;
       if (!Number.isFinite(graceSeconds) || graceSeconds <= 0) {
         if (this.timers.governance) clearTimeout(this.timers.governance);
