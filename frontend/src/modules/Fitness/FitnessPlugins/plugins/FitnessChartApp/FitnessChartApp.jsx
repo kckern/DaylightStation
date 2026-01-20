@@ -1,6 +1,7 @@
 import React, { useMemo, useState, useEffect, useRef, useLayoutEffect, useCallback } from 'react';
 import useFitnessPlugin from '../../useFitnessPlugin';
 import { DaylightMediaPath } from '../../../../../lib/api.mjs';
+import { useRenderProfiler } from '../../../../../hooks/fitness/useRenderProfiler.js';
 import './FitnessChartApp.scss';
 import {
 	MIN_VISIBLE_TICKS,
@@ -681,6 +682,7 @@ const RaceChartSvg = ({ paths, avatars, badges, connectors = [], xTicks, yTicks,
 );
 
 const FitnessChartApp = ({ mode, onClose, config, onMount }) => {
+	useRenderProfiler('FitnessChart');
 	const {
 		participants,
 		historicalParticipants,
