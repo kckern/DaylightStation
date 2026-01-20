@@ -55,16 +55,18 @@ const FitnessApp = () => {
     logger.info('fitness-kiosk-state', { kiosk: kioskUI });
   }, [kioskUI, logger]);
 
-  // Memory/timer profiling for crash debugging
+  // Memory/timer/FPS profiling for crash debugging and performance correlation
   useEffect(() => {
     const startTime = Date.now();
     let sampleCount = 0;
     let baselineMemory = null;
     let baselineTimers = null;
+    let lastFpsCheck = { timestamp: 0, totalFrames: 0, droppedFrames: 0 };
+    let currentIntervalId = null;
+    let heapSamples = []; // For growth rate calculation
 
     // Count active intervals (approximate via window inspection)
     const countTimers = () => {
-      // Use timer tracker if available, otherwise estimate
       if (window.__timerTracker) {
         return window.__timerTracker.getStats?.() || { activeIntervals: -1, activeTimeouts: -1 };
       }
@@ -81,11 +83,61 @@ const FitnessApp = () => {
       };
     };
 
+    // Get video FPS metrics using getVideoPlaybackQuality API
+    const getVideoFps = () => {
+      const video = document.querySelector('video, dash-video');
+      if (!video) return null;
+
+      const quality = video.getVideoPlaybackQuality?.();
+      if (!quality) return null;
+
+      const now = performance.now();
+      const elapsed = (now - lastFpsCheck.timestamp) / 1000;
+      const framesDelta = quality.totalVideoFrames - lastFpsCheck.totalFrames;
+      const droppedDelta = quality.droppedVideoFrames - lastFpsCheck.droppedFrames;
+
+      // Calculate FPS only if we have a previous sample
+      let fps = null;
+      let dropRate = null;
+      if (lastFpsCheck.timestamp > 0 && elapsed > 0) {
+        fps = Math.round(framesDelta / elapsed * 10) / 10;
+        dropRate = framesDelta > 0 ? Math.round(droppedDelta / framesDelta * 1000) / 10 : 0;
+      }
+
+      // Update last check
+      lastFpsCheck = {
+        timestamp: now,
+        totalFrames: quality.totalVideoFrames,
+        droppedFrames: quality.droppedVideoFrames
+      };
+
+      return {
+        fps,
+        totalFrames: quality.totalVideoFrames,
+        droppedFrames: quality.droppedVideoFrames,
+        corruptedFrames: quality.corruptedVideoFrames || 0,
+        dropRate,
+        videoState: video.paused ? 'paused' : (video.readyState < 3 ? 'stalled' : 'playing')
+      };
+    };
+
+    // Calculate heap growth rate from recent samples
+    const calculateHeapGrowthRate = () => {
+      if (heapSamples.length < 2) return null;
+      const oldest = heapSamples[0];
+      const newest = heapSamples[heapSamples.length - 1];
+      const durationMin = (newest.ts - oldest.ts) / 60000;
+      if (durationMin < 0.5) return null;
+      return Math.round((newest.heap - oldest.heap) / durationMin * 10) / 10;
+    };
+
     const logProfile = () => {
       sampleCount++;
-      const elapsed = Math.round((Date.now() - startTime) / 1000);
+      const now = Date.now();
+      const elapsed = Math.round((now - startTime) / 1000);
       const mem = getMemoryMB();
       const timers = countTimers();
+      const videoFps = getVideoFps();
 
       // Capture baseline on first sample
       if (!baselineMemory && mem) baselineMemory = mem.usedMB;
@@ -94,21 +146,51 @@ const FitnessApp = () => {
       const growthMB = mem ? Math.round((mem.usedMB - baselineMemory) * 10) / 10 : null;
       const timerGrowth = timers.activeIntervals >= 0 ? timers.activeIntervals - baselineTimers : null;
 
-      // Get session-level stats (exposed via window for cross-component access)
+      // Track heap samples for growth rate (keep last 10 samples)
+      if (mem) {
+        heapSamples.push({ ts: now, heap: mem.usedMB });
+        if (heapSamples.length > 10) heapSamples.shift();
+      }
+      const heapGrowthRateMBperMin = calculateHeapGrowthRate();
+
+      // Get governance state from global exposure
+      const governance = window.__fitnessGovernance || {};
+      const governancePhase = governance.phase || null;
+      const governanceWarningDurationMs = governance.warningDuration || 0;
+      const challengeActive = !!governance.activeChallenge;
+
+      // Get session-level stats
       const sessionStats = window.__fitnessSession?.getMemoryStats?.() || {};
       const chartStats = window.__fitnessChartStats?.() || {};
-      
-      // React render frequency tracking (exposed by FitnessContext if available)
       const renderStats = window.__fitnessRenderStats?.() || {};
+
+      // Determine video state with governance awareness
+      let videoState = videoFps?.videoState || null;
+      if (governance.videoLocked) {
+        videoState = 'governance-locked';
+      }
+
+      // Dynamic rate limiting - more frequent during warning phase
+      const maxPerMinute = governancePhase === 'warning' ? 12 : 2;
 
       logger.sampled('fitness-profile', {
         sample: sampleCount,
         elapsedSec: elapsed,
         heapMB: mem?.usedMB,
         heapGrowthMB: growthMB,
+        heapGrowthRateMBperMin,
         timers: timers.activeIntervals,
         timerGrowth,
         timeouts: timers.activeTimeouts,
+        // Governance correlation
+        governancePhase,
+        governanceWarningDurationMs,
+        challengeActive,
+        // Video FPS correlation
+        videoFps: videoFps?.fps,
+        videoDroppedFrames: videoFps?.droppedFrames,
+        videoDropRate: videoFps?.dropRate,
+        videoState,
         // Session stats
         sessionActive: sessionStats.sessionActive,
         tickTimerRunning: sessionStats.tickTimerRunning,
@@ -118,53 +200,101 @@ const FitnessApp = () => {
         totalSeriesPoints: sessionStats.totalSeriesPoints,
         maxSeriesLength: sessionStats.maxSeriesLength,
         eventLogSize: sessionStats.eventLogSize,
-        // Snapshot series stats (memory leak indicator)
+        // Snapshot series stats
         snapshotSeriesPoints: sessionStats.snapshotSeriesPoints,
         maxSnapshotSeriesLength: sessionStats.maxSnapshotSeriesLength,
-        // TreasureBox stats (memory leak indicator)
+        // TreasureBox stats
         treasureBoxCumulativeLen: sessionStats.treasureBoxCumulativeLen,
         treasureBoxPerColorPoints: sessionStats.treasureBoxPerColorPoints,
         voiceMemoCount: sessionStats.voiceMemoCount,
         // Cumulative trackers
         cumulativeBeatsSize: sessionStats.cumulativeBeatsSize,
         cumulativeRotationsSize: sessionStats.cumulativeRotationsSize,
-        // Chart stats (if exposed)
+        // Chart stats
         chartCacheSize: chartStats.participantCacheSize,
         chartDropoutMarkers: chartStats.dropoutMarkerCount,
-        // React render stats (if exposed)
+        // Render stats
         forceUpdateCount: renderStats.forceUpdateCount,
-        renderCount: renderStats.renderCount
-      }, { maxPerMinute: 2 });
+        renderCount: renderStats.renderCount,
+        renderRatePer5s: renderStats.ratePer5s
+      }, { maxPerMinute });
 
-      // Warn if growth is concerning
+      // === WARNING THRESHOLDS ===
+
+      // Memory warnings
       if (growthMB > 20) {
         logger.warn('fitness-profile-memory-warning', { growthMB, elapsed });
       }
       if (timerGrowth > 5) {
         logger.warn('fitness-profile-timer-warning', { timerGrowth, elapsed });
       }
-      // Warn if session data growing unexpectedly
+
+      // FPS + Governance correlation warning (key diagnostic)
+      if (videoFps?.fps !== null && videoFps.fps < 24 && governancePhase === 'warning') {
+        logger.warn('fitness.video_fps_warning_correlation', {
+          fps: videoFps.fps,
+          dropRate: videoFps.dropRate,
+          droppedFrames: videoFps.droppedFrames,
+          governancePhase,
+          governanceWarningDurationMs,
+          heapMB: mem?.usedMB,
+          rosterSize: sessionStats.rosterSize,
+          forceUpdateCount: renderStats.forceUpdateCount
+        });
+      }
+
+      // FPS degradation warning (regardless of governance)
+      if (videoFps?.fps !== null && videoFps.fps < 20 && videoState === 'playing') {
+        logger.warn('fitness.video_fps_degraded', {
+          fps: videoFps.fps,
+          dropRate: videoFps.dropRate,
+          videoState,
+          governancePhase,
+          heapMB: mem?.usedMB
+        });
+      }
+
+      // Memory + Governance correlation
+      if (growthMB > 15 && governancePhase === 'warning') {
+        logger.warn('fitness-profile-memory-governance-correlation', {
+          growthMB,
+          heapGrowthRateMBperMin,
+          governancePhase,
+          governanceWarningDurationMs,
+          elapsed
+        });
+      }
+
+      // Memory + Render correlation
+      if (growthMB > 15 && (renderStats.ratePer5s || 0) > 50) {
+        logger.warn('fitness-profile-memory-render-correlation', {
+          growthMB,
+          heapGrowthRateMBperMin,
+          renderRatePer5s: renderStats.ratePer5s,
+          forceUpdateCount: renderStats.forceUpdateCount,
+          elapsed
+        });
+      }
+
+      // Session data warnings
       if (sessionStats.maxSeriesLength > 1500) {
         logger.warn('fitness-profile-series-warning', {
           maxSeriesLength: sessionStats.maxSeriesLength,
           seriesCount: sessionStats.seriesCount
         });
       }
-      // Warn if snapshot series growing unexpectedly (indicates pruning not working)
       if (sessionStats.maxSnapshotSeriesLength > 2500) {
         logger.warn('fitness-profile-snapshot-series-warning', {
           maxSnapshotSeriesLength: sessionStats.maxSnapshotSeriesLength,
           snapshotSeriesPoints: sessionStats.snapshotSeriesPoints
         });
       }
-      // Warn if TreasureBox timeline growing unexpectedly
       if (sessionStats.treasureBoxCumulativeLen > 800) {
         logger.warn('fitness-profile-treasurebox-warning', {
           cumulativeLen: sessionStats.treasureBoxCumulativeLen,
           perColorPoints: sessionStats.treasureBoxPerColorPoints
         });
       }
-      // Warn if tick timer running without active session (potential leak)
       if (sessionStats.tickTimerRunning && !sessionStats.sessionActive) {
         logger.error('fitness-profile-orphan-timer', {
           tickTimerRunning: true,
@@ -172,7 +302,6 @@ const FitnessApp = () => {
           elapsed
         });
       }
-      // Warn if forceUpdate rate is excessive (>100 in 30s = ~3/sec)
       if (renderStats.forceUpdateCount > 100) {
         logger.warn('fitness-profile-excessive-renders', {
           forceUpdateCount: renderStats.forceUpdateCount,
@@ -182,14 +311,38 @@ const FitnessApp = () => {
       }
     };
 
-    // Log immediately, then every 30 seconds
-    logProfile();
-    const intervalId = setInterval(logProfile, 30000);
+    // Adaptive interval: 5s during warning phase, 30s otherwise
+    const updateInterval = () => {
+      const governance = window.__fitnessGovernance || {};
+      const isWarning = governance.phase === 'warning';
+      const targetInterval = isWarning ? 5000 : 30000;
 
-    logger.info('fitness-profile-started', { intervalSec: 30 });
+      // Only recreate interval if needed
+      if (currentIntervalId) {
+        clearInterval(currentIntervalId);
+      }
+      currentIntervalId = setInterval(() => {
+        logProfile();
+        // Check if we need to change interval
+        const nowGov = window.__fitnessGovernance || {};
+        const nowWarning = nowGov.phase === 'warning';
+        const currentTarget = nowWarning ? 5000 : 30000;
+        if (currentTarget !== targetInterval) {
+          updateInterval(); // Recursively update interval
+        }
+      }, targetInterval);
+    };
+
+    // Log immediately, then start adaptive interval
+    logProfile();
+    updateInterval();
+
+    logger.info('fitness-profile-started', { intervalSec: 30, adaptiveWarningIntervalSec: 5 });
 
     return () => {
-      clearInterval(intervalId);
+      if (currentIntervalId) {
+        clearInterval(currentIntervalId);
+      }
       logger.info('fitness-profile-stopped', { samples: sampleCount });
     };
   }, [logger]);

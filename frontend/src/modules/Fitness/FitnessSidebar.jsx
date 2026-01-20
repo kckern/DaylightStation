@@ -1,6 +1,7 @@
 import React, { useState, forwardRef, useImperativeHandle } from 'react';
 import { useFitnessContext } from '../../context/FitnessContext.jsx';
 import getLogger from '../../lib/logging/Logger.js';
+import { useRenderProfiler } from '../../hooks/fitness/useRenderProfiler.js';
 import FitnessTreasureBox from './FitnessSidebar/FitnessTreasureBox.jsx';
 import FitnessUsersList from './FitnessSidebar/FitnessUsers.jsx';
 import FitnessSidebarMenu from './FitnessSidebar/FitnessSidebarMenu.jsx';
@@ -12,6 +13,7 @@ import './FitnessSidebar.scss';
 import './FitnessSidebar/FitnessGovernance.scss';
 
 const FitnessSidebar = forwardRef(({ playerRef, videoVolume, onReloadVideo, reloadTargetSeconds = 0, mode = 'player', governanceDisabled = false, viewMode = 'cam', onToggleViewMode = null, miniCamContent = null, onToggleChart = null, showChart = true, boostLevel, setBoost }, ref) => {
+  useRenderProfiler('FitnessSidebar');
   const fitnessContext = useFitnessContext();
   const isGovernedInitial = governanceDisabled ? false : Boolean(fitnessContext?.governanceState?.isGoverned);
   const [menuState, setMenuState] = useState({ open: false, mode: 'settings', target: null });

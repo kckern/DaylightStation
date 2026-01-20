@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import PropTypes from 'prop-types';
 import { useFitnessContext } from '../../context/FitnessContext.jsx';
 import { DaylightMediaPath } from '../../lib/api.mjs';
+import { useRenderProfiler } from '../../hooks/fitness/useRenderProfiler.js';
 import { COOL_ZONE_PROGRESS_MARGIN, calculateZoneProgressTowardsTarget, normalizeZoneId as normalizeZoneIdForOverlay } from '../../hooks/useFitnessSession.js';
 import { ChallengeOverlay, useChallengeOverlays } from './FitnessPlayerOverlay/ChallengeOverlay.jsx';
 import GovernanceStateOverlay from './FitnessPlayerOverlay/GovernanceStateOverlay.jsx';
@@ -306,6 +307,7 @@ export const useGovernanceOverlay = (governanceState, participantRoster = []) =>
 }, [governanceState, participantRoster]);
 
 const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
+  useRenderProfiler('FitnessPlayerOverlay');
   const fitnessCtx = useFitnessContext();
 
   const voiceMemoOverlayState = fitnessCtx?.voiceMemoOverlayState;

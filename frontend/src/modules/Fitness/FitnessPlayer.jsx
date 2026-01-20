@@ -15,6 +15,7 @@ import FitnessChart from './FitnessSidebar/FitnessChart.jsx';
 import { useMediaAmplifier } from './components/useMediaAmplifier.js';
 import { FitnessPlayerFrame } from './frames';
 import { useVolumeSync } from './hooks/useVolumeSync.js';
+import { useRenderProfiler } from '../../hooks/fitness/useRenderProfiler.js';
 
 const DEBUG_FITNESS_INTERACTIONS = false;
 
@@ -117,6 +118,7 @@ const DEFAULT_SIDEBAR = 250;
 const FITNESS_MAX_VIDEO_BITRATE = null;
 
 const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
+  useRenderProfiler('FitnessPlayer');
   const mainPlayerRef = useRef(null);
   const contentRef = useRef(null);
   const footerRef = useRef(null);
