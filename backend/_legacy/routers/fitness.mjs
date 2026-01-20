@@ -2,6 +2,7 @@ import express from 'express';
 import { loadFile, saveFile } from '../lib/io.mjs';
 import fs from 'fs';
 import path from 'path';
+import { spawn } from 'child_process';
 import OpenAI from 'openai';
 import { userService } from '../lib/config/UserService.mjs';
 import { configService } from '../lib/config/index.mjs';
@@ -1004,5 +1005,119 @@ fitnessRouter.post('/zone_led/reset', (req, res) => {
 
 // Re-export for backward compatibility
 export { prepareSessionForPersistence } from '../lib/fitness/sessionNormalizer.mjs';
+
+// =============================================================================
+// Fitness Simulation Control (for testing/demo)
+// =============================================================================
+
+// Module-level state for simulation process
+const simulationState = {
+  process: null,
+  pid: null,
+  startedAt: null,
+  config: null
+};
+
+/**
+ * POST /api/fitness/simulate
+ * Start fitness simulation
+ * Body: { duration?: number, users?: number, rpm?: number }
+ */
+fitnessRouter.post('/simulate', (req, res) => {
+  // Check if already running
+  if (simulationState.process && !simulationState.process.killed) {
+    return res.json({
+      started: false,
+      alreadyRunning: true,
+      pid: simulationState.pid,
+      startedAt: simulationState.startedAt,
+      config: simulationState.config
+    });
+  }
+
+  const { duration = 120, users = 0, rpm = 0 } = req.body || {};
+
+  const args = [`--duration=${duration}`];
+  if (users > 0) args.push(String(users));
+  if (rpm > 0) args.push(String(users > 0 ? users : 0), String(rpm));
+
+  const scriptPath = path.join(process.cwd(), '_extensions/fitness/simulation.mjs');
+
+  fitnessLogger.info('fitness.simulate.start', { duration, users, rpm, scriptPath });
+
+  try {
+    const proc = spawn('node', [scriptPath, ...args], {
+      detached: true,
+      stdio: 'ignore'
+    });
+    proc.unref();
+
+    simulationState.process = proc;
+    simulationState.pid = proc.pid;
+    simulationState.startedAt = Date.now();
+    simulationState.config = { duration, users, rpm };
+
+    // Auto-clear state when process exits
+    proc.on('exit', () => {
+      simulationState.process = null;
+      simulationState.pid = null;
+      simulationState.startedAt = null;
+      simulationState.config = null;
+      fitnessLogger.info('fitness.simulate.exited');
+    });
+
+    return res.json({
+      started: true,
+      pid: proc.pid,
+      config: { duration, users, rpm }
+    });
+  } catch (err) {
+    fitnessLogger.error('fitness.simulate.spawn-failed', { error: err.message });
+    return res.status(500).json({ error: 'Failed to start simulation', message: err.message });
+  }
+});
+
+/**
+ * DELETE /api/fitness/simulate
+ * Stop running simulation
+ */
+fitnessRouter.delete('/simulate', (req, res) => {
+  if (!simulationState.pid) {
+    return res.json({ stopped: false, error: 'no simulation running' });
+  }
+
+  try {
+    process.kill(simulationState.pid, 'SIGTERM');
+
+    const stoppedPid = simulationState.pid;
+    simulationState.process = null;
+    simulationState.pid = null;
+    simulationState.startedAt = null;
+    simulationState.config = null;
+
+    fitnessLogger.info('fitness.simulate.stopped', { pid: stoppedPid });
+
+    return res.json({ stopped: true, pid: stoppedPid });
+  } catch (err) {
+    fitnessLogger.error('fitness.simulate.stop-failed', { error: err.message });
+    return res.status(500).json({ error: 'Failed to stop simulation', message: err.message });
+  }
+});
+
+/**
+ * GET /api/fitness/simulate/status
+ * Get current simulation status
+ */
+fitnessRouter.get('/simulate/status', (req, res) => {
+  const running = simulationState.process && !simulationState.process.killed;
+
+  return res.json({
+    running,
+    pid: running ? simulationState.pid : null,
+    startedAt: running ? simulationState.startedAt : null,
+    config: running ? simulationState.config : null,
+    runningSince: running ? Date.now() - simulationState.startedAt : null
+  });
+});
 
 export default fitnessRouter;

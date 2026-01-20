@@ -526,14 +526,27 @@ export class Plex {
 
 
 
-  // Helper that takes Plex metadata, plus extra info, and returns a “playable” object
+  // Helper that takes Plex metadata, plus extra info, and returns a "playable" object
   async buildPlayableObject(itemData, parentKey, parentType, percent = 0, seconds = 0, opts = {}) {
     if (!itemData) {
       return null;
     }
 
-    const { title, type, parentTitle, grandparentTitle, summary, year, thumb } = itemData;
+    const { title, type, parentTitle, grandparentTitle, summary, year, thumb, labels } = itemData;
   const media_url = await this.loadmedia_url(itemData, 0, opts);
+
+    // For episodes, also fetch show-level labels (governance labels are typically on the show)
+    let allLabels = Array.isArray(labels) ? [...labels] : [];
+    if (type === 'episode' && itemData.grandparentRatingKey) {
+      try {
+        const [showData] = await this.loadMeta(itemData.grandparentRatingKey);
+        if (showData?.labels && Array.isArray(showData.labels)) {
+          allLabels = [...new Set([...allLabels, ...showData.labels])];
+        }
+      } catch (err) {
+        // Silently continue if show metadata fails - we still have episode labels
+      }
+    }
 
     // Construct the 'playable item' result
     const result = {
@@ -551,6 +564,7 @@ export class Plex {
       tagline: itemData.tagline || "",
       studio: itemData.studio || "",
       year: year || "",
+      labels: allLabels,
       media_type: this.determinemedia_type(type),
       media_url,
       thumb_id: itemData.Media?.[0]?.Part?.[0]?.id,

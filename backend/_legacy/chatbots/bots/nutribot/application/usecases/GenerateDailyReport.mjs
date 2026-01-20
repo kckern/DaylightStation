@@ -389,7 +389,7 @@ export class GenerateDailyReport {
         date, 
         messageId, 
         itemCount: summary.itemCount,
-        totalCalories: summary.totals.calories,
+        totalCalories: totals.calories,
         caption: caption.substring(0, 200) + (caption.length > 200 ? '...' : '')
       });
 

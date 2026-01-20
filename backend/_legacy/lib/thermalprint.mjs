@@ -89,9 +89,15 @@ const printerLog = {
             case 'WARN':
                 logger.warn(message, meta);
                 break;
+            case 'JOB_COMPLETE':
+                if (success) {
+                    logger.info(message, meta);
+                } else {
+                    logger.error(message, meta);
+                }
+                break;
             case 'INFO':
             case 'JOB_START':
-            case 'JOB_COMPLETE':
             case 'DATA_PREVIEW':
             default:
                 logger.info(message, meta);

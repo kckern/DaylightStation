@@ -7,7 +7,6 @@
  * 2. Format that data as a human-readable summary
  */
 
-import { garminExtractor } from './garmin.mjs';
 import { stravaExtractor } from './strava.mjs';
 import { fitnessExtractor } from './fitness.mjs';
 import { weightExtractor } from './weight.mjs';
@@ -26,7 +25,6 @@ import { clickupExtractor } from './clickup.mjs';
 
 // Export individual extractors
 export {
-  garminExtractor,
   stravaExtractor,
   fitnessExtractor,
   weightExtractor,
@@ -55,7 +53,6 @@ export const extractors = [
   journalistExtractor, // User's own journal entries and voice notes - TOP PRIORITY
   
   // Tier 1: Primary sources
-  garminExtractor,    // Best aggregated health data
   stravaExtractor,    // Detailed workouts
   calendarExtractor,  // Calendar events (date-keyed lifelog)
   // eventsExtractor removed - was duplicate of calendarExtractor, both output "CALENDAR EVENTS"
