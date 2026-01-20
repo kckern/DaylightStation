@@ -108,13 +108,30 @@ initBackends().then(() => {
 
 Extract all Express app setup, export the app without calling `listen()`.
 
+### Scheduler handling
+
+**Legacy (`_legacy/cron.mjs`):** No changes - scheduler runs as normal via `setInterval`.
+
+**New (`src/app.mjs`):** Pass `{ enableScheduler: false }` when initializing via toggle:
+```javascript
+// In index.js when loading new backend
+const newBackend = await import('./src/app.mjs');
+newApp = newBackend.createApp({ enableScheduler: false });
+```
+
+The new backend's `createApp()` function accepts options and conditionally starts the scheduler.
+
 ## Edge Cases
 
 1. **WebSocket** - Both backends attach WS to same HTTP server
 2. **Shared state** - Config, logging, MQTT initialized once in index.js
 3. **Secondary API (port 3119)** - Stays on legacy, not toggled
 4. **Cold start** - Both backends initialize at startup, no delay on switch
-5. **Cron jobs** - Follow the toggle (when toggle=new, `/cron/*` goes to new backend)
+5. **Cron/Scheduler** - Legacy scheduler only; new backend's scheduler disabled during toggle phase
+   - Legacy `setInterval` in `cron.mjs` continues running regardless of toggle
+   - New `Scheduler` class is NOT started when loaded via toggle
+   - HTTP routes to `/cron/*` follow the toggle (for manual triggers)
+   - Once toggle is removed and new backend is primary, new scheduler activates
 
 ## Out of Scope
 
