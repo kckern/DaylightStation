@@ -182,6 +182,27 @@ async function main() {
       message: `Toggle active: ${activeBackend}. Use POST /api/toggle_backend to switch.`
     });
   });
+
+  // ==========================================================================
+  // Secondary API Server (port 3119) - for webhooks
+  // ==========================================================================
+
+  const secondaryServer = createServer((req, res) => {
+    res.setHeader('X-Backend', activeBackend);
+
+    // Route to active backend
+    const targetApp = activeBackend === 'legacy' ? legacyApp : newApp;
+    targetApp(req, res);
+  });
+
+  secondaryServer.listen(3119, '0.0.0.0', () => {
+    logger.info('server.secondary.started', {
+      port: 3119,
+      host: '0.0.0.0',
+      mode: 'toggle',
+      purpose: 'webhooks'
+    });
+  });
 }
 
 main().catch(err => {
