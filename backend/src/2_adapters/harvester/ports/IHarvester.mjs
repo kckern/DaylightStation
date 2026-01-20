@@ -27,7 +27,7 @@ export const HarvesterCategory = {
  */
 export class IHarvester {
   /**
-   * Service identifier (e.g., 'garmin', 'lastfm')
+   * Service identifier (e.g., 'strava', 'lastfm')
    * @returns {string}
    */
   get serviceId() {

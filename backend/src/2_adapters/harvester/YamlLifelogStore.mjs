@@ -32,7 +32,7 @@ export class YamlLifelogStore {
    * Load lifelog data for a service
    *
    * @param {string} username - Target user
-   * @param {string} service - Service identifier (e.g., 'garmin')
+   * @param {string} service - Service identifier (e.g., 'strava')
    * @returns {Promise<Object|Array|null>} Parsed YAML data or null if not found
    */
   async load(username, service) {
@@ -53,7 +53,7 @@ export class YamlLifelogStore {
    * Save lifelog data for a service
    *
    * @param {string} username - Target user
-   * @param {string} service - Service identifier (e.g., 'garmin')
+   * @param {string} service - Service identifier (e.g., 'strava')
    * @param {Object|Array} data - Data to save
    * @returns {Promise<void>}
    */

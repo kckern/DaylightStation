@@ -1,7 +1,7 @@
 /**
  * Health Domain
  *
- * Aggregates health data from multiple sources (weight, Strava, Garmin,
+ * Aggregates health data from multiple sources (weight, Strava,
  * FitnessSyncer, nutrition) into unified daily health metrics.
  *
  * @module domains/health

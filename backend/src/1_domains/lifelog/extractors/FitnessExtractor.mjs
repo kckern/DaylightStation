@@ -3,7 +3,6 @@
  *
  * Extracts fitness sync data from fitness.yml
  * Structure: Date-keyed object with steps and activities
- * Note: May overlap with Garmin, use as fallback
  *
  * @module journalist/extractors
  */

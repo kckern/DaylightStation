@@ -14,7 +14,6 @@ import { ILifelogExtractor, ExtractorCategory } from './ILifelogExtractor.mjs';
 
 // Health extractors
 import { WeightExtractor, weightExtractor } from './WeightExtractor.mjs';
-import { GarminExtractor, garminExtractor } from './GarminExtractor.mjs';
 import { NutritionExtractor, nutritionExtractor } from './NutritionExtractor.mjs';
 
 // Fitness extractors
@@ -45,8 +44,6 @@ export {
   // Health
   WeightExtractor,
   weightExtractor,
-  GarminExtractor,
-  garminExtractor,
   NutritionExtractor,
   nutritionExtractor,
   // Fitness
@@ -90,7 +87,6 @@ export const extractors = [
   journalistExtractor, // User's own journal entries and voice notes - TOP PRIORITY
 
   // Tier 1: Primary sources
-  garminExtractor, // Best aggregated health data
   stravaExtractor, // Detailed workouts
   calendarExtractor, // Calendar events (date-keyed lifelog)
   checkinsExtractor, // Locations
@@ -106,13 +102,13 @@ export const extractors = [
   // Tier 3: Supplementary
   lastfmExtractor, // Music listening
   redditExtractor, // Social activity
-  weightExtractor, // Weight trends (may overlap with garmin)
+  weightExtractor, // Weight trends
   fitnessExtractor, // Fitness fallback (may overlap with strava)
 ];
 
 /**
  * Get extractor by source name
- * @param {string} source - Source name (e.g., 'garmin', 'strava')
+ * @param {string} source - Source name (e.g., 'strava', 'weight')
  * @returns {ILifelogExtractor|undefined} Extractor or undefined
  */
 export function getExtractor(source) {
