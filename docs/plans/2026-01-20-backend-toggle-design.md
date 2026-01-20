@@ -133,6 +133,18 @@ The new backend's `createApp()` function accepts options and conditionally start
    - HTTP routes to `/cron/*` follow the toggle (for manual triggers)
    - Once toggle is removed and new backend is primary, new scheduler activates
 
+## Shared Infrastructure
+
+The legacy backend already imports many src/ components:
+- Services: HealthAggregationService, GratitudeService, ProxyService
+- Adapters: ThermalPrinterAdapter, TTSAdapter, MQTTSensorAdapter, GmailAdapter
+- Infrastructure: EventBus, routing toggle system
+
+This is fine because:
+1. Services/adapters are stateless - no conflicting state
+2. The toggle switches the **routing layer**, not underlying services
+3. Both backends effectively share the same infrastructure
+
 ## Out of Scope
 
 - Per-route toggling (existing routing.yml handles this)
