@@ -1,12 +1,14 @@
 // backend/index.js
 /**
- * DaylightStation Backend Entry Point with Toggle
+ * DaylightStation Backend Entry Point with Path-Based Routing
  *
- * Provides runtime toggle between legacy and new backends via /api/toggle_backend.
- * Defaults to 'legacy' on every restart for safety.
+ * Routes requests based on URL path:
+ * - /api/v1/* -> new DDD backend (in src/)
+ * - Everything else -> legacy backend (in _legacy/)
+ *
+ * Legacy owns shared infrastructure: WebSocket/EventBus, MQTT, scheduler.
  */
 
-import express from 'express';
 import { createServer } from 'http';
 import { existsSync } from 'fs';
 import path, { join } from 'path';
@@ -23,9 +25,6 @@ import { loadLoggingConfig, resolveLoggerLevel, getLoggingTags, resolveLogglyTok
 
 const __dirname = path.dirname(new URL(import.meta.url).pathname);
 const isDocker = existsSync('/.dockerenv');
-
-// Toggle state - defaults to legacy, resets on restart
-let activeBackend = 'legacy';
 
 async function main() {
   // ==========================================================================
@@ -104,7 +103,7 @@ async function main() {
 
   const logger = createLogger({
     source: 'backend',
-    app: 'toggle',
+    app: 'router',
     context: { env: process.env.NODE_ENV }
   });
 
@@ -114,58 +113,51 @@ async function main() {
 
   const server = createServer();
 
-  logger.info('toggle.loading_backends', { message: 'Loading legacy and new backends...' });
+  logger.info('router.loading_backends', { message: 'Loading legacy and new backends...' });
 
-  // Load legacy backend (scheduler runs here)
+  // Load legacy backend (owns scheduler, MQTT, WebSocket/EventBus)
   const { createApp: createLegacyApp } = await import('./_legacy/app.mjs');
   const legacyApp = await createLegacyApp({ server, logger, configPaths, configExists });
-  logger.info('toggle.legacy_loaded', { message: 'Legacy backend loaded' });
+  logger.info('router.legacy_loaded', { message: 'Legacy backend loaded' });
 
-  // Load new backend (scheduler disabled - legacy handles it)
+  // Load new backend (scheduler and MQTT disabled - legacy owns them)
   const { createApp: createNewApp } = await import('./src/app.mjs');
-  const newApp = await createNewApp({ server, logger, configPaths, configExists, enableScheduler: false });
-  logger.info('toggle.new_loaded', { message: 'New backend loaded (scheduler disabled)' });
-
-  // ==========================================================================
-  // Toggle Router
-  // ==========================================================================
-
-  const toggleRouter = express.Router();
-  toggleRouter.use(express.json());
-
-  // GET /api/toggle_backend - Get current state
-  toggleRouter.get('/api/toggle_backend', (req, res) => {
-    res.json({ active: activeBackend });
+  const newApp = await createNewApp({
+    server,
+    logger,
+    configPaths,
+    configExists,
+    enableScheduler: false,
+    enableMqtt: false
   });
-
-  // POST /api/toggle_backend - Switch backend
-  toggleRouter.post('/api/toggle_backend', (req, res) => {
-    const { target } = req.body;
-    if (target !== 'legacy' && target !== 'new') {
-      return res.status(400).json({ error: 'target must be "legacy" or "new"' });
-    }
-    const previous = activeBackend;
-    activeBackend = target;
-    logger.info('toggle.switched', { from: previous, to: target });
-    res.json({ active: activeBackend, switched: true, previous });
-  });
+  logger.info('router.new_loaded', { message: 'New backend loaded (scheduler/MQTT disabled)' });
 
   // ==========================================================================
-  // Request Routing
+  // Request Routing (path-based)
   // ==========================================================================
 
   server.on('request', (req, res) => {
     // Add header to indicate which backend served the request
-    res.setHeader('X-Backend', activeBackend);
+    res.setHeader('X-Backend', req.url.startsWith('/api/v1') ? 'new' : 'legacy');
 
-    // Handle toggle endpoint first (before routing to backends)
-    if (req.url === '/api/toggle_backend' || req.url.startsWith('/api/toggle_backend?')) {
-      return toggleRouter(req, res);
+    if (req.url.startsWith('/api/v1')) {
+      // Strip /api/v1 prefix before passing to new app
+      req.url = req.url.replace('/api/v1', '') || '/';
+      return newApp(req, res, (err) => {
+        if (err && !res.headersSent) {
+          res.statusCode = 500;
+          res.end('Internal Server Error');
+        }
+      });
     }
 
-    // Route to active backend
-    const targetApp = activeBackend === 'legacy' ? legacyApp : newApp;
-    targetApp(req, res);
+    // Everything else -> legacy
+    return legacyApp(req, res, (err) => {
+      if (err && !res.headersSent) {
+        res.statusCode = 500;
+        res.end('Internal Server Error');
+      }
+    });
   });
 
   // ==========================================================================
@@ -177,29 +169,33 @@ async function main() {
     logger.info('server.started', {
       port,
       host: '0.0.0.0',
-      mode: 'toggle',
-      active: activeBackend,
-      message: `Toggle active: ${activeBackend}. Use POST /api/toggle_backend to switch.`
+      mode: 'path-routing',
+      message: 'Path-based routing: /api/v1/* -> new, everything else -> legacy'
     });
   });
 
   // ==========================================================================
-  // Secondary API Server (port 3119) - for webhooks
+  // Secondary API Server (port 3119) - for webhooks (always routes to legacy)
   // ==========================================================================
 
+  const secondaryPort = process.env.SECONDARY_PORT || 3119;
   const secondaryServer = createServer((req, res) => {
-    res.setHeader('X-Backend', activeBackend);
+    res.setHeader('X-Backend', 'legacy');
 
-    // Route to active backend
-    const targetApp = activeBackend === 'legacy' ? legacyApp : newApp;
-    targetApp(req, res);
+    // Webhooks always go to legacy
+    legacyApp(req, res, (err) => {
+      if (err && !res.headersSent) {
+        res.statusCode = 500;
+        res.end('Internal Server Error');
+      }
+    });
   });
 
-  secondaryServer.listen(3119, '0.0.0.0', () => {
+  secondaryServer.listen(secondaryPort, '0.0.0.0', () => {
     logger.info('server.secondary.started', {
-      port: 3119,
+      port: secondaryPort,
       host: '0.0.0.0',
-      mode: 'toggle',
+      mode: 'legacy-only',
       purpose: 'webhooks'
     });
   });
