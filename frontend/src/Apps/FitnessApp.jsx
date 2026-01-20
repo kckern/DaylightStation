@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { MantineProvider, Paper, Title, Group, Text, Alert, Grid } from '@mantine/core';
 import '@mantine/core/styles.css';
 import "./FitnessApp.scss";
-import { DaylightAPI } from '../lib/api.mjs';
+import { DaylightAPI, DaylightMediaPath } from '../lib/api.mjs';
 import FitnessMenu from '../modules/Fitness/FitnessMenu.jsx';
 import FitnessNavbar from '../modules/Fitness/FitnessNavbar.jsx';
 import FitnessShow from '../modules/Fitness/FitnessShow.jsx';
@@ -10,11 +10,13 @@ import FitnessPlayer from '../modules/Fitness/FitnessPlayer.jsx';
 import FitnessPluginContainer from '../modules/Fitness/FitnessPlugins/FitnessPluginContainer.jsx';
 import { VolumeProvider } from '../modules/Fitness/VolumeProvider.jsx';
 import { FitnessProvider } from '../context/FitnessContext.jsx';
-import { getChildLogger } from '../lib/logging/singleton.js';
+import getLogger from '../lib/logging/Logger.js';
 import { sortNavItems } from '../modules/Fitness/lib/navigationUtils.js';
 import VoiceMemoOverlay from '../modules/Fitness/FitnessPlayerOverlay/VoiceMemoOverlay.jsx';
 import { useFitnessContext } from '../context/FitnessContext.jsx';
 import { FitnessFrame } from '../modules/Fitness/frames';
+import { useFitnessUrlParams } from '../hooks/fitness/useFitnessUrlParams.js';
+import { useNavigate, useLocation } from 'react-router-dom';
 
 const FitnessApp = () => {
   // NOTE: This app targets a large touchscreen TV device. To reduce perceived latency
@@ -38,7 +40,13 @@ const FitnessApp = () => {
     return isFirefox;
   });
   const viewportRef = useRef(null);
-  const logger = useMemo(() => getChildLogger({ app: 'fitness' }), []);
+  const logger = useMemo(() => getLogger().child({ app: 'fitness' }), []);
+
+  // URL-based navigation
+  const { urlState } = useFitnessUrlParams();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [urlInitialized, setUrlInitialized] = useState(false);
 
   useEffect(() => {
     logger.info('fitness-app-mount');
@@ -47,16 +55,18 @@ const FitnessApp = () => {
     logger.info('fitness-kiosk-state', { kiosk: kioskUI });
   }, [kioskUI, logger]);
 
-  // Memory/timer profiling for crash debugging
+  // Memory/timer/FPS profiling for crash debugging and performance correlation
   useEffect(() => {
     const startTime = Date.now();
     let sampleCount = 0;
     let baselineMemory = null;
     let baselineTimers = null;
+    let lastFpsCheck = { timestamp: 0, totalFrames: 0, droppedFrames: 0 };
+    let currentIntervalId = null;
+    let heapSamples = []; // For growth rate calculation
 
     // Count active intervals (approximate via window inspection)
     const countTimers = () => {
-      // Use timer tracker if available, otherwise estimate
       if (window.__timerTracker) {
         return window.__timerTracker.getStats?.() || { activeIntervals: -1, activeTimeouts: -1 };
       }
@@ -73,11 +83,61 @@ const FitnessApp = () => {
       };
     };
 
+    // Get video FPS metrics using getVideoPlaybackQuality API
+    const getVideoFps = () => {
+      const video = document.querySelector('video, dash-video');
+      if (!video) return null;
+
+      const quality = video.getVideoPlaybackQuality?.();
+      if (!quality) return null;
+
+      const now = performance.now();
+      const elapsed = (now - lastFpsCheck.timestamp) / 1000;
+      const framesDelta = quality.totalVideoFrames - lastFpsCheck.totalFrames;
+      const droppedDelta = quality.droppedVideoFrames - lastFpsCheck.droppedFrames;
+
+      // Calculate FPS only if we have a previous sample
+      let fps = null;
+      let dropRate = null;
+      if (lastFpsCheck.timestamp > 0 && elapsed > 0) {
+        fps = Math.round(framesDelta / elapsed * 10) / 10;
+        dropRate = framesDelta > 0 ? Math.round(droppedDelta / framesDelta * 1000) / 10 : 0;
+      }
+
+      // Update last check
+      lastFpsCheck = {
+        timestamp: now,
+        totalFrames: quality.totalVideoFrames,
+        droppedFrames: quality.droppedVideoFrames
+      };
+
+      return {
+        fps,
+        totalFrames: quality.totalVideoFrames,
+        droppedFrames: quality.droppedVideoFrames,
+        corruptedFrames: quality.corruptedVideoFrames || 0,
+        dropRate,
+        videoState: video.paused ? 'paused' : (video.readyState < 3 ? 'stalled' : 'playing')
+      };
+    };
+
+    // Calculate heap growth rate from recent samples
+    const calculateHeapGrowthRate = () => {
+      if (heapSamples.length < 2) return null;
+      const oldest = heapSamples[0];
+      const newest = heapSamples[heapSamples.length - 1];
+      const durationMin = (newest.ts - oldest.ts) / 60000;
+      if (durationMin < 0.5) return null;
+      return Math.round((newest.heap - oldest.heap) / durationMin * 10) / 10;
+    };
+
     const logProfile = () => {
       sampleCount++;
-      const elapsed = Math.round((Date.now() - startTime) / 1000);
+      const now = Date.now();
+      const elapsed = Math.round((now - startTime) / 1000);
       const mem = getMemoryMB();
       const timers = countTimers();
+      const videoFps = getVideoFps();
 
       // Capture baseline on first sample
       if (!baselineMemory && mem) baselineMemory = mem.usedMB;
@@ -86,18 +146,51 @@ const FitnessApp = () => {
       const growthMB = mem ? Math.round((mem.usedMB - baselineMemory) * 10) / 10 : null;
       const timerGrowth = timers.activeIntervals >= 0 ? timers.activeIntervals - baselineTimers : null;
 
-      // Get session-level stats (exposed via window for cross-component access)
+      // Track heap samples for growth rate (keep last 10 samples)
+      if (mem) {
+        heapSamples.push({ ts: now, heap: mem.usedMB });
+        if (heapSamples.length > 10) heapSamples.shift();
+      }
+      const heapGrowthRateMBperMin = calculateHeapGrowthRate();
+
+      // Get governance state from global exposure
+      const governance = window.__fitnessGovernance || {};
+      const governancePhase = governance.phase || null;
+      const governanceWarningDurationMs = governance.warningDuration || 0;
+      const challengeActive = !!governance.activeChallenge;
+
+      // Get session-level stats
       const sessionStats = window.__fitnessSession?.getMemoryStats?.() || {};
       const chartStats = window.__fitnessChartStats?.() || {};
+      const renderStats = window.__fitnessRenderStats?.() || {};
 
-      logger.info('fitness-profile', {
+      // Determine video state with governance awareness
+      let videoState = videoFps?.videoState || null;
+      if (governance.videoLocked) {
+        videoState = 'governance-locked';
+      }
+
+      // Dynamic rate limiting - more frequent during warning phase
+      const maxPerMinute = governancePhase === 'warning' ? 12 : 2;
+
+      logger.sampled('fitness-profile', {
         sample: sampleCount,
         elapsedSec: elapsed,
         heapMB: mem?.usedMB,
         heapGrowthMB: growthMB,
+        heapGrowthRateMBperMin,
         timers: timers.activeIntervals,
         timerGrowth,
         timeouts: timers.activeTimeouts,
+        // Governance correlation
+        governancePhase,
+        governanceWarningDurationMs,
+        challengeActive,
+        // Video FPS correlation
+        videoFps: videoFps?.fps,
+        videoDroppedFrames: videoFps?.droppedFrames,
+        videoDropRate: videoFps?.dropRate,
+        videoState,
         // Session stats
         sessionActive: sessionStats.sessionActive,
         tickTimerRunning: sessionStats.tickTimerRunning,
@@ -107,26 +200,101 @@ const FitnessApp = () => {
         totalSeriesPoints: sessionStats.totalSeriesPoints,
         maxSeriesLength: sessionStats.maxSeriesLength,
         eventLogSize: sessionStats.eventLogSize,
-        // Chart stats (if exposed)
+        // Snapshot series stats
+        snapshotSeriesPoints: sessionStats.snapshotSeriesPoints,
+        maxSnapshotSeriesLength: sessionStats.maxSnapshotSeriesLength,
+        // TreasureBox stats
+        treasureBoxCumulativeLen: sessionStats.treasureBoxCumulativeLen,
+        treasureBoxPerColorPoints: sessionStats.treasureBoxPerColorPoints,
+        voiceMemoCount: sessionStats.voiceMemoCount,
+        // Cumulative trackers
+        cumulativeBeatsSize: sessionStats.cumulativeBeatsSize,
+        cumulativeRotationsSize: sessionStats.cumulativeRotationsSize,
+        // Chart stats
         chartCacheSize: chartStats.participantCacheSize,
-        chartDropoutMarkers: chartStats.dropoutMarkerCount
-      });
+        chartDropoutMarkers: chartStats.dropoutMarkerCount,
+        // Render stats
+        forceUpdateCount: renderStats.forceUpdateCount,
+        renderCount: renderStats.renderCount,
+        renderRatePer5s: renderStats.ratePer5s
+      }, { maxPerMinute });
 
-      // Warn if growth is concerning
-      if (growthMB > 30) {
+      // === WARNING THRESHOLDS ===
+
+      // Memory warnings
+      if (growthMB > 20) {
         logger.warn('fitness-profile-memory-warning', { growthMB, elapsed });
       }
       if (timerGrowth > 5) {
         logger.warn('fitness-profile-timer-warning', { timerGrowth, elapsed });
       }
-      // Warn if session data growing unexpectedly
-      if (sessionStats.maxSeriesLength > 2500) {
+
+      // FPS + Governance correlation warning (key diagnostic)
+      if (videoFps && videoFps.fps !== null && videoFps.fps < 24 && governancePhase === 'warning') {
+        logger.warn('fitness.video_fps_warning_correlation', {
+          fps: videoFps.fps,
+          dropRate: videoFps.dropRate,
+          droppedFrames: videoFps.droppedFrames,
+          governancePhase,
+          governanceWarningDurationMs,
+          heapMB: mem?.usedMB,
+          rosterSize: sessionStats.rosterSize,
+          forceUpdateCount: renderStats.forceUpdateCount
+        });
+      }
+
+      // FPS degradation warning (regardless of governance)
+      if (videoFps && videoFps.fps !== null && videoFps.fps < 20 && videoState === 'playing') {
+        logger.warn('fitness.video_fps_degraded', {
+          fps: videoFps.fps,
+          dropRate: videoFps.dropRate,
+          videoState,
+          governancePhase,
+          heapMB: mem?.usedMB
+        });
+      }
+
+      // Memory + Governance correlation
+      if (growthMB > 15 && governancePhase === 'warning') {
+        logger.warn('fitness-profile-memory-governance-correlation', {
+          growthMB,
+          heapGrowthRateMBperMin,
+          governancePhase,
+          governanceWarningDurationMs,
+          elapsed
+        });
+      }
+
+      // Memory + Render correlation
+      if (growthMB > 15 && (renderStats.ratePer5s || 0) > 50) {
+        logger.warn('fitness-profile-memory-render-correlation', {
+          growthMB,
+          heapGrowthRateMBperMin,
+          renderRatePer5s: renderStats.ratePer5s,
+          forceUpdateCount: renderStats.forceUpdateCount,
+          elapsed
+        });
+      }
+
+      // Session data warnings
+      if (sessionStats.maxSeriesLength > 1500) {
         logger.warn('fitness-profile-series-warning', {
           maxSeriesLength: sessionStats.maxSeriesLength,
           seriesCount: sessionStats.seriesCount
         });
       }
-      // Warn if tick timer running without active session (potential leak)
+      if (sessionStats.maxSnapshotSeriesLength > 2500) {
+        logger.warn('fitness-profile-snapshot-series-warning', {
+          maxSnapshotSeriesLength: sessionStats.maxSnapshotSeriesLength,
+          snapshotSeriesPoints: sessionStats.snapshotSeriesPoints
+        });
+      }
+      if (sessionStats.treasureBoxCumulativeLen > 800) {
+        logger.warn('fitness-profile-treasurebox-warning', {
+          cumulativeLen: sessionStats.treasureBoxCumulativeLen,
+          perColorPoints: sessionStats.treasureBoxPerColorPoints
+        });
+      }
       if (sessionStats.tickTimerRunning && !sessionStats.sessionActive) {
         logger.error('fitness-profile-orphan-timer', {
           tickTimerRunning: true,
@@ -134,16 +302,47 @@ const FitnessApp = () => {
           elapsed
         });
       }
+      if (renderStats.forceUpdateCount > 100) {
+        logger.warn('fitness-profile-excessive-renders', {
+          forceUpdateCount: renderStats.forceUpdateCount,
+          renderCount: renderStats.renderCount,
+          elapsed
+        });
+      }
     };
 
-    // Log immediately, then every 30 seconds
-    logProfile();
-    const intervalId = setInterval(logProfile, 30000);
+    // Adaptive interval: 5s during warning phase, 30s otherwise
+    const updateInterval = () => {
+      const governance = window.__fitnessGovernance || {};
+      const isWarning = governance.phase === 'warning';
+      const targetInterval = isWarning ? 5000 : 30000;
 
-    logger.info('fitness-profile-started', { intervalSec: 30 });
+      // Only recreate interval if needed
+      if (currentIntervalId) {
+        clearInterval(currentIntervalId);
+      }
+      currentIntervalId = setInterval(() => {
+        logProfile();
+        // Check if we need to change interval
+        const nowGov = window.__fitnessGovernance || {};
+        const nowWarning = nowGov.phase === 'warning';
+        const currentTarget = nowWarning ? 5000 : 30000;
+        if (currentTarget !== targetInterval) {
+          updateInterval(); // Recursively update interval
+        }
+      }, targetInterval);
+    };
+
+    // Log immediately, then start adaptive interval
+    logProfile();
+    updateInterval();
+
+    logger.info('fitness-profile-started', { intervalSec: 30, adaptiveWarningIntervalSec: 5 });
 
     return () => {
-      clearInterval(intervalId);
+      if (currentIntervalId) {
+        clearInterval(currentIntervalId);
+      }
       logger.info('fitness-profile-stopped', { samples: sampleCount });
     };
   }, [logger]);
@@ -385,81 +584,143 @@ const FitnessApp = () => {
     return Array.isArray(src) ? src : [];
   }, [fitnessConfiguration]);
 
+  // Handle /fitness/play/:id route
+  const handlePlayFromUrl = async (episodeId) => {
+    try {
+      // Fetch episode metadata from API to get labels for governance
+      const response = await DaylightAPI(`media/plex/info/${episodeId}`);
+
+      if (!response || response.error) {
+        logger.warn('fitness-play-url-no-metadata', { episodeId, error: response?.error });
+        // Fallback to basic queue item without labels
+        const fallbackItem = {
+          id: episodeId,
+          plex: episodeId,
+          type: 'episode',
+          title: `Episode ${episodeId}`,
+          videoUrl: DaylightMediaPath(`media/plex/url/${episodeId}`),
+          thumb_id: episodeId,
+          image: DaylightMediaPath(`media/plex/img/${episodeId}`)
+        };
+        setFitnessPlayQueue([fallbackItem]);
+        logger.info('fitness-play-url-started-fallback', { episodeId });
+        return;
+      }
+
+      // Build queue item from API response (includes labels for governance)
+      const queueItem = {
+        id: response.key || episodeId,
+        plex: response.key || episodeId,
+        type: response.type || 'episode',
+        title: response.title || `Episode ${episodeId}`,
+        show: response.show,
+        season: response.season,
+        videoUrl: response.media_url || DaylightMediaPath(`media/plex/url/${episodeId}`),
+        thumb_id: response.thumb_id || episodeId,
+        image: response.image || DaylightMediaPath(`media/plex/img/${episodeId}`),
+        labels: response.labels || [],
+        summary: response.summary
+      };
+
+      setFitnessPlayQueue([queueItem]);
+      logger.info('fitness-play-url-started', { episodeId, hasLabels: queueItem.labels.length > 0 });
+    } catch (err) {
+      logger.error('fitness-play-url-error', { episodeId, error: err.message });
+      navigate('/fitness', { replace: true });
+    }
+  };
+
   const handleNavigate = (type, target, item) => {
     logger.info('fitness-navigate', { type, target });
-    
+
     switch (type) {
       case 'plex_collection':
         setActiveCollection(target.collection_id);
         setActivePlugin(null);
         setCurrentView('menu');
         setSelectedShow(null);
+        navigate(`/fitness/menu/${target.collection_id}`, { replace: true });
         break;
-        
+
       case 'plex_collection_group':
         setActiveCollection(target.collection_ids);
         setActivePlugin(null);
         setCurrentView('menu');
         setSelectedShow(null);
+        navigate(`/fitness/menu/${target.collection_ids.join(',')}`, { replace: true });
         break;
-        
+
       case 'plugin_menu':
         setActiveCollection(target.menu_id);
         setActivePlugin(null);
         setCurrentView('menu');
         setSelectedShow(null);
+        navigate(`/fitness/menu/${target.menu_id}`, { replace: true });
         break;
-        
+
       case 'plugin_direct':
-        setActivePlugin({ 
-          id: target.plugin_id, 
-          ...(target.config || {}) 
+        setActivePlugin({
+          id: target.plugin_id,
+          ...(target.config || {})
         });
         setActiveCollection(null);
         setCurrentView('plugin');
         setSelectedShow(null);
+        navigate(`/fitness/plugin/${target.plugin_id}`, { replace: true });
         break;
 
       case 'plugin':
         // Launched from FitnessPluginMenu
-        setActivePlugin({ 
-          id: target.id, 
-          ...(target || {}) 
+        setActivePlugin({
+          id: target.id,
+          ...(target || {})
         });
         setActiveCollection(null);
         setCurrentView('plugin');
         setSelectedShow(null);
+        navigate(`/fitness/plugin/${target.id}`, { replace: true });
         break;
-        
+
       case 'view_direct':
         setActiveCollection(null);
         setActivePlugin(null);
         setCurrentView(target.view);
         setSelectedShow(null);
+        if (target.view === 'users') {
+          navigate('/fitness/users', { replace: true });
+        }
         break;
 
       case 'show':
         setSelectedShow(target.plex || target.id);
         setCurrentView('show');
+        navigate(`/fitness/show/${target.plex || target.id}`, { replace: true });
         break;
 
       case 'movie':
         //send directly to player queue
         setFitnessPlayQueue(prev => [...prev, target]);
+        navigate(`/fitness/play/${target.plex || target.id}`, { replace: true });
         break;
-        
+
       case 'custom_action':
         logger.warn('custom_action not implemented', { action: target.action });
         break;
-        
+
       default:
         logger.warn('fitness-navigate-unknown', { type });
     }
   };
 
   const handleBackToMenu = () => {
-    setCurrentView('menu'); // Switch back to menu view
+    setCurrentView('menu');
     setSelectedShow(null);
+    if (activeCollection) {
+      const colId = Array.isArray(activeCollection) ? activeCollection.join(',') : activeCollection;
+      navigate(`/fitness/menu/${colId}`, { replace: true });
+    } else {
+      navigate('/fitness', { replace: true });
+    }
   };
 
   useEffect(() => {
@@ -519,27 +780,92 @@ const FitnessApp = () => {
     return () => clearTimeout(timeoutId);
   }, [logger]);
 
+  // Initialize state from URL on mount
+  useEffect(() => {
+    if (urlInitialized || loading) return;
+
+    const { view, id, ids, music, fullscreen, simulate } = urlState;
+
+    logger.info('fitness-url-init', { view, id, ids, music, fullscreen, simulate });
+
+    // Handle simulation trigger
+    if (simulate) {
+      if (simulate.stop) {
+        fetch('/api/fitness/simulate', { method: 'DELETE' })
+          .then(r => r.json())
+          .then(data => logger.info('fitness-simulate-stopped', data))
+          .catch(err => logger.error('fitness-simulate-stop-failed', { error: err.message }));
+      } else {
+        fetch('/api/fitness/simulate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(simulate)
+        })
+          .then(r => r.json())
+          .then(data => logger.info('fitness-simulate-started', data))
+          .catch(err => logger.error('fitness-simulate-start-failed', { error: err.message }));
+      }
+
+      // Clear simulate param from URL after triggering
+      const newParams = new URLSearchParams(location.search);
+      newParams.delete('simulate');
+      const newUrl = newParams.toString() ? `${location.pathname}?${newParams}` : location.pathname;
+      navigate(newUrl, { replace: true });
+    }
+
+    // Handle fullscreen
+    if (fullscreen && document.documentElement.requestFullscreen) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    }
+
+    // Set view based on URL
+    if (view === 'users') {
+      setCurrentView('users');
+    } else if (view === 'show' && id) {
+      setSelectedShow(id);
+      setCurrentView('show');
+    } else if (view === 'plugin' && id) {
+      setActivePlugin({ id });
+      setCurrentView('plugin');
+    } else if (view === 'play' && id) {
+      handlePlayFromUrl(id);
+    } else if (view === 'menu' && ids) {
+      if (ids.length === 1) {
+        setActiveCollection(ids[0]);
+      } else {
+        setActiveCollection(ids);
+      }
+      setCurrentView('menu');
+    }
+
+    setUrlInitialized(true);
+  }, [urlState, loading, urlInitialized, navigate, location]);
+
   // Initialize to the first nav item once navItems arrive
   useEffect(() => {
     // Don't auto-navigate if we're on a special view like 'users' or 'show'
     if (currentView === 'users' || currentView === 'show') {
       return;
     }
+    // Don't auto-navigate if URL already set up the initial state
+    if (urlInitialized && (urlState.view !== 'menu' || urlState.id || urlState.ids)) {
+      return;
+    }
     if (activeCollection == null && activePlugin == null && navItems.length > 0) {
       // Sort items to match navbar display order
       const sortedItems = sortNavItems(navItems);
       const firstItem = sortedItems[0];
-      
+
       if (firstItem) {
-        logger.info('fitness-nav-init', { 
-          type: firstItem.type, 
+        logger.info('fitness-nav-init', {
+          type: firstItem.type,
           name: firstItem.name,
-          target: firstItem.target 
+          target: firstItem.target
         });
         handleNavigate(firstItem.type, firstItem.target, firstItem);
       }
     }
-  }, [navItems, activeCollection, activePlugin, currentView]);
+  }, [navItems, activeCollection, activePlugin, currentView, urlInitialized, urlState]);
 
   const queueSize = fitnessPlayQueue.length;
   useEffect(() => {
@@ -669,11 +995,17 @@ const FitnessApp = () => {
                   <FitnessPluginContainer pluginId="fitness_session" mode="standalone" />
                 )}
                 {currentView === 'show' && selectedShow && (
-                  <FitnessShow 
-                    showId={selectedShow} 
+                  <FitnessShow
+                    showId={selectedShow}
                     onBack={handleBackToMenu}
                     viewportRef={viewportRef}
                     setFitnessPlayQueue={setFitnessPlayQueue}
+                    onPlay={(episode) => {
+                      const episodeId = episode.plex || episode.id;
+                      if (episodeId) {
+                        navigate(`/fitness/play/${episodeId}`, { replace: true });
+                      }
+                    }}
                   />
                 )}
                 {currentView === 'menu' && (

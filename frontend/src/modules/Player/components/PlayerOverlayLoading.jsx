@@ -1,7 +1,9 @@
-import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
 import spinner from '../../../assets/icons/spinner.svg';
+import pause from '../../../assets/icons/pause.svg';
 import { playbackLog } from '../lib/playbackLogger.js';
+import { buildMediaDiagnostics, EMPTY_MEDIA_DIAGNOSTICS } from '../lib/mediaDiagnostics.js';
 
 /**
  * Loading / resilience overlay shown while media is buffering, stalling, or waiting to start.
@@ -27,7 +29,10 @@ export function PlayerOverlayLoading({
   waitKey,
   overlayRevealDelayMs = 0,
   mediaDetails: mediaDetailsProp = null,
-  suppressForBlackout = false
+  suppressForBlackout = false,
+  showPauseIcon = false,
+  showDebugDiagnostics = false,
+  getMediaEl
 }) {
   // In blackout mode, keep screen completely dark (TV appears off)
   if (suppressForBlackout) {
@@ -110,6 +115,33 @@ export function PlayerOverlayLoading({
       paused: null
     };
   }, [mediaDetailsProp]);
+
+  // Debug-only detailed diagnostics (buffer, dropped frames)
+  const debugEnabled = showDebugDiagnostics ||
+    (typeof window !== 'undefined' && window.PLAYER_DEBUG_OVERLAY);
+
+  const [detailedDiagnostics, setDetailedDiagnostics] = useState(EMPTY_MEDIA_DIAGNOSTICS);
+
+  useEffect(() => {
+    if (!debugEnabled || typeof getMediaEl !== 'function' || !isVisible) {
+      return () => {};
+    }
+
+    const readDiagnostics = () => {
+      try {
+        const el = getMediaEl();
+        if (el) {
+          setDetailedDiagnostics(buildMediaDiagnostics(el));
+        }
+      } catch (_) {
+        // ignore diagnostic errors
+      }
+    };
+
+    readDiagnostics();
+    const intervalId = setInterval(readDiagnostics, 1000);
+    return () => clearInterval(intervalId);
+  }, [debugEnabled, getMediaEl, isVisible]);
 
   // Determine position display using freshness-based priority (Fix 3: position display audit)
   // If actively seeking, prefer intent; otherwise use freshness to pick the most recent value
@@ -221,13 +253,20 @@ export function PlayerOverlayLoading({
     return null;
   }
 
+  // Use different transition delay for showing vs hiding
+  // When appearing, add 300ms delay to avoid flashing during brief buffering
+  // When disappearing, no delay for instant feedback
+  const transitionStyle = isVisible
+    ? 'opacity 0.3s ease-in-out 0.3s' // 0.3s delay before showing
+    : 'opacity 0.2s ease-in-out 0s';  // No delay when hiding
+
   return (
     <div
-      className="loading-overlay loading"
+      className={`loading-overlay ${showPauseIcon ? 'paused' : 'loading'}`}
       data-no-fullscreen="true"
       style={{
         opacity: isVisible ? 1 : 0,
-        transition: 'opacity 0.3s ease-in-out'
+        transition: transitionStyle
       }}
       onDoubleClick={togglePauseOverlay}
       onPointerDownCapture={blockFullscreenToggle}
@@ -241,7 +280,7 @@ export function PlayerOverlayLoading({
             {...spinnerInteractionProps}
           >
             <img
-              src={spinner}
+              src={showPauseIcon ? pause : spinner}
               alt=""
               draggable={false}
               data-no-fullscreen="true"
@@ -292,7 +331,10 @@ PlayerOverlayLoading.propTypes = {
     networkState: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
     paused: PropTypes.bool
   }),
-  suppressForBlackout: PropTypes.bool
+  suppressForBlackout: PropTypes.bool,
+  showPauseIcon: PropTypes.bool,
+  showDebugDiagnostics: PropTypes.bool,
+  getMediaEl: PropTypes.func
 };
 
 export default PlayerOverlayLoading;

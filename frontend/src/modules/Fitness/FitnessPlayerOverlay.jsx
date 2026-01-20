@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import PropTypes from 'prop-types';
 import { useFitnessContext } from '../../context/FitnessContext.jsx';
 import { DaylightMediaPath } from '../../lib/api.mjs';
+import { useRenderProfiler } from '../../hooks/fitness/useRenderProfiler.js';
 import { COOL_ZONE_PROGRESS_MARGIN, calculateZoneProgressTowardsTarget, normalizeZoneId as normalizeZoneIdForOverlay } from '../../hooks/useFitnessSession.js';
 import { ChallengeOverlay, useChallengeOverlays } from './FitnessPlayerOverlay/ChallengeOverlay.jsx';
 import GovernanceStateOverlay from './FitnessPlayerOverlay/GovernanceStateOverlay.jsx';
@@ -56,7 +57,7 @@ export const useGovernanceOverlay = (governanceState, participantRoster = []) =>
       descriptions: [],
       requirements: [],
       highlightUsers: [],
-      countdown: null,
+      deadline: null,
       countdownTotal: null,
       allowGenericAny: false
     };
@@ -179,7 +180,7 @@ export const useGovernanceOverlay = (governanceState, participantRoster = []) =>
       ].filter(Boolean),
       requirements: combinedRequirements,
       highlightUsers: combinedMissingUsers,
-      countdown: null,
+      deadline: null,
       countdownTotal: null,
       allowGenericAny: challengeRequiredCount === 1
     };
@@ -195,16 +196,15 @@ export const useGovernanceOverlay = (governanceState, participantRoster = []) =>
       descriptions: [],
       requirements: [],
       highlightUsers: [],
-      countdown: null,
+      deadline: null,
       countdownTotal: null,
       allowGenericAny: false
     };
   }
 
   if (normalizedStatus === 'warning') {
-    const countdown = Number.isFinite(governanceState.countdownSecondsRemaining)
-      ? governanceState.countdownSecondsRemaining
-      : null;
+    // Pass deadline timestamp instead of computed countdown - consumer uses useDeadlineCountdown
+    const deadline = governanceState.deadline || null;
     const countdownTotal = Number.isFinite(governanceState.gracePeriodTotal)
       ? Math.max(1, governanceState.gracePeriodTotal)
       : Number.isFinite(governanceState.countdownSecondsTotal)
@@ -227,7 +227,7 @@ export const useGovernanceOverlay = (governanceState, participantRoster = []) =>
         descriptions: [],
         requirements: [],
         highlightUsers: [],
-        countdown,
+        deadline,
         countdownTotal,
         allowGenericAny: false
       };
@@ -242,7 +242,7 @@ export const useGovernanceOverlay = (governanceState, participantRoster = []) =>
       descriptions: [],
       requirements: [],
       highlightUsers: warningHighlights,
-      countdown,
+      deadline,
       countdownTotal,
       allowGenericAny: false
     };
@@ -274,7 +274,7 @@ export const useGovernanceOverlay = (governanceState, participantRoster = []) =>
         ...challengeMissingUsers,
         ...missingUsers
       ])),
-      countdown: null,
+      deadline: null,
       countdownTotal: null,
       allowGenericAny: false
     };
@@ -307,6 +307,7 @@ export const useGovernanceOverlay = (governanceState, participantRoster = []) =>
 }, [governanceState, participantRoster]);
 
 const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
+  useRenderProfiler('FitnessPlayerOverlay');
   const fitnessCtx = useFitnessContext();
 
   const voiceMemoOverlayState = fitnessCtx?.voiceMemoOverlayState;

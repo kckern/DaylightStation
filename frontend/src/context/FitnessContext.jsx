@@ -220,9 +220,42 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const rosterCacheRef = useRef({ signature: null, value: emptyRosterRef.current });
   const [version, setVersion] = useState(0); // Trigger re-render
   const scheduledUpdateRef = useRef(false);
+  
+  // MEMORY LEAK TRACKING: Count forceUpdate calls and renders for profiling
+  const renderStatsRef = useRef({ forceUpdateCount: 0, renderCount: 0, lastResetTime: Date.now() });
 
   const forceUpdate = React.useCallback(() => {
+    renderStatsRef.current.forceUpdateCount++;
     setVersion((v) => v + 1);
+  }, []);
+
+  // Batched forceUpdate - coalesces multiple calls within same frame into single render
+  // Use this for high-frequency updates (WebSocket messages, etc.)
+  const batchedForceUpdate = React.useCallback(() => {
+    if (scheduledUpdateRef.current) return; // Already scheduled
+    scheduledUpdateRef.current = true;
+    requestAnimationFrame(() => {
+      scheduledUpdateRef.current = false;
+      forceUpdate();
+    });
+  }, [forceUpdate]);
+
+  // Track render count
+  renderStatsRef.current.renderCount++;
+  
+  // Expose render stats for profiling (auto-resets every 30s when read)
+  useEffect(() => {
+    window.__fitnessRenderStats = () => {
+      const stats = { ...renderStatsRef.current };
+      // Reset counters when read (30-second window)
+      renderStatsRef.current.forceUpdateCount = 0;
+      renderStatsRef.current.renderCount = 0;
+      renderStatsRef.current.lastResetTime = Date.now();
+      return stats;
+    };
+    return () => {
+      delete window.__fitnessRenderStats;
+    };
   }, []);
 
   // Logging helpers scoped after session ref so sessionId is available
@@ -856,17 +889,10 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     musicPlayerRef.current?.resume?.();
   }, []);
 
-  // MEMORY LEAK FIX: Only run heartbeat when session is active
-  const sessionId = fitnessSessionRef.current?.sessionId;
-  useEffect(() => {
-    if (!sessionId) return;
-    
-    const interval = setInterval(() => {
-      forceUpdate();
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [forceUpdate, sessionId]);
-  
+  // REMOVED: 1-second heartbeat that forced global re-render
+  // Countdown displays now use useDeadlineCountdown hook with deadline timestamp
+  // This eliminates ~60 unnecessary forceUpdate calls/min during active sessions
+
   const fitnessPlayQueue = propPlayQueue !== undefined ? propPlayQueue : internalPlayQueue;
   const setFitnessPlayQueue = propSetPlayQueue || setInternalPlayQueue;
   
@@ -979,7 +1005,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
           const session = fitnessSessionRef.current;
           if (session) {
             session.ingestData(data);
-            forceUpdate();
+            batchedForceUpdate(); // Batched: multiple messages in same frame = 1 render
           }
         }
       );
@@ -998,21 +1024,21 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       Object.values(vibrationTimeoutRefs.current || {}).forEach(clearTimeout);
       vibrationTimeoutRefs.current = {};
     };
-  }, [forceUpdate, handleVibrationEvent]);
+  }, [batchedForceUpdate, handleVibrationEvent]);
 
   // MEMORY LEAK FIX: Only prune devices when session is active
   const currentSessionId = fitnessSessionRef.current?.sessionId;
   useEffect(() => {
     const session = fitnessSessionRef.current;
     if (!currentSessionId) return;
-    
+
     const interval = setInterval(() => {
       const timeouts = getFitnessTimeouts();
       session.deviceManager.pruneStaleDevices(timeouts);
-      forceUpdate();
+      batchedForceUpdate();
     }, 3000);
     return () => clearInterval(interval);
-  }, [forceUpdate, currentSessionId]);
+  }, [batchedForceUpdate, currentSessionId]);
 
   const reconnectFitnessWebSocket = React.useCallback(() => {
     // Use the centralized WebSocketService to reconnect

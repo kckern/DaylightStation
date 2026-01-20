@@ -195,7 +195,7 @@ const deriveResumeMeta = (episode) => {
   };
 };
 
-const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
+const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue, onPlay }) => {
   const [showData, setShowData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -565,14 +565,18 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue }) => {
   // using prop setter directly (debug removed)
         // Force a new array to ensure state change is detected
         setFitnessPlayQueue([queueItem]);
+        // Notify parent to update URL
+        if (typeof onPlay === 'function') onPlay(episode);
         return;
       }
-      
+
       // Try the context setter as fallback
       if (contextSetPlayQueue) {
   // using context setter fallback (debug removed)
         // Force a new array to ensure state change is detected
         contextSetPlayQueue([queueItem]);
+        // Notify parent to update URL
+        if (typeof onPlay === 'function') onPlay(episode);
         return;
       }
       

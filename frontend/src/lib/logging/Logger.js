@@ -24,6 +24,17 @@ let singleton = null;
 let config = { ...DEFAULT_OPTIONS };
 let wsTransport = null;
 
+// Sampling state for rate-limited logging (module-level, shared across instances)
+let samplingState = new Map();
+const WINDOW_MS = 60_000;
+
+/**
+ * Reset sampling state (for testing)
+ */
+export const resetSamplingState = () => {
+  samplingState = new Map();
+};
+
 const formatArg = (arg) => {
   if (typeof arg === 'string') return arg;
   try { return JSON.stringify(arg); }
@@ -96,6 +107,63 @@ const emit = (level, eventName, data = {}, options = {}) => {
 };
 
 /**
+ * Accumulate data for aggregation
+ */
+const accumulateData = (aggregated, data) => {
+  for (const [key, value] of Object.entries(data)) {
+    if (typeof value === 'number') {
+      aggregated[key] = (aggregated[key] || 0) + value;
+    } else if (typeof value === 'string') {
+      if (!aggregated[key]) aggregated[key] = {};
+      const counts = aggregated[key];
+      if (Object.keys(counts).length < 20) {
+        counts[value] = (counts[value] || 0) + 1;
+      } else {
+        counts['__other__'] = (counts['__other__'] || 0) + 1;
+      }
+    }
+  }
+};
+
+/**
+ * Emit a sampled log event with rate limiting
+ */
+const emitSampled = (eventName, data = {}, options = {}) => {
+  const { maxPerMinute = 20, aggregate = true } = options;
+  const now = Date.now();
+
+  let state = samplingState.get(eventName);
+
+  // New window or first call
+  if (!state || now - state.windowStart >= WINDOW_MS) {
+    // Flush previous window's aggregate
+    if (state?.skipped > 0 && aggregate) {
+      emit('info', `${eventName}.aggregated`, {
+        sampledCount: state.count,
+        skippedCount: state.skipped,
+        window: '60s',
+        aggregated: state.aggregated
+      });
+    }
+    state = { count: 0, skipped: 0, aggregated: {}, windowStart: now };
+    samplingState.set(eventName, state);
+  }
+
+  // Within budget: log normally
+  if (state.count < maxPerMinute) {
+    state.count++;
+    emit('info', eventName, data);
+    return;
+  }
+
+  // Over budget: accumulate for summary
+  state.skipped++;
+  if (aggregate) {
+    accumulateData(state.aggregated, data);
+  }
+};
+
+/**
  * Create a child logger with additional context
  */
 const child = (childContext = {}) => {
@@ -106,6 +174,7 @@ const child = (childContext = {}) => {
     info: (eventName, data, opts) => emit('info', eventName, data, { ...opts, context: { ...parentContext, ...childContext, ...(opts?.context || {}) } }),
     warn: (eventName, data, opts) => emit('warn', eventName, data, { ...opts, context: { ...parentContext, ...childContext, ...(opts?.context || {}) } }),
     error: (eventName, data, opts) => emit('error', eventName, data, { ...opts, context: { ...parentContext, ...childContext, ...(opts?.context || {}) } }),
+    sampled: emitSampled,
     child: (ctx) => child({ ...parentContext, ...childContext, ...ctx })
   };
 };
@@ -139,6 +208,7 @@ export const getLogger = () => {
       info: (eventName, data, opts) => emit('info', eventName, data, opts),
       warn: (eventName, data, opts) => emit('warn', eventName, data, opts),
       error: (eventName, data, opts) => emit('error', eventName, data, opts),
+      sampled: emitSampled,
       child,
       configure
     };

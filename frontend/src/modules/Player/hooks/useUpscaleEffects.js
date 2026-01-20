@@ -150,9 +150,24 @@ export function useUpscaleEffects({
       return { upscaleRatio: 1, blurPx: 0, shouldBlur: false, shouldCRT: false };
     }
 
-    const scaleX = displayDimensions.width / srcDimensions.width;
-    const scaleY = displayDimensions.height / srcDimensions.height;
-    const ratio = Math.max(scaleX, scaleY);
+    // Calculate effective rendered dimensions accounting for object-fit: contain
+    // getBoundingClientRect returns element bounds, not actual video render area
+    const srcAspect = srcDimensions.width / srcDimensions.height;
+    const displayAspect = displayDimensions.width / displayDimensions.height;
+
+    let effectiveWidth, effectiveHeight;
+    if (srcAspect > displayAspect) {
+      // Letterboxed (horizontal black bars) - width fills container
+      effectiveWidth = displayDimensions.width;
+      effectiveHeight = displayDimensions.width / srcAspect;
+    } else {
+      // Pillarboxed (vertical black bars) - height fills container (portrait videos)
+      effectiveHeight = displayDimensions.height;
+      effectiveWidth = displayDimensions.height * srcAspect;
+    }
+
+    // Now calculate actual scale ratio using effective dimensions
+    const ratio = effectiveWidth / srcDimensions.width;
 
     const isUpscaled = ratio > 1.05; // small threshold to avoid floating point issues
     const isLowRes = srcDimensions.height <= CRT_MAX_HEIGHT;
@@ -171,7 +186,14 @@ export function useUpscaleEffects({
     };
   })();
 
-  const isActive = isStabilized && (shouldBlur || shouldCRT);
+  // Check loop state synchronously - looped videos skip upscale effects for performance
+  const isLooping = (() => {
+    const videoEl = getVideoElement();
+    return videoEl?.loop === true;
+  })();
+
+  // Disable effects for looped videos (performance optimization for continuous playback)
+  const isActive = isStabilized && !isLooping && (shouldBlur || shouldCRT);
 
   // Build effect styles for video element
   const effectStyles = {};
@@ -185,15 +207,24 @@ export function useUpscaleEffects({
     className: `upscale-crt-overlay ${isActive && shouldCRT ? 'active' : ''}`
   };
 
+  // Calculate effective dimensions for debug (repeat logic for debug output)
+  const srcAspect = srcDimensions.width / srcDimensions.height || 1;
+  const displayAspect = displayDimensions.width / displayDimensions.height || 1;
+  const effectiveDimensions = srcAspect > displayAspect
+    ? { width: displayDimensions.width, height: Math.round(displayDimensions.width / srcAspect) }
+    : { width: Math.round(displayDimensions.height * srcAspect), height: displayDimensions.height };
+
   // Debug info for development
   const debug = {
     srcDimensions,
     displayDimensions,
+    effectiveDimensions,
     upscaleRatio: upscaleRatio.toFixed(2),
     blurPx: blurPx.toFixed(2),
     shouldBlur,
     shouldCRT,
     isStabilized,
+    isLooping,
     preset,
     presetConfig
   };
