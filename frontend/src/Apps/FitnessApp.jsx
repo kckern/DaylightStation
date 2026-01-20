@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { MantineProvider, Paper, Title, Group, Text, Alert, Grid } from '@mantine/core';
 import '@mantine/core/styles.css';
 import "./FitnessApp.scss";
-import { DaylightAPI } from '../lib/api.mjs';
+import { DaylightAPI, DaylightMediaPath } from '../lib/api.mjs';
 import FitnessMenu from '../modules/Fitness/FitnessMenu.jsx';
 import FitnessNavbar from '../modules/Fitness/FitnessNavbar.jsx';
 import FitnessShow from '../modules/Fitness/FitnessShow.jsx';
@@ -434,25 +434,43 @@ const FitnessApp = () => {
   // Handle /fitness/play/:id route
   const handlePlayFromUrl = async (episodeId) => {
     try {
-      const response = await fetch(`/api/plex/metadata/${episodeId}`);
-      if (!response.ok) {
-        logger.error('fitness-play-url-fetch-failed', { episodeId, status: response.status });
-        navigate('/fitness', { replace: true });
+      // Fetch episode metadata from API to get labels for governance
+      const response = await DaylightAPI(`media/plex/info/${episodeId}`);
+
+      if (!response || response.error) {
+        logger.warn('fitness-play-url-no-metadata', { episodeId, error: response?.error });
+        // Fallback to basic queue item without labels
+        const fallbackItem = {
+          id: episodeId,
+          plex: episodeId,
+          type: 'episode',
+          title: `Episode ${episodeId}`,
+          videoUrl: DaylightMediaPath(`media/plex/url/${episodeId}`),
+          thumb_id: episodeId,
+          image: DaylightMediaPath(`media/plex/img/${episodeId}`)
+        };
+        setFitnessPlayQueue([fallbackItem]);
+        logger.info('fitness-play-url-started-fallback', { episodeId });
         return;
       }
 
-      const metadata = await response.json();
+      // Build queue item from API response (includes labels for governance)
       const queueItem = {
-        id: episodeId,
-        plex: episodeId,
-        type: metadata.type || 'episode',
-        title: metadata.title,
-        showId: metadata.grandparentRatingKey || metadata.parentRatingKey,
-        thumb: metadata.thumb
+        id: response.key || episodeId,
+        plex: response.key || episodeId,
+        type: response.type || 'episode',
+        title: response.title || `Episode ${episodeId}`,
+        show: response.show,
+        season: response.season,
+        videoUrl: response.media_url || DaylightMediaPath(`media/plex/url/${episodeId}`),
+        thumb_id: response.thumb_id || episodeId,
+        image: response.image || DaylightMediaPath(`media/plex/img/${episodeId}`),
+        labels: response.labels || [],
+        summary: response.summary
       };
 
       setFitnessPlayQueue([queueItem]);
-      logger.info('fitness-play-url-started', { episodeId, showId: queueItem.showId });
+      logger.info('fitness-play-url-started', { episodeId, hasLabels: queueItem.labels.length > 0 });
     } catch (err) {
       logger.error('fitness-play-url-error', { episodeId, error: err.message });
       navigate('/fitness', { replace: true });
@@ -824,11 +842,17 @@ const FitnessApp = () => {
                   <FitnessPluginContainer pluginId="fitness_session" mode="standalone" />
                 )}
                 {currentView === 'show' && selectedShow && (
-                  <FitnessShow 
-                    showId={selectedShow} 
+                  <FitnessShow
+                    showId={selectedShow}
                     onBack={handleBackToMenu}
                     viewportRef={viewportRef}
                     setFitnessPlayQueue={setFitnessPlayQueue}
+                    onPlay={(episode) => {
+                      const episodeId = episode.plex || episode.id;
+                      if (episodeId) {
+                        navigate(`/fitness/play/${episodeId}`, { replace: true });
+                      }
+                    }}
                   />
                 )}
                 {currentView === 'menu' && (
