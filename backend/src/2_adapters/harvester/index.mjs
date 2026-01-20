@@ -15,7 +15,6 @@ export { YamlLifelogStore } from './YamlLifelogStore.mjs';
 export { YamlAuthStore } from './YamlAuthStore.mjs';
 
 // Fitness Harvesters
-export { GarminHarvester } from './fitness/GarminHarvester.mjs';
 export { StravaHarvester } from './fitness/StravaHarvester.mjs';
 export { WithingsHarvester } from './fitness/WithingsHarvester.mjs';
 export { FitnessSyncerAdapter } from './fitness/FitnessSyncerAdapter.mjs';

@@ -28,7 +28,6 @@ const LEGACY_BUCKETS = {
   cronDaily: [
     "../lib/youtube.mjs",
     "../lib/fitsync.mjs",
-    "../lib/garmin.mjs",
     "../lib/health.mjs",
     "../lib/letterboxd.mjs",
     "../lib/goodreads.mjs",
