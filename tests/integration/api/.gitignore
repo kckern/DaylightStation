@@ -1,0 +1,9 @@
+# API Integration Test Baselines
+# Contains captured responses from real data - personal/sensitive
+_baselines/
+
+# Any stray baseline files
+*.baseline.json
+
+# Local test environment config
+.test-env.json

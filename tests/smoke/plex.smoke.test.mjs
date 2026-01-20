@@ -6,7 +6,7 @@ describe('Plex connectivity', () => {
 
   beforeAll(async () => {
     // Dynamic import to handle ESM config loading
-    const { configService } = await import('../../backend/lib/config/ConfigService.mjs');
+    const { configService } = await import('../../backend/_legacy/lib/config/ConfigService.mjs');
 
     // Get Plex config from household auth or environment
     const plexAuth = configService.getHouseholdAuth('plex');

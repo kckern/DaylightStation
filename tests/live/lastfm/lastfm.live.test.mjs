@@ -8,8 +8,8 @@
  * - Last.fm username in users/{username}/auth/lastfm.yml
  */
 
-import { configService } from '../../../backend/lib/config/ConfigService.mjs';
-import getScrobbles from '../../../backend/lib/lastfm.mjs';
+import { configService } from '../../../backend/_legacy/lib/config/index.mjs';
+import getScrobbles from '../../../backend/_legacy/lib/lastfm.mjs';
 
 describe('Last.fm Live Integration', () => {
   beforeAll(() => {
