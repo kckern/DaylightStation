@@ -5,7 +5,6 @@
  * Data stored at: users/{username}/lifelog/
  *   - weight.yml
  *   - strava.yml
- *   - garmin.yml
  *   - fitness.yml
  *   - nutrition/nutriday.yml
  *   - health.yml
@@ -109,16 +108,6 @@ export class YamlHealthStore extends IHealthDataStore {
   }
 
   /**
-   * Load Garmin activity data for a user
-   * @param {string} userId
-   * @returns {Promise<Object>} Garmin data keyed by date
-   */
-  async loadGarminData(userId) {
-    this.#logger.debug?.('health.store.loadGarmin', { userId });
-    return this.#loadUserFile(userId, 'garmin');
-  }
-
-  /**
    * Load FitnessSyncer data for a user
    * @param {string} userId
    * @returns {Promise<Object>} Fitness data keyed by date
@@ -199,18 +188,16 @@ export class YamlHealthStore extends IHealthDataStore {
    * Get all workouts for a specific date
    * @param {string} userId
    * @param {string} date - YYYY-MM-DD
-   * @returns {Promise<Object>} { strava: [], garmin: [], fitness: [] }
+   * @returns {Promise<Object>} { strava: [], fitness: [] }
    */
   async getWorkoutsForDate(userId, date) {
-    const [strava, garmin, fitness] = await Promise.all([
+    const [strava, fitness] = await Promise.all([
       this.loadStravaData(userId),
-      this.loadGarminData(userId),
       this.loadFitnessData(userId)
     ]);
 
     return {
       strava: strava[date] || [],
-      garmin: garmin[date] || [],
       fitness: fitness[date]?.activities || []
     };
   }
