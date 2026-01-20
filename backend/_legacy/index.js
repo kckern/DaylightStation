@@ -1,38 +1,36 @@
+/**
+ * Legacy Backend Entry Point
+ * Standalone entry point for running legacy backend directly.
+ * For toggle-based routing, use backend/index.js instead.
+ */
+
 import express from 'express';
-import { existsSync, readFileSync } from 'fs';
-import { parse } from 'yaml';
-import path, { join } from 'path';
-import cors from 'cors'; // Step 2: Import cors
-import request from 'request'; // Import the request module
-import { createWebsocketServer } from './routers/websocket.mjs';
+import { existsSync } from 'fs';
 import { createServer } from 'http';
-import { loadFile } from './lib/io.mjs';
-import 'dotenv/config'; // Load .env file
-import { initMqttSubscriber } from './lib/mqtt.mjs';
-import { userDataService } from './lib/config/UserDataService.mjs';
+import path, { join } from 'path';
+import cors from 'cors';
+import 'dotenv/config';
 
 // Config path resolver and loader
 import { resolveConfigPaths, getConfigFilePaths } from './lib/config/pathResolver.mjs';
-import { loadAllConfig, logConfigSummary } from './lib/config/loader.mjs';
-
-// ConfigService v2 (primary config system)
-import { initConfigService, ConfigValidationError, configService } from './lib/config/index.mjs';
-
-// Routing toggle system for legacy/new route migration
-import { loadRoutingConfig, createRoutingMiddleware, ShimMetrics } from '../src/0_infrastructure/routing/index.mjs';
-import { allShims } from '../src/4_api/shims/index.mjs';
-import { createShimsRouter } from '../src/4_api/routers/admin/shims.mjs';
-
+import { initConfigService, ConfigValidationError } from './lib/config/index.mjs';
+import { hydrateProcessEnvFromConfigs } from './lib/logging/config.js';
 
 // Logging system
-import { initializeLogging, getDispatcher } from './lib/logging/dispatcher.js';
+import { initializeLogging } from './lib/logging/dispatcher.js';
 import { createConsoleTransport, createLogglyTransport, createFileTransport } from './lib/logging/transports/index.js';
 import { createLogger } from './lib/logging/logger.js';
-import { ingestFrontendLogs } from './lib/logging/ingestion.js';
-import { loadLoggingConfig, resolveLoggerLevel, getLoggingTags, hydrateProcessEnvFromConfigs, resolveLogglyToken } from './lib/logging/config.js';
+import { loadLoggingConfig, resolveLoggerLevel, getLoggingTags, resolveLogglyToken } from './lib/logging/config.js';
+
+// App factory
+import { createApp } from './app.mjs';
 
 const __dirname = path.dirname(new URL(import.meta.url).pathname);
 const isDocker = existsSync('/.dockerenv');
+
+// =============================================================================
+// Config Initialization
+// =============================================================================
 
 // Resolve config paths (from env vars, mount, or fallback)
 const configPaths = resolveConfigPaths({ isDocker, codebaseDir: join(__dirname, '..') });
@@ -66,6 +64,9 @@ try {
   throw err;
 }
 
+// =============================================================================
+// Logging Initialization
+// =============================================================================
 
 let loggingConfig = loadLoggingConfig();
 
@@ -105,409 +106,53 @@ if (logglyToken && logglySubdomain) {
 }
 
 // Create the root logger using the new system
-let rootLogger = createLogger({
+const logger = createLogger({
   source: 'backend',
   app: 'api',
   context: { env: process.env.NODE_ENV }
 });
 
-const app = express();
-app.use(cors()); // Step 3: Enable CORS for all routes
-app.use(express.json({ limit: '50mb' })); // Parse JSON request bodies with increased limit for voice memos
-app.use(express.urlencoded({ limit: '50mb', extended: true })); // Parse URL-encoded bodies
+// =============================================================================
+// Main Application
+// =============================================================================
 
-// Create HTTP server
-const server = createServer(app);
+async function main() {
+  // Create HTTP server
+  const server = createServer();
 
-// Initialize routing toggle system for legacy/new route migration
-const shimMetrics = new ShimMetrics();
-let routingConfig;
-try {
-  routingConfig = loadRoutingConfig('./backend/config/routing.yml', allShims);
-  console.log('[routing] Config loaded successfully');
-} catch (error) {
-  console.error('[routing] Config error:', error.message);
-  console.log('[routing] Defaulting all routes to legacy');
-  routingConfig = { default: 'legacy', routing: {} };
-}
+  // Create app using factory
+  const app = await createApp({ server, logger, configPaths, configExists });
 
-// Create separate routers for legacy and new implementations
-const legacyRouter = express.Router();
-const newRouter = express.Router();
+  // Mount app on server
+  server.on('request', app);
 
-
-async function initializeApp() {
-  // Create WebSocket server FIRST, before any Express routes
-  // createWebsocketServer(server);
-
-  // Exclude WebSocket paths from all Express middleware
-  app.use((req, res, next) => {
-    if (req.path.startsWith('/ws')) {
-      return next('route'); // Skip all remaining middleware for this route
-    }
-    next();
-  });
-
-  if (configExists) {
-
-    // Load all config using unified loader
-    const configResult = loadAllConfig({
-      configDir: configPaths.configDir,
-      dataDir: configPaths.dataDir,
-      isDocker,
-      isDev: !isDocker
-    });
-
-    // Populate process.env with merged config
-    process.env = { 
-      ...process.env, 
-      isDocker, 
-      ...configResult.config
-    };
-    
-    loggingConfig = loadLoggingConfig();
-
-    // Update dispatcher level and component levels if needed
-    dispatcher.setLevel(resolveLoggerLevel('backend', loggingConfig));
-    dispatcher.componentLevels = loggingConfig.loggers || {};
-
-    // Recreate root logger with updated context (new system)
-    rootLogger = createLogger({
-      source: 'backend',
-      app: 'api',
-      context: { env: process.env.NODE_ENV }
-    });
-    
-    // Log config loading summary
-    logConfigSummary(configResult, rootLogger);
-
-    // Validate configuration and log status
-    const { validateConfig, getConfigStatusSummary } = await import('./lib/config/healthcheck.mjs');
-    const configValidation = validateConfig({ logger: rootLogger, verbose: false });
-    if (!configValidation.valid) {
-      rootLogger.error('config.startup.invalid', { 
-        issues: configValidation.issues,
-        warnings: configValidation.warnings 
-      });
-    }
-    // Log config summary in dev mode
-    if (!isDocker) {
-      console.log('\n' + getConfigStatusSummary() + '\n');
-    }
-
-    // Initialize WebSocket server after config is loaded
-    await createWebsocketServer(server);
-
-    // Initialize MQTT subscriber for vibration sensors (fitness)
-    try {
-      const householdId = configService.getDefaultHouseholdId();
-      const householdConfig = userDataService.readHouseholdAppData(householdId, 'fitness', 'config');
-      let legacyFitnessConfig = {};
-      const dataRoot = process.env.path?.data;
-      const legacyYml = dataRoot && path.join(dataRoot, 'config/apps/fitness.yml');
-      const legacyYaml = dataRoot && path.join(dataRoot, 'config/apps/fitness.yaml');
-      if ((legacyYml && existsSync(legacyYml)) || (legacyYaml && existsSync(legacyYaml))) {
-        legacyFitnessConfig = loadFile('config/apps/fitness') || {};
-      }
-      const equipmentConfig = householdConfig?.equipment || legacyFitnessConfig.equipment || [];
-
-      if (process.env.mqtt) {
-        initMqttSubscriber(equipmentConfig);
-      } else {
-        rootLogger.warn('mqtt.not_configured', { message: 'process.env.mqtt missing; skipping MQTT init' });
-      }
-    } catch (err) {
-      rootLogger.error('mqtt.init.failed', { error: err?.message });
-    }
-
-    // Import routers dynamically after configuration is set
-    const { default: cron } = await import('./routers/cron.mjs');
-    const { default: fetchRouter } = await import('./routers/fetch.mjs');
-    const { default: harvestRouter } = await import('./routers/harvest.mjs');
-    // JournalistRouter now handled in api.mjs for proxy_toggle support
-    const { default: homeRouter } = await import('./routers/home.mjs');
-    const { default: mediaRouter } = await import('./routers/media.mjs');
-    const { default: healthRouter } = await import('./routers/health.mjs');
-    const { default: lifelogRouter } = await import('./routers/lifelog.mjs');
-    const { default: fitnessRouter } = await import('./routers/fitness.mjs');
-    const { default: printerRouter } = await import('./routers/printer.mjs');
-    const { default: gratitudeRouter } = await import('./routers/gratitude.mjs');
-    const { default: plexProxyRouter } = await import('./routers/plexProxy.mjs');
-
-
-    const { default: exe } = await import('./routers/exe.mjs');
-    const { default: tts } = await import('./routers/tts.mjs');
-
-    // Mount admin shims router for monitoring shim usage (before routing middleware)
-    app.use('/admin/shims', createShimsRouter({ metrics: shimMetrics }));
-    rootLogger.info('routing.toggle.initialized', {
-      default: routingConfig.default,
-      routes: Object.keys(routingConfig.routing || {}),
-      adminPath: '/admin/shims'
-    });
-
-    // Content domain (new DDD structure)
-    const { createContentRegistry, createWatchStore, createFinanceServices, createFinanceApiRouter, createEntropyServices, createEntropyApiRouter } = await import('../src/0_infrastructure/bootstrap.mjs');
-    const { createContentRouter } = await import('../src/4_api/routers/content.mjs');
-    const { createProxyRouter } = await import('../src/4_api/routers/proxy.mjs');
-    const { createListRouter } = await import('../src/4_api/routers/list.mjs');
-    const { createPlayRouter } = await import('../src/4_api/routers/play.mjs');
-
-    // Backend API
-    app.post('/api/logs', (req, res) => {
-      const body = req.body;
-      const entries = Array.isArray(body) ? body : [body];
-      const ingestLogger = rootLogger.child({ module: 'http-logs' });
-      const allowedLevels = new Set(['debug', 'info', 'warn', 'error']);
-      let accepted = 0;
-
-      for (const entry of entries) {
-        if (!entry || typeof entry.event !== 'string') continue;
-        const level = String(entry.level || 'info').toLowerCase();
-        const safeLevel = allowedLevels.has(level) ? level : 'info';
-        const data = entry.data || entry.payload || {};
-        const context = entry.context || {};
-        const tags = entry.tags || [];
-        ingestLogger[safeLevel](entry.event, data, {
-          message: entry.message,
-          context,
-          tags,
-          source: entry.source || 'http-logs'
-        });
-        accepted += 1;
-      }
-
-      if (!accepted) {
-        return res.status(400).json({ status: 'error', message: 'No valid log events' });
-      }
-      return res.status(202).json({ status: 'ok', accepted });
-    });
-    app.get('/debug', (_, res) => res.json({ process: { __dirname, env: process.env } }));
-    app.get('/debug/log', (req, res) => {
-      const msg = req.query.message || 'Test log from /debug/log';
-      rootLogger.info('debug.log.test', { message: msg, type: 'info' });
-      rootLogger.warn('debug.log.test', { message: msg, type: 'warn' });
-      rootLogger.error('debug.log.test', { message: msg, type: 'error' });
-      res.json({ status: 'ok', message: 'Logs emitted', content: msg });
-    });
-
-    // Logging health/metrics endpoint
-    app.get('/api/logging/health', (_, res) => {
-      const metrics = dispatcher.getMetrics();
-      const transports = dispatcher.getTransportNames();
-      res.json({
-        status: 'ok',
-        dispatcher: metrics,
-        transports: transports.map(name => ({ name, status: 'ok' })),
-        level: loggingConfig.defaultLevel || 'info'
-      });
-    });
-    
-    // Health check endpoints
-    app.get('/api/ping', (_, res) => res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() }));
-    app.get('/api/status', (_, res) => res.status(200).json({ 
-      status: 'ok', 
-      uptime: process.uptime(), 
-      timestamp: new Date().toISOString(),
-      serverdata: loadFile("state/cron")
-    }));
-    app.get('/api/status/nas', (_, res) => res.status(200).json({ 
-      status: 'ok', 
-      accessible: true,
-      timestamp: new Date().toISOString()
-    }));
-    
-    // Helper to get household head user
-    const getHouseholdHead = () => {
-      const dataPath = process.env.path?.data || '/usr/src/app/data';
-      const hid = process.env.household_id || 'default';
-      const householdPath = `${dataPath}/households/${hid}/household.yml`;
-      try {
-        const householdData = parse(readFileSync(householdPath, 'utf8'));
-        return householdData?.head || '{username}';
-      } catch (err) {
-        rootLogger.warn('household.head.error', { error: err.message });
-        return '{username}';
-      }
-    };
-    
-    // Redirect /data/lifelog/* to /data/users/{head}/lifelog/*
-    // This allows frontend to use simple paths without specifying user
-    app.get('/data/lifelog/*', (req, res) => {
-      const headUser = getHouseholdHead();
-      const remainder = req.params[0];
-      res.redirect(`/data/users/${headUser}/lifelog/${remainder}`);
-    });
-    
-    // Redirect household-level data to households/{hid}/shared/
-    app.get('/data/weather', (req, res) => {
-      const hid = process.env.household_id || 'default';
-      res.redirect(`/data/households/${hid}/shared/weather`);
-    });
-    app.get('/data/events', (req, res) => {
-      const hid = process.env.household_id || 'default';
-      res.redirect(`/data/households/${hid}/shared/events`);
-    });
-    app.get('/data/calendar', (req, res) => {
-      const hid = process.env.household_id || 'default';
-      res.redirect(`/data/households/${hid}/shared/calendar`);
-    });
-
-    // Legacy finance endpoint shims (redirect to new API - must be before legacy routers)
-    app.get('/data/budget', (req, res) => res.redirect(307, '/api/finance/data'));
-    app.get('/data/budget/daytoday', (req, res) => res.redirect(307, '/api/finance/data/daytoday'));
-    app.get('/harvest/budget', (req, res) => res.redirect(307, '/api/finance/refresh'));
-    app.post('/harvest/budget', (req, res) => res.redirect(307, '/api/finance/refresh'));
-
-    app.use('/data', fetchRouter);
-
-    app.use('/cron', cron);
-    app.use("/harvest", harvestRouter);
-    // JournalistRouter now handled via /api/journalist in api.mjs
-    app.use("/home", homeRouter);
-
-    // Create watch state store for progress tracking (needed by legacy media/log)
-    const watchStatePath = process.env.path?.watchState || process.env.WATCH_STATE_PATH || '/data/media_memory';
-    const watchStore = createWatchStore({ watchStatePath });
-
-    // Wire legacy /media/log endpoint to use new WatchState system
-    const { legacyMediaLogMiddleware } = await import('../src/4_api/middleware/legacyCompat.mjs');
-    app.post('/media/log', legacyMediaLogMiddleware(watchStore));
-
-    app.use("/media", mediaRouter);
-    app.use("/api/health", healthRouter);
-    app.use("/api/lifelog", lifelogRouter);
-    app.use("/api/fitness", fitnessRouter);
-    app.use("/exe", exe);
-    app.use("/print", printerRouter);
-    app.use("/tts", tts);
-    app.use("/api/gratitude", gratitudeRouter);
-    app.use("/plex_proxy", plexProxyRouter);
-
-    // Initialize content registry and mount content router (new DDD structure)
-    const mediaBasePath = process.env.path?.media || process.env.MEDIA_PATH || '/data/media';
-    const dataBasePath = process.env.path?.data || process.env.DATA_PATH || '/data';
-    const householdId = configService.getDefaultHouseholdId() || 'default';
-    const householdDir = userDataService.getHouseholdDir(householdId) || `${dataBasePath}/households/${householdId}`;
-    const plexConfig = process.env.media?.plex ? {
-      host: process.env.media.plex.host,
-      token: process.env.media.plex.token
-    } : null;
-    const watchlistPath = `${householdDir}/state/lists.yml`;
-    const contentRegistry = createContentRegistry({
-      mediaBasePath,
-      plex: plexConfig,
-      dataPath: dataBasePath,
-      watchlistPath
-    });
-
-    app.use('/api/content', createContentRouter(contentRegistry, watchStore));
-    rootLogger.info('content.mounted', { path: '/api/content', mediaBasePath, plexEnabled: !!plexConfig });
-
-    // Mount proxy router for streaming and thumbnails
-    app.use('/proxy', createProxyRouter({ registry: contentRegistry }));
-    rootLogger.info('proxy.mounted', { path: '/proxy' });
-
-    // Mount list and play routers for Content Domain API
-    app.use('/api/list', createListRouter({ registry: contentRegistry }));
-    app.use('/api/play', createPlayRouter({ registry: contentRegistry, watchStore }));
-    rootLogger.info('content.api.mounted', { paths: ['/api/list', '/api/play'] });
-
-    // Finance domain (new DDD structure)
-    const financeServices = createFinanceServices({
-      dataRoot: dataBasePath,
-      defaultHouseholdId: householdId,
-      buxfer: process.env.finance?.buxfer ? {
-        email: process.env.finance.buxfer.email,
-        password: process.env.finance.buxfer.password
-      } : null,
-      // AI gateway can be added when needed for transaction categorization
-      logger: rootLogger.child({ module: 'finance' })
-    });
-    app.use('/api/finance', createFinanceApiRouter({
-      financeServices,
-      configService,
-      logger: rootLogger.child({ module: 'finance-api' })
-    }));
-    rootLogger.info('finance.api.mounted', { path: '/api/finance', buxferConfigured: !!financeServices.buxferAdapter });
-
-    // Entropy domain (new DDD structure)
-    const { userLoadFile, userLoadCurrent } = await import('./lib/io.mjs');
-    const ArchiveService = (await import('./lib/ArchiveService.mjs')).default;
-    const entropyServices = createEntropyServices({
-      io: { userLoadFile, userLoadCurrent },
-      archiveService: ArchiveService,
-      configService,
-      logger: rootLogger.child({ module: 'entropy' })
-    });
-    app.use('/api/entropy', createEntropyApiRouter({
-      entropyServices,
-      configService,
-      logger: rootLogger.child({ module: 'entropy-api' })
-    }));
-    rootLogger.info('entropy.api.mounted', { path: '/api/entropy' });
-
-    // Mount API router on main app for webhook routes (journalist, foodlog)
-    const { default: apiRouter } = await import('./api.mjs');
-    app.use("/api", apiRouter);
-
-
-    // Frontend
-    const frontendPath = join(__dirname, '../frontend/dist');
-    const frontendExists = existsSync(frontendPath);
-    if (frontendExists) {
-      // Serve the frontend from the root URL
-      app.use(express.static(frontendPath));
-
-      // Forward non-matching paths to frontend for React Router to handle, but skip /ws/* for WebSocket
-      app.get('*', (req, res, next) => {
-        if (req.path.startsWith('/ws')) {
-          // Let the WebSocket server handle this
-          return next();
-        }
-        res.sendFile(join(frontendPath, 'index.html'));
-      });
-    } else {
-      rootLogger.debug('frontend.dev.redirect', { path: frontendPath, target: 'http://localhost:3111' });
-      app.use('/', (req, res, next) => {
-        if (req.path.startsWith('/ws/')) return next();
-        res.redirect('http://localhost:3111');
-      });
-    }
-
-  } else {
-    app.get("*", function (req, res, next) {
-      if (req.path.startsWith('/ws/')) return next();
-      res.status(500).json({ error: 'This application is not configured yet. Ensure system.yml exists in the data mount.' });
-    });
-  }
-
-  // Start HTTP server
-  // Start HTTP server - bind to 0.0.0.0 to ensure IPv4 compatibility
-  // This prevents IPv6-only processes from intercepting localhost requests
+  // Start server
   const port = process.env.PORT || 3112;
   const host = '0.0.0.0';
   server.listen(port, host, () => {
-    rootLogger.info('server.started', { 
+    logger.info('server.started', {
       port,
       host,
+      mode: 'standalone-legacy',
       env: process.env.NODE_ENV || 'development',
       transports: dispatcher.getTransportNames()
     });
   });
 }
 
-// Initialize the app
-initializeApp().catch(err => rootLogger.error('server.init.failure', { error: err?.message, stack: err?.stack }));
+main().catch(err => {
+  console.error('[FATAL] Server initialization failed:', err.message, err.stack);
+  process.exit(1);
+});
 
+// =============================================================================
+// Secondary API App (port 3119)
+// =============================================================================
 
-
-// another app on port 3119 for an api
 const api_app = express();
-api_app.use(cors()); // Step 3: Enable CORS for all routes
+api_app.use(cors());
+
 async function initializeApiApp() {
-
-
   const { default: apiRouter } = await import('./api.mjs');
 
   api_app.use(express.json({
@@ -516,16 +161,10 @@ async function initializeApiApp() {
   }));
   api_app.use(express.urlencoded({ limit: '50mb', extended: true }));
   api_app.use('', apiRouter);  // Mount at root - subdomain already indicates API
-  
+
   api_app.listen(3119, () => {
-    rootLogger.info('api.secondary.listen', { port: 3119 });
+    logger.info('api.secondary.listen', { port: 3119 });
   });
-
-
-
-  
 }
 
-initializeApiApp().catch(err => rootLogger.error('api.secondary.init.failure', { message: err?.message || err, stack: err?.stack }));
-
-
+initializeApiApp().catch(err => logger.error('api.secondary.init.failure', { message: err?.message || err, stack: err?.stack }));
