@@ -104,6 +104,22 @@ export class PlexAdapter {
   }
 
   /**
+   * Extract labels from Plex Label array, normalizing to lowercase strings
+   * @param {Array} labelArray - Plex Label array (can be strings or {tag: string} objects)
+   * @returns {string[]} - Normalized lowercase label strings
+   * @private
+   */
+  _extractLabels(labelArray) {
+    if (!Array.isArray(labelArray)) return [];
+    const labels = [];
+    for (const label of labelArray) {
+      if (typeof label === 'string') labels.push(label.toLowerCase());
+      else if (label?.tag) labels.push(label.tag.toLowerCase());
+    }
+    return labels;
+  }
+
+  /**
    * Source identifier for this adapter
    * @returns {string}
    */
@@ -160,9 +176,11 @@ export class PlexAdapter {
   /**
    * Get a single item by ID
    * @param {string} id - Compound ID (plex:660440) or local ID
+   * @param {Object} [opts] - Options
+   * @param {Map} [opts.showLabelCache] - Cache for show labels to avoid redundant API calls in batch operations
    * @returns {Promise<PlayableItem|ListableItem|null>}
    */
-  async getItem(id) {
+  async getItem(id, opts = {}) {
     try {
       // Strip source prefix if present
       const localId = id.replace(/^plex:/, '');
@@ -176,17 +194,31 @@ export class PlexAdapter {
         // For episodes, also fetch show-level labels (governance labels are typically on the show)
         let showLabels = [];
         if (item.type === 'episode' && item.grandparentRatingKey) {
-          try {
-            const showData = await this.client.getMetadata(item.grandparentRatingKey);
-            const show = showData?.MediaContainer?.Metadata?.[0];
-            if (show?.Label && Array.isArray(show.Label)) {
-              for (const label of show.Label) {
-                if (typeof label === 'string') showLabels.push(label.toLowerCase());
-                else if (label?.tag) showLabels.push(label.tag.toLowerCase());
+          const showKey = item.grandparentRatingKey;
+          const cache = opts.showLabelCache;
+
+          // Check cache first if provided
+          if (cache && cache.has(showKey)) {
+            showLabels = cache.get(showKey);
+          } else {
+            try {
+              const showData = await this.client.getMetadata(showKey);
+              const show = showData?.MediaContainer?.Metadata?.[0];
+              showLabels = this._extractLabels(show?.Label);
+              // Store in cache if provided
+              if (cache) {
+                cache.set(showKey, showLabels);
+              }
+            } catch (err) {
+              // Debug log but don't fail - episode can still play without show labels
+              if (process.env.NODE_ENV !== 'production') {
+                console.debug('[PlexAdapter] Failed to fetch show labels:', err.message);
+              }
+              // Cache the empty result to avoid retrying failed fetches
+              if (cache) {
+                cache.set(showKey, []);
               }
             }
-          } catch (err) {
-            // Silently continue if show metadata fails - we still have episode labels
           }
         }
 
@@ -264,13 +296,27 @@ export class PlexAdapter {
    * @returns {Promise<PlayableItem[]>}
    */
   async resolvePlayables(id) {
+    // Create a cache for show labels to avoid N+1 queries when processing
+    // multiple episodes from the same show
+    const showLabelCache = new Map();
+    return this._resolvePlayablesWithCache(id, showLabelCache);
+  }
+
+  /**
+   * Internal recursive resolver with cache support
+   * @param {string} id - Container path or rating key
+   * @param {Map} showLabelCache - Cache for show labels
+   * @returns {Promise<PlayableItem[]>}
+   * @private
+   */
+  async _resolvePlayablesWithCache(id, showLabelCache) {
     try {
       // Strip source prefix if present
       const localId = id?.replace(/^plex:/, '') || '';
 
       // If ID is a numeric rating key, check if directly playable or a container
       if (/^\d+$/.test(localId)) {
-        const item = await this.getItem(localId);
+        const item = await this.getItem(localId, { showLabelCache });
         if (item?.mediaUrl) {
           // Directly playable (movie, episode, track)
           return [item];
@@ -280,7 +326,7 @@ export class PlexAdapter {
         const playables = [];
         for (const child of children) {
           const childId = child.id.replace('plex:', '');
-          const resolved = await this.resolvePlayables(childId);
+          const resolved = await this._resolvePlayablesWithCache(childId, showLabelCache);
           playables.push(...resolved);
         }
         return playables;
@@ -293,11 +339,11 @@ export class PlexAdapter {
       for (const item of list) {
         if (item.itemType === 'leaf') {
           const ratingKey = item.id.replace('plex:', '');
-          const playable = await this.getItem(ratingKey);
+          const playable = await this.getItem(ratingKey, { showLabelCache });
           if (playable?.mediaUrl) playables.push(playable);
         } else if (item.itemType === 'container') {
           const childId = item.id.replace('plex:', '');
-          const children = await this.resolvePlayables(childId);
+          const children = await this._resolvePlayablesWithCache(childId, showLabelCache);
           playables.push(...children);
         }
       }
@@ -365,13 +411,7 @@ export class PlexAdapter {
     }
 
     // Extract labels from item
-    const itemLabels = [];
-    if (Array.isArray(item.Label)) {
-      for (const label of item.Label) {
-        if (typeof label === 'string') itemLabels.push(label.toLowerCase());
-        else if (label?.tag) itemLabels.push(label.tag.toLowerCase());
-      }
-    }
+    const itemLabels = this._extractLabels(item.Label);
 
     // Merge with show-level labels if provided (for episodes)
     let allLabels = itemLabels;
@@ -761,13 +801,7 @@ export class PlexAdapter {
 
       // Extract labels from Plex Label objects only (not Collection or Genre)
       // Legacy: item['labels'] = item.Label? item.Label.map(x => x['tag'].toLowerCase()) : [];
-      const labels = [];
-      if (Array.isArray(item.Label)) {
-        for (const label of item.Label) {
-          if (typeof label === 'string') labels.push(label.toLowerCase());
-          else if (label?.tag) labels.push(label.tag.toLowerCase());
-        }
-      }
+      const labels = this._extractLabels(item.Label);
 
       return {
         title: item.title,
