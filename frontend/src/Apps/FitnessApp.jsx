@@ -230,7 +230,7 @@ const FitnessApp = () => {
       }
 
       // FPS + Governance correlation warning (key diagnostic)
-      if (videoFps?.fps !== null && videoFps.fps < 24 && governancePhase === 'warning') {
+      if (videoFps && videoFps.fps !== null && videoFps.fps < 24 && governancePhase === 'warning') {
         logger.warn('fitness.video_fps_warning_correlation', {
           fps: videoFps.fps,
           dropRate: videoFps.dropRate,
@@ -244,7 +244,7 @@ const FitnessApp = () => {
       }
 
       // FPS degradation warning (regardless of governance)
-      if (videoFps?.fps !== null && videoFps.fps < 20 && videoState === 'playing') {
+      if (videoFps && videoFps.fps !== null && videoFps.fps < 20 && videoState === 'playing') {
         logger.warn('fitness.video_fps_degraded', {
           fps: videoFps.fps,
           dropRate: videoFps.dropRate,
