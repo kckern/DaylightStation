@@ -232,7 +232,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     watchlistPath
   });
 
-  const watchStatePath = process.env.path?.watchState || process.env.WATCH_STATE_PATH || '/data/media_memory';
+  // Watch state path - use history/media_memory under data path (matches legacy structure)
+  const watchStatePath = process.env.path?.watchState || process.env.WATCH_STATE_PATH || `${dataBasePath}/history/media_memory`;
   const watchStore = createWatchStore({ watchStatePath });
 
   // Import IO functions for content domain
@@ -244,6 +245,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     loadFile: contentLoadFile,
     saveFile: contentSaveFile,
     cacheBasePath: mediaBasePath ? `${mediaBasePath}/img/cache` : null,
+    dataPath: dataBasePath,
+    mediaBasePath,
     logger: rootLogger.child({ module: 'content' })
   });
 
@@ -289,7 +292,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // Fitness domain
-  const homeAssistantConfig = process.env.home_assistant || {};
+  // Get Home Assistant config: host from system config, token from household auth file
+  const homeAssistantConfigEnv = process.env.home_assistant || {};
+  const homeAssistantAuth = configService.getHouseholdAuth('homeassistant') || {};
   const loadFitnessConfig = (hid) => {
     const targetHouseholdId = hid || configService.getDefaultHouseholdId();
     return userDataService.readHouseholdAppData(targetHouseholdId, 'fitness', 'config');
@@ -300,8 +305,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     mediaRoot: mediaBasePath,
     defaultHouseholdId: householdId,
     homeAssistant: {
-      baseUrl: homeAssistantConfig.base_url || homeAssistantConfig.host || '',
-      token: homeAssistantConfig.token || ''
+      baseUrl: homeAssistantConfigEnv.base_url || homeAssistantConfigEnv.host || '',
+      token: homeAssistantAuth.token || homeAssistantConfigEnv.token || ''
     },
     loadFitnessConfig,
     openaiApiKey: process.env.OPENAI_API_KEY || '',
@@ -312,79 +317,79 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Mount API Routers
   // ==========================================================================
 
-  // Health check endpoints
-  app.get('/api/ping', (_, res) => res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() }));
-  app.get('/api/status', (_, res) => res.status(200).json({
+  // Health check endpoints (no /api/ prefix - accessed via /api/v1/ping after router strips prefix)
+  app.get('/ping', (_, res) => res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() }));
+  app.get('/status', (_, res) => res.status(200).json({
     status: 'ok',
     uptime: process.uptime(),
     timestamp: new Date().toISOString()
   }));
 
   // Content domain routers
-  app.use('/api/content', contentRouters.content);
+  app.use('/content', contentRouters.content);
   app.use('/proxy', contentRouters.proxy);
-  app.use('/api/list', contentRouters.list);
-  app.use('/api/play', contentRouters.play);
-  app.use('/api/local-content', contentRouters.localContent);
+  app.use('/list', contentRouters.list);
+  app.use('/play', contentRouters.play);
+  app.use('/local-content', contentRouters.localContent);
   // NOTE: POST /media/log is handled by legacy backend (_legacy/routers/media.mjs)
   // Frontend calls /media/log (not /api/v1/media/log), so it routes to legacy.
   // When cutover is ready, migrate frontend to call /api/v1/play/log instead.
-  rootLogger.info('content.mounted', { paths: ['/api/content', '/proxy', '/api/list', '/api/play', '/api/local-content'] });
+  rootLogger.info('content.mounted', { paths: ['/content', '/proxy', '/list', '/play', '/local-content'] });
 
   // Health domain router
-  app.use('/api/health', createHealthApiRouter({
+  app.use('/health', createHealthApiRouter({
     healthServices,
     configService,
     logger: rootLogger.child({ module: 'health-api' })
   }));
-  rootLogger.info('health.mounted', { path: '/api/health' });
+  rootLogger.info('health.mounted', { path: '/health' });
 
   // Finance domain router
-  app.use('/api/finance', createFinanceApiRouter({
+  app.use('/finance', createFinanceApiRouter({
     financeServices,
     configService,
     logger: rootLogger.child({ module: 'finance-api' })
   }));
-  rootLogger.info('finance.mounted', { path: '/api/finance', buxferConfigured: !!financeServices.buxferAdapter });
+  rootLogger.info('finance.mounted', { path: '/finance', buxferConfigured: !!financeServices.buxferAdapter });
 
   // Legacy redirects for frontend compatibility
-  app.get('/data/budget', (req, res) => res.redirect(307, '/api/finance/data'));
-  app.get('/data/budget/daytoday', (req, res) => res.redirect(307, '/api/finance/data/daytoday'));
+  app.get('/data/budget', (req, res) => res.redirect(307, '/finance/data'));
+  app.get('/data/budget/daytoday', (req, res) => res.redirect(307, '/finance/data/daytoday'));
 
   // Entropy domain router - import legacy function for parity
   const { getEntropyReport: legacyGetEntropyReport } = await import('../_legacy/lib/entropy.mjs');
-  app.use('/api/entropy', createEntropyApiRouter({
+  app.use('/entropy', createEntropyApiRouter({
     entropyServices,
     configService,
     legacyGetEntropyReport,
     logger: rootLogger.child({ module: 'entropy-api' })
   }));
-  rootLogger.info('entropy.mounted', { path: '/api/entropy' });
+  rootLogger.info('entropy.mounted', { path: '/entropy' });
 
   // Lifelog domain router
-  app.use('/api/lifelog', createLifelogApiRouter({
+  app.use('/lifelog', createLifelogApiRouter({
     lifelogServices,
     configService,
     logger: rootLogger.child({ module: 'lifelog-api' })
   }));
-  rootLogger.info('lifelog.mounted', { path: '/api/lifelog' });
+  rootLogger.info('lifelog.mounted', { path: '/lifelog' });
 
   // Static assets router
   const imgBasePath = process.env.path?.img || `${mediaBasePath}/img`;
-  app.use('/api/static', createStaticApiRouter({
+  app.use('/static', createStaticApiRouter({
     imgBasePath,
     dataBasePath,
     logger: rootLogger.child({ module: 'static-api' })
   }));
-  rootLogger.info('static.mounted', { path: '/api/static' });
+  rootLogger.info('static.mounted', { path: '/static' });
 
   // Calendar domain router
-  app.use('/api/calendar', createCalendarApiRouter({
+  app.use('/calendar', createCalendarApiRouter({
     userDataService,
     configService,
     logger: rootLogger.child({ module: 'calendar-api' })
   }));
-  rootLogger.info('calendar.mounted', { path: '/api/calendar' });
+  rootLogger.info('calendar.mounted', { path: '/calendar' });
 
   // Hardware adapters (printer, TTS, MQTT sensors)
   const printerConfig = process.env.printer || {};
@@ -446,7 +451,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     rootLogger.warn?.('gratitude.canvas.import_failed', { error: e.message });
   }
 
-  app.use('/api/gratitude', createGratitudeApiRouter({
+  app.use('/gratitude', createGratitudeApiRouter({
     gratitudeServices,
     configService,
     broadcastToWebsockets: broadcastEvent,
@@ -454,17 +459,17 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     printerAdapter: hardwareAdapters.printerAdapter,
     logger: rootLogger.child({ module: 'gratitude-api' })
   }));
-  rootLogger.info('gratitude.mounted', { path: '/api/gratitude' });
+  rootLogger.info('gratitude.mounted', { path: '/gratitude' });
 
   // Fitness domain router
-  app.use('/api/fitness', createFitnessApiRouter({
+  app.use('/fitness', createFitnessApiRouter({
     fitnessServices,
     userService,
     userDataService,
     configService,
     logger: rootLogger.child({ module: 'fitness-api' })
   }));
-  rootLogger.info('fitness.mounted', { path: '/api/fitness' });
+  rootLogger.info('fitness.mounted', { path: '/fitness' });
 
   // Home automation domain
   const kioskConfig = process.env.kiosk || {};
@@ -472,8 +477,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const remoteExecConfig = process.env.remote_exec || process.env.remoteExec || {};
   const homeAutomationAdapters = createHomeAutomationAdapters({
     homeAssistant: {
-      baseUrl: homeAssistantConfig.base_url || homeAssistantConfig.host || '',
-      token: homeAssistantConfig.token || ''
+      baseUrl: homeAssistantConfigEnv.base_url || homeAssistantConfigEnv.host || '',
+      token: homeAssistantAuth.token || homeAssistantConfigEnv.token || ''
     },
     kiosk: {
       host: kioskConfig.host || '',
@@ -498,14 +503,14 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Import IO functions for state persistence
   const { loadFile, saveFile } = await import('../_legacy/lib/io.mjs');
 
-  app.use('/api/home', createHomeAutomationApiRouter({
+  app.use('/home', createHomeAutomationApiRouter({
     adapters: homeAutomationAdapters,
     loadFile,
     saveFile,
     householdId,
     logger: rootLogger.child({ module: 'home-automation-api' })
   }));
-  rootLogger.info('homeAutomation.mounted', { path: '/api/home' });
+  rootLogger.info('homeAutomation.mounted', { path: '/home' });
 
   // Messaging domain (provides telegramAdapter for chatbots)
   const telegramConfig = process.env.telegram || {};
@@ -545,13 +550,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'nutribot' })
   });
 
-  app.use('/api/nutribot', createNutribotApiRouter({
+  app.use('/nutribot', createNutribotApiRouter({
     nutribotServices,
     botId: nutribotConfig.telegram?.botId || telegramConfig.botId || '',
     gateway: messagingServices.telegramAdapter,
     logger: rootLogger.child({ module: 'nutribot-api' })
   }));
-  rootLogger.info('nutribot.mounted', { path: '/api/nutribot', telegramConfigured: !!messagingServices.telegramAdapter });
+  rootLogger.info('nutribot.mounted', { path: '/nutribot', telegramConfigured: !!messagingServices.telegramAdapter });
 
   // Journalist application
   const journalistConfig = process.env.journalist || {};
@@ -574,13 +579,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'journalist' })
   });
 
-  app.use('/api/journalist', createJournalistApiRouter({
+  app.use('/journalist', createJournalistApiRouter({
     journalistServices,
     configService,
     secretToken: journalistConfig.telegram?.secretToken || telegramConfig.secretToken || '',
     logger: rootLogger.child({ module: 'journalist-api' })
   }));
-  rootLogger.info('journalist.mounted', { path: '/api/journalist', telegramConfigured: !!messagingServices.telegramAdapter });
+  rootLogger.info('journalist.mounted', { path: '/journalist', telegramConfigured: !!messagingServices.telegramAdapter });
 
   // Scheduling domain - DDD replacement for legacy /cron
   const schedulingJobStore = new YamlJobStore({
@@ -618,12 +623,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     rootLogger.info('scheduler.disabled', { reason: 'Disabled by configuration' });
   }
 
-  app.use('/api/scheduling', createSchedulingRouter({
+  app.use('/scheduling', createSchedulingRouter({
     schedulerService,
     scheduler,
     logger: rootLogger.child({ module: 'scheduling-api' })
   }));
-  rootLogger.info('scheduling.mounted', { path: '/api/scheduling', schedulerEnabled: enableScheduler && scheduler.enabled });
+  rootLogger.info('scheduling.mounted', { path: '/scheduling', schedulerEnabled: enableScheduler && scheduler.enabled });
 
   // ==========================================================================
   // Frontend Static Files
@@ -641,7 +646,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   } else {
     rootLogger.warn('frontend.not_found', { path: frontendPath });
     app.use('/', (req, res, next) => {
-      if (req.path.startsWith('/ws/') || req.path.startsWith('/api/')) return next();
+      // Skip WebSocket paths - let them through to handlers
+      if (req.path.startsWith('/ws')) return next();
       res.status(502).json({ error: 'Frontend not available', detail: 'Frontend dist not found. Build frontend or check deployment.' });
     });
   }

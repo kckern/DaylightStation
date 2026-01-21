@@ -1,10 +1,15 @@
 // backend/src/2_adapters/content/local-content/LocalContentAdapter.mjs
-import fs from 'fs';
 import path from 'path';
-import yaml from 'js-yaml';
 import { generateReference } from 'scripture-guide';
 import { PlayableItem } from '../../../1_domains/content/capabilities/Playable.mjs';
 import { ListableItem } from '../../../1_domains/content/capabilities/Listable.mjs';
+import {
+  buildContainedPath,
+  loadContainedYaml,
+  loadYamlByPrefix,
+  listYamlFiles,
+  dirExists
+} from '../../../0_infrastructure/utils/FileIO.mjs';
 
 /**
  * Adapter for local content (talks, scriptures)
@@ -130,60 +135,32 @@ export class LocalContentAdapter {
   }
 
   /**
-   * Validate and normalize a path to ensure it stays within containment.
-   * @param {string} localId - The local ID/path component
-   * @param {string} subdir - Subdirectory within dataPath (e.g., 'talks')
-   * @returns {string|null} - Normalized path if valid, null if path escapes containment
-   * @private
-   */
-  _validatePath(localId, subdir) {
-    // Normalize the path to resolve any . or .. segments
-    const normalizedId = path.normalize(localId).replace(/^(\.\.[/\\])+/, '');
-    const basePath = path.resolve(this.dataPath, subdir);
-    const candidatePath = path.resolve(basePath, `${normalizedId}.yaml`);
-
-    // Ensure the resolved path stays within the base directory
-    if (!candidatePath.startsWith(basePath + path.sep) && candidatePath !== basePath) {
-      return null;
-    }
-
-    return candidatePath;
-  }
-
-  /**
    * @private
    */
   async _getTalk(localId) {
-    const yamlPath = this._validatePath(localId, 'talks');
-    if (!yamlPath) return null;
+    const basePath = path.resolve(this.dataPath, 'talks');
+    const metadata = loadContainedYaml(basePath, localId);
+    if (!metadata) return null;
 
-    try {
-      if (!fs.existsSync(yamlPath)) return null;
-      const content = fs.readFileSync(yamlPath, 'utf8');
-      const metadata = yaml.load(content);
+    const compoundId = `talk:${localId}`;
+    const mediaUrl = `/proxy/local-content/stream/talk/${localId}`;
 
-      const compoundId = `talk:${localId}`;
-      const mediaUrl = `/proxy/local-content/stream/talk/${localId}`;
-
-      return new PlayableItem({
-        id: compoundId,
-        source: this.source,
-        title: metadata.title || localId,
-        type: 'talk',
-        mediaType: 'video',
-        mediaUrl,
-        duration: metadata.duration || 0,
-        resumable: true,
-        description: metadata.description,
-        metadata: {
-          speaker: metadata.speaker,
-          date: metadata.date,
-          description: metadata.description
-        }
-      });
-    } catch (err) {
-      return null;
-    }
+    return new PlayableItem({
+      id: compoundId,
+      source: this.source,
+      title: metadata.title || localId,
+      type: 'talk',
+      mediaType: 'video',
+      mediaUrl,
+      duration: metadata.duration || 0,
+      resumable: true,
+      description: metadata.description,
+      metadata: {
+        speaker: metadata.speaker,
+        date: metadata.date,
+        description: metadata.description
+      }
+    });
   }
 
   /**
@@ -193,68 +170,61 @@ export class LocalContentAdapter {
    * @private
    */
   async _getScripture(localId) {
-    const yamlPath = this._validatePath(localId, 'scripture');
-    if (!yamlPath) return null;
+    const basePath = path.resolve(this.dataPath, 'scripture');
+    const rawData = loadContainedYaml(basePath, localId);
+    if (!rawData) return null;
 
-    try {
-      if (!fs.existsSync(yamlPath)) return null;
-      const content = fs.readFileSync(yamlPath, 'utf8');
-      const rawData = yaml.load(content);
+    // Parse path components: volume/version/verseId
+    const pathParts = localId.split('/');
+    const volume = rawData.volume || pathParts[0] || null;
+    const version = pathParts[1] || null;
+    const verseId = rawData.chapter || pathParts[2] || null;
 
-      // Parse path components: volume/version/verseId
-      const pathParts = localId.split('/');
-      const volume = rawData.volume || pathParts[0] || null;
-      const version = pathParts[1] || null;
-      const verseId = rawData.chapter || pathParts[2] || null;
-
-      // Use reference from YAML if present, otherwise generate from verse_id
-      let reference = rawData.reference || localId;
-      if (!rawData.reference && verseId && /^\d+$/.test(verseId)) {
-        try {
-          reference = generateReference(verseId).replace(/:1$/, '');
-        } catch (e) {
-          reference = localId;
-        }
+    // Use reference from YAML if present, otherwise generate from verse_id
+    let reference = rawData.reference || localId;
+    if (!rawData.reference && verseId && /^\d+$/.test(verseId)) {
+      try {
+        reference = generateReference(verseId).replace(/:1$/, '');
+      } catch (e) {
+        reference = localId;
       }
-
-      // Handle array format (actual scripture files are arrays of verse objects)
-      let verses = [];
-      if (Array.isArray(rawData)) {
-        verses = rawData.map(v => ({
-          verse_id: v.verse_id,
-          verse: v.verse,
-          text: v.text,
-          format: v.format,
-          headings: v.headings
-        }));
-      } else if (rawData.verses) {
-        verses = rawData.verses;
-      }
-
-      const compoundId = `scripture:${localId}`;
-      const mediaUrl = `/proxy/local-content/stream/scripture/${localId}`;
-
-      return new PlayableItem({
-        id: compoundId,
-        source: this.source,
-        title: reference,
-        type: 'scripture',
-        mediaType: 'audio',
-        mediaUrl,
-        duration: rawData.duration || 0,
-        resumable: true,
-        metadata: {
-          reference,
-          volume,
-          version,
-          chapter: verseId,
-          verses,
-          mediaFile: rawData.mediaFile
-        }
-      });
-    } catch (err) {
-      return null;
     }
+
+    // Handle array format (actual scripture files are arrays of verse objects)
+    let verses = [];
+    if (Array.isArray(rawData)) {
+      verses = rawData.map(v => ({
+        verse_id: v.verse_id,
+        verse: v.verse,
+        text: v.text,
+        format: v.format,
+        headings: v.headings
+      }));
+    } else if (rawData.verses) {
+      verses = rawData.verses;
+    }
+
+    const compoundId = `scripture:${localId}`;
+    const mediaUrl = `/proxy/local-content/stream/scripture/${localId}`;
+
+    return new PlayableItem({
+      id: compoundId,
+      source: this.source,
+      title: reference,
+      type: 'scripture',
+      mediaType: 'audio',
+      mediaUrl,
+      duration: rawData.duration || 0,
+      resumable: true,
+      metadata: {
+        reference,
+        volume,
+        version,
+        chapter: verseId,
+        verses,
+        mediaFile: rawData.mediaFile
+      }
+    });
   }
 
   /**
@@ -264,25 +234,19 @@ export class LocalContentAdapter {
    * @private
    */
   async _getTalkFolder(folderId) {
-    // Validate path stays within data directory
-    const normalizedId = path.normalize(folderId).replace(/^(\.\.[/\\])+/, '');
     const basePath = path.resolve(this.dataPath, 'talks');
-    const folderPath = path.resolve(basePath, normalizedId);
-
-    if (!folderPath.startsWith(basePath + path.sep) && folderPath !== basePath) {
-      return null;
-    }
+    const folderPath = buildContainedPath(basePath, folderId);
+    if (!folderPath) return null;
 
     try {
-      if (!fs.existsSync(folderPath) || !fs.statSync(folderPath).isDirectory()) {
+      if (!dirExists(folderPath)) {
         return null;
       }
 
-      const files = fs.readdirSync(folderPath).filter(f => f.endsWith('.yaml'));
+      const talkIds = listYamlFiles(folderPath);
       const children = [];
 
-      for (const file of files) {
-        const talkId = file.replace('.yaml', '');
+      for (const talkId of talkIds) {
         const item = await this._getTalk(`${folderId}/${talkId}`);
         if (item) children.push(item);
       }
@@ -307,41 +271,37 @@ export class LocalContentAdapter {
    * @private
    */
   async _getSong(collection, number) {
-    const yamlPath = this._validatePath(number, `songs/${collection}`);
-    if (!yamlPath) return null;
+    // Song files are named with zero-padded prefixes: "0304-title.yml"
+    // Use loadYamlByPrefix to find by numeric prefix
+    // dataPath is already the content directory (e.g., /data/content)
+    const basePath = path.resolve(this.dataPath, 'songs', collection);
+    const metadata = loadYamlByPrefix(basePath, number);
+    if (!metadata) return null;
 
-    try {
-      if (!fs.existsSync(yamlPath)) return null;
-      const content = fs.readFileSync(yamlPath, 'utf8');
-      const metadata = yaml.load(content);
+    const compoundId = `${collection}:${number}`;
+    const mediaUrl = `/proxy/local-content/stream/${collection}/${number}`;
 
-      const compoundId = `${collection}:${number}`;
-      const mediaUrl = `/proxy/local-content/stream/${collection}/${number}`;
+    // Handle different YAML field names for song number
+    // YAML may have: number, hymn_num, song_num, or we parse from path
+    const songNumber = metadata.number || metadata.hymn_num || metadata.song_num || parseInt(number, 10);
 
-      // Handle different YAML field names for song number
-      // YAML may have: number, hymn_num, song_num, or we parse from path
-      const songNumber = metadata.number || metadata.hymn_num || metadata.song_num || parseInt(number, 10);
-
-      return new PlayableItem({
-        id: compoundId,
-        source: this.source,
-        title: metadata.title || `${collection} ${number}`,
-        type: collection,
-        mediaType: 'audio',
-        mediaUrl,
-        duration: metadata.duration || 0,
-        resumable: false, // songs don't need resume
-        metadata: {
-          number: songNumber,
-          collection: metadata.collection || collection,
-          verses: metadata.verses || [],
-          lyrics: metadata.lyrics,
-          mediaFile: metadata.mediaFile
-        }
-      });
-    } catch (err) {
-      return null;
-    }
+    return new PlayableItem({
+      id: compoundId,
+      source: this.source,
+      title: metadata.title || `${collection} ${number}`,
+      type: collection,
+      mediaType: 'audio',
+      mediaUrl,
+      duration: metadata.duration || 0,
+      resumable: false, // songs don't need resume
+      metadata: {
+        number: songNumber,
+        collection: metadata.collection || collection,
+        verses: metadata.verses || [],
+        lyrics: metadata.lyrics,
+        mediaFile: metadata.mediaFile
+      }
+    });
   }
 
   /**
@@ -351,37 +311,30 @@ export class LocalContentAdapter {
    * @private
    */
   async _getPoem(localId) {
-    const yamlPath = this._validatePath(localId, 'poetry');
-    if (!yamlPath) return null;
+    const basePath = path.resolve(this.dataPath, 'poetry');
+    const metadata = loadContainedYaml(basePath, localId);
+    if (!metadata) return null;
 
-    try {
-      if (!fs.existsSync(yamlPath)) return null;
-      const content = fs.readFileSync(yamlPath, 'utf8');
-      const metadata = yaml.load(content);
+    const compoundId = `poem:${localId}`;
+    const mediaUrl = `/proxy/local-content/stream/poem/${localId}`;
 
-      const compoundId = `poem:${localId}`;
-      const mediaUrl = `/proxy/local-content/stream/poem/${localId}`;
-
-      return new PlayableItem({
-        id: compoundId,
-        source: this.source,
-        title: metadata.title || localId,
-        type: 'poem',
-        mediaType: 'audio',
-        mediaUrl,
-        duration: metadata.duration || 0,
-        resumable: false, // poems don't track progress
-        metadata: {
-          poem_id: localId,
-          author: metadata.author,
-          condition: metadata.condition,
-          also_suitable_for: metadata.also_suitable_for || [],
-          verses: metadata.verses || [],
-          mediaFile: metadata.mediaFile
-        }
-      });
-    } catch (err) {
-      return null;
-    }
+    return new PlayableItem({
+      id: compoundId,
+      source: this.source,
+      title: metadata.title || localId,
+      type: 'poem',
+      mediaType: 'audio',
+      mediaUrl,
+      duration: metadata.duration || 0,
+      resumable: false, // poems don't track progress
+      metadata: {
+        poem_id: localId,
+        author: metadata.author,
+        condition: metadata.condition,
+        also_suitable_for: metadata.also_suitable_for || [],
+        verses: metadata.verses || [],
+        mediaFile: metadata.mediaFile
+      }
+    });
   }
 }
