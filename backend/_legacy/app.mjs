@@ -45,7 +45,14 @@ const __dirname = path.dirname(new URL(import.meta.url).pathname);
  * @param {boolean} options.configExists - Whether config files exist
  * @returns {Promise<express.Application>} Configured Express app
  */
-export async function createApp({ server, logger, configPaths, configExists }) {
+export async function createApp({
+  server,
+  logger,
+  configPaths,
+  configExists,
+  enableWebSocket = true,
+  enableScheduler = true
+}) {
   const isDocker = existsSync('/.dockerenv');
 
   // Create Express app with base middleware
@@ -132,7 +139,11 @@ export async function createApp({ server, logger, configPaths, configExists }) {
     }
 
     // Initialize WebSocket server after config is loaded
-    await createWebsocketServer(server);
+    if (enableWebSocket) {
+      await createWebsocketServer(server);
+    } else {
+      rootLogger.info('websocket.disabled', { reason: 'Infrastructure owned by new backend' });
+    }
 
     // Initialize MQTT subscriber for vibration sensors (fitness)
     try {
@@ -147,8 +158,12 @@ export async function createApp({ server, logger, configPaths, configExists }) {
       }
       const equipmentConfig = householdConfig?.equipment || legacyFitnessConfig.equipment || [];
 
-      if (process.env.DISABLE_MQTT) {
-        rootLogger.info('mqtt.disabled', { reason: 'DISABLE_MQTT environment variable set' });
+      if (process.env.DISABLE_MQTT || !enableWebSocket) {
+        rootLogger.info('mqtt.disabled', {
+          reason: process.env.DISABLE_MQTT
+            ? 'DISABLE_MQTT environment variable set'
+            : 'Infrastructure owned by new backend'
+        });
       } else if (process.env.mqtt) {
         initMqttSubscriber(equipmentConfig);
       } else {
@@ -298,7 +313,20 @@ export async function createApp({ server, logger, configPaths, configExists }) {
 
     app.use('/data', fetchRouter);
 
-    app.use('/cron', cron);
+    if (enableScheduler) {
+      app.use('/cron', cron);
+      rootLogger.info('cron.router.mounted', { path: '/cron' });
+    } else {
+      // Mount read-only status endpoint only
+      app.get('/cron/status', (req, res) => {
+        res.json({
+          status: 'disabled',
+          reason: 'Scheduler owned by new backend',
+          redirect: '/api/scheduling/status'
+        });
+      });
+      rootLogger.info('cron.disabled', { reason: 'Scheduler owned by new backend' });
+    }
     app.use("/harvest", harvestRouter);
     // JournalistRouter now handled via /api/journalist in api.mjs
     app.use("/home", homeRouter);
