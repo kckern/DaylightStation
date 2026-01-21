@@ -73,6 +73,10 @@
     "rt:payroll": "npx playwright test tests/runtime/finance --grep 'trigger sync' --headed --reporter=list",
     "audit:logging": "node scripts/audit-logging-code.mjs",
     "audit:logging:frontend": "node scripts/audit-logging-code.mjs --baseDir=frontend/src",
-    "audit:logging:backend": "node scripts/audit-logging-code.mjs --baseDir=backend"
+    "audit:logging:backend": "node scripts/audit-logging-code.mjs --baseDir=backend",
+    "parity:update": "node tests/parity-cli.mjs --update",
+    "parity:snapshot": "node tests/parity-cli.mjs --snapshot",
+    "parity:live": "node tests/parity-cli.mjs --live",
+    "parity:list": "node tests/parity-cli.mjs --list"
   }
 }
