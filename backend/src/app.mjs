@@ -616,7 +616,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Frontend Static Files
   // ==========================================================================
 
-  const frontendPath = join(__dirname, '..', 'frontend', 'dist');
+  const frontendPath = join(__dirname, '..', '..', 'frontend', 'dist');
   const frontendExists = existsSync(frontendPath);
 
   if (frontendExists) {
