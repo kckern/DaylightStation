@@ -566,7 +566,6 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Start scheduler (only if enableScheduler is true)
   if (enableScheduler) {
     scheduler.start();
-    rootLogger.info('scheduler.started', { intervalMs: 5000 });
   } else {
     rootLogger.info('scheduler.disabled', { reason: 'Disabled by configuration' });
   }
