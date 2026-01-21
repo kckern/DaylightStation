@@ -33,6 +33,9 @@ import { getDispatcher } from './lib/logging/dispatcher.js';
 import { createLogger } from './lib/logging/logger.js';
 import { loadLoggingConfig, resolveLoggerLevel } from './lib/logging/config.js';
 
+// Legacy route hit tracking for cutover monitoring
+import { getLegacyTracker } from '../src/4_api/middleware/legacyTracker.mjs';
+
 const __dirname = path.dirname(new URL(import.meta.url).pathname);
 
 /**
@@ -305,13 +308,25 @@ export async function createApp({
       res.redirect(`/data/households/${hid}/shared/calendar`);
     });
 
+    // Legacy route hit tracking for cutover monitoring
+    const legacyTracker = getLegacyTracker({ logger: rootLogger });
+
+    // Expose tracker stats via admin endpoint
+    app.get('/admin/legacy-hits', (req, res) => {
+      res.json({
+        hits: legacyTracker.getHits(),
+        totalHits: legacyTracker.getTotalHits(),
+        serverUptime: process.uptime()
+      });
+    });
+
     // Legacy finance endpoint shims (redirect to new API - must be before legacy routers)
     app.get('/data/budget', (req, res) => res.redirect(307, '/api/finance/data'));
     app.get('/data/budget/daytoday', (req, res) => res.redirect(307, '/api/finance/data/daytoday'));
     app.get('/harvest/budget', (req, res) => res.redirect(307, '/api/finance/refresh'));
     app.post('/harvest/budget', (req, res) => res.redirect(307, '/api/finance/refresh'));
 
-    app.use('/data', fetchRouter);
+    app.use('/data', legacyTracker.middleware, fetchRouter);
 
     if (enableScheduler) {
       app.use('/cron', cron);
@@ -327,22 +342,22 @@ export async function createApp({
       });
       rootLogger.info('cron.disabled', { reason: 'Scheduler owned by new backend' });
     }
-    app.use("/harvest", harvestRouter);
+    app.use("/harvest", legacyTracker.middleware, harvestRouter);
     // JournalistRouter now handled via /api/journalist in api.mjs
-    app.use("/home", homeRouter);
+    app.use("/home", legacyTracker.middleware, homeRouter);
 
     // Create watch state store for progress tracking (needed by legacy media/log)
     const watchStatePath = process.env.path?.watchState || process.env.WATCH_STATE_PATH || '/data/media_memory';
     const watchStore = createWatchStore({ watchStatePath });
 
-    // Wire legacy /media/log endpoint to use new WatchState system
-    const { legacyMediaLogMiddleware } = await import('../src/4_api/middleware/legacyCompat.mjs');
-    app.post('/media/log', legacyMediaLogMiddleware(watchStore));
+    // NOTE: legacyMediaLogMiddleware was removed - it intercepted /media/log with broken
+    // field mapping (expected 'library' but frontend sends 'media_key'). The legacy
+    // mediaRouter.post('/log') handles this correctly until full cutover.
 
-    app.use("/media", mediaRouter);
-    app.use("/api/health", healthRouter);
-    app.use("/api/lifelog", lifelogRouter);
-    app.use("/api/fitness", fitnessRouter);
+    app.use("/media", legacyTracker.middleware, mediaRouter);
+    app.use("/api/health", legacyTracker.middleware, healthRouter);
+    app.use("/api/lifelog", legacyTracker.middleware, lifelogRouter);
+    app.use("/api/fitness", legacyTracker.middleware, fitnessRouter);
     app.use("/exe", exe);
     app.use("/print", printerRouter);
     app.use("/tts", tts);
