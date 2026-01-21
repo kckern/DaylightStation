@@ -174,6 +174,33 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger
   });
 
+  // Register message handlers for incoming client messages
+  // These handlers rebroadcast messages to subscribed clients
+  eventBus.onClientMessage((clientId, message) => {
+    // Fitness controller messages - rebroadcast to all fitness subscribers
+    if (message.source === 'fitness' || message.source === 'fitness-simulator') {
+      eventBus.broadcast('fitness', message);
+      rootLogger.debug?.('eventbus.fitness.broadcast', { source: message.source });
+      return;
+    }
+
+    // Piano MIDI messages
+    if (message.source === 'piano' && message.topic === 'midi') {
+      if (!message.type || !message.timestamp) {
+        rootLogger.warn?.('eventbus.midi.invalid', { clientId });
+        return;
+      }
+      eventBus.broadcast('midi', {
+        source: message.source,
+        type: message.type,
+        timestamp: message.timestamp,
+        sessionId: message.sessionId,
+        data: message.data
+      });
+      return;
+    }
+  });
+
   // EventBus admin router (requires eventBus to be created first)
   app.use('/admin/ws', createEventBusRouter({ eventBus, logger: rootLogger }));
 
