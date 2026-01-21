@@ -1,8 +1,10 @@
 # Endpoint Migration Tracker
 
 **Date:** 2026-01-21
-**Status:** Phase 1 Complete - Inventory Built
-**Related:** `docs/plans/2026-01-21-frontend-api-cutover-design.md`
+**Status:** Phase 2 Complete - Parity Audit Done
+**Related:**
+- `docs/plans/2026-01-21-frontend-api-cutover-design.md`
+- `docs/_wip/audits/2026-01-21-parity-audit-results.md`
 
 ---
 
@@ -10,7 +12,16 @@
 
 **Total Legacy Endpoints Called by Frontend:** 47
 **New Backend Equivalents Exist:** 38
-**Gaps (Need Backend Work):** 9
+**Parity Tested:** 28
+**Full Parity (Ready):** 18
+**Blockers Found:** 4
+
+### Critical Blockers
+
+1. **`POST /media/log`** - Permission denied on `/data/media_memory` in Docker
+2. **`/data/list/{key}`** - Missing `local` source adapter
+3. **`/data/scripture/{id}`** - LocalContent adapter not finding data
+4. **`/api/fitness/zone_led`** - Home Assistant not configured
 
 ---
 
@@ -32,16 +43,16 @@
 | [ ] | `media/plex/img/{id}` | `/api/v1/content/plex/image/{id}` | FitnessApp, FitnessShow, Menu | **needs-test** |
 | [ ] | `media/plex/mpd/{id}` | `/api/v1/play/plex/mpd/{id}` | DebugInfo | **needs-test** |
 | [ ] | `media/plex/info/{id}` | `/api/v1/content/plex/info/{id}` | FitnessApp, DebugInfo | **needs-test** |
-| [ ] | `media/plex/list/{id}` | `/api/v1/api/list/plex/{id}` | FitnessShow, FitnessMenu, FitnessMusicPlayer, useFetchPlexData | **needs-test** |
-| [ ] | `media/plex/list/{id}/playable` | `/api/v1/api/list/plex/{id}/playable` | FitnessShow, useQueueController, api.js | **needs-test** |
-| [ ] | **`media/log` (POST)** | `/api/v1/play/log` | useCommonMediaController, useMediaKeyboardHandler, ContentScroller, FitnessPlayer | **CRITICAL** |
+| [x] | `media/plex/list/{id}` | `/api/v1/api/list/plex/{id}` | FitnessShow, FitnessMenu, FitnessMusicPlayer, useFetchPlexData | **OK** |
+| [x] | `media/plex/list/{id}/playable` | `/api/v1/api/list/plex/{id}/playable` | FitnessShow, useQueueController, api.js | **OK** |
+| [ ] | **`media/log` (POST)** | `/api/v1/play/log` | useCommonMediaController, useMediaKeyboardHandler, ContentScroller, FitnessPlayer | **BLOCKED** - Permission error |
 
 ### Media Static Assets
 
 | Status | Legacy Route | New Route | Frontend Callers | Parity |
 |--------|--------------|-----------|------------------|--------|
-| [ ] | `/media/img/users/{id}` | `/api/v1/static/users/{id}` | FitnessSidebarMenu, FitnessUsers, SidebarFooter, PersonCard, Gratitude, FamilySelector, etc. | **needs-test** |
-| [ ] | `/media/img/equipment/{id}` | `/api/v1/static/equipment/{id}` | FitnessUsers, RpmDeviceAvatar, VibrationCard, FullscreenVitalsOverlay | **needs-test** |
+| [x] | `/media/img/users/{id}` | `/api/v1/static/users/{id}` | FitnessSidebarMenu, FitnessUsers, SidebarFooter, PersonCard, Gratitude, FamilySelector, etc. | **OK** |
+| [x] | `/media/img/equipment/{id}` | `/api/v1/static/equipment/{id}` | FitnessUsers, RpmDeviceAvatar, VibrationCard, FullscreenVitalsOverlay | **OK** |
 | [ ] | `/media/img/art/{path}` | `/api/v1/static/art/{path}` | Art.jsx | **needs-test** |
 | [ ] | `/media/img/icons/{icon}.svg` | `/api/v1/static/img/icons/{icon}.svg` | FitnessNavbar | **needs-test** |
 | [ ] | `/media/{audio}.mp3` | **MISSING** | GovernanceAudioPlayer | **GAP** |
@@ -52,9 +63,9 @@
 
 | Status | Legacy Route | New Route | Frontend Callers | Parity |
 |--------|--------------|-----------|------------------|--------|
-| [ ] | `data/list/{key}` | `/api/v1/list/{source}/{key}` | useQueueController, api.js, PlexMenuRouter | **needs-test** |
-| [ ] | `data/list/{key}/playable` | `/api/v1/list/{source}/{key}/playable` | useQueueController, api.js | **needs-test** |
-| [ ] | `data/list/TVApp/recent_on_top` | `/api/v1/list/local/TVApp/recent_on_top` | TVApp.jsx | **needs-test** |
+| [ ] | `data/list/{key}` | `/api/v1/list/{source}/{key}` | useQueueController, api.js, PlexMenuRouter | **BLOCKED** - Missing local adapter |
+| [ ] | `data/list/{key}/playable` | `/api/v1/list/{source}/{key}/playable` | useQueueController, api.js | **BLOCKED** - Missing local adapter |
+| [ ] | `data/list/TVApp/recent_on_top` | `/api/v1/list/local/TVApp/recent_on_top` | TVApp.jsx | **BLOCKED** - Missing local adapter |
 | [ ] | `data/households/default/apps/piano/config` | `/api/v1/content/config/piano` | PianoVisualizer | **needs-mapping** |
 | [ ] | `data/menu_log` (POST) | `/api/v1/content/menu-log` | Menu.jsx | **ready** |
 | [ ] | `/data/events` | `/api/v1/calendar/events` | Upcoming.jsx | **ready** |
@@ -79,13 +90,13 @@
 
 | Status | Legacy Route | New Route | Frontend Callers | Parity |
 |--------|--------------|-----------|------------------|--------|
-| [ ] | `/api/fitness` | `/api/v1/fitness` | FitnessMenu, FitnessPluginMenu, FitnessApp | **ready** |
-| [ ] | **`api/fitness/save_session` (POST)** | `/api/v1/fitness/save_session` | PersistenceManager.js | **CRITICAL** |
-| [ ] | `/api/fitness/sessions/dates` | `/api/v1/fitness/sessions/dates` | SessionBrowserApp | **ready** |
-| [ ] | `/api/fitness/sessions?date={date}` | `/api/v1/fitness/sessions?date={date}` | SessionBrowserApp | **ready** |
-| [ ] | `/api/fitness/sessions/{id}` | `/api/v1/fitness/sessions/{id}` | SessionBrowserApp | **ready** |
-| [ ] | `api/fitness/zone_led` (POST) | `/api/v1/fitness/zone_led` | useZoneLedSync | **ready** |
-| [ ] | `api/fitness/voice_memo` (POST) | `/api/v1/fitness/voice_memo` | useVoiceMemoRecorder | **ready** |
+| [x] | `/api/fitness` | `/api/v1/fitness` | FitnessMenu, FitnessPluginMenu, FitnessApp | **OK** - Full match |
+| [x] | **`api/fitness/save_session` (POST)** | `/api/v1/fitness/save_session` | PersistenceManager.js | **OK** - Validation works |
+| [x] | `/api/fitness/sessions/dates` | `/api/v1/fitness/sessions/dates` | SessionBrowserApp | **OK** |
+| [x] | `/api/fitness/sessions?date={date}` | `/api/v1/fitness/sessions?date={date}` | SessionBrowserApp | **OK** |
+| [x] | `/api/fitness/sessions/{id}` | `/api/v1/fitness/sessions/{id}` | SessionBrowserApp | **OK** |
+| [ ] | `api/fitness/zone_led` (POST) | `/api/v1/fitness/zone_led` | useZoneLedSync | **BLOCKED** - HA config |
+| [ ] | `api/fitness/voice_memo` (POST) | `/api/v1/fitness/voice_memo` | useVoiceMemoRecorder | untested |
 | [ ] | `/api/fitness/simulate` (POST/DELETE) | **MISSING** | FitnessApp (dev only) | **GAP-OK** |
 
 ---
@@ -94,12 +105,12 @@
 
 | Status | Legacy Route | New Route | Frontend Callers | Parity |
 |--------|--------------|-----------|------------------|--------|
-| [ ] | `/home/entropy` | `/api/v1/entropy` | EntropyPanel.jsx | **needs-mapping** |
-| [ ] | `/home/calendar` | `/api/v1/calendar/events` | Calendar.jsx | **ready** |
-| [ ] | `exe/ha/script/{script}` (POST) | `/api/v1/home/cmd` | PianoVisualizer | **needs-mapping** |
-| [ ] | `exe/office_tv/off` | `/api/v1/home/office_tv/off` | OfficeOff.jsx | **ready** |
-| [ ] | `exe/tv/off` | `/api/v1/home/tv/off` | WrapUp.jsx | **ready** |
-| [ ] | `/exe/ws/restart` | `/api/v1/admin/eventbus/restart` | WebSocketContext | **ready** |
+| [x] | `/home/entropy` | `/api/v1/entropy` | EntropyPanel.jsx | **OK** |
+| [x] | `/home/calendar` | `/api/v1/calendar/events` | Calendar.jsx | **OK** |
+| [ ] | `exe/ha/script/{script}` (POST) | `/api/v1/home/cmd` | PianoVisualizer | untested |
+| [ ] | `exe/office_tv/off` | `/api/v1/home/office_tv/off` | OfficeOff.jsx | untested |
+| [ ] | `exe/tv/off` | `/api/v1/home/tv/off` | WrapUp.jsx | untested |
+| [ ] | `/exe/ws/restart` | `/api/v1/admin/eventbus/restart` | WebSocketContext | untested |
 
 ---
 
@@ -107,9 +118,9 @@
 
 | Status | Legacy Route | New Route | Frontend Callers | Parity |
 |--------|--------------|-----------|------------------|--------|
-| [ ] | `/data/budget` | `/api/v1/finance/data` | FinanceApp.jsx | **ready** |
-| [ ] | `/data/budget/daytoday` | `/api/v1/finance/data/daytoday` | Finance.jsx | **ready** |
-| [ ] | `/harvest/budget` | `/api/v1/finance/refresh` | FinanceApp.jsx | **needs-mapping** |
+| [x] | `/data/budget` | `/api/v1/finance/data` | FinanceApp.jsx | **OK** |
+| [x] | `/data/budget/daytoday` | `/api/v1/finance/data/daytoday` | Finance.jsx | **OK** |
+| [ ] | `/harvest/budget` | `/api/v1/finance/refresh` | FinanceApp.jsx | untested |
 | [ ] | `harvest/watchlist` | **MISSING** | useMediaKeyboardHandler | **GAP** |
 
 ---
@@ -118,10 +129,10 @@
 
 | Status | Legacy Route | New Route | Frontend Callers | Parity |
 |--------|--------------|-----------|------------------|--------|
-| [ ] | `/api/health/status` | `/api/v1/health/status` | HealthApp.jsx | **ready** |
-| [ ] | `api/health/nutrilist/{date}` | `/api/v1/health/nutrilist/{date}` | Nutrition.jsx | **ready** |
-| [ ] | `health/nutrilist/{uuid}` (DELETE) | `/api/v1/health/nutrilist/{uuid}` | NutritionDay.jsx | **ready** |
-| [ ] | `health/nutrilist/{uuid}` (PUT) | `/api/v1/health/nutrilist/{uuid}` | NutritionDay.jsx | **ready** |
+| [x] | `/api/health/status` | `/api/v1/health/status` | HealthApp.jsx | **OK** - struct match |
+| [x] | `api/health/nutrilist/{date}` | `/api/v1/health/nutrilist/{date}` | Nutrition.jsx | **OK** - new works better |
+| [ ] | `health/nutrilist/{uuid}` (DELETE) | `/api/v1/health/nutrilist/{uuid}` | NutritionDay.jsx | untested |
+| [ ] | `health/nutrilist/{uuid}` (PUT) | `/api/v1/health/nutrilist/{uuid}` | NutritionDay.jsx | untested |
 
 ---
 
@@ -129,7 +140,7 @@
 
 | Status | Legacy Route | New Route | Frontend Callers | Parity |
 |--------|--------------|-----------|------------------|--------|
-| [ ] | `/api/lifelog` | `/api/v1/lifelog` | LifelogApp.jsx | **needs-test** |
+| [x] | `/api/lifelog` | `/api/v1/lifelog` | LifelogApp.jsx | **OK** |
 
 ---
 
@@ -137,11 +148,11 @@
 
 | Status | Legacy Route | New Route | Frontend Callers | Parity |
 |--------|--------------|-----------|------------------|--------|
-| [ ] | `/api/gratitude/bootstrap` | `/api/v1/gratitude/bootstrap` | Gratitude.jsx, FamilySelector.jsx | **ready** |
-| [ ] | `/api/gratitude/selections/{cat}` (GET) | `/api/v1/gratitude/selections/{cat}` | Gratitude.jsx | **ready** |
-| [ ] | `/api/gratitude/selections/{cat}` (POST) | `/api/v1/gratitude/selections/{cat}` | Gratitude.jsx | **ready** |
-| [ ] | `/api/gratitude/selections/{cat}/{id}` (DELETE) | `/api/v1/gratitude/selections/{cat}/{id}` | Gratitude.jsx | **ready** |
-| [ ] | `/api/gratitude/discarded/{cat}` (POST) | `/api/v1/gratitude/discarded/{cat}` | Gratitude.jsx | **ready** |
+| [x] | `/api/gratitude/bootstrap` | `/api/v1/gratitude/bootstrap` | Gratitude.jsx, FamilySelector.jsx | **OK** - Full match |
+| [x] | `/api/gratitude/selections/{cat}` (GET) | `/api/v1/gratitude/selections/{cat}` | Gratitude.jsx | **OK** |
+| [ ] | `/api/gratitude/selections/{cat}` (POST) | `/api/v1/gratitude/selections/{cat}` | Gratitude.jsx | untested |
+| [ ] | `/api/gratitude/selections/{cat}/{id}` (DELETE) | `/api/v1/gratitude/selections/{cat}/{id}` | Gratitude.jsx | untested |
+| [ ] | `/api/gratitude/discarded/{cat}` (POST) | `/api/v1/gratitude/discarded/{cat}` | Gratitude.jsx | untested |
 
 ---
 
