@@ -563,11 +563,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'scheduler' })
   });
 
-  // Start scheduler (only if enableScheduler is true - disabled in toggle mode)
+  // Start scheduler (only if enableScheduler is true)
   if (enableScheduler) {
     scheduler.start();
+    rootLogger.info('scheduler.started', { intervalMs: 5000 });
   } else {
-    rootLogger.info('scheduler.disabled', { reason: 'toggle mode - legacy scheduler will run instead' });
+    rootLogger.info('scheduler.disabled', { reason: 'Disabled by configuration' });
   }
 
   app.use('/api/scheduling', createSchedulingRouter({
