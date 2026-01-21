@@ -9,8 +9,7 @@
 
 import express from 'express';
 import cors from 'cors';
-import { existsSync, readFileSync } from 'fs';
-import { parse } from 'yaml';
+import { existsSync } from 'fs';
 import path, { join } from 'path';
 
 // Infrastructure imports
@@ -66,10 +65,6 @@ import { allShims } from './4_api/shims/index.mjs';
 import { createShimsRouter } from './4_api/routers/admin/shims.mjs';
 import { createEventBusRouter } from './4_api/routers/admin/eventbus.mjs';
 
-// Legacy tracking
-import { getLegacyTracker } from './4_api/middleware/legacyTracker.mjs';
-import { createLegacyAdminRouter } from './4_api/routers/admin/legacy.mjs';
-
 // Scheduling domain
 import { SchedulerService } from './1_domains/scheduling/services/SchedulerService.mjs';
 import { YamlJobStore } from './2_adapters/scheduling/YamlJobStore.mjs';
@@ -88,9 +83,10 @@ const __dirname = path.dirname(new URL(import.meta.url).pathname);
  * @param {Object} options.configPaths - Resolved config paths { configDir, dataDir }
  * @param {boolean} options.configExists - Whether config files exist
  * @param {boolean} [options.enableScheduler=true] - Whether to start the scheduler (false for toggle mode)
+ * @param {boolean} [options.enableMqtt=true] - Whether to enable MQTT (false for toggle mode - legacy handles it)
  * @returns {Promise<express.Application>} Configured Express app
  */
-export async function createApp({ server, logger, configPaths, configExists, enableScheduler = true }) {
+export async function createApp({ server, logger, configPaths, configExists, enableScheduler = true, enableMqtt = true }) {
   const isDocker = existsSync('/.dockerenv');
 
   // ==========================================================================
@@ -161,7 +157,6 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Admin routers
   app.use('/admin/shims', createShimsRouter({ metrics: shimMetrics }));
-  app.use('/admin/legacy', createLegacyAdminRouter({ logger: rootLogger }));
 
   // ==========================================================================
   // Initialize Services
@@ -375,8 +370,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'hardware' })
   });
 
-  // Initialize MQTT sensor adapter if configured
-  if (hardwareAdapters.mqttAdapter?.isConfigured()) {
+  // Initialize MQTT sensor adapter if configured and enabled
+  if (enableMqtt && hardwareAdapters.mqttAdapter?.isConfigured()) {
     // Load equipment with vibration sensors for MQTT topic mapping
     const fitnessConfig = userDataService.readHouseholdAppData(householdId, 'fitness', 'config') || {};
     const equipment = fitnessConfig.equipment || [];
@@ -386,6 +381,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         topics: hardwareAdapters.mqttAdapter.getStatus().topics
       });
     }
+  } else if (!enableMqtt) {
+    rootLogger.info('mqtt.disabled', { reason: 'toggle mode - legacy handles MQTT' });
   } else if (mqttConfig.host) {
     rootLogger.warn?.('mqtt.disabled', { reason: 'MQTT configured but adapter not initialized' });
   }
@@ -579,117 +576,6 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'scheduling-api' })
   }));
   rootLogger.info('scheduling.mounted', { path: '/api/scheduling', schedulerEnabled: enableScheduler && scheduler.enabled });
-
-  // Legacy finance endpoint shims
-  app.get('/data/budget', (req, res) => res.redirect(307, '/api/finance/data'));
-  app.get('/data/budget/daytoday', (req, res) => res.redirect(307, '/api/finance/data/daytoday'));
-  app.get('/harvest/budget', (req, res) => res.redirect(307, '/api/finance/refresh'));
-  app.post('/harvest/budget', (req, res) => res.redirect(307, '/api/finance/refresh'));
-
-  // ==========================================================================
-  // Legacy Compatibility Redirects (Phase 4)
-  // ==========================================================================
-  // These redirect legacy paths to DDD equivalents while keeping backwards compatibility
-
-  // Content/Media redirects
-  app.use('/media/plex/list', (req, res) => res.redirect(307, `/api/list/plex${req.url}`));
-  app.use('/data/list', (req, res) => res.redirect(307, `/api/list/folder${req.url}`));
-  // Note: /media/log is handled by legacyShims.mediaLog earlier in the middleware chain
-  app.get('/media/plex/info/:id', (req, res) => res.redirect(307, `/api/content/plex/info/${req.params.id}`));
-  app.get('/media/plex/mpd/:id', (req, res) => res.redirect(307, `/api/play/plex/mpd/${req.params.id}`));
-  app.post('/harvest/watchlist', (req, res) => res.redirect(307, '/api/content/refresh-watchlist'));
-
-  // Home/Calendar redirects
-  app.get('/home/entropy', (req, res) => res.redirect(307, '/api/entropy'));
-  app.get('/home/calendar', (req, res) => res.redirect(307, '/api/calendar/events'));
-  app.get('/data/events', (req, res) => res.redirect(307, '/api/calendar/events'));
-
-  // Weather data redirect (was in legacy index.js, redirects to household data file)
-  app.get('/data/weather', (req, res) => {
-    const hid = configService?.getDefaultHouseholdId?.() || process.env.household_id || 'default';
-    res.redirect(307, `/data/households/${hid}/shared/weather`);
-  });
-
-  // Health redirects
-  app.get('/data/lifelog/weight', (req, res) => res.redirect(307, '/api/health/weight'));
-
-  // Menu logging redirect
-  app.post('/data/menu_log', (req, res) => res.redirect(307, '/api/content/menu-log'));
-
-  // TV/Volume control redirects
-  app.get('/exe/tv/off', (req, res) => res.redirect(307, '/api/home/tv/power?action=off'));
-  app.get('/exe/office_tv/off', (req, res) => res.redirect(307, '/api/home/office-tv/power?action=off'));
-  app.get('/exe/vol/up', (req, res) => res.redirect(307, '/api/home/volume/up'));
-  app.get('/exe/vol/down', (req, res) => res.redirect(307, '/api/home/volume/down'));
-  app.get('/exe/vol/mute', (req, res) => res.redirect(307, '/api/home/volume/mute'));
-  app.get('/exe/vol/cycle', (req, res) => res.redirect(307, '/api/home/volume/cycle'));
-
-  // Keyboard configuration redirect (legacy path -> DDD path)
-  app.get('/data/keyboard/:keyboard_id?', (req, res) => {
-    const { keyboard_id } = req.params;
-    const newPath = keyboard_id ? `/api/home/keyboard/${keyboard_id}` : '/api/home/keyboard';
-    res.redirect(307, newPath);
-  });
-
-  // WebSocket restart redirect
-  app.get('/exe/ws/restart', (req, res) => res.redirect(307, '/admin/ws/restart'));
-  app.post('/exe/ws/restart', (req, res) => res.redirect(307, '/admin/ws/restart'));
-
-  // WebSocket broadcast redirect
-  app.all('/exe/ws', (req, res) => res.redirect(307, '/admin/ws/broadcast'));
-
-  // Cron/Scheduling redirects
-  app.get('/cron/status', (req, res) => res.redirect(307, '/api/scheduling/status'));
-  app.post('/cron/run/:jobId', (req, res) => res.redirect(307, `/api/scheduling/run/${req.params.jobId}`));
-  app.get('/cron/cron10Mins', (req, res) => res.redirect(307, '/api/scheduling/cron10Mins'));
-  app.get('/cron/cronHourly', (req, res) => res.redirect(307, '/api/scheduling/cronHourly'));
-  app.get('/cron/cronDaily', (req, res) => res.redirect(307, '/api/scheduling/cronDaily'));
-  app.get('/cron/cronWeekly', (req, res) => res.redirect(307, '/api/scheduling/cronWeekly'));
-
-  // Media/Image redirects - route to DDD static router
-  app.get('/media/img/entropy/:icon', (req, res) => res.redirect(307, `/api/static/entropy/${req.params.icon}`));
-  app.get('/media/img/art/*', (req, res) => res.redirect(307, `/api/static/art/${req.params[0]}`));
-  app.get('/media/img/users/:id', (req, res) => res.redirect(307, `/api/static/users/${req.params.id}`));
-  app.get('/media/img/equipment/:id', (req, res) => res.redirect(307, `/api/static/equipment/${req.params.id}`));
-  app.get('/media/img/*', (req, res) => res.redirect(307, `/api/static/img/${req.params[0]}`));
-
-  rootLogger.info('legacy.redirects.mounted', {
-    count: 29,
-    categories: ['content', 'home', 'health', 'tv', 'websocket', 'cron', 'media']
-  });
-
-  // ==========================================================================
-  // Legacy Router Integration
-  // ==========================================================================
-
-  // Import and mount legacy routers that haven't been fully migrated yet
-  // These are tracked via legacyTracker to monitor usage before deletion
-  const { default: fetchRouter } = await import('../_legacy/routers/fetch.mjs');
-  const { default: harvestRouter } = await import('../_legacy/routers/harvest.mjs');
-  const { default: homeRouter } = await import('../_legacy/routers/home.mjs');
-  const { default: mediaRouter } = await import('../_legacy/routers/media.mjs');
-  const { default: cronRouter } = await import('../_legacy/routers/cron.mjs');
-  const { default: plexProxyRouter } = await import('../_legacy/routers/plexProxy.mjs');
-  const { default: exeRouter } = await import('../_legacy/routers/exe.mjs');
-  const { default: apiRouter } = await import('../_legacy/api.mjs');
-
-  // Get legacy tracker for monitoring route usage
-  const legacyTracker = getLegacyTracker({ logger: rootLogger });
-
-  // Mount legacy routers with tracking middleware
-  app.use('/data', legacyTracker.middleware, fetchRouter);
-  app.use('/harvest', legacyTracker.middleware, harvestRouter);
-  app.use('/home', legacyTracker.middleware, homeRouter);
-  app.use('/media', legacyTracker.middleware, mediaRouter);
-  app.use('/cron', legacyTracker.middleware, cronRouter);
-  app.use('/plex_proxy', legacyTracker.middleware, plexProxyRouter);
-  app.use('/exe', legacyTracker.middleware, exeRouter);
-  app.use('/api', legacyTracker.middleware, apiRouter);
-
-  rootLogger.info('legacy.routers.mounted', {
-    paths: ['/data', '/harvest', '/home', '/media', '/cron', '/plex_proxy', '/exe', '/api'],
-    tracking: true
-  });
 
   // ==========================================================================
   // Frontend Static Files
