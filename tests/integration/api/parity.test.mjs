@@ -402,6 +402,64 @@ describe('DDD vs Legacy Endpoint Parity', () => {
       expect(body.error).toContain('seconds');
     });
   });
+
+  describe('POST /api/fitness/save_session parity', () => {
+    const testPayload = {
+      version: 3,
+      session: {
+        id: '99990101000000',  // Test ID format
+        date: '9999-01-01',
+        start: '9999-01-01 00:00:00',
+        end: '9999-01-01 00:01:00',
+        duration_seconds: 60
+      },
+      timeline: {
+        interval_seconds: 5,
+        tick_count: 12,
+        encoding: 'rle',
+        series: {}
+      },
+      participants: [],
+      events: []
+    };
+
+    it('should accept valid v3 session payload', async () => {
+      const res = await fetch(`${BASE_URL}/api/fitness/save_session`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionData: testPayload })
+      });
+
+      // Should succeed
+      expect([200, 201]).toContain(res.status);
+    });
+
+    it('should reject payload without session.id', async () => {
+      const badPayload = { ...testPayload, session: { date: '9999-01-01' } };
+      const res = await fetch(`${BASE_URL}/api/fitness/save_session`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionData: badPayload })
+      });
+
+      expect(res.status).toBe(400);
+      const body = await res.json();
+      expect(body.error).toContain('sessionId');
+    });
+
+    it('should reject v2 payload without root sessionId', async () => {
+      const v2Payload = { ...testPayload, version: 2 };
+      delete v2Payload.session;  // v2 expects root sessionId
+
+      const res = await fetch(`${BASE_URL}/api/fitness/save_session`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionData: v2Payload })
+      });
+
+      expect(res.status).toBe(400);
+    });
+  });
 });
 } // end isJest
 
