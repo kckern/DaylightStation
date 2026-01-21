@@ -416,6 +416,20 @@ export async function createApp({
     const { default: apiRouter } = await import('./api.mjs');
     app.use("/api", apiRouter);
 
+    // Webhook route aliases (for backwards compatibility with Telegram webhook URLs)
+    app.all('/foodlog', (req, res, next) => {
+      req.url = '/api/foodlog';
+      app.handle(req, res, next);
+    });
+    app.all('/journalist', (req, res, next) => {
+      req.url = '/api/journalist';
+      app.handle(req, res, next);
+    });
+    app.all('/journalist/*', (req, res, next) => {
+      req.url = '/api' + req.url;
+      app.handle(req, res, next);
+    });
+
     // Frontend
     const frontendPath = join(__dirname, '../../frontend/dist');
     const frontendExists = existsSync(frontendPath);
