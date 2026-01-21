@@ -1,0 +1,26 @@
+_meta:
+  captured_at: '2026-01-21T22:56:26.570Z'
+  source_id: '243200'
+  legacy_endpoint: /media/plex/info/243200
+  source_label: Masterclass
+  source_uid: 3ff4ad6c-f2f8-43bb-929d-355f0644306f
+response:
+  status: 200
+  body:
+    listkey: '243200'
+    listType: season
+    key: '243223'
+    type: episode
+    title: A Musical Life
+    show: MasterClass
+    season: Jazz
+    summary: Herbie followed an unlikely path to jazz, and it’s been a wild ride ever since. His story serves as an inspiration and a testament to what you can accomplish when you let passion be your guide.
+    year: 1900
+    labels:
+      - family
+    media_type: dash_video
+    media_url: /plex_proxy/video/:/transcode/universal/start.mpd?path=%2Flibrary%2Fmetadata%2F243223&protocol=dash&X-Plex-Client-Identifier=api-jsx3tswgqliannne9on8ca&X-Plex-Session-Identifier=jsx3tswgqliannne9on8ca&X-Plex-Platform=Chrome&autoAdjustQuality=1&fastSeek=1&mediaBufferSize=104857600&X-Plex-Client-Profile-Extra=append-transcode-target-codec(type%3DvideoProfile%26context%3Dstreaming%26videoCodec%3Dh264%2Chevc%26audioCodec%3Daac%26protocol%3Ddash)
+    thumb_id: 217634
+    image: /plex_proxy/library/metadata/243223/thumb/1755722085
+    percent: 0
+    seconds: 0

@@ -1,0 +1,24 @@
+_meta:
+  captured_at: '2026-01-21T22:56:26.177Z'
+  source_id: '672290'
+  legacy_endpoint: /media/plex/info/672290
+  source_label: Choral Christmas
+  source_uid: 019a7003-ea7b-788f-ac78-13cfa8f32209
+response:
+  status: 200
+  body:
+    listkey: '672290'
+    listType: playlist
+    key: '615391'
+    type: track
+    title: Joy To The World
+    artist: The Tabernacle Choir at Temple Square
+    albumArtist: Mormon Tabernacle Choir
+    album: The Wonder Of Christmas
+    labels: []
+    media_type: audio
+    media_url: /plex_proxy/library/parts/653274/1732133433/file.m4a?X-Plex-Client-Identifier=api-audio-cdn9urrvss8rj7qazdude&X-Plex-Session-Identifier=cdn9urrvss8rj7qazdude
+    thumb_id: 653274
+    image: /plex_proxy/library/metadata/615390/thumb/1765884034
+    percent: 0
+    seconds: 0

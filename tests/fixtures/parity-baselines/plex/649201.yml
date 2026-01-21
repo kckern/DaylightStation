@@ -1,0 +1,25 @@
+_meta:
+  captured_at: '2026-01-21T22:56:31.337Z'
+  source_id: '649201'
+  legacy_endpoint: /media/plex/info/649201
+  source_label: Wisdom
+  source_uid: 2e0b9c94-6f5d-40b8-b201-1fc9fb1ec4c8
+response:
+  status: 200
+  body:
+    listkey: '649201'
+    listType: season
+    key: '649204'
+    type: episode
+    title: Meaning and Bias
+    show: Peterson Academy
+    season: Intelligence Rationality Wisdom and Spirituality
+    summary: In lecture three, we explore the connections between meaning in life, religio (a sense of connectedness), and the human tendency towards self-deceptive and self-destructive behavior. Dr. Vervaeke argues that love and mattering, which involve turning the arrow of relevance towards others and the world, are crucial for a meaningful life. However, the very cognitive processes that make us intelligently adaptive also make us prone to biases and irrationality, as demonstrated through various psychological experiments on probability judgments, framing effects, belief perseverance, and motivated reasoning.
+    year: 2025
+    labels: []
+    media_type: dash_video
+    media_url: /plex_proxy/video/:/transcode/universal/start.mpd?path=%2Flibrary%2Fmetadata%2F649204&protocol=dash&X-Plex-Client-Identifier=api-6anmb16privbus73depz&X-Plex-Session-Identifier=6anmb16privbus73depz&X-Plex-Platform=Chrome&autoAdjustQuality=1&fastSeek=1&mediaBufferSize=104857600&X-Plex-Client-Profile-Extra=append-transcode-target-codec(type%3DvideoProfile%26context%3Dstreaming%26videoCodec%3Dh264%2Chevc%26audioCodec%3Daac%26protocol%3Ddash)
+    thumb_id: 697061
+    image: /plex_proxy/library/metadata/649204/thumb/1747848681
+    percent: 0
+    seconds: 0

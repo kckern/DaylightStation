@@ -1,0 +1,24 @@
+_meta:
+  captured_at: '2026-01-21T22:56:28.430Z'
+  source_id: '385007'
+  legacy_endpoint: /media/plex/info/385007
+  source_label: Instrumental
+  source_uid: dafadd94-6c98-47d7-95d4-6636701a9c71
+response:
+  status: 200
+  body:
+    listkey: '453237'
+    listType: album
+    key: '453238'
+    type: track
+    title: Breakthrough
+    artist: Instrumental Worship
+    album: Soaking in his Presence 1
+    year: 2022
+    labels: []
+    media_type: audio
+    media_url: /plex_proxy/library/parts/484449/1746652360/file.mp3?X-Plex-Client-Identifier=api-audio-aoy5hm07j3mqp2g693bfuk&X-Plex-Session-Identifier=aoy5hm07j3mqp2g693bfuk
+    thumb_id: 484449
+    image: /plex_proxy/library/metadata/453237/thumb/1669030535
+    percent: 0
+    seconds: 0

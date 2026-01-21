@@ -1,0 +1,24 @@
+_meta:
+  captured_at: '2026-01-21T22:56:28.075Z'
+  source_id: '487146'
+  legacy_endpoint: /media/plex/info/487146
+  source_label: 아이쿠
+  source_uid: 4fc66939-e089-43f2-bbe4-1772f6554a3a
+response:
+  status: 200
+  body:
+    listkey: '487174'
+    listType: season
+    key: '487183'
+    type: episode
+    title: Episode 9
+    show: 으랏차차 아이쿠
+    season: Season 1
+    labels:
+      - kidsfun
+    media_type: dash_video
+    media_url: /plex_proxy/video/:/transcode/universal/start.mpd?path=%2Flibrary%2Fmetadata%2F487183&protocol=dash&X-Plex-Client-Identifier=api-wydnl0oudcwfr5qsismff&X-Plex-Session-Identifier=wydnl0oudcwfr5qsismff&X-Plex-Platform=Chrome&autoAdjustQuality=1&fastSeek=1&mediaBufferSize=104857600&X-Plex-Client-Profile-Extra=append-transcode-target-codec(type%3DvideoProfile%26context%3Dstreaming%26videoCodec%3Dh264%2Chevc%26audioCodec%3Daac%26protocol%3Ddash)
+    thumb_id: 519681
+    image: /plex_proxy/library/metadata/487183/thumb/1719017305
+    percent: 0
+    seconds: 0

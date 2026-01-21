@@ -1,0 +1,25 @@
+_meta:
+  captured_at: '2026-01-21T22:56:27.389Z'
+  source_id: '438291'
+  legacy_endpoint: /media/plex/info/438291
+  source_label: Hyrum Andrus
+  source_uid: ef7eab56-06a8-4a87-a3c1-7ff5d751efc1
+response:
+  status: 200
+  body:
+    listkey: '438291'
+    listType: album
+    key: '438293'
+    type: track
+    title: Joseph Smith Man and Seer
+    artist: LDS Lectures
+    albumArtist: Hyrum Andrus
+    album: Hyrum Andrus Seminars
+    year: 2022
+    labels: []
+    media_type: audio
+    media_url: /plex_proxy/library/parts/460223/1656383712/file.mp3?X-Plex-Client-Identifier=api-audio-xkomicplo9jkn2vas6uj1&X-Plex-Session-Identifier=xkomicplo9jkn2vas6uj1
+    thumb_id: 460223
+    image: /plex_proxy/library/metadata/438291/thumb/1656384586
+    percent: 0
+    seconds: 0

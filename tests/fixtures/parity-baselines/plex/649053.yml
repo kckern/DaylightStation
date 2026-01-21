@@ -1,0 +1,25 @@
+_meta:
+  captured_at: '2026-01-21T22:56:26.235Z'
+  source_id: '649053'
+  legacy_endpoint: /media/plex/info/649053
+  source_label: Sermon on the Mount
+  source_uid: 675bca3e-fddb-4b23-81c0-312f8972a19f
+response:
+  status: 200
+  body:
+    listkey: '649053'
+    listType: season
+    key: '649056'
+    type: episode
+    title: Discipline and Freedom
+    show: Peterson Academy
+    season: Sermon on the Mount
+    summary: In our third lecture, we continue our study of the profound wisdom and multi-layered meanings within a few key passages from the Sermon on the Mount, beginning with Matthew 5:14. Dr. Peterson delves into the idea of embodying the spirit of the law, the interplay between discipline and freedom, and the moral responsibility that comes with privilege and success. The lecture emphasizes the importance of aligning one’s actions with their highest potential and the transformative power of taking on life’s challenges as a path to spiritual growth.
+    year: 2025
+    labels: []
+    media_type: dash_video
+    media_url: /plex_proxy/video/:/transcode/universal/start.mpd?path=%2Flibrary%2Fmetadata%2F649056&protocol=dash&X-Plex-Client-Identifier=api-lmnkxjiiqxkqta183lblko&X-Plex-Session-Identifier=lmnkxjiiqxkqta183lblko&X-Plex-Platform=Chrome&autoAdjustQuality=1&fastSeek=1&mediaBufferSize=104857600&X-Plex-Client-Profile-Extra=append-transcode-target-codec(type%3DvideoProfile%26context%3Dstreaming%26videoCodec%3Dh264%2Chevc%26audioCodec%3Daac%26protocol%3Ddash)
+    thumb_id: 696931
+    image: /plex_proxy/library/metadata/649056/thumb/1747849194
+    percent: 0
+    seconds: 0

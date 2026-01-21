@@ -1,0 +1,23 @@
+_meta:
+  captured_at: '2026-01-21T22:56:27.152Z'
+  source_id: '418112'
+  legacy_endpoint: /media/plex/info/418112
+  source_label: Chuck Smith
+  source_uid: 55013f63-92d2-4387-9586-c378d6470b27
+response:
+  status: 200
+  body:
+    listkey: '418112'
+    listType: album
+    key: '418113'
+    type: track
+    title: Genesis 1:1–18
+    artist: Chuck Smith
+    album: Through the Bible
+    labels: []
+    media_type: audio
+    media_url: /plex_proxy/library/parts/429973/1655040547/file.mp3?X-Plex-Client-Identifier=api-audio-7wnrqlq7f78frmk52okad8&X-Plex-Session-Identifier=7wnrqlq7f78frmk52okad8
+    thumb_id: 429973
+    image: /plex_proxy/library/metadata/418112/thumb/1655041159
+    percent: 0
+    seconds: 0

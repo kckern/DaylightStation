@@ -1,0 +1,26 @@
+_meta:
+  captured_at: '2026-01-21T22:56:28.532Z'
+  source_id: '455675'
+  legacy_endpoint: /media/plex/info/455675
+  source_label: Read & Share
+  source_uid: 894a97e1-f0df-4faf-88fe-ed9332b3fb34
+response:
+  status: 200
+  body:
+    listkey: '455676'
+    listType: season
+    key: '455691'
+    type: episode
+    title: Moses Goes Home
+    show: Read and Share Bible
+    season: Season 1
+    summary: Transport yourself back to the story of Moses Going Home in this episode of the Read and Share Bible.
+    year: 2016
+    labels:
+      - family
+    media_type: dash_video
+    media_url: /plex_proxy/video/:/transcode/universal/start.mpd?path=%2Flibrary%2Fmetadata%2F455691&protocol=dash&X-Plex-Client-Identifier=api-kx314y58ol47yexc27y2a&X-Plex-Session-Identifier=kx314y58ol47yexc27y2a&X-Plex-Platform=Chrome&autoAdjustQuality=1&fastSeek=1&mediaBufferSize=104857600&X-Plex-Client-Profile-Extra=append-transcode-target-codec(type%3DvideoProfile%26context%3Dstreaming%26videoCodec%3Dh264%2Chevc%26audioCodec%3Daac%26protocol%3Ddash)
+    thumb_id: 486683
+    image: /plex_proxy/library/metadata/455691/thumb/1721753604
+    percent: 0
+    seconds: 0

@@ -1,0 +1,24 @@
+_meta:
+  captured_at: '2026-01-21T22:56:32.540Z'
+  source_id: '663266'
+  legacy_endpoint: /media/plex/info/663266
+  source_label: Tab Choir
+  source_uid: 4965f47b-3b10-4c5b-a8af-d15ec4f1aed3
+response:
+  status: 200
+  body:
+    listkey: '663267'
+    listType: season
+    key: '663282'
+    type: episode
+    title: Praise to the Lord, the Almighty
+    show: Tabernacle Choir
+    season: Season 1
+    summary: Praise to the Lord, the Almighty, the King of creation
+    labels: []
+    media_type: dash_video
+    media_url: /plex_proxy/video/:/transcode/universal/start.mpd?path=%2Flibrary%2Fmetadata%2F663282&protocol=dash&X-Plex-Client-Identifier=api-vx9a9ye0vsncpvmm0j4og8&X-Plex-Session-Identifier=vx9a9ye0vsncpvmm0j4og8&X-Plex-Platform=Chrome&autoAdjustQuality=1&fastSeek=1&mediaBufferSize=104857600&X-Plex-Client-Profile-Extra=append-transcode-target-codec(type%3DvideoProfile%26context%3Dstreaming%26videoCodec%3Dh264%2Chevc%26audioCodec%3Daac%26protocol%3Ddash)
+    thumb_id: 727008
+    image: /plex_proxy/library/metadata/663282/thumb/1751260308
+    percent: 0
+    seconds: 0

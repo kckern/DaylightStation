@@ -1,0 +1,24 @@
+_meta:
+  captured_at: '2026-01-21T22:56:32.265Z'
+  source_id: '49121'
+  legacy_endpoint: /media/plex/info/49121
+  source_label: Synctuation
+  source_uid: 3247cdd7-7b4f-4376-ba73-9ec20f47c1a6
+response:
+  status: 200
+  body:
+    listkey: '49143'
+    listType: album
+    key: '49144'
+    type: track
+    title: Welcome to Synctuition
+    artist: Synctuition
+    albumArtist: Synctuition
+    album: Discovering Your Path
+    labels: []
+    media_type: audio
+    media_url: /plex_proxy/library/parts/46442/1602997861/file.m4a?X-Plex-Client-Identifier=api-audio-jotyqdq8vw9s4703oejxl&X-Plex-Session-Identifier=jotyqdq8vw9s4703oejxl
+    thumb_id: 46442
+    image: /plex_proxy/library/metadata/49143/thumb/1636923796
+    percent: 0
+    seconds: 0

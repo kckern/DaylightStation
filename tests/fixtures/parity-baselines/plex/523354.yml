@@ -1,0 +1,25 @@
+_meta:
+  captured_at: '2026-01-21T22:56:31.776Z'
+  source_id: '523354'
+  legacy_endpoint: /media/plex/info/523354
+  source_label: Modern Health
+  source_uid: 22b02b5b-b668-4dc3-bd9f-d9802f1d2398
+response:
+  status: 200
+  body:
+    listkey: '523354'
+    listType: album
+    key: '523355'
+    type: track
+    title: Mindful Walking
+    artist: Meditation
+    albumArtist: Healthy Lifestyles
+    album: Modern Health
+    year: 2024
+    labels: []
+    media_type: audio
+    media_url: /plex_proxy/library/parts/548636/1719350565/file.mp3?X-Plex-Client-Identifier=api-audio-0pbk19y13phhhtp5j0m757&X-Plex-Session-Identifier=0pbk19y13phhhtp5j0m757
+    thumb_id: 548636
+    image: /plex_proxy/library/metadata/523354/thumb/1719350606
+    percent: 0
+    seconds: 0

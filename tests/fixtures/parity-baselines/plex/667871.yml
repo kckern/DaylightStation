@@ -1,0 +1,25 @@
+_meta:
+  captured_at: '2026-01-21T22:56:27.585Z'
+  source_id: '667871'
+  legacy_endpoint: /media/plex/info/667871
+  source_label: Lecture
+  source_uid: 56594038-3e2f-43f9-8a48-34e42293c24c
+response:
+  status: 200
+  body:
+    listkey: '667871'
+    listType: album
+    key: '667880'
+    type: track
+    title: Odysseus and Penelope
+    artist: The Great Courses
+    albumArtist: Elizabeth Vandiver
+    album: The Odyssey of Homer
+    year: 2025
+    labels: []
+    media_type: audio
+    media_url: /plex_proxy/library/parts/732581/1754754273/file.mp3?X-Plex-Client-Identifier=api-audio-ct09sd4a91f1a6an4gqcs&X-Plex-Session-Identifier=ct09sd4a91f1a6an4gqcs
+    thumb_id: 732581
+    image: /plex_proxy/library/metadata/667871/thumb/1754754403
+    percent: 0
+    seconds: 0

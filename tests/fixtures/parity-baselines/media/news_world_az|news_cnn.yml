@@ -1,0 +1,9 @@
+_meta:
+  captured_at: '2026-01-21T22:56:34.361Z'
+  source_id: news/world_az|news/cnn
+  legacy_endpoint: /media/local/news/world_az|news/cnn
+  source_label: 10 Min News
+  source_uid: c1074415-a916-44a4-8204-1efc1279d5e3
+response:
+  status: 200
+  body: null

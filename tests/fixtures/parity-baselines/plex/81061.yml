@@ -1,0 +1,24 @@
+_meta:
+  captured_at: '2026-01-21T22:56:23.616Z'
+  source_id: '81061'
+  legacy_endpoint: /media/plex/info/81061
+  source_label: Christmas Movies
+  source_uid: 019ad1e3-cee7-7aa5-83d2-39212ff4abb7
+response:
+  status: 200
+  body:
+    listkey: '81061'
+    listType: collection
+    key: '651922'
+    type: movie
+    title: The Night Before Christmas
+    summary: It's snowy and cold outside, and warm inside where Jerry squeezes past a mousetrap to cavort under a present-laden Christmas tree. Mistaking the sleeping Tom for a plush toy, Jerry wakes the cat and a mad chase ensues. Various toys come to Jerry's rescue as he dashes about. Mistletoe is his final refuge before he must escape to the outdoors just ahead of Tom's claws. Out in the snow, he may become a mouse Popcycle, and unless Christmas peace can descend, Tom may be in for a nasty surprise as well. Can the lads find the spirit of the season?
+    studio: MGM Cartoon Studio
+    year: 1941
+    labels: []
+    media_type: dash_video
+    media_url: /plex_proxy/video/:/transcode/universal/start.mpd?path=%2Flibrary%2Fmetadata%2F651922&protocol=dash&X-Plex-Client-Identifier=api-e7jpx5zjsf90236o7awkcm6&X-Plex-Session-Identifier=e7jpx5zjsf90236o7awkcm6&X-Plex-Platform=Chrome&autoAdjustQuality=1&fastSeek=1&mediaBufferSize=104857600&X-Plex-Client-Profile-Extra=append-transcode-target-codec(type%3DvideoProfile%26context%3Dstreaming%26videoCodec%3Dh264%2Chevc%26audioCodec%3Daac%26protocol%3Ddash)
+    thumb_id: 702488
+    image: /plex_proxy/library/metadata/651922/thumb/1765709450
+    percent: 0
+    seconds: 0

@@ -1,0 +1,26 @@
+_meta:
+  captured_at: '2026-01-21T22:56:33.350Z'
+  source_id: '351362'
+  legacy_endpoint: /media/plex/info/351362
+  source_label: Basketball
+  source_uid: ce52797f-ec7a-489a-b54a-ece35d27e30c
+response:
+  status: 200
+  body:
+    listkey: '351362'
+    listType: season
+    key: '351369'
+    type: episode
+    title: 'Ball-Handling: On the Move'
+    show: MasterClass
+    season: Basketball
+    summary: Now that you're comfortable with your stationary ball-handling mechanics, Stephen teaches you what to keep in mind when you take the dribble on the move.
+    year: 2017
+    labels:
+      - family
+    media_type: dash_video
+    media_url: /plex_proxy/video/:/transcode/universal/start.mpd?path=%2Flibrary%2Fmetadata%2F351369&protocol=dash&X-Plex-Client-Identifier=api-aajtghiytgfqjjzar8101&X-Plex-Session-Identifier=aajtghiytgfqjjzar8101&X-Plex-Platform=Chrome&autoAdjustQuality=1&fastSeek=1&mediaBufferSize=104857600&X-Plex-Client-Profile-Extra=append-transcode-target-codec(type%3DvideoProfile%26context%3Dstreaming%26videoCodec%3Dh264%2Chevc%26audioCodec%3Daac%26protocol%3Ddash)
+    thumb_id: 338339
+    image: /plex_proxy/library/metadata/351362/thumb/1625231767
+    percent: 0
+    seconds: 0

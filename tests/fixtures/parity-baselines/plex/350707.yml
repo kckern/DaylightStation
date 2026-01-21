@@ -1,0 +1,27 @@
+_meta:
+  captured_at: '2026-01-21T22:56:29.517Z'
+  source_id: '350707'
+  legacy_endpoint: /media/plex/info/350707
+  source_label: Concerts
+  source_uid: 86d44905-58bb-4887-9c24-d6831e366c64
+response:
+  status: 200
+  body:
+    listkey: '350707'
+    listType: collection
+    key: '519332'
+    type: movie
+    title: 이승철 30 Year Anniversary Live
+    summary: |-
+      [FULL] LEE SEUNG CHUL's 30th.Anniversary Concert 
+      "Mugunghwa Samchunli"
+      [풀버젼] 이승철 30주년 기념콘서트 "무궁화 삼천리"
+      [フルーバージョン] イ・スンチョル30周年記念コンサート’’無窮花 三千里”
+    year: 2016
+    labels: []
+    media_type: dash_video
+    media_url: /plex_proxy/video/:/transcode/universal/start.mpd?path=%2Flibrary%2Fmetadata%2F519332&protocol=dash&X-Plex-Client-Identifier=api-xnqk6klfp8hngz0drp6g5&X-Plex-Session-Identifier=xnqk6klfp8hngz0drp6g5&X-Plex-Platform=Chrome&autoAdjustQuality=1&fastSeek=1&mediaBufferSize=104857600&X-Plex-Client-Profile-Extra=append-transcode-target-codec(type%3DvideoProfile%26context%3Dstreaming%26videoCodec%3Dh264%2Chevc%26audioCodec%3Daac%26protocol%3Ddash)
+    thumb_id: 544665
+    image: /plex_proxy/library/metadata/519332/thumb/1669817154
+    percent: 0
+    seconds: 0

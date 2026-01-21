@@ -1,0 +1,27 @@
+_meta:
+  captured_at: '2026-01-21T22:56:34.338Z'
+  source_id: ChristmasEve
+  legacy_endpoint: /data/list/ChristmasEve
+  source_label: Christmas Eve
+  source_uid: cdbf9c85-037b-469e-b801-13904ccd22ff
+response:
+  status: 200
+  body:
+    media_key: ChristmasEve
+    label: ChristmasEve
+    items:
+      - label: Caroling
+        uid: 019b534b-0e5c-7221-a4eb-54c1fdcc767c
+        folder: ChristmasEve
+        queue:
+          plex: '622467'
+      - label: Night Before Christmas
+        uid: 019b534d-2c0e-7221-a4ed-813745c01394
+        folder: ChristmasEve
+        play:
+          plex: '651922'
+      - label: Luke 2
+        uid: 019b534c-9932-7221-a4ed-02d4e8fecc64
+        folder: ChristmasEve
+        play:
+          plex: '48644'

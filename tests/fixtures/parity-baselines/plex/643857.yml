@@ -1,0 +1,24 @@
+_meta:
+  captured_at: '2026-01-21T22:56:30.263Z'
+  source_id: '643857'
+  legacy_endpoint: /media/plex/info/643857
+  source_label: Now by Year
+  source_uid: 52900914-e6b9-4f6e-bc29-8030c90b024a
+response:
+  status: 200
+  body:
+    listkey: '643853'
+    listType: album
+    key: '643854'
+    type: track
+    title: Creep
+    artist: Now!
+    albumArtist: Radiohead
+    album: '1992'
+    labels: []
+    media_type: audio
+    media_url: /plex_proxy/library/parts/685730/1746491291/file.mp3?X-Plex-Client-Identifier=api-audio-nyqo08kdylffruaeifge4h&X-Plex-Session-Identifier=nyqo08kdylffruaeifge4h
+    thumb_id: 685730
+    image: /plex_proxy/library/metadata/643853/thumb/1746491636
+    percent: 0
+    seconds: 0

@@ -1,0 +1,24 @@
+_meta:
+  captured_at: '2026-01-21T22:56:23.391Z'
+  source_id: '663035'
+  legacy_endpoint: /media/plex/info/663035
+  source_label: Christmas
+  source_uid: 2511aaef-ed6a-4e34-b51c-1f77ceef407e
+response:
+  status: 200
+  body:
+    listkey: '663035'
+    listType: episode
+    key: '663035'
+    type: episode
+    title: Log Fireplace
+    show: Ambient
+    season: Season 1
+    labels:
+      - nomusic
+    media_type: dash_video
+    media_url: /plex_proxy/video/:/transcode/universal/start.mpd?path=%2Flibrary%2Fmetadata%2F663035&protocol=dash&X-Plex-Client-Identifier=api-c1at3vij8tvzdpjq1rpxda&X-Plex-Session-Identifier=c1at3vij8tvzdpjq1rpxda&X-Plex-Platform=Chrome&autoAdjustQuality=1&fastSeek=1&mediaBufferSize=104857600&X-Plex-Client-Profile-Extra=append-transcode-target-codec(type%3DvideoProfile%26context%3Dstreaming%26videoCodec%3Dh264%2Chevc%26audioCodec%3Daac%26protocol%3Ddash)
+    thumb_id: 726771
+    image: /plex_proxy/library/metadata/663035/thumb/1751121854
+    percent: 0
+    seconds: 0

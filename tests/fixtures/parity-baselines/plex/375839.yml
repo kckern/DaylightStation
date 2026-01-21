@@ -1,0 +1,26 @@
+_meta:
+  captured_at: '2026-01-21T22:56:25.301Z'
+  source_id: '375839'
+  legacy_endpoint: /media/plex/info/375839
+  source_label: Crash Course Kids
+  source_uid: 07097145-28a0-4ccf-becf-5f5ee1d007e9
+response:
+  status: 200
+  body:
+    listkey: '375840'
+    listType: season
+    key: '375861'
+    type: episode
+    title: The Great Picnic Mix Up
+    show: Crash Course Kids
+    season: Season 1
+    summary: So you know that iced tea you like so much? Or that sweet soda drink? They’re actually a few different things combined to make a new thing. In this episode of Crash Course Kids, Sabrina talks about all the different mixtures, solutions, and ants that can b
+    year: 2022
+    labels:
+      - family
+    media_type: dash_video
+    media_url: /plex_proxy/video/:/transcode/universal/start.mpd?path=%2Flibrary%2Fmetadata%2F375861&protocol=dash&X-Plex-Client-Identifier=api-grkz9w90nqloda7b6ztszn&X-Plex-Session-Identifier=grkz9w90nqloda7b6ztszn&X-Plex-Platform=Chrome&autoAdjustQuality=1&fastSeek=1&mediaBufferSize=104857600&X-Plex-Client-Profile-Extra=append-transcode-target-codec(type%3DvideoProfile%26context%3Dstreaming%26videoCodec%3Dh264%2Chevc%26audioCodec%3Daac%26protocol%3Ddash)
+    thumb_id: 725381
+    image: /plex_proxy/library/metadata/375861/thumb/1753905380
+    percent: 0
+    seconds: 0

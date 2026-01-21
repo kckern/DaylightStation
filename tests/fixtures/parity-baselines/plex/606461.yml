@@ -1,0 +1,24 @@
+_meta:
+  captured_at: '2026-01-21T22:56:29.866Z'
+  source_id: '606461'
+  legacy_endpoint: /media/plex/info/606461
+  source_label: Nursury Rhymes
+  source_uid: 8ff67359-e27f-4ddf-84f4-a97360042258
+response:
+  status: 200
+  body:
+    listkey: '606797'
+    listType: album
+    key: '606748'
+    type: track
+    title: 12345 Once I Caught A Fish Alive (Part 2)
+    artist: Nursery Rhymes
+    album: Educational Songs
+    year: 2024
+    labels: []
+    media_type: audio
+    media_url: /plex_proxy/library/parts/641669/1610542912/file.mp3?X-Plex-Client-Identifier=api-audio-jhv740kbkm8gz0o64s78&X-Plex-Session-Identifier=jhv740kbkm8gz0o64s78
+    thumb_id: 641669
+    image: /plex_proxy/library/metadata/606797/thumb/1766577587
+    percent: 0
+    seconds: 0

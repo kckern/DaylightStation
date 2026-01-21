@@ -1,0 +1,25 @@
+_meta:
+  captured_at: '2026-01-21T22:56:32.064Z'
+  source_id: '70264'
+  legacy_endpoint: /media/plex/info/70264
+  source_label: Simpsons
+  source_uid: 2fb48118-7009-44e2-b015-b4ef2afb18b4
+response:
+  status: 200
+  body:
+    listkey: '70265'
+    listType: season
+    key: '70266'
+    type: episode
+    title: Simpsons Roasting on an Open Fire
+    show: The Simpsons
+    season: Season 1
+    summary: Homer's Christmas bonus is canceled and the rainy-day funds are needed to pay for Bart's tattoo removal.
+    year: 1989
+    labels: []
+    media_type: dash_video
+    media_url: /plex_proxy/video/:/transcode/universal/start.mpd?path=%2Flibrary%2Fmetadata%2F70266&protocol=dash&X-Plex-Client-Identifier=api-1og91hrjeehn0jud6qmnd&X-Plex-Session-Identifier=1og91hrjeehn0jud6qmnd&X-Plex-Platform=Chrome&autoAdjustQuality=1&fastSeek=1&mediaBufferSize=104857600&X-Plex-Client-Profile-Extra=append-transcode-target-codec(type%3DvideoProfile%26context%3Dstreaming%26videoCodec%3Dh264%2Chevc%26audioCodec%3Daac%26protocol%3Ddash)
+    thumb_id: 78367
+    image: /plex_proxy/library/metadata/70266/thumb/1719025861
+    percent: 0
+    seconds: 0

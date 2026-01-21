@@ -1,0 +1,25 @@
+_meta:
+  captured_at: '2026-01-21T22:56:31.111Z'
+  source_id: '649148'
+  legacy_endpoint: /media/plex/info/649148
+  source_label: Astronomy
+  source_uid: 994da651-339b-4411-8e9f-852744b9192e
+response:
+  status: 200
+  body:
+    listkey: '649148'
+    listType: season
+    key: '649149'
+    type: episode
+    title: '2025-05-22'
+    show: Peterson Academy
+    season: Astronomy 101
+    summary: In our introductory lecture, Dr. Brian Keating presents astronomy as humanity’s oldest science, tracing its evolution from ancient naked-eye observations to modern scientific inquiry. He explores how early astronomers like Aristotle, Copernicus, and Galileo developed increasingly accurate models of the cosmos, while highlighting how even brilliant scientists made significant errors alongside their groundbreaking discoveries. The lecture emphasizes astronomy’s unique accessibility as a science that anyone can practice with their own eyes, while also discussing its profound impact on human civilization through developments in timekeeping, navigation, and our understanding of our place in the universe.
+    year: 2025
+    labels: []
+    media_type: dash_video
+    media_url: /plex_proxy/video/:/transcode/universal/start.mpd?path=%2Flibrary%2Fmetadata%2F649149&protocol=dash&X-Plex-Client-Identifier=api-eqdrntn2aae1c8rmz7zoig&X-Plex-Session-Identifier=eqdrntn2aae1c8rmz7zoig&X-Plex-Platform=Chrome&autoAdjustQuality=1&fastSeek=1&mediaBufferSize=104857600&X-Plex-Client-Profile-Extra=append-transcode-target-codec(type%3DvideoProfile%26context%3Dstreaming%26videoCodec%3Dh264%2Chevc%26audioCodec%3Daac%26protocol%3Ddash)
+    thumb_id: 697012
+    image: /plex_proxy/library/metadata/649149/thumb/1747848357
+    percent: 0
+    seconds: 0

@@ -1,0 +1,41 @@
+_meta:
+  captured_at: '2026-01-21T22:56:23.707Z'
+  source_id: '672867'
+  legacy_endpoint: /media/plex/info/672867
+  source_label: Christmas Stage
+  source_uid: 019ad222-5cf1-7aa5-83d3-09621f49c873
+response:
+  status: 200
+  body:
+    listkey: '672867'
+    listType: collection
+    key: '460832'
+    type: movie
+    title: Sandi Patty and The Tabernacle Choir | O Holy Night
+    summary: |-
+      Purchase the full program on Blu-ray, DVD, and CD: 
+
+      Blu-ray: http://bit.ly/RIkTyx
+      DVD: http://bit.ly/TKp10a
+      CD: http://bit.ly/RIl0tX
+
+      Sandi Patty and The Tabernacle Choir present a Christmas special of Music and the Spoken Word, "O Holy Night," featuring the Orchestra at Temple Square, Bells on Temple Square, and Band of the United States Air Force Reserve.
+
+      1. Joy to the World
+      2. Carol of the Bells
+      3. O, Come, All Ye Faithful
+      4. I Saw Three Ships
+      5. Sleigh Ride
+      6. The Spoken Word
+      7. Silent Night
+      8. O Holy Night
+
+      Episode 4033a.  Aired December 17, 2006
+    year: 2006
+    labels: []
+    media_type: dash_video
+    media_url: /plex_proxy/video/:/transcode/universal/start.mpd?path=%2Flibrary%2Fmetadata%2F460832&protocol=dash&X-Plex-Client-Identifier=api-zgl9ulf2ivocwa4lt2by&X-Plex-Session-Identifier=zgl9ulf2ivocwa4lt2by&X-Plex-Platform=Chrome&autoAdjustQuality=1&fastSeek=1&mediaBufferSize=104857600&X-Plex-Client-Profile-Extra=append-transcode-target-codec(type%3DvideoProfile%26context%3Dstreaming%26videoCodec%3Dh264%2Chevc%26audioCodec%3Daac%26protocol%3Ddash)
+    thumb_id: 491651
+    image: /plex_proxy/library/metadata/460832/thumb/1746811771
+    percent: 0
+    seconds: 0
