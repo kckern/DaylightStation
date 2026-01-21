@@ -1,9 +1,13 @@
 // backend/src/2_adapters/content/folder/FolderAdapter.mjs
-import fs from 'fs';
 import path from 'path';
-import yaml from 'js-yaml';
 import { ListableItem } from '../../../1_domains/content/capabilities/Listable.mjs';
 import { Item } from '../../../1_domains/content/entities/Item.mjs';
+import {
+  loadYaml,
+  loadYamlFromPath,
+  listYamlFiles,
+  dirExists
+} from '../../../0_infrastructure/utils/FileIO.mjs';
 
 // Threshold for considering an item "watched" (90%)
 const WATCHED_THRESHOLD = 90;
@@ -44,9 +48,9 @@ export class FolderAdapter {
   _loadWatchlist() {
     if (this._watchlistCache) return this._watchlistCache;
     try {
-      if (!fs.existsSync(this.watchlistPath)) return [];
-      const content = fs.readFileSync(this.watchlistPath, 'utf8');
-      this._watchlistCache = yaml.load(content) || [];
+      // loadYaml handles .yml/.yaml automatically
+      const data = loadYaml(this.watchlistPath.replace(/\.(yml|yaml)$/, ''));
+      this._watchlistCache = data || [];
       return this._watchlistCache;
     } catch (err) {
       return [];
@@ -68,10 +72,9 @@ export class FolderAdapter {
         return this._loadPlexWatchState();
       }
 
-      const filePath = path.join(this.historyPath, `${category}.yml`);
-      if (!fs.existsSync(filePath)) return {};
-      const content = fs.readFileSync(filePath, 'utf8');
-      this._watchStateCache[category] = yaml.load(content) || {};
+      const basePath = path.join(this.historyPath, category);
+      const data = loadYaml(basePath);
+      this._watchStateCache[category] = data || {};
       return this._watchStateCache[category];
     } catch (err) {
       return {};
@@ -89,15 +92,15 @@ export class FolderAdapter {
     const plexDir = path.join(this.historyPath, 'plex');
 
     try {
-      if (!fs.existsSync(plexDir)) return {};
-      const files = fs.readdirSync(plexDir);
+      if (!dirExists(plexDir)) return {};
+
+      // listYamlFiles handles both .yml and .yaml, returns filenames without extension
+      const files = listYamlFiles(plexDir, { stripExtension: false });
 
       for (const file of files) {
-        if (!file.endsWith('.yml') && !file.endsWith('.yaml')) continue;
         const filePath = path.join(plexDir, file);
-        const content = fs.readFileSync(filePath, 'utf8');
-        const data = yaml.load(content) || {};
-        Object.assign(combined, data);
+        const data = loadYamlFromPath(filePath);
+        if (data) Object.assign(combined, data);
       }
 
       this._watchStateCache.plex = combined;
@@ -265,6 +268,26 @@ export class FolderAdapter {
         ? parsed.id
         : `${contentSource}:${parsed.id}`;
 
+      // Build play/open actions from source type (for legacy frontend compatibility)
+      // Frontend uses: ...item.play for media, item.open for apps
+      const playAction = {};
+      const openAction = {};
+
+      if (item.play) {
+        // Raw YAML already has play object - use it
+        Object.assign(playAction, item.play);
+      } else if (item.open) {
+        // Raw YAML has open object - use it for app launches
+        Object.assign(openAction, item.open);
+      } else if (item.action === 'Open' || parsed.source === 'app') {
+        // Build open action for app sources
+        openAction.app = mediaKey;
+      } else {
+        // Build play action for media sources
+        const src = item.src || parsed.source;
+        playAction[src] = mediaKey;
+      }
+
       children.push(new Item({
         id: compoundId,
         source: contentSource,
@@ -289,7 +312,15 @@ export class FolderAdapter {
           uid: item.uid,
           // Original source for reference
           src: item.src || parsed.source,
-          media_key: mediaKey
+          media_key: mediaKey,
+          // Legacy display fields
+          folder: folderName,
+          folder_color: item.folder_color || null
+        },
+        // Actions object - play is used by frontend via ...item.play spread
+        actions: {
+          play: Object.keys(playAction).length > 0 ? playAction : undefined,
+          open: Object.keys(openAction).length > 0 ? openAction : undefined
         }
       }));
     }
