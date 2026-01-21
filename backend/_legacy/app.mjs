@@ -320,6 +320,19 @@ export async function createApp({
       });
     });
 
+    // Cutover status dashboard
+    app.get('/admin/cutover-status', async (req, res) => {
+      const { getFlags } = await import('../src/4_api/middleware/cutoverFlags.mjs');
+
+      res.json({
+        flags: getFlags(),
+        legacyHits: legacyTracker.getHits(),
+        totalLegacyHits: legacyTracker.getTotalHits(),
+        serverUptime: process.uptime(),
+        timestamp: new Date().toISOString()
+      });
+    });
+
     // Legacy finance endpoint shims (redirect to new API - must be before legacy routers)
     app.get('/data/budget', (req, res) => res.redirect(307, '/api/finance/data'));
     app.get('/data/budget/daytoday', (req, res) => res.redirect(307, '/api/finance/data/daytoday'));
