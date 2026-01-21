@@ -126,8 +126,15 @@ export function createFinanceRouter(config) {
         return res.status(404).json({ error: 'Day-to-day budget not found' });
       }
 
-      const months = Object.keys(latestBudget.dayToDayBudget).sort((a, b) => b.localeCompare(a));
+      // Filter to current month or earlier (exclude future months)
+      const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
+      const months = Object.keys(latestBudget.dayToDayBudget)
+        .filter(m => m <= currentMonth)
+        .sort((a, b) => b.localeCompare(a));
       const latestMonth = months[0];
+      if (!latestMonth) {
+        return res.status(404).json({ error: 'No budget data for current or past months' });
+      }
       const budgetData = { ...latestBudget.dayToDayBudget[latestMonth] };
 
       // Remove transactions for lighter response

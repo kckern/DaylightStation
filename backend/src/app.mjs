@@ -307,6 +307,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   }));
   rootLogger.info('finance.mounted', { path: '/api/finance', buxferConfigured: !!financeServices.buxferAdapter });
 
+  // Legacy redirects for frontend compatibility
+  app.get('/data/budget', (req, res) => res.redirect(307, '/api/finance/data'));
+  app.get('/data/budget/daytoday', (req, res) => res.redirect(307, '/api/finance/data/daytoday'));
+
   // Entropy domain router - import legacy function for parity
   const { getEntropyReport: legacyGetEntropyReport } = await import('../_legacy/lib/entropy.mjs');
   app.use('/api/entropy', createEntropyApiRouter({
