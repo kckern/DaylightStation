@@ -27,24 +27,30 @@ const logger = createLogger({ source: 'websocket', app: 'api' });
 export async function createWebsocketServer(server) {
   // Check if already initialized
   let eventBus = getEventBus();
-  if (eventBus) {
-    logger.warn('websocket.already_initialized');
-    return { eventBus };
+  const wasAlreadyInitialized = !!eventBus;
+
+  if (!eventBus) {
+    // Create new EventBus if it doesn't exist
+    eventBus = await createEventBus({
+      httpServer: server,
+      path: '/ws',
+      logger
+    });
+    logger.info('websocket.server.started', { path: '/ws' });
+  } else {
+    logger.info('websocket.using_existing_eventbus');
   }
 
-  // Create new EventBus
-  eventBus = await createEventBus({
-    httpServer: server,
-    path: '/ws',
-    logger
-  });
-
-  // Register message handlers for backward compatibility
+  // Always register message handlers (new backend may not have registered all of them)
+  // Note: This means handlers may be registered twice, but that's safe
+  // and ensures backward compatibility features like log ingestion work
   eventBus.onClientMessage((clientId, message) => {
     handleIncomingMessage(clientId, message, eventBus);
   });
 
-  logger.info('websocket.server.started', { path: '/ws' });
+  if (wasAlreadyInitialized) {
+    logger.info('websocket.handlers_registered', { message: 'Registered legacy message handlers on existing EventBus' });
+  }
 
   return { eventBus };
 }

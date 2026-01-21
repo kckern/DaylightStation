@@ -520,10 +520,11 @@ exeRouter.all("/ws", async (req, res) => {
                 : (req.params || {}));
         
         const message = {
+            topic: payload.topic || 'playback',  // Default to playback for office commands
             timestamp: new Date().toISOString(),
             ...payload
         };
-        
+
         broadcastToWebsockets(message);
         
         res.json({ 

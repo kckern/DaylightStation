@@ -21,6 +21,7 @@ import { userService } from '../_legacy/lib/config/UserService.mjs';
 // Logging system
 import { getDispatcher } from './0_infrastructure/logging/dispatcher.js';
 import { createLogger } from './0_infrastructure/logging/logger.js';
+import { ingestFrontendLogs } from './0_infrastructure/logging/ingestion.js';
 import { loadLoggingConfig, resolveLoggerLevel } from '../_legacy/lib/logging/config.js';
 
 // Bootstrap functions
@@ -196,6 +197,16 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         timestamp: message.timestamp,
         sessionId: message.sessionId,
         data: message.data
+      });
+      return;
+    }
+
+    // Frontend logging messages - ingest to backend log system
+    if (message.source === 'playback-logger' || message.topic === 'logging') {
+      const clientMeta = eventBus.getClientMeta(clientId);
+      ingestFrontendLogs(message, {
+        ip: clientMeta?.ip,
+        userAgent: clientMeta?.userAgent
       });
       return;
     }
@@ -396,7 +407,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     },
     onMqttMessage: (payload) => {
       // Broadcast MQTT sensor messages to WebSocket clients
-      broadcastEvent('sensor', payload);
+      broadcastEvent({ topic: 'sensor', ...payload });
     },
     logger: rootLogger.child({ module: 'hardware' })
   });

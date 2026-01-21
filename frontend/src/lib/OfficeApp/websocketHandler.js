@@ -1,5 +1,7 @@
 import getLogger from '../logging/Logger.js';
 
+const logger = getLogger().child({ module: 'websocketHandler', app: 'office' });
+
 /**
  * WebSocket payload handler for OfficeApp
  * Handles incoming websocket messages and transforms them into menu selections
@@ -59,9 +61,9 @@ const handleMediaPlaybackControl = (playbackCommand) => {
     // Dispatch the event on the window to ensure it reaches the media handlers
     window.dispatchEvent(keyboardEvent);
     
-    console.log(`Playback control: ${playbackCommand} -> ${keyToPress}`);
+    logger.info('office.websocket.playback_control', { playbackCommand, keyToPress });
   } else {
-    getLogger().warn('office.websocket.unknown_playback_command', { playbackCommand });
+    logger.warn('office.websocket.unknown_playback_command', { playbackCommand });
   }
 };
 
@@ -80,20 +82,20 @@ export const createWebSocketHandler = (callbacks) => {
     // GUARDRAIL: Reject sensor telemetry and non-office messages that may have leaked through
     const BLOCKED_TOPICS = ['vibration', 'fitness', 'sensor', 'telemetry', 'logging'];
     if (data.topic && BLOCKED_TOPICS.includes(data.topic)) {
-      console.debug('[WebSocket] Blocked non-office topic:', data.topic);
+      logger.debug('office.websocket.blocked_topic', { topic: data.topic });
       return;
     }
-    
+
     // GUARDRAIL: Reject messages from known non-office sources
     const BLOCKED_SOURCES = ['mqtt', 'fitness', 'fitness-simulator', 'playback-logger'];
     if (data.source && BLOCKED_SOURCES.includes(data.source)) {
-      console.debug('[WebSocket] Blocked non-office source:', data.source);
+      logger.debug('office.websocket.blocked_source', { source: data.source });
       return;
     }
-    
+
     // GUARDRAIL: Reject messages that look like sensor data
     if (data.equipmentId || data.deviceId || data.data?.vibration !== undefined) {
-      console.debug('[WebSocket] Blocked sensor-like payload');
+      logger.debug('office.websocket.blocked_sensor_payload');
       return;
     }
 
@@ -155,8 +157,8 @@ export const createWebSocketHandler = (callbacks) => {
       label: "wscmd",
       [action]: data
     };
-    
-    console.log({selection});
+
+    logger.info('office.websocket.selection', { selection, action });
     setCurrentContent(null);
     handleMenuSelection(selection);
   };

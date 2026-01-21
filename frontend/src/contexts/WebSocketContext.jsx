@@ -14,7 +14,7 @@ export const useWebSocket = () => {
 /**
  * Topics intended for OfficeApp
  */
-const OFFICE_TOPICS = ['playback', 'menu', 'system', 'gratitude', 'legacy'];
+const OFFICE_TOPICS = ['playback', 'menu', 'system', 'gratitude'];
 
 export const WebSocketProvider = ({ children }) => {
   const [websocketConnected, setWebsocketConnected] = useState(false);
