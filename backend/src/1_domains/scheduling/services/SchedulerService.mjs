@@ -9,6 +9,8 @@
  */
 
 import crypto from 'crypto';
+import path from 'path';
+import { pathToFileURL } from 'url';
 import { CronExpressionParser } from 'cron-parser';
 import { Job } from '../entities/Job.mjs';
 import { JobState } from '../entities/JobState.mjs';
@@ -19,13 +21,38 @@ export class SchedulerService {
     jobStore,
     stateStore,
     timezone = 'America/Los_Angeles',
+    moduleBasePath = null,
     logger = console
   }) {
     this.jobStore = jobStore;
     this.stateStore = stateStore;
     this.timezone = timezone;
+    this.moduleBasePath = moduleBasePath;
     this.logger = logger;
     this.runningJobs = new Map();
+  }
+
+  /**
+   * Resolve a module path from jobs.yml to an absolute path.
+   * Module paths in jobs.yml are relative to the legacy cron router location.
+   * @param {string} modulePath - Path from job config (e.g., "../lib/weather.mjs")
+   * @returns {string} Absolute path or file URL for dynamic import
+   */
+  resolveModulePath(modulePath) {
+    if (!this.moduleBasePath) {
+      // No base path configured - use as-is (will likely fail)
+      this.logger.warn?.('scheduler.module.no_base_path', {
+        modulePath,
+        message: 'moduleBasePath not configured, using path as-is'
+      });
+      return modulePath;
+    }
+
+    // Resolve relative path against the configured base
+    const absolutePath = path.resolve(this.moduleBasePath, modulePath);
+
+    // Convert to file URL for cross-platform dynamic import compatibility
+    return pathToFileURL(absolutePath).href;
   }
 
   /**
@@ -207,12 +234,13 @@ export class SchedulerService {
     const scopedLogger = this.logger.child?.({ jobId: executionId, job: job.id }) || this.logger;
 
     try {
-      // Import the job module
-      const module = await import(job.module);
+      // Resolve and import the job module
+      const resolvedPath = this.resolveModulePath(job.module);
+      const module = await import(resolvedPath);
       const handler = module.default;
 
       if (typeof handler !== 'function') {
-        throw new Error(`Job module ${job.module} does not export a default function`);
+        throw new Error(`Job module ${job.module} (resolved: ${resolvedPath}) does not export a default function`);
       }
 
       // Execute with timeout
