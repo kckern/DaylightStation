@@ -432,10 +432,10 @@ export async function createApp({
         res.sendFile(join(frontendPath, 'index.html'));
       });
     } else {
-      rootLogger.debug('frontend.dev.redirect', { path: frontendPath, target: 'http://localhost:3111' });
+      rootLogger.warn('frontend.not_found', { path: frontendPath });
       app.use('/', (req, res, next) => {
-        if (req.path.startsWith('/ws/')) return next();
-        res.redirect('http://localhost:3111');
+        if (req.path.startsWith('/ws/') || req.path.startsWith('/api/')) return next();
+        res.status(502).json({ error: 'Frontend not available', detail: 'Frontend dist not found. Build frontend or check deployment.' });
       });
     }
 
