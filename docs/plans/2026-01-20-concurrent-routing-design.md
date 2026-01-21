@@ -4,7 +4,7 @@
 
 **Goal:** Run legacy and new backends concurrently with path-based routing instead of toggle switching.
 
-**Architecture:** Single HTTP server routes `/api/v1/*` to new DDD backend, everything else to legacy. Legacy owns shared infrastructure (WebSocket, MQTT, scheduler).
+**Architecture:** Single HTTP server routes `/api/v1/*` to new DDD backend, everything else to legacy. New backend owns shared infrastructure (WebSocket, MQTT, scheduler).
 
 **Tech Stack:** Express, Node.js HTTP server, existing DDD structure
 
@@ -32,7 +32,7 @@
 **Key principles:**
 - Legacy app handles all existing routes (preserves current functionality)
 - New app mounts only at `/api/v1/*` prefix (fresh API design)
-- EventBus/WebSocket initialized by legacy, used as singleton by both
+- EventBus/WebSocket initialized by new backend, used as singleton by both
 - No toggle - both always active simultaneously
 - X-Backend header indicates which backend served request
 
@@ -67,12 +67,20 @@ server.on('request', (req, res) => {
 });
 ```
 
-**New app configuration:**
+**App configuration (new backend owns infrastructure):**
 ```javascript
+// New backend loads first with defaults (owns infrastructure)
 const newApp = await createNewApp({
   server,
-  enableScheduler: false,  // legacy handles cron
-  enableMqtt: false,       // legacy handles MQTT
+  // enableScheduler: true (default)
+  // enableMqtt: true (default)
+});
+
+// Legacy loads second with infrastructure disabled
+const legacyApp = await createLegacyApp({
+  server,
+  enableWebSocket: false,
+  enableScheduler: false
 });
 ```
 
@@ -174,3 +182,27 @@ From `backend/src/app.mjs`:
 
 From `backend/index.js`:
 - Toggle state and endpoint (~50 lines)
+
+---
+
+## Infrastructure Ownership (Updated 2026-01-20)
+
+After initial concurrent routing implementation, infrastructure ownership was flipped:
+
+**Before:** Legacy owned WebSocket, MQTT, scheduler
+**After:** New backend owns all infrastructure
+
+```
+index.js loads:
+  1. New backend (src/) - owns WebSocket, MQTT, scheduler
+  2. Legacy backend (_legacy/) - pure API compatibility layer
+```
+
+**Legacy disable flags:**
+- `enableWebSocket: false` - skips WebSocket server creation
+- `enableScheduler: false` - mounts read-only `/cron/status` endpoint
+
+**Why new backend owns infrastructure:**
+- Simplifies migration path - new features use new backend infrastructure directly
+- Reduces coupling between backends
+- Legacy becomes purely an API shim layer that can be eventually removed
