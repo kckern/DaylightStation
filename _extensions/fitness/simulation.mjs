@@ -28,11 +28,11 @@ if (fs.existsSync(envPath)) {
 }
 
 // Import the new config framework
-import { resolveConfigPaths } from '../../backend/lib/config/pathResolver.mjs';
-import { loadAllConfig } from '../../backend/lib/config/loader.mjs';
-import { configService, initConfigService } from '../../backend/lib/config/index.mjs';
-import { userDataService } from '../../backend/lib/config/UserDataService.mjs';
-import { loadFile } from '../../backend/lib/io.mjs';
+import { resolveConfigPaths } from '../../backend/_legacy/lib/config/pathResolver.mjs';
+import { loadAllConfig } from '../../backend/_legacy/lib/config/loader.mjs';
+import { configService, initConfigService } from '../../backend/_legacy/lib/config/index.mjs';
+import { userDataService } from '../../backend/_legacy/lib/config/UserDataService.mjs';
+import { loadFile } from '../../backend/_legacy/lib/io.mjs';
 
 // Configuration
 const DAYLIGHT_HOST = process.env.DAYLIGHT_HOST || 'localhost';
