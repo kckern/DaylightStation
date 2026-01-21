@@ -581,10 +581,14 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'scheduling-state' })
   });
 
+  // Module paths in jobs.yml are relative to legacy cron router location
+  const legacyCronRouterDir = join(__dirname, '..', '_legacy', 'routers');
+
   const schedulerService = new SchedulerService({
     jobStore: schedulingJobStore,
     stateStore: schedulingStateStore,
     timezone: 'America/Los_Angeles',
+    moduleBasePath: legacyCronRouterDir,
     logger: rootLogger.child({ module: 'scheduler-service' })
   });
 
