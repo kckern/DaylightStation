@@ -368,6 +368,7 @@ export class FitnessSession {
     
     // Ghost session detection - now also in SessionLifecycle but keeping for compatibility
     this._emptyRosterStartTime = null;
+    this._isEndingSession = false; // Re-entrancy guard for endSession()
     this._sessionEndedCallbacks = [];
 
     this.snapshot = {
@@ -1712,6 +1713,13 @@ export class FitnessSession {
   endSession(reason = 'unknown') {
     if (!this.sessionId) return false;
 
+    // MEMORY LEAK FIX: Prevent recursive loop when _collectTimelineTick -> _checkEmptyRosterTimeout -> endSession
+    if (this._isEndingSession) {
+      console.warn('[FitnessSession] endSession() called recursively, skipping');
+      return false;
+    }
+    this._isEndingSession = true;
+
     const now = Date.now();
     this.endTime = now;
 
@@ -1855,6 +1863,7 @@ export class FitnessSession {
     this._stopTickTimer(); // 6A: Also stop tick timer on reset
     this._lastAutosaveAt = 0;
     this._emptyRosterStartTime = null; // 6A: Reset empty roster tracking
+    this._isEndingSession = false; // Clear re-entrancy guard
     // Note: Don't clear _sessionEndedCallbacks - they persist across sessions
     this.governanceEngine.reset();
     if (this.timeline) {

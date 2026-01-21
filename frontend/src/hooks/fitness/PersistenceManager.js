@@ -548,7 +548,7 @@ export class PersistenceManager {
 
     const persistSessionData = {
       ...sessionData,
-      version: 2,
+      version: 3,
       timezone,
       startTime: startReadable,
       endTime: endReadable,
@@ -645,7 +645,7 @@ export class PersistenceManager {
       const rawKeys = rawSeries && typeof rawSeries === 'object' ? Object.keys(rawSeries) : [];
       
       this._log('persist_series_encode_before', {
-        sessionId: persistSessionData.sessionId,
+        sessionId: persistSessionData.session?.id,
         seriesCount: rawKeys.length,
         tickCount,
         sampleKeys: rawKeys.slice(0, 5)
@@ -657,7 +657,7 @@ export class PersistenceManager {
       const droppedKeys = rawKeys.filter((key) => !Object.prototype.hasOwnProperty.call(encodedSeries || {}, key));
       
       this._log('persist_series_encode_after', {
-        sessionId: persistSessionData.sessionId,
+        sessionId: persistSessionData.session?.id,
         encodedCount: encodedKeys.length,
         droppedKeys: droppedKeys.slice(0, 5),
         wasEmpty: encodedKeys.length === 0,
@@ -672,7 +672,7 @@ export class PersistenceManager {
       ? Object.entries(persistSessionData.timeline.series).slice(0, 2)
       : [];
     getLogger().debug('fitness.persistence.pre_api', {
-      sessionId: persistSessionData.sessionId,
+      sessionId: persistSessionData.session?.id,
       hasTimeline: !!persistSessionData.timeline,
       seriesKeys: persistSessionData.timeline?.series ? Object.keys(persistSessionData.timeline.series).length : 0,
       seriesSample: seriesSample.map(([k, v]) => [k, typeof v, v?.substring?.(0, 50)])
@@ -686,19 +686,19 @@ export class PersistenceManager {
     if ((this._debugSaveCount = (this._debugSaveCount || 0) + 1) <= 5) {
       const tickCount = persistSessionData.timeline?.timebase?.tickCount || 0;
       const seriesCount = Object.keys(persistSessionData.timeline?.series || {}).length;
-      console.error(`📤 SESSION_SAVE [${this._debugSaveCount}/5]: ${persistSessionData.sessionId}, ticks=${tickCount}, series=${seriesCount}`);
+      console.error(`📤 SESSION_SAVE [${this._debugSaveCount}/5]: ${persistSessionData.session?.id}, ticks=${tickCount}, series=${seriesCount}`);
     }
 
     this._persistApi('api/fitness/save_session', { sessionData: persistSessionData }, 'POST')
       .then(resp => {
         // DEBUG: Log success (throttled)
         if ((this._debugSaveSuccessCount = (this._debugSaveSuccessCount || 0) + 1) <= 3) {
-          console.error(`✅ SESSION_SAVED [${this._debugSaveSuccessCount}/3]: ${persistSessionData.sessionId}`);
+          console.error(`✅ SESSION_SAVED [${this._debugSaveSuccessCount}/3]: ${persistSessionData.session?.id}`);
         }
       })
       .catch(err => {
         // DEBUG: Always log failures (these are critical)
-        console.error(`❌ SESSION_SAVE_FAILED: ${persistSessionData.sessionId}`, err?.message || err);
+        console.error(`❌ SESSION_SAVE_FAILED: ${persistSessionData.session?.id}`, err?.message || err);
         getLogger().error('fitness.persistence.failed', { error: err.message });
       })
       .finally(() => {
