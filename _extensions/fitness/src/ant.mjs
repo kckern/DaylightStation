@@ -17,6 +17,12 @@ export class ANTPlusManager {
     this.scanInterval = null;
     this.broadcastCallback = broadcastCallback;
     this._lastLogTime = new Map(); // Throttle logging per device
+
+    // Multi-dongle deduplication: when multiple USB dongles receive the same
+    // ANT+ broadcast, each fires a 'data' event. Track last broadcast per
+    // sensor to skip duplicates within a short window.
+    this._lastBroadcast = new Map(); // deviceId-profile -> { ts, hr, cadence, power }
+    this._dedupeWindowMs = 50; // Skip duplicates within 50ms
   }
 
   async initialize() {
@@ -152,32 +158,48 @@ export class ANTPlusManager {
       channel.on('data', (profile, deviceId, data) => {
         rawDataCount++;
         const timestamp = new Date().toISOString().split('T')[1].slice(0, -5);
-        
+
         // Update device data packet count
         if (detectedDevices.has(deviceId)) {
           detectedDevices.get(deviceId).dataPackets++;
         }
-        
+
         // Extract key metrics for logging (avoid raw buffer spam)
         const hr = data.ComputedHeartRate ?? data.heartRate ?? null;
         const cadence = data.CalculatedCadence ?? data.cadence ?? null;
         const power = data.InstantaneousPower ?? data.power ?? null;
-        
-        // Only log meaningful changes (throttle to reduce spam)
-        const deviceKey = `${deviceId}-${profile}`;
-        const lastLog = this._lastLogTime.get(deviceKey) || 0;
+
+        // Multi-dongle deduplication: skip if another dongle already sent
+        // identical data for this sensor within the dedup window
+        const dedupeKey = `${deviceId}-${profile}`;
         const now = Date.now();
-        
+        const lastBroadcast = this._lastBroadcast.get(dedupeKey);
+
+        if (lastBroadcast && (now - lastBroadcast.ts) < this._dedupeWindowMs) {
+          // Within dedup window - check if data is identical
+          if (lastBroadcast.hr === hr &&
+              lastBroadcast.cadence === cadence &&
+              lastBroadcast.power === power) {
+            return; // Skip duplicate from other dongle
+          }
+        }
+
+        // Update last broadcast tracking
+        this._lastBroadcast.set(dedupeKey, { ts: now, hr, cadence, power });
+
+        // Only log meaningful changes (throttle to reduce spam)
+        const lastLog = this._lastLogTime.get(dedupeKey) || 0;
+
         // Log at most once per second per device
         if (now - lastLog > 1000) {
-          this._lastLogTime.set(deviceKey, now);
-          
+          this._lastLogTime.set(dedupeKey, now);
+
           // Build compact log line
           const metrics = [];
           if (hr) metrics.push(`HR:${hr}`);
           if (cadence !== null) metrics.push(`CAD:${Math.round(cadence)}`);
           if (power) metrics.push(`PWR:${power}`);
-          
+
           if (metrics.length > 0) {
             console.log(`[${timestamp}] ${deviceId} ${profile}: ${metrics.join(' ')}`);
           }
@@ -249,6 +271,8 @@ export class ANTPlusManager {
       }
     }
     this.devices.clear();
+    this._lastBroadcast.clear();
+    this._lastLogTime.clear();
   }
 
   getStatus() {
