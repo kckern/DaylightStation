@@ -1,0 +1,37 @@
+# tests/fixtures/parity-baselines/config.yml
+# Global settings for parity test comparison
+
+server:
+  default_url: http://localhost:3112
+  timeout_ms: 10000
+
+global_ignore:
+  - _cached
+  - timestamp
+  - fetchedAt
+  - _source
+  - generatedAt
+  - lastUpdated
+  - _meta
+
+global_type_checks:
+  duration: number
+  items: array
+  id: string
+
+comparison:
+  # Fields to always check exist (regardless of value)
+  required_by_type:
+    plex:
+      - id
+      - title
+      - type
+    scripture:
+      - id
+      - title
+    hymn:
+      - id
+      - title
+    talk:
+      - id
+      - title
