@@ -148,11 +148,16 @@ export function createContentRegistry(config) {
 
   // Register folder adapter (optional, requires registry reference)
   if (config.watchlistPath) {
-    registry.register(new FolderAdapter({
+    const folderAdapter = new FolderAdapter({
       watchlistPath: config.watchlistPath,
       historyPath: config.mediaMemoryPath || null,
       registry
-    }));
+    });
+    registry.register(folderAdapter);
+
+    // Also register as 'local' for legacy frontend compatibility
+    // Legacy endpoints use /data/list/{key} which maps to /list/local/{key}
+    registry.adapters.set('local', folderAdapter);
   }
 
   return registry;
@@ -178,16 +183,17 @@ export function createWatchStore(config) {
  * @param {Function} [config.loadFile] - Function to load YAML files
  * @param {Function} [config.saveFile] - Function to save YAML files
  * @param {string} [config.cacheBasePath] - Base path for image cache
+ * @param {string} [config.dataPath] - Base data path for local content
  * @param {Object} [config.logger] - Logger instance
  * @returns {Object} Router configuration
  */
 export function createApiRouters(config) {
-  const { registry, watchStore, loadFile, saveFile, cacheBasePath, logger = console } = config;
+  const { registry, watchStore, loadFile, saveFile, cacheBasePath, dataPath, mediaBasePath, logger = console } = config;
 
   return {
     content: createContentRouter(registry, watchStore, { loadFile, saveFile, cacheBasePath, logger }),
     proxy: createProxyRouter({ registry }),
-    localContent: createLocalContentRouter({ registry }),
+    localContent: createLocalContentRouter({ registry, dataPath, mediaBasePath }),
     play: createPlayRouter({ registry, watchStore, logger }),
     list: createListRouter({ registry }),
     legacyShims: {
