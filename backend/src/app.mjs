@@ -326,7 +326,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   app.use('/api/list', contentRouters.list);
   app.use('/api/play', contentRouters.play);
   app.use('/api/local-content', contentRouters.localContent);
-  app.post('/media/log', contentRouters.legacyShims.mediaLog);
+  // NOTE: POST /media/log is handled by legacy backend (_legacy/routers/media.mjs)
+  // Frontend calls /media/log (not /api/v1/media/log), so it routes to legacy.
+  // When cutover is ready, migrate frontend to call /api/v1/play/log instead.
   rootLogger.info('content.mounted', { paths: ['/api/content', '/proxy', '/api/list', '/api/play', '/api/local-content'] });
 
   // Health domain router
