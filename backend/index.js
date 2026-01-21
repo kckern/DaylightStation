@@ -6,7 +6,8 @@
  * - /api/v1/* -> new DDD backend (in src/)
  * - Everything else -> legacy backend (in _legacy/)
  *
- * Legacy owns shared infrastructure: WebSocket/EventBus, MQTT, scheduler.
+ * New backend owns shared infrastructure: WebSocket/EventBus, MQTT, scheduler.
+ * Legacy is a pure API compatibility layer.
  */
 
 import { createServer } from 'http';
@@ -115,22 +116,29 @@ async function main() {
 
   logger.info('router.loading_backends', { message: 'Loading legacy and new backends...' });
 
-  // Load legacy backend (owns scheduler, MQTT, WebSocket/EventBus)
-  const { createApp: createLegacyApp } = await import('./_legacy/app.mjs');
-  const legacyApp = await createLegacyApp({ server, logger, configPaths, configExists });
-  logger.info('router.legacy_loaded', { message: 'Legacy backend loaded' });
-
-  // Load new backend (scheduler and MQTT disabled - legacy owns them)
+  // Load new backend first (owns WebSocket/EventBus, MQTT, scheduler)
   const { createApp: createNewApp } = await import('./src/app.mjs');
   const newApp = await createNewApp({
     server,
     logger,
     configPaths,
-    configExists,
-    enableScheduler: false,
-    enableMqtt: false
+    configExists
+    // enableScheduler: true (default)
+    // enableMqtt: true (default)
   });
-  logger.info('router.new_loaded', { message: 'New backend loaded (scheduler/MQTT disabled)' });
+  logger.info('router.new_loaded', { message: 'New backend loaded (owns infrastructure)' });
+
+  // Load legacy backend (pure API layer - infrastructure disabled)
+  const { createApp: createLegacyApp } = await import('./_legacy/app.mjs');
+  const legacyApp = await createLegacyApp({
+    server,
+    logger,
+    configPaths,
+    configExists,
+    enableWebSocket: false,
+    enableScheduler: false
+  });
+  logger.info('router.legacy_loaded', { message: 'Legacy backend loaded (API layer only)' });
 
   // ==========================================================================
   // Request Routing (path-based)
