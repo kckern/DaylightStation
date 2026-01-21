@@ -147,7 +147,9 @@ export async function createApp({ server, logger, configPaths, configExists }) {
       }
       const equipmentConfig = householdConfig?.equipment || legacyFitnessConfig.equipment || [];
 
-      if (process.env.mqtt) {
+      if (process.env.DISABLE_MQTT) {
+        rootLogger.info('mqtt.disabled', { reason: 'DISABLE_MQTT environment variable set' });
+      } else if (process.env.mqtt) {
         initMqttSubscriber(equipmentConfig);
       } else {
         rootLogger.warn('mqtt.not_configured', { message: 'process.env.mqtt missing; skipping MQTT init' });
