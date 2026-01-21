@@ -417,7 +417,7 @@ export async function createApp({
     app.use("/api", apiRouter);
 
     // Frontend
-    const frontendPath = join(__dirname, '../frontend/dist');
+    const frontendPath = join(__dirname, '../../frontend/dist');
     const frontendExists = existsSync(frontendPath);
     if (frontendExists) {
       // Serve the frontend from the root URL
