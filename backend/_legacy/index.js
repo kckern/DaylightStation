@@ -127,7 +127,7 @@ async function main() {
   server.on('request', app);
 
   // Start server
-  const port = process.env.PORT || 3112;
+  const port = process.env.PORT || 3111;
   const host = '0.0.0.0';
   server.listen(port, host, () => {
     logger.info('server.started', {

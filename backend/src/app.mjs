@@ -466,7 +466,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       host: kioskConfig.host || '',
       port: kioskConfig.port || 5000,
       password: kioskConfig.password || '',
-      daylightHost: kioskConfig.daylightHost || `http://localhost:${process.env.PORT || 3112}`
+      daylightHost: kioskConfig.daylightHost || `http://localhost:${process.env.PORT || 3111}`
     },
     tasker: {
       host: taskerConfig.host || '',

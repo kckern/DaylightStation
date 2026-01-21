@@ -132,7 +132,7 @@ async function main() {
   // Start Server
   // ==========================================================================
 
-  const port = process.env.PORT || 3112;
+  const port = process.env.PORT || 3111;
   server.listen(port, '0.0.0.0', () => {
     logger.info('server.started', { port, host: '0.0.0.0', mode: 'standalone-new' });
   });
