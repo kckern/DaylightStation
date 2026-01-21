@@ -216,7 +216,9 @@ export function createContentRouter(registry, watchStore = null, options = {}) {
   /**
    * GET /api/content/plex/info/:id - Get Plex item metadata
    *
-   * Returns full metadata for a Plex item.
+   * Returns full metadata for a Plex item with legacy-compatible fields.
+   * Legacy fields: listkey, listType, key, type, show, season, labels,
+   *                media_type, media_url, thumb_id, image, percent, seconds
    */
   router.get('/plex/info/:id', async (req, res) => {
     try {
@@ -232,10 +234,64 @@ export function createContentRouter(registry, watchStore = null, options = {}) {
         return res.status(404).json({ error: 'Item not found', id });
       }
 
+      // Determine media_type for legacy compat
+      const itemType = item.metadata?.type;
+      const videoTypes = ['movie', 'episode', 'clip', 'short', 'trailer'];
+      const audioTypes = ['track'];
+      let media_type = itemType;
+      if (videoTypes.includes(itemType)) media_type = 'dash_video';
+      else if (audioTypes.includes(itemType)) media_type = 'audio';
+
+      // Generate streaming URL for playable items
+      let media_url = null;
+      if (videoTypes.includes(itemType) || audioTypes.includes(itemType)) {
+        media_url = await plexAdapter.loadMediaUrl(id);
+      }
+
+      // Load watch state from viewing history
+      let percent = 0;
+      let seconds = 0;
+      if (typeof plexAdapter._loadViewingHistory === 'function') {
+        const history = plexAdapter._loadViewingHistory();
+        const entry = history[id];
+        if (entry) {
+          seconds = entry.playhead || entry.seconds || 0;
+          const duration = entry.mediaDuration || entry.duration || 0;
+          percent = duration > 0 ? Math.round((seconds / duration) * 100) : (entry.percent || 0);
+        }
+      }
+
+      // Extract thumb_id from Media Part if available, else use rating key
+      let thumb_id = id;
+      const mediaPart = item.metadata?.Media?.[0]?.Part?.[0];
+      if (mediaPart?.id) {
+        thumb_id = mediaPart.id;
+      }
+
       res.json({
-        id: item.id,
+        // Legacy identifiers
+        listkey: id,
+        listType: itemType,
+        key: id,
+        // Core fields
         title: item.title,
-        itemType: item.itemType,
+        type: itemType,
+        // Show/season info (for episodes)
+        show: item.metadata?.show || item.metadata?.grandparentTitle || null,
+        season: item.metadata?.season || item.metadata?.parentTitle || null,
+        // Labels for governance
+        labels: item.metadata?.labels || [],
+        // Media playback
+        media_type,
+        media_url,
+        // Thumbnail
+        thumb_id,
+        image: item.thumbnail,
+        // Watch state
+        percent,
+        seconds,
+        // Preserve new DDD fields too
+        id: item.id,
         mediaType: item.mediaType,
         duration: item.duration,
         thumbnail: item.thumbnail,
