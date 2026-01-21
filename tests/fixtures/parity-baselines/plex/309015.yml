@@ -1,0 +1,26 @@
+_meta:
+  captured_at: '2026-01-21T22:56:32.923Z'
+  source_id: '309015'
+  legacy_endpoint: /media/plex/info/309015
+  source_label: CBT
+  source_uid: 0f03318e-0269-4846-b092-601e4c166ec5
+response:
+  status: 200
+  body:
+    listkey: '309015'
+    listType: season
+    key: '309016'
+    type: episode
+    title: 'A CBT Toolbox: Toward Wise Living'
+    show: Professional
+    season: Cognitive Behavioral Therapy for Daily Life
+    summary: Learn why cognitive behavioral therapy (CBT) is such a powerful and effective therapy to help you move toward Wise Mind—that state where your emotions and cognition are working together, each from its own strength, to support you in your best possible life. You’ll meet Amanda, David, and Miriam and watch their initial CBT sessions.
+    year: 2021
+    labels:
+      - family
+    media_type: dash_video
+    media_url: /plex_proxy/video/:/transcode/universal/start.mpd?path=%2Flibrary%2Fmetadata%2F309016&protocol=dash&X-Plex-Client-Identifier=api-f5q4s82o3a8x0rhh46jsv&X-Plex-Session-Identifier=f5q4s82o3a8x0rhh46jsv&X-Plex-Platform=Chrome&autoAdjustQuality=1&fastSeek=1&mediaBufferSize=104857600&X-Plex-Client-Profile-Extra=append-transcode-target-codec(type%3DvideoProfile%26context%3Dstreaming%26videoCodec%3Dh264%2Chevc%26audioCodec%3Daac%26protocol%3Ddash)
+    thumb_id: 329898
+    image: /plex_proxy/library/metadata/309016/thumb/1654270988
+    percent: 0
+    seconds: 0

@@ -1,0 +1,26 @@
+_meta:
+  captured_at: '2026-01-21T22:56:32.747Z'
+  source_id: '71371'
+  legacy_endpoint: /media/plex/info/71371
+  source_label: Tintin
+  source_uid: 8d1e04f0-a020-4c90-95c5-7f21762f5806
+response:
+  status: 200
+  body:
+    listkey: '71372'
+    listType: season
+    key: '71373'
+    type: episode
+    title: The Crab with the Golden Claws (1)
+    show: The Adventures of Tintin
+    season: Season 1
+    summary: Tintin finds himself in the middle of a mystery involving a drowned man, a tin of crab meat, and a piece of paper with a strange name on it. He follows the clues to a ship and finds its crew is using the crab tins to smuggle opiates out of the country.
+    year: 1991
+    labels:
+      - family
+    media_type: dash_video
+    media_url: /plex_proxy/video/:/transcode/universal/start.mpd?path=%2Flibrary%2Fmetadata%2F71373&protocol=dash&X-Plex-Client-Identifier=api-zemkzebebfwnve2abuovr&X-Plex-Session-Identifier=zemkzebebfwnve2abuovr&X-Plex-Platform=Chrome&autoAdjustQuality=1&fastSeek=1&mediaBufferSize=104857600&X-Plex-Client-Profile-Extra=append-transcode-target-codec(type%3DvideoProfile%26context%3Dstreaming%26videoCodec%3Dh264%2Chevc%26audioCodec%3Daac%26protocol%3Ddash)
+    thumb_id: 383511
+    image: /plex_proxy/library/metadata/71373/thumb/1719016608
+    percent: 0
+    seconds: 0

@@ -1,0 +1,23 @@
+_meta:
+  captured_at: '2026-01-21T22:56:25.557Z'
+  source_id: '48644'
+  legacy_endpoint: /media/plex/info/48644
+  source_label: Luke 2
+  source_uid: 019b534c-9932-7221-a4ed-02d4e8fecc64
+response:
+  status: 200
+  body:
+    listkey: '48644'
+    listType: movie
+    key: '48644'
+    type: movie
+    title: 1986 - The Nativity - Luke II
+    year: 2020
+    labels:
+      - family
+    media_type: dash_video
+    media_url: /plex_proxy/video/:/transcode/universal/start.mpd?path=%2Flibrary%2Fmetadata%2F48644&protocol=dash&X-Plex-Client-Identifier=api-fm6lrj9zxhjxvrxt8qk7p8&X-Plex-Session-Identifier=fm6lrj9zxhjxvrxt8qk7p8&X-Plex-Platform=Chrome&autoAdjustQuality=1&fastSeek=1&mediaBufferSize=104857600&X-Plex-Client-Profile-Extra=append-transcode-target-codec(type%3DvideoProfile%26context%3Dstreaming%26videoCodec%3Dh264%2Chevc%26audioCodec%3Daac%26protocol%3Ddash)
+    thumb_id: 45953
+    image: /plex_proxy/library/metadata/48644/thumb/1746810617
+    percent: 0
+    seconds: 0

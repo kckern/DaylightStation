@@ -1,0 +1,26 @@
+_meta:
+  captured_at: '2026-01-21T22:56:29.267Z'
+  source_id: '670147'
+  legacy_endpoint: /media/plex/info/670147
+  source_label: Stinky and Dirty
+  source_uid: d672dfc7-8ec5-4a44-8a2a-9e0c6660e16b
+response:
+  status: 200
+  body:
+    listkey: '670147'
+    listType: season
+    key: '670152'
+    type: episode
+    title: 5. Concrete Plans/The Art of Trash
+    show: The Stinky & Dirty Show
+    season: Season 1
+    summary: Concrete Plans Stinky and Dirty accidentally mess up some wet cement and in an attempt to re-smooth it, leave their tire tracks behind. They find creative ways to fix it. The Art of Trash Stinky & Dirty clean up a vacant lot full of trash to make a park, but when they can't remove some large items, they turn the items into a trash sculpture instead!
+    year: 2016
+    labels:
+      - kidsfun
+    media_type: dash_video
+    media_url: /plex_proxy/video/:/transcode/universal/start.mpd?path=%2Flibrary%2Fmetadata%2F670152&protocol=dash&X-Plex-Client-Identifier=api-cag40q4w0x6qqaqnfng66&X-Plex-Session-Identifier=cag40q4w0x6qqaqnfng66&X-Plex-Platform=Chrome&autoAdjustQuality=1&fastSeek=1&mediaBufferSize=104857600&X-Plex-Client-Profile-Extra=append-transcode-target-codec(type%3DvideoProfile%26context%3Dstreaming%26videoCodec%3Dh264%2Chevc%26audioCodec%3Daac%26protocol%3Ddash)
+    thumb_id: 734769
+    image: /plex_proxy/library/metadata/670152/thumb/1756788701
+    percent: 0
+    seconds: 0

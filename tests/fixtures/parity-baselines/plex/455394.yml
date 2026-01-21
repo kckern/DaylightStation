@@ -1,0 +1,26 @@
+_meta:
+  captured_at: '2026-01-21T22:56:23.988Z'
+  source_id: '455394'
+  legacy_endpoint: /media/plex/info/455394
+  source_label: Living Scriptures
+  source_uid: 019ad755-b55d-7448-ae1d-04b5c9ae0735
+response:
+  status: 200
+  body:
+    listkey: '455500'
+    listType: season
+    key: '455502'
+    type: episode
+    title: The Tree of Life
+    show: Living Scriptures
+    season: Season 1
+    summary: The prophet Lehi had a dream that brought joy and concern for the eternal welfare of his family. The symbols of Lehi’s dream contain teachings important to us even today. The meaning behind the symbols are brought to life, from the mists of darkness to the great and spacious building. The importance of holding— and helping others grasp— the iron rod so that we can partake of the fruit of eternal life becomes clear. 1 Nephi 8–15.
+    year: 2022
+    labels:
+      - family
+    media_type: dash_video
+    media_url: /plex_proxy/video/:/transcode/universal/start.mpd?path=%2Flibrary%2Fmetadata%2F455502&protocol=dash&X-Plex-Client-Identifier=api-56z0muwe2n55pgb0hnvo7i&X-Plex-Session-Identifier=56z0muwe2n55pgb0hnvo7i&X-Plex-Platform=Chrome&autoAdjustQuality=1&fastSeek=1&mediaBufferSize=104857600&X-Plex-Client-Profile-Extra=append-transcode-target-codec(type%3DvideoProfile%26context%3Dstreaming%26videoCodec%3Dh264%2Chevc%26audioCodec%3Daac%26protocol%3Ddash)
+    thumb_id: 486521
+    image: /plex_proxy/library/metadata/455502/thumb/1719104565
+    percent: 0
+    seconds: 0

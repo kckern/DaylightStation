@@ -1,0 +1,26 @@
+_meta:
+  captured_at: '2026-01-21T22:56:31.058Z'
+  source_id: '56021'
+  legacy_endpoint: /media/plex/info/56021
+  source_label: Aladdin
+  source_uid: 019ba5ba-9efe-7110-b753-83b1d3f6fae6
+response:
+  status: 200
+  body:
+    listkey: '56021'
+    listType: movie
+    key: '56021'
+    type: movie
+    title: Aladdin
+    summary: A young man's life is turned around with the help of a genie inside a lamp.
+    tagline: Imagine if you had three wishes, three hopes, three dreams and they all could come true.
+    studio: Walt Disney Feature Animation
+    year: 1992
+    labels:
+      - family
+    media_type: dash_video
+    media_url: /plex_proxy/video/:/transcode/universal/start.mpd?path=%2Flibrary%2Fmetadata%2F56021&protocol=dash&X-Plex-Client-Identifier=api-sf51rckc7rfhz62z7neg5&X-Plex-Session-Identifier=sf51rckc7rfhz62z7neg5&X-Plex-Platform=Chrome&autoAdjustQuality=1&fastSeek=1&mediaBufferSize=104857600&X-Plex-Client-Profile-Extra=append-transcode-target-codec(type%3DvideoProfile%26context%3Dstreaming%26videoCodec%3Dh264%2Chevc%26audioCodec%3Daac%26protocol%3Ddash)
+    thumb_id: 59223
+    image: /plex_proxy/library/metadata/56021/thumb/1767700507
+    percent: 0
+    seconds: 0

@@ -1,0 +1,23 @@
+_meta:
+  captured_at: '2026-01-21T22:56:24.086Z'
+  source_id: '545064'
+  legacy_endpoint: /media/plex/info/545064
+  source_label: 이루마
+  source_uid: e81269f7-5472-4049-8429-eee41bfc607b
+response:
+  status: 200
+  body:
+    listkey: '545185'
+    listType: album
+    key: '545186'
+    type: track
+    title: Embrace Of Silence
+    artist: 이루마
+    album: Piano
+    labels: []
+    media_type: audio
+    media_url: /plex_proxy/library/parts/572526/1507968340/file.mp3?X-Plex-Client-Identifier=api-audio-21vocf5gay9cthlpjqtxka&X-Plex-Session-Identifier=21vocf5gay9cthlpjqtxka
+    thumb_id: 572526
+    image: /plex_proxy/library/metadata/545185/thumb/1723060571
+    percent: 0
+    seconds: 0

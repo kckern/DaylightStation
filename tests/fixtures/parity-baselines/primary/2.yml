@@ -1,0 +1,30 @@
+_meta:
+  captured_at: '2026-01-21T22:56:34.355Z'
+  source_id: '2'
+  legacy_endpoint: /data/primary/2
+  source_label: Primary
+  source_uid: 47d78c7d-f90b-4bd6-9a48-827a4023d1ef
+response:
+  status: 200
+  body:
+    title: I Am a Child of God
+    song_number: 2
+    verses:
+      - - I am a child of God,
+        - And he has sent me here,
+        - Has given me an earthly home
+        - With parents kind and dear.
+      - - I am a child of God,
+        - And so my needs are great;
+        - Help me to understand his words
+        - Before it grows too late.
+      - - I am a child of God.
+        - Rich blessings are in store;
+        - If I but learn to do his will,
+        - I’ll live with him once more.
+      - - I am a child of God.
+        - His promises are sure;
+        - Celestial glory shall be mine
+        - If I can but endure.
+    mediaUrl: /media/audio/songs/primary/0002-i-am-a-child-of-god
+    duration: 202

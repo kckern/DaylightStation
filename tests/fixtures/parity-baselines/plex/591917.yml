@@ -1,0 +1,25 @@
+_meta:
+  captured_at: '2026-01-21T22:56:30.353Z'
+  source_id: '591917'
+  legacy_endpoint: /media/plex/info/591917
+  source_label: Heal
+  source_uid: d1277b0c-24ac-4626-9ffc-9d7a639f5092
+response:
+  status: 200
+  body:
+    listkey: '591918'
+    listType: album
+    key: '591919'
+    type: track
+    title: Refresh
+    artist: Relax, Heal, Inspire
+    albumArtist: Christopher Lloyd Clarke
+    album: Relax Heal & Inspire, Vol. 1
+    year: 2024
+    labels: []
+    media_type: audio
+    media_url: /plex_proxy/library/parts/623176/1746652843/file.mp3?X-Plex-Client-Identifier=api-audio-g1vz48moktqvrroztdsze&X-Plex-Session-Identifier=g1vz48moktqvrroztdsze
+    thumb_id: 623176
+    image: /plex_proxy/library/metadata/591918/thumb/1723140024
+    percent: 0
+    seconds: 0

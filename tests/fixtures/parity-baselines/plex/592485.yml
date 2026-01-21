@@ -1,0 +1,24 @@
+_meta:
+  captured_at: '2026-01-21T22:56:28.871Z'
+  source_id: '592485'
+  legacy_endpoint: /media/plex/info/592485
+  source_label: Cosmic Noise
+  source_uid: 3371188a-ab4d-495c-9a03-ac02e820386a
+response:
+  status: 200
+  body:
+    listkey: '592485'
+    listType: album
+    key: '592486'
+    type: track
+    title: Cosmic Noise
+    artist: White Noise
+    album: Cosmic Noise
+    year: 2024
+    labels: []
+    media_type: audio
+    media_url: /plex_proxy/library/parts/623544/1595985860/file.mp3?X-Plex-Client-Identifier=api-audio-u1bpxrnhxeut4p8l8l5x7&X-Plex-Session-Identifier=u1bpxrnhxeut4p8l8l5x7
+    thumb_id: 623544
+    image: /plex_proxy/library/metadata/592485/thumb/1723140017
+    percent: 0
+    seconds: 0

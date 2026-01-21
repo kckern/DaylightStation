@@ -1,0 +1,24 @@
+_meta:
+  captured_at: '2026-01-21T22:56:28.727Z'
+  source_id: '670008'
+  legacy_endpoint: /media/plex/info/670008
+  source_label: 이야기배달부 동개비
+  source_uid: 11731df5-d580-4d2b-9b7e-22f71f3cd82b
+response:
+  status: 200
+  body:
+    listkey: '670009'
+    listType: season
+    key: '670014'
+    type: episode
+    title: Episode 5
+    show: 이야기배달부 동개비
+    season: Season 1
+    labels:
+      - kidsfun
+    media_type: dash_video
+    media_url: /plex_proxy/video/:/transcode/universal/start.mpd?path=%2Flibrary%2Fmetadata%2F670014&protocol=dash&X-Plex-Client-Identifier=api-5yazxo2g5ztk0bz5v9i64&X-Plex-Session-Identifier=5yazxo2g5ztk0bz5v9i64&X-Plex-Platform=Chrome&autoAdjustQuality=1&fastSeek=1&mediaBufferSize=104857600&X-Plex-Client-Profile-Extra=append-transcode-target-codec(type%3DvideoProfile%26context%3Dstreaming%26videoCodec%3Dh264%2Chevc%26audioCodec%3Daac%26protocol%3Ddash)
+    thumb_id: 734522
+    image: /plex_proxy/library/metadata/670014/thumb/1754939603
+    percent: 0
+    seconds: 0

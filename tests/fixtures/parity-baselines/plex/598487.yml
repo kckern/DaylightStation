@@ -1,0 +1,24 @@
+_meta:
+  captured_at: '2026-01-21T22:56:26.955Z'
+  source_id: '598487'
+  legacy_endpoint: /media/plex/info/598487
+  source_label: Tony Horton
+  source_uid: 1c1f8219-491b-40d6-a47d-490a4175613c
+response:
+  status: 200
+  body:
+    listkey: '598487'
+    listType: season
+    key: '598488'
+    type: episode
+    title: Welcome!
+    show: Power Nation
+    season: Specials
+    summary: Welcome!
+    labels: []
+    media_type: dash_video
+    media_url: /plex_proxy/video/:/transcode/universal/start.mpd?path=%2Flibrary%2Fmetadata%2F598488&protocol=dash&X-Plex-Client-Identifier=api-gqrzlgz0rit0g3luzaco&X-Plex-Session-Identifier=gqrzlgz0rit0g3luzaco&X-Plex-Platform=Chrome&autoAdjustQuality=1&fastSeek=1&mediaBufferSize=104857600&X-Plex-Client-Profile-Extra=append-transcode-target-codec(type%3DvideoProfile%26context%3Dstreaming%26videoCodec%3Dh264%2Chevc%26audioCodec%3Daac%26protocol%3Ddash)
+    thumb_id: 629525
+    image: /plex_proxy/library/metadata/598488/thumb/1723153833
+    percent: 0
+    seconds: 0

@@ -1,0 +1,26 @@
+_meta:
+  captured_at: '2026-01-21T22:56:33.712Z'
+  source_id: '313314'
+  legacy_endpoint: /media/plex/info/313314
+  source_label: Stress
+  source_uid: ee99b665-0361-4a25-b79d-aa49ef558446
+response:
+  status: 200
+  body:
+    listkey: '313314'
+    listType: season
+    key: '313315'
+    type: episode
+    title: Why Don’t Zebras Get Ulcers? Why Do We?
+    show: Better Living
+    season: Stress and Your Body
+    summary: In Professor Sapolsky’s introductory lecture, get a behind-the-scenes look at the science of stress and preview the groundwork for the course ahead. What exactly happens to our bodies when we come under stress? And how is our response to stress different from that of a zebra being hunted al ong a savannah?
+    year: 2021
+    labels:
+      - family
+    media_type: dash_video
+    media_url: /plex_proxy/video/:/transcode/universal/start.mpd?path=%2Flibrary%2Fmetadata%2F313315&protocol=dash&X-Plex-Client-Identifier=api-dvr84rfuvfttdfz0izxtm&X-Plex-Session-Identifier=dvr84rfuvfttdfz0izxtm&X-Plex-Platform=Chrome&autoAdjustQuality=1&fastSeek=1&mediaBufferSize=104857600&X-Plex-Client-Profile-Extra=append-transcode-target-codec(type%3DvideoProfile%26context%3Dstreaming%26videoCodec%3Dh264%2Chevc%26audioCodec%3Daac%26protocol%3Ddash)
+    thumb_id: 337513
+    image: /plex_proxy/library/metadata/313315/thumb/1614602773
+    percent: 0
+    seconds: 0

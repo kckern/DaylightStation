@@ -1,0 +1,26 @@
+_meta:
+  captured_at: '2026-01-21T22:56:32.982Z'
+  source_id: '380662'
+  legacy_endpoint: /media/plex/info/380662
+  source_label: Desire Map Course
+  source_uid: a109e782-7037-43c0-b41b-a793220dc3ea
+response:
+  status: 200
+  body:
+    listkey: '380662'
+    listType: season
+    key: '380663'
+    type: episode
+    title: Welcome
+    show: Commune
+    season: The Desire Map Course with Danielle LaPorte
+    summary: The Desire Map was created out of a goal setting session. Danielle sat down, wrote out her list of goals, and was completely underwhelmed. It felt like a laundry list of chores instead of a roadmap to living the most compelling and fulfilling life she could. But when she switched from setting goals to focusing on how she wanted to feel, the lights turned on and everything changed. Her to-do list had morphed into an invitation to something bigger. She discovered a new paradigm for living, unbound by what if’s and the daily grind. It was all heart, all desire, all love.
+    year: 2022
+    labels:
+      - family
+    media_type: dash_video
+    media_url: /plex_proxy/video/:/transcode/universal/start.mpd?path=%2Flibrary%2Fmetadata%2F380663&protocol=dash&X-Plex-Client-Identifier=api-tinwy4vonhuvcp8o2w4c&X-Plex-Session-Identifier=tinwy4vonhuvcp8o2w4c&X-Plex-Platform=Chrome&autoAdjustQuality=1&fastSeek=1&mediaBufferSize=104857600&X-Plex-Client-Profile-Extra=append-transcode-target-codec(type%3DvideoProfile%26context%3Dstreaming%26videoCodec%3Dh264%2Chevc%26audioCodec%3Daac%26protocol%3Ddash)
+    thumb_id: 374360
+    image: /plex_proxy/library/metadata/380663/thumb/1642821225
+    percent: 0
+    seconds: 0

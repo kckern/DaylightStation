@@ -1,0 +1,25 @@
+_meta:
+  captured_at: '2026-01-21T22:56:27.778Z'
+  source_id: '449733'
+  legacy_endpoint: /media/plex/info/449733
+  source_label: Birds
+  source_uid: bd952887-0afe-435c-9186-93287ae666e6
+response:
+  status: 200
+  body:
+    listkey: '449733'
+    listType: season
+    key: '449735'
+    type: episode
+    title: 'Birds and Boeings: The Magic of Flight'
+    show: Science
+    season: The Scientific Wonder of Birds
+    summary: Delve into the fascinating aerodynamics of bird flight. Grasp how a bird’s wings operate as an airfoil; study the forces of lift, weight, thrust, and drag, and how birds take off, land, and glide. Then explore the astonishing properties of bird feathers, as they control speed, altitude, and direction. Learn about the structure, the types, and the many roles of feathers in bird behavior.
+    labels:
+      - family
+    media_type: dash_video
+    media_url: /plex_proxy/video/:/transcode/universal/start.mpd?path=%2Flibrary%2Fmetadata%2F449735&protocol=dash&X-Plex-Client-Identifier=api-aftes26udtm4hreboezqit&X-Plex-Session-Identifier=aftes26udtm4hreboezqit&X-Plex-Platform=Chrome&autoAdjustQuality=1&fastSeek=1&mediaBufferSize=104857600&X-Plex-Client-Profile-Extra=append-transcode-target-codec(type%3DvideoProfile%26context%3Dstreaming%26videoCodec%3Dh264%2Chevc%26audioCodec%3Daac%26protocol%3Ddash)
+    thumb_id: 479094
+    image: /plex_proxy/library/metadata/449735/thumb/1659859609
+    percent: 0
+    seconds: 0

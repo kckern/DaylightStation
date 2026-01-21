@@ -1,0 +1,26 @@
+_meta:
+  captured_at: '2026-01-21T22:56:33.542Z'
+  source_id: '59493'
+  legacy_endpoint: /media/plex/info/59493
+  source_label: Bluey
+  source_uid: 7337f59b-c1de-4218-850a-6d1b8d7bb8dd
+response:
+  status: 200
+  body:
+    listkey: '347694'
+    listType: season
+    key: '347695'
+    type: episode
+    title: Christmas Clips - The Countdown Is On!
+    show: Bluey (2018)
+    season: Specials
+    year: 2019
+    labels:
+      - kidsfun
+      - family
+    media_type: dash_video
+    media_url: /plex_proxy/video/:/transcode/universal/start.mpd?path=%2Flibrary%2Fmetadata%2F347695&protocol=dash&X-Plex-Client-Identifier=api-4gike8wgul8bap1wjajfq&X-Plex-Session-Identifier=4gike8wgul8bap1wjajfq&X-Plex-Platform=Chrome&autoAdjustQuality=1&fastSeek=1&mediaBufferSize=104857600&X-Plex-Client-Profile-Extra=append-transcode-target-codec(type%3DvideoProfile%26context%3Dstreaming%26videoCodec%3Dh264%2Chevc%26audioCodec%3Daac%26protocol%3Ddash)
+    thumb_id: 494566
+    image: /plex_proxy/library/metadata/347695/thumb/1745954254
+    percent: 0
+    seconds: 0

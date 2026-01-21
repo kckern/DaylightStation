@@ -1,0 +1,26 @@
+_meta:
+  captured_at: '2026-01-21T22:56:27.328Z'
+  source_id: '463265'
+  legacy_endpoint: /media/plex/info/463265
+  source_label: Old Testament
+  source_uid: 612e7d6a-982f-4d1c-8023-2fd8fe6c4f48
+response:
+  status: 200
+  body:
+    listkey: '463265'
+    listType: season
+    key: '463268'
+    type: episode
+    title: Genesis Ch. 12-50
+    show: BibleProject
+    season: Old Testament
+    summary: In Genesis, God promises to bless rebellious humanity through the family of Abraham, despite their constant failure and folly.
+    year: 2016
+    labels:
+      - family
+    media_type: dash_video
+    media_url: /plex_proxy/video/:/transcode/universal/start.mpd?path=%2Flibrary%2Fmetadata%2F463268&protocol=dash&X-Plex-Client-Identifier=api-tqf0zk585xnqvinb6iuf1&X-Plex-Session-Identifier=tqf0zk585xnqvinb6iuf1&X-Plex-Platform=Chrome&autoAdjustQuality=1&fastSeek=1&mediaBufferSize=104857600&X-Plex-Client-Profile-Extra=append-transcode-target-codec(type%3DvideoProfile%26context%3Dstreaming%26videoCodec%3Dh264%2Chevc%26audioCodec%3Daac%26protocol%3Ddash)
+    thumb_id: 494490
+    image: /plex_proxy/library/metadata/463268/thumb/1719104521
+    percent: 0
+    seconds: 0

@@ -1,0 +1,25 @@
+_meta:
+  captured_at: '2026-01-21T22:56:26.676Z'
+  source_id: '47229'
+  legacy_endpoint: /media/plex/info/47229
+  source_label: Zondervan
+  source_uid: 855cc636-19a4-4352-b0c4-817a3eb09585
+response:
+  status: 200
+  body:
+    listkey: '422900'
+    listType: album
+    key: '422903'
+    type: track
+    title: 1 Peter 1:1-2
+    artist: Zondervan
+    albumArtist: Dennis R. Edwards
+    album: 1 Peter
+    year: 2022
+    labels: []
+    media_type: audio
+    media_url: /plex_proxy/library/parts/434252/1655340777/file.mp3?X-Plex-Client-Identifier=api-audio-9w9m7tpf8dse4hjr85ep3p&X-Plex-Session-Identifier=9w9m7tpf8dse4hjr85ep3p
+    thumb_id: 434252
+    image: /plex_proxy/library/metadata/422900/thumb/1655341013
+    percent: 0
+    seconds: 0

@@ -1,0 +1,23 @@
+_meta:
+  captured_at: '2026-01-21T22:56:29.603Z'
+  source_id: '663866'
+  legacy_endpoint: /media/plex/info/663866
+  source_label: Study
+  source_uid: 5af34f28-b2b9-4b84-a78c-4387f836c27f
+response:
+  status: 200
+  body:
+    listkey: '663867'
+    listType: album
+    key: '663870'
+    type: track
+    title: Exam Study - 40Hz Gamma Binaural
+    artist: Study Sonic Focus
+    album: Gamma Binaural Beats
+    labels: []
+    media_type: audio
+    media_url: /plex_proxy/library/parts/727589/1753114210/file.mp3?X-Plex-Client-Identifier=api-audio-fcgnnvcuo24f25mzo8qxv7&X-Plex-Session-Identifier=fcgnnvcuo24f25mzo8qxv7
+    thumb_id: 727589
+    image: /plex_proxy/library/metadata/663867/thumb/1753114555
+    percent: 0
+    seconds: 0

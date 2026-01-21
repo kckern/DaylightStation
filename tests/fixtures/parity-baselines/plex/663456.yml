@@ -1,0 +1,25 @@
+_meta:
+  captured_at: '2026-01-21T22:56:34.296Z'
+  source_id: '663456'
+  legacy_endpoint: /media/plex/info/663456
+  source_label: Crash Land on You
+  source_uid: 40a01987-d16e-4c80-bbd4-4fa10e66aeaf
+response:
+  status: 200
+  body:
+    listkey: '663457'
+    listType: season
+    key: '663458'
+    type: episode
+    title: Episode 1
+    show: Crash Landing on You
+    season: Season 1
+    summary: Knocked out by fierce winds while paragliding through the air, Yun Se-ri wakes up on the north side of the Korean DMZ, where Ri Jeong Hyeok finds her.
+    year: 2019
+    labels: []
+    media_type: dash_video
+    media_url: /plex_proxy/video/:/transcode/universal/start.mpd?path=%2Flibrary%2Fmetadata%2F663458&protocol=dash&X-Plex-Client-Identifier=api-fie04kcbe9lj969zml51u&X-Plex-Session-Identifier=fie04kcbe9lj969zml51u&X-Plex-Platform=Chrome&autoAdjustQuality=1&fastSeek=1&mediaBufferSize=104857600&X-Plex-Client-Profile-Extra=append-transcode-target-codec(type%3DvideoProfile%26context%3Dstreaming%26videoCodec%3Dh264%2Chevc%26audioCodec%3Daac%26protocol%3Ddash)
+    thumb_id: 727165
+    image: /plex_proxy/library/metadata/663458/thumb/1751472382
+    percent: 0
+    seconds: 0

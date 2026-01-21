@@ -1,0 +1,26 @@
+_meta:
+  captured_at: '2026-01-21T22:56:28.339Z'
+  source_id: '487005'
+  legacy_endpoint: /media/plex/info/487005
+  source_label: 꼬마버스 타요
+  source_uid: a71711c5-f014-482f-9ac8-492de1a20ffb
+response:
+  status: 200
+  body:
+    listkey: '487006'
+    listType: season
+    key: '487026'
+    type: episode
+    title: 하나 누나의 외출
+    show: 꼬마버스 타요
+    season: Season 1
+    summary: 밤늦게 까지 놀고 싶은 꼬마버스들은 씨투와 하나가 이웃 도시에 가서 다음 날 온다는 소식에 환호한다. 하나가 자리를 비운 날 밤. 꼬마버스들은 늦게 까지 술래잡기, TV보기, 운행연습 등 각자 하고 싶었던 것을 마음껏 즐긴다. 이때 운행연습을 너무 오래한 가니는 어지러움을 느껴 정비소에 가보기로 한다. 그런데 술래잡기를 하던 타요, 로기와 이 둘 때문에 TV를 못 봐서 화가 난 라니까지 정비소로 달려와 정비소는 온통 엉망이 되고 가니는 위험에 빠진다. 당황 해서 어쩔 줄 몰라 하는 꼬마버스들. 그 때 하나와 씨투가 나타나 이를 해결하고 꼬마버스들은 하나와 함께 정비소를 정리한다.
+    year: 2010
+    labels:
+      - kidsfun
+    media_type: dash_video
+    media_url: /plex_proxy/video/:/transcode/universal/start.mpd?path=%2Flibrary%2Fmetadata%2F487026&protocol=dash&X-Plex-Client-Identifier=api-al0l4xyvwggj20b3m8j08a&X-Plex-Session-Identifier=al0l4xyvwggj20b3m8j08a&X-Plex-Platform=Chrome&autoAdjustQuality=1&fastSeek=1&mediaBufferSize=104857600&X-Plex-Client-Profile-Extra=append-transcode-target-codec(type%3DvideoProfile%26context%3Dstreaming%26videoCodec%3Dh264%2Chevc%26audioCodec%3Daac%26protocol%3Ddash)
+    thumb_id: 519531
+    image: /plex_proxy/library/metadata/487026/thumb/1746019294
+    percent: 0
+    seconds: 0

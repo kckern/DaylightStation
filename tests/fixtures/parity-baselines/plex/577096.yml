@@ -1,0 +1,23 @@
+_meta:
+  captured_at: '2026-01-21T22:56:29.740Z'
+  source_id: '577096'
+  legacy_endpoint: /media/plex/info/577096
+  source_label: Birthday
+  source_uid: 019ae2d3-df5a-7dd3-8407-9a32f83b5bfa
+response:
+  status: 200
+  body:
+    listkey: '577096'
+    listType: album
+    key: '577097'
+    type: track
+    title: Happy Birthday
+    artist: J Rabbit
+    album: Happy Birthday from J Rabbit
+    labels: []
+    media_type: audio
+    media_url: /plex_proxy/library/parts/602297/1570249341/file.mp3?X-Plex-Client-Identifier=api-audio-9q70d0uksfbjffcszovbtp&X-Plex-Session-Identifier=9q70d0uksfbjffcszovbtp
+    thumb_id: 602297
+    image: /plex_proxy/library/metadata/577096/thumb/1723067919
+    percent: 0
+    seconds: 0

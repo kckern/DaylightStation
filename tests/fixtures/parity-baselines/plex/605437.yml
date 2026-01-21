@@ -1,0 +1,26 @@
+_meta:
+  captured_at: '2026-01-21T22:56:27.056Z'
+  source_id: '605437'
+  legacy_endpoint: /media/plex/info/605437
+  source_label: 2B Mindset
+  source_uid: 180806ac-25c5-4976-9226-a8964515a961
+response:
+  status: 200
+  body:
+    listkey: '605438'
+    listType: season
+    key: '605442'
+    type: episode
+    title: Still Hungry? Eat MORE!
+    show: 2B Mindset Super Block
+    season: Season 1
+    summary: This one is for the foodies and volume eaters, like Ilana. She designed her More? Sure! model to help you enjoy more food in a smarter way any day, but especially on weekends, holidays, and at social or stressful events.
+    year: 2024
+    labels:
+      - family
+    media_type: dash_video
+    media_url: /plex_proxy/video/:/transcode/universal/start.mpd?path=%2Flibrary%2Fmetadata%2F605442&protocol=dash&X-Plex-Client-Identifier=api-zfcuw0dqk3kcivnf1oc5de&X-Plex-Session-Identifier=zfcuw0dqk3kcivnf1oc5de&X-Plex-Platform=Chrome&autoAdjustQuality=1&fastSeek=1&mediaBufferSize=104857600&X-Plex-Client-Profile-Extra=append-transcode-target-codec(type%3DvideoProfile%26context%3Dstreaming%26videoCodec%3Dh264%2Chevc%26audioCodec%3Daac%26protocol%3Ddash)
+    thumb_id: 637713
+    image: /plex_proxy/library/metadata/605442/thumb/1724624701
+    percent: 0
+    seconds: 0

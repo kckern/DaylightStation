@@ -1,0 +1,636 @@
+_meta:
+  captured_at: '2026-01-21T22:56:34.384Z'
+  source_id: dc88
+  legacy_endpoint: /data/scripture/dc88
+  source_label: DC
+  source_uid: 06b92410-8fa0-4daf-84b8-c3fc4bf50507
+response:
+  status: 200
+  body:
+    input: dc88
+    reference: Doctrine and Covenants 88
+    volume: dc
+    version: rex
+    verse_id: 39764
+    mediaUrl: /media/audio/scripture/dc/rex/39764
+    media_key: dc/rex/39764
+    verses:
+      - headings:
+          background: Revelation given through Joseph Smith the Prophet at Kirtland, Ohio, December 27 and 28, 1832, and January 3, 1833. The Prophet designated it as the “‘olive leaf’ … plucked from the Tree of Paradise, the Lord’s message of peace to us.” The revelation was given after high priests at a conference prayed “separately and vocally to the Lord to reveal his will unto us concerning the upbuilding of Zion.”
+          summary: 1–5, Faithful Saints receive that Comforter, which is the promise of eternal life; 6–13, All things are controlled and governed by the Light of Christ; 14–16, The Resurrection comes through the Redemption; 17–31, Obedience to celestial, terrestrial, or telestial law prepares men for those respective kingdoms and glories; 32–35, Those who will to abide in sin remain filthy still; 36–41, All kingdoms are governed by law; 42–45, God has given a law unto all things; 46–50, Man will comprehend even God; 51–61, The parable of the man sending his servants into the field and visiting them in turn; 62–73, Draw near unto the Lord, and ye will see His face; 74–80, Sanctify yourselves and teach one another the doctrines of the kingdom; 81–85, Every man who has been warned should warn his neighbor; 86–94, Signs, upheavals of the elements, and angels prepare the way for the coming of the Lord; 95–102, Angelic trumps call forth the dead in their order; 103–116, Angelic trumps proclaim the restoration of the gospel, the fall of Babylon, and the battle of the great God; 117–126, Seek learning, establish a house of God (a temple), and clothe yourselves with the bond of charity; 127–141, The order of the School of the Prophets is set forth, including the ordinance of washing of feet.
+          last: 39768
+          heading: Faithful Saints Receive That Comforter, Which Is the Promise of Eternal Life
+          subtitle: December 1832 • Kirtland, Ohio
+          title: The Olive Leaf
+        verse_id: '39764'
+        verse: '1'
+        format: prose
+        text: '§¶｟Verily｠, thus saith the Lord unto you who have assembled yourselves together to receive his will concerning you:'
+      - verse_id: '39765'
+        verse: '2'
+        format: prose
+        text: Behold, this is pleasing unto your Lord, and the angels rejoice over you; the alms of your prayers have come up into the ears of the Lord of Sabaoth, and are recorded in the book of the names of the sanctified, even them of the celestial world.
+      - verse_id: '39766'
+        verse: '3'
+        format: prose
+        text: ¶Wherefore, I now send upon you another Comforter, even upon you my friends, that it may abide in your hearts, even the Holy Spirit of promise; which other Comforter is the same that I promised unto my disciples, as is recorded in the testimony of John.
+      - verse_id: '39767'
+        verse: '4'
+        format: prose
+        text: This Comforter is the promise which I give unto you of eternal life, even the glory of the celestial kingdom;
+      - verse_id: '39768'
+        verse: '5'
+        format: prose
+        text: Which glory is that of the church of the Firstborn, even of God, the holiest of all, through Jesus Christ his Son—
+      - headings:
+          heading: All Things Are Controlled and Governed by the Light of Christ
+          last: 39776
+        verse_id: '39769'
+        verse: '6'
+        format: prose
+        text: §¶He that ascended up on high, as also he descended below all things, in that he comprehended all things, that he might be in all and through all things, the light of truth;
+      - verse_id: '39770'
+        verse: '7'
+        format: prose
+        text: Which truth shineth. This is the light of Christ. As also he is in the sun, and the light of the sun, and the power thereof by which it was made.
+      - verse_id: '39771'
+        verse: '8'
+        format: prose
+        text: ¶As also he is in the moon, and is the light of the moon, and the power thereof by which it was made;
+      - verse_id: '39772'
+        verse: '9'
+        format: prose
+        text: As also the light of the stars, and the power thereof by which they were made;
+      - verse_id: '39773'
+        verse: '10'
+        format: prose
+        text: And the earth also, and the power thereof, even the earth upon which you stand.
+      - verse_id: '39774'
+        verse: '11'
+        format: prose
+        text: ¶And the light which shineth, which giveth you light, is through him who enlighteneth your eyes, which is the same light that quickeneth your understandings;
+      - verse_id: '39775'
+        verse: '12'
+        format: prose
+        text: Which light proceedeth forth from the presence of God to fill the immensity of space—
+      - verse_id: '39776'
+        verse: '13'
+        format: prose
+        text: The light which is in all things, which giveth life to all things, which is the law by which all things are governed, even the power of God who sitteth upon his throne, who is in the bosom of eternity, who is in the midst of all things.
+      - headings:
+          heading: The Resurrection Comes Through the Redemption
+          last: 39779
+        verse_id: '39777'
+        verse: '14'
+        format: prose
+        text: §¶Now, verily I say unto you, that through the redemption which is made for you is brought to pass the resurrection from the dead.
+      - verse_id: '39778'
+        verse: '15'
+        format: prose
+        text: And the spirit and the body are the soul of man.
+      - verse_id: '39779'
+        verse: '16'
+        format: prose
+        text: And the resurrection from the dead is the redemption of the soul.
+      - headings:
+          heading: Obedience to Celestial, Terrestrial, or Telestial Law Prepares Men for Those Respective Kingdoms and Glories
+          last: 39794
+        verse_id: '39780'
+        verse: '17'
+        format: prose
+        text: §¶And the redemption of the soul is through him that quickeneth all things, in whose bosom it is decreed that the poor and the meek of the earth shall inherit it.
+      - verse_id: '39781'
+        verse: '18'
+        format: prose
+        text: ¶Therefore, it must needs be sanctified from all unrighteousness, that it may be prepared for the celestial glory;
+      - verse_id: '39782'
+        verse: '19'
+        format: prose
+        text: For after it hath filled the measure of its creation, it shall be crowned with glory, even with the presence of God the Father;
+      - verse_id: '39783'
+        verse: '20'
+        format: prose
+        text: That bodies who are of the celestial kingdom may possess it forever and ever; for, for this intent was it made and created, and for this intent are they sanctified.
+      - verse_id: '39784'
+        verse: '21'
+        format: prose
+        text: ¶And they who are not sanctified through the law which I have given unto you, even the law of Christ, must inherit another kingdom, even that of a terrestrial kingdom, or that of a telestial kingdom.
+      - verse_id: '39785'
+        verse: '22'
+        format: prose
+        text: ¶For he who is not able to abide the law of a celestial kingdom cannot abide a celestial glory.
+      - verse_id: '39786'
+        verse: '23'
+        format: prose
+        text: And he who cannot abide the law of a terrestrial kingdom cannot abide a terrestrial glory.
+      - verse_id: '39787'
+        verse: '24'
+        format: prose
+        text: And he who cannot abide the law of a telestial kingdom cannot abide a telestial glory; therefore he is not meet for a kingdom of glory. Therefore he must abide a kingdom which is not a kingdom of glory.
+      - verse_id: '39788'
+        verse: '25'
+        format: prose
+        text: ¶And again, verily I say unto you, the earth abideth the law of a celestial kingdom, for it filleth the measure of its creation, and transgresseth not the law—
+      - verse_id: '39789'
+        verse: '26'
+        format: prose
+        text: Wherefore, it shall be sanctified; yea, notwithstanding it shall die, it shall be quickened again, and shall abide the power by which it is quickened, and the righteous shall inherit it.
+      - verse_id: '39790'
+        verse: '27'
+        format: prose
+        text: For notwithstanding they die, they also shall rise again, a spiritual body.
+      - verse_id: '39791'
+        verse: '28'
+        format: prose
+        text: ¶They who are of a celestial spirit shall receive the same body which was a natural body; even ye shall receive your bodies, and your glory shall be that glory by which your bodies are quickened.
+      - verse_id: '39792'
+        verse: '29'
+        format: prose
+        text: Ye who are quickened by a portion of the celestial glory shall then receive of the same, even a fulness.
+      - verse_id: '39793'
+        verse: '30'
+        format: prose
+        text: ¶And they who are quickened by a portion of the terrestrial glory shall then receive of the same, even a fulness.
+      - verse_id: '39794'
+        verse: '31'
+        format: prose
+        text: And also they who are quickened by a portion of the telestial glory shall then receive of the same, even a fulness.
+      - headings:
+          heading: Those Who Will to Abide in Sin Remain Filthy Still
+          last: 39798
+        verse_id: '39795'
+        verse: '32'
+        format: prose
+        text: §¶And they who remain shall also be quickened; nevertheless, they shall return again to their own place, to enjoy that which they are willing to receive, because they were not willing to enjoy that which they might have received.
+      - verse_id: '39796'
+        verse: '33'
+        format: prose
+        text: For what doth it profit a man if a gift is bestowed upon him, and he receive not the gift? Behold, he rejoices not in that which is given unto him, neither rejoices in him who is the giver of the gift.
+      - verse_id: '39797'
+        verse: '34'
+        format: prose
+        text: ¶And again, verily I say unto you, that which is governed by law is also preserved by law and perfected and sanctified by the same.
+      - verse_id: '39798'
+        verse: '35'
+        format: prose
+        text: That which breaketh a law, and abideth not by law, but seeketh to become a law unto itself, and willeth to abide in sin, and altogether abideth in sin, cannot be sanctified by law, neither by mercy, justice, nor judgment. Therefore, they must remain filthy still.
+      - headings:
+          heading: All Kingdoms Are Governed by Law
+          last: 39804
+        verse_id: '39799'
+        verse: '36'
+        format: prose
+        text: §¶All kingdoms have a law given;
+      - verse_id: '39800'
+        verse: '37'
+        format: prose
+        text: And there are many kingdoms; for there is no space in the which there is no kingdom; and there is no kingdom in which there is no space, either a greater or a lesser kingdom.
+      - verse_id: '39801'
+        verse: '38'
+        format: prose
+        text: And unto every kingdom is given a law; and unto every law there are certain bounds also and conditions.
+      - verse_id: '39802'
+        verse: '39'
+        format: prose
+        text: All beings who abide not in those conditions are not justified.
+      - verse_id: '39803'
+        verse: '40'
+        format: prose
+        text: ¶For intelligence cleaveth unto intelligence; wisdom receiveth wisdom; truth embraceth truth; virtue loveth virtue; light cleaveth unto light; mercy hath compassion on mercy and claimeth her own; justice continueth its course and claimeth its own; judgment goeth before the face of him who sitteth upon the throne and governeth and executeth all things.
+      - verse_id: '39804'
+        verse: '41'
+        format: prose
+        text: He comprehendeth all things, and all things are before him, and all things are round about him; and he is above all things, and in all things, and is through all things, and is round about all things; and all things are by him, and of him, even God, forever and ever.
+      - headings:
+          heading: God Has Given a Law Unto All Things
+          last: 39808
+        verse_id: '39805'
+        verse: '42'
+        format: prose
+        text: §¶And again, verily I say unto you, he hath given a law unto all things, by which they move in their times and their seasons;
+      - verse_id: '39806'
+        verse: '43'
+        format: prose
+        text: And their courses are fixed, even the courses of the heavens and the earth, which comprehend the earth and all the planets.
+      - verse_id: '39807'
+        verse: '44'
+        format: prose
+        text: And they give light to each other in their times and in their seasons, in their minutes, in their hours, in their days, in their weeks, in their months, in their years—all these are one year with God, but not with man.
+      - verse_id: '39808'
+        verse: '45'
+        format: prose
+        text: The earth rolls upon her wings, and the sun giveth his light by day, and the moon giveth her light by night, and the stars also give their light, as they roll upon their wings in their glory, in the midst of the power of God.
+      - headings:
+          heading: Man Will Comprehend Even God
+          last: 39813
+        verse_id: '39809'
+        verse: '46'
+        format: prose
+        text: §¶Unto what shall I liken these kingdoms, that ye may understand?
+      - verse_id: '39810'
+        verse: '47'
+        format: prose
+        text: Behold, all these are kingdoms, and any man who hath seen any or the least of these hath seen God moving in his majesty and power.
+      - verse_id: '39811'
+        verse: '48'
+        format: prose
+        text: I say unto you, he hath seen him; nevertheless, he who came unto his own was not comprehended.
+      - verse_id: '39812'
+        verse: '49'
+        format: prose
+        text: ¶The light shineth in darkness, and the darkness comprehendeth it not; nevertheless, the day shall come when you shall comprehend even God, being quickened in him and by him.
+      - verse_id: '39813'
+        verse: '50'
+        format: prose
+        text: ¶Then shall ye know that ye have seen me, that I am, and that I am the true light that is in you, and that you are in me; otherwise ye could not abound.
+      - headings:
+          heading: The Parable of the Man Sending His Servants Into the Field and Visiting Them in Turn
+          last: 39824
+        verse_id: '39814'
+        verse: '51'
+        format: prose
+        text: §¶Behold, I will liken these kingdoms unto a man having a field, and he sent forth his servants into the field to dig in the field.
+      - verse_id: '39815'
+        verse: '52'
+        format: prose
+        text: 'And he said unto the first: Go ye and labor in the field, and in the first hour I will come unto you, and ye shall behold the joy of my countenance.'
+      - verse_id: '39816'
+        verse: '53'
+        format: prose
+        text: 'And he said unto the second: Go ye also into the field, and in the second hour I will visit you with the joy of my countenance.'
+      - verse_id: '39817'
+        verse: '54'
+        format: prose
+        text: 'And also unto the third, saying: I will visit you;'
+      - verse_id: '39818'
+        verse: '55'
+        format: prose
+        text: And unto the fourth, and so on unto the twelfth.
+      - verse_id: '39819'
+        verse: '56'
+        format: prose
+        text: ¶And the lord of the field went unto the first in the first hour, and tarried with him all that hour, and he was made glad with the light of the countenance of his lord.
+      - verse_id: '39820'
+        verse: '57'
+        format: prose
+        text: And then he withdrew from the first that he might visit the second also, and the third, and the fourth, and so on unto the twelfth.
+      - verse_id: '39821'
+        verse: '58'
+        format: prose
+        text: ¶And thus they all received the light of the countenance of their lord, every man in his hour, and in his time, and in his season—
+      - verse_id: '39822'
+        verse: '59'
+        format: prose
+        text: Beginning at the first, and so on unto the last, and from the last unto the first, and from the first unto the last;
+      - verse_id: '39823'
+        verse: '60'
+        format: prose
+        text: Every man in his own order, until his hour was finished, even according as his lord had commanded him, that his lord might be glorified in him, and he in his lord, that they all might be glorified.
+      - verse_id: '39824'
+        verse: '61'
+        format: prose
+        text: ¶Therefore, unto this parable I will liken all these kingdoms, and the inhabitants thereof—every kingdom in its hour, and in its time, and in its season, even according to the decree which God hath made.
+      - headings:
+          heading: Draw Near Unto the Lord, and Ye Will See His Face
+          last: 39836
+        verse_id: '39825'
+        verse: '62'
+        format: prose
+        text: §¶And again, verily I say unto you, my friends, I leave these sayings with you to ponder in your hearts, with this commandment which I give unto you, that ye shall call upon me while I am near—
+      - verse_id: '39826'
+        verse: '63'
+        format: prose
+        text: Draw near unto me and I will draw near unto you; seek me diligently and ye shall find me; ask, and ye shall receive; knock, and it shall be opened unto you.
+      - verse_id: '39827'
+        verse: '64'
+        format: prose
+        text: Whatsoever ye ask the Father in my name it shall be given unto you, that is expedient for you;
+      - verse_id: '39828'
+        verse: '65'
+        format: prose
+        text: And if ye ask anything that is not expedient for you, it shall turn unto your condemnation.
+      - verse_id: '39829'
+        verse: '66'
+        format: prose
+        text: ¶Behold, that which you hear is as the voice of one crying in the wilderness—in the wilderness, because you cannot see him—my voice, because my voice is Spirit; my Spirit is truth; truth abideth and hath no end; and if it be in you it shall abound.
+      - verse_id: '39830'
+        verse: '67'
+        format: prose
+        text: ¶And if your eye be single to my glory, your whole bodies shall be filled with light, and there shall be no darkness in you; and that body which is filled with light comprehendeth all things.
+      - verse_id: '39831'
+        verse: '68'
+        format: prose
+        text: Therefore, sanctify yourselves that your minds become single to God, and the days will come that you shall see him; for he will unveil his face unto you, and it shall be in his own time, and in his own way, and according to his own will.
+      - verse_id: '39832'
+        verse: '69'
+        format: prose
+        text: ¶Remember the great and last promise which I have made unto you; cast away your idle thoughts and your excess of laughter far from you.
+      - verse_id: '39833'
+        verse: '70'
+        format: prose
+        text: ¶Tarry ye, tarry ye in this place, and call a solemn assembly, even of those who are the first laborers in this last kingdom.
+      - verse_id: '39834'
+        verse: '71'
+        format: prose
+        text: And let those whom they have warned in their traveling call on the Lord, and ponder the warning in their hearts which they have received, for a little season.
+      - verse_id: '39835'
+        verse: '72'
+        format: prose
+        text: ¶Behold, and lo, I will take care of your flocks, and will raise up elders and send unto them.
+      - verse_id: '39836'
+        verse: '73'
+        format: prose
+        text: Behold, I will hasten my work in its time.
+      - headings:
+          heading: Sanctify Yourselves and Teach One Another the Doctrines of the Kingdom
+          last: 39843
+        verse_id: '39837'
+        verse: '74'
+        format: prose
+        text: §¶And I give unto you, who are the first laborers in this last kingdom, a commandment that you assemble yourselves together, and organize yourselves, and prepare yourselves, and sanctify yourselves; yea, purify your hearts, and cleanse your hands and your feet before me, that I may make you clean;
+      - verse_id: '39838'
+        verse: '75'
+        format: prose
+        text: That I may testify unto your Father, and your God, and my God, that you are clean from the blood of this wicked generation; that I may fulfil this promise, this great and last promise, which I have made unto you, when I will.
+      - verse_id: '39839'
+        verse: '76'
+        format: prose
+        text: ¶Also, I give unto you a commandment that ye shall continue in prayer and fasting from this time forth.
+      - verse_id: '39840'
+        verse: '77'
+        format: prose
+        text: ¶And I give unto you a commandment that you shall teach one another the doctrine of the kingdom.
+      - verse_id: '39841'
+        verse: '78'
+        format: prose
+        text: Teach ye diligently and my grace shall attend you, that you may be instructed more perfectly in theory, in principle, in doctrine, in the law of the gospel, in all things that pertain unto the kingdom of God, that are expedient for you to understand;
+      - verse_id: '39842'
+        verse: '79'
+        format: prose
+        text: Of things both in heaven and in the earth, and under the earth; things which have been, things which are, things which must shortly come to pass; things which are at home, things which are abroad; the wars and the perplexities of the nations, and the judgments which are on the land; and a knowledge also of countries and of kingdoms—
+      - verse_id: '39843'
+        verse: '80'
+        format: prose
+        text: That ye may be prepared in all things when I shall send you again to magnify the calling whereunto I have called you, and the mission with which I have commissioned you.
+      - headings:
+          heading: Every Man Who Has Been Warned Should Warn His Neighbor
+          last: 39848
+        verse_id: '39844'
+        verse: '81'
+        format: prose
+        text: §¶Behold, I sent you out to testify and warn the people, and it becometh every man who hath been warned to warn his neighbor.
+      - verse_id: '39845'
+        verse: '82'
+        format: prose
+        text: Therefore, they are left without excuse, and their sins are upon their own heads.
+      - verse_id: '39846'
+        verse: '83'
+        format: prose
+        text: He that seeketh me early shall find me, and shall not be forsaken.
+      - verse_id: '39847'
+        verse: '84'
+        format: prose
+        text: ¶Therefore, tarry ye, and labor diligently, that you may be perfected in your ministry to go forth among the Gentiles for the last time, as many as the mouth of the Lord shall name, to bind up the law and seal up the testimony, and to prepare the saints for the hour of judgment which is to come;
+      - verse_id: '39848'
+        verse: '85'
+        format: prose
+        text: That their souls may escape the wrath of God, the desolation of abomination which awaits the wicked, both in this world and in the world to come. Verily, I say unto you, let those who are not the first elders continue in the vineyard until the mouth of the Lord shall call them, for their time is not yet come; their garments are not clean from the blood of this generation.
+      - headings:
+          heading: Signs, Upheavals of the Elements, and Angels Prepare the Way for the Coming of the Lord
+          last: 39857
+        verse_id: '39849'
+        verse: '86'
+        format: prose
+        text: §¶Abide ye in the liberty wherewith ye are made free; entangle not yourselves in sin, but let your hands be clean, until the Lord comes.
+      - verse_id: '39850'
+        verse: '87'
+        format: prose
+        text: For not many days hence and the earth shall tremble and reel to and fro as a drunken man; and the sun shall hide his face, and shall refuse to give light; and the moon shall be bathed in blood; and the stars shall become exceedingly angry, and shall cast themselves down as a fig that falleth from off a fig-tree.
+      - verse_id: '39851'
+        verse: '88'
+        format: prose
+        text: ¶And after your testimony cometh wrath and indignation upon the people.
+      - verse_id: '39852'
+        verse: '89'
+        format: prose
+        text: For after your testimony cometh the testimony of earthquakes, that shall cause groanings in the midst of her, and men shall fall upon the ground and shall not be able to stand.
+      - verse_id: '39853'
+        verse: '90'
+        format: prose
+        text: ¶And also cometh the testimony of the voice of thunderings, and the voice of lightnings, and the voice of tempests, and the voice of the waves of the sea heaving themselves beyond their bounds.
+      - verse_id: '39854'
+        verse: '91'
+        format: prose
+        text: And all things shall be in commotion; and surely, men’s hearts shall fail them; for fear shall come upon all people.
+      - verse_id: '39855'
+        verse: '92'
+        format: prose
+        text: '¶And angels shall fly through the midst of heaven, crying with a loud voice, sounding the trump of God, saying: Prepare ye, prepare ye, O inhabitants of the earth; for the judgment of our God is come. Behold, and lo, the Bridegroom cometh; go ye out to meet him.'
+      - verse_id: '39856'
+        verse: '93'
+        format: prose
+        text: ¶And immediately there shall appear a great sign in heaven, and all people shall see it together.
+      - verse_id: '39857'
+        verse: '94'
+        format: prose
+        text: 'And another angel shall sound his trump, saying: That great church, the mother of abominations, that made all nations drink of the wine of the wrath of her fornication, that persecuteth the saints of God, that shed their blood—she who sitteth upon many waters, and upon the islands of the sea—behold, she is the tares of the earth; she is bound in bundles; her bands are made strong, no man can loose them; therefore, she is ready to be burned. And he shall sound his trump both long and loud, and all nations shall hear it.'
+      - headings:
+          heading: Angelic Trumps Call Forth the Dead in Their Order
+          last: 39865
+        verse_id: '39858'
+        verse: '95'
+        format: prose
+        text: §¶And there shall be silence in heaven for the space of half an hour; and immediately after shall the curtain of heaven be unfolded, as a scroll is unfolded after it is rolled up, and the face of the Lord shall be unveiled;
+      - verse_id: '39859'
+        verse: '96'
+        format: prose
+        text: And the saints that are upon the earth, who are alive, shall be quickened and be caught up to meet him.
+      - verse_id: '39860'
+        verse: '97'
+        format: prose
+        text: And they who have slept in their graves shall come forth, for their graves shall be opened; and they also shall be caught up to meet him in the midst of the pillar of heaven—
+      - verse_id: '39861'
+        verse: '98'
+        format: prose
+        text: They are Christ’s, the first fruits, they who shall descend with him first, and they who are on the earth and in their graves, who are first caught up to meet him; and all this by the voice of the sounding of the trump of the angel of God.
+      - verse_id: '39862'
+        verse: '99'
+        format: prose
+        text: ¶And after this another angel shall sound, which is the second trump; and then cometh the redemption of those who are Christ’s at his coming; who have received their part in that prison which is prepared for them, that they might receive the gospel, and be judged according to men in the flesh.
+      - verse_id: '39863'
+        verse: '100'
+        format: prose
+        text: ¶And again, another trump shall sound, which is the third trump; and then come the spirits of men who are to be judged, and are found under condemnation;
+      - verse_id: '39864'
+        verse: '101'
+        format: prose
+        text: And these are the rest of the dead; and they live not again until the thousand years are ended, neither again, until the end of the earth.
+      - verse_id: '39865'
+        verse: '102'
+        format: prose
+        text: '¶And another trump shall sound, which is the fourth trump, saying: There are found among those who are to remain until that great and last day, even the end, who shall remain filthy still.'
+      - headings:
+          heading: Angelic Trumps Proclaim the Restoration of the Gospel, the Fall of Babylon, and the Battle of the Great God
+          last: 39879
+        verse_id: '39866'
+        verse: '103'
+        format: prose
+        text: §¶And another trump shall sound, which is the fifth trump, which is the fifth angel who committeth the everlasting gospel—flying through the midst of heaven, unto all nations, kindreds, tongues, and people;
+      - verse_id: '39867'
+        verse: '104'
+        format: prose
+        text: 'And this shall be the sound of his trump, saying to all people, both in heaven and in earth, and that are under the earth—for every ear shall hear it, and every knee shall bow, and every tongue shall confess, while they hear the sound of the trump, saying: Fear God, and give glory to him who sitteth upon the throne, forever and ever; for the hour of his judgment is come.'
+      - verse_id: '39868'
+        verse: '105'
+        format: prose
+        text: '¶And again, another angel shall sound his trump, which is the sixth angel, saying: She is fallen who made all nations drink of the wine of the wrath of her fornication; she is fallen, is fallen!'
+      - verse_id: '39869'
+        verse: '106'
+        format: prose
+        text: 'And again, another angel shall sound his trump, which is the seventh angel, saying: It is finished; it is finished! The Lamb of God hath overcome and trodden the wine-press alone, even the wine-press of the fierceness of the wrath of Almighty God.'
+      - verse_id: '39870'
+        verse: '107'
+        format: prose
+        text: ¶And then shall the angels be crowned with the glory of his might, and the saints shall be filled with his glory, and receive their inheritance and be made equal with him.
+      - verse_id: '39871'
+        verse: '108'
+        format: prose
+        text: ¶And then shall the first angel again sound his trump in the ears of all living, and reveal the secret acts of men, and the mighty works of God in the first thousand years.
+      - verse_id: '39872'
+        verse: '109'
+        format: prose
+        text: ¶And then shall the second angel sound his trump, and reveal the secret acts of men, and the thoughts and intents of their hearts, and the mighty works of God in the second thousand years—
+      - verse_id: '39873'
+        verse: '110'
+        format: prose
+        text: And so on, until the seventh angel shall sound his trump; and he shall stand forth upon the land and upon the sea, and swear in the name of him who sitteth upon the throne, that there shall be time no longer; and Satan shall be bound, that old serpent, who is called the devil, and shall not be loosed for the space of a thousand years.
+      - verse_id: '39874'
+        verse: '111'
+        format: prose
+        text: And then he shall be loosed for a little season, that he may gather together his armies.
+      - verse_id: '39875'
+        verse: '112'
+        format: prose
+        text: ¶And Michael, the seventh angel, even the archangel, shall gather together his armies, even the hosts of heaven.
+      - verse_id: '39876'
+        verse: '113'
+        format: prose
+        text: And the devil shall gather together his armies; even the hosts of hell, and shall come up to battle against Michael and his armies.
+      - verse_id: '39877'
+        verse: '114'
+        format: prose
+        text: ¶And then cometh the battle of the great God; and the devil and his armies shall be cast away into their own place, that they shall not have power over the saints any more at all.
+      - verse_id: '39878'
+        verse: '115'
+        format: prose
+        text: For Michael shall fight their battles, and shall overcome him who seeketh the throne of him who sitteth upon the throne, even the Lamb.
+      - verse_id: '39879'
+        verse: '116'
+        format: prose
+        text: This is the glory of God, and the sanctified; and they shall not any more see death.
+      - headings:
+          heading: Seek Learning, Establish a House of God (a Temple), and Clothe Yourselves With the Bond of Charity
+          last: 39889
+        verse_id: '39880'
+        verse: '117'
+        format: prose
+        text: §¶Therefore, verily I say unto you, my friends, call your solemn assembly, as I have commanded you.
+      - verse_id: '39881'
+        verse: '118'
+        format: prose
+        text: And as all have not faith, seek ye diligently and teach one another words of wisdom; yea, seek ye out of the best books words of wisdom; seek learning, even by study and also by faith.
+      - verse_id: '39882'
+        verse: '119'
+        format: prose
+        text: ¶Organize yourselves; prepare every needful thing; and establish a house, even a house of prayer, a house of fasting, a house of faith, a house of learning, a house of glory, a house of order, a house of God;
+      - verse_id: '39883'
+        verse: '120'
+        format: prose
+        text: That your incomings may be in the name of the Lord; that your outgoings may be in the name of the Lord; that all your salutations may be in the name of the Lord, with uplifted hands unto the Most High.
+      - verse_id: '39884'
+        verse: '121'
+        format: prose
+        text: ¶Therefore, cease from all your light speeches, from all laughter, from all your lustful desires, from all your pride and light-mindedness, and from all your wicked doings.
+      - verse_id: '39885'
+        verse: '122'
+        format: prose
+        text: ¶Appoint among yourselves a teacher, and let not all be spokesmen at once; but let one speak at a time and let all listen unto his sayings, that when all have spoken that all may be edified of all, and that every man may have an equal privilege.
+      - verse_id: '39886'
+        verse: '123'
+        format: prose
+        text: ¶See that ye love one another; cease to be covetous; learn to impart one to another as the gospel requires.
+      - verse_id: '39887'
+        verse: '124'
+        format: prose
+        text: Cease to be idle; cease to be unclean; cease to find fault one with another; cease to sleep longer than is needful; retire to thy bed early, that ye may not be weary; arise early, that your bodies and your minds may be invigorated.
+      - verse_id: '39888'
+        verse: '125'
+        format: prose
+        text: ¶And above all things, clothe yourselves with the bond of charity, as with a mantle, which is the bond of perfectness and peace.
+      - verse_id: '39889'
+        verse: '126'
+        format: prose
+        text: Pray always, that ye may not faint, until I come. Behold, and lo, I will come quickly, and receive you unto myself. Amen.
+      - headings:
+          heading: The Order of the School of the Prophets Is Set Forth, Including the Ordinance of Washing of Feet
+          last: 39904
+        verse_id: '39890'
+        verse: '127'
+        format: prose
+        text: §¶And again, the order of the house prepared for the presidency of the school of the prophets, established for their instruction in all things that are expedient for them, even for all the officers of the church, or in other words, those who are called to the ministry in the church, beginning at the high priests, even down to the deacons—
+      - verse_id: '39891'
+        verse: '128'
+        format: prose
+        text: 'And this shall be the order of the house of the presidency of the school: He that is appointed to be president, or teacher, shall be found standing in his place, in the house which shall be prepared for him.'
+      - verse_id: '39892'
+        verse: '129'
+        format: prose
+        text: ¶Therefore, he shall be first in the house of God, in a place that the congregation in the house may hear his words carefully and distinctly, not with loud speech.
+      - verse_id: '39893'
+        verse: '130'
+        format: prose
+        text: And when he cometh into the house of God, for he should be first in the house—behold, this is beautiful, that he may be an example—
+      - verse_id: '39894'
+        verse: '131'
+        format: prose
+        text: Let him offer himself in prayer upon his knees before God, in token or remembrance of the everlasting covenant.
+      - verse_id: '39895'
+        verse: '132'
+        format: prose
+        text: '¶And when any shall come in after him, let the teacher arise, and, with uplifted hands to heaven, yea, even directly, salute his brother or brethren with these words:'
+      - verse_id: '39896'
+        verse: '133'
+        format: prose
+        text: Art thou a brother or brethren? I salute you in the name of the Lord Jesus Christ, in token or remembrance of the everlasting covenant, in which covenant I receive you to fellowship, in a determination that is fixed, immovable, and unchangeable, to be your friend and brother through the grace of God in the bonds of love, to walk in all the commandments of God blameless, in thanksgiving, forever and ever. Amen.
+      - verse_id: '39897'
+        verse: '134'
+        format: prose
+        text: ¶And he that is found unworthy of this salutation shall not have place among you; for ye shall not suffer that mine house shall be polluted by him.
+      - verse_id: '39898'
+        verse: '135'
+        format: prose
+        text: ¶And he that cometh in and is faithful before me, and is a brother, or if they be brethren, they shall salute the president or teacher with uplifted hands to heaven, with this same prayer and covenant, or by saying Amen, in token of the same.
+      - verse_id: '39899'
+        verse: '136'
+        format: prose
+        text: ¶Behold, verily, I say unto you, this is an ensample unto you for a salutation to one another in the house of God, in the school of the prophets.
+      - verse_id: '39900'
+        verse: '137'
+        format: prose
+        text: And ye are called to do this by prayer and thanksgiving, as the Spirit shall give utterance in all your doings in the house of the Lord, in the school of the prophets, that it may become a sanctuary, a tabernacle of the Holy Spirit to your edification.
+      - verse_id: '39901'
+        verse: '138'
+        format: prose
+        text: ¶And ye shall not receive any among you into this school save he is clean from the blood of this generation;
+      - verse_id: '39902'
+        verse: '139'
+        format: prose
+        text: And he shall be received by the ordinance of the washing of feet, for unto this end was the ordinance of the washing of feet instituted.
+      - verse_id: '39903'
+        verse: '140'
+        format: prose
+        text: And again, the ordinance of washing feet is to be administered by the president, or presiding elder of the church.
+      - verse_id: '39904'
+        verse: '141'
+        format: prose
+        text: It is to be commenced with prayer; and after partaking of bread and wine, he is to gird himself according to the pattern given in the thirteenth chapter of John’s testimony concerning me. Amen.

@@ -1,0 +1,25 @@
+_meta:
+  captured_at: '2026-01-21T22:56:32.439Z'
+  source_id: '64850'
+  legacy_endpoint: /media/plex/info/64850
+  source_label: Lost
+  source_uid: 8f7c4c56-1b24-4d6b-a6e6-7748116b1b6a
+response:
+  status: 200
+  body:
+    listkey: '64851'
+    listType: season
+    key: '64852'
+    type: episode
+    title: Pilot (1)
+    show: Lost
+    season: Season 1
+    summary: Stripped of everything, the 48 survivors scavenge what they can from the plane for their survival. Some panic. Some pin their hopes on rescue. A few find inner strength they never knew they had-like Kate who, with no medical training, suddenly finds herself suturing the doctor's wounds. The band of friends, family, enemies and strangers must work together against the cruel weather and harsh terrain. But the intense howls of  mysterious creatures stalking the jungle fill them all with fear. Fortunately, thanks to the calm leadership of quick-thinking Jack and level-headed Kate, they have hope. But even heroes have secrets, as the survivors will come to learn.
+    year: 2004
+    labels: []
+    media_type: dash_video
+    media_url: /plex_proxy/video/:/transcode/universal/start.mpd?path=%2Flibrary%2Fmetadata%2F64852&protocol=dash&X-Plex-Client-Identifier=api-nshfd7wdq52jevvtx7w8g&X-Plex-Session-Identifier=nshfd7wdq52jevvtx7w8g&X-Plex-Platform=Chrome&autoAdjustQuality=1&fastSeek=1&mediaBufferSize=104857600&X-Plex-Client-Profile-Extra=append-transcode-target-codec(type%3DvideoProfile%26context%3Dstreaming%26videoCodec%3Dh264%2Chevc%26audioCodec%3Daac%26protocol%3Ddash)
+    thumb_id: 236657
+    image: /plex_proxy/library/metadata/64852/thumb/1719025118
+    percent: 0
+    seconds: 0

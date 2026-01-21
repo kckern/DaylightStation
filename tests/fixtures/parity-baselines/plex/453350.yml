@@ -1,0 +1,25 @@
+_meta:
+  captured_at: '2026-01-21T22:56:34.080Z'
+  source_id: '453350'
+  legacy_endpoint: /media/plex/info/453350
+  source_label: Creativity and Your Braim
+  source_uid: d65f37c6-6dc5-4bac-8a8b-dde19989f9e4
+response:
+  status: 200
+  body:
+    listkey: '453350'
+    listType: season
+    key: '453352'
+    type: episode
+    title: Beyond the Right-Brain Creativity Myth
+    show: Better Living
+    season: Creativity and Your Brain
+    summary: Explore current knowledge of the left and right hemispheres of the brain, taking stock of both early and more recent scientific thinking on the specialization of the hemispheres. Note how different aspects of creativity rely on different hemispheres, and how the left hemisphere is involved in key creative functions. Also, grasp how our early environment shapes brain development.
+    labels:
+      - family
+    media_type: dash_video
+    media_url: /plex_proxy/video/:/transcode/universal/start.mpd?path=%2Flibrary%2Fmetadata%2F453352&protocol=dash&X-Plex-Client-Identifier=api-u62jbvje6bg0r9j4jg873m&X-Plex-Session-Identifier=u62jbvje6bg0r9j4jg873m&X-Plex-Platform=Chrome&autoAdjustQuality=1&fastSeek=1&mediaBufferSize=104857600&X-Plex-Client-Profile-Extra=append-transcode-target-codec(type%3DvideoProfile%26context%3Dstreaming%26videoCodec%3Dh264%2Chevc%26audioCodec%3Daac%26protocol%3Ddash)
+    thumb_id: 484557
+    image: /plex_proxy/library/metadata/453352/thumb/1669186193
+    percent: 0
+    seconds: 0

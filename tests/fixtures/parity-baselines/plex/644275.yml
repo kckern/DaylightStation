@@ -1,0 +1,24 @@
+_meta:
+  captured_at: '2026-01-21T22:56:30.851Z'
+  source_id: '644275'
+  legacy_endpoint: /media/plex/info/644275
+  source_label: Classical Deadline
+  source_uid: b11c382b-43c8-4eb4-bd4b-62fd2af167f6
+response:
+  status: 200
+  body:
+    listkey: '644275'
+    listType: album
+    key: '644276'
+    type: track
+    title: Concerto Grosso for Strings
+    artist: Warner Music Group
+    albumArtist: Jenkins
+    album: Classical Music for When You’re on a Deadline
+    labels: []
+    media_type: audio
+    media_url: /plex_proxy/library/parts/686352/1747757688/file.mp3?X-Plex-Client-Identifier=api-audio-bc9r7co94gqlynzvmueo&X-Plex-Session-Identifier=bc9r7co94gqlynzvmueo
+    thumb_id: 686352
+    image: /plex_proxy/library/metadata/644275/thumb/1748025847
+    percent: 0
+    seconds: 0

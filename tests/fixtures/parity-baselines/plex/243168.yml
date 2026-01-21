@@ -1,0 +1,26 @@
+_meta:
+  captured_at: '2026-01-21T22:56:32.179Z'
+  source_id: '243168'
+  legacy_endpoint: /media/plex/info/243168
+  source_label: Business Strategy
+  source_uid: 30a1ce47-40c6-4a8d-a150-a56883ae89ee
+response:
+  status: 200
+  body:
+    listkey: '243168'
+    listType: season
+    key: '243169'
+    type: episode
+    title: Introduction
+    show: MasterClass
+    season: Business Strategy And Leadership
+    summary: 'Meet your new instructor: chairman and CEO of The Walt Disney Company, Bob Iger. In his introduction, Bob talks about what he’s learned from great teachers and what he wants to share with you.'
+    year: 2021
+    labels:
+      - family
+    media_type: dash_video
+    media_url: /plex_proxy/video/:/transcode/universal/start.mpd?path=%2Flibrary%2Fmetadata%2F243169&protocol=dash&X-Plex-Client-Identifier=api-pkcs6ndw3rgmt71tyxod&X-Plex-Session-Identifier=pkcs6ndw3rgmt71tyxod&X-Plex-Platform=Chrome&autoAdjustQuality=1&fastSeek=1&mediaBufferSize=104857600&X-Plex-Client-Profile-Extra=append-transcode-target-codec(type%3DvideoProfile%26context%3Dstreaming%26videoCodec%3Dh264%2Chevc%26audioCodec%3Daac%26protocol%3Ddash)
+    thumb_id: 217582
+    image: /plex_proxy/library/metadata/243169/thumb/1747929251
+    percent: 0
+    seconds: 0

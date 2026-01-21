@@ -1,0 +1,25 @@
+_meta:
+  captured_at: '2026-01-21T22:56:25.984Z'
+  source_id: '242567'
+  legacy_endpoint: /media/plex/info/242567
+  source_label: BoM Theology
+  source_uid: 294ba59f-a820-46cf-834d-6e2668a184a0
+response:
+  status: 200
+  body:
+    listkey: '242582'
+    listType: album
+    key: '244219'
+    type: track
+    title: Title
+    artist: Brief Theological Introductions
+    albumArtist: Joseph Spencer
+    album: '1st Nephi: A Brief Theological Introduction'
+    year: 2021
+    labels: []
+    media_type: audio
+    media_url: /plex_proxy/library/parts/218558/1611033919/file.mp3?X-Plex-Client-Identifier=api-audio-qhji8qz512mjwpsu2qjzya&X-Plex-Session-Identifier=qhji8qz512mjwpsu2qjzya
+    thumb_id: 218558
+    image: /plex_proxy/library/metadata/242582/thumb/2022
+    percent: 0
+    seconds: 0

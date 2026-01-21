@@ -1,0 +1,23 @@
+_meta:
+  captured_at: '2026-01-21T22:56:26.344Z'
+  source_id: '461309'
+  legacy_endpoint: /media/plex/info/461309
+  source_label: Gentle Christmas
+  source_uid: 019a7003-ee9e-788f-ac78-46c81ba2108f
+response:
+  status: 200
+  body:
+    listkey: '461309'
+    listType: playlist
+    key: '337646'
+    type: track
+    title: The First Noel
+    artist: Paul Cardall
+    album: The Christmas Box
+    labels: []
+    media_type: audio
+    media_url: /plex_proxy/library/parts/311682/1607213867/file.mp3?X-Plex-Client-Identifier=api-audio-74dq3b91xzdkmy7hu45yhd&X-Plex-Session-Identifier=74dq3b91xzdkmy7hu45yhd
+    thumb_id: 311682
+    image: /plex_proxy/library/metadata/337637/thumb/1765884120
+    percent: 0
+    seconds: 0

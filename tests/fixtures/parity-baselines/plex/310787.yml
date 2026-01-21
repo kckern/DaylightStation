@@ -1,0 +1,26 @@
+_meta:
+  captured_at: '2026-01-21T22:56:24.583Z'
+  source_id: '310787'
+  legacy_endpoint: /media/plex/info/310787
+  source_label: Science
+  source_uid: b877b522-d210-43be-8801-b741e25a80fc
+response:
+  status: 200
+  body:
+    listkey: '411259'
+    listType: season
+    key: '411260'
+    type: episode
+    title: On Being Round
+    show: Science
+    season: My Favorite Universe
+    summary: What forces tend to make objects round? And why is a sphere the most efficient shape an object can take? The answers will lead us across the cosmos.
+    year: 2022
+    labels:
+      - family
+    media_type: dash_video
+    media_url: /plex_proxy/video/:/transcode/universal/start.mpd?path=%2Flibrary%2Fmetadata%2F411260&protocol=dash&X-Plex-Client-Identifier=api-dx7pwzcyewsfm2jt4ubo7&X-Plex-Session-Identifier=dx7pwzcyewsfm2jt4ubo7&X-Plex-Platform=Chrome&autoAdjustQuality=1&fastSeek=1&mediaBufferSize=104857600&X-Plex-Client-Profile-Extra=append-transcode-target-codec(type%3DvideoProfile%26context%3Dstreaming%26videoCodec%3Dh264%2Chevc%26audioCodec%3Daac%26protocol%3Ddash)
+    thumb_id: 423363
+    image: /plex_proxy/library/metadata/411260/thumb/1654227486
+    percent: 0
+    seconds: 0
