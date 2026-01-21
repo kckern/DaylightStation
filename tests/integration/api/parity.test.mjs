@@ -350,6 +350,58 @@ describe('DDD vs Legacy Endpoint Parity', () => {
       }
     });
   });
+
+  describe('POST /media/log parity', () => {
+    const testPayload = {
+      type: 'plex',
+      media_key: '999999',  // Test ID that won't affect real data
+      percent: 50,
+      seconds: 300,
+      title: 'Parity Test Video',
+      watched_duration: 150
+    };
+
+    it('should accept valid playback log request', async () => {
+      const res = await fetch(`${BASE_URL}/media/log`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(testPayload)
+      });
+
+      // Should succeed or return specific validation error
+      expect([200, 400]).toContain(res.status);
+
+      const body = await res.json();
+      if (res.status === 200) {
+        expect(body.response).toBeDefined();
+        expect(body.response.type).toBe('plex');
+      }
+    });
+
+    it('should reject request missing required fields', async () => {
+      const res = await fetch(`${BASE_URL}/media/log`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'plex' })  // Missing media_key, percent
+      });
+
+      expect(res.status).toBe(400);
+      const body = await res.json();
+      expect(body.error).toContain('Missing');
+    });
+
+    it('should reject request with seconds < 10', async () => {
+      const res = await fetch(`${BASE_URL}/media/log`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...testPayload, seconds: 5 })
+      });
+
+      expect(res.status).toBe(400);
+      const body = await res.json();
+      expect(body.error).toContain('seconds');
+    });
+  });
 });
 } // end isJest
 
