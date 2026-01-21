@@ -597,8 +597,11 @@ const Player = forwardRef(function Player(props, ref) {
   // Loop conditions: single-item queue or continuous flag
   // Note: short videos (<20s) loop automatically but we can't determine duration at render time
   // Use continuous=true in URL params for short clips that should hide progress bar
+  // Shader aliases: legacy names map to canonical shader classes (must match useQueueController)
+  const shaderAliases = { dark: 'blackout', minimal: 'focused', regular: 'default', screensaver: 'focused' };
   const currentItemShader = effectiveMeta?.shader;
-  const explicitShader = play?.shader || queue?.shader || currentItemShader;
+  const rawExplicitShader = play?.shader || queue?.shader || currentItemShader;
+  const explicitShader = shaderAliases[rawExplicitShader] ?? rawExplicitShader;
   const willLoop = (isQueue && playQueue?.length === 1) ||
                    (!isQueue && singlePlayerProps?.continuous);
   const effectiveShader = explicitShader || (willLoop ? 'focused' : queueShader);
