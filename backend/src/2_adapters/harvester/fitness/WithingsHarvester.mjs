@@ -109,6 +109,12 @@ export class WithingsHarvester extends IHarvester {
   async harvest(username, options = {}) {
     const { yearsBack = 15 } = options;
 
+    // Dev mode bypass - skip API calls during development
+    if (process.env.dev) {
+      this.#logger?.info?.('withings.harvest.devMode', { message: 'Dev mode - skipping API call' });
+      return { skipped: true, reason: 'dev_mode' };
+    }
+
     // Check circuit breaker
     if (this.#circuitBreaker.isOpen()) {
       const cooldown = this.#circuitBreaker.getCooldownStatus();
@@ -143,6 +149,10 @@ export class WithingsHarvester extends IHarvester {
 
       // 3. Save to lifelog
       await this.#lifelogStore.save(username, 'withings', measurements);
+
+      // Note: Call processWeight(jobId) after harvest to compute weight analytics
+      // (interpolation, rolling averages, trendlines, caloric balance)
+      // See: backend/_legacy/jobs/weight.mjs for the full implementation
 
       // Success - reset circuit breaker
       this.#circuitBreaker.recordSuccess();
@@ -179,6 +189,14 @@ export class WithingsHarvester extends IHarvester {
 
   getStatus() {
     return this.#circuitBreaker.getStatus();
+  }
+
+  /**
+   * Check if harvester is in cooldown state
+   * @returns {boolean} True if circuit breaker is open
+   */
+  isInCooldown() {
+    return this.#circuitBreaker?.isOpen?.() ?? false;
   }
 
   /**

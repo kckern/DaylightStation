@@ -188,6 +188,33 @@ export class StravaHarvester extends IHarvester {
   }
 
   /**
+   * Check if harvester is in cooldown state
+   * @returns {boolean} True if circuit breaker is open
+   */
+  isInCooldown() {
+    return this.#circuitBreaker.isOpen();
+  }
+
+  /**
+   * Public wrapper for token refresh
+   * @param {string} username - Target user
+   * @returns {Promise<boolean>} True if token refresh succeeded
+   */
+  async refreshAccessToken(username) {
+    return this.#refreshAccessToken(username);
+  }
+
+  /**
+   * Public wrapper for fetching raw activities
+   * @param {string} username - Target user
+   * @param {number} [daysBack=90] - Days of history to fetch
+   * @returns {Promise<Array>} Raw activity data from Strava
+   */
+  async fetchActivities(username, daysBack = 90) {
+    return this.#fetchActivities(username, daysBack);
+  }
+
+  /**
    * Generate reauthorization URL for OAuth flow
    * Migrated from: strava.mjs:159-165
    * @param {Object} [options] - Options
@@ -257,7 +284,7 @@ export class StravaHarvester extends IHarvester {
     let page = 1;
     const perPage = 100;
     const after = moment().subtract(daysBack, 'days').startOf('day').unix();
-    const before = moment().startOf('day').unix();
+    const before = moment().endOf('day').unix();
 
     while (true) {
       const response = await this.#stravaClient.getActivities({ before, after, page, perPage });
