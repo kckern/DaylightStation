@@ -53,6 +53,8 @@
     "test:api": "NODE_OPTIONS=--experimental-vm-modules jest --runInBand tests/integration/api",
     "test:api:schema": "npm run test:api -- --testPathIgnorePatterns=plex",
     "test:api:plex": "npm run test:api -- --testNamePattern=Plex",
+    "test:v1": "NODE_OPTIONS=--experimental-vm-modules jest --runInBand tests/integration/api/v1-regression.test.mjs",
+    "test:v1:verbose": "NODE_OPTIONS=--experimental-vm-modules jest --runInBand --verbose tests/integration/api/v1-regression.test.mjs",
     "test:capture-baselines": "node tests/integration/api/_utils/captureBaselines.mjs",
     "test:verify-baselines": "node tests/integration/api/_utils/captureBaselines.mjs --verify",
     "test:smoke": "NODE_OPTIONS=--experimental-vm-modules jest --runInBand --testPathPattern=tests/smoke",
