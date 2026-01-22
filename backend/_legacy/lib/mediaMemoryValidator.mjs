@@ -1,278 +1,196 @@
 /**
- * Media Memory Validator
+ * DEPRECATED: Legacy Media Memory Validator Re-export Shim
  *
- * Daily cron job to validate Plex IDs in media_memory and auto-backfill orphans.
+ * This module re-exports from the new location for backwards compatibility.
+ * All new code should import from:
+ *   #backend/src/1_domains/content/services/MediaMemoryValidatorService.mjs
  *
- * Safety:
- * - Aborts if Plex server unreachable
- * - Only updates when high-confidence match found (>90%)
- * - Preserves old IDs in oldPlexIds array
- * - Writes work log on changes
+ * Note: The new version uses a class-based API. This shim provides a
+ * compatibility wrapper that matches the original function signature.
+ *
+ * This shim will be removed in a future release.
  */
+
+console.warn(
+  '[DEPRECATION] Importing from #backend/_legacy/lib/mediaMemoryValidator.mjs is deprecated.\n' +
+  'Update imports to: #backend/src/1_domains/content/services/MediaMemoryValidatorService.mjs'
+);
 
 import path from 'path';
 import fs from 'fs';
 import moment from 'moment-timezone';
-import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
-import stringSimilarity from 'string-similarity';
-import axios from './http.mjs';
+import { stringify as stringifyYaml } from 'yaml';
 import { createLogger } from './logging/logger.js';
 import { configService } from './config/index.mjs';
-import { getMediaMemoryDir, getMediaMemoryFiles } from './mediaMemory.mjs';
+import { MediaMemoryValidatorService } from '../../src/1_domains/content/services/MediaMemoryValidatorService.mjs';
+import { getMediaMemoryDir, getMediaMemoryFiles } from '../../src/1_domains/content/services/MediaMemoryService.mjs';
 
 const logger = createLogger({ source: 'cron', app: 'mediaMemoryValidator' });
 
-const MIN_CONFIDENCE = 90;
-const RECENT_DAYS = 30;
-const SAMPLE_PERCENT = 10;
+/**
+ * Legacy PlexClient wrapper for the new service
+ * Creates a PlexClient-like interface from configService
+ */
+class LegacyPlexClient {
+  constructor() {
+    const auth = configService.getHouseholdAuth('plex') || {};
+    this.token = auth.token;
+    const { plex: plexEnv } = process.env;
+    this.host = auth.server_url?.replace(/:\d+$/, '') || plexEnv?.host;
+    this.port = plexEnv?.port;
+    this.baseUrl = this.port ? `${this.host}:${this.port}` : this.host;
+  }
 
-class PlexClient {
-    constructor() {
-        const auth = configService.getHouseholdAuth('plex') || {};
-        this.token = auth.token;
-        const { plex: plexEnv } = process.env;
-        this.host = auth.server_url?.replace(/:\d+$/, '') || plexEnv?.host;
-        this.port = plexEnv?.port;
-        this.baseUrl = this.port ? `${this.host}:${this.port}` : this.host;
+  async fetch(endpoint) {
+    const axios = (await import('./http.mjs')).default;
+    const url = `${this.baseUrl}/${endpoint}`;
+    const separator = url.includes('?') ? '&' : '?';
+    const fullUrl = `${url}${separator}X-Plex-Token=${this.token}`;
+    try {
+      const response = await axios.get(fullUrl, { headers: { Accept: 'application/json' } });
+      return response.data;
+    } catch (error) {
+      if (error.response?.status === 404) return null;
+      throw error;
     }
+  }
 
-    async fetch(endpoint) {
-        const url = `${this.baseUrl}/${endpoint}`;
-        const separator = url.includes('?') ? '&' : '?';
-        const fullUrl = `${url}${separator}X-Plex-Token=${this.token}`;
-        try {
-            const response = await axios.get(fullUrl, { headers: { Accept: 'application/json' } });
-            return response.data;
-        } catch (error) {
-            if (error.response?.status === 404) return null;
-            throw error;
-        }
+  async checkConnectivity() {
+    try {
+      const data = await this.fetch('identity');
+      return !!data?.MediaContainer?.machineIdentifier;
+    } catch {
+      return false;
     }
+  }
 
-    async checkConnectivity() {
-        try {
-            const data = await this.fetch('identity');
-            return !!data?.MediaContainer?.machineIdentifier;
-        } catch {
-            return false;
-        }
-    }
+  async verifyId(plexId) {
+    const data = await this.fetch(`library/metadata/${plexId}`);
+    return data?.MediaContainer?.Metadata?.[0] || null;
+  }
 
-    async verifyId(plexId) {
-        const data = await this.fetch(`library/metadata/${plexId}`);
-        return data?.MediaContainer?.Metadata?.[0] || null;
+  async hubSearch(query, libraryId = null) {
+    const sectionParam = libraryId ? `&sectionId=${libraryId}` : '';
+    const data = await this.fetch(`hubs/search?query=${encodeURIComponent(query)}${sectionParam}`);
+    const hubs = data?.MediaContainer?.Hub || [];
+    const results = [];
+    for (const hub of hubs) {
+      for (const item of (hub.Metadata || [])) {
+        results.push({
+          id: item.ratingKey,
+          title: item.title,
+          parent: item.parentTitle,
+          grandparent: item.grandparentTitle,
+          type: item.type
+        });
+      }
     }
-
-    async hubSearch(query, libraryId = null) {
-        const sectionParam = libraryId ? `&sectionId=${libraryId}` : '';
-        const data = await this.fetch(`hubs/search?query=${encodeURIComponent(query)}${sectionParam}`);
-        const hubs = data?.MediaContainer?.Hub || [];
-        const results = [];
-        for (const hub of hubs) {
-            for (const item of (hub.Metadata || [])) {
-                results.push({
-                    id: item.ratingKey,
-                    title: item.title,
-                    parent: item.parentTitle,
-                    grandparent: item.grandparentTitle,
-                    type: item.type
-                });
-            }
-        }
-        return results;
-    }
+    return results;
+  }
 }
 
-function calculateConfidence(stored, result) {
-    const titleSim = stringSimilarity.compareTwoStrings(
-        (stored.title || '').toLowerCase(),
-        (result.title || '').toLowerCase()
-    );
+/**
+ * Legacy WatchStateStore wrapper
+ * Adapts file-based storage to the service's expected interface
+ */
+class LegacyWatchStateStore {
+  constructor() {
+    this.files = getMediaMemoryFiles();
+    this.dataByFile = new Map();
+    this.yaml = null;
+  }
 
-    let parentSim = 0;
-    if (stored.parent && result.parent) {
-        parentSim = stringSimilarity.compareTwoStrings(
-            stored.parent.toLowerCase(),
-            result.parent.toLowerCase()
-        );
+  async loadYaml() {
+    if (!this.yaml) {
+      this.yaml = await import('yaml');
+    }
+    return this.yaml;
+  }
+
+  async getAllEntries() {
+    const { parse: parseYaml } = await this.loadYaml();
+    const entries = [];
+
+    for (const fileInfo of this.files) {
+      const content = fs.readFileSync(fileInfo.path, 'utf8');
+      const data = parseYaml(content) || {};
+      this.dataByFile.set(fileInfo.path, { data, fileInfo });
+
+      for (const [plexId, entry] of Object.entries(data)) {
+        entries.push({
+          id: plexId,
+          ...entry,
+          libraryId: fileInfo.libraryId,
+          _filePath: fileInfo.path
+        });
+      }
     }
 
-    let grandparentSim = 0;
-    if (stored.grandparent && result.grandparent) {
-        grandparentSim = stringSimilarity.compareTwoStrings(
-            stored.grandparent.toLowerCase(),
-            result.grandparent.toLowerCase()
-        );
-    }
+    return entries;
+  }
 
-    // Weight: title 50%, grandparent 30%, parent 20%
-    const score = (titleSim * 0.5) + (grandparentSim * 0.3) + (parentSim * 0.2);
-    return Math.round(score * 100);
+  async updateId(oldId, newId, updates) {
+    // Find which file contains this entry
+    for (const [filePath, { data, fileInfo }] of this.dataByFile.entries()) {
+      if (data[oldId]) {
+        const entry = data[oldId];
+        delete data[oldId];
+        data[newId] = { ...entry, ...updates };
+
+        // Write back to file
+        const yaml = stringifyYaml(data, { lineWidth: 0 });
+        fs.writeFileSync(filePath, yaml, 'utf8');
+        break;
+      }
+    }
+  }
 }
 
-async function findBestMatch(plex, entry) {
-    const queries = [];
-    if (entry.grandparent && entry.title) {
-        queries.push(`${entry.grandparent} ${entry.title}`);
-    }
-    if (entry.title) {
-        queries.push(entry.title);
-    }
-
-    let bestMatch = null;
-    let bestConfidence = 0;
-
-    for (const query of queries) {
-        const results = await plex.hubSearch(query, entry.libraryId);
-        for (const result of results) {
-            const confidence = calculateConfidence(entry, result);
-            if (confidence > bestConfidence) {
-                bestConfidence = confidence;
-                bestMatch = { ...result, confidence };
-            }
-            if (confidence >= 95) break;
-        }
-        if (bestConfidence >= MIN_CONFIDENCE) break;
-    }
-
-    return bestMatch;
-}
-
-function selectEntriesToCheck(entries) {
-    const now = moment();
-    const recentCutoff = moment().subtract(RECENT_DAYS, 'days');
-
-    const recent = [];
-    const older = [];
-
-    for (const [id, entry] of entries) {
-        const lastPlayed = moment(entry.lastPlayed);
-        if (lastPlayed.isValid() && lastPlayed.isAfter(recentCutoff)) {
-            recent.push([id, entry]);
-        } else {
-            older.push([id, entry]);
-        }
-    }
-
-    // Sample older entries
-    const sampleCount = Math.ceil(older.length * SAMPLE_PERCENT / 100);
-    const shuffled = older.sort(() => Math.random() - 0.5);
-    const sampled = shuffled.slice(0, sampleCount);
-
-    return [...recent, ...sampled];
-}
-
+/**
+ * Legacy compatibility wrapper for validateMediaMemory
+ * Maintains the original function signature while using the new service
+ */
 export default async function validateMediaMemory(guidId) {
-    logger.info('mediaMemory.validator.started', { guidId });
+  logger.info('mediaMemory.validator.started', { guidId });
 
-    const plex = new PlexClient();
+  const plexClient = new LegacyPlexClient();
+  const watchStateStore = new LegacyWatchStateStore();
 
-    // Safety: Check connectivity first
-    if (!await plex.checkConnectivity()) {
-        logger.warn('mediaMemory.validator.aborted', { reason: 'Plex unreachable' });
-        return;
+  const service = new MediaMemoryValidatorService({
+    plexClient,
+    watchStateStore,
+    logger
+  });
+
+  const result = await service.validateMediaMemory();
+
+  // Write work log if changes or unresolved (matching legacy behavior)
+  if (result.changes?.length > 0 || result.unresolvedList?.length > 0) {
+    const logsDir = path.join(getMediaMemoryDir(), 'plex', '_logs');
+    if (!fs.existsSync(logsDir)) {
+      fs.mkdirSync(logsDir, { recursive: true });
     }
 
-    const files = getMediaMemoryFiles();
-    const stats = { checked: 0, valid: 0, backfilled: 0, unresolved: 0 };
-    const allChanges = [];
-    const allUnresolved = [];
+    const logFile = path.join(logsDir, `${moment().format('YYYY-MM-DD')}.yml`);
+    const logData = {
+      date: moment().format('YYYY-MM-DD'),
+      runTime: new Date().toISOString(),
+      summary: {
+        checked: result.checked,
+        valid: result.valid,
+        backfilled: result.backfilled,
+        unresolved: result.unresolved
+      },
+      ...(result.changes?.length > 0 && { changes: result.changes }),
+      ...(result.unresolvedList?.length > 0 && { unresolved: result.unresolvedList })
+    };
 
-    for (const fileInfo of files) {
-        const content = fs.readFileSync(fileInfo.path, 'utf8');
-        const data = parseYaml(content) || {};
-        const entries = Object.entries(data);
+    fs.writeFileSync(logFile, stringifyYaml(logData, { lineWidth: 0 }), 'utf8');
+    logger.info('mediaMemory.validator.logWritten', { path: logFile });
+  }
 
-        const toCheck = selectEntriesToCheck(entries);
-        let fileModified = false;
-
-        for (const [plexId, entry] of toCheck) {
-            stats.checked++;
-
-            const exists = await plex.verifyId(plexId);
-            if (exists) {
-                stats.valid++;
-                continue;
-            }
-
-            // ID is orphaned - try to find match
-            logger.info('mediaMemory.validator.orphanFound', {
-                id: plexId,
-                title: entry.title,
-                file: fileInfo.filename
-            });
-
-            const match = await findBestMatch(plex, entry);
-
-            if (match && match.confidence >= MIN_CONFIDENCE) {
-                stats.backfilled++;
-
-                // Update entry with new ID
-                const oldIds = entry.oldPlexIds || [];
-                oldIds.push(parseInt(plexId, 10));
-
-                const updatedEntry = {
-                    ...entry,
-                    oldPlexIds: oldIds
-                };
-
-                // Remove old key, add new
-                delete data[plexId];
-                data[match.id] = updatedEntry;
-                fileModified = true;
-
-                const change = {
-                    file: fileInfo.filename,
-                    oldId: parseInt(plexId, 10),
-                    newId: parseInt(match.id, 10),
-                    title: entry.title,
-                    parent: entry.parent,
-                    grandparent: entry.grandparent,
-                    confidence: match.confidence,
-                    timestamp: new Date().toISOString()
-                };
-                allChanges.push(change);
-
-                logger.info('mediaMemory.validator.backfilled', change);
-            } else {
-                stats.unresolved++;
-                const unresolved = {
-                    file: fileInfo.filename,
-                    id: parseInt(plexId, 10),
-                    title: entry.title,
-                    reason: match ? `low confidence (${match.confidence}%)` : 'no match found'
-                };
-                allUnresolved.push(unresolved);
-
-                logger.warn('mediaMemory.validator.noMatch', unresolved);
-            }
-        }
-
-        if (fileModified) {
-            const yaml = stringifyYaml(data, { lineWidth: 0 });
-            fs.writeFileSync(fileInfo.path, yaml, 'utf8');
-        }
-    }
-
-    // Write work log if changes or unresolved
-    if (allChanges.length > 0 || allUnresolved.length > 0) {
-        const logsDir = path.join(getMediaMemoryDir(), 'plex', '_logs');
-        if (!fs.existsSync(logsDir)) {
-            fs.mkdirSync(logsDir, { recursive: true });
-        }
-
-        const logFile = path.join(logsDir, `${moment().format('YYYY-MM-DD')}.yml`);
-        const logData = {
-            date: moment().format('YYYY-MM-DD'),
-            runTime: new Date().toISOString(),
-            summary: stats,
-            ...(allChanges.length > 0 && { changes: allChanges }),
-            ...(allUnresolved.length > 0 && { unresolved: allUnresolved })
-        };
-
-        fs.writeFileSync(logFile, stringifyYaml(logData, { lineWidth: 0 }), 'utf8');
-        logger.info('mediaMemory.validator.logWritten', { path: logFile });
-    }
-
-    logger.info('mediaMemory.validator.complete', stats);
+  return result;
 }
+
+// Also export the service class for direct usage
+export { MediaMemoryValidatorService } from '../../src/1_domains/content/services/MediaMemoryValidatorService.mjs';

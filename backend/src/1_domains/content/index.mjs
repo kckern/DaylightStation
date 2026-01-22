@@ -14,3 +14,28 @@ export { validateAdapter, ContentSourceBase } from './ports/IContentSource.mjs';
 
 // Services
 export { ContentSourceRegistry } from './services/ContentSourceRegistry.mjs';
+export { MediaMemoryValidatorService } from './services/MediaMemoryValidatorService.mjs';
+export {
+  getMediaMemoryPath,
+  getMediaMemoryDir,
+  parseLibraryFilename,
+  buildLibraryFilename,
+  getMediaMemoryFiles
+} from './services/MediaMemoryService.mjs';
+export {
+  getConfig as getArchiveConfig,
+  isArchiveEnabled,
+  getHotData,
+  getMostRecentTimestamp,
+  saveToHot,
+  loadArchive,
+  saveToArchive,
+  appendToArchive,
+  getDataForDateRange,
+  rotateToArchive,
+  migrateToHotCold,
+  listArchiveYears,
+  getArchiveStatus,
+  clearConfigCache as clearArchiveConfigCache
+} from './services/ArchiveService.mjs';
+export { default as ArchiveService } from './services/ArchiveService.mjs';
