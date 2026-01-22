@@ -1,5 +1,5 @@
 // tests/unit/content/entities/Item.test.mjs
-import { Item } from '@backend/src/1_domains/content/entities/Item.mjs';
+import { Item } from '#backend/src/1_domains/content/entities/Item.mjs';
 
 describe('Item entity', () => {
   test('creates item with required fields', () => {

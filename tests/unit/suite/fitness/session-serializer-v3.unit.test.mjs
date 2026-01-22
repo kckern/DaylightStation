@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@jest/globals';
-import { SessionSerializerV3 } from '@frontend/hooks/fitness/SessionSerializerV3.js';
+import { SessionSerializerV3 } from '#frontend/hooks/fitness/SessionSerializerV3.js';
 
 describe('SessionSerializerV3', () => {
   describe('computeDerivedStats', () => {

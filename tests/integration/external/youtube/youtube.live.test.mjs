@@ -10,7 +10,7 @@
  * so we must set it before importing.
  */
 
-import { configService } from '@backend/_legacy/lib/config/index.mjs';
+import { configService } from '#backend/_legacy/lib/config/index.mjs';
 
 // Must set process.env.path before importing youtube.mjs
 const dataPath = process.env.DAYLIGHT_DATA_PATH;
@@ -20,7 +20,7 @@ if (dataPath) {
 
 let youtubeHarvest;
 try {
-  const mod = await import('@backend/lib/youtube.mjs');
+  const mod = await import('#backend/lib/youtube.mjs');
   youtubeHarvest = mod.default;
 } catch (e) {
   // Module may fail to load if yt-dlp not installed

@@ -7,8 +7,8 @@
  * - TODOIST_KEY in secrets.yml OR users/{username}/auth/todoist.yml with api_key
  */
 
-import { configService } from '@backend/_legacy/lib/config/index.mjs';
-import getTasks from '@backend/_legacy/lib/todoist.mjs';
+import { configService } from '#backend/_legacy/lib/config/index.mjs';
+import getTasks from '#backend/_legacy/lib/todoist.mjs';
 
 describe('Todoist Live Integration', () => {
   beforeAll(() => {

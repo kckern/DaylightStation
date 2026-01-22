@@ -1,6 +1,6 @@
 // tests/unit/infrastructure/eventbus/adapters/WebSocketAdapter.test.mjs
 import { jest } from '@jest/globals';
-import { WebSocketAdapter } from '@backend/src/0_infrastructure/eventbus/adapters/WebSocketAdapter.mjs';
+import { WebSocketAdapter } from '#backend/src/0_infrastructure/eventbus/adapters/WebSocketAdapter.mjs';
 
 describe('WebSocketAdapter', () => {
   let adapter;

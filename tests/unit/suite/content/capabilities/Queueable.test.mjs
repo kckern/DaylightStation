@@ -1,5 +1,5 @@
 // tests/unit/content/capabilities/Queueable.test.mjs
-import { QueueableItem } from '@backend/src/1_domains/content/capabilities/Queueable.mjs';
+import { QueueableItem } from '#backend/src/1_domains/content/capabilities/Queueable.mjs';
 
 describe('Queueable capability', () => {
   test('creates queueable item with traversal mode', () => {

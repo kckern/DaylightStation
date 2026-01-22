@@ -10,7 +10,7 @@
  * - User gmail refresh token
  */
 
-import { configService } from '@backend/_legacy/lib/config/index.mjs';
+import { configService } from '#backend/_legacy/lib/config/index.mjs';
 
 describe('Shopping Live Integration', () => {
   let processShoppingData;
@@ -31,7 +31,7 @@ describe('Shopping Live Integration', () => {
     process.env.GOOGLE_REDIRECT_URI = configService.getSecret('GOOGLE_REDIRECT_URI') || 'http://localhost:3112/auth/google/callback';
 
     try {
-      const mod = await import('@backend/lib/shopping.mjs');
+      const mod = await import('#backend/lib/shopping.mjs');
       processShoppingData = mod.default;
     } catch (e) {
       console.log('shopping.mjs failed to load:', e.message);

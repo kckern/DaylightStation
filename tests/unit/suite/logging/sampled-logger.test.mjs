@@ -1,6 +1,6 @@
 import { jest } from '@jest/globals';
-import { createLogger } from '@backend/lib/logging/logger.js';
-import { initializeLogging, resetLogging, getDispatcher } from '@backend/lib/logging/dispatcher.js';
+import { createLogger } from '#backend/lib/logging/logger.js';
+import { initializeLogging, resetLogging, getDispatcher } from '#backend/lib/logging/dispatcher.js';
 
 describe('sampled logging', () => {
   let dispatchSpy;

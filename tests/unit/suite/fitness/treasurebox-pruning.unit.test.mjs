@@ -2,7 +2,7 @@
 import { jest, describe, test, expect, beforeAll } from '@jest/globals';
 
 // Mock logger
-jest.unstable_mockModule('@frontend/lib/logging/Logger.js', () => ({
+jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
   default: () => ({
     info: jest.fn(),
     warn: jest.fn(),
@@ -27,7 +27,7 @@ describe('TreasureBox timeline pruning', () => {
   let FitnessTreasureBox;
 
   beforeAll(async () => {
-    const module = await import('@frontend/hooks/fitness/TreasureBox.js');
+    const module = await import('#frontend/hooks/fitness/TreasureBox.js');
     FitnessTreasureBox = module.FitnessTreasureBox;
   });
 

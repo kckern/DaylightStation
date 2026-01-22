@@ -1,5 +1,5 @@
 // tests/unit/api/middleware/legacyPlayShim.test.mjs
-import { createLegacyPlayShim } from '@backend/src/4_api/middleware/legacyPlayShim.mjs';
+import { createLegacyPlayShim } from '#backend/src/4_api/middleware/legacyPlayShim.mjs';
 
 describe('Legacy Play Shim', () => {
   describe('createLegacyPlayShim', () => {

@@ -2,11 +2,11 @@ import { jest } from '@jest/globals';
 
 // Mock the shared transport before importing Logger
 const mockSend = jest.fn();
-jest.unstable_mockModule('@frontend/lib/logging/sharedTransport.js', () => ({
+jest.unstable_mockModule('#frontend/lib/logging/sharedTransport.js', () => ({
   getSharedWsTransport: () => ({ send: mockSend })
 }));
 
-const { getLogger, configure, resetSamplingState } = await import('@frontend/lib/logging/Logger.js');
+const { getLogger, configure, resetSamplingState } = await import('#frontend/lib/logging/Logger.js');
 
 describe('frontend sampled logging', () => {
   beforeEach(() => {

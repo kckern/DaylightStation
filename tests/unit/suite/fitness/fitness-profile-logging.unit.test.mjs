@@ -13,7 +13,7 @@ const mockChild = jest.fn(() => ({
   child: mockChild
 }));
 
-jest.unstable_mockModule('@frontend/lib/logging/Logger.js', () => ({
+jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
   default: () => ({
     sampled: mockSampled,
     info: mockInfo,
@@ -44,7 +44,7 @@ describe('fitness profile logging', () => {
     // Since FitnessApp.jsx is a React component, we'll test the logging behavior
     // by verifying the logger is called correctly when sampled() is invoked
 
-    const { getLogger } = await import('@frontend/lib/logging/Logger.js');
+    const { getLogger } = await import('#frontend/lib/logging/Logger.js');
     const logger = getLogger().child({ app: 'fitness' });
 
     // Simulate what FitnessApp does with the profile data
@@ -70,7 +70,7 @@ describe('fitness profile logging', () => {
   });
 
   test('rate limits to 2 logs per minute (roughly 30-second intervals)', async () => {
-    const { getLogger } = await import('@frontend/lib/logging/Logger.js');
+    const { getLogger } = await import('#frontend/lib/logging/Logger.js');
     const logger = getLogger().child({ app: 'fitness' });
 
     // Verify the maxPerMinute option is passed correctly

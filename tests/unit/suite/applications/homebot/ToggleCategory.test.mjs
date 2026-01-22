@@ -39,7 +39,7 @@ describe('ToggleCategory', () => {
       error: jest.fn()
     };
 
-    const { ToggleCategory } = await import('@backend/src/3_applications/homebot/usecases/ToggleCategory.mjs');
+    const { ToggleCategory } = await import('#backend/src/3_applications/homebot/usecases/ToggleCategory.mjs');
 
     useCase = new ToggleCategory({
       messagingGateway: mockMessagingGateway,
@@ -50,7 +50,7 @@ describe('ToggleCategory', () => {
 
   describe('constructor', () => {
     it('should throw if messagingGateway is not provided', async () => {
-      const { ToggleCategory } = await import('@backend/src/3_applications/homebot/usecases/ToggleCategory.mjs');
+      const { ToggleCategory } = await import('#backend/src/3_applications/homebot/usecases/ToggleCategory.mjs');
 
       expect(() => new ToggleCategory({
         conversationStateStore: mockStateStore
@@ -58,7 +58,7 @@ describe('ToggleCategory', () => {
     });
 
     it('should throw if conversationStateStore is not provided', async () => {
-      const { ToggleCategory } = await import('@backend/src/3_applications/homebot/usecases/ToggleCategory.mjs');
+      const { ToggleCategory } = await import('#backend/src/3_applications/homebot/usecases/ToggleCategory.mjs');
 
       expect(() => new ToggleCategory({
         messagingGateway: mockMessagingGateway

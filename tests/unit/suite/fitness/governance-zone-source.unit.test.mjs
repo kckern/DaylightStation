@@ -17,12 +17,12 @@ const createMockSession = (zoneProfileStore) => ({
 const mockSampled = jest.fn();
 const mockInfo = jest.fn();
 const mockWarn = jest.fn();
-jest.unstable_mockModule('@frontend/lib/logging/Logger.js', () => ({
+jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
   default: () => ({ sampled: mockSampled, info: mockInfo, warn: mockWarn }),
   getLogger: () => ({ sampled: mockSampled, info: mockInfo, warn: mockWarn })
 }));
 
-const { GovernanceEngine } = await import('@frontend/hooks/fitness/GovernanceEngine.js');
+const { GovernanceEngine } = await import('#frontend/hooks/fitness/GovernanceEngine.js');
 
 describe('GovernanceEngine zone source', () => {
   beforeEach(() => {

@@ -8,8 +8,8 @@
  * Run: npm run test:v1
  */
 
-import { loadConfig, normalizeResponse, compareResponses, loadBaseline } from '@testlib/parity-runner.mjs';
-import { loadTestData, validateExpectations, clearCache } from '@testlib/testDataService.mjs';
+import { loadConfig, normalizeResponse, compareResponses, loadBaseline } from '#testlib/parity-runner.mjs';
+import { loadTestData, validateExpectations, clearCache } from '#testlib/testDataService.mjs';
 
 const config = loadConfig();
 const BASE_URL = process.env.TEST_BASE_URL || config.server?.default_url || 'http://localhost:3112';

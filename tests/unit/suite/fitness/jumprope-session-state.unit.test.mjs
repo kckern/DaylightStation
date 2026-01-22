@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
-import { JumpropeSessionState } from '@frontend/hooks/fitness/JumpropeSessionState.js';
+import { JumpropeSessionState } from '#frontend/hooks/fitness/JumpropeSessionState.js';
 
 describe('JumpropeSessionState', () => {
   let state;

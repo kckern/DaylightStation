@@ -7,7 +7,7 @@
  * responses using the expectation matchers.
  */
 
-import { loadTestData, validateExpectations, clearCache } from '@testlib/testDataService.mjs';
+import { loadTestData, validateExpectations, clearCache } from '#testlib/testDataService.mjs';
 
 const BASE_URL = process.env.TEST_BASE_URL || 'http://localhost:3112';
 

@@ -18,7 +18,7 @@ describe('mediaMemory helpers', () => {
       }
     };
 
-    mediaMemory = await import('@backend/_legacy/lib/mediaMemory.mjs');
+    mediaMemory = await import('#backend/_legacy/lib/mediaMemory.mjs');
   });
 
   describe('parseLibraryFilename', () => {

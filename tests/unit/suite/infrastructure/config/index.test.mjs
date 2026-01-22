@@ -10,7 +10,7 @@ describe('Config Infrastructure Index', () => {
 
   beforeEach(async () => {
     // Fresh import each time
-    configModule = await import('@backend/src/0_infrastructure/config/index.mjs');
+    configModule = await import('#backend/src/0_infrastructure/config/index.mjs');
     configModule.resetConfigService();
   });
 

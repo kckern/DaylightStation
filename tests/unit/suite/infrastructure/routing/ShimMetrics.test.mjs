@@ -1,6 +1,6 @@
 // tests/unit/infrastructure/routing/ShimMetrics.test.mjs
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
-import { ShimMetrics } from '@backend/src/0_infrastructure/routing/ShimMetrics.mjs';
+import { ShimMetrics } from '#backend/src/0_infrastructure/routing/ShimMetrics.mjs';
 
 describe('ShimMetrics', () => {
   let metrics;

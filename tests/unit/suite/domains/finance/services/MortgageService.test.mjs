@@ -1,6 +1,6 @@
 // tests/unit/domains/finance/services/MortgageService.test.mjs
 import { jest } from '@jest/globals';
-import { MortgageService } from '@backend/src/1_domains/finance/services/MortgageService.mjs';
+import { MortgageService } from '#backend/src/1_domains/finance/services/MortgageService.mjs';
 
 describe('MortgageService', () => {
   let service;

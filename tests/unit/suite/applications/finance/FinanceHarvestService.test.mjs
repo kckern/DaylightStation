@@ -3,7 +3,7 @@
  */
 
 import { jest, describe, it, expect, beforeEach } from '@jest/globals';
-import { FinanceHarvestService } from '@backend/src/3_applications/finance/FinanceHarvestService.mjs';
+import { FinanceHarvestService } from '#backend/src/3_applications/finance/FinanceHarvestService.mjs';
 
 describe('FinanceHarvestService', () => {
   let service;

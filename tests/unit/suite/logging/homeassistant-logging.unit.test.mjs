@@ -1,5 +1,5 @@
 import { jest } from '@jest/globals';
-import { initializeLogging, resetLogging, getDispatcher } from '@backend/lib/logging/dispatcher.js';
+import { initializeLogging, resetLogging, getDispatcher } from '#backend/lib/logging/dispatcher.js';
 
 describe('home assistant logging', () => {
   let dispatchSpy;
@@ -16,7 +16,7 @@ describe('home assistant logging', () => {
 
   test('uses sampled logging for scene activation', async () => {
     // Import after mocking
-    const { activateScene } = await import('@backend/lib/homeassistant.mjs');
+    const { activateScene } = await import('#backend/lib/homeassistant.mjs');
 
     // Call multiple times
     for (let i = 0; i < 25; i++) {

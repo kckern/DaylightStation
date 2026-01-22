@@ -1,6 +1,6 @@
 // tests/unit/adapters/ai/OpenAIAdapter.test.mjs
 import { jest } from '@jest/globals';
-import { OpenAIAdapter } from '@backend/src/2_adapters/ai/OpenAIAdapter.mjs';
+import { OpenAIAdapter } from '#backend/src/2_adapters/ai/OpenAIAdapter.mjs';
 
 describe('OpenAIAdapter', () => {
   let adapter;

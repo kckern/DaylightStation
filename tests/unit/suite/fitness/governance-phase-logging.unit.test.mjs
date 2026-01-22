@@ -3,12 +3,12 @@ import { jest } from '@jest/globals';
 // Mock logger
 const mockSampled = jest.fn();
 const mockInfo = jest.fn();
-jest.unstable_mockModule('@frontend/lib/logging/Logger.js', () => ({
+jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
   default: () => ({ sampled: mockSampled, info: mockInfo }),
   getLogger: () => ({ sampled: mockSampled, info: mockInfo })
 }));
 
-const { GovernanceEngine } = await import('@frontend/hooks/fitness/GovernanceEngine.js');
+const { GovernanceEngine } = await import('#frontend/hooks/fitness/GovernanceEngine.js');
 
 describe('governance phase change logging', () => {
   beforeEach(() => {

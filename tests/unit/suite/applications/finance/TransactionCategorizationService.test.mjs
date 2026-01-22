@@ -3,7 +3,7 @@
  */
 
 import { jest, describe, it, expect, beforeEach } from '@jest/globals';
-import { TransactionCategorizationService } from '@backend/src/3_applications/finance/TransactionCategorizationService.mjs';
+import { TransactionCategorizationService } from '#backend/src/3_applications/finance/TransactionCategorizationService.mjs';
 
 describe('TransactionCategorizationService', () => {
   let service;

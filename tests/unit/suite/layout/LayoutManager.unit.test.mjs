@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from '@jest/globals';
-import { LayoutManager } from '@frontend/modules/Fitness/FitnessPlugins/plugins/FitnessChartApp/layout/LayoutManager.js';
+import { LayoutManager } from '#frontend/modules/Fitness/FitnessPlugins/plugins/FitnessChartApp/layout/LayoutManager.js';
 import { CHART_DEFAULTS, createPRNG, generateAvatars, generateClusteredAvatars, detectAnomalies } from './testUtils.mjs';
 
 const MARGIN = CHART_DEFAULTS.margin;

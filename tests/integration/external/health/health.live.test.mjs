@@ -6,8 +6,8 @@
  * Aggregates health data from multiple sources (Withings, Garmin, etc.)
  */
 
-import { configService } from '@backend/_legacy/lib/config/index.mjs';
-import healthHarvest from '@backend/_legacy/lib/health.mjs';
+import { configService } from '#backend/_legacy/lib/config/index.mjs';
+import healthHarvest from '#backend/_legacy/lib/health.mjs';
 
 describe('Health Live Integration', () => {
   beforeAll(() => {

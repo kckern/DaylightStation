@@ -4,7 +4,7 @@
  * Run with: npm test -- tests/live/weather/weather.live.test.mjs
  */
 
-import { configService } from '@backend/_legacy/lib/config/index.mjs';
+import { configService } from '#backend/_legacy/lib/config/index.mjs';
 
 describe('Weather Live Integration', () => {
   let getWeather;
@@ -32,7 +32,7 @@ describe('Weather Live Integration', () => {
     };
 
     // Dynamic import after env setup
-    const weatherModule = await import('@backend/lib/weather.mjs');
+    const weatherModule = await import('#backend/lib/weather.mjs');
     getWeather = weatherModule.default;
   });
 

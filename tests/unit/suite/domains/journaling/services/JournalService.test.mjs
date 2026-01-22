@@ -1,6 +1,6 @@
 // tests/unit/domains/journaling/services/JournalService.test.mjs
 import { jest } from '@jest/globals';
-import { JournalService } from '@backend/src/1_domains/journaling/services/JournalService.mjs';
+import { JournalService } from '#backend/src/1_domains/journaling/services/JournalService.mjs';
 
 describe('JournalService', () => {
   let service;

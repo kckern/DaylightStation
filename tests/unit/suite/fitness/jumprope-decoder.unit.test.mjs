@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from '@jest/globals';
-import { RenphoJumpropeDecoder } from '@extensions/fitness/src/decoders/jumprope.mjs';
+import { RenphoJumpropeDecoder } from '#extensions/fitness/src/decoders/jumprope.mjs';
 
 describe('RenphoJumpropeDecoder', () => {
   let decoder;

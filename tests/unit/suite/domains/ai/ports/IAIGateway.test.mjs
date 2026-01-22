@@ -6,7 +6,7 @@ import {
   systemMessage,
   userMessage,
   assistantMessage
-} from '@backend/src/1_domains/ai/ports/IAIGateway.mjs';
+} from '#backend/src/1_domains/ai/ports/IAIGateway.mjs';
 
 describe('IAIGateway', () => {
   describe('interface methods', () => {

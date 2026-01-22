@@ -1,5 +1,5 @@
 // tests/unit/domains/finance/entities/Mortgage.test.mjs
-import { Mortgage } from '@backend/src/1_domains/finance/entities/Mortgage.mjs';
+import { Mortgage } from '#backend/src/1_domains/finance/entities/Mortgage.mjs';
 
 describe('Mortgage', () => {
   let mortgage;

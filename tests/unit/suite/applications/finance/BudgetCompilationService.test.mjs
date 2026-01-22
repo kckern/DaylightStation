@@ -3,7 +3,7 @@
  */
 
 import { jest, describe, it, expect, beforeEach } from '@jest/globals';
-import { BudgetCompilationService } from '@backend/src/3_applications/finance/BudgetCompilationService.mjs';
+import { BudgetCompilationService } from '#backend/src/3_applications/finance/BudgetCompilationService.mjs';
 
 describe('BudgetCompilationService', () => {
   let service;

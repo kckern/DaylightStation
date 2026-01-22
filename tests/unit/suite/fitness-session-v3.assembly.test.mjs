@@ -7,7 +7,7 @@ describe('sessionNormalizer v3 format handling', () => {
 
   beforeAll(async () => {
     // Import the standalone helper module (no express dependency)
-    const normalizer = await import('@backend/_legacy/lib/fitness/sessionNormalizer.mjs');
+    const normalizer = await import('#backend/_legacy/lib/fitness/sessionNormalizer.mjs');
     prepareSessionForPersistence = normalizer.prepareSessionForPersistence;
     stringifyTimelineSeriesForFile = normalizer.stringifyTimelineSeriesForFile;
     isV3Format = normalizer.isV3Format;

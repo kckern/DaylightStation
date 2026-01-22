@@ -4,7 +4,7 @@ import { describe, test, expect, jest, beforeEach } from '@jest/globals';
 const mockSampled = jest.fn();
 const mockInfo = jest.fn();
 const mockWarn = jest.fn();
-jest.unstable_mockModule('@frontend/lib/logging/Logger.js', () => ({
+jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
   default: () => ({ sampled: mockSampled, info: mockInfo, warn: mockWarn }),
   getLogger: () => ({ sampled: mockSampled, info: mockInfo, warn: mockWarn })
 }));
@@ -20,7 +20,7 @@ describe('GovernanceEngine phase stability', () => {
     const mockGetProfile = jest.fn();
     const mockZoneProfileStore = { getProfile: mockGetProfile };
 
-    const { GovernanceEngine } = await import('@frontend/hooks/fitness/GovernanceEngine.js');
+    const { GovernanceEngine } = await import('#frontend/hooks/fitness/GovernanceEngine.js');
 
     const session = {
       zoneProfileStore: mockZoneProfileStore,
@@ -93,7 +93,7 @@ describe('GovernanceEngine phase stability', () => {
   });
 
   test('TreasureBox zone changes do not trigger governance evaluation', async () => {
-    const { FitnessTreasureBox } = await import('@frontend/hooks/fitness/TreasureBox.js');
+    const { FitnessTreasureBox } = await import('#frontend/hooks/fitness/TreasureBox.js');
 
     const mockSession = { _log: jest.fn() };
     const box = new FitnessTreasureBox(mockSession);

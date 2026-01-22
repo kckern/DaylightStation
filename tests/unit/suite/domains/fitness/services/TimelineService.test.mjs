@@ -10,7 +10,7 @@ import {
   formatTimestamp,
   prepareTimelineForApi,
   prepareTimelineForStorage
-} from '@backend/src/1_domains/fitness/services/TimelineService.mjs';
+} from '#backend/src/1_domains/fitness/services/TimelineService.mjs';
 
 describe('TimelineService', () => {
   describe('isAllNullSeries', () => {

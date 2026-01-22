@@ -1,6 +1,6 @@
 // tests/unit/adapters/proxy/PlexProxyAdapter.test.mjs
 import { jest } from '@jest/globals';
-import { PlexProxyAdapter } from '@backend/src/2_adapters/proxy/PlexProxyAdapter.mjs';
+import { PlexProxyAdapter } from '#backend/src/2_adapters/proxy/PlexProxyAdapter.mjs';
 
 describe('PlexProxyAdapter', () => {
   const mockLogger = {

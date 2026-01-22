@@ -13,7 +13,7 @@ describe('zone LED logging', () => {
   });
 
   test('imports getLogger from Logger.js', () => {
-    expect(fileContent).toContain("import { getLogger } from '@testlib/logging/Logger.js'");
+    expect(fileContent).toContain("import { getLogger } from '#testlib/logging/Logger.js'");
   });
 
   test('uses sampled logging for zone LED activations', () => {

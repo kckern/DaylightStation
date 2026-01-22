@@ -11,7 +11,7 @@
  * server environment with process.env.path set up correctly.
  */
 
-import { configService } from '@backend/_legacy/lib/config/index.mjs';
+import { configService } from '#backend/_legacy/lib/config/index.mjs';
 
 // Must set process.env.path before importing budget.mjs
 const dataPath = process.env.DAYLIGHT_DATA_PATH;
@@ -22,7 +22,7 @@ if (dataPath) {
 let refreshFinancialData;
 let moduleError = null;
 try {
-  const mod = await import('@backend/lib/budget.mjs');
+  const mod = await import('#backend/lib/budget.mjs');
   refreshFinancialData = mod.refreshFinancialData;
 } catch (e) {
   moduleError = e.message;

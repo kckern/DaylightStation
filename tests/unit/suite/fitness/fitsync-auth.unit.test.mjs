@@ -14,16 +14,16 @@ const mockLogger = { info: jest.fn(), debug: jest.fn(), warn: jest.fn(), error: 
 const mockAxiosPost = jest.fn();
 
 const mockModules = () => {
-  jest.unstable_mockModule('@backend/lib/config/index.mjs', () => ({ configService: mockConfigService }));
-  jest.unstable_mockModule('@backend/lib/io.mjs', () => ({
+  jest.unstable_mockModule('#backend/lib/config/index.mjs', () => ({ configService: mockConfigService }));
+  jest.unstable_mockModule('#backend/lib/io.mjs', () => ({
     userSaveAuth: mockUserSaveAuth,
     userLoadFile: jest.fn(),
     userSaveFile: jest.fn(),
     loadFile: jest.fn(),
     saveFile: jest.fn()
   }));
-  jest.unstable_mockModule('@backend/_legacy/lib/http.mjs', () => ({ default: { post: mockAxiosPost, get: jest.fn() } }));
-  jest.unstable_mockModule('@backend/_legacy/lib/logging/logger.js', () => ({ createLogger: () => mockLogger }));
+  jest.unstable_mockModule('#backend/_legacy/lib/http.mjs', () => ({ default: { post: mockAxiosPost, get: jest.fn() } }));
+  jest.unstable_mockModule('#backend/_legacy/lib/logging/logger.js', () => ({ createLogger: () => mockLogger }));
 };
 
 const clearEnv = () => {
@@ -38,7 +38,7 @@ const loadFitsync = async () => {
   Object.values(mockLogger).forEach(fn => fn.mockClear());
   clearEnv();
   mockModules();
-  const mod = await import('@backend/_legacy/lib/fitsync.mjs');
+  const mod = await import('#backend/_legacy/lib/fitsync.mjs');
   return mod;
 };
 

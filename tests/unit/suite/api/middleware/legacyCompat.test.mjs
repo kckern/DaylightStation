@@ -1,5 +1,5 @@
 // tests/unit/api/middleware/legacyCompat.test.mjs
-import { translateMediaLogRequest, translateMediaLogResponse } from '@backend/src/4_api/middleware/legacyCompat.mjs';
+import { translateMediaLogRequest, translateMediaLogResponse } from '#backend/src/4_api/middleware/legacyCompat.mjs';
 
 describe('legacyCompat', () => {
   describe('translateMediaLogRequest', () => {

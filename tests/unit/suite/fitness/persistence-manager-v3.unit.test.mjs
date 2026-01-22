@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@jest/globals';
-import { PersistenceManager } from '@frontend/hooks/fitness/PersistenceManager.js';
+import { PersistenceManager } from '#frontend/hooks/fitness/PersistenceManager.js';
 
 describe('PersistenceManager v3 integration', () => {
   it('uses SessionSerializerV3 to build payload', () => {

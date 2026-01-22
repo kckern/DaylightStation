@@ -2,7 +2,7 @@ import { jest } from '@jest/globals';
 
 const mockInfo = jest.fn();
 const mockSampled = jest.fn();
-jest.unstable_mockModule('@frontend/lib/logging/Logger.js', () => ({
+jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
   default: () => ({ info: mockInfo, sampled: mockSampled, error: jest.fn() }),
   getLogger: () => ({ info: mockInfo, sampled: mockSampled, error: jest.fn() })
 }));
@@ -14,7 +14,7 @@ describe('tick timer logging', () => {
   });
 
   test('does not log stopped events for zero-tick short timers', async () => {
-    const { FitnessSession } = await import('@frontend/hooks/fitness/FitnessSession.js');
+    const { FitnessSession } = await import('#frontend/hooks/fitness/FitnessSession.js');
 
     const session = new FitnessSession();
     session._tickTimerStartedAt = Date.now();
@@ -32,7 +32,7 @@ describe('tick timer logging', () => {
   });
 
   test('logs stopped events when ticks occurred', async () => {
-    const { FitnessSession } = await import('@frontend/hooks/fitness/FitnessSession.js');
+    const { FitnessSession } = await import('#frontend/hooks/fitness/FitnessSession.js');
 
     const session = new FitnessSession();
     session._tickTimerStartedAt = Date.now() - 10000;
@@ -48,7 +48,7 @@ describe('tick timer logging', () => {
   });
 
   test('logs stopped events for zero-tick timers that ran >= 2 seconds', async () => {
-    const { FitnessSession } = await import('@frontend/hooks/fitness/FitnessSession.js');
+    const { FitnessSession } = await import('#frontend/hooks/fitness/FitnessSession.js');
 
     const session = new FitnessSession();
     session._tickTimerStartedAt = Date.now() - 2500; // 2.5 seconds ago
@@ -65,7 +65,7 @@ describe('tick timer logging', () => {
   });
 
   test('uses sampled logging for timer start events', async () => {
-    const { FitnessSession } = await import('@frontend/hooks/fitness/FitnessSession.js');
+    const { FitnessSession } = await import('#frontend/hooks/fitness/FitnessSession.js');
 
     const session = new FitnessSession();
     session.timeline = { timebase: { intervalMs: 5000 } };
@@ -83,7 +83,7 @@ describe('tick timer logging', () => {
   });
 
   test('uses sampled logging for timer health checks', async () => {
-    const { FitnessSession } = await import('@frontend/hooks/fitness/FitnessSession.js');
+    const { FitnessSession } = await import('#frontend/hooks/fitness/FitnessSession.js');
 
     const session = new FitnessSession();
     session.sessionId = 'test-session';

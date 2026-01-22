@@ -1,5 +1,5 @@
 // tests/unit/adapters/content/folder/FolderAdapter.test.mjs
-import { FolderAdapter } from '@backend/src/2_adapters/content/folder/FolderAdapter.mjs';
+import { FolderAdapter } from '#backend/src/2_adapters/content/folder/FolderAdapter.mjs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 

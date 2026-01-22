@@ -27,7 +27,7 @@ describe('HomeBotEventRouter', () => {
 
     mockLogger = { debug: jest.fn(), warn: jest.fn() };
 
-    const { HomeBotEventRouter } = await import('@backend/src/3_applications/homebot/bot/HomeBotEventRouter.mjs');
+    const { HomeBotEventRouter } = await import('#backend/src/3_applications/homebot/bot/HomeBotEventRouter.mjs');
     router = new HomeBotEventRouter(mockContainer, { logger: mockLogger });
   });
 
@@ -226,7 +226,7 @@ describe('HomeBotEventRouter', () => {
 
 describe('InputEventType', () => {
   it('should export InputEventType enum', async () => {
-    const { InputEventType } = await import('@backend/src/3_applications/homebot/bot/HomeBotEventRouter.mjs');
+    const { InputEventType } = await import('#backend/src/3_applications/homebot/bot/HomeBotEventRouter.mjs');
 
     expect(InputEventType.TEXT).toBe('text');
     expect(InputEventType.VOICE).toBe('voice');

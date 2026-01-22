@@ -9,14 +9,14 @@
  */
 
 import { describe, it, expect, beforeAll } from '@jest/globals';
-import { loadFixtures, dedupeFixtures, groupByType } from '@testlib/fixture-loader.mjs';
-import { buildUrl, getSupportedTypes } from '@testlib/endpoint-map.mjs';
+import { loadFixtures, dedupeFixtures, groupByType } from '#testlib/fixture-loader.mjs';
+import { buildUrl, getSupportedTypes } from '#testlib/endpoint-map.mjs';
 import {
   loadConfig,
   normalizeResponse,
   compareResponses,
   loadBaseline
-} from '@testlib/parity-runner.mjs';
+} from '#testlib/parity-runner.mjs';
 
 const config = loadConfig();
 const BASE_URL = process.env.PARITY_TEST_URL || config.server.default_url;
