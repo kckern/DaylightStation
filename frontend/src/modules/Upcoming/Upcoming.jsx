@@ -36,7 +36,7 @@ export default function Upcoming() {
   const [listItems, setListItems] = useState([]);
   const [isMoving, setIsMoving] = useState(false);
   const reloadData = () => {
-    DaylightAPI("/home/events").then(events => {
+    DaylightAPI("/api/v1/home/events").then(events => {
       // Rotate events and ensure at least 5 items
       events = [...events.slice(-1), ...events.slice(0, -1)];
       while (events.length < 5) events = [...events, ...events];

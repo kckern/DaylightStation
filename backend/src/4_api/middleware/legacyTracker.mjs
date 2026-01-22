@@ -31,11 +31,12 @@ export function createLegacyTracker(options = {}) {
   const lastHit = new Map();
 
   /**
-   * Middleware that tracks legacy route hits
+   * Middleware that tracks legacy route hits and warns about deprecated routes
    */
   const middleware = (req, res, next) => {
     // Extract route prefix (e.g., /data, /harvest)
     const prefix = '/' + req.baseUrl.split('/').filter(Boolean)[0];
+    const fullPath = req.baseUrl + req.path;
     const now = new Date().toISOString();
 
     // Increment hit count
@@ -49,13 +50,17 @@ export function createLegacyTracker(options = {}) {
     // Track last hit
     lastHit.set(prefix, now);
 
-    // Log the hit (debug level to avoid noise)
-    if (logger.debug) {
-      logger.debug('legacy.route.hit', {
+    // Log deprecation warning for legacy route usage
+    // This helps identify laggard callers during DDD migration
+    if (logger.warn) {
+      logger.warn('legacy.route.deprecated', {
         prefix,
-        path: req.path,
+        fullPath,
         method: req.method,
-        hitCount: hits.get(prefix)
+        hitCount: hits.get(prefix),
+        message: `Legacy route hit: ${req.method} ${fullPath} - migrate to /api/v1${fullPath}`,
+        userAgent: req.get('user-agent'),
+        referer: req.get('referer')
       });
     }
 

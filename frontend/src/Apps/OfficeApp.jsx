@@ -123,7 +123,7 @@ function OfficeApp() {
   // Fetch the key map once
   useEffect(() => {
     logger.info('home.keyboard.fetch.start');
-    DaylightAPI('/home/keyboard/officekeypad')
+    DaylightAPI('/api/v1/home/keyboard/officekeypad')
       .then((fetchedMap) => {
         logger.info('home.keyboard.fetch.success', { hasKeys: !!fetchedMap, keyCount: Object.keys(fetchedMap || {}).length });
         setKeyMap(fetchedMap)
@@ -150,7 +150,7 @@ function OfficeApp() {
 
   // Fetch weather data once
   useEffect(() => {
-    DaylightAPI('/home/weather')
+    DaylightAPI('/api/v1/home/weather')
       .then((data) => {
         setWeatherData(data)
       })
