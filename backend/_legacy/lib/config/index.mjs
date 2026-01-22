@@ -1,125 +1,30 @@
 /**
- * Config Service Entry Point
- * @module lib/config
+ * DEPRECATED: Legacy Config Re-export Shim
  *
- * Factory, singleton, and exports for the config system.
+ * This module re-exports from the new location for backwards compatibility.
+ * All new code should import from:
+ *   #backend/src/0_infrastructure/config/index.mjs
  *
- * Usage at startup:
- *   import { initConfigService } from './lib/config/index.mjs';
- *   initConfigService(dataDir);
- *
- * Usage in modules:
- *   import { configService } from '../lib/config/index.mjs';
- *   const key = configService.getSecret('API_KEY');
- *
- * Usage in tests:
- *   import { createTestConfigService } from '../lib/config/index.mjs';
- *   const svc = createTestConfigService({ ... });
+ * This shim will be removed in a future release.
  */
 
-import { ConfigService } from './ConfigService.mjs';
-import { loadConfig } from './configLoader.mjs';
-import { validateConfig, ConfigValidationError } from './configValidator.mjs';
+console.warn(
+  '[DEPRECATION] Importing from #backend/_legacy/lib/config is deprecated.\n' +
+  'Update imports to: #backend/src/0_infrastructure/config/index.mjs'
+);
 
-let instance = null;
+export {
+  ConfigService,
+  configService,
+  createConfigService,
+  initConfigService,
+  getConfigService,
+  resetConfigService,
+  createTestConfigService,
+  ConfigValidationError,
+  configSchema,
+  loadConfig,
+  validateConfig
+} from '../../../src/0_infrastructure/config/index.mjs';
 
-/**
- * Create a ConfigService from files on disk.
- * Loads config, validates against schema, returns service instance.
- *
- * @param {string} dataDir - Path to data directory
- * @returns {ConfigService}
- * @throws {ConfigValidationError} If config is invalid
- */
-export function createConfigService(dataDir) {
-  const config = loadConfig(dataDir);
-  validateConfig(config, dataDir);
-  return new ConfigService(config);
-}
-
-/**
- * Initialize the singleton instance.
- * Call once at application startup.
- *
- * @param {string} dataDir - Path to data directory
- * @returns {ConfigService}
- * @throws {Error} If already initialized
- * @throws {ConfigValidationError} If config is invalid
- */
-export function initConfigService(dataDir) {
-  if (instance) {
-    throw new Error('ConfigService already initialized');
-  }
-  instance = createConfigService(dataDir);
-  return instance;
-}
-
-/**
- * Get the singleton instance.
- *
- * @returns {ConfigService}
- * @throws {Error} If not yet initialized
- */
-export function getConfigService() {
-  if (!instance) {
-    throw new Error(
-      'ConfigService not initialized. Call initConfigService(dataDir) at startup.'
-    );
-  }
-  return instance;
-}
-
-/**
- * Convenience proxy for direct import.
- *
- * Usage:
- *   import { configService } from './config/index.mjs';
- *   const key = configService.getSecret('API_KEY');
- */
-export const configService = new Proxy({}, {
-  get(_, prop) {
-    // Special handling for isReady() - safe to call before initialization
-    if (prop === 'isReady') {
-      return () => instance !== null;
-    }
-    
-    // Get the instance (throws if not initialized)
-    const svc = getConfigService();
-    const value = svc[prop];
-    
-    // If it's a function, bind it to the correct instance
-    if (typeof value === 'function') {
-      return value.bind(svc);
-    }
-    
-    return value;
-  }
-});
-
-/**
- * Reset singleton instance.
- * For testing only - allows re-initialization.
- */
-export function resetConfigService() {
-  instance = null;
-}
-
-/**
- * Create ConfigService directly from config object.
- * For testing - skips file I/O and validation.
- *
- * @param {object} config - Pre-built config object
- * @returns {ConfigService}
- */
-export function createTestConfigService(config) {
-  return new ConfigService(config);
-}
-
-// Re-exports
-export { ConfigService } from './ConfigService.mjs';
-export { ConfigValidationError } from './configValidator.mjs';
-export { configSchema } from './configSchema.mjs';
-export { loadConfig } from './configLoader.mjs';
-export { validateConfig } from './configValidator.mjs';
-
-export default configService;
+export { default } from '../../../src/0_infrastructure/config/index.mjs';
