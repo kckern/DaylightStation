@@ -81,7 +81,10 @@ export function toListItem(item) {
     if (seasonThumbUrl !== undefined) base.seasonThumbUrl = seasonThumbUrl;
     if (episodeNumber !== undefined) base.episodeNumber = episodeNumber;
     if (index !== undefined) base.index = index;
-    if (summary !== undefined) base.summary = summary;
+    if (summary !== undefined) {
+      base.summary = summary;
+      base.episodeDescription = summary;  // Alias for prod parity
+    }
     if (tagline !== undefined) base.tagline = tagline;
     if (studio !== undefined) base.studio = studio;
     if (thumb_id !== undefined) base.thumb_id = thumb_id;
