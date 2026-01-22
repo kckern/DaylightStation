@@ -15,7 +15,7 @@ import path, { join } from 'path';
 // Infrastructure imports
 import { loadAllConfig, logConfigSummary } from '../_legacy/lib/config/loader.mjs';
 import { ConfigValidationError, configService } from '../_legacy/lib/config/index.mjs';
-import { userDataService } from '../_legacy/lib/config/UserDataService.mjs';
+import { userDataService } from './0_infrastructure/config/index.mjs';
 import { userService } from '../_legacy/lib/config/UserService.mjs';
 
 // Logging system

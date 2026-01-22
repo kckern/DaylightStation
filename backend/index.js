@@ -17,7 +17,8 @@ import 'dotenv/config';
 
 import { resolveConfigPaths, getConfigFilePaths } from './_legacy/lib/config/pathResolver.mjs';
 import { loadAllConfig } from './_legacy/lib/config/loader.mjs';
-import { initConfigService, ConfigValidationError } from './_legacy/lib/config/index.mjs';
+import { initConfigService as initLegacyConfigService, ConfigValidationError as LegacyConfigValidationError } from './_legacy/lib/config/index.mjs';
+import { initConfigService as initNewConfigService, ConfigValidationError as NewConfigValidationError } from './src/0_infrastructure/config/index.mjs';
 import { hydrateProcessEnvFromConfigs } from './_legacy/lib/logging/config.js';
 import { initializeLogging } from './_legacy/lib/logging/dispatcher.js';
 import { createConsoleTransport, createFileTransport, createLogglyTransport } from './_legacy/lib/logging/transports/index.js';
@@ -45,15 +46,21 @@ async function main() {
 
   hydrateProcessEnvFromConfigs(configPaths.configDir);
 
+  // Initialize both legacy and new ConfigService singletons
+  // Both are needed during the migration period
   try {
-    initConfigService(configPaths.dataDir);
-    console.log('[Config] ConfigService initialized');
+    initLegacyConfigService(configPaths.dataDir);
+    initNewConfigService(configPaths.dataDir);
+    console.log('[Config] ConfigService initialized (legacy + new)');
   } catch (err) {
-    if (err instanceof ConfigValidationError) {
+    if (err instanceof LegacyConfigValidationError || err instanceof NewConfigValidationError) {
       console.error('[FATAL] Config validation failed:', err.message);
       process.exit(1);
     }
-    throw err;
+    // Ignore "already initialized" errors - can happen if server.mjs was loaded first
+    if (!err.message?.includes('already initialized')) {
+      throw err;
+    }
   }
 
   // Load full config into process.env
@@ -172,7 +179,9 @@ async function main() {
   // Start Server
   // ==========================================================================
 
-  const port = process.env.PORT || 3111;
+  // In dev mode, use BACKEND_PORT (frontend/Vite uses PORT for user-facing port)
+  // In production (Docker), use PORT directly
+  const port = process.env.BACKEND_PORT || process.env.PORT || 3111;
   server.listen(port, '0.0.0.0', () => {
     logger.info('server.started', {
       port,

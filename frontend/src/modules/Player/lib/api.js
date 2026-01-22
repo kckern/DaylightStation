@@ -19,7 +19,7 @@ export async function flattenQueueItems(items, level = 1) {
         const nestedFlattened = await flattenQueueItems(nestedItems, level + 1);
         flattened.push(...nestedFlattened);
       } else if (item.queue.plex) {
-        const { items: plexItems } = await DaylightAPI(`api/v1/content/plex/list/${item.queue.plex}/playable${shuffle ? ',shuffle' : ''}`);
+        const { items: plexItems } = await DaylightAPI(`api/v1/content/list/plex/${item.queue.plex}/playable${shuffle ? ',shuffle' : ''}`);
         const nestedFlattened = await flattenQueueItems(plexItems, level + 1);
         flattened.push(...nestedFlattened);
       }

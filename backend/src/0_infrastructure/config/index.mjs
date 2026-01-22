@@ -120,5 +120,6 @@ export { ConfigValidationError } from './configValidator.mjs';
 export { configSchema } from './configSchema.mjs';
 export { loadConfig } from './configLoader.mjs';
 export { validateConfig } from './configValidator.mjs';
+export { userDataService, default as UserDataService } from './UserDataService.mjs';
 
 export default configService;

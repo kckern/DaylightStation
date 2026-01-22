@@ -134,7 +134,7 @@ async function runFitnessPlexParityTests() {
 
   for (const col of collectionsToTest) {
     const legacyRes = await fetchJSON(`/media/plex/list/${col.id}`);
-    const dddRes = await fetchJSON(`/api/v1/content/plex/list/${col.id}`);
+    const dddRes = await fetchJSON(`/api/v1/content/list/plex/${col.id}`);
 
     process.stdout.write(`  ${col.name} (${col.id}): `);
 
