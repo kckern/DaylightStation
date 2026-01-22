@@ -5,8 +5,8 @@ export default function ArtApp({ path }) {
   const resolvedUrl = path
     ? path.startsWith("http")
       ? path
-      : DaylightMediaPath(`/media/img/art/${path}`)
-    : DaylightMediaPath("/media/img/art/art");
+      : DaylightMediaPath(`/static/img/art/${path}`)
+    : DaylightMediaPath("/static/img/art/art");
 
   return (
     <div className="art-app">

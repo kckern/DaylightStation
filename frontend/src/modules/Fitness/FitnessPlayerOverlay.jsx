@@ -576,12 +576,12 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
       const avatarSrc = participant?.avatarUrl
         ? participant.avatarUrl
         : vitals?.profileId
-          ? DaylightMediaPath(`/media/img/users/${vitals.profileId}`)
+          ? DaylightMediaPath(`/static/img/users/${vitals.profileId}`)
           : participant?.profileId
-            ? DaylightMediaPath(`/media/img/users/${participant.profileId}`)
+            ? DaylightMediaPath(`/static/img/users/${participant.profileId}`)
             : participant?.id
-              ? DaylightMediaPath(`/media/img/users/${participant.id}`)
-              : DaylightMediaPath(`/media/img/users/user`);
+              ? DaylightMediaPath(`/static/img/users/${participant.id}`)
+              : DaylightMediaPath(`/static/img/users/user`);
       const heartRate = vitals?.heartRate ?? null;
       const zoneInfo = getParticipantZone(participant, vitals);
       const displayLabel = vitals?.displayLabel || participant?.displayLabel || canonicalName;
@@ -812,7 +812,7 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
     const ensureAvatarSrc = (name, participant, vitals) => {
       if (participant?.avatarUrl) return participant.avatarUrl;
       const profileId = vitals?.profileId || participant?.profileId || participant?.id || 'user';
-      return DaylightMediaPath(`/media/img/users/${profileId}`);
+      return DaylightMediaPath(`/static/img/users/${profileId}`);
     };
 
     const addRow = ({ name, groupLabel, participant, target, isGeneric = false, overrides = {} }) => {
@@ -896,7 +896,7 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
         displayLabel: rowDisplayLabel,
         groupLabel: resolvedGroup,
         avatarSrc: isGeneric
-          ? DaylightMediaPath('/media/img/users/user')
+          ? DaylightMediaPath('/static/img/users/user')
           : ensureAvatarSrc(canonicalName, resolvedParticipant, resolvedVitals),
         isGeneric,
         currentZone,

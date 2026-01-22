@@ -18,13 +18,13 @@ const CompositesSection = () => {
           id: 'demo-1', 
           title: 'Demo User', 
           subtitle: 'No live roster', 
-          icon: <img src={DaylightMediaPath('/media/img/users/user')} alt="Demo User" style={{ width: 28, height: 28, borderRadius: 12 }} /> 
+          icon: <img src={DaylightMediaPath('/static/img/users/user')} alt="Demo User" style={{ width: 28, height: 28, borderRadius: 12 }} /> 
         },
         { 
           id: 'demo-2', 
           title: 'Placeholder', 
           subtitle: 'Tap to select', 
-          icon: <img src={DaylightMediaPath('/media/img/users/user')} alt="Placeholder" style={{ width: 28, height: 28, borderRadius: 12 }} /> 
+          icon: <img src={DaylightMediaPath('/static/img/users/user')} alt="Placeholder" style={{ width: 28, height: 28, borderRadius: 12 }} /> 
         }
       ];
     }
@@ -32,7 +32,7 @@ const CompositesSection = () => {
       id: p.id || p.profileId || p.name,
       title: p.displayLabel || p.name || 'Participant',
       subtitle: p.zone ? `Zone ${p.zone}` : undefined,
-      icon: p.avatarUrl ? <img src={p.avatarUrl} alt={p.name} style={{ width: 28, height: 28, borderRadius: 12 }} /> : <img src={DaylightMediaPath('/media/img/users/user')} alt={p.name} style={{ width: 28, height: 28, borderRadius: 12 }} />
+      icon: p.avatarUrl ? <img src={p.avatarUrl} alt={p.name} style={{ width: 28, height: 28, borderRadius: 12 }} /> : <img src={DaylightMediaPath('/static/img/users/user')} alt={p.name} style={{ width: 28, height: 28, borderRadius: 12 }} />
     }));
   }, [participants]);
 

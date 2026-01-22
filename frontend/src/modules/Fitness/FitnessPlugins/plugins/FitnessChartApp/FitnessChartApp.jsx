@@ -113,7 +113,7 @@ const useRaceChartData = (roster, getSeries, timebase, options = {}) => {
 				}
 			}
 			
-			const resolvedAvatar = entry.avatarUrl || DaylightMediaPath(`/media/img/users/${profileId || 'user'}`);
+			const resolvedAvatar = entry.avatarUrl || DaylightMediaPath(`/static/img/users/${profileId || 'user'}`);
 			
 			// SINGLE SOURCE OF TRUTH: Use roster's isActive field directly from DeviceManager
 			// This is set in ParticipantRoster._buildRosterEntry() from device.inactiveSince

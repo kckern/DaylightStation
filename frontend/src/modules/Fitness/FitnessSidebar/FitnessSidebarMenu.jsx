@@ -385,7 +385,7 @@ const FitnessSidebarMenu = ({
         >
           <div className={avatarClass.join(' ')}>
             <img
-              src={DaylightMediaPath(`/media/img/users/${option.profileId}`)}
+              src={DaylightMediaPath(`/static/img/users/${option.profileId}`)}
               alt={`${option.name} avatar`}
               data-generic={option.isGeneric ? '1' : undefined}
               onLoad={(e) => {
@@ -402,7 +402,7 @@ const FitnessSidebarMenu = ({
                 e.target.dataset.fallback = '1';
                 const parent = e.target.closest('.guest-option-avatar');
                 if (parent) parent.classList.add('placeholder');
-                e.target.src = DaylightMediaPath('/media/img/users/user');
+                e.target.src = DaylightMediaPath('/static/img/users/user');
               }}
             />
           </div>

@@ -37,7 +37,7 @@ const GovernanceWarningOverlay = React.memo(function GovernanceWarningOverlay({ 
                         const img = event.currentTarget;
                         if (img.dataset.fallback) return;
                         img.dataset.fallback = '1';
-                        img.src = DaylightMediaPath('/media/img/users/user');
+                        img.src = DaylightMediaPath('/static/img/users/user');
                       }}
                     />
                   </div>
@@ -198,7 +198,7 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ over
                       const img = event.currentTarget;
                       if (img.dataset.fallback) return;
                       img.dataset.fallback = '1';
-                      img.src = DaylightMediaPath('/media/img/users/user');
+                      img.src = DaylightMediaPath('/static/img/users/user');
                     }}
                   />
                 </div>

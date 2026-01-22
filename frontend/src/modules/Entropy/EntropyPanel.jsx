@@ -80,7 +80,7 @@ const EntropyPanel = () => {
               <div className="item-icon">
                 {isSvg ? (
                   <img 
-                    src={`/media/img/entropy/${item.icon}`} 
+                    src={`/static/img/entropy/${item.icon}`} 
                     alt={item.name} 
                     style={{ width: '1.2em', height: '1.2em', display: 'block' }} 
                   />
