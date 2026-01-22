@@ -97,19 +97,13 @@ export async function createApp({
 
   if (configExists) {
     // Load all config using unified loader
-    const configResult = loadAllConfig({
+    // NOTE: We no longer spread config into process.env - use ConfigService instead
+    loadAllConfig({
       configDir: configPaths.configDir,
       dataDir: configPaths.dataDir,
       isDocker,
       isDev: !isDocker
     });
-
-    // Populate process.env with merged config
-    process.env = {
-      ...process.env,
-      isDocker,
-      ...configResult.config
-    };
 
     loggingConfig = loadLoggingConfig();
 

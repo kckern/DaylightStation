@@ -63,15 +63,15 @@ async function main() {
     }
   }
 
-  // Load full config into process.env
+  // Load full config (used by legacy code that still reads process.env for some values)
+  // NOTE: We no longer spread config into process.env - use ConfigService instead
   if (configExists) {
-    const configResult = loadAllConfig({
+    loadAllConfig({
       configDir: configPaths.configDir,
       dataDir: configPaths.dataDir,
       isDocker,
       isDev: !isDocker
     });
-    process.env = { ...process.env, isDocker, ...configResult.config };
   }
 
   // ==========================================================================

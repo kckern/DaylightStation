@@ -96,7 +96,11 @@ export function resetLoggingConfig() {
 }
 
 /**
- * Hydrate process.env from config files
+ * Load configs from config files (without spreading into process.env)
+ *
+ * DEPRECATED: This function exists for backward compatibility.
+ * Use ConfigService instead for accessing configuration values.
+ *
  * @param {string} baseDir - Base directory for config files
  * @returns {Object} Merged configuration
  */
@@ -135,8 +139,8 @@ export function hydrateProcessEnvFromConfigs(baseDir = null) {
 
   const localConfig = localConfigFile ? safeReadYaml(path.join(configDir, localConfigFile)) : {};
 
+  // NOTE: We no longer spread config into process.env - use ConfigService instead
   const merged = { ...systemConfig, ...secretsConfig, ...localConfig };
-  process.env = { ...process.env, ...merged };
   return merged;
 }
 
