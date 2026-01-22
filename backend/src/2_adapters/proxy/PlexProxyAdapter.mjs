@@ -73,7 +73,8 @@ export class PlexProxyAdapter {
 
   /**
    * Transform incoming path
-   * Strips /plex_proxy prefix if present (for backward compatibility)
+   * Strips /plex_proxy prefix if present (for backward compatibility with legacy paths)
+   * New canonical path is /api/v1/proxy/plex/* which doesn't need transformation
    * @param {string} path
    * @returns {string}
    */

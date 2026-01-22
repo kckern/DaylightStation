@@ -21,7 +21,7 @@ export class PlexAdapter {
    * @param {string} [config.token] - Plex auth token
    * @param {string} [config.protocol] - Streaming protocol (default: 'dash')
    * @param {string} [config.platform] - Client platform (default: 'Chrome')
-   * @param {string} [config.proxyPath] - Proxy path for media URLs (default: '/plex_proxy')
+   * @param {string} [config.proxyPath] - Proxy path for media URLs (default: '/api/v1/proxy/plex')
    * @param {string} [config.historyPath] - Path to viewing history directory (e.g., history/media_memory/plex)
    */
   constructor(config) {
@@ -33,7 +33,7 @@ export class PlexAdapter {
     this.token = config.token || '';
     this.protocol = config.protocol || 'dash';
     this.platform = config.platform || 'Chrome';
-    this.proxyPath = config.proxyPath || '/plex_proxy';
+    this.proxyPath = config.proxyPath || '/api/v1/proxy/plex';
     this.historyPath = config.historyPath || null;
 
     // Set up built-in history loader if historyPath provided
@@ -163,7 +163,7 @@ export class PlexAdapter {
       const { thumb, parentThumb, grandparentThumb } = item;
       // Legacy returns empty string "" for missing thumbs
       return [thumb, parentThumb, grandparentThumb].map(
-        t => t ? `/plex_proxy${t}` : ''
+        t => t ? `${this.proxyPath}${t}` : ''
       );
     } catch (err) {
       console.error('[PlexAdapter] loadImgFromKey error:', err.message);
@@ -234,7 +234,7 @@ export class PlexAdapter {
         title: container.title1 || container.title || localId,
         itemType: 'container',
         childCount: container.size || 0,
-        thumbnail: container.thumb ? `/plex_proxy${container.thumb}` : null
+        thumbnail: container.thumb ? `${this.proxyPath}${container.thumb}` : null
       });
     } catch (err) {
       return null;
@@ -364,7 +364,7 @@ export class PlexAdapter {
     const id = item.ratingKey || item.key?.replace(/^\//, '').replace(/\/children$/, '');
 
     // Use proxy URL for thumbnails (not direct Plex URL)
-    const thumbnail = item.thumb ? `/plex_proxy${item.thumb}` : null;
+    const thumbnail = item.thumb ? `${this.proxyPath}${item.thumb}` : null;
 
     return new ListableItem({
       id: `plex:${id}`,
@@ -404,7 +404,7 @@ export class PlexAdapter {
         title: item.title,
         itemType: 'container',
         childCount: item.leafCount || 0,
-        thumbnail: item.thumb ? `/plex_proxy${item.thumb}` : null
+        thumbnail: item.thumb ? `${this.proxyPath}${item.thumb}` : null
       });
     }
 
@@ -457,8 +457,8 @@ export class PlexAdapter {
         metadata.parentIndex = parseInt(item.parentIndex);
       }
       if (item.parentThumb) {
-        metadata.seasonThumbUrl = `/plex_proxy${item.parentThumb}`;
-        metadata.parentThumb = `/plex_proxy${item.parentThumb}`;
+        metadata.seasonThumbUrl = `${this.proxyPath}${item.parentThumb}`;
+        metadata.parentThumb = `${this.proxyPath}${item.parentThumb}`;
       }
       // Show (grandparent) info
       if (item.grandparentRatingKey) {
@@ -466,8 +466,8 @@ export class PlexAdapter {
         metadata.grandparent = item.grandparentRatingKey;
       }
       if (item.grandparentThumb) {
-        metadata.showThumbUrl = `/plex_proxy${item.grandparentThumb}`;
-        metadata.grandparentThumb = `/plex_proxy${item.grandparentThumb}`;
+        metadata.showThumbUrl = `${this.proxyPath}${item.grandparentThumb}`;
+        metadata.grandparentThumb = `${this.proxyPath}${item.grandparentThumb}`;
       }
     }
 
@@ -485,7 +485,7 @@ export class PlexAdapter {
     }
 
     // Use proxy URL for thumbnails (not direct Plex URL)
-    const thumbnail = item.thumb ? `/plex_proxy${item.thumb}` : null;
+    const thumbnail = item.thumb ? `${this.proxyPath}${item.thumb}` : null;
 
     return new PlayableItem({
       id: `plex:${item.ratingKey}`,
@@ -813,7 +813,7 @@ export class PlexAdapter {
       return {
         key: localId,
         title: item.title,
-        image: item.thumb ? `/plex_proxy${item.thumb}` : null,
+        image: item.thumb ? `${this.proxyPath}${item.thumb}` : null,
         summary: item.summary || null,
         tagline: item.tagline || null,
         year: item.year || null,

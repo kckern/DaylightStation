@@ -244,6 +244,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const watchStatePath = process.env.path?.watchState || process.env.WATCH_STATE_PATH || `${dataBasePath}/history/media_memory`;
   const watchStore = createWatchStore({ watchStatePath });
 
+  // Create proxy service for content domain (used for /proxy/plex/* passthrough)
+  const contentProxyService = plexConfig?.host ? createProxyService({
+    plex: { host: plexConfig.host, token: plexConfig.token },
+    logger: rootLogger.child({ module: 'content-proxy' })
+  }) : null;
+
   // Import IO functions for content domain
   const { loadFile: contentLoadFile, saveFile: contentSaveFile } = await import('../_legacy/lib/io.mjs');
 
@@ -255,6 +261,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     cacheBasePath: mediaBasePath ? `${mediaBasePath}/img/cache` : null,
     dataPath: dataBasePath,
     mediaBasePath,
+    proxyService: contentProxyService,
     logger: rootLogger.child({ module: 'content' })
   });
 

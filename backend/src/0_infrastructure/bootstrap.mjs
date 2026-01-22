@@ -184,15 +184,16 @@ export function createWatchStore(config) {
  * @param {Function} [config.saveFile] - Function to save YAML files
  * @param {string} [config.cacheBasePath] - Base path for image cache
  * @param {string} [config.dataPath] - Base data path for local content
+ * @param {import('./proxy/ProxyService.mjs').ProxyService} [config.proxyService] - Proxy service for external services
  * @param {Object} [config.logger] - Logger instance
  * @returns {Object} Router configuration
  */
 export function createApiRouters(config) {
-  const { registry, watchStore, loadFile, saveFile, cacheBasePath, dataPath, mediaBasePath, logger = console } = config;
+  const { registry, watchStore, loadFile, saveFile, cacheBasePath, dataPath, mediaBasePath, proxyService, logger = console } = config;
 
   return {
     content: createContentRouter(registry, watchStore, { loadFile, saveFile, cacheBasePath, logger }),
-    proxy: createProxyRouter({ registry }),
+    proxy: createProxyRouter({ registry, proxyService }),
     localContent: createLocalContentRouter({ registry, dataPath, mediaBasePath }),
     play: createPlayRouter({ registry, watchStore, logger }),
     list: createListRouter({ registry }),
