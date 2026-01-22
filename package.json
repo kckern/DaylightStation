@@ -13,7 +13,7 @@
     "loggly": "^1.1.1",
     "moment": "^2.30.1",
     "moment-timezone": "^0.5.46",
-    "music-metadata": "^11.10.5",
+    "music-metadata": "^11.10.6",
     "mysql2": "^3.12.0",
     "node-fetch": "^3.3.2",
     "openai": "^4.77.0",
