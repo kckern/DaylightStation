@@ -57,6 +57,7 @@ export class EntropyItem {
    * @param {string} [config.direction='lower_is_better'] - Threshold direction
    * @param {string} [config.lastUpdate] - Last update date
    * @param {string} [config.url] - Link URL
+   * @param {number} [config.weight] - Sort weight for display priority (higher = more prominent)
    */
   constructor({
     source,
@@ -68,6 +69,7 @@ export class EntropyItem {
     direction = Direction.LOWER_IS_BETTER,
     lastUpdate = null,
     url = null,
+    weight = null,
   }) {
     this.source = source;
     this.name = name;
@@ -76,6 +78,7 @@ export class EntropyItem {
     this.value = value;
     this.lastUpdate = lastUpdate;
     this.url = url;
+    this.weight = weight;
     this.status = this.#calculateStatus(value, thresholds, direction);
     this.label = this.#formatLabel(metricType, value);
   }
@@ -150,6 +153,7 @@ export class EntropyItem {
       label: this.label,
       lastUpdate: this.lastUpdate,
       url: this.url,
+      weight: this.weight,
     };
   }
 }

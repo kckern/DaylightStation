@@ -3,4 +3,4 @@
  * @module entropy/services
  */
 
-export { EntropyService } from './EntropyService.mjs';
+export { EntropyService, createWithLegacyDependencies } from './EntropyService.mjs';

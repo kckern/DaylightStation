@@ -106,14 +106,15 @@ export class EntropyService {
    */
   async #evaluateSource(username, sourceId, config) {
     try {
-      const { value, lastUpdate } = await this.#getMetricValue(
+      const { value, lastUpdate, lastItem } = await this.#getMetricValue(
         username,
         sourceId,
         config
       );
 
-      // Resolve URL with data placeholders
-      const url = this.#resolveUrl(config.url, { lastUpdate });
+      // Resolve URL with data placeholders from last item
+      // Supports templates like "https://strava.com/activities/{id}"
+      const url = this.#resolveUrl(config.url, { lastUpdate, ...lastItem });
 
       return new EntropyItem({
         source: sourceId,
@@ -125,6 +126,7 @@ export class EntropyService {
         direction: config.direction || 'lower_is_better',
         lastUpdate,
         url,
+        weight: config.weight,
       });
     } catch (error) {
       this.#logger.error?.('entropy.source.error', {
@@ -139,6 +141,7 @@ export class EntropyService {
   /**
    * Get metric value for a source
    * @private
+   * @returns {Promise<{ value: number, lastUpdate: string | null, lastItem: Object | null }>}
    */
   async #getMetricValue(username, sourceId, config) {
     const dataPath = config.dataPath || sourceId;
@@ -153,7 +156,11 @@ export class EntropyService {
       });
 
       const daysSince = this.#calculateDaysSince(result?.timestamp);
-      return { value: daysSince, lastUpdate: result?.date || null };
+      return {
+        value: daysSince,
+        lastUpdate: result?.date || null,
+        lastItem: result?.data || null,
+      };
     }
 
     if (metric === MetricType.COUNT) {
@@ -162,7 +169,7 @@ export class EntropyService {
         listProperty: config.listProperty,
       });
 
-      return { value: result.count, lastUpdate: result.lastUpdated };
+      return { value: result.count, lastUpdate: result.lastUpdated, lastItem: null };
     }
 
     throw new Error(`Unknown metric type: ${metric}`);
@@ -191,6 +198,54 @@ export class EntropyService {
       return data[key] || '';
     });
   }
+}
+
+/**
+ * Create EntropyService with legacy dependencies
+ *
+ * Factory function that creates a fully configured EntropyService using
+ * legacy static imports (io.mjs, configService, ArchiveService).
+ * Used for backward compatibility during migration.
+ *
+ * @returns {Promise<{ entropyService: EntropyService, getEntropyReport: Function }>}
+ */
+export async function createWithLegacyDependencies() {
+  // Dynamic imports to avoid circular dependencies
+  const { userLoadFile, userLoadCurrent } = await import('../../../../_legacy/lib/io.mjs');
+  const { configService } = await import('../../../../_legacy/lib/config/index.mjs');
+  const ArchiveServiceModule = await import('../../../../_legacy/lib/ArchiveService.mjs');
+  const { createLogger } = await import('../../../0_infrastructure/logging/logger.js');
+
+  const ArchiveService = ArchiveServiceModule.default;
+
+  const logger = createLogger({
+    source: 'backend',
+    app: 'entropy',
+  });
+
+  // Create adapter implementing IEntropyReader
+  const { YamlEntropyReader } = await import('../../../2_adapters/entropy/YamlEntropyReader.mjs');
+
+  const entropyReader = new YamlEntropyReader({
+    io: { userLoadFile, userLoadCurrent },
+    archiveService: ArchiveService,
+    logger,
+  });
+
+  // Create service
+  const entropyService = new EntropyService({
+    entropyReader,
+    configService,
+    logger,
+  });
+
+  // Legacy-compatible wrapper function
+  const getEntropyReport = async () => {
+    const username = configService.getHeadOfHousehold();
+    return entropyService.getReport(username);
+  };
+
+  return { entropyService, getEntropyReport };
 }
 
 export default EntropyService;
