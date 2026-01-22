@@ -273,4 +273,37 @@ describe('LocalContent API', () => {
       });
     });
   });
+
+  // ===========================================================================
+  // COVER ART ENDPOINT
+  // ===========================================================================
+  describe('GET /api/local-content/cover/*', () => {
+    describe('error handling', () => {
+      test('returns 400 for empty media key', async () => {
+        const res = await request(app).get('/api/local-content/cover/');
+        expect(res.status).toBe(400);
+      });
+    });
+
+    describe('placeholder generation', () => {
+      test('returns PNG for nonexistent file', async () => {
+        const res = await request(app).get('/api/local-content/cover/nonexistent/path/file');
+        expect(res.status).toBe(200);
+        expect(res.headers['content-type']).toBe('image/png');
+        expect(res.headers['cache-control']).toContain('max-age=');
+      });
+
+      test('returns valid PNG buffer', async () => {
+        const res = await request(app)
+          .get('/api/local-content/cover/test/placeholder')
+          .responseType('buffer');
+        expect(res.status).toBe(200);
+        // PNG magic bytes: 0x89 0x50 0x4E 0x47
+        expect(res.body[0]).toBe(0x89);
+        expect(res.body[1]).toBe(0x50);
+        expect(res.body[2]).toBe(0x4e);
+        expect(res.body[3]).toBe(0x47);
+      });
+    });
+  });
 });
