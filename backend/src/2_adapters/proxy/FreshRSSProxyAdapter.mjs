@@ -7,6 +7,8 @@
  * @module adapters/proxy
  */
 
+import { configService } from '../../0_infrastructure/config/index.mjs';
+
 /**
  * @implements {import('../../0_infrastructure/proxy/IProxyAdapter.mjs').IProxyAdapter}
  */
@@ -130,15 +132,16 @@ export class FreshRSSProxyAdapter {
 }
 
 /**
- * Create a FreshRSSProxyAdapter from environment config
+ * Create a FreshRSSProxyAdapter from ConfigService
  * @param {Object} [options]
  * @returns {FreshRSSProxyAdapter}
  */
 export function createFreshRSSProxyAdapter(options = {}) {
-  const host = process.env.freshrss?.host || process.env.FRESHRSS_HOST;
-  const username = process.env.freshrss?.username || process.env.FRESHRSS_USERNAME;
-  const password = process.env.freshrss?.password || process.env.FRESHRSS_PASSWORD;
-  const apiKey = process.env.freshrss?.apiKey || process.env.FRESHRSS_API_KEY;
+  const adapterConfig = configService.getAdapterConfig('freshrss') || {};
+  const host = adapterConfig.host;
+  const username = configService.getSecret('FRESHRSS_USERNAME');
+  const password = configService.getSecret('FRESHRSS_PASSWORD');
+  const apiKey = configService.getSecret('FRESHRSS_API_KEY');
 
   return new FreshRSSProxyAdapter({ host, username, password, apiKey }, options);
 }

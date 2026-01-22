@@ -7,6 +7,8 @@
  * @module adapters/proxy
  */
 
+import { configService } from '../../0_infrastructure/config/index.mjs';
+
 /**
  * @implements {import('../../0_infrastructure/proxy/IProxyAdapter.mjs').IProxyAdapter}
  */
@@ -111,13 +113,14 @@ export class AudiobookshelfProxyAdapter {
 }
 
 /**
- * Create an AudiobookshelfProxyAdapter from environment config
+ * Create an AudiobookshelfProxyAdapter from ConfigService
  * @param {Object} [options]
  * @returns {AudiobookshelfProxyAdapter}
  */
 export function createAudiobookshelfProxyAdapter(options = {}) {
-  const host = process.env.audiobookshelf?.host || process.env.AUDIOBOOKSHELF_HOST;
-  const token = process.env.audiobookshelf?.token || process.env.AUDIOBOOKSHELF_TOKEN;
+  const adapterConfig = configService.getAdapterConfig('audiobookshelf') || {};
+  const host = adapterConfig.host;
+  const token = configService.getSecret('AUDIOBOOKSHELF_TOKEN');
 
   return new AudiobookshelfProxyAdapter({ host, token }, options);
 }
