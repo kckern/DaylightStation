@@ -123,7 +123,7 @@ const FitnessMenu = ({ activeCollection, onContentSelect, setFitnessPlayQueue })
   // fetch start (debug removed)
         
         // First get the fitness config to get the collections
-        const configResponse = await DaylightAPI('/api/fitness');
+        const configResponse = await DaylightAPI('/api/v1/fitness');
   // config response (debug removed)
         setFitnessConfig(configResponse.fitness || configResponse);
         // Defer show loading to the effect below
@@ -180,7 +180,7 @@ const FitnessMenu = ({ activeCollection, onContentSelect, setFitnessPlayQueue })
 
         const listResponses = await Promise.all(idsToFetch.map(async (collectionId) => {
           try {
-            const response = await DaylightAPI(`/media/plex/list/${collectionId}`);
+            const response = await DaylightAPI(`/api/v1/content/plex/list/${collectionId}`);
             return Array.isArray(response?.items) ? response.items : [];
           } catch (apiErr) {
             console.error(`🎬 ERROR: Error loading shows for collection ${collectionId}:`, apiErr);

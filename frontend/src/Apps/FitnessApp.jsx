@@ -588,7 +588,7 @@ const FitnessApp = () => {
   const handlePlayFromUrl = async (episodeId) => {
     try {
       // Fetch episode metadata from API to get labels for governance
-      const response = await DaylightAPI(`media/plex/info/${episodeId}`);
+      const response = await DaylightAPI(`api/v1/content/plex/info/${episodeId}`);
 
       if (!response || response.error) {
         logger.warn('fitness-play-url-no-metadata', { episodeId, error: response?.error });
@@ -727,7 +727,7 @@ const FitnessApp = () => {
     const fetchFitnessData = async () => {
       try {
         logger.info('fitness-config-request');
-        const response = await DaylightAPI('/api/fitness');
+        const response = await DaylightAPI('/api/v1/fitness');
         
         // Validate response structure
         if (!response || typeof response !== 'object') {
