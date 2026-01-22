@@ -19,7 +19,7 @@ import { ConfigValidationError, configService, userDataService, userService } fr
 import { getDispatcher } from './0_infrastructure/logging/dispatcher.js';
 import { createLogger } from './0_infrastructure/logging/logger.js';
 import { ingestFrontendLogs } from './0_infrastructure/logging/ingestion.js';
-import { loadLoggingConfig, resolveLoggerLevel } from '../_legacy/lib/logging/config.js';
+import { loadLoggingConfig, resolveLoggerLevel } from './0_infrastructure/logging/config.js';
 
 // Bootstrap functions
 import {
