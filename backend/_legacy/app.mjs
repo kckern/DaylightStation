@@ -28,10 +28,10 @@ import { loadRoutingConfig, createRoutingMiddleware, ShimMetrics } from '../src/
 import { allShims } from '../src/4_api/shims/index.mjs';
 import { createShimsRouter } from '../src/4_api/routers/admin/shims.mjs';
 
-// Logging system
-import { getDispatcher } from './lib/logging/dispatcher.js';
-import { createLogger } from './lib/logging/logger.js';
-import { loadLoggingConfig, resolveLoggerLevel } from './lib/logging/config.js';
+// Logging system (from new infrastructure)
+import { getDispatcher } from '../src/0_infrastructure/logging/dispatcher.js';
+import { createLogger } from '../src/0_infrastructure/logging/logger.js';
+import { loadLoggingConfig, resolveLoggerLevel } from '../src/0_infrastructure/logging/config.js';
 
 // Legacy route hit tracking for cutover monitoring
 import { getLegacyTracker } from '../src/4_api/middleware/legacyTracker.mjs';

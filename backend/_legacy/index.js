@@ -14,13 +14,12 @@ import 'dotenv/config';
 // Config path resolver and loader
 import { resolveConfigPaths, getConfigFilePaths } from './lib/config/pathResolver.mjs';
 import { initConfigService, ConfigValidationError } from './lib/config/index.mjs';
-import { hydrateProcessEnvFromConfigs } from './lib/logging/config.js';
 
-// Logging system
-import { initializeLogging } from './lib/logging/dispatcher.js';
-import { createConsoleTransport, createLogglyTransport, createFileTransport } from './lib/logging/transports/index.js';
-import { createLogger } from './lib/logging/logger.js';
-import { loadLoggingConfig, resolveLoggerLevel, getLoggingTags, resolveLogglyToken } from './lib/logging/config.js';
+// Logging system (from new infrastructure)
+import { hydrateProcessEnvFromConfigs, loadLoggingConfig, resolveLoggerLevel, getLoggingTags, resolveLogglyToken } from '../src/0_infrastructure/logging/config.js';
+import { initializeLogging } from '../src/0_infrastructure/logging/dispatcher.js';
+import { createConsoleTransport, createLogglyTransport, createFileTransport } from '../src/0_infrastructure/logging/transports/index.js';
+import { createLogger } from '../src/0_infrastructure/logging/logger.js';
 
 // App factory
 import { createApp } from './app.mjs';
