@@ -392,16 +392,23 @@ export class FilesystemAdapter {
    * @returns {Promise<PlayableItem[]>}
    */
   async resolvePlayables(id) {
+    // Try as single item first (handles single files like sfx/intro)
+    const item = await this.getItem(id);
+    if (item && item.isPlayable && item.isPlayable()) {
+      return [item];
+    }
+
+    // Then try as directory
     const list = await this.getList(id);
     const playables = [];
 
-    for (const item of list) {
-      if (item.itemType === 'leaf') {
-        const localId = item.getLocalId();
+    for (const listItem of list) {
+      if (listItem.itemType === 'leaf') {
+        const localId = listItem.getLocalId();
         const playable = await this.getItem(localId);
         if (playable) playables.push(playable);
-      } else if (item.itemType === 'container') {
-        const localId = item.getLocalId();
+      } else if (listItem.itemType === 'container') {
+        const localId = listItem.getLocalId();
         const children = await this.resolvePlayables(localId);
         playables.push(...children);
       }
