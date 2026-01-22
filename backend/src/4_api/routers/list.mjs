@@ -275,10 +275,9 @@ export function createListRouter(config) {
           const seasonId = item.metadata?.seasonId || item.metadata?.parent;
           if (seasonId && !seasonsMap[seasonId]) {
             seasonsMap[seasonId] = {
-              id: seasonId,
+              num: item.metadata?.seasonNumber ?? item.metadata?.parentIndex,
               title: item.metadata?.seasonName || item.metadata?.parentTitle || `Season`,
-              index: item.metadata?.seasonNumber ?? item.metadata?.parentIndex,
-              thumbnail: item.metadata?.seasonThumbUrl || item.metadata?.parentThumb
+              img: item.metadata?.seasonThumbUrl || item.metadata?.parentThumb
             };
           }
         }
