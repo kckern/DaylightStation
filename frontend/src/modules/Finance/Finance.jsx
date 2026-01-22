@@ -15,7 +15,7 @@ export function FinanceChart()
   const [monthData, setMonthData] = useState({})
   useEffect(() => {
     const fetchData = () => {
-      DaylightAPI('/data/budget/daytoday')
+      DaylightAPI('/api/v1/finance/data/daytoday')
         .then((data) => {
           setMonthData(data)
         })
