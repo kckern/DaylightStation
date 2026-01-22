@@ -9,10 +9,10 @@ import { createServer } from 'http';
 import path, { join } from 'path';
 import 'dotenv/config';
 
-// Config imports (from _legacy since that's where they live)
+// Config imports - using new infrastructure
 import { resolveConfigPaths, getConfigFilePaths } from '../_legacy/lib/config/pathResolver.mjs';
 import { loadAllConfig } from '../_legacy/lib/config/loader.mjs';
-import { initConfigService, ConfigValidationError } from '../_legacy/lib/config/index.mjs';
+import { initConfigService, ConfigValidationError } from './0_infrastructure/config/index.mjs';
 import { hydrateProcessEnvFromConfigs } from '../_legacy/lib/logging/config.js';
 
 // Logging imports (use the new src/ logging)

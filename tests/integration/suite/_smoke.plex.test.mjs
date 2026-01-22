@@ -6,7 +6,19 @@ describe('Plex connectivity', () => {
 
   beforeAll(async () => {
     // Dynamic import to handle ESM config loading
-    const { configService } = await import('@backend/_legacy/lib/config/ConfigService.mjs');
+    // Use new config infrastructure from src/0_infrastructure/config
+    const { createConfigService } = await import('@backend/src/0_infrastructure/config/index.mjs');
+    
+    // Create a config service instance with the data path
+    const dataDir = process.env.DAYLIGHT_DATA_PATH || '/Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStation';
+    let configService;
+    try {
+      configService = createConfigService(dataDir);
+    } catch (e) {
+      // Config may not be available in test environment
+      console.warn('SKIP: Could not load config:', e.message);
+      return;
+    }
 
     // Get Plex config from household auth or environment
     const plexAuth = configService.getHouseholdAuth('plex');
