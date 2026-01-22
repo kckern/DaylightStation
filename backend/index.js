@@ -16,11 +16,10 @@ import path, { join } from 'path';
 import 'dotenv/config';
 
 import { initConfigService, ConfigValidationError } from './src/0_infrastructure/config/index.mjs';
-import { hydrateProcessEnvFromConfigs } from './_legacy/lib/logging/config.js';
-import { initializeLogging } from './_legacy/lib/logging/dispatcher.js';
-import { createConsoleTransport, createFileTransport, createLogglyTransport } from './_legacy/lib/logging/transports/index.js';
-import { createLogger } from './_legacy/lib/logging/logger.js';
-import { loadLoggingConfig, resolveLoggerLevel, getLoggingTags, resolveLogglyToken } from './_legacy/lib/logging/config.js';
+import { hydrateProcessEnvFromConfigs, loadLoggingConfig, resolveLoggerLevel, getLoggingTags, resolveLogglyToken } from './src/0_infrastructure/logging/config.js';
+import { initializeLogging } from './src/0_infrastructure/logging/dispatcher.js';
+import { createConsoleTransport, createFileTransport, createLogglyTransport } from './src/0_infrastructure/logging/transports/index.js';
+import { createLogger } from './src/0_infrastructure/logging/logger.js';
 
 const __dirname = path.dirname(new URL(import.meta.url).pathname);
 const isDocker = existsSync('/.dockerenv');
