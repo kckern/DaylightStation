@@ -5,10 +5,18 @@
  * Sessions are stored at: households/{hid}/apps/fitness/sessions/{YYYY-MM-DD}/{sessionId}.yml
  * Screenshots at: {mediaRoot}/apps/fitness/households/{hid}/sessions/{YYYY-MM-DD}/{sessionId}/screenshots/
  */
-import fs from 'fs';
 import path from 'path';
-import yaml from 'js-yaml';
 import moment from 'moment-timezone';
+import {
+  ensureDir,
+  dirExists,
+  loadYamlFromPath,
+  saveYamlToPath,
+  resolveYamlPath,
+  listYamlFiles,
+  listDirsMatching,
+  deleteFile
+} from '../../../0_infrastructure/utils/FileIO.mjs';
 
 /**
  * Derive session date from sessionId
@@ -94,40 +102,6 @@ export class YamlSessionStore {
   }
 
   /**
-   * Ensure directory exists
-   */
-  _ensureDir(dirPath) {
-    if (!fs.existsSync(dirPath)) {
-      fs.mkdirSync(dirPath, { recursive: true });
-    }
-  }
-
-  /**
-   * Read a YAML file
-   * @param {string} filePath
-   * @returns {Object|null}
-   */
-  _readFile(filePath) {
-    try {
-      if (!fs.existsSync(filePath)) return null;
-      const content = fs.readFileSync(filePath, 'utf8');
-      return yaml.load(content) || null;
-    } catch {
-      return null;
-    }
-  }
-
-  /**
-   * Write a YAML file
-   * @param {string} filePath
-   * @param {Object} data
-   */
-  _writeFile(filePath, data) {
-    this._ensureDir(path.dirname(filePath));
-    fs.writeFileSync(filePath, yaml.dump(data, { lineWidth: -1 }), 'utf8');
-  }
-
-  /**
    * Save a session
    * @param {Object} session - Session entity or plain object
    * @param {string} householdId
@@ -138,9 +112,9 @@ export class YamlSessionStore {
     const paths = this.getStoragePaths(data.sessionId, householdId);
     if (!paths) throw new Error('Invalid sessionId');
 
-    this._ensureDir(paths.sessionsDir);
-    this._ensureDir(paths.screenshotsDir);
-    this._writeFile(paths.sessionFilePath, data);
+    ensureDir(paths.sessionsDir);
+    ensureDir(paths.screenshotsDir);
+    saveYamlToPath(paths.sessionFilePath, data);
   }
 
   /**
@@ -153,13 +127,12 @@ export class YamlSessionStore {
     const paths = this.getStoragePaths(sessionId, householdId);
     if (!paths) return null;
 
-    // Try both .yml and .yaml extensions
-    let data = this._readFile(paths.sessionFilePath);
-    if (!data) {
-      const yamlPath = paths.sessionFilePath.replace(/\.yml$/, '.yaml');
-      data = this._readFile(yamlPath);
-    }
+    // resolveYamlPath handles .yml/.yaml automatically
+    const basePath = paths.sessionFilePath.replace(/\.yml$/, '');
+    const resolvedPath = resolveYamlPath(basePath);
+    if (!resolvedPath) return null;
 
+    const data = loadYamlFromPath(resolvedPath);
     if (!data) return null;
 
     // Parse timestamps to unix ms for API compatibility
@@ -213,10 +186,7 @@ export class YamlSessionStore {
       'sessions'
     );
 
-    if (!fs.existsSync(sessionsRoot)) return [];
-
-    return fs.readdirSync(sessionsRoot)
-      .filter(name => /^\d{4}-\d{2}-\d{2}$/.test(name))
+    return listDirsMatching(sessionsRoot, /^\d{4}-\d{2}-\d{2}$/)
       .sort()
       .reverse();
   }
@@ -238,15 +208,14 @@ export class YamlSessionStore {
       date
     );
 
-    if (!fs.existsSync(sessionsDir)) return [];
+    if (!dirExists(sessionsDir)) return [];
 
-    const files = fs.readdirSync(sessionsDir)
-      .filter(name => name.endsWith('.yml') || name.endsWith('.yaml'));
-
+    const fileNames = listYamlFiles(sessionsDir, { stripExtension: false });
     const sessions = [];
-    for (const name of files) {
+
+    for (const name of fileNames) {
       const filePath = path.join(sessionsDir, name);
-      const data = this._readFile(filePath);
+      const data = loadYamlFromPath(filePath);
       if (!data) continue;
 
       const tz = typeof data.timezone === 'string' ? data.timezone : 'UTC';
@@ -327,18 +296,10 @@ export class YamlSessionStore {
     const paths = this.getStoragePaths(sessionId, householdId);
     if (!paths) return;
 
-    try {
-      if (fs.existsSync(paths.sessionFilePath)) {
-        fs.unlinkSync(paths.sessionFilePath);
-      }
-      // Also try .yaml extension
-      const yamlPath = paths.sessionFilePath.replace(/\.yml$/, '.yaml');
-      if (fs.existsSync(yamlPath)) {
-        fs.unlinkSync(yamlPath);
-      }
-    } catch {
-      // Ignore errors
-    }
+    // Try both extensions
+    const basePath = paths.sessionFilePath.replace(/\.yml$/, '');
+    deleteFile(`${basePath}.yml`);
+    deleteFile(`${basePath}.yaml`);
   }
 }
 

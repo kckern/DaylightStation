@@ -11,10 +11,15 @@
  * @module adapters/persistence/yaml
  */
 
-import fs from 'fs';
 import path from 'path';
-import yaml from 'js-yaml';
 import moment from 'moment-timezone';
+import {
+  ensureDir,
+  dirExists,
+  listYamlFiles,
+  loadYamlFromPath,
+  saveYamlToPath
+} from '../../../0_infrastructure/utils/FileIO.mjs';
 
 export class YamlGratitudeStore {
   #userDataService;
@@ -69,9 +74,7 @@ export class YamlGratitudeStore {
    */
   #ensureSnapshotDir(householdId) {
     const dir = this.#getSnapshotDir(householdId);
-    if (dir && !fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
+    if (dir) ensureDir(dir);
     return dir;
   }
 
@@ -251,7 +254,7 @@ export class YamlGratitudeStore {
     const filename = `${stamp}_${snapshot.id}.yml`;
     const filePath = path.join(snapshotDir, filename);
 
-    fs.writeFileSync(filePath, yaml.dump(snapshot), 'utf8');
+    saveYamlToPath(filePath, snapshot);
     return filename;
   }
 
@@ -262,17 +265,15 @@ export class YamlGratitudeStore {
    */
   async listSnapshots(householdId) {
     const snapshotDir = this.#getSnapshotDir(householdId);
-    if (!snapshotDir || !fs.existsSync(snapshotDir)) {
+    if (!snapshotDir || !dirExists(snapshotDir)) {
       return [];
     }
 
-    const files = fs.readdirSync(snapshotDir)
-      .filter(f => (f.endsWith('.yml') || f.endsWith('.yaml')) && !f.startsWith('._'));
+    const files = listYamlFiles(snapshotDir, { stripExtension: false });
 
     const snapshots = files.map(f => {
       try {
-        const raw = fs.readFileSync(path.join(snapshotDir, f), 'utf8');
-        const data = yaml.load(raw) || {};
+        const data = loadYamlFromPath(path.join(snapshotDir, f)) || {};
         return {
           file: f,
           id: data.id || f.split('_').slice(1).join('_').replace(/\.(yml|yaml)$/, ''),
@@ -301,13 +302,11 @@ export class YamlGratitudeStore {
    */
   async loadSnapshot(householdId, snapshotId) {
     const snapshotDir = this.#getSnapshotDir(householdId);
-    if (!snapshotDir || !fs.existsSync(snapshotDir)) {
+    if (!snapshotDir || !dirExists(snapshotDir)) {
       return null;
     }
 
-    const files = fs.readdirSync(snapshotDir)
-      .filter(f => (f.endsWith('.yml') || f.endsWith('.yaml')) && !f.startsWith('._'));
-
+    const files = listYamlFiles(snapshotDir, { stripExtension: false });
     if (files.length === 0) return null;
 
     let file = null;
@@ -320,8 +319,7 @@ export class YamlGratitudeStore {
     }
 
     try {
-      const raw = fs.readFileSync(path.join(snapshotDir, file), 'utf8');
-      const snapshot = yaml.load(raw);
+      const snapshot = loadYamlFromPath(path.join(snapshotDir, file));
       if (snapshot) {
         snapshot.file = file;
       }

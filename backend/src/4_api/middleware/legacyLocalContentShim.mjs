@@ -1,7 +1,7 @@
 // backend/src/4_api/middleware/legacyLocalContentShim.mjs
 import express from 'express';
-import fs from 'fs';
 import path from 'path';
+import { listYamlFiles, dirExists, listDirs } from '../../0_infrastructure/utils/FileIO.mjs';
 
 /**
  * Scripture volume starting verse IDs
@@ -43,10 +43,9 @@ function getVolumeFromVerseId(verseId) {
  */
 function getDefaultVersion(dataPath, volume) {
   const volumePath = path.join(dataPath, 'content', 'scripture', volume);
-  if (!fs.existsSync(volumePath)) return null;
+  if (!dirExists(volumePath)) return null;
 
-  const versions = fs.readdirSync(volumePath)
-    .filter(f => fs.statSync(path.join(volumePath, f)).isDirectory());
+  const versions = listDirs(volumePath);
   return versions.length > 0 ? versions[0] : null;
 }
 
@@ -60,11 +59,9 @@ function getDefaultVersion(dataPath, volume) {
  */
 function getFirstChapterFromVolume(dataPath, volume, version) {
   const versionPath = path.join(dataPath, 'content', 'scripture', volume, version);
-  if (!fs.existsSync(versionPath)) return null;
+  if (!dirExists(versionPath)) return null;
 
-  const chapters = fs.readdirSync(versionPath)
-    .filter(f => f.endsWith('.yaml'))
-    .map(f => f.replace('.yaml', ''))
+  const chapters = listYamlFiles(versionPath)
     .sort((a, b) => parseInt(a) - parseInt(b));
 
   return chapters.length > 0 ? chapters[0] : null;

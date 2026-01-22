@@ -1,11 +1,18 @@
 // backend/src/2_adapters/content/media/filesystem/FilesystemAdapter.mjs
-import fs from 'fs';
 import path from 'path';
-import yaml from 'js-yaml';
 import { parseFile } from 'music-metadata';
 import { Item } from '../../../../1_domains/content/entities/Item.mjs';
 import { ListableItem } from '../../../../1_domains/content/capabilities/Listable.mjs';
 import { PlayableItem } from '../../../../1_domains/content/capabilities/Playable.mjs';
+import {
+  fileExists,
+  dirExists,
+  loadYamlFromPath,
+  resolveYamlPath,
+  listEntries,
+  getStats,
+  isFile
+} from '../../../../0_infrastructure/utils/FileIO.mjs';
 
 const MEDIA_PREFIXES = ['', 'audio', 'video', 'img'];
 
@@ -68,10 +75,6 @@ export class FilesystemAdapter {
     if (!this.historyPath) return {};
     if (this._watchStateCache) return this._watchStateCache;
 
-    // Use injectable functions for testability
-    const existsSync = this._existsSync || fs.existsSync;
-    const readFileSync = this._readFileSync || ((p) => fs.readFileSync(p, 'utf8'));
-
     try {
       // Try household-specific path first
       if (this.householdId && this.householdsBasePath) {
@@ -80,18 +83,20 @@ export class FilesystemAdapter {
           this.householdId,
           'history/media_memory/media.yml'
         );
-        if (existsSync(householdPath)) {
-          const content = readFileSync(householdPath);
-          this._watchStateCache = yaml.load(content) || {};
+        const basePath = householdPath.replace(/\.yml$/, '');
+        const resolvedPath = resolveYamlPath(basePath);
+        if (resolvedPath) {
+          this._watchStateCache = loadYamlFromPath(resolvedPath) || {};
           return this._watchStateCache;
         }
       }
 
       // Fall back to global path
       const filePath = path.join(this.historyPath, 'media.yml');
-      if (!existsSync(filePath)) return {};
-      const content = readFileSync(filePath);
-      this._watchStateCache = yaml.load(content) || {};
+      const basePath = filePath.replace(/\.yml$/, '');
+      const resolvedPath = resolveYamlPath(basePath);
+      if (!resolvedPath) return {};
+      this._watchStateCache = loadYamlFromPath(resolvedPath) || {};
       return this._watchStateCache;
     } catch (err) {
       return {};
@@ -207,7 +212,7 @@ export class FilesystemAdapter {
         continue; // Skip paths that escape base directory
       }
 
-      if (fs.existsSync(candidate)) {
+      if (fileExists(candidate) || dirExists(candidate)) {
         return { path: candidate, prefix };
       }
     }
@@ -226,7 +231,7 @@ export class FilesystemAdapter {
           continue; // Skip paths that escape base directory
         }
 
-        if (fs.existsSync(candidate)) {
+        if (fileExists(candidate)) {
           return { path: candidate, prefix };
         }
       }
@@ -268,14 +273,17 @@ export class FilesystemAdapter {
     if (!resolved) return null;
 
     try {
-      const stats = fs.statSync(resolved.path);
+      const stats = getStats(resolved.path);
+      if (!stats) return null;
+
       if (stats.isDirectory()) {
+        const entries = listEntries(resolved.path);
         return new ListableItem({
           id: `filesystem:${localId}`,
           source: 'filesystem',
           title: path.basename(localId),
           itemType: 'container',
-          childCount: fs.readdirSync(resolved.path).length
+          childCount: entries.length
         });
       }
 
@@ -330,10 +338,10 @@ export class FilesystemAdapter {
     if (!resolved) return [];
 
     try {
-      const stats = fs.statSync(resolved.path);
-      if (!stats.isDirectory()) return [];
+      const stats = getStats(resolved.path);
+      if (!stats || !stats.isDirectory()) return [];
 
-      const entries = fs.readdirSync(resolved.path);
+      const entries = listEntries(resolved.path);
       const items = [];
 
       for (const entry of entries) {
@@ -341,16 +349,19 @@ export class FilesystemAdapter {
 
         const entryPath = path.join(resolved.path, entry);
         try {
-          const entryStats = fs.statSync(entryPath);
+          const entryStats = getStats(entryPath);
+          if (!entryStats) continue;
+
           const entryId = id ? `${id}/${entry}` : entry;
 
           if (entryStats.isDirectory()) {
+            const childEntries = listEntries(entryPath);
             items.push(new ListableItem({
               id: `filesystem:${entryId}`,
               source: 'filesystem',
               title: entry,
               itemType: 'container',
-              childCount: fs.readdirSync(entryPath).length
+              childCount: childEntries.length
             }));
           } else {
             const ext = path.extname(entry).toLowerCase();

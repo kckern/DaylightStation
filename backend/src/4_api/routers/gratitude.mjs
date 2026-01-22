@@ -21,6 +21,7 @@
  */
 
 import express from 'express';
+import { writeBinary, deleteFile } from '../../0_infrastructure/utils/FileIO.mjs';
 
 /**
  * Create gratitude API router
@@ -576,7 +577,6 @@ export function createGratitudeRouter(config) {
     }
 
     try {
-      const fs = await import('fs');
       const householdId = getHouseholdId(req);
       const upsidedown = req.query.upsidedown !== 'false'; // default true for print
 
@@ -586,7 +586,7 @@ export function createGratitudeRouter(config) {
       // Save to temp file
       const buffer = canvas.toBuffer('image/png');
       const tempPath = `/tmp/prayer_card_${Date.now()}.png`;
-      fs.writeFileSync(tempPath, buffer);
+      writeBinary(tempPath, buffer);
 
       // Create and execute print job
       const printJob = printerAdapter.createImagePrint(tempPath, {
@@ -599,11 +599,7 @@ export function createGratitudeRouter(config) {
       const success = await printerAdapter.print(printJob);
 
       // Clean up temp file
-      try {
-        fs.unlinkSync(tempPath);
-      } catch {
-        /* ignore cleanup errors */
-      }
+      deleteFile(tempPath);
 
       // Mark as printed only if print succeeded
       const printed = { gratitude: [], hopes: [] };

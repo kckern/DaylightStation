@@ -4,9 +4,18 @@
  * Implements IJournalStore port for journal entry storage.
  * Entries stored at: households/{hid}/apps/journal/entries/{YYYY-MM-DD}.yml
  */
-import fs from 'fs';
 import path from 'path';
-import yaml from 'js-yaml';
+import {
+  ensureDir,
+  dirExists,
+  fileExists,
+  listYamlFiles,
+  listDirs,
+  loadYamlFromPath,
+  saveYamlToPath,
+  resolveYamlPath,
+  deleteFile
+} from '../../../0_infrastructure/utils/FileIO.mjs';
 
 export class YamlJournalStore {
   /**
@@ -53,25 +62,16 @@ export class YamlJournalStore {
   }
 
   /**
-   * Ensure directory exists
-   * @param {string} dirPath
-   */
-  _ensureDir(dirPath) {
-    if (!fs.existsSync(dirPath)) {
-      fs.mkdirSync(dirPath, { recursive: true });
-    }
-  }
-
-  /**
-   * Read a YAML file
+   * Read a YAML file (handles .yml/.yaml)
    * @param {string} filePath
    * @returns {Object|null}
    */
   _readFile(filePath) {
     try {
-      if (!fs.existsSync(filePath)) return null;
-      const content = fs.readFileSync(filePath, 'utf8');
-      return yaml.load(content) || null;
+      const basePath = filePath.replace(/\.yml$/, '');
+      const resolvedPath = resolveYamlPath(basePath);
+      if (!resolvedPath) return null;
+      return loadYamlFromPath(resolvedPath) || null;
     } catch {
       return null;
     }
@@ -83,8 +83,8 @@ export class YamlJournalStore {
    * @param {Object} data
    */
   _writeFile(filePath, data) {
-    this._ensureDir(path.dirname(filePath));
-    fs.writeFileSync(filePath, yaml.dump(data, { lineWidth: -1 }), 'utf8');
+    ensureDir(path.dirname(filePath));
+    saveYamlToPath(filePath, data);
   }
 
   /**
@@ -111,9 +111,9 @@ export class YamlJournalStore {
 
     // Search all users for this ID - in production would use userId
     const householdsDir = path.join(this.dataRoot, 'households');
-    if (!fs.existsSync(householdsDir)) return null;
+    if (!dirExists(householdsDir)) return null;
 
-    const users = fs.readdirSync(householdsDir);
+    const users = listDirs(householdsDir);
     for (const userId of users) {
       const entry = await this.findByUserAndDate(userId, dateMatch[1]);
       if (entry && entry.id === id) {
@@ -184,11 +184,10 @@ export class YamlJournalStore {
   async listDates(userId) {
     const entriesDir = this.getEntriesDir(userId);
 
-    if (!fs.existsSync(entriesDir)) return [];
+    if (!dirExists(entriesDir)) return [];
 
-    return fs.readdirSync(entriesDir)
-      .filter(name => /^\d{4}-\d{2}-\d{2}\.yml$/.test(name))
-      .map(name => name.replace('.yml', ''))
+    return listYamlFiles(entriesDir, { stripExtension: true })
+      .filter(name => /^\d{4}-\d{2}-\d{2}$/.test(name))
       .sort()
       .reverse();
   }
@@ -204,13 +203,11 @@ export class YamlJournalStore {
     if (!entry) return;
 
     const filePath = this.getEntryPath(entry.userId, entry.date);
-    try {
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-      }
-    } catch {
-      // Ignore errors
-    }
+    const basePath = filePath.replace(/\.yml$/, '');
+
+    // Try both extensions
+    deleteFile(`${basePath}.yml`);
+    deleteFile(`${basePath}.yaml`);
   }
 
   /**

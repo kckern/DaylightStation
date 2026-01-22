@@ -59,6 +59,33 @@ If `env` values show `[object Object]`, the file is corrupted and needs manual r
 - Logs tee to `dev.log` - tail this for real-time feedback
 - Check if dev server is already running before starting new one
 
+### Dev Server Ports (Multi-Environment)
+
+The backend uses hostname-based config to avoid port conflicts with Docker:
+
+| Environment | Primary | Secondary | Check with |
+|-------------|---------|-----------|------------|
+| Docker (prod) | 3111 | 3119 | `ss -tlnp \| grep 3111` |
+| kckern-server (dev) | 3112 | 3120 | `ss -tlnp \| grep 3112` |
+
+**Before starting dev server**, check if it's already running:
+```bash
+ss -tlnp | grep -E '3112|3120'
+```
+
+**Start dev server** (on kckern-server):
+```bash
+node backend/index.js
+# Or background: nohup node backend/index.js > /tmp/backend-dev.log 2>&1 &
+```
+
+**Stop dev server**:
+```bash
+pkill -f 'node backend/index.js'
+```
+
+**Full runbook**: `docs/runbooks/dev-server-multi-environment.md`
+
 ### Prod Access
 
 ```bash
@@ -83,7 +110,7 @@ ssh {hosts.prod} 'echo "content" > /path/to/file'
 - **Do NOT commit automatically** - User must review changes
 - **Do NOT run deploy.sh automatically** - User must run manually
 - **Keep docs in /docs folder** - In appropriate subfolder
-- **Check dev server** - Before starting new one
+- **Check dev server before starting** - Run `ss -tlnp | grep 3112` first; if running, don't start another
 
 ---
 

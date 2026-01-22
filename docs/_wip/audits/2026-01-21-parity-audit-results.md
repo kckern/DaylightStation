@@ -1,28 +1,31 @@
 # Parity Audit Results
 
-**Date:** 2026-01-21
-**Backend:** Docker container `daylight-station` on port 3111
+**Date:** 2026-01-21 (Updated with dev server testing)
+**Environments Tested:**
+- Docker container `daylight-station` on port 3111
+- Dev server `kckern-server` on port 3112
 **Routing:** `/api/v1/*` → new DDD backend, everything else → legacy
 
 ---
 
 ## Executive Summary
 
-| Category | Count |
-|----------|-------|
-| **Endpoints Tested** | 28 |
-| **Full Parity (OK)** | 18 |
-| **Structure Match (minor diffs)** | 4 |
-| **Gaps (need backend work)** | 4 |
-| **Config Issues** | 2 |
+| Category | Docker (3111) | Dev Server (3112) |
+|----------|---------------|-------------------|
+| **Endpoints Tested** | 28 | 35 |
+| **Full Parity (OK)** | 18 | 22 |
+| **Structure Match (minor diffs)** | 4 | 5 |
+| **Gaps (need backend work)** | 4 | 2 |
+| **Config Issues** | 2 | 1 |
 
-### Critical Finding
+### Key Finding: Dev Server Resolves Docker Permission Issues
 
-**`POST /media/log` (playback tracking) is broken in new backend:**
-```
-Error: "EACCES: permission denied, mkdir '/data/media_memory'"
-```
-The new backend cannot write watch state due to Docker volume permissions. This MUST be fixed before any frontend migration.
+**`POST /media/log` works on dev server!** The Docker permission issue (`EACCES: permission denied`) is specific to the Docker container's volume mounts. On the dev server (native filesystem access), both legacy and new backends work correctly.
+
+### Remaining Blockers (Both Environments)
+
+1. **`/data/list/{key}`** - Missing `local` source adapter in new backend
+2. **Scripture content** - Data files missing (not a code issue)
 
 ---
 
@@ -200,16 +203,102 @@ After local adapter registered:
 ## Test Commands
 
 ```bash
-# Test media/log parity (after fix)
-curl -X POST localhost:3111/media/log \
+# Test media/log parity (on dev server - works!)
+curl -X POST localhost:3112/media/log \
   -H "Content-Type: application/json" \
-  -d '{"type":"plex","media_key":"12345","percent":50,"seconds":300}'
+  -d '{"type":"plex","media_key":"6880","percent":50,"seconds":300}'
 
-curl -X POST localhost:3111/api/v1/api/play/log \
+curl -X POST localhost:3112/api/v1/api/play/log \
   -H "Content-Type: application/json" \
-  -d '{"type":"plex","media_key":"12345","percent":50,"seconds":300}'
+  -d '{"type":"plex","media_key":"6880","percent":50,"seconds":300}'
 
-# Test list parity (after local adapter fix)
-diff <(curl -s localhost:3111/data/list/TVApp | jq -S .) \
-     <(curl -s localhost:3111/api/v1/api/list/local/TVApp | jq -S .)
+# Test list parity (still blocked - local adapter missing)
+diff <(curl -s localhost:3112/data/list/TVApp | jq -S .) \
+     <(curl -s localhost:3112/api/v1/api/list/local/TVApp | jq -S .)
 ```
+
+---
+
+## Dev Server Testing Results (2026-01-21 20:44 UTC)
+
+Testing performed against dev server on port 3112 (alongside Docker on 3111).
+
+### Plex Endpoints
+
+| Endpoint | Legacy | New | Parity | Notes |
+|----------|--------|-----|--------|-------|
+| `media/plex/img/{id}` | 200 image/jpeg | 200 image/jpeg | **OK** | Works, correct path: `/api/v1/api/content/plex/image/{id}` |
+| `media/plex/info/{id}` | 200 flat JSON | 200 nested JSON | **STRUCT** | Different response structure |
+| `media/plex/url/{id}` | streams media | returns JSON | **GAP** | Legacy streams directly, new returns URL in JSON |
+| `media/plex/mpd/{id}` | untested | 200 | **OK** | Path: `/api/v1/api/play/plex/mpd/{id}` |
+
+**Note:** Plex info response structures differ significantly:
+- Legacy: `{listkey, listType, key, type, title, media_url, percent, seconds, ...}`
+- New: `{id, title, mediaType, duration, thumbnail, metadata: {...}}`
+
+### Static Asset Endpoints
+
+| Endpoint | Legacy | New | Parity | Notes |
+|----------|--------|-----|--------|-------|
+| `/media/img/art/{path}` | 200 | 200 | **OK** | Correct new path: `/api/v1/api/static/art/{path}` |
+| `/media/img/icons/{icon}.svg` | 200 | 200 | **OK** | Correct new path: `/api/v1/api/static/img/icons/{icon}.svg` |
+| `/media/img/users/{id}` | 200 | 200 | **OK** | Already confirmed working |
+| `/media/img/equipment/{id}` | 200 | 200 | **OK** | Already confirmed working |
+
+**Important:** Static router is mounted at `/api/static`, so paths need `/api/v1/api/static/*` not `/api/v1/static/*`.
+
+### Home Automation Endpoints
+
+| Endpoint | Legacy | New | Parity | Notes |
+|----------|--------|-----|--------|-------|
+| `exe/tv/off` | error: "Invalid URL" | 200 (30s timeout) | **NEW-BETTER** | New has HA config, legacy missing |
+| `exe/office_tv/off` | error: "Invalid URL" | 200 success | **NEW-BETTER** | New works, legacy config issue |
+
+### Critical Blockers (Dev Server Status)
+
+| Blocker | Docker Status | Dev Server Status | Notes |
+|---------|---------------|-------------------|-------|
+| `POST /media/log` | **BROKEN** (permission) | **OK** ✓ | Works on native filesystem |
+| `/data/list/{key}` | **BLOCKED** | **BLOCKED** | Still needs `local` source adapter |
+| `scripture content` | **BLOCKED** | data missing | Both fail - data files don't exist |
+| `zone_led` | **CONFIG** | **OK** ✓ | New works! Legacy has HA config issue |
+
+### Additional Findings
+
+| Endpoint | Legacy | New | Parity | Notes |
+|----------|--------|-----|--------|-------|
+| `POST /api/gratitude/selections/{cat}` | 400 validate | 400 validate | **OK** | Both validate correctly |
+| `POST /harvest/budget` | redirect | error | **CONFIG** | New needs FinanceHarvestService init |
+| `GET /api/health/nutrilist/{date}` | 500 error | 200 success | **NEW-BETTER** | Legacy missing config |
+
+---
+
+## Updated Blocker Summary
+
+### Remaining Work (Required for Migration)
+
+~~1. **Register `local` content source adapter**~~ **FIXED (2026-01-21)**
+   - Added `local` as alias for FolderAdapter in bootstrap.mjs
+   - Updated list router to handle `local` source same as `folder`
+   - `/api/v1/list/local/TVApp` now returns 35 items (vs legacy 26 - new includes watched items)
+   - Structure differs: new uses transformed toListItem format, legacy returns raw watchlist items
+
+### Environment-Specific Issues
+
+| Issue | Docker | Dev Server | Action |
+|-------|--------|------------|--------|
+| `/media/log` permissions | **BLOCKED** | OK | Fix Docker volume permissions |
+| Home Assistant config | partial | **OK** | Legacy HA config incomplete |
+| Finance harvest service | not init | not init | Initialize in bootstrap |
+
+### Ready for Migration (Confirmed Working)
+
+These endpoints work on dev server and can be migrated:
+
+| Priority | Endpoint | New Path | Status |
+|----------|----------|----------|--------|
+| P1 | `POST /media/log` | `/api/v1/api/play/log` | **READY** (dev server) |
+| P1 | `POST /api/fitness/zone_led` | `/api/v1/api/fitness/zone_led` | **READY** (new works better) |
+| P1 | `GET /exe/tv/*` | `/api/v1/api/home/tv/*` | **READY** (new works better) |
+| P1 | `GET /media/plex/img/*` | `/api/v1/api/content/plex/image/*` | **READY** |
+| P1 | Static assets | `/api/v1/api/static/*` | **READY** |

@@ -5,6 +5,7 @@
  */
 
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import yaml from 'js-yaml';
@@ -107,8 +108,32 @@ export function hydrateProcessEnvFromConfigs(baseDir = null) {
   const systemConfig = safeReadYaml(path.join(configDir, 'system.yml'));
   const secretsConfig = safeReadYaml(path.join(configDir, 'config.secrets.yml'));
 
-  // Skip system-local.yml in Docker - it contains host-specific paths
-  const localConfig = isDocker ? {} : safeReadYaml(path.join(configDir, 'system-local.yml'));
+  // Machine-specific config: DAYLIGHT_ENV > Docker > hostname > legacy fallback
+  let localConfigFile = null;
+  if (process.env.DAYLIGHT_ENV) {
+    const envFile = `system-local.${process.env.DAYLIGHT_ENV}.yml`;
+    if (fs.existsSync(path.join(configDir, envFile))) {
+      localConfigFile = envFile;
+    }
+  }
+  if (!localConfigFile && isDocker) {
+    const dockerFile = 'system-local.docker.yml';
+    if (fs.existsSync(path.join(configDir, dockerFile))) {
+      localConfigFile = dockerFile;
+    }
+  }
+  if (!localConfigFile) {
+    const hostname = os.hostname();
+    const hostFile = `system-local.${hostname}.yml`;
+    if (fs.existsSync(path.join(configDir, hostFile))) {
+      localConfigFile = hostFile;
+    }
+  }
+  if (!localConfigFile && fs.existsSync(path.join(configDir, 'system-local.yml'))) {
+    localConfigFile = 'system-local.yml';
+  }
+
+  const localConfig = localConfigFile ? safeReadYaml(path.join(configDir, localConfigFile)) : {};
 
   const merged = { ...systemConfig, ...secretsConfig, ...localConfig };
   process.env = { ...process.env, ...merged };

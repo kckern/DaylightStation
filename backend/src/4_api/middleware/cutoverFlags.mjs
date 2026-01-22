@@ -5,8 +5,7 @@
  * Flags are stored in YAML config for easy toggling without deploys.
  */
 
-import { readFileSync, existsSync } from 'fs';
-import { parse as parseYaml } from 'yaml';
+import { loadYamlFromPath, resolveYamlPath } from '../../0_infrastructure/utils/FileIO.mjs';
 
 const CONFIG_PATH = process.env.CUTOVER_FLAGS_PATH || '/data/config/cutover-flags.yml';
 
@@ -30,11 +29,14 @@ function loadFlags() {
   if (now - lastLoadTime < 30000) return flags;
 
   try {
-    if (existsSync(CONFIG_PATH)) {
-      const content = readFileSync(CONFIG_PATH, 'utf8');
-      const parsed = parseYaml(content);
-      flags = { ...DEFAULT_FLAGS, ...parsed };
-      lastLoadTime = now;
+    const basePath = CONFIG_PATH.replace(/\.(yml|yaml)$/, '');
+    const resolvedPath = resolveYamlPath(basePath);
+    if (resolvedPath) {
+      const parsed = loadYamlFromPath(resolvedPath);
+      if (parsed) {
+        flags = { ...DEFAULT_FLAGS, ...parsed };
+        lastLoadTime = now;
+      }
     }
   } catch (err) {
     console.error('[CutoverFlags] Failed to load config:', err.message);

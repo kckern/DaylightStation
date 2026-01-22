@@ -10,10 +10,16 @@
  * - Daily summaries: households/{hid}/apps/nutrition/nutriday.yml
  */
 
-import fs from 'fs';
 import path from 'path';
-import yaml from 'js-yaml';
 import { v4 as uuidv4 } from 'uuid';
+import {
+  ensureDir,
+  dirExists,
+  listYamlFiles,
+  loadYamlFromPath,
+  saveYamlToPath,
+  resolveYamlPath
+} from '../../../0_infrastructure/utils/FileIO.mjs';
 import { INutriListStore } from '../../../1_domains/nutrition/ports/INutriListStore.mjs';
 import { shortIdFromUuid } from '../../../0_infrastructure/utils/shortId.mjs';
 
@@ -80,17 +86,12 @@ export class YamlNutriListStore extends INutriListStore {
 
   // ==================== File I/O ====================
 
-  #ensureDir(dirPath) {
-    if (!fs.existsSync(dirPath)) {
-      fs.mkdirSync(dirPath, { recursive: true });
-    }
-  }
-
   #readFile(filePath) {
     try {
-      if (!fs.existsSync(filePath)) return [];
-      const content = fs.readFileSync(filePath, 'utf8');
-      const data = yaml.load(content);
+      const basePath = filePath.replace(/\.yml$/, '');
+      const resolvedPath = resolveYamlPath(basePath);
+      if (!resolvedPath) return [];
+      const data = loadYamlFromPath(resolvedPath);
       // Handle both array and legacy object format
       if (Array.isArray(data)) return data;
       if (data && typeof data === 'object') return Object.values(data);
@@ -102,16 +103,17 @@ export class YamlNutriListStore extends INutriListStore {
   }
 
   #writeFile(filePath, data) {
-    this.#ensureDir(path.dirname(filePath));
-    fs.writeFileSync(filePath, yaml.dump(data, { lineWidth: -1 }), 'utf8');
+    ensureDir(path.dirname(filePath));
+    saveYamlToPath(filePath, data);
   }
 
   #readNutriday(userId) {
     const filePath = this.#getNutridayPath(userId);
     try {
-      if (!fs.existsSync(filePath)) return {};
-      const content = fs.readFileSync(filePath, 'utf8');
-      return yaml.load(content) || {};
+      const basePath = filePath.replace(/\.yml$/, '');
+      const resolvedPath = resolveYamlPath(basePath);
+      if (!resolvedPath) return {};
+      return loadYamlFromPath(resolvedPath) || {};
     } catch {
       return {};
     }
@@ -120,8 +122,10 @@ export class YamlNutriListStore extends INutriListStore {
   #loadArchive(userId, yearMonth) {
     const archivePath = this.#getArchivePath(userId, yearMonth);
     try {
-      if (!fs.existsSync(archivePath)) return [];
-      const data = yaml.load(fs.readFileSync(archivePath, 'utf8'));
+      const basePath = archivePath.replace(/\.yml$/, '');
+      const resolvedPath = resolveYamlPath(basePath);
+      if (!resolvedPath) return [];
+      const data = loadYamlFromPath(resolvedPath);
       return Array.isArray(data) ? data : [];
     } catch {
       return [];
@@ -354,13 +358,11 @@ export class YamlNutriListStore extends INutriListStore {
 
     if (startDate < cutoffDate) {
       const archiveDir = this.#getArchiveDir(userId);
-      if (fs.existsSync(archiveDir)) {
+      if (dirExists(archiveDir)) {
         const startMonth = startDate.substring(0, 7);
         const endMonth = endDate.substring(0, 7);
 
-        const archiveFiles = fs.readdirSync(archiveDir)
-          .filter(f => f.endsWith('.yml'))
-          .map(f => f.replace('.yml', ''))
+        const archiveFiles = listYamlFiles(archiveDir, { stripExtension: true })
           .filter(ym => ym >= startMonth && ym <= endMonth);
 
         for (const yearMonth of archiveFiles) {
@@ -654,7 +656,7 @@ export class YamlNutriListStore extends INutriListStore {
 
     // Write to monthly archives
     const archiveDir = this.#getArchiveDir(userId);
-    this.#ensureDir(archiveDir);
+    ensureDir(archiveDir);
 
     const monthsUpdated = [];
     for (const [yearMonth, monthItems] of Object.entries(coldByMonth)) {

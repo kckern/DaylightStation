@@ -7,9 +7,17 @@
  * @module adapters/persistence/yaml
  */
 
-import fs from 'fs';
 import path from 'path';
-import yaml from 'js-yaml';
+import {
+  ensureDir,
+  dirExists,
+  listYamlFiles,
+  listDirs,
+  loadYamlFromPath,
+  saveYamlToPath,
+  resolveYamlPath,
+  deleteFile
+} from '../../../0_infrastructure/utils/FileIO.mjs';
 
 export class YamlConversationStore {
   #userDataService;
@@ -55,36 +63,19 @@ export class YamlConversationStore {
    */
   #ensureDir(householdId) {
     const dir = this.#getConversationsDir(householdId);
-    if (dir && !fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
+    if (dir) ensureDir(dir);
     return dir;
   }
 
   /**
-   * Read a YAML file
+   * Read a conversation file (handles .yml/.yaml)
    * @private
    */
   #readFile(filePath) {
-    try {
-      if (!fs.existsSync(filePath)) return null;
-      const content = fs.readFileSync(filePath, 'utf8');
-      return yaml.load(content) || null;
-    } catch {
-      return null;
-    }
-  }
-
-  /**
-   * Write a YAML file
-   * @private
-   */
-  #writeFile(filePath, data) {
-    const dir = path.dirname(filePath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    fs.writeFileSync(filePath, yaml.dump(data, { lineWidth: -1 }), 'utf8');
+    const basePath = filePath.replace(/\.yml$/, '');
+    const resolvedPath = resolveYamlPath(basePath);
+    if (!resolvedPath) return null;
+    return loadYamlFromPath(resolvedPath);
   }
 
   /**
@@ -129,7 +120,7 @@ export class YamlConversationStore {
     this.#ensureDir(householdId);
 
     const filePath = this.#getConversationPath(householdId, data.id);
-    this.#writeFile(filePath, data);
+    saveYamlToPath(filePath, data);
 
     this.#logger.debug?.('conversation.saved', {
       id: data.id,
@@ -146,22 +137,19 @@ export class YamlConversationStore {
     // Try default household first
     const defaultHouseholdId = 'default';
     let filePath = this.#getConversationPath(defaultHouseholdId, id);
-
-    if (fs.existsSync(filePath)) {
-      return this.#readFile(filePath);
-    }
+    let data = this.#readFile(filePath);
+    if (data) return data;
 
     // Try to find in any household directory
     const dataRoot = this.#userDataService.getDataRoot?.();
     if (dataRoot) {
       const householdsDir = path.join(dataRoot, 'households');
-      if (fs.existsSync(householdsDir)) {
-        const households = fs.readdirSync(householdsDir);
+      if (dirExists(householdsDir)) {
+        const households = listDirs(householdsDir);
         for (const hid of households) {
           filePath = this.#getConversationPath(hid, id);
-          if (fs.existsSync(filePath)) {
-            return this.#readFile(filePath);
-          }
+          data = this.#readFile(filePath);
+          if (data) return data;
         }
       }
     }
@@ -228,11 +216,13 @@ export class YamlConversationStore {
 
     const householdId = this.#extractHouseholdId(conversation);
     const filePath = this.#getConversationPath(householdId, id);
+    const basePath = filePath.replace(/\.yml$/, '');
 
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
-      this.#logger.debug?.('conversation.deleted', { id, householdId });
-    }
+    // Try both extensions
+    deleteFile(`${basePath}.yml`);
+    deleteFile(`${basePath}.yaml`);
+
+    this.#logger.debug?.('conversation.deleted', { id, householdId });
   }
 
   // ===========================================================================
@@ -252,21 +242,19 @@ export class YamlConversationStore {
     }
 
     const householdsDir = path.join(dataRoot, 'households');
-    if (!fs.existsSync(householdsDir)) {
+    if (!dirExists(householdsDir)) {
       return conversations;
     }
 
-    const households = fs.readdirSync(householdsDir);
+    const households = listDirs(householdsDir);
     for (const hid of households) {
       const convDir = this.#getConversationsDir(hid);
-      if (!convDir || !fs.existsSync(convDir)) continue;
+      if (!convDir || !dirExists(convDir)) continue;
 
-      const files = fs.readdirSync(convDir)
-        .filter(f => f.endsWith('.yml') || f.endsWith('.yaml'));
+      const files = listYamlFiles(convDir, { stripExtension: false });
 
       for (const file of files) {
-        const filePath = path.join(convDir, file);
-        const conv = this.#readFile(filePath);
+        const conv = loadYamlFromPath(path.join(convDir, file));
         if (conv) {
           conversations.push(conv);
         }
@@ -283,17 +271,15 @@ export class YamlConversationStore {
    */
   async getConversationsForHousehold(householdId) {
     const convDir = this.#getConversationsDir(householdId);
-    if (!convDir || !fs.existsSync(convDir)) {
+    if (!convDir || !dirExists(convDir)) {
       return [];
     }
 
-    const files = fs.readdirSync(convDir)
-      .filter(f => f.endsWith('.yml') || f.endsWith('.yaml'));
+    const files = listYamlFiles(convDir, { stripExtension: false });
 
     const conversations = [];
     for (const file of files) {
-      const filePath = path.join(convDir, file);
-      const conv = this.#readFile(filePath);
+      const conv = loadYamlFromPath(path.join(convDir, file));
       if (conv) {
         conversations.push(conv);
       }

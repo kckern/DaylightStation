@@ -494,9 +494,9 @@ describe('API v1 Baseline Validation', () => {
           plex: '545219',
           scripture: '1-nephi-1',  // Use valid scripture reference format
           hymn: '2',
-          primary: '1',
-          talk: 'ldsgc202510',
-          poem: 'frost-road-not-taken',
+          primary: '2',           // Primary songs start at 2 (0002-i-am-a-child-of-god.yml)
+          talk: 'ldsgc202510/11', // Talk requires conference/session format
+          poem: 'remedy/01',      // Poem requires collection/id format
           list: 'FHE'
         };
 

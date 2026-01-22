@@ -67,7 +67,9 @@ export function toListItem(item) {
       // FolderAdapter scheduling fields
       hold, skip_after, wait_until,
       // FolderAdapter grouping and legacy fields
-      program, src, media_key, shuffle, continuous, playable, uid
+      program, src, media_key, shuffle, continuous, playable, uid,
+      // FolderAdapter display fields
+      folder, folder_color
     } = item.metadata;
 
     // Only use metadata.plex if top-level plex not already set
@@ -126,6 +128,9 @@ export function toListItem(item) {
     if (continuous !== undefined && base.continuous === undefined) base.continuous = continuous;
     if (playable !== undefined) base.playable = playable;
     if (uid !== undefined) base.uid = uid;
+    // FolderAdapter display fields
+    if (folder !== undefined) base.folder = folder;
+    if (folder_color !== undefined) base.folder_color = folder_color;
 
     // Duration from PlayableItem
     if (item.duration !== undefined) base.duration = item.duration;
@@ -222,16 +227,19 @@ export function createListRouter(config) {
 
       let items;
 
+      // 'local' is an alias for 'folder' - both use FolderAdapter which expects folder: prefix
+      const isFolderSource = source === 'folder' || source === 'local';
+
       if (modifiers.playable) {
         // Resolve to playable items only
         if (!adapter.resolvePlayables) {
           return res.status(400).json({ error: 'Source does not support playable resolution' });
         }
-        const compoundId = source === 'folder' ? localId : `${source}:${localId}`;
+        const compoundId = isFolderSource ? `folder:${localId}` : `${source}:${localId}`;
         items = await adapter.resolvePlayables(compoundId);
       } else {
         // Get container contents
-        const compoundId = source === 'folder' ? localId : `${source}:${localId}`;
+        const compoundId = isFolderSource ? `folder:${localId}` : `${source}:${localId}`;
         const result = await adapter.getList(compoundId);
 
         // Handle different response shapes
@@ -250,7 +258,7 @@ export function createListRouter(config) {
       }
 
       // Build response
-      const compoundId = source === 'folder' ? localId : `${source}:${localId}`;
+      const compoundId = isFolderSource ? `folder:${localId}` : `${source}:${localId}`;
       const containerInfo = adapter.getItem ? await adapter.getItem(compoundId) : null;
 
       // Build info object for FitnessShow compatibility
@@ -281,6 +289,8 @@ export function createListRouter(config) {
       }
 
       res.json({
+        // Legacy compat field - frontend uses this for menu logging
+        media_key: localId,
         source,
         path: localId,
         title: containerInfo?.title || localId,

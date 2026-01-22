@@ -8,9 +8,13 @@
  * - Data structure: { 'YYYY-MM-DD': [{ message, timestamp, isFirstOfDay, context }] }
  */
 
-import fs from 'fs';
 import path from 'path';
-import yaml from 'js-yaml';
+import {
+  ensureDir,
+  loadYamlFromPath,
+  saveYamlToPath,
+  resolveYamlPath
+} from '../../../0_infrastructure/utils/FileIO.mjs';
 import { INutriCoachStore } from '../../../1_domains/nutrition/ports/INutriCoachStore.mjs';
 
 export class YamlNutriCoachStore extends INutriCoachStore {
@@ -46,17 +50,12 @@ export class YamlNutriCoachStore extends INutriCoachStore {
 
   // ==================== File I/O ====================
 
-  #ensureDir(dirPath) {
-    if (!fs.existsSync(dirPath)) {
-      fs.mkdirSync(dirPath, { recursive: true });
-    }
-  }
-
   #readFile(filePath) {
     try {
-      if (!fs.existsSync(filePath)) return {};
-      const content = fs.readFileSync(filePath, 'utf8');
-      return yaml.load(content) || {};
+      const basePath = filePath.replace(/\.yml$/, '');
+      const resolvedPath = resolveYamlPath(basePath);
+      if (!resolvedPath) return {};
+      return loadYamlFromPath(resolvedPath) || {};
     } catch (e) {
       this.#logger.warn?.('YamlNutriCoachStore.readFile.error', { filePath, error: e.message });
       return {};
@@ -64,8 +63,8 @@ export class YamlNutriCoachStore extends INutriCoachStore {
   }
 
   #writeFile(filePath, data) {
-    this.#ensureDir(path.dirname(filePath));
-    fs.writeFileSync(filePath, yaml.dump(data, { lineWidth: -1 }), 'utf8');
+    ensureDir(path.dirname(filePath));
+    saveYamlToPath(filePath, data);
   }
 
   // ==================== INutriCoachStore Implementation ====================

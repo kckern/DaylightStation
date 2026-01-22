@@ -8,16 +8,59 @@
  * Supports both new names (system.yml) and legacy names (app.yml, config.app.yml).
  *
  * Precedence (highest wins):
- * 1. Resolved paths from pathResolver (DAYLIGHT_DATA_PATH env var)
- * 2. system-local.yml (dev only)
- * 3. secrets.yml
- * 4. apps/*.yml (modular app configs)
- * 5. system.yml (main config, replaces app.yml)
+ * 1. Environment variables (PORT, DAYLIGHT_ENV, etc.)
+ * 2. Machine-specific file (system-local.{hostname}.yml or system-local.docker.yml)
+ * 3. Legacy system-local.yml (backwards compatibility)
+ * 4. secrets.yml
+ * 5. apps/*.yml (modular app configs)
+ * 6. system.yml (main config)
  */
 
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { parse } from 'yaml';
+
+/**
+ * Determine which machine-specific config file to load.
+ * Detection order: DAYLIGHT_ENV > Docker > hostname > legacy fallback
+ *
+ * @param {string} configDir - Config directory path
+ * @param {boolean} isDocker - Whether running in Docker
+ * @returns {string|null} - Config filename to load, or null if none found
+ */
+function getMachineConfigFile(configDir, isDocker) {
+  // 1. Explicit override via env var
+  if (process.env.DAYLIGHT_ENV) {
+    const envFile = `system-local.${process.env.DAYLIGHT_ENV}.yml`;
+    if (fs.existsSync(path.join(configDir, envFile))) {
+      return envFile;
+    }
+    console.warn(`[Config] DAYLIGHT_ENV=${process.env.DAYLIGHT_ENV} but ${envFile} not found, falling back`);
+  }
+
+  // 2. Docker auto-detect
+  if (isDocker) {
+    const dockerFile = 'system-local.docker.yml';
+    if (fs.existsSync(path.join(configDir, dockerFile))) {
+      return dockerFile;
+    }
+  }
+
+  // 3. Hostname-based
+  const hostname = os.hostname();
+  const hostFile = `system-local.${hostname}.yml`;
+  if (fs.existsSync(path.join(configDir, hostFile))) {
+    return hostFile;
+  }
+
+  // 4. Legacy fallback
+  if (fs.existsSync(path.join(configDir, 'system-local.yml'))) {
+    return 'system-local.yml';
+  }
+
+  return null;
+}
 
 /**
  * Safely load and parse a YAML file
@@ -175,14 +218,21 @@ export function loadAllConfig(options = {}) {
   }
 
   // ============================================================
-  // Layer 5: Local overrides (dev only)
+  // Layer 5: Machine-specific overrides
+  // Auto-detects: DAYLIGHT_ENV > Docker > hostname > legacy fallback
   // ============================================================
   let localConfig = null;
-  if (isDev && !isDocker) {
-    const localResult = loadConfigWithFallback(configDir, 'system-local.yml', 'app-local.yml');
-    localConfig = localResult.config;
+  const machineConfigFile = getMachineConfigFile(configDir, isDocker);
+  if (machineConfigFile) {
+    const localPath = path.join(configDir, machineConfigFile);
+    localConfig = safeLoadYaml(localPath);
     if (localConfig) {
-      layers.push({ name: 'local', path: localResult.path, keys: Object.keys(localConfig).length });
+      layers.push({
+        name: 'local',
+        path: localPath,
+        keys: Object.keys(localConfig).length,
+        source: machineConfigFile
+      });
     }
   }
 
