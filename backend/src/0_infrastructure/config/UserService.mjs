@@ -9,18 +9,12 @@
 
 import { configService } from './index.mjs';
 
-// Logger fallback - use console if createLogger unavailable
-let logger;
-try {
-  const { default: createLogger } = await import('#backend/lib/logging/logger.js');
-  logger = createLogger({ app: 'user_service' });
-} catch {
-  logger = {
-    warn: (event, data) => console.warn(`[user_service] ${event}`, data),
-    info: (event, data) => console.info(`[user_service] ${event}`, data),
-    error: (event, data) => console.error(`[user_service] ${event}`, data),
-  };
-}
+// Simple logger - avoid dynamic import to maintain Jest compatibility
+const logger = {
+  warn: (event, data) => console.warn(`[UserService] ${event}`, JSON.stringify(data || {})),
+  info: (event, data) => console.info(`[UserService] ${event}`, JSON.stringify(data || {})),
+  error: (event, data) => console.error(`[UserService] ${event}`, JSON.stringify(data || {})),
+};
 
 export class UserService {
   #configService = null;
@@ -81,15 +75,6 @@ export class UserService {
         birthyear: profile.birthyear,
         group_label: profile.group_label,
       };
-
-      console.log('[UserService] Hydrated user:', {
-        username,
-        'hydrated.id': hydrated.id,
-        'hydrated.profileId': hydrated.profileId,
-        'hydrated.name': hydrated.name,
-        'profile.username': profile.username,
-        'profile.display_name': profile.display_name
-      });
 
       // Add fitness-specific data if available
       const fitnessConfig = profile.apps?.fitness;
