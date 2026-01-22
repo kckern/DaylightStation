@@ -820,7 +820,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     if (now - statusUpdateRef.current.lastSent < 500) return;
     statusUpdateRef.current.inflight = true;
     try {
-      await DaylightAPI('media/log', {
+      await DaylightAPI('api/v1/play/log', {
         title: payload.title,
         type: payload.type,
         media_key: payload.media_key,
