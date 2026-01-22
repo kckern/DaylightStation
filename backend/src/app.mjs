@@ -664,9 +664,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'api-v1' })
   });
 
-  app.use('/api/v1', apiV1Router);
+  // Mount at root since index.js already strips /api/v1 prefix before routing here
+  app.use('/', apiV1Router);
   rootLogger.info('apiV1.mounted', {
-    path: '/api/v1',
+    path: '/ (receives requests after /api/v1 prefix stripped by index.js)',
     routerCount: Object.keys(v1Routers).length,
     routers: Object.keys(v1Routers)
   });
