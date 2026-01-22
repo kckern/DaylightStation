@@ -53,6 +53,34 @@ const DEFAULT_RETAILERS = [
     senders: ['instacart.com', 'noreply@instacart.com', 'receipts@instacart.com'],
     keywords: ['receipt', 'delivery', 'order'],
   },
+  {
+    id: 'heb',
+    name: 'H-E-B',
+    domains: ['heb.com', 'hebgrocery.com'],
+    senders: ['heb.com', 'noreply@heb.com', 'orders@heb.com'],
+    keywords: ['order', 'receipt', 'delivery'],
+  },
+  {
+    id: 'bestbuy',
+    name: 'Best Buy',
+    domains: ['bestbuy.com'],
+    senders: ['bestbuy.com', 'noreply@bestbuy.com', 'orders@bestbuy.com'],
+    keywords: ['order', 'receipt', 'confirmation'],
+  },
+  {
+    id: 'homedepot',
+    name: 'Home Depot',
+    domains: ['homedepot.com'],
+    senders: ['homedepot.com', 'noreply@homedepot.com', 'orders@homedepot.com'],
+    keywords: ['order', 'receipt', 'confirmation'],
+  },
+  {
+    id: 'apple',
+    name: 'Apple',
+    domains: ['apple.com'],
+    senders: ['apple.com', 'noreply@apple.com', 'no_reply@email.apple.com'],
+    keywords: ['order', 'receipt', 'invoice'],
+  },
 ];
 
 const DEFAULT_DAYS_BACK = 7;
@@ -433,6 +461,8 @@ export class ShoppingHarvester extends IHarvester {
             .replace(/<[^>]+>/g, ' ')
             .replace(/&nbsp;/g, ' ')
             .replace(/&amp;/g, '&')
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
             .replace(/\s+/g, ' ')
             .trim();
         }
@@ -511,7 +541,8 @@ Rules:
 - If a field is not found, use null
 - Prices should be numbers without currency symbols
 - Clean up item names (remove SKUs, extra codes)
-- If no items can be extracted, return empty items array`;
+- If no items can be extracted, return empty items array
+- Extract time if present in the receipt`;
 
     const messages = [
       { role: 'system', content: systemPrompt },

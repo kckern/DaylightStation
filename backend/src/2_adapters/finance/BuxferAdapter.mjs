@@ -309,6 +309,51 @@ export class BuxferAdapter {
     }
   }
 
+  // ============ Legacy Compatibility Methods ============
+
+  /**
+   * Process mortgage transactions - simple wrapper for getTransactions
+   * @param {Object} options - Query options
+   * @param {string} options.startDate - Start date (YYYY-MM-DD)
+   * @param {string[]} options.accounts - Account names to query
+   * @returns {Promise<Object[]>} Raw Buxfer transactions
+   */
+  async processMortgageTransactions({ startDate, accounts }) {
+    const endDate = this.getDefaultEndDate();
+    return this.getTransactions({ startDate, endDate, accounts });
+  }
+
+  /**
+   * Delete transactions matching a string in their description
+   * @param {Object} options - Delete options
+   * @param {string} options.accountId - Account ID to search
+   * @param {string} options.matchString - String to match in description (case-insensitive)
+   * @param {string} options.startDate - Start date (YYYY-MM-DD)
+   * @param {string} options.endDate - End date (YYYY-MM-DD)
+   * @returns {Promise<Object[]>} Array of deletion results
+   */
+  async deleteTransactions({ accountId, matchString, startDate, endDate }) {
+    const transactions = await this.getTransactions({ startDate, endDate, accounts: [accountId] });
+    const toDelete = transactions.filter(t =>
+      t.description?.toLowerCase().includes(matchString.toLowerCase())
+    );
+    const results = [];
+    for (const t of toDelete) {
+      results.push(await this.deleteTransaction(t.id));
+    }
+    return results;
+  }
+
+  /**
+   * Get account balances as plain objects (backward compatibility)
+   * @param {string[]} accountNames - Account names to query
+   * @returns {Promise<Object[]>} Plain objects with name and balance
+   */
+  async getAccountBalancesLegacy(accountNames = []) {
+    const accounts = await this.getAccountBalances(accountNames);
+    return accounts.map(a => ({ name: a.name, balance: a.balance }));
+  }
+
   // ============ Batch Processing ============
 
   /**
