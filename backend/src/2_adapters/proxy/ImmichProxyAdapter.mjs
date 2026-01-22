@@ -7,6 +7,8 @@
  * @module adapters/proxy
  */
 
+import { configService } from '../../0_infrastructure/config/index.mjs';
+
 /**
  * @implements {import('../../0_infrastructure/proxy/IProxyAdapter.mjs').IProxyAdapter}
  */
@@ -111,13 +113,14 @@ export class ImmichProxyAdapter {
 }
 
 /**
- * Create an ImmichProxyAdapter from environment config
+ * Create an ImmichProxyAdapter from ConfigService
  * @param {Object} [options]
  * @returns {ImmichProxyAdapter}
  */
 export function createImmichProxyAdapter(options = {}) {
-  const host = process.env.immich?.host || process.env.IMMICH_HOST;
-  const apiKey = process.env.immich?.apiKey || process.env.IMMICH_API_KEY;
+  const adapterConfig = configService.getAdapterConfig('immich') || {};
+  const host = adapterConfig.host;
+  const apiKey = configService.getSecret('IMMICH_API_KEY');
 
   return new ImmichProxyAdapter({ host, apiKey }, options);
 }

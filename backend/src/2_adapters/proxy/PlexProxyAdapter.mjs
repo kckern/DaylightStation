@@ -7,6 +7,8 @@
  * @module adapters/proxy
  */
 
+import { configService } from '../../0_infrastructure/config/index.mjs';
+
 /**
  * @implements {import('../../0_infrastructure/proxy/IProxyAdapter.mjs').IProxyAdapter}
  */
@@ -115,14 +117,15 @@ export class PlexProxyAdapter {
 }
 
 /**
- * Create a PlexProxyAdapter from environment config
+ * Create a PlexProxyAdapter from ConfigService
  * @param {Object} [options]
  * @param {Object} [options.logger] - Logger instance
  * @returns {PlexProxyAdapter}
  */
 export function createPlexProxyAdapter(options = {}) {
-  const host = process.env.plex?.host || process.env.PLEX_HOST;
-  const token = process.env.plex?.token || process.env.PLEX_TOKEN;
+  const adapterConfig = configService.getAdapterConfig('plex') || {};
+  const host = adapterConfig.host;
+  const token = configService.getSecret('PLEX_TOKEN');
 
   return new PlexProxyAdapter({ host, token }, options);
 }
