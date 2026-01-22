@@ -28,10 +28,10 @@ const checkUrlStatus = async (url, config={}) => {
   */
 
 const checkInternet       = () => checkUrlStatus('http://www.msftncsi.com/ncsi.txt');
-const checkDaylightServer = () => checkUrlStatus(DaylightMediaPath('/api/ping'));
-const checkDaylightAPI    = () => checkUrlStatus(DaylightMediaPath('/api/status'));
-const checkMediaInfoURL   = (plexId) => checkUrlStatus(DaylightMediaPath(`/media/plex/info/${plexId}`));
-const checkMediaURL       = (plexId) => checkUrlStatus(DaylightMediaPath(`/media/plex/mpd/${plexId}`));
+const checkDaylightServer = () => checkUrlStatus(DaylightMediaPath('/api/v1/ping'));
+const checkDaylightAPI    = () => checkUrlStatus(DaylightMediaPath('/api/v1/status'));
+const checkMediaInfoURL   = (plexId) => checkUrlStatus(DaylightMediaPath(`/api/v1/content/plex/info/${plexId}`));
+const checkMediaURL       = (plexId) => checkUrlStatus(DaylightMediaPath(`/api/v1/play/plex/mpd/${plexId}`));
 
 /**
  * Debug information component for diagnosing media loading issues
