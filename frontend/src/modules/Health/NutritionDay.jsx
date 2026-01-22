@@ -70,7 +70,7 @@ const NutritionDay = ({ selectedDate, selectedDateData, onDataUpdate }) => {
             console.log('Deleting item with UUID:', uuid);
             console.log('API URL:', `health/nutrilist/${uuid}`);
             
-            const response = await DaylightAPI(`health/nutrilist/${uuid}`, {}, 'DELETE');
+            const response = await DaylightAPI(`api/v1/health/nutrilist/${uuid}`, {}, 'DELETE');
             console.log('Delete API Response:', response);
             
             if (response && (response.message || response.uuid)) {
@@ -142,7 +142,7 @@ const NutritionDay = ({ selectedDate, selectedDateData, onDataUpdate }) => {
             console.log('Update data:', updateData);
             console.log('API URL:', `health/nutrilist/${uuid}`);
 
-            const response = await DaylightAPI(`health/nutrilist/${uuid}`, updateData, 'PUT');
+            const response = await DaylightAPI(`api/v1/health/nutrilist/${uuid}`, updateData, 'PUT');
             console.log('API Response:', response);
             
             if (response && (response.message || response.data)) {

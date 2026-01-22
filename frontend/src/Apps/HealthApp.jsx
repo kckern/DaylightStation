@@ -14,7 +14,7 @@ const HealthApp = () => {
   useEffect(() => {
     const fetchHealthData = async () => {
       try {
-        const response = await DaylightAPI('/api/health/status');
+        const response = await DaylightAPI('/api/v1/health/status');
         setHealthMessage(response);
       } catch (error) {
         logger.error('health.fetch.failed', { message: error?.message, name: error?.name });

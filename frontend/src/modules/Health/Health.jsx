@@ -13,7 +13,7 @@ export default function Health() {
     const [weightData, setWeightData] = useState([]);
     const [today, setToday] = useState({});
   const reloadData = () => {
-    DaylightAPI('/data/lifelog/weight').then((response) => {
+    DaylightAPI('/api/v1/lifelog/weight').then((response) => {
         
         const list = response || [];
         const keys = Object.keys(list);
