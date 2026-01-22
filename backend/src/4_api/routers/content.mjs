@@ -73,9 +73,47 @@ export function createContentRouter(registry, watchStore = null, options = {}) {
         }
       }
 
+      // Get container info for show metadata
+      const compoundId = source === 'folder' || source === 'local' ? `folder:${localId}` : `${source}:${localId}`;
+      const containerInfo = adapter.getItem ? await adapter.getItem(compoundId) : null;
+
+      // Build info object for FitnessShow compatibility
+      let info = null;
+      if (adapter.getContainerInfo) {
+        info = await adapter.getContainerInfo(compoundId);
+      }
+
+      // Build seasons map from items' season metadata (for playable mode)
+      let seasons = null;
+      if (playable && items.length > 0) {
+        const seasonsMap = {};
+        for (const item of items) {
+          const seasonId = item.metadata?.seasonId || item.metadata?.parent;
+          if (seasonId && !seasonsMap[seasonId]) {
+            seasonsMap[seasonId] = {
+              num: item.metadata?.seasonNumber ?? item.metadata?.parentIndex,
+              title: item.metadata?.seasonName || item.metadata?.parentTitle || `Season`,
+              img: item.metadata?.seasonThumbUrl || item.metadata?.parentThumb || item.metadata?.showThumbUrl || item.metadata?.grandparentThumb
+            };
+          }
+        }
+        if (Object.keys(seasonsMap).length > 0) {
+          seasons = seasonsMap;
+        }
+      }
+
       res.json({
+        // Add plex field for plex source (matches prod format)
+        ...(source === 'plex' && { plex: localId }),
+        // Legacy compat field
+        media_key: localId,
         source,
         path: localId,
+        title: containerInfo?.title || localId,
+        label: containerInfo?.title || localId,
+        image: containerInfo?.thumbnail,
+        info,
+        seasons,
         items: items.map(item => {
           // Flatten metadata fields to top level for legacy compatibility
           const metadata = item.metadata || {};
