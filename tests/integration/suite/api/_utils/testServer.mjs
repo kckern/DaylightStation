@@ -22,28 +22,24 @@ import {
   initConfigService,
   resetConfigService,
   configService
-} from '#backend/_legacy/lib/config/index.mjs';
-import { resolveConfigPaths } from '#backend/_legacy/lib/config/pathResolver.mjs';
+} from '#backend/src/0_infrastructure/config/index.mjs';
 
 /**
  * Load test configuration from ConfigService and system-local.yml.
- * Uses pathResolver to discover data path, then reads local overrides.
+ * Uses DAYLIGHT_DATA_PATH directly (no pathResolver needed).
  */
 export async function loadTestConfig() {
   const yaml = await import('js-yaml');
 
-  // Use pathResolver to discover data path (respects DAYLIGHT_DATA_PATH)
-  const codebaseDir = path.resolve(__dirname, '../../../..');
-  const configPaths = resolveConfigPaths({ codebaseDir });
+  // Use DAYLIGHT_DATA_PATH directly (no pathResolver needed)
+  const dataPath = process.env.DAYLIGHT_DATA_PATH;
 
-  if (!configPaths.dataDir) {
+  if (!dataPath) {
     throw new Error(
-      'TEST CONFIG ERROR: Data path not configured.\n' +
-      'Set DAYLIGHT_DATA_PATH environment variable.'
+      'TEST CONFIG ERROR: DAYLIGHT_DATA_PATH not set.\n' +
+      'Add it to your .env file.'
     );
   }
-
-  const dataPath = configPaths.dataDir;
 
   if (!fs.existsSync(dataPath)) {
     throw new Error(
@@ -52,46 +48,31 @@ export async function loadTestConfig() {
     );
   }
 
-  // Load system-local.yml for local overrides (paths, plex host, etc.)
+  // Load system-local.yml for local overrides
+  const envName = process.env.DAYLIGHT_ENV;
   let localConfig = {};
-  const systemLocalYmlPath = path.join(dataPath, 'system', 'system-local.yml');
-  if (fs.existsSync(systemLocalYmlPath)) {
-    localConfig = yaml.load(fs.readFileSync(systemLocalYmlPath, 'utf8')) || {};
+  if (envName) {
+    const localPath = path.join(dataPath, 'system', `system-local.${envName}.yml`);
+    if (fs.existsSync(localPath)) {
+      localConfig = yaml.load(fs.readFileSync(localPath, 'utf8')) || {};
+    }
   }
 
-  // Get media path from system-local.yml, fall back to data path
-  const mediaPath = localConfig.path?.media || dataPath;
+  // Get media path from local config or default
+  const mediaPath = localConfig.paths?.media || path.join(dataPath, '../media');
 
-  // Initialize ConfigService for auth lookups
-  let plexConfig = { host: null, token: null };
-  try {
-    if (configService.isReady()) {
-      resetConfigService();
-    }
-    initConfigService(dataPath);
-
-    // Get Plex token from household auth
-    const plexAuth = configService.getHouseholdAuth('plex');
-    if (plexAuth?.token) {
-      plexConfig.token = plexAuth.token;
-    }
-
-    // Get Plex host from system.yml first
-    const systemYmlPath = path.join(dataPath, 'system', 'system.yml');
-    if (fs.existsSync(systemYmlPath)) {
-      const systemConfig = yaml.load(fs.readFileSync(systemYmlPath, 'utf8'));
-      if (systemConfig?.plex?.host) {
-        plexConfig.host = systemConfig.plex.host;
-      }
-    }
-
-    // Override with system-local.yml (local dev environment)
-    if (localConfig.plex?.host) {
-      plexConfig.host = localConfig.plex.host;
-    }
-  } catch (err) {
-    console.warn('[testServer] Config loading failed:', err.message);
+  // Initialize ConfigService
+  if (configService.isReady()) {
+    resetConfigService();
   }
+  initConfigService(dataPath);
+
+  // Get Plex config from ConfigService
+  const plexAuth = configService.getHouseholdAuth('plex') || {};
+  const plexConfig = {
+    host: plexAuth.server_url || localConfig.plex?.host || null,
+    token: plexAuth.token || null
+  };
 
   return {
     mounts: {
@@ -99,7 +80,7 @@ export async function loadTestConfig() {
       media: mediaPath
     },
     plex: plexConfig,
-    householdId: process.env.HOUSEHOLD_ID || 'default'
+    householdId: configService.getDefaultHouseholdId()
   };
 }
 
