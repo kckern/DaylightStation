@@ -10,15 +10,14 @@ import path, { join } from 'path';
 import 'dotenv/config';
 
 // Config imports - using new infrastructure
-import { resolveConfigPaths, getConfigFilePaths } from '../_legacy/lib/config/pathResolver.mjs';
-import { initConfigService, ConfigValidationError } from './0_infrastructure/config/index.mjs';
+import { initConfigService, configService, ConfigValidationError } from './0_infrastructure/config/index.mjs';
 import { hydrateProcessEnvFromConfigs } from '../_legacy/lib/logging/config.js';
 
 // Logging imports (use the new src/ logging)
 import { initializeLogging } from './0_infrastructure/logging/dispatcher.js';
 import { createConsoleTransport, createFileTransport, createLogglyTransport } from './0_infrastructure/logging/transports/index.js';
 import { createLogger } from './0_infrastructure/logging/logger.js';
-import { loadLoggingConfig, resolveLoggerLevel, getLoggingTags, resolveLogglyToken } from '../_legacy/lib/logging/config.js';
+import { loadLoggingConfig, resolveLoggerLevel, getLoggingTags } from '../_legacy/lib/logging/config.js';
 
 // App factory
 import { createApp } from './app.mjs';
@@ -31,37 +30,46 @@ async function main() {
   // Configuration
   // ==========================================================================
 
-  const configPaths = resolveConfigPaths({ isDocker, codebaseDir: join(__dirname, '..', '..') });
+  // Detect data directory from environment (same pattern as index.js)
+  const dataDir = isDocker
+    ? '/usr/src/app/data'
+    : process.env.DAYLIGHT_DATA_PATH;
 
-  if (configPaths.error) {
-    console.error('[FATAL] Configuration error:', configPaths.error);
-    console.error('[FATAL] Set DAYLIGHT_CONFIG_PATH and DAYLIGHT_DATA_PATH environment variables');
+  if (!dataDir) {
+    console.error('[FATAL] DAYLIGHT_DATA_PATH not set. Cannot start.');
     process.exit(1);
   }
 
-  console.log(`[Config] Source: ${configPaths.source}, Config: ${configPaths.configDir}`);
+  // Derive config paths from data directory
+  const configDir = join(dataDir, 'system');
+  const configExists = existsSync(join(configDir, 'system.yml')) || existsSync(join(configDir, 'app.yml'));
 
-  // Check for config files
-  const configFiles = getConfigFilePaths(configPaths.configDir);
-  const configExists = configFiles && existsSync(configFiles.system);
+  console.log(`[Config] Source: ${isDocker ? 'docker' : 'env'}, dataDir: ${dataDir}`);
 
   // Hydrate process.env with config values (for logging)
-  hydrateProcessEnvFromConfigs(configPaths.configDir);
+  hydrateProcessEnvFromConfigs(configDir);
 
   // Initialize ConfigService v2
   try {
-    initConfigService(configPaths.dataDir);
+    initConfigService(dataDir);
     console.log('[Config] ConfigService initialized');
   } catch (err) {
     if (err instanceof ConfigValidationError) {
       console.error('[FATAL] Config validation failed:', err.message);
       process.exit(1);
     }
-    throw err;
+    // Ignore "already initialized" errors
+    if (!err.message?.includes('already initialized')) {
+      throw err;
+    }
   }
 
-  // Note: Config loading and process.env setup happens in createApp()
-  // We no longer spread config into process.env here - createApp handles this
+  // Build configPaths object for createApp (uses ConfigService values)
+  const configPaths = {
+    dataDir: configService.getDataDir(),
+    configDir: configService.getConfigDir(),
+    source: isDocker ? 'docker' : 'env'
+  };
 
   // ==========================================================================
   // Logging
@@ -92,9 +100,9 @@ async function main() {
     console.log('[Logging] File transport enabled: dev.log (max 50MB, 3 files)');
   }
 
-  // Loggly transport if configured
-  const logglyToken = resolveLogglyToken();
-  const logglySubdomain = process.env.LOGGLY_SUBDOMAIN || process.env.LOGGLY_SUB_DOMAIN;
+  // Loggly transport if configured (use ConfigService for secrets)
+  const logglyToken = configService.getSecret('LOGGLY_TOKEN');
+  const logglySubdomain = configService.getSecret('LOGGLY_SUBDOMAIN');
   if (logglyToken && logglySubdomain) {
     dispatcher.addTransport(createLogglyTransport({
       token: logglyToken,
@@ -123,7 +131,7 @@ async function main() {
   // Start Server
   // ==========================================================================
 
-  const port = process.env.PORT || 3111;
+  const port = configService.getPort();
   server.listen(port, '0.0.0.0', () => {
     logger.info('server.started', { port, host: '0.0.0.0', mode: 'standalone-new' });
   });
