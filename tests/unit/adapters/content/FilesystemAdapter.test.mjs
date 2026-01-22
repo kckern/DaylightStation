@@ -150,6 +150,97 @@ describe('FilesystemAdapter', () => {
     });
   });
 
+  describe('getCoverArt', () => {
+    test('should return cover art for valid image type and size', async () => {
+      const adapter = new FilesystemAdapter({ mediaBasePath: fixturesPath });
+
+      const mockImageData = new Uint8Array(1024); // 1KB image
+      adapter._parseFile = jest.fn().mockResolvedValue({
+        common: {
+          picture: [{
+            format: 'image/jpeg',
+            data: mockImageData
+          }]
+        }
+      });
+
+      const result = await adapter.getCoverArt('audio/test.mp3');
+
+      expect(result).not.toBeNull();
+      expect(result.mimeType).toBe('image/jpeg');
+      expect(result.buffer).toBeInstanceOf(Buffer);
+    });
+
+    test('should return null for invalid MIME type', async () => {
+      const adapter = new FilesystemAdapter({ mediaBasePath: fixturesPath });
+
+      adapter._parseFile = jest.fn().mockResolvedValue({
+        common: {
+          picture: [{
+            format: 'image/bmp', // Not in VALID_IMAGE_TYPES
+            data: new Uint8Array(1024)
+          }]
+        }
+      });
+
+      const result = await adapter.getCoverArt('audio/test.mp3');
+      expect(result).toBeNull();
+    });
+
+    test('should return null for oversized images', async () => {
+      const adapter = new FilesystemAdapter({ mediaBasePath: fixturesPath });
+
+      // Create data larger than 10MB limit
+      const hugeData = new Uint8Array(11 * 1024 * 1024);
+      adapter._parseFile = jest.fn().mockResolvedValue({
+        common: {
+          picture: [{
+            format: 'image/jpeg',
+            data: hugeData
+          }]
+        }
+      });
+
+      const result = await adapter.getCoverArt('audio/test.mp3');
+      expect(result).toBeNull();
+    });
+
+    test('should return null for file without cover art', async () => {
+      const adapter = new FilesystemAdapter({ mediaBasePath: fixturesPath });
+
+      adapter._parseFile = jest.fn().mockResolvedValue({
+        common: {}
+      });
+
+      const result = await adapter.getCoverArt('audio/test.mp3');
+      expect(result).toBeNull();
+    });
+
+    test('should log warning on parse error', async () => {
+      const adapter = new FilesystemAdapter({ mediaBasePath: fixturesPath });
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+      adapter._parseFile = jest.fn().mockRejectedValue(new Error('Parse failed'));
+
+      const result = await adapter.getCoverArt('audio/test.mp3');
+
+      expect(result).toBeNull();
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Failed to parse cover art'),
+        'Parse failed'
+      );
+
+      warnSpy.mockRestore();
+    });
+
+    test('should return null for unresolvable path', async () => {
+      const adapter = new FilesystemAdapter({ mediaBasePath: fixturesPath });
+
+      const result = await adapter.getCoverArt('nonexistent/file.mp3');
+      expect(result).toBeNull();
+    });
+  });
+
   describe('image MIME types', () => {
     it('should detect SVG files', () => {
       const adapter = new FilesystemAdapter({ mediaBasePath: '/test' });
