@@ -26,7 +26,7 @@ export function useFetchPlexData(plexId) {
 
     async function fetchData() {
       try {
-        const response = await DaylightAPI(`media/plex/list/${plexId}`);
+        const response = await DaylightAPI(`api/v1/content/plex/list/${plexId}`);
         if (!canceled) {
           setData(response);
           setLoading(false);
