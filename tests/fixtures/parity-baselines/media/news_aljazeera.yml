@@ -1,9 +1,0 @@
-_meta:
-  captured_at: '2026-01-21T22:56:34.364Z'
-  source_id: news/aljazeera
-  legacy_endpoint: /media/local/news/aljazeera
-  source_label: News
-  source_uid: 9172233c-2980-430c-924b-5ecf72d00da6
-response:
-  status: 200
-  body: null

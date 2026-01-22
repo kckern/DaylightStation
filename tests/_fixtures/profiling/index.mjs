@@ -2,7 +2,7 @@
  * Profiling utilities for memory leak detection
  *
  * @example
- * import { MemoryProfiler, TimerTracker, LeakAssertions, TIMER_TRACKER_SCRIPT } from '../../_fixtures/profiling/index.mjs';
+ * import { MemoryProfiler, TimerTracker, LeakAssertions, TIMER_TRACKER_SCRIPT } from '@fixtures/profiling/index.mjs';
  */
 
 export { MemoryProfiler } from './MemoryProfiler.mjs';
