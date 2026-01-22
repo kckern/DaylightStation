@@ -13,10 +13,22 @@
  * - GET  /api/fitness/zone_led/status - Get LED controller status
  * - GET  /api/fitness/zone_led/metrics - Get LED controller metrics
  * - POST /api/fitness/zone_led/reset - Reset LED controller state
+ * - POST /api/fitness/simulate - Start fitness simulation
+ * - DELETE /api/fitness/simulate - Stop running simulation
+ * - GET  /api/fitness/simulate/status - Get simulation status
  */
 import express from 'express';
-import fs from 'fs';
 import path from 'path';
+import { spawn } from 'child_process';
+import { ensureDir, writeBinary } from '../../0_infrastructure/utils/FileIO.mjs';
+
+// Module-level state for simulation process
+const simulationState = {
+  process: null,
+  pid: null,
+  startedAt: null,
+  config: null
+};
 
 /**
  * Create fitness API router
@@ -206,11 +218,11 @@ export function createFitnessRouter(config) {
       const filename = `${paths.sessionDate}_${indexFragment}.${extension}`;
 
       // Ensure directories exist
-      fs.mkdirSync(paths.screenshotsDir, { recursive: true });
+      ensureDir(paths.screenshotsDir);
 
       // Write file
       const filePath = path.join(paths.screenshotsDir, filename);
-      fs.writeFileSync(filePath, buffer);
+      writeBinary(filePath, buffer);
 
       const relativePath = `${paths.screenshotsRelativeBase}/${filename}`;
 
@@ -345,6 +357,109 @@ export function createFitnessRouter(config) {
     const result = zoneLedController.reset();
     result.resetBy = req.ip || 'unknown';
     res.json(result);
+  });
+
+  // =============================================================================
+  // Simulation Endpoints
+  // =============================================================================
+
+  /**
+   * POST /api/fitness/simulate - Start fitness simulation
+   * Body: { duration?: number, users?: number, rpm?: number }
+   */
+  router.post('/simulate', (req, res) => {
+    // Check if already running
+    if (simulationState.process && !simulationState.process.killed) {
+      return res.json({
+        started: false,
+        alreadyRunning: true,
+        pid: simulationState.pid,
+        startedAt: simulationState.startedAt,
+        config: simulationState.config
+      });
+    }
+
+    const { duration = 120, users = 0, rpm = 0 } = req.body || {};
+
+    const args = [`--duration=${duration}`];
+    if (users > 0) args.push(String(users));
+    if (rpm > 0) args.push(String(users > 0 ? users : 0), String(rpm));
+
+    const scriptPath = path.join(process.cwd(), '_extensions/fitness/simulation.mjs');
+
+    logger.info?.('fitness.simulate.start', { duration, users, rpm, scriptPath });
+
+    try {
+      const proc = spawn('node', [scriptPath, ...args], {
+        detached: true,
+        stdio: 'ignore'
+      });
+      proc.unref();
+
+      simulationState.process = proc;
+      simulationState.pid = proc.pid;
+      simulationState.startedAt = Date.now();
+      simulationState.config = { duration, users, rpm };
+
+      // Auto-clear state when process exits
+      proc.on('exit', () => {
+        simulationState.process = null;
+        simulationState.pid = null;
+        simulationState.startedAt = null;
+        simulationState.config = null;
+        logger.info?.('fitness.simulate.exited');
+      });
+
+      return res.json({
+        started: true,
+        pid: proc.pid,
+        config: { duration, users, rpm }
+      });
+    } catch (err) {
+      logger.error?.('fitness.simulate.spawn-failed', { error: err.message });
+      return res.status(500).json({ error: 'Failed to start simulation', message: err.message });
+    }
+  });
+
+  /**
+   * DELETE /api/fitness/simulate - Stop running simulation
+   */
+  router.delete('/simulate', (req, res) => {
+    if (!simulationState.pid) {
+      return res.json({ stopped: false, error: 'no simulation running' });
+    }
+
+    try {
+      process.kill(simulationState.pid, 'SIGTERM');
+
+      const stoppedPid = simulationState.pid;
+      simulationState.process = null;
+      simulationState.pid = null;
+      simulationState.startedAt = null;
+      simulationState.config = null;
+
+      logger.info?.('fitness.simulate.stopped', { pid: stoppedPid });
+
+      return res.json({ stopped: true, pid: stoppedPid });
+    } catch (err) {
+      logger.error?.('fitness.simulate.stop-failed', { error: err.message });
+      return res.status(500).json({ error: 'Failed to stop simulation', message: err.message });
+    }
+  });
+
+  /**
+   * GET /api/fitness/simulate/status - Get current simulation status
+   */
+  router.get('/simulate/status', (req, res) => {
+    const running = !!(simulationState.process && !simulationState.process.killed);
+
+    return res.json({
+      running,
+      pid: running ? simulationState.pid : null,
+      startedAt: running ? simulationState.startedAt : null,
+      config: running ? simulationState.config : null,
+      runningSince: running ? Date.now() - simulationState.startedAt : null
+    });
   });
 
   return router;
