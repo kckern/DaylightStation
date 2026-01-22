@@ -289,6 +289,8 @@ export function createListRouter(config) {
       }
 
       res.json({
+        // Add plex field for plex source (matches prod format)
+        ...(source === 'plex' && { plex: localId }),
         // Legacy compat field - frontend uses this for menu logging
         media_key: localId,
         source,
