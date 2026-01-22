@@ -16,6 +16,7 @@
 import { google } from 'googleapis';
 import { IHarvester, HarvesterCategory } from '../ports/IHarvester.mjs';
 import { CircuitBreaker } from '../CircuitBreaker.mjs';
+import { configService } from '../../../0_infrastructure/config/index.mjs';
 
 /**
  * Gmail email harvester
@@ -182,9 +183,11 @@ export class GmailHarvester extends IHarvester {
    * @private
    */
   async #createGmailClient(username) {
-    const { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI } = process.env;
+    const GOOGLE_CLIENT_ID = configService.getSecret('GOOGLE_CLIENT_ID');
+    const GOOGLE_CLIENT_SECRET = configService.getSecret('GOOGLE_CLIENT_SECRET');
+    const GOOGLE_REDIRECT_URI = configService.getSecret('GOOGLE_REDIRECT_URI');
     const auth = this.#configService?.getUserAuth?.('google', username) || {};
-    const refreshToken = auth.refresh_token || process.env.GOOGLE_REFRESH_TOKEN;
+    const refreshToken = auth.refresh_token || configService.getSecret('GOOGLE_REFRESH_TOKEN');
 
     if (!(GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET && GOOGLE_REDIRECT_URI && refreshToken)) {
       throw new Error('Gmail credentials not found');

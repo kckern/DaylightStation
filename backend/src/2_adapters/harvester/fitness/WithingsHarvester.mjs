@@ -16,6 +16,7 @@
 import moment from 'moment-timezone';
 import { IHarvester, HarvesterCategory } from '../ports/IHarvester.mjs';
 import { CircuitBreaker } from '../CircuitBreaker.mjs';
+import { configService } from '../../../0_infrastructure/config/index.mjs';
 
 /**
  * Withings measurement type codes
@@ -57,7 +58,7 @@ export class WithingsHarvester extends IHarvester {
     lifelogStore,
     authStore,
     configService,
-    timezone = process.env.TZ || 'America/Los_Angeles',
+    timezone = configService?.isReady?.() ? configService.getTimezone() : 'America/Los_Angeles',
     logger = console,
   }) {
     super();
@@ -205,12 +206,12 @@ export class WithingsHarvester extends IHarvester {
       // Get credentials
       const clientId = this.#configService?.getSecret?.('WITHINGS_CLIENT_ID') ||
                        this.#configService?.getSecret?.('WITHINGS_CLIENT') ||
-                       process.env.WITHINGS_CLIENT_ID;
+                       configService.getSecret('WITHINGS_CLIENT_ID');
       const clientSecret = this.#configService?.getSecret?.('WITHINGS_CLIENT_SECRET') ||
                           this.#configService?.getSecret?.('WITHINGS_SECRET') ||
-                          process.env.WITHINGS_CLIENT_SECRET;
+                          configService.getSecret('WITHINGS_CLIENT_SECRET');
       const redirectUri = this.#configService?.getSecret?.('WITHINGS_REDIRECT') ||
-                         process.env.WITHINGS_REDIRECT;
+                         configService.getSecret('WITHINGS_REDIRECT');
 
       if (!clientId || !clientSecret) {
         this.#logger.error?.('withings.auth.credentials_missing', { message: 'WITHINGS_CLIENT_ID/SECRET missing' });
