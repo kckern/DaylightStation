@@ -263,7 +263,7 @@ export function createListRouter(config) {
 
       // Build info object for FitnessShow compatibility
       let info = null;
-      if (modifiers.playable && adapter.getContainerInfo) {
+      if (adapter.getContainerInfo) {
         info = await adapter.getContainerInfo(compoundId);
       }
 

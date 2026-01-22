@@ -801,7 +801,17 @@ export class PlexAdapter {
       // Legacy: item['labels'] = item.Label? item.Label.map(x => x['tag'].toLowerCase()) : [];
       const labels = this._extractLabels(item.Label);
 
+      // Extract collections from Collection array
+      const collections = [];
+      if (Array.isArray(item.Collection)) {
+        for (const col of item.Collection) {
+          if (typeof col === 'string') collections.push(col);
+          else if (col?.tag) collections.push(col.tag);
+        }
+      }
+
       return {
+        key: localId,
         title: item.title,
         image: item.thumb ? `/plex_proxy${item.thumb}` : null,
         summary: item.summary || null,
@@ -811,6 +821,7 @@ export class PlexAdapter {
         type: item.type || null,
         contentType: item.type || null,
         labels,
+        collections,
         // Additional fields that might be useful
         duration: item.duration ? Math.floor(item.duration / 1000) : null,
         ratingKey: item.ratingKey,
