@@ -13,50 +13,64 @@
 
 import fs from 'fs';
 import path from 'path';
+import yaml from 'js-yaml';
 import { configService } from './index.mjs';
 import { createLogger } from '../logging/logger.js';
-import { loadFile, saveFile } from '../../../_legacy/lib/io.mjs';
 
 const logger = createLogger({
   source: 'backend',
   app: 'user-data-service'
 });
 
-// Track deprecation warnings to avoid spam
-const deprecationWarnings = new Set();
-
 /**
- * Convert absolute path to relative path for io.mjs
- * io.mjs expects paths relative to process.env.path.data
+ * Read YAML file and parse contents
+ * @param {string} absolutePath - Full path to YAML file
+ * @returns {object|null}
  */
-const toRelativePath = (absolutePath) => {
-  const dataDir = configService.getDataDir() || process.env.path?.data;
-  if (!dataDir) return null;
-  if (absolutePath.startsWith(dataDir)) {
-    return absolutePath.slice(dataDir.length).replace(/^[/\\]+/, '');
+const readYamlFile = (absolutePath) => {
+  try {
+    if (!fs.existsSync(absolutePath)) return null;
+    const content = fs.readFileSync(absolutePath, 'utf8');
+    return yaml.load(content) || null;
+  } catch (err) {
+    logger.warn('yaml.read.error', { path: absolutePath, error: err.message });
+    return null;
   }
-  return absolutePath;
 };
 
 /**
- * Read YAML file using io.mjs (with write queue protection on saves)
+ * Write data to YAML file with directory creation
+ * @param {string} absolutePath - Full path to YAML file
+ * @param {object} data - Data to write
+ * @returns {boolean}
+ */
+const writeYamlFile = (absolutePath, data) => {
+  try {
+    const dir = path.dirname(absolutePath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    const content = yaml.dump(data, { lineWidth: -1, quotingType: '"' });
+    fs.writeFileSync(absolutePath, content, 'utf8');
+    return true;
+  } catch (err) {
+    logger.error('yaml.write.error', { path: absolutePath, error: err.message });
+    return false;
+  }
+};
+
+/**
+ * Read YAML file (wrapper for readYamlFile)
  */
 const readYaml = (absolutePath) => {
-  const relativePath = toRelativePath(absolutePath);
-  if (!relativePath) return null;
-  // Strip .yml/.yaml extension - io.mjs adds it back
-  const pathWithoutExt = relativePath.replace(/\.(ya?ml)$/, '');
-  return loadFile(pathWithoutExt);
+  return readYamlFile(absolutePath);
 };
 
 /**
- * Write YAML file using io.mjs (with write queue for concurrency safety)
+ * Write YAML file (wrapper for writeYamlFile)
  */
 const writeYaml = (absolutePath, data) => {
-  const relativePath = toRelativePath(absolutePath);
-  if (!relativePath) return false;
-  const pathWithoutExt = relativePath.replace(/\.(ya?ml)$/, '');
-  return saveFile(pathWithoutExt, data);
+  return writeYamlFile(absolutePath, data);
 };
 
 /**
@@ -513,9 +527,13 @@ class UserDataService {
       }
     }
 
-    // Fall back to legacy path using io.mjs loadFile
-    // (io.mjs handles deprecation warnings internally)
-    return loadFile(legacyPath);
+    // Fall back to legacy path directly
+    this.#ensureInitialized();
+    let fullPath = path.join(this.#dataDir, legacyPath);
+    if (!fullPath.match(/\.(ya?ml|json)$/)) {
+      fullPath += '.yml';
+    }
+    return readYaml(fullPath);
   }
 
   /**
