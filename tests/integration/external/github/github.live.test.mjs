@@ -8,7 +8,7 @@
  * - Optional: GitHub token for private repos and higher rate limits
  */
 
-import { configService } from '#backend/_legacy/lib/config/index.mjs';
+import { configService } from '#backend/src/0_infrastructure/config/index.mjs';
 import getGitHubActivity from '#backend/_legacy/lib/github.mjs';
 
 describe('GitHub Live Integration', () => {

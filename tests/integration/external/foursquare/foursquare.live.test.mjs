@@ -7,7 +7,7 @@
  * - Foursquare OAuth token in users/{username}/auth/foursquare.yml
  */
 
-import { configService } from '#backend/_legacy/lib/config/index.mjs';
+import { configService } from '#backend/src/0_infrastructure/config/index.mjs';
 import getCheckins from '#backend/_legacy/lib/foursquare.mjs';
 
 describe('Foursquare Live Integration', () => {

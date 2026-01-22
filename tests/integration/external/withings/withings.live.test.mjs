@@ -8,7 +8,7 @@
  * - Valid refresh token in users/{username}/auth/withings.yml
  */
 
-import { configService } from '#backend/_legacy/lib/config/index.mjs';
+import { configService } from '#backend/src/0_infrastructure/config/index.mjs';
 import getWeightData, { isWithingsInCooldown } from '#backend/_legacy/lib/withings.mjs';
 
 describe('Withings Live Integration', () => {

@@ -8,7 +8,7 @@
  * - OAuth refresh token in users/{username}/auth/gmail.yml
  */
 
-import { configService } from '#backend/_legacy/lib/config/index.mjs';
+import { configService } from '#backend/src/0_infrastructure/config/index.mjs';
 import listMails from '#backend/_legacy/lib/gmail.mjs';
 
 describe('Gmail Live Integration', () => {
