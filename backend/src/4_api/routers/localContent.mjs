@@ -4,6 +4,7 @@ import path from 'path';
 import { parseFile } from 'music-metadata';
 import { lookupReference, generateReference } from 'scripture-guide';
 import { dirExists, listDirs, getStats, findMediaFileByPrefix } from '../../0_infrastructure/utils/FileIO.mjs';
+import { generatePlaceholderImage } from '../../0_infrastructure/utils/placeholderImage.mjs';
 
 // Volume to first verse_id mapping (for determining volume from verse_id)
 const VOLUME_RANGES = {
@@ -349,6 +350,47 @@ export function createLocalContentRouter(config) {
       console.error('[localContent] poem error:', err);
       res.status(500).json({ error: err.message });
     }
+  });
+
+  /**
+   * GET /api/local-content/cover/*
+   * Returns cover art from embedded ID3 or placeholder
+   */
+  router.get('/cover/*', async (req, res) => {
+    const mediaKey = req.params[0] || '';
+
+    if (!mediaKey) {
+      return res.status(400).json({ error: 'No media key provided' });
+    }
+
+    // Try filesystem adapter for cover art extraction
+    const fsAdapter = registry.get('filesystem');
+
+    if (fsAdapter?.getCoverArt) {
+      try {
+        const coverArt = await fsAdapter.getCoverArt(mediaKey);
+
+        if (coverArt) {
+          res.set({
+            'Content-Type': coverArt.mimeType,
+            'Content-Length': coverArt.buffer.length,
+            'Cache-Control': 'public, max-age=86400'
+          });
+          return res.send(coverArt.buffer);
+        }
+      } catch (err) {
+        console.error('[localContent] cover art extraction error:', err.message);
+      }
+    }
+
+    // Generate placeholder
+    const placeholder = generatePlaceholderImage(mediaKey);
+    res.set({
+      'Content-Type': 'image/png',
+      'Content-Length': placeholder.length,
+      'Cache-Control': 'public, max-age=86400'
+    });
+    return res.send(placeholder);
   });
 
   return router;
