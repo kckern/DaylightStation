@@ -179,32 +179,52 @@ function parseJestOutput(output) {
     testsSkipped: 0,
   };
 
-  // Parse "Test Suites: X failed, Y passed, Z total"
-  const suitesMatch = output.match(/Test Suites:\s*(\d+)\s*failed,?\s*(\d+)?\s*skipped,?\s*(\d+)\s*passed,\s*(\d+)\s*total/i);
+  // Parse Test Suites - try multiple formats
+  // Format: "Test Suites: X failed, Y skipped, Z passed, W of N total" or "W total"
+  let suitesMatch = output.match(/Test Suites:\s*(\d+)\s*failed,\s*(\d+)\s*skipped,\s*(\d+)\s*passed,\s*(\d+)(?:\s*of\s*\d+)?\s*total/i);
   if (suitesMatch) {
     results.suitesFailed = parseInt(suitesMatch[1]) || 0;
     results.suitesPassed = parseInt(suitesMatch[3]) || 0;
     results.suitesTotal = parseInt(suitesMatch[4]) || 0;
   } else {
-    const suitesPassMatch = output.match(/Test Suites:\s*(\d+)\s*passed,\s*(\d+)\s*total/i);
-    if (suitesPassMatch) {
-      results.suitesPassed = parseInt(suitesPassMatch[1]) || 0;
-      results.suitesTotal = parseInt(suitesPassMatch[2]) || 0;
+    // Format: "Test Suites: X failed, Y passed, Z total" (no skipped)
+    suitesMatch = output.match(/Test Suites:\s*(\d+)\s*failed,\s*(\d+)\s*passed,\s*(\d+)(?:\s*of\s*\d+)?\s*total/i);
+    if (suitesMatch) {
+      results.suitesFailed = parseInt(suitesMatch[1]) || 0;
+      results.suitesPassed = parseInt(suitesMatch[2]) || 0;
+      results.suitesTotal = parseInt(suitesMatch[3]) || 0;
+    } else {
+      // Format: "Test Suites: X passed, Y total" (all passing)
+      suitesMatch = output.match(/Test Suites:\s*(\d+)\s*passed,\s*(\d+)(?:\s*of\s*\d+)?\s*total/i);
+      if (suitesMatch) {
+        results.suitesPassed = parseInt(suitesMatch[1]) || 0;
+        results.suitesTotal = parseInt(suitesMatch[2]) || 0;
+      }
     }
   }
 
-  // Parse "Tests: X failed, Y skipped, Z passed, W total"
-  const testsMatch = output.match(/Tests:\s*(\d+)\s*failed,?\s*(\d+)?\s*skipped,?\s*(\d+)\s*passed,\s*(\d+)\s*total/i);
+  // Parse Tests - try multiple formats
+  // Format: "Tests: X failed, Y skipped, Z passed, W total" or "W of N total"
+  let testsMatch = output.match(/Tests:\s*(\d+)\s*failed,\s*(\d+)\s*skipped,\s*(\d+)\s*passed,\s*(\d+)(?:\s*of\s*\d+)?\s*total/i);
   if (testsMatch) {
     results.testsFailed = parseInt(testsMatch[1]) || 0;
     results.testsSkipped = parseInt(testsMatch[2]) || 0;
     results.testsPassed = parseInt(testsMatch[3]) || 0;
     results.testsTotal = parseInt(testsMatch[4]) || 0;
   } else {
-    const testsPassMatch = output.match(/Tests:\s*(\d+)\s*passed,\s*(\d+)\s*total/i);
-    if (testsPassMatch) {
-      results.testsPassed = parseInt(testsPassMatch[1]) || 0;
-      results.testsTotal = parseInt(testsPassMatch[2]) || 0;
+    // Format: "Tests: X failed, Y passed, Z total" (no skipped)
+    testsMatch = output.match(/Tests:\s*(\d+)\s*failed,\s*(\d+)\s*passed,\s*(\d+)(?:\s*of\s*\d+)?\s*total/i);
+    if (testsMatch) {
+      results.testsFailed = parseInt(testsMatch[1]) || 0;
+      results.testsPassed = parseInt(testsMatch[2]) || 0;
+      results.testsTotal = parseInt(testsMatch[3]) || 0;
+    } else {
+      // Format: "Tests: X passed, Y total" (all passing)
+      testsMatch = output.match(/Tests:\s*(\d+)\s*passed,\s*(\d+)(?:\s*of\s*\d+)?\s*total/i);
+      if (testsMatch) {
+        results.testsPassed = parseInt(testsMatch[1]) || 0;
+        results.testsTotal = parseInt(testsMatch[2]) || 0;
+      }
     }
   }
 
