@@ -430,7 +430,7 @@ export class PlexAdapter {
       summary: item.summary || null,
       tagline: item.tagline || null,
       studio: item.studio || null,
-      thumb_id: item.ratingKey,
+      thumb_id: item.Media?.[0]?.Part?.[0]?.id ?? parseInt(item.ratingKey, 10),
       // Media info from Plex (for audio direct stream)
       Media: item.Media,
       // Labels for governance (merged item + show labels for episodes)
