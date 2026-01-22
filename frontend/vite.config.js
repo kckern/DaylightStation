@@ -2,8 +2,8 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path' // Ensure path is imported
 
-// Backend port for dev proxy - in production, frontend is served from same origin
-const BACKEND_PORT = process.env.VITE_BACKEND_PORT || 3112;
+// Backend port for dev proxy - VITE_BACKEND_PORT set by npm scripts in dev
+const BACKEND_PORT = process.env.VITE_BACKEND_PORT || 3111;
 
 // https://vitejs.dev/config/
 // Note: vite-plugin-terminal removed - caused "Failed to fetch" cascades due to

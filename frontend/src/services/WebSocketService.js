@@ -54,11 +54,13 @@ class WebSocketService {
 
   /**
    * Get the WebSocket URL based on current environment
+   * In dev mode with Vite, use same origin (Vite will proxy /ws to backend)
+   * In production, frontend and backend are same origin
    */
   _getWsUrl() {
-    const isLocalhost = /localhost/.test(window.location.href);
-    const baseUrl = isLocalhost ? 'http://localhost:3112' : window.location.origin;
-    return baseUrl.replace(/^http/, 'ws') + '/ws';
+    // Always use current origin - in dev, Vite proxies /ws to backend
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${protocol}//${window.location.host}/ws`;
   }
 
   /**

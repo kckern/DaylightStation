@@ -11,9 +11,9 @@ module.exports = {
     '^@fixtures/(.*)$': '<rootDir>/tests/_fixtures/$1',
     '^@testlib/(.*)$': '<rootDir>/tests/lib/$1',
   },
-  // Transform ESM packages from node_modules
+  // Transform ESM packages from node_modules that use import.meta or ESM syntax
   transformIgnorePatterns: [
-    '/node_modules/(?!(zod)/)',
+    '/node_modules/(?!(zod|node-fetch|data-uri-to-buffer|fetch-blob|formdata-polyfill)/)',
   ],
   // Match tests in /tests/ structure
   testMatch: [

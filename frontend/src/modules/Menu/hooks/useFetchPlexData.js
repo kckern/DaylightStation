@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { DaylightAPI } from '../../../lib/api.mjs';
 
 /**
- * Fetches rich Plex data from /media/plex/list/:id
+ * Fetches rich Plex data from /api/v1/content/list/plex/:id
  * Used by ShowView and SeasonView for detailed metadata.
  * 
  * @param {string} plexId - Plex rating key
@@ -26,7 +26,7 @@ export function useFetchPlexData(plexId) {
 
     async function fetchData() {
       try {
-        const response = await DaylightAPI(`api/v1/content/plex/list/${plexId}`);
+        const response = await DaylightAPI(`api/v1/content/list/plex/${plexId}`);
         if (!canceled) {
           setData(response);
           setLoading(false);
