@@ -1,18 +1,25 @@
-export const slugify = (text) => {
-  if (!text) return '';
-  return text
-    .toString()
-    .toLowerCase()
-    .replace(/\s+/g, '-') // Replace spaces with -
-    .replace(/[^\w\-]+/g, '') // Remove all non-word chars
-    .replace(/\-\-+/g, '-') // Replace multiple - with single -
-    .replace(/^-+/, '') // Trim - from start of text
-    .replace(/-+$/, ''); // Trim - from end of text
-};
+/**
+ * Utils - Legacy Re-export Shim
+ *
+ * MIGRATION: This file re-exports from the new location.
+ *
+ * For slugify:
+ *   Import from '#backend/src/0_infrastructure/utils/strings.mjs' instead.
+ *
+ * For media watch utilities (isWatched, hasProgress, etc.):
+ *   These remain in this file as they are domain-specific.
+ *   Consider migrating to a content domain service if needed.
+ */
+
+// Re-export slugify from new location
+export { slugify } from '../../src/0_infrastructure/utils/strings.mjs';
 
 /**
  * Media watching utility functions
  * Centralized logic for determining watch status
+ *
+ * Note: These functions are domain-specific to content/media.
+ * If needed in new DDD code, migrate to content domain.
  */
 
 // Thresholds for media progress
@@ -30,12 +37,12 @@ const ALTERNATIVE_WATCHED_THRESHOLD = 50; // Alternative threshold used in some 
 export const isWatched = (percentOrItem, threshold = WATCHED_THRESHOLD) => {
   const item = typeof percentOrItem === 'number' ? { percent: percentOrItem } : percentOrItem;
   const { percent, seconds } = item || {};
-  
+
   if (percent == null) return false;
-  
+
   // Check percent threshold first
   if (percent >= threshold) return true;
-  
+
   // Check seconds remaining by deriving duration from percent and seconds
   if (seconds != null && percent > 0) {
     const derivedDuration = calculateDuration(percent, seconds);
@@ -46,7 +53,7 @@ export const isWatched = (percentOrItem, threshold = WATCHED_THRESHOLD) => {
       }
     }
   }
-  
+
   return false;
 };
 
