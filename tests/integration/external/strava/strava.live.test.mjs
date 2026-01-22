@@ -5,8 +5,8 @@
  */
 
 import path from 'path';
-import { configService } from '@backend/_legacy/lib/config/index.mjs';
-import harvestActivities, { getAccessToken, isStravaInCooldown } from '@backend/_legacy/lib/strava.mjs';
+import { configService } from '#backend/_legacy/lib/config/index.mjs';
+import harvestActivities, { getAccessToken, isStravaInCooldown } from '#backend/_legacy/lib/strava.mjs';
 import { readYamlFile, getDataPath } from '../harness-utils.mjs';
 
 describe('Strava Live Integration', () => {

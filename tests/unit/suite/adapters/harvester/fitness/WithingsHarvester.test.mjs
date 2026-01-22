@@ -16,10 +16,10 @@ describe('WithingsHarvester', () => {
     jest.resetModules();
 
     // Import fresh module
-    const module = await import('@backend/src/2_adapters/harvester/fitness/WithingsHarvester.mjs');
+    const module = await import('#backend/src/2_adapters/harvester/fitness/WithingsHarvester.mjs');
     WithingsHarvester = module.WithingsHarvester;
 
-    const portsModule = await import('@backend/src/2_adapters/harvester/ports/IHarvester.mjs');
+    const portsModule = await import('#backend/src/2_adapters/harvester/ports/IHarvester.mjs');
     HarvesterCategory = portsModule.HarvesterCategory;
 
     // Setup mocks

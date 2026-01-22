@@ -21,11 +21,11 @@ describe('UserDataService assembly', () => {
       }
     };
 
-    const { initConfigService, resetConfigService } = await import('@backend/_legacy/lib/config/index.mjs');
+    const { initConfigService, resetConfigService } = await import('#backend/_legacy/lib/config/index.mjs');
     resetConfigService(); // Ensure clean state
     configService = initConfigService(testDataPath);
 
-    const userDataMod = await import('@backend/_legacy/lib/config/UserDataService.mjs');
+    const userDataMod = await import('#backend/_legacy/lib/config/UserDataService.mjs');
     userDataService = userDataMod.userDataService;
   });
 

@@ -1,6 +1,6 @@
 // tests/unit/infrastructure/eventbus/EventBusImpl.test.mjs
 import { jest } from '@jest/globals';
-import { EventBusImpl } from '@backend/src/0_infrastructure/eventbus/EventBusImpl.mjs';
+import { EventBusImpl } from '#backend/src/0_infrastructure/eventbus/EventBusImpl.mjs';
 
 describe('EventBusImpl', () => {
   let bus;

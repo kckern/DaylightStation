@@ -1,5 +1,5 @@
 // tests/unit/api/shims/finance.test.mjs
-import { financeShims } from '@backend/src/4_api/shims/finance.mjs';
+import { financeShims } from '#backend/src/4_api/shims/finance.mjs';
 
 describe('Finance Shims', () => {
   describe('finance-data-v1', () => {

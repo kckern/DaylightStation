@@ -41,7 +41,7 @@ describe('StravaHarvester', () => {
 
   describe('constructor', () => {
     it('should create harvester with required dependencies', async () => {
-      const { StravaHarvester } = await import('@backend/src/2_adapters/harvester/fitness/StravaHarvester.mjs');
+      const { StravaHarvester } = await import('#backend/src/2_adapters/harvester/fitness/StravaHarvester.mjs');
 
       harvester = new StravaHarvester({
         stravaClient: mockStravaClient,
@@ -55,7 +55,7 @@ describe('StravaHarvester', () => {
     });
 
     it('should throw if stravaClient not provided', async () => {
-      const { StravaHarvester } = await import('@backend/src/2_adapters/harvester/fitness/StravaHarvester.mjs');
+      const { StravaHarvester } = await import('#backend/src/2_adapters/harvester/fitness/StravaHarvester.mjs');
 
       expect(() => new StravaHarvester({
         lifelogStore: mockLifelogStore
@@ -63,7 +63,7 @@ describe('StravaHarvester', () => {
     });
 
     it('should throw if lifelogStore not provided', async () => {
-      const { StravaHarvester } = await import('@backend/src/2_adapters/harvester/fitness/StravaHarvester.mjs');
+      const { StravaHarvester } = await import('#backend/src/2_adapters/harvester/fitness/StravaHarvester.mjs');
 
       expect(() => new StravaHarvester({
         stravaClient: mockStravaClient
@@ -73,7 +73,7 @@ describe('StravaHarvester', () => {
 
   describe('serviceId', () => {
     it('should return strava', async () => {
-      const { StravaHarvester } = await import('@backend/src/2_adapters/harvester/fitness/StravaHarvester.mjs');
+      const { StravaHarvester } = await import('#backend/src/2_adapters/harvester/fitness/StravaHarvester.mjs');
 
       harvester = new StravaHarvester({
         stravaClient: mockStravaClient,
@@ -87,7 +87,7 @@ describe('StravaHarvester', () => {
 
   describe('reauthSequence', () => {
     it('should generate reauthorization URL', async () => {
-      const { StravaHarvester } = await import('@backend/src/2_adapters/harvester/fitness/StravaHarvester.mjs');
+      const { StravaHarvester } = await import('#backend/src/2_adapters/harvester/fitness/StravaHarvester.mjs');
 
       mockConfigService.getEnv.mockImplementation((key) => {
         if (key === 'STRAVA_CLIENT_ID') return '12345';
@@ -112,7 +112,7 @@ describe('StravaHarvester', () => {
     });
 
     it('should use custom redirect URI when provided', async () => {
-      const { StravaHarvester } = await import('@backend/src/2_adapters/harvester/fitness/StravaHarvester.mjs');
+      const { StravaHarvester } = await import('#backend/src/2_adapters/harvester/fitness/StravaHarvester.mjs');
 
       mockConfigService.getEnv.mockReturnValue('12345');
 
@@ -131,7 +131,7 @@ describe('StravaHarvester', () => {
     });
 
     it('should fall back to process.env when configService not available', async () => {
-      const { StravaHarvester } = await import('@backend/src/2_adapters/harvester/fitness/StravaHarvester.mjs');
+      const { StravaHarvester } = await import('#backend/src/2_adapters/harvester/fitness/StravaHarvester.mjs');
 
       // Set environment variables
       const originalEnv = process.env.STRAVA_CLIENT_ID;
@@ -159,7 +159,7 @@ describe('StravaHarvester', () => {
 
   describe('getStatus', () => {
     it('should return circuit breaker status', async () => {
-      const { StravaHarvester } = await import('@backend/src/2_adapters/harvester/fitness/StravaHarvester.mjs');
+      const { StravaHarvester } = await import('#backend/src/2_adapters/harvester/fitness/StravaHarvester.mjs');
 
       harvester = new StravaHarvester({
         stravaClient: mockStravaClient,

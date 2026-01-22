@@ -1,7 +1,7 @@
 // tests/unit/applications/journalist/JournalistContainer.test.mjs
 import { describe, it, expect, beforeEach } from '@jest/globals';
 import { jest } from '@jest/globals';
-import { JournalistContainer } from '@backend/src/3_applications/journalist/JournalistContainer.mjs';
+import { JournalistContainer } from '#backend/src/3_applications/journalist/JournalistContainer.mjs';
 
 describe('JournalistContainer', () => {
   let mockMessagingGateway;

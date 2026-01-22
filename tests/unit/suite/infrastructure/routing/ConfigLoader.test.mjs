@@ -1,5 +1,5 @@
 // tests/unit/infrastructure/routing/ConfigLoader.test.mjs
-import { loadRoutingConfig } from '@backend/src/0_infrastructure/routing/ConfigLoader.mjs';
+import { loadRoutingConfig } from '#backend/src/0_infrastructure/routing/ConfigLoader.mjs';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';

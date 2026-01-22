@@ -1,5 +1,5 @@
 // tests/unit/domains/messaging/entities/Notification.test.mjs
-import { Notification } from '@backend/src/1_domains/messaging/entities/Notification.mjs';
+import { Notification } from '#backend/src/1_domains/messaging/entities/Notification.mjs';
 
 describe('Notification', () => {
   let notification;

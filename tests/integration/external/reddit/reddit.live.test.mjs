@@ -7,8 +7,8 @@
  * - Reddit username in users/{username}/auth/reddit.yml
  */
 
-import { configService } from '@backend/_legacy/lib/config/index.mjs';
-import getRedditActivity from '@backend/_legacy/lib/reddit.mjs';
+import { configService } from '#backend/_legacy/lib/config/index.mjs';
+import getRedditActivity from '#backend/_legacy/lib/reddit.mjs';
 
 describe('Reddit Live Integration', () => {
   beforeAll(() => {

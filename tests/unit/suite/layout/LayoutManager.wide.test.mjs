@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@jest/globals';
-import { LayoutManager } from '@frontend/modules/Fitness/FitnessPlugins/plugins/FitnessChartApp/layout/LayoutManager.js';
+import { LayoutManager } from '#frontend/modules/Fitness/FitnessPlugins/plugins/FitnessChartApp/layout/LayoutManager.js';
 import { createPRNG, generateScenario, detectAnomalies, CHART_DEFAULTS } from './testUtils.mjs';
 import fs from 'fs';
 import path from 'path';

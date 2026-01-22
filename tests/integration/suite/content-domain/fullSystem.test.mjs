@@ -7,7 +7,7 @@ import {
   createContentRegistry,
   createWatchStore,
   createApiRouters
-} from '@backend/src/0_infrastructure/bootstrap.mjs';
+} from '#backend/src/0_infrastructure/bootstrap.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const fixturesPath = path.resolve(__dirname, '../../_fixtures');

@@ -7,8 +7,8 @@
  * Run with: npm test -- tests/live/nutribot/GoogleImageSearch.live.test.mjs
  */
 
-import { GoogleImageSearchGateway } from '@backend/_legacy/chatbots/infrastructure/gateways/GoogleImageSearchGateway.mjs';
-import { RealUPCGateway } from '@backend/_legacy/chatbots/infrastructure/gateways/RealUPCGateway.mjs';
+import { GoogleImageSearchGateway } from '#backend/_legacy/chatbots/infrastructure/gateways/GoogleImageSearchGateway.mjs';
+import { RealUPCGateway } from '#backend/_legacy/chatbots/infrastructure/gateways/RealUPCGateway.mjs';
 import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';

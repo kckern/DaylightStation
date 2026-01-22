@@ -1,6 +1,6 @@
 // tests/unit/adapters/ai/AnthropicAdapter.test.mjs
 import { jest } from '@jest/globals';
-import { AnthropicAdapter } from '@backend/src/2_adapters/ai/AnthropicAdapter.mjs';
+import { AnthropicAdapter } from '#backend/src/2_adapters/ai/AnthropicAdapter.mjs';
 
 describe('AnthropicAdapter', () => {
   let adapter;

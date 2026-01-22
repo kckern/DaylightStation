@@ -1,6 +1,6 @@
 // tests/unit/fitness/fitness-timeline-pruning.unit.test.mjs
 import { describe, test, expect, beforeEach } from '@jest/globals';
-import { FitnessTimeline } from '@frontend/hooks/fitness/FitnessTimeline.js';
+import { FitnessTimeline } from '#frontend/hooks/fitness/FitnessTimeline.js';
 
 /**
  * Tests for FitnessTimeline pruning behavior.

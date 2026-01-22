@@ -39,7 +39,7 @@ describe('CancelGratitudeInput', () => {
       error: jest.fn()
     };
 
-    const { CancelGratitudeInput } = await import('@backend/src/3_applications/homebot/usecases/CancelGratitudeInput.mjs');
+    const { CancelGratitudeInput } = await import('#backend/src/3_applications/homebot/usecases/CancelGratitudeInput.mjs');
 
     useCase = new CancelGratitudeInput({
       messagingGateway: mockMessagingGateway,
@@ -50,7 +50,7 @@ describe('CancelGratitudeInput', () => {
 
   describe('constructor', () => {
     it('should throw if messagingGateway is not provided', async () => {
-      const { CancelGratitudeInput } = await import('@backend/src/3_applications/homebot/usecases/CancelGratitudeInput.mjs');
+      const { CancelGratitudeInput } = await import('#backend/src/3_applications/homebot/usecases/CancelGratitudeInput.mjs');
 
       expect(() => new CancelGratitudeInput({
         conversationStateStore: mockStateStore
@@ -58,7 +58,7 @@ describe('CancelGratitudeInput', () => {
     });
 
     it('should throw if conversationStateStore is not provided', async () => {
-      const { CancelGratitudeInput } = await import('@backend/src/3_applications/homebot/usecases/CancelGratitudeInput.mjs');
+      const { CancelGratitudeInput } = await import('#backend/src/3_applications/homebot/usecases/CancelGratitudeInput.mjs');
 
       expect(() => new CancelGratitudeInput({
         messagingGateway: mockMessagingGateway

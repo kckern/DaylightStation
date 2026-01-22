@@ -1,5 +1,5 @@
 // tests/unit/domains/finance/services/TransactionClassifier.test.mjs
-import { TransactionClassifier } from '@backend/src/1_domains/finance/services/TransactionClassifier.mjs';
+import { TransactionClassifier } from '#backend/src/1_domains/finance/services/TransactionClassifier.mjs';
 
 describe('TransactionClassifier', () => {
   let classifier;

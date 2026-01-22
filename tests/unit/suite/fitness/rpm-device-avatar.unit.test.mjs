@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@jest/globals';
-import { calculateRpmProgress, getRpmZoneColor } from '@frontend/modules/Fitness/FitnessSidebar/RealtimeCards/rpmUtils.mjs';
+import { calculateRpmProgress, getRpmZoneColor } from '#frontend/modules/Fitness/FitnessSidebar/RealtimeCards/rpmUtils.mjs';
 
 describe('RpmDeviceAvatar utilities', () => {
   describe('calculateRpmProgress', () => {

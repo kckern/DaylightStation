@@ -3,13 +3,14 @@ module.exports = {
   transform: {
     '^.+\\.m?[tj]s$': 'babel-jest',
   },
-  // Path aliases - use these instead of relative paths!
+  // Path aliases - use # prefix (matches package.json imports field)
+  // This ensures Jest and Node resolve the same paths
   moduleNameMapper: {
-    '^@backend/(.*)$': '<rootDir>/backend/$1',
-    '^@frontend/(.*)$': '<rootDir>/frontend/src/$1',
-    '^@extensions/(.*)$': '<rootDir>/_extensions/$1',
-    '^@fixtures/(.*)$': '<rootDir>/tests/_fixtures/$1',
-    '^@testlib/(.*)$': '<rootDir>/tests/lib/$1',
+    '^#backend/(.*)$': '<rootDir>/backend/$1',
+    '^#frontend/(.*)$': '<rootDir>/frontend/src/$1',
+    '^#extensions/(.*)$': '<rootDir>/_extensions/$1',
+    '^#fixtures/(.*)$': '<rootDir>/tests/_fixtures/$1',
+    '^#testlib/(.*)$': '<rootDir>/tests/lib/$1',
   },
   // Transform ESM packages from node_modules that use import.meta or ESM syntax
   transformIgnorePatterns: [

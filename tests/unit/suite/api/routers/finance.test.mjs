@@ -2,7 +2,7 @@
 import { jest } from '@jest/globals';
 import express from 'express';
 import request from 'supertest';
-import { createFinanceRouter } from '@backend/src/4_api/routers/finance.mjs';
+import { createFinanceRouter } from '#backend/src/4_api/routers/finance.mjs';
 
 describe('Finance API Router', () => {
   let app;

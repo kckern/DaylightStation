@@ -1,5 +1,5 @@
 // tests/unit/api/shims/index.test.mjs
-import { allShims, getShim, applyShim } from '@backend/src/4_api/shims/index.mjs';
+import { allShims, getShim, applyShim } from '#backend/src/4_api/shims/index.mjs';
 
 describe('Shim Registry', () => {
   describe('allShims', () => {

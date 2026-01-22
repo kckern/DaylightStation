@@ -6,8 +6,8 @@
  * Fetches LDS General Conference talk data
  */
 
-import { configService } from '@backend/_legacy/lib/config/index.mjs';
-import getLDSGCData from '@backend/_legacy/lib/ldsgc.mjs';
+import { configService } from '#backend/_legacy/lib/config/index.mjs';
+import getLDSGCData from '#backend/_legacy/lib/ldsgc.mjs';
 
 describe('LDSGC Live Integration', () => {
   beforeAll(() => {

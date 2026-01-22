@@ -1,10 +1,10 @@
 // tests/integration/api/content.test.mjs
 import express from 'express';
 import request from 'supertest';
-import { createContentRouter } from '@backend/src/4_api/routers/content.mjs';
-import { ContentSourceRegistry } from '@backend/src/1_domains/content/services/ContentSourceRegistry.mjs';
-import { FilesystemAdapter } from '@backend/src/2_adapters/content/media/filesystem/FilesystemAdapter.mjs';
-import { YamlWatchStateStore } from '@backend/src/2_adapters/persistence/yaml/YamlWatchStateStore.mjs';
+import { createContentRouter } from '#backend/src/4_api/routers/content.mjs';
+import { ContentSourceRegistry } from '#backend/src/1_domains/content/services/ContentSourceRegistry.mjs';
+import { FilesystemAdapter } from '#backend/src/2_adapters/content/media/filesystem/FilesystemAdapter.mjs';
+import { YamlWatchStateStore } from '#backend/src/2_adapters/persistence/yaml/YamlWatchStateStore.mjs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 

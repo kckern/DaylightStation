@@ -19,7 +19,7 @@ describe('io.mjs assembly', () => {
       }
     };
 
-    io = await import('@backend/_legacy/lib/io.mjs');
+    io = await import('#backend/_legacy/lib/io.mjs');
   });
 
   describe('module imports', () => {

@@ -1,9 +1,9 @@
 // tests/integration/api/proxy.test.mjs
 import express from 'express';
 import request from 'supertest';
-import { createProxyRouter } from '@backend/src/4_api/routers/proxy.mjs';
-import { ContentSourceRegistry } from '@backend/src/1_domains/content/services/ContentSourceRegistry.mjs';
-import { FilesystemAdapter } from '@backend/src/2_adapters/content/media/filesystem/FilesystemAdapter.mjs';
+import { createProxyRouter } from '#backend/src/4_api/routers/proxy.mjs';
+import { ContentSourceRegistry } from '#backend/src/1_domains/content/services/ContentSourceRegistry.mjs';
+import { FilesystemAdapter } from '#backend/src/2_adapters/content/media/filesystem/FilesystemAdapter.mjs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 

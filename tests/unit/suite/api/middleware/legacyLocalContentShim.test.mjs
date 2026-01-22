@@ -6,7 +6,7 @@ import {
   translateLegacyPrimaryPath,
   translateLegacyPoetryPath,
   parseLegacyModifiers
-} from '@backend/src/4_api/middleware/legacyLocalContentShim.mjs';
+} from '#backend/src/4_api/middleware/legacyLocalContentShim.mjs';
 
 describe('Legacy LocalContent Shim', () => {
   describe('translateLegacyScripturePath', () => {

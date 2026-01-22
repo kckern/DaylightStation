@@ -1,8 +1,15 @@
 #!/usr/bin/env node
 /**
- * Migrate test imports from relative paths to @backend/ aliases
+ * Migrate test imports to use # prefix (Node subpath imports)
  *
  * Usage: node tests/lib/migrate-imports.mjs [--dry-run]
+ *
+ * Converts:
+ *   - Relative paths (../../backend/...) to #backend/...
+ *   - Old @ prefix (@backend/...) to #backend/...
+ *
+ * The # prefix works with package.json "imports" field for both
+ * Node (Playwright) and Jest (via moduleNameMapper).
  */
 
 import { readFileSync, writeFileSync, readdirSync, statSync } from 'fs';
@@ -15,63 +22,117 @@ const dryRun = process.argv.includes('--dry-run');
 
 // Patterns to convert
 const patterns = [
-  // Static imports: from '@backend/...' -> from '@backend/...'
+  // === Convert old @ prefix to # prefix ===
+  // @backend -> #backend
+  {
+    regex: /from\s+['"]@backend\/([^'"]+)['"]/g,
+    replace: (match, path) => `from '#backend/${path}'`
+  },
+  {
+    regex: /import\s*\(\s*['"]@backend\/([^'"]+)['"]\s*\)/g,
+    replace: (match, path) => `import('#backend/${path}')`
+  },
+  {
+    regex: /mockModule\s*\(\s*['"]@backend\/([^'"]+)['"]/g,
+    replace: (match, path) => `mockModule('#backend/${path}'`
+  },
+  // @frontend -> #frontend
+  {
+    regex: /from\s+['"]@frontend\/([^'"]+)['"]/g,
+    replace: (match, path) => `from '#frontend/${path}'`
+  },
+  {
+    regex: /import\s*\(\s*['"]@frontend\/([^'"]+)['"]\s*\)/g,
+    replace: (match, path) => `import('#frontend/${path}')`
+  },
+  {
+    regex: /mockModule\s*\(\s*['"]@frontend\/([^'"]+)['"]/g,
+    replace: (match, path) => `mockModule('#frontend/${path}'`
+  },
+  // @extensions -> #extensions
+  {
+    regex: /from\s+['"]@extensions\/([^'"]+)['"]/g,
+    replace: (match, path) => `from '#extensions/${path}'`
+  },
+  {
+    regex: /import\s*\(\s*['"]@extensions\/([^'"]+)['"]\s*\)/g,
+    replace: (match, path) => `import('#extensions/${path}')`
+  },
+  // @fixtures -> #fixtures
+  {
+    regex: /from\s+['"]@fixtures\/([^'"]+)['"]/g,
+    replace: (match, path) => `from '#fixtures/${path}'`
+  },
+  {
+    regex: /import\s*\(\s*['"]@fixtures\/([^'"]+)['"]\s*\)/g,
+    replace: (match, path) => `import('#fixtures/${path}')`
+  },
+  // @testlib -> #testlib
+  {
+    regex: /from\s+['"]@testlib\/([^'"]+)['"]/g,
+    replace: (match, path) => `from '#testlib/${path}'`
+  },
+  {
+    regex: /import\s*\(\s*['"]@testlib\/([^'"]+)['"]\s*\)/g,
+    replace: (match, path) => `import('#testlib/${path}')`
+  },
+  {
+    regex: /mockModule\s*\(\s*['"]@testlib\/([^'"]+)['"]/g,
+    replace: (match, path) => `mockModule('#testlib/${path}'`
+  },
+
+  // === Convert relative paths to # prefix ===
+  // Relative backend imports
   {
     regex: /from\s+['"](\.\.\/)+(backend\/[^'"]+)['"]/g,
-    replace: (match, dots, path) => `from '@backend/${path.replace(/^backend\//, '')}'`
+    replace: (match, dots, path) => `from '#backend/${path.replace(/^backend\//, '')}'`
   },
-  // Dynamic imports: import('@backend/...') -> import('@backend/...')
   {
     regex: /import\s*\(\s*['"](\.\.\/)+(backend\/[^'"]+)['"]\s*\)/g,
-    replace: (match, dots, path) => `import('@backend/${path.replace(/^backend\//, '')}')`
+    replace: (match, dots, path) => `import('#backend/${path.replace(/^backend\//, '')}')`
   },
-  // Jest mockModule: mockModule('@backend/...') -> mockModule('@backend/...')
   {
     regex: /mockModule\s*\(\s*['"](\.\.\/)+(backend\/[^'"]+)['"]/g,
-    replace: (match, dots, path) => `mockModule('@backend/${path.replace(/^backend\//, '')}'`
+    replace: (match, dots, path) => `mockModule('#backend/${path.replace(/^backend\//, '')}'`
   },
-  // Static imports for frontend: from '../frontend/...' -> from '@frontend/...'
+  // Relative frontend imports
   {
     regex: /from\s+['"](\.\.\/)+(frontend\/src\/[^'"]+)['"]/g,
-    replace: (match, dots, path) => `from '@frontend/${path.replace(/^frontend\/src\//, '')}'`
+    replace: (match, dots, path) => `from '#frontend/${path.replace(/^frontend\/src\//, '')}'`
   },
-  // Dynamic imports for frontend: import('../frontend/...') -> import('@frontend/...')
   {
     regex: /import\s*\(\s*['"](\.\.\/)+(frontend\/src\/[^'"]+)['"]\s*\)/g,
-    replace: (match, dots, path) => `import('@frontend/${path.replace(/^frontend\/src\//, '')}')`
+    replace: (match, dots, path) => `import('#frontend/${path.replace(/^frontend\/src\//, '')}')`
   },
-  // Jest mockModule for frontend: mockModule('../frontend/...') -> mockModule('@frontend/...')
   {
     regex: /mockModule\s*\(\s*['"](\.\.\/)+(frontend\/src\/[^'"]+)['"]/g,
-    replace: (match, dots, path) => `mockModule('@frontend/${path.replace(/^frontend\/src\//, '')}'`
+    replace: (match, dots, path) => `mockModule('#frontend/${path.replace(/^frontend\/src\//, '')}'`
   },
-  // Static imports for _extensions: from '@extensions/...' -> from '@extensions/...'
+  // Relative _extensions imports
   {
     regex: /from\s+['"](\.\.\/)+(\_extensions\/[^'"]+)['"]/g,
-    replace: (match, dots, path) => `from '@extensions/${path.replace(/^_extensions\//, '')}'`
+    replace: (match, dots, path) => `from '#extensions/${path.replace(/^_extensions\//, '')}'`
   },
-  // Dynamic imports for _extensions: import('@extensions/...') -> import('@extensions/...')
   {
     regex: /import\s*\(\s*['"](\.\.\/)+(\_extensions\/[^'"]+)['"]\s*\)/g,
-    replace: (match, dots, path) => `import('@extensions/${path.replace(/^_extensions\//, '')}')`
+    replace: (match, dots, path) => `import('#extensions/${path.replace(/^_extensions\//, '')}')`
   },
-  // Static imports for _fixtures: from '@fixtures/...' -> from '@fixtures/...'
+  // Relative _fixtures imports
   {
     regex: /from\s+['"](\.\.\/)+(tests\/_fixtures\/[^'"]+|_fixtures\/[^'"]+)['"]/g,
     replace: (match, dots, path) => {
       const fixturePath = path.replace(/^(tests\/)?_fixtures\//, '');
-      return `from '@fixtures/${fixturePath}'`;
+      return `from '#fixtures/${fixturePath}'`;
     }
   },
-  // Note: path.resolve with _fixtures should NOT be converted - those need real paths, not aliases
-  // Static imports for tests/lib: from '@testlib/...' or '../../lib/...' -> from '@testlib/...'
+  // Relative tests/lib imports
   {
     regex: /from\s+['"](\.\.\/)+(tests\/lib\/[^'"]+|lib\/[^'"]+)['"]/g,
     replace: (match, dots, path) => {
       // Only convert if it's the tests/lib, not backend/lib
       if (path.includes('tests/lib/') || (path.startsWith('lib/') && !path.includes('backend'))) {
         const libPath = path.replace(/^(tests\/)?lib\//, '');
-        return `from '@testlib/${libPath}'`;
+        return `from '#testlib/${libPath}'`;
       }
       return match; // Don't convert backend/lib references
     }

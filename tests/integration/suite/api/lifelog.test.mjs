@@ -9,7 +9,7 @@
 import { jest } from '@jest/globals';
 import express from 'express';
 import request from 'supertest';
-import { createLifelogRouter } from '@backend/src/4_api/routers/lifelog.mjs';
+import { createLifelogRouter } from '#backend/src/4_api/routers/lifelog.mjs';
 
 describe('lifelog integration', () => {
   let app;

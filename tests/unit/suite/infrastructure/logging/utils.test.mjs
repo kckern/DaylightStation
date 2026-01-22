@@ -1,5 +1,5 @@
 // tests/unit/infrastructure/logging/utils.test.mjs
-import { serializeError, extractHttpErrorDetails } from '@backend/src/0_infrastructure/logging/utils.js';
+import { serializeError, extractHttpErrorDetails } from '#backend/src/0_infrastructure/logging/utils.js';
 
 describe('serializeError', () => {
   test('returns null for null input', () => {

@@ -27,6 +27,13 @@
     "yaml": "^2.8.2",
     "zod": "^3.23.8"
   },
+  "imports": {
+    "#backend/*": "./backend/*",
+    "#frontend/*": "./frontend/src/*",
+    "#fixtures/*": "./tests/_fixtures/*",
+    "#testlib/*": "./tests/lib/*",
+    "#extensions/*": "./_extensions/*"
+  },
   "devDependencies": {
     "@babel/core": "^7.27.4",
     "@babel/preset-env": "^7.27.2",

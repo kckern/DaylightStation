@@ -14,8 +14,8 @@ import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
-import { JournalistContainer } from '@backend/src/3_applications/journalist/JournalistContainer.mjs';
-import { YamlConversationStateStore } from '@backend/src/2_adapters/messaging/YamlConversationStateStore.mjs';
+import { JournalistContainer } from '#backend/src/3_applications/journalist/JournalistContainer.mjs';
+import { YamlConversationStateStore } from '#backend/src/2_adapters/messaging/YamlConversationStateStore.mjs';
 
 describe('Journalist Flow Integration', () => {
   let tempDir;

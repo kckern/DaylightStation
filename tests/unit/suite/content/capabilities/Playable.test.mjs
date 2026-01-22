@@ -1,5 +1,5 @@
 // tests/unit/content/capabilities/Playable.test.mjs
-import { PlayableItem } from '@backend/src/1_domains/content/capabilities/Playable.mjs';
+import { PlayableItem } from '#backend/src/1_domains/content/capabilities/Playable.mjs';
 
 describe('Playable capability', () => {
   test('creates playable video item', () => {

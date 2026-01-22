@@ -44,7 +44,7 @@ describe('HandleDebriefResponse', () => {
     };
 
     // Dynamic import after mocks are set up
-    const module = await import('@backend/src/3_applications/journalist/usecases/HandleDebriefResponse.mjs');
+    const module = await import('#backend/src/3_applications/journalist/usecases/HandleDebriefResponse.mjs');
     HandleDebriefResponse = module.HandleDebriefResponse;
   });
 

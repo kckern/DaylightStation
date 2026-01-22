@@ -1,6 +1,6 @@
 // tests/unit/infrastructure/eventbus/WebSocketEventBus.test.mjs
 import { jest } from '@jest/globals';
-import { WebSocketEventBus } from '@backend/src/0_infrastructure/eventbus/WebSocketEventBus.mjs';
+import { WebSocketEventBus } from '#backend/src/0_infrastructure/eventbus/WebSocketEventBus.mjs';
 
 describe('WebSocketEventBus', () => {
   let bus;

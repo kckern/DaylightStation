@@ -1,5 +1,5 @@
 // tests/unit/domains/journaling/entities/JournalEntry.test.mjs
-import { JournalEntry } from '@backend/src/1_domains/journaling/entities/JournalEntry.mjs';
+import { JournalEntry } from '#backend/src/1_domains/journaling/entities/JournalEntry.mjs';
 
 describe('JournalEntry', () => {
   describe('constructor', () => {

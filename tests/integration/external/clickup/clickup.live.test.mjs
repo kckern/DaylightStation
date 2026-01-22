@@ -8,7 +8,7 @@
  * - process.env.clickup config with statuses and team_id
  */
 
-import { configService } from '@backend/_legacy/lib/config/index.mjs';
+import { configService } from '#backend/_legacy/lib/config/index.mjs';
 
 // Set up env before importing clickup.mjs
 const dataPath = process.env.DAYLIGHT_DATA_PATH;
@@ -26,7 +26,7 @@ process.env.CLICKUP_PK = configService.getSecret('CLICKUP_PK');
 
 let getClickUpTasks;
 try {
-  const mod = await import('@backend/lib/clickup.mjs');
+  const mod = await import('#backend/lib/clickup.mjs');
   getClickUpTasks = mod.default;
 } catch (e) {
   console.log('clickup.mjs failed to load:', e.message);

@@ -3,7 +3,7 @@ import {
   translateDataListPath,
   translatePlexListPath,
   toLegacyListResponse
-} from '@backend/src/4_api/middleware/legacyListShim.mjs';
+} from '#backend/src/4_api/middleware/legacyListShim.mjs';
 
 describe('Legacy List Shim', () => {
   describe('translateDataListPath', () => {

@@ -12,7 +12,7 @@ import {
   resolvePlaybackState,
   pauseMediaIfNeeded,
   resumeMediaIfNeeded
-} from '@frontend/modules/Fitness/FitnessSidebar/useVoiceMemoRecorder.js';
+} from '#frontend/modules/Fitness/FitnessSidebar/useVoiceMemoRecorder.js';
 
 describe('Voice Memo Media Pause', () => {
   describe('resolvePlaybackState', () => {

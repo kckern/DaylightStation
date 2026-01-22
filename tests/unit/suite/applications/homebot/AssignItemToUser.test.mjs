@@ -55,7 +55,7 @@ describe('AssignItemToUser', () => {
       error: jest.fn()
     };
 
-    const { AssignItemToUser } = await import('@backend/src/3_applications/homebot/usecases/AssignItemToUser.mjs');
+    const { AssignItemToUser } = await import('#backend/src/3_applications/homebot/usecases/AssignItemToUser.mjs');
 
     useCase = new AssignItemToUser({
       messagingGateway: mockMessagingGateway,
@@ -68,7 +68,7 @@ describe('AssignItemToUser', () => {
 
   describe('constructor', () => {
     it('should throw if messagingGateway is not provided', async () => {
-      const { AssignItemToUser } = await import('@backend/src/3_applications/homebot/usecases/AssignItemToUser.mjs');
+      const { AssignItemToUser } = await import('#backend/src/3_applications/homebot/usecases/AssignItemToUser.mjs');
 
       expect(() => new AssignItemToUser({
         conversationStateStore: mockStateStore,
@@ -78,7 +78,7 @@ describe('AssignItemToUser', () => {
     });
 
     it('should throw if conversationStateStore is not provided', async () => {
-      const { AssignItemToUser } = await import('@backend/src/3_applications/homebot/usecases/AssignItemToUser.mjs');
+      const { AssignItemToUser } = await import('#backend/src/3_applications/homebot/usecases/AssignItemToUser.mjs');
 
       expect(() => new AssignItemToUser({
         messagingGateway: mockMessagingGateway,
@@ -88,7 +88,7 @@ describe('AssignItemToUser', () => {
     });
 
     it('should throw if gratitudeService is not provided', async () => {
-      const { AssignItemToUser } = await import('@backend/src/3_applications/homebot/usecases/AssignItemToUser.mjs');
+      const { AssignItemToUser } = await import('#backend/src/3_applications/homebot/usecases/AssignItemToUser.mjs');
 
       expect(() => new AssignItemToUser({
         messagingGateway: mockMessagingGateway,
@@ -98,7 +98,7 @@ describe('AssignItemToUser', () => {
     });
 
     it('should throw if householdService is not provided', async () => {
-      const { AssignItemToUser } = await import('@backend/src/3_applications/homebot/usecases/AssignItemToUser.mjs');
+      const { AssignItemToUser } = await import('#backend/src/3_applications/homebot/usecases/AssignItemToUser.mjs');
 
       expect(() => new AssignItemToUser({
         messagingGateway: mockMessagingGateway,

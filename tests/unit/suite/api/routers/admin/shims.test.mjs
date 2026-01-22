@@ -2,7 +2,7 @@
 import { jest } from '@jest/globals';
 import express from 'express';
 import request from 'supertest';
-import { createShimsRouter } from '@backend/src/4_api/routers/admin/shims.mjs';
+import { createShimsRouter } from '#backend/src/4_api/routers/admin/shims.mjs';
 
 describe('Admin Shims Router', () => {
   let app;

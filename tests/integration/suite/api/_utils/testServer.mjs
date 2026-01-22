@@ -17,13 +17,13 @@ import {
   createContentRegistry,
   createWatchStore,
   createApiRouters
-} from '@backend/src/0_infrastructure/bootstrap.mjs';
+} from '#backend/src/0_infrastructure/bootstrap.mjs';
 import {
   initConfigService,
   resetConfigService,
   configService
-} from '@backend/_legacy/lib/config/index.mjs';
-import { resolveConfigPaths } from '@backend/_legacy/lib/config/pathResolver.mjs';
+} from '#backend/_legacy/lib/config/index.mjs';
+import { resolveConfigPaths } from '#backend/_legacy/lib/config/pathResolver.mjs';
 
 /**
  * Load test configuration from ConfigService and system-local.yml.

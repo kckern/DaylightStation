@@ -11,7 +11,7 @@ import { jest } from '@jest/globals';
 const mockFetch = jest.fn();
 global.fetch = mockFetch;
 
-const { GoogleImageSearchGateway } = await import('@backend/_legacy/chatbots/infrastructure/gateways/GoogleImageSearchGateway.mjs');
+const { GoogleImageSearchGateway } = await import('#backend/_legacy/chatbots/infrastructure/gateways/GoogleImageSearchGateway.mjs');
 
 describe('GoogleImageSearchGateway', () => {
   let gateway;

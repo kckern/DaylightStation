@@ -1,7 +1,7 @@
 // tests/unit/infrastructure/logging/ingestion.test.mjs
 import { jest, beforeEach, afterEach, describe, test, expect } from '@jest/globals';
-import { initializeLogging, resetLogging } from '@backend/src/0_infrastructure/logging/dispatcher.js';
-import { ingestFrontendLogs } from '@backend/src/0_infrastructure/logging/ingestion.js';
+import { initializeLogging, resetLogging } from '#backend/src/0_infrastructure/logging/dispatcher.js';
+import { ingestFrontendLogs } from '#backend/src/0_infrastructure/logging/ingestion.js';
 
 describe('ingestFrontendLogs', () => {
   let dispatchedEvents;

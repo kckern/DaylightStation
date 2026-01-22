@@ -1,5 +1,5 @@
 // tests/unit/domains/fitness/services/ZoneService.test.mjs
-import { ZoneService } from '@backend/src/1_domains/fitness/services/ZoneService.mjs';
+import { ZoneService } from '#backend/src/1_domains/fitness/services/ZoneService.mjs';
 
 describe('ZoneService', () => {
   let service;
