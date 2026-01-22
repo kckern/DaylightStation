@@ -11,7 +11,6 @@ import 'dotenv/config';
 
 // Config imports - using new infrastructure
 import { resolveConfigPaths, getConfigFilePaths } from '../_legacy/lib/config/pathResolver.mjs';
-import { loadAllConfig } from '../_legacy/lib/config/loader.mjs';
 import { initConfigService, ConfigValidationError } from './0_infrastructure/config/index.mjs';
 import { hydrateProcessEnvFromConfigs } from '../_legacy/lib/logging/config.js';
 
@@ -61,16 +60,8 @@ async function main() {
     throw err;
   }
 
-  // Load full config into process.env (needed before logging setup)
-  if (configExists) {
-    const configResult = loadAllConfig({
-      configDir: configPaths.configDir,
-      dataDir: configPaths.dataDir,
-      isDocker,
-      isDev: !isDocker
-    });
-    process.env = { ...process.env, isDocker, ...configResult.config };
-  }
+  // Note: Config loading and process.env setup happens in createApp()
+  // We no longer spread config into process.env here - createApp handles this
 
   // ==========================================================================
   // Logging
