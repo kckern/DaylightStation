@@ -225,11 +225,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   const watchlistPath = `${householdDir}/state/lists.yml`;
   const contentPath = `${dataBasePath}/content`;  // LocalContentAdapter expects content/ subdirectory
+  const mediaMemoryPath = `${householdDir}/history/media_memory`;
   const contentRegistry = createContentRegistry({
     mediaBasePath,
     plex: plexConfig,
     dataPath: contentPath,
-    watchlistPath
+    watchlistPath,
+    mediaMemoryPath
   });
 
   // Watch state path - use history/media_memory under data path (matches legacy structure)
