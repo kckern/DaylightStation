@@ -4,7 +4,7 @@
  * Run with: npm test -- tests/live/weather/weather.live.test.mjs
  */
 
-import { configService } from '#backend/_legacy/lib/config/index.mjs';
+import { configService } from '#backend/src/0_infrastructure/config/index.mjs';
 
 describe('Weather Live Integration', () => {
   let getWeather;

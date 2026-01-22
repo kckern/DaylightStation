@@ -9,7 +9,7 @@
  * - OAuth refresh token in users/{username}/auth/gcal.yml
  */
 
-import { configService } from '#backend/_legacy/lib/config/index.mjs';
+import { configService } from '#backend/src/0_infrastructure/config/index.mjs';
 import getCalendarEvents from '#backend/_legacy/lib/gcal.mjs';
 import { getToday, getDaysAgo } from '../harness-utils.mjs';
 

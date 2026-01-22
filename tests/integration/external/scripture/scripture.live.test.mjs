@@ -6,7 +6,7 @@
  * Fetches scripture reading guide data
  */
 
-import { configService } from '#backend/_legacy/lib/config/index.mjs';
+import { configService } from '#backend/src/0_infrastructure/config/index.mjs';
 import getScriptureGuide from '#backend/_legacy/lib/scriptureguide.mjs';
 
 describe('Scripture Guide Live Integration', () => {

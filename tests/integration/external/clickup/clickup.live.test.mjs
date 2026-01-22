@@ -8,7 +8,7 @@
  * - process.env.clickup config with statuses and team_id
  */
 
-import { configService } from '#backend/_legacy/lib/config/index.mjs';
+import { configService } from '#backend/src/0_infrastructure/config/index.mjs';
 
 // Set up env before importing clickup.mjs
 const dataPath = process.env.DAYLIGHT_DATA_PATH;

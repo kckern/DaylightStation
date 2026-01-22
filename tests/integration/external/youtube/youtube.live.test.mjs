@@ -10,7 +10,7 @@
  * so we must set it before importing.
  */
 
-import { configService } from '#backend/_legacy/lib/config/index.mjs';
+import { configService } from '#backend/src/0_infrastructure/config/index.mjs';
 
 // Must set process.env.path before importing youtube.mjs
 const dataPath = process.env.DAYLIGHT_DATA_PATH;
