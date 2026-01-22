@@ -42,12 +42,12 @@ const generateThumbnailUrl = (plexObj, timeInSeconds) => {
     if (thumbId) {
       // Ensure thumb_id is treated as a number not a string for consistency
       const numericThumbId = parseInt(thumbId, 10);
-      return DaylightMediaPath(`/plex_proxy/photo/:/transcode?width=240&height=135&minSize=1&upscale=1&url=/library/parts/${numericThumbId}/indexes/sd/${timeInMillis}`);
+      return DaylightMediaPath(`/api/v1/proxy/plex/photo/:/transcode?width=240&height=135&minSize=1&upscale=1&url=/library/parts/${numericThumbId}/indexes/sd/${timeInMillis}`);
     }
     
     // Option 2: If we have mediaId, use library/metadata pattern 
     if (mediaId) {
-      return DaylightMediaPath(`/plex_proxy/photo/:/transcode?width=240&height=135&minSize=1&upscale=1&url=/library/metadata/${mediaId}/thumb/${timeInMillis}`);
+      return DaylightMediaPath(`/api/v1/proxy/plex/photo/:/transcode?width=240&height=135&minSize=1&upscale=1&url=/library/metadata/${mediaId}/thumb/${timeInMillis}`);
     }
     
     // Option 3: If we have an image URL that already has a timestamp, replace the timestamp

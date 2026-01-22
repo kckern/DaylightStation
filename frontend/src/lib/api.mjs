@@ -124,7 +124,7 @@ export const DaylightMediaPath = (path) => {
 }
 
 // Normalize image URLs from API responses - ensures relative paths work correctly
-// With Vite proxy in dev, relative URLs like /plex_proxy/... are proxied to backend
+// With Vite proxy in dev, relative URLs like /api/v1/proxy/plex/... are proxied to backend
 export const normalizeImageUrl = (url) => {
     if (!url) return url;
     // Relative URLs work fine with Vite proxy - just return as-is
