@@ -15,10 +15,7 @@ import { existsSync } from 'fs';
 import path, { join } from 'path';
 import 'dotenv/config';
 
-import { resolveConfigPaths, getConfigFilePaths } from './_legacy/lib/config/pathResolver.mjs';
-import { loadAllConfig } from './_legacy/lib/config/loader.mjs';
-import { initConfigService as initLegacyConfigService, ConfigValidationError as LegacyConfigValidationError } from './_legacy/lib/config/index.mjs';
-import { initConfigService as initNewConfigService, ConfigValidationError as NewConfigValidationError } from './src/0_infrastructure/config/index.mjs';
+import { initConfigService, ConfigValidationError } from './src/0_infrastructure/config/index.mjs';
 import { hydrateProcessEnvFromConfigs } from './_legacy/lib/logging/config.js';
 import { initializeLogging } from './_legacy/lib/logging/dispatcher.js';
 import { createConsoleTransport, createFileTransport, createLogglyTransport } from './_legacy/lib/logging/transports/index.js';
@@ -33,45 +30,40 @@ async function main() {
   // Shared Configuration (runs once for both backends)
   // ==========================================================================
 
-  const configPaths = resolveConfigPaths({ isDocker, codebaseDir: __dirname });
-  if (configPaths.error) {
-    console.error('[FATAL] Configuration error:', configPaths.error);
+  // Detect data directory from environment
+  const dataDir = isDocker
+    ? '/usr/src/app/data'
+    : process.env.DAYLIGHT_DATA_PATH;
+
+  if (!dataDir) {
+    console.error('[Bootstrap] DAYLIGHT_DATA_PATH not set. Cannot start.');
     process.exit(1);
   }
 
-  console.log(`[Config] Source: ${configPaths.source}, Config: ${configPaths.configDir}`);
+  // Derive config paths from data directory
+  // Config lives inside data directory at system/
+  const configDir = join(dataDir, 'system');
+  const configPaths = { configDir, dataDir, source: isDocker ? 'docker' : 'env' };
+  const configExists = existsSync(join(configDir, 'system.yml')) || existsSync(join(configDir, 'app.yml'));
 
-  const configFiles = getConfigFilePaths(configPaths.configDir);
-  const configExists = configFiles && existsSync(configFiles.system);
+  console.log(`[Bootstrap] Config source: ${configPaths.source}, dataDir: ${dataDir}`);
 
-  hydrateProcessEnvFromConfigs(configPaths.configDir);
+  // Hydrate process.env from config files (for logging config, etc.)
+  hydrateProcessEnvFromConfigs(configDir);
 
-  // Initialize both legacy and new ConfigService singletons
-  // Both are needed during the migration period
+  // Initialize ConfigService singleton (loads all YAML configs)
   try {
-    initLegacyConfigService(configPaths.dataDir);
-    initNewConfigService(configPaths.dataDir);
-    console.log('[Config] ConfigService initialized (legacy + new)');
+    initConfigService(dataDir);
+    console.log(`[Bootstrap] ConfigService initialized from ${dataDir}`);
   } catch (err) {
-    if (err instanceof LegacyConfigValidationError || err instanceof NewConfigValidationError) {
-      console.error('[FATAL] Config validation failed:', err.message);
+    if (err instanceof ConfigValidationError) {
+      console.error('[Bootstrap] Config validation failed:', err.message);
       process.exit(1);
     }
     // Ignore "already initialized" errors - can happen if server.mjs was loaded first
     if (!err.message?.includes('already initialized')) {
       throw err;
     }
-  }
-
-  // Load full config (used by legacy code that still reads process.env for some values)
-  // NOTE: We no longer spread config into process.env - use ConfigService instead
-  if (configExists) {
-    loadAllConfig({
-      configDir: configPaths.configDir,
-      dataDir: configPaths.dataDir,
-      isDocker,
-      isDev: !isDocker
-    });
   }
 
   // ==========================================================================
