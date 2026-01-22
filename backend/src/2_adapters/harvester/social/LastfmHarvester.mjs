@@ -16,6 +16,7 @@
 import moment from 'moment-timezone';
 import { IHarvester, HarvesterCategory } from '../ports/IHarvester.mjs';
 import { CircuitBreaker } from '../CircuitBreaker.mjs';
+import { configService } from '../../../0_infrastructure/config/index.mjs';
 
 /**
  * Last.fm scrobble harvester
@@ -41,7 +42,7 @@ export class LastfmHarvester extends IHarvester {
     httpClient,
     lifelogStore,
     configService,
-    timezone = process.env.TZ || 'America/Los_Angeles',
+    timezone = configService?.isReady?.() ? configService.getTimezone() : 'America/Los_Angeles',
     logger = console,
   }) {
     super();
@@ -109,7 +110,7 @@ export class LastfmHarvester extends IHarvester {
 
       // Get auth
       const auth = this.#configService?.getUserAuth?.('lastfm', username) || {};
-      const lastfmUser = auth.username || process.env.LAST_FM_USER;
+      const lastfmUser = auth.username || configService.getSecret('LAST_FM_USER');
       const apiKey = this.#resolveApiKey(auth);
 
       if (!apiKey) {
@@ -214,14 +215,15 @@ export class LastfmHarvester extends IHarvester {
       'LASTFM_APIKEY',
     ];
 
-    // Check env
-    for (const key of candidates) {
-      if (process.env[key]) return process.env[key];
-    }
-
-    // Check secrets
+    // Check injected configService first
     for (const key of candidates) {
       const val = this.#configService?.getSecret?.(key);
+      if (val) return val;
+    }
+
+    // Fallback to global configService
+    for (const key of candidates) {
+      const val = configService?.isReady?.() ? configService.getSecret(key) : null;
       if (val) return val;
     }
 

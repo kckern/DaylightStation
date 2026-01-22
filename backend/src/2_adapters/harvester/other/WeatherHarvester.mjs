@@ -18,6 +18,7 @@ import { fetchWeatherApi } from 'openmeteo';
 import moment from 'moment-timezone';
 import { IHarvester, HarvesterCategory } from '../ports/IHarvester.mjs';
 import { CircuitBreaker } from '../CircuitBreaker.mjs';
+import { configService } from '../../../0_infrastructure/config/index.mjs';
 
 /**
  * Weather data harvester
@@ -40,7 +41,7 @@ export class WeatherHarvester extends IHarvester {
   constructor({
     sharedStore,
     configService,
-    timezone = process.env.TZ || 'America/Los_Angeles',
+    timezone = configService?.isReady?.() ? configService.getTimezone() : 'America/Los_Angeles',
     logger = console,
   }) {
     super();
@@ -99,10 +100,10 @@ export class WeatherHarvester extends IHarvester {
     try {
       this.#logger.info?.('weather.harvest.start', { username, forecastDays });
 
-      // Get location from environment
-      const { weather: weatherConfig } = process.env;
-      const lat = weatherConfig?.lat || process.env.WEATHER_LAT;
-      const lng = weatherConfig?.lng || process.env.WEATHER_LNG;
+      // Get location from config
+      const weatherConfig = configService?.isReady?.() ? configService.getAdapterConfig('weather') : null;
+      const lat = weatherConfig?.lat || configService.getSecret('WEATHER_LAT');
+      const lng = weatherConfig?.lng || configService.getSecret('WEATHER_LNG');
       const tz = weatherConfig?.timezone || this.#timezone;
 
       if (!lat || !lng) {

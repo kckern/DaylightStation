@@ -18,6 +18,7 @@ import moment from 'moment-timezone';
 import crypto from 'crypto';
 import { IHarvester, HarvesterCategory } from '../ports/IHarvester.mjs';
 import { CircuitBreaker } from '../CircuitBreaker.mjs';
+import { configService } from '../../../0_infrastructure/config/index.mjs';
 
 const md5 = (string) => crypto.createHash('md5').update(string).digest('hex');
 
@@ -50,7 +51,7 @@ export class StravaHarvester extends IHarvester {
     lifelogStore,
     authStore,
     configService,
-    timezone = process.env.TZ || 'America/Los_Angeles',
+    timezone = configService?.isReady?.() ? configService.getTimezone() : 'America/Los_Angeles',
     rateLimitDelayMs = 5000,
     logger = console,
   }) {
@@ -194,10 +195,10 @@ export class StravaHarvester extends IHarvester {
    * @returns {Object} Object with authorization URL
    */
   reauthSequence(options = {}) {
-    const clientId = this.#configService?.getEnv?.('STRAVA_CLIENT_ID') ||
-                     process.env.STRAVA_CLIENT_ID;
-    const defaultRedirectUri = this.#configService?.getEnv?.('STRAVA_URL') ||
-                               process.env.STRAVA_URL ||
+    const clientId = this.#configService?.getSecret?.('STRAVA_CLIENT_ID') ||
+                     configService.getSecret('STRAVA_CLIENT_ID');
+    const defaultRedirectUri = this.#configService?.getSecret?.('STRAVA_URL') ||
+                               configService.getSecret('STRAVA_URL') ||
                                'http://localhost:3000/api/auth/strava/callback';
     const redirectUri = options.redirectUri || defaultRedirectUri;
 

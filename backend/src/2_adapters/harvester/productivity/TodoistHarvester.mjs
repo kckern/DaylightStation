@@ -15,6 +15,7 @@
 import moment from 'moment-timezone';
 import { IHarvester, HarvesterCategory } from '../ports/IHarvester.mjs';
 import { CircuitBreaker } from '../CircuitBreaker.mjs';
+import { configService } from '../../../0_infrastructure/config/index.mjs';
 
 /**
  * Todoist task harvester
@@ -46,7 +47,7 @@ export class TodoistHarvester extends IHarvester {
     lifelogStore,
     currentStore,
     configService,
-    timezone = process.env.TZ || 'America/Los_Angeles',
+    timezone = configService?.isReady?.() ? configService.getTimezone() : 'America/Los_Angeles',
     logger = console,
   }) {
     super();
@@ -112,7 +113,7 @@ export class TodoistHarvester extends IHarvester {
 
       // Get API key
       const auth = this.#configService?.getUserAuth?.('todoist', username) || {};
-      const apiKey = auth.api_key || process.env.TODOIST_KEY;
+      const apiKey = auth.api_key || configService.getSecret('TODOIST_KEY');
 
       if (!apiKey) {
         throw new Error('Todoist API key not found');

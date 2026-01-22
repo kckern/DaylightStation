@@ -16,6 +16,7 @@
 import moment from 'moment-timezone';
 import { IHarvester, HarvesterCategory } from '../ports/IHarvester.mjs';
 import { CircuitBreaker } from '../CircuitBreaker.mjs';
+import { configService } from '../../../0_infrastructure/config/index.mjs';
 
 // Foursquare API version date (required param)
 const API_VERSION = '20231231';
@@ -50,7 +51,7 @@ export class FoursquareHarvester extends IHarvester {
     lifelogStore,
     authStore,
     configService,
-    timezone = process.env.TZ || 'America/Los_Angeles',
+    timezone = configService?.isReady?.() ? configService.getTimezone() : 'America/Los_Angeles',
     logger = console,
   }) {
     super();
@@ -123,7 +124,7 @@ export class FoursquareHarvester extends IHarvester {
 
       // Get OAuth token
       const auth = this.#configService?.getUserAuth?.('foursquare', username) || {};
-      const token = auth.token || process.env.FOURSQUARE_TOKEN;
+      const token = auth.token || configService.getSecret('FOURSQUARE_TOKEN');
 
       if (!token) {
         throw new Error('Foursquare OAuth token not configured');

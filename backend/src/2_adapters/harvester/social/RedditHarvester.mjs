@@ -15,6 +15,7 @@
 import moment from 'moment-timezone';
 import { IHarvester, HarvesterCategory } from '../ports/IHarvester.mjs';
 import { CircuitBreaker } from '../CircuitBreaker.mjs';
+import { configService } from '../../../0_infrastructure/config/index.mjs';
 
 /**
  * Reddit activity harvester
@@ -40,7 +41,7 @@ export class RedditHarvester extends IHarvester {
     httpClient,
     lifelogStore,
     configService,
-    timezone = process.env.TZ || 'America/Los_Angeles',
+    timezone = configService?.isReady?.() ? configService.getTimezone() : 'America/Los_Angeles',
     logger = console,
   }) {
     super();

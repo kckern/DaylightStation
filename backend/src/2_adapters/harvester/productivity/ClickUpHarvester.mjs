@@ -16,6 +16,7 @@
 import moment from 'moment-timezone';
 import { IHarvester, HarvesterCategory } from '../ports/IHarvester.mjs';
 import { CircuitBreaker } from '../CircuitBreaker.mjs';
+import { configService } from '../../../0_infrastructure/config/index.mjs';
 
 /**
  * ClickUp task harvester
@@ -44,7 +45,7 @@ export class ClickUpHarvester extends IHarvester {
     lifelogStore,
     currentStore,
     configService,
-    timezone = process.env.TZ || 'America/Los_Angeles',
+    timezone = configService?.isReady?.() ? configService.getTimezone() : 'America/Los_Angeles',
     logger = console,
   }) {
     super();
@@ -90,10 +91,11 @@ export class ClickUpHarvester extends IHarvester {
    * @returns {Promise<{ current: number, lifelog: { created: number, completed: number }, status: string }>}
    */
   async harvest(username, options = {}) {
+    const clickupConfig = configService?.isReady?.() ? configService.getAdapterConfig('clickup') : null;
     const {
       daysBack = 7,
-      statuses = process.env.clickup?.statuses || [],
-      doneStatuses = process.env.clickup?.done_statuses || ['done', 'complete', 'closed'],
+      statuses = clickupConfig?.statuses || [],
+      doneStatuses = clickupConfig?.done_statuses || ['done', 'complete', 'closed'],
     } = options;
 
     // Check circuit breaker
@@ -119,8 +121,8 @@ export class ClickUpHarvester extends IHarvester {
       // Get auth
       const auth = this.#configService?.getHouseholdAuth?.('clickup') ||
                    this.#configService?.getUserAuth?.('clickup', username) || {};
-      const apiKey = auth.api_key || process.env.CLICKUP_PK;
-      const teamId = auth.workspace_id || process.env.clickup?.team_id;
+      const apiKey = auth.api_key || configService.getSecret('CLICKUP_PK');
+      const teamId = auth.workspace_id || clickupConfig?.team_id;
 
       if (!apiKey) {
         throw new Error('ClickUp API key not found');
