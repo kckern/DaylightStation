@@ -760,7 +760,7 @@ export function useCommonMediaController({
         const secs = mediaEl.currentTime || 0;
         if (secs > 10) {
           const title = meta.title + (meta.show ? ` (${meta.show} - ${meta.season})` : '');
-          await DaylightAPI(`media/log`, { title, type, media_key, seconds: secs, percent: pct });
+          await DaylightAPI(`api/v1/play/log`, { title, type, media_key, seconds: secs, percent: pct });
         }
       }
     };
