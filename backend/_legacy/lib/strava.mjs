@@ -1,453 +1,331 @@
-import moment from 'moment-timezone';
-import crypto from 'crypto';
-import { loadFile, saveFile, userLoadFile, userSaveFile, userSaveAuth } from './io.mjs';
-import { configService } from './config/index.mjs';
-import axios from './http.mjs';
-import { createLogger } from './logging/logger.js';
-import { serializeError } from './logging/utils.js';
+/**
+ * Strava - Legacy Re-export Shim
+ *
+ * MIGRATION: This file wraps StravaHarvester from the adapter layer.
+ * Import from '#backend/src/2_adapters/harvester/fitness/StravaHarvester.mjs' instead.
+ *
+ * Example:
+ *   // Old (deprecated):
+ *   import harvestActivities, { getAccessToken, getActivities } from '#backend/_legacy/lib/strava.mjs';
+ *
+ *   // New (preferred):
+ *   import { StravaHarvester } from '#backend/src/2_adapters/harvester/fitness/StravaHarvester.mjs';
+ */
+
+import { StravaHarvester } from '../../src/2_adapters/harvester/fitness/StravaHarvester.mjs';
+import { configService } from '../../src/0_infrastructure/config/index.mjs';
+import { userDataService } from '../../src/0_infrastructure/config/UserDataService.mjs';
+import axios from '../../src/0_infrastructure/http/httpClient.mjs';
+import { createLogger } from '../../src/0_infrastructure/logging/logger.js';
+
+// Logger for the shim layer
+const shimLogger = createLogger({
+  source: 'backend',
+  app: 'strava-shim'
+});
 
 // Get default username for user-scoped data
 const getDefaultUsername = () => configService.getHeadOfHousehold();
-const md5 = (string) => crypto.createHash('md5').update(string).digest('hex');
-const defaultStravaLogger = createLogger({
-    source: 'backend',
-    app: 'strava'
-});
-const asLogger = (logger) => logger || defaultStravaLogger;
 
-const timezone = process.env.TZ || 'America/Los_Angeles';
+// Lazy singleton - initialized on first use
+let harvesterInstance = null;
 
 /**
- * Extract clean error message from HTML error responses
- * @param {Error} error
- * @returns {string} Clean error message
+ * Create a Strava API client adapter that matches StravaHarvester's expected interface
+ * @returns {Object} Strava client with refreshToken, getActivities, getActivityStreams methods
  */
-const cleanErrorMessage = (error) => {
-    const errorStr = error?.message || String(error);
-    
-    // Check for HTML in error message
-    if (errorStr.includes('<!DOCTYPE') || errorStr.includes('<html')) {
-        // Extract error code and type
-        const codeMatch = errorStr.match(/ERROR:\s*\((\d+)\),\s*([^,"]+)/);
-        if (codeMatch) {
-            const [, code, type] = codeMatch;
-            // Try to extract meaningful message from HTML
-            const titleMatch = errorStr.match(/<title>([^<]+)<\/title>/);
-            const messageMatch = errorStr.match(/<b>Message<\/b>\s*([^<]+)/);
-            const h2Match = errorStr.match(/<h2[^>]*>([^<]+)<\/h2>/);
-            
-            const parts = [`HTTP ${code} ${type}`];
-            if (h2Match && h2Match[1]) parts.push(h2Match[1]);
-            if (messageMatch && messageMatch[1]) parts.push(messageMatch[1]);
-            
-            return parts.join(' - ');
+function createStravaClient() {
+  const baseUrl = 'https://www.strava.com';
+
+  // Store current access token in closure
+  let currentAccessToken = null;
+
+  return {
+    /**
+     * Refresh OAuth token
+     * @param {string} refreshToken - Current refresh token
+     * @returns {Promise<Object>} Token response with access_token, refresh_token, expires_at
+     */
+    async refreshToken(refreshToken) {
+      const clientId = configService.getSecret('STRAVA_CLIENT_ID');
+      const clientSecret = configService.getSecret('STRAVA_CLIENT_SECRET');
+
+      const response = await axios.post(`${baseUrl}/oauth/token`,
+        new URLSearchParams({
+          grant_type: 'refresh_token',
+          refresh_token: refreshToken,
+          client_id: clientId,
+          client_secret: clientSecret
+        }),
+        { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+      );
+
+      // Store for subsequent API calls
+      currentAccessToken = response.data.access_token;
+
+      return response.data;
+    },
+
+    /**
+     * Get activities with pagination
+     * @param {Object} params - Query parameters
+     * @param {number} params.before - Unix timestamp (end)
+     * @param {number} params.after - Unix timestamp (start)
+     * @param {number} params.page - Page number
+     * @param {number} params.perPage - Items per page
+     * @returns {Promise<Array>} Activities
+     */
+    async getActivities({ before, after, page, perPage }) {
+      const response = await axios.get(`${baseUrl}/api/v3/athlete/activities`, {
+        params: { before, after, page, per_page: perPage },
+        headers: { Authorization: `Bearer ${currentAccessToken}` }
+      });
+      return response.data;
+    },
+
+    /**
+     * Get activity streams (heart rate, etc.)
+     * @param {number} activityId - Activity ID
+     * @param {Array<string>} keys - Stream keys to fetch
+     * @returns {Promise<Object>} Stream data
+     */
+    async getActivityStreams(activityId, keys) {
+      const response = await axios.get(
+        `${baseUrl}/api/v3/activities/${activityId}/streams`,
+        {
+          params: { keys: keys.join(','), key_by_type: true },
+          headers: { Authorization: `Bearer ${currentAccessToken}` }
         }
+      );
+      return response.data;
+    },
+
+    /**
+     * Set access token directly (for cases where token is already refreshed)
+     * @param {string} token - Access token
+     */
+    setAccessToken(token) {
+      currentAccessToken = token;
     }
-    
-    // Return original if not HTML or couldn't extract
-    return errorStr.length > 200 ? errorStr.substring(0, 200) + '...' : errorStr;
-};
-
-// Circuit breaker state for rate limiting resilience
-const circuitBreaker = {
-  failures: 0,
-  cooldownUntil: null,
-  maxFailures: 3,
-  baseCooldownMs: 5 * 60 * 1000, // 5 minutes
-  maxCooldownMs: 2 * 60 * 60 * 1000, // 2 hours max
-};
-
-/**
- * Check if circuit breaker is open (in cooldown)
- * @returns {boolean|Object} false if OK to proceed, or cooldown info object
- */
-const isInCooldown = () => {
-  if (!circuitBreaker.cooldownUntil) return false;
-  if (Date.now() >= circuitBreaker.cooldownUntil) {
-    // Cooldown expired, reset
-    circuitBreaker.cooldownUntil = null;
-    circuitBreaker.failures = 0;
-    defaultStravaLogger.info('strava.circuit.reset', { message: 'Cooldown expired, circuit reset' });
-    return false;
-  }
-  const remainingMs = circuitBreaker.cooldownUntil - Date.now();
-  return { inCooldown: true, remainingMs, remainingMins: Math.ceil(remainingMs / 60000) };
-};
-
-/**
- * Record a failure and potentially open the circuit
- * @param {Error} error
- */
-const recordFailure = (error) => {
-  circuitBreaker.failures++;
-  
-  // Check if we should enter cooldown
-  if (circuitBreaker.failures >= circuitBreaker.maxFailures) {
-    // Exponential backoff: 5min, 10min, 20min, 40min... up to 2 hours
-    const backoffMultiplier = Math.min(Math.pow(2, circuitBreaker.failures - circuitBreaker.maxFailures), 24);
-    const cooldownMs = Math.min(
-      circuitBreaker.baseCooldownMs * backoffMultiplier,
-      circuitBreaker.maxCooldownMs
-    );
-    circuitBreaker.cooldownUntil = Date.now() + cooldownMs;
-    const cooldownMins = Math.ceil(cooldownMs / 60000);
-    defaultStravaLogger.warn('strava.circuit.open', {
-      failures: circuitBreaker.failures,
-      cooldownMins,
-      reason: cleanErrorMessage(error),
-      resumeAt: new Date(circuitBreaker.cooldownUntil).toISOString()
-    });
-  }
-};
-
-/**
- * Record a success and reset the circuit breaker
- */
-const recordSuccess = () => {
-  if (circuitBreaker.failures > 0) {
-    defaultStravaLogger.info('strava.circuit.success', { previousFailures: circuitBreaker.failures });
-  }
-  circuitBreaker.failures = 0;
-  circuitBreaker.cooldownUntil = null;
-};
-
-export const getAccessToken = async (logger, username = null) => {
-    const log = asLogger(logger);
-    if (process.env.STRAVA_ACCESS_TOKEN) return process.env.STRAVA_ACCESS_TOKEN;
-
-    const { STRAVA_CLIENT_ID, STRAVA_CLIENT_SECRET } = process.env;
-    const user = username || getDefaultUsername();
-    // Load auth fresh from disk (not cached ConfigService) to get latest tokens
-    const authData = loadFile(`users/${user}/auth/strava`) || {};
-    const { refresh } = authData;
-
-    try {
-        const tokenResponse = await axios.post('https://www.strava.com/oauth/token',
-            new URLSearchParams({
-                grant_type: 'refresh_token',
-                refresh_token: refresh,
-                client_id: STRAVA_CLIENT_ID,
-                client_secret: STRAVA_CLIENT_SECRET
-            }),
-            { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
-        );
-        const accessToken = tokenResponse.data.access_token;
-        const refreshToken = tokenResponse.data.refresh_token;
-        const expiresAt = tokenResponse.data.expires_at;
-
-        if (refreshToken) {
-            // Merge with existing auth data to preserve other fields
-            const newAuthData = { 
-                ...authData,
-                refresh: refreshToken,
-                access_token: accessToken,
-                expires_at: expiresAt,
-                updated_at: new Date().toISOString()
-            };
-            userSaveAuth(user, 'strava', newAuthData);
-        }
-        process.env.STRAVA_ACCESS_TOKEN = accessToken;
-        return accessToken;
-    } catch (error) {
-        log.error('harvest.strava.access_token.error', { 
-            error: cleanErrorMessage(error),
-            statusCode: error.response?.status 
-        });
-        return false;
-    }
-};
-
-export const reauthSequence = async () => {
-    const { STRAVA_CLIENT_ID, STRAVA_URL } = process.env;
-    const redirectUri = STRAVA_URL || 'http://localhost:3000/api/auth/strava/callback';
-    return {
-        url: `https://www.strava.com/oauth/authorize?client_id=${STRAVA_CLIENT_ID}&response_type=code&redirect_uri=${redirectUri}&approval_prompt=force&scope=read,activity:read_all`
-    };
+  };
 }
 
-const baseAPI = async (endpoint, logger) => {
-    const log = asLogger(logger);
-    const base_url = `https://www.strava.com/api/v3`;
-    const { STRAVA_ACCESS_TOKEN } = process.env;
-
-    try {
-        const url = `${base_url}/${endpoint}`;
-        const headers = { 'Authorization': `Bearer ${STRAVA_ACCESS_TOKEN}` };
-
-        const dataResponse = await axios.get(url, { headers });
-        return dataResponse.data;
-    } catch (error) {
-        const statusCode = error.response?.status;
-
-        // Circuit breaker for rate limits (429) AND auth failures (401)
-        // Both indicate we should stop hammering the API
-        if (statusCode === 429 || statusCode === 401) {
-            recordFailure(error);
-            log.warn('strava.api_blocked', {
-                endpoint,
-                statusCode,
-                message: statusCode === 429 ? 'Rate limit exceeded' : 'Auth token invalid'
-            });
-            throw error;
-        }
-        log.warn('harvest.strava.fetch.error', {
-            endpoint,
-            error: cleanErrorMessage(error),
-            statusCode,
-            responseData: error.response?.data
-        });
-        return false;
+/**
+ * Create auth store adapter for StravaHarvester
+ * @returns {Object} Auth store with load/save methods
+ */
+function createAuthStore() {
+  return {
+    async load(username, provider) {
+      return userDataService.getAuthToken(username, provider);
+    },
+    async save(username, provider, tokenData) {
+      return userDataService.saveAuthToken(username, provider, tokenData);
     }
+  };
+}
+
+/**
+ * Create lifelog store adapter for StravaHarvester
+ * @returns {Object} Lifelog store with load/save methods
+ */
+function createLifelogStore() {
+  return {
+    async load(username, path) {
+      // Handle both 'strava' and 'archives/strava/...' paths
+      if (path.startsWith('archives/')) {
+        return userDataService.readUserData(username, `lifelog/${path}`);
+      }
+      return userDataService.readUserData(username, `lifelog/${path}`);
+    },
+    async save(username, path, data) {
+      if (path.startsWith('archives/')) {
+        return userDataService.writeUserData(username, `lifelog/${path}`, data);
+      }
+      return userDataService.writeUserData(username, `lifelog/${path}`, data);
+    }
+  };
+}
+
+/**
+ * Get or create the singleton StravaHarvester instance
+ * @returns {StravaHarvester}
+ */
+function getHarvester() {
+  if (!harvesterInstance) {
+    harvesterInstance = new StravaHarvester({
+      stravaClient: createStravaClient(),
+      lifelogStore: createLifelogStore(),
+      authStore: createAuthStore(),
+      configService,
+      timezone: configService.isReady?.() ? configService.getTimezone() : 'America/Los_Angeles',
+      logger: shimLogger
+    });
+  }
+  return harvesterInstance;
+}
+
+// ============================================================
+// Legacy API Exports
+// ============================================================
+
+/**
+ * Get Strava access token (refreshes if needed)
+ * @param {Object} logger - Logger instance (ignored, uses internal logger)
+ * @param {string} [username] - Username (defaults to head of household)
+ * @returns {Promise<string|false>} Access token or false on failure
+ */
+export const getAccessToken = async (logger, username = null) => {
+  const uname = username || getDefaultUsername();
+  try {
+    const success = await getHarvester().refreshAccessToken(uname);
+    if (success) {
+      // Token was refreshed - return true to indicate success
+      // (Original returned the token string, but callers typically just check truthiness)
+      const authData = userDataService.getAuthToken(uname, 'strava');
+      return authData?.access_token || true;
+    }
+    return false;
+  } catch (error) {
+    shimLogger.error('strava.shim.getAccessToken.error', {
+      username: uname,
+      error: error.message
+    });
+    return false;
+  }
 };
 
+/**
+ * Get reauthorization URL for OAuth flow
+ * @returns {Promise<Object>} Object with authorization URL
+ */
+export const reauthSequence = async () => {
+  return getHarvester().reauthSequence();
+};
+
+/**
+ * Get activities from Strava
+ * @param {Object} logger - Logger instance (ignored, uses internal logger)
+ * @param {number} [daysBack=90] - Days of history to fetch
+ * @returns {Promise<Object|false>} Object with items array, or false on failure
+ */
 export const getActivities = async (logger, daysBack = 90) => {
-    const log = asLogger(logger);
-    await getAccessToken(logger);
-
-    const activities = [];
-    let page = 1;
-    const perPage = 100; // Adjust perPage as needed
-    const startTime = moment().subtract(daysBack, 'days').startOf('day');
-    const before = moment().endOf('day').unix();
-    const after = startTime.unix();
-
-    while (true) {
-        const response = await baseAPI(`athlete/activities?before=${before}&after=${after}&page=${page}&per_page=${perPage}`, logger);
-        if (!response) return false;
-        activities.push(...response);
-
-        if (response.length < perPage) break; // Stop if fewer items than perPage are returned
-        page++;
-    }
-    const username = getDefaultUsername();
-    
-    const activitiesWithHeartRate = [];
-    
-    // Process sequentially to avoid rate limits
-    for (const activity of activities) {
-        if(!activity?.id) continue;
-
-        const date = moment(activity.start_date).tz(timezone).format('YYYY-MM-DD');
-        const typeRaw = activity.type || activity.sport_type || 'activity';
-        const safeType = typeRaw.replace(/\s+/g, '').replace(/[^A-Za-z0-9_-]/g, '') || 'activity';
-
-        if (activity.type === 'VirtualRide' || activity.type === 'VirtualRun') {
-            activity.heartRateOverTime = [9];
-            activitiesWithHeartRate.push(activity);
-            continue;
-        }
-
-        // Check if we already have this activity in the archive using new naming
-        const newArchivePath = `archives/strava/${date}_${safeType}_${activity.id}`;
-        const archiveFileNew = userLoadFile(username, newArchivePath);
-        if (archiveFileNew && archiveFileNew.data && archiveFileNew.data.heartRateOverTime) {
-            activitiesWithHeartRate.push(archiveFileNew.data);
-            continue;
-        }
-
-        // Legacy archive by id only
-        const archiveFile = userLoadFile(username, `archives/strava/${activity.id}`);
-        if (archiveFile && archiveFile.data && archiveFile.data.heartRateOverTime) {
-            activitiesWithHeartRate.push(archiveFile.data);
-            continue;
-        }
-
-        // Fallback: check old individual file format (date_id)
-        const oldFormatFile = userLoadFile(username, `strava/${date}_${activity.id}`);
-        if (oldFormatFile && oldFormatFile.data && oldFormatFile.data.heartRateOverTime) {
-            activitiesWithHeartRate.push(oldFormatFile.data);
-            continue;
-        }
-
-        try {
-            // Rate limit meter: Sleep 5 seconds before fetching streams
-            // 200 requests / 15 mins = ~1 request every 4.5 seconds.
-            await new Promise(resolve => setTimeout(resolve, 5000));
-
-            const heartRateResponse = await baseAPI(`activities/${activity.id}/streams?keys=heartrate&key_by_type=true`, logger);
-            if (heartRateResponse && heartRateResponse.heartrate) {
-                activity.heartRateOverTime = heartRateResponse.heartrate.data.map((value, index) => {
-                    return value;
-                });
-            } else {
-                activity.heartRateOverTime = [0];
-            }
-        } catch (error) {
-            log.warn('harvest.strava.heartrate.error', { 
-                activityId: activity.id, 
-                error: cleanErrorMessage(error),
-                statusCode: error.response?.status 
-            });
-            activity.heartRateOverTime = [1];
-            
-            // If rate limit hit, re-throw to let caller handle it (or just let it fail and script will catch)
-            if (error.response && error.response.status === 429) {
-                throw error;
-            }
-        }
-        activitiesWithHeartRate.push(activity);
+  const username = getDefaultUsername();
+  try {
+    // Ensure we have a valid token first
+    const tokenValid = await getHarvester().refreshAccessToken(username);
+    if (!tokenValid) {
+      return false;
     }
 
-    return { items: activitiesWithHeartRate };
+    // Fetch activities
+    const activities = await getHarvester().fetchActivities(username, daysBack);
+    if (!activities) {
+      return false;
+    }
+
+    // Return in legacy format
+    return { items: activities };
+  } catch (error) {
+    shimLogger.error('strava.shim.getActivities.error', {
+      username,
+      daysBack,
+      error: error.message
+    });
+    return false;
+  }
 };
 
-const harvestActivities = async (logger, job_id, daysBack = 90) => {
-    const log = asLogger(logger);
+/**
+ * Check if Strava is in cooldown (circuit breaker open)
+ * @returns {boolean|Object} false if OK, or cooldown info object
+ */
+export const isStravaInCooldown = () => {
+  // Check if harvester exists and is in cooldown
+  if (!harvesterInstance) {
+    return false;
+  }
 
-    // Check circuit breaker before attempting harvest
-    const cooldownStatus = isInCooldown();
-    if (cooldownStatus) {
-        log.debug('strava.harvest.skipped', {
-            jobId: job_id,
-            reason: 'Circuit breaker active',
-            remainingMins: cooldownStatus.remainingMins
-        });
-        return { skipped: true, reason: 'cooldown', remainingMins: cooldownStatus.remainingMins };
-    }
+  const isOpen = harvesterInstance.isInCooldown();
+  if (!isOpen) {
+    return false;
+  }
 
-    // Expand window when BACKFILL_SINCE is provided
-    let effectiveDaysBack = daysBack;
+  // Return cooldown info similar to legacy format
+  const status = harvesterInstance.getStatus();
+  return {
+    inCooldown: true,
+    remainingMins: status.remainingMins || 0
+  };
+};
+
+/**
+ * Harvest activities from Strava
+ * Main entry point for scheduled harvesting
+ *
+ * @param {Object} logger - Logger instance (ignored, uses internal logger)
+ * @param {string} job_id - Job identifier for logging
+ * @param {number} [daysBack=90] - Days of history to fetch
+ * @returns {Promise<Object>} Harvest result
+ */
+export default async function harvestActivities(logger, job_id, daysBack = 90) {
+  const username = getDefaultUsername();
+
+  shimLogger.info('strava.shim.harvest.start', { jobId: job_id, username, daysBack });
+
+  try {
+    // Support BACKFILL_SINCE env var like legacy
     const backfillSince = process.env.BACKFILL_SINCE;
-    if (backfillSince) {
-        const bfMoment = moment(backfillSince, 'YYYY-MM-DD', true);
-        if (bfMoment.isValid()) {
-            const diffDays = Math.max(1, moment().startOf('day').diff(bfMoment.startOf('day'), 'days') + 1);
-            effectiveDaysBack = Math.max(effectiveDaysBack, diffDays);
-            log.info('harvest.strava.backfill', { jobId: job_id, since: backfillSince, daysBack: effectiveDaysBack });
-        } else {
-            log.warn('harvest.strava.backfill_invalid', { jobId: job_id, backfillSince });
-        }
+
+    const result = await getHarvester().harvest(username, {
+      daysBack,
+      backfillSince
+    });
+
+    // Transform result to match legacy format expectations
+    if (result.status === 'skipped') {
+      return {
+        skipped: true,
+        reason: result.reason,
+        remainingMins: result.remainingMins
+      };
     }
 
-    try {
-        const activitiesData = await getActivities(logger, effectiveDaysBack);
-        if(!activitiesData) return await reauthSequence();
-        
-        // Filter out any nulls from getActivities
-        const validItems = (activitiesData.items || []).filter(Boolean);
-        
-        log.info('harvest.strava.activities', { jobId: job_id, count: validItems.length });
-        if (validItems.length > 0) {
-            log.info('harvest.strava.sample', { sample: validItems[0] });
-        }
-        
-        const activities = validItems.map(item => {
-            const src = "strava";
-            const { start_date: timestamp, type, sport_type, id: itemId } = item;
-            if(!itemId) return false;
-            const id = md5(itemId?.toString());
-            const date = moment(timestamp).tz(timezone).format('YYYY-MM-DD');
-            const typeRaw = type || sport_type || 'activity';
-            const safeType = typeRaw.replace(/\s+/g, '').replace(/[^A-Za-z0-9_-]/g, '') || 'activity';
-            const saveMe = { src, id, date, type: safeType, data: item };
-            return saveMe;
-        }).filter(Boolean);
-
-        const harvestedDates = activities.map(activity => activity.date);
-        const username = getDefaultUsername();
-        
-        // Save each activity to archives/strava/{activityId}.yml (full data)
-        activities.forEach(activity => {
-            if (activity.data && activity.data.id) {
-                const archiveData = {
-                    id: activity.data.id,
-                    date: activity.date,
-                    type: activity.type,
-                    src: activity.src,
-                    data: activity.data
-                };
-                const archiveName = `${activity.date}_${activity.type}_${activity.data.id}`;
-                userSaveFile(username, `archives/strava/${archiveName}`, archiveData);
-            }
-        });
-
-        // Load existing summary to preserve history beyond fetch window
-        const existingSummary = userLoadFile(username, 'strava') || {};
-        
-        // Merge new activities into summary structure
-        const newSummary = { ...existingSummary };
-
-        // Clean up legacy data: remove entries without IDs or with heartRateOverTime
-        Object.keys(newSummary).forEach(date => {
-            if (Array.isArray(newSummary[date])) {
-                newSummary[date] = newSummary[date].filter(a => a.id && !a.heartRateOverTime);
-                if (newSummary[date].length === 0) delete newSummary[date];
-            }
-        });
-
-        log.info('harvest.strava.summary.start', { activityCount: activities.length });
-        activities.forEach(activity => {
-            const date = activity.date;
-            if (!newSummary[date]) newSummary[date] = [];
-            
-            // Create lightweight summary object
-            const summaryObj = {
-                id: activity.data.id,
-                title: activity.data.name || '',
-                type: activity.type,
-                startTime: activity.data.start_date ? moment(activity.data.start_date).tz(timezone).format('hh:mm a') : '',
-                distance: parseFloat((activity.data.distance || 0).toFixed(2)),
-                minutes: parseFloat((activity.data.moving_time / 60 || 0).toFixed(2)),
-                calories: activity.data.calories || activity.data.kilojoules || 0,
-                avgHeartrate: parseFloat((activity.data.average_heartrate || 0).toFixed(2)),
-                maxHeartrate: parseFloat((activity.data.max_heartrate || 0).toFixed(2)),
-                suffer_score: parseFloat((activity.data.suffer_score || 0).toFixed(2)),
-                device_name: activity.data.device_name || ''
-            };
-
-            // Remove zero/empty/null values
-            Object.keys(summaryObj).forEach(key => {
-                if (summaryObj[key] === 0 || summaryObj[key] === '' || summaryObj[key] === null) {
-                    delete summaryObj[key];
-                }
-            });
-
-            // Check if activity already exists in summary for this date
-            const existingIndex = newSummary[date].findIndex(a => a.id === summaryObj.id);
-            if (existingIndex >= 0) {
-                newSummary[date][existingIndex] = summaryObj;
-            } else {
-                newSummary[date].push(summaryObj);
-            }
-        });
-
-        // Sort dates
-        const sortedDates = Object.keys(newSummary).sort((a, b) => new Date(b) - new Date(a));
-        const finalSummary = {};
-        sortedDates.forEach(date => {
-            if (newSummary[date].length > 0) {
-                finalSummary[date] = newSummary[date];
-            }
-        });
-
-        // Save to user-namespaced location
-        userSaveFile(username, 'strava', finalSummary);
-
-        // Success! Reset circuit breaker
-        recordSuccess();
-        return finalSummary;
-    } catch (error) {
-        const statusCode = error.response?.status;
-        // Record failure for circuit breaker on rate limit (429) or auth errors (401)
-        if (statusCode === 429 || statusCode === 401) {
-            // Already recorded in baseAPI, but ensure circuit breaker is triggered
-            recordFailure(error);
-            const cooldownStatus = isInCooldown();
-            return {
-                success: false,
-                error: statusCode === 401 ? 'Auth token invalid - needs refresh' : 'Rate limit exceeded',
-                statusCode,
-                cooldown: cooldownStatus || null
-            };
-        }
-        log.error('harvest.strava.failure', {
-            jobId: job_id,
-            error: cleanErrorMessage(error),
-            statusCode
-        });
-        return { success: false, error: cleanErrorMessage(error) };
+    if (result.status === 'error') {
+      return {
+        success: false,
+        error: result.reason
+      };
     }
-};
 
-export { isInCooldown as isStravaInCooldown };
-export default harvestActivities;
+    // Success - return the summary (legacy format)
+    shimLogger.info('strava.shim.harvest.complete', {
+      jobId: job_id,
+      count: result.count,
+      dateCount: result.dateCount
+    });
+
+    return result;
+  } catch (error) {
+    const statusCode = error.response?.status;
+
+    shimLogger.error('strava.shim.harvest.error', {
+      jobId: job_id,
+      error: error.message,
+      statusCode
+    });
+
+    // Return error object similar to legacy
+    if (statusCode === 429 || statusCode === 401) {
+      const cooldownStatus = isStravaInCooldown();
+      return {
+        success: false,
+        error: statusCode === 401 ? 'Auth token invalid - needs refresh' : 'Rate limit exceeded',
+        statusCode,
+        cooldown: cooldownStatus || null
+      };
+    }
+
+    return { success: false, error: error.message };
+  }
+}
