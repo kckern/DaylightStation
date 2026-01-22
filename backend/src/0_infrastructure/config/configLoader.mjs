@@ -39,12 +39,51 @@ function loadSystemConfig(dataDir) {
   const systemPath = path.join(dataDir, 'system', 'system.yml');
   const systemYml = readYaml(systemPath) ?? {};
 
+  // Load environment-specific overrides if DAYLIGHT_ENV is set
+  const envName = process.env.DAYLIGHT_ENV;
+  let localOverrides = {};
+  if (envName) {
+    const localPath = path.join(dataDir, 'system', `system-local.${envName}.yml`);
+    localOverrides = readYaml(localPath) ?? {};
+  }
+
+  // Merge base config with local overrides
+  const merged = deepMerge(systemYml, localOverrides);
+
   return {
+    // Bootstrap paths (not from YML)
     dataDir,
     configDir: path.join(dataDir, 'system'),
-    defaultHouseholdId: systemYml.households?.default ?? 'default',
-    timezone: systemYml.timezone ?? 'America/Los_Angeles',
+    // Environment
+    env: envName ?? merged.env ?? 'default',
+    // Core settings from YML
+    defaultHouseholdId: merged.households?.default ?? 'default',
+    timezone: merged.timezone ?? 'America/Los_Angeles',
+    // Server settings
+    server: merged.server ?? {},
+    // Paths (media, watchState, img, etc.)
+    paths: merged.paths ?? {},
+    // Scheduler
+    scheduler: merged.scheduler ?? {},
+    // Pass through any other top-level keys
+    ...Object.fromEntries(
+      Object.entries(merged).filter(([k]) =>
+        !['households', 'timezone', 'server', 'paths', 'scheduler', 'env'].includes(k)
+      )
+    ),
   };
+}
+
+function deepMerge(target, source) {
+  const result = { ...target };
+  for (const key of Object.keys(source)) {
+    if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])) {
+      result[key] = deepMerge(result[key] ?? {}, source[key]);
+    } else {
+      result[key] = source[key];
+    }
+  }
+  return result;
 }
 
 // ─── Secrets ─────────────────────────────────────────────────
