@@ -133,7 +133,7 @@ export const normalizeImageUrl = (url) => {
 }
 
 export const DaylightImagePath = (key) => {
-    return `${getBaseUrl()}/static/img/${key}`;
+    return `${getBaseUrl()}/api/v1/static/img/${key}`;
 }
 
 export const DaylightPlexPath = (key) => {
