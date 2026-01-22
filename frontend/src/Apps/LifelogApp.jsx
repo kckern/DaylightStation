@@ -14,7 +14,7 @@ const LifelogApp = () => {
   useEffect(() => {
     const fetchLifelogData = async () => {
       try {
-        const response = await DaylightAPI('/api/lifelog');
+        const response = await DaylightAPI('/api/v1/lifelog');
         setLifelogMessage(response);
       } catch (error) {
         logger.error('lifelog.fetch.failed', { message: error?.message, name: error?.name });
