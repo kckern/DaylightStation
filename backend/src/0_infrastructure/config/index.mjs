@@ -121,5 +121,6 @@ export { configSchema } from './configSchema.mjs';
 export { loadConfig } from './configLoader.mjs';
 export { validateConfig } from './configValidator.mjs';
 export { userDataService, default as UserDataService } from './UserDataService.mjs';
+export { userService, UserService } from './UserService.mjs';
 
 export default configService;
