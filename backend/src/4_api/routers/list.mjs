@@ -277,7 +277,8 @@ export function createListRouter(config) {
             seasonsMap[seasonId] = {
               num: item.metadata?.seasonNumber ?? item.metadata?.parentIndex,
               title: item.metadata?.seasonName || item.metadata?.parentTitle || `Season`,
-              img: item.metadata?.seasonThumbUrl || item.metadata?.parentThumb
+              // Fallback chain: season thumb -> parent thumb -> show thumb
+              img: item.metadata?.seasonThumbUrl || item.metadata?.parentThumb || item.metadata?.showThumbUrl || item.metadata?.grandparentThumb
             };
           }
         }
