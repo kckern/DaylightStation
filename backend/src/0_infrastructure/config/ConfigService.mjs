@@ -85,12 +85,44 @@ export class ConfigService {
     return this.#config.system?.dataDir ?? './data';
   }
 
+  getMediaDir() {
+    return this.#config.system?.paths?.media
+      ?? this.#config.system?.mediaDir
+      ?? `${this.getDataDir()}/media`;
+  }
+
   getUserDir(username) {
     return `${this.getDataDir()}/users/${username}`;
   }
 
   getConfigDir() {
     return this.#config.system?.configDir ?? './config';
+  }
+
+  getPath(name) {
+    return this.#config.system?.paths?.[name] ?? null;
+  }
+
+  // ─── System Config ──────────────────────────────────────────
+
+  get(pathStr) {
+    return resolvePath(this.#config.system, pathStr);
+  }
+
+  getEnv() {
+    return this.#config.system?.env ?? process.env.DAYLIGHT_ENV ?? 'default';
+  }
+
+  getTimezone() {
+    return this.#config.system?.timezone ?? 'America/Los_Angeles';
+  }
+
+  getPort() {
+    return this.#config.system?.server?.port ?? 3111;
+  }
+
+  isSchedulerEnabled() {
+    return this.#config.system?.scheduler?.enabled ?? false;
   }
 
   // ─── Convenience ───────────────────────────────────────────
