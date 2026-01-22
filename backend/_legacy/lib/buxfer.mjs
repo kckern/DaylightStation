@@ -1,239 +1,253 @@
-import axios from './http.mjs';
-import { URLSearchParams } from 'url';
+/**
+ * Buxfer - Legacy Re-export Shim
+ *
+ * MIGRATION: This file wraps BuxferAdapter from the adapter layer.
+ * Import from '#backend/src/2_adapters/finance/BuxferAdapter.mjs' instead.
+ *
+ * Example:
+ *   // Old (deprecated):
+ *   import { getTransactions } from '#backend/_legacy/lib/buxfer.mjs';
+ *
+ *   // New (preferred):
+ *   import { BuxferAdapter } from '#backend/src/2_adapters/finance/BuxferAdapter.mjs';
+ */
+
+import { BuxferAdapter } from '../../src/2_adapters/finance/BuxferAdapter.mjs';
+import { configService } from '../../src/0_infrastructure/config/index.mjs';
+import axios from '../../src/0_infrastructure/http/httpClient.mjs';
+import { createLogger } from '../../src/0_infrastructure/logging/logger.js';
 import yaml from 'js-yaml';
 import { readFileSync, writeFileSync, existsSync } from 'fs';
-import isJSON from 'is-json';
 import { askGPT } from './gpt.mjs';
-import moment from 'moment';
-import { configService } from './config/index.mjs';
-import { createLogger } from './logging/logger.js';
+import isJSON from 'is-json';
 
-const logger = createLogger({ app: 'buxfer' });
+const logger = createLogger({ source: 'backend', app: 'buxfer' });
 
-const __appDirectory = `/${(new URL(import.meta.url)).pathname.split('/').slice(1, -3).join('/')}`;
+// Lazy singleton
+let adapterInstance = null;
 
-const getDataPath = () => process.env.path?.data || `${__appDirectory}/data`;
-
-// Get credentials from ConfigService (single source of truth)
-const getCredentials = () => {
-  // Get from user auth via ConfigService
-  const auth = configService.getUserAuth('buxfer');
-  if (auth?.email && auth?.password) {
-    return {
-      BUXFER_EMAIL: auth.email,
-      BUXFER_PW: auth.password
-    };
+function getAdapter() {
+  if (!adapterInstance) {
+    adapterInstance = new BuxferAdapter({
+      httpClient: axios,
+      getCredentials: () => configService.getUserAuth('buxfer'),
+      logger
+    });
   }
+  return adapterInstance;
+}
 
-  // Fallback: try local secrets file (legacy)
-  const secretspath = `${__appDirectory}/config.secrets.yml`;
-  if (existsSync(secretspath)) {
-    try {
-      const secrets = yaml.load(readFileSync(secretspath, 'utf8'));
-      return {
-        BUXFER_EMAIL: secrets.BUXFER_EMAIL,
-        BUXFER_PW: secrets.BUXFER_PW
-      };
-    } catch (err) {
-      logger.warn('buxfer.secrets_load_failed', { error: err.message });
-    }
-  }
-  return { BUXFER_EMAIL: null, BUXFER_PW: null };
+// Helper to get data path
+const getDataPath = () => process.env.path?.data || '/app/data';
+
+// ============ Wrapper functions matching legacy API ============
+
+/**
+ * Get transactions from Buxfer
+ * @param {Object} options
+ * @param {string} options.startDate - Start date (YYYY-MM-DD)
+ * @param {string} options.endDate - End date (YYYY-MM-DD)
+ * @param {string[]} options.accounts - Account names to query
+ * @param {string} options.tagName - Filter by tag
+ * @returns {Promise<Object[]>} Raw Buxfer transactions
+ */
+export const getTransactions = async (options) => {
+  console.log(`Getting transactions from ${options.startDate} to ${options.endDate} for accounts: ${JSON.stringify(options.accounts)}`);
+  return getAdapter().getTransactions(options);
 };
 
-const getToken = async () => {
-    // If a token already exists in process.env, return it
-    if (process.env.BUXFER_TOKEN) {
-        return process.env.BUXFER_TOKEN;
-    }
-    const { BUXFER_EMAIL, BUXFER_PW } = getCredentials();
-    const url = 'https://www.buxfer.com/api/login';
-    const params = {
-        email: BUXFER_EMAIL,
-        password: BUXFER_PW
-    };
-
-   // console.log(`curl -X POST "${url}" -d "email=${BUXFER_EMAIL}&password=${BUXFER_PW}"`);
-    const {data: { response: { token } } } = await axios.post(url, params);
-
-    // Save the token to process.env
-    process.env.BUXFER_TOKEN = token;
-
-    return token;
-}
-export const getTransactions = async ({startDate, endDate,  accounts, tagName}) => { 
-    console.log(`Getting transactions from ${startDate} to ${endDate} for accounts: ${JSON.stringify(accounts)}`);
-	const token = await getToken();
-	startDate = startDate || '2022-01-01';
-	endDate = endDate || '2024-12-31';
-	accounts = accounts || ["Fidelity", "CaptialOne","Payroll"];
-	const command = 'transactions';
-	let transactions = [];
-	for (let account of accounts) {
-        //console.log(`Getting transactions for account: ${account}`);
-		let page = 1;
-		let hasMore = true;
-		while (hasMore) {
-            //console.log(`Getting transactions for account: ${account} page: ${page}`);
-			const params ={ page, accountName: account, startDate, endDate };
-            if(tagName) params.tagName = tagName;
-			const url = `https://www.buxfer.com/api/${command}?token=${token}&${new URLSearchParams(params).toString()}`;
-			const {
-				data: {
-					response
-				}
-			} = await axios.get(url);
-			transactions = [...transactions, ...response.transactions];
-			if (response.transactions.length === 0) {
-				hasMore = false;
-			}
-			else {
-				page++;
-			}
-		}
-	}
-	transactions.sort((a, b) => new Date(b.date) - new Date(a.date)); //save 
-
-	return transactions;
-}
-
-
-//delete if matches string in account ID
-export const deleteTransactions = async ({accountId, matchString, startDate, endDate}) => {
-
-    //delete backup file: data/budget/deletedTransactions.yml
-    //load from yaml file
-    const dataPath = getDataPath();
-    const deletedTransactions = (() => { try { return yaml.load(readFileSync(`${dataPath}/households/default/apps/finances/deletedTransactions.yml`, 'utf8')) || []; } catch { return {}; } })();
-    const transactions = await getTransactions({startDate, endDate, accounts: [accountId]});
-    const transactionsToDelete = transactions.filter(txn => txn.description.includes(matchString));
-    console.log(`Deleting ${transactionsToDelete.length} transactions...`);
-    for(let txn of transactionsToDelete) {
-        const { id, description, amount, date } = txn;
-        const r = await deleteTransaction(id);
-        console.log(`Deleted: ${date} - ${id} - ${description} - ${amount}`);
-        deletedTransactions[id] = { description, amount, date , accountId};
-    }
-    //save to yaml file
-    const deletedTransactionsYml = yaml.dump(deletedTransactions);
-    writeFileSync(`${dataPath}/households/default/apps/finances/deletedTransactions.yml`, deletedTransactionsYml);
-
-}
-
+/**
+ * Delete a single transaction
+ * @param {string} id - Transaction ID
+ * @returns {Promise<Object>} Deletion result
+ */
 export const deleteTransaction = async (id) => {
-    try{
-        const token = await getToken();
-        const url = `https://www.buxfer.com/api/transaction_delete?token=${token}`;
-        const params = { id };
-        const {data: { response } } = await axios.post(url, params);
-        return response;
-    }catch(e){
-        console.log({id, error: e.message});
-    }
-}
+  try {
+    return await getAdapter().deleteTransaction(id);
+  } catch (e) {
+    console.log({ id, error: e.message });
+  }
+};
 
-export const processMortgageTransactions = async ({ startDate, accounts}) => {
-        console.log(`Processing mortgage transactions from ${startDate} for accounts: ${JSON.stringify(accounts)}`);
-        if(!accounts) return [];
-        const endDate = moment().format('YYYY-MM-DD');
-        const transactions = await getTransactions({startDate, endDate, accounts});
-        return transactions;
+/**
+ * Delete transactions matching a string
+ * Note: This maintains legacy behavior of writing to deletedTransactions.yml
+ * @param {Object} options
+ * @param {string} options.accountId - Account name to search
+ * @param {string} options.matchString - String to match in description
+ * @param {string} options.startDate - Start date (YYYY-MM-DD)
+ * @param {string} options.endDate - End date (YYYY-MM-DD)
+ */
+export const deleteTransactions = async ({ accountId, matchString, startDate, endDate }) => {
+  const dataPath = getDataPath();
+  const deletedTransactionsPath = `${dataPath}/households/default/apps/finances/deletedTransactions.yml`;
 
-
-}
-
-
-export const getAccountBalances = async ({ accounts }) => {
-    console.log(`Getting account balances for accounts: ${JSON.stringify(accounts)}`);
-    const token = await getToken();
-    const command = 'accounts';
-    const url = `https://www.buxfer.com/api/${command}?token=${token}`;
-    const { data: { response } } = await axios.get(url);
-    const balances = response.accounts.filter(acc => accounts.includes(acc.name)).map(acc => ({ name: acc.name, balance: acc.balance }));
-    return balances;
-}
-
-
-export const processTransactions = async ({startDate, endDate, accounts}) => {
-    console.log(`Processing transactions from ${startDate} to ${endDate}`);
-    const transactions = await getTransactions({startDate, endDate, accounts});
-
-    const hasNoTag = (txn) => !txn.tagNames.length;
-    const hasRawDescription = (txn) => /(^Direct|Pwp|^xx|as of|\*|（|Privacycom)/ig.test(txn.description); //TODO: parameterize this
-
-    const txn_to_process = transactions.filter(txn => {
-        const noTag = hasNoTag(txn);
-        const rawDesc = hasRawDescription(txn);
-        if (noTag || rawDesc) {
-             //console.log(`Processing ${txn.id}: NoTag=${noTag}, RawDesc=${rawDesc} (${txn.description}) Tags=${JSON.stringify(txn.tagNames)}`);
-             return true;
-        }
-        return false;
-    });
-   // console.log(`Processing ${txn_to_process.length} transactions to categorize...`);
-    txn_to_process.forEach(txn => console.log(`${txn.date} - ${txn.description}`));
-    const dataPath = getDataPath();
-    const {validTags, chat} = yaml.load(readFileSync(`${dataPath}/households/default/apps/finances/gpt.yml`, 'utf8'));
-    chat[0].content =  chat[0].content.replace("__VALID_TAGS__", JSON.stringify(validTags));
-
-    for(let txn of txn_to_process) {
-        const { description, id, tags,date  } = txn;
-        const index = transactions.findIndex(t => t.id === id);
-        const gpt_input = [...chat, {role:"user", content: description}];
-        const json_string = await askGPT(gpt_input, 'gpt-4o', { response_format: { type: "json_object" }});
-        const is_json = isJSON(json_string);
-        const { category, friendlyName, memo } = is_json ? JSON.parse(json_string) : { };
-        if(friendlyName && validTags.includes(category)) {
-            console.log(`${date} - ${id} - ${friendlyName} - ${category}`);
-            const r = await updateTransaction(id, friendlyName, category, memo);
-            transactions[index].tagNames = [category];
-            transactions[index].description = friendlyName;
-        }else console.log(`\x1b[31mFailed to categorize (${category}): ${date} - ${id} - ${description}\x1b[0m`);
-    }
-    //TODO Delete comp transactions from fidility
-    const deleteIds = transactions
-      .filter(txn => 
-        (txn.description.includes('FDIC') || txn.description.includes('Redemption')) && 
-        txn.accountId === 732539
-      )
-      .map(txn => txn.id);    
-    
-      for(let id of deleteIds) {
-        const r = await deleteTransaction(id);
-        console.log(`Deleted: ${id}`);
-    }
-    const saveMe =  transactions.filter(txn => !deleteIds.includes(txn.id));
-    //console.log(saveMe);
-    return saveMe;
-}
-
-export const updateTransaction = async (id, description, tags, memo) =>{
-    try{
-        
-    //console.log(`Updating transaction: ${id} with description: ${description}, tag: ${tags}, memo: ${memo}`);
-    const token = await getToken();
-    const url = `https://www.buxfer.com/api/transaction_edit?token=${token}`;
-    const params = { id, description, tags, memo };
-    const {data: { response } } = await axios.post(url, params);
-    
-    return response;
-
-    }catch(e){
-        console.log({id, description, tags, memo, error: e.message});
-    }
-}
-
-export const addTransaction = async ({ accountId, amount, date, description, tags, type, status, toAccountId, fromAccountId }) => {
+  // Load existing deleted transactions backup
+  const deletedTransactions = (() => {
     try {
-        const token = await getToken();
-        const url = `https://www.buxfer.com/api/transaction_add?token=${token}`;
-        const tagsString = Array.isArray(tags) ? tags.join(',') : tags;
-        const params = { accountId, amount, date, description, tags: tagsString, type, status };
-        if(toAccountId) params['toAccountId'] = toAccountId;
-        if(fromAccountId) params['fromAccountId'] = fromAccountId;
-        const { data: { response } } = await axios.post(url, params);
-        return response;
-    } catch (e) {
-        console.log({ account, amount, date, description, tags, type, status, error: e.message });
+      return yaml.load(readFileSync(deletedTransactionsPath, 'utf8')) || {};
+    } catch {
+      return {};
     }
-}
+  })();
+
+  const transactions = await getTransactions({ startDate, endDate, accounts: [accountId] });
+  const transactionsToDelete = transactions.filter(txn => txn.description.includes(matchString));
+
+  console.log(`Deleting ${transactionsToDelete.length} transactions...`);
+
+  for (const txn of transactionsToDelete) {
+    const { id, description, amount, date } = txn;
+    await deleteTransaction(id);
+    console.log(`Deleted: ${date} - ${id} - ${description} - ${amount}`);
+    deletedTransactions[id] = { description, amount, date, accountId };
+  }
+
+  // Save backup
+  const deletedTransactionsYml = yaml.dump(deletedTransactions);
+  writeFileSync(deletedTransactionsPath, deletedTransactionsYml);
+};
+
+/**
+ * Process mortgage transactions - simple wrapper
+ * @param {Object} options
+ * @param {string} options.startDate - Start date (YYYY-MM-DD)
+ * @param {string[]} options.accounts - Account names to query
+ * @returns {Promise<Object[]>} Raw Buxfer transactions
+ */
+export const processMortgageTransactions = async ({ startDate, accounts }) => {
+  console.log(`Processing mortgage transactions from ${startDate} for accounts: ${JSON.stringify(accounts)}`);
+  if (!accounts) return [];
+  return getAdapter().processMortgageTransactions({ startDate, accounts });
+};
+
+/**
+ * Get account balances
+ * Note: Returns legacy format (plain objects, not entities)
+ * @param {Object} options
+ * @param {string[]} options.accounts - Account names to query
+ * @returns {Promise<Object[]>} Array of { name, balance }
+ */
+export const getAccountBalances = async ({ accounts }) => {
+  console.log(`Getting account balances for accounts: ${JSON.stringify(accounts)}`);
+  return getAdapter().getAccountBalancesLegacy(accounts);
+};
+
+/**
+ * Update a transaction
+ * Note: Legacy uses positional args; adapter uses object
+ * @param {string} id - Transaction ID
+ * @param {string} description - New description
+ * @param {string} tags - Tags (comma-separated or single)
+ * @param {string} memo - Optional memo
+ * @returns {Promise<Object>} Update result
+ */
+export const updateTransaction = async (id, description, tags, memo) => {
+  try {
+    return await getAdapter().updateTransaction(id, { description, tags, memo });
+  } catch (e) {
+    console.log({ id, description, tags, memo, error: e.message });
+  }
+};
+
+/**
+ * Add a new transaction
+ * @param {Object} options - Transaction data
+ * @returns {Promise<Object>} Created transaction
+ */
+export const addTransaction = async (options) => {
+  try {
+    return await getAdapter().addTransaction(options);
+  } catch (e) {
+    console.log({ ...options, error: e.message });
+  }
+};
+
+/**
+ * Process transactions - categorize via AI and apply delete rules
+ *
+ * This maintains legacy behavior:
+ * - Loads validTags and chat prompts from gpt.yml
+ * - Uses askGPT for categorization
+ * - Deletes FDIC/Redemption transactions from accountId 732539
+ *
+ * @param {Object} options
+ * @param {string} options.startDate - Start date (YYYY-MM-DD)
+ * @param {string} options.endDate - End date (YYYY-MM-DD)
+ * @param {string[]} options.accounts - Account names to process
+ * @returns {Promise<Object[]>} Processed transactions (excluding deleted)
+ */
+export const processTransactions = async ({ startDate, endDate, accounts }) => {
+  console.log(`Processing transactions from ${startDate} to ${endDate}`);
+
+  const transactions = await getTransactions({ startDate, endDate, accounts });
+  const dataPath = getDataPath();
+
+  // Load AI config from gpt.yml (legacy behavior)
+  const gptConfigPath = `${dataPath}/households/default/apps/finances/gpt.yml`;
+  let validTags = [];
+  let chat = [];
+
+  if (existsSync(gptConfigPath)) {
+    const gptConfig = yaml.load(readFileSync(gptConfigPath, 'utf8'));
+    validTags = gptConfig.validTags || [];
+    chat = gptConfig.chat || [];
+
+    // Inject valid tags into system prompt
+    if (chat[0]?.content) {
+      chat[0].content = chat[0].content.replace('__VALID_TAGS__', JSON.stringify(validTags));
+    }
+  }
+
+  // Legacy detection patterns
+  const hasNoTag = (txn) => !txn.tagNames?.length;
+  const hasRawDescription = (txn) => /(^Direct|Pwp|^xx|as of|\*|（|Privacycom)/ig.test(txn.description);
+
+  const txnToProcess = transactions.filter(txn => {
+    const noTag = hasNoTag(txn);
+    const rawDesc = hasRawDescription(txn);
+    return noTag || rawDesc;
+  });
+
+  txnToProcess.forEach(txn => console.log(`${txn.date} - ${txn.description}`));
+
+  // Process with AI categorization
+  for (const txn of txnToProcess) {
+    const { description, id, date } = txn;
+    const index = transactions.findIndex(t => t.id === id);
+    const gptInput = [...chat, { role: 'user', content: description }];
+
+    try {
+      const jsonString = await askGPT(gptInput, 'gpt-4o', { response_format: { type: 'json_object' } });
+      const isJson = isJSON(jsonString);
+      const { category, friendlyName, memo } = isJson ? JSON.parse(jsonString) : {};
+
+      if (friendlyName && validTags.includes(category)) {
+        console.log(`${date} - ${id} - ${friendlyName} - ${category}`);
+        await updateTransaction(id, friendlyName, category, memo);
+        transactions[index].tagNames = [category];
+        transactions[index].description = friendlyName;
+      } else {
+        console.log(`\x1b[31mFailed to categorize (${category}): ${date} - ${id} - ${description}\x1b[0m`);
+      }
+    } catch (e) {
+      console.log(`\x1b[31mAI error for ${id}: ${e.message}\x1b[0m`);
+    }
+  }
+
+  // Legacy auto-delete: FDIC/Redemption from Fidelity (accountId 732539)
+  const deleteIds = transactions
+    .filter(txn =>
+      (txn.description.includes('FDIC') || txn.description.includes('Redemption')) &&
+      txn.accountId === 732539
+    )
+    .map(txn => txn.id);
+
+  for (const id of deleteIds) {
+    await deleteTransaction(id);
+    console.log(`Deleted: ${id}`);
+  }
+
+  const result = transactions.filter(txn => !deleteIds.includes(txn.id));
+  return result;
+};
