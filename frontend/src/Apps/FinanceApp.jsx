@@ -19,19 +19,19 @@ const baseUrl = isLocalhost ? 'http://localhost:3112' : window.location.origin;
 const financeLogger = getChildLogger({ app: 'finance' });
 
 const fetchBudget = async () => {
-  const response = await fetch(`${baseUrl}/data/budget`);
+  const response = await fetch(`${baseUrl}/api/v1/finance/data`);
   const data = await response.json();
   return data;
 }
 
 const reloadBudget = async () => {
-  await fetch(`${baseUrl}/harvest/budget`);
+  await fetch(`${baseUrl}/api/v1/harvest/budget`);
 }
 
 const syncPayroll = async (token) => {
   const url = token
-    ? `${baseUrl}/harvest/payroll?token=${encodeURIComponent(token)}`
-    : `${baseUrl}/harvest/payroll`;
+    ? `${baseUrl}/api/v1/harvest/payroll?token=${encodeURIComponent(token)}`
+    : `${baseUrl}/api/v1/harvest/payroll`;
   const response = await fetch(url);
   if (!response.ok) {
     const error = await response.json();
