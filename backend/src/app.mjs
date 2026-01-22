@@ -73,6 +73,9 @@ import { YamlStateStore } from './2_adapters/scheduling/YamlStateStore.mjs';
 import { Scheduler } from './0_infrastructure/scheduling/Scheduler.mjs';
 import { createSchedulingRouter } from './4_api/routers/scheduling.mjs';
 
+// Harvest domain (data collection)
+import { createHarvestRouter } from './4_api/routers/harvest.mjs';
+
 const __dirname = path.dirname(new URL(import.meta.url).pathname);
 
 /**
@@ -357,6 +360,18 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Legacy redirects for frontend compatibility
   app.get('/data/budget', (req, res) => res.redirect(307, '/finance/data'));
   app.get('/data/budget/daytoday', (req, res) => res.redirect(307, '/finance/data/daytoday'));
+
+  // Harvest domain router (data collection endpoints)
+  const { refreshFinancialData, payrollSyncJob } = await import('../_legacy/lib/budget.mjs');
+  const Infinity = (await import('../_legacy/lib/infinity.mjs')).default;
+  app.use('/harvest', createHarvestRouter({
+    refreshFinancialData,
+    payrollSyncJob,
+    Infinity,
+    configService,
+    logger: rootLogger.child({ module: 'harvest-api' })
+  }));
+  rootLogger.info('harvest.mounted', { path: '/harvest' });
 
   // Entropy domain router - import legacy function for parity
   const { getEntropyReport: legacyGetEntropyReport } = await import('../_legacy/lib/entropy.mjs');
