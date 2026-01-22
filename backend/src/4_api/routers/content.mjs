@@ -32,28 +32,72 @@ export function createContentRouter(registry, watchStore = null, options = {}) {
   /**
    * GET /api/content/list/:source/*
    * List items from a content source
+   *
+   * Supports legacy modifiers in path:
+   * - /playable - resolve to playable items
+   * - /shuffle or ,shuffle - randomize order
+   * Examples:
+   *   /list/plex/123 - list children
+   *   /list/plex/123/playable - resolve to playable items
+   *   /list/plex/123/playable,shuffle - playable + shuffled
    */
   router.get('/list/:source/*', async (req, res) => {
     try {
       const { source } = req.params;
-      const localId = req.params[0] || '';
+      let localId = req.params[0] || '';
+
+      // Parse modifiers from path (e.g., "123/playable,shuffle" or "123/playable")
+      const playable = /playable/i.test(localId);
+      const shuffle = /shuffle/i.test(localId);
+
+      // Strip modifiers from localId to get the actual content ID
+      localId = localId.replace(/\/(playable|shuffle|playable,shuffle|shuffle,playable)$/i, '');
 
       const adapter = registry.get(source);
       if (!adapter) {
         return res.status(404).json({ error: `Unknown source: ${source}` });
       }
 
-      const items = await adapter.getList(localId);
+      let items;
+      if (playable && typeof adapter.resolvePlayables === 'function') {
+        items = await adapter.resolvePlayables(localId);
+      } else {
+        items = await adapter.getList(localId);
+      }
+
+      // Shuffle if requested
+      if (shuffle && Array.isArray(items)) {
+        for (let i = items.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [items[i], items[j]] = [items[j], items[i]];
+        }
+      }
+
       res.json({
         source,
         path: localId,
-        items: items.map(item => ({
-          id: item.id,
-          title: item.title,
-          itemType: item.itemType,
-          childCount: item.childCount,
-          thumbnail: item.thumbnail
-        }))
+        items: items.map(item => {
+          // Flatten metadata fields to top level for legacy compatibility
+          const metadata = item.metadata || {};
+          return {
+            // Core fields
+            id: item.id,
+            title: item.title,
+            itemType: item.itemType,
+            childCount: item.childCount,
+            thumbnail: item.thumbnail,
+            // Legacy field aliases
+            label: item.title,
+            image: item.thumbnail,
+            plex: item.id?.replace(/^plex:/, '') || item.id,
+            // Flatten metadata for frontend (seasonId, episodeNumber, etc.)
+            ...metadata,
+            // Spread remaining item properties (duration, mediaUrl, etc.)
+            ...item,
+            // Keep metadata object for backwards compat with code expecting nested
+            metadata
+          };
+        })
       });
     } catch (err) {
       res.status(500).json({ error: err.message });
