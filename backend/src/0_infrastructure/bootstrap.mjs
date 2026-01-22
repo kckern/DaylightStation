@@ -731,10 +731,12 @@ export function createHomeAutomationApiRouter(config) {
     loadFile,
     saveFile,
     householdId,
+    legacyGetEntropyReport,
     logger = console
   } = config;
 
   return createHomeAutomationRouter({
+    haGateway: adapters.haGateway,
     tvAdapter: adapters.tvAdapter,
     kioskAdapter: adapters.kioskAdapter,
     taskerAdapter: adapters.taskerAdapter,
@@ -742,6 +744,7 @@ export function createHomeAutomationApiRouter(config) {
     loadFile,
     saveFile,
     householdId,
+    legacyGetEntropyReport,
     logger
   });
 }

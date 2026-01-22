@@ -28,6 +28,7 @@ import express from 'express';
 export function createHomeAutomationRouter(config) {
   const router = express.Router();
   const {
+    haGateway,
     tvAdapter,
     kioskAdapter,
     taskerAdapter,
@@ -35,6 +36,7 @@ export function createHomeAutomationRouter(config) {
     loadFile,
     saveFile,
     householdId = 'default',
+    legacyGetEntropyReport,
     logger = console
   } = config;
 
@@ -294,6 +296,102 @@ export function createHomeAutomationRouter(config) {
       res.status(500).json({ error: error.message });
     }
   });
+
+  // ===========================================================================
+  // Data Endpoints (weather, events, entropy)
+  // ===========================================================================
+
+  /**
+   * GET /home/entropy
+   * Get entropy report
+   */
+  router.get('/entropy', async (req, res) => {
+    if (!legacyGetEntropyReport) {
+      return res.status(503).json({ error: 'Entropy service not configured' });
+    }
+
+    try {
+      const report = await legacyGetEntropyReport();
+      res.json(report);
+    } catch (error) {
+      logger.error?.('homeAutomation.entropy.error', { error: error.message });
+      res.status(500).json({ error: 'Failed to generate entropy report' });
+    }
+  });
+
+  /**
+   * GET /home/weather
+   * Get weather data from state files
+   */
+  router.get('/weather', async (req, res) => {
+    if (!loadFile) {
+      return res.status(503).json({ error: 'State file loading not configured' });
+    }
+
+    try {
+      const weatherData = loadFile(`households/${householdId}/shared/weather`) || {};
+      res.json(weatherData);
+    } catch (error) {
+      logger.error?.('homeAutomation.weather.error', { error: error.message });
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  /**
+   * GET /home/events
+   * Get events data from state files
+   */
+  router.get('/events', async (req, res) => {
+    if (!loadFile) {
+      return res.status(503).json({ error: 'State file loading not configured' });
+    }
+
+    try {
+      const eventsData = loadFile(`households/${householdId}/shared/events`) || [];
+      res.json(eventsData);
+    } catch (error) {
+      logger.error?.('homeAutomation.events.error', { error: error.message });
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ===========================================================================
+  // Home Assistant Script Execution
+  // ===========================================================================
+
+  /**
+   * POST /home/ha/script/:scriptId
+   * GET /home/ha/script/:scriptId
+   * Run a Home Assistant script by entity ID
+   */
+  const haScriptHandler = async (req, res) => {
+    if (!haGateway) {
+      return res.status(503).json({
+        ok: false,
+        error: 'Home Assistant not configured'
+      });
+    }
+
+    try {
+      const { scriptId } = req.params;
+      const entityId = scriptId.startsWith('script.') ? scriptId : `script.${scriptId}`;
+
+      logger.info?.('homeAutomation.ha.script.running', { entityId });
+
+      const result = await haGateway.callService('script', 'turn_on', { entity_id: entityId });
+
+      res.json({ ok: true, entityId, result });
+    } catch (error) {
+      logger.error?.('homeAutomation.ha.script.failed', {
+        scriptId: req.params.scriptId,
+        error: error.message
+      });
+      res.status(500).json({ ok: false, error: error.message });
+    }
+  };
+
+  router.get('/ha/script/:scriptId', haScriptHandler);
+  router.post('/ha/script/:scriptId', haScriptHandler);
 
   // ===========================================================================
   // Status Endpoints

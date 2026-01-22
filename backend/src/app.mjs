@@ -400,6 +400,25 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   }));
   rootLogger.info('static.mounted', { path: '/static' });
 
+  // Plex proxy service (for thumbnail transcoding, etc.)
+  const plexHost = process.env.plex?.host || process.env.PLEX_HOST || '';
+  const plexAuth = configService.getHouseholdAuth('plex') || {};
+  const plexToken = plexAuth.token || process.env.plex?.token || '';
+
+  if (plexHost && plexToken) {
+    const plexProxyService = createProxyService({
+      plex: { host: plexHost, token: plexToken },
+      logger: rootLogger.child({ module: 'plex-proxy' })
+    });
+
+    app.use('/plex_proxy', async (req, res) => {
+      await plexProxyService.proxy('plex', req, res);
+    });
+    rootLogger.info('plexProxy.mounted', { path: '/plex_proxy' });
+  } else {
+    rootLogger.warn('plexProxy.disabled', { reason: 'Missing host or token' });
+  }
+
   // Calendar domain router
   app.use('/calendar', createCalendarApiRouter({
     userDataService,
@@ -520,11 +539,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Import IO functions for state persistence
   const { loadFile, saveFile } = await import('../_legacy/lib/io.mjs');
 
+  // Import legacy entropy report for home automation
+  const { getEntropyReport: legacyGetEntropyReportHA } = await import('../_legacy/lib/entropy.mjs');
+
   app.use('/home', createHomeAutomationApiRouter({
     adapters: homeAutomationAdapters,
     loadFile,
     saveFile,
     householdId,
+    legacyGetEntropyReport: legacyGetEntropyReportHA,
     logger: rootLogger.child({ module: 'home-automation-api' })
   }));
   rootLogger.info('homeAutomation.mounted', { path: '/home' });
