@@ -103,6 +103,25 @@ export class ConfigService {
     return this.#config.system?.paths?.[name] ?? null;
   }
 
+  // ─── Adapters ────────────────────────────────────────────
+
+  /**
+   * Get adapter configuration by name
+   * @param {string} adapterName - Adapter identifier (plex, immich, mqtt, etc.)
+   * @returns {object|null}
+   */
+  getAdapterConfig(adapterName) {
+    return this.#config.adapters?.[adapterName] ?? null;
+  }
+
+  /**
+   * Get all adapter configurations
+   * @returns {object}
+   */
+  getAllAdapterConfigs() {
+    return this.#config.adapters ?? {};
+  }
+
   // ─── System Config ──────────────────────────────────────────
 
   get(pathStr) {

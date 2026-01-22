@@ -24,6 +24,7 @@ export function loadConfig(dataDir) {
     users: loadAllUsers(dataDir),
     auth: loadAllAuth(dataDir),
     apps: loadAllApps(dataDir),
+    adapters: loadAdapters(dataDir),
     identityMappings: {},
   };
 
@@ -84,6 +85,13 @@ function deepMerge(target, source) {
     }
   }
   return result;
+}
+
+// ─── Adapters ─────────────────────────────────────────────────
+
+function loadAdapters(dataDir) {
+  const adaptersPath = path.join(dataDir, 'system', 'adapters.yml');
+  return readYaml(adaptersPath) ?? {};
 }
 
 // ─── Secrets ─────────────────────────────────────────────────
