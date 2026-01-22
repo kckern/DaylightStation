@@ -24,7 +24,7 @@ const logMenuSelection = async (item) => {
       : null;
 
   if (selectedKey) {
-    await DaylightAPI("data/menu_log", { media_key: selectedKey });
+    await DaylightAPI("api/v1/play/log", { media_key: selectedKey });
   }
 };
 
@@ -256,7 +256,7 @@ function useFetchMenuData(listInput, refreshToken = 0) {
         };
       }
       const data = await DaylightAPI(
-        `data/list/${target}${config ? `/${config}` : ""}`
+        `api/v1/list/folder/${target}${config ? `/${config}` : ""}`
       );
       if (canceled) return null;
       return { 
