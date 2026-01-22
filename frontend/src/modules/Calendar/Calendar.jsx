@@ -4,7 +4,7 @@ import { DaylightAPI } from '../../lib/api.mjs';
 export default function Calendar(){
 
     const [data, setData] = useState('Loading...');
-    DaylightAPI('/home/calendar').then((response) => {
+    DaylightAPI('/api/v1/home/calendar').then((response) => {
         setData(JSON.stringify(response));
     }
     );

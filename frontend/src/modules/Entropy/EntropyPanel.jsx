@@ -8,7 +8,7 @@ const EntropyPanel = () => {
 
   const fetchEntropy = async () => {
     try {
-      const data = await DaylightAPI('/home/entropy');
+      const data = await DaylightAPI('/api/v1/home/entropy');
       setReport(data);
       setLoading(false);
     } catch (error) {
