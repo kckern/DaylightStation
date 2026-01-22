@@ -287,6 +287,9 @@ export function createListRouter(config) {
         }
       }
 
+      // Note: v1 includes additional fields (id, itemType, metadata, etc.) beyond prod format.
+      // This is intentional - extra fields don't break frontend, and provide richer data.
+      // Critical parity requirements: plex, type, image, rating, title, label must match prod.
       res.json({
         // Add plex field for plex source (matches prod format)
         ...(source === 'plex' && { plex: localId }),
