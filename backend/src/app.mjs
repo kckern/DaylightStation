@@ -132,7 +132,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     isDev: !isDocker
   });
 
-  process.env = { ...process.env, isDocker, ...configResult.config };
+  // Note: Legacy code spread configResult.config into process.env here.
+  // All config access now goes through configService.
 
   // Update logging with final config
   let loggingConfig = loadLoggingConfig();
@@ -169,8 +170,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Initialize Services
   // ==========================================================================
 
-  const dataBasePath = process.env.path?.data || process.env.DATA_PATH || '/data';
-  const mediaBasePath = process.env.path?.media || process.env.MEDIA_PATH || '/data/media';
+  const dataBasePath = configService.getDataDir();
+  const mediaBasePath = configService.getMediaDir();
   const householdId = configService.getDefaultHouseholdId() || 'default';
   const householdDir = userDataService.getHouseholdDir(householdId) || `${dataBasePath}/households/${householdId}`;
 
@@ -222,11 +223,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   app.use('/admin/ws', createEventBusRouter({ eventBus, logger: rootLogger }));
 
   // Content domain
-  // Get Plex auth from ConfigService (same source as legacy)
+  // Get Plex auth from ConfigService
   const plexAuth = configService.getHouseholdAuth('plex') || {};
-  const plexConfig = process.env.media?.plex ? {
-    host: plexAuth.server_url || process.env.media.plex.host,
-    token: plexAuth.token || process.env.media.plex.token
+  const plexConfig = (plexAuth.server_url || plexAuth.token) ? {
+    host: plexAuth.server_url || '',
+    token: plexAuth.token || ''
   } : null;
 
   const watchlistPath = `${householdDir}/state/lists.yml`;
@@ -241,7 +242,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // Watch state path - use history/media_memory under data path (matches legacy structure)
-  const watchStatePath = process.env.path?.watchState || process.env.WATCH_STATE_PATH || `${dataBasePath}/history/media_memory`;
+  const watchStatePath = configService.getPath('watchState') || `${dataBasePath}/history/media_memory`;
   const watchStore = createWatchStore({ watchStatePath });
 
   // Create proxy service for content domain (used for /proxy/plex/* passthrough)
@@ -274,12 +275,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // Finance domain
+  const buxferConfig = configService.getAppConfig('finance', 'buxfer');
   const financeServices = createFinanceServices({
     dataRoot: dataBasePath,
     defaultHouseholdId: householdId,
-    buxfer: process.env.finance?.buxfer ? {
-      email: process.env.finance.buxfer.email,
-      password: process.env.finance.buxfer.password
+    buxfer: buxferConfig ? {
+      email: buxferConfig.email,
+      password: buxferConfig.password
     } : null,
     logger: rootLogger.child({ module: 'finance' })
   });
@@ -307,8 +309,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // Fitness domain
-  // Get Home Assistant config: host from system config, token from household auth file
-  const homeAssistantConfigEnv = process.env.home_assistant || {};
+  // Get Home Assistant config from ConfigService
+  const homeAssistantConfig = configService.getAppConfig('home_assistant') || {};
   const homeAssistantAuth = configService.getHouseholdAuth('homeassistant') || {};
   const loadFitnessConfig = (hid) => {
     const targetHouseholdId = hid || configService.getDefaultHouseholdId();
@@ -320,11 +322,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     mediaRoot: mediaBasePath,
     defaultHouseholdId: householdId,
     homeAssistant: {
-      baseUrl: homeAssistantConfigEnv.base_url || homeAssistantConfigEnv.host || '',
-      token: homeAssistantAuth.token || homeAssistantConfigEnv.token || ''
+      baseUrl: homeAssistantConfig.base_url || homeAssistantConfig.host || '',
+      token: homeAssistantAuth.token || homeAssistantConfig.token || ''
     },
     loadFitnessConfig,
-    openaiApiKey: process.env.OPENAI_API_KEY || '',
+    openaiApiKey: configService.getSecret('OPENAI_API_KEY') || '',
     logger: rootLogger.child({ module: 'fitness' })
   });
 
@@ -390,7 +392,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // Static assets router
-  const imgBasePath = process.env.path?.img || `${mediaBasePath}/img`;
+  const imgBasePath = configService.getPath('img') || `${mediaBasePath}/img`;
   v1Routers.static = createStaticApiRouter({
     imgBasePath,
     dataBasePath,
@@ -400,8 +402,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Plex proxy service (for thumbnail transcoding, etc.)
   // Note: plexAuth already declared above for content registry
   let plexProxyHandler = null;
-  const plexHost = process.env.plex?.host || process.env.PLEX_HOST || '';
-  const plexToken = plexAuth.token || process.env.plex?.token || '';
+  const plexHost = plexAuth.server_url || '';
+  const plexToken = plexAuth.token || '';
 
   if (plexHost && plexToken) {
     const plexProxyService = createProxyService({
@@ -423,9 +425,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // Hardware adapters (printer, TTS, MQTT sensors)
-  const printerConfig = process.env.printer || {};
-  const mqttConfig = process.env.mqtt || {};
-  const ttsApiKey = process.env.OPENAI_API_KEY || process.env.openai?.api_key || '';
+  const printerConfig = configService.getAppConfig('printer') || {};
+  const mqttConfig = configService.getAppConfig('mqtt') || {};
+  const ttsApiKey = configService.getSecret('OPENAI_API_KEY') || '';
 
   const hardwareAdapters = createHardwareAdapters({
     printer: {
@@ -501,13 +503,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // Home automation domain
-  const kioskConfig = process.env.kiosk || {};
-  const taskerConfig = process.env.tasker || {};
-  const remoteExecConfig = process.env.remote_exec || process.env.remoteExec || {};
+  const kioskConfig = configService.getAppConfig('kiosk') || {};
+  const taskerConfig = configService.getAppConfig('tasker') || {};
+  const remoteExecConfig = configService.getAppConfig('remote_exec') || {};
   const homeAutomationAdapters = createHomeAutomationAdapters({
     homeAssistant: {
-      baseUrl: homeAssistantConfigEnv.base_url || homeAssistantConfigEnv.host || '',
-      token: homeAssistantAuth.token || homeAssistantConfigEnv.token || ''
+      baseUrl: homeAssistantConfig.base_url || homeAssistantConfig.host || '',
+      token: homeAssistantAuth.token || homeAssistantConfig.token || ''
     },
     kiosk: {
       host: kioskConfig.host || '',
@@ -545,8 +547,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // Messaging domain (provides telegramAdapter for chatbots)
-  const telegramConfig = process.env.telegram || {};
-  const gmailConfig = process.env.gmail || {};
+  const telegramConfig = configService.getAppConfig('telegram') || {};
+  const gmailConfig = configService.getAppConfig('gmail') || {};
   const messagingServices = createMessagingServices({
     userDataService,
     telegram: {
@@ -560,8 +562,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // NutriBot application
-  const nutribotConfig = process.env.nutribot || {};
-  const openaiApiKey = process.env.OPENAI_API_KEY || process.env.openai?.api_key || '';
+  const nutribotConfig = configService.getAppConfig('nutribot') || {};
+  const openaiApiKey = configService.getSecret('OPENAI_API_KEY') || '';
 
   // Create AI adapter for nutribot (optional)
   let nutribotAiGateway = null;
@@ -590,7 +592,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // Journalist application
-  const journalistConfig = process.env.journalist || {};
+  const journalistConfig = configService.getAppConfig('journalist') || {};
 
   // Create AI adapter for journalist (reuse pattern from nutribot, or share adapter)
   let journalistAiGateway = nutribotAiGateway;  // Reuse the same adapter
