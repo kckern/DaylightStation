@@ -76,6 +76,9 @@ import { createSchedulingRouter } from './4_api/routers/scheduling.mjs';
 // Harvest domain (data collection)
 import { createHarvestRouter } from './4_api/routers/harvest.mjs';
 
+// API versioning
+import { createApiV1Router } from './4_api/routers/apiV1.mjs';
+
 const __dirname = path.dirname(new URL(import.meta.url).pathname);
 
 /**
@@ -319,90 +322,78 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // ==========================================================================
-  // Mount API Routers
+  // Create API v1 Routers
   // ==========================================================================
+  // All DDD routers are collected here and mounted under /api/v1
+  // Route names can be changed in apiV1.mjs without affecting this file
 
-  // Health check endpoints (no /api/ prefix - accessed via /api/v1/ping after router strips prefix)
-  app.get('/ping', (_, res) => res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() }));
-  app.get('/status', (_, res) => res.status(200).json({
-    status: 'ok',
-    uptime: process.uptime(),
-    timestamp: new Date().toISOString()
-  }));
-
-  // Content domain routers
-  app.use('/content', contentRouters.content);
-  app.use('/proxy', contentRouters.proxy);
-  app.use('/list', contentRouters.list);
-  app.use('/play', contentRouters.play);
-  app.use('/local-content', contentRouters.localContent);
-  // NOTE: POST /media/log is handled by legacy backend (_legacy/routers/media.mjs)
-  // Frontend calls /media/log (not /api/v1/media/log), so it routes to legacy.
-  // When cutover is ready, migrate frontend to call /api/v1/play/log instead.
-  rootLogger.info('content.mounted', { paths: ['/content', '/proxy', '/list', '/play', '/local-content'] });
+  const v1Routers = {
+    // Content domain routers
+    content: contentRouters.content,
+    proxy: contentRouters.proxy,
+    list: contentRouters.list,
+    play: contentRouters.play,
+    localContent: contentRouters.localContent,
+  };
+  rootLogger.info('content.routers.created', { keys: ['content', 'proxy', 'list', 'play', 'localContent'] });
 
   // Health domain router
-  app.use('/health', createHealthApiRouter({
+  v1Routers.health = createHealthApiRouter({
     healthServices,
     configService,
     logger: rootLogger.child({ module: 'health-api' })
-  }));
-  rootLogger.info('health.mounted', { path: '/health' });
+  });
 
   // Finance domain router
-  app.use('/finance', createFinanceApiRouter({
+  v1Routers.finance = createFinanceApiRouter({
     financeServices,
     configService,
     logger: rootLogger.child({ module: 'finance-api' })
-  }));
-  rootLogger.info('finance.mounted', { path: '/finance', buxferConfigured: !!financeServices.buxferAdapter });
+  });
 
   // Legacy redirects for frontend compatibility
-  app.get('/data/budget', (req, res) => res.redirect(307, '/finance/data'));
-  app.get('/data/budget/daytoday', (req, res) => res.redirect(307, '/finance/data/daytoday'));
+  app.get('/data/budget', (req, res) => res.redirect(307, '/api/v1/finance/data'));
+  app.get('/data/budget/daytoday', (req, res) => res.redirect(307, '/api/v1/finance/data/daytoday'));
 
   // Harvest domain router (data collection endpoints)
   const { refreshFinancialData, payrollSyncJob } = await import('../_legacy/lib/budget.mjs');
   const Infinity = (await import('../_legacy/lib/infinity.mjs')).default;
-  app.use('/harvest', createHarvestRouter({
+  v1Routers.harvest = createHarvestRouter({
     refreshFinancialData,
     payrollSyncJob,
     Infinity,
     configService,
     logger: rootLogger.child({ module: 'harvest-api' })
-  }));
-  rootLogger.info('harvest.mounted', { path: '/harvest' });
+  });
 
   // Entropy domain router - import legacy function for parity
   const { getEntropyReport: legacyGetEntropyReport } = await import('../_legacy/lib/entropy.mjs');
-  app.use('/entropy', createEntropyApiRouter({
+  v1Routers.entropy = createEntropyApiRouter({
     entropyServices,
     configService,
     legacyGetEntropyReport,
     logger: rootLogger.child({ module: 'entropy-api' })
-  }));
-  rootLogger.info('entropy.mounted', { path: '/entropy' });
+  });
 
   // Lifelog domain router
-  app.use('/lifelog', createLifelogApiRouter({
+  v1Routers.lifelog = createLifelogApiRouter({
     lifelogServices,
     configService,
     logger: rootLogger.child({ module: 'lifelog-api' })
-  }));
-  rootLogger.info('lifelog.mounted', { path: '/lifelog' });
+  });
 
   // Static assets router
   const imgBasePath = process.env.path?.img || `${mediaBasePath}/img`;
-  app.use('/static', createStaticApiRouter({
+  v1Routers.static = createStaticApiRouter({
     imgBasePath,
     dataBasePath,
     logger: rootLogger.child({ module: 'static-api' })
-  }));
-  rootLogger.info('static.mounted', { path: '/static' });
+  });
 
   // Plex proxy service (for thumbnail transcoding, etc.)
+  // Note: plexAuth already declared above for content registry
+  let plexProxyHandler = null;
   const plexHost = process.env.plex?.host || process.env.PLEX_HOST || '';
-  const plexAuth = configService.getHouseholdAuth('plex') || {};
   const plexToken = plexAuth.token || process.env.plex?.token || '';
 
   if (plexHost && plexToken) {
@@ -410,22 +401,19 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       plex: { host: plexHost, token: plexToken },
       logger: rootLogger.child({ module: 'plex-proxy' })
     });
-
-    app.use('/plex_proxy', async (req, res) => {
+    plexProxyHandler = async (req, res) => {
       await plexProxyService.proxy('plex', req, res);
-    });
-    rootLogger.info('plexProxy.mounted', { path: '/plex_proxy' });
+    };
   } else {
     rootLogger.warn('plexProxy.disabled', { reason: 'Missing host or token' });
   }
 
   // Calendar domain router
-  app.use('/calendar', createCalendarApiRouter({
+  v1Routers.calendar = createCalendarApiRouter({
     userDataService,
     configService,
     logger: rootLogger.child({ module: 'calendar-api' })
-  }));
-  rootLogger.info('calendar.mounted', { path: '/calendar' });
+  });
 
   // Hardware adapters (printer, TTS, MQTT sensors)
   const printerConfig = process.env.printer || {};
@@ -487,25 +475,23 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     rootLogger.warn?.('gratitude.canvas.import_failed', { error: e.message });
   }
 
-  app.use('/gratitude', createGratitudeApiRouter({
+  v1Routers.gratitude = createGratitudeApiRouter({
     gratitudeServices,
     configService,
     broadcastToWebsockets: broadcastEvent,
     createPrayerCardCanvas,
     printerAdapter: hardwareAdapters.printerAdapter,
     logger: rootLogger.child({ module: 'gratitude-api' })
-  }));
-  rootLogger.info('gratitude.mounted', { path: '/gratitude' });
+  });
 
   // Fitness domain router
-  app.use('/fitness', createFitnessApiRouter({
+  v1Routers.fitness = createFitnessApiRouter({
     fitnessServices,
     userService,
     userDataService,
     configService,
     logger: rootLogger.child({ module: 'fitness-api' })
-  }));
-  rootLogger.info('fitness.mounted', { path: '/fitness' });
+  });
 
   // Home automation domain
   const kioskConfig = process.env.kiosk || {};
@@ -542,15 +528,14 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Import legacy entropy report for home automation
   const { getEntropyReport: legacyGetEntropyReportHA } = await import('../_legacy/lib/entropy.mjs');
 
-  app.use('/home', createHomeAutomationApiRouter({
+  v1Routers.home = createHomeAutomationApiRouter({
     adapters: homeAutomationAdapters,
     loadFile,
     saveFile,
     householdId,
     legacyGetEntropyReport: legacyGetEntropyReportHA,
     logger: rootLogger.child({ module: 'home-automation-api' })
-  }));
-  rootLogger.info('homeAutomation.mounted', { path: '/home' });
+  });
 
   // Messaging domain (provides telegramAdapter for chatbots)
   const telegramConfig = process.env.telegram || {};
@@ -590,13 +575,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'nutribot' })
   });
 
-  app.use('/nutribot', createNutribotApiRouter({
+  v1Routers.nutribot = createNutribotApiRouter({
     nutribotServices,
     botId: nutribotConfig.telegram?.botId || telegramConfig.botId || '',
     gateway: messagingServices.telegramAdapter,
     logger: rootLogger.child({ module: 'nutribot-api' })
-  }));
-  rootLogger.info('nutribot.mounted', { path: '/nutribot', telegramConfigured: !!messagingServices.telegramAdapter });
+  });
 
   // Journalist application
   const journalistConfig = process.env.journalist || {};
@@ -619,13 +603,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'journalist' })
   });
 
-  app.use('/journalist', createJournalistApiRouter({
+  v1Routers.journalist = createJournalistApiRouter({
     journalistServices,
     configService,
     secretToken: journalistConfig.telegram?.secretToken || telegramConfig.secretToken || '',
     logger: rootLogger.child({ module: 'journalist-api' })
-  }));
-  rootLogger.info('journalist.mounted', { path: '/journalist', telegramConfigured: !!messagingServices.telegramAdapter });
+  });
 
   // Scheduling domain - DDD replacement for legacy /cron
   const schedulingJobStore = new YamlJobStore({
@@ -663,12 +646,30 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     rootLogger.info('scheduler.disabled', { reason: 'Disabled by configuration' });
   }
 
-  app.use('/scheduling', createSchedulingRouter({
+  v1Routers.scheduling = createSchedulingRouter({
     schedulerService,
     scheduler,
     logger: rootLogger.child({ module: 'scheduling-api' })
-  }));
-  rootLogger.info('scheduling.mounted', { path: '/scheduling', schedulerEnabled: enableScheduler && scheduler.enabled });
+  });
+
+  // ==========================================================================
+  // Mount API v1 Router
+  // ==========================================================================
+  // All DDD routers are now accessible under /api/v1/*
+  // Route names can be changed in apiV1.mjs without affecting frontend paths
+
+  const apiV1Router = createApiV1Router({
+    routers: v1Routers,
+    plexProxyHandler,
+    logger: rootLogger.child({ module: 'api-v1' })
+  });
+
+  app.use('/api/v1', apiV1Router);
+  rootLogger.info('apiV1.mounted', {
+    path: '/api/v1',
+    routerCount: Object.keys(v1Routers).length,
+    routers: Object.keys(v1Routers)
+  });
 
   // ==========================================================================
   // Frontend Static Files
