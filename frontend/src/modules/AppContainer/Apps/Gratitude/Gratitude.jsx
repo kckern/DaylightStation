@@ -18,11 +18,11 @@ const logger = getChildLogger('gratitude');
  * Get avatar URL for a user
  */
 const getAvatarSrc = (userId) => {
-  return DaylightMediaPath(`/media/img/users/${userId || 'user'}`);
+  return DaylightMediaPath(`/static/img/users/${userId || 'user'}`);
 };
 
 const getFallbackAvatarSrc = () => {
-  return DaylightMediaPath('/media/img/users/user');
+  return DaylightMediaPath('/static/img/users/user');
 };
 
 /**
@@ -442,7 +442,7 @@ function GratitudeApp({
     // 6. Persist to backend (only if NOT from homebot - homebot already persists)
     if (payload.source !== 'homebot') {
       newItems.forEach(item => {
-        DaylightAPI(`/api/gratitude/selections/${itemCategory}`, {
+        DaylightAPI(`/api/v1/gratitude/selections/${itemCategory}`, {
           userId,
           item: { id: item.id, text: item.text }
         }, 'POST').catch(err => {
@@ -508,7 +508,7 @@ function GratitudeApp({
       
       // Persist to backend
       try {
-        const response = await DaylightAPI(`/api/gratitude/selections/${category}`, {
+        const response = await DaylightAPI(`/api/v1/gratitude/selections/${category}`, {
           userId: currentUser?.id,
           item: { id: item.id, text: item.text }
         }, 'POST');
@@ -558,7 +558,7 @@ function GratitudeApp({
         
         // Persist to backend (only for first-time discards)
         try {
-          await DaylightAPI(`/api/gratitude/discarded/${category}`, { item }, 'POST');
+          await DaylightAPI(`/api/v1/gratitude/discarded/${category}`, { item }, 'POST');
         } catch (err) {
           logger.error('gratitude.dismiss.failed', { error: err.message });
         }
@@ -616,7 +616,7 @@ function GratitudeApp({
       
       // Persist removal to backend
       try {
-        await DaylightAPI(`/api/gratitude/selections/${category}/${selection.id}`, {}, 'DELETE');
+        await DaylightAPI(`/api/v1/gratitude/selections/${category}/${selection.id}`, {}, 'DELETE');
       } catch (err) {
         logger.error('gratitude.remove.failed', { error: err.message });
       }
@@ -1008,7 +1008,7 @@ export default function Gratitude({ clear }) {
   const loadBootstrapData = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await DaylightAPI('/api/gratitude/bootstrap');
+      const data = await DaylightAPI('/api/v1/gratitude/bootstrap');
       
       setUsers(data.users || []);
       setQueue(data.options || { gratitude: [], hopes: [] });

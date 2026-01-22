@@ -46,7 +46,7 @@ export function PianoVisualizer({ onClose, onSessionEnd }) {
         
         // Run on_open HA script if configured
         if (config?.on_open?.ha_script) {
-          DaylightAPI(`exe/ha/script/${config.on_open.ha_script}`, {}, 'POST')
+          DaylightAPI(`/home/ha/script/${config.on_open.ha_script}`, {}, 'POST')
             .then(() => console.debug('[Piano] HA on_open script executed'))
             .catch(err => console.debug('[Piano] HA on_open script failed:', err.message));
         }
@@ -60,7 +60,7 @@ export function PianoVisualizer({ onClose, onSessionEnd }) {
     return () => {
       const config = pianoConfigRef.current;
       if (config?.on_close?.ha_script) {
-        DaylightAPI(`exe/ha/script/${config.on_close.ha_script}`, {}, 'POST')
+        DaylightAPI(`/home/ha/script/${config.on_close.ha_script}`, {}, 'POST')
           .catch(err => console.debug('[Piano] HA on_close script failed:', err.message));
       }
     };

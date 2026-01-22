@@ -61,9 +61,9 @@ export function VibrationCard({
       isInactive={isInactive || !isActive}
       isCountdownActive={isCountdownActive}
       countdownWidth={countdownWidth}
-      imageSrc={DaylightMediaPath(`/media/img/equipment/${equipmentId}`)}
+      imageSrc={DaylightMediaPath(`/static/img/equipment/${equipmentId}`)}
       imageAlt={`${deviceName} equipment`}
-      imageFallback={DaylightMediaPath('/media/img/equipment/equipment')}
+      imageFallback={DaylightMediaPath('/static/img/equipment/equipment')}
       isClickable={false}
     >
       <StatsRow

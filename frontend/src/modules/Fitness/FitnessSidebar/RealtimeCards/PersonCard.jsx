@@ -104,9 +104,9 @@ export function PersonCard({
       isInactive={isInactive}
       isCountdownActive={isCountdownActive}
       countdownWidth={countdownWidth}
-      imageSrc={DaylightMediaPath(`/media/img/users/${profileId}`)}
+      imageSrc={DaylightMediaPath(`/static/img/users/${profileId}`)}
       imageAlt={`${deviceName} profile`}
-      imageFallback={DaylightMediaPath('/media/img/users/user')}
+      imageFallback={DaylightMediaPath('/static/img/users/user')}
       onClick={onClick}
       isClickable={true}
       ariaLabel={`Reassign ${deviceName}`}

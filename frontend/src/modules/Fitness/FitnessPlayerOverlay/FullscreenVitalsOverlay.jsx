@@ -146,7 +146,7 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
           : allUsers.find((u) => String(u.hrDeviceId) === String(device.deviceId));
         const zoneInfo = resolveUserZone(user?.name, device, { userCurrentZones, zones, usersConfigRaw });
         const profileSlug = getProfileSlug(user);
-        const avatarSrc = DaylightMediaPath(`/media/img/users/${profileSlug}`);
+        const avatarSrc = DaylightMediaPath(`/static/img/users/${profileSlug}`);
         const progressEntry = user?.name && userZoneProgress instanceof Map
           ? userZoneProgress.get(user.name)
           : (userZoneProgress && typeof userZoneProgress === 'object'
@@ -185,7 +185,7 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
         ? (equipment.find((e) => e.ble === device.deviceId) || equipmentMap[String(device.deviceId)])
         : equipmentMap[String(device.deviceId)];
       const equipmentId = equipmentConfig?.id || String(device.deviceId);
-      const avatarSrc = DaylightMediaPath(`/media/img/equipment/${equipmentId}`);
+      const avatarSrc = DaylightMediaPath(`/static/img/equipment/${equipmentId}`);
       const rpm = Math.max(0, Math.round(device.cadence || 0));
       const animationDuration = rpm > 0 ? `${270 / rpm}s` : '0s';
       const colorKey = cadenceConfig[String(device.deviceId)];
@@ -239,7 +239,7 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
               key={`hr-${item.deviceId}`}
               name={item.name}
               avatarSrc={item.avatarSrc}
-              fallbackSrc={DaylightMediaPath('/media/img/users/user')}
+              fallbackSrc={DaylightMediaPath('/static/img/users/user')}
               heartRate={item.heartRate}
               zoneId={item.zoneId}
               zoneColor={item.zoneColor}
@@ -265,7 +265,7 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
                 '--rpm-ring-color': item.ringColor,
                 '--rpm-overlay-bg': item.overlayBg
               }}
-              fallbackSrc={DaylightMediaPath('/media/img/equipment/equipment')}
+              fallbackSrc={DaylightMediaPath('/static/img/equipment/equipment')}
               renderValue={(value) => (Number.isFinite(value) ? value : 0)}
             />
           ))}

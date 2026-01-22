@@ -79,7 +79,7 @@ const RpmDeviceAvatar = ({
       return;
     }
     e.target.dataset.fallback = '1';
-    e.target.src = DaylightMediaPath('/media/img/equipment/equipment');
+    e.target.src = DaylightMediaPath('/static/img/equipment/equipment');
   };
 
   return (
@@ -120,7 +120,7 @@ const RpmDeviceAvatar = ({
 
       <div className="avatar-core">
         <img
-          src={DaylightMediaPath(`/media/img/equipment/${equipmentId}`)}
+          src={DaylightMediaPath(`/static/img/equipment/${equipmentId}`)}
           alt={equipmentName}
           onError={handleImageError}
         />

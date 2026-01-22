@@ -873,12 +873,12 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                             key={`rpm-${rpmDevice.deviceId}`}
                             rpm={rpmValue}
                             animationDuration={animationDuration}
-                            avatarSrc={DaylightMediaPath(`/media/img/equipment/${equipmentId}`)}
+                            avatarSrc={DaylightMediaPath(`/static/img/equipment/${equipmentId}`)}
                             avatarAlt={deviceName}
                             imageClassName="rpm-device-image"
                             spinnerStyle={{ borderColor }}
                             valueStyle={{ background: CONFIG.rpm.overlayBg }}
-                            fallbackSrc={DaylightMediaPath('/media/img/equipment/equipment')}
+                            fallbackSrc={DaylightMediaPath('/static/img/equipment/equipment')}
                           />
                         );
                       })}
@@ -1021,7 +1021,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                     >
                       {isHeartRate ? (
                         <img
-                          src={DaylightMediaPath(`/media/img/users/${profileId}`)}
+                          src={DaylightMediaPath(`/static/img/users/${profileId}`)}
                           alt={`${deviceName} profile`}
                           className="user-profile-img"
                           onError={(e) => {
@@ -1030,12 +1030,12 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                               return;
                             }
                             e.currentTarget.dataset.fallback = '1';
-                            e.currentTarget.src = DaylightMediaPath('/media/img/users/user');
+                            e.currentTarget.src = DaylightMediaPath('/static/img/users/user');
                           }}
                         />
                       ) : (
                         <img
-                          src={DaylightMediaPath(`/media/img/equipment/${profileId}.png`)}
+                          src={DaylightMediaPath(`/static/img/equipment/${profileId}.png`)}
                           alt={`${deviceName} profile`}
                           onError={(e) => {
                             if (e.target.dataset.fallback) {
@@ -1043,7 +1043,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                               return;
                             }
                             e.target.dataset.fallback = '1';
-                            e.target.src = DaylightMediaPath('/media/img/equipment/equipment');
+                            e.target.src = DaylightMediaPath('/static/img/equipment/equipment');
                           }}
                         />
                       )}

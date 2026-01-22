@@ -44,7 +44,7 @@ const DEFAULT_TITLE = "Whose turn is it?";
  * Get avatar URL for a user
  */
 const getAvatarSrc = (userId) => {
-  return DaylightMediaPath(`/media/img/users/${userId || 'user'}`);
+  return DaylightMediaPath(`/static/img/users/${userId || 'user'}`);
 };
 
 /**
@@ -387,7 +387,7 @@ export default function FamilySelector({ winner, title, exclude, autoSpin }) {
     setLoading(true);
     try {
       // Use the gratitude bootstrap endpoint which returns household users
-      const data = await DaylightAPI('/api/gratitude/bootstrap');
+      const data = await DaylightAPI('/api/v1/gratitude/bootstrap');
       
       // Transform users to members with colors and avatars
       const users = data.users || [];
