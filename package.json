@@ -1,6 +1,7 @@
 {
   "dependencies": {
     "axios": "^1.7.2",
+    "canvas": "^3.2.1",
     "clickup.js": "^4.0.1",
     "cron-parser": "^4.9.0",
     "dotenv": "^17.2.3",
