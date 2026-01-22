@@ -363,7 +363,7 @@ const useVoiceMemoRecorder = ({
       };
 
       const resp = await Promise.race([
-        DaylightAPI('api/fitness/voice_memo', payload, 'POST'),
+        DaylightAPI('api/v1/fitness/voice_memo', payload, 'POST'),
         timeoutPromise
       ]);
 

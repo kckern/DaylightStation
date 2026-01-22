@@ -29,7 +29,7 @@ const FitnessPluginMenu = ({ activePluginMenuId, onPluginSelect, onBack }) => {
   useEffect(() => {
     const loadMenu = async () => {
       try {
-        const config = await DaylightAPI('/api/fitness');
+        const config = await DaylightAPI('/api/v1/fitness');
         const fitnessConfig = config?.fitness || config;
         const menus = fitnessConfig?.plex?.app_menus || [];
         const menu = menus.find(m => String(m.id) === String(activePluginMenuId));

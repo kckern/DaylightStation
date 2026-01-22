@@ -89,7 +89,7 @@ export function useZoneLedSync({
       }, { maxPerMinute: 20 });
 
       // Fire and forget - don't block on response
-      DaylightAPI('api/fitness/zone_led', payload, 'POST').catch(err => {
+      DaylightAPI('api/v1/fitness/zone_led', payload, 'POST').catch(err => {
         // Silent failure - LED sync should never interrupt workout
         console.debug('[ZoneLED] Update failed (non-blocking):', err.message);
       });
@@ -215,7 +215,7 @@ export function useZoneLedSync({
           // Beacon API for reliability during page unload
           if (navigator.sendBeacon) {
             navigator.sendBeacon(
-              `${window.location.origin}/api/fitness/zone_led`,
+              `${window.location.origin}/api/v1/fitness/zone_led`,
               JSON.stringify(payload)
             );
           }
