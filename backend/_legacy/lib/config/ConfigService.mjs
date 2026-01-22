@@ -1,6 +1,10 @@
 /**
  * ConfigService - Pure Configuration Accessor
  * @module lib/config/ConfigService
+ * 
+ * @deprecated Use backend/src/0_infrastructure/config/ConfigService.mjs instead.
+ * This legacy version is being phased out. The new version at
+ * src/0_infrastructure/config/ has the same API and full infrastructure support.
  *
  * Receives pre-loaded, validated config via constructor.
  * All methods are simple property lookups - no I/O, no fallbacks.
@@ -8,6 +12,7 @@
 
 /**
  * Pure configuration accessor.
+ * @deprecated Use backend/src/0_infrastructure/config/ConfigService.mjs instead.
  * Receives pre-loaded, validated config via constructor.
  * All methods are simple property lookups - no I/O, no fallbacks.
  */
