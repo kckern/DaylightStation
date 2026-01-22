@@ -1,3 +1,17 @@
+/**
+ * IO - File Operations Service
+ *
+ * MIGRATION STATUS: Active (canonical source for user/household file operations)
+ *
+ * This module provides user-aware and household-aware file operations.
+ * New DDD code in backend/src/ should prefer:
+ *   - YamlLifelogStore adapter for lifelog operations
+ *   - ConfigService for config file access
+ *   - FileIO utilities for raw file operations
+ *
+ * For legacy code (chatbots, routers), continue using this module.
+ */
+
 import fs from 'fs';
 import yaml from 'js-yaml';
 import {decode} from 'html-entities';

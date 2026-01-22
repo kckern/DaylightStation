@@ -49,3 +49,7 @@ export {
   writeBinary,
   deleteFile,
 } from './FileIO.mjs';
+
+export {
+  slugify,
+} from './strings.mjs';
