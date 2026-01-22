@@ -220,6 +220,13 @@ const PARITY_TESTS = [
     ddd: '/api/v1/fitness/zone_led/metrics',
     schema: 'zoneLedMetrics',
     ignoreFields: ['uptime', 'rates', 'lastActivation']  // Timing fields
+  },
+  {
+    name: 'Simulation Status',
+    legacy: '/api/fitness/simulate/status',
+    ddd: '/api/v1/fitness/simulate/status',
+    schema: 'simulateStatus',
+    ignoreFields: ['runningSince']  // Timing field
   }
 ];
 
