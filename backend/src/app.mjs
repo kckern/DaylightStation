@@ -13,10 +13,7 @@ import { existsSync } from 'fs';
 import path, { join } from 'path';
 
 // Infrastructure imports
-import { loadAllConfig, logConfigSummary } from '../_legacy/lib/config/loader.mjs';
-import { ConfigValidationError, configService } from './0_infrastructure/config/index.mjs';
-import { userDataService } from './0_infrastructure/config/index.mjs';
-import { userService } from '../_legacy/lib/config/UserService.mjs';
+import { ConfigValidationError, configService, userDataService, userService } from './0_infrastructure/config/index.mjs';
 
 // Logging system
 import { getDispatcher } from './0_infrastructure/logging/dispatcher.js';
@@ -121,20 +118,6 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     return app;
   }
 
-  // ==========================================================================
-  // Load Full Configuration
-  // ==========================================================================
-
-  const configResult = loadAllConfig({
-    configDir: configPaths.configDir,
-    dataDir: configPaths.dataDir,
-    isDocker,
-    isDev: !isDocker
-  });
-
-  // Note: Legacy code spread configResult.config into process.env here.
-  // All config access now goes through configService.
-
   // Update logging with final config
   let loggingConfig = loadLoggingConfig();
   const dispatcher = getDispatcher();
@@ -146,8 +129,6 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     app: 'api',
     context: { env: process.env.NODE_ENV }
   });
-
-  logConfigSummary(configResult, rootLogger);
 
   // ==========================================================================
   // Routing Toggle System
