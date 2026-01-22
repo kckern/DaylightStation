@@ -1,92 +1,118 @@
 # Testing Context
 
-## Test Infrastructure
+## Quick Reference
 
-### Test Types
+| Category | Harness | Data Source |
+|----------|---------|-------------|
+| Unit | `node tests/unit/harness.mjs` | `_fixtures/` (dummy) |
+| Integration | `node tests/integration/harness.mjs` | testDataService |
+| External | `node tests/integration/external/harness.mjs` | Live APIs |
+| Runtime | `npx playwright test` | Real backend |
 
-| Type | Tool | Location | Command |
-|------|------|----------|---------|
-| Smoke | Playwright | `tests/smoke/` | `npm run test:smoke` |
-| Assembly | Jest/Node | `tests/assembly/` | `npm run test:assembly` |
-| E2E | Playwright | `tests/e2e/` | `npx playwright test` |
+## Running Tests
 
-### Running Tests
+### Unit Tests
 
 ```bash
-# Smoke tests
-npm run test:smoke
+# Run all unit tests
+node tests/unit/harness.mjs
 
-# Assembly tests
-npm run test:assembly
+# Run specific folders
+node tests/unit/harness.mjs --only=adapters,domains
 
-# E2E tests (requires dev server running)
-npx playwright test
+# Skip folders
+node tests/unit/harness.mjs --skip=voice-memo
 
-# Specific test file
-npx playwright test tests/e2e/specific.spec.js
+# Pattern match
+node tests/unit/harness.mjs --pattern=PlexAdapter
 
-# With headed browser (visible)
-npx playwright test --headed
+# Watch mode
+node tests/unit/harness.mjs --watch
 ```
 
-### Test Configuration
+### Integration Tests
 
-- `jest.config.js` - Jest configuration
-- `playwright.config.js` - Playwright configuration (if exists)
+```bash
+# Run all integration tests
+node tests/integration/harness.mjs
 
-### Test Context Utilities
+# Run specific folders
+node tests/integration/harness.mjs --only=api
 
-Located in test setup files, provides:
-- Test household data
-- Mock services
-- Fixture loading
+# Pattern match
+node tests/integration/harness.mjs --pattern=v1-regression
 
-## Test Household
-
-**Location:** `data/households/test/` (if configured)
-
-**Purpose:** Isolated data for testing without affecting production.
-
-**Structure:**
+# Smoke tests only
+node tests/integration/harness.mjs --smoke
 ```
-data/households/test/
-├── apps/
-│   ├── fitness/config.yml
-│   └── ...
-└── users/
-    ├── test-user-1.yml
-    └── ...
+
+### Harness Options
+
+| Option | Description |
+|--------|-------------|
+| `--only=a,b` | Run only specified folders |
+| `--skip=a,b` | Skip specified folders |
+| `--pattern=text` | Only tests matching pattern |
+| `--verbose, -v` | Show full output |
+| `--dry-run` | Show what would run |
+| `--watch, -w` | Watch mode |
+| `--coverage` | Generate coverage report |
+
+## Directory Structure
+
 ```
+tests/
+├── _archive/              # Archived tests
+├── _fixtures/             # Dummy data for mocked tests
+├── integration/
+│   ├── harness.mjs        # Integration test harness
+│   ├── _wip/              # Work in progress
+│   ├── suite/             # Regression baseline
+│   ├── edge/              # Edge cases
+│   └── external/          # External API tests
+├── lib/                   # testDataService, matchers
+├── runtime/               # Playwright e2e
+└── unit/
+    ├── harness.mjs        # Unit test harness
+    ├── _wip/, suite/, edge/
+```
+
+## Path Aliases
+
+Use these instead of relative paths:
+
+```javascript
+import { X } from '@backend/src/1_domains/...';    // backend/
+import { X } from '@frontend/hooks/...';           // frontend/src/
+import { X } from '@fixtures/media/...';           // tests/_fixtures/
+import { X } from '@testlib/testDataService.mjs';  // tests/lib/
+```
+
+## testDataService
+
+Provides real test data from the data mount instead of hardcoded fixtures.
+
+```javascript
+import { loadTestData, validateExpectations } from '@testlib/testDataService.mjs';
+
+const testData = await loadTestData({ scripture: 1, plex: 2 });
+const sample = testData.plex[0];
+// sample.id = '545219'
+// sample.expect = { title: /regex/, type: 'movie|episode' }
+```
+
+Registry: `data/system/testdata.yml`
 
 ## Writing Tests
 
-### Playwright E2E Pattern
+1. **Use path aliases** - Not relative paths
+2. **Use testDataService** - For real data from data mount
+3. **Use `_fixtures/`** - Only for dummy/mock data
+4. **Choose right category:**
+   - Unit test? → `tests/unit/suite/`
+   - API test? → `tests/integration/suite/`
+   - E2E? → `tests/runtime/suite/`
 
-```javascript
-import { test, expect } from '@playwright/test';
+## Reference
 
-test('description', async ({ page }) => {
-  await page.goto('/app');
-  await page.click('[data-testid="button"]');
-  await expect(page.locator('.result')).toBeVisible();
-});
-```
-
-### Jest Unit Pattern
-
-```javascript
-import { functionToTest } from '../src/module';
-
-describe('Module', () => {
-  test('does something', () => {
-    const result = functionToTest(input);
-    expect(result).toBe(expected);
-  });
-});
-```
-
-## Related Docs
-
-- `docs/plans/2026-01-04-testing-strategy-design.md`
-- `docs/plans/2026-01-04-testing-infrastructure.md`
-- `docs/HARVESTER_TESTS_QUICKSTART.md`
+See `docs/reference/core/testing.md` for full documentation.

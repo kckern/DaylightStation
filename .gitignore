@@ -40,3 +40,4 @@ tests/runtime/
 /logs
 /.playwright-mcp
 /coverage
+tests/output/

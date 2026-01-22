@@ -1,9 +1,0 @@
-_meta:
-  captured_at: '2026-01-21T22:56:34.366Z'
-  source_id: news/cnn
-  legacy_endpoint: /media/local/news/cnn
-  source_label: News
-  source_uid: aa2ef218-dc06-46e1-9b89-8c6140c1dc36
-response:
-  status: 200
-  body: null

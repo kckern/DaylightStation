@@ -1,9 +1,0 @@
-_meta:
-  captured_at: '2026-01-21T22:56:34.359Z'
-  source_id: spot/ubks
-  legacy_endpoint: /media/local/spot/ubks
-  source_label: School
-  source_uid: 3c0b8e49-7cee-4055-bcd9-6e3dbdf1eac4
-response:
-  status: 200
-  body: null

@@ -1,9 +1,0 @@
-_meta:
-  captured_at: '2026-01-21T22:56:34.362Z'
-  source_id: news/teded
-  legacy_endpoint: /media/local/news/teded
-  source_label: Ted Ed
-  source_uid: 9191a827-5ce0-46b8-b63d-aad75ee1accc
-response:
-  status: 200
-  body: null
