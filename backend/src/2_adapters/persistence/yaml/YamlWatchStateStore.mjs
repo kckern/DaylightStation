@@ -1,8 +1,13 @@
 // backend/src/2_adapters/persistence/yaml/YamlWatchStateStore.mjs
-import fs from 'fs';
 import path from 'path';
-import yaml from 'js-yaml';
 import { WatchState } from '../../../1_domains/content/entities/WatchState.mjs';
+import {
+  ensureDir,
+  loadYamlFromPath,
+  saveYamlToPath,
+  deleteFile,
+  resolveYamlPath
+} from '../../../0_infrastructure/utils/FileIO.mjs';
 
 /**
  * YAML-based watch state persistence
@@ -34,13 +39,11 @@ export class YamlWatchStateStore {
    */
   _readFile(storagePath) {
     const filePath = this._getFilePath(storagePath);
-    try {
-      if (!fs.existsSync(filePath)) return {};
-      const content = fs.readFileSync(filePath, 'utf8');
-      return yaml.load(content) || {};
-    } catch (err) {
-      return {};
-    }
+    // Try both .yml and .yaml
+    const basePath = filePath.replace(/\.yml$/, '');
+    const resolvedPath = resolveYamlPath(basePath);
+    if (!resolvedPath) return {};
+    return loadYamlFromPath(resolvedPath) || {};
   }
 
   /**
@@ -50,8 +53,8 @@ export class YamlWatchStateStore {
    */
   _writeFile(storagePath, data) {
     const filePath = this._getFilePath(storagePath);
-    fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    fs.writeFileSync(filePath, yaml.dump(data), 'utf8');
+    ensureDir(path.dirname(filePath));
+    saveYamlToPath(filePath, data);
   }
 
   /**
@@ -99,12 +102,9 @@ export class YamlWatchStateStore {
    */
   async clear(storagePath) {
     const filePath = this._getFilePath(storagePath);
-    try {
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-      }
-    } catch (err) {
-      // Ignore errors
-    }
+    // Try both extensions
+    const basePath = filePath.replace(/\.yml$/, '');
+    deleteFile(`${basePath}.yml`);
+    deleteFile(`${basePath}.yaml`);
   }
 }

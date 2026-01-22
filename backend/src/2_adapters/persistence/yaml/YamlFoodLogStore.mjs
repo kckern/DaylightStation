@@ -8,11 +8,16 @@
  * - Cold storage: households/{hid}/apps/nutrition/archives/nutrilog/{YYYY-MM}.yml
  */
 
-import fs from 'fs';
 import path from 'path';
-import yaml from 'js-yaml';
 import { NutriLog } from '../../../1_domains/nutrition/entities/NutriLog.mjs';
 import { IFoodLogStore } from '../../../1_domains/nutrition/ports/IFoodLogStore.mjs';
+import {
+  ensureDir,
+  dirExists,
+  listYamlFiles,
+  loadYamlFromPath,
+  saveYamlToPath
+} from '../../../0_infrastructure/utils/FileIO.mjs';
 
 const ARCHIVE_RETENTION_DAYS = 30;
 
@@ -86,25 +91,13 @@ export class YamlFoodLogStore extends IFoodLogStore {
   // ==================== File I/O ====================
 
   /**
-   * Ensure directory exists
-   * @param {string} dirPath
-   */
-  #ensureDir(dirPath) {
-    if (!fs.existsSync(dirPath)) {
-      fs.mkdirSync(dirPath, { recursive: true });
-    }
-  }
-
-  /**
-   * Read a YAML file
+   * Read a data file
    * @param {string} filePath
    * @returns {Object}
    */
   #readFile(filePath) {
     try {
-      if (!fs.existsSync(filePath)) return {};
-      const content = fs.readFileSync(filePath, 'utf8');
-      return yaml.load(content) || {};
+      return loadYamlFromPath(filePath) || {};
     } catch (e) {
       this.#logger.warn?.('YamlFoodLogStore.readFile.error', { filePath, error: e.message });
       return {};
@@ -112,13 +105,13 @@ export class YamlFoodLogStore extends IFoodLogStore {
   }
 
   /**
-   * Write a YAML file
+   * Write a data file
    * @param {string} filePath
    * @param {Object} data
    */
   #writeFile(filePath, data) {
-    this.#ensureDir(path.dirname(filePath));
-    fs.writeFileSync(filePath, yaml.dump(data, { lineWidth: -1 }), 'utf8');
+    ensureDir(path.dirname(filePath));
+    saveYamlToPath(filePath, data);
   }
 
   /**
@@ -215,14 +208,13 @@ export class YamlFoodLogStore extends IFoodLogStore {
     // If not found in hot storage, search archives
     if (!entity) {
       const archiveDir = this.#getArchiveDir(userId);
-      if (fs.existsSync(archiveDir)) {
-        const archiveFiles = fs.readdirSync(archiveDir)
-          .filter(f => f.endsWith('.yml'))
+      if (dirExists(archiveDir)) {
+        const archiveFiles = listYamlFiles(archiveDir, { stripExtension: false })
           .sort()
           .reverse(); // Search newest archives first
 
         for (const file of archiveFiles) {
-          const yearMonth = file.replace('.yml', '');
+          const yearMonth = file.replace(/\.(yml|yaml)$/, '');
           const archiveData = this.#loadArchive(userId, yearMonth);
           entity = this.#findEntity(archiveData, id);
           if (entity) break;
@@ -454,7 +446,7 @@ export class YamlFoodLogStore extends IFoodLogStore {
 
     // Write to monthly archives
     const archiveDir = this.#getArchiveDir(userId);
-    this.#ensureDir(archiveDir);
+    ensureDir(archiveDir);
 
     const monthsUpdated = [];
     for (const [yearMonth, monthLogs] of Object.entries(coldByMonth)) {

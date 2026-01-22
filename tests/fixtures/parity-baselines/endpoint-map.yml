@@ -3,7 +3,7 @@
 
 plex:
   legacy: /media/plex/info/{id}
-  ddd: /api/v1/content/plex/{id}
+  ddd: /api/v1/content/plex/info/{id}
   pattern: "^plex:\\s*(\\d+)"
   param: id
 

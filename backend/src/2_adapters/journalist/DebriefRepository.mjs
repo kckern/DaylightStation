@@ -5,9 +5,13 @@
  * Handles persistence of morning debrief data to debriefs.yml
  */
 
-import fs from 'fs';
-import yaml from 'js-yaml';
 import path from 'path';
+import {
+  ensureDir,
+  loadYamlFromPath,
+  saveYamlToPath,
+  resolveYamlPath
+} from '../../0_infrastructure/utils/FileIO.mjs';
 
 /**
  * Repository for persisting debrief data
@@ -43,9 +47,10 @@ export class DebriefRepository {
       // Read existing debriefs or initialize empty structure
       let debriefs = { debriefs: [] };
 
-      if (fs.existsSync(debriefPath)) {
-        const content = fs.readFileSync(debriefPath, 'utf8');
-        debriefs = yaml.load(content) || { debriefs: [] };
+      const basePath = debriefPath.replace(/\.yml$/, '');
+      const resolvedPath = resolveYamlPath(basePath);
+      if (resolvedPath) {
+        debriefs = loadYamlFromPath(resolvedPath) || { debriefs: [] };
       }
 
       // Ensure debriefs array exists
@@ -65,14 +70,11 @@ export class DebriefRepository {
       debriefs.debriefs.unshift(entry);
 
       // Write back to file
-      const yamlOutput = yaml.dump(debriefs, {
-        indent: 2,
-        lineWidth: -1,
+      ensureDir(path.dirname(debriefPath));
+      saveYamlToPath(debriefPath, debriefs, {
         quotingType: '"',
         forceQuotes: true,
       });
-
-      fs.writeFileSync(debriefPath, yamlOutput, 'utf8');
 
       this.#logger?.info('debrief.persisted', {
         date: debrief.date,
@@ -97,13 +99,13 @@ export class DebriefRepository {
     const debriefPath = path.join(this.#dataPath, 'debriefs.yml');
 
     try {
-      if (!fs.existsSync(debriefPath)) {
+      const basePath = debriefPath.replace(/\.yml$/, '');
+      const resolvedPath = resolveYamlPath(basePath);
+      if (!resolvedPath) {
         return [];
       }
 
-      const content = fs.readFileSync(debriefPath, 'utf8');
-      const data = yaml.load(content);
-
+      const data = loadYamlFromPath(resolvedPath);
       return data?.debriefs || [];
     } catch (error) {
       this.#logger?.error('debrief.read-failed', {

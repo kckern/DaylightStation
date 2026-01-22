@@ -20,9 +20,14 @@
  * @module adapters/messaging
  */
 
-import fs from 'fs/promises';
 import path from 'path';
-import yaml from 'js-yaml';
+import {
+  ensureDir,
+  loadYamlFromPath,
+  saveYamlToPath,
+  resolveYamlPath,
+  deleteFile
+} from '../../0_infrastructure/utils/FileIO.mjs';
 import { IConversationStateStore } from '../../1_domains/messaging/ports/IConversationStateStore.mjs';
 
 export class YamlConversationStateStore extends IConversationStateStore {
@@ -64,18 +69,17 @@ export class YamlConversationStateStore extends IConversationStateStore {
   /**
    * Load YAML file for conversation
    * @private
-   * @returns {Promise<Object|null>}
+   * @returns {Object|null}
    */
-  async #loadFile(conversationId) {
+  #loadFile(conversationId) {
     const filePath = this.#getFilePath(conversationId);
     try {
-      const content = await fs.readFile(filePath, 'utf8');
-      return yaml.load(content) || null;
+      const basePath = filePath.replace(/\.yml$/, '');
+      const resolvedPath = resolveYamlPath(basePath);
+      if (!resolvedPath) return null;
+      return loadYamlFromPath(resolvedPath) || null;
     } catch (err) {
-      if (err.code === 'ENOENT') {
-        return null;
-      }
-      throw err;
+      return null;
     }
   }
 
@@ -83,21 +87,10 @@ export class YamlConversationStateStore extends IConversationStateStore {
    * Save data to YAML file
    * @private
    */
-  async #saveFile(conversationId, data) {
+  #saveFile(conversationId, data) {
     const filePath = this.#getFilePath(conversationId);
-    const dir = path.dirname(filePath);
-
-    // Ensure directory exists
-    try {
-      await fs.mkdir(dir, { recursive: true });
-    } catch (err) {
-      if (err.code !== 'EEXIST') {
-        throw err;
-      }
-    }
-
-    const yamlContent = yaml.dump(data, { lineWidth: -1 });
-    await fs.writeFile(filePath, yamlContent, 'utf8');
+    ensureDir(path.dirname(filePath));
+    saveYamlToPath(filePath, data);
   }
 
   // ===========================================================================
@@ -111,7 +104,7 @@ export class YamlConversationStateStore extends IConversationStateStore {
    * @returns {Promise<Object|null>}
    */
   async get(conversationId, messageId) {
-    const data = await this.#loadFile(conversationId);
+    const data = this.#loadFile(conversationId);
     if (!data) {
       return null;
     }
@@ -133,7 +126,7 @@ export class YamlConversationStateStore extends IConversationStateStore {
    * @param {string} [messageId] - Optional message key for session
    */
   async set(conversationId, state, messageId) {
-    let data = await this.#loadFile(conversationId) || {};
+    let data = this.#loadFile(conversationId) || {};
 
     const stateWithTimestamp = {
       ...state,
@@ -157,7 +150,7 @@ export class YamlConversationStateStore extends IConversationStateStore {
       }
     }
 
-    await this.#saveFile(conversationId, data);
+    this.#saveFile(conversationId, data);
   }
 
   /**
@@ -169,18 +162,16 @@ export class YamlConversationStateStore extends IConversationStateStore {
     if (!messageId) {
       // Delete entire file
       const filePath = this.#getFilePath(conversationId);
-      try {
-        await fs.unlink(filePath);
-      } catch (err) {
-        if (err.code !== 'ENOENT') {
-          throw err;
-        }
-      }
+      const basePath = filePath.replace(/\.yml$/, '');
+
+      // Try both extensions
+      deleteFile(`${basePath}.yml`);
+      deleteFile(`${basePath}.yaml`);
       return;
     }
 
     // Delete specific session
-    const data = await this.#loadFile(conversationId);
+    const data = this.#loadFile(conversationId);
     if (!data || !data.sessions || !data.sessions[messageId]) {
       return;
     }
@@ -191,15 +182,11 @@ export class YamlConversationStateStore extends IConversationStateStore {
     const { sessions, ...rootState } = data;
     if (Object.keys(sessions).length === 0 && Object.keys(rootState).length === 0) {
       const filePath = this.#getFilePath(conversationId);
-      try {
-        await fs.unlink(filePath);
-      } catch (err) {
-        if (err.code !== 'ENOENT') {
-          throw err;
-        }
-      }
+      const basePath = filePath.replace(/\.yml$/, '');
+      deleteFile(`${basePath}.yml`);
+      deleteFile(`${basePath}.yaml`);
     } else {
-      await this.#saveFile(conversationId, data);
+      this.#saveFile(conversationId, data);
     }
   }
 

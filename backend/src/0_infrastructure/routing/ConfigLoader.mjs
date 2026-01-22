@@ -1,6 +1,5 @@
 // backend/src/0_infrastructure/routing/ConfigLoader.mjs
-import fs from 'fs';
-import yaml from 'js-yaml';
+import { loadYamlFromPath } from '../utils/FileIO.mjs';
 
 /**
  * Load and validate routing configuration
@@ -10,8 +9,11 @@ import yaml from 'js-yaml';
  * @throws {Error} If config is invalid
  */
 export function loadRoutingConfig(configPath, availableShims) {
-  const content = fs.readFileSync(configPath, 'utf8');
-  const config = yaml.load(content);
+  const config = loadYamlFromPath(configPath);
+
+  if (!config) {
+    throw new Error(`Failed to load routing config from ${configPath}`);
+  }
 
   const errors = [];
 

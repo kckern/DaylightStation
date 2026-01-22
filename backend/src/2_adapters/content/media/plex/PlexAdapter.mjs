@@ -1,10 +1,14 @@
 // backend/src/2_adapters/content/media/plex/PlexAdapter.mjs
-import fs from 'fs';
 import path from 'path';
-import yaml from 'js-yaml';
 import { ListableItem } from '../../../../1_domains/content/capabilities/Listable.mjs';
 import { PlayableItem } from '../../../../1_domains/content/capabilities/Playable.mjs';
 import { PlexClient } from './PlexClient.mjs';
+import {
+  dirExists,
+  listYamlFiles,
+  loadYamlFromPath,
+  saveYamlToPath
+} from '../../../../0_infrastructure/utils/FileIO.mjs';
 
 /**
  * Plex content source adapter.
@@ -45,20 +49,17 @@ export class PlexAdapter {
    * @private
    */
   _loadHistoryFromFiles() {
-    if (!this.historyPath || !fs.existsSync(this.historyPath)) {
+    if (!this.historyPath || !dirExists(this.historyPath)) {
       return {};
     }
 
     let log = {};
     try {
-      const files = fs.readdirSync(this.historyPath);
+      const files = listYamlFiles(this.historyPath, { stripExtension: false });
       for (const file of files) {
-        if (file.endsWith('.yml') || file.endsWith('.yaml')) {
-          const filePath = path.join(this.historyPath, file);
-          const content = fs.readFileSync(filePath, 'utf8');
-          const data = yaml.load(content) || {};
-          log = { ...log, ...data };
-        }
+        const filePath = path.join(this.historyPath, file);
+        const data = loadYamlFromPath(filePath);
+        if (data) log = { ...log, ...data };
       }
     } catch (err) {
       console.error('[PlexAdapter] Error loading history:', err.message);
@@ -73,29 +74,26 @@ export class PlexAdapter {
    * @private
    */
   _clearHistoryFromFiles(keys) {
-    if (!this.historyPath || !fs.existsSync(this.historyPath)) {
+    if (!this.historyPath || !dirExists(this.historyPath)) {
       return;
     }
 
     try {
-      const files = fs.readdirSync(this.historyPath);
+      const files = listYamlFiles(this.historyPath, { stripExtension: false });
       for (const file of files) {
-        if (file.endsWith('.yml') || file.endsWith('.yaml')) {
-          const filePath = path.join(this.historyPath, file);
-          const content = fs.readFileSync(filePath, 'utf8');
-          const data = yaml.load(content) || {};
+        const filePath = path.join(this.historyPath, file);
+        const data = loadYamlFromPath(filePath) || {};
 
-          let modified = false;
-          for (const key of keys) {
-            if (data[key]) {
-              delete data[key];
-              modified = true;
-            }
+        let modified = false;
+        for (const key of keys) {
+          if (data[key]) {
+            delete data[key];
+            modified = true;
           }
+        }
 
-          if (modified) {
-            fs.writeFileSync(filePath, yaml.dump(data), 'utf8');
-          }
+        if (modified) {
+          saveYamlToPath(filePath, data);
         }
       }
     } catch (err) {
