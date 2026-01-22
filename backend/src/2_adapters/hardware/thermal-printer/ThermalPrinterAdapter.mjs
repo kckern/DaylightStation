@@ -16,6 +16,7 @@ import escpos from 'escpos';
 import Network from 'escpos-network';
 import { createCanvas, loadImage } from 'canvas';
 import fs from 'fs';
+import { configService } from '../../../0_infrastructure/config/index.mjs';
 
 /**
  * @typedef {Object} PrinterConfig
@@ -891,8 +892,9 @@ export class ThermalPrinterAdapter {
  * @returns {ThermalPrinterAdapter}
  */
 export function createThermalPrinterAdapter(options = {}) {
-  const host = process.env.printer?.host || process.env.PRINTER_HOST;
-  const port = process.env.printer?.port || process.env.PRINTER_PORT || 9100;
+  const adapterConfig = configService.getAdapterConfig('thermal_printer') || {};
+  const host = adapterConfig.host;
+  const port = adapterConfig.port || 9100;
 
   return new ThermalPrinterAdapter({ host, port }, options);
 }

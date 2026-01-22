@@ -13,6 +13,7 @@
  */
 
 import mqtt from 'mqtt';
+import { configService } from '../../../0_infrastructure/config/index.mjs';
 
 /**
  * @typedef {Object} MQTTConfig
@@ -411,9 +412,9 @@ export class MQTTSensorAdapter {
  * @returns {MQTTSensorAdapter}
  */
 export function createMQTTSensorAdapter(options = {}) {
-  const mqttConfig = process.env.mqtt || {};
-  const host = mqttConfig.host || process.env.MQTT_HOST;
-  const port = mqttConfig.port || process.env.MQTT_PORT || 1883;
+  const adapterConfig = configService.getAdapterConfig('mqtt') || {};
+  const host = adapterConfig.host;
+  const port = adapterConfig.port || 1883;
 
   return new MQTTSensorAdapter({ host, port }, options);
 }
