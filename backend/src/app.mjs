@@ -232,8 +232,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'content-proxy' })
   }) : null;
 
-  // Import IO functions for content domain
-  const { loadFile: contentLoadFile, saveFile: contentSaveFile } = await import('../_legacy/lib/io.mjs');
+  // Import FileIO functions for content domain (replaces legacy io.mjs)
+  const { loadYaml, saveYaml } = await import('./0_infrastructure/utils/FileIO.mjs');
+  const dataDir = configService.getDataDir();
+  const contentLoadFile = (relativePath) => loadYaml(path.join(dataDir, relativePath));
+  const contentSaveFile = (relativePath, data) => saveYaml(path.join(dataDir, relativePath), data);
 
   const contentRouters = createApiRouters({
     registry: contentRegistry,
@@ -267,8 +270,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'finance' })
   });
 
-  // Entropy domain
-  const { userLoadFile, userLoadCurrent } = await import('../_legacy/lib/io.mjs');
+  // Entropy domain - use UserDataService for user-specific data (replaces legacy io.mjs)
+  const userLoadFile = (username, service) => userDataService.getLifelogData(username, service);
+  const userLoadCurrent = (username, service) => userDataService.readUserData(username, `current/${service}`);
   const ArchiveService = (await import('../_legacy/lib/ArchiveService.mjs')).default;
   const entropyServices = createEntropyServices({
     io: { userLoadFile, userLoadCurrent },
@@ -512,8 +516,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'home-automation' })
   });
 
-  // Import IO functions for state persistence
-  const { loadFile, saveFile } = await import('../_legacy/lib/io.mjs');
+  // Import FileIO functions for state persistence (replaces legacy io.mjs)
+  const { loadYaml: haLoadYaml, saveYaml: haSaveYaml } = await import('./0_infrastructure/utils/FileIO.mjs');
+  const haDataDir = configService.getDataDir();
+  const loadFile = (relativePath) => haLoadYaml(path.join(haDataDir, relativePath));
+  const saveFile = (relativePath, data) => haSaveYaml(path.join(haDataDir, relativePath), data);
 
   // Import legacy entropy report for home automation
   const { getEntropyReport: legacyGetEntropyReportHA } = await import('../_legacy/lib/entropy.mjs');
