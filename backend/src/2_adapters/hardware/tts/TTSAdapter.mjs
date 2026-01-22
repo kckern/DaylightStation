@@ -11,6 +11,7 @@
  */
 
 import axios from 'axios';
+import { configService } from '../../../0_infrastructure/config/index.mjs';
 
 /**
  * @typedef {Object} TTSConfig
@@ -175,9 +176,10 @@ export class TTSAdapter {
  * @returns {TTSAdapter}
  */
 export function createTTSAdapter(options = {}) {
-  const apiKey = process.env.OPENAI_API_KEY;
-  const model = process.env.TTS_MODEL || 'tts-1';
-  const defaultVoice = process.env.TTS_DEFAULT_VOICE || 'alloy';
+  const adapterConfig = configService.getAdapterConfig('tts') || {};
+  const apiKey = configService.getSecret('OPENAI_API_KEY');
+  const model = adapterConfig.model || 'tts-1';
+  const defaultVoice = adapterConfig.defaultVoice || 'alloy';
 
   return new TTSAdapter({ apiKey, model, defaultVoice }, options);
 }
