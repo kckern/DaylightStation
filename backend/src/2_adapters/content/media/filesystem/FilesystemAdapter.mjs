@@ -31,6 +31,9 @@ const AUDIO_EXTS = ['.mp3', '.m4a', '.wav', '.flac', '.ogg'];
 const VIDEO_EXTS = ['.mp4', '.webm', '.mkv', '.avi'];
 const IMAGE_EXTS = ['.jpg', '.jpeg', '.png', '.gif', '.svg', '.webp'];
 
+const VALID_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+const MAX_COVER_SIZE = 10 * 1024 * 1024; // 10MB
+
 /**
  * Filesystem adapter for raw media files.
  * Implements IContentSource for accessing media files on the local filesystem.
@@ -128,6 +131,45 @@ export class FilesystemAdapter {
       // File doesn't have ID3 tags or can't be parsed
       return {};
     }
+  }
+
+  /**
+   * Extract cover art from media file
+   * @param {string} mediaKey - e.g., "sfx/intro"
+   * @returns {Promise<{buffer: Buffer, mimeType: string} | null>}
+   */
+  async getCoverArt(mediaKey) {
+    const resolved = this.resolvePath(mediaKey);
+    if (!resolved) return null;
+
+    try {
+      const metadata = await (this._parseFile || parseFile)(resolved.path);
+      const picture = metadata?.common?.picture;
+
+      if (picture?.length) {
+        const mimeType = picture[0].format;
+        const data = picture[0].data;
+
+        // Validate MIME type
+        if (!VALID_IMAGE_TYPES.includes(mimeType)) {
+          return null;
+        }
+
+        // Validate size limit
+        if (data.length > MAX_COVER_SIZE) {
+          return null;
+        }
+
+        return {
+          buffer: Buffer.from(data),
+          mimeType
+        };
+      }
+    } catch (err) {
+      console.warn(`Failed to parse cover art for ${mediaKey}:`, err.message);
+    }
+
+    return null;
   }
 
   get source() {
