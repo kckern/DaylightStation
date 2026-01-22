@@ -9,10 +9,14 @@
  */
 
 import { loadConfig, normalizeResponse, compareResponses, loadBaseline } from '../../lib/parity-runner.mjs';
+import { loadTestData, validateExpectations, clearCache } from '../../lib/testDataService.mjs';
 
 const config = loadConfig();
 const BASE_URL = process.env.TEST_BASE_URL || config.server?.default_url || 'http://localhost:3112';
 const TIMEOUT = config.server?.timeout_ms || 10000;
+
+// Test data loaded from registry
+let testData;
 
 /**
  * Fetch JSON from endpoint with timeout
@@ -75,6 +79,22 @@ function validateTypes(body, typeChecks) {
 }
 
 // =============================================================================
+// Load Test Data
+// =============================================================================
+
+beforeAll(async () => {
+  clearCache();
+  testData = await loadTestData({
+    scripture: 1,
+    hymn: 1,
+    primary: 1,
+    talk: 1,
+    poetry: 1,
+    plex: 1
+  });
+});
+
+// =============================================================================
 // Core API Health Tests
 // =============================================================================
 
@@ -113,11 +133,14 @@ describe('API v1 Core', () => {
 
 describe('API v1 Content Domain', () => {
   describe('Plex Content', () => {
-    // Use a known baseline ID if available
-    const testPlexId = '545219'; // From baselines
-
     it('GET /api/v1/content/plex/info/{id} returns valid plex info', async () => {
-      const res = await fetchJSON(`/api/v1/content/plex/info/${testPlexId}`);
+      const plexSample = testData.plex[0];
+      if (!plexSample) {
+        console.log('No plex test data available, skipping');
+        return;
+      }
+
+      const res = await fetchJSON(`/api/v1/content/plex/info/${plexSample.id}`);
 
       // May 404 if Plex not configured - that's acceptable
       if (res.status === 404 || res.status === 503) {
@@ -128,21 +151,26 @@ describe('API v1 Content Domain', () => {
       expect(res.status).toBe(200);
       expect(res.body).toBeDefined();
 
-      // Validate against baseline if exists
-      const baseline = loadBaseline('plex', testPlexId);
-      if (baseline) {
-        // Only check id and title - type may not always be present
-        const required = baseline.required_fields || ['id', 'title'];
-        const errors = validateRequiredFields(res.body, required);
-        expect(errors).toEqual([]);
+      // Validate against expectations from test data registry
+      if (plexSample.expect && Object.keys(plexSample.expect).length > 0) {
+        const validation = validateExpectations(res.body, plexSample.expect);
+        if (!validation.valid) {
+          console.log('Validation errors:', validation.errors);
+        }
+        expect(validation.valid).toBe(true);
       }
     });
   });
 
   describe('Local Content', () => {
     it('GET /api/v1/local-content/scripture/{ref} returns scripture', async () => {
-      // Use valid scripture reference format: 1-nephi-1
-      const res = await fetchJSON('/api/v1/local-content/scripture/1-nephi-1');
+      const scriptureSample = testData.scripture[0];
+      if (!scriptureSample) {
+        console.log('No scripture test data available, skipping');
+        return;
+      }
+
+      const res = await fetchJSON(`/api/v1/local-content/scripture/${scriptureSample.id}`);
 
       if (res.status === 404 || res.status === 400) {
         console.log('Scripture data not available, skipping');
@@ -151,12 +179,25 @@ describe('API v1 Content Domain', () => {
 
       expect(res.status).toBe(200);
       expect(res.body).toBeDefined();
-      // Scripture returns 'reference' not 'id', 'title'
-      expect(res.body.reference).toBeDefined();
+
+      // Validate against expectations from test data registry
+      if (scriptureSample.expect && Object.keys(scriptureSample.expect).length > 0) {
+        const validation = validateExpectations(res.body, scriptureSample.expect);
+        if (!validation.valid) {
+          console.log('Validation errors:', validation.errors);
+        }
+        expect(validation.valid).toBe(true);
+      }
     });
 
     it('GET /api/v1/local-content/hymn/{num} returns hymn', async () => {
-      const res = await fetchJSON('/api/v1/local-content/hymn/2');
+      const hymnSample = testData.hymn[0];
+      if (!hymnSample) {
+        console.log('No hymn test data available, skipping');
+        return;
+      }
+
+      const res = await fetchJSON(`/api/v1/local-content/hymn/${hymnSample.id}`);
 
       if (res.status === 404 || res.status === 400) {
         console.log('Hymn data not available, skipping');
@@ -165,6 +206,15 @@ describe('API v1 Content Domain', () => {
 
       expect(res.status).toBe(200);
       expect(res.body).toBeDefined();
+
+      // Validate against expectations from test data registry
+      if (hymnSample.expect && Object.keys(hymnSample.expect).length > 0) {
+        const validation = validateExpectations(res.body, hymnSample.expect);
+        if (!validation.valid) {
+          console.log('Validation errors:', validation.errors);
+        }
+        expect(validation.valid).toBe(true);
+      }
     });
   });
 });
@@ -472,36 +522,49 @@ describe('API v1 Static Domain', () => {
 // =============================================================================
 
 describe('API v1 Baseline Validation', () => {
+  // Domain to testData key mapping (testdata.yml uses 'poetry' not 'poem')
+  const domainMap = {
+    plex: 'plex',
+    scripture: 'scripture',
+    hymn: 'hymn',
+    primary: 'primary',
+    talk: 'talk',
+    poem: 'poetry',  // testdata.yml uses 'poetry'
+    list: null       // list not in testdata registry yet
+  };
+
   // Load all available baselines and test against them
   const baselineTypes = ['plex', 'scripture', 'hymn', 'primary', 'talk', 'poem', 'list'];
 
+  // Get endpoint mapping
+  const endpointMap = {
+    plex: (id) => `/api/v1/content/plex/info/${id}`,
+    scripture: (id) => `/api/v1/local-content/scripture/${id}`,
+    hymn: (id) => `/api/v1/local-content/hymn/${id}`,
+    primary: (id) => `/api/v1/local-content/primary/${id}`,
+    talk: (id) => `/api/v1/local-content/talk/${id}`,
+    poem: (id) => `/api/v1/local-content/poem/${id}`,
+    list: (id) => `/api/v1/list/folder/${id}`
+  };
+
+  // Fallback IDs for domains not in testdata registry
+  const fallbackIds = {
+    list: 'FHE'
+  };
+
   for (const type of baselineTypes) {
     describe(`${type} baselines`, () => {
-      // Get endpoint mapping
-      const endpointMap = {
-        plex: (id) => `/api/v1/content/plex/info/${id}`,
-        scripture: (id) => `/api/v1/local-content/scripture/${id}`,
-        hymn: (id) => `/api/v1/local-content/hymn/${id}`,
-        primary: (id) => `/api/v1/local-content/primary/${id}`,
-        talk: (id) => `/api/v1/local-content/talk/${id}`,
-        poem: (id) => `/api/v1/local-content/poem/${id}`,
-        list: (id) => `/api/v1/list/folder/${id}`
-      };
-
       // Sample one baseline per type for quick regression
       it(`validates ${type} response structure`, async () => {
-        const sampleIds = {
-          plex: '545219',
-          scripture: '1-nephi-1',  // Use valid scripture reference format
-          hymn: '2',
-          primary: '2',           // Primary songs start at 2 (0002-i-am-a-child-of-god.yml)
-          talk: 'ldsgc202510/11', // Talk requires conference/session format
-          poem: 'remedy/01',      // Poem requires collection/id format
-          list: 'FHE'
-        };
+        // Get sample from testData or use fallback
+        const testDataKey = domainMap[type];
+        const sample = testDataKey && testData[testDataKey]?.[0];
+        const sampleId = sample?.id || fallbackIds[type];
 
-        const sampleId = sampleIds[type];
-        if (!sampleId) return;
+        if (!sampleId) {
+          console.log(`No test data available for ${type}, skipping`);
+          return;
+        }
 
         const endpoint = endpointMap[type](sampleId);
         const res = await fetchJSON(endpoint);
@@ -515,14 +578,23 @@ describe('API v1 Baseline Validation', () => {
         expect(res.status).toBe(200);
         expect(res.body).toBeDefined();
 
-        // Load baseline and validate required fields
-        const baseline = loadBaseline(type, sampleId);
-        if (baseline && baseline.required_fields) {
-          const errors = validateRequiredFields(res.body, baseline.required_fields);
-          if (errors.length > 0) {
-            console.log(`Validation errors for ${type}/${sampleId}:`, errors);
+        // If we have expectations from testData, use validateExpectations
+        if (sample?.expect && Object.keys(sample.expect).length > 0) {
+          const validation = validateExpectations(res.body, sample.expect);
+          if (!validation.valid) {
+            console.log(`Validation errors for ${type}/${sampleId}:`, validation.errors);
           }
-          expect(errors).toEqual([]);
+          expect(validation.valid).toBe(true);
+        } else {
+          // Fall back to baseline validation for domains without testData expectations
+          const baseline = loadBaseline(type, sampleId);
+          if (baseline && baseline.required_fields) {
+            const errors = validateRequiredFields(res.body, baseline.required_fields);
+            if (errors.length > 0) {
+              console.log(`Validation errors for ${type}/${sampleId}:`, errors);
+            }
+            expect(errors).toEqual([]);
+          }
         }
       });
     });
