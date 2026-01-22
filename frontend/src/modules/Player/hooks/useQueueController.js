@@ -98,7 +98,7 @@ export function useQueueController({ play, queue, clear }) {
           newQueue = flattened.map(item => ({ ...item, ...item.play, ...itemOverrides, guid: guid() }));
         } else if (queue?.plex || play?.plex) {
           const plexId = queue?.plex || play?.plex;
-          const { items } = await DaylightAPI(`api/v1/content/list/plex/${plexId}/playable${isShuffle ? ',shuffle' : ''}`);
+          const { items } = await DaylightAPI(`/api/v1/list/plex/${plexId}/playable${isShuffle ? ',shuffle' : ''}`);
           const flattened = await flattenQueueItems(items);
           newQueue = flattened.map(item => ({ ...item, ...item.play, ...itemOverrides, guid: guid() }));
         }

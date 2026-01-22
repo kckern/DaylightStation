@@ -8,13 +8,14 @@ import { WatchState } from '../../1_domains/content/entities/WatchState.mjs';
  * Create content API router
  *
  * Endpoints:
- * - GET /api/content/list/:source/* - List items from source
  * - GET /api/content/item/:source/* - Get single item info
  * - GET /api/content/playables/:source/* - Resolve to playable items
  * - POST /api/content/progress/:source/* - Update watch progress
  * - GET /api/content/plex/image/:id - Get Plex thumbnail image
  * - GET /api/content/plex/info/:id - Get Plex item metadata
  * - POST /api/content/menu-log - Log menu navigation
+ *
+ * Note: List endpoint moved to /api/v1/list/:source/* (list.mjs)
  *
  * @param {import('../../1_domains/content/services/ContentSourceRegistry.mjs').ContentSourceRegistry} registry
  * @param {import('../../2_adapters/persistence/yaml/YamlWatchStateStore.mjs').YamlWatchStateStore} [watchStore=null] - Optional watch state store
@@ -28,119 +29,6 @@ import { WatchState } from '../../1_domains/content/entities/WatchState.mjs';
 export function createContentRouter(registry, watchStore = null, options = {}) {
   const { loadFile, saveFile, cacheBasePath, logger = console } = options;
   const router = express.Router();
-
-  /**
-   * GET /api/content/list/:source/*
-   * List items from a content source
-   *
-   * Supports legacy modifiers in path:
-   * - /playable - resolve to playable items
-   * - /shuffle or ,shuffle - randomize order
-   * Examples:
-   *   /list/plex/123 - list children
-   *   /list/plex/123/playable - resolve to playable items
-   *   /list/plex/123/playable,shuffle - playable + shuffled
-   */
-  router.get('/list/:source/*', async (req, res) => {
-    try {
-      const { source } = req.params;
-      let localId = req.params[0] || '';
-
-      // Parse modifiers from path (e.g., "123/playable,shuffle" or "123/playable")
-      const playable = /playable/i.test(localId);
-      const shuffle = /shuffle/i.test(localId);
-
-      // Strip modifiers from localId to get the actual content ID
-      localId = localId.replace(/\/(playable|shuffle|playable,shuffle|shuffle,playable)$/i, '');
-
-      const adapter = registry.get(source);
-      if (!adapter) {
-        return res.status(404).json({ error: `Unknown source: ${source}` });
-      }
-
-      let items;
-      if (playable && typeof adapter.resolvePlayables === 'function') {
-        items = await adapter.resolvePlayables(localId);
-      } else {
-        items = await adapter.getList(localId);
-      }
-
-      // Shuffle if requested
-      if (shuffle && Array.isArray(items)) {
-        for (let i = items.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1));
-          [items[i], items[j]] = [items[j], items[i]];
-        }
-      }
-
-      // Get container info for show metadata
-      const compoundId = source === 'folder' || source === 'local' ? `folder:${localId}` : `${source}:${localId}`;
-      const containerInfo = adapter.getItem ? await adapter.getItem(compoundId) : null;
-
-      // Build info object for FitnessShow compatibility
-      let info = null;
-      if (adapter.getContainerInfo) {
-        info = await adapter.getContainerInfo(compoundId);
-      }
-
-      // Build seasons map from items' season metadata (for playable mode)
-      let seasons = null;
-      if (playable && items.length > 0) {
-        const seasonsMap = {};
-        for (const item of items) {
-          const seasonId = item.metadata?.seasonId || item.metadata?.parent;
-          if (seasonId && !seasonsMap[seasonId]) {
-            seasonsMap[seasonId] = {
-              num: item.metadata?.seasonNumber ?? item.metadata?.parentIndex,
-              title: item.metadata?.seasonName || item.metadata?.parentTitle || `Season`,
-              img: item.metadata?.seasonThumbUrl || item.metadata?.parentThumb || item.metadata?.showThumbUrl || item.metadata?.grandparentThumb
-            };
-          }
-        }
-        if (Object.keys(seasonsMap).length > 0) {
-          seasons = seasonsMap;
-        }
-      }
-
-      res.json({
-        // Add plex field for plex source (matches prod format)
-        ...(source === 'plex' && { plex: localId }),
-        // Legacy compat field
-        media_key: localId,
-        source,
-        path: localId,
-        title: containerInfo?.title || localId,
-        label: containerInfo?.title || localId,
-        image: containerInfo?.thumbnail,
-        info,
-        seasons,
-        items: items.map(item => {
-          // Flatten metadata fields to top level for legacy compatibility
-          const metadata = item.metadata || {};
-          return {
-            // Core fields
-            id: item.id,
-            title: item.title,
-            itemType: item.itemType,
-            childCount: item.childCount,
-            thumbnail: item.thumbnail,
-            // Legacy field aliases
-            label: item.title,
-            image: item.thumbnail,
-            plex: item.id?.replace(/^plex:/, '') || item.id,
-            // Flatten metadata for frontend (seasonId, episodeNumber, etc.)
-            ...metadata,
-            // Spread remaining item properties (duration, mediaUrl, etc.)
-            ...item,
-            // Keep metadata object for backwards compat with code expecting nested
-            metadata
-          };
-        })
-      });
-    } catch (err) {
-      res.status(500).json({ error: err.message });
-    }
-  });
 
   /**
    * GET /api/content/item/:source/*
