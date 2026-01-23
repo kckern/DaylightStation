@@ -149,9 +149,23 @@ export class ConfigService {
     const serviceConfig = this.#config.system?.[serviceName];
     if (!serviceConfig) return null;
 
-    // If services_host is defined (typically in local config), it overrides service-specific hosts
-    const host = this.#config.system?.services_host ?? serviceConfig.host;
-    
+    const servicesHost = this.#config.system?.services_host;
+    let host = serviceConfig.host;
+
+    // If services_host is defined (typically in local config), override the hostname
+    // Handle both full URLs (http://plex:32400) and plain hostnames (homeassistant)
+    if (servicesHost && host) {
+      try {
+        const url = new URL(host);
+        // Replace hostname in URL, keeping protocol and port
+        url.hostname = servicesHost;
+        host = url.toString().replace(/\/$/, ''); // Remove trailing slash
+      } catch {
+        // Not a valid URL, just replace the entire host
+        host = servicesHost;
+      }
+    }
+
     return {
       ...serviceConfig,
       host

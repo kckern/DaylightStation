@@ -134,9 +134,20 @@ async function main() {
   // Start Server
   // ==========================================================================
 
-  const port = configService.getPort();
+  // In dev (non-Docker): backend listens on appPort + 1, Vite proxies from appPort
+  // In prod (Docker): backend serves everything directly on appPort
+  const appPort = configService.getAppPort();
+  const port = isDocker ? appPort : appPort + 1;
   server.listen(port, '0.0.0.0', () => {
-    logger.info('server.started', { port, host: '0.0.0.0', mode: 'standalone-new' });
+    logger.info('server.started', {
+      port,
+      appPort,
+      host: '0.0.0.0',
+      mode: isDocker ? 'production' : 'development',
+      message: isDocker
+        ? 'Production: backend serves static + API'
+        : `Development: backend on ${port}, Vite expected on ${appPort}`
+    });
   });
 }
 

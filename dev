@@ -12,7 +12,7 @@ CONFIG_FILE="${DATA_PATH}/system/system-local.${ENV_NAME}.yml"
 
 # Read ports from config (fallback to defaults if not found)
 if [[ -f "$CONFIG_FILE" ]]; then
-    PRIMARY_PORT=$(grep -A1 '^server:' "$CONFIG_FILE" | grep 'port:' | awk '{print $2}')
+    PRIMARY_PORT=$(grep -A1 '^app:' "$CONFIG_FILE" | grep 'port:' | awk '{print $2}')
     SECONDARY_PORT=$(grep -A1 '^webhook:' "$CONFIG_FILE" | grep 'port:' | awk '{print $2}')
     PRIMARY_PORT=${PRIMARY_PORT:-3111}
     SECONDARY_PORT=${SECONDARY_PORT:-3119}

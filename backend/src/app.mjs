@@ -204,11 +204,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   app.use('/admin/ws', createEventBusRouter({ eventBus, logger: rootLogger }));
 
   // Content domain
-  // Get Plex auth from ConfigService
+  // Get Plex config: host from system config (with services_host override), token from household auth
+  const plexSystemConfig = configService.getServiceConfig('plex');
   const plexAuth = configService.getHouseholdAuth('plex') || {};
-  const plexConfig = (plexAuth.server_url || plexAuth.token) ? {
-    host: plexAuth.server_url || '',
-    token: plexAuth.token || ''
+  const plexConfig = (plexSystemConfig?.host && plexAuth.token) ? {
+    host: plexSystemConfig.host,
+    token: plexAuth.token
   } : null;
 
   const watchlistPath = `${householdDir}/state/lists.yml`;
