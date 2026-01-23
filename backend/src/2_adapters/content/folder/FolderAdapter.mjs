@@ -307,43 +307,67 @@ export class FolderAdapter {
         ? parsed.id
         : `${contentSource}:${parsed.id}`;
 
-      // Build play/open/list actions from source type (for legacy frontend compatibility)
-      // Frontend uses: ...item.play for media, item.open for apps, item.list for submenus
+      // Build action object based on YAML action field
+      // Frontend expects: queue: {...}, list: {...}, play: {...}, open: {...}
       const playAction = {};
       const openAction = {};
-      const listAction = {};  // For folder references
+      const listAction = {};
+      const queueAction = {};  // For queue actions
 
+      // Determine action type from YAML (default to Play)
+      const actionType = (item.action || 'Play').toLowerCase();
+
+      // Build the base action object with source and key
+      const baseAction = {};
+      const src = item.src || parsed.source;
+      baseAction[src] = mediaKey;
+
+      // Add options to action object (not just metadata)
+      if (item.shuffle) baseAction.shuffle = true;
+      if (item.continuous) baseAction.continuous = true;
+      if (item.playable !== undefined) baseAction.playable = item.playable;
+
+      // Handle raw YAML overrides first
       if (item.play) {
-        // Raw YAML already has play object - use it
         Object.assign(playAction, item.play);
       } else if (item.open) {
-        // Raw YAML has open object - use it for app launches
         Object.assign(openAction, item.open);
-      } else if (item.action === 'Open' || parsed.source === 'app') {
-        // Build open action for app sources
-        openAction.app = mediaKey;
-      } else if (parsed.source === 'list') {
-        // Build list action for folder references (submenus)
-        listAction.folder = mediaKey;
+      } else if (item.queue) {
+        Object.assign(queueAction, item.queue);
+      } else if (item.list) {
+        Object.assign(listAction, item.list);
+      } else if (actionType === 'open' || parsed.source === 'app') {
+        // Open action for app launches
+        Object.assign(openAction, baseAction);
+      } else if (actionType === 'queue') {
+        // Queue action for shuffle/continuous playback
+        Object.assign(queueAction, baseAction);
+      } else if (actionType === 'list') {
+        // List action for submenus and collections
+        Object.assign(listAction, baseAction);
       } else {
-        // Build play action for media sources
-        const src = item.src || parsed.source;
-        playAction[src] = mediaKey;
+        // Play action (default)
+        Object.assign(playAction, baseAction);
       }
 
       // Check if this is a Plex item with nomusic label that needs overlay
-      // Don't add overlay if already present
       let finalPlayAction = playAction;
-      if (playAction.plex && this.musicOverlayPlaylist && !playAction.overlay) {
-        const hasNomusic = await this._hasNomusicLabel(playAction.plex);
+      let finalQueueAction = queueAction;
+
+      const plexId = playAction.plex || queueAction.plex;
+      if (plexId && this.musicOverlayPlaylist) {
+        const hasNomusic = await this._hasNomusicLabel(plexId);
         if (hasNomusic) {
-          finalPlayAction = {
-            ...playAction,
-            overlay: {
-              queue: { plex: this.musicOverlayPlaylist },
-              shuffle: true
-            }
+          const overlay = {
+            queue: { plex: this.musicOverlayPlaylist },
+            shuffle: true
           };
+          if (playAction.plex && !playAction.overlay) {
+            finalPlayAction = { ...playAction, overlay };
+          }
+          if (queueAction.plex && !queueAction.overlay) {
+            finalQueueAction = { ...queueAction, overlay };
+          }
         }
       }
 
@@ -377,8 +401,9 @@ export class FolderAdapter {
           folder: folderName,
           folder_color: item.folder_color || null
         },
-        // Actions object - play is used by frontend via ...item.play spread
+        // Actions object
         actions: {
+          queue: Object.keys(finalQueueAction).length > 0 ? finalQueueAction : undefined,
           list: Object.keys(listAction).length > 0 ? listAction : undefined,
           play: Object.keys(finalPlayAction).length > 0 ? finalPlayAction : undefined,
           open: Object.keys(openAction).length > 0 ? openAction : undefined

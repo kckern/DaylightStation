@@ -55,7 +55,7 @@ test.describe('TV Menu Action Parity', () => {
 
       // Check action is NOT incorrectly on play (for non-play items)
       const wronglyOnPlay = testCase.expectedAction !== 'play' &&
-        item.play && Object.keys(item.play).some(k => testCase.expectedKeys.includes(k));
+        !!item.play && Object.keys(item.play).some(k => testCase.expectedKeys.includes(k));
 
       results.push({
         label: testCase.label,
