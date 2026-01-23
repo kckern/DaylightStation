@@ -24,6 +24,9 @@ export class FolderAdapter {
     this.watchlistPath = config.watchlistPath;
     this.registry = config.registry || null;
     this.historyPath = config.historyPath || null; // Path to media_memory directory
+    // Overlay config for nomusic items
+    this.nomusicLabels = config.nomusicLabels || [];
+    this.musicOverlayPlaylist = config.musicOverlayPlaylist || null;
     this._watchlistCache = null;
     this._watchStateCache = {};
   }
@@ -107,6 +110,41 @@ export class FolderAdapter {
       return combined;
     } catch (err) {
       return {};
+    }
+  }
+
+  /**
+   * Check if a Plex item has a nomusic label
+   * @param {string} plexId - Plex rating key
+   * @returns {Promise<boolean>}
+   */
+  async _hasNomusicLabel(plexId) {
+    if (!this.nomusicLabels.length || !plexId || !this.registry) return false;
+
+    // Cache results per adapter instance to avoid N+1 queries in loops
+    if (!this._nomusicCache) this._nomusicCache = {};
+    if (plexId in this._nomusicCache) return this._nomusicCache[plexId];
+
+    try {
+      const adapter = this.registry.get('plex');
+      if (!adapter?.getItem) return false;
+
+      const item = await adapter.getItem(`plex:${plexId}`);
+      const labels = item?.metadata?.labels || [];
+
+      const normalizedLabels = labels
+        .map(l => (typeof l === 'string' ? l.toLowerCase().trim() : ''))
+        .filter(Boolean);
+
+      const nomusicSet = new Set(this.nomusicLabels.map(l => l.toLowerCase().trim()));
+      const result = normalizedLabels.some(l => nomusicSet.has(l));
+
+      // Cache before returning
+      this._nomusicCache[plexId] = result;
+      return result;
+    } catch (err) {
+      this._nomusicCache[plexId] = false;
+      return false;
     }
   }
 
@@ -289,6 +327,22 @@ export class FolderAdapter {
         playAction[src] = mediaKey;
       }
 
+      // Check if this is a Plex item with nomusic label that needs overlay
+      // Don't add overlay if already present
+      let finalPlayAction = playAction;
+      if (playAction.plex && this.musicOverlayPlaylist && !playAction.overlay) {
+        const hasNomusic = await this._hasNomusicLabel(playAction.plex);
+        if (hasNomusic) {
+          finalPlayAction = {
+            ...playAction,
+            overlay: {
+              queue: { plex: this.musicOverlayPlaylist },
+              shuffle: true
+            }
+          };
+        }
+      }
+
       children.push(new Item({
         id: compoundId,
         source: contentSource,
@@ -321,7 +375,7 @@ export class FolderAdapter {
         },
         // Actions object - play is used by frontend via ...item.play spread
         actions: {
-          play: Object.keys(playAction).length > 0 ? playAction : undefined,
+          play: Object.keys(finalPlayAction).length > 0 ? finalPlayAction : undefined,
           open: Object.keys(openAction).length > 0 ? openAction : undefined
         }
       }));
