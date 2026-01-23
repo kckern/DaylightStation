@@ -307,10 +307,11 @@ export class FolderAdapter {
         ? parsed.id
         : `${contentSource}:${parsed.id}`;
 
-      // Build play/open actions from source type (for legacy frontend compatibility)
-      // Frontend uses: ...item.play for media, item.open for apps
+      // Build play/open/list actions from source type (for legacy frontend compatibility)
+      // Frontend uses: ...item.play for media, item.open for apps, item.list for submenus
       const playAction = {};
       const openAction = {};
+      const listAction = {};  // For folder references
 
       if (item.play) {
         // Raw YAML already has play object - use it
@@ -321,6 +322,9 @@ export class FolderAdapter {
       } else if (item.action === 'Open' || parsed.source === 'app') {
         // Build open action for app sources
         openAction.app = mediaKey;
+      } else if (parsed.source === 'list') {
+        // Build list action for folder references (submenus)
+        listAction.folder = mediaKey;
       } else {
         // Build play action for media sources
         const src = item.src || parsed.source;
@@ -375,6 +379,7 @@ export class FolderAdapter {
         },
         // Actions object - play is used by frontend via ...item.play spread
         actions: {
+          list: Object.keys(listAction).length > 0 ? listAction : undefined,
           play: Object.keys(finalPlayAction).length > 0 ? finalPlayAction : undefined,
           open: Object.keys(openAction).length > 0 ? openAction : undefined
         }
