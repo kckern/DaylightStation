@@ -32,6 +32,12 @@ function TVAppContent({ rootMenu, autoplay, appParam, logger }) {
     if (!autoplayed && autoplay) {
       if (autoplay.queue || autoplay.play) {
         push({ type: 'player', props: autoplay });
+      } else if (autoplay.list?.plex) {
+        // Plex list → use plex-menu router
+        push({ type: 'plex-menu', props: autoplay });
+      } else if (autoplay.list) {
+        // Non-plex list (folder, etc.)
+        push({ type: 'menu', props: autoplay });
       } else if (autoplay.open) {
         push({ type: 'app', props: autoplay });
       }
