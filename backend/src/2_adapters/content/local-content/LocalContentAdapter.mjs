@@ -148,6 +148,7 @@ export class LocalContentAdapter {
     return new PlayableItem({
       id: compoundId,
       source: this.source,
+      localId,
       title: metadata.title || localId,
       type: 'talk',
       mediaType: 'video',
@@ -210,6 +211,7 @@ export class LocalContentAdapter {
     return new PlayableItem({
       id: compoundId,
       source: this.source,
+      localId,
       title: reference,
       type: 'scripture',
       mediaType: 'audio',
@@ -254,6 +256,7 @@ export class LocalContentAdapter {
       return new ListableItem({
         id: `talk:${folderId}`,
         source: this.source,
+        localId: folderId,
         title: folderId,
         itemType: 'container',
         children
@@ -288,6 +291,7 @@ export class LocalContentAdapter {
     return new PlayableItem({
       id: compoundId,
       source: this.source,
+      localId: number,
       title: metadata.title || `${collection} ${number}`,
       type: collection,
       mediaType: 'audio',
@@ -321,6 +325,7 @@ export class LocalContentAdapter {
     return new PlayableItem({
       id: compoundId,
       source: this.source,
+      localId,
       title: metadata.title || localId,
       type: 'poem',
       mediaType: 'audio',

@@ -231,6 +231,7 @@ export class PlexAdapter {
       return new ListableItem({
         id: `plex:${localId}`,
         source: 'plex',
+        localId,
         title: container.title1 || container.title || localId,
         itemType: 'container',
         childCount: container.size || 0,
@@ -369,7 +370,8 @@ export class PlexAdapter {
     return new ListableItem({
       id: `plex:${id}`,
       source: 'plex',
-      title: item.title,
+      localId: String(id),
+      title: item.title || item.titleSort || `[${item.type || 'Untitled'}]`,
       itemType: isContainer ? 'container' : 'leaf',
       childCount: item.leafCount || item.childCount || 0,
       thumbnail,
@@ -401,6 +403,7 @@ export class PlexAdapter {
       return new ListableItem({
         id: `plex:${item.ratingKey}`,
         source: 'plex',
+        localId: String(item.ratingKey),
         title: item.title,
         itemType: 'container',
         childCount: item.leafCount || 0,
@@ -490,6 +493,7 @@ export class PlexAdapter {
     return new PlayableItem({
       id: `plex:${item.ratingKey}`,
       source: 'plex',
+      localId: String(item.ratingKey),
       title: item.title,
       mediaType: isVideo ? 'video' : 'audio',
       mediaUrl: `/proxy/plex/stream/${item.ratingKey}`,
