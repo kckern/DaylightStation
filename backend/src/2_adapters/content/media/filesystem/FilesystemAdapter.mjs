@@ -308,7 +308,7 @@ export class FilesystemAdapter {
         localId,
         title: path.basename(localId, ext),
         mediaType,
-        mediaUrl: `/proxy/filesystem/stream/${encodeURIComponent(localId)}`,
+        mediaUrl: `/api/v1/proxy/filesystem/stream/${encodeURIComponent(localId)}`,
         duration,
         resumable: mediaType === 'video',
         resumePosition,
