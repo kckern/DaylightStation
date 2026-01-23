@@ -1,4 +1,4 @@
-# Bug Report: TV Player Shows Spinner Instead of Video for Plex Collections
+# Bug Report: TV Player Shows Spinner Instead of Opening Submenu for Folders
 
 **Date Discovered:** 2026-01-22  
 **Severity:** High  
@@ -9,40 +9,61 @@
 
 ## Summary
 
-When selecting a Plex collection (e.g., "Bible Project") from the TV app menu, the Player component fails to render video content and displays either:
-1. A perpetual loading spinner
-2. Debug JSON output in a `<pre>` tag
+When selecting a Plex folder/collection from the TV app menu (e.g., "Bible Project", "FHE"), the application fails to open the submenu and instead shows:
+1. A perpetual loading spinner (most common)
+2. Debug JSON output in a `<pre>` tag (showing folder metadata)
 
-This only occurs in local development. Production correctly plays the first video in the collection queue.
+This only occurs in local development. Production correctly opens the submenu or plays the first video in the collection.
+
+---
+
+## Affected Items
+
+**Confirmed affected:**
+- "Bible Project" - Shows spinner, attempts to play folder as video
+- "FHE" - Shows spinner, no submenu opens
+
+**Likely affected:**
+- Any Plex collection/folder in the TV menu
 
 ---
 
 ## Steps to Reproduce
 
-### Method 1: Manual Testing
+### Bible Project Test
 1. Navigate to http://localhost:3111/tv
-2. Use arrow keys to navigate to "Bible Project" (row 4, col 0 in the menu grid)
+2. Use arrow keys to navigate to "Bible Project" (row 4, col 0)
 3. Press Enter to select
 
-**Expected:** Video starts playing  
-**Actual:** Loading spinner appears indefinitely, or JSON debug data is displayed
+**Expected:** Submenu opens showing episodes  
+**Actual:** Loading spinner appears, attempts to play folder metadata
 
-### Method 2: Automated Test
+### FHE Test
 ```bash
-cd /Users/kckern/Documents/GitHub/DaylightStation
+node tests/runtime/tv-app/fhe-menu-comparison.mjs
+```
+
+1. Navigate to http://localhost:3111/tv
+2. Navigate to "FHE" (row 1, col 2)
+3. Press Enter to select
+
+**Expected:** Submenu opens with 9 items  
+**Actual:** Loading spinner stuck, no submenu
+
+### Automated Tests
+```bash
+# Bible Project test
 npx playwright test tests/runtime/tv-app/tv-video-select-play.runtime.test.mjs --reporter=list
-```
 
-### Method 3: Standalone Script
-```bash
-node tests/runtime/tv-app/tv-prod-test.mjs
+# FHE comparison test  
+node tests/runtime/tv-app/fhe-menu-comparison.mjs
 ```
-Change `BASE_URL` to compare local vs production behavior.
 
 ---
 
 ## Expected Behavior (Production ✅)
 
+### Bible Project
 Tested against `https://daylightlocal.kckern.net/tv`:
 
 ```
@@ -62,10 +83,22 @@ Video info:
   - ReadyState: 4 (HAVE_ENOUGH_DATA)
 ```
 
+### FHE
+Tested against `https://daylightlocal.kckern.net/tv`:
+
+```
+After selection:
+  - Submenu items: 9 ✅
+  - Player components: 0
+  - Loading spinner: Hidden
+  - Result: Submenu opened successfully
+```
+
 ---
 
 ## Actual Behavior (Local Dev ❌)
 
+### Bible Project
 Tested against `http://localhost:3111/tv`:
 
 ```
@@ -85,6 +118,17 @@ Player state:
       "thumb_id": "463232",
       ...
     }
+```
+
+### FHE
+Tested against `http://localhost:3111/tv`:
+
+```
+After selection:
+  - Submenu items: 0 ❌ (should be 9)
+  - Player components: 1 ❌ (should be 0)  
+  - Loading spinner: VISIBLE ❌ (stuck!)
+  - Result: Spinner stuck, no submenu
 ```
 
 ---
@@ -180,6 +224,10 @@ Test screenshots saved at:
 ### Test Files
 - Runtime test: `tests/runtime/tv-app/tv-video-select-play.runtime.test.mjs`
 - Standalone prod test: `tests/runtime/tv-app/tv-prod-test.mjs`
+- FHE comparison test: `tests/runtime/tv-app/fhe-menu-comparison.mjs` (new)
+
+### Test Output
+- FHE test results: `/tmp/fhe-test-output.log`
 
 ### Backend Logs
 ```bash
