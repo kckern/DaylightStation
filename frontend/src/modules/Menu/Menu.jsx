@@ -246,7 +246,8 @@ function useFetchMenuData(listInput, refreshToken = 0) {
     let canceled = false;
 
     async function fetchData(target, config) {
-      config = `${config || ""}+recent_on_top`;
+      // Append recent_on_top config, using "+" to join if there are other configs
+      config = config ? `${config}+recent_on_top` : "recent_on_top";
       if (!target) {
         return {
           title: "No Menu",
@@ -299,13 +300,13 @@ function useFetchMenuData(listInput, refreshToken = 0) {
         return;
       }
 
-      // (C) If the input is an object with "menu", "list", or "plex"
+      // (C) If the input is an object with "menu", "list", "plex", or "folder"
       if (typeof input === "object") {
-        const { menu, list, plex, shuffle, playable } = input;
+        const { menu, list, plex, folder, shuffle, playable } = input;
         const config = [];
         if (shuffle) config.push("shuffle");
         if (playable) config.push("playable");
-        const param = menu || list || plex;
+        const param = menu || list || plex || folder;
         if (param) {
           const data = await fetchData(param, config.join("+"));
           if (data) {
