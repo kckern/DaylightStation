@@ -174,8 +174,7 @@ async function main() {
   // ==========================================================================
 
   // Get port from ConfigService (loaded from system-local.{env}.yml)
-  // BACKEND_PORT for dev (avoids conflict with Docker), PORT for production
-  const port = configService.get('BACKEND_PORT') || configService.get('PORT') || 3111;
+  const port = configService.getPort();
   server.listen(port, '0.0.0.0', () => {
     logger.info('server.started', {
       port,
@@ -189,7 +188,7 @@ async function main() {
   // Secondary API Server - for webhooks (always routes to legacy)
   // ==========================================================================
 
-  const secondaryPort = configService.get('webhook.port') || 3119;
+  const secondaryPort = configService.getWebhookPort();
   const secondaryServer = createServer((req, res) => {
     res.setHeader('X-Backend', 'legacy');
 
