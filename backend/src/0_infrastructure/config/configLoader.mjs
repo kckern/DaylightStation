@@ -49,16 +49,57 @@ function loadSystemConfig(dataDir) {
   }
 
   // Process services_host: Apply to services that don't have explicit host in local config
+  // Handles various formats for both originalHost and services_host:
+  // - Full URL: http://plex:32400, http://localhost:8080
+  // - Hostname with port: plex:32400, localhost:8080
+  // - Plain hostname: plex, localhost
   if (localOverrides.services_host) {
-    const servicesHost = localOverrides.services_host;
+    const servicesHostRaw = localOverrides.services_host;
     const serviceNames = ['home_assistant', 'plex', 'mqtt', 'printer', 'tv'];
-    
+
+    // Extract just the hostname from services_host (in case it's a full URL)
+    let servicesHostname;
+    let servicesPort = null;
+    try {
+      // Try parsing as URL first
+      const parsed = new URL(servicesHostRaw.includes('://') ? servicesHostRaw : `http://${servicesHostRaw}`);
+      servicesHostname = parsed.hostname;
+      // Only use port from services_host if it's non-standard
+      if (parsed.port) servicesPort = parsed.port;
+    } catch {
+      // Fallback: handle hostname:port format
+      const [hostname, port] = servicesHostRaw.split(':');
+      servicesHostname = hostname;
+      servicesPort = port || null;
+    }
+
     for (const serviceName of serviceNames) {
       // Only apply services_host if service doesn't have explicit host in local config
-      if (systemYml[serviceName] && !localOverrides[serviceName]?.host) {
+      if (systemYml[serviceName]?.host && !localOverrides[serviceName]?.host) {
+        const originalHost = systemYml[serviceName].host;
+        let newHost;
+
+        try {
+          // Try to parse original as URL and replace hostname (preserve original port/protocol)
+          const url = new URL(originalHost);
+          url.hostname = servicesHostname;
+          // Only override port if services_host explicitly provides one
+          if (servicesPort) url.port = servicesPort;
+          newHost = url.toString().replace(/\/$/, '');
+        } catch {
+          // Original is plain hostname - use services_host value
+          // Preserve port from original if it had one (hostname:port format)
+          if (originalHost.includes(':')) {
+            const [, originalPort] = originalHost.split(':');
+            newHost = servicesPort ? `${servicesHostname}:${servicesPort}` : `${servicesHostname}:${originalPort}`;
+          } else {
+            newHost = servicesPort ? `${servicesHostname}:${servicesPort}` : servicesHostname;
+          }
+        }
+
         localOverrides[serviceName] = {
           ...localOverrides[serviceName],
-          host: servicesHost
+          host: newHost
         };
       }
     }
