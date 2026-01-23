@@ -325,6 +325,7 @@ export class QueueService {
     return new PlayableItem({
       id: item.id,
       source: item.source,
+      localId: item.localId,
       title: item.title,
       mediaType: item.mediaType,
       mediaUrl: item.mediaUrl,

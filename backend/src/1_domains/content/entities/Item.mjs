@@ -11,6 +11,7 @@
  * @typedef {Object} ItemProps
  * @property {string} id - Compound ID: "source:localId"
  * @property {string} source - Adapter source name
+ * @property {string} localId - Source-specific ID (e.g., plex rating key)
  * @property {string} title - Display title
  * @property {string} [type] - Item type (e.g., 'talk', 'scripture', 'movie')
  * @property {string} [thumbnail] - Proxied thumbnail URL
@@ -33,9 +34,11 @@ export class Item {
     if (!props.id) throw new Error('Item requires id');
     if (!props.source) throw new Error('Item requires source');
     if (!props.title) throw new Error('Item requires title');
+    if (!props.localId) throw new Error('Item requires localId');
 
     this.id = props.id;
     this.source = props.source;
+    this.localId = props.localId;
     this.title = props.title;
     this.type = props.type ?? null;
     this.thumbnail = props.thumbnail ?? null;

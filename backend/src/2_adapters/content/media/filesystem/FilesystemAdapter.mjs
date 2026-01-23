@@ -281,6 +281,7 @@ export class FilesystemAdapter {
         return new ListableItem({
           id: `filesystem:${localId}`,
           source: 'filesystem',
+          localId,
           title: path.basename(localId),
           itemType: 'container',
           childCount: entries.length
@@ -304,6 +305,7 @@ export class FilesystemAdapter {
       return new PlayableItem({
         id: `filesystem:${localId}`,
         source: 'filesystem',
+        localId,
         title: path.basename(localId, ext),
         mediaType,
         mediaUrl: `/proxy/filesystem/stream/${encodeURIComponent(localId)}`,
@@ -359,6 +361,7 @@ export class FilesystemAdapter {
             items.push(new ListableItem({
               id: `filesystem:${entryId}`,
               source: 'filesystem',
+              localId: entryId,
               title: entry,
               itemType: 'container',
               childCount: childEntries.length
@@ -369,6 +372,7 @@ export class FilesystemAdapter {
               items.push(new ListableItem({
                 id: `filesystem:${entryId}`,
                 source: 'filesystem',
+                localId: entryId,
                 title: path.basename(entry, ext),
                 itemType: 'leaf'
               }));

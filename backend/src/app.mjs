@@ -204,13 +204,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   app.use('/admin/ws', createEventBusRouter({ eventBus, logger: rootLogger }));
 
   // Content domain
-  // Get Plex config: host from system config (with services_host override), token from household auth
-  const plexSystemConfig = configService.getServiceConfig('plex');
-  const plexAuth = configService.getHouseholdAuth('plex') || {};
-  const plexConfig = (plexSystemConfig?.host && plexAuth.token) ? {
-    host: plexSystemConfig.host,
-    token: plexAuth.token
-  } : null;
+  // Get media library credentials (currently Plex, could be Jellyfin, etc.)
+  const mediaLibConfig = configService.getServiceCredentials('plex');
 
   // Get nomusic overlay config from fitness app settings
   const fitnessConfig = configService.getAppConfig('fitness');
@@ -222,7 +217,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const mediaMemoryPath = `${householdDir}/history/media_memory`;
   const contentRegistry = createContentRegistry({
     mediaBasePath,
-    plex: plexConfig,
+    plex: mediaLibConfig,  // Bootstrap key stays 'plex' for now
     dataPath: contentPath,
     watchlistPath,
     mediaMemoryPath,
@@ -234,9 +229,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const watchStatePath = configService.getPath('watchState') || `${dataBasePath}/history/media_memory`;
   const watchStore = createWatchStore({ watchStatePath });
 
-  // Create proxy service for content domain (used for /proxy/plex/* passthrough)
-  const contentProxyService = plexConfig?.host ? createProxyService({
-    plex: { host: plexConfig.host, token: plexConfig.token },
+  // Create proxy service for content domain (used for media library passthrough)
+  const contentProxyService = mediaLibConfig?.host ? createProxyService({
+    plex: mediaLibConfig,  // Bootstrap key stays 'plex' for now
     logger: rootLogger.child({ module: 'content-proxy' })
   }) : null;
 
@@ -394,22 +389,19 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'static-api' })
   });
 
-  // Plex proxy service (for thumbnail transcoding, etc.)
-  // Note: plexAuth already declared above for content registry
-  let plexProxyHandler = null;
-  const plexHost = plexAuth.server_url || '';
-  const plexToken = plexAuth.token || '';
+  // Media library proxy service (for thumbnail transcoding, etc.)
+  let mediaLibProxyHandler = null;
 
-  if (plexHost && plexToken) {
-    const plexProxyService = createProxyService({
-      plex: { host: plexHost, token: plexToken },
-      logger: rootLogger.child({ module: 'plex-proxy' })
+  if (mediaLibConfig?.host && mediaLibConfig?.token) {
+    const mediaLibProxyService = createProxyService({
+      plex: mediaLibConfig,  // Bootstrap key stays 'plex' for now
+      logger: rootLogger.child({ module: 'media-proxy' })
     });
-    plexProxyHandler = async (req, res) => {
-      await plexProxyService.proxy('plex', req, res);
+    mediaLibProxyHandler = async (req, res) => {
+      await mediaLibProxyService.proxy('plex', req, res);
     };
   } else {
-    rootLogger.warn('plexProxy.disabled', { reason: 'Missing host or token' });
+    rootLogger.warn('mediaLibProxy.disabled', { reason: 'Missing host or token' });
   }
 
   // Calendar domain router
@@ -665,7 +657,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   const apiV1Router = createApiV1Router({
     routers: v1Routers,
-    plexProxyHandler,
+    plexProxyHandler: mediaLibProxyHandler,  // Key stays 'plexProxyHandler' for API compat
     logger: rootLogger.child({ module: 'api-v1' })
   });
 

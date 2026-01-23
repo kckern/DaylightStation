@@ -365,10 +365,8 @@ export async function createApp({
     const dataBasePath = process.env.path?.data || process.env.DATA_PATH || '/data';
     const householdId = configService.getDefaultHouseholdId() || 'default';
     const householdDir = userDataService.getHouseholdDir(householdId) || `${dataBasePath}/households/${householdId}`;
-    const plexConfig = process.env.media?.plex ? {
-      host: process.env.media.plex.host,
-      token: process.env.media.plex.token
-    } : null;
+    // Use ConfigService for media library credentials (same as new app.mjs)
+    const plexConfig = configService.getServiceCredentials('plex');
     const watchlistPath = `${householdDir}/state/lists.yml`;
     const contentRegistry = createContentRegistry({
       mediaBasePath,

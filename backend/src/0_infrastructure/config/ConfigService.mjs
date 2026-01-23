@@ -183,6 +183,29 @@ export class ConfigService {
     };
   }
 
+  /**
+   * Get service credentials combining system config (host) with auth (token)
+   * @param {string} serviceName - Service identifier (plex, home_assistant, etc.)
+   * @param {string} [householdId] - Household to get auth from (defaults to default household)
+   * @returns {object|null} Combined {host, token, ...} or null if incomplete
+   */
+  getServiceCredentials(serviceName, householdId = null) {
+    const systemConfig = this.getServiceConfig(serviceName);
+    const auth = this.getHouseholdAuth(serviceName, householdId);
+
+    // Require both host and token
+    if (!systemConfig?.host || !auth?.token) return null;
+
+    return {
+      host: systemConfig.host,
+      token: auth.token,
+      // Include other system config fields (protocol, platform, etc.)
+      ...systemConfig,
+      // Include other auth fields if present
+      ...auth
+    };
+  }
+
   getEnv() {
     return this.#config.system?.env ?? process.env.DAYLIGHT_ENV ?? 'default';
   }

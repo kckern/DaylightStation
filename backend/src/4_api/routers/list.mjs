@@ -56,8 +56,12 @@ function compactItem(obj) {
  */
 export function toListItem(item) {
   // Compute default play/queue actions, but allow item.actions to override
-  const computedPlay = item.mediaUrl ? { media: item.id } : undefined;
-  const computedQueue = item.itemType === 'container' ? { playlist: item.id } : undefined;
+  // For plex items, use plex key with numeric ID; otherwise use media key with full compound ID
+  const isPlex = item.source === 'plex';
+  // Use localId from Item entity (extracted from compound ID at construction)
+  const localId = item.localId || item.id;
+  const computedPlay = item.mediaUrl ? (isPlex ? { plex: localId } : { media: item.id }) : undefined;
+  const computedQueue = item.itemType === 'container' ? (isPlex ? { plex: localId } : { playlist: item.id }) : undefined;
 
   const base = {
     id: item.id,
@@ -335,8 +339,8 @@ export function createListRouter(config) {
         viewingHistory = adapter._loadViewingHistory();
         if (viewingHistory && Object.keys(viewingHistory).length > 0) {
           items = items.map(item => {
-            // Extract the local ID (rating key) from compound ID
-            const itemKey = item.id?.replace(/^plex:/, '') || item.metadata?.plex || item.metadata?.key;
+            // Use localId from Item entity (extracted from compound ID at construction)
+            const itemKey = item.localId || item.metadata?.plex || item.metadata?.key;
             const watchData = viewingHistory[itemKey] || viewingHistory[String(itemKey)];
             if (watchData) {
               // Calculate progress from playhead and duration (canonical field names)
@@ -436,7 +440,7 @@ export function createListRouter(config) {
         response._debug = {
           historyCount: historyKeys.length,
           sampleKeys: historyKeys.slice(0, 5),
-          firstItemPlex: items[0]?.id?.replace(/^plex:/, '') || items[0]?.metadata?.plex
+          firstItemPlex: items[0]?.localId || items[0]?.metadata?.plex
         };
       }
 

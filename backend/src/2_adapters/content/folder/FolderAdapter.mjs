@@ -377,6 +377,7 @@ export class FolderAdapter {
       children.push(new Item({
         id: compoundId,
         source: contentSource,
+        localId: parsed.id,
         title: item.label || parsed.id,
         type: item.action === 'Queue' ? 'queue' : 'list',
         thumbnail: item.image,
@@ -448,6 +449,7 @@ export class FolderAdapter {
     return new ListableItem({
       id,
       source: 'folder',
+      localId: folderName,
       title: folderName,
       itemType: 'container',
       children
@@ -455,11 +457,13 @@ export class FolderAdapter {
   }
 
   async getItem(id) {
+    const localId = id.replace('folder:', '');
     const list = await this.getList(id);
     if (!list) return null;
     return new ListableItem({
       id,
       source: 'folder',
+      localId,
       title: list.title,
       itemType: 'container',
       childCount: list.children.length
