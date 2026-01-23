@@ -135,6 +135,170 @@ export class LocalContentAdapter {
   }
 
   /**
+   * List all items in a collection (hymn, primary, talk, scripture, poem)
+   * @param {string} collection - Collection name (e.g., 'hymn', 'primary')
+   * @returns {Promise<Array>}
+   */
+  async listCollection(collection) {
+    if (collection === 'hymn' || collection === 'primary') {
+      return this._listSongs(collection);
+    }
+
+    if (collection === 'talk') {
+      return this._listTalkFolders();
+    }
+
+    if (collection === 'scripture') {
+      return this._listScriptureVolumes();
+    }
+
+    if (collection === 'poem') {
+      return this._listPoemCollections();
+    }
+
+    return [];
+  }
+
+  /**
+   * List folders/subsources for a parent type (used by item router)
+   * @param {string} type - Parent type (e.g., 'talk')
+   * @returns {Promise<Array>}
+   */
+  async listFolders(type) {
+    if (type === 'talk') {
+      return this._listTalkFolders();
+    }
+    return [];
+  }
+
+  /**
+   * List all playable items in a collection
+   * @param {string} collection - Collection name
+   * @returns {Promise<PlayableItem[]>}
+   */
+  async listCollectionPlayables(collection) {
+    const items = await this.listCollection(collection);
+    // For hymn/primary, items are already playable
+    if (collection === 'hymn' || collection === 'primary') {
+      return items;
+    }
+    // For talk, need to recurse into folders
+    return [];
+  }
+
+  /**
+   * List all songs in a collection
+   * @param {string} collection - 'hymn' or 'primary'
+   * @returns {Promise<Array>}
+   * @private
+   */
+  async _listSongs(collection) {
+    const basePath = path.resolve(this.dataPath, 'songs', collection);
+    try {
+      const files = listYamlFiles(basePath);
+      const items = [];
+
+      for (const file of files) {
+        // Extract number from filename (e.g., "0002-the-spirit-of-god.yml" → "2")
+        const match = file.match(/^0*(\d+)/);
+        if (match) {
+          const number = match[1];
+          const item = await this._getSong(collection, number);
+          if (item) items.push(item);
+        }
+      }
+
+      return items;
+    } catch (err) {
+      return [];
+    }
+  }
+
+  /**
+   * List talk folders
+   * @returns {Promise<Array>}
+   * @private
+   */
+  async _listTalkFolders() {
+    const basePath = path.resolve(this.dataPath, 'talks');
+    try {
+      if (!dirExists(basePath)) return [];
+
+      const fs = await import('fs');
+      const entries = fs.readdirSync(basePath, { withFileTypes: true });
+      const folders = entries
+        .filter(e => e.isDirectory())
+        .map(e => ({
+          id: `talk:${e.name}`,
+          source: 'local-content',
+          localId: e.name,
+          title: e.name,
+          itemType: 'container'
+        }));
+
+      return folders;
+    } catch (err) {
+      return [];
+    }
+  }
+
+  /**
+   * List scripture volumes
+   * @returns {Promise<Array>}
+   * @private
+   */
+  async _listScriptureVolumes() {
+    const basePath = path.resolve(this.dataPath, 'scripture');
+    try {
+      if (!dirExists(basePath)) return [];
+
+      const fs = await import('fs');
+      const entries = fs.readdirSync(basePath, { withFileTypes: true });
+      const volumes = entries
+        .filter(e => e.isDirectory())
+        .map(e => ({
+          id: `scripture:${e.name}`,
+          source: 'local-content',
+          localId: e.name,
+          title: e.name.toUpperCase(),
+          itemType: 'container'
+        }));
+
+      return volumes;
+    } catch (err) {
+      return [];
+    }
+  }
+
+  /**
+   * List poem collections
+   * @returns {Promise<Array>}
+   * @private
+   */
+  async _listPoemCollections() {
+    const basePath = path.resolve(this.dataPath, 'poetry');
+    try {
+      if (!dirExists(basePath)) return [];
+
+      const fs = await import('fs');
+      const entries = fs.readdirSync(basePath, { withFileTypes: true });
+      const collections = entries
+        .filter(e => e.isDirectory())
+        .map(e => ({
+          id: `poem:${e.name}`,
+          source: 'local-content',
+          localId: e.name,
+          title: e.name,
+          itemType: 'container'
+        }));
+
+      return collections;
+    } catch (err) {
+      return [];
+    }
+  }
+
+  /**
    * @private
    */
   async _getTalk(localId) {
@@ -143,7 +307,7 @@ export class LocalContentAdapter {
     if (!metadata) return null;
 
     const compoundId = `talk:${localId}`;
-    const mediaUrl = `/proxy/local-content/stream/talk/${localId}`;
+    const mediaUrl = `/api/v1/proxy/local-content/stream/talk/${localId}`;
 
     return new PlayableItem({
       id: compoundId,
@@ -206,7 +370,7 @@ export class LocalContentAdapter {
     }
 
     const compoundId = `scripture:${localId}`;
-    const mediaUrl = `/proxy/local-content/stream/scripture/${localId}`;
+    const mediaUrl = `/api/v1/proxy/local-content/stream/scripture/${localId}`;
 
     return new PlayableItem({
       id: compoundId,
@@ -282,7 +446,7 @@ export class LocalContentAdapter {
     if (!metadata) return null;
 
     const compoundId = `${collection}:${number}`;
-    const mediaUrl = `/proxy/local-content/stream/${collection}/${number}`;
+    const mediaUrl = `/api/v1/proxy/local-content/stream/${collection}/${number}`;
 
     // Handle different YAML field names for song number
     // YAML may have: number, hymn_num, song_num, or we parse from path
@@ -320,7 +484,7 @@ export class LocalContentAdapter {
     if (!metadata) return null;
 
     const compoundId = `poem:${localId}`;
-    const mediaUrl = `/proxy/local-content/stream/poem/${localId}`;
+    const mediaUrl = `/api/v1/proxy/local-content/stream/poem/${localId}`;
 
     return new PlayableItem({
       id: compoundId,
