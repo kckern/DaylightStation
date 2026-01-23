@@ -31,6 +31,13 @@ export function AudioPlayer({
   watchedDurationProvider
 }) {
   const { media_url, title, artist, albumArtist, album, image, type } = media || {};
+  
+  // Fallback for artist/album from metadata if not directly available
+  // (Plex track metadata often has artist/album in metadata object, or grandparentTitle/parentTitle)
+  const effectiveArtist = artist || media?.metadata?.artist || media?.grandparentTitle || media?.metadata?.grandparentTitle || null;
+  const effectiveAlbum = album || media?.metadata?.album || media?.parentTitle || media?.metadata?.parentTitle || null;
+  const effectiveAlbumArtist = albumArtist || media?.metadata?.albumArtist || null;
+  
   const baseMediaKey = useMemo(
     () => `${media_url || ''}:${media?.media_key || media?.key || media?.id || ''}`,
     [media_url, media?.media_key, media?.key, media?.id]
@@ -93,9 +100,9 @@ export function AudioPlayer({
   }, [resilienceBridge, getMediaEl, getContainerEl, hardReset, fetchVideoInfo]);
 
   const percent = duration ? ((seconds / duration) * 100).toFixed(1) : 0;
-  const header = !!artist && !!album ? `${artist} - ${album}` : !!artist ? artist : !!album ? album : media_url;
+  const header = !!effectiveArtist && !!effectiveAlbum ? `${effectiveArtist} - ${effectiveAlbum}` : !!effectiveArtist ? effectiveArtist : !!effectiveAlbum ? effectiveAlbum : title || 'Audio Track';
   const shaderState = percent < 0.1 || seconds > duration - 2 ? 'on' : 'off';
-  const footer = `${title}${albumArtist && albumArtist !== artist ? ` (${albumArtist})` : ''}`;
+  const footer = `${title}${effectiveAlbumArtist && effectiveAlbumArtist !== effectiveArtist ? ` (${effectiveAlbumArtist})` : ''}`;
 
   // Image upscale blur for album art
   const coverImageRef = useRef(null);
