@@ -48,12 +48,32 @@ function loadSystemConfig(dataDir) {
     localOverrides = readYaml(localPath) ?? {};
   }
 
+  // Process services_host: Apply to services that don't have explicit host in local config
+  if (localOverrides.services_host) {
+    const servicesHost = localOverrides.services_host;
+    const serviceNames = ['home_assistant', 'plex', 'mqtt', 'printer', 'tv'];
+    
+    for (const serviceName of serviceNames) {
+      // Only apply services_host if service doesn't have explicit host in local config
+      if (systemYml[serviceName] && !localOverrides[serviceName]?.host) {
+        localOverrides[serviceName] = {
+          ...localOverrides[serviceName],
+          host: servicesHost
+        };
+      }
+    }
+  }
+
   // Merge base config with local overrides
   const merged = deepMerge(systemYml, localOverrides);
+
+  // Derive base directory from dataDir (go up one level)
+  const baseDir = path.dirname(dataDir);
 
   return {
     // Bootstrap paths (not from YML)
     dataDir,
+    baseDir,
     configDir: path.join(dataDir, 'system'),
     // Environment
     env: envName ?? merged.env ?? 'default',

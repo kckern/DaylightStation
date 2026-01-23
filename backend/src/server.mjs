@@ -30,15 +30,18 @@ async function main() {
   // Configuration
   // ==========================================================================
 
-  // Detect data directory from environment (same pattern as index.js)
-  const dataDir = isDocker
-    ? '/usr/src/app/data'
-    : process.env.DAYLIGHT_DATA_PATH;
+  // Detect base directory from environment
+  const baseDir = isDocker
+    ? '/usr/src/app'
+    : process.env.DAYLIGHT_BASE_PATH;
 
-  if (!dataDir) {
-    console.error('[FATAL] DAYLIGHT_DATA_PATH not set. Cannot start.');
+  if (!baseDir) {
+    console.error('[FATAL] DAYLIGHT_BASE_PATH not set. Cannot start.');
     process.exit(1);
   }
+
+  // Derive data directory from base (data and media are siblings)
+  const dataDir = join(baseDir, 'data');
 
   // Derive config paths from data directory
   const configDir = join(dataDir, 'system');

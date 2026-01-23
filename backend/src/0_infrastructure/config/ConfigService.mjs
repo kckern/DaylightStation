@@ -88,7 +88,7 @@ export class ConfigService {
   getMediaDir() {
     return this.#config.system?.paths?.media
       ?? this.#config.system?.mediaDir
-      ?? `${this.getDataDir()}/media`;
+      ?? `${this.#config.system?.baseDir ?? '.'}/media`;
   }
 
   getUserDir(username) {
@@ -100,7 +100,19 @@ export class ConfigService {
   }
 
   getPath(name) {
-    return this.#config.system?.paths?.[name] ?? null;
+    // Check explicit path config first
+    const explicitPath = this.#config.system?.paths?.[name];
+    if (explicitPath) return explicitPath;
+
+    // Derive standard media subdirectories
+    const mediaDir = this.getMediaDir();
+    const standardPaths = {
+      img: `${mediaDir}/img`,
+      font: `${mediaDir}/fonts`,
+      icons: `${mediaDir}/img/icons`
+    };
+
+    return standardPaths[name] ?? null;
   }
 
   // ─── Adapters ────────────────────────────────────────────
@@ -126,6 +138,24 @@ export class ConfigService {
 
   get(pathStr) {
     return resolvePath(this.#config.system, pathStr);
+  }
+
+  /**
+   * Get service configuration with services_host override
+   * @param {string} serviceName - Service identifier (home_assistant, plex, mqtt, etc.)
+   * @returns {object|null} Service config with host and port
+   */
+  getServiceConfig(serviceName) {
+    const serviceConfig = this.#config.system?.[serviceName];
+    if (!serviceConfig) return null;
+
+    // If services_host is defined (typically in local config), it overrides service-specific hosts
+    const host = this.#config.system?.services_host ?? serviceConfig.host;
+    
+    return {
+      ...serviceConfig,
+      host
+    };
   }
 
   getEnv() {
