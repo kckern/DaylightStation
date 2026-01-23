@@ -1,9 +1,32 @@
 #!/bin/bash
 
-# KILL ANY PROCESS USING PORT 3111 or 3112 or 3119  
-lsof -ti:3111 2>/dev/null | xargs kill -9 2>/dev/null || true
-lsof -ti:3112 2>/dev/null | xargs kill -9 2>/dev/null || true
-lsof -ti:3119 2>/dev/null | xargs kill -9 2>/dev/null || true
+# Load env vars from .env
+set -a
+source .env
+set +a
+
+# Resolve config paths
+DATA_PATH="${DAYLIGHT_BASE_PATH}/data"
+ENV_NAME="${DAYLIGHT_ENV:-$(hostname)}"
+CONFIG_FILE="${DATA_PATH}/system/system-local.${ENV_NAME}.yml"
+
+# Read ports from config (fallback to defaults if not found)
+if [[ -f "$CONFIG_FILE" ]]; then
+    PRIMARY_PORT=$(grep -A1 '^server:' "$CONFIG_FILE" | grep 'port:' | awk '{print $2}')
+    SECONDARY_PORT=$(grep -A1 '^webhook:' "$CONFIG_FILE" | grep 'port:' | awk '{print $2}')
+    PRIMARY_PORT=${PRIMARY_PORT:-3111}
+    SECONDARY_PORT=${SECONDARY_PORT:-3119}
+else
+    echo "Warning: Config file not found: $CONFIG_FILE"
+    PRIMARY_PORT=3111
+    SECONDARY_PORT=3119
+fi
+
+echo "Using ports from $ENV_NAME config: primary=$PRIMARY_PORT, secondary=$SECONDARY_PORT"
+
+# Kill any process using configured ports
+lsof -ti:$PRIMARY_PORT 2>/dev/null | xargs kill -9 2>/dev/null || true
+lsof -ti:$SECONDARY_PORT 2>/dev/null | xargs kill -9 2>/dev/null || true
 
 ## clear dev.log
 > ./dev.log
