@@ -184,22 +184,43 @@ export function createContentRouter(registry, watchStore = null, options = {}) {
   });
 
   /**
-   * GET /api/content/plex/info/:id - Get Plex item metadata
+   * GET /api/content/plex/info/:id/:modifiers? - Get Plex item metadata
    *
    * Returns full metadata for a Plex item with legacy-compatible fields.
+   * For containers (shows, albums), can use smart selection to pick a playable item.
+   *
+   * Modifiers (path or query):
+   * - shuffle: Randomly select from unwatched items
+   *
    * Legacy fields: listkey, listType, key, type, show, season, labels,
    *                media_type, media_url, thumb_id, image, percent, seconds
    */
-  router.get('/plex/info/:id', async (req, res) => {
+  router.get('/plex/info/:id/:modifiers?', async (req, res) => {
     try {
-      const { id } = req.params;
+      const { id, modifiers } = req.params;
+      const shuffle = modifiers === 'shuffle' || 'shuffle' in req.query;
+
       const plexAdapter = registry.get('plex');
 
       if (!plexAdapter) {
         return res.status(503).json({ error: 'Plex adapter not configured' });
       }
 
-      const item = await plexAdapter.getItem(`plex:${id}`);
+      // For containers with shuffle, use smart selection to pick a playable item
+      let item;
+      let selectedId = id;
+      if (shuffle && typeof plexAdapter.loadPlayableItemFromKey === 'function') {
+        const selected = await plexAdapter.loadPlayableItemFromKey(id, { shuffle: true });
+        if (selected) {
+          item = selected;
+          selectedId = item.localId || item.id?.replace(/^plex:/, '') || id;
+        }
+      }
+
+      // If no smart selection or not a container, get item directly
+      if (!item) {
+        item = await plexAdapter.getItem(`plex:${id}`);
+      }
       if (!item) {
         return res.status(404).json({ error: 'Item not found', id });
       }
@@ -215,7 +236,7 @@ export function createContentRouter(registry, watchStore = null, options = {}) {
       // Generate streaming URL for playable items
       let media_url = null;
       if (videoTypes.includes(itemType) || audioTypes.includes(itemType)) {
-        media_url = await plexAdapter.loadMediaUrl(id);
+        media_url = await plexAdapter.loadMediaUrl(selectedId);
       }
 
       // Load watch state from viewing history
@@ -223,7 +244,7 @@ export function createContentRouter(registry, watchStore = null, options = {}) {
       let seconds = 0;
       if (typeof plexAdapter._loadViewingHistory === 'function') {
         const history = plexAdapter._loadViewingHistory();
-        const entry = history[id];
+        const entry = history[selectedId];
         if (entry) {
           seconds = entry.playhead || entry.seconds || 0;
           const duration = entry.mediaDuration || entry.duration || 0;
@@ -232,7 +253,7 @@ export function createContentRouter(registry, watchStore = null, options = {}) {
       }
 
       // Extract thumb_id from Media Part if available, else use rating key
-      let thumb_id = id;
+      let thumb_id = selectedId;
       const mediaPart = item.metadata?.Media?.[0]?.Part?.[0];
       if (mediaPart?.id) {
         thumb_id = mediaPart.id;
@@ -240,9 +261,9 @@ export function createContentRouter(registry, watchStore = null, options = {}) {
 
       res.json({
         // Legacy identifiers
-        listkey: id,
+        listkey: id,  // Original container ID (for queue context)
         listType: itemType,
-        key: id,
+        key: selectedId,  // Actual item to play (may differ if smart selection used)
         // Core fields
         title: item.title,
         type: itemType,
