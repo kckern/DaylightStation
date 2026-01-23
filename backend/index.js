@@ -15,7 +15,7 @@ import { existsSync } from 'fs';
 import path, { join } from 'path';
 import 'dotenv/config';
 
-import { initConfigService, ConfigValidationError } from './src/0_infrastructure/config/index.mjs';
+import { initConfigService, ConfigValidationError, configService } from './src/0_infrastructure/config/index.mjs';
 import { hydrateProcessEnvFromConfigs, loadLoggingConfig, resolveLoggerLevel, getLoggingTags, resolveLogglyToken } from './src/0_infrastructure/logging/config.js';
 import { initializeLogging } from './src/0_infrastructure/logging/dispatcher.js';
 import { createConsoleTransport, createFileTransport, createLogglyTransport } from './src/0_infrastructure/logging/transports/index.js';
@@ -170,9 +170,9 @@ async function main() {
   // Start Server
   // ==========================================================================
 
-  // In dev mode, use BACKEND_PORT (frontend/Vite uses PORT for user-facing port)
-  // In production (Docker), use PORT directly
-  const port = process.env.BACKEND_PORT || process.env.PORT || 3111;
+  // Get port from ConfigService (loaded from system-local.{env}.yml)
+  // BACKEND_PORT for dev (avoids conflict with Docker), PORT for production
+  const port = configService.get('BACKEND_PORT') || configService.get('PORT') || 3111;
   server.listen(port, '0.0.0.0', () => {
     logger.info('server.started', {
       port,
@@ -183,10 +183,10 @@ async function main() {
   });
 
   // ==========================================================================
-  // Secondary API Server (port 3119) - for webhooks (always routes to legacy)
+  // Secondary API Server - for webhooks (always routes to legacy)
   // ==========================================================================
 
-  const secondaryPort = process.env.SECONDARY_PORT || 3119;
+  const secondaryPort = configService.get('SECONDARY_PORT') || 3119;
   const secondaryServer = createServer((req, res) => {
     res.setHeader('X-Backend', 'legacy');
 

@@ -5,12 +5,13 @@ import { buildBudget } from './budgetlib/build_budget.mjs';
 import { processTransactions, processMortgageTransactions, getAccountBalances } from './buxfer.mjs';
 import payrollSync from '../jobs/finance/payroll.mjs';
 import { createLogger } from './logging/logger.js';
+import { configService } from '../../src/0_infrastructure/config/index.mjs';
 
 const budgetLogger = createLogger({ source: 'backend', app: 'budget' });
 
 moment.tz.setDefault('America/Los_Angeles');
 
-const dataPath = `${process.env.path.data}`;
+const dataPath = configService.getDataDir();
 
 // Budget data now lives in households/default/apps/finances/
 const financesBasePath      = `${dataPath}/households/default/apps/finances`;

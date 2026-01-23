@@ -5,7 +5,7 @@ export default defineConfig({
   testMatch: '**/*.runtime.test.mjs',
   timeout: 90000,
   use: {
-    baseURL: 'http://localhost:3111',
+    baseURL: process.env.BASE_URL || 'http://localhost:3111',
     headless: true,
     screenshot: 'only-on-failure',
     launchOptions: {

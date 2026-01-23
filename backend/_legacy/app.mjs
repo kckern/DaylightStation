@@ -118,8 +118,8 @@ export async function createApp({
       context: { env: process.env.NODE_ENV }
     });
 
-    // Log config loading summary
-    logConfigSummary(configResult, rootLogger);
+    // Log config loading summary (no-op in new config system)
+    logConfigSummary({}, rootLogger);
 
     // Validate configuration and log status
     const { validateConfig, getConfigStatusSummary } = await import('./lib/config/healthcheck.mjs');
@@ -452,11 +452,12 @@ export async function createApp({
       app.handle(req, res, next);
     });
 
-    // Frontend
+    // Frontend - only serve dist in production (Docker), not in dev
     const frontendPath = join(__dirname, '../../frontend/dist');
     const frontendExists = existsSync(frontendPath);
-    if (frontendExists) {
-      // Serve the frontend from the root URL
+
+    if (isDocker && frontendExists) {
+      // Production: Serve the frontend from the root URL
       app.use(express.static(frontendPath));
 
       // Forward non-matching paths to frontend for React Router to handle, but skip /ws/* for WebSocket
@@ -467,11 +468,24 @@ export async function createApp({
         }
         res.sendFile(join(frontendPath, 'index.html'));
       });
-    } else {
+    } else if (isDocker) {
       rootLogger.warn('frontend.not_found', { path: frontendPath });
       app.use('/', (req, res, next) => {
         if (req.path.startsWith('/ws/') || req.path.startsWith('/api/')) return next();
         res.status(502).json({ error: 'Frontend not available', detail: 'Frontend dist not found. Build frontend or check deployment.' });
+      });
+    } else {
+      // Dev mode: Don't serve frontend - use Vite dev server instead
+      rootLogger.info('frontend.dev_mode', { message: 'Dev mode: frontend served by Vite, not backend' });
+      app.get('*', (req, res, next) => {
+        if (req.path.startsWith('/ws') || req.path.startsWith('/api')) {
+          return next();
+        }
+        res.status(503).json({
+          error: 'Dev mode - frontend not served by backend',
+          detail: 'In development, use Vite dev server for frontend (default port 5173). Backend only handles /api/* routes.',
+          hint: 'Run "npm run dev" to start both Vite and backend, or point your proxy to the Vite port.'
+        });
       });
     }
 

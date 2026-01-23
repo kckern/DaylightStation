@@ -1,7 +1,7 @@
 {
   "watch": ["backend"],
   "ext": "js,mjs,json,yml",
-  "exec": "DAYLIGHT_ENV=kckern-macbook node backend/index.js",
+  "exec": "node backend/index.js",
   "legacyWatch": true,
   "delay": "500"
 }

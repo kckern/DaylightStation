@@ -149,6 +149,20 @@ export class ConfigService {
   isReady() {
     return true;
   }
+
+  // ─── Debug/Status ─────────────────────────────────────────
+
+  /**
+   * Get config safe for exposure via status endpoint.
+   * Excludes secrets, auth, identity mappings (PII), and credential-like fields.
+   * @returns {object}
+   */
+  getSafeConfig() {
+    const { secrets, auth, identityMappings, ...safe } = this.#config;
+
+    // Deep filter sensitive fields from remaining config
+    return filterSensitive(safe);
+  }
 }
 
 function resolvePath(obj, pathStr) {
@@ -159,6 +173,74 @@ function resolvePath(obj, pathStr) {
     current = current[part];
   }
   return current ?? null;
+}
+
+// ─── Sensitivity Registry ─────────────────────────────────────
+// Central registry for field sensitivity classification
+
+// REDACTED: Completely hidden - credentials and secrets
+const REDACTED_PATTERNS = [
+  'token', 'secret', 'password', 'api_key', 'apikey', 'credential',
+  'access_token', 'refresh_token', 'private_key', 'bearer', 'ssn'
+];
+
+// MASKED: Show first char + asterisks - PII and identifiers
+const MASKED_PATTERNS = [
+  'username', 'user', 'email', 'phone', 'address',
+  'display_name', 'name'
+];
+
+// User ID patterns (masked) - but not client/household IDs
+const MASKED_ID_PATTERN = /^(?!.*(client|household)).*_id$/i;
+
+function getSensitivity(key) {
+  const lower = key.toLowerCase();
+
+  // Check redacted patterns first (highest priority)
+  if (REDACTED_PATTERNS.some(p => lower.includes(p))) {
+    return 'redacted';
+  }
+
+  // Check masked patterns
+  if (MASKED_PATTERNS.some(p => lower === p || lower.endsWith('_' + p))) {
+    return 'masked';
+  }
+
+  // Check *_id but not *_client_id or *_household_id
+  if (MASKED_ID_PATTERN.test(key)) {
+    return 'masked';
+  }
+
+  return 'public';
+}
+
+function maskValue(value) {
+  if (value === null || value === undefined) return value;
+  const str = String(value);
+  if (str.length <= 1) return '*';
+  return str[0] + '*'.repeat(Math.min(str.length - 1, 5));
+}
+
+function filterSensitive(obj) {
+  if (obj === null || obj === undefined) return obj;
+  if (typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)) return obj.map(filterSensitive);
+
+  const filtered = {};
+  for (const [key, value] of Object.entries(obj)) {
+    const sensitivity = getSensitivity(key);
+
+    if (sensitivity === 'redacted') {
+      filtered[key] = '[REDACTED]';
+    } else if (sensitivity === 'masked') {
+      filtered[key] = typeof value === 'object' ? filterSensitive(value) : maskValue(value);
+    } else if (typeof value === 'object' && value !== null) {
+      filtered[key] = filterSensitive(value);
+    } else {
+      filtered[key] = value;
+    }
+  }
+  return filtered;
 }
 
 export default ConfigService;
