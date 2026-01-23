@@ -677,25 +677,30 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // ==========================================================================
-  // Frontend Static Files
+  // Frontend Static Files (Production Only)
   // ==========================================================================
 
-  const frontendPath = join(__dirname, '..', '..', 'frontend', 'dist');
-  const frontendExists = existsSync(frontendPath);
+  // GUARDRAIL: Only serve static dist in production (Docker).
+  // Dev server should NEVER serve dist - Vite handles frontend in development.
+  if (isDocker) {
+    const frontendPath = join(__dirname, '..', '..', 'frontend', 'dist');
+    const frontendExists = existsSync(frontendPath);
 
-  if (frontendExists) {
-    app.use(express.static(frontendPath));
-    app.get('*', (req, res, next) => {
-      if (req.path.startsWith('/ws')) return next();
-      res.sendFile(join(frontendPath, 'index.html'));
-    });
+    if (frontendExists) {
+      app.use(express.static(frontendPath));
+      app.get('*', (req, res, next) => {
+        if (req.path.startsWith('/ws')) return next();
+        res.sendFile(join(frontendPath, 'index.html'));
+      });
+    } else {
+      rootLogger.warn('frontend.not_found', { path: frontendPath });
+      app.use('/', (req, res, next) => {
+        if (req.path.startsWith('/ws')) return next();
+        res.status(502).json({ error: 'Frontend not available', detail: 'Frontend dist not found. Build frontend or check deployment.' });
+      });
+    }
   } else {
-    rootLogger.warn('frontend.not_found', { path: frontendPath });
-    app.use('/', (req, res, next) => {
-      // Skip WebSocket paths - let them through to handlers
-      if (req.path.startsWith('/ws')) return next();
-      res.status(502).json({ error: 'Frontend not available', detail: 'Frontend dist not found. Build frontend or check deployment.' });
-    });
+    rootLogger.info('frontend.dev_mode', { message: 'Static serving disabled - use Vite dev server for frontend' });
   }
 
   return app;
