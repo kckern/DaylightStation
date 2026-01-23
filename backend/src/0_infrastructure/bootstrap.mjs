@@ -151,7 +151,9 @@ export function createContentRegistry(config) {
     const folderAdapter = new FolderAdapter({
       watchlistPath: config.watchlistPath,
       historyPath: config.mediaMemoryPath || null,
-      registry
+      registry,
+      nomusicLabels: config.nomusicLabels || [],
+      musicOverlayPlaylist: config.musicOverlayPlaylist || null
     });
     registry.register(folderAdapter);
 
