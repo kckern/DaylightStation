@@ -88,4 +88,16 @@ export class PlayableItem extends Item {
   isPlayable() {
     return true;
   }
+
+  /**
+   * Custom JSON serialization with snake_case aliases for legacy compatibility
+   */
+  toJSON() {
+    return {
+      ...this,
+      media_url: this.mediaUrl,
+      media_type: this.mediaType,
+      media_key: this.media_key
+    };
+  }
 }

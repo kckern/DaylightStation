@@ -72,7 +72,7 @@ export async function fetchMediaInfo({ plex, media, shuffle, maxVideoBitrate, ma
     const infoResponse = await DaylightAPI(url);
     return { ...infoResponse, media_key: infoResponse.plex };
   } else if (media) {
-    const url = buildUrl(`api/v1/content/local/info/${media}`, { shuffle });
+    const url = buildUrl(`api/v1/content/item/filesystem/${media}`, { shuffle });
     const infoResponse = await DaylightAPI(url);
     return infoResponse;
   }

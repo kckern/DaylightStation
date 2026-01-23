@@ -101,6 +101,9 @@ export function useQueueController({ play, queue, clear }) {
           const { items } = await DaylightAPI(`api/v1/list/plex/${plexId}/playable${isShuffle ? ',shuffle' : ''}`);
           const flattened = await flattenQueueItems(items);
           newQueue = flattened.map(item => ({ ...item, ...item.play, ...itemOverrides, guid: guid() }));
+        } else if (play?.media) {
+          // Single media file - create queue from this item directly
+          newQueue = [{ ...play, ...itemOverrides, guid: guid() }];
         }
       }
       if (!isCancelled) {
