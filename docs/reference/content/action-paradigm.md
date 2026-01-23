@@ -438,6 +438,93 @@ When all items filtered (watched, skipped, on hold), progressively relaxes:
 
 ---
 
+## Direct Play URL Parameters
+
+The TV app supports direct playback via URL query parameters, enabling bookmarks, external triggers, and automation.
+
+### Source Parameters
+
+First matching source parameter wins:
+
+| Parameter | Action | Source | Example |
+|-----------|--------|--------|---------|
+| `plex` | play | plex | `?plex=545064` |
+| `media` | play | filesystem | `?media=news/teded` |
+| `folder` | play | folder | `?folder=Morning%20Program` |
+| `hymn` | play | hymn | `?hymn=2` |
+| `primary` | play | primary | `?primary=5` |
+| `scripture` | play | scripture | `?scripture=nt` |
+| `talk` | play | talk | `?talk=ldsgc202010` |
+| `poem` | play | poem | `?poem=edpoe/raven` |
+| `play` | play | auto-detect | `?play=545064` (digits→plex, else→media) |
+| `queue` | queue | auto-detect | `?queue=545064` |
+| `playlist` | queue | auto-detect | `?playlist=545064` (alias) |
+| `list` | list | auto-detect | `?list=545064` → browse as menu |
+| `random` | play+random | auto-detect | `?random=545064` → single random |
+
+### Config Modifiers
+
+Combine with any source parameter:
+
+| Parameter | Type | Values | Example |
+|-----------|------|--------|---------|
+| `shuffle` | boolean | `true` | `&shuffle=true` |
+| `continuous` | boolean | `true` | `&continuous=true` |
+| `repeat` | boolean | `true` | `&repeat=true` |
+| `loop` | boolean | `true` | `&loop=true` |
+| `volume` | number | `0`-`1` | `&volume=0.5` |
+| `playbackRate` | number | `0.5`-`2` | `&playbackRate=1.5` |
+| `shader` | string | `default`,`focused`,`night`,`blackout` | `&shader=night` |
+| `overlay` | plex ID | digits | `&overlay=461309` (auto-shuffled) |
+
+### URL Examples
+
+```bash
+# Play single hymn
+/tv?hymn=2
+
+# Queue Plex playlist shuffled
+/tv?queue=545064&shuffle=true
+
+# Play with night shader and slow speed
+/tv?plex=663035&shader=night&playbackRate=0.75
+
+# Silent video with music overlay
+/tv?plex=663035&overlay=461309
+
+# Random track from artist
+/tv?random=545064
+
+# Browse Plex library as menu
+/tv?list=310787
+
+# Play next from Morning Program
+/tv?folder=Morning%20Program
+
+# Open embedded app
+/tv?fitness=1
+/tv?wrapup=1
+```
+
+### Auto-Detection Logic
+
+For `play`, `queue`, `playlist`, `list`, and `random` parameters:
+- Value is all digits → `plex` source
+- Otherwise → `media` (filesystem) source
+
+### App Open Fallback
+
+Any unrecognized parameter (not a source or config) triggers app open:
+```
+/tv?myapp=param  →  {open: {app: "myapp", param: "param"}}
+```
+
+### Implementation
+
+URL parameters are parsed in `frontend/src/Apps/TVApp.jsx` and converted to action objects that flow through the standard MenuStack navigation.
+
+---
+
 ## Related Documentation
 
 - Item-centric API design: `docs/plans/2026-01-23-item-centric-api-design.md`

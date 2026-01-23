@@ -78,28 +78,50 @@ export default function TVApp({ appParam }) {
   const autoplay = useMemo(() => {
     const params = new URLSearchParams(window.location.search);
     const queryEntries = Object.fromEntries(params.entries());
-    
+
+    // Config modifiers that can be combined with any source
     const configList = ["volume","shader","playbackRate","shuffle","continuous","repeat","loop","overlay"];
     const config = {};
     for (const configKey of configList) {
       if (queryEntries[configKey]) {
-        config[configKey] = queryEntries[configKey];
+        // Parse overlay as Plex playlist with shuffle
+        if (configKey === 'overlay' && /^\d+$/.test(queryEntries[configKey])) {
+          config.overlay = {
+            queue: { plex: queryEntries[configKey] },
+            shuffle: true
+          };
+        } else {
+          config[configKey] = queryEntries[configKey];
+        }
       }
     }
 
+    // Auto-detect source: digits → plex, otherwise → media
     const findKey = (value) => ( /^\d+$/.test(value) ? "plex" : "media" );
+
+    // Source mappings - first match wins
     const mappings = {
+      // Queue actions (all playables)
       playlist:  (value) => ({ queue: { [findKey(value)]: value, ...config } }),
       queue:     (value) => ({ queue: { [findKey(value)]: value, ...config } }),
+
+      // Play actions (single / next up)
       play:      (value) => ({ play:  { [findKey(value)]: value, ...config } }),
-      media:     (value) => ({ play: { media: value, ...config } }),
+      random:    (value) => ({ play:  { [findKey(value)]: value, random: true, ...config } }),
+
+      // Source-specific play
       plex:      (value) => ({ play: { plex: value, ...config } }),
+      media:     (value) => ({ play: { media: value, ...config } }),
+      folder:    (value) => ({ play: { folder: value, ...config } }),
       hymn:      (value) => ({ play: { hymn: value, ...config } }),
       song:      (value) => ({ play: { song: value, ...config } }),
       primary:   (value) => ({ play: { primary: value, ...config } }),
       talk:      (value) => ({ play: { talk: value, ...config } }),
       poem:      (value) => ({ play: { poem: value, ...config } }),
       scripture: (value) => ({ play: { scripture: value, ...config } }),
+
+      // List action (browse as menu)
+      list:      (value) => ({ list: { [findKey(value)]: value } }),
     };
 
     for (const [key, value] of Object.entries(queryEntries)) {
