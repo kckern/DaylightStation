@@ -27,6 +27,30 @@ const normalizeLabelList = (raw) => {
   return Array.from(new Set(normalized));
 };
 
+/**
+ * Extract plex ID from item's action objects (play, queue, list)
+ * This is the canonical way to get the plex ID - not from top-level item.plex
+ * @param {Object} item - Item with action objects
+ * @returns {string|null} The plex ID or null
+ */
+const getPlexIdFromActions = (item) => {
+  return item?.play?.plex || item?.queue?.plex || item?.list?.plex || null;
+};
+
+/**
+ * Get a unique identifier for an item
+ * Checks action objects first (canonical), then falls back to legacy top-level fields
+ * @param {Object} item - Item
+ * @returns {string|null}
+ */
+const getItemIdentifier = (item) => {
+  // Prefer action-based plex ID (canonical)
+  const actionPlex = getPlexIdFromActions(item);
+  if (actionPlex) return actionPlex;
+  // Fall back to top-level fields for backward compatibility
+  return item?.id || item?.ratingKey || item?.plex || null;
+};
+
 const VOICE_MEMO_OVERLAY_INITIAL = {
   open: false,
   mode: null,
@@ -170,7 +194,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const trackRecentlyPlayed = React.useCallback((item) => {
     if (!item) return;
     setRecentlyPlayed(prev => {
-      const filtered = prev.filter(p => (p.id || p.ratingKey || p.plex) !== (item.id || item.ratingKey || item.plex));
+      const itemId = getItemIdentifier(item);
+      const filtered = prev.filter(p => getItemIdentifier(p) !== itemId);
       return [item, ...filtered].slice(0, 10);
     });
   }, []);

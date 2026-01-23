@@ -209,6 +209,9 @@ export class FolderAdapter {
   _shouldSkipItem(item, watchState, options = {}) {
     const { ignoreSkips = false, ignoreWatchStatus = false, ignoreWait = false } = options;
 
+    // Skip if explicitly marked as inactive
+    if (item.active === false) return true;
+
     // Skip if on hold
     if (item.hold) return true;
 
