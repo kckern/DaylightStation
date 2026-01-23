@@ -212,6 +212,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     token: plexAuth.token
   } : null;
 
+  // Get nomusic overlay config from fitness app settings
+  const fitnessConfig = configService.getAppConfig('fitness');
+  const nomusicLabels = fitnessConfig?.plex?.nomusic_labels || [];
+  const musicOverlayPlaylist = fitnessConfig?.plex?.music_overlay_playlist || null;
+
   const watchlistPath = `${householdDir}/state/lists.yml`;
   const contentPath = `${dataBasePath}/content`;  // LocalContentAdapter expects content/ subdirectory
   const mediaMemoryPath = `${householdDir}/history/media_memory`;
@@ -220,7 +225,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     plex: plexConfig,
     dataPath: contentPath,
     watchlistPath,
-    mediaMemoryPath
+    mediaMemoryPath,
+    nomusicLabels,
+    musicOverlayPlaylist
   });
 
   // Watch state path - use history/media_memory under data path (matches legacy structure)
