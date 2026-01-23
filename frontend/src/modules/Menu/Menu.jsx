@@ -693,8 +693,13 @@ function MenuItems({
         const itemKey = findKeyForItem(item) || `${index}-${item.label}`;
         let image = item.image;
 
+        // Normalize legacy /media/img/ paths to new API endpoint
+        if (image && (image.startsWith('/media/img/') || image.startsWith('media/img/'))) {
+          image = DaylightMediaPath(image);
+        }
+
         // If there's a Plex ID but no image, build one
-        if (!item.image && plex) {
+        if (!image && plex) {
           const val = Array.isArray(plex) ? plex[0] : plex;
           image = DaylightMediaPath(`/media/plex/img/${val}`);
         }

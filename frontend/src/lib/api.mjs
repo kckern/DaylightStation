@@ -120,6 +120,14 @@ export const DaylightStatusCheck = async (path, data = {}, method = 'GET') => {
 
 export const DaylightMediaPath = (path) => {
     path = path.toString().replace(/^\/|\/$/g,'');
+    // Rewrite legacy /media/img/* paths to new API endpoint
+    if (path.startsWith('media/img/')) {
+        path = path.replace('media/img/', 'api/v1/static/img/');
+    }
+    // Rewrite /static/img/* to use new API endpoint
+    if (path.startsWith('static/img/')) {
+        path = `api/v1/${path}`;
+    }
     return `${getBaseUrl()}/${path}`;
 }
 
