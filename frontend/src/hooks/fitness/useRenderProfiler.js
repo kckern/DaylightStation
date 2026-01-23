@@ -6,7 +6,7 @@
  * - Excessive remounts (>3 mounts in 60s)
  * - Effect cascades (>20 triggers in 10s)
  *
- * Exposes stats via window.__fitnessRenderStats for cross-component correlation.
+ * Exposes stats via window.__fitnessRenderProfilerStats for cross-component correlation.
  *
  * Usage:
  *   useRenderProfiler('FitnessPlayer');
@@ -63,7 +63,8 @@ function calculateGlobalStats() {
  */
 function updateGlobalState() {
   if (typeof window !== 'undefined') {
-    window.__fitnessRenderStats = calculateGlobalStats();
+    // Use separate global from FitnessContext's __fitnessRenderStats (which is a function)
+    window.__fitnessRenderProfilerStats = calculateGlobalStats();
   }
 }
 
