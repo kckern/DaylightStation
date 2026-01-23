@@ -3,6 +3,7 @@ import PropTypes from 'prop-types';
 import { Scriptures, Hymns, Talk, Poetry } from '../../ContentScroller/ContentScroller.jsx';
 import AppContainer from '../../AppContainer/AppContainer.jsx';
 import { fetchMediaInfo } from '../lib/api.js';
+import { DaylightAPI } from '../../../lib/api.mjs';
 import { AudioPlayer } from './AudioPlayer.jsx';
 import { VideoPlayer } from './VideoPlayer.jsx';
 import { PlayerOverlayLoading } from './PlayerOverlayLoading.jsx';
@@ -220,6 +221,45 @@ export function SinglePlayer(props = {}) {
     });
 
     if (info) {
+      // Detect if this is a collection/folder (no media_url, no playable media_type)
+      const isPlayable = info.media_url || ['dash_video', 'video', 'audio'].includes(info.media_type);
+
+      if (!isPlayable && plex) {
+        // This is a collection - fetch first playable item
+        try {
+          const { items } = await DaylightAPI(`/api/v1/list/plex/${plex}/playable`);
+          if (items && items.length > 0) {
+            const firstItem = items[0];
+            const firstItemPlex = firstItem.plex || firstItem.play?.plex || firstItem.metadata?.plex;
+            if (firstItemPlex) {
+              // Fetch media info for the first playable item
+              const playableInfo = await fetchMediaInfo({
+                plex: firstItemPlex,
+                shuffle: false,
+                maxVideoBitrate: play?.maxVideoBitrate,
+                maxResolution: play?.maxResolution,
+                session: plexClientSession
+              });
+              if (playableInfo) {
+                const withCap = {
+                  ...playableInfo,
+                  continuous,
+                  maxVideoBitrate: play?.maxVideoBitrate ?? null,
+                  maxResolution: play?.maxResolution ?? null
+                };
+                if (play?.seconds !== undefined) withCap.seconds = play.seconds;
+                if (play?.resume !== undefined) withCap.resume = play.resume;
+                setMediaInfo(withCap);
+                setIsReady(true);
+                return;
+              }
+            }
+          }
+        } catch (err) {
+          console.error('[SinglePlayer] Failed to expand collection:', err);
+        }
+      }
+
       const withCap = {
         ...info,
         continuous,
