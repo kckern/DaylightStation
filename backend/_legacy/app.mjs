@@ -15,13 +15,13 @@ import cors from 'cors';
 import { createWebsocketServer } from './routers/websocket.mjs';
 import { loadFile } from './lib/io.mjs';
 import { initMqttSubscriber } from './lib/mqtt.mjs';
-import { userDataService } from './lib/config/UserDataService.mjs';
+import { userDataService } from '../src/0_infrastructure/config/UserDataService.mjs';
 
 // Config loader
-import { loadAllConfig, logConfigSummary } from './lib/config/loader.mjs';
+import { loadAllConfig, logConfigSummary } from '../src/0_infrastructure/config/configLoader.mjs';
 
 // ConfigService v2 (primary config system)
-import { configService } from './lib/config/index.mjs';
+import { configService } from '../src/0_infrastructure/config/index.mjs';
 
 // Routing toggle system for legacy/new route migration
 import { loadRoutingConfig, createRoutingMiddleware, ShimMetrics } from '../src/0_infrastructure/routing/index.mjs';
@@ -121,19 +121,8 @@ export async function createApp({
     // Log config loading summary (no-op in new config system)
     logConfigSummary({}, rootLogger);
 
-    // Validate configuration and log status
-    const { validateConfig, getConfigStatusSummary } = await import('./lib/config/healthcheck.mjs');
-    const configValidation = validateConfig({ logger: rootLogger, verbose: false });
-    if (!configValidation.valid) {
-      rootLogger.error('config.startup.invalid', {
-        issues: configValidation.issues,
-        warnings: configValidation.warnings
-      });
-    }
-    // Log config summary in dev mode
-    if (!isDocker) {
-      console.log('\n' + getConfigStatusSummary() + '\n');
-    }
+    // Config validation now done by ConfigService during initialization
+    // Legacy healthcheck removed - validation happens in initConfigService
 
     // Initialize WebSocket server after config is loaded
     if (enableWebSocket) {

@@ -17,6 +17,9 @@
   },
   "author": "",
   "license": "ISC",
+  "imports": {
+    "#backend/*": "./*"
+  },
   "dependencies": {
     "@doist/todoist-api-typescript": "^3.0.2",
     "@googleapis/calendar": "^9.7.0",

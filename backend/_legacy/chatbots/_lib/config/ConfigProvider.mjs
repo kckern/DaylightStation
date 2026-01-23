@@ -15,8 +15,7 @@ import path from 'path';
 import yaml from 'js-yaml';
 import { fileURLToPath } from 'url';
 import { defaultLogger as logger } from '../logging/Logger.mjs';
-import { configService } from '../../../lib/config/index.mjs';
-import { userDataService } from '../../../lib/config/UserDataService.mjs';
+import { configService, userDataService } from '#backend/src/0_infrastructure/config/index.mjs';
 import { DEFAULT_NUTRITION_GOALS } from '../../bots/nutribot/config/NutriBotConfig.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
