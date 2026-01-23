@@ -29,15 +29,18 @@ async function main() {
   // Shared Configuration (runs once for both backends)
   // ==========================================================================
 
-  // Detect data directory from environment
-  const dataDir = isDocker
-    ? '/usr/src/app/data'
-    : process.env.DAYLIGHT_DATA_PATH;
+  // Detect base directory from environment
+  const baseDir = isDocker
+    ? '/usr/src/app'
+    : process.env.DAYLIGHT_BASE_PATH;
 
-  if (!dataDir) {
-    console.error('[Bootstrap] DAYLIGHT_DATA_PATH not set. Cannot start.');
+  if (!baseDir) {
+    console.error('[Bootstrap] DAYLIGHT_BASE_PATH not set. Cannot start.');
     process.exit(1);
   }
+
+  // Derive data directory from base (data and media are siblings)
+  const dataDir = join(baseDir, 'data');
 
   // Derive config paths from data directory
   // Config lives inside data directory at system/
@@ -186,7 +189,7 @@ async function main() {
   // Secondary API Server - for webhooks (always routes to legacy)
   // ==========================================================================
 
-  const secondaryPort = configService.get('SECONDARY_PORT') || 3119;
+  const secondaryPort = configService.get('webhook.port') || 3119;
   const secondaryServer = createServer((req, res) => {
     res.setHeader('X-Backend', 'legacy');
 
