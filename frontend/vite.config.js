@@ -63,7 +63,7 @@ export default defineConfig(({ command, mode }) => {
       }
     },
     server: {
-      host: env.VITE_HOST || 'localhost',
+      host: env.VITE_HOST || '0.0.0.0',
       port: ports.app,
       watch: {
         usePolling: env.CHOKIDAR_USEPOLLING === 'true',
