@@ -255,6 +255,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     dataPath: dataBasePath,
     mediaBasePath,
     proxyService: contentProxyService,
+    configService,
     logger: rootLogger.child({ module: 'content' })
   });
 

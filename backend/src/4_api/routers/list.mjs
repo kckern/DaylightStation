@@ -2,6 +2,53 @@
 import express from 'express';
 
 /**
+ * Compact an object by removing falsy values and converting numeric strings
+ * @param {Object} obj - Object to compact
+ * @returns {Object} Compacted object
+ */
+function compactItem(obj) {
+  if (typeof obj !== 'object' || obj === null) return obj;
+
+  const result = {};
+  for (const [key, value] of Object.entries(obj)) {
+    // Skip metadata object entirely - fields already flattened to top level
+    if (key === 'metadata') continue;
+
+    // Skip falsy values (null, undefined, 0, false, "")
+    if (!value && value !== 0) continue;
+    // Also skip 0 explicitly (falsy but sometimes meaningful - we decided to filter it)
+    if (value === 0) continue;
+
+    // Recurse into objects (including action objects like play, queue, list)
+    if (typeof value === 'object' && value !== null) {
+      const compacted = compactItem(value);
+      // Only include non-empty objects
+      if (Object.keys(compacted).length > 0) {
+        result[key] = compacted;
+      }
+      continue;
+    }
+
+    // Convert numeric strings to numbers
+    if (typeof value === 'string') {
+      // Integer pattern
+      if (/^-?\d+$/.test(value)) {
+        result[key] = parseInt(value, 10);
+        continue;
+      }
+      // Float pattern
+      if (/^-?\d+\.\d+$/.test(value)) {
+        result[key] = parseFloat(value);
+        continue;
+      }
+    }
+
+    result[key] = value;
+  }
+  return result;
+}
+
+/**
  * Transform item to list response format
  * Flattens metadata properties to top level for FitnessShow compatibility
  * @param {Object} item - Item entity or similar object
@@ -32,9 +79,9 @@ export function toListItem(item) {
   if (item.actions?.list) base.list = item.actions.list;
   if (item.actions?.open) base.open = item.actions.open;
 
-  // Media identifiers from Item (top-level takes priority over metadata)
-  if (item.plex !== undefined) base.plex = item.plex;
-  if (item.media_key !== undefined) base.media_key = item.media_key;
+  // Note: plex and media_key are NOT copied to top-level.
+  // These identifiers belong in action objects (play.plex, queue.plex, list.plex).
+  // Frontend should access them via item.play?.plex || item.queue?.plex || item.list?.plex
 
   // Watch state from PlayableItem (top-level)
   if (item.watchProgress !== undefined) base.watchProgress = item.watchProgress;
@@ -55,9 +102,11 @@ export function toListItem(item) {
   if (item.active !== undefined) base.active = item.active;
 
   // Flatten episode-specific metadata to top level for FitnessShow compatibility
+  // Note: plex and media_key are intentionally NOT extracted here.
+  // They belong in action objects (play.plex, queue.plex, list.plex), not top-level.
   if (item.metadata) {
     const {
-      plex, key, seasonId, seasonName, seasonNumber, seasonThumbUrl,
+      key, seasonId, seasonName, seasonNumber, seasonThumbUrl,
       episodeNumber, index, summary, tagline, studio, thumb_id, type,
       artist, albumArtist, album, albumId, artistId, grandparentTitle,
       // TV show fields
@@ -73,13 +122,13 @@ export function toListItem(item) {
       // FolderAdapter scheduling fields
       hold, skip_after, wait_until,
       // FolderAdapter grouping and legacy fields
-      program, src, media_key, shuffle, continuous, playable, uid,
+      program, src, shuffle, continuous, playable, uid,
       // FolderAdapter display fields
       folder, folder_color
     } = item.metadata;
 
-    // Only use metadata.plex if top-level plex not already set
-    if (plex !== undefined && base.plex === undefined) base.plex = plex;
+    // Note: plex is NOT copied to top-level from metadata.
+    // It belongs in action objects (play.plex, queue.plex, list.plex).
     if (key !== undefined) base.key = key;
     if (seasonId !== undefined) base.seasonId = seasonId;
     if (seasonName !== undefined) base.seasonName = seasonName;
@@ -131,8 +180,8 @@ export function toListItem(item) {
     // FolderAdapter grouping and legacy fields
     if (program !== undefined) base.program = program;
     if (src !== undefined) base.src = src;
-    // Only use metadata fields if top-level not already set
-    if (media_key !== undefined && base.media_key === undefined) base.media_key = media_key;
+    // Note: media_key is NOT copied to top-level from metadata.
+    // The canonical identifier is in action objects or item.id.
     if (shuffle !== undefined && base.shuffle === undefined) base.shuffle = shuffle;
     if (continuous !== undefined && base.continuous === undefined) base.continuous = continuous;
     if (playable !== undefined) base.playable = playable;
@@ -156,7 +205,7 @@ export function toListItem(item) {
     }
   }
 
-  return base;
+  return compactItem(base);
 }
 
 /**
@@ -169,11 +218,30 @@ export function toListItem(item) {
  *
  * @param {Object} config
  * @param {Object} config.registry - ContentSourceRegistry
+ * @param {Function} [config.loadFile] - Function to load state files
+ * @param {Object} [config.configService] - ConfigService for household paths
  * @returns {express.Router}
  */
 export function createListRouter(config) {
-  const { registry } = config;
+  const { registry, loadFile, configService } = config;
   const router = express.Router();
+
+  /**
+   * Extract media key from item's action objects for menu_memory lookup
+   * Items may be raw Item entities (with item.actions) or transformed (with top-level play/queue/etc)
+   * @param {Object} item - Item entity or list item
+   * @returns {string|null} Media key for lookup
+   */
+  function getMenuMemoryKey(item) {
+    // Check both Item entity format (item.actions.X) and transformed format (item.X)
+    const action = item.actions?.play || item.actions?.queue || item.actions?.list || item.actions?.open ||
+                   item.play || item.queue || item.list || item.open;
+    if (!action) return null;
+    // Action is an object like { plex: "123" } or { list: "FHE" }
+    // Get the first value from the action object
+    const values = Object.values(action);
+    return values.length > 0 ? values[0] : null;
+  }
 
   /**
    * Parse path modifiers (playable, shuffle, recent_on_top)
@@ -296,29 +364,20 @@ export function createListRouter(config) {
         items = shuffleArray([...items]);
       }
 
-      // Apply recent_on_top sorting if requested
+      // Apply recent_on_top sorting if requested (uses menu_memory, not play history)
       if (modifiers.recent_on_top) {
+        // Load menu_memory for sorting by menu selection time
+        const menuMemoryPath = configService?.getHouseholdPath('history/menu_memory') ?? 'households/default/history/menu_memory';
+        const menuMemory = loadFile?.(menuMemoryPath) || {};
+
         items = [...items].sort((a, b) => {
-          const aDate = a.lastPlayed || a.watchedDate || a.metadata?.lastPlayed || null;
-          const bDate = b.lastPlayed || b.watchedDate || b.metadata?.lastPlayed || null;
-          
-          // Most recent first (descending order)
-          if (aDate && bDate) {
-            // Parse dates - handle format "2026-01-22 04.44.54" (periods instead of colons)
-            const parseDate = (dateStr) => {
-              if (!dateStr) return 0;
-              // Replace periods with colons for proper parsing
-              const normalized = dateStr.replace(/\./g, ':');
-              return new Date(normalized).getTime();
-            };
-            const aTime = parseDate(aDate);
-            const bTime = parseDate(bDate);
-            return bTime - aTime; // Most recent first
-          }
-          // Items with dates come before items without
-          if (aDate) return -1;
-          if (bDate) return 1;
-          return 0;
+          const aKey = getMenuMemoryKey(a);
+          const bKey = getMenuMemoryKey(b);
+
+          const aTime = aKey ? (menuMemory[aKey] || 0) : 0;
+          const bTime = bKey ? (menuMemory[bKey] || 0) : 0;
+
+          return bTime - aTime; // Most recent first
         });
       }
 

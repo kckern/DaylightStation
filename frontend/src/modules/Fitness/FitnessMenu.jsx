@@ -4,6 +4,25 @@ import { DaylightAPI, normalizeImageUrl } from '../../lib/api.mjs';
 import FitnessPluginMenu from './FitnessPlugins/FitnessPluginMenu.jsx';
 import './FitnessMenu.scss';
 
+/**
+ * Extract plex ID from item's action objects (play, queue, list)
+ * This is the canonical way to get the plex ID - not from top-level item.plex
+ * @param {Object} item - List item with action objects
+ * @returns {string|null} The plex ID or null
+ */
+const getPlexId = (item) => {
+  return item?.play?.plex || item?.queue?.plex || item?.list?.plex || null;
+};
+
+/**
+ * Get a unique identifier for an item (plex ID or fallback to id)
+ * @param {Object} item - List item
+ * @returns {string|null}
+ */
+const getItemKey = (item) => {
+  return getPlexId(item) || item?.id || null;
+};
+
 const FitnessMenu = ({ activeCollection, onContentSelect, setFitnessPlayQueue }) => {
   const [shows, setShows] = useState([]);
   const [loading, setLoading] = useState(true); // initial config loading
@@ -191,7 +210,7 @@ const FitnessMenu = ({ activeCollection, onContentSelect, setFitnessPlayQueue })
         const mergedItemsMap = new Map();
         listResponses.flat().forEach((item) => {
           if (!item) return;
-          const key = item.plex || item.id;
+          const key = getItemKey(item);
           if (key == null) return;
           if (!mergedItemsMap.has(key)) {
             mergedItemsMap.set(key, item);
@@ -203,7 +222,7 @@ const FitnessMenu = ({ activeCollection, onContentSelect, setFitnessPlayQueue })
         setShows(mergedItems);
         const reset = {};
         mergedItems.forEach(item => {
-          const id = item.plex || item.id;
+          const id = getItemKey(item);
           if (id !== undefined) reset[id] = false;
         });
         setLoadedImages(reset);
@@ -290,7 +309,7 @@ const FitnessMenu = ({ activeCollection, onContentSelect, setFitnessPlayQueue })
     if (setFitnessPlayQueue) {
       const resumeMeta = normalizeResumeMeta(show);
       setFitnessPlayQueue(prevQueue => [...prevQueue, {
-        id: show.plex || show.id,
+        id: getItemKey(show),
         title: show.label,
         videoUrl: show.url || show.videoUrl,
         duration: show.duration,
@@ -318,10 +337,10 @@ const FitnessMenu = ({ activeCollection, onContentSelect, setFitnessPlayQueue })
             .sort((a, b) => (b.rating || 0) - (a.rating || 0))
             .map((show, index) => (
               <div
-                key={show.plex || index}
+                key={getItemKey(show) || index}
                 className="show-card show-tile media-card"
                 data-testid="show-card"
-                data-show-id={show.plex || show.id}
+                data-show-id={getItemKey(show)}
                 data-show-title={show.label}
                 onPointerDown={(e) => handleShowClick(e, show)}
               >
@@ -329,10 +348,10 @@ const FitnessMenu = ({ activeCollection, onContentSelect, setFitnessPlayQueue })
                   <img
                     src={normalizeImageUrl(show.image)}
                     alt={show.label}
-                    className={`show-image ${loadedImages[show.plex || show.id] ? 'loaded' : ''}`}
+                    className={`show-image ${loadedImages[getItemKey(show)] ? 'loaded' : ''}`}
                     data-testid="show-poster"
                     onLoad={() => {
-                      const key = show.plex || show.id;
+                      const key = getItemKey(show);
                       if (key !== undefined) {
                         setLoadedImages(prev => ({ ...prev, [key]: true }));
                       }

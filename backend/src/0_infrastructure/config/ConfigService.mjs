@@ -99,6 +99,17 @@ export class ConfigService {
     return this.#config.system?.configDir ?? './config';
   }
 
+  /**
+   * Get household-scoped relative path for state/history files
+   * @param {string} relativePath - Path relative to household dir (e.g., 'history/menu_memory')
+   * @param {string} [householdId] - Household ID, defaults to default household
+   * @returns {string} Full relative path (e.g., 'households/default/history/menu_memory')
+   */
+  getHouseholdPath(relativePath, householdId = null) {
+    const hid = householdId ?? this.getDefaultHouseholdId();
+    return `households/${hid}/${relativePath}`;
+  }
+
   getPath(name) {
     // Check explicit path config first
     const explicitPath = this.#config.system?.paths?.[name];

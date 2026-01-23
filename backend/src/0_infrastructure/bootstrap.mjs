@@ -191,14 +191,14 @@ export function createWatchStore(config) {
  * @returns {Object} Router configuration
  */
 export function createApiRouters(config) {
-  const { registry, watchStore, loadFile, saveFile, cacheBasePath, dataPath, mediaBasePath, proxyService, logger = console } = config;
+  const { registry, watchStore, loadFile, saveFile, cacheBasePath, dataPath, mediaBasePath, proxyService, configService, logger = console } = config;
 
   return {
     content: createContentRouter(registry, watchStore, { loadFile, saveFile, cacheBasePath, logger }),
     proxy: createProxyRouter({ registry, proxyService }),
     localContent: createLocalContentRouter({ registry, dataPath, mediaBasePath }),
     play: createPlayRouter({ registry, watchStore, logger }),
-    list: createListRouter({ registry }),
+    list: createListRouter({ registry, loadFile, configService }),
     legacyShims: {
       play: createLegacyPlayShim(),
       list: createLegacyListShim(),

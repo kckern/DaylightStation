@@ -128,7 +128,8 @@ describe('List API Router', () => {
         actions: { play: { plex: '123' }, queue: { playlist: 'plex:123' } }
       };
       const result = toListItem(item);
-      expect(result.play).toEqual({ plex: '123' });
+      // Note: numeric strings are converted to numbers by compactItem
+      expect(result.play).toEqual({ plex: 123 });
       expect(result.queue).toEqual({ playlist: 'plex:123' });
     });
 
@@ -166,7 +167,9 @@ describe('List API Router', () => {
       expect(result.label).toBe('Top Level');
     });
 
-    it('should include media_key and plex properties from top-level item', () => {
+    it('should NOT include top-level plex and media_key (they belong in action objects)', () => {
+      // plex and media_key are intentionally NOT copied to top level
+      // They should be accessed via action objects (play.plex, queue.plex, list.plex)
       const item = {
         id: 'plex:123',
         title: 'Test',
@@ -174,19 +177,20 @@ describe('List API Router', () => {
         media_key: 'plex:123'
       };
       const result = toListItem(item);
-      expect(result.plex).toBe('123');
-      expect(result.media_key).toBe('plex:123');
+      expect(result.plex).toBeUndefined();
+      expect(result.media_key).toBeUndefined();
     });
 
-    it('should prefer top-level plex over metadata.plex', () => {
+    it('should NOT extract plex from metadata to top level', () => {
+      // plex in metadata should NOT be copied to top level
+      // Frontend should access via action objects instead
       const item = {
         id: 'plex:123',
         title: 'Test',
-        plex: 'top-level-plex',
         metadata: { plex: 'metadata-plex' }
       };
       const result = toListItem(item);
-      expect(result.plex).toBe('top-level-plex');
+      expect(result.plex).toBeUndefined();
     });
 
     it('should include watch state fields from PlayableItem', () => {
@@ -217,7 +221,8 @@ describe('List API Router', () => {
       const result = toListItem(item);
       expect(result.shuffle).toBe(true);
       expect(result.continuous).toBe(true);
-      expect(result.resume).toBe(false);
+      // Note: falsy values (including false) are filtered by compactItem
+      expect(result.resume).toBeUndefined();
       expect(result.active).toBe(true);
     });
 
