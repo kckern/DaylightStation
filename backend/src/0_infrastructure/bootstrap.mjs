@@ -723,6 +723,8 @@ export function createHomeAutomationAdapters(config) {
  * @param {Function} [config.loadFile] - Function to load state files
  * @param {Function} [config.saveFile] - Function to save state files
  * @param {string} [config.householdId] - Household ID
+ * @param {Object} [config.entropyService] - Entropy service for data freshness
+ * @param {Object} [config.configService] - Config service for user lookup
  * @param {Object} [config.logger] - Logger instance
  * @returns {express.Router}
  */
@@ -732,7 +734,8 @@ export function createHomeAutomationApiRouter(config) {
     loadFile,
     saveFile,
     householdId,
-    legacyGetEntropyReport,
+    entropyService,
+    configService,
     logger = console
   } = config;
 
@@ -745,7 +748,8 @@ export function createHomeAutomationApiRouter(config) {
     loadFile,
     saveFile,
     householdId,
-    legacyGetEntropyReport,
+    entropyService,
+    configService,
     logger
   });
 }
@@ -1419,6 +1423,7 @@ export function createLifelogServices(config) {
  * Create lifelog API router
  * @param {Object} config
  * @param {Object} config.lifelogServices - Services from createLifelogServices
+ * @param {Object} config.userDataService - UserDataService for reading user files
  * @param {Object} config.configService - ConfigService for user lookup
  * @param {Object} [config.logger] - Logger instance
  * @returns {express.Router}
@@ -1426,12 +1431,14 @@ export function createLifelogServices(config) {
 export function createLifelogApiRouter(config) {
   const {
     lifelogServices,
+    userDataService,
     configService,
     logger = console
   } = config;
 
   return createLifelogRouter({
-    lifelogAggregator: lifelogServices.lifelogAggregator,
+    aggregator: lifelogServices.lifelogAggregator,
+    userDataService,
     configService,
     logger
   });
