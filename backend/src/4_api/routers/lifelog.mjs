@@ -24,10 +24,12 @@ function isValidDate(dateStr) {
  *
  * @param {Object} config
  * @param {import('../../1_domains/lifelog/services/LifelogAggregator.mjs').LifelogAggregator} config.aggregator
+ * @param {Object} config.userDataService - UserDataService for reading user lifelog files
+ * @param {Object} config.configService - ConfigService for user lookups
  * @returns {express.Router}
  */
 export function createLifelogRouter(config) {
-  const { aggregator } = config;
+  const { aggregator, userDataService, configService } = config;
   const router = express.Router();
 
   /**
@@ -61,6 +63,31 @@ export function createLifelogRouter(config) {
   router.get('/sources', (req, res) => {
     const sources = aggregator.getAvailableSources?.() || [];
     res.json({ sources });
+  });
+
+  /**
+   * GET /api/lifelog/weight - Get weight data for current user
+   *
+   * Returns weight entries from user's lifelog/weight.yml
+   */
+  router.get('/weight', async (req, res) => {
+    try {
+      // Get current user from session or use default
+      const username = req.user?.username || configService?.getHeadOfHousehold?.() || 'kckern';
+      
+      console.log('[lifelog] Weight request for user:', username);
+      
+      // Read weight data from user's lifelog directory
+      const weightData = userDataService?.readUserLifelogData?.(username, 'weight');
+      
+      console.log('[lifelog] Weight data loaded:', weightData ? Object.keys(weightData).length + ' entries' : 'null');
+      
+      // Return empty array if no data, otherwise return as-is
+      res.json(weightData || []);
+    } catch (err) {
+      console.error('[lifelog] Weight error:', err);
+      res.status(500).json({ error: err.message });
+    }
   });
 
   return router;

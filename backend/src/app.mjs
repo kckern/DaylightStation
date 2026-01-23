@@ -373,6 +373,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Lifelog domain router
   v1Routers.lifelog = createLifelogApiRouter({
     lifelogServices,
+    userDataService,
     configService,
     logger: rootLogger.child({ module: 'lifelog-api' })
   });
@@ -523,15 +524,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const loadFile = (relativePath) => haLoadYaml(path.join(householdDir, relativePath));
   const saveFile = (relativePath, data) => haSaveYaml(path.join(householdDir, relativePath), data);
 
-  // Import legacy entropy report for home automation
-  const { getEntropyReport: legacyGetEntropyReportHA } = await import('../_legacy/lib/entropy.mjs');
-
   v1Routers.home = createHomeAutomationApiRouter({
     adapters: homeAutomationAdapters,
     loadFile,
     saveFile,
     householdId,
-    legacyGetEntropyReport: legacyGetEntropyReportHA,
+    entropyService: entropyServices.entropyService,
+    configService,
     logger: rootLogger.child({ module: 'home-automation-api' })
   });
 

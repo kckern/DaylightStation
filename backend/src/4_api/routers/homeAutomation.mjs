@@ -22,6 +22,8 @@ import express from 'express';
  * @param {Function} [config.loadFile] - Function to load state files
  * @param {Function} [config.saveFile] - Function to save state files
  * @param {string} [config.householdId] - Household ID for state files
+ * @param {Object} [config.entropyService] - Entropy service for data freshness
+ * @param {Object} [config.configService] - Config service for user lookup
  * @param {Object} [config.logger]
  * @returns {express.Router}
  */
@@ -36,7 +38,8 @@ export function createHomeAutomationRouter(config) {
     loadFile,
     saveFile,
     householdId = 'default',
-    legacyGetEntropyReport,
+    entropyService,
+    configService,
     logger = console
   } = config;
 
@@ -306,12 +309,13 @@ export function createHomeAutomationRouter(config) {
    * Get entropy report
    */
   router.get('/entropy', async (req, res) => {
-    if (!legacyGetEntropyReport) {
+    if (!entropyService || !configService) {
       return res.status(503).json({ error: 'Entropy service not configured' });
     }
 
     try {
-      const report = await legacyGetEntropyReport();
+      const username = configService.getHeadOfHousehold();
+      const report = await entropyService.getReport(username);
       res.json(report);
     } catch (error) {
       logger.error?.('homeAutomation.entropy.error', { error: error.message });
@@ -329,7 +333,8 @@ export function createHomeAutomationRouter(config) {
     }
 
     try {
-      const weatherData = loadFile(`households/${householdId}/shared/weather`) || {};
+      // loadFile already prepends household path, just use relative path
+      const weatherData = loadFile('shared/weather') || {};
       res.json(weatherData);
     } catch (error) {
       logger.error?.('homeAutomation.weather.error', { error: error.message });
@@ -347,7 +352,8 @@ export function createHomeAutomationRouter(config) {
     }
 
     try {
-      const eventsData = loadFile(`households/${householdId}/shared/events`) || [];
+      // loadFile already prepends household path, just use relative path
+      const eventsData = loadFile('shared/events') || [];
       res.json(eventsData);
     } catch (error) {
       logger.error?.('homeAutomation.events.error', { error: error.message });

@@ -483,6 +483,16 @@ class UserDataService {
     return this.writeUserData(username, segments.join('/'), data);
   }
 
+  /**
+   * Read user lifelog data file (convenience alias for getLifelogData)
+   * @param {string} username - User identifier
+   * @param {string} category - Lifelog category (weight, fitness, nutrition, etc.)
+   * @returns {object|array|null}
+   */
+  readUserLifelogData(username, category) {
+    return this.getLifelogData(username, category);
+  }
+
   // ============================================================
   // APP-SPECIFIC DATA
   // ============================================================
