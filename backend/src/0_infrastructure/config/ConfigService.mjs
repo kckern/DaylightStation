@@ -166,8 +166,13 @@ export class ConfigService {
     return this.#config.system?.timezone ?? 'America/Los_Angeles';
   }
 
-  getPort() {
-    return this.#config.system?.server?.port ?? 3111;
+  /**
+   * Get the public-facing app port (what users/tests hit)
+   * In dev: Vite runs here, backend on +1
+   * In prod: Backend serves everything here
+   */
+  getAppPort() {
+    return this.#config.system?.app?.port ?? 3111;
   }
 
   getWebhookPort() {

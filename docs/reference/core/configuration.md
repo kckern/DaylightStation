@@ -299,27 +299,49 @@ getSafeConfig()                   // Config safe for exposure (secrets redacted)
 
 ## Port Configuration
 
-### Environment-Specific Ports
+### Single App Port Per Environment
 
-| Environment | Backend | Frontend | Webhook | Config File |
-|-------------|---------|----------|---------|-------------|
-| Docker (prod) | 3111 | N/A* | 3119 | system.yml |
-| Linux dev | 3112 | 5173 | 3120 | system-local.kckern-server.yml |
+Each environment defines ONE port - the **public-facing app port**:
 
-*In Docker, frontend is pre-built and served by backend.
+```yaml
+app:
+  port: 3112    # The port users/tests hit
+```
+
+| Environment | `app.port` | User hits | Backend listens | Webhook |
+|-------------|------------|-----------|-----------------|---------|
+| Docker (prod) | 3111 | 3111 | 3111 (serves static + API) | 3119 |
+| kckern-macbook (dev) | 3111 | 3111 (Vite) | 3112 (hidden) | 3119 |
+| kckern-server (dev) | 3112 | 3112 (Vite) | 3113 (hidden) | 3120 |
+
+### Key Principle
+
+**Same surface topology everywhere.** Users and tests only know about `app.port`. In dev, the backend port (`app.port + 1`) is an implementation detail only Vite knows about.
+
+### Detection Logic
+
+```javascript
+const isDocker = existsSync('/.dockerenv');
+const backendPort = isDocker ? appPort : appPort + 1;
+```
+
+- Docker → prod mode → backend serves everything on `app.port`
+- No Docker → dev mode → Vite on `app.port`, backend on `app.port + 1`
 
 ### How Ports Flow
 
 ```
-system-local.{ENV}.yml
+system-local.{ENV}.yml (app.port)
         ↓
-   ConfigService.getPort()  → backend/index.js → server.listen(port)
+   ConfigService.getAppPort()  → returns public port
         ↓
-   vite.config.js           → server.port, proxy target
+   backend/index.js            → listens on appPort (prod) or appPort+1 (dev)
         ↓
-   configHelper.mjs         → test URLs
+   vite.config.js              → Vite on appPort, proxy to appPort+1
         ↓
-   playwright.config.mjs    → baseURL, webServer.url
+   configHelper.mjs            → test URLs use appPort only
+        ↓
+   playwright.config.mjs       → baseURL = appPort
 ```
 
 ---
@@ -328,31 +350,25 @@ system-local.{ENV}.yml
 
 Location: `frontend/vite.config.js`
 
-Reads ports from system config:
+Reads app port from system config, backend is always +1:
 
 ```javascript
 function getPortsFromConfig(env) {
-  const dataPath = env.DAYLIGHT_DATA_PATH ||
-    (env.DAYLIGHT_BASE_PATH ? path.join(env.DAYLIGHT_BASE_PATH, 'data') : null);
-  const envName = env.DAYLIGHT_ENV;
+  // Load config...
+  const appPort = config?.app?.port ?? 3111;
+  const backendPort = appPort + 1;  // Always +1 in dev
 
-  const configPath = path.join(dataPath, 'system', `system-local.${envName}.yml`);
-  const config = yaml.load(fs.readFileSync(configPath, 'utf8'));
-
-  return {
-    backend: config.server?.port ?? 3111,
-    frontend: config.vite?.port ?? 5173
-  };
+  return { app: appPort, backend: backendPort };
 }
 ```
 
-Configures proxy to backend:
+Configures Vite server and proxy:
 
 ```javascript
 server: {
-  port: ports.frontend,    // 5173 for dev
+  port: ports.app,         // e.g., 3112 for kckern-server
   proxy: {
-    '/api': `http://localhost:${ports.backend}`,
+    '/api': `http://localhost:${ports.backend}`,  // e.g., 3113
     '/ws': { target: `ws://localhost:${ports.backend}`, ws: true }
   }
 }
@@ -364,21 +380,21 @@ server: {
 
 Location: `tests/lib/configHelper.mjs`
 
-Provides config for Playwright tests:
+Tests only need the app port - same topology as prod:
 
 ```javascript
-import { getPorts, getTestUrls } from '#testlib/configHelper.mjs';
+import { getAppPort, getTestUrls } from '#testlib/configHelper.mjs';
 
-const ports = getPorts();
-// { backend: 3112, frontend: 5173, webhook: 3120 }
+const appPort = getAppPort();  // e.g., 3112
 
 const urls = getTestUrls();
-// { frontend: 'http://localhost:5173', backend: 'http://localhost:3112', ws: 'ws://...' }
+// All URLs point to appPort - tests don't know about internal backend
+// { frontend: 'http://localhost:3112', backend: 'http://localhost:3112', ws: 'ws://localhost:3112/ws' }
 ```
 
 Used by:
 - `playwright.config.mjs` - baseURL, webServer.url
-- `tests/_fixtures/runtime/urls.mjs` - FRONTEND_URL, BACKEND_URL
+- `tests/_fixtures/runtime/urls.mjs` - FRONTEND_URL, BACKEND_URL (both same port)
 
 ---
 

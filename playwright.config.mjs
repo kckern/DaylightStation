@@ -1,14 +1,14 @@
 import { defineConfig } from '@playwright/test';
-import { getPorts } from './tests/lib/configHelper.mjs';
+import { getAppPort } from './tests/lib/configHelper.mjs';
 
-const ports = getPorts();
+const appPort = getAppPort();
 
 export default defineConfig({
   testDir: './tests/runtime',
   testMatch: '**/*.runtime.test.mjs',
   timeout: 90000,
   use: {
-    baseURL: process.env.BASE_URL || `http://localhost:${ports.frontend}`,
+    baseURL: process.env.BASE_URL || `http://localhost:${appPort}`,
     headless: true,
     screenshot: 'only-on-failure',
     launchOptions: {
@@ -17,7 +17,7 @@ export default defineConfig({
   },
   webServer: {
     command: 'npm run dev',
-    url: `http://localhost:${ports.frontend}`,  // Wait for Vite dev server
+    url: `http://localhost:${appPort}`,
     reuseExistingServer: true,
     timeout: 120000,
   }
