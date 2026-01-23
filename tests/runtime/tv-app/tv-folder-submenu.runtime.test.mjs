@@ -29,7 +29,7 @@ test.describe('TV Folder Submenu Navigation', () => {
 
     // Verify list action is set (not play)
     expect(fhe.list).toBeTruthy();
-    expect(fhe.list.folder).toBe('FHE');
+    expect(fhe.list.list).toBe('FHE');
 
     // play should be undefined or null for folder items
     expect(fhe.play).toBeFalsy();  // Folder items should have no play action
