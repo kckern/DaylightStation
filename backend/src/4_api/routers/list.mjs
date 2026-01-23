@@ -40,6 +40,7 @@ export function toListItem(item) {
   if (item.watchProgress !== undefined) base.watchProgress = item.watchProgress;
   if (item.watchSeconds !== undefined) base.watchSeconds = item.watchSeconds;
   if (item.lastPlayed !== undefined) base.lastPlayed = item.lastPlayed;
+  if (item.watchedDate !== undefined) base.watchedDate = item.watchedDate;
   if (item.playCount !== undefined) base.playCount = item.playCount;
 
   // Behavior flags (top-level takes priority)
@@ -255,6 +256,36 @@ export function createListRouter(config) {
         }
       }
 
+      // Merge viewing history for sources that support it (e.g., Plex)
+      let viewingHistory = null;
+      if (typeof adapter._loadViewingHistory === 'function') {
+        viewingHistory = adapter._loadViewingHistory();
+        if (viewingHistory && Object.keys(viewingHistory).length > 0) {
+          items = items.map(item => {
+            // Extract the local ID (rating key) from compound ID
+            const itemKey = item.id?.replace(/^plex:/, '') || item.metadata?.plex || item.metadata?.key;
+            const watchData = viewingHistory[itemKey] || viewingHistory[String(itemKey)];
+            if (watchData) {
+              // Calculate progress from playhead and duration (canonical field names)
+              const playhead = parseInt(watchData.playhead) || parseInt(watchData.seconds) || 0;
+              const mediaDuration = parseInt(watchData.mediaDuration) || parseInt(watchData.duration) || 0;
+              const percent = mediaDuration > 0 ? (playhead / mediaDuration) * 100 : (watchData.percent || 0);
+
+              // Merge watch data into item (matching legacy field names)
+              return {
+                ...item,
+                watchProgress: percent,
+                watchSeconds: playhead,
+                watchedDate: watchData.lastPlayed || null,
+                // Also include lastPlayed for v1 consumers
+                lastPlayed: watchData.lastPlayed || null
+              };
+            }
+            return item;
+          });
+        }
+      }
+
       // Apply shuffle if requested
       if (modifiers.shuffle) {
         items = shuffleArray([...items]);
@@ -294,7 +325,7 @@ export function createListRouter(config) {
       // Note: v1 includes additional fields (id, itemType, metadata, etc.) beyond prod format.
       // This is intentional - extra fields don't break frontend, and provide richer data.
       // Critical parity requirements: plex, type, image, rating, title, label must match prod.
-      res.json({
+      const response = {
         // Add plex field for plex source (matches prod format)
         ...(source === 'plex' && { plex: localId }),
         // Legacy compat field - frontend uses this for menu logging
@@ -307,7 +338,19 @@ export function createListRouter(config) {
         info,
         seasons,
         items: items.map(toListItem)
-      });
+      };
+
+      // Add debug info for plex source (matches legacy format for troubleshooting)
+      if (source === 'plex' && viewingHistory) {
+        const historyKeys = Object.keys(viewingHistory);
+        response._debug = {
+          historyCount: historyKeys.length,
+          sampleKeys: historyKeys.slice(0, 5),
+          firstItemPlex: items[0]?.id?.replace(/^plex:/, '') || items[0]?.metadata?.plex
+        };
+      }
+
+      res.json(response);
     } catch (err) {
       console.error('[list] Error:', err);
       res.status(500).json({ error: err.message });

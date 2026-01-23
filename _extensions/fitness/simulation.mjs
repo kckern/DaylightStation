@@ -28,15 +28,12 @@ if (fs.existsSync(envPath)) {
 }
 
 // Import the new config framework
-import { resolveConfigPaths } from '../../backend/_legacy/lib/config/pathResolver.mjs';
-import { loadAllConfig } from '../../backend/_legacy/lib/config/loader.mjs';
-import { configService, initConfigService } from '../../backend/_legacy/lib/config/index.mjs';
-import { userDataService } from '../../backend/_legacy/lib/config/UserDataService.mjs';
-import { loadFile } from '../../backend/_legacy/lib/io.mjs';
+import { configService, initConfigService, userDataService } from '../../backend/src/0_infrastructure/config/index.mjs';
+import yaml from 'js-yaml';
 
 // Configuration
 const DAYLIGHT_HOST = process.env.DAYLIGHT_HOST || 'localhost';
-const DAYLIGHT_PORT = process.env.DAYLIGHT_PORT || 3112;
+const DAYLIGHT_PORT = process.env.DAYLIGHT_PORT || 3111;
 const UPDATE_INTERVAL = 2000; // Send data every 2 seconds
 
 // Parse --duration=SECONDS argument (default: 120 seconds / 2 minutes)
@@ -48,43 +45,24 @@ const SIMULATION_DURATION = durationArg
 // Initialize config using the new framework
 const isDocker = fs.existsSync('/.dockerenv');
 
-// Resolve config paths (from env vars, mount, or fallback)
-const configPaths = resolveConfigPaths({ isDocker, codebaseDir: rootDir });
+// Get base directory and derive data directory
+const baseDir = process.env.DAYLIGHT_BASE_PATH || rootDir;
+const dataDir = path.join(baseDir, 'data');
 
-if (configPaths.error) {
-  console.error('❌ Configuration error:', configPaths.error);
-  console.error('💡 Set DAYLIGHT_CONFIG_PATH and DAYLIGHT_DATA_PATH environment variables');
-  console.error('   Or create a .env file in the project root');
-  process.exit(1);
-}
-
-console.log(`📁 Config source: ${configPaths.source}`);
-console.log(`📁 Config dir: ${configPaths.configDir}`);
-console.log(`📁 Data dir: ${configPaths.dataDir}`);
-
-// Load all config using unified loader
-const configResult = loadAllConfig({
-  configDir: configPaths.configDir,
-  dataDir: configPaths.dataDir,
-  isDocker,
-  isDev: !isDocker
-});
-
-// Populate process.env with merged config (required for loadFile and services)
-process.env = { 
-  ...process.env, 
-  isDocker, 
-  ...configResult.config
-};
-
-console.log('📊 Data path:', process.env.path?.data);
+console.log(`📁 Base dir: ${baseDir}`);
+console.log(`📁 Data dir: ${dataDir}`);
 
 // Initialize ConfigService singleton with the data directory
 try {
-  initConfigService(configPaths.dataDir);
+  initConfigService(dataDir);
   console.log('✅ ConfigService initialized');
 } catch (err) {
-  console.warn('⚠️  ConfigService initialization:', err.message);
+  if (err.message.includes('already initialized')) {
+    console.log('✅ ConfigService already initialized');
+  } else {
+    console.error('❌ ConfigService initialization failed:', err.message);
+    process.exit(1);
+  }
 }
 
 // Load fitness config using the new household-aware approach
@@ -93,19 +71,28 @@ function loadConfig() {
     const householdId = configService.getDefaultHouseholdId();
     console.log(`🏠 Using household: ${householdId}`);
     
-    // Try household-scoped path first
-    const householdConfig = userDataService.readHouseholdAppData(householdId, 'fitness', 'config');
-    if (householdConfig) {
+    // Load household-specific fitness config directly
+    const dataDir = configService.getDataDir();
+    const householdFitnessConfigPath = path.join(dataDir, 'households', householdId, 'apps', 'fitness', 'config.yml');
+    
+    if (fs.existsSync(householdFitnessConfigPath)) {
+      const configContent = fs.readFileSync(householdFitnessConfigPath, 'utf8');
+      const fitnessConfig = yaml.load(configContent);
       console.log('✅ Loaded fitness config from household path');
-      console.log('🧪 Config structure keys:', Object.keys(householdConfig || {}));
-      return householdConfig;
+      console.log('🧪 Config structure keys:', Object.keys(fitnessConfig || {}));
+      return fitnessConfig;
     }
     
-    // Fall back to legacy global path
-    console.log('⚠️  Falling back to legacy fitness/config path');
-    const parsed = loadFile("fitness/config");
-    console.log('🧪 Config structure keys:', Object.keys(parsed || {}));
-    return parsed;
+    // Fallback to system app config
+    const fitnessConfig = configService.getAppConfig('fitness');
+    if (fitnessConfig) {
+      console.log('✅ Loaded fitness config from system app config');
+      console.log('🧪 Config structure keys:', Object.keys(fitnessConfig || {}));
+      return fitnessConfig;
+    }
+    
+    console.warn('⚠️  No fitness config found');
+    return {};
   } catch (err) {
     console.error('🧪 Config load error:', err.message);
     return {};
@@ -115,6 +102,11 @@ function loadConfig() {
 const appConfig = loadConfig();
 // The config is flat, not nested under 'fitness'
 const fitnessCfg = appConfig || {};
+
+// Debug: Show what we got
+console.log('🧪 Devices config keys:', Object.keys(fitnessCfg?.devices || {}));
+console.log('🧪 Devices.heart_rate:', fitnessCfg?.devices?.heart_rate);
+console.log('🧪 Devices.cadence:', fitnessCfg?.devices?.cadence);
 
 // Support both old and new config formats
 // New format: devices.heart_rate = { deviceId: userId }, device_colors.heart_rate = { deviceId: color }
