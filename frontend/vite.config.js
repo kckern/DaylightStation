@@ -4,35 +4,38 @@ import path from 'path'
 import fs from 'fs'
 import yaml from 'js-yaml'
 
-// Read ports from system config (SSOT)
+// Read app port from system config (SSOT)
+// Vite runs on app.port, proxies to backend on app.port + 1
 function getPortsFromConfig(env) {
-  // Support both DAYLIGHT_DATA_PATH (explicit) and DAYLIGHT_BASE_PATH (+ /data)
   const dataPath = env.DAYLIGHT_DATA_PATH || (env.DAYLIGHT_BASE_PATH ? path.join(env.DAYLIGHT_BASE_PATH, 'data') : null);
   const envName = env.DAYLIGHT_ENV;
 
-  const defaults = { backend: 3111, frontend: 5173 };
+  const defaultAppPort = 3111;
 
   if (!dataPath || !envName) {
-    console.warn('[vite] DAYLIGHT_DATA_PATH/DAYLIGHT_BASE_PATH or DAYLIGHT_ENV not set, using default ports');
-    return defaults;
+    console.warn('[vite] DAYLIGHT_DATA_PATH/DAYLIGHT_BASE_PATH or DAYLIGHT_ENV not set, using default port');
+    return { app: defaultAppPort, backend: defaultAppPort + 1 };
   }
 
+  // Try environment-specific config first, fall back to base system.yml
+  let config = null;
   const localConfigPath = path.join(dataPath, 'system', `system-local.${envName}.yml`);
+  const baseConfigPath = path.join(dataPath, 'system', 'system.yml');
+
   if (fs.existsSync(localConfigPath)) {
-    const config = yaml.load(fs.readFileSync(localConfigPath, 'utf8'));
-    const backendPort = config.server?.port || defaults.backend;
-    const frontendPort = config.vite?.port || defaults.frontend;
-    console.log(`[vite] Ports from ${envName} config - backend: ${backendPort}, frontend: ${frontendPort}`);
-    return { backend: backendPort, frontend: frontendPort };
+    config = yaml.load(fs.readFileSync(localConfigPath, 'utf8'));
+  } else if (fs.existsSync(baseConfigPath)) {
+    config = yaml.load(fs.readFileSync(baseConfigPath, 'utf8'));
   }
 
-  return defaults;
+  const appPort = config?.app?.port ?? defaultAppPort;
+  const backendPort = appPort + 1;  // Backend always +1 in dev (Vite only runs in dev)
+
+  console.log(`[vite] ${envName}: app port ${appPort}, backend port ${backendPort}`);
+  return { app: appPort, backend: backendPort };
 }
 
 // https://vitejs.dev/config/
-// Note: vite-plugin-terminal removed - caused "Failed to fetch" cascades due to
-// race condition at startup. Frontend console output is already visible in dev.log
-// via consoleInterceptor + DaylightLogger anyway.
 export default defineConfig(({ command, mode }) => {
   // Load env from root .env (one level up from frontend/)
   const env = loadEnv(mode, path.resolve(__dirname, '..'), '');
@@ -56,19 +59,18 @@ export default defineConfig(({ command, mode }) => {
     },
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, 'public'), // Pointing @ to the public folder
+        '@': path.resolve(__dirname, 'public'),
       }
     },
     server: {
       host: env.VITE_HOST || 'localhost',
-      port: ports.frontend,
+      port: ports.app,
       watch: {
         usePolling: env.CHOKIDAR_USEPOLLING === 'true',
         interval: 500
       },
       proxy: {
-        // Proxy API and media requests to backend
-        // Note: /api covers /api/v1/proxy/plex/* for Plex thumbnail proxying
+        // Proxy API and media requests to backend (running on app.port + 1)
         '/api': `http://localhost:${ports.backend}`,
         '/harvest': `http://localhost:${ports.backend}`,
         '/home': `http://localhost:${ports.backend}`,

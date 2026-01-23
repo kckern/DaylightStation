@@ -173,14 +173,20 @@ async function main() {
   // Start Server
   // ==========================================================================
 
-  // Get port from ConfigService (loaded from system-local.{env}.yml)
-  const port = configService.getPort();
+  // Get port from ConfigService
+  // In prod (Docker): backend serves everything on app.port
+  // In dev: Vite serves on app.port, backend hides on app.port + 1
+  const appPort = configService.getAppPort();
+  const port = isDocker ? appPort : appPort + 1;
   server.listen(port, '0.0.0.0', () => {
     logger.info('server.started', {
       port,
+      appPort,
       host: '0.0.0.0',
-      mode: 'path-routing',
-      message: 'Path-based routing: /api/v1/* -> new, everything else -> legacy'
+      mode: isDocker ? 'production' : 'development',
+      message: isDocker
+        ? 'Production: backend serves static + API'
+        : `Development: backend on ${port}, Vite expected on ${appPort}`
     });
   });
 

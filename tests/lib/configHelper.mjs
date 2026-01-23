@@ -1,8 +1,8 @@
 /**
  * Config Helper for Tests
  *
- * Reads port configuration from system YAML files (SSOT).
- * Used by playwright.config.js and test fixtures.
+ * Reads app port from system YAML (SSOT).
+ * Tests only need the public-facing port - same topology as prod.
  */
 
 import fs from 'fs';
@@ -70,56 +70,50 @@ function loadSystemConfig() {
     return null;
   }
 
-  const configPath = path.join(dataPath, 'system', `system-local.${envName}.yml`);
+  // Try environment-specific config first
+  const localConfigPath = path.join(dataPath, 'system', `system-local.${envName}.yml`);
+  const baseConfigPath = path.join(dataPath, 'system', 'system.yml');
 
-  if (!fs.existsSync(configPath)) {
-    console.warn(`[configHelper] Config not found: ${configPath}`);
-    return null;
+  if (fs.existsSync(localConfigPath)) {
+    try {
+      return yaml.load(fs.readFileSync(localConfigPath, 'utf8'));
+    } catch (err) {
+      console.warn(`[configHelper] Failed to load ${localConfigPath}: ${err.message}`);
+    }
   }
 
-  try {
-    return yaml.load(fs.readFileSync(configPath, 'utf8'));
-  } catch (err) {
-    console.warn(`[configHelper] Failed to load config: ${err.message}`);
-    return null;
+  if (fs.existsSync(baseConfigPath)) {
+    try {
+      return yaml.load(fs.readFileSync(baseConfigPath, 'utf8'));
+    } catch (err) {
+      console.warn(`[configHelper] Failed to load ${baseConfigPath}: ${err.message}`);
+    }
   }
+
+  return null;
 }
 
 /**
- * Get port configuration from system YAML
- * @returns {{ backend: number, frontend: number, webhook: number }}
+ * Get the public-facing app port
+ * This is the only port tests need - same topology as prod
  */
-export function getPorts() {
+export function getAppPort() {
   const config = loadSystemConfig();
-
-  // Docker defaults (production)
-  const defaults = {
-    backend: 3111,
-    frontend: 3111,  // In prod, frontend is served by backend
-    webhook: 3119
-  };
-
-  if (!config) return defaults;
-
-  return {
-    backend: config.server?.port ?? defaults.backend,
-    frontend: config.vite?.port ?? defaults.frontend,
-    webhook: config.webhook?.port ?? defaults.webhook
-  };
+  return config?.app?.port ?? 3111;
 }
 
 /**
- * Get test URLs based on system config
- * @returns {{ frontend: string, backend: string, ws: string }}
+ * Get test URLs based on app port
+ * All URLs point to the same port - tests don't know about internal backend
  */
 export function getTestUrls() {
-  const ports = getPorts();
+  const appPort = getAppPort();
 
   return {
-    frontend: `http://localhost:${ports.frontend}`,
-    backend: `http://localhost:${ports.backend}`,
-    ws: `ws://localhost:${ports.frontend}/ws`
+    frontend: `http://localhost:${appPort}`,
+    backend: `http://localhost:${appPort}`,  // Same! Goes through Vite proxy in dev
+    ws: `ws://localhost:${appPort}/ws`
   };
 }
 
-export default { getPorts, getTestUrls };
+export default { getAppPort, getTestUrls };
