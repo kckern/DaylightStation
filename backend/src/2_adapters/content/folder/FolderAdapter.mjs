@@ -260,9 +260,10 @@ export class FolderAdapter {
       // Calculate priority based on watch state and scheduling
       const priority = this._calculatePriority(item, watchState);
 
-      // Extract watch progress
+      // Extract watch progress and lastPlayed
       const percent = watchState?.percent || 0;
       const seconds = watchState?.seconds || watchState?.playhead || 0;
+      const lastPlayed = watchState?.lastPlayed || null;
 
       const compoundId = contentSource === 'folder'
         ? parsed.id
@@ -298,6 +299,7 @@ export class FolderAdapter {
           // Watch state
           percent,
           seconds,
+          lastPlayed,
           priority,
           // Scheduling fields
           hold: item.hold || false,

@@ -519,9 +519,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Import FileIO functions for state persistence (replaces legacy io.mjs)
   const { loadYaml: haLoadYaml, saveYaml: haSaveYaml } = await import('./0_infrastructure/utils/FileIO.mjs');
-  const haDataDir = configService.getDataDir();
-  const loadFile = (relativePath) => haLoadYaml(path.join(haDataDir, relativePath));
-  const saveFile = (relativePath, data) => haSaveYaml(path.join(haDataDir, relativePath), data);
+  // Reuse householdDir from earlier (line 157)
+  const loadFile = (relativePath) => haLoadYaml(path.join(householdDir, relativePath));
+  const saveFile = (relativePath, data) => haSaveYaml(path.join(householdDir, relativePath), data);
 
   // Import legacy entropy report for home automation
   const { getEntropyReport: legacyGetEntropyReportHA } = await import('../_legacy/lib/entropy.mjs');

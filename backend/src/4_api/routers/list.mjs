@@ -43,6 +43,11 @@ export function toListItem(item) {
   if (item.watchedDate !== undefined) base.watchedDate = item.watchedDate;
   if (item.playCount !== undefined) base.playCount = item.playCount;
 
+  // Also check metadata for watch state (FolderAdapter pattern)
+  if (!base.lastPlayed && item.metadata?.lastPlayed) base.lastPlayed = item.metadata.lastPlayed;
+  if (base.watchProgress === undefined && item.metadata?.percent !== undefined) base.watchProgress = item.metadata.percent;
+  if (base.watchSeconds === undefined && item.metadata?.seconds !== undefined) base.watchSeconds = item.metadata.seconds;
+
   // Behavior flags (top-level takes priority)
   if (item.shuffle !== undefined) base.shuffle = item.shuffle;
   if (item.continuous !== undefined) base.continuous = item.continuous;
@@ -289,6 +294,32 @@ export function createListRouter(config) {
       // Apply shuffle if requested
       if (modifiers.shuffle) {
         items = shuffleArray([...items]);
+      }
+
+      // Apply recent_on_top sorting if requested
+      if (modifiers.recent_on_top) {
+        items = [...items].sort((a, b) => {
+          const aDate = a.lastPlayed || a.watchedDate || a.metadata?.lastPlayed || null;
+          const bDate = b.lastPlayed || b.watchedDate || b.metadata?.lastPlayed || null;
+          
+          // Most recent first (descending order)
+          if (aDate && bDate) {
+            // Parse dates - handle format "2026-01-22 04.44.54" (periods instead of colons)
+            const parseDate = (dateStr) => {
+              if (!dateStr) return 0;
+              // Replace periods with colons for proper parsing
+              const normalized = dateStr.replace(/\./g, ':');
+              return new Date(normalized).getTime();
+            };
+            const aTime = parseDate(aDate);
+            const bTime = parseDate(bDate);
+            return bTime - aTime; // Most recent first
+          }
+          // Items with dates come before items without
+          if (aDate) return -1;
+          if (bDate) return 1;
+          return 0;
+        });
       }
 
       // Build response
