@@ -7,14 +7,13 @@
  * New implementation: backend/src/1_domains/gratitude/
  */
 
-import { configService } from '../../../../lib/config/index.mjs';
-import { userDataService } from '../../../../lib/config/UserDataService.mjs';
-import { broadcastToWebsockets } from '../../../../routers/websocket.mjs';
-import { createLogger } from '../../../_lib/logging/index.mjs';
+import { configService, userDataService } from '#backend/src/0_infrastructure/config/index.mjs';
+import { broadcastToWebsockets } from '#backend/_legacy/routers/websocket.mjs';
+import { createLogger } from '#backend/_legacy/chatbots/_lib/logging/index.mjs';
 
 // Import new architecture components
-import { GratitudeService } from '../../../../../src/1_domains/gratitude/services/GratitudeService.mjs';
-import { YamlGratitudeStore } from '../../../../../src/2_adapters/persistence/yaml/YamlGratitudeStore.mjs';
+import { GratitudeService } from '#backend/src/1_domains/gratitude/services/GratitudeService.mjs';
+import { YamlGratitudeStore } from '#backend/src/2_adapters/persistence/yaml/YamlGratitudeStore.mjs';
 
 /**
  * Valid categories for gratitude items

@@ -1,7 +1,7 @@
 
 const compileDailyFoodReport = async () => {};
 import { loadFile, saveFile, userLoadFile, userSaveFile } from "./io.mjs";
-import { userDataService } from "./config/UserDataService.mjs";
+import { userDataService } from '../../src/0_infrastructure/config/UserDataService.mjs';
 import { configService } from "./config/index.mjs";
 import moment from "moment";
 import crypto from "crypto";

@@ -10,7 +10,7 @@
  */
 
 import { configService } from '../lib/config/index.mjs';
-import { userDataService } from '../lib/config/UserDataService.mjs';
+import { userDataService } from '../../src/0_infrastructure/config/UserDataService.mjs';
 import { broadcastToWebsockets } from './websocket.mjs';
 import { createLogger } from '../lib/logging/logger.js';
 

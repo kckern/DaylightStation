@@ -277,3 +277,21 @@ function listYamlFiles(dir) {
 }
 
 export default loadConfig;
+
+// ─── Legacy Compatibility ─────────────────────────────────────
+
+/**
+ * Legacy function - no-op since ConfigService handles everything
+ * @deprecated Use ConfigService instead
+ */
+export function loadAllConfig() {
+  // No-op: Config is loaded via initConfigService
+}
+
+/**
+ * Legacy function - no-op
+ * @deprecated Use ConfigService.getSafeConfig() instead
+ */
+export function logConfigSummary() {
+  // No-op: Config summary logged during initConfigService
+}
