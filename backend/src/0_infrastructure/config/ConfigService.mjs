@@ -170,6 +170,10 @@ export class ConfigService {
     return this.#config.system?.server?.port ?? 3111;
   }
 
+  getWebhookPort() {
+    return this.#config.system?.webhook?.port ?? 3119;
+  }
+
   isSchedulerEnabled() {
     return this.#config.system?.scheduler?.enabled ?? false;
   }

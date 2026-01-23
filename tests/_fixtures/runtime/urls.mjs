@@ -2,23 +2,29 @@
 /**
  * Runtime Test URL Configuration
  *
- * Provides consistent URL configuration for Playwright runtime tests.
- * Uses environment variables with sensible defaults matching playwright.config.js.
+ * Reads port configuration from system YAML (SSOT).
+ * Environment variables can override for CI/special environments.
  *
  * Usage:
  *   import { FRONTEND_URL, BACKEND_URL, WS_URL, getWsUrl } from '#fixtures/runtime/urls.mjs';
  */
 
-// Frontend URL - where the built frontend is served
-// Default matches playwright.config.js baseURL
-export const FRONTEND_URL = process.env.TEST_FRONTEND_URL || 'http://localhost:3111';
+import { getTestUrls } from '#testlib/configHelper.mjs';
 
-// Backend API URL - for direct API calls (bypassing frontend)
-// Default is the dev server port
-export const BACKEND_URL = process.env.TEST_BACKEND_URL || 'http://localhost:3112';
+// Load URLs from system config
+const urls = getTestUrls();
 
-// WebSocket URL - derived from frontend URL by default
-export const WS_URL = process.env.TEST_WS_URL || FRONTEND_URL.replace(/^http/, 'ws') + '/ws';
+// Frontend URL - where the frontend is served (Vite in dev, backend in prod)
+// Can be overridden via TEST_FRONTEND_URL env var
+export const FRONTEND_URL = process.env.TEST_FRONTEND_URL || urls.frontend;
+
+// Backend API URL - for direct API calls (bypassing frontend proxy)
+// Can be overridden via TEST_BACKEND_URL env var
+export const BACKEND_URL = process.env.TEST_BACKEND_URL || urls.backend;
+
+// WebSocket URL - derived from frontend URL
+// Can be overridden via TEST_WS_URL env var
+export const WS_URL = process.env.TEST_WS_URL || urls.ws;
 
 /**
  * Get WebSocket URL from a base URL
@@ -32,10 +38,4 @@ export function getWsUrl(baseUrl = FRONTEND_URL) {
 /**
  * Get all URLs as an object (useful for logging)
  */
-export function getTestUrls() {
-  return {
-    frontend: FRONTEND_URL,
-    backend: BACKEND_URL,
-    ws: WS_URL
-  };
-}
+export { getTestUrls };

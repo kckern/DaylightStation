@@ -4,25 +4,29 @@ import path from 'path'
 import fs from 'fs'
 import yaml from 'js-yaml'
 
-// Read backend port from system config (SSOT)
-function getBackendPort(env) {
-  const dataPath = env.DAYLIGHT_DATA_PATH;
+// Read ports from system config (SSOT)
+function getPortsFromConfig(env) {
+  // Support both DAYLIGHT_DATA_PATH (explicit) and DAYLIGHT_BASE_PATH (+ /data)
+  const dataPath = env.DAYLIGHT_DATA_PATH || (env.DAYLIGHT_BASE_PATH ? path.join(env.DAYLIGHT_BASE_PATH, 'data') : null);
   const envName = env.DAYLIGHT_ENV;
 
+  const defaults = { backend: 3111, frontend: 5173 };
+
   if (!dataPath || !envName) {
-    console.warn('[vite] DAYLIGHT_DATA_PATH or DAYLIGHT_ENV not set, using default port 3111');
-    return 3111;
+    console.warn('[vite] DAYLIGHT_DATA_PATH/DAYLIGHT_BASE_PATH or DAYLIGHT_ENV not set, using default ports');
+    return defaults;
   }
 
   const localConfigPath = path.join(dataPath, 'system', `system-local.${envName}.yml`);
   if (fs.existsSync(localConfigPath)) {
     const config = yaml.load(fs.readFileSync(localConfigPath, 'utf8'));
-    const port = config.BACKEND_PORT || config.PORT || 3111;
-    console.log(`[vite] Backend port from ${envName} config: ${port}`);
-    return port;
+    const backendPort = config.server?.port || defaults.backend;
+    const frontendPort = config.vite?.port || defaults.frontend;
+    console.log(`[vite] Ports from ${envName} config - backend: ${backendPort}, frontend: ${frontendPort}`);
+    return { backend: backendPort, frontend: frontendPort };
   }
 
-  return 3111;
+  return defaults;
 }
 
 // https://vitejs.dev/config/
@@ -32,7 +36,7 @@ function getBackendPort(env) {
 export default defineConfig(({ command, mode }) => {
   // Load env from root .env (one level up from frontend/)
   const env = loadEnv(mode, path.resolve(__dirname, '..'), '');
-  const BACKEND_PORT = getBackendPort(env);
+  const ports = getPortsFromConfig(env);
 
   return {
     plugins: [
@@ -57,6 +61,7 @@ export default defineConfig(({ command, mode }) => {
     },
     server: {
       host: env.VITE_HOST || 'localhost',
+      port: ports.frontend,
       watch: {
         usePolling: env.CHOKIDAR_USEPOLLING === 'true',
         interval: 500
@@ -64,14 +69,14 @@ export default defineConfig(({ command, mode }) => {
       proxy: {
         // Proxy API and media requests to backend
         // Note: /api covers /api/v1/proxy/plex/* for Plex thumbnail proxying
-        '/api': `http://localhost:${BACKEND_PORT}`,
-        '/harvest': `http://localhost:${BACKEND_PORT}`,
-        '/home': `http://localhost:${BACKEND_PORT}`,
-        '/print': `http://localhost:${BACKEND_PORT}`,
-        '/media': `http://localhost:${BACKEND_PORT}`,
-        '/data': `http://localhost:${BACKEND_PORT}`,
+        '/api': `http://localhost:${ports.backend}`,
+        '/harvest': `http://localhost:${ports.backend}`,
+        '/home': `http://localhost:${ports.backend}`,
+        '/print': `http://localhost:${ports.backend}`,
+        '/media': `http://localhost:${ports.backend}`,
+        '/data': `http://localhost:${ports.backend}`,
         '/ws': {
-          target: `ws://localhost:${BACKEND_PORT}`,
+          target: `ws://localhost:${ports.backend}`,
           ws: true
         }
       }

@@ -29,13 +29,15 @@ config.app-local.yml
 .claude/skills/*/config.local.json
 /_extentions/piano/node_modules
 /tests/test-results
-tests/runtime/
+/test-results
+# Runtime test outputs (but track test source files)
+tests/runtime/output/
+tests/runtime/*.log
 .claude/settings.local.json
 /_extensions/fitness/node_modules
 /_extensions/piano/node_modules
 .worktrees
 /_extensions/fitness/config
-/test-results
 .claude/ralph-loop.local.md
 /logs
 /.playwright-mcp
