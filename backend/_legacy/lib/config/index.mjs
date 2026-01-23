@@ -27,4 +27,26 @@ export {
   validateConfig
 } from '../../../src/0_infrastructure/config/index.mjs';
 
+import { configService as _configService } from '../../../src/0_infrastructure/config/index.mjs';
+
+// Hydrate process.env with config values for legacy code compatibility.
+// Legacy code uses patterns like process.env.path.data, process.env.tv.host, etc.
+// This is a temporary compat layer - legacy code should migrate to ConfigService.
+const safeConfig = _configService.getSafeConfig?.() || {};
+const systemConfig = safeConfig.system || {};
+
+// Spread all system config keys into process.env for legacy compatibility
+for (const [key, value] of Object.entries(systemConfig)) {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    process.env[key] = value;
+  }
+}
+
+// Ensure path is set with required values
+process.env.path = {
+  ...process.env.path,
+  data: _configService.getDataDir(),
+  media: _configService.getMediaDir()
+};
+
 export { default } from '../../../src/0_infrastructure/config/index.mjs';

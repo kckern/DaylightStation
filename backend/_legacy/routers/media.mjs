@@ -19,12 +19,12 @@ const mediaRouter = express.Router();
 mediaRouter.use(express.json({
     strict: false // Allows parsing of JSON with single-quoted property names
 }));
-const audioPath = `${process.env.path.media}`;
-const videoPath = `${process.env.path.media}`;
-const mediaPath = `${process.env.path.media}`;
+const mediaPath = configService.getMediaDir();
+const audioPath = mediaPath;
+const videoPath = mediaPath;
 // Resolve notFound path with fallback prefixes (sfx moved to audio/sfx)
 const getNotFoundPath = () => {
-    const errorFile = process.env.media?.error || 'sfx/error.mp3';
+    const errorFile = configService.get('media.error') || 'sfx/error.mp3';
     const prefixes = ['', 'audio', 'video', 'img'];
     for (const prefix of prefixes) {
         const candidate = prefix ? `${mediaPath}/${prefix}/${errorFile}` : `${mediaPath}/${errorFile}`;

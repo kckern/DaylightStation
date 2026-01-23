@@ -53,7 +53,7 @@
     "backend:dev": "nodemon --watch backend --ext js,mjs,json,yml backend/src/server.mjs",
     "backend:log": "node backend/src/server.mjs 2>&1 | tee dev.log",
     "frontend": "npm run dev --prefix frontend",
-    "frontend:dev": "DAYLIGHT_ENV=kckern-macbook VITE_BACKEND_PORT=3112 npm run dev --prefix frontend",
+    "frontend:dev": "npm run dev --prefix frontend",
     "test": "npm run test:unit && npm run test:integration",
     "test:unit": "node tests/unit/harness.mjs",
     "test:integration": "node tests/integration/harness.mjs",

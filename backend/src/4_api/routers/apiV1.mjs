@@ -12,6 +12,7 @@
  */
 
 import express from 'express';
+import { configService } from '../../0_infrastructure/config/index.mjs';
 
 /**
  * Create the v1 API router with all domain sub-routers
@@ -90,7 +91,12 @@ export function createApiV1Router(config) {
 
   // Health check endpoints at root of /api/v1
   router.get('/ping', (req, res) => res.json({ ok: true, timestamp: Date.now() }));
-  router.get('/status', (req, res) => res.json({ ok: true, version: 'v1', routes: mounted }));
+  router.get('/status', (req, res) => res.json({
+    ok: true,
+    version: 'v1',
+    routes: mounted,
+    config: configService.getSafeConfig()
+  }));
 
   logger.info?.('apiV1.mounted', { routeCount: mounted.length, routes: mounted });
 
