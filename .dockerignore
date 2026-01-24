@@ -42,6 +42,7 @@ AGENTS.md
 **/.env.*
 *.yml
 !config/*.yml
+!backend/config/*.yml
 secrets.dev.yaml
 values.dev.yaml
 **/charts

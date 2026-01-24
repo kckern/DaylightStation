@@ -2,10 +2,12 @@
 
 import { Router } from 'express';
 import { HomeBotInputRouter } from '../../2_adapters/homebot/HomeBotInputRouter.mjs';
+import { TelegramWebhookParser } from '../../2_adapters/telegram/TelegramWebhookParser.mjs';
 import {
   webhookValidationMiddleware as defaultWebhookValidation,
   idempotencyMiddleware as defaultIdempotency,
   asyncHandler,
+  errorHandlerMiddleware,
 } from '../../0_infrastructure/http/middleware/index.mjs';
 
 /**
@@ -15,8 +17,7 @@ import {
  * @param {string} [options.botId] - Telegram bot ID
  * @param {string} [options.secretToken] - X-Telegram-Bot-Api-Secret-Token for webhook auth
  * @param {Object} [options.gateway] - TelegramAdapter for callback acknowledgements
- * @param {Function} [options.createTelegramWebhookHandler] - Webhook handler factory
- * @param {Object} [options.middleware] - Middleware functions
+ * @param {Object} [options.logger] - Logger instance
  * @returns {Router}
  */
 export function createHomebotRouter(container, options = {}) {
@@ -26,40 +27,63 @@ export function createHomebotRouter(container, options = {}) {
     botId,
     secretToken,
     gateway,
-    createTelegramWebhookHandler,
-    middleware = {}
+    logger = console
   } = options;
 
-  // Get middleware functions with defaults
-  const {
-    tracingMiddleware = () => (req, res, next) => next(),
-    requestLoggerMiddleware = () => (req, res, next) => next(),
-    errorHandlerMiddleware = () => (err, req, res, next) => {
-      res.status(500).json({ error: err.message });
-    }
-  } = middleware;
+  // Create webhook parser and input router
+  const webhookParser = botId ? new TelegramWebhookParser({ botId, logger }) : null;
+  const inputRouter = new HomeBotInputRouter({ container, logger });
 
-  // Apply middleware
-  router.use(tracingMiddleware());
-  router.use(requestLoggerMiddleware({ logBody: false }));
-
-  // Webhook endpoint
-  if (createTelegramWebhookHandler) {
-    const webhookHandler = createTelegramWebhookHandler(
-      container,
-      { botId, botName: 'homebot' },
-      {
-        gateway,
-        RouterClass: HomeBotInputRouter
-      }
-    );
-
+  // Webhook endpoint with inline handling (like nutribot)
+  if (webhookParser) {
     router.post(
       '/webhook',
       defaultWebhookValidation('homebot', { secretToken }),
       defaultIdempotency({ ttlMs: 300000 }),
-      asyncHandler(webhookHandler)
+      asyncHandler(async (req, res) => {
+        try {
+          // Parse Telegram update into normalized input
+          const parsed = webhookParser.parse(req.body);
+          if (!parsed) {
+            logger.debug?.('homebot.webhook.unsupported', { updateKeys: Object.keys(req.body) });
+            return res.sendStatus(200);
+          }
+
+          // Transform to InputRouter event shape
+          const event = {
+            type: parsed.type,
+            conversationId: parsed.userId,
+            text: parsed.text,
+            fileId: parsed.fileId,
+            callbackData: parsed.callbackData,
+            callbackId: parsed.callbackId,
+            messageId: parsed.messageId,
+            command: parsed.command,
+            metadata: parsed.metadata
+          };
+
+          // Acknowledge callback if present
+          if (parsed.type === 'callback' && parsed.callbackId && gateway) {
+            try {
+              await gateway.answerCallback(parsed.callbackId);
+            } catch (e) {
+              logger.warn?.('homebot.callback.ack_failed', { error: e.message });
+            }
+          }
+
+          // Route to use cases
+          await inputRouter.route(event);
+
+          res.sendStatus(200);
+        } catch (error) {
+          logger.error?.('homebot.webhook.error', { error: error.message, stack: error.stack });
+          // Always return 200 to Telegram to prevent retry loops
+          res.sendStatus(200);
+        }
+      })
     );
+  } else {
+    logger.warn?.('homebot.webhook.disabled', { reason: 'No botId configured' });
   }
 
   // Health check endpoint
