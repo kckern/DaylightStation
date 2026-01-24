@@ -2,71 +2,73 @@
 /**
  * Harvest Router - Data Collection Endpoints (DDD)
  *
- * Provides RESTful endpoints for triggering data harvesting from various services.
- * This is a DDD wrapper around the legacy harvest functionality.
+ * Provides RESTful endpoints for triggering data harvesting.
+ * Delegates all harvest logic to HarvesterService.
  *
  * Endpoints:
- *   GET /harvest/watchlist - Sync watchlist from Infinity
- *   GET /harvest/budget - Trigger financial data refresh
- *   GET /harvest/payroll - Sync payroll data
+ *   GET  /harvest              - List available harvesters with status
+ *   GET  /harvest/:serviceId   - Trigger specific harvester
+ *   POST /harvest/:serviceId   - Trigger specific harvester (with options)
+ *   GET  /harvest/status/:serviceId - Get harvester status
  */
 import express from 'express';
 import crypto from 'crypto';
 
 /**
- * Create harvest router for data collection endpoints
+ * Create harvest router
  * @param {Object} config
- * @param {Object} config.logger - Logger instance
- * @param {Function} config.refreshFinancialData - Budget refresh function
- * @param {Function} config.payrollSyncJob - Payroll sync function
- * @param {Object} config.Infinity - Infinity API client
- * @param {Function} config.configService - Config service for resolving users
+ * @param {Object} config.harvesterService - HarvesterService instance
+ * @param {Object} config.configService - ConfigService for user resolution
+ * @param {Object} [config.logger] - Logger instance
  * @returns {express.Router}
  */
 export function createHarvestRouter(config) {
   const router = express.Router();
   const {
-    logger,
-    refreshFinancialData,
-    payrollSyncJob,
-    Infinity,
-    configService
+    harvesterService,
+    configService,
+    logger = console
   } = config;
 
   // Timeout configuration (ms)
-  const HARVEST_TIMEOUT = 120000; // 2 minutes default
-  const HARVEST_TIMEOUTS = {
-    watchlist: 60000,   // 1 minute for watchlist
-    budget: 240000,     // 4 minutes for budget
-    payroll: 180000     // 3 minutes for payroll
+  const DEFAULT_TIMEOUT = 120000; // 2 minutes
+  const TIMEOUTS = {
+    fitness: 180000,    // 3 minutes
+    strava: 180000,
+    health: 180000,
+    budget: 240000,     // 4 minutes
+    gmail: 180000,
+    shopping: 300000,   // 5 minutes
   };
 
   /**
-   * Resolve the target username from request query param or default to head of household
+   * Resolve target username from request
    */
   const resolveUsername = (req) => {
-    if (req.query.user) {
-      return req.query.user;
-    }
+    if (req.query.user) return req.query.user;
+    if (req.body?.user) return req.body.user;
     return configService?.getHeadOfHousehold?.() || 'default';
   };
 
   /**
-   * Wrap a promise with a timeout
+   * Wrap promise with timeout
    */
-  const withTimeout = (promise, timeoutMs, harvesterName) => {
+  const withTimeout = (promise, timeoutMs, serviceId) => {
     return Promise.race([
       promise,
       new Promise((_, reject) =>
-        setTimeout(() => reject(new Error(`Timeout: ${harvesterName} exceeded ${timeoutMs}ms limit`)), timeoutMs)
+        setTimeout(
+          () => reject(new Error(`Timeout: ${serviceId} exceeded ${timeoutMs}ms limit`)),
+          timeoutMs
+        )
       )
     ]);
   };
 
   /**
-   * Sanitize error for API response
+   * Sanitize error for response
    */
-  const sanitizeError = (error, harvesterName) => {
+  const sanitizeError = (error, serviceId) => {
     let message = error.message || 'Unknown error';
     message = message
       .replace(/Bearer\s+[^\s]+/gi, 'Bearer [REDACTED]')
@@ -74,169 +76,124 @@ export function createHarvestRouter(config) {
       .replace(/key[=:]\s*[^\s&]+/gi, 'key=[REDACTED]');
 
     return {
-      harvester: harvesterName,
+      harvester: serviceId,
       message,
-      type: error.name || 'Error',
-      statusCode: error.response?.status
+      type: error.name || 'Error'
     };
   };
 
   /**
-   * GET /harvest/watchlist
-   * Sync watchlist data from Infinity
-   */
-  router.get('/watchlist', async (req, res) => {
-    const guidId = crypto.randomUUID().split('-').pop();
-    const username = resolveUsername(req);
-
-    logger?.info?.('harvest.watchlist.started', { requestId: guidId, username });
-
-    if (!Infinity) {
-      return res.status(503).json({
-        error: 'Infinity service not configured',
-        harvester: 'watchlist'
-      });
-    }
-
-    try {
-      const timeoutMs = HARVEST_TIMEOUTS.watchlist;
-      const result = await withTimeout(
-        Infinity.loadData('watchlist', { targetUsername: username }),
-        timeoutMs,
-        'watchlist'
-      );
-
-      logger?.info?.('harvest.watchlist.completed', {
-        requestId: guidId,
-        resultType: typeof result,
-        itemCount: Array.isArray(result) ? result.length : undefined
-      });
-
-      res.json({
-        ok: true,
-        harvester: 'watchlist',
-        data: result,
-        requestId: guidId
-      });
-    } catch (error) {
-      logger?.error?.('harvest.watchlist.error', {
-        requestId: guidId,
-        error: error.message
-      });
-
-      const statusCode = error.message?.includes('Timeout') ? 504 : 500;
-      res.status(statusCode).json(sanitizeError(error, 'watchlist'));
-    }
-  });
-
-  /**
-   * GET /harvest/budget
-   * POST /harvest/budget
-   * Trigger financial data refresh
-   */
-  const budgetHandler = async (req, res) => {
-    const guidId = crypto.randomUUID().split('-').pop();
-    const username = resolveUsername(req);
-
-    logger?.info?.('harvest.budget.started', { requestId: guidId, username });
-
-    if (!refreshFinancialData) {
-      return res.status(503).json({
-        error: 'Budget refresh service not configured',
-        harvester: 'budget'
-      });
-    }
-
-    try {
-      const timeoutMs = HARVEST_TIMEOUTS.budget;
-      const result = await withTimeout(
-        refreshFinancialData(guidId, { targetUsername: username }),
-        timeoutMs,
-        'budget'
-      );
-
-      logger?.info?.('harvest.budget.completed', { requestId: guidId });
-
-      res.json({
-        ok: true,
-        harvester: 'budget',
-        data: result,
-        requestId: guidId
-      });
-    } catch (error) {
-      logger?.error?.('harvest.budget.error', {
-        requestId: guidId,
-        error: error.message
-      });
-
-      const statusCode = error.message?.includes('Timeout') ? 504 : 500;
-      res.status(statusCode).json(sanitizeError(error, 'budget'));
-    }
-  };
-
-  router.get('/budget', budgetHandler);
-  router.post('/budget', budgetHandler);
-
-  /**
-   * GET /harvest/payroll
-   * POST /harvest/payroll
-   * Sync payroll data
-   */
-  const payrollHandler = async (req, res) => {
-    const guidId = crypto.randomUUID().split('-').pop();
-    const username = resolveUsername(req);
-    const token = req.query.token;
-
-    logger?.info?.('harvest.payroll.started', { requestId: guidId, username, hasToken: !!token });
-
-    if (!payrollSyncJob) {
-      return res.status(503).json({
-        error: 'Payroll sync service not configured',
-        harvester: 'payroll'
-      });
-    }
-
-    try {
-      const timeoutMs = HARVEST_TIMEOUTS.payroll;
-      const result = await withTimeout(
-        payrollSyncJob(logger, guidId, username, token),
-        timeoutMs,
-        'payroll'
-      );
-
-      logger?.info?.('harvest.payroll.completed', { requestId: guidId });
-
-      res.json({
-        ok: true,
-        harvester: 'payroll',
-        data: result,
-        requestId: guidId
-      });
-    } catch (error) {
-      logger?.error?.('harvest.payroll.error', {
-        requestId: guidId,
-        error: error.message
-      });
-
-      const statusCode = error.message?.includes('Timeout') ? 504 : 500;
-      res.status(statusCode).json(sanitizeError(error, 'payroll'));
-    }
-  };
-
-  router.get('/payroll', payrollHandler);
-  router.post('/payroll', payrollHandler);
-
-  /**
    * GET /harvest
-   * List available harvesters
+   * List all available harvesters with status
    */
   router.get('/', (req, res) => {
+    const harvesters = harvesterService.listHarvesters();
+    const allStatuses = harvesterService.getAllStatuses();
+
+    // Convert statuses array to object keyed by serviceId for lookup
+    const statusesByServiceId = {};
+    for (const status of allStatuses) {
+      statusesByServiceId[status.serviceId] = status;
+    }
+
     res.json({
       ok: true,
-      harvesters: ['watchlist', 'budget', 'payroll'],
-      timeouts: HARVEST_TIMEOUTS
+      harvesters: harvesters.map(h => ({
+        ...h,
+        status: statusesByServiceId[h.serviceId]
+      })),
+      usage: 'GET /harvest/:serviceId or POST /harvest/:serviceId with options'
     });
   });
+
+  /**
+   * GET /harvest/status/:serviceId
+   * Get status of a specific harvester
+   */
+  router.get('/status/:serviceId', (req, res) => {
+    const { serviceId } = req.params;
+
+    if (!harvesterService.has(serviceId)) {
+      return res.status(404).json({
+        ok: false,
+        error: `Unknown harvester: ${serviceId}`,
+        available: harvesterService.listHarvesters().map(h => h.serviceId)
+      });
+    }
+
+    const status = harvesterService.getStatus(serviceId);
+    res.json({ ok: true, ...status });
+  });
+
+  /**
+   * GET/POST /harvest/:serviceId
+   * Trigger a specific harvester
+   */
+  const harvestHandler = async (req, res) => {
+    const { serviceId } = req.params;
+    const requestId = crypto.randomUUID().split('-').pop();
+    const username = resolveUsername(req);
+    const options = { ...req.query, ...req.body };
+    delete options.user; // Don't pass user as option
+
+    if (!harvesterService.has(serviceId)) {
+      return res.status(404).json({
+        ok: false,
+        error: `Unknown harvester: ${serviceId}`,
+        available: harvesterService.listHarvesters().map(h => h.serviceId),
+        requestId
+      });
+    }
+
+    logger?.info?.('harvest.request', {
+      serviceId,
+      username,
+      requestId,
+      method: req.method
+    });
+
+    try {
+      const timeoutMs = TIMEOUTS[serviceId] || DEFAULT_TIMEOUT;
+      const result = await withTimeout(
+        harvesterService.harvest(serviceId, username, options),
+        timeoutMs,
+        serviceId
+      );
+
+      logger?.info?.('harvest.response', {
+        serviceId,
+        requestId,
+        result
+      });
+
+      res.json({
+        ok: true,
+        harvester: serviceId,
+        data: result,
+        requestId
+      });
+
+    } catch (error) {
+      logger?.error?.('harvest.error', {
+        serviceId,
+        requestId,
+        error: error.message
+      });
+
+      const statusCode = error.message?.includes('Timeout') ? 504 :
+                        error.message?.includes('cooldown') ? 503 :
+                        error.response?.status === 429 ? 429 : 500;
+
+      res.status(statusCode).json({
+        ok: false,
+        ...sanitizeError(error, serviceId),
+        requestId
+      });
+    }
+  };
+
+  router.get('/:serviceId', harvestHandler);
+  router.post('/:serviceId', harvestHandler);
 
   return router;
 }
