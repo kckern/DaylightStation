@@ -85,7 +85,7 @@ const LoadingFallback = ShowViewSkeleton;
  * PlexMenuRouter: Loads Plex menu data and routes to appropriate view
  * 
  * For Plex items without a pre-known type, this component:
- * 1. Fetches the data from /data/list/:plexId
+ * 1. Fetches the data from /api/v1/item/plex/:plexId
  * 2. Checks the response type (show, season, etc.)
  * 3. Renders ShowView, SeasonView, or generic TVMenu accordingly
  * 

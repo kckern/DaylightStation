@@ -128,6 +128,22 @@ export const DaylightMediaPath = (path) => {
     if (path.startsWith('static/img/')) {
         path = `api/v1/${path}`;
     }
+    // Rewrite legacy /media/plex/img/* paths to new content API
+    if (path.startsWith('media/plex/img/')) {
+        path = path.replace('media/plex/img/', 'api/v1/content/plex/image/');
+    }
+    // Rewrite legacy /media/plex/url/* paths to new play API
+    if (path.startsWith('media/plex/url/')) {
+        path = path.replace('media/plex/url/', 'api/v1/play/plex/mpd/');
+    }
+    // Rewrite legacy /media/audio/* paths to new proxy media endpoint
+    if (path.startsWith('media/audio/')) {
+        path = path.replace('media/audio/', 'api/v1/proxy/media/audio/');
+    }
+    // Rewrite any remaining /media/* paths to new proxy media endpoint
+    if (path.startsWith('media/') && !path.startsWith('media/plex/')) {
+        path = path.replace('media/', 'api/v1/proxy/media/');
+    }
     return `${getBaseUrl()}/${path}`;
 }
 

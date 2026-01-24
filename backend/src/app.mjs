@@ -265,14 +265,18 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // Finance domain
-  const buxferConfig = configService.getAppConfig('finance', 'buxfer');
+  // Buxfer credentials are in user auth, app config has account IDs
+  const buxferAuth = configService.getUserAuth?.('buxfer') || configService.getHouseholdAuth?.('buxfer');
+  const axios = (await import('axios')).default;
   const financeServices = createFinanceServices({
     dataRoot: dataBasePath,
     defaultHouseholdId: householdId,
-    buxfer: buxferConfig ? {
-      email: buxferConfig.email,
-      password: buxferConfig.password
+    buxfer: buxferAuth?.email && buxferAuth?.password ? {
+      email: buxferAuth.email,
+      password: buxferAuth.password
     } : null,
+    httpClient: axios,
+    configService,
     logger: rootLogger.child({ module: 'finance' })
   });
 
@@ -369,9 +373,6 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Create shared IO functions for lifelog persistence
   const userSaveFile = (username, service, data) => userDataService.saveLifelogData(username, service, data);
   const harvesterIo = { userLoadFile, userSaveFile };
-
-  // HTTP client for external API calls
-  const axios = (await import('axios')).default;
 
   // Note: nutribotAiGateway is created later; pass null for now
   // (shopping extraction will use httpClient directly if AI gateway unavailable)

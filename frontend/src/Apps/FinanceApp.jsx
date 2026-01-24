@@ -25,14 +25,16 @@ const fetchBudget = async () => {
 }
 
 const reloadBudget = async () => {
-  await fetch(`${baseUrl}/api/v1/harvest/budget`);
+  await fetch(`${baseUrl}/api/v1/finance/refresh`, { method: 'POST' });
 }
 
 const syncPayroll = async (token) => {
-  const url = token
-    ? `${baseUrl}/api/v1/harvest/payroll?token=${encodeURIComponent(token)}`
-    : `${baseUrl}/api/v1/harvest/payroll`;
-  const response = await fetch(url);
+  const url = `${baseUrl}/api/v1/finance/payroll/sync`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(token ? { token } : {})
+  });
   if (!response.ok) {
     const error = await response.json();
     throw new Error(error.error || 'Payroll sync failed');

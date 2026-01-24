@@ -98,16 +98,17 @@ export function ShowView({ showId, depth, onSelect, onEscape, MENU_TIMEOUT = 0 }
 
   // Get season key for selection persistence
   const getSeasonKey = useCallback((season) => {
-    return season?.plex || season?.label || null;
+    return season?.list?.plex || season?.key || season?.label || null;
   }, []);
 
   // Handle season selection
   const handleSelect = useCallback((season) => {
     if (!season) return;
-    onSelect?.({ 
-      list: { plex: season.plex }, 
+    const plexId = season.list?.plex || season.key;
+    onSelect?.({
+      list: { plex: plexId },
       type: 'season',
-      label: season.label 
+      label: season.label
     });
   }, [onSelect]);
 
@@ -250,8 +251,8 @@ export function ShowView({ showId, depth, onSelect, onEscape, MENU_TIMEOUT = 0 }
         <div className="show-view__top">
           {/* Show Poster */}
           <div className="show-view__poster">
-            <img 
-              src={`/media/plex/img/${data?.plex}` || data?.image || showInfo.image} 
+            <img
+              src={data?.image || showInfo.image}
               alt={showTitle}
             />
           </div>
@@ -287,7 +288,7 @@ export function ShowView({ showId, depth, onSelect, onEscape, MENU_TIMEOUT = 0 }
               
               return (
                 <div
-                  key={season.plex || index}
+                  key={season.list?.plex || season.key || index}
                   className={`season-card ${isActive ? 'season-card--active' : ''}`}
                   onClick={() => {
                     setSelectedIndex(index, getSeasonKey(season));
