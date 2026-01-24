@@ -7,11 +7,20 @@ moment.tz.setDefault('UTC');
 
 
 const getWeather = async (job_id) => {
-    const { weather: { lat, lng, timezone} } = process.env;
-    
+    const hid = getCurrentHouseholdId();
+
+    // Get weather config from ConfigService
+    const weatherConfig = configService.getAppConfig('weather') || {};
+    const lat = weatherConfig.lat;
+    const lng = weatherConfig.lng;
+    const timezone = weatherConfig.timezone || configService.getTimezone();
+
+    if (!lat || !lng) {
+        throw new Error('Weather location not configured (weather.lat/lng in app config)');
+    }
+
     // Load weather API key from household auth (for future paid tier/OpenWeatherMap)
     // Currently using Open-Meteo which is free and doesn't require API key
-    const hid = getCurrentHouseholdId();
     const auth = configService.getHouseholdAuth('weather', hid) || {};
     // const apiKey = auth.api_key || process.env.OPEN_WEATHER_API_KEY;
 
