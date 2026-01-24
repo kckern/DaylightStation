@@ -88,6 +88,14 @@ import { YamlNutriListStore } from '../2_adapters/persistence/yaml/YamlNutriList
 import { YamlNutriCoachStore } from '../2_adapters/persistence/yaml/YamlNutriCoachStore.mjs';
 import { createNutribotRouter } from '../4_api/routers/nutribot.mjs';
 
+// Nutribot DDD adapters
+import { YamlNutriLogStore } from '../2_adapters/persistence/yaml/YamlNutriLogStore.mjs';
+import { TelegramMessagingAdapter } from '../2_adapters/telegram/TelegramMessagingAdapter.mjs';
+import { TelegramWebhookParser } from '../2_adapters/telegram/TelegramWebhookParser.mjs';
+import { OpenAIFoodParserAdapter } from '../2_adapters/ai/OpenAIFoodParserAdapter.mjs';
+import { NutritionixAdapter } from '../2_adapters/nutrition/NutritionixAdapter.mjs';
+import { WebhookHandler } from '../3_applications/nutribot/handlers/WebhookHandler.mjs';
+
 // Health domain imports
 import { HealthAggregationService } from '../1_domains/health/services/HealthAggregationService.mjs';
 import { YamlHealthStore } from '../2_adapters/persistence/yaml/YamlHealthStore.mjs';
@@ -1310,6 +1318,54 @@ export function createNutribotApiRouter(config) {
     gateway,
     logger
   });
+}
+
+/**
+ * Create nutribot services with DDD architecture
+ * @param {Object} config
+ * @param {Object} config.userDataService
+ * @param {Object} config.telegram - { token, botId }
+ * @param {Object} config.openai - { apiKey }
+ * @param {Object} config.nutritionix - { appId, appKey }
+ * @param {Object} [config.logger]
+ * @returns {Object}
+ */
+export function createNutribotDDDServices(config) {
+  const { userDataService, telegram, openai, nutritionix, logger = console } = config;
+
+  // Persistence adapters
+  const nutriLogStore = new YamlNutriLogStore({ userDataService, logger });
+  const nutriListStore = new YamlNutriListStore({ userDataService, logger });
+
+  // External service adapters
+  const messagingGateway = telegram?.token
+    ? new TelegramMessagingAdapter({ token: telegram.token, logger })
+    : null;
+
+  const webhookParser = telegram?.botId
+    ? new TelegramWebhookParser({ botId: telegram.botId, logger })
+    : null;
+
+  const foodParser = openai?.apiKey
+    ? new OpenAIFoodParserAdapter({ apiKey: openai.apiKey, logger })
+    : null;
+
+  const nutritionLookup = nutritionix?.appId
+    ? new NutritionixAdapter({
+        appId: nutritionix.appId,
+        appKey: nutritionix.appKey,
+        logger
+      })
+    : null;
+
+  return {
+    nutriLogStore,
+    nutriListStore,
+    messagingGateway,
+    webhookParser,
+    foodParser,
+    nutritionLookup
+  };
 }
 
 // =============================================================================
