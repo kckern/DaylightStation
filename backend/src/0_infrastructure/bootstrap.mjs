@@ -1207,15 +1207,17 @@ export function createJournalistApiRouter(config) {
   const {
     journalistServices,
     configService,
+    botId,
     secretToken,
+    gateway,
     logger = console
   } = config;
 
-  return createJournalistRouter({
-    container: journalistServices.journalistContainer,
-    inputRouter: journalistServices.journalistInputRouter,
-    configService,
+  return createJournalistRouter(journalistServices.journalistContainer, {
+    botId,
     secretToken,
+    gateway,
+    configService,
     logger
   });
 }

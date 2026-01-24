@@ -68,7 +68,7 @@ export class TelegramAdapter {
    */
   async sendMessage(chatId, text, options = {}) {
     const params = {
-      chat_id: chatId,
+      chat_id: this.extractChatId(chatId),
       text
     };
 
@@ -100,10 +100,11 @@ export class TelegramAdapter {
 
   /**
    * Send an image
+   * Alias: sendPhoto (for IMessagingGateway interface)
    */
   async sendImage(chatId, imageSource, caption = '', options = {}) {
     const params = {
-      chat_id: chatId
+      chat_id: this.extractChatId(chatId)
     };
 
     if (typeof imageSource === 'string') {
@@ -138,12 +139,24 @@ export class TelegramAdapter {
   }
 
   /**
+   * Alias for sendImage (IMessagingGateway interface)
+   * @param {string} chatId - Chat ID or conversationId
+   * @param {string} imageSource - File ID or URL
+   * @param {Object} options - Options including caption, choices, inline
+   */
+  async sendPhoto(chatId, imageSource, options = {}) {
+    const { caption = '', ...rest } = options;
+    return this.sendImage(chatId, imageSource, caption, rest);
+  }
+
+  /**
    * Edit an existing message
    */
   async updateMessage(chatId, messageId, updates) {
+    const numericChatId = this.extractChatId(chatId);
     if (updates.text) {
       const params = {
-        chat_id: chatId,
+        chat_id: numericChatId,
         message_id: messageId,
         text: updates.text
       };
@@ -161,7 +174,7 @@ export class TelegramAdapter {
       await this.callApi('editMessageText', params);
     } else if (updates.caption) {
       const params = {
-        chat_id: chatId,
+        chat_id: numericChatId,
         message_id: messageId,
         caption: updates.caption
       };
@@ -176,13 +189,34 @@ export class TelegramAdapter {
 
   /**
    * Update keyboard on a message
+   * Pass null/empty choices to remove keyboard
    */
   async updateKeyboard(chatId, messageId, choices) {
-    await this.callApi('editMessageReplyMarkup', {
-      chat_id: chatId,
-      message_id: messageId,
-      reply_markup: JSON.stringify(this.buildKeyboard(choices, true))
-    });
+    const params = {
+      chat_id: this.extractChatId(chatId),
+      message_id: messageId
+    };
+
+    // Handle null/empty choices - removes keyboard
+    if (choices && choices.length > 0) {
+      params.reply_markup = JSON.stringify(this.buildKeyboard(choices, true));
+    }
+
+    await this.callApi('editMessageReplyMarkup', params);
+  }
+
+  /**
+   * Edit message reply markup (alias for updateKeyboard with raw markup)
+   */
+  async editMessageReplyMarkup(chatId, messageId, replyMarkup) {
+    const params = {
+      chat_id: this.extractChatId(chatId),
+      message_id: messageId
+    };
+    if (replyMarkup) {
+      params.reply_markup = typeof replyMarkup === 'string' ? replyMarkup : JSON.stringify(replyMarkup);
+    }
+    await this.callApi('editMessageReplyMarkup', params);
   }
 
   /**
@@ -190,7 +224,7 @@ export class TelegramAdapter {
    */
   async deleteMessage(chatId, messageId) {
     await this.callApi('deleteMessage', {
-      chat_id: chatId,
+      chat_id: this.extractChatId(chatId),
       message_id: messageId
     });
   }
@@ -304,6 +338,30 @@ export class TelegramAdapter {
   // ============ Helper Methods ============
 
   /**
+   * Extract numeric chat ID from conversationId format
+   * Handles: "telegram:botId_chatId" -> "chatId"
+   * Also handles raw numeric IDs for backwards compatibility
+   */
+  extractChatId(conversationId) {
+    if (!conversationId) return conversationId;
+
+    // Already a numeric ID
+    if (/^-?\d+$/.test(conversationId)) {
+      return conversationId;
+    }
+
+    // Parse "telegram:botId_chatId" format
+    const match = conversationId.match(/^telegram:\d+_(-?\d+)$/);
+    if (match) {
+      return match[1];
+    }
+
+    // Fallback: return as-is and let Telegram API reject it
+    this.logger.warn?.('telegram.chatId.unparseable', { conversationId });
+    return conversationId;
+  }
+
+  /**
    * Build keyboard markup
    */
   buildKeyboard(choices, inline = false) {
@@ -362,6 +420,7 @@ export class TelegramAdapter {
 
   /**
    * Answer callback query (acknowledge button press)
+   * Alias: answerCallback (for IMessagingGateway interface)
    */
   async answerCallbackQuery(callbackQueryId, options = {}) {
     const params = { callback_query_id: callbackQueryId };
@@ -369,6 +428,13 @@ export class TelegramAdapter {
     if (options.showAlert) params.show_alert = true;
 
     return this.callApi('answerCallbackQuery', params);
+  }
+
+  /**
+   * Alias for answerCallbackQuery (IMessagingGateway interface)
+   */
+  async answerCallback(callbackId, text) {
+    return this.answerCallbackQuery(callbackId, text ? { text } : {});
   }
 
   /**

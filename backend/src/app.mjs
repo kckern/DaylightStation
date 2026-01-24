@@ -600,6 +600,31 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const journalistToken = configService.getSecret('TELEGRAM_JOURNALIST_BOT_TOKEN') || '';
   const homebotToken = configService.getSecret('TELEGRAM_HOMEBOT_TOKEN') || '';
 
+  // NutriBot application config
+  const nutribotConfig = configService.getAppConfig('nutribot') || {};
+  const openaiApiKey = configService.getSecret('OPENAI_API_KEY') || '';
+
+  // Create shared AI adapter (used by all bots)
+  let sharedAiGateway = null;
+  if (openaiApiKey) {
+    const { OpenAIAdapter } = await import('./2_adapters/ai/OpenAIAdapter.mjs');
+    sharedAiGateway = new OpenAIAdapter({ apiKey: openaiApiKey }, { logger: rootLogger.child({ module: 'shared-ai' }) });
+  }
+
+  // Create shared voice transcription service (used by all bot TelegramAdapters)
+  let voiceTranscriptionService = null;
+  if (sharedAiGateway) {
+    const { TelegramVoiceTranscriptionService } = await import('./2_adapters/messaging/TelegramVoiceTranscriptionService.mjs');
+    voiceTranscriptionService = new TelegramVoiceTranscriptionService({
+      openaiAdapter: sharedAiGateway,
+      httpClient: axios,
+      logger: rootLogger.child({ module: 'voice-transcription' })
+    });
+  }
+
+  // Alias for backward compatibility
+  const nutribotAiGateway = sharedAiGateway;
+
   const messagingServices = createMessagingServices({
     userDataService,
     telegram: {
@@ -609,19 +634,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       credentials: gmailConfig.credentials,
       token: gmailConfig.token
     } : null,
+    transcriptionService: voiceTranscriptionService,  // Voice message transcription
+    httpClient: axios,  // Required for TelegramAdapter API calls
     logger: rootLogger.child({ module: 'messaging' })
   });
-
-  // NutriBot application
-  const nutribotConfig = configService.getAppConfig('nutribot') || {};
-  const openaiApiKey = configService.getSecret('OPENAI_API_KEY') || '';
-
-  // Create AI adapter for nutribot (optional)
-  let nutribotAiGateway = null;
-  if (openaiApiKey) {
-    const { OpenAIAdapter } = await import('./2_adapters/ai/OpenAIAdapter.mjs');
-    nutribotAiGateway = new OpenAIAdapter({ apiKey: openaiApiKey }, { logger: rootLogger.child({ module: 'nutribot-ai' }) });
-  }
 
   const nutribotServices = createNutribotServices({
     dataRoot: dataBasePath,
@@ -653,10 +669,21 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     journalistAiGateway = new OpenAIAdapter({ apiKey: openaiApiKey }, { logger: rootLogger.child({ module: 'journalist-ai' }) });
   }
 
+  // Create dedicated TelegramAdapter for journalist with its own token
+  const { TelegramAdapter } = await import('./2_adapters/messaging/TelegramAdapter.mjs');
+  const journalistTelegramAdapter = journalistToken
+    ? new TelegramAdapter({
+        token: journalistToken,
+        httpClient: axios,
+        transcriptionService: voiceTranscriptionService,
+        logger: rootLogger.child({ module: 'journalist-telegram' })
+      })
+    : null;
+
   const journalistServices = createJournalistServices({
     userDataService,
     configService,
-    telegramAdapter: messagingServices.telegramAdapter,
+    telegramAdapter: journalistTelegramAdapter || messagingServices.telegramAdapter,
     aiGateway: journalistAiGateway,
     userResolver: null,  // TODO: Add UserResolver when available
     conversationStateStore: null,  // Uses in-memory by default
@@ -667,7 +694,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   v1Routers.journalist = createJournalistApiRouter({
     journalistServices,
     configService,
+    botId: chatbotsConfig.bots?.journalist?.telegram_bot_id || '',
     secretToken: chatbotsConfig.bots?.journalist?.secretToken || '',
+    gateway: journalistTelegramAdapter,
     logger: rootLogger.child({ module: 'journalist-api' })
   });
 
@@ -681,8 +710,18 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     homebotAiGateway = new OpenAIAdapter({ apiKey: openaiApiKey }, { logger: rootLogger.child({ module: 'homebot-ai' }) });
   }
 
+  // Create dedicated TelegramAdapter for homebot with its own token
+  const homebotTelegramAdapter = homebotToken
+    ? new TelegramAdapter({
+        token: homebotToken,
+        httpClient: axios,
+        transcriptionService: voiceTranscriptionService,
+        logger: rootLogger.child({ module: 'homebot-telegram' })
+      })
+    : null;
+
   const homebotServices = createHomebotServices({
-    telegramAdapter: messagingServices.telegramAdapter,
+    telegramAdapter: homebotTelegramAdapter || messagingServices.telegramAdapter,
     aiGateway: homebotAiGateway,
     gratitudeStore: gratitudeServices.gratitudeStore,
     configService,
@@ -695,9 +734,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     homebotServices,
     botId: chatbotsConfig.bots?.homebot?.telegram_bot_id || '',
     secretToken: chatbotsConfig.bots?.homebot?.secretToken || '',
-    gateway: messagingServices.telegramAdapter,
-    createTelegramWebhookHandler: null,  // TODO: Add when webhook handler factory available
-    middleware: {},
+    gateway: homebotTelegramAdapter,
     logger: rootLogger.child({ module: 'homebot-api' })
   });
 
