@@ -212,7 +212,7 @@ export class EntropyService {
 export async function createWithLegacyDependencies() {
   // Dynamic imports to avoid circular dependencies
   const { userLoadFile, userLoadCurrent } = await import('../../../../_legacy/lib/io.mjs');
-  const { configService } = await import('../../../../_legacy/lib/config/index.mjs');
+  const { configService } = await import('../../../0_infrastructure/config/index.mjs');
   const ArchiveServiceModule = await import('../../../../_legacy/lib/ArchiveService.mjs');
   const { createLogger } = await import('../../../0_infrastructure/logging/logger.js');
 
