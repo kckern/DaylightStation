@@ -224,7 +224,7 @@ export function createPlayRouter(config) {
       }
 
       // Redirect through proxy (replace plex host with proxy path)
-      const proxyUrl = mediaUrl.replace(/https?:\/\/[^\/]+/, '/proxy/plex');
+      const proxyUrl = mediaUrl.replace(/https?:\/\/[^\/]+/, '/api/v1/proxy/plex');
       res.redirect(proxyUrl);
     } catch (error) {
       logger.error?.('play.plex.mpd.error', { id: req.params.id, error: error.message });
