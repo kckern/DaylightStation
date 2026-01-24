@@ -119,7 +119,7 @@ const CameraViewApp = ({ mode, onClose, config, onMount }) => {
         }
       };
 
-      const resp = await DaylightAPI.post('/api/fitness/session/snapshot', payload);
+      const resp = await DaylightAPI.post('/api/v1/fitness/save_screenshot', payload);
       if (resp?.filename) {
         setSnapshotStatus({
           uploading: false,
