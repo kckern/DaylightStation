@@ -301,6 +301,9 @@ export function createListRouter(config) {
       const rawPath = req.params[0] || '';
       const { modifiers, localId } = parseModifiers(rawPath);
 
+      // Log deprecation warning - frontend should use /api/v1/item instead
+      console.warn(`[DEPRECATION] /api/v1/list/${source}/${rawPath} - Use /api/v1/item/${source}/${rawPath} instead`);
+
       const adapter = registry.get(source);
       if (!adapter) {
         return res.status(404).json({ error: `Unknown source: ${source}` });
