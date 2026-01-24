@@ -8,7 +8,10 @@ import {
   loadContainedYaml,
   loadYamlByPrefix,
   listYamlFiles,
-  dirExists
+  dirExists,
+  loadYamlFromPath,
+  saveYamlToPath,
+  resolveYamlPath
 } from '../../../0_infrastructure/utils/FileIO.mjs';
 
 /**
@@ -19,12 +22,19 @@ export class LocalContentAdapter {
    * @param {Object} config
    * @param {string} config.dataPath - Path to data files (YAML metadata)
    * @param {string} config.mediaPath - Path to media files
+   * @param {string} [config.historyPath] - Path to media_memory directory for watch state
+   * @param {string} [config.householdId] - Household ID for scoped watch state
+   * @param {string} [config.householdsBasePath] - Base path for household data directories
    */
   constructor(config) {
     if (!config.dataPath) throw new Error('LocalContentAdapter requires dataPath');
     if (!config.mediaPath) throw new Error('LocalContentAdapter requires mediaPath');
     this.dataPath = config.dataPath;
     this.mediaPath = config.mediaPath;
+    this.historyPath = config.historyPath || null;
+    this.householdId = config.householdId || null;
+    this.householdsBasePath = config.householdsBasePath || null;
+    this._watchStateCache = null;
   }
 
   get source() {
@@ -39,6 +49,114 @@ export class LocalContentAdapter {
       { prefix: 'primary' },
       { prefix: 'poem' }
     ];
+  }
+
+  /**
+   * Get the file path for talk watch state
+   * @returns {string|null}
+   * @private
+   */
+  _getWatchStatePath() {
+    // Try household-specific path first
+    if (this.householdId && this.householdsBasePath) {
+      const householdPath = path.join(
+        this.householdsBasePath,
+        this.householdId,
+        'history/media_memory/talk.yml'
+      );
+      const basePath = householdPath.replace(/\.yml$/, '');
+      const resolvedPath = resolveYamlPath(basePath);
+      if (resolvedPath) return resolvedPath;
+    }
+    // Fall back to global path
+    if (this.historyPath) {
+      const filePath = path.join(this.historyPath, 'talk.yml');
+      const basePath = filePath.replace(/\.yml$/, '');
+      return resolveYamlPath(basePath) || filePath;
+    }
+    return null;
+  }
+
+  /**
+   * Load watch state from media_memory/talk.yml
+   * @returns {Object} Watch state map { mediaKey: { percent, seconds, time, title } }
+   * @private
+   */
+  _loadWatchState() {
+    if (this._watchStateCache) return this._watchStateCache;
+
+    const filePath = this._getWatchStatePath();
+    if (!filePath) return {};
+
+    try {
+      this._watchStateCache = loadYamlFromPath(filePath) || {};
+      return this._watchStateCache;
+    } catch (err) {
+      return {};
+    }
+  }
+
+  /**
+   * Check if an item is considered watched (>= 90%)
+   * @param {Object} state - Watch state { percent }
+   * @returns {boolean}
+   * @private
+   */
+  _isWatched(state) {
+    return (state?.percent || 0) >= 90;
+  }
+
+  /**
+   * Clear watch state for given keys and save
+   * @param {string[]} keys - Media keys to clear
+   * @private
+   */
+  _clearWatchedKeys(keys) {
+    const filePath = this._getWatchStatePath();
+    if (!filePath) return;
+
+    const watchState = this._loadWatchState();
+    for (const key of keys) {
+      delete watchState[key];
+    }
+    this._watchStateCache = watchState;
+    saveYamlToPath(filePath, watchState);
+  }
+
+  /**
+   * Select a random unwatched talk from a folder.
+   * If all are watched, clears the folder's watch history and picks randomly.
+   * @param {string} folderId - Folder ID (e.g., "ldsgc202510")
+   * @returns {Promise<string|null>} Selected talk localId or null
+   * @private
+   */
+  async _selectFromFolder(folderId) {
+    const folder = await this._getTalkFolder(folderId);
+    if (!folder?.children?.length) return null;
+
+    const watchState = this._loadWatchState();
+    const allKeys = [];
+    const unwatchedKeys = [];
+
+    for (const child of folder.children) {
+      const key = `talks/${child.localId}`;
+      allKeys.push(key);
+      if (!this._isWatched(watchState[key])) {
+        unwatchedKeys.push(key);
+      }
+    }
+
+    // If all watched, clear and reset
+    if (unwatchedKeys.length === 0) {
+      this._clearWatchedKeys(allKeys);
+      // Pick random from all
+      const randomKey = allKeys[Math.floor(Math.random() * allKeys.length)];
+      return randomKey.replace('talks/', '');
+    }
+
+    // Pick random from unwatched
+    const randomKey = unwatchedKeys[Math.floor(Math.random() * unwatchedKeys.length)];
+    return randomKey.replace('talks/', '');
   }
 
   /**
@@ -303,8 +421,16 @@ export class LocalContentAdapter {
    */
   async _getTalk(localId) {
     const basePath = path.resolve(this.dataPath, 'talks');
-    const metadata = loadContainedYaml(basePath, localId);
-    if (!metadata) return null;
+    let metadata = loadContainedYaml(basePath, localId);
+
+    // If not found as file, check if it's a folder and select random unwatched
+    if (!metadata) {
+      const selectedId = await this._selectFromFolder(localId);
+      if (!selectedId) return null;
+      metadata = loadContainedYaml(basePath, selectedId);
+      if (!metadata) return null;
+      localId = selectedId;
+    }
 
     const compoundId = `talk:${localId}`;
     const mediaUrl = `/api/v1/proxy/local-content/stream/talk/${localId}`;
@@ -323,7 +449,9 @@ export class LocalContentAdapter {
       metadata: {
         speaker: metadata.speaker,
         date: metadata.date,
-        description: metadata.description
+        description: metadata.description,
+        content: metadata.content || [],
+        mediaFile: `video/talks/${localId}.mp4`
       }
     });
   }

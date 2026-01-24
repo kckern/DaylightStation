@@ -144,7 +144,14 @@ export function createProxyRouter(config) {
 
       const stat = fs.statSync(fullPath);
       const ext = nodePath.extname(fullPath).toLowerCase();
-      const mimeType = ext === '.mp3' ? 'audio/mpeg' : 'audio/mp4';
+      const mimeTypes = {
+        '.mp3': 'audio/mpeg',
+        '.m4a': 'audio/mp4',
+        '.mp4': 'video/mp4',
+        '.webm': 'video/webm',
+        '.mkv': 'video/x-matroska'
+      };
+      const mimeType = mimeTypes[ext] || 'application/octet-stream';
 
       // Common headers for caching and security
       const commonHeaders = {

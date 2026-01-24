@@ -38,4 +38,18 @@ export class ListableItem extends Item {
   isContainer() {
     return this.itemType === 'container';
   }
+
+  /**
+   * Serialize to JSON with 'items' instead of 'children' for frontend compatibility
+   * @returns {Object}
+   */
+  toJSON() {
+    const obj = { ...this };
+    // Rename children to items for frontend compatibility
+    if (obj.children) {
+      obj.items = obj.children;
+      delete obj.children;
+    }
+    return obj;
+  }
 }

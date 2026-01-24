@@ -260,8 +260,15 @@ export class FolderAdapter {
     const folderName = id.replace('folder:', '');
     const watchlist = this._loadWatchlist();
 
-    // Filter items belonging to this folder
-    const folderItems = watchlist.filter(item => item.folder === folderName);
+    // Normalize folder name: handle URL encoding quirks (+, %20) and case
+    const normalizeFolderName = (name) => {
+      if (!name) return '';
+      return decodeURIComponent(name.replace(/\+/g, ' ')).toLowerCase().trim();
+    };
+
+    // Filter items belonging to this folder (case-insensitive, URL-encoding normalized)
+    const folderNameNorm = normalizeFolderName(folderName);
+    const folderItems = watchlist.filter(item => normalizeFolderName(item.folder) === folderNameNorm);
     if (folderItems.length === 0) return null;
 
     // Map source names to content source types and watch state categories
@@ -472,7 +479,8 @@ export class FolderAdapter {
       localId,
       title: list.title,
       itemType: 'container',
-      childCount: list.children.length
+      childCount: list.children.length,
+      children: list.children
     });
   }
 
