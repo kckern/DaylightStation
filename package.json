@@ -57,6 +57,7 @@
     "test": "npm run test:unit && npm run test:integration",
     "test:unit": "node tests/unit/harness.mjs",
     "test:integration": "node tests/integration/harness.mjs",
+    "test:smoke": "node tests/integration/external/smoke.mjs",
     "rt": "npx playwright test tests/runtime --headed",
     "rt:player": "npx playwright test tests/runtime/player --headed",
     "rt:fitness": "npx playwright test tests/runtime/fitness-session --headed",
