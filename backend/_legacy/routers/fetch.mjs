@@ -861,8 +861,8 @@ const listYamlFiles = (dir) => {
 
 apiRouter.get('/list', async (req, res, next) => {
     try {
-        const dataFiles = listYamlFiles(dataPath);
-        res.json({ dataPath, dataFiles });
+        const dataFiles = listYamlFiles(getDataPath());
+        res.json({ dataPath: getDataPath(), dataFiles });
     } catch (err) {
         next(err);
     }

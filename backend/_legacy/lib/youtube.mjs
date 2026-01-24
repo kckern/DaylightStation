@@ -32,32 +32,38 @@ const LOCK_STALE_MS = 60 * 60 * 1000; // consider a lock stale after 1 hour
 const AUDIO_LANG = 'en';
 const LANG_ARGS = `--extractor-args "youtube:lang=${AUDIO_LANG}"`;
 
-// Determine a shared lock file path
-const LOCK_FILE = (() => {
-  const baseDir = path.join(process.env.path.media || '.', 'video', 'news');
+// Lazy getter for media path (process.env not available at module load)
+const getMediaPath = () => global.__daylightPaths?.media || process.env.DAYLIGHT_MEDIA_PATH || '.';
+
+// Determine a shared lock file path - lazy to avoid module-load timing issues
+let _lockFile = null;
+const getLockFile = () => {
+  if (_lockFile) return _lockFile;
+  const baseDir = path.join(getMediaPath(), 'video', 'news');
   try { fs.mkdirSync(baseDir, { recursive: true }); } catch (e) {}
-  return path.join(baseDir, 'youtube.lock');
-})();
+  _lockFile = path.join(baseDir, 'youtube.lock');
+  return _lockFile;
+};
 
 const acquireLock = () => {
   try {
-    if (fs.existsSync(LOCK_FILE)) {
+    if (fs.existsSync(getLockFile())) {
       try {
-        const stat = fs.statSync(LOCK_FILE);
+        const stat = fs.statSync(getLockFile());
         const ageMs = Date.now() - stat.mtimeMs;
         if (ageMs > LOCK_STALE_MS) {
-          logger.warn('youtube.stale_lock_detected', { ageMins: Math.round(ageMs/60000), lockFile: LOCK_FILE });
-          fs.unlinkSync(LOCK_FILE);
+          logger.warn('youtube.stale_lock_detected', { ageMins: Math.round(ageMs/60000), lockFile: getLockFile() });
+          fs.unlinkSync(getLockFile());
         }
       } catch (_) {
         // If stat fails, attempt to remove and continue
-        try { fs.unlinkSync(LOCK_FILE); } catch (_) {}
+        try { fs.unlinkSync(getLockFile()); } catch (_) {}
       }
     }
-    const fd = fs.openSync(LOCK_FILE, 'wx'); // atomic create, fails if exists
+    const fd = fs.openSync(getLockFile(), 'wx'); // atomic create, fails if exists
     fs.writeFileSync(fd, JSON.stringify({ pid: process.pid, ts: new Date().toISOString() }));
     fs.closeSync(fd);
-    const release = () => { try { fs.unlinkSync(LOCK_FILE); } catch (_) {} };
+    const release = () => { try { fs.unlinkSync(getLockFile()); } catch (_) {} };
     return release;
   } catch (e) {
     // Another instance holds the lock
@@ -187,13 +193,13 @@ const getYoutube = async () => {
   // Single instance guard
   const releaseLock = acquireLock();
   if (!releaseLock) {
-    logger.warn('youtube.another_instance_running', { lockFile: LOCK_FILE });
+    logger.warn('youtube.another_instance_running', { lockFile: getLockFile() });
     return { deleted: [], shortcodes: [], files: [], skipped: true };
   }
 
   try {
     const youtubeData = loadFile('state/youtube');
-    const mediaPath = `${process.env.path.media}/video/news`;
+    const mediaPath = `${getMediaPath()}/video/news`;
     const deleted = [];
     const shortcodes = [];
     const results = [];
