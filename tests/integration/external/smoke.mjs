@@ -63,8 +63,8 @@ const SMOKE_OPTIONS = {
   gmail: {},
   withings: {},
   weather: {},
-  scripture: {},
   shopping: {},
+  buxfer: { daysBack: 1 },
 };
 
 /**

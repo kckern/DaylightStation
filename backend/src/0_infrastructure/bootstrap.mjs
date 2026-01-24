@@ -124,6 +124,7 @@ import {
   GmailHarvester,
   GCalHarvester,
   ShoppingHarvester,
+  BuxferHarvester,
   WeatherHarvester,
   StravaHarvester,
   WithingsHarvester
@@ -1763,6 +1764,21 @@ export function createHarvesterServices(config) {
     registerHarvester('shopping', () => new ShoppingHarvester({
       gmailClientFactory: effectiveGmailClientFactory,
       aiGateway: effectiveAiGateway,
+      lifelogStore,
+      configService,
+      logger,
+    }));
+  }
+
+  // Buxfer - requires httpClient for API calls
+  if (httpClient) {
+    const buxferAdapter = new BuxferAdapter({
+      httpClient,
+      getCredentials: () => configService?.getUserAuth?.('buxfer'),
+      logger,
+    });
+    registerHarvester('buxfer', () => new BuxferHarvester({
+      buxferAdapter,
       lifelogStore,
       configService,
       logger,

@@ -51,6 +51,10 @@ export default {
       supportsBackfill: true,
       params: ['maxPages=10', 'fullSync=false']
     },
+    buxfer: {
+      supportsBackfill: true,
+      params: ['daysBack=30', 'accounts=AccountName']
+    },
 
     // Snapshot-based services (no time-range backfill)
     letterboxd: {
