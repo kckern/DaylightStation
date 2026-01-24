@@ -518,10 +518,10 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue, onPlay 
     
     try {
       // Get URL for the playable item if not present
-      let episodeUrl = episode.url;
+      let episodeUrl = episode.url || episode.media_url;
       if (!episodeUrl && episode.plex) {
-        // Construct the URL using the helper function
-        episodeUrl = DaylightMediaPath(`media/plex/url/${episode.plex}`);
+        // Construct the URL using the new API proxy path
+        episodeUrl = `/api/v1/proxy/plex/stream/${episode.plex}`;
   // constructed media URL (debug removed)
       }
       
@@ -538,7 +538,7 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue, onPlay 
         show: showTitle,
         season: seasonTitle,
         title: episode.label,
-        videoUrl: episodeUrl || 'https://example.com/fallback.mp4', // Add fallback for testing
+        media_url: episodeUrl, // Player expects media_url, not videoUrl
         duration: episode.duration,
         thumb_id: episode.thumb_id, // Pass thumb_id directly to FitnessPlayer
         image: episode.thumb_id ? DaylightMediaPath(`media/plex/img/${episode.thumb_id}`) : episode.image,
@@ -910,10 +910,10 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue, onPlay 
         if (didScroll) return;
       }
       // Get URL for the playable item if not present
-      let episodeUrl = episode.url;
+      let episodeUrl = episode.url || episode.media_url;
       if (!episodeUrl && episode.plex) {
-        // Construct the URL using the helper function
-        episodeUrl = DaylightMediaPath(`media/plex/url/${episode.plex}`);
+        // Construct the URL using the new API proxy path
+        episodeUrl = `/api/v1/proxy/plex/stream/${episode.plex}`;
   // constructed media URL for queue (debug removed)
       }
 
@@ -930,7 +930,7 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue, onPlay 
           show: showTitle,
           season: seasonTitle,
           title: episode.label,
-          videoUrl: episodeUrl,
+          media_url: episodeUrl, // Player expects media_url, not videoUrl
           duration: episode.duration,
           thumb_id: episode.thumb_id, // Pass thumb_id directly to FitnessPlayer
           image: episode.thumb_id ? DaylightMediaPath(`media/plex/img/${episode.thumb_id}`) : episode.image,

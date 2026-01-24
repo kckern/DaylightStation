@@ -496,7 +496,7 @@ export class PlexAdapter {
       localId: String(item.ratingKey),
       title: item.title,
       mediaType: isVideo ? 'video' : 'audio',
-      mediaUrl: `/proxy/plex/stream/${item.ratingKey}`,
+      mediaUrl: `/api/v1/proxy/plex/stream/${item.ratingKey}`,
       duration: item.duration ? Math.floor(item.duration / 1000) : null,
       resumable: isVideo,
       resumePosition: item.viewOffset ? Math.floor(item.viewOffset / 1000) : null,

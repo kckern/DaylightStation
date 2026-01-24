@@ -51,6 +51,7 @@ export function createApiV1Router(config) {
   // Route mapping: { mountPath: routerKey }
   // Change mountPath here to rename routes without touching frontend
   const routeMap = {
+    '/item': 'item',  // New unified item-centric API
     '/content': 'content',
     '/proxy': 'proxy',
     '/list': 'list',
