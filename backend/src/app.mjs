@@ -47,6 +47,8 @@ import {
   createMessagingApiRouter,
   createJournalistServices,
   createJournalistApiRouter,
+  createHomebotServices,
+  createHomebotApiRouter,
   createNutribotServices,
   createNutribotApiRouter,
   createLifelogServices,
@@ -59,9 +61,10 @@ import {
 } from './0_infrastructure/bootstrap.mjs';
 
 // Routing toggle system
-import { loadRoutingConfig, ShimMetrics } from './0_infrastructure/routing/index.mjs';
-import { allShims } from './4_api/shims/index.mjs';
-import { createShimsRouter } from './4_api/routers/admin/shims.mjs';
+import { loadRoutingConfig } from './0_infrastructure/routing/index.mjs';
+
+// HTTP middleware
+import { createDevProxy } from './0_infrastructure/http/middleware/index.mjs';
 import { createEventBusRouter } from './4_api/routers/admin/eventbus.mjs';
 
 // Scheduling domain
@@ -70,6 +73,10 @@ import { YamlJobStore } from './2_adapters/scheduling/YamlJobStore.mjs';
 import { YamlStateStore } from './2_adapters/scheduling/YamlStateStore.mjs';
 import { Scheduler } from './0_infrastructure/scheduling/Scheduler.mjs';
 import { createSchedulingRouter } from './4_api/routers/scheduling.mjs';
+
+// Media jobs (YouTube downloads, etc.)
+import { MediaJobExecutor } from './3_applications/media/MediaJobExecutor.mjs';
+import { createYouTubeJobHandler } from './3_applications/media/YouTubeJobHandler.mjs';
 
 // Harvest domain (data collection)
 import { createHarvestRouter } from './4_api/routers/harvest.mjs';
@@ -112,6 +119,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     next();
   });
 
+  // ==========================================================================
+  // Dev Proxy (for webhook debugging without redeploy)
+  // ==========================================================================
+  // Must be early in middleware chain to intercept requests before handlers
+  const devProxy = createDevProxy({ logger });
+  app.use('/dev', devProxy.router);  // Toggle at /dev/proxy_toggle
+  app.use(devProxy.middleware);      // Intercepts all requests when enabled
+  logger.info('devProxy.initialized', { endpoint: '/dev/proxy_toggle' });
+
   if (!configExists) {
     app.get('*', (req, res, next) => {
       if (req.path.startsWith('/ws/')) return next();
@@ -136,18 +152,14 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Routing Toggle System
   // ==========================================================================
 
-  const shimMetrics = new ShimMetrics();
   let routingConfig;
   try {
-    routingConfig = loadRoutingConfig('./backend/config/routing.yml', allShims);
+    routingConfig = loadRoutingConfig('./backend/config/routing.yml');
     rootLogger.info('routing.toggle.loaded', { default: routingConfig.default });
   } catch (error) {
     rootLogger.warn('routing.toggle.fallback', { error: error.message });
     routingConfig = { default: 'legacy', routing: {} };
   }
-
-  // Admin routers
-  app.use('/admin/shims', createShimsRouter({ metrics: shimMetrics }));
 
   // ==========================================================================
   // Initialize Services
@@ -645,27 +657,74 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'journalist-api' })
   });
 
+  // HomeBot application
+  const homebotConfig = configService.getAppConfig('homebot') || {};
+
+  // Reuse AI gateway from nutribot/journalist
+  let homebotAiGateway = nutribotAiGateway || journalistAiGateway;
+  if (!homebotAiGateway && openaiApiKey) {
+    const { OpenAIAdapter } = await import('./2_adapters/ai/OpenAIAdapter.mjs');
+    homebotAiGateway = new OpenAIAdapter({ apiKey: openaiApiKey }, { logger: rootLogger.child({ module: 'homebot-ai' }) });
+  }
+
+  const homebotServices = createHomebotServices({
+    telegramAdapter: messagingServices.telegramAdapter,
+    aiGateway: homebotAiGateway,
+    gratitudeStore: gratitudeServices.gratitudeStore,
+    configService,
+    conversationStateStore: null,  // Uses in-memory by default
+    websocketBroadcast: broadcastEvent,
+    logger: rootLogger.child({ module: 'homebot' })
+  });
+
+  v1Routers.homebot = createHomebotApiRouter({
+    homebotServices,
+    botId: homebotConfig.telegram?.botId || telegramConfig.botId || '',
+    gateway: messagingServices.telegramAdapter,
+    createTelegramWebhookHandler: null,  // TODO: Add when webhook handler factory available
+    middleware: {},
+    logger: rootLogger.child({ module: 'homebot-api' })
+  });
+
   // Scheduling domain - DDD replacement for legacy /cron
   const schedulingJobStore = new YamlJobStore({
-    loadFile,
+    dataDir,
     logger: rootLogger.child({ module: 'scheduling-jobs' })
   });
 
   const schedulingStateStore = new YamlStateStore({
-    loadFile,
-    saveFile,
+    dataDir,
     logger: rootLogger.child({ module: 'scheduling-state' })
   });
 
-  // Module paths in jobs.yml are relative to legacy cron router location
-  const legacyCronRouterDir = join(__dirname, '..', '_legacy', 'routers');
+  // Legacy module paths (for jobs without executors: fitsync, archive-rotation, media-memory-validator)
+  // These paths are relative to _legacy/routers/ and resolve to _legacy/lib/
+  // TODO: Migrate remaining 3 legacy jobs, then remove this
+  const legacyModuleBasePath = join(__dirname, '..', '_legacy', 'routers');
+
+  // Media job executor (YouTube downloads, etc.)
+  const mediaExecutor = new MediaJobExecutor({
+    logger: rootLogger.child({ module: 'media-executor' })
+  });
+
+  // Register YouTube download handler
+  const mediaPath = process.env.path?.media
+    ? join(process.env.path.media, 'video', 'news')
+    : join(__dirname, '..', 'media', 'video', 'news');
+
+  mediaExecutor.register('youtube', createYouTubeJobHandler({
+    loadFile,
+    mediaPath,
+    logger: rootLogger.child({ module: 'youtube' })
+  }));
 
   const schedulerService = new SchedulerService({
     jobStore: schedulingJobStore,
     stateStore: schedulingStateStore,
     timezone: 'America/Los_Angeles',
-    moduleBasePath: legacyCronRouterDir,
+    moduleBasePath: legacyModuleBasePath,
     harvesterExecutor: harvesterServices.jobExecutor,
+    mediaExecutor,
     logger: rootLogger.child({ module: 'scheduler-service' })
   });
 
