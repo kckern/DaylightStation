@@ -135,6 +135,7 @@ import RSSParser from 'rss-parser';
 // Additional adapters for harvesters
 import { StravaClientAdapter } from '../2_adapters/fitness/StravaClientAdapter.mjs';
 import { YamlWeatherStore } from '../2_adapters/persistence/yaml/YamlWeatherStore.mjs';
+import { google } from 'googleapis';
 
 /**
  * Create and configure the content registry
@@ -1592,6 +1593,35 @@ export function createHarvesterServices(config) {
     logger,
   }) : null);
 
+  // Create Gmail client factory if not provided (for Shopping harvester)
+  const effectiveGmailClientFactory = gmailClientFactory || (async (username) => {
+    const GOOGLE_CLIENT_ID = configService.getSecret('GOOGLE_CLIENT_ID');
+    const GOOGLE_CLIENT_SECRET = configService.getSecret('GOOGLE_CLIENT_SECRET');
+    const GOOGLE_REDIRECT_URI = configService.getSecret('GOOGLE_REDIRECT_URI');
+    const auth = configService?.getUserAuth?.('google', username) || {};
+    const refreshToken = auth.refresh_token || configService.getSecret('GOOGLE_REFRESH_TOKEN');
+
+    if (!(GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET && GOOGLE_REDIRECT_URI && refreshToken)) {
+      throw new Error('Google OAuth credentials not configured');
+    }
+
+    const oAuth2Client = new google.auth.OAuth2(
+      GOOGLE_CLIENT_ID,
+      GOOGLE_CLIENT_SECRET,
+      GOOGLE_REDIRECT_URI
+    );
+    oAuth2Client.setCredentials({ refresh_token: refreshToken });
+
+    return google.gmail({ version: 'v1', auth: oAuth2Client });
+  });
+
+  // Create AI gateway if not provided (for Shopping harvester)
+  const effectiveAiGateway = aiGateway || (() => {
+    const openaiKey = configService.getSecret('OPENAI_API_KEY');
+    if (!openaiKey) return null;
+    return new OpenAIAdapter({ apiKey: openaiKey }, { logger });
+  })();
+
   // Create harvester service
   const harvesterService = new HarvesterService({ configService, logger });
 
@@ -1729,10 +1759,10 @@ export function createHarvesterServices(config) {
   // ==========================================================================
 
   // Shopping - requires gmailClientFactory and aiGateway
-  if (gmailClientFactory && aiGateway) {
+  if (effectiveGmailClientFactory && effectiveAiGateway) {
     registerHarvester('shopping', () => new ShoppingHarvester({
-      gmailClientFactory,
-      aiGateway,
+      gmailClientFactory: effectiveGmailClientFactory,
+      aiGateway: effectiveAiGateway,
       lifelogStore,
       configService,
       logger,
