@@ -37,6 +37,7 @@ export { GCalHarvester } from './communication/GCalHarvester.mjs';
 
 // Finance Harvesters
 export { ShoppingHarvester } from './finance/ShoppingHarvester.mjs';
+export { BuxferHarvester } from './finance/BuxferHarvester.mjs';
 
 // Other Harvesters
 export { WeatherHarvester } from './other/WeatherHarvester.mjs';
