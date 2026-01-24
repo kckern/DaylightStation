@@ -6,7 +6,9 @@ const cloneZoneConfig = (config = []) => {
     id: zone?.id ?? zone?.name ?? `zone-${index}`,
     name: zone?.name ?? zone?.id ?? `Zone ${index + 1}`,
     color: zone?.color || null,
-    min: Number.isFinite(zone?.min) ? zone.min : null
+    min: Number.isFinite(zone?.min) ? zone.min : null,
+    // Preserve coins field for TreasureBox configuration
+    coins: Number.isFinite(zone?.coins) ? zone.coins : 0
   }));
 };
 
@@ -47,6 +49,15 @@ export class ZoneProfileStore {
       return;
     }
     this._baseZoneConfig = cloneZoneConfig(zoneConfig);
+  }
+
+  /**
+   * Get the base zone configuration (for TreasureBox initialization)
+   * @returns {Array|null} Clone of zone config or null if not set
+   */
+  getBaseZoneConfig() {
+    if (!this._baseZoneConfig) return null;
+    return cloneZoneConfig(this._baseZoneConfig);
   }
 
   clear() {
