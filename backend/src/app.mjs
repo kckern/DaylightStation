@@ -75,6 +75,7 @@ import { createHarvestRouter } from './4_api/routers/harvest.mjs';
 
 // API versioning
 import { createApiV1Router } from './4_api/routers/apiV1.mjs';
+import { createItemRouter } from './4_api/routers/item.mjs';
 
 const __dirname = path.dirname(new URL(import.meta.url).pathname);
 
@@ -325,15 +326,23 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // All DDD routers are collected here and mounted under /api/v1
   // Route names can be changed in apiV1.mjs without affecting this file
 
+  // Create unified item router (new item-centric API)
+  const itemRouter = createItemRouter({
+    registry: contentRegistry,
+    logger: rootLogger.child({ module: 'item-api' })
+  });
+
   const v1Routers = {
-    // Content domain routers
+    // New unified item API
+    item: itemRouter,
+    // Legacy content domain routers (to be deprecated)
     content: contentRouters.content,
     proxy: contentRouters.proxy,
     list: contentRouters.list,
     play: contentRouters.play,
     localContent: contentRouters.localContent,
   };
-  rootLogger.info('content.routers.created', { keys: ['content', 'proxy', 'list', 'play', 'localContent'] });
+  rootLogger.info('content.routers.created', { keys: ['item', 'content', 'proxy', 'list', 'play', 'localContent'] });
 
   // Health domain router
   v1Routers.health = createHealthApiRouter({
