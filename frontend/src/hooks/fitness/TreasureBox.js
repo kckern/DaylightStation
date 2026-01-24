@@ -66,7 +66,7 @@ export class FitnessTreasureBox {
 
   configure({ coinTimeUnitMs, zones, users }) {
     // Note: _userTimelines removed (Priority 5) - coins written to main timeline
-    
+
     if (typeof coinTimeUnitMs === 'number' && coinTimeUnitMs > 0) {
       this.coinTimeUnitMs = coinTimeUnitMs;
     }
@@ -89,6 +89,14 @@ export class FitnessTreasureBox {
           this._timeline.perColor.set(z.color, []);
         }
       }
+      // DIAGNOSTIC: Log zone configuration for debugging
+      this._log('zones_configured', {
+        zoneCount: this.globalZones.length,
+        zoneIds: this.globalZones.map(z => z.id)
+      });
+    } else if (zones !== undefined) {
+      // Log if zones was passed but not an array (indicates bug)
+      this._log('zones_configure_invalid', { zonesType: typeof zones, zonesValue: zones }, 'warn');
     }
     // Extract user overrides (provided as part of users.primary/secondary config shape)
     if (users) {
