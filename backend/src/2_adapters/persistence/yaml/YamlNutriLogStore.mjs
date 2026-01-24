@@ -1,0 +1,118 @@
+// backend/src/2_adapters/persistence/yaml/YamlNutriLogStore.mjs
+import { NutriLog } from '../../../1_domains/lifelog/entities/NutriLog.mjs';
+import { loadYaml, saveYaml } from '../../../0_infrastructure/utils/FileIO.mjs';
+
+/**
+ * YAML-based NutriLog persistence adapter
+ * Implements INutriLogStore port
+ */
+export class YamlNutriLogStore {
+  #userDataService;
+  #logger;
+
+  constructor(config) {
+    if (!config.userDataService) {
+      throw new Error('YamlNutriLogStore requires userDataService');
+    }
+    this.#userDataService = config.userDataService;
+    this.#logger = config.logger || console;
+  }
+
+  #getPath(userId) {
+    return this.#userDataService.getUserPath(userId, 'lifelog/nutrition/nutrilog');
+  }
+
+  #loadLogs(userId) {
+    const path = this.#getPath(userId);
+    const data = loadYaml(path);
+    return data || {};
+  }
+
+  #saveLogs(userId, logs) {
+    const path = this.#getPath(userId);
+    saveYaml(path, logs);
+  }
+
+  async save(nutriLog) {
+    const logs = this.#loadLogs(nutriLog.userId);
+    logs[nutriLog.id] = nutriLog.toJSON();
+    this.#saveLogs(nutriLog.userId, logs);
+
+    this.#logger.debug?.('nutrilog.saved', {
+      userId: nutriLog.userId,
+      logId: nutriLog.id,
+      status: nutriLog.status
+    });
+
+    return nutriLog;
+  }
+
+  async findById(userId, id) {
+    const logs = this.#loadLogs(userId);
+    const data = logs[id];
+    return data ? NutriLog.fromJSON(data) : null;
+  }
+
+  async findByDate(userId, date) {
+    const logs = this.#loadLogs(userId);
+    return Object.values(logs)
+      .filter(log => log.meal?.date === date && log.status !== 'deleted')
+      .map(log => NutriLog.fromJSON(log));
+  }
+
+  async findByDateRange(userId, startDate, endDate) {
+    const logs = this.#loadLogs(userId);
+    return Object.values(logs)
+      .filter(log => {
+        const date = log.meal?.date;
+        return date >= startDate && date <= endDate && log.status !== 'deleted';
+      })
+      .map(log => NutriLog.fromJSON(log));
+  }
+
+  async findPending(userId) {
+    const logs = this.#loadLogs(userId);
+    return Object.values(logs)
+      .filter(log => log.status === 'pending')
+      .map(log => NutriLog.fromJSON(log));
+  }
+
+  async findAccepted(userId) {
+    const logs = this.#loadLogs(userId);
+    return Object.values(logs)
+      .filter(log => log.status === 'accepted')
+      .map(log => NutriLog.fromJSON(log));
+  }
+
+  async updateStatus(userId, id, status) {
+    const logs = this.#loadLogs(userId);
+    if (!logs[id]) return null;
+
+    logs[id].status = status;
+    logs[id].updatedAt = new Date().toISOString();
+    if (status === 'accepted') {
+      logs[id].acceptedAt = new Date().toISOString();
+    }
+
+    this.#saveLogs(userId, logs);
+    return NutriLog.fromJSON(logs[id]);
+  }
+
+  async delete(userId, id) {
+    return this.updateStatus(userId, id, 'deleted');
+  }
+
+  async count(userId, options = {}) {
+    const logs = this.#loadLogs(userId);
+    let items = Object.values(logs);
+
+    if (options.status) {
+      items = items.filter(log => log.status === options.status);
+    }
+    if (options.date) {
+      items = items.filter(log => log.meal?.date === options.date);
+    }
+
+    return items.length;
+  }
+}
