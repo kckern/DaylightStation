@@ -83,8 +83,32 @@ export class MQTTSensorAdapter {
    * @param {Object} [options.logger] - Logger instance
    */
   constructor(config, options = {}) {
-    this.#host = config.host;
-    this.#port = config.port || 1883;
+    // Normalize host - extract hostname from various formats:
+    // 'http://mosquitto' -> 'mosquitto', 'mosquitto:1883' -> 'mosquitto', 'mosquitto' -> 'mosquitto'
+    let host = config.host || '';
+    let port = config.port || 1883;
+
+    if (host) {
+      try {
+        // Try parsing as URL (handles http://mosquitto, mqtt://mosquitto:1883, etc.)
+        const url = new URL(host.includes('://') ? host : `mqtt://${host}`);
+        host = url.hostname;
+        // Use port from URL if present and no explicit port config
+        if (url.port && !config.port) {
+          port = parseInt(url.port, 10);
+        }
+      } catch {
+        // Fallback: handle hostname:port format
+        const parts = host.split(':');
+        host = parts[0];
+        if (parts[1] && !config.port) {
+          port = parseInt(parts[1], 10);
+        }
+      }
+    }
+
+    this.#host = host;
+    this.#port = port;
     this.#client = null;
     this.#sensorTopicMap = new Map();
     this.#reconnectAttempts = 0;
