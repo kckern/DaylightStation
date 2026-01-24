@@ -88,18 +88,18 @@ const formatMemoTimestamp = (memo) => {
 };
 
 const VoiceMemoOverlay = ({
-  overlayState,
-  voiceMemos,
-  onClose,
-  onOpenReview,
-  onOpenList,
-  onOpenRedo,
-  onRemoveMemo,
-  onAddMemo,
-  onReplaceMemo,
-  sessionId,
-  playerRef,
-  preferredMicrophoneId
+  overlayState = null,
+  voiceMemos = [],
+  onClose = null,
+  onOpenReview = null,
+  onOpenList = null,
+  onOpenRedo = null,
+  onRemoveMemo = null,
+  onAddMemo = null,
+  onReplaceMemo = null,
+  sessionId = null,
+  playerRef = null,
+  preferredMicrophoneId = ''
 }) => {
   const fitnessCtx = useFitnessContext();
   const pauseMusicPlayer = fitnessCtx?.pauseMusicPlayer;
@@ -754,21 +754,6 @@ VoiceMemoOverlay.propTypes = {
     current: PropTypes.any
   }),
   preferredMicrophoneId: PropTypes.string
-};
-
-VoiceMemoOverlay.defaultProps = {
-  overlayState: null,
-  voiceMemos: [],
-  onClose: null,
-  onOpenReview: null,
-  onOpenList: null,
-  onOpenRedo: null,
-  onRemoveMemo: null,
-  onAddMemo: null,
-  onReplaceMemo: null,
-  sessionId: null,
-  playerRef: null,
-  preferredMicrophoneId: ''
 };
 
 export default VoiceMemoOverlay;

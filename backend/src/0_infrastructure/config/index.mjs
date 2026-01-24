@@ -37,16 +37,44 @@ export function createConfigService(dataDir) {
 }
 
 /**
- * Set resolved paths in process.env for application-wide access.
+ * Global paths object for application-wide access.
+ * This is NOT on process.env because process.env only stores strings.
+ *
+ * Code can access paths via:
+ * 1. global.__daylightPaths.data / global.__daylightPaths.media (preferred)
+ * 2. process.env.DAYLIGHT_DATA_PATH / process.env.DAYLIGHT_MEDIA_PATH
+ */
+const globalPaths = {};
+
+/**
+ * Set resolved paths in environment and global object.
+ *
+ * NOTE: process.env only stores strings, so we can't use process.env.path = {...}
+ * Instead we set individual env vars and a global object.
  *
  * @param {ConfigService} svc - Initialized ConfigService instance
  */
 function setEnvPaths(svc) {
-  process.env.path = {
-    ...process.env.path,
-    data: svc.getDataDir(),
-    media: svc.getMediaDir()
-  };
+  const data = svc.getDataDir();
+  const media = svc.getMediaDir();
+
+  // Set individual string env vars
+  process.env.DAYLIGHT_DATA_PATH = data;
+  process.env.DAYLIGHT_MEDIA_PATH = media;
+
+  // Also set on global object for code that needs an object
+  globalPaths.data = data;
+  globalPaths.media = media;
+
+  // Make available globally for legacy code using process.env.path pattern
+  global.__daylightPaths = globalPaths;
+}
+
+/**
+ * Get paths object. Used by code that previously accessed process.env.path
+ */
+export function getPaths() {
+  return global.__daylightPaths || globalPaths;
 }
 
 /**

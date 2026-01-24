@@ -25,11 +25,17 @@ const ioLogger = createLogger({
 });
 
 /**
- * Get the data directory path, with fallback to DAYLIGHT_DATA_PATH env var
- * This handles the case where process.env.path is not yet initialized (e.g., in tests)
+ * Get the data directory path.
+ *
+ * Checks multiple sources in order:
+ * 1. global.__daylightPaths.data (set by ConfigService)
+ * 2. process.env.DAYLIGHT_DATA_PATH (env var fallback)
+ *
+ * NOTE: We cannot use process.env.path because process.env only stores
+ * strings, so assigning an object results in "[object Object]".
  */
 const getDataPath = () => {
-    return process.env.path?.data || process.env.DAYLIGHT_DATA_PATH;
+    return global.__daylightPaths?.data || process.env.DAYLIGHT_DATA_PATH;
 };
 
 class FlowSequence extends Array {}

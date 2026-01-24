@@ -42,11 +42,8 @@ for (const [key, value] of Object.entries(systemConfig)) {
   }
 }
 
-// Ensure path is set with required values
-process.env.path = {
-  ...process.env.path,
-  data: _configService.getDataDir(),
-  media: _configService.getMediaDir()
-};
+// NOTE: process.env.path is set by the main config module via Object.defineProperty
+// This ensures legacy code using process.env.path.data still works.
+// The main module sets individual DAYLIGHT_*_PATH env vars as a fallback.
 
 export { default } from '../../../src/0_infrastructure/config/index.mjs';
