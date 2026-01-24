@@ -5,3 +5,4 @@
  */
 
 export { HarvesterService } from './HarvesterService.mjs';
+export { HarvesterJobExecutor } from './HarvesterJobExecutor.mjs';
