@@ -116,6 +116,7 @@ export class SchedulerService {
 
   /**
    * Format date for persistence (YYYY-MM-DD HH:mm:ss in timezone)
+   * Uses hourCycle: 'h23' to prevent hour 24 bug with hour12: false
    */
   formatDate(date) {
     return new Intl.DateTimeFormat('en-CA', {
@@ -126,7 +127,7 @@ export class SchedulerService {
       hour: '2-digit',
       minute: '2-digit',
       second: '2-digit',
-      hour12: false
+      hourCycle: 'h23'  // Use h23 (0-23) instead of hour12: false which can produce hour 24
     }).format(date).replace(',', '');
   }
 
