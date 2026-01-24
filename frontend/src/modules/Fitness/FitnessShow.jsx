@@ -517,14 +517,23 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue, onPlay 
     }
     
     try {
+      // Extract plex ID from episode.plex or from episode.id (format: "plex:662039")
+      const extractPlexId = (ep) => {
+        if (ep.plex) return ep.plex;
+        if (typeof ep.id === 'string' && ep.id.startsWith('plex:')) {
+          return ep.id.replace('plex:', '');
+        }
+        return null;
+      };
+      const plexId = extractPlexId(episode);
+
       // Get URL for the playable item if not present
       let episodeUrl = episode.url || episode.media_url;
-      if (!episodeUrl && episode.plex) {
+      if (!episodeUrl && plexId) {
         // Construct the URL using the new API proxy path
-        episodeUrl = `/api/v1/proxy/plex/stream/${episode.plex}`;
-  // constructed media URL (debug removed)
+        episodeUrl = `/api/v1/proxy/plex/stream/${plexId}`;
       }
-      
+
       const { resolvedSeconds, normalizedProgress } = deriveResumeMeta(episode);
 
       // Resolve season and show titles for logging
@@ -534,7 +543,8 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue, onPlay 
 
       // Create the queue item with all available information
       const queueItem = {
-        id: episode.plex || `episode-${Date.now()}`,
+        id: plexId || episode.id || `episode-${Date.now()}`,
+        plex: plexId, // Ensure plex ID is passed for downstream components
         show: showTitle,
         season: seasonTitle,
         title: episode.label,
@@ -909,12 +919,21 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue, onPlay 
         const { didScroll } = scrollIntoViewIfNeeded(sourceEl, { axis: 'y', margin: 24 });
         if (didScroll) return;
       }
+      // Extract plex ID from episode.plex or from episode.id (format: "plex:662039")
+      const extractPlexId = (ep) => {
+        if (ep.plex) return ep.plex;
+        if (typeof ep.id === 'string' && ep.id.startsWith('plex:')) {
+          return ep.id.replace('plex:', '');
+        }
+        return null;
+      };
+      const plexId = extractPlexId(episode);
+
       // Get URL for the playable item if not present
       let episodeUrl = episode.url || episode.media_url;
-      if (!episodeUrl && episode.plex) {
+      if (!episodeUrl && plexId) {
         // Construct the URL using the new API proxy path
-        episodeUrl = `/api/v1/proxy/plex/stream/${episode.plex}`;
-  // constructed media URL for queue (debug removed)
+        episodeUrl = `/api/v1/proxy/plex/stream/${plexId}`;
       }
 
       if (episodeUrl) {
@@ -926,7 +945,8 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue, onPlay 
         const showTitle = info?.title;
 
         const queueItem = {
-          id: episode.plex || `episode-${Date.now()}`,
+          id: plexId || episode.id || `episode-${Date.now()}`,
+          plex: plexId, // Ensure plex ID is passed for downstream components
           show: showTitle,
           season: seasonTitle,
           title: episode.label,
