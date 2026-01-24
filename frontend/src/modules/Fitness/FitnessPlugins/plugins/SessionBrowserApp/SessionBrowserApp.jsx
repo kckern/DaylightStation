@@ -91,7 +91,7 @@ const SessionBrowserApp = () => {
 
   const fetchActiveDates = async () => {
     try {
-      const res = await fetch('/api/fitness/sessions/dates');
+      const res = await fetch('/api/v1/fitness/sessions/dates');
       if (res.ok) {
         const data = await res.json();
         setActiveDates(data.dates || []);
@@ -106,7 +106,7 @@ const SessionBrowserApp = () => {
     setSessions([]);
     setSelectedSessionId(null);
     try {
-      const res = await fetch(`/api/fitness/sessions?date=${date}`);
+      const res = await fetch(`/api/v1/fitness/sessions?date=${date}`);
       if (res.ok) {
         const data = await res.json();
         setSessions(data.sessions || []);
@@ -121,7 +121,7 @@ const SessionBrowserApp = () => {
   const fetchSessionDetail = async (sessionId) => {
     setDetailLoading(true);
     try {
-      const res = await fetch(`/api/fitness/sessions/${sessionId}`);
+      const res = await fetch(`/api/v1/fitness/sessions/${sessionId}`);
       if (res.ok) {
         const data = await res.json();
         setSessionDetail(data.session);
