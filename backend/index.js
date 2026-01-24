@@ -192,14 +192,26 @@ async function main() {
   });
 
   // ==========================================================================
-  // Secondary API Server - for webhooks (always routes to legacy)
+  // Secondary API Server - for webhooks (same routing as primary)
   // ==========================================================================
 
   const secondaryPort = configService.getWebhookPort();
   const secondaryServer = createServer((req, res) => {
-    res.setHeader('X-Backend', 'legacy');
+    // Same routing logic as primary server
+    res.setHeader('X-Backend', req.url.startsWith('/api/v1') ? 'new' : 'legacy');
 
-    // Webhooks always go to legacy
+    if (req.url.startsWith('/api/v1')) {
+      // Strip /api/v1 prefix before passing to new app
+      req.url = req.url.replace('/api/v1', '') || '/';
+      return newApp(req, res, (err) => {
+        if (err && !res.headersSent) {
+          res.statusCode = 500;
+          res.end('Internal Server Error');
+        }
+      });
+    }
+
+    // Everything else -> legacy
     legacyApp(req, res, (err) => {
       if (err && !res.headersSent) {
         res.statusCode = 500;
@@ -212,7 +224,7 @@ async function main() {
     logger.info('server.secondary.started', {
       port: secondaryPort,
       host: '0.0.0.0',
-      mode: 'legacy-only',
+      mode: 'path-based',
       purpose: 'webhooks'
     });
   });
