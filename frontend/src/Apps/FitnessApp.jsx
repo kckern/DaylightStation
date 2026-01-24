@@ -692,15 +692,18 @@ const FitnessApp = () => {
         break;
 
       case 'show':
-        setSelectedShow(target.plex || target.id);
+        // Strip any prefix to get clean numeric ID
+        const showId = String(target.plex || target.id).replace(/^plex:/, '');
+        setSelectedShow(showId);
         setCurrentView('show');
-        navigate(`/fitness/show/${target.plex || target.id}`, { replace: true });
+        navigate(`/fitness/show/${showId}`, { replace: true });
         break;
 
       case 'movie':
         //send directly to player queue
+        const movieId = String(target.plex || target.id).replace(/^plex:/, '');
         setFitnessPlayQueue(prev => [...prev, target]);
-        navigate(`/fitness/play/${target.plex || target.id}`, { replace: true });
+        navigate(`/fitness/play/${movieId}`, { replace: true });
         break;
 
       case 'custom_action':
@@ -1001,7 +1004,7 @@ const FitnessApp = () => {
                     viewportRef={viewportRef}
                     setFitnessPlayQueue={setFitnessPlayQueue}
                     onPlay={(episode) => {
-                      const episodeId = episode.plex || episode.id;
+                      const episodeId = String(episode.plex || episode.id).replace(/^plex:/, '');
                       if (episodeId) {
                         navigate(`/fitness/play/${episodeId}`, { replace: true });
                       }

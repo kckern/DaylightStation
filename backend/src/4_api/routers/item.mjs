@@ -183,9 +183,38 @@ export function createItemRouter(options = {}) {
         });
       }
 
+      // Build info object for FitnessShow compatibility (show-level metadata)
+      let info = null;
+      if (modifiers.playable && adapter.getContainerInfo) {
+        info = await adapter.getContainerInfo(compoundId);
+      }
+
+      // Build seasons map from items' season metadata for FitnessShow
+      let seasons = null;
+      if (modifiers.playable && items.length > 0) {
+        const seasonsMap = {};
+        for (const childItem of items) {
+          const seasonId = childItem.metadata?.seasonId || childItem.metadata?.parent;
+          if (seasonId && !seasonsMap[seasonId]) {
+            seasonsMap[seasonId] = {
+              num: childItem.metadata?.seasonNumber ?? childItem.metadata?.parentIndex,
+              title: childItem.metadata?.seasonName || childItem.metadata?.parentTitle || 'Season',
+              // Fallback chain: season thumb -> parent thumb -> show thumb
+              img: childItem.metadata?.seasonThumbUrl || childItem.metadata?.parentThumb || childItem.metadata?.showThumbUrl || childItem.metadata?.grandparentThumb
+            };
+          }
+        }
+        // Only include seasons if we found any
+        if (Object.keys(seasonsMap).length > 0) {
+          seasons = seasonsMap;
+        }
+      }
+
       // Build response
       const response = {
         id: item.id,
+        // Add plex field for plex source (matches legacy format)
+        ...(source === 'plex' && { plex: localId }),
         source,
         path: localId,
         title: item.title || localId,
@@ -193,6 +222,9 @@ export function createItemRouter(options = {}) {
         itemType: item.itemType,
         thumbnail: item.thumbnail,
         image: item.thumbnail,
+        // Include info and seasons for FitnessShow compatibility
+        ...(info && { info }),
+        ...(seasons && { seasons }),
         items: items.map(toListItem)
       };
 

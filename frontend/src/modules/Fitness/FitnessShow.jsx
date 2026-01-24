@@ -195,7 +195,11 @@ const deriveResumeMeta = (episode) => {
   };
 };
 
-const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue, onPlay }) => {
+const FitnessShow = ({ showId: rawShowId, onBack, viewportRef, setFitnessPlayQueue, onPlay }) => {
+  // Parse showId - strip any prefix (e.g., "plex:662027" -> "662027")
+  // The fitness API assumes plex source, so we only need the numeric ID
+  const showId = rawShowId?.replace(/^[a-z]+:/i, '') || rawShowId;
+
   const [showData, setShowData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -245,7 +249,8 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue, onPlay 
 
     try {
       setLoading(true);
-      const response = await DaylightAPI(`/api/v1/item/plex/${showId}/playable`);
+      // Fitness API assumes plex source - no need to specify it in URL
+      const response = await DaylightAPI(`/api/v1/fitness/show/${showId}/playable`);
       setShowData(response);
       
       const rawLabels = [];
