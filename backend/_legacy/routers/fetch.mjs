@@ -20,8 +20,9 @@ import { userDataService } from '../../src/0_infrastructure/config/UserDataServi
 import { createLogger } from '../lib/logging/logger.js';
 
 const fetchLogger = createLogger({ app: 'fetch' });
-const dataPath = `${process.env.path.data}`;
-const mediaPath = `${process.env.path.media}`;
+// Lazy path getters - process.env.path isn't available at module load time
+const getDataPath = () => global.__daylightPaths?.data || process.env.DAYLIGHT_DATA_PATH;
+const getMediaPath = () => global.__daylightPaths?.media || process.env.DAYLIGHT_MEDIA_PATH;
 
 // Helper for household-scoped media memory paths
 const getMediaMemoryPath = (category, householdId = null) => {
@@ -106,7 +107,7 @@ const clearWatchedItemsFromPlexLibraries = (media_keys) => {
     if (householdDir && fs.existsSync(path.join(householdDir, 'history', 'media_memory', 'plex'))) {
         plexDir = path.join(householdDir, 'history', 'media_memory', 'plex');
     } else {
-        plexDir = path.join(dataPath, 'history', 'media_memory', 'plex');
+        plexDir = path.join(getDataPath(), 'history', 'media_memory', 'plex');
     }
     
     if (!fs.existsSync(plexDir)) {
@@ -148,7 +149,7 @@ const clearWatchedItemsFromPlexLibraries = (media_keys) => {
 }
 apiRouter.get('/img/*', async (req, res, next) => {
     try {
-        const imgPath = `${dataPath}/img/${req.params[0]}`;
+        const imgPath = `${getDataPath()}/img/${req.params[0]}`;
         if (!fs.existsSync(imgPath)) {
             return res.status(404).json({ error: 'Image not found' });
         }
@@ -208,11 +209,11 @@ apiRouter.get('/talk/:talk_folder?/:talk_id?', async (req, res, next) => {
 
     const host = process.env.host || "";
     const { talk_folder, talk_id } = req.params;
-    const filesInFolder = readdirSync(`${dataPath}/content/talks/${talk_folder || ''}`).filter(file => file.endsWith('.yaml')).map(file => file.replace('.yaml', ''));
+    const filesInFolder = readdirSync(`${getDataPath()}/content/talks/${talk_folder || ''}`).filter(file => file.endsWith('.yaml')).map(file => file.replace('.yaml', ''));
     const [selectedFile] = findUnwatchedItems(filesInFolder, 'talk', true);
-    const filePath = `${dataPath}/content/talks/${talk_folder || ''}/${talk_id || selectedFile}.yaml`;
+    const filePath = `${getDataPath()}/content/talks/${talk_folder || ''}/${talk_id || selectedFile}.yaml`;
     const talkData = yaml.load(readFileSync(filePath, 'utf8'));
-    const mediaFilePath = `${mediaPath}/video/talks/${talk_folder || ''}/${talk_id || selectedFile}.mp4`;
+    const mediaFilePath = `${getMediaPath()}/video/talks/${talk_folder || ''}/${talk_id || selectedFile}.mp4`;
     const mediaExists = fs.existsSync(mediaFilePath);
     const mediaUrl = mediaExists ? `${host}/media/video/talks/${talk_folder || ''}/${talk_id || selectedFile}` : null;
     delete talkData.mediaUrl;
@@ -268,13 +269,13 @@ apiRouter.get('/scripture/:first_term?/:second_term?', async (req, res, next) =>
 
     const getVersion = (volume) => {
         //list of versions in volumne folder
-        const versions = readdirSync(`${dataPath}/content/scripture/${volume}`)
-                            .filter(folder => fs.statSync(`${dataPath}/content/scripture/${volume}/${folder}`).isDirectory());
+        const versions = readdirSync(`${getDataPath()}/content/scripture/${volume}`)
+                            .filter(folder => fs.statSync(`${getDataPath()}/content/scripture/${volume}/${folder}`).isDirectory());
         return versions.length > 0 ? versions[0] : null;
     }
 
     const getVerseIdFromVolume = (volume, version) => {
-        const chapters = readdirSync(`${dataPath}/content/scripture/${volume}/${version}`)
+        const chapters = readdirSync(`${getDataPath()}/content/scripture/${volume}/${version}`)
             .filter(file => file.endsWith('.yaml'))
             .map(file => file.replace('.yaml', ''));
         const keys = chapters.map(chapter => `${volume}/${version}/${chapter}`);
@@ -344,7 +345,7 @@ apiRouter.get('/scripture/:first_term?/:second_term?', async (req, res, next) =>
             });
         }
 
-        const filePath = `${dataPath}/content/scripture/${volume}/${version}/${verse_id}.yaml`;
+        const filePath = `${getDataPath()}/content/scripture/${volume}/${version}/${verse_id}.yaml`;
         if (!fs.existsSync(filePath)) {
             return res.status(404).json({
             error: 'Scripture file not found', 
@@ -354,11 +355,11 @@ apiRouter.get('/scripture/:first_term?/:second_term?', async (req, res, next) =>
         }
         const reference = generateReference(verse_id).replace(/:1$/, '');
         const host = process.env.host || "";
-        const mediaFilePath = `${mediaPath}/audio/scripture/${volume}/${version}/${verse_id}.mp3`;
+        const mediaFilePath = `${getMediaPath()}/audio/scripture/${volume}/${version}/${verse_id}.mp3`;
         const mediaExists = fs.existsSync(mediaFilePath);
         const mediaUrl = mediaExists ? `${host}/media/audio/scripture/${volume}/${version}/${verse_id}` : null;
 
-        const data = yaml.load(readFileSync(`${dataPath}/content/scripture/${volume}/${version}/${verse_id}.yaml`, 'utf8'));
+        const data = yaml.load(readFileSync(`${getDataPath()}/content/scripture/${volume}/${version}/${verse_id}.yaml`, 'utf8'));
         res.json({
             input: !!first_term && !!second_term ? `${first_term}/${second_term}` : `${first_term || second_term}`,
             reference,
@@ -404,7 +405,7 @@ apiRouter.get('/:songType(hymn|primary)/:hymn_num?', async (req, res, next) => {
         const { mediaFilePath, mediaUrl } = preferences.reduce((result, prf) => {
             if (result) return result;
             const subDir = prf ? `${prf}/` : '';
-            const searchDir = `${mediaPath}/audio/songs/${songType}/${subDir}`.replace(/\/$/, '');
+            const searchDir = `${getMediaPath()}/audio/songs/${songType}/${subDir}`.replace(/\/$/, '');
             const foundPath = findMediaFileByPrefix(searchDir, hymnNumForMedia);
             if (foundPath) {
                 const host = process.env.host || "";
@@ -432,7 +433,7 @@ apiRouter.get('/:songType(hymn|primary)/:hymn_num?', async (req, res, next) => {
 
 apiRouter.get('/budget',  async (req, res, next) => {
     try {
-        const finances = yaml.load(readFileSync(`${dataPath}/households/default/apps/finances/finances.yml`, 'utf8'));
+        const finances = yaml.load(readFileSync(`${getDataPath()}/households/default/apps/finances/finances.yml`, 'utf8'));
         res.json(finances);
     } catch (err) {
         next(err);
@@ -440,7 +441,7 @@ apiRouter.get('/budget',  async (req, res, next) => {
 });
 apiRouter.get('/budget/daytoday',  async (req, res, next) => {
     try {
-        const {budgets} = yaml.load(readFileSync(`${dataPath}/households/default/apps/finances/finances.yml`, 'utf8'));
+        const {budgets} = yaml.load(readFileSync(`${getDataPath()}/households/default/apps/finances/finances.yml`, 'utf8'));
         const dates = Object.keys(budgets);
         const latestDate = dates.sort((a, b) => moment(b).diff(moment(a)))[0];
         const {dayToDayBudget} = budgets[latestDate];
@@ -852,7 +853,7 @@ const listYamlFiles = (dir) => {
         if (stat && stat.isDirectory()) {
             results = results.concat(listYamlFiles(filePath));
         } else if (file.endsWith('.yaml')) {
-            results.push(filePath.replace(`${dataPath}/`, '').replace('.yaml', ''));
+            results.push(filePath.replace(`${getDataPath()}/`, '').replace('.yaml', ''));
         }
     }
     return results;
