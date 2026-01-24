@@ -54,7 +54,8 @@ import {
   createStaticApiRouter,
   createCalendarApiRouter,
   createEventBus,
-  broadcastEvent
+  broadcastEvent,
+  createHarvesterServices
 } from './0_infrastructure/bootstrap.mjs';
 
 // Routing toggle system
@@ -364,16 +365,34 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   app.get('/data/budget', (req, res) => res.redirect(307, '/api/v1/finance/data'));
   app.get('/data/budget/daytoday', (req, res) => res.redirect(307, '/api/v1/finance/data/daytoday'));
 
-  // Harvest domain router (data collection endpoints)
-  const { refreshFinancialData, payrollSyncJob } = await import('../_legacy/lib/budget.mjs');
-  const Infinity = (await import('../_legacy/lib/infinity.mjs')).default;
+  // Harvester application services
+  // Create shared IO functions for lifelog persistence
+  const userSaveFile = (username, service, data) => userDataService.saveLifelogData(username, service, data);
+  const harvesterIo = { userLoadFile, userSaveFile };
+
+  // HTTP client for external API calls
+  const axios = (await import('axios')).default;
+
+  // Note: nutribotAiGateway is created later; pass null for now
+  // (shopping extraction will use httpClient directly if AI gateway unavailable)
+  const harvesterServices = createHarvesterServices({
+    io: harvesterIo,
+    httpClient: axios,
+    configService,
+    todoistApi: null, // Will use httpClient directly
+    aiGateway: null, // AI gateway created later in app initialization
+    logger: rootLogger.child({ module: 'harvester' })
+  });
+
+  // Create harvest router using HarvesterService
   v1Routers.harvest = createHarvestRouter({
-    refreshFinancialData,
-    payrollSyncJob,
-    Infinity,
+    harvesterService: harvesterServices.harvesterService,
     configService,
     logger: rootLogger.child({ module: 'harvest-api' })
   });
+
+  // Note: harvesterServices.jobExecutor is available for scheduler integration
+  // See Task 7 in the migration plan for wiring to SchedulerService
 
   // Entropy domain router - import legacy function for parity
   const { getEntropyReport: legacyGetEntropyReport } = await import('../_legacy/lib/entropy.mjs');
@@ -492,11 +511,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // Fitness domain router
+  // Note: contentRegistry passed for /show endpoint - fitness assumes plex source
   v1Routers.fitness = createFitnessApiRouter({
     fitnessServices,
     userService,
     userDataService,
     configService,
+    contentRegistry,
     logger: rootLogger.child({ module: 'fitness-api' })
   });
 
