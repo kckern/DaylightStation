@@ -71,16 +71,18 @@ export default defineConfig(({ command, mode }) => {
       },
       proxy: {
         // Proxy API and media requests to backend (running on app.port + 1)
+        // Note: /api covers /api/v1/proxy/plex/* for Plex thumbnail proxying
         '/api': `http://localhost:${ports.backend}`,
+        '/ws': {
+          target: `ws://localhost:${ports.backend}`,
+          ws: true
+        },
+        // Legacy backends, to be deprecated
         '/harvest': `http://localhost:${ports.backend}`,
         '/home': `http://localhost:${ports.backend}`,
         '/print': `http://localhost:${ports.backend}`,
         '/media': `http://localhost:${ports.backend}`,
         '/data': `http://localhost:${ports.backend}`,
-        '/ws': {
-          target: `ws://localhost:${ports.backend}`,
-          ws: true
-        }
       }
     }
   };

@@ -976,12 +976,45 @@ export class GovernanceEngine {
       totalCount = activeParticipants.length;
     }
 
-    // Ensure defaults
+    // BUGFIX: Fall back to previous zoneRankMap/zoneInfoMap when not provided
+    // This fixes internal _triggerPulse() calls which don't pass these maps
+    let usedZoneRankMapFallback = false;
+    let usedZoneInfoMapFallback = false;
+    if (!zoneRankMap && this._latestInputs?.zoneRankMap) {
+      zoneRankMap = this._latestInputs.zoneRankMap;
+      usedZoneRankMapFallback = true;
+    }
+    if (!zoneInfoMap && this._latestInputs?.zoneInfoMap) {
+      zoneInfoMap = this._latestInputs.zoneInfoMap;
+      usedZoneInfoMapFallback = true;
+    }
+    // DIAGNOSTIC: Log when fallback is used (helps diagnose race conditions)
+    if (usedZoneRankMapFallback || usedZoneInfoMapFallback) {
+      getLogger().debug('governance.evaluate.used_cached_zone_maps', {
+        usedZoneRankMapFallback,
+        usedZoneInfoMapFallback,
+        cachedZoneRankMapSize: Object.keys(zoneRankMap || {}).length,
+        cachedZoneInfoMapSize: Object.keys(zoneInfoMap || {}).length
+      });
+    }
+
+    // Ensure defaults (these now only apply if _latestInputs also didn't have them)
     activeParticipants = activeParticipants || [];
     userZoneMap = userZoneMap || {};
     zoneRankMap = zoneRankMap || {};
     zoneInfoMap = zoneInfoMap || {};
     totalCount = totalCount || activeParticipants.length;
+
+    // DIAGNOSTIC: Warn if zoneRankMap is empty but we have participants
+    // This was the exact bug condition - zones not configured, causing false warnings
+    if (activeParticipants.length > 0 && Object.keys(zoneRankMap).length === 0) {
+      getLogger().warn('governance.evaluate.empty_zoneRankMap', {
+        activeParticipantCount: activeParticipants.length,
+        phase: this.phase,
+        hasGovernanceRules,
+        usedZoneRankMapFallback: usedZoneRankMapFallback || false
+      });
+    }
 
     // NEW: Populate userZoneMap from ZoneProfileStore (stable, tick-aligned zone state)
     // This overrides any volatile zone data with the stable source used by UI
