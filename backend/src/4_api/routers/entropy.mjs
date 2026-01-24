@@ -15,12 +15,11 @@ import express from 'express';
  * @param {Object} config
  * @param {Object} config.entropyService - EntropyService instance
  * @param {Object} config.configService - ConfigService for user lookup
- * @param {Function} [config.legacyGetEntropyReport] - Legacy function for parity mode
  * @param {Object} [config.logger] - Logger instance
  * @returns {express.Router}
  */
 export function createEntropyRouter(config) {
-  const { entropyService, configService, legacyGetEntropyReport, logger = console } = config;
+  const { entropyService, configService, logger = console } = config;
   const router = express.Router();
 
   /**
@@ -50,7 +49,7 @@ export function createEntropyRouter(config) {
    * GET /entropy
    * Get entropy report for all configured sources
    *
-   * Response (legacy parity):
+   * Response:
    * {
    *   items: EntropyItem[]
    * }
@@ -62,18 +61,6 @@ export function createEntropyRouter(config) {
 
       logger.debug?.('entropy.report.request', { username });
 
-      // Use legacy function for parity if available
-      if (legacyGetEntropyReport) {
-        const report = await legacyGetEntropyReport();
-        logger.info?.('entropy.report.success', {
-          username,
-          itemCount: report.items?.length || 0,
-          mode: 'legacy-parity'
-        });
-        return res.json(report);
-      }
-
-      // Fall back to DDD service
       const report = await entropyService.getReport(username);
 
       logger.info?.('entropy.report.success', {

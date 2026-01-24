@@ -1434,7 +1434,6 @@ export function createEntropyServices(config) {
  * @param {Object} config
  * @param {Object} config.entropyServices - Services from createEntropyServices
  * @param {Object} config.configService - ConfigService for user lookup
- * @param {Function} [config.legacyGetEntropyReport] - Legacy function for parity mode
  * @param {Object} [config.logger] - Logger instance
  * @returns {express.Router}
  */
@@ -1442,14 +1441,12 @@ export function createEntropyApiRouter(config) {
   const {
     entropyServices,
     configService,
-    legacyGetEntropyReport,
     logger = console
   } = config;
 
   return createEntropyRouter({
     entropyService: entropyServices.entropyService,
     configService,
-    legacyGetEntropyReport,
     logger
   });
 }

@@ -392,12 +392,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'harvest-api' })
   });
 
-  // Entropy domain router - import legacy function for parity
-  const { getEntropyReport: legacyGetEntropyReport } = await import('../_legacy/lib/entropy.mjs');
+  // Entropy domain router
   v1Routers.entropy = createEntropyApiRouter({
     entropyServices,
     configService,
-    legacyGetEntropyReport,
     logger: rootLogger.child({ module: 'entropy-api' })
   });
 
