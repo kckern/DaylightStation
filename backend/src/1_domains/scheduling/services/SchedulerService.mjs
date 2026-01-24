@@ -23,6 +23,7 @@ export class SchedulerService {
     timezone = 'America/Los_Angeles',
     moduleBasePath = null,
     harvesterExecutor = null,
+    mediaExecutor = null,
     logger = console
   }) {
     this.jobStore = jobStore;
@@ -30,14 +31,16 @@ export class SchedulerService {
     this.timezone = timezone;
     this.moduleBasePath = moduleBasePath;
     this.harvesterExecutor = harvesterExecutor;
+    this.mediaExecutor = mediaExecutor;
     this.logger = logger;
     this.runningJobs = new Map();
   }
 
   /**
    * Resolve a module path from jobs.yml to an absolute path.
-   * Module paths in jobs.yml are relative to the legacy cron router location.
-   * @param {string} modulePath - Path from job config (e.g., "../lib/weather.mjs")
+   * Only used for legacy jobs without executors (fitsync, archive-rotation, media-memory-validator).
+   * Module paths are relative to moduleBasePath (typically _legacy/routers/).
+   * @param {string} modulePath - Path from job config (e.g., "../lib/fitsync.mjs")
    * @returns {string} Absolute path or file URL for dynamic import
    */
   resolveModulePath(modulePath) {
@@ -242,6 +245,26 @@ export class SchedulerService {
 
         await Promise.race([
           this.harvesterExecutor.execute(job.id, job.options || {}, {
+            logger: scopedLogger,
+            executionId
+          }),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error(`Job timeout after ${job.timeout}ms`)), job.timeout)
+          )
+        ]);
+
+        execution.succeed();
+        this.logger.info?.('scheduler.job.success', {
+          jobId: job.id,
+          executionId,
+          durationMs: execution.durationMs
+        });
+      } else if (this.mediaExecutor?.canHandle(job.id)) {
+        // Check if media executor can handle this job (youtube, etc.)
+        this.logger.debug?.('scheduler.job.using_media', { jobId: job.id });
+
+        await Promise.race([
+          this.mediaExecutor.execute(job.id, job.options || {}, {
             logger: scopedLogger,
             executionId
           }),

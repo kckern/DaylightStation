@@ -39,7 +39,7 @@ export const WebSocketProvider = ({ children }) => {
       const isLocalhost = /localhost/.test(window.location.href);
       const baseUrl = isLocalhost ? 'http://localhost:3112' : window.location.origin;
       
-      const response = await fetch(`${baseUrl}/exe/ws/restart`, {
+      const response = await fetch(`${baseUrl}/api/v1/admin/ws/restart`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

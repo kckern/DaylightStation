@@ -1,21 +1,34 @@
 /**
  * YamlStateStore - Persists job runtime state to YAML files
  *
- * Stores state in: system/state/cron-runtime
- * Backup in: system/state/cron-runtime_bak
+ * Stores state in: {dataDir}/system/state/cron-runtime.yml
+ * Backup in: {dataDir}/system/state/cron-runtime_bak.yml
  */
 
+import path from 'path';
 import { JobState } from '../../1_domains/scheduling/entities/JobState.mjs';
 import { IStateStore } from '../../1_domains/scheduling/ports/IStateStore.mjs';
+import { loadYaml, saveYaml } from '../../0_infrastructure/utils/FileIO.mjs';
 
 export class YamlStateStore extends IStateStore {
-  constructor({ loadFile, saveFile, logger = console }) {
+  constructor({ dataDir, logger = console }) {
     super();
-    this.loadFile = loadFile;
-    this.saveFile = saveFile;
+    this.dataDir = dataDir;
     this.logger = logger;
-    this.statePath = 'system/state/cron-runtime';
-    this.backupPath = 'system/state/cron-runtime_bak';
+  }
+
+  /**
+   * Get full path to state file
+   */
+  getStatePath() {
+    return path.join(this.dataDir, 'system', 'state', 'cron-runtime');
+  }
+
+  /**
+   * Get full path to backup file
+   */
+  getBackupPath() {
+    return path.join(this.dataDir, 'system', 'state', 'cron-runtime_bak');
   }
 
   /**
@@ -23,16 +36,16 @@ export class YamlStateStore extends IStateStore {
    */
   loadRawState() {
     try {
-      const state = this.loadFile(this.statePath);
+      const state = loadYaml(this.getStatePath());
       if (state && typeof state === 'object') {
         return state;
       }
 
       // Try backup
-      const backup = this.loadFile(this.backupPath);
+      const backup = loadYaml(this.getBackupPath());
       if (backup && typeof backup === 'object') {
         this.logger.info?.('scheduler.stateStore.restored_from_backup');
-        this.saveFile(this.statePath, backup);
+        saveYaml(this.getStatePath(), backup);
         return backup;
       }
 
@@ -81,7 +94,7 @@ export class YamlStateStore extends IStateStore {
     rawState[jobId] = state.toJSON();
 
     try {
-      this.saveFile(this.statePath, rawState);
+      saveYaml(this.getStatePath(), rawState);
     } catch (error) {
       this.logger.error?.('scheduler.stateStore.save_error', {
         jobId,
@@ -103,7 +116,7 @@ export class YamlStateStore extends IStateStore {
     }
 
     try {
-      this.saveFile(this.statePath, rawState);
+      saveYaml(this.getStatePath(), rawState);
     } catch (error) {
       this.logger.error?.('scheduler.stateStore.saveAll_error', {
         error: error.message
@@ -120,7 +133,7 @@ export class YamlStateStore extends IStateStore {
     const rawState = this.loadRawState();
 
     try {
-      this.saveFile(this.backupPath, rawState);
+      saveYaml(this.getBackupPath(), rawState);
       this.logger.debug?.('scheduler.stateStore.backup_success');
     } catch (error) {
       this.logger.error?.('scheduler.stateStore.backup_error', {

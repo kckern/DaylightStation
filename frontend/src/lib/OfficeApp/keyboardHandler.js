@@ -127,16 +127,16 @@ export const createKeyboardHandler = (dependencies) => {
         let endpoint;
         switch (params) {
           case '+1':
-            endpoint = 'exe/vol/+';
+            endpoint = 'api/v1/home/vol/+';
             break;
           case '-1':
-            endpoint = 'exe/vol/-';
+            endpoint = 'api/v1/home/vol/-';
             break;
           case 'mute_toggle':
-            endpoint = 'exe/vol/togglemute';
+            endpoint = 'api/v1/home/vol/togglemute';
             break;
           default:
-            endpoint = 'exe/vol/cycle';
+            endpoint = 'api/v1/home/vol/cycle';
         }
         
         const response = await DaylightAPI(endpoint);

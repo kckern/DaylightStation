@@ -6,14 +6,14 @@
  * between Telegram identifiers and system users.
  */
 
-// Legacy infrastructure imports (until migrated to new structure)
-import { TelegramChatRef } from '../../../../_legacy/chatbots/infrastructure/telegram/TelegramChatRef.mjs';
-import { ConversationId } from '../../../../_legacy/chatbots/domain/value-objects/ChatId.mjs';
-import { loadConfig } from '../../../../_legacy/chatbots/_lib/config/ConfigLoader.mjs';
-import { ValidationError } from '../../../../_legacy/chatbots/_lib/errors/index.mjs';
-import { TestContext } from '../../../../_legacy/chatbots/_lib/testing/TestContext.mjs';
-import { UserResolver } from '../../../../_legacy/chatbots/_lib/users/UserResolver.mjs';
-import { configService } from '../../../../lib/config/index.mjs';
+// Infrastructure imports
+import { TelegramChatRef } from '../../../2_adapters/telegram/TelegramChatRef.mjs';
+import { ConversationId } from '../../../1_domains/messaging/value-objects/ConversationId.mjs';
+import { ValidationError } from '../../../0_infrastructure/utils/errors/index.mjs';
+import { TestContext } from '../../../0_infrastructure/testing/TestContext.mjs';
+import { UserResolver } from '../../../0_infrastructure/users/UserResolver.mjs';
+import { configService } from '../../../0_infrastructure/config/index.mjs';
+import { loadBotConfig } from '../../../0_infrastructure/config/BotConfigLoader.mjs';
 
 // Single source of truth for default nutrition goals
 // calories_min/calories_max define the acceptable calorie range
@@ -549,12 +549,14 @@ export class NutriBotConfig {
   // ==================== Factory Methods ====================
 
   /**
-   * Load configuration from file
-   * @param {string} configPath - Path to config.yaml
-   * @returns {Promise<NutriBotConfig>}
+   * Load configuration from config directory
+   * @param {string} botName - Bot name (e.g., 'nutribot')
+   * @param {object} options - Options
+   * @param {string} options.configDir - Directory containing config files
+   * @returns {NutriBotConfig}
    */
-  static async load(configPath) {
-    const config = await loadConfig(configPath);
+  static load(botName, options = {}) {
+    const config = loadBotConfig(botName, options);
     return new NutriBotConfig(config);
   }
 
