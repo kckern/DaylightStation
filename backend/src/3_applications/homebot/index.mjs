@@ -1,10 +1,4 @@
-/**
- * HomeBot Application barrel export
- * @module homebot
- */
-
-// Container
+// backend/src/3_applications/homebot/index.mjs
+export * from './ports/index.mjs';
+export * from './usecases/index.mjs';
 export { HomeBotContainer } from './HomeBotContainer.mjs';
-
-// Bot infrastructure
-export { HomeBotEventRouter, InputEventType } from './bot/HomeBotEventRouter.mjs';
