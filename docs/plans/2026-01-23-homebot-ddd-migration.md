@@ -868,3 +868,66 @@ git commit -m "docs(homebot): complete DDD migration - ready for legacy cleanup"
 - Container for dependency injection
 - Router + Handler pattern for API endpoints
 - Barrel exports at each level
+
+---
+
+## Legacy Deletion Manifest
+
+**Migration Completed:** 2026-01-23
+
+**Verification Checklist:**
+- [ ] Text input for gratitude
+- [ ] Voice input for gratitude
+- [ ] Category toggle (gratitude ↔ hopes)
+- [ ] Member assignment buttons
+- [ ] Cancel flow
+- [ ] WebSocket broadcast to gratitude wall
+
+**Files to Delete After Confidence Period:**
+
+```
+backend/_legacy/chatbots/bots/homebot/
+├── adapters/
+│   └── HomeBotEventRouter.mjs
+├── application/
+│   └── usecases/
+│       ├── AssignItemToUser.mjs
+│       ├── CancelGratitudeInput.mjs
+│       ├── ProcessGratitudeInput.mjs
+│       └── ToggleCategory.mjs
+├── repositories/
+│   ├── GratitudeRepository.mjs
+│   └── HouseholdRepository.mjs
+├── container.mjs
+└── server.mjs
+```
+
+**Related Files to Update:**
+- `backend/_legacy/api.mjs` - Remove homebot imports/routes
+
+**New DDD Structure:**
+
+```
+backend/src/
+├── 1_domains/gratitude/           # Already complete
+├── 2_adapters/homebot/
+│   ├── HomeBotInputRouter.mjs
+│   ├── ConfigHouseholdAdapter.mjs
+│   └── index.mjs
+├── 3_applications/homebot/
+│   ├── ports/
+│   │   ├── IConversationStateStore.mjs
+│   │   ├── IHouseholdRepository.mjs
+│   │   └── index.mjs
+│   ├── usecases/
+│   │   ├── ProcessGratitudeInput.mjs
+│   │   ├── AssignItemToUser.mjs
+│   │   ├── ToggleCategory.mjs
+│   │   ├── CancelGratitudeInput.mjs
+│   │   └── index.mjs
+│   ├── HomeBotContainer.mjs
+│   └── index.mjs
+└── 4_api/
+    ├── routers/homebot.mjs
+    └── handlers/homebot/index.mjs
+```
