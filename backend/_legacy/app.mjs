@@ -185,7 +185,7 @@ export async function createApp({
     });
 
     // Content domain (new DDD structure)
-    const { createContentRegistry, createWatchStore, createFinanceServices, createFinanceApiRouter, createEntropyServices, createEntropyApiRouter } = await import('../src/0_infrastructure/bootstrap.mjs');
+    const { createContentRegistry, createWatchStore, createEntropyServices, createEntropyApiRouter } = await import('../src/0_infrastructure/bootstrap.mjs');
     const { createContentRouter } = await import('../src/4_api/routers/content.mjs');
     const { createProxyRouter } = await import('../src/4_api/routers/proxy.mjs');
     const { createListRouter } = await import('../src/4_api/routers/list.mjs');
@@ -387,23 +387,7 @@ export async function createApp({
     app.use('/api/play', createPlayRouter({ registry: contentRegistry, watchStore }));
     rootLogger.info('content.api.mounted', { paths: ['/api/list', '/api/play'] });
 
-    // Finance domain (new DDD structure)
-    const financeServices = createFinanceServices({
-      dataRoot: dataBasePath,
-      defaultHouseholdId: householdId,
-      buxfer: process.env.finance?.buxfer ? {
-        email: process.env.finance.buxfer.email,
-        password: process.env.finance.buxfer.password
-      } : null,
-      // AI gateway can be added when needed for transaction categorization
-      logger: rootLogger.child({ module: 'finance' })
-    });
-    app.use('/api/finance', createFinanceApiRouter({
-      financeServices,
-      configService,
-      logger: rootLogger.child({ module: 'finance-api' })
-    }));
-    rootLogger.info('finance.api.mounted', { path: '/api/finance', buxferConfigured: !!financeServices.buxferAdapter });
+    // Finance domain - REMOVED: Now handled by new DDD backend (src/app.mjs)
 
     // Entropy domain (new DDD structure)
     const { userLoadFile, userLoadCurrent } = await import('./lib/io.mjs');

@@ -124,7 +124,33 @@ export function createFitnessRouter(config) {
       if (!adapter.resolvePlayables) {
         return res.status(400).json({ error: 'Plex adapter does not support playable resolution' });
       }
-      const items = await adapter.resolvePlayables(compoundId);
+      let items = await adapter.resolvePlayables(compoundId);
+
+      // Merge viewing history from local YAML files
+      if (typeof adapter._loadViewingHistory === 'function') {
+        const viewingHistory = adapter._loadViewingHistory();
+        if (viewingHistory && Object.keys(viewingHistory).length > 0) {
+          items = items.map(item => {
+            const itemKey = item.localId || item.metadata?.plex || item.metadata?.key;
+            const watchData = viewingHistory[itemKey] || viewingHistory[String(itemKey)];
+            if (watchData) {
+              // Calculate progress from playhead and duration
+              const playhead = parseInt(watchData.playhead) || parseInt(watchData.seconds) || 0;
+              const mediaDuration = parseInt(watchData.mediaDuration) || parseInt(watchData.duration) || 0;
+              const percent = mediaDuration > 0 ? (playhead / mediaDuration) * 100 : (watchData.percent || 0);
+
+              return {
+                ...item,
+                watchProgress: percent,
+                watchSeconds: playhead,
+                watchedDate: watchData.lastPlayed || null,
+                lastPlayed: watchData.lastPlayed || null
+              };
+            }
+            return item;
+          });
+        }
+      }
 
       // Get container info for show metadata
       let info = null;

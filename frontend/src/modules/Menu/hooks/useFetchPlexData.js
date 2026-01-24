@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { DaylightAPI } from '../../../lib/api.mjs';
 
 /**
- * Fetches rich Plex data from /api/v1/list/plex/:id
+ * Fetches rich Plex data from /api/v1/item/plex/:id
  * Used by ShowView and SeasonView for detailed metadata.
  * 
  * @param {string} plexId - Plex rating key

@@ -296,6 +296,41 @@ export class YamlFinanceStore {
   }
 
   // ==========================================================================
+  // Payroll Data
+  // ==========================================================================
+
+  /**
+   * Get payroll data (paychecks)
+   * @param {string} [householdId]
+   * @returns {{paychecks: Object}|null}
+   */
+  getPayrollData(householdId) {
+    const filePath = path.join(this.getBasePath(householdId), 'payroll.yml');
+    return this.#readData(filePath);
+  }
+
+  /**
+   * Save payroll data
+   * @param {string} householdId
+   * @param {{paychecks: Object}} data
+   */
+  savePayrollData(householdId, data) {
+    const filePath = path.join(this.getBasePath(householdId), 'payroll.yml');
+    this.#writeData(filePath, data);
+  }
+
+  /**
+   * Get payroll mapping dictionary (for transaction categorization)
+   * @param {string} [householdId]
+   * @returns {Array<{input: string, desc: string, cat: string, exclude?: boolean}>}
+   */
+  getPayrollMapping(householdId) {
+    const filePath = path.join(this.getBasePath(householdId), 'payrollDict.yml');
+    const data = this.#readData(filePath);
+    return data?.mapping || [];
+  }
+
+  // ==========================================================================
   // Utility Methods
   // ==========================================================================
 

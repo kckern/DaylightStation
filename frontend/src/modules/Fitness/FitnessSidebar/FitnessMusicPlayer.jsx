@@ -477,7 +477,7 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
           {currentTrack?.key || currentTrack?.plex || currentTrack?.media_key ? (
             <img 
               key={currentTrack.key || currentTrack.plex || currentTrack.media_key}
-              src={DaylightMediaPath(`media/plex/img/${currentTrack.key || currentTrack.plex || currentTrack.media_key}`)} 
+              src={DaylightMediaPath(`api/v1/content/plex/image/${currentTrack.key || currentTrack.plex || currentTrack.media_key}`)} 
               alt="Album artwork"
               className="artwork-image"
             />

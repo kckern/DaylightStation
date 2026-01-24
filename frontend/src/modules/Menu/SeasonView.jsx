@@ -100,16 +100,17 @@ export function SeasonView({ seasonId, depth, onSelect, onEscape, MENU_TIMEOUT =
 
   // Get episode key for selection persistence
   const getEpisodeKey = useCallback((episode) => {
-    return episode?.plex || episode?.label || null;
+    return episode?.play?.plex || episode?.key || episode?.label || null;
   }, []);
 
   // Handle episode selection
   const handleSelect = useCallback((episode) => {
     if (!episode) return;
-    onSelect?.({ 
-      play: { plex: episode.plex }, 
+    const plexId = episode.play?.plex || episode.key;
+    onSelect?.({
+      play: { plex: plexId },
       type: 'episode',
-      label: episode.label 
+      label: episode.label
     });
   }, [onSelect]);
 
@@ -319,7 +320,7 @@ export function SeasonView({ seasonId, depth, onSelect, onEscape, MENU_TIMEOUT =
             
             return (
               <div
-                key={episode.plex || index}
+                key={episode.play?.plex || episode.key || index}
                 className={`episode-grid-card ${isActive ? 'episode-grid-card--active' : ''} ${isWatched ? 'episode-grid-card--watched' : ''}`}
                 onClick={() => {
                   setSelectedIndex(index, getEpisodeKey(episode));

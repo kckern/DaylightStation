@@ -282,7 +282,17 @@ export class PlexAdapter {
       if (!container) return [];
 
       const items = container.Metadata || container.Directory || [];
-      return items.map(item => this._toListableItem(item));
+
+      // For playable item types (episodes, tracks, movies), use full conversion
+      // to include duration, episode number, and other playback-relevant metadata
+      const playableTypes = ['episode', 'track', 'movie', 'clip'];
+
+      return items.map(item => {
+        if (playableTypes.includes(item.type)) {
+          return this._toPlayableItem(item);
+        }
+        return this._toListableItem(item);
+      });
     } catch (err) {
       console.error('[PlexAdapter] getList error:', err.message);
       return [];
@@ -398,7 +408,7 @@ export class PlexAdapter {
     const isVideo = ['movie', 'episode', 'clip'].includes(item.type);
     const isAudio = ['track'].includes(item.type);
 
-    // Non-playable types return as containers
+    // Non-playable types return as containers (shows, seasons, albums, etc.)
     if (!isVideo && !isAudio) {
       return new ListableItem({
         id: `plex:${item.ratingKey}`,
@@ -407,7 +417,14 @@ export class PlexAdapter {
         title: item.title,
         itemType: 'container',
         childCount: item.leafCount || 0,
-        thumbnail: item.thumb ? `${this.proxyPath}${item.thumb}` : null
+        thumbnail: item.thumb ? `${this.proxyPath}${item.thumb}` : null,
+        // Include type in metadata for PlexMenuRouter (show, season, artist, album, etc.)
+        metadata: {
+          type: item.type,
+          year: item.year,
+          studio: item.studio,
+          summary: item.summary
+        }
       });
     }
 

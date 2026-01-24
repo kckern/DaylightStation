@@ -32,7 +32,7 @@ const SeasonInfo = ({ item, type = 'episode', showSummary = null }) => {
       {item.image && (
         <div className="info-image-container">
           <img 
-            src={type === 'season' && item.id ? DaylightMediaPath(`media/plex/img/${item.id}`) : normalizeImageUrl(item.image)} 
+            src={type === 'season' && item.id ? DaylightMediaPath(`api/v1/content/plex/image/${item.id}`) : normalizeImageUrl(item.image)} 
             alt={item.title || item.label || item.name} 
             className="info-image" 
           />
@@ -105,11 +105,11 @@ const EpisodeInfo = ({ episode, showInfo, seasonsMap, seasonsList, onPlay }) => 
   const seasonDescription = [season.summary, season.seasonDescription, season.description, showInfo?.summary]
     .find(v => typeof v === 'string' && v.trim().length) || '';
 
-  const seasonImage = normalizeImageUrl(season.img || season.seasonThumbUrl || season.image) || (seasonId ? DaylightMediaPath(`media/plex/img/${seasonId}`) : normalizeImageUrl(showInfo?.image));
+  const seasonImage = normalizeImageUrl(season.img || season.seasonThumbUrl || season.image) || (seasonId ? DaylightMediaPath(`api/v1/content/plex/image/${seasonId}`) : normalizeImageUrl(showInfo?.image));
   // Use the same episode image source as grid: primary is episode.image; fallback to thumb_id path
   const episodeImage = (episode.image && episode.image.trim())
     ? normalizeImageUrl(episode.image)
-    : (episode.thumb_id ? DaylightMediaPath(`media/plex/img/${episode.thumb_id}`) : null);
+    : (episode.thumb_id ? DaylightMediaPath(`api/v1/content/plex/image/${episode.thumb_id}`) : null);
   const durationText = episode.duration ? formatDuration(episode.duration) : null;
   const epTitle = episode.label || episode.title || `Episode ${episode.episodeNumber || ''}`.trim();
   const epNumber = episode.episodeNumber;
@@ -556,9 +556,9 @@ const FitnessShow = ({ showId: rawShowId, onBack, viewportRef, setFitnessPlayQue
         media_url: episodeUrl, // Player expects media_url, not videoUrl
         duration: episode.duration,
         thumb_id: episode.thumb_id, // Pass thumb_id directly to FitnessPlayer
-        image: episode.thumb_id ? DaylightMediaPath(`media/plex/img/${episode.thumb_id}`) : episode.image,
+        image: episode.thumb_id ? DaylightMediaPath(`api/v1/content/plex/image/${episode.thumb_id}`) : episode.image,
         seasonId: episode.seasonId,
-        seasonImage: (episode.seasonThumbUrl || (episode.seasonId ? DaylightMediaPath(`media/plex/img/${episode.seasonId}`) : undefined)),
+        seasonImage: (episode.seasonThumbUrl || (episode.seasonId ? DaylightMediaPath(`api/v1/content/plex/image/${episode.seasonId}`) : undefined)),
         labels: deriveEpisodeLabels(episode),
         type: episode.type || 'episode',
         showId,
@@ -958,9 +958,9 @@ const FitnessShow = ({ showId: rawShowId, onBack, viewportRef, setFitnessPlayQue
           media_url: episodeUrl, // Player expects media_url, not videoUrl
           duration: episode.duration,
           thumb_id: episode.thumb_id, // Pass thumb_id directly to FitnessPlayer
-          image: episode.thumb_id ? DaylightMediaPath(`media/plex/img/${episode.thumb_id}`) : episode.image,
+          image: episode.thumb_id ? DaylightMediaPath(`api/v1/content/plex/image/${episode.thumb_id}`) : episode.image,
           seasonId: episode.seasonId,
-          seasonImage: (episode.seasonThumbUrl || (episode.seasonId ? DaylightMediaPath(`media/plex/img/${episode.seasonId}`) : undefined)),
+          seasonImage: (episode.seasonThumbUrl || (episode.seasonId ? DaylightMediaPath(`api/v1/content/plex/image/${episode.seasonId}`) : undefined)),
           labels: deriveEpisodeLabels(episode),
           type: episode.type || 'episode',
           showId,
@@ -968,7 +968,7 @@ const FitnessShow = ({ showId: rawShowId, onBack, viewportRef, setFitnessPlayQue
           watchSeconds: resolvedSeconds || undefined,
           watchProgress: Number.isFinite(normalizedProgress) ? normalizedProgress : undefined
         };
-        
+
         // Use the appropriate setter
         if (setFitnessPlayQueue) {
           setFitnessPlayQueue(prevQueue => [...prevQueue, queueItem]);

@@ -11,11 +11,13 @@ import { URL } from 'url';
  * @param {Object} config
  * @param {import('../../domains/content/services/ContentSourceRegistry.mjs').ContentSourceRegistry} config.registry
  * @param {import('../../0_infrastructure/proxy/ProxyService.mjs').ProxyService} [config.proxyService] - Optional proxy service for external services
+ * @param {string} [config.mediaBasePath] - Base path for media files
+ * @param {Object} [config.logger] - Logger instance
  * @returns {express.Router}
  */
 export function createProxyRouter(config) {
   const router = express.Router();
-  const { registry, proxyService } = config;
+  const { registry, proxyService, mediaBasePath, logger = console } = config;
 
   /**
    * GET /proxy/filesystem/stream/*
@@ -267,6 +269,107 @@ export function createProxyRouter(config) {
       }
     } catch (err) {
       console.error('[proxy] plex error:', err);
+      if (!res.headersSent) {
+        res.status(500).json({ error: err.message });
+      }
+    }
+  });
+
+  /**
+   * GET /proxy/media/*
+   * Stream audio/video files from the media mount
+   * Replaces legacy /media/* endpoint for ambient music, poetry, etc.
+   */
+  router.get('/media/*', async (req, res) => {
+    try {
+      if (!mediaBasePath) {
+        return res.status(503).json({ error: 'Media path not configured' });
+      }
+
+      const relativePath = decodeURIComponent(req.params[0] || '');
+      if (!relativePath) {
+        return res.status(400).json({ error: 'No path specified' });
+      }
+
+      // Security: prevent path traversal
+      const safePath = nodePath.normalize(relativePath).replace(/^(\.\.(\/|\\|$))+/, '');
+      const fullPath = nodePath.join(mediaBasePath, safePath);
+
+      // Ensure we're still within mediaBasePath
+      if (!fullPath.startsWith(nodePath.resolve(mediaBasePath))) {
+        return res.status(403).json({ error: 'Path traversal not allowed' });
+      }
+
+      // Try with common audio extensions if no extension provided
+      let resolvedPath = fullPath;
+      if (!fs.existsSync(resolvedPath)) {
+        const extensions = ['mp3', 'm4a', 'mp4', 'wav', 'ogg', 'flac'];
+        for (const ext of extensions) {
+          const withExt = `${fullPath}.${ext}`;
+          if (fs.existsSync(withExt)) {
+            resolvedPath = withExt;
+            break;
+          }
+        }
+      }
+
+      if (!fs.existsSync(resolvedPath)) {
+        return res.status(404).json({ error: 'Media file not found', path: relativePath });
+      }
+
+      const stat = fs.statSync(resolvedPath);
+      if (!stat.isFile()) {
+        return res.status(400).json({ error: 'Path is not a file' });
+      }
+
+      const ext = nodePath.extname(resolvedPath).toLowerCase().slice(1);
+      const mimeTypes = {
+        'mp3': 'audio/mpeg',
+        'm4a': 'audio/mp4',
+        'mp4': 'video/mp4',
+        'wav': 'audio/wav',
+        'ogg': 'audio/ogg',
+        'flac': 'audio/flac',
+        'webm': 'video/webm'
+      };
+      const mimeType = mimeTypes[ext] || 'application/octet-stream';
+
+      const commonHeaders = {
+        'Cache-Control': 'public, max-age=31536000',
+        'X-Content-Type-Options': 'nosniff',
+        'Access-Control-Allow-Origin': '*'
+      };
+
+      // Handle range requests for audio seeking
+      const range = req.headers.range;
+      if (range) {
+        const parts = range.replace(/bytes=/, '').split('-');
+        const start = parseInt(parts[0], 10);
+        const end = parts[1] ? parseInt(parts[1], 10) : stat.size - 1;
+        const chunkSize = end - start + 1;
+
+        res.writeHead(206, {
+          ...commonHeaders,
+          'Content-Range': `bytes ${start}-${end}/${stat.size}`,
+          'Accept-Ranges': 'bytes',
+          'Content-Length': chunkSize,
+          'Content-Type': mimeType
+        });
+
+        fs.createReadStream(resolvedPath, { start, end }).pipe(res);
+      } else {
+        res.writeHead(200, {
+          ...commonHeaders,
+          'Accept-Ranges': 'bytes',
+          'Content-Length': stat.size,
+          'Content-Type': mimeType
+        });
+        fs.createReadStream(resolvedPath).pipe(res);
+      }
+
+      logger.debug?.('proxy.media.served', { path: relativePath, mimeType });
+    } catch (err) {
+      logger.error?.('proxy.media.error', { path: req.params[0], error: err.message });
       if (!res.headersSent) {
         res.status(500).json({ error: err.message });
       }

@@ -29,6 +29,7 @@ import express from 'express';
  * @param {Object} [config.harvestService] - FinanceHarvestService instance
  * @param {Object} [config.compilationService] - BudgetCompilationService instance
  * @param {Object} [config.categorizationService] - TransactionCategorizationService instance
+ * @param {Object} [config.payrollService] - PayrollSyncService instance
  * @param {Object} config.configService - ConfigService
  * @param {Object} config.logger - Logger instance
  * @returns {express.Router}
@@ -40,6 +41,7 @@ export function createFinanceRouter(config) {
     harvestService,
     compilationService,
     categorizationService,
+    payrollService,
     configService,
     logger = console
   } = config;
@@ -502,6 +504,38 @@ export function createFinanceRouter(config) {
     } catch (error) {
       logger.error?.('finance.memos.error', { error: error.message });
       return res.status(500).json({ error: 'Failed to load memos' });
+    }
+  });
+
+  // =============================================================================
+  // Payroll Sync
+  // =============================================================================
+
+  /**
+   * POST /api/finance/payroll/sync - Sync payroll data
+   * Fetches paycheck data from external payroll API and uploads to Buxfer
+   */
+  router.post('/payroll/sync', async (req, res) => {
+    const { token } = req.body;
+
+    if (!payrollService) {
+      return res.status(503).json({
+        error: 'Payroll service not configured',
+        hint: 'Initialize PayrollSyncService in bootstrap'
+      });
+    }
+
+    try {
+      logger.info?.('finance.payroll.sync.started', { hasToken: !!token });
+
+      const result = await payrollService.sync({ token });
+
+      logger.info?.('finance.payroll.sync.completed', { result: result.status });
+
+      return res.json(result);
+    } catch (error) {
+      logger.error?.('finance.payroll.sync.error', { error: error.message });
+      return res.status(500).json({ error: 'Payroll sync failed', details: error.message });
     }
   });
 

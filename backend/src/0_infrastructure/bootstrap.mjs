@@ -58,6 +58,7 @@ import { BuxferAdapter } from '../2_adapters/finance/BuxferAdapter.mjs';
 import { BudgetCompilationService } from '../3_applications/finance/BudgetCompilationService.mjs';
 import { FinanceHarvestService } from '../3_applications/finance/FinanceHarvestService.mjs';
 import { TransactionCategorizationService } from '../3_applications/finance/TransactionCategorizationService.mjs';
+import { PayrollSyncService } from '../3_applications/finance/PayrollSyncService.mjs';
 import { createFinanceRouter } from '../4_api/routers/finance.mjs';
 
 // Gratitude domain imports
@@ -229,7 +230,7 @@ export function createApiRouters(config) {
 
   return {
     content: createContentRouter(registry, watchStore, { loadFile, saveFile, cacheBasePath, logger }),
-    proxy: createProxyRouter({ registry, proxyService }),
+    proxy: createProxyRouter({ registry, proxyService, mediaBasePath, logger }),
     localContent: createLocalContentRouter({ registry, dataPath, mediaBasePath }),
     play: createPlayRouter({ registry, watchStore, logger }),
     list: createListRouter({ registry, loadFile, configService }),
@@ -478,6 +479,8 @@ export async function restartEventBus() {
  * @param {string} [config.buxfer.email] - Buxfer email
  * @param {string} [config.buxfer.password] - Buxfer password
  * @param {Object} [config.aiGateway] - AI gateway for transaction categorization
+ * @param {Object} [config.httpClient] - HTTP client for payroll sync
+ * @param {Object} [config.configService] - ConfigService for payroll credentials
  * @param {Object} [config.logger] - Logger instance
  * @returns {Object} Finance services
  */
@@ -487,6 +490,8 @@ export function createFinanceServices(config) {
     defaultHouseholdId = 'default',
     buxfer,
     aiGateway,
+    httpClient,
+    configService,
     logger = console
   } = config;
 
@@ -496,13 +501,14 @@ export function createFinanceServices(config) {
     defaultHouseholdId
   });
 
-  // Buxfer adapter (optional - requires credentials)
+  // Buxfer adapter (optional - requires credentials and httpClient)
   let buxferAdapter = null;
-  if (buxfer?.email && buxfer?.password) {
-    buxferAdapter = new BuxferAdapter(
-      { email: buxfer.email, password: buxfer.password },
-      { logger }
-    );
+  if (buxfer?.email && buxfer?.password && httpClient) {
+    buxferAdapter = new BuxferAdapter({
+      httpClient,
+      getCredentials: () => ({ email: buxfer.email, password: buxfer.password }),
+      logger
+    });
   }
 
   // Budget compilation service
@@ -529,10 +535,22 @@ export function createFinanceServices(config) {
   let harvestService = null;
   if (buxferAdapter) {
     harvestService = new FinanceHarvestService({
-      buxferAdapter,
+      transactionSource: buxferAdapter,
       financeStore,
       compilationService,
       categorizationService,
+      logger
+    });
+  }
+
+  // Payroll sync service (optional - requires httpClient and configService)
+  let payrollService = null;
+  if (httpClient && configService) {
+    payrollService = new PayrollSyncService({
+      httpClient,
+      buxferAdapter,
+      financeStore,
+      configService,
       logger
     });
   }
@@ -542,7 +560,8 @@ export function createFinanceServices(config) {
     buxferAdapter,
     compilationService,
     categorizationService,
-    harvestService
+    harvestService,
+    payrollService
   };
 }
 
@@ -567,6 +586,7 @@ export function createFinanceApiRouter(config) {
     harvestService: financeServices.harvestService,
     compilationService: financeServices.compilationService,
     categorizationService: financeServices.categorizationService,
+    payrollService: financeServices.payrollService,
     configService,
     logger
   });

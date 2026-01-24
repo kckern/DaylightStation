@@ -220,6 +220,8 @@ export function createItemRouter(options = {}) {
         path: localId,
         title: item.title || localId,
         label: item.title || localId,
+        // Include Plex type at top level for PlexMenuRouter (show, season, episode, etc.)
+        type: item.metadata?.type,
         itemType: item.itemType,
         thumbnail: item.thumbnail,
         image: item.thumbnail,

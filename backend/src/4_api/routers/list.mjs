@@ -55,13 +55,16 @@ function compactItem(obj) {
  * @returns {Object} Flattened list item
  */
 export function toListItem(item) {
-  // Compute default play/queue actions, but allow item.actions to override
+  // Compute default play/queue/list actions, but allow item.actions to override
   // For plex items, use plex key with numeric ID; otherwise use media key with full compound ID
   const isPlex = item.source === 'plex';
+  const isContainer = item.itemType === 'container';
   // Use localId from Item entity (extracted from compound ID at construction)
   const localId = item.localId || item.id;
   const computedPlay = item.mediaUrl ? (isPlex ? { plex: localId } : { media: item.id }) : undefined;
-  const computedQueue = item.itemType === 'container' ? (isPlex ? { plex: localId } : { playlist: item.id }) : undefined;
+  const computedQueue = isContainer ? (isPlex ? { plex: localId } : { playlist: item.id }) : undefined;
+  // List action for containers - allows navigation into the container
+  const computedList = isContainer ? (isPlex ? { plex: localId } : { folder: item.id }) : undefined;
 
   const base = {
     id: item.id,
@@ -69,6 +72,8 @@ export function toListItem(item) {
     // Include 'label' for legacy FitnessShow compatibility
     // Top-level label takes priority over metadata.label
     label: item.label ?? item.metadata?.label ?? item.title,
+    // Include Plex type at top level for PlexMenuRouter (show, season, episode, etc.)
+    type: item.metadata?.type,
     itemType: item.itemType || (item.children ? 'container' : 'leaf'),
     childCount: item.childCount || item.children?.length,
     thumbnail: item.thumbnail,
@@ -76,11 +81,11 @@ export function toListItem(item) {
     metadata: item.metadata,
     // Legacy fields - item.actions takes priority over computed defaults
     play: item.actions?.play ?? computedPlay,
-    queue: item.actions?.queue ?? computedQueue
+    queue: item.actions?.queue ?? computedQueue,
+    list: item.actions?.list ?? computedList
   };
 
-  // Action properties from Item (check item.actions for list and open)
-  if (item.actions?.list) base.list = item.actions.list;
+  // Action properties from Item (check item.actions for open)
   if (item.actions?.open) base.open = item.actions.open;
 
   // Note: plex and media_key are NOT copied to top-level.
