@@ -13,21 +13,19 @@ import { WatchState } from '../../1_domains/content/entities/WatchState.mjs';
  * - POST /api/content/progress/:source/* - Update watch progress
  * - GET /api/content/plex/image/:id - Get Plex thumbnail image
  * - GET /api/content/plex/info/:id - Get Plex item metadata
- * - POST /api/content/menu-log - Log menu navigation
  *
  * Note: List endpoint moved to /api/v1/list/:source/* (list.mjs)
+ * Note: Menu logging moved to /api/v1/item/menu-log (item.mjs)
  *
  * @param {import('../../1_domains/content/services/ContentSourceRegistry.mjs').ContentSourceRegistry} registry
  * @param {import('../../2_adapters/persistence/yaml/YamlWatchStateStore.mjs').YamlWatchStateStore} [watchStore=null] - Optional watch state store
  * @param {Object} [options] - Additional options
- * @param {Function} [options.loadFile] - Function to load YAML files
- * @param {Function} [options.saveFile] - Function to save YAML files
  * @param {string} [options.cacheBasePath] - Base path for image cache
  * @param {Object} [options.logger] - Logger instance
  * @returns {express.Router}
  */
 export function createContentRouter(registry, watchStore = null, options = {}) {
-  const { loadFile, saveFile, cacheBasePath, logger = console } = options;
+  const { cacheBasePath, logger = console } = options;
   const router = express.Router();
 
   /**
@@ -290,43 +288,6 @@ export function createContentRouter(registry, watchStore = null, options = {}) {
       });
     } catch (error) {
       logger.error?.('content.plex.info.error', { id: req.params.id, error: error.message });
-      res.status(500).json({ error: error.message });
-    }
-  });
-
-  // ==========================================================================
-  // Menu Navigation Logging
-  // ==========================================================================
-
-  /**
-   * POST /api/content/menu-log - Log menu navigation
-   *
-   * Tracks when menu items are accessed for sorting purposes.
-   * Body: { media_key: string }
-   */
-  router.post('/menu-log', async (req, res) => {
-    try {
-      const { media_key } = req.body;
-
-      if (!media_key) {
-        return res.status(400).json({ error: 'media_key is required' });
-      }
-
-      if (!loadFile || !saveFile) {
-        return res.status(501).json({ error: 'Menu logging not configured' });
-      }
-
-      const menuPath = 'state/menu_memory';
-      const menuLog = loadFile(menuPath) || {};
-      const nowUnix = Math.floor(Date.now() / 1000);
-
-      menuLog[media_key] = nowUnix;
-      saveFile(menuPath, menuLog);
-
-      logger.info?.('content.menu-log.updated', { media_key });
-      res.json({ [media_key]: nowUnix });
-    } catch (error) {
-      logger.error?.('content.menu-log.error', { error: error.message });
       res.status(500).json({ error: error.message });
     }
   });

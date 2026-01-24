@@ -1,6 +1,8 @@
 // backend/src/4_api/routers/item.mjs
 import express from 'express';
 import { toListItem } from './list.mjs';
+import { loadYaml, saveYaml } from '../../0_infrastructure/utils/FileIO.mjs';
+import { configService } from '../../0_infrastructure/config/index.mjs';
 
 /**
  * Parse path modifiers (playable, shuffle, recent_on_top)
@@ -72,16 +74,15 @@ function getMenuMemoryKey(item) {
  * - GET /api/v1/item/:source/(path)/playable - Get playable items from container
  * - GET /api/v1/item/:source/(path)/shuffle - Get shuffled container items
  * - GET /api/v1/item/:source/(path)/recent_on_top - Sort by recent menu selection
+ * - POST /api/v1/item/menu-log - Log menu navigation for recent_on_top sorting
  *
  * @param {Object} options
  * @param {import('../../1_domains/content/services/ContentSourceRegistry.mjs').ContentSourceRegistry} options.registry
- * @param {Function} [options.loadFile] - Function to load state files
- * @param {Object} [options.configService] - ConfigService for household paths
  * @param {Object} [options.logger] - Logger instance
  * @returns {express.Router}
  */
 export function createItemRouter(options = {}) {
-  const { registry, loadFile, configService, logger = console } = options;
+  const { registry, logger = console } = options;
   const router = express.Router();
 
   /**
@@ -171,8 +172,8 @@ export function createItemRouter(options = {}) {
 
       // Apply recent_on_top sorting if requested (uses menu_memory)
       if (modifiers.recent_on_top && !hasFixedOrder) {
-        const menuMemoryPath = configService?.getHouseholdPath('history/menu_memory') ?? 'households/default/history/menu_memory';
-        const menuMemory = loadFile?.(menuMemoryPath) || {};
+        const menuMemoryPath = configService.getHouseholdPath('history/menu_memory');
+        const menuMemory = loadYaml(menuMemoryPath) || {};
 
         items = [...items].sort((a, b) => {
           const aKey = getMenuMemoryKey(a);
@@ -232,6 +233,35 @@ export function createItemRouter(options = {}) {
     } catch (err) {
       logger.error?.('item.get.error', { error: err.message }) || console.error('[item] get error:', err);
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  /**
+   * POST /api/v1/item/menu-log
+   * Log menu navigation for recent_on_top sorting
+   * Body: { media_key: string }
+   */
+  router.post('/menu-log', async (req, res) => {
+    try {
+      const { media_key } = req.body;
+
+      if (!media_key) {
+        return res.status(400).json({ error: 'media_key is required' });
+      }
+
+      const menuMemoryPath = configService.getHouseholdPath('history/menu_memory');
+
+      const menuLog = loadYaml(menuMemoryPath) || {};
+      const nowUnix = Math.floor(Date.now() / 1000);
+
+      menuLog[media_key] = nowUnix;
+      saveYaml(menuMemoryPath, menuLog);
+
+      logger.info?.('item.menu-log.updated', { media_key });
+      res.json({ [media_key]: nowUnix });
+    } catch (error) {
+      logger.error?.('item.menu-log.error', { error: error.message });
+      res.status(500).json({ error: error.message });
     }
   });
 
