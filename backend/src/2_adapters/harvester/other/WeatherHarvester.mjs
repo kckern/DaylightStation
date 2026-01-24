@@ -100,10 +100,14 @@ export class WeatherHarvester extends IHarvester {
     try {
       this.#logger.info?.('weather.harvest.start', { username, forecastDays });
 
-      // Get location from config
-      const weatherConfig = configService?.isReady?.() ? configService.getAdapterConfig('weather') : null;
-      const lat = weatherConfig?.lat || configService.getSecret('WEATHER_LAT');
-      const lng = weatherConfig?.lng || configService.getSecret('WEATHER_LNG');
+      // Get location from config (use injected configService, fallback to global)
+      const cfg = this.#configService || configService;
+      // Try system.weather first, then adapters.weather, then secrets
+      const weatherConfig = cfg?.isReady?.()
+        ? (cfg.get?.('weather') || cfg.getAdapterConfig?.('weather'))
+        : null;
+      const lat = weatherConfig?.lat || cfg.getSecret?.('WEATHER_LAT');
+      const lng = weatherConfig?.lng || cfg.getSecret?.('WEATHER_LNG');
       const tz = weatherConfig?.timezone || this.#timezone;
 
       if (!lat || !lng) {

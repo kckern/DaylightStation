@@ -257,6 +257,7 @@ async function main() {
       io,
       httpClient: axios,
       configService,
+      dataRoot: dataPath,
       logger: args.verbose ? console : { info: () => {}, debug: () => {}, warn: () => {}, error: console.error },
     });
   } catch (error) {
