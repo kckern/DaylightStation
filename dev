@@ -11,7 +11,8 @@
 set -euo pipefail
 
 PORTS=(3112 3113 3120)
-HEALTH_URL="http://localhost:3113/api/v1/health"
+# Use /health/status for fast health check (no data loading)
+HEALTH_URL="http://localhost:3113/api/v1/health/status"
 TIMEOUT=30
 LOG_FILE="/tmp/daylight-dev.log"
 
