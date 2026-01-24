@@ -598,9 +598,9 @@ const FitnessApp = () => {
           plex: episodeId,
           type: 'episode',
           title: `Episode ${episodeId}`,
-          videoUrl: DaylightMediaPath(`media/plex/url/${episodeId}`),
+          videoUrl: DaylightMediaPath(`api/v1/play/plex/mpd/${episodeId}`),
           thumb_id: episodeId,
-          image: DaylightMediaPath(`media/plex/img/${episodeId}`)
+          image: DaylightMediaPath(`api/v1/content/plex/image/${episodeId}`)
         };
         setFitnessPlayQueue([fallbackItem]);
         logger.info('fitness-play-url-started-fallback', { episodeId });
@@ -615,9 +615,9 @@ const FitnessApp = () => {
         title: response.title || `Episode ${episodeId}`,
         show: response.show,
         season: response.season,
-        videoUrl: response.media_url || DaylightMediaPath(`media/plex/url/${episodeId}`),
+        videoUrl: response.media_url || DaylightMediaPath(`api/v1/play/plex/mpd/${episodeId}`),
         thumb_id: response.thumb_id || episodeId,
-        image: response.image || DaylightMediaPath(`media/plex/img/${episodeId}`),
+        image: response.image || DaylightMediaPath(`api/v1/content/plex/image/${episodeId}`),
         labels: response.labels || [],
         summary: response.summary
       };
@@ -794,12 +794,12 @@ const FitnessApp = () => {
     // Handle simulation trigger
     if (simulate) {
       if (simulate.stop) {
-        fetch('/api/fitness/simulate', { method: 'DELETE' })
+        fetch('/api/v1/fitness/simulate', { method: 'DELETE' })
           .then(r => r.json())
           .then(data => logger.info('fitness-simulate-stopped', data))
           .catch(err => logger.error('fitness-simulate-stop-failed', { error: err.message }));
       } else {
-        fetch('/api/fitness/simulate', {
+        fetch('/api/v1/fitness/simulate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(simulate)
