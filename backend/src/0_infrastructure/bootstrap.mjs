@@ -107,6 +107,29 @@ import { createStaticRouter } from '../4_api/routers/static.mjs';
 // Calendar router
 import { createCalendarRouter } from '../4_api/routers/calendar.mjs';
 
+// Harvester application imports
+import { HarvesterService, HarvesterJobExecutor } from '../3_applications/harvester/index.mjs';
+
+// Harvester adapter imports
+import {
+  YamlLifelogStore,
+  TodoistHarvester,
+  ClickUpHarvester,
+  GitHubHarvester,
+  LastfmHarvester,
+  RedditHarvester,
+  LetterboxdHarvester,
+  GoodreadsHarvester,
+  FoursquareHarvester,
+  GmailHarvester,
+  GCalHarvester,
+  ShoppingHarvester,
+  WeatherHarvester,
+  ScriptureHarvester,
+  StravaHarvester,
+  WithingsHarvester
+} from '../2_adapters/harvester/index.mjs';
+
 /**
  * Create and configure the content registry
  * @param {Object} config
@@ -305,6 +328,7 @@ export function createFitnessServices(config) {
  * @param {Object} config.userService - UserService for config hydration
  * @param {Object} config.userDataService - UserDataService for household data
  * @param {Object} config.configService - ConfigService
+ * @param {Object} [config.contentRegistry] - Content source registry (for show endpoint)
  * @param {Object} [config.logger] - Logger instance
  * @returns {express.Router}
  */
@@ -314,6 +338,7 @@ export function createFitnessApiRouter(config) {
     userService,
     userDataService,
     configService,
+    contentRegistry,
     logger = console
   } = config;
 
@@ -324,6 +349,7 @@ export function createFitnessApiRouter(config) {
     userService,
     userDataService,
     configService,
+    contentRegistry,
     logger
   });
 }
@@ -1479,4 +1505,268 @@ export function createStaticApiRouter(config) {
  */
 export function createCalendarApiRouter(config) {
   return createCalendarRouter(config);
+}
+
+// =============================================================================
+// Harvester Services Bootstrap
+// =============================================================================
+
+/**
+ * Create harvester services for scheduled data collection
+ *
+ * This factory creates the HarvesterService with all available harvester adapters
+ * registered. Harvesters are conditionally registered based on available dependencies.
+ *
+ * @param {Object} config
+ * @param {Object} config.io - IO functions { userLoadFile, userSaveFile }
+ * @param {Object} config.httpClient - HTTP client for API requests (e.g., axios)
+ * @param {Object} config.configService - ConfigService for credentials and user lookup
+ * @param {Object} [config.todoistApi] - Todoist API client factory or instance
+ * @param {Object} [config.stravaClient] - Strava API client { refreshToken, getActivities, getActivityStreams }
+ * @param {Object} [config.authStore] - Auth store for OAuth tokens
+ * @param {Object} [config.currentStore] - Store for current state data
+ * @param {Object} [config.aiGateway] - AI gateway for AI-powered harvesters
+ * @param {Object} [config.logger] - Logger instance
+ * @returns {Object} Harvester services { harvesterService, jobExecutor, lifelogStore }
+ */
+export function createHarvesterServices(config) {
+  const {
+    io,
+    httpClient,
+    configService,
+    todoistApi,
+    stravaClient,
+    authStore,
+    currentStore,
+    aiGateway,
+    logger = console
+  } = config;
+
+  // Validate required dependencies
+  if (!io?.userLoadFile || !io?.userSaveFile) {
+    throw new Error('createHarvesterServices requires io.userLoadFile and io.userSaveFile');
+  }
+  if (!configService) {
+    throw new Error('createHarvesterServices requires configService');
+  }
+
+  // Create lifelog store (shared by all harvesters)
+  const lifelogStore = new YamlLifelogStore({ io, logger });
+
+  // Create harvester service
+  const harvesterService = new HarvesterService({ configService, logger });
+
+  // Helper to safely register a harvester
+  const registerHarvester = (name, factory) => {
+    try {
+      const harvester = factory();
+      if (harvester) {
+        harvesterService.register(harvester);
+        logger.debug?.('harvester.bootstrap.registered', { serviceId: name });
+      }
+    } catch (error) {
+      logger.warn?.('harvester.bootstrap.skipped', {
+        serviceId: name,
+        reason: error.message,
+      });
+    }
+  };
+
+  // ==========================================================================
+  // Productivity Harvesters
+  // ==========================================================================
+
+  // Todoist - requires todoistApi or httpClient
+  if (todoistApi || httpClient) {
+    registerHarvester('todoist', () => new TodoistHarvester({
+      todoistApi,
+      httpClient,
+      lifelogStore,
+      currentStore,
+      configService,
+      logger,
+    }));
+  }
+
+  // ClickUp - requires httpClient
+  if (httpClient) {
+    registerHarvester('clickup', () => new ClickUpHarvester({
+      httpClient,
+      lifelogStore,
+      configService,
+      logger,
+    }));
+  }
+
+  // GitHub - requires httpClient
+  if (httpClient) {
+    registerHarvester('github', () => new GitHubHarvester({
+      httpClient,
+      lifelogStore,
+      configService,
+      logger,
+    }));
+  }
+
+  // ==========================================================================
+  // Social Harvesters
+  // ==========================================================================
+
+  // Last.fm - requires httpClient
+  if (httpClient) {
+    registerHarvester('lastfm', () => new LastfmHarvester({
+      httpClient,
+      lifelogStore,
+      configService,
+      logger,
+    }));
+  }
+
+  // Reddit - requires httpClient
+  if (httpClient) {
+    registerHarvester('reddit', () => new RedditHarvester({
+      httpClient,
+      lifelogStore,
+      configService,
+      logger,
+    }));
+  }
+
+  // Letterboxd - requires httpClient
+  if (httpClient) {
+    registerHarvester('letterboxd', () => new LetterboxdHarvester({
+      httpClient,
+      lifelogStore,
+      configService,
+      logger,
+    }));
+  }
+
+  // Goodreads - requires httpClient
+  if (httpClient) {
+    registerHarvester('goodreads', () => new GoodreadsHarvester({
+      httpClient,
+      lifelogStore,
+      configService,
+      logger,
+    }));
+  }
+
+  // Foursquare - requires httpClient
+  if (httpClient) {
+    registerHarvester('foursquare', () => new FoursquareHarvester({
+      httpClient,
+      lifelogStore,
+      configService,
+      logger,
+    }));
+  }
+
+  // ==========================================================================
+  // Communication Harvesters
+  // ==========================================================================
+
+  // Gmail - requires httpClient
+  if (httpClient) {
+    registerHarvester('gmail', () => new GmailHarvester({
+      httpClient,
+      lifelogStore,
+      configService,
+      logger,
+    }));
+  }
+
+  // Google Calendar - requires httpClient
+  if (httpClient) {
+    registerHarvester('gcal', () => new GCalHarvester({
+      httpClient,
+      lifelogStore,
+      configService,
+      logger,
+    }));
+  }
+
+  // ==========================================================================
+  // Finance Harvesters
+  // ==========================================================================
+
+  // Shopping - requires httpClient
+  if (httpClient) {
+    registerHarvester('shopping', () => new ShoppingHarvester({
+      httpClient,
+      lifelogStore,
+      configService,
+      logger,
+    }));
+  }
+
+  // ==========================================================================
+  // Fitness Harvesters
+  // ==========================================================================
+
+  // Strava - requires stravaClient
+  if (stravaClient) {
+    registerHarvester('strava', () => new StravaHarvester({
+      stravaClient,
+      lifelogStore,
+      authStore,
+      configService,
+      logger,
+    }));
+  }
+
+  // Withings - requires httpClient
+  if (httpClient) {
+    registerHarvester('withings', () => new WithingsHarvester({
+      httpClient,
+      lifelogStore,
+      authStore,
+      configService,
+      logger,
+    }));
+  }
+
+  // ==========================================================================
+  // Other Harvesters
+  // ==========================================================================
+
+  // Weather - requires httpClient
+  if (httpClient) {
+    registerHarvester('weather', () => new WeatherHarvester({
+      httpClient,
+      lifelogStore,
+      configService,
+      logger,
+    }));
+  }
+
+  // Scripture - requires httpClient
+  if (httpClient) {
+    registerHarvester('scripture', () => new ScriptureHarvester({
+      httpClient,
+      lifelogStore,
+      configService,
+      logger,
+    }));
+  }
+
+  // Create job executor for scheduler integration
+  const jobExecutor = new HarvesterJobExecutor({
+    harvesterService,
+    configService,
+    logger,
+  });
+
+  // Log summary
+  const registeredHarvesters = harvesterService.listHarvesters();
+  logger.info?.('harvester.bootstrap.complete', {
+    count: registeredHarvesters.length,
+    serviceIds: registeredHarvesters.map(h => h.serviceId),
+  });
+
+  return {
+    harvesterService,
+    jobExecutor,
+    lifelogStore,
+  };
 }
