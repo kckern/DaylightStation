@@ -15,7 +15,7 @@ import { directUPCHandler, directImageHandler, directTextHandler } from '../hand
 import { TelegramWebhookParser } from '../../2_adapters/telegram/TelegramWebhookParser.mjs';
 import { WebhookHandler } from '../../3_applications/nutribot/handlers/WebhookHandler.mjs';
 
-// Middleware (still using legacy until fully migrated)
+// HTTP middleware
 import {
   tracingMiddleware,
   webhookValidationMiddleware,
@@ -23,13 +23,14 @@ import {
   errorHandlerMiddleware,
   requestLoggerMiddleware,
   asyncHandler,
-} from '../../../_legacy/chatbots/adapters/http/middleware/index.mjs';
+} from '../../0_infrastructure/http/middleware/index.mjs';
 
 /**
  * Create NutriBot Express Router
  * @param {import('../../3_applications/nutribot/NutribotContainer.mjs').NutribotContainer} container
  * @param {Object} [options]
  * @param {string} [options.botId] - Telegram bot ID (defaults to env var or config)
+ * @param {string} [options.secretToken] - X-Telegram-Bot-Api-Secret-Token for webhook auth
  * @param {Object} [options.gateway] - TelegramGateway for callback acknowledgements (deprecated)
  * @param {Object} [options.webhookParser] - TelegramWebhookParser instance (DDD)
  * @param {Object} [options.webhookHandler] - WebhookHandler instance (DDD)
@@ -39,6 +40,7 @@ import {
 export function createNutribotRouter(container, options = {}) {
   const router = Router();
   const logger = options.logger || console;
+  const secretToken = options.secretToken;
 
   // Get botId from options, container config, or environment
   const botId =
@@ -59,7 +61,7 @@ export function createNutribotRouter(container, options = {}) {
   // Webhook endpoint using DDD pattern
   router.post(
     '/webhook',
-    webhookValidationMiddleware('nutribot'),
+    webhookValidationMiddleware('nutribot', { secretToken }),
     idempotencyMiddleware({ ttlMs: 300000 }),
     asyncHandler(async (req, res) => {
       try {

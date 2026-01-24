@@ -2,7 +2,9 @@
  * Webhook Validation Middleware
  * @module infrastructure/http/middleware/validation
  *
- * Validates webhook payload structure.
+ * Validates Telegram webhook requests:
+ * 1. X-Telegram-Bot-Api-Secret-Token header (if configured)
+ * 2. Payload structure (message, callback_query, or edited_message)
  */
 
 import { createLogger } from '../../logging/logger.js';
@@ -12,11 +14,28 @@ const logger = createLogger({ source: 'middleware', app: 'http' });
 /**
  * Create webhook validation middleware
  * @param {string} botName - Bot name for logging
+ * @param {Object} [options] - Validation options
+ * @param {string} [options.secretToken] - Expected X-Telegram-Bot-Api-Secret-Token value
  * @returns {Function} Express middleware
  */
-export function webhookValidationMiddleware(botName = 'unknown') {
+export function webhookValidationMiddleware(botName = 'unknown', { secretToken } = {}) {
   return (req, res, next) => {
-    // Check req.body exists
+    // 1. Token validation (if configured)
+    if (secretToken) {
+      const headerToken = req.headers['x-telegram-bot-api-secret-token'];
+      if (headerToken !== secretToken) {
+        logger.warn('webhook.auth.failed', {
+          botName,
+          ip: req.ip || req.headers['x-forwarded-for'],
+          hasToken: !!headerToken,
+          traceId: req.traceId
+        });
+        // Silent 200 - no signal to attacker, no Telegram retry
+        return res.status(200).json({ ok: true });
+      }
+    }
+
+    // 2. Check req.body exists
     if (!req.body) {
       logger.warn('webhook.validation.noBody', { botName, traceId: req.traceId });
       // Return 200 to prevent Telegram retry
