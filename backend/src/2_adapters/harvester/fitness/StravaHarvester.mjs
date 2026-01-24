@@ -188,6 +188,17 @@ export class StravaHarvester extends IHarvester {
   }
 
   /**
+   * Get available harvest parameters
+   * @returns {HarvesterParam[]}
+   */
+  getParams() {
+    return [
+      { name: 'daysBack', type: 'number', default: 90, description: 'Days of history to fetch' },
+      { name: 'backfillSince', type: 'string', default: null, description: 'Override start date (YYYY-MM-DD)' },
+    ];
+  }
+
+  /**
    * Check if harvester is in cooldown state
    * @returns {boolean} True if circuit breaker is open
    */

@@ -206,6 +206,17 @@ export class GCalHarvester extends IHarvester {
   }
 
   /**
+   * Get available harvest parameters
+   * @returns {HarvesterParam[]}
+   */
+  getParams() {
+    return [
+      { name: 'weeksAhead', type: 'number', default: 6, description: 'Weeks to look ahead for upcoming events' },
+      { name: 'weeksBack', type: 'number', default: 6, description: 'Weeks to look back for past events' },
+    ];
+  }
+
+  /**
    * Create authenticated Calendar client
    * @private
    */

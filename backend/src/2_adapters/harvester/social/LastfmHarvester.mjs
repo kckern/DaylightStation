@@ -205,6 +205,17 @@ export class LastfmHarvester extends IHarvester {
   }
 
   /**
+   * Get available harvest parameters
+   * @returns {HarvesterParam[]}
+   */
+  getParams() {
+    return [
+      { name: 'maxPages', type: 'number', default: 10, description: 'Max pages to fetch (200 scrobbles/page)' },
+      { name: 'fullSync', type: 'boolean', default: false, description: 'Fetch all pages (up to 50)' },
+    ];
+  }
+
+  /**
    * Resolve API key from various sources
    * @private
    */

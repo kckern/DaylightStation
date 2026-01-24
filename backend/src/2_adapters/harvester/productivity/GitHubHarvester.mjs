@@ -304,6 +304,17 @@ export class GitHubHarvester extends IHarvester {
   getStatus() {
     return this.#circuitBreaker.getStatus();
   }
+
+  /**
+   * Get available harvest parameters
+   * @returns {HarvesterParam[]}
+   */
+  getParams() {
+    return [
+      { name: 'daysBack', type: 'number', default: 90, description: 'Days of commit history to fetch' },
+      { name: 'maxRepos', type: 'number', default: 10, description: 'Max repos to fetch commits from' },
+    ];
+  }
 }
 
 export default GitHubHarvester;

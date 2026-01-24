@@ -243,6 +243,16 @@ export class ClickUpHarvester extends IHarvester {
   }
 
   /**
+   * Get available harvest parameters
+   * @returns {HarvesterParam[]}
+   */
+  getParams() {
+    return [
+      { name: 'daysBack', type: 'number', default: 7, description: 'Days of history to fetch for lifelog' },
+    ];
+  }
+
+  /**
    * Fetch spaces and build ID->name mapping
    * @private
    */

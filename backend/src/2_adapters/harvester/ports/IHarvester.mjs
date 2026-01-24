@@ -62,6 +62,15 @@ export class IHarvester {
   getStatus() {
     throw new Error('IHarvester.getStatus must be implemented');
   }
+
+  /**
+   * Get available harvest parameters.
+   * Override in subclasses to expose configurable options.
+   * @returns {HarvesterParams[]}
+   */
+  getParams() {
+    return [];
+  }
 }
 
 /**
@@ -78,6 +87,14 @@ export class IHarvester {
  * @property {number} failures - Consecutive failure count
  * @property {number|null} lastFailure - Timestamp of last failure
  * @property {number|null} cooldownUntil - Timestamp when cooldown expires
+ */
+
+/**
+ * @typedef {Object} HarvesterParam
+ * @property {string} name - Parameter name (e.g., 'daysBack')
+ * @property {string} type - Parameter type ('number' | 'string' | 'boolean')
+ * @property {*} default - Default value
+ * @property {string} description - Human-readable description
  */
 
 export default IHarvester;
