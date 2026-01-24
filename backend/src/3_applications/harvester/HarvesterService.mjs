@@ -180,12 +180,13 @@ export class HarvesterService {
   /**
    * List all registered harvesters
    *
-   * @returns {Array<{serviceId: string, category: string}>} Array of harvester info
+   * @returns {Array<{serviceId: string, category: string, params: Array}>} Array of harvester info
    */
   listHarvesters() {
     return Array.from(this.#harvesters.values()).map(harvester => ({
       serviceId: harvester.serviceId,
       category: harvester.category,
+      params: harvester.getParams?.() || [],
     }));
   }
 

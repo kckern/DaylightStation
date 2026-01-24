@@ -1,5 +1,11 @@
 /**
  * Live test harness configuration
+ *
+ * Backfill-capable services accept time-range parameters:
+ * - daysBack: Number of days to look back
+ * - backfillSince: YYYY-MM-DD override start date
+ * - weeksAhead/weeksBack: Calendar-specific time ranges
+ * - maxPages/fullSync: Pagination-based backfill
  */
 
 export default {
@@ -20,18 +26,60 @@ export default {
       delayBetweenTests: 2000
     },
 
-    // Backfill-capable services (support BACKFILL_SINCE env var)
+    // Backfill-capable services (support BACKFILL_SINCE env var or params)
     strava: {
-      supportsBackfill: true
+      supportsBackfill: true,
+      params: ['daysBack=90', 'backfillSince=YYYY-MM-DD']
+    },
+    github: {
+      supportsBackfill: true,
+      params: ['daysBack=90', 'maxRepos=10']
+    },
+    clickup: {
+      supportsBackfill: true,
+      params: ['daysBack=7']
+    },
+    todoist: {
+      supportsBackfill: true,
+      params: ['daysBack=7']
+    },
+    gcal: {
+      supportsBackfill: true,
+      params: ['weeksAhead=6', 'weeksBack=6']
     },
     lastfm: {
-      supportsBackfill: true
+      supportsBackfill: true,
+      params: ['maxPages=10', 'fullSync=false']
     },
+
+    // Snapshot-based services (no time-range backfill)
     letterboxd: {
-      supportsBackfill: true
+      supportsBackfill: false
     },
     goodreads: {
-      supportsBackfill: true
+      supportsBackfill: false
+    },
+    foursquare: {
+      supportsBackfill: false
+    },
+    reddit: {
+      supportsBackfill: false
+    },
+    gmail: {
+      supportsBackfill: false
+    },
+    withings: {
+      supportsBackfill: false,
+      delayBetweenTests: 2000
+    },
+    weather: {
+      supportsBackfill: false
+    },
+    scripture: {
+      supportsBackfill: false
+    },
+    shopping: {
+      supportsBackfill: false
     },
   }
 };

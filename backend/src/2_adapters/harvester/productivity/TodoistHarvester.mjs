@@ -260,6 +260,16 @@ export class TodoistHarvester extends IHarvester {
   }
 
   /**
+   * Get available harvest parameters
+   * @returns {HarvesterParam[]}
+   */
+  getParams() {
+    return [
+      { name: 'daysBack', type: 'number', default: 7, description: 'Days of history to fetch for lifelog' },
+    ];
+  }
+
+  /**
    * Merge tasks by date with composite key deduplication
    * @private
    */
