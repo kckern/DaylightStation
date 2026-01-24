@@ -15,11 +15,11 @@ export async function flattenQueueItems(items, level = 1) {
       const shuffle = !!item.queue.shuffle || item.shuffle || false;
       if (item.queue.playlist || item.queue.queue) {
         const queueKey = item.queue.playlist ?? item.queue.queue;
-        const { items: nestedItems } = await DaylightAPI(`api/v1/list/folder/${queueKey}/playable${shuffle ? ',shuffle' : ''}`);
+        const { items: nestedItems } = await DaylightAPI(`api/v1/item/folder/${queueKey}/playable${shuffle ? ',shuffle' : ''}`);
         const nestedFlattened = await flattenQueueItems(nestedItems, level + 1);
         flattened.push(...nestedFlattened);
       } else if (item.queue.plex) {
-        const { items: plexItems } = await DaylightAPI(`api/v1/list/plex/${item.queue.plex}/playable${shuffle ? ',shuffle' : ''}`);
+        const { items: plexItems } = await DaylightAPI(`api/v1/item/plex/${item.queue.plex}/playable${shuffle ? ',shuffle' : ''}`);
         const nestedFlattened = await flattenQueueItems(plexItems, level + 1);
         flattened.push(...nestedFlattened);
       }
@@ -96,7 +96,7 @@ export async function initializeQueue(play, queue) {
     const queue_media_key = play?.playlist || play?.queue || queue?.playlist || queue?.queue || queue?.media;
     if (queue_media_key) {
       const shuffle = !!play?.shuffle || !!queue?.shuffle || false;
-      const { items } = await DaylightAPI(`api/v1/list/folder/${queue_media_key}/playable${shuffle ? ',shuffle' : ''}`);
+      const { items } = await DaylightAPI(`api/v1/item/folder/${queue_media_key}/playable${shuffle ? ',shuffle' : ''}`);
       const flatItems = await flattenQueueItems(items);
       newQueue = flatItems.map(item => ({ ...item, guid: guid() }));
     } else {
