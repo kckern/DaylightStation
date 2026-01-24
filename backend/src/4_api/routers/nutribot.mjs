@@ -11,8 +11,11 @@ import { nutribotReportHandler } from '../handlers/nutribot/report.mjs';
 import { nutribotReportImgHandler } from '../handlers/nutribot/reportImg.mjs';
 import { directUPCHandler, directImageHandler, directTextHandler } from '../handlers/nutribot/directInput.mjs';
 
-// Legacy imports for middleware and webhook handler until migrated
-import { createTelegramWebhookHandler } from '../../../_legacy/chatbots/adapters/http/TelegramWebhookHandler.mjs';
+// DDD adapters for webhook handling
+import { TelegramWebhookParser } from '../../2_adapters/telegram/TelegramWebhookParser.mjs';
+import { WebhookHandler } from '../../3_applications/nutribot/handlers/WebhookHandler.mjs';
+
+// Middleware (still using legacy until fully migrated)
 import {
   tracingMiddleware,
   webhookValidationMiddleware,
@@ -27,7 +30,9 @@ import {
  * @param {import('../../3_applications/nutribot/NutribotContainer.mjs').NutribotContainer} container
  * @param {Object} [options]
  * @param {string} [options.botId] - Telegram bot ID (defaults to env var or config)
- * @param {Object} [options.gateway] - TelegramGateway for callback acknowledgements
+ * @param {Object} [options.gateway] - TelegramGateway for callback acknowledgements (deprecated)
+ * @param {Object} [options.webhookParser] - TelegramWebhookParser instance (DDD)
+ * @param {Object} [options.webhookHandler] - WebhookHandler instance (DDD)
  * @param {Object} [options.logger] - Logger instance
  * @returns {Router}
  */
@@ -39,19 +44,43 @@ export function createNutribotRouter(container, options = {}) {
   const botId =
     options.botId || container.getConfig?.()?.telegram?.botId || process.env.NUTRIBOT_TELEGRAM_BOT_ID || '6898194425';
 
-  // Create webhook handler using the unified pattern
-  const webhookHandler = createTelegramWebhookHandler(container, { botId, botName: 'nutribot' }, { gateway: options.gateway });
+  // Use injected DDD components or create them
+  const webhookParser = options.webhookParser || new TelegramWebhookParser({ botId, logger });
+  const webhookHandler = options.webhookHandler || new WebhookHandler({
+    container,
+    nutribotConfig: container.getConfig?.(),
+    logger
+  });
 
   // Apply middleware
   router.use(tracingMiddleware());
   router.use(requestLoggerMiddleware({ logBody: false }));
 
-  // Webhook endpoint with validation and idempotency
+  // Webhook endpoint using DDD pattern
   router.post(
     '/webhook',
     webhookValidationMiddleware('nutribot'),
     idempotencyMiddleware({ ttlMs: 300000 }),
-    asyncHandler(webhookHandler)
+    asyncHandler(async (req, res) => {
+      try {
+        // Parse Telegram update into normalized input
+        const input = webhookParser.parse(req.body);
+        if (!input) {
+          // Acknowledge unknown update types gracefully
+          logger.debug?.('nutribot.webhook.unsupported', { updateKeys: Object.keys(req.body) });
+          return res.sendStatus(200);
+        }
+
+        // Route to use cases via handler
+        await webhookHandler.handle(input);
+
+        res.sendStatus(200);
+      } catch (error) {
+        logger.error?.('nutribot.webhook.error', { error: error.message, stack: error.stack });
+        // Always return 200 to Telegram to prevent retry loops
+        res.sendStatus(200);
+      }
+    })
   );
 
   // Direct input endpoints (programmatic API access)
