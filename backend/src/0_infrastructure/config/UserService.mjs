@@ -172,6 +172,17 @@ export class UserService {
   resolveFromPlatform(platform, platformId) {
     return this.#configService.resolveUsername(platform, platformId);
   }
+
+  /**
+   * Resolve a userId to a display name
+   * @param {string} userId - User ID / username
+   * @returns {string} Display name or userId if not found
+   */
+  resolveDisplayName(userId) {
+    if (!userId) return 'Unknown';
+    const profile = this.getProfile(userId);
+    return profile?.display_name || profile?.username || userId;
+  }
 }
 
 // Singleton instance - lazily created to avoid circular dependency issues
