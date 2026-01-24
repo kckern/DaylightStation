@@ -22,12 +22,14 @@ export class SchedulerService {
     stateStore,
     timezone = 'America/Los_Angeles',
     moduleBasePath = null,
+    harvesterExecutor = null,
     logger = console
   }) {
     this.jobStore = jobStore;
     this.stateStore = stateStore;
     this.timezone = timezone;
     this.moduleBasePath = moduleBasePath;
+    this.harvesterExecutor = harvesterExecutor;
     this.logger = logger;
     this.runningJobs = new Map();
   }
@@ -234,35 +236,57 @@ export class SchedulerService {
     const scopedLogger = this.logger.child?.({ jobId: executionId, job: job.id }) || this.logger;
 
     try {
-      // Resolve and import the job module
-      const resolvedPath = this.resolveModulePath(job.module);
-      const module = await import(resolvedPath);
-      const handler = module.default;
+      // Check if harvester executor can handle this job
+      if (this.harvesterExecutor?.canHandle(job.id)) {
+        this.logger.debug?.('scheduler.job.using_harvester', { jobId: job.id });
 
-      if (typeof handler !== 'function') {
-        throw new Error(`Job module ${job.module} (resolved: ${resolvedPath}) does not export a default function`);
+        await Promise.race([
+          this.harvesterExecutor.execute(job.id, job.options || {}, {
+            logger: scopedLogger,
+            executionId
+          }),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error(`Job timeout after ${job.timeout}ms`)), job.timeout)
+          )
+        ]);
+
+        execution.succeed();
+        this.logger.info?.('scheduler.job.success', {
+          jobId: job.id,
+          executionId,
+          durationMs: execution.durationMs
+        });
+      } else {
+        // Fall back to dynamic module import (legacy)
+        const resolvedPath = this.resolveModulePath(job.module);
+        const module = await import(resolvedPath);
+        const handler = module.default;
+
+        if (typeof handler !== 'function') {
+          throw new Error(`Job module ${job.module} (resolved: ${resolvedPath}) does not export a default function`);
+        }
+
+        // Execute with timeout
+        const promise = handler.length >= 2
+          ? handler(scopedLogger, executionId)
+          : handler.length === 1
+            ? handler(executionId)
+            : handler(scopedLogger, executionId);
+
+        await Promise.race([
+          promise,
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error(`Job timeout after ${job.timeout}ms`)), job.timeout)
+          )
+        ]);
+
+        execution.succeed();
+        this.logger.info?.('scheduler.job.success', {
+          jobId: job.id,
+          executionId,
+          durationMs: execution.durationMs
+        });
       }
-
-      // Execute with timeout
-      const promise = handler.length >= 2
-        ? handler(scopedLogger, executionId)
-        : handler.length === 1
-          ? handler(executionId)
-          : handler(scopedLogger, executionId);
-
-      await Promise.race([
-        promise,
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error(`Job timeout after ${job.timeout}ms`)), job.timeout)
-        )
-      ]);
-
-      execution.succeed();
-      this.logger.info?.('scheduler.job.success', {
-        jobId: job.id,
-        executionId,
-        durationMs: execution.durationMs
-      });
     } catch (err) {
       if (err.message?.includes('timeout')) {
         execution.timeout();
