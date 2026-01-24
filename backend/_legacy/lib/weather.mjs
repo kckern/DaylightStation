@@ -10,7 +10,7 @@ const getWeather = async (job_id) => {
     const hid = getCurrentHouseholdId();
 
     // Get weather config from ConfigService
-    const weatherConfig = configService.getAppConfig('weather') || {};
+    const weatherConfig = configService.getServiceConfig('weather') || {};
     const lat = weatherConfig.lat;
     const lng = weatherConfig.lng;
     const timezone = weatherConfig.timezone || configService.getTimezone();
