@@ -199,7 +199,7 @@ const FitnessMenu = ({ activeCollection, onContentSelect, setFitnessPlayQueue })
 
         const listResponses = await Promise.all(idsToFetch.map(async (collectionId) => {
           try {
-            const response = await DaylightAPI(`/api/v1/list/plex/${collectionId}`);
+            const response = await DaylightAPI(`/api/v1/item/plex/${collectionId}`);
             return Array.isArray(response?.items) ? response.items : [];
           } catch (apiErr) {
             console.error(`🎬 ERROR: Error loading shows for collection ${collectionId}:`, apiErr);
