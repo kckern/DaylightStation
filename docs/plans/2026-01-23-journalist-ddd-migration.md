@@ -1,5 +1,7 @@
 # Journalist DDD Migration - Implementation Plan
 
+**STATUS: COMPLETE** (2026-01-23)
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Migrate journalist from `_legacy/chatbots/bots/journalist/` into proper DDD folder structure, aligning with nutribot patterns and maximizing shared adapter reuse.
@@ -7,6 +9,22 @@
 **Key Difference from Nutribot:** Journalist is partially migrated - router and some adapters already exist in new structure. Main work is moving domain and application layers.
 
 **Shared Adapters:** Both journalist and nutribot use `TelegramAdapter` and `OpenAIAdapter` from `2_adapters/`.
+
+---
+
+## Completion Summary
+
+All phases complete. Tests pass (13/13 journalist integration tests).
+
+**Legacy files ready for deletion after confidence period:**
+- `backend/_legacy/chatbots/bots/journalist/` (entire directory)
+
+**New DDD structure:**
+- `backend/src/1_domains/journalist/` - Domain layer (entities, services, value-objects)
+- `backend/src/3_applications/journalist/` - Application layer (ports, usecases, JournalistContainer)
+- `backend/src/2_adapters/journalist/` - Adapters (DebriefRepository, LoggingAIGateway, JournalistInputRouter)
+- `backend/src/4_api/routers/journalist.mjs` - API router
+- `backend/src/4_api/handlers/journalist/` - API handlers
 
 ---
 
