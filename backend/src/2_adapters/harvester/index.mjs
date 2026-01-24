@@ -40,5 +40,4 @@ export { ShoppingHarvester } from './finance/ShoppingHarvester.mjs';
 
 // Other Harvesters
 export { WeatherHarvester } from './other/WeatherHarvester.mjs';
-export { ScriptureHarvester } from './other/ScriptureHarvester.mjs';
 // Note: YouTube (media download) and Budget (already in finance domain) don't fit IHarvester pattern
