@@ -329,6 +329,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Create unified item router (new item-centric API)
   const itemRouter = createItemRouter({
     registry: contentRegistry,
+    loadFile: contentLoadFile,
+    configService,
     logger: rootLogger.child({ module: 'item-api' })
   });
 
