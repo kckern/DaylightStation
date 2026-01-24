@@ -37,6 +37,19 @@ export function createConfigService(dataDir) {
 }
 
 /**
+ * Set resolved paths in process.env for application-wide access.
+ *
+ * @param {ConfigService} svc - Initialized ConfigService instance
+ */
+function setEnvPaths(svc) {
+  process.env.path = {
+    ...process.env.path,
+    data: svc.getDataDir(),
+    media: svc.getMediaDir()
+  };
+}
+
+/**
  * Initialize the singleton instance.
  * Call once at application startup.
  *
@@ -50,6 +63,7 @@ export function initConfigService(dataDir) {
     throw new Error('ConfigService already initialized');
   }
   instance = createConfigService(dataDir);
+  setEnvPaths(instance);
   return instance;
 }
 
