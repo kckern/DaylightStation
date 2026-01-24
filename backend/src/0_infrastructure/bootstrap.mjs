@@ -129,8 +129,12 @@ import {
   WithingsHarvester
 } from '../2_adapters/harvester/index.mjs';
 
-// RSS Parser for Goodreads harvester
+// RSS Parser for Goodreads/Letterboxd harvesters
 import RSSParser from 'rss-parser';
+
+// Additional adapters for harvesters
+import { StravaClientAdapter } from '../2_adapters/fitness/StravaClientAdapter.mjs';
+import { YamlWeatherStore } from '../2_adapters/persistence/yaml/YamlWeatherStore.mjs';
 
 /**
  * Create and configure the content registry
@@ -1531,6 +1535,7 @@ export function createCalendarApiRouter(config) {
  * @param {Object} [config.rssParser] - RSS parser instance (defaults to new RSSParser)
  * @param {Object} [config.sharedStore] - Store for shared household data (weather)
  * @param {Function} [config.gmailClientFactory] - Factory to create Gmail client: (username) => gmailClient
+ * @param {string} [config.dataRoot] - Base data directory (for creating default stores)
  * @param {Object} [config.logger] - Logger instance
  * @returns {Object} Harvester services { harvesterService, jobExecutor, lifelogStore }
  */
@@ -1540,13 +1545,14 @@ export function createHarvesterServices(config) {
     httpClient,
     configService,
     todoistApi,
-    stravaClient,
-    authStore,
+    stravaClient: stravaClientParam,
+    authStore: authStoreParam,
     currentStore,
     aiGateway,
     rssParser,
-    sharedStore,
+    sharedStore: sharedStoreParam,
     gmailClientFactory,
+    dataRoot,
     logger = console
   } = config;
 
@@ -1560,6 +1566,31 @@ export function createHarvesterServices(config) {
 
   // Create lifelog store (shared by all harvesters)
   const lifelogStore = new YamlLifelogStore({ io, logger });
+
+  // Create or use provided stravaClient
+  const stravaClient = stravaClientParam || (httpClient ? new StravaClientAdapter({
+    httpClient,
+    configService,
+    logger,
+  }) : null);
+
+  // Create or use provided authStore (for OAuth token persistence)
+  const authStore = authStoreParam || {
+    async load(username, provider) {
+      return configService?.getUserAuth?.(provider, username) || null;
+    },
+    async save(username, provider, tokenData) {
+      // Auth store save is optional - tokens are typically managed by configService
+      logger.debug?.('authStore.save', { username, provider });
+    },
+  };
+
+  // Create or use provided sharedStore (for weather data)
+  const sharedStore = sharedStoreParam || (dataRoot ? new YamlWeatherStore({
+    dataRoot,
+    householdId: configService?.getDefaultHouseholdId?.() || 'default',
+    logger,
+  }) : null);
 
   // Create harvester service
   const harvesterService = new HarvesterService({ configService, logger });
