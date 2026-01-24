@@ -1,43 +1,115 @@
-#!/bin/bash
+#!/usr/bin/env bash
+#
+# DaylightStation Dev Server Manager
+#
+# Usage:
+#   ./dev              Start dev server (kills stale processes first)
+#   ./dev --kill       Kill any processes on dev ports
+#   ./dev --status     Check if server is running
+#   ./dev --background Start in background, wait for ready
+#
+set -euo pipefail
 
-# Load env vars from .env
-set -a
-source .env
-set +a
+PORTS=(3112 3113 3120)
+HEALTH_URL="http://localhost:3113/api/v1/health"
+TIMEOUT=30
+LOG_FILE="/tmp/daylight-dev.log"
 
-# Resolve config paths
-DATA_PATH="${DAYLIGHT_BASE_PATH}/data"
-ENV_NAME="${DAYLIGHT_ENV:-$(hostname)}"
-CONFIG_FILE="${DATA_PATH}/system/system-local.${ENV_NAME}.yml"
-
-# Read ports from config (fallback to defaults if not found)
-if [[ -f "$CONFIG_FILE" ]]; then
-    PRIMARY_PORT=$(grep -A1 '^app:' "$CONFIG_FILE" | grep 'port:' | awk '{print $2}')
-    SECONDARY_PORT=$(grep -A1 '^webhook:' "$CONFIG_FILE" | grep 'port:' | awk '{print $2}')
-    PRIMARY_PORT=${PRIMARY_PORT:-3111}
-    SECONDARY_PORT=${SECONDARY_PORT:-3119}
+# Colors (disabled if not a terminal)
+if [ -t 1 ]; then
+  GREEN='\033[0;32m'
+  RED='\033[0;31m'
+  YELLOW='\033[0;33m'
+  NC='\033[0m'
 else
-    echo "Warning: Config file not found: $CONFIG_FILE"
-    PRIMARY_PORT=3111
-    SECONDARY_PORT=3119
+  GREEN='' RED='' YELLOW='' NC=''
 fi
 
-echo "Using ports from $ENV_NAME config: primary=$PRIMARY_PORT, secondary=$SECONDARY_PORT"
+kill_ports() {
+  local killed=0
+  for port in "${PORTS[@]}"; do
+    pid=$(lsof -ti :"$port" 2>/dev/null || true)
+    if [ -n "$pid" ]; then
+      kill -9 $pid 2>/dev/null || true
+      killed=$((killed + 1))
+    fi
+  done
+  sleep 0.5
+  if [ $killed -gt 0 ]; then
+    echo -e "${YELLOW}Killed $killed stale process(es)${NC}"
+  fi
+}
 
-# Kill any process using configured ports
-lsof -ti:$PRIMARY_PORT 2>/dev/null | xargs kill -9 2>/dev/null || true
-lsof -ti:$SECONDARY_PORT 2>/dev/null | xargs kill -9 2>/dev/null || true
+wait_ready() {
+  echo -n "Waiting for server"
+  for ((i=1; i<=TIMEOUT; i++)); do
+    if curl -sf "$HEALTH_URL" > /dev/null 2>&1; then
+      echo -e "\n${GREEN}✓ Server ready (${i}s)${NC}"
+      return 0
+    fi
+    echo -n "."
+    sleep 1
+  done
+  echo -e "\n${RED}✗ Timeout after ${TIMEOUT}s${NC}"
+  return 1
+}
 
-## clear dev.log
-> ./dev.log
+check_status() {
+  if curl -sf "$HEALTH_URL" > /dev/null 2>&1; then
+    echo -e "${GREEN}Running${NC}"
+    return 0
+  else
+    echo -e "${RED}Not running${NC}"
+    return 1
+  fi
+}
 
-# Check if --background flag is provided
-if [[ "$1" == "--background" ]]; then
-    npm run dev > /dev/null 2>&1 &
-    PID=$!
-    echo "Dev server started in background with PID: $PID"
-    echo "Check logs at ./dev.log"
-    echo $PID
-else
-    npm run dev
-fi
+show_usage() {
+  echo "Usage: ./dev [--kill|--status|--background]"
+  echo ""
+  echo "Commands:"
+  echo "  (none)       Start dev server (kills stale processes first)"
+  echo "  --kill       Kill any processes on dev ports"
+  echo "  --status     Check if server is running"
+  echo "  --background Start in background, wait until ready"
+  echo ""
+  echo "Ports managed: ${PORTS[*]}"
+}
+
+# Change to script directory (repo root)
+cd "$(dirname "$0")"
+
+case "${1:-}" in
+  --kill)
+    kill_ports
+    echo -e "${GREEN}✓ Ports cleared${NC}"
+    ;;
+  --status)
+    check_status
+    ;;
+  --background)
+    kill_ports
+    echo "Starting server in background..."
+    npm run dev > "$LOG_FILE" 2>&1 &
+    if wait_ready; then
+      echo "Logs: $LOG_FILE"
+    else
+      echo "Check logs: $LOG_FILE"
+      tail -20 "$LOG_FILE"
+      exit 1
+    fi
+    ;;
+  --help|-h)
+    show_usage
+    ;;
+  "")
+    kill_ports
+    echo -e "${GREEN}Starting dev server...${NC}"
+    exec npm run dev
+    ;;
+  *)
+    echo -e "${RED}Unknown option: $1${NC}"
+    show_usage
+    exit 2
+    ;;
+esac
