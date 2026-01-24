@@ -106,7 +106,7 @@ export function PlexMenuRouter({ plexId, depth, onSelect, onEscape, list }) {
     async function fetchAndRoute() {
       try {
         // Fetch Plex item data to determine type (show, season, etc.)
-        const data = await DaylightAPI(`api/v1/list/plex/${plexId}`);
+        const data = await DaylightAPI(`api/v1/item/plex/${plexId}`);
         
         if (!canceled) {
           setRouteInfo({
