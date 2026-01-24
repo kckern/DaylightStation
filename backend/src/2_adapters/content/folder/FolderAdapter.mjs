@@ -415,23 +415,29 @@ export class FolderAdapter {
       }));
     }
 
-    // Sort by priority: in_progress > urgent > high > medium > low
-    const priorityOrder = ['in_progress', 'urgent', 'high', 'medium', 'low'];
-    children.sort((a, b) => {
-      const priorityA = priorityOrder.indexOf(a.metadata?.priority || 'medium');
-      const priorityB = priorityOrder.indexOf(b.metadata?.priority || 'medium');
+    // Check if any item has folder_color - if so, maintain fixed order from YAML
+    // (Legacy behavior: folder_color indicates "no dynamic sorting")
+    const hasFixedOrder = children.some(item => item.metadata?.folder_color);
 
-      if (priorityA !== priorityB) {
-        return priorityA - priorityB;
-      }
+    if (!hasFixedOrder) {
+      // Sort by priority: in_progress > urgent > high > medium > low
+      const priorityOrder = ['in_progress', 'urgent', 'high', 'medium', 'low'];
+      children.sort((a, b) => {
+        const priorityA = priorityOrder.indexOf(a.metadata?.priority || 'medium');
+        const priorityB = priorityOrder.indexOf(b.metadata?.priority || 'medium');
 
-      // For in_progress items, sort by higher percent first
-      if (a.metadata?.priority === 'in_progress' && b.metadata?.priority === 'in_progress') {
-        return (b.metadata?.percent || 0) - (a.metadata?.percent || 0);
-      }
+        if (priorityA !== priorityB) {
+          return priorityA - priorityB;
+        }
 
-      return 0;
-    });
+        // For in_progress items, sort by higher percent first
+        if (a.metadata?.priority === 'in_progress' && b.metadata?.priority === 'in_progress') {
+          return (b.metadata?.percent || 0) - (a.metadata?.percent || 0);
+        }
+
+        return 0;
+      });
+    }
 
     // If no items remain after filtering, try with relaxed filters (legacy behavior)
     if (children.length === 0 && skippedItems.length > 0) {
@@ -470,17 +476,119 @@ export class FolderAdapter {
     });
   }
 
-  async resolvePlayables(id) {
+  /**
+   * Resolve folder to playable items.
+   *
+   * Key behavior based on action type:
+   * - play action: returns ONE playable (next up) - for daily programming variety
+   * - queue action: returns ALL playables - for binge watching
+   * - open/list actions: skipped (not playable)
+   *
+   * @param {string} id - Folder ID
+   * @param {Object} options
+   * @param {boolean} [options.forceAll=false] - If true, get all playables regardless of action type
+   * @returns {Promise<Array>}
+   */
+  async resolvePlayables(id, options = {}) {
+    const { forceAll = false } = options;
     const list = await this.getList(id);
     if (!list || !this.registry) return [];
+
     const playables = [];
+
     for (const child of list.children) {
+      // Determine action type from child's actions object
+      const hasPlayAction = child.actions?.play && Object.keys(child.actions.play).length > 0;
+      const hasQueueAction = child.actions?.queue && Object.keys(child.actions.queue).length > 0;
+      const hasOpenAction = child.actions?.open && Object.keys(child.actions.open).length > 0;
+
+      // Skip open/list actions - they're not playable
+      if (hasOpenAction && !hasPlayAction && !hasQueueAction) {
+        continue;
+      }
+
       const resolved = this.registry.resolve(child.id);
-      if (resolved?.adapter?.resolvePlayables) {
+      if (!resolved?.adapter) continue;
+
+      // For play action (or no explicit action type), get SINGLE next playable
+      // This creates variety and rotation in daily programming
+      if (!forceAll && hasPlayAction && !hasQueueAction) {
+        const nextItem = await this._getNextPlayableFromChild(child, resolved);
+        if (nextItem) {
+          playables.push(nextItem);
+        }
+        continue;
+      }
+
+      // For queue action, get ALL playables
+      if (resolved.adapter.resolvePlayables) {
         const childPlayables = await resolved.adapter.resolvePlayables(child.id);
         playables.push(...childPlayables);
       }
     }
+
     return playables;
+  }
+
+  /**
+   * Get the single "next up" playable from a child source.
+   * Uses watch state to find: in_progress > unwatched > null
+   *
+   * @param {Object} child - Child item from folder
+   * @param {Object} resolved - Resolved registry entry {adapter, localId}
+   * @returns {Promise<Object|null>}
+   * @private
+   */
+  async _getNextPlayableFromChild(child, resolved) {
+    const { adapter } = resolved;
+
+    // Get all playables from the child source
+    let items = [];
+    if (adapter.resolvePlayables) {
+      items = await adapter.resolvePlayables(child.id);
+    } else if (adapter.getItem) {
+      const item = await adapter.getItem(child.id);
+      if (item?.mediaUrl || item?.isPlayable?.()) {
+        items = [item];
+      }
+    }
+
+    if (!items || items.length === 0) return null;
+
+    // For single items (e.g., a single hymn), return it directly
+    if (items.length === 1) return items[0];
+
+    // Determine storage path for watch state lookup
+    const storagePath = adapter.getStoragePath?.(child.id) || child.source || 'media';
+
+    // Load watch state to find "next up"
+    const watchState = this._loadWatchState(storagePath);
+
+    // First pass: find any in-progress item
+    for (const item of items) {
+      const mediaKey = item.localId || item.id.split(':')[1];
+      const state = watchState[mediaKey];
+      const percent = state?.percent || 0;
+
+      // In progress if between 1% and 90%
+      if (percent > 1 && percent < 90) {
+        return item;
+      }
+    }
+
+    // Second pass: find first unwatched item
+    for (const item of items) {
+      const mediaKey = item.localId || item.id.split(':')[1];
+      const state = watchState[mediaKey];
+      const percent = state?.percent || 0;
+
+      // Unwatched if < 90%
+      if (percent < 90) {
+        return item;
+      }
+    }
+
+    // All watched - return null or first item as fallback
+    return items[0];
   }
 }
