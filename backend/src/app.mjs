@@ -391,9 +391,6 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'harvest-api' })
   });
 
-  // Note: harvesterServices.jobExecutor is available for scheduler integration
-  // See Task 7 in the migration plan for wiring to SchedulerService
-
   // Entropy domain router - import legacy function for parity
   const { getEntropyReport: legacyGetEntropyReport } = await import('../_legacy/lib/entropy.mjs');
   v1Routers.entropy = createEntropyApiRouter({
@@ -659,6 +656,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     stateStore: schedulingStateStore,
     timezone: 'America/Los_Angeles',
     moduleBasePath: legacyCronRouterDir,
+    harvesterExecutor: harvesterServices.jobExecutor,
     logger: rootLogger.child({ module: 'scheduler-service' })
   });
 
