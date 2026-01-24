@@ -142,7 +142,10 @@ export function createContentRegistry(config) {
   if (config.dataPath && config.mediaBasePath) {
     registry.register(new LocalContentAdapter({
       dataPath: config.dataPath,
-      mediaPath: config.mediaBasePath
+      mediaPath: config.mediaBasePath,
+      historyPath: config.mediaMemoryPath || null,
+      householdId: config.householdId || null,
+      householdsBasePath: config.householdsBasePath || null
     }));
   }
 
