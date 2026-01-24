@@ -106,9 +106,7 @@ export class HarvesterService {
     }
 
     // Resolve username: use provided username, or head of household from config, or 'default'
-    const targetUser = username || this.#configService?.getHeadOfHousehold?.() || 'default';
-
-    const resolvedUsername = targetUser;
+    const resolvedUsername = username || this.#configService?.getHeadOfHousehold?.() || 'default';
 
     this.#log('info', 'harvester.harvest.start', {
       serviceId,
