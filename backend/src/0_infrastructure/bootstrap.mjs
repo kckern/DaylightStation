@@ -125,10 +125,12 @@ import {
   GCalHarvester,
   ShoppingHarvester,
   WeatherHarvester,
-  ScriptureHarvester,
   StravaHarvester,
   WithingsHarvester
 } from '../2_adapters/harvester/index.mjs';
+
+// RSS Parser for Goodreads harvester
+import RSSParser from 'rss-parser';
 
 /**
  * Create and configure the content registry
@@ -1526,6 +1528,9 @@ export function createCalendarApiRouter(config) {
  * @param {Object} [config.authStore] - Auth store for OAuth tokens
  * @param {Object} [config.currentStore] - Store for current state data
  * @param {Object} [config.aiGateway] - AI gateway for AI-powered harvesters
+ * @param {Object} [config.rssParser] - RSS parser instance (defaults to new RSSParser)
+ * @param {Object} [config.sharedStore] - Store for shared household data (weather)
+ * @param {Function} [config.gmailClientFactory] - Factory to create Gmail client: (username) => gmailClient
  * @param {Object} [config.logger] - Logger instance
  * @returns {Object} Harvester services { harvesterService, jobExecutor, lifelogStore }
  */
@@ -1539,6 +1544,9 @@ export function createHarvesterServices(config) {
     authStore,
     currentStore,
     aiGateway,
+    rssParser,
+    sharedStore,
+    gmailClientFactory,
     logger = console
   } = config;
 
@@ -1642,15 +1650,14 @@ export function createHarvesterServices(config) {
     }));
   }
 
-  // Goodreads - requires httpClient
-  if (httpClient) {
-    registerHarvester('goodreads', () => new GoodreadsHarvester({
-      httpClient,
-      lifelogStore,
-      configService,
-      logger,
-    }));
-  }
+  // Goodreads - requires rssParser (creates default if not provided)
+  const goodreadsParser = rssParser || new RSSParser();
+  registerHarvester('goodreads', () => new GoodreadsHarvester({
+    rssParser: goodreadsParser,
+    lifelogStore,
+    configService,
+    logger,
+  }));
 
   // Foursquare - requires httpClient
   if (httpClient) {
@@ -1690,10 +1697,11 @@ export function createHarvesterServices(config) {
   // Finance Harvesters
   // ==========================================================================
 
-  // Shopping - requires httpClient
-  if (httpClient) {
+  // Shopping - requires gmailClientFactory and aiGateway
+  if (gmailClientFactory && aiGateway) {
     registerHarvester('shopping', () => new ShoppingHarvester({
-      httpClient,
+      gmailClientFactory,
+      aiGateway,
       lifelogStore,
       configService,
       logger,
@@ -1730,21 +1738,10 @@ export function createHarvesterServices(config) {
   // Other Harvesters
   // ==========================================================================
 
-  // Weather - requires httpClient
-  if (httpClient) {
+  // Weather - requires sharedStore for household-level data
+  if (sharedStore) {
     registerHarvester('weather', () => new WeatherHarvester({
-      httpClient,
-      lifelogStore,
-      configService,
-      logger,
-    }));
-  }
-
-  // Scripture - requires httpClient
-  if (httpClient) {
-    registerHarvester('scripture', () => new ScriptureHarvester({
-      httpClient,
-      lifelogStore,
+      sharedStore,
       configService,
       logger,
     }));

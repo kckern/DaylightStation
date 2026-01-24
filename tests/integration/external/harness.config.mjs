@@ -75,9 +75,6 @@ export default {
     weather: {
       supportsBackfill: false
     },
-    scripture: {
-      supportsBackfill: false
-    },
     shopping: {
       supportsBackfill: false
     },
