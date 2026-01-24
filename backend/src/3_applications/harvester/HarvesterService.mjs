@@ -105,12 +105,10 @@ export class HarvesterService {
       throw error;
     }
 
-    // Resolve username if not provided
-    const resolvedUsername = username || this.#resolveDefaultUsername();
+    // Resolve username: use provided username, or head of household from config, or 'default'
+    const targetUser = username || this.#configService?.getHeadOfHousehold?.() || 'default';
 
-    if (!resolvedUsername) {
-      throw new Error('Username required but not provided or resolvable from config');
-    }
+    const resolvedUsername = targetUser;
 
     this.#log('info', 'harvester.harvest.start', {
       serviceId,
@@ -216,32 +214,6 @@ export class HarvesterService {
   // ==========================================================================
   // Private Methods
   // ==========================================================================
-
-  /**
-   * Resolve default username from config
-   * @private
-   * @returns {string|null}
-   */
-  #resolveDefaultUsername() {
-    try {
-      // Try to get default user from config service
-      if (this.#configService.getDefaultUser) {
-        return this.#configService.getDefaultUser();
-      }
-
-      // Fallback: try to get from household config
-      if (this.#configService.getUsers) {
-        const users = this.#configService.getUsers();
-        if (users && users.length > 0) {
-          return users[0];
-        }
-      }
-
-      return null;
-    } catch {
-      return null;
-    }
-  }
 
   /**
    * Log helper
