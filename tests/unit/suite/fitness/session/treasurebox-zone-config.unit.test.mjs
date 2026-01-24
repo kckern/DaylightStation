@@ -156,3 +156,49 @@ describe('FitnessSession.ensureStarted()', () => {
     });
   });
 });
+
+describe('FitnessSession.updateSnapshot()', () => {
+  let FitnessSession;
+
+  beforeAll(async () => {
+    const module = await import('#frontend/hooks/fitness/FitnessSession.js');
+    FitnessSession = module.FitnessSession;
+  });
+
+  describe('TreasureBox zone configuration propagation', () => {
+    let session;
+
+    beforeEach(() => {
+      session = new FitnessSession();
+    });
+
+    afterEach(() => {
+      // Clean up timers
+      if (session?.endSession) {
+        try {
+          session.endSession({ reason: 'test_cleanup' });
+        } catch (e) {
+          // Ignore cleanup errors
+        }
+      }
+    });
+
+    it('should configure TreasureBox when zoneConfig is updated', () => {
+      session.ensureStarted({ reason: 'test', force: true });
+
+      // Initially no zones
+      expect(session.treasureBox.globalZones.length).toBe(0);
+
+      // Update snapshot with zones
+      const mockZoneConfig = [
+        { id: 'blue', name: 'Blue', min: 0, color: 'blue', coins: 0 },
+        { id: 'active', name: 'Active', min: 100, color: 'green', coins: 1 },
+      ];
+
+      session.updateSnapshot({ zoneConfig: mockZoneConfig });
+
+      // TreasureBox should now have zones
+      expect(session.treasureBox.globalZones.length).toBe(2);
+    });
+  });
+});

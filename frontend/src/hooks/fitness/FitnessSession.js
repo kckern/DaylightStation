@@ -1422,6 +1422,12 @@ export class FitnessSession {
 
     if (zoneConfig) {
       this.zoneProfileStore?.setBaseZoneConfig(zoneConfig);
+
+      // BUGFIX: Also configure TreasureBox with zones
+      // This ensures zones are set even if TreasureBox was created after initial config
+      if (this.treasureBox) {
+        this.treasureBox.configure({ zones: zoneConfig });
+      }
     }
 
     // Process Users (from UserManager)
