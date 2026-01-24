@@ -4,7 +4,7 @@ import "./OfficeOff.scss";
 
 export default function OfficeOff({ clear }) {
   useEffect(() => {
-    DaylightAPI("exe/office_tv/off").then(() => {
+    DaylightAPI("api/v1/home/office_tv/off").then(() => {
       const event = new KeyboardEvent("keydown", { key: "Escape" });
       window.dispatchEvent(event);
       clear();

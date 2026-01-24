@@ -2,14 +2,13 @@
 
 /**
  * Build routing table from config, sorted by path length (longest first)
- * @param {Object} routing - Map of path to target/shim config
+ * @param {Object} routing - Map of path to target config
  * @returns {Array} Sorted routing table entries
  */
 export function buildRoutingTable(routing) {
   const entries = Object.entries(routing).map(([path, rule]) => {
     const target = typeof rule === 'string' ? rule : rule.target;
-    const shim = typeof rule === 'object' ? rule.shim : null;
-    return { path, target, shim };
+    return { path, target };
   });
 
   // Sort by path length descending (longest prefix first)
@@ -23,14 +22,13 @@ export function buildRoutingTable(routing) {
  * @param {string} requestPath - Incoming request path
  * @param {Array} routingTable - Sorted routing table
  * @param {string} defaultTarget - Default target if no match ('legacy' or 'new')
- * @returns {Object} { target, shim, matched }
+ * @returns {Object} { target, matched }
  */
 export function matchRoute(requestPath, routingTable, defaultTarget) {
   for (const entry of routingTable) {
     if (requestPath === entry.path || requestPath.startsWith(entry.path + '/')) {
       return {
         target: entry.target,
-        shim: entry.shim,
         matched: entry.path,
       };
     }
@@ -38,7 +36,6 @@ export function matchRoute(requestPath, routingTable, defaultTarget) {
 
   return {
     target: defaultTarget,
-    shim: null,
     matched: null,
   };
 }

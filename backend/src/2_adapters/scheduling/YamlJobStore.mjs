@@ -1,79 +1,25 @@
 /**
  * YamlJobStore - Loads job definitions from YAML files
  *
- * Looks for jobs in:
- * 1. system/jobs.yml (modern format)
- * 2. system/cron-jobs.yml (legacy format, migrated on load)
+ * Jobs are defined in: {dataDir}/system/jobs.yml
+ *
+ * Job execution is handled by:
+ * - HarvesterJobExecutor for jobs with matching harvester serviceId
+ * - MediaJobExecutor for media jobs (youtube, etc.)
+ * - Legacy module import for remaining jobs without executors
  */
 
+import path from 'path';
 import { Job } from '../../1_domains/scheduling/entities/Job.mjs';
 import { IJobStore } from '../../1_domains/scheduling/ports/IJobStore.mjs';
-
-// Legacy bucket mappings for migration
-const LEGACY_BUCKETS = {
-  cron10Mins: [
-    "../lib/weather.mjs",
-    "../lib/gcal.mjs",
-    "../lib/todoist.mjs",
-    "../lib/gmail.mjs",
-  ],
-  cronHourly: [
-    "../lib/withings.mjs",
-    "../lib/strava.mjs",
-    "../lib/lastfm.mjs",
-    "../lib/clickup.mjs",
-    "../lib/foursquare.mjs",
-    "../lib/budget.mjs",
-  ],
-  cronDaily: [
-    "../lib/youtube.mjs",
-    "../lib/fitsync.mjs",
-    "../lib/health.mjs",
-    "../lib/letterboxd.mjs",
-    "../lib/goodreads.mjs",
-    "../lib/github.mjs",
-    "../lib/reddit.mjs",
-    "../lib/shopping.mjs",
-    "../lib/archiveRotation.mjs",
-    "../lib/mediaMemoryValidator.mjs",
-  ],
-  cronWeekly: []
-};
+import { loadYaml } from '../../0_infrastructure/utils/FileIO.mjs';
 
 export class YamlJobStore extends IJobStore {
-  constructor({ loadFile, logger = console }) {
+  constructor({ dataDir, logger = console }) {
     super();
-    this.loadFile = loadFile;
+    this.dataDir = dataDir;
     this.logger = logger;
     this.jobsCache = null;
-  }
-
-  /**
-   * Migrate legacy bucket-based jobs to modern format
-   */
-  migrateLegacyJobs(legacyJobs) {
-    const modernJobs = [];
-
-    for (const legacy of legacyJobs) {
-      const bucketName = legacy.name;
-      const bucketModules = LEGACY_BUCKETS[bucketName];
-
-      if (bucketModules) {
-        bucketModules.forEach((modulePath) => {
-          const id = modulePath.split('/').pop().replace('.mjs', '');
-          modernJobs.push(Job.fromObject({
-            id: `${bucketName}-${id}`,
-            name: `${bucketName}: ${id}`,
-            module: modulePath,
-            schedule: legacy.cron_tab,
-            window: legacy.window || '0',
-            bucket: bucketName
-          }));
-        });
-      }
-    }
-
-    return modernJobs;
   }
 
   /**
@@ -87,31 +33,21 @@ export class YamlJobStore extends IJobStore {
     }
 
     try {
-      // Try modern format first
-      let jobsData = this.loadFile('system/jobs');
+      const jobsPath = path.join(this.dataDir, 'system', 'jobs');
+      const jobsData = loadYaml(jobsPath);
 
       if (jobsData && Array.isArray(jobsData)) {
         this.logger.info?.('scheduler.jobStore.loaded', {
           count: jobsData.length,
-          format: 'modern'
+          path: jobsPath
         });
         this.jobsCache = jobsData.map(j => Job.fromObject(j));
         return this.jobsCache;
       }
 
-      // Fallback to legacy format
-      const legacyJobs = this.loadFile('system/cron-jobs');
-      if (legacyJobs && Array.isArray(legacyJobs)) {
-        this.logger.info?.('scheduler.jobStore.loaded', {
-          count: legacyJobs.length,
-          format: 'legacy'
-        });
-        this.jobsCache = this.migrateLegacyJobs(legacyJobs);
-        return this.jobsCache;
-      }
-
       this.logger.warn?.('scheduler.jobStore.missing', {
-        message: 'No job definitions found'
+        message: 'No job definitions found',
+        path: jobsPath
       });
       return [];
     } catch (error) {

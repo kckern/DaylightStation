@@ -4,7 +4,7 @@ import "./WrapUp.scss";
 
 export default function WrapUp({ clear }) {
   useEffect(() => {
-    DaylightAPI("exe/tv/off").then(() => {
+    DaylightAPI("api/v1/home/tv/off").then(() => {
       const event = new KeyboardEvent("keydown", { key: "Escape" });
       window.dispatchEvent(event);
       clear();

@@ -112,6 +112,11 @@ export function createJournalistRouter(container, options = {}) {
     }),
   );
 
+  // Health check endpoint
+  router.get('/health', (req, res) => {
+    res.json({ status: 'ok', bot: 'journalist' });
+  });
+
   // Apply error handler
   router.use(errorHandlerMiddleware({ isWebhook: false }));
 

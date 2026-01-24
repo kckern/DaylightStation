@@ -24,9 +24,7 @@ import { loadAllConfig, logConfigSummary } from '../src/0_infrastructure/config/
 import { configService } from '../src/0_infrastructure/config/index.mjs';
 
 // Routing toggle system for legacy/new route migration
-import { loadRoutingConfig, createRoutingMiddleware, ShimMetrics } from '../src/0_infrastructure/routing/index.mjs';
-import { allShims } from '../src/4_api/shims/index.mjs';
-import { createShimsRouter } from '../src/4_api/routers/admin/shims.mjs';
+import { loadRoutingConfig, createRoutingMiddleware } from '../src/0_infrastructure/routing/index.mjs';
 
 // Logging system (from new infrastructure)
 import { getDispatcher } from '../src/0_infrastructure/logging/dispatcher.js';
@@ -64,11 +62,10 @@ export async function createApp({
   app.use(express.json({ limit: '50mb' })); // Parse JSON request bodies with increased limit for voice memos
   app.use(express.urlencoded({ limit: '50mb', extended: true })); // Parse URL-encoded bodies
 
-  // Initialize routing toggle system for legacy/new route migration
-  const shimMetrics = new ShimMetrics();
+  // Load routing config (currently just default: legacy)
   let routingConfig;
   try {
-    routingConfig = loadRoutingConfig('./backend/config/routing.yml', allShims);
+    routingConfig = loadRoutingConfig('./backend/config/routing.yml');
     logger.info('routing.config.loaded', { message: 'Config loaded successfully' });
   } catch (error) {
     logger.error('routing.config.error', { error: error.message });
@@ -176,12 +173,9 @@ export async function createApp({
     const { default: exe } = await import('./routers/exe.mjs');
     const { default: tts } = await import('./routers/tts.mjs');
 
-    // Mount admin shims router for monitoring shim usage (before routing middleware)
-    app.use('/admin/shims', createShimsRouter({ metrics: shimMetrics }));
-    rootLogger.info('routing.toggle.initialized', {
+    rootLogger.info('routing.config.active', {
       default: routingConfig.default,
-      routes: Object.keys(routingConfig.routing || {}),
-      adminPath: '/admin/shims'
+      routes: Object.keys(routingConfig.routing || {})
     });
 
     // Content domain (new DDD structure)

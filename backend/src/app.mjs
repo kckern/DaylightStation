@@ -585,13 +585,19 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // Messaging domain (provides telegramAdapter for chatbots)
-  const telegramConfig = configService.getAppConfig('telegram') || {};
+  // Bot tokens come from secrets.yml, config from chatbots.yml
   const chatbotsConfig = configService.getAppConfig('chatbots') || {};
   const gmailConfig = configService.getAppConfig('gmail') || {};
+
+  // Get bot tokens from secrets (TELEGRAM_NUTRIBOT_TOKEN, etc.)
+  const nutribotToken = configService.getSecret('TELEGRAM_NUTRIBOT_TOKEN') || '';
+  const journalistToken = configService.getSecret('TELEGRAM_JOURNALIST_BOT_TOKEN') || '';
+  const homebotToken = configService.getSecret('TELEGRAM_HOMEBOT_TOKEN') || '';
+
   const messagingServices = createMessagingServices({
     userDataService,
     telegram: {
-      token: telegramConfig.token || ''
+      token: nutribotToken  // Default adapter uses nutribot token
     },
     gmail: gmailConfig.credentials ? {
       credentials: gmailConfig.credentials,
@@ -625,8 +631,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   v1Routers.nutribot = createNutribotApiRouter({
     nutribotServices,
-    botId: nutribotConfig.telegram?.botId || chatbotsConfig.bots?.nutribot?.telegram_bot_id || telegramConfig.botId || '',
-    secretToken: chatbotsConfig.bots?.nutribot?.secretToken || telegramConfig.secretToken || '',
+    botId: chatbotsConfig.bots?.nutribot?.telegram_bot_id || '',
+    secretToken: chatbotsConfig.bots?.nutribot?.secretToken || '',
     gateway: messagingServices.telegramAdapter,
     logger: rootLogger.child({ module: 'nutribot-api' })
   });
@@ -655,7 +661,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   v1Routers.journalist = createJournalistApiRouter({
     journalistServices,
     configService,
-    secretToken: chatbotsConfig.bots?.journalist?.secretToken || telegramConfig.secretToken || '',
+    secretToken: chatbotsConfig.bots?.journalist?.secretToken || '',
     logger: rootLogger.child({ module: 'journalist-api' })
   });
 
@@ -681,8 +687,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   v1Routers.homebot = createHomebotApiRouter({
     homebotServices,
-    botId: homebotConfig.telegram?.botId || chatbotsConfig.bots?.homebot?.telegram_bot_id || telegramConfig.botId || '',
-    secretToken: chatbotsConfig.bots?.homebot?.secretToken || telegramConfig.secretToken || '',
+    botId: chatbotsConfig.bots?.homebot?.telegram_bot_id || '',
+    secretToken: chatbotsConfig.bots?.homebot?.secretToken || '',
     gateway: messagingServices.telegramAdapter,
     createTelegramWebhookHandler: null,  // TODO: Add when webhook handler factory available
     middleware: {},

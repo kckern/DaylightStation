@@ -94,6 +94,11 @@ export function createNutribotRouter(container, options = {}) {
   router.get('/report', asyncHandler(nutribotReportHandler(container, { logger })));
   router.get('/report.png', asyncHandler(nutribotReportImgHandler(container, { logger })));
 
+  // Health check endpoint
+  router.get('/health', (req, res) => {
+    res.json({ status: 'ok', bot: 'nutribot' });
+  });
+
   // Apply error handler
   router.use(errorHandlerMiddleware({ isWebhook: false }));
 
