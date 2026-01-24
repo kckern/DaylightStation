@@ -455,8 +455,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // Hardware adapters (printer, TTS, MQTT sensors)
-  const printerConfig = configService.getAppConfig('printer') || {};
-  const mqttConfig = configService.getAppConfig('mqtt') || {};
+  // Use getServiceConfig for system.* configs (printer, mqtt are in system.yml, not apps/)
+  const printerConfig = configService.getServiceConfig('printer') || {};
+  const mqttConfig = configService.getServiceConfig('mqtt') || {};
   const ttsApiKey = configService.getSecret('OPENAI_API_KEY') || '';
 
   const hardwareAdapters = createHardwareAdapters({
