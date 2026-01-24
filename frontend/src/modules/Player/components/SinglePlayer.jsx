@@ -227,7 +227,7 @@ export function SinglePlayer(props = {}) {
       if (!isPlayable && plex) {
         // This is a collection - fetch first playable item
         try {
-          const { items } = await DaylightAPI(`/api/v1/list/plex/${plex}/playable`);
+          const { items } = await DaylightAPI(`/api/v1/item/plex/${plex}/playable`);
           if (items && items.length > 0) {
             const firstItem = items[0];
             const firstItemPlex = firstItem.plex || firstItem.play?.plex || firstItem.metadata?.plex;
