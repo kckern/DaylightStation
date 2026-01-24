@@ -1357,6 +1357,16 @@ export class FitnessSession {
         this.treasureBox.configure({
           zones: baseZoneConfig
         });
+        this._log('treasurebox_zones_from_store', {
+          zoneCount: baseZoneConfig.length,
+          zoneIds: baseZoneConfig.map(z => z.id)
+        });
+      } else {
+        // DIAGNOSTIC: Log when no zones available at session start
+        this._log('treasurebox_no_zones_at_start', {
+          hasZoneProfileStore: !!this.zoneProfileStore,
+          baseZoneConfigLength: baseZoneConfig?.length ?? 0
+        }, 'warn');
       }
 
       // Ensure governance callback is wired even when TreasureBox is lazily created
@@ -1427,6 +1437,10 @@ export class FitnessSession {
       // This ensures zones are set even if TreasureBox was created after initial config
       if (this.treasureBox) {
         this.treasureBox.configure({ zones: zoneConfig });
+        this._log('treasurebox_zones_from_snapshot', {
+          zoneCount: zoneConfig.length,
+          zoneIds: zoneConfig.map(z => z.id)
+        });
       }
     }
 
