@@ -488,11 +488,21 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     mqtt: hardwareAdapters.mqttAdapter?.isConfigured() || false
   });
 
-  // Gratitude domain router - import legacy canvas function for card generation
+  // Gratitude domain router - prayer card canvas renderer
   let createPrayerCardCanvas = null;
   try {
-    const printerModule = await import('../_legacy/routers/printer.mjs');
-    createPrayerCardCanvas = printerModule.createCanvasTypographyDemo;
+    const { createPrayerCardRenderer } = await import('./0_infrastructure/rendering/PrayerCardRenderer.mjs');
+    const householdId = configService.getDefaultHouseholdId();
+    const renderer = createPrayerCardRenderer({
+      getSelectionsForPrint: async () => {
+        return gratitudeServices.gratitudeService.getSelectionsForPrint(
+          householdId,
+          (userId) => userService.resolveDisplayName(userId)
+        );
+      },
+      fontDir: configService.getPath('font') || `${mediaBasePath}/fonts`
+    });
+    createPrayerCardCanvas = renderer.createCanvas;
   } catch (e) {
     rootLogger.warn?.('gratitude.canvas.import_failed', { error: e.message });
   }
