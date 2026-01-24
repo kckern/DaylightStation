@@ -88,18 +88,20 @@ export class EntropyItem {
    * @private
    */
   #calculateStatus(value, thresholds, direction) {
-    const { green, yellow } = thresholds;
+    const { green, yellow, red } = thresholds;
     const lowerIsBetter = direction !== Direction.HIGHER_IS_BETTER;
+    // Use red threshold if provided, otherwise fall back to yellow
+    const redThreshold = red ?? yellow;
 
     if (lowerIsBetter) {
       // Low = green (inbox count, days since workout)
       if (value <= green) return Status.GREEN;
-      if (value <= yellow) return Status.YELLOW;
+      if (value <= redThreshold) return Status.YELLOW;
       return Status.RED;
     } else {
       // High = green (days since accident)
       if (value >= green) return Status.GREEN;
-      if (value >= yellow) return Status.YELLOW;
+      if (value >= redThreshold) return Status.YELLOW;
       return Status.RED;
     }
   }

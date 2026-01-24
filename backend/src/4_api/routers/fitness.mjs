@@ -3,6 +3,8 @@
  *
  * Endpoints:
  * - GET  /api/fitness - Get fitness config
+ * - GET  /api/fitness/show/:id - Get show info (assumes plex source)
+ * - GET  /api/fitness/show/:id/playable - Get playable episodes (assumes plex source)
  * - GET  /api/fitness/sessions/dates - List all session dates
  * - GET  /api/fitness/sessions - List sessions for a date
  * - GET  /api/fitness/sessions/:sessionId - Get session detail
@@ -21,6 +23,7 @@ import express from 'express';
 import path from 'path';
 import { spawn } from 'child_process';
 import { ensureDir, writeBinary } from '../../0_infrastructure/utils/FileIO.mjs';
+import { toListItem } from './list.mjs';
 
 // Module-level state for simulation process
 const simulationState = {
@@ -39,6 +42,7 @@ const simulationState = {
  * @param {Object} config.userService - UserService for hydrating config
  * @param {Object} config.userDataService - UserDataService for reading household data
  * @param {Object} config.configService - ConfigService
+ * @param {Object} config.contentRegistry - Content source registry (for show endpoint)
  * @param {Object} config.transcriptionService - OpenAI transcription service (optional)
  * @param {Object} config.logger - Logger instance
  * @returns {express.Router}
@@ -50,6 +54,7 @@ export function createFitnessRouter(config) {
     userService,
     userDataService,
     configService,
+    contentRegistry,
     transcriptionService,
     logger = console
   } = config;
@@ -90,6 +95,123 @@ export function createFitnessRouter(config) {
     hydratedData._household = householdId;
 
     res.json(hydratedData);
+  });
+
+  // =============================================================================
+  // Show Endpoints (assumes plex source - fitness content is always from plex)
+  // =============================================================================
+
+  /**
+   * GET /api/fitness/show/:id/playable - Get playable episodes for a show
+   * Assumes plex source - no need to specify source in URL
+   */
+  router.get('/show/:id/playable', async (req, res) => {
+    if (!contentRegistry) {
+      return res.status(503).json({ error: 'Content registry not configured' });
+    }
+
+    const { id } = req.params;
+    // Fitness content is always from plex
+    const adapter = contentRegistry.get('plex');
+    if (!adapter) {
+      return res.status(503).json({ error: 'Plex adapter not configured' });
+    }
+
+    try {
+      const compoundId = `plex:${id}`;
+
+      // Get playable items
+      if (!adapter.resolvePlayables) {
+        return res.status(400).json({ error: 'Plex adapter does not support playable resolution' });
+      }
+      const items = await adapter.resolvePlayables(compoundId);
+
+      // Get container info for show metadata
+      let info = null;
+      if (adapter.getContainerInfo) {
+        info = await adapter.getContainerInfo(compoundId);
+      }
+
+      // Build seasons map from items' season metadata
+      let seasons = null;
+      if (items.length > 0) {
+        const seasonsMap = {};
+        for (const item of items) {
+          const seasonId = item.metadata?.seasonId || item.metadata?.parent;
+          if (seasonId && !seasonsMap[seasonId]) {
+            seasonsMap[seasonId] = {
+              num: item.metadata?.seasonNumber ?? item.metadata?.parentIndex,
+              title: item.metadata?.seasonName || item.metadata?.parentTitle || 'Season',
+              img: item.metadata?.seasonThumbUrl || item.metadata?.parentThumb || item.metadata?.showThumbUrl || item.metadata?.grandparentThumb
+            };
+          }
+        }
+        if (Object.keys(seasonsMap).length > 0) {
+          seasons = seasonsMap;
+        }
+      }
+
+      // Get container item for title/image
+      const containerItem = adapter.getItem ? await adapter.getItem(compoundId) : null;
+
+      const response = {
+        id: compoundId,
+        plex: id,
+        title: containerItem?.title || id,
+        label: containerItem?.title || id,
+        image: containerItem?.thumbnail,
+        info,
+        seasons,
+        items: items.map(toListItem)
+      };
+
+      res.json(response);
+    } catch (err) {
+      logger.error?.('fitness.show.playable.error', { id, error: err?.message });
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  /**
+   * GET /api/fitness/show/:id - Get show info
+   * Assumes plex source - no need to specify source in URL
+   */
+  router.get('/show/:id', async (req, res) => {
+    if (!contentRegistry) {
+      return res.status(503).json({ error: 'Content registry not configured' });
+    }
+
+    const { id } = req.params;
+    const adapter = contentRegistry.get('plex');
+    if (!adapter) {
+      return res.status(503).json({ error: 'Plex adapter not configured' });
+    }
+
+    try {
+      const compoundId = `plex:${id}`;
+      const item = adapter.getItem ? await adapter.getItem(compoundId) : null;
+
+      if (!item) {
+        return res.status(404).json({ error: 'Show not found' });
+      }
+
+      let info = null;
+      if (adapter.getContainerInfo) {
+        info = await adapter.getContainerInfo(compoundId);
+      }
+
+      res.json({
+        id: compoundId,
+        plex: id,
+        title: item.title,
+        label: item.title,
+        image: item.thumbnail,
+        info
+      });
+    } catch (err) {
+      logger.error?.('fitness.show.error', { id, error: err?.message });
+      res.status(500).json({ error: err.message });
+    }
   });
 
   /**
