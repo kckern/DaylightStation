@@ -1640,20 +1640,20 @@ export function createHarvesterServices(config) {
     }));
   }
 
-  // Letterboxd - requires httpClient
-  if (httpClient) {
-    registerHarvester('letterboxd', () => new LetterboxdHarvester({
-      httpClient,
-      lifelogStore,
-      configService,
-      logger,
-    }));
-  }
+  // Create shared RSS parser for feed-based harvesters
+  const rssParserInstance = rssParser || new RSSParser();
 
-  // Goodreads - requires rssParser (creates default if not provided)
-  const goodreadsParser = rssParser || new RSSParser();
+  // Letterboxd - uses RSS feed
+  registerHarvester('letterboxd', () => new LetterboxdHarvester({
+    rssParser: rssParserInstance,
+    lifelogStore,
+    configService,
+    logger,
+  }));
+
+  // Goodreads - uses RSS feed
   registerHarvester('goodreads', () => new GoodreadsHarvester({
-    rssParser: goodreadsParser,
+    rssParser: rssParserInstance,
     lifelogStore,
     configService,
     logger,

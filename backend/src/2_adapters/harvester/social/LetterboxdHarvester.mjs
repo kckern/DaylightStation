@@ -1,13 +1,13 @@
 /**
  * LetterboxdHarvester
  *
- * Fetches user's movie diary from Letterboxd via HTML scraping.
+ * Fetches user's movie diary from Letterboxd via RSS feed.
  * Implements IHarvester interface with circuit breaker resilience.
  *
  * Features:
- * - Movie diary scraping
+ * - RSS feed parsing for watched movies
  * - Rating extraction
- * - Paginated fetching
+ * - TMDB movie ID extraction
  *
  * @module harvester/social/LetterboxdHarvester
  */
@@ -21,7 +21,7 @@ import { configService } from '../../../0_infrastructure/config/index.mjs';
  * @implements {IHarvester}
  */
 export class LetterboxdHarvester extends IHarvester {
-  #httpClient;
+  #rssParser;
   #lifelogStore;
   #configService;
   #circuitBreaker;
@@ -29,27 +29,27 @@ export class LetterboxdHarvester extends IHarvester {
 
   /**
    * @param {Object} config
-   * @param {Object} config.httpClient - HTTP client for requests
+   * @param {Object} config.rssParser - RSS parser instance
    * @param {Object} config.lifelogStore - Store for lifelog YAML
    * @param {Object} config.configService - ConfigService for credentials
    * @param {Object} [config.logger] - Logger instance
    */
   constructor({
-    httpClient,
+    rssParser,
     lifelogStore,
     configService,
     logger = console,
   }) {
     super();
 
-    if (!httpClient) {
-      throw new Error('LetterboxdHarvester requires httpClient');
+    if (!rssParser) {
+      throw new Error('LetterboxdHarvester requires rssParser');
     }
     if (!lifelogStore) {
       throw new Error('LetterboxdHarvester requires lifelogStore');
     }
 
-    this.#httpClient = httpClient;
+    this.#rssParser = rssParser;
     this.#lifelogStore = lifelogStore;
     this.#configService = configService;
     this.#logger = logger;
@@ -74,13 +74,10 @@ export class LetterboxdHarvester extends IHarvester {
    * Harvest movie diary from Letterboxd
    *
    * @param {string} username - Target user
-   * @param {Object} [options] - Harvest options
-   * @param {number} [options.maxPages=10] - Max pages to fetch
+   * @param {Object} [options] - Harvest options (unused, RSS returns all recent)
    * @returns {Promise<{ count: number, status: string }>}
    */
   async harvest(username, options = {}) {
-    const { maxPages = 10 } = options;
-
     // Check circuit breaker
     if (this.#circuitBreaker.isOpen()) {
       const cooldown = this.#circuitBreaker.getCooldownStatus();
@@ -98,9 +95,9 @@ export class LetterboxdHarvester extends IHarvester {
     }
 
     try {
-      this.#logger.info?.('letterboxd.harvest.start', { username, maxPages });
+      this.#logger.info?.('letterboxd.harvest.start', { username });
 
-      // Get auth
+      // Get letterboxd username from config
       const auth = this.#configService?.getUserAuth?.('letterboxd', username) || {};
       const letterboxdUser = auth.username || configService.getSecret('LETTERBOXD_USER');
 
@@ -108,24 +105,15 @@ export class LetterboxdHarvester extends IHarvester {
         throw new Error('Letterboxd username not configured');
       }
 
-      const movies = [];
-      let page = 1;
+      // Fetch RSS feed
+      const url = `https://letterboxd.com/${letterboxdUser}/rss/`;
+      const feed = await this.#rssParser.parseURL(url);
 
-      while (page <= maxPages) {
-        const response = await this.#httpClient.get(
-          `https://letterboxd.com/${letterboxdUser}/films/diary/page/${page}/`
-        );
-
-        const html = response.data.replace(/\n/g, ' ');
-        const pageMovies = this.#parseMovies(html);
-
-        if (pageMovies.length === 0) {
-          break;
-        }
-
-        movies.push(...pageMovies);
-        page++;
-      }
+      // Parse movies from RSS items
+      const movies = feed.items
+        .map(item => this.#parseMovie(item))
+        .filter(Boolean)
+        .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
 
       // Save to lifelog
       await this.#lifelogStore.save(username, 'letterboxd', movies);
@@ -137,7 +125,6 @@ export class LetterboxdHarvester extends IHarvester {
         username,
         letterboxdUser,
         movieCount: movies.length,
-        pages: page - 1,
       });
 
       return { count: movies.length, status: 'success' };
@@ -165,46 +152,31 @@ export class LetterboxdHarvester extends IHarvester {
   }
 
   /**
-   * Parse movies from HTML
+   * Parse a movie from RSS item
    * @private
    */
-  #parseMovies(html) {
-    const rowMatches = html.match(/class="diary-entry-row[^"]*"[^>]*>.*?<\/tr>/gim) || [];
+  #parseMovie(item) {
+    // RSS items have custom letterboxd namespace fields
+    const watchedDate = item['letterboxd:watchedDate'] || null;
+    const filmTitle = item['letterboxd:filmTitle'] || null;
+    const filmYear = item['letterboxd:filmYear'] || null;
+    const memberRating = item['letterboxd:memberRating'] || null;
+    const rewatch = item['letterboxd:rewatch'] === 'Yes';
+    const tmdbId = item['tmdb:movieId'] || null;
 
-    return rowMatches.map(row => {
-      // Extract date
-      const dateMatch = row.match(/class="daydate"[^>]*href="[^"]*\/for\/(\d{4})\/(\d{1,2})\/(\d{1,2})\/"/i)
-        || row.match(/href="[^"]*\/for\/(\d{4})\/(\d{1,2})\/(\d{1,2})\/"[^>]*class="daydate"/i);
+    if (!watchedDate || !filmTitle) {
+      return null;
+    }
 
-      // Extract film name
-      const titleMatch = row.match(/data-item-name="([^"]+)"/i);
-
-      // Extract film link
-      const linkMatch = row.match(/data-item-link="([^"]+)"/i);
-
-      // Extract rating
-      const ratingMatch = row.match(/class="rateit-field[^"]*"[^>]*value="(\d+)"/i)
-        || row.match(/value="(\d+)"[^>]*class="rateit-field/i);
-
-      if (!dateMatch || !titleMatch) {
-        return null;
-      }
-
-      const year = dateMatch[1];
-      const month = dateMatch[2].padStart(2, '0');
-      const day = dateMatch[3].padStart(2, '0');
-
-      // Clean title - remove year suffix
-      let title = titleMatch[1];
-      title = title.replace(/\s*\(\d{4}\)$/, '');
-
-      return {
-        date: `${year}-${month}-${day}`,
-        title,
-        rating: ratingMatch ? ratingMatch[1] : null,
-        url: linkMatch ? `https://letterboxd.com${linkMatch[1]}` : null,
-      };
-    }).filter(Boolean);
+    return {
+      date: watchedDate,
+      title: filmTitle,
+      year: filmYear ? parseInt(filmYear, 10) : null,
+      rating: memberRating ? parseFloat(memberRating) : null,
+      rewatch,
+      tmdbId: tmdbId ? parseInt(tmdbId, 10) : null,
+      url: item.link || null,
+    };
   }
 }
 
