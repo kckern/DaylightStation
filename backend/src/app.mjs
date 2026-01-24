@@ -317,8 +317,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Fitness domain
   // Get Home Assistant config from ConfigService
-  const homeAssistantConfig = configService.getAppConfig('home_assistant') || {};
-  const homeAssistantAuth = configService.getHouseholdAuth('homeassistant') || {};
+  // Use getServiceConfig for system.home_assistant (host/port) and getHouseholdAuth for token
+  const haServiceConfig = configService.getServiceConfig('home_assistant') || {};
+  const haAuth = configService.getHouseholdAuth('home_assistant') || {};
+  // Build baseUrl from host and port (host may include protocol, e.g., 'http://homeassistant')
+  const haBaseUrl = haServiceConfig.host
+    ? (haServiceConfig.port ? `${haServiceConfig.host}:${haServiceConfig.port}` : haServiceConfig.host)
+    : '';
   const loadFitnessConfig = (hid) => {
     const targetHouseholdId = hid || configService.getDefaultHouseholdId();
     return userDataService.readHouseholdAppData(targetHouseholdId, 'fitness', 'config');
@@ -329,8 +334,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     mediaRoot: mediaBasePath,
     defaultHouseholdId: householdId,
     homeAssistant: {
-      baseUrl: homeAssistantConfig.base_url || homeAssistantConfig.host || '',
-      token: homeAssistantAuth.token || homeAssistantConfig.token || ''
+      baseUrl: haBaseUrl,
+      token: haAuth.token || ''
     },
     loadFitnessConfig,
     openaiApiKey: configService.getSecret('OPENAI_API_KEY') || '',
@@ -545,8 +550,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const remoteExecConfig = configService.getAppConfig('remote_exec') || {};
   const homeAutomationAdapters = createHomeAutomationAdapters({
     homeAssistant: {
-      baseUrl: homeAssistantConfig.base_url || homeAssistantConfig.host || '',
-      token: homeAssistantAuth.token || homeAssistantConfig.token || ''
+      baseUrl: haBaseUrl,
+      token: haAuth.token || ''
     },
     kiosk: {
       host: kioskConfig.host || '',
