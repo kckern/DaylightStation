@@ -2,19 +2,18 @@
 
 import { Router } from 'express';
 import { HomeBotInputRouter } from '../../2_adapters/homebot/HomeBotInputRouter.mjs';
-
-/**
- * Async handler wrapper
- */
-const asyncHandler = (fn) => (req, res, next) => {
-  Promise.resolve(fn(req, res, next)).catch(next);
-};
+import {
+  webhookValidationMiddleware as defaultWebhookValidation,
+  idempotencyMiddleware as defaultIdempotency,
+  asyncHandler,
+} from '../../0_infrastructure/http/middleware/index.mjs';
 
 /**
  * Create Homebot Express Router
  * @param {import('../../3_applications/homebot/HomeBotContainer.mjs').HomeBotContainer} container
  * @param {Object} [options]
  * @param {string} [options.botId] - Telegram bot ID
+ * @param {string} [options.secretToken] - X-Telegram-Bot-Api-Secret-Token for webhook auth
  * @param {Object} [options.gateway] - TelegramAdapter for callback acknowledgements
  * @param {Function} [options.createTelegramWebhookHandler] - Webhook handler factory
  * @param {Object} [options.middleware] - Middleware functions
@@ -25,6 +24,7 @@ export function createHomebotRouter(container, options = {}) {
 
   const {
     botId,
+    secretToken,
     gateway,
     createTelegramWebhookHandler,
     middleware = {}
@@ -34,8 +34,6 @@ export function createHomebotRouter(container, options = {}) {
   const {
     tracingMiddleware = () => (req, res, next) => next(),
     requestLoggerMiddleware = () => (req, res, next) => next(),
-    webhookValidationMiddleware = () => (req, res, next) => next(),
-    idempotencyMiddleware = () => (req, res, next) => next(),
     errorHandlerMiddleware = () => (err, req, res, next) => {
       res.status(500).json({ error: err.message });
     }
@@ -58,8 +56,8 @@ export function createHomebotRouter(container, options = {}) {
 
     router.post(
       '/webhook',
-      webhookValidationMiddleware('homebot'),
-      idempotencyMiddleware({ ttlMs: 300000 }),
+      defaultWebhookValidation('homebot', { secretToken }),
+      defaultIdempotency({ ttlMs: 300000 }),
       asyncHandler(webhookHandler)
     );
   }

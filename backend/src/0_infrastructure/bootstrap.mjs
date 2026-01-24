@@ -15,10 +15,6 @@ import { createProxyRouter } from '../4_api/routers/proxy.mjs';
 import { createLocalContentRouter } from '../4_api/routers/localContent.mjs';
 import { createPlayRouter } from '../4_api/routers/play.mjs';
 import { createListRouter } from '../4_api/routers/list.mjs';
-import { legacyMediaLogMiddleware } from '../4_api/middleware/legacyCompat.mjs';
-import { createLegacyLocalContentShim } from '../4_api/middleware/legacyLocalContentShim.mjs';
-import { createLegacyPlayShim } from '../4_api/middleware/legacyPlayShim.mjs';
-import { createLegacyListShim } from '../4_api/middleware/legacyListShim.mjs';
 
 // Fitness domain imports
 import { SessionService } from '../1_domains/fitness/services/SessionService.mjs';
@@ -95,6 +91,11 @@ import { TelegramWebhookParser } from '../2_adapters/telegram/TelegramWebhookPar
 import { OpenAIFoodParserAdapter } from '../2_adapters/ai/OpenAIFoodParserAdapter.mjs';
 import { NutritionixAdapter } from '../2_adapters/nutrition/NutritionixAdapter.mjs';
 import { WebhookHandler } from '../3_applications/nutribot/handlers/WebhookHandler.mjs';
+
+// Homebot application imports
+import { HomeBotContainer } from '../3_applications/homebot/HomeBotContainer.mjs';
+import { HomeBotInputRouter, ConfigHouseholdAdapter } from '../2_adapters/homebot/index.mjs';
+import { createHomebotRouter } from '../4_api/routers/homebot.mjs';
 
 // Health domain imports
 import { HealthAggregationService } from '../1_domains/health/services/HealthAggregationService.mjs';
@@ -242,12 +243,6 @@ export function createApiRouters(config) {
     localContent: createLocalContentRouter({ registry, dataPath, mediaBasePath }),
     play: createPlayRouter({ registry, watchStore, logger }),
     list: createListRouter({ registry, loadFile, configService }),
-    legacyShims: {
-      play: createLegacyPlayShim(),
-      list: createLegacyListShim(),
-      localContent: createLegacyLocalContentShim(),
-      mediaLog: legacyMediaLogMiddleware(watchStore)
-    }
   };
 }
 
@@ -1226,6 +1221,96 @@ export function createJournalistApiRouter(config) {
 }
 
 // =============================================================================
+// Homebot Application Bootstrap
+// =============================================================================
+
+/**
+ * Create homebot application services
+ * @param {Object} config
+ * @param {Object} config.telegramAdapter - TelegramAdapter for messaging
+ * @param {Object} config.aiGateway - AI gateway for completions
+ * @param {Object} config.gratitudeStore - YamlGratitudeStore instance
+ * @param {Object} config.configService - ConfigService for household lookup
+ * @param {Object} [config.conversationStateStore] - State store for conversation flow
+ * @param {Function} [config.websocketBroadcast] - WebSocket broadcast function
+ * @param {Object} [config.logger] - Logger instance
+ * @returns {Object} Homebot services
+ */
+export function createHomebotServices(config) {
+  const {
+    telegramAdapter,
+    aiGateway,
+    gratitudeStore,
+    configService,
+    conversationStateStore,
+    websocketBroadcast,
+    logger = console
+  } = config;
+
+  // Household repository adapter
+  const householdRepository = new ConfigHouseholdAdapter({
+    configService,
+    logger
+  });
+
+  // Create homebot container with all dependencies
+  const homebotContainer = new HomeBotContainer({
+    messagingGateway: telegramAdapter,
+    aiGateway,
+    gratitudeStore,
+    conversationStateStore,
+    householdRepository,
+    websocketBroadcast,
+    logger
+  });
+
+  // Create input router for webhook handling
+  const homebotInputRouter = new HomeBotInputRouter({
+    container: homebotContainer,
+    logger
+  });
+
+  return {
+    homebotContainer,
+    homebotInputRouter,
+    householdRepository
+  };
+}
+
+/**
+ * Create homebot API router
+ * @param {Object} config
+ * @param {Object} config.homebotServices - Services from createHomebotServices
+ * @param {string} [config.botId] - Telegram bot ID
+ * @param {string} [config.secretToken] - X-Telegram-Bot-Api-Secret-Token for webhook auth
+ * @param {Object} [config.gateway] - TelegramAdapter for callback acknowledgements
+ * @param {Function} [config.createTelegramWebhookHandler] - Webhook handler factory
+ * @param {Object} [config.middleware] - Middleware functions
+ * @param {Object} [config.logger] - Logger instance
+ * @returns {express.Router}
+ */
+export function createHomebotApiRouter(config) {
+  const {
+    homebotServices,
+    botId,
+    secretToken,
+    gateway,
+    createTelegramWebhookHandler,
+    middleware,
+    logger = console
+  } = config;
+
+  return createHomebotRouter(homebotServices.homebotContainer, {
+    botId,
+    secretToken,
+    gateway,
+    createTelegramWebhookHandler,
+    middleware,
+    logger
+  });
+}
+
+// =============================================================================
 // Nutribot Application Bootstrap
 // =============================================================================
 
@@ -1301,6 +1386,7 @@ export function createNutribotServices(config) {
  * @param {Object} config
  * @param {Object} config.nutribotServices - Services from createNutribotServices
  * @param {string} [config.botId] - Telegram bot ID
+ * @param {string} [config.secretToken] - X-Telegram-Bot-Api-Secret-Token for webhook auth
  * @param {Object} [config.gateway] - TelegramGateway for callback acknowledgements
  * @param {Object} [config.logger] - Logger instance
  * @returns {express.Router}
@@ -1309,12 +1395,14 @@ export function createNutribotApiRouter(config) {
   const {
     nutribotServices,
     botId,
+    secretToken,
     gateway,
     logger = console
   } = config;
 
   return createNutribotRouter(nutribotServices.nutribotContainer, {
     botId,
+    secretToken,
     gateway,
     logger
   });

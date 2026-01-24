@@ -586,6 +586,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Messaging domain (provides telegramAdapter for chatbots)
   const telegramConfig = configService.getAppConfig('telegram') || {};
+  const chatbotsConfig = configService.getAppConfig('chatbots') || {};
   const gmailConfig = configService.getAppConfig('gmail') || {};
   const messagingServices = createMessagingServices({
     userDataService,
@@ -624,7 +625,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   v1Routers.nutribot = createNutribotApiRouter({
     nutribotServices,
-    botId: nutribotConfig.telegram?.botId || telegramConfig.botId || '',
+    botId: nutribotConfig.telegram?.botId || chatbotsConfig.bots?.nutribot?.telegram_bot_id || telegramConfig.botId || '',
+    secretToken: chatbotsConfig.bots?.nutribot?.secretToken || telegramConfig.secretToken || '',
     gateway: messagingServices.telegramAdapter,
     logger: rootLogger.child({ module: 'nutribot-api' })
   });
@@ -653,7 +655,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   v1Routers.journalist = createJournalistApiRouter({
     journalistServices,
     configService,
-    secretToken: journalistConfig.telegram?.secretToken || telegramConfig.secretToken || '',
+    secretToken: chatbotsConfig.bots?.journalist?.secretToken || telegramConfig.secretToken || '',
     logger: rootLogger.child({ module: 'journalist-api' })
   });
 
@@ -679,7 +681,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   v1Routers.homebot = createHomebotApiRouter({
     homebotServices,
-    botId: homebotConfig.telegram?.botId || telegramConfig.botId || '',
+    botId: homebotConfig.telegram?.botId || chatbotsConfig.bots?.homebot?.telegram_bot_id || telegramConfig.botId || '',
+    secretToken: chatbotsConfig.bots?.homebot?.secretToken || telegramConfig.secretToken || '',
     gateway: messagingServices.telegramAdapter,
     createTelegramWebhookHandler: null,  // TODO: Add when webhook handler factory available
     middleware: {},
