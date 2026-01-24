@@ -22,7 +22,7 @@
 import moment from 'moment-timezone';
 import fs from 'fs';
 import yaml from 'js-yaml';
-import { userLoadFile, userSaveFile } from '../../../../_legacy/lib/io.mjs';
+import { userDataService } from '../../../0_infrastructure/config/index.mjs';
 import { createLogger } from '../../../0_infrastructure/logging/logger.js';
 import { configService } from '../../../0_infrastructure/config/index.mjs';
 
@@ -30,6 +30,27 @@ const archiveLogger = createLogger({
   source: 'backend',
   app: 'archive'
 });
+
+/**
+ * Adapter: Load user lifelog file (wraps UserDataService)
+ * @param {string} username
+ * @param {string} service - e.g., 'fitness' or 'archives/lastfm/2024'
+ * @returns {object|null}
+ */
+const userLoadFile = (username, service) => {
+  return userDataService.readUserData(username, `lifelog/${service}`);
+};
+
+/**
+ * Adapter: Save user lifelog file (wraps UserDataService)
+ * @param {string} username
+ * @param {string} service
+ * @param {object} data
+ * @returns {boolean}
+ */
+const userSaveFile = (username, service, data) => {
+  return userDataService.writeUserData(username, `lifelog/${service}`, data);
+};
 
 // Cache config to avoid repeated file reads
 let archiveConfig = null;
