@@ -69,6 +69,7 @@ export function createApiV1Router(config) {
     '/home': 'home',
     '/nutribot': 'nutribot',
     '/journalist': 'journalist',
+    '/homebot': 'homebot',
     '/scheduling': 'scheduling',
     '/messaging': 'messaging',
     '/printer': 'printer',
