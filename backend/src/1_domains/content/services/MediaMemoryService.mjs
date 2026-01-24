@@ -14,7 +14,7 @@ import path from 'path';
 import fs from 'fs';
 import { configService } from '../../../0_infrastructure/config/index.mjs';
 import { userDataService } from '../../../0_infrastructure/config/UserDataService.mjs';
-import { slugify } from '../../../../_legacy/lib/utils.mjs';
+import { slugify } from '../../../0_infrastructure/utils/strings.mjs';
 
 /**
  * Get the relative path for media memory storage
