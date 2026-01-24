@@ -976,7 +976,16 @@ export class GovernanceEngine {
       totalCount = activeParticipants.length;
     }
 
-    // Ensure defaults
+    // BUGFIX: Fall back to previous zoneRankMap/zoneInfoMap when not provided
+    // This fixes internal _triggerPulse() calls which don't pass these maps
+    if (!zoneRankMap && this._latestInputs?.zoneRankMap) {
+      zoneRankMap = this._latestInputs.zoneRankMap;
+    }
+    if (!zoneInfoMap && this._latestInputs?.zoneInfoMap) {
+      zoneInfoMap = this._latestInputs.zoneInfoMap;
+    }
+
+    // Ensure defaults (these now only apply if _latestInputs also didn't have them)
     activeParticipants = activeParticipants || [];
     userZoneMap = userZoneMap || {};
     zoneRankMap = zoneRankMap || {};
