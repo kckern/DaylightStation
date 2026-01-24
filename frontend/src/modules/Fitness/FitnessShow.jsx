@@ -669,12 +669,14 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue, onPlay 
     // Preferred: seasonsMap provided by API
     if (seasonsMap && typeof seasonsMap === 'object' && Object.keys(seasonsMap).length) {
       const arr = Object.entries(seasonsMap).map(([id, s]) => {
-        const count = items.filter(ep => ep.seasonId === id).length;
+        // Convert to string for comparison since Object.entries returns string keys
+        // but episode.seasonId may be a number from the API
+        const count = items.filter(ep => String(ep.seasonId) === id).length;
         // Support both legacy (seasonNumber, seasonName, seasonThumbUrl, seasonDescription) and new (num, title, img, summary) keys
         const numRaw = s.seasonNumber != null ? s.seasonNumber : s.num;
         const number = (numRaw != null && !Number.isNaN(parseInt(numRaw))) ? parseInt(numRaw) : undefined;
         const nameRaw = s.seasonName || s.title; // prefer explicit seasonName
-        const image = s.seasonThumbUrl || s.img || (items.find(ep => ep.seasonId === id)?.image);
+        const image = s.seasonThumbUrl || s.img || (items.find(ep => String(ep.seasonId) === id)?.image);
         const description = s.seasonDescription || s.summary || null;
         return {
           id,
@@ -761,14 +763,14 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue, onPlay 
 
     const isSeasonComplete = (season) => {
       if (!season) return false;
-      const seasonEpisodes = items.filter((ep) => ep.seasonId === season.id);
+      const seasonEpisodes = items.filter((ep) => String(ep.seasonId) === String(season.id));
       if (!seasonEpisodes.length) return false;
       return seasonEpisodes.every(isEpisodeWatched);
     };
 
     const findFirstIncompleteAfter = (startIndex = 0) => {
       const slice = seasons.slice(startIndex);
-      return slice.find((season) => items.some((ep) => ep.seasonId === season.id && !isEpisodeWatched(ep)));
+      return slice.find((season) => items.some((ep) => String(ep.seasonId) === String(season.id) && !isEpisodeWatched(ep)));
     };
 
     const desiredSeasonId = (() => {
@@ -799,7 +801,7 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue, onPlay 
   // Keep selected episode in sync with filter
   useEffect(() => {
     const filtered = seasons.length > 1 && activeSeasonId
-      ? items.filter(ep => ep.seasonId === activeSeasonId)
+      ? items.filter(ep => String(ep.seasonId) === String(activeSeasonId))
       : items;
     if (!filtered.length) return;
     if (!selectedEpisode || !filtered.some(ep => ep.plex === selectedEpisode.plex)) {
@@ -809,7 +811,7 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue, onPlay 
 
   const filteredItems = useMemo(() => {
     const list = (seasons.length > 1 && activeSeasonId)
-      ? items.filter(ep => ep.seasonId === activeSeasonId)
+      ? items.filter(ep => String(ep.seasonId) === String(activeSeasonId))
       : items;
     // Sort by episodeNumber ascending when available
     return [...list].sort((a, b) => {
@@ -1040,7 +1042,7 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue, onPlay 
               <div className="episodes-container">
                 {/* Group episodes by season, render in sorted season order */}
                 {seasons.map((s) => {
-                  const seasonEpisodes = filteredItems.filter(ep => ep.seasonId === s.id);
+                  const seasonEpisodes = filteredItems.filter(ep => String(ep.seasonId) === String(s.id));
                   if (!seasonEpisodes.length) return null;
                   const title = Number.isFinite(s.number) && s.number > 0 ? `Season ${s.number}` : (s.rawName || s.name || 'Season');
                   return (
@@ -1169,7 +1171,7 @@ const FitnessShow = ({ showId, onBack, viewportRef, setFitnessPlayQueue, onPlay 
                     const { didScroll } = scrollIntoViewIfNeeded(btn, { axis: 'y', margin: 24 });
                     if (didScroll) return;
                     setActiveSeasonId(s.id);
-                    const episodeCount = items.filter(ep => ep.seasonId === s.id).length;
+                    const episodeCount = items.filter(ep => String(ep.seasonId) === String(s.id)).length;
                     const hasRealDescription = !!(s.description && s.description.trim());
                     setSelectedInfo({
                       ...s,
