@@ -257,7 +257,7 @@ function useFetchMenuData(listInput, refreshToken = 0) {
         };
       }
       const data = await DaylightAPI(
-        `api/v1/list/folder/${target}${config ? `/${config}` : ""}`
+        `api/v1/item/folder/${target}${config ? `/${config}` : ""}`
       );
       if (canceled) return null;
       return { 
