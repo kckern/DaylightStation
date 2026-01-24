@@ -91,7 +91,7 @@ function normalizeEvent(event, clientMeta = {}) {
     : 'frontend.unknown';
 
   return {
-    ts: event.ts || event.timestamp || new Date().toISOString(),
+    ts: event.ts || event.timestamp || getLocalTimestamp(),
     level: normalizeLevel(event.level),
     event: eventName,
     message: event.message,

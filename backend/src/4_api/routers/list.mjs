@@ -363,13 +363,18 @@ export function createListRouter(config) {
         }
       }
 
-      // Apply shuffle if requested
-      if (modifiers.shuffle) {
+      // Check if any item has folder_color - if so, maintain fixed order from YAML
+      // (Legacy behavior: folder_color indicates "no dynamic sorting")
+      const hasFixedOrder = items.some(item => item.metadata?.folder_color || item.folder_color);
+
+      // Apply shuffle if requested (skip if folder_color present)
+      if (modifiers.shuffle && !hasFixedOrder) {
         items = shuffleArray([...items]);
       }
 
       // Apply recent_on_top sorting if requested (uses menu_memory, not play history)
-      if (modifiers.recent_on_top) {
+      // Skip if folder_color present - maintain YAML order
+      if (modifiers.recent_on_top && !hasFixedOrder) {
         // Load menu_memory for sorting by menu selection time
         const menuMemoryPath = configService?.getHouseholdPath('history/menu_memory') ?? 'households/default/history/menu_memory';
         const menuMemory = loadFile?.(menuMemoryPath) || {};
