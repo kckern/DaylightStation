@@ -82,7 +82,8 @@ async function main() {
 
   const dispatcher = initializeLogging({
     defaultLevel: resolveLoggerLevel('backend', loggingConfig),
-    componentLevels: loggingConfig.loggers || {}
+    componentLevels: loggingConfig.loggers || {},
+    timezone: configService.getTimezone()
   });
 
   // Console transport

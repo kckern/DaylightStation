@@ -5,6 +5,41 @@
  * and fans out to registered transports (console, loggly, etc).
  */
 
+/**
+ * Get current timestamp formatted for configured timezone
+ * @returns {string} Timestamp in format "2026-01-23T16:54:50.536" (no Z suffix = local time)
+ */
+function getLocalTimestamp() {
+  if (!globalTimezone) {
+    // Fallback to system local time if timezone not configured
+    const now = new Date();
+    const offset = now.getTimezoneOffset() * 60000;
+    const localTime = new Date(now - offset);
+    return localTime.toISOString().slice(0, -1);
+  }
+  
+  // Format in configured timezone
+  const now = new Date();
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: globalTimezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    fractionalSecondDigits: 3,
+    hour12: false
+  });
+  
+  const parts = formatter.formatToParts(now);
+  const getValue = (type) => parts.find(p => p.type === type)?.value;
+  
+  return `${getValue('year')}-${getValue('month')}-${getValue('day')}T${getValue('hour')}:${getValue('minute')}:${getValue('second')}.${getValue('fractionalSecond')}`;
+}
+
+let globalTimezone = null;
+
 export const LEVEL_PRIORITY = { debug: 0, info: 1, warn: 2, error: 3 };
 
 export class LogDispatcher {
@@ -13,6 +48,11 @@ export class LogDispatcher {
     this.defaultLevel = config.defaultLevel || 'info';
     this.componentLevels = config.componentLevels || {};
     this.metrics = { sent: 0, dropped: 0, errors: 0 };
+    
+    // Set global timezone for timestamp formatting
+    if (config.timezone) {
+      globalTimezone = config.timezone;
+    }
   }
 
   /**
@@ -80,7 +120,7 @@ export class LogDispatcher {
       return null;
     }
     return {
-      ts: event.ts || new Date().toISOString(),
+      ts: event.ts || getLocalTimestamp(),
       level: event.level || 'info',
       event: event.event,
       message: event.message,

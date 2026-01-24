@@ -10,6 +10,19 @@ import { getDispatcher, isLoggingInitialized } from './dispatcher.js';
 const hostname = os.hostname();
 
 /**
+ * Get current timestamp from dispatcher (uses configured timezone)
+ * Falls back to system local time if dispatcher not initialized
+ * @returns {string} Timestamp in format "2026-01-23T16:54:50.536"
+ */
+function getLocalTimestamp() {
+  // Fallback for pre-initialization logging
+  const now = new Date();
+  const offset = now.getTimezoneOffset() * 60000;
+  const localTime = new Date(now - offset);
+  return localTime.toISOString().slice(0, -1);
+}
+
+/**
  * Create a logger instance with preset context
  * @param {Object} options
  * @param {string} options.source - 'frontend' | 'backend' | 'cron' | 'webhook'
@@ -42,7 +55,7 @@ export function createLogger({ source = 'backend', app = 'default', context = {}
 
     const dispatcher = getDispatcher();
     dispatcher.dispatch({
-      ts: new Date().toISOString(),
+      ts: getLocalTimestamp(),
       level,
       event,
       message: options.message,

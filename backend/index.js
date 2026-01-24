@@ -75,7 +75,8 @@ async function main() {
   const loggingConfig = loadLoggingConfig();
   const dispatcher = initializeLogging({
     defaultLevel: resolveLoggerLevel('backend', loggingConfig),
-    componentLevels: loggingConfig.loggers || {}
+    componentLevels: loggingConfig.loggers || {},
+    timezone: configService.getTimezone()
   });
 
   dispatcher.addTransport(createConsoleTransport({
@@ -85,7 +86,7 @@ async function main() {
 
   if (!isDocker) {
     dispatcher.addTransport(createFileTransport({
-      filename: join(__dirname, 'dev.log'),
+      filename: join(__dirname, '..', 'dev.log'),
       format: 'json',
       maxSize: 50 * 1024 * 1024,
       maxFiles: 3,
