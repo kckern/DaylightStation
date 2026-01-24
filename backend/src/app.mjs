@@ -283,7 +283,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Entropy domain - use UserDataService for user-specific data (replaces legacy io.mjs)
   const userLoadFile = (username, service) => userDataService.getLifelogData(username, service);
   const userLoadCurrent = (username, service) => userDataService.readUserData(username, `current/${service}`);
-  const ArchiveService = (await import('../_legacy/lib/ArchiveService.mjs')).default;
+  const ArchiveService = (await import('./1_domains/content/services/ArchiveService.mjs')).default;
   const entropyServices = createEntropyServices({
     io: { userLoadFile, userLoadCurrent },
     archiveService: ArchiveService,
