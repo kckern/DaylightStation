@@ -317,5 +317,54 @@ describe('OpenAIAdapter', () => {
         expect(delay).toBeLessThanOrEqual(4400);
       });
     });
+
+    describe('retryWithBackoff', () => {
+      test('returns result on first success', async () => {
+        const fn = jest.fn().mockResolvedValue('success');
+        const result = await adapter._testRetryWithBackoff(fn);
+        expect(result).toBe('success');
+        expect(fn).toHaveBeenCalledTimes(1);
+      });
+
+      test('retries on retryable error and succeeds', async () => {
+        const error = new Error('fetch failed');
+        const fn = jest.fn()
+          .mockRejectedValueOnce(error)
+          .mockResolvedValue('success');
+
+        const result = await adapter._testRetryWithBackoff(fn, { baseDelay: 10 });
+        expect(result).toBe('success');
+        expect(fn).toHaveBeenCalledTimes(2);
+      });
+
+      test('throws after max attempts exhausted', async () => {
+        const error = new Error('fetch failed');
+        const fn = jest.fn().mockRejectedValue(error);
+
+        await expect(adapter._testRetryWithBackoff(fn, { maxAttempts: 2, baseDelay: 10 }))
+          .rejects.toThrow('fetch failed');
+        expect(fn).toHaveBeenCalledTimes(2);
+      });
+
+      test('does not retry non-retryable errors', async () => {
+        const error = new Error('bad request');
+        error.status = 400;
+        const fn = jest.fn().mockRejectedValue(error);
+
+        await expect(adapter._testRetryWithBackoff(fn))
+          .rejects.toThrow('bad request');
+        expect(fn).toHaveBeenCalledTimes(1);
+      });
+
+      test('increments retryCount metric on retry', async () => {
+        const error = new Error('fetch failed');
+        const fn = jest.fn()
+          .mockRejectedValueOnce(error)
+          .mockResolvedValue('success');
+
+        await adapter._testRetryWithBackoff(fn, { baseDelay: 10 });
+        expect(adapter.metrics.retryCount).toBe(1);
+      });
+    });
   });
 });

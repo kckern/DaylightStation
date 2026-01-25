@@ -35,7 +35,8 @@ export class OpenAIAdapter {
       startedAt: Date.now(),
       requestCount: 0,
       tokenCount: 0,
-      errors: 0
+      errors: 0,
+      retryCount: 0
     };
   }
 
@@ -108,6 +109,58 @@ export class OpenAIAdapter {
    */
   _testCalculateDelay(error, attempt, baseDelay) {
     return this.#calculateDelay(error, attempt, baseDelay);
+  }
+
+  /**
+   * Execute function with retry and backoff
+   * @private
+   */
+  async #retryWithBackoff(fn, options = {}) {
+    const maxAttempts = options.maxAttempts || 3;
+    const baseDelay = options.baseDelay || 1000;
+    let totalDelayMs = 0;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const result = await fn();
+
+        // Log recovery if we retried
+        if (attempt > 1) {
+          this.logger.info?.('openai.retry.recovered', { attempts: attempt, totalDelayMs });
+        }
+
+        return result;
+      } catch (error) {
+        const isRetryable = this.#isRetryable(error);
+        const isLastAttempt = attempt === maxAttempts;
+
+        if (!isRetryable || isLastAttempt) {
+          throw error;
+        }
+
+        const delay = this.#calculateDelay(error, attempt, baseDelay);
+        totalDelayMs += delay;
+
+        this.logger.warn?.('openai.retry', {
+          attempt,
+          maxAttempts,
+          delayMs: delay,
+          error: error.message,
+          errorCode: error.code || error.status
+        });
+
+        this.metrics.retryCount++;
+        await this.#sleep(delay);
+      }
+    }
+  }
+
+  /**
+   * Expose retryWithBackoff for testing
+   * @private
+   */
+  _testRetryWithBackoff(fn, options) {
+    return this.#retryWithBackoff(fn, options);
   }
 
   /**
@@ -388,7 +441,8 @@ export class OpenAIAdapter {
       startedAt: Date.now(),
       requestCount: 0,
       tokenCount: 0,
-      errors: 0
+      errors: 0,
+      retryCount: 0
     };
   }
 }
