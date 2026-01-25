@@ -176,8 +176,7 @@ export class LogFoodFromUPC {
       // 11. Send photo message
       let photoMsgId;
       if (imagePath) {
-        const result = await messaging.sendPhoto( imagePath, {
-          caption,
+        const result = await messaging.sendPhoto(imagePath, caption, {
           choices: portionButtons,
           inline: true,
         });

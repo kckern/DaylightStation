@@ -64,6 +64,9 @@ import {
 // Routing toggle system
 import { loadRoutingConfig } from './0_infrastructure/routing/index.mjs';
 
+// UPC Gateway for barcode lookups
+import { UPCGateway } from './2_adapters/nutribot/UPCGateway.mjs';
+
 // HTTP middleware
 import { createDevProxy } from './0_infrastructure/http/middleware/index.mjs';
 import { createEventBusRouter } from './4_api/routers/admin/eventbus.mjs';
@@ -648,11 +651,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'messaging' })
   });
 
+  const upcGateway = new UPCGateway({
+    logger: rootLogger.child({ module: 'upc-gateway' }),
+  });
+
   const nutribotServices = createNutribotServices({
     dataRoot: dataBasePath,
     telegramAdapter: messagingServices.telegramAdapter,
     aiGateway: nutribotAiGateway,
-    upcGateway: null,  // TODO: Add UPC gateway when available
+    upcGateway,
     googleImageGateway: null,  // TODO: Add Google Image gateway when available
     conversationStateStore: null,  // Uses in-memory by default
     reportRenderer: null,  // Uses default renderer
