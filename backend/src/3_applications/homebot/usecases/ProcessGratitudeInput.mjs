@@ -40,15 +40,32 @@ export class ProcessGratitudeInput {
   }
 
   /**
+   * Get messaging interface (prefers responseContext for DDD compliance)
+   * @private
+   */
+  #getMessaging(responseContext, conversationId) {
+    if (responseContext) {
+      return responseContext;
+    }
+    return {
+      sendMessage: (text, options) => this.#messagingGateway.sendMessage(conversationId, text, options),
+      updateMessage: (msgId, updates) => this.#messagingGateway.updateMessage(conversationId, msgId, updates),
+    };
+  }
+
+  /**
    * Execute the use case
    * @param {Object} input - Input parameters
    * @param {string} input.conversationId - Conversation ID
    * @param {string} [input.text] - Text input from user
    * @param {string} [input.voiceFileId] - Voice file ID for transcription
+   * @param {Object} [input.responseContext] - Bound response context for DDD-compliant messaging
    * @returns {Promise<Object>} Result with extracted items and message ID
    */
-  async execute({ conversationId, text, voiceFileId }) {
-    this.#logger.info?.('processGratitude.start', { conversationId, hasText: !!text, hasVoice: !!voiceFileId });
+  async execute({ conversationId, text, voiceFileId, responseContext }) {
+    this.#logger.info?.('processGratitude.start', { conversationId, hasText: !!text, hasVoice: !!voiceFileId, hasResponseContext: !!responseContext });
+
+    const messaging = this.#getMessaging(responseContext, conversationId);
 
     try {
       // 1. Transcribe voice if provided (text takes priority)
@@ -72,8 +89,7 @@ export class ProcessGratitudeInput {
       });
 
       if (items.length === 0) {
-        await this.#messagingGateway.sendMessage(
-          conversationId,
+        await messaging.sendMessage(
           "I couldn't identify any gratitude items from your input. Could you try again?"
         );
         return { success: false, error: 'No items extracted' };
@@ -83,7 +99,7 @@ export class ProcessGratitudeInput {
       const members = await this.#householdService?.getMembers?.() || [];
 
       // 4. Send confirmation UI
-      const { messageId } = await this.#sendConfirmationUI(conversationId, items, category, members);
+      const { messageId } = await this.#sendConfirmationUI(messaging, items, category, members);
 
       // 5. Save state for callback handling
       await this.#conversationStateStore.set(conversationId, {
@@ -208,13 +224,13 @@ Example output: { "items": [{ "text": "Good health" }, { "text": "Supportive fam
   /**
    * Send confirmation UI with items and action buttons
    * @private
-   * @param {string} conversationId - Conversation ID
+   * @param {Object} messaging - Messaging interface
    * @param {Array} items - Extracted items
    * @param {string} category - Category
    * @param {Array} members - Household members
    * @returns {Promise<Object>} Result with messageId
    */
-  async #sendConfirmationUI(conversationId, items, category, members) {
+  async #sendConfirmationUI(messaging, items, category, members) {
     // Build message text
     const itemsList = items
       .map((item, index) => `${index + 1}. ${item.text}`)
@@ -241,8 +257,7 @@ Example output: { "items": [{ "text": "Good health" }, { "text": "Supportive fam
       ]
     ];
 
-    const result = await this.#messagingGateway.sendMessage(
-      conversationId,
+    const result = await messaging.sendMessage(
       messageText,
       { choices, inline: true }
     );

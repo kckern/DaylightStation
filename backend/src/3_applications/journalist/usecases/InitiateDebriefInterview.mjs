@@ -43,22 +43,39 @@ export class InitiateDebriefInterview {
   }
 
   /**
+   * Get messaging interface (prefers responseContext for DDD compliance)
+   * @private
+   */
+  #getMessaging(responseContext, conversationId) {
+    if (responseContext) {
+      return responseContext;
+    }
+    return {
+      sendMessage: (text, options) => this.#messagingGateway.sendMessage(conversationId, text, options),
+    };
+  }
+
+  /**
    * Execute the use case
    * @param {Object} input
    * @param {string} input.conversationId - Conversation ID
    * @param {string} [input.debriefDate] - Optional specific debrief date
    * @param {string} [input.instructions] - Optional instructions (e.g., 'change_subject')
    * @param {string} [input.previousQuestion] - Previous question to avoid repeating
+   * @param {Object} [input.responseContext] - Bound response context for DDD-compliant messaging
    */
   async execute(input) {
-    const { conversationId, debriefDate, instructions, previousQuestion } = input;
+    const { conversationId, debriefDate, instructions, previousQuestion, responseContext } = input;
 
     this.#logger.debug?.('debriefInterview.initiate.start', {
       conversationId,
       debriefDate,
       instructions,
       previousQuestion,
+      hasResponseContext: !!responseContext,
     });
+
+    const messaging = this.#getMessaging(responseContext, conversationId);
 
     try {
       // 1. Get the debrief data
@@ -73,8 +90,7 @@ export class InitiateDebriefInterview {
       }
 
       if (!debrief) {
-        await this.#messagingGateway.sendMessage(
-          conversationId,
+        await messaging.sendMessage(
           'No debrief found to interview about.',
         );
         return { success: false };
@@ -120,8 +136,7 @@ export class InitiateDebriefInterview {
 
       // 8. Send question with reply keyboard
       const formattedQuestion = formatQuestion(question, '💬');
-      const { messageId } = await this.#messagingGateway.sendMessage(
-        conversationId,
+      const { messageId } = await messaging.sendMessage(
         formattedQuestion,
         { choices },
       );

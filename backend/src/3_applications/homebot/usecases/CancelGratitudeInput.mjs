@@ -30,22 +30,37 @@ export class CancelGratitudeInput {
   }
 
   /**
+   * Get messaging interface (prefers responseContext for DDD compliance)
+   * @private
+   */
+  #getMessaging(responseContext, conversationId) {
+    if (responseContext) {
+      return responseContext;
+    }
+    return {
+      updateMessage: (msgId, updates) => this.#messagingGateway.updateMessage(conversationId, msgId, updates),
+    };
+  }
+
+  /**
    * Execute the use case
    * @param {Object} input - Input parameters
    * @param {string} input.conversationId - Conversation ID
    * @param {string} input.messageId - Message ID of the confirmation UI
+   * @param {Object} [input.responseContext] - Bound response context for DDD-compliant messaging
    * @returns {Promise<Object>} Result with success status
    */
-  async execute({ conversationId, messageId }) {
-    this.#logger.info?.('cancelGratitudeInput.start', { conversationId, messageId });
+  async execute({ conversationId, messageId, responseContext }) {
+    this.#logger.info?.('cancelGratitudeInput.start', { conversationId, messageId, hasResponseContext: !!responseContext });
+
+    const messaging = this.#getMessaging(responseContext, conversationId);
 
     try {
       // 1. Get state from conversation state store (optional - may not exist)
       const state = await this.#conversationStateStore.get(conversationId, messageId);
 
       // 2. Update message to show cancelled
-      await this.#messagingGateway.updateMessage(
-        conversationId,
+      await messaging.updateMessage(
         messageId,
         '❌ Input cancelled.'
       );

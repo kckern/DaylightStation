@@ -38,16 +38,33 @@ export class AssignItemToUser {
   }
 
   /**
+   * Get messaging interface (prefers responseContext for DDD compliance)
+   * @private
+   */
+  #getMessaging(responseContext, conversationId) {
+    if (responseContext) {
+      return responseContext;
+    }
+    return {
+      sendMessage: (text, options) => this.#messagingGateway.sendMessage(conversationId, text, options),
+      updateMessage: (msgId, updates) => this.#messagingGateway.updateMessage(conversationId, msgId, updates),
+    };
+  }
+
+  /**
    * Execute the use case
    * @param {Object} input - Input parameters
    * @param {string} input.conversationId - Conversation ID
    * @param {string} input.messageId - Message ID of the confirmation UI
    * @param {string} input.username - Username to assign items to
    * @param {string} [input.timezone] - Optional timezone for the selection
+   * @param {Object} [input.responseContext] - Bound response context for DDD-compliant messaging
    * @returns {Promise<Object>} Result with success status
    */
-  async execute({ conversationId, messageId, username, timezone }) {
-    this.#logger.info?.('assignItemToUser.start', { conversationId, messageId, username });
+  async execute({ conversationId, messageId, username, timezone, responseContext }) {
+    this.#logger.info?.('assignItemToUser.start', { conversationId, messageId, username, hasResponseContext: !!responseContext });
+
+    const messaging = this.#getMessaging(responseContext, conversationId);
 
     try {
       // 1. Get state from conversation state store
@@ -55,8 +72,7 @@ export class AssignItemToUser {
 
       if (!state) {
         this.#logger.warn?.('assignItemToUser.noState', { conversationId, messageId });
-        await this.#messagingGateway.updateMessage(
-          conversationId,
+        await messaging.updateMessage(
           messageId,
           '❌ This selection has expired. Please try again.'
         );
@@ -68,8 +84,7 @@ export class AssignItemToUser {
 
       if (!items || items.length === 0) {
         this.#logger.warn?.('assignItemToUser.noItems', { conversationId, messageId });
-        await this.#messagingGateway.updateMessage(
-          conversationId,
+        await messaging.updateMessage(
           messageId,
           '❌ No items found to save.'
         );
@@ -93,8 +108,7 @@ export class AssignItemToUser {
           conversationId,
           error: saveError.message
         });
-        await this.#messagingGateway.updateMessage(
-          conversationId,
+        await messaging.updateMessage(
           messageId,
           '❌ Failed to save items. Please try again.'
         );
@@ -110,8 +124,7 @@ export class AssignItemToUser {
       const categoryLabel = category === 'hopes' ? 'hopes' : 'gratitude';
       const successMessage = `✅ Saved ${itemCount} ${categoryLabel} item${itemCount !== 1 ? 's' : ''} for ${displayName}`;
 
-      await this.#messagingGateway.updateMessage(
-        conversationId,
+      await messaging.updateMessage(
         messageId,
         successMessage
       );

@@ -26,13 +26,31 @@ export class AdvanceToNextQuizQuestion {
   }
 
   /**
+   * Get messaging interface (prefers responseContext for DDD compliance)
+   * @private
+   */
+  #getMessaging(responseContext, chatId) {
+    if (responseContext) {
+      return responseContext;
+    }
+    return {
+      sendMessage: (text, options) => this.#messagingGateway.sendMessage(chatId, text, options),
+      updateMessage: (msgId, updates) => this.#messagingGateway.updateMessage(chatId, msgId, updates),
+      deleteMessage: (msgId) => this.#messagingGateway.deleteMessage(chatId, msgId),
+    };
+  }
+
+  /**
    * Execute the use case
    * @param {Object} input
    * @param {string} input.chatId
    * @param {string} input.messageId - Current quiz message ID to update/delete
+   * @param {Object} [input.responseContext] - Bound response context for DDD-compliant messaging
    */
   async execute(input) {
-    const { chatId, messageId } = input;
+    const { chatId, messageId, responseContext } = input;
+
+    const messaging = this.#getMessaging(responseContext, chatId);
 
     this.#logger.debug?.('quiz.advance.start', { chatId, messageId });
 
@@ -49,7 +67,7 @@ export class AdvanceToNextQuizQuestion {
         // Build keyboard (we'd need to load question choices)
         const keyboard = [['Continue'], ['🎲 Change Subject', '❌ Cancel']];
 
-        await this.#messagingGateway.updateMessage(chatId, messageId, {
+        await messaging.updateMessage(messageId, {
           text: `📋 ${nextItem.queuedMessage}`,
           choices: keyboard,
         });
@@ -74,14 +92,14 @@ export class AdvanceToNextQuizQuestion {
       // 3. No more quiz questions - transition to journal
       // Delete the quiz message
       try {
-        await this.#messagingGateway.deleteMessage(chatId, messageId);
+        await messaging.deleteMessage(messageId);
       } catch (e) {
         // Ignore delete errors
       }
 
       // Initiate journal prompt if available
       if (this.#initiateJournalPrompt) {
-        const result = await this.#initiateJournalPrompt.execute({ chatId });
+        const result = await this.#initiateJournalPrompt.execute({ chatId, responseContext });
 
         this.#logger.info?.('quiz.advance.transitionToJournal', { chatId });
 

@@ -34,14 +34,30 @@ export class GenerateTherapistAnalysis {
   }
 
   /**
+   * Get messaging interface (prefers responseContext for DDD compliance)
+   * @private
+   */
+  #getMessaging(responseContext, chatId) {
+    if (responseContext) {
+      return responseContext;
+    }
+    return {
+      sendMessage: (text, options) => this.#messagingGateway.sendMessage(chatId, text, options),
+    };
+  }
+
+  /**
    * Execute the use case
    * @param {Object} input
    * @param {string} input.chatId
+   * @param {Object} [input.responseContext] - Bound response context for DDD-compliant messaging
    */
   async execute(input) {
-    const { chatId } = input;
+    const { chatId, responseContext } = input;
 
-    this.#logger.debug?.('analysis.therapist.start', { chatId });
+    this.#logger.debug?.('analysis.therapist.start', { chatId, hasResponseContext: !!responseContext });
+
+    const messaging = this.#getMessaging(responseContext, chatId);
 
     try {
       // 1. Delete pending unanswered messages
@@ -57,8 +73,7 @@ export class GenerateTherapistAnalysis {
       }
 
       if (!history || history.trim().length < 100) {
-        await this.#messagingGateway.sendMessage(
-          chatId,
+        await messaging.sendMessage(
           "📘 I don't have enough journal entries to provide an analysis yet. Keep journaling and try again later!",
           {},
         );
@@ -84,7 +99,7 @@ export class GenerateTherapistAnalysis {
       });
 
       // 5. Send analysis with prefix
-      const { messageId } = await this.#messagingGateway.sendMessage(chatId, `📘 ${analysis}`, {
+      const { messageId } = await messaging.sendMessage(`📘 ${analysis}`, {
         parseMode: 'HTML',
       });
 

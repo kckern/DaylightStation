@@ -51,13 +51,30 @@ export class ProcessTextEntry {
   }
 
   /**
+   * Get messaging interface (prefers responseContext for DDD compliance)
+   * @private
+   */
+  #getMessaging(responseContext, chatId) {
+    if (responseContext) {
+      return responseContext;
+    }
+    return {
+      sendMessage: (text, options) => this.#messagingGateway.sendMessage(chatId, text, options),
+      updateMessage: (msgId, updates) => this.#messagingGateway.updateMessage(chatId, msgId, updates),
+      deleteMessage: (msgId) => this.#messagingGateway.deleteMessage(chatId, msgId),
+    };
+  }
+
+  /**
    * Execute the use case
    * @param {ProcessTextEntryInput} input
    */
   async execute(input) {
-    const { chatId, text, messageId, senderId, senderName } = input;
+    const { chatId, text, messageId, senderId, senderName, responseContext } = input;
 
-    this.#logger.debug?.('textEntry.process.start', { chatId, textLength: text.length });
+    this.#logger.debug?.('textEntry.process.start', { chatId, textLength: text.length, hasResponseContext: !!responseContext });
+
+    const messaging = this.#getMessaging(responseContext, chatId);
 
     try {
       // 1. Save message to history
@@ -82,8 +99,7 @@ export class ProcessTextEntry {
 
       if (!response) {
         // Fallback: just acknowledge
-        const { messageId: sentId } = await this.#messagingGateway.sendMessage(
-          chatId,
+        const { messageId: sentId } = await messaging.sendMessage(
           '📝 Noted.',
           {},
         );
@@ -121,7 +137,7 @@ export class ProcessTextEntry {
         : response.question;
 
       // 6. Send with reply keyboard (attached to chat input)
-      const { messageId: sentId } = await this.#messagingGateway.sendMessage(chatId, message, {
+      const { messageId: sentId } = await messaging.sendMessage(message, {
         choices,
       });
 

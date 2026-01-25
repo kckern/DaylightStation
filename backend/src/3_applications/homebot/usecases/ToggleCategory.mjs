@@ -30,15 +30,31 @@ export class ToggleCategory {
   }
 
   /**
+   * Get messaging interface (prefers responseContext for DDD compliance)
+   * @private
+   */
+  #getMessaging(responseContext, conversationId) {
+    if (responseContext) {
+      return responseContext;
+    }
+    return {
+      updateMessage: (msgId, updates) => this.#messagingGateway.updateMessage(conversationId, msgId, updates),
+    };
+  }
+
+  /**
    * Execute the use case
    * @param {Object} input - Input parameters
    * @param {string} input.conversationId - Conversation ID
    * @param {string} input.messageId - Message ID of the confirmation UI
    * @param {string} [input.category] - Optional category to toggle to (if not provided, toggles current)
+   * @param {Object} [input.responseContext] - Bound response context for DDD-compliant messaging
    * @returns {Promise<Object>} Result with success status and new category
    */
-  async execute({ conversationId, messageId, category }) {
-    this.#logger.info?.('toggleCategory.start', { conversationId, messageId, category });
+  async execute({ conversationId, messageId, category, responseContext }) {
+    this.#logger.info?.('toggleCategory.start', { conversationId, messageId, category, hasResponseContext: !!responseContext });
+
+    const messaging = this.#getMessaging(responseContext, conversationId);
 
     try {
       // 1. Get state from conversation state store
@@ -46,8 +62,7 @@ export class ToggleCategory {
 
       if (!state) {
         this.#logger.warn?.('toggleCategory.noState', { conversationId, messageId });
-        await this.#messagingGateway.updateMessage(
-          conversationId,
+        await messaging.updateMessage(
           messageId,
           '❌ This selection has expired. Please try again.'
         );
@@ -77,8 +92,7 @@ export class ToggleCategory {
 
       const updatedMessage = `📝 *${categoryLabel} Items* (${itemCount}):\n${itemList}\n\nWho should these be saved for?`;
 
-      await this.#messagingGateway.updateMessage(
-        conversationId,
+      await messaging.updateMessage(
         messageId,
         updatedMessage
       );

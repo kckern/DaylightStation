@@ -30,15 +30,31 @@ export class HandleSourceSelection {
   }
 
   /**
+   * Get messaging interface (prefers responseContext for DDD compliance)
+   * @private
+   */
+  #getMessaging(responseContext, conversationId) {
+    if (responseContext) {
+      return responseContext;
+    }
+    return {
+      sendMessage: (text, options) => this.#messagingGateway.sendMessage(conversationId, text, options),
+    };
+  }
+
+  /**
    * Execute handling a source selection
    *
    * @param {Object} input
    * @param {string} input.conversationId - Telegram conversation ID
    * @param {string} input.text - Button text that was pressed
+   * @param {Object} [input.responseContext] - Bound response context for DDD-compliant messaging
    * @returns {Object} Result
    */
   async execute(input) {
-    const { conversationId, text } = input;
+    const { conversationId, text, responseContext } = input;
+
+    const messaging = this.#getMessaging(responseContext, conversationId);
 
     // Get current state
     const state = await this.#conversationStateStore.get(conversationId);
@@ -53,13 +69,13 @@ export class HandleSourceSelection {
 
     // Handle back button
     if (text === '← Back') {
-      return this.#handleBack(conversationId, state);
+      return this.#handleBack(conversationId, state, messaging);
     }
 
     // Try to match a source button
     const sourceName = this.#extractSourceName(text);
     if (sourceName) {
-      return this.#handleSourceDump(conversationId, state, sourceName);
+      return this.#handleSourceDump(conversationId, state, sourceName, messaging);
     }
 
     return { handled: false };
@@ -86,16 +102,16 @@ export class HandleSourceSelection {
 
   /**
    * Handle source dump - show raw summary for selected source
+   * @param {Object} messaging - Messaging interface
    */
-  async #handleSourceDump(conversationId, state, sourceName) {
+  async #handleSourceDump(conversationId, state, sourceName, messaging) {
     const summaries = state.debrief?.summaries || [];
 
     // Find the summary for this source
     const sourceSummary = summaries.find((s) => s.source === sourceName);
 
     if (!sourceSummary || !sourceSummary.text) {
-      await this.#messagingGateway.sendMessage(
-        conversationId,
+      await messaging.sendMessage(
         `No detailed data available for ${sourceName}.`,
       );
       return { handled: true, action: 'source_dump', source: sourceName, empty: true };
@@ -103,8 +119,7 @@ export class HandleSourceSelection {
 
     // Send the raw summary
     const icon = SOURCE_ICONS[sourceName] || '📄';
-    await this.#messagingGateway.sendMessage(
-      conversationId,
+    await messaging.sendMessage(
       `${icon} *${sourceName.toUpperCase()}*\n\n${sourceSummary.text}`,
       { parse_mode: 'Markdown' },
     );
@@ -120,10 +135,11 @@ export class HandleSourceSelection {
 
   /**
    * Handle back button - return to main debrief keyboard
+   * @param {Object} messaging - Messaging interface
    */
-  async #handleBack(conversationId, state) {
+  async #handleBack(conversationId, state, messaging) {
     // Restore main 3-button keyboard
-    await this.#messagingGateway.sendMessage(conversationId, 'Back to main options:', {
+    await messaging.sendMessage('Back to main options:', {
       reply_markup: {
         keyboard: [
           [{ text: '📊 Show Details' }, { text: '💬 Ask Me' }, { text: '✅ Accept' }],

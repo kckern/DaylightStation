@@ -30,16 +30,33 @@ export class HandleSpecialStart {
   }
 
   /**
+   * Get messaging interface (prefers responseContext for DDD compliance)
+   * @private
+   */
+  #getMessaging(responseContext, chatId) {
+    if (responseContext) {
+      return responseContext;
+    }
+    return {
+      sendMessage: (text, options) => this.#messagingGateway.sendMessage(chatId, text, options),
+      deleteMessage: (msgId) => this.#messagingGateway.deleteMessage(chatId, msgId),
+    };
+  }
+
+  /**
    * Execute the use case
    * @param {Object} input
    * @param {string} input.chatId
    * @param {string} input.messageId
    * @param {string} input.text - The special start text (🎲 or ❌)
+   * @param {Object} [input.responseContext] - Bound response context for DDD-compliant messaging
    */
   async execute(input) {
-    const { chatId, messageId, text } = input;
+    const { chatId, messageId, text, responseContext } = input;
 
-    this.#logger.debug?.('specialStart.handle.start', { chatId, text });
+    this.#logger.debug?.('specialStart.handle.start', { chatId, text, hasResponseContext: !!responseContext });
+
+    const messaging = this.#getMessaging(responseContext, chatId);
 
     try {
       // 1. Delete unprocessed queue
@@ -49,13 +66,13 @@ export class HandleSpecialStart {
 
       // 2. Delete user's special start message
       try {
-        await this.#messagingGateway.deleteMessage(chatId, messageId);
+        await messaging.deleteMessage(messageId);
       } catch (e) {
         // Ignore delete errors - message may already be gone
       }
 
       // 3. Delete recent bot messages (within 1 minute)
-      await this.#deleteRecentBotMessages(chatId);
+      await this.#deleteRecentBotMessages(chatId, messaging);
 
       // 4. Determine action based on text
       const isRoll = text.includes('🎲') || text.toLowerCase().includes('change');
@@ -91,6 +108,7 @@ export class HandleSpecialStart {
             conversationId: chatId,
             instructions: 'change_subject',
             previousQuestion,
+            responseContext,
           });
 
           return {
@@ -105,6 +123,7 @@ export class HandleSpecialStart {
           const result = await this.#initiateJournalPrompt.execute({
             chatId,
             instructions: 'change_subject',
+            responseContext,
           });
 
           this.#logger.info?.('specialStart.handle.roll', { chatId });
@@ -122,15 +141,14 @@ export class HandleSpecialStart {
         this.#logger.info?.('specialStart.handle.cancel', { chatId });
 
         // Send empty message with keyboard removal, then delete it
-        const { messageId: sentId } = await this.#messagingGateway.sendMessage(
-          chatId,
+        const { messageId: sentId } = await messaging.sendMessage(
           '📝', // Minimal acknowledgment
           { choices: [] }, // Empty choices triggers remove_keyboard
         );
 
         // Delete the message immediately
         try {
-          await this.#messagingGateway.deleteMessage(chatId, sentId);
+          await messaging.deleteMessage(sentId);
         } catch (e) {
           // Ignore delete errors
         }
@@ -158,7 +176,7 @@ export class HandleSpecialStart {
    * Delete recent bot messages
    * @private
    */
-  async #deleteRecentBotMessages(chatId) {
+  async #deleteRecentBotMessages(chatId, messaging) {
     // First try to get the last message ID from flowState (most reliable)
     if (this.#conversationStateStore) {
       try {
@@ -170,7 +188,7 @@ export class HandleSpecialStart {
             messageId: lastMessageId,
           });
           try {
-            await this.#messagingGateway.deleteMessage(chatId, lastMessageId);
+            await messaging.deleteMessage(lastMessageId);
             return; // Successfully deleted
           } catch (e) {
             this.#logger.debug?.('specialStart.deleteMessage.fromState.failed', {
@@ -200,7 +218,7 @@ export class HandleSpecialStart {
 
         if (now - msgTime < fiveMinutes) {
           try {
-            await this.#messagingGateway.deleteMessage(chatId, msg.messageId);
+            await messaging.deleteMessage(msg.messageId);
           } catch (e) {
             // Ignore individual delete errors
           }

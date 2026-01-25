@@ -26,15 +26,31 @@ export class HandleCategorySelection {
   }
 
   /**
+   * Get messaging interface (prefers responseContext for DDD compliance)
+   * @private
+   */
+  #getMessaging(responseContext, conversationId) {
+    if (responseContext) {
+      return responseContext;
+    }
+    return {
+      sendMessage: (text, options) => this.#messagingGateway.sendMessage(conversationId, text, options),
+    };
+  }
+
+  /**
    * Execute category selection handling
    *
    * @param {Object} input
    * @param {string} input.conversationId - Telegram conversation ID
    * @param {string} input.messageText - User's message (category name)
+   * @param {Object} [input.responseContext] - Bound response context for DDD-compliant messaging
    * @returns {Object} Result
    */
   async execute(input) {
-    const { conversationId, messageText } = input;
+    const { conversationId, messageText, responseContext } = input;
+
+    const messaging = this.#getMessaging(responseContext, conversationId);
 
     this.#logger.info?.('debrief.category-selection.start', {
       conversationId,
@@ -53,8 +69,7 @@ export class HandleCategorySelection {
       // Handle skip
       if (messageText.includes('Skip') || messageText.includes('⏭️')) {
         await this.#conversationStateStore.delete(conversationId);
-        await this.#messagingGateway.sendMessage(
-          conversationId,
+        await messaging.sendMessage(
           "No worries! I'm here whenever you want to journal. Have a great day! 🌟",
         );
 
@@ -73,7 +88,7 @@ export class HandleCategorySelection {
         });
 
         // Treat as free-form input
-        await this.#handleFreeformEntry(conversationId, messageText, state);
+        await this.#handleFreeformEntry(conversationId, messageText, state, messaging);
         return { success: true, freeform: true };
       }
 
@@ -82,7 +97,7 @@ export class HandleCategorySelection {
       const question = questions[0] || 'Tell me more about that.';
 
       // Send question
-      await this.#messagingGateway.sendMessage(conversationId, `💭 ${question}`, {
+      await messaging.sendMessage(`💭 ${question}`, {
         reply_markup: {
           remove_keyboard: true,
         },
@@ -151,11 +166,11 @@ export class HandleCategorySelection {
 
   /**
    * Handle free-form entry (user typed instead of selecting category)
+   * @param {Object} messaging - Messaging interface
    */
-  async #handleFreeformEntry(conversationId, text, state) {
+  async #handleFreeformEntry(conversationId, text, state, messaging) {
     // Acknowledge the entry
-    await this.#messagingGateway.sendMessage(
-      conversationId,
+    await messaging.sendMessage(
       "Thanks for sharing that. Anything else on your mind? (or type 'done' to finish)",
     );
 

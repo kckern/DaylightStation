@@ -34,21 +34,39 @@ export class ProcessVoiceEntry {
   }
 
   /**
+   * Get messaging interface (prefers responseContext for DDD compliance)
+   * @private
+   */
+  #getMessaging(responseContext, chatId) {
+    if (responseContext) {
+      return {
+        ...responseContext,
+        transcribeVoice: responseContext.transcribeVoice || this.#messagingGateway?.transcribeVoice?.bind(this.#messagingGateway),
+      };
+    }
+    return {
+      sendMessage: (text, options) => this.#messagingGateway.sendMessage(chatId, text, options),
+      transcribeVoice: this.#messagingGateway?.transcribeVoice?.bind(this.#messagingGateway),
+    };
+  }
+
+  /**
    * Execute the use case
    * @param {ProcessVoiceEntryInput} input
    */
   async execute(input) {
-    const { chatId, voiceFileId, messageId, senderId, senderName } = input;
+    const { chatId, voiceFileId, messageId, senderId, senderName, responseContext } = input;
 
-    this.#logger.debug?.('voiceEntry.process.start', { chatId, voiceFileId });
+    this.#logger.debug?.('voiceEntry.process.start', { chatId, voiceFileId, hasResponseContext: !!responseContext });
+
+    const messaging = this.#getMessaging(responseContext, chatId);
 
     try {
       // 1. Transcribe voice message
-      const transcription = await this.#messagingGateway.transcribeVoice(voiceFileId);
+      const transcription = await messaging.transcribeVoice(voiceFileId);
 
       if (!transcription || transcription.trim().length === 0) {
-        await this.#messagingGateway.sendMessage(
-          chatId,
+        await messaging.sendMessage(
           "🎤 Sorry, I couldn't understand that voice message. Could you try again or type your message?",
           {},
         );
@@ -58,7 +76,7 @@ export class ProcessVoiceEntry {
       // 2. Send transcription confirmation (split if too long for Telegram)
       const messageParts = splitTranscription(transcription);
       for (let i = 0; i < messageParts.length; i++) {
-        await this.#messagingGateway.sendMessage(chatId, messageParts[i], {});
+        await messaging.sendMessage(messageParts[i], {});
         // Small delay between messages to maintain order
         if (i < messageParts.length - 1) {
           await new Promise((resolve) => setTimeout(resolve, 50));
@@ -72,6 +90,7 @@ export class ProcessVoiceEntry {
         messageId,
         senderId,
         senderName,
+        responseContext,
       });
 
       this.#logger.info?.('voiceEntry.process.complete', {

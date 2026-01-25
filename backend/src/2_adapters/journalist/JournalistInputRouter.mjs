@@ -18,6 +18,8 @@ export class JournalistInputRouter {
   #userResolver;
   /** @type {import('../telegram/IInputEvent.mjs').IInputEvent|null} */
   #currentEvent;
+  /** @type {import('../../3_applications/nutribot/ports/IResponseContext.mjs').IResponseContext|null} */
+  #responseContext;
 
   /**
    * @param {import('../../3_applications/journalist/JournalistContainer.mjs').JournalistContainer} container
@@ -31,18 +33,40 @@ export class JournalistInputRouter {
     this.#userResolver = options.userResolver;
     this.#logger = options.logger || console;
     this.#currentEvent = null;
+    this.#responseContext = null;
+  }
+
+  /**
+   * Get messaging interface (prefers responseContext for DDD compliance)
+   * @private
+   */
+  #getMessaging(conversationId) {
+    if (this.#responseContext) {
+      return this.#responseContext;
+    }
+    // Fallback to container gateway with conversationId
+    const gateway = this.#container.getMessagingGateway?.();
+    return {
+      sendMessage: (text, options) => gateway?.sendMessage(conversationId, text, options),
+      updateMessage: (msgId, updates) => gateway?.updateMessage(conversationId, msgId, updates),
+      updateKeyboard: (msgId, choices) => gateway?.updateKeyboard(conversationId, msgId, choices),
+      editMessageReplyMarkup: (msgId, markup) => gateway?.editMessageReplyMarkup(conversationId, msgId, markup),
+      deleteMessage: (msgId) => gateway?.deleteMessage(conversationId, msgId),
+    };
   }
 
   /**
    * Route an IInputEvent to the appropriate use case
    * @param {import('../telegram/IInputEvent.mjs').IInputEvent} event
+   * @param {import('../../3_applications/nutribot/ports/IResponseContext.mjs').IResponseContext} [responseContext] - Bound response context for DDD-compliant messaging
    * @returns {Promise<any>}
    */
-  async route(event) {
+  async route(event, responseContext = null) {
     const { type, conversationId, messageId, payload, metadata } = event;
 
-    // Store event for handlers that need platform identity
+    // Store event and responseContext for handlers that need them
     this.#currentEvent = event;
+    this.#responseContext = responseContext;
 
     this.#logger.debug?.('router.event', { type, conversationId, messageId });
 
@@ -107,6 +131,7 @@ export class JournalistInputRouter {
           chatId: conversationId,
           messageId,
           text,
+          responseContext: this.#responseContext,
         });
       }
     }
@@ -117,6 +142,7 @@ export class JournalistInputRouter {
       const result = await debriefResponseHandler.execute({
         conversationId,
         text,
+        responseContext: this.#responseContext,
       });
       if (result?.handled) {
         return result;
@@ -129,6 +155,7 @@ export class JournalistInputRouter {
       const result = await sourceSelectionHandler.execute({
         conversationId,
         text,
+        responseContext: this.#responseContext,
       });
       if (result?.handled) {
         return result;
@@ -141,6 +168,7 @@ export class JournalistInputRouter {
       const result = await categoryHandler.execute({
         conversationId,
         messageText: text,
+        responseContext: this.#responseContext,
       });
 
       // If it was handled as a category selection, we're done
@@ -157,6 +185,7 @@ export class JournalistInputRouter {
       messageId,
       senderId: this.#extractSenderId(metadata),
       senderName: this.#extractSenderName(metadata),
+      responseContext: this.#responseContext,
     });
   }
 
@@ -196,6 +225,7 @@ export class JournalistInputRouter {
       messageId,
       senderId: this.#extractSenderId(metadata),
       senderName: this.#extractSenderName(metadata),
+      responseContext: this.#responseContext,
     });
   }
 
@@ -208,9 +238,9 @@ export class JournalistInputRouter {
 
     // Delete the slash command message to keep chat clean
     try {
-      const gateway = this.#container.getMessagingGateway?.();
-      if (gateway && messageId) {
-        await gateway.deleteMessage(conversationId, messageId);
+      const messaging = this.#getMessaging(conversationId);
+      if (messageId) {
+        await messaging.deleteMessage(messageId);
       }
     } catch (e) {
       // Ignore delete errors (message may already be gone)
@@ -224,6 +254,7 @@ export class JournalistInputRouter {
         chatId: conversationId,
         command: fullCommand,
         userId: metadata?.senderId,
+        responseContext: this.#responseContext,
       });
     }
 
@@ -254,6 +285,7 @@ export class JournalistInputRouter {
         senderName: this.#extractSenderName(metadata),
         foreignKey: null,
       },
+      responseContext: this.#responseContext,
     });
   }
 
@@ -263,6 +295,7 @@ export class JournalistInputRouter {
    */
   async #handleDebriefCallback(conversationId, payload, messageId, metadata) {
     const action = payload.data.replace('debrief:', '');
+    const messaging = this.#getMessaging(conversationId);
 
     // Handle source selection (e.g., "source:events")
     if (action.startsWith('source:')) {
@@ -279,8 +312,7 @@ export class JournalistInputRouter {
         // Fall back to most recent debrief
         const username = this.#resolveUserId();
         if (!username) {
-          const gateway = this.#container.getMessagingGateway();
-          await gateway.sendMessage(conversationId, '❌ Could not identify user');
+          await messaging.sendMessage('❌ Could not identify user');
           return { success: false };
         }
 
@@ -288,8 +320,7 @@ export class JournalistInputRouter {
         const recentDebriefs = await debriefRepo.getRecentDebriefs(username, 1);
 
         if (!recentDebriefs || recentDebriefs.length === 0) {
-          const gateway = this.#container.getMessagingGateway();
-          await gateway.sendMessage(conversationId, '❌ No recent debrief found');
+          await messaging.sendMessage('❌ No recent debrief found');
           return { success: false };
         }
 
@@ -301,8 +332,7 @@ export class JournalistInputRouter {
       const debrief = await debriefRepo.getDebriefByDate(debriefDate);
 
       if (!debrief || !debrief.summaries) {
-        const gateway = this.#container.getMessagingGateway();
-        await gateway.sendMessage(conversationId, '❌ No debrief found for that date');
+        await messaging.sendMessage('❌ No debrief found for that date');
         return { success: false };
       }
 
@@ -310,14 +340,12 @@ export class JournalistInputRouter {
       const summary = debrief.summaries.find((s) => s.source === sourceName);
 
       if (!summary) {
-        const gateway = this.#container.getMessagingGateway();
-        await gateway.sendMessage(conversationId, `❌ No data found for source: ${sourceName}`);
+        await messaging.sendMessage(`❌ No data found for source: ${sourceName}`);
         return { success: false };
       }
 
       // Send the detail text
-      const gateway = this.#container.getMessagingGateway();
-      await gateway.sendMessage(conversationId, summary.text);
+      await messaging.sendMessage(summary.text);
       return { success: true };
     }
 
@@ -350,21 +378,18 @@ export class JournalistInputRouter {
         }
 
         // Fallback if not available
-        const gateway = this.#container.getMessagingGateway();
-        await gateway.sendMessage(conversationId, '❓ Interview flow not available');
+        await messaging.sendMessage('❓ Interview flow not available');
         return { success: true };
       }
 
       case 'accept': {
         // Remove keyboard, acknowledge
-        const msg = this.#container.getMessagingGateway();
-        await msg.editMessageReplyMarkup(conversationId, payload.sourceMessageId, null);
+        await messaging.editMessageReplyMarkup(payload.sourceMessageId, null);
         return { success: true };
       }
 
       case 'back': {
         // Go back to main debrief keyboard
-        const backGateway = this.#container.getMessagingGateway();
         const debriefKeyboard = {
           inline_keyboard: [
             [
@@ -374,8 +399,7 @@ export class JournalistInputRouter {
             ],
           ],
         };
-        await backGateway.updateKeyboard(
-          conversationId,
+        await messaging.updateKeyboard(
           payload.sourceMessageId,
           debriefKeyboard.inline_keyboard,
         );
