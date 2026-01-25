@@ -21,7 +21,9 @@
  *
  * @typedef {Object} IInputEvent
  * @property {InputEventType} type - Event type
- * @property {string} conversationId - Unique conversation identifier
+ * @property {string} conversationId - Unique conversation identifier (for routing/state)
+ * @property {string} platform - Platform name (e.g., 'telegram', 'discord')
+ * @property {string} platformUserId - Platform-specific user ID (for identity resolution)
  * @property {string} messageId - Message ID within conversation
  * @property {InputEventPayload} payload - Type-specific payload data
  * @property {InputEventMetadata} metadata - Sender/context metadata
@@ -42,14 +44,17 @@ export const InputEventType = {
 /**
  * Transform TelegramWebhookParser output to standardized IInputEvent
  * @param {Object} parsed - Output from TelegramWebhookParser.parse()
+ * @param {import('./TelegramChatRef.mjs').TelegramChatRef} [telegramRef] - Telegram chat reference (optional for backwards compat)
  * @returns {IInputEvent|null}
  */
-export function toInputEvent(parsed) {
+export function toInputEvent(parsed, telegramRef = null) {
   if (!parsed) return null;
 
   return {
     type: parsed.type,
-    conversationId: parsed.userId,
+    conversationId: telegramRef ? telegramRef.toConversationId().toString() : parsed.userId,
+    platform: 'telegram',
+    platformUserId: telegramRef ? telegramRef.platformUserId : parsed.metadata?.from?.id?.toString(),
     messageId: parsed.messageId,
     payload: {
       text: parsed.text,
