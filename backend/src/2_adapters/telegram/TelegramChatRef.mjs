@@ -71,6 +71,15 @@ export class TelegramChatRef {
   }
 
   /**
+   * Get the platform user ID for identity resolution
+   * This is the chat ID without bot context - used to look up system user
+   * @returns {string}
+   */
+  get platformUserId() {
+    return this.#chatId;
+  }
+
+  /**
    * Convert to domain ConversationId
    *
    * The identifier format is "b{botId}_c{chatId}" which encodes
