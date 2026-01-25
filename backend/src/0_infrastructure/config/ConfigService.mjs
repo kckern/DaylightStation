@@ -79,6 +79,17 @@ export class ConfigService {
     return resolvePath(config, pathStr);
   }
 
+  /**
+   * Get app configuration scoped to a household
+   * @param {string|null} householdId - Household ID, defaults to default household
+   * @param {string} appName - App name (e.g., 'chatbots', 'fitness')
+   * @returns {object|null}
+   */
+  getHouseholdAppConfig(householdId, appName) {
+    const hid = householdId ?? this.getDefaultHouseholdId();
+    return this.#config.households?.[hid]?.apps?.[appName] ?? null;
+  }
+
   // ─── Paths ─────────────────────────────────────────────────
 
   getDataDir() {
