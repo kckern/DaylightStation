@@ -74,7 +74,7 @@ export class ProcessRevisionInput {
       // 3. Load current log
       let nutriLog = null;
       if (this.#foodLogStore) {
-        nutriLog = await this.#foodLogStore.findByUuid(logUuid, conversationId);
+        nutriLog = await this.#foodLogStore.findByUuid(logUuid, userId);
       }
 
       if (!nutriLog) {

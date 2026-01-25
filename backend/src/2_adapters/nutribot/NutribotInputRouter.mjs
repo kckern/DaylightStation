@@ -110,6 +110,7 @@ export class NutribotInputRouter extends BaseInputRouter {
       case CallbackActions.REJECT_LOG: {
         const useCase = this.container.getDiscardFoodLog();
         return await useCase.execute({
+          userId: this.#resolveUserId(event),
           conversationId: event.conversationId,
           logUuid: decoded.id,
           messageId: event.messageId,
@@ -119,6 +120,7 @@ export class NutribotInputRouter extends BaseInputRouter {
       case CallbackActions.REVISE_ITEM: {
         const useCase = this.container.getReviseFoodLog();
         return await useCase.execute({
+          userId: this.#resolveUserId(event),
           conversationId: event.conversationId,
           logUuid: decoded.logId || decoded.id,
           itemId: decoded.itemId,

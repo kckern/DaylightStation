@@ -64,7 +64,7 @@ export class AcceptFoodLog {
       // 1. Load the log
       let nutriLog = null;
       if (this.#foodLogStore) {
-        nutriLog = await this.#foodLogStore.findByUuid(logUuid, conversationId);
+        nutriLog = await this.#foodLogStore.findByUuid(logUuid, userId);
       }
 
       if (!nutriLog) {
@@ -80,7 +80,7 @@ export class AcceptFoodLog {
 
       // 3. Update log status to accepted
       if (this.#foodLogStore) {
-        await this.#foodLogStore.updateStatus(conversationId, logUuid, 'accepted');
+        await this.#foodLogStore.updateStatus(userId, logUuid, 'accepted');
       }
 
       // 4. Add items to nutrilist
