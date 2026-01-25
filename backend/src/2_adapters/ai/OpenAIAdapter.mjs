@@ -40,6 +40,22 @@ export class OpenAIAdapter {
   }
 
   /**
+   * Sleep for specified milliseconds
+   * @private
+   */
+  #sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Expose sleep for testing
+   * @private
+   */
+  _testSleep(ms) {
+    return this.#sleep(ms);
+  }
+
+  /**
    * Make an API request
    * @private
    */
