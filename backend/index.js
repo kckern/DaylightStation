@@ -14,6 +14,7 @@ import { createServer } from 'http';
 import { existsSync } from 'fs';
 import path, { join } from 'path';
 import 'dotenv/config';
+import express from 'express';
 
 import { initConfigService, ConfigValidationError, configService } from './src/0_infrastructure/config/index.mjs';
 import { hydrateProcessEnvFromConfigs, loadLoggingConfig, resolveLoggerLevel, getLoggingTags, resolveLogglyToken } from './src/0_infrastructure/logging/config.js';
@@ -146,7 +147,23 @@ async function main() {
   // Request Routing (path-based)
   // ==========================================================================
 
+  // Helper function for health responses
+  const sendHealthResponse = (res, serverName) => {
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({
+      ok: true,
+      server: serverName,
+      timestamp: Date.now(),
+      uptime: process.uptime()
+    }));
+  };
+
   server.on('request', (req, res) => {
+    // Root health check - bypasses ALL routing (always works)
+    if (req.url === '/health' || req.url === '/api/v1/health' || req.url === '/api/v1/health/live') {
+      return sendHealthResponse(res, 'main');
+    }
+
     // Add header to indicate which backend served the request
     res.setHeader('X-Backend', req.url.startsWith('/api/v1') ? 'new' : 'legacy');
 
@@ -192,69 +209,70 @@ async function main() {
   });
 
   // ==========================================================================
-  // Secondary API Server - for webhooks with DevProxy
+  // Secondary Webhook Server (port 3119) - with DevProxy for debugging
   // ==========================================================================
+  // Telegram webhooks are routed here. DevProxy can intercept and forward
+  // to local dev machine when enabled.
 
-  // Create separate webhook app with devProxy for debugging
+  const secondaryPort = configService.getWebhookPort();
+  
+  // Create devProxy - only for webhook server
   const { createDevProxy } = await import('./src/0_infrastructure/http/middleware/devProxy.mjs');
   const devHost = configService.get('LOCAL_DEV_HOST') || configService.getSecret('LOCAL_DEV_HOST');
   const devProxy = createDevProxy({ logger, devHost });
-  logger.info('devProxy.initialized.webhook', { 
-    endpoint: '/dev/proxy_toggle',
-    port: configService.getWebhookPort(),
-    note: 'DevProxy only affects webhook server (port 3119), not main server'
+  
+  // Create Express app for webhook server to properly use router/middleware
+  const webhookApp = express();
+  webhookApp.use(express.json());
+  webhookApp.use(express.urlencoded({ extended: true }));
+  
+  // Health check handlers - FIRST middleware (always works)
+  webhookApp.get('/health', (req, res) => {
+    res.json({
+      ok: true,
+      server: 'webhook',
+      timestamp: Date.now(),
+      uptime: process.uptime()
+    });
   });
-
-  const secondaryPort = configService.getWebhookPort();
-  const secondaryServer = createServer((req, res) => {
-    // Handle devProxy toggle endpoints
-    if (req.url === '/dev/proxy_toggle' || req.url === '/dev/proxy_status') {
-      return devProxy.router(req, res, () => {});
-    }
-
-    // Check if devProxy is enabled - if so, forward the request
-    const proxyState = devProxy.getState();
-    if (proxyState.proxyEnabled && req.url !== '/dev/proxy_toggle' && req.url !== '/dev/proxy_status') {
-      return devProxy.middleware(req, res, () => {
-        // If middleware calls next(), continue with normal routing
-        routeSecondaryRequest(req, res);
-      });
-    }
-
-    // Normal routing when proxy is disabled
-    routeSecondaryRequest(req, res);
+  webhookApp.get('/api/v1/health', (req, res) => {
+    res.json({
+      ok: true,
+      server: 'webhook',
+      timestamp: Date.now(),
+      uptime: process.uptime()
+    });
   });
-
-  function routeSecondaryRequest(req, res) {
+  webhookApp.get('/api/v1/health/live', (req, res) => {
+    res.json({ status: 'ok' });
+  });
+  
+  // Mount devProxy router at /api/v1/dev (for status check on webhook port)
+  webhookApp.use('/api/v1/dev', devProxy.router);
+  
+  // Apply devProxy middleware (checks if proxy is enabled and forwards if so)
+  webhookApp.use(devProxy.middleware);
+  
+  // Route requests normally when proxy is disabled
+  webhookApp.use((req, res, next) => {
     res.setHeader('X-Backend', req.url.startsWith('/api/v1') ? 'new' : 'legacy');
 
     if (req.url.startsWith('/api/v1')) {
-      // Strip /api/v1 prefix before passing to new app
       req.url = req.url.replace('/api/v1', '') || '/';
-      return newApp(req, res, (err) => {
-        if (err && !res.headersSent) {
-          res.statusCode = 500;
-          res.end('Internal Server Error');
-        }
-      });
+      return newApp(req, res, next);
     }
 
-    // Everything else -> legacy
-    legacyApp(req, res, (err) => {
-      if (err && !res.headersSent) {
-        res.statusCode = 500;
-        res.end('Internal Server Error');
-      }
-    });
-  }
+    return legacyApp(req, res, next);
+  });
 
+  const secondaryServer = createServer(webhookApp);
   secondaryServer.listen(secondaryPort, '0.0.0.0', () => {
-    logger.info('server.secondary.started', {
+    logger.info('server.webhook.started', {
       port: secondaryPort,
       host: '0.0.0.0',
-      mode: 'path-based',
-      purpose: 'webhooks',
-      devProxyEnabled: devProxy.getState().proxyEnabled
+      purpose: 'webhooks (Telegram)',
+      devProxyEnabled: devProxy.getState().proxyEnabled,
+      devProxyTarget: devHost || 'not configured'
     });
   });
 }
