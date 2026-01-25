@@ -72,7 +72,7 @@ export class InitiateJournalPrompt {
       let lifelogContext = '';
       if (this.#lifelogAggregator) {
         try {
-          const username = this.#journalEntryRepository?.getUsername?.(chatId) || 'kckern';
+          const username = this.#journalEntryRepository?.getUsername?.(chatId) || 'unknown';
           const today = moment().format('YYYY-MM-DD');
           const lifelog = await this.#lifelogAggregator.aggregate(username, today);
 

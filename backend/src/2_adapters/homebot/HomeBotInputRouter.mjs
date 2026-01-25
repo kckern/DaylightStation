@@ -1,106 +1,128 @@
 // backend/src/2_adapters/homebot/HomeBotInputRouter.mjs
 
+import { InputEventType } from '../telegram/IInputEvent.mjs';
+
 /**
- * Routes normalized input events to homebot use cases
- * Follows same pattern as JournalistInputRouter
+ * Routes IInputEvents to homebot use cases
+ * Follows same pattern as other bot input routers
  */
 export class HomeBotInputRouter {
   #container;
   #logger;
 
   /**
-   * @param {Object} config
-   * @param {Object} config.container - HomeBotContainer
-   * @param {Object} [config.logger]
+   * @param {Object} container - HomeBotContainer
+   * @param {Object} [options]
+   * @param {Object} [options.logger]
    */
-  constructor(config) {
-    if (!config.container) {
-      throw new Error('HomeBotInputRouter requires container');
+  constructor(container, options = {}) {
+    // Support both old {config.container} and new (container, options) signatures
+    if (container?.container) {
+      // Old signature: { container, logger }
+      this.#container = container.container;
+      this.#logger = container.logger || console;
+    } else {
+      // New signature: (container, { logger })
+      if (!container) throw new Error('HomeBotInputRouter requires container');
+      this.#container = container;
+      this.#logger = options.logger || console;
     }
-    this.#container = config.container;
-    this.#logger = config.logger || console;
   }
 
   /**
-   * Route input event to appropriate use case
-   * @param {Object} event - Normalized input event
+   * Route IInputEvent to appropriate use case
+   * @param {import('../telegram/IInputEvent.mjs').IInputEvent} event
    * @returns {Promise<Object>}
    */
   async route(event) {
-    this.#logger.debug?.('homebot.route', { type: event.type });
+    const { type, conversationId, messageId, payload } = event;
 
-    switch (event.type) {
-      case 'text':
-        return this.#handleText(event);
-      case 'voice':
-        return this.#handleVoice(event);
-      case 'callback':
-        return this.#handleCallback(event);
-      case 'command':
-        return this.#handleCommand(event);
-      default:
-        this.#logger.warn?.('homebot.route.unknown', { type: event.type });
-        return { handled: false };
+    this.#logger.debug?.('homebot.route', { type, conversationId });
+
+    try {
+      switch (type) {
+        case InputEventType.TEXT:
+          return await this.#handleText(conversationId, payload.text, messageId);
+
+        case InputEventType.VOICE:
+          return await this.#handleVoice(conversationId, payload.fileId, messageId);
+
+        case InputEventType.CALLBACK:
+          return await this.#handleCallback(conversationId, payload.callbackData, messageId);
+
+        case InputEventType.COMMAND:
+          return await this.#handleCommand(conversationId, payload.command, messageId);
+
+        default:
+          this.#logger.warn?.('homebot.route.unknown', { type });
+          return { handled: false };
+      }
+    } catch (error) {
+      this.#logger.error?.('homebot.route.error', {
+        type,
+        conversationId,
+        error: error.message,
+        stack: error.stack,
+      });
+      throw error;
     }
   }
 
-  async #handleText(event) {
+  async #handleText(conversationId, text, messageId) {
     const useCase = await this.#container.getProcessGratitudeInput();
     return useCase.execute({
-      conversationId: event.conversationId,
-      text: event.text,
-      messageId: event.messageId
+      conversationId,
+      text,
+      messageId,
     });
   }
 
-  async #handleVoice(event) {
+  async #handleVoice(conversationId, fileId, messageId) {
     const useCase = await this.#container.getProcessGratitudeInput();
     return useCase.execute({
-      conversationId: event.conversationId,
-      voiceFileId: event.fileId,
-      messageId: event.messageId
+      conversationId,
+      voiceFileId: fileId,
+      messageId,
     });
   }
 
-  async #handleCallback(event) {
-    const data = event.callbackData;
-
+  async #handleCallback(conversationId, callbackData, messageId) {
     // Parse callback data format: "action:value"
-    if (data.startsWith('user:')) {
-      const username = data.slice(5);
+    if (callbackData.startsWith('user:')) {
+      const username = callbackData.slice(5);
       const useCase = await this.#container.getAssignItemToUser();
       return useCase.execute({
-        conversationId: event.conversationId,
-        messageId: event.messageId,
-        username
+        conversationId,
+        messageId,
+        username,
       });
     }
 
-    if (data.startsWith('category:')) {
-      const category = data.slice(9);
+    if (callbackData.startsWith('category:')) {
+      const category = callbackData.slice(9);
       const useCase = await this.#container.getToggleCategory();
       return useCase.execute({
-        conversationId: event.conversationId,
-        messageId: event.messageId,
-        category
+        conversationId,
+        messageId,
+        category,
       });
     }
 
-    if (data === 'cancel') {
+    if (callbackData === 'cancel') {
       const useCase = await this.#container.getCancelGratitudeInput();
       return useCase.execute({
-        conversationId: event.conversationId,
-        messageId: event.messageId
+        conversationId,
+        messageId,
       });
     }
 
-    this.#logger.warn?.('homebot.callback.unknown', { data });
+    this.#logger.warn?.('homebot.callback.unknown', { data: callbackData });
     return { handled: false };
   }
 
-  async #handleCommand(event) {
+  async #handleCommand(conversationId, command, messageId) {
     // Homebot doesn't have many commands, but could add /gratitude, /hopes
-    this.#logger.debug?.('homebot.command', { command: event.command });
+    this.#logger.debug?.('homebot.command', { command });
     return { handled: false };
   }
 }

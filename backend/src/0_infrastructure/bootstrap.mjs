@@ -79,6 +79,7 @@ import { createJournalistRouter } from '../4_api/routers/journalist.mjs';
 
 // Nutribot application imports
 import { NutribotContainer } from '../3_applications/nutribot/NutribotContainer.mjs';
+import { NutriBotConfig } from '../3_applications/nutribot/config/NutriBotConfig.mjs';
 import { YamlFoodLogStore } from '../2_adapters/persistence/yaml/YamlFoodLogStore.mjs';
 import { YamlNutriListStore } from '../2_adapters/persistence/yaml/YamlNutriListStore.mjs';
 import { YamlNutriCoachStore } from '../2_adapters/persistence/yaml/YamlNutriCoachStore.mjs';
@@ -90,7 +91,6 @@ import { TelegramMessagingAdapter } from '../2_adapters/telegram/TelegramMessagi
 import { TelegramWebhookParser } from '../2_adapters/telegram/TelegramWebhookParser.mjs';
 import { OpenAIFoodParserAdapter } from '../2_adapters/ai/OpenAIFoodParserAdapter.mjs';
 import { NutritionixAdapter } from '../2_adapters/nutrition/NutritionixAdapter.mjs';
-import { WebhookHandler } from '../3_applications/nutribot/handlers/WebhookHandler.mjs';
 
 // Homebot application imports
 import { HomeBotContainer } from '../3_applications/homebot/HomeBotContainer.mjs';
@@ -1361,8 +1361,27 @@ export function createNutribotServices(config) {
     logger
   });
 
+  // Build user mapping from config for conversation -> userId resolution
+  const conversationToUser = new Map();
+  if (Array.isArray(nutribotConfig.users)) {
+    for (const user of nutribotConfig.users) {
+      if (user.telegram?.botId && user.telegram?.chatId && user.systemUser) {
+        const conversationId = `telegram:${user.telegram.botId}_${user.telegram.chatId}`;
+        conversationToUser.set(conversationId, user.systemUser);
+      }
+    }
+  }
+
+  // Add getUserIdFromConversation method to config for adapter layer
+  const enrichedConfig = {
+    ...nutribotConfig,
+    getUserIdFromConversation: (conversationId) => {
+      return conversationToUser.get(conversationId) || null;
+    }
+  };
+
   // Create nutribot container with all dependencies
-  const nutribotContainer = new NutribotContainer(nutribotConfig, {
+  const nutribotContainer = new NutribotContainer(enrichedConfig, {
     messagingGateway: telegramAdapter,
     aiGateway,
     upcGateway,

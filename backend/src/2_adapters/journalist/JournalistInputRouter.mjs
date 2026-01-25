@@ -6,16 +6,7 @@
  */
 
 import { HandleSpecialStart } from '../../3_applications/journalist/usecases/HandleSpecialStart.mjs';
-
-/**
- * Input event types
- */
-export const InputEventType = {
-  TEXT: 'text',
-  VOICE: 'voice',
-  COMMAND: 'command',
-  CALLBACK: 'callback',
-};
+import { InputEventType } from '../telegram/IInputEvent.mjs';
 
 /**
  * Journalist Input Router
@@ -38,15 +29,27 @@ export class JournalistInputRouter {
 
   /**
    * Route an IInputEvent to the appropriate use case
-   * @param {Object} event
+   * @param {import('../telegram/IInputEvent.mjs').IInputEvent} event
    * @returns {Promise<any>}
    */
   async route(event) {
-    const { type, conversationId, messageId, payload, metadata, userId } = event;
+    const { type, conversationId, messageId, payload, metadata } = event;
 
     this.#logger.debug?.('router.event', { type, conversationId, messageId });
 
-    // Merge userId into metadata for downstream handlers
+    // Normalize IInputEvent payload to internal format expected by handlers
+    const normalizedPayload = {
+      ...payload,
+      // Map IInputEvent.payload.callbackData to internal 'data' field
+      data: payload.callbackData,
+      // For commands, text contains args
+      args: payload.text,
+      // Source message ID for callback handlers
+      sourceMessageId: messageId,
+    };
+
+    // Extract userId from metadata for enrichment
+    const userId = metadata?.senderId;
     const enrichedMetadata = { ...metadata, userId };
 
     try {
@@ -55,13 +58,13 @@ export class JournalistInputRouter {
           return this.#handleText(conversationId, payload.text, messageId, enrichedMetadata);
 
         case InputEventType.VOICE:
-          return this.#handleVoice(conversationId, payload, messageId, enrichedMetadata);
+          return this.#handleVoice(conversationId, normalizedPayload, messageId, enrichedMetadata);
 
         case InputEventType.COMMAND:
-          return this.#handleCommand(conversationId, payload.command, payload.args, messageId);
+          return this.#handleCommand(conversationId, payload.command, payload.text, messageId, enrichedMetadata);
 
         case InputEventType.CALLBACK:
-          return this.#handleCallback(conversationId, payload, messageId, enrichedMetadata);
+          return this.#handleCallback(conversationId, normalizedPayload, messageId, enrichedMetadata);
 
         default:
           this.#logger.warn?.('router.unknownEventType', { type });
@@ -191,7 +194,7 @@ export class JournalistInputRouter {
    * Handle slash command
    * @private
    */
-  async #handleCommand(conversationId, command, args, messageId) {
+  async #handleCommand(conversationId, command, args, messageId, metadata) {
     this.#logger.debug?.('router.command', { conversationId, command });
 
     // Delete the slash command message to keep chat clean
@@ -211,6 +214,7 @@ export class JournalistInputRouter {
       return useCase.execute({
         chatId: conversationId,
         command: fullCommand,
+        userId: metadata?.senderId,
       });
     }
 

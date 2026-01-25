@@ -1,12 +1,15 @@
 // backend/src/4_api/routers/homebot.mjs
 
 import { Router } from 'express';
+
+// Shared Telegram adapters
+import { TelegramWebhookParser, createBotWebhookHandler } from '../../2_adapters/telegram/index.mjs';
 import { HomeBotInputRouter } from '../../2_adapters/homebot/HomeBotInputRouter.mjs';
-import { TelegramWebhookParser } from '../../2_adapters/telegram/TelegramWebhookParser.mjs';
+
+// HTTP middleware
 import {
-  webhookValidationMiddleware as defaultWebhookValidation,
-  idempotencyMiddleware as defaultIdempotency,
-  asyncHandler,
+  webhookValidationMiddleware,
+  idempotencyMiddleware,
   errorHandlerMiddleware,
 } from '../../0_infrastructure/http/middleware/index.mjs';
 
@@ -22,65 +25,25 @@ import {
  */
 export function createHomebotRouter(container, options = {}) {
   const router = Router();
+  const { botId, secretToken, gateway, logger = console } = options;
 
-  const {
-    botId,
-    secretToken,
-    gateway,
-    logger = console
-  } = options;
+  // Create webhook components
+  const parser = botId ? new TelegramWebhookParser({ botId, logger }) : null;
+  const inputRouter = new HomeBotInputRouter(container, { logger });
 
-  // Create webhook parser and input router
-  const webhookParser = botId ? new TelegramWebhookParser({ botId, logger }) : null;
-  const inputRouter = new HomeBotInputRouter({ container, logger });
-
-  // Webhook endpoint with inline handling (like nutribot)
-  if (webhookParser) {
+  // Webhook endpoint using shared handler
+  if (parser) {
     router.post(
       '/webhook',
-      defaultWebhookValidation('homebot', { secretToken }),
-      defaultIdempotency({ ttlMs: 300000 }),
-      asyncHandler(async (req, res) => {
-        try {
-          // Parse Telegram update into normalized input
-          const parsed = webhookParser.parse(req.body);
-          if (!parsed) {
-            logger.debug?.('homebot.webhook.unsupported', { updateKeys: Object.keys(req.body) });
-            return res.sendStatus(200);
-          }
-
-          // Transform to InputRouter event shape
-          const event = {
-            type: parsed.type,
-            conversationId: parsed.userId,
-            text: parsed.text,
-            fileId: parsed.fileId,
-            callbackData: parsed.callbackData,
-            callbackId: parsed.callbackId,
-            messageId: parsed.messageId,
-            command: parsed.command,
-            metadata: parsed.metadata
-          };
-
-          // Acknowledge callback if present
-          if (parsed.type === 'callback' && parsed.callbackId && gateway) {
-            try {
-              await gateway.answerCallback(parsed.callbackId);
-            } catch (e) {
-              logger.warn?.('homebot.callback.ack_failed', { error: e.message });
-            }
-          }
-
-          // Route to use cases
-          await inputRouter.route(event);
-
-          res.sendStatus(200);
-        } catch (error) {
-          logger.error?.('homebot.webhook.error', { error: error.message, stack: error.stack });
-          // Always return 200 to Telegram to prevent retry loops
-          res.sendStatus(200);
-        }
-      })
+      webhookValidationMiddleware('homebot', { secretToken }),
+      idempotencyMiddleware({ ttlMs: 300000 }),
+      createBotWebhookHandler({
+        botName: 'homebot',
+        parser,
+        inputRouter,
+        gateway,
+        logger,
+      }),
     );
   } else {
     logger.warn?.('homebot.webhook.disabled', { reason: 'No botId configured' });

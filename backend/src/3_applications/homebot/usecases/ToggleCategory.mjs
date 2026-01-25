@@ -67,7 +67,7 @@ export class ToggleCategory {
         }
       };
 
-      await this.#conversationStateStore.set(conversationId, messageId, updatedState);
+      await this.#conversationStateStore.set(conversationId, updatedState, messageId);
 
       // 4. Update message to show new category label
       const categoryLabel = newCategory === 'hopes' ? 'Hopes' : 'Gratitude';

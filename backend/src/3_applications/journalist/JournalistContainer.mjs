@@ -143,7 +143,7 @@ export class JournalistContainer {
     if (!this.#wrappedAIGateway) {
       this.#wrappedAIGateway = new LoggingAIGateway({
         aiGateway: this.#aiGateway,
-        username: this.#config.username || 'kckern',
+        username: this.#config.username || 'unknown',
         logger: this.#logger,
       });
     }
@@ -174,9 +174,17 @@ export class JournalistContainer {
   getDebriefRepository() {
     if (!this.#debriefRepository) {
       // Get data path from config or environment
+      const configUsername = this.#config.username;
+      if (!configUsername) {
+        throw new Error('JournalistContainer requires config.username to be set');
+      }
       const dataPath = process.env.path?.data
-        ? `${process.env.path.data}/users/${this.#config.username || 'kckern'}/lifelog/journalist`
-        : '/Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStationdata/users/kckern/lifelog/journalist';
+        ? `${process.env.path.data}/users/${configUsername}/lifelog/journalist`
+        : null;
+
+      if (!dataPath) {
+        throw new Error('JournalistContainer requires process.env.path.data to be set');
+      }
 
       this.#debriefRepository = new DebriefRepository({
         logger: this.#logger,

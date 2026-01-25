@@ -249,7 +249,7 @@ describe('HandleSlashCommand', () => {
       });
 
       expect(mockGenerateMorningDebrief.execute).toHaveBeenCalledWith({
-        username: 'kckern', // default fallback
+        username: 'unknown', // default fallback when userId not provided
         date: null,
       });
       expect(result.success).toBe(true);
