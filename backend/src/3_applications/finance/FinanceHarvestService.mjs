@@ -316,7 +316,7 @@ export class FinanceHarvestService {
   }
 
   #getCurrentDate() {
-    return new Date().toISOString().slice(0, 10);
+    return nowDate();
   }
 
   #log(level, message, data = {}) {

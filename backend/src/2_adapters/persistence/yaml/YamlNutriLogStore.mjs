@@ -2,6 +2,8 @@
 import { NutriLog } from '../../../1_domains/lifelog/entities/NutriLog.mjs';
 import { loadYaml, saveYaml } from '../../../0_infrastructure/utils/FileIO.mjs';
 
+import { nowTs24 } from '../../../0_infrastructure/utils/index.mjs';
+
 /**
  * YAML-based NutriLog persistence adapter
  * Implements INutriLogStore port
@@ -89,9 +91,9 @@ export class YamlNutriLogStore {
     if (!logs[id]) return null;
 
     logs[id].status = status;
-    logs[id].updatedAt = new Date().toISOString();
+    logs[id].updatedAt = nowTs24();
     if (status === 'accepted') {
-      logs[id].acceptedAt = new Date().toISOString();
+      logs[id].acceptedAt = nowTs24();
     }
 
     this.#saveLogs(userId, logs);

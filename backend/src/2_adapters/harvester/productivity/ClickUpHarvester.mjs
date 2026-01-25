@@ -142,7 +142,7 @@ export class ClickUpHarvester extends IHarvester {
 
       if (this.#currentStore) {
         await this.#currentStore.save(username, 'clickup', {
-          lastUpdated: new Date().toISOString(),
+          lastUpdated: nowTs24(),
           taskCount: processedTickets.length,
           tasks: processedTickets,
         });

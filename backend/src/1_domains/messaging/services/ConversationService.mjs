@@ -5,6 +5,8 @@
 import { Conversation } from '../entities/Conversation.mjs';
 import { Message } from '../entities/Message.mjs';
 
+import { nowTs24 } from '../../../0_infrastructure/utils/index.mjs';
+
 export class ConversationService {
   constructor({ conversationStore, logger }) {
     this.conversationStore = conversationStore;
@@ -19,7 +21,7 @@ export class ConversationService {
       id: this.generateConversationId(),
       participants,
       messages: [],
-      startedAt: new Date().toISOString(),
+      startedAt: nowTs24(),
       metadata
     });
 
@@ -158,7 +160,7 @@ export class ConversationService {
     }
 
     conversation.metadata.archived = true;
-    conversation.metadata.archivedAt = new Date().toISOString();
+    conversation.metadata.archivedAt = nowTs24();
     await this.conversationStore.save(conversation);
 
     this.logger.info?.('conversation.archived', { conversationId });

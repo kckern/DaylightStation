@@ -136,7 +136,7 @@ ${debrief.summary}`;
         try {
           await this.#debriefRepository.appendDebrief({
             date: debrief.date,
-            timestamp: new Date().toISOString(),
+            timestamp: nowTs24(),
             summary: debrief.summary,
             categories: debrief.categories,
             sources: debrief.lifelog?._meta?.sources || [],

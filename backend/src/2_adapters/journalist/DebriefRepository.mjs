@@ -12,6 +12,7 @@ import {
   saveYamlToPath,
   resolveYamlPath
 } from '../../0_infrastructure/utils/FileIO.mjs';
+import { nowTs24 } from '../../0_infrastructure/utils/index.mjs';
 
 /**
  * Repository for persisting debrief data
@@ -61,7 +62,7 @@ export class DebriefRepository {
       // Build debrief entry
       const entry = {
         date: debrief.date,
-        timestamp: debrief.timestamp || new Date().toISOString(),
+        timestamp: debrief.timestamp || nowTs24(),
         summary: debrief.summary,
         summaries: debrief.summaries || [],
       };

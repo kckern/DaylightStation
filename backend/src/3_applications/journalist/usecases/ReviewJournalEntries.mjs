@@ -35,7 +35,7 @@ export class ReviewJournalEntries {
 
     try {
       // 1. Calculate date range
-      const end = endDate || new Date().toISOString().split('T')[0];
+      const end = endDate || nowDate();
       const start = startDate || this.#getDateDaysAgo(7);
 
       // 2. Load entries for date range

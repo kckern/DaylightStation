@@ -115,7 +115,7 @@ export function createEntropyRouter(config) {
     asyncHandler(async (req, res) => {
       res.json({
         message: 'Entropy router is operational',
-        timestamp: new Date().toISOString(),
+        timestamp: nowTs(),
         endpoints: [
           'GET / - Get entropy report for all sources',
           'GET /:source - Get entropy for specific source',

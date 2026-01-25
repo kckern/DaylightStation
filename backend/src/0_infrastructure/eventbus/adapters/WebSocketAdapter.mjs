@@ -5,6 +5,8 @@
  * Wraps the WebSocket server's broadcast functionality.
  */
 
+import { nowTs } from '../../utils/index.mjs';
+
 export class WebSocketAdapter {
   constructor(options = {}) {
     this.name = 'websocket';
@@ -42,7 +44,7 @@ export class WebSocketAdapter {
 
     const message = {
       topic,
-      timestamp: new Date().toISOString(),
+      timestamp: nowTs(),
       ...payload
     };
 

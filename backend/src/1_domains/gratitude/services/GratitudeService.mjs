@@ -10,6 +10,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { Selection } from '../entities/Selection.mjs';
 import { GratitudeItem } from '../entities/GratitudeItem.mjs';
+import { nowTs24 } from '../../../0_infrastructure/utils/index.mjs';
 
 /**
  * Valid categories
@@ -232,7 +233,7 @@ export class GratitudeService {
   async markAsPrinted(householdId, category, selectionIds) {
     if (!selectionIds || selectionIds.length === 0) return;
 
-    const timestamp = new Date().toISOString();
+    const timestamp = nowTs24();
     await this.#store.markAsPrinted(householdId, category, selectionIds, timestamp);
 
     this.#logger.info?.('gratitude.selections.printed', {
@@ -364,7 +365,7 @@ export class GratitudeService {
     const snapshot = {
       id: uuidv4(),
       householdId,
-      createdAt: new Date().toISOString(),
+      createdAt: nowTs24(),
       ...data
     };
 

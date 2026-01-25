@@ -121,7 +121,7 @@ export class YamlMessageQueueRepository {
         data.queue.push({
           uuid: item.uuid || `queue-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
           ...item,
-          createdAt: item.createdAt || new Date().toISOString()
+          createdAt: item.createdAt || nowTs24()
         });
       }
     }
@@ -164,7 +164,7 @@ export class YamlMessageQueueRepository {
 
     const item = (data.queue || []).find(q => q.uuid === uuid);
     if (item) {
-      item.sentAt = new Date().toISOString();
+      item.sentAt = nowTs24();
       item.messageId = messageId;
       this.#saveData(path, data);
 

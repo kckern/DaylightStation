@@ -1,6 +1,8 @@
 /**
  * JobExecution Entity - Represents a single execution of a job
  */
+import { nowTs24 } from '../../../0_infrastructure/utils/index.mjs';
+
 export class JobExecution {
   constructor({
     jobId,
@@ -26,7 +28,7 @@ export class JobExecution {
    * Mark execution as started
    */
   start() {
-    this.startTime = new Date().toISOString();
+    this.startTime = nowTs24();
     this.status = 'running';
     return this;
   }
@@ -35,7 +37,7 @@ export class JobExecution {
    * Mark execution as successful
    */
   succeed() {
-    this.endTime = new Date().toISOString();
+    this.endTime = nowTs24();
     this.status = 'success';
     this.durationMs = new Date(this.endTime) - new Date(this.startTime);
     return this;
@@ -45,7 +47,7 @@ export class JobExecution {
    * Mark execution as failed
    */
   fail(error) {
-    this.endTime = new Date().toISOString();
+    this.endTime = nowTs24();
     this.status = 'failed';
     this.error = error?.message || error;
     this.durationMs = new Date(this.endTime) - new Date(this.startTime);
@@ -56,7 +58,7 @@ export class JobExecution {
    * Mark execution as timed out
    */
   timeout() {
-    this.endTime = new Date().toISOString();
+    this.endTime = nowTs24();
     this.status = 'timeout';
     this.error = 'Job execution timed out';
     this.durationMs = new Date(this.endTime) - new Date(this.startTime);

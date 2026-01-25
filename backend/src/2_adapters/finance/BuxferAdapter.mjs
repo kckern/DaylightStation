@@ -5,6 +5,7 @@
 
 import { Transaction } from '../../1_domains/finance/entities/Transaction.mjs';
 import { Account } from '../../1_domains/finance/entities/Account.mjs';
+import { nowTs24, nowDate } from '../../0_infrastructure/utils/index.mjs';
 
 const BUXFER_API_BASE = 'https://www.buxfer.com/api';
 
@@ -228,7 +229,7 @@ export class BuxferAdapter {
       balance: a.balance,
       currency: a.currency || 'USD',
       institution: a.bank || null,
-      lastUpdated: new Date().toISOString()
+      lastUpdated: nowTs24()
     }));
   }
 
@@ -543,7 +544,7 @@ export class BuxferAdapter {
    * @returns {string} Date in YYYY-MM-DD format
    */
   getDefaultEndDate() {
-    return new Date().toISOString().split('T')[0];
+    return nowDate();
   }
 
   /**

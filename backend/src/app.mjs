@@ -14,6 +14,7 @@ import path, { join } from 'path';
 
 // Infrastructure imports
 import { ConfigValidationError, configService, userDataService, userService } from './0_infrastructure/config/index.mjs';
+import { UserResolver } from './0_infrastructure/users/UserResolver.mjs';
 
 // Logging system
 import { getDispatcher } from './0_infrastructure/logging/dispatcher.js';
@@ -172,6 +173,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const mediaBasePath = configService.getMediaDir();
   const householdId = configService.getDefaultHouseholdId() || 'default';
   const householdDir = userDataService.getHouseholdDir(householdId) || `${dataBasePath}/households/${householdId}`;
+
+  // UserResolver for platform identity -> system username mapping
+  const userResolver = new UserResolver(configService, {
+    logger: rootLogger.child({ module: 'user-resolver' })
+  });
 
   // EventBus (WebSocket)
   const eventBus = await createEventBus({
@@ -656,6 +662,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   v1Routers.nutribot = createNutribotApiRouter({
     nutribotServices,
+    userResolver,
     botId: chatbotsConfig.bots?.nutribot?.telegram_bot_id || '',
     secretToken: chatbotsConfig.bots?.nutribot?.secretToken || '',
     gateway: messagingServices.telegramAdapter,
@@ -693,7 +700,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     configService,
     telegramAdapter: journalistTelegramAdapter || messagingServices.telegramAdapter,
     aiGateway: journalistAiGateway,
-    userResolver: null,  // TODO: Add UserResolver when available
+    userResolver,
     conversationStateStore: journalistStateStore,
     quizRepository: null,  // TODO: Add quiz repository when available
     logger: rootLogger.child({ module: 'journalist' })
@@ -702,6 +709,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   v1Routers.journalist = createJournalistApiRouter({
     journalistServices,
     configService,
+    userResolver,
     botId: chatbotsConfig.bots?.journalist?.telegram_bot_id || '',
     secretToken: chatbotsConfig.bots?.journalist?.secretToken || '',
     gateway: journalistTelegramAdapter,
@@ -745,6 +753,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   v1Routers.homebot = createHomebotApiRouter({
     homebotServices,
+    userResolver,
     botId: chatbotsConfig.bots?.homebot?.telegram_bot_id || '',
     secretToken: chatbotsConfig.bots?.homebot?.secretToken || '',
     gateway: homebotTelegramAdapter,

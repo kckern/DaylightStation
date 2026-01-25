@@ -5,6 +5,8 @@
 export const MESSAGE_TYPES = ['text', 'voice', 'image', 'document', 'callback'];
 export const MESSAGE_DIRECTIONS = ['incoming', 'outgoing'];
 
+import { nowTs24 } from '../../../0_infrastructure/utils/index.mjs';
+
 export class Message {
   constructor({
     id,
@@ -26,7 +28,7 @@ export class Message {
     this.direction = direction;
     this.content = content;
     this.attachments = attachments;
-    this.timestamp = timestamp || new Date().toISOString();
+    this.timestamp = timestamp || nowTs24();
     this.metadata = metadata;
   }
 

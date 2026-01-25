@@ -1,12 +1,19 @@
 // backend/src/3_applications/nutribot/handlers/WebhookHandler.mjs
+/**
+ * @deprecated Use NutribotInputRouter from 2_adapters/nutribot instead.
+ * This handler is legacy and does not use the centralized UserResolver for identity resolution.
+ * It expects userId to already be a resolved system username.
+ */
 import { decodeCallback, CallbackActions } from '../lib/callback.mjs';
 
 /**
  * Routes normalized webhook input to appropriate use cases
+ *
+ * @deprecated Use NutribotInputRouter from 2_adapters/nutribot instead.
+ * This handler expects pre-resolved usernames, not conversation IDs.
  */
 export class WebhookHandler {
   #container;
-  #config;
   #logger;
 
   constructor(config) {
@@ -14,7 +21,6 @@ export class WebhookHandler {
       throw new Error('WebhookHandler requires container');
     }
     this.#container = config.container;
-    this.#config = config.nutribotConfig;
     this.#logger = config.logger || console;
   }
 
@@ -54,8 +60,8 @@ export class WebhookHandler {
   async #handleText(input) {
     const useCase = this.#container.getLogFoodFromText();
     const result = await useCase.execute({
-      userId: this.#resolveUserId(input.userId),
-      conversationId: input.userId,
+      userId: input.userId,
+      conversationId: input.conversationId || input.userId,
       text: input.text,
       messageId: input.messageId
     });
@@ -65,8 +71,8 @@ export class WebhookHandler {
   async #handleImage(input) {
     const useCase = this.#container.getLogFoodFromImage();
     const result = await useCase.execute({
-      userId: this.#resolveUserId(input.userId),
-      conversationId: input.userId,
+      userId: input.userId,
+      conversationId: input.conversationId || input.userId,
       fileId: input.fileId,
       caption: input.text,
       messageId: input.messageId
@@ -77,8 +83,8 @@ export class WebhookHandler {
   async #handleVoice(input) {
     const useCase = this.#container.getLogFoodFromVoice();
     const result = await useCase.execute({
-      userId: this.#resolveUserId(input.userId),
-      conversationId: input.userId,
+      userId: input.userId,
+      conversationId: input.conversationId || input.userId,
       voiceData: { fileId: input.fileId },
       messageId: input.messageId
     });
@@ -88,8 +94,8 @@ export class WebhookHandler {
   async #handleUPC(input) {
     const useCase = this.#container.getLogFoodFromUPC();
     const result = await useCase.execute({
-      userId: this.#resolveUserId(input.userId),
-      conversationId: input.userId,
+      userId: input.userId,
+      conversationId: input.conversationId || input.userId,
       barcode: input.text,
       messageId: input.messageId
     });
@@ -120,7 +126,7 @@ export class WebhookHandler {
       case CallbackActions.ACCEPT_LOG: {
         const useCase = this.#container.getAcceptFoodLog();
         return await useCase.execute({
-          userId: this.#resolveUserId(input.userId),
+          userId: input.userId,
           logId: decoded.id,
           messageId: input.messageId
         });
@@ -128,7 +134,7 @@ export class WebhookHandler {
       case CallbackActions.REJECT_LOG: {
         const useCase = this.#container.getDiscardFoodLog();
         return await useCase.execute({
-          userId: this.#resolveUserId(input.userId),
+          userId: input.userId,
           logId: decoded.id,
           messageId: input.messageId
         });
@@ -136,7 +142,7 @@ export class WebhookHandler {
       case CallbackActions.REVISE_ITEM: {
         const useCase = this.#container.getReviseFoodLog();
         return await useCase.execute({
-          userId: this.#resolveUserId(input.userId),
+          userId: input.userId,
           logId: decoded.logId || decoded.id,
           itemId: decoded.itemId,
           messageId: input.messageId
@@ -153,34 +159,27 @@ export class WebhookHandler {
       case 'help': {
         const useCase = this.#container.getHandleHelpCommand();
         return await useCase.execute({
-          userId: this.#resolveUserId(input.userId),
-          conversationId: input.userId
+          userId: input.userId,
+          conversationId: input.conversationId || input.userId
         });
       }
       case 'review': {
         const useCase = this.#container.getHandleReviewCommand();
         return await useCase.execute({
-          userId: this.#resolveUserId(input.userId),
-          conversationId: input.userId
+          userId: input.userId,
+          conversationId: input.conversationId || input.userId
         });
       }
       case 'report': {
         const useCase = this.#container.getGenerateDailyReport();
         return await useCase.execute({
-          userId: this.#resolveUserId(input.userId),
-          conversationId: input.userId
+          userId: input.userId,
+          conversationId: input.conversationId || input.userId
         });
       }
       default:
         this.#logger.warn?.('webhook.command.unknown', { command: input.command });
         return { ok: true, handled: false };
     }
-  }
-
-  #resolveUserId(conversationId) {
-    if (this.#config?.getUserIdFromConversation) {
-      return this.#config.getUserIdFromConversation(conversationId) || conversationId;
-    }
-    return conversationId;
   }
 }

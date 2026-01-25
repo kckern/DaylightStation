@@ -1,7 +1,14 @@
 // backend/src/4_api/handlers/homebot/index.mjs
 
+import { TelegramChatRef } from '../../../2_adapters/telegram/TelegramChatRef.mjs';
+
 /**
  * Create webhook handler for homebot
+ *
+ * NOTE: This is a legacy handler. The preferred approach is to use
+ * createBotWebhookHandler from 2_adapters/telegram which uses
+ * standardized IInputEvent and TelegramChatRef for platform identity.
+ *
  * @param {Object} container - HomeBotContainer
  * @param {Object} options
  * @param {string} options.botId
@@ -30,10 +37,22 @@ export function createHomebotWebhookHandler(container, options, deps) {
         return res.sendStatus(200);
       }
 
-      // Normalize to input event
+      // Create TelegramChatRef for platform identity
+      let telegramRef = null;
+      if (botId) {
+        try {
+          telegramRef = TelegramChatRef.fromTelegramUpdate(botId, update);
+        } catch (e) {
+          console.warn('homebot.chatref.failed', { error: e.message });
+        }
+      }
+
+      // Normalize to input event with platform identity
       const event = {
         type: parsed.type,
-        conversationId: parsed.chatId,
+        conversationId: telegramRef ? telegramRef.toConversationId().toString() : parsed.chatId,
+        platform: 'telegram',
+        platformUserId: telegramRef ? telegramRef.platformUserId : null,
         messageId: parsed.messageId,
         text: parsed.content,
         fileId: parsed.raw?.voice?.file_id || parsed.raw?.photo?.[0]?.file_id,

@@ -34,7 +34,7 @@ export function createNutritionRouter(deps) {
       }
 
       const dates = await foodLogStore.listDates(hid);
-      const today = new Date().toISOString().split('T')[0];
+      const today = nowDate();
       const todaySummary = await foodLogService.getDailySummary(hid, today);
 
       res.json({

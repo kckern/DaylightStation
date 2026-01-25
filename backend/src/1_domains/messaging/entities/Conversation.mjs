@@ -2,6 +2,8 @@
  * Conversation Entity - Represents a chat conversation
  */
 
+import { nowTs24 } from '../../../0_infrastructure/utils/index.mjs';
+
 export class Conversation {
   constructor({
     id,
@@ -25,7 +27,7 @@ export class Conversation {
   addMessage(message) {
     this.messages.push({
       ...message,
-      timestamp: message.timestamp || new Date().toISOString()
+      timestamp: message.timestamp || nowTs24()
     });
     this.lastMessageAt = this.messages[this.messages.length - 1].timestamp;
   }

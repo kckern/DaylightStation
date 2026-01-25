@@ -274,7 +274,7 @@ export class HandleDebriefResponse {
       ...state,
       activeFlow: 'free_write',
       debriefAccepted: true,
-      acceptedAt: new Date().toISOString(),
+      acceptedAt: nowTs24(),
     });
 
     this.#logger.info?.('debrief.accepted', {

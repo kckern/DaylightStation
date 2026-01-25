@@ -4,6 +4,8 @@
  * Publishes EventBus events to an MQTT broker.
  */
 
+import { nowTs } from '../../utils/index.mjs';
+
 export class MqttAdapter {
   constructor(options = {}) {
     this.name = 'mqtt';
@@ -41,7 +43,7 @@ export class MqttAdapter {
     const mqttTopic = `${this.topicPrefix}${topic}`;
     const message = JSON.stringify({
       topic,
-      timestamp: new Date().toISOString(),
+      timestamp: nowTs(),
       ...payload
     });
 

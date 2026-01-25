@@ -130,7 +130,7 @@ export class YamlConversationStateStore extends IConversationStateStore {
 
     const stateWithTimestamp = {
       ...state,
-      updatedAt: new Date().toISOString()
+      updatedAt: nowTs24()
     };
 
     if (messageId) {

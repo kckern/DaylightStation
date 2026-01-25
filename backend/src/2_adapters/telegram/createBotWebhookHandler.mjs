@@ -1,19 +1,21 @@
 // backend/src/2_adapters/telegram/createBotWebhookHandler.mjs
 
 import { toInputEvent } from './IInputEvent.mjs';
+import { TelegramChatRef } from './TelegramChatRef.mjs';
 
 /**
  * Factory for creating standardized Telegram webhook handlers.
  *
  * Handles common concerns:
  * - Parsing webhook payload via TelegramWebhookParser
- * - Transforming to standardized IInputEvent
+ * - Transforming to standardized IInputEvent with platform identity
  * - Auto-acknowledging callback queries
  * - Error handling with 200 response (prevents Telegram retries)
  * - Routing to bot-specific input router
  *
  * @param {Object} config
  * @param {string} config.botName - Bot identifier for logging
+ * @param {string} config.botId - Telegram bot ID (for creating TelegramChatRef)
  * @param {Object} config.parser - TelegramWebhookParser instance
  * @param {Object} config.inputRouter - Bot's input router with route(event) method
  * @param {Object} [config.gateway] - TelegramAdapter for callback acknowledgement
@@ -21,7 +23,7 @@ import { toInputEvent } from './IInputEvent.mjs';
  * @returns {Function} Express async handler
  */
 export function createBotWebhookHandler(config) {
-  const { botName, parser, inputRouter, gateway, logger = console } = config;
+  const { botName, botId, parser, inputRouter, gateway, logger = console } = config;
 
   if (!parser) throw new Error('createBotWebhookHandler requires parser');
   if (!inputRouter) throw new Error('createBotWebhookHandler requires inputRouter');
@@ -37,10 +39,20 @@ export function createBotWebhookHandler(config) {
         return res.sendStatus(200);
       }
 
-      // 2. Transform to standardized event
-      const event = toInputEvent(parsed);
+      // 2. Create TelegramChatRef for platform identity (if botId available)
+      let telegramRef = null;
+      if (botId) {
+        try {
+          telegramRef = TelegramChatRef.fromTelegramUpdate(botId, req.body);
+        } catch (e) {
+          logger.warn?.(`${botName}.chatref.failed`, { error: e.message });
+        }
+      }
 
-      // 3. Auto-acknowledge callback queries
+      // 3. Transform to standardized event with platform identity
+      const event = toInputEvent(parsed, telegramRef);
+
+      // 4. Auto-acknowledge callback queries
       if (parsed.callbackId && gateway?.answerCallback) {
         try {
           await gateway.answerCallback(parsed.callbackId);
@@ -49,10 +61,10 @@ export function createBotWebhookHandler(config) {
         }
       }
 
-      // 4. Route to bot's input handler
+      // 5. Route to bot's input handler
       await inputRouter.route(event);
 
-      // 5. Always return 200 to prevent Telegram retries
+      // 6. Always return 200 to prevent Telegram retries
       res.sendStatus(200);
     } catch (error) {
       logger.error?.(`${botName}.webhook.error`, {

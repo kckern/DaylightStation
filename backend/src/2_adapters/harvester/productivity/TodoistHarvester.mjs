@@ -142,7 +142,7 @@ export class TodoistHarvester extends IHarvester {
 
         if (this.#currentStore) {
           await this.#currentStore.save(username, 'todoist', {
-            lastUpdated: new Date().toISOString(),
+            lastUpdated: nowTs24(),
             taskCount: currentTasks.length,
             tasks: currentTasks,
           });

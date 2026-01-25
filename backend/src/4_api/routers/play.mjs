@@ -159,7 +159,7 @@ export function createPlayRouter(config) {
         playhead: normalizedSeconds,
         duration: estimatedDuration,
         playCount: (existingState?.playCount ?? 0) + 1,
-        lastPlayed: new Date().toISOString(),
+        lastPlayed: nowTs24(),
         watchTime: newWatchTime > 0 ? Number(newWatchTime.toFixed(3)) : 0
       });
 

@@ -30,6 +30,7 @@ import {
  * Create Journalist Express Router
  * @param {import('../../3_applications/journalist/JournalistContainer.mjs').JournalistContainer} container
  * @param {Object} [options]
+ * @param {import('../../0_infrastructure/users/UserResolver.mjs').UserResolver} [options.userResolver] - For resolving platform users to system usernames
  * @param {string} [options.botId] - Telegram bot ID
  * @param {string} [options.secretToken] - X-Telegram-Bot-Api-Secret-Token for webhook auth
  * @param {Object} [options.gateway] - TelegramAdapter for callback acknowledgements
@@ -39,11 +40,11 @@ import {
  */
 export function createJournalistRouter(container, options = {}) {
   const router = Router();
-  const { botId, secretToken, gateway, configService, logger = console } = options;
+  const { userResolver, botId, secretToken, gateway, configService, logger = console } = options;
 
   // Create webhook components
   const parser = botId ? new TelegramWebhookParser({ botId, logger }) : null;
-  const inputRouter = new JournalistInputRouter(container, { logger });
+  const inputRouter = new JournalistInputRouter(container, { userResolver, logger });
 
   // Webhook endpoint using shared handler
   if (parser) {
@@ -53,6 +54,7 @@ export function createJournalistRouter(container, options = {}) {
       idempotencyMiddleware({ ttlMs: 300000 }),
       createBotWebhookHandler({
         botName: 'journalist',
+        botId,
         parser,
         inputRouter,
         gateway,

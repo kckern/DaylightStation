@@ -13,6 +13,7 @@
  */
 
 import { WebSocketServer } from 'ws';
+import { nowTs, nowTs24 } from '../utils/index.mjs';
 import crypto from 'crypto';
 
 /**
@@ -204,7 +205,7 @@ export class WebSocketEventBus {
 
     const message = {
       topic,
-      timestamp: new Date().toISOString(),
+      timestamp: nowTs(),
       ...payload
     };
     const msg = JSON.stringify(message);
@@ -382,7 +383,7 @@ export class WebSocketEventBus {
       ip: req?.socket?.remoteAddress,
       userAgent: req?.headers?.['user-agent'],
       subscriptions: new Set(),
-      connectedAt: new Date().toISOString()
+      connectedAt: nowTs24()
     };
 
     this.#clients.set(clientId, { ws, meta });

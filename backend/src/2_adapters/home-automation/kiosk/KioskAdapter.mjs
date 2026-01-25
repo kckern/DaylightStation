@@ -17,6 +17,8 @@
  * @property {string} [error] - Error message if failed
  */
 
+import { nowTs24 } from '../../../0_infrastructure/utils/index.mjs';
+
 export class KioskAdapter {
   #host;
   #port;
@@ -308,7 +310,7 @@ export class KioskAdapter {
    */
   async #fetch(url) {
     this.#metrics.requestCount++;
-    this.#metrics.lastRequestAt = new Date().toISOString();
+    this.#metrics.lastRequestAt = nowTs24();
 
     if (this.#httpClient) {
       return this.#httpClient.get(url);

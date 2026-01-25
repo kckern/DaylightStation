@@ -6,6 +6,8 @@
  * Saves the last prompt and response to last_gpt.yml.
  */
 
+import { nowTs24 } from '../../0_infrastructure/utils/index.mjs';
+
 /**
  * AI Gateway wrapper that logs calls
  */
@@ -65,7 +67,7 @@ export class LoggingAIGateway {
       const duration = Date.now() - startTime;
 
       const logEntry = {
-        timestamp: new Date().toISOString(),
+        timestamp: nowTs24(),
         username: this.#username,
         duration_ms: duration,
         options: options,

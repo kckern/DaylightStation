@@ -11,6 +11,7 @@
  */
 
 import express from 'express';
+import { nowTs24 } from '../../0_infrastructure/utils/index.mjs';
 
 /**
  * Create scheduling router
@@ -80,7 +81,7 @@ export function createSchedulingRouter(config) {
 
         // Respond immediately
         res.json({
-          time: new Date().toISOString(),
+          time: nowTs24(),
           message: `Called endpoint for ${bucketName}`,
           executionId
         });
@@ -132,7 +133,7 @@ export function createSchedulingRouter(config) {
     const running = Array.from(schedulerService.runningJobs.entries()).map(([jobId, executionId]) => ({
       jobId,
       executionId,
-      startedAt: new Date().toISOString() // Approximate
+      startedAt: nowTs24() // Approximate
     }));
 
     res.json({

@@ -14,6 +14,8 @@
  * @module domains/media/services/YouTubeDownloadService
  */
 
+import { nowTs24 } from '../../../0_infrastructure/utils/index.mjs';
+
 import child_process from 'child_process';
 import { promisify } from 'util';
 import fs from 'fs';
@@ -101,7 +103,7 @@ export class YouTubeDownloadService {
 
       // Atomic create
       const fd = fs.openSync(lockFile, 'wx');
-      fs.writeFileSync(fd, JSON.stringify({ pid: process.pid, ts: new Date().toISOString() }));
+      fs.writeFileSync(fd, JSON.stringify({ pid: process.pid, ts: nowTs24() }));
       fs.closeSync(fd);
 
       return () => {

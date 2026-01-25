@@ -13,6 +13,7 @@
 
 import express from 'express';
 import cors from 'cors';
+import { nowTs } from '../0_infrastructure/utils/index.mjs';
 
 /**
  * Create the webhook server
@@ -41,7 +42,7 @@ export function createWebhookServer(config) {
     res.json({
       status: 'ok',
       server: 'webhook',
-      timestamp: new Date().toISOString()
+      timestamp: nowTs()
     });
   });
 

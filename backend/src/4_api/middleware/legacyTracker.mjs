@@ -37,7 +37,7 @@ export function createLegacyTracker(options = {}) {
     // Extract route prefix (e.g., /data, /harvest)
     const prefix = '/' + req.baseUrl.split('/').filter(Boolean)[0];
     const fullPath = req.baseUrl + req.path;
-    const now = new Date().toISOString();
+    const now = nowTs24();
 
     // Increment hit count
     hits.set(prefix, (hits.get(prefix) || 0) + 1);

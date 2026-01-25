@@ -35,7 +35,7 @@ export class ExportJournalMarkdown {
       // 1. Load entries from startDate
       let entries = [];
       if (startDate) {
-        const endDate = new Date().toISOString().split('T')[0];
+        const endDate = nowDate();
         entries = await this.#journalEntryRepository.findByDateRange(chatId, startDate, endDate);
       } else if (this.#journalEntryRepository.findAll) {
         entries = await this.#journalEntryRepository.findAll(chatId);

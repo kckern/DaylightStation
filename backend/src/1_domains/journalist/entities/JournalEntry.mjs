@@ -7,6 +7,7 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import { EntrySource, isValidEntrySource } from '../value-objects/EntrySource.mjs';
+import { nowTs24 } from '../../../0_infrastructure/utils/index.mjs';
 
 /**
  * ValidationError for entity validation
@@ -66,7 +67,7 @@ export class JournalEntry {
     this.#source = source;
     this.#transcription = props.transcription || null;
     this.#analysis = props.analysis ? Object.freeze(props.analysis) : null;
-    this.#createdAt = props.createdAt || new Date().toISOString();
+    this.#createdAt = props.createdAt || nowTs24();
 
     Object.freeze(this);
   }
