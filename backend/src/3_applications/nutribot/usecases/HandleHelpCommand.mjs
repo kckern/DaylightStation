@@ -19,12 +19,29 @@ export class HandleHelpCommand {
   }
 
   /**
+   * Get messaging interface (prefers responseContext for DDD compliance)
+   * @private
+   */
+  #getMessaging(responseContext, conversationId) {
+    if (responseContext) {
+      return responseContext;
+    }
+    return {
+      sendMessage: (text, options) => this.#messagingGateway.sendMessage(conversationId, text, options),
+    };
+  }
+
+  /**
    * Execute the use case
+   * @param {Object} input
+   * @param {Object} [input.responseContext] - Bound response context for DDD-compliant messaging
    */
   async execute(input) {
-    const { conversationId } = input;
+    const { conversationId, responseContext } = input;
 
-    this.#logger.debug?.('command.help', { conversationId });
+    this.#logger.debug?.('command.help', { conversationId, hasResponseContext: !!responseContext });
+
+    const messaging = this.#getMessaging(responseContext, conversationId);
 
     const helpMessage = `📱 <b>NutriBot Commands</b>
 
@@ -44,8 +61,7 @@ export class HandleHelpCommand {
 • Include cooking method (e.g., "grilled chicken")
 • Log as you eat for best accuracy`;
 
-    const { messageId } = await this.#messagingGateway.sendMessage(
-      conversationId,
+    const { messageId } = await messaging.sendMessage(
       helpMessage,
       { parseMode: 'HTML' }
     );

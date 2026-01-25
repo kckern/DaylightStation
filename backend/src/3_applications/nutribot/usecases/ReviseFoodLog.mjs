@@ -34,17 +34,34 @@ export class ReviseFoodLog {
   }
 
   /**
+   * Get messaging interface (prefers responseContext for DDD compliance)
+   * @private
+   */
+  #getMessaging(responseContext, conversationId) {
+    if (responseContext) {
+      return responseContext;
+    }
+    return {
+      sendMessage: (text, options) => messaging.sendMessage( text, options),
+      updateMessage: (msgId, updates) => messaging.updateMessage( msgId, updates),
+    };
+  }
+
+  /**
    * Execute the use case
    * @param {Object} input
    * @param {string} input.userId
    * @param {string} input.conversationId
    * @param {string} input.logUuid
    * @param {string} [input.messageId]
+   * @param {Object} [input.responseContext] - Bound response context for DDD-compliant messaging
    */
   async execute(input) {
-    const { conversationId, logUuid, messageId } = input;
+    const { conversationId, logUuid, messageId, responseContext } = input;
 
-    this.#logger.debug?.('reviseLog.start', { conversationId, logUuid });
+    this.#logger.debug?.('reviseLog.start', { conversationId, logUuid, hasResponseContext: !!responseContext });
+
+    const messaging = this.#getMessaging(responseContext, conversationId);
 
     if (!logUuid) {
       this.#logger.error?.('reviseLog.missingLogUuid', { conversationId });
@@ -86,9 +103,9 @@ export class ReviseFoodLog {
         const updatePayload = isImageLog
           ? { caption: message, choices: [cancelButton], inline: true }
           : { text: message, choices: [cancelButton], inline: true };
-        await this.#messagingGateway.updateMessage(conversationId, messageId, updatePayload);
+        await messaging.updateMessage( messageId, updatePayload);
       } else {
-        await this.#messagingGateway.sendMessage(conversationId, message, {
+        await messaging.sendMessage( message, {
           choices: [cancelButton],
           inline: true,
         });

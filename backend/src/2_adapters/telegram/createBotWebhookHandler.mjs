@@ -2,6 +2,7 @@
 
 import { toInputEvent } from './IInputEvent.mjs';
 import { TelegramChatRef } from './TelegramChatRef.mjs';
+import { TelegramResponseContext } from './TelegramResponseContext.mjs';
 
 /**
  * Factory for creating standardized Telegram webhook handlers.
@@ -9,6 +10,7 @@ import { TelegramChatRef } from './TelegramChatRef.mjs';
  * Handles common concerns:
  * - Parsing webhook payload via TelegramWebhookParser
  * - Transforming to standardized IInputEvent with platform identity
+ * - Creating TelegramResponseContext for DDD-compliant response handling
  * - Auto-acknowledging callback queries
  * - Error handling with 200 response (prevents Telegram retries)
  * - Routing to bot-specific input router
@@ -17,8 +19,8 @@ import { TelegramChatRef } from './TelegramChatRef.mjs';
  * @param {string} config.botName - Bot identifier for logging
  * @param {string} config.botId - Telegram bot ID (for creating TelegramChatRef)
  * @param {Object} config.parser - TelegramWebhookParser instance
- * @param {Object} config.inputRouter - Bot's input router with route(event) method
- * @param {Object} [config.gateway] - TelegramAdapter for callback acknowledgement
+ * @param {Object} config.inputRouter - Bot's input router with route(event, responseContext) method
+ * @param {Object} [config.gateway] - TelegramAdapter for messaging and callback acknowledgement
  * @param {Object} [config.logger] - Logger instance
  * @returns {Function} Express async handler
  */
@@ -52,7 +54,13 @@ export function createBotWebhookHandler(config) {
       // 3. Transform to standardized event with platform identity
       const event = toInputEvent(parsed, telegramRef);
 
-      // 4. Auto-acknowledge callback queries
+      // 4. Create response context (captures TelegramChatRef, eliminates string parsing at send-time)
+      let responseContext = null;
+      if (telegramRef && gateway) {
+        responseContext = new TelegramResponseContext(gateway, telegramRef);
+      }
+
+      // 5. Auto-acknowledge callback queries
       if (parsed.callbackId && gateway?.answerCallback) {
         try {
           await gateway.answerCallback(parsed.callbackId);
@@ -61,10 +69,10 @@ export function createBotWebhookHandler(config) {
         }
       }
 
-      // 5. Route to bot's input handler
-      await inputRouter.route(event);
+      // 6. Route to bot's input handler with response context
+      await inputRouter.route(event, responseContext);
 
-      // 6. Always return 200 to prevent Telegram retries
+      // 7. Always return 200 to prevent Telegram retries
       res.sendStatus(200);
     } catch (error) {
       logger.error?.(`${botName}.webhook.error`, {

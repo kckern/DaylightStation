@@ -63,12 +63,35 @@ export class LogFoodFromText {
   }
 
   /**
+   * Get the messaging interface (prefers responseContext for DDD compliance)
+   * @private
+   * @param {Object} [responseContext] - Bound response context
+   * @param {string} conversationId - Fallback conversation ID
+   * @returns {Object} - Messaging interface with sendMessage, updateMessage, deleteMessage
+   */
+  #getMessaging(responseContext, conversationId) {
+    // Prefer responseContext when available (DDD-compliant, no string parsing)
+    if (responseContext) {
+      return responseContext;
+    }
+    // Fallback to messagingGateway with conversationId (for direct API calls)
+    return {
+      sendMessage: (text, options) => this.#messagingGateway.sendMessage(conversationId, text, options),
+      updateMessage: (msgId, updates) => this.#messagingGateway.updateMessage(conversationId, msgId, updates),
+      deleteMessage: (msgId) => this.#messagingGateway.deleteMessage(conversationId, msgId),
+    };
+  }
+
+  /**
    * Execute the use case
    */
   async execute(input) {
-    const { userId, conversationId, text, messageId, date: overrideDate, existingMessageId } = input;
+    const { userId, conversationId, text, messageId, date: overrideDate, existingMessageId, responseContext } = input;
 
-    this.#logger.info?.('logText.start', { conversationId, text, textLength: text.length });
+    this.#logger.info?.('logText.start', { conversationId, text, textLength: text.length, hasResponseContext: !!responseContext });
+
+    // Get messaging interface (prefers responseContext)
+    const messaging = this.#getMessaging(responseContext, conversationId);
 
     try {
       // 1. Send "Analyzing..." message
@@ -77,7 +100,7 @@ export class LogFoodFromText {
         statusMsgId = existingMessageId;
       } else {
         const truncatedText = text.length > 300 ? text.substring(0, 300) + '...' : text;
-        const result = await this.#messagingGateway.sendMessage(conversationId, `🔍 Analyzing...\n💬 "${truncatedText}"`, {});
+        const result = await messaging.sendMessage(`🔍 Analyzing...\n💬 "${truncatedText}"`, {});
         statusMsgId = result.messageId;
       }
 
@@ -104,18 +127,18 @@ export class LogFoodFromText {
         this.#logger.debug?.('logText.noFood', { conversationId, text });
 
         // Try revision fallback
-        const fallbackResult = await this.#tryRevisionFallback(userId, conversationId, text, statusMsgId, existingMessageId);
+        const fallbackResult = await this.#tryRevisionFallback(userId, conversationId, text, statusMsgId, existingMessageId, messaging);
 
         if (fallbackResult.handled) {
           if (existingMessageId && statusMsgId !== existingMessageId) {
             try {
-              await this.#messagingGateway.deleteMessage(conversationId, statusMsgId);
+              await messaging.deleteMessage(statusMsgId);
             } catch (e) {}
           }
           return fallbackResult;
         }
 
-        await this.#messagingGateway.updateMessage(conversationId, statusMsgId, {
+        await messaging.updateMessage(statusMsgId, {
           text: "❓ I couldn't identify any food from your description. Could you be more specific?",
         });
         return { success: false, error: 'No food detected' };
@@ -150,7 +173,7 @@ export class LogFoodFromText {
       const buttons = this.#buildActionButtons(nutriLog.id);
 
       try {
-        await this.#messagingGateway.updateMessage(conversationId, statusMsgId, {
+        await messaging.updateMessage(statusMsgId, {
           text: `${dateHeader}\n\n${foodList}`,
           choices: buttons,
           inline: true,
@@ -158,7 +181,7 @@ export class LogFoodFromText {
       } catch (updateError) {
         this.#logger.warn?.('logText.updateMessage.failed', { conversationId, error: updateError.message });
         try {
-          await this.#messagingGateway.sendMessage(conversationId, `✅ Food logged! (message update failed)\n\n${dateHeader}\n\n${foodList}`, { reply_markup: { inline_keyboard: buttons } });
+          await messaging.sendMessage(`✅ Food logged! (message update failed)\n\n${dateHeader}\n\n${foodList}`, { reply_markup: { inline_keyboard: buttons } });
         } catch (recoveryError) {
           this.#logger.error?.('logText.recovery.failed', { conversationId, error: recoveryError.message });
         }
@@ -166,7 +189,7 @@ export class LogFoodFromText {
 
       // 7. Delete original user message
       if (messageId) {
-        await this.#deleteMessageWithRetry(conversationId, messageId);
+        await this.#deleteMessageWithRetry(messaging, messageId);
       }
 
       // 8. Update NutriLog with messageId
@@ -209,11 +232,14 @@ export class LogFoodFromText {
   /**
    * Delete message with retry
    * @private
+   * @param {Object} messaging - Messaging interface
+   * @param {string} messageId - Message to delete
+   * @param {number} [maxRetries=3] - Max retry attempts
    */
-  async #deleteMessageWithRetry(conversationId, messageId, maxRetries = 3) {
+  async #deleteMessageWithRetry(messaging, messageId, maxRetries = 3) {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        await this.#messagingGateway.deleteMessage(conversationId, messageId);
+        await messaging.deleteMessage(messageId);
         return;
       } catch (error) {
         const isRetryable = error.code === 'EAI_AGAIN' || error.code === 'ETIMEDOUT' || error.code === 'ECONNRESET';
@@ -385,8 +411,14 @@ Begin response with '{' character - output only valid JSON, no markdown.`,
   /**
    * Try to interpret failed food detection as a revision attempt
    * @private
+   * @param {string} userId
+   * @param {string} conversationId
+   * @param {string} text
+   * @param {string} statusMsgId
+   * @param {string} [existingLogMessageId]
+   * @param {Object} messaging - Messaging interface
    */
-  async #tryRevisionFallback(userId, conversationId, text, statusMsgId, existingLogMessageId = null) {
+  async #tryRevisionFallback(userId, conversationId, text, statusMsgId, existingLogMessageId = null, messaging) {
     this.#logger.debug?.('logText.revisionFallback.start', { conversationId, text });
 
     const messageToUpdate = existingLogMessageId || statusMsgId;
@@ -426,7 +458,7 @@ Begin response with '{' character - output only valid JSON, no markdown.`,
 
     const contextualText = `Original items:\n${originalItems}\n\nUser revision: "${text}"`;
 
-    await this.#messagingGateway.updateMessage(conversationId, messageToUpdate, {
+    await messaging.updateMessage(messageToUpdate, {
       text: '🔍 Processing as revision...',
     });
 
@@ -457,7 +489,7 @@ Begin response with '{' character - output only valid JSON, no markdown.`,
     const foodList = formatFoodList(finalItems);
     const buttons = this.#buildActionButtons(updatedLog.id);
 
-    await this.#messagingGateway.updateMessage(conversationId, messageToUpdate, {
+    await messaging.updateMessage(messageToUpdate, {
       text: `${dateHeader}\n\n${foodList}`,
       choices: buttons,
       inline: true,

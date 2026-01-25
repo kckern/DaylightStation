@@ -30,27 +30,28 @@ export class BaseInputRouter {
   /**
    * Route an IInputEvent to the appropriate handler.
    * @param {import('./telegram/IInputEvent.mjs').IInputEvent} event
+   * @param {import('../3_applications/nutribot/ports/IResponseContext.mjs').IResponseContext} [responseContext] - Bound response context for DDD-compliant messaging
    * @returns {Promise<any>}
    */
-  async route(event) {
+  async route(event, responseContext = null) {
     const { type, conversationId, messageId } = event;
 
-    this.logger.debug?.('router.event', { type, conversationId, messageId });
+    this.logger.debug?.('router.event', { type, conversationId, messageId, hasResponseContext: !!responseContext });
 
     try {
       switch (type) {
         case InputEventType.TEXT:
-          return await this.handleText(event);
+          return await this.handleText(event, responseContext);
         case InputEventType.VOICE:
-          return await this.handleVoice(event);
+          return await this.handleVoice(event, responseContext);
         case InputEventType.IMAGE:
-          return await this.handleImage(event);
+          return await this.handleImage(event, responseContext);
         case InputEventType.CALLBACK:
-          return await this.handleCallback(event);
+          return await this.handleCallback(event, responseContext);
         case InputEventType.COMMAND:
-          return await this.handleCommand(event);
+          return await this.handleCommand(event, responseContext);
         case InputEventType.UPC:
-          return await this.handleUpc(event);
+          return await this.handleUpc(event, responseContext);
         default:
           this.logger.warn?.('router.unknownType', { type });
           return { ok: true, handled: false };
@@ -73,9 +74,10 @@ export class BaseInputRouter {
   /**
    * Handle text input event
    * @param {import('./telegram/IInputEvent.mjs').IInputEvent} event
+   * @param {import('../3_applications/nutribot/ports/IResponseContext.mjs').IResponseContext} [responseContext]
    * @returns {Promise<any>}
    */
-  async handleText(event) {
+  async handleText(event, responseContext) {
     this.logger.warn?.('router.text.notImplemented', { conversationId: event.conversationId });
     return { ok: true, handled: false };
   }
@@ -83,9 +85,10 @@ export class BaseInputRouter {
   /**
    * Handle voice input event
    * @param {import('./telegram/IInputEvent.mjs').IInputEvent} event
+   * @param {import('../3_applications/nutribot/ports/IResponseContext.mjs').IResponseContext} [responseContext]
    * @returns {Promise<any>}
    */
-  async handleVoice(event) {
+  async handleVoice(event, responseContext) {
     this.logger.warn?.('router.voice.notImplemented', { conversationId: event.conversationId });
     return { ok: true, handled: false };
   }
@@ -93,9 +96,10 @@ export class BaseInputRouter {
   /**
    * Handle image input event
    * @param {import('./telegram/IInputEvent.mjs').IInputEvent} event
+   * @param {import('../3_applications/nutribot/ports/IResponseContext.mjs').IResponseContext} [responseContext]
    * @returns {Promise<any>}
    */
-  async handleImage(event) {
+  async handleImage(event, responseContext) {
     this.logger.warn?.('router.image.notImplemented', { conversationId: event.conversationId });
     return { ok: true, handled: false };
   }
@@ -103,9 +107,10 @@ export class BaseInputRouter {
   /**
    * Handle callback (button press) event
    * @param {import('./telegram/IInputEvent.mjs').IInputEvent} event
+   * @param {import('../3_applications/nutribot/ports/IResponseContext.mjs').IResponseContext} [responseContext]
    * @returns {Promise<any>}
    */
-  async handleCallback(event) {
+  async handleCallback(event, responseContext) {
     this.logger.warn?.('router.callback.notImplemented', { conversationId: event.conversationId });
     return { ok: true, handled: false };
   }
@@ -113,9 +118,10 @@ export class BaseInputRouter {
   /**
    * Handle command event
    * @param {import('./telegram/IInputEvent.mjs').IInputEvent} event
+   * @param {import('../3_applications/nutribot/ports/IResponseContext.mjs').IResponseContext} [responseContext]
    * @returns {Promise<any>}
    */
-  async handleCommand(event) {
+  async handleCommand(event, responseContext) {
     this.logger.warn?.('router.command.notImplemented', { conversationId: event.conversationId });
     return { ok: true, handled: false };
   }
@@ -123,9 +129,10 @@ export class BaseInputRouter {
   /**
    * Handle UPC/barcode event
    * @param {import('./telegram/IInputEvent.mjs').IInputEvent} event
+   * @param {import('../3_applications/nutribot/ports/IResponseContext.mjs').IResponseContext} [responseContext]
    * @returns {Promise<any>}
    */
-  async handleUpc(event) {
+  async handleUpc(event, responseContext) {
     this.logger.warn?.('router.upc.notImplemented', { conversationId: event.conversationId });
     return { ok: true, handled: false };
   }

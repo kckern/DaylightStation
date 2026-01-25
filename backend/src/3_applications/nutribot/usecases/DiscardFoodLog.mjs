@@ -24,17 +24,33 @@ export class DiscardFoodLog {
   }
 
   /**
+   * Get messaging interface (prefers responseContext for DDD compliance)
+   * @private
+   */
+  #getMessaging(responseContext, conversationId) {
+    if (responseContext) {
+      return responseContext;
+    }
+    return {
+      deleteMessage: (msgId) => this.#messagingGateway.deleteMessage(conversationId, msgId),
+    };
+  }
+
+  /**
    * Execute the use case
    * @param {Object} input
    * @param {string} input.userId
    * @param {string} input.conversationId
    * @param {string} input.logUuid
    * @param {string} [input.messageId]
+   * @param {Object} [input.responseContext] - Bound response context for DDD-compliant messaging
    */
   async execute(input) {
-    const { conversationId, logUuid, messageId } = input;
+    const { conversationId, logUuid, messageId, responseContext } = input;
 
-    this.#logger.debug?.('discardLog.start', { conversationId, logUuid });
+    this.#logger.debug?.('discardLog.start', { conversationId, logUuid, hasResponseContext: !!responseContext });
+
+    const messaging = this.#getMessaging(responseContext, conversationId);
 
     try {
       // 1. Update log status to rejected
@@ -53,7 +69,7 @@ export class DiscardFoodLog {
       // 3. Delete the confirmation message
       if (messageId) {
         try {
-          await this.#messagingGateway.deleteMessage(conversationId, messageId);
+          await messaging.deleteMessage(messageId);
         } catch (e) {
           // Ignore delete errors
         }

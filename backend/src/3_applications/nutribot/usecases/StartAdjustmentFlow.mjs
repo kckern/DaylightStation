@@ -32,11 +32,12 @@ export class StartAdjustmentFlow {
    * @param {string} input.userId
    * @param {string} input.conversationId
    * @param {string} [input.messageId]
+   * @param {Object} [input.responseContext] - Bound response context for DDD-compliant messaging
    */
   async execute(input) {
-    const { userId, conversationId, messageId: existingMessageId } = input;
+    const { userId, conversationId, messageId: existingMessageId, responseContext } = input;
 
-    this.#logger.debug?.('adjustment.start', { userId, existingMessageId, defaultDay: 'today' });
+    this.#logger.debug?.('adjustment.start', { userId, existingMessageId, defaultDay: 'today', hasResponseContext: !!responseContext });
 
     try {
       // 1. Set conversation state (if store available)
@@ -60,6 +61,7 @@ export class StartAdjustmentFlow {
         conversationId,
         messageId: existingMessageId,
         daysAgo: 0,
+        responseContext,
       });
 
       this.#logger.info?.('adjustment.started', { userId, messageId: existingMessageId, defaultedToToday: true });

@@ -41,14 +41,34 @@ export class GenerateDailyReport {
   }
 
   /**
+   * Get messaging interface (prefers responseContext for DDD compliance)
+   * @private
+   */
+  #getMessaging(responseContext, conversationId) {
+    if (responseContext) {
+      return responseContext;
+    }
+    return {
+      sendMessage: (text, options) => messaging.sendMessage( text, options),
+      sendPhoto: (src, options) => messaging.sendPhoto( src, options),
+      updateMessage: (msgId, updates) => this.#messagingGateway.updateMessage(conversationId, msgId, updates),
+      deleteMessage: (msgId) => messaging.deleteMessage( msgId),
+    };
+  }
+
+  /**
    * Execute the use case
+   * @param {Object} input
+   * @param {Object} [input.responseContext] - Bound response context for DDD-compliant messaging
    */
   async execute(input) {
-    const { userId, conversationId, forceRegenerate = false, messageId: triggerMessageId } = input;
+    const { userId, conversationId, forceRegenerate = false, messageId: triggerMessageId, responseContext } = input;
     const date = input.date || this.#getTodayDate(userId);
     const anchorDateForHistory = this.#getTodayDate(userId);
 
-    this.#logger.debug?.('report.generate.start', { userId, date, forceRegenerate });
+    this.#logger.debug?.('report.generate.start', { userId, date, forceRegenerate, hasResponseContext: !!responseContext });
+
+    const messaging = this.#getMessaging(responseContext, conversationId);
 
     try {
       // 0. Delete any existing report message
@@ -65,7 +85,7 @@ export class GenerateDailyReport {
 
         for (const msgId of messagesToDelete) {
           try {
-            await this.#messagingGateway.deleteMessage(conversationId, msgId);
+            await messaging.deleteMessage( msgId);
           } catch (e) {}
         }
       } catch (e) {
@@ -86,11 +106,11 @@ export class GenerateDailyReport {
         if (pendingLogs.length > 0) {
           if (autoAcceptPending) {
             this.#logger.info?.('report.autoAccept.start', { userId, count: pendingLogs.length });
-            await this.#autoAcceptPendingLogs(pendingLogs, conversationId);
+            await this.#autoAcceptPendingLogs(pendingLogs, messaging);
           } else {
             this.#logger.info?.('report.generate.skipped', { userId, reason: 'pending_logs', count: pendingLogs.length });
             try {
-              await this.#messagingGateway.sendMessage(conversationId, `⏳ ${pendingLogs.length} item(s) still need confirmation before generating report.`, {});
+              await messaging.sendMessage( `⏳ ${pendingLogs.length} item(s) still need confirmation before generating report.`, {});
             } catch (e) {}
             return { success: false, skippedReason: `${pendingLogs.length} pending log(s)` };
           }
@@ -106,7 +126,7 @@ export class GenerateDailyReport {
       }
 
       // 3. Send "Generating..." status message
-      const { messageId: statusMsgId } = await this.#messagingGateway.sendMessage(conversationId, '📊 Generating report...', {});
+      const { messageId: statusMsgId } = await messaging.sendMessage( '📊 Generating report...', {});
 
       // 4. Get items for the report
       const items = await this.#nutriListStore.findByDate(userId, date);
@@ -154,7 +174,7 @@ export class GenerateDailyReport {
 
       // 8. Delete status message
       try {
-        await this.#messagingGateway.deleteMessage(conversationId, statusMsgId);
+        await messaging.deleteMessage( statusMsgId);
       } catch (e) {}
 
       // 9. Build caption
@@ -186,7 +206,7 @@ export class GenerateDailyReport {
       // 11. Send report
       let messageId;
       if (pngPath) {
-        const result = await this.#messagingGateway.sendPhoto(conversationId, pngPath, {
+        const result = await messaging.sendPhoto( pngPath, {
           caption,
           choices: buttons,
           inline: true,
@@ -194,7 +214,7 @@ export class GenerateDailyReport {
         messageId = result.messageId;
       } else {
         const reportMessage = this.#buildReportMessage(summary, date);
-        const result = await this.#messagingGateway.sendMessage(conversationId, reportMessage, { parseMode: 'HTML', choices: buttons, inline: true });
+        const result = await messaging.sendMessage( reportMessage, { parseMode: 'HTML', choices: buttons, inline: true });
         messageId = result.messageId;
       }
 
@@ -327,8 +347,10 @@ export class GenerateDailyReport {
   /**
    * Auto-accept pending logs
    * @private
+   * @param {Array} pendingLogs - Logs to accept
+   * @param {Object} messaging - Messaging interface
    */
-  async #autoAcceptPendingLogs(pendingLogs, conversationId) {
+  async #autoAcceptPendingLogs(pendingLogs, messaging) {
     for (const log of pendingLogs) {
       try {
         const acceptedLog = log.accept();
@@ -339,9 +361,9 @@ export class GenerateDailyReport {
         }
 
         const msgId = log.metadata?.messageId;
-        if (msgId) {
+        if (msgId && messaging?.updateMessage) {
           try {
-            await this.#messagingGateway.updateMessage(conversationId, msgId, { choices: [] });
+            await messaging.updateMessage(msgId, { choices: [] });
           } catch (e) {}
         }
       } catch (e) {
