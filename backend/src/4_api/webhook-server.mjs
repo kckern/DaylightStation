@@ -14,12 +14,14 @@
 import express from 'express';
 import cors from 'cors';
 import { nowTs } from '../0_infrastructure/utils/index.mjs';
+import { createDevProxy } from '../0_infrastructure/http/middleware/devProxy.mjs';
 
 /**
  * Create the webhook server
  * @param {Object} config
  * @param {Object} config.nutribotContainer - NutribotContainer instance
  * @param {Object} config.journalistContainer - JournalistContainer instance
+ * @param {string} [config.devHost] - Dev host for proxy forwarding
  * @param {Object} [config.logger] - Logger instance
  * @returns {express.Application}
  */
@@ -27,6 +29,7 @@ export function createWebhookServer(config) {
   const {
     nutribotContainer,
     journalistContainer,
+    devHost,
     logger = console
   } = config;
 
@@ -37,12 +40,19 @@ export function createWebhookServer(config) {
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
+  // Dev proxy for forwarding webhooks to dev server
+  const devProxy = createDevProxy({ logger, devHost });
+  app.use('/dev', devProxy.router);  // Toggle at /dev/proxy_toggle
+  app.use(devProxy.middleware);      // Intercepts all requests when enabled
+  logger.info?.('webhook.devProxy.initialized', { endpoint: '/dev/proxy_toggle', devHost: devHost || 'not configured' });
+
   // Health check
   app.get('/health', (req, res) => {
     res.json({
       status: 'ok',
       server: 'webhook',
-      timestamp: nowTs()
+      timestamp: nowTs(),
+      devProxy: devProxy.getState()
     });
   });
 
