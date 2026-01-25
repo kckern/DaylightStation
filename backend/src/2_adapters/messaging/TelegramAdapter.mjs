@@ -3,6 +3,9 @@
  * Implements IMessagingGateway and INotificationChannel
  */
 
+import { TelegramChatRef } from '../telegram/TelegramChatRef.mjs';
+import { ConversationId } from '../../1_domains/messaging/value-objects/ConversationId.mjs';
+
 const TELEGRAM_API_BASE = 'https://api.telegram.org/bot';
 
 export class TelegramAdapter {
@@ -339,7 +342,7 @@ export class TelegramAdapter {
 
   /**
    * Extract numeric chat ID from conversationId format
-   * Handles: "telegram:botId_chatId" -> "chatId"
+   * Uses TelegramChatRef for proper parsing of domain ConversationId
    * Also handles raw numeric IDs for backwards compatibility
    */
   extractChatId(conversationId) {
@@ -350,10 +353,15 @@ export class TelegramAdapter {
       return conversationId;
     }
 
-    // Parse "telegram:botId_chatId" format
-    const match = conversationId.match(/^telegram:\d+_(-?\d+)$/);
-    if (match) {
-      return match[1];
+    // Parse domain ConversationId format using TelegramChatRef
+    if (conversationId.startsWith('telegram:')) {
+      try {
+        const domainConvId = ConversationId.parse(conversationId);
+        const telegramRef = TelegramChatRef.fromConversationId(domainConvId);
+        return telegramRef.chatId;
+      } catch (e) {
+        this.logger.warn?.('telegram.chatId.parseError', { conversationId, error: e.message });
+      }
     }
 
     // Fallback: return as-is and let Telegram API reject it

@@ -47,12 +47,37 @@ export class LogFoodFromImage {
   }
 
   /**
+   * Get messaging interface (prefers responseContext for DDD compliance)
+   * @private
+   */
+  #getMessaging(responseContext, conversationId) {
+    if (responseContext) {
+      return {
+        ...responseContext,
+        // Also expose getFileUrl if available
+        getFileUrl: responseContext.getFileUrl || this.#messagingGateway?.getFileUrl?.bind(this.#messagingGateway),
+      };
+    }
+    return {
+      sendMessage: (text, options) => messaging.sendMessage( text, options),
+      sendPhoto: (src, options) => messaging.sendPhoto( src, options),
+      updateMessage: (msgId, updates) => messaging.updateMessage( msgId, updates),
+      deleteMessage: (msgId) => messaging.deleteMessage( msgId),
+      getFileUrl: this.#messagingGateway?.getFileUrl?.bind(this.#messagingGateway),
+    };
+  }
+
+  /**
    * Execute the use case
+   * @param {Object} input
+   * @param {Object} [input.responseContext] - Bound response context for DDD-compliant messaging
    */
   async execute(input) {
-    const { userId, conversationId, imageData, messageId: userMessageId } = input;
+    const { userId, conversationId, imageData, messageId: userMessageId, responseContext } = input;
 
-    this.#logger.debug?.('logImage.start', { conversationId });
+    this.#logger.debug?.('logImage.start', { conversationId, hasResponseContext: !!responseContext });
+
+    const messaging = this.#getMessaging(responseContext, conversationId);
 
     try {
       // 0. Clean up lingering status messages
@@ -62,19 +87,19 @@ export class LogFoodFromImage {
           const oldStatusMsgId = existingState?.flowState?.statusMessageId;
           if (oldStatusMsgId) {
             try {
-              await this.#messagingGateway.deleteMessage(conversationId, oldStatusMsgId);
+              await messaging.deleteMessage( oldStatusMsgId);
             } catch (e) {}
           }
         } catch (e) {}
       }
 
       // 1. Send "Analyzing..." status message
-      const { messageId: statusMsgId } = await this.#messagingGateway.sendMessage(conversationId, `🔍 Analyzing image for nutrition...`, {});
+      const { messageId: statusMsgId } = await messaging.sendMessage( `🔍 Analyzing image for nutrition...`, {});
 
       // 2. Get image URL/data for AI
       let imageUrl = imageData.url;
-      if (imageData.fileId && this.#messagingGateway.getFileUrl) {
-        imageUrl = await this.#messagingGateway.getFileUrl(imageData.fileId);
+      if (imageData.fileId && messaging.getFileUrl) {
+        imageUrl = await messaging.getFileUrl(imageData.fileId);
       }
 
       // 2b. Process image if processor available
@@ -98,7 +123,7 @@ export class LogFoodFromImage {
       const foodItems = this.#parseFoodResponse(response);
 
       if (foodItems.length === 0) {
-        await this.#messagingGateway.updateMessage(conversationId, statusMsgId, {
+        await messaging.updateMessage( statusMsgId, {
           text: "❓ I couldn't identify any food in this image. Could you describe what you're eating?",
         });
         return { success: false, error: 'No food detected' };
@@ -137,14 +162,14 @@ export class LogFoodFromImage {
 
       // 7. Delete status message
       try {
-        await this.#messagingGateway.deleteMessage(conversationId, statusMsgId);
+        await messaging.deleteMessage( statusMsgId);
       } catch (e) {}
 
       // 8. Send photo message with food list as caption
       const caption = this.#formatFoodCaption(foodItems, nutriLog.date || localDate);
       const buttons = this.#buildActionButtons(nutriLog.id);
 
-      const { messageId: photoMsgId } = await this.#messagingGateway.sendPhoto(conversationId, imageData.fileId || imageUrl, {
+      const { messageId: photoMsgId } = await messaging.sendPhoto( imageData.fileId || imageUrl, {
         caption,
         choices: buttons,
         inline: true,
@@ -153,7 +178,7 @@ export class LogFoodFromImage {
       // Delete user's original image
       if (userMessageId) {
         try {
-          await this.#messagingGateway.deleteMessage(conversationId, userMessageId);
+          await messaging.deleteMessage( userMessageId);
         } catch (e) {}
       }
 

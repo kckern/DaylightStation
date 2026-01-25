@@ -25,18 +25,19 @@ export class NutribotInputRouter extends BaseInputRouter {
 
   // ==================== Event Handlers ====================
 
-  async handleText(event) {
+  async handleText(event, responseContext) {
     const useCase = this.container.getLogFoodFromText();
     const result = await useCase.execute({
       userId: this.#resolveUserId(event),
       conversationId: event.conversationId,
       text: event.payload.text,
       messageId: event.messageId,
+      responseContext,
     });
     return { ok: true, result };
   }
 
-  async handleImage(event) {
+  async handleImage(event, responseContext) {
     const useCase = this.container.getLogFoodFromImage();
     const result = await useCase.execute({
       userId: this.#resolveUserId(event),
@@ -46,11 +47,12 @@ export class NutribotInputRouter extends BaseInputRouter {
         caption: event.payload.text,
       },
       messageId: event.messageId,
+      responseContext,
     });
     return { ok: true, result };
   }
 
-  async handleVoice(event) {
+  async handleVoice(event, responseContext) {
     const useCase = this.container.getLogFoodFromVoice();
     const result = await useCase.execute({
       userId: this.#resolveUserId(event),
@@ -59,22 +61,24 @@ export class NutribotInputRouter extends BaseInputRouter {
         fileId: event.payload.fileId,
       },
       messageId: event.messageId,
+      responseContext,
     });
     return { ok: true, result };
   }
 
-  async handleUpc(event) {
+  async handleUpc(event, responseContext) {
     const useCase = this.container.getLogFoodFromUPC();
     const result = await useCase.execute({
       userId: this.#resolveUserId(event),
       conversationId: event.conversationId,
       upc: event.payload.text,
       messageId: event.messageId,
+      responseContext,
     });
     return { ok: true, result };
   }
 
-  async handleCallback(event) {
+  async handleCallback(event, responseContext) {
     const decoded = decodeCallback(event.payload.callbackData);
 
     // Support both new format (a key) and legacy format (cmd key with short codes)
@@ -100,6 +104,7 @@ export class NutribotInputRouter extends BaseInputRouter {
           conversationId: event.conversationId,
           logUuid: decoded.id,
           messageId: event.messageId,
+          responseContext,
         });
       }
       case CallbackActions.REJECT_LOG: {
@@ -108,6 +113,7 @@ export class NutribotInputRouter extends BaseInputRouter {
           conversationId: event.conversationId,
           logUuid: decoded.id,
           messageId: event.messageId,
+          responseContext,
         });
       }
       case CallbackActions.REVISE_ITEM: {
@@ -117,6 +123,7 @@ export class NutribotInputRouter extends BaseInputRouter {
           logUuid: decoded.logId || decoded.id,
           itemId: decoded.itemId,
           messageId: event.messageId,
+          responseContext,
         });
       }
       default:
@@ -125,7 +132,7 @@ export class NutribotInputRouter extends BaseInputRouter {
     }
   }
 
-  async handleCommand(event) {
+  async handleCommand(event, responseContext) {
     const command = event.payload.command;
 
     switch (command) {
@@ -134,6 +141,7 @@ export class NutribotInputRouter extends BaseInputRouter {
         return await useCase.execute({
           userId: this.#resolveUserId(event),
           conversationId: event.conversationId,
+          responseContext,
         });
       }
       case 'review': {
@@ -141,6 +149,7 @@ export class NutribotInputRouter extends BaseInputRouter {
         return await useCase.execute({
           userId: this.#resolveUserId(event),
           conversationId: event.conversationId,
+          responseContext,
         });
       }
       case 'report': {
@@ -148,6 +157,7 @@ export class NutribotInputRouter extends BaseInputRouter {
         return await useCase.execute({
           userId: this.#resolveUserId(event),
           conversationId: event.conversationId,
+          responseContext,
         });
       }
       default:

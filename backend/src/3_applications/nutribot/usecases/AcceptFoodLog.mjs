@@ -30,17 +30,35 @@ export class AcceptFoodLog {
   }
 
   /**
+   * Get messaging interface (prefers responseContext for DDD compliance)
+   * @private
+   */
+  #getMessaging(responseContext, conversationId) {
+    if (responseContext) {
+      return responseContext;
+    }
+    return {
+      sendMessage: (text, options) => this.#messagingGateway.sendMessage(conversationId, text, options),
+      updateMessage: (msgId, updates) => this.#messagingGateway.updateMessage(conversationId, msgId, updates),
+      deleteMessage: (msgId) => this.#messagingGateway.deleteMessage(conversationId, msgId),
+    };
+  }
+
+  /**
    * Execute the use case
    * @param {Object} input
    * @param {string} input.userId
    * @param {string} input.conversationId
    * @param {string} input.logUuid
    * @param {string} [input.messageId]
+   * @param {Object} [input.responseContext] - Bound response context for DDD-compliant messaging
    */
   async execute(input) {
-    const { userId, conversationId, logUuid, messageId } = input;
+    const { userId, conversationId, logUuid, messageId, responseContext } = input;
 
-    this.#logger.debug?.('acceptLog.start', { conversationId, logUuid });
+    this.#logger.debug?.('acceptLog.start', { conversationId, logUuid, hasResponseContext: !!responseContext });
+
+    const messaging = this.#getMessaging(responseContext, conversationId);
 
     try {
       // 1. Load the log
@@ -100,7 +118,7 @@ export class AcceptFoodLog {
 
           const acceptedText = `${dateHeader}\n\n${foodList}`;
 
-          await this.#messagingGateway.updateMessage(conversationId, messageId, {
+          await messaging.updateMessage(messageId, {
             text: acceptedText,
             choices: [],
             inline: true,
@@ -127,6 +145,7 @@ export class AcceptFoodLog {
               userId,
               conversationId,
               date: nutriLog.meal?.date || nutriLog.date,
+              responseContext,
             });
           }
         } catch (e) {

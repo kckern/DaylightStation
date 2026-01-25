@@ -40,27 +40,46 @@ export class LogFoodFromUPC {
   }
 
   /**
+   * Get messaging interface (prefers responseContext for DDD compliance)
+   * @private
+   */
+  #getMessaging(responseContext, conversationId) {
+    if (responseContext) {
+      return responseContext;
+    }
+    return {
+      sendMessage: (text, options) => messaging.sendMessage( text, options),
+      sendPhoto: (src, options) => messaging.sendPhoto( src, options),
+      updateMessage: (msgId, updates) => messaging.updateMessage( msgId, updates),
+      deleteMessage: (msgId) => messaging.deleteMessage( msgId),
+    };
+  }
+
+  /**
    * Execute the use case
+   * @param {Object} input
+   * @param {Object} [input.responseContext] - Bound response context for DDD-compliant messaging
    */
   async execute(input) {
-    const { userId, conversationId, upc, messageId } = input;
+    const { userId, conversationId, upc, messageId, responseContext } = input;
 
-    this.#logger.debug?.('logUPC.start', { conversationId, upc });
+    this.#logger.debug?.('logUPC.start', { conversationId, upc, hasResponseContext: !!responseContext });
 
+    const messaging = this.#getMessaging(responseContext, conversationId);
     let statusMsgId = null;
 
     try {
       // 1. Delete original user message
       if (messageId) {
         try {
-          await this.#messagingGateway.deleteMessage(conversationId, messageId);
+          await messaging.deleteMessage( messageId);
         } catch (e) {
           this.#logger.warn?.('logUPC.deleteOriginalFailed', { error: e.message });
         }
       }
 
       // 2. Send "Looking up..." message
-      const statusMsg = await this.#messagingGateway.sendMessage(conversationId, `🔍 Looking up barcode ${upc}...`);
+      const statusMsg = await messaging.sendMessage( `🔍 Looking up barcode ${upc}...`);
       statusMsgId = statusMsg.messageId;
 
       // 3. Call UPC gateway
@@ -70,7 +89,7 @@ export class LogFoodFromUPC {
       }
 
       if (!product) {
-        await this.#messagingGateway.updateMessage(conversationId, statusMsgId, {
+        await messaging.updateMessage( statusMsgId, {
           text: `❓ Product not found for barcode: ${upc}\n\nYou can describe the food instead.`,
         });
         return { success: false, error: 'Product not found' };
@@ -134,7 +153,7 @@ export class LogFoodFromUPC {
       const portionButtons = this.#buildPortionButtons(nutriLog.id);
 
       // 9. Delete status message
-      await this.#messagingGateway.deleteMessage(conversationId, statusMsgId);
+      await messaging.deleteMessage( statusMsgId);
 
       // 10. Get product image or generate barcode
       let imagePath = null;
@@ -157,14 +176,14 @@ export class LogFoodFromUPC {
       // 11. Send photo message
       let photoMsgId;
       if (imagePath) {
-        const result = await this.#messagingGateway.sendPhoto(conversationId, imagePath, {
+        const result = await messaging.sendPhoto( imagePath, {
           caption,
           choices: portionButtons,
           inline: true,
         });
         photoMsgId = result.messageId;
       } else {
-        const result = await this.#messagingGateway.sendMessage(conversationId, caption, {
+        const result = await messaging.sendMessage( caption, {
           choices: portionButtons,
           inline: true,
         });
@@ -198,7 +217,7 @@ export class LogFoodFromUPC {
         try {
           const isNetworkError = error.code === 'ETIMEDOUT' || error.code === 'ECONNRESET' || error.code === 'EAI_AGAIN';
           const errorMsg = isNetworkError ? `⚠️ Network timeout looking up barcode ${upc}\n\nPlease try again.` : `❌ Error looking up barcode ${upc}\n\n${error.message}`;
-          await this.#messagingGateway.updateMessage(conversationId, statusMsgId, { text: errorMsg });
+          await messaging.updateMessage( statusMsgId, { text: errorMsg });
         } catch (e) {}
       }
 

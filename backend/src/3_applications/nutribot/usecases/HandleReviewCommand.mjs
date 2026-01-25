@@ -20,14 +20,16 @@ export class HandleReviewCommand {
 
   /**
    * Execute the use case
+   * @param {Object} input
+   * @param {Object} [input.responseContext] - Bound response context for DDD-compliant messaging
    */
   async execute(input) {
-    const { userId, conversationId } = input;
+    const { userId, conversationId, responseContext } = input;
 
-    this.#logger.debug?.('command.review', { userId });
+    this.#logger.debug?.('command.review', { userId, hasResponseContext: !!responseContext });
 
     // Delegate to StartAdjustmentFlow
-    return this.#startAdjustmentFlow.execute({ userId, conversationId });
+    return this.#startAdjustmentFlow.execute({ userId, conversationId, responseContext });
   }
 }
 

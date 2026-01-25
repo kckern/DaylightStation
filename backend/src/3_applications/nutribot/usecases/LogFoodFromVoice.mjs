@@ -23,30 +23,51 @@ export class LogFoodFromVoice {
   }
 
   /**
+   * Get messaging interface (prefers responseContext for DDD compliance)
+   * @private
+   */
+  #getMessaging(responseContext, conversationId) {
+    if (responseContext) {
+      return {
+        ...responseContext,
+        transcribeVoice: responseContext.transcribeVoice || this.#messagingGateway?.transcribeVoice?.bind(this.#messagingGateway),
+      };
+    }
+    return {
+      sendMessage: (text, options) => messaging.sendMessage( text, options),
+      deleteMessage: (msgId) => messaging.deleteMessage( msgId),
+      transcribeVoice: this.#messagingGateway?.transcribeVoice?.bind(this.#messagingGateway),
+    };
+  }
+
+  /**
    * Execute the use case
    * @param {Object} input
    * @param {string} input.userId
    * @param {string} input.conversationId
    * @param {Object} input.voiceData - { fileId }
    * @param {string} [input.messageId]
+   * @param {Object} [input.responseContext] - Bound response context for DDD-compliant messaging
    */
   async execute(input) {
-    const { userId, conversationId, voiceData, messageId } = input;
+    const { userId, conversationId, voiceData, messageId, responseContext } = input;
 
-    this.#logger.debug?.('logVoice.start', { conversationId });
+    this.#logger.debug?.('logVoice.start', { conversationId, hasResponseContext: !!responseContext });
+
+    const messaging = this.#getMessaging(responseContext, conversationId);
 
     try {
       // 1. Transcribe voice
       let transcription;
-      if (this.#messagingGateway.transcribeVoice) {
-        transcription = await this.#messagingGateway.transcribeVoice(voiceData.fileId);
+      if (messaging.transcribeVoice) {
+        transcription = await messaging.transcribeVoice(voiceData.fileId);
       } else {
-        await this.#messagingGateway.sendMessage(conversationId, '🎤 Voice messages are not fully supported yet. Please type what you ate.', {});
+        await messaging.sendMessage( '🎤 Voice messages are not fully supported yet. Please type what you ate.', {});
         return { success: false, error: 'Voice transcription not available' };
       }
 
       if (!transcription || transcription.trim().length === 0) {
-        await this.#messagingGateway.sendMessage(conversationId, "❓ I couldn't understand the voice message. Could you type what you ate?", {});
+        await messaging.sendMessage( "❓ I couldn't understand the voice message. Could you type what you ate?", {});
         return { success: false, error: 'Empty transcription' };
       }
 
@@ -60,12 +81,13 @@ export class LogFoodFromVoice {
         userId,
         conversationId,
         text: transcription,
+        responseContext,
       });
 
       // 3. Delete original voice message after analysis appears
       if (messageId && result.success) {
         try {
-          await this.#messagingGateway.deleteMessage(conversationId, messageId);
+          await messaging.deleteMessage( messageId);
         } catch (e) {
           // Ignore delete errors
         }
