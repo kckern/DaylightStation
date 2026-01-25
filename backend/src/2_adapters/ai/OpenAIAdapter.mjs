@@ -45,6 +45,10 @@ export class OpenAIAdapter {
    * @private
    */
   #sleep(ms) {
+    // Allow test override
+    if (this._sleepOverride) {
+      return this._sleepOverride(ms);
+    }
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 
@@ -54,6 +58,14 @@ export class OpenAIAdapter {
    */
   _testSleep(ms) {
     return this.#sleep(ms);
+  }
+
+  /**
+   * Set sleep override for testing
+   * @private
+   */
+  _setSleepOverride(fn) {
+    this._sleepOverride = fn;
   }
 
   /**
@@ -179,44 +191,47 @@ export class OpenAIAdapter {
     this.metrics.requestCount++;
 
     try {
-      const response = await this._makeRequest(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.apiKey}`
-        },
-        body: JSON.stringify(data),
-        timeout: options.timeout || this.timeout
-      });
+      return await this.#retryWithBackoff(async () => {
+        const response = await this._makeRequest(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${this.apiKey}`
+          },
+          body: JSON.stringify(data),
+          timeout: options.timeout || this.timeout
+        });
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        this.metrics.errors++;
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          this.metrics.errors++;
 
-        if (response.status === 429) {
-          const retryAfter = response.headers.get('retry-after') || 60;
-          const error = new Error(`Rate limit exceeded. Retry after ${retryAfter}s`);
-          error.code = 'RATE_LIMIT';
-          error.retryAfter = parseInt(retryAfter, 10);
-          throw error;
+          if (response.status === 429) {
+            const retryAfter = response.headers.get('retry-after') || 60;
+            const error = new Error(`Rate limit exceeded. Retry after ${retryAfter}s`);
+            error.code = 'RATE_LIMIT';
+            error.retryAfter = parseInt(retryAfter, 10);
+            throw error;
+          }
+
+          const err = new Error(errorData.error?.message || `OpenAI API error: ${response.status}`);
+          err.status = response.status;
+          throw err;
         }
 
-        throw new Error(errorData.error?.message || `OpenAI API error: ${response.status}`);
-      }
+        const result = await response.json();
 
-      const result = await response.json();
+        if (result.usage) {
+          this.metrics.tokenCount += result.usage.total_tokens || 0;
+        }
 
-      // Track token usage
-      if (result.usage) {
-        this.metrics.tokenCount += result.usage.total_tokens || 0;
-      }
+        this.logger.debug?.('openai.response', {
+          endpoint,
+          usage: result.usage
+        });
 
-      this.logger.debug?.('openai.response', {
-        endpoint,
-        usage: result.usage
+        return result;
       });
-
-      return result;
     } catch (error) {
       if (!error.code) {
         this.metrics.errors++;
