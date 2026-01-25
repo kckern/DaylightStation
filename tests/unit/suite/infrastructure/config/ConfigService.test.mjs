@@ -131,6 +131,52 @@ describe('ConfigService', () => {
     });
   });
 
+  describe('getHouseholdAppConfig', () => {
+    const mockConfig = {
+      system: { defaultHouseholdId: 'default' },
+      households: {
+        default: {
+          apps: {
+            chatbots: {
+              identity_mappings: {
+                telegram: { '575596036': 'kckern' }
+              }
+            }
+          }
+        }
+      }
+    };
+
+    test('returns household app config by name', () => {
+      const svc = new ConfigService(mockConfig);
+      const chatbotsConfig = svc.getHouseholdAppConfig('default', 'chatbots');
+
+      expect(chatbotsConfig).toBeDefined();
+      expect(chatbotsConfig.identity_mappings.telegram['575596036']).toBe('kckern');
+    });
+
+    test('uses default household when not specified', () => {
+      const svc = new ConfigService(mockConfig);
+      const chatbotsConfig = svc.getHouseholdAppConfig(null, 'chatbots');
+
+      expect(chatbotsConfig.identity_mappings.telegram['575596036']).toBe('kckern');
+    });
+
+    test('returns null for non-existent app', () => {
+      const svc = new ConfigService(mockConfig);
+      const result = svc.getHouseholdAppConfig('default', 'nonexistent');
+
+      expect(result).toBeNull();
+    });
+
+    test('returns null for non-existent household', () => {
+      const svc = new ConfigService(mockConfig);
+      const result = svc.getHouseholdAppConfig('unknown_household', 'chatbots');
+
+      expect(result).toBeNull();
+    });
+  });
+
   describe('paths', () => {
     test('getDataDir returns data directory', () => {
       expect(service.getDataDir()).toBe('/data');
