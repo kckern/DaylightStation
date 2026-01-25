@@ -155,28 +155,10 @@ export class LogFoodFromUPC {
       // 9. Delete status message
       await messaging.deleteMessage( statusMsgId);
 
-      // 10. Get product image or generate barcode
-      let imagePath = null;
-      if (product.imageUrl && this.#barcodeGenerator?.downloadImage) {
-        try {
-          imagePath = await this.#barcodeGenerator.downloadImage(product.imageUrl, upc);
-        } catch (e) {
-          this.#logger.warn?.('logUPC.imageFetchFailed', { error: e.message });
-        }
-      }
-
-      if (!imagePath && this.#barcodeGenerator?.generateBarcode) {
-        try {
-          imagePath = await this.#barcodeGenerator.generateBarcode(upc, product.name);
-        } catch (e) {
-          this.#logger.warn?.('logUPC.barcodeGenFailed', { error: e.message });
-        }
-      }
-
-      // 11. Send photo message
+      // 10. Send photo message (Telegram fetches remote URLs directly)
       let photoMsgId;
-      if (imagePath) {
-        const result = await messaging.sendPhoto(imagePath, caption, {
+      if (product.imageUrl) {
+        const result = await messaging.sendPhoto(product.imageUrl, caption, {
           choices: portionButtons,
           inline: true,
         });
