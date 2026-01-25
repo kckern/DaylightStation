@@ -172,11 +172,39 @@ function loadAllHouseholds(dataDir) {
     const configPath = path.join(householdsDir, hid, 'household.yml');
     const config = readYaml(configPath);
     if (config) {
-      households[hid] = config;
+      households[hid] = {
+        ...config,
+        apps: loadHouseholdApps(householdsDir, hid),
+      };
     }
   }
 
   return households;
+}
+
+function loadHouseholdApps(householdsDir, hid) {
+  const appsDir = path.join(householdsDir, hid, 'apps');
+  const apps = {};
+
+  // Load top-level YAML files in apps/ (e.g., chatbots.yml -> apps.chatbots)
+  for (const file of listYamlFiles(appsDir)) {
+    const appName = path.basename(file, '.yml');
+    const config = readYaml(file);
+    if (config) {
+      apps[appName] = config;
+    }
+  }
+
+  // Load app subdirectories with config.yml (e.g., fitness/config.yml -> apps.fitness)
+  for (const subdir of listDirs(appsDir)) {
+    const configPath = path.join(appsDir, subdir, 'config.yml');
+    const config = readYaml(configPath);
+    if (config) {
+      apps[subdir] = config;
+    }
+  }
+
+  return apps;
 }
 
 // ─── Users ───────────────────────────────────────────────────
