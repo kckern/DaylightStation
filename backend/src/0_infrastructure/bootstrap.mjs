@@ -144,6 +144,9 @@ import {
 // RSS Parser for Goodreads/Letterboxd harvesters
 import RSSParser from 'rss-parser';
 
+// FileIO utilities for image saving
+import { saveImage as saveImageToFile } from './utils/FileIO.mjs';
+
 // Additional adapters for harvesters
 import { StravaClientAdapter } from '../2_adapters/fitness/StravaClientAdapter.mjs';
 import { YamlWeatherStore } from '../2_adapters/persistence/yaml/YamlWeatherStore.mjs';

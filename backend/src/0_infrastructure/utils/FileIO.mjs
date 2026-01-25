@@ -2,6 +2,7 @@
 import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
+import axios from 'axios';
 
 /**
  * FileIO - Centralized filesystem gateway for the DDD backend.
@@ -450,4 +451,83 @@ export function loadYamlByPrefix(dirPath, prefix) {
   const filePath = findYamlByPrefix(dirPath, prefix);
   if (!filePath) return null;
   return loadYamlFromPath(filePath);
+}
+
+// ============================================================
+// Image operations
+// ============================================================
+
+/**
+ * Save an image from a URL to the local filesystem.
+ * Mirrors legacy io.mjs saveImage behavior:
+ * - Creates directory if needed
+ * - Skips download if file exists and is < 24 hours old
+ * - Downloads as stream and saves as .jpg
+ *
+ * @param {string} url - Source URL of the image
+ * @param {string} baseDir - Base directory for images (e.g., media/img)
+ * @param {string} folder - Subfolder name (e.g., 'lists', 'shopping')
+ * @param {string} uid - Unique identifier for the file (becomes filename)
+ * @returns {Promise<string|false>} File path on success, false on failure
+ */
+export async function saveImage(url, baseDir, folder, uid) {
+  if (!url) return false;
+
+  const filePath = path.join(baseDir, folder, `${uid}.jpg`);
+  const dirPath = path.dirname(filePath);
+
+  // Ensure directory exists
+  ensureDir(dirPath);
+
+  // Check if file already exists and is fresh (< 24 hours old)
+  if (fs.existsSync(filePath)) {
+    try {
+      const stats = fs.statSync(filePath);
+      const fileAgeMs = Date.now() - stats.mtimeMs;
+      const oneDayMs = 24 * 60 * 60 * 1000;
+      if (fileAgeMs < oneDayMs) {
+        return filePath; // Skip download, file is fresh
+      }
+    } catch {
+      // Stats failed, proceed with download
+    }
+  }
+
+  try {
+    const response = await axios({
+      method: 'get',
+      url: url,
+      responseType: 'stream',
+    });
+
+    const writer = fs.createWriteStream(filePath);
+    response.data.pipe(writer);
+
+    return new Promise((resolve, reject) => {
+      writer.on('finish', () => resolve(filePath));
+      writer.on('error', reject);
+    });
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Create an IO adapter with saveImage bound to a specific media directory.
+ * Useful for passing to harvesters that expect io.saveImage(url, folder, uid).
+ *
+ * @param {string} mediaImgDir - Base directory for images (e.g., '/data/media/img')
+ * @returns {Object} IO adapter with saveImage method
+ */
+export function createImageIO(mediaImgDir) {
+  return {
+    /**
+     * Save image to folder/uid.jpg under the configured media directory
+     * @param {string} url - Source URL
+     * @param {string} folder - Subfolder name
+     * @param {string} uid - Unique ID (filename without extension)
+     * @returns {Promise<string|false>}
+     */
+    saveImage: (url, folder, uid) => saveImage(url, mediaImgDir, folder, uid),
+  };
 }
