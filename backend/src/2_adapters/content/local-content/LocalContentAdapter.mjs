@@ -580,6 +580,25 @@ export class LocalContentAdapter {
     // YAML may have: number, hymn_num, song_num, or we parse from path
     const songNumber = metadata.number || metadata.hymn_num || metadata.song_num || parseInt(number, 10);
 
+    // Find the actual media file if not specified in YAML
+    // Try _ldsgc subdirectory first (General Conference recordings), then root
+    let mediaFile = metadata.mediaFile;
+    if (!mediaFile && this.mediaPath) {
+      const { findMediaFileByPrefix } = await import('../../../0_infrastructure/utils/FileIO.mjs');
+      const preferences = collection === 'hymn' ? ['_ldsgc', ''] : [''];
+      for (const pref of preferences) {
+        const searchDir = pref
+          ? path.join(this.mediaPath, 'audio', 'songs', collection, pref)
+          : path.join(this.mediaPath, 'audio', 'songs', collection);
+        const mediaFilePath = findMediaFileByPrefix(searchDir, songNumber);
+        if (mediaFilePath) {
+          const subDir = pref ? `${pref}/` : '';
+          mediaFile = `audio/songs/${collection}/${subDir}${path.basename(mediaFilePath)}`;
+          break;
+        }
+      }
+    }
+
     return new PlayableItem({
       id: compoundId,
       source: this.source,
@@ -595,7 +614,7 @@ export class LocalContentAdapter {
         collection: metadata.collection || collection,
         verses: metadata.verses || [],
         lyrics: metadata.lyrics,
-        mediaFile: metadata.mediaFile
+        mediaFile
       }
     });
   }

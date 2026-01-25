@@ -82,5 +82,9 @@ export default {
     shopping: {
       supportsBackfill: false
     },
+    infinity: {
+      supportsBackfill: false,
+      params: ['tableKey=lists']
+    },
   }
 };

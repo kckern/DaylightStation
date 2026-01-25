@@ -137,7 +137,8 @@ import {
   BuxferHarvester,
   WeatherHarvester,
   StravaHarvester,
-  WithingsHarvester
+  WithingsHarvester,
+  createInfinityHarvesters
 } from '../2_adapters/harvester/index.mjs';
 
 // RSS Parser for Goodreads/Letterboxd harvesters
@@ -2009,6 +2010,24 @@ export function createHarvesterServices(config) {
       configService,
       logger,
     }));
+  }
+
+  // Infinity - dynamic table harvesters (requires httpClient)
+  if (httpClient) {
+    try {
+      const infinityHarvesters = createInfinityHarvesters({
+        httpClient,
+        configService,
+        io,
+        logger,
+      });
+      for (const harvester of infinityHarvesters) {
+        harvesterService.register(harvester);
+        logger.debug?.('harvester.bootstrap.registered', { serviceId: harvester.serviceId });
+      }
+    } catch (error) {
+      logger.warn?.('harvester.bootstrap.infinity.skipped', { reason: error.message });
+    }
   }
 
   // Create job executor for scheduler integration

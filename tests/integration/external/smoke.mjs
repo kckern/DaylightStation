@@ -37,6 +37,11 @@ function createIo(dataDir) {
       const filePath = path.join(dataDir, 'users', username, 'lifelog', relativePath);
       saveYaml(filePath, content);
     },
+    householdSaveFile(relativePath, content) {
+      // Use default household for now (matches legacy behavior)
+      const filePath = path.join(dataDir, 'households', 'default', relativePath);
+      saveYaml(filePath, content);
+    },
   };
 }
 
