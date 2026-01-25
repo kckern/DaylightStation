@@ -2,16 +2,18 @@
  * NutriBot Configuration Loader
  * @module nutribot/config/NutriBotConfig
  *
- * Loads and validates nutribot configuration, providing user mappings
- * between Telegram identifiers and system users.
+ * Loads and validates nutribot configuration, providing storage paths
+ * and nutrition goals for users.
+ *
+ * NOTE: Identity resolution (conversation ID -> username) is now handled
+ * by UserResolver in the infrastructure layer. This config only handles
+ * bot-specific configuration like storage paths and nutrition goals.
  */
 
 // Infrastructure imports
 import { TelegramChatRef } from '../../../2_adapters/telegram/TelegramChatRef.mjs';
-import { ConversationId } from '../../../1_domains/messaging/value-objects/ConversationId.mjs';
 import { ValidationError } from '../../../0_infrastructure/utils/errors/index.mjs';
 import { TestContext } from '../../../0_infrastructure/testing/TestContext.mjs';
-import { UserResolver } from '../../../0_infrastructure/users/UserResolver.mjs';
 import { configService } from '../../../0_infrastructure/config/index.mjs';
 import { loadBotConfig } from '../../../0_infrastructure/config/BotConfigLoader.mjs';
 
@@ -49,16 +51,10 @@ function validateConfig(config) {
   if (!config.telegram?.botId) errors.push('telegram.botId is required');
   if (!config.telegram?.botToken) errors.push('telegram.botToken is required');
 
-  // Users validation
-  if (!Array.isArray(config.users)) {
-    errors.push('users must be an array');
-  } else {
-    config.users.forEach((user, i) => {
-      if (!user.telegram?.botId) errors.push(`users[${i}].telegram.botId is required`);
-      if (!user.telegram?.chatId) errors.push(`users[${i}].telegram.chatId is required`);
-      if (!user.systemUser) errors.push(`users[${i}].systemUser is required`);
-      if (!user.displayName) errors.push(`users[${i}].displayName is required`);
-    });
+  // Users validation - still needed for legacy goals/settings lookup
+  // Identity resolution is now handled by UserResolver
+  if (config.users && !Array.isArray(config.users)) {
+    errors.push('users must be an array if provided');
   }
 
   // Storage validation
@@ -74,31 +70,28 @@ function validateConfig(config) {
  *
  * Handles:
  * - Loading and validating config.yaml
- * - Mapping Telegram IDs to system users
- * - Mapping system users to conversation IDs
+ * - Storage paths for nutrilog, nutrilist, etc.
+ * - User nutrition goals lookup
+ *
+ * NOTE: Identity resolution is NOT handled here. Use UserResolver for
+ * mapping conversation IDs / platform IDs to system usernames.
  */
 export class NutriBotConfig {
   /** @type {object} */
   #config;
 
-  /** @type {UserResolver} */
-  #userResolver;
-
-  /** @type {Map<string, object>} */
-  #conversationToUser = new Map();
-
-  /** @type {Map<string, object[]>} */
-  #userToConversations = new Map();
-
   /** @type {Object} */
   #logger;
 
+  /** @type {Map<string, object>} User goals/settings by username */
+  #userSettings = new Map();
+
   /**
    * @param {object} config - Validated configuration object
-   * @param {UserResolver} [userResolver] - User resolver for username lookups
-   * @param {Object} [logger] - Logger instance
+   * @param {Object} [options] - Options
+   * @param {Object} [options.logger] - Logger instance
    */
-  constructor(config, userResolver = null, logger = console) {
+  constructor(config, options = {}) {
     // Validate config
     const result = validateConfig(config);
     if (!result.valid) {
@@ -108,42 +101,27 @@ export class NutriBotConfig {
     }
 
     this.#config = config;
-    this.#userResolver = userResolver;
-    this.#logger = logger;
-    this.#buildUserMappings();
+    this.#logger = options.logger || console;
+    this.#buildUserSettings();
 
     Object.freeze(this);
   }
 
   /**
-   * Build internal lookup maps for user mappings
+   * Build internal lookup map for user settings (goals, timezone, etc.)
+   * This is NOT for identity resolution - just for user-specific config
    */
-  #buildUserMappings() {
-    for (const mapping of this.#config.users) {
-      // Create ConversationId from Telegram IDs
-      const telegramRef = new TelegramChatRef(mapping.telegram.botId, mapping.telegram.chatId);
-      const conversationId = telegramRef.toConversationId();
-      const convKey = conversationId.toString();
+  #buildUserSettings() {
+    if (!Array.isArray(this.#config.users)) return;
 
-      // Map conversation -> user
-      this.#conversationToUser.set(convKey, {
-        systemUser: mapping.systemUser,
+    for (const mapping of this.#config.users) {
+      if (!mapping.systemUser) continue;
+
+      // Store settings by systemUser (username)
+      this.#userSettings.set(mapping.systemUser, {
         displayName: mapping.displayName,
         timezone: mapping.timezone,
         settings: mapping.settings,
-        goals: mapping.goals,
-        telegramRef,
-        conversationId,
-      });
-
-      // Map user -> conversations (one user can have multiple bots/conversations)
-      if (!this.#userToConversations.has(mapping.systemUser)) {
-        this.#userToConversations.set(mapping.systemUser, []);
-      }
-      this.#userToConversations.get(mapping.systemUser).push({
-        conversationId,
-        telegramRef,
-        displayName: mapping.displayName,
         goals: mapping.goals,
       });
     }
@@ -172,106 +150,22 @@ export class NutriBotConfig {
     return this.#config.telegram.botId;
   }
 
-  // ==================== User Mapping Methods ====================
-
-  /**
-   * Get system user ID for a conversation
-   * @param {ConversationId|string} conversationId
-   * @returns {string|null}
-   */
-  getUserForConversation(conversationId) {
-    const key = conversationId instanceof ConversationId ? conversationId.toString() : conversationId;
-
-    const mapping = this.#conversationToUser.get(key);
-    return mapping?.systemUser || null;
-  }
-
-  /**
-   * Get full user info for a conversation
-   * @param {ConversationId|string} conversationId
-   * @returns {object|null}
-   */
-  getUserInfoForConversation(conversationId) {
-    const key = conversationId instanceof ConversationId ? conversationId.toString() : conversationId;
-
-    return this.#conversationToUser.get(key) || null;
-  }
-
-  /**
-   * Get system user ID from Telegram chat reference
-   * @param {TelegramChatRef} telegramRef
-   * @returns {string|null}
-   */
-  getUserForTelegram(telegramRef) {
-    return this.getUserForConversation(telegramRef.toConversationId());
-  }
-
-  /**
-   * Get system user ID from legacy chat_id format
-   * @param {string} legacyChatId - Format: "b{botId}_u{chatId}"
-   * @returns {string|null}
-   */
-  getUserForLegacyChatId(legacyChatId) {
-    try {
-      const telegramRef = TelegramChatRef.fromLegacyPath(legacyChatId);
-      return this.getUserForTelegram(telegramRef);
-    } catch {
-      return null;
-    }
-  }
-
-  /**
-   * Get all conversation IDs for a system user
-   * @param {string} userId
-   * @returns {ConversationId[]}
-   */
-  getConversationsForUser(userId) {
-    const mappings = this.#userToConversations.get(userId) || [];
-    return mappings.map((m) => m.conversationId);
-  }
-
-  /**
-   * Check if a conversation ID is registered
-   * @param {ConversationId|string} conversationId
-   * @returns {boolean}
-   */
-  isKnownConversation(conversationId) {
-    const key = conversationId instanceof ConversationId ? conversationId.toString() : conversationId;
-    return this.#conversationToUser.has(key);
-  }
-
-  /**
-   * Check if a user ID is registered
-   * @param {string} userId
-   * @returns {boolean}
-   */
-  isKnownUser(userId) {
-    return this.#userToConversations.has(userId);
-  }
-
-  /**
-   * Get all registered system user IDs
-   * @returns {string[]}
-   */
-  getAllUserIds() {
-    return Array.from(this.#userToConversations.keys());
-  }
+  // ==================== User Settings ====================
 
   /**
    * Get user's timezone
-   * @param {string} userId
+   * @param {string} username - System username (NOT conversation ID)
    * @returns {string}
    */
-  getUserTimezone(userId) {
-    const conversations = this.#userToConversations.get(userId);
-    if (!conversations || conversations.length === 0) {
-      return this.getDefaultTimezone();
+  getUserTimezone(username) {
+    // Try user settings from config
+    const settings = this.#userSettings.get(username);
+    if (settings?.timezone) {
+      return settings.timezone;
     }
 
-    // Get from first conversation mapping
-    const convKey = conversations[0].conversationId.toString();
-    const mapping = this.#conversationToUser.get(convKey);
-    return mapping?.timezone || this.getDefaultTimezone();
+    // Fall back to config default
+    return this.getDefaultTimezone();
   }
 
   /**
@@ -292,15 +186,13 @@ export class NutriBotConfig {
 
   /**
    * Get user's nutrition goals
-   * @param {string} userId
+   * @param {string} username - System username (NOT conversation ID)
    * @returns {Object} - { calories, protein, carbs, fat, fiber, sodium }
    */
-  getUserGoals(userId) {
-    const username = this.#resolveUsername(userId);
-
+  getUserGoals(username) {
     let rawGoals = null;
 
-    // Prefer goals from user profile if available
+    // Prefer goals from user profile if available (via ConfigService)
     try {
       if (configService?.isReady?.()) {
         const profile = configService.getUserProfile(username);
@@ -317,23 +209,20 @@ export class NutriBotConfig {
     }
 
     if (!rawGoals) {
-      const conversations = this.#userToConversations.get(username);
-      if (!conversations || conversations.length === 0) {
+      // Try user settings from config
+      const settings = this.#userSettings.get(username);
+      if (!settings) {
         this.#logger.warn?.('nutribot.goals.fallback.default', { userId: username });
         rawGoals = this.getDefaultGoals();
+      } else if (!settings.goals) {
+        this.#logger.warn?.('nutribot.goals.fallback.mapping', { userId: username });
+        rawGoals = this.getDefaultGoals();
       } else {
-        // Get from first conversation mapping
-        const goals = conversations[0].goals;
-        if (!goals) {
-          this.#logger.warn?.('nutribot.goals.fallback.mapping', { userId: username });
-          rawGoals = this.getDefaultGoals();
-        } else {
-          // Merge with defaults to ensure all fields exist
-          rawGoals = {
-            ...NutriBotConfig.#DEFAULT_GOALS,
-            ...goals,
-          };
-        }
+        // Merge with defaults to ensure all fields exist
+        rawGoals = {
+          ...NutriBotConfig.#DEFAULT_GOALS,
+          ...settings.goals,
+        };
       }
     }
 
@@ -381,11 +270,11 @@ export class NutriBotConfig {
 
   /**
    * Get thresholds for coaching triggers
-   * @param {string} userId
+   * @param {string} username - System username
    * @returns {Object}
    */
-  getThresholds(userId) {
-    const goals = this.getUserGoals(userId);
+  getThresholds(username) {
+    const goals = this.getUserGoals(username);
     return {
       daily: goals.calories_max || goals.calories || 2000,
     };
@@ -394,51 +283,12 @@ export class NutriBotConfig {
   // ==================== Storage Paths ====================
 
   /**
-   * Resolve a userId/conversationId to a username
-   * @private
-   * @param {string} userId - Conversation ID or username
-   * @returns {string} - Username
-   */
-  #resolveUsername(userId) {
-    // If already a simple username (no colons or underscores with 'b' prefix)
-    if (!userId.includes(':') && !userId.startsWith('b')) {
-      return userId;
-    }
-
-    // Try UserResolver
-    if (this.#userResolver) {
-      const username = this.#userResolver.resolveUsername(userId);
-      if (username) return username;
-    }
-
-    // Fallback: try to find in our conversation mappings
-    const mapping = this.#conversationToUser.get(userId);
-    if (mapping?.systemUser) {
-      return mapping.systemUser;
-    }
-
-    // Last resort: return as-is (for CLI or testing)
-    return userId;
-  }
-
-  /**
-   * Resolve a conversation ID to a user ID/username
-   * Used by adapters to map platform-specific IDs to system users
-   * @param {string} conversationId - Conversation ID (e.g., 'telegram:123_456')
-   * @returns {string} - Resolved username or original conversationId if not found
-   */
-  getUserIdFromConversation(conversationId) {
-    return this.#resolveUsername(conversationId);
-  }
-
-  /**
    * Get storage path for a specific path type
    * @param {string} pathType - 'nutrilog', 'nutrilist', 'nutricursor', etc.
-   * @param {string} userId - Conversation ID or username
+   * @param {string} username - System username (NOT conversation ID)
    * @returns {string}
    */
-  getStoragePath(pathType, userId) {
-    const username = this.#resolveUsername(userId);
+  getStoragePath(pathType, username) {
     const template = this.#config.storage.paths[pathType];
 
     if (!template) {
@@ -452,58 +302,58 @@ export class NutriBotConfig {
   /**
    * Get the nutrilog path for a user
    * Automatically applies test prefix if in test mode
-   * @param {string} userId - Conversation ID or username
+   * @param {string} username - System username (NOT conversation ID)
    * @returns {string}
    */
-  getNutrilogPath(userId) {
-    return this.getStoragePath('nutrilog', userId);
+  getNutrilogPath(username) {
+    return this.getStoragePath('nutrilog', username);
   }
 
   /**
    * Get the nutrilist path for a user
    * Automatically applies test prefix if in test mode
-   * @param {string} userId - Conversation ID or username
+   * @param {string} username - System username (NOT conversation ID)
    * @returns {string}
    */
-  getNutrilistPath(userId) {
-    return this.getStoragePath('nutrilist', userId);
+  getNutrilistPath(username) {
+    return this.getStoragePath('nutrilist', username);
   }
 
   /**
    * Get the nutricursor path for a user
-   * @param {string} userId - Conversation ID or username
+   * @param {string} username - System username (NOT conversation ID)
    * @returns {string}
    */
-  getNutricursorPath(userId) {
-    return this.getStoragePath('nutricursor', userId);
+  getNutricursorPath(username) {
+    return this.getStoragePath('nutricursor', username);
   }
 
   /**
    * Get the nutriday path for a user
-   * @param {string} userId - Conversation ID or username
+   * @param {string} username - System username (NOT conversation ID)
    * @returns {string}
    */
-  getNutridayPath(userId) {
-    return this.getStoragePath('nutriday', userId);
+  getNutridayPath(username) {
+    return this.getStoragePath('nutriday', username);
   }
 
   /**
    * Get the nutricoach path for a user
-   * @param {string} userId - Conversation ID or username
+   * @param {string} username - System username (NOT conversation ID)
    * @returns {string}
    */
-  getNutricoachPath(userId) {
-    return this.getStoragePath('nutricoach', userId);
+  getNutricoachPath(username) {
+    return this.getStoragePath('nutricoach', username);
   }
 
   /**
    * Get the report state path for a user
    * @deprecated Use ConversationState instead
-   * @param {string} userId - Conversation ID or username
+   * @param {string} username - System username (NOT conversation ID)
    * @returns {string}
    */
-  getReportStatePath(userId) {
-    return this.getStoragePath('report_state', userId);
+  getReportStatePath(username) {
+    return this.getStoragePath('report_state', username);
   }
 
   /**

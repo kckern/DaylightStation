@@ -13,6 +13,7 @@
  * Works with any home automation provider (Home Assistant, Hubitat, etc.)
  */
 import { ZONE_PRIORITY } from '../../1_domains/fitness/entities/Zone.mjs';
+import { nowTs24 } from '../../0_infrastructure/utils/index.mjs';
 
 const ZONE_ORDER = ['cool', 'active', 'warm', 'hot', 'fire'];
 
@@ -268,7 +269,7 @@ export class AmbientLedAdapter {
         // Update metrics
         this.metrics.activatedCount++;
         this.metrics.lastActivatedScene = targetScene;
-        this.metrics.lastActivatedTime = new Date().toISOString();
+        this.metrics.lastActivatedTime = nowTs24();
         this.metrics.sceneHistogram[targetScene] =
           (this.metrics.sceneHistogram[targetScene] || 0) + 1;
 

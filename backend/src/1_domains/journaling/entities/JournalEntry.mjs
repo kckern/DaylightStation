@@ -2,6 +2,8 @@
  * JournalEntry Entity - Represents a journal entry
  */
 
+import { nowTs24 } from '../../../0_infrastructure/utils/index.mjs';
+
 export class JournalEntry {
   constructor({
     id,
@@ -28,7 +30,7 @@ export class JournalEntry {
     this.gratitudeItems = gratitudeItems;
     this.prompts = prompts; // Array of prompt objects used to generate entry
     this.attachments = attachments; // Array of attachment objects (photos, voice memos)
-    this.createdAt = createdAt || new Date().toISOString();
+    this.createdAt = createdAt || nowTs24();
     this.updatedAt = updatedAt;
     this.metadata = metadata;
   }
@@ -38,7 +40,7 @@ export class JournalEntry {
    */
   updateContent(newContent) {
     this.content = newContent;
-    this.updatedAt = new Date().toISOString();
+    this.updatedAt = nowTs24();
   }
 
   /**
@@ -46,7 +48,7 @@ export class JournalEntry {
    */
   setMood(mood) {
     this.mood = mood;
-    this.updatedAt = new Date().toISOString();
+    this.updatedAt = nowTs24();
   }
 
   /**
@@ -54,7 +56,7 @@ export class JournalEntry {
    */
   addGratitudeItem(item) {
     this.gratitudeItems.push(item);
-    this.updatedAt = new Date().toISOString();
+    this.updatedAt = nowTs24();
   }
 
   /**
@@ -63,7 +65,7 @@ export class JournalEntry {
   addTag(tag) {
     if (!this.tags.includes(tag)) {
       this.tags.push(tag);
-      this.updatedAt = new Date().toISOString();
+      this.updatedAt = nowTs24();
     }
   }
 
@@ -72,7 +74,7 @@ export class JournalEntry {
    */
   removeTag(tag) {
     this.tags = this.tags.filter(t => t !== tag);
-    this.updatedAt = new Date().toISOString();
+    this.updatedAt = nowTs24();
   }
 
   /**

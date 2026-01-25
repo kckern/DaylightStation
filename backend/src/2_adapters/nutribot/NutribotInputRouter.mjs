@@ -10,17 +10,17 @@ import { decodeCallback, CallbackActions } from '../../3_applications/nutribot/l
  * Transforms platform-agnostic events to use case input shapes.
  */
 export class NutribotInputRouter extends BaseInputRouter {
-  #config;
+  #userResolver;
 
   /**
    * @param {import('../../3_applications/nutribot/NutribotContainer.mjs').NutribotContainer} container
    * @param {Object} [options]
-   * @param {Object} [options.config] - Nutribot config (for user resolution)
+   * @param {import('../../0_infrastructure/users/UserResolver.mjs').UserResolver} [options.userResolver] - For resolving platform users to system usernames
    * @param {Object} [options.logger]
    */
   constructor(container, options = {}) {
     super(container, options);
-    this.#config = options.config;
+    this.#userResolver = options.userResolver;
   }
 
   // ==================== Event Handlers ====================
@@ -28,7 +28,7 @@ export class NutribotInputRouter extends BaseInputRouter {
   async handleText(event) {
     const useCase = this.container.getLogFoodFromText();
     const result = await useCase.execute({
-      userId: this.#resolveUserId(event.conversationId),
+      userId: this.#resolveUserId(event),
       conversationId: event.conversationId,
       text: event.payload.text,
       messageId: event.messageId,
@@ -39,7 +39,7 @@ export class NutribotInputRouter extends BaseInputRouter {
   async handleImage(event) {
     const useCase = this.container.getLogFoodFromImage();
     const result = await useCase.execute({
-      userId: this.#resolveUserId(event.conversationId),
+      userId: this.#resolveUserId(event),
       conversationId: event.conversationId,
       imageData: {
         fileId: event.payload.fileId,
@@ -53,7 +53,7 @@ export class NutribotInputRouter extends BaseInputRouter {
   async handleVoice(event) {
     const useCase = this.container.getLogFoodFromVoice();
     const result = await useCase.execute({
-      userId: this.#resolveUserId(event.conversationId),
+      userId: this.#resolveUserId(event),
       conversationId: event.conversationId,
       voiceData: {
         fileId: event.payload.fileId,
@@ -66,7 +66,7 @@ export class NutribotInputRouter extends BaseInputRouter {
   async handleUpc(event) {
     const useCase = this.container.getLogFoodFromUPC();
     const result = await useCase.execute({
-      userId: this.#resolveUserId(event.conversationId),
+      userId: this.#resolveUserId(event),
       conversationId: event.conversationId,
       upc: event.payload.text,
       messageId: event.messageId,
@@ -96,7 +96,7 @@ export class NutribotInputRouter extends BaseInputRouter {
       case CallbackActions.ACCEPT_LOG: {
         const useCase = this.container.getAcceptFoodLog();
         return await useCase.execute({
-          userId: this.#resolveUserId(event.conversationId),
+          userId: this.#resolveUserId(event),
           conversationId: event.conversationId,
           logUuid: decoded.id,
           messageId: event.messageId,
@@ -132,21 +132,21 @@ export class NutribotInputRouter extends BaseInputRouter {
       case 'help': {
         const useCase = this.container.getHandleHelpCommand();
         return await useCase.execute({
-          userId: this.#resolveUserId(event.conversationId),
+          userId: this.#resolveUserId(event),
           conversationId: event.conversationId,
         });
       }
       case 'review': {
         const useCase = this.container.getHandleReviewCommand();
         return await useCase.execute({
-          userId: this.#resolveUserId(event.conversationId),
+          userId: this.#resolveUserId(event),
           conversationId: event.conversationId,
         });
       }
       case 'report': {
         const useCase = this.container.getGenerateDailyReport();
         return await useCase.execute({
-          userId: this.#resolveUserId(event.conversationId),
+          userId: this.#resolveUserId(event),
           conversationId: event.conversationId,
         });
       }
@@ -159,14 +159,27 @@ export class NutribotInputRouter extends BaseInputRouter {
   // ==================== Helpers ====================
 
   /**
-   * Resolve user ID from conversation ID using config
+   * Resolve user ID from platform identity
+   * Uses UserResolver to map platform+platformUserId to system username
+   * Falls back to conversationId if resolution fails
    * @private
+   * @param {import('../telegram/IInputEvent.mjs').IInputEvent} event
+   * @returns {string}
    */
-  #resolveUserId(conversationId) {
-    if (this.#config?.getUserIdFromConversation) {
-      return this.#config.getUserIdFromConversation(conversationId) || conversationId;
+  #resolveUserId(event) {
+    if (this.#userResolver && event.platform && event.platformUserId) {
+      const username = this.#userResolver.resolveUser(event.platform, event.platformUserId);
+      if (username) {
+        return username;
+      }
+      this.logger.warn?.('nutribot.userResolver.notFound', {
+        platform: event.platform,
+        platformUserId: event.platformUserId,
+        fallback: event.conversationId,
+      });
     }
-    return conversationId;
+    // Fallback to conversationId for backwards compatibility
+    return event.conversationId;
   }
 }
 

@@ -3,6 +3,8 @@
  * Implements INotificationChannel for email sending
  */
 
+import { nowTs24, nowDate } from '../../0_infrastructure/utils/index.mjs';
+
 export class GmailAdapter {
   constructor({ googleAuth, logger }) {
     this.googleAuth = googleAuth; // Function to get authenticated Gmail client
@@ -279,7 +281,7 @@ export class GmailAdapter {
       this.getSentMessages()
     ]);
 
-    const today = new Date().toISOString().split('T')[0];
+    const today = nowDate();
 
     // Categorize messages
     const todaysInbox = inboxMessages
@@ -294,7 +296,7 @@ export class GmailAdapter {
 
     return {
       current: {
-        lastUpdated: new Date().toISOString(),
+        lastUpdated: nowTs24(),
         unreadCount: inboxMessages.filter(m => m.isUnread).length,
         totalCount: inboxMessages.length,
         messages: inboxMessages

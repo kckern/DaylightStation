@@ -16,6 +16,8 @@
  * @property {string} [error] - Error message if failed
  */
 
+import { nowTs24 } from '../../../0_infrastructure/utils/index.mjs';
+
 export class TaskerAdapter {
   #host;
   #port;
@@ -141,7 +143,7 @@ export class TaskerAdapter {
     }
 
     this.#metrics.commandsSent++;
-    this.#metrics.lastCommandAt = new Date().toISOString();
+    this.#metrics.lastCommandAt = nowTs24();
 
     try {
       const url = `http://${this.#host}:${this.#port}/${command}`;

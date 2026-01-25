@@ -1,5 +1,6 @@
 // backend/src/4_api/routers/admin/eventbus.mjs
 import express from 'express';
+import { nowTs } from '../../../0_infrastructure/utils/index.mjs';
 
 /**
  * Create admin eventbus router for WebSocket server management
@@ -29,7 +30,7 @@ export function createEventBusRouter(config) {
       if (!eventBus) {
         return res.status(503).json({
           error: 'EventBus not configured',
-          timestamp: new Date().toISOString()
+          timestamp: nowTs()
         });
       }
 
@@ -38,13 +39,13 @@ export function createEventBusRouter(config) {
       logger.info?.('admin.eventbus.restart.success');
       res.json({
         status: 'WebSocket server restarted successfully',
-        timestamp: new Date().toISOString()
+        timestamp: nowTs()
       });
     } catch (error) {
       logger.error?.('admin.eventbus.restart.failed', { error: error.message });
       res.status(500).json({
         error: error.message || 'Failed to restart WebSocket server',
-        timestamp: new Date().toISOString()
+        timestamp: nowTs()
       });
     }
   }
@@ -61,7 +62,7 @@ export function createEventBusRouter(config) {
       if (!eventBus) {
         return res.status(503).json({
           error: 'EventBus not configured',
-          timestamp: new Date().toISOString()
+          timestamp: nowTs()
         });
       }
 
@@ -73,7 +74,7 @@ export function createEventBusRouter(config) {
           : (req.params || {}));
 
       const message = {
-        timestamp: new Date().toISOString(),
+        timestamp: nowTs(),
         ...payload
       };
 
@@ -113,7 +114,7 @@ export function createEventBusRouter(config) {
     if (!eventBus) {
       return res.status(503).json({
         error: 'EventBus not configured',
-        timestamp: new Date().toISOString()
+        timestamp: nowTs()
       });
     }
 
@@ -121,7 +122,7 @@ export function createEventBusRouter(config) {
     res.json({
       status: eventBus.isRunning?.() ? 'running' : 'stopped',
       metrics,
-      timestamp: new Date().toISOString()
+      timestamp: nowTs()
     });
   });
 

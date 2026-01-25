@@ -7,6 +7,7 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import { isValidQuizCategory } from '../value-objects/QuizCategory.mjs';
+import { nowTs24 } from '../../../0_infrastructure/utils/index.mjs';
 
 /**
  * ValidationError for entity validation
@@ -103,7 +104,7 @@ export class QuizQuestion {
   markAsked() {
     return new QuizQuestion({
       ...this.toJSON(),
-      lastAsked: new Date().toISOString(),
+      lastAsked: nowTs24(),
     });
   }
 

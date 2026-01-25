@@ -11,6 +11,7 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import fs from 'fs';
 import path from 'path';
+import { nowTs24 } from '../../../0_infrastructure/utils/index.mjs';
 
 const execAsync = promisify(exec);
 
@@ -70,7 +71,7 @@ export class RemoteExecAdapter {
   async execute(command) {
     const startTime = Date.now();
     this.#metrics.commandsExecuted++;
-    this.#metrics.lastCommandAt = new Date().toISOString();
+    this.#metrics.lastCommandAt = nowTs24();
 
     this.#logger.info?.('remote-exec.execute', { host: this.#host, user: this.#user });
 

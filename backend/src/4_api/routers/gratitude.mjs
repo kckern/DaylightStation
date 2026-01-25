@@ -22,6 +22,7 @@
 
 import express from 'express';
 import { writeBinary, deleteFile } from '../../0_infrastructure/utils/FileIO.mjs';
+import { nowTs } from '../../0_infrastructure/utils/index.mjs';
 
 /**
  * Create gratitude API router
@@ -445,7 +446,7 @@ export function createGratitudeRouter(config) {
     const payload = {
       topic: 'gratitude',
       item: itemData,
-      timestamp: new Date().toISOString(),
+      timestamp: nowTs(),
       type: 'gratitude_item',
       isCustom: true
     };
@@ -619,7 +620,7 @@ export function createGratitudeRouter(config) {
         success,
         message: success ? 'Prayer card printed successfully' : 'Print failed',
         printed,
-        timestamp: new Date().toISOString()
+        timestamp: nowTs()
       });
     } catch (error) {
       logger.error?.('gratitude.card.print.error', { error: error.message });

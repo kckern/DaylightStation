@@ -461,7 +461,7 @@ export class FitnessSyncerAdapter {
         items,
         metadata: {
           source: 'fitsync',
-          harvestedAt: new Date().toISOString(),
+          harvestedAt: nowTs24(),
           daysBack,
         },
       };

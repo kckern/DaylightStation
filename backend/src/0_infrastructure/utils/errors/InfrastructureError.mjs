@@ -7,6 +7,8 @@
  * Base class for all infrastructure errors
  * These represent errors in external services or I/O operations
  */
+import { nowTs24 } from '../index.mjs';
+
 export class InfrastructureError extends Error {
   /**
    * @param {string} message - Error message
@@ -16,7 +18,7 @@ export class InfrastructureError extends Error {
     super(message);
     this.name = 'InfrastructureError';
     this.context = context;
-    this.timestamp = new Date().toISOString();
+    this.timestamp = nowTs24();
     this.httpStatus = 500;
     this.retryable = false;
 

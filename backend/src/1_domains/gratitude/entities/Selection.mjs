@@ -8,6 +8,7 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
+import { nowTs24 } from '../../../0_infrastructure/utils/index.mjs';
 import { GratitudeItem } from './GratitudeItem.mjs';
 
 /**
@@ -37,7 +38,7 @@ export class Selection {
     this.#item = data.item instanceof GratitudeItem
       ? data.item
       : new GratitudeItem(data.item);
-    this.#datetime = data.datetime || new Date().toISOString();
+    this.#datetime = data.datetime || nowTs24();
     this.#printed = Array.isArray(data.printed) ? [...data.printed] : [];
   }
 
@@ -75,7 +76,7 @@ export class Selection {
    * Mark this selection as printed
    * @param {string} [timestamp] - Print timestamp (defaults to now)
    */
-  markAsPrinted(timestamp = new Date().toISOString()) {
+  markAsPrinted(timestamp = nowTs24()) {
     this.#printed.push(timestamp);
   }
 
@@ -120,7 +121,7 @@ export class Selection {
   static create(userId, item, timezone) {
     const datetime = timezone
       ? new Date().toLocaleString('en-US', { timeZone: timezone })
-      : new Date().toISOString();
+      : nowTs24();
 
     return new Selection({
       id: uuidv4(),

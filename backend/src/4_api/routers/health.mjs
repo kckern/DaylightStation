@@ -50,7 +50,7 @@ export function createHealthRouter(config) {
    * Get today's date in YYYY-MM-DD format
    */
   const getToday = () => {
-    return new Date().toISOString().split('T')[0];
+    return nowDate();
   };
 
   // ==========================================================================
@@ -221,7 +221,7 @@ export function createHealthRouter(config) {
   router.get('/status', asyncHandler(async (req, res) => {
     res.json({
       message: 'Health router is operational',
-      timestamp: new Date().toISOString(),
+      timestamp: nowTs(),
       endpoints: [
         'GET /daily - Get comprehensive daily health data',
         'GET /date/:date - Get health data for specific date (YYYY-MM-DD)',

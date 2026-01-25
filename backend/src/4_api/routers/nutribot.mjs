@@ -29,6 +29,7 @@ import {
  * Create NutriBot Express Router
  * @param {import('../../3_applications/nutribot/NutribotContainer.mjs').NutribotContainer} container
  * @param {Object} [options]
+ * @param {import('../../0_infrastructure/users/UserResolver.mjs').UserResolver} [options.userResolver] - For resolving platform users to system usernames
  * @param {string} [options.botId] - Telegram bot ID
  * @param {string} [options.secretToken] - X-Telegram-Bot-Api-Secret-Token for webhook auth
  * @param {Object} [options.gateway] - TelegramAdapter for callback acknowledgements
@@ -37,7 +38,7 @@ import {
  */
 export function createNutribotRouter(container, options = {}) {
   const router = Router();
-  const { secretToken, gateway, logger = console } = options;
+  const { userResolver, secretToken, gateway, logger = console } = options;
 
   // Get botId from options, container config, or environment
   const botId =
@@ -46,6 +47,7 @@ export function createNutribotRouter(container, options = {}) {
   // Create webhook components
   const parser = botId ? new TelegramWebhookParser({ botId, logger }) : null;
   const inputRouter = new NutribotInputRouter(container, {
+    userResolver,
     config: container.getConfig?.(),
     logger,
   });
@@ -62,6 +64,7 @@ export function createNutribotRouter(container, options = {}) {
       idempotencyMiddleware({ ttlMs: 300000 }),
       createBotWebhookHandler({
         botName: 'nutribot',
+        botId,
         parser,
         inputRouter,
         gateway,

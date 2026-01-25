@@ -2,6 +2,8 @@
  * Account Entity - Represents a financial account
  */
 
+import { nowTs24 } from '../../../0_infrastructure/utils/index.mjs';
+
 export class Account {
   constructor({
     id,
@@ -42,7 +44,7 @@ export class Account {
    */
   updateBalance(newBalance) {
     this.balance = newBalance;
-    this.lastUpdated = new Date().toISOString();
+    this.lastUpdated = nowTs24();
   }
 
   /**
@@ -50,7 +52,7 @@ export class Account {
    */
   applyTransaction(amount) {
     this.balance += amount;
-    this.lastUpdated = new Date().toISOString();
+    this.lastUpdated = nowTs24();
   }
 
   /**

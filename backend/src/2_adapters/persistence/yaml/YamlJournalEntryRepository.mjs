@@ -146,7 +146,7 @@ export class YamlJournalEntryRepository {
       content: entry.content || entry.text,
       senderId: entry.senderId || this.#extractUserId(chatId),
       senderName: entry.senderName,
-      timestamp: entry.timestamp || new Date().toISOString()
+      timestamp: entry.timestamp || nowTs24()
     };
 
     // Add message

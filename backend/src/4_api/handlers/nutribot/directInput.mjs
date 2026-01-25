@@ -6,6 +6,8 @@
  * These bypass Telegram and allow programmatic food logging.
  */
 
+import { nowTs } from '../../../0_infrastructure/utils/index.mjs';
+
 /**
  * Get default user/chat config for direct API calls
  * @param {Object} container
@@ -130,7 +132,18 @@ export function directImageHandler(container, options = {}) {
       // Get image URL from body or query
       const imgUrl = req.body?.img_url || req.query?.img_url;
 
+      // Enhanced logging for public API security monitoring
+      const requestMetadata = {
+        traceId,
+        ip: req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress,
+        userAgent: req.headers['user-agent'],
+        referer: req.headers['referer'],
+        method: req.method,
+        timestamp: nowTs(),
+      };
+
       if (!imgUrl) {
+        logger.warn?.('direct.image.missing_url', requestMetadata);
         return res.status(400).json({
           ok: false,
           error: 'Missing required parameter: img_url',
@@ -141,6 +154,7 @@ export function directImageHandler(container, options = {}) {
       try {
         new URL(imgUrl);
       } catch {
+        logger.warn?.('direct.image.invalid_url', { ...requestMetadata, imgUrl: imgUrl.substring(0, 100) });
         return res.status(400).json({
           ok: false,
           error: 'Invalid img_url format',
@@ -150,8 +164,9 @@ export function directImageHandler(container, options = {}) {
       const { userId, conversationId } = resolveUserContext(container, req.body, req.query);
 
       logger.info?.('direct.image.received', {
-        traceId,
+        ...requestMetadata,
         imgUrl: imgUrl.substring(0, 100) + '...', // Truncate for logging
+        imgDomain: new URL(imgUrl).hostname,
         userId,
         conversationId,
       });
@@ -166,7 +181,15 @@ export function directImageHandler(container, options = {}) {
       });
 
       const duration = Date.now() - startTime;
-      logger.info?.('direct.image.processed', { traceId, durationMs: duration, success: result?.success });
+      logger.info?.('direct.image.processed', {
+        traceId,
+        ip: requestMetadata.ip,
+        userAgent: requestMetadata.userAgent,
+        imgDomain: new URL(imgUrl).hostname,
+        durationMs: duration,
+        success: result?.success,
+        itemsLogged: result?.items?.length || 0,
+      });
 
       res.status(200).json({
         ok: true,
@@ -177,6 +200,8 @@ export function directImageHandler(container, options = {}) {
       const duration = Date.now() - startTime;
       logger.error?.('direct.image.error', {
         traceId,
+        ip: req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress,
+        userAgent: req.headers['user-agent'],
         error: error.message,
         stack: error.stack,
         durationMs: duration,

@@ -280,7 +280,7 @@ export class HomeAssistantAdapter {
     };
 
     this.#metrics.requestCount++;
-    this.#metrics.lastRequestAt = new Date().toISOString();
+    this.#metrics.lastRequestAt = nowTs24();
 
     try {
       let response;

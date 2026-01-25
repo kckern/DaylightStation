@@ -47,7 +47,7 @@ export class MessageQueue {
 
     this.#uuid = props.uuid || uuidv4();
     this.#chatId = props.chatId;
-    this.#timestamp = props.timestamp || new Date().toISOString();
+    this.#timestamp = props.timestamp || nowTs24();
     this.#queuedMessage = props.queuedMessage;
     this.#choices = props.choices ? Object.freeze(props.choices.map((row) => Object.freeze([...row]))) : null;
     this.#inline = props.inline ?? true;

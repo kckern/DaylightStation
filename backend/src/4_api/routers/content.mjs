@@ -113,7 +113,7 @@ export function createContentRouter(registry, watchStore = null, options = {}) {
         playhead: seconds,
         duration,
         playCount: (existing?.playCount || 0) + (seconds === 0 ? 1 : 0),
-        lastPlayed: new Date().toISOString(),
+        lastPlayed: nowTs24(),
         watchTime: (existing?.watchTime || 0) + Math.max(0, seconds - (existing?.playhead || 0))
       });
 

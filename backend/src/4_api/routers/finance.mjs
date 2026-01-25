@@ -129,7 +129,7 @@ export function createFinanceRouter(config) {
       }
 
       // Filter to current month or earlier (exclude future months)
-      const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
+      const currentMonth = nowMonth(); // YYYY-MM
       const months = Object.keys(latestBudget.dayToDayBudget)
         .filter(m => m <= currentMonth)
         .sort((a, b) => b.localeCompare(a));
@@ -167,7 +167,7 @@ export function createFinanceRouter(config) {
         return res.json({
           accounts: accounts.map(a => a.toJSON ? a.toJSON() : a),
           source: 'buxfer',
-          refreshedAt: new Date().toISOString()
+          refreshedAt: nowTs24()
         });
       }
 

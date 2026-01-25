@@ -88,7 +88,7 @@ export class YamlNutriCoachStore extends INutriCoachStore {
     // Append new coaching entry
     data[date].push({
       message,
-      timestamp: new Date().toISOString(),
+      timestamp: nowTs24(),
       isFirstOfDay,
       context,
     });

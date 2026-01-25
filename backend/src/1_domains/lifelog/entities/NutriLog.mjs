@@ -58,8 +58,8 @@ export class NutriLog {
     this.#nutrition = props.nutrition || {};
     this.#metadata = props.metadata || {};
     this.#timezone = props.timezone || 'America/Los_Angeles';
-    this.#createdAt = props.createdAt || new Date().toISOString();
-    this.#updatedAt = props.updatedAt || new Date().toISOString();
+    this.#createdAt = props.createdAt || nowTs24();
+    this.#updatedAt = props.updatedAt || nowTs24();
     this.#acceptedAt = props.acceptedAt || null;
 
     Object.freeze(this);
@@ -70,11 +70,11 @@ export class NutriLog {
   }
 
   #today() {
-    return new Date().toISOString().split('T')[0];
+    return nowDate();
   }
 
   #now() {
-    return new Date().toISOString();
+    return nowTs24();
   }
 
   // Getters
@@ -261,7 +261,7 @@ export class NutriLog {
       status: legacy.status || 'pending',
       text: foodData.text || '',
       meal: {
-        date: foodData.date || new Date().toISOString().split('T')[0],
+        date: foodData.date || nowDate(),
         time: foodData.time || 'afternoon'
       },
       items: (foodData.food || []).map(f => FoodItem.fromLegacy(f)),

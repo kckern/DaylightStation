@@ -56,7 +56,7 @@ export class QuizAnswer {
     this.#chatId = props.chatId;
     this.#date = props.date;
     this.#answer = props.answer;
-    this.#answeredAt = props.answeredAt || new Date().toISOString();
+    this.#answeredAt = props.answeredAt || nowTs24();
 
     Object.freeze(this);
   }

@@ -115,7 +115,7 @@ export class GmailHarvester extends IHarvester {
       const existingDateKeyed = Array.isArray(existingLifelog) ? {} : existingLifelog;
 
       // Categorize and merge messages
-      const today = new Date().toISOString().split('T')[0];
+      const today = nowDate();
       const todaysReceived = inboxMessages
         .filter(m => m.date === today && !m.isSent)
         .map(m => ({ ...m, category: 'received' }));
@@ -132,7 +132,7 @@ export class GmailHarvester extends IHarvester {
       // Save current inbox state
       if (this.#currentStore) {
         await this.#currentStore.save(username, {
-          lastUpdated: new Date().toISOString(),
+          lastUpdated: nowTs24(),
           unreadCount: inboxMessages.filter(m => m.isUnread).length,
           totalCount: inboxMessages.length,
           messages: inboxMessages,

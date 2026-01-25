@@ -71,7 +71,7 @@ export class TaskRegistry {
 
     try {
       await task.handler();
-      task.lastRun = new Date().toISOString();
+      task.lastRun = nowTs24();
       task.lastError = null;
       task.runCount++;
     } catch (err) {

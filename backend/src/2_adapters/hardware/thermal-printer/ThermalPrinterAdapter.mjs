@@ -203,7 +203,7 @@ export class ThermalPrinterAdapter {
                 resolve({
                   success: true,
                   ...status,
-                  timestamp: new Date().toISOString()
+                  timestamp: nowTs24()
                 });
               }, 200);
             }

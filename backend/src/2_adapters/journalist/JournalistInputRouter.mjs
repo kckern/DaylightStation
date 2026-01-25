@@ -15,16 +15,22 @@ import { InputEventType } from '../telegram/IInputEvent.mjs';
 export class JournalistInputRouter {
   #container;
   #logger;
+  #userResolver;
+  /** @type {import('../telegram/IInputEvent.mjs').IInputEvent|null} */
+  #currentEvent;
 
   /**
    * @param {import('../../3_applications/journalist/JournalistContainer.mjs').JournalistContainer} container
    * @param {Object} [options]
+   * @param {import('../../0_infrastructure/users/UserResolver.mjs').UserResolver} [options.userResolver] - For resolving platform users to system usernames
    * @param {Object} [options.logger]
    */
   constructor(container, options = {}) {
     if (!container) throw new Error('container is required');
     this.#container = container;
+    this.#userResolver = options.userResolver;
     this.#logger = options.logger || console;
+    this.#currentEvent = null;
   }
 
   /**
@@ -34,6 +40,9 @@ export class JournalistInputRouter {
    */
   async route(event) {
     const { type, conversationId, messageId, payload, metadata } = event;
+
+    // Store event for handlers that need platform identity
+    this.#currentEvent = event;
 
     this.#logger.debug?.('router.event', { type, conversationId, messageId });
 
@@ -268,8 +277,13 @@ export class JournalistInputRouter {
 
       if (!debriefDate) {
         // Fall back to most recent debrief
-        const userResolver = this.#container.getUserResolver();
-        const username = userResolver.resolveUsername(conversationId);
+        const username = this.#resolveUserId();
+        if (!username) {
+          const gateway = this.#container.getMessagingGateway();
+          await gateway.sendMessage(conversationId, '❌ Could not identify user');
+          return { success: false };
+        }
+
         const debriefRepo = this.#container.getDebriefRepository();
         const recentDebriefs = await debriefRepo.getRecentDebriefs(username, 1);
 
@@ -375,6 +389,29 @@ export class JournalistInputRouter {
   }
 
   // ==================== Helpers ====================
+
+  /**
+   * Resolve user ID from platform identity using UserResolver
+   * Falls back to conversationId if resolution fails
+   * @private
+   * @returns {string|null}
+   */
+  #resolveUserId() {
+    const event = this.#currentEvent;
+    if (this.#userResolver && event?.platform && event?.platformUserId) {
+      const username = this.#userResolver.resolveUser(event.platform, event.platformUserId);
+      if (username) {
+        return username;
+      }
+      this.#logger.warn?.('journalist.userResolver.notFound', {
+        platform: event.platform,
+        platformUserId: event.platformUserId,
+        fallback: event.conversationId,
+      });
+    }
+    // Fallback to conversationId for backwards compatibility
+    return event?.conversationId || null;
+  }
 
   /**
    * Extract sender ID from metadata

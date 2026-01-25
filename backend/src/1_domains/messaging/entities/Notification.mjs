@@ -5,6 +5,8 @@
 export const NOTIFICATION_CHANNELS = ['telegram', 'email', 'push', 'sms'];
 export const NOTIFICATION_PRIORITIES = ['low', 'normal', 'high', 'urgent'];
 
+import { nowTs24 } from '../../../0_infrastructure/utils/index.mjs';
+
 export class Notification {
   constructor({
     id,
@@ -45,14 +47,14 @@ export class Notification {
   /**
    * Mark as sent
    */
-  markSent(timestamp = new Date().toISOString()) {
+  markSent(timestamp = nowTs24()) {
     this.sentAt = timestamp;
   }
 
   /**
    * Mark as read
    */
-  markRead(timestamp = new Date().toISOString()) {
+  markRead(timestamp = nowTs24()) {
     this.readAt = timestamp;
   }
 

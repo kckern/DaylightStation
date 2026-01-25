@@ -6,6 +6,7 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
+import { nowTs24 } from '../../../0_infrastructure/utils/index.mjs';
 
 /**
  * ValidationError for entity validation
@@ -48,7 +49,7 @@ export class ConversationMessage {
 
     this.#messageId = props.messageId;
     this.#chatId = props.chatId;
-    this.#timestamp = props.timestamp || new Date().toISOString();
+    this.#timestamp = props.timestamp || nowTs24();
     this.#senderId = props.senderId;
     this.#senderName = props.senderName;
     this.#text = props.text;
@@ -153,7 +154,7 @@ export class ConversationMessage {
     return new ConversationMessage({
       messageId: props.messageId || uuidv4(),
       chatId: props.chatId,
-      timestamp: props.timestamp || new Date().toISOString(),
+      timestamp: props.timestamp || nowTs24(),
       senderId: 'bot',
       senderName: props.botName || 'Journalist',
       text: props.text,
@@ -170,7 +171,7 @@ export class ConversationMessage {
     return new ConversationMessage({
       messageId: props.messageId || uuidv4(),
       chatId: props.chatId,
-      timestamp: props.timestamp || new Date().toISOString(),
+      timestamp: props.timestamp || nowTs24(),
       senderId: props.senderId,
       senderName: props.senderName || 'User',
       text: props.text,

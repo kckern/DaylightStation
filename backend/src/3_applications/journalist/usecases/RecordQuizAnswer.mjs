@@ -51,7 +51,7 @@ export class RecordQuizAnswer {
       const quizAnswer = QuizAnswer.create({
         questionUuid,
         chatId,
-        date: date || new Date().toISOString().split('T')[0],
+        date: date || nowDate(),
         answer,
       });
 

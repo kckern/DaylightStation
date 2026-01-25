@@ -9,10 +9,14 @@ import { InputEventType } from '../telegram/IInputEvent.mjs';
 export class HomeBotInputRouter {
   #container;
   #logger;
+  #userResolver;
+  /** @type {import('../telegram/IInputEvent.mjs').IInputEvent|null} */
+  #currentEvent;
 
   /**
    * @param {Object} container - HomeBotContainer
    * @param {Object} [options]
+   * @param {import('../../0_infrastructure/users/UserResolver.mjs').UserResolver} [options.userResolver] - For resolving platform users to system usernames
    * @param {Object} [options.logger]
    */
   constructor(container, options = {}) {
@@ -20,13 +24,16 @@ export class HomeBotInputRouter {
     if (container?.container) {
       // Old signature: { container, logger }
       this.#container = container.container;
+      this.#userResolver = container.userResolver;
       this.#logger = container.logger || console;
     } else {
-      // New signature: (container, { logger })
+      // New signature: (container, { logger, userResolver })
       if (!container) throw new Error('HomeBotInputRouter requires container');
       this.#container = container;
+      this.#userResolver = options.userResolver;
       this.#logger = options.logger || console;
     }
+    this.#currentEvent = null;
   }
 
   /**
@@ -36,6 +43,9 @@ export class HomeBotInputRouter {
    */
   async route(event) {
     const { type, conversationId, messageId, payload } = event;
+
+    // Store event for handlers that need platform identity
+    this.#currentEvent = event;
 
     this.#logger.debug?.('homebot.route', { type, conversationId });
 
@@ -124,6 +134,31 @@ export class HomeBotInputRouter {
     // Homebot doesn't have many commands, but could add /gratitude, /hopes
     this.#logger.debug?.('homebot.command', { command });
     return { handled: false };
+  }
+
+  // ==================== Helpers ====================
+
+  /**
+   * Resolve user ID from platform identity using UserResolver
+   * Falls back to conversationId if resolution fails
+   * @private
+   * @returns {string}
+   */
+  #resolveUserId() {
+    const event = this.#currentEvent;
+    if (this.#userResolver && event?.platform && event?.platformUserId) {
+      const username = this.#userResolver.resolveUser(event.platform, event.platformUserId);
+      if (username) {
+        return username;
+      }
+      this.#logger.warn?.('homebot.userResolver.notFound', {
+        platform: event.platform,
+        platformUserId: event.platformUserId,
+        fallback: event.conversationId,
+      });
+    }
+    // Fallback to conversationId for backwards compatibility
+    return event?.conversationId || 'unknown';
   }
 }
 

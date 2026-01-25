@@ -7,6 +7,8 @@
  * Base class for all domain errors
  * These represent errors in business logic or validation
  */
+import { nowTs24 } from '../index.mjs';
+
 export class DomainError extends Error {
   /**
    * @param {string} message - Error message
@@ -16,7 +18,7 @@ export class DomainError extends Error {
     super(message);
     this.name = 'DomainError';
     this.context = context;
-    this.timestamp = new Date().toISOString();
+    this.timestamp = nowTs24();
     this.httpStatus = 500;
 
     // Maintain proper stack trace

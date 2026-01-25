@@ -1199,6 +1199,7 @@ export function createJournalistServices(config) {
  * @param {Object} config
  * @param {Object} config.journalistServices - Services from createJournalistServices
  * @param {Object} config.configService - ConfigService for user lookup
+ * @param {Object} [config.userResolver] - UserResolver for platform ID mapping
  * @param {Object} [config.secretToken] - Telegram webhook secret token
  * @param {Object} [config.logger] - Logger instance
  * @returns {express.Router}
@@ -1207,6 +1208,7 @@ export function createJournalistApiRouter(config) {
   const {
     journalistServices,
     configService,
+    userResolver,
     botId,
     secretToken,
     gateway,
@@ -1214,6 +1216,7 @@ export function createJournalistApiRouter(config) {
   } = config;
 
   return createJournalistRouter(journalistServices.journalistContainer, {
+    userResolver,
     botId,
     secretToken,
     gateway,
@@ -1283,6 +1286,7 @@ export function createHomebotServices(config) {
  * Create homebot API router
  * @param {Object} config
  * @param {Object} config.homebotServices - Services from createHomebotServices
+ * @param {Object} [config.userResolver] - UserResolver for platform ID mapping
  * @param {string} [config.botId] - Telegram bot ID
  * @param {string} [config.secretToken] - X-Telegram-Bot-Api-Secret-Token for webhook auth
  * @param {Object} [config.gateway] - TelegramAdapter for callback acknowledgements
@@ -1294,6 +1298,7 @@ export function createHomebotServices(config) {
 export function createHomebotApiRouter(config) {
   const {
     homebotServices,
+    userResolver,
     botId,
     secretToken,
     gateway,
@@ -1303,6 +1308,7 @@ export function createHomebotApiRouter(config) {
   } = config;
 
   return createHomebotRouter(homebotServices.homebotContainer, {
+    userResolver,
     botId,
     secretToken,
     gateway,
@@ -1361,27 +1367,10 @@ export function createNutribotServices(config) {
     logger
   });
 
-  // Build user mapping from config for conversation -> userId resolution
-  const conversationToUser = new Map();
-  if (Array.isArray(nutribotConfig.users)) {
-    for (const user of nutribotConfig.users) {
-      if (user.telegram?.botId && user.telegram?.chatId && user.systemUser) {
-        const conversationId = `telegram:${user.telegram.botId}_${user.telegram.chatId}`;
-        conversationToUser.set(conversationId, user.systemUser);
-      }
-    }
-  }
-
-  // Add getUserIdFromConversation method to config for adapter layer
-  const enrichedConfig = {
-    ...nutribotConfig,
-    getUserIdFromConversation: (conversationId) => {
-      return conversationToUser.get(conversationId) || null;
-    }
-  };
-
   // Create nutribot container with all dependencies
-  const nutribotContainer = new NutribotContainer(enrichedConfig, {
+  // Note: Identity resolution (conversation ID -> username) is handled by
+  // UserResolver in the adapter layer (NutribotInputRouter), not here.
+  const nutribotContainer = new NutribotContainer(nutribotConfig, {
     messagingGateway: telegramAdapter,
     aiGateway,
     upcGateway,
@@ -1406,6 +1395,7 @@ export function createNutribotServices(config) {
  * Create nutribot API router
  * @param {Object} config
  * @param {Object} config.nutribotServices - Services from createNutribotServices
+ * @param {Object} [config.userResolver] - UserResolver for platform ID mapping
  * @param {string} [config.botId] - Telegram bot ID
  * @param {string} [config.secretToken] - X-Telegram-Bot-Api-Secret-Token for webhook auth
  * @param {Object} [config.gateway] - TelegramGateway for callback acknowledgements
@@ -1415,6 +1405,7 @@ export function createNutribotServices(config) {
 export function createNutribotApiRouter(config) {
   const {
     nutribotServices,
+    userResolver,
     botId,
     secretToken,
     gateway,
@@ -1422,6 +1413,7 @@ export function createNutribotApiRouter(config) {
   } = config;
 
   return createNutribotRouter(nutribotServices.nutribotContainer, {
+    userResolver,
     botId,
     secretToken,
     gateway,

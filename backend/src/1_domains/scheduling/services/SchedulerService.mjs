@@ -420,7 +420,7 @@ export class SchedulerService {
 
     return {
       status: 'ok',
-      timestamp: new Date().toISOString(),
+      timestamp: nowTs24(),
       runningCount: this.runningJobs.size,
       jobs
     };
