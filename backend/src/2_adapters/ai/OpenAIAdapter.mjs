@@ -443,7 +443,8 @@ export class OpenAIAdapter {
       totals: {
         requests: this.metrics.requestCount,
         tokens: this.metrics.tokenCount,
-        errors: this.metrics.errors
+        errors: this.metrics.errors,
+        retries: this.metrics.retryCount
       }
     };
   }
