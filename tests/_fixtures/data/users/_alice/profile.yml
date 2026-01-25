@@ -1,0 +1,11 @@
+id: _alice
+name: Alice Test
+email: alice@test.local
+fitness:
+  max_hr: 185
+  resting_hr: 60
+  zones:
+    - { name: recovery, min: 0, max: 120 }
+    - { name: aerobic, min: 120, max: 150 }
+    - { name: threshold, min: 150, max: 170 }
+    - { name: max, min: 170, max: 185 }

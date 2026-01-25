@@ -1,0 +1,6 @@
+id: _bob
+name: Bob Test
+email: bob@test.local
+fitness:
+  max_hr: 175
+  resting_hr: 55
