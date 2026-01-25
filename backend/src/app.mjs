@@ -130,7 +130,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Dev Proxy (for webhook debugging without redeploy)
   // ==========================================================================
   // Must be early in middleware chain to intercept requests before handlers
-  const devProxy = createDevProxy({ logger });
+  const devHost = configService.get('LOCAL_DEV_HOST') || configService.getSecret('LOCAL_DEV_HOST');
+  const devProxy = createDevProxy({ logger, devHost });
   app.use('/dev', devProxy.router);  // Toggle at /dev/proxy_toggle
   app.use(devProxy.middleware);      // Intercepts all requests when enabled
   logger.info('devProxy.initialized', { endpoint: '/dev/proxy_toggle' });
