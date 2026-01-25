@@ -241,5 +241,47 @@ describe('OpenAIAdapter', () => {
       expect(elapsed).toBeGreaterThanOrEqual(45);
       expect(elapsed).toBeLessThan(100);
     });
+
+    describe('isRetryable', () => {
+      test('returns true for fetch failed errors', () => {
+        const error = new Error('fetch failed');
+        expect(adapter._testIsRetryable(error)).toBe(true);
+      });
+
+      test('returns true for ECONNRESET', () => {
+        const error = new Error('connection reset');
+        error.cause = { code: 'ECONNRESET' };
+        expect(adapter._testIsRetryable(error)).toBe(true);
+      });
+
+      test('returns true for ETIMEDOUT', () => {
+        const error = new Error('timed out');
+        error.cause = { code: 'ETIMEDOUT' };
+        expect(adapter._testIsRetryable(error)).toBe(true);
+      });
+
+      test('returns true for RATE_LIMIT errors', () => {
+        const error = new Error('rate limited');
+        error.code = 'RATE_LIMIT';
+        expect(adapter._testIsRetryable(error)).toBe(true);
+      });
+
+      test('returns true for 5xx server errors', () => {
+        const error = new Error('server error');
+        error.status = 503;
+        expect(adapter._testIsRetryable(error)).toBe(true);
+      });
+
+      test('returns false for 4xx client errors', () => {
+        const error = new Error('bad request');
+        error.status = 400;
+        expect(adapter._testIsRetryable(error)).toBe(false);
+      });
+
+      test('returns false for generic errors', () => {
+        const error = new Error('something went wrong');
+        expect(adapter._testIsRetryable(error)).toBe(false);
+      });
+    });
   });
 });
