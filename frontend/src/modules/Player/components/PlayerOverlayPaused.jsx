@@ -31,20 +31,71 @@ export function PlayerOverlayPaused({
 
   const overlayContextRef = useRef({ source: 'PlayerOverlayPaused' });
   const visibilityRef = useRef(shouldShowPauseOverlay);
+  const overlayRef = useRef(null);
 
   useEffect(() => {
     if (visibilityRef.current === shouldShowPauseOverlay) {
       return;
     }
     visibilityRef.current = shouldShowPauseOverlay;
+
+    // Get dimension diagnostics
+    const overlayEl = overlayRef.current;
+    const overlayRect = overlayEl?.getBoundingClientRect?.() ?? null;
+    const viewport = {
+      width: window.innerWidth,
+      height: window.innerHeight
+    };
+
+    // Calculate gaps
+    const discrepancy = overlayRect ? {
+      top: overlayRect.y,
+      left: overlayRect.x,
+      bottom: viewport.height - (overlayRect.y + overlayRect.height),
+      right: viewport.width - (overlayRect.x + overlayRect.width),
+      widthDiff: viewport.width - overlayRect.width,
+      heightDiff: viewport.height - overlayRect.height
+    } : null;
+
+    const hasGap = discrepancy && (
+      Math.abs(discrepancy.top) > 0.5 ||
+      Math.abs(discrepancy.left) > 0.5 ||
+      Math.abs(discrepancy.bottom) > 0.5 ||
+      Math.abs(discrepancy.right) > 0.5
+    );
+
+    const computedStyles = overlayEl ? window.getComputedStyle(overlayEl) : null;
+
     playbackLog('overlay.paused-visibility', {
       visible: shouldShowPauseOverlay,
       seconds,
       stalled,
       waitingToPlay,
-      positionDisplay: playerPositionDisplay || null
+      positionDisplay: playerPositionDisplay || null,
+      dimensions: overlayRect ? {
+        x: Math.round(overlayRect.x * 100) / 100,
+        y: Math.round(overlayRect.y * 100) / 100,
+        width: Math.round(overlayRect.width * 100) / 100,
+        height: Math.round(overlayRect.height * 100) / 100
+      } : null,
+      viewport,
+      discrepancy: discrepancy ? {
+        top: Math.round(discrepancy.top * 100) / 100,
+        left: Math.round(discrepancy.left * 100) / 100,
+        bottom: Math.round(discrepancy.bottom * 100) / 100,
+        right: Math.round(discrepancy.right * 100) / 100
+      } : null,
+      hasGap,
+      computed: computedStyles ? {
+        position: computedStyles.position,
+        top: computedStyles.top,
+        left: computedStyles.left,
+        width: computedStyles.width,
+        height: computedStyles.height,
+        display: computedStyles.display
+      } : null
     }, {
-      level: shouldShowPauseOverlay ? 'info' : 'debug',
+      level: shouldShowPauseOverlay ? (hasGap ? 'warn' : 'info') : 'debug',
       context: overlayContextRef.current
     });
   }, [playerPositionDisplay, seconds, shouldShowPauseOverlay, stalled, waitingToPlay]);
@@ -75,6 +126,7 @@ export function PlayerOverlayPaused({
 
   return (
     <div
+      ref={overlayRef}
       className="loading-overlay paused"
       data-no-fullscreen="true"
       style={{
