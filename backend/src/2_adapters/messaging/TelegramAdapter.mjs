@@ -186,6 +186,12 @@ export class TelegramAdapter {
         params.parse_mode = updates.parseMode;
       }
 
+      if (updates.choices) {
+        params.reply_markup = JSON.stringify(
+          this.buildKeyboard(updates.choices, true)
+        );
+      }
+
       await this.callApi('editMessageCaption', params);
     }
   }

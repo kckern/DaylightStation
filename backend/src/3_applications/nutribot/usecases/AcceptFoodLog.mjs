@@ -118,11 +118,13 @@ export class AcceptFoodLog {
 
           const acceptedText = `${dateHeader}\n\n${foodList}`;
 
-          await messaging.updateMessage(messageId, {
-            text: acceptedText,
-            choices: [],
-            inline: true,
-          });
+          // Use caption for photo messages (image/upc sources), text for others
+          const isPhotoMessage = ['image', 'upc'].includes(nutriLog.metadata?.source);
+          const updatePayload = isPhotoMessage
+            ? { caption: acceptedText, choices: [], inline: true }
+            : { text: acceptedText, choices: [], inline: true };
+
+          await messaging.updateMessage(messageId, updatePayload);
         } catch (e) {
           this.#logger.warn?.('acceptLog.updateMessageFailed', { error: e.message });
         }
