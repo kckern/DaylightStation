@@ -193,6 +193,20 @@ export class TelegramAdapter {
       }
 
       await this.callApi('editMessageCaption', params);
+    } else if ('choices' in updates) {
+      // Only updating keyboard (removing buttons)
+      const params = {
+        chat_id: numericChatId,
+        message_id: messageId,
+      };
+
+      if (updates.choices && updates.choices.length > 0) {
+        params.reply_markup = JSON.stringify(
+          this.buildKeyboard(updates.choices, true)
+        );
+      }
+
+      await this.callApi('editMessageReplyMarkup', params);
     }
   }
 
