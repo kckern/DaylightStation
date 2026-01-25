@@ -46,7 +46,7 @@ export class DiscardFoodLog {
    * @param {Object} [input.responseContext] - Bound response context for DDD-compliant messaging
    */
   async execute(input) {
-    const { conversationId, logUuid, messageId, responseContext } = input;
+    const { userId, conversationId, logUuid, messageId, responseContext } = input;
 
     this.#logger.debug?.('discardLog.start', { conversationId, logUuid, hasResponseContext: !!responseContext });
 
@@ -55,7 +55,7 @@ export class DiscardFoodLog {
     try {
       // 1. Update log status to rejected
       if (this.#foodLogStore) {
-        await this.#foodLogStore.updateStatus(conversationId, logUuid, 'rejected');
+        await this.#foodLogStore.updateStatus(userId, logUuid, 'rejected');
       }
 
       // 2. Clear revision state if any

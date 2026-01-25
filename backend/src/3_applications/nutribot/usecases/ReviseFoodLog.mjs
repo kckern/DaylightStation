@@ -57,7 +57,7 @@ export class ReviseFoodLog {
    * @param {Object} [input.responseContext] - Bound response context for DDD-compliant messaging
    */
   async execute(input) {
-    const { conversationId, logUuid, messageId, responseContext } = input;
+    const { userId, conversationId, logUuid, messageId, responseContext } = input;
 
     this.#logger.debug?.('reviseLog.start', { conversationId, logUuid, hasResponseContext: !!responseContext });
 
@@ -72,7 +72,7 @@ export class ReviseFoodLog {
       // 1. Load the log to show current items
       let nutriLog = null;
       if (this.#foodLogStore) {
-        nutriLog = await this.#foodLogStore.findByUuid(logUuid, conversationId);
+        nutriLog = await this.#foodLogStore.findByUuid(logUuid, userId);
       }
 
       // 2. Set conversation state to revision mode
