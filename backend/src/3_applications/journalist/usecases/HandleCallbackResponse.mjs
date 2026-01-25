@@ -36,27 +36,44 @@ export class HandleCallbackResponse {
   }
 
   /**
+   * Get messaging interface (prefers responseContext for DDD compliance)
+   * @private
+   */
+  #getMessaging(responseContext, chatId) {
+    if (responseContext) {
+      return responseContext;
+    }
+    return {
+      sendMessage: (text, options) => this.#messagingGateway.sendMessage(chatId, text, options),
+      updateMessage: (msgId, updates) => this.#messagingGateway.updateMessage(chatId, msgId, updates),
+      updateKeyboard: (msgId, choices) => this.#messagingGateway.updateKeyboard(chatId, msgId, choices),
+    };
+  }
+
+  /**
    * Execute the use case
    * @param {HandleCallbackResponseInput} input
    */
   async execute(input) {
-    const { chatId, messageId, callbackData, options = {} } = input;
+    const { chatId, messageId, callbackData, options = {}, responseContext } = input;
 
-    this.#logger.debug?.('callback.handle.start', { chatId, callbackData });
+    this.#logger.debug?.('callback.handle.start', { chatId, callbackData, hasResponseContext: !!responseContext });
+
+    const messaging = this.#getMessaging(responseContext, chatId);
 
     try {
       // 1. Handle special callbacks
       if (callbackData === '🎲 Change Subject') {
         // Change subject - start new prompt
         if (this.#initiateJournalPrompt) {
-          return this.#initiateJournalPrompt.execute({ chatId, instructions: 'change_subject' });
+          return this.#initiateJournalPrompt.execute({ chatId, instructions: 'change_subject', responseContext });
         }
         return { success: true, action: 'change_subject' };
       }
 
       if (callbackData === '❌ Cancel' || callbackData === '❌ Close') {
         // Cancel/Close - remove keyboard and acknowledge
-        await this.#messagingGateway.updateMessage(chatId, messageId, {
+        await messaging.updateMessage(messageId, {
           text:
             callbackData === '❌ Close'
               ? '✓ Session closed. Feel free to write anytime.'
@@ -75,6 +92,7 @@ export class HandleCallbackResponse {
           messageId,
           questionUuid: foreignKey.quiz,
           answer: callbackData,
+          responseContext,
         });
       }
 
@@ -82,7 +100,7 @@ export class HandleCallbackResponse {
       if (this.#processTextEntry) {
         // Remove keyboard from original message
         try {
-          await this.#messagingGateway.updateKeyboard(chatId, messageId, null);
+          await messaging.updateKeyboard(messageId, null);
         } catch (e) {
           // Ignore keyboard update errors
         }
@@ -93,6 +111,7 @@ export class HandleCallbackResponse {
           messageId: `callback_${Date.now()}`,
           senderId: options.senderId || 'user',
           senderName: options.senderName || 'User',
+          responseContext,
         });
       }
 

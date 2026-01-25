@@ -39,16 +39,34 @@ export class HandleDebriefResponse {
   }
 
   /**
+   * Get messaging interface (prefers responseContext for DDD compliance)
+   * @private
+   */
+  #getMessaging(responseContext, conversationId) {
+    if (responseContext) {
+      return responseContext;
+    }
+    return {
+      sendMessage: (text, options) => this.#messagingGateway.sendMessage(conversationId, text, options),
+      updateKeyboard: (msgId, choices) => this.#messagingGateway.updateKeyboard(conversationId, msgId, choices),
+    };
+  }
+
+  /**
    * Execute handling a debrief response
    *
    * @param {Object} input
    * @param {string} input.conversationId - Telegram conversation ID
    * @param {string} input.text - Button text that was pressed
    * @param {string} [input.messageId] - Message ID to edit (for callback buttons)
+   * @param {Object} [input.responseContext] - Bound response context for DDD-compliant messaging
    * @returns {Object} Result
    */
   async execute(input) {
-    const { conversationId, text, messageId } = input;
+    const { conversationId, text, messageId, responseContext } = input;
+
+    // Store responseContext for use in private methods
+    this._responseContext = responseContext;
 
     this.#logger.info?.('debrief.response.received', {
       conversationId,
@@ -62,17 +80,19 @@ export class HandleDebriefResponse {
       return { handled: false };
     }
 
+    const messaging = this.#getMessaging(responseContext, conversationId);
+
     // Route based on button pressed
     if (text === '📊 Details') {
-      return this.#handleShowDetails(conversationId, state, messageId);
+      return this.#handleShowDetails(conversationId, state, messageId, messaging);
     }
 
     if (text === '💬 Ask') {
-      return this.#handleAskMe(conversationId, state);
+      return this.#handleAskMe(conversationId, state, messaging);
     }
 
     if (text === '✅ OK') {
-      return this.#handleAccept(conversationId, state);
+      return this.#handleAccept(conversationId, state, messaging);
     }
 
     // Not a debrief button
@@ -84,8 +104,9 @@ export class HandleDebriefResponse {
    * @param {string} conversationId
    * @param {Object} state
    * @param {string} [messageId] - Message ID to edit keyboard
+   * @param {Object} messaging - Messaging interface
    */
-  async #handleShowDetails(conversationId, state, messageId) {
+  async #handleShowDetails(conversationId, state, messageId, messaging) {
     // Get username from conversationId
     const username = this.#userResolver.resolveUsername(conversationId);
 
@@ -93,7 +114,7 @@ export class HandleDebriefResponse {
     const recentDebriefs = await this.#debriefRepository.getRecentDebriefs(username, 1);
 
     if (!recentDebriefs || recentDebriefs.length === 0) {
-      await this.#messagingGateway.sendMessage(conversationId, 'No debrief data found.');
+      await messaging.sendMessage('No debrief data found.');
       return { handled: true, action: 'show_details', empty: true };
     }
 
@@ -106,8 +127,7 @@ export class HandleDebriefResponse {
       .filter(Boolean);
 
     if (sources.length === 0) {
-      await this.#messagingGateway.sendMessage(
-        conversationId,
+      await messaging.sendMessage(
         'No detailed data sources available for this debrief.',
       );
       return { handled: true, action: 'show_details', empty: true };
@@ -121,14 +141,12 @@ export class HandleDebriefResponse {
 
     if (messageId) {
       // updateKeyboard expects the choices array for inline keyboard
-      await this.#messagingGateway.updateKeyboard(
-        conversationId,
+      await messaging.updateKeyboard(
         messageId,
         keyboardMarkup.inline_keyboard,
       );
     } else {
-      const result = await this.#messagingGateway.sendMessage(
-        conversationId,
+      const result = await messaging.sendMessage(
         'Select a data source to view details:',
         { reply_markup: keyboardMarkup },
       );
@@ -165,8 +183,9 @@ export class HandleDebriefResponse {
 
   /**
    * Handle "Ask Me" - start interview flow with questions
+   * @param {Object} messaging - Messaging interface
    */
-  async #handleAskMe(conversationId, state) {
+  async #handleAskMe(conversationId, state, messaging) {
     const questions = state.debrief?.questions || {};
     const categories = state.debrief?.categories || [];
 
@@ -184,8 +203,7 @@ export class HandleDebriefResponse {
 
     if (!selectedCategory || selectedQuestions.length === 0) {
       // Fallback to generic question
-      await this.#messagingGateway.sendMessage(
-        conversationId,
+      await messaging.sendMessage(
         'What stood out most about yesterday?',
         {
           reply_markup: {
@@ -203,8 +221,7 @@ export class HandleDebriefResponse {
     // Ask the first question
     const question = selectedQuestions[0];
 
-    const result = await this.#messagingGateway.sendMessage(
-      conversationId,
+    const result = await messaging.sendMessage(
       `${selectedCategory.icon} ${question}`,
       {
         reply_markup: {
@@ -248,11 +265,11 @@ export class HandleDebriefResponse {
 
   /**
    * Handle "Accept" - remove keyboard, mark complete
+   * @param {Object} messaging - Messaging interface
    */
-  async #handleAccept(conversationId, state) {
+  async #handleAccept(conversationId, state, messaging) {
     // Send confirmation with keyboard removed
-    await this.#messagingGateway.sendMessage(
-      conversationId,
+    await messaging.sendMessage(
       '✓ Got it. Feel free to write anything on your mind, or just go about your day.',
       {
         reply_markup: { remove_keyboard: true },

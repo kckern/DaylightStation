@@ -30,20 +30,36 @@ export class HandleSlashCommand {
   }
 
   /**
+   * Get messaging interface (prefers responseContext for DDD compliance)
+   * @private
+   */
+  #getMessaging(responseContext, chatId) {
+    if (responseContext) {
+      return responseContext;
+    }
+    return {
+      sendMessage: (text, options) => this.#messagingGateway?.sendMessage(chatId, text, options),
+    };
+  }
+
+  /**
    * Execute the use case
    * @param {Object} input
    * @param {string} input.chatId
    * @param {string} input.command - Command with or without leading /
    * @param {string} [input.userId] - User ID for debrief
+   * @param {Object} [input.responseContext] - Bound response context for DDD-compliant messaging
    */
   async execute(input) {
-    const { chatId, command, userId } = input;
+    const { chatId, command, userId, responseContext } = input;
 
     // Parse command (strip leading /)
     const cmd = command.replace(/^\//, '').toLowerCase().trim();
     const [baseCmd] = cmd.split(/\s+/);
 
-    this.#logger.debug?.('command.slash.start', { chatId, command: baseCmd });
+    this.#logger.debug?.('command.slash.start', { chatId, command: baseCmd, hasResponseContext: !!responseContext });
+
+    const messaging = this.#getMessaging(responseContext, chatId);
 
     try {
       let result;
@@ -56,6 +72,7 @@ export class HandleSlashCommand {
             result = await this.#initiateJournalPrompt.execute({
               chatId,
               instructions: 'change_subject',
+              responseContext,
             });
           }
           break;
@@ -73,16 +90,14 @@ export class HandleSlashCommand {
             result = await this.#sendMorningDebrief.execute({
               conversationId: chatId,
               debrief,
+              responseContext,
             });
           } else {
             // Fallback message if debrief not available
-            if (this.#messagingGateway) {
-              await this.#messagingGateway.sendMessage(
-                chatId,
-                '📅 Morning debrief is not configured yet.',
-                {},
-              );
-            }
+            await messaging.sendMessage(
+              '📅 Morning debrief is not configured yet.',
+              {},
+            );
             result = { success: false, error: 'Debrief not available' };
           }
           break;
@@ -92,22 +107,19 @@ export class HandleSlashCommand {
         case 'analyze':
           // Therapist-style analysis
           if (this.#generateTherapistAnalysis) {
-            result = await this.#generateTherapistAnalysis.execute({ chatId });
+            result = await this.#generateTherapistAnalysis.execute({ chatId, responseContext });
           }
           break;
 
         default:
           // Unknown command - show help
-          if (this.#messagingGateway) {
-            await this.#messagingGateway.sendMessage(
-              chatId,
-              '📝 Available commands:\n' +
-                '/prompt - Start a new conversation topic\n' +
-                "/yesterday - Review yesterday's activities\n" +
-                '/counsel - Get insights and observations',
-              {},
-            );
-          }
+          await messaging.sendMessage(
+            '📝 Available commands:\n' +
+              '/prompt - Start a new conversation topic\n' +
+              "/yesterday - Review yesterday's activities\n" +
+              '/counsel - Get insights and observations',
+            {},
+          );
           result = { success: true, action: 'help' };
           break;
       }

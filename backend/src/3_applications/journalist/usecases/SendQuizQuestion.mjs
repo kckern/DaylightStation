@@ -27,13 +27,29 @@ export class SendQuizQuestion {
   }
 
   /**
+   * Get messaging interface (prefers responseContext for DDD compliance)
+   * @private
+   */
+  #getMessaging(responseContext, chatId) {
+    if (responseContext) {
+      return responseContext;
+    }
+    return {
+      sendMessage: (text, options) => this.#messagingGateway.sendMessage(chatId, text, options),
+    };
+  }
+
+  /**
    * Execute the use case
    * @param {Object} input
    * @param {string} input.chatId
    * @param {string} [input.category] - Optional category filter
+   * @param {Object} [input.responseContext] - Bound response context for DDD-compliant messaging
    */
   async execute(input) {
-    const { chatId, category } = input;
+    const { chatId, category, responseContext } = input;
+
+    const messaging = this.#getMessaging(responseContext, chatId);
 
     this.#logger.debug?.('quiz.send.start', { chatId, category });
 
@@ -68,8 +84,7 @@ export class SendQuizQuestion {
       const keyboard = this.#buildQuizKeyboard(selectedQuestion.choices);
 
       // 5. Send question with inline buttons
-      const { messageId } = await this.#messagingGateway.sendMessage(
-        chatId,
+      const { messageId } = await messaging.sendMessage(
         `📋 ${selectedQuestion.question}`,
         {
           choices: keyboard,

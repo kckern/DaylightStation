@@ -12,6 +12,8 @@ export class HomeBotInputRouter {
   #userResolver;
   /** @type {import('../telegram/IInputEvent.mjs').IInputEvent|null} */
   #currentEvent;
+  /** @type {import('../../3_applications/nutribot/ports/IResponseContext.mjs').IResponseContext|null} */
+  #responseContext;
 
   /**
    * @param {Object} container - HomeBotContainer
@@ -34,34 +36,37 @@ export class HomeBotInputRouter {
       this.#logger = options.logger || console;
     }
     this.#currentEvent = null;
+    this.#responseContext = null;
   }
 
   /**
    * Route IInputEvent to appropriate use case
    * @param {import('../telegram/IInputEvent.mjs').IInputEvent} event
+   * @param {import('../../3_applications/nutribot/ports/IResponseContext.mjs').IResponseContext} [responseContext] - Bound response context for DDD-compliant messaging
    * @returns {Promise<Object>}
    */
-  async route(event) {
+  async route(event, responseContext = null) {
     const { type, conversationId, messageId, payload } = event;
 
-    // Store event for handlers that need platform identity
+    // Store event and responseContext for handlers that need them
     this.#currentEvent = event;
+    this.#responseContext = responseContext;
 
-    this.#logger.debug?.('homebot.route', { type, conversationId });
+    this.#logger.debug?.('homebot.route', { type, conversationId, hasResponseContext: !!responseContext });
 
     try {
       switch (type) {
         case InputEventType.TEXT:
-          return await this.#handleText(conversationId, payload.text, messageId);
+          return await this.#handleText(conversationId, payload.text, messageId, responseContext);
 
         case InputEventType.VOICE:
-          return await this.#handleVoice(conversationId, payload.fileId, messageId);
+          return await this.#handleVoice(conversationId, payload.fileId, messageId, responseContext);
 
         case InputEventType.CALLBACK:
-          return await this.#handleCallback(conversationId, payload.callbackData, messageId);
+          return await this.#handleCallback(conversationId, payload.callbackData, messageId, responseContext);
 
         case InputEventType.COMMAND:
-          return await this.#handleCommand(conversationId, payload.command, messageId);
+          return await this.#handleCommand(conversationId, payload.command, messageId, responseContext);
 
         default:
           this.#logger.warn?.('homebot.route.unknown', { type });
@@ -78,25 +83,27 @@ export class HomeBotInputRouter {
     }
   }
 
-  async #handleText(conversationId, text, messageId) {
+  async #handleText(conversationId, text, messageId, responseContext) {
     const useCase = await this.#container.getProcessGratitudeInput();
     return useCase.execute({
       conversationId,
       text,
       messageId,
+      responseContext,
     });
   }
 
-  async #handleVoice(conversationId, fileId, messageId) {
+  async #handleVoice(conversationId, fileId, messageId, responseContext) {
     const useCase = await this.#container.getProcessGratitudeInput();
     return useCase.execute({
       conversationId,
       voiceFileId: fileId,
       messageId,
+      responseContext,
     });
   }
 
-  async #handleCallback(conversationId, callbackData, messageId) {
+  async #handleCallback(conversationId, callbackData, messageId, responseContext) {
     // Parse callback data format: "action:value"
     if (callbackData.startsWith('user:')) {
       const username = callbackData.slice(5);
@@ -105,6 +112,7 @@ export class HomeBotInputRouter {
         conversationId,
         messageId,
         username,
+        responseContext,
       });
     }
 
@@ -115,6 +123,7 @@ export class HomeBotInputRouter {
         conversationId,
         messageId,
         category,
+        responseContext,
       });
     }
 
@@ -123,6 +132,7 @@ export class HomeBotInputRouter {
       return useCase.execute({
         conversationId,
         messageId,
+        responseContext,
       });
     }
 
@@ -130,7 +140,7 @@ export class HomeBotInputRouter {
     return { handled: false };
   }
 
-  async #handleCommand(conversationId, command, messageId) {
+  async #handleCommand(conversationId, command, messageId, responseContext) {
     // Homebot doesn't have many commands, but could add /gratitude, /hopes
     this.#logger.debug?.('homebot.command', { command });
     return { handled: false };

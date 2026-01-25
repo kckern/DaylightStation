@@ -47,13 +47,28 @@ export class InitiateJournalPrompt {
   }
 
   /**
+   * Get messaging interface (prefers responseContext for DDD compliance)
+   * @private
+   */
+  #getMessaging(responseContext, chatId) {
+    if (responseContext) {
+      return responseContext;
+    }
+    return {
+      sendMessage: (text, options) => this.#messagingGateway.sendMessage(chatId, text, options),
+    };
+  }
+
+  /**
    * Execute the use case
    * @param {InitiateJournalPromptInput} input
    */
   async execute(input) {
-    const { chatId, instructions } = input;
+    const { chatId, instructions, responseContext } = input;
 
-    this.#logger.debug?.('journalPrompt.initiate.start', { chatId, instructions });
+    this.#logger.debug?.('journalPrompt.initiate.start', { chatId, instructions, hasResponseContext: !!responseContext });
+
+    const messaging = this.#getMessaging(responseContext, chatId);
 
     try {
       // 1. Clear any existing queue
@@ -99,7 +114,7 @@ export class InitiateJournalPrompt {
 
       // 5. Send question with reply keyboard (attached to chat input)
       const formattedQuestion = formatQuestion(question, '📘');
-      const { messageId } = await this.#messagingGateway.sendMessage(chatId, formattedQuestion, {
+      const { messageId } = await messaging.sendMessage(formattedQuestion, {
         choices,
       });
 

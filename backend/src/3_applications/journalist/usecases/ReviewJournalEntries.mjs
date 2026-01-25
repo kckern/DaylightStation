@@ -22,14 +22,30 @@ export class ReviewJournalEntries {
   }
 
   /**
+   * Get messaging interface (prefers responseContext for DDD compliance)
+   * @private
+   */
+  #getMessaging(responseContext, chatId) {
+    if (responseContext) {
+      return responseContext;
+    }
+    return {
+      sendMessage: (text, options) => this.#messagingGateway.sendMessage(chatId, text, options),
+    };
+  }
+
+  /**
    * Execute the use case
    * @param {Object} input
    * @param {string} input.chatId
    * @param {string} [input.startDate] - Start date (defaults to 7 days ago)
    * @param {string} [input.endDate] - End date (defaults to today)
+   * @param {Object} [input.responseContext] - Bound response context for DDD-compliant messaging
    */
   async execute(input) {
-    const { chatId, startDate, endDate } = input;
+    const { chatId, startDate, endDate, responseContext } = input;
+
+    const messaging = this.#getMessaging(responseContext, chatId);
 
     this.#logger.debug?.('review.entries.start', { chatId, startDate, endDate });
 
@@ -47,8 +63,7 @@ export class ReviewJournalEntries {
       }
 
       if (entries.length === 0) {
-        await this.#messagingGateway.sendMessage(
-          chatId,
+        await messaging.sendMessage(
           '📖 No journal entries found for this period. Start journaling to see your entries here!',
           {},
         );
@@ -62,7 +77,7 @@ export class ReviewJournalEntries {
       const message = this.#buildReviewMessage(grouped);
 
       // 5. Send message
-      const { messageId } = await this.#messagingGateway.sendMessage(chatId, message, {
+      const { messageId } = await messaging.sendMessage(message, {
         parseMode: 'HTML',
       });
 

@@ -42,27 +42,44 @@ export class SendMorningDebrief {
   }
 
   /**
+   * Get messaging interface (prefers responseContext for DDD compliance)
+   * @private
+   */
+  #getMessaging(responseContext, conversationId) {
+    if (responseContext) {
+      return responseContext;
+    }
+    return {
+      sendMessage: (text, options) => this.#messagingGateway.sendMessage(conversationId, text, options),
+    };
+  }
+
+  /**
    * Execute sending the debrief
    *
    * @param {Object} input
    * @param {string} input.conversationId - Telegram conversation ID
    * @param {Object} input.debrief - Generated debrief data
+   * @param {Object} [input.responseContext] - Bound response context for DDD-compliant messaging
    * @returns {Object} Result with message ID
    */
   async execute(input) {
-    const { conversationId, debrief } = input;
+    const { conversationId, debrief, responseContext } = input;
 
     this.#logger.info?.('debrief.send.start', {
       conversationId,
       success: debrief.success,
       date: debrief.date,
+      hasResponseContext: !!responseContext,
     });
+
+    const messaging = this.#getMessaging(responseContext, conversationId);
 
     try {
       // Handle fallback case (insufficient data or error)
       if (!debrief.success) {
         const message = debrief.fallbackPrompt;
-        const result = await this.#messagingGateway.sendMessage(conversationId, message);
+        const result = await messaging.sendMessage(message);
 
         this.#logger.info?.('debrief.sent-fallback', {
           conversationId,
@@ -95,7 +112,7 @@ ${debrief.summary}`;
       const keyboard = this.#buildMainKeyboard();
 
       // Send message with keyboard
-      const result = await this.#messagingGateway.sendMessage(conversationId, message, {
+      const result = await messaging.sendMessage(message, {
         parse_mode: 'Markdown',
         reply_markup: keyboard,
       });
