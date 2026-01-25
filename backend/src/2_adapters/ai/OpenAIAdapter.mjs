@@ -56,6 +56,34 @@ export class OpenAIAdapter {
   }
 
   /**
+   * Check if error is retryable
+   * @private
+   */
+  #isRetryable(error) {
+    // Network-level failures
+    if (error.cause?.code === 'ECONNRESET') return true;
+    if (error.cause?.code === 'ETIMEDOUT') return true;
+    if (error.cause?.code === 'ENOTFOUND') return true;
+    if (error.message?.includes('fetch failed')) return true;
+
+    // Rate limit
+    if (error.code === 'RATE_LIMIT') return true;
+
+    // Server errors (5xx)
+    if (error.status >= 500 && error.status < 600) return true;
+
+    return false;
+  }
+
+  /**
+   * Expose isRetryable for testing
+   * @private
+   */
+  _testIsRetryable(error) {
+    return this.#isRetryable(error);
+  }
+
+  /**
    * Make an API request
    * @private
    */
