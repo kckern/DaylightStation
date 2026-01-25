@@ -49,10 +49,10 @@ export class GenerateDailyReport {
       return responseContext;
     }
     return {
-      sendMessage: (text, options) => messaging.sendMessage( text, options),
-      sendPhoto: (src, options) => messaging.sendPhoto( src, options),
+      sendMessage: (text, options) => this.#messagingGateway.sendMessage(conversationId, text, options),
+      sendPhoto: (src, options) => this.#messagingGateway.sendPhoto(conversationId, src, options),
       updateMessage: (msgId, updates) => this.#messagingGateway.updateMessage(conversationId, msgId, updates),
-      deleteMessage: (msgId) => messaging.deleteMessage( msgId),
+      deleteMessage: (msgId) => this.#messagingGateway.deleteMessage(conversationId, msgId),
     };
   }
 

@@ -39,9 +39,15 @@ export class ProcessVoiceEntry {
    */
   #getMessaging(responseContext, chatId) {
     if (responseContext) {
+      // If responseContext already has transcribeVoice, use it directly
+      // Don't spread - it breaks private field access (#adapter)
+      if (responseContext.transcribeVoice) {
+        return responseContext;
+      }
+      // Otherwise, wrap with bound transcribeVoice from gateway
       return {
-        ...responseContext,
-        transcribeVoice: responseContext.transcribeVoice || this.#messagingGateway?.transcribeVoice?.bind(this.#messagingGateway),
+        sendMessage: (text, options) => responseContext.sendMessage(text, options),
+        transcribeVoice: this.#messagingGateway?.transcribeVoice?.bind(this.#messagingGateway),
       };
     }
     return {
