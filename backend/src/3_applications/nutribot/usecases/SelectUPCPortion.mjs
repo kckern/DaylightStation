@@ -15,6 +15,37 @@ export class SelectUPCPortion {
   #generateDailyReport;
   #logger;
 
+  /**
+   * Format confirmation message for accepted food
+   * @param {Array} items - Scaled food items
+   * @param {string} logDate - Date string YYYY-MM-DD
+   * @returns {string}
+   */
+  #formatConfirmation(items, logDate) {
+    // Format date like "Sun, 25 Jan 2026"
+    const date = new Date(logDate + 'T12:00:00');
+    const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
+    const day = date.getDate();
+    const month = date.toLocaleDateString('en-US', { month: 'short' });
+    const year = date.getFullYear();
+    const dateStr = `${dayName}, ${day} ${month} ${year}`;
+
+    // Determine meal period based on current time
+    const hour = new Date().getHours();
+    let period = 'evening';
+    if (hour < 12) period = 'morning';
+    else if (hour < 17) period = 'afternoon';
+
+    // Format items
+    const itemLines = items.map((item) => {
+      const grams = item.grams || 100;
+      const name = item.label || item.food || item.name || 'Food';
+      return `🟢 ${name} ${grams}g`;
+    });
+
+    return `✅ ${dateStr} ${period}\n\n${itemLines.join('\n')}`;
+  }
+
   constructor(deps) {
     if (!deps.messagingGateway) throw new Error('messagingGateway is required');
 
@@ -35,7 +66,7 @@ export class SelectUPCPortion {
    * @param {string} [input.messageId]
    */
   async execute(input) {
-    const { conversationId, logUuid, portionFactor, messageId } = input;
+    const { conversationId, logUuid, portionFactor, messageId, responseContext } = input;
 
     this.#logger.debug?.('selectPortion.start', { conversationId, logUuid, portionFactor });
 
@@ -91,7 +122,8 @@ export class SelectUPCPortion {
 
       // Update nutrilog status to accepted
       if (this.#foodLogStore) {
-        await this.#foodLogStore.updateStatus(logUuid, 'accepted', userId);
+        await this.#foodLogStore.updateStatus(userId, logUuid, 'accepted');
+        this.#logger.debug?.('selectPortion.statusUpdated', { logUuid, userId, newStatus: 'accepted' });
       }
 
       // Add to nutrilist
@@ -109,6 +141,10 @@ export class SelectUPCPortion {
           date: logDate,
         }));
         await this.#nutriListStore.saveMany(listItems);
+
+        // Send confirmation message
+        const confirmMsg = this.#formatConfirmation(scaledItems, logDate);
+        await this.#messagingGateway.sendMessage(conversationId, confirmMsg, { responseContext });
       }
 
       // Delete the portion selection message
@@ -121,23 +157,50 @@ export class SelectUPCPortion {
       }
 
       // Generate daily report if no pending items
+      this.#logger.debug?.('selectPortion.autoreport.check', {
+        hasGenerateReport: !!this.#generateDailyReport,
+        hasFoodLogStore: !!this.#foodLogStore,
+        userId,
+      });
+
       if (this.#generateDailyReport && this.#foodLogStore) {
         try {
           const pending = await this.#foodLogStore.findPending(userId);
+          this.#logger.debug?.('selectPortion.autoreport.pendingCheck', {
+            pendingCount: pending.length,
+            userId,
+          });
           if (pending.length === 0) {
+            this.#logger.info?.('selectPortion.autoreport.triggering', { userId, conversationId });
             await new Promise((resolve) => setTimeout(resolve, 300));
             await this.#generateDailyReport.execute({
               userId,
               conversationId,
+              responseContext,
+            });
+          } else {
+            this.#logger.debug?.('selectPortion.autoreport.skipped', {
+              reason: 'pending_items_exist',
+              pendingCount: pending.length,
             });
           }
         } catch (e) {
           this.#logger.warn?.('selectPortion.autoreport.error', { error: e.message });
         }
       } else if (this.#generateDailyReport) {
+        this.#logger.info?.('selectPortion.autoreport.triggering', {
+          userId,
+          conversationId,
+          reason: 'no_foodLogStore',
+        });
         await this.#generateDailyReport.execute({
           userId,
           conversationId,
+          responseContext,
+        });
+      } else {
+        this.#logger.debug?.('selectPortion.autoreport.skipped', {
+          reason: 'no_generateDailyReport_usecase',
         });
       }
 

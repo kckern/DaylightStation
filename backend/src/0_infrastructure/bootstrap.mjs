@@ -1326,6 +1326,7 @@ export function createHomebotApiRouter(config) {
  * Create nutribot application services
  * @param {Object} config
  * @param {string} config.dataRoot - Base data directory
+ * @param {Object} config.userDataService - UserDataService instance
  * @param {Object} config.telegramAdapter - TelegramAdapter for messaging
  * @param {Object} config.aiGateway - AI gateway for completions
  * @param {Object} [config.upcGateway] - UPC lookup gateway
@@ -1339,6 +1340,7 @@ export function createHomebotApiRouter(config) {
 export function createNutribotServices(config) {
   const {
     dataRoot,
+    userDataService,
     telegramAdapter,
     aiGateway,
     upcGateway,
@@ -1368,7 +1370,7 @@ export function createNutribotServices(config) {
 
   // Nutrient list store (YAML persistence)
   const nutriListStore = new YamlNutriListStore({
-    dataRoot,
+    userDataService,
     logger
   });
 
@@ -1516,11 +1518,11 @@ export function createHealthServices(config) {
     logger
   });
 
-  // NutriList store for nutrilist endpoints (optional, requires dataRoot)
+  // NutriList store for nutrilist endpoints (optional, requires userDataService)
   let nutriListStore = null;
-  if (dataRoot) {
+  if (userDataService) {
     nutriListStore = new YamlNutriListStore({
-      dataRoot,
+      userDataService,
       logger
     });
   }

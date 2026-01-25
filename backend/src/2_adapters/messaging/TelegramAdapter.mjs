@@ -3,6 +3,7 @@
  * Implements IMessagingGateway and INotificationChannel
  */
 
+import { readBinary, getBasename, fileExists } from '../../0_infrastructure/utils/FileIO.mjs';
 import { TelegramChatRef } from '../telegram/TelegramChatRef.mjs';
 import { ConversationId } from '../../1_domains/messaging/value-objects/ConversationId.mjs';
 
@@ -104,19 +105,28 @@ export class TelegramAdapter {
   /**
    * Send an image
    * Alias: sendPhoto (for IMessagingGateway interface)
+   * Supports: URLs, file_ids, local file paths, and Buffers
    */
   async sendImage(chatId, imageSource, caption = '', options = {}) {
-    const params = {
-      chat_id: this.extractChatId(chatId)
-    };
+    const numericChatId = this.extractChatId(chatId);
 
-    if (typeof imageSource === 'string') {
-      // URL or file_id
-      params.photo = imageSource;
-    } else {
-      // Buffer - would need multipart form handling
-      throw new Error('Buffer image upload not yet implemented');
+    // Check if imageSource is a local file path
+    const isLocalPath = typeof imageSource === 'string' &&
+      (imageSource.startsWith('/') || /^[A-Za-z]:[\\/]/.test(imageSource));
+
+    // Check if imageSource is a Buffer
+    const isBuffer = Buffer.isBuffer(imageSource);
+
+    if (isLocalPath || isBuffer) {
+      // Use multipart form upload for local files and buffers
+      return this.#sendImageMultipart(numericChatId, imageSource, caption, options);
     }
+
+    // URL or file_id - use standard API call
+    const params = {
+      chat_id: numericChatId,
+      photo: imageSource
+    };
 
     if (caption) {
       params.caption = caption;
@@ -139,6 +149,76 @@ export class TelegramAdapter {
       messageId: result.message_id.toString(),
       ok: true
     };
+  }
+
+  /**
+   * Send image via multipart form data (for local files and buffers)
+   * @private
+   */
+  async #sendImageMultipart(chatId, imageSource, caption, options) {
+    const FormData = (await import('form-data')).default;
+    const axios = (await import('axios')).default;
+    const form = new FormData();
+
+    form.append('chat_id', chatId.toString());
+
+    if (Buffer.isBuffer(imageSource)) {
+      form.append('photo', imageSource, { filename: 'image.png', contentType: 'image/png' });
+    } else {
+      // Local file path - use FileIO utilities
+      const fileBuffer = readBinary(imageSource);
+      if (!fileBuffer) {
+        throw new Error(`File not found: ${imageSource}`);
+      }
+      const filename = getBasename(imageSource);
+      form.append('photo', fileBuffer, { filename, contentType: 'image/png' });
+    }
+
+    if (caption) {
+      form.append('caption', caption);
+    }
+
+    if (options.parseMode) {
+      form.append('parse_mode', options.parseMode);
+    }
+
+    if (options.choices) {
+      form.append('reply_markup', JSON.stringify(
+        this.buildKeyboard(options.choices, options.inline)
+      ));
+    }
+
+    const url = `${TELEGRAM_API_BASE}${this.token}/sendPhoto`;
+
+    try {
+      const response = await axios.post(url, form, {
+        headers: form.getHeaders()
+      });
+
+      const data = response.data;
+
+      if (!data.ok) {
+        this.metrics.errors++;
+        this.logger.error?.('telegram.api.error', { method: 'sendPhoto', error: data.description });
+        throw new Error(data.description || 'Telegram API error');
+      }
+
+      this.metrics.messagesSent++;
+
+      return {
+        messageId: data.result.message_id.toString(),
+        ok: true
+      };
+    } catch (error) {
+      this.metrics.errors++;
+      const errData = error.response?.data;
+      this.logger.error?.('telegram.api.multipart_error', {
+        method: 'sendPhoto',
+        status: error.response?.status,
+        error: errData?.description || error.message
+      });
+      throw new Error(errData?.description || error.message);
+    }
   }
 
   /**

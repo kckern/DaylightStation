@@ -10,7 +10,7 @@
 #
 set -euo pipefail
 
-PORTS=(3112 3113 3120)
+PORTS=(3112 3113 3119 3120)
 # Use /health/status for fast health check (no data loading)
 HEALTH_URL="http://localhost:3113/api/v1/health/status"
 TIMEOUT=30

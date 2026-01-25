@@ -126,16 +126,6 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     next();
   });
 
-  // ==========================================================================
-  // Dev Proxy (for webhook debugging without redeploy)
-  // ==========================================================================
-  // Must be early in middleware chain to intercept requests before handlers
-  const devHost = configService.get('LOCAL_DEV_HOST') || configService.getSecret('LOCAL_DEV_HOST');
-  const devProxy = createDevProxy({ logger, devHost });
-  app.use('/dev', devProxy.router);  // Toggle at /dev/proxy_toggle
-  app.use(devProxy.middleware);      // Intercepts all requests when enabled
-  logger.info('devProxy.initialized', { endpoint: '/dev/proxy_toggle' });
-
   if (!configExists) {
     app.get('*', (req, res, next) => {
       if (req.path.startsWith('/ws/')) return next();
@@ -547,6 +537,18 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'gratitude-api' })
   });
 
+  // Nutribot report renderer (canvas-based PNG generation)
+  let nutribotReportRenderer = null;
+  try {
+    const { NutriReportRenderer } = await import('./0_infrastructure/rendering/NutriReportRenderer.mjs');
+    nutribotReportRenderer = new NutriReportRenderer({
+      logger: rootLogger.child({ module: 'nutribot-renderer' })
+    });
+    rootLogger.info?.('nutribot.renderer.initialized');
+  } catch (e) {
+    rootLogger.warn?.('nutribot.renderer.import_failed', { error: e.message });
+  }
+
   // Fitness domain router
   // Note: contentRegistry passed for /show endpoint - fitness assumes plex source
   v1Routers.fitness = createFitnessApiRouter({
@@ -656,14 +658,20 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'upc-gateway' }),
   });
 
+  // Create conversation state store for nutribot (persists lastReportMessageId for cleanup)
+  const nutribotStateStore = new YamlConversationStateStore({
+    basePath: join(dataDir, 'chatbots', 'nutribot', 'conversations')
+  });
+
   const nutribotServices = createNutribotServices({
     dataRoot: dataBasePath,
+    userDataService,
     telegramAdapter: messagingServices.telegramAdapter,
     aiGateway: nutribotAiGateway,
     upcGateway,
     googleImageGateway: null,  // TODO: Add Google Image gateway when available
-    conversationStateStore: null,  // Uses in-memory by default
-    reportRenderer: null,  // Uses default renderer
+    conversationStateStore: nutribotStateStore,
+    reportRenderer: nutribotReportRenderer,  // Canvas-based PNG report renderer
     nutribotConfig,
     logger: rootLogger.child({ module: 'nutribot' })
   });

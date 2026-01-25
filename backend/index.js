@@ -192,12 +192,40 @@ async function main() {
   });
 
   // ==========================================================================
-  // Secondary API Server - for webhooks (same routing as primary)
+  // Secondary API Server - for webhooks with DevProxy
   // ==========================================================================
+
+  // Create separate webhook app with devProxy for debugging
+  const { createDevProxy } = await import('./src/0_infrastructure/http/middleware/devProxy.mjs');
+  const devHost = configService.get('LOCAL_DEV_HOST') || configService.getSecret('LOCAL_DEV_HOST');
+  const devProxy = createDevProxy({ logger, devHost });
+  logger.info('devProxy.initialized.webhook', { 
+    endpoint: '/dev/proxy_toggle',
+    port: configService.getWebhookPort(),
+    note: 'DevProxy only affects webhook server (port 3119), not main server'
+  });
 
   const secondaryPort = configService.getWebhookPort();
   const secondaryServer = createServer((req, res) => {
-    // Same routing logic as primary server
+    // Handle devProxy toggle endpoints
+    if (req.url === '/dev/proxy_toggle' || req.url === '/dev/proxy_status') {
+      return devProxy.router(req, res, () => {});
+    }
+
+    // Check if devProxy is enabled - if so, forward the request
+    const proxyState = devProxy.getState();
+    if (proxyState.proxyEnabled && req.url !== '/dev/proxy_toggle' && req.url !== '/dev/proxy_status') {
+      return devProxy.middleware(req, res, () => {
+        // If middleware calls next(), continue with normal routing
+        routeSecondaryRequest(req, res);
+      });
+    }
+
+    // Normal routing when proxy is disabled
+    routeSecondaryRequest(req, res);
+  });
+
+  function routeSecondaryRequest(req, res) {
     res.setHeader('X-Backend', req.url.startsWith('/api/v1') ? 'new' : 'legacy');
 
     if (req.url.startsWith('/api/v1')) {
@@ -218,14 +246,15 @@ async function main() {
         res.end('Internal Server Error');
       }
     });
-  });
+  }
 
   secondaryServer.listen(secondaryPort, '0.0.0.0', () => {
     logger.info('server.secondary.started', {
       port: secondaryPort,
       host: '0.0.0.0',
       mode: 'path-based',
-      purpose: 'webhooks'
+      purpose: 'webhooks',
+      devProxyEnabled: devProxy.getState().proxyEnabled
     });
   });
 }

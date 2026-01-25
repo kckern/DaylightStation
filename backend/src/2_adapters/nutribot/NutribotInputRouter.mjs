@@ -128,6 +128,18 @@ export class NutribotInputRouter extends BaseInputRouter {
           responseContext,
         });
       }
+      case 'p': {
+        // Portion selection (from UPC flow)
+        const useCase = this.container.getSelectUPCPortion();
+        return await useCase.execute({
+          userId: this.#resolveUserId(event),
+          conversationId: event.conversationId,
+          logUuid: decoded.id,
+          portionFactor: decoded.f,
+          messageId: event.messageId,
+          responseContext,
+        });
+      }
       case 'ra': {
         // Report Adjust - start adjustment flow
         const useCase = this.container.getStartAdjustmentFlow();
