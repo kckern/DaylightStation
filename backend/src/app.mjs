@@ -74,6 +74,9 @@ import { YamlStateStore } from './2_adapters/scheduling/YamlStateStore.mjs';
 import { Scheduler } from './0_infrastructure/scheduling/Scheduler.mjs';
 import { createSchedulingRouter } from './4_api/routers/scheduling.mjs';
 
+// Conversation state persistence
+import { YamlConversationStateStore } from './2_adapters/messaging/YamlConversationStateStore.mjs';
+
 // Media jobs (YouTube downloads, etc.)
 import { MediaJobExecutor } from './3_applications/media/MediaJobExecutor.mjs';
 import { createYouTubeJobHandler } from './3_applications/media/YouTubeJobHandler.mjs';
@@ -680,13 +683,18 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       })
     : null;
 
+  // Create conversation state store for journalist
+  const journalistStateStore = new YamlConversationStateStore({
+    basePath: join(dataDir, 'chatbots', 'journalist', 'conversations')
+  });
+
   const journalistServices = createJournalistServices({
     userDataService,
     configService,
     telegramAdapter: journalistTelegramAdapter || messagingServices.telegramAdapter,
     aiGateway: journalistAiGateway,
     userResolver: null,  // TODO: Add UserResolver when available
-    conversationStateStore: null,  // Uses in-memory by default
+    conversationStateStore: journalistStateStore,
     quizRepository: null,  // TODO: Add quiz repository when available
     logger: rootLogger.child({ module: 'journalist' })
   });
@@ -720,12 +728,17 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       })
     : null;
 
+  // Create conversation state store for homebot
+  const homebotStateStore = new YamlConversationStateStore({
+    basePath: join(dataDir, 'chatbots', 'homebot', 'conversations')
+  });
+
   const homebotServices = createHomebotServices({
     telegramAdapter: homebotTelegramAdapter || messagingServices.telegramAdapter,
     aiGateway: homebotAiGateway,
     gratitudeStore: gratitudeServices.gratitudeStore,
     configService,
-    conversationStateStore: null,  // Uses in-memory by default
+    conversationStateStore: homebotStateStore,
     websocketBroadcast: broadcastEvent,
     logger: rootLogger.child({ module: 'homebot' })
   });

@@ -11,9 +11,9 @@ import { nutribotReportHandler } from '../handlers/nutribot/report.mjs';
 import { nutribotReportImgHandler } from '../handlers/nutribot/reportImg.mjs';
 import { directUPCHandler, directImageHandler, directTextHandler } from '../handlers/nutribot/directInput.mjs';
 
-// DDD adapters for webhook handling
-import { TelegramWebhookParser } from '../../2_adapters/telegram/TelegramWebhookParser.mjs';
-import { WebhookHandler } from '../../3_applications/nutribot/handlers/WebhookHandler.mjs';
+// Shared Telegram adapters
+import { TelegramWebhookParser, createBotWebhookHandler } from '../../2_adapters/telegram/index.mjs';
+import { NutribotInputRouter } from '../../2_adapters/nutribot/index.mjs';
 
 // HTTP middleware
 import {
@@ -29,68 +29,55 @@ import {
  * Create NutriBot Express Router
  * @param {import('../../3_applications/nutribot/NutribotContainer.mjs').NutribotContainer} container
  * @param {Object} [options]
- * @param {string} [options.botId] - Telegram bot ID (defaults to env var or config)
+ * @param {string} [options.botId] - Telegram bot ID
  * @param {string} [options.secretToken] - X-Telegram-Bot-Api-Secret-Token for webhook auth
- * @param {Object} [options.gateway] - TelegramGateway for callback acknowledgements (deprecated)
- * @param {Object} [options.webhookParser] - TelegramWebhookParser instance (DDD)
- * @param {Object} [options.webhookHandler] - WebhookHandler instance (DDD)
+ * @param {Object} [options.gateway] - TelegramAdapter for callback acknowledgements
  * @param {Object} [options.logger] - Logger instance
  * @returns {Router}
  */
 export function createNutribotRouter(container, options = {}) {
   const router = Router();
-  const logger = options.logger || console;
-  const secretToken = options.secretToken;
+  const { secretToken, gateway, logger = console } = options;
 
   // Get botId from options, container config, or environment
   const botId =
-    options.botId || container.getConfig?.()?.telegram?.botId || process.env.NUTRIBOT_TELEGRAM_BOT_ID || '6898194425';
+    options.botId || container.getConfig?.()?.telegram?.botId || process.env.NUTRIBOT_TELEGRAM_BOT_ID;
 
-  // Use injected DDD components or create them
-  const webhookParser = options.webhookParser || new TelegramWebhookParser({ botId, logger });
-  const webhookHandler = options.webhookHandler || new WebhookHandler({
-    container,
-    nutribotConfig: container.getConfig?.(),
-    logger
+  // Create webhook components
+  const parser = botId ? new TelegramWebhookParser({ botId, logger }) : null;
+  const inputRouter = new NutribotInputRouter(container, {
+    config: container.getConfig?.(),
+    logger,
   });
 
   // Apply middleware
   router.use(tracingMiddleware());
   router.use(requestLoggerMiddleware({ logBody: false }));
 
-  // Webhook endpoint using DDD pattern
-  router.post(
-    '/webhook',
-    webhookValidationMiddleware('nutribot', { secretToken }),
-    idempotencyMiddleware({ ttlMs: 300000 }),
-    asyncHandler(async (req, res) => {
-      try {
-        // Parse Telegram update into normalized input
-        const input = webhookParser.parse(req.body);
-        if (!input) {
-          // Acknowledge unknown update types gracefully
-          logger.debug?.('nutribot.webhook.unsupported', { updateKeys: Object.keys(req.body) });
-          return res.sendStatus(200);
-        }
-
-        // Route to use cases via handler
-        await webhookHandler.handle(input);
-
-        res.sendStatus(200);
-      } catch (error) {
-        logger.error?.('nutribot.webhook.error', { error: error.message, stack: error.stack });
-        // Always return 200 to Telegram to prevent retry loops
-        res.sendStatus(200);
-      }
-    })
-  );
+  // Webhook endpoint using shared handler
+  if (parser) {
+    router.post(
+      '/webhook',
+      webhookValidationMiddleware('nutribot', { secretToken }),
+      idempotencyMiddleware({ ttlMs: 300000 }),
+      createBotWebhookHandler({
+        botName: 'nutribot',
+        parser,
+        inputRouter,
+        gateway,
+        logger,
+      }),
+    );
+  } else {
+    logger.warn?.('nutribot.webhook.disabled', { reason: 'No botId configured' });
+  }
 
   // Direct input endpoints (programmatic API access)
   router.all('/upc', asyncHandler(directUPCHandler(container, { logger })));
   router.all('/image', asyncHandler(directImageHandler(container, { logger })));
   router.all('/text', asyncHandler(directTextHandler(container, { logger })));
 
-  // Report endpoints (no webhook middleware needed)
+  // Report endpoints
   router.get('/report', asyncHandler(nutribotReportHandler(container, { logger })));
   router.get('/report.png', asyncHandler(nutribotReportImgHandler(container, { logger })));
 

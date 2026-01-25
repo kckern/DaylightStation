@@ -79,7 +79,7 @@ export class WebhookHandler {
     const result = await useCase.execute({
       userId: this.#resolveUserId(input.userId),
       conversationId: input.userId,
-      fileId: input.fileId,
+      voiceData: { fileId: input.fileId },
       messageId: input.messageId
     });
     return { ok: true, result };
@@ -98,7 +98,19 @@ export class WebhookHandler {
 
   async #handleCallback(input) {
     const decoded = decodeCallback(input.callbackData);
-    const action = decoded.a;
+
+    // Support both new format (a key) and legacy format (cmd key with short codes)
+    let action = decoded.a || decoded.cmd;
+
+    // Map legacy short codes to action constants
+    const legacyActionMap = {
+      'a': CallbackActions.ACCEPT_LOG,
+      'r': CallbackActions.REVISE_ITEM,
+      'x': CallbackActions.REJECT_LOG,
+    };
+    if (legacyActionMap[action]) {
+      action = legacyActionMap[action];
+    }
 
     // Acknowledge callback immediately
     const messaging = this.#container.getMessagingGateway();
@@ -125,13 +137,13 @@ export class WebhookHandler {
         const useCase = this.#container.getReviseFoodLog();
         return await useCase.execute({
           userId: this.#resolveUserId(input.userId),
-          logId: decoded.logId,
+          logId: decoded.logId || decoded.id,
           itemId: decoded.itemId,
           messageId: input.messageId
         });
       }
       default:
-        this.#logger.warn?.('webhook.callback.unknown', { action });
+        this.#logger.warn?.('webhook.callback.unknown', { action, decoded });
         return { ok: true, handled: false };
     }
   }

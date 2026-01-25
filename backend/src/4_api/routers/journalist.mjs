@@ -6,20 +6,25 @@
  */
 
 import { Router } from 'express';
+
+// Shared Telegram adapters
+import { TelegramWebhookParser, createBotWebhookHandler } from '../../2_adapters/telegram/index.mjs';
 import { JournalistInputRouter } from '../../2_adapters/journalist/JournalistInputRouter.mjs';
-import { TelegramWebhookParser } from '../../2_adapters/telegram/TelegramWebhookParser.mjs';
+
+// API handlers
 import {
   journalistJournalHandler,
   journalistTriggerHandler,
   handleMorningDebrief,
 } from '../handlers/journalist/index.mjs';
+
+// HTTP middleware
 import {
-  webhookValidationMiddleware as defaultWebhookValidation,
-  idempotencyMiddleware as defaultIdempotency,
+  webhookValidationMiddleware,
+  idempotencyMiddleware,
   asyncHandler,
   errorHandlerMiddleware,
 } from '../../0_infrastructure/http/middleware/index.mjs';
-
 
 /**
  * Create Journalist Express Router
@@ -34,74 +39,24 @@ import {
  */
 export function createJournalistRouter(container, options = {}) {
   const router = Router();
+  const { botId, secretToken, gateway, configService, logger = console } = options;
 
-  const {
-    botId,
-    secretToken,
-    gateway,
-    configService,
-    logger = console,
-  } = options;
-
-  // Create webhook parser and input router
-  const webhookParser = botId ? new TelegramWebhookParser({ botId, logger }) : null;
+  // Create webhook components
+  const parser = botId ? new TelegramWebhookParser({ botId, logger }) : null;
   const inputRouter = new JournalistInputRouter(container, { logger });
 
-  // Webhook endpoint with inline handling (like nutribot)
-  if (webhookParser) {
+  // Webhook endpoint using shared handler
+  if (parser) {
     router.post(
       '/webhook',
-      defaultWebhookValidation('journalist', { secretToken }),
-      defaultIdempotency({ ttlMs: 300000 }),
-      asyncHandler(async (req, res) => {
-        try {
-          // Parse Telegram update into normalized input
-          const parsed = webhookParser.parse(req.body);
-          if (!parsed) {
-            logger.debug?.('journalist.webhook.unsupported', { updateKeys: Object.keys(req.body) });
-            return res.sendStatus(200);
-          }
-
-          // Transform to JournalistInputRouter event shape
-          const event = {
-            type: parsed.type,
-            conversationId: parsed.userId,
-            messageId: parsed.messageId,
-            userId: parsed.metadata?.from?.id?.toString(),
-            payload: {
-              text: parsed.text,
-              data: parsed.callbackData,
-              fileId: parsed.fileId,
-              command: parsed.command,
-              args: parsed.text,  // For commands, text contains args
-              sourceMessageId: parsed.messageId,
-            },
-            metadata: {
-              senderId: parsed.metadata?.from?.id?.toString(),
-              firstName: parsed.metadata?.from?.first_name,
-              username: parsed.metadata?.from?.username,
-              chatType: parsed.metadata?.chatType,
-            },
-          };
-
-          // Acknowledge callback if present
-          if (parsed.type === 'callback' && parsed.callbackId && gateway) {
-            try {
-              await gateway.answerCallback(parsed.callbackId);
-            } catch (e) {
-              logger.warn?.('journalist.callback.ack_failed', { error: e.message });
-            }
-          }
-
-          // Route to use cases
-          await inputRouter.route(event);
-
-          res.sendStatus(200);
-        } catch (error) {
-          logger.error?.('journalist.webhook.error', { error: error.message, stack: error.stack });
-          // Always return 200 to Telegram to prevent retry loops
-          res.sendStatus(200);
-        }
+      webhookValidationMiddleware('journalist', { secretToken }),
+      idempotencyMiddleware({ ttlMs: 300000 }),
+      createBotWebhookHandler({
+        botName: 'journalist',
+        parser,
+        inputRouter,
+        gateway,
+        logger,
       }),
     );
   } else {
@@ -119,7 +74,7 @@ export function createJournalistRouter(container, options = {}) {
     '/morning',
     asyncHandler(async (req, res) => {
       const username = req.query.user || configService?.getHeadOfHousehold?.() || 'kckern';
-      const date = req.query.date || null; // Optional: specific date (YYYY-MM-DD)
+      const date = req.query.date || null;
 
       if (!username) {
         return res.status(400).json({
@@ -128,7 +83,6 @@ export function createJournalistRouter(container, options = {}) {
         });
       }
 
-      // Get UserResolver from container (if available)
       const userResolver = container.getUserResolver?.() || null;
 
       const result = await handleMorningDebrief(

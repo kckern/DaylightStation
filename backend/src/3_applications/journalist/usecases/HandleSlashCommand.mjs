@@ -65,7 +65,7 @@ export class HandleSlashCommand {
           if (this.#generateMorningDebrief && this.#sendMorningDebrief) {
             // Step 1: Generate the debrief
             const debrief = await this.#generateMorningDebrief.execute({
-              username: userId || 'kckern', // TODO: proper user resolution
+              username: userId || 'unknown',
               date: null, // defaults to yesterday
             });
 

@@ -422,6 +422,16 @@ export class NutriBotConfig {
   }
 
   /**
+   * Resolve a conversation ID to a user ID/username
+   * Used by adapters to map platform-specific IDs to system users
+   * @param {string} conversationId - Conversation ID (e.g., 'telegram:123_456')
+   * @returns {string} - Resolved username or original conversationId if not found
+   */
+  getUserIdFromConversation(conversationId) {
+    return this.#resolveUsername(conversationId);
+  }
+
+  /**
    * Get storage path for a specific path type
    * @param {string} pathType - 'nutrilog', 'nutrilist', 'nutricursor', etc.
    * @param {string} userId - Conversation ID or username
