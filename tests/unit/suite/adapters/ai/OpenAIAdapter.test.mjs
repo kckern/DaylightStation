@@ -23,6 +23,9 @@ describe('OpenAIAdapter', () => {
       { apiKey: 'test-api-key', model: 'gpt-4o', maxTokens: 1000 },
       { httpClient: mockHttpClient, logger: mockLogger }
     );
+
+    // Override sleep to speed up tests
+    adapter._setSleepOverride(() => Promise.resolve());
   });
 
   describe('constructor', () => {
@@ -365,6 +368,42 @@ describe('OpenAIAdapter', () => {
         await adapter._testRetryWithBackoff(fn, { baseDelay: 10 });
         expect(adapter.metrics.retryCount).toBe(1);
       });
+    });
+  });
+
+  describe('callApi retry integration', () => {
+    test('retries on fetch failure and succeeds', async () => {
+      const mockResponse = {
+        ok: true,
+        json: () => Promise.resolve({
+          choices: [{ message: { content: 'hello' } }],
+          usage: { total_tokens: 10 }
+        })
+      };
+
+      let callCount = 0;
+      const adapter = new OpenAIAdapter(
+        { apiKey: 'test-key' },
+        {
+          httpClient: {
+            fetch: () => {
+              callCount++;
+              if (callCount === 1) {
+                return Promise.reject(new Error('fetch failed'));
+              }
+              return Promise.resolve(mockResponse);
+            }
+          }
+        }
+      );
+
+      // Override sleep to speed up test
+      adapter._setSleepOverride(() => Promise.resolve());
+
+      const result = await adapter.chat([{ role: 'user', content: 'hi' }]);
+      expect(result).toBe('hello');
+      expect(callCount).toBe(2);
+      expect(adapter.metrics.retryCount).toBe(1);
     });
   });
 });
