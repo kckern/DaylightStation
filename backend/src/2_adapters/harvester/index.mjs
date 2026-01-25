@@ -41,4 +41,5 @@ export { BuxferHarvester } from './finance/BuxferHarvester.mjs';
 
 // Other Harvesters
 export { WeatherHarvester } from './other/WeatherHarvester.mjs';
+export { InfinityHarvester, createInfinityHarvesters } from './other/InfinityHarvester.mjs';
 // Note: YouTube (media download) and Budget (already in finance domain) don't fit IHarvester pattern

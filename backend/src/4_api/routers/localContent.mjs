@@ -148,7 +148,7 @@ export function createLocalContentRouter(config) {
         version,
         verse_id: verseId,
         media_key: `${volume}/${version}/${verseId}`,
-        mediaUrl: `/media/audio/scripture/${volume}/${version}/${verseId}`,
+        mediaUrl: `/api/v1/proxy/local-content/stream/scripture/${volume}/${version}/${verseId}`,
         duration: item.duration,
         verses: item.metadata?.verses || []
       });
@@ -176,15 +176,15 @@ export function createLocalContentRouter(config) {
         return res.status(404).json({ error: 'Hymn not found', number });
       }
 
-      // Legacy parity: use hymn_num, legacy mediaUrl format
+      // Legacy parity: use hymn_num, use new streaming endpoint
       const hymnNumber = item.metadata.number || parseInt(number, 10);
 
-      // Look up actual media file for correct URL and duration (legacy behavior)
-      // Try _ldsgc subdirectory first, then root hymn directory
-      let mediaUrl = null;
+      // Use the new streaming endpoint - it finds the file by prefix
+      const mediaUrl = `/api/v1/proxy/local-content/stream/hymn/${number}`;
       let duration = item.duration || item.metadata.duration || 0;
 
-      if (mediaBasePath) {
+      // Get duration from media file if not already set
+      if (!duration && mediaBasePath) {
         const preferences = ['_ldsgc', ''];
         for (const pref of preferences) {
           const searchDir = pref
@@ -192,18 +192,11 @@ export function createLocalContentRouter(config) {
             : path.join(mediaBasePath, 'audio', 'songs', 'hymn');
           const mediaFilePath = findMediaFileByPrefix(searchDir, hymnNumber);
           if (mediaFilePath) {
-            const subDir = pref ? `${pref}/` : '';
-            const filename = path.basename(mediaFilePath, path.extname(mediaFilePath));
-            mediaUrl = `/media/audio/songs/hymn/${subDir}${filename}`;
-
-            // Get duration from media file if not already set
-            if (!duration) {
-              try {
-                const metadata = await parseFile(mediaFilePath, { native: true });
-                duration = parseInt(metadata?.format?.duration) || 0;
-              } catch (e) {
-                // Ignore metadata parsing errors
-              }
+            try {
+              const metadata = await parseFile(mediaFilePath, { native: true });
+              duration = parseInt(metadata?.format?.duration) || 0;
+            } catch (e) {
+              // Ignore metadata parsing errors
             }
             break;
           }
@@ -246,25 +239,20 @@ export function createLocalContentRouter(config) {
       // Legacy parity: use song_number, legacy mediaUrl format
       const songNumber = item.metadata.number || parseInt(number, 10);
 
-      // Look up actual media file for correct URL and duration (legacy behavior)
-      let mediaUrl = null;
+      // Use the new streaming endpoint - it finds the file by prefix
+      const mediaUrl = `/api/v1/proxy/local-content/stream/primary/${number}`;
       let duration = item.duration || item.metadata.duration || 0;
 
-      if (mediaBasePath) {
+      // Get duration from media file if not already set
+      if (!duration && mediaBasePath) {
         const searchDir = path.join(mediaBasePath, 'audio', 'songs', 'primary');
         const mediaFilePath = findMediaFileByPrefix(searchDir, songNumber);
         if (mediaFilePath) {
-          const filename = path.basename(mediaFilePath, path.extname(mediaFilePath));
-          mediaUrl = `/media/audio/songs/primary/${filename}`;
-
-          // Get duration from media file if not already set
-          if (!duration) {
-            try {
-              const metadata = await parseFile(mediaFilePath, { native: true });
-              duration = parseInt(metadata?.format?.duration) || 0;
-            } catch (e) {
-              // Ignore metadata parsing errors
-            }
+          try {
+            const metadata = await parseFile(mediaFilePath, { native: true });
+            duration = parseInt(metadata?.format?.duration) || 0;
+          } catch (e) {
+            // Ignore metadata parsing errors
           }
         }
       }
