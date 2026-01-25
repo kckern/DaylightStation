@@ -1,0 +1,7 @@
+# Test chatbot identity mappings
+identity_mappings:
+  telegram:
+    "111111111": _alice
+    "222222222": _bob
+  discord:
+    "333333333": _alice

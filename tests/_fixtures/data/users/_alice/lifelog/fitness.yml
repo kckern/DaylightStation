@@ -1,0 +1,11 @@
+sessions:
+  - date: "2026-01-01"
+    duration_minutes: 30
+    avg_hr: 145
+    max_hr: 175
+    calories: 320
+  - date: "2026-01-02"
+    duration_minutes: 45
+    avg_hr: 138
+    max_hr: 168
+    calories: 410

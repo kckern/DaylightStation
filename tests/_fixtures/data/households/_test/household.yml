@@ -1,0 +1,7 @@
+id: _test
+name: Test Household
+head: _alice
+members:
+  - _alice
+  - _bob
+  - _charlie

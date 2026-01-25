@@ -1,0 +1,6 @@
+id: _charlie
+name: Charlie Test
+email: charlie@test.local
+fitness:
+  max_hr: 190
+  resting_hr: 65

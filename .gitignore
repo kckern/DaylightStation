@@ -5,8 +5,9 @@ frontend/dist
 frontend/build
 backend/node_modules
 *.yml
-!tests/fixtures/**/*.yml
+!tests/_fixtures/**/*.yml
 data*
+!tests/_fixtures/data/
 node_modules/*
 *.sh
 docker.local.sh

@@ -1,0 +1,31 @@
+devices:
+  heart_rate:
+    "12345": _alice
+    "12346": _bob
+    "12347": _charlie
+  cadence:
+    "54321": equipment_bike
+
+device_colors:
+  heart_rate:
+    "12345": "#ff6b6b"
+    "12346": "#4ecdc4"
+    "12347": "#45b7d1"
+
+users:
+  primary:
+    - id: _alice
+      name: Alice Test
+      hr: 12345
+    - id: _bob
+      name: Bob Test
+      hr: 12346
+  secondary:
+    - id: _charlie
+      name: Charlie Test
+      hr: 12347
+
+equipment:
+  - id: equipment_bike
+    name: Test Bike
+    type: bike
