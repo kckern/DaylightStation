@@ -1345,9 +1345,20 @@ export function createNutribotServices(config) {
     googleImageGateway,
     conversationStateStore,
     reportRenderer,
-    nutribotConfig = {},
+    nutribotConfig: rawNutribotConfig = {},
     logger = console
   } = config;
+
+  // Ensure nutribotConfig has required methods (getUserGoals, getUserTimezone)
+  // If it's a plain object from configService, wrap with default method implementations
+  const defaultGoals = { calories: 2000, calories_min: 1600, calories_max: 2000, protein: 150, carbs: 200, fat: 65, fiber: 30, sodium: 2300 };
+  const nutribotConfig = {
+    ...rawNutribotConfig,
+    getUserGoals: rawNutribotConfig?.getUserGoals?.bind(rawNutribotConfig) || (() => defaultGoals),
+    getUserTimezone: rawNutribotConfig?.getUserTimezone?.bind(rawNutribotConfig) || (() => 'America/Los_Angeles'),
+    getDefaultTimezone: rawNutribotConfig?.getDefaultTimezone?.bind(rawNutribotConfig) || (() => 'America/Los_Angeles'),
+    getThresholds: rawNutribotConfig?.getThresholds?.bind(rawNutribotConfig) || (() => ({ daily: 2000 })),
+  };
 
   // Food log store (YAML persistence)
   const foodLogStore = new YamlFoodLogStore({
