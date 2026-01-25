@@ -52,17 +52,25 @@ export class LogFoodFromImage {
    */
   #getMessaging(responseContext, conversationId) {
     if (responseContext) {
+      // If responseContext already has getFileUrl, use it directly
+      // Don't spread - it breaks private field access (#adapter)
+      if (responseContext.getFileUrl) {
+        return responseContext;
+      }
+      // Otherwise, wrap with bound getFileUrl from gateway
       return {
-        ...responseContext,
-        // Also expose getFileUrl if available
-        getFileUrl: responseContext.getFileUrl || this.#messagingGateway?.getFileUrl?.bind(this.#messagingGateway),
+        sendMessage: (text, options) => responseContext.sendMessage(text, options),
+        sendPhoto: (src, options) => responseContext.sendPhoto(src, options),
+        updateMessage: (msgId, updates) => responseContext.updateMessage(msgId, updates),
+        deleteMessage: (msgId) => responseContext.deleteMessage(msgId),
+        getFileUrl: this.#messagingGateway?.getFileUrl?.bind(this.#messagingGateway),
       };
     }
     return {
-      sendMessage: (text, options) => messaging.sendMessage( text, options),
-      sendPhoto: (src, options) => messaging.sendPhoto( src, options),
-      updateMessage: (msgId, updates) => messaging.updateMessage( msgId, updates),
-      deleteMessage: (msgId) => messaging.deleteMessage( msgId),
+      sendMessage: (text, options) => this.#messagingGateway.sendMessage(conversationId, text, options),
+      sendPhoto: (src, options) => this.#messagingGateway.sendPhoto(conversationId, src, options),
+      updateMessage: (msgId, updates) => this.#messagingGateway.updateMessage(conversationId, msgId, updates),
+      deleteMessage: (msgId) => this.#messagingGateway.deleteMessage(conversationId, msgId),
       getFileUrl: this.#messagingGateway?.getFileUrl?.bind(this.#messagingGateway),
     };
   }
@@ -169,8 +177,7 @@ export class LogFoodFromImage {
       const caption = this.#formatFoodCaption(foodItems, nutriLog.date || localDate);
       const buttons = this.#buildActionButtons(nutriLog.id);
 
-      const { messageId: photoMsgId } = await messaging.sendPhoto( imageData.fileId || imageUrl, {
-        caption,
+      const { messageId: photoMsgId } = await messaging.sendPhoto(imageData.fileId || imageUrl, caption, {
         choices: buttons,
         inline: true,
       });

@@ -174,7 +174,8 @@ export class WebhookHandler {
         const useCase = this.#container.getGenerateDailyReport();
         return await useCase.execute({
           userId: input.userId,
-          conversationId: input.conversationId || input.userId
+          conversationId: input.conversationId || input.userId,
+          autoAcceptPending: true,
         });
       }
       default:

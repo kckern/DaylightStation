@@ -42,8 +42,8 @@ export class ReviseFoodLog {
       return responseContext;
     }
     return {
-      sendMessage: (text, options) => messaging.sendMessage( text, options),
-      updateMessage: (msgId, updates) => messaging.updateMessage( msgId, updates),
+      sendMessage: (text, options) => this.#messagingGateway.sendMessage(conversationId, text, options),
+      updateMessage: (msgId, updates) => this.#messagingGateway.updateMessage(conversationId, msgId, updates),
     };
   }
 

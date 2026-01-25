@@ -28,14 +28,21 @@ export class LogFoodFromVoice {
    */
   #getMessaging(responseContext, conversationId) {
     if (responseContext) {
+      // If responseContext already has transcribeVoice, use it directly
+      // Don't spread - it breaks private field access (#adapter)
+      if (responseContext.transcribeVoice) {
+        return responseContext;
+      }
+      // Otherwise, wrap with bound transcribeVoice from gateway
       return {
-        ...responseContext,
-        transcribeVoice: responseContext.transcribeVoice || this.#messagingGateway?.transcribeVoice?.bind(this.#messagingGateway),
+        sendMessage: (text, options) => responseContext.sendMessage(text, options),
+        deleteMessage: (msgId) => responseContext.deleteMessage(msgId),
+        transcribeVoice: this.#messagingGateway?.transcribeVoice?.bind(this.#messagingGateway),
       };
     }
     return {
-      sendMessage: (text, options) => messaging.sendMessage( text, options),
-      deleteMessage: (msgId) => messaging.deleteMessage( msgId),
+      sendMessage: (text, options) => this.#messagingGateway.sendMessage(conversationId, text, options),
+      deleteMessage: (msgId) => this.#messagingGateway.deleteMessage(conversationId, msgId),
       transcribeVoice: this.#messagingGateway?.transcribeVoice?.bind(this.#messagingGateway),
     };
   }
