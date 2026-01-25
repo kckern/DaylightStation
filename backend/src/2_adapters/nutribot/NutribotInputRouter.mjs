@@ -128,6 +128,27 @@ export class NutribotInputRouter extends BaseInputRouter {
           responseContext,
         });
       }
+      case 'ra': {
+        // Report Adjust - start adjustment flow
+        const useCase = this.container.getStartAdjustmentFlow();
+        return await useCase.execute({
+          userId: this.#resolveUserId(event),
+          conversationId: event.conversationId,
+          messageId: event.messageId,
+          responseContext,
+        });
+      }
+      case 'rx': {
+        // Report Accept/Close - just remove the buttons
+        if (responseContext?.updateMessage) {
+          try {
+            await responseContext.updateMessage(event.messageId, { choices: [] });
+          } catch (e) {
+            this.logger.warn?.('nutribot.callback.rx.updateFailed', { error: e.message });
+          }
+        }
+        return { ok: true, handled: true };
+      }
       default:
         this.logger.warn?.('nutribot.callback.unknown', { action, decoded });
         return { ok: true, handled: false };
