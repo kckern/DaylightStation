@@ -206,8 +206,7 @@ export class GenerateDailyReport {
       // 11. Send report
       let messageId;
       if (pngPath) {
-        const result = await messaging.sendPhoto( pngPath, {
-          caption,
+        const result = await messaging.sendPhoto(pngPath, caption, {
           choices: buttons,
           inline: true,
         });
