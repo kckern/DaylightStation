@@ -14,7 +14,10 @@ const logger = createLogger({ app: 'nutribot' });
 
 // Path to icons/food directory - resolved at runtime
 const getIconsDir = () => {
-  const mediaBase = process.env.path?.media || process.env.MEDIA_PATH || '/data/media';
+  const mediaBase = global.__daylightPaths?.media
+    || process.env.DAYLIGHT_MEDIA_PATH
+    || process.env.MEDIA_PATH
+    || '/data/media';
   return join(mediaBase, 'img/icons/food');
 };
 

@@ -27,46 +27,31 @@ const ARCHIVE_RETENTION_DAYS = 30;
 const NOOM_EMOJI = { green: '🟢', yellow: '🟡', orange: '🟠' };
 
 export class YamlNutriListStore extends INutriListStore {
-  #dataRoot;
+  #userDataService;
   #logger;
 
   /**
    * @param {Object} options
-   * @param {string} options.dataRoot - Base data directory
+   * @param {Object} options.userDataService - UserDataService instance
    * @param {Object} [options.logger] - Logger instance
    */
   constructor(options) {
     super();
-    if (!options?.dataRoot) {
-      throw new Error('YamlNutriListStore requires dataRoot');
+    if (!options?.userDataService) {
+      throw new Error('YamlNutriListStore requires userDataService');
     }
-    this.#dataRoot = options.dataRoot;
+    this.#userDataService = options.userDataService;
     this.#logger = options.logger || console;
   }
 
   // ==================== Path Helpers ====================
 
   #getPath(userId) {
-    return path.join(
-      this.#dataRoot,
-      'households',
-      userId,
-      'apps',
-      'nutrition',
-      'nutrilist.yml'
-    );
+    return this.#userDataService.getUserPath(userId, 'lifelog/nutrition/nutrilist');
   }
 
   #getArchiveDir(userId) {
-    return path.join(
-      this.#dataRoot,
-      'households',
-      userId,
-      'apps',
-      'nutrition',
-      'archives',
-      'nutrilist'
-    );
+    return this.#userDataService.getUserPath(userId, 'lifelog/nutrition/archives/nutrilist');
   }
 
   #getArchivePath(userId, yearMonth) {
@@ -74,14 +59,7 @@ export class YamlNutriListStore extends INutriListStore {
   }
 
   #getNutridayPath(userId) {
-    return path.join(
-      this.#dataRoot,
-      'households',
-      userId,
-      'apps',
-      'nutrition',
-      'nutriday.yml'
-    );
+    return this.#userDataService.getUserPath(userId, 'lifelog/nutrition/nutriday');
   }
 
   // ==================== File I/O ====================

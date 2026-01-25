@@ -147,10 +147,19 @@ class UserDataService {
   getUserDataPath(username, ...segments) {
     const userDir = this.getUserDir(username);
     if (!userDir) return null;
-    
+
     // Handle segments that may include nested paths
     const flatSegments = segments.flatMap(s => s.split('/').filter(Boolean));
     return path.join(userDir, ...flatSegments);
+  }
+
+  /**
+   * Alias for getUserDataPath (used by persistence adapters)
+   * @param {string} username - User identifier
+   * @param {string} relativePath - Relative path within user directory
+   */
+  getUserPath(username, relativePath) {
+    return this.getUserDataPath(username, relativePath);
   }
 
   /**

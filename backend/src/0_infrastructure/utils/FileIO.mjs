@@ -315,6 +315,29 @@ export function writeBinary(filePath, buffer) {
 }
 
 /**
+ * Read binary data from a file
+ * @param {string} filePath - Full file path
+ * @returns {Buffer|null} File content as Buffer, or null if doesn't exist
+ */
+export function readBinary(filePath) {
+  try {
+    if (!fs.existsSync(filePath)) return null;
+    return fs.readFileSync(filePath);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Get the basename of a file path
+ * @param {string} filePath - Full file path
+ * @returns {string} Filename without directory
+ */
+export function getBasename(filePath) {
+  return path.basename(filePath);
+}
+
+/**
  * Check if a path is a file (not directory)
  * @param {string} filePath - Path to check
  * @returns {boolean}
