@@ -31,10 +31,16 @@ export function createDevProxy({ logger, devHost } = {}) {
       return res.status(500).json({ error: 'LOCAL_DEV_HOST not configured' });
     }
 
-    const targetUrl = `http://${targetHost}${req.originalUrl}`;
-    logger?.debug?.('devProxy.forwarding', {
+    // Restore /api/v1 prefix if it was stripped by index.js routing
+    let targetPath = req.originalUrl;
+    if (!targetPath.startsWith('/api/v1') && !targetPath.startsWith('/dev')) {
+      targetPath = `/api/v1${targetPath}`;
+    }
+
+    const targetUrl = `http://${targetHost}${targetPath}`;
+    logger?.info?.('devProxy.forwarding', {
       method: req.method,
-      url: req.originalUrl,
+      originalUrl: req.originalUrl,
       targetUrl
     });
 
