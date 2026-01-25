@@ -231,4 +231,15 @@ describe('OpenAIAdapter', () => {
       expect(adapter.isConfigured()).toBe(true);
     });
   });
+
+  describe('retry helpers', () => {
+    test('sleep delays for specified milliseconds', async () => {
+      const testAdapter = new OpenAIAdapter({ apiKey: 'test-key' });
+      const start = Date.now();
+      await testAdapter._testSleep(50);
+      const elapsed = Date.now() - start;
+      expect(elapsed).toBeGreaterThanOrEqual(45);
+      expect(elapsed).toBeLessThan(100);
+    });
+  });
 });
