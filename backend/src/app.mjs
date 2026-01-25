@@ -88,6 +88,8 @@ import { createYouTubeJobHandler } from './3_applications/media/YouTubeJobHandle
 // Harvest domain (data collection)
 import { createHarvestRouter } from './4_api/routers/harvest.mjs';
 
+// FileIO utilities for image saving
+import { saveImage as saveImageToFile } from './0_infrastructure/utils/FileIO.mjs';
 // API versioning
 import { createApiV1Router } from './4_api/routers/apiV1.mjs';
 import { createItemRouter } from './4_api/routers/item.mjs';
@@ -392,7 +394,19 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Harvester application services
   // Create shared IO functions for lifelog persistence
   const userSaveFile = (username, service, data) => userDataService.saveLifelogData(username, service, data);
-  const harvesterIo = { userLoadFile, userSaveFile };
+
+  // Image saving for Infinity harvester (mirrors legacy io.saveImage behavior)
+  // Images are saved to media/img/{folder}/{uid}.jpg with 24-hour caching
+  const imgBasePath = configService.getPath('img') || `${mediaBasePath}/img`;
+  const saveImage = (url, folder, uid) => saveImageToFile(url, imgBasePath, folder, uid);
+
+  // Household-level file saving for Infinity harvester state
+  const householdSaveFile = (relativePath, data) => {
+    // Save to households/default/state/{path} - matches legacy saveFile('state/lists')
+    return userDataService.saveHouseholdData(householdId, relativePath, data);
+  };
+
+  const harvesterIo = { userLoadFile, userSaveFile, saveImage, householdSaveFile };
 
   // Note: nutribotAiGateway is created later; pass null for now
   // (shopping extraction will use httpClient directly if AI gateway unavailable)
@@ -428,7 +442,6 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // Static assets router
-  const imgBasePath = configService.getPath('img') || `${mediaBasePath}/img`;
   v1Routers.static = createStaticApiRouter({
     imgBasePath,
     dataBasePath,

@@ -377,6 +377,39 @@ class UserDataService {
     return true;
   }
 
+  /**
+   * Get a direct path within a household directory (no 'shared/' prefix)
+   * Used for legacy compatibility with saveFile('state/lists') pattern
+   * @param {string} householdId - Household identifier
+   * @param {...string} segments - Path segments (e.g., 'state', 'lists')
+   * @returns {string|null}
+   */
+  getHouseholdDataPath(householdId, ...segments) {
+    const householdDir = this.getHouseholdDir(householdId);
+    if (!householdDir) return null;
+    const flatSegments = segments.flatMap(s => s.split('/').filter(Boolean));
+    return path.join(householdDir, ...flatSegments);
+  }
+
+  /**
+   * Save data file directly to household directory (matches legacy io.householdSaveFile)
+   * Used for Infinity harvester state files like 'state/lists.yml'
+   * @param {string} householdId - Household identifier
+   * @param {string} dataPath - Relative path within household (e.g., 'state/lists')
+   * @param {object} data - Data to write
+   * @returns {boolean}
+   */
+  saveHouseholdData(householdId, dataPath, data) {
+    let fullPath = this.getHouseholdDataPath(householdId, dataPath);
+    if (!fullPath) return false;
+
+    if (!fullPath.match(/\.(ya?ml|json)$/)) {
+      fullPath += '.yml';
+    }
+
+    return writeYaml(fullPath, data);
+  }
+
   // ============================================================
   // USER DATA READ/WRITE
   // ============================================================
