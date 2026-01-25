@@ -84,6 +84,33 @@ export class OpenAIAdapter {
   }
 
   /**
+   * Calculate delay before retry
+   * @private
+   */
+  #calculateDelay(error, attempt, baseDelay) {
+    // Use retry-after for rate limits
+    if (error.code === 'RATE_LIMIT' && error.retryAfter) {
+      return error.retryAfter * 1000;
+    }
+
+    // Exponential backoff: baseDelay * 2^(attempt-1)
+    const exponentialDelay = baseDelay * Math.pow(2, attempt - 1);
+
+    // Add jitter ±10%
+    const jitter = exponentialDelay * 0.1 * (Math.random() * 2 - 1);
+
+    return Math.floor(exponentialDelay + jitter);
+  }
+
+  /**
+   * Expose calculateDelay for testing
+   * @private
+   */
+  _testCalculateDelay(error, attempt, baseDelay) {
+    return this.#calculateDelay(error, attempt, baseDelay);
+  }
+
+  /**
    * Make an API request
    * @private
    */

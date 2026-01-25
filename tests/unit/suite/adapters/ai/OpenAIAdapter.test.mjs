@@ -283,5 +283,39 @@ describe('OpenAIAdapter', () => {
         expect(adapter._testIsRetryable(error)).toBe(false);
       });
     });
+
+    describe('calculateDelay', () => {
+      test('uses retry-after for rate limit errors', () => {
+        const error = new Error('rate limited');
+        error.code = 'RATE_LIMIT';
+        error.retryAfter = 30;
+        const delay = adapter._testCalculateDelay(error, 1, 1000);
+        expect(delay).toBe(30000);
+      });
+
+      test('returns exponential backoff for attempt 1', () => {
+        const error = new Error('fetch failed');
+        const delay = adapter._testCalculateDelay(error, 1, 1000);
+        // 1000ms base * 2^0 = 1000ms, ±10% jitter = 900-1100
+        expect(delay).toBeGreaterThanOrEqual(900);
+        expect(delay).toBeLessThanOrEqual(1100);
+      });
+
+      test('returns exponential backoff for attempt 2', () => {
+        const error = new Error('fetch failed');
+        const delay = adapter._testCalculateDelay(error, 2, 1000);
+        // 1000ms base * 2^1 = 2000ms, ±10% jitter = 1800-2200
+        expect(delay).toBeGreaterThanOrEqual(1800);
+        expect(delay).toBeLessThanOrEqual(2200);
+      });
+
+      test('returns exponential backoff for attempt 3', () => {
+        const error = new Error('fetch failed');
+        const delay = adapter._testCalculateDelay(error, 3, 1000);
+        // 1000ms base * 2^2 = 4000ms, ±10% jitter = 3600-4400
+        expect(delay).toBeGreaterThanOrEqual(3600);
+        expect(delay).toBeLessThanOrEqual(4400);
+      });
+    });
   });
 });
