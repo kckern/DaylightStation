@@ -133,7 +133,9 @@ export class LogFoodFromText {
           if (existingMessageId && statusMsgId !== existingMessageId) {
             try {
               await messaging.deleteMessage(statusMsgId);
-            } catch (e) {}
+            } catch (e) {
+              this.#logger.debug?.('logText.deleteStatus.failed', { error: e.message });
+            }
           }
           return fallbackResult;
         }
