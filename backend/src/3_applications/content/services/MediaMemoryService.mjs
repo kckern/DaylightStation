@@ -7,14 +7,14 @@
  * Used by both the Plex library and media router.
  *
  * Note: sanitizeForYAML and sanitizeObjectForYAML have been migrated to
- * backend/src/0_infrastructure/utils/yamlSanitizer.mjs
+ * backend/src/0_system/utils/yamlSanitizer.mjs
  */
 
 import path from 'path';
 import fs from 'fs';
-import { configService } from '../../../0_infrastructure/config/index.mjs';
-import { userDataService } from '../../../0_infrastructure/config/UserDataService.mjs';
-import { slugify } from '../../../0_infrastructure/utils/strings.mjs';
+import { configService } from '../../../0_system/config/index.mjs';
+import { userDataService } from '../../../0_system/config/UserDataService.mjs';
+import { slugify } from '../../../0_system/utils/strings.mjs';
 
 /**
  * Get the relative path for media memory storage
@@ -102,7 +102,7 @@ export const getMediaMemoryFiles = (householdId = null) => {
 export {
   sanitizeForYAML,
   sanitizeObjectForYAML
-} from '../../../0_infrastructure/utils/yamlSanitizer.mjs';
+} from '../../../0_system/utils/yamlSanitizer.mjs';
 
 export default {
   getMediaMemoryPath,

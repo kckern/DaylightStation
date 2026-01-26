@@ -6,7 +6,7 @@
  */
 
 import { MessageQueue } from '../../../1_domains/journalist/entities/MessageQueue.mjs';
-import { nowTs24 } from '../../../0_infrastructure/utils/time.mjs';
+import { nowTs24 } from '../../../0_system/utils/time.mjs';
 
 /**
  * Send quiz question use case
