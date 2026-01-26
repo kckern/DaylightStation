@@ -77,9 +77,10 @@ export class ConversationService {
       throw new Error(`Conversation not found: ${conversationId}`);
     }
 
+    const timestamp = messageData.timestamp || nowTs24();
     const message = messageData instanceof Message
       ? messageData
-      : new Message({ ...messageData, conversationId });
+      : new Message({ ...messageData, conversationId, timestamp });
 
     conversation.addMessage(message.toJSON());
     await this.conversationStore.save(conversation);

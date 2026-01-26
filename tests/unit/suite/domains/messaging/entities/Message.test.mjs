@@ -2,6 +2,8 @@
 import { Message, MESSAGE_TYPES } from '#backend/src/1_domains/messaging/entities/Message.mjs';
 
 describe('Message', () => {
+  const testTimestamp = '2026-01-11T12:00:00.000Z';
+
   describe('constructor', () => {
     test('creates message with required fields', () => {
       const msg = new Message({
@@ -9,7 +11,8 @@ describe('Message', () => {
         conversationId: 'conv-456',
         senderId: 'user-1',
         recipientId: 'user-2',
-        content: 'Hello world'
+        content: 'Hello world',
+        timestamp: testTimestamp
       });
 
       expect(msg.id).toBe('msg-123');
@@ -20,53 +23,48 @@ describe('Message', () => {
       expect(msg.type).toBe('text');
     });
 
-    test('defaults timestamp to now', () => {
-      const before = new Date().toISOString();
-      const msg = new Message({ id: '1', content: 'test' });
-      const after = new Date().toISOString();
-
-      expect(msg.timestamp >= before).toBe(true);
-      expect(msg.timestamp <= after).toBe(true);
+    test('throws if timestamp not provided', () => {
+      expect(() => new Message({ id: '1', content: 'test' })).toThrow('timestamp required');
     });
 
     test('defaults metadata to empty object', () => {
-      const msg = new Message({ id: '1', content: 'test' });
+      const msg = new Message({ id: '1', content: 'test', timestamp: testTimestamp });
       expect(msg.metadata).toEqual({});
     });
   });
 
   describe('type checks', () => {
     test('isText returns true for text messages', () => {
-      const msg = new Message({ id: '1', type: 'text', content: 'hello' });
+      const msg = new Message({ id: '1', type: 'text', content: 'hello', timestamp: testTimestamp });
       expect(msg.isText()).toBe(true);
       expect(msg.isVoice()).toBe(false);
     });
 
     test('isVoice returns true for voice messages', () => {
-      const msg = new Message({ id: '1', type: 'voice', content: { fileId: 'f1' } });
+      const msg = new Message({ id: '1', type: 'voice', content: { fileId: 'f1' }, timestamp: testTimestamp });
       expect(msg.isVoice()).toBe(true);
       expect(msg.isText()).toBe(false);
     });
 
     test('isImage returns true for image messages', () => {
-      const msg = new Message({ id: '1', type: 'image', content: { fileId: 'f1' } });
+      const msg = new Message({ id: '1', type: 'image', content: { fileId: 'f1' }, timestamp: testTimestamp });
       expect(msg.isImage()).toBe(true);
     });
 
     test('isCallback returns true for callback messages', () => {
-      const msg = new Message({ id: '1', type: 'callback', content: 'button_1' });
+      const msg = new Message({ id: '1', type: 'callback', content: 'button_1', timestamp: testTimestamp });
       expect(msg.isCallback()).toBe(true);
     });
   });
 
   describe('getText', () => {
     test('returns text content for text messages', () => {
-      const msg = new Message({ id: '1', type: 'text', content: 'hello' });
+      const msg = new Message({ id: '1', type: 'text', content: 'hello', timestamp: testTimestamp });
       expect(msg.getText()).toBe('hello');
     });
 
     test('returns callback data for callback messages', () => {
-      const msg = new Message({ id: '1', type: 'callback', content: 'option_1' });
+      const msg = new Message({ id: '1', type: 'callback', content: 'option_1', timestamp: testTimestamp });
       expect(msg.getText()).toBe('option_1');
     });
 
@@ -75,7 +73,8 @@ describe('Message', () => {
         id: '1',
         type: 'image',
         content: { fileId: 'f1' },
-        metadata: { caption: 'Nice photo' }
+        metadata: { caption: 'Nice photo' },
+        timestamp: testTimestamp
       });
       expect(msg.getText()).toBe('Nice photo');
     });
@@ -84,7 +83,8 @@ describe('Message', () => {
       const msg = new Message({
         id: '1',
         type: 'text',
-        content: { text: 'extracted text' }
+        content: { text: 'extracted text' },
+        timestamp: testTimestamp
       });
       expect(msg.getText()).toBe('extracted text');
     });
@@ -107,7 +107,8 @@ describe('Message', () => {
     });
 
     test('isRecent returns true for recent messages', () => {
-      const msg = new Message({ id: '1', content: 'test' });
+      const recentTime = new Date().toISOString();
+      const msg = new Message({ id: '1', content: 'test', timestamp: recentTime });
       expect(msg.isRecent(5)).toBe(true);
     });
 
@@ -120,12 +121,12 @@ describe('Message', () => {
 
   describe('isFrom', () => {
     test('returns true when sender matches', () => {
-      const msg = new Message({ id: '1', senderId: 'user-1', content: 'test' });
+      const msg = new Message({ id: '1', senderId: 'user-1', content: 'test', timestamp: testTimestamp });
       expect(msg.isFrom('user-1')).toBe(true);
     });
 
     test('returns false when sender does not match', () => {
-      const msg = new Message({ id: '1', senderId: 'user-1', content: 'test' });
+      const msg = new Message({ id: '1', senderId: 'user-1', content: 'test', timestamp: testTimestamp });
       expect(msg.isFrom('user-2')).toBe(false);
     });
   });
@@ -159,7 +160,8 @@ describe('Message', () => {
         conversationId: 'conv-1',
         senderId: 'user-1',
         recipientId: 'user-2',
-        text: 'Hello there'
+        text: 'Hello there',
+        timestamp: testTimestamp
       });
 
       expect(msg.type).toBe('text');
@@ -173,7 +175,8 @@ describe('Message', () => {
         senderId: 'user-1',
         recipientId: 'user-2',
         fileId: 'file-123',
-        duration: 5
+        duration: 5,
+        timestamp: testTimestamp
       });
 
       expect(msg.type).toBe('voice');
@@ -186,7 +189,8 @@ describe('Message', () => {
         senderId: 'user-1',
         recipientId: 'user-2',
         fileId: 'file-123',
-        caption: 'Nice photo'
+        caption: 'Nice photo',
+        timestamp: testTimestamp
       });
 
       expect(msg.type).toBe('image');
@@ -199,7 +203,8 @@ describe('Message', () => {
         conversationId: 'conv-1',
         senderId: 'user-1',
         recipientId: 'user-2',
-        callbackData: 'option_selected'
+        callbackData: 'option_selected',
+        timestamp: testTimestamp
       });
 
       expect(msg.type).toBe('callback');

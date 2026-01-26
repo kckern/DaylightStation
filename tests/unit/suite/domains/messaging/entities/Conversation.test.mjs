@@ -3,6 +3,7 @@ import { Conversation } from '#backend/src/1_domains/messaging/entities/Conversa
 
 describe('Conversation', () => {
   let conversation;
+  const testTimestamp = '2026-01-11T12:00:00.000Z';
 
   beforeEach(() => {
     conversation = new Conversation({
@@ -23,26 +24,34 @@ describe('Conversation', () => {
     test('adds message with timestamp', () => {
       conversation.addMessage({
         senderId: 'john',
-        text: 'Hello!'
+        text: 'Hello!',
+        timestamp: testTimestamp
       });
       expect(conversation.messages).toHaveLength(1);
-      expect(conversation.lastMessageAt).toBeDefined();
+      expect(conversation.lastMessageAt).toBe(testTimestamp);
+    });
+
+    test('throws if timestamp not provided', () => {
+      expect(() => conversation.addMessage({
+        senderId: 'john',
+        text: 'Hello!'
+      })).toThrow('message.timestamp required');
     });
   });
 
   describe('getMessageCount', () => {
     test('returns message count', () => {
-      conversation.addMessage({ senderId: 'john', text: 'Hi' });
-      conversation.addMessage({ senderId: 'jane', text: 'Hello' });
+      conversation.addMessage({ senderId: 'john', text: 'Hi', timestamp: testTimestamp });
+      conversation.addMessage({ senderId: 'jane', text: 'Hello', timestamp: testTimestamp });
       expect(conversation.getMessageCount()).toBe(2);
     });
   });
 
   describe('getMessagesByParticipant', () => {
     test('filters by senderId', () => {
-      conversation.addMessage({ senderId: 'john', text: 'Hi' });
-      conversation.addMessage({ senderId: 'jane', text: 'Hello' });
-      conversation.addMessage({ senderId: 'john', text: 'How are you?' });
+      conversation.addMessage({ senderId: 'john', text: 'Hi', timestamp: testTimestamp });
+      conversation.addMessage({ senderId: 'jane', text: 'Hello', timestamp: testTimestamp });
+      conversation.addMessage({ senderId: 'john', text: 'How are you?', timestamp: testTimestamp });
 
       const johnMessages = conversation.getMessagesByParticipant('john');
       expect(johnMessages).toHaveLength(2);
@@ -51,8 +60,8 @@ describe('Conversation', () => {
 
   describe('getLatestMessage', () => {
     test('returns last message', () => {
-      conversation.addMessage({ senderId: 'john', text: 'First' });
-      conversation.addMessage({ senderId: 'jane', text: 'Last' });
+      conversation.addMessage({ senderId: 'john', text: 'First', timestamp: testTimestamp });
+      conversation.addMessage({ senderId: 'jane', text: 'Last', timestamp: testTimestamp });
       expect(conversation.getLatestMessage().text).toBe('Last');
     });
 
@@ -85,7 +94,7 @@ describe('Conversation', () => {
 
   describe('toJSON/fromJSON', () => {
     test('round-trips conversation data', () => {
-      conversation.addMessage({ senderId: 'john', text: 'Test' });
+      conversation.addMessage({ senderId: 'john', text: 'Test', timestamp: testTimestamp });
       const json = conversation.toJSON();
       const restored = Conversation.fromJSON(json);
       expect(restored.id).toBe(conversation.id);
