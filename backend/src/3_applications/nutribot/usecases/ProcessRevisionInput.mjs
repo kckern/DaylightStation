@@ -95,7 +95,7 @@ export class ProcessRevisionInput {
 
       // 6. Update log with revised items
       if (this.#foodLogStore) {
-        await this.#foodLogStore.updateItems(logUuid, revisedItems);
+        await this.#foodLogStore.updateItems(userId, logUuid, revisedItems);
       }
 
       // 7. Update state back to confirmation

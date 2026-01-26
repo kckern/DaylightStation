@@ -279,12 +279,12 @@ export class HandleDebriefResponse {
     );
 
     // Delete the debrief message from history if repository exists
-    if (this.#journalEntryRepository) {
+    if (this.#journalEntryRepository?.delete) {
       if (state.messageId) {
-        await this.#journalEntryRepository.deleteMessage(conversationId, state.messageId);
+        await this.#journalEntryRepository.delete(state.messageId, conversationId);
       }
       if (state.detailsMessageId) {
-        await this.#journalEntryRepository.deleteMessage(conversationId, state.detailsMessageId);
+        await this.#journalEntryRepository.delete(state.detailsMessageId, conversationId);
       }
     }
 

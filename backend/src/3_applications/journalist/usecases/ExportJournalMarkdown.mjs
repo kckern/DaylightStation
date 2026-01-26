@@ -5,6 +5,8 @@
  * Exports journal entries as Markdown.
  */
 
+import { nowDate } from '../../../0_infrastructure/utils/time.mjs';
+
 /**
  * Export journal markdown use case
  */

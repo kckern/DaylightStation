@@ -14,6 +14,9 @@ export class ConfirmAllPending {
   #logger;
 
   constructor(deps) {
+    if (!deps.foodLogStore) throw new Error('foodLogStore is required');
+    if (!deps.nutriListStore) throw new Error('nutriListStore is required');
+
     this.#foodLogStore = deps.foodLogStore;
     this.#nutriListStore = deps.nutriListStore;
     this.#logger = deps.logger || console;
