@@ -51,9 +51,10 @@ export class ConfirmAllPending {
 
       // 2. Accept each pending log
       let confirmedCount = 0;
+      const now = new Date();
       for (const log of pendingLogs) {
         try {
-          const acceptedLog = log.accept();
+          const acceptedLog = log.accept(now);
           await this.#foodLogStore.save(acceptedLog);
 
           // Sync to nutrilist

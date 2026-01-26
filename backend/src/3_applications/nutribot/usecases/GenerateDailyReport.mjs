@@ -370,9 +370,10 @@ export class GenerateDailyReport {
    * @param {Object} messaging - Messaging interface
    */
   async #autoAcceptPendingLogs(pendingLogs, messaging) {
+    const now = new Date();
     for (const log of pendingLogs) {
       try {
-        const acceptedLog = log.accept();
+        const acceptedLog = log.accept(now);
         await this.#foodLogStore.save(acceptedLog);
 
         if (this.#nutriListStore?.syncFromLog) {

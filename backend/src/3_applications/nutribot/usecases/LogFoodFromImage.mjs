@@ -165,6 +165,7 @@ export class LogFoodFromImage {
           imageUrl: imageUrl,
         },
         timezone,
+        timestamp: now,
       });
 
       // 6. Save NutriLog
@@ -201,7 +202,7 @@ export class LogFoodFromImage {
       if (this.#foodLogStore && photoMsgId) {
         const updatedLog = nutriLog.with({
           metadata: { ...nutriLog.metadata, messageId: String(photoMsgId) },
-        });
+        }, new Date());
         await this.#foodLogStore.save(updatedLog);
       }
 

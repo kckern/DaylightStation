@@ -132,8 +132,20 @@ export class NutriLog {
     return this.#status === 'pending';
   }
 
-  #now() {
-    return formatLocalTimestamp(new Date(), this.#timezone);
+  /**
+   * Format a timestamp for this log's timezone
+   * @param {Date} date - Date to format (required)
+   * @returns {string} Formatted timestamp
+   * @private
+   */
+  #formatTimestamp(date) {
+    if (!(date instanceof Date) || isNaN(date.getTime())) {
+      throw new ValidationError('Valid Date required for timestamp', {
+        field: 'timestamp',
+        received: date,
+      });
+    }
+    return formatLocalTimestamp(date, this.#timezone);
   }
 
   /**
@@ -209,26 +221,29 @@ export class NutriLog {
 
   /**
    * Accept the log (confirm items are correct)
+   * @param {Date} timestamp - Current timestamp (required)
    * @returns {NutriLog}
    */
-  accept() {
+  accept(timestamp) {
     if (!this.isPending) {
       throw new ValidationError(`Cannot accept log with status: ${this.#status}`);
     }
 
+    const formatted = this.#formatTimestamp(timestamp);
     return new NutriLog({
       ...this.toJSON(),
       status: 'accepted',
-      acceptedAt: this.#now(),
-      updatedAt: this.#now(),
+      acceptedAt: formatted,
+      updatedAt: formatted,
     });
   }
 
   /**
    * Reject the log
+   * @param {Date} timestamp - Current timestamp (required)
    * @returns {NutriLog}
    */
-  reject() {
+  reject(timestamp) {
     if (!this.isPending) {
       throw new ValidationError(`Cannot reject log with status: ${this.#status}`);
     }
@@ -236,15 +251,16 @@ export class NutriLog {
     return new NutriLog({
       ...this.toJSON(),
       status: 'rejected',
-      updatedAt: this.#now(),
+      updatedAt: this.#formatTimestamp(timestamp),
     });
   }
 
   /**
    * Delete the log (soft delete)
+   * @param {Date} timestamp - Current timestamp (required)
    * @returns {NutriLog}
    */
-  delete() {
+  delete(timestamp) {
     if (this.isDeleted) {
       return this; // Already deleted
     }
@@ -252,7 +268,7 @@ export class NutriLog {
     return new NutriLog({
       ...this.toJSON(),
       status: 'deleted',
-      updatedAt: this.#now(),
+      updatedAt: this.#formatTimestamp(timestamp),
     });
   }
 
@@ -261,28 +277,30 @@ export class NutriLog {
   /**
    * Add a food item
    * @param {FoodItem|object} item
+   * @param {Date} timestamp - Current timestamp (required)
    * @returns {NutriLog}
    */
-  addItem(item) {
+  addItem(item, timestamp) {
     const foodItem = item instanceof FoodItem ? item : FoodItem.from(item);
 
     return new NutriLog({
       ...this.toJSON(),
       items: [...this.#items.map(i => i.toJSON()), foodItem.toJSON()],
-      updatedAt: this.#now(),
+      updatedAt: this.#formatTimestamp(timestamp),
     });
   }
 
   /**
    * Remove a food item by ID
    * @param {string} itemId
+   * @param {Date} timestamp - Current timestamp (required)
    * @returns {NutriLog}
    */
-  removeItem(itemId) {
+  removeItem(itemId, timestamp) {
     return new NutriLog({
       ...this.toJSON(),
       items: this.#items.filter(i => i.id !== itemId).map(i => i.toJSON()),
-      updatedAt: this.#now(),
+      updatedAt: this.#formatTimestamp(timestamp),
     });
   }
 
@@ -290,9 +308,10 @@ export class NutriLog {
    * Update a food item
    * @param {string} itemId
    * @param {object} updates
+   * @param {Date} timestamp - Current timestamp (required)
    * @returns {NutriLog}
    */
-  updateItem(itemId, updates) {
+  updateItem(itemId, updates, timestamp) {
     const items = this.#items.map(item => {
       if (item.id === itemId) {
         return item.with(updates).toJSON();
@@ -303,16 +322,17 @@ export class NutriLog {
     return new NutriLog({
       ...this.toJSON(),
       items,
-      updatedAt: this.#now(),
+      updatedAt: this.#formatTimestamp(timestamp),
     });
   }
 
   /**
    * Replace all items
    * @param {FoodItem[]|object[]} items
+   * @param {Date} timestamp - Current timestamp (required)
    * @returns {NutriLog}
    */
-  setItems(items) {
+  setItems(items, timestamp) {
     const itemsAsJson = items.map(item =>
       item instanceof FoodItem ? item.toJSON() : item
     );
@@ -320,26 +340,28 @@ export class NutriLog {
     return new NutriLog({
       ...this.toJSON(),
       items: itemsAsJson,
-      updatedAt: this.#now(),
+      updatedAt: this.#formatTimestamp(timestamp),
     });
   }
 
   /**
    * Update items (alias for setItems)
    * @param {FoodItem[]|object[]} items
+   * @param {Date} timestamp - Current timestamp (required)
    * @returns {NutriLog}
    */
-  updateItems(items) {
-    return this.setItems(items);
+  updateItems(items, timestamp) {
+    return this.setItems(items, timestamp);
   }
 
   /**
    * Update the date and optionally time
    * @param {string} date - Date in YYYY-MM-DD format
    * @param {string} [time] - Time of day (morning, afternoon, evening, night)
+   * @param {Date} timestamp - Current timestamp (required)
    * @returns {NutriLog}
    */
-  updateDate(date, time) {
+  updateDate(date, time, timestamp) {
     const json = this.toJSON();
     return new NutriLog({
       ...json,
@@ -349,7 +371,7 @@ export class NutriLog {
         date,
         ...(time ? { time } : {}),
       },
-      updatedAt: this.#now(),
+      updatedAt: this.#formatTimestamp(timestamp),
     });
   }
 
@@ -358,40 +380,43 @@ export class NutriLog {
   /**
    * Update nutrition summary
    * @param {object} nutrition
+   * @param {Date} timestamp - Current timestamp (required)
    * @returns {NutriLog}
    */
-  setNutrition(nutrition) {
+  setNutrition(nutrition, timestamp) {
     return new NutriLog({
       ...this.toJSON(),
       nutrition: { ...this.#nutrition, ...nutrition },
-      updatedAt: this.#now(),
+      updatedAt: this.#formatTimestamp(timestamp),
     });
   }
 
   /**
    * Update the text
    * @param {string} text
+   * @param {Date} timestamp - Current timestamp (required)
    * @returns {NutriLog}
    */
-  setText(text) {
+  setText(text, timestamp) {
     return new NutriLog({
       ...this.toJSON(),
       text,
       metadata: { ...this.#metadata, originalText: this.#text },
-      updatedAt: this.#now(),
+      updatedAt: this.#formatTimestamp(timestamp),
     });
   }
 
   /**
    * Create a copy with updates
    * @param {object} updates
+   * @param {Date} timestamp - Current timestamp (required)
    * @returns {NutriLog}
    */
-  with(updates) {
+  with(updates, timestamp) {
     return new NutriLog({
       ...this.toJSON(),
       ...updates,
-      updatedAt: this.#now(),
+      updatedAt: this.#formatTimestamp(timestamp),
     });
   }
 
@@ -449,15 +474,23 @@ export class NutriLog {
   /**
    * Create a new pending NutriLog
    * @param {object} props
+   * @param {Date} props.timestamp - Current timestamp (required)
    * @returns {NutriLog}
    */
   static create(props) {
+    const { timestamp } = props;
+    if (!(timestamp instanceof Date) || isNaN(timestamp.getTime())) {
+      throw new ValidationError('timestamp is required for NutriLog.create', {
+        field: 'timestamp',
+        received: timestamp,
+      });
+    }
+
     const timezone = props.timezone || 'America/Los_Angeles';
-    const now = new Date();
     const logId = shortId();
     const meal = props.meal || {
-      date: formatLocalTimestamp(now, timezone).split(' ')[0],
-      time: getMealTimeFromHour(now.getHours()),
+      date: formatLocalTimestamp(timestamp, timezone).split(' ')[0],
+      time: getMealTimeFromHour(timestamp.getHours()),
     };
 
     // Generate IDs for items if needed
@@ -473,6 +506,7 @@ export class NutriLog {
       return baseItem;
     });
 
+    const formattedTimestamp = formatLocalTimestamp(timestamp, timezone);
     return new NutriLog({
       id: logId,
       userId: props.userId,
@@ -489,8 +523,8 @@ export class NutriLog {
         ...props.metadata,
       },
       timezone,
-      createdAt: formatLocalTimestamp(now, timezone),
-      updatedAt: formatLocalTimestamp(now, timezone),
+      createdAt: formattedTimestamp,
+      updatedAt: formattedTimestamp,
       acceptedAt: null,
     });
   }
@@ -512,9 +546,17 @@ export class NutriLog {
    * @param {string} userId - System user ID (from config mapping)
    * @param {string} conversationId - Channel:identifier format
    * @param {string} [timezone='America/Los_Angeles']
+   * @param {Date} currentTimestamp - Current timestamp for fallback values (required)
    * @returns {NutriLog}
    */
-  static fromLegacy(legacy, userId, conversationId, timezone = 'America/Los_Angeles') {
+  static fromLegacy(legacy, userId, conversationId, timezone = 'America/Los_Angeles', currentTimestamp) {
+    if (!(currentTimestamp instanceof Date) || isNaN(currentTimestamp.getTime())) {
+      throw new ValidationError('currentTimestamp is required for NutriLog.fromLegacy', {
+        field: 'currentTimestamp',
+        received: currentTimestamp,
+      });
+    }
+
     const items = (legacy.food_data?.food || []).map((item) => {
       const itemUuid = item.uuid || uuidv4();
       return {
@@ -529,6 +571,7 @@ export class NutriLog {
       };
     });
 
+    const fallbackTimestamp = formatLocalTimestamp(currentTimestamp, timezone);
     return new NutriLog({
       id: legacy.id || legacy.uuid, // Fallback to uuid if id missing during migration
       userId,
@@ -536,7 +579,7 @@ export class NutriLog {
       status: legacy.status,
       text: legacy.food_data?.text || '',
       meal: {
-        date: legacy.food_data?.date || formatLocalTimestamp(new Date(), timezone).split(' ')[0],
+        date: legacy.food_data?.date || fallbackTimestamp.split(' ')[0],
         time: legacy.food_data?.time || 'morning',
       },
       items,
@@ -548,9 +591,9 @@ export class NutriLog {
         timezone,
       },
       timezone,
-      createdAt: legacy.createdAt || formatLocalTimestamp(new Date(), timezone),
-      updatedAt: legacy.updatedAt || formatLocalTimestamp(new Date(), timezone),
-      acceptedAt: legacy.status === 'accepted' ? (legacy.acceptedAt || legacy.updatedAt || formatLocalTimestamp(new Date(), timezone)) : null,
+      createdAt: legacy.createdAt || fallbackTimestamp,
+      updatedAt: legacy.updatedAt || fallbackTimestamp,
+      acceptedAt: legacy.status === 'accepted' ? (legacy.acceptedAt || legacy.updatedAt || fallbackTimestamp) : null,
     });
   }
 }

@@ -136,6 +136,7 @@ export class LogFoodFromUPC {
       // 6. Create NutriLog entity
       const extractedUserId = conversationId.split('_').pop();
       const timezone = this.#config?.getUserTimezone?.(extractedUserId) || 'America/Los_Angeles';
+      const now = new Date();
       const nutriLog = NutriLog.create({
         userId: extractedUserId,
         conversationId,
@@ -145,6 +146,7 @@ export class LogFoodFromUPC {
           sourceUpc: upc,
         },
         timezone,
+        timestamp: now,
       });
 
       // 7. Save NutriLog
@@ -179,7 +181,7 @@ export class LogFoodFromUPC {
       if (this.#foodLogStore && photoMsgId) {
         const updatedLog = nutriLog.with({
           metadata: { ...nutriLog.metadata, messageId: String(photoMsgId) },
-        });
+        }, new Date());
         await this.#foodLogStore.save(updatedLog);
       }
 

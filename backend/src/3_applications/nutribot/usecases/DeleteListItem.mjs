@@ -75,7 +75,7 @@ export class DeleteListItem {
         if (item) {
           itemLabel = item.label || item.name || itemLabel;
           const removeId = item.id || item.uuid || itemId;
-          const updatedLog = log.removeItem(removeId);
+          const updatedLog = log.removeItem(removeId, new Date());
 
           if (updatedLog.items.length === 0) {
             await this.#foodLogStore.hardDelete(userId, logId);

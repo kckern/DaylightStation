@@ -109,7 +109,8 @@ export class MoveItemToDate {
       }
 
       // 4. Remove item from original log
-      const updatedOriginalLog = originalLog.removeItem(itemId);
+      const now = new Date();
+      const updatedOriginalLog = originalLog.removeItem(itemId, now);
 
       // 5. Save or delete original log
       if (updatedOriginalLog.items.length === 0) {
@@ -128,7 +129,8 @@ export class MoveItemToDate {
         meal: { date: newDate, time: originalLog.meal?.time || 'afternoon' },
         items: [item],
         timezone,
-      }).accept();
+        timestamp: now,
+      }).accept(now);
 
       await this.#foodLogStore.save(newLog);
       await this.#nutriListStore.syncFromLog(newLog);
