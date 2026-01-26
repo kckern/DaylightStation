@@ -159,7 +159,7 @@ export class LogFoodFromUPC {
       // 9. Delete status message
       await messaging.deleteMessage( statusMsgId);
 
-      // 10. Send photo message (Telegram fetches remote URLs directly)
+      // 10. Send photo message (messaging platform fetches remote URLs directly)
       let photoMsgId;
       if (product.imageUrl) {
         const result = await messaging.sendPhoto(product.imageUrl, caption, {

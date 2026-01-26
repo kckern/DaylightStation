@@ -1,7 +1,7 @@
 // backend/src/3_applications/nutribot/ports/IMessagingGateway.mjs
 
 /**
- * Port interface for messaging operations (Telegram-agnostic)
+ * Port interface for messaging operations (platform-agnostic)
  * @interface IMessagingGateway
  */
 export const IMessagingGateway = {
