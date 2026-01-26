@@ -11,7 +11,7 @@
 
 import path from 'path';
 import { Job } from '../../1_domains/scheduling/entities/Job.mjs';
-import { IJobStore } from '../../1_domains/scheduling/ports/IJobStore.mjs';
+import { IJobStore } from '../../3_applications/scheduling/ports/IJobStore.mjs';
 import { loadYaml } from '../../0_infrastructure/utils/FileIO.mjs';
 
 export class YamlJobStore extends IJobStore {
