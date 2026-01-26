@@ -236,7 +236,7 @@ export class SchedulerService {
     }
 
     this.runningJobs.set(job.id, executionId);
-    execution.start();
+    execution.start(nowTs24());
 
     const scopedLogger = this.logger.child?.({ jobId: executionId, job: job.id }) || this.logger;
 
@@ -255,7 +255,7 @@ export class SchedulerService {
           )
         ]);
 
-        execution.succeed();
+        execution.succeed(nowTs24());
         this.logger.info?.('scheduler.job.success', {
           jobId: job.id,
           executionId,
@@ -275,7 +275,7 @@ export class SchedulerService {
           )
         ]);
 
-        execution.succeed();
+        execution.succeed(nowTs24());
         this.logger.info?.('scheduler.job.success', {
           jobId: job.id,
           executionId,
@@ -305,7 +305,7 @@ export class SchedulerService {
           )
         ]);
 
-        execution.succeed();
+        execution.succeed(nowTs24());
         this.logger.info?.('scheduler.job.success', {
           jobId: job.id,
           executionId,
@@ -313,10 +313,11 @@ export class SchedulerService {
         });
       }
     } catch (err) {
+      const timestamp = nowTs24();
       if (err.message?.includes('timeout')) {
-        execution.timeout();
+        execution.timeout(timestamp);
       } else {
-        execution.fail(err);
+        execution.fail(err, timestamp);
       }
       this.logger.error?.('scheduler.job.failed', {
         jobId: job.id,

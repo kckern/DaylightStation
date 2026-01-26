@@ -8,8 +8,8 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import { nowTs24 } from '../../../0_infrastructure/utils/index.mjs';
 import { GratitudeItem } from './GratitudeItem.mjs';
+import { ValidationError } from '../../core/errors/index.mjs';
 
 /**
  * @typedef {Object} SelectionData
@@ -38,7 +38,7 @@ export class Selection {
     this.#item = data.item instanceof GratitudeItem
       ? data.item
       : new GratitudeItem(data.item);
-    this.#datetime = data.datetime || nowTs24();
+    this.#datetime = data.datetime;
     this.#printed = Array.isArray(data.printed) ? [...data.printed] : [];
   }
 
@@ -74,9 +74,13 @@ export class Selection {
 
   /**
    * Mark this selection as printed
-   * @param {string} [timestamp] - Print timestamp (defaults to now)
+   * @param {string} timestamp - Print timestamp (required)
+   * @throws {ValidationError} If timestamp is not provided
    */
-  markAsPrinted(timestamp = nowTs24()) {
+  markAsPrinted(timestamp) {
+    if (!timestamp) {
+      throw new ValidationError('timestamp is required for markAsPrinted');
+    }
     this.#printed.push(timestamp);
   }
 
@@ -115,19 +119,20 @@ export class Selection {
    * Create a new selection
    * @param {string} userId
    * @param {Object} item
-   * @param {string} [timezone] - Timezone for datetime
+   * @param {string} timestamp - ISO 8601 timestamp (required)
    * @returns {Selection}
+   * @throws {ValidationError} If timestamp is not provided
    */
-  static create(userId, item, timezone) {
-    const datetime = timezone
-      ? new Date().toLocaleString('en-US', { timeZone: timezone })
-      : nowTs24();
+  static create(userId, item, timestamp) {
+    if (!timestamp) {
+      throw new ValidationError('timestamp is required for Selection.create');
+    }
 
     return new Selection({
       id: uuidv4(),
       userId,
       item,
-      datetime
+      datetime: timestamp
     });
   }
 }

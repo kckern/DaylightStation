@@ -1,7 +1,7 @@
 /**
  * JobExecution Entity - Represents a single execution of a job
  */
-import { nowTs24 } from '../../../0_infrastructure/utils/index.mjs';
+import { ValidationError } from '../../core/errors/index.mjs';
 
 export class JobExecution {
   constructor({
@@ -26,18 +26,30 @@ export class JobExecution {
 
   /**
    * Mark execution as started
+   * @param {string} timestamp - Start timestamp (required)
+   * @returns {JobExecution}
+   * @throws {ValidationError} If timestamp is not provided
    */
-  start() {
-    this.startTime = nowTs24();
+  start(timestamp) {
+    if (!timestamp) {
+      throw new ValidationError('timestamp is required for start');
+    }
+    this.startTime = timestamp;
     this.status = 'running';
     return this;
   }
 
   /**
    * Mark execution as successful
+   * @param {string} timestamp - End timestamp (required)
+   * @returns {JobExecution}
+   * @throws {ValidationError} If timestamp is not provided
    */
-  succeed() {
-    this.endTime = nowTs24();
+  succeed(timestamp) {
+    if (!timestamp) {
+      throw new ValidationError('timestamp is required for succeed');
+    }
+    this.endTime = timestamp;
     this.status = 'success';
     this.durationMs = new Date(this.endTime) - new Date(this.startTime);
     return this;
@@ -45,9 +57,16 @@ export class JobExecution {
 
   /**
    * Mark execution as failed
+   * @param {Error|string} error - Error that caused failure
+   * @param {string} timestamp - End timestamp (required)
+   * @returns {JobExecution}
+   * @throws {ValidationError} If timestamp is not provided
    */
-  fail(error) {
-    this.endTime = nowTs24();
+  fail(error, timestamp) {
+    if (!timestamp) {
+      throw new ValidationError('timestamp is required for fail');
+    }
+    this.endTime = timestamp;
     this.status = 'failed';
     this.error = error?.message || error;
     this.durationMs = new Date(this.endTime) - new Date(this.startTime);
@@ -56,9 +75,15 @@ export class JobExecution {
 
   /**
    * Mark execution as timed out
+   * @param {string} timestamp - End timestamp (required)
+   * @returns {JobExecution}
+   * @throws {ValidationError} If timestamp is not provided
    */
-  timeout() {
-    this.endTime = nowTs24();
+  timeout(timestamp) {
+    if (!timestamp) {
+      throw new ValidationError('timestamp is required for timeout');
+    }
+    this.endTime = timestamp;
     this.status = 'timeout';
     this.error = 'Job execution timed out';
     this.durationMs = new Date(this.endTime) - new Date(this.startTime);

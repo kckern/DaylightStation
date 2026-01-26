@@ -3,6 +3,8 @@
  */
 
 import { JournalEntry } from '../entities/JournalEntry.mjs';
+import { nowTs24 } from '../../../0_infrastructure/utils/index.mjs';
+// Note: nowTs24 usage is permitted in service layer (application-adjacent)
 
 export class JournalService {
   constructor({ journalStore }) {
@@ -13,8 +15,10 @@ export class JournalService {
    * Create a journal entry
    */
   async createEntry(data) {
+    const timestamp = nowTs24();
     const entry = new JournalEntry({
       id: data.id || this.generateId(),
+      createdAt: timestamp,
       ...data
     });
     await this.journalStore.save(entry);
@@ -44,8 +48,9 @@ export class JournalService {
     const entry = await this.getEntry(id);
     if (!entry) throw new Error(`Entry not found: ${id}`);
 
-    if (updates.content !== undefined) entry.updateContent(updates.content);
-    if (updates.mood !== undefined) entry.setMood(updates.mood);
+    const timestamp = nowTs24();
+    if (updates.content !== undefined) entry.updateContent(updates.content, timestamp);
+    if (updates.mood !== undefined) entry.setMood(updates.mood, timestamp);
     if (updates.title !== undefined) entry.title = updates.title;
 
     await this.journalStore.save(entry);
