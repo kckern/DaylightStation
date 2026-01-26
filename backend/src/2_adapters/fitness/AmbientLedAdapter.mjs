@@ -112,6 +112,18 @@ export class AmbientLedAdapter {
   }
 
   /**
+   * Clear any active grace period timer
+   * @private
+   */
+  #clearGraceTimer() {
+    if (this.graceTimer) {
+      clearTimeout(this.graceTimer);
+      this.graceTimer = null;
+      this.graceStartedAt = null;
+    }
+  }
+
+  /**
    * Resolve scene from config with fallback chain
    * @private
    */
@@ -212,6 +224,85 @@ export class AmbientLedAdapter {
     }
 
     const targetScene = this.#resolveTargetScene(zones, sessionEnded, sceneConfig);
+
+    // Grace period handling for transient zone loss during active sessions
+    const isZoneEmpty = !zones.some(z => z && z.isActive !== false && this.normalizeZoneId(z.zoneId));
+    const offScene = this.#resolveSceneFromConfig(sceneConfig, 'off');
+
+    // Session end: always immediately turn off and clear grace
+    if (sessionEnded) {
+      this.#clearGraceTimer();
+      // Continue to activation logic below
+    }
+    // Zone loss during active session: start grace period instead of immediate off
+    else if (isZoneEmpty && targetScene === offScene && this.lastScene && this.lastScene !== offScene) {
+      // Already in grace period? Just return, timer is running
+      if (this.graceTimer) {
+        this.#logger.debug?.('fitness.zone_led.grace_period.active', {
+          elapsedMs: Date.now() - this.graceStartedAt,
+          remainingMs: ZONE_LOSS_GRACE_PERIOD_MS - (Date.now() - this.graceStartedAt)
+        });
+        return {
+          ok: true,
+          skipped: true,
+          reason: 'grace_period_active',
+          scene: this.lastScene
+        };
+      }
+
+      // Start grace period
+      this.graceStartedAt = Date.now();
+      this.graceTimer = setTimeout(async () => {
+        this.graceTimer = null;
+        this.graceStartedAt = null;
+
+        // Fire the off scene after grace period expires
+        try {
+          const result = await this.#gateway.activateScene(offScene);
+          if (result.ok) {
+            const previousScene = this.lastScene;
+            this.lastScene = offScene;
+            this.lastActivatedAt = Date.now();
+            this.failureCount = 0;
+
+            this.metrics.activatedCount++;
+            this.metrics.lastActivatedScene = offScene;
+            this.metrics.lastActivatedTime = nowTs24();
+            this.metrics.sceneHistogram[offScene] = (this.metrics.sceneHistogram[offScene] || 0) + 1;
+
+            this.#logger.info?.('fitness.zone_led.grace_period.expired', {
+              scene: offScene,
+              previousScene,
+              gracePeriodMs: ZONE_LOSS_GRACE_PERIOD_MS
+            });
+          }
+        } catch (error) {
+          this.failureCount++;
+          this.metrics.failureCount++;
+          this.#logger.error?.('fitness.zone_led.grace_period.failed', { error: error.message });
+        }
+      }, ZONE_LOSS_GRACE_PERIOD_MS);
+
+      this.#logger.info?.('fitness.zone_led.grace_period.started', {
+        currentScene: this.lastScene,
+        gracePeriodMs: ZONE_LOSS_GRACE_PERIOD_MS
+      });
+
+      return {
+        ok: true,
+        gracePeriodStarted: true,
+        scene: this.lastScene,
+        gracePeriodMs: ZONE_LOSS_GRACE_PERIOD_MS
+      };
+    }
+    // Zones returned: clear any grace period
+    else if (!isZoneEmpty && this.graceTimer) {
+      this.#logger.info?.('fitness.zone_led.grace_period.cancelled', {
+        elapsedMs: Date.now() - this.graceStartedAt,
+        newZones: zones.map(z => z.zoneId)
+      });
+      this.#clearGraceTimer();
+    }
 
     if (!targetScene) {
       this.#logger.debug?.('fitness.zone_led.skipped', {

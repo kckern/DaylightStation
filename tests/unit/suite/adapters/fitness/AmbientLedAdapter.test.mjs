@@ -270,5 +270,93 @@ describe('AmbientLedAdapter', () => {
 
       jest.useRealTimers();
     });
+
+    test('clears grace period when zones return', async () => {
+      jest.useFakeTimers();
+
+      // Activate, then zones empty
+      await adapter.syncZone({ zones: [{ zoneId: 'warm', isActive: true }], sessionEnded: false, householdId: 'hid' });
+      adapter.lastActivatedAt = 0;
+      await adapter.syncZone({ zones: [], sessionEnded: false, householdId: 'hid' });
+
+      expect(adapter.graceTimer).not.toBeNull();
+
+      // Zones return - grace should clear
+      adapter.lastActivatedAt = 0;
+      mockGateway.activateScene.mockClear();
+      const result = await adapter.syncZone({ zones: [{ zoneId: 'hot', isActive: true }], sessionEnded: false, householdId: 'hid' });
+
+      expect(result.ok).toBe(true);
+      expect(adapter.graceTimer).toBeNull();
+      expect(adapter.graceStartedAt).toBeNull();
+      expect(mockGateway.activateScene).toHaveBeenCalledWith('scene.led_orange');
+
+      jest.useRealTimers();
+    });
+
+    test('turns off LED after grace period expires', async () => {
+      jest.useFakeTimers();
+
+      // Activate, then zones empty
+      await adapter.syncZone({ zones: [{ zoneId: 'warm', isActive: true }], sessionEnded: false, householdId: 'hid' });
+      adapter.lastActivatedAt = 0;
+      await adapter.syncZone({ zones: [], sessionEnded: false, householdId: 'hid' });
+
+      mockGateway.activateScene.mockClear();
+
+      // Advance past grace period and flush pending promises
+      jest.advanceTimersByTime(31000);
+      await Promise.resolve(); // Flush microtask queue for async callback
+
+      // Grace timer should have fired
+      expect(mockGateway.activateScene).toHaveBeenCalledWith('scene.led_off');
+      expect(adapter.lastScene).toBe('scene.led_off');
+
+      jest.useRealTimers();
+    });
+
+    test('immediately turns off when session explicitly ends', async () => {
+      jest.useFakeTimers();
+
+      // Activate with zone
+      await adapter.syncZone({ zones: [{ zoneId: 'warm', isActive: true }], sessionEnded: false, householdId: 'hid' });
+      adapter.lastActivatedAt = 0;
+
+      // Start grace period
+      await adapter.syncZone({ zones: [], sessionEnded: false, householdId: 'hid' });
+      expect(adapter.graceTimer).not.toBeNull();
+
+      mockGateway.activateScene.mockClear();
+      adapter.lastActivatedAt = 0;
+
+      // Session ends - should immediately turn off and clear grace
+      const result = await adapter.syncZone({ zones: [], sessionEnded: true, householdId: 'hid' });
+
+      expect(result.ok).toBe(true);
+      expect(result.scene).toBe('scene.led_off');
+      expect(mockGateway.activateScene).toHaveBeenCalledWith('scene.led_off');
+      expect(adapter.graceTimer).toBeNull();
+
+      jest.useRealTimers();
+    });
+
+    test('does not start grace period when session ends', async () => {
+      jest.useFakeTimers();
+
+      // Activate with zone
+      await adapter.syncZone({ zones: [{ zoneId: 'warm', isActive: true }], sessionEnded: false, householdId: 'hid' });
+      adapter.lastActivatedAt = 0;
+      mockGateway.activateScene.mockClear();
+
+      // Session ends with empty zones - should turn off immediately, no grace
+      const result = await adapter.syncZone({ zones: [], sessionEnded: true, householdId: 'hid' });
+
+      expect(result.ok).toBe(true);
+      expect(result.scene).toBe('scene.led_off');
+      expect(result.gracePeriodStarted).toBeUndefined();
+      expect(mockGateway.activateScene).toHaveBeenCalledWith('scene.led_off');
+
+      jest.useRealTimers();
+    });
   });
 });
