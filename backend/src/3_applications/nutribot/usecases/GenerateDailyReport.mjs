@@ -85,7 +85,9 @@ export class GenerateDailyReport {
         for (const msgId of messagesToDelete) {
           try {
             await messaging.deleteMessage( msgId);
-          } catch (e) {}
+          } catch (e) {
+            this.#logger.debug?.('report.deleteMessage.failed', { msgId, error: e.message });
+          }
         }
       } catch (e) {
         this.#logger.error?.('report.deletePrevious.error', { error: e.message });
@@ -110,7 +112,9 @@ export class GenerateDailyReport {
             this.#logger.info?.('report.generate.skipped', { userId, reason: 'pending_logs', count: pendingLogs.length });
             try {
               await messaging.sendMessage( `⏳ ${pendingLogs.length} item(s) still need confirmation before generating report.`, {});
-            } catch (e) {}
+            } catch (e) {
+              this.#logger.debug?.('report.sendPendingNotice.failed', { error: e.message });
+            }
             return { success: false, skippedReason: `${pendingLogs.length} pending log(s)` };
           }
         }
@@ -169,7 +173,9 @@ export class GenerateDailyReport {
       // 8. Delete status message
       try {
         await messaging.deleteMessage( statusMsgId);
-      } catch (e) {}
+      } catch (e) {
+        this.#logger.debug?.('report.deleteStatus.failed', { error: e.message });
+      }
 
       // 9. Build caption
       const calorieMin = goals.calories_min || Math.round(goals.calories * 0.8);
@@ -275,7 +281,9 @@ export class GenerateDailyReport {
       } else if (this.#config?.getDefaultTimezone) {
         timezone = this.#config.getDefaultTimezone();
       }
-    } catch (e) {}
+    } catch (e) {
+      this.#logger.debug?.('report.getTimezone.failed', { error: e.message });
+    }
     return new Date().toLocaleDateString('en-CA', { timeZone: timezone });
   }
 
@@ -375,7 +383,9 @@ export class GenerateDailyReport {
         if (msgId && messaging?.updateMessage) {
           try {
             await messaging.updateMessage(msgId, { choices: [] });
-          } catch (e) {}
+          } catch (e) {
+            this.#logger.debug?.('report.updateMessage.failed', { msgId, error: e.message });
+          }
         }
       } catch (e) {
         this.#logger.error?.('autoAccept.logFailed', { logId: log.id, error: e.message });
