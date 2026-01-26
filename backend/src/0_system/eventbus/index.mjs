@@ -4,7 +4,7 @@
  * Provides pub/sub messaging for internal handlers and external clients.
  *
  * Usage:
- *   import { WebSocketEventBus } from './0_infrastructure/eventbus/index.mjs';
+ *   import { WebSocketEventBus } from './0_system/eventbus/index.mjs';
  *
  *   const eventBus = new WebSocketEventBus({ logger });
  *   await eventBus.start(httpServer);

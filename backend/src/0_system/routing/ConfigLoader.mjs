@@ -1,4 +1,4 @@
-// backend/src/0_infrastructure/routing/ConfigLoader.mjs
+// backend/src/0_system/routing/ConfigLoader.mjs
 import { loadYamlFromPath } from '../utils/FileIO.mjs';
 
 /**

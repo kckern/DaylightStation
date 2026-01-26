@@ -4,7 +4,7 @@
  * Renders prayer cards with gratitude and hopes items for thermal printing.
  * Extracted from legacy printer.mjs to support dependency injection.
  *
- * @module 0_infrastructure/rendering/PrayerCardRenderer
+ * @module 0_system/rendering/PrayerCardRenderer
  */
 
 import moment from 'moment-timezone';
