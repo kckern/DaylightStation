@@ -16,9 +16,8 @@ import {
   ensureDir,
   dirExists,
   listYamlFiles,
-  loadYamlFromPath,
-  saveYamlToPath,
-  resolveYamlPath
+  loadYamlSafe,
+  saveYaml
 } from '../../../0_infrastructure/utils/FileIO.mjs';
 import { INutriListStore } from '../../../1_domains/nutrition/ports/INutriListStore.mjs';
 import { shortIdFromUuid } from '../../../0_infrastructure/utils/shortId.mjs';
@@ -55,7 +54,7 @@ export class YamlNutriListStore extends INutriListStore {
   }
 
   #getArchivePath(userId, yearMonth) {
-    return path.join(this.#getArchiveDir(userId), `${yearMonth}.yml`);
+    return path.join(this.#getArchiveDir(userId), yearMonth);
   }
 
   #getNutridayPath(userId) {
@@ -64,50 +63,33 @@ export class YamlNutriListStore extends INutriListStore {
 
   // ==================== File I/O ====================
 
-  #readFile(filePath) {
+  #readFile(basePath) {
     try {
-      const basePath = filePath.replace(/\.yml$/, '');
-      const resolvedPath = resolveYamlPath(basePath);
-      if (!resolvedPath) return [];
-      const data = loadYamlFromPath(resolvedPath);
+      const data = loadYamlSafe(basePath);
       // Handle both array and legacy object format
       if (Array.isArray(data)) return data;
       if (data && typeof data === 'object') return Object.values(data);
       return [];
     } catch (e) {
-      this.#logger.warn?.('YamlNutriListStore.readFile.error', { filePath, error: e.message });
+      this.#logger.warn?.('YamlNutriListStore.readFile.error', { basePath, error: e.message });
       return [];
     }
   }
 
-  #writeFile(filePath, data) {
-    ensureDir(path.dirname(filePath));
-    saveYamlToPath(filePath, data);
+  #writeFile(basePath, data) {
+    ensureDir(path.dirname(basePath));
+    saveYaml(basePath, data);
   }
 
   #readNutriday(userId) {
-    const filePath = this.#getNutridayPath(userId);
-    try {
-      const basePath = filePath.replace(/\.yml$/, '');
-      const resolvedPath = resolveYamlPath(basePath);
-      if (!resolvedPath) return {};
-      return loadYamlFromPath(resolvedPath) || {};
-    } catch {
-      return {};
-    }
+    const basePath = this.#getNutridayPath(userId);
+    return loadYamlSafe(basePath) || {};
   }
 
   #loadArchive(userId, yearMonth) {
-    const archivePath = this.#getArchivePath(userId, yearMonth);
-    try {
-      const basePath = archivePath.replace(/\.yml$/, '');
-      const resolvedPath = resolveYamlPath(basePath);
-      if (!resolvedPath) return [];
-      const data = loadYamlFromPath(resolvedPath);
-      return Array.isArray(data) ? data : [];
-    } catch {
-      return [];
-    }
+    const basePath = this.#getArchivePath(userId, yearMonth);
+    const data = loadYamlSafe(basePath);
+    return Array.isArray(data) ? data : [];
   }
 
   // ==================== Item Normalization ====================

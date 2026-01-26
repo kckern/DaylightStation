@@ -15,8 +15,8 @@ import {
   ensureDir,
   dirExists,
   listYamlFiles,
-  loadYamlFromPath,
-  saveYamlToPath
+  loadYamlSafe,
+  saveYaml
 } from '../../../0_infrastructure/utils/FileIO.mjs';
 
 const ARCHIVE_RETENTION_DAYS = 30;
@@ -57,7 +57,7 @@ export class YamlFoodLogStore extends IFoodLogStore {
       userId,
       'apps',
       'nutrition',
-      'nutrilog.yml'
+      'nutrilog'
     );
   }
 
@@ -85,33 +85,33 @@ export class YamlFoodLogStore extends IFoodLogStore {
    * @returns {string}
    */
   #getArchivePath(userId, yearMonth) {
-    return path.join(this.#getArchiveDir(userId), `${yearMonth}.yml`);
+    return path.join(this.#getArchiveDir(userId), yearMonth);
   }
 
   // ==================== File I/O ====================
 
   /**
    * Read a data file
-   * @param {string} filePath
+   * @param {string} basePath
    * @returns {Object}
    */
-  #readFile(filePath) {
+  #readFile(basePath) {
     try {
-      return loadYamlFromPath(filePath) || {};
+      return loadYamlSafe(basePath) || {};
     } catch (e) {
-      this.#logger.warn?.('YamlFoodLogStore.readFile.error', { filePath, error: e.message });
+      this.#logger.warn?.('YamlFoodLogStore.readFile.error', { basePath, error: e.message });
       return {};
     }
   }
 
   /**
    * Write a data file
-   * @param {string} filePath
+   * @param {string} basePath
    * @param {Object} data
    */
-  #writeFile(filePath, data) {
-    ensureDir(path.dirname(filePath));
-    saveYamlToPath(filePath, data);
+  #writeFile(basePath, data) {
+    ensureDir(path.dirname(basePath));
+    saveYaml(basePath, data);
   }
 
   /**
@@ -209,12 +209,11 @@ export class YamlFoodLogStore extends IFoodLogStore {
     if (!entity) {
       const archiveDir = this.#getArchiveDir(userId);
       if (dirExists(archiveDir)) {
-        const archiveFiles = listYamlFiles(archiveDir, { stripExtension: false })
+        const archiveMonths = listYamlFiles(archiveDir)
           .sort()
           .reverse(); // Search newest archives first
 
-        for (const file of archiveFiles) {
-          const yearMonth = file.replace(/\.(yml|yaml)$/, '');
+        for (const yearMonth of archiveMonths) {
           const archiveData = this.#loadArchive(userId, yearMonth);
           entity = this.#findEntity(archiveData, id);
           if (entity) break;

@@ -11,9 +11,8 @@
 import path from 'path';
 import {
   ensureDir,
-  loadYamlFromPath,
-  saveYamlToPath,
-  resolveYamlPath
+  loadYamlSafe,
+  saveYaml
 } from '../../../0_infrastructure/utils/FileIO.mjs';
 import { INutriCoachStore } from '../../../1_domains/nutrition/ports/INutriCoachStore.mjs';
 
@@ -44,27 +43,24 @@ export class YamlNutriCoachStore extends INutriCoachStore {
       userId,
       'apps',
       'nutrition',
-      'nutricoach.yml'
+      'nutricoach'
     );
   }
 
   // ==================== File I/O ====================
 
-  #readFile(filePath) {
+  #readFile(basePath) {
     try {
-      const basePath = filePath.replace(/\.yml$/, '');
-      const resolvedPath = resolveYamlPath(basePath);
-      if (!resolvedPath) return {};
-      return loadYamlFromPath(resolvedPath) || {};
+      return loadYamlSafe(basePath) || {};
     } catch (e) {
-      this.#logger.warn?.('YamlNutriCoachStore.readFile.error', { filePath, error: e.message });
+      this.#logger.warn?.('YamlNutriCoachStore.readFile.error', { basePath, error: e.message });
       return {};
     }
   }
 
-  #writeFile(filePath, data) {
-    ensureDir(path.dirname(filePath));
-    saveYamlToPath(filePath, data);
+  #writeFile(basePath, data) {
+    ensureDir(path.dirname(basePath));
+    saveYaml(basePath, data);
   }
 
   // ==================== INutriCoachStore Implementation ====================

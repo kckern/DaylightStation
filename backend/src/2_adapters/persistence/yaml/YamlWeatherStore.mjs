@@ -36,7 +36,7 @@ export class YamlWeatherStore {
    * @private
    */
   #getFilePath() {
-    return path.join(this.#dataRoot, 'households', this.#householdId, 'shared', 'weather.yml');
+    return path.join(this.#dataRoot, 'households', this.#householdId, 'shared', 'weather');
   }
 
   /**

@@ -305,6 +305,17 @@ export function deleteFile(filePath) {
 }
 
 /**
+ * Delete a YAML file (tries both .yml and .yaml extensions)
+ * @param {string} basePath - Path without extension
+ * @returns {boolean} True if any file was deleted
+ */
+export function deleteYaml(basePath) {
+  const ymlDeleted = deleteFile(`${basePath}.yml`);
+  const yamlDeleted = deleteFile(`${basePath}.yaml`);
+  return ymlDeleted || yamlDeleted;
+}
+
+/**
  * Write binary data to a file
  * @param {string} filePath - Full file path
  * @param {Buffer} buffer - Binary data

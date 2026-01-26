@@ -10,12 +10,11 @@ import moment from 'moment-timezone';
 import {
   ensureDir,
   dirExists,
-  loadYamlFromPath,
-  saveYamlToPath,
-  resolveYamlPath,
+  loadYamlSafe,
+  saveYaml,
   listYamlFiles,
   listDirsMatching,
-  deleteFile
+  deleteYaml
 } from '../../../0_infrastructure/utils/FileIO.mjs';
 
 /**
@@ -75,7 +74,7 @@ export class YamlSessionStore {
       sessionDate
     );
 
-    const sessionFilePath = path.join(sessionsDir, `${sessionId}.yml`);
+    const sessionFilePath = path.join(sessionsDir, sessionId);
 
     const screenshotsDir = path.join(
       this.mediaRoot,
@@ -114,7 +113,7 @@ export class YamlSessionStore {
 
     ensureDir(paths.sessionsDir);
     ensureDir(paths.screenshotsDir);
-    saveYamlToPath(paths.sessionFilePath, data);
+    saveYaml(paths.sessionFilePath, data);
   }
 
   /**
@@ -127,12 +126,7 @@ export class YamlSessionStore {
     const paths = this.getStoragePaths(sessionId, householdId);
     if (!paths) return null;
 
-    // resolveYamlPath handles .yml/.yaml automatically
-    const basePath = paths.sessionFilePath.replace(/\.yml$/, '');
-    const resolvedPath = resolveYamlPath(basePath);
-    if (!resolvedPath) return null;
-
-    const data = loadYamlFromPath(resolvedPath);
+    const data = loadYamlSafe(paths.sessionFilePath);
     if (!data) return null;
 
     // Parse timestamps to unix ms for API compatibility
@@ -210,12 +204,12 @@ export class YamlSessionStore {
 
     if (!dirExists(sessionsDir)) return [];
 
-    const fileNames = listYamlFiles(sessionsDir, { stripExtension: false });
+    const baseNames = listYamlFiles(sessionsDir);
     const sessions = [];
 
-    for (const name of fileNames) {
-      const filePath = path.join(sessionsDir, name);
-      const data = loadYamlFromPath(filePath);
+    for (const baseName of baseNames) {
+      const basePath = path.join(sessionsDir, baseName);
+      const data = loadYamlSafe(basePath);
       if (!data) continue;
 
       const tz = typeof data.timezone === 'string' ? data.timezone : 'UTC';
@@ -223,7 +217,7 @@ export class YamlSessionStore {
       const endTime = parseToUnixMs(data.endTime, tz);
 
       sessions.push({
-        sessionId: data.sessionId || name.replace(/\.ya?ml$/, ''),
+        sessionId: data.sessionId || baseName,
         startTime: startTime || null,
         endTime: endTime || null,
         durationMs: Number.isFinite(Number(data.durationMs))
@@ -296,10 +290,7 @@ export class YamlSessionStore {
     const paths = this.getStoragePaths(sessionId, householdId);
     if (!paths) return;
 
-    // Try both extensions
-    const basePath = paths.sessionFilePath.replace(/\.yml$/, '');
-    deleteFile(`${basePath}.yml`);
-    deleteFile(`${basePath}.yaml`);
+    deleteYaml(paths.sessionFilePath);
   }
 }
 

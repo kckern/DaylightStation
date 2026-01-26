@@ -17,8 +17,8 @@ import {
   ensureDir,
   dirExists,
   listYamlFiles,
-  loadYamlFromPath,
-  saveYamlToPath
+  loadYamlSafe,
+  saveYaml
 } from '../../../0_infrastructure/utils/FileIO.mjs';
 
 export class YamlGratitudeStore {
@@ -251,11 +251,11 @@ export class YamlGratitudeStore {
     }
 
     const stamp = moment().format('YYYYMMDD_HHmmss');
-    const filename = `${stamp}_${snapshot.id}.yml`;
-    const filePath = path.join(snapshotDir, filename);
+    const baseName = `${stamp}_${snapshot.id}`;
+    const basePath = path.join(snapshotDir, baseName);
 
-    saveYamlToPath(filePath, snapshot);
-    return filename;
+    saveYaml(basePath, snapshot);
+    return baseName;
   }
 
   /**
@@ -269,23 +269,23 @@ export class YamlGratitudeStore {
       return [];
     }
 
-    const files = listYamlFiles(snapshotDir, { stripExtension: false });
+    const baseNames = listYamlFiles(snapshotDir);
 
-    const snapshots = files.map(f => {
+    const snapshots = baseNames.map(baseName => {
       try {
-        const data = loadYamlFromPath(path.join(snapshotDir, f)) || {};
+        const data = loadYamlSafe(path.join(snapshotDir, baseName)) || {};
         return {
-          file: f,
-          id: data.id || f.split('_').slice(1).join('_').replace(/\.(yml|yaml)$/, ''),
+          file: baseName,
+          id: data.id || baseName.split('_').slice(1).join('_'),
           createdAt: data.createdAt || null,
-          name: f.replace(/\.(yml|yaml)$/, '')
+          name: baseName
         };
       } catch {
         return {
-          file: f,
+          file: baseName,
           id: null,
           createdAt: null,
-          name: f.replace(/\.(yml|yaml)$/, '')
+          name: baseName
         };
       }
     });
@@ -306,22 +306,22 @@ export class YamlGratitudeStore {
       return null;
     }
 
-    const files = listYamlFiles(snapshotDir, { stripExtension: false });
-    if (files.length === 0) return null;
+    const baseNames = listYamlFiles(snapshotDir);
+    if (baseNames.length === 0) return null;
 
-    let file = null;
+    let baseName = null;
     if (snapshotId) {
-      file = files.find(f => f.includes(snapshotId));
+      baseName = baseNames.find(b => b.includes(snapshotId));
     }
     // Default to latest (sorted by filename timestamp desc)
-    if (!file) {
-      file = files.sort().reverse()[0];
+    if (!baseName) {
+      baseName = baseNames.sort().reverse()[0];
     }
 
     try {
-      const snapshot = loadYamlFromPath(path.join(snapshotDir, file));
+      const snapshot = loadYamlSafe(path.join(snapshotDir, baseName));
       if (snapshot) {
-        snapshot.file = file;
+        snapshot.file = baseName;
       }
       return snapshot || null;
     } catch {

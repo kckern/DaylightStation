@@ -11,10 +11,9 @@ import {
   fileExists,
   listYamlFiles,
   listDirs,
-  loadYamlFromPath,
-  saveYamlToPath,
-  resolveYamlPath,
-  deleteFile
+  loadYamlSafe,
+  saveYaml,
+  deleteYaml
 } from '../../../0_infrastructure/utils/FileIO.mjs';
 
 export class YamlJournalStore {
@@ -41,7 +40,7 @@ export class YamlJournalStore {
       'apps',
       'journal',
       'entries',
-      `${date}.yml`
+      date
     );
   }
 
@@ -62,29 +61,22 @@ export class YamlJournalStore {
   }
 
   /**
-   * Read a YAML file (handles .yml/.yaml)
-   * @param {string} filePath
+   * Read a YAML file
+   * @param {string} basePath
    * @returns {Object|null}
    */
-  _readFile(filePath) {
-    try {
-      const basePath = filePath.replace(/\.yml$/, '');
-      const resolvedPath = resolveYamlPath(basePath);
-      if (!resolvedPath) return null;
-      return loadYamlFromPath(resolvedPath) || null;
-    } catch {
-      return null;
-    }
+  _readFile(basePath) {
+    return loadYamlSafe(basePath);
   }
 
   /**
    * Write a YAML file
-   * @param {string} filePath
+   * @param {string} basePath
    * @param {Object} data
    */
-  _writeFile(filePath, data) {
-    ensureDir(path.dirname(filePath));
-    saveYamlToPath(filePath, data);
+  _writeFile(basePath, data) {
+    ensureDir(path.dirname(basePath));
+    saveYaml(basePath, data);
   }
 
   /**
@@ -202,12 +194,8 @@ export class YamlJournalStore {
     const entry = await this.findById(id);
     if (!entry) return;
 
-    const filePath = this.getEntryPath(entry.userId, entry.date);
-    const basePath = filePath.replace(/\.yml$/, '');
-
-    // Try both extensions
-    deleteFile(`${basePath}.yml`);
-    deleteFile(`${basePath}.yaml`);
+    const basePath = this.getEntryPath(entry.userId, entry.date);
+    deleteYaml(basePath);
   }
 
   /**
