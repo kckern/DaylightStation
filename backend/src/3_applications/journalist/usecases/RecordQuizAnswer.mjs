@@ -17,9 +17,7 @@ export class RecordQuizAnswer {
   #logger;
 
   constructor(deps) {
-    // TODO: Make quizRepository required once it's implemented
-    // if (!deps.quizRepository) throw new Error('quizRepository is required');
-
+    // quizRepository is optional - gracefully degrades if not available
     this.#quizRepository = deps.quizRepository || null;
     this.#messageQueueRepository = deps.messageQueueRepository;
     this.#logger = deps.logger || console;
@@ -38,12 +36,13 @@ export class RecordQuizAnswer {
 
     this.#logger.debug?.('quiz.recordAnswer.start', { chatId, questionUuid });
 
-    // If quizRepository is not available, log warning and skip
+    // If quizRepository is not available, log and return success (graceful degradation)
     if (!this.#quizRepository) {
-      this.#logger.warn?.('quiz.recordAnswer.repository-not-available', { chatId, questionUuid });
+      this.#logger.debug?.('quiz.recordAnswer.repository-not-available', { chatId, questionUuid });
       return {
-        success: false,
-        error: 'Quiz repository not implemented yet',
+        success: true,
+        skipped: true,
+        reason: 'quizRepository not configured',
       };
     }
 

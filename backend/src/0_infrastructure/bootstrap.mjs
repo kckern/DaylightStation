@@ -1181,6 +1181,7 @@ export function createJournalistServices(config) {
     conversationStateStore,
     quizRepository,
     userResolver,
+    userDataService,
     logger
   });
 

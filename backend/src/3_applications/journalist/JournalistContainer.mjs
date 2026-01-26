@@ -98,6 +98,9 @@ export class JournalistContainer {
   // Repositories
   #quizRepository;
 
+  // Data services
+  #userDataService;
+
   /**
    * @param {Object} config - Journalist configuration
    * @param {Object} [options] - Additional options
@@ -108,6 +111,7 @@ export class JournalistContainer {
    * @param {Object} [options.conversationStateStore] - Conversation state store
    * @param {Object} [options.quizRepository] - Quiz repository
    * @param {Object} [options.userResolver] - UserResolver for multi-user support
+   * @param {Object} [options.userDataService] - UserDataService for loading user data files
    * @param {Object} [options.logger] - Logger instance
    */
   constructor(config, options = {}) {
@@ -123,6 +127,7 @@ export class JournalistContainer {
     this.#conversationStateStore = options.conversationStateStore;
     this.#quizRepository = options.quizRepository;
     this.#userResolver = options.userResolver;
+    this.#userDataService = options.userDataService;
   }
 
   // ==================== Infrastructure Getters ====================
@@ -379,7 +384,13 @@ export class JournalistContainer {
 
   getLifelogAggregator() {
     if (!this.#lifelogAggregator) {
+      // Create userLoadFile function that wraps userDataService
+      const userLoadFile = this.#userDataService
+        ? (username, filename) => this.#userDataService.getLifelogData(username, filename)
+        : null;
+
       this.#lifelogAggregator = new LifelogAggregator({
+        userLoadFile,
         logger: this.#logger,
       });
     }

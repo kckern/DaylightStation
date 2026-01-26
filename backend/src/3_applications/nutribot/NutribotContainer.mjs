@@ -147,23 +147,29 @@ export class NutribotContainer {
   }
 
   getFoodLogStore() {
+    if (!this.#foodLogStore) {
+      throw new Error('foodLogStore not configured');
+    }
     return this.#foodLogStore;
   }
 
   getNutriListStore() {
+    if (!this.#nutriListStore) {
+      throw new Error('nutriListStore not configured');
+    }
     return this.#nutriListStore;
   }
 
   getNutriCoachStore() {
-    return this.#nutriCoachStore;
+    return this.#nutriCoachStore; // Optional - coach features degrade gracefully
   }
 
   getConversationStateStore() {
-    return this.#conversationStateStore;
+    return this.#conversationStateStore; // Optional - state features degrade gracefully
   }
 
   getReportRenderer() {
-    return this.#reportRenderer;
+    return this.#reportRenderer; // Optional - reports degrade to text-only
   }
 
   // ==================== Core Logging Use Cases ====================

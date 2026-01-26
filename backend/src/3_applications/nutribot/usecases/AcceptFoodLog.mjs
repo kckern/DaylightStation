@@ -134,7 +134,7 @@ export class AcceptFoodLog {
       });
 
       // 7. If no pending logs remain, auto-generate today's report
-      if (this.#foodLogStore?.findPending && this.#generateDailyReport) {
+      if (this.#foodLogStore?.findPending && this.#generateDailyReport?.execute) {
         try {
           const pending = await this.#foodLogStore.findPending(userId);
           this.#logger.debug?.('acceptLog.autoreport.pendingCheck', { userId, pendingCount: pending.length });

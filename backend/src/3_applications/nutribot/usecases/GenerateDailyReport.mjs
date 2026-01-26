@@ -6,9 +6,6 @@
  * visual report and optional coaching messages.
  */
 
-import fs from 'fs/promises';
-import path from 'path';
-import os from 'os';
 import { NOOM_COLOR_EMOJI } from '../../../1_domains/nutrition/entities/formatters.mjs';
 
 /**
@@ -155,20 +152,15 @@ export class GenerateDailyReport {
 
       // 7. Generate PNG report if renderer available
       let pngPath = null;
-      if (this.#reportRenderer?.renderDailyReport) {
+      if (this.#reportRenderer?.renderDailyReportToFile) {
         try {
-          const pngBuffer = await this.#reportRenderer.renderDailyReport({
+          pngPath = await this.#reportRenderer.renderDailyReportToFile({
             date,
             totals,
             goals,
             items,
             history,
           });
-
-          const tmpDir = path.join(os.tmpdir(), 'nutribot-reports');
-          await fs.mkdir(tmpDir, { recursive: true });
-          pngPath = path.join(tmpDir, `report-${date}-${Date.now()}.png`);
-          await fs.writeFile(pngPath, pngBuffer);
         } catch (e) {
           this.#logger.error?.('report.png.failed', { error: e.message });
         }
