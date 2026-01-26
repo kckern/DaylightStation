@@ -10,6 +10,8 @@
  * - transfer: Internal transfers between accounts
  */
 
+import { ValidationError } from '../../core/errors/index.mjs';
+
 /**
  * @typedef {Object} BucketConfig
  * @property {Object} income - Income configuration
@@ -50,7 +52,10 @@ export class TransactionClassifier {
    */
   constructor(config) {
     if (!config) {
-      throw new Error('TransactionClassifier requires bucket configuration');
+      throw new ValidationError('TransactionClassifier requires bucket configuration', {
+        code: 'MISSING_CONFIG',
+        field: 'bucketConfig'
+      });
     }
 
     this.#incomeTags = config.income?.tags || [];

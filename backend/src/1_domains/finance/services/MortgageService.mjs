@@ -3,6 +3,7 @@
  */
 
 import { Mortgage } from '../entities/Mortgage.mjs';
+import { EntityNotFoundError } from '../../core/errors/index.mjs';
 
 export class MortgageService {
   constructor({ mortgageStore }) {
@@ -40,7 +41,7 @@ export class MortgageService {
    */
   async updateBalance(id, newBalance) {
     const mortgage = await this.getMortgage(id);
-    if (!mortgage) throw new Error(`Mortgage not found: ${id}`);
+    if (!mortgage) throw new EntityNotFoundError('Mortgage', id);
 
     mortgage.currentBalance = newBalance;
     await this.mortgageStore.save(mortgage);
@@ -52,7 +53,7 @@ export class MortgageService {
    */
   async recordPayment(id, principalPaid) {
     const mortgage = await this.getMortgage(id);
-    if (!mortgage) throw new Error(`Mortgage not found: ${id}`);
+    if (!mortgage) throw new EntityNotFoundError('Mortgage', id);
 
     mortgage.makePayment(principalPaid);
     await this.mortgageStore.save(mortgage);
@@ -95,7 +96,7 @@ export class MortgageService {
    */
   async getMortgageSummary(id, asOfDate) {
     const mortgage = await this.getMortgage(id);
-    if (!mortgage) throw new Error(`Mortgage not found: ${id}`);
+    if (!mortgage) throw new EntityNotFoundError('Mortgage', id);
 
     return {
       id: mortgage.id,
