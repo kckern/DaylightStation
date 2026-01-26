@@ -92,30 +92,39 @@ describe('Message', () => {
 
   describe('age methods', () => {
     test('getAgeMs returns age in milliseconds', () => {
-      const pastTime = new Date(Date.now() - 5000).toISOString();
+      const now = Date.now();
+      const pastTime = new Date(now - 5000).toISOString();
       const msg = new Message({ id: '1', timestamp: pastTime, content: 'test' });
 
-      expect(msg.getAgeMs()).toBeGreaterThanOrEqual(4900);
-      expect(msg.getAgeMs()).toBeLessThan(6000);
+      expect(msg.getAgeMs(now)).toBeGreaterThanOrEqual(4900);
+      expect(msg.getAgeMs(now)).toBeLessThan(6000);
+    });
+
+    test('getAgeMs throws if nowMs not provided', () => {
+      const msg = new Message({ id: '1', timestamp: testTimestamp, content: 'test' });
+      expect(() => msg.getAgeMs()).toThrow('nowMs timestamp required');
     });
 
     test('getAgeMinutes returns age in minutes', () => {
-      const pastTime = new Date(Date.now() - 120000).toISOString(); // 2 minutes ago
+      const now = Date.now();
+      const pastTime = new Date(now - 120000).toISOString(); // 2 minutes ago
       const msg = new Message({ id: '1', timestamp: pastTime, content: 'test' });
 
-      expect(msg.getAgeMinutes()).toBe(2);
+      expect(msg.getAgeMinutes(now)).toBe(2);
     });
 
     test('isRecent returns true for recent messages', () => {
-      const recentTime = new Date().toISOString();
+      const now = Date.now();
+      const recentTime = new Date(now).toISOString();
       const msg = new Message({ id: '1', content: 'test', timestamp: recentTime });
-      expect(msg.isRecent(5)).toBe(true);
+      expect(msg.isRecent(now, 5)).toBe(true);
     });
 
     test('isRecent returns false for old messages', () => {
-      const pastTime = new Date(Date.now() - 600000).toISOString(); // 10 minutes ago
+      const now = Date.now();
+      const pastTime = new Date(now - 600000).toISOString(); // 10 minutes ago
       const msg = new Message({ id: '1', timestamp: pastTime, content: 'test' });
-      expect(msg.isRecent(5)).toBe(false);
+      expect(msg.isRecent(now, 5)).toBe(false);
     });
   });
 
@@ -155,13 +164,16 @@ describe('Message', () => {
   });
 
   describe('static factory methods', () => {
+    const testNowMs = 1704969600000; // Fixed timestamp for testing
+
     test('createText creates text message', () => {
       const msg = Message.createText({
         conversationId: 'conv-1',
         senderId: 'user-1',
         recipientId: 'user-2',
         text: 'Hello there',
-        timestamp: testTimestamp
+        timestamp: testTimestamp,
+        nowMs: testNowMs
       });
 
       expect(msg.type).toBe('text');
@@ -176,7 +188,8 @@ describe('Message', () => {
         recipientId: 'user-2',
         fileId: 'file-123',
         duration: 5,
-        timestamp: testTimestamp
+        timestamp: testTimestamp,
+        nowMs: testNowMs
       });
 
       expect(msg.type).toBe('voice');
@@ -190,7 +203,8 @@ describe('Message', () => {
         recipientId: 'user-2',
         fileId: 'file-123',
         caption: 'Nice photo',
-        timestamp: testTimestamp
+        timestamp: testTimestamp,
+        nowMs: testNowMs
       });
 
       expect(msg.type).toBe('image');
@@ -204,7 +218,8 @@ describe('Message', () => {
         senderId: 'user-1',
         recipientId: 'user-2',
         callbackData: 'option_selected',
-        timestamp: testTimestamp
+        timestamp: testTimestamp,
+        nowMs: testNowMs
       });
 
       expect(msg.type).toBe('callback');
@@ -214,11 +229,16 @@ describe('Message', () => {
 
   describe('generateId', () => {
     test('generates unique IDs', () => {
-      const id1 = Message.generateId();
-      const id2 = Message.generateId();
+      const nowMs = Date.now();
+      const id1 = Message.generateId(nowMs);
+      const id2 = Message.generateId(nowMs);
 
       expect(id1).toMatch(/^msg-\d+-[a-z0-9]+$/);
       expect(id1).not.toBe(id2);
+    });
+
+    test('throws if nowMs not provided', () => {
+      expect(() => Message.generateId()).toThrow('nowMs timestamp required');
     });
   });
 });

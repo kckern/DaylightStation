@@ -3,14 +3,14 @@
  *
  * This module re-exports from the new location for backwards compatibility.
  * All new code should import from:
- *   #backend/src/1_domains/content/services/ArchiveService.mjs
+ *   #backend/src/3_applications/content/services/ArchiveService.mjs
  *
  * This shim will be removed in a future release.
  */
 
 console.warn(
   '[DEPRECATION] Importing from #backend/_legacy/lib/ArchiveService.mjs is deprecated.\n' +
-  'Update imports to: #backend/src/1_domains/content/services/ArchiveService.mjs'
+  'Update imports to: #backend/src/3_applications/content/services/ArchiveService.mjs'
 );
 
 export {
@@ -28,6 +28,6 @@ export {
   listArchiveYears,
   getArchiveStatus,
   clearConfigCache
-} from '../../src/1_domains/content/services/ArchiveService.mjs';
+} from '../../src/3_applications/content/services/ArchiveService.mjs';
 
-export { default } from '../../src/1_domains/content/services/ArchiveService.mjs';
+export { default } from '../../src/3_applications/content/services/ArchiveService.mjs';

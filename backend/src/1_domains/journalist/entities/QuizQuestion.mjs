@@ -77,11 +77,15 @@ export class QuizQuestion {
 
   /**
    * Get days since last asked
+   * @param {number} nowMs - Current time in milliseconds (required)
    * @returns {number|null}
    */
-  get daysSinceAsked() {
+  getDaysSinceAsked(nowMs) {
+    if (typeof nowMs !== 'number') {
+      throw new ValidationError('nowMs timestamp required', { code: 'MISSING_TIMESTAMP', field: 'nowMs' });
+    }
     if (!this.#lastAsked) return null;
-    const diff = Date.now() - new Date(this.#lastAsked).getTime();
+    const diff = nowMs - new Date(this.#lastAsked).getTime();
     return Math.floor(diff / (1000 * 60 * 60 * 24));
   }
 

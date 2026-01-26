@@ -23,7 +23,7 @@ import { stringify as stringifyYaml } from 'yaml';
 import { createLogger } from './logging/logger.js';
 import { configService } from './config/index.mjs';
 import { MediaMemoryValidatorService } from '../../src/1_domains/content/services/MediaMemoryValidatorService.mjs';
-import { getMediaMemoryDir, getMediaMemoryFiles } from '../../src/1_domains/content/services/MediaMemoryService.mjs';
+import { getMediaMemoryDir, getMediaMemoryFiles } from '../../src/3_applications/content/services/MediaMemoryService.mjs';
 
 const logger = createLogger({ source: 'cron', app: 'mediaMemoryValidator' });
 

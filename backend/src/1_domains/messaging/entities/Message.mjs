@@ -96,16 +96,23 @@ export class Message {
 
   /**
    * Get age in milliseconds
+   * @param {number} nowMs - Current time in milliseconds (required)
+   * @returns {number}
    */
-  getAgeMs() {
-    return Date.now() - new Date(this.timestamp).getTime();
+  getAgeMs(nowMs) {
+    if (typeof nowMs !== 'number') {
+      throw new ValidationError('nowMs timestamp required', { code: 'MISSING_TIMESTAMP', field: 'nowMs' });
+    }
+    return nowMs - new Date(this.timestamp).getTime();
   }
 
   /**
    * Get age in minutes
+   * @param {number} nowMs - Current time in milliseconds (required)
+   * @returns {number}
    */
-  getAgeMinutes() {
-    return Math.floor(this.getAgeMs() / 60000);
+  getAgeMinutes(nowMs) {
+    return Math.floor(this.getAgeMs(nowMs) / 60000);
   }
 
   /**
@@ -117,9 +124,12 @@ export class Message {
 
   /**
    * Check if message is recent (within threshold minutes)
+   * @param {number} nowMs - Current time in milliseconds (required)
+   * @param {number} thresholdMinutes - Threshold in minutes (default 5)
+   * @returns {boolean}
    */
-  isRecent(thresholdMinutes = 5) {
-    return this.getAgeMinutes() <= thresholdMinutes;
+  isRecent(nowMs, thresholdMinutes = 5) {
+    return this.getAgeMinutes(nowMs) <= thresholdMinutes;
   }
 
   toJSON() {
@@ -143,10 +153,12 @@ export class Message {
 
   /**
    * Create a text message
+   * @param {Object} params
+   * @param {number} params.nowMs - Current time in milliseconds for ID generation (required)
    */
-  static createText({ conversationId, senderId, recipientId, text, timestamp, direction = null, metadata = {} }) {
+  static createText({ conversationId, senderId, recipientId, text, timestamp, nowMs, direction = null, metadata = {} }) {
     return new Message({
-      id: Message.generateId(),
+      id: Message.generateId(nowMs),
       conversationId,
       senderId,
       recipientId,
@@ -161,10 +173,12 @@ export class Message {
 
   /**
    * Create a voice message
+   * @param {Object} params
+   * @param {number} params.nowMs - Current time in milliseconds for ID generation (required)
    */
-  static createVoice({ conversationId, senderId, recipientId, fileId, duration, timestamp, direction = null, metadata = {} }) {
+  static createVoice({ conversationId, senderId, recipientId, fileId, duration, timestamp, nowMs, direction = null, metadata = {} }) {
     return new Message({
-      id: Message.generateId(),
+      id: Message.generateId(nowMs),
       conversationId,
       senderId,
       recipientId,
@@ -179,10 +193,12 @@ export class Message {
 
   /**
    * Create an image message
+   * @param {Object} params
+   * @param {number} params.nowMs - Current time in milliseconds for ID generation (required)
    */
-  static createImage({ conversationId, senderId, recipientId, fileId, caption, timestamp, direction = null, metadata = {} }) {
+  static createImage({ conversationId, senderId, recipientId, fileId, caption, timestamp, nowMs, direction = null, metadata = {} }) {
     return new Message({
-      id: Message.generateId(),
+      id: Message.generateId(nowMs),
       conversationId,
       senderId,
       recipientId,
@@ -197,10 +213,12 @@ export class Message {
 
   /**
    * Create a callback message (button press)
+   * @param {Object} params
+   * @param {number} params.nowMs - Current time in milliseconds for ID generation (required)
    */
-  static createCallback({ conversationId, senderId, recipientId, callbackData, timestamp, direction = null, metadata = {} }) {
+  static createCallback({ conversationId, senderId, recipientId, callbackData, timestamp, nowMs, direction = null, metadata = {} }) {
     return new Message({
-      id: Message.generateId(),
+      id: Message.generateId(nowMs),
       conversationId,
       senderId,
       recipientId,
@@ -215,9 +233,14 @@ export class Message {
 
   /**
    * Generate a unique message ID
+   * @param {number} nowMs - Current time in milliseconds (required)
+   * @returns {string}
    */
-  static generateId() {
-    return `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  static generateId(nowMs) {
+    if (typeof nowMs !== 'number') {
+      throw new ValidationError('nowMs timestamp required for generateId', { code: 'MISSING_TIMESTAMP', field: 'nowMs' });
+    }
+    return `msg-${nowMs}-${Math.random().toString(36).slice(2, 8)}`;
   }
 }
 

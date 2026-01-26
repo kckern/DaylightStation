@@ -15,6 +15,7 @@
  * - GET  /api/messaging/metrics - Get adapter metrics
  */
 import express from 'express';
+import { nowTs24 } from '../../0_infrastructure/utils/index.mjs';
 
 /**
  * Create messaging API router
@@ -140,8 +141,12 @@ export function createMessagingRouter(config) {
     }
 
     try {
+      const nowMs = Date.now();
+      const timestamp = nowTs24();
       const conversation = await conversationService.createConversation({
         participants,
+        nowMs,
+        timestamp,
         metadata
       });
 
@@ -168,12 +173,13 @@ export function createMessagingRouter(config) {
     }
 
     try {
+      const timestamp = nowTs24();
       const message = await conversationService.addMessage(id, {
         senderId,
         content,
         type,
         metadata
-      });
+      }, timestamp);
 
       return res.status(201).json({ message: message.toJSON() });
     } catch (error) {
@@ -262,6 +268,8 @@ export function createMessagingRouter(config) {
     }
 
     try {
+      const nowMs = Date.now();
+      const timestamp = nowTs24();
       const notification = await notificationService.send({
         recipient,
         channel,
@@ -269,7 +277,7 @@ export function createMessagingRouter(config) {
         body,
         priority,
         metadata
-      });
+      }, nowMs, timestamp);
 
       return res.status(201).json({
         notification: notification.toJSON(),
@@ -292,7 +300,8 @@ export function createMessagingRouter(config) {
     const { id } = req.params;
 
     try {
-      const notification = await notificationService.markRead(id);
+      const timestamp = nowTs24();
+      const notification = await notificationService.markRead(id, timestamp);
       return res.json({ notification: notification.toJSON() });
     } catch (error) {
       if (error.message.includes('not found')) {

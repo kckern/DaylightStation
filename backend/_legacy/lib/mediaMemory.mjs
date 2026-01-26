@@ -3,7 +3,7 @@
  *
  * This module re-exports from the new location for backwards compatibility.
  * All new code should import from:
- *   #backend/src/1_domains/content/services/MediaMemoryService.mjs
+ *   #backend/src/3_applications/content/services/MediaMemoryService.mjs
  *
  * YAML sanitization functions have been moved to:
  *   #backend/src/0_infrastructure/utils/yamlSanitizer.mjs
@@ -13,7 +13,7 @@
 
 console.warn(
   '[DEPRECATION] Importing from #backend/_legacy/lib/mediaMemory.mjs is deprecated.\n' +
-  'Update imports to: #backend/src/1_domains/content/services/MediaMemoryService.mjs'
+  'Update imports to: #backend/src/3_applications/content/services/MediaMemoryService.mjs'
 );
 
 export {
@@ -25,6 +25,6 @@ export {
   // Re-exported from infrastructure for backwards compat
   sanitizeForYAML,
   sanitizeObjectForYAML
-} from '../../src/1_domains/content/services/MediaMemoryService.mjs';
+} from '../../src/3_applications/content/services/MediaMemoryService.mjs';
 
-export { default } from '../../src/1_domains/content/services/MediaMemoryService.mjs';
+export { default } from '../../src/3_applications/content/services/MediaMemoryService.mjs';

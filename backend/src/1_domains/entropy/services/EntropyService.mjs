@@ -217,7 +217,7 @@ export async function createWithLegacyDependencies() {
   const userLoadFile = (username, service) => userDataService.readUserData(username, `lifelog/${service}`);
   const userLoadCurrent = (username, service) => userDataService.readUserData(username, `current/${service}`);
 
-  const ArchiveServiceModule = await import('../../content/services/ArchiveService.mjs');
+  const ArchiveServiceModule = await import('../../../3_applications/content/services/ArchiveService.mjs');
   const { createLogger } = await import('../../../0_infrastructure/logging/logger.js');
 
   const ArchiveService = ArchiveServiceModule.default;

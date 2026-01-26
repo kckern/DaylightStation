@@ -8,3 +8,4 @@
 
 export { MediaJobExecutor } from './MediaJobExecutor.mjs';
 export { createYouTubeJobHandler } from './YouTubeJobHandler.mjs';
+export { YouTubeDownloadService } from './services/YouTubeDownloadService.mjs';
