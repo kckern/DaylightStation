@@ -1,5 +1,5 @@
 // backend/src/domains/content/services/ContentSourceRegistry.mjs
-import { validateAdapter } from '../ports/IContentSource.mjs';
+import { validateAdapter } from '../../../3_applications/content/ports/IContentSource.mjs';
 
 /**
  * Registry for content source adapters.
@@ -7,7 +7,7 @@ import { validateAdapter } from '../ports/IContentSource.mjs';
  */
 export class ContentSourceRegistry {
   constructor() {
-    /** @type {Map<string, import('../ports/IContentSource.mjs').IContentSource>} */
+    /** @type {Map<string, import('../../../3_applications/content/ports/IContentSource.mjs').IContentSource>} */
     this.adapters = new Map();
 
     /** @type {Map<string, {adapter: any, transform?: function}>} */
@@ -16,7 +16,7 @@ export class ContentSourceRegistry {
 
   /**
    * Register an adapter
-   * @param {import('../ports/IContentSource.mjs').IContentSource} adapter
+   * @param {import('../../../3_applications/content/ports/IContentSource.mjs').IContentSource} adapter
    */
   register(adapter) {
     validateAdapter(adapter);
@@ -35,7 +35,7 @@ export class ContentSourceRegistry {
   /**
    * Get adapter by source name
    * @param {string} source
-   * @returns {import('../ports/IContentSource.mjs').IContentSource|undefined}
+   * @returns {import('../../../3_applications/content/ports/IContentSource.mjs').IContentSource|undefined}
    */
   get(source) {
     return this.adapters.get(source);
