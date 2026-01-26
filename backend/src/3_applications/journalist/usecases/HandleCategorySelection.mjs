@@ -84,7 +84,7 @@ export class HandleCategorySelection {
         this.#logger.warn?.('debrief.category-selection.no-match', {
           conversationId,
           messageText,
-          availableCategories: state.debrief.categories.map((c) => c.key),
+          availableCategories: state.debrief.categories?.map((c) => c.key) || [],
         });
 
         // Treat as free-form input

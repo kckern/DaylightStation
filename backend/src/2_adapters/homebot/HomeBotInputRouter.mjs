@@ -87,6 +87,7 @@ export class HomeBotInputRouter {
     const useCase = await this.#container.getProcessGratitudeInput();
     return useCase.execute({
       conversationId,
+      userId: this.#resolveUserId(),
       text,
       messageId,
       responseContext,
@@ -97,6 +98,7 @@ export class HomeBotInputRouter {
     const useCase = await this.#container.getProcessGratitudeInput();
     return useCase.execute({
       conversationId,
+      userId: this.#resolveUserId(),
       voiceFileId: fileId,
       messageId,
       responseContext,
@@ -104,12 +106,15 @@ export class HomeBotInputRouter {
   }
 
   async #handleCallback(conversationId, callbackData, messageId, responseContext) {
+    const userId = this.#resolveUserId();
+
     // Parse callback data format: "action:value"
     if (callbackData.startsWith('user:')) {
       const username = callbackData.slice(5);
       const useCase = await this.#container.getAssignItemToUser();
       return useCase.execute({
         conversationId,
+        userId,
         messageId,
         username,
         responseContext,
@@ -121,6 +126,7 @@ export class HomeBotInputRouter {
       const useCase = await this.#container.getToggleCategory();
       return useCase.execute({
         conversationId,
+        userId,
         messageId,
         category,
         responseContext,
@@ -131,6 +137,7 @@ export class HomeBotInputRouter {
       const useCase = await this.#container.getCancelGratitudeInput();
       return useCase.execute({
         conversationId,
+        userId,
         messageId,
         responseContext,
       });
@@ -156,15 +163,34 @@ export class HomeBotInputRouter {
    */
   #resolveUserId() {
     const event = this.#currentEvent;
+
+    this.#logger.debug?.('homebot.resolveUserId.attempt', {
+      hasUserResolver: !!this.#userResolver,
+      platform: event?.platform,
+      platformUserId: event?.platformUserId,
+      conversationId: event?.conversationId,
+    });
+
     if (this.#userResolver && event?.platform && event?.platformUserId) {
       const username = this.#userResolver.resolveUser(event.platform, event.platformUserId);
       if (username) {
+        this.#logger.debug?.('homebot.resolveUserId.resolved', {
+          username,
+          platformUserId: event.platformUserId,
+        });
         return username;
       }
       this.#logger.warn?.('homebot.userResolver.notFound', {
         platform: event.platform,
         platformUserId: event.platformUserId,
         fallback: event.conversationId,
+      });
+    } else {
+      this.#logger.warn?.('homebot.resolveUserId.skipResolution', {
+        hasUserResolver: !!this.#userResolver,
+        hasPlatform: !!event?.platform,
+        hasPlatformUserId: !!event?.platformUserId,
+        fallback: event?.conversationId,
       });
     }
     // Fallback to conversationId for backwards compatibility

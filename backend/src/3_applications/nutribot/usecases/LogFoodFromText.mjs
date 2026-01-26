@@ -437,7 +437,7 @@ Begin response with '{' character - output only valid JSON, no markdown.`,
     // Get the log by UUID
     let targetLog = null;
     if (this.#foodLogStore) {
-      targetLog = await this.#foodLogStore.findByUuid(pendingLogUuid);
+      targetLog = await this.#foodLogStore.findByUuid(pendingLogUuid, userId);
     }
 
     if (!targetLog || targetLog.status !== 'pending') {

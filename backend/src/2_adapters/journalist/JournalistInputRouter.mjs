@@ -129,6 +129,7 @@ export class JournalistInputRouter {
       if (useCase) {
         return useCase.execute({
           chatId: conversationId,
+          userId: this.#resolveUserId(),
           messageId,
           text,
           responseContext: this.#responseContext,
@@ -141,6 +142,7 @@ export class JournalistInputRouter {
     if (debriefResponseHandler && this.#isDebriefButton(text)) {
       const result = await debriefResponseHandler.execute({
         conversationId,
+        userId: this.#resolveUserId(),
         text,
         responseContext: this.#responseContext,
       });
@@ -154,6 +156,7 @@ export class JournalistInputRouter {
     if (sourceSelectionHandler && this.#isSourcePickerButton(text)) {
       const result = await sourceSelectionHandler.execute({
         conversationId,
+        userId: this.#resolveUserId(),
         text,
         responseContext: this.#responseContext,
       });
@@ -167,6 +170,7 @@ export class JournalistInputRouter {
     if (categoryHandler) {
       const result = await categoryHandler.execute({
         conversationId,
+        userId: this.#resolveUserId(),
         messageText: text,
         responseContext: this.#responseContext,
       });
@@ -181,6 +185,7 @@ export class JournalistInputRouter {
     const useCase = this.#container.getProcessTextEntry();
     return useCase.execute({
       chatId: conversationId,
+      userId: this.#resolveUserId(),
       text,
       messageId,
       senderId: this.#extractSenderId(metadata),
@@ -221,6 +226,7 @@ export class JournalistInputRouter {
     const useCase = this.#container.getProcessVoiceEntry();
     return useCase.execute({
       chatId: conversationId,
+      userId: this.#resolveUserId(),
       voiceFileId: payload.fileId,
       messageId,
       senderId: this.#extractSenderId(metadata),
@@ -253,7 +259,7 @@ export class JournalistInputRouter {
       return useCase.execute({
         chatId: conversationId,
         command: fullCommand,
-        userId: metadata?.senderId,
+        userId: this.#resolveUserId(),
         responseContext: this.#responseContext,
       });
     }
@@ -278,6 +284,7 @@ export class JournalistInputRouter {
     const useCase = this.#container.getHandleCallbackResponse();
     return useCase.execute({
       chatId: conversationId,
+      userId: this.#resolveUserId(),
       messageId: payload.sourceMessageId,
       callbackData: payload.data,
       options: {
@@ -300,6 +307,7 @@ export class JournalistInputRouter {
     // Handle source selection (e.g., "source:events")
     if (action.startsWith('source:')) {
       const sourceName = action.replace('source:', '');
+      const userId = this.#resolveUserId();
 
       // Get state to find the debrief date
       const stateStore = this.#container.getConversationStateStore();
@@ -310,14 +318,13 @@ export class JournalistInputRouter {
 
       if (!debriefDate) {
         // Fall back to most recent debrief
-        const username = this.#resolveUserId();
-        if (!username) {
+        if (!userId) {
           await messaging.sendMessage('❌ Could not identify user');
           return { success: false };
         }
 
         const debriefRepo = this.#container.getDebriefRepository();
-        const recentDebriefs = await debriefRepo.getRecentDebriefs(username, 1);
+        const recentDebriefs = await debriefRepo.getRecentDebriefs(userId, 1);
 
         if (!recentDebriefs || recentDebriefs.length === 0) {
           await messaging.sendMessage('❌ No recent debrief found');
@@ -373,6 +380,7 @@ export class JournalistInputRouter {
         if (interviewUseCase) {
           return interviewUseCase.execute({
             conversationId,
+            userId: this.#resolveUserId(),
             debriefDate,
           });
         }
@@ -422,15 +430,34 @@ export class JournalistInputRouter {
    */
   #resolveUserId() {
     const event = this.#currentEvent;
+
+    this.#logger.debug?.('journalist.resolveUserId.attempt', {
+      hasUserResolver: !!this.#userResolver,
+      platform: event?.platform,
+      platformUserId: event?.platformUserId,
+      conversationId: event?.conversationId,
+    });
+
     if (this.#userResolver && event?.platform && event?.platformUserId) {
       const username = this.#userResolver.resolveUser(event.platform, event.platformUserId);
       if (username) {
+        this.#logger.debug?.('journalist.resolveUserId.resolved', {
+          username,
+          platformUserId: event.platformUserId,
+        });
         return username;
       }
       this.#logger.warn?.('journalist.userResolver.notFound', {
         platform: event.platform,
         platformUserId: event.platformUserId,
         fallback: event.conversationId,
+      });
+    } else {
+      this.#logger.warn?.('journalist.resolveUserId.skipResolution', {
+        hasUserResolver: !!this.#userResolver,
+        hasPlatform: !!event?.platform,
+        hasPlatformUserId: !!event?.platformUserId,
+        fallback: event?.conversationId,
       });
     }
     // Fallback to conversationId for backwards compatibility
