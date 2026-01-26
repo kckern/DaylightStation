@@ -214,14 +214,14 @@ export class EntropyService {
  */
 export async function createWithLegacyDependencies() {
   // Dynamic imports to avoid circular dependencies
-  const { userDataService, configService } = await import('../../../0_infrastructure/config/index.mjs');
+  const { userDataService, configService } = await import('../../../0_system/config/index.mjs');
 
   // Adapter functions for YamlEntropyReader interface
   const userLoadFile = (username, service) => userDataService.readUserData(username, `lifelog/${service}`);
   const userLoadCurrent = (username, service) => userDataService.readUserData(username, `current/${service}`);
 
   const ArchiveServiceModule = await import('../../content/services/ArchiveService.mjs');
-  const { createLogger } = await import('../../../0_infrastructure/logging/logger.js');
+  const { createLogger } = await import('../../../0_system/logging/logger.js');
 
   const ArchiveService = ArchiveServiceModule.default;
 

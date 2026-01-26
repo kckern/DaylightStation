@@ -14,7 +14,7 @@
  * @module applications/media/services/YouTubeDownloadService
  */
 
-import { nowTs24 } from '../../../0_infrastructure/utils/index.mjs';
+import { nowTs24 } from '../../../0_system/utils/index.mjs';
 
 import child_process from 'child_process';
 import { promisify } from 'util';
