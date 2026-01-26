@@ -6,35 +6,62 @@
 export class TelegramMessagingAdapter {
   #token;
   #baseUrl;
+  #httpClient;
   #logger;
 
-  constructor(config) {
+  /**
+   * @param {Object} config
+   * @param {string} config.token - Telegram bot token
+   * @param {Object} deps
+   * @param {import('#system/services/HttpClient.mjs').HttpClient} deps.httpClient
+   * @param {Object} [deps.logger=console]
+   */
+  constructor(config, deps = {}) {
     if (!config.token) {
       throw new Error('TelegramMessagingAdapter requires token');
     }
+    if (!deps.httpClient) {
+      throw new Error('TelegramMessagingAdapter requires httpClient');
+    }
     this.#token = config.token;
     this.#baseUrl = `https://api.telegram.org/bot${config.token}`;
-    this.#logger = config.logger || console;
+    this.#httpClient = deps.httpClient;
+    this.#logger = deps.logger || console;
   }
 
   async #callApi(method, params = {}) {
-    const response = await fetch(`${this.#baseUrl}/${method}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(params)
-    });
+    try {
+      const response = await this.#httpClient.post(
+        `${this.#baseUrl}/${method}`,
+        params
+      );
 
-    const data = await response.json();
+      if (!response.data.ok) {
+        this.#logger.error?.('telegram.api.error', {
+          method,
+          error: response.data.description
+        });
+        const err = new Error('Telegram API request failed');
+        err.code = 'TELEGRAM_API_ERROR';
+        err.isTransient = false;
+        throw err;
+      }
 
-    if (!data.ok) {
-      this.#logger.error?.('telegram.api.error', {
+      return response.data.result;
+    } catch (error) {
+      if (error.code === 'TELEGRAM_API_ERROR') throw error;
+
+      // Wrap HttpError
+      this.#logger.error?.('telegram.request.failed', {
         method,
-        error: data.description
+        error: error.message,
+        code: error.code
       });
-      throw new Error(`Telegram API error: ${data.description}`);
+      const wrapped = new Error('Failed to call Telegram API');
+      wrapped.code = error.code || 'UNKNOWN_ERROR';
+      wrapped.isTransient = error.isTransient || false;
+      throw wrapped;
     }
-
-    return data.result;
   }
 
   #extractChatId(userId) {
@@ -150,7 +177,6 @@ export class TelegramMessagingAdapter {
 
   async downloadFile(fileId) {
     const url = await this.getFileUrl(fileId);
-    const response = await fetch(url);
-    return Buffer.from(await response.arrayBuffer());
+    return this.#httpClient.downloadBuffer(url);
   }
 }
