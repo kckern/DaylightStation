@@ -41,7 +41,7 @@ Autonomous AI agents that use LLM reasoning for complex tasks. Unlike rule-based
 ### API Layer (`4_api/routers/`)
 - `agents.mjs` - REST endpoints
 
-### Bootstrap (`0_infrastructure/`)
+### Bootstrap (`0_system/`)
 - `bootstrap.mjs` - `createAgentsApiRouter()` function
 
 ### Tests (`tests/unit/agents/`)

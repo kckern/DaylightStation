@@ -12,7 +12,7 @@ The backend uses Domain-Driven Design (DDD) with a layered architecture. Code is
 ```
 backend/
 ├── src/                    # New DDD architecture (313 files)
-│   ├── 0_infrastructure/   # Framework, cross-cutting concerns
+│   ├── 0_system/   # Framework, cross-cutting concerns
 │   ├── 1_domains/          # Business logic (pure, no I/O)
 │   ├── 2_adapters/         # External integrations
 │   ├── 3_applications/     # Use cases, orchestration
@@ -25,7 +25,7 @@ backend/
 
 ## Layer Details
 
-### 0_infrastructure/ (26 files)
+### 0_system/ (26 files)
 
 Cross-cutting concerns shared across all layers.
 
@@ -137,7 +137,7 @@ HTTP layer - Express routers and handlers.
 3_applications → can import from → 2, 1, 0
 2_adapters  → can import from → 1, 0
 1_domains   → can import from → 0 (minimal)
-0_infrastructure → standalone (no upward imports)
+0_system → standalone (no upward imports)
 ```
 
 **Key Principle:** Domains (1_domains/) should have NO imports from adapters. They define ports (interfaces) that adapters implement.

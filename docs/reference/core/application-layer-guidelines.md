@@ -36,13 +36,13 @@ Use cases in `3_applications/` coordinate domain entities and call abstract gate
 ### ALLOWED imports in `3_applications/`
 
 - `1_domains/` - Entities, value objects, domain services
-- `0_infrastructure/utils/` - Pure utilities (time, formatting, uuid)
+- `0_system/utils/` - Pure utilities (time, formatting, uuid)
 - External packages for domain logic (moment-timezone, uuid)
 
 ### FORBIDDEN imports in `3_applications/`
 
 - `2_adapters/` - Never import adapters directly
-- `0_infrastructure/config/` - Config internals (paths, loaders)
+- `0_system/config/` - Config internals (paths, loaders)
 - Vendor SDKs (telegraf, openai, @anthropic-ai/sdk, plex-api)
 - Node fs/path for data operations (use repositories)
 
