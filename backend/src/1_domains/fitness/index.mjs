@@ -18,5 +18,5 @@ export {
 export { SessionService } from './services/SessionService.mjs';
 export { ZoneService } from './services/ZoneService.mjs';
 
-// Ports
-export { ISessionStore } from './ports/ISessionStore.mjs';
+// Ports (re-exported from application layer for backward compatibility)
+export { ISessionStore } from '../../3_applications/fitness/ports/ISessionStore.mjs';
