@@ -10,14 +10,14 @@ import path, { join } from 'path';
 import 'dotenv/config';
 
 // Config imports - using new infrastructure
-import { initConfigService, configService, ConfigValidationError } from './0_infrastructure/config/index.mjs';
-import { hydrateProcessEnvFromConfigs } from './0_infrastructure/logging/config.js';
+import { initConfigService, configService, ConfigValidationError } from './0_system/config/index.mjs';
+import { hydrateProcessEnvFromConfigs } from './0_system/logging/config.js';
 
 // Logging imports (use the new src/ logging)
-import { initializeLogging } from './0_infrastructure/logging/dispatcher.js';
-import { createConsoleTransport, createFileTransport, createLogglyTransport } from './0_infrastructure/logging/transports/index.js';
-import { createLogger } from './0_infrastructure/logging/logger.js';
-import { loadLoggingConfig, resolveLoggerLevel, getLoggingTags } from './0_infrastructure/logging/config.js';
+import { initializeLogging } from './0_system/logging/dispatcher.js';
+import { createConsoleTransport, createFileTransport, createLogglyTransport } from './0_system/logging/transports/index.js';
+import { createLogger } from './0_system/logging/logger.js';
+import { loadLoggingConfig, resolveLoggerLevel, getLoggingTags } from './0_system/logging/config.js';
 
 // App factory
 import { createApp } from './app.mjs';

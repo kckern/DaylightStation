@@ -13,14 +13,14 @@ import { existsSync } from 'fs';
 import path, { join } from 'path';
 
 // Infrastructure imports
-import { ConfigValidationError, configService, userDataService, userService } from './0_infrastructure/config/index.mjs';
-import { UserResolver } from './0_infrastructure/users/UserResolver.mjs';
+import { ConfigValidationError, configService, userDataService, userService } from './0_system/config/index.mjs';
+import { UserResolver } from './0_system/users/UserResolver.mjs';
 
 // Logging system
-import { getDispatcher } from './0_infrastructure/logging/dispatcher.js';
-import { createLogger } from './0_infrastructure/logging/logger.js';
-import { ingestFrontendLogs } from './0_infrastructure/logging/ingestion.js';
-import { loadLoggingConfig, resolveLoggerLevel } from './0_infrastructure/logging/config.js';
+import { getDispatcher } from './0_system/logging/dispatcher.js';
+import { createLogger } from './0_system/logging/logger.js';
+import { ingestFrontendLogs } from './0_system/logging/ingestion.js';
+import { loadLoggingConfig, resolveLoggerLevel } from './0_system/logging/config.js';
 
 // Bootstrap functions
 import {
@@ -60,23 +60,23 @@ import {
   broadcastEvent,
   createHarvesterServices,
   createAgentsApiRouter
-} from './0_infrastructure/bootstrap.mjs';
+} from './0_system/bootstrap.mjs';
 
 // Routing toggle system
-import { loadRoutingConfig } from './0_infrastructure/routing/index.mjs';
+import { loadRoutingConfig } from './0_system/routing/index.mjs';
 
 // UPC Gateway for barcode lookups
 import { UPCGateway } from './2_adapters/nutribot/UPCGateway.mjs';
 
 // HTTP middleware
-import { createDevProxy } from './0_infrastructure/http/middleware/index.mjs';
+import { createDevProxy } from './0_system/http/middleware/index.mjs';
 import { createEventBusRouter } from './4_api/routers/admin/eventbus.mjs';
 
 // Scheduling domain
 import { SchedulerService } from './1_domains/scheduling/services/SchedulerService.mjs';
 import { YamlJobStore } from './2_adapters/scheduling/YamlJobStore.mjs';
 import { YamlStateStore } from './2_adapters/scheduling/YamlStateStore.mjs';
-import { Scheduler } from './0_infrastructure/scheduling/Scheduler.mjs';
+import { Scheduler } from './0_system/scheduling/Scheduler.mjs';
 import { createSchedulingRouter } from './4_api/routers/scheduling.mjs';
 
 // Conversation state persistence
@@ -90,7 +90,7 @@ import { createYouTubeJobHandler } from './3_applications/media/YouTubeJobHandle
 import { createHarvestRouter } from './4_api/routers/harvest.mjs';
 
 // FileIO utilities for image saving
-import { saveImage as saveImageToFile } from './0_infrastructure/utils/FileIO.mjs';
+import { saveImage as saveImageToFile } from './0_system/utils/FileIO.mjs';
 // API versioning
 import { createApiV1Router } from './4_api/routers/apiV1.mjs';
 import { createItemRouter } from './4_api/routers/item.mjs';
@@ -256,7 +256,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   }) : null;
 
   // Import FileIO functions for content domain (replaces legacy io.mjs)
-  const { loadYaml, saveYaml } = await import('./0_infrastructure/utils/FileIO.mjs');
+  const { loadYaml, saveYaml } = await import('./0_system/utils/FileIO.mjs');
   const dataDir = configService.getDataDir();
   const contentLoadFile = (relativePath) => loadYaml(path.join(dataDir, relativePath));
   const contentSaveFile = (relativePath, data) => saveYaml(path.join(dataDir, relativePath), data);
@@ -526,7 +526,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Gratitude domain router - prayer card canvas renderer
   let createPrayerCardCanvas = null;
   try {
-    const { createPrayerCardRenderer } = await import('./0_infrastructure/rendering/PrayerCardRenderer.mjs');
+    const { createPrayerCardRenderer } = await import('./0_system/rendering/PrayerCardRenderer.mjs');
     const householdId = configService.getDefaultHouseholdId();
     const renderer = createPrayerCardRenderer({
       getSelectionsForPrint: async () => {
@@ -554,7 +554,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Nutribot report renderer (canvas-based PNG generation)
   let nutribotReportRenderer = null;
   try {
-    const { NutriReportRenderer } = await import('./0_infrastructure/rendering/NutriReportRenderer.mjs');
+    const { NutriReportRenderer } = await import('./0_system/rendering/NutriReportRenderer.mjs');
     nutribotReportRenderer = new NutriReportRenderer({
       logger: rootLogger.child({ module: 'nutribot-renderer' }),
       fontDir: configService.getPath('font'),
@@ -606,7 +606,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // Import FileIO functions for state persistence (replaces legacy io.mjs)
-  const { loadYaml: haLoadYaml, saveYaml: haSaveYaml } = await import('./0_infrastructure/utils/FileIO.mjs');
+  const { loadYaml: haLoadYaml, saveYaml: haSaveYaml } = await import('./0_system/utils/FileIO.mjs');
   // Reuse householdDir from earlier (line 157)
   const loadFile = (relativePath) => haLoadYaml(path.join(householdDir, relativePath));
   const saveFile = (relativePath, data) => haSaveYaml(path.join(householdDir, relativePath), data);

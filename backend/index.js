@@ -16,11 +16,11 @@ import path, { join } from 'path';
 import 'dotenv/config';
 import express from 'express';
 
-import { initConfigService, ConfigValidationError, configService } from './src/0_infrastructure/config/index.mjs';
-import { hydrateProcessEnvFromConfigs, loadLoggingConfig, resolveLoggerLevel, getLoggingTags, resolveLogglyToken } from './src/0_infrastructure/logging/config.js';
-import { initializeLogging } from './src/0_infrastructure/logging/dispatcher.js';
-import { createConsoleTransport, createFileTransport, createLogglyTransport } from './src/0_infrastructure/logging/transports/index.js';
-import { createLogger } from './src/0_infrastructure/logging/logger.js';
+import { initConfigService, ConfigValidationError, configService } from './src/0_system/config/index.mjs';
+import { hydrateProcessEnvFromConfigs, loadLoggingConfig, resolveLoggerLevel, getLoggingTags, resolveLogglyToken } from './src/0_system/logging/config.js';
+import { initializeLogging } from './src/0_system/logging/dispatcher.js';
+import { createConsoleTransport, createFileTransport, createLogglyTransport } from './src/0_system/logging/transports/index.js';
+import { createLogger } from './src/0_system/logging/logger.js';
 
 const __dirname = path.dirname(new URL(import.meta.url).pathname);
 const isDocker = existsSync('/.dockerenv');
@@ -217,7 +217,7 @@ async function main() {
   const secondaryPort = configService.getWebhookPort();
   
   // Create devProxy - only for webhook server
-  const { createDevProxy } = await import('./src/0_infrastructure/http/middleware/devProxy.mjs');
+  const { createDevProxy } = await import('./src/0_system/http/middleware/devProxy.mjs');
   const devHost = configService.get('LOCAL_DEV_HOST') || configService.getSecret('LOCAL_DEV_HOST');
   const devProxy = createDevProxy({ logger, devHost });
   
