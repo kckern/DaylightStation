@@ -26,8 +26,8 @@ export class HomeBotContainer {
 
   /**
    * @param {Object} config
-   * @param {Object} config.messagingGateway - TelegramAdapter instance
-   * @param {Object} config.aiGateway - OpenAIAdapter instance
+   * @param {Object} config.messagingGateway - Messaging gateway for sending messages
+   * @param {Object} config.aiGateway - AI gateway for chat completions
    * @param {Object} config.gratitudeService - GratitudeService instance
    * @param {Object} config.conversationStateStore - IConversationStateStore implementation
    * @param {Object} config.householdRepository - IHouseholdRepository implementation
