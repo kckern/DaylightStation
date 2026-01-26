@@ -11,7 +11,6 @@
  */
 
 // Infrastructure imports
-import { TelegramChatRef } from '../../../2_adapters/telegram/TelegramChatRef.mjs';
 import { ValidationError } from '../../../0_infrastructure/utils/errors/index.mjs';
 import { TestContext } from '../../../0_infrastructure/testing/TestContext.mjs';
 import { configService } from '../../../0_infrastructure/config/index.mjs';
@@ -144,10 +143,10 @@ export class NutriBotConfig {
   }
 
   /**
-   * Get Telegram bot ID
+   * Get messaging bot ID
    */
-  get telegramBotId() {
-    return this.#config.telegram.botId;
+  get messagingBotId() {
+    return this.#config.telegram?.botId || this.#config.messaging?.botId;
   }
 
   // ==================== User Settings ====================
@@ -357,17 +356,17 @@ export class NutriBotConfig {
   }
 
   /**
-   * Get the legacy path for a Telegram chat
-   * @param {TelegramChatRef} telegramRef
+   * Get the legacy path for a messaging chat
+   * @param {Object} chatRef - { botId, chatId }
    * @returns {string|null}
    */
-  getLegacyPath(telegramRef) {
+  getLegacyPath(chatRef) {
     if (!this.#config.storage.legacy?.enabled) {
       return null;
     }
 
     const pattern = this.#config.storage.legacy.pattern;
-    return pattern.replace('{botId}', telegramRef.botId).replace('{chatId}', telegramRef.chatId);
+    return pattern.replace('{botId}', chatRef.botId).replace('{chatId}', chatRef.chatId);
   }
 
   // ==================== AI Configuration ====================
