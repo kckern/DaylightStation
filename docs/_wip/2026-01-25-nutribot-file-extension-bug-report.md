@@ -39,6 +39,14 @@ The `YamlNutriListStore` class had an asymmetry between its read and write opera
 
 The `#getPath()` method returns paths without the `.yml` extension (e.g., `lifelog/nutrition/nutrilist`), expecting the I/O functions to normalize. However, `#writeFile` passed the path directly to `saveYamlToPath`, which wrote files without extensions.
 
+**FileIO Design:**
+
+The `FileIO.mjs` module provides paired read/write functions for YAML:
+- `loadYamlSafe(basePath)` → calls `resolveYamlPath()` which tries `.yml` then `.yaml`
+- `saveYaml(basePath, data)` → automatically appends `.yml` if no extension
+
+The bug occurred because `#writeFile` was calling `saveYamlToPath` (which writes to exact path) instead of `saveYaml` (which normalizes extension). This broke the symmetry with `#readFile` which uses `loadYamlSafe`.
+
 ### Affected Files
 - `nutrilist` (should be `nutrilist.yml`) - Food item storage
 - `nutriday` (should be `nutriday.yml`) - Daily summary cache
