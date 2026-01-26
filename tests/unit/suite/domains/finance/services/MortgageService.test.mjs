@@ -79,18 +79,34 @@ describe('MortgageService', () => {
   });
 
   describe('calculateAmortizationSchedule', () => {
-    test('generates schedule', () => {
+    test('generates schedule with explicit numPayments', () => {
       const mortgage = {
         interestRate: 6,
         monthlyPayment: 1200,
         currentBalance: 200000,
-        getRemainingMonths: () => 12
+        getRemainingMonths: jest.fn().mockReturnValue(12)
       };
 
       const schedule = service.calculateAmortizationSchedule(mortgage, 12);
       expect(schedule).toHaveLength(12);
       expect(schedule[0].principal).toBeGreaterThan(0);
       expect(schedule[0].interest).toBeGreaterThan(0);
+      // getRemainingMonths should not be called when numPayments is provided
+      expect(mortgage.getRemainingMonths).not.toHaveBeenCalled();
+    });
+
+    test('uses getRemainingMonths with asOfDate when numPayments is null', () => {
+      const asOfDate = new Date('2026-01-01');
+      const mortgage = {
+        interestRate: 6,
+        monthlyPayment: 2000,
+        currentBalance: 100000,
+        getRemainingMonths: jest.fn().mockReturnValue(60)
+      };
+
+      const schedule = service.calculateAmortizationSchedule(mortgage, null, asOfDate);
+      expect(mortgage.getRemainingMonths).toHaveBeenCalledWith(asOfDate);
+      expect(schedule.length).toBeGreaterThan(0);
     });
 
     test('balance decreases over time', () => {
@@ -98,7 +114,7 @@ describe('MortgageService', () => {
         interestRate: 6,
         monthlyPayment: 2000,
         currentBalance: 100000,
-        getRemainingMonths: () => 60
+        getRemainingMonths: jest.fn().mockReturnValue(60)
       };
 
       const schedule = service.calculateAmortizationSchedule(mortgage, 12);
@@ -119,10 +135,12 @@ describe('MortgageService', () => {
         escrow: 500
       });
 
-      const summary = await service.getMortgageSummary('m1');
+      const summary = await service.getMortgageSummary('m1', new Date('2026-01-01'));
       expect(summary.currentBalance).toBe(280000);
       expect(summary.monthlyPayment).toBe(2396);
       expect(summary.principalPaid).toBe(20000);
+      // Payoff is 2054-01-01, as of 2026-01-01 that's 28 years = 336 months
+      expect(summary.remainingMonths).toBe(336);
     });
   });
 });

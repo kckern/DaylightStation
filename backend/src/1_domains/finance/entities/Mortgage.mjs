@@ -2,6 +2,8 @@
  * Mortgage Entity - Represents a mortgage loan
  */
 
+import { ValidationError } from '../../core/errors/index.mjs';
+
 export class Mortgage {
   constructor({
     id,
@@ -62,10 +64,15 @@ export class Mortgage {
 
   /**
    * Calculate remaining term in months
+   * @param {Date|string} asOfDate - The date to calculate remaining months from
+   * @returns {number} Remaining months until payoff
    */
-  getRemainingMonths() {
+  getRemainingMonths(asOfDate) {
+    if (!asOfDate) {
+      throw new ValidationError('asOfDate required', { code: 'MISSING_DATE', field: 'asOfDate' });
+    }
     const payoffDate = new Date(this.getPayoffDate());
-    const now = new Date();
+    const now = new Date(asOfDate);
     const months = (payoffDate.getFullYear() - now.getFullYear()) * 12 +
       (payoffDate.getMonth() - now.getMonth());
     return Math.max(0, months);

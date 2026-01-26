@@ -714,7 +714,8 @@ export class BudgetCompilationService {
     return this.#mortgageCalculator.calculateMortgageStatus({
       config,
       balance,
-      transactions
+      transactions,
+      asOfDate: new Date()
     });
   }
 

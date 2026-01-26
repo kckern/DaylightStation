@@ -8,6 +8,8 @@
  * - Interest vs principal breakdowns
  */
 
+import { ValidationError } from '../../core/errors/index.mjs';
+
 /**
  * @typedef {Object} PaymentPlanConfig
  * @property {string} id - Unique plan identifier
@@ -79,7 +81,7 @@ export class MortgageCalculator {
    * @param {number} params.minimumPayment - Minimum monthly payment
    * @param {PaymentPlanConfig[]} params.paymentPlans - Payment plan configurations
    * @param {number} [params.capitalExtracted=0] - Capital already extracted (reduces payments)
-   * @param {Date} [params.startDate] - Start date for projections (defaults to current month)
+   * @param {Date|string} params.startDate - Start date for projections (required)
    * @returns {PaymentPlanResult[]}
    */
   calculatePaymentPlans({
@@ -88,11 +90,14 @@ export class MortgageCalculator {
     minimumPayment,
     paymentPlans,
     capitalExtracted = 0,
-    startDate = null
+    startDate
   }) {
+    if (!startDate) {
+      throw new ValidationError('startDate required', { code: 'MISSING_DATE', field: 'startDate' });
+    }
     const principal = Math.abs(balance);
     const minPmt = parseFloat(minimumPayment) || 0;
-    const projectionStart = startDate ? new Date(startDate) : new Date();
+    const projectionStart = new Date(startDate);
     projectionStart.setUTCDate(1); // Start of month (use UTC to avoid timezone issues)
 
     return paymentPlans.map((plan) => {
@@ -120,9 +125,13 @@ export class MortgageCalculator {
    * @param {PaymentPlanConfig[]} params.config.paymentPlans - Payment plans
    * @param {number} params.balance - Current account balance
    * @param {Object[]} params.transactions - Payment transactions
+   * @param {Date|string} params.asOfDate - The date to calculate status as of (required)
    * @returns {MortgageStatus}
    */
-  calculateMortgageStatus({ config, balance, transactions }) {
+  calculateMortgageStatus({ config, balance, transactions, asOfDate }) {
+    if (!asOfDate) {
+      throw new ValidationError('asOfDate required', { code: 'MISSING_DATE', field: 'asOfDate' });
+    }
     const {
       mortgageStartValue,
       accountId,
@@ -162,12 +171,13 @@ export class MortgageCalculator {
       balance: balance,
       interestRate: interestRate,
       minimumPayment: minimumPayment,
-      paymentPlans: paymentPlans
+      paymentPlans: paymentPlans,
+      startDate: asOfDate
     });
 
     // Calculate totals
     const totalPaid = transactions.reduce((total, { amount }) => total + (amount || 0), 0);
-    const monthsSinceStart = this.#monthsDiff(new Date(startDate), new Date());
+    const monthsSinceStart = this.#monthsDiff(new Date(startDate), new Date(asOfDate));
 
     const totalInterestPaid = startingBalance - mortgageStartValue;
     const totalPrincipalPaid = totalPaid - totalInterestPaid;

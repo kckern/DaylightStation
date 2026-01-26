@@ -26,6 +26,15 @@ describe('MortgageCalculator', () => {
       expect(result[0].months.length).toBeGreaterThan(0);
     });
 
+    test('throws ValidationError when startDate is missing', () => {
+      expect(() => calculator.calculatePaymentPlans({
+        balance: -100000,
+        interestRate: 0.06,
+        minimumPayment: 600,
+        paymentPlans: [{ id: 'basic' }]
+      })).toThrow('startDate required');
+    });
+
     test('calculates interest correctly for first month', () => {
       const result = calculator.calculatePaymentPlans({
         balance: -120000,
@@ -192,7 +201,8 @@ describe('MortgageCalculator', () => {
       const result = calculator.calculateMortgageStatus({
         config,
         balance: -244000, // Negative = debt
-        transactions
+        transactions,
+        asOfDate: new Date('2026-03-15')
       });
 
       expect(result.accountId).toBe('mortgage-1');
@@ -201,6 +211,23 @@ describe('MortgageCalculator', () => {
       expect(result.totalPaid).toBe(6000);
       expect(result.transactions).toHaveLength(3);
       expect(result.paymentPlans).toHaveLength(1);
+    });
+
+    test('throws ValidationError when asOfDate is missing', () => {
+      const config = {
+        mortgageStartValue: 100000,
+        accountId: 'mortgage-1',
+        startDate: '2025-01-01',
+        interestRate: 0.06,
+        minimumPayment: 1000,
+        paymentPlans: []
+      };
+
+      expect(() => calculator.calculateMortgageStatus({
+        config,
+        balance: -100000,
+        transactions: []
+      })).toThrow('asOfDate required');
     });
 
     test('calculates running balance on transactions', () => {
@@ -222,7 +249,8 @@ describe('MortgageCalculator', () => {
       const result = calculator.calculateMortgageStatus({
         config,
         balance: -96500,
-        transactions
+        transactions,
+        asOfDate: new Date('2026-03-15')
       });
 
       // Each transaction should have a running balance
@@ -249,7 +277,8 @@ describe('MortgageCalculator', () => {
       const result = calculator.calculateMortgageStatus({
         config,
         balance: -185000,
-        transactions
+        transactions,
+        asOfDate: new Date('2026-01-01')
       });
 
       expect(result.monthlyRent).toBeGreaterThan(0);
@@ -277,7 +306,8 @@ describe('MortgageCalculator', () => {
       const result = calculator.calculateMortgageStatus({
         config,
         balance: -200000,
-        transactions: []
+        transactions: [],
+        asOfDate: new Date('2026-01-01')
       });
 
       expect(result.earliestPayoff).toMatch(/^\d{4}-\d{2}$/);
@@ -299,7 +329,8 @@ describe('MortgageCalculator', () => {
       const result = calculator.calculateMortgageStatus({
         config,
         balance: -100000,
-        transactions: []
+        transactions: [],
+        asOfDate: new Date('2026-01-01')
       });
 
       expect(result.totalPaid).toBe(0);
@@ -325,7 +356,8 @@ describe('MortgageCalculator', () => {
       const result = calculator.calculateMortgageStatus({
         config,
         balance: -97000,
-        transactions
+        transactions,
+        asOfDate: new Date('2026-03-15')
       });
 
       expect(result.transactions[0].date).toBe('2026-01-01');
