@@ -19,7 +19,7 @@
  * - GET  /api/finance/data/daytoday - Returns current day-to-day budget
  */
 
-import { nowTs24 } from '../../0_infrastructure/utils/index.mjs';
+import { nowTs24 } from '../../0_system/utils/index.mjs';
 import express from 'express';
 
 /**

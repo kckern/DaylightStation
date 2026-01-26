@@ -11,13 +11,13 @@
  */
 
 import express from 'express';
-import { nowTs24 } from '../../0_infrastructure/utils/index.mjs';
+import { nowTs24 } from '../../0_system/utils/index.mjs';
 
 /**
  * Create scheduling router
  * @param {Object} config
  * @param {import('../../1_domains/scheduling/services/SchedulerService.mjs').SchedulerService} config.schedulerService
- * @param {import('../../0_infrastructure/scheduling/Scheduler.mjs').Scheduler} config.scheduler
+ * @param {import('../../0_system/scheduling/Scheduler.mjs').Scheduler} config.scheduler
  * @param {Object} [config.logger]
  * @returns {express.Router}
  */

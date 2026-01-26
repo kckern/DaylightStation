@@ -12,7 +12,7 @@
  */
 
 import express from 'express';
-import { configService } from '../../0_infrastructure/config/index.mjs';
+import { configService } from '../../0_system/config/index.mjs';
 
 /**
  * Create the v1 API router with all domain sub-routers

@@ -10,7 +10,7 @@ import { URL } from 'url';
  * Create proxy router for streaming and thumbnails
  * @param {Object} config
  * @param {import('../../domains/content/services/ContentSourceRegistry.mjs').ContentSourceRegistry} config.registry
- * @param {import('../../0_infrastructure/proxy/ProxyService.mjs').ProxyService} [config.proxyService] - Optional proxy service for external services
+ * @param {import('../../0_system/proxy/ProxyService.mjs').ProxyService} [config.proxyService] - Optional proxy service for external services
  * @param {string} [config.mediaBasePath] - Base path for media files
  * @param {Object} [config.logger] - Logger instance
  * @returns {express.Router}

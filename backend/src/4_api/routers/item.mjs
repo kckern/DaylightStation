@@ -1,8 +1,8 @@
 // backend/src/4_api/routers/item.mjs
 import express from 'express';
 import { toListItem } from './list.mjs';
-import { loadYaml, saveYaml } from '../../0_infrastructure/utils/FileIO.mjs';
-import { configService } from '../../0_infrastructure/config/index.mjs';
+import { loadYaml, saveYaml } from '../../0_system/utils/FileIO.mjs';
+import { configService } from '../../0_system/config/index.mjs';
 
 /**
  * Parse path modifiers (playable, shuffle, recent_on_top)
