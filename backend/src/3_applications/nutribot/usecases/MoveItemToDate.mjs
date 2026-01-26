@@ -3,6 +3,7 @@
  * @module nutribot/usecases/MoveItemToDate
  *
  * Moves a food item to a different date.
+ * If newDate is not provided, shows a date picker first.
  */
 
 import { NutriLog } from '../../../1_domains/nutrition/entities/NutriLog.mjs';
@@ -18,6 +19,7 @@ export class MoveItemToDate {
   #generateDailyReport;
   #config;
   #logger;
+  #encodeCallback;
 
   constructor(deps) {
     if (!deps.messagingGateway) throw new Error('messagingGateway is required');
@@ -33,6 +35,7 @@ export class MoveItemToDate {
     this.#generateDailyReport = deps.generateDailyReport;
     this.#config = deps.config;
     this.#logger = deps.logger || console;
+    this.#encodeCallback = deps.encodeCallback || ((cmd, data) => JSON.stringify({ cmd, ...data }));
   }
 
   /**
@@ -62,10 +65,29 @@ export class MoveItemToDate {
       }
 
       // If we don't have logId, look it up from nutrilist
+      const listItem = await this.#nutriListStore.findByUuid(userId, itemId);
       if (!logId) {
-        const listItem = await this.#nutriListStore.findByUuid(userId, itemId);
         logId = listItem?.logId || listItem?.log_uuid;
         oldDate = oldDate || listItem?.date;
+      }
+
+      // 2. If no newDate provided, show date picker
+      if (!newDate) {
+        // Save current state with itemId for when date is selected
+        await this.#conversationStateStore.update(conversationId, {
+          activeFlow: 'move',
+          flowState: { itemId, logId, oldDate },
+        });
+
+        const itemLabel = listItem?.name || listItem?.label || 'item';
+        const keyboard = this.#buildDateKeyboard(itemId, oldDate);
+        await this.#messagingGateway.updateMessage(conversationId, messageId, {
+          caption: `📅 Move <b>${itemLabel}</b> to which day?`,
+          parseMode: 'HTML',
+          choices: keyboard,
+        });
+
+        return { success: true, showingDatePicker: true };
       }
 
       if (!logId) {
@@ -147,6 +169,36 @@ export class MoveItemToDate {
       this.#logger.error?.('adjustment.move.error', { userId, error: error.message });
       throw error;
     }
+  }
+
+  /**
+   * Build date selection keyboard for move
+   * @private
+   */
+  #buildDateKeyboard(itemId, currentDate) {
+    const keyboard = [];
+    const today = new Date();
+
+    // Row 1: Today and Yesterday
+    keyboard.push([
+      { text: '☀️ Today', callback_data: this.#encodeCallback('md', { id: itemId, d: 0 }) },
+      { text: '📆 Yesterday', callback_data: this.#encodeCallback('md', { id: itemId, d: 1 }) },
+    ]);
+
+    // Row 2: Past 3 days
+    const row2 = [];
+    for (let i = 2; i <= 4; i++) {
+      const date = new Date(today);
+      date.setDate(date.getDate() - i);
+      const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
+      row2.push({ text: dayName, callback_data: this.#encodeCallback('md', { id: itemId, d: i }) });
+    }
+    keyboard.push(row2);
+
+    // Row 3: Cancel
+    keyboard.push([{ text: '↩️ Cancel', callback_data: this.#encodeCallback('bi') }]);
+
+    return keyboard;
   }
 }
 

@@ -173,18 +173,17 @@ export class JournalistContainer {
 
   getDebriefRepository() {
     if (!this.#debriefRepository) {
-      // Get data path from config or environment
+      // Get data path from config (injected from ConfigService)
       const configUsername = this.#config.username;
       if (!configUsername) {
         throw new Error('JournalistContainer requires config.username to be set');
       }
-      const dataPath = process.env.path?.data
-        ? `${process.env.path.data}/users/${configUsername}/lifelog/journalist`
-        : null;
-
-      if (!dataPath) {
-        throw new Error('JournalistContainer requires process.env.path.data to be set');
+      const dataDir = this.#config.dataDir;
+      if (!dataDir) {
+        throw new Error('JournalistContainer requires config.dataDir to be set');
       }
+
+      const dataPath = `${dataDir}/users/${configUsername}/lifelog/journalist`;
 
       this.#debriefRepository = new DebriefRepository({
         logger: this.#logger,

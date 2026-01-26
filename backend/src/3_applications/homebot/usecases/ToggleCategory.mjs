@@ -12,20 +12,24 @@
 export class ToggleCategory {
   #messagingGateway;
   #conversationStateStore;
+  #householdService;
   #logger;
 
   /**
    * @param {Object} config - Dependencies
    * @param {Object} config.messagingGateway - Messaging gateway for updating messages
    * @param {Object} config.conversationStateStore - State store for conversation state
+   * @param {Object} config.householdService - Service for household member lookup
    * @param {Object} [config.logger] - Logger instance
    */
   constructor(config) {
     if (!config.messagingGateway) throw new Error('messagingGateway is required');
     if (!config.conversationStateStore) throw new Error('conversationStateStore is required');
+    if (!config.householdService) throw new Error('householdService is required');
 
     this.#messagingGateway = config.messagingGateway;
     this.#conversationStateStore = config.conversationStateStore;
+    this.#householdService = config.householdService;
     this.#logger = config.logger || console;
   }
 
@@ -84,18 +88,48 @@ export class ToggleCategory {
 
       await this.#conversationStateStore.set(conversationId, updatedState, messageId);
 
-      // 4. Update message to show new category label
-      const categoryLabel = newCategory === 'hopes' ? 'Hopes' : 'Gratitude';
+      // 4. Build updated message and keyboard
       const items = state.flowState?.items || [];
-      const itemCount = items.length;
       const itemList = items.map(item => `• ${item.text || item}`).join('\n');
+      const categoryLabel = newCategory === 'gratitude' ? 'grateful' : 'hoping';
+      const updatedMessage = `📝 <b>Items to Add</b>\n\n${itemList}\n\n<i>Who is ${categoryLabel} for these?</i>`;
 
-      const updatedMessage = `📝 *${categoryLabel} Items* (${itemCount}):\n${itemList}\n\nWho should these be saved for?`;
+      // Get members for keyboard
+      const members = await this.#householdService?.getMembers?.() || [];
 
-      await messaging.updateMessage(
-        messageId,
-        updatedMessage
-      );
+      // Build keyboard matching legacy pattern
+      const choices = [];
+
+      // Row 1: Category toggle (both options, ✅ on selected)
+      choices.push([
+        {
+          label: newCategory === 'gratitude' ? '✅ Gratitude' : 'Gratitude',
+          data: 'category:gratitude'
+        },
+        {
+          label: newCategory === 'hopes' ? '✅ Hopes' : 'Hopes',
+          data: 'category:hopes'
+        }
+      ]);
+
+      // Member rows (3 per row)
+      const memberButtons = members.map(member => ({
+        label: member.groupLabel || member.displayName || member.userId,
+        data: `user:${member.userId}`
+      }));
+
+      for (let i = 0; i < memberButtons.length; i += 3) {
+        choices.push(memberButtons.slice(i, i + 3));
+      }
+
+      // Cancel row
+      choices.push([{ label: '❌ Cancel', data: 'cancel' }]);
+
+      await messaging.updateMessage(messageId, {
+        text: updatedMessage,
+        parseMode: 'HTML',
+        choices
+      });
 
       this.#logger.info?.('toggleCategory.complete', {
         conversationId,

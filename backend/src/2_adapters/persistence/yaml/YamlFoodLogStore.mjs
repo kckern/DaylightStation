@@ -4,8 +4,8 @@
  * Implements IFoodLogStore port for NutriLog storage.
  *
  * Storage Strategy:
- * - Hot storage: households/{hid}/apps/nutrition/nutrilog.yml (recent 30 days)
- * - Cold storage: households/{hid}/apps/nutrition/archives/nutrilog/{YYYY-MM}.yml
+ * - Hot storage: users/{userId}/lifelog/nutrition/nutrilog.yml (recent 30 days)
+ * - Cold storage: users/{userId}/lifelog/nutrition/archives/nutrilog/{YYYY-MM}.yml
  */
 
 import path from 'path';
@@ -53,9 +53,9 @@ export class YamlFoodLogStore extends IFoodLogStore {
   #getPath(userId) {
     return path.join(
       this.#dataRoot,
-      'households',
+      'users',
       userId,
-      'apps',
+      'lifelog',
       'nutrition',
       'nutrilog'
     );
@@ -69,9 +69,9 @@ export class YamlFoodLogStore extends IFoodLogStore {
   #getArchiveDir(userId) {
     return path.join(
       this.#dataRoot,
-      'households',
+      'users',
       userId,
-      'apps',
+      'lifelog',
       'nutrition',
       'archives',
       'nutrilog'
@@ -181,6 +181,8 @@ export class YamlFoodLogStore extends IFoodLogStore {
     const filePath = this.#getPath(nutriLog.userId);
     const id = nutriLog.id;
 
+    this.#logger.debug?.('YamlFoodLogStore.save', { userId: nutriLog.userId, id, filePath });
+
     // Load existing data
     const data = this.#readFile(filePath);
 
@@ -189,6 +191,8 @@ export class YamlFoodLogStore extends IFoodLogStore {
 
     // Save back
     this.#writeFile(filePath, data);
+
+    this.#logger.debug?.('YamlFoodLogStore.save.complete', { id, entryCount: Object.keys(data).length });
 
     return nutriLog;
   }

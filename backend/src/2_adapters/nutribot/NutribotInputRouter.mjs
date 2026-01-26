@@ -161,6 +161,159 @@ export class NutribotInputRouter extends BaseInputRouter {
         }
         return { ok: true, handled: true };
       }
+
+      // ==================== Adjustment Flow Callbacks ====================
+
+      case 'i': {
+        // Select item for adjustment
+        const useCase = this.container.getSelectItemForAdjustment();
+        return await useCase.execute({
+          userId: this.#resolveUserId(event),
+          conversationId: event.conversationId,
+          messageId: event.messageId,
+          itemId: decoded.id,
+          responseContext,
+        });
+      }
+
+      case 'dt': {
+        // Select date for adjustment
+        const useCase = this.container.getSelectDateForAdjustment();
+        return await useCase.execute({
+          userId: this.#resolveUserId(event),
+          conversationId: event.conversationId,
+          messageId: event.messageId,
+          daysAgo: decoded.d,
+          offset: decoded.o || 0,
+          responseContext,
+        });
+      }
+
+      case 'pg': {
+        // Pagination (same as dt but with offset)
+        const useCase = this.container.getSelectDateForAdjustment();
+        return await useCase.execute({
+          userId: this.#resolveUserId(event),
+          conversationId: event.conversationId,
+          messageId: event.messageId,
+          daysAgo: decoded.d,
+          offset: decoded.o || 0,
+          responseContext,
+        });
+      }
+
+      case 'bd': {
+        // Back to date selection
+        const useCase = this.container.getShowDateSelection();
+        return await useCase.execute({
+          userId: this.#resolveUserId(event),
+          conversationId: event.conversationId,
+          messageId: event.messageId,
+          responseContext,
+        });
+      }
+
+      case 'bi': {
+        // Back to items - reload current date's items
+        const useCase = this.container.getSelectDateForAdjustment();
+        // Get current date from state or default to 0 (today)
+        return await useCase.execute({
+          userId: this.#resolveUserId(event),
+          conversationId: event.conversationId,
+          messageId: event.messageId,
+          daysAgo: decoded.d ?? 0,
+          offset: 0,
+          responseContext,
+        });
+      }
+
+      case 'f': {
+        // Apply portion adjustment (fraction)
+        const useCase = this.container.getApplyPortionAdjustment();
+        return await useCase.execute({
+          userId: this.#resolveUserId(event),
+          conversationId: event.conversationId,
+          messageId: event.messageId,
+          itemId: decoded.id,
+          factor: decoded.f,
+          responseContext,
+        });
+      }
+
+      case 'd': {
+        // Delete list item
+        const useCase = this.container.getDeleteListItem();
+        return await useCase.execute({
+          userId: this.#resolveUserId(event),
+          conversationId: event.conversationId,
+          messageId: event.messageId,
+          itemId: decoded.id,
+          responseContext,
+        });
+      }
+
+      case 'm': {
+        // Move item to different date (start move flow - show date picker)
+        const useCase = this.container.getMoveItemToDate();
+        return await useCase.execute({
+          userId: this.#resolveUserId(event),
+          conversationId: event.conversationId,
+          messageId: event.messageId,
+          itemId: decoded.id,
+          // No newDate - will show date picker
+          responseContext,
+        });
+      }
+
+      case 'md': {
+        // Move to date (date selected - execute move)
+        const useCase = this.container.getMoveItemToDate();
+        const daysAgo = decoded.d || 0;
+        const newDate = this.#getDateFromDaysAgo(daysAgo);
+        return await useCase.execute({
+          userId: this.#resolveUserId(event),
+          conversationId: event.conversationId,
+          messageId: event.messageId,
+          itemId: decoded.id,
+          newDate,
+          responseContext,
+        });
+      }
+
+      case 'dn': {
+        // Done - close adjustment flow, remove buttons
+        if (responseContext?.updateMessage) {
+          try {
+            await responseContext.updateMessage(event.messageId, { choices: [] });
+          } catch (e) {
+            this.logger.warn?.('nutribot.callback.dn.updateFailed', { error: e.message });
+          }
+        }
+        return { ok: true, handled: true };
+      }
+
+      case 'cr': {
+        // Cancel revision - exit revision mode, restore original buttons
+        // For now, just remove buttons (the log is still pending)
+        if (responseContext?.updateMessage) {
+          try {
+            // Restore the original Accept/Revise/Discard buttons
+            const encodeCallback = (cmd, data) => JSON.stringify({ cmd, ...data });
+            const buttons = [
+              [
+                { text: '✅ Accept', callback_data: encodeCallback('a', { id: decoded.id }) },
+                { text: '✏️ Revise', callback_data: encodeCallback('r', { id: decoded.id }) },
+                { text: '🗑️ Discard', callback_data: encodeCallback('x', { id: decoded.id }) },
+              ],
+            ];
+            await responseContext.updateMessage(event.messageId, { choices: buttons });
+          } catch (e) {
+            this.logger.warn?.('nutribot.callback.cr.updateFailed', { error: e.message });
+          }
+        }
+        return { ok: true, handled: true };
+      }
+
       default:
         this.logger.warn?.('nutribot.callback.unknown', { action, decoded });
         return { ok: true, handled: false };
@@ -213,9 +366,18 @@ export class NutribotInputRouter extends BaseInputRouter {
    * @returns {string}
    */
   #resolveUserId(event) {
+    // Debug: Log resolution attempt
+    this.logger.debug?.('nutribot.resolveUserId.attempt', {
+      hasUserResolver: !!this.#userResolver,
+      platform: event.platform,
+      platformUserId: event.platformUserId,
+      conversationId: event.conversationId,
+    });
+
     if (this.#userResolver && event.platform && event.platformUserId) {
       const username = this.#userResolver.resolveUser(event.platform, event.platformUserId);
       if (username) {
+        this.logger.debug?.('nutribot.resolveUserId.resolved', { username, platformUserId: event.platformUserId });
         return username;
       }
       this.logger.warn?.('nutribot.userResolver.notFound', {
@@ -223,9 +385,27 @@ export class NutribotInputRouter extends BaseInputRouter {
         platformUserId: event.platformUserId,
         fallback: event.conversationId,
       });
+    } else {
+      // Log which condition failed
+      this.logger.warn?.('nutribot.resolveUserId.skipResolution', {
+        hasUserResolver: !!this.#userResolver,
+        hasPlatform: !!event.platform,
+        hasPlatformUserId: !!event.platformUserId,
+        fallback: event.conversationId,
+      });
     }
     // Fallback to conversationId for backwards compatibility
     return event.conversationId;
+  }
+
+  /**
+   * Get date string from days ago
+   * @private
+   */
+  #getDateFromDaysAgo(daysAgo) {
+    const date = new Date();
+    date.setDate(date.getDate() - daysAgo);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
   }
 }
 

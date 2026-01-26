@@ -773,7 +773,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const homebotServices = createHomebotServices({
     telegramAdapter: homebotTelegramAdapter || messagingServices.telegramAdapter,
     aiGateway: homebotAiGateway,
-    gratitudeStore: gratitudeServices.gratitudeStore,
+    gratitudeService: gratitudeServices.gratitudeService,
     configService,
     conversationStateStore: homebotStateStore,
     websocketBroadcast: broadcastEvent,
@@ -811,8 +811,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // Register YouTube download handler
-  const mediaPath = process.env.path?.media
-    ? join(process.env.path.media, 'video', 'news')
+  const mediaPath = mediaBasePath
+    ? join(mediaBasePath, 'video', 'news')
     : join(__dirname, '..', 'media', 'video', 'news');
 
   mediaExecutor.register('youtube', createYouTubeJobHandler({

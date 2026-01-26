@@ -60,10 +60,7 @@ export class DiscardFoodLog {
 
       // 2. Clear revision state if any
       if (this.#conversationStateStore) {
-        const state = await this.#conversationStateStore.get(conversationId);
-        if (state) {
-          await this.#conversationStateStore.set(conversationId, state.clearFlow());
-        }
+        await this.#conversationStateStore.clear(conversationId);
       }
 
       // 3. Delete the confirmation message

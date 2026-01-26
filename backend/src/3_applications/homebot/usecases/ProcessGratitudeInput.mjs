@@ -80,12 +80,16 @@ export class ProcessGratitudeInput {
       }
 
       // 2. Extract items using AI
-      const { items, category } = await this.#extractItems(inputText);
+      const { items, category: rawCategory } = await this.#extractItems(inputText);
+
+      // Normalize category - only allow 'gratitude' or 'hopes'
+      const category = rawCategory === 'hopes' ? 'hopes' : 'gratitude';
 
       this.#logger.debug?.('processGratitude.extracted', {
         conversationId,
         itemCount: items.length,
-        category
+        category,
+        rawCategory
       });
 
       if (items.length === 0) {
@@ -231,35 +235,42 @@ Example output: { "items": [{ "text": "Good health" }, { "text": "Supportive fam
    * @returns {Promise<Object>} Result with messageId
    */
   async #sendConfirmationUI(messaging, items, category, members) {
-    // Build message text
-    const itemsList = items
-      .map((item, index) => `${index + 1}. ${item.text}`)
-      .join('\n');
+    // Build message text (legacy format with HTML)
+    const itemsList = items.map(item => `• ${item.text}`).join('\n');
+    const categoryLabel = category === 'gratitude' ? 'grateful' : 'hoping';
+    const messageText = `📝 <b>Items to Add</b>\n\n${itemsList}\n\n<i>Who is ${categoryLabel} for these?</i>`;
 
-    const messageText = `I found these ${category} items:\n\n${itemsList}\n\nWho should these be attributed to?`;
+    // Build keyboard matching legacy pattern
+    const choices = [];
 
-    // Build choices array with structured button format
-    const choices = [
-      // Category toggle button
-      [{
-        label: category === 'gratitude' ? '🔄 Switch to Hopes' : '🔄 Switch to Gratitude',
-        data: `category:${category === 'gratitude' ? 'hopes' : 'gratitude'}`
-      }],
-      // Member buttons
-      ...members.slice(0, 4).map(member => [{
-        label: member.displayName || member.username,
-        data: `user:${member.username}`
-      }]),
-      // Action buttons
-      [
-        { label: '✅ Confirm', data: 'confirm' },
-        { label: '❌ Cancel', data: 'cancel' }
-      ]
-    ];
+    // Row 1: Category toggle (both options, ✅ on selected)
+    choices.push([
+      {
+        label: category === 'gratitude' ? '✅ Gratitude' : 'Gratitude',
+        data: 'category:gratitude'
+      },
+      {
+        label: category === 'hopes' ? '✅ Hopes' : 'Hopes',
+        data: 'category:hopes'
+      }
+    ]);
+
+    // Member rows (3 per row, no emoji, use displayName)
+    const memberButtons = members.map(member => ({
+      label: member.groupLabel || member.displayName || member.userId,
+      data: `user:${member.userId}`
+    }));
+
+    for (let i = 0; i < memberButtons.length; i += 3) {
+      choices.push(memberButtons.slice(i, i + 3));
+    }
+
+    // Last row: Cancel only (clicking user assigns directly)
+    choices.push([{ label: '❌ Cancel', data: 'cancel' }]);
 
     const result = await messaging.sendMessage(
       messageText,
-      { choices, inline: true }
+      { choices, inline: true, parseMode: 'HTML' }
     );
 
     return { messageId: result.messageId };
