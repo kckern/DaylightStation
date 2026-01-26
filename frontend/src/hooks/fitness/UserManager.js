@@ -314,7 +314,10 @@ export class UserManager {
         'config.name': config.name,
         'user.id': user.id,
         'user.name': user.name,
-        resolvedUserId
+        resolvedUserId,
+        hasZoneOverrides: !!config.zones,
+        zoneOverrides: config.zones || null,
+        userZoneConfigLength: user.zoneConfig?.length || 0
       });
       this.users.set(resolvedUserId, user);
     } else {

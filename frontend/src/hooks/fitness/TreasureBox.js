@@ -100,6 +100,7 @@ export class FitnessTreasureBox {
     }
     // Extract user overrides (provided as part of users.primary/secondary config shape)
     if (users) {
+      let overrideCount = 0;
       const collectOverrides = (arr) => {
         if (!Array.isArray(arr)) return;
         arr.forEach((u) => {
@@ -110,12 +111,20 @@ export class FitnessTreasureBox {
             return;
           }
           this.usersConfigOverrides.set(userKey, { ...u.zones });
+          overrideCount++;
         });
       };
       if (Array.isArray(users)) {
         collectOverrides(users);
       } else if (typeof users === 'object') {
         Object.values(users).forEach((value) => collectOverrides(value));
+      }
+      // DIAGNOSTIC: Log user zone override configuration
+      if (overrideCount > 0) {
+        this._log('user_zone_overrides_configured', {
+          overrideCount,
+          userIds: Array.from(this.usersConfigOverrides.keys())
+        });
       }
     }
     // Backfill existing users with zone data
@@ -496,11 +505,15 @@ export class FitnessTreasureBox {
     
     // Determine zone for this reading (use profileId for zone overrides)
     const zone = this.resolveZone(profileId, hr);
-    this._log('zone_resolved', { 
-      accKey, 
+    const hasOverrides = this.usersConfigOverrides.has(profileId);
+    const userOverrides = this.usersConfigOverrides.get(profileId);
+    this._log('zone_resolved', {
+      accKey,
       profileId,
-      hr, 
-      zone: zone ? { id: zone.id, name: zone.name, min: zone.min, coins: zone.coins } : null 
+      hr,
+      zone: zone ? { id: zone.id, name: zone.name, min: zone.min, coins: zone.coins } : null,
+      hasOverrides,
+      overrideKeys: hasOverrides ? Object.keys(userOverrides || {}) : null
     });
     if (zone) {
       if (!acc.highestZone || zone.min > acc.highestZone.min) {
