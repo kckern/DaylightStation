@@ -1,5 +1,7 @@
 // backend/src/domains/content/entities/Item.mjs
 
+import { ValidationError } from '../../core/errors/index.mjs';
+
 /**
  * @typedef {Object} ItemActions
  * @property {Object} [play] - Play action parameters
@@ -31,10 +33,10 @@ export class Item {
    * @param {ItemProps} props
    */
   constructor(props) {
-    if (!props.id) throw new Error('Item requires id');
-    if (!props.source) throw new Error('Item requires source');
-    if (!props.title) throw new Error('Item requires title');
-    if (!props.localId) throw new Error('Item requires localId');
+    if (!props.id) throw new ValidationError('Item requires id', { code: 'MISSING_ID', field: 'id' });
+    if (!props.source) throw new ValidationError('Item requires source', { code: 'MISSING_SOURCE', field: 'source' });
+    if (!props.title) throw new ValidationError('Item requires title', { code: 'MISSING_TITLE', field: 'title' });
+    if (!props.localId) throw new ValidationError('Item requires localId', { code: 'MISSING_LOCAL_ID', field: 'localId' });
 
     this.id = props.id;
     this.source = props.source;

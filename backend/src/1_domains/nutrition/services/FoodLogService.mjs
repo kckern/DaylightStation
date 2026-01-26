@@ -9,7 +9,7 @@
  */
 
 import { NutriLog } from '../entities/NutriLog.mjs';
-import { ValidationError } from '../../core/errors/index.mjs';
+import { ValidationError, EntityNotFoundError } from '../../core/errors/index.mjs';
 
 export class FoodLogService {
   #store;
@@ -76,7 +76,7 @@ export class FoodLogService {
     }
     const log = await this.#store.findById(userId, logId);
     if (!log) {
-      throw new Error(`NutriLog not found: ${logId}`);
+      throw new EntityNotFoundError('NutriLog', logId);
     }
     const accepted = log.accept(timestamp);
     return this.#store.save(accepted);
@@ -98,7 +98,7 @@ export class FoodLogService {
     }
     const log = await this.#store.findById(userId, logId);
     if (!log) {
-      throw new Error(`NutriLog not found: ${logId}`);
+      throw new EntityNotFoundError('NutriLog', logId);
     }
     const rejected = log.reject(timestamp);
     return this.#store.save(rejected);
@@ -120,7 +120,7 @@ export class FoodLogService {
     }
     const log = await this.#store.findById(userId, logId);
     if (!log) {
-      throw new Error(`NutriLog not found: ${logId}`);
+      throw new EntityNotFoundError('NutriLog', logId);
     }
     const deleted = log.delete(timestamp);
     return this.#store.save(deleted);
@@ -143,7 +143,7 @@ export class FoodLogService {
     }
     const log = await this.#store.findById(userId, logId);
     if (!log) {
-      throw new Error(`NutriLog not found: ${logId}`);
+      throw new EntityNotFoundError('NutriLog', logId);
     }
     const updated = log.setItems(items, timestamp);
     return this.#store.save(updated);

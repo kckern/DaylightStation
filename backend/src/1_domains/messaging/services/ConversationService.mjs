@@ -4,8 +4,7 @@
 
 import { Conversation } from '../entities/Conversation.mjs';
 import { Message } from '../entities/Message.mjs';
-
-import { nowTs24 } from '../../../0_infrastructure/utils/index.mjs';
+import { ValidationError, EntityNotFoundError } from '../../core/errors/index.mjs';
 
 export class ConversationService {
   constructor({ conversationStore, logger }) {
@@ -15,13 +14,22 @@ export class ConversationService {
 
   /**
    * Create a new conversation
+   * @param {Object} params
+   * @param {number} params.nowMs - Current time in milliseconds (required)
+   * @param {string} params.timestamp - Formatted timestamp string (required)
    */
-  async createConversation({ participants, metadata = {} }) {
+  async createConversation({ participants, nowMs, timestamp, metadata = {} }) {
+    if (typeof nowMs !== 'number') {
+      throw new ValidationError('nowMs timestamp required', { code: 'MISSING_TIMESTAMP', field: 'nowMs' });
+    }
+    if (!timestamp) {
+      throw new ValidationError('timestamp required', { code: 'MISSING_TIMESTAMP', field: 'timestamp' });
+    }
     const conversation = new Conversation({
-      id: this.generateConversationId(),
+      id: this.generateConversationId(nowMs),
       participants,
       messages: [],
-      startedAt: nowTs24(),
+      startedAt: timestamp,
       metadata
     });
 
@@ -40,8 +48,12 @@ export class ConversationService {
 
   /**
    * Get or create conversation between participants
+   * @param {Array} participants
+   * @param {number} nowMs - Current time in milliseconds (required for creation)
+   * @param {string} timestamp - Formatted timestamp string (required for creation)
+   * @param {Object} metadata
    */
-  async getOrCreateConversation(participants, metadata = {}) {
+  async getOrCreateConversation(participants, nowMs, timestamp, metadata = {}) {
     // Try to find existing conversation
     const existing = await this.conversationStore.findByParticipants(participants);
     if (existing) {
@@ -49,7 +61,7 @@ export class ConversationService {
     }
 
     // Create new conversation
-    return this.createConversation({ participants, metadata });
+    return this.createConversation({ participants, nowMs, timestamp, metadata });
   }
 
   /**
@@ -70,17 +82,23 @@ export class ConversationService {
 
   /**
    * Add a message to a conversation
+   * @param {string} conversationId
+   * @param {Object} messageData
+   * @param {string} timestamp - Formatted timestamp string (required if not in messageData)
    */
-  async addMessage(conversationId, messageData) {
+  async addMessage(conversationId, messageData, timestamp) {
     const conversation = await this.getConversation(conversationId);
     if (!conversation) {
-      throw new Error(`Conversation not found: ${conversationId}`);
+      throw new EntityNotFoundError('Conversation', conversationId);
     }
 
-    const timestamp = messageData.timestamp || nowTs24();
+    const effectiveTimestamp = messageData.timestamp || timestamp;
+    if (!effectiveTimestamp) {
+      throw new ValidationError('timestamp required', { code: 'MISSING_TIMESTAMP', field: 'timestamp' });
+    }
     const message = messageData instanceof Message
       ? messageData
-      : new Message({ ...messageData, conversationId, timestamp });
+      : new Message({ ...messageData, conversationId, timestamp: effectiveTimestamp });
 
     conversation.addMessage(message.toJSON());
     await this.conversationStore.save(conversation);
@@ -153,15 +171,20 @@ export class ConversationService {
 
   /**
    * Archive a conversation
+   * @param {string} conversationId
+   * @param {string} timestamp - Formatted timestamp string (required)
    */
-  async archiveConversation(conversationId) {
+  async archiveConversation(conversationId, timestamp) {
+    if (!timestamp) {
+      throw new ValidationError('timestamp required', { code: 'MISSING_TIMESTAMP', field: 'timestamp' });
+    }
     const conversation = await this.getConversation(conversationId);
     if (!conversation) {
-      throw new Error(`Conversation not found: ${conversationId}`);
+      throw new EntityNotFoundError('Conversation', conversationId);
     }
 
     conversation.metadata.archived = true;
-    conversation.metadata.archivedAt = nowTs24();
+    conversation.metadata.archivedAt = timestamp;
     await this.conversationStore.save(conversation);
 
     this.logger.info?.('conversation.archived', { conversationId });
@@ -209,9 +232,14 @@ export class ConversationService {
 
   /**
    * Generate a unique conversation ID
+   * @param {number} nowMs - Current time in milliseconds (required)
+   * @returns {string}
    */
-  generateConversationId() {
-    return `conv-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  generateConversationId(nowMs) {
+    if (typeof nowMs !== 'number') {
+      throw new ValidationError('nowMs timestamp required for generateConversationId', { code: 'MISSING_TIMESTAMP', field: 'nowMs' });
+    }
+    return `conv-${nowMs}-${Math.random().toString(36).slice(2, 8)}`;
   }
 }
 
