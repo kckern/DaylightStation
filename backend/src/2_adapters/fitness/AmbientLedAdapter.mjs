@@ -83,6 +83,9 @@ export class AmbientLedAdapter {
       sceneHistogram: {},
       sessionStartCount: 0,
       sessionEndCount: 0,
+      gracePeriodStarted: 0,
+      gracePeriodCancelled: 0,
+      gracePeriodExpired: 0,
       uptimeStart: Date.now()
     };
   }
@@ -251,6 +254,7 @@ export class AmbientLedAdapter {
       }
 
       // Start grace period
+      this.metrics.gracePeriodStarted++;
       this.graceStartedAt = Date.now();
       this.graceTimer = setTimeout(async () => {
         this.graceTimer = null;
@@ -266,6 +270,7 @@ export class AmbientLedAdapter {
             this.failureCount = 0;
 
             this.metrics.activatedCount++;
+            this.metrics.gracePeriodExpired++;
             this.metrics.lastActivatedScene = offScene;
             this.metrics.lastActivatedTime = nowTs24();
             this.metrics.sceneHistogram[offScene] = (this.metrics.sceneHistogram[offScene] || 0) + 1;
@@ -297,6 +302,7 @@ export class AmbientLedAdapter {
     }
     // Zones returned: clear any grace period
     else if (!isZoneEmpty && this.graceTimer) {
+      this.metrics.gracePeriodCancelled++;
       this.#logger.info?.('fitness.zone_led.grace_period.cancelled', {
         elapsedMs: Date.now() - this.graceStartedAt,
         newZones: zones.map(z => z.zoneId)
@@ -479,6 +485,11 @@ export class AmbientLedAdapter {
           : 'N/A (uptime < 1min)'
       },
       sceneHistogram: this.metrics.sceneHistogram,
+      gracePeriod: {
+        started: this.metrics.gracePeriodStarted,
+        cancelled: this.metrics.gracePeriodCancelled,
+        expired: this.metrics.gracePeriodExpired
+      },
       lastActivation: {
         scene: this.metrics.lastActivatedScene,
         time: this.metrics.lastActivatedTime

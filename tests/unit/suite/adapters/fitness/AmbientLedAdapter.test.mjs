@@ -240,6 +240,26 @@ describe('AmbientLedAdapter', () => {
       expect(metrics.uptime.ms).toBeGreaterThanOrEqual(0);
       expect(metrics.sceneHistogram).toBeDefined();
     });
+
+    test('tracks grace period metrics', async () => {
+      jest.useFakeTimers();
+
+      // Trigger grace period start
+      await adapter.syncZone({ zones: [{ zoneId: 'warm', isActive: true }], sessionEnded: false, householdId: 'hid' });
+      adapter.lastActivatedAt = 0;
+      await adapter.syncZone({ zones: [], sessionEnded: false, householdId: 'hid' });
+
+      // Cancel it by returning zones
+      adapter.lastActivatedAt = 0;
+      await adapter.syncZone({ zones: [{ zoneId: 'hot', isActive: true }], sessionEnded: false, householdId: 'hid' });
+
+      const metrics = adapter.getMetrics();
+
+      expect(metrics.gracePeriod.started).toBe(1);
+      expect(metrics.gracePeriod.cancelled).toBe(1);
+
+      jest.useRealTimers();
+    });
   });
 
   describe('reset', () => {
