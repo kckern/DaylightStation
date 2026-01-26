@@ -8,10 +8,10 @@
 import { nowTs24 } from '../../../0_infrastructure/utils/index.mjs';
 
 /**
- * @typedef {import('../../../1_domains/home-automation/ports/IHomeAutomationGateway.mjs').DeviceState} DeviceState
- * @typedef {import('../../../1_domains/home-automation/ports/IHomeAutomationGateway.mjs').ServiceResult} ServiceResult
- * @typedef {import('../../../1_domains/home-automation/ports/IHomeAutomationGateway.mjs').WaitOptions} WaitOptions
- * @typedef {import('../../../1_domains/home-automation/ports/IHomeAutomationGateway.mjs').WaitResult} WaitResult
+ * @typedef {import('../../../3_applications/home-automation/ports/IHomeAutomationGateway.mjs').DeviceState} DeviceState
+ * @typedef {import('../../../3_applications/home-automation/ports/IHomeAutomationGateway.mjs').ServiceResult} ServiceResult
+ * @typedef {import('../../../3_applications/home-automation/ports/IHomeAutomationGateway.mjs').WaitOptions} WaitOptions
+ * @typedef {import('../../../3_applications/home-automation/ports/IHomeAutomationGateway.mjs').WaitResult} WaitResult
  */
 
 export class HomeAssistantAdapter {

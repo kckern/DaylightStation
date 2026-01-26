@@ -7,7 +7,7 @@
 
 import path from 'path';
 import { JobState } from '../../1_domains/scheduling/entities/JobState.mjs';
-import { IStateStore } from '../../1_domains/scheduling/ports/IStateStore.mjs';
+import { IStateStore } from '../../3_applications/scheduling/ports/IStateStore.mjs';
 import { loadYaml, saveYaml } from '../../0_infrastructure/utils/FileIO.mjs';
 
 export class YamlStateStore extends IStateStore {
