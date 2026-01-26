@@ -7,6 +7,8 @@
  *   - events: { timestamp, type, data }[] - discrete events during session
  */
 
+import { ValidationError } from '../../core/errors/index.mjs';
+
 export class Session {
   constructor({
     sessionId,
@@ -103,8 +105,12 @@ export class Session {
 
   /**
    * End the session
+   * @param {number} endTime - End timestamp in milliseconds (required)
    */
-  end(endTime = Date.now()) {
+  end(endTime) {
+    if (endTime == null) {
+      throw new ValidationError('endTime required', { code: 'MISSING_END_TIME', field: 'endTime' });
+    }
     this.endTime = endTime;
     this.durationMs = this.getDurationMs();
   }
@@ -121,10 +127,16 @@ export class Session {
 
   /**
    * Add a timeline event
+   * @param {string} type - Event type
+   * @param {Object} data - Event data
+   * @param {number} timestamp - Event timestamp in milliseconds (required)
    */
-  addEvent(type, data = {}) {
+  addEvent(type, data = {}, timestamp) {
+    if (timestamp == null) {
+      throw new ValidationError('timestamp required', { code: 'MISSING_TIMESTAMP', field: 'timestamp' });
+    }
     this.timeline.events.push({
-      timestamp: Date.now(),
+      timestamp,
       type,
       ...data
     });
@@ -132,13 +144,18 @@ export class Session {
 
   /**
    * Add a snapshot/screenshot
+   * @param {Object} capture - Capture info
+   * @param {number} timestamp - Timestamp in milliseconds (required)
    */
-  addSnapshot(capture) {
+  addSnapshot(capture, timestamp) {
+    if (timestamp == null) {
+      throw new ValidationError('timestamp required', { code: 'MISSING_TIMESTAMP', field: 'timestamp' });
+    }
     if (!this.snapshots.captures) {
       this.snapshots.captures = [];
     }
     this.snapshots.captures.push(capture);
-    this.snapshots.updatedAt = Date.now();
+    this.snapshots.updatedAt = timestamp;
   }
 
   /**
@@ -194,8 +211,12 @@ export class Session {
   /**
    * Generate sessionId from a timestamp
    * Format: YYYYMMDDHHmmss (14 digits)
+   * @param {Date|string} date - Date object or ISO string (required)
    */
-  static generateSessionId(date = new Date()) {
+  static generateSessionId(date) {
+    if (date == null) {
+      throw new ValidationError('date required', { code: 'MISSING_DATE', field: 'date' });
+    }
     const d = typeof date === 'string' ? new Date(date) : date;
     const pad = (n, len = 2) => String(n).padStart(len, '0');
     return [

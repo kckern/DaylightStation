@@ -40,8 +40,9 @@ describe('SessionService', () => {
   });
 
   describe('createSession', () => {
-    test('creates and saves session', async () => {
+    test('creates and saves session with startTime', async () => {
       const session = await service.createSession({
+        startTime: 1736596800000,
         roster: [{ name: 'John' }]
       }, 'test-hid');
 
@@ -58,6 +59,11 @@ describe('SessionService', () => {
 
       expect(session.sessionId).toBe('20260111100000');
       expect(session.startTime).toBe(1736586000000);
+    });
+
+    test('throws when startTime is missing', async () => {
+      await expect(service.createSession({ roster: [] }, 'test-hid'))
+        .rejects.toThrow('startTime is required');
     });
   });
 
@@ -169,8 +175,13 @@ describe('SessionService', () => {
 
     test('throws for nonexistent session', async () => {
       mockStore.findById.mockResolvedValue(null);
-      await expect(service.endSession('20260111120000', 'test-hid'))
+      await expect(service.endSession('20260111120000', 'test-hid', 1736600400000))
         .rejects.toThrow('Session not found');
+    });
+
+    test('throws when endTime is missing', async () => {
+      await expect(service.endSession('20260111120000', 'test-hid'))
+        .rejects.toThrow('endTime is required');
     });
   });
 
@@ -201,14 +212,17 @@ describe('SessionService', () => {
         snapshots: { captures: [], updatedAt: null }
       });
 
+      const snapshotTime = 1736596900000;
       const session = await service.addSnapshot(
         '20260111120000',
         { filename: 'test.jpg', size: 1024 },
-        'test-hid'
+        'test-hid',
+        snapshotTime
       );
 
       expect(session.snapshots.captures).toHaveLength(1);
       expect(session.snapshots.captures[0].filename).toBe('test.jpg');
+      expect(session.snapshots.updatedAt).toBe(snapshotTime);
     });
 
     test('removes duplicate by filename', async () => {
@@ -220,11 +234,17 @@ describe('SessionService', () => {
       const session = await service.addSnapshot(
         '20260111120000',
         { filename: 'test.jpg', size: 1024 },
-        'test-hid'
+        'test-hid',
+        1736596900000
       );
 
       expect(session.snapshots.captures).toHaveLength(1);
       expect(session.snapshots.captures[0].size).toBe(1024);
+    });
+
+    test('throws when timestamp is missing', async () => {
+      await expect(service.addSnapshot('20260111120000', { filename: 'test.jpg' }, 'test-hid'))
+        .rejects.toThrow('timestamp is required');
     });
   });
 

@@ -23,16 +23,22 @@ export class SessionService {
 
   /**
    * Create a new session
-   * @param {Object} data - Session data
+   * @param {Object} data - Session data (startTime required)
    * @param {string} householdId - Household ID
    */
   async createSession(data, householdId) {
     const hid = this.resolveHouseholdId(householdId);
-    const sessionId = data.sessionId || Session.generateSessionId();
+
+    // startTime is required - caller must provide timestamp
+    if (data.startTime == null) {
+      throw new Error('startTime is required');
+    }
+
+    const sessionId = data.sessionId || Session.generateSessionId(new Date(data.startTime));
 
     const session = new Session({
       sessionId,
-      startTime: data.startTime || Date.now(),
+      startTime: data.startTime,
       timezone: data.timezone || null,
       roster: data.roster || [],
       timeline: data.timeline || { series: {}, events: [] },
@@ -143,9 +149,12 @@ export class SessionService {
    * End a session
    * @param {string} sessionId - Session ID
    * @param {string} householdId - Household ID
-   * @param {number} endTime - End timestamp (ms since epoch)
+   * @param {number} endTime - End timestamp in milliseconds (required)
    */
-  async endSession(sessionId, householdId, endTime = Date.now()) {
+  async endSession(sessionId, householdId, endTime) {
+    if (endTime == null) {
+      throw new Error('endTime is required');
+    }
     const session = await this.getSession(sessionId, householdId, { decodeTimeline: false });
     if (!session) {
       throw new Error(`Session not found: ${sessionId}`);
@@ -179,8 +188,12 @@ export class SessionService {
    * @param {string} sessionId - Session ID
    * @param {Object} capture - Capture info { filename, path, timestamp, size }
    * @param {string} householdId - Household ID
+   * @param {number} timestamp - Timestamp in milliseconds (required)
    */
-  async addSnapshot(sessionId, capture, householdId) {
+  async addSnapshot(sessionId, capture, householdId, timestamp) {
+    if (timestamp == null) {
+      throw new Error('timestamp is required');
+    }
     const hid = this.resolveHouseholdId(householdId);
     const sanitizedId = Session.sanitizeSessionId(sessionId);
     if (!sanitizedId) {
@@ -198,7 +211,7 @@ export class SessionService {
       );
     }
 
-    session.addSnapshot(capture);
+    session.addSnapshot(capture, timestamp);
     await this.sessionStore.save(session, hid);
     return session;
   }
