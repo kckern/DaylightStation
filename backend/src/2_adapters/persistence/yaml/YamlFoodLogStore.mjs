@@ -10,7 +10,7 @@
 
 import path from 'path';
 import { NutriLog } from '../../../1_domains/nutrition/entities/NutriLog.mjs';
-import { IFoodLogStore } from '../../../1_domains/nutrition/ports/IFoodLogStore.mjs';
+import { IFoodLogStore } from '../../../3_applications/nutribot/ports/IFoodLogStore.mjs';
 import {
   ensureDir,
   dirExists,
