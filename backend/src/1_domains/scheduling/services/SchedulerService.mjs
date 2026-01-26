@@ -15,7 +15,7 @@ import { CronExpressionParser } from 'cron-parser';
 import { Job } from '../entities/Job.mjs';
 import { JobState } from '../entities/JobState.mjs';
 import { JobExecution } from '../entities/JobExecution.mjs';
-import { nowTs24 } from '../../../0_infrastructure/utils/index.mjs';
+import { ValidationError, EntityNotFoundError } from '../../core/errors/index.mjs';
 
 export class SchedulerService {
   constructor({
@@ -87,10 +87,13 @@ export class SchedulerService {
   /**
    * Compute next run time for a job
    * @param {Job} job
-   * @param {Date} fromDate
+   * @param {Date} fromDate - Date to compute from (required)
    * @returns {Date}
    */
-  computeNextRun(job, fromDate = new Date()) {
+  computeNextRun(job, fromDate) {
+    if (!fromDate) {
+      throw new ValidationError('fromDate timestamp required', { code: 'MISSING_TIMESTAMP', field: 'fromDate' });
+    }
     try {
       const interval = CronExpressionParser.parse(job.schedule, {
         currentDate: fromDate,
@@ -157,8 +160,13 @@ export class SchedulerService {
 
   /**
    * Initialize job states - compute next run for jobs without one
+   * @param {Array<{job: Job, state: JobState}>} jobsWithState
+   * @param {Date} now - Current timestamp (required)
    */
-  async initializeStates(jobsWithState, now = new Date()) {
+  async initializeStates(jobsWithState, now) {
+    if (!now) {
+      throw new ValidationError('now timestamp required', { code: 'MISSING_TIMESTAMP', field: 'now' });
+    }
     for (const { job, state } of jobsWithState) {
       if (!state.nextRun) {
         const nextRun = this.computeNextRun(job, now);
@@ -192,9 +200,13 @@ export class SchedulerService {
 
   /**
    * Get jobs that need to run now
+   * @param {Date} now - Current timestamp (required)
    * @returns {Promise<Array<{job: Job, state: JobState}>>}
    */
-  async getJobsDueToRun(now = new Date()) {
+  async getJobsDueToRun(now) {
+    if (!now) {
+      throw new ValidationError('now timestamp required', { code: 'MISSING_TIMESTAMP', field: 'now' });
+    }
     const jobsWithState = await this.loadJobsWithState();
     const states = new Map(jobsWithState.map(j => [j.job.id, j.state]));
 
@@ -223,9 +235,13 @@ export class SchedulerService {
    * @param {Job} job
    * @param {string} executionId
    * @param {boolean} manual
+   * @param {string} timestamp - Current timestamp string (required)
    * @returns {Promise<JobExecution>}
    */
-  async executeJob(job, executionId, manual = false) {
+  async executeJob(job, executionId, manual = false, timestamp) {
+    if (!timestamp) {
+      throw new ValidationError('timestamp required', { code: 'MISSING_TIMESTAMP', field: 'timestamp' });
+    }
     const execution = JobExecution.create(job.id, executionId, manual);
 
     // Check if already running
@@ -236,7 +252,7 @@ export class SchedulerService {
     }
 
     this.runningJobs.set(job.id, executionId);
-    execution.start(nowTs24());
+    execution.start(timestamp);
 
     const scopedLogger = this.logger.child?.({ jobId: executionId, job: job.id }) || this.logger;
 
@@ -255,7 +271,7 @@ export class SchedulerService {
           )
         ]);
 
-        execution.succeed(nowTs24());
+        execution.succeed(timestamp);
         this.logger.info?.('scheduler.job.success', {
           jobId: job.id,
           executionId,
@@ -275,7 +291,7 @@ export class SchedulerService {
           )
         ]);
 
-        execution.succeed(nowTs24());
+        execution.succeed(timestamp);
         this.logger.info?.('scheduler.job.success', {
           jobId: job.id,
           executionId,
@@ -288,7 +304,7 @@ export class SchedulerService {
         const handler = module.default;
 
         if (typeof handler !== 'function') {
-          throw new Error(`Job module ${job.module} (resolved: ${resolvedPath}) does not export a default function`);
+          throw new ValidationError(`Job module ${job.module} (resolved: ${resolvedPath}) does not export a default function`, { code: 'INVALID_MODULE', field: 'module' });
         }
 
         // Execute with timeout
@@ -305,7 +321,7 @@ export class SchedulerService {
           )
         ]);
 
-        execution.succeed(nowTs24());
+        execution.succeed(timestamp);
         this.logger.info?.('scheduler.job.success', {
           jobId: job.id,
           executionId,
@@ -313,7 +329,6 @@ export class SchedulerService {
         });
       }
     } catch (err) {
-      const timestamp = nowTs24();
       if (err.message?.includes('timeout')) {
         execution.timeout(timestamp);
       } else {
@@ -337,16 +352,20 @@ export class SchedulerService {
    * @param {Job} job
    * @param {JobState} state
    * @param {boolean} manual
+   * @param {Date} now - Current timestamp (required)
    * @returns {Promise<JobExecution>}
    */
-  async runJob(job, state, manual = false) {
+  async runJob(job, state, manual = false, now) {
+    if (!now) {
+      throw new ValidationError('now timestamp required', { code: 'MISSING_TIMESTAMP', field: 'now' });
+    }
     const executionId = this.generateExecutionId();
+    const timestamp = this.formatDate(now);
     this.logger.info?.('scheduler.job.started', { jobId: job.id, executionId, manual });
 
-    const execution = await this.executeJob(job, executionId, manual);
+    const execution = await this.executeJob(job, executionId, manual, timestamp);
 
     // Compute next run time
-    const now = new Date();
     const nextRun = this.computeNextRun(job, now);
 
     // Update state
@@ -358,10 +377,14 @@ export class SchedulerService {
 
   /**
    * Run all jobs that are due
+   * @param {Date} now - Current timestamp (required)
    * @returns {Promise<JobExecution[]>}
    */
-  async runDueJobs() {
-    const dueJobs = await this.getJobsDueToRun();
+  async runDueJobs(now) {
+    if (!now) {
+      throw new ValidationError('now timestamp required', { code: 'MISSING_TIMESTAMP', field: 'now' });
+    }
+    const dueJobs = await this.getJobsDueToRun(now);
 
     if (dueJobs.length === 0) {
       return [];
@@ -369,7 +392,7 @@ export class SchedulerService {
 
     const executions = [];
     for (const { job, state } of dueJobs) {
-      const execution = await this.runJob(job, state, false);
+      const execution = await this.runJob(job, state, false, now);
       executions.push(execution);
     }
 
@@ -382,28 +405,35 @@ export class SchedulerService {
   /**
    * Manually trigger a specific job
    * @param {string} jobId
+   * @param {Date} now - Current timestamp (required)
    * @returns {Promise<{execution: JobExecution, executionId: string}>}
    */
-  async triggerJob(jobId) {
+  async triggerJob(jobId, now) {
+    if (!now) {
+      throw new ValidationError('now timestamp required', { code: 'MISSING_TIMESTAMP', field: 'now' });
+    }
     const job = await this.jobStore.getJob(jobId);
     if (!job) {
-      throw new Error(`Job not found: ${jobId}`);
+      throw new EntityNotFoundError('Job', jobId);
     }
 
     const states = await this.stateStore.loadStates();
     const state = states.get(jobId) || new JobState({ jobId });
 
-    const execution = await this.runJob(job, state, true);
+    const execution = await this.runJob(job, state, true, now);
     return { execution, executionId: execution.executionId };
   }
 
   /**
    * Get status of all jobs
+   * @param {Date} now - Current timestamp (required)
    * @returns {Promise<Object>}
    */
-  async getStatus() {
+  async getStatus(now) {
+    if (!now) {
+      throw new ValidationError('now timestamp required', { code: 'MISSING_TIMESTAMP', field: 'now' });
+    }
     const jobsWithState = await this.loadJobsWithState();
-    const now = new Date();
 
     const jobs = jobsWithState.map(({ job, state }) => ({
       id: job.id,
@@ -422,7 +452,7 @@ export class SchedulerService {
 
     return {
       status: 'ok',
-      timestamp: nowTs24(),
+      timestamp: this.formatDate(now),
       runningCount: this.runningJobs.size,
       jobs
     };

@@ -1,5 +1,7 @@
 // backend/src/domains/content/entities/WatchState.mjs
 
+import { ValidationError } from '../../core/errors/index.mjs';
+
 /**
  * @typedef {Object} WatchStateProps
  * @property {string} itemId - Compound ID of the item
@@ -18,7 +20,7 @@ export class WatchState {
    * @param {WatchStateProps} props
    */
   constructor(props) {
-    if (!props.itemId) throw new Error('WatchState requires itemId');
+    if (!props.itemId) throw new ValidationError('WatchState requires itemId', { code: 'MISSING_ITEM_ID', field: 'itemId' });
 
     this.itemId = props.itemId;
     this.playhead = props.playhead ?? 0;

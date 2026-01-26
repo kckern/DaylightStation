@@ -1,6 +1,6 @@
 // backend/src/1_domains/lifelog/entities/NutriLog.mjs
 import { FoodItem } from './FoodItem.mjs';
-import { ValidationError } from '../../core/errors/index.mjs';
+import { ValidationError, DomainInvariantError } from '../../core/errors/index.mjs';
 
 /**
  * @typedef {'pending'|'accepted'|'rejected'|'deleted'} NutriLogStatus
@@ -128,7 +128,7 @@ export class NutriLog {
       throw new ValidationError('timestamp is required for accept');
     }
     if (this.#status !== 'pending') {
-      throw new Error(`Cannot accept log with status: ${this.#status}`);
+      throw new DomainInvariantError(`Cannot accept log with status: ${this.#status}`, { code: 'INVALID_STATE', currentStatus: this.#status });
     }
     return this.#withUpdates({
       status: 'accepted',
@@ -148,7 +148,7 @@ export class NutriLog {
       throw new ValidationError('timestamp is required for reject');
     }
     if (this.#status !== 'pending') {
-      throw new Error(`Cannot reject log with status: ${this.#status}`);
+      throw new DomainInvariantError(`Cannot reject log with status: ${this.#status}`, { code: 'INVALID_STATE', currentStatus: this.#status });
     }
     return this.#withUpdates({ status: 'rejected' }, timestamp);
   }

@@ -3,7 +3,7 @@
  */
 
 import { Notification } from '../entities/Notification.mjs';
-import { nowTs24 } from '../../../0_infrastructure/utils/index.mjs';
+import { ValidationError, EntityNotFoundError } from '../../core/errors/index.mjs';
 
 export class NotificationService {
   constructor({ notificationStore, channels = {} }) {
@@ -13,10 +13,19 @@ export class NotificationService {
 
   /**
    * Send a notification
+   * @param {Object} data - Notification data
+   * @param {number} nowMs - Current time in milliseconds (required)
+   * @param {string} timestamp - Formatted timestamp string (required)
    */
-  async send(data) {
+  async send(data, nowMs, timestamp) {
+    if (typeof nowMs !== 'number') {
+      throw new ValidationError('nowMs timestamp required', { code: 'MISSING_TIMESTAMP', field: 'nowMs' });
+    }
+    if (!timestamp) {
+      throw new ValidationError('timestamp required', { code: 'MISSING_TIMESTAMP', field: 'timestamp' });
+    }
     const notification = new Notification({
-      id: data.id || this.generateId(),
+      id: data.id || this.generateId(nowMs),
       ...data
     });
 
@@ -24,7 +33,7 @@ export class NotificationService {
     const channelAdapter = this.channels[notification.channel];
     if (channelAdapter) {
       await channelAdapter.send(notification);
-      notification.markSent(nowTs24());
+      notification.markSent(timestamp);
     }
 
     await this.notificationStore.save(notification);
@@ -57,22 +66,31 @@ export class NotificationService {
 
   /**
    * Mark notification as read
+   * @param {string} id
+   * @param {string} timestamp - Formatted timestamp string (required)
    */
-  async markRead(id) {
+  async markRead(id, timestamp) {
+    if (!timestamp) {
+      throw new ValidationError('timestamp required', { code: 'MISSING_TIMESTAMP', field: 'timestamp' });
+    }
     const notification = await this.getNotification(id);
-    if (!notification) throw new Error(`Notification not found: ${id}`);
+    if (!notification) throw new EntityNotFoundError('Notification', id);
 
-    notification.markRead(nowTs24());
+    notification.markRead(timestamp);
     await this.notificationStore.save(notification);
     return notification;
   }
 
   /**
    * Mark all notifications read for recipient
+   * @param {string} recipient
+   * @param {string} timestamp - Formatted timestamp string (required)
    */
-  async markAllRead(recipient) {
+  async markAllRead(recipient, timestamp) {
+    if (!timestamp) {
+      throw new ValidationError('timestamp required', { code: 'MISSING_TIMESTAMP', field: 'timestamp' });
+    }
     const unread = await this.getUnreadNotifications(recipient);
-    const timestamp = nowTs24();
     for (const notification of unread) {
       notification.markRead(timestamp);
       await this.notificationStore.save(notification);
@@ -87,8 +105,16 @@ export class NotificationService {
     this.channels[name] = adapter;
   }
 
-  generateId() {
-    return `notif-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  /**
+   * Generate a unique notification ID
+   * @param {number} nowMs - Current time in milliseconds (required)
+   * @returns {string}
+   */
+  generateId(nowMs) {
+    if (typeof nowMs !== 'number') {
+      throw new ValidationError('nowMs timestamp required for generateId', { code: 'MISSING_TIMESTAMP', field: 'nowMs' });
+    }
+    return `notif-${nowMs}-${Math.random().toString(36).slice(2, 8)}`;
   }
 }
 

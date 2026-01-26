@@ -11,6 +11,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { Selection } from '../entities/Selection.mjs';
 import { GratitudeItem } from '../entities/GratitudeItem.mjs';
 import { nowTs24 } from '../../../0_infrastructure/utils/index.mjs';
+import { DomainInvariantError, EntityNotFoundError } from '../../core/errors/index.mjs';
 // Note: nowTs24 usage is permitted in service layer (application-adjacent)
 
 /**
@@ -145,7 +146,7 @@ export class GratitudeService {
       s.item?.id === item.id && s.userId === userId
     );
     if (duplicate) {
-      throw new Error('Item already selected by this user');
+      throw new DomainInvariantError('Item already selected by this user', { code: 'DUPLICATE_SELECTION', itemId: item.id, userId });
     }
 
     // Create selection - generate timestamp in service layer
@@ -411,7 +412,7 @@ export class GratitudeService {
     const snapshot = await this.#store.loadSnapshot(householdId, snapshotId);
 
     if (!snapshot) {
-      throw new Error('Snapshot not found');
+      throw new EntityNotFoundError('Snapshot', snapshotId || 'latest');
     }
 
     await this.#store.restoreSnapshot(householdId, snapshot);

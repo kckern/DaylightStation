@@ -1,3 +1,5 @@
+import { ValidationError } from '../../core/errors/index.mjs';
+
 /**
  * JobState Entity - Represents the runtime state of a job
  */
@@ -32,8 +34,13 @@ export class JobState {
 
   /**
    * Calculate seconds until next run
+   * @param {Date} now - Current timestamp (required)
+   * @returns {number|null} Seconds until next run, or null if no nextRun set
    */
-  secondsUntilNextRun(now = new Date()) {
+  secondsUntilNextRun(now) {
+    if (!now) {
+      throw new ValidationError('now timestamp required', { code: 'MISSING_TIMESTAMP', field: 'now' });
+    }
     if (!this.nextRun) return null;
     const nextRunDate = new Date(this.nextRun);
     return Math.floor((nextRunDate - now) / 1000);
@@ -41,8 +48,13 @@ export class JobState {
 
   /**
    * Check if job needs to run
+   * @param {Date} now - Current timestamp (required)
+   * @returns {boolean} True if job needs to run
    */
-  needsToRun(now = new Date()) {
+  needsToRun(now) {
+    if (!now) {
+      throw new ValidationError('now timestamp required', { code: 'MISSING_TIMESTAMP', field: 'now' });
+    }
     if (!this.nextRun) return true; // Never run, needs initialization
     const secondsUntil = this.secondsUntilNextRun(now);
     return secondsUntil !== null && secondsUntil <= 0;

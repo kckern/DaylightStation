@@ -1,3 +1,5 @@
+import { ValidationError } from '../../core/errors/index.mjs';
+
 /**
  * Job Entity - Represents a scheduled task definition
  */
@@ -36,9 +38,9 @@ export class Job {
    * Validate the job configuration
    */
   validate() {
-    if (!this.id) throw new Error('Job requires id');
-    if (!this.module) throw new Error('Job requires module');
-    if (!this.schedule) throw new Error('Job requires schedule');
+    if (!this.id) throw new ValidationError('Job requires id', { code: 'MISSING_ID', field: 'id' });
+    if (!this.module) throw new ValidationError('Job requires module', { code: 'MISSING_MODULE', field: 'module' });
+    if (!this.schedule) throw new ValidationError('Job requires schedule', { code: 'MISSING_SCHEDULE', field: 'schedule' });
     return true;
   }
 
