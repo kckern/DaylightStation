@@ -91,7 +91,7 @@ healthRouter.get('/daily', asyncHandler(async (req, res) => {
 
     if (healthService) {
         // Use new architecture
-        const healthData = await healthService.aggregateDailyHealth(username, days);
+        const healthData = await healthService.aggregateDailyHealth(username, days, new Date());
         healthLogger.info('health.daily.success', { architecture: 'new' });
         return res.json({
             message: 'Daily health data retrieved successfully',

@@ -90,10 +90,13 @@ export class QueueService {
    * Items without skip_after are always included.
    *
    * @param {Array} items - Items with optional skip_after field
-   * @param {Date} [now] - Current date for testing
+   * @param {Date} now - Current date (required, from application layer)
    * @returns {Array} Filtered items (new array, original unchanged)
    */
-  static filterBySkipAfter(items, now = new Date()) {
+  static filterBySkipAfter(items, now) {
+    if (!now || !(now instanceof Date)) {
+      throw new Error('now date required for filterBySkipAfter');
+    }
     return items.filter(item => {
       if (!item.skip_after) return true;
       const deadline = new Date(item.skip_after);
@@ -106,10 +109,13 @@ export class QueueService {
    * Does not upgrade in_progress items (they already have top priority).
    *
    * @param {Array} items - Items with optional skip_after and priority fields
-   * @param {Date} [now] - Current date for testing
+   * @param {Date} now - Current date (required, from application layer)
    * @returns {Array} Items with updated priority (new array, original unchanged)
    */
-  static applyUrgency(items, now = new Date()) {
+  static applyUrgency(items, now) {
+    if (!now || !(now instanceof Date)) {
+      throw new Error('now date required for applyUrgency');
+    }
     const urgencyThreshold = new Date(now);
     urgencyThreshold.setDate(urgencyThreshold.getDate() + URGENCY_DAYS);
 
@@ -129,10 +135,13 @@ export class QueueService {
    * Items with wait_until in the past or within lookahead window are included.
    *
    * @param {Array} items - Items with optional wait_until field
-   * @param {Date} [now] - Current date for testing
+   * @param {Date} now - Current date (required, from application layer)
    * @returns {Array} Filtered items (new array, original unchanged)
    */
-  static filterByWaitUntil(items, now = new Date()) {
+  static filterByWaitUntil(items, now) {
+    if (!now || !(now instanceof Date)) {
+      throw new Error('now date required for filterByWaitUntil');
+    }
     const lookaheadDate = new Date(now);
     lookaheadDate.setDate(lookaheadDate.getDate() + WAIT_LOOKAHEAD_DAYS);
 
@@ -177,10 +186,13 @@ export class QueueService {
    * Items without days field are always included.
    *
    * @param {Array} items - Items with optional days field
-   * @param {Date} [now] - Current date for testing
+   * @param {Date} now - Current date (required, from application layer)
    * @returns {Array} Filtered items (new array, original unchanged)
    */
-  static filterByDayOfWeek(items, now = new Date()) {
+  static filterByDayOfWeek(items, now) {
+    if (!now || !(now instanceof Date)) {
+      throw new Error('now date required for filterByDayOfWeek');
+    }
     // ISO weekday: 1=Monday, 7=Sunday
     // JS getDay(): 0=Sunday, 1=Monday, etc.
     const jsDay = now.getDay();
@@ -206,11 +218,15 @@ export class QueueService {
    * @param {boolean} [options.ignoreWatchStatus=false]
    * @param {boolean} [options.ignoreWait=false]
    * @param {boolean} [options.allowFallback=false]
-   * @param {Date} [options.now]
+   * @param {Date} options.now - Current date (required, from application layer)
    * @returns {Array}
    */
   static applyFilters(items, options = {}) {
     const { ignoreSkips, ignoreWatchStatus, ignoreWait, allowFallback, now } = options;
+
+    if (!now || !(now instanceof Date)) {
+      throw new Error('now date required for applyFilters');
+    }
 
     let result = [...items];
 
@@ -250,10 +266,15 @@ export class QueueService {
    * Build a prioritized, filtered queue from items
    * @param {Array} items
    * @param {Object} options
+   * @param {Date} options.now - Current date (required, from application layer)
    * @returns {Array}
    */
   static buildQueue(items, options = {}) {
     const { now } = options;
+
+    if (!now || !(now instanceof Date)) {
+      throw new Error('now date required for buildQueue');
+    }
 
     // Apply urgency based on deadlines
     let result = this.applyUrgency(items, now);

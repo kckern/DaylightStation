@@ -110,7 +110,7 @@ export class ProcessRevisionInput {
 
       // 8. Show revised items with buttons
       const logDate = nutriLog.meal?.date || nutriLog.date;
-      const dateHeader = logDate ? formatDateHeader(logDate, { timezone: this.#getTimezone() }) : '';
+      const dateHeader = logDate ? formatDateHeader(logDate, { timezone: this.#getTimezone(), now: new Date() }) : '';
       const foodList = formatFoodList(revisedItems);
       const buttons = this.#buildActionButtons(logUuid);
       const messageText = dateHeader ? `${dateHeader}\n\n${foodList}` : foodList;

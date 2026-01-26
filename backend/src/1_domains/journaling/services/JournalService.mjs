@@ -19,8 +19,9 @@ export class JournalService {
     if (!timestamp) {
       throw new ValidationError('timestamp required', { code: 'MISSING_TIMESTAMP', field: 'timestamp' });
     }
+    const nowMs = new Date(timestamp).getTime();
     const entry = new JournalEntry({
-      id: data.id || this.generateId(),
+      id: data.id || this.generateId(nowMs),
       createdAt: timestamp,
       ...data
     });
@@ -110,8 +111,16 @@ export class JournalService {
     };
   }
 
-  generateId() {
-    return `journal-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  /**
+   * Generate a unique ID for a journal entry
+   * @param {number} nowMs - Current timestamp in milliseconds (from application layer)
+   * @returns {string}
+   */
+  generateId(nowMs) {
+    if (typeof nowMs !== 'number') {
+      throw new ValidationError('nowMs required', { code: 'MISSING_TIMESTAMP', field: 'nowMs' });
+    }
+    return `journal-${nowMs}-${Math.random().toString(36).slice(2, 8)}`;
   }
 }
 

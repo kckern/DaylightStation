@@ -91,7 +91,7 @@ export class ReviseFoodLog {
 
       // 3. Build revision prompt
       const logDate = nutriLog?.meal?.date || nutriLog?.date;
-      const dateHeader = logDate ? formatDateHeader(logDate, { timezone: this.#getTimezone() }) : '';
+      const dateHeader = logDate ? formatDateHeader(logDate, { timezone: this.#getTimezone(), now: new Date() }) : '';
       const currentItems = formatFoodList(nutriLog?.items || []);
       const message = `✏️ Revise Entry:\n\n${dateHeader ? dateHeader + '\n\n' : ''}${currentItems || '(none)'}`;
 

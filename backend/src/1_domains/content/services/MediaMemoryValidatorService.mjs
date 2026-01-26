@@ -35,9 +35,17 @@ export class MediaMemoryValidatorService {
    * - Only updates when high-confidence match found (>=90%)
    * - Preserves old IDs in oldPlexIds array
    * - NEVER deletes orphan entries - only logs unresolved
+   *
+   * @param {Object} options
+   * @param {boolean} [options.dryRun=false] - If true, don't actually update entries
+   * @param {number} options.nowMs - Current timestamp in milliseconds (required, from application layer)
    */
   async validateMediaMemory(options = {}) {
-    const { dryRun = false } = options;
+    const { dryRun = false, nowMs } = options;
+
+    if (typeof nowMs !== 'number') {
+      throw new Error('nowMs timestamp required for validateMediaMemory');
+    }
 
     this.#logger.info?.('validator.start', { dryRun });
 
@@ -50,7 +58,7 @@ export class MediaMemoryValidatorService {
 
     // Get all entries from watch state store
     const allEntries = await this.#watchStateStore.getAllEntries();
-    const selected = this.selectEntriesToCheck(allEntries);
+    const selected = this.selectEntriesToCheck(allEntries, nowMs);
 
     const results = { checked: 0, valid: 0, backfilled: 0, unresolved: 0, failed: 0 };
     const changesList = [];
@@ -129,10 +137,15 @@ export class MediaMemoryValidatorService {
    * Legacy behavior:
    * - All entries played in last RECENT_DAYS are checked
    * - SAMPLE_PERCENT of older entries are randomly sampled
+   *
+   * @param {Array} entries - All entries to check
+   * @param {number} nowMs - Current timestamp in milliseconds (from application layer)
    */
-  selectEntriesToCheck(entries) {
-    const now = Date.now();
-    const recentCutoff = now - (RECENT_DAYS * 24 * 60 * 60 * 1000);
+  selectEntriesToCheck(entries, nowMs) {
+    if (typeof nowMs !== 'number') {
+      throw new Error('nowMs timestamp required for selectEntriesToCheck');
+    }
+    const recentCutoff = nowMs - (RECENT_DAYS * 24 * 60 * 60 * 1000);
 
     const recent = [];
     const older = [];

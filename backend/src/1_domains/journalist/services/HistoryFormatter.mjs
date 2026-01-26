@@ -64,10 +64,14 @@ export function buildChatContext(messages, botName = 'Journalist') {
  * Get recent messages within a time window
  * @param {import('../entities/ConversationMessage.mjs').ConversationMessage[]} messages
  * @param {number} hoursAgo - Hours to look back
+ * @param {number} nowMs - Current timestamp in milliseconds (from application layer)
  * @returns {import('../entities/ConversationMessage.mjs').ConversationMessage[]}
  */
-export function getRecentMessages(messages, hoursAgo = 24) {
-  const cutoff = Date.now() - hoursAgo * 60 * 60 * 1000;
+export function getRecentMessages(messages, hoursAgo = 24, nowMs) {
+  if (typeof nowMs !== 'number') {
+    throw new Error('nowMs timestamp required for getRecentMessages');
+  }
+  const cutoff = nowMs - hoursAgo * 60 * 60 * 1000;
   return messages.filter((msg) => new Date(msg.timestamp).getTime() > cutoff);
 }
 
@@ -107,7 +111,7 @@ export default {
   formatAsChat,
   truncateToLength,
   buildChatContext,
-  getRecentMessages,
+  getRecentMessages, // Note: requires nowMs parameter
   groupByDate,
   extractUserText,
 };
