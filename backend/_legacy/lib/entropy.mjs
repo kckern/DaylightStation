@@ -3,15 +3,15 @@
  *
  * This file has been migrated to the DDD structure.
  * All functionality now lives in:
- *   - backend/src/1_domains/entropy/services/EntropyService.mjs
+ *   - backend/src/3_applications/entropy/services/EntropyService.mjs (uses config/logging)
  *   - backend/src/2_adapters/entropy/YamlEntropyReader.mjs
  *
  * This shim provides backward compatibility for existing imports.
  *
- * @deprecated Use EntropyService from '#backend/src/1_domains/entropy' instead
+ * @deprecated Use EntropyService from '#backend/src/3_applications/entropy' instead
  */
 
-import { createWithLegacyDependencies } from '../../src/1_domains/entropy/services/EntropyService.mjs';
+import { createWithLegacyDependencies } from '../../src/3_applications/entropy/services/EntropyService.mjs';
 
 // Lazy initialization of the singleton
 let _instance = null;
@@ -42,4 +42,4 @@ export const getEntropyReport = async () => {
 
 // Re-export the service and factory for direct access
 export { createWithLegacyDependencies };
-export { EntropyService } from '../../src/1_domains/entropy/services/EntropyService.mjs';
+export { EntropyService } from '../../src/3_applications/entropy/services/EntropyService.mjs';

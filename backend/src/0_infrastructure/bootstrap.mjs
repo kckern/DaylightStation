@@ -106,8 +106,8 @@ import { HealthAggregationService } from '../1_domains/health/services/HealthAgg
 import { YamlHealthStore } from '../2_adapters/persistence/yaml/YamlHealthStore.mjs';
 import { createHealthRouter } from '../4_api/routers/health.mjs';
 
-// Entropy domain imports
-import { EntropyService } from '../1_domains/entropy/services/EntropyService.mjs';
+// Entropy application imports (uses config/logging)
+import { EntropyService } from '../3_applications/entropy/services/EntropyService.mjs';
 import { YamlEntropyReader } from '../2_adapters/entropy/YamlEntropyReader.mjs';
 import { createEntropyRouter } from '../4_api/routers/entropy.mjs';
 
