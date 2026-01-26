@@ -96,9 +96,13 @@ export class LogFoodFromImage {
           if (oldStatusMsgId) {
             try {
               await messaging.deleteMessage( oldStatusMsgId);
-            } catch (e) {}
+            } catch (e) {
+              this.#logger.debug?.('logImage.deleteOldStatus.failed', { error: e.message });
+            }
           }
-        } catch (e) {}
+        } catch (e) {
+          this.#logger.debug?.('logImage.cleanupState.failed', { error: e.message });
+        }
       }
 
       // 1. Send "Analyzing..." status message
@@ -171,7 +175,9 @@ export class LogFoodFromImage {
       // 7. Delete status message
       try {
         await messaging.deleteMessage( statusMsgId);
-      } catch (e) {}
+      } catch (e) {
+        this.#logger.debug?.('logImage.deleteStatus.failed', { error: e.message });
+      }
 
       // 8. Send photo message with food list as caption
       const caption = this.#formatFoodCaption(foodItems, nutriLog.date || localDate);
@@ -186,7 +192,9 @@ export class LogFoodFromImage {
       if (userMessageId) {
         try {
           await messaging.deleteMessage( userMessageId);
-        } catch (e) {}
+        } catch (e) {
+          this.#logger.debug?.('logImage.deleteUserMessage.failed', { error: e.message });
+        }
       }
 
       // Update NutriLog with messageId
