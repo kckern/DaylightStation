@@ -11,42 +11,70 @@ export class OpenAIFoodParserAdapter {
   #apiKey;
   #model;
   #baseUrl;
+  #httpClient;
   #logger;
 
-  constructor(config) {
+  /**
+   * @param {Object} config
+   * @param {string} config.apiKey - OpenAI API key
+   * @param {string} [config.model='gpt-4o-mini'] - Model to use
+   * @param {Object} deps
+   * @param {import('#system/services/HttpClient.mjs').HttpClient} deps.httpClient
+   * @param {Object} [deps.logger=console]
+   */
+  constructor(config, deps = {}) {
     if (!config.apiKey) {
       throw new Error('OpenAIFoodParserAdapter requires apiKey');
+    }
+    if (!deps.httpClient) {
+      throw new Error('OpenAIFoodParserAdapter requires httpClient');
     }
     this.#apiKey = config.apiKey;
     this.#model = config.model || 'gpt-4o-mini';
     this.#baseUrl = 'https://api.openai.com/v1';
-    this.#logger = config.logger || console;
+    this.#httpClient = deps.httpClient;
+    this.#logger = deps.logger || console;
   }
 
   async #callOpenAI(messages, options = {}) {
-    const response = await fetch(`${this.#baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.#apiKey}`
-      },
-      body: JSON.stringify({
-        model: this.#model,
-        messages,
-        temperature: options.temperature ?? 0.3,
-        max_tokens: options.maxTokens ?? 2000,
-        response_format: { type: 'json_object' }
-      })
-    });
+    try {
+      const response = await this.#httpClient.post(
+        `${this.#baseUrl}/chat/completions`,
+        {
+          model: this.#model,
+          messages,
+          temperature: options.temperature ?? 0.3,
+          max_tokens: options.maxTokens ?? 2000,
+          response_format: { type: 'json_object' }
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${this.#apiKey}`
+          }
+        }
+      );
 
-    const data = await response.json();
+      if (response.data.error) {
+        this.#logger.error?.('openai.error', { error: response.data.error });
+        const err = new Error('OpenAI API request failed');
+        err.code = 'OPENAI_API_ERROR';
+        err.isTransient = false;
+        throw err;
+      }
 
-    if (data.error) {
-      this.#logger.error?.('openai.error', { error: data.error });
-      throw new Error(`OpenAI API error: ${data.error.message}`);
+      return response.data.choices[0].message.content;
+    } catch (error) {
+      if (error.code === 'OPENAI_API_ERROR') throw error;
+
+      this.#logger.error?.('openai.request.failed', {
+        error: error.message,
+        code: error.code
+      });
+      const wrapped = new Error('Failed to call OpenAI API');
+      wrapped.code = error.code || 'UNKNOWN_ERROR';
+      wrapped.isTransient = error.isTransient || false;
+      throw wrapped;
     }
-
-    return data.choices[0].message.content;
   }
 
   #buildFoodParsePrompt(text, context = {}) {
