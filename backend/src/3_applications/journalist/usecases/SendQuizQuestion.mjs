@@ -6,6 +6,7 @@
  */
 
 import { MessageQueue } from '../../../1_domains/journalist/entities/MessageQueue.mjs';
+import { nowTs24 } from '../../../0_infrastructure/utils/time.mjs';
 
 /**
  * Send quiz question use case
@@ -72,6 +73,7 @@ export class SendQuizQuestion {
           const queueItems = remainingQuestions.slice(0, 4).map((q, index) =>
             MessageQueue.create({
               chatId,
+              timestamp: nowTs24(),
               queuedMessage: q.question,
               foreignKey: { quiz: q.uuid, queueIndex: index + 1 },
             }),
@@ -94,7 +96,7 @@ export class SendQuizQuestion {
       );
 
       // 6. Mark question as asked
-      const askedQuestion = selectedQuestion.markAsked();
+      const askedQuestion = selectedQuestion.markAsked(nowTs24());
       await this.#quizRepository.recordAnswer?.(askedQuestion.uuid, null); // Mark as asked
 
       this.#logger.info?.('quiz.send.complete', {

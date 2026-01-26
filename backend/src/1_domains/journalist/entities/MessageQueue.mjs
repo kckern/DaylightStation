@@ -6,17 +6,7 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import { nowTs24 } from '../../../0_infrastructure/utils/index.mjs';
-
-/**
- * ValidationError for entity validation
- */
-class ValidationError extends Error {
-  constructor(message) {
-    super(message);
-    this.name = 'ValidationError';
-  }
-}
+import { ValidationError } from '../../core/errors/index.mjs';
 
 /**
  * MessageQueue entity
@@ -45,10 +35,11 @@ export class MessageQueue {
   constructor(props) {
     if (!props.chatId) throw new ValidationError('chatId is required');
     if (!props.queuedMessage) throw new ValidationError('queuedMessage is required');
+    if (!props.timestamp) throw new ValidationError('timestamp is required');
 
     this.#uuid = props.uuid || uuidv4();
     this.#chatId = props.chatId;
-    this.#timestamp = props.timestamp || nowTs24();
+    this.#timestamp = props.timestamp;
     this.#queuedMessage = props.queuedMessage;
     this.#choices = props.choices ? Object.freeze(props.choices.map((row) => Object.freeze([...row]))) : null;
     this.#inline = props.inline ?? true;

@@ -7,6 +7,7 @@
  */
 
 import { ConversationMessage } from '../../../1_domains/journalist/entities/ConversationMessage.mjs';
+import { nowTs24 } from '../../../0_infrastructure/utils/time.mjs';
 import {
   formatAsChat,
   truncateToLength,
@@ -81,6 +82,7 @@ export class ProcessTextEntry {
       const userMessage = ConversationMessage.createUserMessage({
         messageId,
         chatId,
+        timestamp: nowTs24(),
         senderId,
         senderName,
         text,
@@ -109,6 +111,7 @@ export class ProcessTextEntry {
           const botMessage = ConversationMessage.createBotMessage({
             messageId: sentId,
             chatId,
+            timestamp: nowTs24(),
             text: '📝 Noted.',
           });
           await this.#journalEntryRepository.saveMessage?.(botMessage);
@@ -146,6 +149,7 @@ export class ProcessTextEntry {
         const botMessage = ConversationMessage.createBotMessage({
           messageId: sentId,
           chatId,
+          timestamp: nowTs24(),
           text: message,
         });
         await this.#journalEntryRepository.saveMessage?.(botMessage);

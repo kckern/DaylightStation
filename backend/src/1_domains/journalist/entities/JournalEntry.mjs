@@ -7,17 +7,7 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import { EntrySource, isValidEntrySource } from '../value-objects/EntrySource.mjs';
-import { nowTs24 } from '../../../0_infrastructure/utils/index.mjs';
-
-/**
- * ValidationError for entity validation
- */
-class ValidationError extends Error {
-  constructor(message) {
-    super(message);
-    this.name = 'ValidationError';
-  }
-}
+import { ValidationError } from '../../core/errors/index.mjs';
 
 /**
  * @typedef {Object} EntryAnalysis
@@ -59,6 +49,8 @@ export class JournalEntry {
       throw new ValidationError(`Invalid period: ${period}`);
     }
 
+    if (!props.createdAt) throw new ValidationError('createdAt is required');
+
     this.#uuid = props.uuid || uuidv4();
     this.#chatId = props.chatId;
     this.#date = props.date;
@@ -67,7 +59,7 @@ export class JournalEntry {
     this.#source = source;
     this.#transcription = props.transcription || null;
     this.#analysis = props.analysis ? Object.freeze(props.analysis) : null;
-    this.#createdAt = props.createdAt || nowTs24();
+    this.#createdAt = props.createdAt;
 
     Object.freeze(this);
   }

@@ -6,17 +6,7 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import { nowTs24 } from '../../../0_infrastructure/utils/index.mjs';
-
-/**
- * ValidationError for entity validation
- */
-class ValidationError extends Error {
-  constructor(message) {
-    super(message);
-    this.name = 'ValidationError';
-  }
-}
+import { ValidationError } from '../../core/errors/index.mjs';
 
 /**
  * ConversationMessage entity
@@ -43,13 +33,14 @@ export class ConversationMessage {
   constructor(props) {
     if (!props.messageId) throw new ValidationError('messageId is required');
     if (!props.chatId) throw new ValidationError('chatId is required');
+    if (!props.timestamp) throw new ValidationError('timestamp is required');
     if (!props.senderId) throw new ValidationError('senderId is required');
     if (!props.senderName) throw new ValidationError('senderName is required');
     if (typeof props.text !== 'string') throw new ValidationError('text must be a string');
 
     this.#messageId = props.messageId;
     this.#chatId = props.chatId;
-    this.#timestamp = props.timestamp || nowTs24();
+    this.#timestamp = props.timestamp;
     this.#senderId = props.senderId;
     this.#senderName = props.senderName;
     this.#text = props.text;
@@ -148,13 +139,20 @@ export class ConversationMessage {
   /**
    * Create a bot message
    * @param {object} props
+   * @param {string} props.chatId - Chat/conversation ID
+   * @param {string} props.timestamp - ISO timestamp (required)
+   * @param {string} props.text - Message text
+   * @param {string} [props.messageId] - Unique message ID (generated if not provided)
+   * @param {string} [props.botName] - Bot display name
+   * @param {object} [props.foreignKey] - Optional foreign key references
    * @returns {ConversationMessage}
    */
   static createBotMessage(props) {
+    if (!props.timestamp) throw new ValidationError('timestamp is required');
     return new ConversationMessage({
       messageId: props.messageId || uuidv4(),
       chatId: props.chatId,
-      timestamp: props.timestamp || nowTs24(),
+      timestamp: props.timestamp,
       senderId: 'bot',
       senderName: props.botName || 'Journalist',
       text: props.text,
@@ -165,13 +163,21 @@ export class ConversationMessage {
   /**
    * Create a user message
    * @param {object} props
+   * @param {string} props.chatId - Chat/conversation ID
+   * @param {string} props.timestamp - ISO timestamp (required)
+   * @param {string} props.senderId - ID of sender
+   * @param {string} props.text - Message text
+   * @param {string} [props.messageId] - Unique message ID (generated if not provided)
+   * @param {string} [props.senderName] - Display name of sender
+   * @param {object} [props.foreignKey] - Optional foreign key references
    * @returns {ConversationMessage}
    */
   static createUserMessage(props) {
+    if (!props.timestamp) throw new ValidationError('timestamp is required');
     return new ConversationMessage({
       messageId: props.messageId || uuidv4(),
       chatId: props.chatId,
-      timestamp: props.timestamp || nowTs24(),
+      timestamp: props.timestamp,
       senderId: props.senderId,
       senderName: props.senderName || 'User',
       text: props.text,

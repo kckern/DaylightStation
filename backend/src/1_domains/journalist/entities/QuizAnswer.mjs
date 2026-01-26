@@ -6,17 +6,7 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import { nowTs24 } from '../../../0_infrastructure/utils/index.mjs';
-
-/**
- * ValidationError for entity validation
- */
-class ValidationError extends Error {
-  constructor(message) {
-    super(message);
-    this.name = 'ValidationError';
-  }
-}
+import { ValidationError } from '../../core/errors/index.mjs';
 
 /**
  * QuizAnswer entity
@@ -52,12 +42,14 @@ export class QuizAnswer {
       throw new ValidationError('answer is required');
     }
 
+    if (!props.answeredAt) throw new ValidationError('answeredAt is required');
+
     this.#uuid = props.uuid || uuidv4();
     this.#questionUuid = props.questionUuid;
     this.#chatId = props.chatId;
     this.#date = props.date;
     this.#answer = props.answer;
-    this.#answeredAt = props.answeredAt || nowTs24();
+    this.#answeredAt = props.answeredAt;
 
     Object.freeze(this);
   }
@@ -118,9 +110,10 @@ export class QuizAnswer {
    * @param {string} chatId
    * @param {string} date
    * @param {number} choiceIndex
+   * @param {string} answeredAt - When answered (ISO timestamp)
    * @returns {QuizAnswer}
    */
-  static fromChoice(question, chatId, date, choiceIndex) {
+  static fromChoice(question, chatId, date, choiceIndex, answeredAt) {
     const choices = question.choices;
     if (choiceIndex < 0 || choiceIndex >= choices.length) {
       throw new ValidationError(`Invalid choice index: ${choiceIndex}`);
@@ -131,6 +124,7 @@ export class QuizAnswer {
       chatId,
       date,
       answer: choiceIndex,
+      answeredAt,
     });
   }
 
