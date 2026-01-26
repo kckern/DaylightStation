@@ -2,13 +2,13 @@
  * YamlFinanceStore - YAML-based finance data persistence
  *
  * Handles all finance-related YAML files:
- * - budget.config.yml - Budget configuration
- * - finances.yml - Compiled budget output
- * - {date}/transactions.yml - Fetched transactions per budget period
- * - account.balances.yml - Current account balances
- * - mortgage.transactions.yml - Mortgage payment transactions
- * - transaction.memos.yml - User annotations on transactions
- * - gpt.yml - AI categorization configuration
+ * - budget.config - Budget configuration
+ * - finances - Compiled budget output
+ * - {date}/transactions - Fetched transactions per budget period
+ * - account.balances - Current account balances
+ * - mortgage.transactions - Mortgage payment transactions
+ * - transaction.memos - User annotations on transactions
+ * - gpt - AI categorization configuration
  *
  * Base path: households/{hid}/apps/finances/
  */
@@ -18,9 +18,9 @@ import {
   dirExists,
   fileExists,
   listDirsMatching,
-  loadYamlFromPath,
-  saveYamlToPath,
-  resolveYamlPath
+  loadYamlSafe,
+  saveYaml,
+  yamlExists
 } from '../../../0_infrastructure/utils/FileIO.mjs';
 
 export class YamlFinanceStore {
@@ -55,17 +55,14 @@ export class YamlFinanceStore {
   // ==========================================================================
 
   /**
-   * Read a data file (handles .yml/.yaml)
+   * Read a data file
    * @private
    */
-  #readData(filePath) {
-    const basePath = filePath.replace(/\.yml$/, '');
-    const resolvedPath = resolveYamlPath(basePath);
-    if (!resolvedPath) return null;
+  #readData(basePath) {
     try {
-      return loadYamlFromPath(resolvedPath);
+      return loadYamlSafe(basePath);
     } catch (err) {
-      console.error(`Error reading ${filePath}:`, err.message);
+      console.error(`Error reading ${basePath}:`, err.message);
       return null;
     }
   }
@@ -74,10 +71,9 @@ export class YamlFinanceStore {
    * Write a data file
    * @private
    */
-  #writeData(filePath, data) {
-    const dir = path.dirname(filePath);
-    ensureDir(dir);
-    saveYamlToPath(filePath, data, { noRefs: true });
+  #writeData(basePath, data) {
+    ensureDir(path.dirname(basePath));
+    saveYaml(basePath, data, { noRefs: true });
   }
 
   // ==========================================================================
@@ -90,7 +86,7 @@ export class YamlFinanceStore {
    * @returns {Object|null}
    */
   getBudgetConfig(householdId) {
-    const filePath = path.join(this.getBasePath(householdId), 'budget.config.yml');
+    const filePath = path.join(this.getBasePath(householdId), 'budget.config');
     return this.#readData(filePath);
   }
 
@@ -100,7 +96,7 @@ export class YamlFinanceStore {
    * @param {string} [householdId]
    */
   saveBudgetConfig(config, householdId) {
-    const filePath = path.join(this.getBasePath(householdId), 'budget.config.yml');
+    const filePath = path.join(this.getBasePath(householdId), 'budget.config');
     this.#writeData(filePath, config);
   }
 
@@ -114,7 +110,7 @@ export class YamlFinanceStore {
    * @returns {{budgets: Object, mortgage: Object}|null}
    */
   getCompiledFinances(householdId) {
-    const filePath = path.join(this.getBasePath(householdId), 'finances.yml');
+    const filePath = path.join(this.getBasePath(householdId), 'finances');
     return this.#readData(filePath);
   }
 
@@ -124,7 +120,7 @@ export class YamlFinanceStore {
    * @param {string} [householdId]
    */
   saveCompiledFinances(data, householdId) {
-    const filePath = path.join(this.getBasePath(householdId), 'finances.yml');
+    const filePath = path.join(this.getBasePath(householdId), 'finances');
     this.#writeData(filePath, data);
   }
 
@@ -142,7 +138,7 @@ export class YamlFinanceStore {
     const filePath = path.join(
       this.getBasePath(householdId),
       budgetPeriodId,
-      'transactions.yml'
+      'transactions'
     );
     const data = this.#readData(filePath);
     return data?.transactions || null;
@@ -158,7 +154,7 @@ export class YamlFinanceStore {
     const dirPath = path.join(this.getBasePath(householdId), budgetPeriodId);
     ensureDir(dirPath);
 
-    const filePath = path.join(dirPath, 'transactions.yml');
+    const filePath = path.join(dirPath, 'transactions');
     this.#writeData(filePath, { transactions });
   }
 
@@ -189,7 +185,7 @@ export class YamlFinanceStore {
    * @returns {Object[]|null}
    */
   getAccountBalances(householdId) {
-    const filePath = path.join(this.getBasePath(householdId), 'account.balances.yml');
+    const filePath = path.join(this.getBasePath(householdId), 'account.balances');
     const data = this.#readData(filePath);
     return data?.accountBalances || null;
   }
@@ -200,7 +196,7 @@ export class YamlFinanceStore {
    * @param {string} [householdId]
    */
   saveAccountBalances(accountBalances, householdId) {
-    const filePath = path.join(this.getBasePath(householdId), 'account.balances.yml');
+    const filePath = path.join(this.getBasePath(householdId), 'account.balances');
     this.#writeData(filePath, { accountBalances });
   }
 
@@ -214,7 +210,7 @@ export class YamlFinanceStore {
    * @returns {Object[]|null}
    */
   getMortgageTransactions(householdId) {
-    const filePath = path.join(this.getBasePath(householdId), 'mortgage.transactions.yml');
+    const filePath = path.join(this.getBasePath(householdId), 'mortgage.transactions');
     const data = this.#readData(filePath);
     return data?.mortgageTransactions || null;
   }
@@ -225,7 +221,7 @@ export class YamlFinanceStore {
    * @param {string} [householdId]
    */
   saveMortgageTransactions(mortgageTransactions, householdId) {
-    const filePath = path.join(this.getBasePath(householdId), 'mortgage.transactions.yml');
+    const filePath = path.join(this.getBasePath(householdId), 'mortgage.transactions');
     this.#writeData(filePath, { mortgageTransactions });
   }
 
@@ -239,7 +235,7 @@ export class YamlFinanceStore {
    * @returns {Object<string, string>} Map of transactionId -> memo
    */
   getMemos(householdId) {
-    const filePath = path.join(this.getBasePath(householdId), 'transaction.memos.yml');
+    const filePath = path.join(this.getBasePath(householdId), 'transaction.memos');
     return this.#readData(filePath) || {};
   }
 
@@ -263,7 +259,7 @@ export class YamlFinanceStore {
   saveMemo(transactionId, memo, householdId) {
     const memos = this.getMemos(householdId);
     memos[transactionId] = memo;
-    const filePath = path.join(this.getBasePath(householdId), 'transaction.memos.yml');
+    const filePath = path.join(this.getBasePath(householdId), 'transaction.memos');
     this.#writeData(filePath, memos);
   }
 
@@ -291,7 +287,7 @@ export class YamlFinanceStore {
    * @returns {{validTags: string[], chat: Object[]}|null}
    */
   getCategorizationConfig(householdId) {
-    const filePath = path.join(this.getBasePath(householdId), 'gpt.yml');
+    const filePath = path.join(this.getBasePath(householdId), 'gpt');
     return this.#readData(filePath);
   }
 
@@ -305,7 +301,7 @@ export class YamlFinanceStore {
    * @returns {{paychecks: Object}|null}
    */
   getPayrollData(householdId) {
-    const filePath = path.join(this.getBasePath(householdId), 'payroll.yml');
+    const filePath = path.join(this.getBasePath(householdId), 'payroll');
     return this.#readData(filePath);
   }
 
@@ -315,7 +311,7 @@ export class YamlFinanceStore {
    * @param {{paychecks: Object}} data
    */
   savePayrollData(householdId, data) {
-    const filePath = path.join(this.getBasePath(householdId), 'payroll.yml');
+    const filePath = path.join(this.getBasePath(householdId), 'payroll');
     this.#writeData(filePath, data);
   }
 
@@ -325,7 +321,7 @@ export class YamlFinanceStore {
    * @returns {Array<{input: string, desc: string, cat: string, exclude?: boolean}>}
    */
   getPayrollMapping(householdId) {
-    const filePath = path.join(this.getBasePath(householdId), 'payrollDict.yml');
+    const filePath = path.join(this.getBasePath(householdId), 'payrollDict');
     const data = this.#readData(filePath);
     return data?.mapping || [];
   }
@@ -341,7 +337,7 @@ export class YamlFinanceStore {
    */
   exists(householdId) {
     const basePath = path.join(this.getBasePath(householdId), 'budget.config');
-    return resolveYamlPath(basePath) !== null;
+    return yamlExists(basePath);
   }
 
   /**
@@ -356,7 +352,7 @@ export class YamlFinanceStore {
     return listDirsMatching(basePath, /^\d{4}-\d{2}-\d{2}$/)
       .filter(name => {
         const txnBasePath = path.join(basePath, name, 'transactions');
-        return resolveYamlPath(txnBasePath) !== null;
+        return yamlExists(txnBasePath);
       })
       .sort();
   }

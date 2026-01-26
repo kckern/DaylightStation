@@ -13,10 +13,9 @@ import {
   dirExists,
   listYamlFiles,
   listDirs,
-  loadYamlFromPath,
-  saveYamlToPath,
-  resolveYamlPath,
-  deleteFile
+  loadYamlSafe,
+  saveYaml,
+  deleteYaml
 } from '../../../0_infrastructure/utils/FileIO.mjs';
 
 export class YamlConversationStore {
@@ -54,7 +53,7 @@ export class YamlConversationStore {
    */
   #getConversationPath(householdId, conversationId) {
     const dir = this.#getConversationsDir(householdId);
-    return path.join(dir, `${conversationId}.yml`);
+    return path.join(dir, conversationId);
   }
 
   /**
@@ -68,14 +67,11 @@ export class YamlConversationStore {
   }
 
   /**
-   * Read a conversation file (handles .yml/.yaml)
+   * Read a conversation file
    * @private
    */
-  #readFile(filePath) {
-    const basePath = filePath.replace(/\.yml$/, '');
-    const resolvedPath = resolveYamlPath(basePath);
-    if (!resolvedPath) return null;
-    return loadYamlFromPath(resolvedPath);
+  #readFile(basePath) {
+    return loadYamlSafe(basePath);
   }
 
   /**
@@ -119,8 +115,8 @@ export class YamlConversationStore {
     const householdId = this.#extractHouseholdId(data);
     this.#ensureDir(householdId);
 
-    const filePath = this.#getConversationPath(householdId, data.id);
-    saveYamlToPath(filePath, data);
+    const basePath = this.#getConversationPath(householdId, data.id);
+    saveYaml(basePath, data);
 
     this.#logger.debug?.('conversation.saved', {
       id: data.id,
@@ -215,12 +211,8 @@ export class YamlConversationStore {
     if (!conversation) return;
 
     const householdId = this.#extractHouseholdId(conversation);
-    const filePath = this.#getConversationPath(householdId, id);
-    const basePath = filePath.replace(/\.yml$/, '');
-
-    // Try both extensions
-    deleteFile(`${basePath}.yml`);
-    deleteFile(`${basePath}.yaml`);
+    const basePath = this.#getConversationPath(householdId, id);
+    deleteYaml(basePath);
 
     this.#logger.debug?.('conversation.deleted', { id, householdId });
   }
@@ -251,10 +243,10 @@ export class YamlConversationStore {
       const convDir = this.#getConversationsDir(hid);
       if (!convDir || !dirExists(convDir)) continue;
 
-      const files = listYamlFiles(convDir, { stripExtension: false });
+      const baseNames = listYamlFiles(convDir);
 
-      for (const file of files) {
-        const conv = loadYamlFromPath(path.join(convDir, file));
+      for (const baseName of baseNames) {
+        const conv = loadYamlSafe(path.join(convDir, baseName));
         if (conv) {
           conversations.push(conv);
         }
@@ -275,11 +267,11 @@ export class YamlConversationStore {
       return [];
     }
 
-    const files = listYamlFiles(convDir, { stripExtension: false });
+    const baseNames = listYamlFiles(convDir);
 
     const conversations = [];
-    for (const file of files) {
-      const conv = loadYamlFromPath(path.join(convDir, file));
+    for (const baseName of baseNames) {
+      const conv = loadYamlSafe(path.join(convDir, baseName));
       if (conv) {
         conversations.push(conv);
       }

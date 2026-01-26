@@ -3,10 +3,9 @@ import path from 'path';
 import { WatchState } from '../../../1_domains/content/entities/WatchState.mjs';
 import {
   ensureDir,
-  loadYamlFromPath,
-  saveYamlToPath,
-  deleteFile,
-  resolveYamlPath
+  loadYamlSafe,
+  saveYaml,
+  deleteYaml
 } from '../../../0_infrastructure/utils/FileIO.mjs';
 
 /**
@@ -23,13 +22,13 @@ export class YamlWatchStateStore {
   }
 
   /**
-   * Get file path for a storage path
+   * Get base path for a storage path
    * @param {string} storagePath
    * @returns {string}
    */
-  _getFilePath(storagePath) {
+  _getBasePath(storagePath) {
     const safePath = storagePath.replace(/[^a-zA-Z0-9-_]/g, '_');
-    return path.join(this.basePath, `${safePath}.yml`);
+    return path.join(this.basePath, safePath);
   }
 
   /**
@@ -38,12 +37,8 @@ export class YamlWatchStateStore {
    * @returns {Object}
    */
   _readFile(storagePath) {
-    const filePath = this._getFilePath(storagePath);
-    // Try both .yml and .yaml
-    const basePath = filePath.replace(/\.yml$/, '');
-    const resolvedPath = resolveYamlPath(basePath);
-    if (!resolvedPath) return {};
-    return loadYamlFromPath(resolvedPath) || {};
+    const basePath = this._getBasePath(storagePath);
+    return loadYamlSafe(basePath) || {};
   }
 
   /**
@@ -52,9 +47,9 @@ export class YamlWatchStateStore {
    * @param {Object} data
    */
   _writeFile(storagePath, data) {
-    const filePath = this._getFilePath(storagePath);
-    ensureDir(path.dirname(filePath));
-    saveYamlToPath(filePath, data);
+    const basePath = this._getBasePath(storagePath);
+    ensureDir(path.dirname(basePath));
+    saveYaml(basePath, data);
   }
 
   /**
@@ -101,10 +96,7 @@ export class YamlWatchStateStore {
    * @returns {Promise<void>}
    */
   async clear(storagePath) {
-    const filePath = this._getFilePath(storagePath);
-    // Try both extensions
-    const basePath = filePath.replace(/\.yml$/, '');
-    deleteFile(`${basePath}.yml`);
-    deleteFile(`${basePath}.yaml`);
+    const basePath = this._getBasePath(storagePath);
+    deleteYaml(basePath);
   }
 }
