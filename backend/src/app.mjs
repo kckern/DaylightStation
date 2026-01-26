@@ -526,7 +526,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Gratitude domain router - prayer card canvas renderer
   let createPrayerCardCanvas = null;
   try {
-    const { createPrayerCardRenderer } = await import('./0_system/rendering/PrayerCardRenderer.mjs');
+    const { createPrayerCardRenderer } = await import('./2_adapters/gratitude/rendering/PrayerCardRenderer.mjs');
     const householdId = configService.getDefaultHouseholdId();
     const renderer = createPrayerCardRenderer({
       getSelectionsForPrint: async () => {
@@ -554,7 +554,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Nutribot report renderer (canvas-based PNG generation)
   let nutribotReportRenderer = null;
   try {
-    const { NutriReportRenderer } = await import('./0_system/rendering/NutriReportRenderer.mjs');
+    const { NutriReportRenderer } = await import('./2_adapters/nutribot/rendering/NutriReportRenderer.mjs');
     nutribotReportRenderer = new NutriReportRenderer({
       logger: rootLogger.child({ module: 'nutribot-renderer' }),
       fontDir: configService.getPath('font'),
