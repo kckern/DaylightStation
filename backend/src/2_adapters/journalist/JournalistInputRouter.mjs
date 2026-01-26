@@ -6,7 +6,7 @@
  */
 
 import { HandleSpecialStart } from '../../3_applications/journalist/usecases/HandleSpecialStart.mjs';
-import { InputEventType } from '../telegram/IInputEvent.mjs';
+import { InputEventType } from '../../3_applications/shared/InputEventType.mjs';
 
 /**
  * Journalist Input Router
