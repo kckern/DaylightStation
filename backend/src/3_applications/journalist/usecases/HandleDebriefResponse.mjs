@@ -24,7 +24,7 @@ export class HandleDebriefResponse {
 
   /**
    * @param {Object} deps
-   * @param {Object} deps.messagingGateway - Telegram gateway
+   * @param {Object} deps.messagingGateway - Messaging gateway for sending messages
    * @param {Object} deps.conversationStateStore - State persistence
    * @param {Object} deps.debriefRepository - Debrief persistence
    * @param {Object} deps.userResolver - User resolution
@@ -57,7 +57,7 @@ export class HandleDebriefResponse {
    * Execute handling a debrief response
    *
    * @param {Object} input
-   * @param {string} input.conversationId - Telegram conversation ID
+   * @param {string} input.conversationId - Conversation ID
    * @param {string} input.text - Button text that was pressed
    * @param {string} [input.messageId] - Message ID to edit (for callback buttons)
    * @param {Object} [input.responseContext] - Bound response context for DDD-compliant messaging

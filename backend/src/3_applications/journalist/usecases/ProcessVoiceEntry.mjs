@@ -79,7 +79,7 @@ export class ProcessVoiceEntry {
         return { success: false, error: 'Empty transcription' };
       }
 
-      // 2. Send transcription confirmation (split if too long for Telegram)
+      // 2. Send transcription confirmation (split if too long for messaging platform)
       const messageParts = splitTranscription(transcription);
       for (let i = 0; i < messageParts.length; i++) {
         await messaging.sendMessage(messageParts[i], {});

@@ -2,7 +2,7 @@
  * Send Morning Debrief Use Case
  * @module journalist/usecases/SendMorningDebrief
  *
- * Sends the generated debrief to the user via Telegram with reply keyboard
+ * Sends the generated debrief to the user via messaging gateway with reply keyboard
  */
 
 import { nowTs24 } from '../../../0_infrastructure/utils/index.mjs';
@@ -30,7 +30,7 @@ export class SendMorningDebrief {
 
   /**
    * @param {Object} deps
-   * @param {Object} deps.messagingGateway - Telegram gateway
+   * @param {Object} deps.messagingGateway - Messaging gateway for sending messages
    * @param {Object} deps.conversationStateStore - State persistence
    * @param {Object} deps.debriefRepository - Debrief persistence
    * @param {Object} deps.logger - Logger instance
@@ -60,7 +60,7 @@ export class SendMorningDebrief {
    * Execute sending the debrief
    *
    * @param {Object} input
-   * @param {string} input.conversationId - Telegram conversation ID
+   * @param {string} input.conversationId - Conversation ID
    * @param {Object} input.debrief - Generated debrief data
    * @param {Object} [input.responseContext] - Bound response context for DDD-compliant messaging
    * @returns {Object} Result with message ID
@@ -215,7 +215,7 @@ ${debrief.summary}`;
   /**
    * Build source picker keyboard (used by HandleDebriefResponse)
    * @param {Array} sources - Available source names
-   * @returns {Object} Telegram inline keyboard markup
+   * @returns {Object} Inline keyboard markup
    */
   static buildSourcePickerKeyboard(sources) {
     const keyboard = [];

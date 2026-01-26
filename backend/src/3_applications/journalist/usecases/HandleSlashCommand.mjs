@@ -86,7 +86,7 @@ export class HandleSlashCommand {
               date: null, // defaults to yesterday
             });
 
-            // Step 2: Send to Telegram
+            // Step 2: Send via messaging gateway
             result = await this.#sendMorningDebrief.execute({
               conversationId: chatId,
               debrief,
