@@ -35,10 +35,10 @@ export {
   formatFoodList,
 } from './entities/formatters.mjs';
 
-// Ports
-export { IFoodLogStore, isFoodLogStore, assertFoodLogStore } from './ports/IFoodLogStore.mjs';
-export { INutriListStore, isNutriListStore } from './ports/INutriListStore.mjs';
-export { INutriCoachStore, isNutriCoachStore } from './ports/INutriCoachStore.mjs';
+// Ports (re-exported from application layer for backward compatibility)
+export { IFoodLogStore, isFoodLogStore, assertFoodLogStore } from '../../3_applications/nutribot/ports/IFoodLogStore.mjs';
+export { INutriListStore, isNutriListStore } from '../../3_applications/nutribot/ports/INutriListStore.mjs';
+export { INutriCoachStore, isNutriCoachStore } from '../../3_applications/nutribot/ports/INutriCoachStore.mjs';
 
 // Services
 export { FoodLogService } from './services/FoodLogService.mjs';
