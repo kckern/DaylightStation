@@ -11,7 +11,7 @@
  * server environment with process.env.path set up correctly.
  */
 
-import { configService } from '#backend/src/0_infrastructure/config/index.mjs';
+import { configService, initConfigService } from '#backend/src/0_system/config/index.mjs';
 
 // Must set process.env.path before importing budget.mjs
 const dataPath = process.env.DAYLIGHT_DATA_PATH;
@@ -35,8 +35,8 @@ describe('Budget Live Integration', () => {
       throw new Error('DAYLIGHT_DATA_PATH environment variable required');
     }
 
-    if (!configService.isInitialized()) {
-      configService.init({ dataDir: dataPath });
+    if (!configService.isReady()) {
+      initConfigService(dataPath);
     }
 
     process.env.BUXFER_USERNAME = configService.getSecret('BUXFER_USERNAME');

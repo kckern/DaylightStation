@@ -8,7 +8,7 @@
  *   OR LETTERBOXD_USER in secrets.yml/environment
  */
 
-import { configService } from '#backend/src/0_infrastructure/config/index.mjs';
+import { configService, initConfigService } from '#backend/src/0_system/config/index.mjs';
 import getMovies from '#backend/_legacy/lib/letterboxd.mjs';
 
 describe('Letterboxd Live Integration', () => {
@@ -18,8 +18,8 @@ describe('Letterboxd Live Integration', () => {
       throw new Error('DAYLIGHT_DATA_PATH environment variable required');
     }
 
-    if (!configService.isInitialized()) {
-      configService.init({ dataDir: dataPath });
+    if (!configService.isReady()) {
+      initConfigService(dataPath);
     }
 
     // Set fallback env var

@@ -10,7 +10,7 @@
  * - User gmail refresh token
  */
 
-import { configService } from '#backend/src/0_infrastructure/config/index.mjs';
+import { configService, initConfigService } from '#backend/src/0_system/config/index.mjs';
 
 describe('Shopping Live Integration', () => {
   let processShoppingData;
@@ -21,8 +21,8 @@ describe('Shopping Live Integration', () => {
       throw new Error('DAYLIGHT_DATA_PATH environment variable required');
     }
 
-    if (!configService.isInitialized()) {
-      configService.init({ dataDir: dataPath });
+    if (!configService.isReady()) {
+      initConfigService(dataPath);
     }
 
     // Set up Google OAuth credentials before importing

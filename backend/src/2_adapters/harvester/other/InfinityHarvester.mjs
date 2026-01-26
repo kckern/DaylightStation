@@ -455,12 +455,17 @@ export function createInfinityHarvesters({ httpClient, configService, io, logger
   const infinityConfig = configService.get?.('infinity') || {};
   const harvesters = [];
 
-  // Skip known non-table keys
-  const skipKeys = ['workspace', 'INFINITY_DEV', 'dev'];
+  // Skip known non-table keys and deprecated boards
+  const skipKeys = ['workspace', 'INFINITY_DEV', 'dev', 'program'];
+
+  // UUID pattern for attribute IDs (these are column identifiers, not table IDs)
+  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
   for (const [key, tableId] of Object.entries(infinityConfig)) {
     if (skipKeys.includes(key)) continue;
     if (!tableId || typeof tableId !== 'string') continue;
+    // Skip attribute IDs (UUIDs) - these are column identifiers, not board IDs
+    if (uuidPattern.test(tableId)) continue;
 
     try {
       harvesters.push(

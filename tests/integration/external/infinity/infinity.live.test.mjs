@@ -9,7 +9,7 @@
  * - infinity.<tableKey> in system.yml (board IDs)
  */
 
-import { configService } from '#backend/src/0_infrastructure/config/index.mjs';
+import { configService, initConfigService } from '#backend/src/0_system/config/index.mjs';
 import { InfinityHarvester, createInfinityHarvesters } from '#backend/src/2_adapters/harvester/other/InfinityHarvester.mjs';
 import axios from 'axios';
 
@@ -24,8 +24,8 @@ describe('Infinity Live Integration', () => {
       throw new Error('DAYLIGHT_DATA_PATH environment variable required');
     }
 
-    if (!configService.isInitialized()) {
-      configService.init({ dataDir: dataPath });
+    if (!configService.isReady()) {
+      initConfigService(dataPath);
     }
 
     // Create HTTP client
@@ -34,9 +34,11 @@ describe('Infinity Live Integration', () => {
     // Get Infinity config
     infinityConfig = configService.get?.('infinity') || {};
     
-    // Get all table keys (excluding workspace and dev)
+    // Get all table keys (excluding workspace, dev, UUIDs, and deprecated boards)
+    const skipKeys = ['workspace', 'INFINITY_DEV', 'dev', 'program'];
+    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     tableKeys = Object.keys(infinityConfig).filter(
-      (k) => !['workspace', 'INFINITY_DEV', 'dev'].includes(k)
+      (k) => !skipKeys.includes(k) && !uuidPattern.test(infinityConfig[k])
     );
   });
 

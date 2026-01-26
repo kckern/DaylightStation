@@ -6,7 +6,7 @@
  * Fetches LDS General Conference talk data
  */
 
-import { configService } from '#backend/src/0_infrastructure/config/index.mjs';
+import { configService, initConfigService } from '#backend/src/0_system/config/index.mjs';
 import getLDSGCData from '#backend/_legacy/lib/ldsgc.mjs';
 
 describe('LDSGC Live Integration', () => {
@@ -16,8 +16,8 @@ describe('LDSGC Live Integration', () => {
       throw new Error('DAYLIGHT_DATA_PATH environment variable required');
     }
 
-    if (!configService.isInitialized()) {
-      configService.init({ dataDir: dataPath });
+    if (!configService.isReady()) {
+      initConfigService(dataPath);
     }
   });
 

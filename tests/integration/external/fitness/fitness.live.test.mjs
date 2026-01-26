@@ -7,7 +7,7 @@
  * - Fitness data sources configured (Garmin, Strava, etc.)
  */
 
-import { configService } from '#backend/src/0_infrastructure/config/index.mjs';
+import { configService, initConfigService } from '#backend/src/0_system/config/index.mjs';
 import fitnessSync from '#backend/_legacy/lib/fitsync.mjs';
 
 describe('Fitness Sync Live Integration', () => {
@@ -17,8 +17,8 @@ describe('Fitness Sync Live Integration', () => {
       throw new Error('DAYLIGHT_DATA_PATH environment variable required');
     }
 
-    if (!configService.isInitialized()) {
-      configService.init({ dataDir: dataPath });
+    if (!configService.isReady()) {
+      initConfigService(dataPath);
     }
 
     process.env.TZ = process.env.TZ || 'America/Los_Angeles';

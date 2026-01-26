@@ -6,7 +6,7 @@
  * Aggregates health data from multiple sources (Withings, Garmin, etc.)
  */
 
-import { configService } from '#backend/src/0_infrastructure/config/index.mjs';
+import { configService, initConfigService } from '#backend/src/0_system/config/index.mjs';
 import healthHarvest from '#backend/_legacy/lib/health.mjs';
 
 describe('Health Live Integration', () => {
@@ -16,8 +16,8 @@ describe('Health Live Integration', () => {
       throw new Error('DAYLIGHT_DATA_PATH environment variable required');
     }
 
-    if (!configService.isInitialized()) {
-      configService.init({ dataDir: dataPath });
+    if (!configService.isReady()) {
+      initConfigService(dataPath);
     }
 
     process.env.TZ = process.env.TZ || 'America/Los_Angeles';
