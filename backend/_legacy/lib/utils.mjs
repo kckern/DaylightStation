@@ -4,7 +4,7 @@
  * MIGRATION: This file re-exports from the new location.
  *
  * For slugify:
- *   Import from '#backend/src/0_infrastructure/utils/strings.mjs' instead.
+ *   Import from '#backend/src/0_system/utils/strings.mjs' instead.
  *
  * For media watch utilities (isWatched, hasProgress, etc.):
  *   These remain in this file as they are domain-specific.
@@ -12,7 +12,7 @@
  */
 
 // Re-export slugify from new location
-export { slugify } from '../../src/0_infrastructure/utils/strings.mjs';
+export { slugify } from '../../src/0_system/utils/strings.mjs';
 
 /**
  * Media watching utility functions

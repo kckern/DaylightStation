@@ -7,7 +7,7 @@
  * New implementation: backend/src/1_domains/gratitude/
  */
 
-import { configService, userDataService } from '#backend/src/0_infrastructure/config/index.mjs';
+import { configService, userDataService } from '#backend/src/0_system/config/index.mjs';
 import { broadcastToWebsockets } from '#backend/_legacy/routers/websocket.mjs';
 import { createLogger } from '#backend/_legacy/chatbots/_lib/logging/index.mjs';
 

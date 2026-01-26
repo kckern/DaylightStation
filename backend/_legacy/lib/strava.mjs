@@ -13,10 +13,10 @@
  */
 
 import { StravaHarvester } from '../../src/2_adapters/harvester/fitness/StravaHarvester.mjs';
-import { configService } from '../../src/0_infrastructure/config/index.mjs';
-import { userDataService } from '../../src/0_infrastructure/config/UserDataService.mjs';
-import axios from '../../src/0_infrastructure/http/httpClient.mjs';
-import { createLogger } from '../../src/0_infrastructure/logging/logger.js';
+import { configService } from '../../src/0_system/config/index.mjs';
+import { userDataService } from '../../src/0_system/config/UserDataService.mjs';
+import axios from '../../src/0_system/http/httpClient.mjs';
+import { createLogger } from '../../src/0_system/logging/logger.js';
 
 // Logger for the shim layer
 const shimLogger = createLogger({

@@ -3,14 +3,14 @@
  *
  * This module re-exports from the new location for backwards compatibility.
  * All new code should import from:
- *   #backend/src/0_infrastructure/config/index.mjs
+ *   #backend/src/0_system/config/index.mjs
  *
  * This shim will be removed in a future release.
  */
 
 console.warn(
   '[DEPRECATION] Importing from #backend/_legacy/lib/config is deprecated.\n' +
-  'Update imports to: #backend/src/0_infrastructure/config/index.mjs'
+  'Update imports to: #backend/src/0_system/config/index.mjs'
 );
 
 export {
@@ -25,9 +25,9 @@ export {
   configSchema,
   loadConfig,
   validateConfig
-} from '../../../src/0_infrastructure/config/index.mjs';
+} from '../../../src/0_system/config/index.mjs';
 
-import { configService as _configService } from '../../../src/0_infrastructure/config/index.mjs';
+import { configService as _configService } from '../../../src/0_system/config/index.mjs';
 
 // Hydrate process.env with config values for legacy code compatibility.
 // Legacy code uses patterns like process.env.path.data, process.env.tv.host, etc.
@@ -46,4 +46,4 @@ for (const [key, value] of Object.entries(systemConfig)) {
 // This ensures legacy code using process.env.path.data still works.
 // The main module sets individual DAYLIGHT_*_PATH env vars as a fallback.
 
-export { default } from '../../../src/0_infrastructure/config/index.mjs';
+export { default } from '../../../src/0_system/config/index.mjs';

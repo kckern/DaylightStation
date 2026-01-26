@@ -5,7 +5,7 @@ import path from 'path';
 import {Plex} from '../lib/plex.mjs';
 import { loadFile, saveFile } from '../lib/io.mjs';
 import { configService } from '../lib/config/index.mjs';
-import { userDataService } from '../../src/0_infrastructure/config/UserDataService.mjs';
+import { userDataService } from '../../src/0_system/config/UserDataService.mjs';
 import moment from 'moment';
 import { parseFile } from 'music-metadata';
 import { loadMetadataFromMediaKey, loadMetadataFromFile, clearWatchedItems, watchListFromMediaKey, getChildrenFromWatchlist, findUnwatchedItems, applyParamsToItems } from './fetch.mjs';

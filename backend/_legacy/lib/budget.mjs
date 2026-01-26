@@ -5,7 +5,7 @@ import { buildBudget } from './budgetlib/build_budget.mjs';
 import { processTransactions, processMortgageTransactions, getAccountBalances } from './buxfer.mjs';
 import payrollSync from '../jobs/finance/payroll.mjs';
 import { createLogger } from './logging/logger.js';
-import { configService } from '../../src/0_infrastructure/config/index.mjs';
+import { configService } from '../../src/0_system/config/index.mjs';
 
 const budgetLogger = createLogger({ source: 'backend', app: 'budget' });
 

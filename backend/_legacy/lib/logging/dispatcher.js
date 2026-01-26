@@ -12,6 +12,6 @@ export {
   isLoggingInitialized,
   initializeLogging,
   resetLogging
-} from '../../../src/0_infrastructure/logging/dispatcher.js';
+} from '../../../src/0_system/logging/dispatcher.js';
 
-export { default } from '../../../src/0_infrastructure/logging/dispatcher.js';
+export { default } from '../../../src/0_system/logging/dispatcher.js';

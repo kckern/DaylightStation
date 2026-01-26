@@ -18,7 +18,7 @@ import { createLogger } from '../lib/logging/logger.js';
 // Import new architecture components
 import { HealthAggregationService } from '../../src/1_domains/health/services/HealthAggregationService.mjs';
 import { YamlHealthStore } from '../../src/2_adapters/persistence/yaml/YamlHealthStore.mjs';
-import { userDataService } from '../../src/0_infrastructure/config/UserDataService.mjs';
+import { userDataService } from '../../src/0_system/config/UserDataService.mjs';
 
 const healthLogger = createLogger({ source: 'backend', app: 'health' });
 const healthRouter = express.Router();

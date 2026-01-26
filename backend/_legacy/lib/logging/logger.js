@@ -5,5 +5,5 @@
  * Once all consumers are migrated, this file can be deleted.
  */
 
-export { createLogger } from '../../../src/0_infrastructure/logging/logger.js';
-export { default } from '../../../src/0_infrastructure/logging/logger.js';
+export { createLogger } from '../../../src/0_system/logging/logger.js';
+export { default } from '../../../src/0_system/logging/logger.js';

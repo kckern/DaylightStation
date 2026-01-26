@@ -2,7 +2,7 @@
  * WebSocket Server - Bridge to new EventBus infrastructure
  *
  * This module provides backward-compatible exports while delegating
- * to the new WebSocketEventBus in 0_infrastructure/eventbus.
+ * to the new WebSocketEventBus in 0_system/eventbus.
  *
  * Exports:
  *   createWebsocketServer(server) - Initialize WebSocket server
@@ -12,7 +12,7 @@
  * @module routers/websocket
  */
 
-import { createEventBus, getEventBus, broadcastEvent, restartEventBus } from '../../src/0_infrastructure/bootstrap.mjs';
+import { createEventBus, getEventBus, broadcastEvent, restartEventBus } from '../../src/0_system/bootstrap.mjs';
 import { createLogger } from '../lib/logging/logger.js';
 import { ingestFrontendLogs } from '../lib/logging/ingestion.js';
 
