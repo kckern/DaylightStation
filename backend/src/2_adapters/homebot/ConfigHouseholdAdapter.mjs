@@ -23,33 +23,64 @@ export class ConfigHouseholdAdapter {
     this.#logger = config.logger || console;
   }
 
-  async getMembers(householdId) {
-    const config = this.#configService.getHouseholdConfig(householdId);
-    const users = config?.users || {};
+  async getMembers(householdId = null) {
+    const hid = householdId ?? this.#configService.getDefaultHouseholdId();
+    const users = this.#configService.getHouseholdUsers(hid) || [];
 
-    return Object.entries(users).map(([userId, userData]) => ({
-      userId,
-      displayName: userData.display_name || userData.name || userId,
-      group: userData.group || null
-    }));
+    // Handle array format from ConfigService - look up profiles for display names
+    return users.map((user) => {
+      const userId = typeof user === 'string' ? user : (user.username || user.userId || user.name);
+      const profile = this.#configService.getUserProfile(userId);
+
+      // Match legacy pattern: separate displayName and groupLabel
+      const displayName = profile?.display_name || profile?.name || this.#formatUsername(userId);
+      const groupLabel = profile?.group_label || null;
+
+      return {
+        userId,
+        displayName,
+        groupLabel,
+        group: profile?.group || null
+      };
+    });
   }
 
-  async getMemberDisplayName(householdId, userId) {
-    const config = this.#configService.getHouseholdConfig(householdId);
-    const user = config?.users?.[userId];
-    return user?.display_name || user?.name || userId;
+  /**
+   * Format a username as a display name (fallback)
+   * @private
+   */
+  #formatUsername(username) {
+    if (!username) return 'Unknown';
+    return username.charAt(0).toUpperCase() + username.slice(1);
   }
 
-  async getTimezone(householdId) {
-    const config = this.#configService.getHouseholdConfig(householdId);
-    return config?.timezone || 'America/Los_Angeles';
+  async getMemberDisplayName(householdId = null, userId) {
+    const profile = this.#configService.getUserProfile(userId);
+    // Prefer group_label (e.g., "Dad"), then display_name, then formatted username
+    return profile?.group_label
+      || profile?.display_name
+      || profile?.name
+      || this.#formatUsername(userId);
+  }
+
+  async getTimezone(householdId = null) {
+    const hid = householdId ?? this.#configService.getDefaultHouseholdId();
+    return this.#configService.getHouseholdTimezone(hid);
+  }
+
+  /**
+   * Get the default household ID
+   * @returns {string}
+   */
+  getHouseholdId() {
+    return this.#configService.getDefaultHouseholdId();
   }
 
   async resolveHouseholdId(conversationId) {
     if (this.#userResolver) {
       const username = await this.#userResolver.resolveUsername(conversationId);
       if (username) {
-        return this.#configService.getHouseholdIdForUser(username);
+        return this.#configService.getUserHouseholdId(username);
       }
     }
     // Fallback to default household

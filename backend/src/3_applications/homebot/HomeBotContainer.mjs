@@ -12,7 +12,7 @@ import { CancelGratitudeInput } from './usecases/CancelGratitudeInput.mjs';
 export class HomeBotContainer {
   #messagingGateway;
   #aiGateway;
-  #gratitudeStore;
+  #gratitudeService;
   #conversationStateStore;
   #householdRepository;
   #websocketBroadcast;
@@ -28,7 +28,7 @@ export class HomeBotContainer {
    * @param {Object} config
    * @param {Object} config.messagingGateway - TelegramAdapter instance
    * @param {Object} config.aiGateway - OpenAIAdapter instance
-   * @param {Object} config.gratitudeStore - YamlGratitudeStore instance
+   * @param {Object} config.gratitudeService - GratitudeService instance
    * @param {Object} config.conversationStateStore - IConversationStateStore implementation
    * @param {Object} config.householdRepository - IHouseholdRepository implementation
    * @param {Function} [config.websocketBroadcast] - WebSocket broadcast function
@@ -37,7 +37,7 @@ export class HomeBotContainer {
   constructor(config) {
     this.#messagingGateway = config.messagingGateway;
     this.#aiGateway = config.aiGateway;
-    this.#gratitudeStore = config.gratitudeStore;
+    this.#gratitudeService = config.gratitudeService;
     this.#conversationStateStore = config.conversationStateStore;
     this.#householdRepository = config.householdRepository;
     this.#websocketBroadcast = config.websocketBroadcast;
@@ -61,7 +61,7 @@ export class HomeBotContainer {
     if (!this.#assignItemToUser) {
       this.#assignItemToUser = new AssignItemToUser({
         messagingGateway: this.#messagingGateway,
-        gratitudeService: this.#gratitudeStore,
+        gratitudeService: this.#gratitudeService,
         conversationStateStore: this.#conversationStateStore,
         householdService: this.#householdRepository,
         websocketBroadcast: this.#websocketBroadcast,
@@ -76,7 +76,7 @@ export class HomeBotContainer {
       this.#toggleCategory = new ToggleCategory({
         messagingGateway: this.#messagingGateway,
         conversationStateStore: this.#conversationStateStore,
-        householdRepository: this.#householdRepository,
+        householdService: this.#householdRepository,
         logger: this.#logger
       });
     }

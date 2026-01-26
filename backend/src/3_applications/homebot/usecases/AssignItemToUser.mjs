@@ -14,6 +14,7 @@ export class AssignItemToUser {
   #conversationStateStore;
   #gratitudeService;
   #householdService;
+  #websocketBroadcast;
   #logger;
 
   /**
@@ -22,6 +23,7 @@ export class AssignItemToUser {
    * @param {Object} config.conversationStateStore - State store for conversation state
    * @param {Object} config.gratitudeService - Service for saving gratitude items
    * @param {Object} config.householdService - Service for household member lookup
+   * @param {Function} [config.websocketBroadcast] - WebSocket broadcast function
    * @param {Object} [config.logger] - Logger instance
    */
   constructor(config) {
@@ -34,6 +36,7 @@ export class AssignItemToUser {
     this.#conversationStateStore = config.conversationStateStore;
     this.#gratitudeService = config.gratitudeService;
     this.#householdService = config.householdService;
+    this.#websocketBroadcast = config.websocketBroadcast;
     this.#logger = config.logger || console;
   }
 
@@ -116,10 +119,22 @@ export class AssignItemToUser {
       }
 
       // 5. Get display name for success message
-      const member = this.#householdService.getMemberByUsername?.(username);
-      const displayName = member?.displayName || username;
+      const displayName = await this.#householdService.getMemberDisplayName?.(null, username) || username;
 
-      // 6. Update message to show success
+      // 6. Broadcast to WebSocket for frontend update
+      if (this.#websocketBroadcast) {
+        this.#websocketBroadcast({
+          topic: 'gratitude',
+          action: 'item_added',
+          items: items.map(item => ({ id: item.id, text: item.text })),
+          userId: username,
+          userName: displayName,
+          category: category || 'gratitude',
+          source: 'homebot'  // Tells frontend not to persist again
+        });
+      }
+
+      // 8. Update message to show success
       const itemCount = items.length;
       const categoryLabel = category === 'hopes' ? 'hopes' : 'gratitude';
       const successMessage = `✅ Saved ${itemCount} ${categoryLabel} item${itemCount !== 1 ? 's' : ''} for ${displayName}`;
@@ -129,7 +144,7 @@ export class AssignItemToUser {
         successMessage
       );
 
-      // 7. Clear conversation state
+      // 9. Clear conversation state
       await this.#conversationStateStore.delete(conversationId, messageId);
 
       this.#logger.info?.('assignItemToUser.complete', {

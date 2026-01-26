@@ -15,8 +15,32 @@ const WATCHED_THRESHOLD = 90;
 const MIN_PROGRESS_THRESHOLD = 1;
 
 /**
- * Adapter for custom folders/watchlists containing mixed-source items
- * Supports watch state integration for priority-based ordering
+ * Adapter for custom folders/watchlists containing mixed-source items.
+ * Supports watch state integration for priority-based ordering.
+ *
+ * ## Display vs Playback Filtering
+ *
+ * This adapter separates concerns between displaying lists and building playback queues:
+ *
+ * **getList()** - For menu/UI display
+ * - Returns ALL items (only filters `active: false`)
+ * - Enriches items with watch state for UI indicators (progress bars, "watched" badges)
+ * - Example: Show "Felix" in FHE menu even if his assigned video was watched
+ *
+ * **resolvePlayables()** - For automated playback queues
+ * - Filters out: watched (>90%), on hold, past skip_after, wait_until >2 days
+ * - Example: Skip already-watched videos when building a playlist
+ *
+ * ## Filtering Rules
+ *
+ * | Filter              | getList (display) | resolvePlayables (playback) |
+ * |---------------------|-------------------|----------------------------|
+ * | `active: false`     | Hide              | Skip                       |
+ * | Watched >90%        | Show              | Skip                       |
+ * | `watched: true`     | Show              | Skip                       |
+ * | `hold: true`        | Show              | Skip                       |
+ * | `skip_after` passed | Show              | Skip                       |
+ * | `wait_until` >2 days| Show              | Skip                       |
  */
 export class FolderAdapter {
   constructor(config) {
@@ -200,36 +224,32 @@ export class FolderAdapter {
   }
 
   /**
-   * Check if item should be skipped based on scheduling rules
-   * @param {Object} item - Watchlist item with scheduling fields
-   * @param {Object} watchState - Watch state for this item
-   * @param {Object} options - { ignoreSkips, ignoreWatchStatus, ignoreWait }
-   * @returns {boolean} True if item should be skipped
+   * Check if an enriched child item should be skipped for playback
+   * Used by resolvePlayables() to filter items based on watch state and scheduling
+   * @param {Object} child - Enriched Item from getList()
+   * @returns {boolean} True if item should be skipped for playback
    */
-  _shouldSkipItem(item, watchState, options = {}) {
-    const { ignoreSkips = false, ignoreWatchStatus = false, ignoreWait = false } = options;
-
-    // Skip if explicitly marked as inactive
-    if (item.active === false) return true;
+  _shouldSkipForPlayback(child) {
+    const meta = child.metadata || {};
 
     // Skip if on hold
-    if (item.hold) return true;
+    if (meta.hold) return true;
 
     // Skip if watched (>90%)
-    if (!ignoreWatchStatus && this._isWatched(watchState)) return true;
+    if (meta.percent >= WATCHED_THRESHOLD) return true;
 
-    // Skip if marked as watched in watchlist
-    if (!ignoreWatchStatus && item.watched) return true;
+    // Skip if marked as watched
+    if (meta.watched) return true;
 
     // Skip if past skip_after date
-    if (!ignoreSkips && item.skip_after) {
-      const skipDate = new Date(item.skip_after);
+    if (meta.skip_after) {
+      const skipDate = new Date(meta.skip_after);
       if (skipDate < new Date()) return true;
     }
 
     // Skip if wait_until is more than 2 days away
-    if (!ignoreWait && item.wait_until) {
-      const waitDate = new Date(item.wait_until);
+    if (meta.wait_until) {
+      const waitDate = new Date(meta.wait_until);
       const twoDaysFromNow = new Date();
       twoDaysFromNow.setDate(twoDaysFromNow.getDate() + 2);
       if (waitDate > twoDaysFromNow) return true;
@@ -252,11 +272,12 @@ export class FolderAdapter {
 
   /**
    * Get list of items in a folder with watch state enrichment
+   * Returns all items for display (only filters active:false).
+   * Use resolvePlayables() for playback-filtered lists.
    * @param {string} id - Folder ID (folder:FolderName)
-   * @param {Object} options - { ignoreSkips, ignoreWatchStatus, ignoreWait }
    * @returns {Promise<ListableItem|null>}
    */
-  async getList(id, options = {}) {
+  async getList(id) {
     const folderName = id.replace('folder:', '');
     const watchlist = this._loadWatchlist();
 
@@ -283,9 +304,11 @@ export class FolderAdapter {
     };
 
     const children = [];
-    const skippedItems = [];
 
     for (const item of folderItems) {
+      // Only filter on explicit inactive flag (for display purposes)
+      if (item.active === false) continue;
+
       const parsed = this._parseInput(item.input);
       if (!parsed) continue;
 
@@ -296,14 +319,8 @@ export class FolderAdapter {
       // Build the media key for watch state lookup
       const mediaKey = item.media_key || parsed.id;
 
-      // Load watch state for this item's category
+      // Load watch state for this item's category (for UI indicators, not filtering)
       const watchState = watchCategory ? this._loadWatchState(watchCategory)[mediaKey] : null;
-
-      // Check if item should be skipped
-      if (this._shouldSkipItem(item, watchState, options)) {
-        skippedItems.push(item);
-        continue;
-      }
 
       // Calculate priority based on watch state and scheduling
       const priority = this._calculatePriority(item, watchState);
@@ -396,6 +413,7 @@ export class FolderAdapter {
           priority,
           // Scheduling fields
           hold: item.hold || false,
+          watched: item.watched || false,
           skip_after: item.skip_after || null,
           wait_until: item.wait_until || null,
           // Grouping
@@ -446,19 +464,6 @@ export class FolderAdapter {
       });
     }
 
-    // If no items remain after filtering, try with relaxed filters (legacy behavior)
-    if (children.length === 0 && skippedItems.length > 0) {
-      if (!options.ignoreSkips) {
-        return this.getList(id, { ...options, ignoreSkips: true });
-      }
-      if (!options.ignoreWatchStatus) {
-        return this.getList(id, { ...options, ignoreSkips: true, ignoreWatchStatus: true });
-      }
-      if (!options.ignoreWait) {
-        return this.getList(id, { ...options, ignoreSkips: true, ignoreWatchStatus: true, ignoreWait: true });
-      }
-    }
-
     return new ListableItem({
       id,
       source: 'folder',
@@ -485,7 +490,10 @@ export class FolderAdapter {
   }
 
   /**
-   * Resolve folder to playable items.
+   * Resolve folder to playable items for automated playback.
+   *
+   * Unlike getList(), this method filters out items that shouldn't play:
+   * - watched >90%, on hold, past skip_after, wait_until >2 days
    *
    * Key behavior based on action type:
    * - play action: returns ONE playable (next up) - for daily programming variety
@@ -512,6 +520,11 @@ export class FolderAdapter {
 
       // Skip open/list actions - they're not playable
       if (hasOpenAction && !hasPlayAction && !hasQueueAction) {
+        continue;
+      }
+
+      // Skip items that shouldn't play (watched, on hold, past skip_after, etc.)
+      if (this._shouldSkipForPlayback(child)) {
         continue;
       }
 

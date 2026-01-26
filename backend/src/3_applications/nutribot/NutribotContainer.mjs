@@ -299,6 +299,7 @@ export class NutribotContainer {
         nutriListStore: this.#nutriListStore,
         conversationStateStore: this.#conversationStateStore,
         reportRenderer: this.#reportRenderer,
+        generateThresholdCoaching: this.getGenerateThresholdCoaching(),
         config: this.#config,
         logger: this.#logger,
       });

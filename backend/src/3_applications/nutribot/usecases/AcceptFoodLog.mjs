@@ -103,10 +103,7 @@ export class AcceptFoodLog {
 
       // 5. Clear revision state if any
       if (this.#conversationStateStore) {
-        const state = await this.#conversationStateStore.get(conversationId);
-        if (state) {
-          await this.#conversationStateStore.set(conversationId, state.clearFlow());
-        }
+        await this.#conversationStateStore.clear(conversationId);
       }
 
       // 6. Update message to show accepted status

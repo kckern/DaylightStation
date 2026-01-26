@@ -76,6 +76,32 @@ Play (default)   → play: {...}     → Player (direct)
 Open             → open: {...}     → AppContainer
 ```
 
+### Display vs Playback Filtering
+
+FolderAdapter separates concerns between showing menus and building playback queues:
+
+**`getList()`** - For menu/UI display
+- Returns ALL items (only filters `active: false`)
+- Enriches items with watch state for UI indicators (progress %, "watched" badges)
+- Use case: Show "Felix" in FHE menu even if his assigned video was watched
+
+**`resolvePlayables()`** - For automated playback queues
+- Filters out: watched (>90%), on hold, past skip_after, wait_until >2 days
+- Use case: Skip already-watched videos when building a playlist
+
+```
+Filter              │ getList (display) │ resolvePlayables (playback)
+────────────────────┼───────────────────┼────────────────────────────
+active: false       │ Hide              │ Skip
+Watched >90%        │ Show              │ Skip
+watched: true       │ Show              │ Skip
+hold: true          │ Show              │ Skip
+skip_after passed   │ Show              │ Skip
+wait_until >2 days  │ Show              │ Skip
+```
+
+This design supports use cases like classroom assignments where the label represents a person (student) and the media represents their assigned content. The menu must show all assignments regardless of watch status.
+
 ## Integration Points
 
 | Component | Consumes | Produces |

@@ -237,6 +237,12 @@ export class TelegramAdapter {
    */
   async updateMessage(chatId, messageId, updates) {
     const numericChatId = this.extractChatId(chatId);
+
+    // Handle string shorthand: updateMessage(chatId, msgId, "text") -> { text: "text" }
+    if (typeof updates === 'string') {
+      updates = { text: updates };
+    }
+
     if (updates.text) {
       const params = {
         chat_id: numericChatId,
@@ -284,6 +290,9 @@ export class TelegramAdapter {
         params.reply_markup = JSON.stringify(
           this.buildKeyboard(updates.choices, true)
         );
+      } else {
+        // Empty inline_keyboard to remove buttons
+        params.reply_markup = JSON.stringify({ inline_keyboard: [] });
       }
 
       await this.callApi('editMessageReplyMarkup', params);
@@ -303,6 +312,9 @@ export class TelegramAdapter {
     // Handle null/empty choices - removes keyboard
     if (choices && choices.length > 0) {
       params.reply_markup = JSON.stringify(this.buildKeyboard(choices, true));
+    } else {
+      // Empty inline_keyboard to remove buttons
+      params.reply_markup = JSON.stringify({ inline_keyboard: [] });
     }
 
     await this.callApi('editMessageReplyMarkup', params);
@@ -480,7 +492,13 @@ export class TelegramAdapter {
             ? { text: button, callback_data: button }
             : { text: button };
         }
-        return button;
+        // Transform label/data to text/callback_data if needed
+        const text = button.text || button.label;
+        const callback_data = button.callback_data || button.data;
+        if (inline) {
+          return { text, callback_data };
+        }
+        return { text };
       })
     );
 

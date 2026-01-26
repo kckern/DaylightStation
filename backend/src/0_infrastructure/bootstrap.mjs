@@ -1166,10 +1166,11 @@ export function createJournalistServices(config) {
     logger
   });
 
-  // Get journalist config from environment or config service
+  // Get journalist config from config service
   const journalistConfig = {
-    username: configService?.getDefaultUsername?.() || process.env.DEFAULT_USERNAME || 'kckern',
-    getUserTimezone: (userId) => configService?.getUserTimezone?.(userId) || 'America/Los_Angeles'
+    username: configService?.getHeadOfHousehold?.() || 'kckern',
+    dataDir: configService?.getDataDir?.() || './data',
+    getUserTimezone: (userId) => configService?.getHouseholdTimezone?.(configService?.getUserHouseholdId?.(userId)) || 'America/Los_Angeles'
   };
 
   // Create journalist container with all dependencies
@@ -1238,7 +1239,7 @@ export function createJournalistApiRouter(config) {
  * @param {Object} config
  * @param {Object} config.telegramAdapter - TelegramAdapter for messaging
  * @param {Object} config.aiGateway - AI gateway for completions
- * @param {Object} config.gratitudeStore - YamlGratitudeStore instance
+ * @param {Object} config.gratitudeService - GratitudeService instance
  * @param {Object} config.configService - ConfigService for household lookup
  * @param {Object} [config.conversationStateStore] - State store for conversation flow
  * @param {Function} [config.websocketBroadcast] - WebSocket broadcast function
@@ -1249,7 +1250,7 @@ export function createHomebotServices(config) {
   const {
     telegramAdapter,
     aiGateway,
-    gratitudeStore,
+    gratitudeService,
     configService,
     conversationStateStore,
     websocketBroadcast,
@@ -1266,7 +1267,7 @@ export function createHomebotServices(config) {
   const homebotContainer = new HomeBotContainer({
     messagingGateway: telegramAdapter,
     aiGateway,
-    gratitudeStore,
+    gratitudeService,
     conversationStateStore,
     householdRepository,
     websocketBroadcast,

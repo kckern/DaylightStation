@@ -19,6 +19,7 @@ export class GenerateDailyReport {
   #foodLogStore;
   #nutriListStore;
   #conversationStateStore;
+  #generateThresholdCoaching;
   #config;
   #logger;
   #encodeCallback;
@@ -34,6 +35,7 @@ export class GenerateDailyReport {
     this.#foodLogStore = deps.foodLogStore;
     this.#nutriListStore = deps.nutriListStore;
     this.#conversationStateStore = deps.conversationStateStore;
+    this.#generateThresholdCoaching = deps.generateThresholdCoaching;
     this.#config = deps.config;
     this.#logger = deps.logger || console;
     this.#encodeCallback = deps.encodeCallback || ((cmd, data) => JSON.stringify({ cmd, ...data }));
@@ -323,12 +325,30 @@ export class GenerateDailyReport {
    * @private
    */
   async #checkAndTriggerCoaching(userId, conversationId, summary) {
+    if (!this.#generateThresholdCoaching) {
+      return false;
+    }
+
     const thresholds = this.#config.getThresholds?.(userId) || { daily: 2000 };
     const estimatedCalories = this.#estimateCalories(summary);
 
     if (estimatedCalories > thresholds.daily * 0.8) {
       this.#logger.debug?.('report.threshold.approaching', { userId, estimated: estimatedCalories });
-      return true;
+
+      try {
+        const threshold = estimatedCalories >= thresholds.daily ? '100%' : '80%';
+        await this.#generateThresholdCoaching.execute({
+          userId,
+          conversationId,
+          threshold,
+          dailyTotal: estimatedCalories,
+          recentItems: summary.items?.slice(-5) || [],
+        });
+        return true;
+      } catch (e) {
+        this.#logger.error?.('report.coaching.error', { userId, error: e.message });
+        return false;
+      }
     }
 
     return false;
