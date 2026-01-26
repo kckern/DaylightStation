@@ -11,7 +11,7 @@ import { shortId, shortIdFromUuid, isUuid } from '../../../0_infrastructure/util
 import { formatLocalTimestamp } from '../../../0_infrastructure/utils/time.mjs';
 import { FoodItem } from './FoodItem.mjs';
 import { getMealTimeFromHour, validateNutriLog, LogStatuses } from './schemas.mjs';
-import { ValidationError } from '../../../0_infrastructure/utils/errors/index.mjs';
+import { ValidationError } from '../../core/errors/index.mjs';
 
 /**
  * NutriLog entity - aggregate root for food logging
