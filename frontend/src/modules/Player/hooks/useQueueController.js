@@ -134,6 +134,13 @@ export function useQueueController({ play, queue, clear }) {
           const currentIndex = originalQueue.findIndex(item => item.guid === prevQueue[0]?.guid);
           const backtrackIndex = (currentIndex + step + originalQueue.length) % originalQueue.length;
           const backtrackItem = originalQueue[backtrackIndex];
+          playbackLog('queue-advance', {
+            action: 'backtrack',
+            step,
+            fromPosition: currentIndex,
+            toPosition: backtrackIndex,
+            queueLength: prevQueue.length + 1
+          });
           return [backtrackItem, ...prevQueue];
         } else {
           const currentIndex = isContinuous
@@ -144,15 +151,39 @@ export function useQueueController({ play, queue, clear }) {
               ...prevQueue.slice(currentIndex),
               ...prevQueue.slice(0, currentIndex),
             ];
+            playbackLog('queue-advance', {
+              action: 'rotate',
+              step,
+              queueLength: rotatedQueue.length,
+              isContinuous: true
+            });
             return rotatedQueue;
           }
+          playbackLog('queue-advance', {
+            action: 'slice',
+            step,
+            prevLength: prevQueue.length,
+            newLength: prevQueue.length - currentIndex
+          });
           return prevQueue.slice(currentIndex);
         }
       } else if (prevQueue.length === 1 && isContinuous && originalQueue.length > 1) {
         // When last item finishes in continuous mode with multi-item original queue,
         // reset to full original queue to loop playback
+        playbackLog('queue-advance', {
+          action: 'reset-continuous',
+          originalQueueLength: originalQueue.length,
+          reason: 'continuous mode loop'
+        });
         return [...originalQueue];
       }
+      playbackLog('queue-advance', {
+        action: 'clear',
+        prevLength: prevQueue.length,
+        isContinuous,
+        originalQueueLength: originalQueue.length,
+        reason: prevQueue.length === 0 ? 'empty queue' : 'end of non-continuous playlist'
+      });
       clear();
       return [];
     });
