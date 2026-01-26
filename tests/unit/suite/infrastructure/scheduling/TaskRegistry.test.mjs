@@ -1,6 +1,6 @@
 // tests/unit/infrastructure/scheduling/TaskRegistry.test.mjs
 import { jest } from '@jest/globals';
-import { TaskRegistry } from '#backend/src/0_infrastructure/scheduling/TaskRegistry.mjs';
+import { TaskRegistry } from '#backend/src/0_system/scheduling/TaskRegistry.mjs';
 
 describe('TaskRegistry', () => {
   let registry;

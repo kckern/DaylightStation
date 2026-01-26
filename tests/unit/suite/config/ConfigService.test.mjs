@@ -12,8 +12,8 @@ import {
   getConfigService,
   resetConfigService,
   ConfigValidationError,
-} from '#backend/src/0_infrastructure/config/index.mjs';
-import { validateConfig } from '#backend/src/0_infrastructure/config/configValidator.mjs';
+} from '#backend/src/0_system/config/index.mjs';
+import { validateConfig } from '#backend/src/0_system/config/configValidator.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const fixturesDir = path.join(__dirname, 'fixtures');

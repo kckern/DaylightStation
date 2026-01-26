@@ -1,6 +1,6 @@
 // tests/unit/infrastructure/routing/RouteMatcher.test.mjs
 import { describe, it, expect } from '@jest/globals';
-import { buildRoutingTable, matchRoute } from '#backend/src/0_infrastructure/routing/RouteMatcher.mjs';
+import { buildRoutingTable, matchRoute } from '#backend/src/0_system/routing/RouteMatcher.mjs';
 
 describe('RouteMatcher', () => {
   describe('buildRoutingTable', () => {

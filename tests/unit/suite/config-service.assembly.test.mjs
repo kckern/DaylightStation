@@ -19,7 +19,7 @@ describe('ConfigService assembly', () => {
       }
     };
 
-    const { createConfigService } = await import('#backend/src/0_infrastructure/config/index.mjs');
+    const { createConfigService } = await import('#backend/src/0_system/config/index.mjs');
     configService = createConfigService(testDataPath);
   });
 

@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@jest/globals';
 import path from 'path';
-import { loadConfig } from '#backend/src/0_infrastructure/config/configLoader.mjs';
+import { loadConfig } from '#backend/src/0_system/config/configLoader.mjs';
 
 // Use Jest's rootDir-relative path for fixtures
 const fixturesPath = path.resolve(process.cwd(), 'tests/_fixtures/data');

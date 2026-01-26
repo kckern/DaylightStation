@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import express from 'express';
 import request from 'supertest';
-import { createRoutingMiddleware, ShimMetrics } from '#backend/src/0_infrastructure/routing/index.mjs';
+import { createRoutingMiddleware, ShimMetrics } from '#backend/src/0_system/routing/index.mjs';
 
 describe('Routing Toggle Integration', () => {
   let app;

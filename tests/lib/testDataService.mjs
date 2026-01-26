@@ -7,7 +7,7 @@
  */
 
 import path from 'path';
-import { loadYaml, dirExists, listYamlFiles } from '#backend/src/0_infrastructure/utils/FileIO.mjs';
+import { loadYaml, dirExists, listYamlFiles } from '#backend/src/0_system/utils/FileIO.mjs';
 import { validateExpectations } from './testDataMatchers.mjs';
 
 // Re-export validateExpectations for convenience

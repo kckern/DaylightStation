@@ -1,6 +1,6 @@
 // tests/unit/infrastructure/eventbus/adapters/MqttAdapter.test.mjs
 import { jest } from '@jest/globals';
-import { MqttAdapter } from '#backend/src/0_infrastructure/eventbus/adapters/MqttAdapter.mjs';
+import { MqttAdapter } from '#backend/src/0_system/eventbus/adapters/MqttAdapter.mjs';
 
 describe('MqttAdapter', () => {
   let adapter;
