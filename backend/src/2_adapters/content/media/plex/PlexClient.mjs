@@ -4,21 +4,36 @@
  * Low-level Plex API client for making authenticated requests to Plex Media Server.
  */
 export class PlexClient {
+  #host;
+  #token;
+  #protocol;
+  #platform;
+  #httpClient;
+  #logger;
+
   /**
    * @param {Object} config
    * @param {string} config.host - Plex server URL (e.g., http://10.0.0.10:32400)
    * @param {string} [config.token] - Plex auth token
-   * @param {string} [config.protocol] - Streaming protocol (default: 'dash')
-   * @param {string} [config.platform] - Client platform (default: 'Chrome')
+   * @param {string} [config.protocol='dash'] - Streaming protocol
+   * @param {string} [config.platform='Chrome'] - Client platform
+   * @param {Object} deps
+   * @param {import('#system/services/HttpClient.mjs').HttpClient} deps.httpClient
+   * @param {Object} [deps.logger=console]
    */
-  constructor(config) {
+  constructor(config, deps = {}) {
     if (!config.host) {
       throw new Error('PlexClient requires host');
     }
-    this.host = config.host.replace(/\/$/, '');
-    this.token = config.token || '';
-    this.protocol = config.protocol || 'dash';
-    this.platform = config.platform || 'Chrome';
+    if (!deps.httpClient) {
+      throw new Error('PlexClient requires httpClient');
+    }
+    this.#host = config.host.replace(/\/$/, '');
+    this.#token = config.token || '';
+    this.#protocol = config.protocol || 'dash';
+    this.#platform = config.platform || 'Chrome';
+    this.#httpClient = deps.httpClient;
+    this.#logger = deps.logger || console;
   }
 
   /**
@@ -29,24 +44,34 @@ export class PlexClient {
    * @returns {Promise<Object>} JSON response
    */
   async request(path, options = {}) {
-    let url = `${this.host}${path}`;
-    const headers = {
-      'Accept': 'application/json',
-      'X-Plex-Token': this.token
-    };
+    let url = `${this.#host}${path}`;
 
     // Some endpoints need token as query param instead of header
     if (options.includeToken) {
       const separator = url.includes('?') ? '&' : '?';
-      url = `${url}${separator}X-Plex-Token=${this.token}`;
+      url = `${url}${separator}X-Plex-Token=${this.#token}`;
     }
 
-    const response = await fetch(url, { headers });
-    if (!response.ok) {
-      throw new Error(`Plex API error: ${response.status} ${response.statusText}`);
-    }
+    try {
+      const response = await this.#httpClient.get(url, {
+        headers: {
+          'Accept': 'application/json',
+          'X-Plex-Token': this.#token
+        }
+      });
 
-    return response.json();
+      return response.data;
+    } catch (error) {
+      this.#logger.error?.('plex.request.failed', {
+        path,
+        error: error.message,
+        code: error.code
+      });
+      const wrapped = new Error('Plex API request failed');
+      wrapped.code = error.code || 'PLEX_ERROR';
+      wrapped.isTransient = error.isTransient || false;
+      throw wrapped;
+    }
   }
 
   /**
@@ -56,7 +81,7 @@ export class PlexClient {
    */
   buildUrl(path) {
     const separator = path.includes('?') ? '&' : '?';
-    return `${this.host}${path}${separator}X-Plex-Token=${this.token}`;
+    return `${this.#host}${path}${separator}X-Plex-Token=${this.#token}`;
   }
 
   /**
