@@ -73,7 +73,8 @@ export function createApiV1Router(config) {
     '/scheduling': 'scheduling',
     '/messaging': 'messaging',
     '/printer': 'printer',
-    '/tts': 'tts'
+    '/tts': 'tts',
+    '/agents': 'agents'
   };
 
   // Mount each router at its path
