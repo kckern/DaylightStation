@@ -556,7 +556,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   try {
     const { NutriReportRenderer } = await import('./0_infrastructure/rendering/NutriReportRenderer.mjs');
     nutribotReportRenderer = new NutriReportRenderer({
-      logger: rootLogger.child({ module: 'nutribot-renderer' })
+      logger: rootLogger.child({ module: 'nutribot-renderer' }),
+      fontDir: configService.getPath('font'),
+      iconDir: configService.getPath('icons') + '/food',
     });
     rootLogger.info?.('nutribot.renderer.initialized');
   } catch (e) {
@@ -806,10 +808,6 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'scheduling-state' })
   });
 
-  // Legacy module paths (for jobs without executors: fitsync, archive-rotation, media-memory-validator)
-  // These paths are relative to _legacy/routers/ and resolve to _legacy/lib/
-  // TODO: Migrate remaining 3 legacy jobs, then remove this
-  const legacyModuleBasePath = join(__dirname, '..', '_legacy', 'routers');
 
   // Media job executor (YouTube downloads, etc.)
   const mediaExecutor = new MediaJobExecutor({
@@ -831,7 +829,6 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     jobStore: schedulingJobStore,
     stateStore: schedulingStateStore,
     timezone: 'America/Los_Angeles',
-    moduleBasePath: legacyModuleBasePath,
     harvesterExecutor: harvesterServices.jobExecutor,
     mediaExecutor,
     logger: rootLogger.child({ module: 'scheduler-service' })

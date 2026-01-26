@@ -1,7 +1,7 @@
 /**
  * Nutrition Report Renderer
  * @module infrastructure/rendering/NutriReportRenderer
- * 
+ *
  * Generates PNG images for nutrition reports using node-canvas.
  * Design modeled after food_report.mjs
  */
@@ -9,60 +9,6 @@
 import { createCanvas, registerFont, loadImage } from 'canvas';
 import path from 'path';
 import fs from 'fs';
-
-// Icon path - resolved at runtime from media path
-const getIconDir = () => {
-  // Try global paths (set by ConfigService), then env vars, then fallback
-  const mediaPath = global.__daylightPaths?.media
-    || process.env.DAYLIGHT_MEDIA_PATH
-    || process.env.MEDIA_PATH
-    || './media';
-  return path.join(mediaPath, 'img', 'icons', 'food');
-};
-
-// Deferred font registration (global paths aren't available at module load time)
-let fontsRegistered = false;
-let fontRegistrationError = null;
-const ensureFontsRegistered = (logger) => {
-  if (fontsRegistered) return true;
-  const dataPath = global.__daylightPaths?.data
-    || process.env.DAYLIGHT_DATA_PATH
-    || process.env.DATA_PATH
-    || './data';
-  const fontDir = path.join(dataPath, 'content', 'fonts');
-  const fontPath = path.join(fontDir, 'roboto-condensed', 'RobotoCondensed-Regular.ttf');
-  
-  if (!fs.existsSync(fontPath)) {
-    fontRegistrationError = `Font file not found: ${fontPath}`;
-    logger?.warn?.('nutribot.renderer.font_not_found', { error: fontRegistrationError });
-    return false;
-  }
-  
-  try {
-    registerFont(fontPath, { family: 'Roboto Condensed' });
-    fontsRegistered = true;
-    logger?.info?.('nutribot.renderer.font_registered', { fontPath });
-    return true;
-  } catch (e) {
-    fontRegistrationError = `Font registration failed: ${e.message}`;
-    logger?.warn?.('nutribot.renderer.font_registration_failed', { error: fontRegistrationError });
-    return false;
-  }
-};
-
-// Debug helper to log renderer config
-export const getRendererConfig = () => {
-  const dataPath = global.__daylightPaths?.data
-    || process.env.DAYLIGHT_DATA_PATH
-    || process.env.DATA_PATH
-    || './data';
-  return {
-    fontDir: path.join(dataPath, 'content', 'fonts'),
-    iconDir: getIconDir(),
-    fontsRegistered,
-    fontRegistrationError,
-  };
-};
 
 // Font definitions
 const TITLE_FONT = '64px "Roboto Condensed"';
@@ -85,12 +31,86 @@ const COLORS = {
 
 /**
  * Canvas-based report renderer
+ *
+ * @example
+ * // Create with explicit paths (preferred - dependency injection)
+ * const renderer = new NutriReportRenderer({
+ *   logger,
+ *   fontDir: configService.getPath('font'),
+ *   iconDir: configService.getPath('icons') + '/food',
+ * });
  */
 export class NutriReportRenderer {
   #logger;
+  #fontDir;
+  #iconDir;
+  #fontsRegistered = false;
+  #fontRegistrationError = null;
 
+  /**
+   * @param {Object} options
+   * @param {Object} [options.logger] - Logger instance
+   * @param {string} options.fontDir - Path to fonts directory (e.g., '/app/media/fonts')
+   * @param {string} options.iconDir - Path to food icons directory (e.g., '/app/media/img/icons/food')
+   */
   constructor(options = {}) {
     this.#logger = options.logger || console;
+
+    // Require paths via dependency injection
+    if (!options.fontDir) {
+      throw new Error('NutriReportRenderer requires fontDir option');
+    }
+    if (!options.iconDir) {
+      throw new Error('NutriReportRenderer requires iconDir option');
+    }
+
+    this.#fontDir = options.fontDir;
+    this.#iconDir = options.iconDir;
+
+    this.#logger.debug?.('nutribot.renderer.created', {
+      fontDir: this.#fontDir,
+      iconDir: this.#iconDir
+    });
+  }
+
+  /**
+   * Get renderer configuration (for debugging)
+   * @returns {Object}
+   */
+  getConfig() {
+    return {
+      fontDir: this.#fontDir,
+      iconDir: this.#iconDir,
+      fontsRegistered: this.#fontsRegistered,
+      fontRegistrationError: this.#fontRegistrationError,
+    };
+  }
+
+  /**
+   * Register fonts for canvas rendering
+   * @private
+   */
+  #ensureFontsRegistered() {
+    if (this.#fontsRegistered) return true;
+
+    const fontPath = path.join(this.#fontDir, 'roboto-condensed', 'RobotoCondensed-Regular.ttf');
+
+    if (!fs.existsSync(fontPath)) {
+      this.#fontRegistrationError = `Font file not found: ${fontPath}`;
+      this.#logger.warn?.('nutribot.renderer.font_not_found', { error: this.#fontRegistrationError });
+      return false;
+    }
+
+    try {
+      registerFont(fontPath, { family: 'Roboto Condensed' });
+      this.#fontsRegistered = true;
+      this.#logger.info?.('nutribot.renderer.font_registered', { fontPath });
+      return true;
+    } catch (e) {
+      this.#fontRegistrationError = `Font registration failed: ${e.message}`;
+      this.#logger.warn?.('nutribot.renderer.font_registration_failed', { error: this.#fontRegistrationError });
+      return false;
+    }
   }
 
   /**
@@ -167,7 +187,7 @@ export class NutriReportRenderer {
 
     for (const slice of pieChartData) {
       if (slice.percentage === 0) continue;
-      
+
       const endAngle = startAngle + slice.percentage * 2 * Math.PI;
 
       // Draw the wedge
@@ -251,11 +271,10 @@ export class NutriReportRenderer {
 
     // Preload icons
     const iconCache = new Map();
-    const iconDir = getIconDir();
     const iconLoadResults = [];
     for (const foodItem of food) {
       if (foodItem.icon && !iconCache.has(foodItem.icon)) {
-        const iconPath = path.join(iconDir, foodItem.icon + '.png');
+        const iconPath = path.join(this.#iconDir, foodItem.icon + '.png');
         try {
           if (fs.existsSync(iconPath)) {
             iconCache.set(foodItem.icon, await loadImage(iconPath));
@@ -268,14 +287,14 @@ export class NutriReportRenderer {
         }
       }
     }
-    
+
     // Log icon loading summary
     const loaded = iconLoadResults.filter(r => r.status === 'loaded').length;
     const notFound = iconLoadResults.filter(r => r.status === 'not_found');
     if (notFound.length > 0) {
       this.#logger.warn?.('nutribot.renderer.icons_not_found', { count: notFound.length, total: iconLoadResults.length });
     } else if (loaded > 0) {
-      this.#logger.debug?.('nutribot.renderer.icons_loaded', { count: loaded, iconDir });
+      this.#logger.debug?.('nutribot.renderer.icons_loaded', { count: loaded, iconDir: this.#iconDir });
     }
 
     // Draw each food item
@@ -350,18 +369,17 @@ export class NutriReportRenderer {
    */
   async renderDailyReport(report) {
     // Log current path configuration
-    const config = getRendererConfig();
     this.#logger.debug?.('nutribot.renderer.start', {
-      fontDir: config.fontDir,
-      iconDir: config.iconDir
+      fontDir: this.#fontDir,
+      iconDir: this.#iconDir
     });
-    
+
     // Ensure fonts are registered before rendering
-    const fontResult = ensureFontsRegistered(this.#logger);
+    const fontResult = this.#ensureFontsRegistered();
     if (!fontResult) {
       this.#logger.warn?.('nutribot.renderer.font_registration_failed');
     }
-    
+
     const date = report.date;
     const totals = report.totals || {};
     const goals = report.goals || {};
@@ -385,7 +403,7 @@ export class NutriReportRenderer {
     let proteinGrams = 0;
     let carbsGrams = 0;
     let fatGrams = 0;
-    
+
     for (const item of items) {
       proteinGrams += item.protein || 0;
       carbsGrams += item.carbs || 0;
@@ -410,7 +428,7 @@ export class NutriReportRenderer {
       }
     }
     totalCals = Math.round(totalCals);
-    
+
     const dateFormatted = this._formatDate(date);
     const title = dateFormatted ;
 
@@ -457,14 +475,14 @@ export class NutriReportRenderer {
     let fiberTotal = 0;
     let sugarTotal = 0;
     let cholesterolTotal = 0;
-    
+
     for (const item of items) {
       sodiumTotal += item.sodium || 0;
       fiberTotal += item.fiber || 0;
       sugarTotal += item.sugar || 0;
       cholesterolTotal += item.cholesterol || 0;
     }
-    
+
     const stats = [
       { label: 'Sodium', unit: 'mg', icon: 'salt', value: Math.round(sodiumTotal) },
       { label: 'Fiber', unit: 'g', icon: 'kale', value: Math.round(fiberTotal) },
@@ -488,7 +506,7 @@ export class NutriReportRenderer {
 
       // Draw icon in center
       try {
-        const iconPath = path.join(getIconDir(), stat.icon + '.png');
+        const iconPath = path.join(this.#iconDir, stat.icon + '.png');
         if (fs.existsSync(iconPath)) {
           const iconImg = await loadImage(iconPath);
           ctx.drawImage(iconImg, midPoint - 12, rowY - 24, 24, 24);
@@ -572,7 +590,7 @@ export class NutriReportRenderer {
     const barChartHeight = 460; // slightly shorter to leave bottom margin
     const barChartX = (width - barChartWidth) / 2;
     const barChartY = progressBarY + progressBarHeight + 80; // give gap below progress bar
-    
+
     // Calculate max from all data (history + today) so no bars get cut off
     let historyMax = 0;
     if (history && history.length > 0) {
@@ -657,7 +675,7 @@ export class NutriReportRenderer {
     } else {
       baseDate = new Date();
     }
-    
+
     for (let i = barCount - 1; i >= 0; i--) {
       const d = new Date(baseDate);
       d.setDate(d.getDate() - i);
@@ -674,7 +692,7 @@ export class NutriReportRenderer {
           }
         }
       }
-      
+
       if (historyDay) {
         days.push({ calories: historyDay.calories, protein: historyDay.protein, carbs: historyDay.carbs, fat: historyDay.fat, date: dateStr });
       } else if (i === 0 && todayItems && todayItems.length > 0) {
@@ -768,8 +786,8 @@ export class NutriReportRenderer {
    */
   async renderFoodCard(item, imageUrl) {
     // Ensure fonts are registered before rendering
-    ensureFontsRegistered(this.#logger);
-    
+    this.#ensureFontsRegistered();
+
     const canvas = createCanvas(400, 200);
     const ctx = canvas.getContext('2d');
 
