@@ -219,6 +219,7 @@ Read these based on what you're working on:
 | TV app (Plex, media, menus) | `docs/ai-context/tv.md` |
 | Finance app (Buxfer, budgets) | `docs/ai-context/finance.md` |
 | Chatbots (journalist, nutribot) | `docs/ai-context/bots.md` |
+| AI Agents (autonomous LLM agents) | `docs/ai-context/agents.md` |
 | CLI tools, ClickUp workflow | `docs/ai-context/cli-tools.md` |
 | Testing infrastructure | `docs/ai-context/testing.md` |
 
