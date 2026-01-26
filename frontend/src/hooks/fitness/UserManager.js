@@ -310,10 +310,10 @@ export class UserManager {
         category,
         avatarUrl
       });
-      console.log('[UserManager] Created new user:', {
-        'config.name': config.name,
-        'user.id': user.id,
-        'user.name': user.name,
+      getLogger().warn('usermanager.user_created', {
+        configName: config.name,
+        userId: user.id,
+        userName: user.name,
         resolvedUserId,
         hasZoneOverrides: !!config.zones,
         zoneOverrides: config.zones || null,
