@@ -1,5 +1,8 @@
 // backend/src/2_adapters/telegram/IInputEvent.mjs
 
+// Re-export InputEventType from shared application layer
+export { InputEventType } from '../../3_applications/shared/InputEventType.mjs';
+
 /**
  * Standardized input event interface for bot webhooks.
  * Platform-agnostic shape that input routers consume.
@@ -28,18 +31,6 @@
  * @property {InputEventPayload} payload - Type-specific payload data
  * @property {InputEventMetadata} metadata - Sender/context metadata
  */
-
-/**
- * Input event type constants
- */
-export const InputEventType = {
-  TEXT: 'text',
-  VOICE: 'voice',
-  IMAGE: 'image',
-  CALLBACK: 'callback',
-  COMMAND: 'command',
-  UPC: 'upc',
-};
 
 /**
  * Transform TelegramWebhookParser output to standardized IInputEvent
