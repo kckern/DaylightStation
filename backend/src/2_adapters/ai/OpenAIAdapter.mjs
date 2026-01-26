@@ -22,12 +22,15 @@ export class OpenAIAdapter {
     if (!config?.apiKey) {
       throw new Error('OpenAI API key is required');
     }
+    if (!deps.httpClient) {
+      throw new Error('OpenAIAdapter requires httpClient');
+    }
 
     this.apiKey = config.apiKey;
     this.model = config.model || 'gpt-4o';
     this.maxTokens = config.maxTokens || 1000;
     this.timeout = config.timeout || 60000;
-    this.httpClient = deps.httpClient || null;
+    this.httpClient = deps.httpClient;
     this.logger = deps.logger || console;
 
     // Metrics
@@ -246,10 +249,25 @@ export class OpenAIAdapter {
    * @private
    */
   async _makeRequest(url, options) {
-    if (this.httpClient) {
-      return this.httpClient.fetch(url, options);
-    }
-    return fetch(url, options);
+    // Adapt httpClient.post to return fetch-like response
+    // This maintains compatibility with existing callApi method
+    const response = await this.httpClient.post(
+      url,
+      JSON.parse(options.body),
+      {
+        headers: options.headers,
+        timeout: options.timeout
+      }
+    );
+
+    return {
+      ok: response.ok,
+      status: response.status,
+      json: () => Promise.resolve(response.data),
+      headers: {
+        get: (key) => response.headers[key.toLowerCase()]
+      }
+    };
   }
 
   /**
