@@ -15,3 +15,9 @@ export {
 } from './IAIGateway.mjs';
 
 export { ITranscriptionService } from './ITranscriptionService.mjs';
+
+// Messaging ports
+export { INotificationChannel } from './INotificationChannel.mjs';
+export { IMessagingGateway, isMessagingGateway } from './IMessagingGateway.mjs';
+export { IConversationStateStore, isConversationStateStore } from './IConversationStateStore.mjs';
+export { IConversationStore } from './IConversationStore.mjs';

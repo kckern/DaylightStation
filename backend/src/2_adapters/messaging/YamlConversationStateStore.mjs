@@ -29,7 +29,7 @@ import {
   deleteFile
 } from '../../0_infrastructure/utils/FileIO.mjs';
 import { nowTs24 } from '../../0_infrastructure/utils/index.mjs';
-import { IConversationStateStore } from '../../1_domains/messaging/ports/IConversationStateStore.mjs';
+import { IConversationStateStore } from '../../3_applications/shared/ports/index.mjs';
 
 export class YamlConversationStateStore extends IConversationStateStore {
   #basePath;

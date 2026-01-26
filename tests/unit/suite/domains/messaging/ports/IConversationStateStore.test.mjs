@@ -3,7 +3,7 @@ import { jest } from '@jest/globals';
 
 describe('IConversationStateStore interface', () => {
   it('should define required methods', async () => {
-    const { IConversationStateStore, isConversationStateStore } = await import('#backend/src/1_domains/messaging/ports/IConversationStateStore.mjs');
+    const { IConversationStateStore, isConversationStateStore } = await import('#backend/src/3_applications/shared/ports/index.mjs');
 
     const validStore = {
       get: async () => {},

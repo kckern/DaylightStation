@@ -15,10 +15,15 @@ export {
 export { Conversation } from './entities/Conversation.mjs';
 export { Message } from './entities/Message.mjs';
 
-// Ports
-export { INotificationChannel } from './ports/INotificationChannel.mjs';
-export { IMessagingGateway, isMessagingGateway } from './ports/IMessagingGateway.mjs';
-export { IConversationStore } from './ports/IConversationStore.mjs';
+// Ports (re-exported from application layer - canonical location per DDD)
+export {
+  INotificationChannel,
+  IMessagingGateway,
+  isMessagingGateway,
+  IConversationStore,
+  IConversationStateStore,
+  isConversationStateStore
+} from '../../3_applications/shared/ports/index.mjs';
 
 // Services
 export { NotificationService } from './services/NotificationService.mjs';
