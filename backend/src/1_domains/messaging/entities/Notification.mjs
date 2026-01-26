@@ -5,7 +5,7 @@
 export const NOTIFICATION_CHANNELS = ['telegram', 'email', 'push', 'sms'];
 export const NOTIFICATION_PRIORITIES = ['low', 'normal', 'high', 'urgent'];
 
-import { nowTs24 } from '../../../0_infrastructure/utils/index.mjs';
+import { ValidationError } from '../../core/errors/index.mjs';
 
 export class Notification {
   constructor({
@@ -47,14 +47,20 @@ export class Notification {
   /**
    * Mark as sent
    */
-  markSent(timestamp = nowTs24()) {
+  markSent(timestamp) {
+    if (!timestamp) {
+      throw new ValidationError('timestamp required', { code: 'MISSING_TIMESTAMP', field: 'timestamp' });
+    }
     this.sentAt = timestamp;
   }
 
   /**
    * Mark as read
    */
-  markRead(timestamp = nowTs24()) {
+  markRead(timestamp) {
+    if (!timestamp) {
+      throw new ValidationError('timestamp required', { code: 'MISSING_TIMESTAMP', field: 'timestamp' });
+    }
     this.readAt = timestamp;
   }
 

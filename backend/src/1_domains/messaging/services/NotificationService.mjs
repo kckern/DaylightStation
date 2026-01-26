@@ -3,6 +3,7 @@
  */
 
 import { Notification } from '../entities/Notification.mjs';
+import { nowTs24 } from '../../../0_infrastructure/utils/index.mjs';
 
 export class NotificationService {
   constructor({ notificationStore, channels = {} }) {
@@ -23,7 +24,7 @@ export class NotificationService {
     const channelAdapter = this.channels[notification.channel];
     if (channelAdapter) {
       await channelAdapter.send(notification);
-      notification.markSent();
+      notification.markSent(nowTs24());
     }
 
     await this.notificationStore.save(notification);
@@ -61,7 +62,7 @@ export class NotificationService {
     const notification = await this.getNotification(id);
     if (!notification) throw new Error(`Notification not found: ${id}`);
 
-    notification.markRead();
+    notification.markRead(nowTs24());
     await this.notificationStore.save(notification);
     return notification;
   }
@@ -71,8 +72,9 @@ export class NotificationService {
    */
   async markAllRead(recipient) {
     const unread = await this.getUnreadNotifications(recipient);
+    const timestamp = nowTs24();
     for (const notification of unread) {
-      notification.markRead();
+      notification.markRead(timestamp);
       await this.notificationStore.save(notification);
     }
     return unread.length;

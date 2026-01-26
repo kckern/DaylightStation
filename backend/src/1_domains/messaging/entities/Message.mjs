@@ -5,7 +5,7 @@
 export const MESSAGE_TYPES = ['text', 'voice', 'image', 'document', 'callback'];
 export const MESSAGE_DIRECTIONS = ['incoming', 'outgoing'];
 
-import { nowTs24 } from '../../../0_infrastructure/utils/index.mjs';
+import { ValidationError } from '../../core/errors/index.mjs';
 
 export class Message {
   constructor({
@@ -20,6 +20,9 @@ export class Message {
     timestamp,
     metadata = {}
   }) {
+    if (!timestamp) {
+      throw new ValidationError('timestamp required', { code: 'MISSING_TIMESTAMP', field: 'timestamp' });
+    }
     this.id = id;
     this.conversationId = conversationId;
     this.senderId = senderId;
@@ -28,7 +31,7 @@ export class Message {
     this.direction = direction;
     this.content = content;
     this.attachments = attachments;
-    this.timestamp = timestamp || nowTs24();
+    this.timestamp = timestamp;
     this.metadata = metadata;
   }
 
@@ -141,7 +144,7 @@ export class Message {
   /**
    * Create a text message
    */
-  static createText({ conversationId, senderId, recipientId, text, direction = null, metadata = {} }) {
+  static createText({ conversationId, senderId, recipientId, text, timestamp, direction = null, metadata = {} }) {
     return new Message({
       id: Message.generateId(),
       conversationId,
@@ -151,6 +154,7 @@ export class Message {
       direction,
       content: text,
       attachments: [],
+      timestamp,
       metadata
     });
   }
@@ -158,7 +162,7 @@ export class Message {
   /**
    * Create a voice message
    */
-  static createVoice({ conversationId, senderId, recipientId, fileId, duration, direction = null, metadata = {} }) {
+  static createVoice({ conversationId, senderId, recipientId, fileId, duration, timestamp, direction = null, metadata = {} }) {
     return new Message({
       id: Message.generateId(),
       conversationId,
@@ -168,6 +172,7 @@ export class Message {
       direction,
       content: { fileId, duration },
       attachments: [{ type: 'voice', fileId, duration }],
+      timestamp,
       metadata
     });
   }
@@ -175,7 +180,7 @@ export class Message {
   /**
    * Create an image message
    */
-  static createImage({ conversationId, senderId, recipientId, fileId, caption, direction = null, metadata = {} }) {
+  static createImage({ conversationId, senderId, recipientId, fileId, caption, timestamp, direction = null, metadata = {} }) {
     return new Message({
       id: Message.generateId(),
       conversationId,
@@ -185,6 +190,7 @@ export class Message {
       direction,
       content: { fileId },
       attachments: [{ type: 'image', fileId, caption }],
+      timestamp,
       metadata: { ...metadata, caption }
     });
   }
@@ -192,7 +198,7 @@ export class Message {
   /**
    * Create a callback message (button press)
    */
-  static createCallback({ conversationId, senderId, recipientId, callbackData, direction = null, metadata = {} }) {
+  static createCallback({ conversationId, senderId, recipientId, callbackData, timestamp, direction = null, metadata = {} }) {
     return new Message({
       id: Message.generateId(),
       conversationId,
@@ -202,6 +208,7 @@ export class Message {
       direction,
       content: callbackData,
       attachments: [],
+      timestamp,
       metadata
     });
   }

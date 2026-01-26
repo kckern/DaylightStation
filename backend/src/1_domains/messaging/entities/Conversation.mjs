@@ -2,7 +2,7 @@
  * Conversation Entity - Represents a chat conversation
  */
 
-import { nowTs24 } from '../../../0_infrastructure/utils/index.mjs';
+import { ValidationError } from '../../core/errors/index.mjs';
 
 export class Conversation {
   constructor({
@@ -25,9 +25,12 @@ export class Conversation {
    * Add a message to the conversation
    */
   addMessage(message) {
+    if (!message.timestamp) {
+      throw new ValidationError('message.timestamp required', { code: 'MISSING_TIMESTAMP', field: 'message.timestamp' });
+    }
     this.messages.push({
       ...message,
-      timestamp: message.timestamp || nowTs24()
+      timestamp: message.timestamp
     });
     this.lastMessageAt = this.messages[this.messages.length - 1].timestamp;
   }
