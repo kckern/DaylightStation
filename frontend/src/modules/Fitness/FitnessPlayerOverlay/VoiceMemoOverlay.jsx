@@ -146,6 +146,8 @@ const VoiceMemoOverlay = ({
   const panelRef = React.useRef(null);
   // Stale state reset cooldown to prevent render loops (see audit 2026-01-19)
   const staleResetCooldownRef = React.useRef({ lastReset: 0, recentResets: [] });
+  // Track if pointerdown occurred on overlay since opening (prevents instant close, see bug 2026-01-26)
+  const hadPointerDownRef = React.useRef(false);
 
   const handleAccept = useCallback(() => {
     logVoiceMemo('overlay-accept', { memoId: overlayState?.memoId || null });
@@ -349,6 +351,13 @@ const VoiceMemoOverlay = ({
     }
   }, [overlayState?.open]);
 
+  // Reset pointerdown tracking when overlay opens/closes (bug fix 2026-01-26)
+  // This prevents instant close when overlay opens mid-click - the click's pointerdown
+  // was on a different element (e.g., close button), not the overlay backdrop
+  useEffect(() => {
+    hadPointerDownRef.current = false;
+  }, [overlayState?.open]);
+
   // DEBUG: Log xywh of overlay and panel
   useEffect(() => {
     if (!overlayState?.open) return;
@@ -490,16 +499,34 @@ const VoiceMemoOverlay = ({
  //   e.nativeEvent?.stopImmediatePropagation?.();
   }, []);
 
+  // Handle pointerdown on overlay - enables backdrop click dismissal
+  const handleOverlayPointerDown = useCallback((e) => {
+    if (!hadPointerDownRef.current) {
+      logVoiceMemo('overlay-pointerdown-received', {
+        target: e.target?.className || 'unknown'
+      });
+    }
+    hadPointerDownRef.current = true;
+    stopEventPropagation(e);
+  }, [logVoiceMemo, stopEventPropagation]);
+
   // Handle backdrop click (click outside panel to close)
   const handleBackdropClick = useCallback((e) => {
-    // Stop propagation to prevent triggering fullscreen toggle on player underneath
-  //  e.stopPropagation();
-  //  e.nativeEvent?.stopImmediatePropagation?.();
+    // Bug fix 2026-01-26: Ignore clicks if no pointerdown occurred on the overlay
+    // This prevents instant close when overlay opens mid-click (e.g., triggered by
+    // pointerdown on close button, overlay opens, pointerup/click lands on backdrop)
+    if (!hadPointerDownRef.current) {
+      logVoiceMemo('backdrop-click-ignored', {
+        reason: 'no_pointerdown_on_overlay',
+        clickTarget: e.target?.className || 'unknown'
+      });
+      return;
+    }
     // Only close if clicking directly on backdrop, not on panel or its children
     if (e.target === overlayRef.current) {
       handleClose();
     }
-  }, [handleClose]);
+  }, [handleClose, logVoiceMemo]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -563,7 +590,7 @@ const VoiceMemoOverlay = ({
       onTouchStart={(e) => { stopEventPropagation(e); handleUserInteraction(e); }}
       onTouchStartCapture={stopEventPropagation}
       onTouchEnd={stopEventPropagation}
-      onPointerDown={stopEventPropagation}
+      onPointerDown={handleOverlayPointerDown}
       onPointerDownCapture={stopEventPropagation}
       onPointerUp={stopEventPropagation}
       onDoubleClick={stopEventPropagation}
