@@ -4,9 +4,12 @@
  * Service layer for NutriLog domain operations.
  * Note: Nutribot use cases typically work directly with the repository.
  * This service provides higher-level convenience methods.
+ *
+ * All mutation methods require a timestamp parameter (DDD compliance).
  */
 
 import { NutriLog } from '../entities/NutriLog.mjs';
+import { ValidationError } from '../../core/errors/index.mjs';
 
 export class FoodLogService {
   #store;
@@ -40,13 +43,19 @@ export class FoodLogService {
   /**
    * Create a new food log
    * @param {object} props - NutriLog properties
+   * @param {Date} props.timestamp - Current timestamp (required)
    * @returns {Promise<NutriLog>}
    */
   async createLog(props) {
+    if (!(props.timestamp instanceof Date) || isNaN(props.timestamp.getTime())) {
+      throw new ValidationError('timestamp is required for createLog', {
+        field: 'timestamp',
+        received: props.timestamp,
+      });
+    }
     const log = NutriLog.create({
       ...props,
       timezone: props.timezone || this.#timezone,
-      timestamp: props.timestamp || new Date(),
     });
     return this.#store.save(log);
   }
@@ -55,14 +64,21 @@ export class FoodLogService {
    * Accept a pending log
    * @param {string} userId
    * @param {string} logId
+   * @param {Date} timestamp - Current timestamp (required)
    * @returns {Promise<NutriLog>}
    */
-  async acceptLog(userId, logId) {
+  async acceptLog(userId, logId, timestamp) {
+    if (!(timestamp instanceof Date) || isNaN(timestamp.getTime())) {
+      throw new ValidationError('timestamp is required for acceptLog', {
+        field: 'timestamp',
+        received: timestamp,
+      });
+    }
     const log = await this.#store.findById(userId, logId);
     if (!log) {
       throw new Error(`NutriLog not found: ${logId}`);
     }
-    const accepted = log.accept(new Date());
+    const accepted = log.accept(timestamp);
     return this.#store.save(accepted);
   }
 
@@ -70,14 +86,21 @@ export class FoodLogService {
    * Reject a pending log
    * @param {string} userId
    * @param {string} logId
+   * @param {Date} timestamp - Current timestamp (required)
    * @returns {Promise<NutriLog>}
    */
-  async rejectLog(userId, logId) {
+  async rejectLog(userId, logId, timestamp) {
+    if (!(timestamp instanceof Date) || isNaN(timestamp.getTime())) {
+      throw new ValidationError('timestamp is required for rejectLog', {
+        field: 'timestamp',
+        received: timestamp,
+      });
+    }
     const log = await this.#store.findById(userId, logId);
     if (!log) {
       throw new Error(`NutriLog not found: ${logId}`);
     }
-    const rejected = log.reject(new Date());
+    const rejected = log.reject(timestamp);
     return this.#store.save(rejected);
   }
 
@@ -85,14 +108,21 @@ export class FoodLogService {
    * Delete a log (soft delete)
    * @param {string} userId
    * @param {string} logId
+   * @param {Date} timestamp - Current timestamp (required)
    * @returns {Promise<NutriLog>}
    */
-  async deleteLog(userId, logId) {
+  async deleteLog(userId, logId, timestamp) {
+    if (!(timestamp instanceof Date) || isNaN(timestamp.getTime())) {
+      throw new ValidationError('timestamp is required for deleteLog', {
+        field: 'timestamp',
+        received: timestamp,
+      });
+    }
     const log = await this.#store.findById(userId, logId);
     if (!log) {
       throw new Error(`NutriLog not found: ${logId}`);
     }
-    const deleted = log.delete(new Date());
+    const deleted = log.delete(timestamp);
     return this.#store.save(deleted);
   }
 
@@ -101,14 +131,21 @@ export class FoodLogService {
    * @param {string} userId
    * @param {string} logId
    * @param {object[]} items - New items array
+   * @param {Date} timestamp - Current timestamp (required)
    * @returns {Promise<NutriLog>}
    */
-  async updateLogItems(userId, logId, items) {
+  async updateLogItems(userId, logId, items, timestamp) {
+    if (!(timestamp instanceof Date) || isNaN(timestamp.getTime())) {
+      throw new ValidationError('timestamp is required for updateLogItems', {
+        field: 'timestamp',
+        received: timestamp,
+      });
+    }
     const log = await this.#store.findById(userId, logId);
     if (!log) {
       throw new Error(`NutriLog not found: ${logId}`);
     }
-    const updated = log.setItems(items, new Date());
+    const updated = log.setItems(items, timestamp);
     return this.#store.save(updated);
   }
 

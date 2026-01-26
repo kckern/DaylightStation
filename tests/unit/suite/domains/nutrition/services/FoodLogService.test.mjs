@@ -7,6 +7,9 @@ describe('FoodLogService', () => {
   let service;
   let mockStore;
 
+  // Fixed test timestamp for deterministic tests
+  const TEST_TIMESTAMP = new Date('2026-01-11T10:00:00Z');
+
   // Helper to create test NutriLog
   const createTestLog = (overrides = {}) => {
     return NutriLog.create({
@@ -26,6 +29,7 @@ describe('FoodLogService', () => {
         date: '2026-01-11',
         time: 'morning',
       },
+      timestamp: TEST_TIMESTAMP,
       ...overrides,
     });
   };
@@ -95,6 +99,7 @@ describe('FoodLogService', () => {
         items: [
           { label: 'Eggs', grams: 100, color: 'yellow', icon: 'egg', unit: 'g', amount: 100 },
         ],
+        timestamp: TEST_TIMESTAMP,
       };
 
       const log = await service.createLog(props);
@@ -111,7 +116,7 @@ describe('FoodLogService', () => {
       mockStore.findById.mockResolvedValue(testLog);
       mockStore.save.mockImplementation((log) => Promise.resolve(log));
 
-      const accepted = await service.acceptLog('user-1', testLog.id);
+      const accepted = await service.acceptLog('user-1', testLog.id, TEST_TIMESTAMP);
 
       expect(accepted.status).toBe('accepted');
       expect(mockStore.save).toHaveBeenCalled();
@@ -121,7 +126,7 @@ describe('FoodLogService', () => {
       mockStore.findById.mockResolvedValue(null);
 
       await expect(
-        service.acceptLog('user-1', 'nonexistent')
+        service.acceptLog('user-1', 'nonexistent', TEST_TIMESTAMP)
       ).rejects.toThrow('NutriLog not found');
     });
   });
@@ -132,7 +137,7 @@ describe('FoodLogService', () => {
       mockStore.findById.mockResolvedValue(testLog);
       mockStore.save.mockImplementation((log) => Promise.resolve(log));
 
-      const rejected = await service.rejectLog('user-1', testLog.id);
+      const rejected = await service.rejectLog('user-1', testLog.id, TEST_TIMESTAMP);
 
       expect(rejected.status).toBe('rejected');
       expect(mockStore.save).toHaveBeenCalled();
@@ -145,7 +150,7 @@ describe('FoodLogService', () => {
       mockStore.findById.mockResolvedValue(testLog);
       mockStore.save.mockImplementation((log) => Promise.resolve(log));
 
-      const deleted = await service.deleteLog('user-1', testLog.id);
+      const deleted = await service.deleteLog('user-1', testLog.id, TEST_TIMESTAMP);
 
       expect(deleted.status).toBe('deleted');
       expect(mockStore.save).toHaveBeenCalled();
@@ -167,7 +172,7 @@ describe('FoodLogService', () => {
   describe('getAcceptedLogs', () => {
     test('returns accepted logs', async () => {
       const testLog = createTestLog();
-      const accepted = testLog.accept();
+      const accepted = testLog.accept(TEST_TIMESTAMP);
       mockStore.findAccepted.mockResolvedValue([accepted]);
 
       const logs = await service.getAcceptedLogs('user-1');
@@ -212,8 +217,8 @@ describe('FoodLogService', () => {
       const log1 = createTestLog({ meal: { date: '2026-01-06', time: 'morning' } });
       const log2 = createTestLog({ meal: { date: '2026-01-07', time: 'morning' } });
       // Accept both logs for the summary
-      const accepted1 = log1.accept();
-      const accepted2 = log2.accept();
+      const accepted1 = log1.accept(TEST_TIMESTAMP);
+      const accepted2 = log2.accept(TEST_TIMESTAMP);
       mockStore.findByDateRange.mockResolvedValue([accepted1, accepted2]);
 
       const summary = await service.getWeeklySummary('user-1', '2026-01-06');
@@ -235,7 +240,7 @@ describe('FoodLogService', () => {
         { id: 'aBcDeFgHiJ', uuid: '550e8400-e29b-41d4-a716-446655440000', label: 'Banana', grams: 120, color: 'yellow', icon: 'banana', unit: 'g', amount: 120 },
       ];
 
-      const updated = await service.updateLogItems('user-1', testLog.id, newItems);
+      const updated = await service.updateLogItems('user-1', testLog.id, newItems, TEST_TIMESTAMP);
 
       expect(updated.items).toHaveLength(1);
       expect(updated.items[0].label).toBe('Banana');
