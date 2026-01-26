@@ -428,12 +428,15 @@ export class AmbientLedAdapter {
       enabled,
       scenes: enabled ? fitnessConfig.ambient_led.scenes : null,
       throttleMs: enabled ? (fitnessConfig.ambient_led.throttle_ms || 2000) : null,
+      gracePeriodMs: ZONE_LOSS_GRACE_PERIOD_MS,
       state: {
         lastScene: this.lastScene,
         lastActivatedAt: this.lastActivatedAt,
         failureCount: this.failureCount,
         backoffUntil: this.backoffUntil,
-        isInBackoff: this.backoffUntil > Date.now()
+        isInBackoff: this.backoffUntil > Date.now(),
+        gracePeriodActive: !!this.graceTimer,
+        gracePeriodStartedAt: this.graceStartedAt
       }
     };
   }
@@ -498,8 +501,12 @@ export class AmbientLedAdapter {
     const previousState = {
       failureCount: this.failureCount,
       backoffUntil: this.backoffUntil,
-      lastScene: this.lastScene
+      lastScene: this.lastScene,
+      gracePeriodActive: !!this.graceTimer
     };
+
+    // Clear grace timer if active
+    this.#clearGraceTimer();
 
     this.failureCount = 0;
     this.backoffUntil = 0;
