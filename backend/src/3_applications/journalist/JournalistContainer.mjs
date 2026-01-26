@@ -35,10 +35,8 @@ import { HandleDebriefResponse } from './usecases/HandleDebriefResponse.mjs';
 import { HandleSourceSelection } from './usecases/HandleSourceSelection.mjs';
 import { InitiateDebriefInterview } from './usecases/InitiateDebriefInterview.mjs';
 
-// Adapters
+// Domain services
 import { LifelogAggregator } from '../../1_domains/lifelog/services/LifelogAggregator.mjs';
-import { LoggingAIGateway } from '../../2_adapters/journalist/LoggingAIGateway.mjs';
-import { DebriefRepository } from '../../2_adapters/journalist/DebriefRepository.mjs';
 
 /**
  * Journalist Container
@@ -52,6 +50,7 @@ export class JournalistContainer {
   #messagingGateway;
   #aiGateway;
   #wrappedAIGateway;
+  #loggingAIGatewayFactory;
   #journalEntryRepository;
   #messageQueueRepository;
   #conversationStateStore;
@@ -112,6 +111,8 @@ export class JournalistContainer {
    * @param {Object} [options.quizRepository] - Quiz repository
    * @param {Object} [options.userResolver] - UserResolver for multi-user support
    * @param {Object} [options.userDataService] - UserDataService for loading user data files
+   * @param {Object} [options.loggingAIGatewayFactory] - Factory to create logging AI gateway wrapper
+   * @param {Object} [options.debriefRepository] - Debrief repository instance
    * @param {Object} [options.logger] - Logger instance
    */
   constructor(config, options = {}) {
@@ -128,6 +129,8 @@ export class JournalistContainer {
     this.#quizRepository = options.quizRepository;
     this.#userResolver = options.userResolver;
     this.#userDataService = options.userDataService;
+    this.#loggingAIGatewayFactory = options.loggingAIGatewayFactory;
+    this.#debriefRepository = options.debriefRepository;
   }
 
   // ==================== Infrastructure Getters ====================
@@ -146,11 +149,16 @@ export class JournalistContainer {
 
     // Wrap AI gateway with logging wrapper (lazy initialization)
     if (!this.#wrappedAIGateway) {
-      this.#wrappedAIGateway = new LoggingAIGateway({
-        aiGateway: this.#aiGateway,
-        username: this.#config.username || 'unknown',
-        logger: this.#logger,
-      });
+      if (this.#loggingAIGatewayFactory) {
+        this.#wrappedAIGateway = this.#loggingAIGatewayFactory({
+          aiGateway: this.#aiGateway,
+          username: this.#config.username || 'unknown',
+          logger: this.#logger,
+        });
+      } else {
+        // Fallback: use unwrapped gateway if no factory provided
+        this.#wrappedAIGateway = this.#aiGateway;
+      }
     }
 
     return this.#wrappedAIGateway;
@@ -178,22 +186,7 @@ export class JournalistContainer {
 
   getDebriefRepository() {
     if (!this.#debriefRepository) {
-      // Get data path from config (injected from ConfigService)
-      const configUsername = this.#config.username;
-      if (!configUsername) {
-        throw new Error('JournalistContainer requires config.username to be set');
-      }
-      const dataDir = this.#config.dataDir;
-      if (!dataDir) {
-        throw new Error('JournalistContainer requires config.dataDir to be set');
-      }
-
-      const dataPath = `${dataDir}/users/${configUsername}/lifelog/journalist`;
-
-      this.#debriefRepository = new DebriefRepository({
-        logger: this.#logger,
-        dataPath,
-      });
+      throw new Error('debriefRepository not configured - must be injected via constructor');
     }
     return this.#debriefRepository;
   }
