@@ -148,6 +148,7 @@ export class LogFoodFromText {
 
       // 4. Create NutriLog entity
       const timezone = this.#config?.getUserTimezone?.(userId) || 'America/Los_Angeles';
+      const createTimestamp = new Date();
       const nutriLog = NutriLog.create({
         userId,
         conversationId,
@@ -155,13 +156,14 @@ export class LogFoodFromText {
         items: foodItems,
         meal: {
           date: logDate,
-          time: this.#getMealTimeFromHour(new Date().getHours()),
+          time: this.#getMealTimeFromHour(createTimestamp.getHours()),
         },
         metadata: {
           source: 'text',
           sourceText: text,
         },
         timezone,
+        timestamp: createTimestamp,
       });
 
       // 5. Save NutriLog
@@ -198,7 +200,7 @@ export class LogFoodFromText {
       if (this.#foodLogStore) {
         const updatedLog = nutriLog.with({
           metadata: { ...nutriLog.metadata, messageId: String(statusMsgId) },
-        });
+        }, new Date());
         await this.#foodLogStore.save(updatedLog);
       }
 
@@ -476,10 +478,11 @@ Begin response with '{' character - output only valid JSON, no markdown.`,
     }
 
     // Update the existing log with revised items
-    let updatedLog = targetLog.updateItems(finalItems);
+    const revisionTimestamp = new Date();
+    let updatedLog = targetLog.updateItems(finalItems, revisionTimestamp);
 
     if (revisedDate && revisedDate !== (targetLog.meal?.date || targetLog.date)) {
-      updatedLog = updatedLog.updateDate(revisedDate, revisedTime);
+      updatedLog = updatedLog.updateDate(revisedDate, revisedTime, revisionTimestamp);
     }
 
     if (this.#foodLogStore) {

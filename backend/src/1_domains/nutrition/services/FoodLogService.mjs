@@ -46,6 +46,7 @@ export class FoodLogService {
     const log = NutriLog.create({
       ...props,
       timezone: props.timezone || this.#timezone,
+      timestamp: props.timestamp || new Date(),
     });
     return this.#store.save(log);
   }
@@ -61,7 +62,7 @@ export class FoodLogService {
     if (!log) {
       throw new Error(`NutriLog not found: ${logId}`);
     }
-    const accepted = log.accept();
+    const accepted = log.accept(new Date());
     return this.#store.save(accepted);
   }
 
@@ -76,7 +77,7 @@ export class FoodLogService {
     if (!log) {
       throw new Error(`NutriLog not found: ${logId}`);
     }
-    const rejected = log.reject();
+    const rejected = log.reject(new Date());
     return this.#store.save(rejected);
   }
 
@@ -91,7 +92,7 @@ export class FoodLogService {
     if (!log) {
       throw new Error(`NutriLog not found: ${logId}`);
     }
-    const deleted = log.delete();
+    const deleted = log.delete(new Date());
     return this.#store.save(deleted);
   }
 
@@ -107,7 +108,7 @@ export class FoodLogService {
     if (!log) {
       throw new Error(`NutriLog not found: ${logId}`);
     }
-    const updated = log.setItems(items);
+    const updated = log.setItems(items, new Date());
     return this.#store.save(updated);
   }
 

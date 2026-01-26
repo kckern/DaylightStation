@@ -137,7 +137,7 @@ export class YamlFoodLogStore extends IFoodLogStore {
     try {
       // Handle legacy format with food_data
       if (entity.food_data && !entity.meal) {
-        return NutriLog.fromLegacy(entity, userId, entity.chat_id || userId, this.#timezone);
+        return NutriLog.fromLegacy(entity, userId, entity.chat_id || userId, this.#timezone, new Date());
       }
       return NutriLog.from(entity, this.#timezone);
     } catch (err) {
@@ -328,7 +328,7 @@ export class YamlFoodLogStore extends IFoodLogStore {
     if (!nutriLog) {
       throw new Error(`NutriLog not found: ${id}`);
     }
-    const deleted = nutriLog.delete();
+    const deleted = nutriLog.delete(new Date());
     return this.save(deleted);
   }
 
@@ -494,19 +494,20 @@ export class YamlFoodLogStore extends IFoodLogStore {
     const nutriLog = await this.findById(userId, id);
     if (!nutriLog) return null;
 
+    const now = new Date();
     let updated;
     switch (newStatus) {
       case 'accepted':
-        updated = nutriLog.accept();
+        updated = nutriLog.accept(now);
         break;
       case 'rejected':
-        updated = nutriLog.reject();
+        updated = nutriLog.reject(now);
         break;
       case 'deleted':
-        updated = nutriLog.delete();
+        updated = nutriLog.delete(now);
         break;
       default:
-        updated = nutriLog.with({ status: newStatus });
+        updated = nutriLog.with({ status: newStatus }, now);
     }
 
     return this.save(updated);
@@ -523,7 +524,7 @@ export class YamlFoodLogStore extends IFoodLogStore {
     const nutriLog = await this.findById(userId, id);
     if (!nutriLog) return null;
 
-    const updated = nutriLog.updateItems(items);
+    const updated = nutriLog.updateItems(items, new Date());
     return this.save(updated);
   }
 }
