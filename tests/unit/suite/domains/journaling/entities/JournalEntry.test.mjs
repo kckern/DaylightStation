@@ -1,6 +1,9 @@
 // tests/unit/domains/journaling/entities/JournalEntry.test.mjs
 import { JournalEntry } from '#backend/src/1_domains/journaling/entities/JournalEntry.mjs';
 
+// Helper to generate timestamps for tests
+const testTimestamp = () => new Date().toISOString();
+
 describe('JournalEntry', () => {
   describe('constructor', () => {
     test('creates entry with required fields', () => {
@@ -8,7 +11,8 @@ describe('JournalEntry', () => {
         id: 'entry-123',
         userId: 'user-1',
         date: '2026-01-11',
-        content: 'Today was a good day'
+        content: 'Today was a good day',
+        createdAt: '2026-01-11T12:00:00.000Z'
       });
 
       expect(entry.id).toBe('entry-123');
@@ -17,24 +21,24 @@ describe('JournalEntry', () => {
       expect(entry.content).toBe('Today was a good day');
     });
 
-    test('defaults createdAt to now', () => {
-      const before = new Date().toISOString();
+    test('uses provided createdAt timestamp', () => {
+      const timestamp = '2026-01-11T15:30:00.000Z';
       const entry = new JournalEntry({
         id: 'entry-123',
         userId: 'user-1',
-        date: '2026-01-11'
+        date: '2026-01-11',
+        createdAt: timestamp
       });
-      const after = new Date().toISOString();
 
-      expect(entry.createdAt >= before).toBe(true);
-      expect(entry.createdAt <= after).toBe(true);
+      expect(entry.createdAt).toBe(timestamp);
     });
 
     test('initializes empty arrays', () => {
       const entry = new JournalEntry({
         id: 'entry-123',
         userId: 'user-1',
-        date: '2026-01-11'
+        date: '2026-01-11',
+        createdAt: testTimestamp()
       });
 
       expect(entry.tags).toEqual([]);
@@ -48,13 +52,26 @@ describe('JournalEntry', () => {
         id: 'entry-123',
         userId: 'user-1',
         date: '2026-01-11',
-        content: 'Original'
+        content: 'Original',
+        createdAt: testTimestamp()
       });
 
-      entry.updateContent('Updated content');
+      const updateTime = testTimestamp();
+      entry.updateContent('Updated content', updateTime);
 
       expect(entry.content).toBe('Updated content');
-      expect(entry.updatedAt).toBeDefined();
+      expect(entry.updatedAt).toBe(updateTime);
+    });
+
+    test('requires timestamp parameter', () => {
+      const entry = new JournalEntry({
+        id: 'entry-123',
+        userId: 'user-1',
+        date: '2026-01-11',
+        createdAt: testTimestamp()
+      });
+
+      expect(() => entry.updateContent('New content')).toThrow('timestamp is required');
     });
   });
 
@@ -63,13 +80,26 @@ describe('JournalEntry', () => {
       const entry = new JournalEntry({
         id: 'entry-123',
         userId: 'user-1',
-        date: '2026-01-11'
+        date: '2026-01-11',
+        createdAt: testTimestamp()
       });
 
-      entry.setMood('great');
+      const updateTime = testTimestamp();
+      entry.setMood('great', updateTime);
 
       expect(entry.mood).toBe('great');
-      expect(entry.updatedAt).toBeDefined();
+      expect(entry.updatedAt).toBe(updateTime);
+    });
+
+    test('requires timestamp parameter', () => {
+      const entry = new JournalEntry({
+        id: 'entry-123',
+        userId: 'user-1',
+        date: '2026-01-11',
+        createdAt: testTimestamp()
+      });
+
+      expect(() => entry.setMood('great')).toThrow('timestamp is required');
     });
   });
 
@@ -78,13 +108,26 @@ describe('JournalEntry', () => {
       const entry = new JournalEntry({
         id: 'entry-123',
         userId: 'user-1',
-        date: '2026-01-11'
+        date: '2026-01-11',
+        createdAt: testTimestamp()
       });
 
-      entry.addGratitudeItem('Family');
-      entry.addGratitudeItem('Health');
+      const ts = testTimestamp();
+      entry.addGratitudeItem('Family', ts);
+      entry.addGratitudeItem('Health', ts);
 
       expect(entry.gratitudeItems).toEqual(['Family', 'Health']);
+    });
+
+    test('requires timestamp parameter', () => {
+      const entry = new JournalEntry({
+        id: 'entry-123',
+        userId: 'user-1',
+        date: '2026-01-11',
+        createdAt: testTimestamp()
+      });
+
+      expect(() => entry.addGratitudeItem('Family')).toThrow('timestamp is required');
     });
   });
 
@@ -93,10 +136,11 @@ describe('JournalEntry', () => {
       const entry = new JournalEntry({
         id: 'entry-123',
         userId: 'user-1',
-        date: '2026-01-11'
+        date: '2026-01-11',
+        createdAt: testTimestamp()
       });
 
-      entry.addTag('work');
+      entry.addTag('work', testTimestamp());
 
       expect(entry.tags).toContain('work');
     });
@@ -106,12 +150,24 @@ describe('JournalEntry', () => {
         id: 'entry-123',
         userId: 'user-1',
         date: '2026-01-11',
-        tags: ['work']
+        tags: ['work'],
+        createdAt: testTimestamp()
       });
 
-      entry.addTag('work');
+      entry.addTag('work', testTimestamp());
 
       expect(entry.tags).toEqual(['work']);
+    });
+
+    test('requires timestamp parameter', () => {
+      const entry = new JournalEntry({
+        id: 'entry-123',
+        userId: 'user-1',
+        date: '2026-01-11',
+        createdAt: testTimestamp()
+      });
+
+      expect(() => entry.addTag('work')).toThrow('timestamp is required');
     });
   });
 
@@ -121,12 +177,25 @@ describe('JournalEntry', () => {
         id: 'entry-123',
         userId: 'user-1',
         date: '2026-01-11',
-        tags: ['work', 'personal']
+        tags: ['work', 'personal'],
+        createdAt: testTimestamp()
       });
 
-      entry.removeTag('work');
+      entry.removeTag('work', testTimestamp());
 
       expect(entry.tags).toEqual(['personal']);
+    });
+
+    test('requires timestamp parameter', () => {
+      const entry = new JournalEntry({
+        id: 'entry-123',
+        userId: 'user-1',
+        date: '2026-01-11',
+        tags: ['work'],
+        createdAt: testTimestamp()
+      });
+
+      expect(() => entry.removeTag('work')).toThrow('timestamp is required');
     });
   });
 
@@ -136,7 +205,8 @@ describe('JournalEntry', () => {
         id: 'entry-123',
         userId: 'user-1',
         date: '2026-01-11',
-        content: 'This is a test entry with seven words'
+        content: 'This is a test entry with seven words',
+        createdAt: testTimestamp()
       });
 
       expect(entry.getWordCount()).toBe(8);
@@ -147,7 +217,8 @@ describe('JournalEntry', () => {
         id: 'entry-123',
         userId: 'user-1',
         date: '2026-01-11',
-        content: ''
+        content: '',
+        createdAt: testTimestamp()
       });
 
       expect(entry.getWordCount()).toBe(0);
@@ -160,7 +231,8 @@ describe('JournalEntry', () => {
         id: 'entry-123',
         userId: 'user-1',
         date: '2026-01-11',
-        mood: 'good'
+        mood: 'good',
+        createdAt: testTimestamp()
       });
 
       expect(entry.hasMood()).toBe(true);
@@ -170,7 +242,8 @@ describe('JournalEntry', () => {
       const entry = new JournalEntry({
         id: 'entry-123',
         userId: 'user-1',
-        date: '2026-01-11'
+        date: '2026-01-11',
+        createdAt: testTimestamp()
       });
 
       expect(entry.hasMood()).toBe(false);

@@ -1,6 +1,6 @@
 // backend/src/1_domains/lifelog/entities/NutriLog.mjs
 import { FoodItem } from './FoodItem.mjs';
-import { nowTs24 } from '../../../0_infrastructure/utils/index.mjs';
+import { ValidationError } from '../../core/errors/index.mjs';
 
 /**
  * @typedef {'pending'|'accepted'|'rejected'|'deleted'} NutriLogStatus
@@ -53,14 +53,14 @@ export class NutriLog {
     this.#conversationId = props.conversationId || props.userId;
     this.#status = props.status || 'pending';
     this.#text = props.text || '';
-    this.#meal = props.meal || { date: this.#today(), time: 'afternoon' };
+    this.#meal = props.meal;
     this.#items = (props.items || []).map(i => i instanceof FoodItem ? i : FoodItem.fromJSON(i));
     this.#questions = props.questions || [];
     this.#nutrition = props.nutrition || {};
     this.#metadata = props.metadata || {};
     this.#timezone = props.timezone || 'America/Los_Angeles';
-    this.#createdAt = props.createdAt || nowTs24();
-    this.#updatedAt = props.updatedAt || nowTs24();
+    this.#createdAt = props.createdAt;
+    this.#updatedAt = props.updatedAt;
     this.#acceptedAt = props.acceptedAt || null;
 
     Object.freeze(this);
@@ -68,14 +68,6 @@ export class NutriLog {
 
   #generateShortId() {
     return Math.random().toString(36).substring(2, 10);
-  }
-
-  #today() {
-    return nowDate();
-  }
-
-  #now() {
-    return nowTs24();
   }
 
   // Getters
@@ -124,73 +116,181 @@ export class NutriLog {
   }
 
   // Status transitions
-  accept() {
+  /**
+   * Accept the log
+   * @param {string} timestamp - Timestamp for the acceptance (required)
+   * @returns {NutriLog}
+   * @throws {ValidationError} If timestamp is not provided
+   * @throws {Error} If log is not in pending status
+   */
+  accept(timestamp) {
+    if (!timestamp) {
+      throw new ValidationError('timestamp is required for accept');
+    }
     if (this.#status !== 'pending') {
       throw new Error(`Cannot accept log with status: ${this.#status}`);
     }
     return this.#withUpdates({
       status: 'accepted',
-      acceptedAt: this.#now()
-    });
+      acceptedAt: timestamp
+    }, timestamp);
   }
 
-  reject() {
+  /**
+   * Reject the log
+   * @param {string} timestamp - Timestamp for the rejection (required)
+   * @returns {NutriLog}
+   * @throws {ValidationError} If timestamp is not provided
+   * @throws {Error} If log is not in pending status
+   */
+  reject(timestamp) {
+    if (!timestamp) {
+      throw new ValidationError('timestamp is required for reject');
+    }
     if (this.#status !== 'pending') {
       throw new Error(`Cannot reject log with status: ${this.#status}`);
     }
-    return this.#withUpdates({ status: 'rejected' });
+    return this.#withUpdates({ status: 'rejected' }, timestamp);
   }
 
-  delete() {
-    return this.#withUpdates({ status: 'deleted' });
+  /**
+   * Delete the log
+   * @param {string} timestamp - Timestamp for the deletion (required)
+   * @returns {NutriLog}
+   * @throws {ValidationError} If timestamp is not provided
+   */
+  delete(timestamp) {
+    if (!timestamp) {
+      throw new ValidationError('timestamp is required for delete');
+    }
+    return this.#withUpdates({ status: 'deleted' }, timestamp);
   }
 
   // Item management
-  addItem(item) {
+  /**
+   * Add an item to the log
+   * @param {Object|FoodItem} item - Item to add
+   * @param {string} timestamp - Timestamp for the update (required)
+   * @returns {NutriLog}
+   * @throws {ValidationError} If timestamp is not provided
+   */
+  addItem(item, timestamp) {
+    if (!timestamp) {
+      throw new ValidationError('timestamp is required for addItem');
+    }
     const foodItem = item instanceof FoodItem ? item : FoodItem.fromJSON(item);
     return this.#withUpdates({
       items: [...this.#items, foodItem]
-    });
+    }, timestamp);
   }
 
-  removeItem(itemId) {
+  /**
+   * Remove an item from the log
+   * @param {string} itemId - ID of item to remove
+   * @param {string} timestamp - Timestamp for the update (required)
+   * @returns {NutriLog}
+   * @throws {ValidationError} If timestamp is not provided
+   */
+  removeItem(itemId, timestamp) {
+    if (!timestamp) {
+      throw new ValidationError('timestamp is required for removeItem');
+    }
     return this.#withUpdates({
       items: this.#items.filter(i => i.id !== itemId)
-    });
+    }, timestamp);
   }
 
-  updateItem(itemId, updates) {
+  /**
+   * Update an item in the log
+   * @param {string} itemId - ID of item to update
+   * @param {Object} updates - Updates to apply
+   * @param {string} timestamp - Timestamp for the update (required)
+   * @returns {NutriLog}
+   * @throws {ValidationError} If timestamp is not provided
+   */
+  updateItem(itemId, updates, timestamp) {
+    if (!timestamp) {
+      throw new ValidationError('timestamp is required for updateItem');
+    }
     return this.#withUpdates({
       items: this.#items.map(i => i.id === itemId ? i.with(updates) : i)
-    });
+    }, timestamp);
   }
 
-  setItems(items) {
+  /**
+   * Set all items in the log
+   * @param {Array} items - Items to set
+   * @param {string} timestamp - Timestamp for the update (required)
+   * @returns {NutriLog}
+   * @throws {ValidationError} If timestamp is not provided
+   */
+  setItems(items, timestamp) {
+    if (!timestamp) {
+      throw new ValidationError('timestamp is required for setItems');
+    }
     return this.#withUpdates({
       items: items.map(i => i instanceof FoodItem ? i : FoodItem.fromJSON(i))
-    });
+    }, timestamp);
   }
 
   // Other updates
-  setText(text) {
-    return this.#withUpdates({ text });
+  /**
+   * Set the text description
+   * @param {string} text - Text to set
+   * @param {string} timestamp - Timestamp for the update (required)
+   * @returns {NutriLog}
+   * @throws {ValidationError} If timestamp is not provided
+   */
+  setText(text, timestamp) {
+    if (!timestamp) {
+      throw new ValidationError('timestamp is required for setText');
+    }
+    return this.#withUpdates({ text }, timestamp);
   }
 
-  updateDate(date, time) {
+  /**
+   * Update the meal date/time
+   * @param {string} date - Date string (YYYY-MM-DD)
+   * @param {string} time - Meal time
+   * @param {string} timestamp - Timestamp for the update (required)
+   * @returns {NutriLog}
+   * @throws {ValidationError} If timestamp is not provided
+   */
+  updateDate(date, time, timestamp) {
+    if (!timestamp) {
+      throw new ValidationError('timestamp is required for updateDate');
+    }
     return this.#withUpdates({
       meal: { date, time: time || this.#meal.time }
-    });
+    }, timestamp);
   }
 
-  setNutrition(nutrition) {
-    return this.#withUpdates({ nutrition });
+  /**
+   * Set nutrition data
+   * @param {Object} nutrition - Nutrition data
+   * @param {string} timestamp - Timestamp for the update (required)
+   * @returns {NutriLog}
+   * @throws {ValidationError} If timestamp is not provided
+   */
+  setNutrition(nutrition, timestamp) {
+    if (!timestamp) {
+      throw new ValidationError('timestamp is required for setNutrition');
+    }
+    return this.#withUpdates({ nutrition }, timestamp);
   }
 
-  #withUpdates(updates) {
+  /**
+   * Create new NutriLog with updates
+   * @param {Object} updates - Updates to apply
+   * @param {string} timestamp - Timestamp for updatedAt
+   * @returns {NutriLog}
+   * @private
+   */
+  #withUpdates(updates, timestamp) {
     return new NutriLog({
       ...this.toJSON(),
       ...updates,
-      updatedAt: this.#now()
+      updatedAt: timestamp
     });
   }
 
@@ -235,13 +335,23 @@ export class NutriLog {
     });
   }
 
-  static create(props) {
+  /**
+   * Create a new NutriLog
+   * @param {NutriLogProps} props - Properties for the log
+   * @param {string} timestamp - Current timestamp (required)
+   * @returns {NutriLog}
+   * @throws {ValidationError} If timestamp is not provided
+   */
+  static create(props, timestamp) {
+    if (!timestamp) {
+      throw new ValidationError('timestamp is required for NutriLog.create');
+    }
     return new NutriLog({
       ...props,
       id: undefined,
       status: 'pending',
-      createdAt: undefined,
-      updatedAt: undefined
+      createdAt: timestamp,
+      updatedAt: timestamp
     });
   }
 
@@ -251,10 +361,15 @@ export class NutriLog {
    * @param {string} userId
    * @param {string} conversationId
    * @param {string} timezone
+   * @param {string} [currentDate] - Current date for default meal date (required if no foodData.date)
    * @returns {NutriLog}
    */
-  static fromLegacy(legacy, userId, conversationId, timezone) {
+  static fromLegacy(legacy, userId, conversationId, timezone, currentDate) {
     const foodData = legacy.food_data || {};
+    const mealDate = foodData.date || currentDate;
+    if (!mealDate) {
+      throw new ValidationError('currentDate is required for NutriLog.fromLegacy when food_data.date is missing');
+    }
     return new NutriLog({
       id: legacy.id,
       userId,
@@ -262,7 +377,7 @@ export class NutriLog {
       status: legacy.status || 'pending',
       text: foodData.text || '',
       meal: {
-        date: foodData.date || nowDate(),
+        date: mealDate,
         time: foodData.time || 'afternoon'
       },
       items: (foodData.food || []).map(f => FoodItem.fromLegacy(f)),

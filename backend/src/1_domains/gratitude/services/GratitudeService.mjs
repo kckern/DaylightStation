@@ -11,6 +11,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { Selection } from '../entities/Selection.mjs';
 import { GratitudeItem } from '../entities/GratitudeItem.mjs';
 import { nowTs24 } from '../../../0_infrastructure/utils/index.mjs';
+// Note: nowTs24 usage is permitted in service layer (application-adjacent)
 
 /**
  * Valid categories
@@ -147,8 +148,11 @@ export class GratitudeService {
       throw new Error('Item already selected by this user');
     }
 
-    // Create selection
-    const selection = Selection.create(userId, item, timezone);
+    // Create selection - generate timestamp in service layer
+    const timestamp = timezone
+      ? new Date().toLocaleString('en-US', { timeZone: timezone })
+      : nowTs24();
+    const selection = Selection.create(userId, item, timestamp);
     await this.#store.addSelection(householdId, category, selection.toJSON());
 
     // Remove from options (transfer semantics)
@@ -183,12 +187,17 @@ export class GratitudeService {
   async addSelections(householdId, category, userId, items, timezone) {
     const selections = [];
 
+    // Generate timestamp once for all items in batch
+    const timestamp = timezone
+      ? new Date().toLocaleString('en-US', { timeZone: timezone })
+      : nowTs24();
+
     for (const item of items) {
       const itemWithId = {
         id: item.id || uuidv4(),
         text: item.text
       };
-      const selection = Selection.create(userId, itemWithId, timezone);
+      const selection = Selection.create(userId, itemWithId, timestamp);
       await this.#store.addSelection(householdId, category, selection.toJSON());
       selections.push(selection);
     }

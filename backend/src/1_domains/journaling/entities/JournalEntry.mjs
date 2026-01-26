@@ -2,7 +2,7 @@
  * JournalEntry Entity - Represents a journal entry
  */
 
-import { nowTs24 } from '../../../0_infrastructure/utils/index.mjs';
+import { ValidationError } from '../../core/errors/index.mjs';
 
 export class JournalEntry {
   constructor({
@@ -30,51 +30,81 @@ export class JournalEntry {
     this.gratitudeItems = gratitudeItems;
     this.prompts = prompts; // Array of prompt objects used to generate entry
     this.attachments = attachments; // Array of attachment objects (photos, voice memos)
-    this.createdAt = createdAt || nowTs24();
+    this.createdAt = createdAt;
     this.updatedAt = updatedAt;
     this.metadata = metadata;
   }
 
   /**
    * Update content
+   * @param {string} newContent - New content
+   * @param {string} timestamp - Timestamp for the update (required)
+   * @throws {ValidationError} If timestamp is not provided
    */
-  updateContent(newContent) {
+  updateContent(newContent, timestamp) {
+    if (!timestamp) {
+      throw new ValidationError('timestamp is required for updateContent');
+    }
     this.content = newContent;
-    this.updatedAt = nowTs24();
+    this.updatedAt = timestamp;
   }
 
   /**
    * Set mood
+   * @param {string} mood - Mood value
+   * @param {string} timestamp - Timestamp for the update (required)
+   * @throws {ValidationError} If timestamp is not provided
    */
-  setMood(mood) {
+  setMood(mood, timestamp) {
+    if (!timestamp) {
+      throw new ValidationError('timestamp is required for setMood');
+    }
     this.mood = mood;
-    this.updatedAt = nowTs24();
+    this.updatedAt = timestamp;
   }
 
   /**
    * Add gratitude item
+   * @param {Object} item - Gratitude item to add
+   * @param {string} timestamp - Timestamp for the update (required)
+   * @throws {ValidationError} If timestamp is not provided
    */
-  addGratitudeItem(item) {
+  addGratitudeItem(item, timestamp) {
+    if (!timestamp) {
+      throw new ValidationError('timestamp is required for addGratitudeItem');
+    }
     this.gratitudeItems.push(item);
-    this.updatedAt = nowTs24();
+    this.updatedAt = timestamp;
   }
 
   /**
    * Add tag
+   * @param {string} tag - Tag to add
+   * @param {string} timestamp - Timestamp for the update (required)
+   * @throws {ValidationError} If timestamp is not provided
    */
-  addTag(tag) {
+  addTag(tag, timestamp) {
+    if (!timestamp) {
+      throw new ValidationError('timestamp is required for addTag');
+    }
     if (!this.tags.includes(tag)) {
       this.tags.push(tag);
-      this.updatedAt = nowTs24();
+      this.updatedAt = timestamp;
     }
   }
 
   /**
    * Remove tag
+   * @param {string} tag - Tag to remove
+   * @param {string} timestamp - Timestamp for the update (required)
+   * @throws {ValidationError} If timestamp is not provided
    */
-  removeTag(tag) {
+  removeTag(tag, timestamp) {
+    if (!timestamp) {
+      throw new ValidationError('timestamp is required for removeTag');
+    }
     this.tags = this.tags.filter(t => t !== tag);
-    this.updatedAt = nowTs24();
+    this.updatedAt = timestamp;
   }
 
   /**
