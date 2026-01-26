@@ -4,10 +4,11 @@
  * Renders prayer cards with gratitude and hopes items for thermal printing.
  * Extracted from legacy printer.mjs to support dependency injection.
  *
- * @module 0_system/rendering/PrayerCardRenderer
+ * @module 2_adapters/gratitude/rendering/PrayerCardRenderer
  */
 
 import moment from 'moment-timezone';
+import { prayerCardTheme as theme } from './prayerCardTheme.mjs';
 
 /**
  * Select items for print using weighted bucket selection based on age.
@@ -121,10 +122,11 @@ export function selectItemsForPrint(items, count) {
  * @param {Object} config - Configuration object
  * @param {Function} config.getSelectionsForPrint - Async function that returns { gratitude: [], hopes: [] }
  * @param {string} [config.fontDir] - Font directory path (optional)
+ * @param {Object} [config.canvasService] - Canvas service for rendering (optional, for future use)
  * @returns {Object} Renderer with createCanvas method
  */
 export function createPrayerCardRenderer(config) {
-  const { getSelectionsForPrint, fontDir } = config;
+  const { getSelectionsForPrint, fontDir, canvasService } = config;
 
   /**
    * Render a prayer card canvas.
@@ -133,17 +135,18 @@ export function createPrayerCardRenderer(config) {
    * @returns {Promise<{canvas: Canvas, width: number, height: number, selectedIds: {gratitude: string[], hopes: string[]}}>}
    */
   async function createCanvas(upsidedown = false) {
-    const width = 580;
-    const height = 600;
-    const fontFamily = 'Roboto Condensed';
+    const { width, height } = theme.canvas;
+    const fontFamily = theme.fonts.family;
+    const margin = theme.layout.margin;
+    const lineHeight = theme.layout.lineHeight;
     const fontPath = fontDir
-      ? `${fontDir}/roboto-condensed/RobotoCondensed-Regular.ttf`
-      : './backend/journalist/fonts/roboto-condensed/roboto-condensed/RobotoCondensed-Regular.ttf';
+      ? `${fontDir}/${theme.fonts.fontPath}`
+      : `./backend/journalist/fonts/roboto-condensed/${theme.fonts.fontPath}`;
 
     const selections = await getSelectionsForPrint();
 
     const selectedGratitude = selections.gratitude.length > 0
-      ? selectItemsForPrint(selections.gratitude, 2).map(s => ({
+      ? selectItemsForPrint(selections.gratitude, theme.selection.gratitudeCount).map(s => ({
         id: s.id,
         text: s.item.text,
         displayName: s.displayName
@@ -151,7 +154,7 @@ export function createPrayerCardRenderer(config) {
       : [];
 
     const selectedHopes = selections.hopes.length > 0
-      ? selectItemsForPrint(selections.hopes, 2).map(s => ({
+      ? selectItemsForPrint(selections.hopes, theme.selection.hopesCount).map(s => ({
         id: s.id,
         text: s.item.text,
         displayName: s.displayName
@@ -161,73 +164,85 @@ export function createPrayerCardRenderer(config) {
     const { createCanvas: createNodeCanvas, registerFont } = await import('canvas');
 
     try {
-      registerFont(fontPath, { family: 'Roboto Condensed' });
+      registerFont(fontPath, { family: fontFamily });
     } catch (fontError) {
       // Font loading is optional - will fall back to system fonts
     }
-
-    const margin = 25;
-    const lineHeight = 42;
 
     const canvas = createNodeCanvas(width, height);
     const ctx = canvas.getContext('2d');
     ctx.textBaseline = 'top';
 
     // White background
-    ctx.fillStyle = '#FFFFFF';
+    ctx.fillStyle = theme.colors.background;
     ctx.fillRect(0, 0, width, height);
 
     // Black border
-    ctx.strokeStyle = '#000000';
-    ctx.lineWidth = 3;
-    ctx.strokeRect(10, 10, width - 20, height - 20);
+    ctx.strokeStyle = theme.colors.border;
+    ctx.lineWidth = theme.layout.borderWidth;
+    ctx.strokeRect(
+      theme.layout.borderOffset,
+      theme.layout.borderOffset,
+      width - theme.layout.borderOffset * 2,
+      height - theme.layout.borderOffset * 2
+    );
 
-    let yPos = 5;
+    let yPos = theme.layout.headerYOffset;
 
     // Header: "Prayer Card"
-    ctx.fillStyle = '#000000';
-    ctx.font = `bold 72px "${fontFamily}"`;
+    ctx.fillStyle = theme.colors.text;
+    ctx.font = theme.fonts.header;
     const headerText = 'Prayer Card';
     const headerMetrics = ctx.measureText(headerText);
     const headerX = (width - headerMetrics.width) / 2;
     ctx.fillText(headerText, headerX, yPos);
-    yPos += 85;
+    yPos += theme.layout.headerHeight;
 
     // Timestamp
-    ctx.font = `24px "${fontFamily}"`;
+    ctx.font = theme.fonts.timestamp;
     const timestamp = moment().format('ddd, D MMM YYYY, h:mm A');
     const timestampMetrics = ctx.measureText(timestamp);
     const timestampX = (width - timestampMetrics.width) / 2;
     ctx.fillText(timestamp, timestampX, yPos);
-    yPos += 35;
+    yPos += theme.layout.timestampHeight;
 
     // Divider line
-    ctx.fillRect(10, yPos, width - 20, 2);
-    yPos += 15;
+    ctx.fillRect(
+      theme.layout.borderOffset,
+      yPos,
+      width - theme.layout.borderOffset * 2,
+      theme.layout.dividerHeight
+    );
+    yPos += theme.layout.sectionGap;
 
     // Gratitude section
-    ctx.font = `bold 48px "${fontFamily}"`;
-    ctx.fillText('Gratitude', margin, yPos + 10);
-    yPos += 65;
+    ctx.font = theme.fonts.sectionHeader;
+    ctx.fillText('Gratitude', margin, yPos + theme.layout.sectionTitlePadding);
+    yPos += theme.layout.sectionHeaderHeight;
 
-    ctx.font = `36px "${fontFamily}"`;
+    ctx.font = theme.fonts.item;
     for (const item of selectedGratitude) {
-      ctx.fillText(`• ${item.text}`, margin + 15, yPos);
+      ctx.fillText(`• ${item.text}`, margin + theme.layout.bulletIndent, yPos);
       yPos += lineHeight;
     }
 
-    yPos += 10;
-    ctx.fillRect(10, yPos, width - 20, 2);
-    yPos += 20;
+    yPos += theme.layout.dividerGapBefore;
+    ctx.fillRect(
+      theme.layout.borderOffset,
+      yPos,
+      width - theme.layout.borderOffset * 2,
+      theme.layout.dividerHeight
+    );
+    yPos += theme.layout.dividerGapAfter;
 
     // Hopes section
-    ctx.font = `bold 48px "${fontFamily}"`;
-    ctx.fillText('Hopes', margin, yPos + 10);
-    yPos += 65;
+    ctx.font = theme.fonts.sectionHeader;
+    ctx.fillText('Hopes', margin, yPos + theme.layout.sectionTitlePadding);
+    yPos += theme.layout.sectionHeaderHeight;
 
-    ctx.font = `36px "${fontFamily}"`;
+    ctx.font = theme.fonts.item;
     for (const item of selectedHopes) {
-      ctx.fillText(`• ${item.text}`, margin + 15, yPos);
+      ctx.fillText(`• ${item.text}`, margin + theme.layout.bulletIndent, yPos);
       yPos += lineHeight;
     }
 
