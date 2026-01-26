@@ -4,6 +4,8 @@
  * Zones: cool < active < warm < hot < fire
  */
 
+import { ValidationError } from '../../core/errors/index.mjs';
+
 export const ZONE_NAMES = ['cool', 'active', 'warm', 'hot', 'fire'];
 
 export const ZONE_PRIORITY = {
@@ -22,7 +24,11 @@ export class Zone {
     color = null
   }) {
     if (!ZONE_NAMES.includes(name)) {
-      throw new Error(`Invalid zone name: ${name}. Must be one of: ${ZONE_NAMES.join(', ')}`);
+      throw new ValidationError(`Invalid zone name: ${name}. Must be one of: ${ZONE_NAMES.join(', ')}`, {
+        code: 'INVALID_ZONE_NAME',
+        field: 'name',
+        value: name
+      });
     }
     this.name = name;
     this.minHr = minHr;

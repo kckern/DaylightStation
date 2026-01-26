@@ -7,6 +7,7 @@
 
 import { Session } from '../entities/Session.mjs';
 import { prepareTimelineForApi, prepareTimelineForStorage } from './TimelineService.mjs';
+import { ValidationError, EntityNotFoundError } from '../../core/errors/index.mjs';
 
 export class SessionService {
   constructor({ sessionStore, defaultHouseholdId = null }) {
@@ -31,7 +32,10 @@ export class SessionService {
 
     // startTime is required - caller must provide timestamp
     if (data.startTime == null) {
-      throw new Error('startTime is required');
+      throw new ValidationError('startTime is required', {
+        code: 'MISSING_START_TIME',
+        field: 'startTime'
+      });
     }
 
     const sessionId = data.sessionId || Session.generateSessionId(new Date(data.startTime));
@@ -123,7 +127,10 @@ export class SessionService {
     const rawSessionId = sessionData.sessionId || sessionData.session?.id;
     const sanitizedId = Session.sanitizeSessionId(rawSessionId);
     if (!sanitizedId) {
-      throw new Error('Valid sessionId is required');
+      throw new ValidationError('Valid sessionId is required', {
+        code: 'INVALID_SESSION_ID',
+        field: 'sessionId'
+      });
     }
 
     // Normalize to Session entity
@@ -153,11 +160,14 @@ export class SessionService {
    */
   async endSession(sessionId, householdId, endTime) {
     if (endTime == null) {
-      throw new Error('endTime is required');
+      throw new ValidationError('endTime is required', {
+        code: 'MISSING_END_TIME',
+        field: 'endTime'
+      });
     }
     const session = await this.getSession(sessionId, householdId, { decodeTimeline: false });
     if (!session) {
-      throw new Error(`Session not found: ${sessionId}`);
+      throw new EntityNotFoundError('Session', sessionId);
     }
 
     session.end(endTime);
@@ -175,7 +185,7 @@ export class SessionService {
   async addParticipant(sessionId, participant, householdId) {
     const session = await this.getSession(sessionId, householdId, { decodeTimeline: false });
     if (!session) {
-      throw new Error(`Session not found: ${sessionId}`);
+      throw new EntityNotFoundError('Session', sessionId);
     }
 
     session.addParticipant(participant);
@@ -192,12 +202,18 @@ export class SessionService {
    */
   async addSnapshot(sessionId, capture, householdId, timestamp) {
     if (timestamp == null) {
-      throw new Error('timestamp is required');
+      throw new ValidationError('timestamp is required', {
+        code: 'MISSING_TIMESTAMP',
+        field: 'timestamp'
+      });
     }
     const hid = this.resolveHouseholdId(householdId);
     const sanitizedId = Session.sanitizeSessionId(sessionId);
     if (!sanitizedId) {
-      throw new Error('Invalid sessionId');
+      throw new ValidationError('Invalid sessionId', {
+        code: 'INVALID_SESSION_ID',
+        field: 'sessionId'
+      });
     }
 
     // Load existing or create minimal session
