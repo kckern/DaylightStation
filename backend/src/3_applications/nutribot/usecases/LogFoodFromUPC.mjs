@@ -203,7 +203,9 @@ export class LogFoodFromUPC {
           const isNetworkError = error.code === 'ETIMEDOUT' || error.code === 'ECONNRESET' || error.code === 'EAI_AGAIN';
           const errorMsg = isNetworkError ? `⚠️ Network timeout looking up barcode ${upc}\n\nPlease try again.` : `❌ Error looking up barcode ${upc}\n\n${error.message}`;
           await messaging.updateMessage( statusMsgId, { text: errorMsg });
-        } catch (e) {}
+        } catch (e) {
+          this.#logger.debug?.('logUPC.updateError.failed', { error: e.message });
+        }
       }
 
       throw error;
