@@ -109,13 +109,13 @@ export class LogFoodFromVoice {
     } catch (error) {
       this.#logger.error?.('logVoice.error', { conversationId, error: error.message });
 
-      const isTelegramError = error.message?.includes('Telegram error') ||
-        error.code === 'ETIMEDOUT' ||
+      const isTransportError = error.code === 'ETIMEDOUT' ||
         error.code === 'EAI_AGAIN' ||
-        error.code === 'ECONNRESET';
+        error.code === 'ECONNRESET' ||
+        error.isTransient === true;
 
       try {
-        const errorMessage = isTelegramError
+        const errorMessage = isTransportError
           ? `⚠️ Network issue while updating the message. Your food may have been logged.\n\nPlease check your recent entries or try again.\n\n_Error: ${error.message || 'Connection issue'}_`
           : `⚠️ Sorry, I couldn't process your voice message. Please try again or type what you ate.\n\n_Error: ${error.message || 'Unknown error'}_`;
 
