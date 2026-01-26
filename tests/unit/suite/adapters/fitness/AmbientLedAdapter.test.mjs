@@ -208,6 +208,22 @@ describe('AmbientLedAdapter', () => {
       expect(status.enabled).toBe(false);
       expect(status.scenes).toBeNull();
     });
+
+    test('includes grace period info in status', async () => {
+      jest.useFakeTimers();
+
+      // Trigger grace period
+      await adapter.syncZone({ zones: [{ zoneId: 'warm', isActive: true }], sessionEnded: false, householdId: 'hid' });
+      adapter.lastActivatedAt = 0;
+      await adapter.syncZone({ zones: [], sessionEnded: false, householdId: 'hid' });
+
+      const status = adapter.getStatus('hid');
+
+      expect(status.state.gracePeriodActive).toBe(true);
+      expect(status.state.gracePeriodStartedAt).toBeDefined();
+
+      jest.useRealTimers();
+    });
   });
 
   describe('getMetrics', () => {
@@ -239,6 +255,22 @@ describe('AmbientLedAdapter', () => {
       expect(adapter.lastScene).toBeNull();
       expect(adapter.failureCount).toBe(0);
       expect(adapter.backoffUntil).toBe(0);
+    });
+
+    test('clears grace period timer on reset', () => {
+      jest.useFakeTimers();
+
+      // Set up a grace timer
+      adapter.graceTimer = setTimeout(() => {}, 30000);
+      adapter.graceStartedAt = Date.now();
+
+      const result = adapter.reset();
+
+      expect(result.ok).toBe(true);
+      expect(adapter.graceTimer).toBeNull();
+      expect(adapter.graceStartedAt).toBeNull();
+
+      jest.useRealTimers();
     });
   });
 
