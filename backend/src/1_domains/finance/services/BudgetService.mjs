@@ -3,6 +3,7 @@
  */
 
 import { Budget } from '../entities/Budget.mjs';
+import { EntityNotFoundError } from '../../core/errors/index.mjs';
 
 export class BudgetService {
   constructor({ budgetStore, transactionSource }) {
@@ -40,7 +41,7 @@ export class BudgetService {
    */
   async updateBudget(id, updates) {
     const budget = await this.getBudget(id);
-    if (!budget) throw new Error(`Budget not found: ${id}`);
+    if (!budget) throw new EntityNotFoundError('Budget', id);
 
     Object.assign(budget, updates);
     await this.budgetStore.save(budget);
@@ -59,7 +60,7 @@ export class BudgetService {
    */
   async syncBudgetSpending(budgetId, startDate, endDate) {
     const budget = await this.getBudget(budgetId);
-    if (!budget) throw new Error(`Budget not found: ${budgetId}`);
+    if (!budget) throw new EntityNotFoundError('Budget', budgetId);
 
     const transactions = await this.transactionSource.findByCategory(
       budget.category,
