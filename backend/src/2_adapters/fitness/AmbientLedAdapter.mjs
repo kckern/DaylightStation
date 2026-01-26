@@ -16,6 +16,7 @@ import { ZONE_PRIORITY } from '../../1_domains/fitness/entities/Zone.mjs';
 import { nowTs24 } from '../../0_infrastructure/utils/index.mjs';
 
 const ZONE_ORDER = ['cool', 'active', 'warm', 'hot', 'fire'];
+const ZONE_LOSS_GRACE_PERIOD_MS = 30000; // 30 seconds grace before turning off
 
 /**
  * Format duration in human-readable format
@@ -63,6 +64,10 @@ export class AmbientLedAdapter {
     this.failureCount = 0;
     this.maxFailures = 5;
     this.backoffUntil = 0;
+
+    // Grace period for transient zone loss
+    this.graceTimer = null;
+    this.graceStartedAt = null;
 
     // Metrics
     this.metrics = {

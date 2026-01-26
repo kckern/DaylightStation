@@ -241,4 +241,34 @@ describe('AmbientLedAdapter', () => {
       expect(adapter.backoffUntil).toBe(0);
     });
   });
+
+  describe('grace period', () => {
+    test('delays LED-off when zones become empty during active session', async () => {
+      jest.useFakeTimers();
+
+      // Activate with a zone first
+      await adapter.syncZone({
+        zones: [{ zoneId: 'warm', isActive: true }],
+        sessionEnded: false,
+        householdId: 'test-hid'
+      });
+      expect(adapter.lastScene).toBe('scene.led_yellow');
+      mockGateway.activateScene.mockClear();
+
+      // Now zones become empty (but session not ended) - should NOT immediately turn off
+      adapter.lastActivatedAt = 0; // bypass rate limiting
+      const result = await adapter.syncZone({
+        zones: [],
+        sessionEnded: false,
+        householdId: 'test-hid'
+      });
+
+      expect(result.ok).toBe(true);
+      expect(result.gracePeriodStarted).toBe(true);
+      expect(mockGateway.activateScene).not.toHaveBeenCalled(); // Should NOT call off yet
+      expect(adapter.lastScene).toBe('scene.led_yellow'); // Still showing previous scene
+
+      jest.useRealTimers();
+    });
+  });
 });
