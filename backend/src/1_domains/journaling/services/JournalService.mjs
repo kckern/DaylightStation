@@ -3,8 +3,7 @@
  */
 
 import { JournalEntry } from '../entities/JournalEntry.mjs';
-import { nowTs24 } from '../../../0_infrastructure/utils/index.mjs';
-// Note: nowTs24 usage is permitted in service layer (application-adjacent)
+import { ValidationError } from '../../core/errors/index.mjs';
 
 export class JournalService {
   constructor({ journalStore }) {
@@ -13,9 +12,13 @@ export class JournalService {
 
   /**
    * Create a journal entry
+   * @param {Object} data - Entry data
+   * @param {string} timestamp - ISO timestamp (required, from application layer)
    */
-  async createEntry(data) {
-    const timestamp = nowTs24();
+  async createEntry(data, timestamp) {
+    if (!timestamp) {
+      throw new ValidationError('timestamp required', { code: 'MISSING_TIMESTAMP', field: 'timestamp' });
+    }
     const entry = new JournalEntry({
       id: data.id || this.generateId(),
       createdAt: timestamp,
@@ -43,12 +46,17 @@ export class JournalService {
 
   /**
    * Update an entry
+   * @param {string} id - Entry ID
+   * @param {Object} updates - Fields to update
+   * @param {string} timestamp - ISO timestamp (required, from application layer)
    */
-  async updateEntry(id, updates) {
+  async updateEntry(id, updates, timestamp) {
+    if (!timestamp) {
+      throw new ValidationError('timestamp required', { code: 'MISSING_TIMESTAMP', field: 'timestamp' });
+    }
     const entry = await this.getEntry(id);
     if (!entry) throw new Error(`Entry not found: ${id}`);
 
-    const timestamp = nowTs24();
     if (updates.content !== undefined) entry.updateContent(updates.content, timestamp);
     if (updates.mood !== undefined) entry.setMood(updates.mood, timestamp);
     if (updates.title !== undefined) entry.title = updates.title;

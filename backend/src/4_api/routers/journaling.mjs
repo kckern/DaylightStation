@@ -6,6 +6,7 @@
 import express from 'express';
 import { JournalService } from '../../1_domains/journaling/services/JournalService.mjs';
 import { YamlJournalStore } from '../../2_adapters/persistence/yaml/YamlJournalStore.mjs';
+import { nowTs24 } from '../../0_infrastructure/utils/index.mjs';
 
 const router = express.Router();
 
@@ -106,10 +107,11 @@ export function createJournalingRouter(deps) {
         return res.status(400).json({ error: 'Missing household ID (hid)' });
       }
 
+      const timestamp = nowTs24();
       const entry = await journalService.createEntry({
         userId: hid,
         ...entryData
-      });
+      }, timestamp);
 
       res.status(201).json(entry);
     } catch (error) {
@@ -127,7 +129,8 @@ export function createJournalingRouter(deps) {
       const { id } = req.params;
       const updates = req.body;
 
-      const entry = await journalService.updateEntry(id, updates);
+      const timestamp = nowTs24();
+      const entry = await journalService.updateEntry(id, updates, timestamp);
       res.json(entry);
     } catch (error) {
       if (error.message.includes('not found')) {

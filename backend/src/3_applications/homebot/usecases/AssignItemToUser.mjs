@@ -6,6 +6,8 @@
  * they click a member button in the confirmation UI.
  */
 
+import { nowTs24 } from '../../../0_infrastructure/utils/index.mjs';
+
 /**
  * Assign item to user use case
  */
@@ -99,12 +101,17 @@ export class AssignItemToUser {
 
       // 4. Save items to gratitude service
       try {
+        // Generate timestamp with optional timezone adjustment
+        const timestamp = timezone
+          ? new Date().toLocaleString('en-US', { timeZone: timezone })
+          : nowTs24();
+
         await this.#gratitudeService.addSelections(
           householdId,
           category || 'gratitude',
           username,
           items,
-          timezone
+          timestamp
         );
       } catch (saveError) {
         this.#logger.error?.('assignItemToUser.saveError', {

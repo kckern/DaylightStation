@@ -22,7 +22,7 @@
 
 import express from 'express';
 import { writeBinary, deleteFile } from '../../0_infrastructure/utils/FileIO.mjs';
-import { nowTs } from '../../0_infrastructure/utils/index.mjs';
+import { nowTs, nowTs24 } from '../../0_infrastructure/utils/index.mjs';
 
 /**
  * Create gratitude API router
@@ -59,6 +59,17 @@ export function createGratitudeRouter(config) {
    */
   const getTimezone = (householdId) =>
     configService.getHouseholdTimezone?.(householdId) || 'UTC';
+
+  /**
+   * Generate timestamp in household's timezone
+   */
+  const generateTimestamp = (householdId) => {
+    const timezone = getTimezone(householdId);
+    if (timezone && timezone !== 'UTC') {
+      return new Date().toLocaleString('en-US', { timeZone: timezone });
+    }
+    return nowTs24();
+  };
 
   /**
    * Validate category parameter
@@ -254,13 +265,13 @@ export function createGratitudeRouter(config) {
 
     try {
       const householdId = getHouseholdId(req);
-      const timezone = getTimezone(householdId);
+      const timestamp = generateTimestamp(householdId);
       const selection = await gratitudeService.addSelection(
         householdId,
         category,
         userId,
         item,
-        timezone
+        timestamp
       );
 
       res.status(201).json({
@@ -370,7 +381,8 @@ export function createGratitudeRouter(config) {
   router.post('/snapshot/save', async (req, res) => {
     try {
       const householdId = getHouseholdId(req);
-      const result = await gratitudeService.saveSnapshot(householdId);
+      const timestamp = generateTimestamp(householdId);
+      const result = await gratitudeService.saveSnapshot(householdId, timestamp);
 
       res.status(201).json({
         ...result,
@@ -503,7 +515,8 @@ export function createGratitudeRouter(config) {
 
     try {
       const householdId = getHouseholdId(req);
-      await gratitudeService.markAsPrinted(householdId, validCategory, selectionIds);
+      const timestamp = generateTimestamp(householdId);
+      await gratitudeService.markAsPrinted(householdId, validCategory, selectionIds, timestamp);
 
       res.json({
         marked: selectionIds.length,
@@ -606,12 +619,13 @@ export function createGratitudeRouter(config) {
       const printed = { gratitude: [], hopes: [] };
 
       if (success && selectedIds) {
+        const timestamp = generateTimestamp(householdId);
         if (selectedIds.gratitude?.length > 0) {
-          await gratitudeService.markAsPrinted(householdId, 'gratitude', selectedIds.gratitude);
+          await gratitudeService.markAsPrinted(householdId, 'gratitude', selectedIds.gratitude, timestamp);
           printed.gratitude = selectedIds.gratitude;
         }
         if (selectedIds.hopes?.length > 0) {
-          await gratitudeService.markAsPrinted(householdId, 'hopes', selectedIds.hopes);
+          await gratitudeService.markAsPrinted(householdId, 'hopes', selectedIds.hopes, timestamp);
           printed.hopes = selectedIds.hopes;
         }
       }
