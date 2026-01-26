@@ -8,7 +8,7 @@
  * - Last.fm username in users/{username}/auth/lastfm.yml
  */
 
-import { configService } from '#backend/src/0_infrastructure/config/index.mjs';
+import { configService, initConfigService } from '#backend/src/0_system/config/index.mjs';
 import getScrobbles from '#backend/_legacy/lib/lastfm.mjs';
 
 describe('Last.fm Live Integration', () => {
@@ -18,8 +18,8 @@ describe('Last.fm Live Integration', () => {
       throw new Error('DAYLIGHT_DATA_PATH environment variable required');
     }
 
-    if (!configService.isInitialized()) {
-      configService.init({ dataDir: dataPath });
+    if (!configService.isReady()) {
+      initConfigService(dataPath);
     }
 
     process.env.LASTFM_API_KEY = process.env.LASTFM_API_KEY || configService.getSecret('LASTFM_API_KEY') || configService.getSecret('LAST_FM_API_KEY');

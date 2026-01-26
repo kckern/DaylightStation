@@ -8,7 +8,7 @@
  * - Optional: GitHub token for private repos and higher rate limits
  */
 
-import { configService } from '#backend/src/0_infrastructure/config/index.mjs';
+import { configService, initConfigService } from '#backend/src/0_system/config/index.mjs';
 import getGitHubActivity from '#backend/_legacy/lib/github.mjs';
 
 describe('GitHub Live Integration', () => {
@@ -18,8 +18,8 @@ describe('GitHub Live Integration', () => {
       throw new Error('DAYLIGHT_DATA_PATH environment variable required');
     }
 
-    if (!configService.isInitialized()) {
-      configService.init({ dataDir: dataPath });
+    if (!configService.isReady()) {
+      initConfigService(dataPath);
     }
   });
 

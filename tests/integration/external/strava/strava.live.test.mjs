@@ -5,7 +5,7 @@
  */
 
 import path from 'path';
-import { configService } from '#backend/src/0_infrastructure/config/index.mjs';
+import { configService, initConfigService } from '#backend/src/0_system/config/index.mjs';
 import harvestActivities, { getAccessToken, isStravaInCooldown } from '#backend/_legacy/lib/strava.mjs';
 import { readYamlFile, getDataPath } from '../harness-utils.mjs';
 
@@ -18,8 +18,8 @@ describe('Strava Live Integration', () => {
     // Set up process.env.path (required by io.mjs and other modules)
     process.env.path = { data: dataPath };
 
-    if (!configService.isInitialized()) {
-      configService.init({ dataDir: dataPath });
+    if (!configService.isReady()) {
+      initConfigService(dataPath);
     }
 
     // Set secrets in process.env (strava.mjs reads from process.env)

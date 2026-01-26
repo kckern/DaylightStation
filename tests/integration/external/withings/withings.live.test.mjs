@@ -8,7 +8,7 @@
  * - Valid refresh token in users/{username}/auth/withings.yml
  */
 
-import { configService } from '#backend/src/0_infrastructure/config/index.mjs';
+import { configService, initConfigService } from '#backend/src/0_system/config/index.mjs';
 import getWeightData, { isWithingsInCooldown } from '#backend/_legacy/lib/withings.mjs';
 
 describe('Withings Live Integration', () => {
@@ -18,8 +18,8 @@ describe('Withings Live Integration', () => {
       throw new Error('DAYLIGHT_DATA_PATH environment variable required');
     }
 
-    if (!configService.isInitialized()) {
-      configService.init({ dataDir: dataPath });
+    if (!configService.isReady()) {
+      initConfigService(dataPath);
     }
 
     // Set secrets in process.env (withings.mjs reads from process.env)

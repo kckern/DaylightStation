@@ -7,7 +7,7 @@
  * - Reddit username in users/{username}/auth/reddit.yml
  */
 
-import { configService } from '#backend/src/0_infrastructure/config/index.mjs';
+import { configService, initConfigService } from '#backend/src/0_system/config/index.mjs';
 import getRedditActivity from '#backend/_legacy/lib/reddit.mjs';
 
 describe('Reddit Live Integration', () => {
@@ -17,8 +17,8 @@ describe('Reddit Live Integration', () => {
       throw new Error('DAYLIGHT_DATA_PATH environment variable required');
     }
 
-    if (!configService.isInitialized()) {
-      configService.init({ dataDir: dataPath });
+    if (!configService.isReady()) {
+      initConfigService(dataPath);
     }
 
     process.env.REDDIT_USER = configService.getSecret('REDDIT_USER');

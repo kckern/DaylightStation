@@ -4,7 +4,7 @@
  * Run with: npm test -- tests/live/weather/weather.live.test.mjs
  */
 
-import { configService } from '#backend/src/0_infrastructure/config/index.mjs';
+import { configService, initConfigService } from '#backend/src/0_system/config/index.mjs';
 
 describe('Weather Live Integration', () => {
   let getWeather;
@@ -16,8 +16,8 @@ describe('Weather Live Integration', () => {
     }
 
     // Initialize config service
-    if (!configService.isInitialized()) {
-      configService.init({ dataDir: dataPath });
+    if (!configService.isReady()) {
+      initConfigService(dataPath);
     }
 
     // Load weather config from household

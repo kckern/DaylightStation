@@ -7,7 +7,7 @@
  * - Foursquare OAuth token in users/{username}/auth/foursquare.yml
  */
 
-import { configService } from '#backend/src/0_infrastructure/config/index.mjs';
+import { configService, initConfigService } from '#backend/src/0_system/config/index.mjs';
 import getCheckins from '#backend/_legacy/lib/foursquare.mjs';
 
 describe('Foursquare Live Integration', () => {
@@ -17,8 +17,8 @@ describe('Foursquare Live Integration', () => {
       throw new Error('DAYLIGHT_DATA_PATH environment variable required');
     }
 
-    if (!configService.isInitialized()) {
-      configService.init({ dataDir: dataPath });
+    if (!configService.isReady()) {
+      initConfigService(dataPath);
     }
 
     process.env.FOURSQUARE_TOKEN = configService.getSecret('FOURSQUARE_TOKEN');
