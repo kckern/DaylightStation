@@ -1,9 +1,8 @@
 /**
  * Media Domain
  *
- * Services for media operations (downloads, processing, etc.)
+ * Domain entities and value objects for media operations.
+ * Note: YouTubeDownloadService moved to 3_applications/media/services (uses infrastructure)
  *
  * @module domains/media
  */
-
-export { YouTubeDownloadService } from './services/YouTubeDownloadService.mjs';

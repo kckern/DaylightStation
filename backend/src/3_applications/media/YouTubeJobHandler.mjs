@@ -6,7 +6,7 @@
  * @module applications/media/YouTubeJobHandler
  */
 
-import { YouTubeDownloadService } from '../../1_domains/media/services/YouTubeDownloadService.mjs';
+import { YouTubeDownloadService } from './services/YouTubeDownloadService.mjs';
 
 /**
  * Create a scheduler-compatible handler for YouTube downloads

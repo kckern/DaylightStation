@@ -76,7 +76,8 @@ export class Scheduler {
   async initialize() {
     try {
       const jobsWithState = await this.schedulerService.loadJobsWithState();
-      await this.schedulerService.initializeStates(jobsWithState);
+      const now = new Date();
+      await this.schedulerService.initializeStates(jobsWithState, now);
       this.logger.info?.('scheduler.initialized', {
         jobCount: jobsWithState.length
       });
@@ -98,7 +99,8 @@ export class Scheduler {
     this.running = true;
 
     try {
-      const executions = await this.schedulerService.runDueJobs();
+      const now = new Date();
+      const executions = await this.schedulerService.runDueJobs(now);
       if (executions.length > 0) {
         this.logger.debug?.('scheduler.tick_complete', {
           jobsRun: executions.map(e => e.jobId)

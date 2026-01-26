@@ -31,7 +31,8 @@ export function createSchedulingRouter(config) {
    */
   router.get('/status', async (req, res) => {
     try {
-      const status = await schedulerService.getStatus();
+      const now = new Date();
+      const status = await schedulerService.getStatus(now);
       status.scheduler = scheduler?.getStatus() || { enabled: false };
       res.json(status);
     } catch (err) {
@@ -51,7 +52,8 @@ export function createSchedulingRouter(config) {
       logger.info?.('scheduling.job.manual_trigger', { jobId });
 
       // Return immediately with execution ID
-      const { execution, executionId } = await schedulerService.triggerJob(jobId);
+      const now = new Date();
+      const { execution, executionId } = await schedulerService.triggerJob(jobId, now);
 
       res.json({
         status: execution.status === 'success' ? 'completed' : execution.status,
@@ -89,11 +91,12 @@ export function createSchedulingRouter(config) {
         // Get all jobs in this bucket and run them
         const jobs = await schedulerService.jobStore.loadJobs();
         const bucketJobs = jobs.filter(j => j.bucket === bucketName);
+        const now = new Date();
 
         for (const job of bucketJobs) {
           const states = await schedulerService.stateStore.loadStates();
           const state = states.get(job.id) || { jobId: job.id };
-          await schedulerService.runJob(job, state, true);
+          await schedulerService.runJob(job, state, true, now);
         }
       } catch (err) {
         logger.error?.('scheduling.bucket.error', { bucket: bucketName, error: err.message });

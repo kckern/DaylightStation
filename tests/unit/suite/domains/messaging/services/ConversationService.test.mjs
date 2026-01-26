@@ -32,8 +32,10 @@ describe('ConversationService', () => {
 
   describe('createConversation', () => {
     test('creates and saves conversation', async () => {
+      const nowMs = Date.now();
       const conv = await service.createConversation({
         participants: ['user-1', 'user-2'],
+        nowMs,
         metadata: { topic: 'test' }
       });
 
@@ -41,6 +43,12 @@ describe('ConversationService', () => {
       expect(conv.participants).toEqual(['user-1', 'user-2']);
       expect(conv.metadata.topic).toBe('test');
       expect(mockStore.save).toHaveBeenCalled();
+    });
+
+    test('throws if nowMs not provided', async () => {
+      await expect(service.createConversation({
+        participants: ['user-1', 'user-2']
+      })).rejects.toThrow('nowMs timestamp required');
     });
   });
 
@@ -76,7 +84,8 @@ describe('ConversationService', () => {
         messages: []
       });
 
-      const conv = await service.getOrCreateConversation(['user-1', 'user-2']);
+      const nowMs = Date.now();
+      const conv = await service.getOrCreateConversation(['user-1', 'user-2'], nowMs);
 
       expect(conv.id).toBe('conv-existing');
       expect(mockStore.save).not.toHaveBeenCalled();
@@ -85,7 +94,8 @@ describe('ConversationService', () => {
     test('creates new conversation if none exists', async () => {
       mockStore.findByParticipants.mockResolvedValue(null);
 
-      const conv = await service.getOrCreateConversation(['user-1', 'user-2']);
+      const nowMs = Date.now();
+      const conv = await service.getOrCreateConversation(['user-1', 'user-2'], nowMs);
 
       expect(conv.id).toMatch(/^conv-/);
       expect(mockStore.save).toHaveBeenCalled();
@@ -265,11 +275,16 @@ describe('ConversationService', () => {
 
   describe('generateConversationId', () => {
     test('generates unique IDs', () => {
-      const id1 = service.generateConversationId();
-      const id2 = service.generateConversationId();
+      const nowMs = Date.now();
+      const id1 = service.generateConversationId(nowMs);
+      const id2 = service.generateConversationId(nowMs);
 
       expect(id1).toMatch(/^conv-/);
       expect(id1).not.toBe(id2);
+    });
+
+    test('throws if nowMs not provided', () => {
+      expect(() => service.generateConversationId()).toThrow('nowMs timestamp required');
     });
   });
 });

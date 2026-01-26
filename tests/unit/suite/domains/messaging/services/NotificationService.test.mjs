@@ -24,12 +24,13 @@ describe('NotificationService', () => {
 
   describe('send', () => {
     test('sends and saves notification', async () => {
+      const nowMs = Date.now();
       const notification = await service.send({
         recipient: 'john',
         channel: 'telegram',
         title: 'Test',
         body: 'Message'
-      });
+      }, nowMs);
 
       expect(mockChannel.send).toHaveBeenCalled();
       expect(mockStore.save).toHaveBeenCalled();
@@ -37,15 +38,25 @@ describe('NotificationService', () => {
     });
 
     test('saves without sending if no channel adapter', async () => {
+      const nowMs = Date.now();
       const notification = await service.send({
         recipient: 'john',
         channel: 'email',
         title: 'Test',
         body: 'Message'
-      });
+      }, nowMs);
 
       expect(notification.isSent()).toBe(false);
       expect(mockStore.save).toHaveBeenCalled();
+    });
+
+    test('throws if nowMs not provided', async () => {
+      await expect(service.send({
+        recipient: 'john',
+        channel: 'telegram',
+        title: 'Test',
+        body: 'Message'
+      })).rejects.toThrow('nowMs timestamp required');
     });
   });
 

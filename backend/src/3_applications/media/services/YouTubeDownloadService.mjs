@@ -11,7 +11,7 @@
  * - Retry with fallback format options
  * - Codec verification with ffprobe
  *
- * @module domains/media/services/YouTubeDownloadService
+ * @module applications/media/services/YouTubeDownloadService
  */
 
 import { nowTs24 } from '../../../0_infrastructure/utils/index.mjs';
