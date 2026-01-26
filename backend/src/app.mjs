@@ -322,9 +322,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Fitness domain
   // Get Home Assistant config from ConfigService
-  // Use getServiceConfig for system.home_assistant (host/port) and getHouseholdAuth for token
-  const haServiceConfig = configService.getServiceConfig('home_assistant') || {};
-  const haAuth = configService.getHouseholdAuth('home_assistant') || {};
+  // Use getServiceConfig for system.homeassistant (host/port) and getHouseholdAuth for token
+  const haServiceConfig = configService.getServiceConfig('homeassistant') || {};
+  const haAuth = configService.getHouseholdAuth('homeassistant') || {};
   // Build baseUrl from host and port (host may include protocol, e.g., 'http://homeassistant')
   const haBaseUrl = haServiceConfig.host
     ? (haServiceConfig.port ? `${haServiceConfig.host}:${haServiceConfig.port}` : haServiceConfig.host)

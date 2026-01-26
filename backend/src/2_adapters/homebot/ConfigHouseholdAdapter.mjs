@@ -76,9 +76,18 @@ export class ConfigHouseholdAdapter {
     return this.#configService.getDefaultHouseholdId();
   }
 
-  async resolveHouseholdId(conversationId) {
-    if (this.#userResolver) {
-      const username = await this.#userResolver.resolveUsername(conversationId);
+  /**
+   * Resolve household ID from conversation context
+   * Note: This method requires platform and platformUserId to resolve users.
+   * For simple lookups, use getHouseholdId() which returns the default.
+   * @param {string} conversationId - Conversation ID (for logging/fallback only)
+   * @param {string} [platform] - Platform name ('telegram', etc.)
+   * @param {string} [platformUserId] - Platform-specific user ID
+   * @returns {Promise<string>} Household ID
+   */
+  async resolveHouseholdId(conversationId, platform = null, platformUserId = null) {
+    if (this.#userResolver && platform && platformUserId) {
+      const username = this.#userResolver.resolveUser(platform, platformUserId);
       if (username) {
         return this.#configService.getUserHouseholdId(username);
       }
