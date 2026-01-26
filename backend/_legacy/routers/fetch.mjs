@@ -16,7 +16,7 @@ import { parse } from 'path';
 import path from 'path';
 import { isWatched, getEffectivePercent } from '../lib/utils.mjs';
 import { configService } from '../lib/config/index.mjs';
-import { userDataService } from '../../src/0_infrastructure/config/UserDataService.mjs';
+import { userDataService } from '../../src/0_system/config/UserDataService.mjs';
 import { createLogger } from '../lib/logging/logger.js';
 
 const fetchLogger = createLogger({ app: 'fetch' });

@@ -13,9 +13,9 @@
  */
 
 import { BuxferAdapter } from '../../src/2_adapters/finance/BuxferAdapter.mjs';
-import { configService } from '../../src/0_infrastructure/config/index.mjs';
-import axios from '../../src/0_infrastructure/http/httpClient.mjs';
-import { createLogger } from '../../src/0_infrastructure/logging/logger.js';
+import { configService } from '../../src/0_system/config/index.mjs';
+import axios from '../../src/0_system/http/httpClient.mjs';
+import { createLogger } from '../../src/0_system/logging/logger.js';
 import yaml from 'js-yaml';
 import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { askGPT } from './gpt.mjs';

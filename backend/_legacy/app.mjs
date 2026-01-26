@@ -15,21 +15,21 @@ import cors from 'cors';
 import { createWebsocketServer } from './routers/websocket.mjs';
 import { loadFile } from './lib/io.mjs';
 import { initMqttSubscriber } from './lib/mqtt.mjs';
-import { userDataService } from '../src/0_infrastructure/config/UserDataService.mjs';
+import { userDataService } from '../src/0_system/config/UserDataService.mjs';
 
 // Config loader
-import { loadAllConfig, logConfigSummary } from '../src/0_infrastructure/config/configLoader.mjs';
+import { loadAllConfig, logConfigSummary } from '../src/0_system/config/configLoader.mjs';
 
 // ConfigService v2 (primary config system)
-import { configService } from '../src/0_infrastructure/config/index.mjs';
+import { configService } from '../src/0_system/config/index.mjs';
 
 // Routing toggle system for legacy/new route migration
-import { loadRoutingConfig, createRoutingMiddleware } from '../src/0_infrastructure/routing/index.mjs';
+import { loadRoutingConfig, createRoutingMiddleware } from '../src/0_system/routing/index.mjs';
 
 // Logging system (from new infrastructure)
-import { getDispatcher } from '../src/0_infrastructure/logging/dispatcher.js';
-import { createLogger } from '../src/0_infrastructure/logging/logger.js';
-import { loadLoggingConfig, resolveLoggerLevel } from '../src/0_infrastructure/logging/config.js';
+import { getDispatcher } from '../src/0_system/logging/dispatcher.js';
+import { createLogger } from '../src/0_system/logging/logger.js';
+import { loadLoggingConfig, resolveLoggerLevel } from '../src/0_system/logging/config.js';
 
 // Legacy route hit tracking for cutover monitoring
 import { getLegacyTracker } from '../src/4_api/middleware/legacyTracker.mjs';
@@ -179,7 +179,7 @@ export async function createApp({
     });
 
     // Content domain (new DDD structure)
-    const { createContentRegistry, createWatchStore, createEntropyServices, createEntropyApiRouter } = await import('../src/0_infrastructure/bootstrap.mjs');
+    const { createContentRegistry, createWatchStore, createEntropyServices, createEntropyApiRouter } = await import('../src/0_system/bootstrap.mjs');
     const { createContentRouter } = await import('../src/4_api/routers/content.mjs');
     const { createProxyRouter } = await import('../src/4_api/routers/proxy.mjs');
     const { createListRouter } = await import('../src/4_api/routers/list.mjs');

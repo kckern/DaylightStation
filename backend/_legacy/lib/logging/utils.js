@@ -5,4 +5,4 @@
  * Once all consumers are migrated, this file can be deleted.
  */
 
-export { serializeError, extractHttpErrorDetails } from '../../../src/0_infrastructure/logging/utils.js';
+export { serializeError, extractHttpErrorDetails } from '../../../src/0_system/logging/utils.js';

@@ -6,7 +6,7 @@
  *   #backend/src/3_applications/content/services/MediaMemoryService.mjs
  *
  * YAML sanitization functions have been moved to:
- *   #backend/src/0_infrastructure/utils/yamlSanitizer.mjs
+ *   #backend/src/0_system/utils/yamlSanitizer.mjs
  *
  * This shim will be removed in a future release.
  */

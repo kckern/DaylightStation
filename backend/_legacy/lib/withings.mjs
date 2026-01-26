@@ -12,7 +12,7 @@
 import { WithingsHarvester } from '../../src/2_adapters/harvester/fitness/WithingsHarvester.mjs';
 import { YamlLifelogStore } from '../../src/2_adapters/harvester/YamlLifelogStore.mjs';
 import { YamlAuthStore } from '../../src/2_adapters/harvester/YamlAuthStore.mjs';
-import { configService } from '../../src/0_infrastructure/config/index.mjs';
+import { configService } from '../../src/0_system/config/index.mjs';
 import { userLoadFile, userSaveFile, userSaveAuth } from './io.mjs';
 import axios from './http.mjs';
 import processWeight from '../jobs/weight.mjs';

@@ -2,7 +2,7 @@
  * Plex Proxy Router - Bridge to new ProxyService infrastructure
  *
  * This module provides backward-compatible routing while delegating
- * to the new ProxyService in 0_infrastructure/proxy.
+ * to the new ProxyService in 0_system/proxy.
  *
  * @module routers/plexProxy
  */
@@ -10,7 +10,7 @@
 import express from 'express';
 import { createLogger } from '../lib/logging/logger.js';
 import { configService } from '../lib/config/index.mjs';
-import { ProxyService } from '../../src/0_infrastructure/proxy/ProxyService.mjs';
+import { ProxyService } from '../../src/0_system/proxy/ProxyService.mjs';
 import { PlexProxyAdapter } from '../../src/2_adapters/proxy/PlexProxyAdapter.mjs';
 
 const router = express.Router();

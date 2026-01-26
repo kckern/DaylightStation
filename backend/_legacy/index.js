@@ -16,10 +16,10 @@ import { resolveConfigPaths, getConfigFilePaths } from './lib/config/pathResolve
 import { initConfigService, ConfigValidationError } from './lib/config/index.mjs';
 
 // Logging system (from new infrastructure)
-import { hydrateProcessEnvFromConfigs, loadLoggingConfig, resolveLoggerLevel, getLoggingTags, resolveLogglyToken } from '../src/0_infrastructure/logging/config.js';
-import { initializeLogging } from '../src/0_infrastructure/logging/dispatcher.js';
-import { createConsoleTransport, createLogglyTransport, createFileTransport } from '../src/0_infrastructure/logging/transports/index.js';
-import { createLogger } from '../src/0_infrastructure/logging/logger.js';
+import { hydrateProcessEnvFromConfigs, loadLoggingConfig, resolveLoggerLevel, getLoggingTags, resolveLogglyToken } from '../src/0_system/logging/config.js';
+import { initializeLogging } from '../src/0_system/logging/dispatcher.js';
+import { createConsoleTransport, createLogglyTransport, createFileTransport } from '../src/0_system/logging/transports/index.js';
+import { createLogger } from '../src/0_system/logging/logger.js';
 
 // App factory
 import { createApp } from './app.mjs';

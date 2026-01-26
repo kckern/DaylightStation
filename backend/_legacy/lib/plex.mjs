@@ -4,7 +4,7 @@ import { loadFile, saveFile } from '../lib/io.mjs';
 import { configService } from './config/index.mjs';
 import { clearWatchedItems } from '../routers/fetch.mjs';
 import { isWatched, getEffectivePercent, categorizeByWatchStatus } from './utils.mjs';
-import { userDataService } from '../../src/0_infrastructure/config/UserDataService.mjs';
+import { userDataService } from '../../src/0_system/config/UserDataService.mjs';
 import fs from 'fs';
 import { createLogger } from './logging/logger.js';
 import { serializeError } from './logging/utils.js';
