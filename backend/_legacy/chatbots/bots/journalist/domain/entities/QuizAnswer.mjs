@@ -96,9 +96,10 @@ export class QuizAnswer {
    * @param {string} chatId
    * @param {string} date
    * @param {number} choiceIndex
+   * @param {string} [answeredAt] - When answered (ISO timestamp)
    * @returns {QuizAnswer}
    */
-  static fromChoice(question, chatId, date, choiceIndex) {
+  static fromChoice(question, chatId, date, choiceIndex, answeredAt) {
     const choices = question.choices;
     if (choiceIndex < 0 || choiceIndex >= choices.length) {
       throw new ValidationError(`Invalid choice index: ${choiceIndex}`);
@@ -109,6 +110,7 @@ export class QuizAnswer {
       chatId,
       date,
       answer: choiceIndex,
+      answeredAt,
     });
   }
 

@@ -6,7 +6,7 @@
  */
 
 import { QuizAnswer } from '../../../1_domains/journalist/entities/QuizAnswer.mjs';
-import { nowDate } from '../../../0_infrastructure/utils/time.mjs';
+import { nowDate, nowTs24 } from '../../../0_infrastructure/utils/time.mjs';
 
 /**
  * Record quiz answer use case
@@ -53,6 +53,7 @@ export class RecordQuizAnswer {
         chatId,
         date: date || nowDate(),
         answer,
+        answeredAt: nowTs24(),
       });
 
       // 2. Record in repository

@@ -7,17 +7,7 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import { isValidQuizCategory } from '../value-objects/QuizCategory.mjs';
-import { nowTs24 } from '../../../0_infrastructure/utils/index.mjs';
-
-/**
- * ValidationError for entity validation
- */
-class ValidationError extends Error {
-  constructor(message) {
-    super(message);
-    this.name = 'ValidationError';
-  }
-}
+import { ValidationError } from '../../core/errors/index.mjs';
 
 /**
  * QuizQuestion entity
@@ -99,12 +89,14 @@ export class QuizQuestion {
 
   /**
    * Mark question as asked
+   * @param {string} timestamp - ISO timestamp when asked (required)
    * @returns {QuizQuestion}
    */
-  markAsked() {
+  markAsked(timestamp) {
+    if (!timestamp) throw new ValidationError('timestamp is required for markAsked');
     return new QuizQuestion({
       ...this.toJSON(),
-      lastAsked: nowTs24(),
+      lastAsked: timestamp,
     });
   }
 

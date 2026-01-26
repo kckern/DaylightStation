@@ -6,6 +6,7 @@
  */
 
 import { MessageQueue } from '../entities/MessageQueue.mjs';
+import { nowTs24 } from '../../../0_infrastructure/utils/time.mjs';
 
 /**
  * Check if response allows continuing the queue
@@ -96,12 +97,15 @@ export function buildDefaultChoices() {
  * @param {string} chatId
  * @param {string[]} questions
  * @param {object} [foreignKey]
+ * @param {string} [timestamp] - ISO timestamp (defaults to now)
  * @returns {MessageQueue[]}
  */
-export function createQueueFromQuestions(chatId, questions, foreignKey = {}) {
+export function createQueueFromQuestions(chatId, questions, foreignKey = {}, timestamp) {
+  const ts = timestamp || nowTs24();
   return questions.map((question, index) =>
     MessageQueue.create({
       chatId,
+      timestamp: ts,
       queuedMessage: question,
       foreignKey: { ...foreignKey, queueIndex: index },
     }),
