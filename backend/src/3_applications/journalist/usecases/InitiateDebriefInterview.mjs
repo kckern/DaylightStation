@@ -79,13 +79,13 @@ export class InitiateDebriefInterview {
 
     try {
       // 1. Get the debrief data
-      const username = this.#userResolver.resolveUsername(conversationId);
+      // Username is optional - used only for logging in DebriefRepository
       let debrief;
 
       if (debriefDate) {
         debrief = await this.#debriefRepository.getDebriefByDate(debriefDate);
       } else {
-        const recentDebriefs = await this.#debriefRepository.getRecentDebriefs(username, 1);
+        const recentDebriefs = await this.#debriefRepository.getRecentDebriefs(null, 1);
         debrief = recentDebriefs?.[0];
       }
 
