@@ -1,6 +1,6 @@
 /**
  * Nutrition Report Renderer
- * @module infrastructure/rendering/NutriReportRenderer
+ * @module 2_adapters/nutribot/rendering/NutriReportRenderer
  *
  * Generates PNG images for nutrition reports using node-canvas.
  * Design modeled after food_report.mjs
@@ -9,25 +9,7 @@
 import { createCanvas, registerFont, loadImage } from 'canvas';
 import path from 'path';
 import fs from 'fs';
-
-// Font definitions
-const TITLE_FONT = '64px "Roboto Condensed"';
-const SUBTITLE_FONT = '36px "Roboto Condensed"';
-const PIE_LABEL_FONT = '48px "Roboto Condensed"';
-const DEFAULT_FONT = '32px "Roboto Condensed"';
-const SMALL_FONT = '20px "Roboto Condensed"';
-
-// Color palette (matching food_report.mjs)
-const COLORS = {
-  background: '#ffffff',
-  text: '#000000',
-  protein: '#fe938c',  // Pink/salmon
-  carbs: '#a3b18a',    // Sage green
-  fat: '#f6bd60',      // Golden yellow
-  chartBg: '#FAF3ED',  // Light cream
-  barBase: '#CCC',     // Gray base for bars
-  gridLine: '#AAA',    // Grid lines
-};
+import { nutriReportTheme as theme } from './nutriReportTheme.mjs';
 
 /**
  * Canvas-based report renderer
@@ -44,6 +26,7 @@ export class NutriReportRenderer {
   #logger;
   #fontDir;
   #iconDir;
+  #canvasService;
   #fontsRegistered = false;
   #fontRegistrationError = null;
 
@@ -52,6 +35,7 @@ export class NutriReportRenderer {
    * @param {Object} [options.logger] - Logger instance
    * @param {string} options.fontDir - Path to fonts directory (e.g., '/app/media/fonts')
    * @param {string} options.iconDir - Path to food icons directory (e.g., '/app/media/img/icons/food')
+   * @param {Object} [options.canvasService] - Optional CanvasService for canvas creation (uses createCanvas from 'canvas' as fallback)
    */
   constructor(options = {}) {
     this.#logger = options.logger || console;
@@ -66,10 +50,12 @@ export class NutriReportRenderer {
 
     this.#fontDir = options.fontDir;
     this.#iconDir = options.iconDir;
+    this.#canvasService = options.canvasService || null;
 
     this.#logger.debug?.('nutribot.renderer.created', {
       fontDir: this.#fontDir,
-      iconDir: this.#iconDir
+      iconDir: this.#iconDir,
+      hasCanvasService: !!this.#canvasService
     });
   }
 
@@ -141,8 +127,8 @@ export class NutriReportRenderer {
     ctx.fillRect(x, y, w, h);
 
     if (label) {
-      ctx.font = font || DEFAULT_FONT;
-      ctx.fillStyle = textColor || '#000000';
+      ctx.font = font || theme.fonts.default;
+      ctx.fillStyle = textColor || theme.colors.text;
 
       const labelWidth = this._getTextWidth(ctx, label);
       const labelHeight = this._getTextHeight(ctx, label);
@@ -209,13 +195,13 @@ export class NutriReportRenderer {
 
       // Draw the main label
       ctx.save();
-      ctx.font = PIE_LABEL_FONT;
-      ctx.fillStyle = '#000';
+      ctx.font = theme.fonts.pieLabel;
+      ctx.fillStyle = theme.colors.text;
       ctx.fillText(label, wedgeCenterX, wedgeCenterY - 12);
 
       // Draw the sub-label under it
       if (subLabel) {
-        ctx.font = SUBTITLE_FONT;
+        ctx.font = theme.fonts.subtitle;
         ctx.fillText(subLabel, wedgeCenterX, wedgeCenterY + 24);
       }
       ctx.restore();
@@ -232,7 +218,7 @@ export class NutriReportRenderer {
   async _makeFoodList(food, width, height) {
     const listCanvas = createCanvas(width, height);
     const ctx = listCanvas.getContext('2d');
-    ctx.fillStyle = '#fff';
+    ctx.fillStyle = theme.colors.background;
     ctx.fillRect(0, 0, width, height);
 
     if (!food || food.length === 0) return listCanvas;
@@ -254,11 +240,10 @@ export class NutriReportRenderer {
     }
     food = grouped;
 
-    const fontSize = 32;
-    ctx.font = fontSize + 'px "Roboto Condensed"';
+    ctx.font = theme.fonts.foodItem;
 
-    const lineHeight = fontSize + 12;
-    const iconSize = 32;
+    const lineHeight = theme.layout.lineHeight;
+    const iconSize = theme.layout.iconSize;
     let foodItemCount = food.length;
     let lineSpacing = Math.max(0, (height / Math.min(foodItemCount, 10)) - lineHeight);
 
@@ -314,10 +299,10 @@ export class NutriReportRenderer {
       }
 
       // Print calories in left column (right-aligned)
-      ctx.font = fontSize + 'px "Roboto Condensed"';
+      ctx.font = theme.fonts.foodItem;
       const calStr = String(Math.round(calories || 0));
       const calStrWidth = this._getTextWidth(ctx, calStr);
-      ctx.fillStyle = '#000';
+      ctx.fillStyle = theme.colors.text;
       const calX = iconSize + 10 + calColumnWidth - calStrWidth;
       ctx.fillText(calStr, calX, y);
 
@@ -327,9 +312,9 @@ export class NutriReportRenderer {
       ctx.fillText(displayName, iconSize + 10 + calColumnWidth + 10, y);
 
       // Macro boxes on right side
-      const rectWidth = 46;
-      const rectHeight = 30;
-      const macroColors = { protein: COLORS.protein, carbs: COLORS.carbs, fat: COLORS.fat };
+      const rectWidth = theme.layout.macroRectWidth;
+      const rectHeight = theme.layout.macroRectHeight;
+      const macroColors = { protein: theme.colors.protein, carbs: theme.colors.carbs, fat: theme.colors.fat };
       const macros = [
         { key: 'protein', value: protein },
         { key: 'carbs', value: carbs },
@@ -349,9 +334,9 @@ export class NutriReportRenderer {
             rectHeight,
             macroColors[macro.key],
             String(val),
-            '18px "Roboto Condensed"',
+            theme.fonts.macroLabel,
             'center',
-            '#000'
+            theme.colors.text
           );
         }
       }
@@ -386,17 +371,17 @@ export class NutriReportRenderer {
     const items = report.items || [];
     const history = report.history || [];
 
-    // Canvas dimensions matching food_report.mjs
-    const width = 1080;
-    const newCanvasHeight = 1400;
-    const topPageMargin = 100;
+    // Canvas dimensions from theme
+    const width = theme.canvas.width;
+    const newCanvasHeight = theme.canvas.height;
+    const topPageMargin = theme.layout.topMargin;
     const contentEffectiveHeight = newCanvasHeight - 2 * topPageMargin;
 
     const mainCanvas = createCanvas(width, newCanvasHeight);
     const ctx = mainCanvas.getContext('2d');
 
     // White background
-    ctx.fillStyle = COLORS.background;
+    ctx.fillStyle = theme.colors.background;
     ctx.fillRect(0, 0, width, newCanvasHeight);
 
     // Calculate macro grams from items or use totals
@@ -432,28 +417,28 @@ export class NutriReportRenderer {
     const dateFormatted = this._formatDate(date);
     const title = dateFormatted ;
 
-    ctx.font = TITLE_FONT;
-    ctx.fillStyle = COLORS.text;
+    ctx.font = theme.fonts.title;
+    ctx.fillStyle = theme.colors.text;
     const titleWidth = this._getTextWidth(ctx, title);
     ctx.fillText(title, width / 2 - titleWidth / 2, topPageMargin);
 
     // === PIE CHART ===
     const pieData = [
       {
-        color: COLORS.fat,
-        value: Math.round(fatGrams * 9),
+        color: theme.colors.fat,
+        value: Math.round(fatGrams * theme.nutrition.caloriesPerGramFat),
         subLabel: 'Fat',
         label: Math.round(fatGrams) + 'g',
       },
       {
-        color: COLORS.carbs,
-        value: Math.round(carbsGrams * 4),
+        color: theme.colors.carbs,
+        value: Math.round(carbsGrams * theme.nutrition.caloriesPerGramCarbs),
         subLabel: 'Carbs',
         label: Math.round(carbsGrams) + 'g',
       },
       {
-        color: COLORS.protein,
-        value: Math.round(proteinGrams * 4),
+        color: theme.colors.protein,
+        value: Math.round(proteinGrams * theme.nutrition.caloriesPerGramProtein),
         subLabel: 'Protein',
         label: Math.round(proteinGrams) + 'g',
       },
@@ -490,17 +475,17 @@ export class NutriReportRenderer {
       { label: 'Cholesterol', unit: 'mg', icon: 'butter', value: Math.round(cholesterolTotal) },
     ];
 
-    ctx.font = SUBTITLE_FONT;
-    const statsY = topPageMargin + 40 + pieChartWidth + 30;
+    ctx.font = theme.fonts.subtitle;
+    const statsY = topPageMargin + 40 + pieChartWidth + theme.layout.sectionGap;
     for (let i = 0; i < stats.length; i++) {
       const stat = stats[i];
-      const rowY = statsY + i * 45;
+      const rowY = statsY + i * theme.layout.statRowHeight;
 
       const amount = stat.value + stat.unit;
       const labelW = this._getTextWidth(ctx, stat.label);
 
       // Label on left, value on right of midpoint
-      ctx.fillStyle = COLORS.text;
+      ctx.fillStyle = theme.colors.text;
       ctx.fillText(stat.label, midPoint - labelW - 24, rowY);
       ctx.fillText(amount, midPoint + 24, rowY);
 
@@ -516,23 +501,23 @@ export class NutriReportRenderer {
       }
     }
 
-    const goalCalories = goals.calories || 2000;
-    const minRecommended = 1200; // dotted line
+    const goalCalories = goals.calories || theme.nutrition.defaultGoalCalories;
+    const minRecommended = theme.nutrition.minRecommendedCalories;
 
     // === CALORIE PROGRESS BAR (now above bar chart) ===
-    const progressBarWidth = width * 0.9;
-    const progressBarHeight = 48;
+    const progressBarWidth = width * theme.layout.barChartWidthRatio;
+    const progressBarHeight = theme.layout.progressBarHeight;
     const progressBarX = (width - progressBarWidth) / 2;
     const progressBarY = statsY + 200; // below micronutrients, above bar chart
-    const overGoalColor = '#b00020';
-    const underGoalColor = '#7da87a';
-    const cautionColor = '#f6bd60';
+    const overGoalColor = theme.colors.overGoal;
+    const underGoalColor = theme.colors.underGoal;
+    const cautionColor = theme.colors.caution;
 
     // Determine max scale: cap at current if over goal so bar fills horizontally
     const progressMax = Math.max(goalCalories, minRecommended, totalCals);
 
     // Background
-    this._drawRect(ctx, progressBarX, progressBarY, progressBarWidth, progressBarHeight, COLORS.chartBg);
+    this._drawRect(ctx, progressBarX, progressBarY, progressBarWidth, progressBarHeight, theme.colors.chartBg);
 
     // Filled portion with color states: green <=1200, yellow between 1200 and goal, red beyond goal
     const clampedCurrent = Math.min(totalCals, progressMax);
@@ -548,17 +533,17 @@ export class NutriReportRenderer {
       this._drawRect(ctx, progressBarX + goalWidth, progressBarY, overWidth, progressBarHeight, overGoalColor);
     }
 
-    // Tick at 1200
+    // Tick at minimum recommended
     const tick1200X = progressBarX + (minRecommended / progressMax) * progressBarWidth;
     ctx.save();
-    ctx.strokeStyle = COLORS.gridLine;
+    ctx.strokeStyle = theme.colors.gridLine;
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(tick1200X, progressBarY);
     ctx.lineTo(tick1200X, progressBarY + progressBarHeight);
     ctx.stroke();
-    ctx.font = SMALL_FONT;
-    ctx.fillStyle = COLORS.text;
+    ctx.font = theme.fonts.small;
+    ctx.fillStyle = theme.colors.text;
     const tick1200Label = '1200';
     ctx.fillText(tick1200Label, tick1200X - this._getTextWidth(ctx, tick1200Label) / 2, progressBarY - 6);
     ctx.restore();
@@ -566,28 +551,28 @@ export class NutriReportRenderer {
     // Goal marker
     const goalX = progressBarX + (goalCalories / progressMax) * progressBarWidth;
     ctx.save();
-    ctx.strokeStyle = COLORS.text;
+    ctx.strokeStyle = theme.colors.text;
     ctx.lineWidth = 3;
     ctx.beginPath();
     ctx.moveTo(goalX, progressBarY - 4);
     ctx.lineTo(goalX, progressBarY + progressBarHeight + 4);
     ctx.stroke();
-    ctx.font = SMALL_FONT;
+    ctx.font = theme.fonts.small;
     const goalLabel = `${goalCalories} goal`;
     ctx.fillText(goalLabel, goalX - this._getTextWidth(ctx, goalLabel) / 2, progressBarY + progressBarHeight + 26);
     ctx.restore();
 
     // Labels and percentages
-    ctx.font = SUBTITLE_FONT;
-    ctx.fillStyle = COLORS.text;
+    ctx.font = theme.fonts.subtitle;
+    ctx.fillStyle = theme.colors.text;
     const pctOfGoal = goalCalories ? Math.round((totalCals / goalCalories) * 100) : 0;
     const progressLabel = `${totalCals} cal (${pctOfGoal}% of goal)`;
     const progressLabelW = this._getTextWidth(ctx, progressLabel);
     ctx.fillText(progressLabel, width / 2 - progressLabelW / 2, progressBarY - 18);
 
     // === 7-DAY BAR CHART (moved below progress bar) ===
-    const barChartWidth = width * 0.9;
-    const barChartHeight = 460; // slightly shorter to leave bottom margin
+    const barChartWidth = width * theme.layout.barChartWidthRatio;
+    const barChartHeight = theme.layout.barChartHeight;
     const barChartX = (width - barChartWidth) / 2;
     const barChartY = progressBarY + progressBarHeight + 80; // give gap below progress bar
 
@@ -598,13 +583,13 @@ export class NutriReportRenderer {
         if (day.calories > historyMax) historyMax = day.calories;
       }
     }
-    const barMaxVal = Math.max(goalCalories, minRecommended, totalCals, historyMax, 2000) * 1.1; // 10% headroom
+    const barMaxVal = Math.max(goalCalories, minRecommended, totalCals, historyMax, theme.nutrition.defaultGoalCalories) * theme.chart.headroomMultiplier;
 
     this._drawDailyChart(ctx, history, items, barChartWidth, barChartHeight, barChartX, barChartY, goalCalories, minRecommended, barMaxVal, date);
 
-    // Scale up 1.2x like food_report.mjs
-    const scaledWidth = Math.round(width * 1.2);
-    const scaledHeight = Math.round(newCanvasHeight * 1.2);
+    // Scale up per theme settings
+    const scaledWidth = Math.round(width * theme.canvas.scale);
+    const scaledHeight = Math.round(newCanvasHeight * theme.canvas.scale);
     const scaledCanvas = createCanvas(scaledWidth, scaledHeight);
     const scaledCtx = scaledCanvas.getContext('2d');
     scaledCtx.drawImage(mainCanvas, 0, 0, scaledWidth, scaledHeight);
@@ -641,11 +626,11 @@ export class NutriReportRenderer {
    */
   _drawDailyChart(ctx, history, todayItems, barChartWidth, barChartHeight, barChartX, barChartY, goalCalories, minRecommended, barMaxVal, todayDate) {
     // Background
-    this._drawRect(ctx, barChartX, barChartY, barChartWidth, barChartHeight, COLORS.chartBg);
+    this._drawRect(ctx, barChartX, barChartY, barChartWidth, barChartHeight, theme.colors.chartBg);
 
     // Dotted minimum recommended line
     const minY = barChartY + barChartHeight - (minRecommended / barMaxVal) * barChartHeight;
-    ctx.strokeStyle = COLORS.gridLine;
+    ctx.strokeStyle = theme.colors.gridLine;
     ctx.lineWidth = 2;
     ctx.setLineDash([5, 5]);
     ctx.beginPath();
@@ -661,9 +646,9 @@ export class NutriReportRenderer {
     ctx.lineTo(barChartX + barChartWidth, goalY);
     ctx.stroke();
 
-    const barCount = 7;
+    const barCount = theme.chart.barCount;
     const barAreaWidth = barChartWidth / barCount;
-    const barWidth = barAreaWidth * 0.7;
+    const barWidth = barAreaWidth * theme.layout.barWidthRatio;
 
     // Build 7-day data
     const days = [];
@@ -722,8 +707,8 @@ export class NutriReportRenderer {
       // Day label
       const dayLabel = this._getDayLabel(dayData.date);
       ctx.save();
-      ctx.font = SUBTITLE_FONT;
-      ctx.fillStyle = COLORS.text;
+      ctx.font = theme.fonts.subtitle;
+      ctx.fillStyle = theme.colors.text;
       const dayLabelWidth = this._getTextWidth(ctx, dayLabel);
       ctx.fillText(dayLabel, barX + barWidth / 2 - dayLabelWidth / 2, barBottom + 35);
       ctx.restore();
@@ -734,18 +719,18 @@ export class NutriReportRenderer {
 
       // Calories label at top
       ctx.save();
-      ctx.font = SUBTITLE_FONT;
+      ctx.font = theme.fonts.subtitle;
       const calsLabel = String(Math.round(dayData.calories));
       const labelWidth = this._getTextWidth(ctx, calsLabel);
-      ctx.fillStyle = COLORS.text;
+      ctx.fillStyle = theme.colors.text;
       ctx.fillText(calsLabel, barX + barWidth / 2 - labelWidth / 2, barBottom - barH - 10);
       ctx.restore();
 
       // Calculate macro ratios
-      const totalMacroCals = (dayData.carbs || 0) * 4 + (dayData.protein || 0) * 4 + (dayData.fat || 0) * 9;
-      const carbsRatio = totalMacroCals ? ((dayData.carbs || 0) * 4) / totalMacroCals : 0.33;
-      const proteinRatio = totalMacroCals ? ((dayData.protein || 0) * 4) / totalMacroCals : 0.33;
-      const fatRatio = totalMacroCals ? ((dayData.fat || 0) * 9) / totalMacroCals : 0.34;
+      const totalMacroCals = (dayData.carbs || 0) * theme.nutrition.caloriesPerGramCarbs + (dayData.protein || 0) * theme.nutrition.caloriesPerGramProtein + (dayData.fat || 0) * theme.nutrition.caloriesPerGramFat;
+      const carbsRatio = totalMacroCals ? ((dayData.carbs || 0) * theme.nutrition.caloriesPerGramCarbs) / totalMacroCals : 0.33;
+      const proteinRatio = totalMacroCals ? ((dayData.protein || 0) * theme.nutrition.caloriesPerGramProtein) / totalMacroCals : 0.33;
+      const fatRatio = totalMacroCals ? ((dayData.fat || 0) * theme.nutrition.caloriesPerGramFat) / totalMacroCals : 0.34;
 
       // Draw stacked bar segments (bottom to top: protein, carbs, fat)
       let currentY = barBottom;
@@ -754,8 +739,8 @@ export class NutriReportRenderer {
       const proteinH = barH * proteinRatio;
       if (proteinH > 0) {
         const proteinLabel = proteinH > 25 ? String(Math.round(dayData.protein || 0)) : '';
-        this._drawRect(ctx, barX, currentY - proteinH, barWidth, proteinH, COLORS.protein,
-          proteinLabel, SMALL_FONT, 'center', '#000');
+        this._drawRect(ctx, barX, currentY - proteinH, barWidth, proteinH, theme.colors.protein,
+          proteinLabel, theme.fonts.small, 'center', theme.colors.text);
         currentY -= proteinH;
       }
 
@@ -763,8 +748,8 @@ export class NutriReportRenderer {
       const carbsH = barH * carbsRatio;
       if (carbsH > 0) {
         const carbsLabel = carbsH > 25 ? String(Math.round(dayData.carbs || 0)) : '';
-        this._drawRect(ctx, barX, currentY - carbsH, barWidth, carbsH, COLORS.carbs,
-          carbsLabel, SMALL_FONT, 'center', '#000');
+        this._drawRect(ctx, barX, currentY - carbsH, barWidth, carbsH, theme.colors.carbs,
+          carbsLabel, theme.fonts.small, 'center', theme.colors.text);
         currentY -= carbsH;
       }
 
@@ -772,8 +757,8 @@ export class NutriReportRenderer {
       const fatH = barH * fatRatio;
       if (fatH > 0) {
         const fatLabel = fatH > 25 ? String(Math.round(dayData.fat || 0)) : '';
-        this._drawRect(ctx, barX, currentY - fatH, barWidth, fatH, COLORS.fat,
-          fatLabel, SMALL_FONT, 'center', '#000');
+        this._drawRect(ctx, barX, currentY - fatH, barWidth, fatH, theme.colors.fat,
+          fatLabel, theme.fonts.small, 'center', theme.colors.text);
       }
     }
   }
@@ -792,27 +777,27 @@ export class NutriReportRenderer {
     const ctx = canvas.getContext('2d');
 
     // White background
-    ctx.fillStyle = COLORS.background;
+    ctx.fillStyle = theme.colors.background;
     ctx.fillRect(0, 0, 400, 200);
 
     // Item name
-    ctx.fillStyle = COLORS.text;
+    ctx.fillStyle = theme.colors.text;
     ctx.font = 'bold 24px "Roboto Condensed"';
     ctx.fillText(item.name || 'Food Item', 20, 40);
 
     // Brand
     if (item.brand) {
-      ctx.fillStyle = '#666';
+      ctx.fillStyle = theme.colors.brand;
       ctx.font = '16px "Roboto Condensed"';
       ctx.fillText(item.brand, 20, 65);
     }
 
     // Macros
     const macros = [
-      { label: 'Cal', value: item.calories || 0, color: COLORS.text },
-      { label: 'Protein', value: (item.protein || 0) + 'g', color: COLORS.protein },
-      { label: 'Carbs', value: (item.carbs || 0) + 'g', color: COLORS.carbs },
-      { label: 'Fat', value: (item.fat || 0) + 'g', color: COLORS.fat },
+      { label: 'Cal', value: item.calories || 0, color: theme.colors.text },
+      { label: 'Protein', value: (item.protein || 0) + 'g', color: theme.colors.protein },
+      { label: 'Carbs', value: (item.carbs || 0) + 'g', color: theme.colors.carbs },
+      { label: 'Fat', value: (item.fat || 0) + 'g', color: theme.colors.fat },
     ];
 
     let x = 20;
@@ -822,7 +807,7 @@ export class NutriReportRenderer {
       ctx.font = 'bold 28px "Roboto Condensed"';
       ctx.fillText(String(macro.value), x, y);
 
-      ctx.fillStyle = '#666';
+      ctx.fillStyle = theme.colors.brand;
       ctx.font = '14px "Roboto Condensed"';
       ctx.fillText(macro.label, x, y + 25);
 
