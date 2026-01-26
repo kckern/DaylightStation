@@ -58,7 +58,8 @@ import {
   createCalendarApiRouter,
   createEventBus,
   broadcastEvent,
-  createHarvesterServices
+  createHarvesterServices,
+  createAgentsApiRouter
 } from './0_infrastructure/bootstrap.mjs';
 
 // Routing toggle system
@@ -787,6 +788,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     secretToken: chatbotsConfig.bots?.homebot?.secretToken || '',
     gateway: homebotTelegramAdapter,
     logger: rootLogger.child({ module: 'homebot-api' })
+  });
+
+  // Agents application router
+  v1Routers.agents = createAgentsApiRouter({
+    logger: rootLogger.child({ module: 'agents-api' })
   });
 
   // Scheduling domain - DDD replacement for legacy /cron
