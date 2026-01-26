@@ -31,7 +31,7 @@
  * @function
  * @name IMessageQueueRepository#markSent
  * @param {string} uuid - Queue item UUID
- * @param {string} messageId - Telegram message ID
+ * @param {string} messageId - Message ID from messaging platform
  * @returns {Promise<void>}
  */
 

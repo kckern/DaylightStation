@@ -19,7 +19,7 @@ export class HandleSourceSelection {
 
   /**
    * @param {Object} deps
-   * @param {Object} deps.messagingGateway - Telegram gateway
+   * @param {Object} deps.messagingGateway - Messaging gateway for sending messages
    * @param {Object} deps.conversationStateStore - State persistence
    * @param {Object} deps.logger - Logger instance
    */
@@ -46,7 +46,7 @@ export class HandleSourceSelection {
    * Execute handling a source selection
    *
    * @param {Object} input
-   * @param {string} input.conversationId - Telegram conversation ID
+   * @param {string} input.conversationId - Conversation ID
    * @param {string} input.text - Button text that was pressed
    * @param {Object} [input.responseContext] - Bound response context for DDD-compliant messaging
    * @returns {Object} Result

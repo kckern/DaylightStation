@@ -15,7 +15,7 @@ export class HandleCategorySelection {
 
   /**
    * @param {Object} deps
-   * @param {Object} deps.messagingGateway - Telegram gateway
+   * @param {Object} deps.messagingGateway - Messaging gateway for sending messages
    * @param {Object} deps.conversationStateStore - State persistence
    * @param {Object} deps.logger - Logger instance
    */
@@ -42,7 +42,7 @@ export class HandleCategorySelection {
    * Execute category selection handling
    *
    * @param {Object} input
-   * @param {string} input.conversationId - Telegram conversation ID
+   * @param {string} input.conversationId - Conversation ID
    * @param {string} input.messageText - User's message (category name)
    * @param {Object} [input.responseContext] - Bound response context for DDD-compliant messaging
    * @returns {Object} Result
