@@ -7,9 +7,9 @@
  * - Automatic logging of failed requests
  *
  * Usage:
- *   import axios from '#backend/src/0_infrastructure/http/httpClient.mjs';
+ *   import axios from '#backend/src/0_system/http/httpClient.mjs';
  *   // or
- *   import { httpClient, formatAxiosError } from '#backend/src/0_infrastructure/http/index.mjs';
+ *   import { httpClient, formatAxiosError } from '#backend/src/0_system/http/index.mjs';
  */
 
 import axios from 'axios';

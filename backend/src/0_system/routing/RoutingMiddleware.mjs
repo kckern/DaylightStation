@@ -1,4 +1,4 @@
-// backend/src/0_infrastructure/routing/RoutingMiddleware.mjs
+// backend/src/0_system/routing/RoutingMiddleware.mjs
 import { buildRoutingTable, matchRoute } from './RouteMatcher.mjs';
 
 /**

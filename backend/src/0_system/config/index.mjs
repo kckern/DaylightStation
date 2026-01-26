@@ -4,15 +4,15 @@
  * Factory, singleton, and exports for the config system.
  *
  * Usage at startup:
- *   import { initConfigService } from './0_infrastructure/config/index.mjs';
+ *   import { initConfigService } from './0_system/config/index.mjs';
  *   initConfigService(dataDir);
  *
  * Usage in modules:
- *   import { configService } from './0_infrastructure/config/index.mjs';
+ *   import { configService } from './0_system/config/index.mjs';
  *   const key = configService.getSecret('API_KEY');
  *
  * Usage in tests:
- *   import { createTestConfigService } from './0_infrastructure/config/index.mjs';
+ *   import { createTestConfigService } from './0_system/config/index.mjs';
  *   const svc = createTestConfigService({ ... });
  */
 

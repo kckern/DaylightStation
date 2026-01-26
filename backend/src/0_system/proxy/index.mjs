@@ -5,7 +5,7 @@
  * injection and retry logic for external services.
  *
  * Usage:
- *   import { ProxyService, isProxyAdapter } from './0_infrastructure/proxy/index.mjs';
+ *   import { ProxyService, isProxyAdapter } from './0_system/proxy/index.mjs';
  *
  *   const proxyService = new ProxyService({ logger });
  *   proxyService.register(new PlexProxyAdapter(config));

@@ -8,7 +8,7 @@
  * 
  * Works alongside ConfigService for configuration management.
  * 
- * Location: backend/src/0_infrastructure/config/UserDataService.mjs
+ * Location: backend/src/0_system/config/UserDataService.mjs
  */
 
 import fs from 'fs';

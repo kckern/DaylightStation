@@ -1,4 +1,4 @@
-// backend/src/0_infrastructure/bootstrap.mjs
+// backend/src/0_system/bootstrap.mjs
 
 // EventBus imports
 import { WebSocketEventBus } from './eventbus/WebSocketEventBus.mjs';
