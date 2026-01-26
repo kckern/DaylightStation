@@ -19,7 +19,7 @@ import {
   loadYamlSafe,
   saveYaml
 } from '../../../0_infrastructure/utils/FileIO.mjs';
-import { INutriListStore } from '../../../1_domains/nutrition/ports/INutriListStore.mjs';
+import { INutriListStore } from '../../../3_applications/nutribot/ports/INutriListStore.mjs';
 import { shortIdFromUuid } from '../../../0_infrastructure/utils/shortId.mjs';
 
 const ARCHIVE_RETENTION_DAYS = 30;
