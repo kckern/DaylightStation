@@ -96,6 +96,11 @@ import { HomeBotContainer } from '../3_applications/homebot/HomeBotContainer.mjs
 import { ConfigHouseholdAdapter } from '../2_adapters/homebot/index.mjs';
 import { createHomebotRouter } from '../4_api/routers/homebot.mjs';
 
+// Agents application imports
+import { AgentOrchestrator, EchoAgent } from '../3_applications/agents/index.mjs';
+import { MastraAdapter } from '../2_adapters/agents/index.mjs';
+import { createAgentsRouter } from '../4_api/routers/agents.mjs';
+
 // Health domain imports
 import { HealthAggregationService } from '../1_domains/health/services/HealthAggregationService.mjs';
 import { YamlHealthStore } from '../2_adapters/persistence/yaml/YamlHealthStore.mjs';
@@ -1691,6 +1696,35 @@ export function createStaticApiRouter(config) {
  */
 export function createCalendarApiRouter(config) {
   return createCalendarRouter(config);
+}
+
+// =============================================================================
+// Agents Application Bootstrap
+// =============================================================================
+
+/**
+ * Create agents API router
+ * @param {Object} config
+ * @param {Object} [config.logger] - Logger instance
+ * @returns {express.Router}
+ */
+export function createAgentsApiRouter(config) {
+  const { logger = console } = config;
+
+  // Create Mastra adapter (IAgentRuntime implementation)
+  const agentRuntime = new MastraAdapter({ logger });
+
+  // Create orchestrator
+  const agentOrchestrator = new AgentOrchestrator({ agentRuntime, logger });
+
+  // Register available agents
+  agentOrchestrator.register(EchoAgent);
+
+  logger.info?.('agents.bootstrap.complete', {
+    registeredAgents: agentOrchestrator.list().map(a => a.id),
+  });
+
+  return createAgentsRouter({ agentOrchestrator, logger });
 }
 
 // =============================================================================
