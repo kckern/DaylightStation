@@ -25,6 +25,9 @@ export const prayerCardTheme = {
     dividerHeight: 2,
     sectionGap: 15,
     sectionHeaderHeight: 65,
+    sectionTitlePadding: 10,
+    dividerGapBefore: 10,
+    dividerGapAfter: 20,
     bulletIndent: 15,
   },
 
