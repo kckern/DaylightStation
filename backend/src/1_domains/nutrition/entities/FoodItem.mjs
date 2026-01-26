@@ -8,7 +8,7 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import { validateFoodItem } from './schemas.mjs';
-import { ValidationError } from '../../../0_infrastructure/utils/errors/index.mjs';
+import { ValidationError } from '../../core/errors/index.mjs';
 import { shortId, shortIdFromUuid } from '../../../0_infrastructure/utils/shortId.mjs';
 
 /**
