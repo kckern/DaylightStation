@@ -2,7 +2,7 @@
  * Account Entity - Represents a financial account
  */
 
-import { nowTs24 } from '../../../0_infrastructure/utils/index.mjs';
+import { ValidationError } from '../../core/errors/index.mjs';
 
 export class Account {
   constructor({
@@ -41,18 +41,28 @@ export class Account {
 
   /**
    * Update balance
+   * @param {number} newBalance - The new balance value
+   * @param {string} timestamp - ISO timestamp for the update
    */
-  updateBalance(newBalance) {
+  updateBalance(newBalance, timestamp) {
+    if (!timestamp) {
+      throw new ValidationError('timestamp required', { code: 'MISSING_TIMESTAMP', field: 'timestamp' });
+    }
     this.balance = newBalance;
-    this.lastUpdated = nowTs24();
+    this.lastUpdated = timestamp;
   }
 
   /**
    * Apply a transaction to the balance
+   * @param {number} amount - The transaction amount to apply
+   * @param {string} timestamp - ISO timestamp for the update
    */
-  applyTransaction(amount) {
+  applyTransaction(amount, timestamp) {
+    if (!timestamp) {
+      throw new ValidationError('timestamp required', { code: 'MISSING_TIMESTAMP', field: 'timestamp' });
+    }
     this.balance += amount;
-    this.lastUpdated = nowTs24();
+    this.lastUpdated = timestamp;
   }
 
   /**
