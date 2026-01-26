@@ -59,8 +59,19 @@ describe('Mortgage', () => {
 
   describe('getRemainingMonths', () => {
     test('returns positive number for future payoff', () => {
-      const remaining = mortgage.getRemainingMonths();
+      const remaining = mortgage.getRemainingMonths(new Date('2026-01-01'));
       expect(remaining).toBeGreaterThan(0);
+    });
+
+    test('throws ValidationError when asOfDate is missing', () => {
+      expect(() => mortgage.getRemainingMonths()).toThrow('asOfDate required');
+    });
+
+    test('calculates correct remaining months', () => {
+      // Mortgage starts 2024-01-01, term is 30 years, so payoff is 2054-01-01
+      // As of 2026-01-01, that's 28 years = 336 months remaining
+      const remaining = mortgage.getRemainingMonths(new Date('2026-01-01'));
+      expect(remaining).toBe(336);
     });
   });
 

@@ -61,13 +61,16 @@ export class MortgageService {
 
   /**
    * Calculate amortization schedule
+   * @param {Mortgage} mortgage - The mortgage entity
+   * @param {number|null} numPayments - Number of payments to calculate (or null to use remaining months)
+   * @param {Date|string} asOfDate - The date to calculate from (required if numPayments is null)
    */
-  calculateAmortizationSchedule(mortgage, numPayments = null) {
+  calculateAmortizationSchedule(mortgage, numPayments = null, asOfDate = null) {
     const schedule = [];
     const monthlyRate = mortgage.interestRate / 100 / 12;
     const payment = mortgage.monthlyPayment ?? mortgage.calculateMonthlyPayment();
     let balance = mortgage.currentBalance;
-    const months = numPayments ?? mortgage.getRemainingMonths();
+    const months = numPayments ?? mortgage.getRemainingMonths(asOfDate);
 
     for (let i = 1; i <= months && balance > 0; i++) {
       const interestPayment = balance * monthlyRate;
@@ -87,8 +90,10 @@ export class MortgageService {
 
   /**
    * Get mortgage summary
+   * @param {string} id - Mortgage ID
+   * @param {Date|string} asOfDate - The date to calculate summary as of (required)
    */
-  async getMortgageSummary(id) {
+  async getMortgageSummary(id, asOfDate) {
     const mortgage = await this.getMortgage(id);
     if (!mortgage) throw new Error(`Mortgage not found: ${id}`);
 
@@ -96,7 +101,7 @@ export class MortgageService {
       id: mortgage.id,
       currentBalance: mortgage.currentBalance,
       monthlyPayment: mortgage.getTotalMonthlyPayment(),
-      remainingMonths: mortgage.getRemainingMonths(),
+      remainingMonths: mortgage.getRemainingMonths(asOfDate),
       payoffDate: mortgage.getPayoffDate(),
       totalInterest: mortgage.getTotalInterest(),
       principalPaid: mortgage.principal - mortgage.currentBalance
