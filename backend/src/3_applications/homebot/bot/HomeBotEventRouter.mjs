@@ -1,8 +1,8 @@
 /**
- * HomeBotEventRouter - Routes Telegram events to use cases
+ * HomeBotEventRouter - Routes messaging events to use cases
  * @module homebot/bot/HomeBotEventRouter
  *
- * Handles incoming Telegram events (text, voice, callbacks, commands)
+ * Handles incoming messaging events (text, voice, callbacks, commands)
  * and routes them to the appropriate use case handlers.
  */
 
@@ -14,7 +14,7 @@ const InputEventType = {
 };
 
 /**
- * HomeBotEventRouter - Routes Telegram events to use cases
+ * HomeBotEventRouter - Routes messaging events to use cases
  */
 export class HomeBotEventRouter {
   #container;
