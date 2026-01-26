@@ -597,6 +597,27 @@ export class NutriReportRenderer {
   }
 
   /**
+   * Render daily nutrition report as PNG and save to temp file
+   * @param {Object} report
+   * @returns {Promise<string>} Path to temp PNG file
+   */
+  async renderDailyReportToFile(report) {
+    const buffer = await this.renderDailyReport(report);
+
+    const fs = await import('fs/promises');
+    const path = await import('path');
+    const os = await import('os');
+
+    const tmpDir = path.default.join(os.default.tmpdir(), 'nutribot-reports');
+    await fs.default.mkdir(tmpDir, { recursive: true });
+    const pngPath = path.default.join(tmpDir, `report-${report.date}-${Date.now()}.png`);
+    await fs.default.writeFile(pngPath, buffer);
+
+    this.#logger.debug?.('nutribot.renderer.file_saved', { path: pngPath });
+    return pngPath;
+  }
+
+  /**
    * Draw daily stacked bar chart
    * @private
    */

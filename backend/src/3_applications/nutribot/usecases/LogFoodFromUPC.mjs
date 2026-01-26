@@ -100,13 +100,17 @@ export class LogFoodFromUPC {
       if (this.#aiGateway) {
         try {
           classification = await this.#classifyProduct(product);
-        } catch (e) {}
+        } catch (e) {
+          this.#logger.warn?.('upc.classify.failed', { upc, error: e.message });
+        }
 
         if (!classification?.icon || classification.icon === 'default') {
           try {
             const icon = await this.#selectIconFromList(product);
             classification.icon = icon || 'default';
-          } catch (e) {}
+          } catch (e) {
+            this.#logger.warn?.('upc.iconSelect.failed', { upc, error: e.message });
+          }
         }
       }
 

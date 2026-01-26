@@ -28,6 +28,9 @@ export class GenerateMorningDebrief {
    * @param {Object} deps.logger - Logger instance
    */
   constructor(deps) {
+    if (!deps.lifelogAggregator) throw new Error('lifelogAggregator is required');
+    if (!deps.aiGateway) throw new Error('aiGateway is required');
+
     this.#lifelogAggregator = deps.lifelogAggregator;
     this.#aiGateway = deps.aiGateway;
     this.#debriefRepository = deps.debriefRepository;

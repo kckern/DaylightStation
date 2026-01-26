@@ -137,18 +137,22 @@ ${debrief.summary}`;
       }
 
       // Store debrief state for later retrieval (including lifelog for source dumps)
-      await this.#conversationStateStore.set(conversationId, {
-        activeFlow: 'morning_debrief',
-        debrief: {
-          date: debrief.date,
-          summary: debrief.summary,
-          questions: debrief.questions,
-          categories: debrief.categories,
-          sources: debrief.lifelog?._meta?.sources || [],
-          summaries: debrief.lifelog?.summaries || [],
-        },
-        messageId: result.messageId,
-      });
+      if (!this.#conversationStateStore) {
+        this.#logger.warn?.('debrief.send.no-state-store', { conversationId });
+      } else {
+        await this.#conversationStateStore.set(conversationId, {
+          activeFlow: 'morning_debrief',
+          debrief: {
+            date: debrief.date,
+            summary: debrief.summary,
+            questions: debrief.questions,
+            categories: debrief.categories,
+            sources: debrief.lifelog?._meta?.sources || [],
+            summaries: debrief.lifelog?.summaries || [],
+          },
+          messageId: result.messageId,
+        });
+      }
 
       // Persist debrief to debriefs.yml (without questions - generated on-demand)
       if (this.#debriefRepository) {

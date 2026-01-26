@@ -31,6 +31,7 @@ export class InitiateDebriefInterview {
   constructor(deps) {
     if (!deps.messagingGateway) throw new Error('messagingGateway is required');
     if (!deps.aiGateway) throw new Error('aiGateway is required');
+    if (!deps.debriefRepository) throw new Error('debriefRepository is required');
 
     this.#messagingGateway = deps.messagingGateway;
     this.#aiGateway = deps.aiGateway;

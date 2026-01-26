@@ -12,6 +12,8 @@ export class ConfirmAllPending {
   #foodLogStore;
   #nutriListStore;
   #logger;
+  #generateDailyReport;
+  #config;
 
   constructor(deps) {
     if (!deps.foodLogStore) throw new Error('foodLogStore is required');
@@ -19,6 +21,8 @@ export class ConfirmAllPending {
 
     this.#foodLogStore = deps.foodLogStore;
     this.#nutriListStore = deps.nutriListStore;
+    this.#generateDailyReport = deps.generateDailyReport;
+    this.#config = deps.config;
     this.#logger = deps.logger || console;
   }
 

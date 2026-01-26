@@ -109,22 +109,17 @@ export class LogFoodFromVoice {
     } catch (error) {
       this.#logger.error?.('logVoice.error', { conversationId, error: error.message });
 
-      const isTelegramError = error.message?.includes('Telegram error') || error.code === 'ETIMEDOUT' || error.code === 'EAI_AGAIN' || error.code === 'ECONNRESET';
+      const isTelegramError = error.message?.includes('Telegram error') ||
+        error.code === 'ETIMEDOUT' ||
+        error.code === 'EAI_AGAIN' ||
+        error.code === 'ECONNRESET';
 
       try {
-        if (isTelegramError) {
-          await this.#messagingGateway.sendMessage(
-            conversationId,
-            `⚠️ Network issue while updating the message. Your food may have been logged.\n\nPlease check your recent entries or try again.\n\n_Error: ${error.message || 'Connection issue'}_`,
-            { parse_mode: 'Markdown' }
-          );
-        } else {
-          await this.#messagingGateway.sendMessage(
-            conversationId,
-            `⚠️ Sorry, I couldn't process your voice message. Please try again or type what you ate.\n\n_Error: ${error.message || 'Connection issue'}_`,
-            { parse_mode: 'Markdown' }
-          );
-        }
+        const errorMessage = isTelegramError
+          ? `⚠️ Network issue while updating the message. Your food may have been logged.\n\nPlease check your recent entries or try again.\n\n_Error: ${error.message || 'Connection issue'}_`
+          : `⚠️ Sorry, I couldn't process your voice message. Please try again or type what you ate.\n\n_Error: ${error.message || 'Unknown error'}_`;
+
+        await messaging.sendMessage(errorMessage, { parse_mode: 'Markdown' });
       } catch (sendError) {
         this.#logger.error?.('logVoice.errorNotification.failed', {
           conversationId,
@@ -133,7 +128,7 @@ export class LogFoodFromVoice {
         });
       }
 
-      return { success: false, error: error.message };
+      throw error; // Re-throw instead of returning {success: false}
     }
   }
 }
