@@ -1,7 +1,7 @@
 /**
  * PayrollSyncService
  *
- * Syncs payroll data from external payroll API and uploads transactions to Buxfer.
+ * Syncs payroll data from external payroll API and uploads transactions to finance gateway.
  *
  * @module applications/finance/PayrollSyncService
  */
@@ -11,37 +11,44 @@
  */
 export class PayrollSyncService {
   #httpClient;
-  #buxferAdapter;
+  #transactionGateway;
   #financeStore;
   #configService;
+  #payrollConfig;
   #logger;
 
   /**
    * @param {Object} config
    * @param {Object} config.httpClient - HTTP client for API requests
-   * @param {Object} config.buxferAdapter - BuxferAdapter for transaction uploads
+   * @param {Object} config.transactionGateway - Gateway for transaction uploads
    * @param {Object} config.financeStore - YamlFinanceStore for persistence
    * @param {Object} config.configService - ConfigService for credentials
    * @param {Object} [config.logger] - Logger instance
    */
-  constructor({ httpClient, buxferAdapter, financeStore, configService, logger = console }) {
+  constructor({ httpClient, transactionGateway, financeStore, configService, payrollConfig, logger = console }) {
     if (!httpClient) throw new Error('PayrollSyncService requires httpClient');
     if (!configService) throw new Error('PayrollSyncService requires configService');
 
     this.#httpClient = httpClient;
-    this.#buxferAdapter = buxferAdapter;
+    this.#transactionGateway = transactionGateway;
     this.#financeStore = financeStore;
     this.#configService = configService;
+    this.#payrollConfig = payrollConfig; // Pre-resolved payroll configuration
     this.#logger = logger;
   }
 
   /**
-   * Get payroll configuration from ConfigService
+   * Get payroll configuration
    * @returns {Object} Payroll config
    */
   #getPayrollConfig() {
-    const auth = this.#configService.getUserAuth?.('payroll') || {};
+    // Prefer injected config (no config structure knowledge)
+    if (this.#payrollConfig) {
+      return this.#payrollConfig;
+    }
 
+    // Fallback for backwards compatibility (to be removed)
+    const auth = this.#configService.getUserAuth?.('payroll') || {};
     return {
       baseUrl: auth.base_url || auth.base,
       authKey: auth.cookie_name || auth.authkey,
@@ -137,10 +144,10 @@ export class PayrollSyncService {
       this.#logger.info?.('payroll.sync.saved', { newCount });
     }
 
-    // Upload transactions to Buxfer if adapter available
+    // Upload transactions if gateway available
     let uploadedCount = 0;
-    if (this.#buxferAdapter && payrollAccountId) {
-      uploadedCount = await this.#uploadToBuxfer(paychecks, {
+    if (this.#transactionGateway && payrollAccountId) {
+      uploadedCount = await this.#uploadTransactions(paychecks, {
         payrollAccountId,
         directDepositAccountId,
         householdId,
@@ -156,10 +163,10 @@ export class PayrollSyncService {
   }
 
   /**
-   * Upload payroll transactions to Buxfer
+   * Upload payroll transactions to transaction gateway
    * @private
    */
-  async #uploadToBuxfer(paychecks, { payrollAccountId, directDepositAccountId, householdId }) {
+  async #uploadTransactions(paychecks, { payrollAccountId, directDepositAccountId, householdId }) {
     // Load transaction mapping
     const mapping = this.#financeStore?.getPayrollMapping?.(householdId) || [];
 
@@ -201,19 +208,19 @@ export class PayrollSyncService {
     // Sort by date
     allTransactions.sort((a, b) => new Date(a.date) - new Date(b.date));
 
-    // Get existing Buxfer transactions to avoid duplicates
+    // Get existing transactions to avoid duplicates
     const startDate = allTransactions[0].date;
     const endDate = allTransactions[allTransactions.length - 1].date;
 
     let existingTransactions = [];
     try {
-      existingTransactions = await this.#buxferAdapter.getTransactions({
+      existingTransactions = await this.#transactionGateway.getTransactions({
         startDate,
         endDate,
         accounts: ['Payroll'],
       });
     } catch (error) {
-      this.#logger.warn?.('payroll.buxfer.fetch.error', { error: error.message });
+      this.#logger.warn?.('payroll.transaction.fetch.error', { error: error.message });
     }
 
     // Filter to transactions needing upload
@@ -229,7 +236,7 @@ export class PayrollSyncService {
     let uploadedCount = 0;
     for (const txn of toUpload) {
       try {
-        await this.#buxferAdapter.addTransaction({
+        await this.#transactionGateway.addTransaction({
           accountId: payrollAccountId,
           amount: txn.amount,
           date: txn.date,
