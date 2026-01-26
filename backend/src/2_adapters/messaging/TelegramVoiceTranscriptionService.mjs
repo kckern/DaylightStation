@@ -13,16 +13,20 @@ export class TelegramVoiceTranscriptionService {
   /**
    * @param {Object} config
    * @param {Object} config.openaiAdapter - OpenAIAdapter instance
-   * @param {Object} [config.httpClient] - HTTP client (axios)
-   * @param {Object} [config.logger] - Logger instance
+   * @param {Object} deps
+   * @param {import('#system/services/HttpClient.mjs').HttpClient} deps.httpClient
+   * @param {Object} [deps.logger=console]
    */
-  constructor(config) {
+  constructor(config, deps = {}) {
     if (!config?.openaiAdapter) {
       throw new Error('openaiAdapter is required');
     }
+    if (!deps.httpClient) {
+      throw new Error('TelegramVoiceTranscriptionService requires httpClient');
+    }
     this.#openaiAdapter = config.openaiAdapter;
-    this.#httpClient = config.httpClient;
-    this.#logger = config.logger || console;
+    this.#httpClient = deps.httpClient;
+    this.#logger = deps.logger || console;
   }
 
   /**
@@ -64,20 +68,18 @@ export class TelegramVoiceTranscriptionService {
    * @private
    */
   async #downloadAudio(url) {
-    if (this.#httpClient) {
-      const response = await this.#httpClient.get(url, {
-        responseType: 'arraybuffer'
+    try {
+      return await this.#httpClient.downloadBuffer(url);
+    } catch (error) {
+      this.#logger.error?.('telegram-voice.download.failed', {
+        error: error.message,
+        code: error.code
       });
-      return Buffer.from(response.data);
+      const wrapped = new Error('Failed to download audio');
+      wrapped.code = error.code || 'DOWNLOAD_ERROR';
+      wrapped.isTransient = error.isTransient || false;
+      throw wrapped;
     }
-
-    // Fallback to fetch
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`Failed to download audio: ${response.status}`);
-    }
-    const arrayBuffer = await response.arrayBuffer();
-    return Buffer.from(arrayBuffer);
   }
 
   /**
