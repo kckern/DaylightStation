@@ -6,7 +6,7 @@
 import express from 'express';
 import { JournalService } from '../../1_domains/journaling/services/JournalService.mjs';
 import { YamlJournalStore } from '../../2_adapters/persistence/yaml/YamlJournalStore.mjs';
-import { nowTs24 } from '../../0_infrastructure/utils/index.mjs';
+import { nowTs24 } from '../../0_system/utils/index.mjs';
 
 const router = express.Router();
 

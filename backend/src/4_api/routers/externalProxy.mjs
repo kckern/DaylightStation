@@ -14,7 +14,7 @@ import express from 'express';
 /**
  * Create external proxy router
  * @param {Object} config
- * @param {import('../../0_infrastructure/proxy/ProxyService.mjs').ProxyService} config.proxyService
+ * @param {import('../../0_system/proxy/ProxyService.mjs').ProxyService} config.proxyService
  * @param {Object} [config.logger]
  * @returns {express.Router}
  */

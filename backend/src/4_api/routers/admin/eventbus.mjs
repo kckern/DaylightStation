@@ -1,6 +1,6 @@
 // backend/src/4_api/routers/admin/eventbus.mjs
 import express from 'express';
-import { nowTs } from '../../../0_infrastructure/utils/index.mjs';
+import { nowTs } from '../../../0_system/utils/index.mjs';
 
 /**
  * Create admin eventbus router for WebSocket server management

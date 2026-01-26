@@ -23,13 +23,13 @@ import {
   errorHandlerMiddleware,
   requestLoggerMiddleware,
   asyncHandler,
-} from '../../0_infrastructure/http/middleware/index.mjs';
+} from '../../0_system/http/middleware/index.mjs';
 
 /**
  * Create NutriBot Express Router
  * @param {import('../../3_applications/nutribot/NutribotContainer.mjs').NutribotContainer} container
  * @param {Object} [options]
- * @param {import('../../0_infrastructure/users/UserResolver.mjs').UserResolver} [options.userResolver] - For resolving platform users to system usernames
+ * @param {import('../../0_system/users/UserResolver.mjs').UserResolver} [options.userResolver] - For resolving platform users to system usernames
  * @param {string} [options.botId] - Telegram bot ID
  * @param {string} [options.secretToken] - X-Telegram-Bot-Api-Secret-Token for webhook auth
  * @param {Object} [options.gateway] - TelegramAdapter for callback acknowledgements

@@ -13,8 +13,8 @@
 
 import express from 'express';
 import cors from 'cors';
-import { nowTs } from '../0_infrastructure/utils/index.mjs';
-import { createDevProxy } from '../0_infrastructure/http/middleware/devProxy.mjs';
+import { nowTs } from '../0_system/utils/index.mjs';
+import { createDevProxy } from '../0_system/http/middleware/devProxy.mjs';
 
 /**
  * Create the webhook server
