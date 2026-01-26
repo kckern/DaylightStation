@@ -374,16 +374,19 @@ export function createFitnessRouter(config) {
 
       const relativePath = `${paths.screenshotsRelativeBase}/${filename}`;
 
+      // Use request timestamp or current time
+      const captureTimestamp = timestamp || Date.now();
+
       const captureInfo = {
         index: indexValue,
         filename,
         path: relativePath,
-        timestamp: timestamp || Date.now(),
+        timestamp: captureTimestamp,
         size: buffer.length
       };
 
       // Update session with snapshot
-      await sessionService.addSnapshot(sessionId, captureInfo, household);
+      await sessionService.addSnapshot(sessionId, captureInfo, household, captureTimestamp);
 
       return res.json({
         ok: true,

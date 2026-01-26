@@ -119,7 +119,7 @@ describe('Session', () => {
 
   describe('end', () => {
     test('sets endTime', () => {
-      const endTs = Date.now();
+      const endTs = 1736600400000;
       session.end(endTs);
       expect(session.endTime).toBe(endTs);
     });
@@ -127,6 +127,10 @@ describe('Session', () => {
     test('calculates durationMs', () => {
       session.end(session.startTime + 3600000);
       expect(session.durationMs).toBe(3600000);
+    });
+
+    test('throws when endTime is missing', () => {
+      expect(() => session.end()).toThrow('endTime required');
     });
   });
 
@@ -144,19 +148,30 @@ describe('Session', () => {
   });
 
   describe('addEvent', () => {
-    test('adds timeline event', () => {
-      session.addEvent('equipment_change', { equipment: 'bike' });
+    test('adds timeline event with timestamp', () => {
+      const eventTime = 1736596800000;
+      session.addEvent('equipment_change', { equipment: 'bike' }, eventTime);
       expect(session.timeline.events).toHaveLength(1);
       expect(session.timeline.events[0].type).toBe('equipment_change');
       expect(session.timeline.events[0].equipment).toBe('bike');
+      expect(session.timeline.events[0].timestamp).toBe(eventTime);
+    });
+
+    test('throws when timestamp is missing', () => {
+      expect(() => session.addEvent('test', {})).toThrow('timestamp required');
     });
   });
 
   describe('addSnapshot', () => {
-    test('adds capture to snapshots', () => {
-      session.addSnapshot({ filename: 'test.jpg', size: 1024 });
+    test('adds capture to snapshots with timestamp', () => {
+      const snapshotTime = 1736596900000;
+      session.addSnapshot({ filename: 'test.jpg', size: 1024 }, snapshotTime);
       expect(session.snapshots.captures).toHaveLength(1);
-      expect(session.snapshots.updatedAt).toBeDefined();
+      expect(session.snapshots.updatedAt).toBe(snapshotTime);
+    });
+
+    test('throws when timestamp is missing', () => {
+      expect(() => session.addSnapshot({ filename: 'test.jpg' })).toThrow('timestamp required');
     });
   });
 
@@ -202,16 +217,21 @@ describe('Session', () => {
   });
 
   describe('static generateSessionId', () => {
-    test('generates 14-digit timestamp ID', () => {
-      const id = Session.generateSessionId();
-      expect(id).toMatch(/^\d{14}$/);
-    });
-
-    test('accepts Date object', () => {
+    test('generates 14-digit timestamp ID from Date', () => {
       // Note: generateSessionId uses local time, not UTC
       const date = new Date(2026, 0, 11, 12, 30, 45); // Local time
       const id = Session.generateSessionId(date);
+      expect(id).toMatch(/^\d{14}$/);
       expect(id).toBe('20260111123045');
+    });
+
+    test('accepts ISO date string', () => {
+      const id = Session.generateSessionId('2026-01-11T12:30:45');
+      expect(id).toMatch(/^\d{14}$/);
+    });
+
+    test('throws when date is missing', () => {
+      expect(() => Session.generateSessionId()).toThrow('date required');
     });
   });
 
