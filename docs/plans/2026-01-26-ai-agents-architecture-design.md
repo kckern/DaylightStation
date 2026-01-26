@@ -1,5 +1,7 @@
 # AI Agents Architecture Design
 
+> **Status:** Implemented in `refactor/ddd-migration` branch (feature-ai-agents worktree)
+
 > Design for integrating autonomous AI agents into DaylightStation's DDD architecture.
 
 ---
