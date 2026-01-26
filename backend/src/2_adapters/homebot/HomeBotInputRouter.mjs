@@ -18,7 +18,7 @@ export class HomeBotInputRouter {
   /**
    * @param {Object} container - HomeBotContainer
    * @param {Object} [options]
-   * @param {import('../../0_infrastructure/users/UserResolver.mjs').UserResolver} [options.userResolver] - For resolving platform users to system usernames
+   * @param {import('../../0_system/users/UserResolver.mjs').UserResolver} [options.userResolver] - For resolving platform users to system usernames
    * @param {Object} [options.logger]
    */
   constructor(container, options = {}) {

@@ -13,8 +13,8 @@ import {
   ensureDir,
   loadYamlSafe,
   saveYaml
-} from '../../../0_infrastructure/utils/FileIO.mjs';
-import { nowTs24 } from '../../../0_infrastructure/utils/index.mjs';
+} from '../../../0_system/utils/FileIO.mjs';
+import { nowTs24 } from '../../../0_system/utils/index.mjs';
 import { INutriCoachStore } from '../../../3_applications/nutribot/ports/INutriCoachStore.mjs';
 
 export class YamlNutriCoachStore extends INutriCoachStore {

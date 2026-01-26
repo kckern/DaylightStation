@@ -12,7 +12,7 @@ import {
   loadYamlFromPath,
   saveYamlToPath,
   resolveYamlPath
-} from '../../../0_infrastructure/utils/FileIO.mjs';
+} from '../../../0_system/utils/FileIO.mjs';
 
 /**
  * Adapter for local content (talks, scriptures)
@@ -584,7 +584,7 @@ export class LocalContentAdapter {
     // Try _ldsgc subdirectory first (General Conference recordings), then root
     let mediaFile = metadata.mediaFile;
     if (!mediaFile && this.mediaPath) {
-      const { findMediaFileByPrefix } = await import('../../../0_infrastructure/utils/FileIO.mjs');
+      const { findMediaFileByPrefix } = await import('../../../0_system/utils/FileIO.mjs');
       const preferences = collection === 'hymn' ? ['_ldsgc', ''] : [''];
       for (const pref of preferences) {
         const searchDir = pref

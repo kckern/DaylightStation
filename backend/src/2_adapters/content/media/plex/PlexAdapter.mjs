@@ -8,7 +8,7 @@ import {
   listYamlFiles,
   loadYamlFromPath,
   saveYamlToPath
-} from '../../../../0_infrastructure/utils/FileIO.mjs';
+} from '../../../../0_system/utils/FileIO.mjs';
 
 /**
  * Plex content source adapter.

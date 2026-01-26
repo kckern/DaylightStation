@@ -8,7 +8,7 @@
  */
 
 import { ConversationId } from '../../1_domains/messaging/value-objects/ConversationId.mjs';
-import { ValidationError } from '../../0_infrastructure/utils/errors/index.mjs';
+import { ValidationError } from '../../0_system/utils/errors/index.mjs';
 
 /**
  * Channel identifier for Telegram

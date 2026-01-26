@@ -15,7 +15,7 @@ import {
   listYamlFiles,
   listDirsMatching,
   deleteYaml
-} from '../../../0_infrastructure/utils/FileIO.mjs';
+} from '../../../0_system/utils/FileIO.mjs';
 
 /**
  * Derive session date from sessionId

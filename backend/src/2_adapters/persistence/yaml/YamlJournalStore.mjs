@@ -14,7 +14,7 @@ import {
   loadYamlSafe,
   saveYaml,
   deleteYaml
-} from '../../../0_infrastructure/utils/FileIO.mjs';
+} from '../../../0_system/utils/FileIO.mjs';
 
 export class YamlJournalStore {
   /**

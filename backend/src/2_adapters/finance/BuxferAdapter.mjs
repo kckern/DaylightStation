@@ -5,7 +5,7 @@
 
 import { Transaction } from '../../1_domains/finance/entities/Transaction.mjs';
 import { Account } from '../../1_domains/finance/entities/Account.mjs';
-import { nowTs24, nowDate } from '../../0_infrastructure/utils/index.mjs';
+import { nowTs24, nowDate } from '../../0_system/utils/index.mjs';
 
 const BUXFER_API_BASE = 'https://www.buxfer.com/api';
 

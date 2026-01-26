@@ -3,7 +3,7 @@
  * Implements INotificationChannel for email sending
  */
 
-import { nowTs24, nowDate } from '../../0_infrastructure/utils/index.mjs';
+import { nowTs24, nowDate } from '../../0_system/utils/index.mjs';
 
 export class GmailAdapter {
   constructor({ googleAuth, logger }) {

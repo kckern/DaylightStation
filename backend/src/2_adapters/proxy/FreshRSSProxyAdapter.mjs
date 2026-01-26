@@ -7,10 +7,10 @@
  * @module adapters/proxy
  */
 
-import { configService } from '../../0_infrastructure/config/index.mjs';
+import { configService } from '../../0_system/config/index.mjs';
 
 /**
- * @implements {import('../../0_infrastructure/proxy/IProxyAdapter.mjs').IProxyAdapter}
+ * @implements {import('../../0_system/proxy/IProxyAdapter.mjs').IProxyAdapter}
  */
 export class FreshRSSProxyAdapter {
   #host;

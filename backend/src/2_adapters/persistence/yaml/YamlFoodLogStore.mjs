@@ -17,7 +17,7 @@ import {
   listYamlFiles,
   loadYamlSafe,
   saveYaml
-} from '../../../0_infrastructure/utils/FileIO.mjs';
+} from '../../../0_system/utils/FileIO.mjs';
 
 const ARCHIVE_RETENTION_DAYS = 30;
 
