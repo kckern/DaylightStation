@@ -554,7 +554,7 @@ export function createFinanceServices(config) {
   if (httpClient && configService) {
     payrollService = new PayrollSyncService({
       httpClient,
-      buxferAdapter,
+      transactionGateway: buxferAdapter,
       financeStore,
       configService,
       logger
