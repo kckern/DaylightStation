@@ -7,8 +7,8 @@
 
 import { jest } from '@jest/globals';
 import { LifelogAggregator } from '../LifelogAggregator.mjs';
-import { initConfigService, resetConfigService, configService } from '../../../../0_infrastructure/config/index.mjs';
-import { userDataService } from '../../../../0_infrastructure/config/UserDataService.mjs';
+import { initConfigService, resetConfigService, configService } from '../../../../0_system/config/index.mjs';
+import { userDataService } from '../../../../0_system/config/UserDataService.mjs';
 
 // Get data dir from environment or use default
 const DATA_DIR = process.env.DAYLIGHT_DATA_PATH || '/media/kckern/DockerDrive/Dropbox/Apps/DaylightStation/data';
