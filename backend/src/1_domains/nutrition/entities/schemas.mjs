@@ -5,7 +5,7 @@
  * Validation schemas for nutrition data structures.
  */
 
-import { isShortId, isUuid } from '../../../0_infrastructure/utils/shortId.mjs';
+import { isShortId, isUuid } from '../../core/utils/id.mjs';
 
 // ==================== Enums ====================
 
