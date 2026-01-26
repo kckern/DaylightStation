@@ -10,9 +10,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { Selection } from '../entities/Selection.mjs';
 import { GratitudeItem } from '../entities/GratitudeItem.mjs';
-import { nowTs24 } from '../../../0_infrastructure/utils/index.mjs';
-import { DomainInvariantError, EntityNotFoundError } from '../../core/errors/index.mjs';
-// Note: nowTs24 usage is permitted in service layer (application-adjacent)
+import { DomainInvariantError, EntityNotFoundError, ValidationError } from '../../core/errors/index.mjs';
 
 /**
  * Valid categories
@@ -136,10 +134,14 @@ export class GratitudeService {
    * @param {Category} category
    * @param {string} userId
    * @param {Object} item
-   * @param {string} [timezone]
+   * @param {string} timestamp - ISO timestamp (required, from application layer)
    * @returns {Promise<Selection>}
    */
-  async addSelection(householdId, category, userId, item, timezone) {
+  async addSelection(householdId, category, userId, item, timestamp) {
+    if (!timestamp) {
+      throw new ValidationError('timestamp required', { code: 'MISSING_TIMESTAMP', field: 'timestamp' });
+    }
+
     // Check for duplicates
     const existing = await this.#store.getSelections(householdId, category);
     const duplicate = existing.find(s =>
@@ -149,10 +151,6 @@ export class GratitudeService {
       throw new DomainInvariantError('Item already selected by this user', { code: 'DUPLICATE_SELECTION', itemId: item.id, userId });
     }
 
-    // Create selection - generate timestamp in service layer
-    const timestamp = timezone
-      ? new Date().toLocaleString('en-US', { timeZone: timezone })
-      : nowTs24();
     const selection = Selection.create(userId, item, timestamp);
     await this.#store.addSelection(householdId, category, selection.toJSON());
 
@@ -182,16 +180,15 @@ export class GratitudeService {
    * @param {Category} category
    * @param {string} userId
    * @param {Array<{id?: string, text: string}>} items
-   * @param {string} [timezone]
+   * @param {string} timestamp - ISO timestamp (required, from application layer)
    * @returns {Promise<Selection[]>}
    */
-  async addSelections(householdId, category, userId, items, timezone) {
-    const selections = [];
+  async addSelections(householdId, category, userId, items, timestamp) {
+    if (!timestamp) {
+      throw new ValidationError('timestamp required', { code: 'MISSING_TIMESTAMP', field: 'timestamp' });
+    }
 
-    // Generate timestamp once for all items in batch
-    const timestamp = timezone
-      ? new Date().toLocaleString('en-US', { timeZone: timezone })
-      : nowTs24();
+    const selections = [];
 
     for (const item of items) {
       const itemWithId = {
@@ -238,12 +235,15 @@ export class GratitudeService {
    * @param {string} householdId
    * @param {Category} category
    * @param {string[]} selectionIds
+   * @param {string} timestamp - ISO timestamp (required, from application layer)
    * @returns {Promise<void>}
    */
-  async markAsPrinted(householdId, category, selectionIds) {
+  async markAsPrinted(householdId, category, selectionIds, timestamp) {
     if (!selectionIds || selectionIds.length === 0) return;
+    if (!timestamp) {
+      throw new ValidationError('timestamp required', { code: 'MISSING_TIMESTAMP', field: 'timestamp' });
+    }
 
-    const timestamp = nowTs24();
     await this.#store.markAsPrinted(householdId, category, selectionIds, timestamp);
 
     this.#logger.info?.('gratitude.selections.printed', {
@@ -367,15 +367,20 @@ export class GratitudeService {
   /**
    * Save a snapshot
    * @param {string} householdId
+   * @param {string} timestamp - ISO timestamp (required, from application layer)
    * @returns {Promise<{id: string, createdAt: string, file: string}>}
    */
-  async saveSnapshot(householdId) {
+  async saveSnapshot(householdId, timestamp) {
+    if (!timestamp) {
+      throw new ValidationError('timestamp required', { code: 'MISSING_TIMESTAMP', field: 'timestamp' });
+    }
+
     const data = await this.bootstrap(householdId);
 
     const snapshot = {
       id: uuidv4(),
       householdId,
-      createdAt: nowTs24(),
+      createdAt: timestamp,
       ...data
     };
 

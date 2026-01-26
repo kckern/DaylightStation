@@ -6,7 +6,7 @@
  */
 
 import { MessageQueue } from '../entities/MessageQueue.mjs';
-import { nowTs24 } from '../../../0_infrastructure/utils/time.mjs';
+import { ValidationError } from '../../core/errors/index.mjs';
 
 /**
  * Check if response allows continuing the queue
@@ -97,15 +97,17 @@ export function buildDefaultChoices() {
  * @param {string} chatId
  * @param {string[]} questions
  * @param {object} [foreignKey]
- * @param {string} [timestamp] - ISO timestamp (defaults to now)
+ * @param {string} timestamp - ISO timestamp (required, from application layer)
  * @returns {MessageQueue[]}
  */
 export function createQueueFromQuestions(chatId, questions, foreignKey = {}, timestamp) {
-  const ts = timestamp || nowTs24();
+  if (!timestamp) {
+    throw new ValidationError('timestamp required', { code: 'MISSING_TIMESTAMP', field: 'timestamp' });
+  }
   return questions.map((question, index) =>
     MessageQueue.create({
       chatId,
-      timestamp: ts,
+      timestamp,
       queuedMessage: question,
       foreignKey: { ...foreignKey, queueIndex: index },
     }),
