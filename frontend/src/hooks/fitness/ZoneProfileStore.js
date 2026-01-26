@@ -140,6 +140,17 @@ export class ZoneProfileStore {
     const sourceZoneConfig = hasCustomZones ? user.zoneConfig : this._baseZoneConfig;
     const normalizedZoneConfig = cloneZoneConfig(sourceZoneConfig || []);
 
+    // DIAGNOSTIC: Log zone config source for debugging zone mismatch issues
+    if (userId && normalizedZoneConfig.length > 0) {
+      const warmZone = normalizedZoneConfig.find(z => z.id === 'warm' || z.name === 'Warm');
+      console.log('[ZoneProfileStore] Building profile:', {
+        userId,
+        hasCustomZones,
+        warmThreshold: warmZone?.min ?? null,
+        zoneCount: normalizedZoneConfig.length
+      });
+    }
+
     const heartRate = Number.isFinite(user?.currentData?.heartRate)
       ? Math.max(0, user.currentData.heartRate)
       : (Number.isFinite(user?.zoneSnapshot?.currentHR) ? Math.max(0, user.zoneSnapshot.currentHR) : 0);
