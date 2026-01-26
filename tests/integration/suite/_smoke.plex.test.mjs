@@ -6,8 +6,8 @@ describe('Plex connectivity', () => {
 
   beforeAll(async () => {
     // Dynamic import to handle ESM config loading
-    // Use new config infrastructure from src/0_infrastructure/config
-    const { createConfigService } = await import('#backend/src/0_infrastructure/config/index.mjs');
+    // Use new config infrastructure from src/0_system/config
+    const { createConfigService } = await import('#backend/src/0_system/config/index.mjs');
     
     // Create a config service instance with the data path
     const dataDir = process.env.DAYLIGHT_DATA_PATH || '/Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStation';

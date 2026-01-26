@@ -1,5 +1,5 @@
 // tests/unit/infrastructure/config/ConfigService.test.mjs
-import { ConfigService } from '#backend/src/0_infrastructure/config/ConfigService.mjs';
+import { ConfigService } from '#backend/src/0_system/config/ConfigService.mjs';
 
 describe('ConfigService', () => {
   let config;

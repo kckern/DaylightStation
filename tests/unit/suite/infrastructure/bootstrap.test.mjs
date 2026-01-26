@@ -1,6 +1,6 @@
 // tests/unit/infrastructure/bootstrap.test.mjs
 import { jest } from '@jest/globals';
-import { createContentRegistry, createFitnessSyncerAdapter } from '#backend/src/0_infrastructure/bootstrap.mjs';
+import { createContentRegistry, createFitnessSyncerAdapter } from '#backend/src/0_system/bootstrap.mjs';
 
 describe('bootstrap', () => {
   describe('createContentRegistry', () => {

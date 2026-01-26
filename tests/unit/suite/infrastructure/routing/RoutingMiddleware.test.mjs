@@ -3,8 +3,8 @@ import { describe, it, expect, beforeEach, jest, afterEach } from '@jest/globals
 import {
   createRoutingMiddleware,
   wrapResponseWithShim,
-} from '#backend/src/0_infrastructure/routing/RoutingMiddleware.mjs';
-import { ShimMetrics } from '#backend/src/0_infrastructure/routing/ShimMetrics.mjs';
+} from '#backend/src/0_system/routing/RoutingMiddleware.mjs';
+import { ShimMetrics } from '#backend/src/0_system/routing/ShimMetrics.mjs';
 
 describe('RoutingMiddleware', () => {
   let legacyApp;

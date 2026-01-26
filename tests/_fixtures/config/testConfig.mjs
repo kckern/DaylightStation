@@ -10,7 +10,7 @@ import {
   initConfigService,
   resetConfigService,
   configService
-} from '#backend/src/0_infrastructure/config/index.mjs';
+} from '#backend/src/0_system/config/index.mjs';
 import { defaultMockConfig } from './mockConfigs.mjs';
 
 /**

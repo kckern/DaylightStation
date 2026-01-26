@@ -1,6 +1,6 @@
 // tests/unit/infrastructure/proxy/ProxyService.test.mjs
 import { jest } from '@jest/globals';
-import { ProxyService } from '#backend/src/0_infrastructure/proxy/ProxyService.mjs';
+import { ProxyService } from '#backend/src/0_system/proxy/ProxyService.mjs';
 
 describe('ProxyService', () => {
   let proxyService;

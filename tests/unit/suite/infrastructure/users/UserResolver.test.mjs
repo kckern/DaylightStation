@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@jest/globals';
-import { UserResolver } from '#backend/src/0_infrastructure/users/UserResolver.mjs';
+import { UserResolver } from '#backend/src/0_system/users/UserResolver.mjs';
 
 describe('UserResolver', () => {
   const mockConfigService = {

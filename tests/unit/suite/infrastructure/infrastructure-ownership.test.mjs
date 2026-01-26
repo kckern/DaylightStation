@@ -18,7 +18,7 @@ describe('Infrastructure Ownership', () => {
     beforeEach(async () => {
       // Reset module cache to get fresh singleton
       jest.resetModules();
-      bootstrap = await import('#backend/src/0_infrastructure/bootstrap.mjs');
+      bootstrap = await import('#backend/src/0_system/bootstrap.mjs');
     });
 
     afterEach(() => {
@@ -90,7 +90,7 @@ describe('Infrastructure Ownership', () => {
 
     beforeEach(async () => {
       jest.resetModules();
-      bootstrap = await import('#backend/src/0_infrastructure/bootstrap.mjs');
+      bootstrap = await import('#backend/src/0_system/bootstrap.mjs');
     });
 
     afterEach(() => {
@@ -226,7 +226,7 @@ describe('Infrastructure Ownership', () => {
   describe('Load Order Verification', () => {
     it('first backend to create EventBus owns it', async () => {
       jest.resetModules();
-      const bootstrap = await import('#backend/src/0_infrastructure/bootstrap.mjs');
+      const bootstrap = await import('#backend/src/0_system/bootstrap.mjs');
 
       const mockServer = { on: jest.fn() };
       const logger1 = { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() };

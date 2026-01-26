@@ -23,7 +23,7 @@ const mockModules = () => {
     saveFile: jest.fn()
   }));
   jest.unstable_mockModule('#backend/_legacy/lib/http.mjs', () => ({ default: { post: mockAxiosPost, get: jest.fn() } }));
-  jest.unstable_mockModule('#backend/src/0_infrastructure/logging/logger.js', () => ({ createLogger: () => mockLogger }));
+  jest.unstable_mockModule('#backend/src/0_system/logging/logger.js', () => ({ createLogger: () => mockLogger }));
 };
 
 const clearEnv = () => {
