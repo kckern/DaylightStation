@@ -5,9 +5,9 @@
  * NutriList stores individual food items for reporting/analytics.
  *
  * Storage Strategy:
- * - Hot storage: households/{hid}/apps/nutrition/nutrilist.yml (recent 30 days)
- * - Cold storage: households/{hid}/apps/nutrition/archives/nutrilist/{YYYY-MM}.yml
- * - Daily summaries: households/{hid}/apps/nutrition/nutriday.yml
+ * - Hot storage: users/{userId}/lifelog/nutrition/nutrilist.yml (recent 30 days)
+ * - Cold storage: users/{userId}/lifelog/nutrition/archives/nutrilist/{YYYY-MM}.yml
+ * - Daily summaries: users/{userId}/lifelog/nutrition/nutriday.yml
  */
 
 import path from 'path';
