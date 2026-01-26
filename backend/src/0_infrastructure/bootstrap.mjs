@@ -72,7 +72,6 @@ import { createMessagingRouter } from '../4_api/routers/messaging.mjs';
 
 // Journalist application imports
 import { JournalistContainer } from '../3_applications/journalist/JournalistContainer.mjs';
-import { JournalistInputRouter } from '../2_adapters/journalist/JournalistInputRouter.mjs';
 import { YamlJournalEntryRepository } from '../2_adapters/persistence/yaml/YamlJournalEntryRepository.mjs';
 import { YamlMessageQueueRepository } from '../2_adapters/persistence/yaml/YamlMessageQueueRepository.mjs';
 import { createJournalistRouter } from '../4_api/routers/journalist.mjs';
@@ -94,7 +93,7 @@ import { NutritionixAdapter } from '../2_adapters/nutrition/NutritionixAdapter.m
 
 // Homebot application imports
 import { HomeBotContainer } from '../3_applications/homebot/HomeBotContainer.mjs';
-import { HomeBotInputRouter, ConfigHouseholdAdapter } from '../2_adapters/homebot/index.mjs';
+import { ConfigHouseholdAdapter } from '../2_adapters/homebot/index.mjs';
 import { createHomebotRouter } from '../4_api/routers/homebot.mjs';
 
 // Health domain imports
@@ -1185,17 +1184,10 @@ export function createJournalistServices(config) {
     logger
   });
 
-  // Create input router for webhook handling
-  const journalistInputRouter = new JournalistInputRouter(journalistContainer, {
-    userResolver,
-    logger
-  });
-
   return {
     journalEntryRepository,
     messageQueueRepository,
-    journalistContainer,
-    journalistInputRouter
+    journalistContainer
   };
 }
 
@@ -1274,15 +1266,8 @@ export function createHomebotServices(config) {
     logger
   });
 
-  // Create input router for webhook handling
-  const homebotInputRouter = new HomeBotInputRouter({
-    container: homebotContainer,
-    logger
-  });
-
   return {
     homebotContainer,
-    homebotInputRouter,
     householdRepository
   };
 }
