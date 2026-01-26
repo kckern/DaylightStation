@@ -4,11 +4,14 @@
  * Calculates data freshness/staleness for all configured sources.
  * High entropy = stale data, low entropy = fresh data.
  *
+ * Located in application layer because it uses infrastructure services
+ * (configService, logging) for bootstrapping and configuration.
+ *
  * @module entropy/services
  */
 
 import moment from 'moment';
-import { EntropyItem, MetricType } from '../entities/EntropyItem.mjs';
+import { EntropyItem, MetricType } from '../../../1_domains/entropy/entities/EntropyItem.mjs';
 
 /**
  * Service for calculating entropy (data staleness) reports
@@ -217,7 +220,7 @@ export async function createWithLegacyDependencies() {
   const userLoadFile = (username, service) => userDataService.readUserData(username, `lifelog/${service}`);
   const userLoadCurrent = (username, service) => userDataService.readUserData(username, `current/${service}`);
 
-  const ArchiveServiceModule = await import('../../../3_applications/content/services/ArchiveService.mjs');
+  const ArchiveServiceModule = await import('../../content/services/ArchiveService.mjs');
   const { createLogger } = await import('../../../0_infrastructure/logging/logger.js');
 
   const ArchiveService = ArchiveServiceModule.default;

@@ -54,14 +54,22 @@ export function getHourInTimezone(now, timezone) {
 }
 
 /**
- * @deprecated Use getHourInTimezone(now, timezone) instead - requires Date parameter
- * Get current hour in a specific timezone
- * @param {string} timezone - IANA timezone string (e.g., 'America/Los_Angeles')
- * @returns {number} Hour of day (0-23)
+ * @deprecated REMOVED - Use getHourInTimezone(now, timezone) instead
+ *
+ * This function was removed because it uses new Date() internally,
+ * which violates domain layer purity rules. The application layer
+ * should provide the current timestamp.
+ *
+ * Migration: Replace getCurrentHourInTimezone(tz) with getHourInTimezone(new Date(), tz)
+ * in application layer code.
+ *
+ * @throws {Error} Always throws directing callers to use getHourInTimezone
  */
-export function getCurrentHourInTimezone(timezone) {
-  // Legacy function - callers should migrate to getHourInTimezone
-  return getHourInTimezone(new Date(), timezone);
+export function getCurrentHourInTimezone(/* timezone */) {
+  throw new Error(
+    'getCurrentHourInTimezone is removed. Use getHourInTimezone(now, timezone) instead, ' +
+    'where now is provided by the application layer.'
+  );
 }
 
 /**
