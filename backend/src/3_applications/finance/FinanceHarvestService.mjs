@@ -2,14 +2,14 @@
  * FinanceHarvestService - Orchestrates financial data refresh
  *
  * Coordinates the harvesting of financial data from external sources:
- * - Fetches transactions from Buxfer for each budget period
+ * - Fetches transactions from the transaction source for each budget period
  * - Updates account balances
  * - Fetches mortgage transactions
  * - Optionally categorizes transactions using AI
  * - Triggers budget compilation after data refresh
  *
  * Dependencies:
- * - BuxferAdapter: External transaction source
+ * - transactionSource: External transaction gateway
  * - TransactionCategorizationService: AI categorization
  * - BudgetCompilationService: Budget compilation
  * - YamlFinanceStore: Persistence
@@ -26,7 +26,7 @@ export class FinanceHarvestService {
 
   /**
    * @param {Object} deps - Dependencies
-   * @param {Object} deps.transactionSource - BuxferAdapter instance
+   * @param {Object} deps.transactionSource - Transaction gateway instance
    * @param {Object} deps.financeStore - YamlFinanceStore instance
    * @param {Object} [deps.categorizationService] - TransactionCategorizationService instance
    * @param {Object} [deps.compilationService] - BudgetCompilationService instance
@@ -237,7 +237,7 @@ export class FinanceHarvestService {
   async #fetchTransactions(startDate, endDate, accounts) {
     this.#log('debug', 'harvest.transactions.fetch', { startDate, endDate, accounts });
 
-    // BuxferAdapter.getTransactions returns raw transaction objects
+    // transactionSource.getTransactions returns raw transaction objects
     const transactions = await this.#transactionSource.getTransactions({
       startDate,
       endDate,
@@ -253,7 +253,7 @@ export class FinanceHarvestService {
   async #fetchAccountBalances(accounts) {
     this.#log('debug', 'harvest.balances.fetch', { accounts });
 
-    // Get accounts from Buxfer
+    // Get accounts from transaction source
     const allAccounts = await this.#transactionSource.getAccounts();
 
     // Filter and map to balance objects
