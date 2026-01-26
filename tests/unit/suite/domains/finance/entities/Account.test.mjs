@@ -61,25 +61,34 @@ describe('Account', () => {
 
   describe('updateBalance', () => {
     test('updates balance', () => {
-      account.updateBalance(6000);
+      account.updateBalance(6000, '2026-01-26T12:00:00Z');
       expect(account.balance).toBe(6000);
     });
 
     test('updates lastUpdated', () => {
-      account.updateBalance(6000);
-      expect(account.lastUpdated).toBeDefined();
+      const timestamp = '2026-01-26T12:00:00Z';
+      account.updateBalance(6000, timestamp);
+      expect(account.lastUpdated).toBe(timestamp);
+    });
+
+    test('throws if timestamp not provided', () => {
+      expect(() => account.updateBalance(6000)).toThrow('timestamp required');
     });
   });
 
   describe('applyTransaction', () => {
     test('adds to balance', () => {
-      account.applyTransaction(100);
+      account.applyTransaction(100, '2026-01-26T12:00:00Z');
       expect(account.balance).toBe(5100);
     });
 
     test('subtracts from balance', () => {
-      account.applyTransaction(-200);
+      account.applyTransaction(-200, '2026-01-26T12:00:00Z');
       expect(account.balance).toBe(4800);
+    });
+
+    test('throws if timestamp not provided', () => {
+      expect(() => account.applyTransaction(100)).toThrow('timestamp required');
     });
   });
 
