@@ -14,7 +14,6 @@
 
 import { IHarvester, HarvesterCategory } from '../ports/IHarvester.mjs';
 import { CircuitBreaker } from '../CircuitBreaker.mjs';
-import { configService } from '../../../0_infrastructure/config/index.mjs';
 
 /**
  * Letterboxd movie diary harvester
@@ -99,7 +98,7 @@ export class LetterboxdHarvester extends IHarvester {
 
       // Get letterboxd username from config
       const auth = this.#configService?.getUserAuth?.('letterboxd', username) || {};
-      const letterboxdUser = auth.username || configService.getSecret('LETTERBOXD_USER');
+      const letterboxdUser = auth.username || this.#configService?.getSecret?.('LETTERBOXD_USER');
 
       if (!letterboxdUser) {
         throw new Error('Letterboxd username not configured');

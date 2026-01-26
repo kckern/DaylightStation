@@ -124,7 +124,7 @@ export class FoursquareHarvester extends IHarvester {
 
       // Get OAuth token
       const auth = this.#configService?.getUserAuth?.('foursquare', username) || {};
-      const token = auth.token || configService.getSecret('FOURSQUARE_TOKEN');
+      const token = auth.token || this.#configService?.getSecret?.('FOURSQUARE_TOKEN');
 
       if (!token) {
         throw new Error('Foursquare OAuth token not configured');

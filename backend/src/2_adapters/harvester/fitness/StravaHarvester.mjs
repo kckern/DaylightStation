@@ -233,10 +233,8 @@ export class StravaHarvester extends IHarvester {
    * @returns {Object} Object with authorization URL
    */
   reauthSequence(options = {}) {
-    const clientId = this.#configService?.getSecret?.('STRAVA_CLIENT_ID') ||
-                     configService.getSecret('STRAVA_CLIENT_ID');
+    const clientId = this.#configService?.getSecret?.('STRAVA_CLIENT_ID');
     const defaultRedirectUri = this.#configService?.getSecret?.('STRAVA_URL') ||
-                               configService.getSecret('STRAVA_URL') ||
                                'http://localhost:3000/api/auth/strava/callback';
     const redirectUri = options.redirectUri || defaultRedirectUri;
 

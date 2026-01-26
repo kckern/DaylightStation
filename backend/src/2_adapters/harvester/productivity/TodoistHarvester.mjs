@@ -114,7 +114,7 @@ export class TodoistHarvester extends IHarvester {
 
       // Get API key
       const auth = this.#configService?.getUserAuth?.('todoist', username) || {};
-      const apiKey = auth.api_key || configService.getSecret('TODOIST_KEY');
+      const apiKey = auth.api_key || this.#configService?.getSecret?.('TODOIST_KEY');
 
       if (!apiKey) {
         throw new Error('Todoist API key not found');
