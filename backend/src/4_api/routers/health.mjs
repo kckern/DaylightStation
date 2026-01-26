@@ -75,7 +75,7 @@ export function createHealthRouter(config) {
 
     logger.debug?.('health.daily.request', { username, days });
 
-    const healthData = await healthService.aggregateDailyHealth(username, days);
+    const healthData = await healthService.aggregateDailyHealth(username, days, new Date());
 
     logger.info?.('health.daily.success', {
       username,

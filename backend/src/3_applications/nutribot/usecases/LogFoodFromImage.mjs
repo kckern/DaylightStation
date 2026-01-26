@@ -348,7 +348,7 @@ Be conservative with estimates.`,
    * @private
    */
   #formatFoodCaption(items, date) {
-    const dateHeader = date ? formatDateHeader(date, { timezone: this.#getTimezone() }) : '';
+    const dateHeader = date ? formatDateHeader(date, { timezone: this.#getTimezone(), now: new Date() }) : '';
     const foodList = formatFoodList(items);
     return `${dateHeader}\n\n${foodList}`;
   }

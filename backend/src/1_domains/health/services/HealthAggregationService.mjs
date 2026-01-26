@@ -31,9 +31,13 @@ export class HealthAggregationService {
    * Aggregate daily health data for a user
    * @param {string} userId
    * @param {number} [daysBack=15] - Number of days to look back
+   * @param {Date} today - Reference date for "today" (required, from application layer)
    * @returns {Promise<Object<string, HealthMetric>>} Health metrics keyed by date
    */
-  async aggregateDailyHealth(userId, daysBack = 15) {
+  async aggregateDailyHealth(userId, daysBack = 15, today) {
+    if (!today || !(today instanceof Date)) {
+      throw new Error('today date required for aggregateDailyHealth');
+    }
     this.#logger.debug?.('health.aggregate.start', { userId, daysBack });
 
     // Load all data sources in parallel
@@ -48,7 +52,7 @@ export class HealthAggregationService {
       ]);
 
     // Generate date range
-    const dates = this.#generateDateRange(daysBack);
+    const dates = this.#generateDateRange(daysBack, today);
 
     // Aggregate metrics for each day
     const metrics = {};
@@ -117,11 +121,12 @@ export class HealthAggregationService {
 
   /**
    * Generate array of dates going back N days
+   * @param {number} daysBack - Number of days to look back
+   * @param {Date} today - Reference date for "today" (from application layer)
    * @private
    */
-  #generateDateRange(daysBack) {
+  #generateDateRange(daysBack, today) {
     const dates = [];
-    const today = new Date();
 
     for (let i = 0; i < daysBack; i++) {
       const date = new Date(today);

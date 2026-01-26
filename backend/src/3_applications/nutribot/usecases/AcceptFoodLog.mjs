@@ -110,7 +110,7 @@ export class AcceptFoodLog {
       if (messageId) {
         try {
           const logDate = nutriLog.meal?.date || nutriLog.date;
-          const dateHeader = logDate ? formatDateHeader(logDate).replace('🕒', '✅') : '';
+          const dateHeader = logDate ? formatDateHeader(logDate, { now: new Date() }).replace('🕒', '✅') : '';
           const foodList = formatFoodList(nutriLog.items || []);
 
           const acceptedText = `${dateHeader}\n\n${foodList}`;

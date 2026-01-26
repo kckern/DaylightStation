@@ -36,12 +36,15 @@ export function getTimeOfDay(hour) {
 }
 
 /**
- * Get current hour in a specific timezone
+ * Get hour in a specific timezone for a given Date
+ * @param {Date} now - The date/time to get the hour for (required, from application layer)
  * @param {string} timezone - IANA timezone string (e.g., 'America/Los_Angeles')
  * @returns {number} Hour of day (0-23)
  */
-export function getCurrentHourInTimezone(timezone) {
-  const now = new Date();
+export function getHourInTimezone(now, timezone) {
+  if (!now || !(now instanceof Date)) {
+    throw new Error('now date required for getHourInTimezone');
+  }
   const timeStr = now.toLocaleTimeString('en-US', {
     timeZone: timezone,
     hour: 'numeric',
@@ -51,16 +54,28 @@ export function getCurrentHourInTimezone(timezone) {
 }
 
 /**
+ * @deprecated Use getHourInTimezone(now, timezone) instead - requires Date parameter
+ * Get current hour in a specific timezone
+ * @param {string} timezone - IANA timezone string (e.g., 'America/Los_Angeles')
+ * @returns {number} Hour of day (0-23)
+ */
+export function getCurrentHourInTimezone(timezone) {
+  // Legacy function - callers should migrate to getHourInTimezone
+  return getHourInTimezone(new Date(), timezone);
+}
+
+/**
  * Format date header for display
  * Format: "🕒 Tue, 11 Nov 2025 evening"
  * @param {string} date - Date string YYYY-MM-DD
  * @param {Object} [options] - Options
  * @param {string} [options.timeOfDay] - Optional time of day override
  * @param {string} [options.timezone] - Timezone for current time (default: America/Los_Angeles)
+ * @param {Date} [options.now] - Current date/time for time of day calculation (required if timeOfDay not provided)
  * @returns {string} Formatted date header
  */
 export function formatDateHeader(date, options = {}) {
-  const { timeOfDay, timezone = 'America/Los_Angeles' } = options;
+  const { timeOfDay, timezone = 'America/Los_Angeles', now } = options;
   const logDate = new Date(date + 'T12:00:00');
 
   // Format: "Tue, 11 Nov 2025"
@@ -69,7 +84,14 @@ export function formatDateHeader(date, options = {}) {
   const month = logDate.toLocaleDateString('en-US', { month: 'short', timeZone: timezone });
   const year = logDate.getFullYear();
 
-  const time = timeOfDay || getTimeOfDay(getCurrentHourInTimezone(timezone));
+  // If timeOfDay not provided, require now parameter
+  let time = timeOfDay;
+  if (!time) {
+    if (!now || !(now instanceof Date)) {
+      throw new Error('now date required for formatDateHeader when timeOfDay not provided');
+    }
+    time = getTimeOfDay(getHourInTimezone(now, timezone));
+  }
 
   return `🕒 ${dayName}, ${day} ${month} ${year} ${time}`;
 }
@@ -108,7 +130,8 @@ export default {
   NOOM_COLOR_EMOJI,
   getNoomColorEmoji,
   getTimeOfDay,
-  getCurrentHourInTimezone,
+  getHourInTimezone,
+  getCurrentHourInTimezone, // deprecated, use getHourInTimezone
   formatDateHeader,
   formatFoodItem,
   formatFoodList,

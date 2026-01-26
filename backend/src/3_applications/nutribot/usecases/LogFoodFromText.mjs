@@ -172,7 +172,7 @@ export class LogFoodFromText {
       }
 
       // 6. Update message with date header, food list, and buttons
-      const dateHeader = formatDateHeader(logDate, { timezone: this.#getTimezone() });
+      const dateHeader = formatDateHeader(logDate, { timezone: this.#getTimezone(), now: new Date() });
       const foodList = formatFoodList(foodItems);
       const buttons = this.#buildActionButtons(nutriLog.id);
 
@@ -490,7 +490,7 @@ Begin response with '{' character - output only valid JSON, no markdown.`,
     }
 
     const logDate = updatedLog.meal?.date || updatedLog.date;
-    const dateHeader = formatDateHeader(logDate, { timezone: this.#getTimezone() });
+    const dateHeader = formatDateHeader(logDate, { timezone: this.#getTimezone(), now: new Date() });
     const foodList = formatFoodList(finalItems);
     const buttons = this.#buildActionButtons(updatedLog.id);
 
