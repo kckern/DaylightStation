@@ -17,6 +17,7 @@
  */
 
 import { CircuitBreaker } from '../CircuitBreaker.mjs';
+import { nowTs24 } from '../../../0_infrastructure/utils/index.mjs';
 
 /**
  * Token buffer in milliseconds (5 minutes)

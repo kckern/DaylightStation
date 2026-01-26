@@ -5,6 +5,8 @@
  * state queries, scene activation, and script execution.
  */
 
+import { nowTs24 } from '../../../0_infrastructure/utils/index.mjs';
+
 /**
  * @typedef {import('../../../1_domains/home-automation/ports/IHomeAutomationGateway.mjs').DeviceState} DeviceState
  * @typedef {import('../../../1_domains/home-automation/ports/IHomeAutomationGateway.mjs').ServiceResult} ServiceResult

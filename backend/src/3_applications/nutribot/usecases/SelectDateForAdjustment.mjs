@@ -69,8 +69,10 @@ export class SelectDateForAdjustment {
       }
 
       // 4. Update state (if store available)
-      if (this.#conversationStateStore?.update) {
-        await this.#conversationStateStore.update(conversationId, {
+      if (this.#conversationStateStore?.set) {
+        const currentState = await this.#conversationStateStore.get(conversationId) || {};
+        await this.#conversationStateStore.set(conversationId, {
+          ...currentState,
           activeFlow: 'adjustment',
           flowState: { level: 1, date, daysAgo, items: items.map((i) => i.id), offset },
         });

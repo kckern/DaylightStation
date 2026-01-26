@@ -40,8 +40,10 @@ export class ShowDateSelection {
       }
 
       // 2. Update state
-      if (this.#conversationStateStore?.update) {
-        await this.#conversationStateStore.update(conversationId, {
+      if (this.#conversationStateStore?.set) {
+        const currentState = await this.#conversationStateStore.get(conversationId) || {};
+        await this.#conversationStateStore.set(conversationId, {
+          ...currentState,
           activeFlow: 'adjustment',
           flowState: {
             step: 'date_selection',

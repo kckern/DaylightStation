@@ -1186,8 +1186,8 @@ export function createJournalistServices(config) {
   });
 
   // Create input router for webhook handling
-  const journalistInputRouter = new JournalistInputRouter({
-    container: journalistContainer,
+  const journalistInputRouter = new JournalistInputRouter(journalistContainer, {
+    userResolver,
     logger
   });
 

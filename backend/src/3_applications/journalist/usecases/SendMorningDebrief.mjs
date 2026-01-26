@@ -5,6 +5,8 @@
  * Sends the generated debrief to the user via Telegram with reply keyboard
  */
 
+import { nowTs24 } from '../../../0_infrastructure/utils/index.mjs';
+
 // Source icon mapping
 const SOURCE_ICONS = {
   strava: '🏋️',

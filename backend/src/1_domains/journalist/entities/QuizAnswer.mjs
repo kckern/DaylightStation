@@ -6,6 +6,7 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
+import { nowTs24 } from '../../../0_infrastructure/utils/index.mjs';
 
 /**
  * ValidationError for entity validation

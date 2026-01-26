@@ -9,6 +9,7 @@
  */
 
 import { SendMorningDebrief } from './SendMorningDebrief.mjs';
+import { nowTs24 } from '../../../0_infrastructure/utils/index.mjs';
 
 /**
  * Handle debrief response buttons
@@ -107,8 +108,9 @@ export class HandleDebriefResponse {
    * @param {Object} messaging - Messaging interface
    */
   async #handleShowDetails(conversationId, state, messageId, messaging) {
-    // Get username from conversationId
-    const username = this.#userResolver.resolveUsername(conversationId);
+    // Username is optional - used only for logging in DebriefRepository
+    // The repository path is already configured at construction time
+    const username = null;
 
     // Get the most recent debrief from debriefs.yml (persistent storage)
     const recentDebriefs = await this.#debriefRepository.getRecentDebriefs(username, 1);

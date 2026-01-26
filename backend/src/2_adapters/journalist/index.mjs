@@ -5,4 +5,6 @@
 
 export { DebriefRepository } from './DebriefRepository.mjs';
 export { LoggingAIGateway } from './LoggingAIGateway.mjs';
-export { JournalistInputRouter, InputEventType } from './JournalistInputRouter.mjs';
+export { JournalistInputRouter } from './JournalistInputRouter.mjs';
+// Re-export InputEventType from telegram adapter for consumers
+export { InputEventType } from '../telegram/IInputEvent.mjs';

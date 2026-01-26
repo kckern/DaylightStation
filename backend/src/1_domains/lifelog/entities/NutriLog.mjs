@@ -1,5 +1,6 @@
 // backend/src/1_domains/lifelog/entities/NutriLog.mjs
 import { FoodItem } from './FoodItem.mjs';
+import { nowTs24 } from '../../../0_infrastructure/utils/index.mjs';
 
 /**
  * @typedef {'pending'|'accepted'|'rejected'|'deleted'} NutriLogStatus
