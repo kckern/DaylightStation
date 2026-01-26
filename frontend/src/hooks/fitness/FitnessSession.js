@@ -554,7 +554,8 @@ export class FitnessSession {
           this.userManager.assignGuest(device.id, user.name, {
             name: user.name,
             profileId: user.id,
-            source: user.source || 'auto'
+            source: user.source || 'auto',
+            occupantType: user.source === 'Guest' ? 'guest' : 'member'
           });
           this._log('device_auto_assigned', { deviceId: device.id, userName: user.name, userId });
         } else if (ledgerEntry) {

@@ -1,4 +1,5 @@
 import { deriveZoneProgressSnapshot, getZoneMin } from './types.js';
+import getLogger from '../../lib/logging/Logger.js';
 
 const cloneZoneConfig = (config = []) => {
   if (!Array.isArray(config)) return [];
@@ -143,12 +144,15 @@ export class ZoneProfileStore {
     // DIAGNOSTIC: Log zone config source for debugging zone mismatch issues
     if (userId && normalizedZoneConfig.length > 0) {
       const warmZone = normalizedZoneConfig.find(z => z.id === 'warm' || z.name === 'Warm');
-      console.log('[ZoneProfileStore] Building profile:', {
-        userId,
-        hasCustomZones,
-        warmThreshold: warmZone?.min ?? null,
-        zoneCount: normalizedZoneConfig.length
-      });
+      const logger = getLogger();
+      if (logger?.warn) {
+        logger.warn('zoneprofilestore.build_profile', {
+          userId,
+          hasCustomZones,
+          warmThreshold: warmZone?.min ?? null,
+          zoneCount: normalizedZoneConfig.length
+        });
+      }
     }
 
     const heartRate = Number.isFinite(user?.currentData?.heartRate)

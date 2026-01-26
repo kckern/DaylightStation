@@ -94,25 +94,56 @@ If one is populated correctly but the other isn't, zone colors will mismatch.
 ## Diagnostic Logging Added
 
 ### TreasureBox.js
-1. `user_zone_overrides_configured` - Logs when overrides are set
+1. `treasurebox.user_zone_overrides_configured` - Logs when overrides are set
    - `overrideCount`: Number of users with zone overrides
    - `userIds`: Array of user IDs with overrides
 
-2. `zone_resolved` - Enhanced with override info
+2. `treasurebox.zone_resolved` - Enhanced with override info
    - `hasOverrides`: Boolean - whether user has overrides
    - `overrideKeys`: Array of override keys (active, warm, etc.)
 
-### ZoneProfileStore.js
-1. Console log in `#buildProfileFromUser`
+### ZoneProfileStore.js (updated 2026-01-26)
+1. `zoneprofilestore.build_profile` - Logger-based (visible in Docker logs)
    - `userId`: User ID being processed
    - `hasCustomZones`: Whether user.zoneConfig exists
    - `warmThreshold`: The warm zone min (for comparison)
 
-### UserManager.js
-1. Enhanced user creation log
+### UserManager.js (updated 2026-01-26)
+1. `usermanager.user_created` - Logger-based (visible in Docker logs)
    - `hasZoneOverrides`: Whether config.zones exists
    - `zoneOverrides`: The actual zone values
    - `userZoneConfigLength`: Length of built zoneConfig
+
+## Verification Results (2026-01-26)
+
+### TreasureBox: ✅ WORKING CORRECTLY
+Production logs confirm user-specific zones ARE being honored:
+
+```json
+// milo: HR=152 → warm zone with min=140 (user-specific, not global 120)
+{"event":"treasurebox.zone_resolved","data":{"profileId":"milo","hr":152,"zone":{"id":"warm","min":140},"hasOverrides":true,"overrideKeys":["active","warm","hot","fire"]}}
+
+// felix: HR=149 → warm zone with min=140 (user-specific)
+{"event":"treasurebox.zone_resolved","data":{"profileId":"felix","hr":149,"zone":{"id":"warm","min":140},"hasOverrides":true,"overrideKeys":["active","warm","hot","fire"]}}
+
+// soren: HR=112 → cool zone (user-specific active threshold is 120)
+{"event":"treasurebox.zone_resolved","data":{"profileId":"soren","hr":112,"zone":{"id":"cool","min":0},"hasOverrides":true,"overrideKeys":["active","warm","hot","fire"]}}
+```
+
+**Key finding:** All users show `hasOverrides: true` and `min: 140` for warm zone, which is the user-specific threshold (not the global 120).
+
+### ZoneProfileStore: ⏳ PENDING VERIFICATION
+Updated to use Logger instead of console.log. Needs redeploy to verify.
+
+### UserManager: ⏳ PENDING VERIFICATION
+Updated to use Logger instead of console.log. Needs redeploy to verify.
+
+## Next Steps
+
+1. **Redeploy** with updated Logger-based logging for ZoneProfileStore and UserManager
+2. **Verify** `zoneprofilestore.build_profile` logs show `hasCustomZones: true` and correct `warmThreshold`
+3. **Verify** `usermanager.user_created` logs show `hasZoneOverrides: true` and correct values
+4. If both show correct zones, the mismatch may be in GovernanceEngine's zone comparison logic
 
 ## Test Plan
 
