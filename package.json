@@ -29,6 +29,7 @@
     "zod": "^3.23.8"
   },
   "imports": {
+    "#system/*": "./backend/src/0_system/*",
     "#backend/*": "./backend/*",
     "#frontend/*": "./frontend/src/*",
     "#fixtures/*": "./tests/_fixtures/*",
