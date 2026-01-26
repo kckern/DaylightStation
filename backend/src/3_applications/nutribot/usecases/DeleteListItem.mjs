@@ -93,12 +93,12 @@ export class DeleteListItem {
         await this.#nutriListStore.deleteById(userId, itemId);
       }
 
-      // Update message with confirmation
+      // Update message with confirmation (use caption for photo messages)
       const confirmationText = `🗑️ <b>${itemLabel}</b> deleted`;
 
       if (messageId) {
         await this.#messagingGateway.updateMessage(conversationId, messageId, {
-          text: confirmationText,
+          caption: confirmationText,
           parseMode: 'HTML',
           choices: [
             [

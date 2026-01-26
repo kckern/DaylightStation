@@ -74,7 +74,9 @@ export class MoveItemToDate {
       // 2. If no newDate provided, show date picker
       if (!newDate) {
         // Save current state with itemId for when date is selected
-        await this.#conversationStateStore.update(conversationId, {
+        const currentState = await this.#conversationStateStore.get(conversationId) || {};
+        await this.#conversationStateStore.set(conversationId, {
+          ...currentState,
           activeFlow: 'move',
           flowState: { itemId, logId, oldDate },
         });

@@ -26,6 +26,33 @@ export class NutribotInputRouter extends BaseInputRouter {
   // ==================== Event Handlers ====================
 
   async handleText(event, responseContext) {
+    // Check if we're in revision mode
+    const conversationStateStore = this.container.getConversationStateStore?.();
+    if (conversationStateStore) {
+      const state = await conversationStateStore.get(event.conversationId);
+      // ReviseFoodLog stores logUuid as pendingLogUuid in flowState
+      const pendingLogUuid = state?.flowState?.pendingLogUuid;
+      if (state?.activeFlow === 'revision' && pendingLogUuid) {
+        this.logger.debug?.('nutribot.handleText.revisionMode', {
+          conversationId: event.conversationId,
+          pendingLogUuid,
+          text: event.payload.text,
+        });
+        // Route to ProcessRevisionInput
+        const useCase = this.container.getProcessRevisionInput();
+        const result = await useCase.execute({
+          userId: this.#resolveUserId(event),
+          conversationId: event.conversationId,
+          logUuid: pendingLogUuid,
+          text: event.payload.text,
+          messageId: event.messageId,
+          responseContext,
+        });
+        return { ok: true, result };
+      }
+    }
+
+    // Default: log new food
     const useCase = this.container.getLogFoodFromText();
     const result = await useCase.execute({
       userId: this.#resolveUserId(event),

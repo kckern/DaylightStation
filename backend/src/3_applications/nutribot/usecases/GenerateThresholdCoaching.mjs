@@ -63,10 +63,12 @@ export class GenerateThresholdCoaching {
       const { messageId } = await this.#messagingGateway.sendMessage(conversationId, formattedMessage, { parseMode: 'HTML' });
 
       // 5. Record that coaching was given
-      if (this.#conversationStateStore) {
+      if (this.#conversationStateStore?.set) {
         const coachingKey = `coaching_${threshold}_${this.#getTodayDate(userId)}`;
-        await this.#conversationStateStore.update(conversationId, {
-          data: { [coachingKey]: true },
+        const currentState = await this.#conversationStateStore.get(conversationId) || {};
+        await this.#conversationStateStore.set(conversationId, {
+          ...currentState,
+          data: { ...(currentState.data || {}), [coachingKey]: true },
         });
       }
 

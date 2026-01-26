@@ -15,6 +15,7 @@ import { CronExpressionParser } from 'cron-parser';
 import { Job } from '../entities/Job.mjs';
 import { JobState } from '../entities/JobState.mjs';
 import { JobExecution } from '../entities/JobExecution.mjs';
+import { nowTs24 } from '../../../0_infrastructure/utils/index.mjs';
 
 export class SchedulerService {
   constructor({
