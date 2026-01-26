@@ -11,7 +11,7 @@
  */
 
 import axios from 'axios';
-import { configService } from '../../../0_infrastructure/config/index.mjs';
+import { configService } from '../../../0_system/config/index.mjs';
 
 /**
  * @typedef {Object} TTSConfig

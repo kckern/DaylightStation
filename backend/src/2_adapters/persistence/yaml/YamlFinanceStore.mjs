@@ -21,7 +21,7 @@ import {
   loadYamlSafe,
   saveYaml,
   yamlExists
-} from '../../../0_infrastructure/utils/FileIO.mjs';
+} from '../../../0_system/utils/FileIO.mjs';
 
 export class YamlFinanceStore {
   #dataRoot;

@@ -1,8 +1,8 @@
 // backend/src/2_adapters/persistence/yaml/YamlNutriLogStore.mjs
 import { NutriLog } from '../../../1_domains/lifelog/entities/NutriLog.mjs';
-import { loadYaml, saveYaml } from '../../../0_infrastructure/utils/FileIO.mjs';
+import { loadYaml, saveYaml } from '../../../0_system/utils/FileIO.mjs';
 
-import { nowTs24 } from '../../../0_infrastructure/utils/index.mjs';
+import { nowTs24 } from '../../../0_system/utils/index.mjs';
 
 /**
  * YAML-based NutriLog persistence adapter

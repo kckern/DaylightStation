@@ -7,7 +7,7 @@ import {
   loadYamlFromPath,
   listYamlFiles,
   dirExists
-} from '../../../0_infrastructure/utils/FileIO.mjs';
+} from '../../../0_system/utils/FileIO.mjs';
 
 // Threshold for considering an item "watched" (90%)
 const WATCHED_THRESHOLD = 90;

@@ -3,7 +3,7 @@
  * Implements IMessagingGateway and INotificationChannel
  */
 
-import { readBinary, getBasename, fileExists } from '../../0_infrastructure/utils/FileIO.mjs';
+import { readBinary, getBasename, fileExists } from '../../0_system/utils/FileIO.mjs';
 import { TelegramChatRef } from '../telegram/TelegramChatRef.mjs';
 import { ConversationId } from '../../1_domains/messaging/value-objects/ConversationId.mjs';
 

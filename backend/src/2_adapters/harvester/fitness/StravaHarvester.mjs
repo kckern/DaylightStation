@@ -18,7 +18,7 @@ import moment from 'moment-timezone';
 import crypto from 'crypto';
 import { IHarvester, HarvesterCategory } from '../ports/IHarvester.mjs';
 import { CircuitBreaker } from '../CircuitBreaker.mjs';
-import { configService } from '../../../0_infrastructure/config/index.mjs';
+import { configService } from '../../../0_system/config/index.mjs';
 
 const md5 = (string) => crypto.createHash('md5').update(string).digest('hex');
 

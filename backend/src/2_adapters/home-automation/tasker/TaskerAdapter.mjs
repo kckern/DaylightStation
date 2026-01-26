@@ -16,7 +16,7 @@
  * @property {string} [error] - Error message if failed
  */
 
-import { nowTs24 } from '../../../0_infrastructure/utils/index.mjs';
+import { nowTs24 } from '../../../0_system/utils/index.mjs';
 
 export class TaskerAdapter {
   #host;

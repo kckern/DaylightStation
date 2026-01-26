@@ -12,7 +12,7 @@ import {
   listEntries,
   getStats,
   isFile
-} from '../../../../0_infrastructure/utils/FileIO.mjs';
+} from '../../../../0_system/utils/FileIO.mjs';
 
 const MEDIA_PREFIXES = ['', 'audio', 'video', 'img'];
 

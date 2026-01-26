@@ -24,7 +24,7 @@ export class JournalistInputRouter {
   /**
    * @param {import('../../3_applications/journalist/JournalistContainer.mjs').JournalistContainer} container
    * @param {Object} [options]
-   * @param {import('../../0_infrastructure/users/UserResolver.mjs').UserResolver} [options.userResolver] - For resolving platform users to system usernames
+   * @param {import('../../0_system/users/UserResolver.mjs').UserResolver} [options.userResolver] - For resolving platform users to system usernames
    * @param {Object} [options.logger]
    */
   constructor(container, options = {}) {
