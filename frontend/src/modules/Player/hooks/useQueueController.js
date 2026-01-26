@@ -148,6 +148,10 @@ export function useQueueController({ play, queue, clear }) {
           }
           return prevQueue.slice(currentIndex);
         }
+      } else if (prevQueue.length === 1 && isContinuous && originalQueue.length > 1) {
+        // When last item finishes in continuous mode with multi-item original queue,
+        // reset to full original queue to loop playback
+        return [...originalQueue];
       }
       clear();
       return [];
