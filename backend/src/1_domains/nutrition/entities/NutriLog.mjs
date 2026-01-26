@@ -7,7 +7,7 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import { shortId, shortIdFromUuid, isUuid } from '../../../0_infrastructure/utils/shortId.mjs';
+import { shortId, shortIdFromUuid, isUuid } from '../../core/utils/id.mjs';
 import { formatLocalTimestamp } from '../../../0_infrastructure/utils/time.mjs';
 import { FoodItem } from './FoodItem.mjs';
 import { getMealTimeFromHour, validateNutriLog, LogStatuses } from './schemas.mjs';
