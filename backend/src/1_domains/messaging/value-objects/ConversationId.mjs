@@ -7,7 +7,7 @@
  * mapping their native IDs to/from ConversationId.
  */
 
-import { ValidationError } from '../../../0_infrastructure/utils/errors/index.mjs';
+import { ValidationError } from '../../core/errors/index.mjs';
 
 /**
  * ConversationId value object
