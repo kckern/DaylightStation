@@ -94,7 +94,7 @@ The config loads in two places:
 1. `hydrateProcessEnvFromConfigs()` - Early load for logging
 2. `loadAllConfig()` - Full config merge
 
-Both use the same hostname detection. If issues persist, check `backend/src/0_infrastructure/logging/config.js` and `backend/_legacy/lib/config/loader.mjs`.
+Both use the same hostname detection. If issues persist, check `backend/src/0_system/logging/config.js` and `backend/_legacy/lib/config/loader.mjs`.
 
 ## Config File Format
 
@@ -131,5 +131,5 @@ mqtt:
 
 - `backend/index.js` - Main entry point, reads PORT config
 - `backend/_legacy/lib/config/loader.mjs` - Config loading with `getMachineConfigFile()`
-- `backend/src/0_infrastructure/logging/config.js` - Early config hydration
+- `backend/src/0_system/logging/config.js` - Early config hydration
 - `data/system/system-local.*.yml` - Machine-specific configs

@@ -440,7 +440,7 @@ import { Session } from '#domains/fitness/entities/Session.mjs';
     "#domains/*": "./backend/src/1_domains/*",
     "#adapters/*": "./backend/src/2_adapters/*",
     "#applications/*": "./backend/src/3_applications/*",
-    "#infrastructure/*": "./backend/src/0_infrastructure/*"
+    "#infrastructure/*": "./backend/src/0_system/*"
   }
 }
 ```
@@ -465,7 +465,7 @@ import { ValidationError } from '../../../1_domains/core/errors/ValidationError.
 | `#domains/*` | `1_domains/*` | Domain entities, value objects, services |
 | `#adapters/*` | `2_adapters/*` | Repository implementations, gateways |
 | `#applications/*` | `3_applications/*` | Use cases, containers, ports |
-| `#infrastructure/*` | `0_infrastructure/*` | Utils, config, logging |
+| `#infrastructure/*` | `0_system/*` | Utils, config, logging |
 
 **The `#` prefix is Node.js subpath imports convention** - works without bundler configuration, supported natively since Node 12.19.
 

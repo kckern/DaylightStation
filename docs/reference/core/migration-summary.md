@@ -122,7 +122,7 @@ These components remain in `_legacy/` but are tracked for eventual removal:
 
 ### 1. Numbered Layers
 Layers are numbered to enforce dependency direction:
-- `4_api` → `3_applications` → `2_adapters` → `1_domains` → `0_infrastructure`
+- `4_api` → `3_applications` → `2_adapters` → `1_domains` → `0_system`
 
 ### 2. Port/Adapter Pattern
 Domains define interfaces (ports), adapters implement them. This keeps domains pure and testable.

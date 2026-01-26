@@ -10,7 +10,7 @@ Complete mapping of `backend/src/` structure with references to legacy code loca
 
 | Layer | Files | Description |
 |-------|-------|-------------|
-| 0_infrastructure | 26 | Cross-cutting concerns |
+| 0_system | 26 | Cross-cutting concerns |
 | 1_domains | 111 | Business logic |
 | 2_adapters | 76 | External integrations |
 | 3_applications | 60 | Use case orchestration |
@@ -19,7 +19,7 @@ Complete mapping of `backend/src/` structure with references to legacy code loca
 
 ---
 
-## 0_infrastructure/ (26 files)
+## 0_system/ (26 files)
 
 ### config/
 | New File | Legacy Source |

@@ -223,12 +223,12 @@ apps:
 
 ## ConfigService API
 
-Location: `backend/src/0_infrastructure/config/`
+Location: `backend/src/0_system/config/`
 
 ### Initialization
 
 ```javascript
-import { initConfigService, configService } from './0_infrastructure/config/index.mjs';
+import { initConfigService, configService } from './0_system/config/index.mjs';
 
 // At startup (once)
 initConfigService(dataDir);
@@ -499,10 +499,10 @@ Check that `services_host: localhost` is set and the services are actually runni
 
 | File | Purpose |
 |------|---------|
-| `backend/src/0_infrastructure/config/index.mjs` | Singleton entry point |
-| `backend/src/0_infrastructure/config/ConfigService.mjs` | Pure accessor class |
-| `backend/src/0_infrastructure/config/configLoader.mjs` | YAML loading & merging |
-| `backend/src/0_infrastructure/config/configValidator.mjs` | Validation rules |
+| `backend/src/0_system/config/index.mjs` | Singleton entry point |
+| `backend/src/0_system/config/ConfigService.mjs` | Pure accessor class |
+| `backend/src/0_system/config/configLoader.mjs` | YAML loading & merging |
+| `backend/src/0_system/config/configValidator.mjs` | Validation rules |
 | `frontend/vite.config.js` | Frontend port/proxy config |
 | `tests/lib/configHelper.mjs` | Test config helper |
 | `playwright.config.mjs` | Test runner config |
