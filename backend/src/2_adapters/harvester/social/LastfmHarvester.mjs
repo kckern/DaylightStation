@@ -110,7 +110,7 @@ export class LastfmHarvester extends IHarvester {
 
       // Get auth
       const auth = this.#configService?.getUserAuth?.('lastfm', username) || {};
-      const lastfmUser = auth.username || configService.getSecret('LAST_FM_USER');
+      const lastfmUser = auth.username || this.#configService?.getSecret?.('LAST_FM_USER');
       const apiKey = this.#resolveApiKey(auth);
 
       if (!apiKey) {
@@ -232,11 +232,6 @@ export class LastfmHarvester extends IHarvester {
       if (val) return val;
     }
 
-    // Fallback to global configService
-    for (const key of candidates) {
-      const val = configService?.isReady?.() ? configService.getSecret(key) : null;
-      if (val) return val;
-    }
 
     // Check auth
     if (auth?.key) return auth.key;

@@ -14,7 +14,6 @@
 
 import { IHarvester, HarvesterCategory } from '../ports/IHarvester.mjs';
 import { CircuitBreaker } from '../CircuitBreaker.mjs';
-import { configService } from '../../../0_infrastructure/config/index.mjs';
 
 /**
  * Goodreads book harvester
@@ -102,7 +101,7 @@ export class GoodreadsHarvester extends IHarvester {
 
       // Get auth
       const auth = this.#configService?.getUserAuth?.('goodreads', username) || {};
-      const goodreadsUserId = auth.user_id || configService.getSecret('GOODREADS_USER');
+      const goodreadsUserId = auth.user_id || this.#configService?.getSecret?.('GOODREADS_USER');
 
       if (!goodreadsUserId) {
         throw new Error('Goodreads user ID not configured');
