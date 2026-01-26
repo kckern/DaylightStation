@@ -92,7 +92,7 @@ export class ClickUpHarvester extends IHarvester {
    * @returns {Promise<{ current: number, lifelog: { created: number, completed: number }, status: string }>}
    */
   async harvest(username, options = {}) {
-    const clickupConfig = this.#configService?.getAdapterConfig?.('clickup') || null;
+    const clickupConfig = configService?.isReady?.() ? configService.getAdapterConfig('clickup') : null;
     const {
       daysBack = 7,
       statuses = clickupConfig?.statuses || [],
@@ -122,7 +122,7 @@ export class ClickUpHarvester extends IHarvester {
       // Get auth
       const auth = this.#configService?.getHouseholdAuth?.('clickup') ||
                    this.#configService?.getUserAuth?.('clickup', username) || {};
-      const apiKey = auth.api_key || this.#configService?.getSecret?.('CLICKUP_PK');
+      const apiKey = auth.api_key || configService.getSecret('CLICKUP_PK');
       const teamId = auth.workspace_id || clickupConfig?.team_id;
 
       if (!apiKey) {
