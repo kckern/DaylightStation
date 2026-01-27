@@ -3,7 +3,7 @@
  */
 
 // Value Objects
-export { SessionId } from './value-objects/index.mjs';
+export * from './value-objects/index.mjs';
 
 // Entities
 export { Session } from './entities/Session.mjs';
