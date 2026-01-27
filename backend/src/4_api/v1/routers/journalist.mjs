@@ -14,7 +14,7 @@ import { createBotWebhookHandler } from '../../2_adapters/telegram/index.mjs';
 import {
   journalistJournalHandler,
   journalistTriggerHandler,
-  handleMorningDebrief,
+  journalistMorningDebriefHandler,
 } from '../handlers/journalist/index.mjs';
 
 // HTTP middleware
@@ -74,31 +74,7 @@ export function createJournalistRouter(container, options = {}) {
   // Morning debrief endpoint (triggered by cron or manual)
   router.get(
     '/morning',
-    asyncHandler(async (req, res) => {
-      const username = req.query.user || configService?.getHeadOfHousehold?.() || 'kckern';
-      const date = req.query.date || null;
-
-      if (!username) {
-        return res.status(400).json({
-          success: false,
-          error: 'No username specified and no default user configured',
-        });
-      }
-
-      const userResolver = container.getUserResolver?.() || null;
-
-      const result = await handleMorningDebrief(
-        {
-          generateMorningDebrief: container.getGenerateMorningDebrief(),
-          sendMorningDebrief: container.getSendMorningDebrief(),
-          userResolver,
-        },
-        username,
-        date,
-      );
-
-      return res.status(result.success ? 200 : 500).json(result);
-    }),
+    asyncHandler(journalistMorningDebriefHandler(container, { configService, logger })),
   );
 
   // Health check endpoint

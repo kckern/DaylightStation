@@ -6,73 +6,89 @@
  */
 
 /**
- * Handle morning debrief request
+ * Create morning debrief handler
  *
- * @param {Object} deps - Dependencies
- * @param {Object} deps.generateMorningDebrief - GenerateMorningDebrief use case
- * @param {Object} deps.sendMorningDebrief - SendMorningDebrief use case
- * @param {Object} deps.userResolver - UserResolver for username lookup
- * @param {Object} [deps.logger] - Logger instance
- * @param {string} username - System username
- * @param {string} [date] - Optional target date (YYYY-MM-DD)
- * @returns {Object} Result
+ * @param {Object} container - Journalist container with dependencies
+ * @param {Function} container.getGenerateMorningDebrief - Get GenerateMorningDebrief use case
+ * @param {Function} container.getSendMorningDebrief - Get SendMorningDebrief use case
+ * @param {Function} [container.getUserResolver] - Get UserResolver for username lookup
+ * @param {Object} [options] - Additional options
+ * @param {Object} [options.configService] - Config service for default user resolution
+ * @param {Object} [options.logger] - Logger instance
+ * @returns {Function} Express handler (req, res) => Promise<void>
  */
-export async function handleMorningDebrief(deps, username, date = null) {
-  const logger = deps.logger || console;
-  logger.info?.('morning.handler.start', { username, date });
+export function journalistMorningDebriefHandler(container, options = {}) {
+  const { configService, logger = console } = options;
 
-  try {
-    // Step 1: Generate the debrief
-    const debrief = await deps.generateMorningDebrief.execute({
-      username,
-      date,
-    });
+  return async (req, res) => {
+    const username = req.query.user || configService?.getHeadOfHousehold?.() || 'kckern';
+    const date = req.query.date || null;
 
-    // Step 2: Resolve user's conversation ID
-    const conversationId = await resolveConversationId(deps.userResolver, username, logger);
-
-    if (!conversationId) {
-      logger.error?.('morning.handler.no-conversation-id', { username });
-      return {
+    if (!username) {
+      return res.status(400).json({
         success: false,
-        error: 'Could not resolve conversation ID for user',
-      };
+        error: 'No username specified and no default user configured',
+      });
     }
 
-    // Step 3: Send to Telegram
-    const result = await deps.sendMorningDebrief.execute({
-      conversationId,
-      debrief,
-    });
+    logger.info?.('morning.handler.start', { username, date });
 
-    logger.info?.('morning.handler.complete', {
-      username,
-      date: debrief.date,
-      success: result.success,
-      fallback: result.fallback,
-    });
+    try {
+      // Step 1: Generate the debrief
+      const generateMorningDebrief = container.getGenerateMorningDebrief();
+      const debrief = await generateMorningDebrief.execute({
+        username,
+        date,
+      });
 
-    return {
-      success: true,
-      username,
-      date: debrief.date || date,
-      messageId: result.messageId,
-      fallback: result.fallback,
-    };
-  } catch (error) {
-    logger.error?.('morning.handler.failed', {
-      username,
-      date,
-      error: error.message,
-      stack: error.stack,
-    });
+      // Step 2: Resolve user's conversation ID
+      const userResolver = container.getUserResolver?.() || null;
+      const conversationId = await resolveConversationId(userResolver, username, logger);
 
-    return {
-      success: false,
-      username,
-      error: error.message,
-    };
-  }
+      if (!conversationId) {
+        logger.error?.('morning.handler.no-conversation-id', { username });
+        return res.status(500).json({
+          success: false,
+          error: 'Could not resolve conversation ID for user',
+        });
+      }
+
+      // Step 3: Send to Telegram
+      const sendMorningDebrief = container.getSendMorningDebrief();
+      const result = await sendMorningDebrief.execute({
+        conversationId,
+        debrief,
+      });
+
+      logger.info?.('morning.handler.complete', {
+        username,
+        date: debrief.date,
+        success: result.success,
+        fallback: result.fallback,
+      });
+
+      return res.status(200).json({
+        success: true,
+        username,
+        date: debrief.date || date,
+        messageId: result.messageId,
+        fallback: result.fallback,
+      });
+    } catch (error) {
+      logger.error?.('morning.handler.failed', {
+        username,
+        date,
+        error: error.message,
+        stack: error.stack,
+      });
+
+      return res.status(500).json({
+        success: false,
+        username,
+        error: error.message,
+      });
+    }
+  };
 }
 
 /**
@@ -106,4 +122,4 @@ async function resolveConversationId(userResolver, username, logger) {
   return conversationId;
 }
 
-export default handleMorningDebrief;
+export default journalistMorningDebriefHandler;

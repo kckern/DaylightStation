@@ -5,4 +5,4 @@
 
 export { journalistJournalHandler } from './journal.mjs';
 export { journalistTriggerHandler } from './trigger.mjs';
-export { handleMorningDebrief } from './morning.mjs';
+export { journalistMorningDebriefHandler } from './morning.mjs';
