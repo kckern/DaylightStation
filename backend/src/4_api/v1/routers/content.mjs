@@ -2,7 +2,6 @@
 import express from 'express';
 import fs from 'fs';
 import path from 'path';
-import { WatchState } from '../../1_domains/content/entities/WatchState.mjs';
 import { nowTs24 } from '../../0_system/utils/index.mjs';
 
 /**
@@ -28,6 +27,49 @@ import { nowTs24 } from '../../0_system/utils/index.mjs';
 export function createContentRouter(registry, watchStore = null, options = {}) {
   const { cacheBasePath, logger = console } = options;
   const router = express.Router();
+
+  /**
+   * Create watch state object with toJSON method for datastore compatibility
+   * @param {Object} props - Watch state properties
+   * @returns {Object}
+   */
+  function createWatchStateDTO(props) {
+    const { itemId, playhead = 0, duration = 0, playCount = 0, lastPlayed = null, watchTime = 0 } = props;
+    const percent = duration > 0 ? Math.round((playhead / duration) * 100) : 0;
+    return {
+      itemId,
+      playhead,
+      duration,
+      percent,
+      playCount,
+      lastPlayed,
+      watchTime,
+      toJSON() {
+        return {
+          itemId: this.itemId,
+          playhead: this.playhead,
+          duration: this.duration,
+          percent: this.percent,
+          playCount: this.playCount,
+          lastPlayed: this.lastPlayed,
+          watchTime: this.watchTime
+        };
+      }
+    };
+  }
+
+  /**
+   * Check if watch state indicates the item is fully watched
+   * @param {Object} state - Plain watch state object
+   * @returns {boolean}
+   */
+  function isWatched(state) {
+    if (!state || !state.duration) return false;
+    const percent = state.percent ?? (state.playhead && state.duration > 0
+      ? Math.round((state.playhead / state.duration) * 100)
+      : 0);
+    return percent >= 90;
+  }
 
   /**
    * GET /api/content/item/:source/*
@@ -109,7 +151,7 @@ export function createContentRouter(registry, watchStore = null, options = {}) {
 
       // Get existing state or create new one
       const existing = await watchStore.get(itemId, storagePath);
-      const state = new WatchState({
+      const state = createWatchStateDTO({
         itemId,
         playhead: seconds,
         duration,
@@ -125,7 +167,7 @@ export function createContentRouter(registry, watchStore = null, options = {}) {
         playhead: state.playhead,
         duration: state.duration,
         percent: state.percent,
-        watched: state.isWatched()
+        watched: isWatched(state)
       });
     } catch (err) {
       res.status(500).json({ error: err.message });
