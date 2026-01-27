@@ -269,12 +269,109 @@ describe('ConfigService integration', () => {
     });
   });
 
+  describe('service URL resolution', () => {
+    test('resolves service URL for household', () => {
+      // Set env for test
+      const originalEnv = process.env.DAYLIGHT_ENV;
+      process.env.DAYLIGHT_ENV = 'test-env';
+
+      try {
+        const svc = createConfigService(fixturesDir);
+        const url = svc.resolveServiceUrl('test-household', 'plex');
+        expect(url).toBe('http://localhost:32400');
+      } finally {
+        process.env.DAYLIGHT_ENV = originalEnv;
+      }
+    });
+
+    test('returns null for unknown service', () => {
+      const svc = createConfigService(fixturesDir);
+      const url = svc.resolveServiceUrl('test-household', 'unknown-service');
+      expect(url).toBeNull();
+    });
+
+    test('uses default household when not specified', () => {
+      const originalEnv = process.env.DAYLIGHT_ENV;
+      process.env.DAYLIGHT_ENV = 'test-env';
+
+      try {
+        const svc = createConfigService(fixturesDir);
+        // Default household is test-household per fixtures
+        const url = svc.resolveServiceUrl(null, 'plex');
+        expect(url).toBe('http://localhost:32400');
+      } finally {
+        process.env.DAYLIGHT_ENV = originalEnv;
+      }
+    });
+  });
+
   test('loads household integrations', () => {
     const svc = createConfigService(fixturesDir);
     const integrations = svc.getHouseholdIntegrations('test-household');
     expect(integrations).toBeDefined();
     expect(integrations.plex.service).toBe('plex');
     expect(integrations.plex.port).toBe(32400);
+  });
+
+  describe('integration fallback to default household', () => {
+    test('returns own integration when household has it defined', () => {
+      const originalEnv = process.env.DAYLIGHT_ENV;
+      process.env.DAYLIGHT_ENV = 'test-env';
+
+      try {
+        const svc = createConfigService(fixturesDir);
+        // secondary-household defines homeassistant with its own service
+        const integration = svc.getHouseholdIntegration('secondary-household', 'homeassistant');
+        expect(integration).toBeDefined();
+        expect(integration.service).toBe('homeassistant-secondary');
+      } finally {
+        process.env.DAYLIGHT_ENV = originalEnv;
+      }
+    });
+
+    test('falls back to default household when integration not defined', () => {
+      const originalEnv = process.env.DAYLIGHT_ENV;
+      process.env.DAYLIGHT_ENV = 'test-env';
+
+      try {
+        const svc = createConfigService(fixturesDir);
+        // secondary-household does NOT define plex, should fall back to test-household (default)
+        const integration = svc.getHouseholdIntegration('secondary-household', 'plex');
+        expect(integration).toBeDefined();
+        expect(integration.service).toBe('plex');
+        expect(integration.port).toBe(32400);
+      } finally {
+        process.env.DAYLIGHT_ENV = originalEnv;
+      }
+    });
+
+    test('resolveServiceUrl falls back to default household', () => {
+      const originalEnv = process.env.DAYLIGHT_ENV;
+      process.env.DAYLIGHT_ENV = 'test-env';
+
+      try {
+        const svc = createConfigService(fixturesDir);
+        // secondary-household does NOT define plex, should use default household's plex config
+        const url = svc.resolveServiceUrl('secondary-household', 'plex');
+        expect(url).toBe('http://localhost:32400');
+      } finally {
+        process.env.DAYLIGHT_ENV = originalEnv;
+      }
+    });
+
+    test('resolveServiceUrl uses own integration when defined', () => {
+      const originalEnv = process.env.DAYLIGHT_ENV;
+      process.env.DAYLIGHT_ENV = 'test-env';
+
+      try {
+        const svc = createConfigService(fixturesDir);
+        // secondary-household defines its own homeassistant
+        const url = svc.resolveServiceUrl('secondary-household', 'homeassistant');
+        expect(url).toBe('http://10.0.0.20:8123');
+      } finally {
+        process.env.DAYLIGHT_ENV = originalEnv;
+      }
+    });
   });
 });
 

@@ -102,13 +102,22 @@ export class ConfigService {
 
   /**
    * Get specific integration config for a household
+   * Falls back to default household if the requested household doesn't have the integration
    * @param {string|null} householdId - Household ID, defaults to default household
    * @param {string} serviceName - Service name (plex, homeassistant, etc.)
    * @returns {object|null}
    */
   getHouseholdIntegration(householdId, serviceName) {
     const hid = householdId ?? this.getDefaultHouseholdId();
-    return this.#config.households?.[hid]?.integrations?.[serviceName] ?? null;
+    const integration = this.#config.households?.[hid]?.integrations?.[serviceName];
+    if (integration) return integration;
+
+    // Fall back to default household if different from requested
+    const defaultHid = this.getDefaultHouseholdId();
+    if (hid !== defaultHid) {
+      return this.#config.households?.[defaultHid]?.integrations?.[serviceName] ?? null;
+    }
+    return null;
   }
 
   // ─── Paths ─────────────────────────────────────────────────
@@ -238,6 +247,27 @@ export class ConfigService {
 
     const env = this.getEnv();
     return serviceMapping[env] ?? null;
+  }
+
+  /**
+   * Resolve full service URL for a household integration
+   * Combines household integration config with service host resolution
+   * @param {string|null} householdId - Household ID, defaults to default household
+   * @param {string} serviceName - Service name (plex, homeassistant, etc.)
+   * @returns {string|null} Full URL like "http://localhost:32400" or null if not found
+   */
+  resolveServiceUrl(householdId, serviceName) {
+    const hid = householdId ?? this.getDefaultHouseholdId();
+    const integration = this.getHouseholdIntegration(hid, serviceName);
+    if (!integration) return null;
+
+    const logicalServiceName = integration.service ?? serviceName;
+    const host = this.resolveServiceHost(logicalServiceName);
+    if (!host) return null;
+
+    const port = integration.port;
+    const protocol = integration.protocol === 'https' ? 'https' : 'http';
+    return port ? `${protocol}://${host}:${port}` : `${protocol}://${host}`;
   }
 
   // ─── System Config ──────────────────────────────────────────

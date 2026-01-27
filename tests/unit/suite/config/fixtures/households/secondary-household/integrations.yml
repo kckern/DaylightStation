@@ -1,0 +1,6 @@
+# Secondary household integrations
+# Only defines homeassistant, plex should fall back to default household
+
+homeassistant:
+  service: homeassistant-secondary
+  port: 8123
