@@ -20,8 +20,9 @@ import {
   loadYamlSafe,
   saveYaml
 } from '../../../0_system/utils/FileIO.mjs';
+import { IGratitudeDatastore } from '#apps/gratitude/ports/IGratitudeDatastore.mjs';
 
-export class YamlGratitudeDatastore {
+export class YamlGratitudeDatastore extends IGratitudeDatastore {
   #userDataService;
   #logger;
 
@@ -31,6 +32,7 @@ export class YamlGratitudeDatastore {
    * @param {Object} [config.logger] - Logger instance
    */
   constructor(config) {
+    super();
     if (!config.userDataService) {
       throw new Error('YamlGratitudeDatastore requires userDataService');
     }

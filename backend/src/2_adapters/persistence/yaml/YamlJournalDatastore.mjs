@@ -15,13 +15,15 @@ import {
   saveYaml,
   deleteYaml
 } from '../../../0_system/utils/FileIO.mjs';
+import { IJournalDatastore } from '#apps/journaling/ports/IJournalDatastore.mjs';
 
-export class YamlJournalDatastore {
+export class YamlJournalDatastore extends IJournalDatastore {
   /**
    * @param {Object} config
    * @param {string} config.dataRoot - Base data directory
    */
   constructor(config) {
+    super();
     if (!config.dataRoot) throw new Error('YamlJournalDatastore requires dataRoot');
     this.dataRoot = config.dataRoot;
   }

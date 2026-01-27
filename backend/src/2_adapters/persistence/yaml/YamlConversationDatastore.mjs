@@ -17,8 +17,9 @@ import {
   saveYaml,
   deleteYaml
 } from '../../../0_system/utils/FileIO.mjs';
+import { IConversationDatastore } from '#apps/shared/ports/IConversationDatastore.mjs';
 
-export class YamlConversationDatastore {
+export class YamlConversationDatastore extends IConversationDatastore {
   #userDataService;
   #logger;
 
@@ -28,6 +29,7 @@ export class YamlConversationDatastore {
    * @param {Object} [config.logger] - Logger instance
    */
   constructor(config) {
+    super();
     if (!config.userDataService) {
       throw new Error('YamlConversationDatastore requires userDataService');
     }

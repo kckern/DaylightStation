@@ -7,16 +7,18 @@ import {
   saveYaml,
   deleteYaml
 } from '../../../0_system/utils/FileIO.mjs';
+import { IWatchStateDatastore } from '#apps/content/ports/IWatchStateDatastore.mjs';
 
 /**
  * YAML-based watch state persistence
  */
-export class YamlWatchStateDatastore {
+export class YamlWatchStateDatastore extends IWatchStateDatastore {
   /**
    * @param {Object} config
    * @param {string} config.basePath - Base path for watch state files
    */
   constructor(config) {
+    super();
     if (!config.basePath) throw new Error('YamlWatchStateDatastore requires basePath');
     this.basePath = config.basePath;
   }
