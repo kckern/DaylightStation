@@ -1,6 +1,6 @@
-// backend/src/4_api/routers/apiV1.mjs
+// backend/src/4_api/v1/routers/api.mjs
 /**
- * API v1 Router
+ * API Router (v1)
  *
  * Groups all DDD domain routers under the /api/v1 namespace.
  * This provides:
@@ -8,7 +8,7 @@
  * - Single mount point for all DDD routes
  * - Easy to swap route names without changing frontend paths
  *
- * @module api/routers/apiV1
+ * @module api/v1/routers/api
  */
 
 import express from 'express';
@@ -44,7 +44,7 @@ import { configService } from '../../0_system/config/index.mjs';
  * @param {Object} [config.logger] - Logger instance
  * @returns {express.Router}
  */
-export function createApiV1Router(config) {
+export function createApiRouter(config) {
   const router = express.Router();
   const { routers, plexProxyHandler, logger = console } = config;
 
@@ -101,9 +101,9 @@ export function createApiV1Router(config) {
     config: configService.getSafeConfig()
   }));
 
-  logger.info?.('apiV1.mounted', { routeCount: mounted.length, routes: mounted });
+  logger.info?.('api.mounted', { routeCount: mounted.length, routes: mounted });
 
   return router;
 }
 
-export default createApiV1Router;
+export default createApiRouter;

@@ -92,7 +92,7 @@ import { createHarvestRouter } from './4_api/v1/routers/harvest.mjs';
 // FileIO utilities for image saving
 import { saveImage as saveImageToFile } from './0_system/utils/FileIO.mjs';
 // API versioning
-import { createApiV1Router } from './4_api/v1/routers/apiV1.mjs';
+import { createApiRouter } from './4_api/v1/routers/api.mjs';
 import { createItemRouter } from './4_api/v1/routers/item.mjs';
 
 const __dirname = path.dirname(new URL(import.meta.url).pathname);
@@ -352,7 +352,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Create API v1 Routers
   // ==========================================================================
   // All DDD routers are collected here and mounted under /api/v1
-  // Route names can be changed in apiV1.mjs without affecting this file
+  // Route names can be changed in api.mjs without affecting this file
 
   // Create unified item router (new item-centric API)
   const itemRouter = createItemRouter({
@@ -857,17 +857,17 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Mount API v1 Router
   // ==========================================================================
   // All DDD routers are now accessible under /api/v1/*
-  // Route names can be changed in apiV1.mjs without affecting frontend paths
+  // Route names can be changed in api.mjs without affecting frontend paths
 
-  const apiV1Router = createApiV1Router({
+  const apiRouter = createApiRouter({
     routers: v1Routers,
     plexProxyHandler: mediaLibProxyHandler,  // Key stays 'plexProxyHandler' for API compat
     logger: rootLogger.child({ module: 'api-v1' })
   });
 
   // Mount at root since index.js already strips /api/v1 prefix before routing here
-  app.use('/', apiV1Router);
-  rootLogger.info('apiV1.mounted', {
+  app.use('/', apiRouter);
+  rootLogger.info('api.mounted', {
     path: '/ (receives requests after /api/v1 prefix stripped by index.js)',
     routerCount: Object.keys(v1Routers).length,
     routers: Object.keys(v1Routers)
