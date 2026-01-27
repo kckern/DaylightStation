@@ -99,6 +99,7 @@ import { createNutribotRouter } from '../4_api/v1/routers/nutribot.mjs';
 import { YamlNutriLogDatastore } from '../2_adapters/persistence/yaml/YamlNutriLogDatastore.mjs';
 import { TelegramMessagingAdapter } from '../2_adapters/telegram/TelegramMessagingAdapter.mjs';
 import { TelegramWebhookParser } from '../2_adapters/telegram/TelegramWebhookParser.mjs';
+import { createBotWebhookHandler } from '../2_adapters/telegram/createBotWebhookHandler.mjs';
 import { OpenAIFoodParserAdapter } from '../2_adapters/ai/OpenAIFoodParserAdapter.mjs';
 import { NutritionixAdapter } from '../2_adapters/nutrition/NutritionixAdapter.mjs';
 
@@ -1556,9 +1557,20 @@ export function createNutribotApiRouter(config) {
     logger,
   });
 
+  // Build webhook handler (adapter layer concern, not API layer)
+  const webhookHandler = (webhookParser && inputRouter)
+    ? createBotWebhookHandler({
+        botName: 'nutribot',
+        botId,
+        parser: webhookParser,
+        inputRouter,
+        gateway,
+        logger,
+      })
+    : null;
+
   return createNutribotRouter(nutribotServices.nutribotContainer, {
-    webhookParser,
-    inputRouter,
+    webhookHandler,
     botId,
     secretToken,
     gateway,

@@ -11,9 +11,6 @@ import { nutribotReportHandler } from '../handlers/nutribot/report.mjs';
 import { nutribotReportImgHandler } from '../handlers/nutribot/reportImg.mjs';
 import { directUPCHandler, directImageHandler, directTextHandler } from '../handlers/nutribot/directInput.mjs';
 
-// Shared Telegram handler factory
-import { createBotWebhookHandler } from '../../2_adapters/telegram/index.mjs';
-
 // HTTP middleware
 import {
   tracingMiddleware,
@@ -28,8 +25,7 @@ import {
  * Create NutriBot Express Router
  * @param {import('../../3_applications/nutribot/NutribotContainer.mjs').NutribotContainer} container
  * @param {Object} [options]
- * @param {Object} [options.webhookParser] - Pre-built TelegramWebhookParser instance
- * @param {Object} [options.inputRouter] - Pre-built NutribotInputRouter instance
+ * @param {Function} [options.webhookHandler] - Pre-built Telegram webhook handler
  * @param {string} [options.botId] - Telegram bot ID
  * @param {string} [options.secretToken] - X-Telegram-Bot-Api-Secret-Token for webhook auth
  * @param {Object} [options.gateway] - TelegramAdapter for callback acknowledgements
@@ -38,33 +34,22 @@ import {
  */
 export function createNutribotRouter(container, options = {}) {
   const router = Router();
-  const { webhookParser, inputRouter, botId, secretToken, gateway, logger = console } = options;
-
-  // Use injected webhook components
-  const parser = webhookParser;
-  const router_ = inputRouter;
+  const { webhookHandler, botId, secretToken, gateway, logger = console } = options;
 
   // Apply middleware
   router.use(tracingMiddleware());
   router.use(requestLoggerMiddleware({ logBody: false }));
 
-  // Webhook endpoint using shared handler
-  if (parser && router_) {
+  // Webhook endpoint using pre-built handler
+  if (webhookHandler) {
     router.post(
       '/webhook',
       webhookValidationMiddleware('nutribot', { secretToken }),
       idempotencyMiddleware({ ttlMs: 300000 }),
-      createBotWebhookHandler({
-        botName: 'nutribot',
-        botId,
-        parser,
-        inputRouter: router_,
-        gateway,
-        logger,
-      }),
+      webhookHandler,
     );
   } else {
-    logger.warn?.('nutribot.webhook.disabled', { reason: 'No parser or inputRouter configured' });
+    logger.warn?.('nutribot.webhook.disabled', { reason: 'No webhookHandler configured' });
   }
 
   // Direct input endpoints (programmatic API access)
