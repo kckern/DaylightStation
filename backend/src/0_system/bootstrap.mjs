@@ -1441,9 +1441,20 @@ export function createHomebotApiRouter(config) {
   const webhookParser = botId ? new TelegramWebhookParser({ botId, logger }) : null;
   const inputRouter = new HomeBotInputRouter(homebotServices.homebotContainer, { userResolver, logger });
 
+  // Build webhook handler (adapter layer concern, not API layer)
+  const webhookHandler = (webhookParser && inputRouter)
+    ? createBotWebhookHandler({
+        botName: 'homebot',
+        botId,
+        parser: webhookParser,
+        inputRouter,
+        gateway,
+        logger,
+      })
+    : null;
+
   return createHomebotRouter(homebotServices.homebotContainer, {
-    webhookParser,
-    inputRouter,
+    webhookHandler,
     botId,
     secretToken,
     gateway,
