@@ -5,8 +5,10 @@
  * Routes platform-agnostic IInputEvents to Journalist use cases.
  */
 
-import { HandleSpecialStart } from '../../3_applications/journalist/usecases/HandleSpecialStart.mjs';
 import { InputEventType } from '../../3_applications/shared/InputEventType.mjs';
+
+// Special start characters (moved from HandleSpecialStart use case)
+const SPECIAL_START_CHARS = ['🎲', '❌'];
 
 /**
  * Journalist Input Router
@@ -124,7 +126,7 @@ export class JournalistInputRouter {
     this.#logger.debug?.('router.text', { conversationId, textLength: text?.length });
 
     // Check for special starts (🎲, ❌)
-    if (HandleSpecialStart.isSpecialStart(text)) {
+    if (this.#isSpecialStart(text)) {
       const useCase = this.#container.getHandleSpecialStart?.();
       if (useCase) {
         return useCase.execute({
@@ -214,6 +216,15 @@ export class JournalistInputRouter {
     // Source buttons: "🏋️ strava", "💻 github", etc.
     const sourceIcons = ['⌚', '🏋️', '🏃', '⚖️', '📆', '💻', '📍', '💬', '📄'];
     return sourceIcons.some((icon) => text.startsWith(icon + ' '));
+  }
+
+  /**
+   * Check if text is a special start character (routing decision)
+   * @private
+   */
+  #isSpecialStart(text) {
+    if (!text) return false;
+    return SPECIAL_START_CHARS.some(char => text.startsWith(char));
   }
 
   /**
