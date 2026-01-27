@@ -41,15 +41,15 @@ export class TelegramMessagingAdapter {
           method,
           error: response.data.description
         });
-        const err = new Error('Telegram API request failed');
-        err.code = 'TELEGRAM_API_ERROR';
+        const err = new Error('Messaging API request failed');
+        err.code = 'MESSAGING_API_ERROR';
         err.isTransient = false;
         throw err;
       }
 
       return response.data.result;
     } catch (error) {
-      if (error.code === 'TELEGRAM_API_ERROR') throw error;
+      if (error.code === 'MESSAGING_API_ERROR') throw error;
 
       // Wrap HttpError
       this.#logger.error?.('telegram.request.failed', {
@@ -57,7 +57,7 @@ export class TelegramMessagingAdapter {
         error: error.message,
         code: error.code
       });
-      const wrapped = new Error('Failed to call Telegram API');
+      const wrapped = new Error('Failed to call messaging API');
       wrapped.code = error.code || 'UNKNOWN_ERROR';
       wrapped.isTransient = error.isTransient || false;
       throw wrapped;

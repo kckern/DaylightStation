@@ -221,7 +221,7 @@ export class OpenAIAdapter extends IAIGateway {
             throw error;
           }
 
-          const err = new Error(errorData.error?.message || `OpenAI API error: ${response.status}`);
+          const err = new Error(errorData.error?.message || `AI API error: ${response.status}`);
           err.status = response.status;
           throw err;
         }

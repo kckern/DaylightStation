@@ -49,7 +49,7 @@ export class TelegramAdapter {
       if (!data.ok) {
         this.metrics.errors++;
         this.logger.error?.('telegram.api.error', { method, error: data.description });
-        const apiError = new Error(data.description || 'Unknown Telegram API error');
+        const apiError = new Error(data.description || 'Unknown messaging API error');
         apiError._isApiError = true;
         throw apiError;
       }
@@ -199,7 +199,7 @@ export class TelegramAdapter {
       if (!data.ok) {
         this.metrics.errors++;
         this.logger.error?.('telegram.api.error', { method: 'sendPhoto', error: data.description });
-        throw new Error(data.description || 'Telegram API error');
+        throw new Error(data.description || 'Messaging API error');
       }
 
       this.metrics.messagesSent++;

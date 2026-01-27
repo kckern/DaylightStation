@@ -67,8 +67,8 @@ export class PlexClient {
         error: error.message,
         code: error.code
       });
-      const wrapped = new Error('Plex API request failed');
-      wrapped.code = error.code || 'PLEX_ERROR';
+      const wrapped = new Error('Media API request failed');
+      wrapped.code = error.code || 'MEDIA_API_ERROR';
       wrapped.isTransient = error.isTransient || false;
       throw wrapped;
     }

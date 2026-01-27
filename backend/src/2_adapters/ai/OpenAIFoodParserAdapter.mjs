@@ -56,21 +56,21 @@ export class OpenAIFoodParserAdapter {
 
       if (response.data.error) {
         this.#logger.error?.('openai.error', { error: response.data.error });
-        const err = new Error('OpenAI API request failed');
-        err.code = 'OPENAI_API_ERROR';
+        const err = new Error('AI API request failed');
+        err.code = 'AI_API_ERROR';
         err.isTransient = false;
         throw err;
       }
 
       return response.data.choices[0].message.content;
     } catch (error) {
-      if (error.code === 'OPENAI_API_ERROR') throw error;
+      if (error.code === 'AI_API_ERROR') throw error;
 
       this.#logger.error?.('openai.request.failed', {
         error: error.message,
         code: error.code
       });
-      const wrapped = new Error('Failed to call OpenAI API');
+      const wrapped = new Error('Failed to call AI API');
       wrapped.code = error.code || 'UNKNOWN_ERROR';
       wrapped.isTransient = error.isTransient || false;
       throw wrapped;

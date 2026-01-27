@@ -51,7 +51,7 @@ export class NutritionixAdapter {
 
       if (!response.ok) {
         this.#logger.error?.('nutritionix.error', { endpoint, error: response.data });
-        throw new Error(`Nutritionix API error: ${response.data?.message || response.status}`);
+        throw new Error(`Nutrition API error: ${response.data?.message || response.status}`);
       }
 
       return response.data;
@@ -59,7 +59,7 @@ export class NutritionixAdapter {
       if (error.code) {
         // HttpError from httpClient
         this.#logger.error?.('nutritionix.error', { endpoint, error: error.message, code: error.code });
-        throw new Error(`Nutritionix API error: ${error.message}`);
+        throw new Error(`Nutrition API error: ${error.message}`);
       }
       throw error;
     }
