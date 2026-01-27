@@ -174,6 +174,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const householdId = configService.getDefaultHouseholdId() || 'default';
   const householdDir = userDataService.getHouseholdDir(householdId) || `${dataBasePath}/households/${householdId}`;
 
+  // DevProxy for forwarding webhooks to local dev machine
+  const devHost = configService.get('LOCAL_DEV_HOST') || configService.getSecret('LOCAL_DEV_HOST');
+  const devProxy = createDevProxy({ logger: rootLogger, devHost });
+
   // UserResolver for platform identity -> system username mapping
   const userResolver = new UserResolver(configService, {
     logger: rootLogger.child({ module: 'user-resolver' })
@@ -225,6 +229,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // EventBus admin router (requires eventBus to be created first)
   app.use('/admin/ws', createEventBusRouter({ eventBus, logger: rootLogger }));
+
+  // DevProxy control routes (toggle proxy on/off)
+  app.use('/dev', devProxy.router);
 
   // Content domain
   // Get media library credentials (currently Plex, could be Jellyfin, etc.)
@@ -901,6 +908,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     plexProxyHandler: mediaLibProxyHandler,  // Key stays 'plexProxyHandler' for API compat
     logger: rootLogger.child({ module: 'api-v1' })
   });
+
+  // DevProxy middleware - only intercepts webhook routes
+  // Note: These paths don't include /api/v1 because this app is already mounted at that prefix
+  app.use('/nutribot/webhook', devProxy.middleware);
+  app.use('/journalist/webhook', devProxy.middleware);
+  app.use('/homebot/webhook', devProxy.middleware);
 
   // Mount at root since index.js already strips /api/v1 prefix before routing here
   app.use('/', apiRouter);
