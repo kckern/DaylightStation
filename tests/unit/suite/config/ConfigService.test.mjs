@@ -247,6 +247,28 @@ describe('ConfigService integration', () => {
     });
   });
 
+  describe('service resolution', () => {
+    test('resolves service host for current environment', () => {
+      // Set env for test
+      const originalEnv = process.env.DAYLIGHT_ENV;
+      process.env.DAYLIGHT_ENV = 'test-env';
+
+      try {
+        const svc = createConfigService(fixturesDir);
+        const host = svc.resolveServiceHost('plex');
+        expect(host).toBe('localhost');
+      } finally {
+        process.env.DAYLIGHT_ENV = originalEnv;
+      }
+    });
+
+    test('returns null for unknown service', () => {
+      const svc = createConfigService(fixturesDir);
+      const host = svc.resolveServiceHost('unknown-service');
+      expect(host).toBeNull();
+    });
+  });
+
   test('loads household integrations', () => {
     const svc = createConfigService(fixturesDir);
     const integrations = svc.getHouseholdIntegrations('test-household');
