@@ -15,7 +15,7 @@ import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
 import { configService } from './index.mjs';
-import { createLogger } from '../logging/logger.js';
+import { createLogger } from '../logging/logger.mjs';
 
 const logger = createLogger({
   source: 'backend',

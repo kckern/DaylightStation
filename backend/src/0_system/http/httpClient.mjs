@@ -13,7 +13,7 @@
  */
 
 import axios from 'axios';
-import { createLogger } from '../logging/logger.js';
+import { createLogger } from '../logging/logger.mjs';
 
 const httpLogger = createLogger({
   source: 'backend',

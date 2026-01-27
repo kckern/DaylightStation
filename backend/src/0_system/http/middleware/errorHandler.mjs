@@ -5,7 +5,7 @@
  * Catches and formats errors for HTTP responses.
  */
 
-import { createLogger } from '../../logging/logger.js';
+import { createLogger } from '../../logging/logger.mjs';
 import {
   DomainError,
   ValidationError,

@@ -19,10 +19,10 @@ import { UserResolver } from './0_system/users/UserResolver.mjs';
 import { HttpClient } from './0_system/services/HttpClient.mjs';
 
 // Logging system
-import { getDispatcher } from './0_system/logging/dispatcher.js';
-import { createLogger } from './0_system/logging/logger.js';
-import { ingestFrontendLogs } from './0_system/logging/ingestion.js';
-import { loadLoggingConfig, resolveLoggerLevel } from './0_system/logging/config.js';
+import { getDispatcher } from './0_system/logging/dispatcher.mjs';
+import { createLogger } from './0_system/logging/logger.mjs';
+import { ingestFrontendLogs } from './0_system/logging/ingestion.mjs';
+import { loadLoggingConfig, resolveLoggerLevel } from './0_system/logging/config.mjs';
 
 // Bootstrap functions
 import {

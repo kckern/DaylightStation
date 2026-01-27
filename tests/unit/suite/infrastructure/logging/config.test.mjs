@@ -7,7 +7,7 @@ import {
   getLoggingTags,
   resolveLogglyToken,
   resolveLogglySubdomain
-} from '#backend/src/0_system/logging/config.js';
+} from '#backend/src/0_system/logging/config.mjs';
 
 describe('Logging Config', () => {
   const originalEnv = process.env;

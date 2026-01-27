@@ -23,7 +23,7 @@ import moment from 'moment-timezone';
 import fs from 'fs';
 import yaml from 'js-yaml';
 import { userDataService } from '#system/config/index.mjs';
-import { createLogger } from '#system/logging/logger.js';
+import { createLogger } from '#system/logging/logger.mjs';
 import { configService } from '#system/config/index.mjs';
 
 const archiveLogger = createLogger({
