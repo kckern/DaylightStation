@@ -88,7 +88,7 @@ export class AnthropicAdapter extends IAIGateway {
           throw error;
         }
 
-        throw new Error(errorData.error?.message || `Anthropic API error: ${response.status}`);
+        throw new Error(errorData.error?.message || `AI API error: ${response.status}`);
       }
 
       const result = await response.json();
