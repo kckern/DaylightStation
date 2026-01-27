@@ -20,9 +20,9 @@ export {
   INotificationChannel,
   IMessagingGateway,
   isMessagingGateway,
-  IConversationStore,
-  IConversationStateStore,
-  isConversationStateStore
+  IConversationDatastore,
+  IConversationStateDatastore,
+  isConversationStateDatastore
 } from '../../3_applications/shared/ports/index.mjs';
 
 // Services

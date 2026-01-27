@@ -19,13 +19,13 @@ import {
   loadYamlSafe,
   saveYaml
 } from '../../../0_system/utils/FileIO.mjs';
-import { INutriListStore } from '../../../3_applications/nutribot/ports/INutriListStore.mjs';
+import { INutriListDatastore } from '../../../3_applications/nutribot/ports/INutriListDatastore.mjs';
 import { shortIdFromUuid } from '../../../0_system/utils/shortId.mjs';
 
 const ARCHIVE_RETENTION_DAYS = 30;
 const NOOM_EMOJI = { green: '🟢', yellow: '🟡', orange: '🟠' };
 
-export class YamlNutriListStore extends INutriListStore {
+export class YamlNutriListStore extends INutriListDatastore {
   #userDataService;
   #logger;
 

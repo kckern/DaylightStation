@@ -1,10 +1,10 @@
 /**
- * IStateStore - Interface for job runtime state persistence
+ * IStateDatastore - Interface for job runtime state persistence
  *
  * Implementations:
  * - YamlStateStore: Persists to system/state/cron-runtime
  */
-export class IStateStore {
+export class IStateDatastore {
   /**
    * Load all job states
    * @returns {Promise<Map<string, import('../entities/JobState.mjs').JobState>>}
@@ -50,4 +50,4 @@ export class IStateStore {
   }
 }
 
-export default IStateStore;
+export default IStateDatastore;

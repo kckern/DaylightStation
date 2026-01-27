@@ -1,10 +1,10 @@
-// backend/src/3_applications/nutribot/ports/INutriLogStore.mjs
+// backend/src/3_applications/nutribot/ports/INutriLogDatastore.mjs
 
 /**
  * Port interface for NutriLog persistence
- * @interface INutriLogStore
+ * @interface INutriLogDatastore
  */
-export const INutriLogStore = {
+export const INutriLogDatastore = {
   async save(nutriLog) {},
   async findById(userId, id) {},
   async findByDate(userId, date) {},
@@ -16,11 +16,11 @@ export const INutriLogStore = {
 };
 
 /**
- * Validate object implements INutriLogStore
+ * Validate object implements INutriLogDatastore
  * @param {Object} obj
  * @returns {boolean}
  */
-export function isNutriLogStore(obj) {
+export function isNutriLogDatastore(obj) {
   return (
     obj &&
     typeof obj.save === 'function' &&

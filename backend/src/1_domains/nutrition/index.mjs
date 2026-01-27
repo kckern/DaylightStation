@@ -36,9 +36,9 @@ export {
 } from './entities/formatters.mjs';
 
 // Ports (re-exported from application layer for backward compatibility)
-export { IFoodLogStore, isFoodLogStore, assertFoodLogStore } from '../../3_applications/nutribot/ports/IFoodLogStore.mjs';
-export { INutriListStore, isNutriListStore } from '../../3_applications/nutribot/ports/INutriListStore.mjs';
-export { INutriCoachStore, isNutriCoachStore } from '../../3_applications/nutribot/ports/INutriCoachStore.mjs';
+export { IFoodLogDatastore, isFoodLogDatastore, assertFoodLogDatastore } from '../../3_applications/nutribot/ports/IFoodLogDatastore.mjs';
+export { INutriListDatastore, isNutriListDatastore } from '../../3_applications/nutribot/ports/INutriListDatastore.mjs';
+export { INutriCoachDatastore, isNutriCoachDatastore } from '../../3_applications/nutribot/ports/INutriCoachDatastore.mjs';
 
 // Services
 export { FoodLogService } from './services/FoodLogService.mjs';

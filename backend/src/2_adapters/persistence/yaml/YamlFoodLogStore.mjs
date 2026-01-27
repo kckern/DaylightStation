@@ -10,7 +10,7 @@
 
 import path from 'path';
 import { NutriLog } from '../../../1_domains/nutrition/entities/NutriLog.mjs';
-import { IFoodLogStore } from '../../../3_applications/nutribot/ports/IFoodLogStore.mjs';
+import { IFoodLogDatastore } from '../../../3_applications/nutribot/ports/IFoodLogDatastore.mjs';
 import {
   ensureDir,
   dirExists,
@@ -21,7 +21,7 @@ import {
 
 const ARCHIVE_RETENTION_DAYS = 30;
 
-export class YamlFoodLogStore extends IFoodLogStore {
+export class YamlFoodLogStore extends IFoodLogDatastore {
   #dataRoot;
   #logger;
   #invalidSeen = new Set();

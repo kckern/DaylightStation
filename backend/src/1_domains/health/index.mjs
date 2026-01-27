@@ -15,4 +15,4 @@ export { WorkoutEntry } from './entities/WorkoutEntry.mjs';
 export { HealthAggregationService } from './services/HealthAggregationService.mjs';
 
 // Ports moved to application layer - re-export for backward compatibility
-export { IHealthDataStore } from '../../3_applications/health/ports/IHealthDataStore.mjs';
+export { IHealthDataDatastore } from '../../3_applications/health/ports/IHealthDataDatastore.mjs';

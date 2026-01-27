@@ -29,9 +29,9 @@ import {
   deleteFile
 } from '../../0_system/utils/FileIO.mjs';
 import { nowTs24 } from '../../0_system/utils/index.mjs';
-import { IConversationStateStore } from '../../3_applications/shared/ports/index.mjs';
+import { IConversationStateDatastore } from '../../3_applications/shared/ports/index.mjs';
 
-export class YamlConversationStateStore extends IConversationStateStore {
+export class YamlConversationStateStore extends IConversationStateDatastore {
   #basePath;
 
   /**

@@ -1,11 +1,11 @@
-// backend/src/3_applications/homebot/ports/IConversationStateStore.mjs
+// backend/src/3_applications/homebot/ports/IConversationStateDatastore.mjs
 
 /**
  * Port interface for conversation state persistence
  * Used to store temporary UI flow state during multi-step interactions
- * @interface IConversationStateStore
+ * @interface IConversationStateDatastore
  */
-export const IConversationStateStore = {
+export const IConversationStateDatastore = {
   /**
    * Get state for a conversation/message
    * @param {string} conversationId
@@ -42,11 +42,11 @@ export const IConversationStateStore = {
 };
 
 /**
- * Validate object implements IConversationStateStore
+ * Validate object implements IConversationStateDatastore
  * @param {Object} obj
  * @returns {boolean}
  */
-export function isConversationStateStore(obj) {
+export function isConversationStateDatastore(obj) {
   return (
     obj &&
     typeof obj.get === 'function' &&

@@ -1,5 +1,5 @@
 /**
- * IHealthDataStore Port
+ * IHealthDataDatastore Port
  *
  * Interface for health data persistence.
  *
@@ -7,9 +7,9 @@
  */
 
 /**
- * @interface IHealthDataStore
+ * @interface IHealthDataDatastore
  */
-export class IHealthDataStore {
+export class IHealthDataDatastore {
   /**
    * Load weight data for a user
    * @param {string} userId
@@ -85,4 +85,4 @@ export class IHealthDataStore {
   }
 }
 
-export default IHealthDataStore;
+export default IHealthDataDatastore;

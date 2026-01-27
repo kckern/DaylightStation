@@ -10,7 +10,7 @@
  * Interface for conversation state persistence
  * Supports multi-turn conversation flows with optional message-keyed sessions
  */
-export class IConversationStateStore {
+export class IConversationStateDatastore {
   /**
    * Get conversation state
    * @param {string} conversationId
@@ -18,7 +18,7 @@ export class IConversationStateStore {
    * @returns {Promise<ConversationState|null>}
    */
   async get(conversationId, messageId) {
-    throw new Error('IConversationStateStore.get() must be implemented');
+    throw new Error('IConversationStateDatastore.get() must be implemented');
   }
 
   /**
@@ -28,7 +28,7 @@ export class IConversationStateStore {
    * @param {string} [messageId] - Optional message key for session
    */
   async set(conversationId, state, messageId) {
-    throw new Error('IConversationStateStore.set() must be implemented');
+    throw new Error('IConversationStateDatastore.set() must be implemented');
   }
 
   /**
@@ -37,7 +37,7 @@ export class IConversationStateStore {
    * @param {string} [messageId] - Optional: delete specific session
    */
   async delete(conversationId, messageId) {
-    throw new Error('IConversationStateStore.delete() must be implemented');
+    throw new Error('IConversationStateDatastore.delete() must be implemented');
   }
 
   /**
@@ -45,14 +45,14 @@ export class IConversationStateStore {
    * @param {string} conversationId
    */
   async clear(conversationId) {
-    throw new Error('IConversationStateStore.clear() must be implemented');
+    throw new Error('IConversationStateDatastore.clear() must be implemented');
   }
 }
 
 /**
- * Type guard for IConversationStateStore
+ * Type guard for IConversationStateDatastore
  */
-export function isConversationStateStore(obj) {
+export function isConversationStateDatastore(obj) {
   return obj &&
     typeof obj.get === 'function' &&
     typeof obj.set === 'function' &&

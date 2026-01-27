@@ -1,8 +1,8 @@
 /**
- * IConversationStore - Port interface for conversation persistence
+ * IConversationDatastore - Port interface for conversation persistence
  */
 
-export const IConversationStore = {
+export const IConversationDatastore = {
   /**
    * Save a conversation
    * @param {Conversation} conversation - Conversation to save
@@ -46,4 +46,4 @@ export const IConversationStore = {
   async delete(id) {}
 };
 
-export default IConversationStore;
+export default IConversationDatastore;

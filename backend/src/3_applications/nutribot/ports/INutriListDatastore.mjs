@@ -1,18 +1,18 @@
 /**
- * INutriListStore Port
+ * INutriListDatastore Port
  *
  * Port interface for denormalized NutriList persistence.
  * NutriList stores individual food items for reporting/analytics.
  */
 
-export class INutriListStore {
+export class INutriListDatastore {
   /**
    * Sync nutrilist from a NutriLog (updates denormalized data)
    * @param {NutriLog} nutriLog - NutriLog entity
    * @returns {Promise<void>}
    */
   async syncFromLog(nutriLog) {
-    throw new Error('INutriListStore.syncFromLog must be implemented');
+    throw new Error('INutriListDatastore.syncFromLog must be implemented');
   }
 
   /**
@@ -21,7 +21,7 @@ export class INutriListStore {
    * @returns {Promise<void>}
    */
   async saveMany(items) {
-    throw new Error('INutriListStore.saveMany must be implemented');
+    throw new Error('INutriListDatastore.saveMany must be implemented');
   }
 
   /**
@@ -33,7 +33,7 @@ export class INutriListStore {
    * @returns {Promise<Object[]>}
    */
   async findAll(userId, options = {}) {
-    throw new Error('INutriListStore.findAll must be implemented');
+    throw new Error('INutriListDatastore.findAll must be implemented');
   }
 
   /**
@@ -43,7 +43,7 @@ export class INutriListStore {
    * @returns {Promise<Object[]>}
    */
   async findByLogId(userId, logId) {
-    throw new Error('INutriListStore.findByLogId must be implemented');
+    throw new Error('INutriListDatastore.findByLogId must be implemented');
   }
 
   /**
@@ -53,7 +53,7 @@ export class INutriListStore {
    * @returns {Promise<Object|null>}
    */
   async findByUuid(userId, uuid) {
-    throw new Error('INutriListStore.findByUuid must be implemented');
+    throw new Error('INutriListDatastore.findByUuid must be implemented');
   }
 
   /**
@@ -64,7 +64,7 @@ export class INutriListStore {
    * @returns {Promise<Object>}
    */
   async update(userId, itemId, updates) {
-    throw new Error('INutriListStore.update must be implemented');
+    throw new Error('INutriListDatastore.update must be implemented');
   }
 
   /**
@@ -74,7 +74,7 @@ export class INutriListStore {
    * @returns {Promise<Object[]>}
    */
   async findByDate(userId, date) {
-    throw new Error('INutriListStore.findByDate must be implemented');
+    throw new Error('INutriListDatastore.findByDate must be implemented');
   }
 
   /**
@@ -85,7 +85,7 @@ export class INutriListStore {
    * @returns {Promise<Object[]>}
    */
   async findByDateRange(userId, startDate, endDate) {
-    throw new Error('INutriListStore.findByDateRange must be implemented');
+    throw new Error('INutriListDatastore.findByDateRange must be implemented');
   }
 
   /**
@@ -95,7 +95,7 @@ export class INutriListStore {
    * @returns {Promise<number>}
    */
   async removeByLogId(userId, logId) {
-    throw new Error('INutriListStore.removeByLogId must be implemented');
+    throw new Error('INutriListDatastore.removeByLogId must be implemented');
   }
 
   /**
@@ -106,7 +106,7 @@ export class INutriListStore {
    * @returns {Promise<boolean>}
    */
   async updatePortion(userId, uuid, factor) {
-    throw new Error('INutriListStore.updatePortion must be implemented');
+    throw new Error('INutriListDatastore.updatePortion must be implemented');
   }
 
   /**
@@ -116,7 +116,7 @@ export class INutriListStore {
    * @returns {Promise<boolean>}
    */
   async deleteById(userId, uuid) {
-    throw new Error('INutriListStore.deleteById must be implemented');
+    throw new Error('INutriListDatastore.deleteById must be implemented');
   }
 
   /**
@@ -125,7 +125,7 @@ export class INutriListStore {
    * @returns {Promise<void>}
    */
   async clear(userId) {
-    throw new Error('INutriListStore.clear must be implemented');
+    throw new Error('INutriListDatastore.clear must be implemented');
   }
 
   /**
@@ -134,7 +134,7 @@ export class INutriListStore {
    * @returns {Promise<Object>}
    */
   async getGramsByColor(userId) {
-    throw new Error('INutriListStore.getGramsByColor must be implemented');
+    throw new Error('INutriListDatastore.getGramsByColor must be implemented');
   }
 
   /**
@@ -143,7 +143,7 @@ export class INutriListStore {
    * @returns {Promise<Object>}
    */
   async getCountByColor(userId) {
-    throw new Error('INutriListStore.getCountByColor must be implemented');
+    throw new Error('INutriListDatastore.getCountByColor must be implemented');
   }
 
   /**
@@ -153,7 +153,7 @@ export class INutriListStore {
    * @returns {Promise<void>}
    */
   async syncNutriday(userId, datesToSync = null) {
-    throw new Error('INutriListStore.syncNutriday must be implemented');
+    throw new Error('INutriListDatastore.syncNutriday must be implemented');
   }
 
   /**
@@ -163,16 +163,16 @@ export class INutriListStore {
    * @returns {Promise<Object>}
    */
   async archiveOldItems(userId, retentionDays = 30) {
-    throw new Error('INutriListStore.archiveOldItems must be implemented');
+    throw new Error('INutriListDatastore.archiveOldItems must be implemented');
   }
 }
 
 /**
- * Check if an object implements INutriListStore
+ * Check if an object implements INutriListDatastore
  * @param {any} obj
  * @returns {boolean}
  */
-export function isNutriListStore(obj) {
+export function isNutriListDatastore(obj) {
   if (!obj || typeof obj !== 'object') return false;
   return (
     typeof obj.syncFromLog === 'function' &&
@@ -184,4 +184,4 @@ export function isNutriListStore(obj) {
   );
 }
 
-export default INutriListStore;
+export default INutriListDatastore;

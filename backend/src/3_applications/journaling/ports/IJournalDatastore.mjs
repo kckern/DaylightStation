@@ -1,18 +1,18 @@
 /**
- * IJournalStore Port
+ * IJournalDatastore Port
  *
  * Port interface for JournalEntry persistence.
  * Implementations handle storage details (YAML, database, etc.)
  */
 
-export class IJournalStore {
+export class IJournalDatastore {
   /**
    * Save a journal entry
    * @param {JournalEntry} entry - Journal entry entity
    * @returns {Promise<void>}
    */
   async save(entry) {
-    throw new Error('IJournalStore.save must be implemented');
+    throw new Error('IJournalDatastore.save must be implemented');
   }
 
   /**
@@ -21,7 +21,7 @@ export class IJournalStore {
    * @returns {Promise<Object|null>}
    */
   async findById(id) {
-    throw new Error('IJournalStore.findById must be implemented');
+    throw new Error('IJournalDatastore.findById must be implemented');
   }
 
   /**
@@ -31,7 +31,7 @@ export class IJournalStore {
    * @returns {Promise<Object|null>}
    */
   async findByUserAndDate(userId, date) {
-    throw new Error('IJournalStore.findByUserAndDate must be implemented');
+    throw new Error('IJournalDatastore.findByUserAndDate must be implemented');
   }
 
   /**
@@ -42,7 +42,7 @@ export class IJournalStore {
    * @returns {Promise<Object[]>}
    */
   async findByUserInRange(userId, startDate, endDate) {
-    throw new Error('IJournalStore.findByUserInRange must be implemented');
+    throw new Error('IJournalDatastore.findByUserInRange must be implemented');
   }
 
   /**
@@ -52,7 +52,7 @@ export class IJournalStore {
    * @returns {Promise<Object[]>}
    */
   async findByUserAndTag(userId, tag) {
-    throw new Error('IJournalStore.findByUserAndTag must be implemented');
+    throw new Error('IJournalDatastore.findByUserAndTag must be implemented');
   }
 
   /**
@@ -61,7 +61,7 @@ export class IJournalStore {
    * @returns {Promise<string[]>} - Array of YYYY-MM-DD date strings
    */
   async listDates(userId) {
-    throw new Error('IJournalStore.listDates must be implemented');
+    throw new Error('IJournalDatastore.listDates must be implemented');
   }
 
   /**
@@ -70,8 +70,8 @@ export class IJournalStore {
    * @returns {Promise<void>}
    */
   async delete(id) {
-    throw new Error('IJournalStore.delete must be implemented');
+    throw new Error('IJournalDatastore.delete must be implemented');
   }
 }
 
-export default IJournalStore;
+export default IJournalDatastore;

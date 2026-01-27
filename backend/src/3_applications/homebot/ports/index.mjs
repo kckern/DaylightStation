@@ -1,3 +1,3 @@
 // backend/src/3_applications/homebot/ports/index.mjs
-export { IConversationStateStore, isConversationStateStore } from './IConversationStateStore.mjs';
+export { IConversationStateDatastore, isConversationStateDatastore } from './IConversationStateDatastore.mjs';
 export { IHouseholdRepository, isHouseholdRepository } from './IHouseholdRepository.mjs';
