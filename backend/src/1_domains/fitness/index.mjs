@@ -2,6 +2,9 @@
  * Fitness Domain
  */
 
+// Value Objects
+export { SessionId } from './value-objects/index.mjs';
+
 // Entities
 export { Session } from './entities/Session.mjs';
 export { Participant } from './entities/Participant.mjs';
