@@ -849,12 +849,13 @@ export function createThermalPrinterAdapter(config) {
  * @param {string} config.apiKey - OpenAI API key
  * @param {string} [config.model='tts-1'] - TTS model
  * @param {string} [config.defaultVoice='alloy'] - Default voice
+ * @param {Object} config.httpClient - HTTP client for API requests
  * @param {Object} [config.logger] - Logger instance
  * @returns {TTSAdapter}
  */
 export function createTTSAdapterInstance(config) {
-  const { logger = console, ...ttsConfig } = config;
-  return new TTSAdapter(ttsConfig, { logger });
+  const { logger = console, httpClient, ...ttsConfig } = config;
+  return new TTSAdapter(ttsConfig, { httpClient, logger });
 }
 
 /**
@@ -883,11 +884,12 @@ export function createMQTTSensorAdapterInstance(config) {
  * @param {string} [config.mqtt.host] - MQTT broker host
  * @param {number} [config.mqtt.port] - MQTT broker port
  * @param {Function} [config.onMqttMessage] - MQTT message callback
+ * @param {Object} [config.httpClient] - HTTP client for API requests
  * @param {Object} [config.logger] - Logger instance
  * @returns {Object} Hardware adapters
  */
 export function createHardwareAdapters(config) {
-  const { logger = console } = config;
+  const { logger = console, httpClient } = config;
 
   // Thermal printer adapter (optional)
   let printerAdapter = null;
@@ -903,16 +905,16 @@ export function createHardwareAdapters(config) {
     );
   }
 
-  // TTS adapter (optional - requires OpenAI API key)
+  // TTS adapter (optional - requires OpenAI API key and httpClient)
   let ttsAdapter = null;
-  if (config.tts?.apiKey) {
+  if (config.tts?.apiKey && httpClient) {
     ttsAdapter = new TTSAdapter(
       {
         apiKey: config.tts.apiKey,
         model: config.tts.model,
         defaultVoice: config.tts.defaultVoice
       },
-      { logger }
+      { httpClient, logger }
     );
   }
 

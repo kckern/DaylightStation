@@ -42,8 +42,9 @@ export class HttpClient extends IHttpClient {
 
   async downloadBuffer(url, options = {}) {
     const response = await this.#fetchWithTimeout(url, {
-      method: 'GET',
+      method: options.method || 'GET',
       headers: options.headers,
+      body: options.body,
       timeout: options.timeout
     });
 

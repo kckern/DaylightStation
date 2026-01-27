@@ -10,7 +10,7 @@
  * @module adapters/hardware/tts
  */
 
-import axios from 'axios';
+import { Readable } from 'stream';
 import { configService } from '../../../0_system/config/index.mjs';
 
 /**
@@ -29,18 +29,24 @@ export class TTSAdapter {
   #model;
   #defaultVoice;
   #logger;
+  #httpClient;
   #apiUrl;
 
   /**
    * @param {TTSConfig} config
-   * @param {Object} [options]
-   * @param {Object} [options.logger] - Logger instance
+   * @param {Object} deps
+   * @param {import('#system/services/HttpClient.mjs').HttpClient} deps.httpClient
+   * @param {Object} [deps.logger] - Logger instance
    */
-  constructor(config, options = {}) {
+  constructor(config, deps = {}) {
+    if (!deps.httpClient) {
+      throw new Error('TTSAdapter requires httpClient');
+    }
     this.#apiKey = config.apiKey;
     this.#model = config.model || 'tts-1';
     this.#defaultVoice = config.defaultVoice || 'alloy';
-    this.#logger = options.logger || console;
+    this.#httpClient = deps.httpClient;
+    this.#logger = deps.logger || console;
     this.#apiUrl = 'https://api.openai.com/v1/audio/speech';
   }
 
@@ -111,15 +117,13 @@ export class TTSAdapter {
         requestBody.speed = Math.max(0.25, Math.min(4.0, options.speed));
       }
 
-      const response = await axios({
-        method: 'post',
-        url: this.#apiUrl,
+      const buffer = await this.#httpClient.downloadBuffer(this.#apiUrl, {
+        method: 'POST',
         headers: {
           'Authorization': `Bearer ${this.#apiKey}`,
           'Content-Type': 'application/json'
         },
-        data: requestBody,
-        responseType: 'stream'
+        body: JSON.stringify(requestBody)
       });
 
       this.#logger.info?.('tts.generate.success', {
@@ -128,14 +132,18 @@ export class TTSAdapter {
         model
       });
 
-      return response.data;
+      // Convert buffer to stream for backward compatibility
+      return Readable.from(buffer);
 
     } catch (error) {
       this.#logger.error?.('tts.generate.error', {
         error: error.message,
-        status: error.response?.status
+        code: error.code
       });
-      throw error;
+      const err = new Error('TTS generation failed');
+      err.code = error.code || 'TTS_ERROR';
+      err.isTransient = error.isTransient || false;
+      throw err;
     }
   }
 
@@ -172,16 +180,18 @@ export class TTSAdapter {
 
 /**
  * Create a TTSAdapter from environment config
- * @param {Object} [options]
+ * @param {Object} deps
+ * @param {import('#system/services/HttpClient.mjs').HttpClient} deps.httpClient
+ * @param {Object} [deps.logger] - Logger instance
  * @returns {TTSAdapter}
  */
-export function createTTSAdapter(options = {}) {
+export function createTTSAdapter(deps = {}) {
   const adapterConfig = configService.getAdapterConfig('tts') || {};
   const apiKey = configService.getSecret('OPENAI_API_KEY');
   const model = adapterConfig.model || 'tts-1';
   const defaultVoice = adapterConfig.defaultVoice || 'alloy';
 
-  return new TTSAdapter({ apiKey, model, defaultVoice }, options);
+  return new TTSAdapter({ apiKey, model, defaultVoice }, deps);
 }
 
 export default TTSAdapter;
