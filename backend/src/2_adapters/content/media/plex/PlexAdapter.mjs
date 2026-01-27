@@ -15,6 +15,8 @@ import {
  * Implements IContentSource interface for accessing Plex Media Server content.
  */
 export class PlexAdapter {
+  #httpClient;
+
   /**
    * @param {Object} config
    * @param {string} config.host - Plex server URL (e.g., http://10.0.0.10:32400)
@@ -23,12 +25,18 @@ export class PlexAdapter {
    * @param {string} [config.platform] - Client platform (default: 'Chrome')
    * @param {string} [config.proxyPath] - Proxy path for media URLs (default: '/api/v1/proxy/plex')
    * @param {string} [config.historyPath] - Path to viewing history directory (e.g., history/media_memory/plex)
+   * @param {Object} deps
+   * @param {import('#system/services/HttpClient.mjs').HttpClient} deps.httpClient
    */
-  constructor(config) {
+  constructor(config, deps = {}) {
     if (!config.host) {
       throw new Error('PlexAdapter requires host');
     }
-    this.client = new PlexClient(config);
+    if (!deps.httpClient) {
+      throw new Error('PlexAdapter requires httpClient');
+    }
+    this.#httpClient = deps.httpClient;
+    this.client = new PlexClient(config, { httpClient: deps.httpClient });
     this.host = config.host.replace(/\/$/, '');
     this.token = config.token || '';
     this.protocol = config.protocol || 'dash';
@@ -599,7 +607,7 @@ export class PlexAdapter {
     const decisionUrl = `${this.host}/video/:/transcode/universal/decision?${params.toString()}`;
 
     try {
-      const response = await fetch(decisionUrl, {
+      const response = await this.#httpClient.get(decisionUrl, {
         headers: { 'Accept': 'application/json' }
       });
 
@@ -607,8 +615,7 @@ export class PlexAdapter {
         throw new Error(`Decision request failed: ${response.status}`);
       }
 
-      const data = await response.json();
-      const container = data?.MediaContainer;
+      const container = response.data?.MediaContainer;
       if (!container) {
         throw new Error('Invalid decision response: missing MediaContainer');
       }
