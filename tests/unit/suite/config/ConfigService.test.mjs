@@ -246,6 +246,14 @@ describe('ConfigService integration', () => {
       expect(services.plex['test-env']).toBe('localhost');
     });
   });
+
+  test('loads household integrations', () => {
+    const svc = createConfigService(fixturesDir);
+    const integrations = svc.getHouseholdIntegrations('test-household');
+    expect(integrations).toBeDefined();
+    expect(integrations.plex.service).toBe('plex');
+    expect(integrations.plex.port).toBe(32400);
+  });
 });
 
 describe('Singleton management', () => {

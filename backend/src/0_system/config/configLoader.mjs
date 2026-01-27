@@ -187,6 +187,7 @@ function loadAllHouseholds(dataDir) {
         households[householdId] = {
           ...config,
           _folderName: dir, // Store for path resolution
+          integrations: loadHouseholdIntegrationsFlat(dataDir, dir),
           apps: loadHouseholdAppsFlat(dataDir, dir),
         };
       }
@@ -202,6 +203,7 @@ function loadAllHouseholds(dataDir) {
           ...config,
           _folderName: hid,
           _legacyPath: true,
+          integrations: loadHouseholdIntegrationsLegacy(householdsDir, hid),
           apps: loadHouseholdAppsLegacy(householdsDir, hid),
         };
       }
@@ -263,6 +265,22 @@ function loadHouseholdAppsFlat(dataDir, folderName) {
 function loadHouseholdAppsLegacy(householdsDir, hid) {
   const appsDir = path.join(householdsDir, hid, 'apps');
   return loadAppsFromDir(appsDir);
+}
+
+/**
+ * Load integrations for flat household structure.
+ */
+function loadHouseholdIntegrationsFlat(dataDir, folderName) {
+  const integrationsPath = path.join(dataDir, folderName, 'integrations.yml');
+  return readYaml(integrationsPath) ?? {};
+}
+
+/**
+ * Load integrations for legacy nested household structure.
+ */
+function loadHouseholdIntegrationsLegacy(householdsDir, hid) {
+  const integrationsPath = path.join(householdsDir, hid, 'integrations.yml');
+  return readYaml(integrationsPath) ?? {};
 }
 
 /**
