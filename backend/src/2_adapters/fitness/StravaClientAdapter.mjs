@@ -20,7 +20,7 @@ export class StravaClientAdapter {
 
   /**
    * @param {Object} config
-   * @param {Object} config.httpClient - HTTP client (axios-compatible)
+   * @param {import('#system/services/HttpClient.mjs').HttpClient} config.httpClient - HTTP client
    * @param {Object} config.configService - ConfigService for OAuth credentials
    * @param {Object} [config.logger] - Logger instance
    */
