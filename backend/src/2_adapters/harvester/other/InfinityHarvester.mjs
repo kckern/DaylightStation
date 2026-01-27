@@ -485,3 +485,5 @@ export function createInfinityHarvesters({ httpClient, configService, io, logger
 
   return harvesters;
 }
+
+export default InfinityHarvester;

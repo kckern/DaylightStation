@@ -119,3 +119,5 @@ export class YamlNutriLogDatastore extends INutriLogDatastore {
     return items.length;
   }
 }
+
+export default YamlNutriLogDatastore;

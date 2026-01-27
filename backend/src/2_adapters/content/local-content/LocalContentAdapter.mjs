@@ -654,3 +654,5 @@ export class LocalContentAdapter {
     });
   }
 }
+
+export default LocalContentAdapter;

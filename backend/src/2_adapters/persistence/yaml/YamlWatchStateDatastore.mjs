@@ -102,3 +102,5 @@ export class YamlWatchStateDatastore extends IWatchStateDatastore {
     deleteYaml(basePath);
   }
 }
+
+export default YamlWatchStateDatastore;

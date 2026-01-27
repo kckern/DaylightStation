@@ -429,3 +429,5 @@ export class FilesystemAdapter {
     return 'media';
   }
 }
+
+export default FilesystemAdapter;

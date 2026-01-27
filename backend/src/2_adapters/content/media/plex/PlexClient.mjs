@@ -150,3 +150,5 @@ export class PlexClient {
     return { results };
   }
 }
+
+export default PlexClient;

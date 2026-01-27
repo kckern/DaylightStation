@@ -168,3 +168,5 @@ Respond with the same JSON format as text parsing.`
     throw new Error('Voice parsing not yet implemented - requires transcription service');
   }
 }
+
+export default OpenAIFoodParserAdapter;
