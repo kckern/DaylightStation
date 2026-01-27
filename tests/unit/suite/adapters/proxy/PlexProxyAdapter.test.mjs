@@ -136,18 +136,16 @@ describe('PlexProxyAdapter', () => {
   });
 
   describe('shouldRetry', () => {
-    test('returns true for 4xx errors', () => {
+    test('returns true for rate limiting (429)', () => {
       const adapter = new PlexProxyAdapter({
         host: 'http://plex.local',
         token: 'token'
       });
 
-      expect(adapter.shouldRetry(400, 0)).toBe(true);
-      expect(adapter.shouldRetry(404, 0)).toBe(true);
       expect(adapter.shouldRetry(429, 0)).toBe(true);
     });
 
-    test('returns true for 5xx errors', () => {
+    test('returns true for 5xx errors (transient)', () => {
       const adapter = new PlexProxyAdapter({
         host: 'http://plex.local',
         token: 'token'
@@ -156,6 +154,20 @@ describe('PlexProxyAdapter', () => {
       expect(adapter.shouldRetry(500, 0)).toBe(true);
       expect(adapter.shouldRetry(502, 0)).toBe(true);
       expect(adapter.shouldRetry(503, 0)).toBe(true);
+      expect(adapter.shouldRetry(504, 0)).toBe(true);
+    });
+
+    test('returns false for 4xx client errors (permanent)', () => {
+      const adapter = new PlexProxyAdapter({
+        host: 'http://plex.local',
+        token: 'token'
+      });
+
+      // Don't retry permanent client errors
+      expect(adapter.shouldRetry(400, 0)).toBe(false); // Bad Request
+      expect(adapter.shouldRetry(401, 0)).toBe(false); // Unauthorized
+      expect(adapter.shouldRetry(403, 0)).toBe(false); // Forbidden
+      expect(adapter.shouldRetry(404, 0)).toBe(false); // Not Found
     });
 
     test('returns false for success codes', () => {
