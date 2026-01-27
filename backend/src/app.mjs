@@ -358,10 +358,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Route names can be changed in api.mjs without affecting this file
 
   // Create unified item router (new item-centric API)
+  // Resolve menu memory path from configService (bootstrap resolves config values)
+  const menuMemoryPath = configService.getHouseholdPath('history/menu_memory');
   const itemRouter = createItemRouter({
     registry: contentRegistry,
-    loadFile: contentLoadFile,
-    configService,
+    menuMemoryPath,
     logger: rootLogger.child({ module: 'item-api' })
   });
 
@@ -891,7 +892,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // All DDD routers are now accessible under /api/v1/*
   // Route names can be changed in api.mjs without affecting frontend paths
 
+  // Resolve safe config for /status endpoint (bootstrap resolves config values)
+  const safeConfig = configService.getSafeConfig();
+
   const apiRouter = createApiRouter({
+    safeConfig,
     routers: v1Routers,
     plexProxyHandler: mediaLibProxyHandler,  // Key stays 'plexProxyHandler' for API compat
     logger: rootLogger.child({ module: 'api-v1' })

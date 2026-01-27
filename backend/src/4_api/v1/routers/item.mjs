@@ -2,7 +2,6 @@
 import express from 'express';
 import { toListItem } from './list.mjs';
 import { loadYaml, saveYaml } from '../../0_system/utils/FileIO.mjs';
-import { configService } from '../../0_system/config/index.mjs';
 
 /**
  * Parse path modifiers (playable, shuffle, recent_on_top)
@@ -78,11 +77,12 @@ function getMenuMemoryKey(item) {
  *
  * @param {Object} options
  * @param {import('../../1_domains/content/services/ContentSourceRegistry.mjs').ContentSourceRegistry} options.registry
+ * @param {string} options.menuMemoryPath - Absolute path to menu memory file
  * @param {Object} [options.logger] - Logger instance
  * @returns {express.Router}
  */
 export function createItemRouter(options = {}) {
-  const { registry, logger = console } = options;
+  const { registry, menuMemoryPath, logger = console } = options;
   const router = express.Router();
 
   /**
@@ -172,7 +172,6 @@ export function createItemRouter(options = {}) {
 
       // Apply recent_on_top sorting if requested (uses menu_memory)
       if (modifiers.recent_on_top && !hasFixedOrder) {
-        const menuMemoryPath = configService.getHouseholdPath('history/menu_memory');
         const menuMemory = loadYaml(menuMemoryPath) || {};
 
         items = [...items].sort((a, b) => {
@@ -250,8 +249,6 @@ export function createItemRouter(options = {}) {
       if (!media_key) {
         return res.status(400).json({ error: 'media_key is required' });
       }
-
-      const menuMemoryPath = configService.getHouseholdPath('history/menu_memory');
 
       const menuLog = loadYaml(menuMemoryPath) || {};
       const nowUnix = Math.floor(Date.now() / 1000);
