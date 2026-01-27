@@ -90,6 +90,27 @@ export class ConfigService {
     return this.#config.households?.[hid]?.apps?.[appName] ?? null;
   }
 
+  /**
+   * Get all integrations for a household
+   * @param {string|null} householdId - Household ID, defaults to default household
+   * @returns {object}
+   */
+  getHouseholdIntegrations(householdId = null) {
+    const hid = householdId ?? this.getDefaultHouseholdId();
+    return this.#config.households?.[hid]?.integrations ?? {};
+  }
+
+  /**
+   * Get specific integration config for a household
+   * @param {string|null} householdId - Household ID, defaults to default household
+   * @param {string} serviceName - Service name (plex, homeassistant, etc.)
+   * @returns {object|null}
+   */
+  getHouseholdIntegration(householdId, serviceName) {
+    const hid = householdId ?? this.getDefaultHouseholdId();
+    return this.#config.households?.[hid]?.integrations?.[serviceName] ?? null;
+  }
+
   // ─── Paths ─────────────────────────────────────────────────
 
   getDataDir() {
