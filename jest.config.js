@@ -14,7 +14,7 @@ module.exports = {
   },
   // Transform ESM packages from node_modules that use import.meta or ESM syntax
   transformIgnorePatterns: [
-    '/node_modules/(?!(zod|node-fetch|data-uri-to-buffer|fetch-blob|formdata-polyfill)/)',
+    '/node_modules/(?!(zod|node-fetch|data-uri-to-buffer|fetch-blob|formdata-polyfill|music-metadata|strtok3|peek-readable|token-types)/)',
   ],
   // Match tests in /tests/ structure
   testMatch: [
