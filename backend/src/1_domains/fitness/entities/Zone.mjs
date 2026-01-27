@@ -5,16 +5,16 @@
  */
 
 import { ValidationError } from '../../core/errors/index.mjs';
+import {
+  ZONE_NAMES as _ZONE_NAMES,
+  ZONE_PRIORITY as _ZONE_PRIORITY,
+  isValidZoneName,
+  zonePriority,
+} from '../value-objects/ZoneName.mjs';
 
-export const ZONE_NAMES = ['cool', 'active', 'warm', 'hot', 'fire'];
-
-export const ZONE_PRIORITY = {
-  cool: 0,
-  active: 1,
-  warm: 2,
-  hot: 3,
-  fire: 4
-};
+// Re-export for backward compatibility
+export const ZONE_NAMES = _ZONE_NAMES;
+export const ZONE_PRIORITY = _ZONE_PRIORITY;
 
 export class Zone {
   constructor({
@@ -23,7 +23,7 @@ export class Zone {
     maxHr,
     color = null
   }) {
-    if (!ZONE_NAMES.includes(name)) {
+    if (!isValidZoneName(name)) {
       throw new ValidationError(`Invalid zone name: ${name}. Must be one of: ${ZONE_NAMES.join(', ')}`, {
         code: 'INVALID_ZONE_NAME',
         field: 'name',
@@ -40,7 +40,7 @@ export class Zone {
    * Get zone priority (higher = more intense)
    */
   getPriority() {
-    return ZONE_PRIORITY[this.name];
+    return zonePriority(this.name);
   }
 
   /**
