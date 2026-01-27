@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
-import { ValidationError, DomainInvariantError, EntityNotFoundError } from '../index.mjs';
+// tests/unit/suite/domains/core/errors.test.mjs
+
+import { ValidationError, DomainInvariantError, EntityNotFoundError } from '#backend/src/1_domains/core/errors/index.mjs';
 
 describe('ValidationError', () => {
   it('should include code, field, and value properties', () => {
