@@ -1,6 +1,5 @@
 // backend/src/4_api/routers/play.mjs
 import express from 'express';
-import { WatchState } from '../../1_domains/content/entities/WatchState.mjs';
 import { nowTs24 } from '../../0_system/utils/index.mjs';
 
 /**
@@ -21,6 +20,46 @@ import { nowTs24 } from '../../0_system/utils/index.mjs';
 export function createPlayRouter(config) {
   const { registry, watchStore, logger = console } = config;
   const router = express.Router();
+
+  /**
+   * Check if watch state is in progress (started but not finished)
+   * @param {Object} state - Plain watch state object
+   * @returns {boolean}
+   */
+  function isInProgress(state) {
+    if (!state || !state.playhead || !state.duration) return false;
+    const percent = Math.round((state.playhead / state.duration) * 100);
+    return state.playhead > 0 && percent < 90;
+  }
+
+  /**
+   * Create watch state object with toJSON method for datastore compatibility
+   * @param {Object} props - Watch state properties
+   * @returns {Object}
+   */
+  function createWatchStateDTO(props) {
+    const { itemId, playhead = 0, duration = 0, percent, playCount = 0, lastPlayed = null, watchTime = 0 } = props;
+    return {
+      itemId,
+      playhead,
+      duration,
+      percent,
+      playCount,
+      lastPlayed,
+      watchTime,
+      toJSON() {
+        return {
+          itemId: this.itemId,
+          playhead: this.playhead,
+          duration: this.duration,
+          percent: this.percent,
+          playCount: this.playCount,
+          lastPlayed: this.lastPlayed,
+          watchTime: this.watchTime
+        };
+      }
+    };
+  }
 
   /**
    * Parse path modifiers (shuffle, etc.)
@@ -62,7 +101,7 @@ export function createPlayRouter(config) {
     };
 
     // Add resume position if in progress
-    if (watchState?.isInProgress?.()) {
+    if (isInProgress(watchState)) {
       response.resume_position = watchState.playhead;
       response.resume_percent = watchState.percent;
     }
@@ -154,11 +193,17 @@ export function createPlayRouter(config) {
       const existingWatchTime = existingState?.watchTime ?? 0;
       const newWatchTime = existingWatchTime + sessionWatchTime;
 
-      // Create updated watch state
-      const newState = new WatchState({
+      // Calculate final percent for state object
+      const statePercent = estimatedDuration > 0
+        ? Math.round((normalizedSeconds / estimatedDuration) * 100)
+        : 0;
+
+      // Create updated watch state DTO
+      const newState = createWatchStateDTO({
         itemId: compoundId,
         playhead: normalizedSeconds,
         duration: estimatedDuration,
+        percent: statePercent,
         playCount: (existingState?.playCount ?? 0) + 1,
         lastPlayed: nowTs24(),
         watchTime: newWatchTime > 0 ? Number(newWatchTime.toFixed(3)) : 0
@@ -182,7 +227,7 @@ export function createPlayRouter(config) {
           type,
           library: storagePath,
           title: itemMetadata?.title || title,
-          ...newState.toJSON()
+          ...newState
         }
       });
     } catch (error) {
