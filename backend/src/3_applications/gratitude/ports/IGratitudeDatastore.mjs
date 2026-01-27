@@ -38,9 +38,9 @@
 
 /**
  * Gratitude datastore interface
- * @interface IGratitudeDatastore
+ * @class IGratitudeDatastore
  */
-export const IGratitudeDatastore = {
+export class IGratitudeDatastore {
   // Options (available items queue)
 
   /**
@@ -49,7 +49,9 @@ export const IGratitudeDatastore = {
    * @param {Category} category
    * @returns {Promise<GratitudeItemData[]>}
    */
-  getOptions(householdId, category) {},
+  async getOptions(householdId, category) {
+    throw new Error('IGratitudeDatastore.getOptions must be implemented');
+  }
 
   /**
    * Set options for a category
@@ -58,7 +60,9 @@ export const IGratitudeDatastore = {
    * @param {GratitudeItemData[]} items
    * @returns {Promise<void>}
    */
-  setOptions(householdId, category, items) {},
+  async setOptions(householdId, category, items) {
+    throw new Error('IGratitudeDatastore.setOptions must be implemented');
+  }
 
   /**
    * Add an option
@@ -67,7 +71,9 @@ export const IGratitudeDatastore = {
    * @param {GratitudeItemData} item
    * @returns {Promise<void>}
    */
-  addOption(householdId, category, item) {},
+  async addOption(householdId, category, item) {
+    throw new Error('IGratitudeDatastore.addOption must be implemented');
+  }
 
   /**
    * Remove an option by ID
@@ -76,7 +82,9 @@ export const IGratitudeDatastore = {
    * @param {string} itemId
    * @returns {Promise<boolean>}
    */
-  removeOption(householdId, category, itemId) {},
+  async removeOption(householdId, category, itemId) {
+    throw new Error('IGratitudeDatastore.removeOption must be implemented');
+  }
 
   // Selections (user-selected items)
 
@@ -86,7 +94,9 @@ export const IGratitudeDatastore = {
    * @param {Category} category
    * @returns {Promise<SelectionData[]>}
    */
-  getSelections(householdId, category) {},
+  async getSelections(householdId, category) {
+    throw new Error('IGratitudeDatastore.getSelections must be implemented');
+  }
 
   /**
    * Add a selection
@@ -95,7 +105,9 @@ export const IGratitudeDatastore = {
    * @param {SelectionData} selection
    * @returns {Promise<void>}
    */
-  addSelection(householdId, category, selection) {},
+  async addSelection(householdId, category, selection) {
+    throw new Error('IGratitudeDatastore.addSelection must be implemented');
+  }
 
   /**
    * Remove a selection by ID
@@ -104,7 +116,9 @@ export const IGratitudeDatastore = {
    * @param {string} selectionId
    * @returns {Promise<SelectionData|null>}
    */
-  removeSelection(householdId, category, selectionId) {},
+  async removeSelection(householdId, category, selectionId) {
+    throw new Error('IGratitudeDatastore.removeSelection must be implemented');
+  }
 
   /**
    * Mark selections as printed
@@ -114,7 +128,9 @@ export const IGratitudeDatastore = {
    * @param {string} timestamp
    * @returns {Promise<void>}
    */
-  markAsPrinted(householdId, category, selectionIds, timestamp) {},
+  async markAsPrinted(householdId, category, selectionIds, timestamp) {
+    throw new Error('IGratitudeDatastore.markAsPrinted must be implemented');
+  }
 
   // Discarded items
 
@@ -124,7 +140,9 @@ export const IGratitudeDatastore = {
    * @param {Category} category
    * @returns {Promise<GratitudeItemData[]>}
    */
-  getDiscarded(householdId, category) {},
+  async getDiscarded(householdId, category) {
+    throw new Error('IGratitudeDatastore.getDiscarded must be implemented');
+  }
 
   /**
    * Add to discarded
@@ -133,7 +151,9 @@ export const IGratitudeDatastore = {
    * @param {GratitudeItemData} item
    * @returns {Promise<void>}
    */
-  addDiscarded(householdId, category, item) {},
+  async addDiscarded(householdId, category, item) {
+    throw new Error('IGratitudeDatastore.addDiscarded must be implemented');
+  }
 
   // Snapshots
 
@@ -143,14 +163,18 @@ export const IGratitudeDatastore = {
    * @param {SnapshotData} snapshot
    * @returns {Promise<string>} Filename
    */
-  saveSnapshot(householdId, snapshot) {},
+  async saveSnapshot(householdId, snapshot) {
+    throw new Error('IGratitudeDatastore.saveSnapshot must be implemented');
+  }
 
   /**
    * List snapshots
    * @param {string} householdId
    * @returns {Promise<{file: string, id: string, createdAt: string}[]>}
    */
-  listSnapshots(householdId) {},
+  async listSnapshots(householdId) {
+    throw new Error('IGratitudeDatastore.listSnapshots must be implemented');
+  }
 
   /**
    * Load a snapshot
@@ -158,7 +182,9 @@ export const IGratitudeDatastore = {
    * @param {string} [snapshotId] - If not provided, loads latest
    * @returns {Promise<SnapshotData|null>}
    */
-  loadSnapshot(householdId, snapshotId) {},
+  async loadSnapshot(householdId, snapshotId) {
+    throw new Error('IGratitudeDatastore.loadSnapshot must be implemented');
+  }
 
   /**
    * Restore from a snapshot
@@ -166,8 +192,10 @@ export const IGratitudeDatastore = {
    * @param {SnapshotData} snapshot
    * @returns {Promise<void>}
    */
-  restoreSnapshot(householdId, snapshot) {}
-};
+  async restoreSnapshot(householdId, snapshot) {
+    throw new Error('IGratitudeDatastore.restoreSnapshot must be implemented');
+  }
+}
 
 /**
  * Check if object implements IGratitudeDatastore

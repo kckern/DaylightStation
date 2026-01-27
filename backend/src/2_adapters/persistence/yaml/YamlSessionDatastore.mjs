@@ -16,6 +16,7 @@ import {
   listDirsMatching,
   deleteYaml
 } from '../../../0_system/utils/FileIO.mjs';
+import { ISessionDatastore } from '#apps/fitness/ports/ISessionDatastore.mjs';
 
 /**
  * Derive session date from sessionId
@@ -42,13 +43,14 @@ function parseToUnixMs(value, timezone = 'UTC') {
   return Number.isFinite(ms) ? ms : null;
 }
 
-export class YamlSessionDatastore {
+export class YamlSessionDatastore extends ISessionDatastore {
   /**
    * @param {Object} config
    * @param {string} config.dataRoot - Base data directory
    * @param {string} config.mediaRoot - Base media directory
    */
   constructor(config) {
+    super();
     if (!config.dataRoot) throw new Error('YamlSessionDatastore requires dataRoot');
     this.dataRoot = config.dataRoot;
     this.mediaRoot = config.mediaRoot || path.join(process.cwd(), 'media');

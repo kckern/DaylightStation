@@ -2,18 +2,41 @@
 
 /**
  * Port interface for NutriLog persistence
- * @interface INutriLogDatastore
+ * @class INutriLogDatastore
  */
-export const INutriLogDatastore = {
-  async save(nutriLog) {},
-  async findById(userId, id) {},
-  async findByDate(userId, date) {},
-  async findByDateRange(userId, startDate, endDate) {},
-  async findPending(userId) {},
-  async findAccepted(userId) {},
-  async updateStatus(userId, id, status) {},
-  async delete(userId, id) {}
-};
+export class INutriLogDatastore {
+  async save(nutriLog) {
+    throw new Error('INutriLogDatastore.save must be implemented');
+  }
+
+  async findById(userId, id) {
+    throw new Error('INutriLogDatastore.findById must be implemented');
+  }
+
+  async findByDate(userId, date) {
+    throw new Error('INutriLogDatastore.findByDate must be implemented');
+  }
+
+  async findByDateRange(userId, startDate, endDate) {
+    throw new Error('INutriLogDatastore.findByDateRange must be implemented');
+  }
+
+  async findPending(userId) {
+    throw new Error('INutriLogDatastore.findPending must be implemented');
+  }
+
+  async findAccepted(userId) {
+    throw new Error('INutriLogDatastore.findAccepted must be implemented');
+  }
+
+  async updateStatus(userId, id, status) {
+    throw new Error('INutriLogDatastore.updateStatus must be implemented');
+  }
+
+  async delete(userId, id) {
+    throw new Error('INutriLogDatastore.delete must be implemented');
+  }
+}
 
 /**
  * Validate object implements INutriLogDatastore
