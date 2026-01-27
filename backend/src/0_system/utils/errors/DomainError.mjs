@@ -10,6 +10,9 @@
 import { nowTs24 } from '../index.mjs';
 
 export class DomainError extends Error {
+  /** @type {string} Default error code for this class */
+  static defaultCode = 'DOMAIN_ERROR';
+
   /**
    * @param {string} message - Error message
    * @param {object} [context] - Additional context
@@ -18,6 +21,7 @@ export class DomainError extends Error {
     super(message);
     this.name = 'DomainError';
     this.context = context;
+    this.code = context.code || this.constructor.defaultCode;
     this.timestamp = nowTs24();
     this.httpStatus = 500;
 
@@ -35,6 +39,7 @@ export class DomainError extends Error {
     return {
       name: this.name,
       message: this.message,
+      code: this.code,
       context: this.context,
       timestamp: this.timestamp,
       httpStatus: this.httpStatus,
@@ -47,6 +52,9 @@ export class DomainError extends Error {
  * HTTP 400 Bad Request
  */
 export class ValidationError extends DomainError {
+  /** @type {string} Default error code for this class */
+  static defaultCode = 'VALIDATION_ERROR';
+
   /**
    * @param {string} message - Error message
    * @param {object} [context] - Validation context (field, value, etc.)
@@ -77,6 +85,9 @@ export class ValidationError extends DomainError {
  * HTTP 404 Not Found
  */
 export class NotFoundError extends DomainError {
+  /** @type {string} Default error code for this class */
+  static defaultCode = 'NOT_FOUND';
+
   /**
    * @param {string} entityType - Type of entity (e.g., 'NutriLog', 'JournalEntry')
    * @param {string} [identifier] - Entity identifier
@@ -99,6 +110,9 @@ export class NotFoundError extends DomainError {
  * HTTP 409 Conflict
  */
 export class ConflictError extends DomainError {
+  /** @type {string} Default error code for this class */
+  static defaultCode = 'CONFLICT';
+
   /**
    * @param {string} message - Error message
    * @param {object} [context] - Conflict context
@@ -115,6 +129,9 @@ export class ConflictError extends DomainError {
  * HTTP 422 Unprocessable Entity
  */
 export class BusinessRuleError extends DomainError {
+  /** @type {string} Default error code for this class */
+  static defaultCode = 'BUSINESS_RULE_VIOLATION';
+
   /**
    * @param {string} rule - Rule that was violated
    * @param {string} message - Error message
