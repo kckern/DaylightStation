@@ -14,6 +14,7 @@ import cookieParser from 'cookie-parser';
 import { createLogger } from '../lib/logging/logger.js';
 import { storyTeller } from '../story/story.mjs';
 import { TTSAdapter } from '../../src/2_adapters/hardware/tts/TTSAdapter.mjs';
+import { HttpClient } from '../../src/0_system/services/HttpClient.mjs';
 
 const ttsLogger = createLogger({
   source: 'backend',
@@ -24,8 +25,9 @@ const ttsRouter = express.Router();
 ttsRouter.use(express.json({ strict: false }));
 ttsRouter.use(cookieParser());
 
-// Lazy-initialized adapter
+// Lazy-initialized adapter and httpClient
 let ttsAdapter = null;
+let httpClient = null;
 
 /**
  * Get or create TTS adapter
@@ -34,11 +36,15 @@ let ttsAdapter = null;
 function getTTSAdapter() {
   if (ttsAdapter) return ttsAdapter;
 
+  if (!httpClient) {
+    httpClient = new HttpClient({ logger: ttsLogger });
+  }
+
   ttsAdapter = new TTSAdapter({
     apiKey: process.env.OPENAI_API_KEY,
     model: 'tts-1',
     defaultVoice: 'alloy'
-  }, { logger: ttsLogger });
+  }, { httpClient, logger: ttsLogger });
 
   ttsLogger.info('tts.adapter.initialized');
   return ttsAdapter;

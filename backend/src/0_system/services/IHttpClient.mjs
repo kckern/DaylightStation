@@ -72,6 +72,10 @@ export class IHttpClient {
    *
    * @param {string} url - URL to download
    * @param {Object} [options] - Request options
+   * @param {string} [options.method='GET'] - HTTP method
+   * @param {Object} [options.headers] - Request headers
+   * @param {string} [options.body] - Request body (for POST/PUT)
+   * @param {number} [options.timeout] - Timeout in ms
    * @returns {Promise<Buffer>}
    * @throws {HttpError} On request failure
    */
