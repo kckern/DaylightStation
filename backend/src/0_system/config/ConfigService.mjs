@@ -111,14 +111,56 @@ export class ConfigService {
   }
 
   /**
-   * Get household-scoped relative path for state/history files
-   * @param {string} relativePath - Path relative to household dir (e.g., 'history/menu_memory')
+   * Get household-scoped path for state/history files
+   * @param {string} relativePath - Path relative to household dir (e.g., 'apps/fitness', 'history/menu_memory')
    * @param {string} [householdId] - Household ID, defaults to default household
-   * @returns {string} Full relative path (e.g., 'households/default/history/menu_memory')
+   * @returns {string} Full path using correct structure (flat or legacy)
    */
   getHouseholdPath(relativePath, householdId = null) {
     const hid = householdId ?? this.getDefaultHouseholdId();
-    return `households/${hid}/${relativePath}`;
+    const household = this.#config.households?.[hid];
+
+    if (!household) {
+      throw new Error(`Household not found: ${hid}`);
+    }
+
+    const folderName = household._folderName || hid;
+    const dataDir = this.getDataDir();
+
+    // Legacy structure: data/households/{id}/
+    if (household._legacyPath) {
+      const basePath = `${dataDir}/households/${folderName}`;
+      return relativePath ? `${basePath}/${relativePath}` : basePath;
+    }
+
+    // New flat structure: data/household[-{id}]/
+    const basePath = `${dataDir}/${folderName}`;
+    return relativePath ? `${basePath}/${relativePath}` : basePath;
+  }
+
+  /**
+   * Check if a household exists
+   * @param {string} householdId - Household ID to check
+   * @returns {boolean}
+   */
+  householdExists(householdId) {
+    return householdId in (this.#config.households || {});
+  }
+
+  /**
+   * Get the primary household ID
+   * @returns {string}
+   */
+  getPrimaryHouseholdId() {
+    return this.#config.system?.defaultHouseholdId ?? 'default';
+  }
+
+  /**
+   * Get all household IDs
+   * @returns {string[]}
+   */
+  getAllHouseholdIds() {
+    return Object.keys(this.#config.households || {});
   }
 
   getPath(name) {
