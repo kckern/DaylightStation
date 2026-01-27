@@ -277,55 +277,35 @@ export class ConfigService {
   }
 
   /**
-   * Get service configuration with services_host override
+   * Get service configuration from system config
+   * @deprecated Use resolveServiceUrl() for per-household services or getAdapterConfig() for shared services
    * @param {string} serviceName - Service identifier (home_assistant, plex, mqtt, etc.)
    * @returns {object|null} Service config with host and port
    */
   getServiceConfig(serviceName) {
-    const serviceConfig = this.#config.system?.[serviceName];
-    if (!serviceConfig) return null;
-
-    const servicesHost = this.#config.system?.services_host;
-    let host = serviceConfig.host;
-
-    // If services_host is defined (typically in local config), override the hostname
-    // Handle both full URLs (http://plex:32400) and plain hostnames (homeassistant)
-    if (servicesHost && host) {
-      try {
-        const url = new URL(host);
-        // Replace hostname in URL, keeping protocol and port
-        url.hostname = servicesHost;
-        host = url.toString().replace(/\/$/, ''); // Remove trailing slash
-      } catch {
-        // Not a valid URL, just replace the entire host
-        host = servicesHost;
-      }
-    }
-
-    return {
-      ...serviceConfig,
-      host
-    };
+    return this.#config.system?.[serviceName] ?? null;
   }
 
   /**
-   * Get service credentials combining system config (host) with auth (token)
+   * Get service credentials combining URL with auth (token)
+   * @deprecated Use resolveServiceUrl() + getHouseholdAuth() separately
    * @param {string} serviceName - Service identifier (plex, home_assistant, etc.)
    * @param {string} [householdId] - Household to get auth from (defaults to default household)
    * @returns {object|null} Combined {host, token, ...} or null if incomplete
    */
   getServiceCredentials(serviceName, householdId = null) {
-    const systemConfig = this.getServiceConfig(serviceName);
+    const url = this.resolveServiceUrl(householdId, serviceName);
     const auth = this.getHouseholdAuth(serviceName, householdId);
+    const integration = this.getHouseholdIntegration(householdId, serviceName);
 
-    // Require both host and token
-    if (!systemConfig?.host || !auth?.token) return null;
+    // Require both URL and token
+    if (!url || !auth?.token) return null;
 
     return {
-      host: systemConfig.host,
+      host: url,
       token: auth.token,
-      // Include other system config fields (protocol, platform, etc.)
-      ...systemConfig,
+      // Include integration config fields (protocol, platform, etc.)
+      ...integration,
       // Include other auth fields if present
       ...auth
     };
