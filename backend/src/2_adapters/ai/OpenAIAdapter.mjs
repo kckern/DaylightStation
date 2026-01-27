@@ -5,9 +5,11 @@
  * Supports chat completions, vision, transcription (Whisper), and embeddings.
  */
 
+import { IAIGateway } from '#apps/shared/ports/IAIGateway.mjs';
+
 const OPENAI_API_BASE = 'https://api.openai.com/v1';
 
-export class OpenAIAdapter {
+export class OpenAIAdapter extends IAIGateway {
   /**
    * @param {Object} config
    * @param {string} config.apiKey - OpenAI API key
@@ -19,6 +21,8 @@ export class OpenAIAdapter {
    * @param {Object} [deps.logger] - Logger instance
    */
   constructor(config, deps = {}) {
+    super();
+
     if (!config?.apiKey) {
       throw new Error('OpenAI API key is required');
     }

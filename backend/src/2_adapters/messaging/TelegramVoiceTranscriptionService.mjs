@@ -5,7 +5,9 @@
  * Downloads audio from URL and transcribes via OpenAI Whisper.
  */
 
-export class TelegramVoiceTranscriptionService {
+import { ITranscriptionService } from '#apps/shared/ports/ITranscriptionService.mjs';
+
+export class TelegramVoiceTranscriptionService extends ITranscriptionService {
   #openaiAdapter;
   #httpClient;
   #logger;
@@ -18,6 +20,8 @@ export class TelegramVoiceTranscriptionService {
    * @param {Object} [deps.logger=console]
    */
   constructor(config, deps = {}) {
+    super();
+
     if (!config?.openaiAdapter) {
       throw new Error('openaiAdapter is required');
     }
@@ -30,11 +34,40 @@ export class TelegramVoiceTranscriptionService {
   }
 
   /**
-   * Transcribe audio from URL
-   * @param {string} audioUrl - URL to audio file (Telegram file URL)
-   * @returns {Promise<string>} Transcribed text
+   * Transcribe audio buffer to text
+   * @param {Buffer} audioBuffer - Audio data (ogg, mp3, wav, etc.)
+   * @param {Object} [options] - Transcription options
+   * @returns {Promise<{text: string}>} Transcription result
    */
-  async transcribe(audioUrl) {
+  async transcribe(audioBuffer, options = {}) {
+    this.#logger.debug?.('telegram-voice.transcribe.buffer', {
+      size: audioBuffer?.length
+    });
+
+    try {
+      const text = await this.#openaiAdapter.transcribe(audioBuffer, {
+        filename: options.filename || 'audio.ogg',
+        contentType: options.contentType || 'audio/ogg',
+        language: options.language,
+        prompt: options.prompt
+      });
+
+      return { text };
+    } catch (error) {
+      this.#logger.error?.('telegram-voice.transcribe.error', {
+        error: error.message
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Transcribe audio from URL (primary use case for Telegram voice messages)
+   * @param {string} audioUrl - URL to audio file (Telegram file URL)
+   * @param {Object} [options] - Transcription options
+   * @returns {Promise<{text: string}>} Transcription result
+   */
+  async transcribeUrl(audioUrl, options = {}) {
     this.#logger.debug?.('telegram-voice.transcribe.start', { url: audioUrl?.substring(0, 50) });
 
     try {
@@ -47,14 +80,16 @@ export class TelegramVoiceTranscriptionService {
       // Transcribe via OpenAI Whisper
       const text = await this.#openaiAdapter.transcribe(audioBuffer, {
         filename: `voice.${ext}`,
-        contentType: `audio/${ext === 'oga' ? 'ogg' : ext}`
+        contentType: `audio/${ext === 'oga' ? 'ogg' : ext}`,
+        language: options.language,
+        prompt: options.prompt
       });
 
       this.#logger.debug?.('telegram-voice.transcribe.success', {
         textLength: text?.length
       });
 
-      return text;
+      return { text };
     } catch (error) {
       this.#logger.error?.('telegram-voice.transcribe.error', {
         error: error.message
@@ -100,9 +135,18 @@ export class TelegramVoiceTranscriptionService {
 
   /**
    * Check if service is configured
+   * @returns {boolean}
    */
   isConfigured() {
     return this.#openaiAdapter?.isConfigured?.() ?? false;
+  }
+
+  /**
+   * Get supported audio formats
+   * @returns {string[]}
+   */
+  getSupportedFormats() {
+    return ['ogg', 'oga', 'mp3', 'm4a', 'wav', 'webm'];
   }
 }
 

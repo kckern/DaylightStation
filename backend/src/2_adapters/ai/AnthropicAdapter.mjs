@@ -6,10 +6,12 @@
  * Note: Does not support transcription or embeddings (use OpenAI for those).
  */
 
+import { IAIGateway } from '#apps/shared/ports/IAIGateway.mjs';
+
 const ANTHROPIC_API_BASE = 'https://api.anthropic.com/v1';
 const ANTHROPIC_VERSION = '2023-06-01';
 
-export class AnthropicAdapter {
+export class AnthropicAdapter extends IAIGateway {
   /**
    * @param {Object} config
    * @param {string} config.apiKey - Anthropic API key
@@ -21,6 +23,8 @@ export class AnthropicAdapter {
    * @param {Object} [deps.logger] - Logger instance
    */
   constructor(config, deps = {}) {
+    super();
+
     if (!config?.apiKey) {
       throw new Error('Anthropic API key is required');
     }
