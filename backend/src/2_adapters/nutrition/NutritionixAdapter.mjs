@@ -7,41 +7,62 @@ export class NutritionixAdapter {
   #appId;
   #appKey;
   #baseUrl;
+  #httpClient;
   #logger;
 
-  constructor(config) {
+  /**
+   * @param {Object} config
+   * @param {string} config.appId - Nutritionix app ID
+   * @param {string} config.appKey - Nutritionix app key
+   * @param {Object} deps
+   * @param {import('#system/services/HttpClient.mjs').HttpClient} deps.httpClient
+   * @param {Object} [deps.logger] - Logger instance
+   */
+  constructor(config, deps = {}) {
     if (!config.appId || !config.appKey) {
       throw new Error('NutritionixAdapter requires appId and appKey');
+    }
+    if (!deps.httpClient) {
+      throw new Error('NutritionixAdapter requires httpClient');
     }
     this.#appId = config.appId;
     this.#appKey = config.appKey;
     this.#baseUrl = 'https://trackapi.nutritionix.com/v2';
-    this.#logger = config.logger || console;
+    this.#httpClient = deps.httpClient;
+    this.#logger = deps.logger || console;
   }
 
   async #callApi(endpoint, method = 'GET', body = null) {
-    const options = {
-      method,
-      headers: {
-        'Content-Type': 'application/json',
-        'x-app-id': this.#appId,
-        'x-app-key': this.#appKey
-      }
+    const headers = {
+      'Content-Type': 'application/json',
+      'x-app-id': this.#appId,
+      'x-app-key': this.#appKey
     };
 
-    if (body) {
-      options.body = JSON.stringify(body);
+    const url = `${this.#baseUrl}${endpoint}`;
+
+    try {
+      let response;
+      if (method === 'GET') {
+        response = await this.#httpClient.get(url, { headers });
+      } else {
+        response = await this.#httpClient.post(url, body, { headers });
+      }
+
+      if (!response.ok) {
+        this.#logger.error?.('nutritionix.error', { endpoint, error: response.data });
+        throw new Error(`Nutritionix API error: ${response.data?.message || response.status}`);
+      }
+
+      return response.data;
+    } catch (error) {
+      if (error.code) {
+        // HttpError from httpClient
+        this.#logger.error?.('nutritionix.error', { endpoint, error: error.message, code: error.code });
+        throw new Error(`Nutritionix API error: ${error.message}`);
+      }
+      throw error;
     }
-
-    const response = await fetch(`${this.#baseUrl}${endpoint}`, options);
-    const data = await response.json();
-
-    if (!response.ok) {
-      this.#logger.error?.('nutritionix.error', { endpoint, error: data });
-      throw new Error(`Nutritionix API error: ${data.message || response.statusText}`);
-    }
-
-    return data;
   }
 
   #mapNutritionixToFoodData(food) {
