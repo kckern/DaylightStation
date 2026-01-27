@@ -62,6 +62,11 @@ import { GratitudeService } from '../1_domains/gratitude/services/GratitudeServi
 import { YamlGratitudeDatastore } from '../2_adapters/persistence/yaml/YamlGratitudeDatastore.mjs';
 import { createGratitudeRouter } from '../4_api/v1/routers/gratitude.mjs';
 
+// Journaling domain imports
+import { JournalService } from '../1_domains/journaling/services/JournalService.mjs';
+import { YamlJournalDatastore } from '../2_adapters/persistence/yaml/YamlJournalDatastore.mjs';
+import { createJournalingRouter } from '../4_api/v1/routers/journaling.mjs';
+
 // Messaging domain imports
 import { ConversationService } from '../1_domains/messaging/services/ConversationService.mjs';
 import { NotificationService } from '../1_domains/messaging/services/NotificationService.mjs';
@@ -1018,6 +1023,58 @@ export function createGratitudeApiRouter(config) {
     broadcastToWebsockets,
     printerAdapter,
     createPrayerCardCanvas,
+    logger
+  });
+}
+
+// =============================================================================
+// Journaling Domain Bootstrap
+// =============================================================================
+
+/**
+ * Create journaling domain services
+ * @param {Object} config
+ * @param {string} config.dataRoot - Data root directory
+ * @param {Object} [config.logger] - Logger instance
+ * @returns {Object} Journaling services
+ */
+export function createJournalingServices(config) {
+  const { dataRoot, logger = console } = config;
+
+  // Journal store (YAML persistence)
+  const journalStore = new YamlJournalDatastore({
+    dataRoot,
+    logger
+  });
+
+  // Journal service
+  const journalService = new JournalService({
+    journalStore,
+    logger
+  });
+
+  return {
+    journalStore,
+    journalService
+  };
+}
+
+/**
+ * Create journaling API router
+ * @param {Object} config
+ * @param {Object} config.journalingServices - Services from createJournalingServices
+ * @param {Object} [config.logger] - Logger instance
+ * @returns {express.Router}
+ */
+export function createJournalingApiRouter(config) {
+  const {
+    journalingServices,
+    logger = console
+  } = config;
+
+  return createJournalingRouter({
+    journalService: journalingServices.journalService,
+    journalStore: journalingServices.journalStore,
     logger
   });
 }

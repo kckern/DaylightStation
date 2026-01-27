@@ -4,24 +4,23 @@
  * REST API endpoints for journal entry operations.
  */
 import express from 'express';
-import { JournalService } from '../../1_domains/journaling/services/JournalService.mjs';
-import { YamlJournalDatastore } from '../../2_adapters/persistence/yaml/YamlJournalDatastore.mjs';
 import { nowTs24 } from '../../0_system/utils/index.mjs';
 
-const router = express.Router();
-
 /**
- * Create router with dependencies
- * @param {Object} deps
- * @param {string} deps.dataRoot - Data root directory
- * @param {Object} [deps.logger] - Logger instance
+ * Create journaling API router
+ * @param {Object} config
+ * @param {Object} config.journalService - Pre-built JournalService instance
+ * @param {Object} config.journalStore - Pre-built YamlJournalDatastore instance (for listDates/getAllTags)
+ * @param {Object} [config.logger] - Logger instance
  * @returns {express.Router}
+ *
+ * Note: journalStore is passed separately because listDates/getAllTags are not yet
+ * exposed through JournalService. This should be refactored to use service methods only.
  */
-export function createJournalingRouter(deps) {
-  const { dataRoot, logger } = deps;
+export function createJournalingRouter(config) {
+  const { journalService, journalStore, logger = console } = config;
 
-  const journalStore = new YamlJournalDatastore({ dataRoot });
-  const journalService = new JournalService({ journalStore });
+  const router = express.Router();
 
   /**
    * GET /api/journaling
@@ -247,4 +246,4 @@ export function createJournalingRouter(deps) {
   return router;
 }
 
-export default router;
+export default createJournalingRouter;
