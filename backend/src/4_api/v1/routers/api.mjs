@@ -12,12 +12,12 @@
  */
 
 import express from 'express';
-import { configService } from '../../0_system/config/index.mjs';
 
 /**
  * Create the v1 API router with all domain sub-routers
  *
  * @param {Object} config - All router configurations
+ * @param {Object} config.safeConfig - Safe config values for status endpoint
  * @param {Object} config.routers - Pre-created router instances
  * @param {express.Router} config.routers.content - Content router
  * @param {express.Router} config.routers.proxy - Proxy router
@@ -46,7 +46,7 @@ import { configService } from '../../0_system/config/index.mjs';
  */
 export function createApiRouter(config) {
   const router = express.Router();
-  const { routers, plexProxyHandler, logger = console } = config;
+  const { safeConfig, routers, plexProxyHandler, logger = console } = config;
 
   // Route mapping: { mountPath: routerKey }
   // Change mountPath here to rename routes without touching frontend
@@ -98,7 +98,7 @@ export function createApiRouter(config) {
     ok: true,
     version: 'v1',
     routes: mounted,
-    config: configService.getSafeConfig()
+    config: safeConfig
   }));
 
   logger.info?.('api.mounted', { routeCount: mounted.length, routes: mounted });
