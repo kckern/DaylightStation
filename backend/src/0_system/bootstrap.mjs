@@ -84,6 +84,7 @@ import { createMessagingRouter } from '../4_api/v1/routers/messaging.mjs';
 import { JournalistContainer } from '../3_applications/journalist/JournalistContainer.mjs';
 import { YamlJournalEntryRepository } from '../2_adapters/persistence/yaml/YamlJournalEntryRepository.mjs';
 import { YamlMessageQueueRepository } from '../2_adapters/persistence/yaml/YamlMessageQueueRepository.mjs';
+import { JournalistInputRouter } from '../2_adapters/journalist/JournalistInputRouter.mjs';
 import { createJournalistRouter } from '../4_api/v1/routers/journalist.mjs';
 
 // Nutribot application imports
@@ -91,6 +92,7 @@ import { NutribotContainer } from '../3_applications/nutribot/NutribotContainer.
 import { NutriBotConfig } from '../3_applications/nutribot/config/NutriBotConfig.mjs';
 import { YamlNutriListDatastore } from '../2_adapters/persistence/yaml/YamlNutriListDatastore.mjs';
 import { YamlNutriCoachDatastore } from '../2_adapters/persistence/yaml/YamlNutriCoachDatastore.mjs';
+import { NutribotInputRouter } from '../2_adapters/nutribot/index.mjs';
 import { createNutribotRouter } from '../4_api/v1/routers/nutribot.mjs';
 
 // Nutribot DDD adapters
@@ -102,7 +104,7 @@ import { NutritionixAdapter } from '../2_adapters/nutrition/NutritionixAdapter.m
 
 // Homebot application imports
 import { HomeBotContainer } from '../3_applications/homebot/HomeBotContainer.mjs';
-import { ConfigHouseholdAdapter } from '../2_adapters/homebot/index.mjs';
+import { ConfigHouseholdAdapter, HomeBotInputRouter } from '../2_adapters/homebot/index.mjs';
 import { createHomebotRouter } from '../4_api/v1/routers/homebot.mjs';
 
 // Agents application imports
@@ -1333,8 +1335,13 @@ export function createJournalistApiRouter(config) {
     logger = console
   } = config;
 
+  // Create webhook parser and input router
+  const webhookParser = botId ? new TelegramWebhookParser({ botId, logger }) : null;
+  const inputRouter = new JournalistInputRouter(journalistServices.journalistContainer, { userResolver, logger });
+
   return createJournalistRouter(journalistServices.journalistContainer, {
-    userResolver,
+    webhookParser,
+    inputRouter,
     botId,
     secretToken,
     gateway,
@@ -1418,8 +1425,13 @@ export function createHomebotApiRouter(config) {
     logger = console
   } = config;
 
+  // Create webhook parser and input router
+  const webhookParser = botId ? new TelegramWebhookParser({ botId, logger }) : null;
+  const inputRouter = new HomeBotInputRouter(homebotServices.homebotContainer, { userResolver, logger });
+
   return createHomebotRouter(homebotServices.homebotContainer, {
-    userResolver,
+    webhookParser,
+    inputRouter,
     botId,
     secretToken,
     gateway,
@@ -1536,8 +1548,17 @@ export function createNutribotApiRouter(config) {
     logger = console
   } = config;
 
-  return createNutribotRouter(nutribotServices.nutribotContainer, {
+  // Create webhook parser and input router
+  const webhookParser = botId ? new TelegramWebhookParser({ botId, logger }) : null;
+  const inputRouter = new NutribotInputRouter(nutribotServices.nutribotContainer, {
     userResolver,
+    config: nutribotServices.nutribotContainer.getConfig?.(),
+    logger,
+  });
+
+  return createNutribotRouter(nutribotServices.nutribotContainer, {
+    webhookParser,
+    inputRouter,
     botId,
     secretToken,
     gateway,

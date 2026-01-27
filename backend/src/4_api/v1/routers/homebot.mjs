@@ -2,9 +2,8 @@
 
 import { Router } from 'express';
 
-// Shared Telegram adapters
-import { TelegramWebhookParser, createBotWebhookHandler } from '../../2_adapters/telegram/index.mjs';
-import { HomeBotInputRouter } from '../../2_adapters/homebot/HomeBotInputRouter.mjs';
+// Shared Telegram handler factory
+import { createBotWebhookHandler } from '../../2_adapters/telegram/index.mjs';
 
 // HTTP middleware
 import {
@@ -17,7 +16,8 @@ import {
  * Create Homebot Express Router
  * @param {import('../../3_applications/homebot/HomeBotContainer.mjs').HomeBotContainer} container
  * @param {Object} [options]
- * @param {import('../../0_system/users/UserResolver.mjs').UserResolver} [options.userResolver] - For resolving platform users to system usernames
+ * @param {Object} [options.webhookParser] - Pre-built TelegramWebhookParser instance
+ * @param {Object} [options.inputRouter] - Pre-built HomeBotInputRouter instance
  * @param {string} [options.botId] - Telegram bot ID
  * @param {string} [options.secretToken] - X-Telegram-Bot-Api-Secret-Token for webhook auth
  * @param {Object} [options.gateway] - TelegramAdapter for callback acknowledgements
@@ -26,14 +26,14 @@ import {
  */
 export function createHomebotRouter(container, options = {}) {
   const router = Router();
-  const { userResolver, botId, secretToken, gateway, logger = console } = options;
+  const { webhookParser, inputRouter, botId, secretToken, gateway, logger = console } = options;
 
-  // Create webhook components
-  const parser = botId ? new TelegramWebhookParser({ botId, logger }) : null;
-  const inputRouter = new HomeBotInputRouter(container, { userResolver, logger });
+  // Use injected webhook components
+  const parser = webhookParser;
+  const router_ = inputRouter;
 
   // Webhook endpoint using shared handler
-  if (parser) {
+  if (parser && router_) {
     router.post(
       '/webhook',
       webhookValidationMiddleware('homebot', { secretToken }),
@@ -42,13 +42,13 @@ export function createHomebotRouter(container, options = {}) {
         botName: 'homebot',
         botId,
         parser,
-        inputRouter,
+        inputRouter: router_,
         gateway,
         logger,
       }),
     );
   } else {
-    logger.warn?.('homebot.webhook.disabled', { reason: 'No botId configured' });
+    logger.warn?.('homebot.webhook.disabled', { reason: 'No parser or inputRouter configured' });
   }
 
   // Health check endpoint
