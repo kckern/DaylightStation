@@ -63,14 +63,14 @@ If `env` values show `[object Object]`, the file is corrupted and needs manual r
 
 The backend uses hostname-based config to avoid port conflicts with Docker:
 
-| Environment | Primary | Secondary | Check with |
-|-------------|---------|-----------|------------|
-| Docker (prod) | 3111 | 3119 | `ss -tlnp \| grep 3111` |
-| kckern-server (dev) | 3112 | 3120 | `ss -tlnp \| grep 3112` |
+| Environment | Port | Check with |
+|-------------|------|------------|
+| Docker (prod) | 3111 | `ss -tlnp \| grep 3111` |
+| kckern-server (dev) | 3112 | `ss -tlnp \| grep 3112` |
 
 **Before starting dev server**, check if it's already running:
 ```bash
-ss -tlnp | grep -E '3112|3120'
+ss -tlnp | grep 3112
 ```
 
 **Start dev server** (on kckern-server):
@@ -151,38 +151,30 @@ IMPORTANT: Always update docs when changing code!
 ### Folder Structure
 ```
 docs/
-├── ai-context/       # Claude primers (quickstart docs)
-├── reference/        # Domain reference documentation
-│   ├── fitness/      # 1-use-cases, 2-architecture, 3-data-model, 4-codebase, 5-features
-│   ├── tv/
-│   ├── home/
-│   ├── bots/
-│   ├── finance/
-│   └── core/
+├── ai-context/       # Claude primers (agents.md, testing.md)
+├── reference/
+│   └── core/         # Backend architecture, DDD layer guidelines, coding standards
+│       └── layers-of-abstraction/  # Per-layer guidelines
+├── plans/            # Active implementation plans (date-prefixed)
 ├── runbooks/         # Operational procedures
-├── _wip/             # Work in progress (brainstorms, plans, bugs)
-└── _archive/         # Obsolete docs
+├── _wip/             # Work in progress
+│   ├── audits/       # Code audits
+│   └── bugs/         # Bug investigations
+└── _archive/         # Obsolete docs (preserved for reference)
 ```
 
-### Domain Reference Structure
-Each domain in `reference/` follows a numbered 5-file structure:
-- `1-use-cases.md` - Problem statements, requirements, UX flows
-- `2-architecture.md` - System design, data flow diagrams
-- `3-data-model.md` - Entities, schemas, YAML configs
-- `4-codebase.md` - File locations, function reference
-- `5-features.md` - Index of features/ subdirectory
-- `features/` - Individual feature documentation
-
-### Naming Convention
-- Numbered files: `1-use-cases.md`, `2-architecture.md`, etc.
-- Feature files: **kebab-case** in `features/` directory
-- All reference docs have **Related code:** header
+### Reference Structure
+The `reference/core/` folder contains DDD architecture documentation:
+- `backend-architecture.md` - Overall backend structure
+- `configuration.md` - Config system documentation
+- `coding-standards.md` - Code conventions
+- `layers-of-abstraction/` - Per-layer guidelines (system, domain, application, adapter, API)
 
 ### When to Update Docs
 When modifying code, check if related docs need updating:
-- Changed `frontend/src/hooks/fitness/`? Check `docs/reference/fitness/`
-- Changed `frontend/src/apps/tv/`? Check `docs/reference/tv/`
-- Changed core infrastructure? Check `docs/reference/core/`
+- Changed DDD layer structure? Check `docs/reference/core/`
+- Changed config system? Check `docs/reference/core/configuration.md`
+- Added new patterns? Check `docs/reference/core/coding-standards.md`
 
 ### Freshness Audit
 ```bash
@@ -195,33 +187,26 @@ git rev-parse HEAD > docs/docs-last-updated.txt
 
 ### Rules
 
-1. **New work goes to `_wip/`** - All brainstorms, designs, plans, bug investigations, audits, incidents
-2. **Always date-prefix WIP files** - Format: `YYYY-MM-DD-topic-name.md`
-3. **Use appropriate subfolder** - `_wip/bugs/`, `_wip/plans/`, `_wip/audits/`, `_wip/incidents/`
-4. **Graduate when stable** - Move to `reference/{domain}/` (without date prefix) when doc becomes permanent reference
+1. **New work goes to `_wip/`** - Bug investigations, audits, temporary analysis
+2. **Plans go to `plans/`** - Implementation plans (date-prefixed)
+3. **Always date-prefix** - Format: `YYYY-MM-DD-topic-name.md`
+4. **Use appropriate subfolder** - `_wip/bugs/`, `_wip/audits/`
 5. **Archive when obsolete** - Move to `_archive/` when superseded or no longer relevant
-6. **No loose files** - Everything belongs in a subfolder
-7. **Keep reference docs current** - Update existing docs rather than creating new point-in-time snapshots
-8. **No instance-specific data** - Never include paths, hostnames, ports, or environment-specific values. Use placeholders like `{hosts.prod}` or reference `.claude/settings.local.json`
+6. **Keep reference docs current** - Update existing docs rather than creating new point-in-time snapshots
+7. **No instance-specific data** - Never include paths, hostnames, ports, or environment-specific values. Use placeholders like `{hosts.prod}` or reference `.claude/settings.local.json`
 
 ---
 
-## Navigation - AI Context Files
-
-Read these based on what you're working on:
+## Navigation - Documentation
 
 | Working On | Read |
 |------------|------|
-| Project structure, conventions, config | `docs/ai-context/architecture.md` |
-| Shared components (Player, WebSocket, logging) | `docs/ai-context/foundations.md` |
-| Fitness app (sessions, governance, zones) | `docs/ai-context/fitness.md` |
-| Home/Office apps (piano, widgets, HA) | `docs/ai-context/home-office.md` |
-| TV app (Plex, media, menus) | `docs/ai-context/tv.md` |
-| Finance app (Buxfer, budgets) | `docs/ai-context/finance.md` |
-| Chatbots (journalist, nutribot) | `docs/ai-context/bots.md` |
 | AI Agents (autonomous LLM agents) | `docs/ai-context/agents.md` |
-| CLI tools, ClickUp workflow | `docs/ai-context/cli-tools.md` |
 | Testing infrastructure | `docs/ai-context/testing.md` |
+| Backend architecture (DDD layers) | `docs/reference/core/backend-architecture.md` |
+| Config system | `docs/reference/core/configuration.md` |
+| Coding standards | `docs/reference/core/coding-standards.md` |
+| Layer guidelines | `docs/reference/core/layers-of-abstraction/*.md` |
 
 ---
 
@@ -236,11 +221,12 @@ Read these based on what you're working on:
 - `frontend/src/Apps/` - App entry points
 - `frontend/src/modules/` - Reusable UI modules
 - `frontend/src/hooks/` - Custom hooks
-- `backend/routers/` - API routes
-- `backend/lib/` - Backend services
-- `backend/chatbots/` - Bot framework
+- `backend/src/0_system/` - Bootstrap, config loading
+- `backend/src/1_domains/` - Domain entities and logic
+- `backend/src/2_adapters/` - External service integrations (Plex, HA, etc.)
+- `backend/src/3_applications/` - Use cases, orchestration
+- `backend/src/4_api/` - Express routers, HTTP layer
 - `cli/` - CLI tools
-- `docs/ai-context/` - AI context files
 
 ### Config System
 - Household configs: `data/households/{hid}/apps/{app}/config.yml`
