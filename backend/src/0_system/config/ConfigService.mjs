@@ -227,6 +227,19 @@ export class ConfigService {
     return this.#config.services ?? {};
   }
 
+  /**
+   * Resolve service name to host for current environment
+   * @param {string} serviceName - Logical service name (plex, homeassistant, mqtt, etc.)
+   * @returns {string|null} Host for current environment or null if not found
+   */
+  resolveServiceHost(serviceName) {
+    const serviceMapping = this.#config.services?.[serviceName];
+    if (!serviceMapping) return null;
+
+    const env = this.getEnv();
+    return serviceMapping[env] ?? null;
+  }
+
   // ─── System Config ──────────────────────────────────────────
 
   get(pathStr) {
