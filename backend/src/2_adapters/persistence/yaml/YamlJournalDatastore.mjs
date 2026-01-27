@@ -1,7 +1,7 @@
 /**
- * YamlJournalStore - YAML-based journal entry persistence
+ * YamlJournalDatastore - YAML-based journal entry persistence
  *
- * Implements IJournalStore port for journal entry storage.
+ * Implements IJournalDatastore port for journal entry storage.
  * Entries stored at: households/{hid}/apps/journal/entries/{YYYY-MM-DD}.yml
  */
 import path from 'path';
@@ -16,13 +16,13 @@ import {
   deleteYaml
 } from '../../../0_system/utils/FileIO.mjs';
 
-export class YamlJournalStore {
+export class YamlJournalDatastore {
   /**
    * @param {Object} config
    * @param {string} config.dataRoot - Base data directory
    */
   constructor(config) {
-    if (!config.dataRoot) throw new Error('YamlJournalStore requires dataRoot');
+    if (!config.dataRoot) throw new Error('YamlJournalDatastore requires dataRoot');
     this.dataRoot = config.dataRoot;
   }
 
@@ -244,4 +244,4 @@ export class YamlJournalStore {
   }
 }
 
-export default YamlJournalStore;
+export default YamlJournalDatastore;

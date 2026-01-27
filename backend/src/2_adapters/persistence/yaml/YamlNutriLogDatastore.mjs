@@ -1,4 +1,4 @@
-// backend/src/2_adapters/persistence/yaml/YamlNutriLogStore.mjs
+// backend/src/2_adapters/persistence/yaml/YamlNutriLogDatastore.mjs
 import { NutriLog } from '../../../1_domains/lifelog/entities/NutriLog.mjs';
 import { loadYaml, saveYaml } from '../../../0_system/utils/FileIO.mjs';
 
@@ -6,15 +6,15 @@ import { nowTs24 } from '../../../0_system/utils/index.mjs';
 
 /**
  * YAML-based NutriLog persistence adapter
- * Implements INutriLogStore port
+ * Implements INutriLogDatastore port
  */
-export class YamlNutriLogStore {
+export class YamlNutriLogDatastore {
   #userDataService;
   #logger;
 
   constructor(config) {
     if (!config.userDataService) {
-      throw new Error('YamlNutriLogStore requires userDataService');
+      throw new Error('YamlNutriLogDatastore requires userDataService');
     }
     this.#userDataService = config.userDataService;
     this.#logger = config.logger || console;

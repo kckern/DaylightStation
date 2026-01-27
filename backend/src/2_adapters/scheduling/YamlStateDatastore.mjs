@@ -1,5 +1,5 @@
 /**
- * YamlStateStore - Persists job runtime state to YAML files
+ * YamlStateDatastore - Persists job runtime state to YAML files
  *
  * Stores state in: {dataDir}/system/state/cron-runtime.yml
  * Backup in: {dataDir}/system/state/cron-runtime_bak.yml
@@ -10,7 +10,7 @@ import { JobState } from '../../1_domains/scheduling/entities/JobState.mjs';
 import { IStateDatastore } from '../../3_applications/scheduling/ports/IStateDatastore.mjs';
 import { loadYaml, saveYaml } from '../../0_system/utils/FileIO.mjs';
 
-export class YamlStateStore extends IStateDatastore {
+export class YamlStateDatastore extends IStateDatastore {
   constructor({ dataDir, logger = console }) {
     super();
     this.dataDir = dataDir;
@@ -143,4 +143,4 @@ export class YamlStateStore extends IStateDatastore {
   }
 }
 
-export default YamlStateStore;
+export default YamlStateDatastore;

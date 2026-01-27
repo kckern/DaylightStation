@@ -1,16 +1,16 @@
 /**
- * YamlWeatherStore
+ * YamlWeatherDatastore
  *
- * Simple YAML-based store for household weather data.
+ * Simple YAML-based datastore for household weather data.
  * Weather data is shared at household level (not user-specific).
  *
- * @module adapters/persistence/yaml/YamlWeatherStore
+ * @module adapters/persistence/yaml/YamlWeatherDatastore
  */
 
 import path from 'path';
 import { loadYaml, saveYaml } from '../../../0_system/utils/FileIO.mjs';
 
-export class YamlWeatherStore {
+export class YamlWeatherDatastore {
   #dataRoot;
   #householdId;
   #logger;
@@ -23,7 +23,7 @@ export class YamlWeatherStore {
    */
   constructor({ dataRoot, householdId = 'default', logger = console }) {
     if (!dataRoot) {
-      throw new Error('YamlWeatherStore requires dataRoot');
+      throw new Error('YamlWeatherDatastore requires dataRoot');
     }
 
     this.#dataRoot = dataRoot;
@@ -64,4 +64,4 @@ export class YamlWeatherStore {
   }
 }
 
-export default YamlWeatherStore;
+export default YamlWeatherDatastore;

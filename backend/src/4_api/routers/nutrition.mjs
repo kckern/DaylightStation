@@ -5,7 +5,7 @@
  */
 import express from 'express';
 import { FoodLogService } from '../../1_domains/nutrition/services/FoodLogService.mjs';
-import { YamlFoodLogStore } from '../../2_adapters/persistence/yaml/YamlFoodLogStore.mjs';
+import { YamlFoodLogDatastore } from '../../2_adapters/persistence/yaml/YamlFoodLogDatastore.mjs';
 
 const router = express.Router();
 
@@ -19,7 +19,7 @@ const router = express.Router();
 export function createNutritionRouter(deps) {
   const { dataRoot, logger } = deps;
 
-  const foodLogStore = new YamlFoodLogStore({ dataRoot });
+  const foodLogStore = new YamlFoodLogDatastore({ dataRoot });
   const foodLogService = new FoodLogService({ foodLogStore });
 
   /**

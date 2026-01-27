@@ -4,7 +4,7 @@ import request from 'supertest';
 import { createContentRouter } from '#backend/src/4_api/routers/content.mjs';
 import { ContentSourceRegistry } from '#backend/src/1_domains/content/services/ContentSourceRegistry.mjs';
 import { FilesystemAdapter } from '#backend/src/2_adapters/content/media/filesystem/FilesystemAdapter.mjs';
-import { YamlWatchStateStore } from '#backend/src/2_adapters/persistence/yaml/YamlWatchStateStore.mjs';
+import { YamlWatchStateDatastore } from '#backend/src/2_adapters/persistence/yaml/YamlWatchStateDatastore.mjs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -20,7 +20,7 @@ describe('Content API Router', () => {
   beforeAll(() => {
     registry = new ContentSourceRegistry();
     registry.register(new FilesystemAdapter({ mediaBasePath: fixturesPath }));
-    watchStore = new YamlWatchStateStore({ basePath: watchStatePath });
+    watchStore = new YamlWatchStateDatastore({ basePath: watchStatePath });
 
     app = express();
     app.use(express.json());

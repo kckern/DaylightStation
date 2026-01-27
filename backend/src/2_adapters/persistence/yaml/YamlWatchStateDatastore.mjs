@@ -1,4 +1,4 @@
-// backend/src/2_adapters/persistence/yaml/YamlWatchStateStore.mjs
+// backend/src/2_adapters/persistence/yaml/YamlWatchStateDatastore.mjs
 import path from 'path';
 import { WatchState } from '../../../1_domains/content/entities/WatchState.mjs';
 import {
@@ -11,13 +11,13 @@ import {
 /**
  * YAML-based watch state persistence
  */
-export class YamlWatchStateStore {
+export class YamlWatchStateDatastore {
   /**
    * @param {Object} config
    * @param {string} config.basePath - Base path for watch state files
    */
   constructor(config) {
-    if (!config.basePath) throw new Error('YamlWatchStateStore requires basePath');
+    if (!config.basePath) throw new Error('YamlWatchStateDatastore requires basePath');
     this.basePath = config.basePath;
   }
 

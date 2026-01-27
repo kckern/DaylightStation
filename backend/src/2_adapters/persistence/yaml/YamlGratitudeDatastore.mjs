@@ -1,7 +1,7 @@
 /**
- * YamlGratitudeStore - YAML-based gratitude persistence
+ * YamlGratitudeDatastore - YAML-based gratitude persistence
  *
- * Implements IGratitudeStore port for gratitude/hopes data storage.
+ * Implements IGratitudeDatastore port for gratitude/hopes data storage.
  * Data stored at: households/{hid}/shared/gratitude/
  *   - options.{category}.yml
  *   - selections.{category}.yml
@@ -21,7 +21,7 @@ import {
   saveYaml
 } from '../../../0_system/utils/FileIO.mjs';
 
-export class YamlGratitudeStore {
+export class YamlGratitudeDatastore {
   #userDataService;
   #logger;
 
@@ -32,7 +32,7 @@ export class YamlGratitudeStore {
    */
   constructor(config) {
     if (!config.userDataService) {
-      throw new Error('YamlGratitudeStore requires userDataService');
+      throw new Error('YamlGratitudeDatastore requires userDataService');
     }
     this.#userDataService = config.userDataService;
     this.#logger = config.logger || console;
@@ -367,4 +367,4 @@ export class YamlGratitudeStore {
   }
 }
 
-export default YamlGratitudeStore;
+export default YamlGratitudeDatastore;

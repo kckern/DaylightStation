@@ -2,5 +2,5 @@
  * Scheduling Adapters
  */
 
-export { YamlJobStore } from './YamlJobStore.mjs';
-export { YamlStateStore } from './YamlStateStore.mjs';
+export { YamlJobDatastore } from './YamlJobDatastore.mjs';
+export { YamlStateDatastore } from './YamlStateDatastore.mjs';

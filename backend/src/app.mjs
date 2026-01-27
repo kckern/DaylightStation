@@ -74,13 +74,13 @@ import { createEventBusRouter } from './4_api/routers/admin/eventbus.mjs';
 
 // Scheduling domain
 import { SchedulerService } from './1_domains/scheduling/services/SchedulerService.mjs';
-import { YamlJobStore } from './2_adapters/scheduling/YamlJobStore.mjs';
-import { YamlStateStore } from './2_adapters/scheduling/YamlStateStore.mjs';
+import { YamlJobDatastore } from './2_adapters/scheduling/YamlJobDatastore.mjs';
+import { YamlStateDatastore } from './2_adapters/scheduling/YamlStateDatastore.mjs';
 import { Scheduler } from './0_system/scheduling/Scheduler.mjs';
 import { createSchedulingRouter } from './4_api/routers/scheduling.mjs';
 
 // Conversation state persistence
-import { YamlConversationStateStore } from './2_adapters/messaging/YamlConversationStateStore.mjs';
+import { YamlConversationStateDatastore } from './2_adapters/messaging/YamlConversationStateDatastore.mjs';
 
 // Media jobs (YouTube downloads, etc.)
 import { MediaJobExecutor } from './3_applications/media/MediaJobExecutor.mjs';
@@ -675,7 +675,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // Create conversation state store for nutribot (persists lastReportMessageId for cleanup)
-  const nutribotStateStore = new YamlConversationStateStore({
+  const nutribotStateStore = new YamlConversationStateDatastore({
     basePath: join(dataDir, 'chatbots', 'nutribot', 'conversations')
   });
 
@@ -723,7 +723,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     : null;
 
   // Create conversation state store for journalist
-  const journalistStateStore = new YamlConversationStateStore({
+  const journalistStateStore = new YamlConversationStateDatastore({
     basePath: join(dataDir, 'chatbots', 'journalist', 'conversations')
   });
 
@@ -769,7 +769,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     : null;
 
   // Create conversation state store for homebot
-  const homebotStateStore = new YamlConversationStateStore({
+  const homebotStateStore = new YamlConversationStateDatastore({
     basePath: join(dataDir, 'chatbots', 'homebot', 'conversations')
   });
 
@@ -798,12 +798,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // Scheduling domain - DDD replacement for legacy /cron
-  const schedulingJobStore = new YamlJobStore({
+  const schedulingJobStore = new YamlJobDatastore({
     dataDir,
     logger: rootLogger.child({ module: 'scheduling-jobs' })
   });
 
-  const schedulingStateStore = new YamlStateStore({
+  const schedulingStateStore = new YamlStateDatastore({
     dataDir,
     logger: rootLogger.child({ module: 'scheduling-state' })
   });

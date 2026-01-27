@@ -1,7 +1,7 @@
 /**
- * YamlSessionStore - YAML-based session persistence
+ * YamlSessionDatastore - YAML-based session persistence
  *
- * Implements ISessionStore port for fitness session storage.
+ * Implements ISessionDatastore port for fitness session storage.
  * Sessions are stored at: households/{hid}/apps/fitness/sessions/{YYYY-MM-DD}/{sessionId}.yml
  * Screenshots at: {mediaRoot}/apps/fitness/households/{hid}/sessions/{YYYY-MM-DD}/{sessionId}/screenshots/
  */
@@ -42,14 +42,14 @@ function parseToUnixMs(value, timezone = 'UTC') {
   return Number.isFinite(ms) ? ms : null;
 }
 
-export class YamlSessionStore {
+export class YamlSessionDatastore {
   /**
    * @param {Object} config
    * @param {string} config.dataRoot - Base data directory
    * @param {string} config.mediaRoot - Base media directory
    */
   constructor(config) {
-    if (!config.dataRoot) throw new Error('YamlSessionStore requires dataRoot');
+    if (!config.dataRoot) throw new Error('YamlSessionDatastore requires dataRoot');
     this.dataRoot = config.dataRoot;
     this.mediaRoot = config.mediaRoot || path.join(process.cwd(), 'media');
   }
@@ -294,4 +294,4 @@ export class YamlSessionStore {
   }
 }
 
-export default YamlSessionStore;
+export default YamlSessionDatastore;

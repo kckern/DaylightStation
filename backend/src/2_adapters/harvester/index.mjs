@@ -11,8 +11,8 @@ export { IHarvester, HarvesterCategory } from './ports/IHarvester.mjs';
 
 // Utilities
 export { CircuitBreaker, CircuitState } from './CircuitBreaker.mjs';
-export { YamlLifelogStore } from './YamlLifelogStore.mjs';
-export { YamlAuthStore } from './YamlAuthStore.mjs';
+export { YamlLifelogDatastore } from './YamlLifelogDatastore.mjs';
+export { YamlAuthDatastore } from './YamlAuthDatastore.mjs';
 
 // Fitness Harvesters
 export { StravaHarvester } from './fitness/StravaHarvester.mjs';

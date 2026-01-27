@@ -1,7 +1,7 @@
 /**
- * YamlFoodLogStore - YAML-based NutriLog persistence
+ * YamlFoodLogDatastore - YAML-based NutriLog persistence
  *
- * Implements IFoodLogStore port for NutriLog storage.
+ * Implements IFoodLogDatastore port for NutriLog storage.
  *
  * Storage Strategy:
  * - Hot storage: users/{userId}/lifelog/nutrition/nutrilog.yml (recent 30 days)
@@ -21,7 +21,7 @@ import {
 
 const ARCHIVE_RETENTION_DAYS = 30;
 
-export class YamlFoodLogStore extends IFoodLogDatastore {
+export class YamlFoodLogDatastore extends IFoodLogDatastore {
   #dataRoot;
   #logger;
   #invalidSeen = new Set();
@@ -36,7 +36,7 @@ export class YamlFoodLogStore extends IFoodLogDatastore {
   constructor(options) {
     super();
     if (!options?.dataRoot) {
-      throw new Error('YamlFoodLogStore requires dataRoot');
+      throw new Error('YamlFoodLogDatastore requires dataRoot');
     }
     this.#dataRoot = options.dataRoot;
     this.#logger = options.logger || console;
@@ -99,7 +99,7 @@ export class YamlFoodLogStore extends IFoodLogDatastore {
     try {
       return loadYamlSafe(basePath) || {};
     } catch (e) {
-      this.#logger.warn?.('YamlFoodLogStore.readFile.error', { basePath, error: e.message });
+      this.#logger.warn?.('YamlFoodLogDatastore.readFile.error', { basePath, error: e.message });
       return {};
     }
   }
@@ -144,7 +144,7 @@ export class YamlFoodLogStore extends IFoodLogDatastore {
       const key = entity?.id || 'unknown';
       if (!this.#invalidSeen.has(key)) {
         this.#invalidSeen.add(key);
-        this.#logger.warn?.('YamlFoodLogStore.hydrate.failed', {
+        this.#logger.warn?.('YamlFoodLogDatastore.hydrate.failed', {
           userId,
           id: entity?.id,
           status: entity?.status,
@@ -181,7 +181,7 @@ export class YamlFoodLogStore extends IFoodLogDatastore {
     const filePath = this.#getPath(nutriLog.userId);
     const id = nutriLog.id;
 
-    this.#logger.debug?.('YamlFoodLogStore.save', { userId: nutriLog.userId, id, filePath });
+    this.#logger.debug?.('YamlFoodLogDatastore.save', { userId: nutriLog.userId, id, filePath });
 
     // Load existing data
     const data = this.#readFile(filePath);
@@ -192,7 +192,7 @@ export class YamlFoodLogStore extends IFoodLogDatastore {
     // Save back
     this.#writeFile(filePath, data);
 
-    this.#logger.debug?.('YamlFoodLogStore.save.complete', { id, entryCount: Object.keys(data).length });
+    this.#logger.debug?.('YamlFoodLogDatastore.save.complete', { id, entryCount: Object.keys(data).length });
 
     return nutriLog;
   }
@@ -529,4 +529,4 @@ export class YamlFoodLogStore extends IFoodLogDatastore {
   }
 }
 
-export default YamlFoodLogStore;
+export default YamlFoodLogDatastore;
