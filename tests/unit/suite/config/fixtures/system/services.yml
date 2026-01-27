@@ -1,0 +1,12 @@
+# Test fixture for service resolution
+plex:
+  docker: plex
+  test-env: localhost
+
+homeassistant:
+  docker: homeassistant
+  test-env: localhost
+
+mqtt:
+  docker: mosquitto
+  test-env: localhost

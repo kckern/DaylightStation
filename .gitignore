@@ -6,6 +6,7 @@ frontend/build
 backend/node_modules
 *.yml
 !tests/_fixtures/**/*.yml
+!tests/unit/suite/config/fixtures/**/*.yml
 data*
 !tests/_fixtures/data/
 node_modules/*

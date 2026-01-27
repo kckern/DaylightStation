@@ -1,0 +1,9 @@
+# Test fixture for household integrations
+plex:
+  service: plex
+  port: 32400
+  protocol: dash
+
+homeassistant:
+  service: homeassistant
+  port: 8123
