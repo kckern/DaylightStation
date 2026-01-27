@@ -15,13 +15,19 @@ const OPEN_FOOD_FACTS_API = 'https://world.openfoodfacts.org/api/v0/product';
  * UPC Gateway - looks up products by barcode
  */
 export class UPCGateway {
+  #httpClient;
   #logger;
 
   /**
    * @param {Object} deps
+   * @param {import('#system/services/HttpClient.mjs').HttpClient} deps.httpClient
    * @param {Object} [deps.logger]
    */
   constructor(deps = {}) {
+    if (!deps.httpClient) {
+      throw new Error('UPCGateway requires httpClient');
+    }
+    this.#httpClient = deps.httpClient;
     this.#logger = deps.logger || console;
   }
 
@@ -60,7 +66,7 @@ export class UPCGateway {
    */
   async #lookupOpenFoodFacts(upc) {
     try {
-      const response = await fetch(`${OPEN_FOOD_FACTS_API}/${upc}.json`, {
+      const response = await this.#httpClient.get(`${OPEN_FOOD_FACTS_API}/${upc}.json`, {
         headers: {
           'User-Agent': 'DaylightStation/1.0 (nutribot)',
         },
@@ -71,7 +77,7 @@ export class UPCGateway {
         return null;
       }
 
-      const data = await response.json();
+      const data = response.data;
 
       if (data.status !== 1 || !data.product) {
         this.#logger.debug?.('upc.off.notFound', { upc, status: data.status });
