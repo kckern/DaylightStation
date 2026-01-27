@@ -172,13 +172,3 @@ export function isNotFoundError(error) {
   return error instanceof NotFoundError;
 }
 
-export default {
-  DomainError,
-  ValidationError,
-  NotFoundError,
-  ConflictError,
-  BusinessRuleError,
-  isDomainError,
-  isValidationError,
-  isNotFoundError,
-};

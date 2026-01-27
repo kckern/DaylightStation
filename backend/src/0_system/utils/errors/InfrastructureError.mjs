@@ -198,13 +198,3 @@ export function isRateLimitError(error) {
   return error instanceof RateLimitError;
 }
 
-export default {
-  InfrastructureError,
-  ExternalServiceError,
-  RateLimitError,
-  PersistenceError,
-  TimeoutError,
-  isInfrastructureError,
-  isRetryableError,
-  isRateLimitError,
-};
