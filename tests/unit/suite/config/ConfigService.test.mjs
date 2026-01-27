@@ -236,6 +236,16 @@ describe('ConfigService integration', () => {
     expect(svc.resolveUsername('telegram', '12345')).toBe('testuser');
     expect(svc.resolveUsername('garmin', '67890')).toBe('testuser');
   });
+
+  describe('services', () => {
+    test('loads services from services.yml', () => {
+      const svc = createConfigService(fixturesDir);
+      const services = svc.getAllServices();
+      expect(services.plex).toBeDefined();
+      expect(services.plex.docker).toBe('plex');
+      expect(services.plex['test-env']).toBe('localhost');
+    });
+  });
 });
 
 describe('Singleton management', () => {

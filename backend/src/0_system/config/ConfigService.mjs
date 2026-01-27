@@ -198,6 +198,14 @@ export class ConfigService {
     return this.#config.adapters ?? {};
   }
 
+  /**
+   * Get all service host mappings
+   * @returns {object}
+   */
+  getAllServices() {
+    return this.#config.services ?? {};
+  }
+
   // ─── System Config ──────────────────────────────────────────
 
   get(pathStr) {
