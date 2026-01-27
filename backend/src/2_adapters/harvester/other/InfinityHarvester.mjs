@@ -461,9 +461,6 @@ export function createInfinityHarvesters({ httpClient, configService, io, logger
   // UUID pattern for attribute IDs (these are column identifiers, not table IDs)
   const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-  // UUID pattern for attribute IDs (these are column identifiers, not table IDs)
-  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
   for (const [key, tableId] of Object.entries(infinityConfig)) {
     if (skipKeys.includes(key)) continue;
     if (!tableId || typeof tableId !== 'string') continue;
