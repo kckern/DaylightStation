@@ -15,9 +15,9 @@
 import escpos from 'escpos';
 import Network from 'escpos-network';
 import { createCanvas, loadImage } from 'canvas';
-import fs from 'fs';
 import { configService } from '../../../0_system/config/index.mjs';
 import { nowTs24 } from '../../../0_system/utils/index.mjs';
+import { fileExists } from '#system/utils/FileIO.mjs';
 
 /**
  * @typedef {Object} PrinterConfig
@@ -698,7 +698,7 @@ export class ThermalPrinterAdapter {
     let commands = Buffer.alloc(0);
 
     try {
-      if (!item.path || !fs.existsSync(item.path)) {
+      if (!item.path || !fileExists(item.path)) {
         this.#logger.error?.('thermalPrinter.image.notFound', { path: item.path });
         return commands;
       }
