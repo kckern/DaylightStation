@@ -2,7 +2,7 @@
 import { jest } from '@jest/globals';
 import express from 'express';
 import request from 'supertest';
-import { createLocalContentRouter } from '#backend/src/4_api/routers/localContent.mjs';
+import { createLocalContentRouter } from '#backend/src/4_api/v1/routers/localContent.mjs';
 
 describe('LocalContent API Router', () => {
   let app;

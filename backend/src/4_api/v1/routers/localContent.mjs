@@ -3,8 +3,8 @@ import express from 'express';
 import path from 'path';
 import { parseFile } from 'music-metadata';
 import { lookupReference, generateReference } from 'scripture-guide';
-import { dirExists, listDirs, getStats, findMediaFileByPrefix } from '../../0_system/utils/FileIO.mjs';
-import { generatePlaceholderImage } from '../../0_system/utils/placeholderImage.mjs';
+import { dirExists, listDirs, getStats, findMediaFileByPrefix } from '../../../0_system/utils/FileIO.mjs';
+import { generatePlaceholderImage } from '../../../0_system/utils/placeholderImage.mjs';
 
 // Volume to first verse_id mapping (for determining volume from verse_id)
 const VOLUME_RANGES = {

@@ -7,7 +7,7 @@ import {
   webhookValidationMiddleware,
   idempotencyMiddleware,
   errorHandlerMiddleware,
-} from '../../0_system/http/middleware/index.mjs';
+} from '../../../0_system/http/middleware/index.mjs';
 
 /**
  * Create Homebot Express Router

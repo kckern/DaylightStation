@@ -20,7 +20,7 @@ import {
   idempotencyMiddleware,
   asyncHandler,
   errorHandlerMiddleware,
-} from '../../0_system/http/middleware/index.mjs';
+} from '../../../0_system/http/middleware/index.mjs';
 
 /**
  * Create Journalist Express Router
