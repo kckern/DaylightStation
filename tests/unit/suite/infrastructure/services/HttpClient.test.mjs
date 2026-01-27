@@ -1,26 +1,25 @@
-// backend/src/0_system/services/__tests__/HttpClient.test.mjs
+// tests/unit/suite/infrastructure/services/HttpClient.test.mjs
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { HttpClient } from '../HttpClient.mjs';
-import { HttpError } from '../HttpError.mjs';
+import { HttpClient } from '#backend/src/0_system/services/HttpClient.mjs';
+import { HttpError } from '#backend/src/0_system/services/HttpError.mjs';
 
 describe('HttpClient', () => {
   let client;
   let mockLogger;
 
   beforeEach(() => {
-    mockLogger = { debug: vi.fn(), error: vi.fn() };
+    mockLogger = { debug: jest.fn(), error: jest.fn() };
     client = new HttpClient({ logger: mockLogger });
   });
 
   afterEach(() => {
-    vi.restoreAllMocks();
+    jest.restoreAllMocks();
   });
 
   describe('get()', () => {
     it('should make GET request and return parsed JSON', async () => {
       const mockResponse = { id: 1, name: 'test' };
-      global.fetch = vi.fn().mockResolvedValue({
+      global.fetch = jest.fn().mockResolvedValue({
         ok: true,
         status: 200,
         headers: new Headers({ 'content-type': 'application/json' }),
@@ -38,7 +37,7 @@ describe('HttpClient', () => {
     });
 
     it('should throw HttpError on 404', async () => {
-      global.fetch = vi.fn().mockResolvedValue({
+      global.fetch = jest.fn().mockResolvedValue({
         ok: false,
         status: 404,
         statusText: 'Not Found',
@@ -56,7 +55,7 @@ describe('HttpClient', () => {
       const requestBody = { name: 'test' };
       const mockResponse = { id: 1, name: 'test' };
 
-      global.fetch = vi.fn().mockResolvedValue({
+      global.fetch = jest.fn().mockResolvedValue({
         ok: true,
         status: 201,
         headers: new Headers({ 'content-type': 'application/json' }),
@@ -78,7 +77,7 @@ describe('HttpClient', () => {
 
   describe('error handling', () => {
     it('should mark 429 as transient', async () => {
-      global.fetch = vi.fn().mockResolvedValue({
+      global.fetch = jest.fn().mockResolvedValue({
         ok: false,
         status: 429,
         statusText: 'Too Many Requests',
@@ -95,7 +94,7 @@ describe('HttpClient', () => {
     });
 
     it('should mark 500 as transient', async () => {
-      global.fetch = vi.fn().mockResolvedValue({
+      global.fetch = jest.fn().mockResolvedValue({
         ok: false,
         status: 500,
         statusText: 'Internal Server Error',
@@ -111,7 +110,7 @@ describe('HttpClient', () => {
     });
 
     it('should mark 400 as not transient', async () => {
-      global.fetch = vi.fn().mockResolvedValue({
+      global.fetch = jest.fn().mockResolvedValue({
         ok: false,
         status: 400,
         statusText: 'Bad Request',
@@ -132,7 +131,7 @@ describe('HttpClient', () => {
     it('should return Buffer from response', async () => {
       const mockData = new Uint8Array([1, 2, 3, 4]).buffer;
 
-      global.fetch = vi.fn().mockResolvedValue({
+      global.fetch = jest.fn().mockResolvedValue({
         ok: true,
         status: 200,
         headers: new Headers({}),
