@@ -15,8 +15,8 @@
 import moment from 'moment-timezone';
 import { IHarvester, HarvesterCategory } from '../ports/IHarvester.mjs';
 import { CircuitBreaker } from '../CircuitBreaker.mjs';
-import { configService } from '../../../0_system/config/index.mjs';
-import { nowTs24 } from '../../../0_system/utils/index.mjs';
+import { configService } from '#system/config/index.mjs';
+import { nowTs24 } from '#system/utils/index.mjs';
 
 /**
  * Todoist task harvester

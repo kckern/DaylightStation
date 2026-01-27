@@ -23,7 +23,7 @@ export {
   IConversationDatastore,
   IConversationStateDatastore,
   isConversationStateDatastore
-} from '../../3_applications/shared/ports/index.mjs';
+} from '#apps/shared/ports/index.mjs';
 
 // Services
 export { NotificationService } from './services/NotificationService.mjs';

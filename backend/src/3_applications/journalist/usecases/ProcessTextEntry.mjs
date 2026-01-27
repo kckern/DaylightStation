@@ -6,18 +6,18 @@
  * Implements conversational journaling loop with active listening.
  */
 
-import { ConversationMessage } from '../../../1_domains/journalist/entities/ConversationMessage.mjs';
-import { nowTs24 } from '../../../0_system/utils/time.mjs';
+import { ConversationMessage } from '#domains/journalist/entities/ConversationMessage.mjs';
+import { nowTs24 } from '#system/utils/time.mjs';
 import {
   formatAsChat,
   truncateToLength,
-} from '../../../1_domains/journalist/services/HistoryFormatter.mjs';
-import { parseGPTResponse } from '../../../1_domains/journalist/services/QuestionParser.mjs';
-import { formatChoicesAsKeyboard } from '../../../1_domains/journalist/services/QueueManager.mjs';
+} from '#domains/journalist/services/HistoryFormatter.mjs';
+import { parseGPTResponse } from '#domains/journalist/services/QuestionParser.mjs';
+import { formatChoicesAsKeyboard } from '#domains/journalist/services/QueueManager.mjs';
 import {
   buildConversationalPrompt,
   buildConversationalChoicesPrompt,
-} from '../../../1_domains/journalist/services/PromptBuilder.mjs';
+} from '#domains/journalist/services/PromptBuilder.mjs';
 
 /**
  * @typedef {Object} ProcessTextEntryInput

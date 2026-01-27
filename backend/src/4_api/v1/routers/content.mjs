@@ -2,7 +2,7 @@
 import express from 'express';
 import fs from 'fs';
 import path from 'path';
-import { nowTs24 } from '../../../0_system/utils/index.mjs';
+import { nowTs24 } from '#system/utils/index.mjs';
 
 /**
  * Create content API router

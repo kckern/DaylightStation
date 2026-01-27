@@ -1,9 +1,9 @@
 // backend/src/2_adapters/content/media/filesystem/FilesystemAdapter.mjs
 import path from 'path';
 import { parseFile } from 'music-metadata';
-import { Item } from '../../../../1_domains/content/entities/Item.mjs';
-import { ListableItem } from '../../../../1_domains/content/capabilities/Listable.mjs';
-import { PlayableItem } from '../../../../1_domains/content/capabilities/Playable.mjs';
+import { Item } from '#domains/content/entities/Item.mjs';
+import { ListableItem } from '#domains/content/capabilities/Listable.mjs';
+import { PlayableItem } from '#domains/content/capabilities/Playable.mjs';
 import {
   fileExists,
   dirExists,
@@ -12,7 +12,7 @@ import {
   listEntries,
   getStats,
   isFile
-} from '../../../../0_system/utils/FileIO.mjs';
+} from '#system/utils/FileIO.mjs';
 
 const MEDIA_PREFIXES = ['', 'audio', 'video', 'img'];
 

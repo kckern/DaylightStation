@@ -12,9 +12,9 @@
 
 import path from 'path';
 import fs from 'fs';
-import { configService } from '../../../0_system/config/index.mjs';
-import { userDataService } from '../../../0_system/config/UserDataService.mjs';
-import { slugify } from '../../../0_system/utils/strings.mjs';
+import { configService } from '#system/config/index.mjs';
+import { userDataService } from '#system/config/UserDataService.mjs';
+import { slugify } from '#system/utils/strings.mjs';
 
 /**
  * Get the relative path for media memory storage
@@ -102,7 +102,7 @@ export const getMediaMemoryFiles = (householdId = null) => {
 export {
   sanitizeForYAML,
   sanitizeObjectForYAML
-} from '../../../0_system/utils/yamlSanitizer.mjs';
+} from '#system/utils/yamlSanitizer.mjs';
 
 export default {
   getMediaMemoryPath,

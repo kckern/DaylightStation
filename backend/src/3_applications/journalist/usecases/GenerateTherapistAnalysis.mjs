@@ -8,7 +8,7 @@
 import {
   formatAsChat,
   truncateToLength,
-} from '../../../1_domains/journalist/services/HistoryFormatter.mjs';
+} from '#domains/journalist/services/HistoryFormatter.mjs';
 
 /**
  * Generate therapist analysis use case

@@ -16,7 +16,7 @@ import {
   loadYamlSafe,
   saveYaml,
   deleteYaml
-} from '../../../0_system/utils/FileIO.mjs';
+} from '#system/utils/FileIO.mjs';
 import { IConversationDatastore } from '#apps/shared/ports/IConversationDatastore.mjs';
 
 export class YamlConversationDatastore extends IConversationDatastore {

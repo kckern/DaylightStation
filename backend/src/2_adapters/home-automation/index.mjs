@@ -19,4 +19,4 @@ export {
   isHomeAutomationGateway,
   assertHomeAutomationGateway,
   createNoOpGateway
-} from '../../1_domains/home-automation/index.mjs';
+} from '#domains/home-automation/index.mjs';

@@ -9,7 +9,7 @@
  */
 
 import { SendMorningDebrief } from './SendMorningDebrief.mjs';
-import { nowTs24 } from '../../../0_system/utils/index.mjs';
+import { nowTs24 } from '#system/utils/index.mjs';
 
 /**
  * Handle debrief response buttons

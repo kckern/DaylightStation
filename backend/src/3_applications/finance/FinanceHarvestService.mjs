@@ -15,7 +15,7 @@
  * - YamlFinanceStore: Persistence
  */
 
-import { nowDate } from '../../0_system/utils/time.mjs';
+import { nowDate } from '#system/utils/time.mjs';
 
 export class FinanceHarvestService {
   #transactionSource;

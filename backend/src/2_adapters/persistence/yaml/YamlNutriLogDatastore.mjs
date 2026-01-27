@@ -1,7 +1,7 @@
 // backend/src/2_adapters/persistence/yaml/YamlNutriLogDatastore.mjs
-import { NutriLog } from '../../../1_domains/lifelog/entities/NutriLog.mjs';
-import { loadYaml, saveYaml } from '../../../0_system/utils/FileIO.mjs';
-import { nowTs24 } from '../../../0_system/utils/index.mjs';
+import { NutriLog } from '#domains/lifelog/entities/NutriLog.mjs';
+import { loadYaml, saveYaml } from '#system/utils/FileIO.mjs';
+import { nowTs24 } from '#system/utils/index.mjs';
 import { INutriLogDatastore } from '#apps/nutribot/ports/INutriLogDatastore.mjs';
 
 /**

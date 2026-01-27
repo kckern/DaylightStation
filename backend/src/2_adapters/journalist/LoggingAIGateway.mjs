@@ -6,7 +6,7 @@
  * Saves the last prompt and response to last_gpt.yml.
  */
 
-import { nowTs24 } from '../../0_system/utils/index.mjs';
+import { nowTs24 } from '#system/utils/index.mjs';
 
 /**
  * AI Gateway wrapper that logs calls

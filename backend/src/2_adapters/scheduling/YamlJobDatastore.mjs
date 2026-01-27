@@ -10,9 +10,9 @@
  */
 
 import path from 'path';
-import { Job } from '../../1_domains/scheduling/entities/Job.mjs';
-import { IJobDatastore } from '../../3_applications/scheduling/ports/IJobDatastore.mjs';
-import { loadYaml } from '../../0_system/utils/FileIO.mjs';
+import { Job } from '#domains/scheduling/entities/Job.mjs';
+import { IJobDatastore } from '#apps/scheduling/ports/IJobDatastore.mjs';
+import { loadYaml } from '#system/utils/FileIO.mjs';
 
 export class YamlJobDatastore extends IJobDatastore {
   constructor({ dataDir, logger = console }) {

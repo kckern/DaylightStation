@@ -1,8 +1,8 @@
 // backend/src/2_adapters/content/local-content/LocalContentAdapter.mjs
 import path from 'path';
 import { generateReference } from 'scripture-guide';
-import { PlayableItem } from '../../../1_domains/content/capabilities/Playable.mjs';
-import { ListableItem } from '../../../1_domains/content/capabilities/Listable.mjs';
+import { PlayableItem } from '#domains/content/capabilities/Playable.mjs';
+import { ListableItem } from '#domains/content/capabilities/Listable.mjs';
 import {
   buildContainedPath,
   loadContainedYaml,
@@ -12,7 +12,7 @@ import {
   loadYamlFromPath,
   saveYamlToPath,
   resolveYamlPath
-} from '../../../0_system/utils/FileIO.mjs';
+} from '#system/utils/FileIO.mjs';
 
 /**
  * Adapter for local content (talks, scriptures)

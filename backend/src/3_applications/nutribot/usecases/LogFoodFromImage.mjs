@@ -6,8 +6,8 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import { NutriLog } from '../../../1_domains/nutrition/entities/NutriLog.mjs';
-import { formatFoodList, formatDateHeader } from '../../../1_domains/nutrition/entities/formatters.mjs';
+import { NutriLog } from '#domains/nutrition/entities/NutriLog.mjs';
+import { formatFoodList, formatDateHeader } from '#domains/nutrition/entities/formatters.mjs';
 
 /**
  * Log food from image use case

@@ -11,7 +11,7 @@
  */
 
 import moment from 'moment';
-import { EntropyItem, MetricType } from '../../../1_domains/entropy/entities/EntropyItem.mjs';
+import { EntropyItem, MetricType } from '#domains/entropy/entities/EntropyItem.mjs';
 
 /**
  * Service for calculating entropy (data staleness) reports

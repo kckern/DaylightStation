@@ -1,5 +1,5 @@
 // backend/src/2_adapters/ai/OpenAIFoodParserAdapter.mjs
-import { FoodItem } from '../../1_domains/lifelog/entities/FoodItem.mjs';
+import { FoodItem } from '#domains/lifelog/entities/FoodItem.mjs';
 
 /**
  * OpenAI-based food parser implementing IFoodParser

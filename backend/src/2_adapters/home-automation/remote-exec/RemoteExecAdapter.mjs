@@ -10,7 +10,7 @@
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
-import { nowTs24 } from '../../../0_system/utils/index.mjs';
+import { nowTs24 } from '#system/utils/index.mjs';
 import { fileExists, ensureDir, writeFile, readFile } from '#system/utils/FileIO.mjs';
 
 const execAsync = promisify(exec);

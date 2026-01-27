@@ -7,7 +7,7 @@
  * @module adapters/proxy
  */
 
-import { configService } from '../../0_system/config/index.mjs';
+import { configService } from '#system/config/index.mjs';
 
 /**
  * @implements {import('../../0_system/proxy/IProxyAdapter.mjs').IProxyAdapter}

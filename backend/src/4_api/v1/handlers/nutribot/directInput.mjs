@@ -6,7 +6,7 @@
  * These bypass Telegram and allow programmatic food logging.
  */
 
-import { nowTs } from '../../../../0_system/utils/index.mjs';
+import { nowTs } from '#system/utils/index.mjs';
 
 /**
  * Get default user/chat config for direct API calls

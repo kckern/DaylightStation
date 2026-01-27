@@ -5,9 +5,9 @@
  * Generates multiple choice options for a question.
  */
 
-import { parseGPTResponse } from '../../../1_domains/journalist/services/QuestionParser.mjs';
-import { buildDefaultChoices } from '../../../1_domains/journalist/services/QueueManager.mjs';
-import { buildMultipleChoicePrompt } from '../../../1_domains/journalist/services/PromptBuilder.mjs';
+import { parseGPTResponse } from '#domains/journalist/services/QuestionParser.mjs';
+import { buildDefaultChoices } from '#domains/journalist/services/QueueManager.mjs';
+import { buildMultipleChoicePrompt } from '#domains/journalist/services/PromptBuilder.mjs';
 
 // Simple in-memory cache
 const choiceCache = new Map();

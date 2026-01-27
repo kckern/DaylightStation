@@ -5,7 +5,7 @@
  * Shows adjustment options for a selected food item.
  */
 
-import { NOOM_COLOR_EMOJI } from '../../../1_domains/nutrition/entities/formatters.mjs';
+import { NOOM_COLOR_EMOJI } from '#domains/nutrition/entities/formatters.mjs';
 
 /**
  * Select item for adjustment use case

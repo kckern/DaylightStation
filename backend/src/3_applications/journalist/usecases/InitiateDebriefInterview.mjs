@@ -8,12 +8,12 @@
 import {
   formatAsChat,
   truncateToLength,
-} from '../../../1_domains/journalist/services/HistoryFormatter.mjs';
-import { parseGPTResponse } from '../../../1_domains/journalist/services/QuestionParser.mjs';
+} from '#domains/journalist/services/HistoryFormatter.mjs';
+import { parseGPTResponse } from '#domains/journalist/services/QuestionParser.mjs';
 import {
   formatQuestion,
   formatChoicesAsKeyboard,
-} from '../../../1_domains/journalist/services/QueueManager.mjs';
+} from '#domains/journalist/services/QueueManager.mjs';
 
 /**
  * Initiate debrief interview use case

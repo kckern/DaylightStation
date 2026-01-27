@@ -8,7 +8,7 @@
  */
 
 import path from 'path';
-import { loadYaml, saveYaml } from '../../../0_system/utils/FileIO.mjs';
+import { loadYaml, saveYaml } from '#system/utils/FileIO.mjs';
 
 export class YamlWeatherDatastore {
   #dataRoot;

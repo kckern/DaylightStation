@@ -22,7 +22,8 @@
     "#system/*": "./src/0_system/*",
     "#domains/*": "./src/1_domains/*",
     "#adapters/*": "./src/2_adapters/*",
-    "#apps/*": "./src/3_applications/*"
+    "#apps/*": "./src/3_applications/*",
+    "#api/*": "./src/4_api/*"
   },
   "dependencies": {
     "@doist/todoist-api-typescript": "^3.0.2",

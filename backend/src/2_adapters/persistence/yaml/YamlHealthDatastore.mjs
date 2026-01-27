@@ -13,7 +13,7 @@
  * @module adapters/persistence/yaml
  */
 
-import { IHealthDataDatastore } from '../../../3_applications/health/ports/IHealthDataDatastore.mjs';
+import { IHealthDataDatastore } from '#apps/health/ports/IHealthDataDatastore.mjs';
 
 export class YamlHealthDatastore extends IHealthDataDatastore {
   #userDataService;

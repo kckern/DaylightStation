@@ -9,13 +9,13 @@ import moment from 'moment-timezone';
 import {
   formatAsChat,
   truncateToLength,
-} from '../../../1_domains/journalist/services/HistoryFormatter.mjs';
-import { parseGPTResponse } from '../../../1_domains/journalist/services/QuestionParser.mjs';
+} from '#domains/journalist/services/HistoryFormatter.mjs';
+import { parseGPTResponse } from '#domains/journalist/services/QuestionParser.mjs';
 import {
   formatQuestion,
   buildDefaultChoices,
-} from '../../../1_domains/journalist/services/QueueManager.mjs';
-import { buildAutobiographerPrompt, buildMultipleChoicePrompt } from '../../../1_domains/journalist/services/PromptBuilder.mjs';
+} from '#domains/journalist/services/QueueManager.mjs';
+import { buildAutobiographerPrompt, buildMultipleChoicePrompt } from '#domains/journalist/services/PromptBuilder.mjs';
 
 /**
  * @typedef {Object} InitiateJournalPromptInput

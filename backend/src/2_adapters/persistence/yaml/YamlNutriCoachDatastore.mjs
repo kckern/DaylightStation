@@ -13,9 +13,9 @@ import {
   ensureDir,
   loadYamlSafe,
   saveYaml
-} from '../../../0_system/utils/FileIO.mjs';
-import { nowTs24 } from '../../../0_system/utils/index.mjs';
-import { INutriCoachDatastore } from '../../../3_applications/nutribot/ports/INutriCoachDatastore.mjs';
+} from '#system/utils/FileIO.mjs';
+import { nowTs24 } from '#system/utils/index.mjs';
+import { INutriCoachDatastore } from '#apps/nutribot/ports/INutriCoachDatastore.mjs';
 
 export class YamlNutriCoachDatastore extends INutriCoachDatastore {
   #dataRoot;

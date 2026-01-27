@@ -13,7 +13,7 @@
  */
 
 import mqtt from 'mqtt';
-import { configService } from '../../../0_system/config/index.mjs';
+import { configService } from '#system/config/index.mjs';
 
 /**
  * @typedef {Object} MQTTConfig

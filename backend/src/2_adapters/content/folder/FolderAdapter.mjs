@@ -1,13 +1,13 @@
 // backend/src/2_adapters/content/folder/FolderAdapter.mjs
 import path from 'path';
-import { ListableItem } from '../../../1_domains/content/capabilities/Listable.mjs';
-import { Item } from '../../../1_domains/content/entities/Item.mjs';
+import { ListableItem } from '#domains/content/capabilities/Listable.mjs';
+import { Item } from '#domains/content/entities/Item.mjs';
 import {
   loadYaml,
   loadYamlFromPath,
   listYamlFiles,
   dirExists
-} from '../../../0_system/utils/FileIO.mjs';
+} from '#system/utils/FileIO.mjs';
 
 // Threshold for considering an item "watched" (90%)
 const WATCHED_THRESHOLD = 90;

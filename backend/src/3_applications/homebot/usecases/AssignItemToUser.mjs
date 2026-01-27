@@ -6,7 +6,7 @@
  * they click a member button in the confirmation UI.
  */
 
-import { nowTs24 } from '../../../0_system/utils/index.mjs';
+import { nowTs24 } from '#system/utils/index.mjs';
 
 /**
  * Assign item to user use case

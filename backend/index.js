@@ -1,20 +1,14 @@
 // backend/index.js
 /**
- * DaylightStation Backend Entry Point with Path-Based Routing
+ * DaylightStation Backend Entry Point
  *
- * Routes requests based on URL path:
- * - /api/v1/* -> new DDD backend (in src/)
- * - Everything else -> legacy backend (in _legacy/)
- *
- * New backend owns shared infrastructure: WebSocket/EventBus, MQTT, scheduler.
- * Legacy is a pure API compatibility layer.
+ * Routes all requests to the DDD backend (in src/).
  */
 
 import { createServer } from 'http';
 import { existsSync } from 'fs';
 import path, { join } from 'path';
 import 'dotenv/config';
-import express from 'express';
 
 import { initConfigService, ConfigValidationError, configService } from './src/0_system/config/index.mjs';
 import { hydrateProcessEnvFromConfigs, loadLoggingConfig, resolveLoggerLevel, getLoggingTags, resolveLogglyToken } from './src/0_system/logging/config.js';
@@ -27,7 +21,7 @@ const isDocker = existsSync('/.dockerenv');
 
 async function main() {
   // ==========================================================================
-  // Shared Configuration (runs once for both backends)
+  // Configuration
   // ==========================================================================
 
   // Detect base directory from environment
@@ -70,7 +64,7 @@ async function main() {
   }
 
   // ==========================================================================
-  // Shared Logging (runs once for both backends)
+  // Logging
   // ==========================================================================
 
   const loggingConfig = loadLoggingConfig();
@@ -112,39 +106,24 @@ async function main() {
   });
 
   // ==========================================================================
-  // Create HTTP Server and Load Both Backends
+  // Create HTTP Server and Load Backend
   // ==========================================================================
 
   const server = createServer();
 
-  logger.info('router.loading_backends', { message: 'Loading legacy and new backends...' });
+  logger.info('router.loading_backend', { message: 'Loading DDD backend...' });
 
-  // Load new backend first (owns WebSocket/EventBus, MQTT, scheduler)
-  const { createApp: createNewApp } = await import('./src/app.mjs');
-  const newApp = await createNewApp({
+  const { createApp } = await import('./src/app.mjs');
+  const app = await createApp({
     server,
     logger,
     configPaths,
     configExists
-    // enableScheduler: true (default)
-    // enableMqtt: true (default)
   });
-  logger.info('router.new_loaded', { message: 'New backend loaded (owns infrastructure)' });
-
-  // Load legacy backend (pure API layer - infrastructure disabled)
-  const { createApp: createLegacyApp } = await import('./_legacy/app.mjs');
-  const legacyApp = await createLegacyApp({
-    server,
-    logger,
-    configPaths,
-    configExists,
-    enableWebSocket: false,
-    enableScheduler: false
-  });
-  logger.info('router.legacy_loaded', { message: 'Legacy backend loaded (API layer only)' });
+  logger.info('router.backend_loaded', { message: 'DDD backend loaded' });
 
   // ==========================================================================
-  // Request Routing (path-based)
+  // Request Routing
   // ==========================================================================
 
   // Helper function for health responses
@@ -164,22 +143,12 @@ async function main() {
       return sendHealthResponse(res, 'main');
     }
 
-    // Add header to indicate which backend served the request
-    res.setHeader('X-Backend', req.url.startsWith('/api/v1') ? 'new' : 'legacy');
-
+    // Strip /api/v1 prefix if present
     if (req.url.startsWith('/api/v1')) {
-      // Strip /api/v1 prefix before passing to new app
       req.url = req.url.replace('/api/v1', '') || '/';
-      return newApp(req, res, (err) => {
-        if (err && !res.headersSent) {
-          res.statusCode = 500;
-          res.end('Internal Server Error');
-        }
-      });
     }
 
-    // Everything else -> legacy
-    return legacyApp(req, res, (err) => {
+    return app(req, res, (err) => {
       if (err && !res.headersSent) {
         res.statusCode = 500;
         res.end('Internal Server Error');

@@ -21,8 +21,8 @@
  */
 
 import express from 'express';
-import { writeBinary, deleteFile } from '../../../0_system/utils/FileIO.mjs';
-import { nowTs, nowTs24 } from '../../../0_system/utils/index.mjs';
+import { writeBinary, deleteFile } from '#system/utils/FileIO.mjs';
+import { nowTs, nowTs24 } from '#system/utils/index.mjs';
 
 /**
  * Create gratitude API router

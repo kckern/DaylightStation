@@ -1,6 +1,6 @@
 // backend/src/2_adapters/homebot/HomeBotInputRouter.mjs
 
-import { InputEventType } from '../../3_applications/shared/InputEventType.mjs';
+import { InputEventType } from '#apps/shared/InputEventType.mjs';
 
 /**
  * Routes IInputEvents to homebot use cases

@@ -10,4 +10,4 @@ export {
   isHomeAutomationGateway,
   assertHomeAutomationGateway,
   createNoOpGateway
-} from '../../3_applications/home-automation/ports/IHomeAutomationGateway.mjs';
+} from '#apps/home-automation/ports/IHomeAutomationGateway.mjs';

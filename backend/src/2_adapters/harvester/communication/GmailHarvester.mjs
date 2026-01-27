@@ -16,8 +16,8 @@
 import { google } from 'googleapis';
 import { IHarvester, HarvesterCategory } from '../ports/IHarvester.mjs';
 import { CircuitBreaker } from '../CircuitBreaker.mjs';
-import { configService } from '../../../0_system/config/index.mjs';
-import { nowDate, nowTs24 } from '../../../0_system/utils/index.mjs';
+import { configService } from '#system/config/index.mjs';
+import { nowDate, nowTs24 } from '#system/utils/index.mjs';
 
 /**
  * Gmail email harvester

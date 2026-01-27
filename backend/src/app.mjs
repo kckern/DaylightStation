@@ -9,6 +9,7 @@
 
 import express from 'express';
 import cors from 'cors';
+import axios from 'axios';
 import { existsSync } from 'fs';
 import path, { join } from 'path';
 
@@ -253,7 +254,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     mediaMemoryPath,
     nomusicLabels,
     musicOverlayPlaylist
-  });
+  }, { httpClient: axios });
 
   // Watch state path - use history/media_memory under data path (matches legacy structure)
   const watchStatePath = configService.getPath('watchState') || `${dataBasePath}/history/media_memory`;
@@ -295,7 +296,6 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Finance domain
   // Buxfer credentials are in user auth, app config has account IDs
   const buxferAuth = configService.getUserAuth?.('buxfer') || configService.getHouseholdAuth?.('buxfer');
-  const axios = (await import('axios')).default;
   const financeServices = createFinanceServices({
     dataRoot: dataBasePath,
     defaultHouseholdId: householdId,
@@ -355,6 +355,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     },
     loadFitnessConfig,
     openaiApiKey: configService.getSecret('OPENAI_API_KEY') || '',
+    httpClient: axios,
     logger: rootLogger.child({ module: 'fitness' })
   });
 
@@ -613,6 +614,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       privateKey: remoteExecConfig.privateKey || remoteExecConfig.private_key || '',
       knownHostsPath: remoteExecConfig.knownHostsPath || remoteExecConfig.known_hosts_path || ''
     },
+    httpClient: axios,
     logger: rootLogger.child({ module: 'home-automation' })
   });
 
@@ -650,18 +652,17 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   let sharedAiGateway = null;
   if (openaiApiKey) {
     const { OpenAIAdapter } = await import('./2_adapters/ai/OpenAIAdapter.mjs');
-    sharedAiGateway = new OpenAIAdapter({ apiKey: openaiApiKey }, { logger: rootLogger.child({ module: 'shared-ai' }) });
+    sharedAiGateway = new OpenAIAdapter({ apiKey: openaiApiKey }, { httpClient: axios, logger: rootLogger.child({ module: 'shared-ai' }) });
   }
 
   // Create shared voice transcription service (used by all bot TelegramAdapters)
   let voiceTranscriptionService = null;
   if (sharedAiGateway) {
     const { TelegramVoiceTranscriptionService } = await import('./2_adapters/messaging/TelegramVoiceTranscriptionService.mjs');
-    voiceTranscriptionService = new TelegramVoiceTranscriptionService({
-      openaiAdapter: sharedAiGateway,
-      httpClient: axios,
-      logger: rootLogger.child({ module: 'voice-transcription' })
-    });
+    voiceTranscriptionService = new TelegramVoiceTranscriptionService(
+      { openaiAdapter: sharedAiGateway },
+      { httpClient: axios, logger: rootLogger.child({ module: 'voice-transcription' }) }
+    );
   }
 
   // Alias for backward compatibility
@@ -682,6 +683,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   const upcGateway = new UPCGateway({
+    httpClient: axios,
     logger: rootLogger.child({ module: 'upc-gateway' }),
   });
 
@@ -819,7 +821,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     const { OpenAIAdapter } = await import('./2_adapters/ai/OpenAIAdapter.mjs');
     aiOpenaiAdapter = new OpenAIAdapter(
       { apiKey: openaiApiKey },
-      { logger: rootLogger.child({ module: 'ai-openai' }) }
+      { httpClient: axios, logger: rootLogger.child({ module: 'ai-openai' }) }
     );
   }
 
@@ -827,7 +829,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     const { AnthropicAdapter } = await import('./2_adapters/ai/AnthropicAdapter.mjs');
     aiAnthropicAdapter = new AnthropicAdapter(
       { apiKey: anthropicApiKey },
-      { logger: rootLogger.child({ module: 'ai-anthropic' }) }
+      { httpClient: axios, logger: rootLogger.child({ module: 'ai-anthropic' }) }
     );
   }
 

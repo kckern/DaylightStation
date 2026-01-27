@@ -19,7 +19,7 @@ import {
   listYamlFiles,
   loadYamlSafe,
   saveYaml
-} from '../../../0_system/utils/FileIO.mjs';
+} from '#system/utils/FileIO.mjs';
 import { IGratitudeDatastore } from '#apps/gratitude/ports/IGratitudeDatastore.mjs';
 
 export class YamlGratitudeDatastore extends IGratitudeDatastore {

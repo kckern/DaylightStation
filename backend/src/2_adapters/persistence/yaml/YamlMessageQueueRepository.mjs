@@ -7,7 +7,7 @@
  * @module adapters/persistence/yaml
  */
 
-import { nowTs24 } from '../../../0_system/utils/index.mjs';
+import { nowTs24 } from '#system/utils/index.mjs';
 
 export class YamlMessageQueueRepository {
   #userDataService;

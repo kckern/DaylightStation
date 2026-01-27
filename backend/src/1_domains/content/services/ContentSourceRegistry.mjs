@@ -1,5 +1,5 @@
 // backend/src/domains/content/services/ContentSourceRegistry.mjs
-import { validateAdapter } from '../../../3_applications/content/ports/IContentSource.mjs';
+import { validateAdapter } from '#apps/content/ports/IContentSource.mjs';
 
 /**
  * Registry for content source adapters.

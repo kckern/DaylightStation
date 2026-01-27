@@ -5,7 +5,7 @@
  * Exports journal entries as Markdown.
  */
 
-import { nowDate } from '../../../0_system/utils/time.mjs';
+import { nowDate } from '#system/utils/time.mjs';
 
 /**
  * Export journal markdown use case
