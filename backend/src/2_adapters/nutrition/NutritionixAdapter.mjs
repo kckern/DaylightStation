@@ -8,6 +8,7 @@ export class NutritionixAdapter {
   #appKey;
   #baseUrl;
   #httpClient;
+  #calorieColorService;
   #logger;
 
   /**
@@ -16,6 +17,7 @@ export class NutritionixAdapter {
    * @param {string} config.appKey - Nutritionix app key
    * @param {Object} deps
    * @param {import('#system/services/HttpClient.mjs').HttpClient} deps.httpClient
+   * @param {import('#domains/nutrition/services/CalorieColorService.mjs').CalorieColorService} [deps.calorieColorService]
    * @param {Object} [deps.logger] - Logger instance
    */
   constructor(config, deps = {}) {
@@ -29,6 +31,7 @@ export class NutritionixAdapter {
     this.#appKey = config.appKey;
     this.#baseUrl = 'https://trackapi.nutritionix.com/v2';
     this.#httpClient = deps.httpClient;
+    this.#calorieColorService = deps.calorieColorService;
     this.#logger = deps.logger || console;
   }
 
@@ -85,6 +88,15 @@ export class NutritionixAdapter {
   }
 
   #calculateNoomColor(calories, grams) {
+    // Use domain service if available
+    if (this.#calorieColorService) {
+      return this.#calorieColorService.classifyByDensity({
+        calories,
+        servingGrams: grams,
+      });
+    }
+
+    // Fallback: inline logic for backwards compatibility
     if (!calories || !grams) return 'yellow';
     const density = calories / grams;
     if (density < 1) return 'green';
