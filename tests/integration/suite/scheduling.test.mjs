@@ -9,7 +9,7 @@ import { jest, describe, it, expect, beforeAll, beforeEach } from '@jest/globals
 import express from 'express';
 import request from 'supertest';
 import { SchedulerService } from '#backend/src/1_domains/scheduling/services/SchedulerService.mjs';
-import { createSchedulingRouter } from '#backend/src/4_api/routers/scheduling.mjs';
+import { createSchedulingRouter } from '#backend/src/4_api/v1/routers/scheduling.mjs';
 import { Job } from '#backend/src/1_domains/scheduling/entities/Job.mjs';
 import { JobState } from '#backend/src/1_domains/scheduling/entities/JobState.mjs';
 

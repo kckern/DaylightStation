@@ -10,6 +10,7 @@ describe('QueueService', () => {
 
   const createPlayable = (id, title) => new PlayableItem({
     id: `test:${id}`,
+    localId: id,
     source: 'test',
     title,
     mediaType: 'video',

@@ -2,7 +2,7 @@
 import { jest } from '@jest/globals';
 import express from 'express';
 import request from 'supertest';
-import { createListRouter, toListItem } from '#backend/src/4_api/routers/list.mjs';
+import { createListRouter, toListItem } from '#backend/src/4_api/v1/routers/list.mjs';
 
 describe('List API Router', () => {
   let app;

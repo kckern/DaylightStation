@@ -16,7 +16,7 @@ describe('lifelog router', () => {
     jest.resetModules();
     mockAggregator.aggregate.mockReset();
     mockAggregator.getAvailableSources.mockReset();
-    const { createLifelogRouter } = await import('#backend/src/4_api/routers/lifelog.mjs');
+    const { createLifelogRouter } = await import('#backend/src/4_api/v1/routers/lifelog.mjs');
     app = express();
     app.use('/lifelog', createLifelogRouter({ aggregator: mockAggregator }));
   });

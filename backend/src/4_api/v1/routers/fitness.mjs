@@ -22,7 +22,7 @@
 import express from 'express';
 import path from 'path';
 import { spawn } from 'child_process';
-import { ensureDir, writeBinary } from '../../0_system/utils/FileIO.mjs';
+import { ensureDir, writeBinary } from '../../../0_system/utils/FileIO.mjs';
 import { toListItem } from './list.mjs';
 
 // Module-level state for simulation process
