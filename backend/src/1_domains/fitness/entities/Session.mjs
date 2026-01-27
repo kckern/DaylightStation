@@ -8,6 +8,7 @@
  */
 
 import { ValidationError } from '../../core/errors/index.mjs';
+import { SessionId } from '../value-objects/SessionId.mjs';
 
 export class Session {
   constructor({
@@ -21,7 +22,8 @@ export class Session {
     snapshots = { captures: [], updatedAt: null },
     metadata = {}
   }) {
-    this.sessionId = sessionId;
+    // Normalize sessionId to SessionId value object
+    this.sessionId = sessionId instanceof SessionId ? sessionId : new SessionId(sessionId);
     this.startTime = startTime;
     this.endTime = endTime;
     this.durationMs = durationMs;
@@ -162,8 +164,7 @@ export class Session {
    * Get session date in YYYY-MM-DD format (derived from sessionId)
    */
   getDate() {
-    if (!this.sessionId || this.sessionId.length < 8) return null;
-    return `${this.sessionId.slice(0, 4)}-${this.sessionId.slice(4, 6)}-${this.sessionId.slice(6, 8)}`;
+    return this.sessionId.getDate();
   }
 
   /**
@@ -171,7 +172,7 @@ export class Session {
    */
   toSummary() {
     return {
-      sessionId: this.sessionId,
+      sessionId: this.sessionId.toString(),
       startTime: this.startTime,
       endTime: this.endTime,
       durationMs: this.getDurationMs(),
@@ -184,7 +185,7 @@ export class Session {
    */
   toJSON() {
     return {
-      sessionId: this.sessionId,
+      sessionId: this.sessionId.toString(),
       startTime: this.startTime,
       endTime: this.endTime,
       durationMs: this.durationMs,
@@ -212,39 +213,27 @@ export class Session {
    * Generate sessionId from a timestamp
    * Format: YYYYMMDDHHmmss (14 digits)
    * @param {Date|string} date - Date object or ISO string (required)
+   * @returns {string} - The generated sessionId string
+   * @deprecated Use SessionId.generate(date).toString() instead
    */
   static generateSessionId(date) {
-    if (date == null) {
-      throw new ValidationError('date required', { code: 'MISSING_DATE', field: 'date' });
-    }
-    const d = typeof date === 'string' ? new Date(date) : date;
-    const pad = (n, len = 2) => String(n).padStart(len, '0');
-    return [
-      d.getFullYear(),
-      pad(d.getMonth() + 1),
-      pad(d.getDate()),
-      pad(d.getHours()),
-      pad(d.getMinutes()),
-      pad(d.getSeconds())
-    ].join('');
+    return SessionId.generate(date).toString();
   }
 
   /**
    * Validate sessionId format (14 digits)
+   * @deprecated Use SessionId.isValid(id) instead
    */
   static isValidSessionId(id) {
-    if (!id) return false;
-    const digits = String(id).replace(/\D/g, '');
-    return digits.length === 14;
+    return SessionId.isValid(id);
   }
 
   /**
    * Sanitize sessionId (remove non-digits)
+   * @deprecated Use SessionId.sanitize(id) instead
    */
   static sanitizeSessionId(id) {
-    if (!id) return null;
-    const digits = String(id).replace(/\D/g, '');
-    return digits.length === 14 ? digits : null;
+    return SessionId.sanitize(id);
   }
 }
 
