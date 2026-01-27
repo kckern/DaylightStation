@@ -5,7 +5,7 @@
  * Handles date selection in adjustment flow, shows items for that date.
  */
 
-import { NOOM_COLOR_EMOJI } from '../../../1_domains/nutrition/entities/formatters.mjs';
+import { NOOM_COLOR_EMOJI } from '#domains/nutrition/entities/formatters.mjs';
 
 /**
  * Select date for adjustment use case

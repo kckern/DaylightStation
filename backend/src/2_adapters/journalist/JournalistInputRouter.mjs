@@ -5,7 +5,7 @@
  * Routes platform-agnostic IInputEvents to Journalist use cases.
  */
 
-import { InputEventType } from '../../3_applications/shared/InputEventType.mjs';
+import { InputEventType } from '#apps/shared/InputEventType.mjs';
 
 // Special start characters (moved from HandleSpecialStart use case)
 const SPECIAL_START_CHARS = ['🎲', '❌'];

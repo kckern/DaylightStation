@@ -9,4 +9,4 @@
  * This index re-exports from the application layer for backward compatibility.
  */
 
-export { EntropyService, createWithLegacyDependencies } from '../../../3_applications/entropy/services/EntropyService.mjs';
+export { EntropyService, createWithLegacyDependencies } from '#apps/entropy/services/EntropyService.mjs';

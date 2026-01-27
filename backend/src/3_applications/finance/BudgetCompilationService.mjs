@@ -13,7 +13,7 @@
  * - YamlFinanceStore (adapter): Persistence for finance data
  */
 
-import { TransactionClassifier, MortgageCalculator } from '../../1_domains/finance/index.mjs';
+import { TransactionClassifier, MortgageCalculator } from '#domains/finance/index.mjs';
 
 export class BudgetCompilationService {
   #financeStore;

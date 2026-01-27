@@ -14,7 +14,7 @@ import {
   loadYamlSafe,
   saveYaml,
   deleteYaml
-} from '../../../0_system/utils/FileIO.mjs';
+} from '#system/utils/FileIO.mjs';
 import { IJournalDatastore } from '#apps/journaling/ports/IJournalDatastore.mjs';
 
 export class YamlJournalDatastore extends IJournalDatastore {

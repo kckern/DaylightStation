@@ -15,7 +15,7 @@ import {
   listYamlFiles,
   listDirsMatching,
   deleteYaml
-} from '../../../0_system/utils/FileIO.mjs';
+} from '#system/utils/FileIO.mjs';
 import { ISessionDatastore } from '#apps/fitness/ports/ISessionDatastore.mjs';
 
 /**

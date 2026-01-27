@@ -5,7 +5,7 @@
  * Confirms a pending food log and adds items to daily list.
  */
 
-import { formatFoodList, formatDateHeader } from '../../../1_domains/nutrition/entities/formatters.mjs';
+import { formatFoodList, formatDateHeader } from '#domains/nutrition/entities/formatters.mjs';
 
 /**
  * Accept food log use case

@@ -5,7 +5,7 @@
  * Shows a review/summary of recent journal entries.
  */
 
-import { nowDate } from '../../../0_system/utils/time.mjs';
+import { nowDate } from '#system/utils/time.mjs';
 
 /**
  * Review journal entries use case

@@ -5,7 +5,7 @@
  * Looks up product by UPC barcode and creates a pending log.
  */
 
-import { NutriLog } from '../../../1_domains/nutrition/entities/NutriLog.mjs';
+import { NutriLog } from '#domains/nutrition/entities/NutriLog.mjs';
 
 /**
  * Log food from UPC use case

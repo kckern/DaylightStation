@@ -9,15 +9,15 @@
  */
 
 import path from 'path';
-import { NutriLog } from '../../../1_domains/nutrition/entities/NutriLog.mjs';
-import { IFoodLogDatastore } from '../../../3_applications/nutribot/ports/IFoodLogDatastore.mjs';
+import { NutriLog } from '#domains/nutrition/entities/NutriLog.mjs';
+import { IFoodLogDatastore } from '#apps/nutribot/ports/IFoodLogDatastore.mjs';
 import {
   ensureDir,
   dirExists,
   listYamlFiles,
   loadYamlSafe,
   saveYaml
-} from '../../../0_system/utils/FileIO.mjs';
+} from '#system/utils/FileIO.mjs';
 
 const ARCHIVE_RETENTION_DAYS = 30;
 

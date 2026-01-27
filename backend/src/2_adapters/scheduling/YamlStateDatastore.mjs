@@ -6,9 +6,9 @@
  */
 
 import path from 'path';
-import { JobState } from '../../1_domains/scheduling/entities/JobState.mjs';
-import { IStateDatastore } from '../../3_applications/scheduling/ports/IStateDatastore.mjs';
-import { loadYaml, saveYaml } from '../../0_system/utils/FileIO.mjs';
+import { JobState } from '#domains/scheduling/entities/JobState.mjs';
+import { IStateDatastore } from '#apps/scheduling/ports/IStateDatastore.mjs';
+import { loadYaml, saveYaml } from '#system/utils/FileIO.mjs';
 
 export class YamlStateDatastore extends IStateDatastore {
   constructor({ dataDir, logger = console }) {

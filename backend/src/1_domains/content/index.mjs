@@ -13,7 +13,7 @@ export { PlayableItem } from './capabilities/Playable.mjs';
 export { QueueableItem } from './capabilities/Queueable.mjs';
 
 // Ports moved to application layer - re-export for backward compatibility
-export { validateAdapter, ContentSourceBase } from '../../3_applications/content/ports/IContentSource.mjs';
+export { validateAdapter, ContentSourceBase } from '#apps/content/ports/IContentSource.mjs';
 
 // Services
 export { ContentSourceRegistry } from './services/ContentSourceRegistry.mjs';

@@ -36,7 +36,7 @@ import { HandleSourceSelection } from './usecases/HandleSourceSelection.mjs';
 import { InitiateDebriefInterview } from './usecases/InitiateDebriefInterview.mjs';
 
 // Domain services
-import { LifelogAggregator } from '../../1_domains/lifelog/services/LifelogAggregator.mjs';
+import { LifelogAggregator } from '#domains/lifelog/services/LifelogAggregator.mjs';
 
 /**
  * Journalist Container

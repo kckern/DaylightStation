@@ -3,9 +3,9 @@
  * Implements IMessagingGateway and INotificationChannel
  */
 
-import { readBinary, getBasename, fileExists } from '../../0_system/utils/FileIO.mjs';
+import { readBinary, getBasename, fileExists } from '#system/utils/FileIO.mjs';
 import { TelegramChatRef } from '../telegram/TelegramChatRef.mjs';
-import { ConversationId } from '../../1_domains/messaging/value-objects/ConversationId.mjs';
+import { ConversationId } from '#domains/messaging/value-objects/ConversationId.mjs';
 
 const TELEGRAM_API_BASE = 'https://api.telegram.org/bot';
 

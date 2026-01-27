@@ -5,6 +5,7 @@ describe('Item entity', () => {
   test('creates item with required fields', () => {
     const item = new Item({
       id: 'plex:12345',
+      localId: '12345',
       source: 'plex',
       title: 'Test Movie'
     });
@@ -17,6 +18,7 @@ describe('Item entity', () => {
   test('includes optional fields when provided', () => {
     const item = new Item({
       id: 'filesystem:audio/song.mp3',
+      localId: 'audio/song.mp3',
       source: 'filesystem',
       title: 'My Song',
       thumbnail: '/proxy/filesystem/thumb/audio/song.mp3',
@@ -37,6 +39,7 @@ describe('Item entity', () => {
   test('sets default values for optional fields', () => {
     const item = new Item({
       id: 'plex:12345',
+      localId: '12345',
       source: 'plex',
       title: 'Test Movie'
     });
@@ -49,6 +52,7 @@ describe('Item entity', () => {
   test('getLocalId extracts local ID from compound ID', () => {
     const item = new Item({
       id: 'plex:12345',
+      localId: '12345',
       source: 'plex',
       title: 'Test Movie'
     });
@@ -59,6 +63,7 @@ describe('Item entity', () => {
   test('getLocalId handles IDs with multiple colons', () => {
     const item = new Item({
       id: 'filesystem:path/to/file:with:colons.mp3',
+      localId: 'path/to/file:with:colons.mp3',
       source: 'filesystem',
       title: 'Test File'
     });
@@ -69,6 +74,7 @@ describe('Item entity', () => {
   test('getLocalId returns full ID if no colon present', () => {
     const item = new Item({
       id: 'simpleId',
+      localId: 'simpleId',
       source: 'test',
       title: 'Test'
     });

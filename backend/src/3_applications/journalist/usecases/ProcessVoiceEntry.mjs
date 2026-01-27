@@ -5,7 +5,7 @@
  * Processes voice messages by transcribing and delegating to ProcessTextEntry.
  */
 
-import { splitTranscription } from '../../../1_domains/journalist/services/MessageSplitter.mjs';
+import { splitTranscription } from '#domains/journalist/services/MessageSplitter.mjs';
 
 /**
  * @typedef {Object} ProcessVoiceEntryInput

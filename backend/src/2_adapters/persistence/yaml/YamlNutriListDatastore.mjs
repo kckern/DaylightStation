@@ -18,9 +18,9 @@ import {
   listYamlFiles,
   loadYamlSafe,
   saveYaml
-} from '../../../0_system/utils/FileIO.mjs';
-import { INutriListDatastore } from '../../../3_applications/nutribot/ports/INutriListDatastore.mjs';
-import { shortIdFromUuid } from '../../../0_system/utils/shortId.mjs';
+} from '#system/utils/FileIO.mjs';
+import { INutriListDatastore } from '#apps/nutribot/ports/INutriListDatastore.mjs';
+import { shortIdFromUuid } from '#system/utils/shortId.mjs';
 
 const ARCHIVE_RETENTION_DAYS = 30;
 const NOOM_EMOJI = { green: '🟢', yellow: '🟡', orange: '🟠' };

@@ -7,8 +7,8 @@
  * It is responsible for converting to/from the domain's ConversationId.
  */
 
-import { ConversationId } from '../../1_domains/messaging/value-objects/ConversationId.mjs';
-import { ValidationError } from '../../0_system/utils/errors/index.mjs';
+import { ConversationId } from '#domains/messaging/value-objects/ConversationId.mjs';
+import { ValidationError } from '#system/utils/errors/index.mjs';
 
 /**
  * Channel identifier for Telegram

@@ -5,8 +5,8 @@
  * Sends a quiz question with inline buttons for choices.
  */
 
-import { MessageQueue } from '../../../1_domains/journalist/entities/MessageQueue.mjs';
-import { nowTs24 } from '../../../0_system/utils/time.mjs';
+import { MessageQueue } from '#domains/journalist/entities/MessageQueue.mjs';
+import { nowTs24 } from '#system/utils/time.mjs';
 
 /**
  * Send quiz question use case

@@ -5,7 +5,7 @@
  * Flags are stored in YAML config for easy toggling without deploys.
  */
 
-import { loadYamlFromPath, resolveYamlPath } from '../../0_system/utils/FileIO.mjs';
+import { loadYamlFromPath, resolveYamlPath } from '#system/utils/FileIO.mjs';
 
 const CONFIG_PATH = process.env.CUTOVER_FLAGS_PATH || '/data/config/cutover-flags.yml';
 

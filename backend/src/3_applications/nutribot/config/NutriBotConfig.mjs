@@ -11,10 +11,10 @@
  */
 
 // Infrastructure imports
-import { ValidationError } from '../../../0_system/utils/errors/index.mjs';
-import { TestContext } from '../../../0_system/testing/TestContext.mjs';
-import { configService } from '../../../0_system/config/index.mjs';
-import { loadBotConfig } from '../../../0_system/config/BotConfigLoader.mjs';
+import { ValidationError } from '#system/utils/errors/index.mjs';
+import { TestContext } from '#system/testing/TestContext.mjs';
+import { configService } from '#system/config/index.mjs';
+import { loadBotConfig } from '#system/config/BotConfigLoader.mjs';
 
 // Single source of truth for default nutrition goals
 // calories_min/calories_max define the acceptable calorie range

@@ -14,7 +14,7 @@
  * @module legacyTracker
  */
 
-import { nowTs24 } from '../../0_system/utils/index.mjs';
+import { nowTs24 } from '#system/utils/index.mjs';
 
 /**
  * Create a legacy route hit tracker

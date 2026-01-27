@@ -6,7 +6,7 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import { formatFoodList, formatDateHeader } from '../../../1_domains/nutrition/entities/formatters.mjs';
+import { formatFoodList, formatDateHeader } from '#domains/nutrition/entities/formatters.mjs';
 
 /**
  * Process revision input use case

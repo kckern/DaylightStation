@@ -15,4 +15,4 @@ export { TransactionClassifier } from './services/TransactionClassifier.mjs';
 export { MortgageCalculator } from './services/MortgageCalculator.mjs';
 
 // Ports (re-exported from application layer for backward compatibility)
-export { ITransactionSource } from '../../3_applications/finance/ports/ITransactionSource.mjs';
+export { ITransactionSource } from '#apps/finance/ports/ITransactionSource.mjs';

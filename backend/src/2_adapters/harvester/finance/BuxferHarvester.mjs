@@ -15,7 +15,7 @@
 import moment from 'moment-timezone';
 import { IHarvester, HarvesterCategory } from '../ports/IHarvester.mjs';
 import { CircuitBreaker } from '../CircuitBreaker.mjs';
-import { configService } from '../../../0_system/config/index.mjs';
+import { configService } from '#system/config/index.mjs';
 
 const DEFAULT_DAYS_BACK = 30;
 

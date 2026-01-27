@@ -5,7 +5,7 @@
  * Enters revision mode for a pending food log.
  */
 
-import { formatFoodList, formatDateHeader } from '../../../1_domains/nutrition/entities/formatters.mjs';
+import { formatFoodList, formatDateHeader } from '#domains/nutrition/entities/formatters.mjs';
 
 /**
  * Revise food log use case

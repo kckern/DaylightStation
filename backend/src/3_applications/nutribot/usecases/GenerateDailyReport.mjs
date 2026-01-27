@@ -6,7 +6,7 @@
  * visual report and optional coaching messages.
  */
 
-import { NOOM_COLOR_EMOJI } from '../../../1_domains/nutrition/entities/formatters.mjs';
+import { NOOM_COLOR_EMOJI } from '#domains/nutrition/entities/formatters.mjs';
 
 /**
  * Generate daily nutrition report use case

@@ -4,12 +4,12 @@
 import { WebSocketEventBus } from './eventbus/WebSocketEventBus.mjs';
 
 // Content domain imports
-import { ContentSourceRegistry } from '../1_domains/content/services/ContentSourceRegistry.mjs';
-import { FilesystemAdapter } from '../2_adapters/content/media/filesystem/FilesystemAdapter.mjs';
-import { PlexAdapter } from '../2_adapters/content/media/plex/PlexAdapter.mjs';
-import { LocalContentAdapter } from '../2_adapters/content/local-content/LocalContentAdapter.mjs';
-import { FolderAdapter } from '../2_adapters/content/folder/FolderAdapter.mjs';
-import { YamlWatchStateDatastore } from '../2_adapters/persistence/yaml/YamlWatchStateDatastore.mjs';
+import { ContentSourceRegistry } from '#domains/content/services/ContentSourceRegistry.mjs';
+import { FilesystemAdapter } from '#adapters/content/media/filesystem/FilesystemAdapter.mjs';
+import { PlexAdapter } from '#adapters/content/media/plex/PlexAdapter.mjs';
+import { LocalContentAdapter } from '#adapters/content/local-content/LocalContentAdapter.mjs';
+import { FolderAdapter } from '#adapters/content/folder/FolderAdapter.mjs';
+import { YamlWatchStateDatastore } from '#adapters/persistence/yaml/YamlWatchStateDatastore.mjs';
 import { createContentRouter } from '../4_api/v1/routers/content.mjs';
 import { createProxyRouter } from '../4_api/v1/routers/proxy.mjs';
 import { createLocalContentRouter } from '../4_api/v1/routers/localContent.mjs';
@@ -17,114 +17,114 @@ import { createPlayRouter } from '../4_api/v1/routers/play.mjs';
 import { createListRouter } from '../4_api/v1/routers/list.mjs';
 
 // Fitness domain imports
-import { SessionService } from '../1_domains/fitness/services/SessionService.mjs';
-import { YamlSessionDatastore } from '../2_adapters/persistence/yaml/YamlSessionDatastore.mjs';
-import { AmbientLedAdapter } from '../2_adapters/fitness/AmbientLedAdapter.mjs';
-import { VoiceMemoTranscriptionService } from '../2_adapters/fitness/VoiceMemoTranscriptionService.mjs';
-import { OpenAIAdapter } from '../2_adapters/ai/OpenAIAdapter.mjs';
-import { FitnessSyncerAdapter } from '../2_adapters/harvester/fitness/FitnessSyncerAdapter.mjs';
+import { SessionService } from '#domains/fitness/services/SessionService.mjs';
+import { YamlSessionDatastore } from '#adapters/persistence/yaml/YamlSessionDatastore.mjs';
+import { AmbientLedAdapter } from '#adapters/fitness/AmbientLedAdapter.mjs';
+import { VoiceMemoTranscriptionService } from '#adapters/fitness/VoiceMemoTranscriptionService.mjs';
+import { OpenAIAdapter } from '#adapters/ai/OpenAIAdapter.mjs';
+import { FitnessSyncerAdapter } from '#adapters/harvester/fitness/FitnessSyncerAdapter.mjs';
 import { createFitnessRouter } from '../4_api/v1/routers/fitness.mjs';
 
 // Home automation imports
-import { HomeAssistantAdapter } from '../2_adapters/home-automation/homeassistant/HomeAssistantAdapter.mjs';
-import { TVControlAdapter } from '../2_adapters/home-automation/tv/TVControlAdapter.mjs';
-import { KioskAdapter } from '../2_adapters/home-automation/kiosk/KioskAdapter.mjs';
-import { TaskerAdapter } from '../2_adapters/home-automation/tasker/TaskerAdapter.mjs';
-import { RemoteExecAdapter } from '../2_adapters/home-automation/remote-exec/RemoteExecAdapter.mjs';
+import { HomeAssistantAdapter } from '#adapters/home-automation/homeassistant/HomeAssistantAdapter.mjs';
+import { TVControlAdapter } from '#adapters/home-automation/tv/TVControlAdapter.mjs';
+import { KioskAdapter } from '#adapters/home-automation/kiosk/KioskAdapter.mjs';
+import { TaskerAdapter } from '#adapters/home-automation/tasker/TaskerAdapter.mjs';
+import { RemoteExecAdapter } from '#adapters/home-automation/remote-exec/RemoteExecAdapter.mjs';
 import { createHomeAutomationRouter } from '../4_api/v1/routers/homeAutomation.mjs';
 
 // Hardware adapter imports
-import { ThermalPrinterAdapter } from '../2_adapters/hardware/thermal-printer/ThermalPrinterAdapter.mjs';
-import { TTSAdapter } from '../2_adapters/hardware/tts/TTSAdapter.mjs';
-import { MQTTSensorAdapter } from '../2_adapters/hardware/mqtt-sensor/MQTTSensorAdapter.mjs';
+import { ThermalPrinterAdapter } from '#adapters/hardware/thermal-printer/ThermalPrinterAdapter.mjs';
+import { TTSAdapter } from '#adapters/hardware/tts/TTSAdapter.mjs';
+import { MQTTSensorAdapter } from '#adapters/hardware/mqtt-sensor/MQTTSensorAdapter.mjs';
 import { createPrinterRouter } from '../4_api/v1/routers/printer.mjs';
 import { createTTSRouter } from '../4_api/v1/routers/tts.mjs';
 
 // Proxy infrastructure imports
 import { ProxyService } from './proxy/ProxyService.mjs';
-import { PlexProxyAdapter } from '../2_adapters/proxy/PlexProxyAdapter.mjs';
-import { ImmichProxyAdapter } from '../2_adapters/proxy/ImmichProxyAdapter.mjs';
-import { AudiobookshelfProxyAdapter } from '../2_adapters/proxy/AudiobookshelfProxyAdapter.mjs';
-import { FreshRSSProxyAdapter } from '../2_adapters/proxy/FreshRSSProxyAdapter.mjs';
+import { PlexProxyAdapter } from '#adapters/proxy/PlexProxyAdapter.mjs';
+import { ImmichProxyAdapter } from '#adapters/proxy/ImmichProxyAdapter.mjs';
+import { AudiobookshelfProxyAdapter } from '#adapters/proxy/AudiobookshelfProxyAdapter.mjs';
+import { FreshRSSProxyAdapter } from '#adapters/proxy/FreshRSSProxyAdapter.mjs';
 import { createExternalProxyRouter } from '../4_api/v1/routers/externalProxy.mjs';
 
 // Finance domain imports
-import { YamlFinanceDatastore } from '../2_adapters/persistence/yaml/YamlFinanceDatastore.mjs';
-import { BuxferAdapter } from '../2_adapters/finance/BuxferAdapter.mjs';
-import { BudgetCompilationService } from '../3_applications/finance/BudgetCompilationService.mjs';
-import { FinanceHarvestService } from '../3_applications/finance/FinanceHarvestService.mjs';
-import { TransactionCategorizationService } from '../3_applications/finance/TransactionCategorizationService.mjs';
-import { PayrollSyncService } from '../3_applications/finance/PayrollSyncService.mjs';
+import { YamlFinanceDatastore } from '#adapters/persistence/yaml/YamlFinanceDatastore.mjs';
+import { BuxferAdapter } from '#adapters/finance/BuxferAdapter.mjs';
+import { BudgetCompilationService } from '#apps/finance/BudgetCompilationService.mjs';
+import { FinanceHarvestService } from '#apps/finance/FinanceHarvestService.mjs';
+import { TransactionCategorizationService } from '#apps/finance/TransactionCategorizationService.mjs';
+import { PayrollSyncService } from '#apps/finance/PayrollSyncService.mjs';
 import { createFinanceRouter } from '../4_api/v1/routers/finance.mjs';
 
 // Gratitude domain imports
-import { GratitudeService } from '../1_domains/gratitude/services/GratitudeService.mjs';
-import { YamlGratitudeDatastore } from '../2_adapters/persistence/yaml/YamlGratitudeDatastore.mjs';
+import { GratitudeService } from '#domains/gratitude/services/GratitudeService.mjs';
+import { YamlGratitudeDatastore } from '#adapters/persistence/yaml/YamlGratitudeDatastore.mjs';
 import { createGratitudeRouter } from '../4_api/v1/routers/gratitude.mjs';
 
 // Journaling domain imports
-import { JournalService } from '../1_domains/journaling/services/JournalService.mjs';
-import { YamlJournalDatastore } from '../2_adapters/persistence/yaml/YamlJournalDatastore.mjs';
+import { JournalService } from '#domains/journaling/services/JournalService.mjs';
+import { YamlJournalDatastore } from '#adapters/persistence/yaml/YamlJournalDatastore.mjs';
 import { createJournalingRouter } from '../4_api/v1/routers/journaling.mjs';
 
 // Nutrition domain imports
-import { FoodLogService } from '../1_domains/nutrition/services/FoodLogService.mjs';
-import { YamlFoodLogDatastore } from '../2_adapters/persistence/yaml/YamlFoodLogDatastore.mjs';
+import { FoodLogService } from '#domains/nutrition/services/FoodLogService.mjs';
+import { YamlFoodLogDatastore } from '#adapters/persistence/yaml/YamlFoodLogDatastore.mjs';
 import { createNutritionRouter } from '../4_api/v1/routers/nutrition.mjs';
 
 // Messaging domain imports
-import { ConversationService } from '../1_domains/messaging/services/ConversationService.mjs';
-import { NotificationService } from '../1_domains/messaging/services/NotificationService.mjs';
-import { YamlConversationDatastore } from '../2_adapters/persistence/yaml/YamlConversationDatastore.mjs';
-import { TelegramAdapter } from '../2_adapters/messaging/TelegramAdapter.mjs';
-import { GmailAdapter } from '../2_adapters/messaging/GmailAdapter.mjs';
+import { ConversationService } from '#domains/messaging/services/ConversationService.mjs';
+import { NotificationService } from '#domains/messaging/services/NotificationService.mjs';
+import { YamlConversationDatastore } from '#adapters/persistence/yaml/YamlConversationDatastore.mjs';
+import { TelegramAdapter } from '#adapters/messaging/TelegramAdapter.mjs';
+import { GmailAdapter } from '#adapters/messaging/GmailAdapter.mjs';
 import { createMessagingRouter } from '../4_api/v1/routers/messaging.mjs';
 
 // Journalist application imports
-import { JournalistContainer } from '../3_applications/journalist/JournalistContainer.mjs';
-import { YamlJournalEntryRepository } from '../2_adapters/persistence/yaml/YamlJournalEntryRepository.mjs';
-import { YamlMessageQueueRepository } from '../2_adapters/persistence/yaml/YamlMessageQueueRepository.mjs';
-import { JournalistInputRouter } from '../2_adapters/journalist/JournalistInputRouter.mjs';
+import { JournalistContainer } from '#apps/journalist/JournalistContainer.mjs';
+import { YamlJournalEntryRepository } from '#adapters/persistence/yaml/YamlJournalEntryRepository.mjs';
+import { YamlMessageQueueRepository } from '#adapters/persistence/yaml/YamlMessageQueueRepository.mjs';
+import { JournalistInputRouter } from '#adapters/journalist/JournalistInputRouter.mjs';
 import { createJournalistRouter } from '../4_api/v1/routers/journalist.mjs';
 
 // Nutribot application imports
-import { NutribotContainer } from '../3_applications/nutribot/NutribotContainer.mjs';
-import { NutriBotConfig } from '../3_applications/nutribot/config/NutriBotConfig.mjs';
-import { YamlNutriListDatastore } from '../2_adapters/persistence/yaml/YamlNutriListDatastore.mjs';
-import { YamlNutriCoachDatastore } from '../2_adapters/persistence/yaml/YamlNutriCoachDatastore.mjs';
-import { NutribotInputRouter } from '../2_adapters/nutribot/index.mjs';
+import { NutribotContainer } from '#apps/nutribot/NutribotContainer.mjs';
+import { NutriBotConfig } from '#apps/nutribot/config/NutriBotConfig.mjs';
+import { YamlNutriListDatastore } from '#adapters/persistence/yaml/YamlNutriListDatastore.mjs';
+import { YamlNutriCoachDatastore } from '#adapters/persistence/yaml/YamlNutriCoachDatastore.mjs';
+import { NutribotInputRouter } from '#adapters/nutribot/index.mjs';
 import { createNutribotRouter } from '../4_api/v1/routers/nutribot.mjs';
 
 // Nutribot DDD adapters
-import { YamlNutriLogDatastore } from '../2_adapters/persistence/yaml/YamlNutriLogDatastore.mjs';
-import { TelegramMessagingAdapter } from '../2_adapters/telegram/TelegramMessagingAdapter.mjs';
-import { TelegramWebhookParser } from '../2_adapters/telegram/TelegramWebhookParser.mjs';
-import { createBotWebhookHandler } from '../2_adapters/telegram/createBotWebhookHandler.mjs';
-import { OpenAIFoodParserAdapter } from '../2_adapters/ai/OpenAIFoodParserAdapter.mjs';
-import { NutritionixAdapter } from '../2_adapters/nutrition/NutritionixAdapter.mjs';
+import { YamlNutriLogDatastore } from '#adapters/persistence/yaml/YamlNutriLogDatastore.mjs';
+import { TelegramMessagingAdapter } from '#adapters/telegram/TelegramMessagingAdapter.mjs';
+import { TelegramWebhookParser } from '#adapters/telegram/TelegramWebhookParser.mjs';
+import { createBotWebhookHandler } from '#adapters/telegram/createBotWebhookHandler.mjs';
+import { OpenAIFoodParserAdapter } from '#adapters/ai/OpenAIFoodParserAdapter.mjs';
+import { NutritionixAdapter } from '#adapters/nutrition/NutritionixAdapter.mjs';
 
 // Homebot application imports
-import { HomeBotContainer } from '../3_applications/homebot/HomeBotContainer.mjs';
-import { ConfigHouseholdAdapter, HomeBotInputRouter } from '../2_adapters/homebot/index.mjs';
+import { HomeBotContainer } from '#apps/homebot/HomeBotContainer.mjs';
+import { ConfigHouseholdAdapter, HomeBotInputRouter } from '#adapters/homebot/index.mjs';
 import { createHomebotRouter } from '../4_api/v1/routers/homebot.mjs';
 
 // Agents application imports
-import { AgentOrchestrator, EchoAgent } from '../3_applications/agents/index.mjs';
-import { MastraAdapter } from '../2_adapters/agents/index.mjs';
+import { AgentOrchestrator, EchoAgent } from '#apps/agents/index.mjs';
+import { MastraAdapter } from '#adapters/agents/index.mjs';
 import { createAgentsRouter } from '../4_api/v1/routers/agents.mjs';
 
 // Health domain imports
-import { HealthAggregationService } from '../1_domains/health/services/HealthAggregationService.mjs';
-import { YamlHealthDatastore } from '../2_adapters/persistence/yaml/YamlHealthDatastore.mjs';
+import { HealthAggregationService } from '#domains/health/services/HealthAggregationService.mjs';
+import { YamlHealthDatastore } from '#adapters/persistence/yaml/YamlHealthDatastore.mjs';
 import { createHealthRouter } from '../4_api/v1/routers/health.mjs';
 
 // Entropy application imports (uses config/logging)
-import { EntropyService } from '../3_applications/entropy/services/EntropyService.mjs';
-import { YamlEntropyReader } from '../2_adapters/entropy/YamlEntropyReader.mjs';
+import { EntropyService } from '#apps/entropy/services/EntropyService.mjs';
+import { YamlEntropyReader } from '#adapters/entropy/YamlEntropyReader.mjs';
 import { createEntropyRouter } from '../4_api/v1/routers/entropy.mjs';
 
 // Lifelog domain imports
-import { LifelogAggregator } from '../1_domains/lifelog/services/LifelogAggregator.mjs';
+import { LifelogAggregator } from '#domains/lifelog/services/LifelogAggregator.mjs';
 import { createLifelogRouter } from '../4_api/v1/routers/lifelog.mjs';
 
 // Static assets router
@@ -134,7 +134,7 @@ import { createStaticRouter } from '../4_api/v1/routers/static.mjs';
 import { createCalendarRouter } from '../4_api/v1/routers/calendar.mjs';
 
 // Harvester application imports
-import { HarvesterService, HarvesterJobExecutor } from '../3_applications/harvester/index.mjs';
+import { HarvesterService, HarvesterJobExecutor } from '#apps/harvester/index.mjs';
 
 // Harvester adapter imports
 import {
@@ -155,7 +155,7 @@ import {
   StravaHarvester,
   WithingsHarvester,
   createInfinityHarvesters
-} from '../2_adapters/harvester/index.mjs';
+} from '#adapters/harvester/index.mjs';
 
 // RSS Parser for Goodreads/Letterboxd harvesters
 import RSSParser from 'rss-parser';
@@ -164,8 +164,8 @@ import RSSParser from 'rss-parser';
 import { saveImage as saveImageToFile } from './utils/FileIO.mjs';
 
 // Additional adapters for harvesters
-import { StravaClientAdapter } from '../2_adapters/fitness/StravaClientAdapter.mjs';
-import { YamlWeatherDatastore } from '../2_adapters/persistence/yaml/YamlWeatherDatastore.mjs';
+import { StravaClientAdapter } from '#adapters/fitness/StravaClientAdapter.mjs';
+import { YamlWeatherDatastore } from '#adapters/persistence/yaml/YamlWeatherDatastore.mjs';
 import { google } from 'googleapis';
 
 /**
@@ -177,9 +177,11 @@ import { google } from 'googleapis';
  * @param {string} [config.plex.token] - Plex auth token
  * @param {string} [config.dataPath] - Path to data files (for LocalContentAdapter)
  * @param {string} [config.watchlistPath] - Path to watchlist YAML (for FolderAdapter)
+ * @param {Object} deps - Dependencies
+ * @param {Object} [deps.httpClient] - HTTP client for making requests
  * @returns {ContentSourceRegistry}
  */
-export function createContentRegistry(config) {
+export function createContentRegistry(config, deps = {}) {
   const registry = new ContentSourceRegistry();
 
   // Register filesystem adapter
@@ -191,12 +193,12 @@ export function createContentRegistry(config) {
   }
 
   // Register Plex adapter if configured
-  if (config.plex?.host) {
+  if (config.plex?.host && deps.httpClient) {
     registry.register(new PlexAdapter({
       host: config.plex.host,
       token: config.plex.token,
       historyPath: config.mediaMemoryPath ? `${config.mediaMemoryPath}/plex` : null
-    }));
+    }, { httpClient: deps.httpClient }));
   }
 
   // Register local content adapter (optional)
@@ -281,6 +283,7 @@ export function createApiRouters(config) {
  * @param {string} config.homeAssistant.token - HA long-lived token
  * @param {Function} config.loadFitnessConfig - Function to load fitness config for household
  * @param {string} [config.openaiApiKey] - OpenAI API key for voice memo transcription
+ * @param {Object} [config.httpClient] - HTTP client for making requests
  * @param {Object} [config.logger] - Logger instance
  * @returns {Object} Fitness services
  */
@@ -292,6 +295,7 @@ export function createFitnessServices(config) {
     homeAssistant,
     loadFitnessConfig,
     openaiApiKey,
+    httpClient,
     logger = console
   } = config;
 
@@ -310,13 +314,13 @@ export function createFitnessServices(config) {
   let haGateway = null;
   let ambientLedController = null;
 
-  if (homeAssistant?.baseUrl && homeAssistant?.token) {
+  if (homeAssistant?.baseUrl && homeAssistant?.token && httpClient) {
     haGateway = new HomeAssistantAdapter(
       {
         baseUrl: homeAssistant.baseUrl,
         token: homeAssistant.token
       },
-      { logger }
+      { httpClient, logger }
     );
 
     // Ambient LED controller (uses home automation gateway)
@@ -331,12 +335,12 @@ export function createFitnessServices(config) {
     });
   }
 
-  // Voice memo transcription (optional - requires OpenAI API key)
+  // Voice memo transcription (optional - requires OpenAI API key and httpClient)
   let transcriptionService = null;
-  if (openaiApiKey) {
+  if (openaiApiKey && httpClient) {
     const openaiAdapter = new OpenAIAdapter(
       { apiKey: openaiApiKey },
-      { logger }
+      { httpClient, logger }
     );
     transcriptionService = new VoiceMemoTranscriptionService({
       openaiAdapter,
@@ -718,23 +722,24 @@ export function createExternalProxyApiRouter(config) {
  * @param {number} [config.remoteExec.port] - SSH port
  * @param {string} [config.remoteExec.privateKey] - Path to SSH private key
  * @param {string} [config.remoteExec.knownHostsPath] - Path to known_hosts
+ * @param {Object} [config.httpClient] - HTTP client for making requests
  * @param {Object} [config.logger] - Logger instance
  * @returns {Object} Home automation adapters
  */
 export function createHomeAutomationAdapters(config) {
-  const { logger = console } = config;
+  const { httpClient, logger = console } = config;
 
   // Home Assistant gateway (optional - requires baseUrl and token)
   let haGateway = null;
   let tvAdapter = null;
 
-  if (config.homeAssistant?.baseUrl && config.homeAssistant?.token) {
+  if (config.homeAssistant?.baseUrl && config.homeAssistant?.token && httpClient) {
     haGateway = new HomeAssistantAdapter(
       {
         baseUrl: config.homeAssistant.baseUrl,
         token: config.homeAssistant.token
       },
-      { logger }
+      { httpClient, logger }
     );
 
     // TV control adapter (uses HA gateway)
@@ -2001,8 +2006,8 @@ export function createHarvesterServices(config) {
   // Create AI gateway if not provided (for Shopping harvester)
   const effectiveAiGateway = aiGateway || (() => {
     const openaiKey = configService.getSecret('OPENAI_API_KEY');
-    if (!openaiKey) return null;
-    return new OpenAIAdapter({ apiKey: openaiKey }, { logger });
+    if (!openaiKey || !httpClient) return null;
+    return new OpenAIAdapter({ apiKey: openaiKey }, { httpClient, logger });
   })();
 
   // Create harvester service

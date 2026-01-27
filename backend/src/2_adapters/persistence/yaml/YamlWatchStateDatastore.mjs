@@ -1,12 +1,12 @@
 // backend/src/2_adapters/persistence/yaml/YamlWatchStateDatastore.mjs
 import path from 'path';
-import { WatchState } from '../../../1_domains/content/entities/WatchState.mjs';
+import { WatchState } from '#domains/content/entities/WatchState.mjs';
 import {
   ensureDir,
   loadYamlSafe,
   saveYaml,
   deleteYaml
-} from '../../../0_system/utils/FileIO.mjs';
+} from '#system/utils/FileIO.mjs';
 import { IWatchStateDatastore } from '#apps/content/ports/IWatchStateDatastore.mjs';
 
 /**

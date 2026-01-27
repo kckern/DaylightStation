@@ -27,9 +27,9 @@ import {
   saveYamlToPath,
   resolveYamlPath,
   deleteFile
-} from '../../0_system/utils/FileIO.mjs';
-import { nowTs24 } from '../../0_system/utils/index.mjs';
-import { IConversationStateDatastore } from '../../3_applications/shared/ports/index.mjs';
+} from '#system/utils/FileIO.mjs';
+import { nowTs24 } from '#system/utils/index.mjs';
+import { IConversationStateDatastore } from '#apps/shared/ports/index.mjs';
 
 export class YamlConversationStateDatastore extends IConversationStateDatastore {
   #basePath;

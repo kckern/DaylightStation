@@ -1,7 +1,7 @@
 // backend/src/2_adapters/nutribot/NutribotInputRouter.mjs
 
 import { BaseInputRouter } from '../BaseInputRouter.mjs';
-import { decodeCallback, CallbackActions } from '../../3_applications/nutribot/lib/callback.mjs';
+import { decodeCallback, CallbackActions } from '#apps/nutribot/lib/callback.mjs';
 
 /**
  * Nutribot Input Router

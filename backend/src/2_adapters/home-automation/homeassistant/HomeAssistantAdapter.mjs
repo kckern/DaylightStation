@@ -5,7 +5,7 @@
  * state queries, scene activation, and script execution.
  */
 
-import { nowTs24 } from '../../../0_system/utils/index.mjs';
+import { nowTs24 } from '#system/utils/index.mjs';
 
 /**
  * @typedef {import('../../../3_applications/home-automation/ports/IHomeAutomationGateway.mjs').DeviceState} DeviceState

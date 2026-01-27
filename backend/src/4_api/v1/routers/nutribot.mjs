@@ -19,7 +19,7 @@ import {
   errorHandlerMiddleware,
   requestLoggerMiddleware,
   asyncHandler,
-} from '../../../0_system/http/middleware/index.mjs';
+} from '#system/http/middleware/index.mjs';
 
 /**
  * Create NutriBot Express Router

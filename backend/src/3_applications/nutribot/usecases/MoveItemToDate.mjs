@@ -6,7 +6,7 @@
  * If newDate is not provided, shows a date picker first.
  */
 
-import { NutriLog } from '../../../1_domains/nutrition/entities/NutriLog.mjs';
+import { NutriLog } from '#domains/nutrition/entities/NutriLog.mjs';
 
 /**
  * Move item to date use case

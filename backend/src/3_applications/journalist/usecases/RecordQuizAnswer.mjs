@@ -5,8 +5,8 @@
  * Records a user's answer to a quiz question.
  */
 
-import { QuizAnswer } from '../../../1_domains/journalist/entities/QuizAnswer.mjs';
-import { nowDate, nowTs24 } from '../../../0_system/utils/time.mjs';
+import { QuizAnswer } from '#domains/journalist/entities/QuizAnswer.mjs';
+import { nowDate, nowTs24 } from '#system/utils/time.mjs';
 
 /**
  * Record quiz answer use case

@@ -5,7 +5,7 @@
  * Sends the generated debrief to the user via messaging gateway with reply keyboard
  */
 
-import { nowTs24 } from '../../../0_system/utils/index.mjs';
+import { nowTs24 } from '#system/utils/index.mjs';
 
 // Source icon mapping
 const SOURCE_ICONS = {

@@ -1,14 +1,14 @@
 // backend/src/2_adapters/content/media/plex/PlexAdapter.mjs
 import path from 'path';
-import { ListableItem } from '../../../../1_domains/content/capabilities/Listable.mjs';
-import { PlayableItem } from '../../../../1_domains/content/capabilities/Playable.mjs';
+import { ListableItem } from '#domains/content/capabilities/Listable.mjs';
+import { PlayableItem } from '#domains/content/capabilities/Playable.mjs';
 import { PlexClient } from './PlexClient.mjs';
 import {
   dirExists,
   listYamlFiles,
   loadYamlFromPath,
   saveYamlToPath
-} from '../../../../0_system/utils/FileIO.mjs';
+} from '#system/utils/FileIO.mjs';
 
 /**
  * Plex content source adapter.
