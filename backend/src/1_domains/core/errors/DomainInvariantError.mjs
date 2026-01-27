@@ -12,3 +12,5 @@ export class DomainInvariantError extends Error {
     this.details = details;
   }
 }
+
+export default DomainInvariantError;
