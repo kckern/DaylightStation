@@ -9,9 +9,9 @@
 
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import fs from 'fs';
 import path from 'path';
 import { nowTs24 } from '../../../0_system/utils/index.mjs';
+import { fileExists, ensureDir, writeFile, readFile } from '#system/utils/FileIO.mjs';
 
 const execAsync = promisify(exec);
 
@@ -194,16 +194,14 @@ export class RemoteExecAdapter {
 
     try {
       const dir = path.dirname(resolvedPath);
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-      }
+      ensureDir(dir);
 
-      if (!fs.existsSync(resolvedPath)) {
-        fs.writeFileSync(resolvedPath, '', { mode: 0o600 });
+      if (!fileExists(resolvedPath)) {
+        writeFile(resolvedPath, '');
         this.#logger.info?.('remote-exec.knownHostsCreated', { path: resolvedPath });
         isEmpty = true;
       } else {
-        const content = fs.readFileSync(resolvedPath, 'utf8');
+        const content = readFile(resolvedPath);
         isEmpty = !content || content.trim().length === 0;
       }
     } catch (err) {

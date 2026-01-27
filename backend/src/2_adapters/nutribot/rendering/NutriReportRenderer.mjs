@@ -8,8 +8,8 @@
 
 import { createCanvas, registerFont, loadImage } from 'canvas';
 import path from 'path';
-import fs from 'fs';
 import { nutriReportTheme as theme } from './nutriReportTheme.mjs';
+import { fileExists, ensureDir, writeBinary } from '#system/utils/FileIO.mjs';
 
 /**
  * Canvas-based report renderer
@@ -81,7 +81,7 @@ export class NutriReportRenderer {
 
     const fontPath = path.join(this.#fontDir, 'roboto-condensed', 'RobotoCondensed-Regular.ttf');
 
-    if (!fs.existsSync(fontPath)) {
+    if (!fileExists(fontPath)) {
       this.#fontRegistrationError = `Font file not found: ${fontPath}`;
       this.#logger.warn?.('nutribot.renderer.font_not_found', { error: this.#fontRegistrationError });
       return false;
@@ -261,7 +261,7 @@ export class NutriReportRenderer {
       if (foodItem.icon && !iconCache.has(foodItem.icon)) {
         const iconPath = path.join(this.#iconDir, foodItem.icon + '.png');
         try {
-          if (fs.existsSync(iconPath)) {
+          if (fileExists(iconPath)) {
             iconCache.set(foodItem.icon, await loadImage(iconPath));
             iconLoadResults.push({ icon: foodItem.icon, status: 'loaded' });
           } else {
@@ -492,7 +492,7 @@ export class NutriReportRenderer {
       // Draw icon in center
       try {
         const iconPath = path.join(this.#iconDir, stat.icon + '.png');
-        if (fs.existsSync(iconPath)) {
+        if (fileExists(iconPath)) {
           const iconImg = await loadImage(iconPath);
           ctx.drawImage(iconImg, midPoint - 12, rowY - 24, 24, 24);
         }
@@ -607,14 +607,11 @@ export class NutriReportRenderer {
   async renderDailyReportToFile(report) {
     const buffer = await this.renderDailyReport(report);
 
-    const fs = await import('fs/promises');
-    const path = await import('path');
     const os = await import('os');
-
-    const tmpDir = path.default.join(os.default.tmpdir(), 'nutribot-reports');
-    await fs.default.mkdir(tmpDir, { recursive: true });
-    const pngPath = path.default.join(tmpDir, `report-${report.date}-${Date.now()}.png`);
-    await fs.default.writeFile(pngPath, buffer);
+    const tmpDir = path.join(os.default.tmpdir(), 'nutribot-reports');
+    ensureDir(tmpDir);
+    const pngPath = path.join(tmpDir, `report-${report.date}-${Date.now()}.png`);
+    writeBinary(pngPath, buffer);
 
     this.#logger.debug?.('nutribot.renderer.file_saved', { path: pngPath });
     return pngPath;
