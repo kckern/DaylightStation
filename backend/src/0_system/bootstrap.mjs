@@ -10,11 +10,11 @@ import { PlexAdapter } from '../2_adapters/content/media/plex/PlexAdapter.mjs';
 import { LocalContentAdapter } from '../2_adapters/content/local-content/LocalContentAdapter.mjs';
 import { FolderAdapter } from '../2_adapters/content/folder/FolderAdapter.mjs';
 import { YamlWatchStateDatastore } from '../2_adapters/persistence/yaml/YamlWatchStateDatastore.mjs';
-import { createContentRouter } from '../4_api/routers/content.mjs';
-import { createProxyRouter } from '../4_api/routers/proxy.mjs';
-import { createLocalContentRouter } from '../4_api/routers/localContent.mjs';
-import { createPlayRouter } from '../4_api/routers/play.mjs';
-import { createListRouter } from '../4_api/routers/list.mjs';
+import { createContentRouter } from '../4_api/v1/routers/content.mjs';
+import { createProxyRouter } from '../4_api/v1/routers/proxy.mjs';
+import { createLocalContentRouter } from '../4_api/v1/routers/localContent.mjs';
+import { createPlayRouter } from '../4_api/v1/routers/play.mjs';
+import { createListRouter } from '../4_api/v1/routers/list.mjs';
 
 // Fitness domain imports
 import { SessionService } from '../1_domains/fitness/services/SessionService.mjs';
@@ -23,7 +23,7 @@ import { AmbientLedAdapter } from '../2_adapters/fitness/AmbientLedAdapter.mjs';
 import { VoiceMemoTranscriptionService } from '../2_adapters/fitness/VoiceMemoTranscriptionService.mjs';
 import { OpenAIAdapter } from '../2_adapters/ai/OpenAIAdapter.mjs';
 import { FitnessSyncerAdapter } from '../2_adapters/harvester/fitness/FitnessSyncerAdapter.mjs';
-import { createFitnessRouter } from '../4_api/routers/fitness.mjs';
+import { createFitnessRouter } from '../4_api/v1/routers/fitness.mjs';
 
 // Home automation imports
 import { HomeAssistantAdapter } from '../2_adapters/home-automation/homeassistant/HomeAssistantAdapter.mjs';
@@ -31,14 +31,14 @@ import { TVControlAdapter } from '../2_adapters/home-automation/tv/TVControlAdap
 import { KioskAdapter } from '../2_adapters/home-automation/kiosk/KioskAdapter.mjs';
 import { TaskerAdapter } from '../2_adapters/home-automation/tasker/TaskerAdapter.mjs';
 import { RemoteExecAdapter } from '../2_adapters/home-automation/remote-exec/RemoteExecAdapter.mjs';
-import { createHomeAutomationRouter } from '../4_api/routers/homeAutomation.mjs';
+import { createHomeAutomationRouter } from '../4_api/v1/routers/homeAutomation.mjs';
 
 // Hardware adapter imports
 import { ThermalPrinterAdapter } from '../2_adapters/hardware/thermal-printer/ThermalPrinterAdapter.mjs';
 import { TTSAdapter } from '../2_adapters/hardware/tts/TTSAdapter.mjs';
 import { MQTTSensorAdapter } from '../2_adapters/hardware/mqtt-sensor/MQTTSensorAdapter.mjs';
-import { createPrinterRouter } from '../4_api/routers/printer.mjs';
-import { createTTSRouter } from '../4_api/routers/tts.mjs';
+import { createPrinterRouter } from '../4_api/v1/routers/printer.mjs';
+import { createTTSRouter } from '../4_api/v1/routers/tts.mjs';
 
 // Proxy infrastructure imports
 import { ProxyService } from './proxy/ProxyService.mjs';
@@ -46,7 +46,7 @@ import { PlexProxyAdapter } from '../2_adapters/proxy/PlexProxyAdapter.mjs';
 import { ImmichProxyAdapter } from '../2_adapters/proxy/ImmichProxyAdapter.mjs';
 import { AudiobookshelfProxyAdapter } from '../2_adapters/proxy/AudiobookshelfProxyAdapter.mjs';
 import { FreshRSSProxyAdapter } from '../2_adapters/proxy/FreshRSSProxyAdapter.mjs';
-import { createExternalProxyRouter } from '../4_api/routers/externalProxy.mjs';
+import { createExternalProxyRouter } from '../4_api/v1/routers/externalProxy.mjs';
 
 // Finance domain imports
 import { YamlFinanceDatastore } from '../2_adapters/persistence/yaml/YamlFinanceDatastore.mjs';
@@ -55,12 +55,12 @@ import { BudgetCompilationService } from '../3_applications/finance/BudgetCompil
 import { FinanceHarvestService } from '../3_applications/finance/FinanceHarvestService.mjs';
 import { TransactionCategorizationService } from '../3_applications/finance/TransactionCategorizationService.mjs';
 import { PayrollSyncService } from '../3_applications/finance/PayrollSyncService.mjs';
-import { createFinanceRouter } from '../4_api/routers/finance.mjs';
+import { createFinanceRouter } from '../4_api/v1/routers/finance.mjs';
 
 // Gratitude domain imports
 import { GratitudeService } from '../1_domains/gratitude/services/GratitudeService.mjs';
 import { YamlGratitudeDatastore } from '../2_adapters/persistence/yaml/YamlGratitudeDatastore.mjs';
-import { createGratitudeRouter } from '../4_api/routers/gratitude.mjs';
+import { createGratitudeRouter } from '../4_api/v1/routers/gratitude.mjs';
 
 // Messaging domain imports
 import { ConversationService } from '../1_domains/messaging/services/ConversationService.mjs';
@@ -68,13 +68,13 @@ import { NotificationService } from '../1_domains/messaging/services/Notificatio
 import { YamlConversationDatastore } from '../2_adapters/persistence/yaml/YamlConversationDatastore.mjs';
 import { TelegramAdapter } from '../2_adapters/messaging/TelegramAdapter.mjs';
 import { GmailAdapter } from '../2_adapters/messaging/GmailAdapter.mjs';
-import { createMessagingRouter } from '../4_api/routers/messaging.mjs';
+import { createMessagingRouter } from '../4_api/v1/routers/messaging.mjs';
 
 // Journalist application imports
 import { JournalistContainer } from '../3_applications/journalist/JournalistContainer.mjs';
 import { YamlJournalEntryRepository } from '../2_adapters/persistence/yaml/YamlJournalEntryRepository.mjs';
 import { YamlMessageQueueRepository } from '../2_adapters/persistence/yaml/YamlMessageQueueRepository.mjs';
-import { createJournalistRouter } from '../4_api/routers/journalist.mjs';
+import { createJournalistRouter } from '../4_api/v1/routers/journalist.mjs';
 
 // Nutribot application imports
 import { NutribotContainer } from '../3_applications/nutribot/NutribotContainer.mjs';
@@ -82,7 +82,7 @@ import { NutriBotConfig } from '../3_applications/nutribot/config/NutriBotConfig
 import { YamlFoodLogDatastore } from '../2_adapters/persistence/yaml/YamlFoodLogDatastore.mjs';
 import { YamlNutriListDatastore } from '../2_adapters/persistence/yaml/YamlNutriListDatastore.mjs';
 import { YamlNutriCoachDatastore } from '../2_adapters/persistence/yaml/YamlNutriCoachDatastore.mjs';
-import { createNutribotRouter } from '../4_api/routers/nutribot.mjs';
+import { createNutribotRouter } from '../4_api/v1/routers/nutribot.mjs';
 
 // Nutribot DDD adapters
 import { YamlNutriLogDatastore } from '../2_adapters/persistence/yaml/YamlNutriLogDatastore.mjs';
@@ -94,32 +94,32 @@ import { NutritionixAdapter } from '../2_adapters/nutrition/NutritionixAdapter.m
 // Homebot application imports
 import { HomeBotContainer } from '../3_applications/homebot/HomeBotContainer.mjs';
 import { ConfigHouseholdAdapter } from '../2_adapters/homebot/index.mjs';
-import { createHomebotRouter } from '../4_api/routers/homebot.mjs';
+import { createHomebotRouter } from '../4_api/v1/routers/homebot.mjs';
 
 // Agents application imports
 import { AgentOrchestrator, EchoAgent } from '../3_applications/agents/index.mjs';
 import { MastraAdapter } from '../2_adapters/agents/index.mjs';
-import { createAgentsRouter } from '../4_api/routers/agents.mjs';
+import { createAgentsRouter } from '../4_api/v1/routers/agents.mjs';
 
 // Health domain imports
 import { HealthAggregationService } from '../1_domains/health/services/HealthAggregationService.mjs';
 import { YamlHealthDatastore } from '../2_adapters/persistence/yaml/YamlHealthDatastore.mjs';
-import { createHealthRouter } from '../4_api/routers/health.mjs';
+import { createHealthRouter } from '../4_api/v1/routers/health.mjs';
 
 // Entropy application imports (uses config/logging)
 import { EntropyService } from '../3_applications/entropy/services/EntropyService.mjs';
 import { YamlEntropyReader } from '../2_adapters/entropy/YamlEntropyReader.mjs';
-import { createEntropyRouter } from '../4_api/routers/entropy.mjs';
+import { createEntropyRouter } from '../4_api/v1/routers/entropy.mjs';
 
 // Lifelog domain imports
 import { LifelogAggregator } from '../1_domains/lifelog/services/LifelogAggregator.mjs';
-import { createLifelogRouter } from '../4_api/routers/lifelog.mjs';
+import { createLifelogRouter } from '../4_api/v1/routers/lifelog.mjs';
 
 // Static assets router
-import { createStaticRouter } from '../4_api/routers/static.mjs';
+import { createStaticRouter } from '../4_api/v1/routers/static.mjs';
 
 // Calendar router
-import { createCalendarRouter } from '../4_api/routers/calendar.mjs';
+import { createCalendarRouter } from '../4_api/v1/routers/calendar.mjs';
 
 // Harvester application imports
 import { HarvesterService, HarvesterJobExecutor } from '../3_applications/harvester/index.mjs';

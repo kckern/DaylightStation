@@ -70,14 +70,14 @@ import { UPCGateway } from './2_adapters/nutribot/UPCGateway.mjs';
 
 // HTTP middleware
 import { createDevProxy } from './0_system/http/middleware/index.mjs';
-import { createEventBusRouter } from './4_api/routers/admin/eventbus.mjs';
+import { createEventBusRouter } from './4_api/v1/routers/admin/eventbus.mjs';
 
 // Scheduling domain
 import { SchedulerService } from './1_domains/scheduling/services/SchedulerService.mjs';
 import { YamlJobDatastore } from './2_adapters/scheduling/YamlJobDatastore.mjs';
 import { YamlStateDatastore } from './2_adapters/scheduling/YamlStateDatastore.mjs';
 import { Scheduler } from './0_system/scheduling/Scheduler.mjs';
-import { createSchedulingRouter } from './4_api/routers/scheduling.mjs';
+import { createSchedulingRouter } from './4_api/v1/routers/scheduling.mjs';
 
 // Conversation state persistence
 import { YamlConversationStateDatastore } from './2_adapters/messaging/YamlConversationStateDatastore.mjs';
@@ -87,13 +87,13 @@ import { MediaJobExecutor } from './3_applications/media/MediaJobExecutor.mjs';
 import { createYouTubeJobHandler } from './3_applications/media/YouTubeJobHandler.mjs';
 
 // Harvest domain (data collection)
-import { createHarvestRouter } from './4_api/routers/harvest.mjs';
+import { createHarvestRouter } from './4_api/v1/routers/harvest.mjs';
 
 // FileIO utilities for image saving
 import { saveImage as saveImageToFile } from './0_system/utils/FileIO.mjs';
 // API versioning
-import { createApiV1Router } from './4_api/routers/apiV1.mjs';
-import { createItemRouter } from './4_api/routers/item.mjs';
+import { createApiV1Router } from './4_api/v1/routers/apiV1.mjs';
+import { createItemRouter } from './4_api/v1/routers/item.mjs';
 
 const __dirname = path.dirname(new URL(import.meta.url).pathname);
 
