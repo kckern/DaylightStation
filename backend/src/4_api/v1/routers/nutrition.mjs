@@ -4,23 +4,20 @@
  * REST API endpoints for nutrition/food logging operations.
  */
 import express from 'express';
-import { FoodLogService } from '../../1_domains/nutrition/services/FoodLogService.mjs';
-import { YamlFoodLogDatastore } from '../../2_adapters/persistence/yaml/YamlFoodLogDatastore.mjs';
+import { nowDate } from '../../0_system/utils/time.mjs';
 
 const router = express.Router();
 
 /**
  * Create router with dependencies
  * @param {Object} deps
- * @param {string} deps.dataRoot - Data root directory
+ * @param {Object} deps.foodLogService - Pre-built FoodLogService instance
+ * @param {Object} deps.foodLogStore - Pre-built YamlFoodLogDatastore instance
  * @param {Object} [deps.logger] - Logger instance
  * @returns {express.Router}
  */
 export function createNutritionRouter(deps) {
-  const { dataRoot, logger } = deps;
-
-  const foodLogStore = new YamlFoodLogDatastore({ dataRoot });
-  const foodLogService = new FoodLogService({ foodLogStore });
+  const { foodLogService, foodLogStore, logger } = deps;
 
   /**
    * GET /api/nutrition

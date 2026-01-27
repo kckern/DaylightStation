@@ -67,6 +67,11 @@ import { JournalService } from '../1_domains/journaling/services/JournalService.
 import { YamlJournalDatastore } from '../2_adapters/persistence/yaml/YamlJournalDatastore.mjs';
 import { createJournalingRouter } from '../4_api/v1/routers/journaling.mjs';
 
+// Nutrition domain imports
+import { FoodLogService } from '../1_domains/nutrition/services/FoodLogService.mjs';
+import { YamlFoodLogDatastore } from '../2_adapters/persistence/yaml/YamlFoodLogDatastore.mjs';
+import { createNutritionRouter } from '../4_api/v1/routers/nutrition.mjs';
+
 // Messaging domain imports
 import { ConversationService } from '../1_domains/messaging/services/ConversationService.mjs';
 import { NotificationService } from '../1_domains/messaging/services/NotificationService.mjs';
@@ -84,7 +89,6 @@ import { createJournalistRouter } from '../4_api/v1/routers/journalist.mjs';
 // Nutribot application imports
 import { NutribotContainer } from '../3_applications/nutribot/NutribotContainer.mjs';
 import { NutriBotConfig } from '../3_applications/nutribot/config/NutriBotConfig.mjs';
-import { YamlFoodLogDatastore } from '../2_adapters/persistence/yaml/YamlFoodLogDatastore.mjs';
 import { YamlNutriListDatastore } from '../2_adapters/persistence/yaml/YamlNutriListDatastore.mjs';
 import { YamlNutriCoachDatastore } from '../2_adapters/persistence/yaml/YamlNutriCoachDatastore.mjs';
 import { createNutribotRouter } from '../4_api/v1/routers/nutribot.mjs';
@@ -1075,6 +1079,58 @@ export function createJournalingApiRouter(config) {
   return createJournalingRouter({
     journalService: journalingServices.journalService,
     journalStore: journalingServices.journalStore,
+    logger
+  });
+}
+
+// =============================================================================
+// Nutrition Domain Bootstrap
+// =============================================================================
+
+/**
+ * Create nutrition domain services
+ * @param {Object} config
+ * @param {string} config.dataRoot - Data root directory
+ * @param {Object} [config.logger] - Logger instance
+ * @returns {Object} Nutrition services
+ */
+export function createNutritionServices(config) {
+  const { dataRoot, logger = console } = config;
+
+  // Food log store (YAML persistence)
+  const foodLogStore = new YamlFoodLogDatastore({
+    dataRoot,
+    logger
+  });
+
+  // Food log service
+  const foodLogService = new FoodLogService({
+    foodLogStore,
+    logger
+  });
+
+  return {
+    foodLogStore,
+    foodLogService
+  };
+}
+
+/**
+ * Create nutrition API router
+ * @param {Object} config
+ * @param {Object} config.nutritionServices - Services from createNutritionServices
+ * @param {Object} [config.logger] - Logger instance
+ * @returns {express.Router}
+ */
+export function createNutritionApiRouter(config) {
+  const {
+    nutritionServices,
+    logger = console
+  } = config;
+
+  return createNutritionRouter({
+    foodLogService: nutritionServices.foodLogService,
+    foodLogStore: nutritionServices.foodLogStore,
     logger
   });
 }
