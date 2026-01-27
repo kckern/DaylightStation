@@ -5,33 +5,19 @@
  * Supports multiple AI providers (OpenAI, Anthropic).
  */
 import express from 'express';
-import { OpenAIAdapter } from '../../2_adapters/ai/OpenAIAdapter.mjs';
-import { AnthropicAdapter } from '../../2_adapters/ai/AnthropicAdapter.mjs';
 
 const router = express.Router();
 
 /**
- * Create router with dependencies
+ * Create router with pre-built adapters
  * @param {Object} deps
- * @param {Object} [deps.openaiConfig] - OpenAI config { apiKey, model }
- * @param {Object} [deps.anthropicConfig] - Anthropic config { apiKey, model }
+ * @param {Object} [deps.openaiAdapter] - Pre-built OpenAI adapter (optional)
+ * @param {Object} [deps.anthropicAdapter] - Pre-built Anthropic adapter (optional)
  * @param {Object} [deps.logger] - Logger instance
  * @returns {express.Router}
  */
 export function createAIRouter(deps) {
-  const { openaiConfig, anthropicConfig, logger } = deps;
-
-  // Initialize adapters
-  let openaiAdapter = null;
-  let anthropicAdapter = null;
-
-  if (openaiConfig?.apiKey) {
-    openaiAdapter = new OpenAIAdapter(openaiConfig, { logger });
-  }
-
-  if (anthropicConfig?.apiKey) {
-    anthropicAdapter = new AnthropicAdapter(anthropicConfig, { logger });
-  }
+  const { openaiAdapter, anthropicAdapter, logger } = deps;
 
   /**
    * Get adapter by provider name

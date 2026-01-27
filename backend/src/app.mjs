@@ -62,6 +62,9 @@ import {
   createAgentsApiRouter
 } from './0_system/bootstrap.mjs';
 
+// AI router import
+import { createAIRouter } from './4_api/v1/routers/ai.mjs';
+
 // Routing toggle system
 import { loadRoutingConfig } from './0_system/routing/index.mjs';
 
@@ -795,6 +798,35 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Agents application router
   v1Routers.agents = createAgentsApiRouter({
     logger: rootLogger.child({ module: 'agents-api' })
+  });
+
+  // AI API router - provides direct AI endpoints (/api/ai/*)
+  // Create adapters for OpenAI and Anthropic
+  const anthropicApiKey = configService.getSecret('ANTHROPIC_API_KEY') || '';
+
+  let aiOpenaiAdapter = null;
+  let aiAnthropicAdapter = null;
+
+  if (openaiApiKey) {
+    const { OpenAIAdapter } = await import('./2_adapters/ai/OpenAIAdapter.mjs');
+    aiOpenaiAdapter = new OpenAIAdapter(
+      { apiKey: openaiApiKey },
+      { logger: rootLogger.child({ module: 'ai-openai' }) }
+    );
+  }
+
+  if (anthropicApiKey) {
+    const { AnthropicAdapter } = await import('./2_adapters/ai/AnthropicAdapter.mjs');
+    aiAnthropicAdapter = new AnthropicAdapter(
+      { apiKey: anthropicApiKey },
+      { logger: rootLogger.child({ module: 'ai-anthropic' }) }
+    );
+  }
+
+  v1Routers.ai = createAIRouter({
+    openaiAdapter: aiOpenaiAdapter,
+    anthropicAdapter: aiAnthropicAdapter,
+    logger: rootLogger.child({ module: 'ai-api' })
   });
 
   // Scheduling domain - DDD replacement for legacy /cron
