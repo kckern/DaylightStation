@@ -25,9 +25,9 @@ export class HomeAssistantAdapter {
    * @param {Object} config
    * @param {string} config.baseUrl - Home Assistant base URL (e.g., 'http://homeassistant.local:8123')
    * @param {string} config.token - Long-lived access token
-   * @param {Object} [deps]
+   * @param {Object} deps
+   * @param {import('#system/services/HttpClient.mjs').HttpClient} deps.httpClient
    * @param {Object} [deps.logger] - Logger instance
-   * @param {Object} [deps.httpClient] - HTTP client (defaults to fetch)
    */
   constructor(config, deps = {}) {
     if (!config?.baseUrl) {
@@ -36,12 +36,15 @@ export class HomeAssistantAdapter {
     if (!config?.token) {
       throw new Error('HomeAssistantAdapter requires token');
     }
+    if (!deps.httpClient) {
+      throw new Error('HomeAssistantAdapter requires httpClient');
+    }
 
     // Normalize baseUrl (remove trailing slash)
     this.#baseUrl = config.baseUrl.replace(/\/$/, '');
     this.#token = config.token;
     this.#logger = deps.logger || console;
-    this.#httpClient = deps.httpClient || null;
+    this.#httpClient = deps.httpClient;
 
     this.#metrics = {
       startedAt: Date.now(),
@@ -287,30 +290,22 @@ export class HomeAssistantAdapter {
     try {
       let response;
 
-      if (this.#httpClient) {
-        response = await this.#httpClient.request({ method, url, headers, data });
+      if (method === 'GET') {
+        response = await this.#httpClient.get(url, { headers });
       } else {
-        const options = {
-          method,
-          headers
-        };
-        if (data && method !== 'GET') {
-          options.body = JSON.stringify(data);
-        }
-        const fetchResponse = await fetch(url, options);
-
-        if (!fetchResponse.ok) {
-          throw new Error(`HTTP ${fetchResponse.status}: ${fetchResponse.statusText}`);
-        }
-
-        response = await fetchResponse.json();
+        response = await this.#httpClient.post(url, data, { headers });
       }
 
       this.#metrics.successCount++;
-      return response;
+      return response.data;
     } catch (error) {
       this.#metrics.errorCount++;
-      this.#logger.error?.('ha.api.error', { method, path, error: error.message });
+      this.#logger.error?.('ha.api.error', {
+        method,
+        path,
+        error: error.message,
+        code: error.code
+      });
       throw error;
     }
   }
