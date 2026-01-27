@@ -333,19 +333,40 @@ function loadUserAuth(dataDir) {
 }
 
 function loadHouseholdAuth(dataDir) {
-  const householdsDir = path.join(dataDir, 'households');
   const auth = {};
 
-  for (const hid of listDirs(householdsDir)) {
-    const authDir = path.join(householdsDir, hid, 'auth');
-    if (!fs.existsSync(authDir)) continue;
+  // Try new flat structure first
+  const flatDirs = listHouseholdDirs(dataDir);
 
-    auth[hid] = {};
-    for (const file of listYamlFiles(authDir)) {
-      const service = path.basename(file, '.yml');
-      const creds = readYaml(file);
-      if (creds) {
-        auth[hid][service] = creds;
+  if (flatDirs.length > 0) {
+    for (const dir of flatDirs) {
+      const householdId = parseHouseholdId(dir);
+      const authDir = path.join(dataDir, dir, 'auth');
+      if (!fs.existsSync(authDir)) continue;
+
+      auth[householdId] = {};
+      for (const file of listYamlFiles(authDir)) {
+        const service = path.basename(file, '.yml');
+        const creds = readYaml(file);
+        if (creds) {
+          auth[householdId][service] = creds;
+        }
+      }
+    }
+  } else {
+    // Fall back to old nested structure
+    const householdsDir = path.join(dataDir, 'households');
+    for (const hid of listDirs(householdsDir)) {
+      const authDir = path.join(householdsDir, hid, 'auth');
+      if (!fs.existsSync(authDir)) continue;
+
+      auth[hid] = {};
+      for (const file of listYamlFiles(authDir)) {
+        const service = path.basename(file, '.yml');
+        const creds = readYaml(file);
+        if (creds) {
+          auth[hid][service] = creds;
+        }
       }
     }
   }
