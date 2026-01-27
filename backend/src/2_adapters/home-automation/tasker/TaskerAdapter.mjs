@@ -29,15 +29,18 @@ export class TaskerAdapter {
    * @param {Object} config
    * @param {string} config.host - Android device IP or hostname
    * @param {number} config.port - Tasker HTTP server port
-   * @param {Object} [deps]
+   * @param {Object} deps
+   * @param {import('#system/services/HttpClient.mjs').HttpClient} deps.httpClient
    * @param {Object} [deps.logger] - Logger instance
-   * @param {Object} [deps.httpClient] - HTTP client (defaults to fetch)
    */
   constructor(config, deps = {}) {
+    if (!deps.httpClient) {
+      throw new Error('TaskerAdapter requires httpClient');
+    }
     this.#host = config.host;
     this.#port = config.port;
     this.#logger = deps.logger || console;
-    this.#httpClient = deps.httpClient || null;
+    this.#httpClient = deps.httpClient;
 
     this.#metrics = {
       startedAt: Date.now(),
@@ -186,14 +189,17 @@ export class TaskerAdapter {
   }
 
   /**
-   * Fetch wrapper
+   * Fetch wrapper - returns a fetch-like response object
    * @private
    */
   async #fetch(url) {
-    if (this.#httpClient) {
-      return this.#httpClient.get(url);
-    }
-    return fetch(url);
+    const response = await this.#httpClient.get(url);
+    // Return fetch-like object for compatibility
+    return {
+      ok: response.ok,
+      status: response.status,
+      text: async () => typeof response.data === 'string' ? response.data : JSON.stringify(response.data)
+    };
   }
 
   /**
