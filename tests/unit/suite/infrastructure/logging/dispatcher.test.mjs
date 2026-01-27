@@ -7,7 +7,7 @@ import {
   getDispatcher,
   isLoggingInitialized,
   resetLogging
-} from '#backend/src/0_system/logging/dispatcher.js';
+} from '#backend/src/0_system/logging/dispatcher.mjs';
 
 describe('LogDispatcher', () => {
   let dispatcher;

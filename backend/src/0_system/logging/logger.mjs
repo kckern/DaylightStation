@@ -5,7 +5,7 @@
  */
 
 import os from 'os';
-import { getDispatcher, isLoggingInitialized } from './dispatcher.js';
+import { getDispatcher, isLoggingInitialized } from './dispatcher.mjs';
 
 const hostname = os.hostname();
 

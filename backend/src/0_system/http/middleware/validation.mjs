@@ -7,7 +7,7 @@
  * 2. Payload structure (message, callback_query, or edited_message)
  */
 
-import { createLogger } from '../../logging/logger.js';
+import { createLogger } from '../../logging/logger.mjs';
 
 const logger = createLogger({ source: 'middleware', app: 'http' });
 

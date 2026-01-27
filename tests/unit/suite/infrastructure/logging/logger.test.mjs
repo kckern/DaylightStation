@@ -1,11 +1,11 @@
 // tests/unit/infrastructure/logging/logger.test.mjs
 import { jest } from '@jest/globals';
-import { createLogger } from '#backend/src/0_system/logging/logger.js';
+import { createLogger } from '#backend/src/0_system/logging/logger.mjs';
 import {
   initializeLogging,
   resetLogging,
   getDispatcher
-} from '#backend/src/0_system/logging/dispatcher.js';
+} from '#backend/src/0_system/logging/dispatcher.mjs';
 
 describe('createLogger', () => {
   beforeEach(() => {

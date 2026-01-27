@@ -6,7 +6,7 @@
  * using household-scoped identity mappings from ConfigService.
  */
 
-import { createLogger } from '../logging/logger.js';
+import { createLogger } from '../logging/logger.mjs';
 
 /**
  * Resolves platform users to system usernames

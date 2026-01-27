@@ -5,7 +5,7 @@
  * Logs HTTP requests and responses.
  */
 
-import { createLogger } from '../../logging/logger.js';
+import { createLogger } from '../../logging/logger.mjs';
 
 const logger = createLogger({ source: 'http', app: 'middleware' });
 

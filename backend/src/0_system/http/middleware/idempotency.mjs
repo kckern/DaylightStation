@@ -6,7 +6,7 @@
  */
 
 import crypto from 'crypto';
-import { createLogger } from '../../logging/logger.js';
+import { createLogger } from '../../logging/logger.mjs';
 
 const logger = createLogger({ source: 'middleware', app: 'http' });
 

@@ -11,12 +11,12 @@ export {
   isLoggingInitialized,
   initializeLogging,
   resetLogging
-} from './dispatcher.js';
+} from './dispatcher.mjs';
 
-export { createLogger } from './logger.js';
-export { serializeError, extractHttpErrorDetails } from './utils.js';
-export { ingestFrontendLogs } from './ingestion.js';
-export { createConsoleTransport, createLogglyTransport, createFileTransport } from './transports/index.js';
+export { createLogger } from './logger.mjs';
+export { serializeError, extractHttpErrorDetails } from './utils.mjs';
+export { ingestFrontendLogs } from './ingestion.mjs';
+export { createConsoleTransport, createLogglyTransport, createFileTransport } from './transports/index.mjs';
 export {
   loadLoggingConfig,
   resetLoggingConfig,
@@ -25,4 +25,4 @@ export {
   resolveLogglyToken,
   resolveLogglySubdomain,
   hydrateProcessEnvFromConfigs
-} from './config.js';
+} from './config.mjs';

@@ -4,7 +4,7 @@
  * Processes incoming log events from frontend clients via WebSocket or HTTP.
  */
 
-import { getDispatcher, isLoggingInitialized } from './dispatcher.js';
+import { getDispatcher, isLoggingInitialized } from './dispatcher.mjs';
 
 /**
  * Process incoming log events from frontend
