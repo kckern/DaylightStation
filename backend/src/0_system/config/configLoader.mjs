@@ -20,6 +20,7 @@ export function loadConfig(dataDir) {
   const config = {
     system: loadSystemConfig(dataDir),
     secrets: loadSecrets(dataDir),
+    services: loadServices(dataDir),
     households: loadAllHouseholds(dataDir),
     users: loadAllUsers(dataDir),
     auth: loadAllAuth(dataDir),
@@ -153,6 +154,13 @@ function deepMerge(target, source) {
 function loadAdapters(dataDir) {
   const adaptersPath = path.join(dataDir, 'system', 'adapters.yml');
   return readYaml(adaptersPath) ?? {};
+}
+
+// ─── Services ─────────────────────────────────────────────────
+
+function loadServices(dataDir) {
+  const servicesPath = path.join(dataDir, 'system', 'services.yml');
+  return readYaml(servicesPath) ?? {};
 }
 
 // ─── Secrets ─────────────────────────────────────────────────
