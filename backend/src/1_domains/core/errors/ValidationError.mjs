@@ -14,3 +14,5 @@ export class ValidationError extends Error {
     this.details = details;
   }
 }
+
+export default ValidationError;

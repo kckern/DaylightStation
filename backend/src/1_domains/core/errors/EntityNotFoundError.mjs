@@ -13,3 +13,5 @@ export class EntityNotFoundError extends Error {
     this.details = details;
   }
 }
+
+export default EntityNotFoundError;
