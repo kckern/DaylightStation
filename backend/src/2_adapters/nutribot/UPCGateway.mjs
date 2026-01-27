@@ -16,11 +16,13 @@ const OPEN_FOOD_FACTS_API = 'https://world.openfoodfacts.org/api/v0/product';
  */
 export class UPCGateway {
   #httpClient;
+  #calorieColorService;
   #logger;
 
   /**
    * @param {Object} deps
    * @param {import('#system/services/HttpClient.mjs').HttpClient} deps.httpClient
+   * @param {import('#domains/nutrition/services/CalorieColorService.mjs').CalorieColorService} [deps.calorieColorService]
    * @param {Object} [deps.logger]
    */
   constructor(deps = {}) {
@@ -28,6 +30,7 @@ export class UPCGateway {
       throw new Error('UPCGateway requires httpClient');
     }
     this.#httpClient = deps.httpClient;
+    this.#calorieColorService = deps.calorieColorService;
     this.#logger = deps.logger || console;
   }
 
@@ -127,19 +130,25 @@ export class UPCGateway {
   }
 
   /**
-   * Infer Noom color from nutrition and serving size
-   * - Green: < 1.0 cal/g
-   * - Yellow: 1.0-2.4 cal/g
-   * - Orange: > 2.4 cal/g
+   * Infer color classification from nutrition and serving size
+   * Uses CalorieColorService if injected, otherwise falls back to inline logic
    * @private
    */
   #inferNoomColor(nutrition, categories, servingGrams = 100) {
-    // Check categories for green foods
+    // Use domain service if available
+    if (this.#calorieColorService) {
+      return this.#calorieColorService.classifyByDensity({
+        calories: nutrition.calories,
+        servingGrams,
+        categories,
+      });
+    }
+
+    // Fallback: inline logic for backwards compatibility
     const greenCategories = ['vegetables', 'fruits', 'salads', 'leafy'];
     const isGreenCategory = categories.some((cat) => greenCategories.some((g) => cat.toLowerCase().includes(g)));
     if (isGreenCategory) return 'green';
 
-    // Calculate calorie density
     const grams = Number(servingGrams) || 100;
     const calories = Number(nutrition.calories) || 0;
     const caloriesPerGram = grams > 0 ? calories / grams : 0;
