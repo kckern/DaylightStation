@@ -1,13 +1,38 @@
 // backend/src/4_api/handlers/homebot/index.mjs
 
-import { TelegramChatRef } from '../../../2_adapters/telegram/TelegramChatRef.mjs';
+/**
+ * Extract chat ID from Telegram update
+ * @param {object} update - Telegram update object
+ * @returns {string|null} Chat ID or null if not found
+ */
+function extractChatIdFromUpdate(update) {
+  const chatId =
+    update.message?.chat?.id ||
+    update.callback_query?.message?.chat?.id ||
+    update.edited_message?.chat?.id ||
+    update.channel_post?.chat?.id;
+
+  return chatId ? String(chatId) : null;
+}
+
+/**
+ * Create standardized conversation ID for Telegram
+ * Format: "telegram:b{botId}_c{chatId}"
+ * @param {string} botId
+ * @param {string} chatId
+ * @returns {string}
+ */
+function createConversationId(botId, chatId) {
+  const identifier = `b${botId}_c${chatId}`;
+  return `telegram:${identifier}`;
+}
 
 /**
  * Create webhook handler for homebot
  *
  * NOTE: This is a legacy handler. The preferred approach is to use
  * createBotWebhookHandler from 2_adapters/telegram which uses
- * standardized IInputEvent and TelegramChatRef for platform identity.
+ * standardized IInputEvent for platform identity.
  *
  * @param {Object} container - HomeBotContainer
  * @param {Object} options
@@ -37,11 +62,17 @@ export function createHomebotWebhookHandler(container, options, deps) {
         return res.sendStatus(200);
       }
 
-      // Create TelegramChatRef for platform identity
-      let telegramRef = null;
+      // Extract platform identity from update
+      let conversationId = parsed.chatId;
+      let platformUserId = null;
+
       if (botId) {
         try {
-          telegramRef = TelegramChatRef.fromTelegramUpdate(botId, update);
+          const chatId = extractChatIdFromUpdate(update);
+          if (chatId) {
+            conversationId = createConversationId(botId, chatId);
+            platformUserId = chatId;
+          }
         } catch (e) {
           console.warn('homebot.chatref.failed', { error: e.message });
         }
@@ -50,9 +81,9 @@ export function createHomebotWebhookHandler(container, options, deps) {
       // Normalize to input event with platform identity
       const event = {
         type: parsed.type,
-        conversationId: telegramRef ? telegramRef.toConversationId().toString() : parsed.chatId,
+        conversationId,
         platform: 'telegram',
-        platformUserId: telegramRef ? telegramRef.platformUserId : null,
+        platformUserId,
         messageId: parsed.messageId,
         text: parsed.content,
         fileId: parsed.raw?.voice?.file_id || parsed.raw?.photo?.[0]?.file_id,
