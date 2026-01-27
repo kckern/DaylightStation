@@ -106,9 +106,6 @@ Production defaults and shared settings:
 app:
   port: 3111              # Backend API port (Docker default)
 
-webhook:
-  port: 3119              # Webhook receiver port
-
 households:
   default: default        # Default household ID
 
@@ -503,11 +500,13 @@ getPort()                         // Server port
 
 Each environment defines ONE port - the public-facing app port:
 
-| Environment | `app.port` | User hits | Backend listens | Webhook |
-|-------------|------------|-----------|-----------------|---------|
-| docker (prod) | 3111 | 3111 | 3111 | 3119 |
-| kckern-server (dev) | 3112 | 3112 (Vite) | 3113 (hidden) | 3120 |
-| kckern-macbook (dev) | 3111 | 3111 (Vite) | 3112 (hidden) | 3119 |
+| Environment | `app.port` | User hits | Backend listens |
+|-------------|------------|-----------|-----------------|
+| docker (prod) | 3111 | 3111 | 3111 |
+| kckern-server (dev) | 3112 | 3112 (Vite) | 3113 (hidden) |
+| kckern-macbook (dev) | 3111 | 3111 (Vite) | 3112 (hidden) |
+
+> **Note:** Webhooks are now served on the main app port. The separate webhook port (3119) was deprecated.
 
 ### Dev Mode
 
