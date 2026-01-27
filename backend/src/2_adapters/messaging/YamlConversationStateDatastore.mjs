@@ -1,7 +1,7 @@
 /**
- * YamlConversationStateStore - YAML-based conversation state persistence
+ * YamlConversationStateDatastore - YAML-based conversation state persistence
  *
- * Implements IConversationStateStore port for multi-turn conversation state.
+ * Implements IConversationStateDatastore port for multi-turn conversation state.
  * Supports message-keyed sessions for complex flows.
  *
  * Storage format:
@@ -31,7 +31,7 @@ import {
 import { nowTs24 } from '../../0_system/utils/index.mjs';
 import { IConversationStateDatastore } from '../../3_applications/shared/ports/index.mjs';
 
-export class YamlConversationStateStore extends IConversationStateDatastore {
+export class YamlConversationStateDatastore extends IConversationStateDatastore {
   #basePath;
 
   /**
@@ -41,7 +41,7 @@ export class YamlConversationStateStore extends IConversationStateDatastore {
   constructor(config) {
     super();
     if (!config?.basePath) {
-      throw new Error('YamlConversationStateStore requires basePath');
+      throw new Error('YamlConversationStateDatastore requires basePath');
     }
     this.#basePath = config.basePath;
   }
@@ -200,4 +200,4 @@ export class YamlConversationStateStore extends IConversationStateDatastore {
   }
 }
 
-export default YamlConversationStateStore;
+export default YamlConversationStateDatastore;

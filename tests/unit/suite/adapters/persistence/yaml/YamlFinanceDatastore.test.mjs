@@ -1,15 +1,15 @@
 /**
- * YamlFinanceStore Tests
+ * YamlFinanceDatastore Tests
  */
 
 import { jest, describe, it, expect, beforeEach, afterEach } from '@jest/globals';
-import { YamlFinanceStore } from '#backend/src/2_adapters/persistence/yaml/YamlFinanceStore.mjs';
+import { YamlFinanceDatastore } from '#backend/src/2_adapters/persistence/yaml/YamlFinanceDatastore.mjs';
 import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
 import os from 'os';
 
-describe('YamlFinanceStore', () => {
+describe('YamlFinanceDatastore', () => {
   let store;
   let testDataRoot;
 
@@ -37,7 +37,7 @@ describe('YamlFinanceStore', () => {
       yaml.dump(mockBudgetConfig)
     );
 
-    store = new YamlFinanceStore({ dataRoot: testDataRoot });
+    store = new YamlFinanceDatastore({ dataRoot: testDataRoot });
   });
 
   afterEach(() => {
@@ -47,7 +47,7 @@ describe('YamlFinanceStore', () => {
 
   describe('constructor', () => {
     it('throws if dataRoot is missing', () => {
-      expect(() => new YamlFinanceStore({})).toThrow('requires dataRoot');
+      expect(() => new YamlFinanceDatastore({})).toThrow('requires dataRoot');
     });
 
     it('uses default household ID', () => {
@@ -56,7 +56,7 @@ describe('YamlFinanceStore', () => {
     });
 
     it('allows custom default household ID', () => {
-      const customStore = new YamlFinanceStore({
+      const customStore = new YamlFinanceDatastore({
         dataRoot: testDataRoot,
         defaultHouseholdId: 'custom'
       });

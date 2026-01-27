@@ -1,5 +1,5 @@
 /**
- * YamlJobStore - Loads job definitions from YAML files
+ * YamlJobDatastore - Loads job definitions from YAML files
  *
  * Jobs are defined in: {dataDir}/system/jobs.yml
  *
@@ -14,7 +14,7 @@ import { Job } from '../../1_domains/scheduling/entities/Job.mjs';
 import { IJobDatastore } from '../../3_applications/scheduling/ports/IJobDatastore.mjs';
 import { loadYaml } from '../../0_system/utils/FileIO.mjs';
 
-export class YamlJobStore extends IJobDatastore {
+export class YamlJobDatastore extends IJobDatastore {
   constructor({ dataDir, logger = console }) {
     super();
     this.dataDir = dataDir;
@@ -74,4 +74,4 @@ export class YamlJobStore extends IJobDatastore {
   }
 }
 
-export default YamlJobStore;
+export default YamlJobDatastore;

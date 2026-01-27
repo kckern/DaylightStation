@@ -1,17 +1,17 @@
-// tests/unit/adapters/messaging/YamlConversationStateStore.test.mjs
+// tests/unit/adapters/messaging/YamlConversationStateDatastore.test.mjs
 import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
-import { YamlConversationStateStore } from '#backend/src/2_adapters/messaging/YamlConversationStateStore.mjs';
+import { YamlConversationStateDatastore } from '#backend/src/2_adapters/messaging/YamlConversationStateDatastore.mjs';
 import path from 'path';
 import fs from 'fs/promises';
 import os from 'os';
 
-describe('YamlConversationStateStore', () => {
+describe('YamlConversationStateDatastore', () => {
   let store;
   let tempDir;
 
   beforeEach(async () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'conv-state-'));
-    store = new YamlConversationStateStore({ basePath: tempDir });
+    store = new YamlConversationStateDatastore({ basePath: tempDir });
   });
 
   afterEach(async () => {
@@ -23,32 +23,32 @@ describe('YamlConversationStateStore', () => {
   // ===========================================================================
   describe('constructor validation', () => {
     it('should throw if basePath is not provided', () => {
-      expect(() => new YamlConversationStateStore({})).toThrow(
-        'YamlConversationStateStore requires basePath'
+      expect(() => new YamlConversationStateDatastore({})).toThrow(
+        'YamlConversationStateDatastore requires basePath'
       );
     });
 
     it('should throw if config is undefined', () => {
-      expect(() => new YamlConversationStateStore()).toThrow(
-        'YamlConversationStateStore requires basePath'
+      expect(() => new YamlConversationStateDatastore()).toThrow(
+        'YamlConversationStateDatastore requires basePath'
       );
     });
 
     it('should throw if config is null', () => {
-      expect(() => new YamlConversationStateStore(null)).toThrow(
-        'YamlConversationStateStore requires basePath'
+      expect(() => new YamlConversationStateDatastore(null)).toThrow(
+        'YamlConversationStateDatastore requires basePath'
       );
     });
 
     it('should throw if basePath is empty string', () => {
-      expect(() => new YamlConversationStateStore({ basePath: '' })).toThrow(
-        'YamlConversationStateStore requires basePath'
+      expect(() => new YamlConversationStateDatastore({ basePath: '' })).toThrow(
+        'YamlConversationStateDatastore requires basePath'
       );
     });
 
     it('should accept valid basePath', () => {
-      const validStore = new YamlConversationStateStore({ basePath: '/tmp/test' });
-      expect(validStore).toBeInstanceOf(YamlConversationStateStore);
+      const validStore = new YamlConversationStateDatastore({ basePath: '/tmp/test' });
+      expect(validStore).toBeInstanceOf(YamlConversationStateDatastore);
     });
   });
 
@@ -474,7 +474,7 @@ describe('YamlConversationStateStore', () => {
   describe('edge cases', () => {
     it('should create directory if it does not exist', async () => {
       const nestedPath = path.join(tempDir, 'nested', 'deep', 'path');
-      const nestedStore = new YamlConversationStateStore({ basePath: nestedPath });
+      const nestedStore = new YamlConversationStateDatastore({ basePath: nestedPath });
 
       await nestedStore.set('conv123', { activeFlow: 'test' });
 

@@ -9,7 +9,7 @@ import { FilesystemAdapter } from '../2_adapters/content/media/filesystem/Filesy
 import { PlexAdapter } from '../2_adapters/content/media/plex/PlexAdapter.mjs';
 import { LocalContentAdapter } from '../2_adapters/content/local-content/LocalContentAdapter.mjs';
 import { FolderAdapter } from '../2_adapters/content/folder/FolderAdapter.mjs';
-import { YamlWatchStateStore } from '../2_adapters/persistence/yaml/YamlWatchStateStore.mjs';
+import { YamlWatchStateDatastore } from '../2_adapters/persistence/yaml/YamlWatchStateDatastore.mjs';
 import { createContentRouter } from '../4_api/routers/content.mjs';
 import { createProxyRouter } from '../4_api/routers/proxy.mjs';
 import { createLocalContentRouter } from '../4_api/routers/localContent.mjs';
@@ -18,7 +18,7 @@ import { createListRouter } from '../4_api/routers/list.mjs';
 
 // Fitness domain imports
 import { SessionService } from '../1_domains/fitness/services/SessionService.mjs';
-import { YamlSessionStore } from '../2_adapters/persistence/yaml/YamlSessionStore.mjs';
+import { YamlSessionDatastore } from '../2_adapters/persistence/yaml/YamlSessionDatastore.mjs';
 import { AmbientLedAdapter } from '../2_adapters/fitness/AmbientLedAdapter.mjs';
 import { VoiceMemoTranscriptionService } from '../2_adapters/fitness/VoiceMemoTranscriptionService.mjs';
 import { OpenAIAdapter } from '../2_adapters/ai/OpenAIAdapter.mjs';
@@ -49,7 +49,7 @@ import { FreshRSSProxyAdapter } from '../2_adapters/proxy/FreshRSSProxyAdapter.m
 import { createExternalProxyRouter } from '../4_api/routers/externalProxy.mjs';
 
 // Finance domain imports
-import { YamlFinanceStore } from '../2_adapters/persistence/yaml/YamlFinanceStore.mjs';
+import { YamlFinanceDatastore } from '../2_adapters/persistence/yaml/YamlFinanceDatastore.mjs';
 import { BuxferAdapter } from '../2_adapters/finance/BuxferAdapter.mjs';
 import { BudgetCompilationService } from '../3_applications/finance/BudgetCompilationService.mjs';
 import { FinanceHarvestService } from '../3_applications/finance/FinanceHarvestService.mjs';
@@ -59,13 +59,13 @@ import { createFinanceRouter } from '../4_api/routers/finance.mjs';
 
 // Gratitude domain imports
 import { GratitudeService } from '../1_domains/gratitude/services/GratitudeService.mjs';
-import { YamlGratitudeStore } from '../2_adapters/persistence/yaml/YamlGratitudeStore.mjs';
+import { YamlGratitudeDatastore } from '../2_adapters/persistence/yaml/YamlGratitudeDatastore.mjs';
 import { createGratitudeRouter } from '../4_api/routers/gratitude.mjs';
 
 // Messaging domain imports
 import { ConversationService } from '../1_domains/messaging/services/ConversationService.mjs';
 import { NotificationService } from '../1_domains/messaging/services/NotificationService.mjs';
-import { YamlConversationStore } from '../2_adapters/persistence/yaml/YamlConversationStore.mjs';
+import { YamlConversationDatastore } from '../2_adapters/persistence/yaml/YamlConversationDatastore.mjs';
 import { TelegramAdapter } from '../2_adapters/messaging/TelegramAdapter.mjs';
 import { GmailAdapter } from '../2_adapters/messaging/GmailAdapter.mjs';
 import { createMessagingRouter } from '../4_api/routers/messaging.mjs';
@@ -79,13 +79,13 @@ import { createJournalistRouter } from '../4_api/routers/journalist.mjs';
 // Nutribot application imports
 import { NutribotContainer } from '../3_applications/nutribot/NutribotContainer.mjs';
 import { NutriBotConfig } from '../3_applications/nutribot/config/NutriBotConfig.mjs';
-import { YamlFoodLogStore } from '../2_adapters/persistence/yaml/YamlFoodLogStore.mjs';
-import { YamlNutriListStore } from '../2_adapters/persistence/yaml/YamlNutriListStore.mjs';
-import { YamlNutriCoachStore } from '../2_adapters/persistence/yaml/YamlNutriCoachStore.mjs';
+import { YamlFoodLogDatastore } from '../2_adapters/persistence/yaml/YamlFoodLogDatastore.mjs';
+import { YamlNutriListDatastore } from '../2_adapters/persistence/yaml/YamlNutriListDatastore.mjs';
+import { YamlNutriCoachDatastore } from '../2_adapters/persistence/yaml/YamlNutriCoachDatastore.mjs';
 import { createNutribotRouter } from '../4_api/routers/nutribot.mjs';
 
 // Nutribot DDD adapters
-import { YamlNutriLogStore } from '../2_adapters/persistence/yaml/YamlNutriLogStore.mjs';
+import { YamlNutriLogDatastore } from '../2_adapters/persistence/yaml/YamlNutriLogDatastore.mjs';
 import { TelegramMessagingAdapter } from '../2_adapters/telegram/TelegramMessagingAdapter.mjs';
 import { TelegramWebhookParser } from '../2_adapters/telegram/TelegramWebhookParser.mjs';
 import { OpenAIFoodParserAdapter } from '../2_adapters/ai/OpenAIFoodParserAdapter.mjs';
@@ -103,7 +103,7 @@ import { createAgentsRouter } from '../4_api/routers/agents.mjs';
 
 // Health domain imports
 import { HealthAggregationService } from '../1_domains/health/services/HealthAggregationService.mjs';
-import { YamlHealthStore } from '../2_adapters/persistence/yaml/YamlHealthStore.mjs';
+import { YamlHealthDatastore } from '../2_adapters/persistence/yaml/YamlHealthDatastore.mjs';
 import { createHealthRouter } from '../4_api/routers/health.mjs';
 
 // Entropy application imports (uses config/logging)
@@ -126,7 +126,7 @@ import { HarvesterService, HarvesterJobExecutor } from '../3_applications/harves
 
 // Harvester adapter imports
 import {
-  YamlLifelogStore,
+  YamlLifelogDatastore,
   TodoistHarvester,
   ClickUpHarvester,
   GitHubHarvester,
@@ -153,7 +153,7 @@ import { saveImage as saveImageToFile } from './utils/FileIO.mjs';
 
 // Additional adapters for harvesters
 import { StravaClientAdapter } from '../2_adapters/fitness/StravaClientAdapter.mjs';
-import { YamlWeatherStore } from '../2_adapters/persistence/yaml/YamlWeatherStore.mjs';
+import { YamlWeatherDatastore } from '../2_adapters/persistence/yaml/YamlWeatherDatastore.mjs';
 import { google } from 'googleapis';
 
 /**
@@ -221,10 +221,10 @@ export function createContentRegistry(config) {
  * Create watch state store
  * @param {Object} config
  * @param {string} config.watchStatePath - Path for watch state files
- * @returns {YamlWatchStateStore}
+ * @returns {YamlWatchStateDatastore}
  */
 export function createWatchStore(config) {
-  return new YamlWatchStateStore({
+  return new YamlWatchStateDatastore({
     basePath: config.watchStatePath
   });
 }
@@ -233,7 +233,7 @@ export function createWatchStore(config) {
  * Create API routers for the content domain
  * @param {Object} config
  * @param {ContentSourceRegistry} config.registry - Content source registry
- * @param {YamlWatchStateStore} config.watchStore - Watch state store
+ * @param {YamlWatchStateDatastore} config.watchStore - Watch state store
  * @param {Function} [config.loadFile] - Function to load YAML files
  * @param {Function} [config.saveFile] - Function to save YAML files
  * @param {string} [config.cacheBasePath] - Base path for image cache
@@ -284,7 +284,7 @@ export function createFitnessServices(config) {
   } = config;
 
   // Session store and service
-  const sessionStore = new YamlSessionStore({
+  const sessionStore = new YamlSessionDatastore({
     dataRoot,
     mediaRoot
   });
@@ -507,7 +507,7 @@ export function createFinanceServices(config) {
   } = config;
 
   // Finance store (YAML persistence)
-  const financeStore = new YamlFinanceStore({
+  const financeStore = new YamlFinanceDatastore({
     dataRoot,
     defaultHouseholdId
   });
@@ -974,7 +974,7 @@ export function createGratitudeServices(config) {
   const { userDataService, logger = console } = config;
 
   // Gratitude store (YAML persistence)
-  const gratitudeStore = new YamlGratitudeStore({
+  const gratitudeStore = new YamlGratitudeDatastore({
     userDataService,
     logger
   });
@@ -1051,7 +1051,7 @@ export function createMessagingServices(config) {
   } = config;
 
   // Conversation store (YAML persistence)
-  const conversationStore = new YamlConversationStore({
+  const conversationStore = new YamlConversationDatastore({
     userDataService,
     logger
   });
@@ -1361,19 +1361,19 @@ export function createNutribotServices(config) {
   };
 
   // Food log store (YAML persistence)
-  const foodLogStore = new YamlFoodLogStore({
+  const foodLogStore = new YamlFoodLogDatastore({
     dataRoot,
     logger
   });
 
   // Nutrient list store (YAML persistence)
-  const nutriListStore = new YamlNutriListStore({
+  const nutriListStore = new YamlNutriListDatastore({
     userDataService,
     logger
   });
 
   // Coaching store (YAML persistence)
-  const nutriCoachStore = new YamlNutriCoachStore({
+  const nutriCoachStore = new YamlNutriCoachDatastore({
     dataRoot,
     logger
   });
@@ -1446,8 +1446,8 @@ export function createNutribotDDDServices(config) {
   const { userDataService, telegram, openai, nutritionix, logger = console } = config;
 
   // Persistence adapters
-  const nutriLogStore = new YamlNutriLogStore({ userDataService, logger });
-  const nutriListStore = new YamlNutriListStore({ userDataService, logger });
+  const nutriLogStore = new YamlNutriLogDatastore({ userDataService, logger });
+  const nutriListStore = new YamlNutriListDatastore({ userDataService, logger });
 
   // External service adapters
   const messagingGateway = telegram?.token
@@ -1503,7 +1503,7 @@ export function createHealthServices(config) {
   } = config;
 
   // Health store (YAML persistence)
-  const healthStore = new YamlHealthStore({
+  const healthStore = new YamlHealthDatastore({
     userDataService,
     userResolver,
     configService,
@@ -1519,7 +1519,7 @@ export function createHealthServices(config) {
   // NutriList store for nutrilist endpoints (optional, requires userDataService)
   let nutriListStore = null;
   if (userDataService) {
-    nutriListStore = new YamlNutriListStore({
+    nutriListStore = new YamlNutriListDatastore({
       userDataService,
       logger
     });
@@ -1781,7 +1781,7 @@ export function createHarvesterServices(config) {
   }
 
   // Create lifelog store (shared by all harvesters)
-  const lifelogStore = new YamlLifelogStore({ io, logger });
+  const lifelogStore = new YamlLifelogDatastore({ io, logger });
 
   // Create or use provided stravaClient
   const stravaClient = stravaClientParam || (httpClient ? new StravaClientAdapter({
@@ -1802,7 +1802,7 @@ export function createHarvesterServices(config) {
   };
 
   // Create or use provided sharedStore (for weather data)
-  const sharedStore = sharedStoreParam || (dataRoot ? new YamlWeatherStore({
+  const sharedStore = sharedStoreParam || (dataRoot ? new YamlWeatherDatastore({
     dataRoot,
     householdId: configService?.getDefaultHouseholdId?.() || 'default',
     logger,

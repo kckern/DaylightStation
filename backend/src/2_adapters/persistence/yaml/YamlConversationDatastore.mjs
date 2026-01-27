@@ -1,7 +1,7 @@
 /**
- * YamlConversationStore - YAML-based conversation persistence
+ * YamlConversationDatastore - YAML-based conversation persistence
  *
- * Implements IConversationStore port for conversation storage.
+ * Implements IConversationDatastore port for conversation storage.
  * Conversations stored at: households/{hid}/shared/messaging/conversations/{id}.yml
  *
  * @module adapters/persistence/yaml
@@ -18,7 +18,7 @@ import {
   deleteYaml
 } from '../../../0_system/utils/FileIO.mjs';
 
-export class YamlConversationStore {
+export class YamlConversationDatastore {
   #userDataService;
   #logger;
 
@@ -29,7 +29,7 @@ export class YamlConversationStore {
    */
   constructor(config) {
     if (!config.userDataService) {
-      throw new Error('YamlConversationStore requires userDataService');
+      throw new Error('YamlConversationDatastore requires userDataService');
     }
     this.#userDataService = config.userDataService;
     this.#logger = config.logger || console;
@@ -281,4 +281,4 @@ export class YamlConversationStore {
   }
 }
 
-export default YamlConversationStore;
+export default YamlConversationDatastore;

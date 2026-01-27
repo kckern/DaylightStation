@@ -1,7 +1,7 @@
 /**
- * YamlNutriListStore - YAML-based denormalized food item persistence
+ * YamlNutriListDatastore - YAML-based denormalized food item persistence
  *
- * Implements INutriListStore port for NutriList storage.
+ * Implements INutriListDatastore port for NutriList storage.
  * NutriList stores individual food items for reporting/analytics.
  *
  * Storage Strategy:
@@ -25,7 +25,7 @@ import { shortIdFromUuid } from '../../../0_system/utils/shortId.mjs';
 const ARCHIVE_RETENTION_DAYS = 30;
 const NOOM_EMOJI = { green: '🟢', yellow: '🟡', orange: '🟠' };
 
-export class YamlNutriListStore extends INutriListDatastore {
+export class YamlNutriListDatastore extends INutriListDatastore {
   #userDataService;
   #logger;
 
@@ -37,7 +37,7 @@ export class YamlNutriListStore extends INutriListDatastore {
   constructor(options) {
     super();
     if (!options?.userDataService) {
-      throw new Error('YamlNutriListStore requires userDataService');
+      throw new Error('YamlNutriListDatastore requires userDataService');
     }
     this.#userDataService = options.userDataService;
     this.#logger = options.logger || console;
@@ -71,7 +71,7 @@ export class YamlNutriListStore extends INutriListDatastore {
       if (data && typeof data === 'object') return Object.values(data);
       return [];
     } catch (e) {
-      this.#logger.warn?.('YamlNutriListStore.readFile.error', { basePath, error: e.message });
+      this.#logger.warn?.('YamlNutriListDatastore.readFile.error', { basePath, error: e.message });
       return [];
     }
   }
@@ -646,4 +646,4 @@ export class YamlNutriListStore extends INutriListDatastore {
   }
 }
 
-export default YamlNutriListStore;
+export default YamlNutriListDatastore;

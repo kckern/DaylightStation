@@ -1,16 +1,16 @@
 /**
- * YamlAuthStore
+ * YamlAuthDatastore
  *
  * Adapter for reading and writing auth credentials YAML files.
  * Used by harvesters that need to persist OAuth tokens.
  *
- * @module harvester/YamlAuthStore
+ * @module harvester/YamlAuthDatastore
  */
 
 /**
  * YAML-based auth persistence
  */
-export class YamlAuthStore {
+export class YamlAuthDatastore {
   #io;
   #logger;
 
@@ -21,7 +21,7 @@ export class YamlAuthStore {
    */
   constructor({ io, logger = console }) {
     if (!io?.userSaveAuth) {
-      throw new Error('YamlAuthStore requires io.userSaveAuth');
+      throw new Error('YamlAuthDatastore requires io.userSaveAuth');
     }
 
     this.#io = io;
@@ -76,4 +76,4 @@ export class YamlAuthStore {
   }
 }
 
-export default YamlAuthStore;
+export default YamlAuthDatastore;

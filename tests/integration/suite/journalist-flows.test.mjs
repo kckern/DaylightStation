@@ -3,7 +3,7 @@
  * Journalist Flow Integration Tests
  *
  * Tests real flows through the journalist domain using:
- * - Real YamlConversationStateStore with temp directories
+ * - Real YamlConversationStateDatastore with temp directories
  * - Mock messaging gateway (capturing sent messages)
  * - Mock AI gateway (returning test responses)
  *
@@ -15,7 +15,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
 import { JournalistContainer } from '#backend/src/3_applications/journalist/JournalistContainer.mjs';
-import { YamlConversationStateStore } from '#backend/src/2_adapters/messaging/YamlConversationStateStore.mjs';
+import { YamlConversationStateDatastore } from '#backend/src/2_adapters/messaging/YamlConversationStateDatastore.mjs';
 
 describe('Journalist Flow Integration', () => {
   let tempDir;
@@ -33,8 +33,8 @@ describe('Journalist Flow Integration', () => {
     // Create a unique temp directory for each test
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'journalist-test-'));
 
-    // Initialize real YamlConversationStateStore with temp directory
-    conversationStateStore = new YamlConversationStateStore({
+    // Initialize real YamlConversationStateDatastore with temp directory
+    conversationStateStore = new YamlConversationStateDatastore({
       basePath: tempDir,
     });
 

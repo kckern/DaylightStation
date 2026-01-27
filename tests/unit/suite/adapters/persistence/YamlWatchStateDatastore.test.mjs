@@ -1,5 +1,5 @@
-// tests/unit/adapters/persistence/YamlWatchStateStore.test.mjs
-import { YamlWatchStateStore } from '#backend/src/2_adapters/persistence/yaml/YamlWatchStateStore.mjs';
+// tests/unit/adapters/persistence/YamlWatchStateDatastore.test.mjs
+import { YamlWatchStateDatastore } from '#backend/src/2_adapters/persistence/yaml/YamlWatchStateDatastore.mjs';
 import { WatchState } from '#backend/src/1_domains/content/entities/WatchState.mjs';
 import fs from 'fs';
 import path from 'path';
@@ -8,7 +8,7 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const testDataPath = path.resolve(__dirname, '../../../_fixtures/watch-state');
 
-describe('YamlWatchStateStore', () => {
+describe('YamlWatchStateDatastore', () => {
   let store;
 
   beforeAll(() => {
@@ -16,7 +16,7 @@ describe('YamlWatchStateStore', () => {
   });
 
   beforeEach(() => {
-    store = new YamlWatchStateStore({ basePath: testDataPath });
+    store = new YamlWatchStateDatastore({ basePath: testDataPath });
   });
 
   afterEach(() => {
@@ -66,6 +66,6 @@ describe('YamlWatchStateStore', () => {
   });
 
   test('throws error when basePath is missing', () => {
-    expect(() => new YamlWatchStateStore({})).toThrow('requires basePath');
+    expect(() => new YamlWatchStateDatastore({})).toThrow('requires basePath');
   });
 });

@@ -1,7 +1,7 @@
 /**
- * YamlNutriCoachStore - YAML-based coaching message persistence
+ * YamlNutriCoachDatastore - YAML-based coaching message persistence
  *
- * Implements INutriCoachStore port for coaching history storage.
+ * Implements INutriCoachDatastore port for coaching history storage.
  *
  * Storage:
  * - households/{hid}/apps/nutrition/nutricoach.yml
@@ -17,7 +17,7 @@ import {
 import { nowTs24 } from '../../../0_system/utils/index.mjs';
 import { INutriCoachDatastore } from '../../../3_applications/nutribot/ports/INutriCoachDatastore.mjs';
 
-export class YamlNutriCoachStore extends INutriCoachDatastore {
+export class YamlNutriCoachDatastore extends INutriCoachDatastore {
   #dataRoot;
   #logger;
 
@@ -29,7 +29,7 @@ export class YamlNutriCoachStore extends INutriCoachDatastore {
   constructor(options) {
     super();
     if (!options?.dataRoot) {
-      throw new Error('YamlNutriCoachStore requires dataRoot');
+      throw new Error('YamlNutriCoachDatastore requires dataRoot');
     }
     this.#dataRoot = options.dataRoot;
     this.#logger = options.logger || console;
@@ -54,7 +54,7 @@ export class YamlNutriCoachStore extends INutriCoachDatastore {
     try {
       return loadYamlSafe(basePath) || {};
     } catch (e) {
-      this.#logger.warn?.('YamlNutriCoachStore.readFile.error', { basePath, error: e.message });
+      this.#logger.warn?.('YamlNutriCoachDatastore.readFile.error', { basePath, error: e.message });
       return {};
     }
   }
@@ -205,4 +205,4 @@ export class YamlNutriCoachStore extends INutriCoachDatastore {
   }
 }
 
-export default YamlNutriCoachStore;
+export default YamlNutriCoachDatastore;

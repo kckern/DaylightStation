@@ -1,16 +1,16 @@
 /**
- * YamlLifelogStore
+ * YamlLifelogDatastore
  *
  * Adapter for reading and writing lifelog YAML files.
  * Wraps io.mjs functions with a clean interface for harvester adapters.
  *
- * @module harvester/YamlLifelogStore
+ * @module harvester/YamlLifelogDatastore
  */
 
 /**
  * YAML-based lifelog persistence
  */
-export class YamlLifelogStore {
+export class YamlLifelogDatastore {
   #io;
   #logger;
 
@@ -21,7 +21,7 @@ export class YamlLifelogStore {
    */
   constructor({ io, logger = console }) {
     if (!io?.userLoadFile || !io?.userSaveFile) {
-      throw new Error('YamlLifelogStore requires io.userLoadFile and io.userSaveFile');
+      throw new Error('YamlLifelogDatastore requires io.userLoadFile and io.userSaveFile');
     }
 
     this.#io = io;
@@ -125,4 +125,4 @@ export class YamlLifelogStore {
   }
 }
 
-export default YamlLifelogStore;
+export default YamlLifelogDatastore;

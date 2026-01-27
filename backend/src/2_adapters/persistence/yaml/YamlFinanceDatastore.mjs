@@ -1,5 +1,5 @@
 /**
- * YamlFinanceStore - YAML-based finance data persistence
+ * YamlFinanceDatastore - YAML-based finance data persistence
  *
  * Handles all finance-related YAML files:
  * - budget.config - Budget configuration
@@ -23,7 +23,7 @@ import {
   yamlExists
 } from '../../../0_system/utils/FileIO.mjs';
 
-export class YamlFinanceStore {
+export class YamlFinanceDatastore {
   #dataRoot;
   #defaultHouseholdId;
 
@@ -34,7 +34,7 @@ export class YamlFinanceStore {
    */
   constructor(config) {
     if (!config?.dataRoot) {
-      throw new Error('YamlFinanceStore requires dataRoot');
+      throw new Error('YamlFinanceDatastore requires dataRoot');
     }
     this.#dataRoot = config.dataRoot;
     this.#defaultHouseholdId = config.defaultHouseholdId || 'default';
@@ -358,4 +358,4 @@ export class YamlFinanceStore {
   }
 }
 
-export default YamlFinanceStore;
+export default YamlFinanceDatastore;

@@ -1,7 +1,7 @@
 /**
- * YamlHealthStore - YAML-based health data persistence
+ * YamlHealthDatastore - YAML-based health data persistence
  *
- * Implements IHealthDataStore port for health metrics storage.
+ * Implements IHealthDataDatastore port for health metrics storage.
  * Data stored at: users/{username}/lifelog/
  *   - weight.yml
  *   - strava.yml
@@ -15,7 +15,7 @@
 
 import { IHealthDataDatastore } from '../../../3_applications/health/ports/IHealthDataDatastore.mjs';
 
-export class YamlHealthStore extends IHealthDataDatastore {
+export class YamlHealthDatastore extends IHealthDataDatastore {
   #userDataService;
   #userResolver;
   #configService;
@@ -31,7 +31,7 @@ export class YamlHealthStore extends IHealthDataDatastore {
   constructor(config) {
     super();
     if (!config.userDataService) {
-      throw new Error('YamlHealthStore requires userDataService');
+      throw new Error('YamlHealthDatastore requires userDataService');
     }
     this.#userDataService = config.userDataService;
     this.#userResolver = config.userResolver;
@@ -223,4 +223,4 @@ export class YamlHealthStore extends IHealthDataDatastore {
   }
 }
 
-export default YamlHealthStore;
+export default YamlHealthDatastore;

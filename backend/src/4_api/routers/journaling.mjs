@@ -5,7 +5,7 @@
  */
 import express from 'express';
 import { JournalService } from '../../1_domains/journaling/services/JournalService.mjs';
-import { YamlJournalStore } from '../../2_adapters/persistence/yaml/YamlJournalStore.mjs';
+import { YamlJournalDatastore } from '../../2_adapters/persistence/yaml/YamlJournalDatastore.mjs';
 import { nowTs24 } from '../../0_system/utils/index.mjs';
 
 const router = express.Router();
@@ -20,7 +20,7 @@ const router = express.Router();
 export function createJournalingRouter(deps) {
   const { dataRoot, logger } = deps;
 
-  const journalStore = new YamlJournalStore({ dataRoot });
+  const journalStore = new YamlJournalDatastore({ dataRoot });
   const journalService = new JournalService({ journalStore });
 
   /**
