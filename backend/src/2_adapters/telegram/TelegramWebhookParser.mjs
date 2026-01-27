@@ -177,3 +177,5 @@ export class TelegramWebhookParser {
     };
   }
 }
+
+export default TelegramWebhookParser;

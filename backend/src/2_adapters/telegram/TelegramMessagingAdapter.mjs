@@ -180,3 +180,5 @@ export class TelegramMessagingAdapter {
     return this.#httpClient.downloadBuffer(url);
   }
 }
+
+export default TelegramMessagingAdapter;

@@ -1531,3 +1531,5 @@ export class PlexAdapter {
     return this.loadMediaUrl(ratingKey, 0, { ...opts, startOffset });
   }
 }
+
+export default PlexAdapter;

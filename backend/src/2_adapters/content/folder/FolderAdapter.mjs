@@ -613,3 +613,5 @@ export class FolderAdapter {
     return items[0];
   }
 }
+
+export default FolderAdapter;

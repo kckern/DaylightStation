@@ -149,3 +149,5 @@ export class NutritionixAdapter {
     return this.#mapNutritionixToFoodData(data.foods[0]);
   }
 }
+
+export default NutritionixAdapter;
