@@ -165,25 +165,103 @@ function loadSecrets(dataDir) {
 // ─── Households ──────────────────────────────────────────────
 
 function loadAllHouseholds(dataDir) {
-  const householdsDir = path.join(dataDir, 'households');
   const households = {};
 
-  for (const hid of listDirs(householdsDir)) {
-    const configPath = path.join(householdsDir, hid, 'household.yml');
-    const config = readYaml(configPath);
-    if (config) {
-      households[hid] = {
-        ...config,
-        apps: loadHouseholdApps(householdsDir, hid),
-      };
+  // Try new flat structure first (household/, household-*/)
+  const flatDirs = listHouseholdDirs(dataDir);
+
+  if (flatDirs.length > 0) {
+    for (const dir of flatDirs) {
+      const householdId = parseHouseholdId(dir);
+      const configPath = path.join(dataDir, dir, 'household.yml');
+      const config = readYaml(configPath);
+      if (config) {
+        households[householdId] = {
+          ...config,
+          _folderName: dir, // Store for path resolution
+          apps: loadHouseholdAppsFlat(dataDir, dir),
+        };
+      }
+    }
+  } else {
+    // Fall back to old nested structure (households/{id}/)
+    const householdsDir = path.join(dataDir, 'households');
+    for (const hid of listDirs(householdsDir)) {
+      const configPath = path.join(householdsDir, hid, 'household.yml');
+      const config = readYaml(configPath);
+      if (config) {
+        households[hid] = {
+          ...config,
+          _folderName: hid,
+          _legacyPath: true,
+          apps: loadHouseholdAppsLegacy(householdsDir, hid),
+        };
+      }
     }
   }
 
   return households;
 }
 
-function loadHouseholdApps(householdsDir, hid) {
+/**
+ * List household directories in the data directory.
+ * Matches: household/ and household-{name}/ patterns.
+ * Does NOT match: households/ (the legacy parent directory)
+ */
+export function listHouseholdDirs(dataDir) {
+  if (!fs.existsSync(dataDir)) return [];
+
+  return fs.readdirSync(dataDir)
+    .filter(name => {
+      if (name.startsWith('.') || name.startsWith('_')) return false;
+      // Only match 'household' exactly or 'household-*' pattern
+      // Specifically exclude 'households' (the legacy parent directory)
+      if (name !== 'household' && !name.startsWith('household-')) return false;
+      return fs.statSync(path.join(dataDir, name)).isDirectory();
+    });
+}
+
+/**
+ * Parse household ID from folder name.
+ * household/ -> 'default'
+ * household-jones/ -> 'jones'
+ */
+export function parseHouseholdId(folderName) {
+  if (folderName === 'household') return 'default';
+  return folderName.replace(/^household-/, '');
+}
+
+/**
+ * Convert household ID to folder name.
+ * 'default' -> 'household'
+ * 'jones' -> 'household-jones'
+ */
+export function toFolderName(householdId) {
+  if (householdId === 'default') return 'household';
+  return `household-${householdId}`;
+}
+
+/**
+ * Load apps for flat household structure.
+ */
+function loadHouseholdAppsFlat(dataDir, folderName) {
+  const appsDir = path.join(dataDir, folderName, 'apps');
+  return loadAppsFromDir(appsDir);
+}
+
+/**
+ * Load apps for legacy nested household structure.
+ */
+function loadHouseholdAppsLegacy(householdsDir, hid) {
   const appsDir = path.join(householdsDir, hid, 'apps');
+  return loadAppsFromDir(appsDir);
+}
+
+/**
+ * Load apps from an apps directory.
+ * Handles both top-level YAML files and subdirectories with config.yml.
+ */
+function loadAppsFromDir(appsDir) {
   const apps = {};
 
   // Load top-level YAML files in apps/ (e.g., chatbots.yml -> apps.chatbots)
