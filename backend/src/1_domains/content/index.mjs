@@ -3,6 +3,9 @@
 // Note: ArchiveService and MediaMemoryService moved to 3_applications/content/services
 // (they use infrastructure like fs, config services)
 
+// Value Objects
+export { ItemId } from './value-objects/index.mjs';
+
 // Entities
 export { Item } from './entities/Item.mjs';
 export { WatchState } from './entities/WatchState.mjs';
