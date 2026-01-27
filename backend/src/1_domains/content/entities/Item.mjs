@@ -1,6 +1,7 @@
 // backend/src/domains/content/entities/Item.mjs
 
 import { ValidationError } from '../../core/errors/index.mjs';
+import { ItemId } from '../value-objects/ItemId.mjs';
 
 /**
  * @typedef {Object} ItemActions
@@ -11,9 +12,10 @@ import { ValidationError } from '../../core/errors/index.mjs';
 
 /**
  * @typedef {Object} ItemProps
- * @property {string} id - Compound ID: "source:localId"
- * @property {string} source - Adapter source name
- * @property {string} localId - Source-specific ID (e.g., plex rating key)
+ * @property {string|ItemId} [id] - Compound ID: "source:localId" or ItemId instance
+ * @property {ItemId} [itemId] - ItemId value object (alternative to id)
+ * @property {string} [source] - Adapter source name (used with localId to create ItemId)
+ * @property {string} [localId] - Source-specific ID (used with source to create ItemId)
  * @property {string} title - Display title
  * @property {string} [type] - Item type (e.g., 'talk', 'scripture', 'movie')
  * @property {string} [thumbnail] - Proxied thumbnail URL
@@ -33,14 +35,16 @@ export class Item {
    * @param {ItemProps} props
    */
   constructor(props) {
-    if (!props.id) throw new ValidationError('Item requires id', { code: 'MISSING_ID', field: 'id' });
-    if (!props.source) throw new ValidationError('Item requires source', { code: 'MISSING_SOURCE', field: 'source' });
     if (!props.title) throw new ValidationError('Item requires title', { code: 'MISSING_TITLE', field: 'title' });
-    if (!props.localId) throw new ValidationError('Item requires localId', { code: 'MISSING_LOCAL_ID', field: 'localId' });
 
-    this.id = props.id;
-    this.source = props.source;
-    this.localId = props.localId;
+    // Construct ItemId from various input formats
+    this.itemId = Item._resolveItemId(props);
+
+    // Backward-compatible string properties
+    this.id = this.itemId.toString();
+    this.source = this.itemId.source;
+    this.localId = this.itemId.localId;
+
     this.title = props.title;
     this.type = props.type ?? null;
     this.thumbnail = props.thumbnail ?? null;
@@ -52,12 +56,44 @@ export class Item {
   }
 
   /**
+   * Resolve ItemId from various prop formats
+   * @param {ItemProps} props
+   * @returns {ItemId}
+   * @private
+   */
+  static _resolveItemId(props) {
+    // If itemId is already an ItemId instance
+    if (props.itemId instanceof ItemId) {
+      return props.itemId;
+    }
+
+    // If id is an ItemId instance
+    if (props.id instanceof ItemId) {
+      return props.id;
+    }
+
+    // If id is a string, parse it
+    if (typeof props.id === 'string') {
+      return ItemId.parse(props.id);
+    }
+
+    // If source and localId are provided, create from those
+    if (props.source && props.localId) {
+      return ItemId.from(props.source, String(props.localId));
+    }
+
+    throw new ValidationError('Item requires id (string or ItemId) or source+localId', {
+      code: 'MISSING_ID',
+      field: 'id'
+    });
+  }
+
+  /**
    * Extract local ID from compound ID
    * @returns {string}
    */
   getLocalId() {
-    const colonIndex = this.id.indexOf(':');
-    return colonIndex > -1 ? this.id.substring(colonIndex + 1) : this.id;
+    return this.itemId.localId;
   }
 
   /**
