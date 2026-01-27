@@ -125,8 +125,7 @@ HTTP layer - Express routers and handlers.
 
 | File | Port | Purpose |
 |------|------|---------|
-| `src/server.mjs` | 3112 | Main application server |
-| `src/4_api/webhook-server.mjs` | 3119 | Telegram webhook server |
+| `src/server.mjs` | 3111/3112 | Main application server (webhooks included) |
 
 ---
 
