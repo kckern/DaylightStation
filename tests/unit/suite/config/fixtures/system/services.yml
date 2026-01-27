@@ -7,6 +7,10 @@ homeassistant:
   docker: homeassistant
   test-env: localhost
 
+homeassistant-secondary:
+  docker: ha-secondary
+  test-env: 10.0.0.20
+
 mqtt:
   docker: mosquitto
   test-env: localhost
