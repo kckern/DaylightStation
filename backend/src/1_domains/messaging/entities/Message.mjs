@@ -2,10 +2,16 @@
  * Message Entity - Represents a single message in a conversation
  */
 
-export const MESSAGE_TYPES = ['text', 'voice', 'image', 'document', 'callback'];
-export const MESSAGE_DIRECTIONS = ['incoming', 'outgoing'];
-
 import { ValidationError } from '../../core/errors/index.mjs';
+import {
+  MessageType,
+  MESSAGE_TYPES,
+  MessageDirection,
+  MESSAGE_DIRECTIONS,
+} from '../value-objects/index.mjs';
+
+// Re-export for backward compatibility
+export { MESSAGE_TYPES, MESSAGE_DIRECTIONS, MessageType, MessageDirection };
 
 export class Message {
   constructor({
