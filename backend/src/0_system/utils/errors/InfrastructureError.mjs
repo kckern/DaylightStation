@@ -10,6 +10,9 @@
 import { nowTs24 } from '../index.mjs';
 
 export class InfrastructureError extends Error {
+  /** @type {string} Default error code for this class */
+  static defaultCode = 'INFRASTRUCTURE_ERROR';
+
   /**
    * @param {string} message - Error message
    * @param {object} [context] - Additional context
@@ -18,6 +21,7 @@ export class InfrastructureError extends Error {
     super(message);
     this.name = 'InfrastructureError';
     this.context = context;
+    this.code = context.code || this.constructor.defaultCode;
     this.timestamp = nowTs24();
     this.httpStatus = 500;
     this.retryable = false;
@@ -36,6 +40,7 @@ export class InfrastructureError extends Error {
     return {
       name: this.name,
       message: this.message,
+      code: this.code,
       context: this.context,
       timestamp: this.timestamp,
       httpStatus: this.httpStatus,
@@ -49,6 +54,9 @@ export class InfrastructureError extends Error {
  * HTTP 502 Bad Gateway
  */
 export class ExternalServiceError extends InfrastructureError {
+  /** @type {string} Default error code for this class */
+  static defaultCode = 'EXTERNAL_SERVICE_ERROR';
+
   /**
    * @param {string} service - Name of the external service
    * @param {string} message - Error message
@@ -89,6 +97,9 @@ export class ExternalServiceError extends InfrastructureError {
  * HTTP 429 Too Many Requests
  */
 export class RateLimitError extends InfrastructureError {
+  /** @type {string} Default error code for this class */
+  static defaultCode = 'RATE_LIMIT_EXCEEDED';
+
   /**
    * @param {string} service - Name of the rate-limited service
    * @param {number} [retryAfter] - Seconds to wait before retrying
@@ -113,6 +124,9 @@ export class RateLimitError extends InfrastructureError {
  * HTTP 500 Internal Server Error
  */
 export class PersistenceError extends InfrastructureError {
+  /** @type {string} Default error code for this class */
+  static defaultCode = 'PERSISTENCE_ERROR';
+
   /**
    * @param {string} operation - Operation that failed (read, write, delete)
    * @param {string} message - Error message
@@ -132,6 +146,9 @@ export class PersistenceError extends InfrastructureError {
  * HTTP 504 Gateway Timeout
  */
 export class TimeoutError extends InfrastructureError {
+  /** @type {string} Default error code for this class */
+  static defaultCode = 'TIMEOUT';
+
   /**
    * @param {string} operation - Operation that timed out
    * @param {number} timeoutMs - Timeout in milliseconds
