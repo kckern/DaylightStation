@@ -6,6 +6,9 @@
  * Supports multiple channels: Telegram, Email, Push, SMS.
  */
 
+// Value Objects
+export * from './value-objects/index.mjs';
+
 // Entities
 export {
   Notification,
