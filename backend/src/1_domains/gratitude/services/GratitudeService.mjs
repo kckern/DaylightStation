@@ -33,16 +33,13 @@ function shuffleArray(array) {
 
 export class GratitudeService {
   #store;
-  #logger;
 
   /**
    * @param {Object} config
    * @param {import('../ports/IGratitudeStore.mjs').IGratitudeStore} config.store
-   * @param {Object} [config.logger]
    */
   constructor(config) {
     this.#store = config.store;
-    this.#logger = config.logger || console;
   }
 
   /**
@@ -92,11 +89,6 @@ export class GratitudeService {
   async addOption(householdId, category, text) {
     const item = new GratitudeItem({ text });
     await this.#store.addOption(householdId, category, item.toJSON());
-    this.#logger.info?.('gratitude.option.added', {
-      householdId,
-      category,
-      itemId: item.id
-    });
     return item;
   }
 
@@ -164,13 +156,6 @@ export class GratitudeService {
       await this.#store.setOptions(householdId, `discarded.${category}`, newDiscarded);
     }
 
-    this.#logger.info?.('gratitude.selection.added', {
-      householdId,
-      category,
-      userId,
-      selectionId: selection.id
-    });
-
     return selection;
   }
 
@@ -200,13 +185,6 @@ export class GratitudeService {
       selections.push(selection);
     }
 
-    this.#logger.info?.('gratitude.selections.added', {
-      householdId,
-      category,
-      userId,
-      count: selections.length
-    });
-
     return selections;
   }
 
@@ -220,11 +198,6 @@ export class GratitudeService {
   async removeSelection(householdId, category, selectionId) {
     const removed = await this.#store.removeSelection(householdId, category, selectionId);
     if (removed) {
-      this.#logger.info?.('gratitude.selection.removed', {
-        householdId,
-        category,
-        selectionId
-      });
       return Selection.fromJSON(removed);
     }
     return null;
@@ -245,12 +218,6 @@ export class GratitudeService {
     }
 
     await this.#store.markAsPrinted(householdId, category, selectionIds, timestamp);
-
-    this.#logger.info?.('gratitude.selections.printed', {
-      householdId,
-      category,
-      count: selectionIds.length
-    });
   }
 
   /**
@@ -319,12 +286,6 @@ export class GratitudeService {
     // Remove from options
     await this.#store.removeOption(householdId, category, item.id);
 
-    this.#logger.info?.('gratitude.item.discarded', {
-      householdId,
-      category,
-      itemId: item.id
-    });
-
     return gratitudeItem;
   }
 
@@ -386,11 +347,6 @@ export class GratitudeService {
 
     const file = await this.#store.saveSnapshot(householdId, snapshot);
 
-    this.#logger.info?.('gratitude.snapshot.saved', {
-      householdId,
-      snapshotId: snapshot.id
-    });
-
     return {
       id: snapshot.id,
       createdAt: snapshot.createdAt,
@@ -421,11 +377,6 @@ export class GratitudeService {
     }
 
     await this.#store.restoreSnapshot(householdId, snapshot);
-
-    this.#logger.info?.('gratitude.snapshot.restored', {
-      householdId,
-      snapshotId: snapshot.id
-    });
 
     return {
       restored: snapshot.file || snapshotId,

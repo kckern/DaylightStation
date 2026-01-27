@@ -18,12 +18,10 @@ const SAMPLE_PERCENT = 10;
 export class MediaMemoryValidatorService {
   #plexClient;
   #watchStateStore;
-  #logger;
 
-  constructor({ plexClient, watchStateStore, logger }) {
+  constructor({ plexClient, watchStateStore }) {
     this.#plexClient = plexClient;
     this.#watchStateStore = watchStateStore;
-    this.#logger = logger || console;
   }
 
   /**
@@ -47,12 +45,9 @@ export class MediaMemoryValidatorService {
       throw new Error('nowMs timestamp required for validateMediaMemory');
     }
 
-    this.#logger.info?.('validator.start', { dryRun });
-
     // Safety: Check Plex connectivity first (matching legacy behavior)
     const isConnected = await this.#plexClient.checkConnectivity?.();
     if (isConnected === false) {
-      this.#logger.warn?.('validator.aborted', { reason: 'Plex unreachable' });
       return { aborted: true, reason: 'Plex unreachable' };
     }
 
@@ -76,13 +71,6 @@ export class MediaMemoryValidatorService {
         }
 
         // ID is orphaned - try to find match
-        this.#logger.info?.('validator.orphanFound', {
-          id: entry.id,
-          title: entry.title,
-          parent: entry.parent,
-          grandparent: entry.grandparent
-        });
-
         const match = await this.findBestMatch(entry);
 
         if (match && match.confidence >= MIN_CONFIDENCE) {
@@ -97,36 +85,28 @@ export class MediaMemoryValidatorService {
           }
           results.backfilled++;
 
-          const change = {
+          changesList.push({
             oldId: parseInt(entry.id, 10),
             newId: parseInt(match.id, 10),
             title: entry.title,
             parent: entry.parent,
             grandparent: entry.grandparent,
             confidence: match.confidence
-          };
-          changesList.push(change);
-
-          this.#logger.info?.('validator.backfilled', change);
+          });
         } else {
-          // IMPORTANT: Never delete orphans - just log as unresolved (matching legacy)
+          // IMPORTANT: Never delete orphans - just record as unresolved (matching legacy)
           results.unresolved++;
-          const unresolvedEntry = {
+          unresolvedList.push({
             id: parseInt(entry.id, 10),
             title: entry.title,
             reason: match ? `low confidence (${match.confidence}%)` : 'no match found'
-          };
-          unresolvedList.push(unresolvedEntry);
-
-          this.#logger.warn?.('validator.noMatch', unresolvedEntry);
+          });
         }
       } catch (error) {
         results.failed++;
-        this.#logger.error?.('validator.error', { id: entry.id, error: error.message });
       }
     }
 
-    this.#logger.info?.('validator.complete', results);
     return { ...results, changes: changesList, unresolvedList };
   }
 
