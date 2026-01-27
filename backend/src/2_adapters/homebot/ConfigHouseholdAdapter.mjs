@@ -1,7 +1,15 @@
 // backend/src/2_adapters/homebot/ConfigHouseholdAdapter.mjs
 
 /**
- * Adapter implementing IHouseholdRepository using ConfigService
+ * ConfigHouseholdAdapter
+ *
+ * Repository adapter implementing IHouseholdRepository using ConfigService.
+ *
+ * Note: This adapter uses ConfigService for data access (household lookups),
+ * not for adapter configuration. This is appropriate because household data
+ * is stored in ConfigService. The adapter has no static configuration needs.
+ *
+ * @module adapters/homebot/ConfigHouseholdAdapter
  */
 export class ConfigHouseholdAdapter {
   #configService;
@@ -9,18 +17,18 @@ export class ConfigHouseholdAdapter {
   #logger;
 
   /**
-   * @param {Object} config
-   * @param {Object} config.configService - ConfigService instance
-   * @param {Object} [config.userResolver] - UserResolver for conversation ID mapping
-   * @param {Object} [config.logger]
+   * @param {Object} deps
+   * @param {Object} deps.configService - ConfigService for household data lookups
+   * @param {Object} [deps.userResolver] - UserResolver for conversation ID mapping
+   * @param {Object} [deps.logger]
    */
-  constructor(config) {
-    if (!config.configService) {
+  constructor(deps) {
+    if (!deps.configService) {
       throw new Error('ConfigHouseholdAdapter requires configService');
     }
-    this.#configService = config.configService;
-    this.#userResolver = config.userResolver;
-    this.#logger = config.logger || console;
+    this.#configService = deps.configService;
+    this.#userResolver = deps.userResolver;
+    this.#logger = deps.logger || console;
   }
 
   async getMembers(householdId = null) {
