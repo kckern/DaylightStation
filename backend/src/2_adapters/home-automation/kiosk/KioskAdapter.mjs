@@ -34,17 +34,20 @@ export class KioskAdapter {
    * @param {number} config.port - Fully Kiosk REST API port (usually 2323)
    * @param {string} config.password - Fully Kiosk remote admin password
    * @param {string} config.daylightHost - Base URL of Daylight app for the kiosk
-   * @param {Object} [deps]
+   * @param {Object} deps
+   * @param {import('#system/services/HttpClient.mjs').HttpClient} deps.httpClient
    * @param {Object} [deps.logger] - Logger instance
-   * @param {Object} [deps.httpClient] - HTTP client (defaults to fetch)
    */
   constructor(config, deps = {}) {
+    if (!deps.httpClient) {
+      throw new Error('KioskAdapter requires httpClient');
+    }
     this.#host = config.host;
     this.#port = config.port;
     this.#password = config.password;
     this.#daylightHost = config.daylightHost;
     this.#logger = deps.logger || console;
-    this.#httpClient = deps.httpClient || null;
+    this.#httpClient = deps.httpClient;
 
     this.#metrics = {
       startedAt: Date.now(),
@@ -305,18 +308,20 @@ export class KioskAdapter {
   }
 
   /**
-   * Fetch wrapper
+   * Fetch wrapper - returns a fetch-like response object
    * @private
    */
   async #fetch(url) {
     this.#metrics.requestCount++;
     this.#metrics.lastRequestAt = nowTs24();
 
-    if (this.#httpClient) {
-      return this.#httpClient.get(url);
-    }
-
-    return fetch(url);
+    const response = await this.#httpClient.get(url);
+    // Return fetch-like object for compatibility with existing code
+    return {
+      ok: response.ok,
+      status: response.status,
+      text: async () => typeof response.data === 'string' ? response.data : JSON.stringify(response.data)
+    };
   }
 
   /**
