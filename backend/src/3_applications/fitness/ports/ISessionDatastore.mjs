@@ -1,8 +1,8 @@
 /**
- * ISessionStore - Port interface for session persistence
+ * ISessionDatastore - Port interface for session persistence
  */
 
-export const ISessionStore = {
+export const ISessionDatastore = {
   /**
    * Save a session
    * @param {Object} session - Session to save
@@ -66,4 +66,4 @@ export const ISessionStore = {
   getStoragePaths(sessionId, householdId) {}
 };
 
-export default ISessionStore;
+export default ISessionDatastore;

@@ -1,10 +1,10 @@
-// backend/src/3_applications/agents/ports/IMemoryStore.mjs
+// backend/src/3_applications/agents/ports/IMemoryDatastore.mjs
 
 /**
  * Port interface for agent conversation memory (framework-agnostic)
- * @interface IMemoryStore
+ * @interface IMemoryDatastore
  */
-export const IMemoryStore = {
+export const IMemoryDatastore = {
   /**
    * Get conversation history for an agent
    * @param {string} agentId - Agent identifier
@@ -32,11 +32,11 @@ export const IMemoryStore = {
 };
 
 /**
- * Type guard for IMemoryStore
+ * Type guard for IMemoryDatastore
  * @param {any} obj
  * @returns {boolean}
  */
-export function isMemoryStore(obj) {
+export function isMemoryDatastore(obj) {
   return (
     obj &&
     typeof obj.getConversation === 'function' &&

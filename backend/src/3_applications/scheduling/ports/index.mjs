@@ -3,5 +3,5 @@
  * @module applications/scheduling/ports
  */
 
-export { IJobStore } from './IJobStore.mjs';
-export { IStateStore } from './IStateStore.mjs';
+export { IJobDatastore } from './IJobDatastore.mjs';
+export { IStateDatastore } from './IStateDatastore.mjs';

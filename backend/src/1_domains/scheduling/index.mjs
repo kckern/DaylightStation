@@ -10,7 +10,7 @@ export { JobExecution } from './entities/JobExecution.mjs';
 export { JobState } from './entities/JobState.mjs';
 
 // Ports moved to application layer - re-export for backward compatibility
-export { IJobStore } from '../../3_applications/scheduling/ports/IJobStore.mjs';
-export { IStateStore } from '../../3_applications/scheduling/ports/IStateStore.mjs';
+export { IJobDatastore } from '../../3_applications/scheduling/ports/IJobDatastore.mjs';
+export { IStateDatastore } from '../../3_applications/scheduling/ports/IStateDatastore.mjs';
 
 export { SchedulerService } from './services/SchedulerService.mjs';

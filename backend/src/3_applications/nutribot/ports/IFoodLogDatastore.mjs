@@ -1,18 +1,18 @@
 /**
- * IFoodLogStore Port (INutriLogStore)
+ * IFoodLogDatastore Port (INutriLogDatastore)
  *
  * Port interface for NutriLog persistence.
  * Implementations handle storage details (YAML, database, etc.)
  */
 
-export class IFoodLogStore {
+export class IFoodLogDatastore {
   /**
    * Save a NutriLog entity
    * @param {NutriLog} nutriLog - NutriLog entity
    * @returns {Promise<NutriLog>}
    */
   async save(nutriLog) {
-    throw new Error('IFoodLogStore.save must be implemented');
+    throw new Error('IFoodLogDatastore.save must be implemented');
   }
 
   /**
@@ -22,7 +22,7 @@ export class IFoodLogStore {
    * @returns {Promise<NutriLog|null>}
    */
   async findById(userId, id) {
-    throw new Error('IFoodLogStore.findById must be implemented');
+    throw new Error('IFoodLogDatastore.findById must be implemented');
   }
 
   /**
@@ -36,7 +36,7 @@ export class IFoodLogStore {
    * @returns {Promise<NutriLog[]>}
    */
   async findAll(userId, options = {}) {
-    throw new Error('IFoodLogStore.findAll must be implemented');
+    throw new Error('IFoodLogDatastore.findAll must be implemented');
   }
 
   /**
@@ -46,7 +46,7 @@ export class IFoodLogStore {
    * @returns {Promise<NutriLog[]>}
    */
   async findByDate(userId, date) {
-    throw new Error('IFoodLogStore.findByDate must be implemented');
+    throw new Error('IFoodLogDatastore.findByDate must be implemented');
   }
 
   /**
@@ -57,7 +57,7 @@ export class IFoodLogStore {
    * @returns {Promise<NutriLog[]>}
    */
   async findByDateRange(userId, startDate, endDate) {
-    throw new Error('IFoodLogStore.findByDateRange must be implemented');
+    throw new Error('IFoodLogDatastore.findByDateRange must be implemented');
   }
 
   /**
@@ -66,7 +66,7 @@ export class IFoodLogStore {
    * @returns {Promise<NutriLog[]>}
    */
   async findPending(userId) {
-    throw new Error('IFoodLogStore.findPending must be implemented');
+    throw new Error('IFoodLogDatastore.findPending must be implemented');
   }
 
   /**
@@ -75,7 +75,7 @@ export class IFoodLogStore {
    * @returns {Promise<NutriLog[]>}
    */
   async findAccepted(userId) {
-    throw new Error('IFoodLogStore.findAccepted must be implemented');
+    throw new Error('IFoodLogDatastore.findAccepted must be implemented');
   }
 
   /**
@@ -85,7 +85,7 @@ export class IFoodLogStore {
    * @returns {Promise<NutriLog>}
    */
   async delete(userId, id) {
-    throw new Error('IFoodLogStore.delete must be implemented');
+    throw new Error('IFoodLogDatastore.delete must be implemented');
   }
 
   /**
@@ -96,7 +96,7 @@ export class IFoodLogStore {
    * @returns {Promise<number>}
    */
   async count(userId, options = {}) {
-    throw new Error('IFoodLogStore.count must be implemented');
+    throw new Error('IFoodLogDatastore.count must be implemented');
   }
 
   /**
@@ -106,16 +106,16 @@ export class IFoodLogStore {
    * @returns {Promise<Object>}
    */
   async getDailySummary(userId, date) {
-    throw new Error('IFoodLogStore.getDailySummary must be implemented');
+    throw new Error('IFoodLogDatastore.getDailySummary must be implemented');
   }
 }
 
 /**
- * Check if an object implements IFoodLogStore
+ * Check if an object implements IFoodLogDatastore
  * @param {any} obj
  * @returns {boolean}
  */
-export function isFoodLogStore(obj) {
+export function isFoodLogDatastore(obj) {
   if (!obj || typeof obj !== 'object') return false;
   return (
     typeof obj.save === 'function' &&
@@ -130,16 +130,16 @@ export function isFoodLogStore(obj) {
 }
 
 /**
- * Assert that an object implements IFoodLogStore
+ * Assert that an object implements IFoodLogDatastore
  * @param {any} obj
- * @returns {IFoodLogStore}
- * @throws {Error} if obj does not implement IFoodLogStore
+ * @returns {IFoodLogDatastore}
+ * @throws {Error} if obj does not implement IFoodLogDatastore
  */
-export function assertFoodLogStore(obj) {
-  if (!isFoodLogStore(obj)) {
-    throw new Error('Object does not implement IFoodLogStore');
+export function assertFoodLogDatastore(obj) {
+  if (!isFoodLogDatastore(obj)) {
+    throw new Error('Object does not implement IFoodLogDatastore');
   }
   return obj;
 }
 
-export default IFoodLogStore;
+export default IFoodLogDatastore;

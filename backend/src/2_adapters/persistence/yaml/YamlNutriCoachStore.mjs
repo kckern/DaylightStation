@@ -15,9 +15,9 @@ import {
   saveYaml
 } from '../../../0_system/utils/FileIO.mjs';
 import { nowTs24 } from '../../../0_system/utils/index.mjs';
-import { INutriCoachStore } from '../../../3_applications/nutribot/ports/INutriCoachStore.mjs';
+import { INutriCoachDatastore } from '../../../3_applications/nutribot/ports/INutriCoachDatastore.mjs';
 
-export class YamlNutriCoachStore extends INutriCoachStore {
+export class YamlNutriCoachStore extends INutriCoachDatastore {
   #dataRoot;
   #logger;
 

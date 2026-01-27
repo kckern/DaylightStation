@@ -3,4 +3,4 @@
  * @module domains/gratitude/ports
  */
 
-export { IGratitudeStore, isGratitudeStore } from './IGratitudeStore.mjs';
+export { IGratitudeDatastore, isGratitudeDatastore } from './IGratitudeDatastore.mjs';

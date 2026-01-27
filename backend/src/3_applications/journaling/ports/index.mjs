@@ -3,4 +3,4 @@
  * @module applications/journaling/ports
  */
 
-export { IJournalStore } from './IJournalStore.mjs';
+export { IJournalDatastore } from './IJournalDatastore.mjs';

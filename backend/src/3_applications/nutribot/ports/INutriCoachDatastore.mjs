@@ -1,11 +1,11 @@
 /**
- * INutriCoachStore Port
+ * INutriCoachDatastore Port
  *
  * Port interface for coaching message history persistence.
  * Stores coaching messages and their context for each user.
  */
 
-export class INutriCoachStore {
+export class INutriCoachDatastore {
   /**
    * Save a coaching entry
    * @param {Object} entry
@@ -17,7 +17,7 @@ export class INutriCoachStore {
    * @returns {Promise<void>}
    */
   async save(entry) {
-    throw new Error('INutriCoachStore.save must be implemented');
+    throw new Error('INutriCoachDatastore.save must be implemented');
   }
 
   /**
@@ -27,7 +27,7 @@ export class INutriCoachStore {
    * @returns {Promise<Object[]>}
    */
   async getByDate(userId, date) {
-    throw new Error('INutriCoachStore.getByDate must be implemented');
+    throw new Error('INutriCoachDatastore.getByDate must be implemented');
   }
 
   /**
@@ -37,7 +37,7 @@ export class INutriCoachStore {
    * @returns {Promise<number>}
    */
   async getTodayCount(userId, date) {
-    throw new Error('INutriCoachStore.getTodayCount must be implemented');
+    throw new Error('INutriCoachDatastore.getTodayCount must be implemented');
   }
 
   /**
@@ -47,7 +47,7 @@ export class INutriCoachStore {
    * @returns {Promise<boolean>}
    */
   async isFirstOfDay(userId, date) {
-    throw new Error('INutriCoachStore.isFirstOfDay must be implemented');
+    throw new Error('INutriCoachDatastore.isFirstOfDay must be implemented');
   }
 
   /**
@@ -57,7 +57,7 @@ export class INutriCoachStore {
    * @returns {Promise<Object[]>}
    */
   async getRecent(userId, count = 10) {
-    throw new Error('INutriCoachStore.getRecent must be implemented');
+    throw new Error('INutriCoachDatastore.getRecent must be implemented');
   }
 
   /**
@@ -67,7 +67,7 @@ export class INutriCoachStore {
    * @returns {Promise<Object>}
    */
   async getHistory(userId, days = 14) {
-    throw new Error('INutriCoachStore.getHistory must be implemented');
+    throw new Error('INutriCoachDatastore.getHistory must be implemented');
   }
 
   /**
@@ -76,7 +76,7 @@ export class INutriCoachStore {
    * @returns {Promise<Object>}
    */
   async getAll(userId) {
-    throw new Error('INutriCoachStore.getAll must be implemented');
+    throw new Error('INutriCoachDatastore.getAll must be implemented');
   }
 
   /**
@@ -85,16 +85,16 @@ export class INutriCoachStore {
    * @returns {Promise<void>}
    */
   async clear(userId) {
-    throw new Error('INutriCoachStore.clear must be implemented');
+    throw new Error('INutriCoachDatastore.clear must be implemented');
   }
 }
 
 /**
- * Check if an object implements INutriCoachStore
+ * Check if an object implements INutriCoachDatastore
  * @param {any} obj
  * @returns {boolean}
  */
-export function isNutriCoachStore(obj) {
+export function isNutriCoachDatastore(obj) {
   if (!obj || typeof obj !== 'object') return false;
   return (
     typeof obj.save === 'function' &&
@@ -104,4 +104,4 @@ export function isNutriCoachStore(obj) {
   );
 }
 
-export default INutriCoachStore;
+export default INutriCoachDatastore;

@@ -3,4 +3,4 @@
  * @module applications/health/ports
  */
 
-export { IHealthDataStore } from './IHealthDataStore.mjs';
+export { IHealthDataDatastore } from './IHealthDataDatastore.mjs';

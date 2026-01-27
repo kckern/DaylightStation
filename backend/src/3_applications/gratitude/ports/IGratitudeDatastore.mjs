@@ -1,5 +1,5 @@
 /**
- * IGratitudeStore Port
+ * IGratitudeDatastore Port
  *
  * Interface for gratitude data persistence.
  * Implementations handle storage of options, selections, and discarded items.
@@ -37,10 +37,10 @@
  */
 
 /**
- * Gratitude store interface
- * @interface IGratitudeStore
+ * Gratitude datastore interface
+ * @interface IGratitudeDatastore
  */
-export const IGratitudeStore = {
+export const IGratitudeDatastore = {
   // Options (available items queue)
 
   /**
@@ -170,11 +170,11 @@ export const IGratitudeStore = {
 };
 
 /**
- * Check if object implements IGratitudeStore
+ * Check if object implements IGratitudeDatastore
  * @param {*} obj
  * @returns {boolean}
  */
-export function isGratitudeStore(obj) {
+export function isGratitudeDatastore(obj) {
   return (
     obj &&
     typeof obj.getOptions === 'function' &&
@@ -187,4 +187,4 @@ export function isGratitudeStore(obj) {
   );
 }
 
-export default IGratitudeStore;
+export default IGratitudeDatastore;

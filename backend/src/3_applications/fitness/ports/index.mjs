@@ -5,7 +5,7 @@
  * These define contracts for infrastructure adapters.
  */
 
-export { ISessionStore } from './ISessionStore.mjs';
+export { ISessionDatastore } from './ISessionDatastore.mjs';
 export {
   IFitnessSyncerGateway,
   isFitnessSyncerGateway,

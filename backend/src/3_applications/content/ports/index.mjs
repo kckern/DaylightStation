@@ -4,4 +4,4 @@
  */
 
 export { validateAdapter, ContentSourceBase } from './IContentSource.mjs';
-export { validateWatchStateStore } from './IWatchStateStore.mjs';
+export { validateWatchStateDatastore } from './IWatchStateDatastore.mjs';

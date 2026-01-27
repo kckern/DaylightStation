@@ -1,10 +1,10 @@
 /**
- * IJobStore - Interface for loading job definitions
+ * IJobDatastore - Interface for loading job definitions
  *
  * Implementations:
  * - YamlJobStore: Loads from system/jobs.yml
  */
-export class IJobStore {
+export class IJobDatastore {
   /**
    * Load all job definitions
    * @returns {Promise<import('../entities/Job.mjs').Job[]>}
@@ -23,4 +23,4 @@ export class IJobStore {
   }
 }
 
-export default IJobStore;
+export default IJobDatastore;
