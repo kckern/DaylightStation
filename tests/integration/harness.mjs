@@ -310,6 +310,7 @@ async function runTests(args) {
       cwd: rootDir,
       stdio: ['inherit', 'pipe', 'pipe'],
       shell: true,
+      env: { ...process.env, NODE_OPTIONS: '--experimental-vm-modules' },
     });
 
     child.stdout.on('data', (data) => {
