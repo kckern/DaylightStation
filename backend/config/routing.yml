@@ -1,8 +1,0 @@
-# Routing configuration
-# Loaded at server startup, restart required for changes
-
-default: legacy  # Unlisted paths go here
-
-routing:
-  # Routes are specified as path: target (new or legacy)
-  # All paths default to legacy until explicitly migrated

@@ -97,14 +97,22 @@ export class PlexProxyAdapter {
   }
 
   /**
-   * Retry on any 4xx or 5xx error
-   * Plex can return transient errors during transcoding
+   * Retry only on transient errors
+   * Don't retry permanent failures like 403 (auth) or 404 (not found)
    * @param {number} statusCode
    * @param {number} attempt
    * @returns {boolean}
    */
   shouldRetry(statusCode, attempt) {
-    return statusCode >= 400 && statusCode < 600;
+    // Retry on rate limiting
+    if (statusCode === 429) return true;
+    
+    // Retry on server errors (5xx) - these are typically transient
+    if (statusCode >= 500 && statusCode < 600) return true;
+    
+    // Don't retry client errors (4xx) - these are permanent
+    // 400 Bad Request, 401 Unauthorized, 403 Forbidden, 404 Not Found, etc.
+    return false;
   }
 
   /**
