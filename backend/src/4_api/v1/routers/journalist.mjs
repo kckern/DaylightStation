@@ -7,9 +7,8 @@
 
 import { Router } from 'express';
 
-// Shared Telegram adapters
-import { TelegramWebhookParser, createBotWebhookHandler } from '../../2_adapters/telegram/index.mjs';
-import { JournalistInputRouter } from '../../2_adapters/journalist/JournalistInputRouter.mjs';
+// Shared Telegram handler factory
+import { createBotWebhookHandler } from '../../2_adapters/telegram/index.mjs';
 
 // API handlers
 import {
@@ -30,7 +29,8 @@ import {
  * Create Journalist Express Router
  * @param {import('../../3_applications/journalist/JournalistContainer.mjs').JournalistContainer} container
  * @param {Object} [options]
- * @param {import('../../0_system/users/UserResolver.mjs').UserResolver} [options.userResolver] - For resolving platform users to system usernames
+ * @param {Object} [options.webhookParser] - Pre-built TelegramWebhookParser instance
+ * @param {Object} [options.inputRouter] - Pre-built JournalistInputRouter instance
  * @param {string} [options.botId] - Telegram bot ID
  * @param {string} [options.secretToken] - X-Telegram-Bot-Api-Secret-Token for webhook auth
  * @param {Object} [options.gateway] - TelegramAdapter for callback acknowledgements
@@ -40,14 +40,14 @@ import {
  */
 export function createJournalistRouter(container, options = {}) {
   const router = Router();
-  const { userResolver, botId, secretToken, gateway, configService, logger = console } = options;
+  const { webhookParser, inputRouter, botId, secretToken, gateway, configService, logger = console } = options;
 
-  // Create webhook components
-  const parser = botId ? new TelegramWebhookParser({ botId, logger }) : null;
-  const inputRouter = new JournalistInputRouter(container, { userResolver, logger });
+  // Use injected webhook components
+  const parser = webhookParser;
+  const router_ = inputRouter;
 
   // Webhook endpoint using shared handler
-  if (parser) {
+  if (parser && router_) {
     router.post(
       '/webhook',
       webhookValidationMiddleware('journalist', { secretToken }),
@@ -56,13 +56,13 @@ export function createJournalistRouter(container, options = {}) {
         botName: 'journalist',
         botId,
         parser,
-        inputRouter,
+        inputRouter: router_,
         gateway,
         logger,
       }),
     );
   } else {
-    logger.warn?.('journalist.webhook.disabled', { reason: 'No botId configured' });
+    logger.warn?.('journalist.webhook.disabled', { reason: 'No parser or inputRouter configured' });
   }
 
   // Journal export endpoint
