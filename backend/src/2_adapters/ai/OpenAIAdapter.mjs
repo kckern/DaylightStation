@@ -411,8 +411,7 @@ export class OpenAIAdapter {
    * @private
    */
   async _makeFormRequest(url, form) {
-    const axios = (await import('axios')).default;
-    const response = await axios.post(url, form, {
+    const response = await this.httpClient.postForm(url, form, {
       timeout: this.timeout,
       headers: {
         ...form.getHeaders(),

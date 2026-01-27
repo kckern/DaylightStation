@@ -157,7 +157,6 @@ export class TelegramAdapter {
    */
   async #sendImageMultipart(chatId, imageSource, caption, options) {
     const FormData = (await import('form-data')).default;
-    const axios = (await import('axios')).default;
     const form = new FormData();
 
     form.append('chat_id', chatId.toString());
@@ -191,7 +190,7 @@ export class TelegramAdapter {
     const url = `${TELEGRAM_API_BASE}${this.token}/sendPhoto`;
 
     try {
-      const response = await axios.post(url, form, {
+      const response = await this.httpClient.postForm(url, form, {
         headers: form.getHeaders()
       });
 
