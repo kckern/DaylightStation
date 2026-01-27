@@ -7,9 +7,6 @@
 
 import { Router } from 'express';
 
-// Shared Telegram handler factory
-import { createBotWebhookHandler } from '../../2_adapters/telegram/index.mjs';
-
 // API handlers
 import {
   journalistJournalHandler,
@@ -29,8 +26,7 @@ import {
  * Create Journalist Express Router
  * @param {import('../../3_applications/journalist/JournalistContainer.mjs').JournalistContainer} container
  * @param {Object} [options]
- * @param {Object} [options.webhookParser] - Pre-built TelegramWebhookParser instance
- * @param {Object} [options.inputRouter] - Pre-built JournalistInputRouter instance
+ * @param {Function} [options.webhookHandler] - Pre-built Telegram webhook handler
  * @param {string} [options.botId] - Telegram bot ID
  * @param {string} [options.secretToken] - X-Telegram-Bot-Api-Secret-Token for webhook auth
  * @param {Object} [options.gateway] - TelegramAdapter for callback acknowledgements
@@ -40,29 +36,18 @@ import {
  */
 export function createJournalistRouter(container, options = {}) {
   const router = Router();
-  const { webhookParser, inputRouter, botId, secretToken, gateway, configService, logger = console } = options;
+  const { webhookHandler, botId, secretToken, gateway, configService, logger = console } = options;
 
-  // Use injected webhook components
-  const parser = webhookParser;
-  const router_ = inputRouter;
-
-  // Webhook endpoint using shared handler
-  if (parser && router_) {
+  // Webhook endpoint using pre-built handler
+  if (webhookHandler) {
     router.post(
       '/webhook',
       webhookValidationMiddleware('journalist', { secretToken }),
       idempotencyMiddleware({ ttlMs: 300000 }),
-      createBotWebhookHandler({
-        botName: 'journalist',
-        botId,
-        parser,
-        inputRouter: router_,
-        gateway,
-        logger,
-      }),
+      webhookHandler,
     );
   } else {
-    logger.warn?.('journalist.webhook.disabled', { reason: 'No parser or inputRouter configured' });
+    logger.warn?.('journalist.webhook.disabled', { reason: 'No webhookHandler configured' });
   }
 
   // Journal export endpoint

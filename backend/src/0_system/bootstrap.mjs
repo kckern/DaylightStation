@@ -1340,9 +1340,20 @@ export function createJournalistApiRouter(config) {
   const webhookParser = botId ? new TelegramWebhookParser({ botId, logger }) : null;
   const inputRouter = new JournalistInputRouter(journalistServices.journalistContainer, { userResolver, logger });
 
+  // Build webhook handler (adapter layer concern, not API layer)
+  const webhookHandler = (webhookParser && inputRouter)
+    ? createBotWebhookHandler({
+        botName: 'journalist',
+        botId,
+        parser: webhookParser,
+        inputRouter,
+        gateway,
+        logger,
+      })
+    : null;
+
   return createJournalistRouter(journalistServices.journalistContainer, {
-    webhookParser,
-    inputRouter,
+    webhookHandler,
     botId,
     secretToken,
     gateway,
