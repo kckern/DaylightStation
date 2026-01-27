@@ -1,0 +1,31 @@
+# Shared adapter configuration (test fixture)
+# Services that all households use. Per-household services go in integrations.yml.
+# Local services use `service:` field for host resolution via services.yml.
+
+# MQTT broker (vibration sensors, IoT)
+mqtt:
+  service: mqtt
+  port: 1883
+
+# Thermal printer (receipts, labels)
+thermal_printer:
+  service: thermal_printer
+  port: 9100
+
+# Weather - external API (Open-Meteo)
+# No service resolution - uses external API
+weather:
+  lat: 40.6501
+  lng: -111.8221
+  timezone: America/Denver
+
+# TTS - external API (OpenAI)
+# API key from secrets.yml, no service resolution
+tts:
+  model: tts-1
+  default_voice: alloy
+
+# ClickUp - external API
+# API key from secrets.yml, no service resolution
+clickup:
+  api_url: https://api.clickup.com/api/v2
