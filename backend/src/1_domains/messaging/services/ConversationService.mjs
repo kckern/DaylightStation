@@ -7,9 +7,8 @@ import { Message } from '../entities/Message.mjs';
 import { ValidationError, EntityNotFoundError } from '../../core/errors/index.mjs';
 
 export class ConversationService {
-  constructor({ conversationStore, logger }) {
+  constructor({ conversationStore }) {
     this.conversationStore = conversationStore;
-    this.logger = logger || console;
   }
 
   /**
@@ -34,7 +33,6 @@ export class ConversationService {
     });
 
     await this.conversationStore.save(conversation);
-    this.logger.info?.('conversation.created', { id: conversation.id, participants });
     return conversation;
   }
 
@@ -102,12 +100,6 @@ export class ConversationService {
 
     conversation.addMessage(message.toJSON());
     await this.conversationStore.save(conversation);
-
-    this.logger.debug?.('conversation.message.added', {
-      conversationId,
-      messageId: message.id,
-      type: message.type
-    });
 
     return message;
   }
@@ -187,7 +179,6 @@ export class ConversationService {
     conversation.metadata.archivedAt = timestamp;
     await this.conversationStore.save(conversation);
 
-    this.logger.info?.('conversation.archived', { conversationId });
     return conversation;
   }
 
@@ -196,7 +187,6 @@ export class ConversationService {
    */
   async deleteConversation(conversationId) {
     await this.conversationStore.delete(conversationId);
-    this.logger.info?.('conversation.deleted', { conversationId });
   }
 
   /**

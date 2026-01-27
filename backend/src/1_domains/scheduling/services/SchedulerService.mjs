@@ -24,8 +24,7 @@ export class SchedulerService {
     timezone = 'America/Los_Angeles',
     moduleBasePath = null,
     harvesterExecutor = null,
-    mediaExecutor = null,
-    logger = console
+    mediaExecutor = null
   }) {
     this.jobStore = jobStore;
     this.stateStore = stateStore;
@@ -33,7 +32,6 @@ export class SchedulerService {
     this.moduleBasePath = moduleBasePath;
     this.harvesterExecutor = harvesterExecutor;
     this.mediaExecutor = mediaExecutor;
-    this.logger = logger;
     this.runningJobs = new Map();
   }
 
@@ -47,10 +45,6 @@ export class SchedulerService {
   resolveModulePath(modulePath) {
     if (!this.moduleBasePath) {
       // No base path configured - use as-is (will likely fail)
-      this.logger.warn?.('scheduler.module.no_base_path', {
-        modulePath,
-        message: 'moduleBasePath not configured, using path as-is'
-      });
       return modulePath;
     }
 
@@ -109,11 +103,6 @@ export class SchedulerService {
 
       return rawNext;
     } catch (err) {
-      this.logger.error?.('scheduler.computeNextRun.error', {
-        jobId: job.id,
-        schedule: job.schedule,
-        error: err.message
-      });
       throw err;
     }
   }
@@ -217,10 +206,7 @@ export class SchedulerService {
 
       const deps = this.checkDependencies(job, states);
       if (!deps.satisfied) {
-        this.logger.warn?.('scheduler.job.dependencies_unmet', {
-          jobId: job.id,
-          unmet: deps.unmet
-        });
+        // Dependencies unmet - skip this job (caller can log if needed)
         continue;
       }
 
@@ -246,7 +232,6 @@ export class SchedulerService {
 
     // Check if already running
     if (this.runningJobs.has(job.id)) {
-      this.logger.warn?.('scheduler.job.already_running', { jobId: job.id });
       execution.fail(new Error('Job already running'));
       return execution;
     }
@@ -254,49 +239,27 @@ export class SchedulerService {
     this.runningJobs.set(job.id, executionId);
     execution.start(timestamp);
 
-    const scopedLogger = this.logger.child?.({ jobId: executionId, job: job.id }) || this.logger;
-
     try {
       // Check if harvester executor can handle this job
       if (this.harvesterExecutor?.canHandle(job.id)) {
-        this.logger.debug?.('scheduler.job.using_harvester', { jobId: job.id });
-
         await Promise.race([
-          this.harvesterExecutor.execute(job.id, job.options || {}, {
-            logger: scopedLogger,
-            executionId
-          }),
+          this.harvesterExecutor.execute(job.id, job.options || {}, { executionId }),
           new Promise((_, reject) =>
             setTimeout(() => reject(new Error(`Job timeout after ${job.timeout}ms`)), job.timeout)
           )
         ]);
 
         execution.succeed(timestamp);
-        this.logger.info?.('scheduler.job.success', {
-          jobId: job.id,
-          executionId,
-          durationMs: execution.durationMs
-        });
       } else if (this.mediaExecutor?.canHandle(job.id)) {
         // Check if media executor can handle this job (youtube, etc.)
-        this.logger.debug?.('scheduler.job.using_media', { jobId: job.id });
-
         await Promise.race([
-          this.mediaExecutor.execute(job.id, job.options || {}, {
-            logger: scopedLogger,
-            executionId
-          }),
+          this.mediaExecutor.execute(job.id, job.options || {}, { executionId }),
           new Promise((_, reject) =>
             setTimeout(() => reject(new Error(`Job timeout after ${job.timeout}ms`)), job.timeout)
           )
         ]);
 
         execution.succeed(timestamp);
-        this.logger.info?.('scheduler.job.success', {
-          jobId: job.id,
-          executionId,
-          durationMs: execution.durationMs
-        });
       } else {
         // Fall back to dynamic module import (legacy)
         const resolvedPath = this.resolveModulePath(job.module);
@@ -307,12 +270,14 @@ export class SchedulerService {
           throw new ValidationError(`Job module ${job.module} (resolved: ${resolvedPath}) does not export a default function`, { code: 'INVALID_MODULE', field: 'module' });
         }
 
-        // Execute with timeout
+        // Execute with timeout - legacy handlers may expect (logger, executionId) or just (executionId)
+        // Provide no-op logger to prevent crashes if legacy handlers call logger methods
+        const noopLogger = { info: () => {}, debug: () => {}, warn: () => {}, error: () => {}, child: () => noopLogger };
         const promise = handler.length >= 2
-          ? handler(scopedLogger, executionId)
+          ? handler(noopLogger, executionId)
           : handler.length === 1
             ? handler(executionId)
-            : handler(scopedLogger, executionId);
+            : handler(noopLogger, executionId);
 
         await Promise.race([
           promise,
@@ -322,11 +287,6 @@ export class SchedulerService {
         ]);
 
         execution.succeed(timestamp);
-        this.logger.info?.('scheduler.job.success', {
-          jobId: job.id,
-          executionId,
-          durationMs: execution.durationMs
-        });
       }
     } catch (err) {
       if (err.message?.includes('timeout')) {
@@ -334,12 +294,6 @@ export class SchedulerService {
       } else {
         execution.fail(err, timestamp);
       }
-      this.logger.error?.('scheduler.job.failed', {
-        jobId: job.id,
-        executionId,
-        error: err.message,
-        status: execution.status
-      });
     } finally {
       this.runningJobs.delete(job.id);
     }
@@ -361,7 +315,6 @@ export class SchedulerService {
     }
     const executionId = this.generateExecutionId();
     const timestamp = this.formatDate(now);
-    this.logger.info?.('scheduler.job.started', { jobId: job.id, executionId, manual });
 
     const execution = await this.executeJob(job, executionId, manual, timestamp);
 

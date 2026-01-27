@@ -12,19 +12,16 @@ import { WorkoutEntry } from '../entities/WorkoutEntry.mjs';
 
 export class HealthAggregationService {
   #healthStore;
-  #logger;
 
   /**
    * @param {Object} config
    * @param {Object} config.healthStore - IHealthDataStore implementation
-   * @param {Object} [config.logger] - Logger instance
    */
   constructor(config) {
     if (!config.healthStore) {
       throw new Error('HealthAggregationService requires healthStore');
     }
     this.#healthStore = config.healthStore;
-    this.#logger = config.logger || console;
   }
 
   /**
@@ -38,7 +35,6 @@ export class HealthAggregationService {
     if (!today || !(today instanceof Date)) {
       throw new Error('today date required for aggregateDailyHealth');
     }
-    this.#logger.debug?.('health.aggregate.start', { userId, daysBack });
 
     // Load all data sources in parallel
     const [weightData, stravaData, fitnessData, nutritionData, existingHealth, coachingData] =
@@ -72,13 +68,6 @@ export class HealthAggregationService {
 
     // Save aggregated data
     await this.#healthStore.saveHealthData(userId, mergedHealth);
-
-    this.#logger.info?.('health.aggregate.complete', {
-      userId,
-      daysProcessed: dates.length,
-      daysWithWeight: Object.values(metrics).filter(m => m.hasWeight()).length,
-      daysWithWorkouts: Object.values(metrics).filter(m => m.hasWorkouts()).length
-    });
 
     return metrics;
   }

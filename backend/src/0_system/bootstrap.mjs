@@ -998,8 +998,7 @@ export function createGratitudeServices(config) {
 
   // Gratitude service
   const gratitudeService = new GratitudeService({
-    store: gratitudeStore,
-    logger
+    store: gratitudeStore
   });
 
   return {
@@ -1179,8 +1178,7 @@ export function createMessagingServices(config) {
 
   // Conversation service
   const conversationService = new ConversationService({
-    conversationStore,
-    logger
+    conversationStore
   });
 
   // Notification service
@@ -1685,8 +1683,7 @@ export function createHealthServices(config) {
 
   // Health aggregation service
   const healthService = new HealthAggregationService({
-    healthStore,
-    logger
+    healthStore
   });
 
   // NutriList store for nutrilist endpoints (optional, requires userDataService)

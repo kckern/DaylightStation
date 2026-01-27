@@ -872,8 +872,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     stateStore: schedulingStateStore,
     timezone: 'America/Los_Angeles',
     harvesterExecutor: harvesterServices.jobExecutor,
-    mediaExecutor,
-    logger: rootLogger.child({ module: 'scheduler-service' })
+    mediaExecutor
   });
 
   const scheduler = new Scheduler({
