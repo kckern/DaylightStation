@@ -401,9 +401,6 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'finance-api' })
   });
 
-  // Legacy redirects for frontend compatibility
-  app.get('/data/budget', (req, res) => res.redirect(307, '/api/v1/finance/data'));
-  app.get('/data/budget/daytoday', (req, res) => res.redirect(307, '/api/v1/finance/data/daytoday'));
 
   // Harvester application services
   // Create shared IO functions for lifelog persistence
@@ -940,45 +937,61 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // DevProxy middleware - only intercepts webhook routes
-  // Note: These paths don't include /api/v1 because this app is already mounted at that prefix
-  app.use('/nutribot/webhook', devProxy.middleware);
-  app.use('/journalist/webhook', devProxy.middleware);
-  app.use('/homebot/webhook', devProxy.middleware);
-
-  // Mount at root since index.js already strips /api/v1 prefix before routing here
-  app.use('/', apiRouter);
-  rootLogger.info('api.mounted', {
-    path: '/ (receives requests after /api/v1 prefix stripped by index.js)',
-    routerCount: Object.keys(v1Routers).length,
-    routers: Object.keys(v1Routers)
-  });
+  app.use('/api/v1/nutribot/webhook', devProxy.middleware);
+  app.use('/api/v1/journalist/webhook', devProxy.middleware);
+  app.use('/api/v1/homebot/webhook', devProxy.middleware);
 
   // ==========================================================================
-  // Frontend Static Files (Production Only)
+  // Frontend Static Files (Production Only) - MUST be before API router
   // ==========================================================================
 
   // GUARDRAIL: Only serve static dist in production (Docker).
   // Dev server should NEVER serve dist - Vite handles frontend in development.
+  // Static files are served BEFORE API router so frontend paths like /fitness
+  // get the React app, not the API JSON response.
   if (isDocker) {
     const frontendPath = join(__dirname, '..', '..', 'frontend', 'dist');
     const frontendExists = existsSync(frontendPath);
 
     if (frontendExists) {
+      // Serve static assets (JS, CSS, images)
       app.use(express.static(frontendPath));
-      app.get('*', (req, res, next) => {
-        if (req.path.startsWith('/ws')) return next();
+
+      // For SPA routes, serve index.html (but NOT for API or WebSocket paths)
+      // This catch-all must be BEFORE the API router
+      app.use((req, res, next) => {
+        // Skip API paths (they go to the API router below)
+        if (req.path.startsWith('/api/v1') || req.path.startsWith('/ws')) {
+          return next();
+        }
+        // Skip paths with file extensions (already handled by express.static)
+        if (req.path.includes('.')) {
+          return next();
+        }
+        // SPA route - serve index.html
         res.sendFile(join(frontendPath, 'index.html'));
       });
+      rootLogger.info('frontend.static.mounted', { path: frontendPath });
     } else {
       rootLogger.warn('frontend.not_found', { path: frontendPath });
-      app.use('/', (req, res, next) => {
-        if (req.path.startsWith('/ws')) return next();
-        res.status(502).json({ error: 'Frontend not available', detail: 'Frontend dist not found. Build frontend or check deployment.' });
-      });
     }
   } else {
     rootLogger.info('frontend.dev_mode', { message: 'Static serving disabled - use Vite dev server for frontend' });
   }
+
+  // ==========================================================================
+  // Mount API v1 Router (after static files in Docker)
+  // ==========================================================================
+  // API routes are only reached if:
+  // - In dev mode (no static serving)
+  // - Or the request wasn't caught by static serving above (API/WS paths)
+
+  app.use('/api/v1', apiRouter);
+  rootLogger.info('api.mounted', {
+    path: '/api/v1',
+    routerCount: Object.keys(v1Routers).length,
+    routers: Object.keys(v1Routers)
+  });
 
   return app;
 }
