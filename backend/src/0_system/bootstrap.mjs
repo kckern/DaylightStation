@@ -185,9 +185,11 @@ import { google } from 'googleapis';
  * @param {string} [config.watchlistPath] - Path to watchlist YAML (for FolderAdapter)
  * @param {Object} deps - Dependencies
  * @param {Object} [deps.httpClient] - HTTP client for making requests
+ * @param {Object} [deps.watchStore] - Watch state store for progress persistence
  * @returns {ContentSourceRegistry}
  */
 export function createContentRegistry(config, deps = {}) {
+  const { httpClient, watchStore } = deps;
   const registry = new ContentSourceRegistry();
 
   // Register filesystem adapter
@@ -199,12 +201,13 @@ export function createContentRegistry(config, deps = {}) {
   }
 
   // Register Plex adapter if configured
-  if (config.plex?.host && deps.httpClient) {
+  if (config.plex?.host && httpClient) {
     registry.register(new PlexAdapter({
       host: config.plex.host,
       token: config.plex.token,
-      historyPath: config.mediaMemoryPath ? `${config.mediaMemoryPath}/plex` : null
-    }, { httpClient: deps.httpClient }));
+      watchStore,  // Inject WatchStore (preferred)
+      historyPath: config.mediaMemoryPath ? `${config.mediaMemoryPath}/plex` : null  // Fallback
+    }, { httpClient }));
   }
 
   // Register local content adapter (optional)
