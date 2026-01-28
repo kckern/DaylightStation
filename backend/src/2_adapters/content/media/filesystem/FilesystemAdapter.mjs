@@ -1,18 +1,14 @@
 // backend/src/2_adapters/content/media/filesystem/FilesystemAdapter.mjs
 import path from 'path';
 import { parseFile } from 'music-metadata';
-import { Item } from '#domains/content/entities/Item.mjs';
 import { ListableItem } from '#domains/content/capabilities/Listable.mjs';
 import { PlayableItem } from '#domains/content/capabilities/Playable.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import {
   fileExists,
   dirExists,
-  loadYamlFromPath,
-  resolveYamlPath,
   listEntries,
-  getStats,
-  isFile
+  getStats
 } from '#system/utils/FileIO.mjs';
 
 const MEDIA_PREFIXES = ['', 'audio', 'video', 'img'];
@@ -45,15 +41,13 @@ const MAX_COVER_SIZE = 10 * 1024 * 1024; // 10MB
 /**
  * Filesystem adapter for raw media files.
  * Implements IContentSource for accessing media files on the local filesystem.
- * Supports watch state integration for resume position tracking.
+ * Supports watch state integration via MediaProgressMemory for resume position tracking.
  */
 export class FilesystemAdapter {
   /**
    * @param {Object} config
    * @param {string} config.mediaBasePath - Base path for media files
-   * @param {string} [config.historyPath] - Path to media_memory directory for watch state
-   * @param {string} [config.householdId] - Household ID for scoped watch state
-   * @param {string} [config.householdsBasePath] - Base path for household data directories
+   * @param {Object} [config.mediaProgressMemory] - MediaProgressMemory instance for watch state
    */
   constructor(config) {
     if (!config.mediaBasePath) {
@@ -63,48 +57,7 @@ export class FilesystemAdapter {
       });
     }
     this.mediaBasePath = config.mediaBasePath;
-    this.historyPath = config.historyPath || null;
-    this.householdId = config.householdId || null;
-    this.householdsBasePath = config.householdsBasePath || null;
-    this._watchStateCache = null;
-  }
-
-  /**
-   * Load watch state from media_memory YAML file
-   * Tries household-specific path first, then falls back to global path.
-   * @returns {Object} Watch state map { mediaKey: { percent, seconds, playhead, mediaDuration } }
-   * @private
-   */
-  _loadWatchState() {
-    if (!this.historyPath) return {};
-    if (this._watchStateCache) return this._watchStateCache;
-
-    try {
-      // Try household-specific path first
-      if (this.householdId && this.householdsBasePath) {
-        const householdPath = path.join(
-          this.householdsBasePath,
-          this.householdId,
-          'history/media_memory/media.yml'
-        );
-        const basePath = householdPath.replace(/\.yml$/, '');
-        const resolvedPath = resolveYamlPath(basePath);
-        if (resolvedPath) {
-          this._watchStateCache = loadYamlFromPath(resolvedPath) || {};
-          return this._watchStateCache;
-        }
-      }
-
-      // Fall back to global path
-      const filePath = path.join(this.historyPath, 'media.yml');
-      const basePath = filePath.replace(/\.yml$/, '');
-      const resolvedPath = resolveYamlPath(basePath);
-      if (!resolvedPath) return {};
-      this._watchStateCache = loadYamlFromPath(resolvedPath) || {};
-      return this._watchStateCache;
-    } catch (err) {
-      return {};
-    }
+    this.mediaProgressMemory = config.mediaProgressMemory || null;
   }
 
   /**
@@ -114,9 +67,11 @@ export class FilesystemAdapter {
    * @private
    */
   _getWatchState(mediaKey) {
-    const watchState = this._loadWatchState();
+    if (!this.mediaProgressMemory) return null;
     // Try both with and without filesystem: prefix
-    return watchState[mediaKey] || watchState[`filesystem:${mediaKey}`] || null;
+    const state = this.mediaProgressMemory.get(mediaKey) ||
+                  this.mediaProgressMemory.get(`filesystem:${mediaKey}`);
+    return state || null;
   }
 
   /**
