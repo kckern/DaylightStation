@@ -41,6 +41,8 @@ import {
   createGratitudeApiRouter,
   createHomeAutomationAdapters,
   createHomeAutomationApiRouter,
+  createDeviceServices,
+  createDeviceApiRouter,
   createHardwareAdapters,
   createPrinterApiRouter,
   createTTSApiRouter,
@@ -633,6 +635,29 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     entropyService: entropyServices.entropyService,
     configService,
     logger: rootLogger.child({ module: 'home-automation-api' })
+  });
+
+  // Device registry domain
+  const devicesConfig = configService.getAppConfig('devices') || {};
+  const tvSystemConfig = configService.getSystemConfig('tv') || {};
+  const daylightHost = tvSystemConfig.daylight_host;
+  if (!daylightHost) {
+    rootLogger.warn?.('devices.noDaylightHost', { message: 'tv.daylight_host not configured in system.yml' });
+  }
+  const deviceServices = await createDeviceServices({
+    devicesConfig: devicesConfig.devices || {},
+    haGateway: homeAutomationAdapters.haGateway,
+    httpClient: axios,
+    wsBus: null, // Will be set after EventBus is created
+    remoteExec: homeAutomationAdapters.remoteExecAdapter,
+    daylightHost,
+    configService,
+    logger: rootLogger.child({ module: 'devices' })
+  });
+
+  v1Routers.device = createDeviceApiRouter({
+    deviceServices,
+    logger: rootLogger.child({ module: 'device-api' })
   });
 
   // Messaging domain (provides telegramAdapter for chatbots)

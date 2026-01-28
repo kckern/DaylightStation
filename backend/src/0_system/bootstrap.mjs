@@ -33,6 +33,11 @@ import { TaskerAdapter } from '#adapters/home-automation/tasker/TaskerAdapter.mj
 import { RemoteExecAdapter } from '#adapters/home-automation/remote-exec/RemoteExecAdapter.mjs';
 import { createHomeAutomationRouter } from '../4_api/v1/routers/homeAutomation.mjs';
 
+// Device registry imports
+import { DeviceService } from '#apps/devices/services/DeviceService.mjs';
+import { DeviceFactory } from '#adapters/devices/DeviceFactory.mjs';
+import { createDeviceRouter } from '../4_api/v1/routers/device.mjs';
+
 // Hardware adapter imports
 import { ThermalPrinterAdapter } from '#adapters/hardware/thermal-printer/ThermalPrinterAdapter.mjs';
 import { TTSAdapter } from '#adapters/hardware/tts/TTSAdapter.mjs';
@@ -838,6 +843,84 @@ export function createHomeAutomationApiRouter(config) {
     householdId,
     entropyService,
     configService,
+    logger
+  });
+}
+
+// =============================================================================
+// Device Registry Bootstrap
+// =============================================================================
+
+/**
+ * Create device registry services
+ * @param {Object} config
+ * @param {Object} config.devicesConfig - Device configurations keyed by device ID
+ * @param {Object} config.haGateway - Home Assistant gateway (for device_control)
+ * @param {Object} [config.httpClient] - HTTP client for Fully Kiosk API
+ * @param {Object} [config.wsBus] - WebSocket broadcast service
+ * @param {Object} [config.remoteExec] - Remote execution service (for SSH)
+ * @param {string} [config.daylightHost] - Base URL for content loading
+ * @param {Object} [config.configService] - ConfigService for auth lookups
+ * @param {Object} [config.logger] - Logger instance
+ * @returns {Promise<Object>} Device services { deviceService, deviceFactory }
+ */
+export async function createDeviceServices(config) {
+  const {
+    devicesConfig,
+    haGateway,
+    httpClient,
+    wsBus,
+    remoteExec,
+    daylightHost,
+    configService,
+    logger = console
+  } = config;
+
+  // Create device factory with all capability adapters
+  const deviceFactory = new DeviceFactory({
+    haGateway,
+    httpClient,
+    wsBus,
+    remoteExec,
+    daylightHost,
+    configService,
+    logger
+  });
+
+  // Create device service
+  const deviceService = new DeviceService(
+    {},
+    { deviceFactory, logger }
+  );
+
+  // Initialize devices from config
+  await deviceService.initialize(devicesConfig);
+
+  logger.info?.('devices.bootstrap.complete', {
+    deviceCount: deviceService.listDevices().length
+  });
+
+  return {
+    deviceService,
+    deviceFactory
+  };
+}
+
+/**
+ * Create device API router
+ * @param {Object} config
+ * @param {Object} config.deviceServices - Services from createDeviceServices
+ * @param {Object} [config.logger] - Logger instance
+ * @returns {express.Router}
+ */
+export function createDeviceApiRouter(config) {
+  const {
+    deviceServices,
+    logger = console
+  } = config;
+
+  return createDeviceRouter({
+    deviceService: deviceServices.deviceService,
     logger
   });
 }
