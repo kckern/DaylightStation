@@ -267,4 +267,4 @@ export function createItemRouter(options = {}) {
   return router;
 }
 
-export default { createItemRouter };
+export default createItemRouter;

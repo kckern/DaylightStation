@@ -6,8 +6,6 @@
 import express from 'express';
 import { nowDate } from '#system/utils/time.mjs';
 
-const router = express.Router();
-
 /**
  * Create router with dependencies
  * @param {Object} deps
@@ -18,6 +16,7 @@ const router = express.Router();
  */
 export function createNutritionRouter(deps) {
   const { foodLogService, foodLogStore, logger } = deps;
+  const router = express.Router();
 
   /**
    * GET /api/nutrition
@@ -202,4 +201,4 @@ export function createNutritionRouter(deps) {
   return router;
 }
 
-export default router;
+export default createNutritionRouter;
