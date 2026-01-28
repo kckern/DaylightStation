@@ -246,6 +246,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const watchlistPath = `${householdDir}/state/lists.yml`;
   const contentPath = `${dataBasePath}/content`;  // LocalContentAdapter expects content/ subdirectory
   const mediaMemoryPath = `${householdDir}/history/media_memory`;
+
+  // Watch state path - use household-scoped path (SSOT for watch state)
+  const watchStatePath = configService.getPath('watchState') || `${householdDir}/history/media_memory`;
+  const watchStore = createWatchStore({ watchStatePath });
+
   const contentRegistry = createContentRegistry({
     mediaBasePath,
     plex: mediaLibConfig,  // Bootstrap key stays 'plex' for now
@@ -254,11 +259,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     mediaMemoryPath,
     nomusicLabels,
     musicOverlayPlaylist
-  }, { httpClient: axios });
-
-  // Watch state path - use history/media_memory under data path (matches legacy structure)
-  const watchStatePath = configService.getPath('watchState') || `${dataBasePath}/history/media_memory`;
-  const watchStore = createWatchStore({ watchStatePath });
+  }, { httpClient: axios, watchStore });
 
   // Create proxy service for content domain (used for media library passthrough)
   const contentProxyService = mediaLibConfig?.host ? createProxyService({
