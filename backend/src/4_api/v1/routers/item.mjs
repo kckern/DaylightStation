@@ -1,5 +1,6 @@
 // backend/src/4_api/routers/item.mjs
 import express from 'express';
+import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { toListItem } from './list.mjs';
 import { loadYaml, saveYaml } from '#system/utils/FileIO.mjs';
 
@@ -89,8 +90,7 @@ export function createItemRouter(options = {}) {
    * GET /api/v1/item/:source/*
    * Get single item info or container contents with modifiers
    */
-  router.get('/:source/*', async (req, res) => {
-    try {
+  router.get('/:source/*', asyncHandler(async (req, res) => {
       const { source } = req.params;
       const rawPath = req.params[0] || '';
       const { modifiers, localId } = parseModifiers(rawPath);
@@ -231,38 +231,29 @@ export function createItemRouter(options = {}) {
       };
 
       res.json(response);
-    } catch (err) {
-      logger.error?.('item.get.error', { error: err.message }) || console.error('[item] get error:', err);
-      res.status(500).json({ error: err.message });
-    }
-  });
+  }));
 
   /**
    * POST /api/v1/item/menu-log
    * Log menu navigation for recent_on_top sorting
    * Body: { media_key: string }
    */
-  router.post('/menu-log', async (req, res) => {
-    try {
-      const { media_key } = req.body;
+  router.post('/menu-log', asyncHandler(async (req, res) => {
+    const { media_key } = req.body;
 
-      if (!media_key) {
-        return res.status(400).json({ error: 'media_key is required' });
-      }
-
-      const menuLog = loadYaml(menuMemoryPath) || {};
-      const nowUnix = Math.floor(Date.now() / 1000);
-
-      menuLog[media_key] = nowUnix;
-      saveYaml(menuMemoryPath, menuLog);
-
-      logger.info?.('item.menu-log.updated', { media_key });
-      res.json({ [media_key]: nowUnix });
-    } catch (error) {
-      logger.error?.('item.menu-log.error', { error: error.message });
-      res.status(500).json({ error: error.message });
+    if (!media_key) {
+      return res.status(400).json({ error: 'media_key is required' });
     }
-  });
+
+    const menuLog = loadYaml(menuMemoryPath) || {};
+    const nowUnix = Math.floor(Date.now() / 1000);
+
+    menuLog[media_key] = nowUnix;
+    saveYaml(menuMemoryPath, menuLog);
+
+    logger.info?.('item.menu-log.updated', { media_key });
+    res.json({ [media_key]: nowUnix });
+  }));
 
   return router;
 }

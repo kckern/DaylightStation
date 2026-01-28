@@ -23,6 +23,7 @@
 import express from 'express';
 import { writeBinary, deleteFile } from '#system/utils/FileIO.mjs';
 import { nowTs, nowTs24 } from '#system/utils/index.mjs';
+import { asyncHandler } from '#system/http/middleware/index.mjs';
 
 /**
  * Create gratitude API router
@@ -114,24 +115,19 @@ export function createGratitudeRouter(config) {
   /**
    * GET /api/gratitude/bootstrap - Get all data for initialization
    */
-  router.get('/bootstrap', async (req, res) => {
-    try {
-      const householdId = getHouseholdId(req);
-      const data = await gratitudeService.bootstrap(householdId);
+  router.get('/bootstrap', asyncHandler(async (req, res) => {
+    const householdId = getHouseholdId(req);
+    const data = await gratitudeService.bootstrap(householdId);
 
-      // Get users from household config
-      const users = getHouseholdUsers(householdId);
+    // Get users from household config
+    const users = getHouseholdUsers(householdId);
 
-      res.json({
-        users,
-        ...data,
-        _household: householdId
-      });
-    } catch (error) {
-      logger.error?.('gratitude.bootstrap.error', { error: error.message });
-      res.status(500).json({ error: 'Failed to load gratitude data' });
-    }
-  });
+    res.json({
+      users,
+      ...data,
+      _household: householdId
+    });
+  }));
 
   // ===========================================================================
   // Users
@@ -153,51 +149,41 @@ export function createGratitudeRouter(config) {
   /**
    * GET /api/gratitude/options - Get all options (randomized)
    */
-  router.get('/options', async (req, res) => {
-    try {
-      const householdId = getHouseholdId(req);
-      const options = await gratitudeService.getAllOptions(householdId);
+  router.get('/options', asyncHandler(async (req, res) => {
+    const householdId = getHouseholdId(req);
+    const options = await gratitudeService.getAllOptions(householdId);
 
-      res.json({
-        options: {
-          gratitude: options.gratitude.map(i => i.toJSON()),
-          hopes: options.hopes.map(i => i.toJSON())
-        },
-        _household: householdId
-      });
-    } catch (error) {
-      logger.error?.('gratitude.options.error', { error: error.message });
-      res.status(500).json({ error: 'Failed to load options' });
-    }
-  });
+    res.json({
+      options: {
+        gratitude: options.gratitude.map(i => i.toJSON()),
+        hopes: options.hopes.map(i => i.toJSON())
+      },
+      _household: householdId
+    });
+  }));
 
   /**
    * GET /api/gratitude/options/:category - Get options for category
    */
-  router.get('/options/:category', async (req, res) => {
+  router.get('/options/:category', asyncHandler(async (req, res) => {
     const category = validateCategory(req.params.category);
     if (!category) {
       return res.status(400).json({ error: 'Invalid category' });
     }
 
-    try {
-      const householdId = getHouseholdId(req);
-      const items = await gratitudeService.getOptions(householdId, category);
+    const householdId = getHouseholdId(req);
+    const items = await gratitudeService.getOptions(householdId, category);
 
-      res.json({
-        items: items.map(i => i.toJSON()),
-        _household: householdId
-      });
-    } catch (error) {
-      logger.error?.('gratitude.options.category.error', { category, error: error.message });
-      res.status(500).json({ error: 'Failed to load options' });
-    }
-  });
+    res.json({
+      items: items.map(i => i.toJSON()),
+      _household: householdId
+    });
+  }));
 
   /**
    * POST /api/gratitude/options/:category - Add a new option
    */
-  router.post('/options/:category', async (req, res) => {
+  router.post('/options/:category', asyncHandler(async (req, res) => {
     const category = validateCategory(req.params.category);
     if (!category) {
       return res.status(400).json({ error: 'Invalid category' });
@@ -208,19 +194,14 @@ export function createGratitudeRouter(config) {
       return res.status(400).json({ error: 'Missing text' });
     }
 
-    try {
-      const householdId = getHouseholdId(req);
-      const item = await gratitudeService.addOption(householdId, category, text.trim());
+    const householdId = getHouseholdId(req);
+    const item = await gratitudeService.addOption(householdId, category, text.trim());
 
-      res.status(201).json({
-        item: item.toJSON(),
-        _household: householdId
-      });
-    } catch (error) {
-      logger.error?.('gratitude.options.add.error', { category, error: error.message });
-      res.status(500).json({ error: 'Failed to add option' });
-    }
-  });
+    res.status(201).json({
+      item: item.toJSON(),
+      _household: householdId
+    });
+  }));
 
   // ===========================================================================
   // Selections
@@ -229,30 +210,25 @@ export function createGratitudeRouter(config) {
   /**
    * GET /api/gratitude/selections/:category - Get selections for category
    */
-  router.get('/selections/:category', async (req, res) => {
+  router.get('/selections/:category', asyncHandler(async (req, res) => {
     const category = validateCategory(req.params.category);
     if (!category) {
       return res.status(400).json({ error: 'Invalid category' });
     }
 
-    try {
-      const householdId = getHouseholdId(req);
-      const selections = await gratitudeService.getSelections(householdId, category);
+    const householdId = getHouseholdId(req);
+    const selections = await gratitudeService.getSelections(householdId, category);
 
-      res.json({
-        items: selections.map(s => s.toJSON()),
-        _household: householdId
-      });
-    } catch (error) {
-      logger.error?.('gratitude.selections.error', { category, error: error.message });
-      res.status(500).json({ error: 'Failed to load selections' });
-    }
-  });
+    res.json({
+      items: selections.map(s => s.toJSON()),
+      _household: householdId
+    });
+  }));
 
   /**
    * POST /api/gratitude/selections/:category - Add a selection
    */
-  router.post('/selections/:category', async (req, res) => {
+  router.post('/selections/:category', asyncHandler(async (req, res) => {
     const category = validateCategory(req.params.category);
     if (!category) {
       return res.status(400).json({ error: 'Invalid category' });
@@ -282,39 +258,32 @@ export function createGratitudeRouter(config) {
       if (error.message === 'Item already selected by this user') {
         return res.status(409).json({ error: error.message });
       }
-      logger.error?.('gratitude.selections.add.error', { category, error: error.message });
-      res.status(500).json({ error: 'Failed to add selection' });
+      throw error;
     }
-  });
+  }));
 
   /**
    * DELETE /api/gratitude/selections/:category/:selectionId - Remove a selection
    */
-  router.delete('/selections/:category/:selectionId', async (req, res) => {
+  router.delete('/selections/:category/:selectionId', asyncHandler(async (req, res) => {
     const category = validateCategory(req.params.category);
     if (!category) {
       return res.status(400).json({ error: 'Invalid category' });
     }
 
     const { selectionId } = req.params;
+    const householdId = getHouseholdId(req);
+    const removed = await gratitudeService.removeSelection(householdId, category, selectionId);
 
-    try {
-      const householdId = getHouseholdId(req);
-      const removed = await gratitudeService.removeSelection(householdId, category, selectionId);
-
-      if (!removed) {
-        return res.status(404).json({ error: 'Selection not found' });
-      }
-
-      res.json({
-        removed: removed.toJSON(),
-        _household: householdId
-      });
-    } catch (error) {
-      logger.error?.('gratitude.selections.remove.error', { category, selectionId, error: error.message });
-      res.status(500).json({ error: 'Failed to remove selection' });
+    if (!removed) {
+      return res.status(404).json({ error: 'Selection not found' });
     }
-  });
+
+    res.json({
+      removed: removed.toJSON(),
+      _household: householdId
+    });
+  }));
 
   // ===========================================================================
   // Discarded
@@ -323,30 +292,25 @@ export function createGratitudeRouter(config) {
   /**
    * GET /api/gratitude/discarded/:category - Get discarded items
    */
-  router.get('/discarded/:category', async (req, res) => {
+  router.get('/discarded/:category', asyncHandler(async (req, res) => {
     const category = validateCategory(req.params.category);
     if (!category) {
       return res.status(400).json({ error: 'Invalid category' });
     }
 
-    try {
-      const householdId = getHouseholdId(req);
-      const items = await gratitudeService.getDiscarded(householdId, category);
+    const householdId = getHouseholdId(req);
+    const items = await gratitudeService.getDiscarded(householdId, category);
 
-      res.json({
-        items: items.map(i => i.toJSON()),
-        _household: householdId
-      });
-    } catch (error) {
-      logger.error?.('gratitude.discarded.error', { category, error: error.message });
-      res.status(500).json({ error: 'Failed to load discarded items' });
-    }
-  });
+    res.json({
+      items: items.map(i => i.toJSON()),
+      _household: householdId
+    });
+  }));
 
   /**
    * POST /api/gratitude/discarded/:category - Discard an item
    */
-  router.post('/discarded/:category', async (req, res) => {
+  router.post('/discarded/:category', asyncHandler(async (req, res) => {
     const category = validateCategory(req.params.category);
     if (!category) {
       return res.status(400).json({ error: 'Invalid category' });
@@ -357,19 +321,14 @@ export function createGratitudeRouter(config) {
       return res.status(400).json({ error: 'Missing item' });
     }
 
-    try {
-      const householdId = getHouseholdId(req);
-      const discardedItem = await gratitudeService.discardItem(householdId, category, item);
+    const householdId = getHouseholdId(req);
+    const discardedItem = await gratitudeService.discardItem(householdId, category, item);
 
-      res.status(201).json({
-        item: discardedItem.toJSON(),
-        _household: householdId
-      });
-    } catch (error) {
-      logger.error?.('gratitude.discarded.add.error', { category, error: error.message });
-      res.status(500).json({ error: 'Failed to discard item' });
-    }
-  });
+    res.status(201).json({
+      item: discardedItem.toJSON(),
+      _household: householdId
+    });
+  }));
 
   // ===========================================================================
   // Snapshots
@@ -378,49 +337,39 @@ export function createGratitudeRouter(config) {
   /**
    * POST /api/gratitude/snapshot/save - Save a snapshot
    */
-  router.post('/snapshot/save', async (req, res) => {
-    try {
-      const householdId = getHouseholdId(req);
-      const timestamp = generateTimestamp(householdId);
-      const result = await gratitudeService.saveSnapshot(householdId, timestamp);
+  router.post('/snapshot/save', asyncHandler(async (req, res) => {
+    const householdId = getHouseholdId(req);
+    const timestamp = generateTimestamp(householdId);
+    const result = await gratitudeService.saveSnapshot(householdId, timestamp);
 
-      res.status(201).json({
-        ...result,
-        _household: householdId
-      });
-    } catch (error) {
-      logger.error?.('gratitude.snapshot.save.error', { error: error.message });
-      res.status(500).json({ error: 'Failed to save snapshot' });
-    }
-  });
+    res.status(201).json({
+      ...result,
+      _household: householdId
+    });
+  }));
 
   /**
    * GET /api/gratitude/snapshot/list - List available snapshots
    */
-  router.get('/snapshot/list', async (req, res) => {
-    try {
-      const householdId = getHouseholdId(req);
-      const snapshots = await gratitudeService.listSnapshots(householdId);
+  router.get('/snapshot/list', asyncHandler(async (req, res) => {
+    const householdId = getHouseholdId(req);
+    const snapshots = await gratitudeService.listSnapshots(householdId);
 
-      res.json({
-        snapshots,
-        _household: householdId
-      });
-    } catch (error) {
-      logger.error?.('gratitude.snapshot.list.error', { error: error.message });
-      res.status(500).json({ error: 'Failed to list snapshots' });
-    }
-  });
+    res.json({
+      snapshots,
+      _household: householdId
+    });
+  }));
 
   /**
    * POST /api/gratitude/snapshot/restore - Restore from snapshot
    */
-  router.post('/snapshot/restore', async (req, res) => {
-    try {
-      const householdId = getHouseholdId(req);
-      const { id, name } = req.body || {};
-      const snapshotId = id || name?.replace(/\.(yml|yaml)$/, '');
+  router.post('/snapshot/restore', asyncHandler(async (req, res) => {
+    const householdId = getHouseholdId(req);
+    const { id, name } = req.body || {};
+    const snapshotId = id || name?.replace(/\.(yml|yaml)$/, '');
 
+    try {
       const result = await gratitudeService.restoreSnapshot(householdId, snapshotId);
 
       res.json({
@@ -431,10 +380,9 @@ export function createGratitudeRouter(config) {
       if (error.message === 'Snapshot not found') {
         return res.status(404).json({ error: 'No snapshots available' });
       }
-      logger.error?.('gratitude.snapshot.restore.error', { error: error.message });
-      res.status(500).json({ error: 'Failed to restore snapshot' });
+      throw error;
     }
-  });
+  }));
 
   // ===========================================================================
   // WebSocket Broadcast
@@ -480,28 +428,23 @@ export function createGratitudeRouter(config) {
   /**
    * GET /api/gratitude/print - Get selections formatted for printing
    */
-  router.get('/print', async (req, res) => {
-    try {
-      const householdId = getHouseholdId(req);
-      const result = await gratitudeService.getSelectionsForPrint(
-        householdId,
-        resolveDisplayName
-      );
+  router.get('/print', asyncHandler(async (req, res) => {
+    const householdId = getHouseholdId(req);
+    const result = await gratitudeService.getSelectionsForPrint(
+      householdId,
+      resolveDisplayName
+    );
 
-      res.json({
-        ...result,
-        _household: householdId
-      });
-    } catch (error) {
-      logger.error?.('gratitude.print.error', { error: error.message });
-      res.status(500).json({ error: 'Failed to get print data' });
-    }
-  });
+    res.json({
+      ...result,
+      _household: householdId
+    });
+  }));
 
   /**
    * POST /api/gratitude/print/mark - Mark selections as printed
    */
-  router.post('/print/mark', async (req, res) => {
+  router.post('/print/mark', asyncHandler(async (req, res) => {
     const { category, selectionIds } = req.body || {};
 
     if (!category || !Array.isArray(selectionIds)) {
@@ -513,20 +456,15 @@ export function createGratitudeRouter(config) {
       return res.status(400).json({ error: 'Invalid category' });
     }
 
-    try {
-      const householdId = getHouseholdId(req);
-      const timestamp = generateTimestamp(householdId);
-      await gratitudeService.markAsPrinted(householdId, validCategory, selectionIds, timestamp);
+    const householdId = getHouseholdId(req);
+    const timestamp = generateTimestamp(householdId);
+    await gratitudeService.markAsPrinted(householdId, validCategory, selectionIds, timestamp);
 
-      res.json({
-        marked: selectionIds.length,
-        _household: householdId
-      });
-    } catch (error) {
-      logger.error?.('gratitude.print.mark.error', { error: error.message });
-      res.status(500).json({ error: 'Failed to mark as printed' });
-    }
-  });
+    res.json({
+      marked: selectionIds.length,
+      _household: householdId
+    });
+  }));
 
   // ===========================================================================
   // Prayer Card Endpoints
@@ -540,31 +478,26 @@ export function createGratitudeRouter(config) {
    * Note: The createPrayerCardCanvas function fetches selections internally
    * using the legacy bridge which delegates to the DDD GratitudeService.
    */
-  router.get('/card', async (req, res) => {
+  router.get('/card', asyncHandler(async (req, res) => {
     if (!createPrayerCardCanvas) {
       return res.status(501).json({
         error: 'Prayer card generation not configured'
       });
     }
 
-    try {
-      const upsidedown = req.query.upsidedown === 'true';
+    const upsidedown = req.query.upsidedown === 'true';
 
-      // Generate canvas (function fetches selections internally)
-      const { canvas } = await createPrayerCardCanvas(upsidedown);
+    // Generate canvas (function fetches selections internally)
+    const { canvas } = await createPrayerCardCanvas(upsidedown);
 
-      // Convert to PNG buffer
-      const buffer = canvas.toBuffer('image/png');
+    // Convert to PNG buffer
+    const buffer = canvas.toBuffer('image/png');
 
-      res.setHeader('Content-Type', 'image/png');
-      res.setHeader('Content-Length', buffer.length);
-      res.setHeader('Content-Disposition', 'inline; filename="prayer-card.png"');
-      res.send(buffer);
-    } catch (error) {
-      logger.error?.('gratitude.card.error', { error: error.message });
-      res.status(500).json({ error: error.message });
-    }
-  });
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Content-Length', buffer.length);
+    res.setHeader('Content-Disposition', 'inline; filename="prayer-card.png"');
+    res.send(buffer);
+  }));
 
   /**
    * GET /api/gratitude/card/print - Generate and print prayer card
@@ -575,7 +508,7 @@ export function createGratitudeRouter(config) {
    * Note: The createPrayerCardCanvas function returns selectedIds that were
    * included in the generated card, which are then marked as printed.
    */
-  router.get('/card/print', async (req, res) => {
+  router.get('/card/print', asyncHandler(async (req, res) => {
     if (!createPrayerCardCanvas) {
       return res.status(501).json({
         error: 'Prayer card generation not configured',
@@ -590,62 +523,52 @@ export function createGratitudeRouter(config) {
       });
     }
 
-    try {
-      const householdId = getHouseholdId(req);
-      const upsidedown = req.query.upsidedown !== 'false'; // default true for print
+    const householdId = getHouseholdId(req);
+    const upsidedown = req.query.upsidedown !== 'false'; // default true for print
 
-      // Generate canvas (function fetches selections internally and returns selectedIds)
-      const { canvas, width, height, selectedIds } = await createPrayerCardCanvas(upsidedown);
+    // Generate canvas (function fetches selections internally and returns selectedIds)
+    const { canvas, width, height, selectedIds } = await createPrayerCardCanvas(upsidedown);
 
-      // Save to temp file
-      const buffer = canvas.toBuffer('image/png');
-      const tempPath = `/tmp/prayer_card_${Date.now()}.png`;
-      writeBinary(tempPath, buffer);
+    // Save to temp file
+    const buffer = canvas.toBuffer('image/png');
+    const tempPath = `/tmp/prayer_card_${Date.now()}.png`;
+    writeBinary(tempPath, buffer);
 
-      // Create and execute print job
-      const printJob = printerAdapter.createImagePrint(tempPath, {
-        width,
-        height,
-        align: 'left',
-        threshold: 128
-      });
+    // Create and execute print job
+    const printJob = printerAdapter.createImagePrint(tempPath, {
+      width,
+      height,
+      align: 'left',
+      threshold: 128
+    });
 
-      const success = await printerAdapter.print(printJob);
+    const success = await printerAdapter.print(printJob);
 
-      // Clean up temp file
-      deleteFile(tempPath);
+    // Clean up temp file
+    deleteFile(tempPath);
 
-      // Mark as printed only if print succeeded
-      const printed = { gratitude: [], hopes: [] };
+    // Mark as printed only if print succeeded
+    const printed = { gratitude: [], hopes: [] };
 
-      if (success && selectedIds) {
-        const timestamp = generateTimestamp(householdId);
-        if (selectedIds.gratitude?.length > 0) {
-          await gratitudeService.markAsPrinted(householdId, 'gratitude', selectedIds.gratitude, timestamp);
-          printed.gratitude = selectedIds.gratitude;
-        }
-        if (selectedIds.hopes?.length > 0) {
-          await gratitudeService.markAsPrinted(householdId, 'hopes', selectedIds.hopes, timestamp);
-          printed.hopes = selectedIds.hopes;
-        }
+    if (success && selectedIds) {
+      const timestamp = generateTimestamp(householdId);
+      if (selectedIds.gratitude?.length > 0) {
+        await gratitudeService.markAsPrinted(householdId, 'gratitude', selectedIds.gratitude, timestamp);
+        printed.gratitude = selectedIds.gratitude;
       }
-
-      res.json({
-        success,
-        message: success ? 'Prayer card printed successfully' : 'Print failed',
-        printed,
-        timestamp: nowTs()
-      });
-    } catch (error) {
-      logger.error?.('gratitude.card.print.error', { error: error.message });
-      res.status(500).json({
-        success: false,
-        message: 'Print error',
-        error: error.message,
-        printed: { gratitude: [], hopes: [] }
-      });
+      if (selectedIds.hopes?.length > 0) {
+        await gratitudeService.markAsPrinted(householdId, 'hopes', selectedIds.hopes, timestamp);
+        printed.hopes = selectedIds.hopes;
+      }
     }
-  });
+
+    res.json({
+      success,
+      message: success ? 'Prayer card printed successfully' : 'Print failed',
+      printed,
+      timestamp: nowTs()
+    });
+  }));
 
   return router;
 }

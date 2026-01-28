@@ -21,6 +21,7 @@
 
 import { nowTs24, nowMonth } from '#system/utils/index.mjs';
 import express from 'express';
+import { asyncHandler } from '#system/http/middleware/index.mjs';
 
 /**
  * Create finance API router
@@ -158,33 +159,28 @@ export function createFinanceRouter(config) {
   /**
    * GET /api/finance/accounts - Get account balances
    */
-  router.get('/accounts', async (req, res) => {
+  router.get('/accounts', asyncHandler(async (req, res) => {
     const householdId = resolveHouseholdId(req.query.household);
     const { refresh } = req.query;
 
-    try {
-      if (refresh === 'true' && buxferAdapter?.isConfigured()) {
-        // Fetch fresh data from Buxfer
-        const accounts = await buxferAdapter.getAccountBalances();
-        return res.json({
-          accounts: accounts.map(a => a.toJSON ? a.toJSON() : a),
-          source: 'buxfer',
-          refreshedAt: nowTs24()
-        });
-      }
-
-      // Return cached data from local files
-      const balances = financeStore?.getAccountBalances(householdId) || [];
+    if (refresh === 'true' && buxferAdapter?.isConfigured()) {
+      // Fetch fresh data from Buxfer
+      const accounts = await buxferAdapter.getAccountBalances();
       return res.json({
-        accounts: balances,
-        source: 'cache',
-        household: householdId
+        accounts: accounts.map(a => a.toJSON ? a.toJSON() : a),
+        source: 'buxfer',
+        refreshedAt: nowTs24()
       });
-    } catch (error) {
-      logger.error?.('finance.accounts.error', { error: error.message });
-      return res.status(500).json({ error: 'Failed to load account balances' });
     }
-  });
+
+    // Return cached data from local files
+    const balances = financeStore?.getAccountBalances(householdId) || [];
+    return res.json({
+      accounts: balances,
+      source: 'cache',
+      household: householdId
+    });
+  }));
 
   // =============================================================================
   // Transactions
@@ -193,52 +189,47 @@ export function createFinanceRouter(config) {
   /**
    * GET /api/finance/transactions - Get transactions
    */
-  router.get('/transactions', async (req, res) => {
+  router.get('/transactions', asyncHandler(async (req, res) => {
     const householdId = resolveHouseholdId(req.query.household);
     const { startDate, endDate, category, account, budgetDate } = req.query;
 
-    try {
-      let transactions;
+    let transactions;
 
-      // If budgetDate provided, load from local cache
-      if (budgetDate) {
-        transactions = financeStore?.getTransactions(budgetDate, householdId) || [];
-      } else if (buxferAdapter?.isConfigured() && (startDate || endDate)) {
-        // Fetch from Buxfer API
-        if (category) {
-          transactions = await buxferAdapter.findByCategory(category, startDate, endDate);
-        } else if (account) {
-          transactions = await buxferAdapter.findByAccount(account);
-        } else {
-          transactions = await buxferAdapter.findInRange(startDate, endDate);
-        }
-        transactions = transactions.map(t => t.toJSON ? t.toJSON() : t);
+    // If budgetDate provided, load from local cache
+    if (budgetDate) {
+      transactions = financeStore?.getTransactions(budgetDate, householdId) || [];
+    } else if (buxferAdapter?.isConfigured() && (startDate || endDate)) {
+      // Fetch from Buxfer API
+      if (category) {
+        transactions = await buxferAdapter.findByCategory(category, startDate, endDate);
+      } else if (account) {
+        transactions = await buxferAdapter.findByAccount(account);
       } else {
-        // Default: load most recent budget period
-        const periods = financeStore?.listBudgetPeriods(householdId) || [];
-        if (periods.length > 0) {
-          const latestPeriod = periods[periods.length - 1];
-          transactions = financeStore?.getTransactions(latestPeriod, householdId) || [];
-        } else {
-          transactions = [];
-        }
+        transactions = await buxferAdapter.findInRange(startDate, endDate);
       }
-
-      return res.json({
-        transactions,
-        count: transactions.length,
-        household: householdId
-      });
-    } catch (error) {
-      logger.error?.('finance.transactions.error', { error: error.message });
-      return res.status(500).json({ error: 'Failed to load transactions' });
+      transactions = transactions.map(t => t.toJSON ? t.toJSON() : t);
+    } else {
+      // Default: load most recent budget period
+      const periods = financeStore?.listBudgetPeriods(householdId) || [];
+      if (periods.length > 0) {
+        const latestPeriod = periods[periods.length - 1];
+        transactions = financeStore?.getTransactions(latestPeriod, householdId) || [];
+      } else {
+        transactions = [];
+      }
     }
-  });
+
+    return res.json({
+      transactions,
+      count: transactions.length,
+      household: householdId
+    });
+  }));
 
   /**
    * POST /api/finance/transactions/:id - Update transaction
    */
-  router.post('/transactions/:id', async (req, res) => {
+  router.post('/transactions/:id', asyncHandler(async (req, res) => {
     const { id } = req.params;
     const { description, tags, memo } = req.body;
 
@@ -246,18 +237,13 @@ export function createFinanceRouter(config) {
       return res.status(503).json({ error: 'Buxfer adapter not configured' });
     }
 
-    try {
-      const result = await buxferAdapter.updateTransaction(id, { description, tags, memo });
-      return res.json({
-        ok: true,
-        transactionId: id,
-        updated: result
-      });
-    } catch (error) {
-      logger.error?.('finance.transactions.update.error', { id, error: error.message });
-      return res.status(500).json({ error: 'Failed to update transaction' });
-    }
-  });
+    const result = await buxferAdapter.updateTransaction(id, { description, tags, memo });
+    return res.json({
+      ok: true,
+      transactionId: id,
+      updated: result
+    });
+  }));
 
   // =============================================================================
   // Budgets
@@ -357,7 +343,7 @@ export function createFinanceRouter(config) {
    * POST /api/finance/refresh - Trigger full financial data refresh
    * Equivalent to legacy /harvest/budget
    */
-  router.post('/refresh', async (req, res) => {
+  router.post('/refresh', asyncHandler(async (req, res) => {
     const householdId = resolveHouseholdId(req.body.household || req.query.household);
     const { skipCategorization, skipCompilation } = req.body;
 
@@ -375,27 +361,22 @@ export function createFinanceRouter(config) {
       });
     }
 
-    try {
-      logger.info?.('finance.refresh.started', { householdId });
+    logger.info?.('finance.refresh.started', { householdId });
 
-      const result = await harvestService.harvest(householdId, {
-        skipCategorization: skipCategorization === true,
-        skipCompilation: skipCompilation === true
-      });
+    const result = await harvestService.harvest(householdId, {
+      skipCategorization: skipCategorization === true,
+      skipCompilation: skipCompilation === true
+    });
 
-      logger.info?.('finance.refresh.completed', { householdId, result: result.status });
+    logger.info?.('finance.refresh.completed', { householdId, result: result.status });
 
-      return res.json(result);
-    } catch (error) {
-      logger.error?.('finance.refresh.error', { householdId, error: error.message });
-      return res.status(500).json({ error: 'Failed to refresh financial data', details: error.message });
-    }
-  });
+    return res.json(result);
+  }));
 
   /**
    * POST /api/finance/compile - Trigger budget compilation only (no data fetch)
    */
-  router.post('/compile', async (req, res) => {
+  router.post('/compile', asyncHandler(async (req, res) => {
     const householdId = resolveHouseholdId(req.body.household || req.query.household);
 
     if (!compilationService) {
@@ -405,28 +386,23 @@ export function createFinanceRouter(config) {
       });
     }
 
-    try {
-      logger.info?.('finance.compile.started', { householdId });
+    logger.info?.('finance.compile.started', { householdId });
 
-      const result = await compilationService.compile(householdId);
+    const result = await compilationService.compile(householdId);
 
-      logger.info?.('finance.compile.completed', { householdId });
+    logger.info?.('finance.compile.completed', { householdId });
 
-      return res.json({
-        status: 'success',
-        budgetCount: Object.keys(result.budgets).length,
-        hasMortgage: !!result.mortgage
-      });
-    } catch (error) {
-      logger.error?.('finance.compile.error', { householdId, error: error.message });
-      return res.status(500).json({ error: 'Failed to compile budget', details: error.message });
-    }
-  });
+    return res.json({
+      status: 'success',
+      budgetCount: Object.keys(result.budgets).length,
+      hasMortgage: !!result.mortgage
+    });
+  }));
 
   /**
    * POST /api/finance/categorize - Trigger AI transaction categorization
    */
-  router.post('/categorize', async (req, res) => {
+  router.post('/categorize', asyncHandler(async (req, res) => {
     const householdId = resolveHouseholdId(req.body.household || req.query.household);
     const { budgetDate, preview } = req.body;
 
@@ -437,41 +413,36 @@ export function createFinanceRouter(config) {
       });
     }
 
-    try {
-      logger.info?.('finance.categorize.started', { householdId, budgetDate, preview });
+    logger.info?.('finance.categorize.started', { householdId, budgetDate, preview });
 
-      let transactions;
-      if (budgetDate) {
-        transactions = financeStore?.getTransactions(budgetDate, householdId) || [];
+    let transactions;
+    if (budgetDate) {
+      transactions = financeStore?.getTransactions(budgetDate, householdId) || [];
+    } else {
+      // Use latest period
+      const periods = financeStore?.listBudgetPeriods(householdId) || [];
+      if (periods.length > 0) {
+        transactions = financeStore?.getTransactions(periods[periods.length - 1], householdId) || [];
       } else {
-        // Use latest period
-        const periods = financeStore?.listBudgetPeriods(householdId) || [];
-        if (periods.length > 0) {
-          transactions = financeStore?.getTransactions(periods[periods.length - 1], householdId) || [];
-        } else {
-          transactions = [];
-        }
+        transactions = [];
       }
-
-      let result;
-      if (preview === true) {
-        result = await categorizationService.preview(transactions, householdId);
-        return res.json({
-          status: 'preview',
-          ...result
-        });
-      } else {
-        result = await categorizationService.categorize(transactions, householdId);
-        return res.json({
-          status: 'success',
-          ...result
-        });
-      }
-    } catch (error) {
-      logger.error?.('finance.categorize.error', { householdId, error: error.message });
-      return res.status(500).json({ error: 'Failed to categorize transactions', details: error.message });
     }
-  });
+
+    let result;
+    if (preview === true) {
+      result = await categorizationService.preview(transactions, householdId);
+      return res.json({
+        status: 'preview',
+        ...result
+      });
+    } else {
+      result = await categorizationService.categorize(transactions, householdId);
+      return res.json({
+        status: 'success',
+        ...result
+      });
+    }
+  }));
 
   // =============================================================================
   // Transaction Memos
@@ -517,7 +488,7 @@ export function createFinanceRouter(config) {
    * POST /api/finance/payroll/sync - Sync payroll data
    * Fetches paycheck data from external payroll API and uploads to Buxfer
    */
-  router.post('/payroll/sync', async (req, res) => {
+  router.post('/payroll/sync', asyncHandler(async (req, res) => {
     const { token } = req.body;
 
     if (!payrollService) {
@@ -527,19 +498,14 @@ export function createFinanceRouter(config) {
       });
     }
 
-    try {
-      logger.info?.('finance.payroll.sync.started', { hasToken: !!token });
+    logger.info?.('finance.payroll.sync.started', { hasToken: !!token });
 
-      const result = await payrollService.sync({ token });
+    const result = await payrollService.sync({ token });
 
-      logger.info?.('finance.payroll.sync.completed', { result: result.status });
+    logger.info?.('finance.payroll.sync.completed', { result: result.status });
 
-      return res.json(result);
-    } catch (error) {
-      logger.error?.('finance.payroll.sync.error', { error: error.message });
-      return res.status(500).json({ error: 'Payroll sync failed', details: error.message });
-    }
-  });
+    return res.json(result);
+  }));
 
   // =============================================================================
   // Metrics

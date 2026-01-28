@@ -10,6 +10,7 @@
  */
 
 import express from 'express';
+import { asyncHandler } from '#system/http/middleware/index.mjs';
 
 /**
  * Create agents API router
@@ -31,22 +32,17 @@ export function createAgentsRouter(config) {
    * GET /api/agents
    * List all registered agents
    */
-  router.get('/', (req, res) => {
-    try {
-      const agents = agentOrchestrator.list();
-      res.json({ agents });
-    } catch (error) {
-      logger.error?.('agents.list.error', { error: error.message });
-      res.status(500).json({ error: error.message });
-    }
-  });
+  router.get('/', asyncHandler(async (req, res) => {
+    const agents = agentOrchestrator.list();
+    res.json({ agents });
+  }));
 
   /**
    * POST /api/agents/:agentId/run
    * Run an agent synchronously
    * Body: { input: string, context?: object }
    */
-  router.post('/:agentId/run', async (req, res) => {
+  router.post('/:agentId/run', asyncHandler(async (req, res) => {
     const { agentId } = req.params;
     const { input, context = {} } = req.body;
 
@@ -54,9 +50,9 @@ export function createAgentsRouter(config) {
       return res.status(400).json({ error: 'input is required' });
     }
 
-    try {
-      logger.info?.('agents.run.request', { agentId, inputLength: input.length });
+    logger.info?.('agents.run.request', { agentId, inputLength: input.length });
 
+    try {
       const result = await agentOrchestrator.run(agentId, input, context);
 
       res.json({
@@ -71,16 +67,16 @@ export function createAgentsRouter(config) {
         return res.status(404).json({ error: error.message });
       }
 
-      res.status(500).json({ error: error.message });
+      throw error;
     }
-  });
+  }));
 
   /**
    * POST /api/agents/:agentId/run-background
    * Run an agent in background (returns immediately)
    * Body: { input: string, context?: object }
    */
-  router.post('/:agentId/run-background', async (req, res) => {
+  router.post('/:agentId/run-background', asyncHandler(async (req, res) => {
     const { agentId } = req.params;
     const { input, context = {} } = req.body;
 
@@ -88,9 +84,9 @@ export function createAgentsRouter(config) {
       return res.status(400).json({ error: 'input is required' });
     }
 
-    try {
-      logger.info?.('agents.runBackground.request', { agentId });
+    logger.info?.('agents.runBackground.request', { agentId });
 
+    try {
       const { taskId } = await agentOrchestrator.runInBackground(agentId, input, context);
 
       res.status(202).json({
@@ -105,9 +101,9 @@ export function createAgentsRouter(config) {
         return res.status(404).json({ error: error.message });
       }
 
-      res.status(500).json({ error: error.message });
+      throw error;
     }
-  });
+  }));
 
   return router;
 }

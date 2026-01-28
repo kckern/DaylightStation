@@ -12,38 +12,26 @@
  */
 export function journalistTriggerHandler(container) {
   return async (req, res) => {
-    const traceId = req.traceId || 'unknown';
+    // Extract chatId from query or body
+    const chatId = req.query.chatId || req.body?.chatId;
 
-    try {
-      // Extract chatId from query or body
-      const chatId = req.query.chatId || req.body?.chatId;
-
-      if (!chatId) {
-        return res.status(400).json({
-          ok: false,
-          error: 'chatId is required',
-          traceId,
-        });
-      }
-
-      // Get use case
-      const useCase = container.getInitiateJournalPrompt();
-
-      // Execute
-      const result = await useCase.execute({ chatId });
-
-      res.json({
-        ok: true,
-        data: result,
-        traceId,
-      });
-    } catch (error) {
-      res.status(500).json({
+    if (!chatId) {
+      return res.status(400).json({
         ok: false,
-        error: error.message,
-        traceId,
+        error: 'chatId is required',
       });
     }
+
+    // Get use case
+    const useCase = container.getInitiateJournalPrompt();
+
+    // Execute
+    const result = await useCase.execute({ chatId });
+
+    res.json({
+      ok: true,
+      data: result,
+    });
   };
 }
 

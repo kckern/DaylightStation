@@ -33,61 +33,46 @@ export function journalistMorningDebriefHandler(container, options = {}) {
 
     logger.info?.('morning.handler.start', { username, date });
 
-    try {
-      // Step 1: Generate the debrief
-      const generateMorningDebrief = container.getGenerateMorningDebrief();
-      const debrief = await generateMorningDebrief.execute({
-        username,
-        date,
-      });
+    // Step 1: Generate the debrief
+    const generateMorningDebrief = container.getGenerateMorningDebrief();
+    const debrief = await generateMorningDebrief.execute({
+      username,
+      date,
+    });
 
-      // Step 2: Resolve user's conversation ID
-      const userResolver = container.getUserResolver?.() || null;
-      const conversationId = await resolveConversationId(userResolver, username, logger);
+    // Step 2: Resolve user's conversation ID
+    const userResolver = container.getUserResolver?.() || null;
+    const conversationId = await resolveConversationId(userResolver, username, logger);
 
-      if (!conversationId) {
-        logger.error?.('morning.handler.no-conversation-id', { username });
-        return res.status(500).json({
-          success: false,
-          error: 'Could not resolve conversation ID for user',
-        });
-      }
-
-      // Step 3: Send to Telegram
-      const sendMorningDebrief = container.getSendMorningDebrief();
-      const result = await sendMorningDebrief.execute({
-        conversationId,
-        debrief,
-      });
-
-      logger.info?.('morning.handler.complete', {
-        username,
-        date: debrief.date,
-        success: result.success,
-        fallback: result.fallback,
-      });
-
-      return res.status(200).json({
-        success: true,
-        username,
-        date: debrief.date || date,
-        messageId: result.messageId,
-        fallback: result.fallback,
-      });
-    } catch (error) {
-      logger.error?.('morning.handler.failed', {
-        username,
-        date,
-        error: error.message,
-        stack: error.stack,
-      });
-
+    if (!conversationId) {
+      logger.error?.('morning.handler.no-conversation-id', { username });
       return res.status(500).json({
         success: false,
-        username,
-        error: error.message,
+        error: 'Could not resolve conversation ID for user',
       });
     }
+
+    // Step 3: Send to Telegram
+    const sendMorningDebrief = container.getSendMorningDebrief();
+    const result = await sendMorningDebrief.execute({
+      conversationId,
+      debrief,
+    });
+
+    logger.info?.('morning.handler.complete', {
+      username,
+      date: debrief.date,
+      success: result.success,
+      fallback: result.fallback,
+    });
+
+    return res.status(200).json({
+      success: true,
+      username,
+      date: debrief.date || date,
+      messageId: result.messageId,
+      fallback: result.fallback,
+    });
   };
 }
 

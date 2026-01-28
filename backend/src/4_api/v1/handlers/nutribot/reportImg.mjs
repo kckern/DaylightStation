@@ -18,55 +18,46 @@ export function nutribotReportImgHandler(container, options = {}) {
   return async (req, res) => {
     const traceId = req.traceId || 'unknown';
 
-    try {
-      // Extract chatId and date from query
-      const chatId = req.query.chatId;
-      const date = req.query.date;
+    // Extract chatId and date from query
+    const chatId = req.query.chatId;
+    const date = req.query.date;
 
-      logger.info?.('reportImg.request', { chatId, date, traceId });
+    logger.info?.('reportImg.request', { chatId, date, traceId });
 
-      if (!chatId) {
-        return res.status(400).json({
-          ok: false,
-          error: 'chatId is required',
-          traceId,
-        });
-      }
-
-      // Get report data
-      const reportUseCase = container.getGetReportAsJSON();
-      const reportData = await reportUseCase.execute({
-        userId: chatId,
-        date,
-      });
-
-      logger.info?.('reportImg.data', { traceId, chatId, date, itemCount: reportData?.items?.length || 0 });
-
-      // Generate image from report data using renderer if available
-      const reportRenderer = container.getReportRenderer?.();
-      let imageBuffer;
-
-      if (reportRenderer?.renderDailyReport) {
-        imageBuffer = await reportRenderer.renderDailyReport(reportData);
-      } else {
-        // Fallback: return a minimal placeholder PNG
-        imageBuffer = generatePlaceholderPng();
-      }
-
-      logger.info?.('reportImg.generated', { traceId, chatId, date });
-
-      // Set content type and send image
-      res.setHeader('Content-Type', 'image/png');
-      res.setHeader('Cache-Control', 'no-cache');
-      res.send(imageBuffer);
-    } catch (error) {
-      logger.error?.('reportImg.error', { traceId, error: error.message });
-      res.status(500).json({
+    if (!chatId) {
+      return res.status(400).json({
         ok: false,
-        error: error.message,
+        error: 'chatId is required',
         traceId,
       });
     }
+
+    // Get report data
+    const reportUseCase = container.getGetReportAsJSON();
+    const reportData = await reportUseCase.execute({
+      userId: chatId,
+      date,
+    });
+
+    logger.info?.('reportImg.data', { traceId, chatId, date, itemCount: reportData?.items?.length || 0 });
+
+    // Generate image from report data using renderer if available
+    const reportRenderer = container.getReportRenderer?.();
+    let imageBuffer;
+
+    if (reportRenderer?.renderDailyReport) {
+      imageBuffer = await reportRenderer.renderDailyReport(reportData);
+    } else {
+      // Fallback: return a minimal placeholder PNG
+      imageBuffer = generatePlaceholderPng();
+    }
+
+    logger.info?.('reportImg.generated', { traceId, chatId, date });
+
+    // Set content type and send image
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.send(imageBuffer);
   };
 }
 

@@ -3,6 +3,7 @@ import express from 'express';
 import path from 'path';
 import { parseFile } from 'music-metadata';
 import { lookupReference, generateReference } from 'scripture-guide';
+import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { dirExists, listDirs, getStats, findMediaFileByPrefix } from '#system/utils/FileIO.mjs';
 import { generatePlaceholderImage } from '#system/utils/placeholderImage.mjs';
 
@@ -107,8 +108,7 @@ export function createLocalContentRouter(config) {
    * - /scripture/bom (volume - returns first chapter)
    * - /scripture/bom/sebom/31103 (full path)
    */
-  router.get('/scripture/*', async (req, res) => {
-    try {
+  router.get('/scripture/*', asyncHandler(async (req, res) => {
       const input = req.params[0] || '';
       const adapter = registry.get('local-content');
 
@@ -152,18 +152,13 @@ export function createLocalContentRouter(config) {
         duration: item.duration,
         verses: item.metadata?.verses || []
       });
-    } catch (err) {
-      console.error('[localContent] scripture error:', err);
-      res.status(500).json({ error: err.message });
-    }
-  });
+  }));
 
   /**
    * GET /api/local-content/hymn/:number
    * Returns hymn with lyrics (legacy parity with /data/hymn/:number)
    */
-  router.get('/hymn/:number', async (req, res) => {
-    try {
+  router.get('/hymn/:number', asyncHandler(async (req, res) => {
       const { number } = req.params;
       const adapter = registry.get('local-content');
 
@@ -212,18 +207,13 @@ export function createLocalContentRouter(config) {
         mediaUrl,
         duration
       });
-    } catch (err) {
-      console.error('[localContent] hymn error:', err);
-      res.status(500).json({ error: err.message });
-    }
-  });
+  }));
 
   /**
    * GET /api/local-content/primary/:number
    * Returns primary song with lyrics (legacy parity with /data/primary/:number)
    */
-  router.get('/primary/:number', async (req, res) => {
-    try {
+  router.get('/primary/:number', asyncHandler(async (req, res) => {
       const { number } = req.params;
       const adapter = registry.get('local-content');
 
@@ -265,18 +255,13 @@ export function createLocalContentRouter(config) {
         mediaUrl,
         duration
       });
-    } catch (err) {
-      console.error('[localContent] primary error:', err);
-      res.status(500).json({ error: err.message });
-    }
-  });
+  }));
 
   /**
    * GET /api/local-content/talk/*
    * Returns talk with paragraphs for ContentScroller
    */
-  router.get('/talk/*', async (req, res) => {
-    try {
+  router.get('/talk/*', asyncHandler(async (req, res) => {
       const path = req.params[0] || '';
       const adapter = registry.get('local-content');
 
@@ -299,18 +284,13 @@ export function createLocalContentRouter(config) {
         description: item.metadata.description,
         content: item.metadata.content || []
       });
-    } catch (err) {
-      console.error('[localContent] talk error:', err);
-      res.status(500).json({ error: err.message });
-    }
-  });
+  }));
 
   /**
    * GET /api/local-content/poem/*
    * Returns poem with stanzas for ContentScroller
    */
-  router.get('/poem/*', async (req, res) => {
-    try {
+  router.get('/poem/*', asyncHandler(async (req, res) => {
       const path = req.params[0] || '';
       const adapter = registry.get('local-content');
 
@@ -334,11 +314,7 @@ export function createLocalContentRouter(config) {
         duration: item.duration,
         verses: item.metadata.verses
       });
-    } catch (err) {
-      console.error('[localContent] poem error:', err);
-      res.status(500).json({ error: err.message });
-    }
-  });
+  }));
 
   /**
    * GET /api/local-content/cover/*

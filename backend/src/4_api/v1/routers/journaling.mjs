@@ -5,6 +5,7 @@
  */
 import express from 'express';
 import { nowTs24 } from '#system/utils/index.mjs';
+import { asyncHandler } from '#system/http/middleware/index.mjs';
 
 /**
  * Create journaling API router
@@ -26,108 +27,88 @@ export function createJournalingRouter(config) {
    * GET /api/journaling
    * Get journaling module overview
    */
-  router.get('/', async (req, res) => {
-    try {
-      const { hid } = req.query;
-      if (!hid) {
-        return res.status(400).json({ error: 'Missing household ID (hid)' });
-      }
-
-      const dates = await journalStore.listDates(hid);
-      const tags = await journalStore.getAllTags(hid);
-
-      res.json({
-        module: 'journaling',
-        householdId: hid,
-        totalEntries: dates.length,
-        mostRecentDate: dates[0] || null,
-        tags
-      });
-    } catch (error) {
-      logger?.error?.('journaling.overview.error', { error: error.message });
-      res.status(500).json({ error: error.message });
+  router.get('/', asyncHandler(async (req, res) => {
+    const { hid } = req.query;
+    if (!hid) {
+      return res.status(400).json({ error: 'Missing household ID (hid)' });
     }
-  });
+
+    const dates = await journalStore.listDates(hid);
+    const tags = await journalStore.getAllTags(hid);
+
+    res.json({
+      module: 'journaling',
+      householdId: hid,
+      totalEntries: dates.length,
+      mostRecentDate: dates[0] || null,
+      tags
+    });
+  }));
 
   /**
    * GET /api/journaling/entries/dates
    * List all dates with journal entries
    */
-  router.get('/entries/dates', async (req, res) => {
-    try {
-      const { hid } = req.query;
-      if (!hid) {
-        return res.status(400).json({ error: 'Missing household ID (hid)' });
-      }
-
-      const dates = await journalStore.listDates(hid);
-      res.json({ dates });
-    } catch (error) {
-      logger?.error?.('journaling.listDates.error', { error: error.message });
-      res.status(500).json({ error: error.message });
+  router.get('/entries/dates', asyncHandler(async (req, res) => {
+    const { hid } = req.query;
+    if (!hid) {
+      return res.status(400).json({ error: 'Missing household ID (hid)' });
     }
-  });
+
+    const dates = await journalStore.listDates(hid);
+    res.json({ dates });
+  }));
 
   /**
    * GET /api/journaling/entries/:date
    * Get journal entry for a specific date
    */
-  router.get('/entries/:date', async (req, res) => {
-    try {
-      const { hid } = req.query;
-      const { date } = req.params;
+  router.get('/entries/:date', asyncHandler(async (req, res) => {
+    const { hid } = req.query;
+    const { date } = req.params;
 
-      if (!hid) {
-        return res.status(400).json({ error: 'Missing household ID (hid)' });
-      }
-
-      const entry = await journalService.getEntryByDate(hid, date);
-      if (!entry) {
-        return res.status(404).json({ error: 'Journal entry not found' });
-      }
-
-      res.json(entry);
-    } catch (error) {
-      logger?.error?.('journaling.getEntry.error', { error: error.message });
-      res.status(500).json({ error: error.message });
+    if (!hid) {
+      return res.status(400).json({ error: 'Missing household ID (hid)' });
     }
-  });
+
+    const entry = await journalService.getEntryByDate(hid, date);
+    if (!entry) {
+      return res.status(404).json({ error: 'Journal entry not found' });
+    }
+
+    res.json(entry);
+  }));
 
   /**
    * POST /api/journaling/entries
    * Create a new journal entry
    */
-  router.post('/entries', async (req, res) => {
-    try {
-      const { hid } = req.query;
-      const entryData = req.body;
+  router.post('/entries', asyncHandler(async (req, res) => {
+    const { hid } = req.query;
+    const entryData = req.body;
 
-      if (!hid) {
-        return res.status(400).json({ error: 'Missing household ID (hid)' });
-      }
-
-      const timestamp = nowTs24();
-      const entry = await journalService.createEntry({
-        userId: hid,
-        ...entryData
-      }, timestamp);
-
-      res.status(201).json(entry);
-    } catch (error) {
-      logger?.error?.('journaling.createEntry.error', { error: error.message });
-      res.status(500).json({ error: error.message });
+    if (!hid) {
+      return res.status(400).json({ error: 'Missing household ID (hid)' });
     }
-  });
+
+    const timestamp = nowTs24();
+    const entry = await journalService.createEntry({
+      userId: hid,
+      ...entryData
+    }, timestamp);
+
+    res.status(201).json(entry);
+  }));
 
   /**
    * PUT /api/journaling/entries/:id
    * Update a journal entry
    */
-  router.put('/entries/:id', async (req, res) => {
-    try {
-      const { id } = req.params;
-      const updates = req.body;
+  router.put('/entries/:id', asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const updates = req.body;
 
+    try {
       const timestamp = nowTs24();
       const entry = await journalService.updateEntry(id, updates, timestamp);
       res.json(entry);
@@ -135,113 +116,87 @@ export function createJournalingRouter(config) {
       if (error.message.includes('not found')) {
         return res.status(404).json({ error: error.message });
       }
-      logger?.error?.('journaling.updateEntry.error', { error: error.message });
-      res.status(500).json({ error: error.message });
+      throw error;
     }
-  });
+  }));
 
   /**
    * DELETE /api/journaling/entries/:id
    * Delete a journal entry
    */
-  router.delete('/entries/:id', async (req, res) => {
-    try {
-      const { id } = req.params;
+  router.delete('/entries/:id', asyncHandler(async (req, res) => {
+    const { id } = req.params;
 
-      await journalService.deleteEntry(id);
-      res.json({ success: true });
-    } catch (error) {
-      logger?.error?.('journaling.deleteEntry.error', { error: error.message });
-      res.status(500).json({ error: error.message });
-    }
-  });
+    await journalService.deleteEntry(id);
+    res.json({ success: true });
+  }));
 
   /**
    * GET /api/journaling/range
    * Get journal entries for a date range
    */
-  router.get('/range', async (req, res) => {
-    try {
-      const { hid, startDate, endDate } = req.query;
+  router.get('/range', asyncHandler(async (req, res) => {
+    const { hid, startDate, endDate } = req.query;
 
-      if (!hid) {
-        return res.status(400).json({ error: 'Missing household ID (hid)' });
-      }
-      if (!startDate || !endDate) {
-        return res.status(400).json({ error: 'Missing startDate or endDate' });
-      }
-
-      const entries = await journalService.getEntriesInRange(hid, startDate, endDate);
-      res.json({ entries });
-    } catch (error) {
-      logger?.error?.('journaling.range.error', { error: error.message });
-      res.status(500).json({ error: error.message });
+    if (!hid) {
+      return res.status(400).json({ error: 'Missing household ID (hid)' });
     }
-  });
+    if (!startDate || !endDate) {
+      return res.status(400).json({ error: 'Missing startDate or endDate' });
+    }
+
+    const entries = await journalService.getEntriesInRange(hid, startDate, endDate);
+    res.json({ entries });
+  }));
 
   /**
    * GET /api/journaling/by-tag/:tag
    * Get journal entries by tag
    */
-  router.get('/by-tag/:tag', async (req, res) => {
-    try {
-      const { hid } = req.query;
-      const { tag } = req.params;
+  router.get('/by-tag/:tag', asyncHandler(async (req, res) => {
+    const { hid } = req.query;
+    const { tag } = req.params;
 
-      if (!hid) {
-        return res.status(400).json({ error: 'Missing household ID (hid)' });
-      }
-
-      const entries = await journalService.getEntriesByTag(hid, tag);
-      res.json({ entries });
-    } catch (error) {
-      logger?.error?.('journaling.byTag.error', { error: error.message });
-      res.status(500).json({ error: error.message });
+    if (!hid) {
+      return res.status(400).json({ error: 'Missing household ID (hid)' });
     }
-  });
+
+    const entries = await journalService.getEntriesByTag(hid, tag);
+    res.json({ entries });
+  }));
 
   /**
    * GET /api/journaling/mood-summary
    * Get mood summary for a date range
    */
-  router.get('/mood-summary', async (req, res) => {
-    try {
-      const { hid, startDate, endDate } = req.query;
+  router.get('/mood-summary', asyncHandler(async (req, res) => {
+    const { hid, startDate, endDate } = req.query;
 
-      if (!hid) {
-        return res.status(400).json({ error: 'Missing household ID (hid)' });
-      }
-      if (!startDate || !endDate) {
-        return res.status(400).json({ error: 'Missing startDate or endDate' });
-      }
-
-      const summary = await journalService.getMoodSummary(hid, startDate, endDate);
-      res.json(summary);
-    } catch (error) {
-      logger?.error?.('journaling.moodSummary.error', { error: error.message });
-      res.status(500).json({ error: error.message });
+    if (!hid) {
+      return res.status(400).json({ error: 'Missing household ID (hid)' });
     }
-  });
+    if (!startDate || !endDate) {
+      return res.status(400).json({ error: 'Missing startDate or endDate' });
+    }
+
+    const summary = await journalService.getMoodSummary(hid, startDate, endDate);
+    res.json(summary);
+  }));
 
   /**
    * GET /api/journaling/tags
    * Get all tags used by a user
    */
-  router.get('/tags', async (req, res) => {
-    try {
-      const { hid } = req.query;
+  router.get('/tags', asyncHandler(async (req, res) => {
+    const { hid } = req.query;
 
-      if (!hid) {
-        return res.status(400).json({ error: 'Missing household ID (hid)' });
-      }
-
-      const tags = await journalStore.getAllTags(hid);
-      res.json({ tags });
-    } catch (error) {
-      logger?.error?.('journaling.tags.error', { error: error.message });
-      res.status(500).json({ error: error.message });
+    if (!hid) {
+      return res.status(400).json({ error: 'Missing household ID (hid)' });
     }
-  });
+
+    const tags = await journalStore.getAllTags(hid);
+    res.json({ tags });
+  }));
 
   return router;
 }

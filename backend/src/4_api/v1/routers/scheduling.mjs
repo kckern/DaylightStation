@@ -11,6 +11,7 @@
  */
 
 import express from 'express';
+import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { nowTs24 } from '#system/utils/index.mjs';
 
 /**
@@ -29,17 +30,12 @@ export function createSchedulingRouter(config) {
    * GET /status
    * Get status of all jobs with runtime state
    */
-  router.get('/status', async (req, res) => {
-    try {
-      const now = new Date();
-      const status = await schedulerService.getStatus(now);
-      status.scheduler = scheduler?.getStatus() || { enabled: false };
-      res.json(status);
-    } catch (err) {
-      logger.error?.('scheduling.status.error', { error: err.message });
-      res.status(500).json({ error: err.message });
-    }
-  });
+  router.get('/status', asyncHandler(async (req, res) => {
+    const now = new Date();
+    const status = await schedulerService.getStatus(now);
+    status.scheduler = scheduler?.getStatus() || { enabled: false };
+    res.json(status);
+  }));
 
   /**
    * POST /run/:jobId
@@ -115,18 +111,13 @@ export function createSchedulingRouter(config) {
    * GET /jobs
    * List all registered jobs
    */
-  router.get('/jobs', async (req, res) => {
-    try {
-      const jobs = await schedulerService.jobStore.loadJobs();
-      res.json({
-        count: jobs.length,
-        jobs: jobs.map(j => j.toJSON())
-      });
-    } catch (err) {
-      logger.error?.('scheduling.jobs.error', { error: err.message });
-      res.status(500).json({ error: err.message });
-    }
-  });
+  router.get('/jobs', asyncHandler(async (req, res) => {
+    const jobs = await schedulerService.jobStore.loadJobs();
+    res.json({
+      count: jobs.length,
+      jobs: jobs.map(j => j.toJSON())
+    });
+  }));
 
   /**
    * GET /running

@@ -5,6 +5,7 @@ import nodePath from 'path';
 import http from 'http';
 import https from 'https';
 import { URL } from 'url';
+import { asyncHandler } from '#system/http/middleware/index.mjs';
 
 /**
  * Create proxy router for streaming and thumbnails
@@ -23,8 +24,7 @@ export function createProxyRouter(config) {
    * GET /proxy/filesystem/stream/*
    * Stream a file from filesystem
    */
-  router.get('/filesystem/stream/*', async (req, res) => {
-    try {
+  router.get('/filesystem/stream/*', asyncHandler(async (req, res) => {
       const filePath = decodeURIComponent(req.params[0] || '');
       const adapter = registry.get('filesystem');
       if (!adapter) {
@@ -73,41 +73,31 @@ export function createProxyRouter(config) {
         });
         fs.createReadStream(fullPath).pipe(res);
       }
-    } catch (err) {
-      if (!res.headersSent) {
-        res.status(500).json({ error: err.message });
-      }
-    }
-  });
+  }));
 
   /**
    * GET /proxy/plex/stream/:ratingKey
    * Redirect to Plex stream (simplified - full transcode support would need more)
    */
-  router.get('/plex/stream/:ratingKey', async (req, res) => {
-    try {
-      const { ratingKey } = req.params;
-      const adapter = registry.get('plex');
-      if (!adapter) {
-        return res.status(404).json({ error: 'Plex adapter not configured' });
-      }
-
-      // For now, redirect to Plex direct URL
-      // Full transcode support would require session management
-      const token = adapter.client?.token || '';
-      const plexUrl = `${adapter.host}/library/metadata/${ratingKey}?X-Plex-Token=${token}`;
-      res.redirect(plexUrl);
-    } catch (err) {
-      res.status(500).json({ error: err.message });
+  router.get('/plex/stream/:ratingKey', asyncHandler(async (req, res) => {
+    const { ratingKey } = req.params;
+    const adapter = registry.get('plex');
+    if (!adapter) {
+      return res.status(404).json({ error: 'Plex adapter not configured' });
     }
-  });
+
+    // For now, redirect to Plex direct URL
+    // Full transcode support would require session management
+    const token = adapter.client?.token || '';
+    const plexUrl = `${adapter.host}/library/metadata/${ratingKey}?X-Plex-Token=${token}`;
+    res.redirect(plexUrl);
+  }));
 
   /**
    * GET /proxy/local-content/stream/:type/*
    * Stream audio for LocalContent types (talk, scripture, hymn, primary, poem)
    */
-  router.get('/local-content/stream/:type/*', async (req, res) => {
-    try {
+  router.get('/local-content/stream/:type/*', asyncHandler(async (req, res) => {
       const { type } = req.params;
       const path = req.params[0] || '';
       const adapter = registry.get('local-content');
@@ -188,13 +178,7 @@ export function createProxyRouter(config) {
         });
         fs.createReadStream(fullPath).pipe(res);
       }
-    } catch (err) {
-      console.error('[proxy] local-content stream error:', err);
-      if (!res.headersSent) {
-        res.status(500).json({ error: err.message });
-      }
-    }
-  });
+  }));
 
   /**
    * GET /proxy/plex/*
@@ -280,8 +264,7 @@ export function createProxyRouter(config) {
    * Stream audio/video files from the media mount
    * Replaces legacy /media/* endpoint for ambient music, poetry, etc.
    */
-  router.get('/media/*', async (req, res) => {
-    try {
+  router.get('/media/*', asyncHandler(async (req, res) => {
       if (!mediaBasePath) {
         return res.status(503).json({ error: 'Media path not configured' });
       }
@@ -368,13 +351,7 @@ export function createProxyRouter(config) {
       }
 
       logger.debug?.('proxy.media.served', { path: relativePath, mimeType });
-    } catch (err) {
-      logger.error?.('proxy.media.error', { path: req.params[0], error: err.message });
-      if (!res.headersSent) {
-        res.status(500).json({ error: err.message });
-      }
-    }
-  });
+  }));
 
   return router;
 }
