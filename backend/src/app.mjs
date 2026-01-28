@@ -392,6 +392,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     dataRoot: dataBasePath,
     mediaRoot: mediaBasePath,
     defaultHouseholdId: householdId,
+    // Prefer config-driven HA adapter, fall back to config-based creation
+    haGateway: householdAdapters?.home_automation ?? null,
     homeAssistant: {
       baseUrl: haBaseUrl,
       token: haAuth.token || ''
@@ -636,6 +638,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const taskerConfig = configService.getAppConfig('tasker') || {};
   const remoteExecConfig = configService.getAppConfig('remote_exec') || {};
   const homeAutomationAdapters = createHomeAutomationAdapters({
+    // Prefer config-driven HA adapter, fall back to config-based creation
+    haGateway: householdAdapters?.home_automation ?? null,
     homeAssistant: {
       baseUrl: haBaseUrl,
       token: haAuth.token || ''
@@ -715,10 +719,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const openaiApiKey = configService.getSecret('OPENAI_API_KEY') || '';
 
   // Create shared AI adapter (used by all bots)
-  let sharedAiGateway = null;
-  if (openaiApiKey) {
+  // Prefer config-driven adapter from integration system, fall back to hardcoded creation
+  let sharedAiGateway = householdAdapters?.ai ?? null;
+  if (!sharedAiGateway && openaiApiKey) {
     const { OpenAIAdapter } = await import('./2_adapters/ai/OpenAIAdapter.mjs');
     sharedAiGateway = new OpenAIAdapter({ apiKey: openaiApiKey }, { httpClient: axios, logger: rootLogger.child({ module: 'shared-ai' }) });
+    rootLogger.debug('ai.adapter.fallback', { reason: 'Using hardcoded OpenAI adapter creation' });
   }
 
   // Create shared voice transcription service (used by all bot TelegramAdapters)
@@ -785,12 +791,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Journalist application
   const journalistConfig = configService.getAppConfig('journalist') || {};
 
-  // Create AI adapter for journalist (reuse pattern from nutribot, or share adapter)
-  let journalistAiGateway = nutribotAiGateway;  // Reuse the same adapter
-  if (!journalistAiGateway && openaiApiKey) {
-    const { OpenAIAdapter } = await import('./2_adapters/ai/OpenAIAdapter.mjs');
-    journalistAiGateway = new OpenAIAdapter({ apiKey: openaiApiKey }, { logger: rootLogger.child({ module: 'journalist-ai' }) });
-  }
+  // Reuse shared AI adapter (loaded from integration system or created above)
+  const journalistAiGateway = nutribotAiGateway;
 
   // Create dedicated TelegramAdapter for journalist with its own token
   const { TelegramAdapter } = await import('./2_adapters/messaging/TelegramAdapter.mjs');
@@ -832,12 +834,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // HomeBot application
   const homebotConfig = configService.getAppConfig('homebot') || {};
 
-  // Reuse AI gateway from nutribot/journalist
-  let homebotAiGateway = nutribotAiGateway || journalistAiGateway;
-  if (!homebotAiGateway && openaiApiKey) {
-    const { OpenAIAdapter } = await import('./2_adapters/ai/OpenAIAdapter.mjs');
-    homebotAiGateway = new OpenAIAdapter({ apiKey: openaiApiKey }, { logger: rootLogger.child({ module: 'homebot-ai' }) });
-  }
+  // Reuse shared AI adapter (loaded from integration system or created above)
+  const homebotAiGateway = nutribotAiGateway || journalistAiGateway;
 
   // Create dedicated TelegramAdapter for homebot with its own token
   const homebotTelegramAdapter = homebotToken
@@ -882,17 +880,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Create adapters for OpenAI and Anthropic
   const anthropicApiKey = configService.getSecret('ANTHROPIC_API_KEY') || '';
 
-  let aiOpenaiAdapter = null;
+  // Reuse shared AI adapter for OpenAI (loaded from integration system)
+  const aiOpenaiAdapter = sharedAiGateway;
+
+  // Anthropic adapter - could be loaded from integration system if configured
+  // For now, create directly if API key is available
   let aiAnthropicAdapter = null;
-
-  if (openaiApiKey) {
-    const { OpenAIAdapter } = await import('./2_adapters/ai/OpenAIAdapter.mjs');
-    aiOpenaiAdapter = new OpenAIAdapter(
-      { apiKey: openaiApiKey },
-      { httpClient: axios, logger: rootLogger.child({ module: 'ai-openai' }) }
-    );
-  }
-
   if (anthropicApiKey) {
     const { AnthropicAdapter } = await import('./2_adapters/ai/AnthropicAdapter.mjs');
     aiAnthropicAdapter = new AnthropicAdapter(
