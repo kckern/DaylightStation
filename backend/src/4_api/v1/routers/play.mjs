@@ -13,12 +13,12 @@ import { nowTs24 } from '#system/utils/index.mjs';
  *
  * @param {Object} config
  * @param {Object} config.registry - ContentSourceRegistry
- * @param {Object} config.watchStore - WatchStateStore
+ * @param {Object} config.mediaProgressMemory - MediaProgressMemory
  * @param {Object} [config.logger] - Logger instance
  * @returns {express.Router}
  */
 export function createPlayRouter(config) {
-  const { registry, watchStore, logger = console } = config;
+  const { registry, mediaProgressMemory, logger = console } = config;
   const router = express.Router();
 
   /**
@@ -184,7 +184,7 @@ export function createPlayRouter(config) {
 
       // Get existing watch state
       const compoundId = type === 'plex' ? `plex:${media_key}` : media_key;
-      const existingState = watchStore ? await watchStore.get(compoundId, storagePath) : null;
+      const existingState = mediaProgressMemory ? await mediaProgressMemory.get(compoundId, storagePath) : null;
 
       // Calculate duration from percent if not in metadata
       const normalizedSeconds = parseInt(seconds, 10);
@@ -215,8 +215,8 @@ export function createPlayRouter(config) {
       });
 
       // Persist state
-      if (watchStore) {
-        await watchStore.set(newState, storagePath);
+      if (mediaProgressMemory) {
+        await mediaProgressMemory.set(newState, storagePath);
       }
 
       logger.info?.('play.log.updated', {
@@ -312,7 +312,7 @@ export function createPlayRouter(config) {
         const storagePath = typeof adapter.getStoragePath === 'function'
           ? await adapter.getStoragePath(randomItem.id)
           : source;
-        const watchState = watchStore ? await watchStore.get(randomItem.id, storagePath) : null;
+        const watchState = mediaProgressMemory ? await mediaProgressMemory.get(randomItem.id, storagePath) : null;
 
         return res.json(toPlayResponse(randomItem, watchState));
       }
@@ -335,7 +335,7 @@ export function createPlayRouter(config) {
         const storagePath = typeof adapter.getStoragePath === 'function'
           ? await adapter.getStoragePath(firstPlayable.id)
           : source;
-        const watchState = watchStore ? await watchStore.get(firstPlayable.id, storagePath) : null;
+        const watchState = mediaProgressMemory ? await mediaProgressMemory.get(firstPlayable.id, storagePath) : null;
 
         return res.json(toPlayResponse(firstPlayable, watchState));
       }
@@ -344,7 +344,7 @@ export function createPlayRouter(config) {
       const storagePath = typeof adapter.getStoragePath === 'function'
         ? await adapter.getStoragePath(item.id)
         : source;
-      const watchState = watchStore ? await watchStore.get(item.id, storagePath) : null;
+      const watchState = mediaProgressMemory ? await mediaProgressMemory.get(item.id, storagePath) : null;
 
       res.json(toPlayResponse(item, watchState));
     } catch (err) {
