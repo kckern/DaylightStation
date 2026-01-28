@@ -1,26 +1,26 @@
-// backend/src/2_adapters/persistence/yaml/YamlWatchStateDatastore.mjs
+// backend/src/2_adapters/persistence/yaml/YamlMediaProgressMemory.mjs
 import path from 'path';
-import { WatchState } from '#domains/content/entities/WatchState.mjs';
+import { MediaProgress } from '#domains/content/entities/MediaProgress.mjs';
 import {
   ensureDir,
   loadYamlSafe,
   saveYaml,
   deleteYaml
 } from '#system/utils/FileIO.mjs';
-import { IWatchStateDatastore } from '#apps/content/ports/IWatchStateDatastore.mjs';
+import { IMediaProgressMemory } from '#apps/content/ports/IMediaProgressMemory.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 /**
- * YAML-based watch state persistence
+ * YAML-based media progress persistence
  */
-export class YamlWatchStateDatastore extends IWatchStateDatastore {
+export class YamlMediaProgressMemory extends IMediaProgressMemory {
   /**
    * @param {Object} config
-   * @param {string} config.basePath - Base path for watch state files
+   * @param {string} config.basePath - Base path for media progress files
    */
   constructor(config) {
     super();
-    if (!config.basePath) throw new InfrastructureError('YamlWatchStateDatastore requires basePath', {
+    if (!config.basePath) throw new InfrastructureError('YamlMediaProgressMemory requires basePath', {
         code: 'MISSING_DEPENDENCY',
         dependency: 'basePath'
       });
@@ -66,21 +66,21 @@ export class YamlWatchStateDatastore extends IWatchStateDatastore {
   }
 
   /**
-   * Get watch state for an item
+   * Get media progress for an item
    * @param {string} itemId
    * @param {string} storagePath
-   * @returns {Promise<WatchState|null>}
+   * @returns {Promise<MediaProgress|null>}
    */
   async get(itemId, storagePath) {
     const data = this._readFile(storagePath);
     const stateData = data[itemId];
     if (!stateData) return null;
-    return WatchState.fromJSON({ itemId, ...stateData });
+    return MediaProgress.fromJSON({ itemId, ...stateData });
   }
 
   /**
-   * Set watch state for an item
-   * @param {WatchState} state
+   * Set media progress for an item
+   * @param {MediaProgress} state
    * @param {string} storagePath
    * @returns {Promise<void>}
    */
@@ -92,19 +92,19 @@ export class YamlWatchStateDatastore extends IWatchStateDatastore {
   }
 
   /**
-   * Get all watch states for a storage path
+   * Get all media progress entries for a storage path
    * @param {string} storagePath
-   * @returns {Promise<WatchState[]>}
+   * @returns {Promise<MediaProgress[]>}
    */
   async getAll(storagePath) {
     const data = this._readFile(storagePath);
     return Object.entries(data).map(([itemId, stateData]) =>
-      WatchState.fromJSON({ itemId, ...stateData })
+      MediaProgress.fromJSON({ itemId, ...stateData })
     );
   }
 
   /**
-   * Clear all watch states for a storage path
+   * Clear all media progress entries for a storage path
    * @param {string} storagePath
    * @returns {Promise<void>}
    */
@@ -114,4 +114,4 @@ export class YamlWatchStateDatastore extends IWatchStateDatastore {
   }
 }
 
-export default YamlWatchStateDatastore;
+export default YamlMediaProgressMemory;
