@@ -638,8 +638,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // Device registry domain
-  const devicesConfig = configService.getAppConfig('devices') || {};
-  const tvSystemConfig = configService.getSystemConfig('tv') || {};
+  const devicesConfig = configService.getHouseholdAppConfig(householdId, 'devices') || {};
+  const tvSystemConfig = configService.getServiceConfig('tv') || {};
   const daylightHost = tvSystemConfig.daylight_host;
   if (!daylightHost) {
     rootLogger.warn?.('devices.noDaylightHost', { message: 'tv.daylight_host not configured in system.yml' });

@@ -9,7 +9,7 @@
  * @module applications/devices/services
  */
 
-import { ApplicationError } from '#applications/shared/errors/index.mjs';
+import { ApplicationError } from '#apps/shared/errors/index.mjs';
 
 /**
  * @typedef {Object} DeviceCapabilities
@@ -77,12 +77,15 @@ export class Device {
    * @returns {Promise<Object>}
    */
   async powerOn(displayId) {
+    this.#logger.debug?.('device.powerOn.start', { id: this.#id, displayId, hasDeviceControl: !!this.#deviceControl });
     if (!this.#deviceControl) {
+      this.#logger.warn?.('device.powerOn.noDeviceControl', { id: this.#id });
       return { ok: false, error: 'No device control configured' };
     }
 
-    this.#logger.info?.('device.powerOn', { id: this.#id, displayId });
-    return this.#deviceControl.powerOn(displayId);
+    const result = await this.#deviceControl.powerOn(displayId);
+    this.#logger.debug?.('device.powerOn.done', { id: this.#id, displayId, result });
+    return result;
   }
 
   /**
@@ -153,10 +156,14 @@ export class Device {
    * @returns {Promise<Object>}
    */
   async prepareForContent() {
+    this.#logger.debug?.('device.prepareForContent.start', { id: this.#id, hasContentControl: !!this.#contentControl });
     // For Fully Kiosk: screenOn + toForeground
     if (this.#contentControl?.prepareForContent) {
-      return this.#contentControl.prepareForContent();
+      const result = await this.#contentControl.prepareForContent();
+      this.#logger.debug?.('device.prepareForContent.done', { id: this.#id, result });
+      return result;
     }
+    this.#logger.debug?.('device.prepareForContent.noop', { id: this.#id });
     return { ok: true };
   }
 
@@ -167,12 +174,15 @@ export class Device {
    * @returns {Promise<Object>}
    */
   async loadContent(path, query = {}) {
+    this.#logger.info?.('device.loadContent.start', { id: this.#id, path, query, hasContentControl: !!this.#contentControl });
     if (!this.#contentControl) {
+      this.#logger.warn?.('device.loadContent.noContentControl', { id: this.#id });
       return { ok: false, error: 'No content control configured' };
     }
 
-    this.#logger.info?.('device.loadContent', { id: this.#id, path, query });
-    return this.#contentControl.load(path, query);
+    const result = await this.#contentControl.load(path, query);
+    this.#logger.info?.('device.loadContent.done', { id: this.#id, path, ok: result.ok, url: result.url });
+    return result;
   }
 
   /**

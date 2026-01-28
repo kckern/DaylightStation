@@ -150,8 +150,12 @@ export function createDeviceRouter(config) {
     const { deviceId } = req.params;
     const query = { ...req.query };
     const device = deviceService.get(deviceId);
+    const startTime = Date.now();
+
+    logger.info?.('device.router.load.start', { deviceId, query, timestamp: new Date().toISOString() });
 
     if (!device) {
+      logger.warn?.('device.router.load.notFound', { deviceId });
       return res.status(404).json({
         ok: false,
         error: 'Device not found',
@@ -159,11 +163,12 @@ export function createDeviceRouter(config) {
       });
     }
 
-    logger.info?.('device.router.load', { deviceId, query });
-
     // Power on device
+    logger.debug?.('device.router.load.powerOn.start', { deviceId });
     const powerResult = await device.powerOn();
+    logger.debug?.('device.router.load.powerOn.done', { deviceId, result: powerResult, elapsedMs: Date.now() - startTime });
     if (!powerResult.ok) {
+      logger.error?.('device.router.load.powerOn.failed', { deviceId, error: powerResult.error });
       return res.json({
         ok: false,
         step: 'powerOn',
@@ -172,8 +177,11 @@ export function createDeviceRouter(config) {
     }
 
     // Prepare for content (screen wake, foreground, etc.)
+    logger.debug?.('device.router.load.prepare.start', { deviceId });
     const prepResult = await device.prepareForContent();
+    logger.debug?.('device.router.load.prepare.done', { deviceId, result: prepResult, elapsedMs: Date.now() - startTime });
     if (!prepResult.ok) {
+      logger.error?.('device.router.load.prepare.failed', { deviceId, error: prepResult.error });
       return res.json({
         ok: false,
         step: 'prepare',
@@ -182,15 +190,21 @@ export function createDeviceRouter(config) {
     }
 
     // Load content
+    logger.debug?.('device.router.load.content.start', { deviceId, path: '/tv', query });
     const loadResult = await device.loadContent('/tv', query);
+    logger.debug?.('device.router.load.content.done', { deviceId, result: loadResult, elapsedMs: Date.now() - startTime });
 
-    res.json({
+    const response = {
       ok: loadResult.ok,
       deviceId,
       power: powerResult,
       prepare: prepResult,
-      load: loadResult
-    });
+      load: loadResult,
+      totalElapsedMs: Date.now() - startTime
+    };
+
+    logger.info?.('device.router.load.complete', { deviceId, ok: loadResult.ok, totalElapsedMs: response.totalElapsedMs });
+    res.json(response);
   }));
 
   // ===========================================================================
