@@ -1,9 +1,9 @@
-// backend/src/domains/content/entities/WatchState.mjs
+// backend/src/domains/content/entities/MediaProgress.mjs
 
 import { ValidationError } from '../../core/errors/index.mjs';
 
 /**
- * @typedef {Object} WatchStateProps
+ * @typedef {Object} MediaProgressProps
  * @property {string} itemId - Compound ID of the item
  * @property {number} playhead - Current position in seconds
  * @property {number} duration - Total duration in seconds
@@ -13,14 +13,14 @@ import { ValidationError } from '../../core/errors/index.mjs';
  */
 
 /**
- * Watch state tracks playback progress for an item.
+ * Media progress tracks playback progress for an item.
  */
-export class WatchState {
+export class MediaProgress {
   /**
-   * @param {WatchStateProps} props
+   * @param {MediaProgressProps} props
    */
   constructor(props) {
-    if (!props.itemId) throw new ValidationError('WatchState requires itemId', { code: 'MISSING_ITEM_ID', field: 'itemId' });
+    if (!props.itemId) throw new ValidationError('MediaProgress requires itemId', { code: 'MISSING_ITEM_ID', field: 'itemId' });
 
     this.itemId = props.itemId;
     this.playhead = props.playhead ?? 0;
@@ -72,11 +72,11 @@ export class WatchState {
   }
 
   /**
-   * Create WatchState from persisted data
+   * Create MediaProgress from persisted data
    * @param {Object} data
-   * @returns {WatchState}
+   * @returns {MediaProgress}
    */
   static fromJSON(data) {
-    return new WatchState(data);
+    return new MediaProgress(data);
   }
 }
