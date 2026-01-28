@@ -120,6 +120,21 @@ mqtt:
   port: 1883
 ```
 
+## Service-Specific Configuration
+
+### MQTT (Mosquitto)
+
+MQTT is optional and typically only available on production/server environments.
+
+**Disable on dev machines** by setting `mqtt: null` in your machine-specific config:
+
+```yaml
+# system-local.kckern-macbook.yml
+mqtt: null  # Mosquitto not available on dev machine
+```
+
+The system will skip MQTT initialization if `mqtt` is `null` or `mqtt.host` is not configured.
+
 ## Adding a New Environment
 
 1. Get the hostname: `hostname`

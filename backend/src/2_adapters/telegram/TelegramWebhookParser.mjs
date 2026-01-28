@@ -55,6 +55,9 @@ export class TelegramWebhookParser {
     if (message.photo) {
       return this.#parsePhoto(message);
     }
+    if (message.document) {
+      return this.#parseDocument(message);
+    }
     if (message.voice) {
       return this.#parseVoice(message);
     }
@@ -94,6 +97,24 @@ export class TelegramWebhookParser {
         chatType: message.chat.type,
         width: photo.width,
         height: photo.height
+      }
+    };
+  }
+
+  #parseDocument(message) {
+    const doc = message.document;
+    return {
+      type: 'image',
+      userId: this.#buildConversationId(message.chat.id),
+      fileId: doc.file_id,
+      text: message.caption || '',
+      messageId: String(message.message_id),
+      metadata: {
+        from: message.from,
+        chatType: message.chat.type,
+        fileName: doc.file_name,
+        mimeType: doc.mime_type,
+        fileSize: doc.file_size
       }
     };
   }

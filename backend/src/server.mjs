@@ -126,7 +126,13 @@ async function main() {
   // ==========================================================================
 
   const server = createServer();
-  const app = await createApp({ server, logger, configPaths, configExists, enableScheduler: true });
+  
+  // Check if MQTT should be enabled (from system config)
+  // mqtt: null in local config disables MQTT entirely
+  const mqttConfig = configService.getServiceConfig('mqtt');
+  const enableMqtt = mqttConfig !== null && !!mqttConfig?.host;
+  
+  const app = await createApp({ server, logger, configPaths, configExists, enableScheduler: true, enableMqtt });
 
   // Mount app on server
   server.on('request', app);

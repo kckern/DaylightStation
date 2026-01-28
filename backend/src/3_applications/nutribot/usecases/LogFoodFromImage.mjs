@@ -184,7 +184,27 @@ export class LogFoodFromImage {
       const caption = this.#formatFoodCaption(foodItems, nutriLog.date || localDate);
       const buttons = this.#buildActionButtons(nutriLog.id);
 
-      const { messageId: photoMsgId } = await messaging.sendPhoto(imageData.fileId || imageUrl, caption, {
+      // Convert to buffer - either from base64 or by downloading
+      let photoSource;
+      if (typeof imageForAI === 'string' && imageForAI.startsWith('data:')) {
+        // Already have base64, convert to buffer
+        const base64Data = imageForAI.split(',')[1];
+        photoSource = Buffer.from(base64Data, 'base64');
+      } else if (imageUrl && imageUrl.startsWith('http')) {
+        // Download image to buffer
+        try {
+          const response = await fetch(imageUrl);
+          const arrayBuffer = await response.arrayBuffer();
+          photoSource = Buffer.from(arrayBuffer);
+        } catch (e) {
+          this.#logger.warn?.('logImage.download.failed', { error: e.message });
+          photoSource = imageUrl; // Fallback to URL
+        }
+      } else {
+        photoSource = imageUrl || imageData.fileId;
+      }
+
+      const { messageId: photoMsgId } = await messaging.sendPhoto(photoSource, caption, {
         choices: buttons,
         inline: true,
       });
