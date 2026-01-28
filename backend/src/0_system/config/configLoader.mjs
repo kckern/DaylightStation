@@ -118,38 +118,20 @@ function loadSecrets(dataDir) {
 function loadAllHouseholds(dataDir) {
   const households = {};
 
-  // Try new flat structure first (household/, household-*/)
+  // Load from flat structure (household/, household-*/)
   const flatDirs = listHouseholdDirs(dataDir);
 
-  if (flatDirs.length > 0) {
-    for (const dir of flatDirs) {
-      const householdId = parseHouseholdId(dir);
-      const configPath = path.join(dataDir, dir, 'household.yml');
-      const config = readYaml(configPath);
-      if (config) {
-        households[householdId] = {
-          ...config,
-          _folderName: dir, // Store for path resolution
-          integrations: loadHouseholdIntegrationsFlat(dataDir, dir),
-          apps: loadHouseholdAppsFlat(dataDir, dir),
-        };
-      }
-    }
-  } else {
-    // Fall back to old nested structure (households/{id}/)
-    const householdsDir = path.join(dataDir, 'households');
-    for (const hid of listDirs(householdsDir)) {
-      const configPath = path.join(householdsDir, hid, 'household.yml');
-      const config = readYaml(configPath);
-      if (config) {
-        households[hid] = {
-          ...config,
-          _folderName: hid,
-          _legacyPath: true,
-          integrations: loadHouseholdIntegrationsLegacy(householdsDir, hid),
-          apps: loadHouseholdAppsLegacy(householdsDir, hid),
-        };
-      }
+  for (const dir of flatDirs) {
+    const householdId = parseHouseholdId(dir);
+    const configPath = path.join(dataDir, dir, 'household.yml');
+    const config = readYaml(configPath);
+    if (config) {
+      households[householdId] = {
+        ...config,
+        _folderName: dir, // Store for path resolution
+        integrations: loadHouseholdIntegrations(dataDir, dir),
+        apps: loadHouseholdApps(dataDir, dir),
+      };
     }
   }
 
@@ -159,7 +141,6 @@ function loadAllHouseholds(dataDir) {
 /**
  * List household directories in the data directory.
  * Matches: household/ and household-{name}/ patterns.
- * Does NOT match: households/ (the legacy parent directory)
  */
 export function listHouseholdDirs(dataDir) {
   if (!fs.existsSync(dataDir)) return [];
@@ -168,7 +149,6 @@ export function listHouseholdDirs(dataDir) {
     .filter(name => {
       if (name.startsWith('.') || name.startsWith('_')) return false;
       // Only match 'household' exactly or 'household-*' pattern
-      // Specifically exclude 'households' (the legacy parent directory)
       if (name !== 'household' && !name.startsWith('household-')) return false;
       return fs.statSync(path.join(dataDir, name)).isDirectory();
     });
@@ -195,34 +175,18 @@ export function toFolderName(householdId) {
 }
 
 /**
- * Load apps for flat household structure.
+ * Load apps for a household.
  */
-function loadHouseholdAppsFlat(dataDir, folderName) {
+function loadHouseholdApps(dataDir, folderName) {
   const appsDir = path.join(dataDir, folderName, 'apps');
   return loadAppsFromDir(appsDir);
 }
 
 /**
- * Load apps for legacy nested household structure.
+ * Load integrations for a household.
  */
-function loadHouseholdAppsLegacy(householdsDir, hid) {
-  const appsDir = path.join(householdsDir, hid, 'apps');
-  return loadAppsFromDir(appsDir);
-}
-
-/**
- * Load integrations for flat household structure.
- */
-function loadHouseholdIntegrationsFlat(dataDir, folderName) {
+function loadHouseholdIntegrations(dataDir, folderName) {
   const integrationsPath = path.join(dataDir, folderName, 'integrations.yml');
-  return readYaml(integrationsPath) ?? {};
-}
-
-/**
- * Load integrations for legacy nested household structure.
- */
-function loadHouseholdIntegrationsLegacy(householdsDir, hid) {
-  const integrationsPath = path.join(householdsDir, hid, 'integrations.yml');
   return readYaml(integrationsPath) ?? {};
 }
 
@@ -304,38 +268,20 @@ function loadUserAuth(dataDir) {
 function loadHouseholdAuth(dataDir) {
   const auth = {};
 
-  // Try new flat structure first
+  // Load from flat structure (household/, household-*/)
   const flatDirs = listHouseholdDirs(dataDir);
 
-  if (flatDirs.length > 0) {
-    for (const dir of flatDirs) {
-      const householdId = parseHouseholdId(dir);
-      const authDir = path.join(dataDir, dir, 'auth');
-      if (!fs.existsSync(authDir)) continue;
+  for (const dir of flatDirs) {
+    const householdId = parseHouseholdId(dir);
+    const authDir = path.join(dataDir, dir, 'auth');
+    if (!fs.existsSync(authDir)) continue;
 
-      auth[householdId] = {};
-      for (const file of listYamlFiles(authDir)) {
-        const service = path.basename(file, '.yml');
-        const creds = readYaml(file);
-        if (creds) {
-          auth[householdId][service] = creds;
-        }
-      }
-    }
-  } else {
-    // Fall back to old nested structure
-    const householdsDir = path.join(dataDir, 'households');
-    for (const hid of listDirs(householdsDir)) {
-      const authDir = path.join(householdsDir, hid, 'auth');
-      if (!fs.existsSync(authDir)) continue;
-
-      auth[hid] = {};
-      for (const file of listYamlFiles(authDir)) {
-        const service = path.basename(file, '.yml');
-        const creds = readYaml(file);
-        if (creds) {
-          auth[hid][service] = creds;
-        }
+    auth[householdId] = {};
+    for (const file of listYamlFiles(authDir)) {
+      const service = path.basename(file, '.yml');
+      const creds = readYaml(file);
+      if (creds) {
+        auth[householdId][service] = creds;
       }
     }
   }

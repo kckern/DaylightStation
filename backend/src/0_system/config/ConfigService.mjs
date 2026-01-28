@@ -144,7 +144,7 @@ export class ConfigService {
    * Get household-scoped path for state/history files
    * @param {string} relativePath - Path relative to household dir (e.g., 'apps/fitness', 'history/menu_memory')
    * @param {string} [householdId] - Household ID, defaults to default household
-   * @returns {string} Full path using correct structure (flat or legacy)
+   * @returns {string} Full path: data/household[-{id}]/relativePath
    */
   getHouseholdPath(relativePath, householdId = null) {
     const hid = householdId ?? this.getDefaultHouseholdId();
@@ -157,13 +157,7 @@ export class ConfigService {
     const folderName = household._folderName || hid;
     const dataDir = this.getDataDir();
 
-    // Legacy structure: data/households/{id}/
-    if (household._legacyPath) {
-      const basePath = `${dataDir}/households/${folderName}`;
-      return relativePath ? `${basePath}/${relativePath}` : basePath;
-    }
-
-    // New flat structure: data/household[-{id}]/
+    // Flat structure: data/household[-{id}]/
     const basePath = `${dataDir}/${folderName}`;
     return relativePath ? `${basePath}/${relativePath}` : basePath;
   }
