@@ -1,6 +1,6 @@
 // backend/src/1_domains/fitness/services/FitnessProgressClassifier.mjs
 
-import { IMediaProgressClassifier } from '#domains/content';
+import { IMediaProgressClassifier } from '#domains/content/index.mjs';
 
 /**
  * Fitness-specific media progress classifier
