@@ -25,6 +25,7 @@ import { spawn } from 'child_process';
 import { ensureDir, writeBinary } from '#system/utils/FileIO.mjs';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { toListItem } from './list.mjs';
+import { FitnessProgressClassifier } from '#domains/fitness';
 
 // Module-level state for simulation process
 const simulationState = {
@@ -112,6 +113,8 @@ export function createFitnessRouter(config) {
     }
 
     const { id } = req.params;
+    const householdId = req.query.household || configService.getDefaultHouseholdId();
+
     // Fitness content is always from plex
     const adapter = contentRegistry.get('plex');
     if (!adapter) {
@@ -119,6 +122,14 @@ export function createFitnessRouter(config) {
     }
 
     const compoundId = `plex:${id}`;
+
+    // Load config for progress classification thresholds
+    const config = loadFitnessConfig(householdId);
+
+    // Create fitness progress classifier with config thresholds
+    const classifier = new FitnessProgressClassifier(
+      config?.progressClassification || {}
+    );
 
     // Get playable items
     if (!adapter.resolvePlayables) {
@@ -148,12 +159,23 @@ export function createFitnessRouter(config) {
                 watchProgress: percent,
                 watchSeconds: playhead,
                 watchedDate: watchData.lastPlayed || null,
-                lastPlayed: watchData.lastPlayed || null
+                lastPlayed: watchData.lastPlayed || null,
+                // Backend-computed watch status (SSOT)
+                isWatched: classifier.classify(
+                  { playhead, percent, watchTime: watchData.watchTime },
+                  { duration: mediaDuration }
+                ) === 'watched'
               };
             }
             return item;
           });
       }
+
+      // Ensure all items have isWatched field (default false for items without history)
+      items = items.map(item => ({
+        ...item,
+        isWatched: item.isWatched ?? false
+      }));
 
       // Get container info for show metadata
       let info = null;
