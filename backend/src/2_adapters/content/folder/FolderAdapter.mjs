@@ -1,14 +1,8 @@
 // backend/src/2_adapters/content/folder/FolderAdapter.mjs
-import path from 'path';
 import { ListableItem } from '#domains/content/capabilities/Listable.mjs';
 import { Item } from '#domains/content/entities/Item.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
-import {
-  loadYaml,
-  loadYamlFromPath,
-  listYamlFiles,
-  dirExists
-} from '#system/utils/FileIO.mjs';
+import { loadYaml } from '#system/utils/FileIO.mjs';
 
 // Threshold for considering an item "watched" (90%)
 const WATCHED_THRESHOLD = 90;
@@ -51,12 +45,11 @@ export class FolderAdapter {
       });
     this.watchlistPath = config.watchlistPath;
     this.registry = config.registry || null;
-    this.historyPath = config.historyPath || null; // Path to media_memory directory
+    this.mediaProgressMemory = config.mediaProgressMemory || null;
     // Overlay config for nomusic items
     this.nomusicLabels = config.nomusicLabels || [];
     this.musicOverlayPlaylist = config.musicOverlayPlaylist || null;
     this._watchlistCache = null;
-    this._watchStateCache = {};
   }
 
   get source() {
@@ -85,59 +78,6 @@ export class FolderAdapter {
       return this._watchlistCache;
     } catch (err) {
       return [];
-    }
-  }
-
-  /**
-   * Load watch state for a given source category
-   * @param {string} category - Category like 'plex', 'talks', 'media'
-   * @returns {Object} Watch state map { mediaKey: { percent, seconds, playhead, mediaDuration } }
-   */
-  _loadWatchState(category) {
-    if (!this.historyPath) return {};
-    if (this._watchStateCache[category]) return this._watchStateCache[category];
-
-    try {
-      // Handle plex library-specific files
-      if (category === 'plex') {
-        return this._loadPlexWatchState();
-      }
-
-      const basePath = path.join(this.historyPath, category);
-      const data = loadYaml(basePath);
-      this._watchStateCache[category] = data || {};
-      return this._watchStateCache[category];
-    } catch (err) {
-      return {};
-    }
-  }
-
-  /**
-   * Load watch state from all Plex library files
-   * @returns {Object} Combined watch state from all Plex libraries
-   */
-  _loadPlexWatchState() {
-    if (this._watchStateCache.plex) return this._watchStateCache.plex;
-
-    const combined = {};
-    const plexDir = path.join(this.historyPath, 'plex');
-
-    try {
-      if (!dirExists(plexDir)) return {};
-
-      // listYamlFiles handles both .yml and .yaml, returns filenames without extension
-      const files = listYamlFiles(plexDir, { stripExtension: false });
-
-      for (const file of files) {
-        const filePath = path.join(plexDir, file);
-        const data = loadYamlFromPath(filePath);
-        if (data) Object.assign(combined, data);
-      }
-
-      this._watchStateCache.plex = combined;
-      return combined;
-    } catch (err) {
-      return {};
     }
   }
 
@@ -323,8 +263,11 @@ export class FolderAdapter {
       // Build the media key for watch state lookup
       const mediaKey = item.media_key || parsed.id;
 
-      // Load watch state for this item's category (for UI indicators, not filtering)
-      const watchState = watchCategory ? this._loadWatchState(watchCategory)[mediaKey] : null;
+      // Load watch state from mediaProgressMemory (for UI indicators, not filtering)
+      let watchState = null;
+      if (watchCategory && this.mediaProgressMemory) {
+        watchState = await this.mediaProgressMemory.getProgress(watchCategory, mediaKey);
+      }
 
       // Calculate priority based on watch state and scheduling
       const priority = this._calculatePriority(item, watchState);
@@ -586,13 +529,15 @@ export class FolderAdapter {
     // Determine storage path for watch state lookup
     const storagePath = adapter.getStoragePath?.(child.id) || child.source || 'media';
 
-    // Load watch state to find "next up"
-    const watchState = this._loadWatchState(storagePath);
+    // If no mediaProgressMemory, return first item
+    if (!this.mediaProgressMemory) {
+      return items[0];
+    }
 
     // First pass: find any in-progress item
     for (const item of items) {
       const mediaKey = item.localId || item.id.split(':')[1];
-      const state = watchState[mediaKey];
+      const state = await this.mediaProgressMemory.getProgress(storagePath, mediaKey);
       const percent = state?.percent || 0;
 
       // In progress if between 1% and 90%
@@ -604,7 +549,7 @@ export class FolderAdapter {
     // Second pass: find first unwatched item
     for (const item of items) {
       const mediaKey = item.localId || item.id.split(':')[1];
-      const state = watchState[mediaKey];
+      const state = await this.mediaProgressMemory.getProgress(storagePath, mediaKey);
       const percent = state?.percent || 0;
 
       // Unwatched if < 90%
