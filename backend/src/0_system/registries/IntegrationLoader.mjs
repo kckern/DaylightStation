@@ -111,22 +111,98 @@ export class IntegrationLoader {
 
   /**
    * Build complete adapter config from multiple sources.
+   *
+   * Sources (in priority order, later overrides earlier):
+   * 1. Integration config (protocol, platform, etc.)
+   * 2. Auth credentials from household/auth/{provider}.yml
+   * 3. Secrets from secrets.yml (e.g., OPENAI_API_KEY)
+   * 4. Service URL from services.yml
    */
   #buildAdapterConfig(householdId, provider, integrationConfig) {
     // Get auth credentials (token, api_key, etc.)
     const auth = this.#configService.getHouseholdAuth(provider, householdId) ?? {};
 
     // Get service URL from services.yml
-    const host = this.#configService.resolveServiceUrl(provider);
+    const serviceUrl = this.#configService.resolveServiceUrl(provider);
 
-    return {
+    // Get secrets (API keys are often in secrets.yml, not auth files)
+    const secrets = this.#getProviderSecrets(provider);
+
+    // Build base config
+    const config = {
       // Integration-specific config (protocol, platform, etc.)
       ...integrationConfig,
-      // Auth credentials
+      // Auth credentials from auth file
       ...auth,
+      // Secrets (API keys, etc.)
+      ...secrets,
       // Resolved service host (if available)
-      ...(host ? { host } : {}),
+      ...(serviceUrl ? { host: serviceUrl } : {}),
     };
+
+    // Normalize field names for adapter compatibility
+    return this.#normalizeConfig(provider, config);
+  }
+
+  /**
+   * Get secrets for a provider from secrets.yml
+   * Maps provider-specific secret keys to adapter-expected field names
+   */
+  #getProviderSecrets(provider) {
+    // Maps secret env var name → adapter config field name
+    const secretKeyMap = {
+      openai: { 'OPENAI_API_KEY': 'apiKey' },
+      anthropic: { 'ANTHROPIC_API_KEY': 'apiKey' },
+      telegram: { 'TELEGRAM_BOT_TOKEN': 'token' },
+    };
+
+    const keyMappings = secretKeyMap[provider] || {};
+    const secrets = {};
+
+    for (const [envKey, configKey] of Object.entries(keyMappings)) {
+      const value = this.#configService.getSecret?.(envKey);
+      if (value) {
+        secrets[configKey] = value;
+      }
+    }
+
+    return secrets;
+  }
+
+  /**
+   * Normalize config field names for adapter compatibility.
+   * Adapters expect specific field names (e.g., apiKey, baseUrl)
+   * but config files use different conventions (e.g., api_key, host).
+   */
+  #normalizeConfig(provider, config) {
+    const normalized = { ...config };
+
+    // Map snake_case to camelCase for common fields
+    const fieldMappings = {
+      api_key: 'apiKey',
+      base_url: 'baseUrl',
+      access_token: 'accessToken',
+      client_id: 'clientId',
+      client_secret: 'clientSecret',
+    };
+
+    for (const [snake, camel] of Object.entries(fieldMappings)) {
+      if (normalized[snake] !== undefined && normalized[camel] === undefined) {
+        normalized[camel] = normalized[snake];
+        delete normalized[snake];
+      }
+    }
+
+    // Provider-specific normalization
+    if (provider === 'homeassistant') {
+      // HomeAssistantAdapter expects baseUrl, not host
+      if (normalized.host && !normalized.baseUrl) {
+        normalized.baseUrl = normalized.host;
+        delete normalized.host;
+      }
+    }
+
+    return normalized;
   }
 
   #createNoOp(capability) {

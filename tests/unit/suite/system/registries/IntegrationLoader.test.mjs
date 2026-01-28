@@ -114,7 +114,8 @@ describe('IntegrationLoader', () => {
       const adapters = await loader.loadForHousehold('default', {});
 
       expect(adapters.ai.config.model).toBe('gpt-4o');
-      expect(adapters.ai.config.api_key).toBe('sk-secret');
+      // Config is normalized: api_key → apiKey
+      expect(adapters.ai.config.apiKey).toBe('sk-secret');
     });
 
     test('handles null configs array as unconfigured', async () => {
@@ -373,8 +374,8 @@ describe('IntegrationLoader', () => {
 
       const adapters = await loader.loadForHousehold('default', {});
 
-      // Auth config should override provider config
-      expect(adapters.ai.config.api_key).toBe('new-secret-key');
+      // Auth config should override provider config (normalized: api_key → apiKey)
+      expect(adapters.ai.config.apiKey).toBe('new-secret-key');
       expect(adapters.ai.config.model).toBe('gpt-4o');
     });
   });
