@@ -126,9 +126,6 @@ export function createHomeAutomationRouter(config) {
    * Control audio volume on remote device
    * Levels: 0-100, +, -, mute, unmute, togglemute, cycle
    */
-  router.get('/vol/:level', handleVolumeRequest);
-  router.get('/volume/:level', handleVolumeRequest);
-
   const handleVolumeRequest = asyncHandler(async (req, res) => {
     if (!remoteExecAdapter) {
       return res.status(503).json({ error: 'Volume control not configured (Remote exec adapter required)' });
@@ -191,6 +188,9 @@ export function createHomeAutomationRouter(config) {
     const afterState = loadFile?.(volumeStateFile) || { volume, muted };
     res.json({ result, beforeState, afterState });
   });
+
+  router.get('/vol/:level', handleVolumeRequest);
+  router.get('/volume/:level', handleVolumeRequest);
 
   /**
    * GET /home-automation/audio/:device
