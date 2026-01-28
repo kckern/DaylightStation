@@ -57,6 +57,10 @@ export function createNutribotRouter(container, options = {}) {
   router.all('/image', asyncHandler(directImageHandler(container, { logger })));
   router.all('/text', asyncHandler(directTextHandler(container, { logger })));
 
+  // Pinhole endpoint - public access for IFTTT/external integrations
+  // Uses same handler as /image, but with dedicated Cloudflare Access bypass
+  router.all('/pinhole', asyncHandler(directImageHandler(container, { logger })));
+
   // Report endpoints
   router.get('/report', asyncHandler(nutribotReportHandler(container, { logger })));
   router.get('/report.png', asyncHandler(nutribotReportImgHandler(container, { logger })));
