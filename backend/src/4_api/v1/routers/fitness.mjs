@@ -25,7 +25,7 @@ import { spawn } from 'child_process';
 import { ensureDir, writeBinary } from '#system/utils/FileIO.mjs';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { toListItem } from './list.mjs';
-import { FitnessProgressClassifier } from '#domains/fitness';
+import { FitnessProgressClassifier } from '#domains/fitness/index.mjs';
 
 // Module-level state for simulation process
 const simulationState = {
