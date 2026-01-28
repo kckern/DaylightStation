@@ -689,7 +689,7 @@ export class PersistenceManager {
       console.error(`📤 SESSION_SAVE [${this._debugSaveCount}/5]: ${persistSessionData.session?.id}, ticks=${tickCount}, series=${seriesCount}`);
     }
 
-    this._persistApi('api/fitness/save_session', { sessionData: persistSessionData }, 'POST')
+    this._persistApi('api/v1/fitness/save_session', { sessionData: persistSessionData }, 'POST')
       .then(resp => {
         // DEBUG: Log success (throttled)
         if ((this._debugSaveSuccessCount = (this._debugSaveSuccessCount || 0) + 1) <= 3) {

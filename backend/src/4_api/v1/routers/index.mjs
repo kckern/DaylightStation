@@ -50,4 +50,3 @@ export { createTTSRouter } from './tts.mjs';
 
 // Admin routers
 export { createEventBusRouter } from './admin/eventbus.mjs';
-export { createLegacyAdminRouter } from './admin/legacy.mjs';
