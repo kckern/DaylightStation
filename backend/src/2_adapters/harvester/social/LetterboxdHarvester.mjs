@@ -14,6 +14,7 @@
 
 import { IHarvester, HarvesterCategory } from '../ports/IHarvester.mjs';
 import { CircuitBreaker } from '../CircuitBreaker.mjs';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 /**
  * Letterboxd movie diary harvester
@@ -42,10 +43,16 @@ export class LetterboxdHarvester extends IHarvester {
     super();
 
     if (!rssParser) {
-      throw new Error('LetterboxdHarvester requires rssParser');
+      throw new InfrastructureError('LetterboxdHarvester requires rssParser', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'rssParser'
+      });
     }
     if (!lifelogStore) {
-      throw new Error('LetterboxdHarvester requires lifelogStore');
+      throw new InfrastructureError('LetterboxdHarvester requires lifelogStore', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'lifelogStore'
+      });
     }
 
     this.#rssParser = rssParser;
@@ -101,7 +108,10 @@ export class LetterboxdHarvester extends IHarvester {
       const letterboxdUser = auth.username || this.#configService?.getSecret?.('LETTERBOXD_USER');
 
       if (!letterboxdUser) {
-        throw new Error('Letterboxd username not configured');
+        throw new InfrastructureError('Letterboxd username not configured', {
+        code: 'MISSING_CONFIG',
+        service: 'Letterboxd'
+      });
       }
 
       // Fetch RSS feed

@@ -8,6 +8,7 @@
  */
 
 import moment from 'moment';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 /**
  * YAML-based entropy data reader
@@ -27,7 +28,10 @@ export class YamlEntropyReader {
    */
   constructor({ io, archiveService = null, logger = console }) {
     if (!io?.userLoadFile) {
-      throw new Error('YamlEntropyReader requires io.userLoadFile');
+      throw new InfrastructureError('YamlEntropyReader requires io.userLoadFile', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'io'
+      });
     }
     this.#io = io;
     this.#archiveService = archiveService;

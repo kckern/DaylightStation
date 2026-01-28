@@ -4,6 +4,7 @@ import { parseFile } from 'music-metadata';
 import { Item } from '#domains/content/entities/Item.mjs';
 import { ListableItem } from '#domains/content/capabilities/Listable.mjs';
 import { PlayableItem } from '#domains/content/capabilities/Playable.mjs';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import {
   fileExists,
   dirExists,
@@ -56,7 +57,10 @@ export class FilesystemAdapter {
    */
   constructor(config) {
     if (!config.mediaBasePath) {
-      throw new Error('FilesystemAdapter requires mediaBasePath');
+      throw new InfrastructureError('FilesystemAdapter requires mediaBasePath', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'mediaBasePath'
+      });
     }
     this.mediaBasePath = config.mediaBasePath;
     this.historyPath = config.historyPath || null;

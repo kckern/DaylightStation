@@ -19,6 +19,7 @@
 
 import { IHarvester, HarvesterCategory } from '../ports/IHarvester.mjs';
 import { CircuitBreaker } from '../CircuitBreaker.mjs';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 /**
  * Infinity data harvester
@@ -54,13 +55,22 @@ export class InfinityHarvester extends IHarvester {
     super();
 
     if (!httpClient) {
-      throw new Error('InfinityHarvester requires httpClient');
+      throw new InfrastructureError('InfinityHarvester requires httpClient', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'httpClient'
+      });
     }
     if (!configService) {
-      throw new Error('InfinityHarvester requires configService');
+      throw new InfrastructureError('InfinityHarvester requires configService', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'configService'
+      });
     }
     if (!tableKey) {
-      throw new Error('InfinityHarvester requires tableKey');
+      throw new InfrastructureError('InfinityHarvester requires tableKey', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'tableKey'
+      });
     }
 
     this.#httpClient = httpClient;
@@ -370,7 +380,10 @@ export class InfinityHarvester extends IHarvester {
   async updateItem(itemId, attributeId, value) {
     const token = this.#getAuthToken();
     if (!token) {
-      throw new Error('No auth token configured');
+      throw new InfrastructureError('No auth token configured', {
+        code: 'MISSING_CONFIG',
+        service: 'Infinity'
+      });
     }
 
     const url = `https://app.startinfinity.com/api/v2/workspaces/${this.#workspaceId}/boards/${this.#tableId}/items/${itemId}`;
@@ -401,7 +414,10 @@ export class InfinityHarvester extends IHarvester {
   async createItem(folderId, attributes) {
     const token = this.#getAuthToken();
     if (!token) {
-      throw new Error('No auth token configured');
+      throw new InfrastructureError('No auth token configured', {
+        code: 'MISSING_CONFIG',
+        service: 'Infinity'
+      });
     }
 
     const url = `https://app.startinfinity.com/api/v2/workspaces/${this.#workspaceId}/boards/${this.#tableId}/items`;

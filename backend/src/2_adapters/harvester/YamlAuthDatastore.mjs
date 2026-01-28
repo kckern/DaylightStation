@@ -7,6 +7,8 @@
  * @module harvester/YamlAuthDatastore
  */
 
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
+
 /**
  * YAML-based auth persistence
  */
@@ -21,7 +23,10 @@ export class YamlAuthDatastore {
    */
   constructor({ io, logger = console }) {
     if (!io?.userSaveAuth) {
-      throw new Error('YamlAuthDatastore requires io.userSaveAuth');
+      throw new InfrastructureError('YamlAuthDatastore requires io.userSaveAuth', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'io'
+      });
     }
 
     this.#io = io;

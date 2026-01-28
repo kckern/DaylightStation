@@ -14,6 +14,7 @@
 
 import { IHarvester, HarvesterCategory } from '../ports/IHarvester.mjs';
 import { CircuitBreaker } from '../CircuitBreaker.mjs';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 /**
  * Goodreads book harvester
@@ -42,10 +43,16 @@ export class GoodreadsHarvester extends IHarvester {
     super();
 
     if (!rssParser) {
-      throw new Error('GoodreadsHarvester requires rssParser');
+      throw new InfrastructureError('GoodreadsHarvester requires rssParser', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'rssParser'
+      });
     }
     if (!lifelogStore) {
-      throw new Error('GoodreadsHarvester requires lifelogStore');
+      throw new InfrastructureError('GoodreadsHarvester requires lifelogStore', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'lifelogStore'
+      });
     }
 
     this.#rssParser = rssParser;
@@ -104,7 +111,10 @@ export class GoodreadsHarvester extends IHarvester {
       const goodreadsUserId = auth.user_id || this.#configService?.getSecret?.('GOODREADS_USER');
 
       if (!goodreadsUserId) {
-        throw new Error('Goodreads user ID not configured');
+        throw new InfrastructureError('Goodreads user ID not configured', {
+        code: 'MISSING_CONFIG',
+        service: 'Goodreads'
+      });
       }
 
       const url = `https://www.goodreads.com/review/list_rss/${goodreadsUserId}?shelf=${shelf}`;

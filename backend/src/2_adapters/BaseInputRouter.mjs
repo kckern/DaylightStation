@@ -1,6 +1,7 @@
 // backend/src/2_adapters/BaseInputRouter.mjs
 
 import { InputEventType } from './telegram/IInputEvent.mjs';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 /**
  * Abstract base class for bot input routers.
@@ -22,7 +23,10 @@ export class BaseInputRouter {
    * @param {Object} [options.logger]
    */
   constructor(container, options = {}) {
-    if (!container) throw new Error('BaseInputRouter requires container');
+    if (!container) throw new InfrastructureError('BaseInputRouter requires container', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'container'
+      });
     this.container = container;
     this.logger = options.logger || console;
   }

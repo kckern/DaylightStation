@@ -14,6 +14,7 @@
  */
 
 import { IHealthDataDatastore } from '#apps/health/ports/IHealthDataDatastore.mjs';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 export class YamlHealthDatastore extends IHealthDataDatastore {
   #userDataService;
@@ -31,7 +32,10 @@ export class YamlHealthDatastore extends IHealthDataDatastore {
   constructor(config) {
     super();
     if (!config.userDataService) {
-      throw new Error('YamlHealthDatastore requires userDataService');
+      throw new InfrastructureError('YamlHealthDatastore requires userDataService', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'userDataService'
+      });
     }
     this.#userDataService = config.userDataService;
     this.#userResolver = config.userResolver;

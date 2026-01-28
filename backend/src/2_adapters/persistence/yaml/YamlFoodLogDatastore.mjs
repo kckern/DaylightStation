@@ -11,6 +11,7 @@
 import path from 'path';
 import { NutriLog } from '#domains/nutrition/entities/NutriLog.mjs';
 import { IFoodLogDatastore } from '#apps/nutribot/ports/IFoodLogDatastore.mjs';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import {
   ensureDir,
   dirExists,
@@ -36,7 +37,10 @@ export class YamlFoodLogDatastore extends IFoodLogDatastore {
   constructor(options) {
     super();
     if (!options?.dataRoot) {
-      throw new Error('YamlFoodLogDatastore requires dataRoot');
+      throw new InfrastructureError('YamlFoodLogDatastore requires dataRoot', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'dataRoot'
+      });
     }
     this.#dataRoot = options.dataRoot;
     this.#logger = options.logger || console;
@@ -326,7 +330,10 @@ export class YamlFoodLogDatastore extends IFoodLogDatastore {
   async delete(userId, id) {
     const nutriLog = await this.findById(userId, id);
     if (!nutriLog) {
-      throw new Error(`NutriLog not found: ${id}`);
+      throw new InfrastructureError(`NutriLog not found: ${id}`, {
+        code: 'NOT_FOUND',
+        entity: 'NutriLog'
+      });
     }
     const deleted = nutriLog.delete(new Date());
     return this.save(deleted);

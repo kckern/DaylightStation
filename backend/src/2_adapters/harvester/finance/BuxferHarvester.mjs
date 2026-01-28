@@ -16,6 +16,7 @@ import moment from 'moment-timezone';
 import { IHarvester, HarvesterCategory } from '../ports/IHarvester.mjs';
 import { CircuitBreaker } from '../CircuitBreaker.mjs';
 import { configService } from '#system/config/index.mjs';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 const DEFAULT_DAYS_BACK = 30;
 
@@ -49,10 +50,16 @@ export class BuxferHarvester extends IHarvester {
     super();
 
     if (!buxferAdapter) {
-      throw new Error('BuxferHarvester requires buxferAdapter');
+      throw new InfrastructureError('BuxferHarvester requires buxferAdapter', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'buxferAdapter'
+      });
     }
     if (!lifelogStore) {
-      throw new Error('BuxferHarvester requires lifelogStore');
+      throw new InfrastructureError('BuxferHarvester requires lifelogStore', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'lifelogStore'
+      });
     }
 
     this.#buxferAdapter = buxferAdapter;

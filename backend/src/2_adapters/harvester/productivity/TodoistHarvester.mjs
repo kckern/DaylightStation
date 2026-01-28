@@ -17,6 +17,7 @@ import { IHarvester, HarvesterCategory } from '../ports/IHarvester.mjs';
 import { CircuitBreaker } from '../CircuitBreaker.mjs';
 import { configService } from '#system/config/index.mjs';
 import { nowTs24 } from '#system/utils/index.mjs';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 /**
  * Todoist task harvester
@@ -54,7 +55,10 @@ export class TodoistHarvester extends IHarvester {
     super();
 
     if (!lifelogStore) {
-      throw new Error('TodoistHarvester requires lifelogStore');
+      throw new InfrastructureError('TodoistHarvester requires lifelogStore', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'lifelogStore'
+      });
     }
 
     this.#todoistApi = todoistApi;
@@ -117,7 +121,11 @@ export class TodoistHarvester extends IHarvester {
       const apiKey = auth.api_key || configService.getSecret('TODOIST_KEY');
 
       if (!apiKey) {
-        throw new Error('Todoist API key not found');
+        throw new InfrastructureError('Todoist API key not found', {
+          code: 'MISSING_CONFIG',
+          service: 'Todoist',
+          field: 'api_key'
+        });
       }
 
       // Initialize API if factory provided

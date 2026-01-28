@@ -17,6 +17,7 @@ import {
   deleteYaml
 } from '#system/utils/FileIO.mjs';
 import { ISessionDatastore } from '#apps/fitness/ports/ISessionDatastore.mjs';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 /**
  * Derive session date from sessionId
@@ -51,7 +52,10 @@ export class YamlSessionDatastore extends ISessionDatastore {
    */
   constructor(config) {
     super();
-    if (!config.dataRoot) throw new Error('YamlSessionDatastore requires dataRoot');
+    if (!config.dataRoot) throw new InfrastructureError('YamlSessionDatastore requires dataRoot', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'dataRoot'
+      });
     this.dataRoot = config.dataRoot;
     this.mediaRoot = config.mediaRoot || path.join(process.cwd(), 'media');
   }
@@ -111,7 +115,9 @@ export class YamlSessionDatastore extends ISessionDatastore {
   async save(session, householdId) {
     const data = typeof session.toJSON === 'function' ? session.toJSON() : session;
     const paths = this.getStoragePaths(data.sessionId, householdId);
-    if (!paths) throw new Error('Invalid sessionId');
+    if (!paths) throw new InfrastructureError('Invalid sessionId', {
+        code: 'VALIDATION_ERROR'
+      });
 
     ensureDir(paths.sessionsDir);
     ensureDir(paths.screenshotsDir);

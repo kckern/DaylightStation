@@ -18,6 +18,7 @@
 
 import { CircuitBreaker } from '../CircuitBreaker.mjs';
 import { nowTs24 } from '#system/utils/index.mjs';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 /**
  * Token buffer in milliseconds (5 minutes)
@@ -56,10 +57,16 @@ export class FitnessSyncerAdapter {
     cooldownMinutes = 5,
   }) {
     if (!httpClient) {
-      throw new Error('FitnessSyncerAdapter requires httpClient');
+      throw new InfrastructureError('FitnessSyncerAdapter requires httpClient', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'httpClient'
+      });
     }
     if (!authStore) {
-      throw new Error('FitnessSyncerAdapter requires authStore');
+      throw new InfrastructureError('FitnessSyncerAdapter requires authStore', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'authStore'
+      });
     }
 
     this.#httpClient = httpClient;
@@ -346,8 +353,13 @@ export class FitnessSyncerAdapter {
     // Check circuit breaker first
     if (this.#circuitBreaker.isOpen()) {
       const cooldown = this.#circuitBreaker.getCooldownStatus();
-      throw new Error(
-        `Circuit breaker is in cooldown (${cooldown?.remainingMins} minutes remaining)`
+      throw new InfrastructureError(
+        `Circuit breaker is in cooldown (${cooldown?.remainingMins} minutes remaining)`,
+        {
+          code: 'RATE_LIMIT_EXCEEDED',
+          service: 'FitnessSyncer',
+          retryAfter: cooldown?.remainingMins * 60
+        }
       );
     }
 
@@ -355,13 +367,19 @@ export class FitnessSyncerAdapter {
       // Get access token
       const token = await this.getAccessToken();
       if (!token) {
-        throw new Error('No access token available');
+        throw new InfrastructureError('No access token available', {
+        code: 'AUTHENTICATION_ERROR',
+        service: 'FitnessSyncer'
+      });
       }
 
       // Get source ID for provider
       const sourceId = await this.getSourceId(sourceKey);
       if (!sourceId) {
-        throw new Error(`Could not resolve source ID for ${sourceKey}`);
+        throw new InfrastructureError(`Could not resolve source ID for ${sourceKey}`, {
+        code: 'NOT_FOUND',
+        service: 'FitnessSyncer'
+      });
       }
 
       // Calculate date range

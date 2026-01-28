@@ -14,6 +14,7 @@
  */
 import { ZONE_PRIORITY } from '#domains/fitness/entities/Zone.mjs';
 import { nowTs24 } from '#system/utils/index.mjs';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 const ZONE_ORDER = ['cool', 'active', 'warm', 'hot', 'fire'];
 const ZONE_LOSS_GRACE_PERIOD_MS = 30000; // 30 seconds grace before turning off
@@ -46,10 +47,16 @@ export class AmbientLedAdapter {
    */
   constructor(config) {
     if (!config?.gateway) {
-      throw new Error('AmbientLedAdapter requires gateway');
+      throw new InfrastructureError('AmbientLedAdapter requires gateway', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'gateway'
+      });
     }
     if (!config?.loadFitnessConfig) {
-      throw new Error('AmbientLedAdapter requires loadFitnessConfig');
+      throw new InfrastructureError('AmbientLedAdapter requires loadFitnessConfig', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'loadFitnessConfig'
+      });
     }
 
     this.#gateway = config.gateway;
@@ -391,7 +398,10 @@ export class AmbientLedAdapter {
 
         return { ok: true, scene: targetScene };
       } else {
-        throw new Error(result.error || 'HA activation failed');
+        throw new InfrastructureError(result.error || 'HA activation failed', {
+        code: 'EXTERNAL_SERVICE_ERROR',
+        service: 'HomeAssistant'
+      });
       }
     } catch (error) {
       this.failureCount++;

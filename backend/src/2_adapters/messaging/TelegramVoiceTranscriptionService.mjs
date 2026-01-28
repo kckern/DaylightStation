@@ -6,6 +6,7 @@
  */
 
 import { ITranscriptionService } from '#apps/shared/ports/ITranscriptionService.mjs';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 export class TelegramVoiceTranscriptionService extends ITranscriptionService {
   #openaiAdapter;
@@ -23,10 +24,16 @@ export class TelegramVoiceTranscriptionService extends ITranscriptionService {
     super();
 
     if (!config?.openaiAdapter) {
-      throw new Error('openaiAdapter is required');
+      throw new InfrastructureError('openaiAdapter is required', {
+        code: 'MISSING_CONFIG',
+        field: 'openaiAdapter'
+      });
     }
     if (!deps.httpClient) {
-      throw new Error('TelegramVoiceTranscriptionService requires httpClient');
+      throw new InfrastructureError('TelegramVoiceTranscriptionService requires httpClient', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'httpClient'
+      });
     }
     this.#openaiAdapter = config.openaiAdapter;
     this.#httpClient = deps.httpClient;

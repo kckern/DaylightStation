@@ -13,6 +13,7 @@
  * Base path: households/{hid}/apps/finances/
  */
 import path from 'path';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import {
   ensureDir,
   dirExists,
@@ -34,7 +35,10 @@ export class YamlFinanceDatastore {
    */
   constructor(config) {
     if (!config?.dataRoot) {
-      throw new Error('YamlFinanceDatastore requires dataRoot');
+      throw new InfrastructureError('YamlFinanceDatastore requires dataRoot', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'dataRoot'
+      });
     }
     this.#dataRoot = config.dataRoot;
     this.#defaultHouseholdId = config.defaultHouseholdId || 'default';

@@ -6,6 +6,7 @@
  */
 
 import { nowTs24 } from '#system/utils/index.mjs';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 /**
  * @typedef {import('../../../3_applications/home-automation/ports/IHomeAutomationGateway.mjs').DeviceState} DeviceState
@@ -31,13 +32,22 @@ export class HomeAssistantAdapter {
    */
   constructor(config, deps = {}) {
     if (!config?.baseUrl) {
-      throw new Error('HomeAssistantAdapter requires baseUrl');
+      throw new InfrastructureError('HomeAssistantAdapter requires baseUrl', {
+        code: 'MISSING_CONFIG',
+        field: 'baseUrl'
+      });
     }
     if (!config?.token) {
-      throw new Error('HomeAssistantAdapter requires token');
+      throw new InfrastructureError('HomeAssistantAdapter requires token', {
+        code: 'MISSING_CONFIG',
+        field: 'token'
+      });
     }
     if (!deps.httpClient) {
-      throw new Error('HomeAssistantAdapter requires httpClient');
+      throw new InfrastructureError('HomeAssistantAdapter requires httpClient', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'httpClient'
+      });
     }
 
     // Normalize baseUrl (remove trailing slash)

@@ -1,5 +1,7 @@
 // backend/src/2_adapters/telegram/TelegramResponseContext.mjs
 
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
+
 /**
  * TelegramResponseContext - Implements IResponseContext for Telegram
  *
@@ -28,10 +30,16 @@ export class TelegramResponseContext {
    */
   constructor(adapter, chatRef) {
     if (!adapter) {
-      throw new Error('TelegramResponseContext requires adapter');
+      throw new InfrastructureError('TelegramResponseContext requires adapter', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'adapter'
+      });
     }
     if (!chatRef) {
-      throw new Error('TelegramResponseContext requires chatRef');
+      throw new InfrastructureError('TelegramResponseContext requires chatRef', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'chatRef'
+      });
     }
 
     this.#adapter = adapter;

@@ -19,6 +19,7 @@ import moment from 'moment-timezone';
 import { IHarvester, HarvesterCategory } from '../ports/IHarvester.mjs';
 import { CircuitBreaker } from '../CircuitBreaker.mjs';
 import { configService } from '#system/config/index.mjs';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 /**
  * Weather data harvester
@@ -47,7 +48,10 @@ export class WeatherHarvester extends IHarvester {
     super();
 
     if (!sharedStore) {
-      throw new Error('WeatherHarvester requires sharedStore');
+      throw new InfrastructureError('WeatherHarvester requires sharedStore', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'sharedStore'
+      });
     }
 
     this.#sharedStore = sharedStore;
@@ -111,7 +115,10 @@ export class WeatherHarvester extends IHarvester {
       const tz = weatherConfig?.timezone || this.#timezone;
 
       if (!lat || !lng) {
-        throw new Error('Weather location not configured (WEATHER_LAT/WEATHER_LNG)');
+        throw new InfrastructureError('Weather location not configured (WEATHER_LAT/WEATHER_LNG)', {
+        code: 'MISSING_CONFIG',
+        service: 'Weather'
+      });
       }
 
       // Fetch weather and air quality in parallel

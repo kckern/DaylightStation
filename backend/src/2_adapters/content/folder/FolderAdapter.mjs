@@ -2,6 +2,7 @@
 import path from 'path';
 import { ListableItem } from '#domains/content/capabilities/Listable.mjs';
 import { Item } from '#domains/content/entities/Item.mjs';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import {
   loadYaml,
   loadYamlFromPath,
@@ -44,7 +45,10 @@ const MIN_PROGRESS_THRESHOLD = 1;
  */
 export class FolderAdapter {
   constructor(config) {
-    if (!config.watchlistPath) throw new Error('FolderAdapter requires watchlistPath');
+    if (!config.watchlistPath) throw new InfrastructureError('FolderAdapter requires watchlistPath', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'watchlistPath'
+      });
     this.watchlistPath = config.watchlistPath;
     this.registry = config.registry || null;
     this.historyPath = config.historyPath || null; // Path to media_memory directory

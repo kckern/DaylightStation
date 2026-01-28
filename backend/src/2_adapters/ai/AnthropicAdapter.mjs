@@ -7,6 +7,7 @@
  */
 
 import { IAIGateway } from '#apps/shared/ports/IAIGateway.mjs';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 const ANTHROPIC_API_BASE = 'https://api.anthropic.com/v1';
 const ANTHROPIC_VERSION = '2023-06-01';
@@ -26,10 +27,16 @@ export class AnthropicAdapter extends IAIGateway {
     super();
 
     if (!config?.apiKey) {
-      throw new Error('Anthropic API key is required');
+      throw new InfrastructureError('Anthropic API key is required', {
+        code: 'MISSING_CONFIG',
+        field: 'apiKey'
+      });
     }
     if (!deps.httpClient) {
-      throw new Error('AnthropicAdapter requires httpClient');
+      throw new InfrastructureError('AnthropicAdapter requires httpClient', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'httpClient'
+      });
     }
 
     this.apiKey = config.apiKey;
@@ -88,7 +95,11 @@ export class AnthropicAdapter extends IAIGateway {
           throw error;
         }
 
-        throw new Error(errorData.error?.message || `AI API error: ${response.status}`);
+        throw new InfrastructureError(errorData.error?.message || `AI API error: ${response.status}`, {
+          code: 'EXTERNAL_SERVICE_ERROR',
+          service: 'Anthropic',
+          statusCode: response.status
+        });
       }
 
       const result = await response.json();
@@ -295,7 +306,10 @@ export class AnthropicAdapter extends IAIGateway {
         return JSON.parse(retryJson);
       } catch (retryParseError) {
         this.logger.error?.('anthropic.json.retryFailed', { response: retryResponse });
-        throw new Error('Failed to parse JSON response after retry');
+        throw new InfrastructureError('Failed to parse JSON response after retry', {
+          code: 'INVALID_RESPONSE',
+          service: 'Anthropic'
+        });
       }
     }
   }
@@ -305,7 +319,11 @@ export class AnthropicAdapter extends IAIGateway {
    * Use OpenAI Whisper instead
    */
   async transcribe(audioBuffer, options = {}) {
-    throw new Error('Anthropic does not support audio transcription. Use OpenAI Whisper.');
+    throw new InfrastructureError('Anthropic does not support audio transcription. Use OpenAI Whisper.', {
+      code: 'NOT_IMPLEMENTED',
+      service: 'Anthropic',
+      feature: 'transcription'
+    });
   }
 
   /**
@@ -313,7 +331,11 @@ export class AnthropicAdapter extends IAIGateway {
    * Use OpenAI embeddings instead
    */
   async embed(text) {
-    throw new Error('Anthropic does not support embeddings. Use OpenAI embeddings.');
+    throw new InfrastructureError('Anthropic does not support embeddings. Use OpenAI embeddings.', {
+      code: 'NOT_IMPLEMENTED',
+      service: 'Anthropic',
+      feature: 'embeddings'
+    });
   }
 
   // ============ Utilities ============

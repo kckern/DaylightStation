@@ -7,6 +7,8 @@
  * @module harvester/YamlLifelogDatastore
  */
 
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
+
 /**
  * YAML-based lifelog persistence
  */
@@ -21,7 +23,10 @@ export class YamlLifelogDatastore {
    */
   constructor({ io, logger = console }) {
     if (!io?.userLoadFile || !io?.userSaveFile) {
-      throw new Error('YamlLifelogDatastore requires io.userLoadFile and io.userSaveFile');
+      throw new InfrastructureError('YamlLifelogDatastore requires io.userLoadFile and io.userSaveFile', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'io'
+      });
     }
 
     this.#io = io;

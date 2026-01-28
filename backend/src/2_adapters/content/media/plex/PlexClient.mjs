@@ -1,5 +1,7 @@
 // backend/src/adapters/content/media/plex/PlexClient.mjs
 
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
+
 /**
  * Low-level Plex API client for making authenticated requests to Plex Media Server.
  */
@@ -23,10 +25,16 @@ export class PlexClient {
    */
   constructor(config, deps = {}) {
     if (!config.host) {
-      throw new Error('PlexClient requires host');
+      throw new InfrastructureError('PlexClient requires host', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'host'
+      });
     }
     if (!deps.httpClient) {
-      throw new Error('PlexClient requires httpClient');
+      throw new InfrastructureError('PlexClient requires httpClient', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'httpClient'
+      });
     }
     this.#host = config.host.replace(/\/$/, '');
     this.#token = config.token || '';

@@ -18,6 +18,7 @@ import {
   deleteYaml
 } from '#system/utils/FileIO.mjs';
 import { IConversationDatastore } from '#apps/shared/ports/IConversationDatastore.mjs';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 export class YamlConversationDatastore extends IConversationDatastore {
   #userDataService;
@@ -31,7 +32,10 @@ export class YamlConversationDatastore extends IConversationDatastore {
   constructor(config) {
     super();
     if (!config.userDataService) {
-      throw new Error('YamlConversationDatastore requires userDataService');
+      throw new InfrastructureError('YamlConversationDatastore requires userDataService', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'userDataService'
+      });
     }
     this.#userDataService = config.userDataService;
     this.#logger = config.logger || console;

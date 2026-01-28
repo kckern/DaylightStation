@@ -6,6 +6,7 @@
 import { Transaction } from '#domains/finance/entities/Transaction.mjs';
 import { Account } from '#domains/finance/entities/Account.mjs';
 import { nowTs24, nowDate } from '#system/utils/index.mjs';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 const BUXFER_API_BASE = 'https://www.buxfer.com/api';
 
@@ -38,7 +39,10 @@ export class BuxferAdapter {
 
     const credentials = this.getCredentials();
     if (!credentials?.email || !credentials?.password) {
-      throw new Error('Buxfer credentials not configured');
+      throw new InfrastructureError('Buxfer credentials not configured', {
+        code: 'MISSING_CONFIG',
+        service: 'Buxfer'
+      });
     }
 
     const url = `${BUXFER_API_BASE}/login`;
@@ -54,7 +58,10 @@ export class BuxferAdapter {
       const { data } = await this.httpClient.post(url, params);
 
       if (!data?.response?.token) {
-        throw new Error('No token in login response');
+        throw new InfrastructureError('No token in login response', {
+        code: 'AUTHENTICATION_ERROR',
+        service: 'Buxfer'
+      });
       }
 
       this.token = data.response.token;
@@ -66,7 +73,10 @@ export class BuxferAdapter {
     } catch (error) {
       this.metrics.errors++;
       this.logger.error?.('buxfer.auth_failed', { error: error.message });
-      throw new Error(`Buxfer authentication failed: ${error.message}`);
+      throw new InfrastructureError(`Buxfer authentication failed: ${error.message}`, {
+        code: 'AUTHENTICATION_ERROR',
+        service: 'Buxfer'
+      });
     }
   }
 

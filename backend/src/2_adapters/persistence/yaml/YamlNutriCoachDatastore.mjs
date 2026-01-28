@@ -16,6 +16,7 @@ import {
 } from '#system/utils/FileIO.mjs';
 import { nowTs24 } from '#system/utils/index.mjs';
 import { INutriCoachDatastore } from '#apps/nutribot/ports/INutriCoachDatastore.mjs';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 export class YamlNutriCoachDatastore extends INutriCoachDatastore {
   #dataRoot;
@@ -29,7 +30,10 @@ export class YamlNutriCoachDatastore extends INutriCoachDatastore {
   constructor(options) {
     super();
     if (!options?.dataRoot) {
-      throw new Error('YamlNutriCoachDatastore requires dataRoot');
+      throw new InfrastructureError('YamlNutriCoachDatastore requires dataRoot', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'dataRoot'
+      });
     }
     this.#dataRoot = options.dataRoot;
     this.#logger = options.logger || console;

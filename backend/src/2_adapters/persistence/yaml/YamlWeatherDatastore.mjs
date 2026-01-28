@@ -9,6 +9,7 @@
 
 import path from 'path';
 import { loadYaml, saveYaml } from '#system/utils/FileIO.mjs';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 export class YamlWeatherDatastore {
   #dataRoot;
@@ -23,7 +24,10 @@ export class YamlWeatherDatastore {
    */
   constructor({ dataRoot, householdId = 'default', logger = console }) {
     if (!dataRoot) {
-      throw new Error('YamlWeatherDatastore requires dataRoot');
+      throw new InfrastructureError('YamlWeatherDatastore requires dataRoot', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'dataRoot'
+      });
     }
 
     this.#dataRoot = dataRoot;
