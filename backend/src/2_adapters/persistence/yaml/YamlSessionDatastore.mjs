@@ -2,8 +2,8 @@
  * YamlSessionDatastore - YAML-based session persistence
  *
  * Implements ISessionDatastore port for fitness session storage.
- * Sessions are stored at: households/{hid}/apps/fitness/sessions/{YYYY-MM-DD}/{sessionId}.yml
- * Screenshots at: {mediaRoot}/apps/fitness/households/{hid}/sessions/{YYYY-MM-DD}/{sessionId}/screenshots/
+ * Sessions are stored at: household[-{hid}]/apps/fitness/sessions/{YYYY-MM-DD}/{sessionId}.yml
+ * Screenshots at: {mediaRoot}/apps/fitness/household[-{hid}]/sessions/{YYYY-MM-DD}/{sessionId}/screenshots/
  */
 import path from 'path';
 import moment from 'moment-timezone';
@@ -94,8 +94,9 @@ export class YamlSessionDatastore extends ISessionDatastore {
       'screenshots'
     );
 
-    // Relative path for API responses
-    const screenshotsRelativeBase = `apps/fitness/households/${householdId}/sessions/${sessionDate}/${sessionId}/screenshots`;
+    // Relative path for API responses (uses flat household naming convention)
+    const householdFolder = householdId === 'default' ? 'household' : `household-${householdId}`;
+    const screenshotsRelativeBase = `apps/fitness/${householdFolder}/sessions/${sessionDate}/${sessionId}/screenshots`;
 
     return {
       sessionDate,

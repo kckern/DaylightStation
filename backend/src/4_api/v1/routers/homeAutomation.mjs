@@ -132,7 +132,8 @@ export function createHomeAutomationRouter(config) {
     }
 
     const { level } = req.params;
-    const volumeStateFile = `households/${householdId}/history/hardware/volLevel`;
+    // Path relative to household dir (loadFile/saveFile prepend householdDir)
+    const volumeStateFile = `history/hardware/volLevel`;
     const cycleLevels = [70, 50, 30, 20, 10, 0];
     const increment = 12;
 

@@ -2,7 +2,7 @@
  * YamlGratitudeDatastore - YAML-based gratitude persistence
  *
  * Implements IGratitudeDatastore port for gratitude/hopes data storage.
- * Data stored at: households/{hid}/shared/gratitude/
+ * Data stored at: household[-{hid}]/shared/gratitude/
  *   - options.{category}.yml
  *   - selections.{category}.yml
  *   - discarded.{category}.yml

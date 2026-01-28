@@ -176,7 +176,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const dataBasePath = configService.getDataDir();
   const mediaBasePath = configService.getMediaDir();
   const householdId = configService.getDefaultHouseholdId() || 'default';
-  const householdDir = userDataService.getHouseholdDir(householdId) || `${dataBasePath}/households/${householdId}`;
+  const householdDir = userDataService.getHouseholdDir(householdId);
 
   // DevProxy for forwarding webhooks to local dev machine
   const devHost = configService.get('LOCAL_DEV_HOST') || configService.getSecret('LOCAL_DEV_HOST');
@@ -267,10 +267,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   }) : null;
 
   // Import FileIO functions for content domain (replaces legacy io.mjs)
+  // Content routers use household-scoped paths
   const { loadYaml, saveYaml } = await import('./0_system/utils/FileIO.mjs');
   const dataDir = configService.getDataDir();
-  const contentLoadFile = (relativePath) => loadYaml(path.join(dataDir, relativePath));
-  const contentSaveFile = (relativePath, data) => saveYaml(path.join(dataDir, relativePath), data);
+  const contentLoadFile = (relativePath) => loadYaml(path.join(householdDir, relativePath));
+  const contentSaveFile = (relativePath, data) => saveYaml(path.join(householdDir, relativePath), data);
 
   const contentRouters = createApiRouters({
     registry: contentRegistry,
@@ -415,7 +416,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Household-level file saving for Infinity harvester state
   const householdSaveFile = (relativePath, data) => {
-    // Save to households/default/state/{path} - matches legacy saveFile('state/lists')
+    // Save to household[-{hid}]/state/{path}
     return userDataService.saveHouseholdData(householdId, relativePath, data);
   };
 

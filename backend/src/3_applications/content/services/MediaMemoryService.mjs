@@ -23,14 +23,7 @@ import { slugify } from '#system/utils/strings.mjs';
  * @returns {string} Relative path for use with loadFile/saveFile
  */
 export const getMediaMemoryPath = (category, householdId = null) => {
-  const hid = householdId || configService.getDefaultHouseholdId();
-  const householdDir = userDataService.getHouseholdDir(hid);
-  if (householdDir && fs.existsSync(path.join(householdDir, 'history', 'media_memory'))) {
-    // Return path relative to data dir for use with loadFile/saveFile
-    const dataDir = configService.getDataDir();
-    const relativePath = path.relative(dataDir, path.join(householdDir, 'history', 'media_memory', category));
-    return relativePath;
-  }
+  // Return path relative to household dir for use with household-scoped loadFile/saveFile
   return `history/media_memory/${category}`;
 };
 
