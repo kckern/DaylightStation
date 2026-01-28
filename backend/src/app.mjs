@@ -27,7 +27,7 @@ import { loadLoggingConfig, resolveLoggerLevel } from './0_system/logging/config
 // Bootstrap functions
 import {
   createContentRegistry,
-  createWatchStore,
+  createMediaProgressMemory,
   createApiRouters,
   createFitnessServices,
   createFitnessApiRouter,
@@ -247,9 +247,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const contentPath = `${dataBasePath}/content`;  // LocalContentAdapter expects content/ subdirectory
   const mediaMemoryPath = `${householdDir}/history/media_memory`;
 
-  // Watch state path - use household-scoped path (SSOT for watch state)
-  const watchStatePath = configService.getPath('watchState') || `${householdDir}/history/media_memory`;
-  const watchStore = createWatchStore({ watchStatePath });
+  // Media progress path - use household-scoped path (SSOT for media progress)
+  const mediaProgressPath = configService.getPath('watchState') || `${householdDir}/history/media_memory`;
+  const mediaProgressMemory = createMediaProgressMemory({ mediaProgressPath });
 
   const contentRegistry = createContentRegistry({
     mediaBasePath,
@@ -259,7 +259,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     mediaMemoryPath,
     nomusicLabels,
     musicOverlayPlaylist
-  }, { httpClient: axios, watchStore });
+  }, { httpClient: axios, mediaProgressMemory });
 
   // Create proxy service for content domain (used for media library passthrough)
   const contentProxyService = mediaLibConfig?.host ? createProxyService({
@@ -276,7 +276,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   const contentRouters = createApiRouters({
     registry: contentRegistry,
-    watchStore,
+    mediaProgressMemory,
     loadFile: contentLoadFile,
     saveFile: contentSaveFile,
     cacheBasePath: mediaBasePath ? `${mediaBasePath}/img/cache` : null,
