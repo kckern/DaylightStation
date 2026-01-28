@@ -20,6 +20,7 @@ export {
 // Services
 export { SessionService } from './services/SessionService.mjs';
 export { ZoneService } from './services/ZoneService.mjs';
+export { FitnessProgressClassifier } from './services/FitnessProgressClassifier.mjs';
 
 // Ports (re-exported from application layer for backward compatibility)
 export { ISessionDatastore } from '#apps/fitness/ports/ISessionDatastore.mjs';
