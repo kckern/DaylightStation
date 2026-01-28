@@ -59,12 +59,17 @@ export class YamlSecretsProvider extends ISecretsProvider {
     const filePath = path.join(this.#dataDir, relativePath);
     const dir = path.dirname(filePath);
 
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
+    try {
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
 
-    const content = yaml.dump(data, { lineWidth: -1 });
-    fs.writeFileSync(filePath, content, 'utf8');
+      const content = yaml.dump(data, { lineWidth: -1 });
+      fs.writeFileSync(filePath, content, 'utf8');
+    } catch (err) {
+      console.error(`Failed to write ${filePath}: ${err.message}`);
+      throw err;  // Re-throw so callers know write failed
+    }
   }
 
   // ─── Private: Load helpers ──────────────────────────
@@ -77,7 +82,11 @@ export class YamlSecretsProvider extends ISecretsProvider {
       if (name.startsWith('.') || name.startsWith('_') || name === 'example') {
         return false;
       }
-      return fs.statSync(path.join(fullPath, name)).isDirectory();
+      try {
+        return fs.statSync(path.join(fullPath, name)).isDirectory();
+      } catch (err) {
+        return false;  // Skip entries that can't be stat'd
+      }
     });
   }
 
@@ -97,7 +106,11 @@ export class YamlSecretsProvider extends ISecretsProvider {
       .filter(name => {
         if (name.startsWith('.') || name.startsWith('_')) return false;
         if (name !== 'household' && !name.startsWith('household-')) return false;
-        return fs.statSync(path.join(this.#dataDir, name)).isDirectory();
+        try {
+          return fs.statSync(path.join(this.#dataDir, name)).isDirectory();
+        } catch (err) {
+          return false;  // Skip entries that can't be stat'd
+        }
       });
   }
 
