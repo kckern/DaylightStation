@@ -19,15 +19,13 @@ import yaml from 'js-yaml';
 export function loadConfig(dataDir) {
   const config = {
     system: loadSystemConfig(dataDir),
-    secrets: loadSecrets(dataDir),
+    // secrets, auth, systemAuth removed - now handled by SecretsHandler
     services: loadServices(dataDir),
     households: loadAllHouseholds(dataDir),
     users: loadAllUsers(dataDir),
-    auth: loadAllAuth(dataDir),
     apps: loadAllApps(dataDir),
     adapters: loadAdapters(dataDir),
     systemBots: loadSystemBots(dataDir),
-    systemAuth: loadSystemAuth(dataDir),
     identityMappings: {},
   };
 
@@ -106,13 +104,6 @@ function loadAdapters(dataDir) {
 function loadServices(dataDir) {
   const servicesPath = path.join(dataDir, 'system', 'services.yml');
   return readYaml(servicesPath) ?? {};
-}
-
-// ─── Secrets ─────────────────────────────────────────────────
-
-function loadSecrets(dataDir) {
-  const secretsPath = path.join(dataDir, 'system', 'secrets.yml');
-  return readYaml(secretsPath) ?? {};
 }
 
 // ─── Households ──────────────────────────────────────────────
@@ -237,60 +228,6 @@ function loadAllUsers(dataDir) {
   return users;
 }
 
-// ─── Auth ────────────────────────────────────────────────────
-
-function loadAllAuth(dataDir) {
-  return {
-    users: loadUserAuth(dataDir),
-    households: loadHouseholdAuth(dataDir),
-  };
-}
-
-function loadUserAuth(dataDir) {
-  const usersDir = path.join(dataDir, 'users');
-  const auth = {};
-
-  for (const username of listDirs(usersDir)) {
-    const authDir = path.join(usersDir, username, 'auth');
-    if (!fs.existsSync(authDir)) continue;
-
-    auth[username] = {};
-    for (const file of listYamlFiles(authDir)) {
-      const service = path.basename(file, '.yml');
-      const creds = readYaml(file);
-      if (creds) {
-        auth[username][service] = creds;
-      }
-    }
-  }
-
-  return auth;
-}
-
-function loadHouseholdAuth(dataDir) {
-  const auth = {};
-
-  // Load from flat structure (household/, household-*/)
-  const flatDirs = listHouseholdDirs(dataDir);
-
-  for (const dir of flatDirs) {
-    const householdId = parseHouseholdId(dir);
-    const authDir = path.join(dataDir, dir, 'auth');
-    if (!fs.existsSync(authDir)) continue;
-
-    auth[householdId] = {};
-    for (const file of listYamlFiles(authDir)) {
-      const service = path.basename(file, '.yml');
-      const creds = readYaml(file);
-      if (creds) {
-        auth[householdId][service] = creds;
-      }
-    }
-  }
-
-  return auth;
-}
-
 // ─── Apps ────────────────────────────────────────────────────
 
 function loadAllApps(dataDir) {
@@ -318,33 +255,6 @@ function loadAllApps(dataDir) {
 function loadSystemBots(dataDir) {
   const botsPath = path.join(dataDir, 'system', 'bots.yml');
   return readYaml(botsPath) ?? {};
-}
-
-// ─── System Auth ─────────────────────────────────────────────
-
-/**
- * Load system-level auth credentials from system/auth/*.yml
- * Each file represents a platform (e.g., telegram.yml -> systemAuth.telegram)
- * @param {string} dataDir - Path to data directory
- * @returns {object} Auth credentials keyed by platform, then by key
- */
-function loadSystemAuth(dataDir) {
-  const authDir = path.join(dataDir, 'system', 'auth');
-  const auth = {};
-
-  for (const file of listYamlFiles(authDir)) {
-    // Skip example files
-    const basename = path.basename(file);
-    if (basename.includes('.example.')) continue;
-
-    const platform = path.basename(file, '.yml');
-    const creds = readYaml(file);
-    if (creds) {
-      auth[platform] = creds;
-    }
-  }
-
-  return auth;
 }
 
 // ─── Identity Mappings ───────────────────────────────────────
@@ -401,6 +311,9 @@ function listYamlFiles(dir) {
 }
 
 export default loadConfig;
+
+// Export loadSystemConfig for bootstrap (needed to determine secrets provider)
+export { loadSystemConfig };
 
 // ─── Legacy Compatibility ─────────────────────────────────────
 
