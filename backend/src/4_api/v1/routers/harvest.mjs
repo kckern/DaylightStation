@@ -13,6 +13,7 @@
  */
 import express from 'express';
 import crypto from 'crypto';
+import { asyncHandler } from '#system/http/middleware/index.mjs';
 
 /**
  * Create harvest router
@@ -129,7 +130,7 @@ export function createHarvestRouter(config) {
    * GET/POST /harvest/:serviceId
    * Trigger a specific harvester
    */
-  const harvestHandler = async (req, res) => {
+  const harvestHandler = asyncHandler(async (req, res) => {
     const { serviceId } = req.params;
     const requestId = crypto.randomUUID().split('-').pop();
     const username = resolveUsername(req);
@@ -184,13 +185,13 @@ export function createHarvestRouter(config) {
                         error.message?.includes('cooldown') ? 503 :
                         error.response?.status === 429 ? 429 : 500;
 
-      res.status(statusCode).json({
+      return res.status(statusCode).json({
         ok: false,
         ...sanitizeError(error, serviceId),
         requestId
       });
     }
-  };
+  });
 
   router.get('/:serviceId', harvestHandler);
   router.post('/:serviceId', harvestHandler);

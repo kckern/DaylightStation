@@ -18,41 +18,32 @@ export function nutribotReportHandler(container, options = {}) {
   return async (req, res) => {
     const traceId = req.traceId || 'unknown';
 
-    try {
-      // Extract chatId from query or body
-      const chatId = req.query.chatId || req.body?.chatId;
+    // Extract chatId from query or body
+    const chatId = req.query.chatId || req.body?.chatId;
 
-      logger.info?.('report.request', { chatId, traceId });
+    logger.info?.('report.request', { chatId, traceId });
 
-      if (!chatId) {
-        return res.status(400).json({
-          ok: false,
-          error: 'chatId is required',
-          traceId,
-        });
-      }
-
-      // Get use case
-      const useCase = container.getGetReportAsJSON();
-
-      // Execute
-      const result = await useCase.execute({ userId: chatId });
-
-      logger.info?.('report.generated', { traceId, chatId });
-
-      res.json({
-        ok: true,
-        data: result,
-        traceId,
-      });
-    } catch (error) {
-      logger.error?.('report.error', { traceId, error: error.message });
-      res.status(500).json({
+    if (!chatId) {
+      return res.status(400).json({
         ok: false,
-        error: error.message,
+        error: 'chatId is required',
         traceId,
       });
     }
+
+    // Get use case
+    const useCase = container.getGetReportAsJSON();
+
+    // Execute
+    const result = await useCase.execute({ userId: chatId });
+
+    logger.info?.('report.generated', { traceId, chatId });
+
+    res.json({
+      ok: true,
+      data: result,
+      traceId,
+    });
   };
 }
 

@@ -9,6 +9,7 @@
  */
 
 import express from 'express';
+import { asyncHandler } from '#system/http/middleware/index.mjs';
 
 /**
  * Create TTS router
@@ -135,36 +136,29 @@ export function createTTSRouter(config) {
  * @param {TTSAdapter} ttsAdapter
  */
 async function generateAndStream(text, options, res, logger, ttsAdapter) {
-  try {
-    logger.info?.('tts.generate.request', {
-      textLength: text.length,
-      voice: options.voice,
-      model: options.model
+  logger.info?.('tts.generate.request', {
+    textLength: text.length,
+    voice: options.voice,
+    model: options.model
+  });
+
+  const audioStream = await ttsAdapter.generateSpeech(text, options);
+
+  if (audioStream && typeof audioStream.pipe === 'function') {
+    res.setHeader('Content-Type', 'audio/mpeg');
+    res.setHeader('Content-Disposition', 'inline');
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+
+    audioStream.on('error', (err) => {
+      logger.error?.('tts.stream.error', { error: err.message });
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Error streaming audio' });
+      }
     });
 
-    const audioStream = await ttsAdapter.generateSpeech(text, options);
-
-    if (audioStream && typeof audioStream.pipe === 'function') {
-      res.setHeader('Content-Type', 'audio/mpeg');
-      res.setHeader('Content-Disposition', 'inline');
-      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-
-      audioStream.on('error', (err) => {
-        logger.error?.('tts.stream.error', { error: err.message });
-        if (!res.headersSent) {
-          res.status(500).json({ error: 'Error streaming audio' });
-        }
-      });
-
-      audioStream.pipe(res);
-    } else {
-      res.status(500).json({ error: 'Error generating speech' });
-    }
-  } catch (error) {
-    logger.error?.('tts.generate.error', { error: error.message });
-    if (!res.headersSent) {
-      res.status(500).json({ error: error.message || 'Error generating speech' });
-    }
+    audioStream.pipe(res);
+  } else {
+    res.status(500).json({ error: 'Error generating speech' });
   }
 }
 

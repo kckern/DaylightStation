@@ -1,5 +1,6 @@
 // backend/src/4_api/routers/list.mjs
 import express from 'express';
+import { asyncHandler } from '#system/http/middleware/index.mjs';
 
 /**
  * Compact an object by removing falsy values and converting numeric strings
@@ -300,8 +301,7 @@ export function createListRouter(config) {
   /**
    * GET /api/list/:source/(path)
    */
-  router.get('/:source/*', async (req, res) => {
-    try {
+  router.get('/:source/*', asyncHandler(async (req, res) => {
       const { source } = req.params;
       const rawPath = req.params[0] || '';
       const { modifiers, localId } = parseModifiers(rawPath);
@@ -458,11 +458,7 @@ export function createListRouter(config) {
       }
 
       res.json(response);
-    } catch (err) {
-      console.error('[list] Error:', err);
-      res.status(500).json({ error: err.message });
-    }
-  });
+  }));
 
   return router;
 }

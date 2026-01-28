@@ -8,6 +8,7 @@
  */
 
 import express from 'express';
+import { asyncHandler } from '#system/http/middleware/index.mjs';
 
 /**
  * Create Entropy API router
@@ -31,14 +32,6 @@ export function createEntropyRouter(config) {
       configService?.getDefaultUsername?.() ||
       'default'
     );
-  };
-
-  // ==========================================================================
-  // Error Handler
-  // ==========================================================================
-
-  const asyncHandler = (fn) => (req, res, next) => {
-    Promise.resolve(fn(req, res, next)).catch(next);
   };
 
   // ==========================================================================

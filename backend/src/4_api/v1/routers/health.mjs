@@ -9,6 +9,7 @@
 
 import express from 'express';
 import { v4 as uuidv4 } from 'uuid';
+import { asyncHandler } from '#system/http/middleware/index.mjs';
 
 /**
  * Create Health API router
@@ -51,14 +52,6 @@ export function createHealthRouter(config) {
    */
   const getToday = () => {
     return nowDate();
-  };
-
-  // ==========================================================================
-  // Error Handler
-  // ==========================================================================
-
-  const asyncHandler = (fn) => (req, res, next) => {
-    Promise.resolve(fn(req, res, next)).catch(next);
   };
 
   // ==========================================================================

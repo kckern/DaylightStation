@@ -23,6 +23,7 @@ import express from 'express';
 import path from 'path';
 import { spawn } from 'child_process';
 import { ensureDir, writeBinary } from '#system/utils/FileIO.mjs';
+import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { toListItem } from './list.mjs';
 
 // Module-level state for simulation process
@@ -105,7 +106,7 @@ export function createFitnessRouter(config) {
    * GET /api/fitness/show/:id/playable - Get playable episodes for a show
    * Assumes plex source - no need to specify source in URL
    */
-  router.get('/show/:id/playable', async (req, res) => {
+  router.get('/show/:id/playable', asyncHandler(async (req, res) => {
     if (!contentRegistry) {
       return res.status(503).json({ error: 'Content registry not configured' });
     }
@@ -117,14 +118,13 @@ export function createFitnessRouter(config) {
       return res.status(503).json({ error: 'Plex adapter not configured' });
     }
 
-    try {
-      const compoundId = `plex:${id}`;
+    const compoundId = `plex:${id}`;
 
-      // Get playable items
-      if (!adapter.resolvePlayables) {
-        return res.status(400).json({ error: 'Plex adapter does not support playable resolution' });
-      }
-      let items = await adapter.resolvePlayables(compoundId);
+    // Get playable items
+    if (!adapter.resolvePlayables) {
+      return res.status(400).json({ error: 'Plex adapter does not support playable resolution' });
+    }
+    let items = await adapter.resolvePlayables(compoundId);
 
       // Merge viewing history from local YAML files
       if (typeof adapter._loadViewingHistory === 'function') {
@@ -191,18 +191,14 @@ export function createFitnessRouter(config) {
         items: items.map(toListItem)
       };
 
-      res.json(response);
-    } catch (err) {
-      logger.error?.('fitness.show.playable.error', { id, error: err?.message });
-      res.status(500).json({ error: err.message });
-    }
-  });
+    res.json(response);
+  }));
 
   /**
    * GET /api/fitness/show/:id - Get show info
    * Assumes plex source - no need to specify source in URL
    */
-  router.get('/show/:id', async (req, res) => {
+  router.get('/show/:id', asyncHandler(async (req, res) => {
     if (!contentRegistry) {
       return res.status(503).json({ error: 'Content registry not configured' });
     }
@@ -213,9 +209,8 @@ export function createFitnessRouter(config) {
       return res.status(503).json({ error: 'Plex adapter not configured' });
     }
 
-    try {
-      const compoundId = `plex:${id}`;
-      const item = adapter.getItem ? await adapter.getItem(compoundId) : null;
+    const compoundId = `plex:${id}`;
+    const item = adapter.getItem ? await adapter.getItem(compoundId) : null;
 
       if (!item) {
         return res.status(404).json({ error: 'Show not found' });
@@ -226,19 +221,15 @@ export function createFitnessRouter(config) {
         info = await adapter.getContainerInfo(compoundId);
       }
 
-      res.json({
-        id: compoundId,
-        plex: id,
-        title: item.title,
-        label: item.title,
-        image: item.thumbnail,
-        info
-      });
-    } catch (err) {
-      logger.error?.('fitness.show.error', { id, error: err?.message });
-      res.status(500).json({ error: err.message });
-    }
-  });
+    res.json({
+      id: compoundId,
+      plex: id,
+      title: item.title,
+      label: item.title,
+      image: item.thumbnail,
+      info
+    });
+  }));
 
   /**
    * GET /api/fitness/sessions/dates - List all dates that have sessions
