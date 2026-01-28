@@ -494,11 +494,9 @@ const FitnessShow = ({ showId: rawShowId, onBack, viewportRef, setFitnessPlayQue
   };
 
   const isEpisodeWatched = useCallback((episode) => {
-    const watchProgress = normalizeNumber(episode?.watchProgress) ?? 0;
-    const durationSeconds = normalizeNumber(episode?.duration) ?? 0;
-    // For long items (>45 min), require 95% progress; otherwise 50%
-    const threshold = durationSeconds > 45 * 60 ? 95 : 50;
-    return watchProgress >= threshold;
+    // Trust backend-computed isWatched (SSOT)
+    // See: FitnessProgressClassifier for threshold logic
+    return episode?.isWatched ?? false;
   }, []);
 
   const handlePlayEpisode = async (episode, sourceEl = null, event = null) => {
@@ -1083,10 +1081,8 @@ const FitnessShow = ({ showId: rawShowId, onBack, viewportRef, setFitnessPlayQue
                         {seasonEpisodes.map((episode, index) => {
                           const watchProgress = normalizeNumber(episode.watchProgress) ?? 0;
                           const watchedDate = episode.watchedDate;
-                          const durationSeconds = normalizeNumber(episode.duration) ?? 0;
-                          // For long items (>45 min), require 95% progress; otherwise 50%
-                          const watchedThreshold = durationSeconds > 45 * 60 ? 95 : 50;
-                          const isWatched = watchProgress >= watchedThreshold;
+                          // Trust backend-computed isWatched (SSOT)
+                          const isWatched = episode.isWatched ?? false;
                           const hasProgress = watchProgress > 15;
                           const progressPercent = Math.max(0, Math.min(100, watchProgress));
                           const showProgressBar = isResumable && hasProgress && !isWatched;
