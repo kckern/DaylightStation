@@ -1,5 +1,8 @@
 // backend/src/3_applications/agents/AgentOrchestrator.mjs
 
+import { ValidationError } from '#system/utils/errors/index.mjs';
+import { ServiceNotFoundError } from '../shared/errors/index.mjs';
+
 /**
  * AgentOrchestrator - Central service for agent registration and invocation
  *
@@ -19,7 +22,7 @@ export class AgentOrchestrator {
    */
   constructor(deps) {
     if (!deps.agentRuntime) {
-      throw new Error('agentRuntime is required');
+      throw new ValidationError('agentRuntime is required', { field: 'agentRuntime' });
     }
     this.#agentRuntime = deps.agentRuntime;
     this.#logger = deps.logger || console;
@@ -32,7 +35,7 @@ export class AgentOrchestrator {
    */
   register(AgentClass, dependencies) {
     if (!AgentClass.id) {
-      throw new Error('Agent class must have static id property');
+      throw new ValidationError('Agent class must have static id property', { field: 'id' });
     }
 
     const agent = new AgentClass({
@@ -117,7 +120,7 @@ export class AgentOrchestrator {
   #getAgent(agentId) {
     const agent = this.#agents.get(agentId);
     if (!agent) {
-      throw new Error(`Agent not found: ${agentId}`);
+      throw new ServiceNotFoundError('Agent', agentId);
     }
     return agent;
   }

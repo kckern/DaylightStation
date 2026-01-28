@@ -12,6 +12,8 @@
  * - YamlFinanceStore: For reading categorization config
  */
 
+import { ValidationError } from '#system/utils/errors/index.mjs';
+
 export class TransactionCategorizationService {
   #aiGateway;
   #transactionSource;
@@ -38,13 +40,13 @@ export class TransactionCategorizationService {
    */
   constructor({ aiGateway, transactionSource, financeStore, logger }) {
     if (!aiGateway) {
-      throw new Error('TransactionCategorizationService requires aiGateway');
+      throw new ValidationError('TransactionCategorizationService requires aiGateway', { field: 'aiGateway' });
     }
     if (!transactionSource) {
-      throw new Error('TransactionCategorizationService requires transactionSource');
+      throw new ValidationError('TransactionCategorizationService requires transactionSource', { field: 'transactionSource' });
     }
     if (!financeStore) {
-      throw new Error('TransactionCategorizationService requires financeStore');
+      throw new ValidationError('TransactionCategorizationService requires financeStore', { field: 'financeStore' });
     }
     this.#aiGateway = aiGateway;
     this.#transactionSource = transactionSource;

@@ -8,6 +8,9 @@
  * @module applications/media/MediaJobExecutor
  */
 
+import { ValidationError } from '#system/utils/errors/index.mjs';
+import { ServiceNotFoundError } from '../shared/errors/index.mjs';
+
 export class MediaJobExecutor {
   /** @type {Map<string, Function>} */
   #handlers = new Map();
@@ -31,7 +34,10 @@ export class MediaJobExecutor {
    */
   register(jobId, handler) {
     if (typeof handler !== 'function') {
-      throw new Error(`Handler for ${jobId} must be a function`);
+      throw new ValidationError(`Handler for ${jobId} must be a function`, {
+        field: 'handler',
+        jobId
+      });
     }
     this.#handlers.set(jobId, handler);
     this.#logger.debug?.('mediaExecutor.registered', { jobId });
@@ -63,7 +69,7 @@ export class MediaJobExecutor {
 
     const handler = this.#handlers.get(jobId);
     if (!handler) {
-      throw new Error(`No handler registered for job: ${jobId}`);
+      throw new ServiceNotFoundError('MediaJobHandler', jobId);
     }
 
     log.info?.('mediaExecutor.start', { jobId, executionId });

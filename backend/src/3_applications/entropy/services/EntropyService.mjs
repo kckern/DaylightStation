@@ -12,6 +12,7 @@
 
 import moment from 'moment';
 import { EntropyItem, MetricType } from '#domains/entropy/entities/EntropyItem.mjs';
+import { UnsupportedOperationError } from '../../shared/errors/index.mjs';
 
 /**
  * Service for calculating entropy (data staleness) reports
@@ -175,7 +176,10 @@ export class EntropyService {
       return { value: result.count, lastUpdate: result.lastUpdated, lastItem: null };
     }
 
-    throw new Error(`Unknown metric type: ${metric}`);
+    throw new UnsupportedOperationError(
+      `metric type: ${metric}`,
+      'Supported metric types are DAYS_SINCE and COUNT'
+    );
   }
 
   /**
@@ -221,7 +225,7 @@ export async function createWithLegacyDependencies() {
   const userLoadCurrent = (username, service) => userDataService.readUserData(username, `current/${service}`);
 
   const ArchiveServiceModule = await import('../../content/services/ArchiveService.mjs');
-  const { createLogger } = await import('../../../0_system/logging/logger.js');
+  const { createLogger } = await import('../../../0_system/logging/logger.mjs');
 
   const ArchiveService = ArchiveServiceModule.default;
 

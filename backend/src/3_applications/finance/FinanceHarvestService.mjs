@@ -16,6 +16,7 @@
  */
 
 import { nowDate } from '#system/utils/time.mjs';
+import { NotFoundError, ValidationError } from '#system/utils/errors/index.mjs';
 
 export class FinanceHarvestService {
   #transactionSource;
@@ -40,10 +41,10 @@ export class FinanceHarvestService {
     logger
   }) {
     if (!transactionSource) {
-      throw new Error('FinanceHarvestService requires transactionSource');
+      throw new ValidationError('FinanceHarvestService requires transactionSource', { field: 'transactionSource' });
     }
     if (!financeStore) {
-      throw new Error('FinanceHarvestService requires financeStore');
+      throw new ValidationError('FinanceHarvestService requires financeStore', { field: 'financeStore' });
     }
     this.#transactionSource = transactionSource;
     this.#financeStore = financeStore;
@@ -68,7 +69,7 @@ export class FinanceHarvestService {
 
     const config = this.#financeStore.getBudgetConfig(householdId);
     if (!config) {
-      throw new Error('Budget configuration not found');
+      throw new NotFoundError('Budget configuration', householdId);
     }
 
     const { budget: budgets, mortgage } = config;
@@ -216,12 +217,12 @@ export class FinanceHarvestService {
    */
   async categorizeAll(householdId) {
     if (!this.#categorizationService) {
-      throw new Error('Categorization service not configured');
+      throw new ValidationError('Categorization service not configured', { field: 'categorizationService' });
     }
 
     const config = this.#financeStore.getBudgetConfig(householdId);
     if (!config) {
-      throw new Error('Budget configuration not found');
+      throw new NotFoundError('Budget configuration', householdId);
     }
 
     return this.#runCategorization(householdId, config.budget);

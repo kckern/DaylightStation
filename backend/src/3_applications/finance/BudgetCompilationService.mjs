@@ -14,6 +14,7 @@
  */
 
 import { TransactionClassifier, MortgageCalculator } from '#domains/finance/index.mjs';
+import { NotFoundError, ValidationError } from '#system/utils/errors/index.mjs';
 
 export class BudgetCompilationService {
   #financeStore;
@@ -27,7 +28,7 @@ export class BudgetCompilationService {
    */
   constructor({ financeStore, logger }) {
     if (!financeStore) {
-      throw new Error('BudgetCompilationService requires financeStore');
+      throw new ValidationError('BudgetCompilationService requires financeStore', { field: 'financeStore' });
     }
     this.#financeStore = financeStore;
     this.#mortgageCalculator = new MortgageCalculator();
@@ -43,7 +44,7 @@ export class BudgetCompilationService {
   async compile(householdId) {
     const config = this.#financeStore.getBudgetConfig(householdId);
     if (!config) {
-      throw new Error('Budget configuration not found');
+      throw new NotFoundError('Budget configuration', householdId);
     }
 
     const { budget: budgetConfigs, mortgage: mortgageConfig } = config;

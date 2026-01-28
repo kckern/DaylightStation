@@ -6,6 +6,8 @@
  * @module applications/finance/PayrollSyncService
  */
 
+import { ValidationError } from '#system/utils/errors/index.mjs';
+
 /**
  * Payroll sync service
  */
@@ -26,8 +28,8 @@ export class PayrollSyncService {
    * @param {Object} [config.logger] - Logger instance
    */
   constructor({ httpClient, transactionGateway, financeStore, configService, payrollConfig, logger = console }) {
-    if (!httpClient) throw new Error('PayrollSyncService requires httpClient');
-    if (!configService) throw new Error('PayrollSyncService requires configService');
+    if (!httpClient) throw new ValidationError('PayrollSyncService requires httpClient', { field: 'httpClient' });
+    if (!configService) throw new ValidationError('PayrollSyncService requires configService', { field: 'configService' });
 
     this.#httpClient = httpClient;
     this.#transactionGateway = transactionGateway;
@@ -72,12 +74,16 @@ export class PayrollSyncService {
 
     // Validate required config
     if (!baseUrl || !company || !employeeId) {
-      throw new Error('Payroll not configured: missing base_url, company, or employee_id');
+      throw new ValidationError('Payroll not configured: missing base_url, company, or employee_id', {
+        baseUrl,
+        company,
+        employeeId
+      });
     }
 
     const effectiveToken = token || authCookie;
     if (!effectiveToken) {
-      throw new Error('Payroll auth token required');
+      throw new ValidationError('Payroll auth token required', { field: 'token' });
     }
 
     this.#logger.info?.('payroll.sync.start', { company, employeeId });
@@ -96,7 +102,7 @@ export class PayrollSyncService {
       checksResponse = await this.#httpClient.get(listUrl, { headers });
     } catch (error) {
       if (error.response?.status === 401) {
-        throw new Error('Payroll auth expired - please provide a new token');
+        throw new ValidationError('Payroll auth expired - please provide a new token', { authExpired: true });
       }
       throw error;
     }
