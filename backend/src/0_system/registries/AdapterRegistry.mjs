@@ -1,4 +1,4 @@
-import { glob } from 'fs/promises';
+import fs from 'fs/promises';
 import path from 'path';
 
 /**
@@ -19,12 +19,21 @@ export class AdapterRegistry {
   }
 
   // Dependency injection points for testing
-  _glob = async (pattern, cwd) => {
-    const results = [];
-    for await (const entry of glob(pattern, { cwd })) {
-      results.push(path.resolve(cwd, entry));
-    }
-    return results;
+  _findManifests = async (rootDir) => {
+    const manifests = [];
+    const walk = async (dir) => {
+      const entries = await fs.readdir(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          await walk(fullPath);
+        } else if (entry.name === 'manifest.mjs') {
+          manifests.push(fullPath);
+        }
+      }
+    };
+    await walk(rootDir);
+    return manifests;
   };
   _import = (modulePath) => import(modulePath);
 
@@ -32,7 +41,7 @@ export class AdapterRegistry {
    * Scan adapters directory for manifest files and index them.
    */
   async discover() {
-    const manifestPaths = await this._glob('**/manifest.mjs', this.#adaptersRoot);
+    const manifestPaths = await this._findManifests(this.#adaptersRoot);
 
     for (const manifestPath of manifestPaths) {
       try {

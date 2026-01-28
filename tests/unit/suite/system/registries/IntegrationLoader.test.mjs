@@ -2,6 +2,17 @@
 import { jest } from '@jest/globals';
 import { IntegrationLoader } from '#backend/src/0_system/registries/IntegrationLoader.mjs';
 
+/**
+ * Create a mock ConfigService with specified household integrations and auth.
+ */
+function createMockConfigService({ integrations = {}, auth = {}, serviceUrls = {} } = {}) {
+  return {
+    getCapabilityIntegrations: jest.fn((householdId, capability) => integrations[capability] ?? []),
+    getHouseholdAuth: jest.fn((provider, householdId) => auth[provider] ?? null),
+    resolveServiceUrl: jest.fn((provider) => serviceUrls[provider] ?? null),
+  };
+}
+
 describe('IntegrationLoader', () => {
   let mockRegistry;
   let mockLogger;
@@ -14,6 +25,8 @@ describe('IntegrationLoader', () => {
     mockLogger = {
       warn: jest.fn(),
       info: jest.fn(),
+      debug: jest.fn(),
+      error: jest.fn(),
     };
   });
 
@@ -31,27 +44,43 @@ describe('IntegrationLoader', () => {
         })
         .mockReturnValueOnce(undefined);  // ai not configured
 
-      const loader = new IntegrationLoader({ registry: mockRegistry, logger: mockLogger });
+      const mockConfigService = createMockConfigService({
+        integrations: {
+          media: [{ provider: 'plex', protocol: 'dash' }],
+          ai: [],
+        },
+        auth: { plex: { token: 'test-token' } },
+        serviceUrls: { plex: 'http://localhost:32400' },
+      });
 
-      const householdConfig = {
-        media: [{ provider: 'plex', host: 'http://localhost:32400' }],
-        ai: [],  // Not configured
-      };
-      const authConfig = { plex: { token: 'test-token' } };
+      const loader = new IntegrationLoader({
+        registry: mockRegistry,
+        configService: mockConfigService,
+        logger: mockLogger,
+      });
 
-      const adapters = await loader.loadForHousehold('default', householdConfig, authConfig, {});
+      const adapters = await loader.loadForHousehold('default', {});
 
       expect(adapters.media).toBeDefined();
       expect(adapters.media.config.host).toBe('http://localhost:32400');
       expect(adapters.media.config.token).toBe('test-token');
+      expect(adapters.media.config.protocol).toBe('dash');
     });
 
     test('returns NoOp adapter for unconfigured capabilities', async () => {
       mockRegistry.getManifest.mockReturnValue(undefined);
 
-      const loader = new IntegrationLoader({ registry: mockRegistry, logger: mockLogger });
+      const mockConfigService = createMockConfigService({
+        integrations: { media: [], ai: [] },
+      });
 
-      const adapters = await loader.loadForHousehold('default', {}, {}, {});
+      const loader = new IntegrationLoader({
+        registry: mockRegistry,
+        configService: mockConfigService,
+        logger: mockLogger,
+      });
+
+      const adapters = await loader.loadForHousehold('default', {});
 
       expect(adapters.media.isAvailable()).toBe(false);
       expect(adapters.ai.isConfigured()).toBe(false);
@@ -68,28 +97,38 @@ describe('IntegrationLoader', () => {
         adapter: () => Promise.resolve({ default: MockAdapter }),
       });
 
-      const loader = new IntegrationLoader({ registry: mockRegistry, logger: mockLogger });
+      const mockConfigService = createMockConfigService({
+        integrations: {
+          media: [],
+          ai: [{ provider: 'openai', model: 'gpt-4o' }],
+        },
+        auth: { openai: { api_key: 'sk-secret' } },
+      });
 
-      const householdConfig = {
-        ai: [{ provider: 'openai', model: 'gpt-4o' }],
-      };
-      const authConfig = { openai: { api_key: 'sk-secret' } };
+      const loader = new IntegrationLoader({
+        registry: mockRegistry,
+        configService: mockConfigService,
+        logger: mockLogger,
+      });
 
-      const adapters = await loader.loadForHousehold('default', householdConfig, authConfig, {});
+      const adapters = await loader.loadForHousehold('default', {});
 
       expect(adapters.ai.config.model).toBe('gpt-4o');
       expect(adapters.ai.config.api_key).toBe('sk-secret');
     });
 
     test('handles null configs array as unconfigured', async () => {
-      const loader = new IntegrationLoader({ registry: mockRegistry, logger: mockLogger });
+      const mockConfigService = createMockConfigService({
+        integrations: { media: null, ai: null },
+      });
 
-      const householdConfig = {
-        media: null,
-        ai: null,
-      };
+      const loader = new IntegrationLoader({
+        registry: mockRegistry,
+        configService: mockConfigService,
+        logger: mockLogger,
+      });
 
-      const adapters = await loader.loadForHousehold('default', householdConfig, {}, {});
+      const adapters = await loader.loadForHousehold('default', {});
 
       expect(adapters.media.isAvailable()).toBe(false);
       expect(adapters.ai.isConfigured()).toBe(false);
@@ -98,16 +137,23 @@ describe('IntegrationLoader', () => {
     test('logs warning when provider not discovered', async () => {
       mockRegistry.getManifest.mockReturnValue(undefined);
 
-      const loader = new IntegrationLoader({ registry: mockRegistry, logger: mockLogger });
+      const mockConfigService = createMockConfigService({
+        integrations: {
+          media: [{ provider: 'unknown-provider' }],
+          ai: [],
+        },
+      });
 
-      const householdConfig = {
-        media: [{ provider: 'unknown-provider', host: 'http://localhost' }],
-      };
+      const loader = new IntegrationLoader({
+        registry: mockRegistry,
+        configService: mockConfigService,
+        logger: mockLogger,
+      });
 
-      const adapters = await loader.loadForHousehold('default', householdConfig, {}, {});
+      const adapters = await loader.loadForHousehold('default', {});
 
       expect(mockLogger.warn).toHaveBeenCalledWith(
-        'provider-not-discovered',
+        'integration.provider-not-discovered',
         { capability: 'media', provider: 'unknown-provider' }
       );
       // Should fall back to NoOp
@@ -137,16 +183,24 @@ describe('IntegrationLoader', () => {
         })
         .mockReturnValueOnce(undefined);  // ai not configured
 
-      const loader = new IntegrationLoader({ registry: mockRegistry, logger: mockLogger });
+      const mockConfigService = createMockConfigService({
+        integrations: {
+          media: [
+            { provider: 'plex' },
+            { provider: 'filesystem', basePath: '/data/media' },
+          ],
+          ai: [],
+        },
+        serviceUrls: { plex: 'http://localhost:32400' },
+      });
 
-      const householdConfig = {
-        media: [
-          { provider: 'plex', host: 'http://localhost:32400' },
-          { provider: 'filesystem', basePath: '/data/media' },
-        ],
-      };
+      const loader = new IntegrationLoader({
+        registry: mockRegistry,
+        configService: mockConfigService,
+        logger: mockLogger,
+      });
 
-      const adapters = await loader.loadForHousehold('default', householdConfig, {}, {});
+      const adapters = await loader.loadForHousehold('default', {});
 
       // Should be wrapped in MultiProviderAdapter
       expect(adapters.media.isAvailable()).toBe(true);
@@ -169,13 +223,21 @@ describe('IntegrationLoader', () => {
         })
         .mockReturnValueOnce(undefined);
 
-      const loader = new IntegrationLoader({ registry: mockRegistry, logger: mockLogger });
+      const mockConfigService = createMockConfigService({
+        integrations: {
+          media: [{ provider: 'plex' }],
+          ai: [],
+        },
+        serviceUrls: { plex: 'http://localhost:32400' },
+      });
 
-      const householdConfig = {
-        media: [{ provider: 'plex', host: 'http://localhost:32400' }],
-      };
+      const loader = new IntegrationLoader({
+        registry: mockRegistry,
+        configService: mockConfigService,
+        logger: mockLogger,
+      });
 
-      const adapters = await loader.loadForHousehold('default', householdConfig, {}, {});
+      const adapters = await loader.loadForHousehold('default', {});
 
       // Single adapter should not be wrapped
       expect(adapters.media).toBeInstanceOf(MockAdapter);
@@ -195,13 +257,17 @@ describe('IntegrationLoader', () => {
         adapter: () => Promise.resolve({ default: MockAdapter }),
       });
 
-      const loader = new IntegrationLoader({ registry: mockRegistry, logger: mockLogger });
+      const mockConfigService = createMockConfigService({
+        integrations: { media: [{ provider: 'plex' }], ai: [] },
+      });
 
-      const householdConfig = {
-        media: [{ provider: 'plex' }],
-      };
+      const loader = new IntegrationLoader({
+        registry: mockRegistry,
+        configService: mockConfigService,
+        logger: mockLogger,
+      });
 
-      await loader.loadForHousehold('household-1', householdConfig, {}, {});
+      await loader.loadForHousehold('household-1', {});
 
       const cached = loader.getAdapters('household-1');
       expect(cached).toBeDefined();
@@ -209,7 +275,12 @@ describe('IntegrationLoader', () => {
     });
 
     test('returns undefined for unknown household', () => {
-      const loader = new IntegrationLoader({ registry: mockRegistry, logger: mockLogger });
+      const mockConfigService = createMockConfigService();
+      const loader = new IntegrationLoader({
+        registry: mockRegistry,
+        configService: mockConfigService,
+        logger: mockLogger,
+      });
       expect(loader.getAdapters('unknown')).toBeUndefined();
     });
   });
@@ -229,11 +300,17 @@ describe('IntegrationLoader', () => {
         adapter: () => Promise.resolve({ default: MockAdapter }),
       });
 
-      const loader = new IntegrationLoader({ registry: mockRegistry, logger: mockLogger });
+      const mockConfigService = createMockConfigService({
+        integrations: { media: [{ provider: 'plex' }], ai: [] },
+      });
 
-      const adapters = await loader.loadForHousehold('default', {
-        media: [{ provider: 'plex' }],
-      }, {}, {});
+      const loader = new IntegrationLoader({
+        registry: mockRegistry,
+        configService: mockConfigService,
+        logger: mockLogger,
+      });
+
+      const adapters = await loader.loadForHousehold('default', {});
 
       expect(adapters.media.deps).toEqual({});
     });
@@ -254,11 +331,17 @@ describe('IntegrationLoader', () => {
         adapter: () => Promise.resolve({ default: MockAdapter }),
       });
 
-      const loader = new IntegrationLoader({ registry: mockRegistry, logger: mockLogger });
+      const mockConfigService = createMockConfigService({
+        integrations: { media: [{ provider: 'plex' }], ai: [] },
+      });
 
-      const adapters = await loader.loadForHousehold('default', {
-        media: [{ provider: 'plex' }],
-      }, {}, { httpClient: mockHttpClient });
+      const loader = new IntegrationLoader({
+        registry: mockRegistry,
+        configService: mockConfigService,
+        logger: mockLogger,
+      });
+
+      const adapters = await loader.loadForHousehold('default', { httpClient: mockHttpClient });
 
       expect(adapters.media.httpClient).toBe(mockHttpClient);
     });
@@ -274,14 +357,21 @@ describe('IntegrationLoader', () => {
         adapter: () => Promise.resolve({ default: MockAdapter }),
       });
 
-      const loader = new IntegrationLoader({ registry: mockRegistry, logger: mockLogger });
+      const mockConfigService = createMockConfigService({
+        integrations: {
+          media: [],
+          ai: [{ provider: 'openai', api_key: 'old-key', model: 'gpt-4o' }],
+        },
+        auth: { openai: { api_key: 'new-secret-key' } },
+      });
 
-      const householdConfig = {
-        ai: [{ provider: 'openai', api_key: 'old-key', model: 'gpt-4o' }],
-      };
-      const authConfig = { openai: { api_key: 'new-secret-key' } };
+      const loader = new IntegrationLoader({
+        registry: mockRegistry,
+        configService: mockConfigService,
+        logger: mockLogger,
+      });
 
-      const adapters = await loader.loadForHousehold('default', householdConfig, authConfig, {});
+      const adapters = await loader.loadForHousehold('default', {});
 
       // Auth config should override provider config
       expect(adapters.ai.config.api_key).toBe('new-secret-key');
@@ -294,8 +384,17 @@ describe('IntegrationLoader', () => {
       mockRegistry.getAllCapabilities.mockReturnValue(['home_automation']);
       mockRegistry.getManifest.mockReturnValue(undefined);
 
-      const loader = new IntegrationLoader({ registry: mockRegistry, logger: mockLogger });
-      const adapters = await loader.loadForHousehold('default', {}, {}, {});
+      const mockConfigService = createMockConfigService({
+        integrations: { home_automation: [] },
+      });
+
+      const loader = new IntegrationLoader({
+        registry: mockRegistry,
+        configService: mockConfigService,
+        logger: mockLogger,
+      });
+
+      const adapters = await loader.loadForHousehold('default', {});
 
       expect(adapters.home_automation.isConnected()).toBe(false);
       expect(adapters.home_automation.getProviderName()).toBe('noop');
@@ -305,8 +404,17 @@ describe('IntegrationLoader', () => {
       mockRegistry.getAllCapabilities.mockReturnValue(['messaging']);
       mockRegistry.getManifest.mockReturnValue(undefined);
 
-      const loader = new IntegrationLoader({ registry: mockRegistry, logger: mockLogger });
-      const adapters = await loader.loadForHousehold('default', {}, {}, {});
+      const mockConfigService = createMockConfigService({
+        integrations: { messaging: [] },
+      });
+
+      const loader = new IntegrationLoader({
+        registry: mockRegistry,
+        configService: mockConfigService,
+        logger: mockLogger,
+      });
+
+      const adapters = await loader.loadForHousehold('default', {});
 
       expect(adapters.messaging.isConfigured()).toBe(false);
     });
@@ -315,8 +423,17 @@ describe('IntegrationLoader', () => {
       mockRegistry.getAllCapabilities.mockReturnValue(['finance']);
       mockRegistry.getManifest.mockReturnValue(undefined);
 
-      const loader = new IntegrationLoader({ registry: mockRegistry, logger: mockLogger });
-      const adapters = await loader.loadForHousehold('default', {}, {}, {});
+      const mockConfigService = createMockConfigService({
+        integrations: { finance: [] },
+      });
+
+      const loader = new IntegrationLoader({
+        registry: mockRegistry,
+        configService: mockConfigService,
+        logger: mockLogger,
+      });
+
+      const adapters = await loader.loadForHousehold('default', {});
 
       expect(adapters.finance.isConfigured()).toBe(false);
     });
@@ -325,10 +442,64 @@ describe('IntegrationLoader', () => {
       mockRegistry.getAllCapabilities.mockReturnValue(['unknown_capability']);
       mockRegistry.getManifest.mockReturnValue(undefined);
 
-      const loader = new IntegrationLoader({ registry: mockRegistry, logger: mockLogger });
-      const adapters = await loader.loadForHousehold('default', {}, {}, {});
+      const mockConfigService = createMockConfigService({
+        integrations: { unknown_capability: [] },
+      });
+
+      const loader = new IntegrationLoader({
+        registry: mockRegistry,
+        configService: mockConfigService,
+        logger: mockLogger,
+      });
+
+      const adapters = await loader.loadForHousehold('default', {});
 
       expect(adapters.unknown_capability).toEqual({});
+    });
+  });
+
+  describe('hasCapability()', () => {
+    test('returns true for configured capability', async () => {
+      const MockAdapter = class TestAdapter {
+        constructor(config) { this.config = config; }
+        isConfigured() { return true; }
+      };
+
+      mockRegistry.getManifest.mockReturnValue({
+        provider: 'plex',
+        capability: 'media',
+        adapter: () => Promise.resolve({ default: MockAdapter }),
+      });
+
+      const mockConfigService = createMockConfigService({
+        integrations: { media: [{ provider: 'plex' }], ai: [] },
+      });
+
+      const loader = new IntegrationLoader({
+        registry: mockRegistry,
+        configService: mockConfigService,
+        logger: mockLogger,
+      });
+
+      await loader.loadForHousehold('default', {});
+
+      expect(loader.hasCapability('default', 'media')).toBe(true);
+    });
+
+    test('returns false for unconfigured capability', async () => {
+      const mockConfigService = createMockConfigService({
+        integrations: { media: [], ai: [] },
+      });
+
+      const loader = new IntegrationLoader({
+        registry: mockRegistry,
+        configService: mockConfigService,
+        logger: mockLogger,
+      });
+
+      await loader.loadForHousehold('default', {});
+
+      expect(loader.hasCapability('default', 'media')).toBe(false);
     });
   });
 });
