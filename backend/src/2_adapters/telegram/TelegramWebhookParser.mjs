@@ -1,5 +1,7 @@
 // backend/src/2_adapters/telegram/TelegramWebhookParser.mjs
 
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
+
 /**
  * @typedef {Object} NormalizedInput
  * @property {'text'|'image'|'voice'|'callback'|'command'|'upc'} type
@@ -22,7 +24,10 @@ export class TelegramWebhookParser {
 
   constructor(config) {
     if (!config.botId) {
-      throw new Error('TelegramWebhookParser requires botId');
+      throw new InfrastructureError('TelegramWebhookParser requires botId', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'botId'
+      });
     }
     this.#botId = config.botId;
     this.#logger = config.logger || console;

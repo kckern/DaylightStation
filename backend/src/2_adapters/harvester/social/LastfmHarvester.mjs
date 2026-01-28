@@ -17,6 +17,7 @@ import moment from 'moment-timezone';
 import { IHarvester, HarvesterCategory } from '../ports/IHarvester.mjs';
 import { CircuitBreaker } from '../CircuitBreaker.mjs';
 import { configService } from '#system/config/index.mjs';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 /**
  * Last.fm scrobble harvester
@@ -48,10 +49,16 @@ export class LastfmHarvester extends IHarvester {
     super();
 
     if (!httpClient) {
-      throw new Error('LastfmHarvester requires httpClient');
+      throw new InfrastructureError('LastfmHarvester requires httpClient', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'httpClient'
+      });
     }
     if (!lifelogStore) {
-      throw new Error('LastfmHarvester requires lifelogStore');
+      throw new InfrastructureError('LastfmHarvester requires lifelogStore', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'lifelogStore'
+      });
     }
 
     this.#httpClient = httpClient;
@@ -114,10 +121,16 @@ export class LastfmHarvester extends IHarvester {
       const apiKey = this.#resolveApiKey(auth);
 
       if (!apiKey) {
-        throw new Error('Last.fm API key not configured');
+        throw new InfrastructureError('Last.fm API key not configured', {
+        code: 'MISSING_CONFIG',
+        service: 'LastFM'
+      });
       }
       if (!lastfmUser) {
-        throw new Error('Last.fm username not configured');
+        throw new InfrastructureError('Last.fm username not configured', {
+        code: 'MISSING_CONFIG',
+        service: 'LastFM'
+      });
       }
 
       // Load existing scrobbles

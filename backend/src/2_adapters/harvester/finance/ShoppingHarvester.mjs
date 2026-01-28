@@ -18,6 +18,7 @@ import moment from 'moment-timezone';
 import { IHarvester, HarvesterCategory } from '../ports/IHarvester.mjs';
 import { CircuitBreaker } from '../CircuitBreaker.mjs';
 import { configService } from '#system/config/index.mjs';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 /**
  * Default retailer configurations for receipt scanning
@@ -118,13 +119,22 @@ export class ShoppingHarvester extends IHarvester {
     super();
 
     if (!gmailClientFactory) {
-      throw new Error('ShoppingHarvester requires gmailClientFactory');
+      throw new InfrastructureError('ShoppingHarvester requires gmailClientFactory', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'gmailClientFactory'
+      });
     }
     if (!aiGateway) {
-      throw new Error('ShoppingHarvester requires aiGateway');
+      throw new InfrastructureError('ShoppingHarvester requires aiGateway', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'aiGateway'
+      });
     }
     if (!lifelogStore) {
-      throw new Error('ShoppingHarvester requires lifelogStore');
+      throw new InfrastructureError('ShoppingHarvester requires lifelogStore', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'lifelogStore'
+      });
     }
 
     this.#gmailClientFactory = gmailClientFactory;
@@ -383,7 +393,11 @@ export class ShoppingHarvester extends IHarvester {
       const shoppingConfig = config?.shopping;
 
       if (shoppingConfig?.enabled === false) {
-        throw new Error('Shopping harvester not enabled for this household');
+        throw new InfrastructureError('Shopping harvester not enabled for this household', {
+          code: 'FEATURE_DISABLED',
+          service: 'Shopping',
+          household: householdId
+        });
       }
 
       return {
@@ -408,7 +422,10 @@ export class ShoppingHarvester extends IHarvester {
       : retailers;
 
     if (activeRetailers.length === 0) {
-      throw new Error(`No retailers configured${retailerFilter ? ` matching '${retailerFilter}'` : ''}`);
+      throw new InfrastructureError(`No retailers configured${retailerFilter ? ` matching '${retailerFilter}'` : ''}`, {
+        code: 'MISSING_CONFIG',
+        service: 'Shopping'
+      });
     }
 
     const retailerQueries = activeRetailers.map(r => {

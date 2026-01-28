@@ -18,6 +18,7 @@ import moment from 'moment-timezone';
 import { IHarvester, HarvesterCategory } from '../ports/IHarvester.mjs';
 import { CircuitBreaker } from '../CircuitBreaker.mjs';
 import { configService } from '#system/config/index.mjs';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 /**
  * Google Calendar event harvester
@@ -52,7 +53,10 @@ export class GCalHarvester extends IHarvester {
     super();
 
     if (!lifelogStore) {
-      throw new Error('GCalHarvester requires lifelogStore');
+      throw new InfrastructureError('GCalHarvester requires lifelogStore', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'lifelogStore'
+      });
     }
 
     this.#lifelogStore = lifelogStore;
@@ -228,7 +232,11 @@ export class GCalHarvester extends IHarvester {
     const refreshToken = auth.refresh_token || this.#configService?.getSecret?.('GOOGLE_REFRESH_TOKEN');
 
     if (!(GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET && GOOGLE_REDIRECT_URI && refreshToken)) {
-      throw new Error('Google Calendar credentials not found');
+      throw new InfrastructureError('Google Calendar credentials not found', {
+        code: 'MISSING_CONFIG',
+        service: 'GoogleCalendar',
+        required: ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'GOOGLE_REDIRECT_URI', 'refresh_token']
+      });
     }
 
     const oAuth2Client = new google.auth.OAuth2(

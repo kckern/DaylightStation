@@ -1,5 +1,6 @@
 // backend/src/2_adapters/ai/OpenAIFoodParserAdapter.mjs
 import { FoodItem } from '#domains/lifelog/entities/FoodItem.mjs';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 /**
  * OpenAI-based food parser implementing IFoodParser
@@ -24,10 +25,16 @@ export class OpenAIFoodParserAdapter {
    */
   constructor(config, deps = {}) {
     if (!config.apiKey) {
-      throw new Error('OpenAIFoodParserAdapter requires apiKey');
+      throw new InfrastructureError('OpenAIFoodParserAdapter requires apiKey', {
+        code: 'MISSING_CONFIG',
+        field: 'apiKey'
+      });
     }
     if (!deps.httpClient) {
-      throw new Error('OpenAIFoodParserAdapter requires httpClient');
+      throw new InfrastructureError('OpenAIFoodParserAdapter requires httpClient', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'httpClient'
+      });
     }
     this.#apiKey = config.apiKey;
     this.#model = config.model || 'gpt-4o-mini';
@@ -134,7 +141,10 @@ Respond with JSON:
       };
     } catch (err) {
       this.#logger.error?.('foodparser.parse.error', { error: err.message, response });
-      throw new Error('Failed to parse food response');
+      throw new InfrastructureError('Failed to parse food response', {
+        code: 'INVALID_RESPONSE',
+        service: 'OpenAI'
+      });
     }
   }
 
@@ -165,7 +175,10 @@ Respond with the same JSON format as text parsing.`
   }
 
   async parseVoice(audioBuffer, context = {}) {
-    throw new Error('Voice parsing not yet implemented - requires transcription service');
+    throw new InfrastructureError('Voice parsing not yet implemented - requires transcription service', {
+      code: 'NOT_IMPLEMENTED',
+      feature: 'voice parsing'
+    });
   }
 }
 

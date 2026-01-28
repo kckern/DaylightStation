@@ -3,6 +3,7 @@
 import { toInputEvent } from './IInputEvent.mjs';
 import { TelegramChatRef } from './TelegramChatRef.mjs';
 import { TelegramResponseContext } from './TelegramResponseContext.mjs';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 /**
  * Factory for creating standardized Telegram webhook handlers.
@@ -27,8 +28,14 @@ import { TelegramResponseContext } from './TelegramResponseContext.mjs';
 export function createBotWebhookHandler(config) {
   const { botName, botId, parser, inputRouter, gateway, logger = console } = config;
 
-  if (!parser) throw new Error('createBotWebhookHandler requires parser');
-  if (!inputRouter) throw new Error('createBotWebhookHandler requires inputRouter');
+  if (!parser) throw new InfrastructureError('createBotWebhookHandler requires parser', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'parser'
+      });
+  if (!inputRouter) throw new InfrastructureError('createBotWebhookHandler requires inputRouter', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'inputRouter'
+      });
 
   return async (req, res) => {
     try {

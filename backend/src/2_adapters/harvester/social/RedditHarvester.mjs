@@ -16,6 +16,7 @@ import moment from 'moment-timezone';
 import { IHarvester, HarvesterCategory } from '../ports/IHarvester.mjs';
 import { CircuitBreaker } from '../CircuitBreaker.mjs';
 import { configService } from '#system/config/index.mjs';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 /**
  * Reddit activity harvester
@@ -47,10 +48,16 @@ export class RedditHarvester extends IHarvester {
     super();
 
     if (!httpClient) {
-      throw new Error('RedditHarvester requires httpClient');
+      throw new InfrastructureError('RedditHarvester requires httpClient', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'httpClient'
+      });
     }
     if (!lifelogStore) {
-      throw new Error('RedditHarvester requires lifelogStore');
+      throw new InfrastructureError('RedditHarvester requires lifelogStore', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'lifelogStore'
+      });
     }
 
     this.#httpClient = httpClient;
@@ -111,7 +118,10 @@ export class RedditHarvester extends IHarvester {
       const redditUsername = auth.username;
 
       if (!redditUsername) {
-        throw new Error('Reddit username not configured');
+        throw new InfrastructureError('Reddit username not configured', {
+        code: 'MISSING_CONFIG',
+        service: 'Reddit'
+      });
       }
 
       const headers = { 'User-Agent': 'DaylightStation-Harvester/1.0' };

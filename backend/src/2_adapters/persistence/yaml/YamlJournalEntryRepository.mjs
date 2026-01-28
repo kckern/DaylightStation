@@ -9,6 +9,7 @@
 
 import path from 'path';
 import { nowTs24 } from '#system/utils/index.mjs';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 export class YamlJournalEntryRepository {
   #userDataService;
@@ -25,7 +26,10 @@ export class YamlJournalEntryRepository {
    */
   constructor(config) {
     if (!config.userDataService) {
-      throw new Error('YamlJournalEntryRepository requires userDataService');
+      throw new InfrastructureError('YamlJournalEntryRepository requires userDataService', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'userDataService'
+      });
     }
     this.#userDataService = config.userDataService;
     this.#userResolver = config.userResolver;
@@ -121,7 +125,10 @@ export class YamlJournalEntryRepository {
     // Handle both (entry, conversationId) and entry-with-chatId patterns
     const chatId = conversationId || entry.chatId || entry.conversationId;
     if (!chatId) {
-      throw new Error('conversationId or entry.chatId is required');
+      throw new InfrastructureError('conversationId or entry.chatId is required', {
+        code: 'MISSING_CONFIG',
+        field: 'chatId'
+      });
     }
 
     const path = this.#getPath(chatId);
@@ -208,7 +215,10 @@ export class YamlJournalEntryRepository {
     );
 
     if (index === -1) {
-      throw new Error(`Entry not found: ${id}`);
+      throw new InfrastructureError(`Entry not found: ${id}`, {
+        code: 'NOT_FOUND',
+        entity: 'Entry'
+      });
     }
 
     data.messages[index] = { ...data.messages[index], ...entry };
@@ -377,7 +387,9 @@ export class YamlJournalEntryRepository {
   async saveMessage(message) {
     const conversationId = message.chatId || message.conversationId;
     if (!conversationId) {
-      throw new Error('Message must have chatId or conversationId');
+      throw new InfrastructureError('Message must have chatId or conversationId', {
+        code: 'VALIDATION_ERROR'
+      });
     }
 
     const timezone = this.#getTimezone(conversationId);

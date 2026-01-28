@@ -3,6 +3,7 @@ import path from 'path';
 import { generateReference } from 'scripture-guide';
 import { PlayableItem } from '#domains/content/capabilities/Playable.mjs';
 import { ListableItem } from '#domains/content/capabilities/Listable.mjs';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import {
   buildContainedPath,
   loadContainedYaml,
@@ -27,8 +28,14 @@ export class LocalContentAdapter {
    * @param {string} [config.householdsBasePath] - Base path for household data directories
    */
   constructor(config) {
-    if (!config.dataPath) throw new Error('LocalContentAdapter requires dataPath');
-    if (!config.mediaPath) throw new Error('LocalContentAdapter requires mediaPath');
+    if (!config.dataPath) throw new InfrastructureError('LocalContentAdapter requires dataPath', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'dataPath'
+      });
+    if (!config.mediaPath) throw new InfrastructureError('LocalContentAdapter requires mediaPath', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'mediaPath'
+      });
     this.dataPath = config.dataPath;
     this.mediaPath = config.mediaPath;
     this.historyPath = config.historyPath || null;

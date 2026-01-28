@@ -1,5 +1,7 @@
 // backend/src/2_adapters/homebot/ConfigHouseholdAdapter.mjs
 
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
+
 /**
  * ConfigHouseholdAdapter
  *
@@ -24,7 +26,10 @@ export class ConfigHouseholdAdapter {
    */
   constructor(deps) {
     if (!deps.configService) {
-      throw new Error('ConfigHouseholdAdapter requires configService');
+      throw new InfrastructureError('ConfigHouseholdAdapter requires configService', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'configService'
+      });
     }
     this.#configService = deps.configService;
     this.#userResolver = deps.userResolver;

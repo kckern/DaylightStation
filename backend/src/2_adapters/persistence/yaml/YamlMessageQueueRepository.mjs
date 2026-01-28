@@ -8,6 +8,7 @@
  */
 
 import { nowTs24 } from '#system/utils/index.mjs';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 export class YamlMessageQueueRepository {
   #userDataService;
@@ -22,7 +23,10 @@ export class YamlMessageQueueRepository {
    */
   constructor(config) {
     if (!config.userDataService) {
-      throw new Error('YamlMessageQueueRepository requires userDataService');
+      throw new InfrastructureError('YamlMessageQueueRepository requires userDataService', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'userDataService'
+      });
     }
     this.#userDataService = config.userDataService;
     this.#userResolver = config.userResolver;

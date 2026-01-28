@@ -12,6 +12,7 @@
 
 import { Readable } from 'stream';
 import { configService } from '#system/config/index.mjs';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 /**
  * @typedef {Object} TTSConfig
@@ -40,7 +41,10 @@ export class TTSAdapter {
    */
   constructor(config, deps = {}) {
     if (!deps.httpClient) {
-      throw new Error('TTSAdapter requires httpClient');
+      throw new InfrastructureError('TTSAdapter requires httpClient', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'httpClient'
+      });
     }
     this.#apiKey = config.apiKey;
     this.#model = config.model || 'tts-1';
@@ -86,11 +90,17 @@ export class TTSAdapter {
    */
   async generateSpeech(text, options = {}) {
     if (!this.#apiKey) {
-      throw new Error('OpenAI API key not configured');
+      throw new InfrastructureError('OpenAI API key not configured', {
+        code: 'MISSING_CONFIG',
+        service: 'ExternalService'
+      });
     }
 
     if (!text || typeof text !== 'string') {
-      throw new Error('Text is required');
+      throw new InfrastructureError('Text is required', {
+        code: 'MISSING_CONFIG',
+        field: 'Text'
+      });
     }
 
     const voice = options.voice || this.#defaultVoice;

@@ -18,6 +18,7 @@
  */
 
 import { nowTs24 } from '#system/utils/index.mjs';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 export class KioskAdapter {
   #host;
@@ -40,7 +41,10 @@ export class KioskAdapter {
    */
   constructor(config, deps = {}) {
     if (!deps.httpClient) {
-      throw new Error('KioskAdapter requires httpClient');
+      throw new InfrastructureError('KioskAdapter requires httpClient', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'httpClient'
+      });
     }
     this.#host = config.host;
     this.#port = config.port;

@@ -8,6 +8,7 @@ import {
   deleteYaml
 } from '#system/utils/FileIO.mjs';
 import { IWatchStateDatastore } from '#apps/content/ports/IWatchStateDatastore.mjs';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 /**
  * YAML-based watch state persistence
@@ -19,7 +20,10 @@ export class YamlWatchStateDatastore extends IWatchStateDatastore {
    */
   constructor(config) {
     super();
-    if (!config.basePath) throw new Error('YamlWatchStateDatastore requires basePath');
+    if (!config.basePath) throw new InfrastructureError('YamlWatchStateDatastore requires basePath', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'basePath'
+      });
     this.basePath = config.basePath;
   }
 

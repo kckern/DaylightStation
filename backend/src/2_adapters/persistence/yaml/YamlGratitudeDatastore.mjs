@@ -21,6 +21,7 @@ import {
   saveYaml
 } from '#system/utils/FileIO.mjs';
 import { IGratitudeDatastore } from '#apps/gratitude/ports/IGratitudeDatastore.mjs';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 export class YamlGratitudeDatastore extends IGratitudeDatastore {
   #userDataService;
@@ -34,7 +35,10 @@ export class YamlGratitudeDatastore extends IGratitudeDatastore {
   constructor(config) {
     super();
     if (!config.userDataService) {
-      throw new Error('YamlGratitudeDatastore requires userDataService');
+      throw new InfrastructureError('YamlGratitudeDatastore requires userDataService', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'userDataService'
+      });
     }
     this.#userDataService = config.userDataService;
     this.#logger = config.logger || console;
@@ -249,7 +253,9 @@ export class YamlGratitudeDatastore extends IGratitudeDatastore {
   async saveSnapshot(householdId, snapshot) {
     const snapshotDir = this.#ensureSnapshotDir(householdId);
     if (!snapshotDir) {
-      throw new Error('Failed to resolve snapshot directory');
+      throw new InfrastructureError('Failed to resolve snapshot directory', {
+        code: 'PERSISTENCE_ERROR'
+      });
     }
 
     const stamp = moment().format('YYYYMMDD_HHmmss');

@@ -18,6 +18,7 @@ import { IHarvester, HarvesterCategory } from '../ports/IHarvester.mjs';
 import { CircuitBreaker } from '../CircuitBreaker.mjs';
 import { configService } from '#system/config/index.mjs';
 import { nowTs24 } from '#system/utils/index.mjs';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 /**
  * ClickUp task harvester
@@ -52,10 +53,16 @@ export class ClickUpHarvester extends IHarvester {
     super();
 
     if (!httpClient) {
-      throw new Error('ClickUpHarvester requires httpClient');
+      throw new InfrastructureError('ClickUpHarvester requires httpClient', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'httpClient'
+      });
     }
     if (!lifelogStore) {
-      throw new Error('ClickUpHarvester requires lifelogStore');
+      throw new InfrastructureError('ClickUpHarvester requires lifelogStore', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'lifelogStore'
+      });
     }
 
     this.#httpClient = httpClient;
@@ -126,10 +133,18 @@ export class ClickUpHarvester extends IHarvester {
       const teamId = auth.workspace_id || clickupConfig?.team_id;
 
       if (!apiKey) {
-        throw new Error('ClickUp API key not found');
+        throw new InfrastructureError('ClickUp API key not found', {
+          code: 'MISSING_CONFIG',
+          service: 'ClickUp',
+          field: 'api_key'
+        });
       }
       if (!teamId) {
-        throw new Error('ClickUp team ID not found');
+        throw new InfrastructureError('ClickUp team ID not found', {
+          code: 'MISSING_CONFIG',
+          service: 'ClickUp',
+          field: 'workspace_id'
+        });
       }
 
       const headers = { Authorization: apiKey };

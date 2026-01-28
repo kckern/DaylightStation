@@ -18,6 +18,7 @@ import { createCanvas, loadImage } from 'canvas';
 import { configService } from '#system/config/index.mjs';
 import { nowTs24 } from '#system/utils/index.mjs';
 import { fileExists } from '#system/utils/FileIO.mjs';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 /**
  * @typedef {Object} PrinterConfig
@@ -358,7 +359,9 @@ export class ThermalPrinterAdapter {
 
     const numCols = headers.length || (rows.length > 0 ? rows[0].length : 0);
     if (numCols === 0) {
-      throw new Error('Table must have headers or data rows');
+      throw new InfrastructureError('Table must have headers or data rows', {
+        code: 'VALIDATION_ERROR'
+      });
     }
 
     const separatorSpace = numCols + 1;

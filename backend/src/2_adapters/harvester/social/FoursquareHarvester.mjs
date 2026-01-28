@@ -17,6 +17,7 @@ import moment from 'moment-timezone';
 import { IHarvester, HarvesterCategory } from '../ports/IHarvester.mjs';
 import { CircuitBreaker } from '../CircuitBreaker.mjs';
 import { configService } from '#system/config/index.mjs';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 // Foursquare API version date (required param)
 const API_VERSION = '20231231';
@@ -57,10 +58,16 @@ export class FoursquareHarvester extends IHarvester {
     super();
 
     if (!httpClient) {
-      throw new Error('FoursquareHarvester requires httpClient');
+      throw new InfrastructureError('FoursquareHarvester requires httpClient', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'httpClient'
+      });
     }
     if (!lifelogStore) {
-      throw new Error('FoursquareHarvester requires lifelogStore');
+      throw new InfrastructureError('FoursquareHarvester requires lifelogStore', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'lifelogStore'
+      });
     }
 
     this.#httpClient = httpClient;
@@ -127,7 +134,10 @@ export class FoursquareHarvester extends IHarvester {
       const token = auth.token || this.#configService?.getSecret?.('FOURSQUARE_TOKEN');
 
       if (!token) {
-        throw new Error('Foursquare OAuth token not configured');
+        throw new InfrastructureError('Foursquare OAuth token not configured', {
+        code: 'MISSING_CONFIG',
+        service: 'Foursquare'
+      });
       }
 
       // Load existing data for incremental merge

@@ -3,6 +3,7 @@ import { NutriLog } from '#domains/lifelog/entities/NutriLog.mjs';
 import { loadYaml, saveYaml } from '#system/utils/FileIO.mjs';
 import { nowTs24 } from '#system/utils/index.mjs';
 import { INutriLogDatastore } from '#apps/nutribot/ports/INutriLogDatastore.mjs';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 /**
  * YAML-based NutriLog persistence adapter
@@ -15,7 +16,10 @@ export class YamlNutriLogDatastore extends INutriLogDatastore {
   constructor(config) {
     super();
     if (!config.userDataService) {
-      throw new Error('YamlNutriLogDatastore requires userDataService');
+      throw new InfrastructureError('YamlNutriLogDatastore requires userDataService', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'userDataService'
+      });
     }
     this.#userDataService = config.userDataService;
     this.#logger = config.logger || console;

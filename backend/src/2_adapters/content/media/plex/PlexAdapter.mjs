@@ -3,6 +3,7 @@ import path from 'path';
 import { ListableItem } from '#domains/content/capabilities/Listable.mjs';
 import { PlayableItem } from '#domains/content/capabilities/Playable.mjs';
 import { PlexClient } from './PlexClient.mjs';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import {
   dirExists,
   listYamlFiles,
@@ -30,10 +31,16 @@ export class PlexAdapter {
    */
   constructor(config, deps = {}) {
     if (!config.host) {
-      throw new Error('PlexAdapter requires host');
+      throw new InfrastructureError('PlexAdapter requires host', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'host'
+      });
     }
     if (!deps.httpClient) {
-      throw new Error('PlexAdapter requires httpClient');
+      throw new InfrastructureError('PlexAdapter requires httpClient', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'httpClient'
+      });
     }
     this.#httpClient = deps.httpClient;
     this.client = new PlexClient(config, { httpClient: deps.httpClient });
@@ -612,12 +619,19 @@ export class PlexAdapter {
       });
 
       if (!response.ok) {
-        throw new Error(`Decision request failed: ${response.status}`);
+        throw new InfrastructureError(`Decision request failed: ${response.status}`, {
+        code: 'EXTERNAL_SERVICE_ERROR',
+        service: 'Plex',
+        statusCode: response.status
+      });
       }
 
       const container = response.data?.MediaContainer;
       if (!container) {
-        throw new Error('Invalid decision response: missing MediaContainer');
+        throw new InfrastructureError('Invalid decision response: missing MediaContainer', {
+        code: 'INVALID_RESPONSE',
+        service: 'Plex'
+      });
       }
 
       // Extract decision codes
@@ -748,13 +762,19 @@ export class PlexAdapter {
         // Audio: Direct stream without transcode decision
         const { clientIdentifier, sessionIdentifier } = this._generateSessionIds(session ? `${session}-audio` : null);
         const mediaKey = itemData?.Media?.[0]?.Part?.[0]?.key;
-        if (!mediaKey) throw new Error('Media key not found for audio');
+        if (!mediaKey) throw new InfrastructureError('Media key not found for audio', {
+        code: 'NOT_FOUND',
+        service: 'Plex'
+      });
 
         const separator = mediaKey.includes('?') ? '&' : '?';
         return `${this.proxyPath}${mediaKey}${separator}X-Plex-Client-Identifier=${clientIdentifier}&X-Plex-Session-Identifier=${sessionIdentifier}`;
       } else {
         // Video: Use decision API
-        if (!key) throw new Error('Rating key not found for video');
+        if (!key) throw new InfrastructureError('Rating key not found for video', {
+        code: 'NOT_FOUND',
+        service: 'Plex'
+      });
 
         const decisionResult = await this.requestTranscodeDecision(key, {
           maxVideoBitrate,
@@ -1313,7 +1333,10 @@ export class PlexAdapter {
       // Parse decision response
       const container = response?.MediaContainer;
       if (!container) {
-        throw new Error('Invalid decision response: missing MediaContainer');
+        throw new InfrastructureError('Invalid decision response: missing MediaContainer', {
+        code: 'INVALID_RESPONSE',
+        service: 'Plex'
+      });
       }
 
       // Extract decision codes

@@ -30,6 +30,7 @@ import {
 } from '#system/utils/FileIO.mjs';
 import { nowTs24 } from '#system/utils/index.mjs';
 import { IConversationStateDatastore } from '#apps/shared/ports/index.mjs';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 export class YamlConversationStateDatastore extends IConversationStateDatastore {
   #basePath;
@@ -41,7 +42,10 @@ export class YamlConversationStateDatastore extends IConversationStateDatastore 
   constructor(config) {
     super();
     if (!config?.basePath) {
-      throw new Error('YamlConversationStateDatastore requires basePath');
+      throw new InfrastructureError('YamlConversationStateDatastore requires basePath', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'basePath'
+      });
     }
     this.#basePath = config.basePath;
   }

@@ -11,6 +11,8 @@
  * - script.{location}_tv_volume - Set TV volume script (optional)
  */
 
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
+
 /**
  * @typedef {Object} TVLocation
  * @property {string} name - Location name (e.g., 'living_room', 'office')
@@ -69,7 +71,10 @@ export class TVControlAdapter {
    */
   constructor(config, deps = {}) {
     if (!config?.gateway) {
-      throw new Error('TVControlAdapter requires gateway');
+      throw new InfrastructureError('TVControlAdapter requires gateway', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'gateway'
+      });
     }
 
     this.#gateway = config.gateway;

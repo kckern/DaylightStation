@@ -16,6 +16,7 @@ import {
   deleteYaml
 } from '#system/utils/FileIO.mjs';
 import { IJournalDatastore } from '#apps/journaling/ports/IJournalDatastore.mjs';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 export class YamlJournalDatastore extends IJournalDatastore {
   /**
@@ -24,7 +25,10 @@ export class YamlJournalDatastore extends IJournalDatastore {
    */
   constructor(config) {
     super();
-    if (!config.dataRoot) throw new Error('YamlJournalDatastore requires dataRoot');
+    if (!config.dataRoot) throw new InfrastructureError('YamlJournalDatastore requires dataRoot', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'dataRoot'
+      });
     this.dataRoot = config.dataRoot;
   }
 

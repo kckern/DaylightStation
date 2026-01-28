@@ -1,5 +1,7 @@
 // backend/src/2_adapters/nutrition/NutritionixAdapter.mjs
 
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
+
 /**
  * Nutritionix API adapter implementing INutritionLookup
  */
@@ -22,10 +24,16 @@ export class NutritionixAdapter {
    */
   constructor(config, deps = {}) {
     if (!config.appId || !config.appKey) {
-      throw new Error('NutritionixAdapter requires appId and appKey');
+      throw new InfrastructureError('NutritionixAdapter requires appId and appKey', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'appId'
+      });
     }
     if (!deps.httpClient) {
-      throw new Error('NutritionixAdapter requires httpClient');
+      throw new InfrastructureError('NutritionixAdapter requires httpClient', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'httpClient'
+      });
     }
     this.#appId = config.appId;
     this.#appKey = config.appKey;
@@ -54,7 +62,11 @@ export class NutritionixAdapter {
 
       if (!response.ok) {
         this.#logger.error?.('nutritionix.error', { endpoint, error: response.data });
-        throw new Error(`Nutrition API error: ${response.data?.message || response.status}`);
+        throw new InfrastructureError(`Nutrition API error: ${response.data?.message || response.status}`, {
+        code: 'EXTERNAL_SERVICE_ERROR',
+        service: 'Nutritionix',
+        statusCode: response.status
+      });
       }
 
       return response.data;
@@ -62,7 +74,10 @@ export class NutritionixAdapter {
       if (error.code) {
         // HttpError from httpClient
         this.#logger.error?.('nutritionix.error', { endpoint, error: error.message, code: error.code });
-        throw new Error(`Nutrition API error: ${error.message}`);
+        throw new InfrastructureError(`Nutrition API error: ${error.message}`, {
+        code: 'EXTERNAL_SERVICE_ERROR',
+        service: 'Nutritionix'
+      });
       }
       throw error;
     }

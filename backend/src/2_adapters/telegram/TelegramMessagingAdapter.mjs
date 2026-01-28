@@ -1,5 +1,7 @@
 // backend/src/2_adapters/telegram/TelegramMessagingAdapter.mjs
 
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
+
 /**
  * Telegram messaging adapter implementing IMessagingGateway
  */
@@ -18,10 +20,16 @@ export class TelegramMessagingAdapter {
    */
   constructor(config, deps = {}) {
     if (!config.token) {
-      throw new Error('TelegramMessagingAdapter requires token');
+      throw new InfrastructureError('TelegramMessagingAdapter requires token', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'token'
+      });
     }
     if (!deps.httpClient) {
-      throw new Error('TelegramMessagingAdapter requires httpClient');
+      throw new InfrastructureError('TelegramMessagingAdapter requires httpClient', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'httpClient'
+      });
     }
     this.#token = config.token;
     this.#baseUrl = `https://api.telegram.org/bot${config.token}`;
@@ -99,7 +107,10 @@ export class TelegramMessagingAdapter {
     if (typeof imageSource === 'string') {
       params.photo = imageSource;
     } else {
-      throw new Error('Buffer upload not yet implemented');
+      throw new InfrastructureError('Buffer upload not yet implemented', {
+        code: 'NOT_IMPLEMENTED',
+        feature: 'buffer upload'
+      });
     }
 
     const result = await this.#callApi('sendPhoto', params);

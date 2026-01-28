@@ -17,6 +17,7 @@ import moment from 'moment-timezone';
 import { IHarvester, HarvesterCategory } from '../ports/IHarvester.mjs';
 import { CircuitBreaker } from '../CircuitBreaker.mjs';
 import { configService } from '#system/config/index.mjs';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 /**
  * Withings measurement type codes
@@ -64,10 +65,16 @@ export class WithingsHarvester extends IHarvester {
     super();
 
     if (!httpClient) {
-      throw new Error('WithingsHarvester requires httpClient');
+      throw new InfrastructureError('WithingsHarvester requires httpClient', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'httpClient'
+      });
     }
     if (!lifelogStore) {
-      throw new Error('WithingsHarvester requires lifelogStore');
+      throw new InfrastructureError('WithingsHarvester requires lifelogStore', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'lifelogStore'
+      });
     }
 
     this.#httpClient = httpClient;

@@ -6,6 +6,7 @@
  */
 
 import { IAIGateway } from '#apps/shared/ports/IAIGateway.mjs';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 const OPENAI_API_BASE = 'https://api.openai.com/v1';
 
@@ -24,10 +25,16 @@ export class OpenAIAdapter extends IAIGateway {
     super();
 
     if (!config?.apiKey) {
-      throw new Error('OpenAI API key is required');
+      throw new InfrastructureError('OpenAI API key is required', {
+        code: 'MISSING_CONFIG',
+        field: 'apiKey'
+      });
     }
     if (!deps.httpClient) {
-      throw new Error('OpenAIAdapter requires httpClient');
+      throw new InfrastructureError('OpenAIAdapter requires httpClient', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'httpClient'
+      });
     }
 
     this.apiKey = config.apiKey;
@@ -360,7 +367,10 @@ export class OpenAIAdapter extends IAIGateway {
         return JSON.parse(retryResponse);
       } catch (retryParseError) {
         this.logger.error?.('openai.json.retryFailed', { response: retryResponse });
-        throw new Error('Failed to parse JSON response after retry');
+        throw new InfrastructureError('Failed to parse JSON response after retry', {
+          code: 'INVALID_RESPONSE',
+          service: 'OpenAI'
+        });
       }
     }
   }

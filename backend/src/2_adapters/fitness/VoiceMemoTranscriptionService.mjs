@@ -6,6 +6,7 @@
  */
 
 import { buildTranscriptionContext } from './transcriptionContext.mjs';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 const CLEANUP_SYSTEM_PROMPT = 'You clean short voice memos recorded during fitness sessions. Remove duplicated words, filler like "uh", obvious transcription glitches. Keep numeric data and intent intact. Return ONLY the cleaned text - no commentary or additions. Fix obvious mistranscriptions (eg thumbbells -> dumbbells). ONLY respond with "[No Memo]" if the audio is literally silence, static noise, or completely unintelligible gibberish. If the person said actual words - even if unrelated to fitness - return those words cleaned up.';
 
@@ -20,7 +21,10 @@ export class VoiceMemoTranscriptionService {
    */
   constructor(config) {
     if (!config?.openaiAdapter) {
-      throw new Error('openaiAdapter is required');
+      throw new InfrastructureError('openaiAdapter is required', {
+        code: 'MISSING_CONFIG',
+        field: 'openaiAdapter'
+      });
     }
     this.#openaiAdapter = config.openaiAdapter;
     this.#logger = config.logger || console;

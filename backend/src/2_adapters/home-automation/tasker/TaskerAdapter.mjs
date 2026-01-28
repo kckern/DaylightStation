@@ -17,6 +17,7 @@
  */
 
 import { nowTs24 } from '#system/utils/index.mjs';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 export class TaskerAdapter {
   #host;
@@ -35,7 +36,10 @@ export class TaskerAdapter {
    */
   constructor(config, deps = {}) {
     if (!deps.httpClient) {
-      throw new Error('TaskerAdapter requires httpClient');
+      throw new InfrastructureError('TaskerAdapter requires httpClient', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'httpClient'
+      });
     }
     this.#host = config.host;
     this.#port = config.port;

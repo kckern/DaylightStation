@@ -7,6 +7,7 @@
  */
 
 import { nowTs24 } from '#system/utils/index.mjs';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 /**
  * AI Gateway wrapper that logs calls
@@ -25,8 +26,14 @@ export class LoggingAIGateway {
    * @param {Function} [deps.saveFile] - Function to save files
    */
   constructor(deps) {
-    if (!deps.aiGateway) throw new Error('aiGateway is required');
-    if (!deps.username) throw new Error('username is required');
+    if (!deps.aiGateway) throw new InfrastructureError('aiGateway is required', {
+        code: 'MISSING_CONFIG',
+        field: 'aiGateway'
+      });
+    if (!deps.username) throw new InfrastructureError('username is required', {
+        code: 'MISSING_CONFIG',
+        field: 'username'
+      });
 
     this.#aiGateway = deps.aiGateway;
     this.#username = deps.username;

@@ -10,6 +10,7 @@ import { createCanvas, registerFont, loadImage } from 'canvas';
 import path from 'path';
 import { nutriReportTheme as theme } from './nutriReportTheme.mjs';
 import { fileExists, ensureDir, writeBinary } from '#system/utils/FileIO.mjs';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 /**
  * Canvas-based report renderer
@@ -42,10 +43,16 @@ export class NutriReportRenderer {
 
     // Require paths via dependency injection
     if (!options.fontDir) {
-      throw new Error('NutriReportRenderer requires fontDir option');
+      throw new InfrastructureError('NutriReportRenderer requires fontDir option', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'fontDir'
+      });
     }
     if (!options.iconDir) {
-      throw new Error('NutriReportRenderer requires iconDir option');
+      throw new InfrastructureError('NutriReportRenderer requires iconDir option', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'iconDir'
+      });
     }
 
     this.#fontDir = options.fontDir;

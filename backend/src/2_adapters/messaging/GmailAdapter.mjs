@@ -4,6 +4,7 @@
  */
 
 import { nowTs24, nowDate } from '#system/utils/index.mjs';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 export class GmailAdapter {
   constructor({ googleAuth, logger }) {
@@ -24,7 +25,10 @@ export class GmailAdapter {
    */
   async getClient() {
     if (!this.googleAuth) {
-      throw new Error('Google authentication not configured');
+      throw new InfrastructureError('Google authentication not configured', {
+        code: 'MISSING_CONFIG',
+        service: 'Gmail'
+      });
     }
     return this.googleAuth();
   }

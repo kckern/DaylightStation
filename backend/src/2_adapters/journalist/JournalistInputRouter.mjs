@@ -6,6 +6,7 @@
  */
 
 import { InputEventType } from '#apps/shared/InputEventType.mjs';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 // Special start characters (moved from HandleSpecialStart use case)
 const SPECIAL_START_CHARS = ['🎲', '❌'];
@@ -30,7 +31,10 @@ export class JournalistInputRouter {
    * @param {Object} [options.logger]
    */
   constructor(container, options = {}) {
-    if (!container) throw new Error('container is required');
+    if (!container) throw new InfrastructureError('container is required', {
+        code: 'MISSING_CONFIG',
+        field: 'container'
+      });
     this.#container = container;
     this.#userResolver = options.userResolver;
     this.#logger = options.logger || console;

@@ -5,6 +5,8 @@
  * Implements UPC barcode lookup using Open Food Facts API.
  */
 
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
+
 // Default barcode image fallback
 const BARCODE_IMAGE_FALLBACK = (upc) => `https://images.barcodespider.com/upcimage/${upc}.jpg`;
 
@@ -27,7 +29,10 @@ export class UPCGateway {
    */
   constructor(deps = {}) {
     if (!deps.httpClient) {
-      throw new Error('UPCGateway requires httpClient');
+      throw new InfrastructureError('UPCGateway requires httpClient', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'httpClient'
+      });
     }
     this.#httpClient = deps.httpClient;
     this.#calorieColorService = deps.calorieColorService;

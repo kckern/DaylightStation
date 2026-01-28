@@ -17,6 +17,7 @@ import moment from 'moment-timezone';
 import { IHarvester, HarvesterCategory } from '../ports/IHarvester.mjs';
 import { CircuitBreaker } from '../CircuitBreaker.mjs';
 import { configService } from '#system/config/index.mjs';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 /**
  * GitHub activity harvester
@@ -48,10 +49,16 @@ export class GitHubHarvester extends IHarvester {
     super();
 
     if (!httpClient) {
-      throw new Error('GitHubHarvester requires httpClient');
+      throw new InfrastructureError('GitHubHarvester requires httpClient', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'httpClient'
+      });
     }
     if (!lifelogStore) {
-      throw new Error('GitHubHarvester requires lifelogStore');
+      throw new InfrastructureError('GitHubHarvester requires lifelogStore', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'lifelogStore'
+      });
     }
 
     this.#httpClient = httpClient;
@@ -114,7 +121,10 @@ export class GitHubHarvester extends IHarvester {
       const githubToken = auth.token;
 
       if (!githubUsername) {
-        throw new Error('GitHub username not configured');
+        throw new InfrastructureError('GitHub username not configured', {
+        code: 'MISSING_CONFIG',
+        service: 'GitHub'
+      });
       }
 
       const headers = {

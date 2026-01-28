@@ -10,6 +10,8 @@
  * @module adapters/fitness/StravaClientAdapter
  */
 
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
+
 const STRAVA_BASE_URL = 'https://www.strava.com';
 
 export class StravaClientAdapter {
@@ -26,10 +28,16 @@ export class StravaClientAdapter {
    */
   constructor({ httpClient, configService, logger = console }) {
     if (!httpClient) {
-      throw new Error('StravaClientAdapter requires httpClient');
+      throw new InfrastructureError('StravaClientAdapter requires httpClient', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'httpClient'
+      });
     }
     if (!configService) {
-      throw new Error('StravaClientAdapter requires configService');
+      throw new InfrastructureError('StravaClientAdapter requires configService', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'configService'
+      });
     }
 
     this.#httpClient = httpClient;
@@ -48,7 +56,10 @@ export class StravaClientAdapter {
     const clientSecret = this.#configService.getSecret('STRAVA_CLIENT_SECRET');
 
     if (!clientId || !clientSecret) {
-      throw new Error('Strava OAuth credentials not configured (STRAVA_CLIENT_ID, STRAVA_CLIENT_SECRET)');
+      throw new InfrastructureError('Strava OAuth credentials not configured (STRAVA_CLIENT_ID, STRAVA_CLIENT_SECRET)', {
+        code: 'MISSING_CONFIG',
+        service: 'Strava'
+      });
     }
 
     this.#logger.debug?.('strava.client.refreshToken', { hasRefreshToken: !!refreshToken });
@@ -81,7 +92,10 @@ export class StravaClientAdapter {
    */
   async getActivities({ before, after, page, perPage }) {
     if (!this.#currentAccessToken) {
-      throw new Error('No access token available. Call refreshToken first.');
+      throw new InfrastructureError('No access token available. Call refreshToken first.', {
+        code: 'AUTHENTICATION_ERROR',
+        service: 'Strava'
+      });
     }
 
     const response = await this.#httpClient.get(
@@ -103,7 +117,10 @@ export class StravaClientAdapter {
    */
   async getActivityStreams(activityId, keys) {
     if (!this.#currentAccessToken) {
-      throw new Error('No access token available. Call refreshToken first.');
+      throw new InfrastructureError('No access token available. Call refreshToken first.', {
+        code: 'AUTHENTICATION_ERROR',
+        service: 'Strava'
+      });
     }
 
     const response = await this.#httpClient.get(

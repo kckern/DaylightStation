@@ -1,6 +1,7 @@
 // backend/src/2_adapters/homebot/HomeBotInputRouter.mjs
 
 import { InputEventType } from '#apps/shared/InputEventType.mjs';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 /**
  * Routes IInputEvents to homebot use cases
@@ -30,7 +31,10 @@ export class HomeBotInputRouter {
       this.#logger = container.logger || console;
     } else {
       // New signature: (container, { logger, userResolver })
-      if (!container) throw new Error('HomeBotInputRouter requires container');
+      if (!container) throw new InfrastructureError('HomeBotInputRouter requires container', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'container'
+      });
       this.#container = container;
       this.#userResolver = options.userResolver;
       this.#logger = options.logger || console;

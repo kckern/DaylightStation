@@ -19,6 +19,7 @@ import crypto from 'crypto';
 import { IHarvester, HarvesterCategory } from '../ports/IHarvester.mjs';
 import { CircuitBreaker } from '../CircuitBreaker.mjs';
 import { configService } from '#system/config/index.mjs';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 const md5 = (string) => crypto.createHash('md5').update(string).digest('hex');
 
@@ -58,10 +59,16 @@ export class StravaHarvester extends IHarvester {
     super();
 
     if (!stravaClient) {
-      throw new Error('StravaHarvester requires stravaClient');
+      throw new InfrastructureError('StravaHarvester requires stravaClient', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'stravaClient'
+      });
     }
     if (!lifelogStore) {
-      throw new Error('StravaHarvester requires lifelogStore');
+      throw new InfrastructureError('StravaHarvester requires lifelogStore', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'lifelogStore'
+      });
     }
 
     this.#stravaClient = stravaClient;

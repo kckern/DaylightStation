@@ -21,6 +21,7 @@ import {
 } from '#system/utils/FileIO.mjs';
 import { INutriListDatastore } from '#apps/nutribot/ports/INutriListDatastore.mjs';
 import { shortIdFromUuid } from '#system/utils/shortId.mjs';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 const ARCHIVE_RETENTION_DAYS = 30;
 const NOOM_EMOJI = { green: '🟢', yellow: '🟡', orange: '🟠' };
@@ -37,7 +38,10 @@ export class YamlNutriListDatastore extends INutriListDatastore {
   constructor(options) {
     super();
     if (!options?.userDataService) {
-      throw new Error('YamlNutriListDatastore requires userDataService');
+      throw new InfrastructureError('YamlNutriListDatastore requires userDataService', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'userDataService'
+      });
     }
     this.#userDataService = options.userDataService;
     this.#logger = options.logger || console;
@@ -274,7 +278,10 @@ export class YamlNutriListDatastore extends INutriListDatastore {
 
     const index = items.findIndex(item => item.uuid === itemId || item.id === itemId);
     if (index === -1) {
-      throw new Error(`Item not found: ${itemId}`);
+      throw new InfrastructureError(`Item not found: ${itemId}`, {
+        code: 'NOT_FOUND',
+        entity: 'Item'
+      });
     }
 
     items[index] = { ...items[index], ...updates };

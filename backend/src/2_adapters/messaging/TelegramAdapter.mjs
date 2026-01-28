@@ -6,13 +6,17 @@
 import { readBinary, getBasename, fileExists } from '#system/utils/FileIO.mjs';
 import { TelegramChatRef } from '../telegram/TelegramChatRef.mjs';
 import { ConversationId } from '#domains/messaging/value-objects/ConversationId.mjs';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 const TELEGRAM_API_BASE = 'https://api.telegram.org/bot';
 
 export class TelegramAdapter {
   constructor({ token, httpClient, transcriptionService, logger }) {
     if (!token) {
-      throw new Error('Telegram bot token is required');
+      throw new InfrastructureError('Telegram bot token is required', {
+        code: 'MISSING_CONFIG',
+        field: 'token'
+      });
     }
     this.token = token;
     this.httpClient = httpClient || { get: fetch, post: fetch };
@@ -167,7 +171,10 @@ export class TelegramAdapter {
       // Local file path - use FileIO utilities
       const fileBuffer = readBinary(imageSource);
       if (!fileBuffer) {
-        throw new Error(`File not found: ${imageSource}`);
+        throw new InfrastructureError(`File not found: ${imageSource}`, {
+        code: 'NOT_FOUND',
+        service: 'Telegram'
+      });
       }
       const filename = getBasename(imageSource);
       form.append('photo', fileBuffer, { filename, contentType: 'image/png' });
@@ -199,7 +206,10 @@ export class TelegramAdapter {
       if (!data.ok) {
         this.metrics.errors++;
         this.logger.error?.('telegram.api.error', { method: 'sendPhoto', error: data.description });
-        throw new Error(data.description || 'Messaging API error');
+        throw new InfrastructureError(data.description || 'Messaging API error', {
+        code: 'EXTERNAL_SERVICE_ERROR',
+        service: 'Telegram'
+      });
       }
 
       this.metrics.messagesSent++;
@@ -216,7 +226,10 @@ export class TelegramAdapter {
         status: error.response?.status,
         error: errData?.description || error.message
       });
-      throw new Error(errData?.description || error.message);
+      throw new InfrastructureError(errData?.description || error.message, {
+        code: 'EXTERNAL_SERVICE_ERROR',
+        service: 'Telegram'
+      });
     }
   }
 
@@ -348,7 +361,10 @@ export class TelegramAdapter {
    */
   async transcribeVoice(fileId) {
     if (!this.transcriptionService) {
-      throw new Error('Transcription service not configured');
+      throw new InfrastructureError('Transcription service not configured', {
+        code: 'MISSING_CONFIG',
+        service: 'Telegram'
+      });
     }
 
     const fileUrl = await this.getFileUrl(fileId);
