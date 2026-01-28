@@ -28,22 +28,19 @@ export class LogFoodFromVoice {
    */
   #getMessaging(responseContext, conversationId) {
     if (responseContext) {
-      // If responseContext already has transcribeVoice, use it directly
-      // Don't spread - it breaks private field access (#adapter)
-      if (responseContext.transcribeVoice) {
-        return responseContext;
-      }
-      // Otherwise, wrap with bound transcribeVoice from gateway
+      // ResponseContext never has transcribeVoice (it's platform-agnostic)
+      // We always need the messagingGateway for voice transcription
       return {
         sendMessage: (text, options) => responseContext.sendMessage(text, options),
         deleteMessage: (msgId) => responseContext.deleteMessage(msgId),
-        transcribeVoice: this.#messagingGateway?.transcribeVoice?.bind(this.#messagingGateway),
+        transcribeVoice: (fileId) => this.#messagingGateway.transcribeVoice(fileId),
       };
     }
+    // Fallback to gateway directly
     return {
       sendMessage: (text, options) => this.#messagingGateway.sendMessage(conversationId, text, options),
       deleteMessage: (msgId) => this.#messagingGateway.deleteMessage(conversationId, msgId),
-      transcribeVoice: this.#messagingGateway?.transcribeVoice?.bind(this.#messagingGateway),
+      transcribeVoice: (fileId) => this.#messagingGateway.transcribeVoice(fileId),
     };
   }
 
@@ -66,11 +63,16 @@ export class LogFoodFromVoice {
     try {
       // 1. Transcribe voice
       let transcription;
-      if (messaging.transcribeVoice) {
+      try {
         transcription = await messaging.transcribeVoice(voiceData.fileId);
-      } else {
-        await messaging.sendMessage( '🎤 Voice messages are not fully supported yet. Please type what you ate.', {});
-        return { success: false, error: 'Voice transcription not available' };
+      } catch (transcribeError) {
+        // Check if transcription service is not configured
+        if (transcribeError.code === 'MISSING_CONFIG' || transcribeError.message?.includes('not configured')) {
+          await messaging.sendMessage( '🎤 Voice messages are not fully supported yet. Please type what you ate.', {});
+          return { success: false, error: 'Voice transcription not available' };
+        }
+        // Re-throw other errors (network issues, etc.)
+        throw transcribeError;
       }
 
       if (!transcription || transcription.trim().length === 0) {
