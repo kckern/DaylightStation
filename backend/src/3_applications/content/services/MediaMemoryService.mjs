@@ -26,7 +26,10 @@ export const getMediaMemoryPath = (category, householdId = null) => {
   const hid = householdId || configService.getDefaultHouseholdId();
   const householdDir = userDataService.getHouseholdDir(hid);
   if (householdDir && fs.existsSync(path.join(householdDir, 'history', 'media_memory'))) {
-    return `households/${hid}/history/media_memory/${category}`;
+    // Return path relative to data dir for use with loadFile/saveFile
+    const dataDir = configService.getDataDir();
+    const relativePath = path.relative(dataDir, path.join(householdDir, 'history', 'media_memory', category));
+    return relativePath;
   }
   return `history/media_memory/${category}`;
 };
