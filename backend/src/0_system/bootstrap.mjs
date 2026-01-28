@@ -399,9 +399,10 @@ export function createApiRouters(config) {
  * @param {string} config.dataRoot - Base data directory
  * @param {string} config.mediaRoot - Base media directory
  * @param {string} config.defaultHouseholdId - Default household ID
- * @param {Object} config.homeAssistant - Home Assistant configuration
- * @param {string} config.homeAssistant.baseUrl - HA base URL
- * @param {string} config.homeAssistant.token - HA long-lived token
+ * @param {Object} [config.homeAssistant] - Home Assistant configuration (legacy)
+ * @param {string} [config.homeAssistant.baseUrl] - HA base URL
+ * @param {string} [config.homeAssistant.token] - HA long-lived token
+ * @param {Object} [config.haGateway] - Pre-loaded Home Assistant adapter (preferred)
  * @param {Function} config.loadFitnessConfig - Function to load fitness config for household
  * @param {string} [config.openaiApiKey] - OpenAI API key for voice memo transcription
  * @param {Object} [config.httpClient] - HTTP client for making requests
@@ -414,6 +415,7 @@ export function createFitnessServices(config) {
     mediaRoot,
     defaultHouseholdId,
     homeAssistant,
+    haGateway: preloadedHaGateway,
     loadFitnessConfig,
     openaiApiKey,
     httpClient,
@@ -431,11 +433,11 @@ export function createFitnessServices(config) {
     defaultHouseholdId
   });
 
-  // Home automation gateway (optional - requires baseUrl and token)
-  let haGateway = null;
+  // Home automation gateway - prefer pre-loaded adapter, fall back to config-based creation
+  let haGateway = preloadedHaGateway ?? null;
   let ambientLedController = null;
 
-  if (homeAssistant?.baseUrl && homeAssistant?.token && httpClient) {
+  if (!haGateway && homeAssistant?.baseUrl && homeAssistant?.token && httpClient) {
     haGateway = new HomeAssistantAdapter(
       {
         baseUrl: homeAssistant.baseUrl,
@@ -443,8 +445,11 @@ export function createFitnessServices(config) {
       },
       { httpClient, logger }
     );
+    logger.debug?.('fitness.haGateway.fallback', { reason: 'Using config-based HA adapter creation' });
+  }
 
-    // Ambient LED controller (uses home automation gateway)
+  // Ambient LED controller (uses home automation gateway)
+  if (haGateway) {
     ambientLedController = new AmbientLedAdapter({
       gateway: haGateway,
       loadFitnessConfig,
@@ -826,9 +831,10 @@ export function createExternalProxyApiRouter(config) {
 /**
  * Create home automation adapters
  * @param {Object} config
- * @param {Object} config.homeAssistant - Home Assistant config
- * @param {string} config.homeAssistant.baseUrl - HA base URL
- * @param {string} config.homeAssistant.token - HA long-lived token
+ * @param {Object} [config.homeAssistant] - Home Assistant config (legacy)
+ * @param {string} [config.homeAssistant.baseUrl] - HA base URL
+ * @param {string} [config.homeAssistant.token] - HA long-lived token
+ * @param {Object} [config.haGateway] - Pre-loaded Home Assistant adapter (preferred)
  * @param {Object} [config.kiosk] - Kiosk config
  * @param {string} [config.kiosk.host] - Kiosk device host
  * @param {number} [config.kiosk.port] - Kiosk port
@@ -848,13 +854,13 @@ export function createExternalProxyApiRouter(config) {
  * @returns {Object} Home automation adapters
  */
 export function createHomeAutomationAdapters(config) {
-  const { httpClient, logger = console } = config;
+  const { httpClient, logger = console, haGateway: preloadedHaGateway } = config;
 
-  // Home Assistant gateway (optional - requires baseUrl and token)
-  let haGateway = null;
+  // Home Assistant gateway - prefer pre-loaded adapter, fall back to config-based creation
+  let haGateway = preloadedHaGateway ?? null;
   let tvAdapter = null;
 
-  if (config.homeAssistant?.baseUrl && config.homeAssistant?.token && httpClient) {
+  if (!haGateway && config.homeAssistant?.baseUrl && config.homeAssistant?.token && httpClient) {
     haGateway = new HomeAssistantAdapter(
       {
         baseUrl: config.homeAssistant.baseUrl,
@@ -862,8 +868,11 @@ export function createHomeAutomationAdapters(config) {
       },
       { httpClient, logger }
     );
+    logger.debug?.('homeAutomation.haGateway.fallback', { reason: 'Using config-based HA adapter creation' });
+  }
 
-    // TV control adapter (uses HA gateway)
+  // TV control adapter (uses HA gateway)
+  if (haGateway) {
     tvAdapter = new TVControlAdapter(
       { gateway: haGateway },
       { logger }
