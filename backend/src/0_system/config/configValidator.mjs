@@ -54,7 +54,9 @@ export function validateConfig(config, dataDir) {
     errors.push({ path: 'households', message: 'at least one household required' });
   } else {
     for (const [hid, household] of Object.entries(config.households)) {
-      checkedPaths.push(`${dataDir}/households/${hid}/household.yml`);
+      // Use flat structure: household/ for 'default', household-{id}/ for others
+      const folderName = household._folderName || (hid === 'default' ? 'household' : `household-${hid}`);
+      checkedPaths.push(`${dataDir}/${folderName}/household.yml`);
       validateObject(household, configSchema.households.valueSchema, `households.${hid}`, errors);
     }
   }

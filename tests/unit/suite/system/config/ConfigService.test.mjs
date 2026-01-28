@@ -35,21 +35,6 @@ describe('ConfigService household paths', () => {
     });
   });
 
-  describe('getHouseholdPath() with legacy structure', () => {
-    test('resolves legacy structure paths', () => {
-      const config = {
-        system: { dataDir: '/data' },
-        households: {
-          default: { _folderName: 'default', _legacyPath: true, name: 'Default' },
-        },
-      };
-      const service = new ConfigService(config);
-
-      expect(service.getHouseholdPath('', 'default')).toBe('/data/households/default');
-      expect(service.getHouseholdPath('apps/fitness', 'default')).toBe('/data/households/default/apps/fitness');
-    });
-  });
-
   describe('getHouseholdPath() error handling', () => {
     test('throws error for non-existent household', () => {
       const config = {
@@ -82,7 +67,7 @@ describe('ConfigService household paths', () => {
       };
       const service = new ConfigService(config);
 
-      // Without _folderName or _legacyPath, uses flat structure with hid as folder
+      // Without _folderName, uses hid as folder name
       expect(service.getHouseholdPath('apps/fitness', 'myhouse')).toBe('/data/myhouse/apps/fitness');
     });
   });

@@ -7,7 +7,7 @@ const fixturesPath = path.resolve(process.cwd(), 'tests/_fixtures/data');
 
 describe('configLoader', () => {
   describe('loadConfig', () => {
-    it('loads household apps from households/{hid}/apps/', () => {
+    it('loads household apps from household-{id}/apps/', () => {
       const config = loadConfig(fixturesPath);
 
       expect(config.households.test.apps).toBeDefined();
