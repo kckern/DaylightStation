@@ -231,9 +231,6 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // EventBus admin router (requires eventBus to be created first)
   app.use('/admin/ws', createEventBusRouter({ eventBus, logger: rootLogger }));
 
-  // DevProxy control routes (toggle proxy on/off)
-  app.use('/dev', devProxy.router);
-
   // Content domain
   // Get media library credentials (currently Plex, could be Jellyfin, etc.)
   const mediaLibConfig = configService.getServiceCredentials('plex');
@@ -460,6 +457,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     dataBasePath,
     logger: rootLogger.child({ module: 'static-api' })
   });
+
+  // DevProxy control routes (toggle proxy on/off)
+  v1Routers.dev = devProxy.router;
 
   // Media library proxy service (for thumbnail transcoding, etc.)
   let mediaLibProxyHandler = null;
