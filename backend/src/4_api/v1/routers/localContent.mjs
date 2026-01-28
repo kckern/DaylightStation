@@ -383,3 +383,5 @@ export function createLocalContentRouter(config) {
 
   return router;
 }
+
+export default createLocalContentRouter;

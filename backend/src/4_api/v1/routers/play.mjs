@@ -139,6 +139,11 @@ export function createPlayRouter(config) {
    * - watched_duration: number (optional) - Duration watched this session
    */
   router.post('/log', async (req, res) => {
+    logger.info?.('play.log.request_received', {
+      body: req.body,
+      headers: { 'content-type': req.headers['content-type'] }
+    });
+
     try {
       const { type, media_key, percent, seconds, title, watched_duration } = req.body;
 
@@ -350,3 +355,5 @@ export function createPlayRouter(config) {
 
   return router;
 }
+
+export default createPlayRouter;

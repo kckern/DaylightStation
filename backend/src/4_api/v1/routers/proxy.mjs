@@ -378,3 +378,5 @@ export function createProxyRouter(config) {
 
   return router;
 }
+
+export default createProxyRouter;

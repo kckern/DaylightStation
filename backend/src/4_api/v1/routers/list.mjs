@@ -466,3 +466,5 @@ export function createListRouter(config) {
 
   return router;
 }
+
+export default createListRouter;

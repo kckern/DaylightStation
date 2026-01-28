@@ -337,3 +337,5 @@ export function createContentRouter(registry, watchStore = null, options = {}) {
 
   return router;
 }
+
+export default createContentRouter;

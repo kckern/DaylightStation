@@ -6,8 +6,6 @@
  */
 import express from 'express';
 
-const router = express.Router();
-
 /**
  * Create router with pre-built adapters
  * @param {Object} deps
@@ -18,6 +16,7 @@ const router = express.Router();
  */
 export function createAIRouter(deps) {
   const { openaiAdapter, anthropicAdapter, logger } = deps;
+  const router = express.Router();
 
   /**
    * Get adapter by provider name
@@ -225,4 +224,4 @@ export function createAIRouter(deps) {
   return router;
 }
 
-export default router;
+export default createAIRouter;
