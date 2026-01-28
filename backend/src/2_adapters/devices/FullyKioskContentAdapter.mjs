@@ -69,26 +69,35 @@ export class FullyKioskContentAdapter {
     const startTime = Date.now();
     this.#metrics.prepares++;
 
+    this.#logger.debug?.('fullykiosk.prepareForContent.start', { host: this.#host, port: this.#port });
+
     try {
       // Wake screen
+      this.#logger.debug?.('fullykiosk.prepareForContent.screenOn.start');
       const screenResult = await this.#sendCommand('screenOn');
+      this.#logger.debug?.('fullykiosk.prepareForContent.screenOn.done', { result: screenResult });
       if (!screenResult.ok) {
+        this.#logger.error?.('fullykiosk.prepareForContent.screenOn.failed', { error: screenResult.error });
         return { ok: false, step: 'screenOn', error: screenResult.error };
       }
 
       // Bring to foreground
+      this.#logger.debug?.('fullykiosk.prepareForContent.toForeground.start');
       const foregroundResult = await this.#sendCommand('toForeground');
+      this.#logger.debug?.('fullykiosk.prepareForContent.toForeground.done', { result: foregroundResult });
       if (!foregroundResult.ok) {
+        this.#logger.error?.('fullykiosk.prepareForContent.toForeground.failed', { error: foregroundResult.error });
         return { ok: false, step: 'toForeground', error: foregroundResult.error };
       }
 
+      this.#logger.debug?.('fullykiosk.prepareForContent.success', { elapsedMs: Date.now() - startTime });
       return {
         ok: true,
         elapsedMs: Date.now() - startTime
       };
     } catch (error) {
       this.#metrics.errors++;
-      this.#logger.error?.('fullykiosk.prepareForContent.error', { error: error.message });
+      this.#logger.error?.('fullykiosk.prepareForContent.exception', { error: error.message, stack: error.stack });
       return { ok: false, error: error.message };
     }
   }
@@ -103,17 +112,26 @@ export class FullyKioskContentAdapter {
     const startTime = Date.now();
     this.#metrics.loads++;
 
+    this.#logger.info?.('fullykiosk.load.start', {
+      path,
+      query,
+      daylightHost: this.#daylightHost,
+      kioskHost: this.#host,
+      kioskPort: this.#port
+    });
+
     try {
       // Build destination URL
       const queryString = new URLSearchParams(query).toString();
       const fullUrl = `${this.#daylightHost}${path}${queryString ? `?${queryString}` : ''}`;
 
-      this.#logger.info?.('fullykiosk.load', { path, query, fullUrl });
+      this.#logger.info?.('fullykiosk.load.builtUrl', { fullUrl });
 
       // Send load command
       const result = await this.#sendCommand('loadURL', { url: fullUrl });
 
       if (result.ok) {
+        this.#logger.info?.('fullykiosk.load.success', { fullUrl, loadTimeMs: Date.now() - startTime });
         return {
           ok: true,
           url: fullUrl,
@@ -121,6 +139,7 @@ export class FullyKioskContentAdapter {
         };
       } else {
         this.#metrics.errors++;
+        this.#logger.error?.('fullykiosk.load.failed', { fullUrl, error: result.error, loadTimeMs: Date.now() - startTime });
         return {
           ok: false,
           url: fullUrl,
@@ -129,7 +148,7 @@ export class FullyKioskContentAdapter {
       }
     } catch (error) {
       this.#metrics.errors++;
-      this.#logger.error?.('fullykiosk.load.error', { path, error: error.message });
+      this.#logger.error?.('fullykiosk.load.exception', { path, error: error.message, stack: error.stack });
       return { ok: false, error: error.message };
     }
   }
@@ -198,13 +217,31 @@ export class FullyKioskContentAdapter {
       ...params
     });
 
+    // Log URL without password for security
+    const logParams = { ...params };
     const url = `http://${this.#host}:${this.#port}/?${queryParams}`;
+    const logUrl = `http://${this.#host}:${this.#port}/?cmd=${cmd}&password=***${Object.keys(logParams).length ? '&' + new URLSearchParams(logParams) : ''}`;
+
     this.#metrics.lastRequestAt = nowTs24();
+    const startTime = Date.now();
+
+    this.#logger.debug?.('fullykiosk.sendCommand.start', { cmd, host: this.#host, port: this.#port, params: logParams, logUrl });
 
     try {
       const response = await this.#httpClient.get(url);
+      const elapsedMs = Date.now() - startTime;
 
-      if (response.ok) {
+      this.#logger.debug?.('fullykiosk.sendCommand.response', {
+        cmd,
+        status: response.status,
+        statusText: response.statusText,
+        hasData: !!response.data,
+        dataType: typeof response.data,
+        elapsedMs
+      });
+
+      // axios uses response.status, not response.ok
+      if (response.status >= 200 && response.status < 300) {
         let data = response.data;
 
         // Parse JSON if string
@@ -216,12 +253,22 @@ export class FullyKioskContentAdapter {
           }
         }
 
+        this.#logger.debug?.('fullykiosk.sendCommand.success', { cmd, elapsedMs });
         return { ok: true, data };
       } else {
+        this.#logger.warn?.('fullykiosk.sendCommand.httpError', { cmd, status: response.status, elapsedMs });
         return { ok: false, error: `HTTP ${response.status}` };
       }
     } catch (error) {
-      this.#logger.error?.('fullykiosk.command.error', { cmd, error: error.message });
+      const elapsedMs = Date.now() - startTime;
+      this.#logger.error?.('fullykiosk.sendCommand.error', {
+        cmd,
+        error: error.message,
+        code: error.code,
+        host: this.#host,
+        port: this.#port,
+        elapsedMs
+      });
       return { ok: false, error: error.message };
     }
   }
