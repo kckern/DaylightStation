@@ -2,7 +2,7 @@
  * YamlJournalDatastore - YAML-based journal entry persistence
  *
  * Implements IJournalDatastore port for journal entry storage.
- * Entries stored at: households/{hid}/apps/journal/entries/{YYYY-MM-DD}.yml
+ * Entries stored at: household[-{hid}]/apps/journal/entries/{YYYY-MM-DD}.yml
  */
 import path from 'path';
 import {

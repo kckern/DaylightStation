@@ -10,7 +10,7 @@
  * - transaction.memos - User annotations on transactions
  * - gpt - AI categorization configuration
  *
- * Base path: households/{hid}/apps/finances/
+ * Base path: household[-{hid}]/apps/finances/
  */
 import path from 'path';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';

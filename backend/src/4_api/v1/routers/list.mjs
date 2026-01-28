@@ -384,8 +384,8 @@ export function createListRouter(config) {
       // Skip if folder_color present - maintain YAML order
       if (modifiers.recent_on_top && !hasFixedOrder) {
         // Load menu_memory for sorting by menu selection time
-        const menuMemoryPath = configService?.getHouseholdPath('history/menu_memory') ?? 'households/default/history/menu_memory';
-        const menuMemory = loadFile?.(menuMemoryPath) || {};
+        // Note: loadFile is scoped to data dir; household path built by caller
+        const menuMemory = loadFile?.('history/menu_memory') || {};
 
         items = [...items].sort((a, b) => {
           const aKey = getMenuMemoryKey(a);

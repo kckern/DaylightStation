@@ -4,7 +4,7 @@
  * Implements INutriCoachDatastore port for coaching history storage.
  *
  * Storage:
- * - households/{hid}/apps/nutrition/nutricoach.yml
+ * - household[-{hid}]/apps/nutrition/nutricoach.yml
  * - Data structure: { 'YYYY-MM-DD': [{ message, timestamp, isFirstOfDay, context }] }
  */
 
