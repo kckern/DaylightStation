@@ -7,14 +7,20 @@
 
 export class ConfigService {
   #config;
+  #secretsHandler;
 
-  constructor(config) {
+  constructor(config, secretsHandler = null) {
     this.#config = Object.freeze(config);
+    this.#secretsHandler = secretsHandler;
   }
 
   // ─── Secrets ───────────────────────────────────────────────
 
   getSecret(key) {
+    if (this.#secretsHandler) {
+      return this.#secretsHandler.getSecret(key);
+    }
+    // Fallback for tests using createTestConfigService with inline secrets
     return this.#config.secrets?.[key] ?? null;
   }
 
@@ -63,11 +69,21 @@ export class ConfigService {
   getUserAuth(service, username = null) {
     const user = username ?? this.getHeadOfHousehold();
     if (!user) return null;
+
+    if (this.#secretsHandler) {
+      return this.#secretsHandler.getUserAuth(user, service);
+    }
+    // Fallback for tests
     return this.#config.auth?.users?.[user]?.[service] ?? null;
   }
 
   getHouseholdAuth(service, householdId = null) {
     const hid = householdId ?? this.getDefaultHouseholdId();
+
+    if (this.#secretsHandler) {
+      return this.#secretsHandler.getHouseholdAuth(hid, service);
+    }
+    // Fallback for tests
     return this.#config.auth?.households?.[hid]?.[service] ?? null;
   }
 
@@ -303,6 +319,10 @@ export class ConfigService {
    * @returns {string|null} The auth token/credential
    */
   getSystemAuth(platform, key) {
+    if (this.#secretsHandler) {
+      return this.#secretsHandler.getSystemAuth(platform, key);
+    }
+    // Fallback for tests
     return this.#config.systemAuth?.[platform]?.[key] ?? null;
   }
 
