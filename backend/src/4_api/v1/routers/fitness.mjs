@@ -126,10 +126,14 @@ export function createFitnessRouter(config) {
     }
     let items = await adapter.resolvePlayables(compoundId);
 
-      // Merge viewing history from local YAML files
-      if (typeof adapter._loadViewingHistory === 'function') {
-        const viewingHistory = adapter._loadViewingHistory();
-        if (viewingHistory && Object.keys(viewingHistory).length > 0) {
+      // Merge viewing history - prefer async WatchStore method
+      let viewingHistory = {};
+      if (typeof adapter._loadViewingHistoryAsync === 'function') {
+        viewingHistory = await adapter._loadViewingHistoryAsync();
+      } else if (typeof adapter._loadViewingHistory === 'function') {
+        viewingHistory = adapter._loadViewingHistory();
+      }
+      if (viewingHistory && Object.keys(viewingHistory).length > 0) {
           items = items.map(item => {
             const itemKey = item.localId || item.metadata?.plex || item.metadata?.key;
             const watchData = viewingHistory[itemKey] || viewingHistory[String(itemKey)];
@@ -149,7 +153,6 @@ export function createFitnessRouter(config) {
             }
             return item;
           });
-        }
       }
 
       // Get container info for show metadata
