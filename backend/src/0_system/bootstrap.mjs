@@ -1,5 +1,9 @@
 // backend/src/0_system/bootstrap.mjs
 
+// Integration registry imports
+import { AdapterRegistry } from './registries/AdapterRegistry.mjs';
+import { IntegrationLoader } from './registries/IntegrationLoader.mjs';
+
 // EventBus imports
 import { WebSocketEventBus } from './eventbus/WebSocketEventBus.mjs';
 
@@ -173,6 +177,115 @@ import { saveImage as saveImageToFile } from './utils/FileIO.mjs';
 import { StravaClientAdapter } from '#adapters/fitness/StravaClientAdapter.mjs';
 import { YamlWeatherDatastore } from '#adapters/persistence/yaml/YamlWeatherDatastore.mjs';
 import { google } from 'googleapis';
+
+// =============================================================================
+// Integration Registry Bootstrap
+// =============================================================================
+
+/**
+ * Singleton instances for config-driven integration loading
+ */
+let adapterRegistryInstance = null;
+let integrationLoaderInstance = null;
+
+/**
+ * Initialize the integration system (AdapterRegistry + IntegrationLoader)
+ *
+ * This discovers all available adapter manifests at startup and creates
+ * an IntegrationLoader for config-driven adapter instantiation.
+ *
+ * @param {Object} config
+ * @param {Object} config.configService - ConfigService for integration config
+ * @param {Object} [config.logger] - Logger instance
+ * @returns {Promise<{registry: AdapterRegistry, loader: IntegrationLoader}>}
+ */
+export async function initializeIntegrations(config) {
+  const { configService, logger = console } = config;
+
+  // Create and discover adapters (singleton)
+  if (!adapterRegistryInstance) {
+    adapterRegistryInstance = new AdapterRegistry();
+    await adapterRegistryInstance.discover();
+
+    const capabilities = adapterRegistryInstance.getAllCapabilities();
+    logger.info?.('integrations.registry.discovered', {
+      capabilities,
+      providerCounts: capabilities.map(cap => ({
+        capability: cap,
+        providers: adapterRegistryInstance.getProviders(cap)
+      }))
+    });
+  }
+
+  // Create integration loader (singleton)
+  if (!integrationLoaderInstance) {
+    integrationLoaderInstance = new IntegrationLoader({
+      registry: adapterRegistryInstance,
+      configService,
+      logger
+    });
+  }
+
+  return {
+    registry: adapterRegistryInstance,
+    loader: integrationLoaderInstance
+  };
+}
+
+/**
+ * Load integrations for a household
+ *
+ * This loads all configured adapters for a household based on their
+ * integrations.yml file. Returns adapters keyed by capability.
+ *
+ * @param {Object} config
+ * @param {string} [config.householdId] - Household ID (defaults to default)
+ * @param {Object} [config.httpClient] - HTTP client for adapter use
+ * @param {Object} [config.logger] - Logger instance
+ * @returns {Promise<Object>} Adapters keyed by capability
+ */
+export async function loadHouseholdIntegrations(config) {
+  const { householdId, httpClient, logger = console } = config;
+
+  if (!integrationLoaderInstance) {
+    throw new Error('Integration system not initialized. Call initializeIntegrations first.');
+  }
+
+  const adapters = await integrationLoaderInstance.loadForHousehold(
+    householdId,
+    { httpClient }
+  );
+
+  logger.info?.('integrations.household.loaded', {
+    householdId,
+    capabilities: Object.keys(adapters)
+  });
+
+  return adapters;
+}
+
+/**
+ * Get the loaded adapters for a household
+ * @param {string} householdId
+ * @returns {Object|undefined} Adapters keyed by capability
+ */
+export function getHouseholdAdapters(householdId) {
+  return integrationLoaderInstance?.getAdapters(householdId);
+}
+
+/**
+ * Check if a capability is configured for a household
+ * @param {string} householdId
+ * @param {string} capability
+ * @returns {boolean}
+ */
+export function hasCapability(householdId, capability) {
+  return integrationLoaderInstance?.hasCapability(householdId, capability) ?? false;
+}
+
+// =============================================================================
+// Content Domain Bootstrap
+// =============================================================================
 
 /**
  * Create and configure the content registry

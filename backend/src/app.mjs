@@ -26,6 +26,12 @@ import { loadLoggingConfig, resolveLoggerLevel } from './0_system/logging/config
 
 // Bootstrap functions
 import {
+  // Integration system (config-driven adapter loading)
+  initializeIntegrations,
+  loadHouseholdIntegrations,
+  getHouseholdAdapters,
+  hasCapability,
+  // Content domain
   createContentRegistry,
   createMediaProgressMemory,
   createApiRouters,
@@ -167,6 +173,41 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   } catch (error) {
     rootLogger.warn('routing.toggle.fallback', { error: error.message });
     routingConfig = { default: 'legacy', routing: {} };
+  }
+
+  // ==========================================================================
+  // Initialize Integration System (Config-Driven Adapter Loading)
+  // ==========================================================================
+
+  // Discover available adapters and prepare for config-driven loading
+  // This replaces hardcoded adapter imports with manifest-based discovery
+  let integrationSystem = null;
+  let householdAdapters = null;
+
+  try {
+    integrationSystem = await initializeIntegrations({
+      configService,
+      logger: rootLogger.child({ module: 'integrations' })
+    });
+
+    // Load adapters for the default household
+    const defaultHouseholdId = configService.getDefaultHouseholdId() || 'default';
+    householdAdapters = await loadHouseholdIntegrations({
+      householdId: defaultHouseholdId,
+      httpClient: axios,
+      logger: rootLogger.child({ module: 'integrations' })
+    });
+
+    rootLogger.info('integrations.loaded', {
+      householdId: defaultHouseholdId,
+      capabilities: Object.keys(householdAdapters)
+    });
+  } catch (err) {
+    // Integration system is optional - fall back to hardcoded adapters
+    rootLogger.warn('integrations.fallback', {
+      reason: err.message,
+      message: 'Falling back to hardcoded adapter initialization'
+    });
   }
 
   // ==========================================================================
