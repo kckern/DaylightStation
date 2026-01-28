@@ -338,8 +338,7 @@ Cross-cutting concerns that apply broadly:
 
 Concerns specific to API layer evolution:
 
-- `cutoverFlags.mjs` - Feature flags for migration
-- `legacyTracker.mjs` - Track legacy endpoint usage
+- `householdResolver.mjs` - Resolve household context from requests
 
 ---
 
