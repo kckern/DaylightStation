@@ -290,10 +290,10 @@ export class QueueService {
 
   /**
    * @param {Object} config
-   * @param {import('../ports/IWatchStateStore.mjs').IWatchStateStore} config.watchStore
+   * @param {Object} config.mediaProgressMemory - IMediaProgressMemory instance for watch state
    */
   constructor(config) {
-    this.watchStore = config.watchStore;
+    this.mediaProgressMemory = config.mediaProgressMemory;
   }
 
   /**
@@ -309,7 +309,7 @@ export class QueueService {
 
     // First pass: find any in-progress items
     for (const item of items) {
-      const state = await this.watchStore.get(item.id, storagePath);
+      const state = await this.mediaProgressMemory.get(item.id, storagePath);
       if (state?.isInProgress()) {
         return this._withResumePosition(item, state);
       }
@@ -317,7 +317,7 @@ export class QueueService {
 
     // Second pass: find first unwatched item
     for (const item of items) {
-      const state = await this.watchStore.get(item.id, storagePath);
+      const state = await this.mediaProgressMemory.get(item.id, storagePath);
       if (!state || !state.isWatched()) {
         return item;
       }
