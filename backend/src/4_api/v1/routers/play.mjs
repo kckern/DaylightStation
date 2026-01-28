@@ -33,11 +33,11 @@ export function createPlayRouter(config) {
   }
 
   /**
-   * Create watch state object with toJSON method for datastore compatibility
-   * @param {Object} props - Watch state properties
+   * Create media progress object with toJSON method for datastore compatibility
+   * @param {Object} props - Media progress properties
    * @returns {Object}
    */
-  function createWatchStateDTO(props) {
+  function createMediaProgressDTO(props) {
     const { itemId, playhead = 0, duration = 0, percent, playCount = 0, lastPlayed = null, watchTime = 0 } = props;
     return {
       itemId,
@@ -203,8 +203,8 @@ export function createPlayRouter(config) {
         ? Math.round((normalizedSeconds / estimatedDuration) * 100)
         : 0;
 
-      // Create updated watch state DTO
-      const newState = createWatchStateDTO({
+      // Create updated media progress DTO
+      const newState = createMediaProgressDTO({
         itemId: compoundId,
         playhead: normalizedSeconds,
         duration: estimatedDuration,
