@@ -19,22 +19,22 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
  * Note: Menu logging moved to /api/v1/item/menu-log (item.mjs)
  *
  * @param {import('../../1_domains/content/services/ContentSourceRegistry.mjs').ContentSourceRegistry} registry
- * @param {import('../../2_adapters/persistence/yaml/YamlWatchStateStore.mjs').YamlWatchStateStore} [watchStore=null] - Optional watch state store
+ * @param {import('../../2_adapters/persistence/yaml/YamlMediaProgressMemory.mjs').YamlMediaProgressMemory} [mediaProgressMemory=null] - Optional media progress memory store
  * @param {Object} [options] - Additional options
  * @param {string} [options.cacheBasePath] - Base path for image cache
  * @param {Object} [options.logger] - Logger instance
  * @returns {express.Router}
  */
-export function createContentRouter(registry, watchStore = null, options = {}) {
+export function createContentRouter(registry, mediaProgressMemory = null, options = {}) {
   const { cacheBasePath, logger = console } = options;
   const router = express.Router();
 
   /**
-   * Create watch state object with toJSON method for datastore compatibility
-   * @param {Object} props - Watch state properties
+   * Create media progress object with toJSON method for datastore compatibility
+   * @param {Object} props - Media progress properties
    * @returns {Object}
    */
-  function createWatchStateDTO(props) {
+  function createMediaProgressDTO(props) {
     const { itemId, playhead = 0, duration = 0, playCount = 0, lastPlayed = null, watchTime = 0 } = props;
     const percent = duration > 0 ? Math.round((playhead / duration) * 100) : 0;
     return {
@@ -60,8 +60,8 @@ export function createContentRouter(registry, watchStore = null, options = {}) {
   }
 
   /**
-   * Check if watch state indicates the item is fully watched
-   * @param {Object} state - Plain watch state object
+   * Check if media progress indicates the item is fully watched
+   * @param {Object} state - Plain media progress object
    * @returns {boolean}
    */
   function isWatched(state) {
@@ -119,8 +119,8 @@ export function createContentRouter(registry, watchStore = null, options = {}) {
    * Update watch progress for an item
    */
   router.post('/progress/:source/*', asyncHandler(async (req, res) => {
-    if (!watchStore) {
-      return res.status(501).json({ error: 'Watch state storage not configured' });
+    if (!mediaProgressMemory) {
+      return res.status(501).json({ error: 'Media progress storage not configured' });
     }
 
     const { source } = req.params;
@@ -142,8 +142,8 @@ export function createContentRouter(registry, watchStore = null, options = {}) {
       : source;
 
     // Get existing state or create new one
-    const existing = await watchStore.get(itemId, storagePath);
-    const state = createWatchStateDTO({
+    const existing = await mediaProgressMemory.get(itemId, storagePath);
+    const state = createMediaProgressDTO({
       itemId,
       playhead: seconds,
       duration,
@@ -152,7 +152,7 @@ export function createContentRouter(registry, watchStore = null, options = {}) {
       watchTime: (existing?.watchTime || 0) + Math.max(0, seconds - (existing?.playhead || 0))
     });
 
-    await watchStore.set(state, storagePath);
+    await mediaProgressMemory.set(state, storagePath);
 
     res.json({
       itemId,
