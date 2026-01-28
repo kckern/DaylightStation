@@ -337,11 +337,14 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // Finance domain
-  // Buxfer credentials are in user auth, app config has account IDs
+  // Prefer config-driven buxfer adapter, fall back to legacy auth lookup
   const buxferAuth = configService.getUserAuth?.('buxfer') || configService.getHouseholdAuth?.('buxfer');
   const financeServices = createFinanceServices({
     dataRoot: dataBasePath,
     defaultHouseholdId: householdId,
+    // Prefer config-driven adapter from integration system
+    buxferAdapter: householdAdapters?.finance ?? null,
+    // Legacy fallback
     buxfer: buxferAuth?.email && buxferAuth?.password ? {
       email: buxferAuth.email,
       password: buxferAuth.password
@@ -471,6 +474,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     configService,
     todoistApi: null, // Will use httpClient directly
     aiGateway: null, // AI gateway created later in app initialization
+    // Reuse config-driven buxfer adapter from finance domain
+    buxferAdapter: householdAdapters?.finance ?? null,
     logger: rootLogger.child({ module: 'harvester' })
   });
 

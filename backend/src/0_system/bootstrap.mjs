@@ -628,7 +628,8 @@ export async function restartEventBus() {
  * @param {Object} config
  * @param {string} config.dataRoot - Base data directory
  * @param {string} [config.defaultHouseholdId='default'] - Default household ID
- * @param {Object} [config.buxfer] - Buxfer configuration
+ * @param {Object} [config.buxferAdapter] - Pre-loaded Buxfer adapter (preferred)
+ * @param {Object} [config.buxfer] - Buxfer configuration (legacy fallback)
  * @param {string} [config.buxfer.email] - Buxfer email
  * @param {string} [config.buxfer.password] - Buxfer password
  * @param {Object} [config.aiGateway] - AI gateway for transaction categorization
@@ -641,6 +642,7 @@ export function createFinanceServices(config) {
   const {
     dataRoot,
     defaultHouseholdId = 'default',
+    buxferAdapter: preloadedBuxferAdapter,
     buxfer,
     aiGateway,
     httpClient,
@@ -654,14 +656,14 @@ export function createFinanceServices(config) {
     defaultHouseholdId
   });
 
-  // Buxfer adapter (optional - requires credentials and httpClient)
-  let buxferAdapter = null;
-  if (buxfer?.email && buxfer?.password && httpClient) {
-    buxferAdapter = new BuxferAdapter({
-      httpClient,
-      getCredentials: () => ({ email: buxfer.email, password: buxfer.password }),
-      logger
-    });
+  // Buxfer adapter - prefer pre-loaded adapter, fall back to config-based creation
+  let buxferAdapter = preloadedBuxferAdapter ?? null;
+  if (!buxferAdapter && buxfer?.email && buxfer?.password && httpClient) {
+    buxferAdapter = new BuxferAdapter(
+      { email: buxfer.email, password: buxfer.password },
+      { httpClient, logger }
+    );
+    logger.debug?.('finance.buxferAdapter.fallback', { reason: 'Using config-based Buxfer adapter creation' });
   }
 
   // Budget compilation service
@@ -2153,6 +2155,7 @@ export function createHarvesterServices(config) {
     rssParser,
     sharedStore: sharedStoreParam,
     gmailClientFactory,
+    buxferAdapter: preloadedBuxferAdapter,
     dataRoot,
     logger = console
   } = config;
@@ -2369,13 +2372,19 @@ export function createHarvesterServices(config) {
     }));
   }
 
-  // Buxfer - requires httpClient for API calls
-  if (httpClient) {
-    const buxferAdapter = new BuxferAdapter({
-      httpClient,
-      getCredentials: () => configService?.getUserAuth?.('buxfer'),
-      logger,
-    });
+  // Buxfer - prefer pre-loaded adapter, fall back to config-based creation
+  let buxferAdapter = preloadedBuxferAdapter ?? null;
+  if (!buxferAdapter && httpClient) {
+    const buxferAuth = configService?.getHouseholdAuth?.('buxfer') || configService?.getUserAuth?.('buxfer');
+    if (buxferAuth?.email && buxferAuth?.password) {
+      buxferAdapter = new BuxferAdapter(
+        { email: buxferAuth.email, password: buxferAuth.password },
+        { httpClient, logger }
+      );
+      logger.debug?.('harvester.buxferAdapter.fallback', { reason: 'Using config-based Buxfer adapter creation' });
+    }
+  }
+  if (buxferAdapter) {
     registerHarvester('buxfer', () => new BuxferHarvester({
       buxferAdapter,
       lifelogStore,
