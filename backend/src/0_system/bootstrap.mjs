@@ -9,7 +9,7 @@ import { FilesystemAdapter } from '#adapters/content/media/filesystem/Filesystem
 import { PlexAdapter } from '#adapters/content/media/plex/PlexAdapter.mjs';
 import { LocalContentAdapter } from '#adapters/content/local-content/LocalContentAdapter.mjs';
 import { FolderAdapter } from '#adapters/content/folder/FolderAdapter.mjs';
-import { YamlWatchStateDatastore } from '#adapters/persistence/yaml/YamlWatchStateDatastore.mjs';
+import { YamlMediaProgressMemory } from '#adapters/persistence/yaml/YamlMediaProgressMemory.mjs';
 import { createContentRouter } from '../4_api/v1/routers/content.mjs';
 import { createProxyRouter } from '../4_api/v1/routers/proxy.mjs';
 import { createLocalContentRouter } from '../4_api/v1/routers/localContent.mjs';
@@ -185,11 +185,11 @@ import { google } from 'googleapis';
  * @param {string} [config.watchlistPath] - Path to watchlist YAML (for FolderAdapter)
  * @param {Object} deps - Dependencies
  * @param {Object} [deps.httpClient] - HTTP client for making requests
- * @param {Object} [deps.watchStore] - Watch state store for progress persistence
+ * @param {Object} [deps.mediaProgressMemory] - Media progress memory for progress persistence
  * @returns {ContentSourceRegistry}
  */
 export function createContentRegistry(config, deps = {}) {
-  const { httpClient, watchStore } = deps;
+  const { httpClient, mediaProgressMemory } = deps;
   const registry = new ContentSourceRegistry();
 
   // Register filesystem adapter
@@ -205,7 +205,7 @@ export function createContentRegistry(config, deps = {}) {
     registry.register(new PlexAdapter({
       host: config.plex.host,
       token: config.plex.token,
-      watchStore,  // Inject WatchStore (preferred)
+      mediaProgressMemory,  // Inject MediaProgressMemory (preferred)
       historyPath: config.mediaMemoryPath ? `${config.mediaMemoryPath}/plex` : null  // Fallback
     }, { httpClient }));
   }
@@ -241,14 +241,14 @@ export function createContentRegistry(config, deps = {}) {
 }
 
 /**
- * Create watch state store
+ * Create media progress memory
  * @param {Object} config
- * @param {string} config.watchStatePath - Path for watch state files
- * @returns {YamlWatchStateDatastore}
+ * @param {string} config.mediaProgressPath - Path for media progress files
+ * @returns {YamlMediaProgressMemory}
  */
-export function createWatchStore(config) {
-  return new YamlWatchStateDatastore({
-    basePath: config.watchStatePath
+export function createMediaProgressMemory(config) {
+  return new YamlMediaProgressMemory({
+    basePath: config.mediaProgressPath
   });
 }
 
