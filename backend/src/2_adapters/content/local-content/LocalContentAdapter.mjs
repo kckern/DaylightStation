@@ -9,11 +9,11 @@ import {
   loadContainedYaml,
   loadYamlByPrefix,
   listYamlFiles,
-  dirExists,
-  loadYamlFromPath,
-  saveYamlToPath,
-  resolveYamlPath
+  dirExists
 } from '#system/utils/FileIO.mjs';
+
+// Threshold for considering an item "watched" (90%)
+const WATCHED_THRESHOLD = 90;
 
 /**
  * Adapter for local content (talks, scriptures)
@@ -23,9 +23,7 @@ export class LocalContentAdapter {
    * @param {Object} config
    * @param {string} config.dataPath - Path to data files (YAML metadata)
    * @param {string} config.mediaPath - Path to media files
-   * @param {string} [config.historyPath] - Path to media_memory directory for watch state
-   * @param {string} [config.householdId] - Household ID for scoped watch state
-   * @param {string} [config.householdsBasePath] - Base path for household data directories
+   * @param {Object} [config.mediaProgressMemory] - Media progress memory instance (IMediaProgressMemory)
    */
   constructor(config) {
     if (!config.dataPath) throw new InfrastructureError('LocalContentAdapter requires dataPath', {
@@ -38,10 +36,7 @@ export class LocalContentAdapter {
       });
     this.dataPath = config.dataPath;
     this.mediaPath = config.mediaPath;
-    this.historyPath = config.historyPath || null;
-    this.householdId = config.householdId || null;
-    this.householdsBasePath = config.householdsBasePath || null;
-    this._watchStateCache = null;
+    this.mediaProgressMemory = config.mediaProgressMemory || null;
   }
 
   get source() {
@@ -59,80 +54,19 @@ export class LocalContentAdapter {
   }
 
   /**
-   * Get the file path for talk watch state
-   * @returns {string|null}
-   * @private
-   */
-  _getWatchStatePath() {
-    // Try household-specific path first
-    if (this.householdId && this.householdsBasePath) {
-      const householdPath = path.join(
-        this.householdsBasePath,
-        this.householdId,
-        'history/media_memory/talk.yml'
-      );
-      const basePath = householdPath.replace(/\.yml$/, '');
-      const resolvedPath = resolveYamlPath(basePath);
-      if (resolvedPath) return resolvedPath;
-    }
-    // Fall back to global path
-    if (this.historyPath) {
-      const filePath = path.join(this.historyPath, 'talk.yml');
-      const basePath = filePath.replace(/\.yml$/, '');
-      return resolveYamlPath(basePath) || filePath;
-    }
-    return null;
-  }
-
-  /**
-   * Load watch state from media_memory/talk.yml
-   * @returns {Object} Watch state map { mediaKey: { percent, seconds, time, title } }
-   * @private
-   */
-  _loadWatchState() {
-    if (this._watchStateCache) return this._watchStateCache;
-
-    const filePath = this._getWatchStatePath();
-    if (!filePath) return {};
-
-    try {
-      this._watchStateCache = loadYamlFromPath(filePath) || {};
-      return this._watchStateCache;
-    } catch (err) {
-      return {};
-    }
-  }
-
-  /**
-   * Check if an item is considered watched (>= 90%)
+   * Check if an item is considered watched (>= threshold)
    * @param {Object} state - Watch state { percent }
    * @returns {boolean}
    * @private
    */
   _isWatched(state) {
-    return (state?.percent || 0) >= 90;
-  }
-
-  /**
-   * Clear watch state for given keys and save
-   * @param {string[]} keys - Media keys to clear
-   * @private
-   */
-  _clearWatchedKeys(keys) {
-    const filePath = this._getWatchStatePath();
-    if (!filePath) return;
-
-    const watchState = this._loadWatchState();
-    for (const key of keys) {
-      delete watchState[key];
-    }
-    this._watchStateCache = watchState;
-    saveYamlToPath(filePath, watchState);
+    return (state?.percent || 0) >= WATCHED_THRESHOLD;
   }
 
   /**
    * Select a random unwatched talk from a folder.
    * If all are watched, clears the folder's watch history and picks randomly.
+   * Uses mediaProgressMemory for async watch state loading.
    * @param {string} folderId - Folder ID (e.g., "ldsgc202510")
    * @returns {Promise<string|null>} Selected talk localId or null
    * @private
@@ -141,29 +75,43 @@ export class LocalContentAdapter {
     const folder = await this._getTalkFolder(folderId);
     if (!folder?.children?.length) return null;
 
-    const watchState = this._loadWatchState();
-    const allKeys = [];
-    const unwatchedKeys = [];
+    // Build list of all keys and check watch state via mediaProgressMemory
+    const allLocalIds = folder.children.map(child => child.localId);
+    const unwatchedIds = [];
 
-    for (const child of folder.children) {
-      const key = `talks/${child.localId}`;
-      allKeys.push(key);
-      if (!this._isWatched(watchState[key])) {
-        unwatchedKeys.push(key);
+    // Load watch state for each item via mediaProgressMemory
+    for (const localId of allLocalIds) {
+      const mediaKey = localId; // Key within 'talks' storage
+      let state = null;
+      if (this.mediaProgressMemory) {
+        try {
+          state = await this.mediaProgressMemory.get('talks', mediaKey);
+        } catch (err) {
+          // Ignore errors, treat as unwatched
+        }
+      }
+      if (!this._isWatched(state)) {
+        unwatchedIds.push(localId);
       }
     }
 
-    // If all watched, clear and reset
-    if (unwatchedKeys.length === 0) {
-      this._clearWatchedKeys(allKeys);
+    // If all watched, clear via mediaProgressMemory and pick random from all
+    if (unwatchedIds.length === 0) {
+      if (this.mediaProgressMemory) {
+        for (const localId of allLocalIds) {
+          try {
+            await this.mediaProgressMemory.delete('talks', localId);
+          } catch (err) {
+            // Ignore delete errors
+          }
+        }
+      }
       // Pick random from all
-      const randomKey = allKeys[Math.floor(Math.random() * allKeys.length)];
-      return randomKey.replace('talks/', '');
+      return allLocalIds[Math.floor(Math.random() * allLocalIds.length)];
     }
 
     // Pick random from unwatched
-    const randomKey = unwatchedKeys[Math.floor(Math.random() * unwatchedKeys.length)];
-    return randomKey.replace('talks/', '');
+    return unwatchedIds[Math.floor(Math.random() * unwatchedIds.length)];
   }
 
   /**
