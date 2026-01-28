@@ -32,7 +32,6 @@ export function validateConfig(config, dataDir) {
   const errors = [];
   const checkedPaths = [
     `${dataDir}/system/system.yml`,
-    `${dataDir}/system/secrets.yml`,
   ];
 
   // Validate system section
@@ -40,13 +39,6 @@ export function validateConfig(config, dataDir) {
     errors.push({ path: 'system', message: 'missing required section' });
   } else {
     validateObject(config.system, configSchema.system.properties, 'system', errors);
-  }
-
-  // Validate secrets section
-  if (!config.secrets) {
-    errors.push({ path: 'secrets', message: 'missing required section' });
-  } else {
-    validateObject(config.secrets, configSchema.secrets.properties, 'secrets', errors);
   }
 
   // Validate households
