@@ -230,6 +230,7 @@ class UserDataService {
 
   /**
    * Get the base path for a household's data directory
+   * Delegates to ConfigService for proper path resolution (flat vs legacy structure)
    * @param {string} householdId - Household identifier
    * @returns {string|null}
    */
@@ -238,9 +239,16 @@ class UserDataService {
       logger.warn('user-data.missing-household-id');
       return null;
     }
-    this.#ensureInitialized();
-    if (!this.#dataDir) return null;
-    return path.join(this.#dataDir, 'households', householdId);
+    try {
+      // Delegate to ConfigService for proper path resolution
+      return configService.getHouseholdPath(null, householdId);
+    } catch (err) {
+      // Fallback if household not found in config (shouldn't happen in normal operation)
+      logger.warn('user-data.household-not-in-config', { householdId, error: err.message });
+      this.#ensureInitialized();
+      if (!this.#dataDir) return null;
+      return path.join(this.#dataDir, 'households', householdId);
+    }
   }
 
   /**
