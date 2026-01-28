@@ -205,8 +205,7 @@ export function createContentRegistry(config, deps = {}) {
     registry.register(new PlexAdapter({
       host: config.plex.host,
       token: config.plex.token,
-      mediaProgressMemory,  // Inject MediaProgressMemory (preferred)
-      historyPath: config.mediaMemoryPath ? `${config.mediaMemoryPath}/plex` : null  // Fallback
+      mediaProgressMemory  // Inject MediaProgressMemory for watch state persistence
     }, { httpClient }));
   }
 
