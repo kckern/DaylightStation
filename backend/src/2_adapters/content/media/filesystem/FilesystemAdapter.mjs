@@ -63,10 +63,10 @@ export class FilesystemAdapter {
   /**
    * Get watch state for a specific media key
    * @param {string} mediaKey - Media key (file path)
-   * @returns {Object|null} Watch state { percent, seconds, playhead, mediaDuration }
+   * @returns {Object|null} Media progress { percent, seconds, playhead, mediaDuration }
    * @private
    */
-  _getWatchState(mediaKey) {
+  _getMediaProgress(mediaKey) {
     if (!this.mediaProgressMemory) return null;
     // Try both with and without filesystem: prefix
     const state = this.mediaProgressMemory.get(mediaKey) ||
@@ -250,10 +250,10 @@ export class FilesystemAdapter {
       const ext = path.extname(resolved.path).toLowerCase();
       const mediaType = this.getMediaType(ext);
 
-      // Load watch state for resume position
-      const watchState = this._getWatchState(localId);
-      const resumePosition = watchState?.playhead || watchState?.seconds || null;
-      const duration = watchState?.mediaDuration || null;
+      // Load media progress for resume position
+      const progress = this._getMediaProgress(localId);
+      const resumePosition = progress?.playhead || progress?.seconds || null;
+      const duration = progress?.mediaDuration || null;
 
       // Parse ID3 tags for audio files
       let audioMetadata = {};

@@ -255,7 +255,7 @@ export function createMediaProgressMemory(config) {
  * Create API routers for the content domain
  * @param {Object} config
  * @param {ContentSourceRegistry} config.registry - Content source registry
- * @param {YamlWatchStateDatastore} config.watchStore - Watch state store
+ * @param {YamlMediaProgressMemory} config.mediaProgressMemory - Media progress memory
  * @param {Function} [config.loadFile] - Function to load YAML files
  * @param {Function} [config.saveFile] - Function to save YAML files
  * @param {string} [config.cacheBasePath] - Base path for image cache
@@ -265,13 +265,13 @@ export function createMediaProgressMemory(config) {
  * @returns {Object} Router configuration
  */
 export function createApiRouters(config) {
-  const { registry, watchStore, loadFile, saveFile, cacheBasePath, dataPath, mediaBasePath, proxyService, configService, logger = console } = config;
+  const { registry, mediaProgressMemory, loadFile, saveFile, cacheBasePath, dataPath, mediaBasePath, proxyService, configService, logger = console } = config;
 
   return {
-    content: createContentRouter(registry, watchStore, { loadFile, saveFile, cacheBasePath, logger }),
+    content: createContentRouter(registry, mediaProgressMemory, { loadFile, saveFile, cacheBasePath, logger }),
     proxy: createProxyRouter({ registry, proxyService, mediaBasePath, logger }),
     localContent: createLocalContentRouter({ registry, dataPath, mediaBasePath }),
-    play: createPlayRouter({ registry, watchStore, logger }),
+    play: createPlayRouter({ registry, mediaProgressMemory, logger }),
     list: createListRouter({ registry, loadFile, configService }),
   };
 }
