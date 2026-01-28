@@ -1,7 +1,7 @@
 // backend/src/2_adapters/home-automation/homeassistant/manifest.mjs
 
 export default {
-  provider: 'home_assistant',
+  provider: 'homeassistant',
   capability: 'home_automation',
   displayName: 'Home Assistant',
 

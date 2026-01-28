@@ -236,32 +236,48 @@ export class ConfigService {
    * @returns {string|null} Host for current environment or null if not found
    */
   resolveServiceHost(serviceName) {
-    const serviceMapping = this.#config.services?.[serviceName];
-    if (!serviceMapping) return null;
+    const service = this.#config.services?.[serviceName];
+    if (!service) return null;
 
     const env = this.getEnv();
-    return serviceMapping[env] ?? null;
+    // Support new format: { hosts: { env: host }, port: X }
+    // and legacy format: { env: host }
+    const hosts = service.hosts ?? service;
+    return hosts[env] ?? hosts.default ?? null;
   }
 
   /**
-   * Resolve full service URL for a household integration
-   * Combines household integration config with service host resolution
-   * @param {string|null} householdId - Household ID, defaults to default household
+   * Get service port from services.yml
+   * @param {string} serviceName - Logical service name
+   * @returns {number|null} Port number or null if not defined
+   */
+  getServicePort(serviceName) {
+    return this.#config.services?.[serviceName]?.port ?? null;
+  }
+
+  /**
+   * Resolve full service URL from services.yml
    * @param {string} serviceName - Service name (plex, homeassistant, etc.)
+   * @param {string} [protocol='http'] - Protocol to use
    * @returns {string|null} Full URL like "http://localhost:32400" or null if not found
    */
-  resolveServiceUrl(householdId, serviceName) {
-    const hid = householdId ?? this.getDefaultHouseholdId();
-    const integration = this.getHouseholdIntegration(hid, serviceName);
-    if (!integration) return null;
-
-    const logicalServiceName = integration.service ?? serviceName;
-    const host = this.resolveServiceHost(logicalServiceName);
+  resolveServiceUrl(serviceName, protocol = 'http') {
+    const host = this.resolveServiceHost(serviceName);
     if (!host) return null;
 
-    const port = integration.port;
-    const protocol = integration.protocol === 'https' ? 'https' : 'http';
+    const port = this.getServicePort(serviceName);
     return port ? `${protocol}://${host}:${port}` : `${protocol}://${host}`;
+  }
+
+  /**
+   * Get integration config for a capability from household integrations
+   * @param {string|null} householdId - Household ID, defaults to default household
+   * @param {string} capability - Capability name (media, ai, home_automation)
+   * @returns {Array} Array of provider configs or empty array
+   */
+  getCapabilityIntegrations(householdId, capability) {
+    const hid = householdId ?? this.getDefaultHouseholdId();
+    return this.#config.households?.[hid]?.integrations?.[capability] ?? [];
   }
 
   // ─── System Config ──────────────────────────────────────────

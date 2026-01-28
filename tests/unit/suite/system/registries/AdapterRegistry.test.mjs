@@ -8,7 +8,7 @@ describe('AdapterRegistry', () => {
       const registry = new AdapterRegistry();
 
       // Mock glob to return test manifests
-      registry._glob = jest.fn().mockResolvedValue([
+      registry._findManifests = jest.fn().mockResolvedValue([
         '/fake/path/plex/manifest.mjs',
         '/fake/path/openai/manifest.mjs',
       ]);
@@ -44,7 +44,7 @@ describe('AdapterRegistry', () => {
   describe('getManifest()', () => {
     test('returns manifest for capability/provider pair', async () => {
       const registry = new AdapterRegistry();
-      registry._glob = jest.fn().mockResolvedValue(['/fake/path/plex/manifest.mjs']);
+      registry._findManifests = jest.fn().mockResolvedValue(['/fake/path/plex/manifest.mjs']);
       registry._import = jest.fn().mockResolvedValue({
         default: {
           provider: 'plex',
@@ -63,7 +63,7 @@ describe('AdapterRegistry', () => {
 
     test('returns undefined for unknown capability/provider', async () => {
       const registry = new AdapterRegistry();
-      registry._glob = jest.fn().mockResolvedValue([]);
+      registry._findManifests = jest.fn().mockResolvedValue([]);
       await registry.discover();
 
       expect(registry.getManifest('unknown', 'fake')).toBeUndefined();
@@ -73,7 +73,7 @@ describe('AdapterRegistry', () => {
   describe('getProviders()', () => {
     test('returns empty array for unknown capability', async () => {
       const registry = new AdapterRegistry();
-      registry._glob = jest.fn().mockResolvedValue([]);
+      registry._findManifests = jest.fn().mockResolvedValue([]);
       await registry.discover();
 
       expect(registry.getProviders('unknown')).toEqual([]);
@@ -81,7 +81,7 @@ describe('AdapterRegistry', () => {
 
     test('returns all providers for a capability', async () => {
       const registry = new AdapterRegistry();
-      registry._glob = jest.fn().mockResolvedValue([
+      registry._findManifests = jest.fn().mockResolvedValue([
         '/fake/path/plex/manifest.mjs',
         '/fake/path/filesystem/manifest.mjs',
       ]);
@@ -107,7 +107,7 @@ describe('AdapterRegistry', () => {
       const registry = new AdapterRegistry();
       const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
 
-      registry._glob = jest.fn().mockResolvedValue(['/fake/path/bad/manifest.mjs']);
+      registry._findManifests = jest.fn().mockResolvedValue(['/fake/path/bad/manifest.mjs']);
       registry._import = jest.fn().mockResolvedValue({
         default: { provider: 'bad', displayName: 'Bad Manifest' } // missing capability
       });
@@ -124,7 +124,7 @@ describe('AdapterRegistry', () => {
       const registry = new AdapterRegistry();
       const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
 
-      registry._glob = jest.fn().mockResolvedValue(['/fake/path/bad/manifest.mjs']);
+      registry._findManifests = jest.fn().mockResolvedValue(['/fake/path/bad/manifest.mjs']);
       registry._import = jest.fn().mockResolvedValue({
         default: { capability: 'media', displayName: 'Bad Manifest' } // missing provider
       });
@@ -140,7 +140,7 @@ describe('AdapterRegistry', () => {
       const registry = new AdapterRegistry();
       const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
 
-      registry._glob = jest.fn().mockResolvedValue([
+      registry._findManifests = jest.fn().mockResolvedValue([
         '/fake/path/broken/manifest.mjs',
         '/fake/path/good/manifest.mjs',
       ]);
@@ -163,13 +163,13 @@ describe('AdapterRegistry', () => {
   });
 
   describe('constructor', () => {
-    test('accepts custom adaptersRoot', () => {
+    test('accepts custom adaptersRoot', async () => {
       const registry = new AdapterRegistry({ adaptersRoot: '/custom/path' });
-      // The custom path is used internally, we can verify via _glob calls
-      registry._glob = jest.fn().mockResolvedValue([]);
-      registry.discover();
+      // The custom path is used internally, we can verify via _findManifests calls
+      registry._findManifests = jest.fn().mockResolvedValue([]);
+      await registry.discover();
 
-      expect(registry._glob).toHaveBeenCalledWith('**/manifest.mjs', '/custom/path');
+      expect(registry._findManifests).toHaveBeenCalledWith('/custom/path');
     });
   });
 });
