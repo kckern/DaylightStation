@@ -10,11 +10,11 @@ import { existsSync } from 'fs';
 import path, { join } from 'path';
 import 'dotenv/config';
 
-import { initConfigService, ConfigValidationError, configService } from './src/0_system/config/index.mjs';
-import { hydrateProcessEnvFromConfigs, loadLoggingConfig, resolveLoggerLevel, getLoggingTags, resolveLogglyToken } from './src/0_system/logging/config.mjs';
-import { initializeLogging } from './src/0_system/logging/dispatcher.mjs';
-import { createConsoleTransport, createFileTransport, createLogglyTransport } from './src/0_system/logging/transports/index.mjs';
-import { createLogger } from './src/0_system/logging/logger.mjs';
+import { initConfigService, ConfigValidationError, configService } from '#system/config/index.mjs';
+import { hydrateProcessEnvFromConfigs, loadLoggingConfig, resolveLoggerLevel, getLoggingTags, resolveLogglyToken } from '#system/logging/config.mjs';
+import { initializeLogging } from '#system/logging/dispatcher.mjs';
+import { createConsoleTransport, createFileTransport, createLogglyTransport } from '#system/logging/transports/index.mjs';
+import { createLogger } from '#system/logging/logger.mjs';
 
 const __dirname = path.dirname(new URL(import.meta.url).pathname);
 const isDocker = existsSync('/.dockerenv');
@@ -143,11 +143,10 @@ async function main() {
       return sendHealthResponse(res, 'main');
     }
 
-    // Strip /api/v1 prefix if present
-    if (req.url.startsWith('/api/v1')) {
-      req.url = req.url.replace('/api/v1', '') || '/';
-    }
-
+    // All requests go to Express app (no prefix stripping)
+    // - API routes: /api/v1/* handled by API router mounted at /api/v1
+    // - WebSocket: /ws/* handled by WebSocket middleware
+    // - Frontend: everything else served as static files (Docker) or 404 (dev)
     return app(req, res, (err) => {
       if (err && !res.headersSent) {
         res.statusCode = 500;

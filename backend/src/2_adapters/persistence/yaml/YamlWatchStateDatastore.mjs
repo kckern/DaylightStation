@@ -33,8 +33,15 @@ export class YamlWatchStateDatastore extends IWatchStateDatastore {
    * @returns {string}
    */
   _getBasePath(storagePath) {
-    const safePath = storagePath.replace(/[^a-zA-Z0-9-_]/g, '_');
-    return path.join(this.basePath, safePath);
+    // Sanitize each path segment but preserve directory structure
+    const safePath = storagePath
+      .split('/')
+      .filter(segment => segment.length > 0)  // Remove empty segments
+      .map(segment => segment.replace(/[^a-zA-Z0-9-_]/g, '_'))
+      .join('/');
+    // Default to 'default' if path is empty after sanitization
+    const finalPath = safePath || 'default';
+    return path.join(this.basePath, `${finalPath}.yml`);
   }
 
   /**
