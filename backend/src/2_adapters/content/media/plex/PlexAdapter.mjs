@@ -1,15 +1,8 @@
 // backend/src/2_adapters/content/media/plex/PlexAdapter.mjs
-import path from 'path';
 import { ListableItem } from '#domains/content/capabilities/Listable.mjs';
 import { PlayableItem } from '#domains/content/capabilities/Playable.mjs';
 import { PlexClient } from './PlexClient.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
-import {
-  dirExists,
-  listYamlFiles,
-  loadYamlFromPath,
-  saveYamlToPath
-} from '#system/utils/FileIO.mjs';
 
 /**
  * Plex content source adapter.
@@ -25,7 +18,7 @@ export class PlexAdapter {
    * @param {string} [config.protocol] - Streaming protocol (default: 'dash')
    * @param {string} [config.platform] - Client platform (default: 'Chrome')
    * @param {string} [config.proxyPath] - Proxy path for media URLs (default: '/api/v1/proxy/plex')
-   * @param {string} [config.historyPath] - Path to viewing history directory (e.g., history/media_memory/plex)
+   * @param {Object} [config.mediaProgressMemory] - WatchStore instance for viewing history persistence
    * @param {Object} deps
    * @param {import('#system/services/HttpClient.mjs').HttpClient} deps.httpClient
    */
@@ -49,76 +42,7 @@ export class PlexAdapter {
     this.protocol = config.protocol || 'dash';
     this.platform = config.platform || 'Chrome';
     this.proxyPath = config.proxyPath || '/api/v1/proxy/plex';
-    this.watchStore = config.watchStore || null;
-    this.historyPath = config.historyPath || null;
-
-    // Set up history loader - prefer watchStore, fall back to file-based
-    if (this.watchStore) {
-      // WatchStore-based loading (new SSOT approach)
-      this._historyLoader = null; // Will use async method instead
-    } else if (this.historyPath) {
-      // Legacy file-based loading (deprecated)
-      this._historyLoader = () => this._loadHistoryFromFiles();
-      this._historyClearer = (keys) => this._clearHistoryFromFiles(keys);
-    }
-  }
-
-  /**
-   * Load viewing history from YAML files
-   * @returns {Object} History object mapping plex keys to {playhead, mediaDuration, percent}
-   * @private
-   */
-  _loadHistoryFromFiles() {
-    if (!this.historyPath || !dirExists(this.historyPath)) {
-      return {};
-    }
-
-    let log = {};
-    try {
-      const files = listYamlFiles(this.historyPath, { stripExtension: false });
-      for (const file of files) {
-        const filePath = path.join(this.historyPath, file);
-        const data = loadYamlFromPath(filePath);
-        if (data) log = { ...log, ...data };
-      }
-    } catch (err) {
-      console.error('[PlexAdapter] Error loading history:', err.message);
-    }
-
-    return log;
-  }
-
-  /**
-   * Clear watch history for given keys from YAML files
-   * @param {string[]} keys - Plex keys to clear
-   * @private
-   */
-  _clearHistoryFromFiles(keys) {
-    if (!this.historyPath || !dirExists(this.historyPath)) {
-      return;
-    }
-
-    try {
-      const files = listYamlFiles(this.historyPath, { stripExtension: false });
-      for (const file of files) {
-        const filePath = path.join(this.historyPath, file);
-        const data = loadYamlFromPath(filePath) || {};
-
-        let modified = false;
-        for (const key of keys) {
-          if (data[key]) {
-            delete data[key];
-            modified = true;
-          }
-        }
-
-        if (modified) {
-          saveYamlToPath(filePath, data);
-        }
-      }
-    } catch (err) {
-      console.error('[PlexAdapter] Error clearing history:', err.message);
-    }
+    this.mediaProgressMemory = config.mediaProgressMemory || null;
   }
 
   /**
@@ -909,46 +833,17 @@ export class PlexAdapter {
   // ===========================================================================
 
   /**
-   * Set the history loader for viewing history integration
-   * @param {Function} loader - Function that returns viewing history object {plexKey: {playhead, mediaDuration}}
-   */
-  setHistoryLoader(loader) {
-    this._historyLoader = loader;
-  }
-
-  /**
-   * Set the history clearer for resetting watched items
-   * @param {Function} clearer - Function(keys: string[]) that clears watch status for given keys
-   */
-  setHistoryClearer(clearer) {
-    this._historyClearer = clearer;
-  }
-
-  /**
-   * Load viewing history from configured loader
-   * @returns {Object} History object mapping plex keys to {playhead, mediaDuration}
-   * @private
-   */
-  _loadViewingHistory() {
-    if (this._historyLoader) {
-      return this._historyLoader() || {};
-    }
-    return {};
-  }
-
-  /**
-   * Load viewing history from WatchStore (async version)
+   * Load viewing history from mediaProgressMemory (async)
    * @param {string} [storagePath='plex'] - Storage path to load from
    * @returns {Promise<Object>} History object mapping bare plex keys to watch state
    */
   async _loadViewingHistoryAsync(storagePath = 'plex') {
-    if (!this.watchStore) {
-      // Fall back to sync loader if no watchStore
-      return this._loadViewingHistory();
+    if (!this.mediaProgressMemory) {
+      return {};
     }
 
     try {
-      const states = await this.watchStore.getAll(storagePath);
+      const states = await this.mediaProgressMemory.getAll(storagePath);
       const history = {};
       for (const state of states) {
         // Strip plex: prefix from key for adapter compatibility
@@ -962,20 +857,20 @@ export class PlexAdapter {
       }
       return history;
     } catch (e) {
-      console.error('[PlexAdapter] Error loading history from WatchStore:', e.message);
+      console.error('[PlexAdapter] Error loading history from mediaProgressMemory:', e.message);
       return {};
     }
   }
 
   /**
-   * Clear watch status for given keys using configured clearer
+   * Clear watch status for given keys
+   * Note: This is currently a no-op. Clearing should be done through mediaProgressMemory.delete()
    * @param {string[]} keys - Plex keys to clear
    * @private
    */
   _clearWatchedItems(keys) {
-    if (this._historyClearer) {
-      this._historyClearer(keys);
-    }
+    // No-op: clearing watch status should be handled through mediaProgressMemory directly
+    // This method is kept for API compatibility with _selectEpisodeByPriority
   }
 
   /**
@@ -1069,9 +964,10 @@ export class PlexAdapter {
    *
    * @param {string[]|Object[]} keys - Array of plex keys or items with .plex property
    * @param {boolean} [shuffle=false] - Whether to shuffle within category
-   * @returns {[string|null, number, number]} [key, seconds, percent]
+   * @param {string} [storagePath='plex'] - Storage path for history lookup
+   * @returns {Promise<[string|null, number, number]>} [key, seconds, percent]
    */
-  selectKeyToPlay(keys, shuffle = false) {
+  async selectKeyToPlay(keys, shuffle = false, storagePath = 'plex') {
     // Normalize keys array
     keys = Array.isArray(keys) ? keys : [];
     if (keys.length > 0 && keys[0]?.plex) {
@@ -1080,7 +976,7 @@ export class PlexAdapter {
     if (keys.length === 0) return [null, 0, 0];
 
     // Load viewing history
-    const log = this._loadViewingHistory();
+    const log = await this._loadViewingHistoryAsync(storagePath);
 
     // Categorize by watch status
     const { watched, inProgress, unwatched } = this._categorizeByWatchStatus(keys, log);
@@ -1096,10 +992,11 @@ export class PlexAdapter {
    * @param {string} key - Container or item key
    * @param {Object} [opts] - Options
    * @param {boolean} [opts.shuffle] - Whether to shuffle selection
+   * @param {string} [opts.storagePath='plex'] - Storage path for history lookup
    * @returns {Promise<Object|null>} Playable item with media URL and resume info
    */
   async loadPlayableItemFromKey(key, opts = {}) {
-    const { shuffle = false } = opts;
+    const { shuffle = false, storagePath = 'plex' } = opts;
 
     // Strip plex: prefix if present
     key = key?.replace(/^plex:/, '') || '';
@@ -1111,7 +1008,7 @@ export class PlexAdapter {
 
     // If directly playable, return it
     if (item.mediaUrl && ['movie', 'episode', 'track'].includes(item.metadata?.type)) {
-      const log = this._loadViewingHistory();
+      const log = await this._loadViewingHistoryAsync(storagePath);
       const entry = log[key] || {};
       return {
         ...item,
@@ -1129,7 +1026,7 @@ export class PlexAdapter {
     const keys = list.map(i => i.id.replace('plex:', ''));
 
     // Use smart selection
-    const [selectedKey, seconds, percent] = this.selectKeyToPlay(keys, shuffle);
+    const [selectedKey, seconds, percent] = await this.selectKeyToPlay(keys, shuffle, storagePath);
     if (!selectedKey) return null;
 
     // Recursively load the selected item (may need to drill down further)
@@ -1147,17 +1044,18 @@ export class PlexAdapter {
    * @param {string} key - Container key
    * @param {Object} [opts] - Options
    * @param {boolean} [opts.shuffle] - Whether to shuffle the queue
+   * @param {string} [opts.storagePath='plex'] - Storage path for history lookup
    * @returns {Promise<Object[]>} Array of playable items
    */
   async loadPlayableQueueFromKey(key, opts = {}) {
-    const { shuffle = false } = opts;
+    const { shuffle = false, storagePath = 'plex' } = opts;
 
     // Resolve to playable items
     const playables = await this.resolvePlayables(key);
     if (!playables.length) return [];
 
     // Add viewing history to each item
-    const log = this._loadViewingHistory();
+    const log = await this._loadViewingHistoryAsync(storagePath);
     const queue = playables.map(item => {
       const itemKey = item.id.replace('plex:', '');
       const entry = log[itemKey] || {};
@@ -1192,14 +1090,15 @@ export class PlexAdapter {
    *   - program: string - Group identifier for selecting within program
    *   - index: number - Episode index within program
    *   - uid: string - Unique identifier for the item
+   * @param {string} [storagePath='plex'] - Storage path for history lookup
    * @returns {Promise<[string|null, number, string|null]>} [plexKey, seekSeconds, uid]
    */
-  async loadSingleFromWatchlist(watchlistData) {
+  async loadSingleFromWatchlist(watchlistData, storagePath = 'plex') {
     if (!watchlistData || typeof watchlistData !== 'object') {
       return [null, 0, null];
     }
 
-    const log = this._loadViewingHistory();
+    const log = await this._loadViewingHistoryAsync(storagePath);
     const now = new Date();
     const twoDaysFromNow = new Date(now);
     twoDaysFromNow.setDate(twoDaysFromNow.getDate() + 2);
