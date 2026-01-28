@@ -14,6 +14,9 @@
  * @module 3_applications/harvester/HarvesterService
  */
 
+import { ValidationError } from '#system/utils/errors/index.mjs';
+import { ServiceNotFoundError } from '../shared/errors/index.mjs';
+
 /**
  * Application service that orchestrates harvester operations
  */
@@ -34,7 +37,7 @@ export class HarvesterService {
    */
   constructor({ configService, logger }) {
     if (!configService) {
-      throw new Error('HarvesterService requires configService');
+      throw new ValidationError('HarvesterService requires configService', { field: 'configService' });
     }
     this.#configService = configService;
     this.#logger = logger || console;
@@ -48,7 +51,7 @@ export class HarvesterService {
    */
   register(harvester) {
     if (!harvester?.serviceId) {
-      throw new Error('Harvester must have a serviceId property');
+      throw new ValidationError('Harvester must have a serviceId property', { field: 'serviceId' });
     }
 
     const serviceId = harvester.serviceId;
@@ -74,7 +77,7 @@ export class HarvesterService {
    */
   registerAll(harvesters) {
     if (!Array.isArray(harvesters)) {
-      throw new Error('registerAll expects an array of harvesters');
+      throw new ValidationError('registerAll expects an array of harvesters', { field: 'harvesters' });
     }
 
     for (const harvester of harvesters) {
@@ -100,9 +103,8 @@ export class HarvesterService {
     const harvester = this.#harvesters.get(serviceId);
 
     if (!harvester) {
-      const error = new Error(`Harvester not found: ${serviceId}`);
       this.#log('error', 'harvester.harvest.notFound', { serviceId });
-      throw error;
+      throw new ServiceNotFoundError('Harvester', serviceId);
     }
 
     // Resolve username: use provided username, or head of household from config, or 'default'
@@ -148,7 +150,7 @@ export class HarvesterService {
     const harvester = this.#harvesters.get(serviceId);
 
     if (!harvester) {
-      throw new Error(`Harvester not found: ${serviceId}`);
+      throw new ServiceNotFoundError('Harvester', serviceId);
     }
 
     return {
