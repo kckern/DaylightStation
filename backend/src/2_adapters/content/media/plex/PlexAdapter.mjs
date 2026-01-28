@@ -49,10 +49,15 @@ export class PlexAdapter {
     this.protocol = config.protocol || 'dash';
     this.platform = config.platform || 'Chrome';
     this.proxyPath = config.proxyPath || '/api/v1/proxy/plex';
+    this.watchStore = config.watchStore || null;
     this.historyPath = config.historyPath || null;
 
-    // Set up built-in history loader if historyPath provided
-    if (this.historyPath) {
+    // Set up history loader - prefer watchStore, fall back to file-based
+    if (this.watchStore) {
+      // WatchStore-based loading (new SSOT approach)
+      this._historyLoader = null; // Will use async method instead
+    } else if (this.historyPath) {
+      // Legacy file-based loading (deprecated)
       this._historyLoader = () => this._loadHistoryFromFiles();
       this._historyClearer = (keys) => this._clearHistoryFromFiles(keys);
     }
@@ -458,6 +463,8 @@ export class PlexAdapter {
       type: item.type,
       year: item.year,
       grandparentTitle: item.grandparentTitle,
+      librarySectionID: item.librarySectionID || null,
+      librarySectionTitle: item.librarySectionTitle || null,
       // Episode-specific properties for FitnessShow compatibility
       plex: item.ratingKey,
       key: item.ratingKey,
@@ -543,6 +550,22 @@ export class PlexAdapter {
    * @returns {Promise<string>}
    */
   async getStoragePath(id) {
+    // Strip plex: prefix if present
+    const localId = String(id).replace(/^plex:/, '');
+
+    try {
+      const item = await this.getItem(`plex:${localId}`);
+      if (item?.metadata?.librarySectionID) {
+        const libraryId = item.metadata.librarySectionID;
+        const libraryName = (item.metadata.librarySectionTitle || 'media')
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-|-$/g, '');
+        return `plex/${libraryId}_${libraryName}`;
+      }
+    } catch (e) {
+      // Fall back to generic plex path on error
+    }
     return 'plex';
   }
 
@@ -911,6 +934,37 @@ export class PlexAdapter {
       return this._historyLoader() || {};
     }
     return {};
+  }
+
+  /**
+   * Load viewing history from WatchStore (async version)
+   * @param {string} [storagePath='plex'] - Storage path to load from
+   * @returns {Promise<Object>} History object mapping bare plex keys to watch state
+   */
+  async _loadViewingHistoryAsync(storagePath = 'plex') {
+    if (!this.watchStore) {
+      // Fall back to sync loader if no watchStore
+      return this._loadViewingHistory();
+    }
+
+    try {
+      const states = await this.watchStore.getAll(storagePath);
+      const history = {};
+      for (const state of states) {
+        // Strip plex: prefix from key for adapter compatibility
+        const bareKey = state.itemId.replace(/^plex:/, '');
+        history[bareKey] = {
+          playhead: state.playhead || 0,
+          percent: state.percent || 0,
+          lastPlayed: state.lastPlayed || null,
+          mediaDuration: state.duration || 0
+        };
+      }
+      return history;
+    } catch (e) {
+      console.error('[PlexAdapter] Error loading history from WatchStore:', e.message);
+      return {};
+    }
   }
 
   /**
