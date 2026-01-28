@@ -4,4 +4,4 @@
  */
 
 export { validateAdapter, ContentSourceBase } from './IContentSource.mjs';
-export { validateWatchStateDatastore } from './IWatchStateDatastore.mjs';
+export { IMediaProgressMemory, validateMediaProgressMemory } from './IMediaProgressMemory.mjs';
