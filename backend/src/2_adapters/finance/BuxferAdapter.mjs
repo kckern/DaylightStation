@@ -11,9 +11,34 @@ import { InfrastructureError } from '#system/utils/errors/index.mjs';
 const BUXFER_API_BASE = 'https://www.buxfer.com/api';
 
 export class BuxferAdapter {
-  constructor({ httpClient, getCredentials, logger }) {
+  /**
+   * @param {Object} config - Adapter configuration
+   * @param {string} config.email - Buxfer account email
+   * @param {string} config.password - Buxfer account password
+   * @param {Object} deps - Dependencies
+   * @param {Object} deps.httpClient - HTTP client for API requests
+   * @param {Object} [deps.logger] - Logger instance
+   */
+  constructor(config, deps = {}) {
+    const { email, password } = config;
+    const { httpClient, logger } = deps;
+
+    if (!email || !password) {
+      throw new InfrastructureError('Buxfer credentials required (email, password)', {
+        code: 'MISSING_CONFIG',
+        service: 'Buxfer'
+      });
+    }
+    if (!httpClient) {
+      throw new InfrastructureError('BuxferAdapter requires httpClient', {
+        code: 'MISSING_DEPENDENCY',
+        service: 'Buxfer'
+      });
+    }
+
+    this.email = email;
+    this.password = password;
     this.httpClient = httpClient;
-    this.getCredentials = getCredentials;
     this.logger = logger || console;
     this.token = null;
     this.tokenExpiresAt = 0;
@@ -37,18 +62,10 @@ export class BuxferAdapter {
       return this.token;
     }
 
-    const credentials = this.getCredentials();
-    if (!credentials?.email || !credentials?.password) {
-      throw new InfrastructureError('Buxfer credentials not configured', {
-        code: 'MISSING_CONFIG',
-        service: 'Buxfer'
-      });
-    }
-
     const url = `${BUXFER_API_BASE}/login`;
     const params = {
-      email: credentials.email,
-      password: credentials.password
+      email: this.email,
+      password: this.password
     };
 
     try {
@@ -596,8 +613,7 @@ export class BuxferAdapter {
    * @returns {boolean}
    */
   isConfigured() {
-    const credentials = this.getCredentials();
-    return !!(credentials?.email && credentials?.password);
+    return !!(this.email && this.password);
   }
 }
 
