@@ -159,3 +159,196 @@ describe('ConfigService household paths', () => {
     });
   });
 });
+
+describe('ConfigService system config', () => {
+  describe('getSystemConfig()', () => {
+    test('returns bot config for "bots"', () => {
+      const config = {
+        system: {},
+        systemBots: {
+          nutribot: { telegram: { bot_id: '123', webhook_path: '/nutribot' } },
+          homebot: { telegram: { bot_id: '456', webhook_path: '/homebot' } },
+        },
+      };
+      const service = new ConfigService(config);
+
+      const bots = service.getSystemConfig('bots');
+      expect(bots).toEqual({
+        nutribot: { telegram: { bot_id: '123', webhook_path: '/nutribot' } },
+        homebot: { telegram: { bot_id: '456', webhook_path: '/homebot' } },
+      });
+    });
+
+    test('returns null for unknown config name', () => {
+      const config = {
+        system: {},
+        systemBots: {},
+      };
+      const service = new ConfigService(config);
+
+      expect(service.getSystemConfig('unknown')).toBeNull();
+    });
+
+    test('returns null when systemBots is undefined', () => {
+      const config = {
+        system: {},
+      };
+      const service = new ConfigService(config);
+
+      expect(service.getSystemConfig('bots')).toBeNull();
+    });
+  });
+
+  describe('getSystemAuth()', () => {
+    test('returns auth token for platform and key', () => {
+      const config = {
+        system: {},
+        systemAuth: {
+          telegram: {
+            nutribot: 'token123',
+            homebot: 'token456',
+          },
+          discord: {
+            mybot: 'discordtoken',
+          },
+        },
+      };
+      const service = new ConfigService(config);
+
+      expect(service.getSystemAuth('telegram', 'nutribot')).toBe('token123');
+      expect(service.getSystemAuth('telegram', 'homebot')).toBe('token456');
+      expect(service.getSystemAuth('discord', 'mybot')).toBe('discordtoken');
+    });
+
+    test('returns null for unknown platform', () => {
+      const config = {
+        system: {},
+        systemAuth: {
+          telegram: { nutribot: 'token123' },
+        },
+      };
+      const service = new ConfigService(config);
+
+      expect(service.getSystemAuth('slack', 'nutribot')).toBeNull();
+    });
+
+    test('returns null for unknown key', () => {
+      const config = {
+        system: {},
+        systemAuth: {
+          telegram: { nutribot: 'token123' },
+        },
+      };
+      const service = new ConfigService(config);
+
+      expect(service.getSystemAuth('telegram', 'unknownbot')).toBeNull();
+    });
+
+    test('returns null when systemAuth is undefined', () => {
+      const config = {
+        system: {},
+      };
+      const service = new ConfigService(config);
+
+      expect(service.getSystemAuth('telegram', 'nutribot')).toBeNull();
+    });
+  });
+
+  describe('getHouseholdMessagingPlatform()', () => {
+    test('returns first platform for household app', () => {
+      const config = {
+        system: { defaultHouseholdId: 'default' },
+        households: {
+          default: {
+            integrations: {
+              messaging: {
+                nutribot: [{ platform: 'telegram' }],
+                journalist: [{ platform: 'discord' }, { platform: 'telegram' }],
+              },
+            },
+          },
+        },
+      };
+      const service = new ConfigService(config);
+
+      expect(service.getHouseholdMessagingPlatform('default', 'nutribot')).toBe('telegram');
+      expect(service.getHouseholdMessagingPlatform('default', 'journalist')).toBe('discord');
+    });
+
+    test('uses default household when householdId is null', () => {
+      const config = {
+        system: { defaultHouseholdId: 'default' },
+        households: {
+          default: {
+            integrations: {
+              messaging: {
+                nutribot: [{ platform: 'telegram' }],
+              },
+            },
+          },
+        },
+      };
+      const service = new ConfigService(config);
+
+      expect(service.getHouseholdMessagingPlatform(null, 'nutribot')).toBe('telegram');
+    });
+
+    test('returns null for unknown app', () => {
+      const config = {
+        system: { defaultHouseholdId: 'default' },
+        households: {
+          default: {
+            integrations: {
+              messaging: {
+                nutribot: [{ platform: 'telegram' }],
+              },
+            },
+          },
+        },
+      };
+      const service = new ConfigService(config);
+
+      expect(service.getHouseholdMessagingPlatform('default', 'unknownbot')).toBeNull();
+    });
+
+    test('returns null when messaging config is empty array', () => {
+      const config = {
+        system: { defaultHouseholdId: 'default' },
+        households: {
+          default: {
+            integrations: {
+              messaging: {
+                nutribot: [],
+              },
+            },
+          },
+        },
+      };
+      const service = new ConfigService(config);
+
+      expect(service.getHouseholdMessagingPlatform('default', 'nutribot')).toBeNull();
+    });
+
+    test('returns null when integrations is missing', () => {
+      const config = {
+        system: { defaultHouseholdId: 'default' },
+        households: {
+          default: {},
+        },
+      };
+      const service = new ConfigService(config);
+
+      expect(service.getHouseholdMessagingPlatform('default', 'nutribot')).toBeNull();
+    });
+
+    test('returns null when household does not exist', () => {
+      const config = {
+        system: { defaultHouseholdId: 'default' },
+        households: {},
+      };
+      const service = new ConfigService(config);
+
+      expect(service.getHouseholdMessagingPlatform('nonexistent', 'nutribot')).toBeNull();
+    });
+  });
+});

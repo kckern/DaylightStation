@@ -2,23 +2,19 @@ import { describe, it, expect } from '@jest/globals';
 import { UserResolver } from '#backend/src/0_system/users/UserResolver.mjs';
 
 describe('UserResolver', () => {
+  // Mock ConfigService that uses resolveUsername (the new approach)
   const mockConfigService = {
-    getDefaultHouseholdId: () => 'default',
-    getHouseholdAppConfig: (hid, appName) => {
-      if (appName === 'chatbots') {
-        return {
-          identity_mappings: {
-            telegram: {
-              '575596036': 'kckern',
-              '123456789': 'kirk',
-            },
-            discord: {
-              '987654321': 'kckern',
-            },
-          },
-        };
-      }
-      return null;
+    resolveUsername: (platform, platformId) => {
+      const mappings = {
+        telegram: {
+          '575596036': 'kckern',
+          '123456789': 'kirk',
+        },
+        discord: {
+          '987654321': 'kckern',
+        },
+      };
+      return mappings[platform]?.[String(platformId)] ?? null;
     },
   };
 
@@ -48,24 +44,12 @@ describe('UserResolver', () => {
       expect(resolver.resolveUser('slack', '575596036')).toBeNull();
     });
 
-    it('accepts explicit household override', () => {
-      const multiHouseholdConfig = {
-        getDefaultHouseholdId: () => 'default',
-        getHouseholdAppConfig: (hid, appName) => {
-          if (appName === 'chatbots' && hid === 'other') {
-            return {
-              identity_mappings: {
-                telegram: { '575596036': 'other_user' },
-              },
-            };
-          }
-          return null;
-        },
-      };
+    it('returns null for null/undefined inputs', () => {
+      const resolver = new UserResolver(mockConfigService);
 
-      const resolver = new UserResolver(multiHouseholdConfig);
-
-      expect(resolver.resolveUser('telegram', '575596036', 'other')).toBe('other_user');
+      expect(resolver.resolveUser(null, '575596036')).toBeNull();
+      expect(resolver.resolveUser('telegram', null)).toBeNull();
+      expect(resolver.resolveUser(undefined, undefined)).toBeNull();
     });
   });
 
