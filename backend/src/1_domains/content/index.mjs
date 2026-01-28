@@ -8,7 +8,7 @@ export { ItemId } from './value-objects/index.mjs';
 
 // Entities
 export { Item } from './entities/Item.mjs';
-export { WatchState } from './entities/WatchState.mjs';
+export { MediaProgress } from './entities/MediaProgress.mjs';
 
 // Capabilities
 export { ListableItem } from './capabilities/Listable.mjs';
