@@ -84,6 +84,7 @@ import { createMessagingRouter } from '../4_api/v1/routers/messaging.mjs';
 import { JournalistContainer } from '#apps/journalist/JournalistContainer.mjs';
 import { YamlJournalEntryRepository } from '#adapters/persistence/yaml/YamlJournalEntryRepository.mjs';
 import { YamlMessageQueueRepository } from '#adapters/persistence/yaml/YamlMessageQueueRepository.mjs';
+import { DebriefRepository } from '#adapters/journalist/DebriefRepository.mjs';
 import { JournalistInputRouter } from '#adapters/journalist/JournalistInputRouter.mjs';
 import { createJournalistRouter } from '../4_api/v1/routers/journalist.mjs';
 
@@ -1298,6 +1299,12 @@ export function createJournalistServices(config) {
     getUserTimezone: (userId) => configService?.getHouseholdTimezone?.(configService?.getUserHouseholdId?.(userId)) || 'America/Los_Angeles'
   };
 
+  // Debrief repository (YAML persistence)
+  const debriefRepository = new DebriefRepository({
+    dataPath: `${journalistConfig.dataDir}/users/${journalistConfig.username}/lifelog/journalist`,
+    logger
+  });
+
   // Create journalist container with all dependencies
   const journalistContainer = new JournalistContainer(journalistConfig, {
     messagingGateway: telegramAdapter,
@@ -1308,6 +1315,7 @@ export function createJournalistServices(config) {
     quizRepository,
     userResolver,
     userDataService,
+    debriefRepository,
     logger
   });
 

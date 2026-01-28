@@ -16,6 +16,7 @@ import path, { join } from 'path';
 // Infrastructure imports
 import { ConfigValidationError, configService, userDataService, userService } from './0_system/config/index.mjs';
 import { UserResolver } from './0_system/users/UserResolver.mjs';
+import { HttpClient } from './0_system/services/HttpClient.mjs';
 
 // Logging system
 import { getDispatcher } from './0_system/logging/dispatcher.js';
@@ -659,9 +660,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   let voiceTranscriptionService = null;
   if (sharedAiGateway) {
     const { TelegramVoiceTranscriptionService } = await import('./2_adapters/messaging/TelegramVoiceTranscriptionService.mjs');
+    const voiceHttpClient = new HttpClient({ logger: rootLogger.child({ module: 'voice-http' }) });
     voiceTranscriptionService = new TelegramVoiceTranscriptionService(
       { openaiAdapter: sharedAiGateway },
-      { httpClient: axios, logger: rootLogger.child({ module: 'voice-transcription' }) }
+      { httpClient: voiceHttpClient, logger: rootLogger.child({ module: 'voice-transcription' }) }
     );
   }
 
@@ -682,8 +684,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'messaging' })
   });
 
+  const upcHttpClient = new HttpClient({ logger: rootLogger.child({ module: 'upc-http' }) });
   const upcGateway = new UPCGateway({
-    httpClient: axios,
+    httpClient: upcHttpClient,
     logger: rootLogger.child({ module: 'upc-gateway' }),
   });
 

@@ -352,7 +352,8 @@ export class TelegramAdapter {
     }
 
     const fileUrl = await this.getFileUrl(fileId);
-    return this.transcriptionService.transcribe(fileUrl);
+    const result = await this.transcriptionService.transcribeUrl(fileUrl);
+    return result.text;
   }
 
   /**

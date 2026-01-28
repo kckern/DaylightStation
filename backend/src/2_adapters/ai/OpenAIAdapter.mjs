@@ -265,7 +265,7 @@ export class OpenAIAdapter extends IAIGateway {
     );
 
     return {
-      ok: response.ok,
+      ok: response.status >= 200 && response.status < 300,
       status: response.status,
       json: () => Promise.resolve(response.data),
       headers: {
