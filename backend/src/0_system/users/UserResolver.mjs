@@ -36,13 +36,11 @@ export class UserResolver {
   resolveUser(platform, platformUserId, householdId = null) {
     if (!platform || !platformUserId) return null;
 
-    const hid = householdId ?? this.#configService.getDefaultHouseholdId();
-    const chatbotsConfig = this.#configService.getHouseholdAppConfig(hid, 'chatbots');
-
-    const username = chatbotsConfig?.identity_mappings?.[platform]?.[String(platformUserId)] ?? null;
+    // Use ConfigService's pre-built identity mappings from user profiles
+    const username = this.#configService.resolveUsername(platform, platformUserId);
 
     if (!username) {
-      this.#logger.debug?.('userResolver.notFound', { platform, platformUserId, householdId: hid });
+      this.#logger.debug?.('userResolver.notFound', { platform, platformUserId });
     }
 
     return username;

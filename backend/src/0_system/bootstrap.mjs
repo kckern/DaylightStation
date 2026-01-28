@@ -3,6 +3,7 @@
 // Integration registry imports
 import { AdapterRegistry } from './registries/AdapterRegistry.mjs';
 import { IntegrationLoader } from './registries/IntegrationLoader.mjs';
+import { SystemBotLoader } from './registries/SystemBotLoader.mjs';
 
 // EventBus imports
 import { WebSocketEventBus } from './eventbus/WebSocketEventBus.mjs';
@@ -187,6 +188,7 @@ import { google } from 'googleapis';
  */
 let adapterRegistryInstance = null;
 let integrationLoaderInstance = null;
+let systemBotLoaderInstance = null;
 
 /**
  * Initialize the integration system (AdapterRegistry + IntegrationLoader)
@@ -226,9 +228,19 @@ export async function initializeIntegrations(config) {
     });
   }
 
+  // Create system bot loader (singleton)
+  if (!systemBotLoaderInstance) {
+    systemBotLoaderInstance = new SystemBotLoader({
+      configService,
+      logger
+    });
+    logger.info?.('integrations.systemBotLoader.created');
+  }
+
   return {
     registry: adapterRegistryInstance,
-    loader: integrationLoaderInstance
+    loader: integrationLoaderInstance,
+    botLoader: systemBotLoaderInstance
   };
 }
 
@@ -281,6 +293,51 @@ export function getHouseholdAdapters(householdId) {
  */
 export function hasCapability(householdId, capability) {
   return integrationLoaderInstance?.hasCapability(householdId, capability) ?? false;
+}
+
+/**
+ * Load system-level bots from system config.
+ *
+ * This loads all bots defined in system/bots.yml and creates adapters
+ * with tokens from system/auth/{platform}.yml.
+ *
+ * @param {Object} deps - Shared dependencies for bot adapters
+ * @param {Object} deps.httpClient - HTTP client for API calls
+ * @param {Object} [deps.transcriptionService] - Optional transcription service for voice
+ * @returns {number} Number of bots loaded
+ */
+export function loadSystemBots(deps = {}) {
+  if (!systemBotLoaderInstance) {
+    throw new Error('Integration system not initialized. Call initializeIntegrations first.');
+  }
+
+  return systemBotLoaderInstance.loadBots(deps);
+}
+
+/**
+ * Get the messaging adapter for a household and app.
+ *
+ * Uses the household's configured messaging platform for the specified app
+ * to return the appropriate bot adapter.
+ *
+ * @param {string} householdId - Household identifier
+ * @param {string} appName - App name (nutribot, journalist, homebot, etc.)
+ * @returns {Object|null} Messaging adapter or null if not configured
+ */
+export function getMessagingAdapter(householdId, appName) {
+  if (!systemBotLoaderInstance) {
+    throw new Error('Integration system not initialized. Call initializeIntegrations first.');
+  }
+
+  return systemBotLoaderInstance.getBotForHousehold(householdId, appName);
+}
+
+/**
+ * Get the system bot loader instance.
+ * @returns {SystemBotLoader|null}
+ */
+export function getSystemBotLoader() {
+  return systemBotLoaderInstance;
 }
 
 // =============================================================================

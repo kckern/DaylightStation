@@ -31,6 +31,8 @@ import {
   loadHouseholdIntegrations,
   getHouseholdAdapters,
   hasCapability,
+  loadSystemBots,
+  getMessagingAdapter,
   // Content domain
   createContentRegistry,
   createMediaProgressMemory,
@@ -743,6 +745,21 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     );
   }
 
+  // Load system-level bots from config (system/bots.yml + system/auth/telegram.yml)
+  // This creates bot adapters that can be looked up by household messaging platform
+  try {
+    const botsLoaded = loadSystemBots({
+      httpClient: axios,
+      transcriptionService: voiceTranscriptionService
+    });
+    rootLogger.info('system.bots.loaded', { count: botsLoaded });
+  } catch (err) {
+    rootLogger.warn('system.bots.fallback', {
+      reason: err.message,
+      message: 'System bots not loaded - falling back to legacy token config'
+    });
+  }
+
   // Alias for backward compatibility
   const nutribotAiGateway = sharedAiGateway;
 
@@ -771,10 +788,24 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     basePath: join(dataDir, 'chatbots', 'nutribot', 'conversations')
   });
 
+  // Get nutribot adapter: try config-driven approach first, fall back to legacy
+  let nutribotTelegramAdapter = getMessagingAdapter(householdId, 'nutribot');
+  if (!nutribotTelegramAdapter && nutribotToken) {
+    // Fall back to legacy secrets.yml token
+    const { TelegramAdapter } = await import('./2_adapters/messaging/TelegramAdapter.mjs');
+    nutribotTelegramAdapter = new TelegramAdapter({
+      token: nutribotToken,
+      httpClient: axios,
+      transcriptionService: voiceTranscriptionService,
+      logger: rootLogger.child({ module: 'nutribot-telegram' })
+    });
+    rootLogger.debug('nutribot.adapter.fallback', { reason: 'Using legacy secrets.yml token' });
+  }
+
   const nutribotServices = createNutribotServices({
     dataRoot: dataBasePath,
     userDataService,
-    telegramAdapter: messagingServices.telegramAdapter,
+    telegramAdapter: nutribotTelegramAdapter || messagingServices.telegramAdapter,
     aiGateway: nutribotAiGateway,
     upcGateway,
     googleImageGateway: null,  // TODO: Add Google Image gateway when available
@@ -789,7 +820,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     userResolver,
     botId: chatbotsConfig.bots?.nutribot?.telegram_bot_id || '',
     secretToken: chatbotsConfig.bots?.nutribot?.secretToken || '',
-    gateway: messagingServices.telegramAdapter,
+    gateway: nutribotTelegramAdapter || messagingServices.telegramAdapter,
     logger: rootLogger.child({ module: 'nutribot-api' })
   });
 
@@ -799,16 +830,19 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Reuse shared AI adapter (loaded from integration system or created above)
   const journalistAiGateway = nutribotAiGateway;
 
-  // Create dedicated TelegramAdapter for journalist with its own token
-  const { TelegramAdapter } = await import('./2_adapters/messaging/TelegramAdapter.mjs');
-  const journalistTelegramAdapter = journalistToken
-    ? new TelegramAdapter({
-        token: journalistToken,
-        httpClient: axios,
-        transcriptionService: voiceTranscriptionService,
-        logger: rootLogger.child({ module: 'journalist-telegram' })
-      })
-    : null;
+  // Get journalist adapter: try config-driven approach first, fall back to legacy
+  let journalistTelegramAdapter = getMessagingAdapter(householdId, 'journalist');
+  if (!journalistTelegramAdapter && journalistToken) {
+    // Fall back to legacy secrets.yml token
+    const { TelegramAdapter } = await import('./2_adapters/messaging/TelegramAdapter.mjs');
+    journalistTelegramAdapter = new TelegramAdapter({
+      token: journalistToken,
+      httpClient: axios,
+      transcriptionService: voiceTranscriptionService,
+      logger: rootLogger.child({ module: 'journalist-telegram' })
+    });
+    rootLogger.debug('journalist.adapter.fallback', { reason: 'Using legacy secrets.yml token' });
+  }
 
   // Create conversation state store for journalist
   const journalistStateStore = new YamlConversationStateDatastore({
@@ -842,15 +876,19 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Reuse shared AI adapter (loaded from integration system or created above)
   const homebotAiGateway = nutribotAiGateway || journalistAiGateway;
 
-  // Create dedicated TelegramAdapter for homebot with its own token
-  const homebotTelegramAdapter = homebotToken
-    ? new TelegramAdapter({
-        token: homebotToken,
-        httpClient: axios,
-        transcriptionService: voiceTranscriptionService,
-        logger: rootLogger.child({ module: 'homebot-telegram' })
-      })
-    : null;
+  // Get homebot adapter: try config-driven approach first, fall back to legacy
+  let homebotTelegramAdapter = getMessagingAdapter(householdId, 'homebot');
+  if (!homebotTelegramAdapter && homebotToken) {
+    // Fall back to legacy secrets.yml token
+    const { TelegramAdapter } = await import('./2_adapters/messaging/TelegramAdapter.mjs');
+    homebotTelegramAdapter = new TelegramAdapter({
+      token: homebotToken,
+      httpClient: axios,
+      transcriptionService: voiceTranscriptionService,
+      logger: rootLogger.child({ module: 'homebot-telegram' })
+    });
+    rootLogger.debug('homebot.adapter.fallback', { reason: 'Using legacy secrets.yml token' });
+  }
 
   // Create conversation state store for homebot
   const homebotStateStore = new YamlConversationStateDatastore({

@@ -282,6 +282,46 @@ export class ConfigService {
 
   // ─── System Config ──────────────────────────────────────────
 
+  /**
+   * Get system-level config by name (e.g., 'bots' returns system/bots.yml content)
+   * @param {string} name - Config name (bots, etc.)
+   * @returns {object|null}
+   */
+  getSystemConfig(name) {
+    // Map config names to their locations in the config object
+    const configMap = {
+      bots: this.#config.systemBots,
+      // Add other system configs here as needed
+    };
+    return configMap[name] ?? null;
+  }
+
+  /**
+   * Get system-level auth credentials
+   * @param {string} platform - Platform name (telegram, discord, etc.)
+   * @param {string} key - Auth key (bot name, service name, etc.)
+   * @returns {string|null} The auth token/credential
+   */
+  getSystemAuth(platform, key) {
+    return this.#config.systemAuth?.[platform]?.[key] ?? null;
+  }
+
+  /**
+   * Get the first messaging platform configured for a household app
+   * @param {string|null} householdId - Household ID, defaults to default household
+   * @param {string} appName - App name (nutribot, journalist, etc.)
+   * @returns {string|null} Platform name (telegram, discord, etc.)
+   */
+  getHouseholdMessagingPlatform(householdId, appName) {
+    const hid = householdId ?? this.getDefaultHouseholdId();
+    const integrations = this.#config.households?.[hid]?.integrations;
+    const messaging = integrations?.messaging?.[appName];
+    if (!messaging || !Array.isArray(messaging) || messaging.length === 0) {
+      return null;
+    }
+    return messaging[0]?.platform ?? null;
+  }
+
   get(pathStr) {
     return resolvePath(this.#config.system, pathStr);
   }

@@ -26,6 +26,8 @@ export function loadConfig(dataDir) {
     auth: loadAllAuth(dataDir),
     apps: loadAllApps(dataDir),
     adapters: loadAdapters(dataDir),
+    systemBots: loadSystemBots(dataDir),
+    systemAuth: loadSystemAuth(dataDir),
     identityMappings: {},
   };
 
@@ -304,6 +306,45 @@ function loadAllApps(dataDir) {
   }
 
   return apps;
+}
+
+// ─── System Bots ─────────────────────────────────────────────
+
+/**
+ * Load system-level bot configurations from system/bots.yml
+ * @param {string} dataDir - Path to data directory
+ * @returns {object} Bot configurations keyed by bot name
+ */
+function loadSystemBots(dataDir) {
+  const botsPath = path.join(dataDir, 'system', 'bots.yml');
+  return readYaml(botsPath) ?? {};
+}
+
+// ─── System Auth ─────────────────────────────────────────────
+
+/**
+ * Load system-level auth credentials from system/auth/*.yml
+ * Each file represents a platform (e.g., telegram.yml -> systemAuth.telegram)
+ * @param {string} dataDir - Path to data directory
+ * @returns {object} Auth credentials keyed by platform, then by key
+ */
+function loadSystemAuth(dataDir) {
+  const authDir = path.join(dataDir, 'system', 'auth');
+  const auth = {};
+
+  for (const file of listYamlFiles(authDir)) {
+    // Skip example files
+    const basename = path.basename(file);
+    if (basename.includes('.example.')) continue;
+
+    const platform = path.basename(file, '.yml');
+    const creds = readYaml(file);
+    if (creds) {
+      auth[platform] = creds;
+    }
+  }
+
+  return auth;
 }
 
 // ─── Identity Mappings ───────────────────────────────────────
