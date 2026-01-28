@@ -196,7 +196,7 @@ export function createContentRegistry(config, deps = {}) {
   if (config.mediaBasePath) {
     registry.register(new FilesystemAdapter({
       mediaBasePath: config.mediaBasePath,
-      historyPath: config.mediaMemoryPath ? `${config.mediaMemoryPath}/media` : null
+      mediaProgressMemory,
     }));
   }
 
@@ -214,7 +214,7 @@ export function createContentRegistry(config, deps = {}) {
     registry.register(new LocalContentAdapter({
       dataPath: config.dataPath,
       mediaPath: config.mediaBasePath,
-      historyPath: config.mediaMemoryPath || null,
+      mediaProgressMemory,
       householdId: config.householdId || null,
       householdsBasePath: config.householdsBasePath || null
     }));
@@ -224,7 +224,7 @@ export function createContentRegistry(config, deps = {}) {
   if (config.watchlistPath) {
     const folderAdapter = new FolderAdapter({
       watchlistPath: config.watchlistPath,
-      historyPath: config.mediaMemoryPath || null,
+      mediaProgressMemory,
       registry,
       nomusicLabels: config.nomusicLabels || [],
       musicOverlayPlaylist: config.musicOverlayPlaylist || null
