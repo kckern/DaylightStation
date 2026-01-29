@@ -8,19 +8,34 @@
  */
 
 import express from 'express';
+import path from 'path';
+import { loadYamlFromPath } from '../../utils/FileIO.mjs';
+
+/**
+ * Read dev host from system/config/dev.yml
+ * @param {string} dataDir - Path to data directory
+ * @returns {string|null} The dev host or null if not found
+ */
+function readDevHostFromConfig(dataDir) {
+  if (!dataDir) return null;
+  const devConfigPath = path.join(dataDir, 'system', 'config', 'dev.yml');
+  const config = loadYamlFromPath(devConfigPath);
+  return config?.host ?? null;
+}
 
 /**
  * Create dev proxy middleware and toggle router
  *
  * @param {Object} options
  * @param {Object} options.logger - Logger instance
- * @param {string} [options.devHost] - Override LOCAL_DEV_HOST env var
+ * @param {string} [options.dataDir] - Path to data directory for reading dev.yml
+ * @param {string} [options.devHost] - Override dev host (fallback if dev.yml not found)
  * @returns {{ router: express.Router, middleware: Function, getState: Function }}
  */
-export function createDevProxy({ logger, devHost } = {}) {
+export function createDevProxy({ logger, dataDir, devHost } = {}) {
   let proxyEnabled = false;
 
-  const getDevHost = () => devHost || process.env.LOCAL_DEV_HOST;
+  const getDevHost = () => readDevHostFromConfig(dataDir) || devHost || process.env.LOCAL_DEV_HOST;
 
   /**
    * Forward a request to the dev host
