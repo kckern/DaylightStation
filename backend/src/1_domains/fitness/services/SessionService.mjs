@@ -9,6 +9,23 @@ import { Session } from '../entities/Session.mjs';
 import { prepareTimelineForApi, prepareTimelineForStorage } from './TimelineService.mjs';
 import { ValidationError, EntityNotFoundError } from '../../core/errors/index.mjs';
 
+/**
+ * Parse a v3 timestamp string into Unix milliseconds.
+ * Accepts formats: 'YYYY-MM-DD HH:mm:ss' or 'YYYY-MM-DD H:mm:ss'
+ * @param {string|number|null} timestamp
+ * @returns {number|null}
+ */
+function parseV3Timestamp(timestamp) {
+  if (timestamp == null) return null;
+  if (typeof timestamp === 'number') return timestamp;
+  if (typeof timestamp !== 'string') return null;
+
+  // Try parsing as ISO-ish format: "2026-01-29 06:33:22"
+  const normalized = timestamp.replace(' ', 'T');
+  const parsed = Date.parse(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 export class SessionService {
   constructor({ sessionStore, defaultHouseholdId = null }) {
     this.sessionStore = sessionStore;
