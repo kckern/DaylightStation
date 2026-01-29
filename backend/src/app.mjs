@@ -346,8 +346,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const financeServices = createFinanceServices({
     dataRoot: dataBasePath,
     defaultHouseholdId: householdId,
-    // Prefer config-driven adapter from integration system
-    buxferAdapter: householdAdapters?.get?.('finance') ?? null,
+    // Prefer config-driven adapter from integration system (use .has() to avoid NoOp)
+    buxferAdapter: householdAdapters?.has?.('finance') ? householdAdapters.get('finance') : null,
     // Legacy fallback
     buxfer: buxferAuth?.email && buxferAuth?.password ? {
       email: buxferAuth.email,
@@ -399,8 +399,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     dataRoot: dataBasePath,
     mediaRoot: mediaBasePath,
     defaultHouseholdId: householdId,
-    // Prefer config-driven HA adapter, fall back to config-based creation
-    haGateway: householdAdapters?.get?.('home_automation') ?? null,
+    // Prefer config-driven HA adapter, fall back to config-based creation (use .has() to avoid NoOp)
+    haGateway: householdAdapters?.has?.('home_automation') ? householdAdapters.get('home_automation') : null,
     homeAssistant: {
       baseUrl: haBaseUrl,
       token: haAuth.token || ''
@@ -478,8 +478,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     configService,
     todoistApi: null, // Will use httpClient directly
     aiGateway: null, // AI gateway created later in app initialization
-    // Reuse config-driven buxfer adapter from finance domain
-    buxferAdapter: householdAdapters?.get?.('finance') ?? null,
+    // Reuse config-driven buxfer adapter from finance domain (use .has() to avoid NoOp)
+    buxferAdapter: householdAdapters?.has?.('finance') ? householdAdapters.get('finance') : null,
     logger: rootLogger.child({ module: 'harvester' })
   });
 
@@ -648,8 +648,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const taskerConfig = configService.getAppConfig('tasker') || {};
   const remoteExecConfig = configService.getAppConfig('remote_exec') || {};
   const homeAutomationAdapters = createHomeAutomationAdapters({
-    // Prefer config-driven HA adapter, fall back to config-based creation
-    haGateway: householdAdapters?.get?.('home_automation') ?? null,
+    // Prefer config-driven HA adapter, fall back to config-based creation (use .has() to avoid NoOp)
+    haGateway: householdAdapters?.has?.('home_automation') ? householdAdapters.get('home_automation') : null,
     homeAssistant: {
       baseUrl: haBaseUrl,
       token: haAuth.token || ''
@@ -725,7 +725,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Create shared AI adapter (used by all bots)
   // Prefer config-driven adapter from integration system, fall back to hardcoded creation
-  let sharedAiGateway = householdAdapters?.get?.('ai') ?? null;
+  // Note: .get() returns NoOp adapter if not configured, so check .has() first
+  let sharedAiGateway = householdAdapters?.has?.('ai') ? householdAdapters.get('ai') : null;
   if (!sharedAiGateway && openaiApiKey) {
     const { OpenAIAdapter } = await import('./2_adapters/ai/OpenAIAdapter.mjs');
     sharedAiGateway = new OpenAIAdapter({ apiKey: openaiApiKey }, { httpClient: axios, logger: rootLogger.child({ module: 'shared-ai' }) });
