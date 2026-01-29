@@ -121,6 +121,21 @@ When user wants to triage NEW violations, for each one ask:
 3. **Fix now** - Help fix the code
 4. **Skip** - Leave as NEW for now
 
+## DDD Architecture Rules
+
+**Port Location:** Ports (interfaces) belong in `3_applications/*/ports/`, NOT in domains.
+
+| Layer | Can Import From | Ports? |
+|-------|-----------------|--------|
+| 1_domains | 0_system only | NO - domains are pure |
+| 2_adapters | 1_domains, 0_system, 3_apps/*/ports/ | Implements ports |
+| 3_applications | 1_domains, 2_adapters, 0_system | Defines ports |
+| 4_api | All lower layers | No |
+
+**Common Violations:**
+- `domain-imports-application` - Domain importing from `#apps/` (including re-exporting ports)
+- `adapter-imports-application-non-port` - Adapter importing from `#apps/` but NOT from `/ports/`
+
 ## Rules Reference
 
 Rules are defined in `cli/audit/rules/`:
@@ -132,3 +147,4 @@ Rules are defined in `cli/audit/rules/`:
 - `domain.mjs` - Domain purity (no new Date(), no fs, etc.)
 
 Full coding standards: `docs/reference/core/coding-standards.md`
+Full domain guidelines: `docs/reference/core/layers-of-abstraction/domain-layer-guidelines.md`

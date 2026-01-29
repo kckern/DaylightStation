@@ -20,12 +20,12 @@ export const rules = [
     message: 'Domain layer must not import from applications - dependency flows inward'
   },
   {
-    id: 'adapter-imports-application',
+    id: 'adapter-imports-application-non-port',
     severity: 'high',
-    description: 'Adapter layer imports from applications',
-    pattern: /from ['"]#apps/,
+    description: 'Adapter layer imports non-port from applications',
+    pattern: /from ['"]#apps\/(?![^'"]*\/ports\/)/,
     scope: 'backend/src/2_adapters/**/*.mjs',
-    message: 'Adapter layer should not import from applications'
+    message: 'Adapter layer should only import ports from applications (use #apps/*/ports/)'
   },
   {
     id: 'relative-path-traversal',

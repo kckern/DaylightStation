@@ -1,6 +1,6 @@
 # Backend Architecture
 
-**Last Updated:** 2026-01-12
+**Last Updated:** 2026-01-29
 **Status:** DDD Migration Complete (95%)
 
 ---
@@ -46,7 +46,7 @@ Cross-cutting concerns shared across all layers.
 Pure business logic with no external dependencies. Each domain has:
 - `entities/` - Data models with validation
 - `services/` - Business logic
-- `ports/` - Interfaces for external dependencies
+- `value-objects/` - Immutable value types (optional)
 
 | Domain | Purpose | Entities |
 |--------|---------|----------|
@@ -61,7 +61,7 @@ Pure business logic with no external dependencies. Each domain has:
 | `gratitude/` | Gratitude tracking | Selection |
 | `entropy/` | Random content | Entropy reader |
 | `home-automation/` | Smart home control | Device states |
-| `ai/` | AI abstraction | IAIGateway port |
+| `ai/` | AI abstraction | AI-related value objects |
 | `lifelog/` | Activity aggregation | Lifelog entries |
 | `core/` | Shared value objects | Common types |
 
@@ -91,7 +91,7 @@ Concrete implementations that connect domains to external systems.
 
 ### 3_applications/ (60 files)
 
-Use case orchestration and complex workflows.
+Use case orchestration, complex workflows, and **port interfaces** (contracts for external dependencies).
 
 | Application | Purpose | Key Components |
 |-------------|---------|----------------|
@@ -134,12 +134,15 @@ HTTP layer - Express routers and handlers.
 ```
 4_api       → can import from → 3, 2, 1, 0
 3_applications → can import from → 2, 1, 0
-2_adapters  → can import from → 1, 0
+2_adapters  → can import from → 3 (ports only), 1, 0
 1_domains   → can import from → 0 (minimal)
 0_system → standalone (no upward imports)
 ```
 
-**Key Principle:** Domains (1_domains/) should have NO imports from adapters. They define ports (interfaces) that adapters implement.
+**Key Principles:**
+- Domains (1_domains/) are **pure** - no imports from adapters or applications
+- Applications (3_applications/) define **ports** (interfaces) that adapters implement
+- Adapters import port interfaces from applications to implement them
 
 ---
 
@@ -162,20 +165,22 @@ import { YamlSessionStore } from '../adapters/...';
 
 ### Port/Adapter Pattern
 
-Domains define interfaces (ports), adapters implement them:
+Applications define interfaces (ports), adapters implement them:
 
 ```javascript
-// 1_domains/fitness/ports/ISessionStore.mjs
-export const ISessionStore = {
-  save(session) {},
-  findById(id) {},
-  listByDate(date) {}
-};
+// 3_applications/fitness/ports/ISessionDatastore.mjs
+export class ISessionDatastore {
+  async save(session) { throw new Error('Not implemented'); }
+  async findById(id) { throw new Error('Not implemented'); }
+  async listByDate(date) { throw new Error('Not implemented'); }
+}
 
-// 2_adapters/persistence/yaml/YamlSessionStore.mjs
-export class YamlSessionStore {
-  save(session) { /* YAML file I/O */ }
-  findById(id) { /* YAML file I/O */ }
+// 2_adapters/persistence/yaml/YamlSessionDatastore.mjs
+import { ISessionDatastore } from '#apps/fitness/ports/ISessionDatastore.mjs';
+
+export class YamlSessionDatastore extends ISessionDatastore {
+  async save(session) { /* YAML file I/O */ }
+  async findById(id) { /* YAML file I/O */ }
 }
 ```
 
