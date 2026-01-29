@@ -223,7 +223,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // DevProxy for forwarding webhooks to local dev machine
   const devHost = configService.get('LOCAL_DEV_HOST') || configService.getSecret('LOCAL_DEV_HOST');
-  const devProxy = createDevProxy({ logger: rootLogger, devHost });
+  const dataDir = configService.getDataDir();
+  const devProxy = createDevProxy({ logger: rootLogger, dataDir, devHost });
 
   // UserResolver for platform identity -> system username mapping
   const userResolver = new UserResolver(configService, {
@@ -731,12 +732,18 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   }
 
   // Create shared voice transcription service (used by all bot TelegramAdapters)
+  // ALWAYS use OpenAI for transcription (requires Whisper API support)
   let voiceTranscriptionService = null;
-  if (sharedAiGateway) {
+  if (openaiApiKey) {
+    const { OpenAIAdapter } = await import('./2_adapters/ai/OpenAIAdapter.mjs');
+    const openaiForTranscription = new OpenAIAdapter(
+      { apiKey: openaiApiKey },
+      { httpClient: axios, logger: rootLogger.child({ module: 'openai-transcription' }) }
+    );
     const { TelegramVoiceTranscriptionService } = await import('./2_adapters/messaging/TelegramVoiceTranscriptionService.mjs');
     const voiceHttpClient = new HttpClient({ logger: rootLogger.child({ module: 'voice-http' }) });
     voiceTranscriptionService = new TelegramVoiceTranscriptionService(
-      { openaiAdapter: sharedAiGateway },
+      { openaiAdapter: openaiForTranscription },
       { httpClient: voiceHttpClient, logger: rootLogger.child({ module: 'voice-transcription' }) }
     );
   }
