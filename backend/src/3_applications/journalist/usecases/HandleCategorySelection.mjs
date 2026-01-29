@@ -139,6 +139,11 @@ export class HandleCategorySelection {
    * Match user's text to a category
    */
   #matchCategory(text, categories) {
+    // Defensive check - if no categories, fall through to freeform
+    if (!categories || !Array.isArray(categories) || categories.length === 0) {
+      return null;
+    }
+
     const normalized = text.toLowerCase();
 
     // Try exact icon match first

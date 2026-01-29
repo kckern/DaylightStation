@@ -1,5 +1,10 @@
 // backend/src/0_system/bootstrap.mjs
 
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
 // Integration registry imports
 import { AdapterRegistry } from './registries/AdapterRegistry.mjs';
 import { IntegrationLoader } from './registries/IntegrationLoader.mjs';
@@ -206,7 +211,9 @@ export async function initializeIntegrations(config) {
 
   // Create and discover adapters (singleton)
   if (!adapterRegistryInstance) {
-    adapterRegistryInstance = new AdapterRegistry();
+    // Adapters are at backend/src/2_adapters, relative to this file (0_system/bootstrap.mjs)
+    const adaptersRoot = path.resolve(__dirname, '../2_adapters');
+    adapterRegistryInstance = new AdapterRegistry({ adaptersRoot });
     await adapterRegistryInstance.discover();
 
     const capabilities = adapterRegistryInstance.getAllCapabilities();
@@ -308,7 +315,8 @@ export function hasCapability(householdId, capability) {
  */
 export function loadSystemBots(deps = {}) {
   if (!systemBotLoaderInstance) {
-    throw new Error('Integration system not initialized. Call initializeIntegrations first.');
+    // Integration system not available - return 0 to allow fallback to hardcoded adapters
+    return 0;
   }
 
   return systemBotLoaderInstance.loadBots(deps);
@@ -326,7 +334,8 @@ export function loadSystemBots(deps = {}) {
  */
 export function getMessagingAdapter(householdId, appName) {
   if (!systemBotLoaderInstance) {
-    throw new Error('Integration system not initialized. Call initializeIntegrations first.');
+    // Integration system not available - return null to allow fallback to hardcoded adapters
+    return null;
   }
 
   return systemBotLoaderInstance.getBotForHousehold(householdId, appName);

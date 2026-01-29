@@ -11,11 +11,11 @@ export class AdapterRegistry {
 
   /**
    * @param {Object} options
-   * @param {string} [options.adaptersRoot] - Path to adapters directory.
-   *   Defaults to backend/src/2_adapters relative to cwd.
+   * @param {string} options.adaptersRoot - Path to adapters directory (required).
    */
   constructor({ adaptersRoot } = {}) {
-    this.#adaptersRoot = adaptersRoot || path.resolve(process.cwd(), 'backend/src/2_adapters');
+    if (!adaptersRoot) throw new Error('adaptersRoot is required');
+    this.#adaptersRoot = adaptersRoot;
   }
 
   // Dependency injection points for testing
