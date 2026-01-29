@@ -255,6 +255,60 @@ describe('SessionService', () => {
     });
   });
 
+  describe('saveSession v3 full round-trip', () => {
+    test('saves complete v3 payload and retrieves with all data', async () => {
+      const v3Payload = {
+        version: 3,
+        timezone: 'America/Los_Angeles',
+        session: {
+          id: '20260129063322',
+          date: '2026-01-29',
+          start: '2026-01-29 06:33:22',
+          end: '2026-01-29 07:00:00',
+          duration_seconds: 1598
+        },
+        participants: {
+          'kckern': {
+            display_name: 'Kirk',
+            is_primary: true,
+            hr_device: 'device_40475'
+          }
+        },
+        timeline: {
+          interval_seconds: 5,
+          tick_count: 320,
+          encoding: 'rle',
+          series: {
+            'kckern:hr': '[[120,100],[125,100],[130,120]]',
+            'kckern:zone': '[["a",200],["w",120]]'
+          }
+        },
+        events: [
+          { at: '2026-01-29 06:35:00', type: 'media_start', data: { title: 'Workout Mix' } }
+        ]
+      };
+
+      mockStore.findById.mockResolvedValue(null);
+
+      const session = await service.saveSession(v3Payload, 'test-hid');
+
+      // Verify core fields
+      expect(session.sessionId.toString()).toBe('20260129063322');
+      expect(session.startTime).toBeTruthy();
+      expect(session.timezone).toBe('America/Los_Angeles');
+
+      // Verify roster
+      expect(session.roster).toHaveLength(1);
+      expect(session.roster[0].name).toBe('Kirk');
+      expect(session.roster[0].isPrimary).toBe(true);
+      expect(session.roster[0].hrDeviceId).toBe('device_40475');
+
+      // Verify timeline series were preserved (and encoded for storage)
+      expect(Object.keys(session.timeline.series)).toContain('kckern:hr');
+      expect(typeof session.timeline.series['kckern:hr']).toBe('string');
+    });
+  });
+
   describe('endSession', () => {
     test('ends session with provided time', async () => {
       mockStore.findById.mockResolvedValue({
