@@ -150,6 +150,19 @@ export class ConfigService {
   }
 
   /**
+   * Get raw integrations config for a household.
+   * Returns the entire integrations.yml content for parsing.
+   * Used by IntegrationLoader for config-driven adapter loading.
+   *
+   * @param {string} [householdId]
+   * @returns {object} Raw integrations config
+   */
+  getIntegrationsConfig(householdId) {
+    const hid = householdId ?? this.getDefaultHouseholdId();
+    return this.#config.households?.[hid]?.integrations ?? {};
+  }
+
+  /**
    * Get specific integration config for a household
    * Falls back to default household if the requested household doesn't have the integration
    * @param {string|null} householdId - Household ID, defaults to default household
