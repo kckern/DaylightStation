@@ -20,11 +20,11 @@ export class IHealthDataDatastore {
   }
 
   /**
-   * Load Strava workout data for a user
+   * Load workout/activity data for a user
    * @param {string} userId
-   * @returns {Promise<Object>} Strava data keyed by date
+   * @returns {Promise<Object>} Activity data keyed by date
    */
-  async loadStravaData(userId) {
+  async loadActivityData(userId) {
     throw new Error('Not implemented');
   }
 

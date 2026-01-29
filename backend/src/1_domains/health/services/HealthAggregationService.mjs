@@ -37,10 +37,10 @@ export class HealthAggregationService {
     }
 
     // Load all data sources in parallel
-    const [weightData, stravaData, fitnessData, nutritionData, existingHealth, coachingData] =
+    const [weightData, activityData, fitnessData, nutritionData, existingHealth, coachingData] =
       await Promise.all([
         this.#healthStore.loadWeightData(userId),
-        this.#healthStore.loadStravaData(userId),
+        this.#healthStore.loadActivityData(userId),
         this.#healthStore.loadFitnessData(userId),
         this.#healthStore.loadNutritionData(userId),
         this.#healthStore.loadHealthData(userId),
@@ -55,7 +55,7 @@ export class HealthAggregationService {
     for (const date of dates) {
       const metric = this.#aggregateDayMetrics(date, {
         weight: weightData[date],
-        strava: stravaData[date] || [],
+        strava: activityData[date] || [],
         fitness: fitnessData[date],
         nutrition: nutritionData[date],
         coaching: coachingData[date]
