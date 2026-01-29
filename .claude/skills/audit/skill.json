@@ -1,0 +1,16 @@
+{
+  "name": "audit",
+  "description": "Scan codebase for coding standards and DDD violations",
+  "version": "1.0.0",
+  "author": "DaylightStation Team",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "scope": {
+        "type": "string",
+        "description": "What to scan: domain name (e.g., 'fitness'), layer (e.g., '1_domains'), '--changed', or blank for full",
+        "default": ""
+      }
+    }
+  }
+}
