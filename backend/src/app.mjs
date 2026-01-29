@@ -535,18 +535,20 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // Hardware adapters (printer, TTS, MQTT sensors)
-  // Printer uses getServiceConfig (system.yml), MQTT uses resolveServiceHost (services.yml)
-  const printerConfig = configService.getServiceConfig('printer') || {};
+  // Printer: adapter config (adapters.yml) for settings, services.yml for environment-based host resolution
+  const printerAdapterConfig = configService.getAdapterConfig('thermal_printer') || {};
+  const printerHost = printerAdapterConfig.host || configService.resolveServiceHost('printer');
+  const printerPort = printerAdapterConfig.port || configService.getServicePort('printer') || 9100;
   const mqttHost = configService.resolveServiceHost('mqtt');
   const mqttPort = configService.getServicePort('mqtt') || 1883;
   const ttsApiKey = configService.getSecret('OPENAI_API_KEY') || '';
 
   const hardwareAdapters = createHardwareAdapters({
     printer: {
-      host: printerConfig.host || '',
-      port: printerConfig.port || 9100,
-      timeout: printerConfig.timeout || 5000,
-      upsideDown: printerConfig.upsideDown !== false
+      host: printerHost || '',
+      port: printerPort,
+      timeout: printerAdapterConfig.timeout || 5000,
+      upsideDown: printerAdapterConfig.upsideDown !== false
     },
     mqtt: {
       host: mqttHost || '',
