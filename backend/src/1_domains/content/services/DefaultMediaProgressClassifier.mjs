@@ -60,3 +60,5 @@ export class DefaultMediaProgressClassifier extends IMediaProgressClassifier {
     return 'in_progress';
   }
 }
+
+export default DefaultMediaProgressClassifier;

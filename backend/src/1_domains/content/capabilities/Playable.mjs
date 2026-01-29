@@ -101,3 +101,5 @@ export class PlayableItem extends Item {
     };
   }
 }
+
+export default PlayableItem;

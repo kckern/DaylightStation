@@ -190,3 +190,5 @@ export class IntegrationLoader {
     return this.#loadedAdapters.get(householdId)?.has(capability, appName) ?? false;
   }
 }
+
+export default IntegrationLoader;

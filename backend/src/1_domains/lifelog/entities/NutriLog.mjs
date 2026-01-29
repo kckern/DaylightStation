@@ -391,3 +391,5 @@ export class NutriLog {
     });
   }
 }
+
+export default NutriLog;

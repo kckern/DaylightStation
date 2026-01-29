@@ -59,3 +59,5 @@ export function isConversationStateDatastore(obj) {
     typeof obj.delete === 'function' &&
     typeof obj.clear === 'function';
 }
+
+export default IConversationStateDatastore;

@@ -267,3 +267,5 @@ export class MediaMemoryValidatorService {
     return (2 * intersectionSize) / (aLower.length + bLower.length - 2);
   }
 }
+
+export default MediaMemoryValidatorService;

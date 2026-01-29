@@ -24,3 +24,5 @@ export class QueueableItem extends Item {
     this.isQueueContainer = props.isQueueContainer ?? false;
   }
 }
+
+export default QueueableItem;

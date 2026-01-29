@@ -360,3 +360,5 @@ export class QueueService {
     });
   }
 }
+
+export default QueueService;

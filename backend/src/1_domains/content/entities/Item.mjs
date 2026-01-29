@@ -131,3 +131,5 @@ export class Item {
     return false;
   }
 }
+
+export default Item;
