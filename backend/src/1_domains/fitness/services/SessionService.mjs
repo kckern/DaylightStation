@@ -10,12 +10,12 @@ import { prepareTimelineForApi, prepareTimelineForStorage } from './TimelineServ
 import { ValidationError, EntityNotFoundError } from '../../core/errors/index.mjs';
 
 /**
- * Parse a v3 timestamp string into Unix milliseconds.
+ * Parse a timestamp string into Unix milliseconds.
  * Accepts formats: 'YYYY-MM-DD HH:mm:ss' or 'YYYY-MM-DD H:mm:ss'
  * @param {string|number|null} timestamp
  * @returns {number|null}
  */
-function parseV3Timestamp(timestamp) {
+function parseTimestamp(timestamp) {
   if (timestamp == null) return null;
   if (typeof timestamp === 'number') return timestamp;
   if (typeof timestamp !== 'string') return null;
@@ -44,22 +44,22 @@ function convertParticipantsToRoster(participants) {
 }
 
 /**
- * Normalize a v3 payload to v1 structure for Session.fromJSON().
+ * Normalize a session payload to internal structure for Session.fromJSON().
  *
- * v3 format:
+ * Handles payloads with nested session block:
  *   - session.id, session.start, session.end, session.duration_seconds
  *   - participants: { id: { display_name, is_primary, hr_device, ... } }
- *   - timeline.series at root level (already flat in v3 persistence payload)
+ *   - timeline.series at root level
  *
- * v1 format:
+ * Converts to internal format:
  *   - sessionId, startTime, endTime, durationMs at root
  *   - roster: [{ name, isPrimary, hrDeviceId, ... }]
  *   - timeline.series (unchanged)
  *
- * @param {Object} data - Raw session payload (v2 or v3)
- * @returns {Object} - Normalized v1-compatible payload
+ * @param {Object} data - Raw session payload
+ * @returns {Object} - Normalized payload
  */
-function normalizeV3Payload(data) {
+function normalizePayload(data) {
   // Detect v3 format: has session.id but no root sessionId/startTime
   const isV3 = data.session && typeof data.session === 'object' && !data.startTime;
 
@@ -74,8 +74,8 @@ function normalizeV3Payload(data) {
     // Extract sessionId from nested session block
     sessionId: session.id || data.sessionId,
     // Parse timestamp strings to Unix ms
-    startTime: parseV3Timestamp(session.start) || data.startTime,
-    endTime: parseV3Timestamp(session.end) || data.endTime,
+    startTime: parseTimestamp(session.start) || data.startTime,
+    endTime: parseTimestamp(session.end) || data.endTime,
     durationMs: session.duration_seconds != null
       ? session.duration_seconds * 1000
       : data.durationMs,
@@ -200,8 +200,8 @@ export class SessionService {
   async saveSession(sessionData, householdId) {
     const hid = this.resolveHouseholdId(householdId);
 
-    // Normalize v3 payload to v1 structure
-    const normalized = normalizeV3Payload(sessionData);
+    // Normalize payload to internal structure
+    const normalized = normalizePayload(sessionData);
 
     // Handle both sessionId and legacy formats
     const rawSessionId = normalized.sessionId || normalized.session?.id;

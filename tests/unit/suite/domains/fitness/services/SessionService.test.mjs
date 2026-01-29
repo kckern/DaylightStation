@@ -158,7 +158,7 @@ describe('SessionService', () => {
     });
   });
 
-  describe('saveSession v3 payload normalization', () => {
+  describe('saveSession payload normalization', () => {
     test('extracts sessionId from v3 session.id', async () => {
       mockStore.findById.mockResolvedValue(null);
 
@@ -255,7 +255,7 @@ describe('SessionService', () => {
     });
   });
 
-  describe('saveSession v3 full round-trip', () => {
+  describe('saveSession full round-trip', () => {
     test('saves complete v3 payload and retrieves with all data', async () => {
       const v3Payload = {
         version: 3,
