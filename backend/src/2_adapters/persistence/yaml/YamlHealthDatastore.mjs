@@ -102,12 +102,12 @@ export class YamlHealthDatastore extends IHealthDataDatastore {
   }
 
   /**
-   * Load Strava workout data for a user
+   * Load workout/activity data for a user
    * @param {string} userId
-   * @returns {Promise<Object>} Strava data keyed by date
+   * @returns {Promise<Object>} Activity data keyed by date
    */
-  async loadStravaData(userId) {
-    this.#logger.debug?.('health.store.loadStrava', { userId });
+  async loadActivityData(userId) {
+    this.#logger.debug?.('health.store.loadActivity', { userId });
     return this.#loadUserFile(userId, 'strava');
   }
 
@@ -192,16 +192,16 @@ export class YamlHealthDatastore extends IHealthDataDatastore {
    * Get all workouts for a specific date
    * @param {string} userId
    * @param {string} date - YYYY-MM-DD
-   * @returns {Promise<Object>} { strava: [], fitness: [] }
+   * @returns {Promise<Object>} { activity: [], fitness: [] }
    */
   async getWorkoutsForDate(userId, date) {
-    const [strava, fitness] = await Promise.all([
-      this.loadStravaData(userId),
+    const [activity, fitness] = await Promise.all([
+      this.loadActivityData(userId),
       this.loadFitnessData(userId)
     ]);
 
     return {
-      strava: strava[date] || [],
+      activity: activity[date] || [],
       fitness: fitness[date]?.activities || []
     };
   }

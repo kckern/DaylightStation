@@ -3,11 +3,11 @@
  * @module journalist/usecases/HandleSourceSelection
  *
  * Handles source picker buttons from "Show Details":
- * - Source buttons (🏋️ strava, 💻 github, etc.) → Dump raw summary
+ * - Source buttons (🏋️ activity, 💻 code, etc.) → Dump raw summary
  * - ← Back → Return to main debrief keyboard
  */
 
-import { SOURCE_ICONS } from './SendMorningDebrief.mjs';
+import { getSourceIcon } from './SendMorningDebrief.mjs';
 
 /**
  * Handle source selection buttons
@@ -83,18 +83,15 @@ export class HandleSourceSelection {
 
   /**
    * Extract source name from button text like "🏋️ strava"
+   * Button format is always: "emoji source_name"
    */
   #extractSourceName(text) {
-    // Try matching known patterns
-    for (const [source, icon] of Object.entries(SOURCE_ICONS)) {
-      if (text === `${icon} ${source}`) {
-        return source;
-      }
-    }
-
-    // Try matching with 📄 default icon
-    if (text.startsWith('📄 ')) {
-      return text.slice(3);
+    // Button text format: "emoji source_name"
+    // Split on first space to get source name
+    const parts = text.split(' ');
+    if (parts.length >= 2) {
+      // Everything after first space is the source name
+      return parts.slice(1).join(' ');
     }
 
     return null;
@@ -118,7 +115,7 @@ export class HandleSourceSelection {
     }
 
     // Send the raw summary
-    const icon = SOURCE_ICONS[sourceName] || '📄';
+    const icon = getSourceIcon(sourceName);
     await messaging.sendMessage(
       `${icon} *${sourceName.toUpperCase()}*\n\n${sourceSummary.text}`,
       { parse_mode: 'Markdown' },
