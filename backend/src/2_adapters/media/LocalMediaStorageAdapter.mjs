@@ -35,7 +35,9 @@ export class LocalMediaStorageAdapter {
       const fullPath = path.join(dirPath, entry);
       try {
         if (fs.statSync(fullPath).isDirectory()) dirs.push(entry);
-      } catch (_) {}
+      } catch (_) {
+        this.#logger.debug?.('storage.statError', { path: fullPath });
+      }
     }
     return dirs;
   }
@@ -54,7 +56,9 @@ export class LocalMediaStorageAdapter {
         if (pattern && !pattern.test(name)) continue;
         const datePrefix = name.split('.')[0];
         files.push({ path: fullPath, name, datePrefix, mtimeMs: stat.mtimeMs });
-      } catch (_) {}
+      } catch (_) {
+        this.#logger.debug?.('storage.statError', { path: fullPath });
+      }
     }
     return files;
   }
@@ -73,6 +77,7 @@ export class LocalMediaStorageAdapter {
   async acquireLock(lockName, options = {}) {
     const { staleMs = 60 * 60 * 1000 } = options;
     const lockPath = path.join(this.#basePath, `${lockName}.lock`);
+    const logger = this.#logger;  // Capture for closure
     try {
       if (fs.existsSync(lockPath)) {
         const stat = fs.statSync(lockPath);
@@ -87,7 +92,13 @@ export class LocalMediaStorageAdapter {
       fs.closeSync(fd);
       return {
         acquired: true,
-        release: () => { try { fs.unlinkSync(lockPath); } catch (_) {} }
+        release: () => {
+          try {
+            fs.unlinkSync(lockPath);
+          } catch (e) {
+            logger.warn?.('storage.lockReleaseError', { lockName, error: e.message });
+          }
+        }
       };
     } catch (e) {
       return { acquired: false };
@@ -99,6 +110,7 @@ export class LocalMediaStorageAdapter {
       const stat = fs.statSync(filePath);
       return { mtimeMs: stat.mtimeMs, isDirectory: stat.isDirectory(), isFile: stat.isFile() };
     } catch (_) {
+      this.#logger.debug?.('storage.statError', { path: filePath });
       return null;
     }
   }
