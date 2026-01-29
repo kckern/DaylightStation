@@ -14,8 +14,57 @@ export class ConfigService {
 
   // ─── Secrets ───────────────────────────────────────────────
 
+  /**
+   * Get a secret by legacy key name.
+   * Maps old SCREAMING_CASE keys to new systemAuth structure.
+   * @deprecated Use getSystemAuth(platform, key) directly
+   */
   getSecret(key) {
-    return this.#config.secrets?.[key] ?? null;
+    // Check legacy secrets.yml first (backwards compat)
+    const legacyValue = this.#config.secrets?.[key];
+    if (legacyValue) return legacyValue;
+
+    // Map legacy keys to systemAuth structure
+    const mapping = {
+      OPENAI_API_KEY: ['openai', 'api_key'],
+      ANTHROPIC_API_KEY: ['anthropic', 'api_key'],
+      GOOGLE_CLIENT_ID: ['google', 'client_id'],
+      GOOGLE_CLIENT_SECRET: ['google', 'client_secret'],
+      GOOGLE_REDIRECT_URI: ['google', 'redirect_uri'],
+      GOOGLE_API_KEY: ['google', 'api_key'],
+      GOOGLE_CSE_ID: ['google', 'cse_id'],
+      STRAVA_CLIENT_ID: ['strava', 'client_id'],
+      STRAVA_CLIENT_SECRET: ['strava', 'client_secret'],
+      LOGGLY_TOKEN: ['loggly', 'token'],
+      LOGGLY_SUBDOMAIN: ['loggly', 'subdomain'],
+      LOGGLY_API_TOKEN: ['loggly', 'api_token'],
+      CLICKUP_PK: ['clickup', 'pk'],
+      TODOIST_KEY: ['todoist', 'api_key'],
+      IFTTT_KEY: ['ifttt', 'key'],
+      OPEN_WEATHER_API_KEY: ['weather', 'openweather_api_key'],
+      LAST_FM_API_KEY: ['lastfm', 'api_key'],
+      PLEX_TOKEN: ['plex', 'token'],
+      IMMICH_API_KEY: ['immich', 'api_key'],
+      AUDIOBOOKSHELF_TOKEN: ['audiobookshelf', 'token'],
+      FRESHRSS_USERNAME: ['freshrss', 'username'],
+      FRESHRSS_PASSWORD: ['freshrss', 'password'],
+      FRESHRSS_API_KEY: ['freshrss', 'api_key'],
+      WITHINGS_CLIENT: ['withings', 'client_id'],
+      WITHINGS_SECRET: ['withings', 'client_secret'],
+      WITHINGS_REDIRECT: ['withings', 'redirect_uri'],
+      FITSYNC_CLIENT_ID: ['fitsync', 'client_id'],
+      FITSYNC_CLIENT_SECRET: ['fitsync', 'client_secret'],
+      ED_APP_ID: ['food', 'edamam_app_id'],
+      ED_APP_KEY: ['food', 'edamam_app_key'],
+      UPCITE: ['food', 'upcitemdb_key'],
+    };
+
+    const mapped = mapping[key];
+    if (mapped) {
+      return this.getSystemAuth(mapped[0], mapped[1]);
+    }
+
+    return null;
   }
 
   // ─── Households ────────────────────────────────────────────
@@ -344,7 +393,7 @@ export class ConfigService {
    * @returns {object|null} Combined {host, token, ...} or null if incomplete
    */
   getServiceCredentials(serviceName, householdId = null) {
-    const url = this.resolveServiceUrl(householdId, serviceName);
+    const url = this.resolveServiceUrl(serviceName);
     const auth = this.getHouseholdAuth(serviceName, householdId);
     const integration = this.getHouseholdIntegration(householdId, serviceName);
 

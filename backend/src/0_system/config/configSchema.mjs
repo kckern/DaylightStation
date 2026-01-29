@@ -24,13 +24,9 @@ export const configSchema = {
   },
 
   secrets: {
-    required: true,
+    required: false,
     type: 'object',
-    properties: {
-      OPENAI_API_KEY: { required: true, type: 'string' },
-      TELEGRAM_NUTRIBOT_TOKEN: { required: false, type: 'string' },
-      TELEGRAM_JOURNALIST_BOT_TOKEN: { required: false, type: 'string' },
-    }
+    properties: {}
   },
 
   households: {

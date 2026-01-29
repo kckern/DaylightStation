@@ -40,14 +40,14 @@ export function loadConfig(dataDir) {
 // ─── System ──────────────────────────────────────────────────
 
 function loadSystemConfig(dataDir) {
-  const systemPath = path.join(dataDir, 'system', 'system.yml');
+  const systemPath = path.join(dataDir, 'system', 'config', 'system.yml');
   const systemYml = readYaml(systemPath) ?? {};
 
   // Load environment-specific overrides if DAYLIGHT_ENV is set
   const envName = process.env.DAYLIGHT_ENV;
   let localOverrides = {};
   if (envName) {
-    const localPath = path.join(dataDir, 'system', `system-local.${envName}.yml`);
+    const localPath = path.join(dataDir, 'system', 'config', `system-local.${envName}.yml`);
     localOverrides = readYaml(localPath) ?? {};
   }
 
@@ -61,7 +61,7 @@ function loadSystemConfig(dataDir) {
     // Bootstrap paths (not from YML)
     dataDir,
     baseDir,
-    configDir: path.join(dataDir, 'system'),
+    configDir: path.join(dataDir, 'system', 'config'),
     // Environment
     env: envName ?? merged.env ?? 'default',
     // Core settings from YML
@@ -97,21 +97,28 @@ function deepMerge(target, source) {
 // ─── Adapters ─────────────────────────────────────────────────
 
 function loadAdapters(dataDir) {
-  const adaptersPath = path.join(dataDir, 'system', 'adapters.yml');
+  const adaptersPath = path.join(dataDir, 'system', 'config', 'adapters.yml');
   return readYaml(adaptersPath) ?? {};
 }
 
 // ─── Services ─────────────────────────────────────────────────
 
 function loadServices(dataDir) {
-  const servicesPath = path.join(dataDir, 'system', 'services.yml');
+  const servicesPath = path.join(dataDir, 'system', 'config', 'services.yml');
   return readYaml(servicesPath) ?? {};
 }
 
 // ─── Secrets ─────────────────────────────────────────────────
+// Legacy: secrets.yml is deprecated, auth is now loaded from system/auth/*.yml
 
 function loadSecrets(dataDir) {
-  const secretsPath = path.join(dataDir, 'system', 'secrets.yml');
+  // Check legacy path first for backwards compatibility
+  const legacyPath = path.join(dataDir, 'system', 'secrets.yml');
+  const legacy = readYaml(legacyPath);
+  if (legacy) return legacy;
+
+  // New structure: secrets are in system/config/secrets.yml (if exists)
+  const secretsPath = path.join(dataDir, 'system', 'config', 'secrets.yml');
   return readYaml(secretsPath) ?? {};
 }
 
@@ -311,12 +318,12 @@ function loadAllApps(dataDir) {
 // ─── System Bots ─────────────────────────────────────────────
 
 /**
- * Load system-level bot configurations from system/bots.yml
+ * Load system-level bot configurations from system/config/bots.yml
  * @param {string} dataDir - Path to data directory
  * @returns {object} Bot configurations keyed by bot name
  */
 function loadSystemBots(dataDir) {
-  const botsPath = path.join(dataDir, 'system', 'bots.yml');
+  const botsPath = path.join(dataDir, 'system', 'config', 'bots.yml');
   return readYaml(botsPath) ?? {};
 }
 

@@ -84,7 +84,7 @@ import { loadRoutingConfig } from './0_system/routing/index.mjs';
 import { UPCGateway } from './2_adapters/nutribot/UPCGateway.mjs';
 
 // HTTP middleware
-import { createDevProxy } from './0_system/http/middleware/index.mjs';
+import { createDevProxy, errorHandlerMiddleware } from './0_system/http/middleware/index.mjs';
 import { createEventBusRouter } from './4_api/v1/routers/admin/eventbus.mjs';
 
 // Scheduling domain
@@ -536,9 +536,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // Hardware adapters (printer, TTS, MQTT sensors)
-  // Use getServiceConfig for system.* configs (printer, mqtt are in system.yml, not apps/)
+  // Printer uses getServiceConfig (system.yml), MQTT uses resolveServiceHost (services.yml)
   const printerConfig = configService.getServiceConfig('printer') || {};
-  const mqttConfig = configService.getServiceConfig('mqtt') || {};
+  const mqttHost = configService.resolveServiceHost('mqtt');
+  const mqttPort = configService.getServicePort('mqtt') || 1883;
   const ttsApiKey = configService.getSecret('OPENAI_API_KEY') || '';
 
   const hardwareAdapters = createHardwareAdapters({
@@ -549,8 +550,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       upsideDown: printerConfig.upsideDown !== false
     },
     mqtt: {
-      host: mqttConfig.host || '',
-      port: mqttConfig.port || 1883
+      host: mqttHost || '',
+      port: mqttPort
     },
     tts: {
       apiKey: ttsApiKey,
@@ -576,8 +577,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       });
     }
   } else if (!enableMqtt) {
-    rootLogger.info('mqtt.disabled', { reason: 'toggle mode - legacy handles MQTT' });
-  } else if (mqttConfig.host) {
+    rootLogger.info('mqtt.disabled', { reason: 'disabled for this environment' });
+  } else if (mqttHost) {
     rootLogger.warn?.('mqtt.disabled', { reason: 'MQTT configured but adapter not initialized' });
   }
 
@@ -1032,6 +1033,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     routerCount: Object.keys(v1Routers).length,
     routers: Object.keys(v1Routers)
   });
+
+  // Error handler middleware - must be last
+  app.use(errorHandlerMiddleware());
 
   return app;
 }

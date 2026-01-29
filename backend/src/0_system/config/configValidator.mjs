@@ -31,8 +31,7 @@ export class ConfigValidationError extends Error {
 export function validateConfig(config, dataDir) {
   const errors = [];
   const checkedPaths = [
-    `${dataDir}/system/system.yml`,
-    `${dataDir}/system/secrets.yml`,
+    `${dataDir}/system/config/system.yml`,
   ];
 
   // Validate system section
@@ -42,10 +41,8 @@ export function validateConfig(config, dataDir) {
     validateObject(config.system, configSchema.system.properties, 'system', errors);
   }
 
-  // Validate secrets section
-  if (!config.secrets) {
-    errors.push({ path: 'secrets', message: 'missing required section' });
-  } else {
+  // Validate secrets section (optional - may be loaded from system/auth/*.yml instead)
+  if (config.secrets && Object.keys(config.secrets).length > 0) {
     validateObject(config.secrets, configSchema.secrets.properties, 'secrets', errors);
   }
 
