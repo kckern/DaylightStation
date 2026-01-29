@@ -35,10 +35,5 @@ export {
   formatFoodList,
 } from './entities/formatters.mjs';
 
-// Ports (re-exported from application layer for backward compatibility)
-export { IFoodLogDatastore, isFoodLogDatastore, assertFoodLogDatastore } from '#apps/nutribot/ports/IFoodLogDatastore.mjs';
-export { INutriListDatastore, isNutriListDatastore } from '#apps/nutribot/ports/INutriListDatastore.mjs';
-export { INutriCoachDatastore, isNutriCoachDatastore } from '#apps/nutribot/ports/INutriCoachDatastore.mjs';
-
 // Services
 export { FoodLogService } from './services/FoodLogService.mjs';
