@@ -1,7 +1,7 @@
 /**
  * YamlJobDatastore - Loads job definitions from YAML files
  *
- * Jobs are defined in: {dataDir}/system/jobs.yml
+ * Jobs are defined in: {dataDir}/system/config/jobs.yml
  *
  * Job execution is handled by:
  * - HarvesterJobExecutor for jobs with matching harvester serviceId
@@ -33,7 +33,7 @@ export class YamlJobDatastore extends IJobDatastore {
     }
 
     try {
-      const jobsPath = path.join(this.dataDir, 'system', 'jobs');
+      const jobsPath = path.join(this.dataDir, 'system', 'config', 'jobs');
       const jobsData = loadYaml(jobsPath);
 
       if (jobsData && Array.isArray(jobsData)) {
