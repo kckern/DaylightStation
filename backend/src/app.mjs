@@ -384,13 +384,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Fitness domain
   // Get Home Assistant config from ConfigService
-  // Use getServiceConfig for system.homeassistant (host/port) and getHouseholdAuth for token
-  const haServiceConfig = configService.getServiceConfig('homeassistant') || {};
+  // Use resolveServiceUrl for services.yml (environment-aware) and getHouseholdAuth for token
+  const haBaseUrl = configService.resolveServiceUrl('homeassistant') || '';
   const haAuth = configService.getHouseholdAuth('homeassistant') || {};
-  // Build baseUrl from host and port (host may include protocol, e.g., 'http://homeassistant')
-  const haBaseUrl = haServiceConfig.host
-    ? (haServiceConfig.port ? `${haServiceConfig.host}:${haServiceConfig.port}` : haServiceConfig.host)
-    : '';
   const loadFitnessConfig = (hid) => {
     const targetHouseholdId = hid || configService.getDefaultHouseholdId();
     return userDataService.readHouseholdAppData(targetHouseholdId, 'fitness', 'config');
