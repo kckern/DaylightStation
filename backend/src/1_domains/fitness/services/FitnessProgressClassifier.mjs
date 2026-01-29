@@ -92,3 +92,5 @@ export class FitnessProgressClassifier extends IMediaProgressClassifier {
     return percent >= threshold ? 'watched' : 'in_progress';
   }
 }
+
+export default FitnessProgressClassifier;

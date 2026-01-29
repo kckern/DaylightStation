@@ -172,3 +172,5 @@ export function isNotFoundError(error) {
   return error instanceof NotFoundError;
 }
 
+
+export default DomainError;

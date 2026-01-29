@@ -80,3 +80,5 @@ export class MediaProgress {
     return new MediaProgress(data);
   }
 }
+
+export default MediaProgress;

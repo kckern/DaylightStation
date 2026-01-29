@@ -85,3 +85,5 @@ export class AdapterRegistry {
     return [...this.#manifests.keys()];
   }
 }
+
+export default AdapterRegistry;

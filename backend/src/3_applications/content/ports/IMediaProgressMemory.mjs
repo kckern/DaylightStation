@@ -63,3 +63,5 @@ export function validateMediaProgressMemory(store) {
     throw new Error('MediaProgressMemory must implement clear(storagePath): Promise<void>');
   }
 }
+
+export default IMediaProgressMemory;

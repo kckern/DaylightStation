@@ -53,3 +53,5 @@ export class ListableItem extends Item {
     return obj;
   }
 }
+
+export default ListableItem;

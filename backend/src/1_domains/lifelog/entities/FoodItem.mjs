@@ -189,3 +189,5 @@ export class FoodItem {
     return other instanceof FoodItem && this.#id === other.id;
   }
 }
+
+export default FoodItem;

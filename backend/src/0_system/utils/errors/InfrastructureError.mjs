@@ -198,3 +198,5 @@ export function isRateLimitError(error) {
   return error instanceof RateLimitError;
 }
 
+
+export default InfrastructureError;

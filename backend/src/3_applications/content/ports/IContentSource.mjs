@@ -88,3 +88,5 @@ export class ContentSourceBase {
     throw new Error('resolvePlayables must be implemented');
   }
 }
+
+export default ContentSourceBase;

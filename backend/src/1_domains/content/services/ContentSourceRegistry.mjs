@@ -98,3 +98,5 @@ export class ContentSourceRegistry {
     return this.resolve(compoundId) !== null;
   }
 }
+
+export default ContentSourceRegistry;

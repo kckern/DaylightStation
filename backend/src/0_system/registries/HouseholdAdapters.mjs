@@ -80,3 +80,5 @@ export class HouseholdAdapters {
     return noOps[capability] ?? { isConfigured: () => false };
   }
 }
+
+export default HouseholdAdapters;

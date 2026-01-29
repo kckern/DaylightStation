@@ -16,3 +16,5 @@ export class IMediaProgressClassifier {
     throw new Error('IMediaProgressClassifier.classify must be implemented');
   }
 }
+
+export default IMediaProgressClassifier;

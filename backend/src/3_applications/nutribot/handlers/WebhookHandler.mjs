@@ -184,3 +184,5 @@ export class WebhookHandler {
     }
   }
 }
+
+export default WebhookHandler;

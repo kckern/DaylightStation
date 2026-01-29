@@ -52,3 +52,5 @@ export function isNutriLogDatastore(obj) {
     typeof obj.updateStatus === 'function'
   );
 }
+
+export default INutriLogDatastore;
