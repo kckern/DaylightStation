@@ -158,6 +158,49 @@ describe('SessionService', () => {
     });
   });
 
+  describe('saveSession v3 payload normalization', () => {
+    test('extracts sessionId from v3 session.id', async () => {
+      mockStore.findById.mockResolvedValue(null);
+
+      const session = await service.saveSession({
+        version: 3,
+        session: {
+          id: '20260129063322',
+          date: '2026-01-29',
+          start: '2026-01-29 06:33:22',
+          end: '2026-01-29 07:00:00',
+          duration_seconds: 1598
+        },
+        timeline: { series: {}, events: [] }
+      }, 'test-hid');
+
+      expect(session.sessionId.toString()).toBe('20260129063322');
+    });
+
+    test('extracts startTime from v3 session.start', async () => {
+      mockStore.findById.mockResolvedValue(null);
+
+      const session = await service.saveSession({
+        version: 3,
+        session: {
+          id: '20260129063322',
+          start: '2026-01-29 06:33:22',
+          end: '2026-01-29 07:00:00',
+          duration_seconds: 1598
+        },
+        participants: {},
+        timeline: {
+          interval_seconds: 5,
+          tick_count: 320,
+          series: {}
+        }
+      }, 'test-hid');
+
+      expect(session.startTime).toBeTruthy();
+      expect(typeof session.startTime).toBe('number');
+    });
+  });
+
   describe('endSession', () => {
     test('ends session with provided time', async () => {
       mockStore.findById.mockResolvedValue({
