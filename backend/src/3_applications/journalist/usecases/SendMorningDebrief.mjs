@@ -7,16 +7,34 @@
 
 import { nowTs24 } from '#system/utils/index.mjs';
 
-// Source icon mapping
+// Source icon mapping - uses generic category names
+// Vendor sources are mapped via SOURCE_CATEGORY_MAP
 const SOURCE_ICONS = {
-  strava: '🏋️',
+  activity: '🏋️',    // was: strava
   fitness: '🏃',
   weight: '⚖️',
   events: '📆',
-  github: '💻',
+  code: '💻',         // was: github
   checkins: '📍',
-  reddit: '💬',
+  social: '💬',       // was: reddit
 };
+
+// Maps vendor source names to generic category keys
+const SOURCE_CATEGORY_MAP = {
+  strava: 'activity',
+  github: 'code',
+  reddit: 'social',
+};
+
+/**
+ * Get icon for a source (handles vendor-to-generic mapping)
+ * @param {string} source - Source name (may be vendor-specific)
+ * @returns {string} Icon emoji
+ */
+function getSourceIcon(source) {
+  const category = SOURCE_CATEGORY_MAP[source] || source;
+  return SOURCE_ICONS[category] || '📄';
+}
 
 /**
  * Send morning debrief to user
@@ -228,7 +246,7 @@ ${debrief.summary}`;
     // Build rows of 3 buttons each with callback data
     for (let i = 0; i < sourceNames.length; i += 3) {
       const row = sourceNames.slice(i, i + 3).map((source) => ({
-        text: `${SOURCE_ICONS[source] || '📄'} ${source}`,
+        text: `${getSourceIcon(source)} ${source}`,
         callback_data: `debrief:source:${source}`,
       }));
       keyboard.push(row);
@@ -248,5 +266,5 @@ ${debrief.summary}`;
   }
 }
 
-export { SOURCE_ICONS };
+export { SOURCE_ICONS, SOURCE_CATEGORY_MAP, getSourceIcon };
 export default SendMorningDebrief;

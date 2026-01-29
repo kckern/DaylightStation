@@ -27,7 +27,7 @@ export { HandleSpecialStart } from './HandleSpecialStart.mjs';
 
 // Morning debrief use cases
 export { GenerateMorningDebrief } from './GenerateMorningDebrief.mjs';
-export { SendMorningDebrief, SOURCE_ICONS } from './SendMorningDebrief.mjs';
+export { SendMorningDebrief, SOURCE_ICONS, SOURCE_CATEGORY_MAP, getSourceIcon } from './SendMorningDebrief.mjs';
 export { HandleCategorySelection } from './HandleCategorySelection.mjs';
 export { HandleDebriefResponse } from './HandleDebriefResponse.mjs';
 export { HandleSourceSelection } from './HandleSourceSelection.mjs';
