@@ -305,7 +305,14 @@ export class ConfigService {
     // Support new format: { hosts: { env: host }, port: X }
     // and legacy format: { env: host }
     const hosts = service.hosts ?? service;
-    return hosts[env] ?? hosts.default ?? null;
+    
+    // Check if environment-specific host exists (including explicit null)
+    if (env in hosts) {
+      return hosts[env]; // Return value, even if null (disabled)
+    }
+    
+    // Fall back to default only if env key doesn't exist
+    return hosts.default ?? null;
   }
 
   /**
