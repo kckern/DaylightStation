@@ -789,7 +789,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const nutribotServices = createNutribotServices({
     dataRoot: dataBasePath,
     userDataService,
-    telegramAdapter: nutribotTelegramAdapter || messagingServices.telegramAdapter,
+    telegramAdapter: nutribotTelegramAdapter,
     aiGateway: nutribotAiGateway,
     upcGateway,
     googleImageGateway: null,  // TODO: Add Google Image gateway when available
@@ -804,7 +804,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     userResolver,
     botId: systemBots.nutribot?.telegram?.bot_id || '',
     secretToken: systemBots.nutribot?.telegram?.secret_token || '',
-    gateway: nutribotTelegramAdapter || messagingServices.telegramAdapter,
+    gateway: nutribotTelegramAdapter,
     logger: rootLogger.child({ module: 'nutribot-api' })
   });
 
@@ -825,7 +825,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const journalistServices = createJournalistServices({
     userDataService,
     configService,
-    telegramAdapter: journalistTelegramAdapter || messagingServices.telegramAdapter,
+    telegramAdapter: journalistTelegramAdapter,
     aiGateway: journalistAiGateway,
     userResolver,
     conversationStateStore: journalistStateStore,
@@ -858,7 +858,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   const homebotServices = createHomebotServices({
-    telegramAdapter: homebotTelegramAdapter || messagingServices.telegramAdapter,
+    telegramAdapter: homebotTelegramAdapter,
     aiGateway: homebotAiGateway,
     gratitudeService: gratitudeServices.gratitudeService,
     configService,
