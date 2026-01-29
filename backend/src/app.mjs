@@ -97,9 +97,10 @@ import { createSchedulingRouter } from './4_api/v1/routers/scheduling.mjs';
 // Conversation state persistence
 import { YamlConversationStateDatastore } from './2_adapters/messaging/YamlConversationStateDatastore.mjs';
 
-// Media jobs (YouTube downloads, etc.)
+// Media jobs (fresh video downloads)
 import { MediaJobExecutor } from './3_applications/media/MediaJobExecutor.mjs';
-import { createYouTubeJobHandler } from './3_applications/media/YouTubeJobHandler.mjs';
+import { createFreshVideoJobHandler } from './3_applications/media/YouTubeJobHandler.mjs';
+import { YtDlpAdapter } from './2_adapters/media/YtDlpAdapter.mjs';
 
 // Harvest domain (data collection)
 import { createHarvestRouter } from './4_api/v1/routers/harvest.mjs';
@@ -932,15 +933,20 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'media-executor' })
   });
 
-  // Register YouTube download handler
+  // Register fresh video download handler
   const mediaPath = mediaBasePath
     ? join(mediaBasePath, 'video', 'news')
     : join(__dirname, '..', 'media', 'video', 'news');
 
-  mediaExecutor.register('youtube', createYouTubeJobHandler({
+  const videoSourceGateway = new YtDlpAdapter({
+    logger: rootLogger.child({ module: 'ytdlp' })
+  });
+
+  mediaExecutor.register('youtube', createFreshVideoJobHandler({
+    videoSourceGateway,
     loadFile,
     mediaPath,
-    logger: rootLogger.child({ module: 'youtube' })
+    logger: rootLogger.child({ module: 'freshvideo' })
   }));
 
   const schedulerService = new SchedulerService({
