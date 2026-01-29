@@ -14,3 +14,7 @@ homeassistant-secondary:
 mqtt:
   docker: mosquitto
   test-env: localhost
+
+printer:
+  docker: 10.0.0.50
+  test-env: localhost
