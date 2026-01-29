@@ -503,3 +503,74 @@ describe('Validation errors', () => {
     }
   });
 });
+
+describe('getServiceConfig deprecation', () => {
+  // Mock config with services defined in services.yml format (not system.{name})
+  const mockConfigWithServices = {
+    system: {
+      dataDir: '/data',
+      configDir: '/data/system',
+      defaultHouseholdId: 'home',
+      timezone: 'America/Los_Angeles',
+      env: 'test-env',
+    },
+    secrets: {
+      OPENAI_API_KEY: 'sk-test-key',
+    },
+    households: {
+      home: {
+        head: 'alice',
+        users: ['alice'],
+      },
+    },
+    users: {
+      alice: { name: 'Alice' },
+    },
+    auth: { users: {}, households: {} },
+    apps: {},
+    identityMappings: {},
+    // Services defined in services.yml format - NOT in system.homeassistant
+    services: {
+      homeassistant: {
+        'test-env': 'localhost',
+        port: 8123,
+      },
+      plex: {
+        'test-env': 'localhost',
+        port: 32400,
+      },
+    },
+  };
+
+  test('getServiceConfig returns null for services in services.yml', () => {
+    const svc = createTestConfigService(mockConfigWithServices);
+    // getServiceConfig looks in system.{name} which doesn't exist for services.yml services
+    const config = svc.getServiceConfig('homeassistant');
+    expect(config).toBeNull();
+  });
+
+  test('resolveServiceUrl returns URL for services in services.yml', () => {
+    const svc = createTestConfigService(mockConfigWithServices);
+    // resolveServiceUrl reads from services config correctly
+    const url = svc.resolveServiceUrl('homeassistant');
+    expect(url).not.toBeNull();
+    expect(url).toBe('http://localhost:8123');
+  });
+
+  test('demonstrates the bug: code using getServiceConfig gets null', () => {
+    const svc = createTestConfigService(mockConfigWithServices);
+
+    // This is what broken code does - gets null because service isn't in system.{name}
+    const haServiceConfig = svc.getServiceConfig('homeassistant') || {};
+    const brokenHost = haServiceConfig.host;
+    const brokenPort = haServiceConfig.port;
+
+    // Verify both are undefined/null - this demonstrates the bug
+    expect(brokenHost).toBeUndefined();
+    expect(brokenPort).toBeUndefined();
+
+    // This is the correct approach
+    const correctUrl = svc.resolveServiceUrl('homeassistant');
+    expect(correctUrl).toBe('http://localhost:8123');
+  });
+});
