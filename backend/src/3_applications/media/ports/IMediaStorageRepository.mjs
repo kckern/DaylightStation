@@ -5,6 +5,7 @@
  * Implementations handle the actual storage (local fs, S3, etc.)
  *
  * @module applications/media/ports/IMediaStorageRepository
+ * @interface IMediaStorageRepository
  */
 
 /**
@@ -119,3 +120,5 @@ export function isMediaStorageRepository(obj) {
     typeof obj.stat === 'function' &&
     typeof obj.joinPath === 'function';
 }
+
+export default IMediaStorageRepository;
