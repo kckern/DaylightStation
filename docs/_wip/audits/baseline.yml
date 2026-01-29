@@ -1,0 +1,21 @@
+# Audit Baseline - Tracks known violations across audit runs
+#
+# Updated automatically by /audit skill, manually triaged by developer
+#
+# Sections:
+#   known: Violations you've seen and acknowledged (won't show as NEW)
+#   exceptions: Violations you've decided are intentional (permanently ignored)
+#   resolved: Auto-populated when known violations are no longer detected
+
+schema_version: 1
+last_updated: 2026-01-29
+
+# Violations you've seen and acknowledged (won't show as NEW in reports)
+known: []
+
+# Violations you've decided are intentional exceptions
+# These are permanently ignored and won't appear in reports
+exceptions: []
+
+# Auto-populated: violations that were in 'known' but no longer detected
+resolved: []

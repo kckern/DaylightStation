@@ -1,7 +1,7 @@
 # Audit Skill Design
 
 **Date:** 2026-01-29
-**Status:** Design
+**Status:** Implemented
 
 ---
 
@@ -187,9 +187,46 @@ These were in baseline but no longer detected.
 
 ---
 
+## Implementation
+
+### File Structure
+
+```
+cli/audit/
+├── index.mjs          # Main scanner entry point
+├── utils.mjs          # File discovery, annotation checking
+├── baseline.mjs       # Baseline YAML read/write
+├── report.mjs         # Markdown report generator
+└── rules/
+    ├── index.mjs      # Rule aggregator
+    ├── imports.mjs    # Wrong-layer imports, path traversal
+    ├── exports.mjs    # Missing default exports
+    ├── naming.mjs     # Underscore privates, generic names
+    ├── classes.mjs    # Public fields, constructor validation
+    ├── errors.mjs     # Generic errors, silent swallow
+    └── domain.mjs     # Domain purity rules
+
+.claude/skills/audit.md  # Claude Code skill definition
+docs/_wip/audits/baseline.yml  # Violation tracking
+```
+
+### CLI Usage
+
+```bash
+# Direct CLI usage
+node cli/audit/index.mjs                    # Full backend
+node cli/audit/index.mjs fitness            # Single domain
+node cli/audit/index.mjs 1_domains          # Entire layer
+node cli/audit/index.mjs --changed          # Changed files only
+node cli/audit/index.mjs --json             # JSON output
+```
+
+---
+
 ## Future Enhancements
 
 1. **GitHub Actions integration** - Run on PR, post summary as comment
 2. **Auto-fix mode** - Apply simple fixes automatically (add default exports, etc.)
 3. **Trend dashboard** - Track violation counts over time
 4. **Pre-commit hook** - Optional fast check on staged files only
+5. **JSDoc rules** - Check for missing @class, @param, @returns
