@@ -213,6 +213,11 @@ system/services.yml
 Result: http://localhost:32400
 ```
 
+### ConfigService Helpers
+
+- `resolveServiceUrl(serviceName, protocol = 'http')` builds the service URL using `system/services.yml` and $DAYLIGHT_ENV.
+- `getServiceCredentials(serviceName, householdId)` combines the resolved URL with household auth for that service.
+
 ### Resolution Matrix Example
 
 | Household | Service | docker | kckern-server | kckern-macbook |
