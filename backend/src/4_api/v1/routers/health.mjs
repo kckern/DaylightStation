@@ -149,15 +149,15 @@ export function createHealthRouter(config) {
 
   /**
    * GET /health/workouts
-   * Get Strava workout data
+   * Get workout/activity data
    */
   router.get('/workouts', asyncHandler(async (req, res) => {
     const username = getDefaultUsername();
-    const stravaData = await healthStore.loadStravaData(username);
+    const activityData = await healthStore.loadActivityData(username);
 
     res.json({
       message: 'Workout data retrieved successfully',
-      data: stravaData
+      data: activityData
     });
   }));
 
@@ -220,7 +220,7 @@ export function createHealthRouter(config) {
         'GET /date/:date - Get health data for specific date (YYYY-MM-DD)',
         'GET /range?start=&end= - Get health data for date range',
         'GET /weight - Get weight tracking data',
-        'GET /workouts - Get Strava workout data',
+        'GET /workouts - Get workout/activity data',
         'GET /fitness - Get fitness tracking data',
         'GET /nutrition - Get nutrition data',
         'GET /coaching - Get health coaching messages',
