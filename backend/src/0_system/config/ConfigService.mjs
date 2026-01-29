@@ -442,13 +442,56 @@ export class ConfigService {
    * Get the public-facing app port (what users/tests hit)
    * In dev: Vite runs here, backend on +1
    * In prod: Backend serves everything here
+   *
+   * Supports environment-based format (like services.yml):
+   *   app:
+   *     ports:
+   *       default: 3111
+   *       docker: 3111
+   *       kckern-server: 3112
    */
   getAppPort() {
-    return this.#config.system?.app?.port ?? 3111;
+    const app = this.#config.system?.app;
+    if (!app) return 3111;
+
+    // New format: app.ports.{env}
+    if (app.ports && typeof app.ports === 'object') {
+      const env = this.getEnv();
+      if (env in app.ports) {
+        return app.ports[env];
+      }
+      return app.ports.default ?? 3111;
+    }
+
+    // Legacy format: app.port (single value)
+    return app.port ?? 3111;
   }
 
+  /**
+   * Check if scheduler is enabled for current environment.
+   * Supports environment-based format:
+   *   scheduler:
+   *     enabled:
+   *       default: false
+   *       docker: true
+   */
   isSchedulerEnabled() {
-    return this.#config.system?.scheduler?.enabled ?? false;
+    const scheduler = this.#config.system?.scheduler;
+    if (!scheduler) return false;
+
+    const enabled = scheduler.enabled;
+
+    // New format: scheduler.enabled.{env}
+    if (enabled && typeof enabled === 'object') {
+      const env = this.getEnv();
+      if (env in enabled) {
+        return !!enabled[env];
+      }
+      return !!enabled.default;
+    }
+
+    // Legacy format: scheduler.enabled (boolean)
+    return !!enabled;
   }
 
   // ─── Convenience ───────────────────────────────────────────
