@@ -15,6 +15,3 @@ export { MediaJobExecutor } from './MediaJobExecutor.mjs';
 
 // Ports (interfaces)
 export { IVideoSourceGateway, isVideoSourceGateway } from './ports/IVideoSourceGateway.mjs';
-
-// Legacy exports (deprecated - will be removed in future version)
-export { YouTubeDownloadService } from './services/YouTubeDownloadService.mjs';
