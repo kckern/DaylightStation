@@ -199,6 +199,35 @@ describe('SessionService', () => {
       expect(session.startTime).toBeTruthy();
       expect(typeof session.startTime).toBe('number');
     });
+
+    test('converts v3 participants object to roster array', async () => {
+      mockStore.findById.mockResolvedValue(null);
+
+      const session = await service.saveSession({
+        version: 3,
+        session: {
+          id: '20260129063322',
+          start: '2026-01-29 06:33:22',
+          end: '2026-01-29 07:00:00'
+        },
+        participants: {
+          'kckern': {
+            display_name: 'Kirk',
+            is_primary: true,
+            hr_device: 'device_40475'
+          },
+          'guest-1': {
+            display_name: 'Guest',
+            is_guest: true
+          }
+        },
+        timeline: { series: {} }
+      }, 'test-hid');
+
+      expect(session.roster).toHaveLength(2);
+      expect(session.roster.find(p => p.name === 'Kirk')).toBeTruthy();
+      expect(session.roster.find(p => p.isPrimary)).toBeTruthy();
+    });
   });
 
   describe('endSession', () => {
