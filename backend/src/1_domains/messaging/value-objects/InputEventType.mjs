@@ -1,4 +1,4 @@
-// backend/src/3_applications/shared/InputEventType.mjs
+// backend/src/1_domains/messaging/value-objects/InputEventType.mjs
 
 /**
  * Input event types for bot message routing.

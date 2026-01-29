@@ -4,14 +4,14 @@
  * Reads device config and creates appropriate capability adapters
  * (HomeAssistant, FullyKiosk, SSH, WebSocket) based on provider settings.
  *
- * @module adapters/devices
+ * @module applications/devices/services
  */
 
-import { Device } from '#apps/devices/services/Device.mjs';
-import { HomeAssistantDeviceAdapter } from './HomeAssistantDeviceAdapter.mjs';
-import { FullyKioskContentAdapter } from './FullyKioskContentAdapter.mjs';
-import { WebSocketContentAdapter } from './WebSocketContentAdapter.mjs';
-import { SshOsAdapter } from './SshOsAdapter.mjs';
+import { Device } from './Device.mjs';
+import { HomeAssistantDeviceAdapter } from '#adapters/devices/HomeAssistantDeviceAdapter.mjs';
+import { FullyKioskContentAdapter } from '#adapters/devices/FullyKioskContentAdapter.mjs';
+import { WebSocketContentAdapter } from '#adapters/devices/WebSocketContentAdapter.mjs';
+import { SshOsAdapter } from '#adapters/devices/SshOsAdapter.mjs';
 
 export class DeviceFactory {
   #haGateway;
