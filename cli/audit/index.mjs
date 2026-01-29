@@ -16,7 +16,7 @@
 import { execSync } from 'child_process';
 import { readFileSync } from 'fs';
 import { rules as importRules } from './rules/imports.mjs';
-import { rules as exportRules } from './rules/exports.mjs';
+import { rules as exportRules, detectMissingDefaults } from './rules/exports.mjs';
 import { rules as namingRules } from './rules/naming.mjs';
 import { rules as classRules } from './rules/classes.mjs';
 import { rules as errorRules } from './rules/errors.mjs';
@@ -85,6 +85,9 @@ async function scan(scope, options = {}) {
   let idCounter = 1;
 
   for (const rule of ALL_RULES) {
+    // Skip rules that need post-processing - they have custom detection
+    if (rule._needsPostProcess) continue;
+
     const violations = detectViolations(rule, files);
     for (const v of violations) {
       // Check if ignored via baseline or annotation
@@ -96,6 +99,17 @@ async function scan(scope, options = {}) {
         status: ignored ? 'ignored' : 'new'
       });
     }
+  }
+
+  // Run custom detection for missing default exports
+  const missingDefaultViolations = await detectMissingDefaults(files);
+  for (const v of missingDefaultViolations) {
+    const ignored = isIgnored(v, baseline);
+    allViolations.push({
+      id: `v-${String(idCounter++).padStart(3, '0')}`,
+      ...v,
+      status: ignored ? 'ignored' : 'new'
+    });
   }
 
   return {
