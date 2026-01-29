@@ -259,7 +259,7 @@ export class YouTubeDownloadService {
     for (let attempt = 1; attempt <= this.#options.maxAttempts; attempt++) {
       const params = this.#getDownloadParams(attempt);
       const outputPath = `${dirPath}/%(upload_date)s.%(ext)s`;
-      const cmd = `yt-dlp ${params} -o "${outputPath}" --max-downloads 1 --playlist-end 1 "${inputUrl}"`;
+      const cmd = `yt-dlp --js-runtimes node:auto ${params} -o "${outputPath}" --max-downloads 1 --playlist-end 1 "${inputUrl}"`;
 
       this.#logger.info?.('youtube.downloadAttempt', { shortcode, attempt, maxAttempts: this.#options.maxAttempts });
 
