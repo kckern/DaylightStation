@@ -228,6 +228,31 @@ describe('SessionService', () => {
       expect(session.roster.find(p => p.name === 'Kirk')).toBeTruthy();
       expect(session.roster.find(p => p.isPrimary)).toBeTruthy();
     });
+
+    test('preserves timeline.series from v3 payload', async () => {
+      mockStore.findById.mockResolvedValue(null);
+
+      const session = await service.saveSession({
+        version: 3,
+        session: {
+          id: '20260129063322',
+          start: '2026-01-29 06:33:22',
+          end: '2026-01-29 07:00:00'
+        },
+        participants: {},
+        timeline: {
+          interval_seconds: 5,
+          tick_count: 3,
+          encoding: 'rle',
+          series: {
+            'kckern:hr': '[[120,2],125]',
+            'kckern:zone': '[["a",3]]'
+          }
+        }
+      }, 'test-hid');
+
+      expect(Object.keys(session.timeline.series).length).toBeGreaterThan(0);
+    });
   });
 
   describe('endSession', () => {
