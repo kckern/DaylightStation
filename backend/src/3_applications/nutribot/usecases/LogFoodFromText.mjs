@@ -93,6 +93,20 @@ export class LogFoodFromText {
     // Get messaging interface (prefers responseContext)
     const messaging = this.#getMessaging(responseContext, conversationId);
 
+    // Check if conversation is in revision mode BEFORE processing
+    let isRevisionMode = false;
+    let pendingLogUuid = null;
+    let originalMessageId = null;
+    if (this.#conversationStateStore) {
+      const state = await this.#conversationStateStore.get(conversationId);
+      if (state?.activeFlow === 'revision') {
+        isRevisionMode = true;
+        pendingLogUuid = state.flowState?.pendingLogUuid;
+        originalMessageId = state.flowState?.originalMessageId;
+        this.#logger.debug?.('logText.revisionMode', { conversationId, pendingLogUuid, originalMessageId });
+      }
+    }
+
     try {
       // 1. Send "Analyzing..." message
       let statusMsgId;
@@ -122,6 +136,27 @@ export class LogFoodFromText {
       });
 
       const logDate = overrideDate || aiDate;
+
+      // Handle revision mode: update existing log instead of creating new one
+      if (isRevisionMode && pendingLogUuid && foodItems.length > 0) {
+        const revisionResult = await this.#handleRevision({
+          userId,
+          conversationId,
+          pendingLogUuid,
+          foodItems,
+          logDate,
+          aiTime: this.#parseFoodResponse(response).time,
+          statusMsgId,
+          originalMessageId,
+          messageId,
+          messaging,
+        });
+        // If revision succeeded, return; otherwise fall through to create new log
+        if (revisionResult) {
+          return revisionResult;
+        }
+        this.#logger.warn?.('logText.revision.fallbackToNew', { conversationId, pendingLogUuid });
+      }
 
       if (foodItems.length === 0) {
         this.#logger.debug?.('logText.noFood', { conversationId, text });
@@ -410,6 +445,92 @@ Begin response with '{' character - output only valid JSON, no markdown.`,
         { text: '🗑️ Discard', callback_data: this.#encodeCallback('x', { id: logUuid }) },
       ],
     ];
+  }
+
+  /**
+   * Handle revision mode: update existing log with new items
+   * @private
+   */
+  async #handleRevision({ userId, conversationId, pendingLogUuid, foodItems, logDate, aiTime, statusMsgId, originalMessageId, messageId, messaging }) {
+    this.#logger.info?.('logText.revision.start', { conversationId, pendingLogUuid, itemCount: foodItems.length });
+
+    // Load the existing log
+    let targetLog = null;
+    if (this.#foodLogStore) {
+      targetLog = await this.#foodLogStore.findByUuid(pendingLogUuid, userId);
+    }
+
+    if (!targetLog) {
+      this.#logger.warn?.('logText.revision.logNotFound', { conversationId, pendingLogUuid });
+      // Fall through to create new log by returning null
+      return null;
+    }
+
+    // Update the log with new items
+    const revisionTimestamp = new Date();
+    let updatedLog = targetLog.updateItems(foodItems, revisionTimestamp);
+
+    // Update date if different
+    const existingDate = targetLog.meal?.date || targetLog.date;
+    if (logDate && logDate !== existingDate) {
+      updatedLog = updatedLog.updateDate(logDate, aiTime, revisionTimestamp);
+    }
+
+    // Save the updated log
+    if (this.#foodLogStore) {
+      await this.#foodLogStore.save(updatedLog);
+    }
+
+    // Clear revision state
+    if (this.#conversationStateStore) {
+      await this.#conversationStateStore.clear(conversationId);
+      this.#logger.debug?.('logText.revision.stateCleared', { conversationId });
+    }
+
+    // Update the message with revised items
+    const finalDate = updatedLog.meal?.date || updatedLog.date;
+    const dateHeader = formatDateHeader(finalDate, { timezone: this.#getTimezone(), now: new Date() });
+    const foodList = formatFoodList(foodItems);
+    const buttons = this.#buildActionButtons(updatedLog.id);
+
+    // Determine which message to update (prefer original log message)
+    const messageToUpdate = originalMessageId || statusMsgId;
+
+    // Check if this was an image-based log for proper update format
+    const isImageLog = targetLog.metadata?.source === 'image';
+    const updatePayload = isImageLog
+      ? { caption: `${dateHeader}\n\n${foodList}`, choices: buttons, inline: true }
+      : { text: `${dateHeader}\n\n${foodList}`, choices: buttons, inline: true };
+
+    await messaging.updateMessage(messageToUpdate, updatePayload);
+
+    // Delete the "Analyzing..." status message if different from the target
+    if (statusMsgId && statusMsgId !== messageToUpdate) {
+      try {
+        await messaging.deleteMessage(statusMsgId);
+      } catch (e) {
+        this.#logger.debug?.('logText.revision.deleteStatus.failed', { error: e.message });
+      }
+    }
+
+    // Delete original user message
+    if (messageId) {
+      await this.#deleteMessageWithRetry(messaging, messageId);
+    }
+
+    this.#logger.info?.('logText.revision.complete', {
+      conversationId,
+      logUuid: updatedLog.id,
+      itemCount: foodItems.length,
+    });
+
+    return {
+      success: true,
+      nutrilogUuid: updatedLog.id,
+      messageId: messageToUpdate,
+      itemCount: foodItems.length,
+      revised: true,
+    };
   }
 
   /**
