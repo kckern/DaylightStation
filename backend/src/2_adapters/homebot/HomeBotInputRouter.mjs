@@ -1,6 +1,6 @@
 // backend/src/2_adapters/homebot/HomeBotInputRouter.mjs
 
-import { InputEventType } from '#apps/shared/InputEventType.mjs';
+import { InputEventType } from '#domains/messaging';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 /**

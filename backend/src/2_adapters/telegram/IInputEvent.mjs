@@ -1,7 +1,7 @@
 // backend/src/2_adapters/telegram/IInputEvent.mjs
 
-// Re-export InputEventType from shared application layer
-export { InputEventType } from '#apps/shared/InputEventType.mjs';
+// Re-export InputEventType from messaging domain
+export { InputEventType } from '#domains/messaging';
 
 /**
  * Standardized input event interface for bot webhooks.
