@@ -155,6 +155,9 @@ export function encodeSeries(series = {}) {
       // Skip all-null series
       if (value.every(v => v == null)) continue;
       encoded[key] = encodeSingleSeries(value);
+    } else if (typeof value === 'string' && value.startsWith('[')) {
+      // Preserve already-encoded string values (v3 format)
+      encoded[key] = value;
     }
   }
   return encoded;

@@ -200,8 +200,11 @@ export class SessionService {
   async saveSession(sessionData, householdId) {
     const hid = this.resolveHouseholdId(householdId);
 
+    // Normalize v3 payload to v1 structure
+    const normalized = normalizeV3Payload(sessionData);
+
     // Handle both sessionId and legacy formats
-    const rawSessionId = sessionData.sessionId || sessionData.session?.id;
+    const rawSessionId = normalized.sessionId || normalized.session?.id;
     const sanitizedId = Session.sanitizeSessionId(rawSessionId);
     if (!sanitizedId) {
       throw new ValidationError('Valid sessionId is required', {
@@ -212,7 +215,7 @@ export class SessionService {
 
     // Normalize to Session entity
     const session = Session.fromJSON({
-      ...sessionData,
+      ...normalized,
       sessionId: sanitizedId
     });
 
