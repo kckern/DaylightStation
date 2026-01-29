@@ -712,14 +712,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // Messaging domain (provides telegramAdapter for chatbots)
-  // Bot tokens come from secrets.yml, config from chatbots.yml
-  const chatbotsConfig = configService.getAppConfig('chatbots') || {};
+  // System bot config (bot_id, secretToken per platform) from system/bots.yml
+  const systemBots = configService.getSystemConfig('bots') || {};
   const gmailConfig = configService.getAppConfig('gmail') || {};
-
-  // Get bot tokens from secrets (TELEGRAM_NUTRIBOT_TOKEN, etc.)
-  const nutribotToken = configService.getSecret('TELEGRAM_NUTRIBOT_TOKEN') || '';
-  const journalistToken = configService.getSecret('TELEGRAM_JOURNALIST_BOT_TOKEN') || '';
-  const homebotToken = configService.getSecret('TELEGRAM_HOMEBOT_TOKEN') || '';
 
   // NutriBot application config
   const nutribotConfig = configService.getAppConfig('nutribot') || {};
@@ -754,9 +749,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     });
     rootLogger.info('system.bots.loaded', { count: botsLoaded });
   } catch (err) {
-    rootLogger.warn('system.bots.fallback', {
+    rootLogger.warn('system.bots.error', {
       reason: err.message,
-      message: 'System bots not loaded - falling back to legacy token config'
+      message: 'System bots not loaded - messaging services may not work'
     });
   }
 
@@ -766,7 +761,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const messagingServices = createMessagingServices({
     userDataService,
     telegram: {
-      token: nutribotToken  // Default adapter uses nutribot token
+      token: configService.getSystemAuth('telegram', 'nutribot') || ''  // Default adapter uses nutribot token
     },
     gmail: gmailConfig.credentials ? {
       credentials: gmailConfig.credentials,
@@ -788,19 +783,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     basePath: join(dataDir, 'chatbots', 'nutribot', 'conversations')
   });
 
-  // Get nutribot adapter: try config-driven approach first, fall back to legacy
-  let nutribotTelegramAdapter = getMessagingAdapter(householdId, 'nutribot');
-  if (!nutribotTelegramAdapter && nutribotToken) {
-    // Fall back to legacy secrets.yml token
-    const { TelegramAdapter } = await import('./2_adapters/messaging/TelegramAdapter.mjs');
-    nutribotTelegramAdapter = new TelegramAdapter({
-      token: nutribotToken,
-      httpClient: axios,
-      transcriptionService: voiceTranscriptionService,
-      logger: rootLogger.child({ module: 'nutribot-telegram' })
-    });
-    rootLogger.debug('nutribot.adapter.fallback', { reason: 'Using legacy secrets.yml token' });
-  }
+  // Get nutribot adapter from config-driven SystemBotLoader
+  const nutribotTelegramAdapter = getMessagingAdapter(householdId, 'nutribot');
 
   const nutribotServices = createNutribotServices({
     dataRoot: dataBasePath,
@@ -818,8 +802,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   v1Routers.nutribot = createNutribotApiRouter({
     nutribotServices,
     userResolver,
-    botId: chatbotsConfig.bots?.nutribot?.telegram_bot_id || '',
-    secretToken: chatbotsConfig.bots?.nutribot?.secretToken || '',
+    botId: systemBots.nutribot?.telegram?.bot_id || '',
+    secretToken: systemBots.nutribot?.telegram?.secret_token || '',
     gateway: nutribotTelegramAdapter || messagingServices.telegramAdapter,
     logger: rootLogger.child({ module: 'nutribot-api' })
   });
@@ -830,19 +814,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Reuse shared AI adapter (loaded from integration system or created above)
   const journalistAiGateway = nutribotAiGateway;
 
-  // Get journalist adapter: try config-driven approach first, fall back to legacy
-  let journalistTelegramAdapter = getMessagingAdapter(householdId, 'journalist');
-  if (!journalistTelegramAdapter && journalistToken) {
-    // Fall back to legacy secrets.yml token
-    const { TelegramAdapter } = await import('./2_adapters/messaging/TelegramAdapter.mjs');
-    journalistTelegramAdapter = new TelegramAdapter({
-      token: journalistToken,
-      httpClient: axios,
-      transcriptionService: voiceTranscriptionService,
-      logger: rootLogger.child({ module: 'journalist-telegram' })
-    });
-    rootLogger.debug('journalist.adapter.fallback', { reason: 'Using legacy secrets.yml token' });
-  }
+  // Get journalist adapter from config-driven SystemBotLoader
+  const journalistTelegramAdapter = getMessagingAdapter(householdId, 'journalist');
 
   // Create conversation state store for journalist
   const journalistStateStore = new YamlConversationStateDatastore({
@@ -864,8 +837,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     journalistServices,
     configService,
     userResolver,
-    botId: chatbotsConfig.bots?.journalist?.telegram_bot_id || '',
-    secretToken: chatbotsConfig.bots?.journalist?.secretToken || '',
+    botId: systemBots.journalist?.telegram?.bot_id || '',
+    secretToken: systemBots.journalist?.telegram?.secret_token || '',
     gateway: journalistTelegramAdapter,
     logger: rootLogger.child({ module: 'journalist-api' })
   });
@@ -876,19 +849,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Reuse shared AI adapter (loaded from integration system or created above)
   const homebotAiGateway = nutribotAiGateway || journalistAiGateway;
 
-  // Get homebot adapter: try config-driven approach first, fall back to legacy
-  let homebotTelegramAdapter = getMessagingAdapter(householdId, 'homebot');
-  if (!homebotTelegramAdapter && homebotToken) {
-    // Fall back to legacy secrets.yml token
-    const { TelegramAdapter } = await import('./2_adapters/messaging/TelegramAdapter.mjs');
-    homebotTelegramAdapter = new TelegramAdapter({
-      token: homebotToken,
-      httpClient: axios,
-      transcriptionService: voiceTranscriptionService,
-      logger: rootLogger.child({ module: 'homebot-telegram' })
-    });
-    rootLogger.debug('homebot.adapter.fallback', { reason: 'Using legacy secrets.yml token' });
-  }
+  // Get homebot adapter from config-driven SystemBotLoader
+  const homebotTelegramAdapter = getMessagingAdapter(householdId, 'homebot');
 
   // Create conversation state store for homebot
   const homebotStateStore = new YamlConversationStateDatastore({
@@ -908,8 +870,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   v1Routers.homebot = createHomebotApiRouter({
     homebotServices,
     userResolver,
-    botId: chatbotsConfig.bots?.homebot?.telegram_bot_id || '',
-    secretToken: chatbotsConfig.bots?.homebot?.secretToken || '',
+    botId: systemBots.homebot?.telegram?.bot_id || '',
+    secretToken: systemBots.homebot?.telegram?.secret_token || '',
     gateway: homebotTelegramAdapter,
     logger: rootLogger.child({ module: 'homebot-api' })
   });
