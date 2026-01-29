@@ -38,8 +38,8 @@ async function main() {
   const dataDir = join(baseDir, 'data');
 
   // Derive config paths from data directory
-  // Config lives inside data directory at system/
-  const configDir = join(dataDir, 'system');
+  // Config lives inside data directory at system/config/
+  const configDir = join(dataDir, 'system', 'config');
   const configPaths = { configDir, dataDir, source: isDocker ? 'docker' : 'env' };
   const configExists = existsSync(join(configDir, 'system.yml')) || existsSync(join(configDir, 'app.yml'));
 

@@ -266,7 +266,7 @@ export class FolderAdapter {
       // Load watch state from mediaProgressMemory (for UI indicators, not filtering)
       let watchState = null;
       if (watchCategory && this.mediaProgressMemory) {
-        watchState = await this.mediaProgressMemory.getProgress(watchCategory, mediaKey);
+        watchState = await this.mediaProgressMemory.get(mediaKey, watchCategory);
       }
 
       // Calculate priority based on watch state and scheduling
@@ -277,9 +277,7 @@ export class FolderAdapter {
       const seconds = watchState?.seconds || watchState?.playhead || 0;
       const lastPlayed = watchState?.lastPlayed || null;
 
-      const compoundId = contentSource === 'folder'
-        ? parsed.id
-        : `${contentSource}:${parsed.id}`;
+      const compoundId = `${contentSource}:${parsed.id}`;
 
       // Build action object based on YAML action field
       // Frontend expects: queue: {...}, list: {...}, play: {...}, open: {...}
@@ -537,7 +535,7 @@ export class FolderAdapter {
     // First pass: find any in-progress item
     for (const item of items) {
       const mediaKey = item.localId || item.id.split(':')[1];
-      const state = await this.mediaProgressMemory.getProgress(storagePath, mediaKey);
+      const state = await this.mediaProgressMemory.get(mediaKey, storagePath);
       const percent = state?.percent || 0;
 
       // In progress if between 1% and 90%
@@ -549,7 +547,7 @@ export class FolderAdapter {
     // Second pass: find first unwatched item
     for (const item of items) {
       const mediaKey = item.localId || item.id.split(':')[1];
-      const state = await this.mediaProgressMemory.getProgress(storagePath, mediaKey);
+      const state = await this.mediaProgressMemory.get(mediaKey, storagePath);
       const percent = state?.percent || 0;
 
       // Unwatched if < 90%

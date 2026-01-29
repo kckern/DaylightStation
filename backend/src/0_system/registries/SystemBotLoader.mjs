@@ -161,8 +161,9 @@ export class SystemBotLoader {
    * @private
    */
   #createAdapter(platform, appName, config, deps) {
-    // Get auth token from system auth config
-    const token = this.#configService.getSystemAuth(platform, appName);
+    // Get auth from system auth config (may be string or object with token property)
+    const auth = this.#configService.getSystemAuth(platform, appName);
+    const token = typeof auth === 'string' ? auth : auth?.token;
 
     if (!token) {
       this.#logger.warn?.('bot.loader.no-token', { appName, platform });
@@ -179,6 +180,7 @@ export class SystemBotLoader {
       case 'telegram':
         return new TelegramAdapter({
           token,
+          secretToken: auth?.secret_token,
           httpClient: deps.httpClient,
           transcriptionService: deps.transcriptionService,
           logger: this.#logger

@@ -44,7 +44,7 @@ async function main() {
   const dataDir = join(baseDir, 'data');
 
   // Derive config paths from data directory
-  const configDir = join(dataDir, 'system');
+  const configDir = join(dataDir, 'system', 'config');
   const configExists = existsSync(join(configDir, 'system.yml')) || existsSync(join(configDir, 'app.yml'));
 
   console.log(`[Config] Source: ${isDocker ? 'docker' : 'env'}, dataDir: ${dataDir}`);
@@ -127,10 +127,10 @@ async function main() {
 
   const server = createServer();
   
-  // Check if MQTT should be enabled (from system config)
-  // mqtt: null in local config disables MQTT entirely
-  const mqttConfig = configService.getServiceConfig('mqtt');
-  const enableMqtt = mqttConfig !== null && !!mqttConfig?.host;
+  // Check if MQTT should be enabled (from services config)
+  // mqtt host: null in services.yml for this env disables MQTT entirely
+  const mqttHost = configService.resolveServiceHost('mqtt');
+  const enableMqtt = !!mqttHost;
   
   const app = await createApp({ server, logger, configPaths, configExists, enableScheduler: true, enableMqtt });
 
