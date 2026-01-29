@@ -26,6 +26,66 @@ function parseV3Timestamp(timestamp) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+/**
+ * Convert v3 participants object to v1 roster array.
+ * @param {Object} participants - { participantId: { display_name, is_primary, hr_device, ... } }
+ * @returns {Array} - [{ name, isPrimary, hrDeviceId, ... }]
+ */
+function convertParticipantsToRoster(participants) {
+  if (!participants || typeof participants !== 'object') return [];
+
+  return Object.entries(participants).map(([id, meta]) => ({
+    name: meta.display_name || id,
+    profileId: id,
+    isPrimary: meta.is_primary === true,
+    isGuest: meta.is_guest === true,
+    ...(meta.hr_device ? { hrDeviceId: meta.hr_device } : {})
+  }));
+}
+
+/**
+ * Normalize a v3 payload to v1 structure for Session.fromJSON().
+ *
+ * v3 format:
+ *   - session.id, session.start, session.end, session.duration_seconds
+ *   - participants: { id: { display_name, is_primary, hr_device, ... } }
+ *   - timeline.series at root level (already flat in v3 persistence payload)
+ *
+ * v1 format:
+ *   - sessionId, startTime, endTime, durationMs at root
+ *   - roster: [{ name, isPrimary, hrDeviceId, ... }]
+ *   - timeline.series (unchanged)
+ *
+ * @param {Object} data - Raw session payload (v2 or v3)
+ * @returns {Object} - Normalized v1-compatible payload
+ */
+function normalizeV3Payload(data) {
+  // Detect v3 format: has session.id but no root sessionId/startTime
+  const isV3 = data.session && typeof data.session === 'object' && !data.startTime;
+
+  if (!isV3) {
+    return data;
+  }
+
+  const session = data.session;
+
+  return {
+    ...data,
+    // Extract sessionId from nested session block
+    sessionId: session.id || data.sessionId,
+    // Parse timestamp strings to Unix ms
+    startTime: parseV3Timestamp(session.start) || data.startTime,
+    endTime: parseV3Timestamp(session.end) || data.endTime,
+    durationMs: session.duration_seconds != null
+      ? session.duration_seconds * 1000
+      : data.durationMs,
+    // Convert participants object to roster array
+    roster: convertParticipantsToRoster(data.participants) || data.roster || [],
+    // Timeline series should be preserved as-is (already at timeline.series)
+    timeline: data.timeline || { series: {}, events: [] }
+  };
+}
+
 export class SessionService {
   constructor({ sessionStore, defaultHouseholdId = null }) {
     this.sessionStore = sessionStore;
