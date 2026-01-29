@@ -10,8 +10,5 @@
 export { GratitudeItem } from './entities/GratitudeItem.mjs';
 export { Selection } from './entities/Selection.mjs';
 
-// Ports moved to application layer - re-export for backward compatibility
-export { IGratitudeDatastore, isGratitudeDatastore } from '#apps/gratitude/ports/IGratitudeDatastore.mjs';
-
 // Services
 export { GratitudeService } from './services/GratitudeService.mjs';

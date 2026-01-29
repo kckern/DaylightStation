@@ -5,9 +5,4 @@
  * Provider-agnostic home automation abstractions.
  */
 
-// Ports moved to application layer - re-export for backward compatibility
-export {
-  isHomeAutomationGateway,
-  assertHomeAutomationGateway,
-  createNoOpGateway
-} from '#apps/home-automation/ports/IHomeAutomationGateway.mjs';
+// Domain is currently empty - all port interfaces are in 3_applications/home-automation/ports/
