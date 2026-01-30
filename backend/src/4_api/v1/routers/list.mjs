@@ -307,7 +307,11 @@ export function createListRouter(config) {
       const { modifiers, localId } = parseModifiers(rawPath);
 
       // Log deprecation warning - frontend should use /api/v1/item instead
-      console.warn(`[DEPRECATION] /api/v1/list/${source}/${rawPath} - Use /api/v1/item/${source}/${rawPath} instead`);
+      console.warn(`[DEPRECATION] /api/v1/list/${source}/${rawPath} - Use /api/v1/item/${source}/${rawPath} instead`, {
+        referer: req.headers.referer || req.headers.referrer,
+        userAgent: req.headers['user-agent'],
+        ip: req.ip
+      });
 
       const adapter = registry.get(source);
       if (!adapter) {

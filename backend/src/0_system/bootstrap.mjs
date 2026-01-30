@@ -1557,7 +1557,7 @@ export function createJournalistServices(config) {
 
   // Message queue repository (YAML persistence)
   const messageQueueRepository = new YamlMessageQueueRepository({
-    userDataService,
+    dataService: userDataService,
     userResolver,
     logger
   });
@@ -1961,7 +1961,7 @@ export function createHealthServices(config) {
 
   // Health store (YAML persistence)
   const healthStore = new YamlHealthDatastore({
-    userDataService,
+    dataService: userDataService,
     userResolver,
     configService,
     logger
@@ -2258,11 +2258,11 @@ export function createHarvesterServices(config) {
   };
 
   // Create or use provided sharedStore (for weather data)
-  const sharedStore = sharedStoreParam || new YamlWeatherDatastore({
-    dataService,
+  const sharedStore = sharedStoreParam || (userDataService ? new YamlWeatherDatastore({
+    dataService: userDataService,
     configService,
     logger,
-  });
+  }) : null);
 
   // Create Gmail client factory if not provided (for Shopping harvester)
   const effectiveGmailClientFactory = gmailClientFactory || (async (username) => {
