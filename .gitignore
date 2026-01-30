@@ -9,6 +9,8 @@ backend/node_modules
 !tests/unit/suite/config/fixtures/**/*.yml
 data*
 !tests/_fixtures/data/
+!**/DataService.mjs
+!**/DataService.test.mjs
 node_modules/*
 *.sh
 docker.local.sh
