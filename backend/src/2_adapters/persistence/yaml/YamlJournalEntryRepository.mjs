@@ -76,20 +76,25 @@ export class YamlJournalEntryRepository {
   }
 
   /**
-   * Get storage path for journal messages
+   * Get username and relative path for journal messages
    * @private
+   * @returns {{ username: string, relativePath: string }}
    */
-  #getPath(conversationId) {
+  #getStorageInfo(conversationId) {
     const username = this.#getUsername(conversationId);
-    return `users/${username}/lifelog/journalist/messages`;
+    return {
+      username,
+      relativePath: 'lifelog/journalist/messages'
+    };
   }
 
   /**
    * Load data from YAML file
    * @private
    */
-  #loadData(path) {
-    const data = this.#userDataService.readData?.(path);
+  #loadData(conversationId) {
+    const { username, relativePath } = this.#getStorageInfo(conversationId);
+    const data = this.#userDataService.readUserData(username, relativePath);
     return data || { messages: [] };
   }
 
@@ -97,8 +102,13 @@ export class YamlJournalEntryRepository {
    * Save data to YAML file
    * @private
    */
-  #saveData(path, data) {
-    this.#userDataService.writeData?.(path, data);
+  #saveData(conversationId, data) {
+    const { username, relativePath } = this.#getStorageInfo(conversationId);
+    const result = this.#userDataService.writeUserData(username, relativePath, data);
+    if (!result) {
+      this.#logger.error?.('journal.save.failed', { username, relativePath });
+    }
+    return result;
   }
 
   /**
@@ -131,16 +141,17 @@ export class YamlJournalEntryRepository {
       });
     }
 
-    const path = this.#getPath(chatId);
+    const { username, relativePath } = this.#getStorageInfo(chatId);
 
     this.#logger.debug?.('journal.save', {
-      path,
+      username,
+      relativePath,
       role: entry.role,
       contentLength: entry.content?.length || entry.text?.length
     });
 
     // Load existing data
-    const data = this.#loadData(path);
+    const data = this.#loadData(chatId);
 
     // Ensure messages array exists
     if (!Array.isArray(data.messages)) {
@@ -168,7 +179,7 @@ export class YamlJournalEntryRepository {
     });
 
     // Save back
-    this.#saveData(path, data);
+    this.#saveData(chatId, data);
 
     return message;
   }
@@ -192,8 +203,7 @@ export class YamlJournalEntryRepository {
    * @returns {Promise<Object[]>}
    */
   async findAll(conversationId) {
-    const path = this.#getPath(conversationId);
-    const data = this.#loadData(path);
+    const data = this.#loadData(conversationId);
     // Return in chronological order (reverse of stored order)
     return (data.messages || []).slice().reverse();
   }
@@ -206,8 +216,7 @@ export class YamlJournalEntryRepository {
    */
   async update(entry, conversationId) {
     const chatId = conversationId || entry.chatId || entry.conversationId;
-    const path = this.#getPath(chatId);
-    const data = this.#loadData(path);
+    const data = this.#loadData(chatId);
 
     const id = entry.id || entry.messageId;
     const index = (data.messages || []).findIndex(m =>
@@ -222,7 +231,7 @@ export class YamlJournalEntryRepository {
     }
 
     data.messages[index] = { ...data.messages[index], ...entry };
-    this.#saveData(path, data);
+    this.#saveData(chatId, data);
 
     return data.messages[index];
   }
@@ -236,8 +245,7 @@ export class YamlJournalEntryRepository {
   async delete(uuid, conversationId) {
     if (!conversationId) return;
 
-    const path = this.#getPath(conversationId);
-    const data = this.#loadData(path);
+    const data = this.#loadData(conversationId);
 
     if (!data.messages || data.messages.length === 0) return;
 
@@ -248,7 +256,7 @@ export class YamlJournalEntryRepository {
     });
 
     if (data.messages.length !== initialLength) {
-      this.#saveData(path, data);
+      this.#saveData(conversationId, data);
       this.#logger.debug?.('journal.delete', { conversationId, uuid });
     }
   }
@@ -320,11 +328,11 @@ export class YamlJournalEntryRepository {
    * @returns {Promise<Object[]>}
    */
   async getMessageHistory(conversationId, limit = 20) {
-    const path = this.#getPath(conversationId);
+    const { username, relativePath } = this.#getStorageInfo(conversationId);
 
-    this.#logger.debug?.('journal.getHistory', { path, limit });
+    this.#logger.debug?.('journal.getHistory', { username, relativePath, limit });
 
-    const data = this.#loadData(path);
+    const data = this.#loadData(conversationId);
     const messages = data.messages || [];
 
     // File is stored newest-first (descending), so take first N and reverse
