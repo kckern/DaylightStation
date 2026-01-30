@@ -73,6 +73,12 @@ import { TransactionCategorizationService } from '#apps/finance/TransactionCateg
 import { PayrollSyncService } from '#apps/finance/PayrollSyncService.mjs';
 import { createFinanceRouter } from '#api/v1/routers/finance.mjs';
 
+// Cost domain imports
+import { CostAnalysisService } from '#domains/cost/index.mjs';
+import { CostIngestionService, CostBudgetService, CostReportingService } from '#apps/cost/index.mjs';
+import { YamlCostDatastore } from '#adapters/cost/YamlCostDatastore.mjs';
+import createCostRouter from '#api/v1/routers/cost.mjs';
+
 // Gratitude domain imports
 import { GratitudeService } from '#domains/gratitude/services/GratitudeService.mjs';
 import { YamlGratitudeDatastore } from '#adapters/persistence/yaml/YamlGratitudeDatastore.mjs';
@@ -820,6 +826,100 @@ export function createFinanceApiRouter(config) {
     categorizationService: financeServices.categorizationService,
     payrollService: financeServices.payrollService,
     configService,
+    logger
+  });
+}
+
+// =============================================================================
+// Cost Domain Bootstrap
+// =============================================================================
+
+/**
+ * Create cost domain services
+ *
+ * @param {Object} config
+ * @param {string} config.dataRoot - Base directory for cost data storage (required)
+ * @param {Object} [config.budgetRepository] - Budget repository (for budget evaluation)
+ * @param {Object} [config.alertGateway] - Alert gateway for budget notifications
+ * @param {Object} [config.sources] - Array of ICostSource adapters
+ * @param {Object} [config.logger] - Logger instance
+ * @returns {{ costDatastore: YamlCostDatastore, analysisService: CostAnalysisService, ingestionService: CostIngestionService, budgetService: CostBudgetService, reportingService: CostReportingService }}
+ *
+ * @example
+ * const { reportingService, budgetService } = createCostServices({
+ *   dataRoot: '/data/household/cost',
+ *   logger
+ * });
+ */
+export function createCostServices(config) {
+  const {
+    dataRoot,
+    budgetRepository,
+    alertGateway,
+    sources = [],
+    logger = console
+  } = config;
+
+  // Cost datastore (YAML persistence)
+  const costDatastore = new YamlCostDatastore({ dataRoot });
+
+  // Domain service (stateless)
+  const analysisService = new CostAnalysisService();
+
+  // Budget service (optional - requires budget repository)
+  let budgetService = null;
+  if (budgetRepository) {
+    budgetService = new CostBudgetService({
+      budgetRepository,
+      costRepository: costDatastore,
+      alertGateway,
+      analysisService,
+      logger
+    });
+  }
+
+  // Ingestion service
+  const ingestionService = new CostIngestionService({
+    costRepository: costDatastore,
+    budgetService,
+    sources,
+    logger
+  });
+
+  // Reporting service
+  const reportingService = new CostReportingService({
+    costRepository: costDatastore,
+    budgetService,
+    analysisService,
+    logger
+  });
+
+  return {
+    costDatastore,
+    analysisService,
+    ingestionService,
+    budgetService,
+    reportingService
+  };
+}
+
+/**
+ * Create cost API router
+ *
+ * @param {Object} config
+ * @param {Object} config.costServices - Services from createCostServices
+ * @param {Object} [config.logger] - Logger instance
+ * @returns {express.Router}
+ */
+export function createCostApiRouter(config) {
+  const {
+    costServices,
+    logger = console
+  } = config;
+
+  return createCostRouter({
+    reportingService: costServices.reportingService,
+    budgetService: costServices.budgetService,
     logger
   });
 }

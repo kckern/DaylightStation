@@ -59,6 +59,7 @@ export function createApiRouter(config) {
     '/local-content': 'localContent',
     '/health': 'health',
     '/finance': 'finance',
+    '/cost': 'cost',
     '/harvest': 'harvest',
     '/entropy': 'entropy',
     '/lifelog': 'lifelog',

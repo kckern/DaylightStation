@@ -71,7 +71,9 @@ import {
   createEventBus,
   broadcastEvent,
   createHarvesterServices,
-  createAgentsApiRouter
+  createAgentsApiRouter,
+  createCostServices,
+  createCostApiRouter
 } from './0_system/bootstrap.mjs';
 
 // AI router import
@@ -356,6 +358,14 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'finance' })
   });
 
+  // Cost domain
+  const costDataRoot = configService.getHouseholdPath('apps/cost');
+  const costServices = createCostServices({
+    dataRoot: costDataRoot,
+    // budgetRepository not yet implemented - will be added when YamlBudgetDatastore is created
+    logger: rootLogger.child({ module: 'cost' })
+  });
+
   // Entropy domain - use UserDataService for user-specific data (replaces legacy io.mjs)
   const userLoadFile = (username, service) => userDataService.getLifelogData(username, service);
   const userLoadCurrent = (username, service) => userDataService.readUserData(username, `current/${service}`);
@@ -446,6 +456,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'finance-api' })
   });
 
+  // Cost domain router
+  v1Routers.cost = createCostApiRouter({
+    costServices,
+    logger: rootLogger.child({ module: 'cost-api' })
+  });
 
   // Harvester application services
   // Create shared IO functions for lifelog persistence

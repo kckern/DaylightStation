@@ -18,7 +18,7 @@
  * const statuses = await service.evaluateBudgets('default');
  */
 
-import { CostAnalysisService } from '#domains/cost';
+import { CostAnalysisService } from '#domains/cost/index.mjs';
 
 /**
  * CostBudgetService
