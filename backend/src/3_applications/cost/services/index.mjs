@@ -6,3 +6,4 @@
  */
 
 export { CostIngestionService } from './CostIngestionService.mjs';
+export { CostBudgetService } from './CostBudgetService.mjs';
