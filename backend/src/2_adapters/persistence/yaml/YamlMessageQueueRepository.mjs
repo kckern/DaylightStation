@@ -11,24 +11,24 @@ import { nowTs24 } from '#system/utils/index.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 export class YamlMessageQueueRepository {
-  #userDataService;
+  #dataService;
   #userResolver;
   #logger;
 
   /**
    * @param {Object} config
-   * @param {Object} config.userDataService - UserDataService for YAML I/O
+   * @param {Object} config.dataService - DataService for YAML I/O
    * @param {Object} [config.userResolver] - UserResolver for telegram ID to username mapping
    * @param {Object} [config.logger] - Logger instance
    */
   constructor(config) {
-    if (!config.userDataService) {
-      throw new InfrastructureError('YamlMessageQueueRepository requires userDataService', {
+    if (!config.dataService) {
+      throw new InfrastructureError('YamlMessageQueueRepository requires dataService', {
         code: 'MISSING_DEPENDENCY',
-        dependency: 'userDataService'
+        dependency: 'dataService'
       });
     }
-    this.#userDataService = config.userDataService;
+    this.#dataService = config.dataService;
     this.#userResolver = config.userResolver;
     this.#logger = config.logger || console;
   }
@@ -61,20 +61,25 @@ export class YamlMessageQueueRepository {
   }
 
   /**
-   * Get storage path for message queue
+   * Get username and relative path for message queue
    * @private
+   * @returns {{ username: string, relativePath: string }}
    */
-  #getPath(conversationId) {
+  #getStorageInfo(conversationId) {
     const username = this.#getUsername(conversationId);
-    return `users/${username}/lifelog/journalist/queue`;
+    return {
+      username,
+      relativePath: 'lifelog/journalist/queue'
+    };
   }
 
   /**
    * Load queue data from YAML
    * @private
    */
-  #loadData(path) {
-    const data = this.#userDataService.readData?.(path);
+  #loadData(conversationId) {
+    const { username, relativePath } = this.#getStorageInfo(conversationId);
+    const data = this.#dataService.user.read(relativePath, username);
     return data || { queue: [] };
   }
 
@@ -82,8 +87,9 @@ export class YamlMessageQueueRepository {
    * Save queue data to YAML
    * @private
    */
-  #saveData(path, data) {
-    this.#userDataService.writeData?.(path, data);
+  #saveData(conversationId, data) {
+    const { username, relativePath } = this.#getStorageInfo(conversationId);
+    this.#dataService.user.write(relativePath, data, username);
   }
 
   // ===========================================================================
@@ -96,8 +102,7 @@ export class YamlMessageQueueRepository {
    * @returns {Promise<Object[]>}
    */
   async loadUnsentQueue(chatId) {
-    const path = this.#getPath(chatId);
-    const data = this.#loadData(path);
+    const data = this.#loadData(chatId);
 
     // Filter to unsent items only
     return (data.queue || []).filter(item => !item.sentAt);
@@ -110,8 +115,7 @@ export class YamlMessageQueueRepository {
    * @returns {Promise<void>}
    */
   async saveToQueue(chatId, items) {
-    const path = this.#getPath(chatId);
-    const data = this.#loadData(path);
+    const data = this.#loadData(chatId);
 
     // Ensure queue array exists
     if (!Array.isArray(data.queue)) {
@@ -132,7 +136,7 @@ export class YamlMessageQueueRepository {
       }
     }
 
-    this.#saveData(path, data);
+    this.#saveData(chatId, data);
 
     this.#logger.debug?.('queue.saved', {
       chatId,
@@ -165,14 +169,13 @@ export class YamlMessageQueueRepository {
    * @returns {Promise<void>}
    */
   async markSentForChat(chatId, uuid, messageId) {
-    const path = this.#getPath(chatId);
-    const data = this.#loadData(path);
+    const data = this.#loadData(chatId);
 
     const item = (data.queue || []).find(q => q.uuid === uuid);
     if (item) {
       item.sentAt = nowTs24();
       item.messageId = messageId;
-      this.#saveData(path, data);
+      this.#saveData(chatId, data);
 
       this.#logger.debug?.('queue.markSent', { chatId, uuid, messageId });
     }
@@ -184,8 +187,7 @@ export class YamlMessageQueueRepository {
    * @returns {Promise<void>}
    */
   async clearQueue(chatId) {
-    const path = this.#getPath(chatId);
-    this.#saveData(path, { queue: [] });
+    this.#saveData(chatId, { queue: [] });
 
     this.#logger.debug?.('queue.cleared', { chatId });
   }
@@ -196,8 +198,7 @@ export class YamlMessageQueueRepository {
    * @returns {Promise<void>}
    */
   async deleteUnprocessed(chatId) {
-    const path = this.#getPath(chatId);
-    const data = this.#loadData(path);
+    const data = this.#loadData(chatId);
 
     // Keep only sent items
     const originalCount = (data.queue || []).length;
@@ -206,7 +207,7 @@ export class YamlMessageQueueRepository {
     const deletedCount = originalCount - data.queue.length;
 
     if (deletedCount > 0) {
-      this.#saveData(path, data);
+      this.#saveData(chatId, data);
       this.#logger.debug?.('queue.deleteUnprocessed', { chatId, deletedCount });
     }
   }
@@ -218,8 +219,7 @@ export class YamlMessageQueueRepository {
    * @returns {Promise<Object|null>}
    */
   async getByUuid(chatId, uuid) {
-    const path = this.#getPath(chatId);
-    const data = this.#loadData(path);
+    const data = this.#loadData(chatId);
 
     return (data.queue || []).find(q => q.uuid === uuid) || null;
   }
@@ -232,13 +232,12 @@ export class YamlMessageQueueRepository {
    * @returns {Promise<Object|null>}
    */
   async updateItem(chatId, uuid, updates) {
-    const path = this.#getPath(chatId);
-    const data = this.#loadData(path);
+    const data = this.#loadData(chatId);
 
     const item = (data.queue || []).find(q => q.uuid === uuid);
     if (item) {
       Object.assign(item, updates);
-      this.#saveData(path, data);
+      this.#saveData(chatId, data);
       return item;
     }
 
