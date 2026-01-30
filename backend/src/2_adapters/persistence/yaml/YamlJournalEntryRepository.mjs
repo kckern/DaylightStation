@@ -12,26 +12,26 @@ import { nowTs24 } from '#system/utils/index.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 export class YamlJournalEntryRepository {
-  #userDataService;
+  #dataService;
   #userResolver;
   #configService;
   #logger;
 
   /**
    * @param {Object} config
-   * @param {Object} config.userDataService - UserDataService for YAML I/O
+   * @param {Object} config.dataService - DataService for YAML I/O
    * @param {Object} config.userResolver - UserResolver for telegram ID to username mapping
    * @param {Object} [config.configService] - ConfigService for timezone lookup
    * @param {Object} [config.logger] - Logger instance
    */
   constructor(config) {
-    if (!config.userDataService) {
-      throw new InfrastructureError('YamlJournalEntryRepository requires userDataService', {
+    if (!config.dataService) {
+      throw new InfrastructureError('YamlJournalEntryRepository requires dataService', {
         code: 'MISSING_DEPENDENCY',
-        dependency: 'userDataService'
+        dependency: 'dataService'
       });
     }
-    this.#userDataService = config.userDataService;
+    this.#dataService = config.dataService;
     this.#userResolver = config.userResolver;
     this.#configService = config.configService;
     this.#logger = config.logger || console;
@@ -94,7 +94,7 @@ export class YamlJournalEntryRepository {
    */
   #loadData(conversationId) {
     const { username, relativePath } = this.#getStorageInfo(conversationId);
-    const data = this.#userDataService.readUserData(username, relativePath);
+    const data = this.#dataService.user.read(relativePath, username);
     return data || { messages: [] };
   }
 
@@ -104,7 +104,7 @@ export class YamlJournalEntryRepository {
    */
   #saveData(conversationId, data) {
     const { username, relativePath } = this.#getStorageInfo(conversationId);
-    const result = this.#userDataService.writeUserData(username, relativePath, data);
+    const result = this.#dataService.user.write(relativePath, data, username);
     if (!result) {
       this.#logger.error?.('journal.save.failed', { username, relativePath });
     }
