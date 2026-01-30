@@ -1,50 +1,67 @@
-# DaylightStation
+# Daylight Station
 
-A self-hosted personal life management platform. Aggregates fitness, health, finance, media, and productivity data into a unified dashboard with real-time tracking and home automation.
+**A self-hosted data refinery for an intentional life.**
+
+Your digital life is scattered—calendar in Google, tasks in Todoist, runs in Strava, weight in Withings, photos in Immich, media on Plex, home sensors in Home Assistant. Daylight Station pulls from all of it, refines the noise into signal, and delivers context-aware experiences exactly when and where you need them.
 
 ![License](https://img.shields.io/badge/license-Polyform%20Noncommercial-blue)
 ![Docker Pulls](https://img.shields.io/docker/pulls/kckern/daylight-station)
 
-## Features
+## One Backbone. Many Taps.
 
-### Fitness & Health
-- **Real-time workout tracking** with pose detection and live metrics
-- **Multi-platform sync** from Strava, Garmin, Withings, and custom FitSync
-- **Vibration sensor support** via MQTT for equipment integration
+Your morning thermal receipt shows today's calendar, the weather, and "it's been 4 days since your last workout." The office kiosk displays your upcoming meetings and flags overdue tasks. When you finish a workout, the garage display prompts for a voice memo. At dinner, a family photo slides in between TV episodes instead of ads.
 
-### Nutrition
-- **NutriBot** - Telegram-based AI nutrition assistant
-- **Food logging** with barcode scanning and meal planning
+Same data. Different moments. Always relevant.
 
-### Media & Entertainment
-- **Plex integration** for media streaming and consumption tracking
-- **YouTube playback** with yt-dlp support
+- **Kiosk displays** — Purpose-built interfaces for each room
+- **Telegram bots** — Log meals by voice, journal with AI prompts
+- **Thermal printer** — A morning receipt of goals before you touch a screen
+- **TV overlays** — Dad's ETA appears without pausing the movie
+- **Push notifications** — Alerts that matter, filtered from noise
 
-### Finance
-- **Buxfer integration** for expense tracking and budgets
+## What It Connects To
 
-### Productivity
-- **Task aggregation** from Todoist, Google Calendar, ClickUp
-- **Email summaries** from Gmail
+### Inputs (The Crude)
 
-### Home Automation
-- **Home Assistant integration** for smart device control
-- **MQTT messaging** for IoT devices
+Daylight Station ingests data from wherever your life already lives:
 
-### Lifelog
-- **Unified timeline** extracting events from all integrated services
+| Category | Sources |
+|----------|---------|
+| **Calendar & Tasks** | Google Calendar, Todoist, ClickUp |
+| **Health & Fitness** | Strava, Withings, Garmin, MQTT sensors |
+| **Media** | Plex, Audiobookshelf, YouTube |
+| **Photos & Memories** | Immich |
+| **Finance** | Buxfer |
+| **News & Reading** | FreshRSS, Goodreads |
+| **Home** | Home Assistant, MQTT |
+| **Communication** | Gmail, Telegram |
+
+### Outputs (The Taps)
+
+Refined data flows to purpose-built interfaces:
+
+| Tap | What It Does |
+|-----|--------------|
+| **Room Kiosks** | Mounted tablets with context-specific dashboards |
+| **TV App** | Media browser with family photo interstitials |
+| **Fitness Kiosk** | Workout videos with live heart rate overlay |
+| **Telegram Bots** | Nutribot (meal logging), Journalist (AI journaling) |
+| **Thermal Printer** | Physical morning receipt—no screen required |
+| **Home Assistant** | Ambient lighting, automations, device control |
+| **WebSocket Events** | Real-time push to any connected client |
 
 ## Quick Start
 
 ### Prerequisites
 
 - Docker and Docker Compose
-- External services you want to integrate (Plex, Home Assistant, etc.)
+- A data directory for configuration and persistence
+- API credentials for services you want to connect
 
 ### 1. Create project directory
 
 ```bash
-mkdir daylightstation && cd daylightstation
+mkdir daylight && cd daylight
 ```
 
 ### 2. Download configuration
@@ -60,8 +77,10 @@ curl -O https://raw.githubusercontent.com/kckern/DaylightStation/main/config/sys
 ```bash
 mv secrets.example.yml secrets.yml
 mv system.example.yml system.yml
-# Edit secrets.yml and system.yml with your API keys and settings
 ```
+
+Edit `secrets.yml` with your API keys (Strava, Plex, OpenAI, etc.)
+Edit `system.yml` with your household settings and feature flags.
 
 ### 4. Start
 
@@ -73,77 +92,82 @@ docker-compose up -d
 
 Open `http://localhost:3111` in your browser.
 
-## Configuration
-
-### Required Files
-
-| File | Purpose |
-|------|---------|
-| `secrets.yml` | API keys, tokens, and credentials for integrations |
-| `system.yml` | Application settings, household configuration, feature flags |
-
-### Key Settings
-
-**secrets.yml:**
-```yaml
-strava:
-  client_id: "your-client-id"
-  client_secret: "your-secret"
-  refresh_token: "your-token"
-
-openai:
-  api_key: "sk-..."
-
-plex:
-  token: "your-plex-token"
-  server_url: "http://your-plex-server:32400"
-```
-
-**system.yml:**
-```yaml
-household:
-  id: "my-household"
-  head: "username"
-
-features:
-  fitness: true
-  nutrition: true
-  media: true
-```
-
-### Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `PORT` | `3112` | Backend API port |
-| `FRONTEND_PORT` | `3111` | Frontend UI port |
-| `NODE_ENV` | `production` | Environment mode |
-
-### Data & Media Mounts
-
-Configure volume mounts in `docker-compose.yml` for persistent storage:
-- `/usr/src/app/data` - YAML configuration and user data
-- `/usr/src/app/media` - Media files (optional)
+See [Configuration Guide](docs/configuration.md) for detailed setup of individual integrations.
 
 ## Architecture
 
-DaylightStation is a Node.js application with:
-- **Frontend**: React 18 + Vite + Mantine UI
-- **Backend**: Express.js + WebSocket
-- **Infrastructure**: Docker (Alpine Linux)
+Daylight Station follows a refinery model: raw data comes in, gets processed through domain logic, and flows out to purpose-built taps.
 
 ```
-┌─────────────┐     ┌─────────────┐
-│   Frontend  │────▶│   Backend   │────▶ External APIs
-│   (React)   │◀────│  (Express)  │      (Strava, Plex, etc.)
-└─────────────┘ WS  └─────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                        INPUTS (Crude)                           │
+│  Strava · Google · Todoist · Plex · Home Assistant · MQTT · ... │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                     REFINERY (Backend)                          │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐        │
+│  │ Adapters │→ │ Domains  │→ │   Apps   │→ │   API    │        │
+│  │ (ingest) │  │ (logic)  │  │(use cases)│  │ (serve)  │        │
+│  └──────────┘  └──────────┘  └──────────┘  └──────────┘        │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                       OUTPUTS (Taps)                            │
+│  Kiosks · TV · Telegram Bots · Thermal Printer · Notifications  │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-For detailed architecture, see [docs/ai-context/architecture.md](docs/ai-context/architecture.md).
+- **Adapters** pull from external APIs and self-hosted services
+- **Domains** contain business logic (fitness, nutrition, finance, etc.)
+- **Applications** orchestrate use cases across domains
+- **API** serves refined data to any client that can speak HTTP/WebSocket
+
+Frontend apps are purpose-built React interfaces, each optimized for a specific context (office dashboard, TV remote, gym kiosk).
+
+## Screenshots
+
+### Office Kiosk
+A wall-mounted dashboard showing calendar, weather, finance trends, and entropy alerts ("4 days since last workout").
+
+![Office Kiosk](docs/screenshots/office-kiosk.png)
+
+### Fitness Kiosk
+Garage display with workout video, live heart rate zones, and participant tracking via ANT+/Bluetooth sensors.
+
+![Fitness Kiosk](docs/screenshots/fitness-kiosk.png)
+
+### TV App
+Living room media browser with Plex integration. Family photos appear as interstitials between episodes.
+
+![TV App](docs/screenshots/tv-app.png)
+
+### Morning Receipt
+Thermal printer output: today's calendar, weather, goals, and accountability nudges—before you touch a screen.
+
+![Morning Receipt](docs/screenshots/morning-receipt.jpg)
+
+### Nutribot
+Telegram bot for meal logging. Send a photo, voice memo, or text like "two eggs and toast" and get instant calorie tracking with AI-powered coaching.
+
+![Nutribot](docs/screenshots/nutribot.png)
+
+## Configuration
+
+| File | Purpose |
+|------|---------|
+| `secrets.yml` | API keys and credentials for integrations |
+| `system.yml` | Household settings, users, feature flags |
+
+See [Configuration Guide](docs/configuration.md) for detailed setup.
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
+Daylight Station is built for personal use first, open-sourced for others who share the philosophy. Contributions welcome—especially new adapters, output taps, and documentation.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup.
 
 ## License
 
@@ -152,5 +176,5 @@ Polyform Noncommercial 1.0.0. Free for personal and non-commercial use. See [LIC
 ## Links
 
 - [Documentation](docs/)
-- [Report Issues](https://github.com/kckern/DaylightStation/issues)
 - [Docker Hub](https://hub.docker.com/r/kckern/daylight-station)
+- [Report Issues](https://github.com/kckern/DaylightStation/issues)
