@@ -7,19 +7,32 @@
  * - HarvesterJobExecutor for jobs with matching harvester serviceId
  * - MediaJobExecutor for media jobs (youtube, etc.)
  * - Legacy module import for remaining jobs without executors
+ *
+ * Uses DataService for filesystem abstraction - adapter does not
+ * interact with filesystem directly.
  */
 
-import path from 'path';
 import { Job } from '#domains/scheduling/entities/Job.mjs';
 import { IJobDatastore } from '#apps/scheduling/ports/IJobDatastore.mjs';
-import { loadYaml } from '#system/utils/FileIO.mjs';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
+
+const JOBS_PATH = 'config/jobs';
 
 export class YamlJobDatastore extends IJobDatastore {
-  constructor({ dataDir, logger = console }) {
+  #dataService;
+  #logger;
+  #jobsCache = null;
+
+  constructor({ dataService, logger = console }) {
     super();
-    this.dataDir = dataDir;
-    this.logger = logger;
-    this.jobsCache = null;
+    if (!dataService) {
+      throw new InfrastructureError('YamlJobDatastore requires dataService', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'dataService'
+      });
+    }
+    this.#dataService = dataService;
+    this.#logger = logger;
   }
 
   /**
@@ -28,30 +41,27 @@ export class YamlJobDatastore extends IJobDatastore {
    */
   async loadJobs() {
     // Return cached if available
-    if (this.jobsCache) {
-      return this.jobsCache;
+    if (this.#jobsCache) {
+      return this.#jobsCache;
     }
 
     try {
-      const jobsPath = path.join(this.dataDir, 'system', 'config', 'jobs');
-      const jobsData = loadYaml(jobsPath);
+      const jobsData = this.#dataService.system.read(JOBS_PATH);
 
       if (jobsData && Array.isArray(jobsData)) {
-        this.logger.info?.('scheduler.jobStore.loaded', {
-          count: jobsData.length,
-          path: jobsPath
+        this.#logger.info?.('scheduler.jobStore.loaded', {
+          count: jobsData.length
         });
-        this.jobsCache = jobsData.map(j => Job.fromObject(j));
-        return this.jobsCache;
+        this.#jobsCache = jobsData.map(j => Job.fromObject(j));
+        return this.#jobsCache;
       }
 
-      this.logger.warn?.('scheduler.jobStore.missing', {
-        message: 'No job definitions found',
-        path: jobsPath
+      this.#logger.warn?.('scheduler.jobStore.missing', {
+        message: 'No job definitions found'
       });
       return [];
     } catch (error) {
-      this.logger.error?.('scheduler.jobStore.error', { error: error.message });
+      this.#logger.error?.('scheduler.jobStore.error', { error: error.message });
       return [];
     }
   }
@@ -70,7 +80,7 @@ export class YamlJobDatastore extends IJobDatastore {
    * Clear the cache (for reloading after config changes)
    */
   clearCache() {
-    this.jobsCache = null;
+    this.#jobsCache = null;
   }
 }
 
