@@ -199,8 +199,16 @@ export class TimestampService {
   }
 }
 
-// Create singleton instance
-export const ts = new TimestampService(configService);
+// Lazy-initialize singleton to avoid circular dependency
+let _ts;
+export const ts = new Proxy({}, {
+  get(target, prop) {
+    if (!_ts) {
+      _ts = new TimestampService(configService);
+    }
+    return _ts[prop];
+  }
+});
 
 // Convenience functions
 export const nowTs = () => ts.now();
