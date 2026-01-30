@@ -150,7 +150,7 @@ import { createStaticRouter } from '#api/v1/routers/static.mjs';
 import { createCalendarRouter } from '#api/v1/routers/calendar.mjs';
 
 // Harvester application imports
-import { HarvesterService, HarvesterJobExecutor } from '#apps/harvester';
+import { HarvesterService, HarvesterJobExecutor } from '#apps/harvester/index.mjs';
 
 // Harvester adapter imports
 import {
