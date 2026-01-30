@@ -1,7 +1,7 @@
 // backend/src/2_adapters/telegram/IInputEvent.mjs
 
 // Re-export InputEventType from messaging domain
-export { InputEventType } from '#domains/messaging';
+export { InputEventType } from '#domains/messaging/index.mjs';
 
 /**
  * Standardized input event interface for bot webhooks.

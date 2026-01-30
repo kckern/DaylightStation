@@ -5,7 +5,7 @@
  * Routes platform-agnostic IInputEvents to Journalist use cases.
  */
 
-import { InputEventType } from '#domains/messaging';
+import { InputEventType } from '#domains/messaging/index.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 // Special start characters (moved from HandleSpecialStart use case)
