@@ -24,7 +24,173 @@ Lifeplan is a new domain that implements the JOP Life Plan framework, serving as
 
 The core question answered: **"What should I do right now, and why?"**
 
-### Design Principles
+---
+
+## The JOP Framework: Six Layers of Intentional Living
+
+JOP (Joy on Purpose) is a framework for intentional living. Its core insight: **the purpose of life is to maximize joy**, and joy comes from meaningful progress toward worthwhile goals. Most people drift through life reacting to circumstances. The life plan provides a compass that always points toward the greatest possible joy.
+
+The framework organizes life into six hierarchical layers, each building on the one above:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              PURPOSE                                         │
+│                                                                             │
+│  "Why do I exist?"                                                          │
+│                                                                             │
+│  Transcendent and singular. Cannot be completed, only approached.           │
+│  Worth dying for, or it's not worth living for.                            │
+│  Example: "To maximize joy through meaningful contribution"                 │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                             QUALITIES                                        │
+│                                                                             │
+│  "Who must I be to fulfill my purpose?"                                     │
+│                                                                             │
+│  Character traits you cultivate. Never "done" - perpetual aspiration.       │
+│  Decompose into principles (general guidance) and rules (specific triggers).│
+│  Examples: Physical vitality, intellectual growth, relational depth         │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                              VALUES                                          │
+│                                                                             │
+│  "When two good things conflict, which wins?"                               │
+│                                                                             │
+│  Explicit ranking of priorities. Without ranking, you decide by mood.       │
+│  Must be ordered - if you can't rank them, you don't value them.           │
+│  Examples: Health > Family > Craft > Adventure > Wealth                     │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                              BELIEFS                                         │
+│                                                                             │
+│  "How does reality work? What causes what?"                                 │
+│                                                                             │
+│  If-then mappings between cause and effect. Recipes for outcomes.           │
+│  Must be tested and updated. Strengthen with evidence, weaken without.      │
+│  Examples: "If I exercise regularly, then I have more energy"               │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                               GOALS                                          │
+│                                                                             │
+│  "What audacious outcomes will I achieve?"                                  │
+│                                                                             │
+│  Measurable, completable aims. Must be audacious enough to matter.          │
+│  Require sacrifice, deadline, metrics. Progress toward purpose.             │
+│  Examples: "Run a marathon by October", "Ship product by Q2"                │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                               TASKS                                          │
+│                                                                             │
+│  "What do I do right now?"                                                  │
+│                                                                             │
+│  Daily actions that advance goals. The atomic unit of execution.            │
+│  Every task should trace back through goals to purpose.                     │
+│  Examples: "Morning run", "Review pull request", "Call mom"                 │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### The Key Insight: Mapping Purpose to Tasks
+
+The big picture is easy. Everyone wants a meaningful life. The hard part is **propagating purpose down to daily tasks** in a way that makes every action feel meaningful.
+
+Without this mapping:
+- Work feels like drudgery separate from "real life"
+- You react to circumstances instead of proactively designing your days
+- You accomplish tasks without feeling progress toward anything that matters
+- You make inconsistent decisions because you lack explicit priorities
+
+With this mapping:
+- Every task connects to your highest purpose
+- Work becomes "what I get to do" instead of "what I have to do"
+- You can evaluate any potential action against your values
+- Decisions become clearer because you have criteria to measure against
+
+---
+
+## Why DaylightStation is the Perfect Platform for JOP
+
+DaylightStation is a **data refinery**. It ingests raw data from everywhere your life already lives and distills it into high-purity signal. This architecture is uniquely suited to operationalize the JOP framework.
+
+### The Problem JOP Addresses
+
+Most people are "terribly unhappy" - lonely, stressed, anxious, apathetic. They drift through life making ad-hoc decisions based on mood or pressure. They never explicitly define:
+- What they want most (purpose)
+- Who they need to be to get it (qualities)
+- How to prioritize when good things conflict (values)
+- What actually causes what (beliefs)
+- What audacious outcomes to pursue (goals)
+
+Without these explicit definitions, improvement is haphazard and joy is fleeting.
+
+### The Problem DaylightStation Addresses
+
+Your digital life is scattered across dozens of apps. The value is trapped:
+- 20 browser tabs for 20 different services
+- No synthesis - your fitness data doesn't talk to your calendar
+- Doomscrolling on apps designed to capture attention, not serve it
+
+The tools exist. The data exists. What's missing is the **last mile** - an interface that delivers the right information at the right moment.
+
+### The Synthesis: Lifeplan + Lifelog
+
+**Lifelog** captures what happened - the raw data of your life:
+- Fitness activities from Strava/Garmin
+- Time allocation from Calendar
+- Tasks completed from Todoist
+- Health metrics from Withings/Oura
+- Content consumed from Plex
+- Social interactions from email/messaging
+
+**Lifeplan** defines what should happen - the intent:
+- Purpose statement
+- Quality principles and rules
+- Value rankings
+- Belief hypotheses
+- Goal commitments
+- Task priorities
+
+**DaylightStation** is the present fulcrum that:
+1. **Compares** plan intent to lifelog reality
+2. **Calculates** drift between stated values and observed behavior
+3. **Tests** beliefs automatically by detecting signals in the data
+4. **Surfaces** gaps through kiosks, receipts, bots, and alerts
+5. **Captures** feedback through ceremonies and journaling
+6. **Evolves** the plan based on evidence
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           THE DATA REFINERY                                  │
+│                                                                             │
+│   Inputs (Lifelog)              Refinery                  Outputs           │
+│   ─────────────────            ──────────              ───────────          │
+│   Strava activities    ──┐                        ┌──  Kiosk dashboards     │
+│   Calendar events      ──┤                        ├──  Morning receipts     │
+│   Todoist tasks        ──┼──► [ Compare ]         ├──  Telegram nudges      │
+│   Withings health      ──┤    [ Detect  ] ◄── Plan├──  Voice prompts        │
+│   Oura readiness       ──┤    [ Surface ]         ├──  Ceremony flows       │
+│   Journal entries      ──┤    [ Capture ]         └──  Drift alerts         │
+│   Financial txns       ──┘    [ Evolve  ]                                   │
+│                                   ▲                                          │
+│                                   │                                          │
+│                           ┌───────┴───────┐                                  │
+│                           │   Lifeplan    │                                  │
+│                           │   (Intent)    │                                  │
+│                           └───────────────┘                                  │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### What Makes This Different
+
+Most productivity systems are static documents you forget about. Lifeplan is **alive**:
+
+| Traditional | Lifeplan |
+|-------------|----------|
+| Write goals in a notebook | Goals have state machines (dream → committed → achieved) |
+| Hope you remember your values | System calculates value drift from actual time allocation |
+| Believe things without testing | Beliefs have operationalized signals that auto-detect |
+| Review plan when you remember | Ceremonies trigger at configured cadences |
+| No feedback on what works | Rule effectiveness tracked (triggered/followed/helped) |
+
+Every action becomes an experiment. The system learns what works for you.
+
+---
+
+## Design Principles
 
 From JOP, the critical insight is that Lifeplan must support two modes:
 
