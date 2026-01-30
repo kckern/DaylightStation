@@ -497,6 +497,136 @@ dependencies:
 
 ---
 
+## Anti-Goals & Nightmare Futures
+
+Goals define what you're moving **toward**. Anti-goals define what you're moving **away from**. The contrast creates motivational tension - the nightmare future is what happens if you don't act.
+
+### The Role of Anti-Goals
+
+From Future Authoring: envisioning your worst possible future creates powerful motivation that positive goals alone may not provide. Anti-goals are grounded in beliefs about what causes bad outcomes.
+
+```
+POSITIVE GOAL                        ANTI-GOAL (nightmare)
+────────────                         ────────────────────
+"Be financially secure"     ←────►   "End up broke and dependent"
+"Stay healthy and active"   ←────►   "Become incapacitated, burden to family"
+"Build strong relationships"←────►   "Die alone, no one at funeral"
+"Do meaningful work"        ←────►   "Waste career on pointless busywork"
+```
+
+### Anti-Goal Schema
+
+```yaml
+anti_goals:
+  - id: financial-ruin
+    nightmare: "End up broke, dependent on others, unable to provide"
+
+    # What beliefs drive this fear?
+    grounded_in_beliefs:
+      - id: money-enables-freedom
+        note: "Without money, I lose autonomy"
+      - id: dependency-is-degrading
+        note: "Relying on others for basics feels shameful"
+
+    # What positive goals does this motivate?
+    motivates_goals:
+      - goal: build-emergency-fund
+        mechanism: "Fear of ruin makes saving non-negotiable"
+      - goal: diversify-income
+        mechanism: "Single income source = single point of failure"
+
+    # Warning signals that nightmare is approaching
+    warning_signals:
+      - source: finance
+        pattern: "savings < 3 months expenses"
+        severity: warning
+      - source: finance
+        pattern: "debt increasing for 3+ months"
+        severity: critical
+
+    # Origin narrative (Past Authoring integration)
+    origin:
+      type: observation
+      narrative: |
+        Watched my uncle lose everything after job loss at 55.
+        Couldn't find work, burned through savings, had to move
+        in with his kids. The shame in his eyes stuck with me.
+      source_events: [uncle-financial-collapse-2015]
+
+  - id: health-collapse
+    nightmare: "Become incapacitated, lose independence, burden family"
+
+    grounded_in_beliefs:
+      - id: health-is-foundation
+        note: "Everything else depends on physical capability"
+      - id: preventable-decline
+        note: "Most health decline is preventable with effort"
+
+    motivates_goals:
+      - goal: maintain-fitness
+        mechanism: "Avoiding nightmare makes daily exercise worthwhile"
+      - goal: regular-checkups
+        mechanism: "Early detection prevents catastrophic decline"
+
+    warning_signals:
+      - source: health
+        pattern: "weight gain > 10% in 6 months"
+        severity: warning
+      - source: health
+        pattern: "skipped exercise for 2+ weeks"
+        severity: warning
+
+    origin:
+      type: experience
+      narrative: |
+        Dad's heart attack at 58 came out of nowhere. Years of
+        "I'll exercise tomorrow" caught up. Watching him struggle
+        to walk across a room changed my perspective.
+```
+
+### Anti-Goal States
+
+| State | Meaning | System Response |
+|-------|---------|-----------------|
+| `distant` | No warning signals | Normal background motivation |
+| `approaching` | Warning signals triggered | Escalate visibility of related goals |
+| `imminent` | Critical signals or sustained pattern | Emergency review, reprioritize goals |
+
+### Integration with Goals
+
+Anti-goals enhance goal motivation without being goals themselves:
+
+```yaml
+goals:
+  - id: build-emergency-fund
+    name: "Build 6-month emergency fund"
+    quality: financial
+    state: committed
+
+    # Positive motivation
+    why: "Financial security enables freedom to take risks"
+
+    # Negative motivation (anti-goal linkage)
+    avoids_nightmare: financial-ruin
+    nightmare_proximity: distant   # Updated based on warning signals
+
+    # Combined motivation visible in ceremonies
+    motivation_summary: |
+      Positive: Freedom to take career risks
+      Negative: Avoid ending up like Uncle Jim
+```
+
+### Anti-Goal Cadence
+
+| Check | Frequency | Action |
+|-------|-----------|--------|
+| Warning signal monitoring | Continuous | Auto-detect from lifelog |
+| Proximity update | Every cycle | Recalculate `nightmare_proximity` |
+| Nightmare review | Season review | "Are these still your fears? New ones?" |
+| Origin processing | Era review | Deep dive on nightmare origins, process if needed |
+
+---
+
 ## Life Events
 
 Life events are first-class entities that mark major transitions. They can block/unblock goals and provide context for understanding behavior changes in the lifelog.
@@ -854,6 +984,97 @@ function canTransitionToConfirmed(belief) {
 │                                                                             │
 │  [ Yes, 60% is right ]  [ Adjust ]  [ Review unexamined biases ]           │
 └─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Belief Origins (Past Authoring Integration)
+
+Beliefs don't appear from nowhere - they emerge from experiences, teaching, culture, and reasoning. Tracking origins helps identify potential biases and enables deeper processing.
+
+**Origin Types:**
+
+| Type | Description | Bias Risk |
+|------|-------------|-----------|
+| `experience` | Direct personal experience | High if single event (small_sample, vivid_memory) |
+| `observation` | Watching others' experiences | Survivorship bias risk |
+| `teaching` | Taught by authority figure | Appeal to authority, may be outdated |
+| `culture` | Absorbed from environment | Unexamined, may not fit your context |
+| `reasoning` | Derived logically from other beliefs | Only as good as premises |
+| `trauma` | Formed in response to painful event | May be protective but overgeneralized |
+
+**Origin Schema:**
+
+```yaml
+beliefs:
+  - id: meritocracy
+    if: "I work hard and smart"
+    then: "I will achieve success"
+
+    origin:
+      type: experience
+      narrative: |
+        After college, I worked 70-hour weeks for 3 years and got promoted
+        twice while peers who worked less stayed in place. This convinced
+        me that effort directly causes advancement.
+
+      source_events:                    # Links to lifelog/personal history
+        - event_id: first-promotion-2018
+          role: confirming
+        - event_id: peer-comparison-2019
+          role: confirming
+
+      formed_at: 2019-06-01
+      last_examined: 2024-03-15
+
+      # Origin-specific bias flags
+      origin_biases:
+        - type: small_sample
+          note: "Based on ~5 years at one company in one industry"
+        - type: survivorship
+          note: "Didn't track peers who worked hard but didn't advance"
+        - type: confounding
+          note: "Also had good manager, right timing, privilege"
+```
+
+**Past Processing Integration:**
+
+When significant past events are processed (via journaling/lifelog), the system can:
+
+1. **Prompt for belief extraction**: "What did this experience teach you about how the world works?"
+2. **Link to existing beliefs**: "Does this confirm or challenge any existing beliefs?"
+3. **Flag origin biases**: Single vivid experiences automatically flagged for `small_sample`
+4. **Enable re-processing**: When a belief is refuted, revisit the origin narrative - "What did I miss?"
+
+```yaml
+# Lifelog event with belief linkage
+past_events:
+  - id: layoff-2023
+    date: 2023-09-15
+    type: career
+    narrative: |
+      Laid off despite being top performer. Company chose to keep
+      less productive employees with better political connections.
+
+    processed: true
+    processed_at: 2023-10-01
+
+    belief_impacts:
+      - belief_id: meritocracy
+        impact: disconfirming
+        confidence_delta: -0.20
+        note: "Direct counter-evidence to hard work → success"
+
+      - belief_id: relationships-matter
+        impact: confirming
+        confidence_delta: +0.15
+        note: "Connections protected less productive peers"
+
+    beliefs_formed:
+      - id: politics-trumps-merit
+        if: "Office politics are strong"
+        then: "Merit matters less than relationships"
+        origin:
+          type: experience
+          source_events: [layoff-2023]
 ```
 
 ### Operationalization
@@ -1302,6 +1523,79 @@ qualities:
 - Quality with grounding values removed → flagged for review
 - Review prompt: "Do I still want to cultivate this trait? Why?"
 
+### Shadow Qualities
+
+Every virtue has a shadow - the dysfunction that emerges when the quality is overexpressed or applied in the wrong context. Tracking shadows helps catch when strengths become weaknesses.
+
+**Shadow Pattern:**
+
+```
+Quality (virtue)                    Shadow (dysfunction)
+────────────────                    ────────────────────
+Industrious         ──overexpress──►  Workaholic
+Confident           ──overexpress──►  Arrogant
+Generous            ──overexpress──►  Self-neglecting
+Cautious            ──overexpress──►  Paralyzed
+Agreeable           ──overexpress──►  Doormat
+Ambitious           ──overexpress──►  Ruthless
+Organized           ──overexpress──►  Rigid/OCD
+Spontaneous         ──overexpress──►  Chaotic/Unreliable
+```
+
+**Shadow Schema:**
+
+```yaml
+qualities:
+  - id: industrious
+    name: "Industrious"
+    description: "I apply sustained effort toward meaningful goals"
+
+    shadow:
+      name: "Workaholic"
+      description: "Work consumes everything; relationships and health suffer"
+
+      # Belief that enables the shadow
+      enabling_belief:
+        id: more-work-always-better
+        if: "I work more hours"
+        then: "I get proportionally more results"
+        note: "Ignores diminishing returns, burnout, opportunity cost"
+
+      # Triggers that indicate shadow activation
+      warning_signals:
+        - source: calendar
+          pattern: "work_hours > 55/week for 2+ weeks"
+        - source: self_report
+          pattern: "skipped_family_event for work"
+        - source: health
+          pattern: "sleep < 6hrs for 5+ days"
+
+      # What to do when shadow detected
+      countermeasures:
+        - rule: "When work_hours > 50, review: is this sustainable?"
+        - rule: "When skipping personal commitment for work, pause and reconsider"
+
+    shadow_state: dormant    # dormant | emerging | active
+    last_shadow_check: 2024-06-01
+```
+
+**Shadow States:**
+
+| State | Meaning | System Response |
+|-------|---------|-----------------|
+| `dormant` | No warning signals active | Normal quality cultivation |
+| `emerging` | 1-2 warning signals triggered | Alert + review countermeasures |
+| `active` | 3+ signals or sustained pattern | Escalate to ceremony, pause quality pursuit |
+
+**Shadow Detection Cadence:**
+
+| Check | Frequency | Action |
+|-------|-----------|--------|
+| Signal monitoring | Continuous | Auto-detect from lifelog |
+| Shadow state update | Every cycle | Aggregate signals, update state |
+| Shadow review | Phase review | "Any qualities becoming shadows?" |
+| Deep shadow audit | Season review | Review all qualities with `emerging` or `active` shadow states |
+
 ### Rule States
 
 ```
@@ -1588,6 +1882,9 @@ backend/src/
 │       │   ├── Milestone.mjs
 │       │   ├── Dependency.mjs          # Goal-to-goal and external blockers
 │       │   ├── LifeEvent.mjs           # Major life transitions
+│       │   ├── AntiGoal.mjs            # Nightmare futures to avoid
+│       │   ├── BeliefOrigin.mjs        # Past experiences that formed beliefs
+│       │   ├── Shadow.mjs              # Dysfunction version of qualities
 │       │   ├── Task.mjs
 │       │   ├── FeedbackEntry.mjs
 │       │   ├── Cycle.mjs               # Execution period (formerly Sprint)
@@ -1603,6 +1900,9 @@ backend/src/
 │       │   ├── LifeEventProcessor.mjs  # Handle impact types (blocks/derails/invalidates/cascades)
 │       │   ├── BeliefCascadeProcessor.mjs  # Handle foundational belief refutation cascades
 │       │   ├── BiasCalibrationService.mjs  # Calculate effective confidence, prompt for bias review
+│       │   ├── PastProcessingService.mjs   # Extract beliefs from past events, link origins
+│       │   ├── ShadowDetectionService.mjs  # Monitor quality shadow signals
+│       │   ├── NightmareProximityService.mjs  # Track anti-goal warning signals
 │       │   ├── BeliefEvaluator.mjs     # Evidence → confidence
 │       │   ├── ValueDriftCalculator.mjs
 │       │   ├── RuleMatchingService.mjs
@@ -1623,6 +1923,9 @@ backend/src/
 │       │   ├── BeliefState.mjs         # hypothesized | testing | confirmed | uncertain | refuted | questioning | revised | abandoned
 │       │   ├── AttributionBias.mjs     # survivorship | confirmation | small_sample | regression_mean | confounding | hindsight | halo_effect | self_serving | luck
 │       │   ├── BiasStatus.mjs          # acknowledged | dismissed | unexamined
+│       │   ├── BeliefOriginType.mjs    # experience | observation | teaching | culture | reasoning | trauma
+│       │   ├── ShadowState.mjs         # dormant | emerging | active
+│       │   ├── NightmareProximity.mjs  # distant | approaching | imminent
 │       │   └── index.mjs
 │       │
 │       └── index.mjs
