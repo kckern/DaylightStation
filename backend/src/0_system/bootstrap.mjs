@@ -17,6 +17,7 @@ import { WebSocketEventBus } from './eventbus/WebSocketEventBus.mjs';
 import { ContentSourceRegistry } from '#domains/content/services/ContentSourceRegistry.mjs';
 import { FilesystemAdapter } from '#adapters/content/media/filesystem/FilesystemAdapter.mjs';
 import { PlexAdapter } from '#adapters/content/media/plex/PlexAdapter.mjs';
+import { MediaKeyResolver } from '#domains/media/MediaKeyResolver.mjs';
 import { LocalContentAdapter } from '#adapters/content/local-content/LocalContentAdapter.mjs';
 import { FolderAdapter } from '#adapters/content/folder/FolderAdapter.mjs';
 import { YamlMediaProgressMemory } from '#adapters/persistence/yaml/YamlMediaProgressMemory.mjs';
@@ -366,10 +367,11 @@ export function getSystemBotLoader() {
  * @param {Object} deps - Dependencies
  * @param {Object} [deps.httpClient] - HTTP client for making requests
  * @param {Object} [deps.mediaProgressMemory] - Media progress memory for progress persistence
+ * @param {MediaKeyResolver} [deps.mediaKeyResolver] - Media key resolver for normalizing keys
  * @returns {ContentSourceRegistry}
  */
 export function createContentRegistry(config, deps = {}) {
-  const { httpClient, mediaProgressMemory } = deps;
+  const { httpClient, mediaProgressMemory, mediaKeyResolver } = deps;
   const registry = new ContentSourceRegistry();
 
   // Register filesystem adapter
@@ -385,7 +387,8 @@ export function createContentRegistry(config, deps = {}) {
     registry.register(new PlexAdapter({
       host: config.plex.host,
       token: config.plex.token,
-      mediaProgressMemory  // Inject MediaProgressMemory for watch state persistence
+      mediaProgressMemory,  // Inject MediaProgressMemory for watch state persistence
+      mediaKeyResolver      // Inject MediaKeyResolver for normalizing media keys
     }, { httpClient }));
   }
 
@@ -420,14 +423,26 @@ export function createContentRegistry(config, deps = {}) {
 }
 
 /**
+ * Create media key resolver from config
+ * @param {Object} config - Media key resolution config from configService.get('system', 'media')
+ * @param {Object} [config.mediaKeyResolution] - Resolution configuration
+ * @returns {MediaKeyResolver}
+ */
+export function createMediaKeyResolver(config = {}) {
+  return new MediaKeyResolver(config.mediaKeyResolution || {});
+}
+
+/**
  * Create media progress memory
  * @param {Object} config
  * @param {string} config.mediaProgressPath - Path for media progress files
+ * @param {MediaKeyResolver} [config.mediaKeyResolver] - Media key resolver for normalizing keys
  * @returns {YamlMediaProgressMemory}
  */
 export function createMediaProgressMemory(config) {
   return new YamlMediaProgressMemory({
-    basePath: config.mediaProgressPath
+    basePath: config.mediaProgressPath,
+    mediaKeyResolver: config.mediaKeyResolver
   });
 }
 

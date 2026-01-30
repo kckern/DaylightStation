@@ -30,6 +30,10 @@
   },
   "imports": {
     "#system/*": "./backend/src/0_system/*",
+    "#domains/*": "./backend/src/1_domains/*",
+    "#adapters/*": "./backend/src/2_adapters/*",
+    "#apps/*": "./backend/src/3_applications/*",
+    "#api/*": "./backend/src/4_api/*",
     "#backend/*": "./backend/*",
     "#frontend/*": "./frontend/src/*",
     "#fixtures/*": "./tests/_fixtures/*",
