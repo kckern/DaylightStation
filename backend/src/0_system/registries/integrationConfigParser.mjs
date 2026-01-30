@@ -44,8 +44,22 @@ export function parseIntegrationsConfig(config) {
 
   for (const [key, value] of Object.entries(config)) {
     if (CAPABILITY_KEYS.includes(key)) {
-      // Per-app routing section (ai, messaging, etc.)
-      appRouting[key] = parseAppRouting(value);
+      // Check if it's a simple capability array (e.g., home_automation: [{provider: 'homeassistant'}])
+      // vs app routing (e.g., messaging: {nutribot: [{platform: 'telegram'}]})
+      if (Array.isArray(value)) {
+        // Simple capability declaration - extract service entries
+        for (const entry of value) {
+          const provider = entry?.provider ?? entry?.platform;
+          if (provider && PROVIDER_CAPABILITY_MAP[provider]) {
+            // Copy config excluding provider/platform key
+            const { provider: _p, platform: _pl, ...serviceConfig } = entry;
+            services[provider] = serviceConfig;
+          }
+        }
+      } else {
+        // Per-app routing section (ai, messaging, etc.)
+        appRouting[key] = parseAppRouting(value);
+      }
     } else if (PROVIDER_CAPABILITY_MAP[key]) {
       // Service connection entry (plex, homeassistant, etc.)
       services[key] = value;
