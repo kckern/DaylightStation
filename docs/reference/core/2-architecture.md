@@ -18,7 +18,7 @@ DaylightStation requires a consistent three-tier data architecture to support:
 | Tier | Scope | Examples | Storage Path |
 |------|-------|----------|--------------|
 | **System** | Infrastructure shared across ALL households | Database, logging, AI keys, OAuth app registrations | `config/config.secrets.yml` |
-| **Household** | Shared within a family | Plex, Home Assistant, family calendar, weather | `data/households/{hid}/` |
+| **Household** | Shared within a family | Plex, Home Assistant, family calendar, weather | `data/household[-{hid}]/` |
 | **User** | Personal per individual | Gmail, Todoist, Garmin, Strava, fitness data | `data/users/{username}/` |
 
 ---
@@ -34,36 +34,34 @@ DaylightStation/
 │   └── system.yml                             # System settings
 │
 └── data/
-    │
-    ├── households/                            # HOUSEHOLD LEVEL
-    │   ├── default/
-    │   │   ├── household.yml                  # Household config (users list, head, timezone)
-    │   │   │
-    │   │   ├── auth/                          # 🆕 Household credentials
-    │   │   │   ├── plex.yml
-    │   │   │   ├── home_assistant.yml
-    │   │   │   ├── clickup.yml
-    │   │   │   ├── weather.yml
-    │   │   │   ├── infinity.yml
-    │   │   │   ├── buxfer.yml
-    │   │   │   └── foursquare.yml
-    │   │   │
-    │   │   ├── apps/                          # Household app config
-    │   │   │   ├── fitness/config.yml
-    │   │   │   └── finances/config.yml
-    │   │   │
-    │   │   ├── shared/                        # Household shared data
-    │   │   │   ├── calendar.yml               # Aggregated family calendar
-    │   │   │   ├── weather.yml                # Cached weather data
-    │   │   │   └── gratitude/                 # Shared gratitude selections
-    │   │   │
-    │   │   └── history/                       # Household history/state
-    │   │       ├── watchlist.yml
-    │   │       └── media_memory/
+    ├── household/                              # HOUSEHOLD LEVEL (default household)
+    │   ├── household.yml                       # Household config (users list, head, timezone)
     │   │
-    │   └── {other-household}/                 # Additional households
+    │   ├── auth/                               # Household credentials
+    │   │   ├── plex.yml
+    │   │   ├── home_assistant.yml
+    │   │   ├── clickup.yml
+    │   │   ├── weather.yml
+    │   │   ├── infinity.yml
+    │   │   ├── buxfer.yml
+    │   │   └── foursquare.yml
+    │   │
+    │   ├── apps/                               # Household app config
+    │   │   ├── fitness/config.yml
+    │   │   └── finances/config.yml
+    │   │
+    │   ├── shared/                             # Household shared data
+    │   │   ├── calendar.yml                    # Aggregated family calendar
+    │   │   ├── weather.yml                     # Cached weather data
+    │   │   └── gratitude/                      # Shared gratitude selections
+    │   │
+    │   └── history/                            # Household history/state
+    │       ├── watchlist.yml
+    │       └── media_memory/
     │
-    └── users/                                 # USER LEVEL
+    ├── household-{hid}/                         # Additional households
+    │
+    └── users/                                  # USER LEVEL
         ├── {username}/
         │   ├── profile.yml                    # User profile & preferences
         │   │
@@ -124,7 +122,7 @@ saveFile(path, data)                // saveFile('state/cron', data)
 // e.g., process.env.MYSQL_HOST, process.env.OPENAI_API_KEY
 
 // =============================================================================
-// HOUSEHOLD LEVEL - households/{hid}/
+// HOUSEHOLD LEVEL - household[-{hid}]/
 // =============================================================================
 
 householdLoadFile(hid, path)        // householdLoadFile('default', 'shared/calendar')
@@ -151,8 +149,8 @@ getDefaultUsername()                // Returns head of household
 | Function | Example | Resolves To |
 |----------|---------|-------------|
 | `loadFile('state/cron')` | System | `{dataDir}/state/cron.yml` |
-| `householdLoadFile('default', 'shared/calendar')` | Household | `{dataDir}/households/default/shared/calendar.yml` |
-| `householdLoadAuth('default', 'plex')` | Household | `{dataDir}/households/default/auth/plex.yml` |
+| `householdLoadFile('default', 'shared/calendar')` | Household | `{dataDir}/household/shared/calendar.yml` |
+| `householdLoadAuth('default', 'plex')` | Household | `{dataDir}/household/auth/plex.yml` |
 | `userLoadFile('{username}', 'events')` | User | `{dataDir}/users/{username}/lifelog/events.yml` |
 | `userLoadAuth('{username}', 'strava')` | User | `{dataDir}/users/{username}/auth/strava.yml` |
 
@@ -190,17 +188,17 @@ getDefaultUsername()                // Returns head of household
 | `LAST_FM_API_KEY` | System | System | ✅ Keep (app key) |
 | `ED_APP_ID/KEY`, `UPCITE` | System | System | ✅ Keep (app keys) |
 | **❌ Move to Household** ||||
-| `PLEX_TOKEN` | System | Household | → `households/{hid}/auth/plex.yml` |
-| `HOME_ASSISTANT_TOKEN` | System | Household | → `households/{hid}/auth/home_assistant.yml` |
-| `CLICKUP_PK` | System | Household | → `households/{hid}/auth/clickup.yml` |
-| `OPEN_WEATHER_API_KEY` | System | Household | → `households/{hid}/auth/weather.yml` |
-| `INFINITY_*` | System | Household | → `households/{hid}/auth/infinity.yml` |
-| `BUXFER_EMAIL/PW` | System | Household | → `households/{hid}/auth/buxfer.yml` |
-| `PAYROLL_*` | System | Household | → `households/{hid}/auth/payroll.yml` |
-| `FOURSQUARE_TOKEN` | System | Household | → `households/{hid}/auth/foursquare.yml` |
-| `MEMOS_TOKEN` | System | Household | → `households/{hid}/auth/memos.yml` |
-| `FULLY_KIOSK_PASSWORD` | System | Household | → `households/{hid}/auth/fully_kiosk.yml` |
-| `IFTTT_KEY` | System | Household | → `households/{hid}/auth/ifttt.yml` |
+| `PLEX_TOKEN` | System | Household | → `household[-{hid}]/auth/plex.yml` |
+| `HOME_ASSISTANT_TOKEN` | System | Household | → `household[-{hid}]/auth/home_assistant.yml` |
+| `CLICKUP_PK` | System | Household | → `household[-{hid}]/auth/clickup.yml` |
+| `OPEN_WEATHER_API_KEY` | System | Household | → `household[-{hid}]/auth/weather.yml` |
+| `INFINITY_*` | System | Household | → `household[-{hid}]/auth/infinity.yml` |
+| `BUXFER_EMAIL/PW` | System | Household | → `household[-{hid}]/auth/buxfer.yml` |
+| `PAYROLL_*` | System | Household | → `household[-{hid}]/auth/payroll.yml` |
+| `FOURSQUARE_TOKEN` | System | Household | → `household[-{hid}]/auth/foursquare.yml` |
+| `MEMOS_TOKEN` | System | Household | → `household[-{hid}]/auth/memos.yml` |
+| `FULLY_KIOSK_PASSWORD` | System | Household | → `household[-{hid}]/auth/fully_kiosk.yml` |
+| `IFTTT_KEY` | System | Household | → `household[-{hid}]/auth/ifttt.yml` |
 | **❌ Move to User** ||||
 | `GOOGLE_REFRESH_TOKEN` | System | User | → `users/{username}/auth/google.yml` |
 | `GGL_ACCESS` | System | User | → `users/{username}/auth/google.yml` |
@@ -216,15 +214,15 @@ getDefaultUsername()                // Returns head of household
 
 #### Household Auth Examples
 ```yaml
-# households/default/auth/plex.yml
+# household/auth/plex.yml
 token: ***REMOVED***
 server_url: http://plex.local:32400
 
-# households/default/auth/home_assistant.yml
+# household/auth/home_assistant.yml
 token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 base_url: http://homeassistant.local:8123
 
-# households/default/auth/clickup.yml
+# household/auth/clickup.yml
 api_key: ***REMOVED***
 workspace_id: 3833120
 ```
@@ -455,7 +453,7 @@ node cli/auth-validator.cli.mjs --json
 - [x] Add `getCurrentHouseholdId()` helper
 - [x] Add `userLoadProfile()` helper
 - [x] Add `getDefaultUsername()` helper
-- [x] Create `data/households/default/auth/` directory
+- [x] Create `data/household/auth/` directory
 
 ### Phase 1: Household Auth Migration (Day 1-2) ✅ COMPLETE
 - [x] Create household auth files from current secrets (11 files)
@@ -487,7 +485,7 @@ node cli/auth-validator.cli.mjs --json
 
 After migration, these secrets are now stored in tiered auth files and can be removed from `config.secrets.yml`:
 
-**Migrated to Household Auth (`data/households/default/auth/`):**
+**Migrated to Household Auth (`data/household/auth/`):**
 - `PLEX_TOKEN` → `plex.yml`
 - `HOME_ASSISTANT_TOKEN` → `home_assistant.yml`
 - `CLICKUP_PK` → `clickup.yml`
@@ -567,7 +565,7 @@ console.log('=== Migrating Household Auth ===');
 for (const [service, data] of Object.entries(householdAuth)) {
   if (Object.values(data).some(v => v)) {
     householdSaveAuth(HOUSEHOLD_ID, service, data);
-    console.log(`✅ households/${HOUSEHOLD_ID}/auth/${service}.yml`);
+    console.log(`✅ household${HOUSEHOLD_ID === 'default' ? '' : '-' + HOUSEHOLD_ID}/auth/${service}.yml`);
   }
 }
 
@@ -675,7 +673,7 @@ data/
         ├── calendar.yml            # Upcoming events (next 6 weeks)
         └── events.yml              # Aggregated upcoming items
 
-households/{hid}/
+household[-{hid}]/
 └── shared/
     ├── events.yml                  # Household aggregated upcoming events (for TV display)
     └── current/                    # Household-level current data
@@ -1090,7 +1088,7 @@ const listCalendarEvents = async (logger, job_id, targetUsername = null) => {
     
     // Also save to household shared (for TV display)
     const hid = process.env.household_id || 'default';
-    saveFile(`households/${hid}/shared/calendar`, formatEvents(upcomingEvents));
+    householdSaveFile(hid, 'shared/calendar', formatEvents(upcomingEvents));
     
     // === LIFELOG DATA: Past events (last 6 weeks) ===
     let pastEvents = [];
@@ -1118,7 +1116,7 @@ const listCalendarEvents = async (logger, job_id, targetUsername = null) => {
 **Data Structures:**
 
 ```yaml
-# users/{username}/current/calendar.yml (also households/{hid}/shared/calendar.yml)
+# users/{username}/current/calendar.yml (also household[-{hid}]/shared/calendar.yml)
 - id: 'event123'
   start: '2025-12-31T14:00:00Z'
   end: '2025-12-31T15:00:00Z'
@@ -1161,7 +1159,7 @@ export default async (job_id) => {
     
     // Save to household shared location (for Upcoming module)
     const hid = process.env.household_id || 'default';
-    saveFile(`households/${hid}/shared/events`, allItems);
+    householdSaveFile(hid, 'shared/events', allItems);
     
     return allItems;
 };

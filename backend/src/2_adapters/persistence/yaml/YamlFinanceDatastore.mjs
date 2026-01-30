@@ -14,6 +14,7 @@
  */
 import path from 'path';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
+import { toFolderName } from '#system/config/configLoader.mjs';
 import {
   ensureDir,
   dirExists,
@@ -51,7 +52,7 @@ export class YamlFinanceDatastore {
    */
   getBasePath(householdId) {
     const hid = householdId || this.#defaultHouseholdId;
-    return path.join(this.#dataRoot, 'households', hid, 'apps', 'finances');
+    return path.join(this.#dataRoot, toFolderName(hid), 'apps', 'finances');
   }
 
   // ==========================================================================

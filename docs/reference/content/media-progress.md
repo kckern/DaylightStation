@@ -340,7 +340,7 @@ No configuration needed - uses sensible defaults.
 
 ### Fitness Classifier
 
-**Location:** `data/households/{hid}/apps/fitness/config.yml`
+**Location:** `data/household[-{hid}]/apps/fitness/config.yml`
 
 ```yaml
 progressClassification:

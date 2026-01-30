@@ -10,13 +10,13 @@ import {
   dirExists,
   fileExists,
   listYamlFiles,
-  listDirs,
   loadYamlSafe,
   saveYaml,
   deleteYaml
 } from '#system/utils/FileIO.mjs';
 import { IJournalDatastore } from '#apps/journaling/ports/IJournalDatastore.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
+import { listHouseholdDirs, parseHouseholdId, toFolderName } from '#system/config/configLoader.mjs';
 
 export class YamlJournalDatastore extends IJournalDatastore {
   /**
@@ -41,8 +41,7 @@ export class YamlJournalDatastore extends IJournalDatastore {
   getEntryPath(userId, date) {
     return path.join(
       this.dataRoot,
-      'households',
-      userId,
+      toFolderName(userId),
       'apps',
       'journal',
       'entries',
@@ -58,8 +57,7 @@ export class YamlJournalDatastore extends IJournalDatastore {
   getEntriesDir(userId) {
     return path.join(
       this.dataRoot,
-      'households',
-      userId,
+      toFolderName(userId),
       'apps',
       'journal',
       'entries'
@@ -107,12 +105,10 @@ export class YamlJournalDatastore extends IJournalDatastore {
     const dateMatch = id.match(/(\d{4}-\d{2}-\d{2})/);
     if (!dateMatch) return null;
 
-    // Search all users for this ID - in production would use userId
-    const householdsDir = path.join(this.dataRoot, 'households');
-    if (!dirExists(householdsDir)) return null;
-
-    const users = listDirs(householdsDir);
-    for (const userId of users) {
+    // Search all households for this ID - in production would use userId
+    const householdFolders = listHouseholdDirs(this.dataRoot);
+    for (const folderName of householdFolders) {
+      const userId = parseHouseholdId(folderName);
       const entry = await this.findByUserAndDate(userId, dateMatch[1]);
       if (entry && entry.id === id) {
         return entry;

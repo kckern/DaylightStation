@@ -13,8 +13,8 @@
 - `backend/src/0_system/bootstrap.mjs` - createDeviceServices, createDeviceApiRouter
 
 **Device config:**
-- `data/households/default/apps/devices/config.yml` - Device definitions
-- `data/households/default/auth/fullykiosk.yml` - Kiosk password (existing)
+- `data/household/apps/devices/config.yml` - Device definitions
+- `data/household/auth/fullykiosk.yml` - Kiosk password (existing)
 
 **HA files updated:**
 - `_includes/rest_commands/devices.yaml` - New device registry commands
@@ -62,7 +62,7 @@ Each capability can provide additional features:
 ### Config Structure
 
 ```yaml
-# data/households/{hid}/apps/devices/config.yml
+# data/household[-{hid}]/apps/devices/config.yml
 devices:
   livingroom-tv:
     type: shield-tv

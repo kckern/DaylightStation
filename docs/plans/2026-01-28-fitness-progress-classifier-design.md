@@ -95,7 +95,7 @@ backend/src/1_domains/fitness/
 
 ## Config Schema
 
-**Location:** `data/households/{hid}/apps/fitness/config.yml`
+**Location:** `data/household[-{hid}]/apps/fitness/config.yml`
 
 ```yaml
 # Media progress classification thresholds

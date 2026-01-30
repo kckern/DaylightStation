@@ -15,6 +15,7 @@ import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
 import { configService } from './index.mjs';
+import { toFolderName } from './configLoader.mjs';
 import { createLogger } from '../logging/logger.mjs';
 
 const logger = createLogger({
@@ -219,16 +220,6 @@ class UserDataService {
   // ============================================================
 
   /**
-   * Get the households directory path
-   * @returns {string|null}
-   */
-  getHouseholdsDir() {
-    this.#ensureInitialized();
-    if (!this.#dataDir) return null;
-    return path.join(this.#dataDir, 'households');
-  }
-
-  /**
    * Get the base path for a household's data directory
    * Delegates to ConfigService for proper path resolution (flat vs legacy structure)
    * @param {string} householdId - Household identifier
@@ -247,7 +238,7 @@ class UserDataService {
       logger.warn('user-data.household-not-in-config', { householdId, error: err.message });
       this.#ensureInitialized();
       if (!this.#dataDir) return null;
-      return path.join(this.#dataDir, 'households', householdId);
+      return path.join(this.#dataDir, toFolderName(householdId));
     }
   }
 

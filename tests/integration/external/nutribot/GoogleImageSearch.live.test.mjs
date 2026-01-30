@@ -2,7 +2,7 @@
  * GoogleImageSearchGateway Live Integration Test
  * 
  * Tests the Google Image Search gateway with REAL API calls.
- * Requires GOOGLE_API_KEY and GOOGLE_CSE_ID in households/default/auth/google.yml
+ * Requires GOOGLE_API_KEY and GOOGLE_CSE_ID in household/auth/google.yml
  * 
  * Run with: npm test -- tests/live/nutribot/GoogleImageSearch.live.test.mjs
  */
@@ -20,7 +20,8 @@ describe('GoogleImageSearchGateway Live API', () => {
 
   beforeAll(() => {
     // Load credentials from household auth file
-    const authPath = '/Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStation/data/households/default/auth/google.yml';
+    const dataDir = process.env.DAYLIGHT_DATA_PATH || path.resolve('data');
+    const authPath = path.join(dataDir, 'household/auth/google.yml');
     let apiKey = null;
     let cseId = null;
     

@@ -157,7 +157,7 @@ Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>"
 
 The file header comments mention:
 ```
- * - Hot storage: households/{hid}/apps/nutrition/nutrilist.yml
+ * - Hot storage: household[-{hid}]/apps/nutrition/nutrilist.yml
 ```
 
 But `#getPath()` builds:
@@ -173,7 +173,7 @@ lifelog/nutrition/nutrilist
 git add backend/src/2_adapters/persistence/yaml/YamlNutriListStore.mjs
 git commit -m "docs: correct storage path comments in YamlNutriListStore
 
-Comments referenced households/{hid}/apps/ but code uses lifelog/nutrition/.
+Comments referenced household[-{hid}]/apps/ but code uses lifelog/nutrition/.
 
 Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>"
 ```

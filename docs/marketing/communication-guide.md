@@ -43,7 +43,7 @@ A "tap" is any output modality that draws from the refined data. **Do not defaul
 Taps include:
 - Room-specific kiosks (garage, office, kitchen)
 - TV overlays (PIP maps, photo interstitials)
-- Thermal printer (morning receipt)
+- Thermal printer (morning receipt, fitness workout summary, gratitude reminders)
 - Telegram bots (Nutribot, Journalist, Homebot)
 - Push notifications / WebSocket
 - Ambient lighting (via Home Assistant)

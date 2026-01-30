@@ -10,6 +10,7 @@
 import path from 'path';
 import { loadYaml, saveYaml } from '#system/utils/FileIO.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
+import { toFolderName } from '#system/config/configLoader.mjs';
 
 export class YamlWeatherDatastore {
   #dataRoot;
@@ -40,7 +41,7 @@ export class YamlWeatherDatastore {
    * @private
    */
   #getFilePath() {
-    return path.join(this.#dataRoot, 'households', this.#householdId, 'shared', 'weather');
+    return path.join(this.#dataRoot, toFolderName(this.#householdId), 'shared', 'weather');
   }
 
   /**

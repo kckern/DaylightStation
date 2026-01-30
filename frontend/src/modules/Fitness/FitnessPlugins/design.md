@@ -2140,4 +2140,4 @@ plex:
 - [FitnessChart.jsx](../FitnessSidebar/FitnessChart.jsx) - Chart component to convert
 - [FitnessPlayerOverlay.jsx](../FitnessPlayerOverlay.jsx) - Overlay integration target
 - [FitnessContext.jsx](../../../context/FitnessContext.jsx) - Shared state management
-- [config.yml](/data/households/default/apps/fitness/config.yml) - App menu configuration
+- [config.yml](/data/household/apps/fitness/config.yml) - App menu configuration

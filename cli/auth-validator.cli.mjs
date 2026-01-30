@@ -4,7 +4,7 @@
  * 
  * Validates the three-tier auth architecture:
  * - System level: env vars from config.secrets.yml
- * - Household level: data/households/{hid}/auth/*.yml
+ * - Household level: data/household[-{hid}]/auth/*.yml
  * - User level: data/users/{username}/auth/*.yml
  * 
  * Usage:
@@ -68,8 +68,9 @@ const projectRoot = path.resolve(__dirname, '..');
 
 // Find data path
 const possibleDataPaths = [
+    process.env.DAYLIGHT_DATA_PATH,
     process.env.DATA_PATH,
-    '/Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStationdata',
+    '/Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStation/data',
     path.join(projectRoot, 'data')
 ].filter(Boolean);
 

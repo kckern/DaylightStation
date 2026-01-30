@@ -5,8 +5,8 @@ import yaml from 'js-yaml';
 import { parseInput } from './endpoint-map.mjs';
 
 // Data path from environment or default
-const DATA_PATH = process.env.DAYLIGHT_DATA_PATH || '/media/kckern/DockerDrive/Dropbox/Apps/DaylightStation/data';
-const LISTS_PATH = path.join(DATA_PATH, 'households/default/state/lists.yml');
+const DATA_PATH = process.env.DAYLIGHT_DATA_PATH || path.resolve('data');
+const LISTS_PATH = path.join(DATA_PATH, 'household/state/lists.yml');
 
 /**
  * Load test fixtures from lists.yml

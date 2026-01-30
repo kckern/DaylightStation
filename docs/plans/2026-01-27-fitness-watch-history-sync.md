@@ -321,7 +321,7 @@ Expected: `lastViewedAt` should now have a timestamp.
 **Step 3: Check history file**
 
 ```bash
-grep "449313" /data/households/default/history/media_memory/plex/14_fitness.yml
+grep "449313" /data/household/history/media_memory/plex/14_fitness.yml
 ```
 
 Expected: Entry exists for the media ID.
