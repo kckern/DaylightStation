@@ -1,7 +1,7 @@
 // backend/src/2_adapters/BaseInputRouter.mjs
 
 import { InputEventType } from './telegram/IInputEvent.mjs';
-import { InfrastructureError } from '#system/utils/errors';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 /**
  * Abstract base class for bot input routers.
