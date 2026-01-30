@@ -17,27 +17,27 @@ import { IHealthDataDatastore } from '#apps/health/ports/IHealthDataDatastore.mj
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 export class YamlHealthDatastore extends IHealthDataDatastore {
-  #userDataService;
+  #dataService;
   #userResolver;
   #configService;
   #logger;
 
   /**
    * @param {Object} config
-   * @param {Object} config.userDataService - UserDataService instance for YAML I/O
+   * @param {Object} config.dataService - DataService instance for YAML I/O
    * @param {Object} [config.userResolver] - UserResolver for ID to username mapping
    * @param {Object} [config.configService] - ConfigService for default user lookup
    * @param {Object} [config.logger] - Logger instance
    */
   constructor(config) {
     super();
-    if (!config.userDataService) {
-      throw new InfrastructureError('YamlHealthDatastore requires userDataService', {
+    if (!config.dataService) {
+      throw new InfrastructureError('YamlHealthDatastore requires dataService', {
         code: 'MISSING_DEPENDENCY',
-        dependency: 'userDataService'
+        dependency: 'dataService'
       });
     }
-    this.#userDataService = config.userDataService;
+    this.#dataService = config.dataService;
     this.#userResolver = config.userResolver;
     this.#configService = config.configService;
     this.#logger = config.logger || console;
@@ -74,7 +74,7 @@ export class YamlHealthDatastore extends IHealthDataDatastore {
    */
   #loadUserFile(userId, path) {
     const username = userId ? this.#resolveUsername(userId) : this.#getDefaultUsername();
-    const data = this.#userDataService.readUserData?.(username, path);
+    const data = this.#dataService.user.read?.(path, username);
     return data || {};
   }
 
@@ -84,7 +84,7 @@ export class YamlHealthDatastore extends IHealthDataDatastore {
    */
   #saveUserFile(userId, path, data) {
     const username = userId ? this.#resolveUsername(userId) : this.#getDefaultUsername();
-    this.#userDataService.writeUserData?.(username, path, data);
+    this.#dataService.user.write?.(path, data, username);
   }
 
   // ===========================================================================
