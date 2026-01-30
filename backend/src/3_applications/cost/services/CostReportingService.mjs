@@ -20,7 +20,7 @@
  * const byCategory = await service.getSpendByCategory('default', period, 2);
  */
 
-import { CostAnalysisService } from '#domains/cost';
+import { CostAnalysisService } from '#domains/cost/index.mjs';
 
 /**
  * CostReportingService
