@@ -1,43 +1,45 @@
 // backend/src/2_adapters/persistence/yaml/YamlNutriLogDatastore.mjs
 import { NutriLog } from '#domains/lifelog/entities/NutriLog.mjs';
-import { loadYaml, saveYaml } from '#system/utils/FileIO.mjs';
 import { nowTs24 } from '#system/utils/index.mjs';
 import { INutriLogDatastore } from '#apps/nutribot/ports/INutriLogDatastore.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
+const NUTRILOG_PATH = 'lifelog/nutrition/nutrilog';
+
 /**
  * YAML-based NutriLog persistence adapter
  * Implements INutriLogDatastore port
+ *
+ * Uses DataService for filesystem abstraction - adapter does not
+ * interact with filesystem directly.
  */
 export class YamlNutriLogDatastore extends INutriLogDatastore {
-  #userDataService;
+  #dataService;
   #logger;
 
   constructor(config) {
     super();
-    if (!config.userDataService) {
-      throw new InfrastructureError('YamlNutriLogDatastore requires userDataService', {
+    if (!config.dataService) {
+      throw new InfrastructureError('YamlNutriLogDatastore requires dataService', {
         code: 'MISSING_DEPENDENCY',
-        dependency: 'userDataService'
+        dependency: 'dataService'
       });
     }
-    this.#userDataService = config.userDataService;
+    this.#dataService = config.dataService;
     this.#logger = config.logger || console;
   }
 
-  #getPath(userId) {
-    return this.#userDataService.getUserPath(userId, 'lifelog/nutrition/nutrilog');
-  }
-
   #loadLogs(userId) {
-    const path = this.#getPath(userId);
-    const data = loadYaml(path);
+    const data = this.#dataService.user.read(NUTRILOG_PATH, userId);
     return data || {};
   }
 
   #saveLogs(userId, logs) {
-    const path = this.#getPath(userId);
-    saveYaml(path, logs);
+    const result = this.#dataService.user.write(NUTRILOG_PATH, logs, userId);
+    if (!result) {
+      this.#logger.error?.('nutrilog.save.failed', { userId });
+    }
+    return result;
   }
 
   async save(nutriLog) {
