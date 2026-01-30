@@ -8,8 +8,8 @@
  * - /media/plex/info/{id} - episode info with watch progress
  *
  * Uses real data from:
- * - households/default/apps/fitness/config.yml
- * - households/default/history/media_memory/plex/14_fitness.yml
+ * - household/apps/fitness/config.yml
+ * - household/history/media_memory/plex/14_fitness.yml
  *
  * Run with: node tests/integration/api/fitness-plex-parity.test.mjs
  */
@@ -22,9 +22,9 @@ import yaml from 'yaml';
 const BASE_URL = process.env.PARITY_TEST_URL || 'http://localhost:3112';
 
 // Data paths - adjust if running from different location
-const DATA_PATH = process.env.DAYLIGHT_DATA_PATH || '/media/kckern/DockerDrive/Dropbox/Apps/DaylightStation/data';
-const FITNESS_CONFIG_PATH = path.join(DATA_PATH, 'households/default/apps/fitness/config.yml');
-const FITNESS_MEMORY_PATH = path.join(DATA_PATH, 'households/default/history/media_memory/plex/14_fitness.yml');
+const DATA_PATH = process.env.DAYLIGHT_DATA_PATH || path.resolve('data');
+const FITNESS_CONFIG_PATH = path.join(DATA_PATH, 'household/apps/fitness/config.yml');
+const FITNESS_MEMORY_PATH = path.join(DATA_PATH, 'household/history/media_memory/plex/14_fitness.yml');
 
 // Helper to make requests
 async function fetchJSON(urlPath) {

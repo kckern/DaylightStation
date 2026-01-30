@@ -229,6 +229,6 @@ git rev-parse HEAD > docs/docs-last-updated.txt
 - `cli/` - CLI tools
 
 ### Config System
-- Household configs: `data/households/{hid}/apps/{app}/config.yml`
+- Household configs: `data/household[-{hid}]/apps/{app}/config.yml`
 - Use ConfigService for reads (preferred over io.mjs)
 - Multi-dimensional process.env (use spread pattern to set)

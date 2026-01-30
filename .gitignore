@@ -45,3 +45,5 @@ tests/runtime/*.log
 /.playwright-mcp
 /coverage
 tests/output/
+/docs/marketing/jop
+/docs/ideas

@@ -41,7 +41,7 @@ export function PianoVisualizer({ onClose, onSessionEnd }) {
     const initPiano = async () => {
       try {
         // Load piano config from household
-        const config = await DaylightAPI('data/households/default/apps/piano/config');
+        const config = await DaylightAPI('data/household/apps/piano/config');
         pianoConfigRef.current = config;
         
         // Run on_open HA script if configured

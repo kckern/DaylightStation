@@ -369,7 +369,7 @@ export function createFitnessServices(config) {
 | **Service without lifecycle** | Service class with no start/stop that could be pure functions | Make it a utility |
 | **Utility with state** | Function that caches internally between calls | Make it a service |
 | **Config access in utilities** | `import { configService } from '#system/config'` in a utility | Pass values as parameters |
-| **Hardcoded paths** | `const dataDir = '/data/households'` | Use ConfigService |
+| **Hardcoded paths** | `const dataDir = '/data/household'` | Use ConfigService |
 | **Swallowed errors** | `catch (e) { }` | Throw system errors, let app layer handle |
 | **Generic Error** | `throw new Error('config missing')` | `throw new ConfigurationError('...', { code })` |
 | **Bootstrap business logic** | Calculating values, transforming data in bootstrap | Bootstrap only wires |

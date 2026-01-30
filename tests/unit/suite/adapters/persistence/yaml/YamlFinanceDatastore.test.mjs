@@ -28,7 +28,7 @@ describe('YamlFinanceDatastore', () => {
     testDataRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'finance-store-test-'));
 
     // Create directory structure
-    const financesPath = path.join(testDataRoot, 'households', 'default', 'apps', 'finances');
+    const financesPath = path.join(testDataRoot, 'household', 'apps', 'finances');
     fs.mkdirSync(financesPath, { recursive: true });
 
     // Write test config file
@@ -52,7 +52,7 @@ describe('YamlFinanceDatastore', () => {
 
     it('uses default household ID', () => {
       const basePath = store.getBasePath();
-      expect(basePath).toContain('households/default/apps/finances');
+      expect(basePath).toContain('household/apps/finances');
     });
 
     it('allows custom default household ID', () => {
@@ -68,12 +68,12 @@ describe('YamlFinanceDatastore', () => {
   describe('getBasePath', () => {
     it('returns correct path for default household', () => {
       const basePath = store.getBasePath();
-      expect(basePath).toBe(path.join(testDataRoot, 'households', 'default', 'apps', 'finances'));
+      expect(basePath).toBe(path.join(testDataRoot, 'household', 'apps', 'finances'));
     });
 
     it('returns correct path for specified household', () => {
       const basePath = store.getBasePath('other');
-      expect(basePath).toBe(path.join(testDataRoot, 'households', 'other', 'apps', 'finances'));
+      expect(basePath).toBe(path.join(testDataRoot, 'household-other', 'apps', 'finances'));
     });
   });
 

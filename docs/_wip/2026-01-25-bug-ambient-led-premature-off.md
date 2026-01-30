@@ -233,7 +233,7 @@ After fix implementation:
 
 - HomeAssistant Integration: `backend/src/2_adapters/fitness/AmbientLedAdapter.mjs`
 - Frontend Zone Logic: `frontend/src/apps/fitness/`
-- Configuration: `data/households/default/apps/fitness/config.yml`
+- Configuration: `data/household/apps/fitness/config.yml`
 - API Endpoint: `POST /api/v1/fitness/zone_led`
 
 ## Notes

@@ -52,7 +52,7 @@ The fitness app has **two independent data flows** that are not connected:
 
 #### 1. Session Was Saved Successfully
 
-File: `households/default/apps/fitness/sessions/2026-01-27/20260127063318.yml`
+File: `household/apps/fitness/sessions/2026-01-27/20260127063318.yml`
 
 ```yaml
 session:
@@ -79,7 +79,7 @@ timeline:
 #### 2. Watch History Empty
 
 ```bash
-$ grep "449313" households/default/history/media_memory/plex/*.yml
+$ grep "449313" household/history/media_memory/plex/*.yml
 # No results - episode not in any history file
 ```
 
@@ -127,7 +127,7 @@ This suggests the governance system doesn't recognize the media, which may preve
 ### How Watch History SHOULD Work
 
 1. **PlexAdapter** provides `_loadViewingHistory()` which reads from YAML files:
-   - Path: `households/{hid}/history/media_memory/plex/{libraryId}_{libraryName}.yml`
+  - Path: `household[-{hid}]/history/media_memory/plex/{libraryId}_{libraryName}.yml`
    - Fitness library: `14_fitness.yml`
 
 2. **play.mjs router** handles `POST /api/play/log`:
@@ -157,10 +157,10 @@ The fitness frontend is **not calling** `POST /api/play/log` when videos complet
 
 ```bash
 # Check session file exists
-ls -la data/households/default/apps/fitness/sessions/2026-01-27/
+ls -la data/household/apps/fitness/sessions/2026-01-27/
 
 # Check if episode in history
-grep "449313" data/households/default/history/media_memory/plex/14_fitness.yml
+grep "449313" data/household/history/media_memory/plex/14_fitness.yml
 
 # Check API response
 curl -s "http://localhost:3111/api/v1/fitness/show/449307/playable" | jq '.items[] | select(.id == "plex:449313") | {title, lastViewedAt, watchProgress}'

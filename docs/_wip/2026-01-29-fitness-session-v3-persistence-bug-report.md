@@ -17,7 +17,7 @@ The frontend `PersistenceManager.js` builds a **v3 session payload** with transf
 
 ### Affected Session
 - **Session ID:** `20260129063322`
-- **File Path:** `households/default/apps/fitness/sessions/2026-01-29/20260129063322.yml`
+- **File Path:** `household/apps/fitness/sessions/2026-01-29/20260129063322.yml`
 
 ### Current File Contents (production)
 ```yaml

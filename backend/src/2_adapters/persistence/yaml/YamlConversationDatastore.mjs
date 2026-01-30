@@ -12,13 +12,13 @@ import {
   ensureDir,
   dirExists,
   listYamlFiles,
-  listDirs,
   loadYamlSafe,
   saveYaml,
   deleteYaml
 } from '#system/utils/FileIO.mjs';
 import { IConversationDatastore } from '#apps/shared/ports/IConversationDatastore.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
+import { listHouseholdDirs, parseHouseholdId } from '#system/config/configLoader.mjs';
 
 export class YamlConversationDatastore extends IConversationDatastore {
   #userDataService;
@@ -145,14 +145,12 @@ export class YamlConversationDatastore extends IConversationDatastore {
     // Try to find in any household directory
     const dataRoot = this.#userDataService.getDataRoot?.();
     if (dataRoot) {
-      const householdsDir = path.join(dataRoot, 'households');
-      if (dirExists(householdsDir)) {
-        const households = listDirs(householdsDir);
-        for (const hid of households) {
-          filePath = this.#getConversationPath(hid, id);
-          data = this.#readFile(filePath);
-          if (data) return data;
-        }
+      const householdFolders = listHouseholdDirs(dataRoot);
+      for (const folderName of householdFolders) {
+        const hid = parseHouseholdId(folderName);
+        filePath = this.#getConversationPath(hid, id);
+        data = this.#readFile(filePath);
+        if (data) return data;
       }
     }
 
@@ -239,13 +237,9 @@ export class YamlConversationDatastore extends IConversationDatastore {
       return conversations;
     }
 
-    const householdsDir = path.join(dataRoot, 'households');
-    if (!dirExists(householdsDir)) {
-      return conversations;
-    }
-
-    const households = listDirs(householdsDir);
-    for (const hid of households) {
+    const householdFolders = listHouseholdDirs(dataRoot);
+    for (const folderName of householdFolders) {
+      const hid = parseHouseholdId(folderName);
       const convDir = this.#getConversationsDir(hid);
       if (!convDir || !dirExists(convDir)) continue;
 

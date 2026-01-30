@@ -61,7 +61,7 @@ audiobookshelf:
 
 **Step 2: Verify file is valid YAML**
 
-Run: `node -e "console.log(require('js-yaml').load(require('fs').readFileSync('/media/kckern/DockerDrive/Dropbox/Apps/DaylightStation/data/system/services.yml', 'utf8')))"`
+Run: `node -e "console.log(require('js-yaml').load(require('fs').readFileSync('{dataDir}/system/services.yml', 'utf8')))"`
 
 Expected: Object printed without error
 
@@ -77,7 +77,7 @@ git commit -m "feat(config): add services.yml for service host resolution"
 ## Task 2: Create integrations.yml for Default Household
 
 **Files:**
-- Create: `data/households/default/integrations.yml`
+- Create: `data/household/integrations.yml`
 
 **Step 1: Create the integrations.yml file**
 
@@ -110,14 +110,14 @@ audiobookshelf:
 
 **Step 2: Verify file is valid YAML**
 
-Run: `node -e "console.log(require('js-yaml').load(require('fs').readFileSync('/media/kckern/DockerDrive/Dropbox/Apps/DaylightStation/data/households/default/integrations.yml', 'utf8')))"`
+Run: `node -e "console.log(require('js-yaml').load(require('fs').readFileSync('{dataDir}/household/integrations.yml', 'utf8')))"`
 
 Expected: Object printed without error
 
 **Step 3: Commit**
 
 ```bash
-git add data/households/default/integrations.yml
+git add data/household/integrations.yml
 git commit -m "feat(config): add integrations.yml for default household"
 ```
 
@@ -127,7 +127,7 @@ git commit -m "feat(config): add integrations.yml for default household"
 
 **Files:**
 - Create: `tests/unit/suite/config/fixtures/system/services.yml`
-- Create: `tests/unit/suite/config/fixtures/households/test-household/integrations.yml`
+- Create: `tests/unit/suite/config/fixtures/household-test-household/integrations.yml`
 
 **Step 1: Create test fixtures services.yml**
 

@@ -177,7 +177,7 @@ export class InfinityHarvester extends IHarvester {
         : processedItems;
 
       // Save to household state file (Infinity data is household-level, not user-level)
-      // This matches legacy behavior: saveFile('state/lists') -> households/default/state/lists
+      // This matches legacy behavior: saveFile('state/lists') -> household/state/lists
       if (this.#io?.householdSaveFile) {
         await this.#io.householdSaveFile(`state/${this.#tableKey}`, finalItems);
       }

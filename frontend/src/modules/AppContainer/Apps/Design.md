@@ -40,7 +40,7 @@ User → Remote/Keyboard → React State → API POST → YAML Files
 
 **Data Storage (household-scoped):**
 ```
-data/households/default/shared/gratitude/
+data/household/shared/gratitude/
 ├── options.gratitude.yaml
 ├── options.hopes.yaml
 ├── selections.gratitude.yaml
@@ -256,7 +256,7 @@ User: Sunny weather, good coffee, and family time
 Gratitude users will be derived directly from `household.yml`:
 
 ```yaml
-# data/households/default/household.yml
+# data/household/household.yml
 users:
   - {username}    # Display name from user profile
   - felix
