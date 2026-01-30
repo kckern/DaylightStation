@@ -14,7 +14,7 @@ import { existsSync } from 'fs';
 import path, { join } from 'path';
 
 // Infrastructure imports
-import { ConfigValidationError, configService, userDataService, userService } from './0_system/config/index.mjs';
+import { ConfigValidationError, configService, dataService, userDataService, userService } from './0_system/config/index.mjs';
 import { UserResolver } from './0_system/users/UserResolver.mjs';
 import { HttpClient } from './0_system/services/HttpClient.mjs';
 
@@ -470,6 +470,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     io: harvesterIo,
     httpClient: axios,
     configService,
+    userDataService,
     todoistApi: null, // Will use httpClient directly
     aiGateway: null, // AI gateway created later in app initialization
     // Reuse config-driven buxfer adapter from finance domain (use .has() to avoid NoOp)
@@ -919,12 +920,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Scheduling domain - DDD replacement for legacy /cron
   const schedulingJobStore = new YamlJobDatastore({
-    dataDir,
+    dataService,
     logger: rootLogger.child({ module: 'scheduling-jobs' })
   });
 
   const schedulingStateStore = new YamlStateDatastore({
-    dataDir,
+    dataService,
     logger: rootLogger.child({ module: 'scheduling-state' })
   });
 
