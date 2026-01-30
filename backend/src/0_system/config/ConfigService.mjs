@@ -204,6 +204,7 @@ export class ConfigService {
 
   /**
    * Get household-scoped path for state/history files
+   * @deprecated Use getHouseholdAppPath() for app data
    * @param {string} relativePath - Path relative to household dir (e.g., 'apps/fitness', 'history/menu_memory')
    * @param {string} [householdId] - Household ID, defaults to default household
    * @returns {string} Full path: data/household[-{id}]/relativePath
@@ -221,6 +222,32 @@ export class ConfigService {
 
     // Flat structure: data/household[-{id}]/
     const basePath = `${dataDir}/${folderName}`;
+    return relativePath ? `${basePath}/${relativePath}` : basePath;
+  }
+
+  /**
+   * Get canonical household app path following households/apps/{appName}/ pattern
+   * @param {string} appName - App name (fitness, nutribot, journalist, etc.)
+   * @param {string} [relativePath] - Path relative to app dir (e.g., 'sessions', 'conversations')
+   * @param {string} [householdId] - Household ID (ignored - kept for API compatibility)
+   * @returns {string} Full path: data/households/apps/{appName}/{relativePath}
+   */
+  getHouseholdAppPath(appName, relativePath = '', householdId = null) {
+    const dataDir = this.getDataDir();
+    const basePath = `${dataDir}/households/apps/${appName}`;
+    return relativePath ? `${basePath}/${relativePath}` : basePath;
+  }
+
+  /**
+   * Get canonical household app media path
+   * @param {string} appName - App name (fitness, etc.)
+   * @param {string} [relativePath] - Path relative to app media dir
+   * @param {string} [householdId] - Household ID (ignored - kept for API compatibility)
+   * @returns {string} Full path: media/apps/{appName}/households/{relativePath}
+   */
+  getHouseholdAppMediaPath(appName, relativePath = '', householdId = null) {
+    const mediaDir = this.getMediaDir();
+    const basePath = `${mediaDir}/apps/${appName}/households`;
     return relativePath ? `${basePath}/${relativePath}` : basePath;
   }
 

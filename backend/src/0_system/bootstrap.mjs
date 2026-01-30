@@ -692,34 +692,29 @@ export async function restartEventBus() {
 /**
  * Create finance domain services
  * @param {Object} config
- * @param {string} config.dataRoot - Base data directory
- * @param {string} [config.defaultHouseholdId='default'] - Default household ID
+ * @param {Object} config.configService - ConfigService instance for path resolution
  * @param {Object} [config.buxferAdapter] - Pre-loaded Buxfer adapter (preferred)
  * @param {Object} [config.buxfer] - Buxfer configuration (legacy fallback)
  * @param {string} [config.buxfer.email] - Buxfer email
  * @param {string} [config.buxfer.password] - Buxfer password
  * @param {Object} [config.aiGateway] - AI gateway for transaction categorization
  * @param {Object} [config.httpClient] - HTTP client for payroll sync
- * @param {Object} [config.configService] - ConfigService for payroll credentials
  * @param {Object} [config.logger] - Logger instance
  * @returns {Object} Finance services
  */
 export function createFinanceServices(config) {
   const {
-    dataRoot,
-    defaultHouseholdId = 'default',
+    configService,
     buxferAdapter: preloadedBuxferAdapter,
     buxfer,
     aiGateway,
     httpClient,
-    configService,
     logger = console
   } = config;
 
   // Finance store (YAML persistence)
   const financeStore = new YamlFinanceDatastore({
-    dataRoot,
-    defaultHouseholdId
+    configService
   });
 
   // Buxfer adapter - prefer pre-loaded adapter, fall back to config-based creation
@@ -1321,16 +1316,16 @@ export function createGratitudeApiRouter(config) {
 /**
  * Create journaling domain services
  * @param {Object} config
- * @param {string} config.dataRoot - Data root directory
+ * @param {Object} config.configService - ConfigService instance for path resolution
  * @param {Object} [config.logger] - Logger instance
  * @returns {Object} Journaling services
  */
 export function createJournalingServices(config) {
-  const { dataRoot, logger = console } = config;
+  const { configService, logger = console } = config;
 
   // Journal store (YAML persistence)
   const journalStore = new YamlJournalDatastore({
-    dataRoot,
+    configService,
     logger
   });
 
@@ -1373,16 +1368,16 @@ export function createJournalingApiRouter(config) {
 /**
  * Create nutrition domain services
  * @param {Object} config
- * @param {string} config.dataRoot - Data root directory
+ * @param {Object} config.configService - ConfigService instance for path resolution
  * @param {Object} [config.logger] - Logger instance
  * @returns {Object} Nutrition services
  */
 export function createNutritionServices(config) {
-  const { dataRoot, logger = console } = config;
+  const { configService, logger = console } = config;
 
   // Food log store (YAML persistence)
   const foodLogStore = new YamlFoodLogDatastore({
-    dataRoot,
+    configService,
     logger
   });
 
@@ -1805,7 +1800,7 @@ export function createNutribotServices(config) {
 
   // Food log store (YAML persistence)
   const foodLogStore = new YamlFoodLogDatastore({
-    dataRoot,
+    configService,
     logger
   });
 
@@ -1961,7 +1956,6 @@ export function createHealthServices(config) {
     userDataService,
     userResolver,
     configService,
-    dataRoot,
     logger = console
   } = config;
 
@@ -2213,7 +2207,6 @@ export function createAgentsApiRouter(config) {
  * @param {Object} [config.rssParser] - RSS parser instance (defaults to new RSSParser)
  * @param {Object} [config.sharedStore] - Store for shared household data (weather)
  * @param {Function} [config.gmailClientFactory] - Factory to create Gmail client: (username) => gmailClient
- * @param {string} [config.dataRoot] - Base data directory (for creating default stores)
  * @param {Object} [config.logger] - Logger instance
  * @returns {Object} Harvester services { harvesterService, jobExecutor, lifelogStore }
  */
@@ -2231,7 +2224,6 @@ export function createHarvesterServices(config) {
     sharedStore: sharedStoreParam,
     gmailClientFactory,
     buxferAdapter: preloadedBuxferAdapter,
-    dataRoot,
     logger = console
   } = config;
 
@@ -2265,9 +2257,8 @@ export function createHarvesterServices(config) {
   };
 
   // Create or use provided sharedStore (for weather data)
-  const sharedStore = sharedStoreParam || (dataRoot ? new YamlWeatherDatastore({
-    dataRoot,
-    householdId: configService?.getDefaultHouseholdId?.() || 'default',
+  const sharedStore = sharedStoreParam || (configService ? new YamlWeatherDatastore({
+    configService,
     logger,
   }) : null);
 

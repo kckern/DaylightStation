@@ -2,7 +2,7 @@
  * YamlJournalDatastore - YAML-based journal entry persistence
  *
  * Implements IJournalDatastore port for journal entry storage.
- * Entries stored at: household[-{hid}]/apps/journal/entries/{YYYY-MM-DD}.yml
+ * Entries stored at (via ConfigService.getHouseholdPath): household[-{id}]/apps/journal/entries/{YYYY-MM-DD}.yml
  */
 import path from 'path';
 import {
@@ -16,20 +16,20 @@ import {
 } from '#system/utils/FileIO.mjs';
 import { IJournalDatastore } from '#apps/journaling/ports/IJournalDatastore.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
-import { listHouseholdDirs, parseHouseholdId, toFolderName } from '#system/config/configLoader.mjs';
+import { listHouseholdDirs, parseHouseholdId } from '#system/config/configLoader.mjs';
 
 export class YamlJournalDatastore extends IJournalDatastore {
   /**
    * @param {Object} config
-   * @param {string} config.dataRoot - Base data directory
+   * @param {Object} config.configService - ConfigService instance for path resolution
    */
   constructor(config) {
     super();
-    if (!config.dataRoot) throw new InfrastructureError('YamlJournalDatastore requires dataRoot', {
+    if (!config.configService) throw new InfrastructureError('YamlJournalDatastore requires configService', {
         code: 'MISSING_DEPENDENCY',
-        dependency: 'dataRoot'
+        dependency: 'configService'
       });
-    this.dataRoot = config.dataRoot;
+    this.configService = config.configService;
   }
 
   /**
@@ -40,11 +40,7 @@ export class YamlJournalDatastore extends IJournalDatastore {
    */
   getEntryPath(userId, date) {
     return path.join(
-      this.dataRoot,
-      toFolderName(userId),
-      'apps',
-      'journal',
-      'entries',
+      this.configService.getHouseholdPath('apps/journal/entries', userId),
       date
     );
   }
@@ -55,13 +51,7 @@ export class YamlJournalDatastore extends IJournalDatastore {
    * @returns {string}
    */
   getEntriesDir(userId) {
-    return path.join(
-      this.dataRoot,
-      toFolderName(userId),
-      'apps',
-      'journal',
-      'entries'
-    );
+    return this.configService.getHouseholdPath('apps/journal/entries', userId);
   }
 
   /**
@@ -106,7 +96,7 @@ export class YamlJournalDatastore extends IJournalDatastore {
     if (!dateMatch) return null;
 
     // Search all households for this ID - in production would use userId
-    const householdFolders = listHouseholdDirs(this.dataRoot);
+    const householdFolders = listHouseholdDirs(this.configService.getDataDir());
     for (const folderName of householdFolders) {
       const userId = parseHouseholdId(folderName);
       const entry = await this.findByUserAndDate(userId, dateMatch[1]);

@@ -10,11 +10,10 @@
  * - transaction.memos - User annotations on transactions
  * - gpt - AI categorization configuration
  *
- * Base path: household[-{hid}]/apps/finances/
+ * Base path (via ConfigService.getHouseholdPath): household[-{id}]/apps/finances/
  */
 import path from 'path';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
-import { toFolderName } from '#system/config/configLoader.mjs';
 import {
   ensureDir,
   dirExists,
@@ -26,23 +25,20 @@ import {
 } from '#system/utils/FileIO.mjs';
 
 export class YamlFinanceDatastore {
-  #dataRoot;
-  #defaultHouseholdId;
+  #configService;
 
   /**
    * @param {Object} config
-   * @param {string} config.dataRoot - Base data directory
-   * @param {string} [config.defaultHouseholdId='default'] - Default household ID
+   * @param {Object} config.configService - ConfigService instance for path resolution
    */
   constructor(config) {
-    if (!config?.dataRoot) {
-      throw new InfrastructureError('YamlFinanceDatastore requires dataRoot', {
+    if (!config?.configService) {
+      throw new InfrastructureError('YamlFinanceDatastore requires configService', {
         code: 'MISSING_DEPENDENCY',
-        dependency: 'dataRoot'
+        dependency: 'configService'
       });
     }
-    this.#dataRoot = config.dataRoot;
-    this.#defaultHouseholdId = config.defaultHouseholdId || 'default';
+    this.#configService = config.configService;
   }
 
   /**
@@ -51,8 +47,7 @@ export class YamlFinanceDatastore {
    * @returns {string}
    */
   getBasePath(householdId) {
-    const hid = householdId || this.#defaultHouseholdId;
-    return path.join(this.#dataRoot, toFolderName(hid), 'apps', 'finances');
+    return this.#configService.getHouseholdPath('apps/finances', householdId);
   }
 
   // ==========================================================================

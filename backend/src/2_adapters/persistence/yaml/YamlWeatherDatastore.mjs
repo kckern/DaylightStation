@@ -3,36 +3,35 @@
  *
  * Simple YAML-based datastore for household weather data.
  * Weather data is shared at household level (not user-specific).
+ * Path (via ConfigService.getHouseholdPath): household[-{id}]/shared/weather
  *
  * @module adapters/persistence/yaml/YamlWeatherDatastore
  */
 
-import path from 'path';
 import { loadYaml, saveYaml } from '#system/utils/FileIO.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
-import { toFolderName } from '#system/config/configLoader.mjs';
 
 export class YamlWeatherDatastore {
-  #dataRoot;
+  #configService;
   #householdId;
   #logger;
 
   /**
    * @param {Object} config
-   * @param {string} config.dataRoot - Base data directory
-   * @param {string} [config.householdId='default'] - Household ID
+   * @param {Object} config.configService - ConfigService instance for path resolution
+   * @param {string} [config.householdId] - Household ID (defaults to default household)
    * @param {Object} [config.logger] - Logger instance
    */
-  constructor({ dataRoot, householdId = 'default', logger = console }) {
-    if (!dataRoot) {
-      throw new InfrastructureError('YamlWeatherDatastore requires dataRoot', {
+  constructor({ configService, householdId, logger = console }) {
+    if (!configService) {
+      throw new InfrastructureError('YamlWeatherDatastore requires configService', {
         code: 'MISSING_DEPENDENCY',
-        dependency: 'dataRoot'
+        dependency: 'configService'
       });
     }
 
-    this.#dataRoot = dataRoot;
-    this.#householdId = householdId;
+    this.#configService = configService;
+    this.#householdId = householdId || configService.getDefaultHouseholdId();
     this.#logger = logger;
   }
 
@@ -41,7 +40,7 @@ export class YamlWeatherDatastore {
    * @private
    */
   #getFilePath() {
-    return path.join(this.#dataRoot, toFolderName(this.#householdId), 'shared', 'weather');
+    return this.#configService.getHouseholdPath('shared/weather', this.#householdId);
   }
 
   /**
