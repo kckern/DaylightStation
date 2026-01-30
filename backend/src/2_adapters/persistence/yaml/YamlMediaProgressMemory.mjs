@@ -25,6 +25,7 @@ export class YamlMediaProgressMemory extends IMediaProgressMemory {
         dependency: 'basePath'
       });
     this.basePath = config.basePath;
+    this.mediaKeyResolver = config.mediaKeyResolver || null;
   }
 
   /**
