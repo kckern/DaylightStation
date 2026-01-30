@@ -55,7 +55,7 @@
     "path": "^0.12.7",
     "require-directory": "^2.1.1",
     "rss-parser": "^3.13.0",
-    "scripture-guide": "^1.0.62",
+    "scripture-guide": "^1.0.87",
     "smartquotes": "^2.3.2",
     "string-sanitizer": "^2.0.2",
     "string-similarity": "^4.0.4",

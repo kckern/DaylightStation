@@ -452,6 +452,13 @@ export class LocalContentAdapter {
       verses = rawData.verses;
     }
 
+    // Construct media file path if not in YAML
+    let mediaFile = rawData.mediaFile;
+    if (!mediaFile) {
+      // Default path: audio/scripture/{volume}/{version}/{verseId}.mp3
+      mediaFile = `audio/scripture/${volume}/${version}/${verseId}.mp3`;
+    }
+
     const compoundId = `scripture:${localId}`;
     const mediaUrl = `/api/v1/proxy/local-content/stream/scripture/${localId}`;
 
@@ -471,7 +478,7 @@ export class LocalContentAdapter {
         version,
         chapter: verseId,
         verses,
-        mediaFile: rawData.mediaFile
+        mediaFile
       }
     });
   }
