@@ -3,32 +3,32 @@
  *
  * Stores state in: {dataDir}/system/state/cron-runtime.yml
  * Backup in: {dataDir}/system/state/cron-runtime_bak.yml
+ *
+ * Uses DataService for filesystem abstraction - adapter does not
+ * interact with filesystem directly.
  */
 
-import path from 'path';
 import { JobState } from '#domains/scheduling/entities/JobState.mjs';
 import { IStateDatastore } from '#apps/scheduling/ports/IStateDatastore.mjs';
-import { loadYaml, saveYaml } from '#system/utils/FileIO.mjs';
+import { InfrastructureError } from '#system/utils/errors/index.mjs';
+
+const STATE_PATH = 'state/cron-runtime';
+const BACKUP_PATH = 'state/cron-runtime_bak';
 
 export class YamlStateDatastore extends IStateDatastore {
-  constructor({ dataDir, logger = console }) {
+  #dataService;
+  #logger;
+
+  constructor({ dataService, logger = console }) {
     super();
-    this.dataDir = dataDir;
-    this.logger = logger;
-  }
-
-  /**
-   * Get full path to state file
-   */
-  getStatePath() {
-    return path.join(this.dataDir, 'system', 'state', 'cron-runtime');
-  }
-
-  /**
-   * Get full path to backup file
-   */
-  getBackupPath() {
-    return path.join(this.dataDir, 'system', 'state', 'cron-runtime_bak');
+    if (!dataService) {
+      throw new InfrastructureError('YamlStateDatastore requires dataService', {
+        code: 'MISSING_DEPENDENCY',
+        dependency: 'dataService'
+      });
+    }
+    this.#dataService = dataService;
+    this.#logger = logger;
   }
 
   /**
@@ -36,22 +36,22 @@ export class YamlStateDatastore extends IStateDatastore {
    */
   loadRawState() {
     try {
-      const state = loadYaml(this.getStatePath());
+      const state = this.#dataService.system.read(STATE_PATH);
       if (state && typeof state === 'object') {
         return state;
       }
 
       // Try backup
-      const backup = loadYaml(this.getBackupPath());
+      const backup = this.#dataService.system.read(BACKUP_PATH);
       if (backup && typeof backup === 'object') {
-        this.logger.info?.('scheduler.stateStore.restored_from_backup');
-        saveYaml(this.getStatePath(), backup);
+        this.#logger.info?.('scheduler.stateStore.restored_from_backup');
+        this.#dataService.system.write(STATE_PATH, backup);
         return backup;
       }
 
       return {};
     } catch (error) {
-      this.logger.error?.('scheduler.stateStore.load_error', {
+      this.#logger.error?.('scheduler.stateStore.load_error', {
         error: error.message
       });
       return {};
@@ -93,14 +93,10 @@ export class YamlStateDatastore extends IStateDatastore {
     const rawState = this.loadRawState();
     rawState[jobId] = state.toJSON();
 
-    try {
-      saveYaml(this.getStatePath(), rawState);
-    } catch (error) {
-      this.logger.error?.('scheduler.stateStore.save_error', {
-        jobId,
-        error: error.message
-      });
-      throw error;
+    const result = this.#dataService.system.write(STATE_PATH, rawState);
+    if (!result) {
+      this.#logger.error?.('scheduler.stateStore.save_error', { jobId });
+      throw new Error(`Failed to save state for job ${jobId}`);
     }
   }
 
@@ -115,13 +111,10 @@ export class YamlStateDatastore extends IStateDatastore {
       rawState[jobId] = state.toJSON();
     }
 
-    try {
-      saveYaml(this.getStatePath(), rawState);
-    } catch (error) {
-      this.logger.error?.('scheduler.stateStore.saveAll_error', {
-        error: error.message
-      });
-      throw error;
+    const result = this.#dataService.system.write(STATE_PATH, rawState);
+    if (!result) {
+      this.#logger.error?.('scheduler.stateStore.saveAll_error');
+      throw new Error('Failed to save all states');
     }
   }
 
@@ -132,13 +125,11 @@ export class YamlStateDatastore extends IStateDatastore {
   async backup() {
     const rawState = this.loadRawState();
 
-    try {
-      saveYaml(this.getBackupPath(), rawState);
-      this.logger.debug?.('scheduler.stateStore.backup_success');
-    } catch (error) {
-      this.logger.error?.('scheduler.stateStore.backup_error', {
-        error: error.message
-      });
+    const result = this.#dataService.system.write(BACKUP_PATH, rawState);
+    if (result) {
+      this.#logger.debug?.('scheduler.stateStore.backup_success');
+    } else {
+      this.#logger.error?.('scheduler.stateStore.backup_error');
     }
   }
 }
