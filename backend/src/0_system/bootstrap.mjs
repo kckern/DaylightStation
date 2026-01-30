@@ -125,7 +125,7 @@ import { ConfigHouseholdAdapter, HomeBotInputRouter } from '#adapters/homebot/in
 import { createHomebotRouter } from '#api/v1/routers/homebot.mjs';
 
 // Agents application imports
-import { AgentOrchestrator, EchoAgent } from '#apps/agents';
+import { AgentOrchestrator, EchoAgent } from '#apps/agents/index.mjs';
 import { MastraAdapter } from '#adapters/agents/index.mjs';
 import { createAgentsRouter } from '#api/v1/routers/agents.mjs';
 
