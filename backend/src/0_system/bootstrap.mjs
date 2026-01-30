@@ -108,7 +108,7 @@ import { NutribotContainer } from '#apps/nutribot/NutribotContainer.mjs';
 import { NutriBotConfig } from '#apps/nutribot/config/NutriBotConfig.mjs';
 import { YamlNutriListDatastore } from '#adapters/persistence/yaml/YamlNutriListDatastore.mjs';
 import { YamlNutriCoachDatastore } from '#adapters/persistence/yaml/YamlNutriCoachDatastore.mjs';
-import { NutribotInputRouter } from '#adapters/nutribot';
+import { NutribotInputRouter } from '#adapters/nutribot/index.mjs';
 import { createNutribotRouter } from '#api/v1/routers/nutribot.mjs';
 
 // Nutribot DDD adapters
@@ -121,12 +121,12 @@ import { NutritionixAdapter } from '#adapters/nutrition/NutritionixAdapter.mjs';
 
 // Homebot application imports
 import { HomeBotContainer } from '#apps/homebot/HomeBotContainer.mjs';
-import { ConfigHouseholdAdapter, HomeBotInputRouter } from '#adapters/homebot';
+import { ConfigHouseholdAdapter, HomeBotInputRouter } from '#adapters/homebot/index.mjs';
 import { createHomebotRouter } from '#api/v1/routers/homebot.mjs';
 
 // Agents application imports
 import { AgentOrchestrator, EchoAgent } from '#apps/agents';
-import { MastraAdapter } from '#adapters/agents';
+import { MastraAdapter } from '#adapters/agents/index.mjs';
 import { createAgentsRouter } from '#api/v1/routers/agents.mjs';
 
 // Health domain imports
@@ -171,7 +171,7 @@ import {
   StravaHarvester,
   WithingsHarvester,
   createInfinityHarvesters
-} from '#adapters/harvester';
+} from '#adapters/harvester/index.mjs';
 
 // RSS Parser for Goodreads/Letterboxd harvesters
 import RSSParser from 'rss-parser';
