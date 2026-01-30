@@ -6,3 +6,6 @@
  *
  * @module domains/media
  */
+
+export { MediaKeyResolver } from './MediaKeyResolver.mjs';
+export { UnknownMediaSourceError, UnresolvableMediaKeyError } from './errors.mjs';
