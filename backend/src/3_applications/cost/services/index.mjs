@@ -7,3 +7,4 @@
 
 export { CostIngestionService } from './CostIngestionService.mjs';
 export { CostBudgetService } from './CostBudgetService.mjs';
+export { CostReportingService } from './CostReportingService.mjs';
