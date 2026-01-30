@@ -8,7 +8,7 @@
 import { createServer } from 'http';
 import { existsSync } from 'fs';
 import path, { join } from 'path';
-import 'dotenv/config';
+import dotenv from 'dotenv';
 
 import { initConfigService, ConfigValidationError, configService } from '#system/config/index.mjs';
 import { hydrateProcessEnvFromConfigs, loadLoggingConfig, resolveLoggerLevel, getLoggingTags, resolveLogglyToken } from '#system/logging/config.mjs';
@@ -17,12 +17,16 @@ import { createConsoleTransport, createFileTransport, createLogglyTransport } fr
 import { createLogger } from '#system/logging/logger.mjs';
 
 const __dirname = path.dirname(new URL(import.meta.url).pathname);
+// Load repo-root .env deterministically (nodemon/working-dir can vary)
+dotenv.config({ path: join(__dirname, '..', '.env') });
 const isDocker = existsSync('/.dockerenv');
 
 async function main() {
   // ==========================================================================
   // Configuration
   // ==========================================================================
+
+  console.log(`[Bootstrap] Env: DAYLIGHT_ENV=${process.env.DAYLIGHT_ENV ?? 'unset'}`);
 
   // Detect base directory from environment
   const baseDir = isDocker

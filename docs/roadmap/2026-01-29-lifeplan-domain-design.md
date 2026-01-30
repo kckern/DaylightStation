@@ -331,35 +331,34 @@ Forcing functions and ceremonies reference cadences, not fixed durations:
                               ┌─────────────────────────────────────────┐
                               │                                         │
                               ▼                                         │
-┌──────────┐  explore   ┌────────────┐  not worth it  ┌───────────┐    │
-│  dream   │───────────►│ considered │───────────────►│ abandoned │    │
-│          │            │            │                │           │    │
-│ "What if │            │ "Is this   │                │ "Not for  │    │
-│  I..."   │            │  worth the │                │  me"      │    │
-└────┬─────┘            │  sacrifice?│                └───────────┘    │
-     │                  └─────┬──────┘                      ▲          │
-     │ not serious            │ commit                      │          │
-     ▼                        ▼                             │          │
-┌───────────┐           ┌───────────┐  give up             │          │
-│ abandoned │           │ committed │──────────────────────┤          │
-│           │           │ (active)  │                      │          │
-│ "Just a   │           │           │  life happens        │          │
-│  fantasy" │           │ Deadline, │─────────────┐        │          │
-└───────────┘           │ metrics,  │             │        │          │
-                        │ sacrifice │             ▼        │          │
-                        └─────┬─────┘      ┌──────────┐    │          │
-                              │            │  paused  │────┤          │
-              ┌───────────────┼────────────└────┬─────┘    │          │
-              │               │                 │ resume   │          │
-              ▼               ▼                 ▼          │          │
-        ┌──────────┐   ┌──────────┐      ┌───────────┐    │          │
-        │ achieved │   │  failed  │──────│reconsidered│───┘          │
-        │          │   │          │      │(try again?)│              │
-        │ "Done!"  │   │ "Missed  │      └───────────┘               │
-        └────┬─────┘   │ deadline"│                                   │
-             │         └──────────┘                                   │
-             │ spawn new goal                                         │
-             └────────────────────────────────────────────────────────┘
+┌──────────┐  explore   ┌────────────┐  deps clear  ┌─────────┐        │
+│  dream   │───────────►│ considered │─────────────►│  ready  │        │
+│          │            │            │              │         │        │
+│ "What if │            │ Evaluating │◄─────────────│ "Green  │        │
+│  I..."   │            │ + waiting  │ new dep or   │  light" │        │
+└────┬─────┘            │ on deps    │ re-evaluate  └────┬────┘        │
+     │                  └─────┬──────┘                   │             │
+     │ not serious            │ abandon                  │ commit      │
+     ▼                        ▼                          ▼             │
+┌───────────┐           ┌───────────┐            ┌───────────┐        │
+│ abandoned │◄──────────┤           │◄───────────│ committed │        │
+│           │           │ abandoned │            │ (active)  │        │
+│ "Just a   │           │           │            │           │        │
+│  fantasy" │           └───────────┘            │ Deadline, │        │
+└───────────┘                 ▲                  │ metrics,  │        │
+                              │                  │ sacrifice │        │
+                              │                  └─────┬─────┘        │
+                              │         ┌──────────────┼──────────┐   │
+                              │         │              │          │   │
+                              │         ▼              ▼          ▼   │
+                              │   ┌──────────┐  ┌──────────┐ ┌───────┴───┐
+                              ├───│  paused  │  │  failed  │ │ achieved  │
+                              │   └────┬─────┘  └────┬─────┘ └───────────┘
+                              │        │             │
+                              │        │ resume      │ retry
+                              │        ▼             ▼
+                              │   committed     considered
+                              └─────────────────────────────
 ```
 
 ### States Defined
@@ -367,7 +366,8 @@ Forcing functions and ceremonies reference cadences, not fixed durations:
 | State | Description | Required Fields |
 |-------|-------------|-----------------|
 | **dream** | Aspiration without commitment | `name`, `quality` (optional) |
-| **considered** | Active evaluation - researching, estimating sacrifice | `name`, `quality`, `why`, `estimated_sacrifice` |
+| **considered** | Active evaluation OR waiting on dependencies | `name`, `quality`, `why`, `estimated_sacrifice` |
+| **ready** | Dependencies clear, committable now | Same as considered + all dependencies satisfied |
 | **committed** | Active pursuit with accountability | `name`, `quality`, `why`, `sacrifice`, `deadline`, `metrics`, `audacity` |
 | **paused** | Temporarily suspended (life circumstances) | Same as committed + `paused_reason`, `resume_conditions` |
 | **achieved** | Successfully completed | Same as committed + `achieved_date`, `retrospective` |
@@ -378,15 +378,30 @@ Forcing functions and ceremonies reference cadences, not fixed durations:
 
 ```javascript
 const GOAL_TRANSITIONS = {
-  dream: ['considered', 'abandoned'],
-  considered: ['committed', 'dream', 'abandoned'],
-  committed: ['achieved', 'failed', 'paused', 'abandoned'],
-  paused: ['committed', 'abandoned'],
-  failed: ['considered'],  // Try again
-  achieved: [],
-  abandoned: [],
+  dream: ['considered', 'abandoned', 'invalidated'],
+  considered: ['ready', 'dream', 'abandoned', 'invalidated'],  // Auto-transition to ready when deps clear
+  ready: ['committed', 'considered', 'abandoned', 'invalidated'],  // Back to considered if new dep
+  committed: ['achieved', 'failed', 'paused', 'abandoned', 'invalidated'],
+  paused: ['committed', 'abandoned', 'invalidated'],
+  failed: ['considered', 'invalidated'],  // Try again, or invalidate if now impossible
+  achieved: [],             // Terminal: success
+  abandoned: [],            // Terminal: chose to quit
+  invalidated: [],          // Terminal: became impossible (life circumstance change)
 };
 ```
+
+**Terminal State Distinction:**
+- `achieved` - Goal completed successfully
+- `abandoned` - User chose to stop pursuing (could theoretically resume)
+- `invalidated` - External circumstances made goal impossible (no fault of user)
+
+### Automatic Transitions
+
+| Trigger | Transition |
+|---------|------------|
+| All dependencies clear | `considered` → `ready` (auto) |
+| New dependency added | `ready` → `considered` (auto) |
+| Existing dependency fails/resets | `ready` → `considered` (auto) |
 
 ### Evaluation Logic
 
@@ -411,6 +426,245 @@ const GOAL_TRANSITIONS = {
 | Progress check | Every cycle | Calculate status, alert if behind |
 | Deadline alerts | 1 phase / 2 cycles / 1 cycle / 1 unit before | Escalating urgency |
 | Post-completion retro | On terminal state | Retrospective prompts |
+
+---
+
+## Goal Dependencies & Life Events
+
+The JOP model captures goal states but doesn't explicitly model **external constraints that block commitment** — circumstances that make it irrational to commit regardless of desire. A goal can be desirable, aligned with values, and well-defined, but still **uncommittable** because of prerequisites that must resolve first.
+
+### Dependency Types
+
+| Type | Override? | Clears when... | Example |
+|------|-----------|----------------|---------|
+| **prerequisite** | No | Required goal achieved | "Run marathon" blocked by "Lose 100 lbs" |
+| **recommended** | Yes, with acknowledgment | Goal achieved or user overrides | "Start business" soft-blocked by "Build savings" |
+| **life_event** | No | Event logged as occurred | "Apply for promotion" blocked by "Baby born" |
+| **resource** | Auto | Threshold detected in data | "Buy house" blocked by "Have $50k saved" |
+
+### Goal Structure: Flat with Milestones
+
+Goals are **flat**, not hierarchical. Use milestones for checkpoints within a goal:
+
+- **Milestone** = stepping stone, only valuable as part of the goal
+- **Separate goal** = independently valuable outcome
+- **Dependency** = only when one goal physically blocks another (rare)
+
+```
+Goal: "Start consulting business"
+├── Milestone: "Get certification"     ← Checkpoint, not separate goal
+├── Milestone: "Land first client"
+├── Milestone: "Quit day job"
+└── Deadline: 2025-06-01
+
+Goal: "Lose 100 lbs"                   ← Separate goal (independently valuable)
+├── Milestone: "Lose 50 lbs"
+└── Deadline: 2025-03-01
+
+Dependency: "Run marathon" ──prerequisite──► "Lose 100 lbs"
+```
+
+### Dependency Schema
+
+```yaml
+dependencies:
+  - type: prerequisite
+    blocked_goal: run-marathon
+    requires_goal: lose-100-lbs
+    status: pending           # pending | satisfied
+    reason: "Physical capability required"
+
+  - type: recommended
+    blocked_goal: start-business
+    requires_goal: build-emergency-fund
+    status: pending
+    reason: "Financial safety net"
+    overridden: false         # User can override
+
+  - type: life_event
+    blocked_goal: apply-for-promotion
+    awaits_event: baby-born-2024
+    status: pending
+    reason: "Wait until parental leave complete"
+
+  - type: resource
+    blocked_goal: buy-house
+    resource: savings
+    threshold: 50000
+    current: 32000            # Updated from finance data
+    status: pending
+```
+
+---
+
+## Life Events
+
+Life events are first-class entities that mark major transitions. They can block/unblock goals and provide context for understanding behavior changes in the lifelog.
+
+### Categories
+
+| Category | Examples |
+|----------|----------|
+| **Family** | Baby born, married, divorced, death in family, kid starts school |
+| **Career** | New job starts, job ends, promotion, retirement |
+| **Location** | Move to new city, move to new home |
+| **Education** | Graduate, start program, complete certification |
+| **Health** | Surgery, diagnosis, recovery complete |
+| **Financial** | Inheritance, bankruptcy, debt paid off, major purchase |
+
+### Impact Types
+
+Life events affect goals differently based on severity:
+
+| Impact Type | What Happens | Goal Effect | Example |
+|-------------|--------------|-------------|---------|
+| **blocks** | Delays commitment | `considered` can't → `committed` | Baby born delays promotion application |
+| **derails** | Disrupts active goals | `committed` → `paused` | Job loss pauses "buy house" |
+| **invalidates** | Makes goals impossible | → `invalidated` (new terminal state) | Paralysis invalidates "run marathon" |
+| **transforms** | Context shift requiring re-evaluation | Goals flagged for review | Divorce requires re-evaluating shared goals |
+| **cascades** | Fundamental life shift | Triggers emergency retro | Death of child, terminal diagnosis |
+
+### Duration Types
+
+| Duration | Description | Resolution |
+|----------|-------------|------------|
+| **temporary** | Has known end date | Auto-resolves on date |
+| **indefinite** | Unknown when resolved | Manual status update |
+| **permanent** | Won't resolve | Goals must adapt or invalidate |
+
+### Life Event Schema
+
+```yaml
+life_events:
+  # BLOCKS example - delays commitment
+  - id: baby-born-2024
+    type: family
+    subtype: birth
+    name: "Second child born"
+    status: anticipated       # anticipated | occurred | cancelled
+    impact_type: blocks       # blocks | derails | invalidates | transforms | cascades
+    duration_type: temporary  # temporary | indefinite | permanent
+    expected_date: 2024-08-15
+    actual_date: null
+    impact:
+      blocks_goals: [apply-for-promotion, start-business]
+      unlocks_goals: []
+      affects_capacity: -40%
+      duration: 3 months
+    signals:
+      - source: calendar
+        pattern: "parental leave"
+    notes: "Plan to take 3 months parental leave"
+
+  # DERAILS example - disrupts active goals
+  - id: job-loss-2024
+    type: career
+    subtype: job_loss
+    name: "Laid off from TechCorp"
+    status: occurred
+    impact_type: derails
+    duration_type: indefinite
+    expected_date: null
+    actual_date: 2024-06-15
+    impact:
+      derails_goals:
+        - goal: buy-house
+          effect: force_pause
+          reason: "Income requirement no longer met"
+        - goal: build-emergency-fund
+          effect: escalate
+          reason: "Now critical priority"
+      affects_capacity: -30%   # Job search consumes capacity
+      duration: null           # Unknown
+    resolution:
+      condition: "new_job_started"
+      signals:
+        - source: calendar
+          pattern: "first day"
+        - source: finance
+          pattern: "paycheck_detected"
+
+  # INVALIDATES example - makes goals impossible
+  - id: disability-2024
+    type: health
+    subtype: permanent_disability
+    name: "Spinal injury - paralysis"
+    status: occurred
+    impact_type: invalidates
+    duration_type: permanent
+    expected_date: null
+    actual_date: 2024-04-20
+    impact:
+      invalidates_goals: [run-marathon, hiking-appalachian-trail]
+      transforms_goals: [stay-physically-active]  # Needs re-evaluation
+      affects_capacity: -25%
+      duration: permanent
+    notes: "Goals requiring mobility need transformation, not abandonment"
+
+  # CASCADES example - triggers emergency retro
+  - id: child-loss-2024
+    type: family
+    subtype: death
+    name: "Loss of child"
+    status: occurred
+    impact_type: cascades
+    duration_type: permanent
+    expected_date: null
+    actual_date: 2024-07-10
+    impact:
+      triggers: emergency_retro
+      affects_capacity: -80%
+      duration: 6 months       # Initial impact, may extend
+    ceremony_scheduled:
+      type: emergency_retro
+      scheduled_for: 2024-07-24  # 2 weeks after event
+      status: pending
+```
+
+### Signal Detection (Hybrid Approach)
+
+System suggests life events based on signals, user confirms:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  📍 Detected: Possible relocation                           │
+│                                                             │
+│  Signals:                                                   │
+│  • Calendar: "Moving day" event on Mar 15                  │
+│  • Address change in Google contacts                       │
+│                                                             │
+│  Is this a life event you want to track?                    │
+│                                                             │
+│  [ Yes, log "Move" ]  [ Not a major event ]                │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Dependencies in Ceremonies
+
+| Ceremony | What surfaces | Action prompted |
+|----------|---------------|-----------------|
+| **Cycle retro** | Goals that became `ready` this cycle | "Goal X is now unblocked. Ready to commit?" |
+| **Phase review** | Stale blockers (no progress in 1+ phase) | "Goal X blocked for 6 weeks. Still valid?" |
+| **Season review** | Full dependency audit | Review all blocked goals, prune abandoned paths |
+
+**Season Review Dependency Audit:**
+
+```yaml
+dependency_audit:
+  ready_goals: 3              # Goals now committable
+  blocked_goals: 5
+  bottlenecks:                # High-impact blockers
+    - goal: lose-100-lbs
+      blocks: [run-marathon, join-hiking-club, beach-vacation]
+      note: "High-impact blocker — prioritize?"
+  stale_events:               # Overdue anticipated events
+    - event: baby-born-2024
+      expected: 2024-08-15
+      overdue_by: 45 days
+      note: "Update expected date or mark occurred?"
+  circular_dependencies: []   # Should be empty
+  orphaned_goals: []          # Goals with no path to purpose
+```
 
 ---
 
@@ -451,6 +705,156 @@ const GOAL_TRANSITIONS = {
 | true | false | **Disconfirmation** | Did the thing, didn't get result | -0.05 to -0.10 |
 | false | true | **Spurious** | Got result without the cause | -0.10 to -0.15 |
 | false | false | **Untested** | No data point | 0 (dormancy decay) |
+
+### Attribution Bias Awareness
+
+Raw confidence can be misleading. Luck and cognitive biases can create false positives - outcomes attributed to actions that were actually due to stochastic variance, privilege, timing, or other confounds.
+
+**Attribution Bias Types:**
+
+| Bias | Description | Example |
+|------|-------------|---------|
+| `survivorship` | Only seeing winners who did X, not losers who also did X | "Successful people wake at 5am" (ignoring failures who also do) |
+| `confirmation` | Noticing hits, ignoring misses | Remembering when lucky shirt worked, forgetting when it didn't |
+| `small_sample` | N too low for confidence level | "Tried 3 times, worked 3 times" = 100% confidence? |
+| `regression_mean` | Would have reverted to baseline anyway | Took supplement at lowest point, improved (would have anyway) |
+| `confounding` | Multiple variables changed simultaneously | Got promotion after hard work AND networking - which caused it? |
+| `hindsight` | Outcome seems obvious only after the fact | "I knew that would happen" (but didn't predict it) |
+| `halo_effect` | One positive trait colors perception of unrelated traits | Smart person must also be wise, ethical, etc. |
+| `self_serving` | Attributing success to self, failure to external factors | "I succeeded because I'm talented; I failed because of bad luck" |
+| `luck` | Pure stochastic variance misattributed to causation | Right place, right time, credited to strategy |
+
+**Evidence Quality Schema:**
+
+```yaml
+beliefs:
+  - id: meritocracy
+    if: "I work hard and smart"
+    then: "I will achieve success"
+    foundational: true
+
+    # Raw confidence from evidence
+    confidence: 0.85
+    state: confirmed
+
+    # Evidence quality tracking
+    evidence_quality:
+      sample_size: 8
+      observation_span: "5 years"
+
+      # Bias acknowledgments
+      biases_considered:
+        - type: survivorship
+          status: acknowledged    # acknowledged | dismissed | unexamined
+          notes: "I only know successful hard workers; can't see the failures"
+          confidence_adjustment: -0.10
+
+        - type: confounding
+          status: acknowledged
+          alternative_explanations:
+            - "Privilege/background"
+            - "Timing (entered field during growth period)"
+            - "Connections from education"
+          notes: "Hard to isolate hard work from these factors"
+          confidence_adjustment: -0.15
+
+        - type: self_serving
+          status: dismissed
+          notes: "I've tracked my failures too; not cherry-picking"
+
+        - type: small_sample
+          status: unexamined
+
+      # Computed effective confidence
+      raw_confidence: 0.85
+      total_bias_adjustment: -0.25
+      effective_confidence: 0.60   # Used for decisions and state transitions
+
+      last_bias_review: 2024-06-15
+```
+
+**Effective Confidence Calculation:**
+
+```javascript
+function calculateEffectiveConfidence(belief) {
+  const raw = belief.confidence;
+
+  // Sum acknowledged bias adjustments
+  const biasAdjustment = belief.evidence_quality.biases_considered
+    .filter(b => b.status === 'acknowledged')
+    .reduce((sum, b) => sum + (b.confidence_adjustment || 0), 0);
+
+  // Small sample penalty (auto-calculated)
+  const samplePenalty = belief.evidence_quality.sample_size < 5
+    ? -0.15
+    : belief.evidence_quality.sample_size < 10
+      ? -0.05
+      : 0;
+
+  return Math.max(0, Math.min(1, raw + biasAdjustment + samplePenalty));
+}
+```
+
+**State Transitions with Bias Awareness:**
+
+```javascript
+function canTransitionToConfirmed(belief) {
+  const dominated = belief.evidence_quality.total_bias_adjustment < -0.30;
+  const tooSmall = belief.evidence_quality.sample_size < 5;
+
+  if (dominated) {
+    return {
+      allowed: false,
+      max_state: 'uncertain',
+      reason: 'Bias adjustments exceed 30% - cannot confirm'
+    };
+  }
+
+  if (tooSmall) {
+    return {
+      allowed: false,
+      max_state: 'uncertain',
+      reason: 'Sample size < 5 - need more observations'
+    };
+  }
+
+  return { allowed: true };
+}
+```
+
+**Bias Review Cadence:**
+
+| When | What |
+|------|------|
+| Belief created | Prompt: "What biases might affect this belief?" (initialize with `unexamined`) |
+| Evidence logged | Auto-flag if `sample_size < 5` and `confidence > 0.7` |
+| Cycle retro | Optional: "Any beliefs where luck played a role?" |
+| Season review | Review all beliefs with `unexamined` biases |
+| Belief refuted | Retrospective: "Which biases contributed to overconfidence?" |
+| Foundational refuted | Deep audit: Review bias acknowledgments on all dependent beliefs |
+
+**Calibration Prompt Example:**
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  📊 Belief Calibration: "Hard work leads to success"                        │
+│                                                                             │
+│  Raw confidence: 85%                                                        │
+│  Sample size: 8 observations over 5 years                                   │
+│                                                                             │
+│  Acknowledged biases:                                                       │
+│  • Survivorship (-10%): "Only see successful hard workers"                 │
+│  • Confounding (-15%): "Timing, connections, privilege unclear"            │
+│                                                                             │
+│  Effective confidence: 60%                                                  │
+│                                                                             │
+│  Unexamined biases: small_sample, self_serving                             │
+│                                                                             │
+│  Does 60% feel right for decision-making?                                   │
+│                                                                             │
+│  [ Yes, 60% is right ]  [ Adjust ]  [ Review unexamined biases ]           │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
 
 ### Operationalization
 
@@ -502,6 +906,246 @@ effectiveConfidence = storedConfidence * decayFactor;
 | Dormancy check | Every phase | Flag beliefs untested >2 phases |
 | Calibration review | Every season | "Are your confidence levels accurate?" |
 
+### Belief Structure: Foundational vs Derived
+
+Not all beliefs are equal. Some are foundational worldview beliefs that support many others:
+
+```
+FOUNDATIONAL BELIEFS (paradigm layer)
+│
+├── "Hard work reliably leads to success"
+│   ├── derived: "I should work 60hr weeks"
+│   ├── derived: "Unsuccessful people didn't try hard enough"
+│   └── justifies_value: "Achievement"
+│
+├── "People are fundamentally equal"
+│   ├── derived: "Everyone deserves equal opportunity"
+│   ├── derived: "Discrimination is harmful"
+│   └── justifies_value: "Fairness"
+│
+└── "I can trust my own judgment"
+    ├── derived: "I should make my own decisions"
+    └── grounds_quality: "Self-reliant"
+```
+
+**Schema additions:**
+
+```yaml
+beliefs:
+  # Foundational belief
+  - id: meritocracy
+    if: "I work hard and smart"
+    then: "I will achieve success"
+    foundational: true           # Paradigm-level belief
+    depends_on: []               # No dependencies (it's foundational)
+    confidence: 0.85
+    state: confirmed
+
+  # Derived belief
+  - id: long-hours-good
+    if: "I work 60+ hours per week"
+    then: "I will advance faster"
+    foundational: false
+    depends_on: [meritocracy]    # If meritocracy falls, this is questioned
+    confidence: 0.70
+    state: confirmed
+```
+
+### Belief Refutation Cascade
+
+When a foundational belief is refuted, it cascades through the hierarchy:
+
+```
+FOUNDATIONAL BELIEF REFUTED
+        │
+        ▼
+┌───────────────────────────────────────────────────────────────────────┐
+│  "Hard work reliably leads to success" ──► REFUTED                    │
+│   (Evidence: worked hard for 5 years, passed over for promotion       │
+│    3x while less-hardworking colleagues advanced via connections)     │
+└───────────────────────────────────────────────────────────────────────┘
+        │
+        ├──► DERIVED BELIEFS ──► state: questioning
+        │    • "I should work 60hr weeks"
+        │    • "Unsuccessful people didn't try"
+        │
+        ├──► VALUES ──► flagged for review
+        │    • "Achievement" - justified_by: [meritocracy]
+        │      Question: "Is achievement still a top value, or was I
+        │                 chasing it because I believed it guaranteed success?"
+        │
+        ├──► QUALITIES ──► flagged for review
+        │    • "Industrious" - grounded_in: [meritocracy, achievement]
+        │      Question: "Do I still want to be industrious, or do I want
+        │                 to be strategic/connected instead?"
+        │
+        └──► PURPOSE ──► if grounded_in includes refuted belief
+             • "Build wealth through excellence in my craft"
+               grounded_in: [meritocracy, mastery-belief]
+               Action: EMERGENCY_RETRO (purpose foundation threatened)
+```
+
+### Cascade States
+
+When a foundational belief is refuted, dependents enter a special state:
+
+```javascript
+const BELIEF_STATES = {
+  hypothesized: ['testing', 'dormant'],
+  testing: ['confirmed', 'uncertain', 'refuted'],
+  confirmed: ['testing', 'questioning'],      // questioning = cascade-triggered
+  uncertain: ['testing', 'questioning'],
+  refuted: ['revised', 'abandoned'],          // Terminal or revision
+  dormant: ['testing', 'abandoned'],
+
+  // Cascade states
+  questioning: ['testing', 'revised', 'abandoned'],  // Must actively re-evaluate
+  revised: ['testing'],                              // Belief reformulated
+  abandoned: [],                                     // Terminal
+};
+```
+
+**State meanings:**
+- `questioning` - Foundation shaken, must actively decide: test again, revise, or abandon
+- `revised` - Belief reformulated with new understanding (back to testing)
+- `abandoned` - Belief rejected entirely
+
+### Cascade Logic
+
+```javascript
+function processBeliefRefutation(belief, allBeliefs, values, qualities, purpose) {
+  const cascade = {
+    beliefs_questioning: [],
+    values_review: [],
+    qualities_review: [],
+    purpose_threatened: false,
+  };
+
+  if (!belief.foundational) {
+    return cascade; // Non-foundational refutation doesn't cascade
+  }
+
+  // Find dependent beliefs
+  cascade.beliefs_questioning = allBeliefs
+    .filter(b => b.depends_on?.includes(belief.id))
+    .map(b => ({ ...b, state: 'questioning', reason: `Foundation "${belief.id}" refuted` }));
+
+  // Find values justified by this belief
+  cascade.values_review = values
+    .filter(v => v.justified_by?.includes(belief.id))
+    .map(v => ({ ...v, action: 'review', reason: `Justification "${belief.id}" refuted` }));
+
+  // Find qualities grounded in this belief
+  cascade.qualities_review = qualities
+    .filter(q => q.grounded_in?.includes(belief.id))
+    .map(q => ({ ...q, action: 'review', reason: `Ground "${belief.id}" refuted` }));
+
+  // Check if purpose is threatened
+  if (purpose.grounded_in?.includes(belief.id)) {
+    cascade.purpose_threatened = true;
+    // Trigger emergency retro
+  }
+
+  return cascade;
+}
+```
+
+### Cascade Triggers for Emergency Retro
+
+```javascript
+const INTERNAL_CASCADE_TRIGGERS = {
+  // Single foundational belief refuted that grounds purpose
+  purpose_foundation_refuted: {
+    condition: (belief, purpose) =>
+      belief.foundational &&
+      belief.state === 'refuted' &&
+      purpose.grounded_in?.includes(belief.id),
+    action: 'emergency_retro',
+  },
+
+  // Multiple foundational beliefs refuted in same season (paradigm collapse)
+  paradigm_collapse: {
+    condition: (beliefs, season) => {
+      const refutedFoundational = beliefs.filter(b =>
+        b.foundational &&
+        b.state === 'refuted' &&
+        b.refuted_at >= season.start
+      );
+      return refutedFoundational.length >= 3;
+    },
+    action: 'emergency_retro',
+  },
+
+  // Majority of a value's justifications refuted
+  value_unjustified: {
+    condition: (value, beliefs) => {
+      const justifications = value.justified_by || [];
+      const refuted = justifications.filter(id =>
+        beliefs.find(b => b.id === id)?.state === 'refuted'
+      );
+      return refuted.length > justifications.length / 2;
+    },
+    action: 'flag_for_season_review',
+  },
+};
+```
+
+### Example: Paradigm Shift
+
+```yaml
+# Before: Worldview based on meritocracy
+foundational_beliefs:
+  - id: meritocracy
+    state: confirmed
+    confidence: 0.85
+
+values:
+  - id: achievement
+    rank: 1
+    justified_by: [meritocracy]
+
+qualities:
+  - id: industrious
+    grounded_in: [meritocracy, achievement]
+
+purpose:
+  statement: "Build wealth and status through excellence"
+  grounded_in: [meritocracy]
+
+# Event: Passed over for promotion 3x despite excellence
+# Meanwhile, well-connected mediocre performers advance
+
+# After cascade:
+foundational_beliefs:
+  - id: meritocracy
+    state: refuted
+    confidence: 0.25
+    refuted_at: 2024-06-15
+    evidence: "3 promotion cycles, exceeded metrics, passed over for connected candidates"
+
+derived_beliefs:
+  - id: long-hours-good
+    state: questioning  # Was: confirmed
+    cascade_reason: "Foundation 'meritocracy' refuted"
+
+values:
+  - id: achievement
+    rank: 1  # Unchanged until reviewed
+    justified_by: [meritocracy]  # All justifications refuted
+    review_flag: true
+    review_prompt: "Is achievement valuable for its own sake, or only as path to success?"
+
+qualities:
+  - id: industrious
+    grounded_in: [meritocracy, achievement]
+    review_flag: true
+    review_prompt: "Do I want to be industrious, or strategic/connected?"
+
+purpose:
+  review_required: true  # Foundation threatened
+  ceremony_triggered: emergency_retro
+```
+
 ---
 
 ## Loop 3: Value Loop
@@ -511,6 +1155,39 @@ effectiveConfidence = storedConfidence * decayFactor;
 Values answer: **"When two good things conflict, which wins?"**
 
 Without explicit ranking, you make ad-hoc decisions based on mood or pressure. With ranking + conflict resolution rules, you have a consistent framework.
+
+### Value Justifications
+
+Values don't exist in isolation - they're often justified by underlying beliefs about how the world works. Tracking these justifications enables cascade reviews when beliefs are refuted:
+
+```yaml
+values:
+  - id: achievement
+    rank: 2
+    name: "Achievement"
+    justified_by:                    # Why do I value this?
+      - belief: meritocracy          # "Because hard work leads to success"
+      - belief: mastery-fulfillment  # "Because mastery brings satisfaction"
+    # If ALL justifications are refuted, value needs re-evaluation
+    # If SOME remain, value may still stand on remaining grounds
+
+  - id: family
+    rank: 1
+    name: "Family"
+    justified_by: []                 # Intrinsic - no belief justification needed
+    # Values with no justifications are axiomatic; they don't cascade
+
+  - id: fairness
+    rank: 3
+    name: "Fairness"
+    justified_by:
+      - belief: equality-fundamental  # "Because all people have equal worth"
+```
+
+**Cascade behavior:**
+- Value with all `justified_by` beliefs refuted → flagged for review
+- Value with some `justified_by` beliefs remaining → stable, but noted
+- Value with empty `justified_by` → axiomatic, never cascades from beliefs
 
 ### Alignment States
 
@@ -592,6 +1269,38 @@ Qualities are **character traits** you cultivate. Unlike goals (which complete),
 Qualities decompose into:
 - **Principles**: General guidance ("I prioritize sleep")
 - **Rules**: Specific trigger→action mappings ("When tired → walk instead of caffeine")
+
+### Quality Grounds
+
+Qualities are grounded in beliefs and values. Tracking these grounds enables cascade reviews when foundations shift:
+
+```yaml
+qualities:
+  - id: industrious
+    name: "Industrious"
+    grounded_in:
+      beliefs: [meritocracy]         # "Because hard work leads to success"
+      values: [achievement]          # "Because I value achievement"
+    # If grounds refuted, quality needs re-evaluation:
+    # "Do I still want to be industrious, or strategic instead?"
+
+  - id: healthy
+    name: "Healthy"
+    grounded_in:
+      beliefs: [health-longevity]    # "Because health enables long life"
+      values: [vitality]             # "Because I value feeling alive"
+
+  - id: generous
+    name: "Generous"
+    grounded_in:
+      beliefs: [abundance-mindset]   # "Because there's enough to share"
+      values: [community, fairness]  # "Because I value community and fairness"
+```
+
+**Cascade behavior:**
+- Quality with all grounding beliefs refuted → flagged for review
+- Quality with grounding values removed → flagged for review
+- Review prompt: "Do I still want to cultivate this trait? Why?"
 
 ### Rule States
 
@@ -764,6 +1473,75 @@ Ceremonies create temporal containers for reflection and data collection. Withou
 - Major goal setting (what audacious goals for next era?)
 - Value ranking reassessment (major life changes reflected?)
 
+#### Emergency Retro (triggered by cascade events)
+
+Some life events are too significant to wait for the next scheduled review. Cascade-level events (death of loved one, terminal diagnosis, permanent disability, divorce) trigger an emergency retrospective.
+
+**Timing:**
+- Triggers automatically when `impact_type: cascades` event is logged
+- Scheduled 1-2 weeks after event (space for initial processing)
+- Mandatory - cannot be indefinitely postponed
+- Can be rescheduled once if needed
+
+**Scope:** Full plan review (Purpose → Qualities → Values → Goals)
+
+**Agenda:**
+
+| Step | Prompt | Duration |
+|------|--------|----------|
+| Acknowledge | "What happened? How has reality shifted?" | 10 min |
+| Purpose check | "Does my purpose still resonate, or has this revealed something new?" | 15 min |
+| Qualities audit | "Who must I be now? What qualities matter more/less?" | 15 min |
+| Values re-ranking | "Have my priorities shifted? What wins now when things conflict?" | 15 min |
+| Goal triage | See prompts below | 30 min |
+| Capacity reset | "What is my realistic capacity now? For how long?" | 10 min |
+
+**Goal Triage Prompts:**
+- "Which goals are now impossible?" → mark `invalidated`
+- "Which goals need transformation?" → move to `considered` with notes
+- "Which goals are now irrelevant?" → mark `abandoned`
+- "What new goals emerge from this change?"
+
+**Output Schema:**
+
+```yaml
+emergency_retro_record:
+  triggered_by: child-loss-2024
+  scheduled: 2024-07-24
+  completed: 2024-07-24
+
+  purpose:
+    status: unchanged | refined | transformed
+    notes: "..."
+
+  qualities:
+    elevated: [resilience, presence]
+    diminished: []
+    added: [grief-processing]
+
+  values:
+    reordered: true
+    new_ranking: [family, health, faith, craft, wealth]
+    rationale: "Family moved to top after loss"
+
+  goals:
+    invalidated: []
+    transformed:
+      - goal: family-vacation-2024
+        new_form: "Memorial trip instead"
+    abandoned:
+      - goal: career-promotion
+        reason: "No longer priority"
+    new:
+      - goal: grief-counseling
+        state: committed
+
+  capacity:
+    adjustment: -50%
+    duration: 6 months
+    reassess_at: 2025-01-24
+```
+
 ### Accountability Mechanisms
 
 **1. Commitment Visibility**
@@ -808,16 +1586,23 @@ backend/src/
 │       │   ├── Evidence.mjs
 │       │   ├── Goal.mjs
 │       │   ├── Milestone.mjs
+│       │   ├── Dependency.mjs          # Goal-to-goal and external blockers
+│       │   ├── LifeEvent.mjs           # Major life transitions
 │       │   ├── Task.mjs
 │       │   ├── FeedbackEntry.mjs
 │       │   ├── Cycle.mjs               # Execution period (formerly Sprint)
 │       │   ├── Ceremony.mjs
 │       │   ├── CeremonyRecord.mjs
+│       │   ├── EmergencyRetroRecord.mjs  # Special record for cascade events
 │       │   ├── LifePlan.mjs            # Aggregate root
 │       │   └── index.mjs
 │       │
 │       ├── services/
 │       │   ├── GoalStateService.mjs    # State machine logic
+│       │   ├── DependencyResolver.mjs  # Check if goal is ready
+│       │   ├── LifeEventProcessor.mjs  # Handle impact types (blocks/derails/invalidates/cascades)
+│       │   ├── BeliefCascadeProcessor.mjs  # Handle foundational belief refutation cascades
+│       │   ├── BiasCalibrationService.mjs  # Calculate effective confidence, prompt for bias review
 │       │   ├── BeliefEvaluator.mjs     # Evidence → confidence
 │       │   ├── ValueDriftCalculator.mjs
 │       │   ├── RuleMatchingService.mjs
@@ -831,6 +1616,13 @@ backend/src/
 │       │   ├── EvidenceType.mjs
 │       │   ├── CeremonyType.mjs
 │       │   ├── CadenceLevel.mjs        # unit | cycle | phase | season | era
+│       │   ├── DependencyType.mjs      # prerequisite | recommended | life_event | resource
+│       │   ├── LifeEventType.mjs       # family | career | location | education | health | financial
+│       │   ├── LifeEventImpact.mjs     # blocks | derails | invalidates | transforms | cascades
+│       │   ├── LifeEventDuration.mjs   # temporary | indefinite | permanent
+│       │   ├── BeliefState.mjs         # hypothesized | testing | confirmed | uncertain | refuted | questioning | revised | abandoned
+│       │   ├── AttributionBias.mjs     # survivorship | confirmation | small_sample | regression_mean | confounding | hindsight | halo_effect | self_serving | luck
+│       │   ├── BiasStatus.mjs          # acknowledged | dismissed | unexamined
 │       │   └── index.mjs
 │       │
 │       └── index.mjs
@@ -851,7 +1643,8 @@ backend/src/
 │       │
 │       └── signals/
 │           ├── BeliefSignalDetector.mjs
-│           └── ContextSignalDetector.mjs
+│           ├── ContextSignalDetector.mjs
+│           └── LifeEventSignalDetector.mjs  # Detect life events from calendar/data
 │
 ├── 3_applications/
 │   └── lifeplan/
@@ -898,6 +1691,7 @@ backend/src/
 | Service | Layer | Responsibility |
 |---------|-------|----------------|
 | `GoalStateService` | Domain | Validate and execute state transitions |
+| `DependencyResolver` | Domain | Check if goal dependencies are satisfied |
 | `BeliefEvaluator` | Domain | Calculate confidence updates from evidence |
 | `ValueDriftCalculator` | Domain | Compare allocation vs ranking |
 | `RuleMatchingService` | Domain | Match context to applicable rules |
@@ -909,6 +1703,8 @@ backend/src/
 | `CeremonyService` | Application | Orchestrate ceremony flows |
 | `CycleService` | Application | Cycle planning, velocity tracking |
 | `CadenceService` | Application | Cadence timing calculations |
+| `LifeEventService` | Application | Track and detect life events |
+| `DependencyAuditService` | Application | Season review dependency audits |
 
 ### Integration Points
 
@@ -982,6 +1778,7 @@ cadence:
 
 # ============================================================
 # PURPOSE
+# With grounding in foundational beliefs
 # ============================================================
 
 purpose:
@@ -990,6 +1787,23 @@ purpose:
   last_reviewed: 2024-06-01
   review_cadence: era  # Review purpose every era
   notes: "Refined after reading JOP framework"
+
+  # What foundational beliefs support this purpose?
+  # If these are refuted, purpose needs emergency review
+  grounded_in:
+    beliefs:
+      - id: meaning-from-contribution
+        note: "I believe contributing to others creates meaning"
+      - id: joy-achievable
+        note: "I believe sustained joy is possible through intention"
+    values:
+      - id: impact
+        note: "This purpose reflects my value of making a difference"
+
+  # If grounded_in beliefs are refuted → triggers emergency_retro
+  # Example: If "meaning-from-contribution" is refuted by evidence that
+  # contribution doesn't actually create meaning for me, the purpose itself
+  # needs re-evaluation
 
 # ============================================================
 # QUALITIES
@@ -1198,8 +2012,78 @@ beliefs:
     evidence: []
 
 # ============================================================
+# LIFE EVENTS
+# Major transitions that block/unblock goals
+# ============================================================
+
+life_events:
+  - id: baby-born-2024
+    type: family
+    subtype: birth
+    name: "Second child born"
+    status: anticipated       # anticipated | occurred | cancelled
+    expected_date: 2024-08-15
+    actual_date: null
+    impact:
+      blocks_goals: [apply-for-promotion]
+      unlocks_goals: []
+      affects_capacity: -40%
+      duration: 3 months
+    signals:
+      - source: calendar
+        pattern: "parental leave"
+      - source: calendar
+        pattern: "baby shower"
+    notes: "Plan to take 3 months parental leave"
+
+  - id: move-to-austin
+    type: location
+    subtype: relocation
+    name: "Move to Austin"
+    status: occurred
+    expected_date: 2024-03-01
+    actual_date: 2024-03-15
+    impact:
+      blocks_goals: []
+      unlocks_goals: [join-local-climbing-gym]
+      affects_capacity: -20%
+      duration: 1 month
+
+# ============================================================
+# DEPENDENCIES
+# Goal-to-goal and external blockers
+# ============================================================
+
+dependencies:
+  - type: prerequisite
+    blocked_goal: run-marathon
+    requires_goal: lose-100-lbs
+    status: pending
+    reason: "Physical capability required"
+
+  - type: recommended
+    blocked_goal: start-business
+    requires_goal: build-emergency-fund
+    status: pending
+    reason: "Financial safety net"
+    overridden: false
+
+  - type: life_event
+    blocked_goal: apply-for-promotion
+    awaits_event: baby-born-2024
+    status: pending
+    reason: "Wait until parental leave complete"
+
+  - type: resource
+    blocked_goal: buy-house
+    resource: savings
+    threshold: 50000
+    current: 32000
+    status: pending
+
+# ============================================================
 # GOALS
-# With full state machine
+# With full state machine and dependencies
 # ============================================================
 
 goals:
@@ -1236,6 +2120,38 @@ goals:
       alignment_checked: true
       sacrifice_acceptable: null
       metrics_defined: false
+      deadline_set: false
+
+  # READY state (dependencies cleared, awaiting commitment)
+  apply-for-promotion:
+    id: apply-for-promotion
+    name: "Apply for Senior Engineer promotion"
+    quality: intellectual
+    state: ready
+    why: "Career advancement and increased impact"
+    estimated_sacrifice: "Extra project visibility work, 5 hours/week"
+    audacity: medium
+    created_at: 2024-06-01
+    ready_since: 2024-11-15
+    state_history:
+      - state: dream
+        timestamp: 2024-06-01T10:00:00Z
+        reason: "created"
+      - state: considered
+        timestamp: 2024-07-01T10:00:00Z
+        reason: "started building case"
+      - state: ready
+        timestamp: 2024-11-15T10:00:00Z
+        reason: "life_event:baby-born-2024 resolved"
+    dependencies_satisfied:
+      - type: life_event
+        event: baby-born-2024
+        satisfied_at: 2024-11-15
+        notes: "Baby settled, parental leave complete"
+    evaluation:
+      alignment_checked: true
+      sacrifice_acceptable: true
+      metrics_defined: true
       deadline_set: false
 
   # COMMITTED state

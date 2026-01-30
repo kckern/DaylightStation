@@ -477,6 +477,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     aiGateway: null, // AI gateway created later in app initialization
     // Reuse config-driven buxfer adapter from finance domain (use .has() to avoid NoOp)
     buxferAdapter: householdAdapters?.has?.('finance') ? householdAdapters.get('finance') : null,
+    dataRoot: dataBasePath, // Required for weather sharedStore
     logger: rootLogger.child({ module: 'harvester' })
   });
 
