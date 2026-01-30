@@ -99,7 +99,7 @@ import { createMessagingRouter } from '#api/v1/routers/messaging.mjs';
 import { JournalistContainer } from '#apps/journalist/JournalistContainer.mjs';
 import { YamlJournalEntryRepository } from '#adapters/persistence/yaml/YamlJournalEntryRepository.mjs';
 import { YamlMessageQueueRepository } from '#adapters/persistence/yaml/YamlMessageQueueRepository.mjs';
-import { DebriefRepository } from '#adapters/journalist/DebriefRepository.mjs';
+import { DebriefRepository, LoggingAIGateway } from '#adapters/journalist/index.mjs';
 import { JournalistInputRouter } from '#adapters/journalist/JournalistInputRouter.mjs';
 import { createJournalistRouter } from '#api/v1/routers/journalist.mjs';
 
@@ -462,7 +462,7 @@ export function createApiRouters(config) {
 /**
  * Create fitness domain services
  * @param {Object} config
- * @param {string} config.dataRoot - Base data directory
+ * @param {Object} config.configService - ConfigService instance for path resolution
  * @param {string} config.mediaRoot - Base media directory
  * @param {string} config.defaultHouseholdId - Default household ID
  * @param {Object} [config.homeAssistant] - Home Assistant configuration (legacy)
@@ -477,7 +477,7 @@ export function createApiRouters(config) {
  */
 export function createFitnessServices(config) {
   const {
-    dataRoot,
+    configService,
     mediaRoot,
     defaultHouseholdId,
     homeAssistant,
@@ -490,7 +490,7 @@ export function createFitnessServices(config) {
 
   // Session store and service
   const sessionStore = new YamlSessionDatastore({
-    dataRoot,
+    configService,
     mediaRoot
   });
 
@@ -1591,6 +1591,15 @@ export function createJournalistServices(config) {
     userResolver,
     userDataService,
     debriefRepository,
+    loggingAIGatewayFactory: (deps) => new LoggingAIGateway({
+      ...deps,
+      saveFile: (relativePath, data) => {
+        // Save relative to user's lifelog directory
+        // relativePath is "journalist/last_gpt.yml", we need "lifelog/journalist/last_gpt.yml"
+        const dataPath = `lifelog/${relativePath}`;
+        userDataService.writeUserData?.(deps.username, dataPath, data);
+      }
+    }),
     logger
   });
 
@@ -1757,7 +1766,7 @@ export function createHomebotApiRouter(config) {
 /**
  * Create nutribot application services
  * @param {Object} config
- * @param {string} config.dataRoot - Base data directory
+ * @param {Object} config.configService - ConfigService instance for path resolution
  * @param {Object} config.userDataService - UserDataService instance
  * @param {Object} config.telegramAdapter - TelegramAdapter for messaging
  * @param {Object} config.aiGateway - AI gateway for completions
@@ -1771,7 +1780,7 @@ export function createHomebotApiRouter(config) {
  */
 export function createNutribotServices(config) {
   const {
-    dataRoot,
+    configService,
     userDataService,
     telegramAdapter,
     aiGateway,
@@ -1808,7 +1817,7 @@ export function createNutribotServices(config) {
 
   // Coaching store (YAML persistence)
   const nutriCoachStore = new YamlNutriCoachDatastore({
-    dataRoot,
+    configService,
     logger
   });
 
