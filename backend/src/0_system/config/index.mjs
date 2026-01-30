@@ -19,6 +19,7 @@
 import { ConfigService } from './ConfigService.mjs';
 import { loadConfig } from './configLoader.mjs';
 import { validateConfig, ConfigValidationError } from './configValidator.mjs';
+import { DataService } from './DataService.mjs';
 
 let instance = null;
 
@@ -133,5 +134,49 @@ export { loadConfig } from './configLoader.mjs';
 export { validateConfig } from './configValidator.mjs';
 export { userDataService, default as UserDataService } from './UserDataService.mjs';
 export { userService, UserService } from './UserService.mjs';
+
+// DataService singleton with lazy initialization
+let dataServiceInstance = null;
+
+/**
+ * Get the DataService singleton instance.
+ * Uses lazy initialization - creates instance on first call.
+ *
+ * @returns {DataService}
+ */
+export function getDataService() {
+  if (!dataServiceInstance) {
+    dataServiceInstance = new DataService({ configService: getConfigService() });
+  }
+  return dataServiceInstance;
+}
+
+/**
+ * Convenience proxy for direct import.
+ *
+ * Usage:
+ *   import { dataService } from './config/index.mjs';
+ *   const data = dataService.getData('household', 'apps/weather');
+ */
+export const dataService = new Proxy({}, {
+  get(_, prop) {
+    const svc = getDataService();
+    const value = svc[prop];
+    if (typeof value === 'function') {
+      return value.bind(svc);
+    }
+    return value;
+  }
+});
+
+/**
+ * Reset DataService singleton instance.
+ * For testing only - allows re-initialization.
+ */
+export function resetDataService() {
+  dataServiceInstance = null;
+}
+
+export { DataService } from './DataService.mjs';
 
 export default configService;
