@@ -1,4 +1,18 @@
 /**
+ * @deprecated Use DataService instead. This service will be removed in a future version.
+ *
+ * Migration guide:
+ *   userDataService.readUserData(user, path)              → dataService.user.read(path, user)
+ *   userDataService.writeUserData(user, path, data)       → dataService.user.write(path, data, user)
+ *   userDataService.readHouseholdSharedData(hid, path)    → dataService.household.read(path, hid)
+ *   userDataService.writeHouseholdSharedData(hid, path, data) → dataService.household.write(path, data, hid)
+ *   userDataService.readSystemData(path)                  → dataService.system.read(path)
+ *   userDataService.writeSystemData(path, data)           → dataService.system.write(path, data)
+ *
+ * Key difference: In DataService, path is always the first parameter.
+ */
+
+/**
  * UserDataService - User-Namespaced Data Management
  * 
  * Handles all user-specific data operations with proper namespacing:
@@ -688,6 +702,55 @@ class UserDataService {
    */
   isReady() {
     return this.#initialized || this.#ensureInitialized();
+  }
+
+  // ============================================================
+  // SYSTEM DATA (global, not user/household scoped)
+  // ============================================================
+
+  /**
+   * Get system data path
+   * @param {...string} segments - Path segments (e.g., 'state', 'cron-runtime')
+   * @returns {string|null}
+   */
+  getSystemPath(...segments) {
+    this.#ensureInitialized();
+    if (!this.#dataDir) return null;
+    const flatSegments = segments.flatMap(s => s.split('/').filter(Boolean));
+    return path.join(this.#dataDir, 'system', ...flatSegments);
+  }
+
+  /**
+   * Read system data file
+   * @param {string} dataPath - Relative path within system directory (e.g., 'state/cron-runtime')
+   * @returns {object|null}
+   */
+  readSystemData(dataPath) {
+    let fullPath = this.getSystemPath(dataPath);
+    if (!fullPath) return null;
+
+    if (!fullPath.match(/\.(ya?ml|json)$/)) {
+      fullPath += '.yml';
+    }
+
+    return readYaml(fullPath);
+  }
+
+  /**
+   * Write system data file
+   * @param {string} dataPath - Relative path within system directory
+   * @param {object} data - Data to write
+   * @returns {boolean}
+   */
+  writeSystemData(dataPath, data) {
+    let fullPath = this.getSystemPath(dataPath);
+    if (!fullPath) return false;
+
+    if (!fullPath.match(/\.(ya?ml|json)$/)) {
+      fullPath += '.yml';
+    }
+
+    return writeYaml(fullPath, data);
   }
 }
 
