@@ -3,44 +3,41 @@
  *
  * Simple YAML-based datastore for household weather data.
  * Weather data is shared at household level (not user-specific).
- * Path (via ConfigService.getHouseholdPath): household[-{id}]/shared/weather
+ * Path: household[-{id}]/shared/weather
+ *
+ * Uses DataService for filesystem abstraction - adapter does not
+ * interact with filesystem directly.
  *
  * @module adapters/persistence/yaml/YamlWeatherDatastore
  */
 
-import { loadYaml, saveYaml } from '#system/utils/FileIO.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
+const WEATHER_PATH = 'shared/weather';
+
 export class YamlWeatherDatastore {
-  #configService;
+  #dataService;
   #householdId;
   #logger;
 
   /**
    * @param {Object} config
-   * @param {Object} config.configService - ConfigService instance for path resolution
+   * @param {Object} config.dataService - DataService for YAML I/O
+   * @param {Object} config.configService - ConfigService for default household
    * @param {string} [config.householdId] - Household ID (defaults to default household)
    * @param {Object} [config.logger] - Logger instance
    */
-  constructor({ configService, householdId, logger = console }) {
-    if (!configService) {
-      throw new InfrastructureError('YamlWeatherDatastore requires configService', {
+  constructor({ dataService, configService, householdId, logger = console }) {
+    if (!dataService) {
+      throw new InfrastructureError('YamlWeatherDatastore requires dataService', {
         code: 'MISSING_DEPENDENCY',
-        dependency: 'configService'
+        dependency: 'dataService'
       });
     }
 
-    this.#configService = configService;
-    this.#householdId = householdId || configService.getDefaultHouseholdId();
+    this.#dataService = dataService;
+    this.#householdId = householdId || configService?.getDefaultHouseholdId() || 'default';
     this.#logger = logger;
-  }
-
-  /**
-   * Get the file path for weather data
-   * @private
-   */
-  #getFilePath() {
-    return this.#configService.getHouseholdPath('shared/weather', this.#householdId);
   }
 
   /**
@@ -48,9 +45,12 @@ export class YamlWeatherDatastore {
    * @param {Object} data - Weather data to save
    */
   async save(data) {
-    const filePath = this.#getFilePath();
-    this.#logger.debug?.('weather.store.save', { filePath, keys: Object.keys(data) });
-    await saveYaml(filePath, data);
+    this.#logger.debug?.('weather.store.save', { householdId: this.#householdId, keys: Object.keys(data) });
+    const result = this.#dataService.household.write(WEATHER_PATH, data, this.#householdId);
+    if (!result) {
+      this.#logger.error?.('weather.store.save.failed', { householdId: this.#householdId });
+    }
+    return result;
   }
 
   /**
@@ -58,13 +58,11 @@ export class YamlWeatherDatastore {
    * @returns {Object|null} Weather data or null if not found
    */
   async load() {
-    const filePath = this.#getFilePath();
-    try {
-      return await loadYaml(filePath);
-    } catch (error) {
-      this.#logger.debug?.('weather.store.load.notFound', { filePath });
-      return null;
+    const data = this.#dataService.household.read(WEATHER_PATH, this.#householdId);
+    if (!data) {
+      this.#logger.debug?.('weather.store.load.notFound', { householdId: this.#householdId });
     }
+    return data;
   }
 }
 
