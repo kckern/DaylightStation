@@ -43,6 +43,7 @@ export class PlexAdapter {
     this.platform = config.platform || 'Chrome';
     this.proxyPath = config.proxyPath || '/api/v1/proxy/plex';
     this.mediaProgressMemory = config.mediaProgressMemory || null;
+    this.mediaKeyResolver = config.mediaKeyResolver || null;
   }
 
   /**
@@ -846,8 +847,14 @@ export class PlexAdapter {
       const states = await this.mediaProgressMemory.getAll(storagePath);
       const history = {};
       for (const state of states) {
-        // Strip plex: prefix from key for adapter compatibility
-        const bareKey = state.itemId.replace(/^plex:/, '');
+        // Use resolver to parse compound key, or strip prefix as fallback
+        let bareKey;
+        if (this.mediaKeyResolver) {
+          const { id } = this.mediaKeyResolver.parse(state.itemId);
+          bareKey = id;
+        } else {
+          bareKey = state.itemId.replace(/^plex:/, '');
+        }
         history[bareKey] = {
           playhead: state.playhead || 0,
           percent: state.percent || 0,
