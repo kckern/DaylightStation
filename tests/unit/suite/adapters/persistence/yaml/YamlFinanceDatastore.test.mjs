@@ -12,6 +12,7 @@ import os from 'os';
 describe('YamlFinanceDatastore', () => {
   let store;
   let testDataRoot;
+  let mockConfigService;
 
   const mockBudgetConfig = {
     budget: [{ timeframe: { start: '2026-01-01', end: '2026-06-30' } }],
@@ -37,7 +38,19 @@ describe('YamlFinanceDatastore', () => {
       yaml.dump(mockBudgetConfig)
     );
 
-    store = new YamlFinanceDatastore({ dataRoot: testDataRoot });
+    // Create mock configService
+    mockConfigService = {
+      getDefaultHouseholdId: () => 'default',
+      getHouseholdPath: (relativePath, householdId) => {
+        const hid = householdId || 'default';
+        const folderName = hid === 'default' ? 'household' : `household-${hid}`;
+        return relativePath
+          ? path.join(testDataRoot, folderName, relativePath)
+          : path.join(testDataRoot, folderName);
+      }
+    };
+
+    store = new YamlFinanceDatastore({ configService: mockConfigService });
   });
 
   afterEach(() => {
@@ -46,22 +59,8 @@ describe('YamlFinanceDatastore', () => {
   });
 
   describe('constructor', () => {
-    it('throws if dataRoot is missing', () => {
-      expect(() => new YamlFinanceDatastore({})).toThrow('requires dataRoot');
-    });
-
-    it('uses default household ID', () => {
-      const basePath = store.getBasePath();
-      expect(basePath).toContain('household/apps/finances');
-    });
-
-    it('allows custom default household ID', () => {
-      const customStore = new YamlFinanceDatastore({
-        dataRoot: testDataRoot,
-        defaultHouseholdId: 'custom'
-      });
-      const basePath = customStore.getBasePath();
-      expect(basePath).toContain('households/custom/apps/finances');
+    it('throws if configService is missing', () => {
+      expect(() => new YamlFinanceDatastore({})).toThrow('requires configService');
     });
   });
 
