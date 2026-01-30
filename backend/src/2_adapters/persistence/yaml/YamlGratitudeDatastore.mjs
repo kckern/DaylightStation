@@ -24,23 +24,23 @@ import { IGratitudeDatastore } from '#apps/gratitude/ports/IGratitudeDatastore.m
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 export class YamlGratitudeDatastore extends IGratitudeDatastore {
-  #userDataService;
+  #dataService;
   #logger;
 
   /**
    * @param {Object} config
-   * @param {Object} config.userDataService - UserDataService instance for YAML I/O
+   * @param {Object} config.dataService - DataService instance for YAML I/O
    * @param {Object} [config.logger] - Logger instance
    */
   constructor(config) {
     super();
-    if (!config.userDataService) {
-      throw new InfrastructureError('YamlGratitudeDatastore requires userDataService', {
+    if (!config.dataService) {
+      throw new InfrastructureError('YamlGratitudeDatastore requires dataService', {
         code: 'MISSING_DEPENDENCY',
-        dependency: 'userDataService'
+        dependency: 'dataService'
       });
     }
-    this.#userDataService = config.userDataService;
+    this.#dataService = config.dataService;
     this.#logger = config.logger || console;
   }
 
@@ -53,7 +53,7 @@ export class YamlGratitudeDatastore extends IGratitudeDatastore {
    * @private
    */
   #readArray(householdId, key) {
-    const data = this.#userDataService.readHouseholdSharedData(householdId, `gratitude/${key}`);
+    const data = this.#dataService.household.read(`shared/gratitude/${key}`, householdId);
     return Array.isArray(data) ? data : [];
   }
 
@@ -63,7 +63,7 @@ export class YamlGratitudeDatastore extends IGratitudeDatastore {
    */
   #writeArray(householdId, key, arr) {
     const data = Array.isArray(arr) ? arr : [];
-    this.#userDataService.writeHouseholdSharedData(householdId, `gratitude/${key}`, data);
+    this.#dataService.household.write(`shared/gratitude/${key}`, data, householdId);
   }
 
   /**
@@ -71,7 +71,9 @@ export class YamlGratitudeDatastore extends IGratitudeDatastore {
    * @private
    */
   #getSnapshotDir(householdId) {
-    return this.#userDataService.getHouseholdSharedPath(householdId, 'gratitude/snapshots');
+    // resolvePath adds .yml extension, so we strip it for directory paths
+    const resolvedPath = this.#dataService.household.resolvePath('shared/gratitude/snapshots', householdId);
+    return resolvedPath.replace(/\.yml$/, '');
   }
 
   /**
