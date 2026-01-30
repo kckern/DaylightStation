@@ -2,8 +2,8 @@
  * YamlSessionDatastore - YAML-based session persistence
  *
  * Implements ISessionDatastore port for fitness session storage.
- * Sessions are stored at: household[-{hid}]/apps/fitness/sessions/{YYYY-MM-DD}/{sessionId}.yml
- * Screenshots at: {mediaRoot}/apps/fitness/household[-{hid}]/sessions/{YYYY-MM-DD}/{sessionId}/screenshots/
+ * Sessions are stored at: household[-{id}]/apps/fitness/sessions/{YYYY-MM-DD}/{sessionId}.yml
+ * Screenshots at: {mediaRoot}/apps/fitness/sessions/{YYYY-MM-DD}/{sessionId}/screenshots/
  */
 import path from 'path';
 import moment from 'moment-timezone';
@@ -47,16 +47,16 @@ function parseToUnixMs(value, timezone = 'UTC') {
 export class YamlSessionDatastore extends ISessionDatastore {
   /**
    * @param {Object} config
-   * @param {string} config.dataRoot - Base data directory
+   * @param {Object} config.configService - ConfigService instance for path resolution
    * @param {string} config.mediaRoot - Base media directory
    */
   constructor(config) {
     super();
-    if (!config.dataRoot) throw new InfrastructureError('YamlSessionDatastore requires dataRoot', {
+    if (!config.configService) throw new InfrastructureError('YamlSessionDatastore requires configService', {
         code: 'MISSING_DEPENDENCY',
-        dependency: 'dataRoot'
+        dependency: 'configService'
       });
-    this.dataRoot = config.dataRoot;
+    this.configService = config.configService;
     this.mediaRoot = config.mediaRoot || path.join(process.cwd(), 'media');
   }
 
@@ -71,12 +71,7 @@ export class YamlSessionDatastore extends ISessionDatastore {
     if (!sessionDate) return null;
 
     const sessionsDir = path.join(
-      this.dataRoot,
-      'households',
-      householdId,
-      'apps',
-      'fitness',
-      'sessions',
+      this.configService.getHouseholdPath('apps/fitness/sessions', householdId),
       sessionDate
     );
 
@@ -86,17 +81,14 @@ export class YamlSessionDatastore extends ISessionDatastore {
       this.mediaRoot,
       'apps',
       'fitness',
-      'households',
-      householdId,
       'sessions',
       sessionDate,
       sessionId,
       'screenshots'
     );
 
-    // Relative path for API responses (uses flat household naming convention)
-    const householdFolder = householdId === 'default' ? 'household' : `household-${householdId}`;
-    const screenshotsRelativeBase = `apps/fitness/${householdFolder}/sessions/${sessionDate}/${sessionId}/screenshots`;
+    // Relative path for API responses
+    const screenshotsRelativeBase = `apps/fitness/sessions/${sessionDate}/${sessionId}/screenshots`;
 
     return {
       sessionDate,
@@ -180,14 +172,7 @@ export class YamlSessionDatastore extends ISessionDatastore {
    * @returns {Promise<string[]>}
    */
   async listDates(householdId) {
-    const sessionsRoot = path.join(
-      this.dataRoot,
-      'households',
-      householdId,
-      'apps',
-      'fitness',
-      'sessions'
-    );
+    const sessionsRoot = this.configService.getHouseholdPath('apps/fitness/sessions', householdId);
 
     return listDirsMatching(sessionsRoot, /^\d{4}-\d{2}-\d{2}$/)
       .sort()
@@ -202,12 +187,7 @@ export class YamlSessionDatastore extends ISessionDatastore {
    */
   async findByDate(date, householdId) {
     const sessionsDir = path.join(
-      this.dataRoot,
-      'households',
-      householdId,
-      'apps',
-      'fitness',
-      'sessions',
+      this.configService.getHouseholdPath('apps/fitness/sessions', householdId),
       date
     );
 

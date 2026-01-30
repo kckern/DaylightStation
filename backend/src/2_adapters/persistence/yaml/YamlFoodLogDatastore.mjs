@@ -3,7 +3,7 @@
  *
  * Implements IFoodLogDatastore port for NutriLog storage.
  *
- * Storage Strategy:
+ * Storage Strategy (via ConfigService.getUserDir):
  * - Hot storage: users/{userId}/lifelog/nutrition/nutrilog.yml (recent 30 days)
  * - Cold storage: users/{userId}/lifelog/nutrition/archives/nutrilog/{YYYY-MM}.yml
  */
@@ -23,26 +23,26 @@ import {
 const ARCHIVE_RETENTION_DAYS = 30;
 
 export class YamlFoodLogDatastore extends IFoodLogDatastore {
-  #dataRoot;
+  #configService;
   #logger;
   #invalidSeen = new Set();
   #timezone;
 
   /**
    * @param {Object} options
-   * @param {string} options.dataRoot - Base data directory
+   * @param {Object} options.configService - ConfigService instance for path resolution
    * @param {Object} [options.logger] - Logger instance
    * @param {string} [options.timezone='America/Los_Angeles'] - Default timezone
    */
   constructor(options) {
     super();
-    if (!options?.dataRoot) {
-      throw new InfrastructureError('YamlFoodLogDatastore requires dataRoot', {
+    if (!options?.configService) {
+      throw new InfrastructureError('YamlFoodLogDatastore requires configService', {
         code: 'MISSING_DEPENDENCY',
-        dependency: 'dataRoot'
+        dependency: 'configService'
       });
     }
-    this.#dataRoot = options.dataRoot;
+    this.#configService = options.configService;
     this.#logger = options.logger || console;
     this.#timezone = options.timezone || 'America/Los_Angeles';
   }
@@ -56,9 +56,7 @@ export class YamlFoodLogDatastore extends IFoodLogDatastore {
    */
   #getPath(userId) {
     return path.join(
-      this.#dataRoot,
-      'users',
-      userId,
+      this.#configService.getUserDir(userId),
       'lifelog',
       'nutrition',
       'nutrilog'
@@ -72,9 +70,7 @@ export class YamlFoodLogDatastore extends IFoodLogDatastore {
    */
   #getArchiveDir(userId) {
     return path.join(
-      this.#dataRoot,
-      'users',
-      userId,
+      this.#configService.getUserDir(userId),
       'lifelog',
       'nutrition',
       'archives',

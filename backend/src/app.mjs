@@ -337,7 +337,6 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const healthServices = createHealthServices({
     userDataService,
     configService,
-    dataRoot: dataBasePath,
     logger: rootLogger
   });
 
@@ -345,8 +344,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Prefer config-driven buxfer adapter, fall back to legacy auth lookup
   const buxferAuth = configService.getUserAuth?.('buxfer') || configService.getHouseholdAuth?.('buxfer');
   const financeServices = createFinanceServices({
-    dataRoot: dataBasePath,
-    defaultHouseholdId: householdId,
+    configService,
     // Prefer config-driven adapter from integration system (use .has() to avoid NoOp)
     buxferAdapter: householdAdapters?.has?.('finance') ? householdAdapters.get('finance') : null,
     // Legacy fallback
@@ -355,7 +353,6 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       password: buxferAuth.password
     } : null,
     httpClient: axios,
-    configService,
     logger: rootLogger.child({ module: 'finance' })
   });
 
@@ -393,7 +390,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   };
 
   const fitnessServices = createFitnessServices({
-    dataRoot: dataBasePath,
+    configService,
     mediaRoot: mediaBasePath,
     defaultHouseholdId: householdId,
     // Prefer config-driven HA adapter, fall back to config-based creation (use .has() to avoid NoOp)
@@ -477,7 +474,6 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     aiGateway: null, // AI gateway created later in app initialization
     // Reuse config-driven buxfer adapter from finance domain (use .has() to avoid NoOp)
     buxferAdapter: householdAdapters?.has?.('finance') ? householdAdapters.get('finance') : null,
-    dataRoot: dataBasePath, // Required for weather sharedStore
     logger: rootLogger.child({ module: 'harvester' })
   });
 
@@ -796,14 +792,14 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Create conversation state store for nutribot (persists lastReportMessageId for cleanup)
   const nutribotStateStore = new YamlConversationStateDatastore({
-    basePath: join(dataDir, 'chatbots', 'nutribot', 'conversations')
+    basePath: configService.getHouseholdPath('apps/nutribot/conversations')
   });
 
   // Get nutribot adapter from config-driven SystemBotLoader
   const nutribotTelegramAdapter = getMessagingAdapter(householdId, 'nutribot');
 
   const nutribotServices = createNutribotServices({
-    dataRoot: dataBasePath,
+    configService,
     userDataService,
     telegramAdapter: nutribotTelegramAdapter,
     aiGateway: nutribotAiGateway,
@@ -835,7 +831,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Create conversation state store for journalist
   const journalistStateStore = new YamlConversationStateDatastore({
-    basePath: join(dataDir, 'chatbots', 'journalist', 'conversations')
+    basePath: configService.getHouseholdPath('apps/journalist/conversations')
   });
 
   const journalistServices = createJournalistServices({
@@ -870,7 +866,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Create conversation state store for homebot
   const homebotStateStore = new YamlConversationStateDatastore({
-    basePath: join(dataDir, 'chatbots', 'homebot', 'conversations')
+    basePath: configService.getHouseholdPath('apps/homebot/conversations')
   });
 
   const homebotServices = createHomebotServices({

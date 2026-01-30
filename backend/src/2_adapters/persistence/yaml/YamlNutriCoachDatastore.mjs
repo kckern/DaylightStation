@@ -3,8 +3,8 @@
  *
  * Implements INutriCoachDatastore port for coaching history storage.
  *
- * Storage:
- * - household[-{hid}]/apps/nutrition/nutricoach.yml
+ * Storage path (via ConfigService.getHouseholdPath):
+ * - household[-{id}]/apps/nutrition/nutricoach.yml
  * - Data structure: { 'YYYY-MM-DD': [{ message, timestamp, isFirstOfDay, context }] }
  */
 
@@ -19,37 +19,31 @@ import { INutriCoachDatastore } from '#apps/nutribot/ports/INutriCoachDatastore.
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 export class YamlNutriCoachDatastore extends INutriCoachDatastore {
-  #dataRoot;
+  #configService;
   #logger;
 
   /**
    * @param {Object} options
-   * @param {string} options.dataRoot - Base data directory
+   * @param {Object} options.configService - ConfigService instance for path resolution
    * @param {Object} [options.logger] - Logger instance
    */
   constructor(options) {
     super();
-    if (!options?.dataRoot) {
-      throw new InfrastructureError('YamlNutriCoachDatastore requires dataRoot', {
+    if (!options?.configService) {
+      throw new InfrastructureError('YamlNutriCoachDatastore requires configService', {
         code: 'MISSING_DEPENDENCY',
-        dependency: 'dataRoot'
+        dependency: 'configService'
       });
     }
-    this.#dataRoot = options.dataRoot;
+    this.#configService = options.configService;
     this.#logger = options.logger || console;
   }
 
   // ==================== Path Helpers ====================
 
   #getPath(userId) {
-    return path.join(
-      this.#dataRoot,
-      'households',
-      userId,
-      'apps',
-      'nutrition',
-      'nutricoach'
-    );
+    // userId here is actually householdId based on usage
+    return this.#configService.getHouseholdPath('apps/nutrition/nutricoach', userId);
   }
 
   // ==================== File I/O ====================
