@@ -106,6 +106,7 @@ import { createJournalistRouter } from '#api/v1/routers/journalist.mjs';
 // Nutribot application imports
 import { NutribotContainer } from '#apps/nutribot/NutribotContainer.mjs';
 import { NutriBotConfig } from '#apps/nutribot/config/NutriBotConfig.mjs';
+import { dataService } from '#system/config/index.mjs';
 import { YamlNutriListDatastore } from '#adapters/persistence/yaml/YamlNutriListDatastore.mjs';
 import { YamlNutriCoachDatastore } from '#adapters/persistence/yaml/YamlNutriCoachDatastore.mjs';
 import { NutribotInputRouter } from '#adapters/nutribot/index.mjs';
@@ -1254,16 +1255,15 @@ export function createTTSApiRouter(config) {
 /**
  * Create gratitude domain services
  * @param {Object} config
- * @param {Object} config.userDataService - UserDataService for YAML I/O
  * @param {Object} [config.logger] - Logger instance
  * @returns {Object} Gratitude services
  */
 export function createGratitudeServices(config) {
-  const { userDataService, logger = console } = config;
+  const { logger = console } = config;
 
   // Gratitude store (YAML persistence)
   const gratitudeStore = new YamlGratitudeDatastore({
-    userDataService,
+    dataService,
     logger
   });
 
@@ -1549,7 +1549,7 @@ export function createJournalistServices(config) {
 
   // Journal entry repository (YAML persistence)
   const journalEntryRepository = new YamlJournalEntryRepository({
-    userDataService,
+    dataService,
     userResolver,
     configService,
     logger
@@ -1893,7 +1893,7 @@ export function createNutribotApiRouter(config) {
 /**
  * Create nutribot services with DDD architecture
  * @param {Object} config
- * @param {Object} config.userDataService
+ * @param {Object} config.userDataService - UserDataService for YamlNutriListDatastore
  * @param {Object} config.telegram - { token, botId }
  * @param {Object} config.openai - { apiKey }
  * @param {Object} config.nutritionix - { appId, appKey }
@@ -1904,7 +1904,7 @@ export function createNutribotDDDServices(config) {
   const { userDataService, telegram, openai, nutritionix, logger = console } = config;
 
   // Persistence adapters
-  const nutriLogStore = new YamlNutriLogDatastore({ userDataService, logger });
+  const nutriLogStore = new YamlNutriLogDatastore({ dataService, logger });
   const nutriListStore = new YamlNutriListDatastore({ userDataService, logger });
 
   // External service adapters
@@ -2215,6 +2215,7 @@ export function createHarvesterServices(config) {
     io,
     httpClient,
     configService,
+    userDataService,
     todoistApi,
     stravaClient: stravaClientParam,
     authStore: authStoreParam,
@@ -2257,10 +2258,11 @@ export function createHarvesterServices(config) {
   };
 
   // Create or use provided sharedStore (for weather data)
-  const sharedStore = sharedStoreParam || (configService ? new YamlWeatherDatastore({
+  const sharedStore = sharedStoreParam || new YamlWeatherDatastore({
+    dataService,
     configService,
     logger,
-  }) : null);
+  });
 
   // Create Gmail client factory if not provided (for Shopping harvester)
   const effectiveGmailClientFactory = gmailClientFactory || (async (username) => {
@@ -2370,8 +2372,25 @@ export function createHarvesterServices(config) {
     }));
   }
 
-  // Create shared RSS parser for feed-based harvesters
-  const rssParserInstance = rssParser || new RSSParser();
+  // Create shared RSS parser for feed-based harvesters with custom field support
+  const rssParserInstance = rssParser || new RSSParser({
+    customFields: {
+      item: [
+        ['letterboxd:watchedDate', 'letterboxd:watchedDate'],
+        ['letterboxd:filmTitle', 'letterboxd:filmTitle'],
+        ['letterboxd:filmYear', 'letterboxd:filmYear'],
+        ['letterboxd:memberRating', 'letterboxd:memberRating'],
+        ['letterboxd:rewatch', 'letterboxd:rewatch'],
+        ['letterboxd:memberLike', 'letterboxd:memberLike'],
+        ['tmdb:movieId', 'tmdb:movieId'],
+        ['gr:book_id', 'gr:book_id'],
+        ['gr:author_name', 'gr:author_name'],
+        ['gr:user_rating', 'gr:user_rating'],
+        ['gr:user_read_at', 'gr:user_read_at'],
+        ['gr:user_shelves', 'gr:user_shelves']
+      ]
+    }
+  });
 
   // Letterboxd - uses RSS feed
   registerHarvester('letterboxd', () => new LetterboxdHarvester({
