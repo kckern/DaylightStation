@@ -293,49 +293,23 @@ export class ConfigService {
   }
 
   /**
-   * Resolve service name to host for current environment
-   * @param {string} serviceName - Logical service name (plex, homeassistant, mqtt, etc.)
-   * @returns {string|null} Host for current environment or null if not found
+   * Resolve service URL for current environment
+   * @param {string} serviceName - Service name (plex, homeassistant, mqtt, etc.)
+   * @returns {string|null} Full URL or null if not found
    */
-  resolveServiceHost(serviceName) {
+  resolveServiceUrl(serviceName) {
     const service = this.#config.services?.[serviceName];
     if (!service) return null;
 
     const env = this.getEnv();
-    // Support new format: { hosts: { env: host }, port: X }
-    // and legacy format: { env: host }
-    const hosts = service.hosts ?? service;
-    
-    // Check if environment-specific host exists (including explicit null)
-    if (env in hosts) {
-      return hosts[env]; // Return value, even if null (disabled)
+
+    // Direct env lookup - all values are full URLs
+    if (env in service) {
+      return service[env];
     }
-    
-    // Fall back to default only if env key doesn't exist
-    return hosts.default ?? null;
-  }
 
-  /**
-   * Get service port from services.yml
-   * @param {string} serviceName - Logical service name
-   * @returns {number|null} Port number or null if not defined
-   */
-  getServicePort(serviceName) {
-    return this.#config.services?.[serviceName]?.port ?? null;
-  }
-
-  /**
-   * Resolve full service URL from services.yml
-   * @param {string} serviceName - Service name (plex, homeassistant, etc.)
-   * @param {string} [protocol='http'] - Protocol to use
-   * @returns {string|null} Full URL like "http://localhost:32400" or null if not found
-   */
-  resolveServiceUrl(serviceName, protocol = 'http') {
-    const host = this.resolveServiceHost(serviceName);
-    if (!host) return null;
-
-    const port = this.getServicePort(serviceName);
-    return port ? `${protocol}://${host}:${port}` : `${protocol}://${host}`;
+    // Fall back to default
+    return service.default ?? null;
   }
 
   /**

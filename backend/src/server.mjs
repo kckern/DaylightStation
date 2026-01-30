@@ -128,9 +128,9 @@ async function main() {
   const server = createServer();
   
   // Check if MQTT should be enabled (from services config)
-  // mqtt host: null in services.yml for this env disables MQTT entirely
-  const mqttHost = configService.resolveServiceHost('mqtt');
-  const enableMqtt = !!mqttHost;
+  // null/missing URL in services.yml for this env disables MQTT entirely
+  const mqttUrl = configService.resolveServiceUrl('mqtt');
+  const enableMqtt = !!mqttUrl;
   
   const app = await createApp({ server, logger, configPaths, configExists, enableScheduler: true, enableMqtt });
 

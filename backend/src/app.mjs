@@ -535,24 +535,32 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // Hardware adapters (printer, TTS, MQTT sensors)
-  // Printer: adapter config (adapters.yml) for settings, services.yml for environment-based host resolution
   const printerAdapterConfig = configService.getAdapterConfig('thermal_printer') || {};
-  const printerHost = printerAdapterConfig.host || configService.resolveServiceHost('printer');
-  const printerPort = printerAdapterConfig.port || configService.getServicePort('printer') || 9100;
-  const mqttHost = configService.resolveServiceHost('mqtt');
-  const mqttPort = configService.getServicePort('mqtt') || 1883;
+  const printerUrl = configService.resolveServiceUrl('thermal_printer');
+  const mqttUrl = configService.resolveServiceUrl('mqtt');
   const ttsApiKey = configService.getSecret('OPENAI_API_KEY') || '';
+
+  // Parse URLs to extract host/port for adapters that need them
+  const parseUrl = (url) => {
+    if (!url) return { host: null, port: null };
+    try {
+      const parsed = new URL(url);
+      return { host: parsed.hostname, port: parsed.port ? parseInt(parsed.port, 10) : null };
+    } catch { return { host: null, port: null }; }
+  };
+  const printer = parseUrl(printerUrl);
+  const mqtt = parseUrl(mqttUrl);
 
   const hardwareAdapters = createHardwareAdapters({
     printer: {
-      host: printerHost || '',
-      port: printerPort,
+      host: printerAdapterConfig.host || printer.host || '',
+      port: printerAdapterConfig.port || printer.port || 9100,
       timeout: printerAdapterConfig.timeout || 5000,
       upsideDown: printerAdapterConfig.upsideDown !== false
     },
     mqtt: {
-      host: mqttHost || '',
-      port: mqttPort
+      host: mqtt.host || '',
+      port: mqtt.port || 1883
     },
     tts: {
       apiKey: ttsApiKey,
@@ -579,7 +587,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     }
   } else if (!enableMqtt) {
     rootLogger.info('mqtt.disabled', { reason: 'disabled for this environment' });
-  } else if (mqttHost) {
+  } else if (mqtt.host) {
     rootLogger.warn?.('mqtt.disabled', { reason: 'MQTT configured but adapter not initialized' });
   }
 
