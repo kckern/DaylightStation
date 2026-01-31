@@ -102,6 +102,7 @@ function NewFormatComposite({ visual, audio, Player, ignoreKeys, coordination })
         <VisualRenderer
           track={visual}
           audioState={audioPlaybackState}
+          currentIndex={advanceController.currentIndex}
           onAdvance={advanceController.advance}
         />
       </div>
