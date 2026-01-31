@@ -286,6 +286,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Content domain
   // Get media library credentials (currently Plex, could be Jellyfin, etc.)
   const mediaLibConfig = configService.getServiceCredentials('plex');
+  // Get Immich gallery credentials
+  const immichConfig = configService.getServiceCredentials('immich');
 
   // Get nomusic overlay config from fitness app settings
   const fitnessConfig = configService.getAppConfig('fitness');
@@ -303,6 +305,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const contentRegistry = createContentRegistry({
     mediaBasePath,
     plex: mediaLibConfig,  // Bootstrap key stays 'plex' for now
+    immich: immichConfig,  // Gallery source (photos/videos)
     dataPath: contentPath,
     watchlistPath,
     mediaMemoryPath,
@@ -729,6 +732,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   v1Routers.device = createDeviceApiRouter({
     deviceServices,
+    configService,
     logger: rootLogger.child({ module: 'device-api' })
   });
 
