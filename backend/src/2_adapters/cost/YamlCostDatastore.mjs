@@ -287,15 +287,24 @@ export class YamlCostDatastore extends ICostRepository {
   }
 
   /**
-   * Compact old cost entries
+   * Compact old cost entries into daily/monthly summaries
    *
-   * Placeholder implementation - returns statistics indicating no compaction.
+   * **NOT YET IMPLEMENTED** - Returns zero statistics.
+   * Scheduled for Phase 9: CostCompactionService (see design doc).
+   *
+   * When implemented, this will:
+   * - Roll up individual entries into daily summaries
+   * - Preserve category and attribution breakdowns
+   * - Reduce storage for historical data
    *
    * @param {Date} olderThan - Compact entries older than this date
-   * @returns {Promise<Object>} Compaction statistics
+   * @returns {Promise<{ entriesCompacted: number, summariesCreated: number, bytesReclaimed: number }>}
+   *
+   * @todo Implement compaction logic in Phase 9
+   * @see docs/plans/2026-01-30-cost-domain-design.md
    */
   async compact(olderThan) {
-    // Placeholder - no compaction implemented yet
+    // TODO(Phase 9): Implement compaction - roll up entries into summaries
     return {
       entriesCompacted: 0,
       summariesCreated: 0,
@@ -304,16 +313,24 @@ export class YamlCostDatastore extends ICostRepository {
   }
 
   /**
-   * Archive cost entries to a file
+   * Archive cost entries to a compressed file
    *
-   * Placeholder implementation - no archival implemented yet.
+   * **NOT YET IMPLEMENTED** - No-op.
+   * Scheduled for Phase 9: CostCompactionService (see design doc).
+   *
+   * When implemented, this will:
+   * - Write entries to gzipped YAML archive
+   * - Support restoration of archived data
    *
    * @param {CostEntry[]} entries - Entries to archive
    * @param {string} archivePath - Destination file path
    * @returns {Promise<void>}
+   *
+   * @todo Implement archive logic in Phase 9
+   * @see docs/plans/2026-01-30-cost-domain-design.md
    */
   async archive(entries, archivePath) {
-    // Placeholder - no archival implemented yet
+    // TODO(Phase 9): Implement archive - write to gzipped YAML
   }
 
   // ==========================================================================
