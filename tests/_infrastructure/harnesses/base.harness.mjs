@@ -73,8 +73,7 @@ export function findTestFiles(baseDir, targets, args) {
 export function runJest(files, options = {}) {
   return new Promise((resolve, reject) => {
     const jestArgs = [
-      '--experimental-vm-modules',
-      'npx', 'jest',
+      'jest',
       ...files,
       '--colors',
     ];
@@ -84,7 +83,7 @@ export function runJest(files, options = {}) {
     if (options.verbose) jestArgs.push('--verbose');
     if (options.runInBand) jestArgs.push('--runInBand');
 
-    const child = spawn('node', jestArgs, {
+    const child = spawn('npx', jestArgs, {
       stdio: 'inherit',
       env: { ...process.env, NODE_OPTIONS: '--experimental-vm-modules' },
     });

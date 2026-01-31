@@ -5,44 +5,76 @@
 
 import fs from 'fs';
 import path from 'path';
-import { glob } from 'glob';
 
 const DRY_RUN = process.argv.includes('--dry-run');
 
+// Only match import/require statements, NOT path.resolve/path.join calls
 const IMPORT_REWRITES = [
-  // Old lib paths -> #testlib
-  [/@testlib\/testDataService\.mjs/g, '#testlib/testDataService.mjs'],
-  [/['"]\.\.\/\.\.\/lib\/testDataService\.mjs['"]/g, "'#testlib/testDataService.mjs'"],
-  [/['"]\.\.\/\.\.\/\.\.\/lib\/testDataService\.mjs['"]/g, "'#testlib/testDataService.mjs'"],
-  [/['"]\.\.\/lib\/testDataService\.mjs['"]/g, "'#testlib/testDataService.mjs'"],
-  [/['"]\.\.\/\.\.\/\.\.\/\.\.\/lib\/testDataService\.mjs['"]/g, "'#testlib/testDataService.mjs'"],
+  // Old lib paths -> #testlib (import statements only)
+  [/from ['"]\.\.\/\.\.\/lib\/testDataService\.mjs['"]/g, "from '#testlib/testDataService.mjs'"],
+  [/from ['"]\.\.\/\.\.\/\.\.\/lib\/testDataService\.mjs['"]/g, "from '#testlib/testDataService.mjs'"],
+  [/from ['"]\.\.\/lib\/testDataService\.mjs['"]/g, "from '#testlib/testDataService.mjs'"],
+  [/from ['"]\.\.\/\.\.\/\.\.\/\.\.\/lib\/testDataService\.mjs['"]/g, "from '#testlib/testDataService.mjs'"],
+  [/from ['"]\.\.\/\.\.\/\.\.\/\.\.\/\.\.\/lib\/testDataService\.mjs['"]/g, "from '#testlib/testDataService.mjs'"],
 
-  // Old _lib relative paths -> #testlib
-  [/['"]\.\.\/_lib\/([^'"]+)['"]/g, "'#testlib/$1'"],
-  [/['"]\.\.\/\.\.\/_lib\/([^'"]+)['"]/g, "'#testlib/$1'"],
-  [/['"]\.\.\/\.\.\/\.\.\/_lib\/([^'"]+)['"]/g, "'#testlib/$1'"],
-  [/['"]\.\.\/\.\.\/\.\.\/\.\.\/_lib\/([^'"]+)['"]/g, "'#testlib/$1'"],
+  // testDataMatchers
+  [/from ['"]\.\.\/\.\.\/lib\/testDataMatchers\.mjs['"]/g, "from '#testlib/testDataMatchers.mjs'"],
+  [/from ['"]\.\.\/\.\.\/\.\.\/lib\/testDataMatchers\.mjs['"]/g, "from '#testlib/testDataMatchers.mjs'"],
+  [/from ['"]\.\.\/lib\/testDataMatchers\.mjs['"]/g, "from '#testlib/testDataMatchers.mjs'"],
+  [/from ['"]\.\.\/\.\.\/\.\.\/\.\.\/lib\/testDataMatchers\.mjs['"]/g, "from '#testlib/testDataMatchers.mjs'"],
 
-  // Fixtures - relative paths -> #fixtures
-  [/['"]\.\.\/\.\.\/_fixtures\/([^'"]+)['"]/g, "'#fixtures/$1'"],
-  [/['"]\.\.\/\.\.\/\.\.\/_fixtures\/([^'"]+)['"]/g, "'#fixtures/$1'"],
-  [/['"]\.\.\/\.\.\/\.\.\/\.\.\/_fixtures\/([^'"]+)['"]/g, "'#fixtures/$1'"],
-  [/['"]\.\.\/_fixtures\/([^'"]+)['"]/g, "'#fixtures/$1'"],
+  // configHelper
+  [/from ['"]\.\.\/\.\.\/lib\/configHelper\.mjs['"]/g, "from '#testlib/configHelper.mjs'"],
+  [/from ['"]\.\.\/\.\.\/\.\.\/lib\/configHelper\.mjs['"]/g, "from '#testlib/configHelper.mjs'"],
+  [/from ['"]\.\.\/lib\/configHelper\.mjs['"]/g, "from '#testlib/configHelper.mjs'"],
+  [/from ['"]\.\.\/\.\.\/\.\.\/\.\.\/lib\/configHelper\.mjs['"]/g, "from '#testlib/configHelper.mjs'"],
 
-  // Harnesses - relative paths -> #harnesses
-  [/['"]\.\.\/\.\.\/_infrastructure\/harnesses\/([^'"]+)['"]/g, "'#harnesses/$1'"],
-  [/['"]\.\.\/\.\.\/\.\.\/_infrastructure\/harnesses\/([^'"]+)['"]/g, "'#harnesses/$1'"],
-  [/['"]\.\.\/\.\.\/\.\.\/\.\.\/_infrastructure\/harnesses\/([^'"]+)['"]/g, "'#harnesses/$1'"],
-  [/['"]\.\.\/_infrastructure\/harnesses\/([^'"]+)['"]/g, "'#harnesses/$1'"],
+  // Old _lib relative paths -> #testlib (import statements only)
+  [/from ['"]\.\.\/_lib\/([^'"]+)['"]/g, "from '#testlib/$1'"],
+  [/from ['"]\.\.\/\.\.\/_lib\/([^'"]+)['"]/g, "from '#testlib/$1'"],
+  [/from ['"]\.\.\/\.\.\/\.\.\/_lib\/([^'"]+)['"]/g, "from '#testlib/$1'"],
+  [/from ['"]\.\.\/\.\.\/\.\.\/\.\.\/_lib\/([^'"]+)['"]/g, "from '#testlib/$1'"],
+  [/from ['"]\.\.\/\.\.\/\.\.\/\.\.\/\.\.\/_lib\/([^'"]+)['"]/g, "from '#testlib/$1'"],
+
+  // Fixtures - import statements only
+  [/from ['"]\.\.\/_fixtures\/([^'"]+)['"]/g, "from '#fixtures/$1'"],
+  [/from ['"]\.\.\/\.\.\/_fixtures\/([^'"]+)['"]/g, "from '#fixtures/$1'"],
+  [/from ['"]\.\.\/\.\.\/\.\.\/_fixtures\/([^'"]+)['"]/g, "from '#fixtures/$1'"],
+  [/from ['"]\.\.\/\.\.\/\.\.\/\.\.\/_fixtures\/([^'"]+)['"]/g, "from '#fixtures/$1'"],
+  [/from ['"]\.\.\/\.\.\/\.\.\/\.\.\/\.\.\/_fixtures\/([^'"]+)['"]/g, "from '#fixtures/$1'"],
+
+  // Harnesses - import statements only
+  [/from ['"]\.\.\/_infrastructure\/harnesses\/([^'"]+)['"]/g, "from '#harnesses/$1'"],
+  [/from ['"]\.\.\/\.\.\/_infrastructure\/harnesses\/([^'"]+)['"]/g, "from '#harnesses/$1'"],
+  [/from ['"]\.\.\/\.\.\/\.\.\/_infrastructure\/harnesses\/([^'"]+)['"]/g, "from '#harnesses/$1'"],
+  [/from ['"]\.\.\/\.\.\/\.\.\/\.\.\/_infrastructure\/harnesses\/([^'"]+)['"]/g, "from '#harnesses/$1'"],
 
   // Backend aliases are already correct - no changes needed
   // #system/, #domains/, #adapters/, #apps/, #api/
 ];
 
-async function updateImports() {
-  const testFiles = await glob('tests/**/*.test.mjs', {
-    ignore: ['tests/_archive/**'],
-  });
+function findTestFiles(dir, files = []) {
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name);
+
+    // Skip _archive directory
+    if (entry.name === '_archive') continue;
+
+    if (entry.isDirectory()) {
+      findTestFiles(fullPath, files);
+    } else if (entry.name.endsWith('.test.mjs')) {
+      files.push(fullPath);
+    }
+  }
+
+  return files;
+}
+
+function updateImports() {
+  const testsDir = path.resolve(process.cwd(), 'tests');
+  const testFiles = findTestFiles(testsDir);
 
   console.log(`Found ${testFiles.length} test files`);
   if (DRY_RUN) {
@@ -54,18 +86,18 @@ async function updateImports() {
   for (const file of testFiles) {
     let content = fs.readFileSync(file, 'utf8');
     let originalContent = content;
-    let modified = false;
 
     for (const [pattern, replacement] of IMPORT_REWRITES) {
+      // Reset lastIndex before testing
+      pattern.lastIndex = 0;
       if (pattern.test(content)) {
-        content = content.replace(pattern, replacement);
-        // Reset regex lastIndex for global patterns
+        // Reset again before replace
         pattern.lastIndex = 0;
+        content = content.replace(pattern, replacement);
       }
     }
 
     if (content !== originalContent) {
-      modified = true;
       totalModified++;
 
       if (DRY_RUN) {
@@ -89,4 +121,4 @@ async function updateImports() {
   console.log(`\n${DRY_RUN ? 'Would update' : 'Updated'} ${totalModified} files`);
 }
 
-updateImports().catch(console.error);
+updateImports();
