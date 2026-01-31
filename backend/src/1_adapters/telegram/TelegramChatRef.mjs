@@ -71,9 +71,14 @@ export class TelegramChatRef {
   }
 
   /**
-   * Get the platform user ID for identity resolution
-   * This is the chat ID without bot context - used to look up system user
-   * @returns {string}
+   * Get the chat ID for identity resolution fallback
+   *
+   * NOTE: For user identity resolution, prefer using `from.id` from the
+   * parsed message metadata. This returns the chat ID, which equals the
+   * user ID only in private chats. For groups, this is the group ID.
+   *
+   * @returns {string} The chat ID (not necessarily the user ID)
+   * @deprecated Prefer using parsed.metadata.from.id for user identity
    */
   get platformUserId() {
     return this.#chatId;
