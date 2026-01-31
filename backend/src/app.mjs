@@ -291,6 +291,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const immichAuth = configService.getHouseholdAuth('immich');
   const immichConfig = immichHost && immichAuth?.token ? { host: immichHost, apiKey: immichAuth.token } : null;
 
+  // Get Audiobookshelf credentials (ebooks/audiobooks)
+  const audiobookshelfHost = configService.resolveServiceUrl('audiobookshelf');
+  const audiobookshelfAuth = configService.getHouseholdAuth('audiobookshelf');
+  const audiobookshelfConfig = audiobookshelfHost && audiobookshelfAuth?.token
+    ? { host: audiobookshelfHost, token: audiobookshelfAuth.token }
+    : null;
+
   // Get nomusic overlay config from fitness app settings
   const fitnessConfig = configService.getAppConfig('fitness');
   const nomusicLabels = fitnessConfig?.plex?.nomusic_labels || [];
@@ -308,6 +315,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     mediaBasePath,
     plex: mediaLibConfig,  // Bootstrap key stays 'plex' for now
     immich: immichConfig,  // Gallery source (photos/videos)
+    audiobookshelf: audiobookshelfConfig,  // Ebooks/audiobooks
     dataPath: contentPath,
     watchlistPath,
     mediaMemoryPath,
@@ -319,6 +327,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const contentProxyService = createProxyService({
     plex: mediaLibConfig,  // Bootstrap key stays 'plex' for now
     immich: immichConfig,  // Photo/video gallery
+    audiobookshelf: audiobookshelfConfig,  // Ebooks/audiobooks
     logger: rootLogger.child({ module: 'content-proxy' })
   });
 
