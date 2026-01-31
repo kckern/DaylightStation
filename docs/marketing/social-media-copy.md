@@ -46,7 +46,7 @@ Home Assistant is incredible for controlling devices and automations. But I want
 
 - **Office kiosk:** Calendar, weather, spending trends, "entropy alerts" (e.g., "4 days since last workout")
 - **Garage kiosk:** Workout videos with live heart rate overlay via MQTT sensors, voice memo prompts after sessions
-- **Kitchen printer:** A thermal receipt each morning with the day's schedule and accountability nudges
+- **Kitchen printer:** A thermal receipt-paper each morning with the day's schedule and accountability nudges
 - **TV:** Family photos appear between episodes; PIP shows Dad's ETA without pausing the movie
 
 It doesn't replace HA — it uses HA as one of many data sources, then synthesizes everything into interfaces optimized for humans, not config.
@@ -87,7 +87,7 @@ I've been tracking for years — Strava for runs, Withings for weight, Todoist f
 
 I built **Daylight Station** to synthesize all of it and surface insights *where I actually am* throughout the day:
 
-- **Morning thermal receipt:** Printed summary of today's schedule, weather, and accountability nudges ("4 days since last run", "weight trending up")
+- **Morning thermal receipt-paper:** Printed summary of today's schedule, weather, and accountability nudges ("4 days since last run", "weight trending up")
 - **Office kiosk:** Passive display showing calendar, spending, and "entropy alerts" — things drifting from my goals
 - **Fitness kiosk:** Live heart rate zones during workouts, with automatic voice memo prompts for post-session reflection
 - **Telegram bots:** "Two eggs and toast" → logs 340 calories with AI parsing. Daily coaching based on trends.
@@ -162,7 +162,7 @@ Anyone else doing room-specific displays beyond the typical HA dashboard tablet?
 
 **What it does:**
 
-- Morning thermal receipt with calendar, weather, and accountability nudges
+- Morning thermal receipt-paper with calendar, weather, and accountability nudges
 - Office kiosk with passive "entropy alerts" (things I'm neglecting)
 - Garage workout display with live heart rate overlay
 - TV app with family photos between episodes
@@ -411,7 +411,7 @@ It pulls from Strava, Plex, Home Assistant, calendars, and more — then deliver
 
 The philosophy: Stop checking apps. Let the right data find you.
 
-→ Morning: Thermal receipt with schedule + accountability nudges
+→ Morning: Thermal receipt-paper with schedule + accountability nudges
 → Office: Passive kiosk with calendar + entropy alerts
 → Garage: Workout video with live heart rate overlay
 → TV: Family photos between episodes
@@ -463,7 +463,7 @@ So I built **Daylight Station** — a system that puts my accountability *in my 
 **How it works:**
 
 - **Office wall kiosk:** Shows "entropy alerts" — things drifting from my goals. "4 days since last workout" is literally on the wall, staring at me.
-- **Morning thermal receipt:** Prints automatically. Today's calendar, weather, and nudges. I can't forget to check it because it's *physical paper* next to the coffee maker.
+- **Morning thermal receipt-paper:** Prints automatically. Today's calendar, weather, and nudges. I can't forget to check it because it's *physical paper* next to the coffee maker.
 - **Telegram bot nudges:** "You haven't logged dinner" appears in my messages without me initiating.
 
 The philosophy: **externalize the executive function.** Make the environment do the remembering.
@@ -769,7 +769,7 @@ I use biometric tracking (heart rate, HRV, sleep) and wanted to surface that dat
 
 - Pulls health data via APIs (Strava, Withings — Oura/Whoop could be added)
 - Displays "entropy alerts" on a wall kiosk: "HRV down 15% this week"
-- Includes recovery data in morning thermal receipt
+- Includes recovery data in morning thermal receipt-paper
 - Overlays live heart rate on workout videos in the garage
 
 The idea: stop checking an app for your health data. Make it ambient.
@@ -903,7 +903,7 @@ A self-hosted "data refinery" that synthesizes your scattered digital life into 
 - Shows you the right information at the right moment, without app-checking
 
 **Examples:**
-🖨️ Morning thermal receipt with calendar + accountability nudges
+🖨️ Morning thermal receipt-paper with calendar + accountability nudges
 🖥️ Office kiosk with passive "entropy alerts"
 🏃 Fitness display with live heart rate overlay
 📺 TV with family photos between episodes
@@ -929,7 +929,7 @@ It pulls from Strava, Plex, Home Assistant, calendars, and more — then deliver
 
 The philosophy: Stop checking apps. Let the right data find you.
 
-→ Morning: Thermal receipt with schedule + accountability nudges
+→ Morning: Thermal receipt-paper with schedule + accountability nudges
 → Office: Passive kiosk with calendar + entropy alerts
 → Garage: Workout video with live heart rate overlay
 → TV: Family photos between episodes

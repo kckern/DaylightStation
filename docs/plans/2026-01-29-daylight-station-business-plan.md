@@ -353,7 +353,7 @@ This aligns with the existing internal roadmap and emphasizes what unlocks adopt
 
 1) Define the **commercial license offer**: who it applies to, pricing, and purchase workflow.
 2) Create a **single canonical onboarding path**: “Get a printer receipt working” or “Get an office kiosk working” in under 30 minutes.
-3) Package 2–3 **showcase demos**: thermal receipt, fitness overlay, TV photo interstitials.
+3) Package 2–3 **showcase demos**: thermal receipt-paper, fitness overlay, TV photo interstitials.
 4) Publish **contributor guides** for adapters and taps.
 5) Add a lightweight **support page** describing paid onboarding/support options.
 

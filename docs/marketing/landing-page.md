@@ -68,7 +68,7 @@ That signal flows to **purpose-built taps** throughout your home:
 
 **Inputs:** Google Calendar, Todoist, Strava, Withings, Plex, Immich, Home Assistant, FreshRSS, Gmail, and more.
 
-**Outputs:** Room-specific dashboards, Telegram bots, thermal receipts, TV overlays, push notifications, ambient lighting, voice assistants.
+**Outputs:** Room-specific dashboards, Telegram bots, thermal printouts, TV overlays, push notifications, ambient lighting, voice assistants.
 
 The same data appears in different forms depending on where you are and what you need.
 
@@ -78,7 +78,7 @@ The same data appears in different forms depending on where you are and what you
 
 ### Morning
 
-You wake up. Instead of reaching for your phone, you grab the thermal receipt from the kitchen printer:
+You wake up. Instead of reaching for your phone, you grab the thermal receipt-paper from the kitchen printer:
 
 > **Wednesday, January 29**
 >
