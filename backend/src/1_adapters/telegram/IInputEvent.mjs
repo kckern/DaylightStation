@@ -45,7 +45,7 @@ export function toInputEvent(parsed, telegramRef = null) {
     type: parsed.type,
     conversationId: telegramRef ? telegramRef.toConversationId().toString() : parsed.userId,
     platform: 'telegram',
-    platformUserId: telegramRef ? telegramRef.platformUserId : parsed.metadata?.from?.id?.toString(),
+    platformUserId: parsed.metadata?.from?.id?.toString(),
     messageId: parsed.messageId,
     payload: {
       text: parsed.text,
