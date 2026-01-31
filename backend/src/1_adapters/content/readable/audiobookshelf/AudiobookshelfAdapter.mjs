@@ -231,10 +231,18 @@ export class AudiobookshelfAdapter {
     const ebookFile = media.ebookFile || {};
     const metadata = media.metadata || ebookFile.metadata || {};
 
+    // Build FlowPosition object with CFI for epub.js reader integration
+    // ebookLocation is the EPUB CFI string (e.g., "/6/14!/4/2/1:0")
     // ebookProgress is 0-1 fraction, convert to 0-100 percent
-    const resumePercent = progress?.ebookProgress != null
-      ? Math.round(progress.ebookProgress * 100)
-      : null;
+    const resumePosition = progress?.ebookLocation ? {
+      type: 'flow',
+      cfi: progress.ebookLocation,
+      percent: Math.round((progress.ebookProgress || 0) * 100)
+    } : (progress?.ebookProgress != null ? {
+      type: 'flow',
+      cfi: null,
+      percent: Math.round(progress.ebookProgress * 100)
+    } : null);
 
     return new ReadableItem({
       id: `abs:${item.id}`,
@@ -244,7 +252,7 @@ export class AudiobookshelfAdapter {
       format: (ebookFile.ebookFormat || 'epub').toLowerCase(),
       contentUrl: this.#ebookUrl(item.id),
       resumable: true,
-      resumePosition: resumePercent,
+      resumePosition,
       thumbnail: this.#coverUrl(item.id),
       description: metadata.description || null,
       metadata: {

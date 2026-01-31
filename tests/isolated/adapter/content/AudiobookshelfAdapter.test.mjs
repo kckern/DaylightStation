@@ -48,9 +48,10 @@ describe('AudiobookshelfAdapter', () => {
           mediaType: 'book'
         }
       });
-      // Mock getProgress response
+      // Mock getProgress response with CFI location
       mockHttpClient.get.mockResolvedValueOnce({
         data: {
+          ebookLocation: '/6/14!/4/2/1:0',
           ebookProgress: 0.35,
           isFinished: false
         }
@@ -67,8 +68,55 @@ describe('AudiobookshelfAdapter', () => {
       expect(result.source).toBe('abs');
       expect(result.contentType).toBe('flow');
       expect(result.format).toBe('epub');
-      expect(result.resumePosition).toBe(35); // 0.35 * 100
+      // FlowPosition object with CFI for epub.js reader
+      expect(result.resumePosition).toEqual({
+        type: 'flow',
+        cfi: '/6/14!/4/2/1:0',
+        percent: 35
+      });
       expect(result.isReadable()).toBe(true);
+    });
+
+    test('returns ReadableItem with percent-only position when no CFI', async () => {
+      // Mock getItem response for ebook
+      mockHttpClient.get.mockResolvedValueOnce({
+        data: {
+          id: 'item-789',
+          libraryId: 'lib-1',
+          media: {
+            ebookFile: {
+              ebookFormat: 'epub',
+              metadata: { title: 'Test Ebook No CFI' }
+            },
+            numAudioFiles: 0,
+            duration: 0
+          },
+          mediaType: 'book'
+        }
+      });
+      // Mock getProgress response without CFI (older ABS versions or PDF)
+      mockHttpClient.get.mockResolvedValueOnce({
+        data: {
+          ebookProgress: 0.75,
+          isFinished: false
+        }
+      });
+
+      const adapter = new AudiobookshelfAdapter(
+        { host: 'http://localhost:13378', token: 'test-token' },
+        { httpClient: mockHttpClient }
+      );
+
+      const result = await adapter.getItem('abs:item-789');
+
+      expect(result.id).toBe('abs:item-789');
+      expect(result.contentType).toBe('flow');
+      // FlowPosition with null CFI but valid percent
+      expect(result.resumePosition).toEqual({
+        type: 'flow',
+        cfi: null,
+        percent: 75
+      });
     });
 
     test('returns PlayableItem for audiobook', async () => {
@@ -208,9 +256,10 @@ describe('AudiobookshelfAdapter', () => {
           mediaType: 'book'
         }
       });
-      // Mock getProgress response
+      // Mock getProgress response with CFI location
       mockHttpClient.get.mockResolvedValueOnce({
         data: {
+          ebookLocation: '/4/8!/2/1:0',
           ebookProgress: 0.5,
           isFinished: false
         }
@@ -226,6 +275,11 @@ describe('AudiobookshelfAdapter', () => {
       expect(result).toHaveLength(1);
       expect(result[0].id).toBe('abs:item-123');
       expect(result[0].isReadable()).toBe(true);
+      expect(result[0].resumePosition).toEqual({
+        type: 'flow',
+        cfi: '/4/8!/2/1:0',
+        percent: 50
+      });
     });
 
     test('returns empty array for audiobook', async () => {
@@ -316,9 +370,10 @@ describe('AudiobookshelfAdapter', () => {
           mediaType: 'book'
         }
       });
-      // Mock getProgress response
+      // Mock getProgress response with CFI location
       mockHttpClient.get.mockResolvedValueOnce({
         data: {
+          ebookLocation: '/2/4!/1:0',
           ebookProgress: 0.5,
           isFinished: false
         }
