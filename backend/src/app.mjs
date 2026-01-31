@@ -958,7 +958,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       logger: rootLogger.child({ module: 'ytdlp' })
     });
 
-    mediaExecutor.register('youtube', createFreshVideoJobHandler({
+    mediaExecutor.register('freshvideo', createFreshVideoJobHandler({
       videoSourceGateway,
       loadFile,
       mediaPath,
