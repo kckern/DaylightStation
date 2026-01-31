@@ -7,6 +7,7 @@
  */
 
 import { FreshVideoService } from './services/FreshVideoService.mjs';
+import { ValidationError } from '#system/utils/errors/index.mjs';
 
 /**
  * Create a scheduler-compatible handler for fresh video downloads
@@ -19,6 +20,14 @@ import { FreshVideoService } from './services/FreshVideoService.mjs';
  * @returns {Function} Async handler (logger, executionId) => Promise<void>
  */
 export function createFreshVideoJobHandler({ videoSourceGateway, loadFile, mediaPath, logger }) {
+  // Validate required mediaPath to fail fast instead of at runtime
+  if (!mediaPath) {
+    throw new ValidationError('mediaPath is required for FreshVideoJobHandler', {
+      field: 'mediaPath',
+      received: mediaPath
+    });
+  }
+
   const service = new FreshVideoService({
     videoSourceGateway,
     configLoader: () => loadFile('state/youtube'),

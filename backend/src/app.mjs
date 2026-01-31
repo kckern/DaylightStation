@@ -950,21 +950,25 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'media-executor' })
   });
 
-  // Register fresh video download handler
-  const mediaPath = mediaBasePath
-    ? join(mediaBasePath, 'video', 'news')
-    : join(__dirname, '..', 'media', 'video', 'news');
+  // Register fresh video download handler (only if mediaBasePath is configured)
+  if (mediaBasePath) {
+    const mediaPath = join(mediaBasePath, 'video', 'news');
 
-  const videoSourceGateway = new YtDlpAdapter({
-    logger: rootLogger.child({ module: 'ytdlp' })
-  });
+    const videoSourceGateway = new YtDlpAdapter({
+      logger: rootLogger.child({ module: 'ytdlp' })
+    });
 
-  mediaExecutor.register('youtube', createFreshVideoJobHandler({
-    videoSourceGateway,
-    loadFile,
-    mediaPath,
-    logger: rootLogger.child({ module: 'freshvideo' })
-  }));
+    mediaExecutor.register('youtube', createFreshVideoJobHandler({
+      videoSourceGateway,
+      loadFile,
+      mediaPath,
+      logger: rootLogger.child({ module: 'freshvideo' })
+    }));
+  } else {
+    rootLogger.warn?.('freshvideo.disabled', {
+      reason: 'mediaBasePath not configured - video downloads disabled'
+    });
+  }
 
   const schedulerService = new SchedulerService({
     jobStore: schedulingJobStore,
