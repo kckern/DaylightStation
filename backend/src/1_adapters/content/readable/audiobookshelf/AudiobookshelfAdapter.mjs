@@ -72,10 +72,16 @@ export class AudiobookshelfAdapter {
 
   /**
    * Build audio stream URL for an audiobook
+   * ABS uses /api/items/{itemId}/file/{ino} for audio streaming
    * @param {string} itemId
+   * @param {string} [ino] - Audio file inode from item.media.audioFiles[0].ino
    * @returns {string}
    */
-  #audioUrl(itemId) {
+  #audioUrl(itemId, ino) {
+    if (ino) {
+      return `${this.#proxyPath}/items/${itemId}/file/${ino}`;
+    }
+    // Fallback for compatibility (won't work for streaming)
     return `${this.#proxyPath}/items/${itemId}/play`;
   }
 
@@ -103,7 +109,9 @@ export class AudiobookshelfAdapter {
    * @returns {boolean}
    */
   #isAudiobook(item) {
-    return (item?.media?.numAudioFiles ?? 0) > 0;
+    // Check both numAudioFiles (list response) and audioFiles array (detail response)
+    const numFiles = item?.media?.numAudioFiles ?? item?.media?.audioFiles?.length ?? 0;
+    return numFiles > 0;
   }
 
   /**
@@ -281,6 +289,14 @@ export class AudiobookshelfAdapter {
   }
 
   /**
+   * Get available search capabilities (implements IMediaSearchable)
+   * @returns {string[]} - Supported query fields
+   */
+  getSearchCapabilities() {
+    return ['text', 'mediaType', 'take', 'skip'];
+  }
+
+  /**
    * Convert Audiobookshelf item to ReadableItem (for ebooks)
    * @param {Object} item
    * @param {Object} [progress]
@@ -335,13 +351,16 @@ export class AudiobookshelfAdapter {
     const metadata = media.metadata || {};
 
     const author = metadata.authorName || metadata.author || null;
+    // Get first audio file's ino for streaming URL
+    const firstAudioFile = media.audioFiles?.[0];
+    const audioIno = firstAudioFile?.ino;
 
     return new PlayableItem({
       id: `abs:${item.id}`,
       source: 'abs',
       title: metadata.title || item.id,
       mediaType: 'audio',
-      mediaUrl: this.#audioUrl(item.id),
+      mediaUrl: this.#audioUrl(item.id, audioIno),
       duration: media.duration || null,
       resumable: true,
       resumePosition: progress?.currentTime || null,
