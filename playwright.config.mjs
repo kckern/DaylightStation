@@ -1,10 +1,10 @@
 import { defineConfig } from '@playwright/test';
-import { getAppPort } from './tests/lib/configHelper.mjs';
+import { getAppPort } from './tests/_lib/configHelper.mjs';
 
 const appPort = getAppPort();
 
 export default defineConfig({
-  testDir: './tests/runtime',
+  testDir: './tests',
   testMatch: '**/*.runtime.test.mjs',
   timeout: 90000,
   use: {

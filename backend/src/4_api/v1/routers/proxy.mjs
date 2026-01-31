@@ -260,6 +260,87 @@ export function createProxyRouter(config) {
   });
 
   /**
+   * GET /proxy/immich/*
+   * Passthrough proxy for Immich API requests (thumbnails, videos, etc.)
+   * Uses ProxyService if available, otherwise falls back to direct proxy
+   */
+  router.use('/immich', async (req, res) => {
+    try {
+      // Use ProxyService if available
+      if (proxyService?.isConfigured?.('immich')) {
+        await proxyService.proxy('immich', req, res);
+        return;
+      }
+
+      // Fallback: direct proxy using adapter credentials
+      const adapter = registry.get('immich');
+      if (!adapter) {
+        return res.status(503).json({ error: 'Immich adapter not configured' });
+      }
+
+      const host = adapter.host;
+      const apiKey = adapter.apiKey;
+      if (!host || !apiKey) {
+        return res.status(503).json({ error: 'Immich not configured' });
+      }
+
+      // Build target URL - map /assets/{id}/video/playback to Immich API
+      let targetPath = req.url;
+      // Immich video playback endpoint is /api/assets/{id}/video/playback
+      if (!targetPath.startsWith('/api/')) {
+        targetPath = '/api' + targetPath;
+      }
+      const targetUrl = new URL(targetPath, host);
+
+      // Forward headers (except host) and add API key
+      const headers = { ...req.headers, 'x-api-key': apiKey };
+      delete headers.host;
+
+      const protocol = targetUrl.protocol === 'https:' ? https : http;
+      const options = {
+        hostname: targetUrl.hostname,
+        port: targetUrl.port || (targetUrl.protocol === 'https:' ? 443 : 80),
+        path: targetUrl.pathname + targetUrl.search,
+        method: req.method,
+        headers,
+        timeout: 60000
+      };
+
+      const proxyReq = protocol.request(options, (proxyRes) => {
+        if (!res.headersSent) {
+          res.writeHead(proxyRes.statusCode, proxyRes.headers);
+        }
+        proxyRes.pipe(res);
+      });
+
+      proxyReq.on('error', (err) => {
+        console.error('[proxy] immich error:', err.message);
+        if (!res.headersSent) {
+          res.status(502).json({ error: 'Immich proxy error', details: err.message });
+        }
+      });
+
+      proxyReq.on('timeout', () => {
+        proxyReq.destroy();
+        if (!res.headersSent) {
+          res.status(504).json({ error: 'Immich proxy timeout' });
+        }
+      });
+
+      if (['POST', 'PUT', 'PATCH'].includes(req.method)) {
+        req.pipe(proxyReq);
+      } else {
+        proxyReq.end();
+      }
+    } catch (err) {
+      console.error('[proxy] immich error:', err);
+      if (!res.headersSent) {
+        res.status(500).json({ error: err.message });
+      }
+    }
+  });
+
+  /**
    * GET /proxy/media/*
    * Stream audio/video files from the media mount
    * Replaces legacy /media/* endpoint for ambient music, poetry, etc.

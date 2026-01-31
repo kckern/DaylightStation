@@ -75,12 +75,17 @@ export class ImmichProxyAdapter {
 
   /**
    * Transform incoming path
-   * Strips /immich prefix if present
+   * Strips /immich prefix if present and prepends /api for Immich API
    * @param {string} path
    * @returns {string}
    */
   transformPath(path) {
-    return path.replace(/^\/immich/, '');
+    let transformed = path.replace(/^\/immich/, '');
+    // Immich API endpoints are under /api/
+    if (!transformed.startsWith('/api/')) {
+      transformed = '/api' + transformed;
+    }
+    return transformed;
   }
 
   /**

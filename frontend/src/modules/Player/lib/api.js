@@ -72,7 +72,15 @@ export async function fetchMediaInfo({ plex, media, shuffle, maxVideoBitrate, ma
     const infoResponse = await DaylightAPI(url);
     return { ...infoResponse, media_key: infoResponse.plex };
   } else if (media) {
-    const url = buildUrl(`api/v1/content/item/filesystem/${media}`, { shuffle });
+    // Parse compound ID (e.g., "immich:uuid" or "plex:123") to route to correct source
+    const colonIndex = media.indexOf(':');
+    let source = 'filesystem';
+    let localId = media;
+    if (colonIndex > 0) {
+      source = media.substring(0, colonIndex);
+      localId = media.substring(colonIndex + 1);
+    }
+    const url = buildUrl(`api/v1/content/item/${source}/${localId}`, { shuffle });
     const infoResponse = await DaylightAPI(url);
     return infoResponse;
   }

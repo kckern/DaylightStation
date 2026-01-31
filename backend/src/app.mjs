@@ -286,8 +286,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Content domain
   // Get media library credentials (currently Plex, could be Jellyfin, etc.)
   const mediaLibConfig = configService.getServiceCredentials('plex');
-  // Get Immich gallery credentials
-  const immichConfig = configService.getServiceCredentials('immich');
+  // Get Immich gallery credentials (household auth uses 'token', adapter expects 'apiKey')
+  const immichHost = configService.resolveServiceUrl('immich');
+  const immichAuth = configService.getHouseholdAuth('immich');
+  const immichConfig = immichHost && immichAuth?.token ? { host: immichHost, apiKey: immichAuth.token } : null;
 
   // Get nomusic overlay config from fitness app settings
   const fitnessConfig = configService.getAppConfig('fitness');
@@ -314,10 +316,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   }, { httpClient: axios, mediaProgressMemory });
 
   // Create proxy service for content domain (used for media library passthrough)
-  const contentProxyService = mediaLibConfig?.host ? createProxyService({
+  const contentProxyService = createProxyService({
     plex: mediaLibConfig,  // Bootstrap key stays 'plex' for now
+    immich: immichConfig,  // Photo/video gallery
     logger: rootLogger.child({ module: 'content-proxy' })
-  }) : null;
+  });
 
   // Import FileIO functions for content domain (replaces legacy io.mjs)
   // Content routers use household-scoped paths
