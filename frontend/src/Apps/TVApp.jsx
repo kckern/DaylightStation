@@ -30,7 +30,10 @@ function TVAppContent({ rootMenu, autoplay, appParam, logger }) {
   // Handle autoplay on mount
   useEffect(() => {
     if (!autoplayed && autoplay) {
-      if (autoplay.queue || autoplay.play) {
+      if (autoplay.compose) {
+        // Composed presentation - push to composite player
+        push({ type: 'composite', props: autoplay.compose });
+      } else if (autoplay.queue || autoplay.play) {
         push({ type: 'player', props: autoplay });
       } else if (autoplay.list?.plex) {
         // Plex list → use plex-menu router
@@ -86,7 +89,7 @@ export default function TVApp({ appParam }) {
     const queryEntries = Object.fromEntries(params.entries());
 
     // Config modifiers that can be combined with any source
-    const configList = ["volume","shader","playbackRate","shuffle","continuous","repeat","loop","overlay"];
+    const configList = ["volume","shader","playbackRate","shuffle","continuous","repeat","loop","overlay","advance","interval"];
     const config = {};
     for (const configKey of configList) {
       if (queryEntries[configKey]) {
@@ -100,6 +103,27 @@ export default function TVApp({ appParam }) {
           config[configKey] = queryEntries[configKey];
         }
       }
+    }
+
+    // Parse advance config for composed presentations
+    if (queryEntries.advance) {
+      config.advance = {
+        mode: queryEntries.advance,
+        interval: parseInt(queryEntries.interval) || 5000
+      };
+    }
+
+    // Parse per-track modifiers (e.g., loop.audio=0, shuffle.visual=1)
+    const trackModifiers = { visual: {}, audio: {} };
+    for (const [key, value] of Object.entries(queryEntries)) {
+      const match = key.match(/^(\w+)\.(visual|audio)$/);
+      if (match) {
+        const [, modifier, track] = match;
+        trackModifiers[track][modifier] = value;
+      }
+    }
+    if (Object.keys(trackModifiers.visual).length || Object.keys(trackModifiers.audio).length) {
+      config.trackModifiers = trackModifiers;
     }
 
     // Auto-detect source: digits → plex, otherwise → media
@@ -128,6 +152,13 @@ export default function TVApp({ appParam }) {
 
       // List action (browse as menu)
       list:      (value) => ({ list: { [findKey(value)]: value } }),
+
+      // Composed presentation - comma-separated sources
+      // Backend infers track assignment, explicit prefix overrides (e.g., audio:plex:123)
+      compose:   (value) => {
+        const sources = value.split(',');
+        return { compose: { sources, ...config } };
+      },
     };
 
     for (const [key, value] of Object.entries(queryEntries)) {
@@ -146,7 +177,7 @@ export default function TVApp({ appParam }) {
   const isQueueOrPlay = useMemo(() => {
     const params = new URLSearchParams(window.location.search);
     const queryEntries = Object.fromEntries(params.entries());
-    return ["queue", "play"].some(key => Object.keys(queryEntries).includes(key));
+    return ["queue", "play", "compose"].some(key => Object.keys(queryEntries).includes(key));
   }, []);
 
   // Show loading while fetching root menu
