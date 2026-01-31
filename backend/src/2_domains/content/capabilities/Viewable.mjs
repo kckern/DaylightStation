@@ -1,5 +1,6 @@
 // backend/src/2_domains/content/capabilities/Viewable.mjs
 import { Item } from '../entities/Item.mjs';
+import { ValidationError } from '../../core/errors/index.mjs';
 
 /**
  * Viewable capability - static media for display (not played)
@@ -20,6 +21,7 @@ export class ViewableItem extends Item {
    */
   constructor(props) {
     super(props);
+    if (!props.imageUrl) throw new ValidationError('ViewableItem requires imageUrl', { code: 'MISSING_IMAGE_URL', field: 'imageUrl' });
     this.imageUrl = props.imageUrl;
     this.width = props.width ?? null;
     this.height = props.height ?? null;
