@@ -132,7 +132,7 @@ function loadAllHouseholds(dataDir) {
 
   for (const dir of flatDirs) {
     const householdId = parseHouseholdId(dir);
-    const configPath = path.join(dataDir, dir, 'household.yml');
+    const configPath = path.join(dataDir, dir, 'config', 'household.yml');
     const config = readYaml(configPath);
     if (config) {
       households[householdId] = {
@@ -195,7 +195,7 @@ function loadHouseholdApps(dataDir, folderName) {
  * Load integrations for a household.
  */
 function loadHouseholdIntegrations(dataDir, folderName) {
-  const integrationsPath = path.join(dataDir, folderName, 'integrations.yml');
+  const integrationsPath = path.join(dataDir, folderName, 'config', 'integrations.yml');
   return readYaml(integrationsPath) ?? {};
 }
 
