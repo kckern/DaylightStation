@@ -66,7 +66,7 @@ export class SelectUPCPortion {
    * @param {string} [input.messageId]
    */
   async execute(input) {
-    const { conversationId, logUuid, portionFactor, messageId, responseContext } = input;
+    const { userId, conversationId, logUuid, portionFactor, messageId, responseContext } = input;
 
     this.#logger.debug?.('selectPortion.start', { conversationId, logUuid, portionFactor });
 
@@ -77,8 +77,6 @@ export class SelectUPCPortion {
         return { success: false, error: 'Missing log UUID' };
       }
 
-      // Load the log (extract userId from conversationId)
-      const userId = conversationId.split('_').pop();
       let nutriLog = null;
       if (this.#foodLogStore) {
         nutriLog = await this.#foodLogStore.findByUuid(logUuid, userId);
