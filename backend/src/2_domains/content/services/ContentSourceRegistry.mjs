@@ -90,6 +90,14 @@ export class ContentSourceRegistry {
   }
 
   /**
+   * List all registered source names
+   * @returns {string[]}
+   */
+  list() {
+    return Array.from(this.adapters.keys());
+  }
+
+  /**
    * Check if a compound ID can be resolved
    * @param {string} compoundId
    * @returns {boolean}
