@@ -131,12 +131,34 @@ export default function TVApp({ appParam }) {
 
     // Source mappings - first match wins
     const mappings = {
-      // Queue actions (all playables)
+      // Queue actions - comma-separated or app: prefix = composed presentation
       playlist:  (value) => ({ queue: { [findKey(value)]: value, ...config } }),
-      queue:     (value) => ({ queue: { [findKey(value)]: value, ...config } }),
+      queue:     (value) => {
+        if (value.includes(',')) {
+          // Comma-separated sources = composed presentation (backend infers tracks)
+          const sources = value.split(',').map(s => s.trim());
+          return { compose: { sources, ...config } };
+        }
+        if (value.startsWith('app:')) {
+          // App sources always use composite player (clock, blackout, screensaver)
+          return { compose: { sources: [value], ...config } };
+        }
+        return { queue: { [findKey(value)]: value, ...config } };
+      },
 
-      // Play actions (single / next up)
-      play:      (value) => ({ play:  { [findKey(value)]: value, ...config } }),
+      // Play actions - comma-separated or app: prefix = composed presentation
+      play:      (value) => {
+        if (value.includes(',')) {
+          // Comma-separated sources = composed presentation (backend infers tracks)
+          const sources = value.split(',').map(s => s.trim());
+          return { compose: { sources, ...config } };
+        }
+        if (value.startsWith('app:')) {
+          // App sources always use composite player (clock, blackout, screensaver)
+          return { compose: { sources: [value], ...config } };
+        }
+        return { play: { [findKey(value)]: value, ...config } };
+      },
       random:    (value) => ({ play:  { [findKey(value)]: value, random: true, ...config } }),
 
       // Source-specific play
@@ -152,13 +174,6 @@ export default function TVApp({ appParam }) {
 
       // List action (browse as menu)
       list:      (value) => ({ list: { [findKey(value)]: value } }),
-
-      // Composed presentation - comma-separated sources
-      // Backend infers track assignment, explicit prefix overrides (e.g., audio:plex:123)
-      compose:   (value) => {
-        const sources = value.split(',');
-        return { compose: { sources, ...config } };
-      },
     };
 
     for (const [key, value] of Object.entries(queryEntries)) {
@@ -177,7 +192,7 @@ export default function TVApp({ appParam }) {
   const isQueueOrPlay = useMemo(() => {
     const params = new URLSearchParams(window.location.search);
     const queryEntries = Object.fromEntries(params.entries());
-    return ["queue", "play", "compose"].some(key => Object.keys(queryEntries).includes(key));
+    return ["queue", "play"].some(key => Object.keys(queryEntries).includes(key));
   }, []);
 
   // Show loading while fetching root menu
