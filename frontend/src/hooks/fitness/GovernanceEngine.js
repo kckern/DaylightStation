@@ -781,6 +781,10 @@ export class GovernanceEngine {
    */
   _resetToIdle() {
     this._clearTimers();
+    if (this._zoneChangeDebounceTimer) {
+      clearTimeout(this._zoneChangeDebounceTimer);
+      this._zoneChangeDebounceTimer = null;
+    }
     this.meta = {
       satisfiedOnce: false,
       satisfiedSince: null,
