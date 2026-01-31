@@ -14,6 +14,7 @@ export { MediaProgress } from './entities/MediaProgress.mjs';
 export { ListableItem } from './capabilities/Listable.mjs';
 export { PlayableItem } from './capabilities/Playable.mjs';
 export { QueueableItem } from './capabilities/Queueable.mjs';
+export { ViewableItem } from './capabilities/Viewable.mjs';
 
 // Services
 export { ContentSourceRegistry } from './services/ContentSourceRegistry.mjs';
