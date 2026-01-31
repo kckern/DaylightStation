@@ -32,6 +32,7 @@ config.app-local.yml
 !scripts/port-manager.mjs
 !scripts/dev-server.sh
 !scripts/test-env.sh
+!scripts/update-test-imports.mjs
 *.log
 .github/copilot-instructions.md
 # Skill local configs
