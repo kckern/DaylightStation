@@ -1,0 +1,29 @@
+# docker-compose.test.yml
+# Secondary deployment for isolated test environment
+
+services:
+  daylight-test:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: daylight-test
+    ports:
+      - "3113:3111"  # Map test port to internal port
+    environment:
+      - NODE_ENV=test
+      - DAYLIGHT_DATA_PATH=/data
+      - DAYLIGHT_MEDIA_PATH=/media
+    volumes:
+      - ${TEST_DATA_PATH:-./tests/_infrastructure/household-demo}:/data:ro
+      - ${TEST_MEDIA_PATH:-./tests/_fixtures/media}:/media:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3111/api/v1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - daylight-test-network
+
+networks:
+  daylight-test-network:
+    driver: bridge
