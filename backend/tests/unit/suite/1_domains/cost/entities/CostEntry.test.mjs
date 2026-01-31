@@ -1,12 +1,12 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { CostEntry } from '../../../../../../src/1_domains/cost/entities/CostEntry.mjs';
-import { Money } from '../../../../../../src/1_domains/cost/value-objects/Money.mjs';
-import { Usage } from '../../../../../../src/1_domains/cost/value-objects/Usage.mjs';
-import { CostCategory } from '../../../../../../src/1_domains/cost/value-objects/CostCategory.mjs';
-import { Attribution } from '../../../../../../src/1_domains/cost/value-objects/Attribution.mjs';
-import { SpreadSource } from '../../../../../../src/1_domains/cost/value-objects/SpreadSource.mjs';
-import { EntryType } from '../../../../../../src/1_domains/cost/value-objects/EntryType.mjs';
-import { ValidationError } from '../../../../../../src/1_domains/core/errors/index.mjs';
+import { CostEntry } from '#domains/cost/entities/CostEntry.mjs';
+import { Money } from '#domains/cost/value-objects/Money.mjs';
+import { Usage } from '#domains/cost/value-objects/Usage.mjs';
+import { CostCategory } from '#domains/cost/value-objects/CostCategory.mjs';
+import { Attribution } from '#domains/cost/value-objects/Attribution.mjs';
+import { SpreadSource } from '#domains/cost/value-objects/SpreadSource.mjs';
+import { EntryType } from '#domains/cost/value-objects/EntryType.mjs';
+import { ValidationError } from '#domains/core/errors/index.mjs';
 
 describe('CostEntry', () => {
   // Common test fixtures

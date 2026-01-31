@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { CostBudget } from '../../../../../../src/1_domains/cost/entities/CostBudget.mjs';
-import { Money } from '../../../../../../src/1_domains/cost/value-objects/Money.mjs';
-import { CostCategory } from '../../../../../../src/1_domains/cost/value-objects/CostCategory.mjs';
-import { BudgetPeriod } from '../../../../../../src/1_domains/cost/value-objects/BudgetPeriod.mjs';
-import { Thresholds } from '../../../../../../src/1_domains/cost/value-objects/Thresholds.mjs';
-import { ValidationError } from '../../../../../../src/1_domains/core/errors/index.mjs';
+import { CostBudget } from '#domains/cost/entities/CostBudget.mjs';
+import { Money } from '#domains/cost/value-objects/Money.mjs';
+import { CostCategory } from '#domains/cost/value-objects/CostCategory.mjs';
+import { BudgetPeriod } from '#domains/cost/value-objects/BudgetPeriod.mjs';
+import { Thresholds } from '#domains/cost/value-objects/Thresholds.mjs';
+import { ValidationError } from '#domains/core/errors/index.mjs';
 
 describe('CostBudget', () => {
   // Common test fixtures

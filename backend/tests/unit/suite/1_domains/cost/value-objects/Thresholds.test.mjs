@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { Thresholds } from '../../../../../../src/1_domains/cost/value-objects/Thresholds.mjs';
+import { Thresholds } from '#domains/cost/value-objects/Thresholds.mjs';
 
 describe('Thresholds', () => {
   describe('construction', () => {

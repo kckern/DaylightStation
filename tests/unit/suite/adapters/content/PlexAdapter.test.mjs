@@ -1,7 +1,7 @@
 // tests/unit/adapters/content/PlexAdapter.test.mjs
 import { jest } from '@jest/globals';
-import { PlexAdapter } from '#backend/src/2_adapters/content/media/plex/PlexAdapter.mjs';
-import { PlexClient } from '#backend/src/2_adapters/content/media/plex/PlexClient.mjs';
+import { PlexAdapter } from '#adapters/content/media/plex/PlexAdapter.mjs';
+import { PlexClient } from '#adapters/content/media/plex/PlexClient.mjs';
 
 describe('PlexAdapter', () => {
   describe('constructor', () => {

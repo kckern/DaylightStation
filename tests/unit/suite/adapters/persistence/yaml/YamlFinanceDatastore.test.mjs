@@ -3,7 +3,7 @@
  */
 
 import { jest, describe, it, expect, beforeEach, afterEach } from '@jest/globals';
-import { YamlFinanceDatastore } from '#backend/src/2_adapters/persistence/yaml/YamlFinanceDatastore.mjs';
+import { YamlFinanceDatastore } from '#adapters/persistence/yaml/YamlFinanceDatastore.mjs';
 import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';

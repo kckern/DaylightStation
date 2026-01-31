@@ -1,5 +1,5 @@
 // tests/unit/domains/finance/entities/Budget.test.mjs
-import { Budget } from '#backend/src/1_domains/finance/entities/Budget.mjs';
+import { Budget } from '#domains/finance/entities/Budget.mjs';
 
 describe('Budget', () => {
   let budget;

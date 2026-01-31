@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { SpreadSource } from '../../../../../../src/1_domains/cost/value-objects/SpreadSource.mjs';
-import { Money } from '../../../../../../src/1_domains/cost/value-objects/Money.mjs';
+import { SpreadSource } from '#domains/cost/value-objects/SpreadSource.mjs';
+import { Money } from '#domains/cost/value-objects/Money.mjs';
 
 describe('SpreadSource', () => {
   describe('construction', () => {

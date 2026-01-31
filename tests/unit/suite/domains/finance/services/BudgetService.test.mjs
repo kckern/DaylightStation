@@ -1,6 +1,6 @@
 // tests/unit/domains/finance/services/BudgetService.test.mjs
 import { jest } from '@jest/globals';
-import { BudgetService } from '#backend/src/1_domains/finance/services/BudgetService.mjs';
+import { BudgetService } from '#domains/finance/services/BudgetService.mjs';
 
 describe('BudgetService', () => {
   let service;

@@ -1,6 +1,6 @@
 // tests/unit/adapters/content/FilesystemAdapter.test.mjs
 import { jest } from '@jest/globals';
-import { FilesystemAdapter } from '#backend/src/2_adapters/content/media/filesystem/FilesystemAdapter.mjs';
+import { FilesystemAdapter } from '#adapters/content/media/filesystem/FilesystemAdapter.mjs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 

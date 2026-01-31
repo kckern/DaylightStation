@@ -1,5 +1,5 @@
 // tests/unit/domains/finance/entities/Transaction.test.mjs
-import { Transaction } from '#backend/src/1_domains/finance/entities/Transaction.mjs';
+import { Transaction } from '#domains/finance/entities/Transaction.mjs';
 
 describe('Transaction', () => {
   let transaction;

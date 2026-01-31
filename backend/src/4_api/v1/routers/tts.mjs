@@ -14,7 +14,7 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
 /**
  * Create TTS router
  * @param {Object} config
- * @param {import('../../2_adapters/hardware/tts/TTSAdapter.mjs').TTSAdapter} config.ttsAdapter
+ * @param {import('#adapters/hardware/tts/TTSAdapter.mjs').TTSAdapter} config.ttsAdapter
  * @param {Object} [config.logger]
  * @returns {express.Router}
  */

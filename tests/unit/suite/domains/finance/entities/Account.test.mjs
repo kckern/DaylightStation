@@ -1,5 +1,5 @@
 // tests/unit/domains/finance/entities/Account.test.mjs
-import { Account } from '#backend/src/1_domains/finance/entities/Account.mjs';
+import { Account } from '#domains/finance/entities/Account.mjs';
 
 describe('Account', () => {
   let account;

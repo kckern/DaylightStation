@@ -10,7 +10,7 @@
  */
 
 import { configService, initConfigService } from '#backend/src/0_system/config/index.mjs';
-import { InfinityHarvester, createInfinityHarvesters } from '#backend/src/2_adapters/harvester/other/InfinityHarvester.mjs';
+import { InfinityHarvester, createInfinityHarvesters } from '#adapters/harvester/other/InfinityHarvester.mjs';
 import axios from 'axios';
 
 describe('Infinity Live Integration', () => {

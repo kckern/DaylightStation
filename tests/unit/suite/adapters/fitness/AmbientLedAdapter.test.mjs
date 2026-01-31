@@ -1,6 +1,6 @@
 // tests/unit/adapters/fitness/AmbientLedAdapter.test.mjs
 import { jest } from '@jest/globals';
-import { AmbientLedAdapter } from '#backend/src/2_adapters/fitness/AmbientLedAdapter.mjs';
+import { AmbientLedAdapter } from '#adapters/fitness/AmbientLedAdapter.mjs';
 
 describe('AmbientLedAdapter', () => {
   let adapter;

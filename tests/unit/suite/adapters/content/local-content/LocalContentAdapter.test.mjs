@@ -1,7 +1,7 @@
 // tests/unit/adapters/content/local-content/LocalContentAdapter.test.mjs
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { LocalContentAdapter } from '#backend/src/2_adapters/content/local-content/LocalContentAdapter.mjs';
+import { LocalContentAdapter } from '#adapters/content/local-content/LocalContentAdapter.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 

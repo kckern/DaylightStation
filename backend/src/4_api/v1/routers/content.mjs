@@ -18,8 +18,8 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
  * Note: List endpoint moved to /api/v1/list/:source/* (list.mjs)
  * Note: Menu logging moved to /api/v1/item/menu-log (item.mjs)
  *
- * @param {import('../../1_domains/content/services/ContentSourceRegistry.mjs').ContentSourceRegistry} registry
- * @param {import('../../2_adapters/persistence/yaml/YamlMediaProgressMemory.mjs').YamlMediaProgressMemory} [mediaProgressMemory=null] - Optional media progress memory store
+ * @param {import('#domains/content/services/ContentSourceRegistry.mjs').ContentSourceRegistry} registry
+ * @param {import('#adapters/persistence/yaml/YamlMediaProgressMemory.mjs').YamlMediaProgressMemory} [mediaProgressMemory=null] - Optional media progress memory store
  * @param {Object} [options] - Additional options
  * @param {string} [options.cacheBasePath] - Base path for image cache
  * @param {Object} [options.logger] - Logger instance

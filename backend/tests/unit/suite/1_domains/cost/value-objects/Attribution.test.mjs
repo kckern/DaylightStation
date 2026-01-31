@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { Attribution } from '../../../../../../src/1_domains/cost/value-objects/Attribution.mjs';
-import { ValidationError } from '../../../../../../src/1_domains/core/errors/index.mjs';
+import { Attribution } from '#domains/cost/value-objects/Attribution.mjs';
+import { ValidationError } from '#domains/core/errors/index.mjs';
 
 describe('Attribution', () => {
   describe('constructor', () => {

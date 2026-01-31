@@ -1,5 +1,5 @@
 // tests/unit/content/entities/WatchState.test.mjs
-import { WatchState } from '#backend/src/1_domains/content/entities/WatchState.mjs';
+import { WatchState } from '#domains/content/entities/WatchState.mjs';
 
 describe('WatchState entity', () => {
   test('creates watch state with required fields', () => {

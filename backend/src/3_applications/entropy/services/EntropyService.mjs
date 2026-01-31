@@ -235,7 +235,7 @@ export async function createWithLegacyDependencies() {
   });
 
   // Create adapter implementing IEntropyReader
-  const { YamlEntropyReader } = await import('../../../2_adapters/entropy/YamlEntropyReader.mjs');
+  const { YamlEntropyReader } = await import('#adapters/entropy/YamlEntropyReader.mjs');
 
   const entropyReader = new YamlEntropyReader({
     io: { userLoadFile, userLoadCurrent },

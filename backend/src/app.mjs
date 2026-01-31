@@ -83,26 +83,26 @@ import { createAIRouter } from './4_api/v1/routers/ai.mjs';
 import { loadRoutingConfig } from './0_system/routing/index.mjs';
 
 // UPC Gateway for barcode lookups
-import { UPCGateway } from './2_adapters/nutribot/UPCGateway.mjs';
+import { UPCGateway } from '#adapters/nutribot/UPCGateway.mjs';
 
 // HTTP middleware
 import { createDevProxy, errorHandlerMiddleware } from './0_system/http/middleware/index.mjs';
 import { createEventBusRouter } from './4_api/v1/routers/admin/eventbus.mjs';
 
 // Scheduling domain
-import { SchedulerService } from './1_domains/scheduling/services/SchedulerService.mjs';
-import { YamlJobDatastore } from './2_adapters/scheduling/YamlJobDatastore.mjs';
-import { YamlStateDatastore } from './2_adapters/scheduling/YamlStateDatastore.mjs';
+import { SchedulerService } from '#domains/scheduling/services/SchedulerService.mjs';
+import { YamlJobDatastore } from '#adapters/scheduling/YamlJobDatastore.mjs';
+import { YamlStateDatastore } from '#adapters/scheduling/YamlStateDatastore.mjs';
 import { Scheduler } from './0_system/scheduling/Scheduler.mjs';
 import { createSchedulingRouter } from './4_api/v1/routers/scheduling.mjs';
 
 // Conversation state persistence
-import { YamlConversationStateDatastore } from './2_adapters/messaging/YamlConversationStateDatastore.mjs';
+import { YamlConversationStateDatastore } from '#adapters/messaging/YamlConversationStateDatastore.mjs';
 
 // Media jobs (fresh video downloads)
 import { MediaJobExecutor } from './3_applications/media/MediaJobExecutor.mjs';
 import { createFreshVideoJobHandler } from './3_applications/media/YouTubeJobHandler.mjs';
-import { YtDlpAdapter } from './2_adapters/media/YtDlpAdapter.mjs';
+import { YtDlpAdapter } from '#adapters/media/YtDlpAdapter.mjs';
 
 // Harvest domain (data collection)
 import { createHarvestRouter } from './4_api/v1/routers/harvest.mjs';
@@ -613,7 +613,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Gratitude domain router - prayer card canvas renderer
   let createPrayerCardCanvas = null;
   try {
-    const { createPrayerCardRenderer } = await import('./2_adapters/gratitude/rendering/PrayerCardRenderer.mjs');
+    const { createPrayerCardRenderer } = await import('#adapters/gratitude/rendering/PrayerCardRenderer.mjs');
     const householdId = configService.getDefaultHouseholdId();
     const renderer = createPrayerCardRenderer({
       getSelectionsForPrint: async () => {
@@ -641,7 +641,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Nutribot report renderer (canvas-based PNG generation)
   let nutribotReportRenderer = null;
   try {
-    const { NutriReportRenderer } = await import('./2_adapters/nutribot/rendering/NutriReportRenderer.mjs');
+    const { NutriReportRenderer } = await import('#adapters/nutribot/rendering/NutriReportRenderer.mjs');
     nutribotReportRenderer = new NutriReportRenderer({
       logger: rootLogger.child({ module: 'nutribot-renderer' }),
       fontDir: configService.getPath('font'),
@@ -746,7 +746,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Note: .get() returns NoOp adapter if not configured, so check .has() first
   let sharedAiGateway = householdAdapters?.has?.('ai') ? householdAdapters.get('ai') : null;
   if (!sharedAiGateway && openaiApiKey) {
-    const { OpenAIAdapter } = await import('./2_adapters/ai/OpenAIAdapter.mjs');
+    const { OpenAIAdapter } = await import('#adapters/ai/OpenAIAdapter.mjs');
     sharedAiGateway = new OpenAIAdapter({ apiKey: openaiApiKey }, { httpClient: axios, logger: rootLogger.child({ module: 'shared-ai' }) });
     rootLogger.debug('ai.adapter.fallback', { reason: 'Using hardcoded OpenAI adapter creation' });
   }
@@ -755,12 +755,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // ALWAYS use OpenAI for transcription (requires Whisper API support)
   let voiceTranscriptionService = null;
   if (openaiApiKey) {
-    const { OpenAIAdapter } = await import('./2_adapters/ai/OpenAIAdapter.mjs');
+    const { OpenAIAdapter } = await import('#adapters/ai/OpenAIAdapter.mjs');
     const openaiForTranscription = new OpenAIAdapter(
       { apiKey: openaiApiKey },
       { httpClient: axios, logger: rootLogger.child({ module: 'openai-transcription' }) }
     );
-    const { TelegramVoiceTranscriptionService } = await import('./2_adapters/messaging/TelegramVoiceTranscriptionService.mjs');
+    const { TelegramVoiceTranscriptionService } = await import('#adapters/messaging/TelegramVoiceTranscriptionService.mjs');
     const voiceHttpClient = new HttpClient({ logger: rootLogger.child({ module: 'voice-http' }) });
     voiceTranscriptionService = new TelegramVoiceTranscriptionService(
       { openaiAdapter: openaiForTranscription },
@@ -920,7 +920,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // For now, create directly if API key is available
   let aiAnthropicAdapter = null;
   if (anthropicApiKey) {
-    const { AnthropicAdapter } = await import('./2_adapters/ai/AnthropicAdapter.mjs');
+    const { AnthropicAdapter } = await import('#adapters/ai/AnthropicAdapter.mjs');
     aiAnthropicAdapter = new AnthropicAdapter(
       { apiKey: anthropicApiKey },
       { httpClient: axios, logger: rootLogger.child({ module: 'ai-anthropic' }) }

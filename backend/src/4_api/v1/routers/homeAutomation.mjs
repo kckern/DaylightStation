@@ -16,10 +16,10 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
 /**
  * Create home automation router
  * @param {Object} config
- * @param {import('../../2_adapters/home-automation/tv/TVControlAdapter.mjs').TVControlAdapter} config.tvAdapter
- * @param {import('../../2_adapters/home-automation/kiosk/KioskAdapter.mjs').KioskAdapter} config.kioskAdapter
- * @param {import('../../2_adapters/home-automation/tasker/TaskerAdapter.mjs').TaskerAdapter} config.taskerAdapter
- * @param {import('../../2_adapters/home-automation/remote-exec/RemoteExecAdapter.mjs').RemoteExecAdapter} config.remoteExecAdapter
+ * @param {import('#adapters/home-automation/tv/TVControlAdapter.mjs').TVControlAdapter} config.tvAdapter
+ * @param {import('#adapters/home-automation/kiosk/KioskAdapter.mjs').KioskAdapter} config.kioskAdapter
+ * @param {import('#adapters/home-automation/tasker/TaskerAdapter.mjs').TaskerAdapter} config.taskerAdapter
+ * @param {import('#adapters/home-automation/remote-exec/RemoteExecAdapter.mjs').RemoteExecAdapter} config.remoteExecAdapter
  * @param {Function} [config.loadFile] - Function to load state files
  * @param {Function} [config.saveFile] - Function to save state files
  * @param {string} [config.householdId] - Household ID for state files

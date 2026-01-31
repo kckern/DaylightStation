@@ -15,7 +15,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
 import { JournalistContainer } from '#backend/src/3_applications/journalist/JournalistContainer.mjs';
-import { YamlConversationStateDatastore } from '#backend/src/2_adapters/messaging/YamlConversationStateDatastore.mjs';
+import { YamlConversationStateDatastore } from '#adapters/messaging/YamlConversationStateDatastore.mjs';
 
 describe('Journalist Flow Integration', () => {
   let tempDir;

@@ -1,6 +1,6 @@
 // tests/unit/domains/messaging/services/NotificationService.test.mjs
 import { jest } from '@jest/globals';
-import { NotificationService } from '#backend/src/1_domains/messaging/services/NotificationService.mjs';
+import { NotificationService } from '#domains/messaging/services/NotificationService.mjs';
 
 describe('NotificationService', () => {
   let service;

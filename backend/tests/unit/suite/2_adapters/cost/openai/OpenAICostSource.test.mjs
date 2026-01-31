@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { OpenAICostSource } from '../../../../../../src/2_adapters/cost/openai/OpenAICostSource.mjs';
-import { ICostSource } from '../../../../../../src/3_applications/cost/ports/ICostSource.mjs';
-import { CostEntry } from '../../../../../../src/1_domains/cost/entities/CostEntry.mjs';
-import { CostCategory } from '../../../../../../src/1_domains/cost/value-objects/CostCategory.mjs';
+import { OpenAICostSource } from '#adapters/cost/openai/OpenAICostSource.mjs';
+import { ICostSource } from '#applications/cost/ports/ICostSource.mjs';
+import { CostEntry } from '#domains/cost/entities/CostEntry.mjs';
+import { CostCategory } from '#domains/cost/value-objects/CostCategory.mjs';
 
 describe('OpenAICostSource', () => {
   let source;

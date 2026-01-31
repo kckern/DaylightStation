@@ -40,7 +40,7 @@ describe('GarminHarvester', () => {
 
   describe('constructor', () => {
     it('should create harvester with required dependencies', async () => {
-      const { GarminHarvester } = await import('#backend/src/2_adapters/harvester/fitness/GarminHarvester.mjs');
+      const { GarminHarvester } = await import('#adapters/harvester/fitness/GarminHarvester.mjs');
 
       harvester = new GarminHarvester({
         garminClientFactory: mockGarminClientFactory,
@@ -53,7 +53,7 @@ describe('GarminHarvester', () => {
     });
 
     it('should throw if garminClientFactory not provided', async () => {
-      const { GarminHarvester } = await import('#backend/src/2_adapters/harvester/fitness/GarminHarvester.mjs');
+      const { GarminHarvester } = await import('#adapters/harvester/fitness/GarminHarvester.mjs');
 
       expect(() => new GarminHarvester({
         lifelogStore: mockLifelogStore
@@ -61,7 +61,7 @@ describe('GarminHarvester', () => {
     });
 
     it('should throw if lifelogStore not provided', async () => {
-      const { GarminHarvester } = await import('#backend/src/2_adapters/harvester/fitness/GarminHarvester.mjs');
+      const { GarminHarvester } = await import('#adapters/harvester/fitness/GarminHarvester.mjs');
 
       expect(() => new GarminHarvester({
         garminClientFactory: mockGarminClientFactory
@@ -71,7 +71,7 @@ describe('GarminHarvester', () => {
 
   describe('serviceId', () => {
     it('should return garmin', async () => {
-      const { GarminHarvester } = await import('#backend/src/2_adapters/harvester/fitness/GarminHarvester.mjs');
+      const { GarminHarvester } = await import('#adapters/harvester/fitness/GarminHarvester.mjs');
 
       harvester = new GarminHarvester({
         garminClientFactory: mockGarminClientFactory,
@@ -85,7 +85,7 @@ describe('GarminHarvester', () => {
 
   describe('getActivityDetails', () => {
     it('should get activity details by ID', async () => {
-      const { GarminHarvester } = await import('#backend/src/2_adapters/harvester/fitness/GarminHarvester.mjs');
+      const { GarminHarvester } = await import('#adapters/harvester/fitness/GarminHarvester.mjs');
 
       mockGarminClient.getActivity.mockResolvedValue({
         activityId: 12345,
@@ -108,7 +108,7 @@ describe('GarminHarvester', () => {
     });
 
     it('should respect circuit breaker when in cooldown', async () => {
-      const { GarminHarvester } = await import('#backend/src/2_adapters/harvester/fitness/GarminHarvester.mjs');
+      const { GarminHarvester } = await import('#adapters/harvester/fitness/GarminHarvester.mjs');
 
       // Force circuit breaker open by simulating failures
       mockGarminClient.getActivity.mockRejectedValue(new Error('API error'));
@@ -135,7 +135,7 @@ describe('GarminHarvester', () => {
 
   describe('getSteps', () => {
     it('should get steps for a date', async () => {
-      const { GarminHarvester } = await import('#backend/src/2_adapters/harvester/fitness/GarminHarvester.mjs');
+      const { GarminHarvester } = await import('#adapters/harvester/fitness/GarminHarvester.mjs');
 
       mockGarminClient.getSteps.mockResolvedValue({
         totalSteps: 8500,
@@ -157,7 +157,7 @@ describe('GarminHarvester', () => {
     });
 
     it('should use current date if none provided', async () => {
-      const { GarminHarvester } = await import('#backend/src/2_adapters/harvester/fitness/GarminHarvester.mjs');
+      const { GarminHarvester } = await import('#adapters/harvester/fitness/GarminHarvester.mjs');
 
       mockGarminClient.getSteps.mockResolvedValue({ totalSteps: 1000 });
 
@@ -175,7 +175,7 @@ describe('GarminHarvester', () => {
 
   describe('getHeartRate', () => {
     it('should get heart rate data for a date', async () => {
-      const { GarminHarvester } = await import('#backend/src/2_adapters/harvester/fitness/GarminHarvester.mjs');
+      const { GarminHarvester } = await import('#adapters/harvester/fitness/GarminHarvester.mjs');
 
       mockGarminClient.getHeartRate.mockResolvedValue({
         restingHeartRate: 58,
@@ -199,7 +199,7 @@ describe('GarminHarvester', () => {
 
   describe('downloadActivityData', () => {
     it('should download activity data to directory', async () => {
-      const { GarminHarvester } = await import('#backend/src/2_adapters/harvester/fitness/GarminHarvester.mjs');
+      const { GarminHarvester } = await import('#adapters/harvester/fitness/GarminHarvester.mjs');
 
       const mockActivity = { activityId: 12345, activityName: 'Run' };
       mockGarminClient.getActivity.mockResolvedValue(mockActivity);
@@ -221,7 +221,7 @@ describe('GarminHarvester', () => {
     });
 
     it('should use default directory if none provided', async () => {
-      const { GarminHarvester } = await import('#backend/src/2_adapters/harvester/fitness/GarminHarvester.mjs');
+      const { GarminHarvester } = await import('#adapters/harvester/fitness/GarminHarvester.mjs');
 
       const mockActivity = { activityId: 12345 };
       mockGarminClient.getActivity.mockResolvedValue(mockActivity);
@@ -244,7 +244,7 @@ describe('GarminHarvester', () => {
 
   describe('harvest', () => {
     it('should harvest activities and save to lifelog', async () => {
-      const { GarminHarvester } = await import('#backend/src/2_adapters/harvester/fitness/GarminHarvester.mjs');
+      const { GarminHarvester } = await import('#adapters/harvester/fitness/GarminHarvester.mjs');
 
       mockGarminClient.getActivities.mockResolvedValue([
         {
@@ -270,7 +270,7 @@ describe('GarminHarvester', () => {
     });
 
     it('should return empty result when no activities', async () => {
-      const { GarminHarvester } = await import('#backend/src/2_adapters/harvester/fitness/GarminHarvester.mjs');
+      const { GarminHarvester } = await import('#adapters/harvester/fitness/GarminHarvester.mjs');
 
       mockGarminClient.getActivities.mockResolvedValue([]);
 
@@ -289,7 +289,7 @@ describe('GarminHarvester', () => {
 
   describe('getStatus', () => {
     it('should return circuit breaker status', async () => {
-      const { GarminHarvester } = await import('#backend/src/2_adapters/harvester/fitness/GarminHarvester.mjs');
+      const { GarminHarvester } = await import('#adapters/harvester/fitness/GarminHarvester.mjs');
 
       harvester = new GarminHarvester({
         garminClientFactory: mockGarminClientFactory,

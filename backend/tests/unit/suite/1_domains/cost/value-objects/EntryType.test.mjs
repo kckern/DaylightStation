@@ -3,7 +3,7 @@ import {
   EntryType,
   ENTRY_TYPES,
   isCountedInSpend
-} from '../../../../../../src/1_domains/cost/value-objects/EntryType.mjs';
+} from '#domains/cost/value-objects/EntryType.mjs';
 
 describe('EntryType', () => {
   describe('enum values', () => {

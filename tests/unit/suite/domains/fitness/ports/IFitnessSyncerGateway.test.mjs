@@ -4,7 +4,7 @@ import {
   IFitnessSyncerGateway,
   isFitnessSyncerGateway,
   assertFitnessSyncerGateway
-} from '#backend/src/1_domains/fitness/ports/IFitnessSyncerGateway.mjs';
+} from '#domains/fitness/ports/IFitnessSyncerGateway.mjs';
 
 describe('IFitnessSyncerGateway', () => {
   describe('requiredMethods', () => {

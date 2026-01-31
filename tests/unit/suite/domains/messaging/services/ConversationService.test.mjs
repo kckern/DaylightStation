@@ -1,6 +1,6 @@
 // tests/unit/domains/messaging/services/ConversationService.test.mjs
 import { jest } from '@jest/globals';
-import { ConversationService } from '#backend/src/1_domains/messaging/services/ConversationService.mjs';
+import { ConversationService } from '#domains/messaging/services/ConversationService.mjs';
 
 describe('ConversationService', () => {
   let service;
