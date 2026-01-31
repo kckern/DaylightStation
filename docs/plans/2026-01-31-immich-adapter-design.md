@@ -68,14 +68,65 @@ Build out the Immich content adapter following the Plex pattern, enabling Daylig
 
 ## Domain Model Mapping
 
+### Content Capabilities
+
+The domain layer has four content capabilities:
+
+| Capability | Purpose | Examples |
+|------------|---------|----------|
+| `ListableItem` | Browse hierarchies | Albums (container), Photos in list (leaf) |
+| `PlayableItem` | Stream media with duration | Videos, Audio, Slideshows |
+| `ViewableItem` | Static display (no playback) | Art display, Single photo view |
+| `QueueableItem` | Resolve to playback queue | Shows, Playlists, Albums |
+
+### ViewableItem (NEW)
+
+Static media that can be displayed but has no playback semantics (duration, resume, queue).
+
+```javascript
+// backend/src/2_domains/content/capabilities/Viewable.mjs
+
+/**
+ * Viewable capability - static media for display (not played)
+ * Use cases: Art display, single photo view, ambient backgrounds
+ */
+export class ViewableItem extends Item {
+  /**
+   * @param {Object} props
+   * @param {string} props.id - Compound ID
+   * @param {string} props.source - Adapter source
+   * @param {string} props.title - Display title
+   * @param {string} props.imageUrl - Full resolution image URL (proxied)
+   * @param {string} [props.thumbnail] - Thumbnail URL (for previews)
+   * @param {number} [props.width] - Image width
+   * @param {number} [props.height] - Image height
+   * @param {string} [props.mimeType] - image/jpeg, image/webp, etc.
+   * @param {Object} [props.metadata] - EXIF, location, people, etc.
+   */
+  constructor(props) {
+    super(props);
+    this.imageUrl = props.imageUrl;
+    this.width = props.width ?? null;
+    this.height = props.height ?? null;
+    this.mimeType = props.mimeType ?? null;
+  }
+
+  get aspectRatio() {
+    if (!this.width || !this.height) return null;
+    return this.width / this.height;
+  }
+}
+```
+
 ### Immich → DaylightStation
 
-| Immich Concept | Domain Entity | Notes |
-|----------------|---------------|-------|
-| Album | `ListableItem` (container) | Has children, childCount |
-| Photo | `ListableItem` (leaf) | No mediaUrl, just thumbnail |
-| Photo (slideshow) | `PlayableItem` (image) | Synthetic duration for timed display |
-| Video | `PlayableItem` (video) | Actual duration from metadata |
+| Immich Concept | Context | Domain Entity | Notes |
+|----------------|---------|---------------|-------|
+| Album | Browsing | `ListableItem` (container) | Has children, childCount |
+| Photo | List view | `ListableItem` (leaf) | Thumbnail only |
+| Photo | Static display | `ViewableItem` | Full-res image, no duration |
+| Photo | Slideshow | `PlayableItem` (image) | Synthetic duration for timed display |
+| Video | Any | `PlayableItem` (video) | Actual duration from metadata |
 
 ### Field Mapping
 
@@ -171,11 +222,15 @@ export const IMediaSearchable = {
 
 ```
 backend/src/
-├── 2_domains/media/
-│   ├── IMediaSearchable.mjs          # Search interface
-│   ├── MediaSearchQuery.mjs          # Query value object
-│   ├── MediaKeyResolver.mjs          # UPDATE: Add 'immich' to knownSources
-│   └── index.mjs                     # UPDATE: Export new interfaces
+├── 2_domains/
+│   ├── content/capabilities/
+│   │   └── Viewable.mjs              # NEW: ViewableItem capability
+│   │
+│   └── media/
+│       ├── IMediaSearchable.mjs      # Search interface
+│       ├── MediaSearchQuery.mjs      # Query value object
+│       ├── MediaKeyResolver.mjs      # UPDATE: Add 'immich' to knownSources
+│       └── index.mjs                 # UPDATE: Export new interfaces
 │
 ├── 1_adapters/content/gallery/immich/
 │   ├── ImmichAdapter.mjs             # IContentSource + IMediaSearchable
@@ -190,6 +245,8 @@ tests/isolated/
 │   └── ImmichAdapter.test.mjs        # Unit tests
 ├── domains/media/
 │   └── IMediaSearchable.test.mjs     # Interface contract tests
+├── domains/content/
+│   └── Viewable.test.mjs             # ViewableItem tests
 ```
 
 ### Existing Files (No Changes Needed)
@@ -205,9 +262,10 @@ data/system/config/services.yml                       # Already configured
 
 ### Phase 1: Domain Layer
 
-1. Create `IMediaSearchable.mjs` - interface definition
-2. Create `MediaSearchQuery.mjs` - query value object with validation
-3. Update `MediaKeyResolver.mjs` - add 'immich' to knownSources with UUID pattern
+1. Create `Viewable.mjs` - ViewableItem capability for static image display
+2. Create `IMediaSearchable.mjs` - search interface definition
+3. Create `MediaSearchQuery.mjs` - query value object with validation
+4. Update `MediaKeyResolver.mjs` - add 'immich' to knownSources with UUID pattern
 
 ### Phase 2: Adapter Layer
 
@@ -222,6 +280,7 @@ data/system/config/services.yml                       # Already configured
 2. Create `ImmichAdapter.mjs` - implements interfaces
    - `IContentSource`: source, prefixes, getItem, getList, resolvePlayables
    - `IMediaSearchable`: search, getSearchCapabilities
+   - `IViewableSource`: getViewable (for static image display)
 
 3. Create `manifest.mjs` - provider config schema
 
@@ -274,6 +333,10 @@ const results = await adapter.search({
 // Resolve album to slideshow queue
 const playables = await adapter.resolvePlayables('immich:album:xyz-789');
 // Returns PlayableItem[] with mediaType: 'image', duration: 10 (configurable)
+
+// Get single photo for static display (Art app, photo viewer)
+const viewable = await adapter.getViewable('immich:931cb18f-2642-...');
+// Returns ViewableItem with imageUrl, dimensions, EXIF metadata
 ```
 
 ### MediaSearchService
