@@ -15,7 +15,8 @@ module.exports = {
     '^#frontend/(.*)$': '<rootDir>/frontend/src/$1',
     '^#extensions/(.*)$': '<rootDir>/_extensions/$1',
     '^#fixtures/(.*)$': '<rootDir>/tests/_fixtures/$1',
-    '^#testlib/(.*)$': '<rootDir>/tests/lib/$1',
+    '^#testlib/(.*)$': '<rootDir>/tests/_lib/$1',
+    '^#harnesses/(.*)$': '<rootDir>/tests/_infrastructure/harnesses/$1',
   },
   // Transform ESM packages from node_modules that use import.meta or ESM syntax
   transformIgnorePatterns: [
