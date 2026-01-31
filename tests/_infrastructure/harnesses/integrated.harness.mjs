@@ -10,7 +10,7 @@ const HOUSEHOLD_DEMO = path.resolve(__dirname, '../household-demo');
 const TARGETS = ['domain', 'adapter', 'flow', 'contract', 'assembly'];
 
 async function ensureHouseholdDemo() {
-  if (!fs.existsSync(HOUSEHOLD_DEMO) || !fs.existsSync(path.join(HOUSEHOLD_DEMO, 'household.yml'))) {
+  if (!fs.existsSync(HOUSEHOLD_DEMO) || !fs.existsSync(path.join(HOUSEHOLD_DEMO, 'config', 'household.yml'))) {
     console.log(`${COLORS.yellow}household-demo not found. Generating...${COLORS.reset}`);
     const { execSync } = await import('child_process');
     execSync('node tests/_infrastructure/generators/setup-household-demo.mjs', { stdio: 'inherit' });
