@@ -50,6 +50,14 @@ describe('ViewableItem', () => {
       expect(viewable.mimeType).toBe('image/jpeg');
       expect(viewable.metadata.exif.iso).toBe(200);
     });
+
+    test('throws when imageUrl is missing', () => {
+      expect(() => new ViewableItem({
+        id: 'immich:abc-123',
+        source: 'immich',
+        title: 'Photo.jpg'
+      })).toThrow();
+    });
   });
 
   describe('aspectRatio', () => {
