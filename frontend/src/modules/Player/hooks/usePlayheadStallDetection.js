@@ -186,16 +186,46 @@ export function usePlayheadStallDetection({
         const savedPosition = position;
         const savedSrc = mediaEl.src;
 
-        // Force a full decoder reset
-        mediaEl.load();
+        // Setup cleanup function to ensure listeners are always removed
+        let timeoutId = null;
 
-        // Restore position and resume playback once loaded
-        const onCanPlay = () => {
+        const cleanup = () => {
+          if (timeoutId) {
+            clearTimeout(timeoutId);
+            timeoutId = null;
+          }
           mediaEl.removeEventListener('canplay', onCanPlay);
+          mediaEl.removeEventListener('error', onError);
+        };
+
+        const onCanPlay = () => {
+          cleanup();
           mediaEl.currentTime = savedPosition;
           mediaEl.play().catch(() => {});
         };
+
+        const onError = () => {
+          cleanup();
+          logger.warn('playback.decoder_reset_failed', {
+            position: savedPosition,
+            error: 'media_error'
+          });
+        };
+
+        // Timeout to clean up if canplay never fires (e.g., network failure)
+        timeoutId = setTimeout(() => {
+          cleanup();
+          logger.warn('playback.decoder_reset_timeout', {
+            position: savedPosition,
+            timeoutMs: 5000
+          });
+        }, 5000);
+
         mediaEl.addEventListener('canplay', onCanPlay);
+        mediaEl.addEventListener('error', onError);
+
+        // Force a full decoder reset
+        mediaEl.load();
 
         // If src was cleared by load(), restore it
         if (!mediaEl.src && savedSrc) {
