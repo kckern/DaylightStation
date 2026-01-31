@@ -159,6 +159,95 @@ describe('AudiobookshelfAdapter', () => {
       expect(result.isPlayable()).toBe(true);
     });
 
+    test('returns PlayableItem with frontend-compatible metadata aliases', async () => {
+      // Mock getItem response for audiobook with full metadata
+      mockHttpClient.get.mockResolvedValueOnce({
+        data: {
+          id: 'item-full',
+          libraryId: 'lib-1',
+          media: {
+            numAudioFiles: 12,
+            duration: 43200, // 12 hours
+            metadata: {
+              title: 'The Great Novel',
+              authorName: 'Jane Author',
+              narratorName: 'John Narrator',
+              seriesName: 'Epic Series',
+              description: 'An epic tale'
+            }
+          },
+          mediaType: 'book'
+        }
+      });
+      // Mock getProgress response
+      mockHttpClient.get.mockResolvedValueOnce({
+        data: {
+          currentTime: 7200,
+          isFinished: false
+        }
+      });
+
+      const adapter = new AudiobookshelfAdapter(
+        { host: 'http://localhost:13378', token: 'test-token' },
+        { httpClient: mockHttpClient }
+      );
+
+      const result = await adapter.getItem('abs:item-full');
+
+      // Verify DDD metadata fields
+      expect(result.metadata.author).toBe('Jane Author');
+      expect(result.metadata.narrator).toBe('John Narrator');
+
+      // Verify legacy aliases for AudioPlayer frontend
+      expect(result.metadata.artist).toBe('Jane Author'); // alias for author
+      expect(result.metadata.albumArtist).toBe('John Narrator'); // alias for narrator
+      expect(result.metadata.album).toBe('Epic Series'); // series as album
+
+      // Verify thumbnail is set for cover art
+      expect(result.thumbnail).toBe('/api/v1/proxy/abs/items/item-full/cover');
+    });
+
+    test('PlayableItem toJSON includes legacy field aliases', async () => {
+      // Mock getItem response
+      mockHttpClient.get.mockResolvedValueOnce({
+        data: {
+          id: 'item-json',
+          libraryId: 'lib-1',
+          media: {
+            numAudioFiles: 8,
+            duration: 28800,
+            metadata: {
+              title: 'JSON Test Book',
+              authorName: 'Test Author'
+            }
+          },
+          mediaType: 'book'
+        }
+      });
+      // Mock getProgress response
+      mockHttpClient.get.mockResolvedValueOnce({
+        data: {
+          currentTime: 1800,
+          isFinished: false
+        }
+      });
+
+      const adapter = new AudiobookshelfAdapter(
+        { host: 'http://localhost:13378', token: 'test-token' },
+        { httpClient: mockHttpClient }
+      );
+
+      const result = await adapter.getItem('abs:item-json');
+      const json = result.toJSON();
+
+      // Legacy aliases from PlayableItem.toJSON()
+      expect(json.media_url).toBe('/api/v1/proxy/abs/items/item-json/play');
+      expect(json.media_type).toBe('audio');
+      expect(json.image).toBe('/api/v1/proxy/abs/items/item-json/cover');
+      expect(json.seconds).toBe(1800);
+      expect(json.media_key).toBe('abs:item-json');
+    });
+
     test('returns null for non-existent item', async () => {
       mockHttpClient.get.mockRejectedValue(new Error('Not found'));
 
