@@ -1,5 +1,5 @@
 // tests/unit/content/capabilities/Listable.test.mjs
-import { ListableItem } from '#backend/src/1_domains/content/capabilities/Listable.mjs';
+import { ListableItem } from '#domains/content/capabilities/Listable.mjs';
 
 describe('Listable capability', () => {
   test('creates listable item with itemType', () => {

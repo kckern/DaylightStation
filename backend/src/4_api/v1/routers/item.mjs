@@ -77,7 +77,7 @@ function getMenuMemoryKey(item) {
  * - POST /api/v1/item/menu-log - Log menu navigation for recent_on_top sorting
  *
  * @param {Object} options
- * @param {import('../../1_domains/content/services/ContentSourceRegistry.mjs').ContentSourceRegistry} options.registry
+ * @param {import('#domains/content/services/ContentSourceRegistry.mjs').ContentSourceRegistry} options.registry
  * @param {string} options.menuMemoryPath - Absolute path to menu memory file
  * @param {Object} [options.logger] - Logger instance
  * @returns {express.Router}

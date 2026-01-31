@@ -1,5 +1,5 @@
 // tests/unit/domains/journaling/entities/JournalEntry.test.mjs
-import { JournalEntry } from '#backend/src/1_domains/journaling/entities/JournalEntry.mjs';
+import { JournalEntry } from '#domains/journaling/entities/JournalEntry.mjs';
 
 // Helper to generate timestamps for tests
 const testTimestamp = () => new Date().toISOString();

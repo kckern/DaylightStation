@@ -1,5 +1,5 @@
 // tests/unit/suite/adapters/content/media/filesystem/manifest.test.mjs
-import manifest from '#backend/src/2_adapters/content/media/filesystem/manifest.mjs';
+import manifest from '#adapters/content/media/filesystem/manifest.mjs';
 
 describe('Filesystem Manifest', () => {
   test('has required fields', () => {

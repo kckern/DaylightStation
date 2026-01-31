@@ -20,8 +20,8 @@
   "imports": {
     "#backend/*": "./*",
     "#system/*": "./src/0_system/*",
-    "#domains/*": "./src/1_domains/*",
-    "#adapters/*": "./src/2_adapters/*",
+    "#domains/*": "./src/2_domains/*",
+    "#adapters/*": "./src/1_adapters/*",
     "#apps/*": "./src/3_applications/*",
     "#api/*": "./src/4_api/*"
   },

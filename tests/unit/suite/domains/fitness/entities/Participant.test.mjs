@@ -1,5 +1,5 @@
 // tests/unit/domains/fitness/entities/Participant.test.mjs
-import { Participant } from '#backend/src/1_domains/fitness/entities/Participant.mjs';
+import { Participant } from '#domains/fitness/entities/Participant.mjs';
 
 describe('Participant', () => {
   let participant;

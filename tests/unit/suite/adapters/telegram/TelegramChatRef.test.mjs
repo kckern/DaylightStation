@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@jest/globals';
-import { TelegramChatRef } from '#backend/src/2_adapters/telegram/TelegramChatRef.mjs';
+import { TelegramChatRef } from '#adapters/telegram/TelegramChatRef.mjs';
 
 describe('TelegramChatRef', () => {
   describe('platformUserId', () => {

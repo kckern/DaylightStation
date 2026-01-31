@@ -23,7 +23,7 @@ function isValidDate(dateStr) {
  * Create lifelog API router
  *
  * @param {Object} config
- * @param {import('../../1_domains/lifelog/services/LifelogAggregator.mjs').LifelogAggregator} config.aggregator
+ * @param {import('#domains/lifelog/services/LifelogAggregator.mjs').LifelogAggregator} config.aggregator
  * @param {Object} config.userDataService - UserDataService for reading user lifelog files
  * @param {Object} config.configService - ConfigService for user lookups
  * @returns {express.Router}

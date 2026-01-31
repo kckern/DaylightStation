@@ -1,6 +1,6 @@
 // tests/unit/adapters/finance/BuxferAdapter.test.mjs
 import { jest } from '@jest/globals';
-import { BuxferAdapter } from '#backend/src/2_adapters/finance/BuxferAdapter.mjs';
+import { BuxferAdapter } from '#adapters/finance/BuxferAdapter.mjs';
 
 describe('BuxferAdapter', () => {
   let adapter;

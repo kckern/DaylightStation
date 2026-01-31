@@ -24,7 +24,7 @@ describe('FitnessSyncerAdapter', () => {
     jest.useFakeTimers();
     jest.setSystemTime(new Date('2026-01-13T12:00:00Z'));
 
-    const module = await import('#backend/src/2_adapters/harvester/fitness/FitnessSyncerAdapter.mjs');
+    const module = await import('#adapters/harvester/fitness/FitnessSyncerAdapter.mjs');
     FitnessSyncerAdapter = module.FitnessSyncerAdapter;
 
     mockHttpClient = {

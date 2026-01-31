@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { BudgetPeriod, PERIOD_TYPES } from '../../../../../../src/1_domains/cost/value-objects/BudgetPeriod.mjs';
-import { ValidationError } from '../../../../../../src/1_domains/core/errors/index.mjs';
+import { BudgetPeriod, PERIOD_TYPES } from '#domains/cost/value-objects/BudgetPeriod.mjs';
+import { ValidationError } from '#domains/core/errors/index.mjs';
 
 describe('BudgetPeriod', () => {
   describe('constructor', () => {
@@ -218,7 +218,7 @@ describe('Thresholds', () => {
   let Thresholds;
 
   beforeEach(async () => {
-    const mod = await import('../../../../../../src/1_domains/cost/value-objects/Thresholds.mjs');
+    const mod = await import('#domains/cost/value-objects/Thresholds.mjs');
     Thresholds = mod.Thresholds;
   });
 
@@ -296,7 +296,7 @@ describe('EntryType', () => {
   let EntryType, ENTRY_TYPES, isCountedInSpend;
 
   beforeEach(async () => {
-    const mod = await import('../../../../../../src/1_domains/cost/value-objects/EntryType.mjs');
+    const mod = await import('#domains/cost/value-objects/EntryType.mjs');
     EntryType = mod.EntryType;
     ENTRY_TYPES = mod.ENTRY_TYPES;
     isCountedInSpend = mod.isCountedInSpend;
@@ -364,8 +364,8 @@ describe('SpreadSource', () => {
   let SpreadSource, Money;
 
   beforeEach(async () => {
-    const spreadMod = await import('../../../../../../src/1_domains/cost/value-objects/SpreadSource.mjs');
-    const moneyMod = await import('../../../../../../src/1_domains/cost/value-objects/Money.mjs');
+    const spreadMod = await import('#domains/cost/value-objects/SpreadSource.mjs');
+    const moneyMod = await import('#domains/cost/value-objects/Money.mjs');
     SpreadSource = spreadMod.SpreadSource;
     Money = moneyMod.Money;
   });

@@ -64,10 +64,10 @@ describe('ShoppingHarvester', () => {
     jest.useFakeTimers();
     jest.setSystemTime(new Date('2026-01-13T12:00:00Z'));
 
-    const module = await import('#backend/src/2_adapters/harvester/finance/ShoppingHarvester.mjs');
+    const module = await import('#adapters/harvester/finance/ShoppingHarvester.mjs');
     ShoppingHarvester = module.ShoppingHarvester;
 
-    const portsModule = await import('#backend/src/2_adapters/harvester/ports/IHarvester.mjs');
+    const portsModule = await import('#adapters/harvester/ports/IHarvester.mjs');
     HarvesterCategory = portsModule.HarvesterCategory;
 
     mockGmail = {

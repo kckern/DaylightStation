@@ -15,7 +15,7 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
 /**
  * Create printer router
  * @param {Object} config
- * @param {import('../../2_adapters/hardware/thermal-printer/ThermalPrinterAdapter.mjs').ThermalPrinterAdapter} config.printerAdapter
+ * @param {import('#adapters/hardware/thermal-printer/ThermalPrinterAdapter.mjs').ThermalPrinterAdapter} config.printerAdapter
  * @param {Object} [config.logger]
  * @returns {express.Router}
  */

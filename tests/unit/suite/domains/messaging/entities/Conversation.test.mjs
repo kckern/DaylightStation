@@ -1,5 +1,5 @@
 // tests/unit/domains/messaging/entities/Conversation.test.mjs
-import { Conversation } from '#backend/src/1_domains/messaging/entities/Conversation.mjs';
+import { Conversation } from '#domains/messaging/entities/Conversation.mjs';
 
 describe('Conversation', () => {
   let conversation;

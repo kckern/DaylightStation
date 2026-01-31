@@ -1,7 +1,7 @@
 // tests/unit/domains/nutrition/services/FoodLogService.test.mjs
 import { jest } from '@jest/globals';
-import { FoodLogService } from '#backend/src/1_domains/nutrition/services/FoodLogService.mjs';
-import { NutriLog } from '#backend/src/1_domains/nutrition/entities/NutriLog.mjs';
+import { FoodLogService } from '#domains/nutrition/services/FoodLogService.mjs';
+import { NutriLog } from '#domains/nutrition/entities/NutriLog.mjs';
 
 describe('FoodLogService', () => {
   let service;

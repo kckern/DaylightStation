@@ -2,9 +2,9 @@
 import express from 'express';
 import request from 'supertest';
 import { createContentRouter } from '#backend/src/4_api/v1/routers/content.mjs';
-import { ContentSourceRegistry } from '#backend/src/1_domains/content/services/ContentSourceRegistry.mjs';
-import { FilesystemAdapter } from '#backend/src/2_adapters/content/media/filesystem/FilesystemAdapter.mjs';
-import { YamlWatchStateDatastore } from '#backend/src/2_adapters/persistence/yaml/YamlWatchStateDatastore.mjs';
+import { ContentSourceRegistry } from '#domains/content/services/ContentSourceRegistry.mjs';
+import { FilesystemAdapter } from '#adapters/content/media/filesystem/FilesystemAdapter.mjs';
+import { YamlWatchStateDatastore } from '#adapters/persistence/yaml/YamlWatchStateDatastore.mjs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 

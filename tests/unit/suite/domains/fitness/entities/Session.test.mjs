@@ -1,5 +1,5 @@
 // tests/unit/domains/fitness/entities/Session.test.mjs
-import { Session } from '#backend/src/1_domains/fitness/entities/Session.mjs';
+import { Session } from '#domains/fitness/entities/Session.mjs';
 
 describe('Session', () => {
   let session;

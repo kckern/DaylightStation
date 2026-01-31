@@ -9,7 +9,7 @@ export class IMediaProgressMemory {
    * Get media progress for an item
    * @param {string} itemId - Item identifier
    * @param {string} storagePath - Storage path
-   * @returns {Promise<import('../../../1_domains/content/entities/MediaProgress.mjs').MediaProgress|null>}
+   * @returns {Promise<import('#domains/content/entities/MediaProgress.mjs').MediaProgress|null>}
    */
   async get(itemId, storagePath) {
     throw new Error('IMediaProgressMemory.get must be implemented');
@@ -17,7 +17,7 @@ export class IMediaProgressMemory {
 
   /**
    * Set media progress for an item
-   * @param {import('../../../1_domains/content/entities/MediaProgress.mjs').MediaProgress} mediaProgress - Media progress to save
+   * @param {import('#domains/content/entities/MediaProgress.mjs').MediaProgress} mediaProgress - Media progress to save
    * @param {string} storagePath - Storage path
    * @returns {Promise<void>}
    */
@@ -28,7 +28,7 @@ export class IMediaProgressMemory {
   /**
    * Get all media progress records for a storage path
    * @param {string} storagePath - Storage path
-   * @returns {Promise<import('../../../1_domains/content/entities/MediaProgress.mjs').MediaProgress[]>}
+   * @returns {Promise<import('#domains/content/entities/MediaProgress.mjs').MediaProgress[]>}
    */
   async getAll(storagePath) {
     throw new Error('IMediaProgressMemory.getAll must be implemented');

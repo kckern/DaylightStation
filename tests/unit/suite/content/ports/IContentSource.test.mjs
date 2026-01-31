@@ -1,5 +1,5 @@
 // tests/unit/content/ports/IContentSource.test.mjs
-import { validateAdapter, ContentSourceBase } from '#backend/src/1_domains/content/ports/IContentSource.mjs';
+import { validateAdapter, ContentSourceBase } from '#domains/content/ports/IContentSource.mjs';
 
 describe('IContentSource port', () => {
   test('validateAdapter rejects invalid adapter', () => {

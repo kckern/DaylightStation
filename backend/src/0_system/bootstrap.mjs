@@ -219,8 +219,8 @@ export async function initializeIntegrations(config) {
 
   // Create and discover adapters (singleton)
   if (!adapterRegistryInstance) {
-    // Adapters are at backend/src/2_adapters, relative to this file (0_system/bootstrap.mjs)
-    const adaptersRoot = path.resolve(__dirname, '../2_adapters');
+    // Adapters are at backend/src/1_adapters, relative to this file (0_system/bootstrap.mjs)
+    const adaptersRoot = path.resolve(__dirname, '../1_adapters');
     adapterRegistryInstance = new AdapterRegistry({ adaptersRoot });
     await adapterRegistryInstance.discover();
 

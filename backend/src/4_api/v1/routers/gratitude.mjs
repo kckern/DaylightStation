@@ -29,7 +29,7 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
  * Create gratitude API router
  *
  * @param {Object} config
- * @param {import('../../1_domains/gratitude/services/GratitudeService.mjs').GratitudeService} config.gratitudeService
+ * @param {import('#domains/gratitude/services/GratitudeService.mjs').GratitudeService} config.gratitudeService
  * @param {Object} config.configService - ConfigService for household data
  * @param {Function} config.broadcastToWebsockets - WebSocket broadcast function
  * @param {Object} [config.printerAdapter] - ThermalPrinterAdapter for card printing

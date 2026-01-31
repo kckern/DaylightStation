@@ -1,5 +1,5 @@
 // tests/unit/content/services/ContentSourceRegistry.test.mjs
-import { ContentSourceRegistry } from '#backend/src/1_domains/content/services/ContentSourceRegistry.mjs';
+import { ContentSourceRegistry } from '#domains/content/services/ContentSourceRegistry.mjs';
 
 describe('ContentSourceRegistry', () => {
   let registry;

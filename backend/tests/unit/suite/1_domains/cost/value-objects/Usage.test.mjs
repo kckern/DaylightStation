@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { Usage } from '../../../../../../src/1_domains/cost/value-objects/Usage.mjs';
-import { ValidationError } from '../../../../../../src/1_domains/core/errors/index.mjs';
+import { Usage } from '#domains/cost/value-objects/Usage.mjs';
+import { ValidationError } from '#domains/core/errors/index.mjs';
 
 describe('Usage', () => {
   describe('constructor', () => {

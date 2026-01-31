@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { YamlCostDatastore } from '../../../../../src/2_adapters/cost/YamlCostDatastore.mjs';
-import { ICostRepository } from '../../../../../src/3_applications/cost/ports/ICostRepository.mjs';
-import { CostEntry } from '../../../../../src/1_domains/cost/entities/CostEntry.mjs';
-import { Money } from '../../../../../src/1_domains/cost/value-objects/Money.mjs';
-import { CostCategory } from '../../../../../src/1_domains/cost/value-objects/CostCategory.mjs';
-import { Attribution } from '../../../../../src/1_domains/cost/value-objects/Attribution.mjs';
-import { EntryType } from '../../../../../src/1_domains/cost/value-objects/EntryType.mjs';
+import { YamlCostDatastore } from '#adapters/cost/YamlCostDatastore.mjs';
+import { ICostRepository } from '#applications/cost/ports/ICostRepository.mjs';
+import { CostEntry } from '#domains/cost/entities/CostEntry.mjs';
+import { Money } from '#domains/cost/value-objects/Money.mjs';
+import { CostCategory } from '#domains/cost/value-objects/CostCategory.mjs';
+import { Attribution } from '#domains/cost/value-objects/Attribution.mjs';
+import { EntryType } from '#domains/cost/value-objects/EntryType.mjs';
 
 describe('YamlCostDatastore', () => {
   let mockIo;

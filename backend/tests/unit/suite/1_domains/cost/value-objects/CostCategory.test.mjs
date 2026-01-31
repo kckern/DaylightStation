@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { CostCategory } from '../../../../../../src/1_domains/cost/value-objects/CostCategory.mjs';
-import { ValidationError } from '../../../../../../src/1_domains/core/errors/index.mjs';
+import { CostCategory } from '#domains/cost/value-objects/CostCategory.mjs';
+import { ValidationError } from '#domains/core/errors/index.mjs';
 
 describe('CostCategory', () => {
   describe('constructor', () => {

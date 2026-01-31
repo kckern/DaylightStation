@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { CostIngestionService } from '../../../../../../src/3_applications/cost/services/CostIngestionService.mjs';
-import { CostEntry } from '../../../../../../src/1_domains/cost/entities/CostEntry.mjs';
-import { Money } from '../../../../../../src/1_domains/cost/value-objects/Money.mjs';
-import { CostCategory } from '../../../../../../src/1_domains/cost/value-objects/CostCategory.mjs';
-import { Attribution } from '../../../../../../src/1_domains/cost/value-objects/Attribution.mjs';
-import { EntryType } from '../../../../../../src/1_domains/cost/value-objects/EntryType.mjs';
+import { CostIngestionService } from '#applications/cost/services/CostIngestionService.mjs';
+import { CostEntry } from '#domains/cost/entities/CostEntry.mjs';
+import { Money } from '#domains/cost/value-objects/Money.mjs';
+import { CostCategory } from '#domains/cost/value-objects/CostCategory.mjs';
+import { Attribution } from '#domains/cost/value-objects/Attribution.mjs';
+import { EntryType } from '#domains/cost/value-objects/EntryType.mjs';
 
 describe('CostIngestionService', () => {
   let mockRepository;

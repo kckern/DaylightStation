@@ -1,6 +1,6 @@
 // tests/unit/adapters/messaging/TelegramAdapter.test.mjs
 import { jest } from '@jest/globals';
-import { TelegramAdapter } from '#backend/src/2_adapters/messaging/TelegramAdapter.mjs';
+import { TelegramAdapter } from '#adapters/messaging/TelegramAdapter.mjs';
 
 describe('TelegramAdapter', () => {
   let adapter;

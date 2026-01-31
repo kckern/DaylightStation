@@ -1,5 +1,5 @@
 // tests/unit/suite/adapters/content/media/plex/manifest.test.mjs
-import manifest from '#backend/src/2_adapters/content/media/plex/manifest.mjs';
+import manifest from '#adapters/content/media/plex/manifest.mjs';
 
 describe('Plex Manifest', () => {
   test('has required fields', () => {

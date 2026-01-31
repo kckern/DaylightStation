@@ -1,6 +1,6 @@
 // tests/unit/domains/fitness/services/SessionService.test.mjs
 import { jest } from '@jest/globals';
-import { SessionService } from '#backend/src/1_domains/fitness/services/SessionService.mjs';
+import { SessionService } from '#domains/fitness/services/SessionService.mjs';
 
 describe('SessionService', () => {
   let service;

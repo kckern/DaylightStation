@@ -1,6 +1,6 @@
 // tests/unit/suite/adapters/ai/manifests.test.mjs
-import openaiManifest from '#backend/src/2_adapters/ai/openai/manifest.mjs';
-import anthropicManifest from '#backend/src/2_adapters/ai/anthropic/manifest.mjs';
+import openaiManifest from '#adapters/ai/openai/manifest.mjs';
+import anthropicManifest from '#adapters/ai/anthropic/manifest.mjs';
 
 describe('AI Provider Manifests', () => {
   describe('OpenAI', () => {

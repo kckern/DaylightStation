@@ -17,7 +17,7 @@ describe('PlexClient', () => {
 
   describe('constructor', () => {
     it('should create client with host and token', async () => {
-      const { PlexClient } = await import('#backend/src/2_adapters/content/media/plex/PlexClient.mjs');
+      const { PlexClient } = await import('#adapters/content/media/plex/PlexClient.mjs');
 
       const client = new PlexClient({
         host: 'http://localhost:32400',
@@ -29,13 +29,13 @@ describe('PlexClient', () => {
     });
 
     it('should throw if host not provided', async () => {
-      const { PlexClient } = await import('#backend/src/2_adapters/content/media/plex/PlexClient.mjs');
+      const { PlexClient } = await import('#adapters/content/media/plex/PlexClient.mjs');
 
       expect(() => new PlexClient({})).toThrow('PlexClient requires host');
     });
 
     it('should strip trailing slash from host', async () => {
-      const { PlexClient } = await import('#backend/src/2_adapters/content/media/plex/PlexClient.mjs');
+      const { PlexClient } = await import('#adapters/content/media/plex/PlexClient.mjs');
 
       const client = new PlexClient({
         host: 'http://localhost:32400/',
@@ -48,7 +48,7 @@ describe('PlexClient', () => {
 
   describe('request', () => {
     it('should make authenticated request with token header', async () => {
-      const { PlexClient } = await import('#backend/src/2_adapters/content/media/plex/PlexClient.mjs');
+      const { PlexClient } = await import('#adapters/content/media/plex/PlexClient.mjs');
 
       mockFetch.mockResolvedValue({
         ok: true,
@@ -73,7 +73,7 @@ describe('PlexClient', () => {
     });
 
     it('should throw on non-ok response', async () => {
-      const { PlexClient } = await import('#backend/src/2_adapters/content/media/plex/PlexClient.mjs');
+      const { PlexClient } = await import('#adapters/content/media/plex/PlexClient.mjs');
 
       mockFetch.mockResolvedValue({
         ok: false,
@@ -92,7 +92,7 @@ describe('PlexClient', () => {
 
   describe('hubSearch', () => {
     it('should search Plex hub and return results', async () => {
-      const { PlexClient } = await import('#backend/src/2_adapters/content/media/plex/PlexClient.mjs');
+      const { PlexClient } = await import('#adapters/content/media/plex/PlexClient.mjs');
 
       mockFetch.mockResolvedValue({
         ok: true,
@@ -123,7 +123,7 @@ describe('PlexClient', () => {
     });
 
     it('should flatten results from multiple hubs', async () => {
-      const { PlexClient } = await import('#backend/src/2_adapters/content/media/plex/PlexClient.mjs');
+      const { PlexClient } = await import('#adapters/content/media/plex/PlexClient.mjs');
 
       mockFetch.mockResolvedValue({
         ok: true,
@@ -148,7 +148,7 @@ describe('PlexClient', () => {
     });
 
     it('should return empty results when no matches', async () => {
-      const { PlexClient } = await import('#backend/src/2_adapters/content/media/plex/PlexClient.mjs');
+      const { PlexClient } = await import('#adapters/content/media/plex/PlexClient.mjs');
 
       mockFetch.mockResolvedValue({
         ok: true,
@@ -168,7 +168,7 @@ describe('PlexClient', () => {
     });
 
     it('should encode query parameter', async () => {
-      const { PlexClient } = await import('#backend/src/2_adapters/content/media/plex/PlexClient.mjs');
+      const { PlexClient } = await import('#adapters/content/media/plex/PlexClient.mjs');
 
       mockFetch.mockResolvedValue({
         ok: true,
@@ -189,7 +189,7 @@ describe('PlexClient', () => {
     });
 
     it('should filter by library if provided', async () => {
-      const { PlexClient } = await import('#backend/src/2_adapters/content/media/plex/PlexClient.mjs');
+      const { PlexClient } = await import('#adapters/content/media/plex/PlexClient.mjs');
 
       mockFetch.mockResolvedValue({
         ok: true,
@@ -210,7 +210,7 @@ describe('PlexClient', () => {
     });
 
     it('should respect limit option', async () => {
-      const { PlexClient } = await import('#backend/src/2_adapters/content/media/plex/PlexClient.mjs');
+      const { PlexClient } = await import('#adapters/content/media/plex/PlexClient.mjs');
 
       mockFetch.mockResolvedValue({
         ok: true,
@@ -231,7 +231,7 @@ describe('PlexClient', () => {
     });
 
     it('should handle missing Hub array gracefully', async () => {
-      const { PlexClient } = await import('#backend/src/2_adapters/content/media/plex/PlexClient.mjs');
+      const { PlexClient } = await import('#adapters/content/media/plex/PlexClient.mjs');
 
       mockFetch.mockResolvedValue({
         ok: true,
@@ -249,7 +249,7 @@ describe('PlexClient', () => {
     });
 
     it('should handle missing Metadata in hub gracefully', async () => {
-      const { PlexClient } = await import('#backend/src/2_adapters/content/media/plex/PlexClient.mjs');
+      const { PlexClient } = await import('#adapters/content/media/plex/PlexClient.mjs');
 
       mockFetch.mockResolvedValue({
         ok: true,
@@ -273,7 +273,7 @@ describe('PlexClient', () => {
 
   describe('buildUrl', () => {
     it('should build full URL with token', async () => {
-      const { PlexClient } = await import('#backend/src/2_adapters/content/media/plex/PlexClient.mjs');
+      const { PlexClient } = await import('#adapters/content/media/plex/PlexClient.mjs');
 
       const client = new PlexClient({
         host: 'http://localhost:32400',
@@ -286,7 +286,7 @@ describe('PlexClient', () => {
     });
 
     it('should append token to existing query params', async () => {
-      const { PlexClient } = await import('#backend/src/2_adapters/content/media/plex/PlexClient.mjs');
+      const { PlexClient } = await import('#adapters/content/media/plex/PlexClient.mjs');
 
       const client = new PlexClient({
         host: 'http://localhost:32400',

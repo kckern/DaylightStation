@@ -2,8 +2,8 @@
 import express from 'express';
 import request from 'supertest';
 import { createProxyRouter } from '#backend/src/4_api/v1/routers/proxy.mjs';
-import { ContentSourceRegistry } from '#backend/src/1_domains/content/services/ContentSourceRegistry.mjs';
-import { FilesystemAdapter } from '#backend/src/2_adapters/content/media/filesystem/FilesystemAdapter.mjs';
+import { ContentSourceRegistry } from '#domains/content/services/ContentSourceRegistry.mjs';
+import { FilesystemAdapter } from '#adapters/content/media/filesystem/FilesystemAdapter.mjs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 

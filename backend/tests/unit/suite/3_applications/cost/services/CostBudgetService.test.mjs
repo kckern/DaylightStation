@@ -1,14 +1,14 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { CostBudgetService } from '../../../../../../src/3_applications/cost/services/CostBudgetService.mjs';
-import { CostBudget } from '../../../../../../src/1_domains/cost/entities/CostBudget.mjs';
-import { CostEntry } from '../../../../../../src/1_domains/cost/entities/CostEntry.mjs';
-import { CostAnalysisService } from '../../../../../../src/1_domains/cost/services/CostAnalysisService.mjs';
-import { Money } from '../../../../../../src/1_domains/cost/value-objects/Money.mjs';
-import { CostCategory } from '../../../../../../src/1_domains/cost/value-objects/CostCategory.mjs';
-import { Attribution } from '../../../../../../src/1_domains/cost/value-objects/Attribution.mjs';
-import { BudgetPeriod } from '../../../../../../src/1_domains/cost/value-objects/BudgetPeriod.mjs';
-import { Thresholds } from '../../../../../../src/1_domains/cost/value-objects/Thresholds.mjs';
-import { EntryType } from '../../../../../../src/1_domains/cost/value-objects/EntryType.mjs';
+import { CostBudgetService } from '#applications/cost/services/CostBudgetService.mjs';
+import { CostBudget } from '#domains/cost/entities/CostBudget.mjs';
+import { CostEntry } from '#domains/cost/entities/CostEntry.mjs';
+import { CostAnalysisService } from '#domains/cost/services/CostAnalysisService.mjs';
+import { Money } from '#domains/cost/value-objects/Money.mjs';
+import { CostCategory } from '#domains/cost/value-objects/CostCategory.mjs';
+import { Attribution } from '#domains/cost/value-objects/Attribution.mjs';
+import { BudgetPeriod } from '#domains/cost/value-objects/BudgetPeriod.mjs';
+import { Thresholds } from '#domains/cost/value-objects/Thresholds.mjs';
+import { EntryType } from '#domains/cost/value-objects/EntryType.mjs';
 
 describe('CostBudgetService', () => {
   let mockBudgetRepository;

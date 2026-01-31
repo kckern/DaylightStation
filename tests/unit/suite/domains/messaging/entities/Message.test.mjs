@@ -1,5 +1,5 @@
 // tests/unit/domains/messaging/entities/Message.test.mjs
-import { Message, MESSAGE_TYPES } from '#backend/src/1_domains/messaging/entities/Message.mjs';
+import { Message, MESSAGE_TYPES } from '#domains/messaging/entities/Message.mjs';
 
 describe('Message', () => {
   const testTimestamp = '2026-01-11T12:00:00.000Z';
