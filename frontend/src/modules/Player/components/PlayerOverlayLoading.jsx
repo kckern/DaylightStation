@@ -32,7 +32,10 @@ export function PlayerOverlayLoading({
   suppressForBlackout = false,
   showPauseIcon = false,
   showDebugDiagnostics = false,
-  getMediaEl
+  getMediaEl,
+  sessionInstance = null,
+  currentTime = null,
+  videoFps = null
 }) {
   // In blackout mode, keep screen completely dark (TV appears off)
   if (suppressForBlackout) {
@@ -41,7 +44,11 @@ export function PlayerOverlayLoading({
   const overlayDisplayActive = shouldRender && isVisible && !pauseOverlayActive;
 
   const logIntervalRef = useRef(null);
+  const diagnosticIntervalRef = useRef(null);
   const visibleSinceRef = useRef(null);
+  const componentIdRef = useRef(`overlay-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`);
+  const lastPlayheadRef = useRef(null);
+  const stallThresholdEmittedRef = useRef(false);
   const overlayVisibilityRef = useRef({
     overlayDisplayActive,
     shouldRender,
@@ -58,11 +65,48 @@ export function PlayerOverlayLoading({
     if (shouldRender && isVisible) {
       if (!visibleSinceRef.current) {
         visibleSinceRef.current = Date.now();
+        stallThresholdEmittedRef.current = false;
       }
     } else {
       visibleSinceRef.current = null;
+      stallThresholdEmittedRef.current = false;
     }
   }, [isVisible, shouldRender]);
+
+  // Track last good playhead position when not stalled
+  useEffect(() => {
+    if (!stalled && Number.isFinite(currentTime) && currentTime > 0) {
+      lastPlayheadRef.current = currentTime;
+    }
+  }, [stalled, currentTime]);
+
+  // Stall threshold detection - emit event when stall exceeds 3 seconds (Issue #4 fix)
+  useEffect(() => {
+    if (!stalled || !visibleSinceRef.current || stallThresholdEmittedRef.current) {
+      return;
+    }
+    const overlayDuration = Date.now() - visibleSinceRef.current;
+    if (overlayDuration > 3000) {
+      stallThresholdEmittedRef.current = true;
+      const payload = {
+        duration: overlayDuration,
+        playheadPosition: currentTime,
+        videoFps: videoFps ?? null,
+        lastGoodPosition: lastPlayheadRef.current,
+        status,
+        waitKey: waitKey || null
+      };
+      // Prefer sessionInstance for remote transport; fall back to playbackLog
+      if (sessionInstance && typeof sessionInstance.logEvent === 'function') {
+        sessionInstance.logEvent('playback.stall_threshold_exceeded', payload);
+      } else {
+        playbackLog('playback.stall_threshold_exceeded', payload, {
+          level: 'warn',
+          context: overlayLogContext
+        });
+      }
+    }
+  }, [stalled, currentTime, videoFps, status, waitKey, sessionInstance, overlayLogContext]);
 
   const emitManualReset = useCallback((reasonOrPayload, extra = {}) => {
     const basePayload = typeof reasonOrPayload === 'string'
@@ -123,6 +167,12 @@ export function PlayerOverlayLoading({
   const [detailedDiagnostics, setDetailedDiagnostics] = useState(EMPTY_MEDIA_DIAGNOSTICS);
 
   useEffect(() => {
+    // Clear any existing diagnostic timer first to prevent duplicates
+    if (diagnosticIntervalRef.current) {
+      clearInterval(diagnosticIntervalRef.current);
+      diagnosticIntervalRef.current = null;
+    }
+
     if (!debugEnabled || typeof getMediaEl !== 'function' || !isVisible) {
       return () => {};
     }
@@ -139,9 +189,29 @@ export function PlayerOverlayLoading({
     };
 
     readDiagnostics();
-    const intervalId = setInterval(readDiagnostics, 1000);
-    return () => clearInterval(intervalId);
-  }, [debugEnabled, getMediaEl, isVisible]);
+    const timerId = `diag-${componentIdRef.current}-${Date.now()}`;
+    playbackLog('timer.lifecycle', {
+      timerId,
+      action: 'started',
+      componentName: 'PlayerOverlayLoading',
+      timerType: 'diagnostic'
+    }, { level: 'debug', context: overlayLogContext });
+
+    diagnosticIntervalRef.current = setInterval(readDiagnostics, 1000);
+
+    return () => {
+      if (diagnosticIntervalRef.current) {
+        playbackLog('timer.lifecycle', {
+          timerId,
+          action: 'stopped',
+          componentName: 'PlayerOverlayLoading',
+          timerType: 'diagnostic'
+        }, { level: 'debug', context: overlayLogContext });
+        clearInterval(diagnosticIntervalRef.current);
+        diagnosticIntervalRef.current = null;
+      }
+    };
+  }, [debugEnabled, getMediaEl, isVisible, overlayLogContext]);
 
   // Determine position display using freshness-based priority (Fix 3: position display audit)
   // If actively seeking, prefer intent; otherwise use freshness to pick the most recent value
@@ -177,12 +247,6 @@ export function PlayerOverlayLoading({
     return status;
   })();
 
-  const blockFullscreenToggle = useCallback((event) => {
-    event?.preventDefault?.();
-    event?.stopPropagation?.();
-    event?.nativeEvent?.stopImmediatePropagation?.();
-  }, []);
-
   const handleSpinnerInteraction = useCallback((event) => {
     event?.preventDefault?.();
     event?.stopPropagation?.();
@@ -211,43 +275,89 @@ export function PlayerOverlayLoading({
     : 'startup:idle';
 
   const logLabel = overlayLogLabel || waitKey || '';
-  const overlaySummarySampleRate = useMemo(() => {
-    const fromWindow = typeof window !== 'undefined'
-      ? Number(window.PLAYER_OVERLAY_SUMMARY_SAMPLE_RATE)
-      : null;
-    return Number.isFinite(fromWindow) ? fromWindow : 0.25;
-  }, []);
   const logOverlaySummary = useCallback(() => {
     const now = Date.now();
     const timestampLabel = new Date(now).toISOString();
     const visibleDurationMs = visibleSinceRef.current ? now - visibleSinceRef.current : null;
     const revealLabel = Number.isFinite(overlayRevealDelayMs) ? `${overlayRevealDelayMs}ms` : 'n/a';
-    const visibilitySummary = `ts:${timestampLabel} vis:${visibleDurationMs != null ? `${visibleDurationMs}ms` : 'n/a'}/${revealLabel}`;
-    const summary = `${visibilitySummary} | status:${statusLabel} | ${timerSummary} | ${seekSummary} | ${mediaSummary} | ${startupSummary}`;
-    playbackLog('overlay-summary', logLabel ? `[${logLabel}] ${summary}` : summary, {
-      level: 'debug',
-      sampleRate: overlaySummarySampleRate,
-      context: overlayLogContext
-    });
-  }, [overlayRevealDelayMs, timerSummary, seekSummary, mediaSummary, startupSummary, logLabel, overlayLogContext, overlaySummarySampleRate]);
+    // Build structured payload for session logging
+    const payload = {
+      timestamp: timestampLabel,
+      visibleDurationMs,
+      revealDelayMs: overlayRevealDelayMs,
+      status: statusLabel,
+      countdownSeconds: countdownSeconds ?? null,
+      intentPosition: intentPositionDisplay || null,
+      mediaDetails: normalizedMediaDetails,
+      startupState: (isStartupPhase || startupWatchdogState?.active)
+        ? {
+          state: startupWatchdogState?.state || 'armed',
+          attempts: startupWatchdogState?.attempts ?? 0,
+          timeoutMs: startupWatchdogState?.timeoutMs ?? null
+        }
+        : null,
+      stalled,
+      waitingToPlay,
+      waitKey: waitKey || null,
+      overlayLogLabel: overlayLogLabel || null
+    };
+    // Issue #4 fix: Use sessionInstance.logEvent() for critical telemetry (no sampling)
+    // This ensures overlay events reach remote transport for production debugging
+    if (sessionInstance && typeof sessionInstance.logEvent === 'function') {
+      sessionInstance.logEvent('overlay-summary', payload);
+    } else {
+      // Fallback to playbackLog with info level (elevated from debug) for non-session contexts
+      const summary = `ts:${timestampLabel} vis:${visibleDurationMs != null ? `${visibleDurationMs}ms` : 'n/a'}/${revealLabel} | status:${statusLabel} | ${timerSummary} | ${seekSummary} | ${mediaSummary} | ${startupSummary}`;
+      playbackLog('overlay-summary', logLabel ? `[${logLabel}] ${summary}` : summary, {
+        level: 'info',
+        context: overlayLogContext
+      });
+    }
+  }, [overlayRevealDelayMs, timerSummary, seekSummary, mediaSummary, startupSummary, logLabel, overlayLogContext, sessionInstance, statusLabel, countdownSeconds, intentPositionDisplay, normalizedMediaDetails, isStartupPhase, startupWatchdogState, stalled, waitingToPlay, waitKey, overlayLogLabel]);
+
+  // Use a ref to store the latest logOverlaySummary function to avoid timer recreation
+  const logOverlaySummaryRef = useRef(logOverlaySummary);
+  useEffect(() => {
+    logOverlaySummaryRef.current = logOverlaySummary;
+  }, [logOverlaySummary]);
 
   useEffect(() => {
+    // Clear any existing timer first to prevent duplicates
+    if (logIntervalRef.current) {
+      clearInterval(logIntervalRef.current);
+      logIntervalRef.current = null;
+    }
+
     if (!overlayLoggingActive) {
-      if (logIntervalRef.current) {
-        clearInterval(logIntervalRef.current);
-        logIntervalRef.current = null;
-      }
       return () => {};
     }
-    logOverlaySummary();
-    logIntervalRef.current = setInterval(logOverlaySummary, 1000);
+
+    const timerId = `log-${componentIdRef.current}-${Date.now()}`;
+    playbackLog('timer.lifecycle', {
+      timerId,
+      action: 'started',
+      componentName: 'PlayerOverlayLoading',
+      timerType: 'logging'
+    }, { level: 'debug', context: overlayLogContext });
+
+    // Use ref-based callback to avoid recreating interval when callback changes
+    const tick = () => logOverlaySummaryRef.current();
+    tick(); // Call immediately
+    logIntervalRef.current = setInterval(tick, 1000);
+
     return () => {
       if (logIntervalRef.current) {
+        playbackLog('timer.lifecycle', {
+          timerId,
+          action: 'stopped',
+          componentName: 'PlayerOverlayLoading',
+          timerType: 'logging'
+        }, { level: 'debug', context: overlayLogContext });
         clearInterval(logIntervalRef.current);
         logIntervalRef.current = null;
       }
     };
-  }, [logOverlaySummary, overlayLoggingActive]);
+  }, [overlayLoggingActive, overlayLogContext]);
 
   if (!overlayDisplayActive) {
     return null;
@@ -269,8 +379,6 @@ export function PlayerOverlayLoading({
         transition: transitionStyle
       }}
       onDoubleClick={togglePauseOverlay}
-      onPointerDownCapture={blockFullscreenToggle}
-      onMouseDownCapture={blockFullscreenToggle}
     >
       <div className="loading-overlay__inner">
         <div className="loading-timing">
@@ -334,7 +442,12 @@ PlayerOverlayLoading.propTypes = {
   suppressForBlackout: PropTypes.bool,
   showPauseIcon: PropTypes.bool,
   showDebugDiagnostics: PropTypes.bool,
-  getMediaEl: PropTypes.func
+  getMediaEl: PropTypes.func,
+  sessionInstance: PropTypes.shape({
+    logEvent: PropTypes.func
+  }),
+  currentTime: PropTypes.number,
+  videoFps: PropTypes.number
 };
 
 export default PlayerOverlayLoading;
