@@ -5,6 +5,7 @@ frontend/dist
 frontend/build
 backend/node_modules
 *.yml
+!docker-compose.test.yml
 !tests/_fixtures/**/*.yml
 !tests/unit/suite/config/fixtures/**/*.yml
 data*
@@ -29,6 +30,7 @@ config.app-local.yml
 /scripts/*
 !scripts/port-manager.mjs
 !scripts/dev-server.sh
+!scripts/test-env.sh
 *.log
 .github/copilot-instructions.md
 # Skill local configs
