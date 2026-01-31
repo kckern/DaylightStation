@@ -712,7 +712,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // Device registry domain
-  const devicesConfig = configService.getHouseholdAppConfig(householdId, 'devices') || {};
+  const devicesConfig = configService.getHouseholdDevices(householdId);
   // daylight_host is the callback URL for this app - derive from app port or device config
   const appPort = configService.getAppPort();
   const daylightHost = devicesConfig.daylightHost || `http://localhost:${appPort}`;
