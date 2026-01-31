@@ -1,0 +1,192 @@
+// =============================================================================
+// ImageCarousel - Fullscreen image carousel with fade transitions
+// =============================================================================
+
+.image-carousel {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: #000;
+  overflow: hidden;
+
+  // Container for image slides
+  &__slide-container {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  // Individual slide (current and transitioning)
+  &__slide {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 500ms ease-in-out;
+
+    &--active {
+      opacity: 1;
+      z-index: 2;
+    }
+
+    &--exiting {
+      opacity: 0;
+      z-index: 1;
+    }
+  }
+
+  // Image element
+  &__image {
+    max-width: 100%;
+    max-height: 100%;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    user-select: none;
+    -webkit-user-drag: none;
+  }
+
+  // Caption overlay
+  &__caption {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 1.5rem 2rem;
+    background: linear-gradient(
+      to top,
+      rgba(0, 0, 0, 0.85) 0%,
+      rgba(0, 0, 0, 0.6) 50%,
+      transparent 100%
+    );
+    color: #fff;
+    text-align: center;
+    z-index: 10;
+
+    // Caption text
+    &-text {
+      font-size: 1.25rem;
+      font-weight: 400;
+      line-height: 1.4;
+      margin: 0;
+      text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
+    }
+  }
+
+  // Error state styling
+  &__error {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    padding: 2rem;
+    color: rgba(255, 255, 255, 0.6);
+
+    &-icon {
+      font-size: 3rem;
+      opacity: 0.5;
+    }
+
+    &-message {
+      font-size: 1rem;
+      margin: 0;
+    }
+  }
+
+  // Loading state (subtle indicator)
+  &__loading {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: #000;
+
+    &-spinner {
+      width: 48px;
+      height: 48px;
+      border: 3px solid rgba(255, 255, 255, 0.15);
+      border-top-color: rgba(255, 255, 255, 0.6);
+      border-radius: 50%;
+      animation: image-carousel-spin 0.8s linear infinite;
+    }
+  }
+
+  // Empty state
+  &__empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 1.25rem;
+  }
+
+  // Image counter indicator (optional)
+  &__counter {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    padding: 0.5rem 0.75rem;
+    background-color: rgba(0, 0, 0, 0.6);
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 0.875rem;
+    font-family: system-ui, -apple-system, sans-serif;
+    border-radius: 4px;
+    z-index: 10;
+    pointer-events: none;
+  }
+}
+
+// Keyframe animation for loading spinner
+@keyframes image-carousel-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+// Shader mode overrides (integrates with Player.scss shader system)
+.player {
+  .night .image-carousel {
+    &__image {
+      filter: grayscale(1) brightness(0.15);
+    }
+
+    &__caption {
+      background: linear-gradient(
+        to top,
+        rgba(39, 12, 12, 0.9) 0%,
+        rgba(39, 12, 12, 0.5) 50%,
+        transparent 100%
+      );
+
+      &-text {
+        color: rgba(255, 0, 0, 0.3);
+      }
+    }
+  }
+
+  .blackout .image-carousel {
+    &__image,
+    &__caption {
+      filter: brightness(0);
+    }
+  }
+
+  .focused .image-carousel {
+    &__caption {
+      display: none;
+    }
+
+    &__counter {
+      display: none;
+    }
+  }
+}

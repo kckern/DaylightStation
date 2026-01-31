@@ -6,81 +6,9 @@ import { BlackoutScreen } from './visuals/BlackoutScreen.jsx';
 import { Screensaver } from './visuals/Screensaver.jsx';
 import { ClockDisplay } from './visuals/ClockDisplay.jsx';
 
-// Media components - VideoPlayer is existing, ImageCarousel is stubbed
+// Media components
 import { VideoPlayer } from './VideoPlayer.jsx';
-
-/**
- * ImageCarousel - Stub component for image/pages media type
- * Renders a single image from the items array.
- * Full implementation in Task #16.
- */
-function ImageCarousel({ items, currentIndex = 0, loop, onAdvance }) {
-  const item = items?.[currentIndex] || items?.[0];
-
-  if (!item) {
-    return (
-      <div
-        data-track="visual"
-        data-visual-type="image"
-        style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          width: '100%',
-          height: '100%',
-          backgroundColor: '#000',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          color: '#fff'
-        }}
-      >
-        No images available
-      </div>
-    );
-  }
-
-  return (
-    <div
-      data-track="visual"
-      data-visual-type="image"
-      data-image-index={currentIndex}
-      style={{
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        width: '100%',
-        height: '100%',
-        backgroundColor: '#000',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center'
-      }}
-    >
-      <img
-        src={item.url}
-        alt={item.caption || `Image ${currentIndex + 1}`}
-        style={{
-          maxWidth: '100%',
-          maxHeight: '100%',
-          objectFit: 'contain'
-        }}
-      />
-    </div>
-  );
-}
-
-ImageCarousel.propTypes = {
-  items: PropTypes.arrayOf(PropTypes.shape({
-    id: PropTypes.string,
-    url: PropTypes.string.isRequired,
-    duration: PropTypes.number,
-    caption: PropTypes.string
-  })),
-  currentIndex: PropTypes.number,
-  loop: PropTypes.bool,
-  onAdvance: PropTypes.func
-};
+import { ImageCarousel } from './ImageCarousel.jsx';
 
 /**
  * ArtFrame - Stub component for single static image display
@@ -162,9 +90,11 @@ const MEDIA_COMPONENTS = {
  *
  * @param {Object} track - Visual track configuration from IVisualTrack interface
  * @param {Object} audioState - Current audio playback state for synced advances
+ * @param {number} currentIndex - Current item index for media tracks (from useAdvanceController)
  * @param {Function} onAdvance - Callback when visual should advance to next item
+ * @param {Function} onItemError - Callback when a media item fails to load
  */
-export function VisualRenderer({ track, audioState, onAdvance }) {
+export function VisualRenderer({ track, audioState, currentIndex = 0, onAdvance, onItemError }) {
   if (!track) {
     return (
       <div data-track="visual" data-visual-type="empty">
@@ -283,7 +213,9 @@ export function VisualRenderer({ track, audioState, onAdvance }) {
       <MediaComponent
         items={track.items}
         loop={track.loop}
+        currentIndex={currentIndex}
         onAdvance={onAdvance}
+        onItemError={onItemError}
       />
     );
   }
@@ -346,7 +278,9 @@ VisualRenderer.propTypes = {
     trackEnded: PropTypes.bool,
     isPaused: PropTypes.bool
   }),
-  onAdvance: PropTypes.func
+  currentIndex: PropTypes.number,
+  onAdvance: PropTypes.func,
+  onItemError: PropTypes.func
 };
 
 // Named exports for individual components
