@@ -53,7 +53,7 @@ export function validateConfig(config, dataDir) {
     for (const [hid, household] of Object.entries(config.households)) {
       // Use flat structure: household/ for 'default', household-{id}/ for others
       const folderName = household._folderName || (hid === 'default' ? 'household' : `household-${hid}`);
-      checkedPaths.push(`${dataDir}/${folderName}/household.yml`);
+      checkedPaths.push(`${dataDir}/${folderName}/config/household.yml`);
       validateObject(household, configSchema.households.valueSchema, `households.${hid}`, errors);
     }
   }
