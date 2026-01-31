@@ -156,6 +156,256 @@ describe('PlexAdapter', () => {
       expect(result.children).toEqual([]);
     });
   });
+
+  describe('IMediaSearchable interface', () => {
+    describe('getSearchCapabilities', () => {
+      test('returns supported query fields', () => {
+        const adapter = new PlexAdapter({
+          host: 'http://localhost:32400',
+          token: 'test-token'
+        });
+
+        const capabilities = adapter.getSearchCapabilities();
+
+        expect(capabilities).toContain('text');
+        expect(capabilities).toContain('mediaType');
+        expect(capabilities).toContain('tags');
+        expect(capabilities).toContain('ratingMin');
+        expect(capabilities).toContain('take');
+        expect(capabilities).toContain('skip');
+      });
+    });
+
+    describe('search', () => {
+      test('returns empty results when no text query provided', async () => {
+        const adapter = new PlexAdapter({
+          host: 'http://localhost:32400',
+          token: 'test-token'
+        });
+
+        const result = await adapter.search({});
+
+        expect(result.items).toEqual([]);
+        expect(result.total).toBe(0);
+      });
+
+      test('searches via hubSearch and returns PlayableItems for movies', async () => {
+        const adapter = new PlexAdapter({
+          host: 'http://localhost:32400',
+          token: 'test-token'
+        });
+
+        // Mock hubSearch
+        adapter.client.hubSearch = jest.fn().mockResolvedValue({
+          results: [
+            { ratingKey: '12345', title: 'Test Movie', type: 'movie', year: 2024 }
+          ]
+        });
+
+        // Mock getItem for full metadata
+        adapter.getItem = jest.fn().mockResolvedValue({
+          id: 'plex:12345',
+          source: 'plex',
+          title: 'Test Movie',
+          mediaType: 'video',
+          mediaUrl: '/api/v1/proxy/plex/stream/12345',
+          metadata: { type: 'movie', rating: 8 }
+        });
+
+        const result = await adapter.search({ text: 'test' });
+
+        expect(adapter.client.hubSearch).toHaveBeenCalledWith('test', { limit: 50 });
+        expect(result.items.length).toBe(1);
+        expect(result.items[0].id).toBe('plex:12345');
+        expect(result.total).toBe(1);
+      });
+
+      test('filters by mediaType video', async () => {
+        const adapter = new PlexAdapter({
+          host: 'http://localhost:32400',
+          token: 'test-token'
+        });
+
+        adapter.client.hubSearch = jest.fn().mockResolvedValue({
+          results: [
+            { ratingKey: '1', title: 'Movie', type: 'movie' },
+            { ratingKey: '2', title: 'Song', type: 'track' },
+            { ratingKey: '3', title: 'Episode', type: 'episode' }
+          ]
+        });
+
+        adapter.getItem = jest.fn().mockImplementation(async (id) => ({
+          id: `plex:${id}`,
+          source: 'plex',
+          title: `Item ${id}`,
+          metadata: {}
+        }));
+
+        const result = await adapter.search({ text: 'test', mediaType: 'video' });
+
+        // Should only return movie and episode, not track
+        expect(result.items.length).toBe(2);
+      });
+
+      test('filters by mediaType audio', async () => {
+        const adapter = new PlexAdapter({
+          host: 'http://localhost:32400',
+          token: 'test-token'
+        });
+
+        adapter.client.hubSearch = jest.fn().mockResolvedValue({
+          results: [
+            { ratingKey: '1', title: 'Movie', type: 'movie' },
+            { ratingKey: '2', title: 'Song', type: 'track' }
+          ]
+        });
+
+        adapter.getItem = jest.fn().mockImplementation(async (id) => ({
+          id: `plex:${id}`,
+          source: 'plex',
+          title: `Item ${id}`,
+          metadata: {}
+        }));
+
+        const result = await adapter.search({ text: 'test', mediaType: 'audio' });
+
+        // Should only return track
+        expect(result.items.length).toBe(1);
+      });
+
+      test('filters by ratingMin', async () => {
+        const adapter = new PlexAdapter({
+          host: 'http://localhost:32400',
+          token: 'test-token'
+        });
+
+        adapter.client.hubSearch = jest.fn().mockResolvedValue({
+          results: [
+            { ratingKey: '1', title: 'High Rated', type: 'movie' },
+            { ratingKey: '2', title: 'Low Rated', type: 'movie' }
+          ]
+        });
+
+        adapter.getItem = jest.fn().mockImplementation(async (id) => {
+          const ratings = { '1': 9, '2': 3 }; // Plex 0-10 scale
+          return {
+            id: `plex:${id}`,
+            source: 'plex',
+            title: `Movie ${id}`,
+            metadata: { rating: ratings[id] }
+          };
+        });
+
+        // ratingMin 4 = Plex rating 8+ (normalized: rating/2)
+        const result = await adapter.search({ text: 'test', ratingMin: 4 });
+
+        expect(result.items.length).toBe(1);
+        expect(result.items[0].id).toBe('plex:1');
+      });
+
+      test('filters by tags/labels', async () => {
+        const adapter = new PlexAdapter({
+          host: 'http://localhost:32400',
+          token: 'test-token'
+        });
+
+        adapter.client.hubSearch = jest.fn().mockResolvedValue({
+          results: [
+            { ratingKey: '1', title: 'Tagged Movie', type: 'movie' },
+            { ratingKey: '2', title: 'Untagged Movie', type: 'movie' }
+          ]
+        });
+
+        adapter.getItem = jest.fn().mockImplementation(async (id) => {
+          const labels = { '1': ['fitness', 'workout'], '2': [] };
+          return {
+            id: `plex:${id}`,
+            source: 'plex',
+            title: `Movie ${id}`,
+            metadata: { labels: labels[id] }
+          };
+        });
+
+        const result = await adapter.search({ text: 'test', tags: ['fitness'] });
+
+        expect(result.items.length).toBe(1);
+        expect(result.items[0].id).toBe('plex:1');
+      });
+
+      test('respects take limit', async () => {
+        const adapter = new PlexAdapter({
+          host: 'http://localhost:32400',
+          token: 'test-token'
+        });
+
+        adapter.client.hubSearch = jest.fn().mockResolvedValue({ results: [] });
+
+        await adapter.search({ text: 'test', take: 25 });
+
+        expect(adapter.client.hubSearch).toHaveBeenCalledWith('test', { limit: 25 });
+      });
+
+      test('applies skip offset', async () => {
+        const adapter = new PlexAdapter({
+          host: 'http://localhost:32400',
+          token: 'test-token'
+        });
+
+        adapter.client.hubSearch = jest.fn().mockResolvedValue({
+          results: [
+            { ratingKey: '1', title: 'First', type: 'movie' },
+            { ratingKey: '2', title: 'Second', type: 'movie' },
+            { ratingKey: '3', title: 'Third', type: 'movie' }
+          ]
+        });
+
+        adapter.getItem = jest.fn().mockImplementation(async (id) => ({
+          id: `plex:${id}`,
+          source: 'plex',
+          title: `Movie ${id}`,
+          metadata: {}
+        }));
+
+        const result = await adapter.search({ text: 'test', skip: 2 });
+
+        // Should skip first 2, return only third
+        expect(result.items.length).toBe(1);
+        expect(result.items[0].id).toBe('plex:3');
+      });
+
+      test('handles search errors gracefully', async () => {
+        const adapter = new PlexAdapter({
+          host: 'http://localhost:32400',
+          token: 'test-token'
+        });
+
+        adapter.client.hubSearch = jest.fn().mockRejectedValue(new Error('Network error'));
+
+        const result = await adapter.search({ text: 'test' });
+
+        expect(result.items).toEqual([]);
+        expect(result.total).toBe(0);
+      });
+
+      test('returns ListableItem for container types', async () => {
+        const adapter = new PlexAdapter({
+          host: 'http://localhost:32400',
+          token: 'test-token'
+        });
+
+        adapter.client.hubSearch = jest.fn().mockResolvedValue({
+          results: [
+            { ratingKey: '1', title: 'TV Show', type: 'show', key: '/library/metadata/1/children' }
+          ]
+        });
+
+        const result = await adapter.search({ text: 'test' });
+
+        expect(result.items.length).toBe(1);
+        expect(result.items[0].itemType).toBe('container');
+      });
+    });
+  });
 });
 
 describe('PlexClient', () => {
