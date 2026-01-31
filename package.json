@@ -37,7 +37,7 @@
     "#backend/*": "./backend/*",
     "#frontend/*": "./frontend/src/*",
     "#fixtures/*": "./tests/_fixtures/*",
-    "#testlib/*": "./tests/lib/*",
+    "#testlib/*": "./tests/_lib/*",
     "#extensions/*": "./_extensions/*"
   },
   "devDependencies": {

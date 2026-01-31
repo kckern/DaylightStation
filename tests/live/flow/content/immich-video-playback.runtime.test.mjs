@@ -142,7 +142,7 @@ test.describe('Immich Video Playback', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // TEST 3: Video actually plays
+  // TEST 3: Video actually plays for 15+ seconds
   // ═══════════════════════════════════════════════════════════════════════════
   test('Video loads and plays', async () => {
     // Skip if no video was discovered
@@ -160,8 +160,9 @@ test.describe('Immich Video Playback', () => {
     // Verify it's using the Immich proxy
     expect(videoSrc).toContain('/api/v1/proxy/immich');
 
-    // Wait for video to have metadata
-    await sharedPage.waitForTimeout(3000);
+    // Wait for video to have metadata and start playing
+    console.log('\n⏳ Waiting for video to load...');
+    await sharedPage.waitForTimeout(5000);
 
     const videoState = await video.evaluate(el => ({
       paused: el.paused,
@@ -172,7 +173,7 @@ test.describe('Immich Video Playback', () => {
       error: el.error ? { code: el.error.code, message: el.error.message } : null
     }));
 
-    console.log(`\n📊 Video state:`);
+    console.log(`\n📊 Initial video state:`);
     console.log(`   - Paused: ${videoState.paused}`);
     console.log(`   - Time: ${videoState.currentTime?.toFixed(2)}s`);
     console.log(`   - Duration: ${isNaN(videoState.duration) ? 'unknown' : videoState.duration?.toFixed(2) + 's'}`);
@@ -181,21 +182,30 @@ test.describe('Immich Video Playback', () => {
     console.log(`   - Error: ${videoState.error ? `${videoState.error.code} - ${videoState.error.message}` : 'none'}`);
 
     // Verify video has loaded enough data
-    expect(videoState.readyState).toBeGreaterThanOrEqual(2); // HAVE_CURRENT_DATA or better
+    expect(videoState.readyState).toBeGreaterThanOrEqual(1); // At least HAVE_METADATA
     expect(videoState.error).toBeNull();
 
-    // If video is stuck at 0, wait a bit more for playback
-    if (videoState.currentTime < 0.5) {
-      console.log('\n⏱️  Waiting for playback to progress...');
-      await sharedPage.waitForTimeout(2000);
+    // Let video play for 15+ seconds
+    console.log('\n🎬 Letting video play for 15 seconds...');
+    await sharedPage.waitForTimeout(15000);
 
-      const newTime = await video.evaluate(el => el.currentTime);
-      console.log(`   - New time: ${newTime.toFixed(2)}s`);
+    const finalState = await video.evaluate(el => ({
+      paused: el.paused,
+      currentTime: el.currentTime,
+      duration: el.duration
+    }));
 
-      // Video should have progressed (unless it's paused)
-      if (!videoState.paused) {
-        expect(newTime).toBeGreaterThan(0);
-      }
+    console.log(`\n📊 Final video state after 15s:`);
+    console.log(`   - Paused: ${finalState.paused}`);
+    console.log(`   - Time: ${finalState.currentTime?.toFixed(2)}s`);
+    console.log(`   - Duration: ${isNaN(finalState.duration) ? 'unknown' : finalState.duration?.toFixed(2) + 's'}`);
+
+    // Video should have progressed significantly
+    if (!finalState.paused) {
+      expect(finalState.currentTime).toBeGreaterThan(10);
+      console.log(`\n✅ Video played successfully for ${finalState.currentTime.toFixed(1)} seconds`);
+    } else {
+      console.log('\n⚠️  Video is paused');
     }
 
     console.log('\n✅ Immich video playback test completed successfully');
