@@ -223,4 +223,45 @@ describe('MediaKeyResolver', () => {
       expect(rulesUndefined.patterns).toHaveLength(4);
     });
   });
+
+  describe('Immich UUID pattern', () => {
+    it('recognizes immich as known source', () => {
+      const resolver = new MediaKeyResolver({
+        knownSources: ['plex', 'immich', 'folder']
+      });
+      expect(resolver.isCompound('immich:abc-123-def')).toBe(true);
+    });
+
+    it('resolves UUID pattern to immich source', () => {
+      const resolver = new MediaKeyResolver({
+        knownSources: ['plex', 'immich', 'folder'],
+        defaults: {
+          patterns: [
+            { match: '^\\d+$', source: 'plex' },
+            { match: '^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$', source: 'immich' }
+          ],
+          fallbackChain: ['plex', 'immich']
+        }
+      });
+
+      const result = resolver.resolve('931cb18f-2642-489b-bff5-c554e8ad4249');
+      expect(result).toBe('immich:931cb18f-2642-489b-bff5-c554e8ad4249');
+    });
+
+    it('numeric ID still resolves to plex', () => {
+      const resolver = new MediaKeyResolver({
+        knownSources: ['plex', 'immich', 'folder'],
+        defaults: {
+          patterns: [
+            { match: '^\\d+$', source: 'plex' },
+            { match: '^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$', source: 'immich' }
+          ],
+          fallbackChain: ['plex', 'immich']
+        }
+      });
+
+      const result = resolver.resolve('12345');
+      expect(result).toBe('plex:12345');
+    });
+  });
 });
