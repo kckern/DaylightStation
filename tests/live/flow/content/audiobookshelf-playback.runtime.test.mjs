@@ -24,6 +24,9 @@ let discoveredAudiobookId;
 
 test.describe.configure({ mode: 'serial' });
 
+// Set reasonable timeouts to avoid endless spinning
+test.setTimeout(30000); // 30 seconds max per test
+
 test.describe('Audiobookshelf Audiobook Playback', () => {
 
   test.beforeAll(async ({ browser }) => {
@@ -119,8 +122,12 @@ test.describe('Audiobookshelf Audiobook Playback', () => {
 
     console.log('✅ Page loaded');
 
-    // Wait for app to mount and player to initialize
-    await sharedPage.waitForTimeout(3000);
+    // Wait for audio/video element to appear (with timeout)
+    try {
+      await sharedPage.locator('audio, video').first().waitFor({ timeout: 10000 });
+    } catch {
+      console.log('⚠️  No media element appeared within 10s');
+    }
 
     // Check for audio element (audiobooks use audio, not video)
     const audioExists = await sharedPage.locator('audio').count();
