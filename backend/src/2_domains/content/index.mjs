@@ -16,6 +16,11 @@ export { PlayableItem } from './capabilities/Playable.mjs';
 export { QueueableItem } from './capabilities/Queueable.mjs';
 export { ReadableItem } from './capabilities/Readable.mjs';
 export { ViewableItem } from './capabilities/Viewable.mjs';
+export {
+  createVisualTrack,
+  createAudioTrack,
+  createComposedPresentation
+} from './capabilities/Composable.mjs';
 
 // Services
 export { ContentSourceRegistry } from './services/ContentSourceRegistry.mjs';
