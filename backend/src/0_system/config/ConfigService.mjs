@@ -182,6 +182,27 @@ export class ConfigService {
     return null;
   }
 
+  /**
+   * Get devices config for a household
+   * @param {string|null} householdId - Household ID, defaults to default household
+   * @returns {object}
+   */
+  getHouseholdDevices(householdId = null) {
+    const hid = householdId ?? this.getDefaultHouseholdId();
+    return this.#config.households?.[hid]?.devices ?? {};
+  }
+
+  /**
+   * Get a specific device config
+   * @param {string} deviceId - Device ID (e.g., 'office-tv', 'piano')
+   * @param {string|null} householdId - Household ID, defaults to default household
+   * @returns {object|null}
+   */
+  getDeviceConfig(deviceId, householdId = null) {
+    const devices = this.getHouseholdDevices(householdId);
+    return devices?.devices?.[deviceId] ?? null;
+  }
+
   // ─── Paths ─────────────────────────────────────────────────
 
   getDataDir() {
