@@ -142,6 +142,7 @@ export class GovernanceEngine {
     this.media = null;
     this.phase = 'pending'; // pending, unlocked, warning, locked
     this.pulse = 0;
+    this._zoneChangeDebounceTimer = null;
 
     // Hysteresis: require satisfaction for minimum duration before unlocking
     // This prevents rapid phase cycling when HR hovers around threshold
@@ -207,13 +208,20 @@ export class GovernanceEngine {
 
   /**
    * Update global window state for cross-component logging correlation
+   * Uses getters for warningDuration/lockDuration so they're calculated fresh when accessed
    */
   _updateGlobalState() {
     if (typeof window !== 'undefined') {
+      const self = this;
       window.__fitnessGovernance = {
         phase: this.phase,
-        warningDuration: this._warningStartTime ? Date.now() - this._warningStartTime : 0,
-        lockDuration: this._lockStartTime ? Date.now() - this._lockStartTime : 0,
+        // Use getter so duration is calculated at access time, not at update time
+        get warningDuration() {
+          return self._warningStartTime ? Date.now() - self._warningStartTime : 0;
+        },
+        get lockDuration() {
+          return self._lockStartTime ? Date.now() - self._lockStartTime : 0;
+        },
         activeChallenge: this.challengeState?.activeChallenge?.id || null,
         videoLocked: this.challengeState?.videoLocked || false,
         mediaId: this.media?.id || null
@@ -227,10 +235,12 @@ export class GovernanceEngine {
   _logZoneChanges(userZoneMap, zoneInfoMap) {
     const logger = getLogger();
     const now = Date.now();
+    let hasZoneChange = false;
 
     for (const [userId, newZone] of Object.entries(userZoneMap)) {
       const prevZone = this._previousUserZoneMap[userId];
       if (prevZone !== newZone && prevZone !== undefined) {
+        hasZoneChange = true;
         // Get roster entry for HR data
         const rosterEntry = this.session?.roster?.find(
           e => (e.id || e.profileId) === userId
@@ -250,6 +260,9 @@ export class GovernanceEngine {
           governancePhase: this.phase,
           mediaId: this.media?.id
         }, { maxPerMinute: 30 });
+
+        // Trigger reactive evaluation for faster zone change response
+        this.notifyZoneChange(userId, { fromZone: prevZone, toZone: newZone });
       }
     }
 
@@ -664,6 +677,33 @@ export class GovernanceEngine {
     this.evaluate();
   }
 
+  /**
+   * Notify governance of a zone change for immediate evaluation.
+   * Debounces rapid changes to prevent thrashing.
+   *
+   * @param {string} userId - User whose zone changed
+   * @param {Object} change - { fromZone, toZone }
+   */
+  notifyZoneChange(userId, change = {}) {
+    const { fromZone, toZone } = change;
+
+    getLogger().debug('governance.zone_change_notification', {
+      userId,
+      fromZone,
+      toZone,
+      currentPhase: this.phase
+    });
+
+    if (this._zoneChangeDebounceTimer) {
+      clearTimeout(this._zoneChangeDebounceTimer);
+    }
+
+    this._zoneChangeDebounceTimer = setTimeout(() => {
+      this._zoneChangeDebounceTimer = null;
+      this.evaluate();
+    }, 100);
+  }
+
   _schedulePulse(delayMs) {
     if (this.timers.challenge) {
       clearTimeout(this.timers.challenge);
@@ -687,6 +727,10 @@ export class GovernanceEngine {
 
   reset() {
     this._clearTimers();
+    if (this._zoneChangeDebounceTimer) {
+      clearTimeout(this._zoneChangeDebounceTimer);
+      this._zoneChangeDebounceTimer = null;
+    }
     this.meta = {
       satisfiedOnce: false,
       satisfiedSince: null,
