@@ -11,3 +11,4 @@ export { PlexProxyAdapter, createPlexProxyAdapter } from './PlexProxyAdapter.mjs
 export { ImmichProxyAdapter, createImmichProxyAdapter } from './ImmichProxyAdapter.mjs';
 export { AudiobookshelfProxyAdapter, createAudiobookshelfProxyAdapter } from './AudiobookshelfProxyAdapter.mjs';
 export { FreshRSSProxyAdapter, createFreshRSSProxyAdapter } from './FreshRSSProxyAdapter.mjs';
+export { KomgaProxyAdapter, createKomgaProxyAdapter } from './KomgaProxyAdapter.mjs';
