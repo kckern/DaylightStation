@@ -53,6 +53,8 @@
   },
   "scripts": {
     "dev": "npm run start:dev",
+    "dev:clean": "node scripts/port-manager.mjs clean-all && npm run dev",
+    "dev:kill": "node scripts/port-manager.mjs kill 3112",
     "start": "concurrently \"npm run backend\" \"npm run frontend\"",
     "start:dev": "concurrently \"npm run backend:dev\" \"npm run frontend:dev\"",
     "backend": "node backend/index.js",
@@ -64,6 +66,8 @@
     "test:unit": "node tests/unit/harness.mjs",
     "test:integration": "node tests/integration/harness.mjs",
     "test:smoke": "node tests/integration/external/smoke.mjs",
+    "test:clean-ports": "node scripts/port-manager.mjs clean-all",
+    "pretest": "npm run test:clean-ports",
     "rt": "npx playwright test tests/runtime --headed",
     "rt:player": "npx playwright test tests/runtime/player --headed",
     "rt:fitness": "npx playwright test tests/runtime/fitness-session --headed",
