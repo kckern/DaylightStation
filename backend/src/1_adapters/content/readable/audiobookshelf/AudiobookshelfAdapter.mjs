@@ -274,6 +274,8 @@ export class AudiobookshelfAdapter {
     const media = item.media || {};
     const metadata = media.metadata || {};
 
+    const author = metadata.authorName || metadata.author || null;
+
     return new PlayableItem({
       id: `abs:${item.id}`,
       source: 'abs',
@@ -287,8 +289,14 @@ export class AudiobookshelfAdapter {
       description: metadata.description || null,
       metadata: {
         libraryId: item.libraryId,
-        author: metadata.authorName || metadata.author,
+        author,
+        // Alias for AudioPlayer frontend compatibility (looks for metadata.artist)
+        artist: author,
         narrator: metadata.narratorName,
+        // Alias for AudioPlayer (looks for metadata.albumArtist for narrator display)
+        albumArtist: metadata.narratorName,
+        // Series name as album for display
+        album: metadata.seriesName || null,
         numAudioFiles: media.numAudioFiles,
         completed: progress?.isFinished || false
       }
