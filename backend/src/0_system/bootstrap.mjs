@@ -20,6 +20,7 @@ import { PlexAdapter } from '#adapters/content/media/plex/PlexAdapter.mjs';
 import { MediaKeyResolver } from '#domains/media/MediaKeyResolver.mjs';
 import { LocalContentAdapter } from '#adapters/content/local-content/LocalContentAdapter.mjs';
 import { FolderAdapter } from '#adapters/content/folder/FolderAdapter.mjs';
+import { ImmichAdapter } from '#adapters/content/gallery/immich/ImmichAdapter.mjs';
 import { YamlMediaProgressMemory } from '#adapters/persistence/yaml/YamlMediaProgressMemory.mjs';
 import { createContentRouter } from '#api/v1/routers/content.mjs';
 import { createProxyRouter } from '#api/v1/routers/proxy.mjs';
@@ -423,6 +424,15 @@ export function createContentRegistry(config, deps = {}) {
     // Also register as 'local' for legacy frontend compatibility
     // Legacy endpoints use /data/list/{key} which maps to /list/local/{key}
     registry.adapters.set('local', folderAdapter);
+  }
+
+  // Register Immich adapter if configured
+  if (config.immich?.host && config.immich?.apiKey && httpClient) {
+    registry.register(new ImmichAdapter({
+      host: config.immich.host,
+      apiKey: config.immich.apiKey,
+      slideDuration: config.immich.slideDuration || 10
+    }, { httpClient }));
   }
 
   return registry;
