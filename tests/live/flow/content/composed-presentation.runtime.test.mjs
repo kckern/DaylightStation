@@ -51,7 +51,7 @@ test.describe('Composed Presentation', () => {
   test('compose URL loads composite player', async () => {
     test.setTimeout(15000);
 
-    const composeUrl = `${BASE_URL}/tv?compose=app:clock`;
+    const composeUrl = `${BASE_URL}/tv?play=app:clock`;
     console.log(`\nNavigating to: ${composeUrl}`);
 
     await sharedPage.goto(composeUrl, {
@@ -78,7 +78,7 @@ test.describe('Composed Presentation', () => {
   test('app:clock renders ClockDisplay', async () => {
     test.setTimeout(15000);
 
-    const clockUrl = `${BASE_URL}/tv?compose=app:clock`;
+    const clockUrl = `${BASE_URL}/tv?play=app:clock`;
     console.log(`\nNavigating to: ${clockUrl}`);
 
     await sharedPage.goto(clockUrl, {
@@ -105,7 +105,7 @@ test.describe('Composed Presentation', () => {
   test('app:blackout renders BlackoutScreen', async () => {
     test.setTimeout(15000);
 
-    const blackoutUrl = `${BASE_URL}/tv?compose=app:blackout`;
+    const blackoutUrl = `${BASE_URL}/tv?play=app:blackout`;
     console.log(`\nNavigating to: ${blackoutUrl}`);
 
     await sharedPage.goto(blackoutUrl, {
@@ -132,7 +132,7 @@ test.describe('Composed Presentation', () => {
   test('URL modifiers are parsed without errors', async () => {
     test.setTimeout(15000);
 
-    const modifierUrl = `${BASE_URL}/tv?compose=app:clock&loop=1&shuffle=1`;
+    const modifierUrl = `${BASE_URL}/tv?play=app:clock&loop=1&shuffle=1`;
     console.log(`\nNavigating to: ${modifierUrl}`);
 
     // Track any page errors
