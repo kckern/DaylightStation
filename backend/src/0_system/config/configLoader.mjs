@@ -139,6 +139,7 @@ function loadAllHouseholds(dataDir) {
         ...config,
         _folderName: dir, // Store for path resolution
         integrations: loadHouseholdIntegrations(dataDir, dir),
+        devices: loadHouseholdDevices(dataDir, dir),
         apps: loadHouseholdApps(dataDir, dir),
       };
     }
@@ -197,6 +198,14 @@ function loadHouseholdApps(dataDir, folderName) {
 function loadHouseholdIntegrations(dataDir, folderName) {
   const integrationsPath = path.join(dataDir, folderName, 'config', 'integrations.yml');
   return readYaml(integrationsPath) ?? {};
+}
+
+/**
+ * Load devices config for a household.
+ */
+function loadHouseholdDevices(dataDir, folderName) {
+  const devicesPath = path.join(dataDir, folderName, 'config', 'devices.yml');
+  return readYaml(devicesPath) ?? {};
 }
 
 /**
