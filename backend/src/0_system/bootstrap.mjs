@@ -21,6 +21,7 @@ import { MediaKeyResolver } from '#domains/media/MediaKeyResolver.mjs';
 import { LocalContentAdapter } from '#adapters/content/local-content/LocalContentAdapter.mjs';
 import { FolderAdapter } from '#adapters/content/folder/FolderAdapter.mjs';
 import { ImmichAdapter } from '#adapters/content/gallery/immich/ImmichAdapter.mjs';
+import { AudiobookshelfAdapter } from '#adapters/content/readable/audiobookshelf/AudiobookshelfAdapter.mjs';
 import { YamlMediaProgressMemory } from '#adapters/persistence/yaml/YamlMediaProgressMemory.mjs';
 import { createContentRouter } from '#api/v1/routers/content.mjs';
 import { createProxyRouter } from '#api/v1/routers/proxy.mjs';
@@ -432,6 +433,14 @@ export function createContentRegistry(config, deps = {}) {
       host: config.immich.host,
       apiKey: config.immich.apiKey,
       slideDuration: config.immich.slideDuration || 10
+    }, { httpClient }));
+  }
+
+  // Register Audiobookshelf adapter if configured
+  if (config.audiobookshelf?.host && config.audiobookshelf?.token && httpClient) {
+    registry.register(new AudiobookshelfAdapter({
+      host: config.audiobookshelf.host,
+      token: config.audiobookshelf.token
     }, { httpClient }));
   }
 
