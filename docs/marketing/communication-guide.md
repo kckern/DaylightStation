@@ -121,7 +121,7 @@ The phone isn't going away. The goal is to make the phone less necessary for dai
 
 The most effective narrative is: "Here's what a day looks like with Daylight Station."
 
-- **Morning:** Thermal receipt with weather, calendar, accountability nudges. No screen.
+- **Morning:** Thermal receipt-paper with weather, calendar, accountability nudges. No screen.
 - **Midday:** Office kiosk shows next meeting, spending trends. Peripheral vision, no active checking.
 - **Evening:** Garage display plays workout video with live heart rate overlay. Voice memo prompt when you stop.
 - **Night:** TV shows family photos between episodes. PIP map when Dad is 5 minutes away.
@@ -256,7 +256,7 @@ Instead: "Daylight Station is a data refinery that synthesizes your digital life
 ### Being Too Generic
 
 "A platform for life optimization" means nothing. Be specific:
-- "Your morning starts with a thermal receipt, not a phone"
+- "Your morning starts with a thermal receipt-paper, not a phone"
 - "Your workout video shows your live heart rate"
 - "Your TV slips family photos between episodes"
 

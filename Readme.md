@@ -9,7 +9,7 @@ Your digital life is scattered—calendar in Google, tasks in Todoist, runs in S
 
 ## One Backbone. Many Taps.
 
-Your morning thermal receipt shows today's calendar, the weather, and "it's been 4 days since your last workout." The office kiosk displays your upcoming meetings and flags overdue tasks. When you finish a workout, the garage display prompts for a voice memo. At dinner, a family photo slides in between TV episodes instead of ads.
+Your morning thermal receipt-paper shows today's calendar, the weather, and "it's been 4 days since your last workout." The office kiosk displays your upcoming meetings and flags overdue tasks. When you finish a workout, the garage display prompts for a voice memo. At dinner, a family photo slides in between TV episodes instead of ads.
 
 Same data. Different moments. Always relevant.
 
