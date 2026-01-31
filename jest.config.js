@@ -26,6 +26,9 @@ module.exports = {
   testMatch: [
     '**/tests/unit/**/*.test.mjs',
     '**/tests/integration/**/*.test.mjs',
+    '**/tests/isolated/**/*.test.mjs',
+    '**/tests/integrated/**/*.test.mjs',
+    '**/tests/live/**/*.test.mjs',
   ],
   testPathIgnorePatterns: [
     '/node_modules/',
