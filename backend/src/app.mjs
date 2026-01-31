@@ -104,6 +104,9 @@ import { MediaJobExecutor } from './3_applications/media/MediaJobExecutor.mjs';
 import { createFreshVideoJobHandler } from './3_applications/media/FreshVideoJobHandler.mjs';
 import { YtDlpAdapter } from '#adapters/media/YtDlpAdapter.mjs';
 
+// Content composition use case
+import { ComposePresentationUseCase } from './3_applications/content/usecases/ComposePresentationUseCase.mjs';
+
 // Harvest domain (data collection)
 import { createHarvestRouter } from './4_api/v1/routers/harvest.mjs';
 
@@ -328,6 +331,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const contentLoadFile = (relativePath) => loadYaml(path.join(householdDir, relativePath));
   const contentSaveFile = (relativePath, data) => saveYaml(path.join(householdDir, relativePath), data);
 
+  // Create compose presentation use case for multi-track content composition
+  const composePresentationUseCase = new ComposePresentationUseCase({
+    contentSourceRegistry: contentRegistry,
+    logger: rootLogger.child({ module: 'compose-presentation' })
+  });
+
   const contentRouters = createApiRouters({
     registry: contentRegistry,
     mediaProgressMemory,
@@ -337,6 +346,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     dataPath: dataBasePath,
     mediaBasePath,
     proxyService: contentProxyService,
+    composePresentationUseCase,
     configService,
     logger: rootLogger.child({ module: 'content' })
   });

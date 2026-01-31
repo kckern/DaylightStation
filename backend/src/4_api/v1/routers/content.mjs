@@ -14,6 +14,7 @@ import { isMediaSearchable, validateSearchQuery } from '#domains/media/IMediaSea
  * - GET /api/content/playables/:source/* - Resolve to playable items
  * - POST /api/content/progress/:source/* - Update watch progress
  * - GET /api/content/search - Search across content sources (IMediaSearchable)
+ * - POST /api/content/compose - Compose multi-track presentation from sources
  * - GET /api/content/plex/image/:id - Get Plex thumbnail image
  * - GET /api/content/plex/info/:id - Get Plex item metadata
  *
@@ -24,11 +25,12 @@ import { isMediaSearchable, validateSearchQuery } from '#domains/media/IMediaSea
  * @param {import('#adapters/persistence/yaml/YamlMediaProgressMemory.mjs').YamlMediaProgressMemory} [mediaProgressMemory=null] - Optional media progress memory store
  * @param {Object} [options] - Additional options
  * @param {string} [options.cacheBasePath] - Base path for image cache
+ * @param {import('#apps/content/usecases/ComposePresentationUseCase.mjs').ComposePresentationUseCase} [options.composePresentationUseCase] - Use case for composing presentations
  * @param {Object} [options.logger] - Logger instance
  * @returns {express.Router}
  */
 export function createContentRouter(registry, mediaProgressMemory = null, options = {}) {
-  const { cacheBasePath, logger = console } = options;
+  const { cacheBasePath, composePresentationUseCase, logger = console } = options;
   const router = express.Router();
 
   /**
@@ -260,6 +262,74 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
       total: totalCount,
       items: allItems
     });
+  }));
+
+  // ==========================================================================
+  // Compose Route (Multi-track Presentations)
+  // ==========================================================================
+
+  /**
+   * POST /api/content/compose
+   * Compose a multi-track presentation from heterogeneous sources.
+   *
+   * Request body:
+   * {
+   *   "sources": ["plex:12345", "plex:67890"],  // Required: array of source identifiers
+   *   "config": {
+   *     "advance": { "mode": "timed", "interval": 5000 },
+   *     "loop": true,
+   *     "shuffle": true,
+   *     "layout": "fullscreen"
+   *   }
+   * }
+   *
+   * Source format:
+   * - [track:]provider:id - e.g., "visual:plex:12345" or "audio:plex:67890"
+   * - Numeric-only assumes Plex: "12345" -> "plex:12345"
+   * - Track prefix is optional; inferred from mediaType if omitted
+   *
+   * Response: IComposedPresentation object
+   */
+  router.post('/compose', asyncHandler(async (req, res) => {
+    if (!composePresentationUseCase) {
+      return res.status(501).json({
+        error: 'Compose endpoint not configured',
+        code: 'COMPOSE_NOT_CONFIGURED'
+      });
+    }
+
+    const { sources, config = {} } = req.body;
+
+    // Validate sources is non-empty array
+    if (!sources || !Array.isArray(sources) || sources.length === 0) {
+      return res.status(400).json({
+        error: 'sources must be a non-empty array of source identifiers',
+        code: 'INVALID_SOURCES'
+      });
+    }
+
+    try {
+      const presentation = await composePresentationUseCase.compose(sources, config);
+      res.json(presentation);
+    } catch (err) {
+      // Handle application errors with appropriate status codes
+      if (err.code === 'INVALID_INPUT' || err.code === 'NO_VISUAL_TRACK') {
+        return res.status(400).json({
+          error: err.message,
+          code: err.code,
+          details: err.details
+        });
+      }
+      if (err.code === 'ITEM_NOT_FOUND' || err.name === 'ServiceNotFoundError') {
+        return res.status(404).json({
+          error: err.message,
+          code: err.code || 'NOT_FOUND',
+          details: err.details
+        });
+      }
+      // Re-throw unexpected errors for the error handler middleware
+      throw err;
+    }
   }));
 
   // ==========================================================================
