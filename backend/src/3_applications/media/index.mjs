@@ -7,7 +7,7 @@
  */
 
 // Job handlers
-export { createFreshVideoJobHandler, createYouTubeJobHandler } from './YouTubeJobHandler.mjs';
+export { createFreshVideoJobHandler } from './FreshVideoJobHandler.mjs';
 
 // Application services
 export { FreshVideoService } from './services/FreshVideoService.mjs';
