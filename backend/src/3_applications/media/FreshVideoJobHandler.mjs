@@ -62,7 +62,4 @@ export function createFreshVideoJobHandler({ videoSourceGateway, loadFile, media
   };
 }
 
-// Keep old export name for backward compatibility during transition
-export const createYouTubeJobHandler = createFreshVideoJobHandler;
-
 export default createFreshVideoJobHandler;
