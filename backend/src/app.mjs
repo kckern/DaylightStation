@@ -101,7 +101,7 @@ import { YamlConversationStateDatastore } from '#adapters/messaging/YamlConversa
 
 // Media jobs (fresh video downloads)
 import { MediaJobExecutor } from './3_applications/media/MediaJobExecutor.mjs';
-import { createFreshVideoJobHandler } from './3_applications/media/YouTubeJobHandler.mjs';
+import { createFreshVideoJobHandler } from './3_applications/media/FreshVideoJobHandler.mjs';
 import { YtDlpAdapter } from '#adapters/media/YtDlpAdapter.mjs';
 
 // Harvest domain (data collection)
