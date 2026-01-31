@@ -8,6 +8,7 @@ backend/node_modules
 !docker-compose.test.yml
 !tests/_fixtures/**/*.yml
 !tests/unit/suite/config/fixtures/**/*.yml
+!tests/_infrastructure/environments.yml
 data*
 !tests/_fixtures/data/
 !**/DataService.mjs

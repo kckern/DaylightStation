@@ -1,0 +1,19 @@
+# tests/_infrastructure/environments.yml
+# Test environment configuration
+
+dev:
+  url: http://localhost:3112
+  data: household-demo
+  description: Local development server
+
+test:
+  url: http://localhost:3113
+  data: household-demo
+  docker: daylight-test
+  description: Isolated Docker test environment
+
+prod:
+  url: http://daylight.local:3111
+  data: real
+  readonly: true
+  description: Production server (read-only tests only)
