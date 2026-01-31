@@ -4,6 +4,7 @@ import 'dash-video-element';
 import { useCommonMediaController } from '../hooks/useCommonMediaController.js';
 import { ProgressBar } from './ProgressBar.jsx';
 import { useUpscaleEffects } from '../hooks/useUpscaleEffects.js';
+import { useRenderFpsMonitor } from '../hooks/useRenderFpsMonitor.js';
 import { getLogger } from '../../../lib/logging/Logger.js';
 
 /**
@@ -103,6 +104,18 @@ export function VideoPlayer({
     preset: upscaleEffects
   });
 
+  // Render FPS monitoring for blur overlay performance diagnosis
+  const renderFps = useRenderFpsMonitor({
+    enabled: displayReady && !isPaused,
+    mediaContext: {
+      title: media?.title,
+      show: media?.show,
+      season: media?.season,
+      mediaKey: media?.media_key || media?.key || media?.plex,
+      shader
+    }
+  });
+
   // Register accessors with resilience bridge
   useEffect(() => {
     if (resilienceBridge?.registerAccessors) {
@@ -165,13 +178,31 @@ export function VideoPlayer({
   }, [isDash, media_url, elementKey]);
 
   // FPS logging every 10 seconds during playback
+  // TIMER THRASHING FIX: Use ref for timer ID and stable dependencies
+  const fpsIntervalRef = useRef(null);
+  const fpsLoggingActiveRef = useRef(false);
+
   useEffect(() => {
+    // Clear any existing timer first to prevent duplicates
+    if (fpsIntervalRef.current) {
+      clearInterval(fpsIntervalRef.current);
+      fpsIntervalRef.current = null;
+    }
+
     // Only log if video is playing (not paused, not stalled, has started)
-    if (isPaused || isStalled || seconds === 0 || !displayReady || !quality?.supported) {
+    const shouldLog = !isPaused && !isStalled && seconds > 0 && displayReady && quality?.supported;
+    
+    if (!shouldLog) {
+      fpsLoggingActiveRef.current = false;
       return;
     }
 
-    const intervalId = setInterval(() => {
+    fpsLoggingActiveRef.current = true;
+
+    fpsIntervalRef.current = setInterval(() => {
+      // Re-check conditions inside interval since they may change
+      if (!fpsLoggingActiveRef.current) return;
+
       const logger = getLogger();
       const mediaEl = getMediaEl();
       
@@ -204,8 +235,20 @@ export function VideoPlayer({
       });
     }, 10000); // 10 seconds
 
-    return () => clearInterval(intervalId);
-  }, [isPaused, isStalled, seconds, displayReady, quality, droppedFramePct, currentMaxKbps, duration, media, isDash, shader, getMediaEl]);
+    return () => {
+      fpsLoggingActiveRef.current = false;
+      if (fpsIntervalRef.current) {
+        clearInterval(fpsIntervalRef.current);
+        fpsIntervalRef.current = null;
+      }
+    };
+  }, [isPaused, isStalled, displayReady, quality?.supported]); // Reduced dependencies - only track state changes that determine timer creation
+
+  // Keep refs up to date with latest values for use in interval callback
+  const latestDataRef = useRef({ seconds, quality, droppedFramePct, currentMaxKbps, duration, media, isDash, shader });
+  useEffect(() => {
+    latestDataRef.current = { seconds, quality, droppedFramePct, currentMaxKbps, duration, media, isDash, shader };
+  }, [seconds, quality, droppedFramePct, currentMaxKbps, duration, media, isDash, shader]);
 
   const percent = duration ? ((seconds / duration) * 100).toFixed(1) : 0;
   const plexIdValue = media?.media_key || media?.key || media?.plex || null;
@@ -247,13 +290,13 @@ export function VideoPlayer({
         <div className={overlayProps.className} />
       )}
       {showQuality && quality?.supported && (
-        <QualityOverlay stats={quality} capKbps={currentMaxKbps} avgPct={droppedFramePct} />
+        <QualityOverlay stats={quality} capKbps={currentMaxKbps} avgPct={droppedFramePct} renderFps={renderFps} />
       )}
     </div>
   );
 }
 
-function QualityOverlay({ stats, capKbps, avgPct }) {
+function QualityOverlay({ stats, capKbps, avgPct, renderFps }) {
   // console.log('[QualityOverlay] Rendering with capKbps:', capKbps);
   const pctText = `${stats.totalVideoFrames > 0 ? stats.droppedPct.toFixed(1) : '0.0'}%`;
   const avgText = typeof avgPct === 'number' ? `${(avgPct * 100).toFixed(1)}%` : null;
@@ -262,6 +305,7 @@ function QualityOverlay({ stats, capKbps, avgPct }) {
       <div> Dropped Frames: {stats.droppedVideoFrames} ({pctText}) </div>
       <div> Bitrate Cap: {capKbps == null ? 'unlimited' : `${capKbps} kbps`} </div>
       {avgText && <div> Avg (rolling): {avgText} </div>}
+      {renderFps !== null && <div> Render FPS: {renderFps} </div>}
     </div>
   );
 }
@@ -274,7 +318,8 @@ QualityOverlay.propTypes = {
     supported: PropTypes.bool
   }),
   capKbps: PropTypes.oneOfType([PropTypes.number, PropTypes.oneOf([null])]),
-  avgPct: PropTypes.number
+  avgPct: PropTypes.number,
+  renderFps: PropTypes.number
 };
 
 VideoPlayer.propTypes = {
