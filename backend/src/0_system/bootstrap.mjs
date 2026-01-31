@@ -472,14 +472,15 @@ export function createMediaProgressMemory(config) {
  * @param {string} [config.cacheBasePath] - Base path for image cache
  * @param {string} [config.dataPath] - Base data path for local content
  * @param {import('./proxy/ProxyService.mjs').ProxyService} [config.proxyService] - Proxy service for external services
+ * @param {import('#apps/content/usecases/ComposePresentationUseCase.mjs').ComposePresentationUseCase} [config.composePresentationUseCase] - Use case for composing presentations
  * @param {Object} [config.logger] - Logger instance
  * @returns {Object} Router configuration
  */
 export function createApiRouters(config) {
-  const { registry, mediaProgressMemory, loadFile, saveFile, cacheBasePath, dataPath, mediaBasePath, proxyService, configService, logger = console } = config;
+  const { registry, mediaProgressMemory, loadFile, saveFile, cacheBasePath, dataPath, mediaBasePath, proxyService, composePresentationUseCase, configService, logger = console } = config;
 
   return {
-    content: createContentRouter(registry, mediaProgressMemory, { loadFile, saveFile, cacheBasePath, logger }),
+    content: createContentRouter(registry, mediaProgressMemory, { loadFile, saveFile, cacheBasePath, composePresentationUseCase, logger }),
     proxy: createProxyRouter({ registry, proxyService, mediaBasePath, logger }),
     localContent: createLocalContentRouter({ registry, dataPath, mediaBasePath }),
     play: createPlayRouter({ registry, mediaProgressMemory, logger }),
