@@ -1513,6 +1513,114 @@ export class PlexAdapter {
     const ratingKey = String(id).replace(/^plex:/, '');
     return this.loadMediaUrl(ratingKey, 0, { ...opts, startOffset });
   }
+
+  // ===========================================================================
+  // IMediaSearchable INTERFACE IMPLEMENTATION
+  // ===========================================================================
+
+  /**
+   * Search for media items matching query
+   * Implements IMediaSearchable.search()
+   *
+   * @param {Object} query - MediaSearchQuery
+   * @param {string} [query.text] - Free text search (title, description)
+   * @param {'image'|'video'|'audio'} [query.mediaType] - Filter by type
+   * @param {string[]} [query.tags] - Filter by Plex labels
+   * @param {number} [query.ratingMin] - Minimum rating (1-5)
+   * @param {number} [query.take] - Limit results
+   * @param {number} [query.skip] - Offset for pagination
+   * @returns {Promise<{items: Array, total: number}>}
+   */
+  async search(query) {
+    try {
+      // Validate that we have a text query (Plex requires search text)
+      if (!query.text) {
+        return { items: [], total: 0 };
+      }
+
+      // Build Plex search options
+      const options = {
+        limit: query.take || 50
+      };
+
+      // Execute hub search
+      const result = await this.client.hubSearch(query.text, options);
+      let items = result.results || [];
+
+      // Filter by mediaType if specified
+      if (query.mediaType) {
+        const typeMap = {
+          'video': ['movie', 'episode', 'clip'],
+          'audio': ['track'],
+          'image': [] // Plex doesn't have images
+        };
+        const allowedTypes = typeMap[query.mediaType] || [];
+        if (allowedTypes.length > 0) {
+          items = items.filter(item => allowedTypes.includes(item.type));
+        }
+      }
+
+      // Apply skip offset
+      if (query.skip && query.skip > 0) {
+        items = items.slice(query.skip);
+      }
+
+      // Convert to PlayableItem/ListableItem
+      const showLabelCache = new Map();
+      const convertedItems = await Promise.all(
+        items.map(async (item) => {
+          // For playable types, get full metadata
+          if (['movie', 'episode', 'track', 'clip'].includes(item.type)) {
+            const fullItem = await this.getItem(item.ratingKey, { showLabelCache });
+            if (fullItem) {
+              // Filter by rating if specified
+              if (query.ratingMin) {
+                const rating = fullItem.metadata?.rating || fullItem.metadata?.userRating;
+                // Plex ratings are 0-10, normalize to 1-5
+                const normalizedRating = rating ? (rating / 2) : 0;
+                if (normalizedRating < query.ratingMin) return null;
+              }
+
+              // Filter by tags/labels if specified
+              if (query.tags?.length > 0) {
+                const itemLabels = fullItem.metadata?.labels || [];
+                const hasMatchingLabel = query.tags.some(tag =>
+                  itemLabels.includes(tag.toLowerCase())
+                );
+                if (!hasMatchingLabel) return null;
+              }
+
+              return fullItem;
+            }
+          }
+
+          // For containers (shows, albums), return as listable
+          return this._toListableItem(item);
+        })
+      );
+
+      // Filter out nulls
+      const filteredItems = convertedItems.filter(Boolean);
+
+      return {
+        items: filteredItems,
+        total: filteredItems.length
+      };
+    } catch (err) {
+      console.error('[PlexAdapter] search error:', err.message);
+      return { items: [], total: 0 };
+    }
+  }
+
+  /**
+   * Get available search capabilities for this adapter
+   * Implements IMediaSearchable.getSearchCapabilities()
+   *
+   * @returns {string[]} - Supported query fields
+   */
+  getSearchCapabilities() {
+    return ['text', 'mediaType', 'tags', 'ratingMin', 'take', 'skip'];
+  }
 }
 
 export default PlexAdapter;
