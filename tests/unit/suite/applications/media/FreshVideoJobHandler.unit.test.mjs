@@ -12,7 +12,7 @@ import { describe, it, expect, jest, beforeAll, afterAll } from '@jest/globals';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { createFreshVideoJobHandler } from '#apps/media/YouTubeJobHandler.mjs';
+import { createFreshVideoJobHandler } from '#apps/media/FreshVideoJobHandler.mjs';
 
 describe('FreshVideoJobHandler', () => {
   describe('createFreshVideoJobHandler', () => {

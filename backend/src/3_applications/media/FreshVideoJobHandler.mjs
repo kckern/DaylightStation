@@ -3,7 +3,7 @@
  *
  * Wraps FreshVideoService for scheduler integration.
  *
- * @module applications/media/YouTubeJobHandler
+ * @module applications/media/FreshVideoJobHandler
  */
 
 import { FreshVideoService } from './services/FreshVideoService.mjs';
