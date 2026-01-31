@@ -221,6 +221,66 @@ export class AudiobookshelfAdapter {
   }
 
   /**
+   * Search for media items (implements IMediaSearchable)
+   * @param {Object} query - MediaSearchQuery
+   * @param {string} [query.mediaType] - Filter by 'audio' (audiobooks) or 'ebook'
+   * @param {string} [query.text] - Text search (searches title)
+   * @param {number} [query.take=20] - Max items to return
+   * @param {number} [query.skip=0] - Items to skip
+   * @returns {Promise<{items: Array, total: number}>}
+   */
+  async search(query = {}) {
+    try {
+      const { mediaType, text, take = 20, skip = 0 } = query;
+
+      // Get all libraries first
+      const librariesData = await this.#client.getLibraries();
+      const libraries = librariesData.libraries || [];
+
+      const allItems = [];
+
+      // Fetch items from each library
+      for (const lib of libraries) {
+        const itemsData = await this.#client.getLibraryItems(lib.id, 0, 100);
+        const items = itemsData.results || [];
+
+        for (const item of items) {
+          // Filter by mediaType if specified
+          const isAudiobook = this.#isAudiobook(item);
+          const isEbook = this.#isEbook(item);
+
+          if (mediaType === 'audio' && !isAudiobook) continue;
+          if (mediaType === 'ebook' && !isEbook) continue;
+
+          // Filter by text if specified (simple title search)
+          if (text) {
+            const title = item.media?.metadata?.title?.toLowerCase() || '';
+            if (!title.includes(text.toLowerCase())) continue;
+          }
+
+          // Convert to appropriate item type
+          if (isAudiobook) {
+            allItems.push(this.#toPlayableItem(item, null));
+          } else if (isEbook) {
+            allItems.push(this.#toReadableItem(item, null));
+          }
+        }
+      }
+
+      // Apply pagination
+      const paginatedItems = allItems.slice(skip, skip + take);
+
+      return {
+        items: paginatedItems,
+        total: allItems.length
+      };
+    } catch (err) {
+      console.error('[AudiobookshelfAdapter] search error:', err.message);
+      return { items: [], total: 0 };
+    }
+  }
+
+  /**
    * Convert Audiobookshelf item to ReadableItem (for ebooks)
    * @param {Object} item
    * @param {Object} [progress]
