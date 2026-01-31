@@ -4,6 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { nowTs24 } from '#system/utils/index.mjs';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
+import { isMediaSearchable, validateSearchQuery } from '#domains/media/IMediaSearchable.mjs';
 
 /**
  * Create content API router
@@ -12,6 +13,7 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
  * - GET /api/content/item/:source/* - Get single item info
  * - GET /api/content/playables/:source/* - Resolve to playable items
  * - POST /api/content/progress/:source/* - Update watch progress
+ * - GET /api/content/search - Search across content sources (IMediaSearchable)
  * - GET /api/content/plex/image/:id - Get Plex thumbnail image
  * - GET /api/content/plex/info/:id - Get Plex item metadata
  *
@@ -160,6 +162,103 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
       duration: state.duration,
       percent: state.percent,
       watched: isWatched(state)
+    });
+  }));
+
+  // ==========================================================================
+  // Search Routes
+  // ==========================================================================
+
+  /**
+   * GET /api/content/search
+   * Search across content sources that implement IMediaSearchable
+   *
+   * Query params:
+   * - sources: Comma-separated source filter (optional, defaults to all searchable)
+   * - text: Free text search
+   * - people: Comma-separated person names
+   * - dateFrom, dateTo: ISO date range
+   * - location: City/state/country
+   * - mediaType: image, video, or audio
+   * - favorites: Boolean (true/1)
+   * - take, skip: Pagination
+   * - sort: date, title, or random
+   */
+  router.get('/search', asyncHandler(async (req, res) => {
+    // Parse sources filter
+    const sourcesParam = req.query.sources;
+    const requestedSources = sourcesParam ? sourcesParam.split(',').map(s => s.trim()) : null;
+
+    // Build search query from query params
+    const query = {};
+    if (req.query.text) query.text = req.query.text;
+    if (req.query.people) query.people = req.query.people.split(',').map(p => p.trim());
+    if (req.query.dateFrom) query.dateFrom = req.query.dateFrom;
+    if (req.query.dateTo) query.dateTo = req.query.dateTo;
+    if (req.query.location) query.location = req.query.location;
+    if (req.query.mediaType) query.mediaType = req.query.mediaType;
+    if (req.query.favorites === 'true' || req.query.favorites === '1') query.favorites = true;
+    if (req.query.take) query.take = parseInt(req.query.take, 10);
+    if (req.query.skip) query.skip = parseInt(req.query.skip, 10);
+    if (req.query.sort) query.sort = req.query.sort;
+    if (req.query.tags) query.tags = req.query.tags.split(',').map(t => t.trim());
+
+    // Validate query
+    try {
+      validateSearchQuery(query);
+    } catch (err) {
+      return res.status(400).json({ error: err.message, code: err.code });
+    }
+
+    // Find all searchable adapters
+    const allSources = registry.list();
+    const searchableAdapters = [];
+
+    for (const sourceName of allSources) {
+      // If sources filter provided, skip non-matching
+      if (requestedSources && !requestedSources.includes(sourceName)) continue;
+
+      const adapter = registry.get(sourceName);
+      if (isMediaSearchable(adapter)) {
+        searchableAdapters.push({ name: sourceName, adapter });
+      }
+    }
+
+    if (searchableAdapters.length === 0) {
+      const msg = requestedSources
+        ? `No searchable adapters found for sources: ${requestedSources.join(', ')}`
+        : 'No searchable adapters configured';
+      return res.status(404).json({ error: msg });
+    }
+
+    // Execute search on all adapters
+    const allItems = [];
+    let totalCount = 0;
+    const searchedSources = [];
+
+    for (const { name, adapter } of searchableAdapters) {
+      try {
+        const result = await adapter.search(query);
+        searchedSources.push(name);
+        totalCount += result.total || result.items?.length || 0;
+
+        // Add source attribution to items if not present
+        const items = (result.items || []).map(item => ({
+          ...item,
+          source: item.source || name
+        }));
+        allItems.push(...items);
+      } catch (err) {
+        logger.warn?.('content.search.adapter.error', { source: name, error: err.message });
+        // Continue with other adapters
+      }
+    }
+
+    res.json({
+      query,
+      sources: searchedSources,
+      total: totalCount,
+      items: allItems
     });
   }));
 
