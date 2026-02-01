@@ -80,53 +80,53 @@ const SeasonInfo = ({ item, type = 'episode', showSummary = null }) => {
   );
 };
 
-// Episode Info Component - Rich layout for an episode with season context
-const EpisodeInfo = ({ episode, showInfo, seasonsMap, seasonsList, onPlay }) => {
+// Episode Info Component - Rich layout for an episode with parent (season) context
+const EpisodeInfo = ({ episode, showInfo, parentsMap, parentsList, onPlay }) => {
   if (!episode) return null;
-  const seasonId = episode.seasonId;
+  const parentId = episode.parentId;
   // Try map first, then list
-  const seasonFromMap = seasonsMap && seasonId ? seasonsMap[seasonId] : null;
-  const seasonFromList = !seasonFromMap && seasonsList ? seasonsList.find(s => s.id === seasonId) : null;
-  const season = seasonFromMap || seasonFromList || {};
-  // Robust season name fallback priority
-  const rawSeasonName = season.title || season.seasonName || season.name;
-  const numericSeason = (() => {
+  const parentFromMap = parentsMap && parentId ? parentsMap[parentId] : null;
+  const parentFromList = !parentFromMap && parentsList ? parentsList.find(s => s.id === parentId) : null;
+  const parent = parentFromMap || parentFromList || {};
+  // Robust parent (season) name fallback priority
+  const rawParentName = parent.title || parent.name;
+  const numericParent = (() => {
     // prefer explicit numeric properties
-    if (Number.isFinite(season.num)) return season.num;
-    if (Number.isFinite(season.number)) return season.number;
-    const parsed = parseInt(season.id, 10);
+    if (Number.isFinite(parent.index)) return parent.index;
+    if (Number.isFinite(parent.number)) return parent.number;
+    const parsed = parseInt(parent.id, 10);
     return Number.isFinite(parsed) ? parsed : undefined;
   })();
-  const seasonName = rawSeasonName && rawSeasonName.toString().trim().length
-    ? rawSeasonName
-    : (Number.isFinite(numericSeason) ? `Season ${numericSeason}` : 'Season');
+  const parentName = rawParentName && rawParentName.toString().trim().length
+    ? rawParentName
+    : (Number.isFinite(numericParent) ? `Season ${numericParent}` : 'Season');
 
-  // Season description fallback chain: explicit summary/description -> show summary
-  const seasonDescription = [season.summary, season.seasonDescription, season.description, showInfo?.summary]
+  // Parent (season) description fallback chain: explicit summary/description -> show summary
+  const parentDescription = [parent.summary, parent.description, showInfo?.summary]
     .find(v => typeof v === 'string' && v.trim().length) || '';
 
-  const seasonImage = normalizeImageUrl(season.img || season.image) || (seasonId ? DaylightMediaPath(`api/v1/content/plex/image/${seasonId}`) : normalizeImageUrl(showInfo?.image));
+  const parentImage = normalizeImageUrl(parent.thumbnail || parent.image) || (parentId ? DaylightMediaPath(`api/v1/content/plex/image/${parentId}`) : normalizeImageUrl(showInfo?.image));
   // Use the same episode image source as grid: primary is episode.image; fallback to thumbId path
   const episodeImage = (episode.image && episode.image.trim())
     ? normalizeImageUrl(episode.image)
     : (episode.thumbId ? DaylightMediaPath(`api/v1/content/plex/image/${episode.thumbId}`) : null);
   const durationText = episode.duration ? formatDuration(episode.duration) : null;
-  const epTitle = episode.label || episode.title || `Episode ${episode.episodeNumber || ''}`.trim();
-  const epNumber = episode.episodeNumber;
+  const epTitle = episode.label || episode.title || `Episode ${episode.itemIndex || ''}`.trim();
+  const epNumber = episode.itemIndex;
   const epDescription = episode.episodeDescription || episode.summary || '';
 
   return (
     <div className="episode-info">
       <div className="episode-season-header">
-        {seasonImage && (
+        {parentImage && (
           <div className="season-thumb-wrapper">
-            <img src={seasonImage} alt={seasonName} className="season-thumb" />
+            <img src={parentImage} alt={parentName} className="season-thumb" />
           </div>
         )}
         <div className="season-meta">
           <h2 className="show-name">{showInfo?.title}</h2>
-          {seasonDescription && (
-            <div className="season-description"><p>{seasonName}—{seasonDescription}</p></div>
+          {parentDescription && (
+            <div className="season-description"><p>{parentName}—{parentDescription}</p></div>
           )}
         </div>
       </div>
@@ -520,9 +520,10 @@ const FitnessShow = ({ showId: rawShowId, onBack, viewportRef, setFitnessPlayQue
     }
     
     try {
-      // Extract plex ID from episode.plex or from episode.id (format: "plex:662039")
+      // Extract plex ID from episode.plex, episode.play.plex, or from episode.id (format: "plex:662039")
       const extractPlexId = (ep) => {
-        if (ep.plex) return ep.plex;
+        if (ep.plex) return String(ep.plex);
+        if (ep.play?.plex) return String(ep.play.plex);
         if (typeof ep.id === 'string' && ep.id.startsWith('plex:')) {
           return ep.id.replace('plex:', '');
         }
@@ -540,11 +541,17 @@ const FitnessShow = ({ showId: rawShowId, onBack, viewportRef, setFitnessPlayQue
       const { resolvedSeconds, normalizedProgress } = deriveResumeMeta(episode);
 
       // Resolve season and show titles for logging
-      const seasonObj = seasons && seasons.find(s => s.id === episode.seasonId);
+      const seasonObj = seasons && seasons.find(s => s.id === episode.parentId);
       const seasonTitle = seasonObj ? (seasonObj.title || seasonObj.name || seasonObj.rawName) : undefined;
       const showTitle = info?.title;
 
       // Create the queue item with all available information
+      // Get season image from parentsMap (has proper season thumbnails) or fall back to episode parentId
+      const parentData = parentsMap && episode.parentId ? parentsMap[episode.parentId] : null;
+      const seasonImageUrl = parentData?.thumbnail
+        ? normalizeImageUrl(parentData.thumbnail)
+        : (episode.parentId ? DaylightMediaPath(`api/v1/content/plex/image/${episode.parentId}`) : undefined);
+
       const queueItem = {
         id: plexId || episode.id || `episode-${Date.now()}`,
         plex: plexId, // Ensure plex ID is passed for downstream components
@@ -555,8 +562,9 @@ const FitnessShow = ({ showId: rawShowId, onBack, viewportRef, setFitnessPlayQue
         duration: episode.duration,
         thumbId: episode.thumbId, // Pass thumbId directly to FitnessPlayer
         image: episode.thumbId ? DaylightMediaPath(`api/v1/content/plex/image/${episode.thumbId}`) : episode.image,
-        seasonId: episode.seasonId,
-        seasonImage: episode.seasonId ? DaylightMediaPath(`api/v1/content/plex/image/${episode.seasonId}`) : undefined,
+        parentId: episode.parentId,
+        parentImage: seasonImageUrl,
+        seasonImage: seasonImageUrl, // Alias for footer seek thumbnails
         labels: deriveEpisodeLabels(episode),
         type: episode.type || 'episode',
         showId,
@@ -609,7 +617,7 @@ const FitnessShow = ({ showId: rawShowId, onBack, viewportRef, setFitnessPlayQue
     }
   };
 
-  const { info, items = [], seasons: seasonsMap = null } = showData || {};
+  const { info, items = [], parents: parentsMap = null } = showData || {};
 
   const resumableLabels = useMemo(() => {
     const labels = plexConfig?.resumable_labels;
@@ -677,20 +685,19 @@ const FitnessShow = ({ showId: rawShowId, onBack, viewportRef, setFitnessPlayQue
     return false;
   }, [governedTypeSet, showType, governedLabelSet, showLabelSet]);
 
-  // Derive seasons from new seasonsMap (backend seasons object) with fallback to legacy per-episode fields
+  // Derive seasons from parentsMap (backend groups object) with fallback to per-episode fields
   const seasons = useMemo(() => {
-    // Preferred: seasonsMap provided by API
-    if (seasonsMap && typeof seasonsMap === 'object' && Object.keys(seasonsMap).length) {
-      const arr = Object.entries(seasonsMap).map(([id, s]) => {
+    // Preferred: parentsMap provided by API (canonical fields)
+    if (parentsMap && typeof parentsMap === 'object' && Object.keys(parentsMap).length) {
+      const arr = Object.entries(parentsMap).map(([id, g]) => {
         // Convert to string for comparison since Object.entries returns string keys
-        // but episode.seasonId may be a number from the API
-        const count = items.filter(ep => String(ep.seasonId) === id).length;
-        // Support both legacy (seasonNumber, seasonName, seasonDescription) and new (num, title, img, summary) keys
-        const numRaw = s.seasonNumber != null ? s.seasonNumber : s.num;
-        const number = (numRaw != null && !Number.isNaN(parseInt(numRaw))) ? parseInt(numRaw) : undefined;
-        const nameRaw = s.seasonName || s.title; // prefer explicit seasonName
-        const image = s.img || (items.find(ep => String(ep.seasonId) === id)?.image);
-        const description = s.seasonDescription || s.summary || null;
+        // but episode.parentId may be a number from the API
+        const count = items.filter(ep => String(ep.parentId) === id).length;
+        // Use canonical field names: index, title, thumbnail
+        const number = (g.index != null && !Number.isNaN(parseInt(g.index))) ? parseInt(g.index) : undefined;
+        const nameRaw = g.title;
+        const image = g.thumbnail || (items.find(ep => String(ep.parentId) === id)?.image);
+        const description = g.summary || null;
         return {
           id,
           number,
@@ -704,13 +711,13 @@ const FitnessShow = ({ showId: rawShowId, onBack, viewportRef, setFitnessPlayQue
       arr.sort((a, b) => {
         const an = a.number, bn = b.number;
         const aHas = Number.isFinite(an), bHas = Number.isFinite(bn);
-        
+
         // Special handling: season 0 (specials) goes to the end
         const aIsZero = aHas && an === 0;
         const bIsZero = bHas && bn === 0;
         if (aIsZero && !bIsZero) return 1;  // a (season 0) goes after b
         if (!aIsZero && bIsZero) return -1; // b (season 0) goes after a
-        
+
         // Normal sorting for numbered seasons (excluding 0)
         if (aHas && bHas && an !== bn) return an - bn;
         if (aHas && !bHas) return -1;
@@ -721,16 +728,16 @@ const FitnessShow = ({ showId: rawShowId, onBack, viewportRef, setFitnessPlayQue
       });
       return arr;
     }
-    // Fallback (legacy): derive from episodes
+    // Fallback: derive from episodes using canonical parentId
     const map = new Map();
     for (const ep of items) {
-      if (!ep.seasonId) continue;
-      const number = undefined; // legacy seasonNumber removed from episode items
+      if (!ep.parentId) continue;
+      const number = undefined;
       const image = ep.image;
-      if (!map.has(ep.seasonId)) {
-        map.set(ep.seasonId, { id: ep.seasonId, number, rawName: undefined, image, count: 1 });
+      if (!map.has(ep.parentId)) {
+        map.set(ep.parentId, { id: ep.parentId, number, rawName: undefined, image, count: 1 });
       } else {
-        const cur = map.get(ep.seasonId);
+        const cur = map.get(ep.parentId);
         cur.count += 1;
         if (!cur.image && image) cur.image = image;
       }
@@ -740,7 +747,7 @@ const FitnessShow = ({ showId: rawShowId, onBack, viewportRef, setFitnessPlayQue
       name: (Number.isFinite(s.number) && s.number > 0) ? `Season ${s.number}` : (s.rawName || 'Season')
     }));
     return arr;
-  }, [items, seasonsMap]);
+  }, [items, parentsMap]);
 
   // Initialize load tracking when items/seasons change
   useEffect(() => {
@@ -776,14 +783,14 @@ const FitnessShow = ({ showId: rawShowId, onBack, viewportRef, setFitnessPlayQue
 
     const isSeasonComplete = (season) => {
       if (!season) return false;
-      const seasonEpisodes = items.filter((ep) => String(ep.seasonId) === String(season.id));
+      const seasonEpisodes = items.filter((ep) => String(ep.parentId) === String(season.id));
       if (!seasonEpisodes.length) return false;
       return seasonEpisodes.every(isEpisodeWatched);
     };
 
     const findFirstIncompleteAfter = (startIndex = 0) => {
       const slice = seasons.slice(startIndex);
-      return slice.find((season) => items.some((ep) => String(ep.seasonId) === String(season.id) && !isEpisodeWatched(ep)));
+      return slice.find((season) => items.some((ep) => String(ep.parentId) === String(season.id) && !isEpisodeWatched(ep)));
     };
 
     const desiredSeasonId = (() => {
@@ -814,7 +821,7 @@ const FitnessShow = ({ showId: rawShowId, onBack, viewportRef, setFitnessPlayQue
   // Keep selected episode in sync with filter
   useEffect(() => {
     const filtered = seasons.length > 1 && activeSeasonId
-      ? items.filter(ep => String(ep.seasonId) === String(activeSeasonId))
+      ? items.filter(ep => String(ep.parentId) === String(activeSeasonId))
       : items;
     if (!filtered.length) return;
     if (!selectedEpisode || !filtered.some(ep => ep.plex === selectedEpisode.plex)) {
@@ -824,12 +831,12 @@ const FitnessShow = ({ showId: rawShowId, onBack, viewportRef, setFitnessPlayQue
 
   const filteredItems = useMemo(() => {
     const list = (seasons.length > 1 && activeSeasonId)
-      ? items.filter(ep => String(ep.seasonId) === String(activeSeasonId))
+      ? items.filter(ep => String(ep.parentId) === String(activeSeasonId))
       : items;
-    // Sort by episodeNumber ascending when available
+    // Sort by itemIndex ascending when available
     return [...list].sort((a, b) => {
-      const an = Number.isFinite(a.episodeNumber) ? a.episodeNumber : (a.episodeNumber != null ? parseInt(a.episodeNumber) : NaN);
-      const bn = Number.isFinite(b.episodeNumber) ? b.episodeNumber : (b.episodeNumber != null ? parseInt(b.episodeNumber) : NaN);
+      const an = Number.isFinite(a.itemIndex) ? a.itemIndex : (a.itemIndex != null ? parseInt(a.itemIndex) : NaN);
+      const bn = Number.isFinite(b.itemIndex) ? b.itemIndex : (b.itemIndex != null ? parseInt(b.itemIndex) : NaN);
       const aHas = !Number.isNaN(an), bHas = !Number.isNaN(bn);
       if (aHas && bHas && an !== bn) return an - bn;
       if (aHas && !bHas) return -1;
@@ -922,9 +929,10 @@ const FitnessShow = ({ showId: rawShowId, onBack, viewportRef, setFitnessPlayQue
         const { didScroll } = scrollIntoViewIfNeeded(sourceEl, { axis: 'y', margin: 24 });
         if (didScroll) return;
       }
-      // Extract plex ID from episode.plex or from episode.id (format: "plex:662039")
+      // Extract plex ID from episode.plex, episode.play.plex, or from episode.id (format: "plex:662039")
       const extractPlexId = (ep) => {
-        if (ep.plex) return ep.plex;
+        if (ep.plex) return String(ep.plex);
+        if (ep.play?.plex) return String(ep.play.plex);
         if (typeof ep.id === 'string' && ep.id.startsWith('plex:')) {
           return ep.id.replace('plex:', '');
         }
@@ -943,7 +951,7 @@ const FitnessShow = ({ showId: rawShowId, onBack, viewportRef, setFitnessPlayQue
         const { resolvedSeconds, normalizedProgress } = deriveResumeMeta(episode);
 
         // Resolve season and show titles for logging
-        const seasonObj = seasons && seasons.find(s => s.id === episode.seasonId);
+        const seasonObj = seasons && seasons.find(s => s.id === episode.parentId);
         const seasonTitle = seasonObj ? (seasonObj.title || seasonObj.name || seasonObj.rawName) : undefined;
         const showTitle = info?.title;
 
@@ -957,8 +965,8 @@ const FitnessShow = ({ showId: rawShowId, onBack, viewportRef, setFitnessPlayQue
           duration: episode.duration,
           thumbId: episode.thumbId, // Pass thumbId directly to FitnessPlayer
           image: episode.thumbId ? DaylightMediaPath(`api/v1/content/plex/image/${episode.thumbId}`) : episode.image,
-          seasonId: episode.seasonId,
-          seasonImage: episode.seasonId ? DaylightMediaPath(`api/v1/content/plex/image/${episode.seasonId}`) : undefined,
+          parentId: episode.parentId,
+          parentImage: episode.parentId ? DaylightMediaPath(`api/v1/content/plex/image/${episode.parentId}`) : undefined,
           labels: deriveEpisodeLabels(episode),
           type: episode.type || 'episode',
           showId,
@@ -993,8 +1001,8 @@ const FitnessShow = ({ showId: rawShowId, onBack, viewportRef, setFitnessPlayQue
             <EpisodeInfo
               episode={selectedInfo}
               showInfo={info}
-              seasonsMap={seasonsMap}
-              seasonsList={seasons}
+              parentsMap={parentsMap}
+              parentsList={seasons}
               onPlay={handlePlayEpisode}
             />
           )}
@@ -1065,7 +1073,7 @@ const FitnessShow = ({ showId: rawShowId, onBack, viewportRef, setFitnessPlayQue
               <div className="episodes-container">
                 {/* Group episodes by season, render in sorted season order */}
                 {seasons.map((s) => {
-                  const seasonEpisodes = filteredItems.filter(ep => String(ep.seasonId) === String(s.id));
+                  const seasonEpisodes = filteredItems.filter(ep => String(ep.parentId) === String(s.id));
                   if (!seasonEpisodes.length) return null;
                   const title = Number.isFinite(s.number) && s.number > 0 ? `Season ${s.number}` : (s.rawName || s.name || 'Season');
                   return (
@@ -1086,9 +1094,9 @@ const FitnessShow = ({ showId: rawShowId, onBack, viewportRef, setFitnessPlayQue
                           const hasProgress = watchProgress > 15;
                           const progressPercent = Math.max(0, Math.min(100, watchProgress));
                           const showProgressBar = isResumable && hasProgress && !isWatched;
-                          const episodeNumber = Number.isFinite(episode?.episodeNumber)
-                            ? episode.episodeNumber
-                            : (Number.isFinite(episode?.index) ? episode.index : null);
+                          const episodeNumber = Number.isFinite(episode?.itemIndex)
+                            ? episode.itemIndex
+                            : null;
 
                           return (
                           <div
@@ -1097,9 +1105,12 @@ const FitnessShow = ({ showId: rawShowId, onBack, viewportRef, setFitnessPlayQue
                             title={episode.label}
                           >
                             {episode.image && (
-                              <div 
+                              <div
                                 className="episode-thumbnail"
+                                data-testid="episode-thumbnail"
+                                data-plex-id={episode.plex || episode.id}
                                 onPointerDown={(e) => handlePlayEpisode(episode, e.currentTarget.closest('.episode-card'), e)}
+                                onClick={(e) => handlePlayEpisode(episode, e.currentTarget.closest('.episode-card'), e)}
                               >
                                 <img
                                   src={normalizeImageUrl(episode.image)}
@@ -1192,7 +1203,7 @@ const FitnessShow = ({ showId: rawShowId, onBack, viewportRef, setFitnessPlayQue
                     const { didScroll } = scrollIntoViewIfNeeded(btn, { axis: 'y', margin: 24 });
                     if (didScroll) return;
                     setActiveSeasonId(s.id);
-                    const episodeCount = items.filter(ep => String(ep.seasonId) === String(s.id)).length;
+                    const episodeCount = items.filter(ep => String(ep.parentId) === String(s.id)).length;
                     const hasRealDescription = !!(s.description && s.description.trim());
                     setSelectedInfo({
                       ...s,

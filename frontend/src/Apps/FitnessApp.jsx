@@ -629,9 +629,10 @@ const FitnessApp = () => {
       if (!response || response.error) {
         logger.warn('fitness-play-url-no-metadata', { episodeId, error: response?.error });
         // Fallback to basic queue item without labels
+        const plexIdFallback = String(episodeId);
         const fallbackItem = {
-          id: episodeId,
-          plex: episodeId,
+          id: plexIdFallback,
+          plex: plexIdFallback,
           type: 'episode',
           title: `Episode ${episodeId}`,
           videoUrl: DaylightMediaPath(`api/v1/play/plex/mpd/${episodeId}`),
@@ -644,9 +645,10 @@ const FitnessApp = () => {
       }
 
       // Build queue item from API response (includes labels for governance)
+      const plexId = String(response.key || episodeId);
       const queueItem = {
-        id: response.key || episodeId,
-        plex: response.key || episodeId,
+        id: plexId,
+        plex: plexId,
         type: response.type || 'episode',
         title: response.title || `Episode ${episodeId}`,
         show: response.show,

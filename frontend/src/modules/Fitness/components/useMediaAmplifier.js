@@ -60,16 +60,16 @@ const normalizePart = (value, fallback) => {
   return normalized;
 };
 
-export const useMediaAmplifier = (mediaElement, { showId, seasonId, trackId } = {}) => {
+export const useMediaAmplifier = (mediaElement, { grandparentId, parentId, trackId } = {}) => {
   const { getVolume, setVolume } = useVolumeStore();
-  
+
   const ids = useMemo(
     () => ({
-      showId: normalizePart(showId, 'fitness'),
-      seasonId: normalizePart(seasonId, 'global'),
+      grandparentId: normalizePart(grandparentId, 'fitness'),
+      parentId: normalizePart(parentId, 'global'),
       trackId: normalizePart(trackId, null)
     }),
-    [showId, seasonId, trackId]
+    [grandparentId, parentId, trackId]
   );
 
   const [boostLevel, setBoostLevel] = useState(1);

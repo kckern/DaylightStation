@@ -228,8 +228,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   }, [mediaElement, registerVideoPlayer]);
 
   const { boostLevel, setBoost } = useMediaAmplifier(mediaElement, {
-    showId: currentItem?.showId,
-    seasonId: currentItem?.seasonId,
+    grandparentId: currentItem?.grandparentId,
+    parentId: currentItem?.parentId,
     trackId: currentItem?.id
   });
   const seekIntentRef = useRef(null); // Track seek/resume intent to override actual time
@@ -498,7 +498,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
         || currentItem.plex
         || currentItem.mediaUrl
         || `fitness-${currentItem.id || ''}`,
-      plex: currentItem.id || currentItem.plex,
+      plex: currentItem.plex || currentItem.id,
       mediaUrl: currentItem.mediaUrl || currentItem.videoUrl,
       title: currentItem.title || currentItem.label,
       mediaType: 'video',
@@ -532,14 +532,14 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     return enhanced;
   }, [currentItem, plexConfig]);
 
-  const showId = useMemo(
-    () => enhancedCurrentItem?.showId || currentItem?.showId || currentItem?.seriesId || currentItem?.plex || 'fitness',
-    [enhancedCurrentItem?.showId, currentItem?.showId, currentItem?.seriesId, currentItem?.plex]
+  const grandparentId = useMemo(
+    () => enhancedCurrentItem?.grandparentId || currentItem?.grandparentId || currentItem?.seriesId || currentItem?.plex || 'fitness',
+    [enhancedCurrentItem?.grandparentId, currentItem?.grandparentId, currentItem?.seriesId, currentItem?.plex]
   );
 
-  const seasonId = useMemo(
-    () => enhancedCurrentItem?.seasonId || currentItem?.seasonId || 'unknown',
-    [enhancedCurrentItem?.seasonId, currentItem?.seasonId]
+  const parentId = useMemo(
+    () => enhancedCurrentItem?.parentId || currentItem?.parentId || 'unknown',
+    [enhancedCurrentItem?.parentId, currentItem?.parentId]
   );
 
   const currentMediaIdentity = useMemo(
@@ -558,8 +558,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
 
   const { videoVolume } = useFitnessVolumeControls({
     videoPlayerRef: playerRef,
-    videoShowId: showId,
-    videoSeasonId: seasonId,
+    videoGrandparentId: grandparentId,
+    videoParentId: parentId,
     videoTrackId: currentMediaIdentity
   });
 
@@ -824,7 +824,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       isStalled, // Include stall state in payload (3C fix)
       title: currentItem.title || currentItem.label || 'Episode',
       type: (currentItem.plex || /^\d+$/.test(String(mediaKey))) ? 'plex' : (currentItem.type || 'media'),
-      showId: currentItem.showId || null
+      grandparentId: currentItem.grandparentId || null
     };
   }, [currentItem, currentTime, duration, resilienceState]);
 
@@ -853,8 +853,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
         reason
       }, 'POST');
       statusUpdateRef.current.lastSent = now;
-      if (payload.showId && typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('fitness-show-refresh', { detail: { showId: payload.showId } }));
+      if (payload.grandparentId && typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('fitness-show-refresh', { detail: { showId: payload.grandparentId } }));
       }
     } catch (err) {
       console.error('Failed to post episode status', err);
@@ -874,12 +874,12 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       setQueue([]);
     }
     // Trigger show refresh on manual exit
-    if (currentItem?.showId && typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('fitness-show-refresh', { detail: { showId: currentItem.showId } }));
+    if (currentItem?.grandparentId && typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('fitness-show-refresh', { detail: { showId: currentItem.grandparentId } }));
     }
     setCurrentItem(null);
     pendingCloseRef.current = false;
-  }, [postEpisodeStatus, setQueue, currentItem?.showId]);
+  }, [postEpisodeStatus, setQueue, currentItem?.grandparentId]);
 
   const handleClose = () => {
     // 4A: Guard - if voice memo overlay is open, pause video but don't unmount

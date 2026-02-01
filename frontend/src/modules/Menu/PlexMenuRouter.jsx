@@ -146,11 +146,11 @@ export function PlexMenuRouter({ plexId, depth, onSelect, onEscape, list }) {
   if (type === 'show') {
     return (
       <Suspense fallback={<ShowViewSkeleton />}>
-        <ShowView 
-          showId={plexId} 
-          depth={depth} 
-          onSelect={onSelect} 
-          onEscape={onEscape} 
+        <ShowView
+          grandparentId={plexId}
+          depth={depth}
+          onSelect={onSelect}
+          onEscape={onEscape}
         />
       </Suspense>
     );
@@ -159,11 +159,11 @@ export function PlexMenuRouter({ plexId, depth, onSelect, onEscape, list }) {
   if (type === 'season') {
     return (
       <Suspense fallback={<SeasonViewSkeleton />}>
-        <SeasonView 
-          seasonId={plexId} 
-          depth={depth} 
-          onSelect={onSelect} 
-          onEscape={onEscape} 
+        <SeasonView
+          parentId={plexId}
+          depth={depth}
+          onSelect={onSelect}
+          onEscape={onEscape}
         />
       </Suspense>
     );

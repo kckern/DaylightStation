@@ -232,3 +232,95 @@ git rev-parse HEAD > docs/docs-last-updated.txt
 - Household configs: `data/household[-{hid}]/apps/{app}/config.yml`
 - Use ConfigService for reads (preferred over io.mjs)
 - Multi-dimensional process.env (use spread pattern to set)
+
+---
+
+## Testing
+
+### Test Architecture
+
+Tests are organized in `tests/` with infrastructure in `tests/_infrastructure/`:
+
+| Location | Purpose |
+|----------|---------|
+| `tests/live/flow/` | Playwright UI tests (`.runtime.test.mjs`) |
+| `tests/live/api/` | API integration tests |
+| `tests/live/adapter/` | Adapter tests |
+| `tests/_infrastructure/harnesses/` | Test harness scripts |
+| `tests/_lib/` | Test utilities and helpers |
+| `tests/_fixtures/` | Test data and URLs |
+
+### Port Configuration (SSOT)
+
+Test URLs come from system config - **NOT hardcoded**. The port is determined by:
+
+1. `tests/_lib/configHelper.mjs` reads from `system.yml` in the data path
+2. Default fallback is 3111 if no config found
+3. `playwright.config.mjs` uses `getAppPort()` from configHelper
+
+**This means tests use the same port as the running dev server.** If Vite is on 3111, tests connect to 3111.
+
+### Running Playwright Tests
+
+```bash
+# Run all flow tests (headless)
+npx playwright test tests/live/flow/
+
+# Run specific test
+npx playwright test tests/live/flow/fitness/fitness-happy-path.runtime.test.mjs
+
+# Run headed (visible browser)
+npx playwright test tests/live/flow/ --headed
+
+# Run with line reporter for cleaner output
+npx playwright test tests/live/flow/ --reporter=line
+```
+
+### Dev Server Handling
+
+Playwright's `webServer` config (in `playwright.config.mjs`) automatically:
+1. Checks if a server is running on the configured port
+2. If `reuseExistingServer: true`, uses existing server
+3. If no server running, starts `npm run dev`
+
+**The test harness ensures the dev server is running.** If the test reports "server not responding":
+- Check if `npm run dev` is running (`ps aux | grep vite`)
+- Check the port with `lsof -i :3111` (or whatever port)
+- The dev server consists of Vite (frontend) AND nodemon (backend) running together
+
+### Test Harness Scripts
+
+```bash
+# Run live tests via harness (recommended)
+npm run test:live              # All live tests
+npm run test:live:flow         # Playwright flow tests only
+npm run test:live:api          # API tests only
+
+# These harnesses check backend health before running
+```
+
+### Troubleshooting Test Failures
+
+**"Server not responding" or "Vite not running":**
+1. Check what's on the expected port: `lsof -i :3111`
+2. Start dev server if needed: `npm run dev`
+3. Verify both Vite and backend are running: `ps aux | grep -E 'vite|nodemon'`
+
+**DASH video "Not supported" in headless:**
+- Normal behavior - headless Chrome lacks some codecs
+- Tests skip gracefully when video can't play
+- Run `--headed` for full video playback testing
+
+**Test passes locally but fails in CI:**
+- Check port configuration matches CI environment
+- CI may need different system.yml or env vars
+
+### No Excuses Policy
+
+When running tests:
+- **Don't complain about ports** - Use configHelper SSOT
+- **Don't blame Docker** - Check what's actually running on ports
+- **Don't skip server setup** - Playwright config handles it
+- **Don't guess URLs** - Read from `tests/_fixtures/runtime/urls.mjs`
+
+The test infrastructure is designed to work. If tests fail, debug the actual issue.

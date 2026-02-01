@@ -100,7 +100,7 @@ export function usePlayheadStallDetection({
   });
 
   const logger = getLogger();
-  const assetId = meta.assetId || meta.key || meta.guid || meta.id || meta.plex || meta.mediaUrl;
+  const assetId = meta?.assetId || meta?.key || meta?.guid || meta?.id || meta?.plex || meta?.mediaUrl;
 
   /**
    * Log a playback event

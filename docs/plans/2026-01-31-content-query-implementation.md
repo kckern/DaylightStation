@@ -8,7 +8,7 @@
 
 **Tech Stack:** Express.js, ES Modules, Jest for testing
 
-**Reference:** `docs/reference/content/query-interface.md`
+**Reference:** `docs/reference/content/content-domain-reference.md`
 
 ---
 
