@@ -383,10 +383,11 @@ export function getSystemBotLoader() {
  * @param {Object} [deps.httpClient] - HTTP client for making requests
  * @param {Object} [deps.mediaProgressMemory] - Media progress memory for progress persistence
  * @param {MediaKeyResolver} [deps.mediaKeyResolver] - Media key resolver for normalizing keys
+ * @param {Object} [deps.app] - Express app instance for setting canvasBasePath
  * @returns {ContentSourceRegistry}
  */
 export function createContentRegistry(config, deps = {}) {
-  const { httpClient, mediaProgressMemory, mediaKeyResolver } = deps;
+  const { httpClient, mediaProgressMemory, mediaKeyResolver, app } = deps;
   const registry = new ContentSourceRegistry();
 
   // Register filesystem adapter
@@ -452,11 +453,16 @@ export function createContentRegistry(config, deps = {}) {
   }
 
   // Register canvas-filesystem adapter if configured
-  if (config.canvas?.filesystem?.basePath) {
+  const canvasBasePath = config.canvas?.filesystem?.basePath;
+  if (canvasBasePath) {
     registry.register(new FilesystemCanvasAdapter({
-      basePath: config.canvas.filesystem.basePath,
+      basePath: canvasBasePath,
       proxyPath: config.canvas?.proxyPath || '/api/v1/canvas/image'
     }));
+    // Make basePath available to canvas image proxy endpoint
+    if (app) {
+      app.set('canvasBasePath', canvasBasePath);
+    }
   }
 
   // Register canvas-immich adapter if immich is configured and canvas.immich.library is set
