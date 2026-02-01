@@ -187,6 +187,41 @@ export class ItemSelectionService {
     }
     return sortFn(items);
   }
+
+  /**
+   * Apply a pick operation to select subset of items.
+   *
+   * @param {Array} items - Items to pick from
+   * @param {string} pickType - Pick type (first, all, random, take:N)
+   * @returns {Array} Selected items
+   * @throws {Error} If pick type is unknown or invalid format
+   */
+  static applyPick(items, pickType) {
+    if (items.length === 0) return [];
+
+    if (pickType === 'first') {
+      return [items[0]];
+    }
+
+    if (pickType === 'all') {
+      return [...items];
+    }
+
+    if (pickType === 'random') {
+      const index = Math.floor(Math.random() * items.length);
+      return [items[index]];
+    }
+
+    if (pickType.startsWith('take:')) {
+      const n = parseInt(pickType.slice(5), 10);
+      if (isNaN(n)) {
+        throw new Error('Invalid take format: expected take:N where N is a number');
+      }
+      return items.slice(0, n);
+    }
+
+    throw new Error(`Unknown pick: ${pickType}`);
+  }
 }
 
 export default ItemSelectionService;

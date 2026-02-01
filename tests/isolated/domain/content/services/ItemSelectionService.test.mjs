@@ -252,4 +252,53 @@ describe('ItemSelectionService', () => {
       expect(result.map(i => i.id)).toEqual(['2', '1']);
     });
   });
+
+  describe('applyPick', () => {
+    test('picks first item', () => {
+      const items = [{ id: '1' }, { id: '2' }, { id: '3' }];
+      const result = ItemSelectionService.applyPick(items, 'first');
+      expect(result).toEqual([{ id: '1' }]);
+    });
+
+    test('picks all items', () => {
+      const items = [{ id: '1' }, { id: '2' }, { id: '3' }];
+      const result = ItemSelectionService.applyPick(items, 'all');
+      expect(result.length).toBe(3);
+    });
+
+    test('picks random item', () => {
+      const items = [{ id: '1' }, { id: '2' }, { id: '3' }];
+      const result = ItemSelectionService.applyPick(items, 'random');
+      expect(result.length).toBe(1);
+      expect(items.some(i => i.id === result[0].id)).toBe(true);
+    });
+
+    test('picks first N items with take:N', () => {
+      const items = [{ id: '1' }, { id: '2' }, { id: '3' }, { id: '4' }];
+      const result = ItemSelectionService.applyPick(items, 'take:2');
+      expect(result.map(i => i.id)).toEqual(['1', '2']);
+    });
+
+    test('handles take:N when N > items.length', () => {
+      const items = [{ id: '1' }, { id: '2' }];
+      const result = ItemSelectionService.applyPick(items, 'take:5');
+      expect(result.length).toBe(2);
+    });
+
+    test('returns empty array for empty input', () => {
+      expect(ItemSelectionService.applyPick([], 'first')).toEqual([]);
+      expect(ItemSelectionService.applyPick([], 'all')).toEqual([]);
+      expect(ItemSelectionService.applyPick([], 'random')).toEqual([]);
+    });
+
+    test('throws for unknown pick', () => {
+      expect(() => ItemSelectionService.applyPick([{ id: '1' }], 'unknown'))
+        .toThrow('Unknown pick: unknown');
+    });
+
+    test('throws for invalid take:N format', () => {
+      expect(() => ItemSelectionService.applyPick([{ id: '1' }], 'take:abc'))
+        .toThrow('Invalid take format');
+    });
+  });
 });
