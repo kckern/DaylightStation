@@ -396,7 +396,7 @@ export class GovernanceEngine {
     this._updateGlobalState();
   }
 
-  configure(config, policies) {
+  configure(config, policies, { subscribeToAppEvent } = {}) {
     this.config = config || {};
     if (Array.isArray(policies) && policies.length > 0) {
       this.policies = policies;
@@ -420,6 +420,11 @@ export class GovernanceEngine {
       this.session.treasureBox.setGovernanceCallback(() => {
         this._evaluateFromTreasureBox();
       });
+    }
+
+    // Setup playback event subscription for timer coordination
+    if (subscribeToAppEvent) {
+      this._setupPlaybackSubscription(subscribeToAppEvent);
     }
 
     // Initial evaluation from current state
@@ -773,8 +778,46 @@ export class GovernanceEngine {
     });
   }
 
+  /**
+   * Subscribe to playback events for timer coordination.
+   * Call during configure() when subscribeToAppEvent is available.
+   */
+  _setupPlaybackSubscription(subscribeToAppEvent) {
+    if (!subscribeToAppEvent || typeof subscribeToAppEvent !== 'function') {
+      return;
+    }
+
+    // Clean up any existing subscriptions
+    this._cleanupPlaybackSubscription();
+
+    this._unsubscribeStalled = subscribeToAppEvent('playback:stalled', () => {
+      this._pauseTimers();
+    });
+
+    this._unsubscribeRecovered = subscribeToAppEvent('playback:recovered', () => {
+      this._resumeTimers();
+    });
+
+    getLogger().debug('governance.playback_subscription_setup');
+  }
+
+  /**
+   * Clean up playback event subscriptions.
+   */
+  _cleanupPlaybackSubscription() {
+    if (typeof this._unsubscribeStalled === 'function') {
+      this._unsubscribeStalled();
+      this._unsubscribeStalled = null;
+    }
+    if (typeof this._unsubscribeRecovered === 'function') {
+      this._unsubscribeRecovered();
+      this._unsubscribeRecovered = null;
+    }
+  }
+
   reset() {
     this._clearTimers();
+    this._cleanupPlaybackSubscription();
     if (this._zoneChangeDebounceTimer) {
       clearTimeout(this._zoneChangeDebounceTimer);
       this._zoneChangeDebounceTimer = null;
@@ -832,6 +875,7 @@ export class GovernanceEngine {
    */
   _resetToIdle() {
     this._clearTimers();
+    this._cleanupPlaybackSubscription();
     if (this._zoneChangeDebounceTimer) {
       clearTimeout(this._zoneChangeDebounceTimer);
       this._zoneChangeDebounceTimer = null;
@@ -882,6 +926,14 @@ export class GovernanceEngine {
     if (this.phase !== null) {
       this._setPhase(null);
     }
+  }
+
+  /**
+   * Full cleanup for component unmount.
+   */
+  destroy() {
+    this.reset();
+    this._cleanupPlaybackSubscription();
   }
 
   get state() {
