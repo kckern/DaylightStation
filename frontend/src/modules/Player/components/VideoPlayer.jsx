@@ -34,7 +34,7 @@ export function VideoPlayer({
   resilienceBridge
 }) {
   // console.log('[VideoPlayer] Received keyboardOverrides:', keyboardOverrides ? Object.keys(keyboardOverrides) : 'undefined');
-  const isPlex = ['dash_video'].includes(media.media_type);
+  const isPlex = ['dash_video'].includes(media.mediaType);
   const [displayReady, setDisplayReady] = useState(false);
   const [isAdapting, setIsAdapting] = useState(false);
   const [adaptMessage, setAdaptMessage] = useState(undefined);
@@ -111,7 +111,7 @@ export function VideoPlayer({
       title: media?.title,
       show: media?.show,
       season: media?.season,
-      mediaKey: media?.media_key || media?.key || media?.plex,
+      mediaKey: media?.assetId || media?.key || media?.plex,
       shader
     }
   });
@@ -136,13 +136,13 @@ export function VideoPlayer({
     };
   }, [resilienceBridge, getMediaEl, getContainerEl, fetchVideoInfo]);
 
-  const { show, season, title, media_url } = media;
+  const { show, season, title, mediaUrl } = media;
 
-  // If the media_url (or its effective bitrate cap) changes, reset display readiness so UI transitions are correct
+  // If the mediaUrl (or its effective bitrate cap) changes, reset display readiness so UI transitions are correct
   useEffect(() => {
     setDisplayReady(false);
     displayReadyLoggedRef.current = false;
-  }, [media_url, media?.maxVideoBitrate]);
+  }, [mediaUrl, media?.maxVideoBitrate]);
 
   // Handle dash-video custom element events (web components don't support React synthetic events)
   useEffect(() => {
@@ -162,7 +162,7 @@ export function VideoPlayer({
           title: media?.title,
           show: media?.show,
           season: media?.season,
-          mediaKey: media?.media_key || media?.key || media?.plex,
+          mediaKey: media?.assetId || media?.key || media?.plex,
           readyTs: Date.now()
         });
       }
@@ -175,7 +175,7 @@ export function VideoPlayer({
       el.removeEventListener('canplay', handleReady);
       el.removeEventListener('playing', handleReady);
     };
-  }, [isDash, media_url, elementKey]);
+  }, [isDash, mediaUrl, elementKey]);
 
   // FPS logging every 10 seconds during playback
   // TIMER THRASHING FIX: Use ref for timer ID and stable dependencies
@@ -220,7 +220,7 @@ export function VideoPlayer({
         title: media?.title,
         show: media?.show,
         season: media?.season,
-        mediaKey: media?.media_key || media?.key || media?.plex,
+        mediaKey: media?.assetId || media?.key || media?.plex,
         currentTime: Math.round(seconds * 10) / 10,
         duration: Math.round(duration * 10) / 10,
         droppedFrames: quality.droppedVideoFrames,
@@ -251,7 +251,7 @@ export function VideoPlayer({
   }, [seconds, quality, droppedFramePct, currentMaxKbps, duration, media, isDash, shader]);
 
   const percent = duration ? ((seconds / duration) * 100).toFixed(1) : 0;
-  const plexIdValue = media?.media_key || media?.key || media?.plex || null;
+  const plexIdValue = media?.assetId || media?.key || media?.plex || null;
   
   
   const heading = !!show && !!season && !!title
@@ -267,20 +267,20 @@ export function VideoPlayer({
       <ProgressBar percent={percent} onClick={handleProgressClick} />
       {isDash ? (
         <dash-video
-          key={`${media_url || ''}:${media?.maxVideoBitrate ?? 'unlimited'}:${elementKey}`}
+          key={`${mediaUrl || ''}:${media?.maxVideoBitrate ?? 'unlimited'}:${elementKey}`}
           ref={containerRef}
           class={`video-element ${displayReady ? 'show' : ''}`}
-          src={media_url}
+          src={mediaUrl}
           autoplay=""
           style={effectStyles}
         />
       ) : (
         <video
-          key={`${media_url || ''}:${media?.maxVideoBitrate ?? 'unlimited'}:${elementKey}`}
+          key={`${mediaUrl || ''}:${media?.maxVideoBitrate ?? 'unlimited'}:${elementKey}`}
           autoPlay
           ref={containerRef}
           className={`video-element ${displayReady ? 'show' : ''}`}
-          src={media_url}
+          src={mediaUrl}
           style={effectStyles}
           onCanPlay={() => { setDisplayReady(true); setIsAdapting(false); setAdaptMessage(undefined); }}
           onPlaying={() => { setDisplayReady(true); setIsAdapting(false); setAdaptMessage(undefined); }}

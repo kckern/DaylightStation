@@ -56,22 +56,6 @@ export class MediaProgress {
   }
 
   /**
-   * Convert to plain object for persistence
-   * @returns {Object}
-   */
-  toJSON() {
-    return {
-      itemId: this.itemId,
-      playhead: this.playhead,
-      duration: this.duration,
-      percent: this.percent,
-      playCount: this.playCount,
-      lastPlayed: this.lastPlayed,
-      watchTime: this.watchTime
-    };
-  }
-
-  /**
    * Create MediaProgress from persisted data
    * @param {Object} data
    * @returns {MediaProgress}

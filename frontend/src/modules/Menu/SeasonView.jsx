@@ -84,7 +84,7 @@ export function SeasonView({ seasonId, depth, onSelect, onEscape, MENU_TIMEOUT =
   const seasonInfo = data?.info || {};
   const seasonTitle = data?.title || seasonInfo.title || 'Season';
   const showTitle = seasonInfo.parentTitle || '';
-  const seasonPoster = seasonInfo.image || seasonInfo.parentThumb || '';
+  const seasonPoster = seasonInfo.image || '';
 
   // Timeout logic for OfficeApp single-button navigation
   const { timeLeft, resetTime } = useProgressTimeout(MENU_TIMEOUT, () => {

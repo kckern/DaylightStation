@@ -239,11 +239,11 @@ const FitnessPlayerFooterSeekThumbnails = ({
     const plexObj = {
       plex: currentItem.plex || currentItem.id,
       id: currentItem.id,
-      thumb_id: currentItem.thumb_id ? 
-        (typeof currentItem.thumb_id === 'number' ? currentItem.thumb_id : parseInt(currentItem.thumb_id, 10)) 
+      thumbId: currentItem.thumbId ?
+        (typeof currentItem.thumbId === 'number' ? currentItem.thumbId : parseInt(currentItem.thumbId, 10))
         : null,
       image: currentItem.image,
-      media_key: currentItem.media_key,
+      assetId: currentItem.assetId,
       ratingKey: currentItem.ratingKey,
       metadata: currentItem.metadata
     };
@@ -404,8 +404,8 @@ FitnessPlayerFooterSeekThumbnails.propTypes = {
     image: PropTypes.string,
     plex: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
     id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
-    thumb_id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
-    media_key: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    thumbId: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    assetId: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
     ratingKey: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
     metadata: PropTypes.object,
     duration: PropTypes.number

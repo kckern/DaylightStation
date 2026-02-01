@@ -22,7 +22,7 @@ export function useMediaKeyboardHandler(config) {
     ignoreKeys = false,
     meta,
     type,
-    media_key,
+    assetId,
     setCurrentTime,
     keyboardOverrides = {},
     controller,
@@ -38,7 +38,7 @@ export function useMediaKeyboardHandler(config) {
     getMediaEl
   });
 
-  const mediaIdentityKey = meta?.media_key || media_key || meta?.id || null;
+  const mediaIdentityKey = meta?.assetId || assetId || meta?.id || null;
   const mediaTitle = meta?.title || meta?.name || meta?.show || null;
 
   const logUserAction = (action, payload = {}, level = 'info') => {
@@ -132,12 +132,12 @@ export function useMediaKeyboardHandler(config) {
         percent: Number.isFinite(percent) ? percent : null,
         trigger: 'keyboard'
       });
-      if (meta && type && media_key) {
+      if (meta && type && assetId) {
         const { currentTime, percent } = readProgressSnapshot();
         const title = meta.title + (meta.show ? ` (${meta.show} - ${meta.season})` : '');
         const progressPercent = Number.isFinite(percent) ? percent : 100;
-        const logType = (meta.plex || /^\d+$/.test(String(media_key))) ? 'plex' : type;
-        DaylightAPI('api/v1/play/log', { title, type: logType, media_key, seconds: currentTime, percent: progressPercent });
+        const logType = (meta.plex || /^\d+$/.test(String(assetId))) ? 'plex' : type;
+        DaylightAPI('api/v1/play/log', { title, type: logType, assetId, seconds: currentTime, percent: progressPercent });
         DaylightAPI('api/v1/harvest/watchlist');
       }
 
@@ -212,7 +212,7 @@ export function useMediaKeyboardHandler(config) {
     ignoreKeys,
     meta,
     type,
-    media_key,
+    assetId,
     setCurrentTime,
     actionHandlers: customActionHandlers,
     componentOverrides: conditionalOverrides

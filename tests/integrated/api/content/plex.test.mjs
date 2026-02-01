@@ -140,18 +140,18 @@ describe('Plex API', () => {
         validateSchema(res.body, 'playResponse');
       });
 
-      test('play response has media_url', async () => {
+      test('play response has mediaUrl', async () => {
         const res = await request(app).get('/api/play/plex/660440');
 
         expect(res.status).toBe(200);
-        expect(res.body.media_url).toBeDefined();
+        expect(res.body.mediaUrl).toBeDefined();
       });
 
-      test('play response has media_key', async () => {
+      test('play response has assetId', async () => {
         const res = await request(app).get('/api/play/plex/660440');
 
         expect(res.status).toBe(200);
-        expect(res.body.media_key).toBeDefined();
+        expect(res.body.assetId).toBeDefined();
       });
     });
 
@@ -198,7 +198,7 @@ describe('Plex API', () => {
         const res = await request(app).get('/api/play/plex/456724/shuffle');
 
         expect(res.status).toBe(200);
-        expect(res.body.media_key).toBeDefined();
+        expect(res.body.assetId).toBeDefined();
       });
     });
 

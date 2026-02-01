@@ -162,10 +162,10 @@ export function createItemRouter(options = {}) {
         }
       }
 
-      // Check if any item has folder_color - if so, maintain fixed order from YAML
-      const hasFixedOrder = items.some(childItem => childItem.metadata?.folder_color || childItem.folder_color);
+      // Check if any item has folderColor - if so, maintain fixed order from YAML
+      const hasFixedOrder = items.some(childItem => childItem.metadata?.folderColor || childItem.folderColor);
 
-      // Apply shuffle if requested (skip if folder_color present)
+      // Apply shuffle if requested (skip if folderColor present)
       if (modifiers.shuffle && !hasFixedOrder) {
         items = shuffleArray([...items]);
       }
@@ -199,8 +199,7 @@ export function createItemRouter(options = {}) {
             seasonsMap[seasonId] = {
               num: childItem.metadata?.seasonNumber ?? childItem.metadata?.parentIndex,
               title: childItem.metadata?.seasonName || childItem.metadata?.parentTitle || 'Season',
-              // Fallback chain: season thumb -> parent thumb -> show thumb
-              img: childItem.metadata?.seasonThumbUrl || childItem.metadata?.parentThumb || childItem.metadata?.showThumbUrl || childItem.metadata?.grandparentThumb
+              img: childItem.thumbnail
             };
           }
         }
@@ -236,23 +235,23 @@ export function createItemRouter(options = {}) {
   /**
    * POST /api/v1/item/menu-log
    * Log menu navigation for recent_on_top sorting
-   * Body: { media_key: string }
+   * Body: { assetId: string }
    */
   router.post('/menu-log', asyncHandler(async (req, res) => {
-    const { media_key } = req.body;
+    const { assetId } = req.body;
 
-    if (!media_key) {
-      return res.status(400).json({ error: 'media_key is required' });
+    if (!assetId) {
+      return res.status(400).json({ error: 'assetId is required' });
     }
 
     const menuLog = loadYaml(menuMemoryPath) || {};
     const nowUnix = Math.floor(Date.now() / 1000);
 
-    menuLog[media_key] = nowUnix;
+    menuLog[assetId] = nowUnix;
     saveYaml(menuMemoryPath, menuLog);
 
-    logger.info?.('item.menu-log.updated', { media_key });
-    res.json({ [media_key]: nowUnix });
+    logger.info?.('item.menu-log.updated', { assetId });
+    res.json({ [assetId]: nowUnix });
   }));
 
   return router;

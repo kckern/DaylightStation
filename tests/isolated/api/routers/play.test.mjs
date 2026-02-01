@@ -63,8 +63,8 @@ describe('Play API Router', () => {
 
       expect(res.status).toBe(200);
       expect(res.body.id).toBe('filesystem:audio/test.mp3');
-      expect(res.body.media_url).toBe('/proxy/filesystem/stream/audio/test.mp3');
-      expect(res.body.media_type).toBe('audio');
+      expect(res.body.mediaUrl).toBe('/proxy/filesystem/stream/audio/test.mp3');
+      expect(res.body.mediaType).toBe('audio');
     });
 
     it('returns playable item from plex', async () => {
@@ -72,8 +72,8 @@ describe('Play API Router', () => {
 
       expect(res.status).toBe(200);
       expect(res.body.id).toBe('plex:12345');
-      expect(res.body.media_url).toBe('/proxy/plex/stream/12345');
-      expect(res.body.media_type).toBe('video');
+      expect(res.body.mediaUrl).toBe('/proxy/plex/stream/12345');
+      expect(res.body.mediaType).toBe('video');
     });
 
     it('returns 404 for unknown source', async () => {

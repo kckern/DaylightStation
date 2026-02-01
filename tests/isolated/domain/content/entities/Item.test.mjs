@@ -162,7 +162,7 @@ describe('Item entity', () => {
         title: 'Test'
       });
       expect(item.plex).toBe('12345');
-      expect(item.media_key).toBe('plex:12345');
+      expect(item.assetId).toBe('plex:12345');
     });
 
     it('should extract filesystem path from compound ID', () => {
@@ -171,17 +171,17 @@ describe('Item entity', () => {
         source: 'filesystem',
         title: 'Song'
       });
-      expect(item.media_key).toBe('filesystem:audio/music/song.mp3');
+      expect(item.assetId).toBe('filesystem:audio/music/song.mp3');
     });
 
-    it('should allow explicit media_key override', () => {
+    it('should allow explicit assetId override', () => {
       const item = new Item({
         id: 'plex:123',
         source: 'plex',
         title: 'Test',
-        media_key: 'custom-key'
+        assetId: 'custom-key'
       });
-      expect(item.media_key).toBe('custom-key');
+      expect(item.assetId).toBe('custom-key');
     });
 
     it('should return null for plex if not a plex item', () => {

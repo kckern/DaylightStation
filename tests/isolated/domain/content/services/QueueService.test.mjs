@@ -190,23 +190,23 @@ describe('QueueService', () => {
     });
   });
 
-  describe('skip_after filtering', () => {
-    test('should skip items past their skip_after date', () => {
+  describe('skipAfter filtering', () => {
+    test('should skip items past their skipAfter date', () => {
       const now = new Date('2026-01-13');
       const items = [
-        { id: '1', title: 'Current', skip_after: '2026-12-31' },
-        { id: '2', title: 'Expired', skip_after: '2025-01-01' },
-        { id: '3', title: 'No Deadline', skip_after: null }
+        { id: '1', title: 'Current', skipAfter: '2026-12-31' },
+        { id: '2', title: 'Expired', skipAfter: '2025-01-01' },
+        { id: '3', title: 'No Deadline', skipAfter: null }
       ];
       const filtered = QueueService.filterBySkipAfter(items, now);
       expect(filtered.map(i => i.id)).toEqual(['1', '3']);
     });
 
-    test('should mark items as urgent if skip_after within 8 days', () => {
+    test('should mark items as urgent if skipAfter within 8 days', () => {
       const now = new Date('2026-01-13');
       const items = [
-        { id: '1', title: 'Urgent', skip_after: '2026-01-20', priority: 'medium' }, // 7 days
-        { id: '2', title: 'Not Urgent', skip_after: '2026-01-25', priority: 'medium' } // 12 days
+        { id: '1', title: 'Urgent', skipAfter: '2026-01-20', priority: 'medium' }, // 7 days
+        { id: '2', title: 'Not Urgent', skipAfter: '2026-01-25', priority: 'medium' } // 12 days
       ];
       const enriched = QueueService.applyUrgency(items, now);
       expect(enriched[0].priority).toBe('urgent');
@@ -216,13 +216,13 @@ describe('QueueService', () => {
     test('should not upgrade in_progress to urgent', () => {
       const now = new Date('2026-01-13');
       const items = [
-        { id: '1', title: 'In Progress', skip_after: '2026-01-15', priority: 'in_progress' }
+        { id: '1', title: 'In Progress', skipAfter: '2026-01-15', priority: 'in_progress' }
       ];
       const enriched = QueueService.applyUrgency(items, now);
       expect(enriched[0].priority).toBe('in_progress'); // stays in_progress
     });
 
-    test('should handle items without skip_after date', () => {
+    test('should handle items without skipAfter date', () => {
       const now = new Date('2026-01-13');
       const items = [
         { id: '1', title: 'No Deadline', priority: 'medium' }
@@ -232,32 +232,32 @@ describe('QueueService', () => {
     });
   });
 
-  describe('wait_until filtering', () => {
-    test('should skip items with wait_until more than 2 days in future', () => {
+  describe('waitUntil filtering', () => {
+    test('should skip items with waitUntil more than 2 days in future', () => {
       const now = new Date('2026-01-13');
       const items = [
-        { id: '1', title: 'Available Now', wait_until: '2026-01-12' },
-        { id: '2', title: 'Soon Available', wait_until: '2026-01-15' }, // 2 days
-        { id: '3', title: 'Not Yet', wait_until: '2026-01-20' }, // 7 days
-        { id: '4', title: 'No Wait', wait_until: null }
+        { id: '1', title: 'Available Now', waitUntil: '2026-01-12' },
+        { id: '2', title: 'Soon Available', waitUntil: '2026-01-15' }, // 2 days
+        { id: '3', title: 'Not Yet', waitUntil: '2026-01-20' }, // 7 days
+        { id: '4', title: 'No Wait', waitUntil: null }
       ];
       const filtered = QueueService.filterByWaitUntil(items, now);
       expect(filtered.map(i => i.id)).toEqual(['1', '2', '4']);
     });
 
-    test('should include items with wait_until exactly 2 days ahead', () => {
+    test('should include items with waitUntil exactly 2 days ahead', () => {
       const now = new Date('2026-01-13');
       const items = [
-        { id: '1', title: 'Boundary', wait_until: '2026-01-15' } // exactly 2 days
+        { id: '1', title: 'Boundary', waitUntil: '2026-01-15' } // exactly 2 days
       ];
       const filtered = QueueService.filterByWaitUntil(items, now);
       expect(filtered.length).toBe(1);
     });
 
-    test('should include items with past wait_until dates', () => {
+    test('should include items with past waitUntil dates', () => {
       const now = new Date('2026-01-13');
       const items = [
-        { id: '1', title: 'Past', wait_until: '2026-01-01' }
+        { id: '1', title: 'Past', waitUntil: '2026-01-01' }
       ];
       const filtered = QueueService.filterByWaitUntil(items, now);
       expect(filtered.length).toBe(1);
@@ -362,7 +362,7 @@ describe('QueueService', () => {
         { id: '1', title: 'Good', percent: 0, hold: false },
         { id: '2', title: 'On Hold', percent: 0, hold: true },
         { id: '3', title: 'Watched', percent: 95, hold: false },
-        { id: '4', title: 'Expired', percent: 0, hold: false, skip_after: '2020-01-01' },
+        { id: '4', title: 'Expired', percent: 0, hold: false, skipAfter: '2020-01-01' },
         { id: '5', title: 'In Progress', percent: 50, hold: false }
       ];
       const filtered = QueueService.applyFilters(items);
@@ -382,7 +382,7 @@ describe('QueueService', () => {
       const now = new Date('2026-01-13');
       const items = [
         { id: '1', title: 'Normal', percent: 0, priority: 'medium' },
-        { id: '2', title: 'Deadline Soon', percent: 0, priority: 'medium', skip_after: '2026-01-18' }
+        { id: '2', title: 'Deadline Soon', percent: 0, priority: 'medium', skipAfter: '2026-01-18' }
       ];
       const result = QueueService.buildQueue(items, { now });
       expect(result[0].id).toBe('2'); // Urgent first

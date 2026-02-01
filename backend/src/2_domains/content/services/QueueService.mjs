@@ -26,12 +26,12 @@ const PRIORITY_ORDER = {
 };
 
 /**
- * Number of days before skip_after to mark as urgent
+ * Number of days before skipAfter to mark as urgent
  */
 const URGENCY_DAYS = 8;
 
 /**
- * Number of days to look ahead for wait_until filtering
+ * Number of days to look ahead for waitUntil filtering
  */
 const WAIT_LOOKAHEAD_DAYS = 2;
 
@@ -86,10 +86,10 @@ export class QueueService {
   }
 
   /**
-   * Filter items that are past their skip_after deadline.
-   * Items without skip_after are always included.
+   * Filter items that are past their skipAfter deadline.
+   * Items without skipAfter are always included.
    *
-   * @param {Array} items - Items with optional skip_after field
+   * @param {Array} items - Items with optional skipAfter field
    * @param {Date} now - Current date (required, from application layer)
    * @returns {Array} Filtered items (new array, original unchanged)
    */
@@ -98,17 +98,17 @@ export class QueueService {
       throw new Error('now date required for filterBySkipAfter');
     }
     return items.filter(item => {
-      if (!item.skip_after) return true;
-      const deadline = new Date(item.skip_after);
+      if (!item.skipAfter) return true;
+      const deadline = new Date(item.skipAfter);
       return deadline >= now;
     });
   }
 
   /**
-   * Mark items as urgent if skip_after is within URGENCY_DAYS.
+   * Mark items as urgent if skipAfter is within URGENCY_DAYS.
    * Does not upgrade in_progress items (they already have top priority).
    *
-   * @param {Array} items - Items with optional skip_after and priority fields
+   * @param {Array} items - Items with optional skipAfter and priority fields
    * @param {Date} now - Current date (required, from application layer)
    * @returns {Array} Items with updated priority (new array, original unchanged)
    */
@@ -120,8 +120,8 @@ export class QueueService {
     urgencyThreshold.setDate(urgencyThreshold.getDate() + URGENCY_DAYS);
 
     return items.map(item => {
-      if (!item.skip_after) return item;
-      const deadline = new Date(item.skip_after);
+      if (!item.skipAfter) return item;
+      const deadline = new Date(item.skipAfter);
       if (deadline <= urgencyThreshold && item.priority !== 'in_progress') {
         return { ...item, priority: 'urgent' };
       }
@@ -130,11 +130,11 @@ export class QueueService {
   }
 
   /**
-   * Filter items that have wait_until more than WAIT_LOOKAHEAD_DAYS in future.
-   * Items without wait_until are always included.
-   * Items with wait_until in the past or within lookahead window are included.
+   * Filter items that have waitUntil more than WAIT_LOOKAHEAD_DAYS in future.
+   * Items without waitUntil are always included.
+   * Items with waitUntil in the past or within lookahead window are included.
    *
-   * @param {Array} items - Items with optional wait_until field
+   * @param {Array} items - Items with optional waitUntil field
    * @param {Date} now - Current date (required, from application layer)
    * @returns {Array} Filtered items (new array, original unchanged)
    */
@@ -146,8 +146,8 @@ export class QueueService {
     lookaheadDate.setDate(lookaheadDate.getDate() + WAIT_LOOKAHEAD_DAYS);
 
     return items.filter(item => {
-      if (!item.wait_until) return true;
-      const waitDate = new Date(item.wait_until);
+      if (!item.waitUntil) return true;
+      const waitDate = new Date(item.waitUntil);
       return waitDate <= lookaheadDate;
     });
   }

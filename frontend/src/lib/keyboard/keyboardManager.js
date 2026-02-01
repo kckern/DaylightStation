@@ -318,7 +318,7 @@ export function usePlayerKeyboard(config) {
     ignoreKeys,
     meta,
     type,
-    media_key,
+    assetId,
     setCurrentTime,
     actionHandlers = {},
     componentOverrides = {}

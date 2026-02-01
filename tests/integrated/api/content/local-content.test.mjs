@@ -108,11 +108,11 @@ describe('LocalContent API', () => {
         expect(typeof res.body.number).toBe('number');
       });
 
-      test('hymn has media_key', async () => {
+      test('hymn has assetId', async () => {
         const res = await request(app).get('/api/local-content/hymn/113');
 
         expect(res.status).toBe(200);
-        expect(res.body.media_key).toBeDefined();
+        expect(res.body.assetId).toBeDefined();
       });
     });
 
@@ -201,12 +201,12 @@ describe('LocalContent API', () => {
         validateSchema(res.body, 'talk');
       });
 
-      test('talk has title and media_key', async () => {
+      test('talk has title and assetId', async () => {
         const res = await request(app).get(`/api/local-content${TALK_PATH}`);
 
         expect(res.status).toBe(200);
         expect(typeof res.body.title).toBe('string');
-        expect(res.body.media_key).toBeDefined();
+        expect(res.body.assetId).toBeDefined();
       });
     });
 

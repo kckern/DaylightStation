@@ -54,7 +54,7 @@ export function SinglePlayer(props = {}) {
     playbackRate,
     onProgress,
     onMediaRef,
-    media_key: mediaKeyProp,
+    assetId: mediaKeyProp,
     upscaleEffects
   } = play || {};
   
@@ -128,18 +128,18 @@ export function SinglePlayer(props = {}) {
 
   const playbackSessionKey = useMemo(() => {
     const candidates = [
-      mediaInfo?.media_key,
+      mediaInfo?.assetId,
       mediaInfo?.key,
       mediaInfo?.plex,
       mediaInfo?.id,
-      mediaInfo?.media_url,
+      mediaInfo?.mediaUrl,
       plex,
       mediaKeyProp,
       media
     ];
     const firstDefined = candidates.find((value) => value != null && String(value).length);
     return firstDefined != null ? String(firstDefined) : null;
-  }, [mediaInfo?.media_key, mediaInfo?.key, mediaInfo?.plex, mediaInfo?.id, mediaInfo?.media_url, plex, mediaKeyProp, media]);
+  }, [mediaInfo?.assetId, mediaInfo?.key, mediaInfo?.plex, mediaInfo?.id, mediaInfo?.mediaUrl, plex, mediaKeyProp, media]);
 
   const handleProgress = useCallback((payload = {}) => {
     const watchedDuration = accumulateWatchedDuration(payload);
@@ -221,8 +221,8 @@ export function SinglePlayer(props = {}) {
     });
 
     if (info) {
-      // Detect if this is a collection/folder (no media_url, no playable media_type)
-      const isPlayable = info.media_url || ['dash_video', 'video', 'audio'].includes(info.media_type);
+      // Detect if this is a collection/folder (no mediaUrl, no playable mediaType)
+      const isPlayable = info.mediaUrl || ['dash_video', 'video', 'audio'].includes(info.mediaType);
 
       if (!isPlayable && plex) {
         // This is a collection - fetch first playable item
@@ -289,7 +289,7 @@ export function SinglePlayer(props = {}) {
   }, [fetchVideoInfoCallback]);
 
   useEffect(() => {
-    if (!isReady || !mediaInfo?.media_type) {
+    if (!isReady || !mediaInfo?.mediaType) {
       return;
     }
     onResolvedMeta?.(mediaInfo);
@@ -298,7 +298,7 @@ export function SinglePlayer(props = {}) {
   if (goToApp) return <AppContainer open={goToApp} clear={clear} />;
   
   // Calculate plexId from available sources - plex prop is passed directly from Player
-  const initialPlexId = plex || media || mediaInfo?.media_key || mediaInfo?.key || mediaInfo?.plex || null;
+  const initialPlexId = plex || media || mediaInfo?.assetId || mediaInfo?.key || mediaInfo?.plex || null;
 
   // Create ref to hold registered accessors
   const mediaAccessorsRef = useRef({ getMediaEl: () => null, getContainerEl: () => null });
@@ -352,13 +352,13 @@ export function SinglePlayer(props = {}) {
           />
         </div>
       )}
-      {isReady && ['dash_video', 'video', 'audio'].includes(mediaInfo.media_type) && (
+      {isReady && ['dash_video', 'video', 'audio'].includes(mediaInfo.mediaType) && (
         React.createElement(
           {
             audio: AudioPlayer,
             video: VideoPlayer,
             dash_video: VideoPlayer
-          }[mediaInfo.media_type],
+          }[mediaInfo.mediaType],
           {
             media: mediaInfo,
             advance,
@@ -385,7 +385,7 @@ export function SinglePlayer(props = {}) {
           }
         )
       )}
-      {isReady && !['dash_video', 'video', 'audio'].includes(mediaInfo.media_type) && (
+      {isReady && !['dash_video', 'video', 'audio'].includes(mediaInfo.mediaType) && (
         <pre>
           {JSON.stringify(mediaInfo, null, 2)}
         </pre>

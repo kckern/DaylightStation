@@ -105,11 +105,11 @@ const EpisodeInfo = ({ episode, showInfo, seasonsMap, seasonsList, onPlay }) => 
   const seasonDescription = [season.summary, season.seasonDescription, season.description, showInfo?.summary]
     .find(v => typeof v === 'string' && v.trim().length) || '';
 
-  const seasonImage = normalizeImageUrl(season.img || season.seasonThumbUrl || season.image) || (seasonId ? DaylightMediaPath(`api/v1/content/plex/image/${seasonId}`) : normalizeImageUrl(showInfo?.image));
-  // Use the same episode image source as grid: primary is episode.image; fallback to thumb_id path
+  const seasonImage = normalizeImageUrl(season.img || season.image) || (seasonId ? DaylightMediaPath(`api/v1/content/plex/image/${seasonId}`) : normalizeImageUrl(showInfo?.image));
+  // Use the same episode image source as grid: primary is episode.image; fallback to thumbId path
   const episodeImage = (episode.image && episode.image.trim())
     ? normalizeImageUrl(episode.image)
-    : (episode.thumb_id ? DaylightMediaPath(`api/v1/content/plex/image/${episode.thumb_id}`) : null);
+    : (episode.thumbId ? DaylightMediaPath(`api/v1/content/plex/image/${episode.thumbId}`) : null);
   const durationText = episode.duration ? formatDuration(episode.duration) : null;
   const epTitle = episode.label || episode.title || `Episode ${episode.episodeNumber || ''}`.trim();
   const epNumber = episode.episodeNumber;
@@ -531,7 +531,7 @@ const FitnessShow = ({ showId: rawShowId, onBack, viewportRef, setFitnessPlayQue
       const plexId = extractPlexId(episode);
 
       // Get URL for the playable item if not present
-      let episodeUrl = episode.url || episode.media_url;
+      let episodeUrl = episode.url || episode.mediaUrl;
       if (!episodeUrl && plexId) {
         // Construct the URL using the new API proxy path
         episodeUrl = `/api/v1/proxy/plex/stream/${plexId}`;
@@ -551,12 +551,12 @@ const FitnessShow = ({ showId: rawShowId, onBack, viewportRef, setFitnessPlayQue
         show: showTitle,
         season: seasonTitle,
         title: episode.label,
-        media_url: episodeUrl, // Player expects media_url, not videoUrl
+        mediaUrl: episodeUrl,
         duration: episode.duration,
-        thumb_id: episode.thumb_id, // Pass thumb_id directly to FitnessPlayer
-        image: episode.thumb_id ? DaylightMediaPath(`api/v1/content/plex/image/${episode.thumb_id}`) : episode.image,
+        thumbId: episode.thumbId, // Pass thumbId directly to FitnessPlayer
+        image: episode.thumbId ? DaylightMediaPath(`api/v1/content/plex/image/${episode.thumbId}`) : episode.image,
         seasonId: episode.seasonId,
-        seasonImage: (episode.seasonThumbUrl || (episode.seasonId ? DaylightMediaPath(`api/v1/content/plex/image/${episode.seasonId}`) : undefined)),
+        seasonImage: episode.seasonId ? DaylightMediaPath(`api/v1/content/plex/image/${episode.seasonId}`) : undefined,
         labels: deriveEpisodeLabels(episode),
         type: episode.type || 'episode',
         showId,
@@ -685,11 +685,11 @@ const FitnessShow = ({ showId: rawShowId, onBack, viewportRef, setFitnessPlayQue
         // Convert to string for comparison since Object.entries returns string keys
         // but episode.seasonId may be a number from the API
         const count = items.filter(ep => String(ep.seasonId) === id).length;
-        // Support both legacy (seasonNumber, seasonName, seasonThumbUrl, seasonDescription) and new (num, title, img, summary) keys
+        // Support both legacy (seasonNumber, seasonName, seasonDescription) and new (num, title, img, summary) keys
         const numRaw = s.seasonNumber != null ? s.seasonNumber : s.num;
         const number = (numRaw != null && !Number.isNaN(parseInt(numRaw))) ? parseInt(numRaw) : undefined;
         const nameRaw = s.seasonName || s.title; // prefer explicit seasonName
-        const image = s.seasonThumbUrl || s.img || (items.find(ep => String(ep.seasonId) === id)?.image);
+        const image = s.img || (items.find(ep => String(ep.seasonId) === id)?.image);
         const description = s.seasonDescription || s.summary || null;
         return {
           id,
@@ -933,7 +933,7 @@ const FitnessShow = ({ showId: rawShowId, onBack, viewportRef, setFitnessPlayQue
       const plexId = extractPlexId(episode);
 
       // Get URL for the playable item if not present
-      let episodeUrl = episode.url || episode.media_url;
+      let episodeUrl = episode.url || episode.mediaUrl;
       if (!episodeUrl && plexId) {
         // Construct the URL using the new API proxy path
         episodeUrl = `/api/v1/proxy/plex/stream/${plexId}`;
@@ -953,12 +953,12 @@ const FitnessShow = ({ showId: rawShowId, onBack, viewportRef, setFitnessPlayQue
           show: showTitle,
           season: seasonTitle,
           title: episode.label,
-          media_url: episodeUrl, // Player expects media_url, not videoUrl
+          mediaUrl: episodeUrl,
           duration: episode.duration,
-          thumb_id: episode.thumb_id, // Pass thumb_id directly to FitnessPlayer
-          image: episode.thumb_id ? DaylightMediaPath(`api/v1/content/plex/image/${episode.thumb_id}`) : episode.image,
+          thumbId: episode.thumbId, // Pass thumbId directly to FitnessPlayer
+          image: episode.thumbId ? DaylightMediaPath(`api/v1/content/plex/image/${episode.thumbId}`) : episode.image,
           seasonId: episode.seasonId,
-          seasonImage: (episode.seasonThumbUrl || (episode.seasonId ? DaylightMediaPath(`api/v1/content/plex/image/${episode.seasonId}`) : undefined)),
+          seasonImage: episode.seasonId ? DaylightMediaPath(`api/v1/content/plex/image/${episode.seasonId}`) : undefined,
           labels: deriveEpisodeLabels(episode),
           type: episode.type || 'episode',
           showId,

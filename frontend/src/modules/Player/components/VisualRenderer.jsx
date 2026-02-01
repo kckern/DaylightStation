@@ -164,7 +164,7 @@ export function VisualRenderer({ track, audioState, currentIndex = 0, onAdvance,
 
     // For video type, adapt to VideoPlayer's expected props
     if (track.type === 'video') {
-      // VideoPlayer expects media object with media_url, etc.
+      // VideoPlayer expects media object with mediaUrl, etc.
       const videoItem = track.items?.[0];
       if (!videoItem) {
         return (
@@ -191,8 +191,8 @@ export function VisualRenderer({ track, audioState, currentIndex = 0, onAdvance,
 
       // Build media object expected by VideoPlayer
       const media = {
-        media_url: videoItem.url,
-        media_type: videoItem.mediaType || 'video',
+        mediaUrl: videoItem.url,
+        mediaType: videoItem.mediaType || 'video',
         title: videoItem.caption || videoItem.title,
         ...videoItem
       };

@@ -22,7 +22,7 @@ import { ItemId } from '../value-objects/ItemId.mjs';
  * @property {string} [description] - Item description
  * @property {Object} [metadata] - Additional metadata
  * @property {ItemActions} [actions] - Available actions for this item
- * @property {string} [media_key] - Optional override for media key (defaults to id)
+ * @property {string} [assetId] - Optional override for asset identifier (defaults to id)
  * @property {string} [label] - Short display label (falls back to title)
  */
 
@@ -52,7 +52,7 @@ export class Item {
     this.description = props.description ?? null;
     this.metadata = props.metadata ?? {};
     this.actions = props.actions ?? null;
-    this._media_key = props.media_key ?? null;
+    this._assetId = props.assetId ?? null;
     this._label = props.label ?? null;
   }
 
@@ -117,11 +117,11 @@ export class Item {
   }
 
   /**
-   * Get the media key for logging/requests
+   * Get the asset identifier for logging/requests
    * @returns {string}
    */
-  get media_key() {
-    return this._media_key ?? this.id;
+  get assetId() {
+    return this._assetId ?? this.id;
   }
 
   /**

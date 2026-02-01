@@ -51,12 +51,12 @@ export function useQueueController({ play, queue, clear }) {
 
     if (Array.isArray(play)) {
       const playArraySignature = play
-        .map((item) => item?.guid || item?.media || item?.media_key || item?.id || '')
+        .map((item) => item?.guid || item?.media || item?.assetId || item?.id || '')
         .join('|');
       signatureParts.push(`play:${play.length}:${playArraySignature}`);
     } else if (Array.isArray(queue)) {
       const queueArraySignature = queue
-        .map((item) => item?.guid || item?.media || item?.media_key || item?.id || '')
+        .map((item) => item?.guid || item?.media || item?.assetId || item?.id || '')
         .join('|');
       signatureParts.push(`queue:${queue.length}:${queueArraySignature}`);
     }
@@ -91,9 +91,9 @@ export function useQueueController({ play, queue, clear }) {
       } else if (Array.isArray(queue)) {
         newQueue = queue.map(item => ({ ...item, guid: guid() }));
       } else if ((play && typeof play === 'object') || (queue && typeof queue === 'object')) {
-        const queue_media_key = play?.playlist || play?.queue || queue?.playlist || queue?.queue || queue?.media;
-        if (queue_media_key) {
-          const { items } = await DaylightAPI(`api/v1/item/folder/${queue_media_key}/playable${isShuffle ? ',shuffle' : ''}`);
+        const queue_assetId = play?.playlist || play?.queue || queue?.playlist || queue?.queue || queue?.media;
+        if (queue_assetId) {
+          const { items } = await DaylightAPI(`api/v1/item/folder/${queue_assetId}/playable${isShuffle ? ',shuffle' : ''}`);
           const flattened = await flattenQueueItems(items);
           newQueue = flattened.map(item => ({ ...item, ...item.play, ...itemOverrides, guid: guid() }));
         } else if (queue?.plex || play?.plex) {

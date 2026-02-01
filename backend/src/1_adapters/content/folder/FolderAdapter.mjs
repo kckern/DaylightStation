@@ -23,7 +23,7 @@ const MIN_PROGRESS_THRESHOLD = 1;
  * - Example: Show "Felix" in FHE menu even if his assigned video was watched
  *
  * **resolvePlayables()** - For automated playback queues
- * - Filters out: watched (>90%), on hold, past skip_after, wait_until >2 days
+ * - Filters out: watched (>90%), on hold, past skipAfter, waitUntil >2 days
  * - Example: Skip already-watched videos when building a playlist
  *
  * ## Filtering Rules
@@ -34,8 +34,8 @@ const MIN_PROGRESS_THRESHOLD = 1;
  * | Watched >90%        | Show              | Skip                       |
  * | `watched: true`     | Show              | Skip                       |
  * | `hold: true`        | Show              | Skip                       |
- * | `skip_after` passed | Show              | Skip                       |
- * | `wait_until` >2 days| Show              | Skip                       |
+ * | `skipAfter` passed | Show              | Skip                       |
+ * | `waitUntil` >2 days| Show              | Skip                       |
  */
 export class FolderAdapter {
   constructor(config) {
@@ -153,9 +153,9 @@ export class FolderAdapter {
       return 'in_progress';
     }
 
-    // Check for urgent based on skip_after deadline
-    if (item.skip_after) {
-      const skipDate = new Date(item.skip_after);
+    // Check for urgent based on skipAfter deadline
+    if (item.skipAfter) {
+      const skipDate = new Date(item.skipAfter);
       const eightDaysFromNow = new Date();
       eightDaysFromNow.setDate(eightDaysFromNow.getDate() + 8);
       if (skipDate <= eightDaysFromNow) {
@@ -185,15 +185,15 @@ export class FolderAdapter {
     // Skip if marked as watched
     if (meta.watched) return true;
 
-    // Skip if past skip_after date
-    if (meta.skip_after) {
-      const skipDate = new Date(meta.skip_after);
+    // Skip if past skipAfter date
+    if (meta.skipAfter) {
+      const skipDate = new Date(meta.skipAfter);
       if (skipDate < new Date()) return true;
     }
 
-    // Skip if wait_until is more than 2 days away
-    if (meta.wait_until) {
-      const waitDate = new Date(meta.wait_until);
+    // Skip if waitUntil is more than 2 days away
+    if (meta.waitUntil) {
+      const waitDate = new Date(meta.waitUntil);
       const twoDaysFromNow = new Date();
       twoDaysFromNow.setDate(twoDaysFromNow.getDate() + 2);
       if (waitDate > twoDaysFromNow) return true;
@@ -260,13 +260,13 @@ export class FolderAdapter {
       const contentSource = mapping.source;
       const watchCategory = mapping.category;
 
-      // Build the media key for watch state lookup
-      const mediaKey = item.media_key || parsed.id;
+      // Build the asset ID for watch state lookup
+      const assetId = item.assetId || parsed.id;
 
       // Load watch state from mediaProgressMemory (for UI indicators, not filtering)
       let watchState = null;
       if (watchCategory && this.mediaProgressMemory) {
-        watchState = await this.mediaProgressMemory.get(mediaKey, watchCategory);
+        watchState = await this.mediaProgressMemory.get(assetId, watchCategory);
       }
 
       // Calculate priority based on watch state and scheduling
@@ -292,7 +292,7 @@ export class FolderAdapter {
       // Build the base action object with source and key
       const baseAction = {};
       const src = item.src || parsed.source;
-      baseAction[src] = mediaKey;
+      baseAction[src] = assetId;
 
       // Add options to action object (not just metadata)
       if (item.shuffle) baseAction.shuffle = true;
@@ -359,8 +359,8 @@ export class FolderAdapter {
           // Scheduling fields
           hold: item.hold || false,
           watched: item.watched || false,
-          skip_after: item.skip_after || null,
-          wait_until: item.wait_until || null,
+          skipAfter: item.skipAfter || null,
+          waitUntil: item.waitUntil || null,
           // Grouping
           program: item.program || folderName,
           // Legacy fields
@@ -370,10 +370,10 @@ export class FolderAdapter {
           uid: item.uid,
           // Original source for reference
           src: item.src || parsed.source,
-          media_key: mediaKey,
+          assetId: assetId,
           // Legacy display fields
           folder: folderName,
-          folder_color: item.folder_color || null
+          folderColor: item.folderColor || null
         },
         // Actions object
         actions: {
@@ -385,9 +385,9 @@ export class FolderAdapter {
       }));
     }
 
-    // Check if any item has folder_color - if so, maintain fixed order from YAML
-    // (Legacy behavior: folder_color indicates "no dynamic sorting")
-    const hasFixedOrder = children.some(item => item.metadata?.folder_color);
+    // Check if any item has folderColor - if so, maintain fixed order from YAML
+    // (Legacy behavior: folderColor indicates "no dynamic sorting")
+    const hasFixedOrder = children.some(item => item.metadata?.folderColor);
 
     if (!hasFixedOrder) {
       // Sort by priority: in_progress > urgent > high > medium > low
@@ -438,7 +438,7 @@ export class FolderAdapter {
    * Resolve folder to playable items for automated playback.
    *
    * Unlike getList(), this method filters out items that shouldn't play:
-   * - watched >90%, on hold, past skip_after, wait_until >2 days
+   * - watched >90%, on hold, past skipAfter, waitUntil >2 days
    *
    * Key behavior based on action type:
    * - play action: returns ONE playable (next up) - for daily programming variety
@@ -468,7 +468,7 @@ export class FolderAdapter {
         continue;
       }
 
-      // Skip items that shouldn't play (watched, on hold, past skip_after, etc.)
+      // Skip items that shouldn't play (watched, on hold, past skipAfter, etc.)
       if (this._shouldSkipForPlayback(child)) {
         continue;
       }

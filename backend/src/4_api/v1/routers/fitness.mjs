@@ -193,7 +193,7 @@ export function createFitnessRouter(config) {
             seasonsMap[seasonId] = {
               num: item.metadata?.seasonNumber ?? item.metadata?.parentIndex,
               title: item.metadata?.seasonName || item.metadata?.parentTitle || 'Season',
-              img: item.metadata?.seasonThumbUrl || item.metadata?.parentThumb || item.metadata?.showThumbUrl || item.metadata?.grandparentThumb
+              img: item.thumbnail
             };
           }
         }

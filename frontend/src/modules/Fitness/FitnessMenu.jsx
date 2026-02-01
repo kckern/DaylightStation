@@ -313,7 +313,7 @@ const FitnessMenu = ({ activeCollection, onContentSelect, setFitnessPlayQueue })
         title: show.label,
         videoUrl: show.url || show.videoUrl,
         duration: show.duration,
-        thumb_id: show.thumb_id,
+        thumbId: show.thumbId,
         image: show.image,
         labels: show.labels,
         type: show.type || null,

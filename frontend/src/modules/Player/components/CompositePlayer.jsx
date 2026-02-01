@@ -53,9 +53,9 @@ function NewFormatComposite({ visual, audio, Player, ignoreKeys, coordination })
 
         return {
           ...item,
-          // Map camelCase to snake_case for Player compatibility
-          media_url: item.mediaUrl || item.media_url,
-          media_type: item.mediaType || item.media_type || 'audio',
+          // Use camelCase field names
+          mediaUrl: item.mediaUrl,
+          mediaType: item.mediaType || 'audio',
           // Set plex key for SinglePlayer's fetchMediaInfo
           plex: plexKey || item.plex,
           seconds: 0,

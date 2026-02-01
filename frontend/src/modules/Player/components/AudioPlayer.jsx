@@ -30,7 +30,7 @@ export function AudioPlayer({
   resilienceBridge,
   watchedDurationProvider
 }) {
-  const { media_url, title, artist, albumArtist, album, image, type } = media || {};
+  const { mediaUrl, title, artist, albumArtist, album, image, type } = media || {};
   
   // Fallback for artist/album from metadata if not directly available
   // (Plex track metadata often has artist/album in metadata object, or grandparentTitle/parentTitle)
@@ -39,8 +39,8 @@ export function AudioPlayer({
   const effectiveAlbumArtist = albumArtist || media?.metadata?.albumArtist || null;
   
   const baseMediaKey = useMemo(
-    () => `${media_url || ''}:${media?.media_key || media?.key || media?.id || ''}`,
-    [media_url, media?.media_key, media?.key, media?.id]
+    () => `${mediaUrl || ''}:${media?.assetId || media?.key || media?.id || ''}`,
+    [mediaUrl, media?.assetId, media?.key, media?.id]
   );
   const {
     seconds,
@@ -218,10 +218,10 @@ export function AudioPlayer({
       title,
       artist,
       album,
-      mediaKey: media?.media_key || media?.key || media?.plex,
+      mediaKey: media?.assetId || media?.key || media?.plex,
       loadedTs: Date.now()
     });
-  }, [title, artist, album, media?.media_key, media?.key, media?.plex]);
+  }, [title, artist, album, media?.assetId, media?.key, media?.plex]);
 
   return (
     <div ref={audioPlayerRef} className={`audio-player ${shader}`}>
@@ -252,7 +252,7 @@ export function AudioPlayer({
       <audio
         key={mediaInstanceKey}
         ref={containerRef}
-        src={media_url}
+        src={mediaUrl}
         autoPlay
         style={{ display: 'none' }}
       />

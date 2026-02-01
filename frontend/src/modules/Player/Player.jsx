@@ -219,7 +219,7 @@ const Player = forwardRef(function Player(props, ref) {
   }, [currentMediaGuid, clearRemountTimer]);
 
   const effectiveMeta = resolvedMeta || singlePlayerProps || null;
-  const plexId = queue?.plex || play?.plex || effectiveMeta?.plex || effectiveMeta?.media_key || null;
+  const plexId = queue?.plex || play?.plex || effectiveMeta?.plex || effectiveMeta?.assetId || null;
 
   const mediaIdentity = useMemo(
     () => resolveMediaIdentity(effectiveMeta) || resolveMediaIdentity(singlePlayerProps) || resolveMediaIdentity(play) || resolveMediaIdentity(queue),
@@ -622,7 +622,7 @@ const Player = forwardRef(function Player(props, ref) {
   const singleAdvance = useCallback(() => {
     if (singlePlayerProps?.continuous) {
       // For continuous single items, check if native loop is already handling it
-      const mediaEl = document.querySelector(`[data-key="${singlePlayerProps.media_key || singlePlayerProps.plex}"]`);
+      const mediaEl = document.querySelector(`[data-key="${singlePlayerProps.assetId || singlePlayerProps.plex}"]`);
       if (mediaEl && !mediaEl.loop) {
         // If not using native loop, manually restart
         mediaEl.currentTime = 0;
@@ -632,7 +632,7 @@ const Player = forwardRef(function Player(props, ref) {
     } else {
       clear();
     }
-  }, [singlePlayerProps?.continuous, singlePlayerProps?.media_key, singlePlayerProps?.plex, clear]);
+  }, [singlePlayerProps?.continuous, singlePlayerProps?.assetId, singlePlayerProps?.plex, clear]);
 
   // Compose onMediaRef so we keep existing external callback semantics
   const handleMediaRef = useCallback((el) => {

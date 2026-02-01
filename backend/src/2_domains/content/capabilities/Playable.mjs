@@ -88,22 +88,6 @@ export class PlayableItem extends Item {
   isPlayable() {
     return true;
   }
-
-  /**
-   * Custom JSON serialization with snake_case aliases for legacy compatibility
-   */
-  toJSON() {
-    return {
-      ...this,
-      // Legacy field aliases for frontend compatibility
-      media_url: this.mediaUrl,
-      media_type: this.mediaType,
-      media_key: this.media_key,
-      image: this.thumbnail,
-      // Alias resumePosition as seconds for AudioPlayer
-      seconds: this.resumePosition ?? 0
-    };
-  }
 }
 
 export default PlayableItem;

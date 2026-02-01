@@ -354,7 +354,7 @@ describe('DDD vs Legacy Endpoint Parity', () => {
   describe('POST /media/log parity', () => {
     const testPayload = {
       type: 'plex',
-      media_key: '999999',  // Test ID that won't affect real data
+      assetId: '999999',  // Test ID that won't affect real data
       percent: 50,
       seconds: 300,
       title: 'Parity Test Video',
@@ -382,7 +382,7 @@ describe('DDD vs Legacy Endpoint Parity', () => {
       const res = await fetch(`${BASE_URL}/media/log`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'plex' })  // Missing media_key, percent
+        body: JSON.stringify({ type: 'plex' })  // Missing assetId, percent
       });
 
       expect(res.status).toBe(400);
