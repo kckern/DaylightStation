@@ -146,7 +146,7 @@ describe('ImmichAdapter', () => {
   });
 
   describe('getViewable', () => {
-    test('returns ViewableItem for image', async () => {
+    test('returns DisplayableItem for image', async () => {
       mockHttpClient.get.mockResolvedValue({
         data: {
           id: 'abc-123',
@@ -173,7 +173,7 @@ describe('ImmichAdapter', () => {
       expect(result.width).toBe(4000);
       expect(result.height).toBe(3000);
       expect(result.mimeType).toBe('image/jpeg');
-      expect(result.isViewable()).toBe(true);
+      expect(result.isDisplayable()).toBe(true);
     });
   });
 

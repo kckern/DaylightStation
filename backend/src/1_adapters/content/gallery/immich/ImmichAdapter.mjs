@@ -2,7 +2,7 @@
 
 import { ListableItem } from '#domains/content/capabilities/Listable.mjs';
 import { PlayableItem } from '#domains/content/capabilities/Playable.mjs';
-import { ViewableItem } from '#domains/content/capabilities/Viewable.mjs';
+import { DisplayableItem } from '#domains/content/capabilities/Displayable.mjs';
 import { ImmichClient } from './ImmichClient.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
@@ -179,9 +179,9 @@ export class ImmichAdapter {
   }
 
   /**
-   * Get ViewableItem for static display
+   * Get DisplayableItem for static display
    * @param {string} id
-   * @returns {Promise<ViewableItem|null>}
+   * @returns {Promise<DisplayableItem|null>}
    */
   async getViewable(id) {
     try {
@@ -189,7 +189,7 @@ export class ImmichAdapter {
       const asset = await this.#client.getAsset(localId);
       if (!asset) return null;
 
-      return new ViewableItem({
+      return new DisplayableItem({
         id: `immich:${asset.id}`,
         source: 'immich',
         title: asset.originalFileName,

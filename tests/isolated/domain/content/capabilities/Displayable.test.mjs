@@ -24,10 +24,10 @@ describe('DisplayableItem', () => {
     expect(item.frameStyle).toBe('ornate');
   });
 
-  it('inherits from ViewableItem', () => {
+  it('has imageUrl and isDisplayable capability', () => {
     const item = new DisplayableItem(validProps);
     expect(item.imageUrl).toBe('/api/v1/canvas/image/test-123');
-    expect(item.isViewable()).toBe(true);
+    expect(item.isDisplayable()).toBe(true);
   });
 
   it('defaults tags to empty array', () => {

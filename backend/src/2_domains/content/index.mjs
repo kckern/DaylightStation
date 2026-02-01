@@ -16,7 +16,6 @@ export { ListableItem } from './capabilities/Listable.mjs';
 export { PlayableItem } from './capabilities/Playable.mjs';
 export { QueueableItem } from './capabilities/Queueable.mjs';
 export { ReadableItem } from './capabilities/Readable.mjs';
-export { ViewableItem } from './capabilities/Viewable.mjs';
 
 // Services
 export { CanvasSelectionService } from './services/CanvasSelectionService.mjs';
