@@ -60,6 +60,61 @@ const FILTER_METHODS = {
 const DATE_REQUIRED_FILTERS = ['skipAfter', 'waitUntil', 'days'];
 
 /**
+ * Sort methods.
+ */
+const SORT_METHODS = {
+  priority: (items) => QueueService.sortByPriority(items),
+
+  track_order: (items) => {
+    return [...items].sort((a, b) => {
+      const discA = a.discNumber ?? 1;
+      const discB = b.discNumber ?? 1;
+      if (discA !== discB) return discA - discB;
+
+      const trackA = a.trackNumber ?? a.itemIndex ?? 0;
+      const trackB = b.trackNumber ?? b.itemIndex ?? 0;
+      return trackA - trackB;
+    });
+  },
+
+  source_order: (items) => [...items],
+
+  date_asc: (items) => {
+    return [...items].sort((a, b) => {
+      const dateA = a.date || a.takenAt || '';
+      const dateB = b.date || b.takenAt || '';
+      return dateA.localeCompare(dateB);
+    });
+  },
+
+  date_desc: (items) => {
+    return [...items].sort((a, b) => {
+      const dateA = a.date || a.takenAt || '';
+      const dateB = b.date || b.takenAt || '';
+      return dateB.localeCompare(dateA);
+    });
+  },
+
+  random: (items) => {
+    // Fisher-Yates shuffle
+    const result = [...items];
+    for (let i = result.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [result[i], result[j]] = [result[j], result[i]];
+    }
+    return result;
+  },
+
+  title: (items) => {
+    return [...items].sort((a, b) => {
+      const titleA = a.title || '';
+      const titleB = b.title || '';
+      return titleA.localeCompare(titleB);
+    });
+  }
+};
+
+/**
  * ItemSelectionService provides unified item selection logic for content queries.
  * Pure domain service with no I/O dependencies.
  *
@@ -115,6 +170,22 @@ export class ItemSelectionService {
       (result, filterName) => this.applyFilter(result, filterName, context),
       items
     );
+  }
+
+  /**
+   * Apply a named sort to items.
+   *
+   * @param {Array} items - Items to sort
+   * @param {string} sortName - Sort name (priority, track_order, source_order, date_asc, date_desc, random, title)
+   * @returns {Array} Sorted items (new array)
+   * @throws {Error} If sort is unknown
+   */
+  static applySort(items, sortName) {
+    const sortFn = SORT_METHODS[sortName];
+    if (!sortFn) {
+      throw new Error(`Unknown sort: ${sortName}`);
+    }
+    return sortFn(items);
   }
 }
 

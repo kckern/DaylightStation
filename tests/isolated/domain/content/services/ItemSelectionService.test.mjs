@@ -159,4 +159,97 @@ describe('ItemSelectionService', () => {
       expect(result.length).toBe(2);
     });
   });
+
+  describe('applySort', () => {
+    test('sorts by priority', () => {
+      const items = [
+        { id: '1', priority: 'low' },
+        { id: '2', priority: 'in_progress', percent: 50 },
+        { id: '3', priority: 'high' }
+      ];
+      const result = ItemSelectionService.applySort(items, 'priority');
+      expect(result.map(i => i.id)).toEqual(['2', '3', '1']);
+    });
+
+    test('sorts by track_order', () => {
+      const items = [
+        { id: '1', discNumber: 1, trackNumber: 3 },
+        { id: '2', discNumber: 1, trackNumber: 1 },
+        { id: '3', discNumber: 2, trackNumber: 1 }
+      ];
+      const result = ItemSelectionService.applySort(items, 'track_order');
+      expect(result.map(i => i.id)).toEqual(['2', '1', '3']);
+    });
+
+    test('sorts by source_order (preserves original)', () => {
+      const items = [
+        { id: '1' },
+        { id: '2' },
+        { id: '3' }
+      ];
+      const result = ItemSelectionService.applySort(items, 'source_order');
+      expect(result.map(i => i.id)).toEqual(['1', '2', '3']);
+    });
+
+    test('sorts by date_asc', () => {
+      const items = [
+        { id: '1', date: '2026-03-01' },
+        { id: '2', date: '2026-01-01' },
+        { id: '3', date: '2026-02-01' }
+      ];
+      const result = ItemSelectionService.applySort(items, 'date_asc');
+      expect(result.map(i => i.id)).toEqual(['2', '3', '1']);
+    });
+
+    test('sorts by date_desc', () => {
+      const items = [
+        { id: '1', date: '2026-01-01' },
+        { id: '2', date: '2026-03-01' },
+        { id: '3', date: '2026-02-01' }
+      ];
+      const result = ItemSelectionService.applySort(items, 'date_desc');
+      expect(result.map(i => i.id)).toEqual(['2', '3', '1']);
+    });
+
+    test('sorts by random (shuffles items)', () => {
+      const items = [{ id: '1' }, { id: '2' }, { id: '3' }, { id: '4' }, { id: '5' }];
+      const result = ItemSelectionService.applySort(items, 'random');
+      expect(result.length).toBe(5);
+      expect(new Set(result.map(i => i.id)).size).toBe(5); // all unique
+    });
+
+    test('sorts by title', () => {
+      const items = [
+        { id: '1', title: 'Zebra' },
+        { id: '2', title: 'Apple' },
+        { id: '3', title: 'Mango' }
+      ];
+      const result = ItemSelectionService.applySort(items, 'title');
+      expect(result.map(i => i.id)).toEqual(['2', '3', '1']);
+    });
+
+    test('throws for unknown sort', () => {
+      expect(() => ItemSelectionService.applySort([], 'unknown'))
+        .toThrow('Unknown sort: unknown');
+    });
+
+    test('uses itemIndex as fallback for track_order', () => {
+      const items = [
+        { id: '1', itemIndex: 3 },
+        { id: '2', itemIndex: 1 },
+        { id: '3', itemIndex: 2 }
+      ];
+      const result = ItemSelectionService.applySort(items, 'track_order');
+      expect(result.map(i => i.id)).toEqual(['2', '3', '1']);
+    });
+
+    test('uses takenAt as fallback for date sorts', () => {
+      const items = [
+        { id: '1', takenAt: '2026-03-01' },
+        { id: '2', takenAt: '2026-01-01' }
+      ];
+      const result = ItemSelectionService.applySort(items, 'date_asc');
+      expect(result.map(i => i.id)).toEqual(['2', '1']);
+    });
+  });
 });
