@@ -14,19 +14,27 @@ import { playbackLog } from './lib/playbackLogger.js';
 import { useCompositeControllerChannel } from './components/CompositeControllerContext.jsx';
 import { resolveMediaIdentity } from './utils/mediaIdentity.js';
 import { useMediaTransportAdapter } from './hooks/transport/useMediaTransportAdapter.js';
+import { guardedReload } from '../../lib/reloadGuard.js';
 
 const REMOUNT_BACKOFF_BASE_MS = 1000;
 const REMOUNT_BACKOFF_FACTOR = 1.5;
 const REMOUNT_BACKOFF_MAX_MS = 45000;
 
-const reloadDocument = () => {
-  try {
-    if (typeof window !== 'undefined' && typeof window.location?.reload === 'function') {
-      window.location.reload();
+const reloadDocument = (reason = 'player-resilience') => {
+  guardedReload({
+    reason,
+    fallbackAction: () => {
+      // When reloads are blocked, set a state flag instead
+      // This allows the UI to show a "please refresh manually" message
+      if (typeof window !== 'undefined') {
+        window.__playerReloadBlocked = true;
+        // Dispatch event for any listeners
+        window.dispatchEvent(new CustomEvent('player:reload-blocked', {
+          detail: { reason, timestamp: Date.now() }
+        }));
+      }
     }
-  } catch (_) {
-    // ignore reload issues to keep recovery flow going
-  }
+  });
 };
 
 const entryGuidCache = typeof WeakMap !== 'undefined' ? new WeakMap() : null;
