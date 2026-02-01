@@ -63,7 +63,7 @@ const getVideoFps = (mediaEl) => {
 
 /**
  * Hook for detecting playhead stalls and regressions
- * 
+ *
  * @param {Object} options
  * @param {Function} options.getMediaEl - Function to get the media element
  * @param {boolean} options.enabled - Whether detection is enabled
@@ -71,6 +71,7 @@ const getVideoFps = (mediaEl) => {
  * @param {Function} options.onStallDetected - Callback when stall is detected
  * @param {Function} options.onRecoveryAttempt - Callback to attempt recovery
  * @param {Function} options.onRecoveryExhausted - Callback when all recovery attempts exhausted
+ * @param {Function} options.onRecovered - Callback when playback recovers from a stall
  */
 export function usePlayheadStallDetection({
   getMediaEl,
@@ -78,7 +79,8 @@ export function usePlayheadStallDetection({
   meta = {},
   onStallDetected,
   onRecoveryAttempt,
-  onRecoveryExhausted
+  onRecoveryExhausted,
+  onRecovered
 }) {
   // Track playhead position for stall/regression detection
   const lastPlayheadPositionRef = useRef(null);
@@ -320,6 +322,14 @@ export function usePlayheadStallDetection({
             stallDurationMs: stallDuration,
             recoveryAttempts: recoveryAttemptsRef.current
           });
+
+          if (typeof onRecovered === 'function') {
+            onRecovered({
+              position: currentTime,
+              stallDurationMs: stallDuration,
+              recoveryAttempts: recoveryAttemptsRef.current
+            });
+          }
         }
       }
       
@@ -392,7 +402,7 @@ export function usePlayheadStallDetection({
 
     // Update last position for next check
     lastPlayheadPositionRef.current = currentTime;
-  }, [getMediaEl, logEvent, attemptRecovery, onStallDetected]);
+  }, [getMediaEl, logEvent, attemptRecovery, onStallDetected, onRecovered]);
 
   /**
    * Reset all stall detection state
