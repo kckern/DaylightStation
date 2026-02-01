@@ -19,6 +19,7 @@ export { ReadableItem } from './capabilities/Readable.mjs';
 export { ViewableItem } from './capabilities/Viewable.mjs';
 
 // Services
+export { CanvasSelectionService } from './services/CanvasSelectionService.mjs';
 export { ContentSourceRegistry } from './services/ContentSourceRegistry.mjs';
 export { MediaMemoryValidatorService } from './services/MediaMemoryValidatorService.mjs';
 export { IMediaProgressClassifier } from './services/IMediaProgressClassifier.mjs';
