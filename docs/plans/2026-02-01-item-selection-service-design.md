@@ -1,7 +1,7 @@
 # ItemSelectionService Design
 
 **Date:** 2026-02-01
-**Status:** Design
+**Status:** Implemented
 
 ---
 
@@ -300,3 +300,14 @@ All date-dependent logic requires `context.now` to be passed explicitly. This en
 - `query-combinatorics.md` Section 8 - Sorting
 - `backend/src/2_domains/content/services/QueueService.mjs` - Watchlist filter/sort logic
 - `backend/src/1_adapters/content/folder/FolderAdapter.mjs` - Current implementation
+
+---
+
+## Implementation Notes (2026-02-01)
+
+- Created `ItemSelectionService` in domain layer with static methods
+- Reused QueueService filter methods (filterBySkipAfter, filterByWaitUntil, etc.)
+- Added new sort methods: track_order, date_asc, date_desc, random, title
+- Implemented fallback cascade via private `#applyFiltersWithFallback`
+- Exported from `backend/src/2_domains/content/index.mjs`
+- Test coverage in `tests/isolated/domain/content/services/ItemSelectionService.test.mjs`
