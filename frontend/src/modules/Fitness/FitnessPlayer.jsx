@@ -4,6 +4,7 @@ import './FitnessPlayer.scss';
 import { useFitness } from '../../context/FitnessContext.jsx';
 import Player from '../Player/Player.jsx';
 import usePlayerController from '../Player/usePlayerController.js';
+import { usePlayheadStallDetection } from '../Player/hooks/usePlayheadStallDetection.js';
 import { DaylightMediaPath, DaylightAPI } from '../../lib/api.mjs';
 import FitnessPlayerFooter from './FitnessPlayerFooter.jsx';
 import FitnessPlayerOverlay, { useGovernanceOverlay } from './FitnessPlayerOverlay.jsx';
@@ -175,9 +176,29 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     participantRoster: contextParticipantRoster,
     registerVideoPlayer,
     setCurrentMedia,
-    trackRecentlyPlayed
+    trackRecentlyPlayed,
+    emitAppEvent
   } = useFitness() || {};
   const playerRef = useRef(null); // imperative Player API
+
+  // Stall detection and recovery - wires dead hook into live system
+  usePlayheadStallDetection({
+    getMediaEl: () => playerRef.current?.getMediaElement?.(),
+    enabled: true,
+    meta: currentItem,
+    onStallDetected: (info) => {
+      emitAppEvent?.('playback:stalled', info, 'fitness-player');
+    },
+    onRecoveryAttempt: (info) => {
+      emitAppEvent?.('playback:recovery_attempt', info, 'fitness-player');
+    },
+    onRecoveryExhausted: (info) => {
+      emitAppEvent?.('playback:recovery_failed', info, 'fitness-player');
+    },
+    onRecovered: (info) => {
+      emitAppEvent?.('playback:recovered', info, 'fitness-player');
+    }
+  });
 
   const [mediaElement, setMediaElement] = useState(null);
 
