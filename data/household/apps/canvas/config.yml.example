@@ -1,0 +1,43 @@
+# Canvas Art Display Configuration
+# Copy this file to config.yml and customize for your household
+
+defaults:
+  rotation:
+    interval: 300          # seconds between art changes
+    mode: random           # random | sequential
+    avoidRepeats: true
+  frame:
+    style: classic         # minimal | classic | ornate | none
+  transitions:
+    type: crossfade        # crossfade | fade | none
+    duration: 1000         # ms
+  overlay:
+    enabled: false
+    showOnInteract: true
+
+contexts:
+  time:
+    morning:               # 6am-12pm
+      tags: [bright, warm]
+      categories: [landscapes, nature]
+    evening:               # 6pm-10pm
+      tags: [calm, warm]
+    night:                 # 10pm-6am
+      tags: [dark, minimal]
+      frame:
+        style: none
+
+  calendar:
+    christmas:
+      dateRange: [12-01, 12-31]
+      tags: [holiday, winter]
+
+  devices:
+    living-room-tv:
+      categories: [landscapes, classical]
+      frame:
+        style: ornate
+    bedroom-display:
+      rotation:
+        interval: 600
+      tags: [calm]
