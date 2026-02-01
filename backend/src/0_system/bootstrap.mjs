@@ -22,6 +22,8 @@ import { LocalContentAdapter } from '#adapters/content/local-content/LocalConten
 import { FolderAdapter } from '#adapters/content/folder/FolderAdapter.mjs';
 import { ImmichAdapter } from '#adapters/content/gallery/immich/ImmichAdapter.mjs';
 import { AudiobookshelfAdapter } from '#adapters/content/readable/audiobookshelf/AudiobookshelfAdapter.mjs';
+import { FilesystemCanvasAdapter, ImmichCanvasAdapter } from '#adapters/content/canvas/index.mjs';
+import { ImmichClient } from '#adapters/content/gallery/immich/ImmichClient.mjs';
 import { YamlMediaProgressMemory } from '#adapters/persistence/yaml/YamlMediaProgressMemory.mjs';
 
 // Content adapter manifests (for category/provider metadata)
@@ -378,14 +380,20 @@ export function getSystemBotLoader() {
  * @param {string} [config.plex.token] - Plex auth token
  * @param {string} [config.dataPath] - Path to data files (for LocalContentAdapter)
  * @param {string} [config.watchlistPath] - Path to watchlist YAML (for FolderAdapter)
+ * @param {Object} [config.canvas] - Canvas (displayable art) configuration
+ * @param {Object} [config.canvas.filesystem] - Filesystem canvas config
+ * @param {string} [config.canvas.filesystem.basePath] - Base path for art images
+ * @param {Object} [config.canvas.immich] - Immich canvas config (reuses immich host/apiKey)
+ * @param {string} [config.canvas.immich.library] - Immich library/album to use for art
  * @param {Object} deps - Dependencies
  * @param {Object} [deps.httpClient] - HTTP client for making requests
  * @param {Object} [deps.mediaProgressMemory] - Media progress memory for progress persistence
  * @param {MediaKeyResolver} [deps.mediaKeyResolver] - Media key resolver for normalizing keys
+ * @param {Object} [deps.app] - Express app instance for setting canvasBasePath
  * @returns {ContentSourceRegistry}
  */
 export function createContentRegistry(config, deps = {}) {
-  const { httpClient, mediaProgressMemory, mediaKeyResolver } = deps;
+  const { httpClient, mediaProgressMemory, mediaKeyResolver, app } = deps;
   const registry = new ContentSourceRegistry();
 
   // Register filesystem adapter
@@ -462,6 +470,32 @@ export function createContentRegistry(config, deps = {}) {
       host: config.audiobookshelf.host,
       token: config.audiobookshelf.token
     }, { httpClient }));
+  }
+
+  // Register canvas-filesystem adapter if configured
+  const canvasBasePath = config.canvas?.filesystem?.basePath;
+  if (canvasBasePath) {
+    registry.register(new FilesystemCanvasAdapter({
+      basePath: canvasBasePath,
+      proxyPath: config.canvas?.proxyPath || '/api/v1/canvas/image'
+    }));
+    // Make basePath available to canvas image proxy endpoint
+    if (app) {
+      app.set('canvasBasePath', canvasBasePath);
+    }
+  }
+
+  // Register canvas-immich adapter if immich is configured and canvas.immich.library is set
+  if (config.immich?.host && config.immich?.apiKey && config.canvas?.immich?.library && httpClient) {
+    const immichClient = new ImmichClient({
+      host: config.immich.host,
+      apiKey: config.immich.apiKey
+    }, { httpClient });
+
+    registry.register(new ImmichCanvasAdapter({
+      library: config.canvas.immich.library,
+      proxyPath: config.canvas?.immich?.proxyPath || '/api/v1/proxy/immich-canvas'
+    }, { client: immichClient }));
   }
 
   return registry;

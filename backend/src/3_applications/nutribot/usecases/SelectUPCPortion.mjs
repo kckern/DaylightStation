@@ -134,6 +134,7 @@ export class SelectUPCPortion {
 
         const listItems = scaledItems.map((item) => ({
           ...item,
+          userId: userId,
           chatId: conversationId,
           logUuid: logUuid,
           date: logDate,

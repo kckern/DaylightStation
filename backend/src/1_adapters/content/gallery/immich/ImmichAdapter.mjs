@@ -434,6 +434,7 @@ export class ImmichAdapter {
       title: asset.originalFileName,
       itemType: 'leaf',
       thumbnail: this.#thumbnailUrl(asset.id),
+      imageUrl: this.#originalUrl(asset.id),
       metadata: {
         type: asset.type?.toLowerCase() || 'image',
         width: asset.width,
