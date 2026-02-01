@@ -20,6 +20,7 @@ export class ListableItem extends Item {
    * @param {Array} [props.children] - Child items (for containers)
    * @param {number} [props.sortOrder] - Order in list
    * @param {string} [props.thumbnail] - Proxied thumbnail URL
+   * @param {string} [props.imageUrl] - Full-size image URL (for display)
    * @param {string} [props.description] - Item description
    * @param {Object} [props.metadata] - Additional metadata
    */
@@ -29,6 +30,7 @@ export class ListableItem extends Item {
     this.children = props.children ?? [];
     this.childCount = props.childCount ?? this.children.length;
     this.sortOrder = props.sortOrder ?? 0;
+    this.imageUrl = props.imageUrl ?? null;
   }
 
   /**

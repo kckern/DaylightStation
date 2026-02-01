@@ -76,7 +76,8 @@ export function createApiRouter(config) {
     '/printer': 'printer',
     '/tts': 'tts',
     '/agents': 'agents',
-    '/dev': 'dev'
+    '/dev': 'dev',
+    '/canvas': 'canvas'
   };
 
   // Mount each router at its path

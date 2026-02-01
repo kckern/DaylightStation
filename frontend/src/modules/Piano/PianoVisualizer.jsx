@@ -40,13 +40,14 @@ export function PianoVisualizer({ onClose, onSessionEnd }) {
   useEffect(() => {
     const initPiano = async () => {
       try {
-        // Load piano config from household
-        const config = await DaylightAPI('data/household/apps/piano/config');
-        pianoConfigRef.current = config;
-        
+        // Load device config to get module hooks
+        const devicesConfig = await DaylightAPI('api/v1/device/config');
+        const pianoConfig = devicesConfig?.devices?.['office-tv']?.modules?.['piano-visualizer'] ?? {};
+        pianoConfigRef.current = pianoConfig;
+
         // Run on_open HA script if configured
-        if (config?.on_open?.ha_script) {
-          DaylightAPI(`/api/v1/home/ha/script/${config.on_open.ha_script}`, {}, 'POST')
+        if (pianoConfig?.on_open) {
+          DaylightAPI(`/api/v1/home/ha/script/${pianoConfig.on_open}`, {}, 'POST')
             .then(() => console.debug('[Piano] HA on_open script executed'))
             .catch(err => console.debug('[Piano] HA on_open script failed:', err.message));
         }
@@ -59,8 +60,8 @@ export function PianoVisualizer({ onClose, onSessionEnd }) {
     // Cleanup: Run on_close HA script if configured
     return () => {
       const config = pianoConfigRef.current;
-      if (config?.on_close?.ha_script) {
-        DaylightAPI(`/api/v1/home/ha/script/${config.on_close.ha_script}`, {}, 'POST')
+      if (config?.on_close) {
+        DaylightAPI(`/api/v1/home/ha/script/${config.on_close}`, {}, 'POST')
           .catch(err => console.debug('[Piano] HA on_close script failed:', err.message));
       }
     };

@@ -96,6 +96,9 @@ import { YamlStateDatastore } from '#adapters/scheduling/YamlStateDatastore.mjs'
 import { Scheduler } from './0_system/scheduling/Scheduler.mjs';
 import { createSchedulingRouter } from './4_api/v1/routers/scheduling.mjs';
 
+// Canvas domain
+import { createCanvasRouter } from './4_api/v1/routers/canvas.mjs';
+
 // Conversation state persistence
 import { YamlConversationStateDatastore } from '#adapters/messaging/YamlConversationStateDatastore.mjs';
 
@@ -306,6 +309,18 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const nomusicLabels = fitnessConfig?.plex?.nomusic_labels || [];
   const musicOverlayPlaylist = fitnessConfig?.plex?.music_overlay_playlist || null;
 
+  // Canvas art display config - filesystem path for art images
+  const canvasConfig = configService.getAppConfig('canvas') || {};
+  // Default to Dropbox path if not configured
+  const defaultCanvasPath = '/Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStation/media/img/art';
+  const canvas = {
+    filesystem: {
+      basePath: canvasConfig.filesystem?.basePath || defaultCanvasPath
+    },
+    immich: canvasConfig.immich || null,
+    proxyPath: canvasConfig.proxyPath || '/api/v1/canvas/image'
+  };
+
   const watchlistPath = `${householdDir}/state/lists.yml`;
   const contentPath = `${dataBasePath}/content`;  // LocalContentAdapter expects content/ subdirectory
   const mediaMemoryPath = `${householdDir}/history/media_memory`;
@@ -319,12 +334,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     plex: mediaLibConfig,  // Bootstrap key stays 'plex' for now
     immich: immichConfig,  // Gallery source (photos/videos)
     audiobookshelf: audiobookshelfConfig,  // Ebooks/audiobooks
+    canvas,  // Canvas art display (filesystem-based)
     dataPath: contentPath,
     watchlistPath,
     mediaMemoryPath,
     nomusicLabels,
     musicOverlayPlaylist
-  }, { httpClient: axios, mediaProgressMemory });
+  }, { httpClient: axios, mediaProgressMemory, app });
 
   // Create proxy service for content domain (used for media library passthrough)
   const contentProxyService = createProxyService({
@@ -1021,6 +1037,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     schedulerService,
     scheduler,
     logger: rootLogger.child({ module: 'scheduling-api' })
+  });
+
+  // Canvas router for art display
+  v1Routers.canvas = createCanvasRouter({
+    canvasService: null  // Uses req.app.get('canvasBasePath') instead
   });
 
   // ==========================================================================

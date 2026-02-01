@@ -86,14 +86,26 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
     const { source } = req.params;
     const localId = req.params[0] || '';
 
-    const adapter = registry.get(source);
+    // Try exact source match first, then prefix resolution
+    let adapter = registry.get(source);
+    let resolvedLocalId = localId;
+
+    if (!adapter) {
+      // Try prefix-based resolution (e.g., canvas:religious/nativity.jpg)
+      const resolved = registry.resolveFromPrefix(source, localId);
+      if (resolved) {
+        adapter = resolved.adapter;
+        resolvedLocalId = resolved.localId;
+      }
+    }
+
     if (!adapter) {
       return res.status(404).json({ error: `Unknown source: ${source}` });
     }
 
-    const item = await adapter.getItem(localId);
+    const item = await adapter.getItem(resolvedLocalId);
     if (!item) {
-      return res.status(404).json({ error: 'Item not found', source, localId });
+      return res.status(404).json({ error: 'Item not found', source, localId: resolvedLocalId });
     }
 
     res.json(item);
@@ -107,15 +119,26 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
     const { source } = req.params;
     const localId = req.params[0] || '';
 
-    const adapter = registry.get(source);
+    // Try exact source match first, then prefix resolution
+    let adapter = registry.get(source);
+    let resolvedLocalId = localId;
+
+    if (!adapter) {
+      const resolved = registry.resolveFromPrefix(source, localId);
+      if (resolved) {
+        adapter = resolved.adapter;
+        resolvedLocalId = resolved.localId;
+      }
+    }
+
     if (!adapter) {
       return res.status(404).json({ error: `Unknown source: ${source}` });
     }
 
-    const playables = await adapter.resolvePlayables(localId);
+    const playables = await adapter.resolvePlayables(resolvedLocalId);
     res.json({
       source,
-      path: localId,
+      path: resolvedLocalId,
       items: playables
     });
   }));
@@ -137,14 +160,25 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
       return res.status(400).json({ error: 'seconds and duration are required numbers' });
     }
 
-    const adapter = registry.get(source);
+    // Try exact source match first, then prefix resolution
+    let adapter = registry.get(source);
+    let resolvedLocalId = localId;
+
+    if (!adapter) {
+      const resolved = registry.resolveFromPrefix(source, localId);
+      if (resolved) {
+        adapter = resolved.adapter;
+        resolvedLocalId = resolved.localId;
+      }
+    }
+
     if (!adapter) {
       return res.status(404).json({ error: `Unknown source: ${source}` });
     }
 
-    const itemId = `${source}:${localId}`;
+    const itemId = `${source}:${resolvedLocalId}`;
     const storagePath = typeof adapter.getStoragePath === 'function'
-      ? await adapter.getStoragePath(localId)
+      ? await adapter.getStoragePath(resolvedLocalId)
       : source;
 
     // Get existing state or create new one

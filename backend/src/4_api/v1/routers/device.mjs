@@ -20,12 +20,27 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
  * Create device router
  * @param {Object} config
  * @param {import('#apps/devices/services/DeviceService.mjs').DeviceService} config.deviceService
+ * @param {import('#system/config/index.mjs').ConfigService} [config.configService]
  * @param {Object} [config.logger]
  * @returns {express.Router}
  */
 export function createDeviceRouter(config) {
   const router = express.Router();
-  const { deviceService, logger = console } = config;
+  const { deviceService, configService, logger = console } = config;
+
+  // ===========================================================================
+  // Device Config
+  // ===========================================================================
+
+  /**
+   * GET /device/config
+   * Get raw devices config (for frontend module initialization)
+   */
+  router.get('/config', (req, res) => {
+    const { householdId } = req.query;
+    const config = configService.getHouseholdDevices(householdId);
+    res.json(config);
+  });
 
   // ===========================================================================
   // Device Listing
