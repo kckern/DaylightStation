@@ -3,15 +3,17 @@ import { useState, useEffect, useCallback } from "react";
 import "./Art.scss";
 import { DaylightAPI } from "../../../../lib/api.mjs";
 
-export default function ArtApp({ deviceId }) {
+export default function ArtApp({ deviceId, item, onClose }) {
   const [current, setCurrent] = useState(null);
   const [next, setNext] = useState(null);
   const [transitioning, setTransitioning] = useState(false);
   const [showOverlay, setShowOverlay] = useState(false);
   const [error, setError] = useState(null);
 
-  // Fetch current art
+  // Fetch current art (deviceId mode only)
   const fetchCurrent = useCallback(async () => {
+    if (item) return; // Skip fetch if item provided directly
+
     try {
       const response = await DaylightAPI(`/canvas/current?deviceId=${deviceId}`);
       if (response.ok) {
@@ -32,7 +34,7 @@ export default function ArtApp({ deviceId }) {
     } catch (err) {
       setError(err.message);
     }
-  }, [deviceId, current]);
+  }, [deviceId, current, item]);
 
   // Initial fetch and polling
   useEffect(() => {
@@ -48,6 +50,34 @@ export default function ArtApp({ deviceId }) {
       img.src = next.imageUrl;
     }
   }, [next]);
+
+  // Fetch item by ID if item.id provided (display= mode)
+  useEffect(() => {
+    if (item?.id && !current) {
+      const fetchItem = async () => {
+        try {
+          const [source, ...rest] = item.id.split(':');
+          const localId = rest.join(':');
+          const data = await DaylightAPI(`api/v1/content/item/${source}/${localId}`);
+          setCurrent(data);
+        } catch (err) {
+          setError(err.message);
+        }
+      };
+      fetchItem();
+    }
+  }, [item, current]);
+
+  // Handle escape key
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && onClose) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
 
   // Handle overlay toggle
   const toggleOverlay = useCallback(() => {
