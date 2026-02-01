@@ -21,7 +21,7 @@ import { ValidationError } from '../core/errors/index.mjs';
 
 /**
  * @typedef {Object} MediaSearchResult
- * @property {Array} items - Matched items (ListableItem|PlayableItem|ViewableItem)
+ * @property {Array} items - Matched items (ListableItem|PlayableItem|DisplayableItem)
  * @property {number} total - Total matches (for pagination)
  * @property {Object} [facets] - Aggregations (people counts, date buckets)
  */
