@@ -183,7 +183,7 @@ export default function TVApp({ appParam }) {
       scripture: (value) => ({ play: { scripture: value, ...config } }),
 
       // List action (browse as menu)
-      list:      (value) => ({ list: { [findKey(value)]: value } }),
+      list:      (value) => ({ list: { [findKey(value)]: value, ...config } }),
     };
 
     for (const [key, value] of Object.entries(queryEntries)) {
