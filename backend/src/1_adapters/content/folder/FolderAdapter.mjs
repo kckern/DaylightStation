@@ -57,7 +57,10 @@ export class FolderAdapter {
   }
 
   get prefixes() {
-    return [{ prefix: 'folder' }];
+    return [
+      { prefix: 'folder' },
+      { prefix: 'local' }
+    ];
   }
 
   canResolve(id) {
