@@ -282,6 +282,45 @@ export class ItemSelectionService {
 
     return strategy;
   }
+
+  /**
+   * Select items based on context and strategy.
+   * Main entry point for item selection.
+   *
+   * @param {Array} items - Pre-enriched items (with metadata.percent, etc.)
+   * @param {Object} context - Selection context
+   * @param {string} [context.action] - play, queue, display, list, read
+   * @param {string} [context.containerType] - folder, album, playlist, search
+   * @param {Object} [context.query] - Query filters used (person, time, text)
+   * @param {Date} context.now - Current date (required for filtering)
+   * @param {Object} [overrides] - Explicit strategy overrides
+   * @returns {Array} Selected items
+   */
+  static select(items, context, overrides = {}) {
+    const strategy = this.resolveStrategy(context, overrides);
+
+    // Apply urgency promotion for watchlist-like strategies
+    let processed = items;
+    if (strategy.filter.includes('skipAfter') && context.now) {
+      processed = QueueService.applyUrgency(processed, context.now);
+    }
+
+    // Filter
+    if (strategy.filter.length > 0) {
+      if (!context.now || !(context.now instanceof Date)) {
+        throw new Error('now date required for filtering');
+      }
+      processed = this.applyFilters(processed, strategy.filter, context);
+    }
+
+    // Sort
+    processed = this.applySort(processed, strategy.sort);
+
+    // Pick
+    processed = this.applyPick(processed, strategy.pick);
+
+    return processed;
+  }
 }
 
 export default ItemSelectionService;

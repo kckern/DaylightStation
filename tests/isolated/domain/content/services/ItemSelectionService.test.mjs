@@ -397,4 +397,81 @@ describe('ItemSelectionService', () => {
       });
     });
   });
+
+  describe('select', () => {
+    const now = new Date('2026-01-15');
+
+    test('applies full watchlist pipeline', () => {
+      const items = [
+        { id: '1', priority: 'low', hold: false, percent: 0 },
+        { id: '2', priority: 'high', hold: false, percent: 0 },
+        { id: '3', priority: 'medium', hold: true, percent: 0 }, // filtered
+        { id: '4', priority: 'in_progress', hold: false, percent: 50 }
+      ];
+      const result = ItemSelectionService.select(items, {
+        containerType: 'folder',
+        now
+      });
+      // Filtered (hold), sorted by priority, pick first
+      expect(result.length).toBe(1);
+      expect(result[0].id).toBe('4'); // in_progress first
+    });
+
+    test('applies album pipeline (no filter, track_order)', () => {
+      const items = [
+        { id: '1', trackNumber: 3 },
+        { id: '2', trackNumber: 1 },
+        { id: '3', trackNumber: 2 }
+      ];
+      const result = ItemSelectionService.select(items, {
+        containerType: 'album',
+        now
+      });
+      expect(result.map(i => i.id)).toEqual(['2', '3', '1']);
+    });
+
+    test('respects override pick', () => {
+      const items = [
+        { id: '1', priority: 'high', hold: false, percent: 0 },
+        { id: '2', priority: 'low', hold: false, percent: 0 }
+      ];
+      const result = ItemSelectionService.select(
+        items,
+        { containerType: 'folder', now },
+        { pick: 'all' }
+      );
+      expect(result.length).toBe(2);
+    });
+
+    test('applies urgency promotion before sort', () => {
+      const items = [
+        { id: '1', priority: 'medium', skipAfter: '2026-01-20' }, // within 8 days -> urgent
+        { id: '2', priority: 'high' }
+      ];
+      const result = ItemSelectionService.select(
+        items,
+        { containerType: 'folder', now },
+        { pick: 'all' }
+      );
+      expect(result[0].id).toBe('1'); // promoted to urgent, before high
+      expect(result[0].priority).toBe('urgent');
+    });
+
+    test('handles empty result after filtering', () => {
+      const items = [
+        { id: '1', hold: true }
+      ];
+      const result = ItemSelectionService.select(items, {
+        containerType: 'folder',
+        now
+      });
+      expect(result).toEqual([]);
+    });
+
+    test('throws if now not provided for watchlist strategy', () => {
+      const items = [{ id: '1' }];
+      expect(() => ItemSelectionService.select(items, { containerType: 'folder' }))
+        .toThrow('now date required');
+    });
+  });
 });
