@@ -60,8 +60,8 @@ function useProgressTimeout(timeout = 0, onTimeout, interval = 15) {
  * - Falls back to local state if MenuNavigationContext is unavailable
  * - Supports alphanumeric key cycling for single-button input
  */
-export function SeasonView({ seasonId, depth, onSelect, onEscape, MENU_TIMEOUT = 0 }) {
-  const { data, loading, error } = useFetchPlexData(seasonId);
+export function SeasonView({ parentId, depth, onSelect, onEscape, MENU_TIMEOUT = 0 }) {
+  const { data, loading, error } = useFetchPlexData(parentId);
   const navContext = useContext(MenuNavigationContext);
   const gridRef = useRef(null);
   
@@ -83,7 +83,7 @@ export function SeasonView({ seasonId, depth, onSelect, onEscape, MENU_TIMEOUT =
   const episodes = data?.items || [];
   const seasonInfo = data?.info || {};
   const seasonTitle = data?.title || seasonInfo.title || 'Season';
-  const showTitle = seasonInfo.parentTitle || '';
+  const showTitle = seasonInfo.grandparentTitle || '';
   const seasonPoster = seasonInfo.image || '';
 
   // Timeout logic for OfficeApp single-button navigation
@@ -271,7 +271,7 @@ export function SeasonView({ seasonId, depth, onSelect, onEscape, MENU_TIMEOUT =
         {selectedEpisode && (
           <div className="season-view__selected-info">
             <div className="season-view__selected-number">
-              Episode {selectedEpisode.episodeNumber !== undefined ? selectedEpisode.episodeNumber : selectedIndex + 1}
+              Episode {selectedEpisode.itemIndex !== undefined ? selectedEpisode.itemIndex : selectedIndex + 1}
             </div>
             <h3 className="season-view__selected-title">
               {selectedEpisode.label || selectedEpisode.title}
@@ -370,7 +370,7 @@ export function SeasonView({ seasonId, depth, onSelect, onEscape, MENU_TIMEOUT =
                 {/* Episode Info */}
                 <div className="episode-grid-card__info">
                   <span className="episode-grid-card__number">
-                    {episode.episodeNumber !== undefined ? episode.episodeNumber : index + 1}.
+                    {episode.itemIndex !== undefined ? episode.itemIndex : index + 1}.
                   </span>
                   <span className="episode-grid-card__title">
                     {episode.label || episode.title}

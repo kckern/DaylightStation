@@ -147,7 +147,9 @@ export function createFitnessRouter(config) {
       if (viewingHistory && Object.keys(viewingHistory).length > 0) {
           items = items.map(item => {
             const itemKey = item.localId || item.metadata?.plex || item.metadata?.key;
-            const watchData = viewingHistory[itemKey] || viewingHistory[String(itemKey)];
+            // Try both raw key and plex-prefixed key to match media_memory format
+            const plexPrefixedKey = `plex:${itemKey}`;
+            const watchData = viewingHistory[itemKey] || viewingHistory[String(itemKey)] || viewingHistory[plexPrefixedKey];
             if (watchData) {
               // Calculate progress from playhead and duration
               const playhead = parseInt(watchData.playhead) || parseInt(watchData.seconds) || 0;
@@ -183,22 +185,24 @@ export function createFitnessRouter(config) {
         info = await adapter.getContainerInfo(compoundId);
       }
 
-      // Build seasons map from items' season metadata
-      let seasons = null;
+      // Build parents map from items' hierarchy metadata (canonical relative fields)
+      let parents = null;
       if (items.length > 0) {
-        const seasonsMap = {};
+        const parentsMap = {};
         for (const item of items) {
-          const seasonId = item.metadata?.seasonId || item.metadata?.parent;
-          if (seasonId && !seasonsMap[seasonId]) {
-            seasonsMap[seasonId] = {
-              num: item.metadata?.seasonNumber ?? item.metadata?.parentIndex,
-              title: item.metadata?.seasonName || item.metadata?.parentTitle || 'Season',
-              img: item.thumbnail
+          const pId = item.metadata?.parentId;
+          if (pId && !parentsMap[pId]) {
+            parentsMap[pId] = {
+              index: item.metadata?.parentIndex,
+              title: item.metadata?.parentTitle || 'Parent',
+              // Use parent (season) thumbnail from metadata, or construct proxy URL for parent
+              thumbnail: item.metadata?.parentThumb || `/api/v1/content/plex/image/${pId}`,
+              type: item.metadata?.parentType
             };
           }
         }
-        if (Object.keys(seasonsMap).length > 0) {
-          seasons = seasonsMap;
+        if (Object.keys(parentsMap).length > 0) {
+          parents = parentsMap;
         }
       }
 
@@ -212,7 +216,7 @@ export function createFitnessRouter(config) {
         label: containerItem?.title || id,
         image: containerItem?.thumbnail,
         info,
-        seasons,
+        parents,
         items: items.map(toListItem)
       };
 

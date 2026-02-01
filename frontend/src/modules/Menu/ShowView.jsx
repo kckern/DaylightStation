@@ -60,8 +60,8 @@ function useProgressTimeout(timeout = 0, onTimeout, interval = 15) {
  * - Falls back to local state if MenuNavigationContext is unavailable
  * - Supports alphanumeric key cycling for single-button input
  */
-export function ShowView({ showId, depth, onSelect, onEscape, MENU_TIMEOUT = 0 }) {
-  const { data, loading, error } = useFetchPlexData(showId);
+export function ShowView({ grandparentId, depth, onSelect, onEscape, MENU_TIMEOUT = 0 }) {
+  const { data, loading, error } = useFetchPlexData(grandparentId);
   const navContext = useContext(MenuNavigationContext);
   const seasonsRef = useRef(null);
   

@@ -189,23 +189,25 @@ export function createItemRouter(options = {}) {
         info = await adapter.getContainerInfo(compoundId);
       }
 
-      // Build seasons map from items' season metadata for FitnessShow
-      let seasons = null;
+      // Build parents map from items' hierarchy metadata (canonical relative fields)
+      let parents = null;
       if (modifiers.playable && items.length > 0) {
-        const seasonsMap = {};
+        const parentsMap = {};
         for (const childItem of items) {
-          const seasonId = childItem.metadata?.seasonId || childItem.metadata?.parent;
-          if (seasonId && !seasonsMap[seasonId]) {
-            seasonsMap[seasonId] = {
-              num: childItem.metadata?.seasonNumber ?? childItem.metadata?.parentIndex,
-              title: childItem.metadata?.seasonName || childItem.metadata?.parentTitle || 'Season',
-              img: childItem.thumbnail
+          const pId = childItem.metadata?.parentId;
+          if (pId && !parentsMap[pId]) {
+            parentsMap[pId] = {
+              index: childItem.metadata?.parentIndex,
+              title: childItem.metadata?.parentTitle || 'Parent',
+              // Use parent (season) thumbnail from metadata, or construct proxy URL for parent
+              thumbnail: childItem.metadata?.parentThumb || `/api/v1/content/plex/image/${pId}`,
+              type: childItem.metadata?.parentType
             };
           }
         }
-        // Only include seasons if we found any
-        if (Object.keys(seasonsMap).length > 0) {
-          seasons = seasonsMap;
+        // Only include parents if we found any
+        if (Object.keys(parentsMap).length > 0) {
+          parents = parentsMap;
         }
       }
 
@@ -223,9 +225,9 @@ export function createItemRouter(options = {}) {
         itemType: item.itemType,
         thumbnail: item.thumbnail,
         image: item.thumbnail,
-        // Include info and seasons for FitnessShow compatibility
+        // Include info and parents for FitnessShow compatibility
         ...(info && { info }),
-        ...(seasons && { seasons }),
+        ...(parents && { parents }),
         items: items.map(toListItem)
       };
 

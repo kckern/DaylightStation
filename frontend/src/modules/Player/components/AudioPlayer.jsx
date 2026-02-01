@@ -33,7 +33,7 @@ export function AudioPlayer({
   const { mediaUrl, title, artist, albumArtist, album, image, type } = media || {};
   
   // Fallback for artist/album from metadata if not directly available
-  // (Plex track metadata often has artist/album in metadata object, or grandparentTitle/parentTitle)
+  // (Plex track metadata uses canonical hierarchy: grandparentTitle=artist, parentTitle=album)
   const effectiveArtist = artist || media?.metadata?.artist || media?.grandparentTitle || media?.metadata?.grandparentTitle || null;
   const effectiveAlbum = album || media?.metadata?.album || media?.parentTitle || media?.metadata?.parentTitle || null;
   const effectiveAlbumArtist = albumArtist || media?.metadata?.albumArtist || null;

@@ -116,15 +116,12 @@ export function toListItem(item) {
   // They belong in action objects (play.plex, queue.plex, list.plex), not top-level.
   if (item.metadata) {
     const {
-      key, seasonId, seasonName, seasonNumber,
-      episodeNumber, index, summary, tagline, studio, thumbId, type,
-      artist, albumArtist, album, albumId, artistId, grandparentTitle,
-      // TV show fields
-      show, season,
-      // Parent (season) fields
-      parent, parentTitle, parentIndex,
-      // Grandparent (show) fields
-      showId, grandparent,
+      key, summary, tagline, studio, thumbId, type,
+      artist, albumArtist, album, albumId, artistId,
+      // Canonical relative hierarchy fields
+      parentId, parentTitle, parentIndex, parentType, parentThumb,
+      grandparentId, grandparentTitle, grandparentType, grandparentThumb,
+      itemIndex,
       // Rating fields for FitnessMenu sorting
       rating, userRating, year,
       // FolderAdapter watch state fields
@@ -140,11 +137,17 @@ export function toListItem(item) {
     // Note: plex is NOT copied to top-level from metadata.
     // It belongs in action objects (play.plex, queue.plex, list.plex).
     if (key !== undefined) base.key = key;
-    if (seasonId !== undefined) base.seasonId = seasonId;
-    if (seasonName !== undefined) base.seasonName = seasonName;
-    if (seasonNumber !== undefined) base.seasonNumber = seasonNumber;
-    if (episodeNumber !== undefined) base.episodeNumber = episodeNumber;
-    if (index !== undefined) base.index = index;
+    // Canonical relative hierarchy fields
+    if (parentId !== undefined) base.parentId = parentId;
+    if (parentTitle !== undefined) base.parentTitle = parentTitle;
+    if (parentIndex !== undefined) base.parentIndex = parentIndex;
+    if (parentType !== undefined) base.parentType = parentType;
+    if (grandparentId !== undefined) base.grandparentId = grandparentId;
+    if (grandparentTitle !== undefined) base.grandparentTitle = grandparentTitle;
+    if (grandparentType !== undefined) base.grandparentType = grandparentType;
+    if (parentThumb !== undefined) base.parentThumb = parentThumb;
+    if (grandparentThumb !== undefined) base.grandparentThumb = grandparentThumb;
+    if (itemIndex !== undefined) base.itemIndex = itemIndex;
     if (summary !== undefined) {
       base.summary = summary;
       base.episodeDescription = summary;  // Alias for prod parity
@@ -159,17 +162,6 @@ export function toListItem(item) {
     if (album !== undefined) base.album = album;
     if (albumId !== undefined) base.albumId = albumId;
     if (artistId !== undefined) base.artistId = artistId;
-    if (grandparentTitle !== undefined) base.grandparentTitle = grandparentTitle;
-    // TV show fields
-    if (show !== undefined) base.show = show;
-    if (season !== undefined) base.season = season;
-    // Parent (season) fields
-    if (parent !== undefined) base.parent = parent;
-    if (parentTitle !== undefined) base.parentTitle = parentTitle;
-    if (parentIndex !== undefined) base.parentIndex = parentIndex;
-    // Grandparent (show) fields
-    if (showId !== undefined) base.showId = showId;
-    if (grandparent !== undefined) base.grandparent = grandparent;
     // Rating fields for FitnessMenu sorting
     if (rating !== undefined) base.rating = rating;
     if (userRating !== undefined) base.userRating = userRating;
@@ -408,23 +400,25 @@ export function createListRouter(config) {
         info = await adapter.getContainerInfo(compoundId);
       }
 
-      // Build seasons map from items' season metadata
-      let seasons = null;
+      // Build parents map from items' hierarchy metadata (canonical relative fields)
+      let parents = null;
       if (modifiers.playable && items.length > 0) {
-        const seasonsMap = {};
+        const parentsMap = {};
         for (const item of items) {
-          const seasonId = item.metadata?.seasonId || item.metadata?.parent;
-          if (seasonId && !seasonsMap[seasonId]) {
-            seasonsMap[seasonId] = {
-              num: item.metadata?.seasonNumber ?? item.metadata?.parentIndex,
-              title: item.metadata?.seasonName || item.metadata?.parentTitle || `Season`,
-              img: item.thumbnail
+          const pId = item.metadata?.parentId;
+          if (pId && !parentsMap[pId]) {
+            parentsMap[pId] = {
+              index: item.metadata?.parentIndex,
+              title: item.metadata?.parentTitle || 'Parent',
+              // Use parent (season) thumbnail from metadata, or construct proxy URL for parent
+              thumbnail: item.metadata?.parentThumb || `/api/v1/content/plex/image/${pId}`,
+              type: item.metadata?.parentType
             };
           }
         }
-        // Only include seasons if we found any
-        if (Object.keys(seasonsMap).length > 0) {
-          seasons = seasonsMap;
+        // Only include parents if we found any
+        if (Object.keys(parentsMap).length > 0) {
+          parents = parentsMap;
         }
       }
 
@@ -442,7 +436,7 @@ export function createListRouter(config) {
         label: containerInfo?.title || localId,
         image: containerInfo?.thumbnail,
         info,
-        seasons,
+        parents,
         items: items.map(toListItem)
       };
 

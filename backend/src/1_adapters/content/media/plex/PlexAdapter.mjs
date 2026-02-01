@@ -457,29 +457,30 @@ export class PlexAdapter {
       labels: allLabels.length > 0 ? allLabels : null
     };
 
-    // Add episode-specific fields (TV shows)
+    // Add episode-specific fields (TV shows) - using canonical relative hierarchy names
     if (item.type === 'episode') {
-      metadata.show = item.grandparentTitle;
-      metadata.season = item.parentTitle;
-      if (item.index !== undefined && item.index !== null) {
-        metadata.episodeNumber = parseInt(item.index);
-        metadata.index = parseInt(item.index);
+      // Grandparent (show) info
+      metadata.grandparentTitle = item.grandparentTitle;
+      metadata.grandparentType = 'show';
+      if (item.grandparentRatingKey) {
+        metadata.grandparentId = item.grandparentRatingKey;
       }
-      // Season (parent) info
+      // Parent (season) info
+      metadata.parentTitle = item.parentTitle;
+      metadata.parentType = 'season';
       if (item.parentRatingKey) {
-        metadata.seasonId = item.parentRatingKey;
-        metadata.parent = item.parentRatingKey;
-        metadata.seasonName = item.parentTitle;
-        metadata.parentTitle = item.parentTitle;
+        metadata.parentId = item.parentRatingKey;
       }
       if (item.parentIndex !== undefined && item.parentIndex !== null) {
-        metadata.seasonNumber = parseInt(item.parentIndex);
         metadata.parentIndex = parseInt(item.parentIndex);
       }
-      // Show (grandparent) info
-      if (item.grandparentRatingKey) {
-        metadata.showId = item.grandparentRatingKey;
-        metadata.grandparent = item.grandparentRatingKey;
+      // Parent thumbnail (season cover image)
+      if (item.parentThumb) {
+        metadata.parentThumb = `${this.proxyPath}${item.parentThumb}`;
+      }
+      // Item position
+      if (item.index !== undefined && item.index !== null) {
+        metadata.itemIndex = parseInt(item.index);
       }
     }
 

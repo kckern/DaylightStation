@@ -138,8 +138,8 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
   }, [currentTrack]);
 
   const musicVolumeState = usePersistentVolume({
-    showId: 'fitness-music',
-    seasonId: selectedPlaylistId || 'global',
+    grandparentId: 'fitness-music',
+    parentId: selectedPlaylistId || 'global',
     trackId: currentTrackIdentity || 'music',
     playerRef: audioPlayerRef
   });

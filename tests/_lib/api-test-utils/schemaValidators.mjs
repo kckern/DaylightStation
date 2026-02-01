@@ -131,6 +131,44 @@ export const SCHEMAS = {
       percent: 'number',
       watched: 'boolean'
     }
+  },
+
+  // Fitness/playable content schemas with canonical hierarchy fields
+  fitnessShowPlayable: {
+    required: ['id', 'title', 'items', 'parents'],
+    types: {
+      id: 'string',
+      title: 'string',
+      items: 'array',
+      parents: 'object'
+    }
+  },
+
+  playableItem: {
+    required: ['id', 'title', 'parentId'],
+    types: {
+      id: 'string',
+      title: 'string',
+      parentId: 'string',
+      parentTitle: 'string',
+      parentIndex: 'number',
+      parentType: 'string',
+      itemIndex: 'number',
+      grandparentId: 'string',
+      grandparentTitle: 'string',
+      grandparentType: 'string'
+    }
+  },
+
+  // Parent container entry in parents map
+  parentContainer: {
+    required: ['title'],
+    types: {
+      index: 'number',
+      title: 'string',
+      thumbnail: 'string',
+      type: 'string'
+    }
   }
 };
 
@@ -260,6 +298,41 @@ export function validateErrorResponse(data, expectedStatus) {
 
   if (typeof data.error !== 'string') {
     throw new Error('Error response "error" field should be a string');
+  }
+}
+
+/**
+ * Validate parents map structure (for playable responses with hierarchy).
+ *
+ * @param {Object} parents - Map of parent containers keyed by ID
+ * @param {Object} options
+ * @param {number} options.minCount - Minimum expected parents (default: 1)
+ */
+export function validateParentsMap(parents, options = {}) {
+  const { minCount = 1 } = options;
+
+  if (!parents || typeof parents !== 'object') {
+    throw new Error('Expected parents to be an object');
+  }
+
+  const entries = Object.entries(parents);
+
+  if (entries.length < minCount) {
+    throw new Error(`Expected at least ${minCount} parent entries, got ${entries.length}`);
+  }
+
+  for (const [id, container] of entries) {
+    if (!id) {
+      throw new Error('Parent map has entry with empty key');
+    }
+
+    if (!container.title) {
+      throw new Error(`Parent container '${id}' missing 'title' field`);
+    }
+
+    if (container.index !== undefined && typeof container.index !== 'number') {
+      throw new Error(`Parent container '${id}' has non-number index`);
+    }
   }
 }
 

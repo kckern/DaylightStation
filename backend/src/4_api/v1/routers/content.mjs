@@ -619,7 +619,7 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
         seconds,
         // Preserve new DDD fields too
         id: item.id,
-        mediaType: item.mediaType,
+        // Note: mediaType already set above (computed from itemType)
         duration: item.duration,
         thumbnail: item.thumbnail,
         metadata: item.metadata

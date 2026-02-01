@@ -2,8 +2,8 @@ import { useMemo } from 'react';
 import { usePersistentVolume } from './usePersistentVolume.js';
 
 const DEFAULT_VIDEO_IDS = {
-  showId: 'fitness',
-  seasonId: 'global',
+  grandparentId: 'fitness',
+  parentId: 'global',
   trackId: 'video'
 };
 
@@ -13,13 +13,13 @@ const DEFAULT_VIDEO_IDS = {
  */
 export function useFitnessVolumeControls({
   videoPlayerRef,
-  videoShowId,
-  videoSeasonId,
+  videoGrandparentId,
+  videoParentId,
   videoTrackId
 } = {}) {
   const videoVolume = usePersistentVolume({
-    showId: videoShowId || DEFAULT_VIDEO_IDS.showId,
-    seasonId: videoSeasonId || DEFAULT_VIDEO_IDS.seasonId,
+    grandparentId: videoGrandparentId || DEFAULT_VIDEO_IDS.grandparentId,
+    parentId: videoParentId || DEFAULT_VIDEO_IDS.parentId,
     trackId: videoTrackId || DEFAULT_VIDEO_IDS.trackId,
     playerRef: videoPlayerRef
   });

@@ -32,8 +32,8 @@ function sanitizeVolume(entry, fallback = DEFAULT_VOLUME) {
 function parseKeyMeta(key) {
   const match = key.match(VOLUME_KEY_PATTERN);
   if (!match) return null;
-  const [, showId, seasonId, trackId] = match;
-  return { showId, seasonId, trackId };
+  const [, grandparentId, parentId, trackId] = match;
+  return { grandparentId, parentId, trackId };
 }
 
 function parseStoredEntry(key, rawValue) {
@@ -54,7 +54,7 @@ function isVolumeKey(key) {
 
 function ensureGlobalDefault(map) {
   if (!map.has(GLOBAL_KEY)) {
-    map.set(GLOBAL_KEY, { ...DEFAULT_VOLUME, showId: null, seasonId: null, trackId: null, key: GLOBAL_KEY });
+    map.set(GLOBAL_KEY, { ...DEFAULT_VOLUME, grandparentId: null, parentId: null, trackId: null, key: GLOBAL_KEY });
   }
 }
 
@@ -63,15 +63,15 @@ function stripMeta(entry) {
 }
 
 function normalizeIds(ids = {}) {
-  const showId = ids.showId != null ? String(ids.showId) : null;
-  const seasonId = ids.seasonId != null ? String(ids.seasonId) : 'global';
+  const grandparentId = ids.grandparentId != null ? String(ids.grandparentId) : null;
+  const parentId = ids.parentId != null ? String(ids.parentId) : 'global';
   const trackId = ids.trackId != null ? String(ids.trackId) : null;
-  return { showId, seasonId, trackId };
+  return { grandparentId, parentId, trackId };
 }
 
 function makeTrackKey(ids) {
-  if (!ids.showId || !ids.trackId) return null;
-  return `${FITNESS_PREFIX}:${ids.showId}:${ids.seasonId}:${ids.trackId}`;
+  if (!ids.grandparentId || !ids.trackId) return null;
+  return `${FITNESS_PREFIX}:${ids.grandparentId}:${ids.parentId}:${ids.trackId}`;
 }
 
 function selectLatest(map, predicate) {
@@ -87,7 +87,7 @@ function selectLatest(map, predicate) {
 
 function resolveFromMap(map, ids) {
   const globalEntry = map.get(GLOBAL_KEY) ?? { ...DEFAULT_VOLUME, updatedAt: 0 };
-  if (!ids.showId || !ids.trackId) {
+  if (!ids.grandparentId || !ids.trackId) {
     return { ...globalEntry, source: 'global' };
   }
 
@@ -95,10 +95,10 @@ function resolveFromMap(map, ids) {
   const exact = exactKey ? map.get(exactKey) : null;
   if (exact) return { ...exact, source: 'exact' };
 
-  const seasonSibling = selectLatest(map, (entry) => entry.showId === ids.showId && entry.seasonId === ids.seasonId && entry.trackId !== ids.trackId);
+  const seasonSibling = selectLatest(map, (entry) => entry.grandparentId === ids.grandparentId && entry.parentId === ids.parentId && entry.trackId !== ids.trackId);
   if (seasonSibling) return { ...seasonSibling, source: 'season-sibling' };
 
-  const showSibling = selectLatest(map, (entry) => entry.showId === ids.showId && entry.trackId !== ids.trackId);
+  const showSibling = selectLatest(map, (entry) => entry.grandparentId === ids.grandparentId && entry.trackId !== ids.trackId);
   if (showSibling) return { ...showSibling, source: 'show-sibling' };
 
   return { ...globalEntry, source: 'global' };
@@ -185,8 +185,8 @@ export function createVolumeStore(options = {}) {
       storageHealthy,
       entries: Array.from(map.values()).map((entry) => ({
         key: entry.key,
-        showId: entry.showId,
-        seasonId: entry.seasonId,
+        grandparentId: entry.grandparentId,
+        parentId: entry.parentId,
         trackId: entry.trackId,
         level: entry.level,
         muted: entry.muted,

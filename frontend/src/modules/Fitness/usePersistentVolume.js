@@ -10,15 +10,15 @@ const normalizePart = (value, fallback) => {
   return normalized;
 };
 
-export function usePersistentVolume({ showId, seasonId, trackId, playerRef } = {}) {
+export function usePersistentVolume({ grandparentId, parentId, trackId, playerRef } = {}) {
   const { getVolume, setVolume, applyToPlayer, version } = useVolumeStore();
   const ids = useMemo(
     () => ({
-      showId: normalizePart(showId, 'fitness'),
-      seasonId: normalizePart(seasonId, 'global'),
+      grandparentId: normalizePart(grandparentId, 'fitness'),
+      parentId: normalizePart(parentId, 'global'),
       trackId: normalizePart(trackId, null)
     }),
-    [showId, seasonId, trackId]
+    [grandparentId, parentId, trackId]
   );
   
   // Synchronously initialize volume from storage on first render (3B fix)
