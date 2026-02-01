@@ -81,7 +81,36 @@ When `play=container` or `queue=container`, item selection is handled by **ItemS
 - Promotes items with `skipAfter` within 8 days to `priority: urgent`
 - Sorts by: in_progress (by % desc) > urgent > high > medium > low
 
-See `docs/plans/2026-02-01-item-selection-service-design.md` for full specification.
+See `item-selection-service.md` for full API reference.
+
+### Nested Containers
+
+When a container contains other containers, all nested playables are flattened. Order follows the container type's strategy (album → track order, show → episode order, etc.).
+
+### Heterogeneous Containers (Program of Watchlists)
+
+When queuing a container whose children have different selection semantics:
+
+| Child Type | Contribution to Queue |
+|------------|----------------------|
+| Watchlist | ONE item (next eligible by priority/filters) |
+| Album | ALL tracks (in track order) |
+| Playlist | ALL items (in playlist order) |
+| Show | ALL episodes (in episode order) |
+
+**Example:** A "Daily Program" containing `[Watchlist:FHE, Watchlist:Scripture, Album:Hymns]`
+
+```
+queue=program
+    ↓
+├── FHE watchlist      → 1 item (next unwatched, highest priority)
+├── Scripture watchlist → 1 item (next unwatched, highest priority)
+└── Hymns album        → 12 items (all tracks in order)
+    ↓
+Queue: 14 items total
+```
+
+Each child is resolved using **its own container type's strategy**, not the parent's. The parent container serves as a grouping mechanism only.
 
 ---
 
