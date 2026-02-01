@@ -3,6 +3,28 @@ import { describe, it, expect, jest, beforeEach } from '@jest/globals';
 import { ContentQueryService } from '#apps/content/ContentQueryService.mjs';
 
 describe('ContentQueryService', () => {
+  describe('constructor', () => {
+    it('accepts mediaProgressMemory as optional dependency', () => {
+      const mockRegistry = { get: jest.fn(), list: jest.fn(() => []), resolveSource: jest.fn(() => []) };
+      const mockMemory = { get: jest.fn(), getAll: jest.fn() };
+
+      const service = new ContentQueryService({
+        registry: mockRegistry,
+        mediaProgressMemory: mockMemory
+      });
+
+      expect(service).toBeDefined();
+    });
+
+    it('works without mediaProgressMemory', () => {
+      const mockRegistry = { get: jest.fn(), list: jest.fn(() => []), resolveSource: jest.fn(() => []) };
+
+      const service = new ContentQueryService({ registry: mockRegistry });
+
+      expect(service).toBeDefined();
+    });
+  });
+
   let service;
   let mockRegistry;
   let mockAdapter1;

@@ -6,13 +6,16 @@
  */
 export class ContentQueryService {
   #registry;
+  #mediaProgressMemory;
 
   /**
    * @param {Object} deps
    * @param {import('#domains/content/services/ContentSourceRegistry.mjs').ContentSourceRegistry} deps.registry
+   * @param {import('#apps/content/ports/IMediaProgressMemory.mjs').IMediaProgressMemory} [deps.mediaProgressMemory]
    */
-  constructor({ registry }) {
+  constructor({ registry, mediaProgressMemory = null }) {
     this.#registry = registry;
+    this.#mediaProgressMemory = mediaProgressMemory;
   }
 
   /**
