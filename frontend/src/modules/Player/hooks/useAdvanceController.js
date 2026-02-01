@@ -113,11 +113,8 @@ export function useAdvanceController(visual, audioState) {
       return;
     }
 
-    // Only run timer when audio is playing (or if there's no audio)
-    if (audioState && !isPlaying) {
-      return;
-    }
-
+    // Timed mode runs independently - no audio sync required
+    // (Use 'synced' mode if you need audio-driven advancement)
     intervalRef.current = setInterval(() => {
       setCurrentIndex((prevIndex) => getNextIndex(prevIndex, 1));
     }, interval);
@@ -128,7 +125,7 @@ export function useAdvanceController(visual, audioState) {
         intervalRef.current = null;
       }
     };
-  }, [mode, interval, itemCount, isPlaying, getNextIndex, audioState]);
+  }, [mode, interval, itemCount, getNextIndex]);
 
   /**
    * Handle 'onTrackEnd' mode - advance when audio track ends

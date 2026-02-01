@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { useFitnessContext } from '../../context/FitnessContext.jsx';
 import { DaylightMediaPath } from '../../lib/api.mjs';
@@ -1049,6 +1049,50 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
 
     return rows;
   }, [overlay, participants, fitnessCtx?.usersConfigRaw, zoneMetadata, userZoneProgress, participantMap, resolveParticipantVitals, fitnessCtx?.getUserZoneThreshold, governanceState]);
+
+  // BUG-001 DEBUG: Track changes to blocking users lists for SSOT debugging
+  const prevWarningOffendersRef = useRef([]);
+  const prevLockRowsRef = useRef([]);
+
+  // Log warning screen blocking user changes
+  useEffect(() => {
+    const currentNames = warningOffenders.map(o => o.displayLabel || o.name).sort();
+    const prevNames = prevWarningOffendersRef.current;
+    const currentKey = currentNames.join(',');
+    const prevKey = prevNames.join(',');
+    
+    if (currentKey !== prevKey && sessionInstance?.logEvent) {
+      sessionInstance.logEvent('overlay.warning_offenders_changed', {
+        previousUsers: prevNames,
+        currentUsers: currentNames,
+        addedUsers: currentNames.filter(n => !prevNames.includes(n)),
+        removedUsers: prevNames.filter(n => !currentNames.includes(n)),
+        phase: overlay?.status || null,
+        category: overlay?.category || null
+      });
+    }
+    prevWarningOffendersRef.current = currentNames;
+  }, [warningOffenders, sessionInstance, overlay?.status, overlay?.category]);
+
+  // Log lock screen blocking user changes
+  useEffect(() => {
+    const currentNames = lockRows.map(r => r.displayLabel || r.name).sort();
+    const prevNames = prevLockRowsRef.current;
+    const currentKey = currentNames.join(',');
+    const prevKey = prevNames.join(',');
+    
+    if (currentKey !== prevKey && sessionInstance?.logEvent) {
+      sessionInstance.logEvent('overlay.lock_rows_changed', {
+        previousUsers: prevNames,
+        currentUsers: currentNames,
+        addedUsers: currentNames.filter(n => !prevNames.includes(n)),
+        removedUsers: prevNames.filter(n => !currentNames.includes(n)),
+        phase: overlay?.status || null,
+        category: overlay?.category || null
+      });
+    }
+    prevLockRowsRef.current = currentNames;
+  }, [lockRows, sessionInstance, overlay?.status, overlay?.category]);
 
   const challengeOverlay = currentChallengeOverlay?.show && !isGovernanceLocked
     ? <ChallengeOverlay overlay={currentChallengeOverlay} />

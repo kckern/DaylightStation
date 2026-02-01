@@ -48,6 +48,7 @@ export class Item {
     this.title = props.title;
     this.type = props.type ?? null;
     this.thumbnail = props.thumbnail ?? null;
+    this.imageUrl = props.imageUrl ?? null;
     this.description = props.description ?? null;
     this.metadata = props.metadata ?? {};
     this.actions = props.actions ?? null;

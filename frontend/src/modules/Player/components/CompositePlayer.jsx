@@ -46,13 +46,23 @@ function NewFormatComposite({ visual, audio, Player, ignoreKeys, coordination })
 
     // Audio track should provide play or queue configuration
     if (audio.items && audio.items.length > 0) {
-      // Build queue from items
-      const queueItems = audio.items.map(item => ({
-        ...item,
-        seconds: 0,
-        resume: false,
-        shader: 'minimal'
-      }));
+      // Build queue from items, mapping to Player's expected format
+      const queueItems = audio.items.map(item => {
+        // Extract plex key from id if it's a plex item (e.g., "plex:587484" -> "587484")
+        const plexKey = item.id?.startsWith('plex:') ? item.id.slice(5) : null;
+
+        return {
+          ...item,
+          // Map camelCase to snake_case for Player compatibility
+          media_url: item.mediaUrl || item.media_url,
+          media_type: item.mediaType || item.media_type || 'audio',
+          // Set plex key for SinglePlayer's fetchMediaInfo
+          plex: plexKey || item.plex,
+          seconds: 0,
+          resume: false,
+          shader: 'minimal'
+        };
+      });
 
       return {
         queue: queueItems.length === 1 ? queueItems[0] : queueItems,
