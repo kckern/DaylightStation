@@ -187,7 +187,7 @@ export class ContentSourceRegistry {
     const colonIndex = compoundId.indexOf(':');
     if (colonIndex === -1) {
       // No colon - treat as filesystem path (default adapter)
-      const defaultAdapter = this.adapters.get('filesystem');
+      const defaultAdapter = this.#adapterEntries.get('filesystem')?.adapter;
       return defaultAdapter ? { adapter: defaultAdapter, localId: compoundId } : null;
     }
 
@@ -195,7 +195,7 @@ export class ContentSourceRegistry {
     const localId = compoundId.substring(colonIndex + 1);
 
     // First try exact source match
-    const adapter = this.adapters.get(source);
+    const adapter = this.#adapterEntries.get(source)?.adapter;
     if (adapter) {
       return { adapter, localId };
     }
