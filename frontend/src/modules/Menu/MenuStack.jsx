@@ -8,6 +8,7 @@ import { getLogger } from '../../lib/logging/Logger.js';
 // Lazy load components that may be rendered from the stack
 const Player = lazy(() => import('../Player/Player').then(m => ({ default: m.default || m.Player })));
 const AppContainer = lazy(() => import('../AppContainer/AppContainer').then(m => ({ default: m.default || m.AppContainer })));
+const ArtViewer = lazy(() => import('../AppContainer/Apps/Art/Art').then(m => ({ default: m.default })));
 
 /**
  * Loading fallback for lazy-loaded components
@@ -166,6 +167,21 @@ export function MenuStack({ rootMenu }) {
         <Suspense fallback={<LoadingFallback />}>
           <AppContainer open={props.open} clear={clear} />
         </Suspense>
+      );
+
+    case 'display':
+      return (
+        <Suspense fallback={<LoadingFallback />}>
+          <ArtViewer item={props.display} onClose={clear} />
+        </Suspense>
+      );
+
+    case 'reader':
+      // TODO: Implement reader component
+      return (
+        <div className="menu-stack-placeholder">
+          Reader not yet implemented. ID: {props.read?.id}
+        </div>
       );
 
     default:
