@@ -25,6 +25,7 @@ export {
 // Services
 export { CanvasSelectionService } from './services/CanvasSelectionService.mjs';
 export { ContentSourceRegistry } from './services/ContentSourceRegistry.mjs';
+export { ItemSelectionService } from './services/ItemSelectionService.mjs';
 export { MediaMemoryValidatorService } from './services/MediaMemoryValidatorService.mjs';
 export { IMediaProgressClassifier } from './services/IMediaProgressClassifier.mjs';
 export { DefaultMediaProgressClassifier } from './services/DefaultMediaProgressClassifier.mjs';
