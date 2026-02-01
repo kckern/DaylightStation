@@ -1,6 +1,7 @@
 // backend/src/4_api/routers/list.mjs
 import express from 'express';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
+import { parseModifiers } from '../utils/modifierParser.mjs';
 
 /**
  * Compact an object by removing falsy values and converting numeric strings
@@ -239,40 +240,6 @@ export function createListRouter(config) {
     // Get the first value from the action object
     const values = Object.values(action);
     return values.length > 0 ? values[0] : null;
-  }
-
-  /**
-   * Parse path modifiers (playable, shuffle, recent_on_top)
-   */
-  function parseModifiers(rawPath) {
-    const parts = rawPath.split('/');
-    const modifiers = {
-      playable: false,
-      shuffle: false,
-      recent_on_top: false
-    };
-    const cleanParts = [];
-
-    for (const part of parts) {
-      if (part === 'playable') {
-        modifiers.playable = true;
-      } else if (part === 'shuffle') {
-        modifiers.shuffle = true;
-      } else if (part === 'recent_on_top') {
-        modifiers.recent_on_top = true;
-      } else if (part.includes(',')) {
-        const mods = part.split(',');
-        for (const mod of mods) {
-          if (mod === 'playable') modifiers.playable = true;
-          if (mod === 'shuffle') modifiers.shuffle = true;
-          if (mod === 'recent_on_top') modifiers.recent_on_top = true;
-        }
-      } else if (part) {
-        cleanParts.push(part);
-      }
-    }
-
-    return { modifiers, localId: cleanParts.join('/') };
   }
 
   /**

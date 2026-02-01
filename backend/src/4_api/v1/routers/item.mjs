@@ -3,42 +3,7 @@ import express from 'express';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { toListItem } from './list.mjs';
 import { loadYaml, saveYaml } from '#system/utils/FileIO.mjs';
-
-/**
- * Parse path modifiers (playable, shuffle, recent_on_top)
- * @param {string} rawPath - Raw path from URL
- * @returns {Object} { modifiers, localId }
- */
-function parseModifiers(rawPath) {
-  const parts = rawPath.split('/');
-  const modifiers = {
-    playable: false,
-    shuffle: false,
-    recent_on_top: false
-  };
-  const cleanParts = [];
-
-  for (const part of parts) {
-    if (part === 'playable') {
-      modifiers.playable = true;
-    } else if (part === 'shuffle') {
-      modifiers.shuffle = true;
-    } else if (part === 'recent_on_top') {
-      modifiers.recent_on_top = true;
-    } else if (part.includes(',')) {
-      const mods = part.split(',');
-      for (const mod of mods) {
-        if (mod === 'playable') modifiers.playable = true;
-        if (mod === 'shuffle') modifiers.shuffle = true;
-        if (mod === 'recent_on_top') modifiers.recent_on_top = true;
-      }
-    } else if (part) {
-      cleanParts.push(part);
-    }
-  }
-
-  return { modifiers, localId: cleanParts.join('/') };
-}
+import { parseModifiers } from '../utils/modifierParser.mjs';
 
 /**
  * Shuffle array in place (Fisher-Yates)
