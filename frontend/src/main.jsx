@@ -11,6 +11,7 @@ import FinanceApp from './Apps/FinanceApp.jsx';
 import HealthApp from './Apps/HealthApp.jsx';
 import LifelogApp from './Apps/LifelogApp.jsx';
 import FitnessApp from './Apps/FitnessApp.jsx';
+import AdminApp from './Apps/AdminApp.jsx';
 import Blank from './modules/Blank/Blank.jsx';
 import { configurePlaybackLogger } from './modules/Player/lib/playbackLogger.js';
 import { configureDaylightLogger, getDaylightLogger } from './lib/logging/singleton.js';
@@ -92,6 +93,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
       <Route path="/health" element={<HealthApp />} />
       <Route path="/fitness/*" element={<FitnessApp />} />
       <Route path="/lifelog" element={<LifelogApp />} />
+      <Route path="/admin/*" element={<AdminApp />} />
       <Route path="*" element={<Blank />} />
     </Routes>
   </BrowserRouter>,
