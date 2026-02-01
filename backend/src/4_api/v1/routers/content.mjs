@@ -603,9 +603,9 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
         // Core fields
         title: item.title,
         type: itemType,
-        // Show/season info (for episodes)
-        show: item.metadata?.show || item.metadata?.grandparentTitle || null,
-        season: item.metadata?.season || item.metadata?.parentTitle || null,
+        // Show/season info (for episodes) - canonical naming
+        grandparentTitle: item.metadata?.grandparentTitle || null,
+        parentTitle: item.metadata?.parentTitle || null,
         // Labels for governance
         labels: item.metadata?.labels || [],
         // Media playback

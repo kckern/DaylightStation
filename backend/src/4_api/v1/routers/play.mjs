@@ -86,8 +86,8 @@ export function createPlayRouter(config) {
 
     // Legacy field mapping for Plex items
     if (item.metadata) {
-      if (item.metadata.grandparentTitle) response.show = item.metadata.grandparentTitle;
-      if (item.metadata.parentTitle) response.season = item.metadata.parentTitle;
+      if (item.metadata.grandparentTitle) response.grandparentTitle = item.metadata.grandparentTitle;
+      if (item.metadata.parentTitle) response.parentTitle = item.metadata.parentTitle;
       if (item.metadata.type === 'episode') response.episode = item.title;
     }
 

@@ -39,7 +39,7 @@ export function useMediaKeyboardHandler(config) {
   });
 
   const mediaIdentityKey = meta?.assetId || assetId || meta?.id || null;
-  const mediaTitle = meta?.title || meta?.name || meta?.show || null;
+  const mediaTitle = meta?.title || meta?.name || meta?.grandparentTitle || null;
 
   const logUserAction = (action, payload = {}, level = 'info') => {
     const data = {
@@ -134,7 +134,7 @@ export function useMediaKeyboardHandler(config) {
       });
       if (meta && type && assetId) {
         const { currentTime, percent } = readProgressSnapshot();
-        const title = meta.title + (meta.show ? ` (${meta.show} - ${meta.season})` : '');
+        const title = meta.title + (meta.grandparentTitle ? ` (${meta.grandparentTitle} - ${meta.parentTitle})` : '');
         const progressPercent = Number.isFinite(percent) ? percent : 100;
         const logType = (meta.plex || /^\d+$/.test(String(assetId))) ? 'plex' : type;
         DaylightAPI('api/v1/play/log', { title, type: logType, assetId, seconds: currentTime, percent: progressPercent });

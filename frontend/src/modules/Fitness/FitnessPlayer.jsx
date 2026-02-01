@@ -505,8 +505,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       type: currentItem.type || currentItem.mediaType || 'video',
       assetId: currentItem.id || currentItem.assetId || `fitness-${currentItem.id || ''}`,
       thumbId: currentItem.thumbId,
-      show: currentItem.show || 'Fitness',
-      season: currentItem.season || 'Workout',
+      grandparentTitle: currentItem.grandparentTitle || 'Fitness',
+      parentTitle: currentItem.parentTitle || 'Workout',
       percent: (() => {
         const normalized = typeof currentItem.watchProgress === 'string'
           ? parseFloat(currentItem.watchProgress)
@@ -550,8 +550,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   const fitnessLogContext = useMemo(() => ({
     mediaId: resolveMediaIdentity(currentItem),
     title: currentItem?.title,
-    show: enhancedCurrentItem?.show,
-    season: enhancedCurrentItem?.season,
+    grandparentTitle: enhancedCurrentItem?.grandparentTitle,
+    parentTitle: enhancedCurrentItem?.parentTitle,
     playerMode,
     isGoverned: playIsGoverned
   }), [currentItem, enhancedCurrentItem, playerMode, playIsGoverned]);
@@ -1053,8 +1053,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       source: 'video_player',
       mediaId: currentMediaIdentity,
       title: media.title || media.label || null,
-      show: media.show || null,
-      season: media.season || null,
+      grandparentTitle: media.grandparentTitle || null,
+      parentTitle: media.parentTitle || null,
       plexId: media.plex || media.id || null,
       mediaKey: media.assetId || null,
       durationSeconds,

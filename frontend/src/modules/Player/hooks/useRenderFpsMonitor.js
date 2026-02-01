@@ -78,8 +78,8 @@ export function useRenderFpsMonitor({
     logger.info('playback.render_fps', {
       renderFps: fps,
       title: context.title,
-      show: context.show,
-      season: context.season,
+      grandparentTitle: context.grandparentTitle,
+      parentTitle: context.parentTitle,
       mediaKey: context.mediaKey,
       shader: context.shader,
       timestamp: Date.now()
