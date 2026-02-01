@@ -1,5 +1,5 @@
 // tests/isolated/api/parsers/contentQueryParser.test.mjs
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect } from 'vitest';
 import { parseContentQuery, validateContentQuery, QUERY_ALIASES } from '#api/v1/parsers/contentQueryParser.mjs';
 
 describe('contentQueryParser', () => {
@@ -39,11 +39,11 @@ describe('contentQueryParser', () => {
       const result = parseContentQuery({
         text: 'test',
         person: 'alice',
-        time: '2025'
+        creator: 'bob'
       });
       expect(result.text).toBe('test');
       expect(result.person).toBe('alice');
-      expect(result.time).toBe('2025');
+      expect(result.creator).toBe('bob');
     });
 
     it('passes through adapter-specific keys (prefix.key)', () => {
@@ -134,6 +134,40 @@ describe('contentQueryParser', () => {
       expect(QUERY_ALIASES.source.photos).toBe('gallery');
       expect(QUERY_ALIASES.source.videos).toBe('media');
       expect(QUERY_ALIASES.source.books).toBe('readable');
+    });
+  });
+
+  describe('parseContentQuery - duration parsing', () => {
+    it('parses simple duration to seconds', () => {
+      const result = parseContentQuery({ duration: '3m' });
+      expect(result.duration).toEqual({ value: 180 });
+    });
+
+    it('parses duration range to from/to seconds', () => {
+      const result = parseContentQuery({ duration: '3m..10m' });
+      expect(result.duration).toEqual({ from: 180, to: 600 });
+    });
+
+    it('parses open-ended duration range', () => {
+      const result = parseContentQuery({ duration: '..5m' });
+      expect(result.duration).toEqual({ from: null, to: 300 });
+    });
+  });
+
+  describe('parseContentQuery - time parsing', () => {
+    it('parses year to date range', () => {
+      const result = parseContentQuery({ time: '2025' });
+      expect(result.time).toEqual({ from: '2025-01-01', to: '2025-12-31' });
+    });
+
+    it('parses year-month to date range', () => {
+      const result = parseContentQuery({ time: '2025-06' });
+      expect(result.time).toEqual({ from: '2025-06-01', to: '2025-06-30' });
+    });
+
+    it('parses year range', () => {
+      const result = parseContentQuery({ time: '2024..2025' });
+      expect(result.time).toEqual({ from: '2024-01-01', to: '2025-12-31' });
     });
   });
 });
