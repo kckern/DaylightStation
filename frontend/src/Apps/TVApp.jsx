@@ -32,6 +32,10 @@ function TVAppContent({ rootMenu, autoplay, appParam, logger }) {
     if (!autoplayed && autoplay) {
       if (autoplay.queue || autoplay.play) {
         push({ type: 'player', props: autoplay });
+      } else if (autoplay.display) {
+        push({ type: 'display', props: autoplay });
+      } else if (autoplay.read) {
+        push({ type: 'reader', props: autoplay });
       } else if (autoplay.list?.plex) {
         // Plex list → use plex-menu router
         push({ type: 'plex-menu', props: autoplay });
@@ -114,6 +118,12 @@ export default function TVApp({ appParam }) {
       // Play actions (single / next up)
       play:      (value) => ({ play:  { [findKey(value)]: value, ...config } }),
       random:    (value) => ({ play:  { [findKey(value)]: value, random: true, ...config } }),
+
+      // Display actions (static images)
+      display:   (value) => ({ display: { id: value, ...config } }),
+
+      // Read actions (ebooks, articles)
+      read:      (value) => ({ read: { id: value, ...config } }),
 
       // Source-specific play
       plex:      (value) => ({ play: { plex: value, ...config } }),
