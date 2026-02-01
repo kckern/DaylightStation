@@ -277,9 +277,9 @@ export class FilesystemAdapter {
           fileSize: stats.size,
           mimeType: MIME_TYPES[ext] || 'application/octet-stream',
           // Include watch state fields in metadata for compatibility
-          percent: watchState?.percent || null,
+          percent: progress?.percent || null,
           playhead: resumePosition,
-          watchTime: watchState?.watchTime || null
+          watchTime: progress?.watchTime || null
         }
       });
     } catch (err) {
