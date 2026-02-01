@@ -59,5 +59,26 @@ describe('SelectUPCPortion', () => {
       expect(findByUuidCalledWith).not.toBeNull();
       expect(findByUuidCalledWith.userId).toBe('kckern');
     });
+
+    it('passes userId (not conversationId) to nutriListStore.saveMany', async () => {
+      let savedItems = null;
+      mockNutriListStore.saveMany = jest.fn().mockImplementation((items) => {
+        savedItems = items;
+        return Promise.resolve();
+      });
+
+      await useCase.execute({
+        userId: 'kckern',
+        conversationId: 'telegram:b6898194425_c575596036',
+        logUuid: 'abc123',
+        portionFactor: 1,
+        messageId: '50',
+      });
+
+      expect(savedItems).not.toBeNull();
+      expect(savedItems.length).toBeGreaterThan(0);
+      expect(savedItems[0].userId).toBe('kckern');
+      expect(savedItems[0].chatId).toBe('telegram:b6898194425_c575596036');
+    });
   });
 });
