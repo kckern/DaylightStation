@@ -341,6 +341,29 @@ export function createProxyRouter(config) {
   });
 
   /**
+   * GET /proxy/abs/*
+   * Passthrough proxy for Audiobookshelf API requests (audio, covers, etc.)
+   * Uses ProxyService for streaming with Bearer token auth
+   */
+  router.use('/abs', async (req, res) => {
+    try {
+      // Use ProxyService if available
+      if (proxyService?.isConfigured?.('audiobookshelf')) {
+        await proxyService.proxy('audiobookshelf', req, res);
+        return;
+      }
+
+      // No fallback for now - ABS requires ProxyService
+      return res.status(503).json({ error: 'Audiobookshelf proxy not configured' });
+    } catch (err) {
+      console.error('[proxy] audiobookshelf error:', err);
+      if (!res.headersSent) {
+        res.status(500).json({ error: err.message });
+      }
+    }
+  });
+
+  /**
    * GET /proxy/media/*
    * Stream audio/video files from the media mount
    * Replaces legacy /media/* endpoint for ambient music, poetry, etc.

@@ -172,6 +172,16 @@ export class YamlNutriListDatastore extends INutriListDatastore {
     if (!newItems || newItems.length === 0) return;
 
     const userId = newItems[0].userId || newItems[0].chatId || 'cli-user';
+
+    // Validate userId to prevent path traversal or invalid directories
+    if (!userId || userId.includes(':') || userId.includes('/')) {
+      throw new InfrastructureError('Invalid userId for nutrilist save', {
+        code: 'INVALID_USER_ID',
+        received: userId,
+        hint: 'userId must not contain ":" or "/" characters'
+      });
+    }
+
     const filePath = this.#getPath(userId);
 
     // Load existing items

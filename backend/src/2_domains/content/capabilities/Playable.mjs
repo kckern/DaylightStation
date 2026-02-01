@@ -95,9 +95,13 @@ export class PlayableItem extends Item {
   toJSON() {
     return {
       ...this,
+      // Legacy field aliases for frontend compatibility
       media_url: this.mediaUrl,
       media_type: this.mediaType,
-      media_key: this.media_key
+      media_key: this.media_key,
+      image: this.thumbnail,
+      // Alias resumePosition as seconds for AudioPlayer
+      seconds: this.resumePosition ?? 0
     };
   }
 }

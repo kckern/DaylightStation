@@ -159,6 +159,95 @@ describe('AudiobookshelfAdapter', () => {
       expect(result.isPlayable()).toBe(true);
     });
 
+    test('returns PlayableItem with frontend-compatible metadata aliases', async () => {
+      // Mock getItem response for audiobook with full metadata
+      mockHttpClient.get.mockResolvedValueOnce({
+        data: {
+          id: 'item-full',
+          libraryId: 'lib-1',
+          media: {
+            numAudioFiles: 12,
+            duration: 43200, // 12 hours
+            metadata: {
+              title: 'The Great Novel',
+              authorName: 'Jane Author',
+              narratorName: 'John Narrator',
+              seriesName: 'Epic Series',
+              description: 'An epic tale'
+            }
+          },
+          mediaType: 'book'
+        }
+      });
+      // Mock getProgress response
+      mockHttpClient.get.mockResolvedValueOnce({
+        data: {
+          currentTime: 7200,
+          isFinished: false
+        }
+      });
+
+      const adapter = new AudiobookshelfAdapter(
+        { host: 'http://localhost:13378', token: 'test-token' },
+        { httpClient: mockHttpClient }
+      );
+
+      const result = await adapter.getItem('abs:item-full');
+
+      // Verify DDD metadata fields
+      expect(result.metadata.author).toBe('Jane Author');
+      expect(result.metadata.narrator).toBe('John Narrator');
+
+      // Verify legacy aliases for AudioPlayer frontend
+      expect(result.metadata.artist).toBe('Jane Author'); // alias for author
+      expect(result.metadata.albumArtist).toBe('John Narrator'); // alias for narrator
+      expect(result.metadata.album).toBe('Epic Series'); // series as album
+
+      // Verify thumbnail is set for cover art
+      expect(result.thumbnail).toBe('/api/v1/proxy/abs/items/item-full/cover');
+    });
+
+    test('PlayableItem toJSON includes legacy field aliases', async () => {
+      // Mock getItem response
+      mockHttpClient.get.mockResolvedValueOnce({
+        data: {
+          id: 'item-json',
+          libraryId: 'lib-1',
+          media: {
+            numAudioFiles: 8,
+            duration: 28800,
+            metadata: {
+              title: 'JSON Test Book',
+              authorName: 'Test Author'
+            }
+          },
+          mediaType: 'book'
+        }
+      });
+      // Mock getProgress response
+      mockHttpClient.get.mockResolvedValueOnce({
+        data: {
+          currentTime: 1800,
+          isFinished: false
+        }
+      });
+
+      const adapter = new AudiobookshelfAdapter(
+        { host: 'http://localhost:13378', token: 'test-token' },
+        { httpClient: mockHttpClient }
+      );
+
+      const result = await adapter.getItem('abs:item-json');
+      const json = result.toJSON();
+
+      // Legacy aliases from PlayableItem.toJSON()
+      expect(json.media_url).toBe('/api/v1/proxy/abs/items/item-json/play');
+      expect(json.media_type).toBe('audio');
+      expect(json.image).toBe('/api/v1/proxy/abs/items/item-json/cover');
+      expect(json.seconds).toBe(1800);
+      expect(json.media_key).toBe('abs:item-json');
+    });
+
     test('returns null for non-existent item', async () => {
       mockHttpClient.get.mockRejectedValue(new Error('Not found'));
 
@@ -388,6 +477,106 @@ describe('AudiobookshelfAdapter', () => {
 
       // Ebooks are not playable, they are readable
       expect(result).toEqual([]);
+    });
+  });
+
+  describe('IMediaSearchable', () => {
+    test('getSearchCapabilities returns supported query fields', () => {
+      const adapter = new AudiobookshelfAdapter(
+        { host: 'http://localhost:13378', token: 'test-token' },
+        { httpClient: mockHttpClient }
+      );
+
+      const capabilities = adapter.getSearchCapabilities();
+
+      expect(capabilities).toContain('text');
+      expect(capabilities).toContain('mediaType');
+      expect(capabilities).toContain('take');
+      expect(capabilities).toContain('skip');
+    });
+
+    test('search returns audiobooks with mediaType=audio filter', async () => {
+      // Mock getLibraries
+      mockHttpClient.get.mockResolvedValueOnce({
+        data: {
+          libraries: [{ id: 'lib-1', name: 'Audiobooks' }]
+        }
+      });
+      // Mock getLibraryItems
+      mockHttpClient.get.mockResolvedValueOnce({
+        data: {
+          results: [
+            {
+              id: 'audio-1',
+              media: {
+                numAudioFiles: 5,
+                duration: 3600,
+                metadata: { title: 'Test Audiobook' }
+              }
+            },
+            {
+              id: 'ebook-1',
+              media: {
+                ebookFile: { ebookFormat: 'epub' },
+                numAudioFiles: 0,
+                metadata: { title: 'Test Ebook' }
+              }
+            }
+          ]
+        }
+      });
+
+      const adapter = new AudiobookshelfAdapter(
+        { host: 'http://localhost:13378', token: 'test-token' },
+        { httpClient: mockHttpClient }
+      );
+
+      const result = await adapter.search({ mediaType: 'audio' });
+
+      expect(result.total).toBe(1);
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].id).toBe('abs:audio-1');
+      expect(result.items[0].mediaType).toBe('audio');
+    });
+
+    test('search filters by text query', async () => {
+      // Mock getLibraries
+      mockHttpClient.get.mockResolvedValueOnce({
+        data: { libraries: [{ id: 'lib-1', name: 'Books' }] }
+      });
+      // Mock getLibraryItems
+      mockHttpClient.get.mockResolvedValueOnce({
+        data: {
+          results: [
+            {
+              id: 'match-1',
+              media: {
+                numAudioFiles: 3,
+                duration: 1800,
+                metadata: { title: 'The Magic Garden' }
+              }
+            },
+            {
+              id: 'no-match',
+              media: {
+                numAudioFiles: 4,
+                duration: 2400,
+                metadata: { title: 'Other Book' }
+              }
+            }
+          ]
+        }
+      });
+
+      const adapter = new AudiobookshelfAdapter(
+        { host: 'http://localhost:13378', token: 'test-token' },
+        { httpClient: mockHttpClient }
+      );
+
+      const result = await adapter.search({ text: 'magic' });
+
+      expect(result.total).toBe(1);
+      expect(result.items[0].title).toBe('The Magic Garden');
     });
   });
 });

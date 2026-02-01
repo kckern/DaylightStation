@@ -75,12 +75,18 @@ export class AudiobookshelfProxyAdapter {
 
   /**
    * Transform incoming path
-   * Strips /audiobookshelf prefix if present
+   * Adds /api prefix for Audiobookshelf API endpoints
    * @param {string} path
    * @returns {string}
    */
   transformPath(path) {
-    return path.replace(/^\/audiobookshelf/, '');
+    // Strip any legacy prefix
+    let cleanPath = path.replace(/^\/audiobookshelf/, '');
+    // Ensure /api prefix for Audiobookshelf API
+    if (!cleanPath.startsWith('/api/')) {
+      cleanPath = '/api' + cleanPath;
+    }
+    return cleanPath;
   }
 
   /**
