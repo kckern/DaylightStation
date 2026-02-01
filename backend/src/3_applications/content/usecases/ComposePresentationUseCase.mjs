@@ -75,7 +75,7 @@ export class ComposePresentationUseCase {
    * @returns {Promise<import('#domains/content/capabilities/Composable.mjs').IComposedPresentation>}
    */
   async compose(sources, config = {}) {
-    this.#logger.debug?.('composePresentationUseCase.start', { sources, config });
+    this.#logger.debug?.('compose.start', { sources, config });
 
     if (!sources || !Array.isArray(sources) || sources.length === 0) {
       throw new ApplicationError('At least one source is required', {
@@ -109,12 +109,15 @@ export class ComposePresentationUseCase {
     const visualType = this.#inferVisualType(allVisualItems[0]);
 
     // Build visual track with all items
-    // For images, prefer thumbnail for fast loading; for videos use mediaUrl
+    // For images, use imageUrl (full resolution) or mediaUrl, with thumbnail as fallback
+    // For videos, use mediaUrl (playback stream)
     const visualTrack = createVisualTrack({
       type: visualType,
       items: allVisualItems.map(item => ({
         id: item.id,
-        url: visualType === 'image' ? (item.thumbnail || item.mediaUrl) : (item.mediaUrl || item.thumbnail),
+        url: visualType === 'image' 
+          ? (item.imageUrl || item.mediaUrl || item.thumbnail)
+          : (item.mediaUrl || item.thumbnail),
         duration: item.duration ? item.duration * 1000 : null,
         caption: item.title
       })),

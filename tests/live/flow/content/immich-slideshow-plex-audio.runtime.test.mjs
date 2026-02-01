@@ -39,6 +39,39 @@ test.describe('Immich Slideshow + Plex Audio', () => {
     });
     sharedPage = await sharedContext.newPage();
 
+    // Track network requests to see what URLs are being fetched
+    const composeResponses = [];
+    sharedPage.on('response', async response => {
+      const url = response.url();
+      if (url.includes('/compose')) {
+        try {
+          const body = await response.json();
+          composeResponses.push(body);
+          console.log(`Compose API returned ${body.visual?.items?.length || 0} visual items`);
+          if (body.visual?.items?.[0]) {
+            console.log(`First item URL: ${body.visual.items[0].url}`);
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
+    });
+    
+    sharedPage.on('request', request => {
+      const url = request.url();
+      if (url.includes('/proxy/immich/')) {
+        const path = url.substring(url.indexOf('/assets/'));
+        console.log(`Image request: ${path}`);
+      }
+    });
+    
+    sharedPage.on('requestfailed', request => {
+      const url = request.url();
+      if (url.includes('/proxy/immich/')) {
+        console.log(`Failed request: ${url.substring(url.indexOf('/api'))}`);
+      }
+    });
+
     // Enable autoplay for audio/video
     try {
       const cdp = await sharedContext.newCDPSession(sharedPage);
@@ -200,20 +233,30 @@ test.describe('Immich Slideshow + Plex Audio', () => {
     // The compose API fetches many items and can take several seconds
     await sharedPage.waitForTimeout(8000);
 
-    // Debug: log page HTML to understand what's rendered
-    const bodyHtml = await sharedPage.locator('body').innerHTML();
-    console.log('Body HTML preview:', bodyHtml.substring(0, 1000));
+    // Wait for visual track to appear
+    console.log('Waiting for visual track...');
+    await sharedPage.waitForSelector('[data-track="visual"]', { timeout: 10000 });
+    console.log('Visual track found');
 
-    // Check for visual track element (retry a few times)
-    let visualCount = 0;
-    for (let i = 0; i < 3; i++) {
-      const visualTrack = sharedPage.locator('[data-track="visual"]');
-      visualCount = await visualTrack.count();
-      if (visualCount > 0) break;
-      console.log(`Retry ${i + 1}: waiting for visual track...`);
-      await sharedPage.waitForTimeout(2000);
+    // Wait for image to load (spinner should disappear and img element should appear)
+    console.log('Waiting for image to load...');
+    try {
+      await sharedPage.waitForSelector('[data-track="visual"] img.image-carousel__image', { 
+        timeout: 5000,
+        state: 'visible'
+      });
+      console.log('Image loaded and visible');
+    } catch (e) {
+      console.log('Image did not load within timeout, checking for loading spinner...');
+      const spinner = await sharedPage.locator('.image-carousel__loading-spinner').count();
+      console.log(`Loading spinner present: ${spinner > 0}`);
+      if (spinner > 0) {
+        throw new Error('Image carousel stuck in loading state - spinner still present after 5s');
+      }
     }
+
     const visualTrack = sharedPage.locator('[data-track="visual"]');
+    const visualCount = await visualTrack.count();
     console.log(`\nVisual track elements found: ${visualCount}`);
 
     // Check for audio element
@@ -242,16 +285,20 @@ test.describe('Immich Slideshow + Plex Audio', () => {
       return;
     }
 
-    // Find the image element in the visual track
-    const imageElement = sharedPage.locator('[data-track="visual"] img, [data-visual-type] img, .slideshow img').first();
-    const imageExists = await imageElement.count() > 0;
-
-    let initialImageSrc = null;
-    if (imageExists) {
-      initialImageSrc = await imageElement.getAttribute('src');
-      console.log(`\nInitial image: ${initialImageSrc?.substring(0, 80)}...`);
-    } else {
-      console.log('\nNo image element found in visual track');
+    // Wait for image to be visible (in case it wasn't loaded yet)
+    console.log('\nWaiting for image to be visible...');
+    const imageElement = sharedPage.locator('[data-track="visual"] img.image-carousel__image').first();
+    
+    try {
+      await imageElement.waitFor({ state: 'visible', timeout: 10000 });
+      const initialImageSrc = await imageElement.getAttribute('src');
+      console.log(`Initial image: ${initialImageSrc?.substring(0, 80)}...`);
+    } catch (e) {
+      console.log('Image element did not become visible');
+      const spinner = await sharedPage.locator('.image-carousel__loading-spinner').count();
+      console.log(`Loading spinner still present: ${spinner > 0}`);
+      test.skip(true, 'Image failed to load');
+      return;
     }
 
     // Check audio state
@@ -273,21 +320,22 @@ test.describe('Immich Slideshow + Plex Audio', () => {
       console.log(`   - Error: ${audioState.error ? `code ${audioState.error.code}` : 'none'}`);
     }
 
+    // Get initial image src
+    const initialImageSrc = await imageElement.getAttribute('src');
+
     // Wait for slideshow to advance (10 seconds should be enough for 1-2 slides)
     console.log('\nWaiting 10 seconds for slideshow to advance...');
     await sharedPage.waitForTimeout(10000);
 
     // Check if slideshow advanced
-    if (imageExists) {
-      const currentImageSrc = await imageElement.getAttribute('src').catch(() => null);
-      console.log(`\nCurrent image: ${currentImageSrc?.substring(0, 80)}...`);
+    const currentImageSrc = await imageElement.getAttribute('src').catch(() => null);
+    console.log(`Current image: ${currentImageSrc?.substring(0, 80)}...`);
 
-      if (initialImageSrc && currentImageSrc) {
-        expect(currentImageSrc).not.toBe(initialImageSrc);
-        console.log('Slideshow advanced to new image!');
-      } else if (!currentImageSrc) {
-        console.log('Could not get current image src');
-      }
+    if (initialImageSrc && currentImageSrc) {
+      expect(currentImageSrc).not.toBe(initialImageSrc);
+      console.log('Slideshow advanced to new image!');
+    } else if (!currentImageSrc) {
+      console.log('Could not get current image src');
     }
 
     // Check final audio state

@@ -19,60 +19,81 @@ export function useImagePreloader(items, currentIndex, preloadCount = 3) {
   const [loadStatus, setLoadStatus] = useState(new Map());
   const [failedIndexes, setFailedIndexes] = useState(new Set());
   const preloadersRef = useRef(new Map()); // Track active Image objects
+  const prevItemsRef = useRef(null); // Track previous items to detect changes
 
   /**
-   * Preload a single image by index
-   */
-  const preloadImage = useCallback((index) => {
-    if (index < 0 || index >= items.length) return;
-
-    const item = items[index];
-    if (!item?.url) return;
-
-    // Skip if already loading or loaded
-    if (preloadersRef.current.has(index)) return;
-
-    // Create Image object for preloading
-    const img = new Image();
-    preloadersRef.current.set(index, img);
-
-    // Mark as loading
-    setLoadStatus((prev) => {
-      const next = new Map(prev);
-      next.set(index, 'loading');
-      return next;
-    });
-
-    img.onload = () => {
-      setLoadStatus((prev) => {
-        const next = new Map(prev);
-        next.set(index, 'loaded');
-        return next;
-      });
-    };
-
-    img.onerror = () => {
-      setLoadStatus((prev) => {
-        const next = new Map(prev);
-        next.set(index, 'error');
-        return next;
-      });
-      setFailedIndexes((prev) => {
-        const next = new Set(prev);
-        next.add(index);
-        return next;
-      });
-    };
-
-    // Start loading
-    img.src = item.url;
-  }, [items]);
-
-  /**
-   * Effect: Preload images around current index
+   * Single combined effect: Reset on item change, then preload
+   * This ensures reset happens atomically before preloading starts
    */
   useEffect(() => {
     if (!items || items.length === 0) return;
+
+    // Check if items array actually changed (by identity or first item id)
+    const itemsChanged = prevItemsRef.current !== items;
+    const firstItemChanged = prevItemsRef.current?.[0]?.id !== items[0]?.id;
+
+    if (itemsChanged && firstItemChanged) {
+      // Reset state when items actually change (new carousel)
+
+      // Clear all existing preloaders
+      preloadersRef.current.forEach((img) => {
+        img.onload = null;
+        img.onerror = null;
+      });
+      preloadersRef.current.clear();
+
+      // Reset state
+      setLoadStatus(new Map());
+      setFailedIndexes(new Set());
+    }
+
+    prevItemsRef.current = items;
+
+    // Helper to preload a single image
+    const preloadImage = (index) => {
+      if (index < 0 || index >= items.length) return;
+
+      const item = items[index];
+      if (!item?.url) return;
+
+      // Skip if already loading or loaded
+      if (preloadersRef.current.has(index)) return;
+
+      // Create Image object for preloading
+      const img = new Image();
+      preloadersRef.current.set(index, img);
+
+      // Mark as loading
+      setLoadStatus((prev) => {
+        const next = new Map(prev);
+        next.set(index, 'loading');
+        return next;
+      });
+
+      img.onload = () => {
+        setLoadStatus((prev) => {
+          const next = new Map(prev);
+          next.set(index, 'loaded');
+          return next;
+        });
+      };
+
+      img.onerror = () => {
+        setLoadStatus((prev) => {
+          const next = new Map(prev);
+          next.set(index, 'error');
+          return next;
+        });
+        setFailedIndexes((prev) => {
+          const next = new Set(prev);
+          next.add(index);
+          return next;
+        });
+      };
+
+      // Start loading
+      img.src = item.url;
+    };
 
     // Preload current image first
     preloadImage(currentIndex);
@@ -91,23 +112,15 @@ export function useImagePreloader(items, currentIndex, preloadCount = 3) {
     if (currentIndex > 0) {
       preloadImage(prevIndex);
     }
-  }, [items, currentIndex, preloadCount, preloadImage]);
 
-  /**
-   * Reset state when items array changes (e.g., new carousel)
-   */
-  useEffect(() => {
-    // Clear all preloaders
-    preloadersRef.current.forEach((img) => {
-      img.onload = null;
-      img.onerror = null;
-    });
-    preloadersRef.current.clear();
-
-    // Reset state
-    setLoadStatus(new Map());
-    setFailedIndexes(new Set());
-  }, [items]);
+    // Cleanup on unmount
+    return () => {
+      preloadersRef.current.forEach((img) => {
+        img.onload = null;
+        img.onerror = null;
+      });
+    };
+  }, [items, currentIndex, preloadCount]);
 
   /**
    * Calculate if current and next images are preloaded
