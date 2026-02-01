@@ -44,6 +44,19 @@ const STRATEGIES = {
 };
 
 /**
+ * Inference rules: context signal -> strategy name
+ */
+const INFERENCE_RULES = [
+  { match: (ctx) => ctx.containerType === 'folder', strategy: 'watchlist' },
+  { match: (ctx) => ctx.containerType === 'album', strategy: 'album' },
+  { match: (ctx) => ctx.containerType === 'playlist', strategy: 'playlist' },
+  { match: (ctx) => ctx.query?.person, strategy: 'chronological' },
+  { match: (ctx) => ctx.query?.time, strategy: 'chronological' },
+  { match: (ctx) => ctx.query?.text, strategy: 'discovery' },
+  { match: (ctx) => ctx.action === 'display', strategy: 'slideshow' }
+];
+
+/**
  * Filter type to QueueService method mapping.
  */
 const FILTER_METHODS = {
@@ -221,6 +234,53 @@ export class ItemSelectionService {
     }
 
     throw new Error(`Unknown pick: ${pickType}`);
+  }
+
+  /**
+   * Resolve a strategy from context and overrides.
+   * Resolution order: inference -> explicit strategy -> individual overrides
+   *
+   * @param {Object} context - Selection context
+   * @param {string} [context.action] - play, queue, display, list, read
+   * @param {string} [context.containerType] - folder, album, playlist, search
+   * @param {Object} [context.query] - Query filters (person, time, text)
+   * @param {Object} [overrides] - Explicit overrides
+   * @param {string} [overrides.strategy] - Named strategy to use
+   * @param {string} [overrides.sort] - Override sort only
+   * @param {string} [overrides.pick] - Override pick only
+   * @param {string} [overrides.filter] - 'none' to disable filtering
+   * @returns {{ filter: string[], sort: string, pick: string }}
+   */
+  static resolveStrategy(context, overrides = {}) {
+    // 1. Infer base strategy from context
+    let strategyName = 'discovery'; // default
+    for (const rule of INFERENCE_RULES) {
+      if (rule.match(context)) {
+        strategyName = rule.strategy;
+        break;
+      }
+    }
+
+    // 2. Override with explicit strategy if provided
+    if (overrides.strategy) {
+      strategyName = overrides.strategy;
+    }
+
+    // 3. Get base strategy
+    const strategy = this.getStrategy(strategyName);
+
+    // 4. Apply individual overrides
+    if (overrides.filter === 'none') {
+      strategy.filter = [];
+    }
+    if (overrides.sort) {
+      strategy.sort = overrides.sort;
+    }
+    if (overrides.pick) {
+      strategy.pick = overrides.pick;
+    }
+
+    return strategy;
   }
 }
 

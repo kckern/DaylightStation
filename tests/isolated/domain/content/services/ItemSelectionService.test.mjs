@@ -301,4 +301,100 @@ describe('ItemSelectionService', () => {
         .toThrow('Invalid take format');
     });
   });
+
+  describe('resolveStrategy', () => {
+    describe('inference from context', () => {
+      test('infers watchlist for folder container', () => {
+        const strategy = ItemSelectionService.resolveStrategy({
+          containerType: 'folder'
+        });
+        expect(strategy.sort).toBe('priority');
+      });
+
+      test('infers album for album container', () => {
+        const strategy = ItemSelectionService.resolveStrategy({
+          containerType: 'album'
+        });
+        expect(strategy.sort).toBe('track_order');
+      });
+
+      test('infers playlist for playlist container', () => {
+        const strategy = ItemSelectionService.resolveStrategy({
+          containerType: 'playlist'
+        });
+        expect(strategy.sort).toBe('source_order');
+      });
+
+      test('infers chronological for person query', () => {
+        const strategy = ItemSelectionService.resolveStrategy({
+          query: { person: 'John' }
+        });
+        expect(strategy.sort).toBe('date_asc');
+      });
+
+      test('infers chronological for time query', () => {
+        const strategy = ItemSelectionService.resolveStrategy({
+          query: { time: '2025' }
+        });
+        expect(strategy.sort).toBe('date_asc');
+      });
+
+      test('infers discovery for text query', () => {
+        const strategy = ItemSelectionService.resolveStrategy({
+          query: { text: 'vacation' }
+        });
+        expect(strategy.sort).toBe('random');
+      });
+
+      test('infers slideshow for display action', () => {
+        const strategy = ItemSelectionService.resolveStrategy({
+          action: 'display'
+        });
+        expect(strategy.sort).toBe('random');
+        expect(strategy.pick).toBe('all');
+      });
+    });
+
+    describe('override priority', () => {
+      test('explicit strategy overrides inference', () => {
+        const strategy = ItemSelectionService.resolveStrategy(
+          { containerType: 'folder' },
+          { strategy: 'binge' }
+        );
+        expect(strategy.sort).toBe('source_order');
+      });
+
+      test('explicit sort overrides strategy', () => {
+        const strategy = ItemSelectionService.resolveStrategy(
+          { containerType: 'folder' },
+          { sort: 'random' }
+        );
+        expect(strategy.sort).toBe('random');
+        expect(strategy.filter).toContain('watched'); // rest from watchlist
+      });
+
+      test('explicit pick overrides strategy', () => {
+        const strategy = ItemSelectionService.resolveStrategy(
+          { containerType: 'folder' },
+          { pick: 'all' }
+        );
+        expect(strategy.pick).toBe('all');
+      });
+
+      test('filter: none disables filtering', () => {
+        const strategy = ItemSelectionService.resolveStrategy(
+          { containerType: 'folder' },
+          { filter: 'none' }
+        );
+        expect(strategy.filter).toEqual([]);
+      });
+    });
+
+    describe('defaults', () => {
+      test('defaults to discovery when no signals', () => {
+        const strategy = ItemSelectionService.resolveStrategy({});
+        expect(strategy.sort).toBe('random');
+      });
+    });
+  });
 });
