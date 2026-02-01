@@ -119,9 +119,9 @@ export function toListItem(item) {
     const {
       key, summary, tagline, studio, thumbId, type,
       artist, albumArtist, album, albumId, artistId,
-      // Canonical relative hierarchy fields
-      parentId, parentTitle, parentIndex, parentType, parentThumb,
-      grandparentId, grandparentTitle, grandparentType, grandparentThumb,
+      // Canonical relative hierarchy fields (thumbs excluded - access via parents map)
+      parentId, parentTitle, parentIndex, parentType,
+      grandparentId, grandparentTitle, grandparentType,
       itemIndex,
       // Rating fields for FitnessMenu sorting
       rating, userRating, year,
@@ -146,8 +146,8 @@ export function toListItem(item) {
     if (grandparentId !== undefined) base.grandparentId = grandparentId;
     if (grandparentTitle !== undefined) base.grandparentTitle = grandparentTitle;
     if (grandparentType !== undefined) base.grandparentType = grandparentType;
-    if (parentThumb !== undefined) base.parentThumb = parentThumb;
-    if (grandparentThumb !== undefined) base.grandparentThumb = grandparentThumb;
+    // Note: parentThumb and grandparentThumb are NOT copied to top-level.
+    // Thumbnails should be accessed via parents[parentId].thumbnail per content-stack-reference.md
     if (itemIndex !== undefined) base.itemIndex = itemIndex;
     if (summary !== undefined) {
       base.summary = summary;
