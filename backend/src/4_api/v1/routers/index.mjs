@@ -49,4 +49,5 @@ export { createProxyRouter } from './proxy.mjs';
 export { createTTSRouter } from './tts.mjs';
 
 // Admin routers
+export { createAdminRouter, createAdminContentRouter, createAdminImagesRouter } from './admin/index.mjs';
 export { createEventBusRouter } from './admin/eventbus.mjs';

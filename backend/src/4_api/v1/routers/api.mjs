@@ -77,7 +77,8 @@ export function createApiRouter(config) {
     '/tts': 'tts',
     '/agents': 'agents',
     '/dev': 'dev',
-    '/canvas': 'canvas'
+    '/canvas': 'canvas',
+    '/admin': 'admin'
   };
 
   // Mount each router at its path

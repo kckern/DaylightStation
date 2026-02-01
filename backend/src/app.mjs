@@ -88,6 +88,7 @@ import { UPCGateway } from '#adapters/nutribot/UPCGateway.mjs';
 // HTTP middleware
 import { createDevProxy, errorHandlerMiddleware } from './0_system/http/middleware/index.mjs';
 import { createEventBusRouter } from './4_api/v1/routers/admin/eventbus.mjs';
+import { createAdminRouter } from './4_api/v1/routers/admin/index.mjs';
 
 // Scheduling domain
 import { SchedulerService } from '#domains/scheduling/services/SchedulerService.mjs';
@@ -1042,6 +1043,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Canvas router for art display
   v1Routers.canvas = createCanvasRouter({
     canvasService: null  // Uses req.app.get('canvasBasePath') instead
+  });
+
+  // Admin router - combined content, images, and eventbus management
+  v1Routers.admin = createAdminRouter({
+    userDataService,
+    configService,
+    mediaPath: imgBasePath,
+    eventBus,
+    logger: rootLogger.child({ module: 'admin-api' })
   });
 
   // ==========================================================================
