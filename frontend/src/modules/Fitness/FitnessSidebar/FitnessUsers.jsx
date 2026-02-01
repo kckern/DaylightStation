@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useLayoutEffect } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useCallback } from 'react';
 import { Badge } from '@mantine/core';
 import { useFitnessContext } from '../../../context/FitnessContext.jsx';
 import getLogger from '../../../lib/logging/Logger.js';
@@ -115,8 +115,8 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
   // Use the fitness context
   const fitnessContext = useFitnessContext();
   
-  const { 
-    connected, 
+  const {
+    connected,
     fitnessDevices,
     allDevices: contextAllDevices,
     activeHeartRateParticipants, // Phase 1 SSOT: Use this instead of filtering devices
@@ -135,6 +135,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     participantRoster,
     getUserByDevice,
     userCollections,
+    fitnessConfiguration, // Household config SSOT for user display labels
     deviceOwnership,
   } = fitnessContext;
 
@@ -662,7 +663,29 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     const luminance = (0.299*r + 0.587*g + 0.114*b)/255;
     return luminance > CONFIG.color.luminanceThreshold ? CONFIG.color.fallbackTextDark : CONFIG.color.fallbackTextLight;
   };
-  
+
+  /**
+   * Get displayLabel from household config (SSOT for user names).
+   * This ensures sidebar matches governance display.
+   */
+  const getHouseholdDisplayLabel = useCallback((profileId) => {
+    const users = fitnessConfiguration?.fitness?.users;
+    if (!users || !profileId) return null;
+
+    const allUsers = [
+      ...(users.primary || []),
+      ...(users.secondary || [])
+    ];
+
+    const user = allUsers.find(u =>
+      u.id === profileId ||
+      u.profileId === profileId ||
+      u.slug === profileId
+    );
+
+    return user?.displayLabel || null;
+  }, [fitnessConfiguration]);
+
   useEffect(() => {
     // Phase 1 SSOT: Use activeHeartRateParticipants directly from context
     // No more inline roster-to-device derivation - that logic now lives in FitnessContext
@@ -943,8 +966,18 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                 : (Number.isFinite(participantEntry?.heartRate)
                   ? participantEntry.heartRate
                   : (Number.isFinite(device.heartRate) ? device.heartRate : null));
+              // Get household SSOT label first
+              const householdDisplayLabel = profileId ? getHouseholdDisplayLabel(profileId) : null;
+
               const deviceName = isHeartRate ?
-                (guestAssignment?.occupantName || guestAssignment?.metadata?.name || displayLabel || ownerName || participantEntry?.name || deviceIdStr) : (device.name || String(device.deviceId));
+                (guestAssignment?.occupantName ||
+                 guestAssignment?.metadata?.name ||
+                 householdDisplayLabel ||     // Household SSOT (e.g., "Dad")
+                 displayLabel ||
+                 ownerName ||
+                 participantEntry?.name ||
+                 deviceIdStr)
+                : (device.name || String(device.deviceId));
               const zoneIdForGrouping = isHeartRate ? getDeviceZoneId(device) : null;
               const zoneClass = zoneIdForGrouping ? `zone-${zoneIdForGrouping}` : 'no-zone';
               const zoneBadgeColor = zoneIdForGrouping
