@@ -11,6 +11,19 @@ backend/node_modules
 !tests/_infrastructure/environments.yml
 data*
 !tests/_fixtures/data/
+# Allow example config files in data/household
+!data/
+data/*
+!data/household/
+data/household/*
+!data/household/apps/
+data/household/apps/*
+!data/household/apps/canvas/
+data/household/apps/canvas/*
+!data/household/apps/canvas/*.example
+!data/household/config/
+data/household/config/*
+!data/household/config/*.example
 !**/DataService.mjs
 !**/DataService.test.mjs
 node_modules/*
