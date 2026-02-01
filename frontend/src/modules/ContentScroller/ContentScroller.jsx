@@ -45,7 +45,7 @@ import { useMediaReporter } from '../Player/hooks/useMediaReporter.js';
   export default function ContentScroller({
     type = "generic",
     className = "",
-    media_key,
+    assetId,
     title,ready,
     subtitle,
     mainMediaUrl,
@@ -142,13 +142,13 @@ import { useMediaReporter } from '../Player/hooks/useMediaReporter.js';
     // Logger for media progress
     const lastLoggedTimeRef = useRef(Date.now());
 
-    const logTime = async (type, media_key, percent, title) => {
+    const logTime = async (type, assetId, percent, title) => {
       const now = Date.now();
       const timeSinceLastLog = now - lastLoggedTimeRef.current;
       if (timeSinceLastLog > 10000 && parseFloat(percent) > 0) {
       lastLoggedTimeRef.current = now;
       const seconds = Math.round((duration * percent) / 100);
-      await DaylightAPI(`api/v1/play/log`, { title, type, media_key, seconds, percent: Math.round(percent) });
+      await DaylightAPI(`api/v1/play/log`, { title, type, assetId, seconds, percent: Math.round(percent) });
       }
     };
 
@@ -156,7 +156,7 @@ import { useMediaReporter } from '../Player/hooks/useMediaReporter.js';
       const mainEl = mainRef.current;
       if (!mainEl || !duration) return;
       const percent = (mainEl.currentTime / duration) * 100;
-      logTime(type, media_key, percent, title);
+      logTime(type, assetId, percent, title);
     };
 
     useEffect(() => {
@@ -402,7 +402,7 @@ import { useMediaReporter } from '../Player/hooks/useMediaReporter.js';
     const [titleHeader, setTitleHeader] = useState("Loading...");
     const [subtitle, setSubtitle] = useState("");
     const [mainMediaUrl, setMainMediaUrl] = useState(null);
-    const [media_key, setMediaKey] = useState(null);
+    const [assetId, setMediaKey] = useState(null);
     const [scriptureTextData, setScriptureTextData] = useState(null);
   
     const [music] = useState(
@@ -444,11 +444,11 @@ import { useMediaReporter } from '../Player/hooks/useMediaReporter.js';
       }
       
       console.log('Making API call to:', `api/v1/local-content/scripture/${scripture}`);
-      DaylightAPI(`api/v1/local-content/scripture/${scripture}`).then(({reference, media_key,mediaUrl, verses}) => {
-        console.log('Scripture API response:', {reference, media_key, mediaUrl, verses: verses?.length});
+      DaylightAPI(`api/v1/local-content/scripture/${scripture}`).then(({reference, assetId,mediaUrl, verses}) => {
+        console.log('Scripture API response:', {reference, assetId, mediaUrl, verses: verses?.length});
         setScriptureTextData(verses);
         setTitleHeader(reference);
-        setMediaKey(media_key);
+        setMediaKey(assetId);
         setMainMediaUrl(mediaUrl);
         if (verses && verses[0]?.headings) {
           const { title, subtitle: st } = verses[0].headings;
@@ -475,10 +475,10 @@ import { useMediaReporter } from '../Player/hooks/useMediaReporter.js';
   
     return (
       <ContentScroller
-        key={`scripture-${scripture}-${media_key}`} // Force re-render when scripture changes
+        key={`scripture-${scripture}-${assetId}`} // Force re-render when scripture changes
         type="scriptures"
         title={titleHeader}
-        media_key={media_key}
+        assetId={assetId}
         subtitle={subtitle}
         mainMediaUrl={mainMediaUrl}
         mainVolume={mainVolume}
@@ -536,7 +536,7 @@ import { useMediaReporter } from '../Player/hooks/useMediaReporter.js';
     const [hymnNum, setHymnNum] = useState(null);
     const [mediaUrl, setMediaUrl] = useState(null);
     const [duration, setDuration] = useState(0);
-    const [media_key, setMediaKey] = useState(null);
+    const [assetId, setMediaKey] = useState(null);
     const hymnTextRef = useRef(null);
     const folder = subfolder || `hymn`;
     // Normalize the incoming hymn identifier by trimming any leading zeros (e.g. "007" -> "7")
@@ -571,19 +571,19 @@ import { useMediaReporter } from '../Player/hooks/useMediaReporter.js';
 
     useEffect(() => {
       if (!onResolvedMeta) return;
-      if (!media_key || !mediaUrl || !title) return;
+      if (!assetId || !mediaUrl || !title) return;
       onResolvedMeta({
-        media_key,
-        media_type: 'audio',
+        assetId,
+        mediaType: 'audio',
         title,
         subtitle,
-        plex: media_key,
+        plex: assetId,
         duration,
-        hymn_num: hymnNum,
+        hymnNum: hymnNum,
         type: folder,
         seconds: 0
       });
-    }, [onResolvedMeta, media_key, mediaUrl, title, subtitle, hymnNum, duration, folder]);
+    }, [onResolvedMeta, assetId, mediaUrl, title, subtitle, hymnNum, duration, folder]);
 
     // Apply centering behavior once verses/hymnNum change
     useCenterByWidest(hymnTextRef, [verses, hymnNum]);
@@ -621,7 +621,7 @@ import { useMediaReporter } from '../Player/hooks/useMediaReporter.js';
         key={`hymn-${normalizedHymn}-${hymnNum}`} // Force re-render when hymn changes (normalized)
         type="hymn"
         title={title}
-        media_key={media_key}
+        assetId={assetId}
         subtitle={subtitle}
         mainMediaUrl={mediaUrl}
         mainVolume={mainVolume}
@@ -770,16 +770,16 @@ import { useMediaReporter } from '../Player/hooks/useMediaReporter.js';
     const [subtitle, setSubtitle] = useState("");
     const [videoUrl, setVideoUrl] = useState(null);
     const [transcriptData, setTranscriptData] = useState(null);
-    const [media_key, setMediaKey] = useState(null);
+    const [assetId, setMediaKey] = useState(null);
 
     useEffect(() => {
 
-      DaylightAPI(`api/v1/local-content/talk/${talk}`).then(({title, speaker, media_key, mediaUrl, content}) => {
+      DaylightAPI(`api/v1/local-content/talk/${talk}`).then(({title, speaker, assetId, mediaUrl, content}) => {
         setTitle(title);
         setSubtitle(speaker);
         setVideoUrl(mediaUrl);
         setTranscriptData(content);
-        setMediaKey(media_key);
+        setMediaKey(assetId);
       });
     }
     , [talk]);
@@ -826,10 +826,10 @@ import { useMediaReporter } from '../Player/hooks/useMediaReporter.js';
     
     return (
       <ContentScroller
-        key={`talk-${talk}-${media_key}`} // Force re-render when talk changes
+        key={`talk-${talk}-${assetId}`} // Force re-render when talk changes
         type="talk"
         title={title}
-        media_key={media_key}
+        assetId={assetId}
         subtitle={subtitle}
         mainMediaUrl={videoUrl}
         mainVolume={mainVolume}
@@ -888,7 +888,7 @@ import { useMediaReporter } from '../Player/hooks/useMediaReporter.js';
     const [poemID, setPoemID] = useState(null);
     const [mediaUrl, setMediaUrl] = useState(null);
     const [duration, setDuration] = useState(0);
-    const [media_key, setMediaKey] = useState(null);
+    const [assetId, setMediaKey] = useState(null);
     const poetryTextRef = useRef(null);
 
     useEffect(() => {
@@ -927,7 +927,7 @@ import { useMediaReporter } from '../Player/hooks/useMediaReporter.js';
           poemID: finalPoemId,
           mediaUrl: DaylightMediaPath(`media/audio/poetry/${finalPoemId}`),
           subtitle: `Poem #${finalPoemId}`,
-          media_key: `audio/poetry/${finalPoemId}`,
+          assetId: `audio/poetry/${finalPoemId}`,
           duration,
           versesLength: verses?.length
         });
@@ -983,7 +983,7 @@ import { useMediaReporter } from '../Player/hooks/useMediaReporter.js';
     console.log('Poetry about to render ContentScroller with:', {
       type: "poetry",
       title,
-      media_key,
+      assetId,
       subtitle,
       mainMediaUrl: mediaUrl,
       mainVolume,
@@ -995,7 +995,7 @@ import { useMediaReporter } from '../Player/hooks/useMediaReporter.js';
         key={`poetry-${poem}-${poemID}`} // Force re-render when poem changes
         type="poetry"
         title={title}
-        media_key={media_key}
+        assetId={assetId}
         subtitle={subtitle}
         mainMediaUrl={mediaUrl}
         mainVolume={mainVolume}

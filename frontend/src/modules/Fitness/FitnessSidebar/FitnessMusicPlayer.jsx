@@ -131,7 +131,7 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
     if (!currentTrack) return null;
     return currentTrack.key
       || currentTrack.plex
-      || currentTrack.media_key
+      || currentTrack.assetId
       || currentTrack.ratingKey
       || currentTrack.id
       || null;
@@ -222,16 +222,16 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
     // Update current track key if changed, but keep original track data from queue
     if (progressData?.media) {
       const mediaData = progressData.media;
-      const newKey = mediaData.key || mediaData.plex || mediaData.media_key;
+      const newKey = mediaData.key || mediaData.plex || mediaData.assetId;
       
       setCurrentTrack(prev => {
-        const prevKey = prev?.key || prev?.plex || prev?.media_key;
+        const prevKey = prev?.key || prev?.plex || prev?.assetId;
         // Only update if track actually changed
         if (newKey && newKey !== prevKey) {
           // Find the full track data from playQueueData instead of using minimal progressData.media
           // Search in the original queue data as it's immutable
           const fullTrackData = playQueueData?.find(track => {
-            const trackKey = track.key || track.plex || track.media_key;
+            const trackKey = track.key || track.plex || track.assetId;
             return trackKey === newKey;
           });
           
@@ -292,7 +292,7 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
       album: currentTrack?.album || currentTrack?.parentTitle || null,
       playlistId: selectedPlaylistId || null,
       plexId: currentTrack?.plex || null,
-      mediaKey: currentTrack?.key || currentTrack?.media_key || null,
+      mediaKey: currentTrack?.key || currentTrack?.assetId || null,
       durationSeconds,
       volume: Math.round((musicVolumeState.volume || 0) * 100) / 100,
       musicEnabled: Boolean(musicEnabled)
@@ -474,10 +474,10 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
           onPointerDown={handleTogglePlayPause} 
           style={{ cursor: 'pointer' }}
         >
-          {currentTrack?.key || currentTrack?.plex || currentTrack?.media_key ? (
+          {currentTrack?.key || currentTrack?.plex || currentTrack?.assetId ? (
             <img 
-              key={currentTrack.key || currentTrack.plex || currentTrack.media_key}
-              src={DaylightMediaPath(`api/v1/content/plex/image/${currentTrack.key || currentTrack.plex || currentTrack.media_key}`)} 
+              key={currentTrack.key || currentTrack.plex || currentTrack.assetId}
+              src={DaylightMediaPath(`api/v1/content/plex/image/${currentTrack.key || currentTrack.plex || currentTrack.assetId}`)} 
               alt="Album artwork"
               className="artwork-image"
             />

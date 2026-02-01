@@ -70,7 +70,7 @@ export async function fetchMediaInfo({ plex, media, shuffle, maxVideoBitrate, ma
     const base = shuffle ? `api/v1/content/plex/info/${plex}/shuffle` : `api/v1/content/plex/info/${plex}`;
     const url = buildUrl(base, queryCommon);
     const infoResponse = await DaylightAPI(url);
-    return { ...infoResponse, media_key: infoResponse.plex };
+    return { ...infoResponse, assetId: infoResponse.plex };
   } else if (media) {
     // Parse compound ID (e.g., "immich:uuid" or "plex:123") to route to correct source
     const colonIndex = media.indexOf(':');
@@ -101,10 +101,10 @@ export async function initializeQueue(play, queue) {
   } else if (Array.isArray(queue)) {
     newQueue = queue.map(item => ({ ...item, guid: guid() }));
   } else if ((play && typeof play === 'object') || (queue && typeof queue === 'object')) {
-    const queue_media_key = play?.playlist || play?.queue || queue?.playlist || queue?.queue || queue?.media;
-    if (queue_media_key) {
+    const queueAssetId = play?.playlist || play?.queue || queue?.playlist || queue?.queue || queue?.media;
+    if (queueAssetId) {
       const shuffle = !!play?.shuffle || !!queue?.shuffle || false;
-      const { items } = await DaylightAPI(`api/v1/item/folder/${queue_media_key}/playable${shuffle ? ',shuffle' : ''}`);
+      const { items } = await DaylightAPI(`api/v1/item/folder/${queueAssetId}/playable${shuffle ? ',shuffle' : ''}`);
       const flatItems = await flattenQueueItems(items);
       newQueue = flatItems.map(item => ({ ...item, guid: guid() }));
     } else {

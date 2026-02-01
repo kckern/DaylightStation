@@ -43,7 +43,7 @@ describe('LocalContent API Router', () => {
       expect(res.body.reference).toBe('1 Nephi 1');
       expect(res.body.verses).toHaveLength(1);
       expect(res.body.mediaUrl).toBeDefined();
-      expect(res.body.media_key).toBe('scripture:cfm/1nephi1');
+      expect(res.body.assetId).toBe('scripture:cfm/1nephi1');
     });
 
     it('returns 404 for nonexistent scripture', async () => {
@@ -75,7 +75,7 @@ describe('LocalContent API Router', () => {
       expect(res.status).toBe(200);
       expect(res.body.title).toBe("Our Savior's Love");
       expect(res.body.number).toBe(113);
-      expect(res.body.media_key).toBe('hymn:113');
+      expect(res.body.assetId).toBe('hymn:113');
     });
 
     it('returns 404 for nonexistent hymn', async () => {
@@ -139,7 +139,7 @@ describe('LocalContent API Router', () => {
       expect(res.status).toBe(200);
       expect(res.body.speaker).toBe('Elder Test');
       expect(res.body.content).toHaveLength(1);
-      expect(res.body.media_key).toBe('talk:general/test-talk');
+      expect(res.body.assetId).toBe('talk:general/test-talk');
     });
 
     it('returns 404 for nonexistent talk', async () => {
@@ -174,7 +174,7 @@ describe('LocalContent API Router', () => {
       expect(res.body.author).toBe('Test Author');
       expect(res.body.condition).toBe('sleep');
       expect(res.body.also_suitable_for).toEqual(['calm', 'peace']);
-      expect(res.body.media_key).toBe('poem:remedy/01');
+      expect(res.body.assetId).toBe('poem:remedy/01');
     });
 
     it('returns 404 for nonexistent poem', async () => {

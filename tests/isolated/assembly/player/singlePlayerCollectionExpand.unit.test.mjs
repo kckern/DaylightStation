@@ -10,71 +10,71 @@
 describe('SinglePlayer Collection Expansion Logic', () => {
   /**
    * The isPlayable check from SinglePlayer.jsx (line ~225):
-   * const isPlayable = info.media_url || ['dash_video', 'video', 'audio'].includes(info.media_type);
+   * const isPlayable = info.mediaUrl || ['dash_video', 'video', 'audio'].includes(info.mediaType);
    */
   const isPlayable = (info) =>
-    Boolean(info.media_url) || ['dash_video', 'video', 'audio'].includes(info.media_type);
+    Boolean(info.mediaUrl) || ['dash_video', 'video', 'audio'].includes(info.mediaType);
 
   describe('isPlayable detection', () => {
     describe('should return false for collection responses', () => {
-      test('collection with no media_url and no playable media_type', () => {
+      test('collection with no mediaUrl and no playable mediaType', () => {
         const collectionInfo = {
           title: 'Movies Collection',
-          media_type: 'collection',
+          mediaType: 'collection',
           items: []
         };
         expect(isPlayable(collectionInfo)).toBe(false);
       });
 
-      test('folder with no media_url and folder media_type', () => {
+      test('folder with no mediaUrl and folder mediaType', () => {
         const folderInfo = {
           title: 'My Folder',
-          media_type: 'folder',
+          mediaType: 'folder',
           path: '/some/path'
         };
         expect(isPlayable(folderInfo)).toBe(false);
       });
 
-      test('show with no media_url and show media_type', () => {
+      test('show with no mediaUrl and show mediaType', () => {
         const showInfo = {
           title: 'TV Show',
-          media_type: 'show',
+          mediaType: 'show',
           seasons: 5
         };
         expect(isPlayable(showInfo)).toBe(false);
       });
 
-      test('season with no media_url and season media_type', () => {
+      test('season with no mediaUrl and season mediaType', () => {
         const seasonInfo = {
           title: 'Season 1',
-          media_type: 'season',
+          mediaType: 'season',
           episodes: 10
         };
         expect(isPlayable(seasonInfo)).toBe(false);
       });
 
-      test('undefined media_type with no media_url', () => {
+      test('undefined mediaType with no mediaUrl', () => {
         const emptyInfo = {
           title: 'Unknown'
         };
         expect(isPlayable(emptyInfo)).toBe(false);
       });
 
-      test('null media_type with no media_url', () => {
+      test('null mediaType with no mediaUrl', () => {
         const nullInfo = {
           title: 'Unknown',
-          media_type: null
+          mediaType: null
         };
         expect(isPlayable(nullInfo)).toBe(false);
       });
     });
 
     describe('should return true for video responses', () => {
-      test('video with media_url', () => {
+      test('video with mediaUrl', () => {
         const videoInfo = {
           title: 'Movie',
-          media_type: 'video',
-          media_url: '/proxy/plex/stream/12345'
+          mediaType: 'video',
+          mediaUrl: '/proxy/plex/stream/12345'
         };
         expect(isPlayable(videoInfo)).toBe(true);
       });
@@ -82,71 +82,71 @@ describe('SinglePlayer Collection Expansion Logic', () => {
       test('dash_video type', () => {
         const dashInfo = {
           title: 'Movie (DASH)',
-          media_type: 'dash_video',
-          media_url: '/proxy/plex/stream/12345/dash'
+          mediaType: 'dash_video',
+          mediaUrl: '/proxy/plex/stream/12345/dash'
         };
         expect(isPlayable(dashInfo)).toBe(true);
       });
 
-      test('video type without media_url (still playable by type)', () => {
+      test('video type without mediaUrl (still playable by type)', () => {
         const videoTypeOnly = {
           title: 'Video',
-          media_type: 'video'
+          mediaType: 'video'
         };
         expect(isPlayable(videoTypeOnly)).toBe(true);
       });
 
-      test('dash_video type without media_url (still playable by type)', () => {
+      test('dash_video type without mediaUrl (still playable by type)', () => {
         const dashTypeOnly = {
           title: 'DASH Video',
-          media_type: 'dash_video'
+          mediaType: 'dash_video'
         };
         expect(isPlayable(dashTypeOnly)).toBe(true);
       });
     });
 
     describe('should return true for audio responses', () => {
-      test('audio with media_url', () => {
+      test('audio with mediaUrl', () => {
         const audioInfo = {
           title: 'Song',
-          media_type: 'audio',
-          media_url: '/proxy/filesystem/stream/music/song.mp3'
+          mediaType: 'audio',
+          mediaUrl: '/proxy/filesystem/stream/music/song.mp3'
         };
         expect(isPlayable(audioInfo)).toBe(true);
       });
 
-      test('audio type without media_url (still playable by type)', () => {
+      test('audio type without mediaUrl (still playable by type)', () => {
         const audioTypeOnly = {
           title: 'Audio',
-          media_type: 'audio'
+          mediaType: 'audio'
         };
         expect(isPlayable(audioTypeOnly)).toBe(true);
       });
     });
 
-    describe('should return true when media_url is present regardless of type', () => {
-      test('collection type but has media_url', () => {
+    describe('should return true when mediaUrl is present regardless of type', () => {
+      test('collection type but has mediaUrl', () => {
         const weirdCollection = {
           title: 'Weird Collection',
-          media_type: 'collection',
-          media_url: '/proxy/some/stream'
+          mediaType: 'collection',
+          mediaUrl: '/proxy/some/stream'
         };
         expect(isPlayable(weirdCollection)).toBe(true);
       });
 
-      test('unknown type but has media_url', () => {
+      test('unknown type but has mediaUrl', () => {
         const unknownWithUrl = {
           title: 'Unknown',
-          media_type: 'unknown',
-          media_url: '/proxy/stream'
+          mediaType: 'unknown',
+          mediaUrl: '/proxy/stream'
         };
         expect(isPlayable(unknownWithUrl)).toBe(true);
       });
 
-      test('no type but has media_url', () => {
+      test('no type but has mediaUrl', () => {
         const noTypeWithUrl = {
           title: 'Media',
-          media_url: '/proxy/stream'
+          mediaUrl: '/proxy/stream'
         };
         expect(isPlayable(noTypeWithUrl)).toBe(true);
       });
@@ -259,15 +259,15 @@ describe('SinglePlayer Collection Expansion Logic', () => {
       expect(isPlayable({})).toBe(false);
     });
 
-    test('isPlayable handles null/undefined media_url', () => {
-      expect(isPlayable({ media_url: null })).toBe(false);
-      expect(isPlayable({ media_url: undefined })).toBe(false);
+    test('isPlayable handles null/undefined mediaUrl', () => {
+      expect(isPlayable({ mediaUrl: null })).toBe(false);
+      expect(isPlayable({ mediaUrl: undefined })).toBe(false);
     });
 
-    test('isPlayable handles empty string media_url', () => {
+    test('isPlayable handles empty string mediaUrl', () => {
       // Empty string is falsy, so should return false unless type is playable
-      expect(isPlayable({ media_url: '' })).toBe(false);
-      expect(isPlayable({ media_url: '', media_type: 'video' })).toBe(true);
+      expect(isPlayable({ mediaUrl: '' })).toBe(false);
+      expect(isPlayable({ mediaUrl: '', mediaType: 'video' })).toBe(true);
     });
   });
 });

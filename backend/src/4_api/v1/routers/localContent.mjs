@@ -147,7 +147,7 @@ export function createLocalContentRouter(config) {
         volume,
         version,
         verse_id: verseId,
-        media_key: `${volume}/${version}/${verseId}`,
+        assetId: `${volume}/${version}/${verseId}`,
         mediaUrl: `/api/v1/proxy/local-content/stream/scripture/${volume}/${version}/${verseId}`,
         duration: item.duration,
         verses: item.metadata?.verses || []
@@ -202,7 +202,7 @@ export function createLocalContentRouter(config) {
         title: item.title,
         number: hymnNumber,
         hymn_num: hymnNumber,
-        media_key: item.id,
+        assetId: item.id,
         verses: item.metadata.verses,
         mediaUrl,
         duration
@@ -277,7 +277,7 @@ export function createLocalContentRouter(config) {
       res.json({
         title: item.title,
         speaker: item.metadata.speaker,
-        media_key: item.id,
+        assetId: item.id,
         mediaUrl: item.mediaUrl,
         duration: item.duration,
         date: item.metadata.date,
@@ -309,7 +309,7 @@ export function createLocalContentRouter(config) {
         condition: item.metadata.condition,
         also_suitable_for: item.metadata.also_suitable_for,
         poem_id: item.metadata.poem_id,
-        media_key: item.id,
+        assetId: item.id,
         mediaUrl: item.mediaUrl,
         duration: item.duration,
         verses: item.metadata.verses

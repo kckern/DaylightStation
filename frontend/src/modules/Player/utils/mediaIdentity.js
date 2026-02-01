@@ -1,12 +1,12 @@
 export const resolveMediaIdentity = (meta) => {
   if (!meta) return null;
-  const candidate = meta.media_key
+  const candidate = meta.assetId
     ?? meta.key
     ?? meta.plex
     ?? meta.media
     ?? meta.id
     ?? meta.guid
-    ?? meta.media_url
+    ?? meta.mediaUrl
     ?? null;
   return candidate != null ? String(candidate) : null;
 };

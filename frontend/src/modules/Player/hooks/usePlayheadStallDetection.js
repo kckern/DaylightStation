@@ -100,7 +100,7 @@ export function usePlayheadStallDetection({
   });
 
   const logger = getLogger();
-  const media_key = meta.media_key || meta.key || meta.guid || meta.id || meta.plex || meta.media_url;
+  const assetId = meta.assetId || meta.key || meta.guid || meta.id || meta.plex || meta.mediaUrl;
 
   /**
    * Log a playback event
@@ -114,14 +114,14 @@ export function usePlayheadStallDetection({
       album: meta?.album,
       show: meta?.show,
       season: meta?.season,
-      mediaKey: media_key,
+      mediaKey: assetId,
       position: mediaEl?.currentTime || null,
       duration: mediaEl?.duration || null,
       videoFps: mediaEl ? getVideoFps(mediaEl) : 0,
       heapMB: getHeapMB(),
       ...data
     });
-  }, [logger, meta, media_key, getMediaEl]);
+  }, [logger, meta, assetId, getMediaEl]);
 
   /**
    * Attempt recovery from a stall
@@ -447,7 +447,7 @@ export function usePlayheadStallDetection({
   // Reset state when media changes
   useEffect(() => {
     resetStallState();
-  }, [media_key, resetStallState]);
+  }, [assetId, resetStallState]);
 
   return {
     stallInfo,

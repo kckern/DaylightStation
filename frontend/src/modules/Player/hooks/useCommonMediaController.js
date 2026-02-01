@@ -40,12 +40,12 @@ export function useCommonMediaController({
   keyboardOverrides
 }) {
   const DEBUG_MEDIA = false;
-  // Global guards persisted across remounts (per media_key)
+  // Global guards persisted across remounts (per assetId)
   if (!useCommonMediaController.__appliedStartByKey) useCommonMediaController.__appliedStartByKey = Object.create(null);
   if (!useCommonMediaController.__lastPosByKey) useCommonMediaController.__lastPosByKey = Object.create(null);
   if (!useCommonMediaController.__lastSeekByKey) useCommonMediaController.__lastSeekByKey = Object.create(null);
 
-  const media_key = meta.media_key || meta.key || meta.guid || meta.id || meta.plex || meta.media_url;
+  const assetId = meta.assetId || meta.key || meta.guid || meta.id || meta.plex || meta.mediaUrl;
   const containerRef = useRef(null);
   const [seconds, setSeconds] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -290,7 +290,7 @@ export function useCommonMediaController({
     return container;
   }, []);
 
-  const isDash = meta.media_type === 'dash_video';
+  const isDash = meta.mediaType === 'dash_video';
   // Seed current cap if provided on meta
     useEffect(() => {
     if (Number.isFinite(meta?.maxVideoBitrate)) {
@@ -299,17 +299,17 @@ export function useCommonMediaController({
     } else {
       setCurrentMaxKbps(null);
     }
-  }, [meta?.maxVideoBitrate, meta?.media_key]);
+  }, [meta?.maxVideoBitrate, meta?.assetId]);
 
   // Reset sampling state on media change to prevent carryover
   useEffect(() => {
     // Log media key changes to catch unexpected resets
     try {
-      if (media_key) {
-        if (!useCommonMediaController.__prevKeyLog) useCommonMediaController.__prevKeyLog = media_key;
-        if (useCommonMediaController.__prevKeyLog !== media_key) {
-          if (DEBUG_MEDIA) console.log('[MediaKey] change detected', { from: useCommonMediaController.__prevKeyLog, to: media_key });
-          useCommonMediaController.__prevKeyLog = media_key;
+      if (assetId) {
+        if (!useCommonMediaController.__prevKeyLog) useCommonMediaController.__prevKeyLog = assetId;
+        if (useCommonMediaController.__prevKeyLog !== assetId) {
+          if (DEBUG_MEDIA) console.log('[MediaKey] change detected', { from: useCommonMediaController.__prevKeyLog, to: assetId });
+          useCommonMediaController.__prevKeyLog = assetId;
         }
       }
     } catch {}
@@ -321,11 +321,11 @@ export function useCommonMediaController({
     // Reset playback started flag for new media
     playbackStartedRef.current = false;
     // Do not reset currentMaxKbps here; it seeds from meta.maxVideoBitrate effect above
-  }, [media_key]);
+  }, [assetId]);
 
   useEffect(() => {
     setElementKey(0);
-  }, [media_key]);
+  }, [assetId]);
 
   const handleProgressClick = useCallback((event) => {
     if (!duration || !containerRef.current) return;
@@ -347,7 +347,7 @@ export function useCommonMediaController({
     ignoreKeys,
     meta,
     type,
-    media_key,
+    assetId,
     setCurrentTime: setSeconds,
     keyboardOverrides
   });
@@ -500,12 +500,12 @@ export function useCommonMediaController({
     setElementKey((prev) => prev + 1);
 
     lastSeekIntentRef.current = targetTime;
-    try { useCommonMediaController.__lastSeekByKey[media_key] = targetTime; } catch {}
+    try { useCommonMediaController.__lastSeekByKey[assetId] = targetTime; } catch {}
 
     if (DEBUG_MEDIA) console.log('[Stall Recovery] softReinit: triggered', { targetTime, seekBackSeconds, hostDestroyed, mediaDestroyed });
 
     return true;
-  }, [getMediaEl, playbackRate, setElementKey, softReinitSeekBackSeconds, media_key]);
+  }, [getMediaEl, playbackRate, setElementKey, softReinitSeekBackSeconds, assetId]);
 
   const recoveryMethods = useMemo(() => ({
     nudge: nudgeRecovery,
@@ -666,7 +666,7 @@ export function useCommonMediaController({
           album: meta?.album,
           show: meta?.show,
           season: meta?.season,
-          mediaKey: media_key,
+          mediaKey: assetId,
           currentTime: mediaEl.currentTime,
           duration: mediaEl.duration,
           stallDurationMs: diff
@@ -760,7 +760,7 @@ export function useCommonMediaController({
         const secs = mediaEl.currentTime || 0;
         if (secs > 10) {
           const title = meta.title + (meta.show ? ` (${meta.show} - ${meta.season})` : '');
-          await DaylightAPI(`api/v1/play/log`, { title, type, media_key, seconds: secs, percent: pct });
+          await DaylightAPI(`api/v1/play/log`, { title, type, assetId, seconds: secs, percent: pct });
         }
       }
     };
@@ -769,8 +769,8 @@ export function useCommonMediaController({
       setSeconds(mediaEl.currentTime);
       // Keep a sticky record of the last known good time
       lastPlaybackPosRef.current = mediaEl.currentTime || 0;
-      // Persist last position per media_key across remounts
-      try { useCommonMediaController.__lastPosByKey[media_key] = lastPlaybackPosRef.current; } catch {}
+      // Persist last position per assetId across remounts
+      try { useCommonMediaController.__lastPosByKey[assetId] = lastPlaybackPosRef.current; } catch {}
       logProgress();
       markProgress();
       if (onProgress) {
@@ -831,9 +831,9 @@ export function useCommonMediaController({
       const adjustedVolume = Math.min(1, Math.max(0, processedVolume));
       const isVideo = ['video', 'dash_video'].includes(mediaEl.tagName.toLowerCase());
 
-      // Only apply start time on effective initial load (first time for this media_key), not on recovery reloads
+      // Only apply start time on effective initial load (first time for this assetId), not on recovery reloads
       let startTime = 0;
-      const hasAppliedForKey = !!useCommonMediaController.__appliedStartByKey[media_key];
+      const hasAppliedForKey = !!useCommonMediaController.__appliedStartByKey[assetId];
       const isEffectiveInitial = isInitialLoadRef.current && !isRecoveringRef.current && !hasAppliedForKey;
       if (isEffectiveInitial) {
         const shouldApplyStart = (duration > (12 * 60) || isVideo);
@@ -849,7 +849,7 @@ export function useCommonMediaController({
 
         // Mark that we've completed the initial load for this key
         isInitialLoadRef.current = false;
-        try { useCommonMediaController.__appliedStartByKey[media_key] = true; } catch {}
+        try { useCommonMediaController.__appliedStartByKey[assetId] = true; } catch {}
         if (DEBUG_MEDIA) console.log('[StartTime] initial load applying start', { startTime, start, isVideo, duration });
       } else {
         if (DEBUG_MEDIA) console.log('[StartTime] treating as non-initial load', {
@@ -868,9 +868,9 @@ export function useCommonMediaController({
       if (!isRecoveringRef.current) {
         const candidates = [
           lastSeekIntentRef.current,
-          useCommonMediaController.__lastSeekByKey[media_key],
+          useCommonMediaController.__lastSeekByKey[assetId],
           lastPlaybackPosRef.current,
-          useCommonMediaController.__lastPosByKey[media_key]
+          useCommonMediaController.__lastPosByKey[assetId]
         ];
         const sticky = candidates.find(v => v != null && Number.isFinite(v)) || 0;
         const nearStart = (sticky <= 1);
@@ -887,7 +887,7 @@ export function useCommonMediaController({
         startTime = snapshotTarget;
       }
       
-      mediaEl.dataset.key = media_key;
+      mediaEl.dataset.key = assetId;
       
       if (Number.isFinite(startTime)) {
         try {
@@ -960,7 +960,7 @@ export function useCommonMediaController({
       const mediaEl = getMediaEl();
       if (mediaEl && Number.isFinite(mediaEl.currentTime)) {
         lastSeekIntentRef.current = mediaEl.currentTime;
-        try { useCommonMediaController.__lastSeekByKey[media_key] = mediaEl.currentTime; } catch {}
+        try { useCommonMediaController.__lastSeekByKey[assetId] = mediaEl.currentTime; } catch {}
         if (DEBUG_MEDIA) console.log('[Seek] seeking event: intent captured', { intent: lastSeekIntentRef.current, duration: mediaEl.duration });
       }
       setIsSeeking(true);
@@ -1001,7 +1001,7 @@ export function useCommonMediaController({
             album: meta?.album,
             show: meta?.show,
             season: meta?.season,
-            mediaKey: media_key,
+            mediaKey: assetId,
             mediaType: isAudio ? 'audio' : isVideo ? 'video' : 'unknown',
             currentTime: el.currentTime,
             duration: el.duration,
@@ -1022,7 +1022,7 @@ export function useCommonMediaController({
             album: meta?.album,
             show: meta?.show,
             season: meta?.season,
-            mediaKey: media_key,
+            mediaKey: assetId,
             currentTime: el.currentTime,
             duration: el.duration
           });
@@ -1038,7 +1038,7 @@ export function useCommonMediaController({
             album: meta?.album,
             show: meta?.show,
             season: meta?.season,
-            mediaKey: media_key,
+            mediaKey: assetId,
             currentTime: el.currentTime,
             duration: el.duration
           });
@@ -1074,12 +1074,12 @@ export function useCommonMediaController({
       mediaEl.removeEventListener('seeking', handleSeeking);
       mediaEl.removeEventListener('seeked', clearSeeking);
     };
-  }, [onEnd, playbackRate, start, isVideo, meta, type, media_key, onProgress, enabled, softMs, hardMs, mode, isStalled, volume, getMediaEl, markProgress, scheduleStallDetection, clearTimers, strategySteps, readStallState, elementKey]);
+  }, [onEnd, playbackRate, start, isVideo, meta, type, assetId, onProgress, enabled, softMs, hardMs, mode, isStalled, volume, getMediaEl, markProgress, scheduleStallDetection, clearTimers, strategySteps, readStallState, elementKey]);
 
   useEffect(() => {
     const mediaEl = getMediaEl();
     if (mediaEl && onMediaRef) onMediaRef(mediaEl);
-  }, [meta.media_key, onMediaRef, getMediaEl, elementKey]);
+  }, [meta.assetId, onMediaRef, getMediaEl, elementKey]);
 
   // Sample video playback quality metrics (dropped/decoded frames)
   useEffect(() => {
@@ -1163,11 +1163,11 @@ export function useCommonMediaController({
           reason: 'over_allowance',
           droppedFramePct: `${(droppedFramePct * 100).toFixed(2)}%`,
           allowance: `${(droppedFrameAllowance * 100).toFixed(2)}%`,
-          mediaKey: media_key
+          mediaKey: assetId
         });
         try {
-          if (DEBUG_MEDIA) console.info('[ABR] downscale', { plexId: media_key, from: curr, to: next, droppedFramePct });
-          onRequestBitrateChange(next, { media_key, reason: 'over_allowance', droppedFramePct });
+          if (DEBUG_MEDIA) console.info('[ABR] downscale', { plexId: assetId, from: curr, to: next, droppedFramePct });
+          onRequestBitrateChange(next, { assetId, reason: 'over_allowance', droppedFramePct });
         } finally {
           // The caller is responsible for clearing any UI; we only unlock the guard after a grace period
           setTimeout(() => { pendingAdaptRef.current = false; }, 50);
@@ -1192,11 +1192,11 @@ export function useCommonMediaController({
           reason: 'stable_performance',
           droppedFramePct: `${(droppedFramePct * 100).toFixed(2)}%`,
           stableSeconds: rampUpStableSecs,
-          mediaKey: media_key
+          mediaKey: assetId
         });
         try {
-          if (DEBUG_MEDIA) console.info('[ABR] ramp-up', { plexId: media_key, from: curr, to: next, droppedFramePct });
-          onRequestBitrateChange(next, { media_key, reason: 'ramp_up', droppedFramePct });
+          if (DEBUG_MEDIA) console.info('[ABR] ramp-up', { plexId: assetId, from: curr, to: next, droppedFramePct });
+          onRequestBitrateChange(next, { assetId, reason: 'ramp_up', droppedFramePct });
         } finally {
           setTimeout(() => { pendingAdaptRef.current = false; }, 50);
         }
@@ -1211,14 +1211,14 @@ export function useCommonMediaController({
         setCurrentMaxKbps(null);
         stableBelowMsRef.current = 0;
         try {
-          if (DEBUG_MEDIA) console.info('[ABR] reset-to-unlimited', { plexId: media_key, from: curr, to: null, droppedFramePct });
-          onRequestBitrateChange(null, { media_key, reason: 'reset_unlimited', droppedFramePct });
+          if (DEBUG_MEDIA) console.info('[ABR] reset-to-unlimited', { plexId: assetId, from: curr, to: null, droppedFramePct });
+          onRequestBitrateChange(null, { assetId, reason: 'reset_unlimited', droppedFramePct });
         } finally {
           setTimeout(() => { pendingAdaptRef.current = false; }, 50);
         }
       }
     }
-  }, [isDash, quality?.supported, showQuality, droppedFramePct, droppedFrameAllowance, minAdaptIntervalMs, onRequestBitrateChange, initialCapKbps, minCapKbps, rampUpLowPct, rampUpStableSecs, getMediaEl, media_key, maxCapKbps, resetToUnlimitedAtKbps, resetStableSecs, currentMaxKbps, elementKey]);
+  }, [isDash, quality?.supported, showQuality, droppedFramePct, droppedFrameAllowance, minAdaptIntervalMs, onRequestBitrateChange, initialCapKbps, minCapKbps, rampUpLowPct, rampUpStableSecs, getMediaEl, assetId, maxCapKbps, resetToUnlimitedAtKbps, resetStableSecs, currentMaxKbps, elementKey]);
 
   // Manual reset keyboard handler (optional)
   useEffect(() => {
@@ -1227,13 +1227,13 @@ export function useCommonMediaController({
       if (e.key === manualResetKey && typeof onRequestBitrateChange === 'function') {
         const curr = currentMaxKbps;
         setCurrentMaxKbps(null);
-        if (DEBUG_MEDIA) console.info('[ABR] manual reset to unlimited', { plexId: media_key, from: curr });
-        onRequestBitrateChange(null, { media_key, reason: 'manual_reset', droppedFramePct });
+        if (DEBUG_MEDIA) console.info('[ABR] manual reset to unlimited', { plexId: assetId, from: curr });
+        onRequestBitrateChange(null, { assetId, reason: 'manual_reset', droppedFramePct });
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [manualResetKey, isDash, onRequestBitrateChange, media_key, droppedFramePct, currentMaxKbps]);
+  }, [manualResetKey, isDash, onRequestBitrateChange, assetId, droppedFramePct, currentMaxKbps]);
 
   const manualRecover = useCallback((strategyName, options) => attemptRecovery({ strategyName, manual: true, options }), [attemptRecovery]);
   const manualSoftReinit = useCallback((options) => attemptRecovery({ strategyName: 'softReinit', manual: true, options }), [attemptRecovery]);

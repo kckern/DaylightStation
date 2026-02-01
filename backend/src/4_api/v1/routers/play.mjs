@@ -90,9 +90,9 @@ export function createPlayRouter(config) {
   function toPlayResponse(item, watchState = null) {
     const response = {
       id: item.id,
-      media_key: item.id,
-      media_url: item.mediaUrl,
-      media_type: item.mediaType,
+      assetId: item.id,
+      mediaUrl: item.mediaUrl,
+      mediaType: item.mediaType,
       title: item.title,
       duration: item.duration,
       resumable: item.resumable ?? false,
@@ -132,7 +132,7 @@ export function createPlayRouter(config) {
    *
    * Body:
    * - type: string (e.g., 'plex', 'filesystem')
-   * - media_key: string - Item ID
+   * - assetId: string - Item ID
    * - percent: number - Playback percentage (0-100)
    * - seconds: number - Current playhead position
    * - title: string (optional) - Item title
@@ -145,11 +145,11 @@ export function createPlayRouter(config) {
     });
 
     try {
-      const { type, media_key, percent, seconds, title, watched_duration } = req.body;
+      const { type, assetId, percent, seconds, title, watched_duration } = req.body;
 
       // Validate required fields
-      if (!type || !media_key || percent === undefined) {
-        const missing = !type ? 'type' : !media_key ? 'media_key' : 'percent';
+      if (!type || !assetId || percent === undefined) {
+        const missing = !type ? 'type' : !assetId ? 'assetId' : 'percent';
         return res.status(400).json({ error: `Missing required field: ${missing}` });
       }
 
@@ -166,7 +166,7 @@ export function createPlayRouter(config) {
         const plexAdapter = registry.get('plex');
         if (plexAdapter && typeof plexAdapter.getItem === 'function') {
           try {
-            const item = await plexAdapter.getItem(`plex:${media_key}`);
+            const item = await plexAdapter.getItem(`plex:${assetId}`);
             if (item?.metadata?.librarySectionID) {
               const libraryId = item.metadata.librarySectionID;
               const libraryName = (item.metadata.librarySectionTitle || 'media')
@@ -177,13 +177,13 @@ export function createPlayRouter(config) {
               itemMetadata = item.metadata;
             }
           } catch (e) {
-            logger.warn?.('play.log.metadata_fetch_failed', { media_key, error: e.message });
+            logger.warn?.('play.log.metadata_fetch_failed', { assetId, error: e.message });
           }
         }
       }
 
       // Get existing watch state
-      const compoundId = type === 'plex' ? `plex:${media_key}` : media_key;
+      const compoundId = type === 'plex' ? `plex:${assetId}` : assetId;
       const existingState = mediaProgressMemory ? await mediaProgressMemory.get(compoundId, storagePath) : null;
 
       // Calculate duration from percent if not in metadata
@@ -220,7 +220,7 @@ export function createPlayRouter(config) {
       }
 
       logger.info?.('play.log.updated', {
-        media_key,
+        assetId,
         type,
         percent: normalizedPercent,
         playhead: normalizedSeconds,

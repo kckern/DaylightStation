@@ -297,7 +297,7 @@ export class InfinityHarvester extends IHarvester {
       const folder = folders.find((f) => f.id === item.folder_id) || {};
       processedItem.folder = folder.name || item.folder_id;
       if (folder.color) {
-        processedItem.folder_color = folder.color;
+        processedItem.folderColor = folder.color;
       }
 
       return processedItem;

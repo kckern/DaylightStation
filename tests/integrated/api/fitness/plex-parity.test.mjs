@@ -257,7 +257,7 @@ async function runFitnessPlexParityTests() {
       }
 
       // Check critical fields
-      const criticalFields = ['title', 'media_url', 'media_type', 'image', 'percent', 'seconds'];
+      const criticalFields = ['title', 'mediaUrl', 'mediaType', 'image', 'percent', 'seconds'];
       const missingCritical = criticalFields.filter(f => !(f in dddRes.body));
 
       if (missingCritical.length === 0) {

@@ -635,7 +635,7 @@ const FitnessApp = () => {
           type: 'episode',
           title: `Episode ${episodeId}`,
           videoUrl: DaylightMediaPath(`api/v1/play/plex/mpd/${episodeId}`),
-          thumb_id: episodeId,
+          thumbId: episodeId,
           image: DaylightMediaPath(`api/v1/content/plex/image/${episodeId}`)
         };
         setFitnessPlayQueue([fallbackItem]);
@@ -651,8 +651,8 @@ const FitnessApp = () => {
         title: response.title || `Episode ${episodeId}`,
         show: response.show,
         season: response.season,
-        videoUrl: response.media_url || DaylightMediaPath(`api/v1/play/plex/mpd/${episodeId}`),
-        thumb_id: response.thumb_id || episodeId,
+        videoUrl: response.mediaUrl || DaylightMediaPath(`api/v1/play/plex/mpd/${episodeId}`),
+        thumbId: response.thumbId || episodeId,
         image: response.image || DaylightMediaPath(`api/v1/content/plex/image/${episodeId}`),
         labels: response.labels || [],
         summary: response.summary

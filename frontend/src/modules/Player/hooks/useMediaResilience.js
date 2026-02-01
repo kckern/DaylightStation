@@ -68,7 +68,7 @@ export function useMediaResilience({
     seconds,
     getMediaEl,
     waitKey,
-    mediaType: mediaTypeHint || meta?.media_type,
+    mediaType: mediaTypeHint || meta?.mediaType,
     playerFlavor: playerFlavorHint,
     epsilonSeconds
   });

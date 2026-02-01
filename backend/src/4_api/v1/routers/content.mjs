@@ -528,8 +528,8 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
    * Modifiers (path or query):
    * - shuffle: Randomly select from unwatched items
    *
-   * Legacy fields: listkey, listType, key, type, show, season, labels,
-   *                media_type, media_url, thumb_id, image, percent, seconds
+   * Response fields: listkey, listType, key, type, show, season, labels,
+   *                   mediaType, mediaUrl, thumbId, image, percent, seconds
    */
   router.get('/plex/info/:id/:modifiers?', async (req, res) => {
     try {
@@ -561,18 +561,18 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
         return res.status(404).json({ error: 'Item not found', id });
       }
 
-      // Determine media_type for legacy compat
+      // Determine mediaType
       const itemType = item.metadata?.type;
       const videoTypes = ['movie', 'episode', 'clip', 'short', 'trailer'];
       const audioTypes = ['track'];
-      let media_type = itemType;
-      if (videoTypes.includes(itemType)) media_type = 'dash_video';
-      else if (audioTypes.includes(itemType)) media_type = 'audio';
+      let mediaType = itemType;
+      if (videoTypes.includes(itemType)) mediaType = 'dash_video';
+      else if (audioTypes.includes(itemType)) mediaType = 'audio';
 
       // Generate streaming URL for playable items
-      let media_url = null;
+      let mediaUrl = null;
       if (videoTypes.includes(itemType) || audioTypes.includes(itemType)) {
-        media_url = await plexAdapter.loadMediaUrl(selectedId);
+        mediaUrl = await plexAdapter.loadMediaUrl(selectedId);
       }
 
       // Load watch state from viewing history
@@ -588,11 +588,11 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
         }
       }
 
-      // Extract thumb_id from Media Part if available, else use rating key
-      let thumb_id = selectedId;
+      // Extract thumbId from Media Part if available, else use rating key
+      let thumbId = selectedId;
       const mediaPart = item.metadata?.Media?.[0]?.Part?.[0];
       if (mediaPart?.id) {
-        thumb_id = mediaPart.id;
+        thumbId = mediaPart.id;
       }
 
       res.json({
@@ -609,10 +609,10 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
         // Labels for governance
         labels: item.metadata?.labels || [],
         // Media playback
-        media_type,
-        media_url,
+        mediaType,
+        mediaUrl,
         // Thumbnail
-        thumb_id,
+        thumbId,
         image: item.thumbnail,
         // Watch state
         percent,

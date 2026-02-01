@@ -24,7 +24,7 @@ const logMenuSelection = async (item) => {
       : null;
 
   if (selectedKey) {
-    await DaylightAPI("api/v1/item/menu-log", { media_key: selectedKey });
+    await DaylightAPI("api/v1/item/menu-log", { assetId: selectedKey });
   }
 };
 

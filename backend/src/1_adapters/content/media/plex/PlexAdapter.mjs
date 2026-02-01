@@ -450,7 +450,7 @@ export class PlexAdapter {
       summary: item.summary || null,
       tagline: item.tagline || null,
       studio: item.studio || null,
-      thumb_id: item.Media?.[0]?.Part?.[0]?.id ?? parseInt(item.ratingKey, 10),
+      thumbId: item.Media?.[0]?.Part?.[0]?.id ?? parseInt(item.ratingKey, 10),
       // Media info from Plex (for audio direct stream)
       Media: item.Media,
       // Labels for governance (merged item + show labels for episodes)
@@ -476,18 +476,10 @@ export class PlexAdapter {
         metadata.seasonNumber = parseInt(item.parentIndex);
         metadata.parentIndex = parseInt(item.parentIndex);
       }
-      if (item.parentThumb) {
-        metadata.seasonThumbUrl = `${this.proxyPath}${item.parentThumb}`;
-        metadata.parentThumb = `${this.proxyPath}${item.parentThumb}`;
-      }
       // Show (grandparent) info
       if (item.grandparentRatingKey) {
         metadata.showId = item.grandparentRatingKey;
         metadata.grandparent = item.grandparentRatingKey;
-      }
-      if (item.grandparentThumb) {
-        metadata.showThumbUrl = `${this.proxyPath}${item.grandparentThumb}`;
-        metadata.grandparentThumb = `${this.proxyPath}${item.grandparentThumb}`;
       }
     }
 
@@ -504,8 +496,9 @@ export class PlexAdapter {
       }
     }
 
-    // Use proxy URL for thumbnails (not direct Plex URL)
-    const thumbnail = item.thumb ? `${this.proxyPath}${item.thumb}` : null;
+    // Use proxy URL for thumbnails with fallback chain (episode -> season -> show)
+    const thumbPath = item.thumb || item.parentThumb || item.grandparentThumb;
+    const thumbnail = thumbPath ? `${this.proxyPath}${thumbPath}` : null;
 
     return new PlayableItem({
       id: `plex:${item.ratingKey}`,
@@ -1139,14 +1132,14 @@ export class PlexAdapter {
 
   /**
    * Load a single item from a watchlist with priority selection
-   * Priority: in_progress > urgent (skip_after within 8 days) > normal
+   * Priority: in_progress > urgent (skipAfter within 8 days) > normal
    *
    * @param {Object} watchlistData - Watchlist configuration object
    *   Keys are plex rating keys, values are:
    *   - watched: boolean - Skip if true
    *   - hold: boolean - Skip if true
-   *   - skip_after: string - Date after which to skip (ISO format)
-   *   - wait_until: string - Date until which to wait (ISO format)
+   *   - skipAfter: string - Date after which to skip (ISO format)
+   *   - waitUntil: string - Date until which to wait (ISO format)
    *   - program: string - Group identifier for selecting within program
    *   - index: number - Episode index within program
    *   - uid: string - Unique identifier for the item
@@ -1177,15 +1170,15 @@ export class PlexAdapter {
       if (item.watched) continue;
       if (item.hold) continue;
 
-      // Check skip_after date
-      if (item.skip_after) {
-        const skipAfter = new Date(item.skip_after);
+      // Check skipAfter date
+      if (item.skipAfter) {
+        const skipAfter = new Date(item.skipAfter);
         if (skipAfter <= now) continue;
       }
 
-      // Check wait_until date
-      if (item.wait_until) {
-        const waitUntil = new Date(item.wait_until);
+      // Check waitUntil date
+      if (item.waitUntil) {
+        const waitUntil = new Date(item.waitUntil);
         if (waitUntil >= twoDaysFromNow) continue;
       }
 
@@ -1201,8 +1194,8 @@ export class PlexAdapter {
       let priority = 'normal';
       if (percent > 0) {
         priority = 'in_progress';
-      } else if (item.skip_after) {
-        const skipAfter = new Date(item.skip_after);
+      } else if (item.skipAfter) {
+        const skipAfter = new Date(item.skipAfter);
         if (skipAfter <= eightDaysFromNow) {
           priority = 'urgent';
         }
@@ -1551,7 +1544,7 @@ export class PlexAdapter {
    * Alias for loadMediaUrl to match legacy interface
    * @deprecated Use loadMediaUrl instead
    */
-  async loadmedia_url(itemOrKey, attempt = 0, opts = {}) {
+  async loadMediaUrlLegacy(itemOrKey, attempt = 0, opts = {}) {
     return this.loadMediaUrl(itemOrKey, attempt, opts);
   }
 

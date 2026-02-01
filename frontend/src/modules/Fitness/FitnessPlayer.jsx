@@ -33,15 +33,15 @@ const generateThumbnailUrl = (plexObj, timeInSeconds) => {
     const timeInMillis = Math.floor(timeInSeconds * 1000);
     
     // Check for available properties to use in URL generation
-    let thumbId = plexObj.thumb_id || null;
+    let thumbId = plexObj.thumbId || null;
     let image = plexObj.image || null;
     let mediaId = typeof plexObj === 'object' ? plexObj.id || plexObj.plex : plexObj;
     
     // Basic logging
     
-    // Option 1: Use thumb_id directly with library/parts pattern (best quality)
+    // Option 1: Use thumbId directly with library/parts pattern (best quality)
     if (thumbId) {
-      // Ensure thumb_id is treated as a number not a string for consistency
+      // Ensure thumbId is treated as a number not a string for consistency
       const numericThumbId = parseInt(thumbId, 10);
       return DaylightMediaPath(`/api/v1/proxy/plex/photo/:/transcode?width=240&height=135&minSize=1&upscale=1&url=/library/parts/${numericThumbId}/indexes/sd/${timeInMillis}`);
     }
@@ -316,11 +316,11 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       setGovernanceMedia(null);
       return;
     }
-    const mediaId = currentItem.media_key || currentItem.id || currentItem.plex || currentItem.videoUrl || currentItem.media_url || currentItem.guid;
+    const mediaId = currentItem.assetId || currentItem.id || currentItem.plex || currentItem.videoUrl || currentItem.mediaUrl || currentItem.guid;
     setGovernanceMedia({
       id: mediaId || `unknown-${currentItem.title || 'fitness'}`,
       labels: Array.isArray(currentItem.labels) ? currentItem.labels : [],
-      type: currentItem.type || currentItem.media_type || null
+      type: currentItem.type || currentItem.mediaType || null
     });
   }, [currentItem, setGovernanceMedia]);
 
@@ -493,18 +493,18 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     const enhanced = {
       ...currentItem,
       guid: currentItem.guid
-        || currentItem.media_key
+        || currentItem.assetId
         || currentItem.id
         || currentItem.plex
-        || currentItem.media_url
+        || currentItem.mediaUrl
         || `fitness-${currentItem.id || ''}`,
       plex: currentItem.id || currentItem.plex,
-      media_url: currentItem.media_url || currentItem.videoUrl,
+      mediaUrl: currentItem.mediaUrl || currentItem.videoUrl,
       title: currentItem.title || currentItem.label,
-      media_type: 'video',
-      type: currentItem.type || currentItem.media_type || 'video',
-      media_key: currentItem.id || currentItem.media_key || `fitness-${currentItem.id || ''}`,
-      thumb_id: currentItem.thumb_id,
+      mediaType: 'video',
+      type: currentItem.type || currentItem.mediaType || 'video',
+      assetId: currentItem.id || currentItem.assetId || `fitness-${currentItem.id || ''}`,
+      thumbId: currentItem.thumbId,
       show: currentItem.show || 'Fitness',
       season: currentItem.season || 'Workout',
       percent: (() => {
@@ -658,8 +658,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   const isValidPlexObj = (plexObj) => {
     if (!plexObj) return false;
     
-    // First check if there's a thumb_id available
-    if (typeof plexObj === 'object' && plexObj.thumb_id) return true;
+    // First check if there's a thumbId available
+    if (typeof plexObj === 'object' && plexObj.thumbId) return true;
     
     // Fallback to checking if it's a numeric ID or a path that contains metadata
     const plexId = typeof plexObj === 'object' ? plexObj.id || plexObj.plex || plexObj.ratingKey : plexObj;
@@ -810,12 +810,12 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     }
     if (status === 'none') return null;
 
-    const mediaKey = currentItem.media_key || currentItem.plex || currentItem.id || currentItem.guid || null;
+    const mediaKey = currentItem.assetId || currentItem.plex || currentItem.id || currentItem.guid || null;
     if (!mediaKey) return null;
 
     return {
       episodeId: mediaKey,
-      media_key: mediaKey,
+      assetId: mediaKey,
       status,
       percent: percent != null ? Math.round(percent) : null,
       positionSeconds,
@@ -844,7 +844,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       await DaylightAPI('api/v1/play/log', {
         title: payload.title,
         type: payload.type,
-        media_key: payload.media_key,
+        assetId: payload.assetId,
         seconds: payload.positionSeconds,
         percent: payload.percent ?? undefined,
         status: payload.status,
@@ -943,8 +943,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     if (currentIndex < queue.length - 1) {
       const nextItem = queue[currentIndex + 1];
       // Ensure the video URL is properly formatted
-      if (nextItem && !nextItem.media_url && nextItem.videoUrl) {
-        nextItem.media_url = nextItem.videoUrl;
+      if (nextItem && !nextItem.mediaUrl && nextItem.videoUrl) {
+        nextItem.mediaUrl = nextItem.videoUrl;
       }
       setCurrentItem(nextItem);
     } else {
@@ -958,8 +958,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     if (currentIndex > 0) {
       const prevItem = queue[currentIndex - 1];
       // Ensure the video URL is properly formatted
-      if (prevItem && !prevItem.media_url && prevItem.videoUrl) {
-        prevItem.media_url = prevItem.videoUrl;
+      if (prevItem && !prevItem.mediaUrl && prevItem.videoUrl) {
+        prevItem.mediaUrl = prevItem.videoUrl;
       }
       setCurrentItem(prevItem);
     } else {
@@ -1000,19 +1000,19 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     const canAutoplay = !mediaGoverned || (governance === 'unlocked' || governance === 'warning');
     const stableGuid = String(
       enhancedCurrentItem.guid
-        || enhancedCurrentItem.media_key
+        || enhancedCurrentItem.assetId
         || enhancedCurrentItem.plex
         || enhancedCurrentItem.id
-        || enhancedCurrentItem.media_url
-        || `fitness-${enhancedCurrentItem.id || enhancedCurrentItem.media_key || 'entry'}`
+        || enhancedCurrentItem.mediaUrl
+        || `fitness-${enhancedCurrentItem.id || enhancedCurrentItem.assetId || 'entry'}`
     );
     
     return {
       guid: stableGuid,
       plex: enhancedCurrentItem.plex,
-      media_url: enhancedCurrentItem.media_url,
-      media_type: 'video',
-      media_key: enhancedCurrentItem.media_key,
+      mediaUrl: enhancedCurrentItem.mediaUrl,
+      mediaType: 'video',
+      assetId: enhancedCurrentItem.assetId,
       title: enhancedCurrentItem.title,
       seconds: enhancedCurrentItem.seconds,
       shader: 'minimal',
@@ -1056,13 +1056,13 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       show: media.show || null,
       season: media.season || null,
       plexId: media.plex || media.id || null,
-      mediaKey: media.media_key || null,
+      mediaKey: media.assetId || null,
       durationSeconds,
       resumeSeconds: Number.isFinite(media.seconds) ? Math.round(media.seconds) : null,
       autoplay: autoplayEnabled,
       governed: Boolean(playIsGoverned),
       labels: Array.isArray(media.labels) ? media.labels : [],
-      type: media.type || media.media_type || 'video',
+      type: media.type || media.mediaType || 'video',
       queueSize
     });
   }, [fitnessSessionInstance, currentMediaIdentity, enhancedCurrentItem, currentItem, autoplayEnabled, playIsGoverned, queueSize]);
@@ -1105,9 +1105,9 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     const plexObj = {
       plex: currentItem.plex,
       id: currentItem.id,
-      thumb_id: currentItem.thumb_id ? (typeof currentItem.thumb_id === 'number' ? currentItem.thumb_id : parseInt(currentItem.thumb_id, 10)) : null,
+      thumbId: currentItem.thumbId ? (typeof currentItem.thumbId === 'number' ? currentItem.thumbId : parseInt(currentItem.thumbId, 10)) : null,
       image: currentItem.image,
-      media_key: currentItem.media_key,
+      assetId: currentItem.assetId,
       ratingKey: currentItem.ratingKey,
       metadata: currentItem.metadata
     };
@@ -1142,9 +1142,9 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   // Effect: initialize current item from queue
   useEffect(() => {
     if (queue.length > 0 && !currentItem) {
-      // Normalize first item (ensure media_url exists)
+      // Normalize first item (ensure mediaUrl exists)
       const first = { ...queue[0] };
-      if (!first.media_url && first.videoUrl) first.media_url = first.videoUrl;
+      if (!first.mediaUrl && first.videoUrl) first.mediaUrl = first.videoUrl;
       setCurrentItem(first);
     }
   }, [queue, currentItem]);
@@ -1426,7 +1426,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
 
   const hasActiveItem = Boolean(currentItem && enhancedCurrentItem && playObject);
   const playerKey = hasActiveItem
-    ? `${enhancedCurrentItem.media_key || enhancedCurrentItem.plex || enhancedCurrentItem.id}:${currentItem?.seconds ?? 0}`
+    ? `${enhancedCurrentItem.assetId || enhancedCurrentItem.plex || enhancedCurrentItem.id}:${currentItem?.seconds ?? 0}`
     : 'fitness-player-empty';
 
   // Video content with overlay and chart

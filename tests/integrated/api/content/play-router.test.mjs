@@ -28,23 +28,23 @@ describe('Play Router API', () => {
   // RESPONSE FORMAT
   // ===========================================================================
   describe('response format', () => {
-    test('returns id and media_key', async () => {
+    test('returns id and assetId', async () => {
       const baseline = await loadBaseline('filesystem/filesystem-hymn-audio.json');
 
       const res = await request(app).get('/api/play/filesystem/audio/songs/hymn/_ldsgc/113.mp3');
 
       expect(res.status).toBe(200);
       expect(res.body.id).toBeDefined();
-      expect(res.body.media_key).toBeDefined();
+      expect(res.body.assetId).toBeDefined();
     });
 
-    test('returns media_url for playable item', async () => {
+    test('returns mediaUrl for playable item', async () => {
       const baseline = await loadBaseline('filesystem/filesystem-hymn-audio.json');
 
       const res = await request(app).get('/api/play/filesystem/audio/songs/hymn/_ldsgc/113.mp3');
 
       expect(res.status).toBe(200);
-      expect(res.body.media_url).toBeDefined();
+      expect(res.body.mediaUrl).toBeDefined();
     });
 
     test('returns title when available', async () => {
@@ -69,7 +69,7 @@ describe('Play Router API', () => {
       const res = await request(app).get('/api/play/folder/TVApp');
 
       expect(res.status).toBe(200);
-      expect(res.body.media_key).toBeDefined();
+      expect(res.body.assetId).toBeDefined();
     });
 
     test('shuffle on container returns random item', async () => {
@@ -78,7 +78,7 @@ describe('Play Router API', () => {
       const res = await request(app).get('/api/play/folder/TVApp/shuffle');
 
       expect(res.status).toBe(200);
-      expect(res.body.media_key).toBeDefined();
+      expect(res.body.assetId).toBeDefined();
     });
   });
 
@@ -92,7 +92,7 @@ describe('Play Router API', () => {
       const res = await request(app).get('/api/play/filesystem/audio/songs/hymn/_ldsgc/113.mp3');
 
       expect(res.status).toBe(200);
-      expect(res.body.media_url).toBeDefined();
+      expect(res.body.mediaUrl).toBeDefined();
     });
   });
 
@@ -102,7 +102,7 @@ describe('Play Router API', () => {
 
       expect(res.status).toBe(200);
       // Should resolve to a playable item
-      expect(res.body.id || res.body.media_key).toBeDefined();
+      expect(res.body.id || res.body.assetId).toBeDefined();
     });
   });
 

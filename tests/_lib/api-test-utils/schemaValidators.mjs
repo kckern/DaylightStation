@@ -11,10 +11,10 @@
 export const SCHEMAS = {
   // LocalContent schemas
   scripture: {
-    required: ['reference', 'media_key', 'mediaUrl', 'verses'],
+    required: ['reference', 'assetId', 'mediaUrl', 'verses'],
     types: {
       reference: 'string',
-      media_key: 'string',
+      assetId: 'string',
       mediaUrl: 'string',
       duration: 'number',
       verses: 'array'
@@ -22,11 +22,11 @@ export const SCHEMAS = {
   },
 
   hymn: {
-    required: ['title', 'number', 'media_key', 'mediaUrl'],
+    required: ['title', 'number', 'assetId', 'mediaUrl'],
     types: {
       title: 'string',
       number: 'number',
-      media_key: 'string',
+      assetId: 'string',
       mediaUrl: 'string',
       duration: 'number',
       verses: 'array',
@@ -35,11 +35,11 @@ export const SCHEMAS = {
   },
 
   primary: {
-    required: ['title', 'number', 'media_key', 'mediaUrl'],
+    required: ['title', 'number', 'assetId', 'mediaUrl'],
     types: {
       title: 'string',
       number: 'number',
-      media_key: 'string',
+      assetId: 'string',
       mediaUrl: 'string',
       duration: 'number',
       verses: 'array',
@@ -48,11 +48,11 @@ export const SCHEMAS = {
   },
 
   talk: {
-    required: ['title', 'media_key', 'mediaUrl'],
+    required: ['title', 'assetId', 'mediaUrl'],
     types: {
       title: 'string',
       speaker: 'string',
-      media_key: 'string',
+      assetId: 'string',
       mediaUrl: 'string',
       duration: 'number',
       content: 'array'
@@ -60,11 +60,11 @@ export const SCHEMAS = {
   },
 
   poem: {
-    required: ['title', 'media_key'],
+    required: ['title', 'assetId'],
     types: {
       title: 'string',
       author: 'string',
-      media_key: 'string',
+      assetId: 'string',
       mediaUrl: 'string',
       duration: 'number',
       verses: 'array'
@@ -95,12 +95,12 @@ export const SCHEMAS = {
 
   // Play response schemas
   playResponse: {
-    required: ['id', 'media_key'],
+    required: ['id', 'assetId'],
     types: {
       id: 'string',
-      media_key: 'string',
-      media_url: 'string',
-      media_type: 'string',
+      assetId: 'string',
+      mediaUrl: 'string',
+      mediaType: 'string',
       title: 'string',
       duration: 'number',
       thumbnail: 'string'
@@ -109,11 +109,11 @@ export const SCHEMAS = {
 
   // Plex-specific schemas
   plexEpisode: {
-    required: ['id', 'media_key', 'title'],
+    required: ['id', 'assetId', 'title'],
     types: {
       id: 'string',
-      media_key: 'string',
-      media_url: 'string',
+      assetId: 'string',
+      mediaUrl: 'string',
       title: 'string',
       show: 'string',
       season: 'string',

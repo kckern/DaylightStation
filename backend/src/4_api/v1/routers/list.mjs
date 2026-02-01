@@ -89,7 +89,7 @@ export function toListItem(item) {
   // Action properties from Item (check item.actions for open)
   if (item.actions?.open) base.open = item.actions.open;
 
-  // Note: plex and media_key are NOT copied to top-level.
+  // Note: plex and assetId are NOT copied to top-level.
   // These identifiers belong in action objects (play.plex, queue.plex, list.plex).
   // Frontend should access them via item.play?.plex || item.queue?.plex || item.list?.plex
 
@@ -112,29 +112,29 @@ export function toListItem(item) {
   if (item.active !== undefined) base.active = item.active;
 
   // Flatten episode-specific metadata to top level for FitnessShow compatibility
-  // Note: plex and media_key are intentionally NOT extracted here.
+  // Note: plex and assetId are intentionally NOT extracted here.
   // They belong in action objects (play.plex, queue.plex, list.plex), not top-level.
   if (item.metadata) {
     const {
-      key, seasonId, seasonName, seasonNumber, seasonThumbUrl,
-      episodeNumber, index, summary, tagline, studio, thumb_id, type,
+      key, seasonId, seasonName, seasonNumber,
+      episodeNumber, index, summary, tagline, studio, thumbId, type,
       artist, albumArtist, album, albumId, artistId, grandparentTitle,
       // TV show fields
       show, season,
       // Parent (season) fields
-      parent, parentTitle, parentIndex, parentThumb,
+      parent, parentTitle, parentIndex,
       // Grandparent (show) fields
-      showId, grandparent, showThumbUrl, grandparentThumb,
+      showId, grandparent,
       // Rating fields for FitnessMenu sorting
       rating, userRating, year,
       // FolderAdapter watch state fields
       percent, seconds, priority,
       // FolderAdapter scheduling fields
-      hold, skip_after, wait_until,
+      hold, skipAfter, waitUntil,
       // FolderAdapter grouping and legacy fields
       program, src, shuffle, continuous, playable, uid,
       // FolderAdapter display fields
-      folder, folder_color
+      folder, folderColor
     } = item.metadata;
 
     // Note: plex is NOT copied to top-level from metadata.
@@ -143,7 +143,6 @@ export function toListItem(item) {
     if (seasonId !== undefined) base.seasonId = seasonId;
     if (seasonName !== undefined) base.seasonName = seasonName;
     if (seasonNumber !== undefined) base.seasonNumber = seasonNumber;
-    if (seasonThumbUrl !== undefined) base.seasonThumbUrl = seasonThumbUrl;
     if (episodeNumber !== undefined) base.episodeNumber = episodeNumber;
     if (index !== undefined) base.index = index;
     if (summary !== undefined) {
@@ -152,7 +151,7 @@ export function toListItem(item) {
     }
     if (tagline !== undefined) base.tagline = tagline;
     if (studio !== undefined) base.studio = studio;
-    if (thumb_id !== undefined) base.thumb_id = thumb_id;
+    if (thumbId !== undefined) base.thumbId = thumbId;
     if (type !== undefined) base.type = type;
     // Music fields
     if (artist !== undefined) base.artist = artist;
@@ -168,12 +167,9 @@ export function toListItem(item) {
     if (parent !== undefined) base.parent = parent;
     if (parentTitle !== undefined) base.parentTitle = parentTitle;
     if (parentIndex !== undefined) base.parentIndex = parentIndex;
-    if (parentThumb !== undefined) base.parentThumb = parentThumb;
     // Grandparent (show) fields
     if (showId !== undefined) base.showId = showId;
     if (grandparent !== undefined) base.grandparent = grandparent;
-    if (showThumbUrl !== undefined) base.showThumbUrl = showThumbUrl;
-    if (grandparentThumb !== undefined) base.grandparentThumb = grandparentThumb;
     // Rating fields for FitnessMenu sorting
     if (rating !== undefined) base.rating = rating;
     if (userRating !== undefined) base.userRating = userRating;
@@ -185,12 +181,12 @@ export function toListItem(item) {
     if (priority !== undefined) base.priority = priority;
     // FolderAdapter scheduling fields
     if (hold !== undefined) base.hold = hold;
-    if (skip_after !== undefined) base.skip_after = skip_after;
-    if (wait_until !== undefined) base.wait_until = wait_until;
+    if (skipAfter !== undefined) base.skipAfter = skipAfter;
+    if (waitUntil !== undefined) base.waitUntil = waitUntil;
     // FolderAdapter grouping and legacy fields
     if (program !== undefined) base.program = program;
     if (src !== undefined) base.src = src;
-    // Note: media_key is NOT copied to top-level from metadata.
+    // Note: assetId is NOT copied to top-level from metadata.
     // The canonical identifier is in action objects or item.id.
     if (shuffle !== undefined && base.shuffle === undefined) base.shuffle = shuffle;
     if (continuous !== undefined && base.continuous === undefined) base.continuous = continuous;
@@ -198,7 +194,7 @@ export function toListItem(item) {
     if (uid !== undefined) base.uid = uid;
     // FolderAdapter display fields
     if (folder !== undefined) base.folder = folder;
-    if (folder_color !== undefined) base.folder_color = folder_color;
+    if (folderColor !== undefined) base.folderColor = folderColor;
 
     // Duration from PlayableItem
     if (item.duration !== undefined) base.duration = item.duration;
@@ -375,17 +371,17 @@ export function createListRouter(config) {
         }
       }
 
-      // Check if any item has folder_color - if so, maintain fixed order from YAML
-      // (Legacy behavior: folder_color indicates "no dynamic sorting")
-      const hasFixedOrder = items.some(item => item.metadata?.folder_color || item.folder_color);
+      // Check if any item has folderColor - if so, maintain fixed order from YAML
+      // (Legacy behavior: folderColor indicates "no dynamic sorting")
+      const hasFixedOrder = items.some(item => item.metadata?.folderColor || item.folderColor);
 
-      // Apply shuffle if requested (skip if folder_color present)
+      // Apply shuffle if requested (skip if folderColor present)
       if (modifiers.shuffle && !hasFixedOrder) {
         items = shuffleArray([...items]);
       }
 
       // Apply recent_on_top sorting if requested (uses menu_memory, not play history)
-      // Skip if folder_color present - maintain YAML order
+      // Skip if folderColor present - maintain YAML order
       if (modifiers.recent_on_top && !hasFixedOrder) {
         // Load menu_memory for sorting by menu selection time
         // Note: loadFile is scoped to data dir; household path built by caller
@@ -422,8 +418,7 @@ export function createListRouter(config) {
             seasonsMap[seasonId] = {
               num: item.metadata?.seasonNumber ?? item.metadata?.parentIndex,
               title: item.metadata?.seasonName || item.metadata?.parentTitle || `Season`,
-              // Fallback chain: season thumb -> parent thumb -> show thumb
-              img: item.metadata?.seasonThumbUrl || item.metadata?.parentThumb || item.metadata?.showThumbUrl || item.metadata?.grandparentThumb
+              img: item.thumbnail
             };
           }
         }
@@ -440,7 +435,7 @@ export function createListRouter(config) {
         // Add plex field for plex source (matches prod format)
         ...(source === 'plex' && { plex: localId }),
         // Legacy compat field - frontend uses this for menu logging
-        media_key: localId,
+        assetId: localId,
         source,
         path: localId,
         title: containerInfo?.title || localId,

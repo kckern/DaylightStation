@@ -40,20 +40,20 @@ describe('Filesystem API', () => {
         validateSchema(res.body, 'playResponse');
       });
 
-      test('play response has media_url', async () => {
+      test('play response has mediaUrl', async () => {
         const res = await request(app).get(`/api/play/filesystem${HYMN_AUDIO_PATH}`);
 
         expect(res.status).toBe(200);
-        expect(res.body.media_url).toBeDefined();
+        expect(res.body.mediaUrl).toBeDefined();
       });
 
-      test('play response has media_type', async () => {
+      test('play response has mediaType', async () => {
         const res = await request(app).get(`/api/play/filesystem${HYMN_AUDIO_PATH}`);
 
         expect(res.status).toBe(200);
         // Media type should indicate audio
-        if (res.body.media_type) {
-          expect(res.body.media_type).toMatch(/audio/i);
+        if (res.body.mediaType) {
+          expect(res.body.mediaType).toMatch(/audio/i);
         }
       });
     });
@@ -66,8 +66,8 @@ describe('Filesystem API', () => {
 
         expect(res.status).toBe(200);
         // Media key should match
-        if (baseline.media_key) {
-          expect(res.body.media_key).toBeDefined();
+        if (baseline.assetId) {
+          expect(res.body.assetId).toBeDefined();
         }
       });
     });

@@ -167,18 +167,18 @@ describe('List API Router', () => {
       expect(result.label).toBe('Top Level');
     });
 
-    it('should NOT include top-level plex and media_key (they belong in action objects)', () => {
-      // plex and media_key are intentionally NOT copied to top level
+    it('should NOT include top-level plex and assetId (they belong in action objects)', () => {
+      // plex and assetId are intentionally NOT copied to top level
       // They should be accessed via action objects (play.plex, queue.plex, list.plex)
       const item = {
         id: 'plex:123',
         title: 'Test',
         plex: '123',
-        media_key: 'plex:123'
+        assetId: 'plex:123'
       };
       const result = toListItem(item);
       expect(result.plex).toBeUndefined();
-      expect(result.media_key).toBeUndefined();
+      expect(result.assetId).toBeUndefined();
     });
 
     it('should NOT extract plex from metadata to top level', () => {
