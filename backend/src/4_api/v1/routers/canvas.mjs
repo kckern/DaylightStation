@@ -6,10 +6,13 @@
  * - POST /next - Advance to next art
  * - POST /rotation/start - Start auto-rotation
  * - POST /rotation/stop - Stop auto-rotation
+ * - GET /image/* - Serve canvas image files
  *
  * @module api/v1/routers
  */
 import { Router } from 'express';
+import path from 'path';
+import fs from 'fs';
 
 /**
  * Create canvas API router
@@ -98,6 +101,45 @@ export function createCanvasRouter({ canvasService }) {
       canvasService.stopRotation(deviceId);
 
       res.json({ success: true });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  /**
+   * GET /image/* - Serve canvas image
+   */
+  router.get('/image/*', async (req, res, next) => {
+    try {
+      const imagePath = req.params[0];
+
+      // Get canvas service to access config
+      const canvasService = req.app.get('canvasService');
+      if (!canvasService) {
+        return res.status(503).json({ error: 'Canvas service not configured' });
+      }
+
+      // Get basePath from the adapter (injected at bootstrap)
+      const basePath = req.app.get('canvasBasePath');
+      if (!basePath) {
+        return res.status(503).json({ error: 'Canvas basePath not configured' });
+      }
+
+      const fullPath = path.join(basePath, imagePath);
+
+      // Security: ensure path is within basePath (prevent traversal)
+      const resolvedPath = path.resolve(fullPath);
+      const resolvedBase = path.resolve(basePath);
+      if (!resolvedPath.startsWith(resolvedBase)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      // Check file exists
+      if (!fs.existsSync(resolvedPath)) {
+        return res.status(404).json({ error: 'Image not found', path: imagePath });
+      }
+
+      res.sendFile(resolvedPath);
     } catch (err) {
       next(err);
     }
