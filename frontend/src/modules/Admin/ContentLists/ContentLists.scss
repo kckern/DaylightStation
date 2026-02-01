@@ -1,0 +1,60 @@
+.folder-card {
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  }
+}
+
+.lists-folder {
+  .item-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    background: white;
+    border: 1px solid #e9ecef;
+    border-radius: 8px;
+    margin-bottom: 8px;
+
+    &:hover {
+      border-color: #228be6;
+    }
+
+    .drag-handle {
+      cursor: grab;
+      color: #adb5bd;
+
+      &:active {
+        cursor: grabbing;
+      }
+    }
+
+    .item-thumbnail {
+      width: 48px;
+      height: 48px;
+      border-radius: 4px;
+      object-fit: cover;
+      background: #f1f3f5;
+    }
+
+    .item-info {
+      flex: 1;
+      min-width: 0;
+
+      .item-label {
+        font-weight: 500;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .item-input {
+        font-size: 12px;
+        color: #868e96;
+      }
+    }
+  }
+}
