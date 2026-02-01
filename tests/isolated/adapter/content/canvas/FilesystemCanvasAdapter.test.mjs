@@ -117,4 +117,46 @@ describe('FilesystemCanvasAdapter', () => {
       expect(item).toBeNull();
     });
   });
+
+  describe('resolveDisplayables', () => {
+    it('returns all images in a category folder', async () => {
+      const mockFs = {
+        existsSync: jest.fn().mockReturnValue(true),
+        readdirSync: jest.fn()
+          .mockReturnValueOnce(['religious']) // categories
+          .mockReturnValueOnce(['nativity.jpg', 'sheep.jpg']), // files in religious
+        statSync: jest.fn().mockReturnValue({ isDirectory: () => true }),
+        readFileSync: jest.fn(),
+      };
+
+      const adapter = new FilesystemCanvasAdapter(
+        { basePath: '/media/art' },
+        { fs: mockFs }
+      );
+
+      const items = await adapter.resolveDisplayables('religious');
+
+      expect(items).toHaveLength(2);
+      expect(items[0].id).toBe('canvas:religious/nativity.jpg');
+    });
+
+    it('returns single item when given full path', async () => {
+      const mockFs = {
+        existsSync: jest.fn().mockReturnValue(true),
+        readdirSync: jest.fn().mockReturnValue(['nativity.jpg']),
+        statSync: jest.fn().mockReturnValue({ isDirectory: () => false }),
+        readFileSync: jest.fn(),
+      };
+
+      const adapter = new FilesystemCanvasAdapter(
+        { basePath: '/media/art' },
+        { fs: mockFs }
+      );
+
+      const items = await adapter.resolveDisplayables('religious/nativity.jpg');
+
+      expect(items).toHaveLength(1);
+      expect(items[0].id).toBe('canvas:religious/nativity.jpg');
+    });
+  });
 });

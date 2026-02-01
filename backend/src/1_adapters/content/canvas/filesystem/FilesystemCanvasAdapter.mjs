@@ -68,6 +68,26 @@ export class FilesystemCanvasAdapter {
     return this.#buildItem(category, filename);
   }
 
+  /**
+   * Resolve to displayable items (for slideshows, galleries)
+   * @param {string} id - Category name or full path
+   * @returns {Promise<DisplayableItem[]>}
+   */
+  async resolveDisplayables(id) {
+    const localPath = id.replace(/^canvas:/, '');
+    const fullPath = `${this.#basePath}/${localPath}`;
+
+    // Check if it's a directory (category) or file
+    if (this.#fs.existsSync(fullPath) && this.#fs.statSync(fullPath).isDirectory()) {
+      // It's a category folder - return all images
+      return this.list({ categories: [localPath] });
+    }
+
+    // It's a single file
+    const item = await this.getItem(`canvas:${localPath}`);
+    return item ? [item] : [];
+  }
+
   #listCategories() {
     if (!this.#fs.existsSync(this.#basePath)) return [];
 
