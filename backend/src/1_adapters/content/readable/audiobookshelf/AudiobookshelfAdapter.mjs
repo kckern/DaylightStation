@@ -72,10 +72,16 @@ export class AudiobookshelfAdapter {
 
   /**
    * Build audio stream URL for an audiobook
+   * ABS uses /api/items/{itemId}/file/{ino} for audio streaming
    * @param {string} itemId
+   * @param {string} [ino] - Audio file inode from item.media.audioFiles[0].ino
    * @returns {string}
    */
-  #audioUrl(itemId) {
+  #audioUrl(itemId, ino) {
+    if (ino) {
+      return `${this.#proxyPath}/items/${itemId}/file/${ino}`;
+    }
+    // Fallback for compatibility (won't work for streaming)
     return `${this.#proxyPath}/items/${itemId}/play`;
   }
 
@@ -103,7 +109,9 @@ export class AudiobookshelfAdapter {
    * @returns {boolean}
    */
   #isAudiobook(item) {
-    return (item?.media?.numAudioFiles ?? 0) > 0;
+    // Check both numAudioFiles (list response) and audioFiles array (detail response)
+    const numFiles = item?.media?.numAudioFiles ?? item?.media?.audioFiles?.length ?? 0;
+    return numFiles > 0;
   }
 
   /**
@@ -221,6 +229,74 @@ export class AudiobookshelfAdapter {
   }
 
   /**
+   * Search for media items (implements IMediaSearchable)
+   * @param {Object} query - MediaSearchQuery
+   * @param {string} [query.mediaType] - Filter by 'audio' (audiobooks) or 'ebook'
+   * @param {string} [query.text] - Text search (searches title)
+   * @param {number} [query.take=20] - Max items to return
+   * @param {number} [query.skip=0] - Items to skip
+   * @returns {Promise<{items: Array, total: number}>}
+   */
+  async search(query = {}) {
+    try {
+      const { mediaType, text, take = 20, skip = 0 } = query;
+
+      // Get all libraries first
+      const librariesData = await this.#client.getLibraries();
+      const libraries = librariesData.libraries || [];
+
+      const allItems = [];
+
+      // Fetch items from each library
+      for (const lib of libraries) {
+        const itemsData = await this.#client.getLibraryItems(lib.id, 0, 100);
+        const items = itemsData.results || [];
+
+        for (const item of items) {
+          // Filter by mediaType if specified
+          const isAudiobook = this.#isAudiobook(item);
+          const isEbook = this.#isEbook(item);
+
+          if (mediaType === 'audio' && !isAudiobook) continue;
+          if (mediaType === 'ebook' && !isEbook) continue;
+
+          // Filter by text if specified (simple title search)
+          if (text) {
+            const title = item.media?.metadata?.title?.toLowerCase() || '';
+            if (!title.includes(text.toLowerCase())) continue;
+          }
+
+          // Convert to appropriate item type
+          if (isAudiobook) {
+            allItems.push(this.#toPlayableItem(item, null));
+          } else if (isEbook) {
+            allItems.push(this.#toReadableItem(item, null));
+          }
+        }
+      }
+
+      // Apply pagination
+      const paginatedItems = allItems.slice(skip, skip + take);
+
+      return {
+        items: paginatedItems,
+        total: allItems.length
+      };
+    } catch (err) {
+      console.error('[AudiobookshelfAdapter] search error:', err.message);
+      return { items: [], total: 0 };
+    }
+  }
+
+  /**
+   * Get available search capabilities (implements IMediaSearchable)
+   * @returns {string[]} - Supported query fields
+   */
+  getSearchCapabilities() {
+    return ['text', 'mediaType', 'take', 'skip'];
+  }
+
+  /**
    * Convert Audiobookshelf item to ReadableItem (for ebooks)
    * @param {Object} item
    * @param {Object} [progress]
@@ -274,12 +350,17 @@ export class AudiobookshelfAdapter {
     const media = item.media || {};
     const metadata = media.metadata || {};
 
+    const author = metadata.authorName || metadata.author || null;
+    // Get first audio file's ino for streaming URL
+    const firstAudioFile = media.audioFiles?.[0];
+    const audioIno = firstAudioFile?.ino;
+
     return new PlayableItem({
       id: `abs:${item.id}`,
       source: 'abs',
       title: metadata.title || item.id,
       mediaType: 'audio',
-      mediaUrl: this.#audioUrl(item.id),
+      mediaUrl: this.#audioUrl(item.id, audioIno),
       duration: media.duration || null,
       resumable: true,
       resumePosition: progress?.currentTime || null,
@@ -287,8 +368,14 @@ export class AudiobookshelfAdapter {
       description: metadata.description || null,
       metadata: {
         libraryId: item.libraryId,
-        author: metadata.authorName || metadata.author,
+        author,
+        // Alias for AudioPlayer frontend compatibility (looks for metadata.artist)
+        artist: author,
         narrator: metadata.narratorName,
+        // Alias for AudioPlayer (looks for metadata.albumArtist for narrator display)
+        albumArtist: metadata.narratorName,
+        // Series name as album for display
+        album: metadata.seriesName || null,
         numAudioFiles: media.numAudioFiles,
         completed: progress?.isFinished || false
       }
