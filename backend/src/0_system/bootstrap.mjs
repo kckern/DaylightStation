@@ -22,7 +22,13 @@ import { LocalContentAdapter } from '#adapters/content/local-content/LocalConten
 import { FolderAdapter } from '#adapters/content/folder/FolderAdapter.mjs';
 import { ImmichAdapter } from '#adapters/content/gallery/immich/ImmichAdapter.mjs';
 import { YamlMediaProgressMemory } from '#adapters/persistence/yaml/YamlMediaProgressMemory.mjs';
+
+// Content adapter manifests (for category/provider metadata)
+import filesystemManifest from '#adapters/content/media/filesystem/manifest.mjs';
+import plexManifest from '#adapters/content/media/plex/manifest.mjs';
+import immichManifest from '#adapters/content/gallery/immich/manifest.mjs';
 import { createContentRouter } from '#api/v1/routers/content.mjs';
+import { ContentQueryService } from '#apps/content/ContentQueryService.mjs';
 import { createProxyRouter } from '#api/v1/routers/proxy.mjs';
 import { createLocalContentRouter } from '#api/v1/routers/localContent.mjs';
 import { createPlayRouter } from '#api/v1/routers/play.mjs';
@@ -383,34 +389,45 @@ export function createContentRegistry(config, deps = {}) {
 
   // Register filesystem adapter
   if (config.mediaBasePath) {
-    registry.register(new FilesystemAdapter({
-      mediaBasePath: config.mediaBasePath,
-      mediaProgressMemory,
-    }));
+    registry.register(
+      new FilesystemAdapter({
+        mediaBasePath: config.mediaBasePath,
+        mediaProgressMemory,
+      }),
+      { category: filesystemManifest.capability, provider: filesystemManifest.provider }
+    );
   }
 
   // Register Plex adapter if configured
   if (config.plex?.host && httpClient) {
-    registry.register(new PlexAdapter({
-      host: config.plex.host,
-      token: config.plex.token,
-      mediaProgressMemory,  // Inject MediaProgressMemory for watch state persistence
-      mediaKeyResolver      // Inject MediaKeyResolver for normalizing media keys
-    }, { httpClient }));
+    registry.register(
+      new PlexAdapter({
+        host: config.plex.host,
+        token: config.plex.token,
+        mediaProgressMemory,  // Inject MediaProgressMemory for watch state persistence
+        mediaKeyResolver      // Inject MediaKeyResolver for normalizing media keys
+      }, { httpClient }),
+      { category: plexManifest.capability, provider: plexManifest.provider }
+    );
   }
 
   // Register local content adapter (optional)
+  // Note: LocalContentAdapter has no manifest - uses 'local' category
   if (config.dataPath && config.mediaBasePath) {
-    registry.register(new LocalContentAdapter({
-      dataPath: config.dataPath,
-      mediaPath: config.mediaBasePath,
-      mediaProgressMemory,
-      householdId: config.householdId || null,
-      householdsBasePath: config.householdsBasePath || null
-    }));
+    registry.register(
+      new LocalContentAdapter({
+        dataPath: config.dataPath,
+        mediaPath: config.mediaBasePath,
+        mediaProgressMemory,
+        householdId: config.householdId || null,
+        householdsBasePath: config.householdsBasePath || null
+      }),
+      { category: 'local', provider: 'local-content' }
+    );
   }
 
   // Register folder adapter (optional, requires registry reference)
+  // Note: FolderAdapter has no manifest - uses 'local' category
   if (config.watchlistPath) {
     const folderAdapter = new FolderAdapter({
       watchlistPath: config.watchlistPath,
@@ -419,7 +436,7 @@ export function createContentRegistry(config, deps = {}) {
       nomusicLabels: config.nomusicLabels || [],
       musicOverlayPlaylist: config.musicOverlayPlaylist || null
     });
-    registry.register(folderAdapter);
+    registry.register(folderAdapter, { category: 'local', provider: 'folder' });
 
     // Also register as 'local' for legacy frontend compatibility
     // Legacy endpoints use /data/list/{key} which maps to /list/local/{key}
@@ -428,11 +445,14 @@ export function createContentRegistry(config, deps = {}) {
 
   // Register Immich adapter if configured
   if (config.immich?.host && config.immich?.apiKey && httpClient) {
-    registry.register(new ImmichAdapter({
-      host: config.immich.host,
-      apiKey: config.immich.apiKey,
-      slideDuration: config.immich.slideDuration || 10
-    }, { httpClient }));
+    registry.register(
+      new ImmichAdapter({
+        host: config.immich.host,
+        apiKey: config.immich.apiKey,
+        slideDuration: config.immich.slideDuration || 10
+      }, { httpClient }),
+      { category: immichManifest.capability, provider: immichManifest.provider }
+    );
   }
 
   return registry;
@@ -479,8 +499,11 @@ export function createMediaProgressMemory(config) {
 export function createApiRouters(config) {
   const { registry, mediaProgressMemory, loadFile, saveFile, cacheBasePath, dataPath, mediaBasePath, proxyService, composePresentationUseCase, configService, logger = console } = config;
 
+  // Create ContentQueryService for unified query interface
+  const contentQueryService = new ContentQueryService({ registry });
+
   return {
-    content: createContentRouter(registry, mediaProgressMemory, { loadFile, saveFile, cacheBasePath, composePresentationUseCase, logger }),
+    content: createContentRouter(registry, mediaProgressMemory, { loadFile, saveFile, cacheBasePath, composePresentationUseCase, contentQueryService, logger }),
     proxy: createProxyRouter({ registry, proxyService, mediaBasePath, logger }),
     localContent: createLocalContentRouter({ registry, dataPath, mediaBasePath }),
     play: createPlayRouter({ registry, mediaProgressMemory, logger }),

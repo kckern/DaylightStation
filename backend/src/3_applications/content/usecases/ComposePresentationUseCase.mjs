@@ -104,26 +104,31 @@ export class ComposePresentationUseCase {
     const trackCount = (visualTracks.length > 0 ? 1 : 0) + (audioTracks.length > 0 ? 1 : 0);
     const resolvedModifiers = this.#resolveModifiers(config, trackCount);
 
-    // Build visual track
-    // For now, take first visual source; future: support multiple visual items
-    const visualSource = visualTracks[0];
+    // Flatten all visual items and determine visual type from first item
+    const allVisualItems = visualTracks.flatMap(t => t.items);
+    const visualType = this.#inferVisualType(allVisualItems[0]);
+
+    // Build visual track with all items
+    // For images, prefer thumbnail for fast loading; for videos use mediaUrl
     const visualTrack = createVisualTrack({
-      type: this.#inferVisualType(visualSource.item),
-      items: [{
-        id: visualSource.item.id,
-        url: visualSource.item.mediaUrl || visualSource.item.thumbnail,
-        duration: visualSource.item.duration ? visualSource.item.duration * 1000 : null,
-        caption: visualSource.item.title
-      }],
-      advance: config.advance || { mode: 'none' },
-      loop: resolvedModifiers.visual.loop ?? false
+      type: visualType,
+      items: allVisualItems.map(item => ({
+        id: item.id,
+        url: visualType === 'image' ? (item.thumbnail || item.mediaUrl) : (item.mediaUrl || item.thumbnail),
+        duration: item.duration ? item.duration * 1000 : null,
+        caption: item.title
+      })),
+      advance: config.advance || { mode: 'timed', interval: 5000 },
+      loop: resolvedModifiers.visual.loop ?? true
     });
 
     // Build audio track (if any audio sources)
     let audioTrack = null;
     if (audioTracks.length > 0) {
+      // Flatten all audio items
+      const allAudioItems = audioTracks.flatMap(t => t.items);
       audioTrack = createAudioTrack({
-        items: audioTracks.map(t => t.item),
+        items: allAudioItems,
         shuffle: resolvedModifiers.audio.shuffle ?? false,
         loop: resolvedModifiers.audio.loop ?? false
       });
@@ -158,7 +163,7 @@ export class ComposePresentationUseCase {
    * Resolve a source string to track assignment and item metadata.
    *
    * @param {string} source - Source identifier with optional track prefix
-   * @returns {Promise<{track: 'visual'|'audio', source: string, item: Object}>}
+   * @returns {Promise<{track: 'visual'|'audio', source: string, items: Object[]}>}
    * @private
    */
   async #resolveTrack(source) {
@@ -186,23 +191,70 @@ export class ComposePresentationUseCase {
       throw new ServiceNotFoundError('ContentSourceAdapter', provider);
     }
 
-    // Get item metadata
-    const item = await adapter.getItem(id);
+    // Detect if this is a container reference (person, album, playlist)
+    // Container patterns:
+    // - immich:person:uuid or immich:album:uuid
+    // - plex playlist (numeric ID that resolves to playlist type)
+    const isContainerReference = this.#isContainerSource(provider, id, track);
 
-    if (!item) {
-      throw new ApplicationError(`Item not found: ${sourceWithoutTrack}`, {
-        code: 'ITEM_NOT_FOUND',
-        provider,
-        id
-      });
+    let items = [];
+
+    if (isContainerReference && typeof adapter.getList === 'function') {
+      // Container source: get items from the container
+      items = await adapter.getList(id);
+
+      if (!items || items.length === 0) {
+        throw new ApplicationError(`No items found in container: ${sourceWithoutTrack}`, {
+          code: 'EMPTY_CONTAINER',
+          provider,
+          id
+        });
+      }
+    } else {
+      // Single item source
+      const item = await adapter.getItem(id);
+
+      if (!item) {
+        throw new ApplicationError(`Item not found: ${sourceWithoutTrack}`, {
+          code: 'ITEM_NOT_FOUND',
+          provider,
+          id
+        });
+      }
+
+      items = [item];
     }
 
-    // Infer track from mediaType if not explicitly specified
-    if (!track) {
-      track = this.#inferTrack(item);
+    // Infer track from first item's mediaType if not explicitly specified
+    if (!track && items.length > 0) {
+      track = this.#inferTrack(items[0]);
     }
 
-    return { track, source: sourceWithoutTrack, item };
+    return { track, source: sourceWithoutTrack, items };
+  }
+
+  /**
+   * Detect if a source ID refers to a container (list of items).
+   *
+   * @param {string} provider - Provider name (immich, plex, etc.)
+   * @param {string} id - Item/container ID
+   * @param {string|null} trackHint - Optional track assignment hint ('visual' or 'audio')
+   * @returns {boolean}
+   * @private
+   */
+  #isContainerSource(provider, id, trackHint = null) {
+    // Immich container patterns
+    if (provider === 'immich') {
+      return id.startsWith('person:') || id.startsWith('album:');
+    }
+
+    // Plex: audio tracks are typically playlists (contain multiple tracks)
+    // We treat audio Plex sources as containers to get all tracks
+    if (provider === 'plex' && trackHint === 'audio') {
+      return true;
+    }
+
+    return false;
   }
 
   /**
@@ -261,23 +313,29 @@ export class ComposePresentationUseCase {
   /**
    * Infer visual media type from item metadata.
    *
-   * @param {Object} item - Item with mediaType property
+   * @param {Object} item - Item with mediaType or metadata.type property
    * @returns {'video' | 'image' | 'pages'}
    * @private
    */
   #inferVisualType(item) {
-    const mediaType = item.mediaType;
+    // Check multiple possible locations for media type
+    const mediaType = item.mediaType || item.metadata?.type || item.type;
 
     if (mediaType === 'video' || mediaType === 'live') {
       return 'video';
     }
 
-    if (mediaType === 'image') {
+    if (mediaType === 'image' || mediaType === 'IMAGE' || mediaType === 'photo') {
       return 'image';
     }
 
-    // Default to video for unknown types
-    return 'video';
+    // For Immich items, if itemType is 'leaf' and no video indicator, assume image
+    if (item.itemType === 'leaf' && !item.mediaUrl?.includes('video')) {
+      return 'image';
+    }
+
+    // Default to image for photos/slideshows
+    return 'image';
   }
 
   /**

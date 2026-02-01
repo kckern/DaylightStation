@@ -337,6 +337,51 @@ export class AudiobookshelfAdapter {
       }
     });
   }
+
+  /**
+   * Get search capabilities for ContentQueryService.
+   * Returns structured capability info for query orchestration.
+   * @returns {{canonical: string[], specific: string[]}}
+   */
+  getSearchCapabilities() {
+    return {
+      canonical: ['text', 'creator'],
+      specific: ['narrator', 'author', 'series']
+    };
+  }
+
+  /**
+   * Get canonical → adapter-specific query key mappings.
+   * Used by ContentQueryService to translate queries.
+   * @returns {Object}
+   */
+  getQueryMappings() {
+    return {
+      person: 'narrator', // Best effort: person → narrator for audiobooks
+      creator: 'author'
+    };
+  }
+
+  /**
+   * Get container alias → internal path mappings.
+   * @returns {Object}
+   */
+  getContainerAliases() {
+    return {
+      libraries: 'lib:',
+      authors: 'author:',
+      narrators: 'narrator:',
+      series: 'series:'
+    };
+  }
+
+  /**
+   * Get list of root containers for browsing.
+   * @returns {string[]}
+   */
+  getRootContainers() {
+    return ['libraries', 'authors', 'series'];
+  }
 }
 
 export default AudiobookshelfAdapter;

@@ -225,6 +225,9 @@ export class PlexAdapter {
           // Default: get children (works for shows, seasons, albums, etc.)
           path = `/library/metadata/${localId}/children`;
         }
+      } else if (localId === 'playlist:' || localId === 'playlists') {
+        // List all playlists
+        path = '/playlists/all';
       } else {
         // Path-based (e.g., library/sections/1/all)
         path = `/${localId}`;
@@ -267,22 +270,28 @@ export class PlexAdapter {
   _filterPlaylistsByLibraryName(playlists, targetName) {
     const target = targetName.toLowerCase();
 
-    // First: filter to audio playlists only
-    const audioPlaylists = playlists.filter(p => p.playlistType === 'audio');
+    // For "music" library, use playlistType as the primary filter
+    // (playlists don't have librarySectionTitle, but playlistType indicates content type)
+    if (target === 'music') {
+      const audioPlaylists = playlists.filter(p => p.playlistType === 'audio');
+      return audioPlaylists;
+    }
 
-    // Second: exact match (case-insensitive)
-    let filtered = audioPlaylists.filter(p =>
+    // For "video" library, use video playlistType
+    if (target === 'video' || target === 'movies' || target === 'tv') {
+      const videoPlaylists = playlists.filter(p => p.playlistType === 'video');
+      return videoPlaylists;
+    }
+
+    // For other library names, try librarySectionTitle matching (fallback)
+    let filtered = playlists.filter(p =>
       p.librarySectionTitle?.toLowerCase() === target
     );
 
-    // Fallback: contains match if no exact results
     if (filtered.length === 0) {
-      filtered = audioPlaylists.filter(p =>
+      filtered = playlists.filter(p =>
         p.librarySectionTitle?.toLowerCase().includes(target)
       );
-      if (filtered.length > 0) {
-        console.log(`[PlexAdapter] No exact match for library '${targetName}', using contains match`);
-      }
     }
 
     return filtered;
