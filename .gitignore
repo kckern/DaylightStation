@@ -46,6 +46,7 @@ config.app-local.yml
 !scripts/dev-server.sh
 !scripts/test-env.sh
 !scripts/update-test-imports.mjs
+!scripts/migrate-lists-to-watchlists.mjs
 *.log
 .github/copilot-instructions.md
 # Skill local configs
