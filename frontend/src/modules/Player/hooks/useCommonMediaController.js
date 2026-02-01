@@ -664,8 +664,8 @@ export function useCommonMediaController({
           title: meta?.title || meta?.name,
           artist: meta?.artist,
           album: meta?.album,
-          show: meta?.show,
-          season: meta?.season,
+          grandparentTitle: meta?.grandparentTitle,
+          parentTitle: meta?.parentTitle,
           mediaKey: assetId,
           currentTime: mediaEl.currentTime,
           duration: mediaEl.duration,
@@ -759,7 +759,7 @@ export function useCommonMediaController({
         lastLoggedTimeRef.current = now;
         const secs = mediaEl.currentTime || 0;
         if (secs > 10) {
-          const title = meta.title + (meta.show ? ` (${meta.show} - ${meta.season})` : '');
+          const title = meta.title + (meta.grandparentTitle ? ` (${meta.grandparentTitle} - ${meta.parentTitle})` : '');
           await DaylightAPI(`api/v1/play/log`, { title, type, assetId, seconds: secs, percent: pct });
         }
       }
@@ -798,7 +798,7 @@ export function useCommonMediaController({
 
     const onEnded = () => {
       const mediaEl = getMediaEl();
-      const title = meta.title + (meta.show ? ` (${meta.show} - ${meta.season})` : '');
+      const title = meta.title + (meta.grandparentTitle ? ` (${meta.grandparentTitle} - ${meta.parentTitle})` : '');
       
       lastLoggedTimeRef.current = 0;
       
@@ -999,8 +999,8 @@ export function useCommonMediaController({
             title: meta?.title || meta?.name,
             artist: meta?.artist,
             album: meta?.album,
-            show: meta?.show,
-            season: meta?.season,
+            grandparentTitle: meta?.grandparentTitle,
+            parentTitle: meta?.parentTitle,
             mediaKey: assetId,
             mediaType: isAudio ? 'audio' : isVideo ? 'video' : 'unknown',
             currentTime: el.currentTime,
@@ -1020,8 +1020,8 @@ export function useCommonMediaController({
             title: meta?.title || meta?.name,
             artist: meta?.artist,
             album: meta?.album,
-            show: meta?.show,
-            season: meta?.season,
+            grandparentTitle: meta?.grandparentTitle,
+            parentTitle: meta?.parentTitle,
             mediaKey: assetId,
             currentTime: el.currentTime,
             duration: el.duration
@@ -1036,8 +1036,8 @@ export function useCommonMediaController({
             title: meta?.title || meta?.name,
             artist: meta?.artist,
             album: meta?.album,
-            show: meta?.show,
-            season: meta?.season,
+            grandparentTitle: meta?.grandparentTitle,
+            parentTitle: meta?.parentTitle,
             mediaKey: assetId,
             currentTime: el.currentTime,
             duration: el.duration

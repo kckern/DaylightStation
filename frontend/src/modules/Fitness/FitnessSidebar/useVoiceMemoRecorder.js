@@ -354,9 +354,9 @@ const useVoiceMemoRecorder = ({
         startedAt: recordingStartTimeRef.current || Date.now(),
         endedAt: Date.now(),
         context: {
-          currentShow: fitnessCtx?.currentMedia?.showName || fitnessCtx?.currentMedia?.show,
+          currentShow: fitnessCtx?.currentMedia?.showName || fitnessCtx?.currentMedia?.grandparentTitle,
           currentEpisode: fitnessCtx?.currentMedia?.title,
-          recentShows: fitnessCtx?.recentlyPlayed?.map(item => item.showName || item.show),
+          recentShows: fitnessCtx?.recentlyPlayed?.map(item => item.showName || item.grandparentTitle),
           activeUsers: fitnessCtx?.fitnessSessionInstance?.roster?.map(p => p.name),
           householdId: fitnessCtx?.householdId
         }

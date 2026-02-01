@@ -175,9 +175,9 @@ describe('Plex API', () => {
 
         expect(res.status).toBe(200);
 
-        // If baseline is an episode, it should have show info
-        if (baseline.show) {
-          expect(res.body.show).toBe(baseline.show);
+        // If baseline is an episode, it should have grandparentTitle (canonical show name)
+        if (baseline.grandparentTitle || baseline.show) {
+          expect(res.body.grandparentTitle).toBe(baseline.grandparentTitle || baseline.show);
         }
       });
 

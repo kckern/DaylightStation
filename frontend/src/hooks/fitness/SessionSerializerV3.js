@@ -190,8 +190,8 @@ export class SessionSerializerV3 {
     return {
       at: this.formatTimestamp(event.timestamp, timezone),
       title: d.title,
-      ...(d.show && { show: d.show }),
-      ...(d.season && { season: d.season }),
+      ...(d.grandparentTitle && { grandparentTitle: d.grandparentTitle }),
+      ...(d.parentTitle && { parentTitle: d.parentTitle }),
       plex_id: d.plexId || d.plex_id || d.mediaId,
       duration_seconds: d.durationSeconds || d.duration_seconds,
       ...(d.labels?.length && { labels: d.labels })

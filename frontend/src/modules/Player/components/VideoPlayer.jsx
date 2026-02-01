@@ -109,8 +109,8 @@ export function VideoPlayer({
     enabled: displayReady && !isPaused,
     mediaContext: {
       title: media?.title,
-      show: media?.show,
-      season: media?.season,
+      grandparentTitle: media?.grandparentTitle,
+      parentTitle: media?.parentTitle,
       mediaKey: media?.assetId || media?.key || media?.plex,
       shader
     }
@@ -136,7 +136,7 @@ export function VideoPlayer({
     };
   }, [resilienceBridge, getMediaEl, getContainerEl, fetchVideoInfo]);
 
-  const { show, season, title, mediaUrl } = media;
+  const { grandparentTitle, parentTitle, title, mediaUrl } = media;
 
   // If the mediaUrl (or its effective bitrate cap) changes, reset display readiness so UI transitions are correct
   useEffect(() => {
@@ -160,8 +160,8 @@ export function VideoPlayer({
         const logger = getLogger();
         logger.info('playback.video-ready', {
           title: media?.title,
-          show: media?.show,
-          season: media?.season,
+          grandparentTitle: media?.grandparentTitle,
+          parentTitle: media?.parentTitle,
           mediaKey: media?.assetId || media?.key || media?.plex,
           readyTs: Date.now()
         });
@@ -218,8 +218,8 @@ export function VideoPlayer({
 
       logger.info('playback.fps_stats', {
         title: media?.title,
-        show: media?.show,
-        season: media?.season,
+        grandparentTitle: media?.grandparentTitle,
+        parentTitle: media?.parentTitle,
         mediaKey: media?.assetId || media?.key || media?.plex,
         currentTime: Math.round(seconds * 10) / 10,
         duration: Math.round(duration * 10) / 10,
@@ -254,12 +254,12 @@ export function VideoPlayer({
   const plexIdValue = media?.assetId || media?.key || media?.plex || null;
   
   
-  const heading = !!show && !!season && !!title
-    ? `${show} - ${season}: ${title}`
-    : !!show && !!season
-    ? `${show} - ${season}`
-    : !!show
-    ? show
+  const heading = !!grandparentTitle && !!parentTitle && !!title
+    ? `${grandparentTitle} - ${parentTitle}: ${title}`
+    : !!grandparentTitle && !!parentTitle
+    ? `${grandparentTitle} - ${parentTitle}`
+    : !!grandparentTitle
+    ? grandparentTitle
     : title;
 
   return (
