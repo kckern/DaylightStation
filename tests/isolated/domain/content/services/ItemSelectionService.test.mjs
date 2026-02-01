@@ -474,4 +474,57 @@ describe('ItemSelectionService', () => {
         .toThrow('now date required');
     });
   });
+
+  describe('select with fallback', () => {
+    const now = new Date('2026-01-15');
+
+    test('relaxes skipAfter/hold if all filtered', () => {
+      const items = [
+        { id: '1', hold: true, percent: 0 }
+      ];
+      const result = ItemSelectionService.select(
+        items,
+        { containerType: 'folder', now },
+        { allowFallback: true }
+      );
+      expect(result.length).toBe(1);
+      expect(result[0].id).toBe('1');
+    });
+
+    test('relaxes watched if still empty after hold', () => {
+      const items = [
+        { id: '1', hold: true, percent: 95 }
+      ];
+      const result = ItemSelectionService.select(
+        items,
+        { containerType: 'folder', now },
+        { allowFallback: true }
+      );
+      expect(result.length).toBe(1);
+    });
+
+    test('does not fallback without allowFallback', () => {
+      const items = [
+        { id: '1', hold: true }
+      ];
+      const result = ItemSelectionService.select(
+        items,
+        { containerType: 'folder', now }
+      );
+      expect(result.length).toBe(0);
+    });
+
+    test('preserves sort and pick after fallback', () => {
+      const items = [
+        { id: '1', hold: true, priority: 'low' },
+        { id: '2', hold: true, priority: 'high' }
+      ];
+      const result = ItemSelectionService.select(
+        items,
+        { containerType: 'folder', now },
+        { allowFallback: true, pick: 'all' }
+      );
+      expect(result.map(i => i.id)).toEqual(['2', '1']); // sorted by priority
+    });
+  });
 });

@@ -294,6 +294,7 @@ export class ItemSelectionService {
    * @param {Object} [context.query] - Query filters used (person, time, text)
    * @param {Date} context.now - Current date (required for filtering)
    * @param {Object} [overrides] - Explicit strategy overrides
+   * @param {boolean} [overrides.allowFallback] - Enable fallback cascade for empty results
    * @returns {Array} Selected items
    */
   static select(items, context, overrides = {}) {
@@ -305,12 +306,17 @@ export class ItemSelectionService {
       processed = QueueService.applyUrgency(processed, context.now);
     }
 
-    // Filter
+    // Filter with optional fallback
     if (strategy.filter.length > 0) {
       if (!context.now || !(context.now instanceof Date)) {
         throw new Error('now date required for filtering');
       }
-      processed = this.applyFilters(processed, strategy.filter, context);
+      processed = this.#applyFiltersWithFallback(
+        processed,
+        strategy.filter,
+        context,
+        overrides.allowFallback
+      );
     }
 
     // Sort
@@ -320,6 +326,36 @@ export class ItemSelectionService {
     processed = this.applyPick(processed, strategy.pick);
 
     return processed;
+  }
+
+  /**
+   * Apply filters with fallback cascade.
+   * If result is empty and allowFallback, progressively relax filters.
+   * @private
+   */
+  static #applyFiltersWithFallback(items, filters, context, allowFallback) {
+    // Define which filters to relax in order
+    const relaxOrder = ['skipAfter', 'hold', 'watched', 'waitUntil'];
+
+    let result = this.applyFilters(items, filters, context);
+
+    if (result.length > 0 || !allowFallback) {
+      return result;
+    }
+
+    // Progressive relaxation
+    let activeFilters = [...filters];
+    for (const filterToRelax of relaxOrder) {
+      if (activeFilters.includes(filterToRelax)) {
+        activeFilters = activeFilters.filter(f => f !== filterToRelax);
+        result = this.applyFilters(items, activeFilters, context);
+        if (result.length > 0) {
+          return result;
+        }
+      }
+    }
+
+    return result;
   }
 }
 
