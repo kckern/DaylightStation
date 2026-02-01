@@ -1,6 +1,7 @@
 // backend/src/4_api/routers/play.mjs
 import express from 'express';
 import { nowTs24 } from '#system/utils/index.mjs';
+import { parseModifiers } from '../utils/modifierParser.mjs';
 
 /**
  * Create play API router for retrieving playable media info
@@ -59,29 +60,6 @@ export function createPlayRouter(config) {
         };
       }
     };
-  }
-
-  /**
-   * Parse path modifiers (shuffle, etc.)
-   */
-  function parseModifiers(pathParts) {
-    const modifiers = { shuffle: false };
-    const cleanParts = [];
-
-    for (const part of pathParts) {
-      if (part === 'shuffle') {
-        modifiers.shuffle = true;
-      } else if (part.includes(',')) {
-        const mods = part.split(',');
-        for (const mod of mods) {
-          if (mod === 'shuffle') modifiers.shuffle = true;
-        }
-      } else {
-        cleanParts.push(part);
-      }
-    }
-
-    return { modifiers, localId: cleanParts.join('/') };
   }
 
   /**
@@ -294,7 +272,7 @@ export function createPlayRouter(config) {
     try {
       const { source } = req.params;
       const rawPath = req.params[0] || '';
-      const { modifiers, localId } = parseModifiers(rawPath.split('/'));
+      const { modifiers, localId } = parseModifiers(rawPath);
 
       const adapter = registry.get(source);
       if (!adapter) {
