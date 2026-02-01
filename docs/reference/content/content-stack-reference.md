@@ -447,11 +447,12 @@ The system uses relative position names (`parent`, `grandparent`) rather than ab
 | `parentTitle` | Parent container name | `parentTitle` | `albumTitle` |
 | `parentIndex` | Parent sequence number | `parentIndex` | N/A |
 | `parentType` | Parent container type | `'season'` | `'album'` |
-| `parentThumb` | Parent thumbnail URL | `parentThumb` | N/A |
 | `grandparentId` | Root container ID | `grandparentRatingKey` | N/A |
 | `grandparentTitle` | Root container name | `grandparentTitle` | N/A |
 | `grandparentType` | Root container type | `'show'` | N/A |
 | `itemIndex` | Item position in parent | `index` | N/A |
+
+**Note:** Parent thumbnails are accessed via the `parents` map lookup (`parents[parentId].thumbnail`), not as top-level fields on items. This avoids duplicating thumbnail URLs across many items.
 
 ### Response Structure
 
