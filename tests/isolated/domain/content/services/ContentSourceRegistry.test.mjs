@@ -1,4 +1,5 @@
 // tests/unit/content/services/ContentSourceRegistry.test.mjs
+import { describe, test, expect, beforeEach } from 'vitest';
 import { ContentSourceRegistry } from '#domains/content/services/ContentSourceRegistry.mjs';
 
 describe('ContentSourceRegistry', () => {
