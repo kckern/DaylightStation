@@ -1,4 +1,5 @@
 // tests/unit/adapters/content/folder/FolderAdapter.test.mjs
+import { describe, test, expect, beforeEach } from 'vitest';
 import { FolderAdapter } from '#adapters/content/folder/FolderAdapter.mjs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -34,7 +35,12 @@ describe('FolderAdapter', () => {
 
   describe('prefixes', () => {
     test('returns folder prefix', () => {
-      expect(adapter.prefixes).toEqual([{ prefix: 'folder' }]);
+      expect(adapter.prefixes).toContainEqual({ prefix: 'folder' });
+    });
+
+    test('includes local as prefix alias', () => {
+      const prefixes = adapter.prefixes;
+      expect(prefixes.map(p => p.prefix)).toContain('local');
     });
   });
 
