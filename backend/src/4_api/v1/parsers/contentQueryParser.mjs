@@ -1,5 +1,7 @@
 // backend/src/4_api/v1/parsers/contentQueryParser.mjs
 
+import { parseDuration, parseTime } from './rangeParser.mjs';
+
 /**
  * Query parameter aliases for normalization.
  */
@@ -106,6 +108,18 @@ export function parseContentQuery(rawParams) {
     }
   }
 
+  // Parse duration if present
+  if (query.duration) {
+    const parsed = parseDuration(query.duration);
+    if (parsed) query.duration = parsed;
+  }
+
+  // Parse time if present
+  if (query.time) {
+    const parsed = parseTime(query.time);
+    if (parsed) query.time = parsed;
+  }
+
   // Pagination (convert to numbers)
   if (rawParams.take !== undefined) {
     const take = parseInt(rawParams.take, 10);
@@ -206,8 +220,8 @@ export function validateContentQuery(query) {
     });
   }
 
-  // Duration format validation
-  if (query.duration && !DURATION_REGEX.test(query.duration)) {
+  // Duration format validation (skip if already parsed to object)
+  if (query.duration && typeof query.duration === 'string' && !DURATION_REGEX.test(query.duration)) {
     errors.push({
       field: 'duration',
       message: `Invalid duration format: ${query.duration}. Use: 30, 3m, 1h, 1h30m, or ranges like 3m..10m`
