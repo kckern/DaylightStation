@@ -204,6 +204,11 @@ export class GovernanceEngine {
 
     // Expose governance state globally for cross-component correlation
     this._updateGlobalState();
+
+    // Timer pause state for playback stall coordination
+    this._timersPaused = false;
+    this._pausedAt = null;
+    this._remainingMs = null;
   }
 
   /**
@@ -725,6 +730,49 @@ export class GovernanceEngine {
     }
   }
 
+  /**
+   * Pause governance timers during playback stalls.
+   * Preserves remaining time so countdown can resume accurately.
+   */
+  _pauseTimers() {
+    if (this._timersPaused) return;
+    this._timersPaused = true;
+    this._pausedAt = Date.now();
+
+    if (this.meta?.deadline) {
+      this._remainingMs = Math.max(0, this.meta.deadline - Date.now());
+    }
+
+    getLogger().info('governance.timers_paused', {
+      phase: this.phase,
+      remainingMs: this._remainingMs,
+      mediaId: this.media?.id
+    });
+  }
+
+  /**
+   * Resume governance timers after playback recovers.
+   * Restores deadline based on preserved remaining time.
+   */
+  _resumeTimers() {
+    if (!this._timersPaused) return;
+    this._timersPaused = false;
+
+    if (this._remainingMs > 0 && this.meta) {
+      this.meta.deadline = Date.now() + this._remainingMs;
+    }
+
+    const pauseDuration = this._pausedAt ? Date.now() - this._pausedAt : 0;
+    this._pausedAt = null;
+
+    getLogger().info('governance.timers_resumed', {
+      phase: this.phase,
+      newDeadline: this.meta?.deadline,
+      pauseDurationMs: pauseDuration,
+      mediaId: this.media?.id
+    });
+  }
+
   reset() {
     this._clearTimers();
     if (this._zoneChangeDebounceTimer) {
@@ -765,7 +813,10 @@ export class GovernanceEngine {
       totalCount: 0
     };
     this._lastEvaluationTs = null;
-    
+    this._timersPaused = false;
+    this._pausedAt = null;
+    this._remainingMs = null;
+
     // State caching for performance - throttle recomputation to 200ms
     this._stateCache = null;
     this._stateCacheTs = 0;
@@ -818,12 +869,15 @@ export class GovernanceEngine {
       totalCount: 0
     };
     this._lastEvaluationTs = null;
+    this._timersPaused = false;
+    this._pausedAt = null;
+    this._remainingMs = null;
     this._stateCache = null;
     this._stateCacheTs = 0;
     this._stateCacheThrottleMs = 200;
     this._stateVersion = 0;
     this._stateCacheVersion = -1;
-    
+
     // Only set phase if actually changing to avoid unnecessary callbacks
     if (this.phase !== null) {
       this._setPhase(null);
@@ -1003,6 +1057,12 @@ export class GovernanceEngine {
    * @param {number} params.totalCount - Total number of active participants
    */
   evaluate({ activeParticipants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount } = {}) {
+    // Skip evaluation while timers are paused (playback stalled)
+    if (this._timersPaused) {
+      getLogger().debug('governance.evaluate.skipped_paused', { phase: this.phase });
+      return;
+    }
+
     const now = Date.now();
     const hasGovernanceRules = (this._governedLabelSet.size + this._governedTypeSet.size) > 0;
 
