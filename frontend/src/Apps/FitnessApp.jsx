@@ -55,6 +55,42 @@ const FitnessApp = () => {
     logger.info('fitness-kiosk-state', { kiosk: kioskUI });
   }, [kioskUI, logger]);
 
+  // Reload diagnostics - capture what triggers page unloads
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handleBeforeUnload = () => {
+      logger.error('page_unload_triggered', {
+        timestamp: Date.now(),
+        url: window.location.href,
+        stack: new Error('Unload stack trace').stack,
+        governancePhase: window.__fitnessGovernance?.phase || null,
+        sessionStats: window.__fitnessSession?.getMemoryStats?.() || null,
+        performanceMemory: performance.memory ? {
+          usedJSHeapSize: performance.memory.usedJSHeapSize,
+          totalJSHeapSize: performance.memory.totalJSHeapSize,
+          jsHeapSizeLimit: performance.memory.jsHeapSizeLimit
+        } : null
+      });
+    };
+
+    const handleVisibilityChange = () => {
+      logger.info('page_visibility_changed', {
+        hidden: document.hidden,
+        visibilityState: document.visibilityState,
+        governancePhase: window.__fitnessGovernance?.phase || null
+      });
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [logger]);
+
   // Memory/timer/FPS profiling for crash debugging and performance correlation
   useEffect(() => {
     const startTime = Date.now();
