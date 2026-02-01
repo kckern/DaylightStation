@@ -71,4 +71,53 @@ describe('YamlNutriListDatastore', () => {
       );
     });
   });
+
+  describe('userId validation', () => {
+    it('throws InfrastructureError when userId contains colon', async () => {
+      const items = [{
+        userId: 'telegram:b6898194425_c575596036',
+        label: 'Test Food',
+        calories: 200,
+        date: '2026-01-31',
+      }];
+
+      await expect(datastore.saveMany(items))
+        .rejects.toThrow(InfrastructureError);
+    });
+
+    it('throws InfrastructureError when userId contains slash', async () => {
+      const items = [{
+        userId: 'path/traversal',
+        label: 'Test Food',
+        calories: 200,
+        date: '2026-01-31',
+      }];
+
+      await expect(datastore.saveMany(items))
+        .rejects.toThrow(InfrastructureError);
+    });
+
+    it('throws InfrastructureError when falling back to invalid chatId', async () => {
+      const items = [{
+        chatId: 'telegram:invalid',  // No userId, falls back to chatId
+        label: 'Test Food',
+        calories: 200,
+        date: '2026-01-31',
+      }];
+
+      await expect(datastore.saveMany(items))
+        .rejects.toThrow(InfrastructureError);
+    });
+
+    it('allows valid userId without special characters', async () => {
+      const items = [{
+        userId: 'kckern',
+        label: 'Test Food',
+        calories: 200,
+        date: '2026-01-31',
+      }];
+
+      await expect(datastore.saveMany(items)).resolves.not.toThrow();
+    });
+  });
 });
