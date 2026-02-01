@@ -189,13 +189,21 @@ export class PlexAdapter {
 
   /**
    * Get list of items in a container
-   * @param {string} id - Container path or rating key (empty for library sections)
+   * @param {string|Object} input - Container path/rating key (string) or query object
+   * @param {string} [input.from] - Container path when input is object
+   * @param {string} [input['plex.libraryName']] - Filter playlists by library name
    * @returns {Promise<ListableItem[]>}
    */
-  async getList(id) {
+  async getList(input) {
     try {
-      // Strip source prefix if present
-      const localId = id?.replace(/^plex:/, '') || '';
+      // Normalize input - support both string ID and query object
+      const localId = typeof input === 'string'
+        ? input?.replace(/^plex:/, '') || ''
+        : (input?.from?.replace(/^plex:/, '') || '');
+      const query = typeof input === 'object' ? input : {};
+
+      // Extract adapter-specific filter params
+      const libraryNameFilter = query['plex.libraryName'];
 
       // Determine the correct path based on item type
       let path;
@@ -226,7 +234,12 @@ export class PlexAdapter {
       const container = data.MediaContainer;
       if (!container) return [];
 
-      const items = container.Metadata || container.Directory || [];
+      let items = container.Metadata || container.Directory || [];
+
+      // Apply library name filter for playlists
+      if (libraryNameFilter && (localId === 'playlist:' || localId === 'playlists' || localId.startsWith('playlists'))) {
+        items = this._filterPlaylistsByLibraryName(items, libraryNameFilter);
+      }
 
       // For playable item types (episodes, tracks, movies), use full conversion
       // to include duration, episode number, and other playback-relevant metadata
@@ -242,6 +255,37 @@ export class PlexAdapter {
       console.error('[PlexAdapter] getList error:', err.message);
       return [];
     }
+  }
+
+  /**
+   * Filter playlists by library name with fallback matching
+   * @param {Object[]} playlists - Raw Plex playlist metadata
+   * @param {string} targetName - Library name to match
+   * @returns {Object[]} Filtered playlists
+   * @private
+   */
+  _filterPlaylistsByLibraryName(playlists, targetName) {
+    const target = targetName.toLowerCase();
+
+    // First: filter to audio playlists only
+    const audioPlaylists = playlists.filter(p => p.playlistType === 'audio');
+
+    // Second: exact match (case-insensitive)
+    let filtered = audioPlaylists.filter(p =>
+      p.librarySectionTitle?.toLowerCase() === target
+    );
+
+    // Fallback: contains match if no exact results
+    if (filtered.length === 0) {
+      filtered = audioPlaylists.filter(p =>
+        p.librarySectionTitle?.toLowerCase().includes(target)
+      );
+      if (filtered.length > 0) {
+        console.log(`[PlexAdapter] No exact match for library '${targetName}', using contains match`);
+      }
+    }
+
+    return filtered;
   }
 
   /**
@@ -1613,13 +1657,49 @@ export class PlexAdapter {
   }
 
   /**
-   * Get available search capabilities for this adapter
-   * Implements IMediaSearchable.getSearchCapabilities()
-   *
-   * @returns {string[]} - Supported query fields
+   * Get available search capabilities for this adapter.
+   * Returns structured capability info for query orchestration.
+   * @returns {{canonical: string[], specific: string[]}}
    */
   getSearchCapabilities() {
-    return ['text', 'mediaType', 'tags', 'ratingMin', 'take', 'skip'];
+    return {
+      canonical: ['text', 'mediaType', 'tags'],
+      specific: ['ratingMin', 'actor', 'director', 'year']
+    };
+  }
+
+  /**
+   * Get canonical → adapter-specific query key mappings.
+   * Used by ContentQueryService to translate queries.
+   * @returns {Object}
+   */
+  getQueryMappings() {
+    return {
+      person: null, // Plex uses actor/director specifically, not generic person
+      creator: 'director',
+      time: 'year'
+    };
+  }
+
+  /**
+   * Get container alias → internal path mappings.
+   * @returns {Object}
+   */
+  getContainerAliases() {
+    return {
+      playlists: 'playlist:',
+      collections: 'collection:',
+      artists: 'artist:',
+      albums: 'album:'
+    };
+  }
+
+  /**
+   * Get list of root containers for browsing.
+   * @returns {string[]}
+   */
+  getRootContainers() {
+    return ['playlists', 'collections'];
   }
 }
 
