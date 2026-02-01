@@ -118,16 +118,70 @@ export class ImmichClient {
   }
 
   /**
-   * Get people (face recognition)
+   * Get people (face recognition) with optional statistics enrichment
+   * @param {Object} [options]
+   * @param {boolean} [options.withStatistics] - Fetch asset counts for each person
    * @returns {Promise<Array>}
    */
-  async getPeople() {
+  async getPeople(options = {}) {
     const response = await this.#httpClient.get(
       `${this.#host}/api/people`,
       { headers: this.#getHeaders() }
     );
     // API returns { people: [...] } or array directly
-    return response.data?.people || response.data || [];
+    const people = response.data?.people || response.data || [];
+
+    // Optionally enrich with statistics (asset counts)
+    if (options.withStatistics) {
+      // Only fetch stats for named people (unnamed are less useful)
+      const namedPeople = people.filter(p => p.name && p.name.trim());
+      await Promise.all(
+        namedPeople.map(async (person) => {
+          try {
+            const stats = await this.getPersonStatistics(person.id);
+            person.assetCount = stats.assets || 0;
+          } catch (e) {
+            person.assetCount = 0;
+          }
+        })
+      );
+    }
+
+    return people;
+  }
+
+  /**
+   * Get statistics for a person (asset count)
+   * @param {string} personId
+   * @returns {Promise<{assets: number}>}
+   */
+  async getPersonStatistics(personId) {
+    const response = await this.#httpClient.get(
+      `${this.#host}/api/people/${personId}/statistics`,
+      { headers: this.#getHeaders() }
+    );
+    return response.data || { assets: 0 };
+  }
+
+  /**
+   * Get assets for a specific person using search metadata API
+   * @param {string} personId - Person ID
+   * @param {number} [take=100] - Max number of assets to fetch
+   * @returns {Promise<Array>}
+   */
+  async getPersonAssets(personId, take = 100) {
+    // Use search metadata with personIds filter - the recommended approach
+    const response = await this.#httpClient.post(
+      `${this.#host}/api/search/metadata`,
+      {
+        personIds: [personId],
+        take,
+        order: 'desc'
+      },
+      { headers: this.#getHeaders() }
+    );
+    // Response has { assets: { items: [...], total: n } }
+    return response.data?.assets?.items || response.data?.assets || [];
   }
 
   /**

@@ -274,20 +274,148 @@ LegacyFormatComposite.propTypes = {
 };
 
 /**
+ * SourceResolver - Resolves unresolved sources via backend /api/content/compose
+ * Handles the case where URL params provide sources that need resolution
+ */
+function SourceResolver({ sources, config, Player, ignoreKeys, coordination }) {
+  const [resolvedTracks, setResolvedTracks] = React.useState(null);
+  const [error, setError] = React.useState(null);
+  const [loading, setLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    if (!sources || sources.length === 0) {
+      setLoading(false);
+      return;
+    }
+
+    const resolveSources = async () => {
+      try {
+        const response = await fetch('/api/v1/content/compose', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sources, config })
+        });
+
+        if (!response.ok) {
+          const errData = await response.json().catch(() => ({}));
+          throw new Error(errData.error || `HTTP ${response.status}`);
+        }
+
+        const presentation = await response.json();
+        setResolvedTracks(presentation);
+      } catch (err) {
+        console.error('[SourceResolver] Failed to resolve sources:', err);
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    resolveSources();
+  }, [sources, config]);
+
+  if (loading) {
+    return (
+      <div className="player composite" data-loading="true">
+        <div style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          backgroundColor: '#000',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: '#666'
+        }}>
+          Loading presentation...
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="player composite" data-error="true">
+        <div style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          backgroundColor: '#000',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: '#f66'
+        }}>
+          Error: {error}
+        </div>
+      </div>
+    );
+  }
+
+  if (!resolvedTracks) {
+    return null;
+  }
+
+  return (
+    <CompositeProvider>
+      <NewFormatComposite
+        visual={resolvedTracks.visual}
+        audio={resolvedTracks.audio}
+        Player={Player}
+        ignoreKeys={ignoreKeys}
+        coordination={coordination}
+      />
+    </CompositeProvider>
+  );
+}
+
+SourceResolver.propTypes = {
+  sources: PropTypes.arrayOf(PropTypes.string).isRequired,
+  config: PropTypes.object,
+  Player: PropTypes.elementType.isRequired,
+  ignoreKeys: PropTypes.bool,
+  coordination: PropTypes.object
+};
+
+/**
  * CompositePlayer - Main entry point
  *
  * Detects format and delegates to appropriate implementation:
+ * - Unresolved sources (compose.sources): Resolves via backend then renders
  * - New format (visual/audio tracks): Uses VisualRenderer + CompositeContext
  * - Old format (play.overlay): Uses legacy Player-based approach
  */
 export function CompositePlayer(props) {
-  const { visual, audio, compose, play, queue, Player, coordination } = props;
+  const { visual, audio, compose, play, queue, Player, coordination, sources: topLevelSources } = props;
 
-  // Detect new format: explicit visual/audio tracks or compose object
-  const isNewFormat = !!(visual || audio || compose);
+  // Detect new format: explicit visual/audio tracks, compose object, or sources array
+  const isNewFormat = !!(visual || audio || compose || topLevelSources);
 
   if (isNewFormat) {
-    // Extract tracks from compose object if provided
+    // Check if we have unresolved sources that need backend resolution
+    // Sources can be in compose.sources or directly in props.sources
+    const unresolvedSources = compose?.sources ?? topLevelSources;
+    if (unresolvedSources && Array.isArray(unresolvedSources)) {
+      // Extract config from either compose or props
+      const { sources: _, ...configFromCompose } = compose || {};
+      const { sources: __, Player: ___, coordination: ____, ...configFromProps } = props;
+      const config = { ...configFromProps, ...configFromCompose };
+      return (
+        <SourceResolver
+          sources={unresolvedSources}
+          config={config}
+          Player={Player}
+          ignoreKeys={props.ignoreKeys}
+          coordination={coordination}
+        />
+      );
+    }
+
+    // Extract tracks from compose object if provided (already resolved)
     const visualTrack = visual || compose?.visual;
     const audioTrack = audio || compose?.audio;
 
@@ -327,6 +455,9 @@ CompositePlayer.propTypes = {
     shuffle: PropTypes.oneOfType([PropTypes.bool, PropTypes.number])
   }),
   compose: PropTypes.shape({
+    // Unresolved sources (from URL params)
+    sources: PropTypes.arrayOf(PropTypes.string),
+    // Resolved tracks (from backend)
     visual: PropTypes.object,
     audio: PropTypes.object
   }),

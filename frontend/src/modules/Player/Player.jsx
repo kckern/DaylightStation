@@ -67,7 +67,11 @@ const createDefaultPlaybackMetrics = () => ({
  * Supports composite overlays (video with audio background)
  */
 const Player = forwardRef(function Player(props, ref) {
-  if (props.play?.overlay || props.queue?.overlay) {
+  // Detect composite presentations:
+  // - Old format: play.overlay or queue.overlay
+  // - New format: visual + audio tracks
+  // - Sources format: sources array (unresolved, needs backend resolution)
+  if (props.play?.overlay || props.queue?.overlay || props.visual || props.audio || props.sources) {
     return <CompositePlayer {...props} Player={Player} />;
   }
   

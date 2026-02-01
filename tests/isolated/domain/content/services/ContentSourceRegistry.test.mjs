@@ -91,4 +91,129 @@ describe('ContentSourceRegistry', () => {
     expect(result.adapter).toBe(mockFilesystemAdapter);
     expect(result.localId).toBe('audio/song.mp3');
   });
+
+  // ==========================================================================
+  // Category/Provider Indexing Tests (for ContentQueryService integration)
+  // ==========================================================================
+
+  describe('category/provider indexing', () => {
+    const mockImmichAdapter = {
+      source: 'immich',
+      prefixes: [{ prefix: 'immich' }],
+      getItem: async () => null,
+      getList: async () => [],
+      resolvePlayables: async () => []
+    };
+
+    const mockImmichFamilyAdapter = {
+      source: 'immich-family',
+      prefixes: [{ prefix: 'immich-family' }],
+      getItem: async () => null,
+      getList: async () => [],
+      resolvePlayables: async () => []
+    };
+
+    const mockAbsAdapter = {
+      source: 'abs',
+      prefixes: [{ prefix: 'abs' }],
+      getItem: async () => null,
+      getList: async () => [],
+      resolvePlayables: async () => []
+    };
+
+    test('registers adapter with category metadata', () => {
+      registry.register(mockImmichAdapter, { category: 'gallery', provider: 'immich' });
+      expect(registry.get('immich')).toBe(mockImmichAdapter);
+    });
+
+    test('getByCategory returns adapters for category', () => {
+      registry.register(mockImmichAdapter, { category: 'gallery', provider: 'immich' });
+      registry.register(mockImmichFamilyAdapter, { category: 'gallery', provider: 'immich' });
+      registry.register(mockAbsAdapter, { category: 'readable', provider: 'abs' });
+
+      const galleryAdapters = registry.getByCategory('gallery');
+      expect(galleryAdapters).toHaveLength(2);
+      expect(galleryAdapters).toContain(mockImmichAdapter);
+      expect(galleryAdapters).toContain(mockImmichFamilyAdapter);
+    });
+
+    test('getByProvider returns adapters for provider', () => {
+      registry.register(mockImmichAdapter, { category: 'gallery', provider: 'immich' });
+      registry.register(mockImmichFamilyAdapter, { category: 'gallery', provider: 'immich' });
+      registry.register(mockAbsAdapter, { category: 'readable', provider: 'abs' });
+
+      const immichAdapters = registry.getByProvider('immich');
+      expect(immichAdapters).toHaveLength(2);
+      expect(immichAdapters).toContain(mockImmichAdapter);
+      expect(immichAdapters).toContain(mockImmichFamilyAdapter);
+    });
+
+    test('getCategories returns all registered categories', () => {
+      registry.register(mockImmichAdapter, { category: 'gallery', provider: 'immich' });
+      registry.register(mockAbsAdapter, { category: 'readable', provider: 'abs' });
+
+      const categories = registry.getCategories();
+      expect(categories).toContain('gallery');
+      expect(categories).toContain('readable');
+    });
+
+    test('getProviders returns all registered providers', () => {
+      registry.register(mockImmichAdapter, { category: 'gallery', provider: 'immich' });
+      registry.register(mockAbsAdapter, { category: 'readable', provider: 'abs' });
+
+      const providers = registry.getProviders();
+      expect(providers).toContain('immich');
+      expect(providers).toContain('abs');
+    });
+
+    describe('resolveSource', () => {
+      beforeEach(() => {
+        registry.register(mockImmichAdapter, { category: 'gallery', provider: 'immich' });
+        registry.register(mockImmichFamilyAdapter, { category: 'gallery', provider: 'immich' });
+        registry.register(mockPlexAdapter, { category: 'media', provider: 'plex' });
+        registry.register(mockAbsAdapter, { category: 'readable', provider: 'abs' });
+      });
+
+      test('resolves exact source name', () => {
+        const result = registry.resolveSource('immich');
+        expect(result).toHaveLength(1);
+        expect(result[0]).toBe(mockImmichAdapter);
+      });
+
+      test('resolves by category', () => {
+        const result = registry.resolveSource('gallery');
+        expect(result).toHaveLength(2);
+        expect(result).toContain(mockImmichAdapter);
+        expect(result).toContain(mockImmichFamilyAdapter);
+      });
+
+      test('resolves by provider (when not exact match)', () => {
+        // If 'immich' isn't an exact source name but a provider, it should still work
+        // In this case, 'immich' IS an exact source name, so test with different scenario
+        const result = registry.resolveSource('readable');
+        expect(result).toHaveLength(1);
+        expect(result[0]).toBe(mockAbsAdapter);
+      });
+
+      test('returns all adapters when no filter', () => {
+        const result = registry.resolveSource();
+        expect(result).toHaveLength(4);
+      });
+
+      test('returns empty array for unknown source', () => {
+        const result = registry.resolveSource('nonexistent');
+        expect(result).toHaveLength(0);
+      });
+    });
+
+    test('getEntry returns adapter with metadata', () => {
+      registry.register(mockImmichAdapter, { category: 'gallery', provider: 'immich' });
+
+      const entry = registry.getEntry('immich');
+      expect(entry).toBeDefined();
+      expect(entry.adapter).toBe(mockImmichAdapter);
+      expect(entry.category).toBe('gallery');
+      expect(entry.provider).toBe('immich');
+    });
+  });
 });

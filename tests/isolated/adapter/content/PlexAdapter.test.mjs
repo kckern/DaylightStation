@@ -441,7 +441,7 @@ describe('PlexAdapter', () => {
       });
 
       const result = await adapter.getList('playlist:');
-      expect(mockClient.getContainer).toHaveBeenCalledWith('/playlist:');
+      expect(mockClient.getContainer).toHaveBeenCalledWith('/playlists/all');
       expect(result).toHaveLength(1);
     });
 
@@ -455,7 +455,7 @@ describe('PlexAdapter', () => {
       });
 
       const result = await adapter.getList({ from: 'playlist:' });
-      expect(mockClient.getContainer).toHaveBeenCalledWith('/playlist:');
+      expect(mockClient.getContainer).toHaveBeenCalledWith('/playlists/all');
       expect(result).toHaveLength(1);
     });
 

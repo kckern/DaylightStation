@@ -161,6 +161,14 @@ export function MenuStack({ rootMenu }) {
         </Suspense>
       );
 
+    case 'composite':
+      // Composed presentation with visual + audio tracks
+      return (
+        <Suspense fallback={<LoadingFallback />}>
+          <Player {...props} clear={clear} />
+        </Suspense>
+      );
+
     case 'app':
       return (
         <Suspense fallback={<LoadingFallback />}>

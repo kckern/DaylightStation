@@ -16,9 +16,10 @@
  */
 
 import { test, expect } from '@playwright/test';
-import { BACKEND_URL } from '#fixtures/runtime/urls.mjs';
+import { BACKEND_URL, FRONTEND_URL } from '#fixtures/runtime/urls.mjs';
 
-const BASE_URL = BACKEND_URL;
+const API_URL = BACKEND_URL;
+const APP_URL = FRONTEND_URL;
 const MIN_PHOTO_COUNT = 20;
 
 let sharedPage;
@@ -63,9 +64,10 @@ test.describe('Immich Slideshow + Plex Audio', () => {
   // TEST 1: Discover Immich people with 20+ photos
   // ═══════════════════════════════════════════════════════════════════════════
   test('Discover Immich people with 20+ photos', async ({ request }) => {
-    console.log(`\nSearching for Immich people via ${BASE_URL}/api/v1/content/query/list`);
+    test.setTimeout(120000); // Immich people query can take 60+ seconds
+    console.log(`\nSearching for Immich people via ${API_URL}/api/v1/content/query/list`);
 
-    const response = await request.get(`${BASE_URL}/api/v1/content/query/list`, {
+    const response = await request.get(`${API_URL}/api/v1/content/query/list`, {
       params: {
         from: 'people',
         source: 'immich'
@@ -115,13 +117,14 @@ test.describe('Immich Slideshow + Plex Audio', () => {
   // TEST 2: Discover Plex music playlist
   // ═══════════════════════════════════════════════════════════════════════════
   test('Discover Plex music playlist', async ({ request }) => {
-    console.log(`\nSearching for Plex music playlists via ${BASE_URL}/api/v1/content/query/list`);
+    test.setTimeout(60000); // Plex playlist query may take time
+    console.log(`\nSearching for Plex music playlists via ${API_URL}/api/v1/content/query/list`);
 
-    const response = await request.get(`${BASE_URL}/api/v1/content/query/list`, {
+    // Query all playlists - they're typically music playlists in Plex
+    const response = await request.get(`${API_URL}/api/v1/content/query/list`, {
       params: {
         from: 'playlists',
-        source: 'plex',
-        'plex.libraryName': 'Music'
+        source: 'plex'
       }
     });
 
@@ -139,8 +142,8 @@ test.describe('Immich Slideshow + Plex Audio', () => {
     console.log(`Found ${data.items?.length || 0} music playlists`);
 
     if (!data.items || data.items.length === 0) {
-      console.log('No music playlists found in "Music" library');
-      test.skip(true, 'No music playlists found');
+      console.log('No playlists found in Plex');
+      test.skip(true, 'No playlists found');
       return;
     }
 
@@ -176,11 +179,12 @@ test.describe('Immich Slideshow + Plex Audio', () => {
 
     // Build the composed URL
     // Visual: immich person photos, Audio: plex playlist
-    const visualSource = `visual:${discoveredPersonId.replace('immich:', 'immich:person:')}`;
+    // discoveredPersonId is already in format "immich:person:uuid"
+    const visualSource = `visual:${discoveredPersonId}`;
     const audioSource = `audio:${discoveredPlaylistId}`;
     const playParam = `${visualSource},${audioSource}`;
 
-    const tvUrl = `${BASE_URL}/tv?play=${encodeURIComponent(playParam)}`;
+    const tvUrl = `${APP_URL}/tv?play=${encodeURIComponent(playParam)}`;
     console.log(`\nOpening TV app: ${tvUrl}`);
     console.log(`   Visual: ${discoveredPersonName}'s photos`);
     console.log(`   Audio: ${discoveredPlaylistName}`);
@@ -192,12 +196,24 @@ test.describe('Immich Slideshow + Plex Audio', () => {
 
     console.log('Page loaded');
 
-    // Wait for app to mount and player to initialize
-    await sharedPage.waitForTimeout(5000);
+    // Wait for app to mount and compose API to complete
+    // The compose API fetches many items and can take several seconds
+    await sharedPage.waitForTimeout(8000);
 
-    // Check for visual track element
+    // Debug: log page HTML to understand what's rendered
+    const bodyHtml = await sharedPage.locator('body').innerHTML();
+    console.log('Body HTML preview:', bodyHtml.substring(0, 1000));
+
+    // Check for visual track element (retry a few times)
+    let visualCount = 0;
+    for (let i = 0; i < 3; i++) {
+      const visualTrack = sharedPage.locator('[data-track="visual"]');
+      visualCount = await visualTrack.count();
+      if (visualCount > 0) break;
+      console.log(`Retry ${i + 1}: waiting for visual track...`);
+      await sharedPage.waitForTimeout(2000);
+    }
     const visualTrack = sharedPage.locator('[data-track="visual"]');
-    const visualCount = await visualTrack.count();
     console.log(`\nVisual track elements found: ${visualCount}`);
 
     // Check for audio element
@@ -218,7 +234,7 @@ test.describe('Immich Slideshow + Plex Audio', () => {
   // TEST 4: Slideshow advances and audio plays
   // ═══════════════════════════════════════════════════════════════════════════
   test('Slideshow advances and audio plays', async () => {
-    test.setTimeout(45000);
+    test.setTimeout(30000);
 
     // Skip if discovery failed
     if (!discoveredPersonId || !discoveredPlaylistId) {
@@ -257,19 +273,20 @@ test.describe('Immich Slideshow + Plex Audio', () => {
       console.log(`   - Error: ${audioState.error ? `code ${audioState.error.code}` : 'none'}`);
     }
 
-    // Wait for slideshow to advance (20 seconds should be enough for 2-3 slides)
-    console.log('\nWaiting 20 seconds for slideshow to advance...');
-    await sharedPage.waitForTimeout(20000);
+    // Wait for slideshow to advance (10 seconds should be enough for 1-2 slides)
+    console.log('\nWaiting 10 seconds for slideshow to advance...');
+    await sharedPage.waitForTimeout(10000);
 
     // Check if slideshow advanced
     if (imageExists) {
       const currentImageSrc = await imageElement.getAttribute('src').catch(() => null);
       console.log(`\nCurrent image: ${currentImageSrc?.substring(0, 80)}...`);
 
-      if (initialImageSrc && currentImageSrc && initialImageSrc !== currentImageSrc) {
+      if (initialImageSrc && currentImageSrc) {
+        expect(currentImageSrc).not.toBe(initialImageSrc);
         console.log('Slideshow advanced to new image!');
-      } else if (initialImageSrc === currentImageSrc) {
-        console.log('Same image - slideshow may not have advanced');
+      } else if (!currentImageSrc) {
+        console.log('Could not get current image src');
       }
     }
 
@@ -281,17 +298,18 @@ test.describe('Immich Slideshow + Plex Audio', () => {
         error: el.error ? { code: el.error.code } : null
       }));
 
-      console.log(`\nFinal audio state after 20s:`);
+      console.log(`\nFinal audio state after 10s:`);
       console.log(`   - Paused: ${finalAudioState.paused}`);
       console.log(`   - Time: ${finalAudioState.currentTime?.toFixed(2)}s`);
       console.log(`   - Error: ${finalAudioState.error ? `code ${finalAudioState.error.code}` : 'none'}`);
 
-      // Audio should have progressed if not paused and no error
-      if (!finalAudioState.paused && !finalAudioState.error) {
-        expect(finalAudioState.currentTime).toBeGreaterThan(5);
+      // Verify no audio error
+      expect(finalAudioState.error).toBeNull();
+
+      // Audio should have progressed if not paused
+      if (!finalAudioState.paused) {
+        expect(finalAudioState.currentTime).toBeGreaterThan(3);
         console.log('Audio is playing!');
-      } else if (finalAudioState.error) {
-        console.log('Audio has error');
       }
     }
 

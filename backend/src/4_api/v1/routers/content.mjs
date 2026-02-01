@@ -5,6 +5,7 @@ import path from 'path';
 import { nowTs24 } from '#system/utils/index.mjs';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { isMediaSearchable, validateSearchQuery } from '#domains/media/IMediaSearchable.mjs';
+import { parseContentQuery, validateContentQuery } from '../parsers/contentQueryParser.mjs';
 
 /**
  * Create content API router
@@ -26,11 +27,12 @@ import { isMediaSearchable, validateSearchQuery } from '#domains/media/IMediaSea
  * @param {Object} [options] - Additional options
  * @param {string} [options.cacheBasePath] - Base path for image cache
  * @param {import('#apps/content/usecases/ComposePresentationUseCase.mjs').ComposePresentationUseCase} [options.composePresentationUseCase] - Use case for composing presentations
+ * @param {import('#apps/content/ContentQueryService.mjs').ContentQueryService} [options.contentQueryService] - Content query service for unified search/list
  * @param {Object} [options.logger] - Logger instance
  * @returns {express.Router}
  */
 export function createContentRouter(registry, mediaProgressMemory = null, options = {}) {
-  const { cacheBasePath, composePresentationUseCase, logger = console } = options;
+  const { cacheBasePath, composePresentationUseCase, contentQueryService, logger = console } = options;
   const router = express.Router();
 
   /**
@@ -168,12 +170,113 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
   }));
 
   // ==========================================================================
-  // Search Routes
+  // Unified Query Interface (ContentQueryService)
+  // ==========================================================================
+
+  /**
+   * GET /api/content/query/search
+   * Search across content sources using unified query interface.
+   *
+   * Query params:
+   * - source: Source filter (source name, provider like "immich", or category like "gallery")
+   * - text: Free text search
+   * - person: Person filter (canonical, translated per-adapter)
+   * - creator: Creator/author filter
+   * - time: Time filter (2025, 2025-06, 2024..2025, summer)
+   * - duration: Duration filter (30, 3m, 1h, 3m..10m)
+   * - mediaType: image, video, audio
+   * - capability: playable, viewable, readable, listable
+   * - favorites: Boolean
+   * - sort: date, title, random (aliases: shuffle, rand)
+   * - take, skip: Pagination
+   * - {adapter}.{key}: Adapter-specific keys (e.g., immich.location)
+   */
+  router.get('/query/search', asyncHandler(async (req, res) => {
+    if (!contentQueryService) {
+      return res.status(501).json({
+        error: 'Content query service not configured',
+        code: 'QUERY_SERVICE_NOT_CONFIGURED'
+      });
+    }
+
+    const query = parseContentQuery(req.query);
+    const validation = validateContentQuery(query);
+
+    if (!validation.valid) {
+      return res.status(400).json({
+        error: 'Validation failed',
+        details: validation.errors
+      });
+    }
+
+    try {
+      const result = await contentQueryService.search(query);
+      res.json({
+        query,
+        ...result
+      });
+    } catch (error) {
+      logger.error?.('content.query.search.error', { query, error: error.message });
+      res.status(500).json({ error: 'Search failed', message: error.message });
+    }
+  }));
+
+  /**
+   * GET /api/content/query/list
+   * List containers (playlists, albums, people, etc.) using unified query interface.
+   *
+   * Query params:
+   * - from: Required. Container alias (playlists, albums, people, cameras, etc.)
+   * - source: Source filter (optional)
+   * - pick: "random" to return contents of a randomly selected container
+   * - sort: Sorting for results
+   * - take, skip: Pagination
+   */
+  router.get('/query/list', asyncHandler(async (req, res) => {
+    if (!contentQueryService) {
+      return res.status(501).json({
+        error: 'Content query service not configured',
+        code: 'QUERY_SERVICE_NOT_CONFIGURED'
+      });
+    }
+
+    const query = parseContentQuery(req.query);
+    const validation = validateContentQuery(query);
+
+    if (!validation.valid) {
+      return res.status(400).json({
+        error: 'Validation failed',
+        details: validation.errors
+      });
+    }
+
+    if (!query.from) {
+      return res.status(400).json({
+        error: 'Missing required parameter: from',
+        code: 'MISSING_FROM_PARAM'
+      });
+    }
+
+    try {
+      const result = await contentQueryService.list(query);
+      res.json({
+        from: query.from,
+        ...result
+      });
+    } catch (error) {
+      logger.error?.('content.query.list.error', { query, error: error.message });
+      res.status(500).json({ error: 'List failed', message: error.message });
+    }
+  }));
+
+  // ==========================================================================
+  // Legacy Search Routes (IMediaSearchable)
   // ==========================================================================
 
   /**
    * GET /api/content/search
    * Search across content sources that implement IMediaSearchable
+   * @deprecated Use /api/content/query/search instead
    *
    * Query params:
    * - sources: Comma-separated source filter (optional, defaults to all searchable)

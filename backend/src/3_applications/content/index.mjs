@@ -37,3 +37,7 @@ export {
   clearConfigCache as clearArchiveConfigCache
 } from './services/ArchiveService.mjs';
 export { default as ArchiveService } from './services/ArchiveService.mjs';
+
+// ContentQueryService - Multi-source content query orchestration
+export { ContentQueryService } from './ContentQueryService.mjs';
+export { default as ContentQueryServiceDefault } from './ContentQueryService.mjs';

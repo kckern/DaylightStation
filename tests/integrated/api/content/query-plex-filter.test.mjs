@@ -24,8 +24,8 @@ describe('Content Query - Plex Library Filter', () => {
         );
         plexConfigured = plexCheck.ok && plexCheck.status !== 501;
       }
-    } catch {
-      // Backend not available
+    } catch (err) {
+      console.log('Plex availability check failed:', err.message);
       plexConfigured = false;
     }
   });
@@ -83,17 +83,18 @@ describe('Content Query - Plex Library Filter', () => {
       const moviesData = await moviesResponse.json();
 
       // The results should be different (unless both are empty)
-      if (musicData.items?.length > 0 && moviesData.items?.length > 0) {
-        const musicIds = new Set(musicData.items.map(i => i.id));
-        const movieIds = new Set(moviesData.items.map(i => i.id));
+      const musicIds = new Set((musicData.items || []).map(i => i.id));
+      const movieIds = new Set((moviesData.items || []).map(i => i.id));
 
-        // At least some items should be different
-        const overlap = [...musicIds].filter(id => movieIds.has(id));
-        const uniqueMusic = musicData.items.length - overlap.length;
-        const uniqueMovies = moviesData.items.length - overlap.length;
+      // At least some items should be different
+      const overlap = [...musicIds].filter(id => movieIds.has(id));
+      const uniqueMusic = musicData.items?.length ? musicData.items.length - overlap.length : 0;
+      const uniqueMovies = moviesData.items?.length ? moviesData.items.length - overlap.length : 0;
 
-        // Either some unique items or both sets are disjoint
-        expect(uniqueMusic + uniqueMovies).toBeGreaterThanOrEqual(0);
+      // At least verify the arrays are different OR both are empty (which is acceptable)
+      if (musicData.items?.length > 0 || moviesData.items?.length > 0) {
+        // If at least one has items, they should have some unique content
+        expect(uniqueMusic + uniqueMovies).toBeGreaterThan(0);
       }
     });
 

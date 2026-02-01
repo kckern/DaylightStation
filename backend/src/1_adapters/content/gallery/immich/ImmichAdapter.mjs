@@ -123,17 +123,35 @@ export class ImmichAdapter {
 
   /**
    * Get list of items
-   * @param {string} id - Empty for albums, album:xyz for album contents
+   * @param {string|Object} input - ID string or query object with 'from' field
    * @returns {Promise<ListableItem[]>}
    */
-  async getList(id) {
+  async getList(input) {
     try {
-      const localId = this.#stripPrefix(id);
+      // Normalize input - support both string ID and query object
+      const localId = typeof input === 'string'
+        ? this.#stripPrefix(input)
+        : this.#stripPrefix(input?.from || '');
 
       // Empty = list all albums
       if (!localId) {
         const albums = await this.#client.getAlbums();
         return albums.map(album => this.#toAlbumListable(album));
+      }
+
+      // List all people (with statistics for photo counts)
+      if (localId === 'person:') {
+        const people = await this.#client.getPeople({ withStatistics: true });
+        return people.map(person => this.#toPersonListable(person));
+      }
+
+      // Person's photos
+      if (localId.startsWith('person:')) {
+        const personId = localId.replace('person:', '');
+        const assets = await this.#client.getPersonAssets(personId);
+        return assets.map(asset =>
+          asset.type === 'VIDEO' ? this.#toPlayableItem(asset) : this.#toListableItem(asset)
+        );
       }
 
       // Album contents
@@ -233,11 +251,49 @@ export class ImmichAdapter {
   }
 
   /**
-   * Get search capabilities
-   * @returns {string[]}
+   * Get search capabilities for ContentQueryService.
+   * Returns structured capability info for query orchestration.
+   * @returns {{canonical: string[], specific: string[]}}
    */
   getSearchCapabilities() {
-    return ['text', 'people', 'dateFrom', 'dateTo', 'location', 'mediaType', 'favorites', 'tags'];
+    return {
+      canonical: ['text', 'person', 'time', 'mediaType', 'favorites'],
+      specific: ['location', 'tags']
+    };
+  }
+
+  /**
+   * Get canonical → adapter-specific query key mappings.
+   * Used by ContentQueryService to translate queries.
+   * @returns {Object}
+   */
+  getQueryMappings() {
+    return {
+      person: 'personIds',
+      time: { from: 'takenAfter', to: 'takenBefore' },
+      text: 'query'
+    };
+  }
+
+  /**
+   * Get container alias → internal path mappings.
+   * @returns {Object}
+   */
+  getContainerAliases() {
+    return {
+      playlists: 'album:',
+      albums: 'album:',
+      people: 'person:',
+      cameras: 'camera:'
+    };
+  }
+
+  /**
+   * Get list of root containers for browsing.
+   * @returns {string[]}
+   */
+  getRootContainers() {
+    return ['albums', 'people', 'cameras'];
   }
 
   /**
@@ -337,6 +393,31 @@ export class ImmichAdapter {
       metadata: {
         type: 'album',
         shared: album.shared || false
+      }
+    });
+  }
+
+  /**
+   * Convert person to ListableItem (for person selection)
+   * @param {Object} person
+   * @returns {ListableItem}
+   */
+  #toPersonListable(person) {
+    return new ListableItem({
+      id: `immich:person:${person.id}`,
+      source: 'immich',
+      title: person.name || 'Unknown',
+      itemType: 'container',
+      childCount: person.assetCount || 0,
+      thumbnail: person.thumbnailPath
+        ? `${this.#proxyPath}${person.thumbnailPath}`
+        : null,
+      metadata: {
+        type: 'person',
+        birthDate: person.birthDate,
+        isHidden: person.isHidden || false,
+        isFavorite: person.isFavorite || false,
+        assetCount: person.assetCount || 0
       }
     });
   }
