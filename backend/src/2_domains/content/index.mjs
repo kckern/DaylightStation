@@ -11,6 +11,7 @@ export { Item } from './entities/Item.mjs';
 export { MediaProgress } from './entities/MediaProgress.mjs';
 
 // Capabilities
+export { DisplayableItem } from './capabilities/Displayable.mjs';
 export { ListableItem } from './capabilities/Listable.mjs';
 export { PlayableItem } from './capabilities/Playable.mjs';
 export { QueueableItem } from './capabilities/Queueable.mjs';
