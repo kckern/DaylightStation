@@ -71,13 +71,8 @@ export class YamlMediaProgressMemory extends IMediaProgressMemory {
   /**
    * Convert persisted YAML data to domain entity.
    *
-   * CANONICAL FORMAT (after migrate-watch-history.mjs):
+   * CANONICAL FORMAT (after migrate-watch-history.mjs P0 migration):
    *   playhead, duration, percent, playCount, lastPlayed, watchTime
-   *
-   * Legacy fallbacks kept for unmigrated data (should be rare after P0 migration):
-   *   - seconds → playhead (scripture format)
-   *   - time → lastPlayed (scripture format)
-   *   - mediaDuration → duration (old Plex webhook format)
    *
    * @param {string} itemId
    * @param {Object} data - Raw persisted data
@@ -85,22 +80,12 @@ export class YamlMediaProgressMemory extends IMediaProgressMemory {
    * @private
    */
   _toDomainEntity(itemId, data) {
-    // Canonical fields with legacy fallbacks
-    const playhead = data.playhead ?? data.seconds ?? 0;       // seconds = legacy scripture
-    const lastPlayed = data.lastPlayed ?? data.time ?? null;   // time = legacy scripture
-    let duration = data.duration ?? data.mediaDuration ?? 0;   // mediaDuration = legacy Plex
-
-    // Synthesize duration from percent if needed (pre-migration entries)
-    if (!duration && data.percent && playhead > 0) {
-      duration = Math.round(playhead / (data.percent / 100));
-    }
-
     return new MediaProgress({
       itemId,
-      playhead,
-      duration,
+      playhead: data.playhead ?? 0,
+      duration: data.duration ?? 0,
       playCount: data.playCount ?? 0,
-      lastPlayed,
+      lastPlayed: data.lastPlayed ?? null,
       watchTime: data.watchTime ?? 0
     });
   }

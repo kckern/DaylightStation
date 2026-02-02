@@ -244,10 +244,10 @@ export class LocalMediaAdapter {
 
     if (mediaType === 'unknown') return null;
 
-    // Get watch state
+    // Get watch state (canonical format after P0 migration)
     const progress = this._getMediaProgress(localId);
-    const resumePosition = progress?.playhead || progress?.seconds || null;
-    const duration = progress?.mediaDuration || null;
+    const resumePosition = progress?.playhead ?? null;
+    const duration = progress?.duration ?? null;
 
     // Check for thumbnail
     const thumbnailUrl = this.hasThumbnail(localId)

@@ -250,10 +250,10 @@ export class FilesystemAdapter {
       const ext = path.extname(resolved.path).toLowerCase();
       const mediaType = this.getMediaType(ext);
 
-      // Load media progress for resume position
+      // Load media progress for resume position (canonical format after P0 migration)
       const progress = this._getMediaProgress(localId);
-      const resumePosition = progress?.playhead || progress?.seconds || null;
-      const duration = progress?.mediaDuration || null;
+      const resumePosition = progress?.playhead ?? null;
+      const duration = progress?.duration ?? null;
 
       // Parse ID3 tags for audio files
       let audioMetadata = {};

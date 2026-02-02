@@ -737,3 +737,226 @@ Example: `plex:nt/kjvf/25065` = Luke 4 with KJV Formatted text
 | `scripture/john-999` | 404 - Chapter out of range |
 | `scripture/99999999` | 404 - Verse ID not found |
 | `list=scripture/john-1` | 400 - Leaf not listable |
+
+---
+
+## 15. API Routes Reference
+
+### Route Overview
+
+All routes are prefixed with `/api/v1/`. The primary content access routes are:
+
+| Route | Purpose | Returns |
+|-------|---------|---------|
+| `/item/:source/*` | Unified item access | Item or container contents |
+| `/content/item/:source/*` | Single item info | Item metadata |
+| `/content/playables/:source/*` | Resolve to playables | Playable items array |
+| `/content/progress/:source/*` | Update watch progress | Progress confirmation |
+| `/play/:source/*` | Play info with resume | Playable with resume position |
+| `/play/log` | Log playback progress | Updated progress state |
+| `/list/:source/*` | List container contents | Items array (deprecated) |
+| `/content/query/search` | Unified search | Search results |
+| `/content/query/list` | List containers | Containers array |
+
+### Primary Routes: `/api/v1/item/:source/*`
+
+The unified item endpoint handles most content access patterns.
+
+**Path Parameters:**
+- `:source` - Content source (`plex`, `narrated`, `singing`, `folder`, `local`, `filesystem`)
+- `*` - Local ID within source (path-like, may contain `/`)
+
+**Path Modifiers (appended to path):**
+- `/playable` - Resolve container to playable items only
+- `/shuffle` - Return items in random order
+- `/recent_on_top` - Sort by recent menu selection time
+
+**Query Parameters:**
+- `?select=<strategy>` - Use ItemSelectionService to pick item from container
+  - `select=watchlist` - Watchlist strategy (priority, skip watched, filter by days)
+  - `select=album` - Album strategy (track order)
+  - `select=sequential` - Sequential next item
+
+**Examples:**
+```
+GET /api/v1/item/plex/672445                    # Container info
+GET /api/v1/item/plex/672445/playable           # Playable episodes only
+GET /api/v1/item/plex/672445?select=watchlist   # Next unwatched item
+GET /api/v1/item/narrated/scripture/nt?select=watchlist  # Next unfinished NT chapter
+GET /api/v1/item/singing/hymn/123               # Hymn with synced content
+GET /api/v1/item/folder/watchlist/FHE           # Watchlist items
+```
+
+### Play Routes: `/api/v1/play/*`
+
+**GET /api/v1/play/:source/*path**
+
+Returns playable item info with resume position.
+
+**Path Modifiers:**
+- `/shuffle` - Random selection from container
+
+**Response Fields:**
+```json
+{
+  "id": "plex:12345",
+  "assetId": "plex:12345",
+  "mediaUrl": "/api/v1/proxy/plex/...",
+  "mediaType": "video",
+  "title": "Episode Title",
+  "duration": 1800,
+  "resumable": true,
+  "resume_position": 542,    // Present if in-progress
+  "resume_percent": 30,      // Present if in-progress
+  "thumbnail": "...",
+  "plex": "12345"            // Legacy Plex ID field
+}
+```
+
+**POST /api/v1/play/log**
+
+Updates watch progress. Request body:
+```json
+{
+  "type": "plex",
+  "assetId": "12345",
+  "percent": 50,
+  "seconds": 900,
+  "title": "Episode Title",        // optional
+  "watched_duration": 120          // optional, session watch time
+}
+```
+
+Response uses canonical field names:
+```json
+{
+  "response": {
+    "type": "plex",
+    "library": "plex/14_fitness",
+    "playhead": 900,
+    "duration": 1800,
+    "percent": 50,
+    "playCount": 3,
+    "lastPlayed": "2026-02-02T14:30:00",
+    "watchTime": 1542.5
+  }
+}
+```
+
+### Content Query Routes
+
+**GET /api/v1/content/query/search**
+
+Unified search across sources.
+
+| Parameter | Description | Example |
+|-----------|-------------|---------|
+| `source` | Source filter | `plex`, `gallery`, `media` |
+| `text` | Free text search | `Mozart` |
+| `person` | Person/face filter | UUID |
+| `creator` | Creator/author | `Spielberg` |
+| `time` | Time filter | `2024`, `2020..2024` |
+| `duration` | Length filter | `3m..10m` |
+| `mediaType` | Content type | `video`, `audio`, `image` |
+| `capability` | Required capability | `playable`, `displayable` |
+| `favorites` | Boolean filter | `true` |
+| `sort` | Sort order | `date`, `title`, `random` |
+| `take`, `skip` | Pagination | `take=20&skip=40` |
+
+**GET /api/v1/content/query/list**
+
+List containers by type.
+
+| Parameter | Description | Example |
+|-----------|-------------|---------|
+| `from` | Container type (required) | `playlists`, `albums`, `people` |
+| `source` | Source filter | `plex`, `immich` |
+| `pick` | Selection mode | `random` |
+| `sort` | Sort order | `date`, `title` |
+
+### Plex-Specific Routes
+
+**GET /api/v1/content/plex/info/:id/:modifiers?**
+
+Legacy Plex info endpoint with smart selection.
+
+| Modifier | Effect |
+|----------|--------|
+| `shuffle` | Random item from container |
+
+Response includes both legacy and canonical fields:
+```json
+{
+  "listkey": "672445",           // Original container ID
+  "listType": "show",
+  "key": "123456",               // Selected item ID
+  "type": "episode",
+  "grandparentTitle": "Show Name",
+  "parentTitle": "Season 1",
+  "labels": ["exercise", "nomusic"],
+  "mediaType": "dash_video",
+  "mediaUrl": "/api/v1/proxy/plex/...",
+  "thumbId": "456789",
+  "image": "...",
+  "percent": 45,                 // Canonical
+  "seconds": 542,                // Canonical (maps to playhead)
+  "duration": 1200,
+  "metadata": {...}
+}
+```
+
+**GET /api/v1/play/plex/mpd/:id**
+
+Get DASH MPD manifest URL for Plex item.
+
+| Query Param | Description |
+|-------------|-------------|
+| `maxVideoBitrate` | Maximum video bitrate |
+
+### Source Aliases
+
+Multiple paths can resolve to the same content:
+
+| Alias Path | Resolves To |
+|------------|-------------|
+| `/item/local/...` | `/item/folder/...` |
+| `/play/media/...` | `/play/filesystem/...` |
+| `plex.query:...` | ContentQueryService search with Plex source |
+| `gallery.query:...` | ContentQueryService search with Immich source |
+
+### Watch State Field Mapping
+
+After P0 migration (2026-02), all watch history uses canonical format:
+
+| Canonical Field | Legacy Aliases | Description |
+|-----------------|----------------|-------------|
+| `playhead` | `seconds` | Current position in seconds |
+| `duration` | `mediaDuration` | Total length in seconds |
+| `percent` | - | Completion percentage (0-100) |
+| `playCount` | - | Number of times started |
+| `lastPlayed` | `time` | ISO timestamp of last play |
+| `watchTime` | - | Total accumulated watch time |
+
+API responses map canonical fields to contract fields:
+- `watchProgress` = `percent`
+- `watchSeconds` = `playhead`
+- `watchedDate` = `lastPlayed`
+
+### Error Responses
+
+All endpoints return consistent error format:
+
+```json
+{
+  "error": "Human-readable message",
+  "code": "MACHINE_READABLE_CODE",
+  "details": { ... }
+}
+```
+
+| Status | Code | Meaning |
+|--------|------|---------|
+| 400 | `INVALID_INPUT` | Bad request parameters |
+| 404 | `NOT_FOUND` | Item/source not found |
+| 501 | `*_NOT_CONFIGURED` | Service not available |
+| 503 | - | External service offline |
