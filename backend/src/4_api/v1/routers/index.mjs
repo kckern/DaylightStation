@@ -1,5 +1,6 @@
 // Core API routers
 export { createApiRouter } from './api.mjs';
+export { createConfigRouter } from './config.mjs';
 export { createHealthRouter } from './health.mjs';
 export { createStaticRouter } from './static.mjs';
 

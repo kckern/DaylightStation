@@ -24,6 +24,7 @@ import express from 'express';
  * @param {express.Router} config.routers.list - List router
  * @param {express.Router} config.routers.play - Play router
  * @param {express.Router} config.routers.localContent - LocalContent router
+ * @param {express.Router} [config.routers.local] - Local media browsing router
  * @param {express.Router} config.routers.health - Health router
  * @param {express.Router} config.routers.finance - Finance router
  * @param {express.Router} config.routers.harvest - Harvest router
@@ -53,11 +54,13 @@ export function createApiRouter(config) {
   // Change mountPath here to rename routes without touching frontend
   const routeMap = {
     '/item': 'item',  // New unified item-centric API
+    '/config': 'config',
     '/content': 'content',
     '/proxy': 'proxy',
     '/list': 'list',
     '/play': 'play',
     '/local-content': 'localContent',
+    '/local': 'local',
     '/health': 'health',
     '/finance': 'finance',
     '/cost': 'cost',

@@ -121,6 +121,7 @@ import { createHarvestRouter } from './4_api/v1/routers/harvest.mjs';
 import { saveImage as saveImageToFile } from './0_system/utils/FileIO.mjs';
 // API versioning
 import { createApiRouter } from './4_api/v1/routers/api.mjs';
+import { createConfigRouter } from './4_api/v1/routers/config.mjs';
 import { createItemRouter } from './4_api/v1/routers/item.mjs';
 
 const __dirname = path.dirname(new URL(import.meta.url).pathname);
@@ -585,6 +586,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     imgBasePath,
     dataBasePath,
     logger: rootLogger.child({ module: 'static-api' })
+  });
+
+  // Config router - serves configuration to frontend
+  v1Routers.config = createConfigRouter({
+    dataPath: dataBasePath,
+    logger: rootLogger.child({ module: 'config-api' })
   });
 
   // DevProxy control routes (toggle proxy on/off)
