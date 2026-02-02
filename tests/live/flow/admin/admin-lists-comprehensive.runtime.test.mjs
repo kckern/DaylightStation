@@ -200,4 +200,71 @@ test.describe('Admin Lists Comprehensive', () => {
     const errors = await testListType(page, 'watchlists');
     expect(errors, `Found ${errors.length} card rendering errors in watchlists`).toHaveLength(0);
   });
+
+  test('Summary: all list types pass validation', async ({ page }) => {
+    const allErrors = [];
+    const summary = {
+      menus: { lists: 0, items: 0, errors: 0 },
+      programs: { lists: 0, items: 0, errors: 0 },
+      watchlists: { lists: 0, items: 0, errors: 0 }
+    };
+
+    for (const type of ['menus', 'programs', 'watchlists']) {
+      const lists = expectedLists[type];
+      summary[type].lists = lists.length;
+
+      for (const listName of lists) {
+        await page.goto(`${BASE_URL}/admin/content/lists/${type}/${listName}`, {
+          waitUntil: 'networkidle',
+          timeout: 30000
+        });
+
+        await page.waitForSelector('.item-row', { timeout: 10000 }).catch(() => null);
+        await page.waitForTimeout(3000);
+
+        const rows = page.locator('.item-row');
+        const rowCount = await rows.count();
+
+        const fixtureItems = getListItems(type, listName);
+        const sampled = sampleItems(fixtureItems, SAMPLE_SIZE);
+
+        for (const sampledItem of sampled) {
+          const rowIdx = sampledItem.originalIndex;
+          if (rowIdx >= rowCount) continue;
+
+          const row = rows.nth(rowIdx);
+          const result = await validateCardStructure(row, rowIdx, `${type}/${listName}`);
+
+          summary[type].items++;
+          if (!result.valid) {
+            summary[type].errors++;
+            allErrors.push(result.error);
+          }
+        }
+      }
+    }
+
+    // Print summary
+    console.log('\n' + '='.repeat(60));
+    console.log('ADMIN LISTS COMPREHENSIVE TEST SUMMARY');
+    console.log('='.repeat(60));
+
+    for (const [type, stats] of Object.entries(summary)) {
+      const status = stats.errors === 0 ? 'PASS' : 'FAIL';
+      console.log(`${status} ${type.padEnd(12)} | ${stats.lists} lists | ${stats.items} items checked | ${stats.errors} errors`);
+    }
+
+    const totalErrors = allErrors.length;
+    console.log('-'.repeat(60));
+    console.log(`Total: ${totalErrors} errors`);
+
+    if (totalErrors > 0) {
+      console.log('\nErrors:');
+      allErrors.forEach((e, i) => console.log(`  ${i + 1}. ${e}`));
+    }
+
+    console.log('='.repeat(60) + '\n');
+
+    expect(totalErrors, `Found ${totalErrors} total card rendering errors`).toBe(0);
+  });
 });
