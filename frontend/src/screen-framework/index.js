@@ -5,14 +5,19 @@
 
 export const VERSION = '0.1.0';
 
-// Core exports
-export { ActionBus, getActionBus, resetActionBus } from './input/ActionBus.js';
-export { WidgetRegistry, getWidgetRegistry, resetWidgetRegistry } from './widgets/registry.js';
-export { registerBuiltinWidgets } from './widgets/builtins.js';
-export { DataManager, getDataManager, resetDataManager } from './data/DataManager.js';
+// Main renderer
+export { ScreenRenderer } from './ScreenRenderer.jsx';
 
-// Layout exports
+// Layouts
 export { GridLayout } from './layouts/GridLayout.jsx';
 
-// Widget exports
+// Input system
+export { ActionBus, getActionBus, resetActionBus } from './input/ActionBus.js';
+
+// Data layer
+export { DataManager, getDataManager, resetDataManager } from './data/DataManager.js';
+
+// Widget system
+export { WidgetRegistry, getWidgetRegistry, resetWidgetRegistry } from './widgets/registry.js';
 export { WidgetWrapper } from './widgets/WidgetWrapper.jsx';
+export { registerBuiltinWidgets } from './widgets/builtins.js';
