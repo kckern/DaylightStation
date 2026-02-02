@@ -180,6 +180,10 @@ export default function TVApp({ appParam }) {
           return { compose: { sources: [value], ...config } };
         }
         const { source, id } = parseCompoundId(value);
+        // For singing/narrated, pass canonical contentId format for category-based routing
+        if (source === 'singing' || source === 'narrated') {
+          return { play: { contentId: value, ...config } };
+        }
         return { play: { [source]: id, ...config } };
       },
       random:    (value) => {

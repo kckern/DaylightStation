@@ -91,7 +91,7 @@ export function SingingScroller({
   })();
 
   return (
-    <div style={cssVars}>
+    <div style={cssVars} data-visual-type="singing" className="singing-scroller">
       <ContentScroller
         key={`singing-${contentId}`}
         type="singing"

@@ -103,7 +103,7 @@ export function NarratedScroller({
   })();
 
   return (
-    <div style={cssVars}>
+    <div style={cssVars} data-visual-type="narrated" className="narrated-scroller">
       <ContentScroller
         key={`narrated-${contentId}`}
         type="narrated"
