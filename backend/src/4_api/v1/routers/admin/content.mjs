@@ -54,6 +54,81 @@ function toKebabCase(name) {
 }
 
 /**
+ * Parse list file content - supports both old (array) and new (object with items) formats
+ * @param {string} filename - List filename (without extension)
+ * @param {any} content - Parsed YAML content
+ * @returns {Object} - Normalized list object with metadata and items
+ */
+function parseListContent(filename, content) {
+  // Old format: array at root
+  if (Array.isArray(content)) {
+    return {
+      title: formatFilename(filename),
+      items: content
+    };
+  }
+
+  // New format: object with items key
+  if (content && typeof content === 'object') {
+    return {
+      title: content.title || formatFilename(filename),
+      description: content.description || null,
+      group: content.group || null,
+      icon: content.icon || null,
+      sorting: content.sorting || 'manual',
+      days: content.days || null,
+      active: content.active !== false,
+      defaultAction: content.defaultAction || 'Play',
+      defaultVolume: content.defaultVolume || null,
+      defaultPlaybackRate: content.defaultPlaybackRate || null,
+      items: content.items || []
+    };
+  }
+
+  // Fallback for empty/null
+  return {
+    title: formatFilename(filename),
+    items: []
+  };
+}
+
+/**
+ * Convert filename to display title
+ * @param {string} filename - Kebab-case filename
+ * @returns {string} - Title case display name
+ */
+function formatFilename(filename) {
+  return filename
+    .replace(/-/g, ' ')
+    .replace(/\b\w/g, c => c.toUpperCase());
+}
+
+/**
+ * Serialize list to YAML-ready object (new format, omitting defaults)
+ * @param {Object} list - List object with metadata and items
+ * @returns {Object} - Clean object for YAML serialization
+ */
+function serializeList(list) {
+  const output = {};
+
+  // Only write non-default metadata
+  if (list.title) output.title = list.title;
+  if (list.description) output.description = list.description;
+  if (list.group) output.group = list.group;
+  if (list.icon) output.icon = list.icon;
+  if (list.sorting && list.sorting !== 'manual') output.sorting = list.sorting;
+  if (list.days) output.days = list.days;
+  if (list.active === false) output.active = false;
+  if (list.defaultAction && list.defaultAction !== 'Play') output.defaultAction = list.defaultAction;
+  if (list.defaultVolume != null) output.defaultVolume = list.defaultVolume;
+  if (list.defaultPlaybackRate != null) output.defaultPlaybackRate = list.defaultPlaybackRate;
+
+  output.items = list.items;
+
+  return output;
+}
+
+/**
  * Validate list type parameter
  */
 function validateType(type) {
