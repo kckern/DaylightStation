@@ -35,3 +35,4 @@ export { ItemSelectionService } from './services/ItemSelectionService.mjs';
 export { MediaMemoryValidatorService } from './services/MediaMemoryValidatorService.mjs';
 export { IMediaProgressClassifier } from './services/IMediaProgressClassifier.mjs';
 export { DefaultMediaProgressClassifier } from './services/DefaultMediaProgressClassifier.mjs';
+export { RelevanceScoringService } from './services/RelevanceScoringService.mjs';
