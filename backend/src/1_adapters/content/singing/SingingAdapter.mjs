@@ -46,7 +46,9 @@ export class SingingAdapter {
    * @param {string} localId - e.g., "hymn/2" or "primary/custom-song"
    * @returns {Promise<Object|null>}
    */
-  async getItem(localId) {
+  async getItem(id) {
+    // Strip source prefix if present (router passes compound ID)
+    const localId = id.replace(/^singing:/, '');
     const [collection, ...rest] = localId.split('/');
     const itemId = rest.join('/');
     const collectionPath = path.join(this.dataPath, collection);
