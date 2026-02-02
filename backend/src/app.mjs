@@ -100,6 +100,9 @@ import { createSchedulingRouter } from './4_api/v1/routers/scheduling.mjs';
 // Canvas domain
 import { createCanvasRouter } from './4_api/v1/routers/canvas.mjs';
 
+// Screens domain
+import { createScreensRouter } from './4_api/v1/routers/screens.mjs';
+
 // Conversation state persistence
 import { YamlConversationStateDatastore } from '#adapters/messaging/YamlConversationStateDatastore.mjs';
 
@@ -1043,6 +1046,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Canvas router for art display
   v1Routers.canvas = createCanvasRouter({
     canvasService: null  // Uses req.app.get('canvasBasePath') instead
+  });
+
+  // Screens router for screen configurations
+  v1Routers.screens = createScreensRouter({
+    dataPath: dataBasePath,
+    logger: rootLogger.child({ module: 'screens-api' })
   });
 
   // Admin router - combined content, images, and eventbus management
