@@ -509,14 +509,15 @@ export function createAdminContentRouter(config) {
     }
 
     const listPath = getListPath(type, listName, householdId);
-    const items = loadYamlSafe(listPath);
+    const content = loadYamlSafe(listPath);
 
-    if (items === null) {
+    if (content === null) {
       throw new NotFoundError('List', `${type}/${listName}`);
     }
 
     try {
-      const itemsArray = Array.isArray(items) ? items : [];
+      // Parse list to get metadata and items
+      const list = parseListContent(listName, content);
 
       // Build new item - preserve all provided fields
       const newItem = {
@@ -535,10 +536,10 @@ export function createAdminContentRouter(config) {
       if (itemData.priority !== undefined) newItem.priority = itemData.priority;
       if (itemData.group !== undefined) newItem.group = itemData.group;
 
-      itemsArray.push(newItem);
-      saveYaml(listPath, itemsArray);
+      list.items.push(newItem);
+      saveYaml(listPath, serializeList(list));
 
-      const newIndex = itemsArray.length - 1;
+      const newIndex = list.items.length - 1;
 
       logger.info?.('admin.lists.item.added', { type, list: listName, index: newIndex, label: newItem.label, household: householdId });
 
@@ -570,21 +571,22 @@ export function createAdminContentRouter(config) {
     }
 
     const listPath = getListPath(type, listName, householdId);
-    const items = loadYamlSafe(listPath);
+    const content = loadYamlSafe(listPath);
 
-    if (items === null) {
+    if (content === null) {
       throw new NotFoundError('List', `${type}/${listName}`);
     }
 
-    const itemsArray = Array.isArray(items) ? items : [];
+    // Parse list to get metadata and items
+    const list = parseListContent(listName, content);
 
-    if (index >= itemsArray.length) {
+    if (index >= list.items.length) {
       throw new NotFoundError('Item', index, { type, list: listName });
     }
 
     try {
       // Merge updates with existing item
-      const existingItem = itemsArray[index];
+      const existingItem = list.items[index];
       const updatedItem = { ...existingItem };
 
       // Apply updates for any provided field
@@ -595,8 +597,8 @@ export function createAdminContentRouter(config) {
         }
       }
 
-      itemsArray[index] = updatedItem;
-      saveYaml(listPath, itemsArray);
+      list.items[index] = updatedItem;
+      saveYaml(listPath, serializeList(list));
 
       logger.info?.('admin.lists.item.updated', { type, list: listName, index, household: householdId });
 
@@ -627,22 +629,23 @@ export function createAdminContentRouter(config) {
     }
 
     const listPath = getListPath(type, listName, householdId);
-    const items = loadYamlSafe(listPath);
+    const content = loadYamlSafe(listPath);
 
-    if (items === null) {
+    if (content === null) {
       throw new NotFoundError('List', `${type}/${listName}`);
     }
 
-    const itemsArray = Array.isArray(items) ? items : [];
+    // Parse list to get metadata and items
+    const list = parseListContent(listName, content);
 
-    if (index >= itemsArray.length) {
+    if (index >= list.items.length) {
       throw new NotFoundError('Item', index, { type, list: listName });
     }
 
     try {
-      const deletedItem = itemsArray[index];
-      itemsArray.splice(index, 1);
-      saveYaml(listPath, itemsArray);
+      const deletedItem = list.items[index];
+      list.items.splice(index, 1);
+      saveYaml(listPath, serializeList(list));
 
       logger.info?.('admin.lists.item.deleted', { type, list: listName, index, label: deletedItem.label, household: householdId });
 
