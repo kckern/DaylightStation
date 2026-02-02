@@ -1,15 +1,15 @@
 .admin-layout {
   .mantine-AppShell-navbar {
-    background-color: #fff;
-    border-right: 1px solid #e9ecef;
+    background-color: var(--mantine-color-body);
+    border-right: 1px solid var(--mantine-color-dark-4);
   }
 
   .mantine-AppShell-header {
-    background-color: #fff;
-    border-bottom: 1px solid #e9ecef;
+    background-color: var(--mantine-color-body);
+    border-bottom: 1px solid var(--mantine-color-dark-4);
   }
 
   .mantine-AppShell-main {
-    background-color: #f8f9fa;
+    background-color: var(--mantine-color-body);
   }
 }

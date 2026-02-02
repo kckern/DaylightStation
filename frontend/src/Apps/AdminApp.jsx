@@ -22,19 +22,17 @@ function AdminApp() {
   }, [logger]);
 
   return (
-    <MantineProvider theme={theme}>
+    <MantineProvider theme={theme} defaultColorScheme="dark">
       <div className="App admin-app">
         <Routes>
           <Route element={<AdminLayout />}>
-            <Route index element={<Navigate to="content/lists" replace />} />
-            <Route path="content/lists" element={<ListsIndex />} />
-            <Route path="content/lists/:folder" element={<ListsFolder />} />
-            <Route path="content/menus" element={<ComingSoon title="Menus" />} />
-            <Route path="content/playlists" element={<ComingSoon title="Playlists" />} />
+            <Route index element={<Navigate to="content/lists/menus" replace />} />
+            <Route path="content/lists/:type" element={<ListsIndex />} />
+            <Route path="content/lists/:type/:name" element={<ListsFolder />} />
             <Route path="apps/*" element={<ComingSoon title="App Config" />} />
             <Route path="household/*" element={<ComingSoon title="Household" />} />
             <Route path="system/*" element={<ComingSoon title="System" />} />
-            <Route path="*" element={<Navigate to="content/lists" replace />} />
+            <Route path="*" element={<Navigate to="content/lists/menus" replace />} />
           </Route>
         </Routes>
       </div>

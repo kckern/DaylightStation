@@ -82,7 +82,7 @@ const TVAppWithParams = () => {
 ReactDOM.createRoot(document.getElementById('root')).render(
   <BrowserRouter>
     <Routes>
-      <Route path="/" element={<RootApp />} />
+      <Route path="/" element={<AdminApp />} />
       <Route path="/home" element={<HomeApp />} />
       <Route path="/office" element={<OfficeAppWithWebSocket />} />
       <Route path="/config" element={<ConfigApp />} />

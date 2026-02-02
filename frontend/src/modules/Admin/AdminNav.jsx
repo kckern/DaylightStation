@@ -2,7 +2,7 @@ import React from 'react';
 import { NavLink as RouterNavLink, useLocation } from 'react-router-dom';
 import { NavLink, Stack, Text, Divider } from '@mantine/core';
 import {
-  IconList, IconMenu2, IconPlaylist,
+  IconMenu2, IconPlayerRecord, IconCalendarEvent,
   IconDeviceTv, IconKeyboard, IconRun,
   IconUsers, IconDevices, IconHome,
   IconPlayerPlay, IconSettings
@@ -12,9 +12,9 @@ const navSections = [
   {
     label: 'CONTENT',
     items: [
-      { label: 'Lists', icon: IconList, to: '/admin/content/lists' },
-      { label: 'Menus', icon: IconMenu2, to: '/admin/content/menus' },
-      { label: 'Playlists', icon: IconPlaylist, to: '/admin/content/playlists' },
+      { label: 'Menus', icon: IconMenu2, to: '/admin/content/lists/menus' },
+      { label: 'Watchlists', icon: IconPlayerRecord, to: '/admin/content/lists/watchlists' },
+      { label: 'Programs', icon: IconCalendarEvent, to: '/admin/content/lists/programs' },
     ]
   },
   {

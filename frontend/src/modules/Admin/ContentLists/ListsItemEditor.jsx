@@ -1,25 +1,32 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Modal, TextInput, Select, Switch, Group, Stack, Button, FileInput, Image } from '@mantine/core';
 import { IconUpload } from '@tabler/icons-react';
 
 const ACTION_OPTIONS = [
   { value: 'Play', label: 'Play' },
   { value: 'Queue', label: 'Queue' },
+  { value: 'List', label: 'List' },
   { value: 'Display', label: 'Display' },
   { value: 'Read', label: 'Read' },
 ];
 
-function ListsItemEditor({ opened, onClose, onSave, item, loading }) {
+function ListsItemEditor({ opened, onClose, onSave, item, loading, existingGroups = [] }) {
   const [formData, setFormData] = useState({
     label: '',
     input: '',
     action: 'Play',
     active: true,
-    image: null
+    image: null,
+    group: ''
   });
   const [imageFile, setImageFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [errors, setErrors] = useState({});
+
+  // Build group options from existing groups
+  const groupOptions = existingGroups
+    .filter(g => g) // Remove empty/null
+    .map(g => ({ value: g, label: g }));
 
   // Reset form when modal opens
   useEffect(() => {
@@ -30,7 +37,8 @@ function ListsItemEditor({ opened, onClose, onSave, item, loading }) {
           input: item.input || '',
           action: item.action || 'Play',
           active: item.active !== false,
-          image: item.image || null
+          image: item.image || null,
+          group: item.group || ''
         });
       } else {
         setFormData({
@@ -38,7 +46,8 @@ function ListsItemEditor({ opened, onClose, onSave, item, loading }) {
           input: '',
           action: 'Play',
           active: true,
-          image: null
+          image: null,
+          group: ''
         });
       }
       setImageFile(null);
@@ -98,13 +107,20 @@ function ListsItemEditor({ opened, onClose, onSave, item, loading }) {
     e.preventDefault();
     if (!validate()) return;
 
-    await onSave({
+    const data = {
       label: formData.label.trim(),
       input: formData.input.trim(),
       action: formData.action,
       active: formData.active,
       image: formData.image
-    });
+    };
+
+    // Only include group if it has a value
+    if (formData.group.trim()) {
+      data.group = formData.group.trim();
+    }
+
+    await onSave(data);
   };
 
   return (
@@ -125,6 +141,7 @@ function ListsItemEditor({ opened, onClose, onSave, item, loading }) {
             error={errors.label}
             required
             data-autofocus
+            data-testid="item-label-input"
           />
 
           <TextInput
@@ -135,6 +152,7 @@ function ListsItemEditor({ opened, onClose, onSave, item, loading }) {
             onChange={(e) => handleInputChange('input', e.target.value)}
             error={errors.input}
             required
+            data-testid="item-input-input"
           />
 
           <Select
@@ -142,6 +160,23 @@ function ListsItemEditor({ opened, onClose, onSave, item, loading }) {
             data={ACTION_OPTIONS}
             value={formData.action}
             onChange={(value) => handleInputChange('action', value)}
+          />
+
+          <Select
+            label="Group"
+            description="Optional grouping for organization"
+            placeholder="Select or type a group"
+            data={groupOptions}
+            value={formData.group}
+            onChange={(value) => handleInputChange('group', value || '')}
+            searchable
+            creatable
+            getCreateLabel={(query) => `+ Create "${query}"`}
+            onCreate={(query) => {
+              groupOptions.push({ value: query, label: query });
+              return query;
+            }}
+            clearable
           />
 
           <Switch
@@ -173,7 +208,7 @@ function ListsItemEditor({ opened, onClose, onSave, item, loading }) {
 
           <Group justify="flex-end" mt="md">
             <Button variant="subtle" onClick={onClose}>Cancel</Button>
-            <Button type="submit" loading={loading || uploading}>
+            <Button type="submit" loading={loading || uploading} data-testid="save-item-button">
               {item ? 'Save Changes' : 'Add Item'}
             </Button>
           </Group>

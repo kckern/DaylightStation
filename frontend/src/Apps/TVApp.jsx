@@ -130,13 +130,30 @@ export default function TVApp({ appParam }) {
       config.trackModifiers = trackModifiers;
     }
 
-    // Auto-detect source: digits → plex, otherwise → media
-    const findKey = (value) => ( /^\d+$/.test(value) ? "plex" : "media" );
+    // Parse compound ID format (source:id) or auto-detect source
+    // Returns { source, id } where source is the adapter name and id is the local ID
+    const parseCompoundId = (value) => {
+      // Check for explicit source:id format (e.g., plex:380663, immich:abc-123)
+      const match = value.match(/^([a-z]+):(.+)$/i);
+      if (match) {
+        return { source: match[1].toLowerCase(), id: match[2] };
+      }
+      // Fallback: all digits → plex, otherwise → media (use full value as id)
+      return /^\d+$/.test(value)
+        ? { source: 'plex', id: value }
+        : { source: 'media', id: value };
+    };
+
+    // Legacy findKey for backwards compatibility (returns just the source)
+    const findKey = (value) => parseCompoundId(value).source;
 
     // Source mappings - first match wins
     const mappings = {
       // Queue actions - comma-separated or app: prefix = composed presentation
-      playlist:  (value) => ({ queue: { [findKey(value)]: value, ...config } }),
+      playlist:  (value) => {
+        const { source, id } = parseCompoundId(value);
+        return { queue: { [source]: id, ...config } };
+      },
       queue:     (value) => {
         if (value.includes(',')) {
           // Comma-separated sources = composed presentation (backend infers tracks)
@@ -147,7 +164,8 @@ export default function TVApp({ appParam }) {
           // App sources always use composite player (clock, blackout, screensaver)
           return { compose: { sources: [value], ...config } };
         }
-        return { queue: { [findKey(value)]: value, ...config } };
+        const { source, id } = parseCompoundId(value);
+        return { queue: { [source]: id, ...config } };
       },
 
       // Play actions - comma-separated or app: prefix = composed presentation
@@ -161,9 +179,13 @@ export default function TVApp({ appParam }) {
           // App sources always use composite player (clock, blackout, screensaver)
           return { compose: { sources: [value], ...config } };
         }
-        return { play: { [findKey(value)]: value, ...config } };
+        const { source, id } = parseCompoundId(value);
+        return { play: { [source]: id, ...config } };
       },
-      random:    (value) => ({ play:  { [findKey(value)]: value, random: true, ...config } }),
+      random:    (value) => {
+        const { source, id } = parseCompoundId(value);
+        return { play: { [source]: id, random: true, ...config } };
+      },
 
       // Display actions (static images)
       display:   (value) => ({ display: { id: value, ...config } }),
@@ -183,7 +205,10 @@ export default function TVApp({ appParam }) {
       scripture: (value) => ({ play: { scripture: value, ...config } }),
 
       // List action (browse as menu)
-      list:      (value) => ({ list: { [findKey(value)]: value, ...config } }),
+      list:      (value) => {
+        const { source, id } = parseCompoundId(value);
+        return { list: { [source]: id, ...config } };
+      },
     };
 
     for (const [key, value] of Object.entries(queryEntries)) {
