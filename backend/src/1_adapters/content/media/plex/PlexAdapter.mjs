@@ -1,6 +1,7 @@
 // backend/src/2_adapters/content/media/plex/PlexAdapter.mjs
 import { ListableItem } from '#domains/content/capabilities/Listable.mjs';
 import { PlayableItem } from '#domains/content/capabilities/Playable.mjs';
+import { ContentCategory } from '#domains/content/value-objects/ContentCategory.mjs';
 import { PlexClient } from './PlexClient.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
@@ -60,6 +61,28 @@ export class PlexAdapter {
       else if (label?.tag) labels.push(label.tag.toLowerCase());
     }
     return labels;
+  }
+
+  /**
+   * Map Plex type to ContentCategory
+   * @param {string} type - Plex item type
+   * @returns {string} ContentCategory value
+   */
+  #mapTypeToCategory(type) {
+    const mapping = {
+      'playlist': ContentCategory.CURATED,
+      'collection': ContentCategory.CURATED,
+      'artist': ContentCategory.CREATOR,
+      'show': ContentCategory.SERIES,
+      'movie': ContentCategory.WORK,
+      'album': ContentCategory.CONTAINER,
+      'season': ContentCategory.CONTAINER,
+      'episode': ContentCategory.EPISODE,
+      'track': ContentCategory.TRACK,
+      'clip': ContentCategory.MEDIA,
+      'photo': ContentCategory.MEDIA
+    };
+    return mapping[type] || ContentCategory.MEDIA;
   }
 
   /**
@@ -180,7 +203,10 @@ export class PlexAdapter {
         title: container.title1 || container.title || localId,
         itemType: 'container',
         childCount: container.size || 0,
-        thumbnail: container.thumb ? `${this.proxyPath}${container.thumb}` : null
+        thumbnail: container.thumb ? `${this.proxyPath}${container.thumb}` : null,
+        metadata: {
+          category: ContentCategory.CONTAINER
+        }
       });
     } catch (err) {
       return null;
@@ -378,6 +404,7 @@ export class PlexAdapter {
     // Build metadata with hierarchy info
     const metadata = {
       type: item.type,
+      category: this.#mapTypeToCategory(item.type),
       year: item.year,
       // Rating fields for sorting in FitnessMenu
       rating: item.userRating ?? item.rating ?? item.audienceRating ?? null,
@@ -436,6 +463,7 @@ export class PlexAdapter {
       // Build metadata with hierarchy info
       const containerMetadata = {
         type: item.type,
+        category: this.#mapTypeToCategory(item.type),
         year: item.year,
         studio: item.studio,
         summary: item.summary,
@@ -485,6 +513,7 @@ export class PlexAdapter {
     // These fields are flattened to top level by the router for legacy compatibility
     const metadata = {
       type: item.type,
+      category: this.#mapTypeToCategory(item.type),
       year: item.year,
       grandparentTitle: item.grandparentTitle,
       librarySectionID: item.librarySectionID || null,
@@ -1761,6 +1790,7 @@ export class PlexAdapter {
                     (p.thumb ? `${this.proxyPath}${p.thumb}` : null),
           metadata: {
             type: 'playlist',
+            category: this.#mapTypeToCategory('playlist'),
             playlistType: p.playlistType,
             childCount: p.leafCount || 0,
             smart: p.smart || false
@@ -1806,6 +1836,7 @@ export class PlexAdapter {
               thumbnail: c.thumb ? `${this.proxyPath}${c.thumb}` : null,
               metadata: {
                 type: 'collection',
+                category: this.#mapTypeToCategory('collection'),
                 librarySectionTitle: section.title,
                 childCount: c.childCount || 0
               }
