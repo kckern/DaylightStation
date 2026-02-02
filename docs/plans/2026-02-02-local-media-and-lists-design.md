@@ -191,14 +191,26 @@ Action field controls behavior when menu item references another list:
 
 ### Schedule Format
 
-Array-based day format:
+Accepts both string presets and array format for flexibility:
 
+**String presets:**
+```yaml
+days: Daily
+days: Weekdays
+days: Weekend
+days: MWF
+days: TTh
+```
+
+**Array format:**
 ```yaml
 days: ["Sunday"]
 days: ["Saturday"]
 days: ["M", "W", "F"]
 days: ["T", "Th"]
 ```
+
+**Normalization:** Both formats are accepted on input. Internally normalized to array format for consistent processing. Day abbreviations: `M`, `T`, `W`, `Th`, `F`, `Saturday`, `Sunday`.
 
 ### resolvePlayables Behavior
 
