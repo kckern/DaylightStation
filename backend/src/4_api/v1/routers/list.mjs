@@ -389,16 +389,6 @@ export function createListRouter(config) {
         items: items.map(toListItem)
       };
 
-      // Add debug info for plex source (matches legacy format for troubleshooting)
-      if (source === 'plex' && viewingHistory) {
-        const historyKeys = Object.keys(viewingHistory);
-        response._debug = {
-          historyCount: historyKeys.length,
-          sampleKeys: historyKeys.slice(0, 5),
-          firstItemPlex: items[0]?.localId || items[0]?.metadata?.plex
-        };
-      }
-
       res.json(response);
   }));
 

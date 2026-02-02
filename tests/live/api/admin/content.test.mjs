@@ -1,5 +1,5 @@
 // tests/live/api/admin/content.test.mjs
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+// Jest globals available without import
 
 // Get the base URL from the test config or environment
 const getBaseUrl = () => {
