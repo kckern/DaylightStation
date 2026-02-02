@@ -61,31 +61,58 @@ export class NarratedAdapter {
     const [collection, ...rest] = localId.split('/');
     let itemPath = rest.join('/');
     const collectionPath = path.join(this.dataPath, collection);
+    const mediaCollectionPath = path.join(this.mediaPath, collection);
 
     // Load collection manifest
     const manifest = this._loadManifest(collection);
+
+    // Track resolved paths for text and audio (may differ for scripture)
+    let textPath = itemPath;
+    let audioPath = itemPath;
+    let resolvedMeta = null;
 
     // Apply resolver if specified
     if (manifest?.resolver && itemPath) {
       const resolver = await this._loadResolver(manifest.resolver);
       if (resolver) {
-        const resolved = resolver.resolve(itemPath, collectionPath);
+        // New resolver interface returns { textPath, audioPath, ... }
+        const resolved = resolver.resolve(itemPath, collectionPath, {
+          mediaPath: mediaCollectionPath,
+          defaults: manifest?.defaults || {}
+        });
         if (resolved) {
-          itemPath = resolved;
+          if (typeof resolved === 'string') {
+            // Legacy resolver returns string
+            textPath = resolved;
+            audioPath = resolved;
+          } else {
+            // New resolver returns object with separate paths
+            textPath = resolved.textPath;
+            audioPath = resolved.audioPath;
+            resolvedMeta = {
+              volume: resolved.volume,
+              textVersion: resolved.textVersion,
+              audioRecording: resolved.audioRecording,
+              verseId: resolved.verseId
+            };
+          }
         }
       }
     }
 
-    // Load item metadata
-    const metadata = loadContainedYaml(collectionPath, itemPath);
+    // Load item metadata using text path
+    const metadata = loadContainedYaml(collectionPath, textPath);
     if (!metadata) return null;
 
     // Determine content type
     const contentType = manifest?.contentType || 'paragraphs';
-    const contentData = metadata.verses || metadata.content || metadata.paragraphs || [];
+    // Handle both object with verses key and array at root level
+    const contentData = Array.isArray(metadata)
+      ? metadata
+      : (metadata.verses || metadata.content || metadata.paragraphs || []);
 
-    // Find media files
-    const mediaFile = this._findMediaFile(collection, itemPath, metadata);
+    // Find media files using audio path
+    const mediaFile = this._findMediaFile(collection, audioPath, metadata);
 
     // Resolve ambient if enabled
     const ambientUrl = manifest?.ambient ? this._resolveAmbientUrl() : null;
@@ -93,15 +120,30 @@ export class NarratedAdapter {
     // Build style
     const style = { ...this._getDefaultStyle(), ...manifest?.style };
 
+    // Build canonical ID using text path
+    const canonicalId = `narrated:${collection}/${textPath}`;
+
+    // Extract title - handle both object and array metadata
+    const titleSource = Array.isArray(metadata) ? metadata[0] : metadata;
+    const title = titleSource?.title
+      || titleSource?.headings?.heading
+      || titleSource?.headings?.title
+      || textPath;
+    const subtitle = titleSource?.speaker
+      || titleSource?.author
+      || titleSource?.headings?.section_title
+      || null;
+
     return {
-      id: `narrated:${collection}/${itemPath}`,
+      id: canonicalId,
       source: 'narrated',
       category: 'narrated',
       collection,
-      title: metadata.title || itemPath,
-      subtitle: metadata.speaker || metadata.author || null,
-      mediaUrl: `/api/v1/stream/narrated/${collection}/${itemPath}`,
-      videoUrl: metadata.videoFile ? `/api/v1/stream/narrated/${collection}/${itemPath}/video` : null,
+      title,
+      subtitle,
+      // Use audio path for streaming URL
+      mediaUrl: `/api/v1/stream/narrated/${collection}/${audioPath}`,
+      videoUrl: metadata.videoFile ? `/api/v1/stream/narrated/${collection}/${textPath}/video` : null,
       ambientUrl,
       duration: metadata.duration || 0,
       content: {
@@ -109,6 +151,8 @@ export class NarratedAdapter {
         data: contentData
       },
       style,
+      // Include resolution metadata if available
+      ...(resolvedMeta && { resolved: resolvedMeta }),
       metadata
     };
   }
