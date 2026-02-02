@@ -163,9 +163,9 @@ docs/
 ├── reference/
 │   └── core/         # Backend architecture, DDD layer guidelines, coding standards
 │       └── layers-of-abstraction/  # Per-layer guidelines
-├── plans/            # Active implementation plans (date-prefixed)
 ├── runbooks/         # Operational procedures
 ├── _wip/             # Work in progress
+│   ├── plans/        # Implementation plans (date-prefixed)
 │   ├── audits/       # Code audits
 │   └── bugs/         # Bug investigations
 └── _archive/         # Obsolete docs (preserved for reference)
@@ -195,13 +195,12 @@ git rev-parse HEAD > docs/docs-last-updated.txt
 
 ### Rules
 
-1. **New work goes to `_wip/`** - Bug investigations, audits, temporary analysis
-2. **Plans go to `plans/`** - Implementation plans (date-prefixed)
+1. **New work goes to `_wip/`** - Bug investigations, audits, plans, temporary analysis
+2. **Use appropriate subfolder** - `_wip/plans/`, `_wip/bugs/`, `_wip/audits/`
 3. **Always date-prefix** - Format: `YYYY-MM-DD-topic-name.md`
-4. **Use appropriate subfolder** - `_wip/bugs/`, `_wip/audits/`
-5. **Archive when obsolete** - Move to `_archive/` when superseded or no longer relevant
-6. **Keep reference docs current** - Update existing docs rather than creating new point-in-time snapshots
-7. **No instance-specific data** - Never include paths, hostnames, ports, or environment-specific values. Use placeholders like `{hosts.prod}` or reference `.claude/settings.local.json`
+4. **Archive when obsolete** - Move to `_archive/` when superseded or no longer relevant
+5. **Keep reference docs current** - Update existing docs rather than creating new point-in-time snapshots
+6. **No instance-specific data** - Never include paths, hostnames, ports, or environment-specific values. Use placeholders like `{hosts.prod}` or reference `.claude/settings.local.json`
 
 ---
 
