@@ -6,7 +6,7 @@ import {
   IconMusic, IconDeviceTv, IconMovie, IconDeviceTvOld, IconStack2,
   IconUser, IconDisc, IconPhoto, IconPlaylist, IconFile, IconBook,
   IconChevronRight, IconChevronLeft, IconHome, IconInfoCircle,
-  IconEye, IconEyeOff, IconPlayerPlay, IconExternalLink
+  IconEye, IconEyeOff, IconPlayerPlay, IconExternalLink, IconAlertTriangle
 } from '@tabler/icons-react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -45,6 +45,17 @@ const SOURCE_COLORS = {
   media: 'gray',
   default: 'gray'
 };
+
+/**
+ * Parse source prefix from raw input value
+ * @param {string} input - Raw input like "plex:12345"
+ * @returns {string} Source name uppercase or "UNKNOWN"
+ */
+function parseSource(input) {
+  if (!input) return 'UNKNOWN';
+  const match = input.match(/^([a-z]+):/i);
+  return match ? match[1].toUpperCase() : 'UNKNOWN';
+}
 
 function getTypeIcon(type) {
   const Icon = TYPE_ICONS[type] || TYPE_ICONS.default;
@@ -242,6 +253,44 @@ function ContentDisplay({ item, onClick, loading }) {
   );
 }
 
+/**
+ * Display for unresolved content - warning state
+ */
+function UnresolvedContentDisplay({ item, onClick }) {
+  const source = parseSource(item.value);
+
+  return (
+    <div
+      onClick={onClick}
+      className="content-display content-display--unresolved"
+      style={{ cursor: 'pointer' }}
+    >
+      <Group gap={6} wrap="nowrap" style={{ flex: 1 }}>
+        <Avatar size={36} radius="sm" color="yellow">
+          <IconAlertTriangle size={16} />
+        </Avatar>
+        <Box style={{ flex: 1, minWidth: 0 }}>
+          <Group gap={4} wrap="nowrap">
+            <Text size="xs" truncate fw={500}>
+              {item.value}
+            </Text>
+            <Box style={{ flex: 1 }} />
+            <Badge size="xs" variant="light" color="yellow" style={{ flexShrink: 0 }}>
+              {source}
+            </Badge>
+          </Group>
+          <Group gap={4} wrap="nowrap">
+            <IconAlertTriangle size={14} color="var(--mantine-color-yellow-6)" />
+            <Text size="xs" c="yellow">
+              Unknown • Unresolved
+            </Text>
+          </Group>
+        </Box>
+      </Group>
+    </div>
+  );
+}
+
 // Cache for content info to avoid re-fetching
 const contentInfoCache = new Map();
 
@@ -255,7 +304,10 @@ async function fetchContentMetadata(value) {
 
   // Parse source:id format (trim whitespace from parts)
   const match = value.match(/^([^:]+):\s*(.+)$/);
-  if (!match) return null;
+  if (!match) {
+    // Format can't be parsed - return unresolved
+    return { value, unresolved: true };
+  }
 
   const [, source, localId] = [null, match[1].trim(), match[2].trim()];
 
@@ -272,19 +324,20 @@ async function fetchContentMetadata(value) {
         grandparent: data.metadata?.grandparentTitle,
         parent: data.metadata?.parentTitle,
         library: data.metadata?.librarySectionTitle,
-        itemCount: data.metadata?.childCount ?? data.metadata?.leafCount ?? null
+        itemCount: data.metadata?.childCount ?? data.metadata?.leafCount ?? null,
+        unresolved: false
       };
       contentInfoCache.set(value, info);
       return info;
     } else {
-      // API returned error status - return minimal info
+      // API returned error status - return unresolved
       console.warn(`Content API returned ${response.status} for ${value}`);
-      return { value, title: localId, source, type: null };
+      return { value, title: localId, source, type: null, unresolved: true };
     }
   } catch (err) {
     console.error('Failed to fetch content info:', err);
-    // Return minimal info on network/parse failure
-    return { value, title: localId, source, type: null };
+    // Return unresolved on network/parse failure
+    return { value, title: localId, source, type: null, unresolved: true };
   }
 }
 
@@ -853,8 +906,13 @@ function ContentSearchCombobox({ value, onChange }) {
       );
     }
 
-    // Have content info - show rich display
+    // Have content info - check if unresolved
     if (contentInfo) {
+      if (contentInfo.unresolved) {
+        return (
+          <UnresolvedContentDisplay item={contentInfo} onClick={handleStartEditing} />
+        );
+      }
       return (
         <ContentDisplay item={contentInfo} onClick={handleStartEditing} />
       );
