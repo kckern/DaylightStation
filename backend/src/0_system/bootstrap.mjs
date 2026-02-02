@@ -20,8 +20,12 @@ import { PlexAdapter } from '#adapters/content/media/plex/PlexAdapter.mjs';
 import { MediaKeyResolver } from '#domains/media/MediaKeyResolver.mjs';
 import { LocalContentAdapter } from '#adapters/content/local-content/LocalContentAdapter.mjs';
 import { FolderAdapter } from '#adapters/content/folder/FolderAdapter.mjs';
+import { LocalMediaAdapter } from '#adapters/content/media/local-media/LocalMediaAdapter.mjs';
+import { ListAdapter } from '#adapters/content/list/ListAdapter.mjs';
 import { ImmichAdapter } from '#adapters/content/gallery/immich/ImmichAdapter.mjs';
 import { AudiobookshelfAdapter } from '#adapters/content/readable/audiobookshelf/AudiobookshelfAdapter.mjs';
+import { SingingAdapter } from '#adapters/content/singing/SingingAdapter.mjs';
+import { ReadingAdapter } from '#adapters/content/reading/ReadingAdapter.mjs';
 import { FilesystemCanvasAdapter, ImmichCanvasAdapter } from '#adapters/content/canvas/index.mjs';
 import { ImmichClient } from '#adapters/content/gallery/immich/ImmichClient.mjs';
 import { YamlMediaProgressMemory } from '#adapters/persistence/yaml/YamlMediaProgressMemory.mjs';
@@ -30,12 +34,17 @@ import { YamlMediaProgressMemory } from '#adapters/persistence/yaml/YamlMediaPro
 import filesystemManifest from '#adapters/content/media/filesystem/manifest.mjs';
 import plexManifest from '#adapters/content/media/plex/manifest.mjs';
 import immichManifest from '#adapters/content/gallery/immich/manifest.mjs';
+import localMediaManifest from '#adapters/content/media/local-media/manifest.mjs';
+import listManifest from '#adapters/content/list/manifest.mjs';
+import singingManifest from '#adapters/content/singing/manifest.mjs';
+import readingManifest from '#adapters/content/reading/manifest.mjs';
 import { createContentRouter } from '#api/v1/routers/content.mjs';
 import { ContentQueryService } from '#apps/content/ContentQueryService.mjs';
 import { createProxyRouter } from '#api/v1/routers/proxy.mjs';
 import { createLocalContentRouter } from '#api/v1/routers/localContent.mjs';
 import { createPlayRouter } from '#api/v1/routers/play.mjs';
 import { createListRouter } from '#api/v1/routers/list.mjs';
+import { createLocalRouter } from '#api/v1/routers/local.mjs';
 
 // Fitness domain imports
 import { SessionService } from '#domains/fitness/services/SessionService.mjs';
@@ -385,6 +394,12 @@ export function getSystemBotLoader() {
  * @param {string} [config.canvas.filesystem.basePath] - Base path for art images
  * @param {Object} [config.canvas.immich] - Immich canvas config (reuses immich host/apiKey)
  * @param {string} [config.canvas.immich.library] - Immich library/album to use for art
+ * @param {Object} [config.singing] - Singing adapter configuration (hymns, primary songs)
+ * @param {string} [config.singing.dataPath] - Path to singing content data files
+ * @param {string} [config.singing.mediaPath] - Path to singing content media files
+ * @param {Object} [config.reading] - Reading adapter configuration (scripture, talks, poetry)
+ * @param {string} [config.reading.dataPath] - Path to reading content data files
+ * @param {string} [config.reading.mediaPath] - Path to reading content media files
  * @param {Object} deps - Dependencies
  * @param {Object} [deps.httpClient] - HTTP client for making requests
  * @param {Object} [deps.mediaProgressMemory] - Media progress memory for progress persistence
@@ -452,6 +467,37 @@ export function createContentRegistry(config, deps = {}) {
     registry.adapters.set('local', folderAdapter);
   }
 
+  // Register LocalMediaAdapter for browsing filesystem paths as content sources
+  if (config.mediaBasePath && config.dataPath) {
+    const localMediaAdapter = new LocalMediaAdapter({
+      mediaBasePath: config.mediaBasePath,
+      dataPath: config.dataPath,
+      cacheBasePath: config.cacheBasePath || path.join(config.dataPath, 'system/cache'),
+      householdId: config.householdId || null,
+      configService: deps.configService || null,
+      mediaProgressMemory
+    });
+    registry.register(localMediaAdapter, {
+      category: localMediaManifest.capability,
+      provider: localMediaManifest.provider
+    });
+  }
+
+  // Register ListAdapter for menus/programs/watchlists as content sources
+  if (config.dataPath) {
+    const listAdapter = new ListAdapter({
+      dataPath: config.dataPath,
+      householdId: config.householdId || null,
+      registry,
+      mediaProgressMemory,
+      configService: deps.configService || null
+    });
+    registry.register(listAdapter, {
+      category: listManifest.capability,
+      provider: listManifest.provider
+    });
+  }
+
   // Register Immich adapter if configured
   if (config.immich?.host && config.immich?.apiKey && httpClient) {
     registry.register(
@@ -498,6 +544,30 @@ export function createContentRegistry(config, deps = {}) {
     }, { client: immichClient }));
   }
 
+  // Register SingingAdapter for participatory sing-along content (hymns, primary songs)
+  if (config.singing?.dataPath && config.singing?.mediaPath) {
+    registry.register(
+      new SingingAdapter({
+        dataPath: config.singing.dataPath,
+        mediaPath: config.singing.mediaPath,
+        mediaProgressMemory
+      }),
+      { category: singingManifest.capability, provider: singingManifest.provider }
+    );
+  }
+
+  // Register ReadingAdapter for follow-along reading content (scripture, talks, poetry)
+  if (config.reading?.dataPath && config.reading?.mediaPath) {
+    registry.register(
+      new ReadingAdapter({
+        dataPath: config.reading.dataPath,
+        mediaPath: config.reading.mediaPath,
+        mediaProgressMemory
+      }),
+      { category: readingManifest.capability, provider: readingManifest.provider }
+    );
+  }
+
   return registry;
 }
 
@@ -536,14 +606,18 @@ export function createMediaProgressMemory(config) {
  * @param {string} [config.dataPath] - Base data path for local content
  * @param {import('./proxy/ProxyService.mjs').ProxyService} [config.proxyService] - Proxy service for external services
  * @param {import('#apps/content/usecases/ComposePresentationUseCase.mjs').ComposePresentationUseCase} [config.composePresentationUseCase] - Use case for composing presentations
+ * @param {Object<string, string>} [config.legacyPrefixMap] - Legacy prefix mapping (e.g., { hymn: 'singing:hymn' })
  * @param {Object} [config.logger] - Logger instance
  * @returns {Object} Router configuration
  */
 export function createApiRouters(config) {
-  const { registry, mediaProgressMemory, loadFile, saveFile, cacheBasePath, dataPath, mediaBasePath, proxyService, composePresentationUseCase, configService, logger = console } = config;
+  const { registry, mediaProgressMemory, loadFile, saveFile, cacheBasePath, dataPath, mediaBasePath, proxyService, composePresentationUseCase, configService, legacyPrefixMap = {}, logger = console } = config;
 
   // Create ContentQueryService for unified query interface
-  const contentQueryService = new ContentQueryService({ registry, mediaProgressMemory });
+  const contentQueryService = new ContentQueryService({ registry, mediaProgressMemory, legacyPrefixMap });
+
+  // Get LocalMediaAdapter from registry for local router
+  const localMediaAdapter = registry.get('local');
 
   return {
     content: createContentRouter(registry, mediaProgressMemory, { loadFile, saveFile, cacheBasePath, composePresentationUseCase, contentQueryService, logger }),
@@ -551,6 +625,7 @@ export function createApiRouters(config) {
     localContent: createLocalContentRouter({ registry, dataPath, mediaBasePath }),
     play: createPlayRouter({ registry, mediaProgressMemory, contentQueryService, logger }),
     list: createListRouter({ registry, loadFile, configService }),
+    local: createLocalRouter({ localMediaAdapter, mediaBasePath, cacheBasePath: cacheBasePath || path.join(dataPath, 'system/cache'), logger }),
   };
 }
 

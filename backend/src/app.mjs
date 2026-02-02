@@ -333,6 +333,16 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const mediaProgressPath = configService.getPath('watchState') || `${householdDir}/history/media_memory`;
   const mediaProgressMemory = createMediaProgressMemory({ mediaProgressPath });
 
+  // Singing/Reading adapters - use content subdirectories
+  const singingConfig = {
+    dataPath: path.join(contentPath, 'singing'),
+    mediaPath: path.join(mediaBasePath, 'singing')
+  };
+  const readingConfig = {
+    dataPath: path.join(contentPath, 'reading'),
+    mediaPath: path.join(mediaBasePath, 'reading')
+  };
+
   const contentRegistry = createContentRegistry({
     mediaBasePath,
     plex: mediaLibConfig,  // Bootstrap key stays 'plex' for now
@@ -343,7 +353,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     watchlistPath,
     mediaMemoryPath,
     nomusicLabels,
-    musicOverlayPlaylist
+    musicOverlayPlaylist,
+    singing: singingConfig,  // Sing-along content (hymns, primary songs)
+    reading: readingConfig   // Follow-along reading (scripture, talks, poetry)
   }, { httpClient: axios, mediaProgressMemory, app });
 
   // Create proxy service for content domain (used for media library passthrough)
@@ -359,6 +371,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const { loadYaml, saveYaml } = await import('./0_system/utils/FileIO.mjs');
   const contentLoadFile = (relativePath) => loadYaml(path.join(householdDir, relativePath));
   const contentSaveFile = (relativePath, data) => saveYaml(path.join(householdDir, relativePath), data);
+
+  // Load legacy prefix mapping for ContentQueryService (e.g., hymn:123 -> singing:hymn/123)
+  const contentPrefixesPath = path.join(dataBasePath, 'config', 'content-prefixes');
+  const contentPrefixes = loadYaml(contentPrefixesPath) || {};
+  const legacyPrefixMap = contentPrefixes.legacy || {};
 
   // Create compose presentation use case for multi-track content composition
   const composePresentationUseCase = new ComposePresentationUseCase({
@@ -377,6 +394,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     proxyService: contentProxyService,
     composePresentationUseCase,
     configService,
+    legacyPrefixMap,
     logger: rootLogger.child({ module: 'content' })
   });
 
@@ -484,8 +502,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     list: contentRouters.list,
     play: contentRouters.play,
     localContent: contentRouters.localContent,
+    // Local media browsing and streaming
+    local: contentRouters.local,
   };
-  rootLogger.info('content.routers.created', { keys: ['item', 'content', 'proxy', 'list', 'play', 'localContent'] });
+  rootLogger.info('content.routers.created', { keys: ['item', 'content', 'proxy', 'list', 'play', 'localContent', 'local'] });
 
   // Health domain router
   v1Routers.health = createHealthApiRouter({
