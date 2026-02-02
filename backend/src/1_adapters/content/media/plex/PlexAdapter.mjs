@@ -995,9 +995,9 @@ export class PlexAdapter {
         }
         history[bareKey] = {
           playhead: state.playhead || 0,
+          duration: state.duration || 0,
           percent: state.percent || 0,
-          lastPlayed: state.lastPlayed || null,
-          mediaDuration: state.duration || 0
+          lastPlayed: state.lastPlayed || null
         };
       }
       return history;
@@ -1051,9 +1051,9 @@ export class PlexAdapter {
 
     for (const key of keys) {
       const entry = log[key];
-      const playhead = entry?.playhead || entry?.seconds || 0;
-      const mediaDuration = entry?.mediaDuration || entry?.duration || 0;
-      const percent = mediaDuration > 0 ? (playhead / mediaDuration) * 100 : (entry?.percent || 0);
+      const playhead = entry?.playhead ?? 0;
+      const duration = entry?.duration ?? 0;
+      const percent = entry?.percent ?? (duration > 0 ? (playhead / duration) * 100 : 0);
 
       if (this._isWatched({ percent, seconds: playhead })) {
         watched.push(key);
@@ -1088,9 +1088,7 @@ export class PlexAdapter {
     if (inProgress.length > 0) {
       const selected = shuffle ? inProgress[Math.floor(Math.random() * inProgress.length)] : inProgress[0];
       const entry = log[selected] || {};
-      const seconds = entry.playhead || entry.seconds || 0;
-      const percent = entry.percent || 0;
-      return [selected, seconds, percent];
+      return [selected, entry.playhead ?? 0, entry.percent ?? 0];
     }
 
     // Priority 3: Restart from first watched (clear watch status)
@@ -1158,8 +1156,8 @@ export class PlexAdapter {
       return {
         ...item,
         listkey: key,
-        percent: entry.percent || 0,
-        seconds: entry.playhead || entry.seconds || 0
+        percent: entry.percent ?? 0,
+        seconds: entry.playhead ?? 0
       };
     }
 
@@ -1206,8 +1204,8 @@ export class PlexAdapter {
       const entry = log[itemKey] || {};
       return {
         ...item,
-        percent: entry.percent || 0,
-        seconds: entry.playhead || entry.seconds || 0
+        percent: entry.percent ?? 0,
+        seconds: entry.playhead ?? 0
       };
     });
 
@@ -1276,9 +1274,9 @@ export class PlexAdapter {
 
       // Check watch status from history
       const entry = log[plexKey];
-      const playhead = entry?.playhead || entry?.seconds || 0;
-      const duration = entry?.mediaDuration || entry?.duration || 0;
-      const percent = duration > 0 ? (playhead / duration) * 100 : (entry?.percent || 0);
+      const playhead = entry?.playhead ?? 0;
+      const duration = entry?.duration ?? 0;
+      const percent = entry?.percent ?? (duration > 0 ? (playhead / duration) * 100 : 0);
 
       if (this._isWatched({ percent, seconds: playhead })) continue;
 

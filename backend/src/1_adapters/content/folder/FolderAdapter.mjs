@@ -121,14 +121,14 @@ export class FolderAdapter {
 
   /**
    * Check if an item is considered "watched" (>90% or <60s remaining)
-   * @param {Object} watchState - { percent, seconds, playhead, mediaDuration }
+   * @param {Object} watchState - { percent, playhead, duration } (canonical format after P0 migration)
    * @returns {boolean}
    */
   _isWatched(watchState) {
     if (!watchState) return false;
-    const percent = watchState.percent || 0;
-    const playhead = watchState.playhead || watchState.seconds || 0;
-    const duration = watchState.mediaDuration || 0;
+    const percent = watchState.percent ?? 0;
+    const playhead = watchState.playhead ?? 0;
+    const duration = watchState.duration ?? 0;
 
     // Watched if >= 90%
     if (percent >= WATCHED_THRESHOLD) return true;
@@ -275,10 +275,10 @@ export class FolderAdapter {
       // Calculate priority based on watch state and scheduling
       const priority = this._calculatePriority(item, watchState);
 
-      // Extract watch progress and lastPlayed
-      const percent = watchState?.percent || 0;
-      const seconds = watchState?.seconds || watchState?.playhead || 0;
-      const lastPlayed = watchState?.lastPlayed || null;
+      // Extract watch progress and lastPlayed (canonical format after P0 migration)
+      const percent = watchState?.percent ?? 0;
+      const playhead = watchState?.playhead ?? 0;
+      const lastPlayed = watchState?.lastPlayed ?? null;
 
       const compoundId = `${contentSource}:${parsed.id}`;
 
@@ -354,9 +354,9 @@ export class FolderAdapter {
         type: item.action === 'Queue' ? 'queue' : 'list',
         thumbnail: item.image,
         metadata: {
-          // Watch state
+          // Watch state (canonical format after P0 migration)
           percent,
-          seconds,
+          playhead,
           lastPlayed,
           priority,
           // Scheduling fields
