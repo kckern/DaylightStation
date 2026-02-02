@@ -311,7 +311,7 @@ export class ContentQueryService {
     const containerType = context.containerType
       || (typeof adapter.getContainerType === 'function'
           ? adapter.getContainerType(localId)
-          : 'folder');
+          : 'watchlist');
 
     const selectionContext = {
       ...context,
