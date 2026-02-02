@@ -5,7 +5,8 @@ import {
   loadContainedYaml,
   findMediaFileByPrefix,
   dirExists,
-  listDirs
+  listDirs,
+  listYamlFiles
 } from '#system/utils/FileIO.mjs';
 
 /**
@@ -121,6 +122,81 @@ export class SingingAdapter {
       fontSize: '1.4rem',
       textAlign: 'center'
     };
+  }
+
+  /**
+   * List collections or items in a collection
+   * @param {string} localId - Empty for collections, or collection name for items
+   * @returns {Promise<Object>}
+   */
+  async getList(localId) {
+    if (!localId) {
+      // List all collections
+      const collections = listDirs(this.dataPath);
+      return {
+        id: 'singing:',
+        source: 'singing',
+        category: 'singing',
+        itemType: 'container',
+        items: collections.map(name => ({
+          id: `singing:${name}`,
+          source: 'singing',
+          title: name,
+          itemType: 'container'
+        }))
+      };
+    }
+
+    const [collection, ...rest] = localId.split('/');
+    const subPath = rest.join('/');
+
+    if (!subPath) {
+      // List items in collection
+      const collectionPath = path.join(this.dataPath, collection);
+      const files = listYamlFiles(collectionPath);
+
+      const items = [];
+      for (const file of files) {
+        const match = file.match(/^0*(\d+)/);
+        if (match) {
+          const item = await this.getItem(`${collection}/${match[1]}`);
+          if (item) items.push(item);
+        }
+      }
+
+      return {
+        id: `singing:${collection}`,
+        source: 'singing',
+        category: 'singing',
+        collection,
+        itemType: 'container',
+        items
+      };
+    }
+
+    // Subfolder listing - return the item
+    return this.getItem(localId);
+  }
+
+  /**
+   * Resolve playable items from a local ID
+   * @param {string} localId - Item or collection ID
+   * @returns {Promise<Array>}
+   */
+  async resolvePlayables(localId) {
+    const item = await this.getItem(localId);
+    if (item) return [item];
+
+    const list = await this.getList(localId);
+    return list?.items || [];
+  }
+
+  /**
+   * Get storage path for watch state persistence
+   * @returns {string}
+   */
+  getStoragePath() {
+    return 'singing';
   }
 }
 
