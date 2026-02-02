@@ -6,7 +6,7 @@ import {
 } from '@mantine/core';
 import {
   IconSearch, IconArrowLeft, IconAlertCircle,
-  IconTrash, IconDotsVertical, IconList, IconLayoutGrid
+  IconTrash, IconDotsVertical, IconList, IconLayoutGrid, IconSettings
 } from '@tabler/icons-react';
 import {
   DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors
@@ -17,6 +17,7 @@ import {
 import { useAdminLists } from '../../../hooks/admin/useAdminLists.js';
 import ListsItemRow, { EmptyItemRow, InsertRowButton } from './ListsItemRow.jsx';
 import ListsItemEditor from './ListsItemEditor.jsx';
+import ListSettingsModal from './ListSettingsModal.jsx';
 import './ContentLists.scss';
 
 // Type display names (singular)
@@ -30,15 +31,16 @@ function ListsFolder() {
   const { type, name: listName } = useParams();
   const navigate = useNavigate();
   const {
-    items, loading, error,
+    items, loading, error, listMetadata,
     fetchItems, addItem, updateItem, deleteItem, reorderItems, toggleItemActive,
-    deleteList
+    deleteList, updateListSettings
   } = useAdminLists();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
   const [viewMode, setViewMode] = useState('flat'); // 'flat' or 'grouped'
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -202,6 +204,8 @@ function ListsFolder() {
               onDelete={() => deleteItem(item.index)}
               onToggleActive={() => toggleItemActive(item.index)}
               onDuplicate={() => handleDuplicateItem(item)}
+              isWatchlist={type === 'watchlists'}
+              onEdit={() => { setEditingItem(item); setEditorOpen(true); }}
             />
             {showInsertButtons && (
               <InsertRowButton onInsert={() => handleInsertAt(idx + 1)} />
@@ -209,7 +213,7 @@ function ListsFolder() {
           </React.Fragment>
         ))}
       </SortableContext>
-      <EmptyItemRow onAdd={handleAddItem} nextIndex={items.length} />
+      <EmptyItemRow onAdd={handleAddItem} nextIndex={items.length} isWatchlist={type === 'watchlists'} />
     </Box>
   );
 
@@ -249,6 +253,13 @@ function ListsFolder() {
             </Menu.Target>
             <Menu.Dropdown>
               <Menu.Item
+                leftSection={<IconSettings size={16} />}
+                onClick={() => setSettingsOpen(true)}
+              >
+                {typeLabel} Settings
+              </Menu.Item>
+              <Menu.Divider />
+              <Menu.Item
                 color="red"
                 leftSection={<IconTrash size={16} />}
                 onClick={handleDeleteList}
@@ -275,6 +286,10 @@ function ListsFolder() {
           <div className="col-label"><Text size="xs" fw={600} c="dimmed">Label</Text></div>
           <div className="col-action"><Text size="xs" fw={600} c="dimmed">Action</Text></div>
           <div className="col-input"><Text size="xs" fw={600} c="dimmed">Input</Text></div>
+          {type === 'watchlists' && (
+            <div className="col-progress"><Text size="xs" fw={600} c="dimmed">Progress</Text></div>
+          )}
+          <div className="col-config"><Text size="xs" fw={600} c="dimmed">Config</Text></div>
           <div className="col-menu"></div>
         </div>
       )}
@@ -324,6 +339,18 @@ function ListsFolder() {
         onClose={() => { setEditorOpen(false); setEditingItem(null); }}
         onSave={handleSaveItem}
         item={editingItem}
+        loading={loading}
+        existingGroups={existingGroups}
+      />
+
+      <ListSettingsModal
+        opened={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        metadata={listMetadata}
+        onSave={async (settings) => {
+          await updateListSettings(settings);
+          setSettingsOpen(false);
+        }}
         loading={loading}
         existingGroups={existingGroups}
       />
