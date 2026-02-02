@@ -167,7 +167,7 @@ const VALID_MEDIA_TYPES = ['image', 'video', 'audio'];
 /**
  * Valid capabilities.
  */
-const VALID_CAPABILITIES = ['playable', 'viewable', 'readable', 'listable'];
+const VALID_CAPABILITIES = ['playable', 'displayable', 'readable', 'listable'];
 
 /**
  * Valid pick options.

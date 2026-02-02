@@ -3,19 +3,19 @@ import ContentScroller from './ContentScroller.jsx';
 import { DaylightAPI, DaylightMediaPath } from '../../lib/api.mjs';
 
 /**
- * ReadingScroller
- * ---------------
- * Wraps ContentScroller for reading content (scripture, talks, poetry).
+ * NarratedScroller
+ * ----------------
+ * Wraps ContentScroller for narrated content (scripture, talks, poetry).
  *
  * Features:
- *  - Fetches data from /api/v1/item/reading/{path}
+ *  - Fetches data from /api/v1/item/narrated/{path}
  *  - Supports verses content type (scripture-style with verse numbers)
  *  - Supports paragraphs content type (talks, poetry)
  *  - Video mode (if data.videoUrl exists)
  *  - Ambient audio (if data.ambientUrl exists)
  *  - Applies style via CSS variables
  */
-export function ReadingScroller({
+export function NarratedScroller({
   contentId,
   advance,
   clear,
@@ -34,10 +34,10 @@ export function ReadingScroller({
   useEffect(() => {
     if (!contentId) return;
 
-    // Extract path from contentId (reading:scripture/bom/... → scripture/bom/...)
-    const path = contentId.replace(/^reading:/, '');
+    // Extract path from contentId (narrated:scripture/bom/... → scripture/bom/...)
+    const path = contentId.replace(/^narrated:/, '');
 
-    DaylightAPI(`api/v1/item/reading/${path}`).then(response => {
+    DaylightAPI(`api/v1/item/narrated/${path}`).then(response => {
       setData(response);
     });
   }, [contentId]);
@@ -48,7 +48,7 @@ export function ReadingScroller({
     if (contentData.type === 'verses') {
       // Scripture-style verses
       return (
-        <div className="reading-text verses">
+        <div className="narrated-text verses">
           {contentData.data.map((verse, idx) => (
             <p key={idx} className="verse">
               <span className="verse-num">{verse.verse}</span>
@@ -61,7 +61,7 @@ export function ReadingScroller({
 
     // Paragraphs (talks, poetry, etc.)
     return (
-      <div className="reading-text paragraphs">
+      <div className="narrated-text paragraphs">
         {contentData.data.map((para, idx) => {
           if (para.startsWith('##')) {
             return <h4 key={idx}>{para.slice(2).trim()}</h4>;
@@ -105,8 +105,8 @@ export function ReadingScroller({
   return (
     <div style={cssVars}>
       <ContentScroller
-        key={`reading-${contentId}`}
-        type="reading"
+        key={`narrated-${contentId}`}
+        type="narrated"
         title={data.title}
         assetId={contentId}
         subtitle={data.subtitle}
@@ -138,4 +138,4 @@ export function ReadingScroller({
   );
 }
 
-export default ReadingScroller;
+export default NarratedScroller;

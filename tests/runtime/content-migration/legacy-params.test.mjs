@@ -56,7 +56,7 @@ test.describe('Legacy query params', () => {
     });
 
     // Wait for content to load
-    await page.waitForSelector('[data-visual-type="reading"], .reading-scroller, .content-scroller', {
+    await page.waitForSelector('[data-visual-type="narrated"], .narrated-scroller, .content-scroller', {
       timeout: 10000
     });
 
@@ -86,10 +86,10 @@ test.describe('Legacy query params', () => {
     console.log('Canonical singing param loaded successfully');
   });
 
-  test('tv?play=reading:scripture/alma-32 works with canonical reading ID', async ({ page }) => {
+  test('tv?play=narrated:scripture/alma-32 works with canonical narrated ID', async ({ page }) => {
     test.setTimeout(15000);
 
-    const canonicalUrl = `${BASE_URL}/tv?play=reading:scripture/alma-32`;
+    const canonicalUrl = `${BASE_URL}/tv?play=narrated:scripture/alma-32`;
     console.log(`\nNavigating to: ${canonicalUrl}`);
 
     await page.goto(canonicalUrl, {
@@ -97,12 +97,12 @@ test.describe('Legacy query params', () => {
       timeout: 10000
     });
 
-    // Wait for reading player
-    await page.waitForSelector('[data-visual-type="reading"], .reading-scroller', {
+    // Wait for narrated player
+    await page.waitForSelector('[data-visual-type="narrated"], .narrated-scroller', {
       timeout: 10000
     });
 
-    console.log('Canonical reading param loaded successfully');
+    console.log('Canonical narrated param loaded successfully');
   });
 });
 
@@ -125,7 +125,7 @@ test.describe('API resolution', () => {
     const data = await response.json();
     console.log(`scripture:alma-32 resolved to:`, data);
 
-    expect(data.category).toBe('reading');
+    expect(data.category).toBe('narrated');
     expect(data.collection).toBe('scripture');
   });
 
@@ -145,7 +145,7 @@ test.describe('API resolution', () => {
   });
 
   test('scripture API endpoint returns correct content metadata', async ({ request }) => {
-    const response = await request.get(`${BASE_URL}/api/v1/reading/scripture/alma-32`);
+    const response = await request.get(`${BASE_URL}/api/v1/narrated/scripture/alma-32`);
     expect(response.ok()).toBe(true);
 
     const data = await response.json();
@@ -155,7 +155,7 @@ test.describe('API resolution', () => {
       category: data.category
     });
 
-    expect(data.category).toBe('reading');
+    expect(data.category).toBe('narrated');
     expect(data.collection).toBe('scripture');
   });
 });

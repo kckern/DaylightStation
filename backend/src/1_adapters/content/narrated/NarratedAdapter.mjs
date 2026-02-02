@@ -1,4 +1,4 @@
-// backend/src/1_adapters/content/reading/ReadingAdapter.mjs
+// backend/src/1_adapters/content/narrated/NarratedAdapter.mjs
 import path from 'path';
 import {
   loadYamlByPrefix,
@@ -10,13 +10,13 @@ import {
 } from '#system/utils/FileIO.mjs';
 
 /**
- * Adapter for follow-along reading content (scripture, talks, poetry).
- * Uses the 'reading:' prefix for compound IDs.
+ * Adapter for follow-along narrated content (scripture, talks, poetry).
+ * Uses the 'narrated:' prefix for compound IDs.
  *
- * ID format: reading:{collection}/{path}
- * Examples: reading:scripture/bom, reading:talks/ldsgc
+ * ID format: narrated:{collection}/{path}
+ * Examples: narrated:scripture/bom, narrated:talks/ldsgc
  */
-export class ReadingAdapter {
+export class NarratedAdapter {
   /**
    * @param {Object} config
    * @param {string} config.dataPath - Path to data files (YAML metadata)
@@ -31,15 +31,15 @@ export class ReadingAdapter {
   }
 
   get source() {
-    return 'reading';
+    return 'narrated';
   }
 
   get prefixes() {
-    return [{ prefix: 'reading' }];
+    return [{ prefix: 'narrated' }];
   }
 
   canResolve(id) {
-    return id.startsWith('reading:');
+    return id.startsWith('narrated:');
   }
 
   /**
@@ -47,7 +47,7 @@ export class ReadingAdapter {
    * @returns {string}
    */
   getStoragePath() {
-    return 'reading';
+    return 'narrated';
   }
 
   /**
@@ -92,14 +92,14 @@ export class ReadingAdapter {
     const style = { ...this._getDefaultStyle(), ...manifest?.style };
 
     return {
-      id: `reading:${collection}/${itemPath}`,
-      source: 'reading',
-      category: 'reading',
+      id: `narrated:${collection}/${itemPath}`,
+      source: 'narrated',
+      category: 'narrated',
       collection,
       title: metadata.title || itemPath,
       subtitle: metadata.speaker || metadata.author || null,
-      mediaUrl: `/api/v1/stream/reading/${collection}/${itemPath}`,
-      videoUrl: metadata.videoFile ? `/api/v1/stream/reading/${collection}/${itemPath}/video` : null,
+      mediaUrl: `/api/v1/stream/narrated/${collection}/${itemPath}`,
+      videoUrl: metadata.videoFile ? `/api/v1/stream/narrated/${collection}/${itemPath}/video` : null,
       ambientUrl,
       duration: metadata.duration || 0,
       content: {
@@ -179,7 +179,7 @@ export class ReadingAdapter {
   }
 
   /**
-   * Get default style for reading content
+   * Get default style for narrated content
    * @returns {Object}
    * @private
    */
@@ -201,13 +201,13 @@ export class ReadingAdapter {
       // List all collections
       const collections = listDirs(this.dataPath);
       return {
-        id: 'reading:',
-        source: 'reading',
-        category: 'reading',
+        id: 'narrated:',
+        source: 'narrated',
+        category: 'narrated',
         itemType: 'container',
         items: collections.map(name => ({
-          id: `reading:${name}`,
-          source: 'reading',
+          id: `narrated:${name}`,
+          source: 'narrated',
           title: name,
           itemType: 'container'
         }))
@@ -229,8 +229,8 @@ export class ReadingAdapter {
       for (const dir of dirs) {
         if (dir !== 'manifest') {
           items.push({
-            id: `reading:${collection}/${dir}`,
-            source: 'reading',
+            id: `narrated:${collection}/${dir}`,
+            source: 'narrated',
             title: dir,
             itemType: 'container'
           });
@@ -246,9 +246,9 @@ export class ReadingAdapter {
       }
 
       return {
-        id: `reading:${collection}`,
-        source: 'reading',
-        category: 'reading',
+        id: `narrated:${collection}`,
+        source: 'narrated',
+        category: 'narrated',
         collection,
         itemType: 'container',
         items
@@ -264,8 +264,8 @@ export class ReadingAdapter {
     // Add nested subfolders as containers
     for (const dir of subDirs) {
       items.push({
-        id: `reading:${collection}/${subPath}/${dir}`,
-        source: 'reading',
+        id: `narrated:${collection}/${subPath}/${dir}`,
+        source: 'narrated',
         title: dir,
         itemType: 'container'
       });
@@ -278,9 +278,9 @@ export class ReadingAdapter {
     }
 
     return {
-      id: `reading:${localId}`,
-      source: 'reading',
-      category: 'reading',
+      id: `narrated:${localId}`,
+      source: 'narrated',
+      category: 'narrated',
       collection,
       itemType: 'container',
       items
@@ -301,4 +301,4 @@ export class ReadingAdapter {
   }
 }
 
-export default ReadingAdapter;
+export default NarratedAdapter;

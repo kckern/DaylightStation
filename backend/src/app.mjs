@@ -334,14 +334,14 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const mediaProgressPath = configService.getPath('watchState') || `${householdDir}/history/media_memory`;
   const mediaProgressMemory = createMediaProgressMemory({ mediaProgressPath });
 
-  // Singing/Reading adapters - use content subdirectories
+  // Singing/Narrated adapters - use content subdirectories
   const singingConfig = {
     dataPath: path.join(contentPath, 'singing'),
     mediaPath: path.join(mediaBasePath, 'singing')
   };
-  const readingConfig = {
-    dataPath: path.join(contentPath, 'reading'),
-    mediaPath: path.join(mediaBasePath, 'reading')
+  const narratedConfig = {
+    dataPath: path.join(contentPath, 'narrated'),
+    mediaPath: path.join(mediaBasePath, 'narrated')
   };
 
   const contentRegistry = createContentRegistry({
@@ -356,7 +356,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     nomusicLabels,
     musicOverlayPlaylist,
     singing: singingConfig,  // Sing-along content (hymns, primary songs)
-    reading: readingConfig   // Follow-along reading (scripture, talks, poetry)
+    narrated: narratedConfig   // Follow-along narrated content (scripture, talks, poetry)
   }, { httpClient: axios, mediaProgressMemory, app });
 
   // Create proxy service for content domain (used for media library passthrough)

@@ -17,7 +17,7 @@ The query system operates across these orthogonal dimensions:
 | **Category Alias** | `gallery`, `media`, `audiobooks`, `ebooks`, `local` | 5 |
 | **Resolution Strategy** | explicit, query, heuristic, alias, nested | 5 |
 | **Target Type** | leaf, container | 2 |
-| **Capability** | `playable`, `viewable`, `readable`, `listable` | 4 |
+| **Capability** | `playable`, `displayable`, `readable`, `listable` | 4 |
 | **Cardinality** | single, multi-same-source, multi-track | 3 |
 | **Query Keys** | `text`, `person`, `time`, `duration`, `mediaType`, `creator` | 6+ |
 | **Modifiers** | `shuffle`, `loop`, `continuous`, `sort`, `take`, `skip`, `pick` | 7+ |
@@ -121,12 +121,15 @@ Each child is resolved using **its own container type's strategy**, not the pare
 | Source | Category | Capabilities Produced | ID Format |
 |--------|----------|----------------------|-----------|
 | `plex` | media | playable, listable | digits (ratingKey) |
-| `immich` | gallery | viewable, playable (video), listable | UUID |
+| `immich` | gallery | displayable, playable (video), listable | UUID |
 | `audiobookshelf` | audiobooks, ebooks | playable, readable, listable | UUID |
 | `komga` | ebooks | readable, listable | UUID |
 | `folder` | local | listable, mixed references | path |
-| `canvas` | gallery | viewable, listable | path |
+| `canvas` | gallery | displayable, listable | path |
 | `filesystem` | media | playable, listable | path |
+| `singing` | singing | playable, listable (with synced stanzas) | `{collection}/{number}` |
+| `narrated` | narrated | playable, listable (with synced paragraphs) | `{collection}/{path}` |
+| `list` | local | listable (menus, programs, watchlists) | `{type}:{name}` |
 
 ### Category Aliases
 
@@ -136,7 +139,9 @@ Each child is resolved using **its own container type's strategy**, not the pare
 | `media` | plex, filesystem | All playable media |
 | `audiobooks` | audiobookshelf | Audio long-form |
 | `ebooks` | audiobookshelf, komga | Readable content |
-| `local` | folder | Alias for folder adapter |
+| `local` | folder, list | Local content sources |
+| `singing` | singing | Participatory sing-along content |
+| `narrated` | narrated | Follow-along narrated content |
 
 ### Prefix Aliases (ID Resolution)
 
@@ -145,6 +150,13 @@ Each child is resolved using **its own container type's strategy**, not the pare
 | `media:` | filesystem | `media:audio/song.mp3` |
 | `file:` | filesystem | `file:video/movie.mp4` |
 | `local:` | folder | `local:TVApp/menu` |
+| `singing:` | singing | `singing:hymn/123` |
+| `narrated:` | narrated | `narrated:scripture/alma-32` |
+| `menu:` | list | `menu:TVApp/main` |
+| `program:` | list | `program:daily` |
+| `watchlist:` | list | `watchlist:FHE` |
+| `hymn:` | singing (legacy) | `hymn:123` → `singing:hymn/123` |
+| `scripture:` | narrated (legacy) | `scripture:alma-32` → `narrated:scripture/alma-32` |
 
 ---
 
@@ -188,7 +200,7 @@ Input ID
 | Capability | Required Fields | Meaning |
 |------------|-----------------|---------|
 | `playable` | `mediaUrl`, `duration` | Can be played (video, audio) |
-| `viewable` | `imageUrl` | Can be displayed (photo, art) |
+| `displayable` | `imageUrl` | Can be displayed (photo, art) |
 | `readable` | `contentUrl`, `format` | Can be read (ebook, comic) |
 | `listable` | `items[]` or `itemType=container` | Has browsable children |
 
@@ -198,7 +210,7 @@ Input ID
                     ┌─────────────────────────────────────────┐
                     │           LEAF CAPABILITIES             │
                     ├─────────────┬─────────────┬─────────────┤
-                    │  playable   │  viewable   │  readable   │
+                    │  playable   │ displayable │  readable   │
 ┌───────────────────┼─────────────┼─────────────┼─────────────┤
 │ plex              │ ✓ video,    │ ~ thumb     │ ✗           │
 │                   │   audio     │   only      │             │
@@ -215,14 +227,24 @@ Input ID
 ├───────────────────┼─────────────┼─────────────┼─────────────┤
 │ filesystem        │ ✓ audio,    │ ~ image     │ ✗           │
 │                   │   video     │             │             │
+├───────────────────┼─────────────┼─────────────┼─────────────┤
+│ singing           │ ✓ audio     │ ✗           │ ✗           │
+│                   │ + content   │             │             │
+├───────────────────┼─────────────┼─────────────┼─────────────┤
+│ narrated           │ ✓ audio,    │ ✗           │ ✗           │
+│                   │   video     │             │             │
+│                   │ + content   │             │             │
+├───────────────────┼─────────────┼─────────────┼─────────────┤
+│ list              │ ~ refs      │ ✗           │ ✗           │
 └───────────────────┴─────────────┴─────────────┴─────────────┘
 
 Legend: ✓ = native support, ~ = partial/derived, ✗ = not supported
+Note: singing/narrated produce playable items with synchronized `content` for UI rendering
 ```
 
 ### Action × Capability Validity
 
-|  | playable | viewable | readable |
+|  | playable | displayable | readable |
 |--|----------|----------|----------|
 | **play** | ✓ Valid | ~ Degrade | ✗ Error |
 | **queue** | ✓ Valid | ~ Slideshow? | ✗ Error |
@@ -262,7 +284,7 @@ Track labels (`visual:`, `audio:`) assign content to presentation layers.
 
 | Track Label | Expected Capability | Layer |
 |-------------|---------------------|-------|
-| `visual` | viewable (or playable video) | Display layer |
+| `visual` | displayable (or playable video) | Display layer |
 | `audio` | playable audio | Audio layer |
 | `text` | readable (future) | Overlay/subtitle |
 | (unlabeled) | Inferred from content | Auto-assign |
@@ -433,7 +455,7 @@ play=visual:{source}:{id},audio:{source}:{id}
 ```
 play ──✗── readable-only (komga comic, audiobookshelf ebook)
 read ──✗── playable-only (plex video, filesystem audio)
-read ──✗── viewable-only (canvas image, immich photo)
+read ──✗── displayable-only (canvas image, immich photo)
 list ──✗── leaf target (not listable)
 *.query: ──✗── source without search() implementation
 ```
@@ -441,10 +463,10 @@ list ──✗── leaf target (not listable)
 ### Soft Constraints (Degrade Gracefully)
 
 ```
-play + viewable → show image (silent degrade)
+play + displayable → show image (silent degrade)
 display + playable → show thumbnail
 display + readable → show cover image
-queue + viewable → slideshow queue
+queue + displayable → slideshow queue
 ```
 
 ### Ambiguous (Behavior Decisions)

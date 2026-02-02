@@ -28,7 +28,7 @@ describe('SingingAdapter', () => {
     });
 
     test('canResolve returns false for other IDs', () => {
-      expect(adapter.canResolve('reading:scripture/bom')).toBe(false);
+      expect(adapter.canResolve('narrated:scripture/bom')).toBe(false);
       expect(adapter.canResolve('plex:12345')).toBe(false);
     });
   });

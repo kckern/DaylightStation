@@ -429,7 +429,7 @@ export class ContentQueryService {
   #hasCapability(item, capability) {
     const capMap = {
       playable: () => typeof item.isPlayable === 'function' ? item.isPlayable() : !!item.mediaUrl,
-      viewable: () => typeof item.isViewable === 'function' ? item.isViewable() : !!item.imageUrl,
+      displayable: () => typeof item.isDisplayable === 'function' ? item.isDisplayable() : !!item.imageUrl,
       readable: () => typeof item.isReadable === 'function' ? item.isReadable() : !!item.contentUrl,
       listable: () => typeof item.isContainer === 'function' ? item.isContainer() : item.itemType === 'container',
     };

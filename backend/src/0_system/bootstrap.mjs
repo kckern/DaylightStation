@@ -25,7 +25,7 @@ import { ListAdapter } from '#adapters/content/list/ListAdapter.mjs';
 import { ImmichAdapter } from '#adapters/content/gallery/immich/ImmichAdapter.mjs';
 import { AudiobookshelfAdapter } from '#adapters/content/readable/audiobookshelf/AudiobookshelfAdapter.mjs';
 import { SingingAdapter } from '#adapters/content/singing/SingingAdapter.mjs';
-import { ReadingAdapter } from '#adapters/content/reading/ReadingAdapter.mjs';
+import { NarratedAdapter } from '#adapters/content/narrated/NarratedAdapter.mjs';
 import { FilesystemCanvasAdapter, ImmichCanvasAdapter } from '#adapters/content/canvas/index.mjs';
 import { ImmichClient } from '#adapters/content/gallery/immich/ImmichClient.mjs';
 import { YamlMediaProgressMemory } from '#adapters/persistence/yaml/YamlMediaProgressMemory.mjs';
@@ -37,7 +37,7 @@ import immichManifest from '#adapters/content/gallery/immich/manifest.mjs';
 import localMediaManifest from '#adapters/content/media/local-media/manifest.mjs';
 import listManifest from '#adapters/content/list/manifest.mjs';
 import singingManifest from '#adapters/content/singing/manifest.mjs';
-import readingManifest from '#adapters/content/reading/manifest.mjs';
+import narratedManifest from '#adapters/content/narrated/manifest.mjs';
 import { createContentRouter } from '#api/v1/routers/content.mjs';
 import { ContentQueryService } from '#apps/content/ContentQueryService.mjs';
 import { createProxyRouter } from '#api/v1/routers/proxy.mjs';
@@ -397,9 +397,9 @@ export function getSystemBotLoader() {
  * @param {Object} [config.singing] - Singing adapter configuration (hymns, primary songs)
  * @param {string} [config.singing.dataPath] - Path to singing content data files
  * @param {string} [config.singing.mediaPath] - Path to singing content media files
- * @param {Object} [config.reading] - Reading adapter configuration (scripture, talks, poetry)
- * @param {string} [config.reading.dataPath] - Path to reading content data files
- * @param {string} [config.reading.mediaPath] - Path to reading content media files
+ * @param {Object} [config.narrated] - Narrated adapter configuration (scripture, talks, poetry)
+ * @param {string} [config.narrated.dataPath] - Path to narrated content data files
+ * @param {string} [config.narrated.mediaPath] - Path to narrated content media files
  * @param {Object} deps - Dependencies
  * @param {Object} [deps.httpClient] - HTTP client for making requests
  * @param {Object} [deps.mediaProgressMemory] - Media progress memory for progress persistence
@@ -556,15 +556,15 @@ export function createContentRegistry(config, deps = {}) {
     );
   }
 
-  // Register ReadingAdapter for follow-along reading content (scripture, talks, poetry)
-  if (config.reading?.dataPath && config.reading?.mediaPath) {
+  // Register NarratedAdapter for follow-along narrated content (scripture, talks, poetry)
+  if (config.narrated?.dataPath && config.narrated?.mediaPath) {
     registry.register(
-      new ReadingAdapter({
-        dataPath: config.reading.dataPath,
-        mediaPath: config.reading.mediaPath,
+      new NarratedAdapter({
+        dataPath: config.narrated.dataPath,
+        mediaPath: config.narrated.mediaPath,
         mediaProgressMemory
       }),
-      { category: readingManifest.capability, provider: readingManifest.provider }
+      { category: narratedManifest.capability, provider: narratedManifest.provider }
     );
   }
 
