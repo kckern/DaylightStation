@@ -543,7 +543,7 @@ export function createApiRouters(config) {
   const { registry, mediaProgressMemory, loadFile, saveFile, cacheBasePath, dataPath, mediaBasePath, proxyService, composePresentationUseCase, configService, logger = console } = config;
 
   // Create ContentQueryService for unified query interface
-  const contentQueryService = new ContentQueryService({ registry });
+  const contentQueryService = new ContentQueryService({ registry, mediaProgressMemory });
 
   return {
     content: createContentRouter(registry, mediaProgressMemory, { loadFile, saveFile, cacheBasePath, composePresentationUseCase, contentQueryService, logger }),
