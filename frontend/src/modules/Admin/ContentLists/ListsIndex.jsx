@@ -1,33 +1,45 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import {
   SimpleGrid, Card, Text, Badge, Group, Button,
   Center, Loader, Alert, Stack, Title
 } from '@mantine/core';
-import { IconPlus, IconFolder, IconAlertCircle } from '@tabler/icons-react';
+import { IconPlus, IconList, IconAlertCircle } from '@tabler/icons-react';
 import { useAdminLists } from '../../../hooks/admin/useAdminLists.js';
-import ListsFolderCreate from './ListsFolderCreate.jsx';
+import ListCreate from './ListCreate.jsx';
 import './ContentLists.scss';
 
+// Type display names
+const TYPE_LABELS = {
+  menus: 'Menus',
+  watchlists: 'Watchlists',
+  programs: 'Programs'
+};
+
 function ListsIndex() {
+  const { type } = useParams();
   const navigate = useNavigate();
-  const { folders, loading, error, fetchFolders, createFolder } = useAdminLists();
+  const { lists, loading, error, fetchLists, createList } = useAdminLists();
   const [createModalOpen, setCreateModalOpen] = useState(false);
 
   useEffect(() => {
-    fetchFolders();
-  }, [fetchFolders]);
+    if (type) {
+      fetchLists(type);
+    }
+  }, [type, fetchLists]);
 
-  const handleFolderClick = (folder) => {
-    navigate(`/admin/content/lists/${folder.name}`);
+  const handleListClick = (list) => {
+    navigate(`/admin/content/lists/${type}/${list.name}`);
   };
 
-  const handleCreateFolder = async (name) => {
-    await createFolder(name);
+  const handleCreateList = async (name) => {
+    await createList(type, name);
     setCreateModalOpen(false);
   };
 
-  if (loading && folders.length === 0) {
+  const typeLabel = TYPE_LABELS[type] || type;
+
+  if (loading && lists.length === 0) {
     return (
       <Center h="60vh">
         <Loader size="lg" />
@@ -38,61 +50,64 @@ function ListsIndex() {
   return (
     <Stack gap="md">
       <Group justify="space-between">
-        <Title order={2}>Content Lists</Title>
+        <Title order={2}>{typeLabel}</Title>
         <Button
           leftSection={<IconPlus size={16} />}
           onClick={() => setCreateModalOpen(true)}
+          data-testid="new-list-button"
         >
-          New Folder
+          New {typeLabel.slice(0, -1)}
         </Button>
       </Group>
 
       {error && (
         <Alert icon={<IconAlertCircle size={16} />} color="red" title="Error">
-          {error.message || 'Failed to load folders'}
+          {error.message || 'Failed to load lists'}
         </Alert>
       )}
 
       <SimpleGrid cols={{ base: 1, sm: 2, md: 3, lg: 4 }} spacing="md">
-        {folders.map(folder => (
+        {lists.map(list => (
           <Card
-            key={folder.name}
+            key={list.name}
             shadow="sm"
             padding="lg"
             radius="md"
             withBorder
-            className="folder-card"
-            onClick={() => handleFolderClick(folder)}
+            className="list-card"
+            onClick={() => handleListClick(list)}
+            data-testid={`list-card-${list.name}`}
           >
             <Group justify="space-between">
               <Group gap="xs">
-                <IconFolder size={24} stroke={1.5} />
+                <IconList size={24} stroke={1.5} />
                 <Text fw={500} tt="capitalize">
-                  {folder.name.replace(/-/g, ' ')}
+                  {list.name.replace(/-/g, ' ')}
                 </Text>
               </Group>
               <Badge color="blue" variant="light">
-                {folder.count}
+                {list.count}
               </Badge>
             </Group>
           </Card>
         ))}
       </SimpleGrid>
 
-      {folders.length === 0 && !loading && (
+      {lists.length === 0 && !loading && (
         <Center h="40vh">
           <Stack align="center">
-            <IconFolder size={48} stroke={1} color="gray" />
-            <Text c="dimmed">No folders yet. Create one to get started.</Text>
+            <IconList size={48} stroke={1} color="gray" />
+            <Text c="dimmed">No {typeLabel.toLowerCase()} yet. Create one to get started.</Text>
           </Stack>
         </Center>
       )}
 
-      <ListsFolderCreate
+      <ListCreate
         opened={createModalOpen}
         onClose={() => setCreateModalOpen(false)}
-        onCreate={handleCreateFolder}
+        onCreate={handleCreateList}
         loading={loading}
+        typeLabel={typeLabel.slice(0, -1)}
       />
     </Stack>
   );

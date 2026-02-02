@@ -5,161 +5,164 @@ import getLogger from '../../lib/logging/Logger.js';
 const API_BASE = '/api/v1/admin/content';
 
 /**
- * Hook for managing admin lists (folders and items)
+ * Hook for managing admin config lists (menus, watchlists, programs)
  */
 export function useAdminLists() {
   const logger = useMemo(() => getLogger().child({ hook: 'useAdminLists' }), []);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [folders, setFolders] = useState([]);
+  const [lists, setLists] = useState([]);
   const [items, setItems] = useState([]);
-  const [currentFolder, setCurrentFolder] = useState(null);
+  const [currentType, setCurrentType] = useState(null);
+  const [currentList, setCurrentList] = useState(null);
 
-  // Fetch all folders
-  const fetchFolders = useCallback(async () => {
+  // Fetch all lists of a specific type
+  const fetchLists = useCallback(async (type) => {
     setLoading(true);
     setError(null);
     try {
-      const data = await DaylightAPI(`${API_BASE}/lists`);
-      setFolders(data.folders || []);
-      logger.info('admin.lists.folders.fetched', { count: data.folders?.length });
-      return data.folders;
+      const data = await DaylightAPI(`${API_BASE}/lists/${type}`);
+      setLists(data.lists || []);
+      setCurrentType(type);
+      logger.info('admin.lists.fetched', { type, count: data.lists?.length });
+      return data.lists;
     } catch (err) {
       setError(err);
-      logger.error('admin.lists.folders.fetch.failed', { message: err.message });
+      logger.error('admin.lists.fetch.failed', { type, message: err.message });
       throw err;
     } finally {
       setLoading(false);
     }
   }, [logger]);
 
-  // Fetch items in a folder
-  const fetchItems = useCallback(async (folder) => {
+  // Fetch items in a list
+  const fetchItems = useCallback(async (type, listName) => {
     setLoading(true);
     setError(null);
     try {
-      const data = await DaylightAPI(`${API_BASE}/lists/${folder}`);
+      const data = await DaylightAPI(`${API_BASE}/lists/${type}/${listName}`);
       setItems(data.items || []);
-      setCurrentFolder(folder);
-      logger.info('admin.lists.items.fetched', { folder, count: data.items?.length });
+      setCurrentType(type);
+      setCurrentList(listName);
+      logger.info('admin.lists.items.fetched', { type, list: listName, count: data.items?.length });
       return data.items;
     } catch (err) {
       setError(err);
-      logger.error('admin.lists.items.fetch.failed', { folder, message: err.message });
+      logger.error('admin.lists.items.fetch.failed', { type, list: listName, message: err.message });
       throw err;
     } finally {
       setLoading(false);
     }
   }, [logger]);
 
-  // Create a new folder
-  const createFolder = useCallback(async (name) => {
+  // Create a new list
+  const createList = useCallback(async (type, name) => {
     setLoading(true);
     setError(null);
     try {
-      const result = await DaylightAPI(`${API_BASE}/lists`, { name }, 'POST');
-      logger.info('admin.lists.folder.created', { folder: result.folder });
-      await fetchFolders();
+      const result = await DaylightAPI(`${API_BASE}/lists/${type}`, { name }, 'POST');
+      logger.info('admin.lists.created', { type, list: result.list });
+      await fetchLists(type);
       return result;
     } catch (err) {
       setError(err);
-      logger.error('admin.lists.folder.create.failed', { name, message: err.message });
+      logger.error('admin.lists.create.failed', { type, name, message: err.message });
       throw err;
     } finally {
       setLoading(false);
     }
-  }, [fetchFolders, logger]);
+  }, [fetchLists, logger]);
 
-  // Delete a folder
-  const deleteFolder = useCallback(async (folder) => {
+  // Delete a list
+  const deleteList = useCallback(async (type, listName) => {
     setLoading(true);
     setError(null);
     try {
-      await DaylightAPI(`${API_BASE}/lists/${folder}`, {}, 'DELETE');
-      logger.info('admin.lists.folder.deleted', { folder });
-      await fetchFolders();
+      await DaylightAPI(`${API_BASE}/lists/${type}/${listName}`, {}, 'DELETE');
+      logger.info('admin.lists.deleted', { type, list: listName });
+      await fetchLists(type);
     } catch (err) {
       setError(err);
-      logger.error('admin.lists.folder.delete.failed', { folder, message: err.message });
+      logger.error('admin.lists.delete.failed', { type, list: listName, message: err.message });
       throw err;
     } finally {
       setLoading(false);
     }
-  }, [fetchFolders, logger]);
+  }, [fetchLists, logger]);
 
-  // Add an item to current folder
+  // Add an item to current list
   const addItem = useCallback(async (item) => {
-    if (!currentFolder) throw new Error('No folder selected');
+    if (!currentType || !currentList) throw new Error('No list selected');
     setLoading(true);
     setError(null);
     try {
-      const result = await DaylightAPI(`${API_BASE}/lists/${currentFolder}/items`, item, 'POST');
-      logger.info('admin.lists.item.added', { folder: currentFolder, index: result.index });
-      await fetchItems(currentFolder);
+      const result = await DaylightAPI(`${API_BASE}/lists/${currentType}/${currentList}/items`, item, 'POST');
+      logger.info('admin.lists.item.added', { type: currentType, list: currentList, index: result.index });
+      await fetchItems(currentType, currentList);
       return result;
     } catch (err) {
       setError(err);
-      logger.error('admin.lists.item.add.failed', { folder: currentFolder, message: err.message });
+      logger.error('admin.lists.item.add.failed', { type: currentType, list: currentList, message: err.message });
       throw err;
     } finally {
       setLoading(false);
     }
-  }, [currentFolder, fetchItems, logger]);
+  }, [currentType, currentList, fetchItems, logger]);
 
   // Update an item
   const updateItem = useCallback(async (index, updates) => {
-    if (!currentFolder) throw new Error('No folder selected');
+    if (!currentType || !currentList) throw new Error('No list selected');
     setLoading(true);
     setError(null);
     try {
-      await DaylightAPI(`${API_BASE}/lists/${currentFolder}/items/${index}`, updates, 'PUT');
-      logger.info('admin.lists.item.updated', { folder: currentFolder, index });
-      await fetchItems(currentFolder);
+      await DaylightAPI(`${API_BASE}/lists/${currentType}/${currentList}/items/${index}`, updates, 'PUT');
+      logger.info('admin.lists.item.updated', { type: currentType, list: currentList, index });
+      await fetchItems(currentType, currentList);
     } catch (err) {
       setError(err);
-      logger.error('admin.lists.item.update.failed', { folder: currentFolder, index, message: err.message });
+      logger.error('admin.lists.item.update.failed', { type: currentType, list: currentList, index, message: err.message });
       throw err;
     } finally {
       setLoading(false);
     }
-  }, [currentFolder, fetchItems, logger]);
+  }, [currentType, currentList, fetchItems, logger]);
 
   // Delete an item
   const deleteItem = useCallback(async (index) => {
-    if (!currentFolder) throw new Error('No folder selected');
+    if (!currentType || !currentList) throw new Error('No list selected');
     setLoading(true);
     setError(null);
     try {
-      await DaylightAPI(`${API_BASE}/lists/${currentFolder}/items/${index}`, {}, 'DELETE');
-      logger.info('admin.lists.item.deleted', { folder: currentFolder, index });
-      await fetchItems(currentFolder);
+      await DaylightAPI(`${API_BASE}/lists/${currentType}/${currentList}/items/${index}`, {}, 'DELETE');
+      logger.info('admin.lists.item.deleted', { type: currentType, list: currentList, index });
+      await fetchItems(currentType, currentList);
     } catch (err) {
       setError(err);
-      logger.error('admin.lists.item.delete.failed', { folder: currentFolder, index, message: err.message });
+      logger.error('admin.lists.item.delete.failed', { type: currentType, list: currentList, index, message: err.message });
       throw err;
     } finally {
       setLoading(false);
     }
-  }, [currentFolder, fetchItems, logger]);
+  }, [currentType, currentList, fetchItems, logger]);
 
   // Reorder items (full replacement)
   const reorderItems = useCallback(async (newItems) => {
-    if (!currentFolder) throw new Error('No folder selected');
+    if (!currentType || !currentList) throw new Error('No list selected');
     setLoading(true);
     setError(null);
     try {
-      await DaylightAPI(`${API_BASE}/lists/${currentFolder}`, { items: newItems }, 'PUT');
+      await DaylightAPI(`${API_BASE}/lists/${currentType}/${currentList}`, { items: newItems }, 'PUT');
       setItems(newItems.map((item, index) => ({ ...item, index })));
-      logger.info('admin.lists.reordered', { folder: currentFolder, count: newItems.length });
+      logger.info('admin.lists.reordered', { type: currentType, list: currentList, count: newItems.length });
     } catch (err) {
       setError(err);
-      logger.error('admin.lists.reorder.failed', { folder: currentFolder, message: err.message });
+      logger.error('admin.lists.reorder.failed', { type: currentType, list: currentList, message: err.message });
       throw err;
     } finally {
       setLoading(false);
     }
-  }, [currentFolder, logger]);
+  }, [currentType, currentList, logger]);
 
   // Toggle item active state (inline)
   const toggleItemActive = useCallback(async (index) => {
@@ -172,14 +175,15 @@ export function useAdminLists() {
     // State
     loading,
     error,
-    folders,
+    lists,
     items,
-    currentFolder,
+    currentType,
+    currentList,
 
-    // Folder operations
-    fetchFolders,
-    createFolder,
-    deleteFolder,
+    // List operations
+    fetchLists,
+    createList,
+    deleteList,
 
     // Item operations
     fetchItems,
