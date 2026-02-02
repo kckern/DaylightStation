@@ -82,10 +82,11 @@ Base: `/api/v1/admin/content`
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/lists` | Overview of all types with counts |
-| GET | `/lists/:type` | List all lists of a type |
+| GET | `/lists/:type` | List all lists of a type (with metadata) |
 | POST | `/lists/:type` | Create new list |
-| GET | `/lists/:type/:name` | Get items in list |
-| PUT | `/lists/:type/:name` | Replace list contents (reorder) |
+| GET | `/lists/:type/:name` | Get list with metadata and items |
+| PUT | `/lists/:type/:name` | Replace list items (preserves metadata) |
+| PUT | `/lists/:type/:name/settings` | Update list-level settings only |
 | DELETE | `/lists/:type/:name` | Delete entire list |
 | POST | `/lists/:type/:name/items` | Add item to list |
 | PUT | `/lists/:type/:name/items/:index` | Update item |
@@ -95,17 +96,113 @@ Where `:type` is one of: `menus`, `watchlists`, `programs`
 
 ---
 
-## Item Schema
+## YAML Format
 
-All config list items share a base schema:
+Lists support two YAML formats for backward compatibility:
+
+### Old Format (Array at Root)
 
 ```yaml
-- label: "Display Name"
-  input: "plex: 12345"        # Content reference
-  action: "Play"              # Play, Queue, List
-  active: true                # Whether item is enabled
-  image: "https://..."        # Optional thumbnail
+# cartoons.yml - items directly at root
+- label: Stinky and Dirty
+  input: plex:585114
+- label: Holy Moly
+  input: plex:456598
 ```
+
+### New Format (Metadata + Items)
+
+```yaml
+# cartoons.yml - metadata wrapper with items key
+title: Saturday Cartoons
+description: Weekend cartoon rotation for kids
+group: Kids
+sorting: manual
+days: Weekend
+defaultAction: Queue
+
+items:
+  - label: Stinky and Dirty
+    input: plex:585114
+    continuous: true
+  - label: Holy Moly
+    input: plex:456598
+```
+
+The API reads both formats and always writes the new format (preserving metadata).
+
+---
+
+## List-Level Metadata
+
+Lists can have the following metadata fields:
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `title` | string | filename | Display title for the list |
+| `description` | string | null | Optional description |
+| `group` | string | null | Group name for organizing lists |
+| `icon` | string | null | Tabler icon name (e.g., "IconMusic") |
+| `sorting` | string | "manual" | Sorting mode: manual, alpha, random, recent |
+| `days` | string | null | Days preset when list is active |
+| `active` | boolean | true | Whether list is enabled |
+| `defaultAction` | string | "Play" | Default action for new items |
+| `defaultVolume` | number | null | Default volume (0-100) |
+| `defaultPlaybackRate` | number | null | Default playback speed (0.5-3.0) |
+
+---
+
+## Item Schema
+
+All config list items share a base schema with optional extended fields.
+
+### Identity Fields
+
+| Field | Type | Default | Required | Description |
+|-------|------|---------|----------|-------------|
+| `label` | string | - | Yes | Display name |
+| `input` | string | - | Yes | Content reference (e.g., "plex:12345") |
+| `action` | string | "Play" | No | Action: Play, Queue, List, Shuffle |
+| `active` | boolean | true | No | Whether item is enabled |
+| `group` | string | null | No | Group name for organization |
+| `image` | string | null | No | Custom thumbnail URL/path |
+| `uid` | string | auto | No | Unique identifier (auto-generated) |
+
+### Playback Fields
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `shuffle` | boolean | false | Randomize playback order |
+| `continuous` | boolean | false | Auto-advance to next item |
+| `loop` | boolean | false | Loop playback |
+| `fixedOrder` | boolean | false | Prevent shuffle override |
+| `volume` | number | 100 | Volume level (0-100) |
+| `playbackRate` | number | 1.0 | Playback speed (0.5-3.0) |
+
+### Scheduling Fields
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `days` | string | null | Days preset: Daily, Weekdays, Weekend, MWF, TTh |
+| `snooze` | string | null | Snooze duration (e.g., "1d", "2h") |
+| `waitUntil` | string | null | ISO date - don't show before |
+
+### Display Fields
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `shader` | string | null | Visual shader effect |
+| `composite` | boolean | false | Composite mode |
+| `playable` | boolean | true | Whether item is directly playable |
+
+### Progress Fields (Watchlists)
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `progress` | number | null | Override progress (0-100) |
+| `watched` | boolean | false | Override watched status |
+
+> **Note:** Progress fields are typically managed by media_memory. Manual overrides may be reset when media is played.
 
 ### Watchlist-specific fields
 
@@ -116,7 +213,7 @@ All config list items share a base schema:
   hold: false                 # Temporarily skip
   skipAfter: "2026-03-01"     # Deadline
   waitUntil: "2026-02-15"     # Don't show before
-  days: [1, 3, 5]             # ISO weekdays (M, W, F)
+  days: "MWF"                 # Mon, Wed, Fri
 ```
 
 ### Program-specific fields
@@ -142,6 +239,60 @@ When content is requested from a config list:
    - `containerType: 'program'` → preserve source order, return all eligible
 
 See `item-selection-service.md` for full selection logic.
+
+---
+
+## Admin UI Components
+
+The ContentLists module (`frontend/src/modules/Admin/ContentLists/`) provides a complete admin interface.
+
+### Index View (ListsIndex)
+
+- Grid of list cards grouped by `group` field
+- Shows title, description, icon, item count
+- "Inactive" badge for disabled lists
+- Click to navigate to list contents
+
+### Folder View (ListsFolder)
+
+- Spreadsheet-style table with drag-and-drop reordering
+- Columns: Active, Drag, Index, Label, Action, Input, Progress (watchlists), Config, Menu
+- **Progress Column:** Shows progress bar or watched checkmark (watchlists only)
+- **Config Column:** Shows priority icons for active config options (max 2 + overflow)
+- Inline editing for label, action, and input
+- Settings modal for list-level metadata
+
+### Item Editor (ListsItemEditor)
+
+Two-mode editor accessible via row menu or config icons:
+
+**Simple Mode:**
+- Label, Input, Action, Active, Image, Group
+- Quick editing for basic items
+
+**Full Mode:**
+- Accordion categories: Identity, Playback, Scheduling, Display, Progress, Custom
+- All item fields with appropriate controls (switches, sliders, date pickers)
+- Custom fields section for unknown YAML keys (pass-through)
+
+### Config Indicators (ConfigIndicators)
+
+Shows active config options as icons in the table:
+- Priority-based display (max 2 icons + "+N" overflow)
+- Icons: shuffle, continuous, loop, fixedOrder, volume, playbackRate, days, snooze, waitUntil, shader, composite
+- Tooltip shows all active options
+- Click opens editor in Full mode
+
+### Constants (listConstants.js)
+
+Exports for use across components:
+- `ACTION_OPTIONS` - Play, Queue, List, Shuffle
+- `SORTING_OPTIONS` - Manual, Alphabetical, Random, Recently Added
+- `DAYS_PRESETS` - Daily, Weekdays, Weekend, MWF, TTh
+- `KNOWN_ITEM_FIELDS` - All managed fields
+- `ITEM_DEFAULTS` - Default values
+- `CONFIG_INDICATORS` - Icon definitions with conditions
+- `LIST_DEFAULTS` - List-level defaults
 
 ---
 
