@@ -198,6 +198,104 @@ export class ImmichClient {
   }
 
   /**
+   * Get all tags
+   * @returns {Promise<Array>}
+   */
+  async getTags() {
+    const response = await this.#httpClient.get(
+      `${this.#host}/api/tags`,
+      { headers: this.#getHeaders() }
+    );
+    return response.data || [];
+  }
+
+  /**
+   * Get assets with a specific tag
+   * @param {string} tagId - Tag ID
+   * @returns {Promise<Array>}
+   */
+  async getTagAssets(tagId) {
+    const response = await this.#httpClient.get(
+      `${this.#host}/api/tags/${tagId}`,
+      { headers: this.#getHeaders() }
+    );
+    return response.data?.assets || [];
+  }
+
+  /**
+   * Search assets by geographic bounds (map view)
+   * @param {Object} bounds - Geographic bounds
+   * @param {number} bounds.lat - Center latitude
+   * @param {number} bounds.lon - Center longitude
+   * @param {number} [bounds.radius=0.1] - Radius in degrees (roughly)
+   * @returns {Promise<Array>}
+   */
+  async searchByLocation(bounds) {
+    const { lat, lon, radius = 0.1 } = bounds;
+
+    // Create bounding box from center + radius
+    const query = {
+      // Immich uses these for geo search
+      latitude: lat,
+      longitude: lon,
+      // Or use city/state if available
+      take: 100,
+      order: 'desc'
+    };
+
+    const response = await this.#httpClient.post(
+      `${this.#host}/api/search/metadata`,
+      query,
+      {
+        headers: {
+          ...this.#getHeaders(),
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+    return response.data?.assets?.items || [];
+  }
+
+  /**
+   * Search using CLIP/smart search (semantic search)
+   * @param {string} query - Natural language query
+   * @param {number} [take=50] - Max results
+   * @returns {Promise<Array>}
+   */
+  async smartSearch(query, take = 50) {
+    const response = await this.#httpClient.post(
+      `${this.#host}/api/search/smart`,
+      { query, take },
+      {
+        headers: {
+          ...this.#getHeaders(),
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+    return response.data?.assets?.items || [];
+  }
+
+  /**
+   * Get map markers (clustered assets by location)
+   * @param {Object} bounds - Map viewport bounds
+   * @returns {Promise<Array>}
+   */
+  async getMapMarkers(bounds = {}) {
+    const params = new URLSearchParams();
+    if (bounds.north) params.append('north', bounds.north);
+    if (bounds.south) params.append('south', bounds.south);
+    if (bounds.east) params.append('east', bounds.east);
+    if (bounds.west) params.append('west', bounds.west);
+
+    const response = await this.#httpClient.get(
+      `${this.#host}/api/map/markers?${params.toString()}`,
+      { headers: this.#getHeaders() }
+    );
+    return response.data || [];
+  }
+
+  /**
    * Parse Immich duration string to seconds
    * @param {string} durationStr - "HH:MM:SS.mmm" format
    * @returns {number|null}

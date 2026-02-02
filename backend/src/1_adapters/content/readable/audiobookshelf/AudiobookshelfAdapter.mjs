@@ -95,6 +95,15 @@ export class AudiobookshelfAdapter {
   }
 
   /**
+   * Build author image URL
+   * @param {string} authorId
+   * @returns {string}
+   */
+  #authorImageUrl(authorId) {
+    return `${this.#proxyPath}/authors/${authorId}/image`;
+  }
+
+  /**
    * Check if item data represents an ebook
    * @param {Object} item
    * @returns {boolean}
@@ -116,12 +125,21 @@ export class AudiobookshelfAdapter {
 
   /**
    * Get single item by ID
-   * @param {string} id - Compound ID (abs:item-123)
-   * @returns {Promise<ReadableItem|PlayableItem|null>}
+   * @param {string} id - Compound ID (abs:item-123 or abs:author:xyz)
+   * @returns {Promise<ReadableItem|PlayableItem|ListableItem|null>}
    */
   async getItem(id) {
     try {
       const localId = this.#stripPrefix(id);
+
+      // Handle author IDs
+      if (localId.startsWith('author:')) {
+        const authorId = localId.replace('author:', '');
+        const author = await this.#client.getAuthor(authorId);
+        if (!author) return null;
+        return this.#toAuthorListable(author);
+      }
+
       const item = await this.#client.getItem(localId);
       if (!item) return null;
 
@@ -149,7 +167,7 @@ export class AudiobookshelfAdapter {
 
   /**
    * Get list of items
-   * @param {string} id - Empty for libraries, lib:xyz for items in library
+   * @param {string} id - Empty for libraries, lib:xyz for items, author: for authors
    * @returns {Promise<ListableItem[]>}
    */
   async getList(id) {
@@ -161,6 +179,34 @@ export class AudiobookshelfAdapter {
         const data = await this.#client.getLibraries();
         const libraries = data.libraries || [];
         return libraries.map(lib => this.#toLibraryListable(lib));
+      }
+
+      // List all authors (across all libraries)
+      if (localId === 'author:' || localId === 'authors') {
+        const librariesData = await this.#client.getLibraries();
+        const libraries = librariesData.libraries || [];
+        const allAuthors = [];
+
+        for (const lib of libraries) {
+          try {
+            const authorsData = await this.#client.getAuthors(lib.id);
+            const authors = authorsData.authors || [];
+            allAuthors.push(...authors.map(a => this.#toAuthorListable(a)));
+          } catch {
+            // Skip libraries without authors
+          }
+        }
+        return allAuthors;
+      }
+
+      // Specific author's books
+      if (localId.startsWith('author:')) {
+        const authorId = localId.replace('author:', '');
+        const author = await this.#client.getAuthor(authorId);
+        if (!author) return [];
+        // Author response includes libraryItems when ?include=items
+        const items = author.libraryItems || [];
+        return items.map(item => this.#toItemListable(item));
       }
 
       // Library contents (items)
@@ -240,52 +286,139 @@ export class AudiobookshelfAdapter {
   async search(query = {}) {
     try {
       const { mediaType, text, take = 20, skip = 0 } = query;
+      const searchText = text || query.query; // Support translated query.query
 
       // Get all libraries first
       const librariesData = await this.#client.getLibraries();
       const libraries = librariesData.libraries || [];
 
-      const allItems = [];
+      // Search authors and items in parallel
+      const [matchingAuthors, allItems] = await Promise.all([
+        searchText ? this.#searchAuthors(searchText, libraries) : Promise.resolve([]),
+        this.#searchItems(searchText, mediaType, libraries)
+      ]);
 
-      // Fetch items from each library
-      for (const lib of libraries) {
-        const itemsData = await this.#client.getLibraryItems(lib.id, 0, 100);
-        const items = itemsData.results || [];
-
-        for (const item of items) {
-          // Filter by mediaType if specified
-          const isAudiobook = this.#isAudiobook(item);
-          const isEbook = this.#isEbook(item);
-
-          if (mediaType === 'audio' && !isAudiobook) continue;
-          if (mediaType === 'ebook' && !isEbook) continue;
-
-          // Filter by text if specified (simple title search)
-          if (text) {
-            const title = item.media?.metadata?.title?.toLowerCase() || '';
-            if (!title.includes(text.toLowerCase())) continue;
-          }
-
-          // Convert to appropriate item type
-          if (isAudiobook) {
-            allItems.push(this.#toPlayableItem(item, null));
-          } else if (isEbook) {
-            allItems.push(this.#toReadableItem(item, null));
-          }
-        }
-      }
+      // Combine - authors first (higher relevance), then items
+      const combinedItems = [...matchingAuthors, ...allItems];
 
       // Apply pagination
-      const paginatedItems = allItems.slice(skip, skip + take);
+      const paginatedItems = combinedItems.slice(skip, skip + take);
 
       return {
         items: paginatedItems,
-        total: allItems.length
+        total: combinedItems.length
       };
     } catch (err) {
       console.error('[AudiobookshelfAdapter] search error:', err.message);
       return { items: [], total: 0 };
     }
+  }
+
+  /**
+   * Search for authors by name
+   * @param {string} searchText
+   * @param {Array} libraries
+   * @returns {Promise<ListableItem[]>}
+   */
+  async #searchAuthors(searchText, libraries) {
+    try {
+      const searchLower = searchText.toLowerCase();
+      const matchingAuthorIds = [];
+
+      // First pass: find matching author IDs
+      for (const lib of libraries) {
+        try {
+          const authorsData = await this.#client.getAuthors(lib.id);
+          const authors = authorsData.authors || [];
+
+          const matching = authors.filter(a =>
+            a.name && a.name.toLowerCase().includes(searchLower)
+          );
+
+          matchingAuthorIds.push(...matching.map(a => a.id));
+        } catch {
+          // Skip libraries without authors
+        }
+      }
+
+      // Second pass: fetch full author data (with books) for thumbnails
+      const matchingAuthors = await Promise.all(
+        matchingAuthorIds.map(async (id) => {
+          try {
+            const author = await this.#client.getAuthor(id);
+            return this.#toAuthorListable(author);
+          } catch {
+            return null;
+          }
+        })
+      );
+
+      const validAuthors = matchingAuthors.filter(Boolean);
+
+      // Sort by relevance - exact match first, then starts with, then contains
+      validAuthors.sort((a, b) => {
+        const aName = a.title.toLowerCase();
+        const bName = b.title.toLowerCase();
+        const aExact = aName === searchLower;
+        const bExact = bName === searchLower;
+        const aStarts = aName.startsWith(searchLower);
+        const bStarts = bName.startsWith(searchLower);
+
+        if (aExact && !bExact) return -1;
+        if (bExact && !aExact) return 1;
+        if (aStarts && !bStarts) return -1;
+        if (bStarts && !aStarts) return 1;
+        // Secondary sort by book count
+        return (b.childCount || 0) - (a.childCount || 0);
+      });
+
+      return validAuthors;
+    } catch (err) {
+      console.error('[AudiobookshelfAdapter] searchAuthors error:', err.message);
+      return [];
+    }
+  }
+
+  /**
+   * Search for items (books) by title
+   * @param {string} searchText
+   * @param {string} mediaType
+   * @param {Array} libraries
+   * @returns {Promise<Array>}
+   */
+  async #searchItems(searchText, mediaType, libraries) {
+    const allItems = [];
+
+    for (const lib of libraries) {
+      const itemsData = await this.#client.getLibraryItems(lib.id, { limit: 100 });
+      const items = itemsData.results || [];
+
+      for (const item of items) {
+        // Filter by mediaType if specified
+        const isAudiobook = this.#isAudiobook(item);
+        const isEbook = this.#isEbook(item);
+
+        if (mediaType === 'audio' && !isAudiobook) continue;
+        if (mediaType === 'ebook' && !isEbook) continue;
+
+        // Filter by text if specified (simple title search)
+        if (searchText) {
+          const title = item.media?.metadata?.title?.toLowerCase() || '';
+          const author = item.media?.metadata?.authorName?.toLowerCase() || '';
+          if (!title.includes(searchText.toLowerCase()) &&
+              !author.includes(searchText.toLowerCase())) continue;
+        }
+
+        // Convert to appropriate item type
+        if (isAudiobook) {
+          allItems.push(this.#toPlayableItem(item, null));
+        } else if (isEbook) {
+          allItems.push(this.#toReadableItem(item, null));
+        }
+      }
+    }
+
+    return allItems;
   }
 
   /**
@@ -397,6 +530,46 @@ export class AudiobookshelfAdapter {
       metadata: {
         type: 'library',
         mediaType: library.mediaType
+      }
+    });
+  }
+
+  /**
+   * Convert Audiobookshelf author to ListableItem
+   * @param {Object} author
+   * @returns {ListableItem}
+   */
+  #toAuthorListable(author) {
+    const bookCount = author.numBooks || author.libraryItems?.length || 0;
+
+    // Use author image if available, otherwise use first book's cover
+    let thumbnail = null;
+    if (author.imagePath) {
+      thumbnail = this.#authorImageUrl(author.id);
+    } else if (author.libraryItems?.length > 0) {
+      // Fallback to first book's cover
+      const firstBookId = author.libraryItems[0].id;
+      thumbnail = this.#coverUrl(firstBookId);
+    }
+
+    return new ListableItem({
+      id: `abs:author:${author.id}`,
+      source: 'abs',
+      title: author.name,
+      itemType: 'container',
+      childCount: bookCount,
+      thumbnail,
+      metadata: {
+        type: 'author',
+        // Parent info - Authors is a root concept in Audiobookshelf
+        librarySectionTitle: 'Audiobookshelf',
+        parentTitle: 'Author',
+        // Item counts
+        childCount: bookCount,
+        leafCount: bookCount,
+        // Author-specific
+        description: author.description || null,
+        asin: author.asin || null
       }
     });
   }

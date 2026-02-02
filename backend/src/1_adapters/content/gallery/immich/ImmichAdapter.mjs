@@ -94,7 +94,7 @@ export class ImmichAdapter {
 
   /**
    * Get single item by ID
-   * @param {string} id - Compound ID (immich:abc-123)
+   * @param {string} id - Compound ID (immich:abc-123, immich:person:abc-123, immich:album:abc-123)
    * @returns {Promise<ListableItem|PlayableItem|null>}
    */
   async getItem(id) {
@@ -108,13 +108,59 @@ export class ImmichAdapter {
         return this.#toAlbumListable(album);
       }
 
-      const asset = await this.#client.getAsset(localId);
-      if (!asset) return null;
-
-      if (asset.type === 'VIDEO') {
-        return this.#toPlayableItem(asset);
+      // Check if it's a person reference
+      if (localId.startsWith('person:')) {
+        const personId = localId.replace('person:', '');
+        const people = await this.#client.getPeople({ withStatistics: true });
+        const person = people.find(p => p.id === personId);
+        if (!person) return null;
+        return this.#toPersonListable(person);
       }
-      return this.#toListableItem(asset);
+
+      // Check if it's a tag reference
+      if (localId.startsWith('tag:')) {
+        const tagId = localId.replace('tag:', '');
+        const tags = await this.#client.getTags();
+        const tag = tags.find(t => t.id === tagId);
+        if (!tag) return null;
+        return this.#toTagListable(tag);
+      }
+
+      // Try as asset ID first
+      try {
+        const asset = await this.#client.getAsset(localId);
+        if (asset) {
+          if (asset.type === 'VIDEO') {
+            return this.#toPlayableItem(asset);
+          }
+          return this.#toListableItem(asset);
+        }
+      } catch {
+        // Asset lookup failed - continue to try other lookups
+      }
+
+      // If asset lookup failed, try as person ID (for bare UUIDs without person: prefix)
+      try {
+        const people = await this.#client.getPeople({ withStatistics: true });
+        const person = people.find(p => p.id === localId);
+        if (person) {
+          return this.#toPersonListable(person);
+        }
+      } catch {
+        // Ignore person lookup errors
+      }
+
+      // Try as album ID
+      try {
+        const album = await this.#client.getAlbum(localId);
+        if (album) {
+          return this.#toAlbumListable(album);
+        }
+      } catch {
+        // Ignore album lookup errors
+      }
+
+      return null;
     } catch (err) {
       console.error('[ImmichAdapter] getItem error:', err.message);
       return null;
@@ -145,12 +191,48 @@ export class ImmichAdapter {
         return people.map(person => this.#toPersonListable(person));
       }
 
+      // List all tags
+      if (localId === 'tag:' || localId === 'tags') {
+        const tags = await this.#client.getTags();
+        return tags.map(tag => this.#toTagListable(tag));
+      }
+
+      // Tag's photos
+      if (localId.startsWith('tag:')) {
+        const tagId = localId.replace('tag:', '');
+        const tags = await this.#client.getTags();
+        const tag = tags.find(t => t.id === tagId);
+        const tagName = tag?.name || 'Unknown';
+
+        const assets = await this.#client.getTagAssets(tagId);
+        const context = {
+          parentTitle: tagName,
+          parentId: `immich:tag:${tagId}`
+        };
+        return assets.map(asset =>
+          asset.type === 'VIDEO'
+            ? this.#toPlayableItem(asset, false, context)
+            : this.#toListableItem(asset, context)
+        );
+      }
+
       // Person's photos
       if (localId.startsWith('person:')) {
         const personId = localId.replace('person:', '');
+        // Fetch person info for context
+        const people = await this.#client.getPeople({ withStatistics: true });
+        const person = people.find(p => p.id === personId);
+        const personName = person?.name || 'Unknown';
+
         const assets = await this.#client.getPersonAssets(personId);
+        const context = {
+          parentTitle: personName,
+          parentId: `immich:person:${personId}`
+        };
         return assets.map(asset =>
-          asset.type === 'VIDEO' ? this.#toPlayableItem(asset) : this.#toListableItem(asset)
+          asset.type === 'VIDEO'
+            ? this.#toPlayableItem(asset, false, context)
+            : this.#toListableItem(asset, context)
         );
       }
 
@@ -158,8 +240,14 @@ export class ImmichAdapter {
       if (localId.startsWith('album:')) {
         const albumId = localId.replace('album:', '');
         const album = await this.#client.getAlbum(albumId);
+        const context = {
+          parentTitle: album.albumName,
+          parentId: `immich:album:${albumId}`
+        };
         return (album.assets || []).map(asset =>
-          asset.type === 'VIDEO' ? this.#toPlayableItem(asset) : this.#toListableItem(asset)
+          asset.type === 'VIDEO'
+            ? this.#toPlayableItem(asset, false, context)
+            : this.#toListableItem(asset, context)
         );
       }
 
@@ -172,24 +260,43 @@ export class ImmichAdapter {
 
   /**
    * Resolve to playable items (for slideshows)
-   * @param {string} id - Album or asset ID
+   * @param {string} id - Album, person, or asset ID
    * @returns {Promise<PlayableItem[]>}
    */
   async resolvePlayables(id) {
     try {
       const localId = this.#stripPrefix(id);
 
-      // Single asset
-      if (!localId.startsWith('album:')) {
-        const asset = await this.#client.getAsset(localId);
-        if (!asset) return [];
-        return [this.#toPlayableItem(asset, true)];
+      // Person's photos as slideshow
+      if (localId.startsWith('person:')) {
+        const personId = localId.replace('person:', '');
+        const people = await this.#client.getPeople({ withStatistics: true });
+        const person = people.find(p => p.id === personId);
+        const personName = person?.name || 'Unknown';
+
+        const assets = await this.#client.getPersonAssets(personId);
+        const context = {
+          parentTitle: personName,
+          parentId: `immich:person:${personId}`
+        };
+        return assets.map(asset => this.#toPlayableItem(asset, true, context));
       }
 
       // Album = all assets as slideshow
-      const albumId = localId.replace('album:', '');
-      const album = await this.#client.getAlbum(albumId);
-      return (album.assets || []).map(asset => this.#toPlayableItem(asset, true));
+      if (localId.startsWith('album:')) {
+        const albumId = localId.replace('album:', '');
+        const album = await this.#client.getAlbum(albumId);
+        const context = {
+          parentTitle: album.albumName,
+          parentId: `immich:album:${albumId}`
+        };
+        return (album.assets || []).map(asset => this.#toPlayableItem(asset, true, context));
+      }
+
+      // Single asset
+      const asset = await this.#client.getAsset(localId);
+      if (!asset) return [];
+      return [this.#toPlayableItem(asset, true)];
     } catch (err) {
       console.error('[ImmichAdapter] resolvePlayables error:', err.message);
       return [];
@@ -230,24 +337,213 @@ export class ImmichAdapter {
   }
 
   /**
-   * Search for media items
+   * Search for media items, people, tags, and albums
    * @param {Object} query - MediaSearchQuery
    * @returns {Promise<{items: Array, total: number}>}
    */
   async search(query) {
     try {
-      const immichQuery = await this.#buildImmichQuery(query);
-      const result = await this.#client.searchMetadata(immichQuery);
+      // Use query.text or query.query (after translation)
+      const searchText = query.text || query.query;
 
-      const items = (result.items || []).map(asset =>
-        asset.type === 'VIDEO' ? this.#toPlayableItem(asset) : this.#toListableItem(asset)
-      );
+      // Check for special search patterns
+      const mapMatch = searchText?.match(/^map#([\d.-]+)\/([\d.-]+)\/([\d.-]+)$/);
+      if (mapMatch) {
+        // Geo search: map#zoom/lat/lon
+        return this.#searchByMap(parseFloat(mapMatch[2]), parseFloat(mapMatch[3]), parseFloat(mapMatch[1]));
+      }
 
-      return { items, total: result.total || items.length };
+      // Run all searches in parallel
+      const [assetResult, matchingPeople, matchingTags, matchingAlbums] = await Promise.all([
+        this.#searchAssets(query),
+        searchText ? this.#searchPeople(searchText) : Promise.resolve([]),
+        searchText ? this.#searchTags(searchText) : Promise.resolve([]),
+        searchText ? this.#searchAlbums(searchText) : Promise.resolve([])
+      ]);
+
+      // Combine results - containers first (people, tags, albums), then assets
+      const items = [
+        ...matchingPeople,
+        ...matchingTags,
+        ...matchingAlbums,
+        ...assetResult.items
+      ];
+      const total = items.length;
+
+      return { items, total };
     } catch (err) {
       console.error('[ImmichAdapter] search error:', err.message);
       return { items: [], total: 0 };
     }
+  }
+
+  /**
+   * Search for assets by query
+   * @param {Object} query
+   * @returns {Promise<{items: Array}>}
+   */
+  async #searchAssets(query) {
+    const immichQuery = await this.#buildImmichQuery(query);
+    const result = await this.#client.searchMetadata(immichQuery);
+
+    const items = (result.items || []).map(asset =>
+      asset.type === 'VIDEO' ? this.#toPlayableItem(asset) : this.#toListableItem(asset)
+    );
+
+    return { items };
+  }
+
+  /**
+   * Search for people by name
+   * @param {string} text - Search text
+   * @returns {Promise<ListableItem[]>}
+   */
+  async #searchPeople(text) {
+    try {
+      const searchLower = text.toLowerCase();
+      const people = await this.#client.getPeople({ withStatistics: true });
+
+      // Find people whose names contain the search text
+      const matching = people.filter(p =>
+        p.name && p.name.toLowerCase().includes(searchLower)
+      );
+
+      // Sort by relevance - exact match first, then starts with, then contains
+      matching.sort((a, b) => {
+        const aName = a.name.toLowerCase();
+        const bName = b.name.toLowerCase();
+        const aExact = aName === searchLower;
+        const bExact = bName === searchLower;
+        const aStarts = aName.startsWith(searchLower);
+        const bStarts = bName.startsWith(searchLower);
+
+        if (aExact && !bExact) return -1;
+        if (bExact && !aExact) return 1;
+        if (aStarts && !bStarts) return -1;
+        if (bStarts && !aStarts) return 1;
+        // Secondary sort by asset count (more photos = higher)
+        return (b.assetCount || 0) - (a.assetCount || 0);
+      });
+
+      return matching.map(person => this.#toPersonListable(person));
+    } catch (err) {
+      console.error('[ImmichAdapter] searchPeople error:', err.message);
+      return [];
+    }
+  }
+
+  /**
+   * Search for tags by name
+   * @param {string} text - Search text
+   * @returns {Promise<ListableItem[]>}
+   */
+  async #searchTags(text) {
+    try {
+      const searchLower = text.toLowerCase();
+      const tags = await this.#client.getTags();
+
+      // Find tags whose names contain the search text
+      const matching = tags.filter(t =>
+        t.name && t.name.toLowerCase().includes(searchLower)
+      );
+
+      // Sort by relevance
+      matching.sort((a, b) => {
+        const aName = a.name.toLowerCase();
+        const bName = b.name.toLowerCase();
+        if (aName === searchLower) return -1;
+        if (bName === searchLower) return 1;
+        if (aName.startsWith(searchLower)) return -1;
+        if (bName.startsWith(searchLower)) return 1;
+        return 0;
+      });
+
+      return matching.map(tag => this.#toTagListable(tag));
+    } catch (err) {
+      console.error('[ImmichAdapter] searchTags error:', err.message);
+      return [];
+    }
+  }
+
+  /**
+   * Search for albums by name
+   * @param {string} text - Search text
+   * @returns {Promise<ListableItem[]>}
+   */
+  async #searchAlbums(text) {
+    try {
+      const searchLower = text.toLowerCase();
+      const albums = await this.#client.getAlbums();
+
+      // Find albums whose names contain the search text
+      const matching = albums.filter(a =>
+        a.albumName && a.albumName.toLowerCase().includes(searchLower)
+      );
+
+      // Sort by relevance
+      matching.sort((a, b) => {
+        const aName = a.albumName.toLowerCase();
+        const bName = b.albumName.toLowerCase();
+        if (aName === searchLower) return -1;
+        if (bName === searchLower) return 1;
+        if (aName.startsWith(searchLower)) return -1;
+        if (bName.startsWith(searchLower)) return 1;
+        return (b.assetCount || 0) - (a.assetCount || 0);
+      });
+
+      return matching.map(album => this.#toAlbumListable(album));
+    } catch (err) {
+      console.error('[ImmichAdapter] searchAlbums error:', err.message);
+      return [];
+    }
+  }
+
+  /**
+   * Search by map coordinates
+   * @param {number} lat - Latitude
+   * @param {number} lon - Longitude
+   * @param {number} zoom - Zoom level (higher = smaller area)
+   * @returns {Promise<{items: Array, total: number}>}
+   */
+  async #searchByMap(lat, lon, zoom) {
+    try {
+      // Convert zoom to approximate radius (higher zoom = smaller radius)
+      const radius = Math.max(0.01, 10 / Math.pow(2, zoom - 10));
+
+      const assets = await this.#client.searchByLocation({ lat, lon, radius });
+
+      const items = assets.map(asset =>
+        asset.type === 'VIDEO' ? this.#toPlayableItem(asset) : this.#toListableItem(asset)
+      );
+
+      return { items, total: items.length };
+    } catch (err) {
+      console.error('[ImmichAdapter] searchByMap error:', err.message);
+      return { items: [], total: 0 };
+    }
+  }
+
+  /**
+   * Convert tag to ListableItem
+   * @param {Object} tag
+   * @returns {ListableItem}
+   */
+  #toTagListable(tag) {
+    return new ListableItem({
+      id: `immich:tag:${tag.id}`,
+      source: 'immich',
+      title: tag.name,
+      itemType: 'container',
+      childCount: tag.assetCount || 0,
+      thumbnail: null, // Tags don't have thumbnails
+      metadata: {
+        type: 'tag',
+        librarySectionTitle: 'Immich',
+        parentTitle: 'Tag',
+        childCount: tag.assetCount || 0,
+        color: tag.color || null
+      }
+    });
   }
 
   /**
@@ -284,6 +580,7 @@ export class ImmichAdapter {
       playlists: 'album:',
       albums: 'album:',
       people: 'person:',
+      tags: 'tag:',
       cameras: 'camera:'
     };
   }
@@ -380,18 +677,26 @@ export class ImmichAdapter {
    * @returns {ListableItem}
    */
   #toAlbumListable(album) {
+    const assetCount = album.assetCount || album.assets?.length || 0;
     return new ListableItem({
       id: `immich:album:${album.id}`,
       source: 'immich',
       title: album.albumName,
       itemType: 'container',
-      childCount: album.assetCount || album.assets?.length || 0,
+      childCount: assetCount,
       thumbnail: album.albumThumbnailAssetId
         ? this.#thumbnailUrl(album.albumThumbnailAssetId)
         : null,
       description: album.description || null,
       metadata: {
         type: 'album',
+        // Parent info - Albums is a root concept in Immich
+        librarySectionTitle: 'Immich',
+        parentTitle: 'Albums',
+        // Item counts
+        childCount: assetCount,
+        leafCount: assetCount,
+        // Album-specific
         shared: album.shared || false
       }
     });
@@ -403,21 +708,28 @@ export class ImmichAdapter {
    * @returns {ListableItem}
    */
   #toPersonListable(person) {
+    const assetCount = person.assetCount || 0;
     return new ListableItem({
       id: `immich:person:${person.id}`,
       source: 'immich',
       title: person.name || 'Unknown',
       itemType: 'container',
-      childCount: person.assetCount || 0,
-      thumbnail: person.thumbnailPath
-        ? `${this.#proxyPath}${person.thumbnailPath}`
-        : null,
+      childCount: assetCount,
+      // Use API endpoint for person thumbnails (not internal file path)
+      thumbnail: `${this.#proxyPath}/api/people/${person.id}/thumbnail`,
       metadata: {
         type: 'person',
+        // Parent info - Person is a root concept in Immich
+        librarySectionTitle: 'Immich',
+        parentTitle: 'Person',
+        // Item counts for display
+        childCount: assetCount,
+        leafCount: assetCount,
+        // Person-specific fields
         birthDate: person.birthDate,
         isHidden: person.isHidden || false,
         isFavorite: person.isFavorite || false,
-        assetCount: person.assetCount || 0
+        assetCount: assetCount
       }
     });
   }
@@ -425,9 +737,12 @@ export class ImmichAdapter {
   /**
    * Convert asset to ListableItem (for images in browse view)
    * @param {Object} asset
+   * @param {Object} [context] - Optional context for parent info
+   * @param {string} [context.parentTitle] - Parent container name
+   * @param {string} [context.parentId] - Parent container ID
    * @returns {ListableItem}
    */
-  #toListableItem(asset) {
+  #toListableItem(asset, context = {}) {
     return new ListableItem({
       id: `immich:${asset.id}`,
       source: 'immich',
@@ -437,6 +752,11 @@ export class ImmichAdapter {
       imageUrl: this.#originalUrl(asset.id),
       metadata: {
         type: asset.type?.toLowerCase() || 'image',
+        // Library/parent info
+        librarySectionTitle: 'Immich',
+        parentTitle: context.parentTitle || null,
+        parentId: context.parentId || null,
+        // Asset details
         width: asset.width,
         height: asset.height,
         capturedAt: asset.exifInfo?.dateTimeOriginal,
@@ -450,9 +770,12 @@ export class ImmichAdapter {
    * Convert asset to PlayableItem (for videos or slideshow images)
    * @param {Object} asset
    * @param {boolean} [forSlideshow=false] - If true, images get synthetic duration
+   * @param {Object} [context] - Optional context for parent info
+   * @param {string} [context.parentTitle] - Parent container name
+   * @param {string} [context.parentId] - Parent container ID
    * @returns {PlayableItem}
    */
-  #toPlayableItem(asset, forSlideshow = false) {
+  #toPlayableItem(asset, forSlideshow = false, context = {}) {
     const isVideo = asset.type === 'VIDEO';
     const duration = isVideo
       ? this.#client.parseDuration(asset.duration)
@@ -469,6 +792,11 @@ export class ImmichAdapter {
       thumbnail: this.#thumbnailUrl(asset.id),
       metadata: {
         type: asset.type?.toLowerCase(),
+        // Library/parent info
+        librarySectionTitle: 'Immich',
+        parentTitle: context.parentTitle || null,
+        parentId: context.parentId || null,
+        // Asset details
         width: asset.width,
         height: asset.height,
         capturedAt: asset.exifInfo?.dateTimeOriginal,

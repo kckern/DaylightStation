@@ -142,6 +142,32 @@ export class AudiobookshelfClient {
   }
 
   /**
+   * Get all authors in a library
+   * @param {string} libraryId - Library ID
+   * @returns {Promise<{authors: Array}>}
+   */
+  async getAuthors(libraryId) {
+    const response = await this.#httpClient.get(
+      `${this.#host}/api/libraries/${libraryId}/authors`,
+      { headers: this.#getHeaders() }
+    );
+    return response.data;
+  }
+
+  /**
+   * Get a specific author by ID
+   * @param {string} authorId - Author ID
+   * @returns {Promise<Object>}
+   */
+  async getAuthor(authorId) {
+    const response = await this.#httpClient.get(
+      `${this.#host}/api/authors/${authorId}?include=items`,
+      { headers: this.#getHeaders() }
+    );
+    return response.data;
+  }
+
+  /**
    * Check if an item is an ebook
    * @param {Object} item - Audiobookshelf item
    * @returns {boolean}

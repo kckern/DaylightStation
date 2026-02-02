@@ -1,17 +1,23 @@
 /**
  * Admin Content Router
  *
- * CRUD endpoints for managing household watchlist content.
+ * CRUD endpoints for managing household config lists.
+ *
+ * Config Lists come in three types:
+ * - menus: Navigation structures (listable only, may contain non-playables)
+ * - watchlists: Content pools with progress tracking (listable + queueable)
+ * - programs: Ordered sequences for scheduled playback (listable + queueable)
  *
  * Endpoints:
- * - GET    /lists              - List all folders with item counts
- * - POST   /lists              - Create new folder
- * - GET    /lists/:folder      - Get items in folder
- * - PUT    /lists/:folder      - Replace folder contents (reorder)
- * - DELETE /lists/:folder      - Delete entire folder
- * - POST   /lists/:folder/items          - Add item to folder
- * - PUT    /lists/:folder/items/:index   - Update item at index
- * - DELETE /lists/:folder/items/:index   - Remove item at index
+ * - GET    /lists                     - List all types with counts
+ * - GET    /lists/:type               - List all lists of a type
+ * - POST   /lists/:type               - Create new list
+ * - GET    /lists/:type/:name         - Get items in list
+ * - PUT    /lists/:type/:name         - Replace list contents (reorder)
+ * - DELETE /lists/:type/:name         - Delete entire list
+ * - POST   /lists/:type/:name/items          - Add item to list
+ * - PUT    /lists/:type/:name/items/:index   - Update item at index
+ * - DELETE /lists/:type/:name/items/:index   - Remove item at index
  */
 import express from 'express';
 import path from 'path';
@@ -28,11 +34,14 @@ import {
   ConflictError
 } from '#system/utils/errors/index.mjs';
 
-// Validation pattern for folder names (lowercase, alphanumeric, hyphens)
-const FOLDER_NAME_PATTERN = /^[a-z0-9-]+$/;
+// Valid list types
+const LIST_TYPES = ['menus', 'watchlists', 'programs'];
+
+// Validation pattern for list names (lowercase, alphanumeric, hyphens)
+const LIST_NAME_PATTERN = /^[a-z0-9-]+$/;
 
 /**
- * Convert display name to kebab-case folder name
+ * Convert display name to kebab-case list name
  * @param {string} name - Display name (e.g., "Morning Program")
  * @returns {string} - Kebab-case name (e.g., "morning-program")
  */
@@ -42,6 +51,18 @@ function toKebabCase(name) {
     .trim()
     .replace(/\s+/g, '-')
     .replace(/[^a-z0-9-]/g, '');
+}
+
+/**
+ * Validate list type parameter
+ */
+function validateType(type) {
+  if (!LIST_TYPES.includes(type)) {
+    throw new ValidationError(`Invalid list type: ${type}`, {
+      field: 'type',
+      hint: `Must be one of: ${LIST_TYPES.join(', ')}`
+    });
+  }
 }
 
 /**
@@ -63,121 +84,176 @@ export function createAdminContentRouter(config) {
   const router = express.Router();
 
   /**
-   * Get the watchlists directory path for a household
+   * Get the lists base directory for a household
    */
-  function getWatchlistsDir(householdId) {
+  function getListsBaseDir(householdId) {
     const hid = householdId || configService.getDefaultHouseholdId();
-    const basePath = userDataService.getHouseholdPath(hid);
-    return path.join(basePath, 'config', 'watchlists');
+    const basePath = userDataService.getHouseholdDir(hid);
+    return path.join(basePath, 'config', 'lists');
   }
 
   /**
-   * Get full path to a watchlist file
+   * Get directory for a specific list type
    */
-  function getWatchlistPath(folder, householdId) {
-    const watchlistsDir = getWatchlistsDir(householdId);
-    return path.join(watchlistsDir, folder);
+  function getTypeDir(type, householdId) {
+    return path.join(getListsBaseDir(householdId), type);
+  }
+
+  /**
+   * Get full path to a list file
+   */
+  function getListPath(type, listName, householdId) {
+    return path.join(getTypeDir(type, householdId), listName);
   }
 
   // =============================================================================
-  // Folder Endpoints
+  // Overview Endpoint
   // =============================================================================
 
   /**
-   * GET /lists - List all folders with item counts
+   * GET /lists - Overview of all list types with counts
    */
   router.get('/lists', (req, res) => {
     const householdId = req.query.household || configService.getDefaultHouseholdId();
 
     try {
-      const watchlistsDir = getWatchlistsDir(householdId);
+      const baseDir = getListsBaseDir(householdId);
 
-      // Get all YAML files in the watchlists directory
-      const folderNames = listYamlFiles(watchlistsDir);
-
-      // Build folder list with counts
-      const folders = folderNames.map(name => {
-        const items = loadYamlSafe(path.join(watchlistsDir, name)) || [];
+      const summary = LIST_TYPES.map(type => {
+        const typeDir = path.join(baseDir, type);
+        const names = listYamlFiles(typeDir);
         return {
-          name,
-          count: Array.isArray(items) ? items.length : 0,
-          path: `config/watchlists/${name}.yml`
+          type,
+          count: names.length,
+          path: `config/lists/${type}`
         };
       });
 
-      logger.info?.('admin.lists.listed', { household: householdId, folderCount: folders.length });
+      const total = summary.reduce((sum, t) => sum + t.count, 0);
+
+      logger.info?.('admin.lists.overview', { household: householdId, total });
 
       res.json({
-        folders,
+        types: summary,
+        total,
         household: householdId
       });
     } catch (error) {
-      logger.error?.('admin.lists.list.failed', { error: error.message, household: householdId });
-      res.status(500).json({ error: 'Failed to list folders' });
+      logger.error?.('admin.lists.overview.failed', { error: error.message, household: householdId });
+      res.status(500).json({ error: 'Failed to get lists overview' });
+    }
+  });
+
+  // =============================================================================
+  // Type-Level Endpoints
+  // =============================================================================
+
+  /**
+   * GET /lists/:type - List all lists of a specific type
+   */
+  router.get('/lists/:type', (req, res) => {
+    const { type } = req.params;
+    const householdId = req.query.household || configService.getDefaultHouseholdId();
+
+    validateType(type);
+
+    try {
+      const typeDir = getTypeDir(type, householdId);
+      const listNames = listYamlFiles(typeDir);
+
+      const lists = listNames.map(name => {
+        const items = loadYamlSafe(path.join(typeDir, name)) || [];
+        return {
+          name,
+          count: Array.isArray(items) ? items.length : 0,
+          path: `config/lists/${type}/${name}.yml`
+        };
+      });
+
+      logger.info?.('admin.lists.type.listed', { type, household: householdId, count: lists.length });
+
+      res.json({
+        type,
+        lists,
+        household: householdId
+      });
+    } catch (error) {
+      logger.error?.('admin.lists.type.list.failed', { type, error: error.message, household: householdId });
+      res.status(500).json({ error: `Failed to list ${type}` });
     }
   });
 
   /**
-   * POST /lists - Create new folder
+   * POST /lists/:type - Create new list of a specific type
    */
-  router.post('/lists', (req, res) => {
+  router.post('/lists/:type', (req, res) => {
+    const { type } = req.params;
     const householdId = req.query.household || configService.getDefaultHouseholdId();
     const { name } = req.body || {};
 
+    validateType(type);
+
     if (!name || typeof name !== 'string' || !name.trim()) {
-      throw new ValidationError('Folder name is required', { field: 'name' });
+      throw new ValidationError('List name is required', { field: 'name' });
     }
 
-    const folderName = toKebabCase(name);
+    const listName = toKebabCase(name);
 
-    if (!FOLDER_NAME_PATTERN.test(folderName)) {
-      throw new ValidationError('Invalid folder name', {
+    if (!LIST_NAME_PATTERN.test(listName)) {
+      throw new ValidationError('Invalid list name', {
         field: 'name',
         hint: 'Use alphanumeric characters and hyphens only'
       });
     }
 
-    const watchlistsDir = getWatchlistsDir(householdId);
-    const watchlistPath = path.join(watchlistsDir, folderName);
+    const typeDir = getTypeDir(type, householdId);
+    const listPath = path.join(typeDir, listName);
 
-    // Check if folder already exists
-    const existing = loadYamlSafe(watchlistPath);
+    // Check if list already exists
+    const existing = loadYamlSafe(listPath);
     if (existing !== null) {
-      throw new ConflictError('Folder already exists', { folder: folderName });
+      throw new ConflictError('List already exists', { type, list: listName });
     }
 
     try {
-      // Ensure the watchlists directory exists
-      ensureDir(watchlistsDir);
+      // Ensure the type directory exists
+      ensureDir(typeDir);
 
-      // Create empty folder
-      saveYaml(watchlistPath, []);
+      // Create empty list
+      saveYaml(listPath, []);
 
-      logger.info?.('admin.lists.created', { folder: folderName, household: householdId });
+      logger.info?.('admin.lists.created', { type, list: listName, household: householdId });
 
       res.status(201).json({
         ok: true,
-        folder: folderName,
-        path: `config/watchlists/${folderName}.yml`
+        type,
+        list: listName,
+        path: `config/lists/${type}/${listName}.yml`
       });
     } catch (error) {
-      logger.error?.('admin.lists.create.failed', { folder: folderName, error: error.message });
-      res.status(500).json({ error: 'Failed to create folder' });
+      logger.error?.('admin.lists.create.failed', { type, list: listName, error: error.message });
+      res.status(500).json({ error: 'Failed to create list' });
     }
   });
 
+  // =============================================================================
+  // List-Level Endpoints
+  // =============================================================================
+
   /**
-   * GET /lists/:folder - Get items in folder
+   * GET /lists/:type/:name - Get items in a list
    */
-  router.get('/lists/:folder', (req, res) => {
-    const { folder } = req.params;
+  router.get('/lists/:type/:name', (req, res) => {
+    const { type, name: listName } = req.params;
     const householdId = req.query.household || configService.getDefaultHouseholdId();
 
-    const watchlistPath = getWatchlistPath(folder, householdId);
-    const items = loadYamlSafe(watchlistPath);
+    validateType(type);
+
+    const listPath = getListPath(type, listName, householdId);
+    const items = loadYamlSafe(listPath);
 
     if (items === null) {
-      throw new NotFoundError('Folder', folder);
+      throw new NotFoundError('List', `${type}/${listName}`);
     }
 
     // Ensure items is an array and add indices
@@ -187,10 +263,11 @@ export function createAdminContentRouter(config) {
       ...item
     }));
 
-    logger.info?.('admin.lists.folder.loaded', { folder, count: indexedItems.length, household: householdId });
+    logger.info?.('admin.lists.loaded', { type, list: listName, count: indexedItems.length, household: householdId });
 
     res.json({
-      folder,
+      type,
+      list: listName,
       items: indexedItems,
       count: indexedItems.length,
       household: householdId
@@ -198,71 +275,76 @@ export function createAdminContentRouter(config) {
   });
 
   /**
-   * PUT /lists/:folder - Replace folder contents (for reordering)
+   * PUT /lists/:type/:name - Replace list contents (for reordering)
    */
-  router.put('/lists/:folder', (req, res) => {
-    const { folder } = req.params;
+  router.put('/lists/:type/:name', (req, res) => {
+    const { type, name: listName } = req.params;
     const householdId = req.query.household || configService.getDefaultHouseholdId();
     const { items } = req.body || {};
+
+    validateType(type);
 
     if (!items || !Array.isArray(items)) {
       throw new ValidationError('Items array is required', { field: 'items' });
     }
 
-    const watchlistPath = getWatchlistPath(folder, householdId);
+    const listPath = getListPath(type, listName, householdId);
 
-    // Check if folder exists
-    const existing = loadYamlSafe(watchlistPath);
+    // Check if list exists
+    const existing = loadYamlSafe(listPath);
     if (existing === null) {
-      throw new NotFoundError('Folder', folder);
+      throw new NotFoundError('List', `${type}/${listName}`);
     }
 
     try {
       // Remove index field if present (it's computed, not stored)
       const cleanItems = items.map(({ index, ...item }) => item);
 
-      saveYaml(watchlistPath, cleanItems);
+      saveYaml(listPath, cleanItems);
 
-      logger.info?.('admin.lists.reordered', { folder, count: cleanItems.length, household: householdId });
+      logger.info?.('admin.lists.reordered', { type, list: listName, count: cleanItems.length, household: householdId });
 
       res.json({
         ok: true,
-        folder,
+        type,
+        list: listName,
         count: cleanItems.length
       });
     } catch (error) {
-      logger.error?.('admin.lists.reorder.failed', { folder, error: error.message });
-      res.status(500).json({ error: 'Failed to update folder' });
+      logger.error?.('admin.lists.reorder.failed', { type, list: listName, error: error.message });
+      res.status(500).json({ error: 'Failed to update list' });
     }
   });
 
   /**
-   * DELETE /lists/:folder - Delete entire folder
+   * DELETE /lists/:type/:name - Delete entire list
    */
-  router.delete('/lists/:folder', (req, res) => {
-    const { folder } = req.params;
+  router.delete('/lists/:type/:name', (req, res) => {
+    const { type, name: listName } = req.params;
     const householdId = req.query.household || configService.getDefaultHouseholdId();
 
-    const watchlistPath = getWatchlistPath(folder, householdId);
+    validateType(type);
 
-    // Check if folder exists
-    const existing = loadYamlSafe(watchlistPath);
+    const listPath = getListPath(type, listName, householdId);
+
+    // Check if list exists
+    const existing = loadYamlSafe(listPath);
     if (existing === null) {
-      throw new NotFoundError('Folder', folder);
+      throw new NotFoundError('List', `${type}/${listName}`);
     }
 
     try {
-      deleteYaml(watchlistPath);
+      deleteYaml(listPath);
 
-      logger.info?.('admin.lists.deleted', { folder, household: householdId });
+      logger.info?.('admin.lists.deleted', { type, list: listName, household: householdId });
 
       res.json({
         ok: true,
-        deleted: { folder }
+        deleted: { type, list: listName }
       });
     } catch (error) {
-      logger.error?.('admin.lists.delete.failed', { folder, error: error.message });
-      res.status(500).json({ error: 'Failed to delete folder' });
+      logger.error?.('admin.lists.delete.failed', { type, list: listName, error: error.message });
+      res.status(500).json({ error: 'Failed to delete list' });
     }
   });
 
@@ -271,86 +353,95 @@ export function createAdminContentRouter(config) {
   // =============================================================================
 
   /**
-   * POST /lists/:folder/items - Add item to folder
+   * POST /lists/:type/:name/items - Add item to list
    */
-  router.post('/lists/:folder/items', (req, res) => {
-    const { folder } = req.params;
+  router.post('/lists/:type/:name/items', (req, res) => {
+    const { type, name: listName } = req.params;
     const householdId = req.query.household || configService.getDefaultHouseholdId();
-    const { label, input, action = 'Play', active = true, image = null } = req.body || {};
+    const itemData = req.body || {};
 
-    // Validate required fields
-    if (!label || typeof label !== 'string' || !label.trim()) {
+    validateType(type);
+
+    // Validate required fields based on type
+    if (!itemData.label || typeof itemData.label !== 'string' || !itemData.label.trim()) {
       throw new ValidationError('Missing required field', { field: 'label' });
     }
-    if (!input || typeof input !== 'string' || !input.trim()) {
+    if (!itemData.input || typeof itemData.input !== 'string' || !itemData.input.trim()) {
       throw new ValidationError('Missing required field', { field: 'input' });
     }
 
-    const watchlistPath = getWatchlistPath(folder, householdId);
-    const items = loadYamlSafe(watchlistPath);
+    const listPath = getListPath(type, listName, householdId);
+    const items = loadYamlSafe(listPath);
 
     if (items === null) {
-      throw new NotFoundError('Folder', folder);
+      throw new NotFoundError('List', `${type}/${listName}`);
     }
 
     try {
       const itemsArray = Array.isArray(items) ? items : [];
 
-      // Build new item
+      // Build new item - preserve all provided fields
       const newItem = {
-        label: label.trim(),
-        input: input.trim(),
-        action,
-        active
+        label: itemData.label.trim(),
+        input: itemData.input.trim()
       };
 
-      // Only add image if provided
-      if (image) {
-        newItem.image = image;
-      }
+      // Copy optional fields if provided
+      if (itemData.action !== undefined) newItem.action = itemData.action;
+      if (itemData.active !== undefined) newItem.active = itemData.active;
+      if (itemData.image !== undefined) newItem.image = itemData.image;
+      if (itemData.shuffle !== undefined) newItem.shuffle = itemData.shuffle;
+      if (itemData.continuous !== undefined) newItem.continuous = itemData.continuous;
+      if (itemData.days !== undefined) newItem.days = itemData.days;
+      if (itemData.hold !== undefined) newItem.hold = itemData.hold;
+      if (itemData.priority !== undefined) newItem.priority = itemData.priority;
+      if (itemData.group !== undefined) newItem.group = itemData.group;
 
       itemsArray.push(newItem);
-      saveYaml(watchlistPath, itemsArray);
+      saveYaml(listPath, itemsArray);
 
       const newIndex = itemsArray.length - 1;
 
-      logger.info?.('admin.lists.item.added', { folder, index: newIndex, label, household: householdId });
+      logger.info?.('admin.lists.item.added', { type, list: listName, index: newIndex, label: newItem.label, household: householdId });
 
       res.status(201).json({
         ok: true,
         index: newIndex,
-        folder
+        type,
+        list: listName
       });
     } catch (error) {
-      logger.error?.('admin.lists.item.add.failed', { folder, label, error: error.message });
+      logger.error?.('admin.lists.item.add.failed', { type, list: listName, label: itemData.label, error: error.message });
       res.status(500).json({ error: 'Failed to add item' });
     }
   });
 
   /**
-   * PUT /lists/:folder/items/:index - Update item at index
+   * PUT /lists/:type/:name/items/:index - Update item at index
    */
-  router.put('/lists/:folder/items/:index', (req, res) => {
-    const { folder, index: indexStr } = req.params;
+  router.put('/lists/:type/:name/items/:index', (req, res) => {
+    const { type, name: listName, index: indexStr } = req.params;
     const householdId = req.query.household || configService.getDefaultHouseholdId();
     const updates = req.body || {};
+
+    validateType(type);
 
     const index = parseInt(indexStr, 10);
     if (isNaN(index) || index < 0) {
       throw new ValidationError('Invalid index', { field: 'index' });
     }
 
-    const watchlistPath = getWatchlistPath(folder, householdId);
-    const items = loadYamlSafe(watchlistPath);
+    const listPath = getListPath(type, listName, householdId);
+    const items = loadYamlSafe(listPath);
 
     if (items === null) {
-      throw new NotFoundError('Folder', folder);
+      throw new NotFoundError('List', `${type}/${listName}`);
     }
 
     const itemsArray = Array.isArray(items) ? items : [];
 
     if (index >= itemsArray.length) {
-      throw new NotFoundError('Item', index, { folder });
+      throw new NotFoundError('Item', index, { type, list: listName });
     }
 
     try {
@@ -358,60 +449,64 @@ export function createAdminContentRouter(config) {
       const existingItem = itemsArray[index];
       const updatedItem = { ...existingItem };
 
-      // Apply updates (only for allowed fields)
-      if (updates.label !== undefined) updatedItem.label = updates.label;
-      if (updates.input !== undefined) updatedItem.input = updates.input;
-      if (updates.action !== undefined) updatedItem.action = updates.action;
-      if (updates.active !== undefined) updatedItem.active = updates.active;
-      if (updates.image !== undefined) updatedItem.image = updates.image;
+      // Apply updates for any provided field
+      const allowedFields = ['label', 'input', 'action', 'active', 'image', 'shuffle', 'continuous', 'days', 'hold', 'priority', 'skipAfter', 'waitUntil', 'group'];
+      for (const field of allowedFields) {
+        if (updates[field] !== undefined) {
+          updatedItem[field] = updates[field];
+        }
+      }
 
       itemsArray[index] = updatedItem;
-      saveYaml(watchlistPath, itemsArray);
+      saveYaml(listPath, itemsArray);
 
-      logger.info?.('admin.lists.item.updated', { folder, index, household: householdId });
+      logger.info?.('admin.lists.item.updated', { type, list: listName, index, household: householdId });
 
       res.json({
         ok: true,
         index,
-        folder
+        type,
+        list: listName
       });
     } catch (error) {
-      logger.error?.('admin.lists.item.update.failed', { folder, index, error: error.message });
+      logger.error?.('admin.lists.item.update.failed', { type, list: listName, index, error: error.message });
       res.status(500).json({ error: 'Failed to update item' });
     }
   });
 
   /**
-   * DELETE /lists/:folder/items/:index - Remove item at index
+   * DELETE /lists/:type/:name/items/:index - Remove item at index
    */
-  router.delete('/lists/:folder/items/:index', (req, res) => {
-    const { folder, index: indexStr } = req.params;
+  router.delete('/lists/:type/:name/items/:index', (req, res) => {
+    const { type, name: listName, index: indexStr } = req.params;
     const householdId = req.query.household || configService.getDefaultHouseholdId();
+
+    validateType(type);
 
     const index = parseInt(indexStr, 10);
     if (isNaN(index) || index < 0) {
       throw new ValidationError('Invalid index', { field: 'index' });
     }
 
-    const watchlistPath = getWatchlistPath(folder, householdId);
-    const items = loadYamlSafe(watchlistPath);
+    const listPath = getListPath(type, listName, householdId);
+    const items = loadYamlSafe(listPath);
 
     if (items === null) {
-      throw new NotFoundError('Folder', folder);
+      throw new NotFoundError('List', `${type}/${listName}`);
     }
 
     const itemsArray = Array.isArray(items) ? items : [];
 
     if (index >= itemsArray.length) {
-      throw new NotFoundError('Item', index, { folder });
+      throw new NotFoundError('Item', index, { type, list: listName });
     }
 
     try {
       const deletedItem = itemsArray[index];
       itemsArray.splice(index, 1);
-      saveYaml(watchlistPath, itemsArray);
+      saveYaml(listPath, itemsArray);
 
-      logger.info?.('admin.lists.item.deleted', { folder, index, label: deletedItem.label, household: householdId });
+      logger.info?.('admin.lists.item.deleted', { type, list: listName, index, label: deletedItem.label, household: householdId });
 
       res.json({
         ok: true,
@@ -421,7 +516,7 @@ export function createAdminContentRouter(config) {
         }
       });
     } catch (error) {
-      logger.error?.('admin.lists.item.delete.failed', { folder, index, error: error.message });
+      logger.error?.('admin.lists.item.delete.failed', { type, list: listName, index, error: error.message });
       res.status(500).json({ error: 'Failed to delete item' });
     }
   });
