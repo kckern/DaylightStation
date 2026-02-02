@@ -71,7 +71,7 @@ When `play=container` or `queue=container`, item selection is handled by **ItemS
 
 | Container Type | Default Strategy | Filter | Sort | Pick |
 |----------------|------------------|--------|------|------|
-| Watchlist (folder) | `watchlist` | skipAfter, hold, watched, days | priority | first (play) / all (queue) |
+| Watchlist | `watchlist` | skipAfter, hold, watched, days | priority | first (play) / all (queue) |
 | Album | `album` | none | track_order | first (play) / all (queue) |
 | Playlist | `playlist` | none | source_order | first (play) / all (queue) |
 | Search results | `discovery` | none | random | first (play) / all (queue) |
