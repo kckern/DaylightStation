@@ -246,6 +246,58 @@ export class ContentQueryService {
     }
     return arr;
   }
+
+  /**
+   * Enrich items with watch state from mediaProgressMemory.
+   * @param {Array} items - Items to enrich
+   * @param {Object} adapter - Adapter for storage path resolution
+   * @returns {Promise<Array>} Enriched items
+   */
+  async #enrichWithWatchState(items, adapter) {
+    if (!this.#mediaProgressMemory || items.length === 0) {
+      return items;
+    }
+
+    return Promise.all(items.map(async (item) => {
+      const storagePath = typeof adapter.getStoragePath === 'function'
+        ? await adapter.getStoragePath(item.id)
+        : adapter.source || 'default';
+
+      const progress = await this.#mediaProgressMemory.get(item.id, storagePath);
+
+      if (!progress) return item;
+
+      return {
+        ...item,
+        percent: progress.percent ?? 0,
+        playhead: progress.playhead ?? 0,
+        duration: progress.duration ?? item.duration ?? 0,
+        watched: (progress.percent ?? 0) >= 90
+      };
+    }));
+  }
+
+  /**
+   * Resolve a query to playable items with selection applied.
+   * @param {string} source - Source name
+   * @param {string} localId - Local ID/path within source
+   * @param {Object} [context] - Selection context
+   * @param {Date} [context.now] - Current date
+   * @param {Object} [overrides] - Selection strategy overrides
+   * @returns {Promise<{items: Array, strategy: Object}>}
+   */
+  async resolve(source, localId, context = {}, overrides = {}) {
+    const adapter = this.#registry.get(source);
+    if (!adapter) {
+      throw new Error(`Unknown source: ${source}`);
+    }
+
+    const items = await adapter.resolvePlayables(localId);
+    const enriched = await this.#enrichWithWatchState(items, adapter);
+
+    // TODO: Apply ItemSelectionService in next task
+    return { items: enriched, strategy: null };
+  }
 }
 
 export default ContentQueryService;
