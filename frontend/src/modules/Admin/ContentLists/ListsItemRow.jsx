@@ -10,6 +10,8 @@ import {
 } from '@tabler/icons-react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import ConfigIndicators from './ConfigIndicators.jsx';
+import ProgressDisplay from './ProgressDisplay.jsx';
 
 const ACTION_OPTIONS = [
   { value: 'Play', label: 'Play' },
@@ -1370,7 +1372,7 @@ function ItemDetailsDrawer({ opened, onClose, contentValue }) {
   );
 }
 
-function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate }) {
+function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, isWatchlist, onEdit }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: item.index
   });
@@ -1483,6 +1485,16 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate })
         />
       </div>
 
+      {isWatchlist && (
+        <div className="col-progress">
+          <ProgressDisplay item={item} />
+        </div>
+      )}
+
+      <div className="col-config">
+        <ConfigIndicators item={item} onClick={onEdit ? () => onEdit() : undefined} />
+      </div>
+
       <div className="col-menu">
         <Menu position="bottom-end">
           <Menu.Target>
@@ -1515,7 +1527,7 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate })
 }
 
 // Empty row for adding new items at the bottom
-function EmptyItemRow({ onAdd, nextIndex }) {
+function EmptyItemRow({ onAdd, nextIndex, isWatchlist }) {
   const [label, setLabel] = useState('');
   const [action, setAction] = useState('Play');
   const [input, setInput] = useState('');
@@ -1575,6 +1587,10 @@ function EmptyItemRow({ onAdd, nextIndex }) {
       <div className="col-input">
         <ContentSearchCombobox value={input} onChange={setInput} />
       </div>
+      {isWatchlist && (
+        <div className="col-progress"></div>
+      )}
+      <div className="col-config"></div>
       <div className="col-menu"></div>
     </div>
   );
