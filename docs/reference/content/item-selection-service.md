@@ -42,7 +42,7 @@ ItemSelectionService.select(items, context, overrides)
 | `items` | `Array` | Pre-enriched items with metadata (percent, priority, etc.) |
 | `context.now` | `Date` | Current date (required for filtering) |
 | `context.action` | `string` | play, queue, display, list, read |
-| `context.containerType` | `string` | folder, album, playlist, search |
+| `context.containerType` | `string` | watchlist, program, album, playlist, search |
 | `context.query` | `object` | Query filters used (person, time, text) |
 | `overrides.strategy` | `string` | Force named strategy |
 | `overrides.sort` | `string` | Override sort only |
@@ -286,10 +286,10 @@ const items = [
 ];
 
 // Without fallback: returns []
-ItemSelectionService.select(items, { containerType: 'folder', now });
+ItemSelectionService.select(items, { containerType: 'watchlist', now });
 
 // With fallback: relaxes hold, then watched, returns item
-ItemSelectionService.select(items, { containerType: 'folder', now }, { allowFallback: true });
+ItemSelectionService.select(items, { containerType: 'watchlist', now }, { allowFallback: true });
 ```
 
 ---
@@ -381,8 +381,8 @@ ItemSelectionService is pure and synchronous:
 
 ```javascript
 // Get next item from watchlist for today
-const result = ItemSelectionService.select(folderItems, {
-  containerType: 'folder',
+const result = ItemSelectionService.select(watchlistItems, {
+  containerType: 'watchlist',
   now: new Date()
 });
 // Returns: first eligible item by priority
@@ -393,7 +393,7 @@ const result = ItemSelectionService.select(folderItems, {
 ```javascript
 // Skip all watch-state filters, play in order
 const result = ItemSelectionService.select(showEpisodes, {
-  containerType: 'folder',
+  containerType: 'watchlist',
   now: new Date()
 }, {
   strategy: 'binge'
@@ -487,7 +487,7 @@ ItemSelectionService is wired into the playback flow via `ContentQueryService.re
 // Application layer orchestrates the pipeline
 const result = await contentQueryService.resolve('folder', 'FHE', {
   now: new Date(),
-  containerType: 'folder'
+  containerType: 'watchlist'
 });
 
 // Returns: { items: [...selected], strategy: { name, filter, sort, pick } }

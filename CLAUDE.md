@@ -22,10 +22,6 @@ Read `.claude/settings.local.json` and look at the `env` section for all environ
     "hosts": {
       "prod": "user@hostname"
     },
-    "ports": {
-      "frontend": 5173,
-      "backend": 3112
-    },
     "docker": {
       "container": "daylight"
     },
@@ -49,9 +45,20 @@ If `env` values show `[object Object]`, the file is corrupted and needs manual r
 - **Data mount:** YAML data files (`env.mounts.data`)
 - **Media mount:** Media files (`env.mounts.media`)
 - **Prod host:** SSH target (`env.hosts.prod`)
-- **Dev ports:** Frontend, backend, API (`env.ports.*`)
 - **Docker container:** Container name (`env.docker.container`)
 - **Prod commands:** Access/Login (`env.production.*`)
+
+### Port Configuration
+
+Dev ports for this environment are in `settings.local.json`:
+- **App port:** `env.ports.app` (3111 on kckern-macbook)
+- **Backend port:** `env.ports.backend` (3112 on kckern-macbook)
+
+Runtime port config comes from `data/system/config/system.yml` based on `DAYLIGHT_ENV`.
+
+In dev mode, Vite runs on the app port and proxies `/api/*` to backend.
+
+**Never assume port 5173** - that's Vite's default, but this project configures it via system.yml.
 
 ### Dev Workflow
 
@@ -63,14 +70,15 @@ If `env` values show `[object Object]`, the file is corrupted and needs manual r
 
 The backend uses hostname-based config to avoid port conflicts with Docker:
 
-| Environment | Port | Check with |
-|-------------|------|------------|
-| Docker (prod) | 3111 | `ss -tlnp \| grep 3111` |
-| kckern-server (dev) | 3112 | `ss -tlnp \| grep 3112` |
+| Environment | App Port | Backend Port | Check with |
+|-------------|----------|--------------|------------|
+| Docker (prod) | 3111 | 3111 | `lsof -i :3111` |
+| kckern-macbook (dev) | 3111 | 3112 | `lsof -i :3111` |
+| kckern-server (dev) | 3112 | 3113 | `lsof -i :3112` |
 
 **Before starting dev server**, check if it's already running:
 ```bash
-ss -tlnp | grep 3112
+lsof -i :3111  # on kckern-macbook
 ```
 
 **Start dev server** (on kckern-server):
