@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import PropTypes from 'prop-types';
 import { Scriptures, Hymns, Talk, Poetry } from '../../ContentScroller/ContentScroller.jsx';
+import { SingingScroller } from '../../ContentScroller/SingingScroller.jsx';
+import { ReadingScroller } from '../../ContentScroller/ReadingScroller.jsx';
 import AppContainer from '../../AppContainer/AppContainer.jsx';
+import { getCategoryFromId } from '../../../lib/queryParamResolver.js';
 import { fetchMediaInfo } from '../lib/api.js';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { AudioPlayer } from './AudioPlayer.jsx';
@@ -79,8 +82,13 @@ export function SinglePlayer(props = {}) {
   // Shader diagnostics for loading state - must be called before early returns
   const loadingShaderRef = useRef(null);
   const playerContainerRef = useRef(null);
+
+  // Extract contentId for category-based routing
+  const { contentId } = play || {};
+  const category = contentId ? getCategoryFromId(contentId) : null;
+
   // Content scroller types don't use the shader, so disable for them
-  const isContentScrollerType = !!(scripture || hymn || primary || talk || poem);
+  const isContentScrollerType = !!(scripture || hymn || primary || talk || poem || category === 'singing' || category === 'reading');
   useShaderDiagnostics({
     shaderRef: loadingShaderRef,
     containerRef: playerContainerRef,
@@ -89,6 +97,15 @@ export function SinglePlayer(props = {}) {
     enabled: !isContentScrollerType && !suppressLocalOverlay
   });
 
+  // Category-based routing (new canonical contentId format)
+  if (contentId && category === 'singing') {
+    return <SingingScroller contentId={contentId} {...contentProps} {...contentScrollerBridge} />;
+  }
+  if (contentId && category === 'reading') {
+    return <ReadingScroller contentId={contentId} {...contentProps} {...contentScrollerBridge} />;
+  }
+
+  // Legacy fallback (keep for backwards compatibility during migration)
   if (!!scripture) return <Scriptures {...contentProps} {...contentScrollerBridge} />;
   if (!!hymn) return <Hymns {...contentProps} {...contentScrollerBridge} />;
   if (!!primary) return <Hymns {...contentProps} {...contentScrollerBridge} hymn={primary} subfolder="primary" />;
@@ -405,6 +422,7 @@ export function SinglePlayer(props = {}) {
 }
 
 SinglePlayer.propTypes = {
+  contentId: PropTypes.string,
   plex: PropTypes.string,
   media: PropTypes.string,
   hymn: PropTypes.any,
