@@ -13,3 +13,6 @@ export { DataManager, getDataManager, resetDataManager } from './data/DataManage
 
 // Layout exports
 export { GridLayout } from './layouts/GridLayout.jsx';
+
+// Widget exports
+export { WidgetWrapper } from './widgets/WidgetWrapper.jsx';
