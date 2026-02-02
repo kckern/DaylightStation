@@ -3,6 +3,7 @@
 import { ListableItem } from '#domains/content/capabilities/Listable.mjs';
 import { ReadableItem } from '#domains/content/capabilities/Readable.mjs';
 import { PlayableItem } from '#domains/content/capabilities/Playable.mjs';
+import { ContentCategory } from '#domains/content/value-objects/ContentCategory.mjs';
 import { AudiobookshelfClient } from './AudiobookshelfClient.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
@@ -465,6 +466,7 @@ export class AudiobookshelfAdapter {
       thumbnail: this.#coverUrl(item.id),
       description: metadata.description || null,
       metadata: {
+        category: ContentCategory.WORK,
         libraryId: item.libraryId,
         author: metadata.authorName || metadata.author,
         narrator: metadata.narratorName,
@@ -500,6 +502,7 @@ export class AudiobookshelfAdapter {
       thumbnail: this.#coverUrl(item.id),
       description: metadata.description || null,
       metadata: {
+        category: ContentCategory.WORK,
         libraryId: item.libraryId,
         author,
         // Alias for AudioPlayer frontend compatibility (looks for metadata.artist)
@@ -560,6 +563,7 @@ export class AudiobookshelfAdapter {
       childCount: bookCount,
       thumbnail,
       metadata: {
+        category: ContentCategory.CREATOR,
         type: 'author',
         // Parent info - Authors is a root concept in Audiobookshelf
         librarySectionTitle: 'Audiobookshelf',
@@ -590,6 +594,7 @@ export class AudiobookshelfAdapter {
       itemType: 'leaf',
       thumbnail: this.#coverUrl(item.id),
       metadata: {
+        category: ContentCategory.WORK,
         type: this.#isEbook(item) ? 'ebook' : 'audiobook',
         author: metadata.authorName || metadata.author,
         duration: media.duration,
