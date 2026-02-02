@@ -108,4 +108,70 @@ test.describe('Admin Lists Comprehensive', () => {
       }
     }
   });
+
+  test('Menus: all items render with proper cards', async ({ page }) => {
+    const type = 'menus';
+    const lists = expectedLists[type];
+    const errors = [];
+    let totalItemsChecked = 0;
+
+    console.log(`\nTesting ${lists.length} menus...`);
+
+    for (const listName of lists) {
+      console.log(`  Checking ${type}/${listName}...`);
+
+      // Navigate to list
+      await page.goto(`${BASE_URL}/admin/content/lists/${type}/${listName}`, {
+        waitUntil: 'networkidle',
+        timeout: 30000
+      });
+
+      // Wait for items to load
+      await page.waitForSelector('.item-row', { timeout: 10000 }).catch(() => null);
+
+      // Wait for content info to load
+      await page.waitForTimeout(3000);
+
+      // Get all rows
+      const rows = page.locator('.item-row');
+      const rowCount = await rows.count();
+
+      if (rowCount === 0) {
+        console.log(`    No items in ${listName}`);
+        continue;
+      }
+
+      // Get items from fixture for sampling
+      const fixtureItems = getListItems(type, listName);
+      const sampled = sampleItems(fixtureItems, SAMPLE_SIZE);
+
+      console.log(`    ${rowCount} rows, sampling ${sampled.length} items`);
+
+      // Validate sampled items
+      for (const sampledItem of sampled) {
+        const rowIdx = sampledItem.originalIndex;
+        if (rowIdx >= rowCount) continue;
+
+        const row = rows.nth(rowIdx);
+        const result = await validateCardStructure(row, rowIdx, `${type}/${listName}`);
+
+        if (!result.valid) {
+          errors.push(result.error);
+          if (result.unresolved) {
+            console.log(`    ❌ ${result.error}`);
+          }
+        }
+        totalItemsChecked++;
+      }
+    }
+
+    console.log(`\nMenus: Checked ${totalItemsChecked} items across ${lists.length} lists`);
+
+    if (errors.length > 0) {
+      console.log(`\n❌ ${errors.length} errors found:`);
+      errors.forEach(e => console.log(`  - ${e}`));
+    }
+
+    expect(errors, `Found ${errors.length} card rendering errors`).toHaveLength(0);
+  });
 });
