@@ -421,17 +421,24 @@ export function createAdminContentRouter(config) {
 
     const listPath = getListPath(type, listName, householdId);
 
-    // Check if list exists
+    // Load existing list to preserve metadata
     const existing = loadYamlSafe(listPath);
     if (existing === null) {
       throw new NotFoundError('List', `${type}/${listName}`);
     }
 
     try {
+      // Parse existing list to get metadata
+      const list = parseListContent(listName, existing);
+
       // Remove index field if present (it's computed, not stored)
       const cleanItems = items.map(({ index, ...item }) => item);
 
-      saveYaml(listPath, cleanItems);
+      // Replace items while preserving metadata
+      list.items = cleanItems;
+
+      // Save with serializeList to preserve metadata
+      saveYaml(listPath, serializeList(list));
 
       logger.info?.('admin.lists.reordered', { type, list: listName, count: cleanItems.length, household: householdId });
 
