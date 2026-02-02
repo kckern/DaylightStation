@@ -249,6 +249,18 @@ describe('ContentQueryService', () => {
         await expect(service.resolve('unknown', 'path/123')).rejects.toThrow('Unknown source: unknown');
       });
 
+      it('throws descriptive error when adapter lacks resolvePlayables', async () => {
+        const mockRegistry = {
+          get: jest.fn(() => ({ name: 'broken-adapter' })),
+          list: jest.fn(() => ['broken'])
+        };
+
+        const service = new ContentQueryService({ registry: mockRegistry });
+
+        await expect(service.resolve('broken', 'path'))
+          .rejects.toThrow('Adapter broken does not support resolvePlayables');
+      });
+
       it('preserves priority field from source items', async () => {
         const mockRegistry = {
           get: jest.fn(() => ({
