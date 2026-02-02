@@ -15,11 +15,12 @@ import { parseModifiers } from '../utils/modifierParser.mjs';
  * @param {Object} config
  * @param {Object} config.registry - ContentSourceRegistry
  * @param {Object} config.mediaProgressMemory - MediaProgressMemory
+ * @param {Object} [config.contentQueryService] - ContentQueryService for smart selection
  * @param {Object} [config.logger] - Logger instance
  * @returns {express.Router}
  */
 export function createPlayRouter(config) {
-  const { registry, mediaProgressMemory, logger = console } = config;
+  const { registry, mediaProgressMemory, contentQueryService, logger = console } = config;
   const router = express.Router();
 
   /**
@@ -279,20 +280,36 @@ export function createPlayRouter(config) {
         return res.status(404).json({ error: `Unknown source: ${source}` });
       }
 
-      // If shuffle modifier, resolve to playables and return random one
-      if (modifiers.shuffle && adapter.resolvePlayables) {
-        const playables = await adapter.resolvePlayables(localId);
-        if (!playables.length) {
+      // If shuffle modifier, use resolve with random pick
+      if (modifiers.shuffle) {
+        let selectedItem;
+
+        if (contentQueryService) {
+          const result = await contentQueryService.resolve(source, localId, { now: new Date() }, { pick: 'random' });
+
+          if (!result.items.length) {
+            return res.status(404).json({ error: 'No playable items found' });
+          }
+
+          selectedItem = result.items[0];
+        } else if (adapter.resolvePlayables) {
+          // Fallback: use adapter directly
+          const playables = await adapter.resolvePlayables(localId);
+          if (!playables.length) {
+            return res.status(404).json({ error: 'No playable items found' });
+          }
+
+          selectedItem = playables[Math.floor(Math.random() * playables.length)];
+        } else {
           return res.status(404).json({ error: 'No playable items found' });
         }
 
-        const randomItem = playables[Math.floor(Math.random() * playables.length)];
         const storagePath = typeof adapter.getStoragePath === 'function'
-          ? await adapter.getStoragePath(randomItem.id)
+          ? await adapter.getStoragePath(selectedItem.id)
           : source;
-        const watchState = mediaProgressMemory ? await mediaProgressMemory.get(randomItem.id, storagePath) : null;
+        const watchState = mediaProgressMemory ? await mediaProgressMemory.get(selectedItem.id, storagePath) : null;
 
-        return res.json(toPlayResponse(randomItem, watchState));
+        return res.json(toPlayResponse(selectedItem, watchState));
       }
 
       // Get single item
@@ -304,18 +321,27 @@ export function createPlayRouter(config) {
 
       // Check if it's a container (needs resolution to playable)
       if (item.isContainer?.() || item.itemType === 'container') {
-        const playables = await adapter.resolvePlayables(compoundId);
+        let playables;
+
+        if (contentQueryService) {
+          const result = await contentQueryService.resolve(source, localId, { now: new Date() });
+          playables = result.items;
+        } else {
+          // Fallback: use adapter directly
+          playables = await adapter.resolvePlayables(compoundId);
+        }
+
         if (!playables.length) {
           return res.status(404).json({ error: 'No playable items in container' });
         }
 
-        const firstPlayable = playables[0];
+        const selectedItem = playables[0];
         const storagePath = typeof adapter.getStoragePath === 'function'
-          ? await adapter.getStoragePath(firstPlayable.id)
+          ? await adapter.getStoragePath(selectedItem.id)
           : source;
-        const watchState = mediaProgressMemory ? await mediaProgressMemory.get(firstPlayable.id, storagePath) : null;
+        const watchState = mediaProgressMemory ? await mediaProgressMemory.get(selectedItem.id, storagePath) : null;
 
-        return res.json(toPlayResponse(firstPlayable, watchState));
+        return res.json(toPlayResponse(selectedItem, watchState));
       }
 
       // Return playable item
