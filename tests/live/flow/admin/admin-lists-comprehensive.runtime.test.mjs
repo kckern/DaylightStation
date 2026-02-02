@@ -89,33 +89,18 @@ async function validateCardStructure(row, rowIndex, listPath) {
 test.describe('Admin Lists Comprehensive', () => {
   test.setTimeout(300000); // 5 minutes for full suite
 
-  test('API returns all expected list types', async ({ request }) => {
-    const types = ['menus', 'programs', 'watchlists'];
-
-    for (const type of types) {
-      const response = await request.get(`${BASE_URL}/api/v1/admin/content/lists/${type}`);
-      expect(response.ok(), `Failed to fetch ${type} lists`).toBe(true);
-
-      const data = await response.json();
-      const apiLists = (data.lists || []).map(l => l.name);
-      const expectedNames = expectedLists[type];
-
-      console.log(`${type}: API has ${apiLists.length}, expected ${expectedNames.length}`);
-
-      // All expected lists should be in API response
-      for (const expected of expectedNames) {
-        expect(apiLists, `Missing ${type}/${expected} from API`).toContain(expected);
-      }
-    }
-  });
-
-  test('Menus: all items render with proper cards', async ({ page }) => {
-    const type = 'menus';
+  /**
+   * Generate test for a specific list type
+   * @param {import('@playwright/test').Page} page - Playwright page
+   * @param {string} type - List type (menus, programs, watchlists)
+   * @returns {Promise<string[]>} Array of error messages
+   */
+  async function testListType(page, type) {
     const lists = expectedLists[type];
     const errors = [];
     let totalItemsChecked = 0;
 
-    console.log(`\nTesting ${lists.length} menus...`);
+    console.log(`\nTesting ${lists.length} ${type}...`);
 
     for (const listName of lists) {
       console.log(`  Checking ${type}/${listName}...`);
@@ -171,13 +156,48 @@ test.describe('Admin Lists Comprehensive', () => {
       }
     }
 
-    console.log(`\nMenus: Checked ${totalItemsChecked} items across ${lists.length} lists`);
+    console.log(`\n${type}: Checked ${totalItemsChecked} items across ${lists.length} lists`);
 
     if (errors.length > 0) {
       console.log(`\n❌ ${errors.length} errors found:`);
       errors.forEach(e => console.log(`  - ${e}`));
     }
 
-    expect(errors, `Found ${errors.length} card rendering errors`).toHaveLength(0);
+    return errors;
+  }
+
+  test('API returns all expected list types', async ({ request }) => {
+    const types = ['menus', 'programs', 'watchlists'];
+
+    for (const type of types) {
+      const response = await request.get(`${BASE_URL}/api/v1/admin/content/lists/${type}`);
+      expect(response.ok(), `Failed to fetch ${type} lists`).toBe(true);
+
+      const data = await response.json();
+      const apiLists = (data.lists || []).map(l => l.name);
+      const expectedNames = expectedLists[type];
+
+      console.log(`${type}: API has ${apiLists.length}, expected ${expectedNames.length}`);
+
+      // All expected lists should be in API response
+      for (const expected of expectedNames) {
+        expect(apiLists, `Missing ${type}/${expected} from API`).toContain(expected);
+      }
+    }
+  });
+
+  test('Menus: all items render with proper cards', async ({ page }) => {
+    const errors = await testListType(page, 'menus');
+    expect(errors, `Found ${errors.length} card rendering errors in menus`).toHaveLength(0);
+  });
+
+  test('Programs: all items render with proper cards', async ({ page }) => {
+    const errors = await testListType(page, 'programs');
+    expect(errors, `Found ${errors.length} card rendering errors in programs`).toHaveLength(0);
+  });
+
+  test('Watchlists: all items render with proper cards', async ({ page }) => {
+    const errors = await testListType(page, 'watchlists');
+    expect(errors, `Found ${errors.length} card rendering errors in watchlists`).toHaveLength(0);
   });
 });
