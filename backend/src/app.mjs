@@ -505,8 +505,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     localContent: contentRouters.localContent,
     // Local media browsing and streaming
     local: contentRouters.local,
+    // Stream router for singing/narrated content
+    stream: contentRouters.stream,
   };
-  rootLogger.info('content.routers.created', { keys: ['item', 'content', 'proxy', 'list', 'play', 'localContent', 'local'] });
+  rootLogger.info('content.routers.created', { keys: ['item', 'content', 'proxy', 'list', 'play', 'localContent', 'local', 'stream'] });
 
   // Health domain router
   v1Routers.health = createHealthApiRouter({

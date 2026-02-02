@@ -44,6 +44,7 @@ import { createProxyRouter } from '#api/v1/routers/proxy.mjs';
 import { createLocalContentRouter } from '#api/v1/routers/localContent.mjs';
 import { createPlayRouter } from '#api/v1/routers/play.mjs';
 import { createListRouter } from '#api/v1/routers/list.mjs';
+import { createStreamRouter } from '#api/v1/routers/stream.mjs';
 import { createLocalRouter } from '#api/v1/routers/local.mjs';
 
 // Fitness domain imports
@@ -626,6 +627,11 @@ export function createApiRouters(config) {
     play: createPlayRouter({ registry, mediaProgressMemory, contentQueryService, logger }),
     list: createListRouter({ registry, loadFile, configService }),
     local: createLocalRouter({ localMediaAdapter, mediaBasePath, cacheBasePath: cacheBasePath || path.join(dataPath, 'system/cache'), logger }),
+    stream: createStreamRouter({
+      singingMediaPath: path.join(mediaBasePath, 'singing'),
+      narratedMediaPath: path.join(mediaBasePath, 'narrated'),
+      logger
+    }),
   };
 }
 

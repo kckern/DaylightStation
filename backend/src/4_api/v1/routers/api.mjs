@@ -83,7 +83,8 @@ export function createApiRouter(config) {
     '/agents': 'agents',
     '/dev': 'dev',
     '/canvas': 'canvas',
-    '/admin': 'admin'
+    '/admin': 'admin',
+    '/stream': 'stream'
   };
 
   // Mount each router at its path

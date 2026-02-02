@@ -17,6 +17,7 @@ export { createNutribotRouter } from './nutribot.mjs';
 export { createContentRouter } from './content.mjs';
 export { createLocalContentRouter } from './localContent.mjs';
 export { createPlayRouter } from './play.mjs';
+export { createStreamRouter } from './stream.mjs';
 
 // Domain routers - Finance
 export { createFinanceRouter } from './finance.mjs';
