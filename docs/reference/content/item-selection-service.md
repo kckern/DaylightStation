@@ -440,6 +440,51 @@ npx jest tests/isolated/domain/content/services/ItemSelectionService.test.mjs
 
 ---
 
+## 13. Integration with ContentQueryService
+
+ItemSelectionService is wired into the playback flow via `ContentQueryService.resolve()`:
+
+```javascript
+// Application layer orchestrates the pipeline
+const result = await contentQueryService.resolve('folder', 'FHE', {
+  now: new Date(),
+  containerType: 'folder'
+});
+
+// Returns: { items: [...selected], strategy: { name, filter, sort, pick } }
+```
+
+### Resolution Flow
+
+```
+Route (/api/v1/play/:source/*)
+    ↓
+ContentQueryService.resolve()
+    ↓
+adapter.resolvePlayables()     → Flat list of items
+    ↓
+#enrichWithWatchState()        → Add percent, watched, priority from memory
+    ↓
+ItemSelectionService.select()  → Filter → Sort → Pick
+    ↓
+Selected items returned
+```
+
+### Watch State Enrichment
+
+Before selection, items are enriched with:
+
+| Field | Source | Purpose |
+|-------|--------|---------|
+| `percent` | mediaProgressMemory | Watch progress (0-100) |
+| `watched` | percent >= 90 | Boolean for filter |
+| `priority` | 'in_progress' if 0 < percent < 90 | Sort ordering |
+| `playhead` | mediaProgressMemory | Resume position |
+
+This ensures ItemSelectionService has the data it needs to apply watchlist filters.
+
+---
+
 ## Related Documentation
 
 - `query-combinatorics.md` - Query parameter syntax, action definitions
