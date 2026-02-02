@@ -69,6 +69,15 @@ export class ContentQueryService {
 
   /**
    * Parse text to detect if it's a direct ID reference.
+   *
+   * NOTE: This method contains source-specific ID format knowledge as a
+   * pragmatic tradeoff. Moving this to adapters would require significant
+   * interface changes for minimal benefit. The ID formats (numeric for Plex,
+   * UUID for Immich) are stable and unlikely to conflict with search terms.
+   *
+   * If this becomes problematic, adapters could implement:
+   *   getIdPattern(): { pattern: RegExp, priority: number }
+   *
    * Supports:
    * - Explicit "source:id" format (e.g., "plex:456724", "immich:abc-123")
    * - Implicit all-digits → plex (e.g., "456724")
