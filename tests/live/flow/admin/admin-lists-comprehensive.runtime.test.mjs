@@ -19,6 +19,73 @@ const SAMPLE_SIZE = 20;
 // Load expected lists from data mount
 const expectedLists = getExpectedLists();
 
+/**
+ * Validate a content display card has proper structure
+ * @param {import('@playwright/test').Locator} row - The item row locator
+ * @param {number} rowIndex - Row index for error messages
+ * @param {string} listPath - List path for error messages (e.g., "menus/ambient")
+ * @returns {Promise<{valid: boolean, error?: string, unresolved?: boolean}>}
+ */
+async function validateCardStructure(row, rowIndex, listPath) {
+  const inputCol = row.locator('.col-input');
+  const contentDisplay = inputCol.locator('.content-display');
+
+  // Check content display exists
+  const displayCount = await contentDisplay.count();
+  if (displayCount === 0) {
+    return { valid: false, error: `Row ${rowIndex}: No .content-display found` };
+  }
+
+  // Check for unresolved state
+  const isUnresolved = await contentDisplay.locator('.content-display--unresolved').count() > 0 ||
+                       await contentDisplay.locator('text=Unresolved').count() > 0;
+
+  if (isUnresolved) {
+    const rawValue = await contentDisplay.textContent();
+    return {
+      valid: false,
+      unresolved: true,
+      error: `Row ${rowIndex} in ${listPath}: Unresolved content - ${JSON.stringify(rawValue?.substring(0, 50) || '')}`
+    };
+  }
+
+  // Check for avatar (thumbnail)
+  const avatar = contentDisplay.locator('.mantine-Avatar-root');
+  const hasAvatar = await avatar.count() > 0;
+  if (!hasAvatar) {
+    return { valid: false, error: `Row ${rowIndex} in ${listPath}: No thumbnail avatar` };
+  }
+
+  // Check for title text (not empty, not raw ID)
+  const text = await contentDisplay.textContent();
+  if (!text || text.trim().length === 0) {
+    return { valid: false, error: `Row ${rowIndex} in ${listPath}: Empty content display` };
+  }
+
+  // Check it's not just a raw ID (plex:12345 or just numbers)
+  const isRawId = /^(plex|immich|abs|media):\s*\d+\s*$/i.test(text.trim()) ||
+                  /^\d+$/.test(text.replace(/PLEX|IMMICH|ABS|MEDIA/gi, '').trim());
+  if (isRawId) {
+    return { valid: false, error: `Row ${rowIndex} in ${listPath}: Shows raw ID instead of title - "${text}"` };
+  }
+
+  // Check for type+parent line (contains bullet separator)
+  const hasBullet = text.includes('•');
+  if (!hasBullet) {
+    // Might be OK for some items without parent, log warning but don't fail
+    console.log(`  Note: Row ${rowIndex} in ${listPath} has no type•parent line`);
+  }
+
+  // Check for source badge
+  const badge = contentDisplay.locator('.mantine-Badge-root');
+  const hasBadge = await badge.count() > 0;
+  if (!hasBadge) {
+    return { valid: false, error: `Row ${rowIndex} in ${listPath}: No source badge` };
+  }
+
+  return { valid: true };
+}
+
 test.describe('Admin Lists Comprehensive', () => {
   test.setTimeout(300000); // 5 minutes for full suite
 
