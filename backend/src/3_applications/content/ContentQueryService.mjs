@@ -1,5 +1,7 @@
 // backend/src/3_applications/content/ContentQueryService.mjs
 
+import { ItemSelectionService } from '#domains/content/index.mjs';
+
 /**
  * Application service for orchestrating content queries across multiple sources.
  * Handles canonical key translation, result merging, and capability filtering.
@@ -283,6 +285,7 @@ export class ContentQueryService {
    * @param {string} localId - Local ID/path within source
    * @param {Object} [context] - Selection context
    * @param {Date} [context.now] - Current date
+   * @param {string} [context.containerType] - Container type hint
    * @param {Object} [overrides] - Selection strategy overrides
    * @returns {Promise<{items: Array, strategy: Object}>}
    */
@@ -295,8 +298,30 @@ export class ContentQueryService {
     const items = await adapter.resolvePlayables(localId);
     const enriched = await this.#enrichWithWatchState(items, adapter);
 
-    // TODO: Apply ItemSelectionService in next task
-    return { items: enriched, strategy: null };
+    // Determine container type from adapter if not provided
+    const containerType = context.containerType
+      || (typeof adapter.getContainerType === 'function'
+          ? adapter.getContainerType(localId)
+          : 'folder');
+
+    const selectionContext = {
+      ...context,
+      containerType,
+      now: context.now || new Date()
+    };
+
+    const strategy = ItemSelectionService.resolveStrategy(selectionContext, overrides);
+    const selected = ItemSelectionService.select(enriched, selectionContext, overrides);
+
+    return {
+      items: selected,
+      strategy: {
+        name: strategy.name,
+        filter: strategy.filter,
+        sort: strategy.sort,
+        pick: strategy.pick
+      }
+    };
   }
 }
 

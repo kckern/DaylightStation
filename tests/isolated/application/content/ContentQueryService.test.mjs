@@ -162,7 +162,11 @@ describe('ContentQueryService', () => {
           mediaProgressMemory: mockMemory
         });
 
-        const result = await service.resolve('plex', 'shows/123', { now: new Date() });
+        // Use filter=none, pick=all to bypass selection and test enrichment directly
+        const result = await service.resolve('plex', 'shows/123',
+          { now: new Date() },
+          { filter: 'none', pick: 'all' }
+        );
 
         // Items should be enriched with percent
         expect(result.items[0].percent).toBe(95);
@@ -195,7 +199,11 @@ describe('ContentQueryService', () => {
           mediaProgressMemory: mockMemory
         });
 
-        const result = await service.resolve('plex', 'shows/123', { now: new Date() });
+        // Use filter=none, pick=all to bypass selection and test enrichment directly
+        const result = await service.resolve('plex', 'shows/123',
+          { now: new Date() },
+          { filter: 'none', pick: 'all' }
+        );
 
         expect(result.items[0].watched).toBe(true);
         expect(result.items[1].watched).toBe(false);
@@ -234,6 +242,82 @@ describe('ContentQueryService', () => {
         });
 
         await expect(service.resolve('unknown', 'path/123')).rejects.toThrow('Unknown source: unknown');
+      });
+    });
+
+    describe('ItemSelectionService integration', () => {
+      it('applies ItemSelectionService to filter watched items', async () => {
+        const mockRegistry = {
+          get: jest.fn(() => ({
+            resolvePlayables: jest.fn(async () => [
+              { id: 'plex:123', title: 'Episode 1' },
+              { id: 'plex:456', title: 'Episode 2' },
+              { id: 'plex:789', title: 'Episode 3' }
+            ]),
+            getStoragePath: jest.fn(async () => 'plex/1_shows')
+          })),
+          list: jest.fn(() => ['plex'])
+        };
+
+        const mockMemory = {
+          get: jest.fn(async (itemId) => {
+            if (itemId === 'plex:123') return { percent: 95 }; // watched
+            if (itemId === 'plex:456') return { percent: 10 }; // in progress
+            return null; // not started
+          }),
+          getAll: jest.fn()
+        };
+
+        const service = new ContentQueryService({
+          registry: mockRegistry,
+          mediaProgressMemory: mockMemory
+        });
+
+        const result = await service.resolve('plex', 'shows/123', {
+          now: new Date(),
+          containerType: 'folder'
+        });
+
+        // With watchlist strategy (default for folder), watched items filtered out
+        // Should return in_progress first (plex:456), then unwatched (plex:789)
+        expect(result.items.length).toBeLessThan(3);
+        expect(result.items.some(i => i.id === 'plex:123')).toBe(false); // watched filtered
+        expect(result.strategy.name).toBe('watchlist');
+      });
+
+      it('returns all items when filter=none and pick=all override', async () => {
+        const mockRegistry = {
+          get: jest.fn(() => ({
+            resolvePlayables: jest.fn(async () => [
+              { id: 'plex:123', title: 'Episode 1' },
+              { id: 'plex:456', title: 'Episode 2' }
+            ]),
+            getStoragePath: jest.fn(async () => 'plex/1_shows')
+          })),
+          list: jest.fn(() => ['plex'])
+        };
+
+        const mockMemory = {
+          get: jest.fn(async (itemId) => {
+            if (itemId === 'plex:123') return { percent: 95 }; // watched
+            return null;
+          }),
+          getAll: jest.fn()
+        };
+
+        const service = new ContentQueryService({
+          registry: mockRegistry,
+          mediaProgressMemory: mockMemory
+        });
+
+        const result = await service.resolve('plex', 'shows/123',
+          { now: new Date() },
+          { filter: 'none', pick: 'all' }
+        );
+
+        // With filter=none and pick=all, all items returned including watched
+        expect(result.items.length).toBe(2);
+        expect(result.items.some(i => i.id === 'plex:123')).toBe(true); // watched item included
       });
     });
   });

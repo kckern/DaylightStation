@@ -249,7 +249,7 @@ export class ItemSelectionService {
    * @param {string} [overrides.sort] - Override sort only
    * @param {string} [overrides.pick] - Override pick only
    * @param {string} [overrides.filter] - 'none' to disable filtering
-   * @returns {{ filter: string[], sort: string, pick: string }}
+   * @returns {{ name: string, filter: string[], sort: string, pick: string }}
    */
   static resolveStrategy(context, overrides = {}) {
     // 1. Infer base strategy from context
@@ -279,6 +279,9 @@ export class ItemSelectionService {
     if (overrides.pick) {
       strategy.pick = overrides.pick;
     }
+
+    // Include strategy name in result
+    strategy.name = strategyName;
 
     return strategy;
   }
