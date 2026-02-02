@@ -22,33 +22,306 @@ export class ContentQueryService {
 
   /**
    * Search across multiple content sources.
+   * Supports direct ID lookup (explicit "plex:123" or implicit "123") with text search fallback.
+   * ID lookup and text search run in parallel for speed.
    *
    * @param {Object} query - Normalized query object
    * @returns {Promise<{items: Array, total: number, sources: string[], warnings?: Array}>}
    */
   async search(query) {
     const adapters = this.#registry.resolveSource(query.source);
-    const results = [];
     const warnings = [];
 
-    await Promise.all(
-      adapters.map(async (adapter) => {
-        try {
-          if (!this.#canHandle(adapter, query)) return;
+    // Check if query.text looks like a direct ID
+    const idMatch = this.#parseIdFromText(query.text);
 
-          const translated = this.#translateQuery(adapter, query);
-          const result = await adapter.search(translated);
-          results.push({ adapter, result });
-        } catch (error) {
-          warnings.push({
-            source: adapter.source,
-            error: error.message,
-          });
+    // Run ID lookup and text search in parallel
+    const [idResult, searchResults] = await Promise.all([
+      // Direct ID lookup (if text looks like an ID)
+      idMatch ? this.#lookupById(idMatch.source, idMatch.id, warnings) : Promise.resolve(null),
+
+      // Standard text search across adapters
+      Promise.all(
+        adapters.map(async (adapter) => {
+          try {
+            if (!this.#canHandle(adapter, query)) return null;
+
+            const translated = this.#translateQuery(adapter, query);
+            const result = await adapter.search(translated);
+            return { adapter, result };
+          } catch (error) {
+            warnings.push({
+              source: adapter.source,
+              error: error.message,
+            });
+            return null;
+          }
+        })
+      )
+    ]);
+
+    // Filter out null results from search
+    const results = searchResults.filter(Boolean);
+
+    // Merge results with ID match leading
+    return this.#mergeResultsWithIdMatch(idResult, results, query, warnings);
+  }
+
+  /**
+   * Parse text to detect if it's a direct ID reference.
+   * Supports:
+   * - Explicit "source:id" format (e.g., "plex:456724", "immich:abc-123")
+   * - Implicit all-digits → plex (e.g., "456724")
+   * - Implicit UUID → immich (e.g., "ff940f1a-f5ea-4580-a517-dfc68413e215")
+   *
+   * @param {string} text - Search text to check
+   * @returns {{source: string, id: string} | null}
+   */
+  #parseIdFromText(text) {
+    if (!text || typeof text !== 'string') return null;
+
+    const trimmed = text.trim();
+
+    // Explicit source:id format (e.g., "plex:456724", "immich:abc-123", "immich:person:abc-123")
+    const explicitMatch = trimmed.match(/^([a-z]+):(.+)$/i);
+    if (explicitMatch) {
+      return { source: explicitMatch[1].toLowerCase(), id: explicitMatch[2] };
+    }
+
+    // Implicit all-digits → plex (e.g., "456724")
+    if (/^\d+$/.test(trimmed)) {
+      return { source: 'plex', id: trimmed };
+    }
+
+    // Implicit UUID → immich (e.g., "ff940f1a-f5ea-4580-a517-dfc68413e215")
+    // UUID format: 8-4-4-4-12 hex characters
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed)) {
+      return { source: 'immich', id: trimmed };
+    }
+
+    return null;
+  }
+
+  /**
+   * Attempt direct ID lookup from a source.
+   *
+   * @param {string} source - Source name
+   * @param {string} id - Local ID
+   * @param {Array} warnings - Warnings array to append errors
+   * @returns {Promise<Object | null>} Item if found, null otherwise
+   */
+  async #lookupById(source, id, warnings) {
+    try {
+      const adapter = this.#registry.get(source);
+      if (!adapter) {
+        // Try resolving by source name in case it's a provider name
+        const adapters = this.#registry.resolveSource(source);
+        if (adapters.length === 0) return null;
+        // Use first matching adapter
+        return this.#lookupById(adapters[0].source, id, warnings);
+      }
+
+      // Try getItem if available
+      if (typeof adapter.getItem === 'function') {
+        const item = await adapter.getItem(id);
+        if (item) {
+          return { ...item, _idMatch: true };
         }
-      })
-    );
+      }
 
-    return this.#mergeResults(results, query, warnings);
+      // Fallback: try to get item info via other means
+      if (typeof adapter.getMetadata === 'function') {
+        const metadata = await adapter.getMetadata(id);
+        if (metadata) {
+          return {
+            id: `${source}:${id}`,
+            source,
+            localId: id,
+            title: metadata.title,
+            thumbnail: metadata.thumbnail,
+            metadata,
+            _idMatch: true
+          };
+        }
+      }
+
+      return null;
+    } catch (error) {
+      // Silent failure - ID lookup is best-effort
+      warnings.push({
+        source,
+        error: `ID lookup failed: ${error.message}`,
+      });
+      return null;
+    }
+  }
+
+  /**
+   * Merge search results with ID match leading, sorted by relevance.
+   */
+  #mergeResultsWithIdMatch(idResult, results, query, warnings) {
+    let items = results.flatMap(r => r.result.items || []);
+
+    // If we have an ID match, prepend it (avoiding duplicates)
+    if (idResult) {
+      const idMatchId = idResult.id;
+      // Remove any duplicate from search results
+      items = items.filter(item => item.id !== idMatchId);
+      // Prepend the ID match
+      items.unshift(idResult);
+    }
+
+    // Apply capability filter
+    if (query.capability) {
+      items = items.filter(item => this.#hasCapability(item, query.capability));
+    }
+
+    // Apply relevance-based sorting (unless random or explicit sort)
+    if (query.sort === 'random') {
+      const idMatch = items.find(i => i._idMatch);
+      const rest = items.filter(i => !i._idMatch);
+      items = idMatch ? [idMatch, ...this.#shuffle(rest)] : this.#shuffle(items);
+    } else if (!query.sort || query.sort === 'relevance') {
+      // Sort by relevance - containers first, then artists, then tracks
+      items = this.#sortByRelevance(items, query.text);
+    }
+
+    // Clean up internal flag
+    items = items.map(({ _idMatch, ...item }) => item);
+
+    // Apply pagination
+    const skip = query.skip || 0;
+    const take = query.take || items.length;
+    const total = items.length;
+    items = items.slice(skip, skip + take);
+
+    const sources = [...new Set(items.map(i => i.source))];
+
+    const result = { items, total, sources };
+    if (warnings.length > 0) {
+      result.warnings = warnings;
+    }
+    return result;
+  }
+
+  /**
+   * Calculate relevance score for an item.
+   * Higher score = more relevant (shown first).
+   *
+   * Scoring tiers:
+   * - 1000: ID match (explicit lookup)
+   * - 150: Person (Immich face albums) - most specific match
+   * - 148: Curated collections (playlists, collections, tags, Immich albums)
+   * - 145: Creative entities (artists, authors, directors)
+   * - 140: TV Shows (containers with seasons/episodes)
+   * - 130: Movies (standalone complete works)
+   * - 125: Music Albums (Plex album containers)
+   * - 20: Episodes
+   * - 15: Tracks
+   * - 10: Individual media (images, videos)
+   *
+   * @param {Object} item
+   * @param {string} [searchText] - Original search text for title matching bonus
+   * @returns {number}
+   */
+  #getRelevanceScore(item, searchText) {
+    // ID match always wins
+    if (item._idMatch) return 1000;
+
+    const type = item.metadata?.type || item.itemType || '';
+    const itemType = item.itemType || '';
+    const source = item.source || '';
+    const title = (item.title || '').toLowerCase();
+    const searchLower = (searchText || '').toLowerCase();
+
+    let score = 0;
+
+    // Containers
+    if (itemType === 'container') {
+      // Tier 1: Person (Immich face albums) - most specific match
+      if (type === 'person') {
+        score = 150;
+      }
+      // Tier 2: Curated collections
+      else if (type === 'playlist' || type === 'collection' || type === 'tag') {
+        score = 148;
+      }
+      // Immich albums are curated photo collections (Tier 2)
+      else if (type === 'album' && source === 'immich') {
+        score = 148;
+      }
+      // Tier 3: Creative entities
+      else if (['artist', 'author', 'director'].includes(type)) {
+        score = 145;
+      }
+      // Tier 4: TV Shows
+      else if (type === 'show') {
+        score = 140;
+      }
+      // Tier 6: Music albums (Plex)
+      else if (type === 'album') {
+        score = 125;
+      }
+      // Other containers
+      else {
+        score = 100;
+      }
+    }
+    // Standalone content (non-containers)
+    else if (type === 'movie') {
+      // Tier 5: Movies - standalone complete works, above music albums
+      score = 130;
+    }
+    else if (type === 'episode') {
+      score = 20;
+    }
+    else if (type === 'track') {
+      score = 15;
+    }
+    else if (['video', 'image'].includes(type)) {
+      score = 10;
+    }
+    // Non-container artists/authors (fallback if itemType not set)
+    else if (['artist', 'author', 'director'].includes(type)) {
+      score = 145;
+    }
+    // Fallback
+    else {
+      score = 5;
+    }
+
+    // Title match bonuses (within tier)
+    if (searchLower && title) {
+      if (title === searchLower) {
+        score += 20; // Exact match
+      } else if (title.startsWith(searchLower)) {
+        score += 10; // Starts with
+      } else if (title.includes(searchLower)) {
+        score += 5; // Contains
+      }
+    }
+
+    // Bonus for items with more children (richer results)
+    const childCount = item.childCount || item.metadata?.childCount || 0;
+    if (childCount > 0) {
+      score += Math.min(childCount / 100, 5); // Up to +5 for large collections
+    }
+
+    return score;
+  }
+
+  /**
+   * Sort items by relevance score.
+   * @param {Array} items
+   * @param {string} [searchText]
+   * @returns {Array}
+   */
+  #sortByRelevance(items, searchText) {
+    return [...items].sort((a, b) => {
+      const scoreA = this.#getRelevanceScore(a, searchText);
+      const scoreB = this.#getRelevanceScore(b, searchText);
+      return scoreB - scoreA; // Higher score first
+    });
   }
 
   /**

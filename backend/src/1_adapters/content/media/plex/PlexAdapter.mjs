@@ -375,6 +375,38 @@ export class PlexAdapter {
     // Use proxy URL for thumbnails (not direct Plex URL)
     const thumbnail = item.thumb ? `${this.proxyPath}${item.thumb}` : null;
 
+    // Build metadata with hierarchy info
+    const metadata = {
+      type: item.type,
+      year: item.year,
+      // Rating fields for sorting in FitnessMenu
+      rating: item.userRating ?? item.rating ?? item.audienceRating ?? null,
+      userRating: item.userRating ?? null,
+      librarySectionTitle: item.librarySectionTitle || null,
+      childCount: item.leafCount || item.childCount || 0
+    };
+
+    // Add parent info based on type
+    if (item.type === 'season') {
+      metadata.parentTitle = item.parentTitle;
+      metadata.parentType = 'show';
+      metadata.parentRatingKey = item.parentRatingKey;
+    } else if (item.type === 'album') {
+      metadata.parentTitle = item.parentTitle;
+      metadata.parentType = 'artist';
+      metadata.parentRatingKey = item.parentRatingKey;
+    } else if (['show', 'artist', 'movie', 'collection'].includes(item.type)) {
+      // Top-level items: use collection for movies if available, else library
+      if (item.type === 'movie' && Array.isArray(item.Collection) && item.Collection.length > 0) {
+        const firstCollection = item.Collection[0];
+        metadata.parentTitle = typeof firstCollection === 'string' ? firstCollection : firstCollection?.tag;
+        metadata.parentType = 'collection';
+      } else {
+        metadata.parentTitle = item.librarySectionTitle || null;
+        metadata.parentType = 'library';
+      }
+    }
+
     return new ListableItem({
       id: `plex:${id}`,
       source: 'plex',
@@ -383,14 +415,7 @@ export class PlexAdapter {
       itemType: isContainer ? 'container' : 'leaf',
       childCount: item.leafCount || item.childCount || 0,
       thumbnail,
-      metadata: {
-        type: item.type,
-        year: item.year,
-        // Rating fields for sorting in FitnessMenu
-        // FitnessMenu sorts by 'rating' - use userRating as primary (user's own ratings)
-        rating: item.userRating ?? item.rating ?? item.audienceRating ?? null,
-        userRating: item.userRating ?? null
-      }
+      metadata
     });
   }
 
@@ -408,6 +433,33 @@ export class PlexAdapter {
 
     // Non-playable types return as containers (shows, seasons, albums, etc.)
     if (!isVideo && !isAudio) {
+      // Build metadata with hierarchy info
+      const containerMetadata = {
+        type: item.type,
+        year: item.year,
+        studio: item.studio,
+        summary: item.summary,
+        librarySectionID: item.librarySectionID || null,
+        librarySectionTitle: item.librarySectionTitle || null,
+        childCount: item.leafCount || item.childCount || 0
+      };
+
+      // Add parent info for containers
+      // Seasons have shows as parents, albums have artists as parents
+      if (item.type === 'season') {
+        containerMetadata.parentTitle = item.parentTitle; // Show title
+        containerMetadata.parentType = 'show';
+        containerMetadata.parentRatingKey = item.parentRatingKey;
+      } else if (item.type === 'album') {
+        containerMetadata.parentTitle = item.parentTitle; // Artist name
+        containerMetadata.parentType = 'artist';
+        containerMetadata.parentRatingKey = item.parentRatingKey;
+      } else if (['show', 'artist', 'collection'].includes(item.type)) {
+        // Top-level containers use library as parent
+        containerMetadata.parentTitle = item.librarySectionTitle || null;
+        containerMetadata.parentType = 'library';
+      }
+
       return new ListableItem({
         id: `plex:${item.ratingKey}`,
         source: 'plex',
@@ -416,13 +468,7 @@ export class PlexAdapter {
         itemType: 'container',
         childCount: item.leafCount || 0,
         thumbnail: item.thumb ? `${this.proxyPath}${item.thumb}` : null,
-        // Include type in metadata for PlexMenuRouter (show, season, artist, album, etc.)
-        metadata: {
-          type: item.type,
-          year: item.year,
-          studio: item.studio,
-          summary: item.summary
-        }
+        metadata: containerMetadata
       });
     }
 
@@ -494,6 +540,22 @@ export class PlexAdapter {
       }
       if (item.grandparentRatingKey) {
         metadata.artistId = item.grandparentRatingKey;
+      }
+    }
+
+    // Add best-effort parent for top-level items (show, movie, artist, collection)
+    // These don't have a parentTitle from Plex, so use library or collection as parent
+    const topLevelTypes = ['show', 'movie', 'artist', 'collection'];
+    if (topLevelTypes.includes(item.type)) {
+      // For movies, try to use first collection as parent if available
+      if (item.type === 'movie' && Array.isArray(item.Collection) && item.Collection.length > 0) {
+        const firstCollection = item.Collection[0];
+        metadata.parentTitle = typeof firstCollection === 'string' ? firstCollection : firstCollection?.tag;
+        metadata.parentType = 'collection';
+      } else {
+        // Fall back to library name as parent
+        metadata.parentTitle = item.librarySectionTitle || null;
+        metadata.parentType = 'library';
       }
     }
 
@@ -1612,6 +1674,12 @@ export class PlexAdapter {
         items = items.slice(query.skip);
       }
 
+      // Also search playlists and collections
+      const [matchingPlaylists, matchingCollections] = await Promise.all([
+        this._searchPlaylists(query.text),
+        this._searchCollections(query.text)
+      ]);
+
       // Convert to PlayableItem/ListableItem
       const showLabelCache = new Map();
       const convertedItems = await Promise.all(
@@ -1641,13 +1709,23 @@ export class PlexAdapter {
             }
           }
 
-          // For containers (shows, albums), return as listable
+          // For containers (shows, albums, artists), fetch full metadata to get thumbnails
+          if (['show', 'album', 'artist', 'season'].includes(item.type)) {
+            const fullItem = await this.getItem(item.ratingKey);
+            if (fullItem) return fullItem;
+          }
+
+          // Fallback to basic conversion
           return this._toListableItem(item);
         })
       );
 
-      // Filter out nulls
-      const filteredItems = convertedItems.filter(Boolean);
+      // Filter out nulls and combine with playlists/collections
+      const filteredItems = [
+        ...matchingPlaylists,
+        ...matchingCollections,
+        ...convertedItems.filter(Boolean)
+      ];
 
       return {
         items: filteredItems,
@@ -1656,6 +1734,93 @@ export class PlexAdapter {
     } catch (err) {
       console.error('[PlexAdapter] search error:', err.message);
       return { items: [], total: 0 };
+    }
+  }
+
+  /**
+   * Search playlists by title
+   * @param {string} searchText - Text to search for
+   * @returns {Promise<ListableItem[]>}
+   * @private
+   */
+  async _searchPlaylists(searchText) {
+    try {
+      const searchLower = searchText.toLowerCase();
+      const data = await this.client.getContainer('/playlists/all');
+      const playlists = data.MediaContainer?.Metadata || [];
+
+      return playlists
+        .filter(p => p.title?.toLowerCase().includes(searchLower))
+        .map(p => new ListableItem({
+          id: `plex:${p.ratingKey}`,
+          source: 'plex',
+          title: p.title,
+          itemType: 'container',
+          childCount: p.leafCount || 0,
+          thumbnail: p.composite ? `${this.proxyPath}${p.composite}` :
+                    (p.thumb ? `${this.proxyPath}${p.thumb}` : null),
+          metadata: {
+            type: 'playlist',
+            playlistType: p.playlistType,
+            childCount: p.leafCount || 0,
+            smart: p.smart || false
+          }
+        }));
+    } catch (err) {
+      console.error('[PlexAdapter] _searchPlaylists error:', err.message);
+      return [];
+    }
+  }
+
+  /**
+   * Search collections by title
+   * @param {string} searchText - Text to search for
+   * @returns {Promise<ListableItem[]>}
+   * @private
+   */
+  async _searchCollections(searchText) {
+    try {
+      const searchLower = searchText.toLowerCase();
+
+      // Get all library sections to search collections
+      const sectionsData = await this.client.getContainer('/library/sections');
+      const sections = sectionsData.MediaContainer?.Directory || [];
+
+      const allCollections = [];
+
+      await Promise.all(sections.map(async (section) => {
+        try {
+          const collectionsData = await this.client.getContainer(
+            `/library/sections/${section.key}/collections`
+          );
+          const collections = collectionsData.MediaContainer?.Metadata || [];
+
+          const matching = collections
+            .filter(c => c.title?.toLowerCase().includes(searchLower))
+            .map(c => new ListableItem({
+              id: `plex:${c.ratingKey}`,
+              source: 'plex',
+              title: c.title,
+              itemType: 'container',
+              childCount: c.childCount || 0,
+              thumbnail: c.thumb ? `${this.proxyPath}${c.thumb}` : null,
+              metadata: {
+                type: 'collection',
+                librarySectionTitle: section.title,
+                childCount: c.childCount || 0
+              }
+            }));
+
+          allCollections.push(...matching);
+        } catch {
+          // Skip sections without collections
+        }
+      }));
+
+      return allCollections;
+    } catch (err) {
+      console.error('[PlexAdapter] _searchCollections error:', err.message);
+      return [];
     }
   }
 
