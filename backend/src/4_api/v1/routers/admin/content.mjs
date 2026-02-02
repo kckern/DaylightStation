@@ -13,6 +13,7 @@
  * - GET    /lists/:type               - List all lists of a type
  * - POST   /lists/:type               - Create new list
  * - GET    /lists/:type/:name         - Get items in list
+ * - PUT    /lists/:type/:name/settings       - Update list metadata
  * - PUT    /lists/:type/:name         - Replace list contents (reorder)
  * - DELETE /lists/:type/:name         - Delete entire list
  * - POST   /lists/:type/:name/items          - Add item to list
@@ -51,6 +52,84 @@ function toKebabCase(name) {
     .trim()
     .replace(/\s+/g, '-')
     .replace(/[^a-z0-9-]/g, '');
+}
+
+/**
+ * Parse list file content - supports both old (array) and new (object with items) formats
+ * @param {string} filename - List filename (without extension)
+ * @param {any} content - Parsed YAML content
+ * @returns {Object} - Normalized list object with metadata and items
+ */
+function parseListContent(filename, content) {
+  // Old format: array at root
+  if (Array.isArray(content)) {
+    return {
+      title: formatFilename(filename),
+      items: content
+    };
+  }
+
+  // New format: object with items key
+  if (content && typeof content === 'object') {
+    return {
+      title: content.title || formatFilename(filename),
+      description: content.description || null,
+      group: content.group || null,
+      icon: content.icon || null,
+      sorting: content.sorting || 'manual',
+      days: content.days || null,
+      active: content.active !== false,
+      defaultAction: content.defaultAction || 'Play',
+      defaultVolume: content.defaultVolume || null,
+      defaultPlaybackRate: content.defaultPlaybackRate || null,
+      items: Array.isArray(content.items) ? content.items : []
+    };
+  }
+
+  // Fallback for empty/null
+  return {
+    title: formatFilename(filename),
+    items: []
+  };
+}
+
+/**
+ * Convert filename to display title
+ * @param {string} filename - Kebab-case filename
+ * @returns {string} - Title case display name
+ */
+function formatFilename(filename) {
+  if (!filename || typeof filename !== 'string') {
+    return 'Untitled';
+  }
+  return filename
+    .replace(/-/g, ' ')
+    .replace(/\b\w/g, c => c.toUpperCase());
+}
+
+/**
+ * Serialize list to YAML-ready object (new format, omitting defaults)
+ * @param {Object} list - List object with metadata and items
+ * @returns {Object} - Clean object for YAML serialization
+ */
+function serializeList(list) {
+  const output = {};
+
+  // Only write non-default metadata
+  if (list.title) output.title = list.title;
+  if (list.description) output.description = list.description;
+  if (list.group) output.group = list.group;
+  if (list.icon) output.icon = list.icon;
+  if (list.sorting && list.sorting !== 'manual') output.sorting = list.sorting;
+  if (list.days) output.days = list.days;
+  if (list.active === false) output.active = false;
+  if (list.defaultAction && list.defaultAction !== 'Play') output.defaultAction = list.defaultAction;
+  if (list.defaultVolume != null) output.defaultVolume = list.defaultVolume;
+  if (list.defaultPlaybackRate != null) output.defaultPlaybackRate = list.defaultPlaybackRate;
+
+  output.items = list.items;
+
+  return output;
 }
 
 /**
@@ -162,11 +241,19 @@ export function createAdminContentRouter(config) {
       const listNames = listYamlFiles(typeDir);
 
       const lists = listNames.map(name => {
-        const items = loadYamlSafe(path.join(typeDir, name)) || [];
+        const content = loadYamlSafe(path.join(typeDir, name));
+        const list = parseListContent(name, content);
+        // parseListContent already normalizes all fields with proper defaults
         return {
           name,
-          count: Array.isArray(items) ? items.length : 0,
-          path: `config/lists/${type}/${name}.yml`
+          title: list.title,
+          description: list.description,
+          group: list.group,
+          icon: list.icon,
+          sorting: list.sorting,
+          days: list.days,
+          active: list.active,
+          itemCount: list.items.length
         };
       });
 
@@ -219,8 +306,8 @@ export function createAdminContentRouter(config) {
       // Ensure the type directory exists
       ensureDir(typeDir);
 
-      // Create empty list
-      saveYaml(listPath, []);
+      // Create empty list with new object format
+      saveYaml(listPath, { items: [] });
 
       logger.info?.('admin.lists.created', { type, list: listName, household: householdId });
 
@@ -241,7 +328,7 @@ export function createAdminContentRouter(config) {
   // =============================================================================
 
   /**
-   * GET /lists/:type/:name - Get items in a list
+   * GET /lists/:type/:name - Get full list with metadata and items
    */
   router.get('/lists/:type/:name', (req, res) => {
     const { type, name: listName } = req.params;
@@ -250,15 +337,17 @@ export function createAdminContentRouter(config) {
     validateType(type);
 
     const listPath = getListPath(type, listName, householdId);
-    const items = loadYamlSafe(listPath);
+    const content = loadYamlSafe(listPath);
 
-    if (items === null) {
+    if (content === null) {
       throw new NotFoundError('List', `${type}/${listName}`);
     }
 
-    // Ensure items is an array and add indices
-    const itemsArray = Array.isArray(items) ? items : [];
-    const indexedItems = itemsArray.map((item, index) => ({
+    // Parse list content to get metadata and items
+    const list = parseListContent(listName, content);
+
+    // Add indices to items
+    const indexedItems = list.items.map((item, index) => ({
       index,
       ...item
     }));
@@ -267,9 +356,51 @@ export function createAdminContentRouter(config) {
 
     res.json({
       type,
-      list: listName,
+      name: listName,
+      ...list,
       items: indexedItems,
-      count: indexedItems.length,
+      household: householdId
+    });
+  });
+
+  /**
+   * PUT /lists/:type/:name/settings - Update list metadata
+   */
+  router.put('/lists/:type/:name/settings', (req, res) => {
+    const { type, name: listName } = req.params;
+    const householdId = req.query.household || configService.getDefaultHouseholdId();
+    const settings = req.body || {};
+
+    validateType(type);
+
+    const listPath = getListPath(type, listName, householdId);
+
+    // Load existing list
+    const content = loadYamlSafe(listPath);
+    if (content === null) {
+      throw new NotFoundError('List not found', { type, list: listName });
+    }
+
+    // Parse and merge settings
+    const list = parseListContent(listName, content);
+
+    // Only update allowed fields
+    const allowedFields = ['title', 'description', 'group', 'icon', 'sorting', 'days', 'active', 'defaultAction', 'defaultVolume', 'defaultPlaybackRate'];
+    for (const field of allowedFields) {
+      if (settings[field] !== undefined) {
+        list[field] = settings[field];
+      }
+    }
+
+    // Save with new format
+    saveYaml(listPath, serializeList(list));
+
+    logger.info?.('admin.lists.settings.updated', { type, list: listName, household: householdId });
+
+    res.json({
+      type,
+      name: listName,
+      ...list,
       household: householdId
     });
   });
@@ -290,17 +421,24 @@ export function createAdminContentRouter(config) {
 
     const listPath = getListPath(type, listName, householdId);
 
-    // Check if list exists
+    // Load existing list to preserve metadata
     const existing = loadYamlSafe(listPath);
     if (existing === null) {
       throw new NotFoundError('List', `${type}/${listName}`);
     }
 
     try {
+      // Parse existing list to get metadata
+      const list = parseListContent(listName, existing);
+
       // Remove index field if present (it's computed, not stored)
       const cleanItems = items.map(({ index, ...item }) => item);
 
-      saveYaml(listPath, cleanItems);
+      // Replace items while preserving metadata
+      list.items = cleanItems;
+
+      // Save with serializeList to preserve metadata
+      saveYaml(listPath, serializeList(list));
 
       logger.info?.('admin.lists.reordered', { type, list: listName, count: cleanItems.length, household: householdId });
 
@@ -371,14 +509,15 @@ export function createAdminContentRouter(config) {
     }
 
     const listPath = getListPath(type, listName, householdId);
-    const items = loadYamlSafe(listPath);
+    const content = loadYamlSafe(listPath);
 
-    if (items === null) {
+    if (content === null) {
       throw new NotFoundError('List', `${type}/${listName}`);
     }
 
     try {
-      const itemsArray = Array.isArray(items) ? items : [];
+      // Parse list to get metadata and items
+      const list = parseListContent(listName, content);
 
       // Build new item - preserve all provided fields
       const newItem = {
@@ -397,10 +536,10 @@ export function createAdminContentRouter(config) {
       if (itemData.priority !== undefined) newItem.priority = itemData.priority;
       if (itemData.group !== undefined) newItem.group = itemData.group;
 
-      itemsArray.push(newItem);
-      saveYaml(listPath, itemsArray);
+      list.items.push(newItem);
+      saveYaml(listPath, serializeList(list));
 
-      const newIndex = itemsArray.length - 1;
+      const newIndex = list.items.length - 1;
 
       logger.info?.('admin.lists.item.added', { type, list: listName, index: newIndex, label: newItem.label, household: householdId });
 
@@ -432,21 +571,22 @@ export function createAdminContentRouter(config) {
     }
 
     const listPath = getListPath(type, listName, householdId);
-    const items = loadYamlSafe(listPath);
+    const content = loadYamlSafe(listPath);
 
-    if (items === null) {
+    if (content === null) {
       throw new NotFoundError('List', `${type}/${listName}`);
     }
 
-    const itemsArray = Array.isArray(items) ? items : [];
+    // Parse list to get metadata and items
+    const list = parseListContent(listName, content);
 
-    if (index >= itemsArray.length) {
+    if (index >= list.items.length) {
       throw new NotFoundError('Item', index, { type, list: listName });
     }
 
     try {
       // Merge updates with existing item
-      const existingItem = itemsArray[index];
+      const existingItem = list.items[index];
       const updatedItem = { ...existingItem };
 
       // Apply updates for any provided field
@@ -457,8 +597,8 @@ export function createAdminContentRouter(config) {
         }
       }
 
-      itemsArray[index] = updatedItem;
-      saveYaml(listPath, itemsArray);
+      list.items[index] = updatedItem;
+      saveYaml(listPath, serializeList(list));
 
       logger.info?.('admin.lists.item.updated', { type, list: listName, index, household: householdId });
 
@@ -489,22 +629,23 @@ export function createAdminContentRouter(config) {
     }
 
     const listPath = getListPath(type, listName, householdId);
-    const items = loadYamlSafe(listPath);
+    const content = loadYamlSafe(listPath);
 
-    if (items === null) {
+    if (content === null) {
       throw new NotFoundError('List', `${type}/${listName}`);
     }
 
-    const itemsArray = Array.isArray(items) ? items : [];
+    // Parse list to get metadata and items
+    const list = parseListContent(listName, content);
 
-    if (index >= itemsArray.length) {
+    if (index >= list.items.length) {
       throw new NotFoundError('Item', index, { type, list: listName });
     }
 
     try {
-      const deletedItem = itemsArray[index];
-      itemsArray.splice(index, 1);
-      saveYaml(listPath, itemsArray);
+      const deletedItem = list.items[index];
+      list.items.splice(index, 1);
+      saveYaml(listPath, serializeList(list));
 
       logger.info?.('admin.lists.item.deleted', { type, list: listName, index, label: deletedItem.label, household: householdId });
 
