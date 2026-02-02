@@ -1,12 +1,12 @@
 // tests/isolated/application/content/ContentQueryService.test.mjs
-import { describe, it, expect, jest, beforeEach } from '@jest/globals';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ContentQueryService } from '#apps/content/ContentQueryService.mjs';
 
 describe('ContentQueryService', () => {
   describe('constructor', () => {
     it('accepts mediaProgressMemory as optional dependency', () => {
-      const mockRegistry = { get: jest.fn(), list: jest.fn(() => []), resolveSource: jest.fn(() => []) };
-      const mockMemory = { get: jest.fn(), getAll: jest.fn() };
+      const mockRegistry = { get: vi.fn(), list: vi.fn(() => []), resolveSource: vi.fn(() => []) };
+      const mockMemory = { get: vi.fn(), getAll: vi.fn() };
 
       const service = new ContentQueryService({
         registry: mockRegistry,
@@ -17,7 +17,7 @@ describe('ContentQueryService', () => {
     });
 
     it('works without mediaProgressMemory', () => {
-      const mockRegistry = { get: jest.fn(), list: jest.fn(() => []), resolveSource: jest.fn(() => []) };
+      const mockRegistry = { get: vi.fn(), list: vi.fn(() => []), resolveSource: vi.fn(() => []) };
 
       const service = new ContentQueryService({ registry: mockRegistry });
 
@@ -33,25 +33,25 @@ describe('ContentQueryService', () => {
   beforeEach(() => {
     mockAdapter1 = {
       source: 'immich',
-      search: jest.fn().mockResolvedValue({ items: [{ id: 'immich:1', source: 'immich' }], total: 1 }),
-      getList: jest.fn().mockResolvedValue([{ id: 'immich:album:1', source: 'immich', itemType: 'container' }]),
-      getSearchCapabilities: jest.fn().mockReturnValue({ canonical: ['text', 'person'], specific: [] }),
-      getQueryMappings: jest.fn().mockReturnValue({ person: 'personIds' }),
-      getContainerAliases: jest.fn().mockReturnValue({ playlists: 'album:', albums: 'album:' }),
+      search: vi.fn().mockResolvedValue({ items: [{ id: 'immich:1', source: 'immich' }], total: 1 }),
+      getList: vi.fn().mockResolvedValue([{ id: 'immich:album:1', source: 'immich', itemType: 'container' }]),
+      getSearchCapabilities: vi.fn().mockReturnValue({ canonical: ['text', 'person'], specific: [] }),
+      getQueryMappings: vi.fn().mockReturnValue({ person: 'personIds' }),
+      getContainerAliases: vi.fn().mockReturnValue({ playlists: 'album:', albums: 'album:' }),
     };
 
     mockAdapter2 = {
       source: 'plex',
-      search: jest.fn().mockResolvedValue({ items: [{ id: 'plex:1', source: 'plex' }], total: 1 }),
-      getList: jest.fn().mockResolvedValue([{ id: 'plex:playlist:1', source: 'plex', itemType: 'container' }]),
-      getSearchCapabilities: jest.fn().mockReturnValue({ canonical: ['text'], specific: ['actor'] }),
-      getQueryMappings: jest.fn().mockReturnValue({}),
-      getContainerAliases: jest.fn().mockReturnValue({ playlists: 'playlist:' }),
+      search: vi.fn().mockResolvedValue({ items: [{ id: 'plex:1', source: 'plex' }], total: 1 }),
+      getList: vi.fn().mockResolvedValue([{ id: 'plex:playlist:1', source: 'plex', itemType: 'container' }]),
+      getSearchCapabilities: vi.fn().mockReturnValue({ canonical: ['text'], specific: ['actor'] }),
+      getQueryMappings: vi.fn().mockReturnValue({}),
+      getContainerAliases: vi.fn().mockReturnValue({ playlists: 'playlist:' }),
     };
 
     mockRegistry = {
-      resolveSource: jest.fn().mockReturnValue([mockAdapter1, mockAdapter2]),
-      get: jest.fn().mockImplementation(source => {
+      resolveSource: vi.fn().mockReturnValue([mockAdapter1, mockAdapter2]),
+      get: vi.fn().mockImplementation(source => {
         if (source === 'immich') return mockAdapter1;
         if (source === 'plex') return mockAdapter2;
         return null;
@@ -138,23 +138,23 @@ describe('ContentQueryService', () => {
     describe('#enrichWithWatchState (tested via resolve)', () => {
       it('adds percent field from mediaProgressMemory', async () => {
         const mockRegistry = {
-          get: jest.fn(() => ({
-            resolvePlayables: jest.fn(async () => [
+          get: vi.fn(() => ({
+            resolvePlayables: vi.fn(async () => [
               { id: 'plex:123', title: 'Episode 1' },
               { id: 'plex:456', title: 'Episode 2' }
             ]),
-            getStoragePath: jest.fn(async () => 'plex/1_shows')
+            getStoragePath: vi.fn(async () => 'plex/1_shows')
           })),
-          list: jest.fn(() => ['plex'])
+          list: vi.fn(() => ['plex'])
         };
 
         const mockMemory = {
-          get: jest.fn(async (itemId) => {
+          get: vi.fn(async (itemId) => {
             if (itemId === 'plex:123') return { percent: 95, playhead: 1800, duration: 1900 };
             if (itemId === 'plex:456') return { percent: 10, playhead: 100, duration: 1000 };
             return null;
           }),
-          getAll: jest.fn()
+          getAll: vi.fn()
         };
 
         const service = new ContentQueryService({
@@ -177,23 +177,23 @@ describe('ContentQueryService', () => {
 
       it('sets watched=true when percent >= 90', async () => {
         const mockRegistry = {
-          get: jest.fn(() => ({
-            resolvePlayables: jest.fn(async () => [
+          get: vi.fn(() => ({
+            resolvePlayables: vi.fn(async () => [
               { id: 'plex:123', title: 'Episode 1' },
               { id: 'plex:456', title: 'Episode 2' }
             ]),
-            getStoragePath: jest.fn(async () => 'plex/1_shows')
+            getStoragePath: vi.fn(async () => 'plex/1_shows')
           })),
-          list: jest.fn(() => ['plex'])
+          list: vi.fn(() => ['plex'])
         };
 
         const mockMemory = {
-          get: jest.fn(async (itemId) => {
+          get: vi.fn(async (itemId) => {
             if (itemId === 'plex:123') return { percent: 95, playhead: 1800, duration: 1900 };
             if (itemId === 'plex:456') return { percent: 10, playhead: 100, duration: 1000 };
             return null;
           }),
-          getAll: jest.fn()
+          getAll: vi.fn()
         };
 
         const service = new ContentQueryService({
@@ -216,13 +216,13 @@ describe('ContentQueryService', () => {
 
       it('returns items unchanged when no mediaProgressMemory', async () => {
         const mockRegistry = {
-          get: jest.fn(() => ({
-            resolvePlayables: jest.fn(async () => [
+          get: vi.fn(() => ({
+            resolvePlayables: vi.fn(async () => [
               { id: 'plex:123', title: 'Episode 1' }
             ]),
-            getStoragePath: jest.fn(async () => 'plex/1_shows')
+            getStoragePath: vi.fn(async () => 'plex/1_shows')
           })),
-          list: jest.fn(() => ['plex'])
+          list: vi.fn(() => ['plex'])
         };
 
         const service = new ContentQueryService({
@@ -238,8 +238,8 @@ describe('ContentQueryService', () => {
 
       it('throws for unknown source', async () => {
         const mockRegistry = {
-          get: jest.fn(() => null),
-          list: jest.fn(() => ['plex'])
+          get: vi.fn(() => null),
+          list: vi.fn(() => ['plex'])
         };
 
         const service = new ContentQueryService({
@@ -251,8 +251,8 @@ describe('ContentQueryService', () => {
 
       it('throws descriptive error when adapter lacks resolvePlayables', async () => {
         const mockRegistry = {
-          get: jest.fn(() => ({ name: 'broken-adapter' })),
-          list: jest.fn(() => ['broken'])
+          get: vi.fn(() => ({ name: 'broken-adapter' })),
+          list: vi.fn(() => ['broken'])
         };
 
         const service = new ContentQueryService({ registry: mockRegistry });
@@ -263,19 +263,19 @@ describe('ContentQueryService', () => {
 
       it('preserves priority field from source items', async () => {
         const mockRegistry = {
-          get: jest.fn(() => ({
-            resolvePlayables: jest.fn(async () => [
+          get: vi.fn(() => ({
+            resolvePlayables: vi.fn(async () => [
               { id: 'plex:123', title: 'Episode 1', priority: 'high' },
               { id: 'plex:456', title: 'Episode 2', priority: 'low' }
             ]),
-            getStoragePath: jest.fn(async () => 'plex/1_shows')
+            getStoragePath: vi.fn(async () => 'plex/1_shows')
           })),
-          list: jest.fn(() => ['plex'])
+          list: vi.fn(() => ['plex'])
         };
 
         const mockMemory = {
-          get: jest.fn(async () => null),
-          getAll: jest.fn()
+          get: vi.fn(async () => null),
+          getAll: vi.fn()
         };
 
         const service = new ContentQueryService({
@@ -295,22 +295,22 @@ describe('ContentQueryService', () => {
 
       it('sets priority to in_progress when percent > 0 and < 90', async () => {
         const mockRegistry = {
-          get: jest.fn(() => ({
-            resolvePlayables: jest.fn(async () => [
+          get: vi.fn(() => ({
+            resolvePlayables: vi.fn(async () => [
               { id: 'plex:123', title: 'Episode 1' },
               { id: 'plex:456', title: 'Episode 2' }
             ]),
-            getStoragePath: jest.fn(async () => 'plex/1_shows')
+            getStoragePath: vi.fn(async () => 'plex/1_shows')
           })),
-          list: jest.fn(() => ['plex'])
+          list: vi.fn(() => ['plex'])
         };
 
         const mockMemory = {
-          get: jest.fn(async (itemId) => {
+          get: vi.fn(async (itemId) => {
             if (itemId === 'plex:456') return { percent: 45 };
             return null;
           }),
-          getAll: jest.fn()
+          getAll: vi.fn()
         };
 
         const service = new ContentQueryService({
@@ -336,24 +336,24 @@ describe('ContentQueryService', () => {
     describe('ItemSelectionService integration', () => {
       it('applies ItemSelectionService to filter watched items', async () => {
         const mockRegistry = {
-          get: jest.fn(() => ({
-            resolvePlayables: jest.fn(async () => [
+          get: vi.fn(() => ({
+            resolvePlayables: vi.fn(async () => [
               { id: 'plex:123', title: 'Episode 1' },
               { id: 'plex:456', title: 'Episode 2' },
               { id: 'plex:789', title: 'Episode 3' }
             ]),
-            getStoragePath: jest.fn(async () => 'plex/1_shows')
+            getStoragePath: vi.fn(async () => 'plex/1_shows')
           })),
-          list: jest.fn(() => ['plex'])
+          list: vi.fn(() => ['plex'])
         };
 
         const mockMemory = {
-          get: jest.fn(async (itemId) => {
+          get: vi.fn(async (itemId) => {
             if (itemId === 'plex:123') return { percent: 95 }; // watched
             if (itemId === 'plex:456') return { percent: 10 }; // in progress
             return null; // not started
           }),
-          getAll: jest.fn()
+          getAll: vi.fn()
         };
 
         const service = new ContentQueryService({
@@ -375,22 +375,22 @@ describe('ContentQueryService', () => {
 
       it('returns all items when filter=none and pick=all override', async () => {
         const mockRegistry = {
-          get: jest.fn(() => ({
-            resolvePlayables: jest.fn(async () => [
+          get: vi.fn(() => ({
+            resolvePlayables: vi.fn(async () => [
               { id: 'plex:123', title: 'Episode 1' },
               { id: 'plex:456', title: 'Episode 2' }
             ]),
-            getStoragePath: jest.fn(async () => 'plex/1_shows')
+            getStoragePath: vi.fn(async () => 'plex/1_shows')
           })),
-          list: jest.fn(() => ['plex'])
+          list: vi.fn(() => ['plex'])
         };
 
         const mockMemory = {
-          get: jest.fn(async (itemId) => {
+          get: vi.fn(async (itemId) => {
             if (itemId === 'plex:123') return { percent: 95 }; // watched
             return null;
           }),
-          getAll: jest.fn()
+          getAll: vi.fn()
         };
 
         const service = new ContentQueryService({

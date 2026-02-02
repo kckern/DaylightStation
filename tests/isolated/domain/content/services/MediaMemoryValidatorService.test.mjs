@@ -1,5 +1,5 @@
 // tests/unit/domains/content/services/MediaMemoryValidatorService.test.mjs
-import { describe, it, expect, beforeEach, jest } from '@jest/globals';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 describe('MediaMemoryValidatorService', () => {
   let service;
@@ -9,19 +9,19 @@ describe('MediaMemoryValidatorService', () => {
 
   beforeEach(() => {
     mockPlexClient = {
-      checkConnectivity: jest.fn().mockResolvedValue(true),
-      verifyId: jest.fn(),
-      hubSearch: jest.fn()
+      checkConnectivity: vi.fn().mockResolvedValue(true),
+      verifyId: vi.fn(),
+      hubSearch: vi.fn()
     };
     mockWatchStateStore = {
-      getAllEntries: jest.fn(),
-      updateId: jest.fn()
+      getAllEntries: vi.fn(),
+      updateId: vi.fn()
     };
     mockLogger = {
-      info: jest.fn(),
-      warn: jest.fn(),
-      error: jest.fn(),
-      debug: jest.fn()
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn()
     };
   });
 
@@ -51,6 +51,8 @@ describe('MediaMemoryValidatorService', () => {
   });
 
   describe('validateMediaMemory', () => {
+    const nowMs = Date.now();
+
     it('should abort if Plex server unreachable', async () => {
       const { MediaMemoryValidatorService } = await import('#domains/content/services/MediaMemoryValidatorService.mjs');
 
@@ -62,7 +64,7 @@ describe('MediaMemoryValidatorService', () => {
         logger: mockLogger
       });
 
-      const result = await service.validateMediaMemory();
+      const result = await service.validateMediaMemory({ nowMs });
       expect(result.aborted).toBe(true);
       expect(result.reason).toBe('Plex unreachable');
       expect(mockWatchStateStore.getAllEntries).not.toHaveBeenCalled();
@@ -82,7 +84,7 @@ describe('MediaMemoryValidatorService', () => {
         logger: mockLogger
       });
 
-      const result = await service.validateMediaMemory();
+      const result = await service.validateMediaMemory({ nowMs });
       expect(result.valid).toBe(1);
       expect(result.checked).toBe(1);
     });
@@ -112,7 +114,7 @@ describe('MediaMemoryValidatorService', () => {
         logger: mockLogger
       });
 
-      const result = await service.validateMediaMemory();
+      const result = await service.validateMediaMemory({ nowMs });
       expect(result.backfilled).toBe(1);
       expect(mockWatchStateStore.updateId).toHaveBeenCalledWith(
         'orphan-1',
@@ -121,7 +123,7 @@ describe('MediaMemoryValidatorService', () => {
       );
     });
 
-    it('should NEVER delete orphan entries - only log as unresolved', async () => {
+    it('should NEVER delete orphan entries - only add to unresolvedList', async () => {
       const { MediaMemoryValidatorService } = await import('#domains/content/services/MediaMemoryValidatorService.mjs');
 
       mockWatchStateStore.getAllEntries.mockResolvedValue([
@@ -132,23 +134,22 @@ describe('MediaMemoryValidatorService', () => {
 
       service = new MediaMemoryValidatorService({
         plexClient: mockPlexClient,
-        watchStateStore: mockWatchStateStore,
-        logger: mockLogger
+        watchStateStore: mockWatchStateStore
       });
 
-      const result = await service.validateMediaMemory();
+      const result = await service.validateMediaMemory({ nowMs });
 
-      // Should be logged as unresolved, NOT removed
+      // Should be tracked as unresolved, NOT removed
       expect(result.unresolved).toBe(1);
       expect(result.unresolved).toBeGreaterThan(0);
 
       // Verify remove was NEVER called (critical safety feature)
       expect(mockWatchStateStore.remove).toBeUndefined();
 
-      // Verify warning was logged
-      expect(mockLogger.warn).toHaveBeenCalledWith(
-        'validator.noMatch',
-        expect.objectContaining({ id: expect.any(Number), reason: 'no match found' })
+      // Verify unresolved item is tracked in unresolvedList
+      expect(result.unresolvedList).toHaveLength(1);
+      expect(result.unresolvedList[0]).toEqual(
+        expect.objectContaining({ title: 'Unknown Movie', reason: 'no match found' })
       );
     });
 
@@ -169,7 +170,7 @@ describe('MediaMemoryValidatorService', () => {
         logger: mockLogger
       });
 
-      const result = await service.validateMediaMemory();
+      const result = await service.validateMediaMemory({ nowMs });
       expect(result.unresolved).toBe(1);
       expect(result.backfilled).toBe(0);
     });
@@ -198,7 +199,7 @@ describe('MediaMemoryValidatorService', () => {
         logger: mockLogger
       });
 
-      const result = await service.validateMediaMemory({ dryRun: true });
+      const result = await service.validateMediaMemory({ dryRun: true, nowMs });
       expect(result.backfilled).toBe(1);
       expect(mockWatchStateStore.updateId).not.toHaveBeenCalled();
     });
@@ -213,13 +214,12 @@ describe('MediaMemoryValidatorService', () => {
 
       service = new MediaMemoryValidatorService({
         plexClient: mockPlexClient,
-        watchStateStore: mockWatchStateStore,
-        logger: mockLogger
+        watchStateStore: mockWatchStateStore
       });
 
-      const result = await service.validateMediaMemory();
+      const result = await service.validateMediaMemory({ nowMs });
+      // Error should be caught and counted as failed
       expect(result.failed).toBe(1);
-      expect(mockLogger.error).toHaveBeenCalled();
     });
 
     it('should return complete results object with changes and unresolvedList', async () => {
@@ -233,7 +233,7 @@ describe('MediaMemoryValidatorService', () => {
         logger: mockLogger
       });
 
-      const result = await service.validateMediaMemory();
+      const result = await service.validateMediaMemory({ nowMs });
       expect(result).toHaveProperty('checked');
       expect(result).toHaveProperty('valid');
       expect(result).toHaveProperty('backfilled');
@@ -254,9 +254,9 @@ describe('MediaMemoryValidatorService', () => {
         logger: mockLogger
       });
 
-      const now = new Date();
-      const recent = new Date(now - 5 * 24 * 60 * 60 * 1000).toISOString(); // 5 days ago
-      const old = new Date(now - 60 * 24 * 60 * 60 * 1000).toISOString(); // 60 days ago
+      const nowMs = Date.now();
+      const recent = new Date(nowMs - 5 * 24 * 60 * 60 * 1000).toISOString(); // 5 days ago
+      const old = new Date(nowMs - 60 * 24 * 60 * 60 * 1000).toISOString(); // 60 days ago
 
       const entries = [
         { id: '1', title: 'Recent Movie', lastPlayed: recent },
@@ -265,7 +265,7 @@ describe('MediaMemoryValidatorService', () => {
         { id: '4', title: 'Old Movie 3', lastPlayed: old }
       ];
 
-      const selected = service.selectEntriesToCheck(entries);
+      const selected = service.selectEntriesToCheck(entries, nowMs);
 
       // Recent entry should always be included
       expect(selected.some(e => e.id === '1')).toBe(true);
@@ -280,7 +280,8 @@ describe('MediaMemoryValidatorService', () => {
         logger: mockLogger
       });
 
-      const old = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString();
+      const nowMs = Date.now();
+      const old = new Date(nowMs - 60 * 24 * 60 * 60 * 1000).toISOString();
 
       // Create 100 old entries
       const entries = Array.from({ length: 100 }, (_, i) => ({
@@ -289,7 +290,7 @@ describe('MediaMemoryValidatorService', () => {
         lastPlayed: old
       }));
 
-      const selected = service.selectEntriesToCheck(entries);
+      const selected = service.selectEntriesToCheck(entries, nowMs);
 
       // Should sample ~10% of older entries (10 out of 100)
       expect(selected.length).toBe(10);
@@ -514,6 +515,8 @@ describe('MediaMemoryValidatorService', () => {
   });
 
   describe('oldPlexIds preservation', () => {
+    const nowMs = Date.now();
+
     it('should preserve old ID in oldPlexIds array when backfilling', async () => {
       const { MediaMemoryValidatorService } = await import('#domains/content/services/MediaMemoryValidatorService.mjs');
 
@@ -538,7 +541,7 @@ describe('MediaMemoryValidatorService', () => {
         logger: mockLogger
       });
 
-      await service.validateMediaMemory();
+      await service.validateMediaMemory({ nowMs });
 
       expect(mockWatchStateStore.updateId).toHaveBeenCalledWith(
         '99999',
@@ -572,7 +575,7 @@ describe('MediaMemoryValidatorService', () => {
         logger: mockLogger
       });
 
-      await service.validateMediaMemory();
+      await service.validateMediaMemory({ nowMs });
 
       expect(mockWatchStateStore.updateId).toHaveBeenCalledWith(
         '99999',

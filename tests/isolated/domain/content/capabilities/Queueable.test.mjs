@@ -1,4 +1,5 @@
 // tests/unit/content/capabilities/Queueable.test.mjs
+import { describe, test, expect } from 'vitest';
 import { QueueableItem } from '#domains/content/capabilities/Queueable.mjs';
 
 describe('Queueable capability', () => {

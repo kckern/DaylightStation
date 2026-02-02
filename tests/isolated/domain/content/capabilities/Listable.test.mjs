@@ -1,4 +1,5 @@
 // tests/unit/content/capabilities/Listable.test.mjs
+import { describe, test, expect } from 'vitest';
 import { ListableItem } from '#domains/content/capabilities/Listable.mjs';
 
 describe('Listable capability', () => {

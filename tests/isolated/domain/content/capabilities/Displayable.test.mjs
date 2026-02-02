@@ -1,4 +1,5 @@
 // tests/isolated/domain/content/capabilities/Displayable.test.mjs
+import { describe, it, expect } from 'vitest';
 import { DisplayableItem } from '#domains/content/capabilities/Displayable.mjs';
 
 describe('DisplayableItem', () => {
