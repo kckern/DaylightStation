@@ -202,6 +202,8 @@ function ListsFolder() {
               onDelete={() => deleteItem(item.index)}
               onToggleActive={() => toggleItemActive(item.index)}
               onDuplicate={() => handleDuplicateItem(item)}
+              isWatchlist={type === 'watchlists'}
+              onEdit={() => { setEditingItem(item); setEditorOpen(true); }}
             />
             {showInsertButtons && (
               <InsertRowButton onInsert={() => handleInsertAt(idx + 1)} />
@@ -209,7 +211,7 @@ function ListsFolder() {
           </React.Fragment>
         ))}
       </SortableContext>
-      <EmptyItemRow onAdd={handleAddItem} nextIndex={items.length} />
+      <EmptyItemRow onAdd={handleAddItem} nextIndex={items.length} isWatchlist={type === 'watchlists'} />
     </Box>
   );
 
@@ -275,6 +277,10 @@ function ListsFolder() {
           <div className="col-label"><Text size="xs" fw={600} c="dimmed">Label</Text></div>
           <div className="col-action"><Text size="xs" fw={600} c="dimmed">Action</Text></div>
           <div className="col-input"><Text size="xs" fw={600} c="dimmed">Input</Text></div>
+          {type === 'watchlists' && (
+            <div className="col-progress"><Text size="xs" fw={600} c="dimmed">Progress</Text></div>
+          )}
+          <div className="col-config"><Text size="xs" fw={600} c="dimmed">Config</Text></div>
           <div className="col-menu"></div>
         </div>
       )}
