@@ -549,7 +549,7 @@ export function createApiRouters(config) {
     content: createContentRouter(registry, mediaProgressMemory, { loadFile, saveFile, cacheBasePath, composePresentationUseCase, contentQueryService, logger }),
     proxy: createProxyRouter({ registry, proxyService, mediaBasePath, logger }),
     localContent: createLocalContentRouter({ registry, dataPath, mediaBasePath }),
-    play: createPlayRouter({ registry, mediaProgressMemory, logger }),
+    play: createPlayRouter({ registry, mediaProgressMemory, contentQueryService, logger }),
     list: createListRouter({ registry, loadFile, configService }),
   };
 }
