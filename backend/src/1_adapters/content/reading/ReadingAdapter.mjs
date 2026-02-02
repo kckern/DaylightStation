@@ -190,6 +190,115 @@ export class ReadingAdapter {
       textAlign: 'left'
     };
   }
+
+  /**
+   * List collections, items in a collection, or subfolder contents
+   * @param {string} localId - Empty for collections, collection name for items, or path for subfolders
+   * @returns {Promise<Object>}
+   */
+  async getList(localId) {
+    if (!localId) {
+      // List all collections
+      const collections = listDirs(this.dataPath);
+      return {
+        id: 'reading:',
+        source: 'reading',
+        category: 'reading',
+        itemType: 'container',
+        items: collections.map(name => ({
+          id: `reading:${name}`,
+          source: 'reading',
+          title: name,
+          itemType: 'container'
+        }))
+      };
+    }
+
+    const [collection, ...rest] = localId.split('/');
+    const subPath = rest.join('/');
+    const collectionPath = path.join(this.dataPath, collection);
+
+    if (!subPath) {
+      // List items in collection (may have subfolders)
+      const dirs = listDirs(collectionPath);
+      const files = listYamlFiles(collectionPath);
+
+      const items = [];
+
+      // Add subfolders as containers (skip manifest folder)
+      for (const dir of dirs) {
+        if (dir !== 'manifest') {
+          items.push({
+            id: `reading:${collection}/${dir}`,
+            source: 'reading',
+            title: dir,
+            itemType: 'container'
+          });
+        }
+      }
+
+      // Add files as items (skip manifest.yml)
+      for (const file of files) {
+        if (file !== 'manifest.yml') {
+          const item = await this.getItem(`${collection}/${file.replace('.yml', '')}`);
+          if (item) items.push(item);
+        }
+      }
+
+      return {
+        id: `reading:${collection}`,
+        source: 'reading',
+        category: 'reading',
+        collection,
+        itemType: 'container',
+        items
+      };
+    }
+
+    // Subfolder listing
+    const subfolderPath = path.join(collectionPath, subPath);
+    const subDirs = listDirs(subfolderPath);
+    const files = listYamlFiles(subfolderPath);
+    const items = [];
+
+    // Add nested subfolders as containers
+    for (const dir of subDirs) {
+      items.push({
+        id: `reading:${collection}/${subPath}/${dir}`,
+        source: 'reading',
+        title: dir,
+        itemType: 'container'
+      });
+    }
+
+    // Add files as items
+    for (const file of files) {
+      const item = await this.getItem(`${collection}/${subPath}/${file.replace('.yml', '')}`);
+      if (item) items.push(item);
+    }
+
+    return {
+      id: `reading:${localId}`,
+      source: 'reading',
+      category: 'reading',
+      collection,
+      itemType: 'container',
+      items
+    };
+  }
+
+  /**
+   * Resolve playable items from a local ID
+   * @param {string} localId - Item or collection/folder ID
+   * @returns {Promise<Array>}
+   */
+  async resolvePlayables(localId) {
+    const item = await this.getItem(localId);
+    if (item && item.mediaUrl) return [item];
+
+    const list = await this.getList(localId);
+    return list?.items?.filter(i => i.mediaUrl) || [];
+  }
 }
 
 export default ReadingAdapter;
