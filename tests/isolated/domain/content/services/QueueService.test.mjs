@@ -1,12 +1,31 @@
 // tests/unit/content/services/QueueService.test.mjs
-import { jest } from '@jest/globals';
+import { describe, it, test, expect, beforeEach, vi } from 'vitest';
 import { QueueService } from '#domains/content/services/QueueService.mjs';
 import { PlayableItem } from '#domains/content/capabilities/Playable.mjs';
-import { WatchState } from '#domains/content/entities/WatchState.mjs';
+
+// Create a mock WatchState class for testing
+class WatchState {
+  constructor({ itemId, playhead = 0, duration = 0, playCount = 0, lastPlayed = null }) {
+    this.itemId = itemId;
+    this.playhead = playhead;
+    this.duration = duration;
+    this.playCount = playCount;
+    this.lastPlayed = lastPlayed;
+  }
+  get percent() {
+    return this.duration ? Math.round((this.playhead / this.duration) * 100) : 0;
+  }
+  isWatched() {
+    return this.percent >= 90;
+  }
+  isInProgress() {
+    return this.playhead > 0 && !this.isWatched();
+  }
+}
 
 describe('QueueService', () => {
   let service;
-  let mockWatchStore;
+  let mockMediaProgressMemory;
 
   const createPlayable = (id, title) => new PlayableItem({
     id: `test:${id}`,
@@ -19,13 +38,13 @@ describe('QueueService', () => {
   });
 
   beforeEach(() => {
-    mockWatchStore = {
-      get: jest.fn().mockResolvedValue(null),
-      set: jest.fn().mockResolvedValue(undefined),
-      getAll: jest.fn().mockResolvedValue([]),
-      clear: jest.fn().mockResolvedValue(undefined)
+    mockMediaProgressMemory = {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn().mockResolvedValue(undefined),
+      getAll: vi.fn().mockResolvedValue([]),
+      clear: vi.fn().mockResolvedValue(undefined)
     };
-    service = new QueueService({ watchStore: mockWatchStore });
+    service = new QueueService({ mediaProgressMemory: mockMediaProgressMemory });
   });
 
   describe('getNextPlayable', () => {
@@ -46,7 +65,7 @@ describe('QueueService', () => {
         createPlayable('2', 'Episode 2')
       ];
 
-      mockWatchStore.get.mockImplementation(async (id) => {
+      mockMediaProgressMemory.get.mockImplementation(async (id) => {
         if (id === 'test:2') {
           return new WatchState({ itemId: 'test:2', playhead: 1800, duration: 3600 });
         }
@@ -63,7 +82,7 @@ describe('QueueService', () => {
         createPlayable('2', 'Episode 2')
       ];
 
-      mockWatchStore.get.mockImplementation(async (id) => {
+      mockMediaProgressMemory.get.mockImplementation(async (id) => {
         if (id === 'test:1') {
           return new WatchState({ itemId: 'test:1', playhead: 3500, duration: 3600 }); // 97% watched
         }
@@ -77,7 +96,7 @@ describe('QueueService', () => {
     test('returns null when all items watched', async () => {
       const items = [createPlayable('1', 'Episode 1')];
 
-      mockWatchStore.get.mockResolvedValue(
+      mockMediaProgressMemory.get.mockResolvedValue(
         new WatchState({ itemId: 'test:1', playhead: 3500, duration: 3600 })
       );
 
@@ -93,7 +112,7 @@ describe('QueueService', () => {
     test('includes resume position for in-progress items', async () => {
       const items = [createPlayable('1', 'Episode 1')];
 
-      mockWatchStore.get.mockResolvedValue(
+      mockMediaProgressMemory.get.mockResolvedValue(
         new WatchState({ itemId: 'test:1', playhead: 1800, duration: 3600 })
       );
 
@@ -358,6 +377,7 @@ describe('QueueService', () => {
 
   describe('filter pipeline', () => {
     it('should apply all filters in order', () => {
+      const now = new Date('2026-01-13');
       const items = [
         { id: '1', title: 'Good', percent: 0, hold: false },
         { id: '2', title: 'On Hold', percent: 0, hold: true },
@@ -365,16 +385,17 @@ describe('QueueService', () => {
         { id: '4', title: 'Expired', percent: 0, hold: false, skipAfter: '2020-01-01' },
         { id: '5', title: 'In Progress', percent: 50, hold: false }
       ];
-      const filtered = QueueService.applyFilters(items);
+      const filtered = QueueService.applyFilters(items, { now });
       expect(filtered.map(i => i.id)).toEqual(['1', '5']);
     });
 
     it('should support fallback cascade when empty', () => {
+      const now = new Date('2026-01-13');
       const items = [
         { id: '1', title: 'Watched', percent: 95, hold: false }
       ];
       // First pass returns empty because item is watched, fallback ignores watched status
-      const filtered = QueueService.applyFilters(items, { allowFallback: true });
+      const filtered = QueueService.applyFilters(items, { allowFallback: true, now });
       expect(filtered.map(i => i.id)).toEqual(['1']);
     });
 
@@ -390,12 +411,13 @@ describe('QueueService', () => {
     });
 
     it('should return prioritized and filtered queue', () => {
+      const now = new Date('2026-01-13');
       const items = [
         { id: '1', title: 'Low Priority', percent: 0, priority: 'low' },
         { id: '2', title: 'In Progress', percent: 50, priority: 'in_progress' },
         { id: '3', title: 'High Priority', percent: 0, priority: 'high' }
       ];
-      const result = QueueService.buildQueue(items);
+      const result = QueueService.buildQueue(items, { now });
       expect(result.map(i => i.id)).toEqual(['2', '3', '1']);
     });
   });

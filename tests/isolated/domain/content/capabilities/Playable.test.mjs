@@ -1,4 +1,5 @@
 // tests/unit/content/capabilities/Playable.test.mjs
+import { describe, it, test, expect } from 'vitest';
 import { PlayableItem } from '#domains/content/capabilities/Playable.mjs';
 
 describe('Playable capability', () => {

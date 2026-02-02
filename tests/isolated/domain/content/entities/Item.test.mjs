@@ -1,4 +1,5 @@
 // tests/unit/content/entities/Item.test.mjs
+import { describe, it, test, expect } from 'vitest';
 import { Item } from '#domains/content/entities/Item.mjs';
 
 describe('Item entity', () => {
@@ -71,15 +72,16 @@ describe('Item entity', () => {
     expect(item.getLocalId()).toBe('path/to/file:with:colons.mp3');
   });
 
-  test('getLocalId returns full ID if no colon present', () => {
+  test('getLocalId returns localId from source+localId construction', () => {
+    // When constructed with source and localId (no compound id string)
     const item = new Item({
-      id: 'simpleId',
-      localId: 'simpleId',
       source: 'test',
+      localId: 'simpleId',
       title: 'Test'
     });
 
     expect(item.getLocalId()).toBe('simpleId');
+    expect(item.id).toBe('test:simpleId');
   });
 
   describe('action properties', () => {
