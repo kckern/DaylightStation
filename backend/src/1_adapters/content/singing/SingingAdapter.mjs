@@ -34,7 +34,13 @@ export class SingingAdapter {
   }
 
   get prefixes() {
-    return [{ prefix: 'singing' }];
+    // Register canonical prefix and legacy aliases from content-prefixes.yml
+    // Legacy: hymn:123 → singing:hymn/123, primary:1 → singing:primary/1
+    return [
+      { prefix: 'singing' },
+      { prefix: 'hymn', idTransform: (id) => `hymn/${id}` },
+      { prefix: 'primary', idTransform: (id) => `primary/${id}` }
+    ];
   }
 
   canResolve(id) {
