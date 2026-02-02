@@ -5,6 +5,12 @@
 
 // Value Objects
 export { ItemId } from './value-objects/index.mjs';
+export {
+  ContentCategory,
+  ALL_CONTENT_CATEGORIES,
+  isValidContentCategory,
+  getCategoryScore
+} from './value-objects/index.mjs';
 
 // Entities
 export { Item } from './entities/Item.mjs';
