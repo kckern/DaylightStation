@@ -51,7 +51,8 @@ export function getListItems(type, name) {
   }
   const content = fs.readFileSync(filePath, 'utf-8');
   const data = yaml.load(content);
-  return data?.items || [];
+  // YAML files are arrays at root, not objects with 'items' key
+  return Array.isArray(data) ? data : (data?.items || []);
 }
 
 /**
