@@ -168,9 +168,11 @@ describe('ContentQueryService', () => {
           { filter: 'none', pick: 'all' }
         );
 
-        // Items should be enriched with percent
-        expect(result.items[0].percent).toBe(95);
-        expect(result.items[1].percent).toBe(10);
+        // Items should be enriched with percent (lookup by ID to be order-agnostic)
+        const item123 = result.items.find(i => i.id === 'plex:123');
+        const item456 = result.items.find(i => i.id === 'plex:456');
+        expect(item123.percent).toBe(95);
+        expect(item456.percent).toBe(10);
       });
 
       it('sets watched=true when percent >= 90', async () => {
@@ -205,8 +207,11 @@ describe('ContentQueryService', () => {
           { filter: 'none', pick: 'all' }
         );
 
-        expect(result.items[0].watched).toBe(true);
-        expect(result.items[1].watched).toBe(false);
+        // Lookup by ID to be order-agnostic
+        const item123 = result.items.find(i => i.id === 'plex:123');
+        const item456 = result.items.find(i => i.id === 'plex:456');
+        expect(item123.watched).toBe(true);
+        expect(item456.watched).toBe(false);
       });
 
       it('returns items unchanged when no mediaProgressMemory', async () => {
@@ -242,6 +247,77 @@ describe('ContentQueryService', () => {
         });
 
         await expect(service.resolve('unknown', 'path/123')).rejects.toThrow('Unknown source: unknown');
+      });
+
+      it('preserves priority field from source items', async () => {
+        const mockRegistry = {
+          get: jest.fn(() => ({
+            resolvePlayables: jest.fn(async () => [
+              { id: 'plex:123', title: 'Episode 1', priority: 'high' },
+              { id: 'plex:456', title: 'Episode 2', priority: 'low' }
+            ]),
+            getStoragePath: jest.fn(async () => 'plex/1_shows')
+          })),
+          list: jest.fn(() => ['plex'])
+        };
+
+        const mockMemory = {
+          get: jest.fn(async () => null),
+          getAll: jest.fn()
+        };
+
+        const service = new ContentQueryService({
+          registry: mockRegistry,
+          mediaProgressMemory: mockMemory
+        });
+
+        const result = await service.resolve('plex', 'shows/123',
+          { now: new Date() },
+          { filter: 'none', pick: 'all' }
+        );
+
+        // Priority from source should be preserved
+        expect(result.items[0].priority).toBe('high');
+        expect(result.items[1].priority).toBe('low');
+      });
+
+      it('sets priority to in_progress when percent > 0 and < 90', async () => {
+        const mockRegistry = {
+          get: jest.fn(() => ({
+            resolvePlayables: jest.fn(async () => [
+              { id: 'plex:123', title: 'Episode 1' },
+              { id: 'plex:456', title: 'Episode 2' }
+            ]),
+            getStoragePath: jest.fn(async () => 'plex/1_shows')
+          })),
+          list: jest.fn(() => ['plex'])
+        };
+
+        const mockMemory = {
+          get: jest.fn(async (itemId) => {
+            if (itemId === 'plex:456') return { percent: 45 };
+            return null;
+          }),
+          getAll: jest.fn()
+        };
+
+        const service = new ContentQueryService({
+          registry: mockRegistry,
+          mediaProgressMemory: mockMemory
+        });
+
+        const result = await service.resolve('plex', 'shows/123',
+          { now: new Date() },
+          { filter: 'none', pick: 'all' }
+        );
+
+        // Item with 45% should get in_progress priority
+        const inProgressItem = result.items.find(i => i.id === 'plex:456');
+        expect(inProgressItem.priority).toBe('in_progress');
+
+        // Item with no watch state should have no priority
+        const unwatchedItem = result.items.find(i => i.id === 'plex:123');
+        expect(unwatchedItem.priority).toBeUndefined();
       });
     });
 
