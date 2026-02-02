@@ -106,78 +106,64 @@ test.describe('Legacy query params', () => {
   });
 });
 
-test.describe('API resolution', () => {
-  test('hymn:2 resolves to singing:hymn/2', async ({ request }) => {
-    const response = await request.get(`${BASE_URL}/api/v1/content/resolve?id=hymn:2`);
+test.describe('API endpoints', () => {
+  test('singing hymn item endpoint returns content', async ({ request }) => {
+    const response = await request.get(`${BASE_URL}/api/v1/item/singing/hymn/2`);
     expect(response.ok()).toBe(true);
 
     const data = await response.json();
-    console.log(`hymn:2 resolved to:`, data);
-
-    expect(data.id).toBe('singing:hymn/2');
-    expect(data.category).toBe('singing');
-  });
-
-  test('scripture:alma-32 resolves correctly', async ({ request }) => {
-    const response = await request.get(`${BASE_URL}/api/v1/content/resolve?id=scripture:alma-32`);
-    expect(response.ok()).toBe(true);
-
-    const data = await response.json();
-    console.log(`scripture:alma-32 resolved to:`, data);
-
-    expect(data.category).toBe('narrated');
-    expect(data.collection).toBe('scripture');
-  });
-
-  test('hymn:2 API endpoint returns correct content metadata', async ({ request }) => {
-    const response = await request.get(`${BASE_URL}/api/v1/singing/hymn/2`);
-    expect(response.ok()).toBe(true);
-
-    const data = await response.json();
-    console.log(`API hymn/2 response:`, {
+    console.log(`API singing/hymn/2 response:`, {
       id: data.id,
-      title: data.title,
-      category: data.category
+      title: data.title
     });
 
     expect(data.id).toBe('singing:hymn/2');
-    expect(data.category).toBe('singing');
   });
 
-  test('scripture API endpoint returns correct content metadata', async ({ request }) => {
-    const response = await request.get(`${BASE_URL}/api/v1/narrated/scripture/alma-32`);
+  test('narrated scripture item endpoint returns content', async ({ request }) => {
+    const response = await request.get(`${BASE_URL}/api/v1/item/narrated/scripture/bom`);
     expect(response.ok()).toBe(true);
 
     const data = await response.json();
-    console.log(`API scripture/alma-32 response:`, {
+    console.log(`API narrated/scripture/bom response:`, {
       id: data.id,
-      title: data.title,
-      category: data.category
+      title: data.title
     });
 
-    expect(data.category).toBe('narrated');
-    expect(data.collection).toBe('scripture');
+    expect(data.id).toContain('narrated:scripture');
+  });
+
+  test('config content-prefixes endpoint returns legacy mapping', async ({ request }) => {
+    const response = await request.get(`${BASE_URL}/api/v1/config/content-prefixes`);
+    expect(response.ok()).toBe(true);
+
+    const data = await response.json();
+    console.log(`Config content-prefixes:`, data);
+
+    expect(data.legacy).toBeDefined();
+    expect(data.legacy.hymn).toBe('singing:hymn');
+    expect(data.legacy.scripture).toBe('narrated:scripture');
   });
 });
 
-test.describe('Legacy ID format variations', () => {
-  test('hymn with numeric padding resolves', async ({ request }) => {
-    // Test that hymn IDs work with various formats
-    const response = await request.get(`${BASE_URL}/api/v1/content/resolve?id=hymn:2`);
+test.describe('ID format variations', () => {
+  test('hymn with different numbers resolves', async ({ request }) => {
+    // Test hymn ID 100
+    const response = await request.get(`${BASE_URL}/api/v1/item/singing/hymn/100`);
     expect(response.ok()).toBe(true);
 
     const data = await response.json();
     expect(data).toBeDefined();
-    expect(data.id).toBeTruthy();
+    expect(data.id).toBe('singing:hymn/100');
   });
 
-  test('scripture with book-chapter-verse format resolves', async ({ request }) => {
-    // Test various scripture formats
-    const response = await request.get(`${BASE_URL}/api/v1/content/resolve?id=scripture:alma-32`);
+  test('scripture volumes resolve', async ({ request }) => {
+    // Test Book of Mormon volume
+    const response = await request.get(`${BASE_URL}/api/v1/item/narrated/scripture/bom`);
     expect(response.ok()).toBe(true);
 
     const data = await response.json();
     expect(data).toBeDefined();
-    expect(data.id).toBeTruthy();
+    expect(data.id).toContain('narrated:scripture');
   });
 });

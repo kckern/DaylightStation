@@ -55,7 +55,9 @@ export class NarratedAdapter {
    * @param {string} localId - e.g., "scripture/alma-32" or "talks/ldsgc202410/smith"
    * @returns {Promise<Object|null>}
    */
-  async getItem(localId) {
+  async getItem(id) {
+    // Strip source prefix if present (router passes compound ID)
+    const localId = id.replace(/^narrated:/, '');
     const [collection, ...rest] = localId.split('/');
     let itemPath = rest.join('/');
     const collectionPath = path.join(this.dataPath, collection);
