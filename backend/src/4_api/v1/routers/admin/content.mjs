@@ -240,11 +240,18 @@ export function createAdminContentRouter(config) {
       const listNames = listYamlFiles(typeDir);
 
       const lists = listNames.map(name => {
-        const items = loadYamlSafe(path.join(typeDir, name)) || [];
+        const content = loadYamlSafe(path.join(typeDir, name));
+        const list = parseListContent(name, content);
         return {
           name,
-          count: Array.isArray(items) ? items.length : 0,
-          path: `config/lists/${type}/${name}.yml`
+          title: list.title,
+          description: list.description || null,
+          group: list.group || null,
+          icon: list.icon || null,
+          sorting: list.sorting || 'manual',
+          days: list.days || null,
+          active: list.active !== false,
+          itemCount: list.items.length
         };
       });
 
