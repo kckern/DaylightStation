@@ -11,6 +11,8 @@ backend/node_modules
 !tests/_infrastructure/environments.yml
 data*
 !tests/_fixtures/data/
+!**/screen-framework/data/
+!**/screen-framework/data/**
 # Allow example config files in data/household
 !data/
 data/*
