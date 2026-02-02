@@ -1,6 +1,6 @@
 // backend/src/3_applications/content/ContentQueryService.mjs
 
-import { ItemSelectionService } from '#domains/content/index.mjs';
+import { ItemSelectionService, RelevanceScoringService } from '#domains/content/index.mjs';
 
 /**
  * Application service for orchestrating content queries across multiple sources.
@@ -205,123 +205,14 @@ export class ContentQueryService {
   }
 
   /**
-   * Calculate relevance score for an item.
-   * Higher score = more relevant (shown first).
-   *
-   * Scoring tiers:
-   * - 1000: ID match (explicit lookup)
-   * - 150: Person (Immich face albums) - most specific match
-   * - 148: Curated collections (playlists, collections, tags, Immich albums)
-   * - 145: Creative entities (artists, authors, directors)
-   * - 140: TV Shows (containers with seasons/episodes)
-   * - 130: Movies (standalone complete works)
-   * - 125: Music Albums (Plex album containers)
-   * - 20: Episodes
-   * - 15: Tracks
-   * - 10: Individual media (images, videos)
-   *
-   * @param {Object} item
-   * @param {string} [searchText] - Original search text for title matching bonus
-   * @returns {number}
-   */
-  #getRelevanceScore(item, searchText) {
-    // ID match always wins
-    if (item._idMatch) return 1000;
-
-    const type = item.metadata?.type || item.itemType || '';
-    const itemType = item.itemType || '';
-    const source = item.source || '';
-    const title = (item.title || '').toLowerCase();
-    const searchLower = (searchText || '').toLowerCase();
-
-    let score = 0;
-
-    // Containers
-    if (itemType === 'container') {
-      // Tier 1: Person (Immich face albums) - most specific match
-      if (type === 'person') {
-        score = 150;
-      }
-      // Tier 2: Curated collections
-      else if (type === 'playlist' || type === 'collection' || type === 'tag') {
-        score = 148;
-      }
-      // Immich albums are curated photo collections (Tier 2)
-      else if (type === 'album' && source === 'immich') {
-        score = 148;
-      }
-      // Tier 3: Creative entities
-      else if (['artist', 'author', 'director'].includes(type)) {
-        score = 145;
-      }
-      // Tier 4: TV Shows
-      else if (type === 'show') {
-        score = 140;
-      }
-      // Tier 6: Music albums (Plex)
-      else if (type === 'album') {
-        score = 125;
-      }
-      // Other containers
-      else {
-        score = 100;
-      }
-    }
-    // Standalone content (non-containers)
-    else if (type === 'movie') {
-      // Tier 5: Movies - standalone complete works, above music albums
-      score = 130;
-    }
-    else if (type === 'episode') {
-      score = 20;
-    }
-    else if (type === 'track') {
-      score = 15;
-    }
-    else if (['video', 'image'].includes(type)) {
-      score = 10;
-    }
-    // Non-container artists/authors (fallback if itemType not set)
-    else if (['artist', 'author', 'director'].includes(type)) {
-      score = 145;
-    }
-    // Fallback
-    else {
-      score = 5;
-    }
-
-    // Title match bonuses (within tier)
-    if (searchLower && title) {
-      if (title === searchLower) {
-        score += 20; // Exact match
-      } else if (title.startsWith(searchLower)) {
-        score += 10; // Starts with
-      } else if (title.includes(searchLower)) {
-        score += 5; // Contains
-      }
-    }
-
-    // Bonus for items with more children (richer results)
-    const childCount = item.childCount || item.metadata?.childCount || 0;
-    if (childCount > 0) {
-      score += Math.min(childCount / 100, 5); // Up to +5 for large collections
-    }
-
-    return score;
-  }
-
-  /**
    * Sort items by relevance score.
+   * Delegates to domain RelevanceScoringService.
    * @param {Array} items
    * @param {string} [searchText]
    * @returns {Array}
    */
   #sortByRelevance(items, searchText) {
-    return [...items].sort((a, b) => {
-      const scoreA = this.#getRelevanceScore(a, searchText);
-      const scoreB = this.#getRelevanceScore(b, searchText);
-      return scoreB - scoreA; // Higher score first
-    });
+    return RelevanceScoringService.sortByRelevance(items, searchText);
   }
 
   /**
