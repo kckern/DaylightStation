@@ -13,6 +13,7 @@ import LifelogApp from './Apps/LifelogApp.jsx';
 import FitnessApp from './Apps/FitnessApp.jsx';
 import AdminApp from './Apps/AdminApp.jsx';
 import Blank from './modules/Blank/Blank.jsx';
+import { ScreenRenderer } from './screen-framework/index.js';
 import { configurePlaybackLogger } from './modules/Player/lib/playbackLogger.js';
 import { configureDaylightLogger, getDaylightLogger } from './lib/logging/singleton.js';
 import { setupGlobalErrorHandlers } from './lib/logging/errorHandlers.js';
@@ -94,6 +95,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
       <Route path="/fitness/*" element={<FitnessApp />} />
       <Route path="/lifelog" element={<LifelogApp />} />
       <Route path="/admin/*" element={<AdminApp />} />
+      <Route path="/screen/:screenId" element={<ScreenRenderer />} />
       <Route path="*" element={<Blank />} />
     </Routes>
   </BrowserRouter>,
