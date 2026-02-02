@@ -218,14 +218,24 @@ if (allProgress.length === 0 && usesFallback) {
 
 ## Recommended Follow-up Work
 
-### P0 - Data Migration
+### P0 - Data Migration ✅
 Run migration script to canonicalize all watch history YAML files:
 - Rename `mediaDuration` → `duration`
 - Rename `seconds` → `playhead` (scripture files)
 - Add `duration` to entries that lack it (query Plex for metadata)
 
-### P1 - Schema Validation
+**Completed:** `cli/migrate-watch-history.mjs` migrated 2252 entries across 21 files.
+
+### P1 - Schema Validation ✅
 Add schema validation to `YamlMediaProgressMemory.set()` to ensure new entries use canonical format.
+
+**Completed:**
+- `mediaProgressSchema.mjs` defines canonical/legacy field constants
+- `validateCanonicalSchema()` detects legacy field usage
+- `YamlMediaProgressMemory.set()` logs warning when legacy fields detected (non-blocking)
+- 69 unit tests verify schema validation works correctly
+
+**Commits:** 104c322, 3fda072, f5bed4f
 
 ### P2 - Library ID Caching
 Cache Plex library ID → storage path mappings to avoid API calls on every request.
