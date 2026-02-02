@@ -205,6 +205,40 @@ export class ContentSourceRegistry {
   }
 
   /**
+   * Register legacy prefix aliases from config.
+   * Maps legacy prefixes (e.g., "hymn") to canonical format (e.g., "singing:hymn").
+   * @param {Object<string, string>} legacyMap - Map of legacy prefix to canonical format
+   * @example
+   * registry.registerLegacyPrefixes({
+   *   hymn: 'singing:hymn',      // hymn:123 → singing adapter with localId hymn/123
+   *   talk: 'narrated:talks'     // talk:foo → narrated adapter with localId talks/foo
+   * });
+   */
+  registerLegacyPrefixes(legacyMap) {
+    for (const [legacyPrefix, canonical] of Object.entries(legacyMap)) {
+      // Parse canonical format: "source:pathPrefix" (e.g., "singing:hymn")
+      const colonIndex = canonical.indexOf(':');
+      if (colonIndex === -1) continue;
+
+      const targetSource = canonical.substring(0, colonIndex);
+      const pathPrefix = canonical.substring(colonIndex + 1);
+
+      // Look up the target adapter
+      const adapter = this.get(targetSource);
+      if (!adapter) {
+        console.warn(`[ContentSourceRegistry] Legacy prefix "${legacyPrefix}" targets unknown source "${targetSource}"`);
+        continue;
+      }
+
+      // Register the legacy prefix with transform: id → pathPrefix/id
+      this.#prefixMap.set(legacyPrefix, {
+        adapter,
+        transform: (id) => `${pathPrefix}/${id}`
+      });
+    }
+  }
+
+  /**
    * List all registered prefixes
    * @returns {string[]}
    */

@@ -614,6 +614,13 @@ export function createMediaProgressMemory(config) {
 export function createApiRouters(config) {
   const { registry, mediaProgressMemory, loadFile, saveFile, cacheBasePath, dataPath, mediaBasePath, proxyService, composePresentationUseCase, configService, legacyPrefixMap = {}, logger = console } = config;
 
+  // Register legacy prefix aliases (e.g., hymn → singing:hymn) from config
+  // This enables the content API to resolve legacy prefixes via registry.resolveFromPrefix()
+  if (Object.keys(legacyPrefixMap).length > 0) {
+    registry.registerLegacyPrefixes(legacyPrefixMap);
+    logger.debug?.('bootstrap.legacyPrefixes.registered', { prefixes: Object.keys(legacyPrefixMap) });
+  }
+
   // Create ContentQueryService for unified query interface
   const contentQueryService = new ContentQueryService({ registry, mediaProgressMemory, legacyPrefixMap });
 
