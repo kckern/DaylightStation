@@ -45,6 +45,11 @@ export default defineConfig(({ command, mode }) => {
     plugins: [
       react()
     ],
+    test: {
+      environment: 'happy-dom',
+      globals: true,
+      setupFiles: ['./src/test-setup.js'],
+    },
     css: {
       preprocessorOptions: {
         scss: {
