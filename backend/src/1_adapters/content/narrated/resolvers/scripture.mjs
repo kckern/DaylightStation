@@ -47,9 +47,13 @@ function getFirstDir(basePath) {
 /**
  * Try to resolve a segment as a scripture reference
  * @param {string} segment - Path segment to test
- * @returns {{ volume: string, verseId: string }|null} Resolved reference or null
+ * @param {Object} [options] - Resolution options
+ * @param {boolean} [options.allowVolumeAsContainer] - If true, volumes return as container (no verseId)
+ * @returns {{ volume: string, verseId?: string, isContainer?: boolean }|null} Resolved reference or null
  */
-function tryResolveReference(segment) {
+function tryResolveReference(segment, options = {}) {
+  const { allowVolumeAsContainer = false } = options;
+
   // Try as reference string (e.g., "alma-32", "1-nephi-1", "john-1")
   try {
     const ref = lookupReference(segment);
@@ -69,8 +73,13 @@ function tryResolveReference(segment) {
     if (volume) return { volume, verseId: String(asNumber) };
   }
 
-  // Try as volume name (return first verse in that volume)
+  // Try as volume name
   if (VOLUME_RANGES[segment]) {
+    if (allowVolumeAsContainer) {
+      // Return as container without resolving to first verse
+      return { volume: segment, isContainer: true };
+    }
+    // Legacy behavior: resolve to first verse
     return { volume: segment, verseId: String(VOLUME_RANGES[segment].start) };
   }
 
@@ -93,15 +102,16 @@ function tryResolveReference(segment) {
 export const ScriptureResolver = {
   /**
    * Resolve scripture input to normalized paths for text and audio
-   * @param {string} input - Scripture path (e.g., "john-1", "kjvf/john-1", "kjvf/nirv/john-1")
+   * @param {string} input - Scripture path (e.g., "john-1", "kjvf/john-1", "kjvf/nirv/john-1", "nt")
    * @param {string} dataPath - Base path to scripture data
    * @param {Object} [options] - Resolution options
    * @param {string} [options.mediaPath] - Base path to scripture audio
    * @param {Object} [options.defaults] - Per-volume defaults { nt: { text: 'kjvf', audio: 'nirv' } }
-   * @returns {{ textPath: string, audioPath: string, volume: string, verseId: string }|null}
+   * @param {boolean} [options.allowVolumeAsContainer] - If true, volume-only input returns container indicator
+   * @returns {{ textPath: string, audioPath: string, volume: string, verseId: string, isContainer?: boolean }|null}
    */
   resolve(input, dataPath, options = {}) {
-    const { mediaPath, defaults = {} } = options;
+    const { mediaPath, defaults = {}, allowVolumeAsContainer = false } = options;
 
     // Full path passthrough (volume/version/verseId format)
     // Only triggers when first segment is a known volume AND last is numeric
@@ -128,7 +138,7 @@ export const ScriptureResolver = {
     let refIndex = -1;
 
     for (let i = segments.length - 1; i >= 0; i--) {
-      reference = tryResolveReference(segments[i]);
+      reference = tryResolveReference(segments[i], { allowVolumeAsContainer });
       if (reference) {
         refIndex = i;
         break;
@@ -137,7 +147,19 @@ export const ScriptureResolver = {
 
     if (!reference) return null;
 
-    const { volume, verseId } = reference;
+    const { volume, verseId, isContainer } = reference;
+
+    // If this is a container (volume-only), return early with container indicator
+    if (isContainer) {
+      const volumeDefaults = defaults[volume] || {};
+      return {
+        volume,
+        isContainer: true,
+        textVersion: volumeDefaults.text || getFirstDir(path.join(dataPath, volume)) || 'default',
+        audioRecording: volumeDefaults.audio || (mediaPath ? getFirstDir(path.join(mediaPath, volume)) : null)
+      };
+    }
+
     const prefixSegments = segments.slice(0, refIndex);
 
     // Get defaults for this volume

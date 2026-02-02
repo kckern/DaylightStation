@@ -575,16 +575,18 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
         mediaUrl = await plexAdapter.loadMediaUrl(selectedId);
       }
 
-      // Load watch state from viewing history
+      // Load watch state via ContentQueryService (DDD-compliant)
       let percent = 0;
       let seconds = 0;
-      if (typeof plexAdapter._loadViewingHistory === 'function') {
-        const history = plexAdapter._loadViewingHistory();
-        const entry = history[selectedId];
-        if (entry) {
-          seconds = entry.playhead || entry.seconds || 0;
-          const duration = entry.mediaDuration || entry.duration || 0;
-          percent = duration > 0 ? Math.round((seconds / duration) * 100) : (entry.percent || 0);
+      if (contentQueryService) {
+        const enriched = await contentQueryService.enrichWithWatchState(
+          [{ id: `plex:${selectedId}`, ...item }],
+          'plex',
+          `plex:${id}`
+        );
+        if (enriched[0]) {
+          percent = enriched[0].percent ?? 0;
+          seconds = enriched[0].playhead ?? 0;
         }
       }
 

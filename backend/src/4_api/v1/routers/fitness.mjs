@@ -45,6 +45,7 @@ const simulationState = {
  * @param {Object} config.userDataService - UserDataService for reading household data
  * @param {Object} config.configService - ConfigService
  * @param {Object} config.contentRegistry - Content source registry (for show endpoint)
+ * @param {Object} [config.contentQueryService] - ContentQueryService for watch state enrichment
  * @param {Object} config.transcriptionService - OpenAI transcription service (optional)
  * @param {Object} config.logger - Logger instance
  * @returns {express.Router}
@@ -57,6 +58,7 @@ export function createFitnessRouter(config) {
     userDataService,
     configService,
     contentRegistry,
+    contentQueryService,
     transcriptionService,
     logger = console
   } = config;
@@ -137,47 +139,30 @@ export function createFitnessRouter(config) {
     }
     let items = await adapter.resolvePlayables(compoundId);
 
-      // Merge viewing history - prefer async WatchStore method
-      let viewingHistory = {};
-      if (typeof adapter._loadViewingHistoryAsync === 'function') {
-        viewingHistory = await adapter._loadViewingHistoryAsync();
-      } else if (typeof adapter._loadViewingHistory === 'function') {
-        viewingHistory = adapter._loadViewingHistory();
-      }
-      if (viewingHistory && Object.keys(viewingHistory).length > 0) {
-          items = items.map(item => {
-            const itemKey = item.localId || item.metadata?.plex || item.metadata?.key;
-            // Try both raw key and plex-prefixed key to match media_memory format
-            const plexPrefixedKey = `plex:${itemKey}`;
-            const watchData = viewingHistory[itemKey] || viewingHistory[String(itemKey)] || viewingHistory[plexPrefixedKey];
-            if (watchData) {
-              // Calculate progress from playhead and duration
-              const playhead = parseInt(watchData.playhead) || parseInt(watchData.seconds) || 0;
-              const mediaDuration = parseInt(watchData.mediaDuration) || parseInt(watchData.duration) || 0;
-              const percent = mediaDuration > 0 ? (playhead / mediaDuration) * 100 : (watchData.percent || 0);
+    // Enrich with watch state via ContentQueryService (DDD-compliant)
+    if (contentQueryService) {
+      items = await contentQueryService.enrichWithWatchState(items, 'plex', compoundId);
+    }
 
-              return {
-                ...item,
-                watchProgress: percent,
-                watchSeconds: playhead,
-                watchedDate: watchData.lastPlayed || null,
-                lastPlayed: watchData.lastPlayed || null,
-                // Backend-computed watch status (SSOT)
-                isWatched: classifier.classify(
-                  { playhead, percent, watchTime: watchData.watchTime },
-                  { duration: mediaDuration }
-                ) === 'watched'
-              };
-            }
-            return item;
-          });
-      }
+    // Map domain fields to API contract and apply fitness-specific classification
+    items = items.map(item => {
+      const playhead = item.playhead ?? 0;
+      const percent = item.percent ?? 0;
+      const duration = item.duration ?? 0;
 
-      // Ensure all items have isWatched field (default false for items without history)
-      items = items.map(item => ({
+      return {
         ...item,
-        isWatched: item.isWatched ?? false
-      }));
+        watchProgress: percent,
+        watchSeconds: playhead,
+        watchedDate: item.lastPlayed ?? null,
+        // Backend-computed watch status using fitness-specific classifier (SSOT)
+        // Preserve undefined for watchTime so classifier can skip anti-seeking check when data is missing
+        isWatched: classifier.classify(
+          { playhead, percent, watchTime: item.watchTime },
+          { duration }
+        ) === 'watched'
+      };
+    });
 
       // Get container info for show metadata
       let info = null;

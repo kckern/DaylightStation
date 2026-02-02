@@ -56,12 +56,19 @@ export class MediaProgress {
   }
 
   /**
-   * Create MediaProgress from persisted data
-   * @param {Object} data
-   * @returns {MediaProgress}
+   * Serialize to plain object
+   * @returns {Object}
    */
-  static fromJSON(data) {
-    return new MediaProgress(data);
+  toJSON() {
+    return {
+      itemId: this.itemId,
+      playhead: this.playhead,
+      duration: this.duration,
+      percent: this.percent,
+      playCount: this.playCount,
+      lastPlayed: this.lastPlayed,
+      watchTime: this.watchTime
+    };
   }
 }
 
