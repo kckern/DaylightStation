@@ -100,6 +100,7 @@ export function toListItem(item) {
   if (item.lastPlayed !== undefined) base.lastPlayed = item.lastPlayed;
   if (item.watchedDate !== undefined) base.watchedDate = item.watchedDate;
   if (item.playCount !== undefined) base.playCount = item.playCount;
+  if (item.isWatched !== undefined) base.isWatched = item.isWatched;
 
   // Also check metadata for watch state (FolderAdapter pattern)
   if (!base.lastPlayed && item.metadata?.lastPlayed) base.lastPlayed = item.metadata.lastPlayed;
@@ -219,10 +220,11 @@ export function toListItem(item) {
  * @param {Object} config.registry - ContentSourceRegistry
  * @param {Function} [config.loadFile] - Function to load state files
  * @param {Object} [config.configService] - ConfigService for household paths
+ * @param {Object} [config.contentQueryService] - ContentQueryService for watch state enrichment
  * @returns {express.Router}
  */
 export function createListRouter(config) {
-  const { registry, loadFile, configService } = config;
+  const { registry, loadFile, configService, contentQueryService } = config;
   const router = express.Router();
 
   /**
@@ -277,17 +279,16 @@ export function createListRouter(config) {
 
       // 'local' is an alias for 'folder' - both use FolderAdapter which expects folder: prefix
       const isFolderSource = source === 'folder' || source === 'local';
+      const compoundId = isFolderSource ? `folder:${localId}` : `${source}:${localId}`;
 
       if (modifiers.playable) {
         // Resolve to playable items only
         if (!adapter.resolvePlayables) {
           return res.status(400).json({ error: 'Source does not support playable resolution' });
         }
-        const compoundId = isFolderSource ? `folder:${localId}` : `${source}:${localId}`;
         items = await adapter.resolvePlayables(compoundId);
       } else {
         // Get container contents
-        const compoundId = isFolderSource ? `folder:${localId}` : `${source}:${localId}`;
         const result = await adapter.getList(compoundId);
 
         // Handle different response shapes
@@ -300,34 +301,16 @@ export function createListRouter(config) {
         }
       }
 
-      // Merge viewing history for sources that support it (e.g., Plex)
-      let viewingHistory = null;
-      if (typeof adapter._loadViewingHistory === 'function') {
-        viewingHistory = adapter._loadViewingHistory();
-        if (viewingHistory && Object.keys(viewingHistory).length > 0) {
-          items = items.map(item => {
-            // Use localId from Item entity (extracted from compound ID at construction)
-            const itemKey = item.localId || item.metadata?.plex || item.metadata?.key;
-            const watchData = viewingHistory[itemKey] || viewingHistory[String(itemKey)];
-            if (watchData) {
-              // Calculate progress from playhead and duration (canonical field names)
-              const playhead = parseInt(watchData.playhead) || parseInt(watchData.seconds) || 0;
-              const mediaDuration = parseInt(watchData.mediaDuration) || parseInt(watchData.duration) || 0;
-              const percent = mediaDuration > 0 ? (playhead / mediaDuration) * 100 : (watchData.percent || 0);
-
-              // Merge watch data into item (matching legacy field names)
-              return {
-                ...item,
-                watchProgress: percent,
-                watchSeconds: playhead,
-                watchedDate: watchData.lastPlayed || null,
-                // Also include lastPlayed for v1 consumers
-                lastPlayed: watchData.lastPlayed || null
-              };
-            }
-            return item;
-          });
-        }
+      // Enrich with watch state via ContentQueryService (DDD-compliant)
+      if (contentQueryService) {
+        const enriched = await contentQueryService.enrichWithWatchState(items, source, compoundId);
+        // Map domain fields to API contract field names
+        items = enriched.map(item => ({
+          ...item,
+          watchProgress: item.percent ?? null,
+          watchSeconds: item.playhead ?? null,
+          watchedDate: item.lastPlayed ?? null
+        }));
       }
 
       // Check if any item has folderColor - if so, maintain fixed order from YAML
@@ -358,7 +341,6 @@ export function createListRouter(config) {
       }
 
       // Build response
-      const compoundId = isFolderSource ? `folder:${localId}` : `${source}:${localId}`;
       const containerInfo = adapter.getItem ? await adapter.getItem(compoundId) : null;
 
       // Build info object for FitnessShow compatibility

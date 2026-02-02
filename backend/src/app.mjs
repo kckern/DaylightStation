@@ -384,7 +384,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'compose-presentation' })
   });
 
-  const contentRouters = createApiRouters({
+  const { routers: contentRouters, services: contentServices } = createApiRouters({
     registry: contentRegistry,
     mediaProgressMemory,
     loadFile: contentLoadFile,
@@ -490,6 +490,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const menuMemoryPath = configService.getHouseholdPath('history/menu_memory');
   const itemRouter = createItemRouter({
     registry: contentRegistry,
+    contentQueryService: contentServices.contentQueryService,
     menuMemoryPath,
     logger: rootLogger.child({ module: 'item-api' })
   });
@@ -734,6 +735,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     userDataService,
     configService,
     contentRegistry,
+    contentQueryService: contentServices.contentQueryService,
     logger: rootLogger.child({ module: 'fitness-api' })
   });
 

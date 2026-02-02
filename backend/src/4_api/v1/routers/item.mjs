@@ -41,14 +41,18 @@ function getMenuMemoryKey(item) {
  * - GET /api/v1/item/:source/(path)/recent_on_top - Sort by recent menu selection
  * - POST /api/v1/item/menu-log - Log menu navigation for recent_on_top sorting
  *
+ * Query params:
+ * - ?select=watchlist - Use ItemSelectionService to pick item based on watch history
+ *
  * @param {Object} options
  * @param {import('#domains/content/services/ContentSourceRegistry.mjs').ContentSourceRegistry} options.registry
+ * @param {import('#apps/content/ContentQueryService.mjs').ContentQueryService} [options.contentQueryService]
  * @param {string} options.menuMemoryPath - Absolute path to menu memory file
  * @param {Object} [options.logger] - Logger instance
  * @returns {express.Router}
  */
 export function createItemRouter(options = {}) {
-  const { registry, menuMemoryPath, logger = console } = options;
+  const { registry, contentQueryService, menuMemoryPath, logger = console } = options;
   const router = express.Router();
 
   /**
@@ -69,6 +73,64 @@ export function createItemRouter(options = {}) {
       // 'local' is an alias for 'folder' - both use FolderAdapter
       const isFolderSource = source === 'folder' || source === 'local';
       const compoundId = isFolderSource ? `folder:${localId}` : `${source}:${localId}`;
+
+      // Handle ?select=<strategy> for item selection from containers
+      // Uses ContentQueryService.resolve() with ItemSelectionService
+      const selectStrategy = req.query.select;
+      if (selectStrategy && contentQueryService) {
+        try {
+          const context = { now: new Date() };
+          const overrides = { strategy: selectStrategy, allowFallback: true };
+          const { items: selected, strategy } = await contentQueryService.resolve(
+            source,
+            localId,
+            context,
+            overrides
+          );
+
+          if (selected.length === 0) {
+            return res.status(404).json({
+              error: 'No items available after selection',
+              source,
+              localId,
+              strategy: strategy.name
+            });
+          }
+
+          // Load full item content for the selected item
+          // Selection returns lightweight items; need full content for playback
+          const selectedItem = selected[0];
+          let fullItem = selectedItem;
+
+          // If the item is lightweight (no content), load the full item
+          if (!selectedItem.content && selectedItem.id) {
+            const fullItemData = await adapter.getItem(selectedItem.id);
+            if (fullItemData) {
+              // Merge full item with watch state from enriched selection
+              fullItem = {
+                ...fullItemData,
+                percent: selectedItem.percent,
+                watched: selectedItem.watched,
+                playhead: selectedItem.playhead,
+                duration: selectedItem.duration ?? fullItemData.duration
+              };
+            }
+          }
+
+          // Return selected item with selection metadata
+          res.json({
+            ...fullItem,
+            _selection: {
+              strategy: strategy.name,
+              totalCandidates: selected.length
+            }
+          });
+          return;
+        } catch (error) {
+          logger.warn?.('item.select.error', { source, localId, strategy: selectStrategy, error: error.message });
+          // Fall through to normal item handling
+        }
+      }
 
       // Get the item first
       const item = await adapter.getItem(compoundId);
@@ -109,28 +171,16 @@ export function createItemRouter(options = {}) {
         }
       }
 
-      // Merge viewing history for sources that support it (e.g., Plex)
-      if (typeof adapter._loadViewingHistory === 'function') {
-        const viewingHistory = adapter._loadViewingHistory();
-        if (viewingHistory && Object.keys(viewingHistory).length > 0) {
-          items = items.map(childItem => {
-            const itemKey = childItem.localId || childItem.metadata?.plex || childItem.metadata?.key;
-            const watchData = viewingHistory[itemKey] || viewingHistory[String(itemKey)];
-            if (watchData) {
-              const playhead = parseInt(watchData.playhead) || parseInt(watchData.seconds) || 0;
-              const mediaDuration = parseInt(watchData.mediaDuration) || parseInt(watchData.duration) || 0;
-              const percent = mediaDuration > 0 ? (playhead / mediaDuration) * 100 : (watchData.percent || 0);
-              return {
-                ...childItem,
-                watchProgress: percent,
-                watchSeconds: playhead,
-                watchedDate: watchData.lastPlayed || null,
-                lastPlayed: watchData.lastPlayed || null
-              };
-            }
-            return childItem;
-          });
-        }
+      // Enrich with watch state via ContentQueryService (DDD-compliant)
+      if (contentQueryService) {
+        const enriched = await contentQueryService.enrichWithWatchState(items, source, compoundId);
+        // Map domain fields to API contract field names
+        items = enriched.map(item => ({
+          ...item,
+          watchProgress: item.percent ?? null,
+          watchSeconds: item.playhead ?? null,
+          watchedDate: item.lastPlayed ?? null
+        }));
       }
 
       // Check if any item has folderColor - if so, maintain fixed order from YAML

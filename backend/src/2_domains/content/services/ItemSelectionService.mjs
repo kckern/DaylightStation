@@ -21,6 +21,13 @@ const STRATEGIES = {
     sort: 'source_order',
     pick: 'all'
   },
+  sequential: {
+    // For content you progress through in order (scripture, audiobooks)
+    // Filters out fully watched, sorts by sequence, picks next item
+    filter: ['watched'],
+    sort: 'source_order',
+    pick: 'first'
+  },
   album: {
     filter: [],
     sort: 'track_order',
@@ -55,6 +62,7 @@ const INFERENCE_RULES = [
   { match: (ctx) => ctx.containerType === 'watchlist', strategy: 'watchlist' },
   { match: (ctx) => ctx.containerType === 'program', strategy: 'program' },
   { match: (ctx) => ctx.containerType === 'folder', strategy: 'watchlist' }, // deprecated, maps to watchlist
+  { match: (ctx) => ctx.containerType === 'sequential', strategy: 'sequential' }, // scripture, audiobooks
   { match: (ctx) => ctx.containerType === 'album', strategy: 'album' },
   { match: (ctx) => ctx.containerType === 'playlist', strategy: 'playlist' },
   { match: (ctx) => ctx.query?.person, strategy: 'chronological' },

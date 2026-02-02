@@ -621,3 +621,119 @@ queue=plex:playlist:123&shuffle=1
 display=immich:album:abc&loop=1&advance=timed&interval=5000
 play=plex.query:Mozart&sort=date&take=10
 ```
+
+---
+
+## 14. Scripture Query Permutations
+
+Scripture is accessed via the `narrated` source with the `scripture` collection. The resolution supports multiple formats.
+
+### Reference Types
+
+| Format | Example | Resolution |
+|--------|---------|------------|
+| **Volume selector** | `scripture/nt` | Next unfinished chapter in volume (via ItemSelectionService) |
+| **Book reference** | `scripture/john` | First chapter of book |
+| **Chapter reference** | `scripture/john-1` | Specific chapter |
+| **Verse reference** | `scripture/john-1:1` | Chapter containing verse |
+| **Numeric verse ID** | `scripture/25065` | Direct verse lookup |
+
+### Volume Ranges
+
+| Volume | Abbrev | Verse ID Range | Notes |
+|--------|--------|----------------|-------|
+| Old Testament | `ot` | 1 - 23145 | Genesis through Malachi |
+| New Testament | `nt` | 23146 - 31102 | Matthew through Revelation |
+| Book of Mormon | `bom` | 31103 - 38550 | 1 Nephi through Moroni |
+| Doctrine & Covenants | `dc` | 38551 - 41844 | Sections 1-138 + OD1/OD2 |
+| Pearl of Great Price | `pgp` | 41845 - 42296 | Moses, Abraham, JS-M, JS-H, AoF |
+
+### Version and Recording Cascade
+
+Scripture queries support text version and audio recording specification with fallback:
+
+```
+Resolution priority (most specific → least):
+1. Explicit in query:     scripture/{version}/{recording}/{ref}
+2. Query params:          scripture/{ref}?text=kjvf&audio=nirv
+3. Manifest defaults:     config/narrated/scripture.yml → defaults
+```
+
+### Query Permutations
+
+**Volume-level (uses ItemSelectionService):**
+```
+play=scripture/nt                    # Next unfinished NT chapter
+play=scripture/bom                   # Next unfinished BOM chapter
+play=scripture/ot                    # Next unfinished OT chapter
+play=scripture/dc                    # Next unfinished D&C section
+play=scripture/pgp                   # Next unfinished PGP chapter
+```
+
+**Book-level:**
+```
+play=scripture/john                  # John chapter 1 (first chapter)
+play=scripture/alma                  # Alma chapter 1
+play=scripture/genesis               # Genesis chapter 1
+```
+
+**Chapter-level:**
+```
+play=scripture/john-1                # John 1 specifically
+play=scripture/alma-32               # Alma 32 specifically
+play=scripture/1-nephi-1             # 1 Nephi 1
+play=scripture/d&c-4                 # D&C 4 (special char handling)
+```
+
+**Verse-level (resolves to chapter):**
+```
+play=scripture/john-1:1              # John 1 (containing verse)
+play=scripture/alma-32:21            # Alma 32 (containing verse)
+```
+
+**Numeric ID (direct verse lookup):**
+```
+play=scripture/25065                 # Luke 4:1 (verse ID)
+play=scripture/31103                 # 1 Nephi 1:1 (first BOM verse)
+```
+
+**With version override:**
+```
+play=scripture/kjvf/john-1           # KJV Formatted text
+play=scripture/nirv/john-1           # NIRV recording
+play=scripture/kjvf/nirv/john-1      # Both explicit
+```
+
+**Full compound ID format:**
+```
+play=narrated:scripture/nt           # Explicit source prefix
+play=narrated:scripture/kjvf/john-1  # With version
+```
+
+**With query params (alternative to path segments):**
+```
+play=scripture/john-1?text=kjvf&audio=nirv
+play=scripture/nt?strategy=sequential
+```
+
+### Selection Strategy for Volumes
+
+When `play=scripture/{volume}` is requested:
+
+1. Load all chapters in volume from scriptures.yml watch history
+2. Find first chapter with `percent < 90` (in-progress or unwatched)
+3. If all chapters watched, return first chapter (restart)
+4. Return single item for playback
+
+Watch history keys use format: `plex:{volume}/{textVersion}/{verseId}`
+
+Example: `plex:nt/kjvf/25065` = Luke 4 with KJV Formatted text
+
+### Error Cases
+
+| Query | Expected Error |
+|-------|----------------|
+| `scripture/invalid-book` | 404 - Unknown reference |
+| `scripture/john-999` | 404 - Chapter out of range |
+| `scripture/99999999` | 404 - Verse ID not found |
+| `list=scripture/john-1` | 400 - Leaf not listable |

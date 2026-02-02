@@ -621,17 +621,23 @@ export function createApiRouters(config) {
   const localMediaAdapter = registry.get('local');
 
   return {
-    content: createContentRouter(registry, mediaProgressMemory, { loadFile, saveFile, cacheBasePath, composePresentationUseCase, contentQueryService, logger }),
-    proxy: createProxyRouter({ registry, proxyService, mediaBasePath, logger }),
-    localContent: createLocalContentRouter({ registry, dataPath, mediaBasePath }),
-    play: createPlayRouter({ registry, mediaProgressMemory, contentQueryService, logger }),
-    list: createListRouter({ registry, loadFile, configService }),
-    local: createLocalRouter({ localMediaAdapter, mediaBasePath, cacheBasePath: cacheBasePath || path.join(dataPath, 'system/cache'), logger }),
-    stream: createStreamRouter({
-      singingMediaPath: path.join(mediaBasePath, 'singing'),
-      narratedMediaPath: path.join(mediaBasePath, 'narrated'),
-      logger
-    }),
+    routers: {
+      content: createContentRouter(registry, mediaProgressMemory, { loadFile, saveFile, cacheBasePath, composePresentationUseCase, contentQueryService, logger }),
+      proxy: createProxyRouter({ registry, proxyService, mediaBasePath, logger }),
+      localContent: createLocalContentRouter({ registry, dataPath, mediaBasePath }),
+      play: createPlayRouter({ registry, mediaProgressMemory, contentQueryService, logger }),
+      list: createListRouter({ registry, loadFile, configService, contentQueryService }),
+      local: createLocalRouter({ localMediaAdapter, mediaBasePath, cacheBasePath: cacheBasePath || path.join(dataPath, 'system/cache'), logger }),
+      stream: createStreamRouter({
+        singingMediaPath: path.join(mediaBasePath, 'singing'),
+        narratedMediaPath: path.join(mediaBasePath, 'narrated'),
+        logger
+      }),
+    },
+    // Expose services for other routers that need them
+    services: {
+      contentQueryService
+    }
   };
 }
 
@@ -737,6 +743,7 @@ export function createFitnessServices(config) {
  * @param {Object} config.userDataService - UserDataService for household data
  * @param {Object} config.configService - ConfigService
  * @param {Object} [config.contentRegistry] - Content source registry (for show endpoint)
+ * @param {Object} [config.contentQueryService] - ContentQueryService for watch state enrichment
  * @param {Object} [config.logger] - Logger instance
  * @returns {express.Router}
  */
@@ -747,6 +754,7 @@ export function createFitnessApiRouter(config) {
     userDataService,
     configService,
     contentRegistry,
+    contentQueryService,
     logger = console
   } = config;
 
@@ -758,6 +766,7 @@ export function createFitnessApiRouter(config) {
     userDataService,
     configService,
     contentRegistry,
+    contentQueryService,
     logger
   });
 }

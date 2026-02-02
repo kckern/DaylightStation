@@ -450,37 +450,99 @@ export class ContentQueryService {
 
   /**
    * Enrich items with watch state from mediaProgressMemory.
+   * Optimized to load storage path once from container and batch-load all progress.
+   * Falls back to scanning all library files when source is offline.
    * @param {Array} items - Items to enrich
    * @param {Object} adapter - Adapter for storage path resolution
+   * @param {string} [containerId] - Container ID for efficient storage path lookup
    * @returns {Promise<Array>} Enriched items
    */
-  async #enrichWithWatchState(items, adapter) {
+  async #enrichWithWatchState(items, adapter, containerId = null) {
     if (!this.#mediaProgressMemory || items.length === 0) {
       return items;
     }
 
-    return Promise.all(items.map(async (item) => {
-      const storagePath = typeof adapter.getStoragePath === 'function'
-        ? await adapter.getStoragePath(item.id)
-        : adapter.source || 'default';
+    // Get storage path once from container (not per-item) to avoid N API calls
+    let storagePath = adapter.source || 'default';
+    let usesFallback = false;
+    if (typeof adapter.getStoragePath === 'function') {
+      // Use container ID if provided, otherwise use first item
+      const lookupId = containerId || items[0]?.id;
+      if (lookupId) {
+        try {
+          storagePath = await adapter.getStoragePath(lookupId);
+        } catch {
+          // Fall back to default on error
+          usesFallback = true;
+        }
+      }
+    }
 
-      const progress = await this.#mediaProgressMemory.get(item.id, storagePath);
+    console.debug('[ContentQueryService.#enrichWithWatchState] Storage path resolved:', { storagePath, usesFallback });
+
+    // Load ALL progress for this storage path at once (1 file read, not N)
+    let allProgress = await this.#mediaProgressMemory.getAll(storagePath);
+    console.debug('[ContentQueryService.#enrichWithWatchState] Progress loaded:', { count: allProgress.length });
+
+    // If no progress found and we're using fallback, scan all library files
+    // This handles the case when the source is offline (e.g., Plex unreachable)
+    if (allProgress.length === 0 && (usesFallback || storagePath === adapter.source)) {
+      // Try loading from all library-prefixed paths (e.g., plex/14_fitness, plex/24_church-series)
+      if (typeof this.#mediaProgressMemory.getAllFromAllLibraries === 'function') {
+        allProgress = await this.#mediaProgressMemory.getAllFromAllLibraries(adapter.source || 'plex');
+      }
+    }
+
+    const progressMap = new Map(allProgress.map(p => [p.itemId, p]));
+
+    // Enrich items from the map (no additional API/file calls)
+    return items.map(item => {
+      const progress = progressMap.get(item.id);
 
       if (!progress) return item;
 
-      const percent = progress.percent ?? 0;
+      const playhead = progress.playhead ?? 0;
+      // Use progress duration, fall back to item duration from source metadata
+      const duration = progress.duration || item.duration || 0;
+      // Calculate percent - prefer progress.percent if available, otherwise calculate from playhead/duration
+      // This handles cases where watch history has playhead but no duration (Plex metadata provides it)
+      let percent = progress.percent ?? 0;
+      if (percent === 0 && playhead > 0 && duration > 0) {
+        percent = Math.round((playhead / duration) * 100);
+      }
       const isInProgress = percent > 0 && percent < 90;
 
       return {
         ...item,
         percent,
-        playhead: progress.playhead ?? 0,
-        duration: progress.duration ?? item.duration ?? 0,
+        playhead,
+        duration,
+        // Preserve undefined/null for watchTime so classifier can handle missing data
+        watchTime: progress.watchTime > 0 ? progress.watchTime : undefined,
+        lastPlayed: progress.lastPlayed ?? null,
         watched: percent >= 90,
         // Set priority to in_progress if partially watched (unless already set)
         priority: isInProgress && !item.priority ? 'in_progress' : item.priority
       };
-    }));
+    });
+  }
+
+  /**
+   * Public method to enrich items with watch state.
+   * Used by API routers to add watch progress to items from any source.
+   * @param {Array} items - Items to enrich
+   * @param {string} source - Source name for adapter lookup
+   * @param {string} [containerId] - Container ID for efficient storage path lookup
+   * @returns {Promise<Array>} Enriched items with percent, playhead, watched, etc.
+   */
+  async enrichWithWatchState(items, source, containerId = null) {
+    const adapter = this.#registry.get(source);
+    if (!adapter) {
+      console.debug('[ContentQueryService.enrichWithWatchState] No adapter for source:', source);
+      return items;
+    }
+    console.debug('[ContentQueryService.enrichWithWatchState]', { source, containerId, itemCount: items.length });
+    return this.#enrichWithWatchState(items, adapter, containerId);
   }
 
   /**
@@ -504,7 +566,9 @@ export class ContentQueryService {
     }
 
     const items = await adapter.resolvePlayables(localId);
-    const enriched = await this.#enrichWithWatchState(items, adapter);
+    // Pass container ID for efficient batch loading of watch state
+    const containerId = `${source}:${localId}`;
+    const enriched = await this.#enrichWithWatchState(items, adapter, containerId);
 
     // Determine container type from adapter if not provided
     const containerType = context.containerType
