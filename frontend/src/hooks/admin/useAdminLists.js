@@ -14,6 +14,7 @@ export function useAdminLists() {
   const [error, setError] = useState(null);
   const [lists, setLists] = useState([]);
   const [items, setItems] = useState([]);
+  const [listMetadata, setListMetadata] = useState(null);
   const [currentType, setCurrentType] = useState(null);
   const [currentList, setCurrentList] = useState(null);
 
@@ -43,6 +44,9 @@ export function useAdminLists() {
     try {
       const data = await DaylightAPI(`${API_BASE}/lists/${type}/${listName}`);
       setItems(data.items || []);
+      // Store list metadata (everything except items)
+      const { items: _, ...metadata } = data;
+      setListMetadata(metadata);
       setCurrentType(type);
       setCurrentList(listName);
       logger.info('admin.lists.items.fetched', { type, list: listName, count: data.items?.length });
@@ -171,12 +175,42 @@ export function useAdminLists() {
     await updateItem(index, { active: !item.active });
   }, [items, updateItem]);
 
+  // Update list settings (metadata)
+  const updateListSettings = useCallback(async (settings) => {
+    if (!currentType || !currentList) throw new Error('No list selected');
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await DaylightAPI(
+        `${API_BASE}/lists/${currentType}/${currentList}/settings`,
+        settings,
+        'PUT'
+      );
+      // Update local metadata state
+      const { items: _, ...metadata } = data;
+      setListMetadata(metadata);
+      logger.info('admin.lists.settings.updated', { type: currentType, list: currentList });
+      return data;
+    } catch (err) {
+      setError(err);
+      logger.error('admin.lists.settings.update.failed', {
+        type: currentType,
+        list: currentList,
+        message: err.message
+      });
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [currentType, currentList, logger]);
+
   return {
     // State
     loading,
     error,
     lists,
     items,
+    listMetadata,
     currentType,
     currentList,
 
@@ -192,6 +226,9 @@ export function useAdminLists() {
     deleteItem,
     reorderItems,
     toggleItemActive,
+
+    // Settings operations
+    updateListSettings,
 
     // Helpers
     clearError: () => setError(null)
