@@ -36,7 +36,14 @@ export class NarratedAdapter {
   }
 
   get prefixes() {
-    return [{ prefix: 'narrated' }];
+    // Register canonical prefix and legacy aliases from content-prefixes.yml
+    // Legacy: scripture:bom → narrated:scripture/bom, talk:ldsgc → narrated:talks/ldsgc, poem:remedy → narrated:poetry/remedy
+    return [
+      { prefix: 'narrated' },
+      { prefix: 'scripture', idTransform: (id) => `scripture/${id}` },
+      { prefix: 'talk', idTransform: (id) => `talks/${id}` },
+      { prefix: 'poem', idTransform: (id) => `poetry/${id}` }
+    ];
   }
 
   canResolve(id) {
