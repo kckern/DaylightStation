@@ -1,4 +1,5 @@
 // tests/unit/adapters/content/singing/SingingAdapter.test.mjs
+// Basic unit tests that don't require mocking
 import { describe, test, expect, beforeEach } from '@jest/globals';
 import { SingingAdapter } from '#adapters/content/singing/SingingAdapter.mjs';
 
