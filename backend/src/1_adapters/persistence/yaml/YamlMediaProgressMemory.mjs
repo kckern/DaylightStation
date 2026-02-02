@@ -1,4 +1,4 @@
-// backend/src/2_adapters/persistence/yaml/YamlMediaProgressMemory.mjs
+// backend/src/1_adapters/persistence/yaml/YamlMediaProgressMemory.mjs
 import path from 'path';
 import { MediaProgress } from '#domains/content/entities/MediaProgress.mjs';
 import {
