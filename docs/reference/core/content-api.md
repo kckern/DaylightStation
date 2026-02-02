@@ -20,10 +20,13 @@ All items use compound IDs:
 - `plex:12345` - Plex item by rating key
 - `filesystem:audio/music/song.mp3` - Filesystem path
 - `folder:Morning Program` - Named folder
-- `talk:general/talk-id` - Local talk
-- `scripture:cfm/1nephi1` - Scripture chapter
-- `hymn:113` - Hymn by number
-- `poem:remedy/01` - Poetry item
+- `singing:hymn/2` - Hymn by number
+- `singing:primary/5` - Primary song by number
+- `reading:scripture/bom/sebom/31103` - Scripture chapter
+- `reading:talk/general/1` - Talk
+- `reading:poem/remedy/01` - Poetry item
+
+**Note:** Legacy IDs (e.g., `hymn:113`) are supported via prefix mapping in the unified query interface.
 
 ---
 
@@ -264,12 +267,71 @@ All endpoints return errors in this format:
 
 ---
 
+## Unified Item API (New)
+
+The Item API (`/api/v1/item/:source/*`) is the **preferred** endpoint for all content sources, providing a unified interface that works for Plex, filesystem, singing, reading, and any future source.
+
+### GET /api/v1/item/:source/*
+
+Get single item or container with optional modifiers.
+
+**Singing Example:**
+```bash
+GET /api/v1/item/singing/hymn/2
+```
+
+**Reading Example:**
+```bash
+GET /api/v1/item/reading/scripture/bom/sebom/31103
+```
+
+**Path Modifiers:**
+- `/playable` - Flatten to playable items only (for containers)
+- `/shuffle` - Randomize order (skipped if folderColor present)
+- `/recent_on_top` - Sort by menu access time (requires menu logging)
+
+**Response:**
+```json
+{
+  "id": "singing:hymn/2",
+  "source": "singing",
+  "path": "hymn/2",
+  "title": "All Creatures of Our God and King",
+  "itemType": "item",
+  "thumbnail": "/path/to/image.jpg",
+  "items": []
+}
+```
+
+### POST /api/v1/item/menu-log
+
+Log menu navigation for `recent_on_top` sorting.
+
+**Body:**
+```json
+{
+  "assetId": "singing:hymn/2"
+}
+```
+
+**Response:**
+```json
+{
+  "singing:hymn/2": 1738506234
+}
+```
+
+---
+
 ## Related Code
 
-- `backend/src/4_api/routers/play.mjs` - Play API router
-- `backend/src/4_api/routers/list.mjs` - List API router
-- `backend/src/4_api/routers/content.mjs` - Content API router
-- `backend/src/4_api/routers/localContent.mjs` - LocalContent API router
-- `backend/src/4_api/routers/proxy.mjs` - Proxy API router
+- `backend/src/4_api/v1/routers/item.mjs` - Unified Item API router (new)
+- `backend/src/4_api/v1/routers/play.mjs` - Play API router (legacy)
+- `backend/src/4_api/v1/routers/list.mjs` - List API router (legacy)
+- `backend/src/4_api/v1/routers/content.mjs` - Content API router (legacy)
+- `backend/src/4_api/v1/routers/localContent.mjs` - LocalContent API router
+- `backend/src/4_api/v1/routers/proxy.mjs` - Proxy API router
 - `backend/src/1_domains/content/` - Domain entities and ports
 - `backend/src/2_adapters/content/` - Source adapters
+  - `singing/SingingAdapter.mjs` - Hymns and primary songs
+  - `reading/ReadingAdapter.mjs` - Scripture, talks, poetry

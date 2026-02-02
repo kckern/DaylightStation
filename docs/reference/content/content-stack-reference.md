@@ -17,7 +17,7 @@ The content system has five key concepts:
 | **Category** | Domain grouping declared in household config | `media`, `gallery`, `audiobooks`, `ebooks` | `integrations.yml` entries: `media: [{provider: plex}]` |
 | **Provider** | Software/service hosting content | `plex`, `immich`, `audiobookshelf`, `komga` | `services.yml` URLs per environment: `plex: {docker: http://plex:32400}` |
 | **Source** | Runtime adapter name (provider + optional instance) | `plex`, `immich`, `immich-family`, `folder`, `canvas` | `ContentSourceRegistry.register(adapter, {category, provider})` |
-| **Capability** | What you can do with an **item** (not source-level) | `playable`, `viewable`, `readable`, `listable` | Item classes: `PlayableItem`, `DisplayableItem`, `ListableItem` |
+| **Capability** | What you can do with an **item** (not source-level) | `playable`, `displayable`, `readable`, `listable` | Item classes: `PlayableItem`, `DisplayableItem`, `ListableItem` |
 | **Shape** | Response structure | `item`, `list`, `asset` | `/item/:source/*` → single, `/list` → array, `/proxy/*` → binary |
 
 ### Key Distinctions
@@ -25,15 +25,18 @@ The content system has five key concepts:
 - **Category** is a household-level declaration grouping providers by purpose
 - **Provider** is the software (Plex, Immich) - connection URLs defined in `services.yml`
 - **Source** is the runtime adapter registered in `ContentSourceRegistry`
-- **Capability** is per-item, not per-source (Immich photos are viewable, Immich videos are playable)
+- **Capability** is per-item, not per-source (Immich photos are displayable, Immich videos are playable)
 
 ### Special Sources
 
-| Source | Notes |
-|--------|-------|
-| `folder` | Bridges YAML data files and filesystem. Provides content, config, and menus. |
-| `local` | Alias for `folder` in API routes. |
-| `canvas` | Static art images from filesystem or Immich libraries. |
+| Source | Notes | Reference |
+|--------|-------|-----------|
+| `folder` | Bridges YAML data files and filesystem. Provides content, config, and menus. | |
+| `local` | Browses configured filesystem paths as content sources. See [LocalMediaAdapter](./local-media-adapter.md). | `/api/v1/local/*` |
+| `list` | Exposes menus/programs/watchlists as content. Prefixes: `menu:`, `program:`, `watchlist:`. See [ListAdapter](./list-adapter.md). | |
+| `canvas` | Static art images from filesystem or Immich libraries. | |
+| `singing` | Participatory sing-along content (hymns, primary songs). Playable with synced stanzas. | |
+| `narrated` | Follow-along narrated content (scripture, talks, poetry). Playable with synced paragraphs. | |
 
 ---
 
@@ -401,19 +404,23 @@ Capabilities describe what you can do with an **item**, not a source. A single s
 |------------|-----------|-----------------|---------------|
 | `listable` | `ListableItem` | `id`, `title`, `itemType` | Album, Person, Folder |
 | `playable` | `PlayableItem` | `mediaUrl`, `duration` | Video, Audio track |
-| `viewable` | `DisplayableItem` | `imageUrl` | Photo, Canvas art |
+| `displayable` | `DisplayableItem` | `imageUrl` | Photo, Canvas art |
 | `readable` | (planned) | `contentUrl`, `format` | Ebook, Article |
 
 ### Per-Source Capabilities
 
 | Source | Items Produced | Capabilities |
 |--------|----------------|--------------|
-| `immich` | photos, videos, albums, people | viewable (photo), playable (video), listable (container) |
+| `immich` | photos, videos, albums, people | displayable (photo), playable (video), listable (container) |
 | `plex` | movies, episodes, tracks, playlists | playable, listable (container) |
 | `audiobookshelf` | audiobooks, podcasts, ebooks | playable (audio), readable (ebook), listable |
 | `komga` | comics, manga | readable, listable |
-| `canvas` | art images | viewable, listable (directory) |
+| `canvas` | art images | displayable, listable (directory) |
 | `folder` | YAML-defined menus | listable, may reference playable items |
+| `filesystem` | audio, video files | playable, listable (directory) |
+| `singing` | hymns, primary songs | playable (with synced stanzas), listable |
+| `narrated` | scripture, talks, poetry | playable (with synced paragraphs), listable |
+| `list` | menus, programs, watchlists | listable, references other sources |
 
 ### Capability Filtering
 
@@ -786,7 +793,7 @@ GET /content/query/list?from=people&source=gallery  # Immich only
 | Param | Type | Description |
 |-------|------|-------------|
 | `source` | string | Filter by source name, provider, or category |
-| `capability` | string | Filter by item capability (`playable`, `viewable`, `readable`) |
+| `capability` | string | Filter by item capability (`playable`, `displayable`, `readable`) |
 | `text` | string | Free text search |
 | `person` | string | Person filter (faces in Immich, actors in Plex) |
 | `time` | string | Time filter: `2025`, `2025-06`, `2024..2025`, `summer` |

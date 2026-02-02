@@ -3,9 +3,9 @@ import path from 'path';
 
 const KEY_MAPPING = {
   'songs': 'singing',
-  'talks': 'reading',
-  'scripture': 'reading',
-  'poetry': 'reading'
+  'talks': 'narrated',
+  'scripture': 'narrated',
+  'poetry': 'narrated'
 };
 
 async function migrateWatchState(dataPath) {

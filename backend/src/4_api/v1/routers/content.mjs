@@ -219,7 +219,7 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
    * - time: Time filter (2025, 2025-06, 2024..2025, summer)
    * - duration: Duration filter (30, 3m, 1h, 3m..10m)
    * - mediaType: image, video, audio
-   * - capability: playable, viewable, readable, listable
+   * - capability: playable, displayable, readable, listable
    * - favorites: Boolean
    * - sort: date, title, random (aliases: shuffle, rand)
    * - take, skip: Pagination

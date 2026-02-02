@@ -16,9 +16,9 @@ async function loadPrefixMap() {
     legacyPrefixMap = {
       hymn: 'singing:hymn',
       primary: 'singing:primary',
-      scripture: 'reading:scripture',
-      talk: 'reading:talks',
-      poem: 'reading:poetry'
+      scripture: 'narrated:scripture',
+      talk: 'narrated:talks',
+      poem: 'narrated:poetry'
     };
   }
   return legacyPrefixMap;
@@ -59,7 +59,7 @@ export async function resolvePlayParams(params) {
  */
 export function getCategoryFromId(contentId) {
   if (!contentId) return null;
-  const match = contentId.match(/^(singing|reading):/);
+  const match = contentId.match(/^(singing|narrated):/);
   return match ? match[1] : null;
 }
 

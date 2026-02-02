@@ -1,4 +1,4 @@
-// tests/isolated/adapter/content/reading/ReadingAdapter.test.mjs
+// tests/isolated/adapter/content/narrated/NarratedAdapter.test.mjs
 import { jest, describe, test, expect, beforeEach } from '@jest/globals';
 
 // Mock FileIO at top of file
@@ -12,33 +12,33 @@ jest.unstable_mockModule('#system/utils/FileIO.mjs', () => ({
 }));
 
 const { loadYamlByPrefix, loadContainedYaml, findMediaFileByPrefix, listDirs, listYamlFiles } = await import('#system/utils/FileIO.mjs');
-const { ReadingAdapter } = await import('#adapters/content/reading/ReadingAdapter.mjs');
+const { NarratedAdapter } = await import('#adapters/content/narrated/NarratedAdapter.mjs');
 
-describe('ReadingAdapter', () => {
+describe('NarratedAdapter', () => {
   let adapter;
 
   beforeEach(() => {
     // Clear all mocks before each test
     jest.clearAllMocks();
 
-    adapter = new ReadingAdapter({
-      dataPath: '/mock/data/content/reading',
-      mediaPath: '/mock/media/reading'
+    adapter = new NarratedAdapter({
+      dataPath: '/mock/data/content/narrated',
+      mediaPath: '/mock/media/narrated'
     });
   });
 
   describe('source and prefixes', () => {
-    test('source returns "reading"', () => {
-      expect(adapter.source).toBe('reading');
+    test('source returns "narrated"', () => {
+      expect(adapter.source).toBe('narrated');
     });
 
-    test('prefixes returns reading prefix', () => {
-      expect(adapter.prefixes).toEqual([{ prefix: 'reading' }]);
+    test('prefixes returns narrated prefix', () => {
+      expect(adapter.prefixes).toEqual([{ prefix: 'narrated' }]);
     });
 
-    test('canResolve returns true for reading: IDs', () => {
-      expect(adapter.canResolve('reading:scripture/bom')).toBe(true);
-      expect(adapter.canResolve('reading:talks/ldsgc202410')).toBe(true);
+    test('canResolve returns true for narrated: IDs', () => {
+      expect(adapter.canResolve('narrated:scripture/bom')).toBe(true);
+      expect(adapter.canResolve('narrated:talks/ldsgc202410')).toBe(true);
     });
 
     test('canResolve returns false for other IDs', () => {
@@ -60,10 +60,10 @@ describe('ReadingAdapter', () => {
           verses: [{ verse_id: 34541, text: 'And now...' }]
         };
       });
-      findMediaFileByPrefix.mockReturnValue('/mock/media/reading/scripture/bom/sebom/34541.mp3');
+      findMediaFileByPrefix.mockReturnValue('/mock/media/narrated/scripture/bom/sebom/34541.mp3');
 
       // Mock the scripture resolver module
-      jest.unstable_mockModule('#adapters/content/reading/resolvers/scripture.mjs', () => ({
+      jest.unstable_mockModule('#adapters/content/narrated/resolvers/scripture.mjs', () => ({
         default: {
           resolve: jest.fn(() => 'bom/sebom/34541')
         },
@@ -74,7 +74,7 @@ describe('ReadingAdapter', () => {
 
       const item = await adapter.getItem('scripture/alma-32');
 
-      expect(item.category).toBe('reading');
+      expect(item.category).toBe('narrated');
       expect(item.collection).toBe('scripture');
     });
 
@@ -87,11 +87,11 @@ describe('ReadingAdapter', () => {
           content: ['Paragraph 1', 'Paragraph 2']
         };
       });
-      findMediaFileByPrefix.mockReturnValue('/mock/media/reading/talks/ldsgc202410/smith.mp3');
+      findMediaFileByPrefix.mockReturnValue('/mock/media/narrated/talks/ldsgc202410/smith.mp3');
 
       const item = await adapter.getItem('talks/ldsgc202410/smith');
 
-      expect(item.id).toBe('reading:talks/ldsgc202410/smith');
+      expect(item.id).toBe('narrated:talks/ldsgc202410/smith');
       expect(item.content.type).toBe('paragraphs');
     });
 
@@ -224,7 +224,7 @@ describe('ReadingAdapter', () => {
 
       const item = await adapter.getItem('talks/ldsgc202410/smith');
 
-      expect(item.mediaUrl).toBe('/api/v1/stream/reading/talks/ldsgc202410/smith');
+      expect(item.mediaUrl).toBe('/api/v1/stream/narrated/talks/ldsgc202410/smith');
     });
 
     test('includes videoUrl when videoFile metadata present', async () => {
@@ -240,7 +240,7 @@ describe('ReadingAdapter', () => {
 
       const item = await adapter.getItem('talks/video-talk');
 
-      expect(item.videoUrl).toBe('/api/v1/stream/reading/talks/video-talk/video');
+      expect(item.videoUrl).toBe('/api/v1/stream/narrated/talks/video-talk/video');
     });
 
     test('includes ambientUrl when manifest enables ambient', async () => {
@@ -282,8 +282,8 @@ describe('ReadingAdapter', () => {
   });
 
   describe('getStoragePath', () => {
-    test('returns reading as storage key', () => {
-      expect(adapter.getStoragePath()).toBe('reading');
+    test('returns narrated as storage key', () => {
+      expect(adapter.getStoragePath()).toBe('narrated');
     });
   });
 
@@ -293,14 +293,14 @@ describe('ReadingAdapter', () => {
 
       const result = await adapter.getList('');
 
-      expect(result.id).toBe('reading:');
-      expect(result.source).toBe('reading');
-      expect(result.category).toBe('reading');
+      expect(result.id).toBe('narrated:');
+      expect(result.source).toBe('narrated');
+      expect(result.category).toBe('narrated');
       expect(result.itemType).toBe('container');
       expect(result.items).toHaveLength(3);
       expect(result.items[0]).toEqual({
-        id: 'reading:scripture',
-        source: 'reading',
+        id: 'narrated:scripture',
+        source: 'narrated',
         title: 'scripture',
         itemType: 'container'
       });
@@ -323,14 +323,14 @@ describe('ReadingAdapter', () => {
 
       const result = await adapter.getList('scripture');
 
-      expect(result.id).toBe('reading:scripture');
+      expect(result.id).toBe('narrated:scripture');
       expect(result.collection).toBe('scripture');
       expect(result.itemType).toBe('container');
       // Should have 2 subfolders (bom, dc) + 1 file (introduction, excluding manifest.yml)
       expect(result.items).toHaveLength(3);
       expect(result.items[0]).toEqual({
-        id: 'reading:scripture/bom',
-        source: 'reading',
+        id: 'narrated:scripture/bom',
+        source: 'narrated',
         title: 'bom',
         itemType: 'container'
       });
@@ -377,7 +377,7 @@ describe('ReadingAdapter', () => {
 
       const result = await adapter.getList('scripture/bom');
 
-      expect(result.id).toBe('reading:scripture/bom');
+      expect(result.id).toBe('narrated:scripture/bom');
       expect(result.collection).toBe('scripture');
       expect(result.itemType).toBe('container');
       // Should have 1 subfolder (sebom) + 2 files (chapter1, chapter2)
@@ -398,9 +398,9 @@ describe('ReadingAdapter', () => {
 
       const result = await adapter.getList('scripture/bom/sebom');
 
-      expect(result.id).toBe('reading:scripture/bom/sebom');
+      expect(result.id).toBe('narrated:scripture/bom/sebom');
       expect(result.items).toHaveLength(2);
-      expect(result.items[0].id).toBe('reading:scripture/bom/sebom/31103');
+      expect(result.items[0].id).toBe('narrated:scripture/bom/sebom/31103');
     });
   });
 
@@ -413,12 +413,12 @@ describe('ReadingAdapter', () => {
           content: ['Paragraph 1']
         };
       });
-      findMediaFileByPrefix.mockReturnValue('/mock/media/reading/talks/test.mp3');
+      findMediaFileByPrefix.mockReturnValue('/mock/media/narrated/talks/test.mp3');
 
       const items = await adapter.resolvePlayables('talks/test-talk');
 
       expect(items).toHaveLength(1);
-      expect(items[0].id).toBe('reading:talks/test-talk');
+      expect(items[0].id).toBe('narrated:talks/test-talk');
       expect(items[0].mediaUrl).toBeTruthy();
     });
 

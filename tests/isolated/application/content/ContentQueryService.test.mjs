@@ -43,7 +43,7 @@ describe('ContentQueryService', () => {
         registry: mockRegistry,
         legacyPrefixMap: {
           hymn: 'singing:hymn',
-          scripture: 'reading:scripture'
+          scripture: 'narrated:scripture'
         }
       });
 
@@ -51,17 +51,17 @@ describe('ContentQueryService', () => {
       expect(result).toEqual({ source: 'singing', id: 'hymn/123' });
     });
 
-    it('maps scripture:alma-32 to reading:scripture/alma-32', () => {
+    it('maps scripture:alma-32 to narrated:scripture/alma-32', () => {
       const mockRegistry = { get: vi.fn(), list: vi.fn(() => []), resolveSource: vi.fn(() => []) };
       const service = new ContentQueryService({
         registry: mockRegistry,
         legacyPrefixMap: {
-          scripture: 'reading:scripture'
+          scripture: 'narrated:scripture'
         }
       });
 
       const result = service._parseIdFromTextPublic('scripture:alma-32');
-      expect(result).toEqual({ source: 'reading', id: 'scripture/alma-32' });
+      expect(result).toEqual({ source: 'narrated', id: 'scripture/alma-32' });
     });
 
     it('passes through canonical IDs unchanged', () => {

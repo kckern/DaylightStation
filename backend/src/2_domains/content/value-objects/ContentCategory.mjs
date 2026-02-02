@@ -13,6 +13,7 @@
  * - SERIES (140): TV shows, podcast series
  * - WORK (130): Movies, standalone complete works
  * - CONTAINER (125): Music albums, generic containers
+ * - LIST (40): Menus, programs, watchlists as content sources
  * - EPISODE (20): Individual episodes
  * - TRACK (15): Individual tracks
  * - MEDIA (10): Images, videos, individual media files
@@ -28,6 +29,7 @@ export const ContentCategory = Object.freeze({
   SERIES: 'series',
   WORK: 'work',
   CONTAINER: 'container',
+  LIST: 'list',
   EPISODE: 'episode',
   TRACK: 'track',
   MEDIA: 'media'
@@ -50,6 +52,7 @@ const CATEGORY_SCORES = Object.freeze({
   [ContentCategory.SERIES]: 140,
   [ContentCategory.WORK]: 130,
   [ContentCategory.CONTAINER]: 125,
+  [ContentCategory.LIST]: 40,
   [ContentCategory.EPISODE]: 20,
   [ContentCategory.TRACK]: 15,
   [ContentCategory.MEDIA]: 10

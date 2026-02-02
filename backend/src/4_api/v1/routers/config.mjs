@@ -32,16 +32,16 @@ export function createConfigRouter(config) {
    * GET /api/v1/config/content-prefixes
    * Load legacy content prefix mapping from data/config/content-prefixes.yml
    * This is used by the frontend queryParamResolver to map legacy query params
-   * to canonical singing: and reading: format.
+   * to canonical singing: and narrated: format.
    *
    * Response format:
    * {
    *   "legacy": {
    *     "hymn": "singing:hymn",
    *     "primary": "singing:primary",
-   *     "scripture": "reading:scripture",
-   *     "talk": "reading:talks",
-   *     "poem": "reading:poetry"
+   *     "scripture": "narrated:scripture",
+   *     "talk": "narrated:talks",
+   *     "poem": "narrated:poetry"
    *   }
    * }
    */
