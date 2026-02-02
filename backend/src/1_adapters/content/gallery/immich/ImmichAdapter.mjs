@@ -3,6 +3,7 @@
 import { ListableItem } from '#domains/content/capabilities/Listable.mjs';
 import { PlayableItem } from '#domains/content/capabilities/Playable.mjs';
 import { DisplayableItem } from '#domains/content/capabilities/Displayable.mjs';
+import { ContentCategory } from '#domains/content/value-objects/ContentCategory.mjs';
 import { ImmichClient } from './ImmichClient.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
@@ -538,6 +539,7 @@ export class ImmichAdapter {
       thumbnail: null, // Tags don't have thumbnails
       metadata: {
         type: 'tag',
+        category: ContentCategory.CURATED,
         librarySectionTitle: 'Immich',
         parentTitle: 'Tag',
         childCount: tag.assetCount || 0,
@@ -690,6 +692,7 @@ export class ImmichAdapter {
       description: album.description || null,
       metadata: {
         type: 'album',
+        category: ContentCategory.CURATED,
         // Parent info - Albums is a root concept in Immich
         librarySectionTitle: 'Immich',
         parentTitle: 'Albums',
@@ -719,6 +722,7 @@ export class ImmichAdapter {
       thumbnail: `${this.#proxyPath}/api/people/${person.id}/thumbnail`,
       metadata: {
         type: 'person',
+        category: ContentCategory.IDENTITY,
         // Parent info - Person is a root concept in Immich
         librarySectionTitle: 'Immich',
         parentTitle: 'Person',
@@ -752,6 +756,7 @@ export class ImmichAdapter {
       imageUrl: this.#originalUrl(asset.id),
       metadata: {
         type: asset.type?.toLowerCase() || 'image',
+        category: ContentCategory.MEDIA,
         // Library/parent info
         librarySectionTitle: 'Immich',
         parentTitle: context.parentTitle || null,
@@ -792,6 +797,7 @@ export class ImmichAdapter {
       thumbnail: this.#thumbnailUrl(asset.id),
       metadata: {
         type: asset.type?.toLowerCase(),
+        category: ContentCategory.MEDIA,
         // Library/parent info
         librarySectionTitle: 'Immich',
         parentTitle: context.parentTitle || null,
