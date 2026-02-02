@@ -78,6 +78,12 @@ export function createItemRouter(options = {}) {
 
       // If no modifiers and not a container, return single item
       if (!hasModifiers && item.itemType !== 'container') {
+        // For content with playback data (singing, narrated), return full item
+        // These have 'content' field needed by frontend scrollers
+        if (item.content || item.category === 'singing' || item.category === 'narrated') {
+          res.json(item);
+          return;
+        }
         res.json(toListItem(item));
         return;
       }
