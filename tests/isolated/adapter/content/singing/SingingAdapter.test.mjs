@@ -7,10 +7,11 @@ jest.unstable_mockModule('#system/utils/FileIO.mjs', () => ({
   loadContainedYaml: jest.fn(),
   findMediaFileByPrefix: jest.fn(),
   dirExists: jest.fn(() => true),
-  listDirs: jest.fn(() => [])
+  listDirs: jest.fn(() => []),
+  listYamlFiles: jest.fn(() => [])
 }));
 
-const { loadYamlByPrefix, loadContainedYaml, findMediaFileByPrefix } = await import('#system/utils/FileIO.mjs');
+const { loadYamlByPrefix, loadContainedYaml, findMediaFileByPrefix, listDirs, listYamlFiles } = await import('#system/utils/FileIO.mjs');
 const { SingingAdapter } = await import('#adapters/content/singing/SingingAdapter.mjs');
 
 describe('SingingAdapter', () => {
@@ -154,6 +155,56 @@ describe('SingingAdapter', () => {
       const item = await adapter.getItem('primary/10');
 
       expect(item.mediaUrl).toBe('/api/v1/stream/singing/primary/10');
+    });
+  });
+
+  describe('getList', () => {
+    test('lists collections when no localId', async () => {
+      listDirs.mockReturnValue(['hymn', 'primary']);
+
+      const result = await adapter.getList('');
+
+      expect(result.items).toHaveLength(2);
+      expect(result.items[0].id).toBe('singing:hymn');
+      expect(result.items[0].itemType).toBe('container');
+    });
+
+    test('lists items in collection', async () => {
+      listYamlFiles.mockReturnValue(['0001-song.yml', '0002-song.yml']);
+      loadYamlByPrefix.mockReturnValue({
+        title: 'Test Song',
+        number: 1,
+        verses: []
+      });
+      loadContainedYaml.mockReturnValue(null);
+      findMediaFileByPrefix.mockReturnValue(null);
+
+      const result = await adapter.getList('hymn');
+
+      expect(result.items).toHaveLength(2);
+    });
+  });
+
+  describe('resolvePlayables', () => {
+    test('returns single item as array', async () => {
+      loadYamlByPrefix.mockReturnValue({
+        title: 'Test Song',
+        number: 1,
+        verses: []
+      });
+      loadContainedYaml.mockReturnValue(null);
+      findMediaFileByPrefix.mockReturnValue(null);
+
+      const items = await adapter.resolvePlayables('hymn/1');
+
+      expect(items).toHaveLength(1);
+      expect(items[0].id).toBe('singing:hymn/1');
+    });
+  });
+
+  describe('getStoragePath', () => {
+    test('returns singing as storage key', () => {
+      expect(adapter.getStoragePath()).toBe('singing');
     });
   });
 });
