@@ -50,6 +50,7 @@ config.app-local.yml
 !scripts/update-test-imports.mjs
 !scripts/migrate-lists-to-watchlists.mjs
 !scripts/migrate-content-structure.sh
+!scripts/migrate-watch-state.mjs
 *.log
 .github/copilot-instructions.md
 # Skill local configs
