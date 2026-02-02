@@ -81,7 +81,7 @@ function parseListContent(filename, content) {
       defaultAction: content.defaultAction || 'Play',
       defaultVolume: content.defaultVolume || null,
       defaultPlaybackRate: content.defaultPlaybackRate || null,
-      items: content.items || []
+      items: Array.isArray(content.items) ? content.items : []
     };
   }
 
@@ -98,6 +98,9 @@ function parseListContent(filename, content) {
  * @returns {string} - Title case display name
  */
 function formatFilename(filename) {
+  if (!filename || typeof filename !== 'string') {
+    return 'Untitled';
+  }
   return filename
     .replace(/-/g, ' ')
     .replace(/\b\w/g, c => c.toUpperCase());
