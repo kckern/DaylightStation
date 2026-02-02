@@ -242,15 +242,16 @@ export function createAdminContentRouter(config) {
       const lists = listNames.map(name => {
         const content = loadYamlSafe(path.join(typeDir, name));
         const list = parseListContent(name, content);
+        // parseListContent already normalizes all fields with proper defaults
         return {
           name,
           title: list.title,
-          description: list.description || null,
-          group: list.group || null,
-          icon: list.icon || null,
-          sorting: list.sorting || 'manual',
-          days: list.days || null,
-          active: list.active !== false,
+          description: list.description,
+          group: list.group,
+          icon: list.icon,
+          sorting: list.sorting,
+          days: list.days,
+          active: list.active,
           itemCount: list.items.length
         };
       });
@@ -304,8 +305,8 @@ export function createAdminContentRouter(config) {
       // Ensure the type directory exists
       ensureDir(typeDir);
 
-      // Create empty list
-      saveYaml(listPath, []);
+      // Create empty list with new object format
+      saveYaml(listPath, { items: [] });
 
       logger.info?.('admin.lists.created', { type, list: listName, household: householdId });
 
