@@ -11,6 +11,11 @@ const STRATEGIES = {
     sort: 'priority',
     pick: 'first'
   },
+  program: {
+    filter: ['skipAfter', 'waitUntil', 'hold', 'days'],
+    sort: 'source_order',
+    pick: 'all'
+  },
   binge: {
     filter: ['watched'],
     sort: 'source_order',
@@ -47,7 +52,9 @@ const STRATEGIES = {
  * Inference rules: context signal -> strategy name
  */
 const INFERENCE_RULES = [
-  { match: (ctx) => ctx.containerType === 'folder', strategy: 'watchlist' },
+  { match: (ctx) => ctx.containerType === 'watchlist', strategy: 'watchlist' },
+  { match: (ctx) => ctx.containerType === 'program', strategy: 'program' },
+  { match: (ctx) => ctx.containerType === 'folder', strategy: 'watchlist' }, // deprecated, maps to watchlist
   { match: (ctx) => ctx.containerType === 'album', strategy: 'album' },
   { match: (ctx) => ctx.containerType === 'playlist', strategy: 'playlist' },
   { match: (ctx) => ctx.query?.person, strategy: 'chronological' },

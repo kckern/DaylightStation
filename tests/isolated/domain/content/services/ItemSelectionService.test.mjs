@@ -1,5 +1,5 @@
 // tests/isolated/domain/content/services/ItemSelectionService.test.mjs
-import { jest } from '@jest/globals';
+import { describe, it, test, expect } from 'vitest';
 import { ItemSelectionService } from '#domains/content/services/ItemSelectionService.mjs';
 
 describe('ItemSelectionService', () => {
@@ -63,6 +63,15 @@ describe('ItemSelectionService', () => {
       expect(strategy).toEqual({
         filter: [],
         sort: 'random',
+        pick: 'all'
+      });
+    });
+
+    test('returns program strategy', () => {
+      const strategy = ItemSelectionService.getStrategy('program');
+      expect(strategy).toEqual({
+        filter: ['skipAfter', 'waitUntil', 'hold', 'days'],
+        sort: 'source_order',
         pick: 'all'
       });
     });
@@ -323,6 +332,25 @@ describe('ItemSelectionService', () => {
           containerType: 'playlist'
         });
         expect(strategy.sort).toBe('source_order');
+      });
+
+      test('infers watchlist for watchlist container', () => {
+        const strategy = ItemSelectionService.resolveStrategy({
+          containerType: 'watchlist'
+        });
+        expect(strategy.sort).toBe('priority');
+        expect(strategy.pick).toBe('first');
+        expect(strategy.filter).toContain('watched');
+      });
+
+      test('infers program for program container', () => {
+        const strategy = ItemSelectionService.resolveStrategy({
+          containerType: 'program'
+        });
+        expect(strategy.sort).toBe('source_order');
+        expect(strategy.pick).toBe('all');
+        expect(strategy.filter).not.toContain('watched');
+        expect(strategy.filter).toContain('days');
       });
 
       test('infers chronological for person query', () => {

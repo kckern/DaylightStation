@@ -62,7 +62,7 @@ const items = [
 ];
 
 const result = ItemSelectionService.select(items, {
-  containerType: 'folder',
+  containerType: 'watchlist',
   now: new Date()
 });
 
@@ -77,7 +77,8 @@ Strategies are named presets that define filter, sort, and pick behavior.
 
 | Strategy | Filter | Sort | Pick | Use Case |
 |----------|--------|------|------|----------|
-| `watchlist` | skipAfter, waitUntil, hold, watched, days | priority | first | Daily programming |
+| `watchlist` | skipAfter, waitUntil, hold, watched, days | priority | first | Pick N from content pool |
+| `program` | skipAfter, waitUntil, hold, days | source_order | all | Daily program sequence |
 | `binge` | watched | source_order | all | Catch-up viewing |
 | `album` | (none) | track_order | all | Music albums |
 | `playlist` | (none) | source_order | all | User-curated playlists |
@@ -99,7 +100,9 @@ Strategies are resolved in layers, with later layers overriding earlier:
 
 | Context Signal | Inferred Strategy |
 |----------------|-------------------|
-| `containerType === 'folder'` | watchlist |
+| `containerType === 'watchlist'` | watchlist |
+| `containerType === 'program'` | program |
+| `containerType === 'folder'` | watchlist (deprecated) |
 | `containerType === 'album'` | album |
 | `containerType === 'playlist'` | playlist |
 | `query.person` present | chronological |
@@ -111,15 +114,51 @@ Strategies are resolved in layers, with later layers overriding earlier:
 **Override Examples:**
 
 ```javascript
-// Force binge strategy on a folder
-ItemSelectionService.select(items, { containerType: 'folder', now }, { strategy: 'binge' });
+// Force binge strategy on a watchlist
+ItemSelectionService.select(items, { containerType: 'watchlist', now }, { strategy: 'binge' });
 
 // Override just the sort
-ItemSelectionService.select(items, { containerType: 'folder', now }, { sort: 'random' });
+ItemSelectionService.select(items, { containerType: 'watchlist', now }, { sort: 'random' });
 
 // Disable all filtering
-ItemSelectionService.select(items, { containerType: 'folder', now }, { filter: 'none' });
+ItemSelectionService.select(items, { containerType: 'watchlist', now }, { filter: 'none' });
+
+// Pick 2 items from a watchlist (for embedding in a program)
+ItemSelectionService.select(items, { containerType: 'watchlist', now }, { pick: 'take:2' });
 ```
+
+### Program vs Watchlist
+
+Two core container types that use different selection strategies:
+
+| Concept | Question Answered | Pick | Filters `watched` |
+|---------|------------------|------|-------------------|
+| **Program** | "What's eligible for today's run?" | all | No |
+| **Watchlist** | "What N items from this content pool?" | first/take:N | Yes |
+
+**Program** - An ordered sequence of items (e.g., "Morning Program"):
+- Returns ALL eligible items in source order
+- Filters by scheduling (days, hold, skipAfter) but NOT by watch state
+- Items play through in sequence
+
+**Watchlist** - A content pool to pick from (e.g., "Cooking Lessons"):
+- Returns N items based on priority and watch state
+- Filters watched items so you get the "next" unwatched content
+- Use `pick: 'take:N'` to get multiple items
+
+**Programs can contain watchlists:**
+
+```
+Morning Program (program strategy)
+├── Intro                      → atomic item
+├── News                       → atomic item
+├── Cooking Lessons (pick: 2)  → watchlist → returns [Lesson 5, Lesson 6]
+└── Closing                    → atomic item
+
+Result queue: [Intro, News, Lesson5, Lesson6, Closing]
+```
+
+When a program contains a watchlist reference, the watchlist resolves to N items which get flattened into the program queue.
 
 ---
 
