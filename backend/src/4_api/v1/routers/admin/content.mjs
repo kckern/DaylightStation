@@ -13,6 +13,7 @@
  * - GET    /lists/:type               - List all lists of a type
  * - POST   /lists/:type               - Create new list
  * - GET    /lists/:type/:name         - Get items in list
+ * - PUT    /lists/:type/:name/settings       - Update list metadata
  * - PUT    /lists/:type/:name         - Replace list contents (reorder)
  * - DELETE /lists/:type/:name         - Delete entire list
  * - POST   /lists/:type/:name/items          - Add item to list
@@ -358,6 +359,48 @@ export function createAdminContentRouter(config) {
       name: listName,
       ...list,
       items: indexedItems,
+      household: householdId
+    });
+  });
+
+  /**
+   * PUT /lists/:type/:name/settings - Update list metadata
+   */
+  router.put('/lists/:type/:name/settings', (req, res) => {
+    const { type, name: listName } = req.params;
+    const householdId = req.query.household || configService.getDefaultHouseholdId();
+    const settings = req.body || {};
+
+    validateType(type);
+
+    const listPath = getListPath(type, listName, householdId);
+
+    // Load existing list
+    const content = loadYamlSafe(listPath);
+    if (content === null) {
+      throw new NotFoundError('List not found', { type, list: listName });
+    }
+
+    // Parse and merge settings
+    const list = parseListContent(listName, content);
+
+    // Only update allowed fields
+    const allowedFields = ['title', 'description', 'group', 'icon', 'sorting', 'days', 'active', 'defaultAction', 'defaultVolume', 'defaultPlaybackRate'];
+    for (const field of allowedFields) {
+      if (settings[field] !== undefined) {
+        list[field] = settings[field];
+      }
+    }
+
+    // Save with new format
+    saveYaml(listPath, serializeList(list));
+
+    logger.info?.('admin.lists.settings.updated', { type, list: listName, household: householdId });
+
+    res.json({
+      type,
+      name: listName,
+      ...list,
       household: householdId
     });
   });
