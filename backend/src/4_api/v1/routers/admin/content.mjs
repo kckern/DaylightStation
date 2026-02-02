@@ -327,7 +327,7 @@ export function createAdminContentRouter(config) {
   // =============================================================================
 
   /**
-   * GET /lists/:type/:name - Get items in a list
+   * GET /lists/:type/:name - Get full list with metadata and items
    */
   router.get('/lists/:type/:name', (req, res) => {
     const { type, name: listName } = req.params;
@@ -336,15 +336,17 @@ export function createAdminContentRouter(config) {
     validateType(type);
 
     const listPath = getListPath(type, listName, householdId);
-    const items = loadYamlSafe(listPath);
+    const content = loadYamlSafe(listPath);
 
-    if (items === null) {
+    if (content === null) {
       throw new NotFoundError('List', `${type}/${listName}`);
     }
 
-    // Ensure items is an array and add indices
-    const itemsArray = Array.isArray(items) ? items : [];
-    const indexedItems = itemsArray.map((item, index) => ({
+    // Parse list content to get metadata and items
+    const list = parseListContent(listName, content);
+
+    // Add indices to items
+    const indexedItems = list.items.map((item, index) => ({
       index,
       ...item
     }));
@@ -353,9 +355,9 @@ export function createAdminContentRouter(config) {
 
     res.json({
       type,
-      list: listName,
+      name: listName,
+      ...list,
       items: indexedItems,
-      count: indexedItems.length,
       household: householdId
     });
   });
