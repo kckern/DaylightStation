@@ -46,6 +46,7 @@ export { createSchedulingRouter } from './scheduling.mjs';
 export { createEntropyRouter } from './entropy.mjs';
 export { createExternalProxyRouter } from './externalProxy.mjs';
 export { createProxyRouter } from './proxy.mjs';
+export { createScreensRouter } from './screens.mjs';
 export { createTTSRouter } from './tts.mjs';
 
 // Admin routers
