@@ -300,6 +300,10 @@ export class ContentQueryService {
       throw new Error(`Unknown source: ${source}`);
     }
 
+    if (typeof adapter.resolvePlayables !== 'function') {
+      throw new Error(`Adapter ${source} does not support resolvePlayables`);
+    }
+
     const items = await adapter.resolvePlayables(localId);
     const enriched = await this.#enrichWithWatchState(items, adapter);
 
