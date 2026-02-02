@@ -133,4 +133,108 @@ describe('ContentQueryService', () => {
       expect(result.items).toHaveLength(0);
     });
   });
+
+  describe('resolve', () => {
+    describe('#enrichWithWatchState (tested via resolve)', () => {
+      it('adds percent field from mediaProgressMemory', async () => {
+        const mockRegistry = {
+          get: jest.fn(() => ({
+            resolvePlayables: jest.fn(async () => [
+              { id: 'plex:123', title: 'Episode 1' },
+              { id: 'plex:456', title: 'Episode 2' }
+            ]),
+            getStoragePath: jest.fn(async () => 'plex/1_shows')
+          })),
+          list: jest.fn(() => ['plex'])
+        };
+
+        const mockMemory = {
+          get: jest.fn(async (itemId) => {
+            if (itemId === 'plex:123') return { percent: 95, playhead: 1800, duration: 1900 };
+            if (itemId === 'plex:456') return { percent: 10, playhead: 100, duration: 1000 };
+            return null;
+          }),
+          getAll: jest.fn()
+        };
+
+        const service = new ContentQueryService({
+          registry: mockRegistry,
+          mediaProgressMemory: mockMemory
+        });
+
+        const result = await service.resolve('plex', 'shows/123', { now: new Date() });
+
+        // Items should be enriched with percent
+        expect(result.items[0].percent).toBe(95);
+        expect(result.items[1].percent).toBe(10);
+      });
+
+      it('sets watched=true when percent >= 90', async () => {
+        const mockRegistry = {
+          get: jest.fn(() => ({
+            resolvePlayables: jest.fn(async () => [
+              { id: 'plex:123', title: 'Episode 1' },
+              { id: 'plex:456', title: 'Episode 2' }
+            ]),
+            getStoragePath: jest.fn(async () => 'plex/1_shows')
+          })),
+          list: jest.fn(() => ['plex'])
+        };
+
+        const mockMemory = {
+          get: jest.fn(async (itemId) => {
+            if (itemId === 'plex:123') return { percent: 95, playhead: 1800, duration: 1900 };
+            if (itemId === 'plex:456') return { percent: 10, playhead: 100, duration: 1000 };
+            return null;
+          }),
+          getAll: jest.fn()
+        };
+
+        const service = new ContentQueryService({
+          registry: mockRegistry,
+          mediaProgressMemory: mockMemory
+        });
+
+        const result = await service.resolve('plex', 'shows/123', { now: new Date() });
+
+        expect(result.items[0].watched).toBe(true);
+        expect(result.items[1].watched).toBe(false);
+      });
+
+      it('returns items unchanged when no mediaProgressMemory', async () => {
+        const mockRegistry = {
+          get: jest.fn(() => ({
+            resolvePlayables: jest.fn(async () => [
+              { id: 'plex:123', title: 'Episode 1' }
+            ]),
+            getStoragePath: jest.fn(async () => 'plex/1_shows')
+          })),
+          list: jest.fn(() => ['plex'])
+        };
+
+        const service = new ContentQueryService({
+          registry: mockRegistry
+          // no mediaProgressMemory
+        });
+
+        const result = await service.resolve('plex', 'shows/123', { now: new Date() });
+
+        expect(result.items[0].id).toBe('plex:123');
+        expect(result.items[0].percent).toBeUndefined();
+      });
+
+      it('throws for unknown source', async () => {
+        const mockRegistry = {
+          get: jest.fn(() => null),
+          list: jest.fn(() => ['plex'])
+        };
+
+        const service = new ContentQueryService({
+          registry: mockRegistry
+        });
+
+        await expect(service.resolve('unknown', 'path/123')).rejects.toThrow('Unknown source: unknown');
+      });
+    });
+  });
 });
