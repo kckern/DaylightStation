@@ -269,12 +269,17 @@ export class ContentQueryService {
 
       if (!progress) return item;
 
+      const percent = progress.percent ?? 0;
+      const isInProgress = percent > 0 && percent < 90;
+
       return {
         ...item,
-        percent: progress.percent ?? 0,
+        percent,
         playhead: progress.playhead ?? 0,
         duration: progress.duration ?? item.duration ?? 0,
-        watched: (progress.percent ?? 0) >= 90
+        watched: percent >= 90,
+        // Set priority to in_progress if partially watched (unless already set)
+        priority: isInProgress && !item.priority ? 'in_progress' : item.priority
       };
     }));
   }
