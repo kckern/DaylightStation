@@ -11,6 +11,7 @@ import {
 } from '#system/utils/FileIO.mjs';
 import { IMediaProgressMemory } from '#apps/content/ports/IMediaProgressMemory.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
+import { validateCanonicalSchema, LEGACY_TO_CANONICAL } from './mediaProgressSchema.mjs';
 
 /**
  * YAML-based media progress persistence
@@ -112,6 +113,22 @@ export class YamlMediaProgressMemory extends IMediaProgressMemory {
   async set(state, storagePath) {
     const data = this._readFile(storagePath);
     const { itemId, ...rest } = state.toJSON();
+
+    // Validate schema before writing
+    const validation = validateCanonicalSchema(rest);
+    if (!validation.valid) {
+      console.warn(
+        '[YamlMediaProgressMemory] Attempting to write data with legacy fields',
+        {
+          itemId,
+          storagePath,
+          legacyFields: validation.legacyFields,
+          hint: 'Use canonical field names: ' +
+            validation.legacyFields.map(f => `${f} → ${LEGACY_TO_CANONICAL[f] || 'remove'}`).join(', ')
+        }
+      );
+    }
+
     data[itemId] = rest;
     this._writeFile(storagePath, data);
   }
