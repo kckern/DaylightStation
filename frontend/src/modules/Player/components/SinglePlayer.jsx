@@ -84,11 +84,18 @@ export function SinglePlayer(props = {}) {
   const playerContainerRef = useRef(null);
 
   // Extract contentId for category-based routing
-  const { contentId } = play || {};
+  // Also convert legacy props to canonical contentId format
+  const { contentId: rawContentId } = play || {};
+  const contentId = rawContentId
+    || (hymn ? `singing:hymn/${hymn}` : null)
+    || (primary ? `singing:primary/${primary}` : null)
+    || (scripture ? `narrated:scripture/${scripture}` : null)
+    || (talk ? `narrated:talks/${talk}` : null)
+    || (poem ? `narrated:poetry/${poem}` : null);
   const category = contentId ? getCategoryFromId(contentId) : null;
 
   // Content scroller types don't use the shader, so disable for them
-  const isContentScrollerType = !!(scripture || hymn || primary || talk || poem || category === 'singing' || category === 'narrated');
+  const isContentScrollerType = !!(category === 'singing' || category === 'narrated');
   useShaderDiagnostics({
     shaderRef: loadingShaderRef,
     containerRef: playerContainerRef,
