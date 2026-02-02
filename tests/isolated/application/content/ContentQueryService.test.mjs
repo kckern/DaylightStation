@@ -23,6 +23,90 @@ describe('ContentQueryService', () => {
 
       expect(service).toBeDefined();
     });
+
+    it('accepts legacyPrefixMap as optional dependency', () => {
+      const mockRegistry = { get: vi.fn(), list: vi.fn(() => []), resolveSource: vi.fn(() => []) };
+
+      const service = new ContentQueryService({
+        registry: mockRegistry,
+        legacyPrefixMap: { hymn: 'singing:hymn' }
+      });
+
+      expect(service).toBeDefined();
+    });
+  });
+
+  describe('legacy prefix mapping', () => {
+    it('maps hymn:123 to singing:hymn/123', () => {
+      const mockRegistry = { get: vi.fn(), list: vi.fn(() => []), resolveSource: vi.fn(() => []) };
+      const service = new ContentQueryService({
+        registry: mockRegistry,
+        legacyPrefixMap: {
+          hymn: 'singing:hymn',
+          scripture: 'reading:scripture'
+        }
+      });
+
+      const result = service._parseIdFromTextPublic('hymn:123');
+      expect(result).toEqual({ source: 'singing', id: 'hymn/123' });
+    });
+
+    it('maps scripture:alma-32 to reading:scripture/alma-32', () => {
+      const mockRegistry = { get: vi.fn(), list: vi.fn(() => []), resolveSource: vi.fn(() => []) };
+      const service = new ContentQueryService({
+        registry: mockRegistry,
+        legacyPrefixMap: {
+          scripture: 'reading:scripture'
+        }
+      });
+
+      const result = service._parseIdFromTextPublic('scripture:alma-32');
+      expect(result).toEqual({ source: 'reading', id: 'scripture/alma-32' });
+    });
+
+    it('passes through canonical IDs unchanged', () => {
+      const mockRegistry = { get: vi.fn(), list: vi.fn(() => []), resolveSource: vi.fn(() => []) };
+      const service = new ContentQueryService({
+        registry: mockRegistry,
+        legacyPrefixMap: {}
+      });
+
+      const result = service._parseIdFromTextPublic('singing:hymn/123');
+      expect(result).toEqual({ source: 'singing', id: 'hymn/123' });
+    });
+
+    it('passes through plex IDs unchanged when not in legacy map', () => {
+      const mockRegistry = { get: vi.fn(), list: vi.fn(() => []), resolveSource: vi.fn(() => []) };
+      const service = new ContentQueryService({
+        registry: mockRegistry,
+        legacyPrefixMap: { hymn: 'singing:hymn' }
+      });
+
+      const result = service._parseIdFromTextPublic('plex:456724');
+      expect(result).toEqual({ source: 'plex', id: '456724' });
+    });
+
+    it('handles implicit numeric IDs (plex)', () => {
+      const mockRegistry = { get: vi.fn(), list: vi.fn(() => []), resolveSource: vi.fn(() => []) };
+      const service = new ContentQueryService({
+        registry: mockRegistry,
+        legacyPrefixMap: { hymn: 'singing:hymn' }
+      });
+
+      const result = service._parseIdFromTextPublic('456724');
+      expect(result).toEqual({ source: 'plex', id: '456724' });
+    });
+
+    it('handles implicit UUID IDs (immich)', () => {
+      const mockRegistry = { get: vi.fn(), list: vi.fn(() => []), resolveSource: vi.fn(() => []) };
+      const service = new ContentQueryService({
+        registry: mockRegistry,
+        legacyPrefixMap: { hymn: 'singing:hymn' }
+      });
+
+      const result = service._parseIdFromTextPublic('ff940f1a-f5ea-4580-a517-dfc68413e215');
+      expect(result).toEqual({ source: 'immich', id: 'ff940f1a-f5ea-4580-a517-dfc68413e215' });
+    });
   });
 
   let service;

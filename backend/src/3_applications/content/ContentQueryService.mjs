@@ -9,15 +9,18 @@ import { ItemSelectionService, RelevanceScoringService } from '#domains/content/
 export class ContentQueryService {
   #registry;
   #mediaProgressMemory;
+  #legacyPrefixMap;
 
   /**
    * @param {Object} deps
    * @param {import('#domains/content/services/ContentSourceRegistry.mjs').ContentSourceRegistry} deps.registry
    * @param {import('#apps/content/ports/IMediaProgressMemory.mjs').IMediaProgressMemory} [deps.mediaProgressMemory]
+   * @param {Object<string, string>} [deps.legacyPrefixMap] - Map of legacy prefixes to canonical format (e.g., { hymn: 'singing:hymn' })
    */
-  constructor({ registry, mediaProgressMemory = null }) {
+  constructor({ registry, mediaProgressMemory = null, legacyPrefixMap = {} }) {
     this.#registry = registry;
     this.#mediaProgressMemory = mediaProgressMemory;
+    this.#legacyPrefixMap = legacyPrefixMap;
   }
 
   /**
@@ -79,6 +82,7 @@ export class ContentQueryService {
    *   getIdPattern(): { pattern: RegExp, priority: number }
    *
    * Supports:
+   * - Legacy prefix mapping (e.g., "hymn:123" → {source: 'singing', id: 'hymn/123'})
    * - Explicit "source:id" format (e.g., "plex:456724", "immich:abc-123")
    * - Implicit all-digits → plex (e.g., "456724")
    * - Implicit UUID → immich (e.g., "ff940f1a-f5ea-4580-a517-dfc68413e215")
@@ -91,10 +95,23 @@ export class ContentQueryService {
 
     const trimmed = text.trim();
 
-    // Explicit source:id format (e.g., "plex:456724", "immich:abc-123", "immich:person:abc-123")
+    // Explicit source:id format (e.g., "plex:456724", "hymn:123", "immich:abc-123")
     const explicitMatch = trimmed.match(/^([a-z]+):(.+)$/i);
     if (explicitMatch) {
-      return { source: explicitMatch[1].toLowerCase(), id: explicitMatch[2] };
+      const prefix = explicitMatch[1].toLowerCase();
+      const localId = explicitMatch[2];
+
+      // Check if prefix is in legacy map (e.g., "hymn" -> "singing:hymn")
+      const legacyMapping = this.#legacyPrefixMap[prefix];
+      if (legacyMapping) {
+        // legacyMapping is like "singing:hymn" - split to get source and category
+        const [source, category] = legacyMapping.split(':');
+        // Transform to canonical format: source='singing', id='hymn/123'
+        return { source, id: `${category}/${localId}` };
+      }
+
+      // Not a legacy prefix, return as-is
+      return { source: prefix, id: localId };
     }
 
     // Implicit all-digits → plex (e.g., "456724")
@@ -109,6 +126,15 @@ export class ContentQueryService {
     }
 
     return null;
+  }
+
+  /**
+   * Public wrapper for testing legacy prefix mapping.
+   * @param {string} text - Search text to check
+   * @returns {{source: string, id: string} | null}
+   */
+  _parseIdFromTextPublic(text) {
+    return this.#parseIdFromText(text);
   }
 
   /**
