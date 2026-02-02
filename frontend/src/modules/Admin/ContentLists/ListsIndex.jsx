@@ -1,10 +1,18 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   SimpleGrid, Card, Text, Badge, Group, Button,
-  Center, Loader, Alert, Stack, Title
+  Center, Loader, Alert, Stack, Title, Box
 } from '@mantine/core';
-import { IconPlus, IconList, IconAlertCircle } from '@tabler/icons-react';
+import {
+  IconPlus, IconList, IconAlertCircle,
+  // Common icons for lists
+  IconHome, IconStar, IconHeart, IconBookmark, IconFolder,
+  IconMusic, IconVideo, IconPhoto, IconBook, IconMovie,
+  IconDeviceTv, IconPlaylist, IconCalendar, IconClock,
+  IconRun, IconBolt, IconFlame, IconTrophy, IconTarget,
+  IconSettings, IconMenu2, IconPlayerPlay
+} from '@tabler/icons-react';
 import { useAdminLists } from '../../../hooks/admin/useAdminLists.js';
 import ListCreate from './ListCreate.jsx';
 import './ContentLists.scss';
@@ -15,6 +23,52 @@ const TYPE_LABELS = {
   watchlists: 'Watchlists',
   programs: 'Programs'
 };
+
+// Map icon name strings to actual icon components
+const ICON_MAP = {
+  IconList,
+  IconHome,
+  IconStar,
+  IconHeart,
+  IconBookmark,
+  IconFolder,
+  IconMusic,
+  IconVideo,
+  IconPhoto,
+  IconBook,
+  IconMovie,
+  IconDeviceTv,
+  IconPlaylist,
+  IconCalendar,
+  IconClock,
+  IconRun,
+  IconBolt,
+  IconFlame,
+  IconTrophy,
+  IconTarget,
+  IconSettings,
+  IconMenu2,
+  IconPlayerPlay
+};
+
+/**
+ * Render a dynamic icon by name
+ * Falls back to IconList if icon name not found
+ */
+function DynamicIcon({ name, size = 24, stroke = 1.5 }) {
+  const IconComponent = ICON_MAP[name] || IconList;
+  return <IconComponent size={size} stroke={stroke} />;
+}
+
+/**
+ * Format a list name for display (fallback when no title)
+ * e.g., "my-cool-list" -> "My Cool List"
+ */
+function formatName(name) {
+  return name
+    .replace(/-/g, ' ')
+    .replace(/\b\w/g, c => c.toUpperCase());
+}
 
 function ListsIndex() {
   const { type } = useParams();
@@ -27,6 +81,31 @@ function ListsIndex() {
       fetchLists(type);
     }
   }, [type, fetchLists]);
+
+  // Group lists by their group field
+  const groupedLists = useMemo(() => {
+    const groups = {};
+
+    lists.forEach(list => {
+      const groupName = list.group || 'Ungrouped';
+      if (!groups[groupName]) {
+        groups[groupName] = [];
+      }
+      groups[groupName].push(list);
+    });
+
+    // Sort groups: named groups first (alphabetically), then Ungrouped last
+    const sortedGroupNames = Object.keys(groups).sort((a, b) => {
+      if (a === 'Ungrouped') return 1;
+      if (b === 'Ungrouped') return -1;
+      return a.localeCompare(b);
+    });
+
+    return sortedGroupNames.map(name => ({
+      name,
+      lists: groups[name]
+    }));
+  }, [lists]);
 
   const handleListClick = (list) => {
     navigate(`/admin/content/lists/${type}/${list.name}`);
@@ -66,32 +145,59 @@ function ListsIndex() {
         </Alert>
       )}
 
-      <SimpleGrid cols={{ base: 1, sm: 2, md: 3, lg: 4 }} spacing="md">
-        {lists.map(list => (
-          <Card
-            key={list.name}
-            shadow="sm"
-            padding="lg"
-            radius="md"
-            withBorder
-            className="list-card"
-            onClick={() => handleListClick(list)}
-            data-testid={`list-card-${list.name}`}
-          >
-            <Group justify="space-between">
-              <Group gap="xs">
-                <IconList size={24} stroke={1.5} />
-                <Text fw={500} tt="capitalize">
-                  {list.name.replace(/-/g, ' ')}
-                </Text>
-              </Group>
-              <Badge color="blue" variant="light">
-                {list.count}
-              </Badge>
-            </Group>
-          </Card>
-        ))}
-      </SimpleGrid>
+      {groupedLists.map(group => (
+        <Box key={group.name}>
+          {group.name !== 'Ungrouped' && (
+            <Text size="sm" fw={600} c="dimmed" tt="uppercase" mb="xs">
+              {group.name}
+            </Text>
+          )}
+          <SimpleGrid cols={{ base: 1, sm: 2, md: 3, lg: 4 }} spacing="md">
+            {group.lists.map(list => (
+              <Card
+                key={list.name}
+                shadow="sm"
+                padding="lg"
+                radius="md"
+                withBorder
+                className="list-card"
+                onClick={() => handleListClick(list)}
+                data-testid={`list-card-${list.name}`}
+              >
+                <Group justify="space-between" wrap="nowrap">
+                  <Group gap="xs" wrap="nowrap" style={{ flex: 1, minWidth: 0 }}>
+                    {list.icon ? (
+                      <DynamicIcon name={list.icon} />
+                    ) : (
+                      <IconList size={24} stroke={1.5} />
+                    )}
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <Text fw={500} truncate>
+                        {list.title || formatName(list.name)}
+                      </Text>
+                      {list.description && (
+                        <Text size="xs" c="dimmed" lineClamp={1}>
+                          {list.description}
+                        </Text>
+                      )}
+                    </div>
+                  </Group>
+                  <Group gap="xs" wrap="nowrap">
+                    {!list.active && (
+                      <Badge color="red" variant="light" size="xs">
+                        Inactive
+                      </Badge>
+                    )}
+                    <Badge color="blue" variant="light">
+                      {list.itemCount ?? list.count ?? 0}
+                    </Badge>
+                  </Group>
+                </Group>
+              </Card>
+            ))}
+          </SimpleGrid>
+        </Box>
+      ))}
 
       {lists.length === 0 && !loading && (
         <Center h="40vh">
