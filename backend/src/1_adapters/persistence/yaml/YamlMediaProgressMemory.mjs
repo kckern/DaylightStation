@@ -69,25 +69,29 @@ export class YamlMediaProgressMemory extends IMediaProgressMemory {
   }
 
   /**
-   * Normalize persisted data to domain entity format
-   * Handles legacy formats (e.g., scripture: seconds/percent/time)
+   * Convert persisted YAML data to domain entity.
+   *
+   * CANONICAL FORMAT (after migrate-watch-history.mjs):
+   *   playhead, duration, percent, playCount, lastPlayed, watchTime
+   *
+   * Legacy fallbacks kept for unmigrated data (should be rare after P0 migration):
+   *   - seconds → playhead (scripture format)
+   *   - time → lastPlayed (scripture format)
+   *   - mediaDuration → duration (old Plex webhook format)
+   *
    * @param {string} itemId
    * @param {Object} data - Raw persisted data
    * @returns {MediaProgress}
    * @private
    */
   _toDomainEntity(itemId, data) {
-    // Normalize field names from legacy formats
-    const playhead = data.playhead ?? data.seconds ?? 0;
-    const lastPlayed = data.lastPlayed ?? data.time ?? null;
+    // Canonical fields with legacy fallbacks
+    const playhead = data.playhead ?? data.seconds ?? 0;       // seconds = legacy scripture
+    const lastPlayed = data.lastPlayed ?? data.time ?? null;   // time = legacy scripture
+    let duration = data.duration ?? data.mediaDuration ?? 0;   // mediaDuration = legacy Plex
 
-    // If we have percent but no duration, synthesize duration from percent
-    // This preserves the percent value when calculated by the domain entity
-    // Also check mediaDuration (legacy Plex field name)
-    let duration = data.duration ?? data.mediaDuration ?? 0;
+    // Synthesize duration from percent if needed (pre-migration entries)
     if (!duration && data.percent && playhead > 0) {
-      // percent = (playhead / duration) * 100
-      // duration = playhead / (percent / 100)
       duration = Math.round(playhead / (data.percent / 100));
     }
 

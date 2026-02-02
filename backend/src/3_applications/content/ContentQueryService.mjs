@@ -502,14 +502,15 @@ export class ContentQueryService {
       if (!progress) return item;
 
       const playhead = progress.playhead ?? 0;
-      // Use progress duration, fall back to item duration from source metadata
       const duration = progress.duration || item.duration || 0;
-      // Calculate percent - prefer progress.percent if available, otherwise calculate from playhead/duration
-      // This handles cases where watch history has playhead but no duration (Plex metadata provides it)
+
+      // After P0 migration, progress.percent should always be present.
+      // Fallback calculation kept for: (1) new entries before duration captured, (2) edge cases
       let percent = progress.percent ?? 0;
       if (percent === 0 && playhead > 0 && duration > 0) {
         percent = Math.round((playhead / duration) * 100);
       }
+
       const isInProgress = percent > 0 && percent < 90;
 
       return {
