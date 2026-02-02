@@ -15,38 +15,22 @@ Read `.claude/settings.local.json` and look at the `env` section for all environ
 ```json
 {
   "env": {
-    "mounts": {
-      "data": "/path/to/data",
-      "media": "/path/to/media"
-    },
-    "hosts": {
-      "prod": "user@hostname"
-    },
-    "docker": {
-      "container": "daylight"
-    },
-    "production": {
-      "access_command": "ssh user@host ...",
-      "logs_command": "ssh user@host ...",
-      "mounts": {
-        "data": "...",
-        "media": "..."
-      },
-      "docker_compose_path": "..."
+    "prod_host": "homeserver.local",
+    "docker_container": "daylight-station",
+    "ports": {
+      "app": 3111,
+      "backend": 3112
     }
   }
 }
 ```
 
-If `env` values show `[object Object]`, the file is corrupted and needs manual repair.
-
 ### Key Environment Values
 
-- **Data mount:** YAML data files (`env.mounts.data`)
-- **Media mount:** Media files (`env.mounts.media`)
-- **Prod host:** SSH target (`env.hosts.prod`)
-- **Docker container:** Container name (`env.docker.container`)
-- **Prod commands:** Access/Login (`env.production.*`)
+- **Prod host:** SSH target (`env.prod_host`)
+- **Docker container:** Container name (`env.docker_container`)
+- **App port:** Frontend port (`env.ports.app`)
+- **Backend port:** API port (`env.ports.backend`)
 
 ### Port Configuration
 
@@ -96,19 +80,21 @@ pkill -f 'node backend/index.js'
 
 ### Prod Access
 
+SSH config (`~/.ssh/config`) handles authentication for `{env.prod_host}`.
+
 ```bash
-# SSH to prod (use command from settings)
-{env.production.access_command}
+# SSH to prod
+ssh {env.prod_host}
 
 # View prod logs
-{env.production.logs_command}
+ssh {env.prod_host} 'docker logs {env.docker_container}'
 ```
 
 ### Mount Permissions
 
 When writing data files from macOS, use SSH due to mount permission issues:
 ```bash
-ssh {hosts.prod} 'echo "content" > /path/to/file'
+ssh {env.prod_host} 'echo "content" > /path/to/file'
 ```
 
 ---
@@ -200,7 +186,7 @@ git rev-parse HEAD > docs/docs-last-updated.txt
 3. **Always date-prefix** - Format: `YYYY-MM-DD-topic-name.md`
 4. **Archive when obsolete** - Move to `_archive/` when superseded or no longer relevant
 5. **Keep reference docs current** - Update existing docs rather than creating new point-in-time snapshots
-6. **No instance-specific data** - Never include paths, hostnames, ports, or environment-specific values. Use placeholders like `{hosts.prod}` or reference `.claude/settings.local.json`
+6. **No instance-specific data** - Never include paths, hostnames, ports, or environment-specific values. Use placeholders like `{env.prod_host}` or reference `.claude/settings.local.json`
 
 ---
 

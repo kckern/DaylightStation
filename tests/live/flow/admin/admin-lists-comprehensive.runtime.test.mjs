@@ -127,9 +127,12 @@ test.describe('Admin Lists Comprehensive', () => {
       });
 
       // Wait for items to load
-      await page.waitForSelector('.item-row', { timeout: 10000 }).catch(() => null);
+      const hasItems = await page.waitForSelector('.item-row', { timeout: 10000 }).catch(() => {
+        console.log(`    Note: No .item-row found within timeout for ${listName}`);
+        return null;
+      });
 
-      // Wait for content info to load
+      // Allow time for content metadata to load (async fetch per item)
       await page.waitForTimeout(3000);
 
       // Get all rows
@@ -150,7 +153,10 @@ test.describe('Admin Lists Comprehensive', () => {
       // Validate sampled items
       for (const sampledItem of sampled) {
         const rowIdx = sampledItem.originalIndex;
-        if (rowIdx >= rowCount) continue;
+        if (rowIdx >= rowCount) {
+          console.log(`    Note: Sampled row ${rowIdx} exceeds actual row count ${rowCount}, skipping`);
+          continue;
+        }
 
         const row = rows.nth(rowIdx);
         const result = await validateCardStructure(row, rowIdx, `${type}/${listName}`);
