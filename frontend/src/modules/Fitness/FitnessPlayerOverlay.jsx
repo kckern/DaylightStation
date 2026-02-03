@@ -631,13 +631,7 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
     }
     const requirementList = Array.isArray(overlay.requirements) ? overlay.requirements.filter(Boolean) : [];
     
-    // PHASE 6B FIX: When requirements are empty but participants exist,
-    // show placeholder rows so UI doesn't display "Waiting for participant data..."
-    // This covers the timing gap between participantRoster population and TreasureBox data arrival.
-    // Once TreasureBox records HR data, GovernanceEngine will populate proper requirements.
-    const hasParticipantsButNoRequirements = requirementList.length === 0 && participants.length > 0;
-    
-    if (requirementList.length === 0 && !hasParticipantsButNoRequirements) {
+    if (requirementList.length === 0) {
       return [];
     }
     const allowGenericAny = Boolean(overlay.allowGenericAny);
@@ -868,12 +862,6 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
         if (Number.isFinite(userTargetOverride)) {
           return Math.round(userTargetOverride);
         }
-        // If this is an identity-only entry (no vitals yet), don't show zone minimums
-        // as they aren't user-specific targets
-        const isIdentityOnly = resolvedParticipant?._source === 'identity_only';
-        if (isIdentityOnly) {
-          return null; // Will show "--" in UI
-        }
         if (Number.isFinite(target?.targetBpm)) {
           return Math.round(target.targetBpm);
         }
@@ -1023,58 +1011,6 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
         });
       });
     });
-
-    // PHASE 6B FIX: If no rows were built from requirements but participants exist,
-    // create placeholder rows showing participants are connected but awaiting HR data.
-    // This provides visual feedback while TreasureBox populates.
-    if (rows.length === 0 && hasParticipantsButNoRequirements) {
-      const namedParticipants = participants.filter((p) => p?.name);
-      const fallbackRequirement = overlay?.requirements?.find(Boolean)
-        || (Array.isArray(governanceState?.requirements) ? governanceState.requirements.find(Boolean) : null)
-        || governanceState?.challenge
-        || null;
-      const derivedTarget = fallbackRequirement ? buildTargetInfo(fallbackRequirement) : null;
-
-      // When no fallback requirement, try to get zone from governance state's base policy
-      const baseZoneId = !derivedTarget && governanceState?.baseZoneId
-        ? normalizeZoneId(governanceState.baseZoneId)
-        : null;
-      const baseZoneInfo = baseZoneId ? zoneMetadata?.map?.[baseZoneId] : null;
-
-      // Safely get first zone from metadata as final fallback
-      const zoneMapKeys = zoneMetadata?.map ? Object.keys(zoneMetadata.map) : [];
-      const firstZoneInfo = zoneMapKeys.length > 0 ? zoneMetadata.map[zoneMapKeys[0]] : null;
-
-      const defaultTarget = derivedTarget || {
-        zoneInfo: baseZoneInfo || aggregateZone || firstZoneInfo || null,
-        label: baseZoneInfo?.name
-          || fallbackRequirement?.zoneLabel
-          || fallbackRequirement?.ruleLabel
-          || zoneMetadata?.map?.[normalizeZoneId(fallbackRequirement?.zone)]?.name
-          || (fallbackRequirement?.zone ? fallbackRequirement.zone.charAt(0).toUpperCase() + fallbackRequirement.zone.slice(1) : null)
-          || aggregateZone?.name
-          || 'Target',
-        targetBpm: Number.isFinite(fallbackRequirement?.threshold)
-          ? fallbackRequirement.threshold
-          : null
-      };
-      namedParticipants.forEach((participant) => {
-        const vitals = resolveParticipantVitals(participant.name, participant);
-        const currentZone = getParticipantZone(participant, vitals);
-        addRow({
-          name: participant.name,
-          participant,
-          target: defaultTarget,
-          overrides: {
-            currentZone,
-            heartRate: vitals?.heartRate ?? null,
-            targetHeartRate: null,
-            progressPercent: null,
-            currentLabel: currentZone?.name || 'Connecting...'
-          }
-        });
-      });
-    }
 
     return rows;
   }, [overlay, participants, fitnessCtx?.usersConfigRaw, zoneMetadata, userZoneProgress, participantMap, resolveParticipantVitals, fitnessCtx?.getUserZoneThreshold, governanceState]);
