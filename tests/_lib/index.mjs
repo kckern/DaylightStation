@@ -8,3 +8,4 @@
 export * from './testDataService.mjs';
 export * from './testDataMatchers.mjs';
 export * from './configHelper.mjs';
+export { FitnessSimHelper } from './FitnessSimHelper.mjs';
