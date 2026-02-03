@@ -786,6 +786,145 @@ GET /content/query/list?from=people&source=gallery  # Immich only
 
 ---
 
+## 11. Content Browser Model (Admin UI)
+
+Admin UIs need to browse, select, and display content with rich metadata. This section documents the patterns for content selection interfaces.
+
+### Item Display Model
+
+Every content item renders with these display fields:
+
+| Field | Source | Description |
+|-------|--------|-------------|
+| `title` | ID3 tags, Plex metadata, or filename | Primary display text |
+| `thumbnail` | Cover art, poster, or album art | Avatar/image (falls back to first letter) |
+| `type` | `audio`, `video`, `folder`, `show`, `episode`, etc. | Icon and type label |
+| `source` | Extracted from compound ID | Source badge (`PLEX`, `MEDIA`, etc.) |
+| `parentTitle` | Parent folder/container name | Subtitle line (e.g., "SFX", "Season 1") |
+| `itemCount` | `childCount` for containers | Badge showing child count |
+
+**Display hierarchy:**
+```
+┌─────────────────────────────────────────────────────┐
+│ [Thumbnail]  Title                    [5] [SOURCE]  │
+│              🎵 Audio • Parent Folder         [>]   │
+└─────────────────────────────────────────────────────┘
+```
+
+### Container Types
+
+Items are either **containers** (browsable) or **leaves** (selectable):
+
+```javascript
+const CONTAINER_TYPES = [
+  'show', 'season', 'artist', 'album',
+  'collection', 'playlist', 'folder', 'container'
+];
+
+function isContainerItem(item) {
+  if (item.itemType === 'container') return true;
+  return CONTAINER_TYPES.includes(item.type || item.metadata?.type);
+}
+```
+
+Containers show a chevron (`>`) for drill-down navigation.
+
+### Sibling Loading Pattern
+
+When editing a content reference (e.g., `media:sfx/intro`), load siblings by browsing the parent:
+
+```
+Current value: media:sfx/intro
+                     ↓ extract parent path
+Parent path:   sfx
+                     ↓ fetch
+API call:      GET /api/v1/list/media/sfx
+                     ↓ returns
+Siblings:      [bgmusic/, error.mp3, intro.mp3, wii.mp3]
+```
+
+**Algorithm:**
+```javascript
+async function loadSiblings(compoundId) {
+  const [source, localId] = compoundId.split(':');
+  const parts = localId.split('/');
+
+  if (parts.length <= 1) {
+    // At root - no parent to browse
+    return [];
+  }
+
+  const parentPath = parts.slice(0, -1).join('/');
+  const response = await fetch(`/api/v1/list/${source}/${parentPath}`);
+  const data = await response.json();
+  return data.items;
+}
+```
+
+### API Endpoints for Browsing
+
+| Endpoint | Returns | Use Case |
+|----------|---------|----------|
+| `GET /api/v1/item/{source}/{localId}` | Single item with full metadata | Display selected item |
+| `GET /api/v1/list/{source}/{path}` | Container children as list | Browse folder, load siblings |
+| `GET /api/v1/content/item/{source}/{localId}` | Item metadata only | Resolve display info |
+| `GET /api/v1/content/query/search?text=...` | Search results | Free-text content search |
+
+### Rich Metadata via getItem
+
+The `getItem()` adapter method returns rich metadata. For filesystem items:
+
+```json
+{
+  "id": "filesystem:sfx/intro.mp3",
+  "title": "Good Morning",           // From ID3 tags
+  "thumbnail": "/api/v1/local-content/cover/sfx%2Fintro.mp3",
+  "type": "audio",
+  "parentTitle": "Sfx",
+  "artist": "Morning Program",       // From ID3 tags
+  "duration": 45,
+  "metadata": {
+    "type": "audio",
+    "parentTitle": "Sfx",
+    "librarySectionTitle": "Media"
+  }
+}
+```
+
+The `getList()` method calls `getItem()` for each child to provide the same rich metadata.
+
+### Source Badge Colors
+
+```javascript
+const SOURCE_COLORS = {
+  plex: 'orange',
+  immich: 'blue',
+  abs: 'green',
+  media: 'gray',
+  filesystem: 'gray',
+  watchlist: 'violet',
+  default: 'gray'
+};
+```
+
+### Navigation State
+
+Browser components maintain navigation state for drill-down:
+
+| State | Purpose |
+|-------|---------|
+| `currentParent` | Container being browsed (for header display) |
+| `navStack` | Breadcrumb trail of visited containers |
+| `browseItems` | Current list of items to display |
+| `highlightedIdx` | Keyboard navigation index |
+
+**Navigation actions:**
+- **Drill down (→):** Push current to stack, fetch container children
+- **Go up (←):** Pop from stack, fetch previous parent's children
+- **Select (Enter):** Call `onChange(item.id)` for leaves
+
+---
+
 ## Appendix: Query Parameters
 
 ### Search Parameters
