@@ -17,6 +17,8 @@ When your apps finally meet, new things become possible:
 - Family photos appear between TV episodes instead of ads
 - Your heart rate overlays on workout videos in real-time
 - A morning debrief arrives via Telegram, summarizing yesterday's activities and prompting you to journal via voice memo
+- A grounded feed replaces doomscrolling—Reddit posts interleaved with family photos, overdue todos, and health nudges
+- Your morning alarm plays a personalized program: inbox summary, calendar, todos, then news from your subscribed podcasts and YouTube channels
 
 Same data you already have. Now it works together.
 
@@ -45,6 +47,7 @@ Also supports: Buxfer, ClickUp, FreshRSS, Garmin, GitHub, Gmail, Goodreads, Last
 | **Telegram bots** | Meal logging, AI journaling |
 | **Thermal printer** | Morning "newspaper", on-demand notifications and reports |
 | **Voice briefings** | Morning alarm that reads your inbox, calendar, and todos |
+| **Grounded feed** | Boonscrolling: news and social mixed with photos, todos, and health nudges |
 | **Home Assistant** | Ambient lighting, automations |
 | **WebSocket** | Real-time push to any client |
 
