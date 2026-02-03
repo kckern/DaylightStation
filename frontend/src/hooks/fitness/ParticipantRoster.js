@@ -108,12 +108,15 @@ export class ParticipantRoster {
 
     const roster = [];
     const heartRateDevices = this._deviceManager.getAllDevices().filter(d => d.type === 'heart_rate');
-    
+
     // Build zone lookup from TreasureBox
     const zoneLookup = this._buildZoneLookup();
 
+    // Determine if we should prefer group labels (2+ participants)
+    const preferGroupLabels = heartRateDevices.length > 1;
+
     heartRateDevices.forEach((device) => {
-      const entry = this._buildRosterEntry(device, zoneLookup);
+      const entry = this._buildRosterEntry(device, zoneLookup, { preferGroupLabels });
       if (entry) {
         roster.push(entry);
         // Track historical participant by ID
@@ -281,18 +284,19 @@ export class ParticipantRoster {
     return zoneLookup;
   }
 
-  _buildRosterEntry(device, zoneLookup) {
+  _buildRosterEntry(device, zoneLookup, options = {}) {
     if (!device || device.id == null) return null;
-    
+
+    const { preferGroupLabels = false } = options;
     const deviceId = String(device.id);
     const heartRate = Number.isFinite(device.heartRate) ? Math.round(device.heartRate) : null;
-    
+
     // Resolve participant name from guest assignment or user mapping
     const guestEntry = this._userManager?.assignmentLedger?.get?.(deviceId) || null;
     const ledgerName = guestEntry?.occupantName || guestEntry?.metadata?.name || null;
     const mappedUser = this._userManager.resolveUserForDevice(deviceId);
     const participantName = ledgerName || mappedUser?.name;
-    
+
     if (!participantName) return null;
 
     // Use the actual user ID - must be explicitly set
@@ -337,12 +341,29 @@ export class ParticipantRoster {
     const baseUserName = isGuest
       ? (guestEntry?.metadata?.baseUserName || guestEntry?.metadata?.base_user_name || null)
       : participantName;
-    
+
+    // For primary users, prefer group labels only when multiple participants are present
+    // For guests, never use group labels (they don't have them)
+    const shouldPreferGroupLabel = !isGuest && preferGroupLabels;
+    const groupLabel = isGuest ? null : mappedUser?.groupLabel;
+
     const displayLabel = resolveDisplayLabel({
       name: participantName,
-      groupLabel: isGuest ? null : mappedUser?.groupLabel,
-      preferGroupLabel: !isGuest
+      groupLabel,
+      preferGroupLabel: shouldPreferGroupLabel
     });
+
+    // Log display label resolution for debugging participant count transitions
+    if (groupLabel && !isGuest) {
+      getLogger().debug('participant.roster.display_label_resolved', {
+        userId,
+        name: participantName,
+        groupLabel,
+        displayLabel,
+        preferGroupLabels,
+        shouldPreferGroupLabel
+      });
+    }
 
     // Get status from ActivityMonitor if available
     const status = this._activityMonitor 
