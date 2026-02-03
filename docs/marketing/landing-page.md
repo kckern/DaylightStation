@@ -1,8 +1,8 @@
 # Daylight Station
 
-### Where your apps finally meet.
+**Where your apps finally meet.**
 
-**Alone, they're apps. At Daylight Station, they're a life.**
+A self-hosted data refinery for an intentional life.
 
 [Get Started on GitHub →](https://github.com/kckern/DaylightStation)
 

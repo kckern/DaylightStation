@@ -8,7 +8,16 @@
 
 ## Hero Messaging
 
-### Primary Tagline
+### Taxonomy
+
+| Element | Content | Usage |
+|---------|---------|-------|
+| **Title** | Daylight Station | Product name, always first |
+| **Tagline** | Where your apps finally meet. | Primary hook, use everywhere |
+| **Description** | A self-hosted data refinery for an intentional life. | One-line explanation |
+| **Sales Copy** | Your calendar lives in Google. Your runs live in Strava... | Expanded narrative |
+
+### Tagline
 
 > **Where your apps finally meet.**
 
@@ -18,33 +27,37 @@ Five words. Does everything:
 - "Meet" implies collaboration, not just display
 - Universal—everyone has apps that don't talk to each other
 
-### Supporting Line
+### Description
+
+> **A self-hosted data refinery for an intentional life.**
+
+The functional explanation. Use after the tagline or standalone for SEO/technical contexts.
+
+### Sales Copy (One Paragraph)
+
+> Your calendar lives in Google. Your runs live in Strava. Your weight lives in Withings. Your movies live in Plex. Your home lives in Home Assistant. They've never been in the same room—until now. Daylight Station is where your scattered digital life finally comes together, refines the noise into signal, and delivers context-aware experiences exactly when and where you need them.
+
+### Supporting Line (Optional)
 
 > **Alone, they're apps. At Daylight Station, they're a life.**
 
-The contrast:
+Use for emphasis or as a closing statement. The contrast:
 - "Alone" = current state, fragmented, meaningless in isolation
-- "Together" = synthesis, context, meaning
+- "At Daylight Station" = the place where synthesis happens
 - "A life" = the profound outcome of connecting trivial inputs
-
-### Descriptor
-
-> A self-hosted data refinery for an intentional life.
-
-Use when the tagline needs context or for SEO/longer formats.
 
 ---
 
 ## Messaging Hierarchy
 
 ```
-DAYLIGHT STATION
-Where your apps finally meet.
+DAYLIGHT STATION                                    [Title]
+Where your apps finally meet.                       [Tagline]
 
-Alone, they're apps. At Daylight Station, they're a life.
+A self-hosted data refinery for an intentional life. [Description]
 
-A self-hosted data refinery that connects your scattered
-digital life and delivers it exactly when you need it.
+Your calendar lives in Google. Your runs live in    [Sales Copy]
+Strava. Your weight lives in Withings...
 ```
 
 ---
