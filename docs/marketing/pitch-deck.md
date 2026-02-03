@@ -12,9 +12,9 @@ A slide-by-slide outline for presenting Daylight Station. Core deck is ~10 slide
 
 **DAYLIGHT STATION**
 
-*A self-hosted data refinery for an intentional life*
+*Where your apps finally meet.*
 
-One backbone. Many taps.
+Alone, they're apps. At Daylight Station, they're a life.
 
 [Your name]
 [Date]
@@ -23,7 +23,7 @@ One backbone. Many taps.
 
 ### Slide 2: The Problem
 
-**Your digital life is scattered.**
+**Your apps have never been in the same room.**
 
 - Calendar in Google
 - Tasks in Todoist
@@ -33,9 +33,9 @@ One backbone. Many taps.
 - Home in Home Assistant
 - Photos in Immich
 
-**20 services. 20 browser tabs. Zero synthesis.**
+**20 services. 20 browser tabs. Zero introductions.**
 
-You have more data about yourself than ever before — and you've never felt less in control.
+They all know about you. None of them know about each other.
 
 ---
 
@@ -56,30 +56,30 @@ Instead, you spend your life checking apps.
 
 ### Slide 4: The Insight
 
-**You don't need another app. You need the last mile.**
+**You don't need another app. You need a place where they meet.**
 
-The "last mile" is the interface — where data meets your eyes, your hands, your environment.
+Your services work. They just don't work *together*.
 
-Commercial apps own this layer. They use it to extract attention.
+Strava knows your runs. Withings knows your weight. Plex knows your movies. Google knows your calendar.
 
-**What if you owned it instead?**
+**What if they finally met?**
 
-What if the right data appeared on the right screen at the right moment — without you asking?
+What if the right data appeared on the right screen at the right moment — because your apps were finally in the same room?
 
 ---
 
 ### Slide 5: The Solution
 
-**Daylight Station is a data refinery.**
+**Daylight Station is where your apps finally meet.**
 
 It pulls from everywhere your life already lives:
 - Cloud APIs (Strava, Google, Todoist, Withings)
 - Self-hosted services (Plex, Home Assistant, Immich)
 - Sensors (heart rate, motion, MQTT)
 
-It refines the noise into signal.
+It introduces them to each other. They start working together.
 
-It delivers context-aware experiences through purpose-built **taps**:
+That collaboration flows to purpose-built **taps** throughout your home:
 - Room kiosks
 - TV overlays
 - Telegram bots
@@ -87,7 +87,7 @@ It delivers context-aware experiences through purpose-built **taps**:
 - Push notifications
 - Ambient lighting
 
-**One backbone. Many taps. Always relevant.**
+**Alone, they're apps. Together, they're a life.**
 
 ---
 
@@ -140,7 +140,7 @@ When you stop, it prompts for a voice memo.
 The TV shows family photos between episodes.
 A PIP map shows Dad's ETA without pausing the movie.
 
-**Same data. Different moments. Always relevant.**
+**Same data, finally together. Different moments. Always relevant.**
 
 ---
 
@@ -196,8 +196,8 @@ A PIP map shows Dad's ETA without pausing the movie.
 - AI agents with full context of your life, running locally
 
 **The end state:**
-You stop managing your digital life.
-Your environment manages it for you.
+Your apps finally work together.
+Your environment works for you.
 
 ---
 
