@@ -236,6 +236,28 @@ test.describe('Governance Lock Screen Monitor', () => {
       await sim.waitForController();
       logState('CONTROLLER_READY', { summary: 'FitnessSimulationController available' });
 
+      // ═══════════════════════════════════════════════════════════════
+      // CHECK: Initial lock screen state BEFORE any HR data
+      // ═══════════════════════════════════════════════════════════════
+      console.log('\n[CHECK] Looking for initial "Waiting for participant data..." state...');
+
+      // Check immediately - might catch empty state
+      const initialState = await extractLockScreenState();
+      if (initialState.visible) {
+        if (initialState.isEmpty) {
+          logState('EMPTY_STATE_CAPTURED', {
+            summary: 'Caught "Waiting for participant data..." state!',
+            message: initialState.message
+          });
+          console.log('[FOUND] Initial empty state with message:', initialState.message);
+        } else {
+          console.log('[MISSED] Lock screen already has rows - HR data arrived quickly');
+        }
+      } else {
+        console.log('[INFO] Lock screen not yet visible');
+      }
+      await checkAndLogChanges('initial check before HR');
+
       // Get available devices
       const devices = await sim.getDevices();
       console.log(`[SETUP] Available devices: ${devices.length}`);
