@@ -128,32 +128,6 @@ export class ParticipantRoster {
   }
 
   /**
-   * Get identity-only roster (names and device IDs only, no zone data).
-   * Use this for immediate rendering while vitals are still loading.
-   *
-   * @returns {RosterEntry[]}
-   */
-  getIdentityRoster() {
-    if (!this._deviceManager || !this._userManager) {
-      return [];
-    }
-
-    const roster = [];
-    const heartRateDevices = this._deviceManager.getAllDevices().filter(d => d.type === 'heart_rate');
-    const preferGroupLabels = heartRateDevices.length > 1;
-
-    heartRateDevices.forEach((device) => {
-      const entry = this._buildIdentityEntry(device, { preferGroupLabels });
-      if (entry) {
-        roster.push(entry);
-        if (entry.id) this._historicalParticipants.add(entry.id);
-      }
-    });
-
-    return roster;
-  }
-
-  /**
    * Get active participants (currently broadcasting)
    * @returns {RosterEntry[]}
    */
@@ -308,60 +282,6 @@ export class ParticipantRoster {
     });
 
     return zoneLookup;
-  }
-
-  /**
-   * Build identity-only roster entry (no zone/vitals data).
-   * Faster than full entry since it doesn't need TreasureBox.
-   *
-   * @param {Object} device
-   * @param {Object} options
-   * @returns {RosterEntry|null}
-   */
-  _buildIdentityEntry(device, options = {}) {
-    if (!device || device.id == null) return null;
-
-    const { preferGroupLabels = false } = options;
-    const deviceId = String(device.id);
-
-    // Resolve participant name from guest assignment or user mapping
-    const guestEntry = this._userManager?.assignmentLedger?.get?.(deviceId) || null;
-    const ledgerName = guestEntry?.occupantName || guestEntry?.metadata?.name || null;
-    const mappedUser = this._userManager.resolveUserForDevice(deviceId);
-    const participantName = ledgerName || mappedUser?.name;
-
-    if (!participantName) return null;
-
-    const userId = mappedUser?.id || guestEntry?.occupantId || guestEntry?.metadata?.profileId;
-    const isGuest = guestEntry
-      ? (guestEntry.occupantType === 'guest')
-      : (mappedUser ? mappedUser.source === 'Guest' : true);
-    const groupLabel = isGuest ? null : mappedUser?.groupLabel;
-
-    const displayLabel = resolveDisplayLabel({
-      name: participantName,
-      groupLabel,
-      preferGroupLabel: !isGuest && preferGroupLabels
-    });
-
-    return {
-      name: participantName,
-      displayLabel,
-      groupLabel: groupLabel || null,
-      profileId: userId,
-      id: userId,
-      baseUserName: isGuest ? (guestEntry?.metadata?.baseUserName || null) : participantName,
-      isGuest,
-      hrDeviceId: deviceId,
-      // Zone/vitals data is null until enriched
-      heartRate: null,
-      zoneId: null,
-      zoneColor: null,
-      avatarUrl: mappedUser?.avatarUrl || null,
-      status: ParticipantStatus.UNKNOWN,
-      isActive: true,
-      _source: 'identity_only'
-    };
   }
 
   _buildRosterEntry(device, zoneLookup, options = {}) {

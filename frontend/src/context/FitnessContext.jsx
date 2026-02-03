@@ -1322,13 +1322,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       return rosterCacheRef.current.value;
     }
 
-    // Fallback: identity-only roster (no vitals yet)
-    const identityRoster = fitnessSessionRef.current?.participantRoster?.getIdentityRoster?.() || [];
-    if (identityRoster.length > 0) {
-      return identityRoster;
-    }
-
-    // Final fallback: empty
+    // Fallback: empty
     rosterCacheRef.current.signature = null;
     rosterCacheRef.current.value = emptyRosterRef.current;
     return rosterCacheRef.current.value;
