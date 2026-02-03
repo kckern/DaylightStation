@@ -132,6 +132,27 @@ test.describe('Fitness Happy Path', () => {
     // Start dev server if not already running
     devServerProc = await ensureDevServer(90000);
 
+    // FAIL FAST: Verify fitness API returns valid data before running any tests
+    console.log('Verifying fitness API health...');
+    let fitnessConfig;
+    try {
+      const response = await fetch(`${API_URL}/api/v1/fitness`, { signal: AbortSignal.timeout(10000) });
+      if (!response.ok) {
+        throw new Error(`Fitness API returned ${response.status}: ${response.statusText}`);
+      }
+      fitnessConfig = await response.json();
+    } catch (err) {
+      throw new Error(`FAIL FAST: Fitness API not responding. Cannot run tests.\nError: ${err.message}\nURL: ${API_URL}/api/v1/fitness`);
+    }
+
+    // Validate essential config fields exist
+    const navItems = fitnessConfig?.fitness?.plex?.nav_items || fitnessConfig?.plex?.nav_items;
+    const users = fitnessConfig?.fitness?.users?.primary || fitnessConfig?.users?.primary;
+    if (!navItems || navItems.length === 0) {
+      throw new Error(`FAIL FAST: Fitness API returned no nav_items. Config may be invalid.\nReceived keys: ${Object.keys(fitnessConfig || {}).join(', ')}`);
+    }
+    console.log(`Fitness API healthy: ${navItems.length} nav items, ${users?.length || 0} primary users`);
+
     // Mark log position at test start
     logStartPosition = getDevLogPosition();
     console.log(`dev.log position at start: ${logStartPosition}`);

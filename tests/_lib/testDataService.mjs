@@ -6,6 +6,7 @@
  * with discovery fallback when more samples are needed.
  */
 
+import 'dotenv/config';
 import path from 'path';
 import { loadYaml, dirExists, listYamlFiles } from '#backend/src/0_system/utils/FileIO.mjs';
 import { validateExpectations } from './testDataMatchers.mjs';
@@ -14,11 +15,13 @@ import { validateExpectations } from './testDataMatchers.mjs';
 export { validateExpectations };
 
 // Default data path (can be overridden via environment variable)
+// Accepts DAYLIGHT_DATA_PATH directly, or constructs from DAYLIGHT_BASE_PATH
 const DATA_PATH = process.env.DAYLIGHT_DATA_PATH ||
+  (process.env.DAYLIGHT_BASE_PATH ? path.join(process.env.DAYLIGHT_BASE_PATH, 'data') : null) ||
   '/media/kckern/DockerDrive/Dropbox/Apps/DaylightStation/data';
 
 // Registry file path
-const REGISTRY_PATH = path.join(DATA_PATH, 'system/testdata');
+const REGISTRY_PATH = path.join(DATA_PATH, 'system/config/testdata');
 
 // Cache storage
 let registryCache = null;
