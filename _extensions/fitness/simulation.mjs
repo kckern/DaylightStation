@@ -28,7 +28,7 @@ if (fs.existsSync(envPath)) {
 }
 
 // Import the new config framework
-import { configService, initConfigService, userDataService } from '../../backend/src/0_infrastructure/config/index.mjs';
+import { configService, initConfigService, userDataService } from '../../backend/src/0_system/config/index.mjs';
 import yaml from 'js-yaml';
 
 // Configuration
@@ -71,22 +71,22 @@ function loadConfig() {
     const householdId = configService.getDefaultHouseholdId();
     console.log(`🏠 Using household: ${householdId}`);
     
-    // Load household-specific fitness config directly
+    // Use the ConfigService method to get household app config
+    const fitnessConfig = configService.getHouseholdAppConfig(householdId, 'fitness');
+    if (fitnessConfig) {
+      console.log('✅ Loaded fitness config from household app config');
+      console.log('🧪 Config structure keys:', Object.keys(fitnessConfig || {}));
+      return fitnessConfig;
+    }
+    
+    // Fallback: Try to load directly from file system
     const dataDir = configService.getDataDir();
-    const householdFitnessConfigPath = path.join(dataDir, 'households', householdId, 'apps', 'fitness', 'config.yml');
+    const householdFitnessConfigPath = path.join(dataDir, 'household', 'apps', 'fitness', 'config.yml');
     
     if (fs.existsSync(householdFitnessConfigPath)) {
       const configContent = fs.readFileSync(householdFitnessConfigPath, 'utf8');
       const fitnessConfig = yaml.load(configContent);
       console.log('✅ Loaded fitness config from household path');
-      console.log('🧪 Config structure keys:', Object.keys(fitnessConfig || {}));
-      return fitnessConfig;
-    }
-    
-    // Fallback to system app config
-    const fitnessConfig = configService.getAppConfig('fitness');
-    if (fitnessConfig) {
-      console.log('✅ Loaded fitness config from system app config');
       console.log('🧪 Config structure keys:', Object.keys(fitnessConfig || {}));
       return fitnessConfig;
     }

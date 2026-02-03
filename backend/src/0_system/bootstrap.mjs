@@ -389,6 +389,7 @@ export function getSystemBotLoader() {
  * @param {string} [config.plex.host] - Plex server URL
  * @param {string} [config.plex.token] - Plex auth token
  * @param {string} [config.dataPath] - Path to data files (for LocalContentAdapter)
+ * @param {string} [config.listDataPath] - Root data path for ListAdapter (household/config/lists/)
  * @param {string} [config.watchlistPath] - Path to watchlist YAML (for FolderAdapter)
  * @param {Object} [config.canvas] - Canvas (displayable art) configuration
  * @param {Object} [config.canvas.filesystem] - Filesystem canvas config
@@ -485,9 +486,11 @@ export function createContentRegistry(config, deps = {}) {
   }
 
   // Register ListAdapter for menus/programs/watchlists as content sources
-  if (config.dataPath) {
+  // Uses listDataPath (root data path) for household/config/lists/*, not dataPath (content/)
+  const listDataPath = config.listDataPath || config.dataPath;
+  if (listDataPath) {
     const listAdapter = new ListAdapter({
-      dataPath: config.dataPath,
+      dataPath: listDataPath,
       householdId: config.householdId || null,
       registry,
       mediaProgressMemory,

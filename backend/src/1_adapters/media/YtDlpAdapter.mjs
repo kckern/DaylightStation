@@ -183,6 +183,113 @@ export class YtDlpAdapter {
   }
 
   /**
+   * Extract channel avatar URL from YouTube channel page HTML
+   * @param {string} channelUrl - YouTube channel URL
+   * @returns {Promise<string|null>} Avatar URL or null
+   */
+  async #fetchChannelAvatar(channelUrl) {
+    if (!channelUrl) return null;
+
+    try {
+      // Use grep to extract just the avatar URL, avoiding huge buffer
+      const cmd = `curl -sL "${channelUrl}" | grep -o '"avatar":{"thumbnails":\\[{"url":"[^"]*"' | head -1 | sed 's/.*"url":"\\([^"]*\\)".*/\\1/'`;
+      const { stdout } = await this.#execWithTimeout(cmd, 30000);
+
+      const avatarUrl = stdout.trim();
+      if (avatarUrl && avatarUrl.startsWith('http')) {
+        return avatarUrl;
+      }
+    } catch (e) {
+      this.#logger.debug?.('ytdlp.avatarFetchError', { channelUrl, error: e.message });
+    }
+
+    return null;
+  }
+
+  /**
+   * Fetch channel/playlist metadata (title, description, thumbnail)
+   * @param {Object} source - Source configuration
+   * @returns {Promise<{title?: string, description?: string, thumbnailUrl?: string, uploader?: string} | null>}
+   */
+  async fetchChannelMetadata(source) {
+    const url = this.#buildUrl(source);
+
+    // Use yt-dlp to get first video metadata (which contains playlist/channel info)
+    // Note: Don't use --flat-playlist as it omits channel_url/uploader_url needed for avatar
+    const cmd = [
+      'yt-dlp',
+      '--dump-json',
+      '--playlist-items 1',  // Get just the first item to extract playlist metadata
+      `"${url}"`
+    ].join(' ');
+
+    try {
+      const { stdout } = await this.#execWithTimeout(cmd, 60000);
+      // Parse just the first line (first video contains playlist metadata)
+      const firstLine = stdout.trim().split('\n')[0];
+      const data = JSON.parse(firstLine);
+
+      // Extract playlist/channel metadata from video entry
+      const title = data.playlist_title || data.channel || data.uploader || data.title || source.provider;
+
+      // Try to get the actual channel avatar (not video thumbnail)
+      // Prefer uploader_url (@handle format) as it's more reliable for avatar extraction
+      let thumbnailUrl = null;
+      const channelUrl = data.uploader_url || data.channel_url;
+      if (channelUrl) {
+        this.#logger.debug?.('ytdlp.fetchingAvatar', { provider: source.provider, channelUrl });
+        thumbnailUrl = await this.#fetchChannelAvatar(channelUrl);
+      }
+
+      // Fallback to video thumbnail if channel avatar not found
+      if (!thumbnailUrl && data.thumbnails?.length) {
+        const sortedThumbs = [...data.thumbnails].sort((a, b) => (b.height || 0) - (a.height || 0));
+        thumbnailUrl = sortedThumbs[0]?.url;
+        this.#logger.debug?.('ytdlp.usingVideoThumbnail', { provider: source.provider });
+      }
+
+      return {
+        title,
+        description: data.description || null,
+        thumbnailUrl,
+        uploader: data.uploader || data.channel || data.playlist_uploader || null
+      };
+    } catch (e) {
+      this.#logger.warn?.('ytdlp.metadataError', {
+        provider: source.provider,
+        error: e.message
+      });
+      return null;
+    }
+  }
+
+  /**
+   * Download a thumbnail image
+   * @param {string} url - Thumbnail URL
+   * @param {string} outputPath - Path to save the image (e.g., /path/to/show.jpg)
+   * @returns {Promise<boolean>} Success status
+   */
+  async downloadThumbnail(url, outputPath) {
+    if (!url) return false;
+
+    try {
+      // Use curl or wget to download the image
+      const cmd = `curl -sL -o "${outputPath}" "${url}"`;
+      await this.#execWithTimeout(cmd, 30000);
+
+      // Verify file was created
+      return fs.existsSync(outputPath);
+    } catch (e) {
+      this.#logger.warn?.('ytdlp.thumbnailError', {
+        url,
+        outputPath,
+        error: e.message
+      });
+      return false;
+    }
+  }
+
+  /**
    * Download the latest video from a source
    * @param {Object} source - Source configuration
    * @param {string} source.provider - Content provider identifier

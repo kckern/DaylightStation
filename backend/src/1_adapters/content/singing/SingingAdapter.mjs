@@ -85,7 +85,7 @@ export class SingingAdapter {
       collection,
       title: metadata.title || `${collection} ${itemId}`,
       subtitle: metadata.subtitle || `${collection} #${metadata.number || itemId}`,
-      mediaUrl: `/api/v1/stream/singing/${localId}`,
+      mediaUrl: `/api/v1/proxy/local-content/stream/${localId}`,
       duration: metadata.duration || 0,
       content: {
         type: contentType,

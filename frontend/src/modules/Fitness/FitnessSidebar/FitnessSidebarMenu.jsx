@@ -135,10 +135,10 @@ const FitnessSidebarMenu = ({
       seen.add(String(currentlySelectedId));
     }
     
-    // Exclude users already assigned to OTHER devices (not the current one)
+    // Exclude users already assigned to ANY device (including current one)
     deviceAssignments.forEach((assignment) => {
       const assignedDeviceId = assignment?.deviceId != null ? String(assignment.deviceId) : null;
-      if (!assignedDeviceId || assignedDeviceId === deviceIdStr) return;
+      if (!assignedDeviceId) return;
       const blockKeys = [];
       const metadata = assignment?.metadata || {};
       if (metadata.candidateId) blockKeys.push(String(metadata.candidateId));

@@ -15,6 +15,7 @@ import {
 } from '@mantine/core';
 import { IconUpload, IconSettings, IconSettingsAutomation } from '@tabler/icons-react';
 import EditorCategories from './EditorCategories.jsx';
+import ContentSearchCombobox from './ContentSearchCombobox.jsx';
 import { ACTION_OPTIONS, KNOWN_ITEM_FIELDS, ITEM_DEFAULTS } from './listConstants.js';
 
 /**
@@ -111,16 +112,18 @@ function SimpleMode({ formData, onChange, errors, existingGroups, imageFile, onI
         data-testid="item-label-input"
       />
 
-      <TextInput
-        label="Input"
-        placeholder="e.g., plex:311549 or media:path/to/file"
-        description="Format: source:id (plex:123, media:path, youtube:xyz)"
-        value={formData.input}
-        onChange={(e) => onChange('input', e.target.value)}
-        error={errors.input}
-        required
-        data-testid="item-input-input"
-      />
+      <Box>
+        <Text size="sm" fw={500} mb={4}>Input <Text span c="red">*</Text></Text>
+        <ContentSearchCombobox
+          value={formData.input}
+          onChange={(val) => onChange('input', val)}
+          placeholder="Search content or type source:id"
+        />
+        <Text size="xs" c="dimmed" mt={4}>
+          Search or type directly: plex:123, media:path, youtube:xyz
+        </Text>
+        {errors.input && <Text size="xs" c="red" mt={4}>{errors.input}</Text>}
+      </Box>
 
       <Select
         label="Action"

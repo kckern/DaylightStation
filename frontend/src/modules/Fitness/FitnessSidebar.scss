@@ -2234,7 +2234,7 @@
         // Grid layout for filtered guest options
         &.guest-grid {
           display: grid;
-          grid-template-columns: repeat(3, 1fr);
+          grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
           column-gap: 0.5rem;
           row-gap: 0.35rem;
         }
