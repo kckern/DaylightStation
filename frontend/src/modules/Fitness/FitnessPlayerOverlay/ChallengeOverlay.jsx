@@ -252,7 +252,7 @@ export const useChallengeOverlays = (governanceState, zones) => {
 		const actualCount = Number.isFinite(challenge.actualCount) ? Math.max(0, challenge.actualCount) : 0;
 		const missingUsers = Array.isArray(challenge.missingUsers) ? challenge.missingUsers.filter(Boolean) : [];
 		const metUsers = Array.isArray(challenge.metUsers) ? challenge.metUsers.filter(Boolean) : [];
-		const zoneLabel = challenge.zoneLabel || challenge.zone || 'Target zone';
+		const zoneLabel = challenge.zoneLabel || challenge.zone || 'Zone';
 		const zoneInfo = resolveZoneDetails(challenge.zone || challenge.zoneLabel);
 		const selectionLabel = challenge.selectionLabel || '';
 		let progress = totalSeconds

@@ -70,7 +70,7 @@ export const useGovernanceOverlay = (governanceState, participantRoster = []) =>
   const watchers = Array.isArray(governanceState.watchers) ? governanceState.watchers : [];
   const challengeLocked = Boolean(governanceState.videoLocked);
   const challenge = governanceState.challenge;
-  const challengeZoneLabel = challenge?.zoneLabel || challenge?.zone || 'Target zone';
+  const challengeZoneLabel = challenge?.zoneLabel || challenge?.zone || null;
   const challengeSelectionLabel = challenge?.selectionLabel || '';
   const challengeRequiredCount = Number.isFinite(challenge?.requiredCount) ? Math.max(0, challenge.requiredCount) : null;
   const challengeActualCount = Number.isFinite(challenge?.actualCount) ? Math.max(0, challenge.actualCount) : null;
@@ -82,7 +82,7 @@ export const useGovernanceOverlay = (governanceState, participantRoster = []) =>
     : [];
   const challengeRequirement = (() => {
     if (!challenge || challenge.status === 'success' || challenge.status === 'failed') return null;
-    const baseZone = challengeZoneLabel || 'Target zone';
+    const baseZone = challengeZoneLabel || 'Zone';
     let requirementText = '';
     if (challengeRequiredCount != null) {
       const noun = challengeRequiredCount === 1 ? 'person' : 'people';
