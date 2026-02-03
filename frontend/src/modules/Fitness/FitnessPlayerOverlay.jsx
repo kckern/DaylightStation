@@ -795,9 +795,15 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
           zoneInfo = { ...zoneInfo, id: normalizedId };
         }
       }
+      // Defensive fallback chain: try multiple sources before showing generic "Target"
+      const targetZoneId = requirement?.zone || requirement?.targetZoneId;
+      const zoneFromMetadata = targetZoneId && zoneMetadata?.map?.[normalizeZoneId(targetZoneId)];
+
       const label = requirement?.zoneLabel
         || zoneInfo?.name
+        || zoneFromMetadata?.name
         || requirement?.ruleLabel
+        || (targetZoneId ? targetZoneId.charAt(0).toUpperCase() + targetZoneId.slice(1) : null)
         || 'Target';
       const targetBpm = Number.isFinite(requirement?.threshold)
         ? requirement.threshold
@@ -1024,7 +1030,11 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
       const derivedTarget = fallbackRequirement ? buildTargetInfo(fallbackRequirement) : null;
       const defaultTarget = derivedTarget || {
         zoneInfo: aggregateZone || zoneMetadata.map[Object.keys(zoneMetadata.map)[0]] || null,
-        label: fallbackRequirement?.zoneLabel || fallbackRequirement?.ruleLabel || 'Target zone',
+        label: fallbackRequirement?.zoneLabel
+          || fallbackRequirement?.ruleLabel
+          || (zoneMetadata?.map?.[normalizeZoneId(fallbackRequirement?.zone)]?.name)
+          || (fallbackRequirement?.zone ? fallbackRequirement.zone.charAt(0).toUpperCase() + fallbackRequirement.zone.slice(1) : null)
+          || 'Target zone',
         targetBpm: Number.isFinite(fallbackRequirement?.threshold)
           ? fallbackRequirement.threshold
           : (Number.isFinite(aggregateZone?.min) ? aggregateZone.min : null)
