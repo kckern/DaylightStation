@@ -1,6 +1,4 @@
-# Daylight Station
-
-**Where your apps finally meet.**
+# Daylight Station — Where your apps finally meet.
 
 A self-hosted data refinery for an intentional life.
 
