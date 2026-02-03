@@ -9,11 +9,11 @@
  * Data flows through normal WebSocket pipeline to FitnessContext.
  */
 export class FitnessSimulationController {
-  constructor({ wsService, getSession, zoneConfig, usersConfig }) {
+  constructor({ wsService, getSession, zoneConfig, getUsersConfig }) {
     this.wsService = wsService;
     this.getSession = getSession;
     this.zoneConfig = zoneConfig;
-    this.usersConfig = usersConfig;
+    this.getUsersConfig = getUsersConfig;
 
     // Per-device state tracking
     this.deviceState = new Map(); // deviceId -> { beatCount, autoInterval, autoMode, lastHR }
@@ -56,14 +56,17 @@ export class FitnessSimulationController {
    * Falls back to live session devices if config unavailable
    */
   getDevices() {
+    // Get current usersConfig via getter (may change during session)
+    const usersConfig = this.getUsersConfig?.() || {};
+
     // First try to get devices from usersConfig.primary (configured users)
-    const primaryUsers = Array.isArray(this.usersConfig?.primary) ? this.usersConfig.primary : [];
+    const primaryUsers = Array.isArray(usersConfig?.primary) ? usersConfig.primary : [];
 
     if (primaryUsers.length > 0) {
       return primaryUsers
-        .filter(user => user.hrDeviceId) // Only users with HR device configured
+        .filter(user => user.hr) // Only users with HR device configured
         .map(user => {
-          const deviceId = String(user.hrDeviceId);
+          const deviceId = String(user.hr);
           const state = this.deviceState.get(deviceId) || {};
           return {
             deviceId,
@@ -494,6 +497,15 @@ export class FitnessSimulationController {
     this.challengeState = null;
     this.governanceOverride = null;
 
+    this._notifyStateChange();
+    return { ok: true };
+  }
+
+  /**
+   * Reset stats counters (for test isolation)
+   */
+  resetStats() {
+    this.stats = { challengesWon: 0, challengesFailed: 0 };
     this._notifyStateChange();
     return { ok: true };
   }

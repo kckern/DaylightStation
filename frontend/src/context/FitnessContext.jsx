@@ -221,6 +221,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
 
   // Session State
   const fitnessSessionRef = useRef(new FitnessSession());
+  const usersConfigRef = useRef({});
   
   // MEMORY LEAK FIX: Cleanup session on provider unmount
   useEffect(() => {
@@ -385,6 +386,11 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       governedTypes: normalizedGovernedTypes
     };
   }, [fitnessConfiguration]);
+
+  // Keep usersConfigRef in sync for simulation controller
+  useEffect(() => {
+    usersConfigRef.current = usersConfig;
+  }, [usersConfig]);
 
   // Derived Session State
   const session = fitnessSessionRef.current;
@@ -1106,8 +1112,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
           controller = new FitnessSimulationController({
             wsService,
             getSession: () => fitnessSessionRef.current,
-            zoneConfig: normalizedBaseZoneConfig,
-            usersConfig
+            zoneConfig: { zones: zoneConfig },
+            getUsersConfig: () => usersConfigRef.current
           });
 
           window.__fitnessSimController = controller;
