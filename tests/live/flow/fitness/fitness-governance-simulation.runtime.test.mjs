@@ -44,6 +44,7 @@ test.afterEach(async () => {
   // Reset state between tests
   await sim.disableGovernance().catch(() => {});
   await sim.stopAll().catch(() => {});
+  await sim.resetStats().catch(() => {});
   await sharedPage.waitForTimeout(500);
 });
 
@@ -203,6 +204,7 @@ test('participant dropout mid-challenge', async () => {
   await sim.activateAll('active');
 
   const devices = await sim.getDevices();
+  const initialActiveCount = (await sim.getActiveDevices()).length;
   const [device1, device2] = devices;
 
   await sim.triggerChallenge({ targetZone: 'hot', duration: 15 });
@@ -218,10 +220,10 @@ test('participant dropout mid-challenge', async () => {
   const activeChal = (await sim.getGovernanceState()).activeChallenge;
   expect(activeChal.participantProgress[device1.deviceId]).toBe(true);
 
-  // Verify dropout
+  // Verify dropout - one fewer active device than initial
   const activeDevices = await sim.getActiveDevices();
-  expect(activeDevices.length).toBe(1);
-  expect(activeDevices[0].deviceId).toBe(device1.deviceId);
+  expect(activeDevices.length).toBe(initialActiveCount - 1);
+  expect(activeDevices.find(d => d.deviceId === device2.deviceId)).toBeUndefined();
 
   // Challenge can still complete
   await sim.completeChallenge(true);

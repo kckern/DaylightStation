@@ -126,6 +126,10 @@ export class FitnessSimHelper {
     return this.page.evaluate(() => window.__fitnessSimController.getGovernanceState());
   }
 
+  async resetStats() {
+    return this.page.evaluate(() => window.__fitnessSimController.resetStats());
+  }
+
   // ═══════════════════════════════════════════════════════════════
   // Queries
   // ═══════════════════════════════════════════════════════════════
