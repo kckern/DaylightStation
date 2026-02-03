@@ -69,6 +69,7 @@ const FitnessPlayerFooterSeekThumbnails = ({
     intentTime,
     previewTime,
     isSeekPending,
+    lifecycle,
     commitSeek,
     setPreview,
     setPreviewThrottled,
