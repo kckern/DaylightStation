@@ -1,8 +1,14 @@
 # Daylight Station
 
-**A self-hosted data refinery for an intentional life.**
+### Where your apps finally meet.
 
-Your digital life is scattered—calendar in Google, tasks in Todoist, runs in Strava, weight in Withings, photos in Immich, media on Plex, home sensors in Home Assistant. Daylight Station pulls from all of it, refines the noise into signal, and delivers context-aware experiences exactly when and where you need them.
+**Alone, they're apps. At Daylight Station, they're a life.**
+
+Your calendar lives in Google. Your runs live in Strava. Your weight lives in Withings. Your movies live in Plex. Your home lives in Home Assistant.
+
+They've never been in the same room. Daylight Station is that room.
+
+A self-hosted data refinery that pulls from all of it, refines the noise into signal, and delivers context-aware experiences exactly when and where you need them.
 
 ![License](https://img.shields.io/badge/license-Polyform%20Noncommercial-blue)
 ![Docker Pulls](https://img.shields.io/docker/pulls/kckern/daylight-station)
