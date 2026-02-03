@@ -1034,16 +1034,29 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
         || governanceState?.challenge
         || null;
       const derivedTarget = fallbackRequirement ? buildTargetInfo(fallbackRequirement) : null;
+
+      // When no fallback requirement, try to get zone from governance state's base policy
+      const baseZoneId = !derivedTarget && governanceState?.baseZoneId
+        ? normalizeZoneId(governanceState.baseZoneId)
+        : null;
+      const baseZoneInfo = baseZoneId ? zoneMetadata?.map?.[baseZoneId] : null;
+
+      // Safely get first zone from metadata as final fallback
+      const zoneMapKeys = zoneMetadata?.map ? Object.keys(zoneMetadata.map) : [];
+      const firstZoneInfo = zoneMapKeys.length > 0 ? zoneMetadata.map[zoneMapKeys[0]] : null;
+
       const defaultTarget = derivedTarget || {
-        zoneInfo: aggregateZone || zoneMetadata.map[Object.keys(zoneMetadata.map)[0]] || null,
-        label: fallbackRequirement?.zoneLabel
+        zoneInfo: baseZoneInfo || aggregateZone || firstZoneInfo || null,
+        label: baseZoneInfo?.name
+          || fallbackRequirement?.zoneLabel
           || fallbackRequirement?.ruleLabel
-          || (zoneMetadata?.map?.[normalizeZoneId(fallbackRequirement?.zone)]?.name)
+          || zoneMetadata?.map?.[normalizeZoneId(fallbackRequirement?.zone)]?.name
           || (fallbackRequirement?.zone ? fallbackRequirement.zone.charAt(0).toUpperCase() + fallbackRequirement.zone.slice(1) : null)
-          || 'Target zone',
+          || aggregateZone?.name
+          || 'Target',
         targetBpm: Number.isFinite(fallbackRequirement?.threshold)
           ? fallbackRequirement.threshold
-          : (Number.isFinite(aggregateZone?.min) ? aggregateZone.min : null)
+          : null
       };
       namedParticipants.forEach((participant) => {
         const vitals = resolveParticipantVitals(participant.name, participant);
