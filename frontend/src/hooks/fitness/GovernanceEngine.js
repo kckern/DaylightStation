@@ -1100,6 +1100,7 @@ export class GovernanceEngine {
       requirements: summary.requirements || [],
       lockRows,
       zoneRankMap: { ...(this._latestInputs.zoneRankMap || {}) },
+      baseZoneId: this._getBaseZoneId(),
       targetUserCount: summary.targetUserCount != null ? summary.targetUserCount : null,
       policyId: summary.policyId || null,
       policyName: this.challengeState?.activePolicyName || summary.policyId || null,
@@ -1119,6 +1120,24 @@ export class GovernanceEngine {
       challengeCountdownTotal: challengeSnapshot ? challengeSnapshot.totalSeconds : null,
       nextChallenge: nextChallengeSnapshot
     };
+  }
+
+  /**
+   * Get the base zone ID from the active policy's base requirement.
+   * Used by UI to look up zone name from zoneMetadata when requirement.zoneLabel is not set.
+   * @returns {string|null}
+   */
+  _getBaseZoneId() {
+    const activePolicy = this._chooseActivePolicy(this._latestInputs?.totalCount || 0);
+    if (!activePolicy?.baseRequirement) return null;
+
+    // baseRequirement is { zone_id: rule } e.g., { active: 'all' }
+    const entries = Object.entries(activePolicy.baseRequirement);
+    if (entries.length === 0) return null;
+
+    // Return the first zone key (normalized)
+    const [zoneKey] = entries[0];
+    return zoneKey ? String(zoneKey).toLowerCase() : null;
   }
 
   // Main evaluation loop, called periodically or on data change
