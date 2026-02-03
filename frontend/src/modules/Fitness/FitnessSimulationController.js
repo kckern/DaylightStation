@@ -213,6 +213,192 @@ export class FitnessSimulationController {
   }
 
   /**
+   * Start looping waveform automation (3-min cycle, repeats forever)
+   * Phases: warmup → build → peak → cooldown
+   */
+  startAuto(deviceId) {
+    const state = this._getOrCreateState(deviceId);
+
+    // Stop any existing automation
+    if (state.autoInterval) {
+      clearInterval(state.autoInterval);
+    }
+
+    state.autoMode = 'waveform';
+    state.startTime = Date.now();
+
+    const phaseDur = 45; // 45s per phase, 180s total cycle
+
+    const tick = () => {
+      const elapsed = (Date.now() - state.startTime) / 1000;
+      const phase = Math.floor(elapsed / phaseDur) % 4;
+      const t = (elapsed % phaseDur) / phaseDur;
+
+      let hr;
+      switch (phase) {
+        case 0: // Warmup: 80 → 110
+          hr = 80 + t * 30;
+          break;
+        case 1: // Build: 110 → 150
+          hr = 110 + t * 40;
+          break;
+        case 2: // Peak: 150 → 175 → 150
+          hr = 150 + Math.sin(t * Math.PI) * 25;
+          break;
+        case 3: // Cooldown: 150 → 80
+        default:
+          hr = 150 - t * 70;
+          break;
+      }
+
+      // Add small jitter
+      hr += (Math.random() - 0.5) * 6;
+      this._sendHR(deviceId, Math.round(hr));
+    };
+
+    // Send immediately and every 2 seconds
+    tick();
+    state.autoInterval = setInterval(tick, 2000);
+
+    this._notifyStateChange();
+    return { ok: true, deviceId, mode: 'waveform' };
+  }
+
+  /**
+   * Start realistic session automation (ends after duration)
+   *
+   * @param {string} deviceId
+   * @param {object} opts
+   * @param {number} opts.duration - Total seconds (default 720 = 12 min)
+   * @param {string} opts.intensity - 'easy' | 'moderate' | 'hard'
+   * @param {number} opts.phaseOffset - Seconds to offset phase timing
+   */
+  startAutoSession(deviceId, opts = {}) {
+    const {
+      duration = 720,
+      intensity = 'moderate',
+      phaseOffset = 0
+    } = opts;
+
+    const state = this._getOrCreateState(deviceId);
+
+    // Stop any existing automation
+    if (state.autoInterval) {
+      clearInterval(state.autoInterval);
+    }
+
+    state.autoMode = 'session';
+    state.startTime = Date.now() - (phaseOffset * 1000);
+
+    // Phase percentages of duration
+    const phases = {
+      warmup: 0.15,    // 15%: cool → active
+      build: 0.25,     // 25%: active → warm → hot
+      peak: 0.45,      // 45%: hot ↔ fire
+      cooldown: 0.15   // 15%: → active → cool
+    };
+
+    // Intensity affects peak zone targets
+    const peakHR = {
+      easy: { low: 130, high: 150 },
+      moderate: { low: 145, high: 170 },
+      hard: { low: 160, high: 180 }
+    }[intensity] || { low: 145, high: 170 };
+
+    const tick = () => {
+      const elapsed = (Date.now() - state.startTime) / 1000;
+
+      // Session complete
+      if (elapsed >= duration) {
+        clearInterval(state.autoInterval);
+        state.autoInterval = null;
+        state.autoMode = null;
+        this._notifyStateChange();
+        return;
+      }
+
+      const progress = elapsed / duration;
+      let hr;
+
+      if (progress < phases.warmup) {
+        // Warmup: 70 → 100
+        const t = progress / phases.warmup;
+        hr = 70 + t * 30;
+      } else if (progress < phases.warmup + phases.build) {
+        // Build: 100 → peakHR.low
+        const t = (progress - phases.warmup) / phases.build;
+        hr = 100 + t * (peakHR.low - 100);
+      } else if (progress < phases.warmup + phases.build + phases.peak) {
+        // Peak: oscillate between low and high
+        const t = (progress - phases.warmup - phases.build) / phases.peak;
+        hr = peakHR.low + Math.sin(t * Math.PI * 4) * ((peakHR.high - peakHR.low) / 2) + ((peakHR.high - peakHR.low) / 2);
+      } else {
+        // Cooldown: peakHR.low → 75
+        const t = (progress - phases.warmup - phases.build - phases.peak) / phases.cooldown;
+        hr = peakHR.low - t * (peakHR.low - 75);
+      }
+
+      // Add jitter
+      hr += (Math.random() - 0.5) * 8;
+      hr = Math.max(60, Math.min(185, hr));
+
+      this._sendHR(deviceId, Math.round(hr));
+    };
+
+    tick();
+    state.autoInterval = setInterval(tick, 2000);
+
+    this._notifyStateChange();
+    return { ok: true, deviceId, mode: 'session', duration };
+  }
+
+  /**
+   * Stop automation for device
+   */
+  stopAuto(deviceId) {
+    const state = this._getOrCreateState(deviceId);
+
+    if (state.autoInterval) {
+      clearInterval(state.autoInterval);
+      state.autoInterval = null;
+    }
+    state.autoMode = null;
+
+    this._notifyStateChange();
+    return { ok: true, deviceId };
+  }
+
+  /**
+   * Activate all configured devices at specified zone
+   */
+  activateAll(zone = 'active') {
+    const devices = this.getDevices();
+    const results = devices.map(d => this.setZone(d.deviceId, zone));
+    return { ok: true, count: devices.length, results };
+  }
+
+  /**
+   * Start auto session for all devices with random phase offsets
+   */
+  startAutoSessionAll(opts = {}) {
+    const devices = this.getDevices();
+    const results = devices.map((d, i) => {
+      const offset = (i * 15) + Math.random() * 10; // Stagger by ~15-25s
+      return this.startAutoSession(d.deviceId, { ...opts, phaseOffset: offset });
+    });
+    return { ok: true, count: devices.length, results };
+  }
+
+  /**
+   * Stop all devices
+   */
+  stopAll() {
+    const devices = this.getDevices();
+    const results = devices.map(d => this.stopDevice(d.deviceId));
+    return { ok: true, count: devices.length, results };
+  }
+
+  /**
    * Cleanup on destroy
    */
   destroy() {
