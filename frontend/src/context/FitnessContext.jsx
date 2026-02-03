@@ -1091,6 +1091,47 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     });
   }, []);
 
+  // ═══════════════════════════════════════════════════════════════
+  // HR Simulation Controller (localhost only)
+  // ═══════════════════════════════════════════════════════════════
+  useEffect(() => {
+    const isLocalhost = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+    if (!isLocalhost) return;
+
+    let controller = null;
+
+    import('../modules/Fitness/FitnessSimulationController.js')
+      .then(({ FitnessSimulationController }) => {
+        import('../services/WebSocketService.js').then(({ wsService }) => {
+          controller = new FitnessSimulationController({
+            wsService,
+            getSession: () => fitnessSessionRef.current,
+            zoneConfig: normalizedBaseZoneConfig
+          });
+
+          window.__fitnessSimController = controller;
+
+          // Broadcast state changes for popup
+          controller.onStateChange = () => {
+            window.dispatchEvent(new CustomEvent('sim-state-change', {
+              detail: controller.getDevices()
+            }));
+          };
+
+          console.log('[FitnessContext] Simulation controller available on window.__fitnessSimController');
+        });
+      })
+      .catch(err => {
+        console.warn('[FitnessContext] Failed to load simulation controller:', err);
+      });
+
+    return () => {
+      if (controller) {
+        controller.destroy();
+        delete window.__fitnessSimController;
+      }
+    };
+  }, [normalizedBaseZoneConfig]);
 
   // Prepare data for context value
   const allDevicesRaw = React.useMemo(() => Array.from(fitnessDevices.values()), [fitnessDevices, version]);
