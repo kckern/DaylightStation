@@ -1106,7 +1106,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
           controller = new FitnessSimulationController({
             wsService,
             getSession: () => fitnessSessionRef.current,
-            zoneConfig: normalizedBaseZoneConfig
+            zoneConfig: normalizedBaseZoneConfig,
+            usersConfig
           });
 
           window.__fitnessSimController = controller;

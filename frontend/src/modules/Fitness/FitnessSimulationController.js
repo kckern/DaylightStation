@@ -9,10 +9,11 @@
  * Data flows through normal WebSocket pipeline to FitnessContext.
  */
 export class FitnessSimulationController {
-  constructor({ wsService, getSession, zoneConfig }) {
+  constructor({ wsService, getSession, zoneConfig, usersConfig }) {
     this.wsService = wsService;
     this.getSession = getSession;
     this.zoneConfig = zoneConfig;
+    this.usersConfig = usersConfig;
 
     // Per-device state tracking
     this.deviceState = new Map(); // deviceId -> { beatCount, autoInterval, autoMode, lastHR }
@@ -51,19 +52,43 @@ export class FitnessSimulationController {
   }
 
   /**
-   * Get configured devices from session
+   * Get configured devices from usersConfig.primary
+   * Falls back to live session devices if config unavailable
    */
   getDevices() {
+    // First try to get devices from usersConfig.primary (configured users)
+    const primaryUsers = Array.isArray(this.usersConfig?.primary) ? this.usersConfig.primary : [];
+
+    if (primaryUsers.length > 0) {
+      return primaryUsers
+        .filter(user => user.hrDeviceId) // Only users with HR device configured
+        .map(user => {
+          const deviceId = String(user.hrDeviceId);
+          const state = this.deviceState.get(deviceId) || {};
+          return {
+            deviceId,
+            name: user.name || `Device ${deviceId}`,
+            currentHR: state.lastHR || null,
+            currentZone: this._hrToZone(state.lastHR),
+            isActive: state.lastHR != null && Date.now() - (state.lastSent || 0) < 5000,
+            autoMode: state.autoMode || null,
+            beatCount: state.beatCount || 0
+          };
+        });
+    }
+
+    // Fallback: get devices from live session deviceManager
     const session = this.getSession();
     if (!session?.deviceManager) return [];
 
-    const hrDevices = session.deviceManager.getHeartRateDevices?.() || [];
+    const allDevices = session.deviceManager.getAllDevices?.() || [];
+    const hrDevices = allDevices.filter(d => d.type === 'heart_rate');
 
     return hrDevices.map(device => {
-      const state = this.deviceState.get(String(device.deviceId)) || {};
+      const state = this.deviceState.get(String(device.id)) || {};
       return {
-        deviceId: String(device.deviceId),
-        name: device.userName || device.name || `Device ${device.deviceId}`,
+        deviceId: String(device.id),
+        name: device.name || `Device ${device.id}`,
         currentHR: state.lastHR || null,
         currentZone: this._hrToZone(state.lastHR),
         isActive: state.lastHR != null && Date.now() - (state.lastSent || 0) < 5000,
