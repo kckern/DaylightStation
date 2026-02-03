@@ -52,6 +52,14 @@ const STRATEGIES = {
     filter: [],
     sort: 'random',
     pick: 'all'
+  },
+  freshvideo: {
+    // For fresh video sources (news, teded, etc.)
+    // Filters out watched, sorts by date (latest first) with source priority tiebreaker
+    // Returns single item: the latest unwatched video from highest-priority source
+    filter: ['watched'],
+    sort: 'date_desc_priority',
+    pick: 'first'
   }
 };
 
@@ -63,6 +71,7 @@ const INFERENCE_RULES = [
   { match: (ctx) => ctx.containerType === 'program', strategy: 'program' },
   { match: (ctx) => ctx.containerType === 'folder', strategy: 'watchlist' }, // deprecated, maps to watchlist
   { match: (ctx) => ctx.containerType === 'sequential', strategy: 'sequential' }, // scripture, audiobooks
+  { match: (ctx) => ctx.containerType === 'freshvideo', strategy: 'freshvideo' }, // news, teded, etc.
   { match: (ctx) => ctx.containerType === 'album', strategy: 'album' },
   { match: (ctx) => ctx.containerType === 'playlist', strategy: 'playlist' },
   { match: (ctx) => ctx.query?.person, strategy: 'chronological' },
@@ -120,6 +129,21 @@ const SORT_METHODS = {
       const dateA = a.date || a.takenAt || '';
       const dateB = b.date || b.takenAt || '';
       return dateB.localeCompare(dateA);
+    });
+  },
+
+  date_desc_priority: (items) => {
+    // Sort by date descending (latest first), then by sourcePriority ascending (lower = higher priority)
+    // Used for freshvideo strategy: picks latest video, but if dates match, prefers higher-priority source
+    return [...items].sort((a, b) => {
+      const dateA = a.date || a.takenAt || '';
+      const dateB = b.date || b.takenAt || '';
+      const dateCompare = dateB.localeCompare(dateA);
+      if (dateCompare !== 0) return dateCompare;
+      // Tiebreaker: source priority (lower index = higher priority)
+      const priorityA = a.sourcePriority ?? 999;
+      const priorityB = b.sourcePriority ?? 999;
+      return priorityA - priorityB;
     });
   },
 

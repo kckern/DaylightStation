@@ -17,6 +17,7 @@
  */
 
 import { nowTs24 } from '#system/utils/index.mjs';
+import { saveYaml, loadYamlSafe } from '#system/utils/FileIO.mjs';
 import fs from 'fs';
 import path from 'path';
 
@@ -227,6 +228,67 @@ export class FreshVideoService {
   }
 
   /**
+   * Ensure channel metadata exists (title, thumbnail)
+   * Fetches from source if metadata.yml doesn't exist
+   * @param {Object} source - Source configuration
+   * @param {string} providerDir - Directory for this provider
+   */
+  async #ensureChannelMetadata(source, providerDir) {
+    const metadataPath = path.join(providerDir, 'metadata');
+    const thumbnailPath = path.join(providerDir, 'show.jpg');
+
+    // Check if metadata already exists
+    const existingMetadata = loadYamlSafe(metadataPath);
+    if (existingMetadata?.title) {
+      this.#logger.debug?.('freshvideo.metadataExists', {
+        provider: source.provider
+      });
+      return;
+    }
+
+    // Fetch channel metadata if gateway supports it
+    if (!this.#videoSourceGateway.fetchChannelMetadata) {
+      return;
+    }
+
+    this.#logger.info?.('freshvideo.fetchingMetadata', {
+      provider: source.provider
+    });
+
+    const metadata = await this.#videoSourceGateway.fetchChannelMetadata(source);
+    if (!metadata) {
+      return;
+    }
+
+    // Save metadata.yml
+    saveYaml(metadataPath, {
+      title: metadata.title,
+      description: metadata.description,
+      uploader: metadata.uploader,
+      thumbnailUrl: metadata.thumbnailUrl
+    });
+
+    this.#logger.info?.('freshvideo.metadataSaved', {
+      provider: source.provider,
+      title: metadata.title
+    });
+
+    // Download thumbnail if available and gateway supports it
+    if (metadata.thumbnailUrl && this.#videoSourceGateway.downloadThumbnail) {
+      const downloaded = await this.#videoSourceGateway.downloadThumbnail(
+        metadata.thumbnailUrl,
+        thumbnailPath
+      );
+      if (downloaded) {
+        this.#logger.info?.('freshvideo.thumbnailSaved', {
+          provider: source.provider,
+          path: thumbnailPath
+        });
+      }
+    }
+  }
+
+  /**
    * Download latest video from a source
    * @param {Object} source - Source configuration
    * @returns {Promise<{success: boolean, skipped?: boolean, filePath?: string, error?: string}>}
@@ -234,6 +296,9 @@ export class FreshVideoService {
   async #downloadSource(source) {
     const providerDir = path.join(this.#mediaPath, source.provider);
     this.#ensureDir(providerDir);
+
+    // Ensure channel metadata exists (title, thumbnail for admin UI)
+    await this.#ensureChannelMetadata(source, providerDir);
 
     // Check if already have today's file
     const existingFile = this.#getTodayFile(providerDir);

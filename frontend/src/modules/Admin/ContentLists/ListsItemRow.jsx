@@ -24,7 +24,10 @@ const ACTION_OPTIONS = [
 ];
 
 // Types that represent containers (can be drilled into)
-const CONTAINER_TYPES = ['show', 'season', 'artist', 'album', 'collection', 'playlist', 'folder', 'container'];
+const CONTAINER_TYPES = [
+  'show', 'season', 'artist', 'album', 'collection', 'playlist', 'folder', 'container',
+  'series', 'channel', 'conference', 'watchlist', 'query', 'menu', 'program'
+];
 
 /**
  * Check if an item is a container that can be browsed into
@@ -77,6 +80,15 @@ const SOURCE_COLORS = {
   immich: 'blue',
   abs: 'green',
   media: 'gray',
+  filesystem: 'gray',
+  watchlist: 'violet',
+  query: 'cyan',
+  menu: 'teal',
+  program: 'teal',
+  freshvideo: 'lime',
+  talk: 'pink',
+  'local-content': 'pink',
+  list: 'violet',
   default: 'gray'
 };
 
@@ -850,6 +862,39 @@ function ContentSearchCombobox({ value, onChange }) {
           thumbnail: null,
           parentKey: null,
           libraryId
+        };
+      } else if (['watchlist', 'query', 'menu', 'program'].includes(source)) {
+        // List-based items - siblings are other lists of same type
+        childrenUrl = `/api/v1/list/list/${source}:`;
+        parentInfo = {
+          id: `${source}:`,
+          title: source.charAt(0).toUpperCase() + source.slice(1) + 's',
+          source: 'list',
+          thumbnail: null,
+          parentKey: null,
+          libraryId: null
+        };
+      } else if (source === 'freshvideo') {
+        // Freshvideo channels - siblings are other channels in video/news
+        childrenUrl = `/api/v1/list/filesystem/video/news`;
+        parentInfo = {
+          id: 'filesystem:video/news',
+          title: 'Fresh Video Channels',
+          source: 'filesystem',
+          thumbnail: null,
+          parentKey: null,
+          libraryId: null
+        };
+      } else if (source === 'talk' || source === 'local-content') {
+        // Talk series - siblings are other talk series
+        childrenUrl = `/api/v1/list/local-content/talk:`;
+        parentInfo = {
+          id: 'talk:',
+          title: 'Talk Series',
+          source: 'local-content',
+          thumbnail: null,
+          parentKey: null,
+          libraryId: null
         };
       } else if (localId.includes('/')) {
         // Path-based item (e.g., media:sfx/intro) - use parent path as container

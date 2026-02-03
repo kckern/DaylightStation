@@ -817,8 +817,8 @@ Items are either **containers** (browsable) or **leaves** (selectable):
 
 ```javascript
 const CONTAINER_TYPES = [
-  'show', 'season', 'artist', 'album',
-  'collection', 'playlist', 'folder', 'container'
+  'show', 'season', 'artist', 'album', 'collection', 'playlist', 'folder', 'container',
+  'series', 'channel', 'conference', 'watchlist', 'query', 'menu', 'program'
 ];
 
 function isContainerItem(item) {
@@ -831,7 +831,9 @@ Containers show a chevron (`>`) for drill-down navigation.
 
 ### Sibling Loading Pattern
 
-When editing a content reference (e.g., `media:sfx/intro`), load siblings by browsing the parent:
+When editing a content reference, load siblings by browsing the appropriate parent container.
+
+#### Path-based Items (media, filesystem)
 
 ```
 Current value: media:sfx/intro
@@ -843,21 +845,66 @@ API call:      GET /api/v1/list/media/sfx
 Siblings:      [bgmusic/, error.mp3, intro.mp3, wii.mp3]
 ```
 
+#### List-based Items (watchlist, query, menu, program)
+
+```
+Current value: watchlist:comefollowme2025
+                     ↓ get all lists of type
+API call:      GET /api/v1/list/list/watchlist:
+                     ↓ returns
+Siblings:      [cfmscripture, comefollowme2025, parenting, ...]
+```
+
+#### Freshvideo Channels
+
+```
+Current value: freshvideo:teded
+                     ↓ resolves to filesystem:video/news/teded
+API call:      GET /api/v1/list/filesystem/video/news
+                     ↓ returns
+Siblings:      [5minnews, bbc, cnn, teded, vox, ...]
+```
+
+#### Talk Series
+
+```
+Current value: talk:ldsgc
+                     ↓ get all talk series
+API call:      GET /api/v1/list/local-content/talk:
+                     ↓ returns
+Siblings:      [ldsgc, byu, ...]
+```
+
 **Algorithm:**
 ```javascript
 async function loadSiblings(compoundId) {
   const [source, localId] = compoundId.split(':');
-  const parts = localId.split('/');
 
-  if (parts.length <= 1) {
-    // At root - no parent to browse
-    return [];
+  // List-based sources (watchlist, query, menu, program)
+  if (['watchlist', 'query', 'menu', 'program'].includes(source)) {
+    const response = await fetch(`/api/v1/list/list/${source}:`);
+    return (await response.json()).items;
   }
+
+  // Freshvideo channels
+  if (source === 'freshvideo') {
+    const response = await fetch(`/api/v1/list/filesystem/video/news`);
+    return (await response.json()).items;
+  }
+
+  // Talk series
+  if (source === 'talk' || source === 'local-content') {
+    const response = await fetch(`/api/v1/list/local-content/talk:`);
+    return (await response.json()).items;
+  }
+
+  // Path-based sources (media, filesystem)
+  const parts = localId.split('/');
+  if (parts.length <= 1) return [];
 
   const parentPath = parts.slice(0, -1).join('/');
   const response = await fetch(`/api/v1/list/${source}/${parentPath}`);
-  const data = await response.json();
-  return data.items;
+  return (await response.json()).items;
 }
 ```
 
@@ -903,6 +950,13 @@ const SOURCE_COLORS = {
   media: 'gray',
   filesystem: 'gray',
   watchlist: 'violet',
+  query: 'cyan',
+  menu: 'teal',
+  program: 'teal',
+  freshvideo: 'lime',
+  talk: 'pink',
+  'local-content': 'pink',
+  list: 'violet',
   default: 'gray'
 };
 ```

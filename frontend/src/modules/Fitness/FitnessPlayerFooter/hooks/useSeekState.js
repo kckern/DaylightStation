@@ -31,7 +31,8 @@ const TOLERANCES = {
   RELAXED: 0.75,      // Seconds - tolerance after grace period
   GRACE_MS: 650,      // How long after 'seeked' event to use relaxed tolerance
   MAX_HOLD_MS: 2500,  // Max time to hold pending state before force-clearing
-  STICKY_MS: 700      // How long to "remember" last seek for UI smoothness
+  STICKY_MS: 700,     // How long to "remember" last seek for UI smoothness
+  SETTLE_DELAY_MS: 100 // Delay before transitioning PLAYING to IDLE
 };
 
 /**

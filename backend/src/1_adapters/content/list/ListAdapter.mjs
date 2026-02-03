@@ -3,6 +3,7 @@ import path from 'path';
 import { ListableItem } from '#domains/content/capabilities/Listable.mjs';
 import { Item } from '#domains/content/entities/Item.mjs';
 import { ContentCategory } from '#domains/content/value-objects/ContentCategory.mjs';
+import { ItemSelectionService } from '#domains/content/index.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import {
   dirExists,
@@ -25,6 +26,47 @@ const DAY_PRESETS = {
 
 // Map JavaScript day index (0=Sunday) to day abbreviation
 const JS_DAY_TO_ABBREV = ['Sunday', 'M', 'T', 'W', 'Th', 'F', 'Saturday'];
+
+/**
+ * Format a kebab-case or camelCase name to human-readable title
+ * @param {string} name - Raw name like "comefollowme2025" or "morning-program"
+ * @returns {string} Formatted title
+ */
+function formatListTitle(name) {
+  if (!name) return 'Untitled';
+
+  // Known patterns to expand (add more as needed)
+  const expansions = {
+    'comefollowme': 'Come Follow Me',
+    'cfm': 'Come Follow Me',
+    'dailynews': 'Daily News',
+    'morningprogram': 'Morning Program',
+    'kidsqueue': 'Kids Queue'
+  };
+
+  // Check for known patterns first (case-insensitive)
+  const lowerName = name.toLowerCase();
+  for (const [pattern, expansion] of Object.entries(expansions)) {
+    if (lowerName.startsWith(pattern)) {
+      const suffix = name.slice(pattern.length);
+      // Format suffix (usually a year like "2025")
+      const formattedSuffix = suffix ? ` ${suffix}` : '';
+      return expansion + formattedSuffix;
+    }
+  }
+
+  // Split on hyphens or camelCase boundaries
+  let formatted = name
+    .replace(/-/g, ' ')  // Replace hyphens with spaces
+    .replace(/([a-z])([A-Z])/g, '$1 $2')  // Insert space before capitals
+    .replace(/(\d+)/g, ' $1')  // Insert space before numbers
+    .trim();
+
+  // Capitalize first letter of each word
+  formatted = formatted.replace(/\b\w/g, c => c.toUpperCase());
+
+  return formatted;
+}
 
 /**
  * ListAdapter - Exposes menus, programs, and watchlists as content sources.
@@ -72,33 +114,35 @@ export class ListAdapter {
 
   get prefixes() {
     return [
-      { prefix: 'menu' },
-      { prefix: 'program' },
-      { prefix: 'watchlist' }
+      { prefix: 'menu', idTransform: (id) => `menu:${id}` },
+      { prefix: 'program', idTransform: (id) => `program:${id}` },
+      { prefix: 'watchlist', idTransform: (id) => `watchlist:${id}` },
+      { prefix: 'query', idTransform: (id) => `query:${id}` }
     ];
   }
 
   /**
    * Get the list type from a prefix
    * @param {string} prefix
-   * @returns {'menus'|'programs'|'watchlists'|null}
+   * @returns {'menus'|'programs'|'watchlists'|'queries'|null}
    */
   _getListType(prefix) {
     const map = {
       menu: 'menus',
       program: 'programs',
-      watchlist: 'watchlists'
+      watchlist: 'watchlists',
+      query: 'queries'
     };
     return map[prefix] || null;
   }
 
   /**
    * Parse a compound ID into prefix and name
-   * @param {string} id - e.g., "menu:fhe" or "program:music-queue"
+   * @param {string} id - e.g., "menu:fhe" or "program:music-queue" or "query:dailynews"
    * @returns {{prefix: string, name: string}|null}
    */
   _parseId(id) {
-    const match = id.match(/^(menu|program|watchlist):(.+)$/);
+    const match = id.match(/^(menu|program|watchlist|query):(.+)$/);
     if (!match) return null;
     return { prefix: match[1], name: match[2] };
   }
@@ -269,17 +313,40 @@ export class ListAdapter {
     // Return list metadata
     const items = Array.isArray(listData) ? listData : (listData.items || []);
 
+    // Get title: prefer explicit title, then format from name
+    const title = listData.title || listData.label || formatListTitle(parsed.name);
+
+    // Try to get thumbnail from first item in list (if available)
+    let thumbnail = listData.image || null;
+    if (!thumbnail && items.length > 0 && items[0].image) {
+      thumbnail = items[0].image;
+    }
+
+    // Build parent/library label for UI display
+    const typeLabels = {
+      watchlist: 'Watchlists',
+      program: 'Programs',
+      menu: 'Menus',
+      query: 'Queries'
+    };
+    const librarySectionTitle = listData.group || typeLabels[parsed.prefix] || 'Lists';
+
     return new ListableItem({
       id,
       source: 'list',
       localId: `${parsed.prefix}:${parsed.name}`,
-      title: listData.title || listData.label || parsed.name,
+      title,
+      type: parsed.prefix,  // 'watchlist', 'query', 'program', 'menu'
+      thumbnail,
       itemType: 'container',
       childCount: items.length,
       metadata: {
         category: ContentCategory.LIST,
+        type: parsed.prefix,  // Also in metadata for frontend compatibility
         listType: parsed.prefix,
-        description: listData.description
+        description: listData.description,
+        childCount: items.length,
+        librarySectionTitle
       }
     });
   }
@@ -289,8 +356,11 @@ export class ListAdapter {
    * @returns {Promise<ListableItem[]|ListableItem|null>}
    */
   async getList(id) {
-    // Handle "menu:", "program:", "watchlist:" - return all lists of that type
-    const prefixMatch = id.match(/^(menu|program|watchlist):$/);
+    // Strip source prefix if present (e.g., "list:watchlist:" → "watchlist:")
+    const strippedId = id.replace(/^list:/, '');
+
+    // Handle "menu:", "program:", "watchlist:", "query:" - return all lists of that type
+    const prefixMatch = strippedId.match(/^(menu|program|watchlist|query):$/);
     if (prefixMatch) {
       const prefix = prefixMatch[1];
       const listType = this._getListType(prefix);
@@ -299,16 +369,26 @@ export class ListAdapter {
       return names.map(name => {
         const listData = this._loadList(listType, name);
         const items = Array.isArray(listData) ? listData : (listData?.items || []);
+        const title = listData?.title || listData?.label || formatListTitle(name);
+
+        // Try to get thumbnail from list config or first item
+        let thumbnail = listData?.image || null;
+        if (!thumbnail && items.length > 0 && items[0].image) {
+          thumbnail = items[0].image;
+        }
 
         return new ListableItem({
           id: `${prefix}:${name}`,
           source: 'list',
           localId: `${prefix}:${name}`,
-          title: listData?.title || listData?.label || name,
+          title,
+          type: prefix,
+          thumbnail,
           itemType: 'container',
           childCount: items.length,
           metadata: {
             category: ContentCategory.LIST,
+            type: prefix,
             listType: prefix
           }
         });
@@ -316,7 +396,7 @@ export class ListAdapter {
     }
 
     // Handle specific list "menu:fhe" - return items within
-    const parsed = this._parseId(id);
+    const parsed = this._parseId(strippedId);
     if (!parsed) return null;
 
     const listType = this._getListType(parsed.prefix);
@@ -327,16 +407,26 @@ export class ListAdapter {
 
     const items = Array.isArray(listData) ? listData : (listData.items || []);
     const children = await this._buildListItems(items, parsed.prefix);
+    const title = listData.title || listData.label || formatListTitle(parsed.name);
+
+    // Try to get thumbnail from list config or first item
+    let thumbnail = listData.image || null;
+    if (!thumbnail && items.length > 0 && items[0].image) {
+      thumbnail = items[0].image;
+    }
 
     return new ListableItem({
       id,
       source: 'list',
       localId: `${parsed.prefix}:${parsed.name}`,
-      title: listData.title || listData.label || parsed.name,
+      title,
+      type: parsed.prefix,
+      thumbnail,
       itemType: 'container',
       children,
       metadata: {
         category: ContentCategory.LIST,
+        type: parsed.prefix,
         listType: parsed.prefix
       }
     });
@@ -414,6 +504,11 @@ export class ListAdapter {
     const parsed = this._parseId(id);
     if (!parsed) return [];
 
+    // Handle query: prefix specially
+    if (parsed.prefix === 'query') {
+      return this._resolveQuery(parsed.name);
+    }
+
     const listType = this._getListType(parsed.prefix);
     if (!listType) return [];
 
@@ -449,6 +544,113 @@ export class ListAdapter {
     }
 
     return playables;
+  }
+
+  /**
+   * Resolve a query definition to playable items.
+   * Supports query types: freshvideo
+   * @param {string} queryName - Query name (e.g., "dailynews")
+   * @returns {Promise<Array>}
+   * @private
+   */
+  async _resolveQuery(queryName) {
+    const queryData = this._loadList('queries', queryName);
+    if (!queryData) return [];
+
+    const queryType = queryData.type;
+
+    if (queryType === 'freshvideo') {
+      return this._resolveFreshVideoQuery(queryData);
+    }
+
+    // Unknown query type
+    console.warn(`[ListAdapter] Unknown query type: ${queryType}`);
+    return [];
+  }
+
+  /**
+   * Resolve a freshvideo query to a single playable item.
+   * Lists videos from each source, adds sourcePriority and date,
+   * then applies freshvideo strategy (filter watched, sort by date desc + priority, pick first).
+   * @param {Object} queryData - Query definition { type: 'freshvideo', sources: [...] }
+   * @returns {Promise<Array>}
+   * @private
+   */
+  async _resolveFreshVideoQuery(queryData) {
+    const sources = queryData.sources || [];
+    if (sources.length === 0) return [];
+
+    const allItems = [];
+    const filesystemAdapter = this.registry?.get('filesystem');
+
+    if (!filesystemAdapter) {
+      console.warn('[ListAdapter] FilesystemAdapter not available for freshvideo query');
+      return [];
+    }
+
+    // Collect videos from each source with priority
+    for (let i = 0; i < sources.length; i++) {
+      const sourcePath = sources[i];
+      const videoPath = `video/${sourcePath}`;
+
+      try {
+        // Get list of videos from the source directory
+        const items = await filesystemAdapter.getList(videoPath);
+
+        for (const item of items) {
+          if (item.itemType !== 'leaf') continue;
+
+          // Extract date from filename (YYYYMMDD.mp4 -> YYYYMMDD)
+          const filename = item.localId?.split('/').pop() || '';
+          const dateMatch = filename.match(/^(\d{8})/);
+          const date = dateMatch ? dateMatch[1] : '00000000';
+
+          // Get full item with media URL
+          const fullItem = await filesystemAdapter.getItem(item.localId);
+          if (!fullItem) continue;
+
+          allItems.push({
+            ...fullItem,
+            date,
+            sourcePriority: i,
+            // Add metadata for display
+            metadata: {
+              ...fullItem.metadata,
+              querySource: sourcePath,
+              date
+            }
+          });
+        }
+      } catch (err) {
+        console.warn(`[ListAdapter] Failed to list freshvideo source ${sourcePath}:`, err.message);
+      }
+    }
+
+    if (allItems.length === 0) return [];
+
+    // Enrich with watch state if available
+    let enrichedItems = allItems;
+    if (this.mediaProgressMemory) {
+      enrichedItems = await Promise.all(allItems.map(async (item) => {
+        const mediaKey = item.localId || item.id?.replace('filesystem:', '');
+        const state = await this.mediaProgressMemory.get(mediaKey, 'media');
+        const percent = state?.percent || 0;
+        return {
+          ...item,
+          percent,
+          watched: percent >= 90
+        };
+      }));
+    }
+
+    // Apply freshvideo strategy using ItemSelectionService
+    const context = {
+      containerType: 'freshvideo',
+      now: new Date()
+    };
+
+    const selected = ItemSelectionService.select(enrichedItems, context);
+    return selected;
   }
 
   /**

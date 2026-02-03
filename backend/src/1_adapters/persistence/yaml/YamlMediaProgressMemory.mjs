@@ -1,8 +1,6 @@
 // backend/src/1_adapters/persistence/yaml/YamlMediaProgressMemory.mjs
-import path from 'path';
 import { MediaProgress } from '#domains/content/entities/MediaProgress.mjs';
 import {
-  ensureDir,
   loadYamlSafe,
   saveYaml,
   deleteYaml,
@@ -37,6 +35,10 @@ export class YamlMediaProgressMemory extends IMediaProgressMemory {
    * @returns {string}
    */
   _getBasePath(storagePath) {
+    // Guard against undefined storagePath
+    if (!storagePath) {
+      return `${this.basePath}/default`;
+    }
     // Sanitize each path segment but preserve directory structure
     const safePath = storagePath
       .split('/')
@@ -45,7 +47,8 @@ export class YamlMediaProgressMemory extends IMediaProgressMemory {
       .join('/');
     // Default to 'default' if path is empty after sanitization
     const finalPath = safePath || 'default';
-    return path.join(this.basePath, `${finalPath}.yml`);
+    // Return path WITHOUT extension - FileIO adds .yml automatically
+    return `${this.basePath}/${finalPath}`;
   }
 
   /**
@@ -65,7 +68,7 @@ export class YamlMediaProgressMemory extends IMediaProgressMemory {
    */
   _writeFile(storagePath, data) {
     const basePath = this._getBasePath(storagePath);
-    ensureDir(path.dirname(basePath));
+    // saveYaml handles directory creation internally
     saveYaml(basePath, data);
   }
 
@@ -163,7 +166,7 @@ export class YamlMediaProgressMemory extends IMediaProgressMemory {
    * @returns {Promise<MediaProgress[]>}
    */
   async getAllFromAllLibraries(source) {
-    const sourceDir = path.join(this.basePath, source);
+    const sourceDir = `${this.basePath}/${source}`;
 
     if (!dirExists(sourceDir)) {
       return [];

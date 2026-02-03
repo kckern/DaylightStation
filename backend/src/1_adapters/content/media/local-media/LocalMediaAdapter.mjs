@@ -475,6 +475,17 @@ export class LocalMediaAdapter {
     this._rootsCache = null;
     this._indexCache = null;
   }
+
+  /**
+   * Get search capabilities for ContentQueryService
+   * @returns {{canonical: string[], specific: string[]}}
+   */
+  getSearchCapabilities() {
+    return {
+      canonical: ['text', 'mediaType'],
+      specific: []
+    };
+  }
 }
 
 export default LocalMediaAdapter;

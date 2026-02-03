@@ -351,6 +351,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     audiobookshelf: audiobookshelfConfig,  // Ebooks/audiobooks
     canvas,  // Canvas art display (filesystem-based)
     dataPath: contentPath,
+    listDataPath: dataBasePath,  // ListAdapter needs root data path for household/config/lists/
     watchlistPath,
     mediaMemoryPath,
     nomusicLabels,
@@ -1089,7 +1090,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   v1Routers.admin = createAdminRouter({
     userDataService,
     configService,
-    mediaPath: imgBasePath,
+    mediaPath: mediaBasePath || imgBasePath, // Use base media path for admin operations
+    loadFile,
     eventBus,
     logger: rootLogger.child({ module: 'admin-api' })
   });

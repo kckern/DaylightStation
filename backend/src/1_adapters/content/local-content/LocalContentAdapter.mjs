@@ -3,17 +3,105 @@ import path from 'path';
 import { generateReference } from 'scripture-guide';
 import { PlayableItem } from '#domains/content/capabilities/Playable.mjs';
 import { ListableItem } from '#domains/content/capabilities/Listable.mjs';
+import { ItemSelectionService } from '#domains/content/index.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import {
   buildContainedPath,
   loadContainedYaml,
   loadYamlByPrefix,
+  loadYamlSafe,
   listYamlFiles,
+  listEntries,
   dirExists
 } from '#system/utils/FileIO.mjs';
 
 // Threshold for considering an item "watched" (90%)
 const WATCHED_THRESHOLD = 90;
+
+/**
+ * Format a conference folder name to human-readable title
+ * @param {string} folderId - e.g., "ldsgc202510"
+ * @returns {string} Formatted title, e.g., "General Conference October 2025"
+ */
+function formatConferenceName(folderId) {
+  if (!folderId) return null;
+
+  // Extract date pattern YYYYMM from folder name
+  const match = folderId.match(/^([a-z]+)(\d{4})(\d{2})$/i);
+  if (!match) return folderId;
+
+  const [, prefix, year, month] = match;
+  const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'];
+  const monthName = monthNames[parseInt(month, 10) - 1] || month;
+
+  // Map known prefixes to full names
+  const prefixMap = {
+    ldsgc: 'General Conference',
+    ldswc: "Women's Conference"
+  };
+
+  const conferenceName = prefixMap[prefix.toLowerCase()] || prefix;
+  return `${conferenceName} ${monthName} ${year}`;
+}
+
+/**
+ * Determine container type from folder structure
+ * @param {string} folderId - Folder identifier
+ * @param {string} mediaPath - Base path for media files
+ * @returns {'series'|'conference'|'folder'} Container type
+ */
+function resolveContainerType(folderId, mediaPath) {
+  if (!folderId) return 'folder';
+
+  // Check for metadata.yml with explicit containerType
+  const folderPath = path.join(mediaPath, 'video', 'talks', folderId);
+  const metadataPath = path.join(folderPath, 'metadata');
+  const metadata = loadYamlSafe(metadataPath);
+  if (metadata?.containerType) {
+    return metadata.containerType;
+  }
+
+  // Pattern detection: conference folders match prefix + YYYYMM
+  const conferencePattern = /^[a-z]+\d{6}$/i;
+  if (conferencePattern.test(folderId)) {
+    return 'conference';
+  }
+
+  // Check if folder contains conference subfolders (series pattern)
+  if (dirExists(folderPath)) {
+    const entries = listEntries(folderPath);
+    const hasConferenceSubfolders = entries.some(e => conferencePattern.test(e));
+    if (hasConferenceSubfolders) {
+      return 'series';
+    }
+  }
+
+  return 'folder';
+}
+
+/**
+ * Format a series folder name to human-readable title
+ * Uses folder's metadata.yml if available, otherwise formats the folder name
+ * @param {string} seriesId - Series folder identifier (e.g., "ldsgc")
+ * @param {string} mediaPath - Base path for media files
+ * @returns {string} Formatted title
+ */
+function formatSeriesTitle(seriesId, mediaPath) {
+  if (!seriesId) return null;
+
+  // Try loading metadata.yml from series folder
+  const metadataPath = path.join(mediaPath, 'video', 'talks', seriesId, 'metadata');
+  const metadata = loadYamlSafe(metadataPath);
+  if (metadata?.title) {
+    return metadata.title;
+  }
+
+  // Fallback: format folder name (capitalize, add spaces before caps)
+  return seriesId
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/^./, c => c.toUpperCase());
+}
 
 /**
  * Adapter for local content (talks, scriptures)
@@ -45,11 +133,11 @@ export class LocalContentAdapter {
 
   get prefixes() {
     return [
-      { prefix: 'talk' },
-      { prefix: 'scripture' },
-      { prefix: 'hymn' },
-      { prefix: 'primary' },
-      { prefix: 'poem' }
+      { prefix: 'talk', idTransform: (id) => `talk:${id}` },
+      { prefix: 'scripture', idTransform: (id) => `scripture:${id}` },
+      { prefix: 'hymn', idTransform: (id) => `hymn:${id}` },
+      { prefix: 'primary', idTransform: (id) => `primary:${id}` },
+      { prefix: 'poem', idTransform: (id) => `poem:${id}` }
     ];
   }
 
@@ -64,7 +152,7 @@ export class LocalContentAdapter {
   }
 
   /**
-   * Select a random unwatched talk from a folder.
+   * Select a random unwatched talk from a folder using ItemSelectionService.
    * If all are watched, clears the folder's watch history and picks randomly.
    * Uses mediaProgressMemory for async watch state loading.
    * @param {string} folderId - Folder ID (e.g., "ldsgc202510")
@@ -75,43 +163,49 @@ export class LocalContentAdapter {
     const folder = await this._getTalkFolder(folderId);
     if (!folder?.children?.length) return null;
 
-    // Build list of all keys and check watch state via mediaProgressMemory
-    const allLocalIds = folder.children.map(child => child.localId);
-    const unwatchedIds = [];
-
-    // Load watch state for each item via mediaProgressMemory
-    for (const localId of allLocalIds) {
-      const mediaKey = localId; // Key within 'talks' storage
-      let state = null;
+    // Enrich items with watch state (percent) from mediaProgressMemory
+    const enrichedItems = await Promise.all(folder.children.map(async (child) => {
+      let percent = 0;
       if (this.mediaProgressMemory) {
         try {
-          state = await this.mediaProgressMemory.get('talks', mediaKey);
+          const state = await this.mediaProgressMemory.get('talks', child.localId);
+          percent = state?.percent || 0;
         } catch (err) {
           // Ignore errors, treat as unwatched
         }
       }
-      if (!this._isWatched(state)) {
-        unwatchedIds.push(localId);
-      }
-    }
+      return { ...child, percent, watched: percent >= WATCHED_THRESHOLD };
+    }));
 
-    // If all watched, clear via mediaProgressMemory and pick random from all
-    if (unwatchedIds.length === 0) {
+    // Use ItemSelectionService: filter watched, random sort, pick first
+    const context = { containerType: 'talk', now: new Date() };
+    let selected = ItemSelectionService.select(enrichedItems, context, {
+      strategy: 'discovery',  // random sort, pick first
+      filter: 'none'          // we handle watched filter below
+    });
+
+    // Apply watched filter manually (ItemSelectionService's watched filter checks percent)
+    selected = selected.filter(item => !item.watched);
+
+    // If all watched, clear watch history and pick random from all
+    if (selected.length === 0) {
       if (this.mediaProgressMemory) {
-        for (const localId of allLocalIds) {
+        for (const item of enrichedItems) {
           try {
-            await this.mediaProgressMemory.delete('talks', localId);
+            await this.mediaProgressMemory.delete('talks', item.localId);
           } catch (err) {
             // Ignore delete errors
           }
         }
       }
-      // Pick random from all
-      return allLocalIds[Math.floor(Math.random() * allLocalIds.length)];
+      // Re-select without watched filter
+      selected = ItemSelectionService.select(enrichedItems, context, {
+        strategy: 'discovery',
+        filter: 'none'
+      });
     }
 
-    // Pick random from unwatched
-    return unwatchedIds[Math.floor(Math.random() * unwatchedIds.length)];
+    return selected.length > 0 ? selected[0].localId : null;
   }
 
   /**
@@ -176,10 +270,16 @@ export class LocalContentAdapter {
    * @returns {Promise<ListableItem|null>}
    */
   async getList(id) {
-    const [prefix, localId] = id.split(':');
-    if (!localId) return null;
+    // Strip source prefix if present (e.g., "local-content:talk:" → "talk:")
+    const strippedId = id.replace(/^local-content:/, '');
+    const [prefix, localId] = strippedId.split(':');
 
-    if (prefix === 'talk') {
+    // Handle "talk:" - return all talk folders (series)
+    if (prefix === 'talk' && !localId) {
+      return this._listTalkFolders();
+    }
+
+    if (prefix === 'talk' && localId) {
       return this._getTalkFolder(localId);
     }
 
@@ -188,6 +288,8 @@ export class LocalContentAdapter {
 
   /**
    * Resolve ID to playable items
+   * Recursively flattens containers (series → conferences → talks)
+   * Similar to PlexAdapter's Artist → Albums → Tracks resolution
    * @param {string} id
    * @returns {Promise<PlayableItem[]>}
    */
@@ -198,13 +300,28 @@ export class LocalContentAdapter {
       return [item];
     }
 
-    // Try as container
+    // Try as container and recursively resolve
     const list = await this.getList(id);
-    if (list && list.children) {
-      return list.children.filter(c => c.isPlayable && c.isPlayable());
+    if (!list) return [];
+
+    const playables = [];
+
+    // Check direct children
+    if (list.children) {
+      for (const child of list.children) {
+        if (child.isPlayable && child.isPlayable()) {
+          // Leaf item - add directly
+          playables.push(child);
+        } else if (child.itemType === 'container') {
+          // Container - recurse into it
+          const childId = child.id || `talk:${child.localId}`;
+          const childPlayables = await this.resolvePlayables(childId);
+          playables.push(...childPlayables);
+        }
+      }
     }
 
-    return [];
+    return playables;
   }
 
   /**
@@ -289,25 +406,72 @@ export class LocalContentAdapter {
 
   /**
    * List talk folders
+   * Returns both series (from media path) and conference folders (from data path)
    * @returns {Promise<Array>}
    * @private
    */
   async _listTalkFolders() {
-    const basePath = path.resolve(this.dataPath, 'talks');
-    try {
-      if (!dirExists(basePath)) return [];
+    const dataBasePath = path.resolve(this.dataPath, 'talks');
+    const mediaBasePath = path.resolve(this.mediaPath, 'video', 'talks');
+    const folders = [];
+    const seenIds = new Set();
 
-      const fs = await import('fs');
-      const entries = fs.readdirSync(basePath, { withFileTypes: true });
-      const folders = entries
-        .filter(e => e.isDirectory())
-        .map(e => ({
-          id: `talk:${e.name}`,
-          source: 'local-content',
-          localId: e.name,
-          title: e.name,
-          itemType: 'container'
-        }));
+    try {
+      // First check media path for series folders (nested structure)
+      if (dirExists(mediaBasePath)) {
+        const mediaEntries = listEntries(mediaBasePath);
+        const conferencePattern = /^[a-z]+\d{6}$/i;
+
+        for (const entry of mediaEntries) {
+          if (entry.startsWith('.') || entry.startsWith('_')) continue;
+
+          const entryPath = path.join(mediaBasePath, entry);
+          const stats = await import('fs').then(fs => fs.statSync(entryPath));
+
+          if (stats.isDirectory()) {
+            const containerType = resolveContainerType(entry, this.mediaPath);
+
+            // Check if series (contains conference subfolders)
+            if (containerType === 'series') {
+              seenIds.add(entry);
+              folders.push({
+                id: `talk:${entry}`,
+                source: 'local-content',
+                localId: entry,
+                title: formatSeriesTitle(entry, this.mediaPath),
+                type: 'series',
+                itemType: 'container'
+              });
+            }
+          }
+        }
+      }
+
+      // Then check data path for conference folders
+      if (dirExists(dataBasePath)) {
+        const fs = await import('fs');
+        const entries = fs.readdirSync(dataBasePath, { withFileTypes: true });
+
+        for (const e of entries) {
+          if (!e.isDirectory() || e.name.startsWith('.') || e.name.startsWith('_')) continue;
+
+          // Skip if already covered by a series folder
+          const prefixMatch = e.name.match(/^([a-z]+)\d/i);
+          if (prefixMatch && seenIds.has(prefixMatch[1].toLowerCase())) {
+            continue;
+          }
+
+          const containerType = resolveContainerType(e.name, this.mediaPath);
+          folders.push({
+            id: `talk:${e.name}`,
+            source: 'local-content',
+            localId: e.name,
+            title: formatConferenceName(e.name) || e.name,
+            type: containerType,
+            itemType: 'container'
+          });
+        }
+      }
 
       return folders;
     } catch (err) {
@@ -372,15 +536,70 @@ export class LocalContentAdapter {
   }
 
   /**
+   * Resolve a talk folder alias (e.g., "ldsgc") to the latest matching folder.
+   * Similar to freshvideo logic - finds folders matching the prefix and returns the most recent.
+   * @param {string} alias - Folder alias (e.g., "ldsgc")
+   * @returns {string|null} Latest matching folder ID (e.g., "ldsgc202510") or null
+   * @private
+   */
+  _resolveLatestFolder(alias) {
+    const basePath = path.resolve(this.dataPath, 'talks');
+    if (!dirExists(basePath)) return null;
+
+    const entries = listEntries(basePath);
+
+    // Filter folders matching the alias prefix followed by YYYYMM pattern
+    const pattern = new RegExp(`^${alias}(\\d{6})$`);
+    const matches = entries
+      .filter(entry => pattern.test(entry))
+      .map(entry => {
+        const match = entry.match(pattern);
+        return { folder: entry, date: match[1] };
+      });
+
+    if (matches.length === 0) return null;
+
+    // Sort by date descending (latest first)
+    matches.sort((a, b) => b.date.localeCompare(a.date));
+
+    return matches[0].folder;
+  }
+
+  /**
    * @private
    */
   async _getTalk(localId) {
     const basePath = path.resolve(this.dataPath, 'talks');
     let metadata = loadContainedYaml(basePath, localId);
 
-    // If not found as file, check if it's a folder and select random unwatched
+    // If not found as file, check if it's a folder/series reference
     if (!metadata) {
-      const selectedId = await this._selectFromFolder(localId);
+      // Check if localId refers to a series folder in media path
+      const mediaBasePath = path.resolve(this.mediaPath, 'video', 'talks');
+      const seriesPath = path.join(mediaBasePath, localId);
+
+      if (dirExists(seriesPath)) {
+        // Check if it's a series (contains conference subfolders)
+        const containerType = resolveContainerType(localId, this.mediaPath);
+        if (containerType === 'series' || containerType === 'conference') {
+          // Return as container, not auto-select a talk
+          const folder = await this._getTalkFolder(localId);
+          return folder;
+        }
+      }
+
+      // Check if localId is an alias for a dated folder
+      const resolvedFolder = this._resolveLatestFolder(localId);
+      const folderId = resolvedFolder || localId;
+
+      // Check if the resolved folder is a conference folder
+      const resolvedContainerType = resolveContainerType(folderId, this.mediaPath);
+      if (resolvedContainerType === 'conference') {
+        const folder = await this._getTalkFolder(folderId);
+        return folder;
+      }
+
+      const selectedId = await this._selectFromFolder(folderId);
       if (!selectedId) return null;
       metadata = loadContainedYaml(basePath, selectedId);
       if (!metadata) return null;
@@ -389,6 +608,11 @@ export class LocalContentAdapter {
 
     const compoundId = `talk:${localId}`;
     const mediaUrl = `/api/v1/proxy/local-content/stream/talk/${localId}`;
+
+    // Extract parent folder from localId (e.g., "ldsgc202510/13" → "ldsgc202510")
+    const pathParts = localId.split('/');
+    const folderId = pathParts.length > 1 ? pathParts[0] : null;
+    const parentTitle = formatConferenceName(folderId);
 
     return new PlayableItem({
       id: compoundId,
@@ -402,11 +626,15 @@ export class LocalContentAdapter {
       resumable: true,
       description: metadata.description,
       metadata: {
+        type: 'talk',
         speaker: metadata.speaker,
         date: metadata.date,
         description: metadata.description,
         content: metadata.content || [],
-        mediaFile: `video/talks/${localId}.mp4`
+        mediaFile: `video/talks/${localId}.mp4`,
+        // Parent info for UI display
+        parentTitle: parentTitle,
+        grandparentTitle: metadata.speaker
       }
     });
   }
@@ -485,35 +713,225 @@ export class LocalContentAdapter {
 
   /**
    * Get a folder of talks as a ListableItem container
-   * @param {string} folderId - Folder name (e.g., "april2024")
+   * Handles nested hierarchy: Series → Conferences → Talks
+   * @param {string} folderId - Folder name (e.g., "ldsgc202510"), alias (e.g., "ldsgc"), or nested path (e.g., "ldsgc/ldsgc202510")
    * @returns {Promise<ListableItem|null>}
    * @private
    */
   async _getTalkFolder(folderId) {
     const basePath = path.resolve(this.dataPath, 'talks');
-    const folderPath = buildContainedPath(basePath, folderId);
-    if (!folderPath) return null;
+    const mediaBasePath = path.resolve(this.mediaPath, 'video', 'talks');
+
+    // Check for nested path first (series/conference pattern in media)
+    const nestedMediaPath = path.join(mediaBasePath, folderId);
+    const isNestedPath = folderId.includes('/');
+
+    // Determine container type
+    const containerType = resolveContainerType(folderId, this.mediaPath);
+
+    // Handle series folder (contains conferences, not talks directly)
+    if (containerType === 'series') {
+      return this._getSeriesFolder(folderId);
+    }
+
+    // Try alias resolution first (e.g., "ldsgc" → "ldsgc202510" or check nested media)
+    let actualFolderId = folderId;
+    let parentSeriesId = null;
+
+    if (!isNestedPath) {
+      // Check if this is a series alias that should resolve to latest conference
+      const resolvedFolder = this._resolveLatestFolder(folderId);
+      if (resolvedFolder) {
+        actualFolderId = resolvedFolder;
+      }
+    } else {
+      // Parse nested path: series/conference
+      const parts = folderId.split('/');
+      parentSeriesId = parts[0];
+      actualFolderId = parts[parts.length - 1];
+    }
+
+    // Try data path first (where YAML metadata lives)
+    let folderPath = buildContainedPath(basePath, actualFolderId);
+
+    // If not in data path, check nested media path structure
+    if (!folderPath || !dirExists(folderPath)) {
+      const nestedDataPath = path.join(basePath, parentSeriesId || '', actualFolderId);
+      if (dirExists(nestedDataPath)) {
+        folderPath = nestedDataPath;
+      }
+    }
+
+    if (!folderPath || !dirExists(folderPath)) {
+      return null;
+    }
 
     try {
-      if (!dirExists(folderPath)) {
-        return null;
-      }
-
       const talkIds = listYamlFiles(folderPath);
       const children = [];
 
       for (const talkId of talkIds) {
-        const item = await this._getTalk(`${folderId}/${talkId}`);
+        const talkPath = parentSeriesId
+          ? `${parentSeriesId}/${actualFolderId}/${talkId}`
+          : `${actualFolderId}/${talkId}`;
+        const item = await this._getTalk(talkPath);
         if (item) children.push(item);
       }
 
+      // Load metadata from media path for title/parentTitle
+      const mediaMetadataPath = path.join(mediaBasePath, folderId, 'metadata');
+      const metadata = loadYamlSafe(mediaMetadataPath);
+
+      // Build title: from metadata, or format from folder name
+      let title = metadata?.title || formatConferenceName(actualFolderId) || actualFolderId;
+
+      // Build parentTitle: from parent series metadata
+      let parentTitle = null;
+      if (parentSeriesId) {
+        parentTitle = formatSeriesTitle(parentSeriesId, this.mediaPath);
+      } else {
+        // Extract prefix from folder name and try to get series title
+        const prefixMatch = actualFolderId.match(/^([a-z]+)\d/i);
+        if (prefixMatch) {
+          const prefix = prefixMatch[1].toLowerCase();
+          parentTitle = formatSeriesTitle(prefix, this.mediaPath);
+        }
+      }
+
+      // Build thumbnail URL with cascading fallback (self → parent series)
+      let thumbnail = null;
+      const fs = await import('fs');
+      const imgNames = ['cover.jpg', 'show.jpg', 'cover.png', 'show.png'];
+
+      // Check own folder first
+      const folderMediaPath = path.join(mediaBasePath, folderId);
+      if (dirExists(folderMediaPath)) {
+        for (const imgName of imgNames) {
+          if (fs.existsSync(path.join(folderMediaPath, imgName))) {
+            thumbnail = `/api/v1/proxy/filesystem/stream/${encodeURIComponent(`video/talks/${folderId}/${imgName}`)}`;
+            break;
+          }
+        }
+      }
+
+      // Fallback to parent series folder
+      if (!thumbnail && parentSeriesId) {
+        const seriesMediaPath = path.join(mediaBasePath, parentSeriesId);
+        if (dirExists(seriesMediaPath)) {
+          for (const imgName of imgNames) {
+            if (fs.existsSync(path.join(seriesMediaPath, imgName))) {
+              thumbnail = `/api/v1/proxy/filesystem/stream/${encodeURIComponent(`video/talks/${parentSeriesId}/${imgName}`)}`;
+              break;
+            }
+          }
+        }
+      }
+
+      // Fallback using prefix extraction (e.g., ldsgc202510 → ldsgc)
+      if (!thumbnail && !parentSeriesId) {
+        const prefixMatch = actualFolderId.match(/^([a-z]+)\d/i);
+        if (prefixMatch) {
+          const seriesId = prefixMatch[1].toLowerCase();
+          const seriesMediaPath = path.join(mediaBasePath, seriesId);
+          if (dirExists(seriesMediaPath)) {
+            for (const imgName of imgNames) {
+              if (fs.existsSync(path.join(seriesMediaPath, imgName))) {
+                thumbnail = `/api/v1/proxy/filesystem/stream/${encodeURIComponent(`video/talks/${seriesId}/${imgName}`)}`;
+                break;
+              }
+            }
+          }
+        }
+      }
+
       return new ListableItem({
-        id: `talk:${folderId}`,
+        id: `talk:${folderId}`,  // Keep original path in ID for consistency
         source: this.source,
-        localId: folderId,
-        title: folderId,
+        localId: actualFolderId, // Use resolved folder for actual path
+        title,
+        type: containerType,
+        thumbnail,
         itemType: 'container',
-        children
+        childCount: children.length,
+        children,
+        metadata: {
+          type: containerType,
+          parentTitle,
+          librarySectionTitle: parentTitle || 'Talks',
+          childCount: children.length
+        }
+      });
+    } catch (err) {
+      return null;
+    }
+  }
+
+  /**
+   * Get a series folder containing conference subfolders
+   * @param {string} seriesId - Series folder name (e.g., "ldsgc")
+   * @returns {Promise<ListableItem|null>}
+   * @private
+   */
+  async _getSeriesFolder(seriesId) {
+    const mediaBasePath = path.resolve(this.mediaPath, 'video', 'talks');
+    const seriesPath = path.join(mediaBasePath, seriesId);
+
+    if (!dirExists(seriesPath)) return null;
+
+    try {
+      // List conference subfolders
+      const entries = listEntries(seriesPath);
+      const conferencePattern = /^[a-z]+\d{6}$/i;
+      const conferenceIds = entries.filter(e => conferencePattern.test(e));
+
+      const children = [];
+      for (const confId of conferenceIds) {
+        const confPath = `${seriesId}/${confId}`;
+        const confItem = await this._getTalkFolder(confPath);
+        if (confItem) {
+          // Convert PlayableItem children to ListableItem references
+          children.push(new ListableItem({
+            id: `talk:${confPath}`,
+            source: this.source,
+            localId: confId,
+            title: confItem.title,
+            type: 'conference',
+            thumbnail: confItem.thumbnail,
+            itemType: 'container',
+            childCount: confItem.childCount,
+            metadata: confItem.metadata
+          }));
+        }
+      }
+
+      // Load series title from metadata or format folder name
+      const title = formatSeriesTitle(seriesId, this.mediaPath);
+
+      // Build thumbnail URL (check cover.jpg, show.jpg)
+      let thumbnail = null;
+      const fs = await import('fs');
+      for (const imgName of ['cover.jpg', 'show.jpg', 'cover.png', 'show.png']) {
+        if (fs.existsSync(path.join(seriesPath, imgName))) {
+          thumbnail = `/api/v1/proxy/filesystem/stream/${encodeURIComponent(`video/talks/${seriesId}/${imgName}`)}`;
+          break;
+        }
+      }
+
+      return new ListableItem({
+        id: `talk:${seriesId}`,
+        source: this.source,
+        localId: seriesId,
+        title,
+        type: 'series',
+        thumbnail,
+        itemType: 'container',
+        childCount: children.length,
+        children,
+        metadata: {
+          type: 'series',
+          librarySectionTitle: 'Talks',
+          childCount: children.length
+        }
       });
     } catch (err) {
       return null;
@@ -614,6 +1032,260 @@ export class LocalContentAdapter {
         mediaFile: metadata.mediaFile
       }
     });
+  }
+
+  /**
+   * Search local content (talks, hymns, poems).
+   * Scriptures use reference parsing, not text search.
+   * @param {Object} query
+   * @param {string} query.text - Search text (min 2 chars)
+   * @param {string} [query.mediaType] - Filter by media type
+   * @param {number} [query.take=50] - Max results
+   * @returns {Promise<{items: Array, total: number}>}
+   */
+  async search({ text, mediaType, take = 50 }) {
+    if (!text || text.length < 2) return { items: [], total: 0 };
+
+    const searchLower = text.toLowerCase();
+    const results = [];
+
+    // Search talks (by title, speaker in metadata)
+    if (!mediaType || mediaType === 'video') {
+      const talkResults = await this._searchTalks(searchLower, take - results.length);
+      results.push(...talkResults);
+    }
+
+    // Search hymns (by title, number)
+    if (!mediaType || mediaType === 'audio') {
+      if (results.length < take) {
+        const hymnResults = await this._searchSongs('hymn', searchLower, take - results.length);
+        results.push(...hymnResults);
+      }
+
+      // Search primary songs
+      if (results.length < take) {
+        const primaryResults = await this._searchSongs('primary', searchLower, take - results.length);
+        results.push(...primaryResults);
+      }
+
+      // Search poems (by title, author)
+      if (results.length < take) {
+        const poemResults = await this._searchPoems(searchLower, take - results.length);
+        results.push(...poemResults);
+      }
+    }
+
+    return { items: results, total: results.length };
+  }
+
+  /**
+   * Search talks by title and speaker
+   * @param {string} searchText - Lowercase search text
+   * @param {number} limit - Max results
+   * @returns {Promise<Array>}
+   * @private
+   */
+  async _searchTalks(searchText, limit) {
+    if (limit <= 0) return [];
+
+    const basePath = path.resolve(this.dataPath, 'talks');
+    const mediaBasePath = path.resolve(this.mediaPath, 'video', 'talks');
+    const results = [];
+
+    if (!dirExists(basePath)) return [];
+
+    try {
+      const fs = await import('fs');
+
+      // Helper to search a conference folder
+      const searchFolder = async (folderId, folderPath) => {
+        if (results.length >= limit) return;
+
+        const talkFiles = listYamlFiles(folderPath);
+        for (const talkId of talkFiles) {
+          if (results.length >= limit) break;
+
+          const talkPath = `${folderId}/${talkId}`;
+          const metadata = loadContainedYaml(basePath, talkPath);
+          if (!metadata) continue;
+
+          const title = (metadata.title || '').toLowerCase();
+          const speaker = (metadata.speaker || '').toLowerCase();
+
+          if (title.includes(searchText) || speaker.includes(searchText)) {
+            const item = await this._getTalk(talkPath);
+            if (item) results.push(item);
+          }
+        }
+      };
+
+      // Search nested structure (series → conferences)
+      if (dirExists(mediaBasePath)) {
+        const seriesEntries = listEntries(mediaBasePath);
+        const conferencePattern = /^[a-z]+\d{6}$/i;
+
+        for (const entry of seriesEntries) {
+          if (results.length >= limit) break;
+          if (entry.startsWith('.') || entry.startsWith('_')) continue;
+
+          const entryPath = path.join(mediaBasePath, entry);
+          if (!fs.statSync(entryPath).isDirectory()) continue;
+
+          // Check if series folder (contains conferences)
+          const subEntries = listEntries(entryPath);
+          const isSeriesFolder = subEntries.some(e => conferencePattern.test(e));
+
+          if (isSeriesFolder) {
+            // Search each conference subfolder
+            for (const confEntry of subEntries) {
+              if (results.length >= limit) break;
+              if (!conferencePattern.test(confEntry)) continue;
+
+              const confDataPath = path.join(basePath, entry, confEntry);
+              if (dirExists(confDataPath)) {
+                await searchFolder(`${entry}/${confEntry}`, confDataPath);
+              }
+            }
+          }
+        }
+      }
+
+      // Search flat conference folders in data path
+      const dataEntries = fs.readdirSync(basePath, { withFileTypes: true });
+      for (const e of dataEntries) {
+        if (results.length >= limit) break;
+        if (!e.isDirectory() || e.name.startsWith('.') || e.name.startsWith('_')) continue;
+
+        const folderPath = path.join(basePath, e.name);
+        await searchFolder(e.name, folderPath);
+      }
+    } catch (err) {
+      // Ignore errors, return what we found
+    }
+
+    return results;
+  }
+
+  /**
+   * Search songs by title and number
+   * @param {string} collection - 'hymn' or 'primary'
+   * @param {string} searchText - Lowercase search text
+   * @param {number} limit - Max results
+   * @returns {Promise<Array>}
+   * @private
+   */
+  async _searchSongs(collection, searchText, limit) {
+    if (limit <= 0) return [];
+
+    const basePath = path.resolve(this.dataPath, 'songs', collection);
+    const results = [];
+
+    try {
+      const files = listYamlFiles(basePath);
+
+      for (const file of files) {
+        if (results.length >= limit) break;
+
+        // Extract number from filename
+        const match = file.match(/^0*(\d+)/);
+        if (!match) continue;
+
+        const number = match[1];
+
+        // Check if search matches number directly
+        if (number === searchText || number.startsWith(searchText)) {
+          const item = await this._getSong(collection, number);
+          if (item) results.push(item);
+          continue;
+        }
+
+        // Load metadata to search title
+        const metadata = loadYamlByPrefix(basePath, number);
+        if (!metadata) continue;
+
+        const title = (metadata.title || '').toLowerCase();
+        if (title.includes(searchText)) {
+          const item = await this._getSong(collection, number);
+          if (item) results.push(item);
+        }
+      }
+    } catch (err) {
+      // Ignore errors
+    }
+
+    return results;
+  }
+
+  /**
+   * Search poems by title and author
+   * @param {string} searchText - Lowercase search text
+   * @param {number} limit - Max results
+   * @returns {Promise<Array>}
+   * @private
+   */
+  async _searchPoems(searchText, limit) {
+    if (limit <= 0) return [];
+
+    const basePath = path.resolve(this.dataPath, 'poetry');
+    const results = [];
+
+    if (!dirExists(basePath)) return [];
+
+    try {
+      const fs = await import('fs');
+      const collections = fs.readdirSync(basePath, { withFileTypes: true })
+        .filter(e => e.isDirectory())
+        .map(e => e.name);
+
+      for (const collection of collections) {
+        if (results.length >= limit) break;
+
+        const collectionPath = path.join(basePath, collection);
+        const files = listYamlFiles(collectionPath);
+
+        for (const file of files) {
+          if (results.length >= limit) break;
+
+          const localId = `${collection}/${file}`;
+          const metadata = loadContainedYaml(basePath, localId);
+          if (!metadata) continue;
+
+          const title = (metadata.title || '').toLowerCase();
+          const author = (metadata.author || '').toLowerCase();
+
+          if (title.includes(searchText) || author.includes(searchText)) {
+            const item = await this._getPoem(localId);
+            if (item) results.push(item);
+          }
+        }
+      }
+    } catch (err) {
+      // Ignore errors
+    }
+
+    return results;
+  }
+
+  /**
+   * Get search capabilities for ContentQueryService
+   * @returns {{canonical: string[], specific: string[]}}
+   */
+  getSearchCapabilities() {
+    return {
+      canonical: ['text', 'mediaType'],
+      specific: ['speaker', 'collection']
+    };
+  }
+
+  /**
+   * Get query mappings for ContentQueryService
+   * @returns {Object}
+   */
+  getQueryMappings() {
+    return {
+      creator: 'speaker',
+      person: 'speaker'
+    };
   }
 }
 

@@ -120,8 +120,8 @@ test.describe('Admin Lists Comprehensive', () => {
       // Allow time for content metadata to load (async fetch per item)
       await page.waitForTimeout(3000);
 
-      // Get all rows
-      const rows = page.locator('.item-row');
+      // Get all rows (exclude empty/template rows)
+      const rows = page.locator('.item-row:not(.empty-row)');
       const rowCount = await rows.count();
 
       if (rowCount === 0) {
@@ -222,7 +222,7 @@ test.describe('Admin Lists Comprehensive', () => {
         await page.waitForSelector('.item-row', { timeout: 10000 }).catch(() => null);
         await page.waitForTimeout(3000);
 
-        const rows = page.locator('.item-row');
+        const rows = page.locator('.item-row:not(.empty-row)');
         const rowCount = await rows.count();
 
         const fixtureItems = getListItems(type, listName);

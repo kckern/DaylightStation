@@ -162,7 +162,7 @@ export class NarratedAdapter {
       title,
       subtitle,
       // Use audio path for streaming URL
-      mediaUrl: `/api/v1/stream/narrated/${collection}/${audioPath}`,
+      mediaUrl: `/api/v1/proxy/local-content/stream/${collection}/${audioPath}`,
       videoUrl: metadata.videoFile ? `/api/v1/stream/narrated/${collection}/${textPath}/video` : null,
       ambientUrl,
       duration: metadata.duration || 0,
@@ -471,7 +471,7 @@ export class NarratedAdapter {
       volume,
       textVersion,
       audioRecording: audioRecording || textVersion,
-      mediaUrl: `/api/v1/stream/narrated/scripture/${audioPath}`,
+      mediaUrl: `/api/v1/proxy/local-content/stream/scripture/${audioPath}`,
       itemIndex: targetChapterId - range.start,
       // Include watch state for ItemSelectionService
       percent: inProgressChapter ? (await this._getChapterPercent(volume, textVersion, targetChapterId)) : 0
@@ -613,7 +613,7 @@ export class NarratedAdapter {
       collection,
       title,
       subtitle,
-      mediaUrl: `/api/v1/stream/narrated/${collection}/${audioPath}`,
+      mediaUrl: `/api/v1/proxy/local-content/stream/${collection}/${audioPath}`,
       videoUrl: metadata.videoFile ? `/api/v1/stream/narrated/${collection}/${textPath}/video` : null,
       ambientUrl,
       duration: metadata.duration || 0,
