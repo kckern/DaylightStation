@@ -212,6 +212,29 @@ export class GovernanceEngine {
   }
 
   /**
+   * Get zone info with normalized key lookup
+   * @param {string} zoneId - Raw zone ID (will be normalized)
+   * @returns {Object|null} Zone info object or null
+   */
+  _getZoneInfo(zoneId) {
+    if (!zoneId) return null;
+    const normalized = normalizeZoneId(zoneId);
+    return this._latestInputs?.zoneInfoMap?.[normalized] || null;
+  }
+
+  /**
+   * Get zone rank with normalized key lookup
+   * @param {string} zoneId - Raw zone ID (will be normalized)
+   * @returns {number|null} Zone rank or null
+   */
+  _getZoneRank(zoneId) {
+    if (!zoneId) return null;
+    const normalized = normalizeZoneId(zoneId);
+    const rank = this._latestInputs?.zoneRankMap?.[normalized];
+    return Number.isFinite(rank) ? rank : null;
+  }
+
+  /**
    * Update global window state for cross-component logging correlation
    * Uses getters for warningDuration/lockDuration so they're calculated fresh when accessed
    */
@@ -258,8 +281,8 @@ export class GovernanceEngine {
           odeName: rosterEntry?.name || rosterEntry?.displayName || userId,
           fromZone: prevZone || 'none',
           toZone: newZone || 'none',
-          fromZoneLabel: zoneInfoMap[prevZone]?.name || prevZone,
-          toZoneLabel: zoneInfoMap[newZone]?.name || newZone,
+          fromZoneLabel: this._getZoneInfo(prevZone)?.name || prevZone,
+          toZoneLabel: this._getZoneInfo(newZone)?.name || newZone,
           hr,
           hrPercent,
           governancePhase: this.phase,
@@ -293,8 +316,7 @@ export class GovernanceEngine {
     }
 
     const summary = activeChallenge.summary || null;
-    const zoneInfoMap = this._latestInputs.zoneInfoMap || {};
-    const zoneInfo = activeChallenge.zone ? zoneInfoMap[activeChallenge.zone] : null;
+    const zoneInfo = this._getZoneInfo(activeChallenge.zone);
     const zoneLabel = (summary && summary.zoneLabel)
       || (zoneInfo && zoneInfo.name)
       || activeChallenge.zone
@@ -677,7 +699,7 @@ export class GovernanceEngine {
         id: userId,
         name: rosterEntry?.name || rosterEntry?.displayName || userId,
         zone: zoneId,
-        zoneLabel: zoneInfoMap[zoneId]?.name || zoneId,
+        zoneLabel: this._getZoneInfo(zoneId)?.name || zoneId,
         hr: rosterEntry?.hr?.value || rosterEntry?.heartRate || null
       });
     }
@@ -1040,11 +1062,7 @@ export class GovernanceEngine {
           actualCount: Number.isFinite(challengeSnapshot.actualCount) ? challengeSnapshot.actualCount : null,
           selectionLabel: challengeSnapshot.selectionLabel || '',
           participantKey: null,
-          severity: (() => {
-            const zoneId = challengeSnapshot.zone || null;
-            const rankMap = this._latestInputs.zoneRankMap || {};
-            return zoneId && Number.isFinite(rankMap[zoneId]) ? rankMap[zoneId] : null;
-          })()
+          severity: this._getZoneRank(challengeSnapshot.zone)
         };
         list.unshift(challengeRequirement);
       }
@@ -1059,9 +1077,7 @@ export class GovernanceEngine {
       ...entry,
       participantKey: entry.participantKey || null,
       targetZoneId: entry.targetZoneId || entry.zone || null,
-      severity: entry.severity != null ? entry.severity : (entry.targetZoneId && Number.isFinite((this._latestInputs.zoneRankMap || {})[entry.targetZoneId])
-        ? (this._latestInputs.zoneRankMap || {})[entry.targetZoneId]
-        : null)
+      severity: entry.severity != null ? entry.severity : this._getZoneRank(entry.targetZoneId)
     }));
 
     const enforceOneRowPerParticipant = (rows) => {
@@ -1480,8 +1496,8 @@ export class GovernanceEngine {
       const zoneId = zoneKey ? String(zoneKey).toLowerCase() : null;
       if (!zoneId) return null;
 
-      const requiredRank = zoneRankMap[zoneId];
-      const zoneInfo = zoneInfoMap[zoneId];
+      const requiredRank = this._getZoneRank(zoneId);
+      const zoneInfo = this._getZoneInfo(zoneId);
 
       return {
         zone: zoneId,
@@ -1534,7 +1550,7 @@ export class GovernanceEngine {
   _evaluateZoneRequirement(zoneKey, rule, activeParticipants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount) {
     const zoneId = zoneKey ? String(zoneKey).toLowerCase() : null;
     if (!zoneId) return null;
-    const requiredRank = zoneRankMap[zoneId];
+    const requiredRank = this._getZoneRank(zoneId);
     if (!Number.isFinite(requiredRank)) return null;
 
     const metUsers = [];
@@ -1547,9 +1563,7 @@ export class GovernanceEngine {
           caller: 'GovernanceEngine._evaluateZoneRequirement'
         });
       }
-      const participantRank = participantZoneId && Number.isFinite(zoneRankMap[participantZoneId])
-        ? zoneRankMap[participantZoneId]
-        : 0;
+      const participantRank = this._getZoneRank(participantZoneId) ?? 0;
       if (participantRank >= requiredRank) {
         metUsers.push(participantId);
       }
@@ -1564,7 +1578,7 @@ export class GovernanceEngine {
     const missingUsers = activeParticipants.filter((participantId) => 
       !metUsers.includes(participantId) && !exemptUsers.includes(normalizeName(participantId))
     );
-    const zoneInfo = zoneInfoMap[zoneId];
+    const zoneInfo = this._getZoneInfo(zoneId);
 
     return {
       zone: zoneId,
@@ -1841,8 +1855,8 @@ export class GovernanceEngine {
     const buildChallengeSummary = (challenge) => {
         if (!challenge) return null;
         const zoneId = challenge.zone;
-        const zoneInfo = zoneInfoMap[zoneId];
-        const requiredRank = zoneRankMap[zoneId] || 0;
+        const zoneInfo = this._getZoneInfo(zoneId);
+        const requiredRank = this._getZoneRank(zoneId) ?? 0;
         
         const metUsers = [];
       activeParticipants.forEach((participantId) => {
@@ -1854,7 +1868,7 @@ export class GovernanceEngine {
           caller: 'GovernanceEngine.buildChallengeSummary'
           });
         }
-            const pRank = pZone && Number.isFinite(zoneRankMap[pZone]) ? zoneRankMap[pZone] : 0;
+            const pRank = this._getZoneRank(pZone) ?? 0;
         if (pRank >= requiredRank) metUsers.push(participantId);
         });
         
