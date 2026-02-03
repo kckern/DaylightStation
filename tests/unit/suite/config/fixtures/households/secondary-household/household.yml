@@ -1,7 +1,0 @@
-version: "1.0"
-household_id: secondary-household
-name: "Secondary Household"
-head: seconduser
-
-users:
-  - seconduser
