@@ -1,20 +1,19 @@
-# Social & Identity Abstraction Design
+# Social Features & Licensing
 
-> Protocol-agnostic social federation with Nostr and Polycentric support
+> Protocol-agnostic social federation with cryptographic licensing
 
-**Date:** 2026-02-03
+**Last Updated:** 2026-02-03
 **Status:** Design Complete
-**Supersedes:** `docs/roadmap/2026-02-02-licensing-roadmap.md`, `docs/roadmap/2026-02-02-social-features-design.md`
 
 ---
 
 ## Overview
 
-DaylightStation Social enables sharing between households running separate instances. Rather than coupling to a single protocol, this design abstracts social federation behind a port interface with pluggable adapters.
+DaylightStation Social enables sharing between households running separate instances. Rather than coupling to a single protocol, the design abstracts social federation behind a port interface with pluggable adapters.
 
 **Supported protocols:**
-- **Nostr** - Decentralized social via relays, Schnorr signatures, NIP-44 encryption
-- **Polycentric** - Futo's decentralized protocol, Ed25519 signatures, native encryption
+- **Nostr** - Decentralized social via relays, Schnorr signatures (secp256k1), NIP-44 encryption
+- **Polycentric** - Futo's protocol, Ed25519 signatures, native encryption
 
 **Design principles:**
 - Domain layer is protocol-agnostic
@@ -22,9 +21,11 @@ DaylightStation Social enables sharing between households running separate insta
 - Users can link multiple protocol identities
 - One system license, badges issued per-protocol on demand
 
+**Security model:** Zero-trust network. Relays/systems are untrusted infrastructure. Security comes from cryptography (signatures for authenticity, encryption for confidentiality), not network perimeters.
+
 ---
 
-## Identity Model
+## Part 1: Identity Model
 
 ### Three Layers
 
@@ -33,6 +34,8 @@ DaylightStation Social enables sharing between households running separate insta
 | **System** | The DaylightStation deployment | License, primary owner, instance ID |
 | **Household** | A family unit within the system | Config, users, devices, household identity |
 | **User** | An individual person | Profile, roles, linked protocol identities |
+
+A single system may contain multiple households. Each household may contain multiple users.
 
 ### User Types
 
@@ -94,11 +97,11 @@ When an activity occurs, author is determined by:
 
 ---
 
-## Licensing & Badges
+## Part 2: Licensing
 
 ### License (System-Level)
 
-Purchased by the primary owner. Proves the DaylightStation instance is paid.
+Purchased by the primary owner. Proves the DaylightStation instance is paid. The license is protocol-agnostic—no npub, no DID, just instance + owner.
 
 ```json
 {
@@ -107,13 +110,49 @@ Purchased by the primary owner. Proves the DaylightStation instance is paid.
   "tier": "patron",
   "billing": "subscription",
   "owner_email": "kevin@example.com",
+  "stripe_customer_id": "cus_abc123",
   "issued": 1738483200,
   "nonce": "a1b2c3d4"
 }
 + server signature
 ```
 
-The license is protocol-agnostic. No npub, no DID - just instance + owner.
+**Billing types:**
+- `"subscription"` - Monthly or annual, checked against Stripe
+- `"lifetime"` - One-time purchase, never expires
+
+### Tiers & Pricing
+
+| Tier | Monthly | Annual | Lifetime | Badge |
+|------|---------|--------|----------|-------|
+| **Freeloader** | Free | Free | Free | - |
+| **Backer** | $1 | $10 | $50 | ✓ |
+| **Sponsor** | $3 | $25 | $125 | 🏆 |
+| **Patron** | $5 | $50 | $250 | 💎 |
+| **Benefactor** | $10 | $100 | $500 | 👑 |
+| **Medici** | $50 | $500 | $2500 | ⭐ |
+
+**Lifetime** = 5x annual price. License never expires, no renewal needed.
+
+### Tier Descriptions
+
+- **Freeloader**: Free unlimited trial. Full core functionality, no social features. Officially chided for not paying.
+- **Backer**: Entry-level supporter. Unlocks local extras. Link identity anytime for social.
+- **Sponsor**: Committed supporter. Same features as Backer, higher status on network.
+- **Patron**: Classic arts supporter tier. You're keeping the lights on.
+- **Benefactor**: Serious contributor. People notice your badge.
+- **Medici**: You're literally funding the Renaissance. Maximum clout.
+
+### Feature Access
+
+All paid tiers unlock the same features. The difference is **social proof**.
+
+| Feature | Freeloader | Paid (no identity) | Paid (with identity) |
+|---------|------------|-------------------|---------------------|
+| Core app | ✅ | ✅ | ✅ |
+| Local extras | ❌ | ✅ | ✅ |
+| Social features | ❌ | ❌ | ✅ |
+| Network badge | ❌ | ❌ | ✅ (status-based) |
 
 ### Badge Certificates (Per-Protocol, Per-Identity)
 
@@ -150,6 +189,21 @@ Generated on demand when a user or household links a protocol identity. Proves "
 + server signature
 ```
 
+**Status values:**
+- `"active"` - Subscription current, show tier badge
+- `"past_due"` - Payment failed, show ⚠️ Delinquent
+- `"lapsed"` - Subscription cancelled, show 🪦 Lapsed
+
+### Badge Display
+
+| Payment Status | Network Display |
+|----------------|-----------------|
+| Active (subscription) | Tier badge (✓ 🏆 💎 👑 ⭐) |
+| Active (lifetime) | Tier badge + 🎖️ |
+| Past due | ⚠️ Delinquent |
+| Cancelled/lapsed | 🪦 Lapsed |
+| No valid badge | 🚨 Intruder |
+
 ### Badge Issuance Flow
 
 ```
@@ -162,7 +216,7 @@ POST /api/badges/request { protocol: "nostr", identity: "npub1..." }
 Server verifies:
   1. User belongs to this instance
   2. Instance license is valid
-  3. User proves ownership of npub (challenge/response)
+  3. User proves ownership of identity (challenge/response)
     │
     ▼
 Returns signed badge certificate
@@ -180,34 +234,72 @@ POST /api/badges/request {
 }
 ```
 
-Server verifies the existing badge, confirms same instance, issues new protocol badge.
+Server verifies the existing badge, confirms same instance, issues new protocol badge. One payment, badges for any protocol on demand.
 
-### Tiers & Pricing
+### Badge Refresh
 
-| Tier | Monthly | Annual | Lifetime | Badge |
-|------|---------|--------|----------|-------|
-| **Freeloader** | Free | Free | Free | - |
-| **Backer** | $1 | $10 | $50 | ✓ |
-| **Sponsor** | $3 | $25 | $125 | 🏆 |
-| **Patron** | $5 | $50 | $250 | 💎 |
-| **Benefactor** | $10 | $100 | $500 | 👑 |
-| **Medici** | $50 | $500 | $2500 | ⭐ |
+Badges expire after 30 days. App automatically refreshes before expiration:
 
-### Badge Display
+```
+App startup / badge nearing expiration
+    │
+    ▼
+POST /api/refresh-badge { license: "...", protocol: "nostr", identity: "npub1..." }
+    │
+    ▼
+Lambda:
+  1. Verify license signature
+  2. Check Stripe subscription status
+  3. Return fresh badge cert (valid 30 days)
+    │
+    ▼
+App stores new badge, attaches to future events
+```
 
-| Payment Status | Network Display |
-|----------------|-----------------|
-| Active (subscription) | Tier badge (✓ 🏆 💎 👑 ⭐) |
-| Active (lifetime) | Tier badge + 🎖️ |
-| Past due | ⚠️ Delinquent |
-| Cancelled/lapsed | 🪦 Lapsed |
-| No valid badge | 🚨 Intruder |
+### Why Badges Can't Be Forged
+
+| Attack | Result |
+|--------|--------|
+| No badge tag | Shows "🚨 Intruder" |
+| Forged badge signature | Signature verification fails → "🚨 Intruder" |
+| Copy someone else's badge | Identity doesn't match event author → "🚨 Intruder" |
+| Modify badge data | Signature no longer valid → "🚨 Intruder" |
+| Hack client to show fake badge | Other clients still verify → they see "🚨 Intruder" |
+
+**Your signing key is the root of trust. Without it, valid badges cannot be created.**
 
 ---
 
-## Social Content Model
+## Part 3: Social Features
 
-### Activity (Core Unit)
+### Use Cases
+
+**Family Clusters (Primary):**
+- Cousins see each other's workout completions
+- Grandparents see photo albums from multiple households
+- Extended family shares recipes and meal ideas
+
+**Household-Internal:**
+- Kid completes chores → Parents see it in household feed
+- Family announcements visible to all household members
+- Private posts for personal journaling
+
+**Activity Sharing:**
+- "Kevin completed a 30-minute cycling workout"
+- "Sarah watched Severance S2E03"
+- "The Kern Household tried a new pasta recipe"
+
+### Visibility Model
+
+| Level | Audience | Transport |
+|-------|----------|-----------|
+| **private** | Only the author | Local only |
+| **household** | All users in household (role-filtered) | Local only |
+| **circle** | Named groups on other instances | Protocol (encrypted) |
+| **connections** | All mutual connections | Protocol (encrypted) |
+| **public** | Anyone on the network | Protocol (unencrypted) |
+
+### Content Model
 
 Activities follow an actor-verb-object pattern:
 
@@ -223,40 +315,52 @@ Activities follow an actor-verb-object pattern:
   attachments: [
     { type: "workout_summary", duration: 45, calories: 380 }
   ],
-  inReplyTo: null,
   createdAt: 1738500000
 }
 ```
 
-### Verbs
+**Verbs:** `posted`, `completed`, `watched`, `listened`, `shared`, `liked`, `replied`
 
-| Verb | Usage |
-|------|-------|
-| `posted` | Freeform text post |
-| `completed` | Workout, chore, task |
-| `watched` | Media playback |
-| `listened` | Audio/music |
-| `shared` | Recipe, photo album |
-| `liked` | Reaction |
-| `replied` | Response to activity |
+### Auto-Sharing
 
-### Visibility Levels
+System events can auto-generate posts based on user policies:
 
-| Level | Audience | Transport |
-|-------|----------|-----------|
-| **private** | Only the author | Local only |
-| **household** | All users in household (role-filtered) | Local only |
-| **circle** | Named groups on other instances | Protocol (encrypted) |
-| **connections** | All mutual connections | Protocol (encrypted) |
-| **public** | Anyone on the network | Protocol (unencrypted) |
+```yaml
+# Per-user sharing policies
+sharing:
+  fitness:
+    mode: auto              # auto | ask | never
+    visibility: connections
+    include_details: true
+
+  media:
+    mode: ask               # Prompt before sharing
+    visibility: circle
+    circles: [family]
+
+  chores:
+    mode: auto
+    visibility: household   # Only share within household
+```
+
+### Connections & Circles
+
+**Connections:** Mutual relationships between actors (users or households) across instances.
+
+**Circles:** Named groups of connections for targeted sharing (e.g., "Close Family", "Extended Family", "Friends").
+
+**Connection discovery:**
+- QR code exchange
+- Manual identity entry
+- NIP-05 / DID resolution
 
 ---
 
-## Architecture
+## Part 4: Architecture
 
 ### Domain Layer (`backend/src/2_domains/social/`)
 
-Protocol-agnostic business logic.
+Protocol-agnostic business logic. Knows nothing about Nostr or Polycentric.
 
 ```
 2_domains/social/
@@ -343,25 +447,27 @@ class SocialNetworkPort {
 
 ### Capability Declaration
 
+Adapters declare what they support; domain adapts behavior:
+
 ```javascript
-// NostrAdapter.mjs
+// NostrAdapter
 getCapabilities() {
   return {
     visibility: ['private', 'household', 'circle', 'connections', 'public'],
     reactions: ['like', 'emoji'],
-    edit: false,
-    delete: true,
+    edit: false,           // Nostr events are immutable
+    delete: true,          // NIP-09 deletion requests
     circles: true,
     threads: true
   };
 }
 
-// PolycentricAdapter.mjs
+// PolycentricAdapter
 getCapabilities() {
   return {
     visibility: ['private', 'household', 'circle', 'connections', 'public'],
-    reactions: ['like'],
-    edit: true,
+    reactions: ['like'],   // No emoji reactions yet
+    edit: true,            // Polycentric supports edits
     delete: true,
     circles: true,
     threads: true
@@ -395,125 +501,35 @@ getCapabilities() {
 
 ### Multi-Protocol Publishing
 
+When an activity has external visibility, it may go to multiple protocols:
+
 ```javascript
 async publish(activity, actor) {
-  const results = [];
   const linkedIdentities = await this.identityBridge.getLinkedIdentities(actor);
 
   for (const { protocol, identity } of linkedIdentities) {
     const adapter = this.adapters.get(protocol);
 
     if (!adapter.getCapabilities().visibility.includes(activity.visibility)) {
-      results.push({ protocol, status: 'unsupported' });
-      continue;
+      continue;  // Protocol doesn't support this visibility
     }
 
     const badge = await this.licensingBridge.getBadge(protocol, identity);
-
-    try {
-      const ref = await adapter.publish(activity, badge);
-      results.push({ protocol, status: 'published', ref });
-    } catch (err) {
-      results.push({ protocol, status: 'failed', error: err.message });
-    }
+    await adapter.publish(activity, badge);
   }
-
-  return results;
 }
 ```
 
----
-
-## Data Storage
-
-### Hybrid Approach
+### Data Storage
 
 | Data | Storage | Reason |
 |------|---------|--------|
 | Activities | SQLite | Volume, queries, timeline ordering |
 | Connections & Circles | YAML | Config-like, human-editable |
 | Protocol sync state | SQLite | Frequent updates |
-| Linked identities | YAML (user profile) | Part of user config |
+| Linked identities | YAML (user/household config) | Part of config |
 
-### SQLite Schema
-
-```sql
-CREATE TABLE activities (
-    id TEXT PRIMARY KEY,
-    actor_type TEXT NOT NULL,
-    actor_id TEXT NOT NULL,
-    verb TEXT NOT NULL,
-    object_type TEXT,
-    object_ref TEXT,
-    visibility TEXT NOT NULL,
-    circles TEXT,                       -- JSON array
-    content TEXT,                       -- JSON
-    in_reply_to TEXT,
-    created_at INTEGER NOT NULL,
-    updated_at INTEGER,
-    outbound_status TEXT,
-    source_protocol TEXT,
-    source_ref TEXT,
-    source_badge TEXT
-);
-
-CREATE INDEX idx_activities_feed ON activities(visibility, created_at DESC);
-CREATE INDEX idx_activities_actor ON activities(actor_type, actor_id);
-CREATE INDEX idx_activities_outbound ON activities(outbound_status)
-    WHERE outbound_status IS NOT NULL;
-
-CREATE TABLE sync_state (
-    protocol TEXT NOT NULL,
-    endpoint TEXT NOT NULL,
-    last_event_time INTEGER,
-    last_sync INTEGER,
-    status TEXT,
-    PRIMARY KEY (protocol, endpoint)
-);
-
-CREATE TABLE reactions (
-    id TEXT PRIMARY KEY,
-    activity_id TEXT NOT NULL,
-    actor_type TEXT NOT NULL,
-    actor_id TEXT NOT NULL,
-    reaction_type TEXT NOT NULL,
-    emoji TEXT,
-    created_at INTEGER NOT NULL,
-    source_protocol TEXT,
-    source_ref TEXT,
-    FOREIGN KEY (activity_id) REFERENCES activities(id)
-);
-```
-
-### YAML Configs
-
-```yaml
-# data/household/apps/social/connections.yml
-connections:
-  - id: "conn_abc123"
-    protocol: nostr
-    identity: "npub1cousin..."
-    alias: "Sarah's Family"
-    status: mutual
-    household_name: "The Smith Home"
-    circles: [family, extended]
-    added: 2026-01-15T10:30:00Z
-
-# data/household/apps/social/circles.yml
-circles:
-  - id: family
-    name: "Close Family"
-  - id: extended
-    name: "Extended Family"
-  - id: friends
-    name: "Friends"
-```
-
----
-
-## API Layer
-
-### Endpoints
+### API Endpoints
 
 ```
 # Activities
@@ -542,46 +558,11 @@ DELETE /api/v1/social/identities/:id
 POST   /api/v1/social/identities/:id/badge
 ```
 
-### WebSocket Events
-
-```javascript
-socket.on('social:activity:new', (activity) => {});
-socket.on('social:activity:deleted', (id) => {});
-socket.on('social:reaction:new', ({ activityId, reaction }) => {});
-socket.on('social:connection:request', (connection) => {});
-socket.on('social:sync:status', ({ protocol, status }) => {});
-```
-
 ---
 
-## Frontend Module
+## Part 5: Gatekeeper Integration
 
-```
-frontend/src/modules/Social/
-├── Social.jsx
-├── Social.scss
-├── context/
-│   └── SocialContext.jsx
-├── components/
-│   ├── Feed/
-│   ├── Activity/
-│   ├── Actor/
-│   ├── Connections/
-│   ├── Circles/
-│   └── Settings/
-└── hooks/
-    ├── useFeed.js
-    ├── useConnections.js
-    ├── useCircles.js
-    ├── useSocialSocket.js
-    └── useLinkedIdentities.js
-```
-
----
-
-## Gatekeeper Integration
-
-### Governed Actions
+Social actions are governed by Gatekeeper policies:
 
 | Action | Resource | Conditions |
 |--------|----------|------------|
@@ -590,7 +571,7 @@ frontend/src/modules/Social/
 | `social:connect` | `connection:*` | can user manage connections |
 | `social:link-identity` | `identity:*` | can user link protocols |
 
-### Example Policy
+**Example policy:**
 
 ```yaml
 policies:
@@ -615,80 +596,48 @@ policies:
         resources: [activity:*, connection:*, identity:*]
 ```
 
----
-
-## Auto-Sharing
-
-### Sharing Policies (Per-User)
-
-```yaml
-# data/household/users/kevin/social-policies.yml
-sharing:
-  fitness:
-    mode: auto              # auto | ask | never
-    visibility: connections
-    include_details: true
-
-  media:
-    mode: ask
-    visibility: circle
-    circles: [family]
-    exclude_labels: [adult]
-
-  chores:
-    mode: auto
-    visibility: household
-
-  recipes:
-    mode: never
-```
-
-### Flow
-
-```
-Domain event (workout completed)
-    │
-    ▼
-ActivityWatcher receives event
-    │
-    ▼
-AutoPostGenerator.maybePost()
-    │
-    ├── mode: never → Skip
-    ├── mode: auto → Build activity → Gatekeeper → Publish
-    └── mode: ask → Create draft → Notify user → User approves/cancels
-```
+**Key principle:** External visibility requires explicit policy allowance. Default-deny for anything leaving the household.
 
 ---
 
-## Connection Discovery
+## Part 6: AWS Infrastructure
 
-### Methods
+### Architecture
 
-| Method | Description |
-|--------|-------------|
-| QR Code | Scan to exchange identities |
-| Manual | Paste npub or DID |
-| NIP-05 / DID resolution | Human-readable identifier |
-
-### QR Payload
-
-```json
-{
-  "type": "daylight-connect",
-  "version": 1,
-  "identities": [
-    { "protocol": "nostr", "identity": "npub1kernhousehold..." },
-    { "protocol": "polycentric", "identity": "did:poly:kernhome..." }
-  ],
-  "name": "The Kern Home",
-  "relay_hints": ["wss://relay.daylightstation.com"]
-}
 ```
+Stripe ──▶ API Gateway ──▶ Lambda ──▶ Secrets Manager
+                             │              │
+                             │       ┌──────┘
+                             ▼       ▼
+                        [Signs credentials]
+                             │
+                             ▼
+                      Returns to user
+```
+
+### Secrets Manager
+
+```bash
+aws secretsmanager create-secret \
+  --name "daylightstation/licensing-key" \
+  --description "Private key for signing licenses" \
+  --secret-string "..."
+```
+
+### Cost Estimate
+
+| Component | Cost |
+|-----------|------|
+| AWS Lambda | ~$0.20/month |
+| API Gateway | ~$0.10/month |
+| Secrets Manager | $0.40/month |
+| Amplify Hosting | Free tier |
+| Stripe fees | 2.9% + $0.30/txn |
+| **Total** | **~$0.70/month** + Stripe fees |
 
 ---
 
-## Implementation Phases
+## Part 7: Implementation Phases
 
 ### Phase 1: Domain Foundation
 - [ ] Social domain entities (Activity, Actor, Connection, Circle)
@@ -732,8 +681,33 @@ AutoPostGenerator.maybePost()
 
 ---
 
+## Security Checklist
+
+- [ ] Signing key NEVER in git
+- [ ] Key stored in AWS Secrets Manager
+- [ ] Lambda IAM role has least-privilege
+- [ ] Stripe webhook signature verified
+- [ ] Identity ownership verified before issuing badges
+- [ ] Badge contains no PII
+- [ ] Server pubkey hardcoded in official build
+
+---
+
+## Open Questions
+
+1. **Relay/system selection:** Public infrastructure, recommended servers, or encourage self-hosting?
+2. **Photo storage:** Thumbnails in events, full resolution via direct fetch?
+3. **Offline handling:** How long to queue outbound when network unavailable?
+4. **Moderation:** Can household admins delete incoming posts? Block external users?
+5. **License recovery:** Email-based lookup if user loses license key?
+6. **Rate limiting:** How many identity changes per year?
+
+---
+
 ## Changelog
 
 | Date | Change |
 |------|--------|
-| 2026-02-03 | Initial design - protocol abstraction for Nostr + Polycentric |
+| 2026-02-03 | Merged licensing + social; added protocol abstraction for Nostr + Polycentric |
+| 2026-02-02 | Initial licensing roadmap |
+| 2026-02-02 | Initial social features design |
