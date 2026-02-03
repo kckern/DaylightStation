@@ -18,6 +18,7 @@ import path from 'path';
 import { spawn } from 'child_process';
 import { FRONTEND_URL, BACKEND_URL } from '#fixtures/runtime/urls.mjs';
 import { getTestSample, validateExpectations, clearCache } from '#testlib/testDataService.mjs';
+import { FitnessSimHelper } from '#testlib/FitnessSimHelper.mjs';
 
 const BASE_URL = FRONTEND_URL;
 const API_URL = BACKEND_URL;
@@ -677,6 +678,128 @@ test.describe('Fitness Happy Path', () => {
       // Accept either playing or ready to play (readyState >= 1 means we have metadata)
       expect(finalState?.readyState >= 1 || !finalState?.paused, 'Video should have loaded or be playing').toBe(true);
     }
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  // TEST 8: Simulation controller initializes
+  // ═══════════════════════════════════════════════════════════════
+  test('simulation controller available on localhost', async () => {
+    // Navigate to fitness app if not already there
+    if (!sharedPage.url().includes('/fitness')) {
+      await sharedPage.goto(`${BASE_URL}/fitness`);
+      await sharedPage.waitForTimeout(2000);
+    }
+
+    const sim = new FitnessSimHelper(sharedPage);
+    await sim.waitForController();
+
+    const devices = await sim.getDevices();
+    console.log(`Controller ready with ${devices.length} configured devices`);
+    expect(devices.length).toBeGreaterThan(0);
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  // TEST 9: Zone changes update participant state
+  // ═══════════════════════════════════════════════════════════════
+  test('setting zone updates participant state', async () => {
+    const sim = new FitnessSimHelper(sharedPage);
+    await sim.waitForController();
+
+    const devices = await sim.getDevices();
+    const device = devices[0];
+
+    // Set to hot zone
+    const result = await sim.setZone(device.deviceId, 'hot');
+    expect(result.ok).toBe(true);
+
+    // Wait for zone to register
+    await sim.waitForZone(device.deviceId, 'hot');
+
+    // Verify device state
+    const updated = await sim.getDevices();
+    const updatedDevice = updated.find(d => d.deviceId === device.deviceId);
+    expect(updatedDevice.currentZone).toBe('hot');
+    expect(updatedDevice.currentHR).toBeGreaterThan(140);
+
+    console.log(`Device ${device.deviceId} now at ${updatedDevice.currentHR} bpm (${updatedDevice.currentZone})`);
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  // TEST 10: Auto session progresses through zones
+  // ═══════════════════════════════════════════════════════════════
+  test('auto session progresses through zones', async () => {
+    const sim = new FitnessSimHelper(sharedPage);
+    await sim.waitForController();
+
+    const devices = await sim.getDevices();
+    const device = devices[0];
+
+    // Start short auto session (30 seconds)
+    await sim.startAutoSession(device.deviceId, { duration: 30 });
+
+    // Should start in warmup (cool → active range)
+    await sharedPage.waitForTimeout(3000);
+    let state = await sim.getDevices();
+    let d = state.find(x => x.deviceId === device.deviceId);
+    console.log(`After 3s: ${d.currentHR} bpm (${d.currentZone})`);
+    expect(d.autoMode).toBe('session');
+
+    // Wait and check progression
+    await sharedPage.waitForTimeout(5000);
+    state = await sim.getDevices();
+    d = state.find(x => x.deviceId === device.deviceId);
+    console.log(`After 8s: ${d.currentHR} bpm (${d.currentZone})`);
+
+    await sim.stopAuto(device.deviceId);
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  // TEST 11: Governance override enables challenges
+  // ═══════════════════════════════════════════════════════════════
+  test('governance override enables challenges on any content', async () => {
+    const sim = new FitnessSimHelper(sharedPage);
+    await sim.waitForController();
+
+    // Enable governance with short phases for testing
+    await sim.enableGovernance({
+      phases: { warmup: 3, main: 60, cooldown: 3 },
+      challenges: { enabled: true, interval: 10, duration: 15 }
+    });
+
+    // Activate all participants
+    await sim.activateAll('active');
+    const devices = await sim.getDevices();
+    await sim.waitForActiveCount(devices.length, 5000);
+    console.log('All devices activated');
+
+    // Wait for warmup, then trigger challenge
+    await sharedPage.waitForTimeout(4000);
+
+    const challengeResult = await sim.triggerChallenge({ targetZone: 'hot' });
+    expect(challengeResult.ok).toBe(true);
+    console.log('Challenge triggered');
+
+    // Verify governance state shows active challenge
+    const state = await sim.getGovernanceState();
+    expect(state.activeChallenge).not.toBeNull();
+    expect(state.activeChallenge.targetZone).toBe('hot');
+
+    // Move all devices to target zone
+    for (const d of devices) {
+      await sim.setZone(d.deviceId, 'hot');
+    }
+
+    // Complete challenge successfully
+    await sim.completeChallenge(true);
+
+    // Verify win recorded
+    const finalState = await sim.getGovernanceState();
+    expect(finalState.stats.challengesWon).toBeGreaterThan(0);
+    console.log(`Challenge completed. Wins: ${finalState.stats.challengesWon}`);
+
+    // Cleanup
+    await sim.disableGovernance();
+    await sim.stopAll();
   });
 
 });
