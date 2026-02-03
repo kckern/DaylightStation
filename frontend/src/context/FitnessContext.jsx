@@ -1147,6 +1147,21 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
 
   const preferGroupLabels = React.useMemo(() => heartRateDevices.length > 1, [heartRateDevices.length]);
 
+  // Log when participant count crosses the threshold for group label display
+  const prevPreferGroupLabelsRef = useRef(preferGroupLabels);
+  useEffect(() => {
+    if (prevPreferGroupLabelsRef.current !== preferGroupLabels) {
+      playbackLog('fitness-context', {
+        event: 'prefer_group_labels_changed',
+        from: prevPreferGroupLabelsRef.current,
+        to: preferGroupLabels,
+        heartRateDeviceCount: heartRateDevices.length,
+        participantNames: heartRateDevices.map(d => d.name || d.id).slice(0, 5)
+      }, { level: 'info', context: { source: 'FitnessContext' } });
+      prevPreferGroupLabelsRef.current = preferGroupLabels;
+    }
+  }, [preferGroupLabels, heartRateDevices]);
+
   const getDisplayLabel = React.useCallback((name, { groupLabelOverride, preferGroupLabel, userId } = {}) => {
     if (!name) return null;
     // Use userId for group label lookup if provided, otherwise use name
