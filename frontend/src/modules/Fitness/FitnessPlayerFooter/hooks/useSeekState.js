@@ -34,6 +34,20 @@ const TOLERANCES = {
   STICKY_MS: 700      // How long to "remember" last seek for UI smoothness
 };
 
+/**
+ * Seek lifecycle states
+ * - idle: No seek in progress
+ * - seeking: Seek requested, waiting for playhead to reach target
+ * - buffering: Playhead at target, waiting for playback to resume
+ * - playing: Playback resumed at target position
+ */
+export const SEEK_LIFECYCLE = {
+  IDLE: 'idle',
+  SEEKING: 'seeking',
+  BUFFERING: 'buffering',
+  PLAYING: 'playing'
+};
+
 export default function useSeekState({
   currentTime,
   playerRef,
@@ -44,6 +58,9 @@ export default function useSeekState({
   // Core state
   const [intentTime, setIntentTime] = useState(null);
   const [previewTime, setPreviewTime] = useState(null);
+
+  // Seek lifecycle state
+  const [lifecycle, setLifecycle] = useState(SEEK_LIFECYCLE.IDLE);
   
   // Tracking refs
   const awaitingSettleRef = useRef(false);
@@ -145,6 +162,8 @@ export default function useSeekState({
 
     // Record intent
     setIntentTime(normalizedTarget);
+    // Enter seeking state
+    setLifecycle(SEEK_LIFECYCLE.SEEKING);
     awaitingSettleRef.current = true;
     pendingMetaRef.current = {
       target: normalizedTarget,
@@ -237,6 +256,59 @@ export default function useSeekState({
   }, [currentTime, intentTime, clearIntent]);
 
   /**
+   * Transition from SEEKING to BUFFERING when playhead reaches target
+   */
+  useEffect(() => {
+    if (lifecycle !== SEEK_LIFECYCLE.SEEKING) return;
+    if (intentTime == null) return;
+
+    const delta = Math.abs(currentTime - intentTime);
+    if (delta <= TOLERANCES.CLEAR) {
+      logSeekEvent('lifecycle-transition', { from: 'seeking', to: 'buffering', delta });
+      setLifecycle(SEEK_LIFECYCLE.BUFFERING);
+    }
+  }, [lifecycle, currentTime, intentTime]);
+
+  /**
+   * Transition from BUFFERING to PLAYING when video actually plays
+   */
+  useEffect(() => {
+    if (lifecycle !== SEEK_LIFECYCLE.BUFFERING) return;
+
+    const el = playerRef?.current?.getMediaElement?.();
+    if (!el) return;
+
+    const handlePlaying = () => {
+      logSeekEvent('lifecycle-transition', { from: 'buffering', to: 'playing' });
+      setLifecycle(SEEK_LIFECYCLE.PLAYING);
+    };
+
+    // Check if already playing
+    if (!el.paused && el.readyState >= 3) {
+      setLifecycle(SEEK_LIFECYCLE.PLAYING);
+      return;
+    }
+
+    el.addEventListener('playing', handlePlaying);
+    return () => el.removeEventListener('playing', handlePlaying);
+  }, [lifecycle, playerRef]);
+
+  /**
+   * Transition from PLAYING to IDLE after a short delay
+   */
+  useEffect(() => {
+    if (lifecycle !== SEEK_LIFECYCLE.PLAYING) return;
+
+    const timer = setTimeout(() => {
+      logSeekEvent('lifecycle-transition', { from: 'playing', to: 'idle' });
+      setLifecycle(SEEK_LIFECYCLE.IDLE);
+      clearIntent('lifecycle-complete');
+    }, 100);
+
+    return () => clearTimeout(timer);
+  }, [lifecycle, clearIntent]);
+
+  /**
    * Listen for media element events
    */
   useEffect(() => {
@@ -289,7 +361,8 @@ export default function useSeekState({
     intentTime,       // Current seek intent (or null)
     previewTime,      // Current hover preview (or null)
     isSeekPending: intentTime != null,
-    
+    lifecycle,        // Seek lifecycle state (idle/seeking/buffering/playing)
+
     // Actions
     commitSeek,       // Request a seek (pass explicit target!)
     setPreview,       // Set preview time
