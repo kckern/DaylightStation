@@ -1124,6 +1124,8 @@
   flex-direction: column;
   position: relative;
   border-left: 2px solid #000;
+  overflow: hidden; // Prevent scrollbar thrashing from internal layout changes
+  contain: layout; // Isolate layout recalculations
 
   .sidebar-menu-toggle-floating {
     position: absolute;
@@ -1604,6 +1606,8 @@
     flex-shrink: 0;
     width: 100%;
     padding: 0;
+    contain: layout; // Isolate layout from music player changes
+    overflow: hidden;
   }
 }
 
@@ -1627,6 +1631,7 @@
   box-sizing: border-box;
   flex-shrink: 0;
   transition: box-shadow 0.2s ease;
+  contain: layout size; // Prevent marquee measurements from affecting parent
 
   &.controls-open {
     box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);

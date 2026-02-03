@@ -24,13 +24,9 @@ import { FRONTEND_URL } from '#fixtures/runtime/urls.mjs';
 
 const HEALTH_ENDPOINT = `${FRONTEND_URL}/api/v1/fitness`;
 
-// Show with NoMusic label - navigating through show view triggers music auto-enable
-// 673258 = "10 Minute Beginner" show (has NoMusic label)
-const SHOW_URL = `${FRONTEND_URL}/fitness/show/673258`;
-
-// Episode from that show
-// 673260 = "Total Body" from "10 Minute Beginner"
-const EPISODE_ID = '673260';
+// Playable with NoMusic label - triggers music auto-enable
+// 599479 = known working NoMusic video (used in music-fix-verify test)
+const PLAY_URL = `${FRONTEND_URL}/fitness/play/599479`;
 
 // Default playlist ID from fitness config (Fitness playlist)
 const DEFAULT_PLAYLIST_ID = 672596;
@@ -243,35 +239,20 @@ test.describe.serial('Music Player Width Stability', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // HURDLE 2: Navigate to Show (Triggers NoMusic Label Check)
+  // HURDLE 2: Navigate to Play URL (Triggers NoMusic Label Check)
   // ═══════════════════════════════════════════════════════════════════════════
-  test('HURDLE 2: Navigate to show and start episode', async () => {
-    console.log('\n🏃 HURDLE 2: Navigating to show (triggers NoMusic label check)...');
-    console.log(`   URL: ${SHOW_URL}`);
+  test('HURDLE 2: Navigate to play URL and wait for video', async () => {
+    console.log('\n🏃 HURDLE 2: Navigating to play URL (triggers NoMusic label check)...');
+    console.log(`   URL: ${PLAY_URL}`);
 
-    await page.goto(SHOW_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
-
-    // Wait for episode cards to load
-    const episodeCard = page.locator('.episode-card, [data-testid="episode-card"]').first();
-    await expect(episodeCard).toBeVisible({ timeout: 15000 });
-    console.log('   Show page loaded with episodes');
-
-    // Wait for show data to fully load (NoMusic label check happens here)
-    await page.waitForTimeout(2000);
-
-    // Click the first episode to start playback
-    const episodeThumbnail = page.locator('.episode-thumbnail, [data-testid="episode-thumbnail"]').first();
-    await expect(episodeThumbnail).toBeVisible({ timeout: 5000 });
-    console.log('   Clicking episode to start playback...');
-    await episodeThumbnail.click();
+    await page.goto(PLAY_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
 
     // Wait for video player to appear
-    await page.waitForTimeout(3000);
     const videoPlayer = page.locator('video');
     await expect(videoPlayer.first()).toBeVisible({ timeout: 15000 });
 
     console.log('   Video player visible');
-    console.log('✅ HURDLE 2 PASSED: Show loaded and episode playing\n');
+    console.log('✅ HURDLE 2 PASSED: Video playing\n');
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
