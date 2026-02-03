@@ -6,10 +6,11 @@
  */
 
 import { test, expect } from '@playwright/test';
-import { FRONTEND_URL } from '#fixtures/runtime/urls.mjs';
+import { FRONTEND_URL, BACKEND_URL } from '#fixtures/runtime/urls.mjs';
 import { FitnessSimHelper } from '#testlib/FitnessSimHelper.mjs';
 
 const BASE_URL = FRONTEND_URL;
+const API_URL = BACKEND_URL;
 
 let sharedPage;
 let sharedContext;
@@ -18,6 +19,20 @@ let sim;
 test.describe.configure({ mode: 'serial' });
 
 test.beforeAll(async ({ browser }) => {
+  // FAIL FAST: Verify fitness API is accessible before running tests
+  console.log('Verifying fitness API health...');
+  try {
+    const response = await fetch(`${API_URL}/api/v1/fitness`, { signal: AbortSignal.timeout(10000) });
+    if (!response.ok) {
+      throw new Error(`Fitness API returned ${response.status}: ${response.statusText}`);
+    }
+    const config = await response.json();
+    const users = config?.fitness?.users?.primary || config?.users?.primary || [];
+    console.log(`Fitness API healthy: ${users.length} primary users with HR devices`);
+  } catch (err) {
+    throw new Error(`FAIL FAST: Fitness API not responding. Cannot run governance tests.\nError: ${err.message}\nURL: ${API_URL}/api/v1/fitness`);
+  }
+
   sharedContext = await browser.newContext();
   sharedPage = await sharedContext.newPage();
 
