@@ -8,6 +8,7 @@ Runtime tests for the Fitness application. All tests run against a live dev serv
 |------|-------|---------|
 | `fitness-happy-path.runtime.test.mjs` | 11 | End-to-end UI flow |
 | `fitness-governance-simulation.runtime.test.mjs` | 11 | HR simulation & governance |
+| `governance-lockscreen-monitor.runtime.test.mjs` | 1 | Lock screen state monitoring |
 
 ## Running Tests
 
@@ -57,6 +58,29 @@ Tests the FitnessSimulationController governance features. Exit criteria for HR 
 | 9 | governance override on/off | Enable/disable governance, verify state changes |
 | 10 | rapid challenge succession | Multiple challenges back-to-back without issues |
 | 11 | already in target zone when challenge starts | Pre-positioned devices get instant credit |
+
+## Lock Screen Monitor Test (1)
+
+Detailed logging test for governance lock screen behavior. Logs every state change as users progress toward unlock.
+
+| # | Test | What it verifies |
+|---|------|------------------|
+| 1 | all required users must reach target zone to unlock | 4 of 5 users reaching warm zone unlocks video |
+
+**State changes logged:**
+- `OVERLAY_VISIBILITY` - Lock screen appears/disappears
+- `OVERLAY_STATUS` - Status changes (pending, locked, etc.)
+- `ROW_ADDED/REMOVED` - Users appear/disappear from lock screen
+- `ZONE_CHANGE` - User moves between HR zones
+- `HR_CHANGE` - Heart rate and target values update
+- `PROGRESS_CHANGE` - Progress bar percentage updates
+- `VIDEO_UNLOCKED` - Lock screen disappears, video playable
+
+**Key findings from test:**
+- Users have different target HRs (100, 120, 120, 125 BPM)
+- Users are removed from lock screen when they meet their requirement
+- Video unlocks when all required users (4 of 5) reach target
+- Progress shows 50% when reaching zone, then user is removed
 
 ## Test Fixtures
 
