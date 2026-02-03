@@ -1369,13 +1369,6 @@ export class FitnessSession {
           baseZoneConfigLength: baseZoneConfig?.length ?? 0
         }, 'warn');
       }
-
-      // Ensure governance callback is wired even when TreasureBox is lazily created
-      if (this.governanceEngine) {
-        this.treasureBox.setGovernanceCallback(() => {
-          this.governanceEngine._evaluateFromTreasureBox();
-        });
-      }
     }
     
     // Update ParticipantRoster with treasureBox reference after creation
