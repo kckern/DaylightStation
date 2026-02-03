@@ -414,14 +414,14 @@ export class GovernanceEngine {
       : [];
     this._governedTypeSet = new Set(normalizeLabelList(governedTypeSource));
 
-    // Seed _latestInputs with zone maps from session snapshot
+    // Seed _latestInputs with zone maps from config param or session snapshot
     // This ensures fallbacks work even on first evaluate() call
     // Must happen BEFORE initial evaluation so zone labels are available
-    if (this.session?.snapshot?.zoneConfig) {
-      const zoneConfig = this.session.snapshot.zoneConfig;
+    const zoneConfigSource = config.zoneConfig || this.session?.snapshot?.zoneConfig || [];
+    if (zoneConfigSource.length > 0) {
       const zoneRankMap = {};
       const zoneInfoMap = {};
-      zoneConfig.forEach((z, idx) => {
+      zoneConfigSource.forEach((z, idx) => {
         if (!z || z.id == null) return;
         const zid = normalizeZoneId(z.id);
         if (!zid) return;
@@ -436,8 +436,9 @@ export class GovernanceEngine {
       this._latestInputs.zoneInfoMap = zoneInfoMap;
 
       getLogger().debug('governance.configure.seeded_zone_maps', {
-        zoneCount: zoneConfig.length,
-        zoneIds: Object.keys(zoneInfoMap)
+        zoneCount: zoneConfigSource.length,
+        zoneIds: Object.keys(zoneInfoMap),
+        source: config.zoneConfig ? 'config_param' : 'snapshot'
       });
     }
 
