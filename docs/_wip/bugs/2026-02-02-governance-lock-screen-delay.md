@@ -244,6 +244,14 @@ logger.sampled('governance.phase_change', {
   - Warning → Locked transitions work
   - Challenge requirements display correctly
 
+### Automated Test Coverage (2026-02-03)
+
+- [x] **30ms rapid polling test** - `governance-lockscreen-monitor.runtime.test.mjs`
+  - Confirms 1116ms total hydration time
+  - Captures placeholder → real value transition
+  - Documents exact timing deltas between phases
+  - Run: `npx playwright test tests/live/flow/fitness/governance-lockscreen-monitor.runtime.test.mjs`
+
 ## Future Considerations
 
 ### Re-enabling Direct Governance Callback
@@ -279,6 +287,117 @@ grep '"Target zone"' prod-logs-20260202-185930.txt  # No output
 # Verify proper zone labels present
 grep '"zoneLabel"' prod-logs-20260202-185930.txt | grep governance
 # Shows: "zoneLabel":"Active", "zoneLabel":"Cool"
+```
+
+## Empirical Timing Data (2026-02-03)
+
+### Test: 30ms Rapid Polling for Hydration Sequence
+
+A Playwright test with 30ms polling interval captured the exact hydration sequence:
+
+```
+Test file: tests/live/flow/fitness/governance-lockscreen-monitor.runtime.test.mjs
+Commit: dfedd190
+```
+
+### Captured Hydration Phases
+
+| Timestamp | Phase | Rows | Message | Target Zone | Target HR |
+|-----------|-------|------|---------|-------------|-----------|
+| T+1040ms | `NO_OVERLAY` | - | - | - | - |
+| T+1429ms | `HR_PRESENT_ZONES_PENDING` | 2 | "Loading unlock rules..." | **"Target zone"** (placeholder) | **60** (placeholder) |
+| T+1803ms | `HR_PRESENT_ZONES_PENDING` | 3 | "Loading unlock rules..." | **"Target zone"** (placeholder) | **60** (placeholder) |
+| T+2156ms | `FULLY_HYDRATED` | 3 | "Meet these conditions..." | **"Active"** (real) | **100/120/125** (real) |
+
+### Detailed Row State at Each Phase
+
+**T+1429ms (HR_PRESENT_ZONES_PENDING):**
+```
+Dad:  meta="50 / 60", currentZone="Cool", targetZone="Target zone" [HR:✓, CZ:✓, TZ:✗]
+Milo: meta="50 / 60", currentZone="Cool", targetZone="Target zone" [HR:✓, CZ:✓, TZ:✗]
+```
+
+**T+2156ms (FULLY_HYDRATED):**
+```
+Dad:  meta="50 / 100", currentZone="Cool", targetZone="Active" [HR:✓, CZ:✓, TZ:✓]
+Milo: meta="50 / 120", currentZone="Cool", targetZone="Active" [HR:✓, CZ:✓, TZ:✓]
+Alan: meta="50 / 125", currentZone="Cool", targetZone="Active" [HR:✓, CZ:✓, TZ:✓]
+```
+
+### Timing Deltas
+
+| Transition | Duration | What Changed |
+|------------|----------|--------------|
+| NO_OVERLAY → Rows appear | **389ms** | Lock screen visible, rows with placeholders |
+| More rows appear | **+374ms** | Additional users added, still placeholders |
+| **Placeholders → Real values** | **+353ms** | Target zone "Target zone" → "Active", HR 60 → 100/120/125 |
+| **Total hydration time** | **~1116ms** | From first appearance to fully correct |
+
+### Key Finding: Placeholder Values
+
+The test confirmed that initial values are **placeholders**, not just missing:
+
+| Field | Placeholder Value | Real Value |
+|-------|-------------------|------------|
+| Target zone label | "Target zone" | "Active" |
+| Target HR | 60 | 100, 120, 125 (user-specific) |
+| Message | "Loading unlock rules..." | "Meet these conditions to unlock playback." |
+
+The **60 BPM** placeholder is particularly misleading because it's a valid-looking number that doesn't match any user's actual target.
+
+### Lock Screen Lifecycle (Observed)
+
+```
+T+0      Controller ready
+T+389ms  Lock screen appears with partial data:
+         ├── Title: "Video Locked" ✓
+         ├── Message: "Loading unlock rules..." (intermediate)
+         ├── Rows: Present but with placeholders
+         │   ├── Current HR: Correct (from device)
+         │   ├── Target HR: 60 (WRONG - placeholder)
+         │   ├── Current Zone: "Cool" ✓
+         │   └── Target Zone: "Target zone" (WRONG - placeholder)
+         └── Progress bar: Not shown
+
+T+1116ms Lock screen fully hydrated:
+         ├── Title: "Video Locked" ✓
+         ├── Message: "Meet these conditions..." ✓
+         ├── Rows: Fully populated
+         │   ├── Current HR: Correct ✓
+         │   ├── Target HR: User-specific (100/120/125) ✓
+         │   ├── Current Zone: Correct ✓
+         │   └── Target Zone: "Active" ✓
+         └── Progress bar: Visible when applicable
+```
+
+### Test Code Reference
+
+The hydration phases are detected using this logic:
+
+```javascript
+// Determine phase from DOM state
+let phase;
+if (emptyRow) {
+  phase = 'EMPTY_WAITING';
+} else if (rows.length === 0) {
+  phase = 'PANEL_NO_ROWS';
+} else {
+  const allHydrated = rowDetails.every(r => r.fullyHydrated);
+  const anyHasHR = rowDetails.some(r => r.hasValidHR);
+
+  if (allHydrated) {
+    phase = 'FULLY_HYDRATED';
+  } else if (anyHasHR) {
+    phase = 'HR_PRESENT_ZONES_PENDING';  // ← The problematic state
+  } else {
+    phase = 'ROWS_PRESENT_DATA_PENDING';
+  }
+}
+
+// fullyHydrated check
+const hasValidHR = meta?.match(/^(\d+)\s*\/\s*(\d+)$/) !== null;
+const hasTargetZone = targetZone && targetZone !== 'Target' && targetZone !== 'Target zone';
+const fullyHydrated = hasValidHR && hasCurrentZone && hasTargetZone;
 ```
 
 ## Resolution (2026-02-02)
