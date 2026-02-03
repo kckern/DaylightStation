@@ -119,24 +119,24 @@ const FitnessPlayerFooterSeekThumbnails = ({
     }
   }, [zoomRange, clearIntent]);
 
-  // --- AUTO-RESET ZOOM AFTER SEEK COMPLETES ---
-  // When a seek completes and playback resumes, schedule zoom reset to base level
-  const prevSeekPendingRef = useRef(isSeekPending);
+  // --- AUTO-RESET ZOOM AFTER PLAYBACK RESUMES ---
+  // Wait for video to actually START PLAYING at seek target before resetting zoom
+  const prevLifecycleRef = useRef(lifecycle);
   useEffect(() => {
-    const wasSeekPending = prevSeekPendingRef.current;
-    prevSeekPendingRef.current = isSeekPending;
+    const prevLifecycle = prevLifecycleRef.current;
+    prevLifecycleRef.current = lifecycle;
 
-    // Detect seek completion: was pending, now not pending, and we're zoomed
-    if (wasSeekPending && !isSeekPending && isZoomed) {
-      logger.info('seek-completed-scheduling-zoom-reset', { isZoomed, zoomRange });
+    // Reset zoom when playback resumes after seek (not just when seek intent clears)
+    if (prevLifecycle !== 'playing' && lifecycle === 'playing' && isZoomed) {
+      logger.info('playback-resumed-scheduling-zoom-reset', { isZoomed, zoomRange, lifecycle });
       scheduleZoomReset(800);
     }
 
     // Cancel zoom reset when a new seek starts
-    if (!wasSeekPending && isSeekPending) {
+    if (lifecycle === 'seeking') {
       cancelZoomReset();
     }
-  }, [isSeekPending, isZoomed, zoomRange, scheduleZoomReset, cancelZoomReset]);
+  }, [lifecycle, isZoomed, zoomRange, scheduleZoomReset, cancelZoomReset]);
 
   // --- EXPOSE REFS TO PARENT ---
   useEffect(() => {
