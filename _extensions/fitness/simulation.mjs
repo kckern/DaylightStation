@@ -1,5 +1,16 @@
 #!/usr/bin/env node
 
+/**
+ * @deprecated This CLI simulation script is deprecated.
+ * Use the browser-based FitnessSimulationController instead:
+ * - For manual testing: Click gear button in FitnessPlayer (localhost only)
+ * - For Playwright tests: Use FitnessSimHelper from tests/_lib/
+ *
+ * This file will be removed in a future release.
+ * See docs/_wip/plans/2026-02-03-hr-simulation-panel-v2.md
+ */
+console.warn('⚠️  DEPRECATED: fitness/simulation.mjs is deprecated. Use browser-based simulation panel instead.');
+
 import WebSocket from 'ws';
 import fs from 'fs';
 import path from 'path';
