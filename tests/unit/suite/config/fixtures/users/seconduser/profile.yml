@@ -1,5 +1,0 @@
-version: "1.0"
-username: seconduser
-household_id: secondary-household
-display_name: "Second User"
-type: admin
