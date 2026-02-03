@@ -340,19 +340,177 @@ test.describe('Governance Lock Screen Monitor', () => {
       await sim.waitForController();
       recordEvent('CONTROLLER_READY');
 
-      // Check initial state immediately
-      await checkState();
-
-      // Get devices
+      // Get devices first
       const devices = await sim.getDevices();
       recordEvent('DEVICES_ENUMERATED', { count: devices.length });
 
       // ═══════════════════════════════════════════════════════════════
-      // SET ALL DEVICES TO COOL ZONE
+      // RAPID POLLING: Capture lock screen hydration sequence
+      // Start sending HR data immediately, poll every 30ms to catch all states
+      // ═══════════════════════════════════════════════════════════════
+      console.log('\n[DEEP DIVE] Starting HR data stream and rapid polling for hydration sequence...');
+
+      // Send HR data for first device immediately to trigger hydration
+      console.log(`  Sending initial HR data for device ${devices[0]?.deviceId}...`);
+      await sim.setZone(devices[0].deviceId, 'cool');
+
+      let lastRawState = null;
+      const hydrationEvents = [];
+
+      for (let i = 0; i < 150; i++) { // 150 x 30ms = 4.5 seconds
+        const rawState = await page.evaluate(() => {
+          const overlay = document.querySelector('.governance-overlay');
+          if (!overlay) return { phase: 'NO_OVERLAY' };
+
+          const panel = overlay.querySelector('.governance-lock');
+          if (!panel) return { phase: 'OVERLAY_NO_PANEL' };
+
+          const title = panel.querySelector('.governance-lock__title')?.textContent?.trim();
+          const message = panel.querySelector('.governance-lock__message')?.textContent?.trim();
+          const emptyRow = panel.querySelector('.governance-lock__row--empty');
+          const rows = panel.querySelectorAll('.governance-lock__row:not(.governance-lock__row--header):not(.governance-lock__row--empty)');
+
+          // Detailed row inspection
+          const rowDetails = [];
+          rows.forEach(row => {
+            const name = row.querySelector('.governance-lock__chip-name')?.textContent?.trim();
+            const meta = row.querySelector('.governance-lock__chip-meta')?.textContent?.trim();
+            const currentPill = row.querySelector('.governance-lock__pill:not(.governance-lock__pill--target)');
+            const targetPill = row.querySelector('.governance-lock__pill--target');
+            const currentZone = currentPill?.textContent?.trim();
+            const targetZone = targetPill?.textContent?.trim();
+
+            // Check if data looks hydrated vs placeholder
+            const hrMatch = meta?.match(/^(\d+)\s*\/\s*(\d+)$/);
+            const hasValidHR = hrMatch !== null;
+            const hasCurrentZone = currentZone && currentZone !== 'No signal' && currentZone !== '';
+            const hasTargetZone = targetZone && targetZone !== 'Target' && targetZone !== 'Target zone' && targetZone !== '';
+
+            rowDetails.push({
+              name: name || '(no name)',
+              meta: meta || '(no meta)',
+              currentZone: currentZone || '(none)',
+              targetZone: targetZone || '(none)',
+              hasValidHR,
+              hasCurrentZone,
+              hasTargetZone,
+              fullyHydrated: hasValidHR && hasCurrentZone && hasTargetZone
+            });
+          });
+
+          // Determine phase
+          let phase;
+          if (emptyRow) {
+            phase = 'EMPTY_WAITING';
+          } else if (rows.length === 0) {
+            phase = 'PANEL_NO_ROWS';
+          } else {
+            const allHydrated = rowDetails.every(r => r.fullyHydrated);
+            const someHydrated = rowDetails.some(r => r.fullyHydrated);
+            const anyHasHR = rowDetails.some(r => r.hasValidHR);
+
+            if (allHydrated) {
+              phase = 'FULLY_HYDRATED';
+            } else if (someHydrated) {
+              phase = 'PARTIALLY_HYDRATED';
+            } else if (anyHasHR) {
+              phase = 'HR_PRESENT_ZONES_PENDING';
+            } else {
+              phase = 'ROWS_PRESENT_DATA_PENDING';
+            }
+          }
+
+          return {
+            phase,
+            title,
+            message,
+            hasEmptyRow: !!emptyRow,
+            rowCount: rows.length,
+            rows: rowDetails
+          };
+        });
+
+        // Record state change
+        const stateKey = JSON.stringify({ phase: rawState.phase, rowCount: rawState.rowCount, rows: rawState.rows?.map(r => ({ name: r.name, hasValidHR: r.hasValidHR, hasCurrentZone: r.hasCurrentZone, hasTargetZone: r.hasTargetZone })) });
+        const lastKey = lastRawState ? JSON.stringify({ phase: lastRawState.phase, rowCount: lastRawState.rowCount, rows: lastRawState.rows?.map(r => ({ name: r.name, hasValidHR: r.hasValidHR, hasCurrentZone: r.hasCurrentZone, hasTargetZone: r.hasTargetZone })) }) : null;
+
+        if (stateKey !== lastKey) {
+          const elapsed = getElapsed();
+          hydrationEvents.push({
+            t: elapsed,
+            phase: rawState.phase,
+            message: rawState.message,
+            rowCount: rawState.rowCount,
+            rows: rawState.rows
+          });
+
+          recordEvent('HYDRATION_STATE', {
+            phase: rawState.phase,
+            message: rawState.message?.slice(0, 50),
+            rowCount: rawState.rowCount,
+            rowSummary: rawState.rows?.map(r => `${r.name}:HR=${r.hasValidHR},CZ=${r.hasCurrentZone},TZ=${r.hasTargetZone}`).join('; ')
+          });
+
+          console.log(`  [${formatMs(elapsed)}] Phase: ${rawState.phase}, Rows: ${rawState.rowCount}, Message: "${rawState.message?.slice(0, 40)}..."`);
+          if (rawState.rows?.length > 0) {
+            rawState.rows.forEach(r => {
+              console.log(`    - ${r.name}: meta="${r.meta}", currentZone="${r.currentZone}", targetZone="${r.targetZone}" [HR:${r.hasValidHR}, CZ:${r.hasCurrentZone}, TZ:${r.hasTargetZone}]`);
+            });
+          }
+        }
+
+        lastRawState = rawState;
+
+        // Stop early if fully hydrated with all expected rows (4 users)
+        if (rawState.phase === 'FULLY_HYDRATED' && rawState.rowCount >= 4) {
+          console.log(`  [${formatMs(getElapsed())}] Stopping rapid poll - fully hydrated with ${rawState.rowCount} rows`);
+          break;
+        }
+
+        // Send HR data for next device every 300ms to accelerate hydration
+        const deviceIndex = Math.floor(i / 10) + 1; // +1 because device 0 already sent
+        if (i > 0 && i % 10 === 0 && deviceIndex < devices.length) {
+          const nextDevice = devices[deviceIndex];
+          if (nextDevice) {
+            await sim.setZone(nextDevice.deviceId, 'cool');
+            console.log(`  [${formatMs(getElapsed())}] Sent HR for device[${deviceIndex}]: ${nextDevice.deviceId}`);
+          }
+        }
+
+        await page.waitForTimeout(30);
+      }
+
+      // Report hydration sequence
+      console.log('\n[HYDRATION SEQUENCE SUMMARY]');
+      console.log('┌────────────┬────────────────────────────────┬──────┬─────────────────────────────────┐');
+      console.log('│ Timestamp  │ Phase                          │ Rows │ Details                         │');
+      console.log('├────────────┼────────────────────────────────┼──────┼─────────────────────────────────┤');
+      for (const evt of hydrationEvents) {
+        const rowInfo = evt.rows?.map(r => r.name.slice(0,3)).join(',') || '-';
+        console.log(`│ ${formatMs(evt.t).padEnd(10)} │ ${evt.phase.padEnd(30)} │ ${String(evt.rowCount).padEnd(4)} │ ${rowInfo.padEnd(31)} │`);
+      }
+      console.log('└────────────┴────────────────────────────────┴──────┴─────────────────────────────────┘');
+
+      // Calculate deltas
+      if (hydrationEvents.length > 1) {
+        console.log('\n[HYDRATION TIMING DELTAS]');
+        for (let i = 1; i < hydrationEvents.length; i++) {
+          const prev = hydrationEvents[i - 1];
+          const curr = hydrationEvents[i];
+          const delta = curr.t - prev.t;
+          console.log(`  ${prev.phase} → ${curr.phase}: ${delta}ms`);
+        }
+      }
+
+      // Now do standard state check
+      await checkState();
+
+      // ═══════════════════════════════════════════════════════════════
+      // SET REMAINING DEVICES TO COOL ZONE
       // ═══════════════════════════════════════════════════════════════
       recordEvent('SETTING_COOL_ZONE_START');
-      for (const device of devices) {
-        await sim.setZone(device.deviceId, 'cool');
+      for (let i = 1; i < devices.length; i++) { // Start from 1, device 0 already set
+        await sim.setZone(devices[i].deviceId, 'cool');
         await page.waitForTimeout(200);
       }
       recordEvent('SETTING_COOL_ZONE_COMPLETE');
