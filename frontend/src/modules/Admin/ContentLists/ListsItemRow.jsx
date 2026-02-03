@@ -6,7 +6,9 @@ import {
   IconMusic, IconDeviceTv, IconMovie, IconDeviceTvOld, IconStack2,
   IconUser, IconDisc, IconPhoto, IconPlaylist, IconFile, IconBook,
   IconChevronRight, IconChevronLeft, IconHome, IconInfoCircle,
-  IconEye, IconEyeOff, IconPlayerPlay, IconExternalLink, IconAlertTriangle
+  IconEye, IconEyeOff, IconPlayerPlay, IconExternalLink, IconAlertTriangle,
+  IconList, IconMicrophone, IconVideo, IconFolder, IconFileText, IconSearch,
+  IconBroadcast, IconPresentation, IconSchool, IconUsers, IconStack3
 } from '@tabler/icons-react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -21,6 +23,19 @@ const ACTION_OPTIONS = [
   { value: 'Read', label: 'Read' },
 ];
 
+// Types that represent containers (can be drilled into)
+const CONTAINER_TYPES = ['show', 'season', 'artist', 'album', 'collection', 'playlist', 'folder', 'container'];
+
+/**
+ * Check if an item is a container that can be browsed into
+ */
+function isContainerItem(item) {
+  if (!item) return false;
+  if (item.isContainer || item.itemType === 'container') return true;
+  const type = item.type || item.metadata?.type;
+  return CONTAINER_TYPES.includes(type);
+}
+
 // Type to icon mapping
 const TYPE_ICONS = {
   track: IconMusic,
@@ -34,6 +49,25 @@ const TYPE_ICONS = {
   photo: IconPhoto,
   playlist: IconPlaylist,
   book: IconBook,
+  // Custom types for DaylightStation
+  watchlist: IconList,
+  program: IconList,
+  menu: IconList,
+  query: IconSearch,
+  talk: IconMicrophone,
+  freshvideo: IconVideo,
+  folder: IconFolder,
+  container: IconFolder,
+  media: IconFileText,
+  audio: IconMusic,
+  video: IconVideo,
+  // Container types for talks/channels
+  channel: IconBroadcast,
+  series: IconStack3,
+  conference: IconPresentation,
+  course: IconSchool,
+  meeting: IconUsers,
+  collection: IconStack2,
   default: IconFile
 };
 
@@ -75,8 +109,66 @@ const TYPE_LABELS = {
   photo: 'Photo',
   playlist: 'Playlist',
   book: 'Book',
-  clip: 'Clip'
+  clip: 'Clip',
+  // Custom types for DaylightStation
+  watchlist: 'Watchlist',
+  program: 'Program',
+  menu: 'Menu',
+  query: 'Query',
+  talk: 'Talk',
+  freshvideo: 'Video',
+  folder: 'Folder',
+  container: 'Container',
+  media: 'Media',
+  audio: 'Audio',
+  video: 'Video',
+  // Container types for talks/channels
+  channel: 'Channel',
+  series: 'Series',
+  conference: 'Conference',
+  course: 'Course',
+  meeting: 'Meeting',
+  collection: 'Collection'
 };
+
+// Color palette for seeded avatars (Mantine color names)
+const AVATAR_COLORS = [
+  'red', 'pink', 'grape', 'violet', 'indigo', 'blue', 'cyan', 'teal',
+  'green', 'lime', 'yellow', 'orange'
+];
+
+/**
+ * Generate a consistent color from a string (seeded by hash)
+ * @param {string} str - String to hash
+ * @returns {string} Mantine color name
+ */
+function getSeededColor(str) {
+  if (!str) return 'gray';
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) - hash) + str.charCodeAt(i);
+    hash = hash & hash; // Convert to 32bit integer
+  }
+  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+}
+
+/**
+ * Types that should get seeded colored avatars when no thumbnail
+ */
+const SEEDED_COLOR_TYPES = ['query', 'watchlist', 'program', 'menu'];
+
+/**
+ * Get avatar content (icon or letter) based on item type
+ */
+function getAvatarContent(item) {
+  const type = item.type;
+  // Return icon for specific types, otherwise first letter
+  if (type === 'query') return <IconSearch size={18} />;
+  if (type === 'watchlist') return <IconList size={18} />;
+  if (type === 'program') return <IconPlayerPlay size={18} />;
+  if (type === 'menu') return <IconList size={18} />;
+  return item.title?.[0];
+}
 
 // Build subtitle showing type • parent
 function buildSubtitle(item) {
@@ -93,7 +185,7 @@ function buildSubtitle(item) {
 }
 
 // Shimmer Avatar - shows shimmer placeholder while image loads
-function ShimmerAvatar({ src, size = 36, radius = 'sm', children, ...props }) {
+function ShimmerAvatar({ src, size = 36, radius = 'sm', color, children, ...props }) {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
 
@@ -115,10 +207,10 @@ function ShimmerAvatar({ src, size = 36, radius = 'sm', children, ...props }) {
     img.src = src;
   }, [src]);
 
-  // No src or error - show fallback avatar
+  // No src or error - show fallback avatar with optional color
   if (!src || error) {
     return (
-      <Avatar size={size} radius={radius} {...props}>
+      <Avatar size={size} radius={radius} color={color} {...props}>
         {children}
       </Avatar>
     );
@@ -150,14 +242,17 @@ function ShimmerAvatar({ src, size = 36, radius = 'sm', children, ...props }) {
 // Shared content item display - used in both table rows and combobox options
 function ContentItemDisplay({ item, isHighlighted, isCurrent, showChevron, onChevronClick, compact = false }) {
   const sourceColor = SOURCE_COLORS[item.source] || SOURCE_COLORS.default;
-  const isContainer = item.isContainer || ['show', 'season', 'artist', 'album', 'collection', 'playlist'].includes(item.type);
+  const isContainer = isContainerItem(item);
   const subtitle = buildSubtitle(item);
   const size = compact ? 28 : 36;
 
+  // Get seeded color for types that should have colored avatars
+  const avatarColor = SEEDED_COLOR_TYPES.includes(item.type) ? getSeededColor(item.title) : undefined;
+
   return (
     <Group gap={6} wrap="nowrap" style={{ flex: 1 }}>
-      <ShimmerAvatar src={item.thumbnail} size={size} radius="sm">
-        {item.title?.[0]}
+      <ShimmerAvatar src={item.thumbnail} size={size} radius="sm" color={avatarColor}>
+        {getAvatarContent(item)}
       </ShimmerAvatar>
       <Box style={{ flex: 1, minWidth: 0 }}>
         <Group gap={4} wrap="nowrap">
@@ -203,7 +298,7 @@ function ContentItemDisplay({ item, isHighlighted, isCurrent, showChevron, onChe
 
 // Custom option component for the dropdown - wraps ContentItemDisplay
 function ContentOption({ item, isCurrent, isHighlighted, onDrillDown, ...others }) {
-  const isContainer = item.isContainer || ['show', 'season', 'artist', 'album', 'collection', 'playlist'].includes(item.type);
+  const isContainer = isContainerItem(item);
 
   // Build class names for styling
   const classNames = ['content-option'];
@@ -480,7 +575,7 @@ function ContentSearchCombobox({ value, onChange }) {
           parent: item.metadata?.parentTitle,
           library: item.metadata?.librarySectionTitle,
           itemCount: item.metadata?.childCount ?? item.metadata?.leafCount ?? null,
-          isContainer: ['show', 'season', 'artist', 'album', 'collection', 'playlist'].includes(item.metadata?.type || item.type)
+          isContainer: CONTAINER_TYPES.includes(item.metadata?.type || item.type)
         }));
         setBrowseItems(children);
         setHighlightedIdx(0);
@@ -496,7 +591,7 @@ function ContentSearchCombobox({ value, onChange }) {
 
   // Drill down into a container (right arrow)
   const drillDown = async (item) => {
-    if (!item?.isContainer && !['show', 'season', 'artist', 'album', 'collection', 'playlist'].includes(item?.type)) {
+    if (!isContainerItem(item)) {
       return false;
     }
 
@@ -574,7 +669,7 @@ function ContentSearchCombobox({ value, onChange }) {
         parent: item.metadata?.parentTitle,
         library: item.metadata?.librarySectionTitle,
         itemCount: item.metadata?.childCount ?? item.metadata?.leafCount ?? null,
-        isContainer: ['show', 'season', 'artist', 'album', 'collection', 'playlist'].includes(item.metadata?.type || item.type)
+        isContainer: CONTAINER_TYPES.includes(item.metadata?.type || item.type)
       }));
 
       setBrowseItems(libraryItems);
@@ -661,7 +756,7 @@ function ContentSearchCombobox({ value, onChange }) {
         parent: item.metadata?.parentTitle,
         library: item.metadata?.librarySectionTitle,
         itemCount: item.metadata?.childCount ?? item.metadata?.leafCount ?? null,
-        isContainer: ['show', 'season', 'artist', 'album', 'collection', 'playlist'].includes(item.metadata?.type || item.type)
+        isContainer: CONTAINER_TYPES.includes(item.metadata?.type || item.type)
       }));
 
       setBrowseItems(siblings);
@@ -756,6 +851,20 @@ function ContentSearchCombobox({ value, onChange }) {
           parentKey: null,
           libraryId
         };
+      } else if (localId.includes('/')) {
+        // Path-based item (e.g., media:sfx/intro) - use parent path as container
+        const parts = localId.split('/');
+        const parentPath = parts.slice(0, -1).join('/');
+        const parentTitle = parts[parts.length - 2] || parentPath;
+        childrenUrl = `/api/v1/list/${source}/${parentPath}`;
+        parentInfo = {
+          id: `${source}:${parentPath}`,
+          title: parentTitle,
+          source,
+          thumbnail: null,
+          parentKey: null,
+          libraryId: null
+        };
       }
 
       setCurrentParent(parentInfo);
@@ -767,18 +876,21 @@ function ContentSearchCombobox({ value, onChange }) {
 
       const childrenData = await childrenResponse.json();
       const childItems = childrenData.items || [];
-      const siblings = childItems.map(item => ({
-        value: item.id || `${item.source}:${item.localId}`,
+      const siblings = childItems.map(item => {
+        // Extract source from item or from compound ID (e.g., "filesystem:media:path" or "plex:123")
+        const itemSource = item.source || item.id?.split(':')[0];
+        return {
+        value: item.id || `${itemSource}:${item.localId}`,
         title: item.title,
-        source: item.source,
-        type: item.metadata?.type || item.type,
+        source: itemSource,
+        type: item.metadata?.type || item.type || item.itemType,
         thumbnail: item.thumbnail,
         grandparent: item.metadata?.grandparentTitle,
         parent: item.metadata?.parentTitle,
         library: item.metadata?.librarySectionTitle,
-        itemCount: item.metadata?.childCount ?? item.metadata?.leafCount ?? null,
-        isContainer: ['show', 'season', 'artist', 'album', 'collection', 'playlist'].includes(item.metadata?.type || item.type)
-      }));
+        itemCount: item.metadata?.childCount ?? item.metadata?.leafCount ?? item.childCount ?? null,
+        isContainer: isContainerItem(item)
+      };});
       setBrowseItems(siblings);
 
       // Find and highlight current item
@@ -1286,7 +1398,7 @@ function ItemDetailsDrawer({ opened, onClose, contentValue }) {
               {/* Load Content link - opens in TV app */}
               <Text
                 component="a"
-                href={`/tv?${['show', 'season', 'artist', 'album', 'playlist', 'collection'].includes(itemInfo.metadata?.type) ? 'list' : 'play'}=${itemInfo.id}`}
+                href={`/tv?${CONTAINER_TYPES.includes(itemInfo.metadata?.type) ? 'list' : 'play'}=${itemInfo.id}`}
                 target="_blank"
                 size="sm"
                 c="blue"
@@ -1321,7 +1433,7 @@ function ItemDetailsDrawer({ opened, onClose, contentValue }) {
                     const isWatched = child.watched || child.viewCount > 0;
                     const childType = child.metadata?.type || child.type;
                     const isCurrentItem = currentItemId && child.id === currentItemId;
-                    const isContainer = ['show', 'season', 'artist', 'album', 'collection', 'playlist'].includes(childType);
+                    const isContainer = CONTAINER_TYPES.includes(childType);
 
                     return (
                       <Group

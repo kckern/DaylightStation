@@ -3,12 +3,14 @@ import path from 'path';
 import { parseFile } from 'music-metadata';
 import { ListableItem } from '#domains/content/capabilities/Listable.mjs';
 import { PlayableItem } from '#domains/content/capabilities/Playable.mjs';
+import { ItemSelectionService } from '#domains/content/index.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import {
   fileExists,
   dirExists,
   listEntries,
-  getStats
+  getStats,
+  loadYamlSafe
 } from '#system/utils/FileIO.mjs';
 
 const MEDIA_PREFIXES = ['', 'audio', 'video', 'img'];
@@ -48,6 +50,7 @@ export class FilesystemAdapter {
    * @param {Object} config
    * @param {string} config.mediaBasePath - Base path for media files
    * @param {Object} [config.mediaProgressMemory] - MediaProgressMemory instance for watch state
+   * @param {Object} [config.configService] - ConfigService for loading metadata configs
    */
   constructor(config) {
     if (!config.mediaBasePath) {
@@ -58,6 +61,7 @@ export class FilesystemAdapter {
     }
     this.mediaBasePath = config.mediaBasePath;
     this.mediaProgressMemory = config.mediaProgressMemory || null;
+    this.configService = config.configService || null;
   }
 
   /**
@@ -85,6 +89,7 @@ export class FilesystemAdapter {
       const metadata = await (this._parseFile || parseFile)(filePath, { duration: true });
       const common = metadata?.common || {};
       return {
+        title: common.title,
         artist: common.artist,
         album: common.album,
         year: common.year,
@@ -95,6 +100,16 @@ export class FilesystemAdapter {
       // File doesn't have ID3 tags or can't be parsed
       return {};
     }
+  }
+
+  /**
+   * Load metadata from a folder's metadata.yml file
+   * @param {string} metadataPath - Path to metadata file (without extension)
+   * @returns {Object|null} Metadata object or null if not found
+   * @private
+   */
+  _loadFolderMetadata(metadataPath) {
+    return loadYamlSafe(metadataPath);
   }
 
   /**
@@ -144,7 +159,8 @@ export class FilesystemAdapter {
     return [
       { prefix: 'media' },
       { prefix: 'file' },
-      { prefix: 'fs' }
+      { prefix: 'fs' },
+      { prefix: 'freshvideo', idTransform: (id) => `video/news/${id}` }
     ];
   }
 
@@ -237,13 +253,45 @@ export class FilesystemAdapter {
 
       if (stats.isDirectory()) {
         const entries = listEntries(resolved.path);
+        const baseName = path.basename(localId);
+
+        // Detect freshvideo paths (video/news/*)
+        const isFreshVideo = localId.startsWith('video/news/');
+        let title = baseName;
+        let thumbnail = null;
+
+        // Try to load metadata.yml from the directory for human-readable title/thumbnail
+        const metadataPath = path.join(resolved.path, 'metadata');
+        const folderMetadata = this._loadFolderMetadata(metadataPath);
+        if (folderMetadata) {
+          title = folderMetadata.title || folderMetadata.name || baseName;
+          // Check for show.jpg thumbnail in folder
+          const showJpgPath = path.join(resolved.path, 'show.jpg');
+          if (fileExists(showJpgPath)) {
+            thumbnail = `/api/v1/proxy/filesystem/stream/${encodeURIComponent(localId + '/show.jpg')}`;
+          }
+        } else {
+          // Format folder name sensically if no metadata file
+          title = baseName.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        }
+
+        // Count only video files for childCount
+        const videoCount = entries.filter(e => e.endsWith('.mp4')).length;
+
         return new ListableItem({
           id: `filesystem:${localId}`,
           source: 'filesystem',
           localId,
-          title: path.basename(localId),
+          title,
+          type: isFreshVideo ? 'channel' : 'folder',  // Freshvideo sources are channels
+          thumbnail,
           itemType: 'container',
-          childCount: entries.length
+          childCount: videoCount || entries.length,
+          metadata: {
+            type: isFreshVideo ? 'channel' : 'folder',  // Match container type for display
+            childCount: videoCount || entries.length,
+            librarySectionTitle: isFreshVideo ? 'Fresh Videos' : 'Media'
+          }
         });
       }
 
@@ -261,11 +309,30 @@ export class FilesystemAdapter {
         audioMetadata = await this._parseAudioMetadata(resolved.path);
       }
 
+      // Extract parent folder name for parentTitle (e.g., "audio/sfx/intro.mp3" → "SFX")
+      const pathParts = localId.split('/');
+      let parentTitle = null;
+      if (pathParts.length > 1) {
+        const parentFolder = pathParts[pathParts.length - 2];
+        // Format parent folder name nicely
+        parentTitle = parentFolder
+          .replace(/_/g, ' ')
+          .replace(/\b\w/g, c => c.toUpperCase());
+      }
+
+      // Build thumbnail URL for cover art (if embedded in file)
+      const thumbnail = `/api/v1/local-content/cover/${encodeURIComponent(localId)}`;
+
+      // Use ID3 title if available, otherwise filename
+      const title = audioMetadata.title || path.basename(localId, ext);
+
       return new PlayableItem({
         id: `filesystem:${localId}`,
         source: 'filesystem',
         localId,
-        title: path.basename(localId, ext),
+        title,
+        type: mediaType, // 'audio', 'video', or 'image'
+        thumbnail,
         mediaType,
         mediaUrl: `/api/v1/proxy/filesystem/stream/${encodeURIComponent(localId)}`,
         duration,
@@ -273,9 +340,12 @@ export class FilesystemAdapter {
         resumePosition,
         metadata: {
           ...audioMetadata,
+          type: mediaType,
           filePath: resolved.path,
           fileSize: stats.size,
           mimeType: MIME_TYPES[ext] || 'application/octet-stream',
+          parentTitle,
+          librarySectionTitle: 'Media',
           // Include watch state fields in metadata for compatibility
           percent: progress?.percent || null,
           playhead: resumePosition,
@@ -293,8 +363,8 @@ export class FilesystemAdapter {
    * @returns {Promise<ListableItem[]>}
    */
   async getList(id) {
-    // Strip source prefix if present
-    const localId = id.replace(/^filesystem:/, '');
+    // Strip source prefix if present (supports filesystem:, media:, file:, fs:)
+    const localId = id.replace(/^(filesystem|media|file|fs):/, '');
     const resolved = this.resolvePath(localId);
     if (!resolved) return [];
 
@@ -313,29 +383,13 @@ export class FilesystemAdapter {
           const entryStats = getStats(entryPath);
           if (!entryStats) continue;
 
-          const entryId = id ? `${id}/${entry}` : entry;
+          // Build clean localId for the child entry
+          const childLocalId = localId ? `${localId}/${entry}` : entry;
 
-          if (entryStats.isDirectory()) {
-            const childEntries = listEntries(entryPath);
-            items.push(new ListableItem({
-              id: `filesystem:${entryId}`,
-              source: 'filesystem',
-              localId: entryId,
-              title: entry,
-              itemType: 'container',
-              childCount: childEntries.length
-            }));
-          } else {
-            const ext = path.extname(entry).toLowerCase();
-            if (AUDIO_EXTS.includes(ext) || VIDEO_EXTS.includes(ext)) {
-              items.push(new ListableItem({
-                id: `filesystem:${entryId}`,
-                source: 'filesystem',
-                localId: entryId,
-                title: path.basename(entry, ext),
-                itemType: 'leaf'
-              }));
-            }
+          // Use getItem for rich metadata (thumbnails, ID3 tags, formatted titles, etc.)
+          const item = await this.getItem(childLocalId);
+          if (item) {
+            items.push(item);
           }
         } catch (entryErr) {
           // Skip entries that can't be accessed
@@ -352,9 +406,14 @@ export class FilesystemAdapter {
 
   /**
    * @param {string} id
+   * @param {Object} [options]
+   * @param {boolean} [options.freshvideo] - Apply freshvideo selection strategy
    * @returns {Promise<PlayableItem[]>}
    */
-  async resolvePlayables(id) {
+  async resolvePlayables(id, options = {}) {
+    // Detect freshvideo paths (video/news/*) and apply strategy
+    const isFreshVideo = options.freshvideo || id.startsWith('video/news/');
+
     // Try as single item first (handles single files like sfx/intro)
     const item = await this.getItem(id);
     if (item && item.isPlayable && item.isPlayable()) {
@@ -372,12 +431,60 @@ export class FilesystemAdapter {
         if (playable) playables.push(playable);
       } else if (listItem.itemType === 'container') {
         const localId = listItem.getLocalId();
-        const children = await this.resolvePlayables(localId);
+        const children = await this.resolvePlayables(localId, options);
         playables.push(...children);
       }
     }
 
+    // Apply freshvideo strategy if detected
+    if (isFreshVideo && playables.length > 0) {
+      return this._applyFreshVideoStrategy(playables);
+    }
+
     return playables;
+  }
+
+  /**
+   * Apply freshvideo selection strategy to items.
+   * Extracts date from YYYYMMDD filenames, enriches with watch state,
+   * then selects latest unwatched video.
+   * @param {PlayableItem[]} items
+   * @returns {Promise<PlayableItem[]>}
+   * @private
+   */
+  async _applyFreshVideoStrategy(items) {
+    // Enrich items with date from filename
+    const enrichedItems = await Promise.all(items.map(async (item) => {
+      const filename = item.localId?.split('/').pop() || '';
+      const dateMatch = filename.match(/^(\d{8})/);
+      const date = dateMatch ? dateMatch[1] : '00000000';
+
+      // Get watch state if available
+      let percent = 0;
+      let watched = false;
+      if (this.mediaProgressMemory) {
+        const mediaKey = item.localId || item.id?.replace('filesystem:', '');
+        const state = await this.mediaProgressMemory.get(mediaKey, 'media');
+        percent = state?.percent || 0;
+        watched = percent >= 90;
+      }
+
+      return {
+        ...item,
+        date,
+        sourcePriority: 0, // Single source, no priority needed
+        percent,
+        watched
+      };
+    }));
+
+    // Apply freshvideo strategy
+    const context = {
+      containerType: 'freshvideo',
+      now: new Date()
+    };
+
+    return ItemSelectionService.select(enrichedItems, context);
   }
 
   /**
@@ -386,6 +493,113 @@ export class FilesystemAdapter {
    */
   async getStoragePath(id) {
     return 'media';
+  }
+
+  /**
+   * Search media files by filename.
+   * @param {Object} query
+   * @param {string} query.text - Search text (min 2 chars)
+   * @param {string} [query.mediaType] - Filter by media type (audio, video, image)
+   * @param {number} [query.take=50] - Max results
+   * @returns {Promise<{items: Array, total: number}>}
+   */
+  async search({ text, mediaType, take = 50 }) {
+    if (!text || text.length < 2) return { items: [], total: 0 };
+
+    const searchLower = text.toLowerCase();
+    const results = [];
+
+    // Search through media prefix directories
+    for (const prefix of MEDIA_PREFIXES) {
+      if (results.length >= take) break;
+
+      const searchPath = prefix
+        ? path.join(this.mediaBasePath, prefix)
+        : this.mediaBasePath;
+
+      if (!dirExists(searchPath)) continue;
+
+      const found = await this._searchDirectory(searchPath, searchLower, mediaType, take - results.length, 0, prefix);
+      results.push(...found);
+    }
+
+    return { items: results, total: results.length };
+  }
+
+  /**
+   * Recursively search a directory for matching files
+   * @param {string} dirPath - Absolute directory path
+   * @param {string} searchText - Lowercase search text
+   * @param {string} [mediaType] - Filter by media type
+   * @param {number} limit - Max results
+   * @param {number} depth - Current recursion depth
+   * @param {string} prefix - Media prefix being searched
+   * @returns {Promise<Array>}
+   * @private
+   */
+  async _searchDirectory(dirPath, searchText, mediaType, limit, depth, prefix) {
+    // Limit depth to prevent runaway recursion
+    if (depth > 5 || limit <= 0) return [];
+
+    const results = [];
+    const entries = listEntries(dirPath);
+
+    for (const entry of entries) {
+      if (results.length >= limit) break;
+      if (entry.startsWith('.') || entry.startsWith('_')) continue;
+
+      const entryPath = path.join(dirPath, entry);
+      const stats = getStats(entryPath);
+      if (!stats) continue;
+
+      // Build localId relative to mediaBasePath
+      const relativePath = path.relative(this.mediaBasePath, entryPath);
+      const entryLower = entry.toLowerCase();
+
+      if (stats.isDirectory()) {
+        // Check if directory name matches
+        if (entryLower.includes(searchText)) {
+          const item = await this.getItem(relativePath);
+          if (item) results.push(item);
+        }
+
+        // Recurse into subdirectories
+        if (results.length < limit) {
+          const subResults = await this._searchDirectory(
+            entryPath, searchText, mediaType, limit - results.length, depth + 1, prefix
+          );
+          results.push(...subResults);
+        }
+      } else {
+        const ext = path.extname(entry).toLowerCase();
+        const fileMediaType = this.getMediaType(ext);
+
+        // Skip if mediaType filter doesn't match
+        if (mediaType && fileMediaType !== mediaType) continue;
+
+        // Skip non-media files
+        if (fileMediaType === 'unknown') continue;
+
+        const baseName = path.basename(entry, ext).toLowerCase();
+        if (baseName.includes(searchText) || entryLower.includes(searchText)) {
+          const item = await this.getItem(relativePath);
+          if (item) results.push(item);
+        }
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Get search capabilities for ContentQueryService
+   * @returns {{canonical: string[], specific: string[]}}
+   */
+  getSearchCapabilities() {
+    return {
+      canonical: ['text', 'mediaType'],
+      specific: []
+    };
   }
 }
 

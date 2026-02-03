@@ -270,7 +270,19 @@ export function createListRouter(config) {
         ip: req.ip
       });
 
-      const adapter = registry.get(source);
+      // Try exact source match first, then fall back to prefix resolution
+      let adapter = registry.get(source);
+      let resolvedLocalId = localId;
+
+      if (!adapter) {
+        // Try prefix resolution (e.g., "media" prefix -> FilesystemAdapter)
+        const resolved = registry.resolve(`${source}:${localId}`);
+        if (resolved) {
+          adapter = resolved.adapter;
+          resolvedLocalId = resolved.localId;
+        }
+      }
+
       if (!adapter) {
         return res.status(404).json({ error: `Unknown source: ${source}` });
       }
@@ -279,7 +291,7 @@ export function createListRouter(config) {
 
       // 'local' is an alias for 'folder' - both use FolderAdapter which expects folder: prefix
       const isFolderSource = source === 'folder' || source === 'local';
-      const compoundId = isFolderSource ? `folder:${localId}` : `${source}:${localId}`;
+      const compoundId = isFolderSource ? `folder:${resolvedLocalId}` : `${source}:${resolvedLocalId}`;
 
       if (modifiers.playable) {
         // Resolve to playable items only
