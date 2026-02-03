@@ -1048,7 +1048,7 @@ export class GovernanceEngine {
         const challengeRequirement = {
           zone: challengeSnapshot.zone || challengeSnapshot.zoneLabel,
           targetZoneId: challengeSnapshot.zone || challengeSnapshot.zoneLabel || null,
-          zoneLabel: challengeSnapshot.zoneLabel || challengeSnapshot.zone || 'Target zone',
+          zoneLabel: challengeSnapshot.zoneLabel || challengeSnapshot.zone || null,
           rule: challengeSnapshot.rule ?? null,
           ruleLabel: challengeSnapshot.selectionLabel || challengeSnapshot.rule || 'Challenge requirement',
           satisfied: false,
