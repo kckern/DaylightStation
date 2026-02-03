@@ -105,7 +105,13 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
   }, [selectedPlaylistId]);
 
   // Measure text overflow for marquee scroll distance
+  // Uses double-RAF to ensure measurement happens after paint, avoiding layout thrashing
   useEffect(() => {
+    if (!titleContainerRef.current || !marqueeTextRef.current) return;
+
+    let rafId = null;
+    let innerRafId = null;
+
     const measureOverflow = () => {
       if (!titleContainerRef.current || !marqueeTextRef.current) return;
 
@@ -117,11 +123,15 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
       setScrollDistance(overflow > 0 ? -overflow : 0);
     };
 
-    // Measure after render and fonts load
-    measureOverflow();
-    const timeoutId = setTimeout(measureOverflow, 100);
+    // Double RAF ensures measurement happens after browser paint
+    rafId = requestAnimationFrame(() => {
+      innerRafId = requestAnimationFrame(measureOverflow);
+    });
 
-    return () => clearTimeout(timeoutId);
+    return () => {
+      if (rafId) cancelAnimationFrame(rafId);
+      if (innerRafId) cancelAnimationFrame(innerRafId);
+    };
   }, [currentTrack?.title, currentTrack?.label]);
 
   const currentTrackIdentity = useMemo(() => {
