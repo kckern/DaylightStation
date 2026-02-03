@@ -441,27 +441,68 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
 
   // Build a map of deviceId -> displayName applying group_label rule
   const hrDisplayNameMap = React.useMemo(() => {
-    if (!allDevices) return hrOwnerMap;
+    const logger = getLogger();
+
+    if (!allDevices) {
+      logger.debug('fitness_users.hr_display_name_map.no_devices');
+      return hrOwnerMap;
+    }
+
     const activeHrDeviceIds = allDevices
       .filter(d => d.type === 'heart_rate')
       .map(d => String(d.deviceId));
-    
-    if (activeHrDeviceIds.length <= 1) return hrOwnerMap;
-    
+
+    logger.debug('fitness_users.hr_display_name_map.recompute', {
+      activeHrCount: activeHrDeviceIds.length,
+      activeHrDeviceIds
+    });
+
+    if (activeHrDeviceIds.length <= 1) {
+      logger.debug('fitness_users.hr_display_name_map.single_device_no_override', {
+        count: activeHrDeviceIds.length
+      });
+      return hrOwnerMap;
+    }
+
+    // Multi-device mode: apply groupLabel overrides
     const labelLookup = {};
     heartRateOwners.forEach((descriptor, deviceId) => {
       if (descriptor?.groupLabel) {
         labelLookup[String(deviceId)] = descriptor.groupLabel;
       }
     });
-    if (Object.keys(labelLookup).length === 0) return hrOwnerMap;
+
+    if (Object.keys(labelLookup).length === 0) {
+      logger.debug('fitness_users.hr_display_name_map.no_group_labels_configured');
+      return hrOwnerMap;
+    }
+
     const out = { ...hrOwnerMap };
+    const appliedOverrides = [];
+    const skippedGuests = [];
+
     Object.keys(labelLookup).forEach(deviceId => {
-      if (getGuestAssignment(deviceId)) return;
+      if (getGuestAssignment(deviceId)) {
+        skippedGuests.push({ deviceId, reason: 'guest_assigned' });
+        return;
+      }
       if (out[deviceId]) {
+        appliedOverrides.push({
+          deviceId,
+          from: out[deviceId],
+          to: labelLookup[deviceId]
+        });
         out[deviceId] = labelLookup[deviceId];
       }
     });
+
+    logger.info('fitness_users.hr_display_name_map.group_label_override', {
+      activeHrCount: activeHrDeviceIds.length,
+      appliedOverrides,
+      skippedGuests,
+      availableGroupLabels: labelLookup
+    });
+
     return out;
   }, [hrOwnerMap, allDevices, heartRateOwners, getGuestAssignment]);
 
@@ -944,14 +985,45 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                 : (Number.isFinite(participantEntry?.heartRate)
                   ? participantEntry.heartRate
                   : (Number.isFinite(device.heartRate) ? device.heartRate : null));
-              const deviceName = isHeartRate ?
-                (guestAssignment?.occupantName ||
-                 guestAssignment?.metadata?.name ||
-                 displayLabel ||              // Now correct after Task 1
-                 ownerName ||                 // Backup with correct multi-device logic
-                 participantEntry?.name ||
-                 deviceIdStr)
-                : (device.name || String(device.deviceId));
+              // Resolve deviceName with source tracking for diagnostics
+              let deviceName;
+              let deviceNameSource;
+              if (isHeartRate) {
+                if (guestAssignment?.occupantName) {
+                  deviceName = guestAssignment.occupantName;
+                  deviceNameSource = 'guestAssignment.occupantName';
+                } else if (guestAssignment?.metadata?.name) {
+                  deviceName = guestAssignment.metadata.name;
+                  deviceNameSource = 'guestAssignment.metadata.name';
+                } else if (displayLabel) {
+                  deviceName = displayLabel;
+                  deviceNameSource = 'displayLabel';
+                } else if (ownerName) {
+                  deviceName = ownerName;
+                  deviceNameSource = 'ownerName (hrDisplayNameMap)';
+                } else if (participantEntry?.name) {
+                  deviceName = participantEntry.name;
+                  deviceNameSource = 'participantEntry.name';
+                } else {
+                  deviceName = deviceIdStr;
+                  deviceNameSource = 'deviceIdStr (fallback)';
+                }
+              } else {
+                deviceName = device.name || String(device.deviceId);
+                deviceNameSource = device.name ? 'device.name' : 'device.deviceId';
+              }
+
+              // Log deviceName resolution for HR devices
+              if (isHeartRate) {
+                getLogger().debug('fitness_users.device_name_resolved', {
+                  deviceId: deviceIdStr,
+                  deviceName,
+                  deviceNameSource,
+                  ownerName,
+                  displayLabel,
+                  hasGuestAssignment: !!guestAssignment
+                });
+              }
               const zoneIdForGrouping = isHeartRate ? getDeviceZoneId(device) : null;
               const zoneClass = zoneIdForGrouping ? `zone-${zoneIdForGrouping}` : 'no-zone';
               const zoneBadgeColor = zoneIdForGrouping

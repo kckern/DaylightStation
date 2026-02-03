@@ -920,7 +920,25 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
 
   const fitnessPlayQueue = propPlayQueue !== undefined ? propPlayQueue : internalPlayQueue;
   const setFitnessPlayQueue = propSetPlayQueue || setInternalPlayQueue;
-  
+
+  // Auto-enable music when queue contains video with nomusic label
+  React.useEffect(() => {
+    if (!fitnessPlayQueue || fitnessPlayQueue.length === 0) return;
+
+    const currentItem = fitnessPlayQueue[0];
+    if (!currentItem?.labels || !Array.isArray(currentItem.labels)) return;
+
+    const nomusicLabelSet = new Set(nomusicLabels.map(l => l.toLowerCase()));
+    const itemLabels = currentItem.labels.map(l =>
+      typeof l === 'string' ? l.trim().toLowerCase() : ''
+    ).filter(Boolean);
+
+    const hasNomusicLabel = itemLabels.some(label => nomusicLabelSet.has(label));
+    if (hasNomusicLabel) {
+      setMusicAutoEnabledState(true);
+    }
+  }, [fitnessPlayQueue, nomusicLabels]);
+
   // Governance Media Update
   const setGovernanceMedia = React.useCallback((input) => {
     const session = fitnessSessionRef.current;
