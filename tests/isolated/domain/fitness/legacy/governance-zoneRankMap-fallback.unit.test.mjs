@@ -4,9 +4,10 @@ import { describe, test, expect, jest, beforeEach } from '@jest/globals';
 const mockSampled = jest.fn();
 const mockInfo = jest.fn();
 const mockWarn = jest.fn();
+const mockDebug = jest.fn();
 jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
-  default: () => ({ sampled: mockSampled, info: mockInfo, warn: mockWarn }),
-  getLogger: () => ({ sampled: mockSampled, info: mockInfo, warn: mockWarn })
+  default: () => ({ sampled: mockSampled, info: mockInfo, warn: mockWarn, debug: mockDebug }),
+  getLogger: () => ({ sampled: mockSampled, info: mockInfo, warn: mockWarn, debug: mockDebug })
 }));
 
 describe('GovernanceEngine.evaluate() zoneRankMap fallback', () => {
@@ -14,6 +15,7 @@ describe('GovernanceEngine.evaluate() zoneRankMap fallback', () => {
     mockSampled.mockClear();
     mockInfo.mockClear();
     mockWarn.mockClear();
+    mockDebug.mockClear();
   });
 
   test('should reuse previous zoneRankMap when called without params', async () => {

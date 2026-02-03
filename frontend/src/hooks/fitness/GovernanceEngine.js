@@ -414,6 +414,33 @@ export class GovernanceEngine {
       : [];
     this._governedTypeSet = new Set(normalizeLabelList(governedTypeSource));
 
+    // Seed _latestInputs with zone maps from session snapshot
+    // This ensures fallbacks work even on first evaluate() call
+    // Must happen BEFORE initial evaluation so zone labels are available
+    if (this.session?.snapshot?.zoneConfig) {
+      const zoneConfig = this.session.snapshot.zoneConfig;
+      const zoneRankMap = {};
+      const zoneInfoMap = {};
+      zoneConfig.forEach((z, idx) => {
+        if (!z || z.id == null) return;
+        const zid = normalizeZoneId(z.id);
+        if (!zid) return;
+        zoneRankMap[zid] = idx;
+        zoneInfoMap[zid] = {
+          id: zid,
+          name: z.name || String(z.id),
+          color: z.color || null
+        };
+      });
+      this._latestInputs.zoneRankMap = zoneRankMap;
+      this._latestInputs.zoneInfoMap = zoneInfoMap;
+
+      getLogger().debug('governance.configure.seeded_zone_maps', {
+        zoneCount: zoneConfig.length,
+        zoneIds: Object.keys(zoneInfoMap)
+      });
+    }
+
     // Subscribe to TreasureBox for reactive zone-based evaluation
     // (removes 1-second polling delay for governance responsiveness)
     if (this.session?.treasureBox) {
@@ -571,12 +598,20 @@ export class GovernanceEngine {
 
       // Skip logging for null-to-null (no-op) transitions
       if (oldPhase !== null || newPhase !== null) {
+        // Include requirement summary for debugging lock screen label issues
+        const firstReq = this.requirementSummary?.requirements?.[0];
         logger.sampled('governance.phase_change', {
           from: oldPhase,
           to: newPhase,
           mediaId: this.media?.id,
           deadline: this.meta?.deadline,
-          satisfiedOnce: this.meta?.satisfiedOnce
+          satisfiedOnce: this.meta?.satisfiedOnce,
+          requirementCount: this.requirementSummary?.requirements?.length || 0,
+          firstRequirement: firstReq ? {
+            zone: firstReq.zone,
+            zoneLabel: firstReq.zoneLabel,
+            satisfied: firstReq.satisfied
+          } : null
         }, { maxPerMinute: 30 });
       }
 
@@ -872,6 +907,9 @@ export class GovernanceEngine {
    * Reset to idle state (null phase) without double phase transitions.
    * Use this instead of reset() + _setPhase(null) to avoid triggering
    * two separate phase change callbacks.
+   *
+   * Note: Preserves zoneRankMap and zoneInfoMap that were seeded during configure()
+   * to ensure zone label fallbacks work even when no media/participants are present.
    */
   _resetToIdle() {
     this._clearTimers();
@@ -905,11 +943,14 @@ export class GovernanceEngine {
       requirements: [],
       activeCount: 0
     };
+    // Preserve zone maps that were seeded during configure()
+    const preservedZoneRankMap = this._latestInputs?.zoneRankMap || {};
+    const preservedZoneInfoMap = this._latestInputs?.zoneInfoMap || {};
     this._latestInputs = {
       activeParticipants: [],
       userZoneMap: {},
-      zoneRankMap: {},
-      zoneInfoMap: {},
+      zoneRankMap: preservedZoneRankMap,
+      zoneInfoMap: preservedZoneInfoMap,
       totalCount: 0
     };
     this._lastEvaluationTs = null;
@@ -1212,6 +1253,26 @@ export class GovernanceEngine {
       // Don't call reset() here - it clears satisfiedOnce which breaks grace period logic.
       // If user had satisfied requirements before, we want to preserve that so the
       // grace period countdown can continue when participants return with low HR.
+      
+      // FIX: Pre-populate requirements from policy even without participants.
+      // This ensures lock screen shows proper zone labels (e.g., "Active") immediately,
+      // rather than falling back to "Target zone" for ~2 seconds until HR data arrives.
+      const activePolicy = this._chooseActivePolicy(0);
+      if (activePolicy) {
+        const baseRequirement = activePolicy.baseRequirement || {};
+        const prePopulatedRequirements = this._buildRequirementShell(
+          baseRequirement,
+          zoneRankMap || {},
+          zoneInfoMap || {}
+        );
+        this.requirementSummary = {
+          policyId: activePolicy.id,
+          targetUserCount: activePolicy.minParticipants,
+          requirements: prePopulatedRequirements,
+          activeCount: 0
+        };
+      }
+      
       this._clearTimers();
       this._setPhase('pending');
       // Capture latest inputs so UI (watchers) reflects the current empty state
@@ -1368,6 +1429,48 @@ export class GovernanceEngine {
       }
     });
     return chosen || fallback;
+  }
+
+  /**
+   * Build requirement structure from policy config WITHOUT participant data.
+   * Used to pre-populate lock screen with proper zone labels before HR arrives.
+   * 
+   * @param {Object} requirementMap - Policy's baseRequirement map (zone -> rule)
+   * @param {Object} zoneRankMap - Map of zoneId -> rank
+   * @param {Object} zoneInfoMap - Map of zoneId -> zone metadata (name, color, etc.)
+   * @returns {Array} - Array of requirement objects with zone labels but no participant data
+   */
+  _buildRequirementShell(requirementMap, zoneRankMap, zoneInfoMap) {
+    if (!requirementMap || typeof requirementMap !== 'object') {
+      return [];
+    }
+    const entries = Object.entries(requirementMap).filter(([key]) => key !== 'grace_period_seconds');
+    if (!entries.length) {
+      return [];
+    }
+
+    return entries.map(([zoneKey, rule]) => {
+      const zoneId = zoneKey ? String(zoneKey).toLowerCase() : null;
+      if (!zoneId) return null;
+
+      const requiredRank = zoneRankMap[zoneId];
+      const zoneInfo = zoneInfoMap[zoneId];
+
+      return {
+        zone: zoneId,
+        zoneLabel: zoneInfo?.name || zoneId,
+        targetZoneId: zoneId,
+        participantKey: null,
+        severity: Number.isFinite(requiredRank) ? requiredRank : null,
+        rule,
+        ruleLabel: this._describeRule(rule, 0),
+        requiredCount: null, // Unknown until we have participant count
+        actualCount: 0,
+        metUsers: [],
+        missingUsers: [], // Empty - no participants to be missing yet
+        satisfied: false
+      };
+    }).filter(Boolean);
   }
 
   _evaluateRequirementSet(requirementMap, activeParticipants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount) {
