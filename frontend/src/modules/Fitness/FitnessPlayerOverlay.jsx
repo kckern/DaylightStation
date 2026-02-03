@@ -868,6 +868,12 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
         if (Number.isFinite(userTargetOverride)) {
           return Math.round(userTargetOverride);
         }
+        // If this is an identity-only entry (no vitals yet), don't show zone minimums
+        // as they aren't user-specific targets
+        const isIdentityOnly = resolvedParticipant?._source === 'identity_only';
+        if (isIdentityOnly) {
+          return null; // Will show "--" in UI
+        }
         if (Number.isFinite(target?.targetBpm)) {
           return Math.round(target.targetBpm);
         }
