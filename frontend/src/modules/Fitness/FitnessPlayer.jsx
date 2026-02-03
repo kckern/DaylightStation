@@ -15,6 +15,7 @@ import { resolvePause, PAUSE_REASON } from '../Player/utils/pauseArbiter.js';
 import FitnessChart from './FitnessSidebar/FitnessChart.jsx';
 import { useMediaAmplifier } from './components/useMediaAmplifier.js';
 import { FitnessPlayerFrame } from './frames';
+import HRSimTrigger from './HRSimTrigger.jsx';
 import { useVolumeSync } from './hooks/useVolumeSync.js';
 import { useRenderProfiler } from '../../hooks/fitness/useRenderProfiler.js';
 
@@ -1542,19 +1543,22 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   );
 
   return (
-    <FitnessPlayerFrame
-      className={playerRootClasses}
-      mode={playerMode}
-      sidebarSide={sidebarSide}
-      sidebarWidth={sidebarRenderWidth}
-      sidebar={sidebarContent}
-      footer={footerContent}
-      contentRef={contentRef}
-      mainRef={mainPlayerRef}
-      onRootPointerDownCapture={handleRootPointerDownCapture}
-    >
-      {mainContent}
-    </FitnessPlayerFrame>
+    <>
+      <FitnessPlayerFrame
+        className={playerRootClasses}
+        mode={playerMode}
+        sidebarSide={sidebarSide}
+        sidebarWidth={sidebarRenderWidth}
+        sidebar={sidebarContent}
+        footer={footerContent}
+        contentRef={contentRef}
+        mainRef={mainPlayerRef}
+        onRootPointerDownCapture={handleRootPointerDownCapture}
+      >
+        {mainContent}
+      </FitnessPlayerFrame>
+      <HRSimTrigger />
+    </>
   );
 };
 
