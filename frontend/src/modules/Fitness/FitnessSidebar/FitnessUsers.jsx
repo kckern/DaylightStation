@@ -664,28 +664,6 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     return luminance > CONFIG.color.luminanceThreshold ? CONFIG.color.fallbackTextDark : CONFIG.color.fallbackTextLight;
   };
 
-  /**
-   * Get displayLabel from household config (SSOT for user names).
-   * This ensures sidebar matches governance display.
-   */
-  const getHouseholdDisplayLabel = useCallback((profileId) => {
-    const users = fitnessConfiguration?.fitness?.users;
-    if (!users || !profileId) return null;
-
-    const allUsers = [
-      ...(users.primary || []),
-      ...(users.secondary || [])
-    ];
-
-    const user = allUsers.find(u =>
-      u.id === profileId ||
-      u.profileId === profileId ||
-      u.slug === profileId
-    );
-
-    return user?.displayLabel || null;
-  }, [fitnessConfiguration]);
-
   useEffect(() => {
     // Phase 1 SSOT: Use activeHeartRateParticipants directly from context
     // No more inline roster-to-device derivation - that logic now lives in FitnessContext
@@ -966,15 +944,11 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                 : (Number.isFinite(participantEntry?.heartRate)
                   ? participantEntry.heartRate
                   : (Number.isFinite(device.heartRate) ? device.heartRate : null));
-              // Get household SSOT label first
-              const householdDisplayLabel = profileId ? getHouseholdDisplayLabel(profileId) : null;
-
               const deviceName = isHeartRate ?
                 (guestAssignment?.occupantName ||
                  guestAssignment?.metadata?.name ||
-                 householdDisplayLabel ||     // Household SSOT (e.g., "Dad")
-                 displayLabel ||
-                 ownerName ||
+                 displayLabel ||              // Now correct after Task 1
+                 ownerName ||                 // Backup with correct multi-device logic
                  participantEntry?.name ||
                  deviceIdStr)
                 : (device.name || String(device.deviceId));
