@@ -92,55 +92,51 @@ export class FitnessSimulationController {
     return zones[0]?.id || null;
   }
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // Manual Control Methods
-  // ─────────────────────────────────────────────────────────────────────────────
-
   /**
-   * Build ANT+ HR message format
-   * @param {string} deviceId - Device ID
-   * @param {number} hr - Heart rate in BPM
-   * @returns {object} - ANT+ formatted message
+   * Build ANT+ HR message in format expected by DeviceManager
    */
   _buildHRMessage(deviceId, hr) {
     const state = this._getOrCreateState(deviceId);
-    state.beatCount = (state.beatCount || 0) + 1;
-
     const now = Date.now();
-    const beatTime = Math.round((now % 65536) * 1.024); // ANT+ 1/1024s resolution
+    const elapsedSeconds = Math.floor((now - (state.startTime || now)) / 1000);
+
+    // Increment beat count based on HR (beats per second * 2 for ~2s interval)
+    state.beatCount = (state.beatCount + Math.round(hr / 30)) % 256;
+    state.lastHR = hr;
+    state.lastSent = now;
+
+    const beatTime = (elapsedSeconds * 1024) % 65536;
 
     return {
-      topic: 'fitness/hr',
-      source: 'simulation',
-      type: 'hr',
-      timestamp: now,
-      profile: 'HeartRate',
-      deviceId: parseInt(deviceId, 10),
+      topic: 'fitness',
+      source: 'fitness-simulator',
+      type: 'ant',
+      timestamp: new Date().toISOString(),
+      profile: 'HR',
+      deviceId: String(deviceId),
       dongleIndex: 0,
       data: {
-        ManId: 1,
+        ManId: 255,
         SerialNumber: parseInt(deviceId, 10),
-        HwVersion: 1,
+        HwVersion: 5,
         SwVersion: 1,
-        ModelNum: 1,
+        ModelNum: 2,
         BatteryLevel: 100,
-        BatteryVoltage: 3.0,
+        BatteryVoltage: 4.15625,
         BatteryStatus: 'Good',
         DeviceID: parseInt(deviceId, 10),
         Channel: 0,
         BeatTime: beatTime,
         BeatCount: state.beatCount,
         ComputedHeartRate: hr,
-        PreviousBeat: state.lastBeatTime || beatTime - 1000,
-        OperatingTime: Math.floor((now - (state.startTime || now)) / 1000)
+        PreviousBeat: beatTime - 1024,
+        OperatingTime: elapsedSeconds * 1000
       }
     };
   }
 
   /**
    * Get or create device state entry
-   * @param {string} deviceId - Device ID
-   * @returns {object} - Device state object
    */
   _getOrCreateState(deviceId) {
     const id = String(deviceId);
@@ -151,7 +147,6 @@ export class FitnessSimulationController {
         autoMode: null,
         lastHR: null,
         lastSent: null,
-        lastBeatTime: null,
         startTime: Date.now()
       });
     }
@@ -160,20 +155,12 @@ export class FitnessSimulationController {
 
   /**
    * Send HR message via WebSocket
-   * @param {string} deviceId - Device ID
-   * @param {number} hr - Heart rate in BPM
    */
   _sendHR(deviceId, hr) {
     const message = this._buildHRMessage(deviceId, hr);
-    const state = this._getOrCreateState(deviceId);
-
-    state.lastHR = hr;
-    state.lastSent = Date.now();
-    state.lastBeatTime = message.data.BeatTime;
-
-    if (this.wsService?.send) {
-      this.wsService.send(message);
-    }
+    this.wsService?.send?.(message);
+    this._notifyStateChange();
+    return { ok: true, hr, deviceId };
   }
 
   /**
@@ -181,73 +168,48 @@ export class FitnessSimulationController {
    */
   _notifyStateChange() {
     if (typeof this.onStateChange === 'function') {
-      this.onStateChange(this.getDevices());
+      this.onStateChange();
     }
   }
 
   /**
-   * Set device to zone's midpoint HR
-   * @param {string} deviceId - Device ID
-   * @param {string} zone - Zone ID (e.g., 'rest', 'warmup', 'cardio', 'peak', 'fire')
-   * @returns {{ ok: boolean, deviceId?: string, zone?: string, hr?: number, error?: string }}
+   * Set device to specific zone's midpoint HR
    */
   setZone(deviceId, zone) {
     const hr = this.zoneMidpoints[zone];
     if (hr == null) {
-      return { ok: false, error: `Unknown zone: ${zone}` };
+      return { ok: false, error: `Invalid zone: ${zone}` };
     }
-
-    this._sendHR(deviceId, hr);
-    this._notifyStateChange();
-
-    return { ok: true, deviceId: String(deviceId), zone, hr };
+    return this._sendHR(deviceId, hr);
   }
 
   /**
    * Set device to exact HR value
-   * @param {string} deviceId - Device ID
-   * @param {number} bpm - Heart rate in BPM (valid range: 40-220)
-   * @returns {{ ok: boolean, deviceId?: string, hr?: number, error?: string }}
    */
   setHR(deviceId, bpm) {
-    const hr = parseInt(bpm, 10);
-    if (isNaN(hr) || hr < 40 || hr > 220) {
-      return { ok: false, error: `Invalid HR: ${bpm}. Must be between 40 and 220.` };
+    if (bpm < 40 || bpm > 220) {
+      return { ok: false, error: `HR out of range (40-220): ${bpm}` };
     }
-
-    this._sendHR(deviceId, hr);
-    this._notifyStateChange();
-
-    return { ok: true, deviceId: String(deviceId), hr };
+    return this._sendHR(deviceId, Math.round(bpm));
   }
 
   /**
    * Stop sending data for device (triggers dropout)
-   * @param {string} deviceId - Device ID
-   * @returns {{ ok: boolean, deviceId?: string, error?: string }}
    */
   stopDevice(deviceId) {
-    const id = String(deviceId);
-    const state = this.deviceState.get(id);
+    const state = this._getOrCreateState(deviceId);
 
-    if (!state) {
-      return { ok: false, error: `Device not found: ${deviceId}` };
-    }
-
-    // Clear any auto interval
+    // Stop any automation
     if (state.autoInterval) {
       clearInterval(state.autoInterval);
       state.autoInterval = null;
     }
-
-    // Clear state to trigger dropout detection
+    state.autoMode = null;
     state.lastHR = null;
     state.lastSent = null;
-    state.autoMode = null;
 
     this._notifyStateChange();
-
-    return { ok: true, deviceId: id };
+    return { ok: true, deviceId };
   }
 
   /**
