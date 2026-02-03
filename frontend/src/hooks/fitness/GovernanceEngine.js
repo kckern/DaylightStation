@@ -1232,6 +1232,19 @@ export class GovernanceEngine {
     // 2. Check participants
     if (activeParticipants.length === 0) {
       getLogger().warn('governance.evaluate.no_participants');
+
+      // DIAGNOSTIC: Log if zone maps are empty when pre-populating
+      const zoneInfoMapSize = Object.keys(zoneInfoMap || {}).length;
+      const zoneRankMapSize = Object.keys(zoneRankMap || {}).length;
+      if (zoneInfoMapSize === 0 || zoneRankMapSize === 0) {
+        getLogger().warn('governance.evaluate.empty_zone_maps_on_prepopulate', {
+          zoneInfoMapSize,
+          zoneRankMapSize,
+          hasSessionSnapshot: !!this.session?.snapshot?.zoneConfig,
+          snapshotZoneCount: this.session?.snapshot?.zoneConfig?.length || 0
+        });
+      }
+
       // Don't call reset() here - it clears satisfiedOnce which breaks grace period logic.
       // If user had satisfied requirements before, we want to preserve that so the
       // grace period countdown can continue when participants return with low HR.
@@ -1247,6 +1260,18 @@ export class GovernanceEngine {
           zoneRankMap || {},
           zoneInfoMap || {}
         );
+
+        // Log what we pre-populated for debugging
+        if (prePopulatedRequirements.length > 0) {
+          const firstReq = prePopulatedRequirements[0];
+          getLogger().debug('governance.evaluate.prepopulated_requirements', {
+            count: prePopulatedRequirements.length,
+            firstZone: firstReq?.zone,
+            firstZoneLabel: firstReq?.zoneLabel,
+            hasProperLabel: firstReq?.zoneLabel !== firstReq?.zone
+          });
+        }
+
         this.requirementSummary = {
           policyId: activePolicy.id,
           targetUserCount: activePolicy.minParticipants,
