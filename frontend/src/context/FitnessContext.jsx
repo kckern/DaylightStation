@@ -1503,7 +1503,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     const mergedSource = existing?.source || (participant?.isGuest ? 'Guest' : null);
     const mergedDisplayLabel = existing?.displayLabel
       || participant?.displayLabel
-      || getDisplayLabel(participant?.name || nameOrId, { preferGroupLabel: false });
+      || getDisplayLabel(participant?.name || nameOrId, { userId: participant?.id || participant?.profileId });
 
     if (!existing) {
       return {
