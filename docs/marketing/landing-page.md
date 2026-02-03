@@ -1,8 +1,8 @@
 # Daylight Station
 
-### A self-hosted data refinery for an intentional life.
+### Where your apps finally meet.
 
-Your digital life is scattered across dozens of apps and services. Daylight Station pulls it all together, refines the noise into signal, and delivers it exactly when and where you need it.
+**Alone, they're apps. At Daylight Station, they're a life.**
 
 [Get Started on GitHub →](https://github.com/kckern/DaylightStation)
 
@@ -12,32 +12,34 @@ Your digital life is scattered across dozens of apps and services. Daylight Stat
 
 ## The Problem
 
-You've tried to take control of your digital life. You self-host Plex. You track runs on Strava. You manage tasks in Todoist. You log weight in Withings. You automate your home with Home Assistant.
+Your calendar lives in Google. Your runs live in Strava. Your weight lives in Withings. Your movies live in Plex. Your home lives in Home Assistant.
 
-But the value is trapped.
+They've never been in the same room.
 
-- **20 browser tabs** for 20 different services
-- **Context switching** every time you want to check something
-- **No synthesis** — your fitness data doesn't talk to your calendar
+- **20 services** that don't know about each other
+- **20 browser tabs** you cycle through like a chore
+- **Zero synthesis** — your fitness data has never met your calendar
 - **Doomscrolling** on apps designed to capture your attention, not serve it
 
-The tools exist. The data exists. What's missing is the **last mile** — an interface that delivers the right information at the right moment, without the noise.
+The tools exist. The data exists. What's missing is the place where they finally meet.
 
 ---
 
 ## The Solution
 
-Daylight Station is a **data refinery**. It ingests raw data from everywhere your life already lives — cloud APIs, self-hosted services, sensors, calendars — and distills it into high-purity signal.
+**Daylight Station is that room.**
 
-That signal flows to **purpose-built taps** throughout your home:
+A self-hosted data refinery that pulls from everywhere your life already lives — cloud APIs, self-hosted services, sensors, calendars — and finally lets them work together.
 
-- A **kiosk in your office** showing today's calendar and accountability nudges
-- A **display in your garage** overlaying heart rate on workout videos
-- A **thermal printer in your kitchen** producing a morning receipt of goals
-- A **Telegram bot** that logs meals from a photo or voice memo
+When your apps meet, you get:
+
+- A **kiosk in your office** that knows your calendar *and* your workout streak
+- A **display in your garage** that overlays your heart rate on workout videos
+- A **thermal printer in your kitchen** that gives you the morning briefing *before* you touch a screen
+- A **Telegram bot** that logs meals from a photo *and* coaches you based on your trends
 - A **TV app** that slips family photos between episodes instead of ads
 
-**One backbone. Many taps. Always relevant.**
+**Where your apps finally meet. One backbone. Many taps.**
 
 ---
 
@@ -70,7 +72,7 @@ That signal flows to **purpose-built taps** throughout your home:
 
 **Outputs:** Room-specific dashboards, Telegram bots, thermal printouts, TV overlays, push notifications, ambient lighting, voice assistants.
 
-The same data appears in different forms depending on where you are and what you need.
+Your apps meet at Daylight Station. What comes out depends on where you are and what you need.
 
 ---
 
@@ -189,6 +191,7 @@ docker-compose up -d
 ---
 
 **Daylight Station** is open source under the Polyform Noncommercial License.
-Built for personal use. Shared for others who want to reclaim their attention.
+
+Where your apps finally meet. Built for personal use. Shared for others who want their data to work together.
 
 [GitHub](https://github.com/kckern/DaylightStation) · [Issues](https://github.com/kckern/DaylightStation/issues) · [Docker Hub](https://hub.docker.com/r/kckern/daylight-station)
