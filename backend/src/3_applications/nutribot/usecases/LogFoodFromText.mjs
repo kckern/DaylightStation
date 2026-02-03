@@ -108,12 +108,23 @@ export class LogFoodFromText {
     }
 
     try {
-      // 1. Send "Analyzing..." message
+      // 1. Create status indicator (or use existing message for revision flows)
+      const truncatedText = text.length > 300 ? text.substring(0, 300) + '...' : text;
+      let status = null;
       let statusMsgId;
+
       if (existingMessageId) {
+        // Revision flow: message already exists, just track its ID
         statusMsgId = existingMessageId;
+      } else if (messaging.createStatusIndicator) {
+        // Use status indicator with animation
+        status = await messaging.createStatusIndicator(
+          `🔍 Analyzing\n💬 "${truncatedText}"`,
+          { frames: ['.', '..', '...'], interval: 2000 }
+        );
+        statusMsgId = status.messageId;
       } else {
-        const truncatedText = text.length > 300 ? text.substring(0, 300) + '...' : text;
+        // Fallback for gateways without status indicator support
         const result = await messaging.sendMessage(`🔍 Analyzing...\n💬 "${truncatedText}"`, {});
         statusMsgId = result.messageId;
       }
@@ -175,9 +186,13 @@ export class LogFoodFromText {
           return fallbackResult;
         }
 
-        await messaging.updateMessage(statusMsgId, {
-          text: "❓ I couldn't identify any food from your description. Could you be more specific?",
-        });
+        if (status) {
+          await status.finish("❓ I couldn't identify any food from your description. Could you be more specific?");
+        } else {
+          await messaging.updateMessage(statusMsgId, {
+            text: "❓ I couldn't identify any food from your description. Could you be more specific?",
+          });
+        }
         return { success: false, error: 'No food detected' };
       }
 
@@ -212,11 +227,20 @@ export class LogFoodFromText {
       const buttons = this.#buildActionButtons(nutriLog.id);
 
       try {
-        await messaging.updateMessage(statusMsgId, {
-          text: `${dateHeader}\n\n${foodList}`,
-          choices: buttons,
-          inline: true,
-        });
+        if (status) {
+          // Use status indicator's finish (stops animation, updates in place)
+          await status.finish(`${dateHeader}\n\n${foodList}`, {
+            choices: buttons,
+            inline: true,
+          });
+        } else {
+          // Fallback: direct update
+          await messaging.updateMessage(statusMsgId, {
+            text: `${dateHeader}\n\n${foodList}`,
+            choices: buttons,
+            inline: true,
+          });
+        }
       } catch (updateError) {
         this.#logger.warn?.('logText.updateMessage.failed', { conversationId, error: updateError.message });
         try {
