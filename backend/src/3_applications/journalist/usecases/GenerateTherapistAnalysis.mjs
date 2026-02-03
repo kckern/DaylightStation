@@ -58,6 +58,7 @@ export class GenerateTherapistAnalysis {
     this.#logger.debug?.('analysis.therapist.start', { chatId, hasResponseContext: !!responseContext });
 
     const messaging = this.#getMessaging(responseContext, chatId);
+    let status = null;
 
     try {
       // 1. Delete pending unanswered messages
@@ -80,6 +81,14 @@ export class GenerateTherapistAnalysis {
         return { success: false, error: 'Insufficient history' };
       }
 
+      // Create status indicator for analysis (this can take a while with large context)
+      if (messaging.createStatusIndicator) {
+        status = await messaging.createStatusIndicator(
+          '📘 Analyzing your journal',
+          { frames: ['.', '..', '...'], interval: 2500 }
+        );
+      }
+
       // 3. Load recent debrief summaries (15 days back)
       let debriefContext = '';
       if (this.#debriefRepository) {
@@ -99,9 +108,13 @@ export class GenerateTherapistAnalysis {
       });
 
       // 5. Send analysis with prefix
-      const { messageId } = await messaging.sendMessage(`📘 ${analysis}`, {
-        parseMode: 'HTML',
-      });
+      let messageId;
+      if (status) {
+        messageId = await status.finish(`📘 ${analysis}`, { parseMode: 'HTML' });
+      } else {
+        const result = await messaging.sendMessage(`📘 ${analysis}`, { parseMode: 'HTML' });
+        messageId = result.messageId;
+      }
 
       this.#logger.info?.('analysis.therapist.complete', { chatId, messageId });
 
@@ -112,6 +125,16 @@ export class GenerateTherapistAnalysis {
       };
     } catch (error) {
       this.#logger.error?.('analysis.therapist.error', { chatId, error: error.message });
+
+      // Show error in status indicator if available
+      if (status) {
+        try {
+          await status.finish('⚠️ Sorry, I couldn\'t complete the analysis. Please try again later.');
+        } catch (e) {
+          // Ignore
+        }
+      }
+
       throw error;
     }
   }

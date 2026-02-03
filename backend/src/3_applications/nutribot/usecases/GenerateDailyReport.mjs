@@ -128,8 +128,20 @@ export class GenerateDailyReport {
         return { success: false, skippedReason: 'No food logged for this date' };
       }
 
-      // 3. Send "Generating..." status message
-      const { messageId: statusMsgId } = await messaging.sendMessage( '📊 Generating report...', {});
+      // 3. Create status indicator for report generation
+      let status = null;
+      let statusMsgId;
+
+      if (messaging.createStatusIndicator) {
+        status = await messaging.createStatusIndicator(
+          '📊 Generating report',
+          { frames: ['.', '..', '...'], interval: 2000 }
+        );
+        statusMsgId = status.messageId;
+      } else {
+        const result = await messaging.sendMessage('📊 Generating report...', {});
+        statusMsgId = result.messageId;
+      }
 
       // 4. Get items for the report
       const items = await this.#nutriListStore.findByDate(userId, date);
@@ -170,11 +182,15 @@ export class GenerateDailyReport {
         }
       }
 
-      // 8. Delete status message
-      try {
-        await messaging.deleteMessage( statusMsgId);
-      } catch (e) {
-        this.#logger.debug?.('report.deleteStatus.failed', { error: e.message });
+      // 8. Cancel status indicator before sending report
+      if (status) {
+        await status.cancel();
+      } else {
+        try {
+          await messaging.deleteMessage(statusMsgId);
+        } catch (e) {
+          this.#logger.debug?.('report.deleteStatus.failed', { error: e.message });
+        }
       }
 
       // 9. Build caption

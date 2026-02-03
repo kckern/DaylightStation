@@ -57,13 +57,14 @@ export class LogFoodFromImage {
       if (responseContext.getFileUrl) {
         return responseContext;
       }
-      // Otherwise, wrap with bound getFileUrl from gateway
+      // Otherwise, wrap with bound methods from gateway
       return {
         sendMessage: (text, options) => responseContext.sendMessage(text, options),
         sendPhoto: (src, options) => responseContext.sendPhoto(src, options),
         updateMessage: (msgId, updates) => responseContext.updateMessage(msgId, updates),
         deleteMessage: (msgId) => responseContext.deleteMessage(msgId),
         getFileUrl: this.#messagingGateway?.getFileUrl?.bind(this.#messagingGateway),
+        createStatusIndicator: responseContext.createStatusIndicator?.bind(responseContext),
       };
     }
     return {
@@ -105,8 +106,21 @@ export class LogFoodFromImage {
         }
       }
 
-      // 1. Send "Analyzing..." status message
-      const { messageId: statusMsgId } = await messaging.sendMessage( `🔍 Analyzing image for nutrition...`, {});
+      // 1. Create status indicator with animation
+      let status = null;
+      let statusMsgId;
+
+      if (messaging.createStatusIndicator) {
+        status = await messaging.createStatusIndicator(
+          '🔍 Analyzing image for nutrition',
+          { frames: ['.', '..', '...'], interval: 2000 }
+        );
+        statusMsgId = status.messageId;
+      } else {
+        // Fallback for gateways without status indicator support
+        const result = await messaging.sendMessage('🔍 Analyzing image for nutrition...', {});
+        statusMsgId = result.messageId;
+      }
 
       // 2. Get image URL/data for AI
       let imageUrl = imageData.url;
@@ -135,9 +149,13 @@ export class LogFoodFromImage {
       const foodItems = this.#parseFoodResponse(response);
 
       if (foodItems.length === 0) {
-        await messaging.updateMessage( statusMsgId, {
-          text: "❓ I couldn't identify any food in this image. Could you describe what you're eating?",
-        });
+        if (status) {
+          await status.finish("❓ I couldn't identify any food in this image. Could you describe what you're eating?");
+        } else {
+          await messaging.updateMessage(statusMsgId, {
+            text: "❓ I couldn't identify any food in this image. Could you describe what you're eating?",
+          });
+        }
         return { success: false, error: 'No food detected' };
       }
 
@@ -173,11 +191,15 @@ export class LogFoodFromImage {
         await this.#foodLogStore.save(nutriLog);
       }
 
-      // 7. Delete status message
-      try {
-        await messaging.deleteMessage( statusMsgId);
-      } catch (e) {
-        this.#logger.debug?.('logImage.deleteStatus.failed', { error: e.message });
+      // 7. Cancel status indicator (deletes message) before sending photo
+      if (status) {
+        await status.cancel();
+      } else {
+        try {
+          await messaging.deleteMessage(statusMsgId);
+        } catch (e) {
+          this.#logger.debug?.('logImage.deleteStatus.failed', { error: e.message });
+        }
       }
 
       // 8. Send photo message with food list as caption

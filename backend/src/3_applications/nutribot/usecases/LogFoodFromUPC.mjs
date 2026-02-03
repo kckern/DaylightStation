@@ -66,21 +66,30 @@ export class LogFoodFromUPC {
     this.#logger.debug?.('logUPC.start', { conversationId, upc, hasResponseContext: !!responseContext });
 
     const messaging = this.#getMessaging(responseContext, conversationId);
+    let status = null;
     let statusMsgId = null;
 
     try {
       // 1. Delete original user message
       if (messageId) {
         try {
-          await messaging.deleteMessage( messageId);
+          await messaging.deleteMessage(messageId);
         } catch (e) {
           this.#logger.warn?.('logUPC.deleteOriginalFailed', { error: e.message });
         }
       }
 
-      // 2. Send "Looking up..." message
-      const statusMsg = await messaging.sendMessage( `🔍 Looking up barcode ${upc}...`);
-      statusMsgId = statusMsg.messageId;
+      // 2. Create status indicator with animation
+      if (messaging.createStatusIndicator) {
+        status = await messaging.createStatusIndicator(
+          `🔍 Looking up barcode ${upc}`,
+          { frames: ['.', '..', '...'], interval: 2000 }
+        );
+        statusMsgId = status.messageId;
+      } else {
+        const statusMsg = await messaging.sendMessage(`🔍 Looking up barcode ${upc}...`);
+        statusMsgId = statusMsg.messageId;
+      }
 
       // 3. Call UPC gateway
       let product = null;
@@ -89,9 +98,13 @@ export class LogFoodFromUPC {
       }
 
       if (!product) {
-        await messaging.updateMessage( statusMsgId, {
-          text: `❓ Product not found for barcode: ${upc}\n\nYou can describe the food instead.`,
-        });
+        if (status) {
+          await status.finish(`❓ Product not found for barcode: ${upc}\n\nYou can describe the food instead.`);
+        } else {
+          await messaging.updateMessage(statusMsgId, {
+            text: `❓ Product not found for barcode: ${upc}\n\nYou can describe the food instead.`,
+          });
+        }
         return { success: false, error: 'Product not found' };
       }
 
@@ -157,8 +170,12 @@ export class LogFoodFromUPC {
       const caption = this.#buildProductCaption(product, foodItem);
       const portionButtons = this.#buildPortionButtons(nutriLog.id);
 
-      // 9. Delete status message
-      await messaging.deleteMessage( statusMsgId);
+      // 9. Cancel status indicator (deletes message) before sending photo
+      if (status) {
+        await status.cancel();
+      } else {
+        await messaging.deleteMessage(statusMsgId);
+      }
 
       // 10. Send photo message (messaging platform fetches remote URLs directly)
       let photoMsgId;
@@ -199,11 +216,15 @@ export class LogFoodFromUPC {
     } catch (error) {
       this.#logger.error?.('logUPC.error', { conversationId, upc, error: error.message });
 
-      if (statusMsgId) {
+      if (status || statusMsgId) {
         try {
           const isNetworkError = error.code === 'ETIMEDOUT' || error.code === 'ECONNRESET' || error.code === 'EAI_AGAIN';
           const errorMsg = isNetworkError ? `⚠️ Network timeout looking up barcode ${upc}\n\nPlease try again.` : `❌ Error looking up barcode ${upc}\n\n${error.message}`;
-          await messaging.updateMessage( statusMsgId, { text: errorMsg });
+          if (status) {
+            await status.finish(errorMsg);
+          } else {
+            await messaging.updateMessage(statusMsgId, { text: errorMsg });
+          }
         } catch (e) {
           this.#logger.debug?.('logUPC.updateError.failed', { error: e.message });
         }

@@ -10,6 +10,16 @@
  *
  * @interface IResponseContext
  */
+
+/**
+ * Status indicator handle for long-running operations.
+ * Returned by createStatusIndicator().
+ *
+ * @typedef {Object} IStatusIndicator
+ * @property {string} messageId - The underlying message ID
+ * @property {function(string, Object?): Promise<string>} finish - Complete with final content, returns messageId
+ * @property {function(): Promise<void>} cancel - Abort without final message (deletes status)
+ */
 export const IResponseContext = {
   /**
    * Send a text message to the bound conversation
@@ -50,6 +60,35 @@ export const IResponseContext = {
    * @returns {Promise<void>}
    */
   async deleteMessage(messageId) {},
+
+  /**
+   * Create a status indicator for a long-running operation.
+   * Shows initial text immediately, optionally animates while waiting.
+   * Adapter handles implementation (update-in-place vs delete+recreate).
+   *
+   * @param {string} initialText - Initial status text (e.g., "🔍 Analyzing")
+   * @param {Object} [options] - Options
+   * @param {string[]} [options.frames] - Animation frames to cycle (e.g., ['.', '..', '...'])
+   * @param {number} [options.interval=2000] - Animation interval in ms
+   * @returns {Promise<IStatusIndicator>}
+   *
+   * @example
+   * // With animation
+   * const status = await ctx.createStatusIndicator('🔍 Analyzing', {
+   *   frames: ['.', '..', '...'],
+   *   interval: 2000,
+   * });
+   * // ... long operation ...
+   * const messageId = await status.finish('Done!', { choices: buttons });
+   *
+   * @example
+   * // Static (no animation)
+   * const status = await ctx.createStatusIndicator('🔍 Processing...');
+   * // ... long operation ...
+   * await status.cancel(); // Delete status, send different message type
+   * const { messageId } = await ctx.sendPhoto(photo, caption);
+   */
+  async createStatusIndicator(initialText, options = {}) {},
 };
 
 /**

@@ -44,10 +44,11 @@ export class ProcessVoiceEntry {
       if (responseContext.transcribeVoice) {
         return responseContext;
       }
-      // Otherwise, wrap with bound transcribeVoice from gateway
+      // Otherwise, wrap with bound methods from gateway
       return {
         sendMessage: (text, options) => responseContext.sendMessage(text, options),
         transcribeVoice: this.#messagingGateway?.transcribeVoice?.bind(this.#messagingGateway),
+        createStatusIndicator: responseContext.createStatusIndicator?.bind(responseContext),
       };
     }
     return {
@@ -67,16 +68,34 @@ export class ProcessVoiceEntry {
 
     const messaging = this.#getMessaging(responseContext, chatId);
 
+    // Create status indicator for transcription phase
+    let status = null;
+    if (messaging.createStatusIndicator) {
+      status = await messaging.createStatusIndicator(
+        '🎤 Transcribing',
+        { frames: ['.', '..', '...'], interval: 1500 }
+      );
+    }
+
     try {
       // 1. Transcribe voice message
       const transcription = await messaging.transcribeVoice(voiceFileId);
 
       if (!transcription || transcription.trim().length === 0) {
-        await messaging.sendMessage(
-          "🎤 Sorry, I couldn't understand that voice message. Could you try again or type your message?",
-          {},
-        );
+        if (status) {
+          await status.finish("🎤 Sorry, I couldn't understand that voice message. Could you try again or type your message?");
+        } else {
+          await messaging.sendMessage(
+            "🎤 Sorry, I couldn't understand that voice message. Could you try again or type your message?",
+            {},
+          );
+        }
         return { success: false, error: 'Empty transcription' };
+      }
+
+      // Cancel status indicator before sending transcription
+      if (status) {
+        await status.cancel();
       }
 
       // 2. Send transcription confirmation (split if too long for messaging platform)
@@ -111,6 +130,16 @@ export class ProcessVoiceEntry {
       };
     } catch (error) {
       this.#logger.error?.('voiceEntry.process.error', { chatId, error: error.message });
+
+      // Show error in status indicator if available
+      if (status) {
+        try {
+          await status.finish('⚠️ Sorry, something went wrong processing your voice message. Please try again.');
+        } catch (e) {
+          // Ignore
+        }
+      }
+
       throw error;
     }
   }

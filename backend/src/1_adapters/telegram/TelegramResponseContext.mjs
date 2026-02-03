@@ -109,6 +109,88 @@ export class TelegramResponseContext {
     return this.#adapter.deleteMessage(this.#chatId, messageId);
   }
 
+  /**
+   * Create a status indicator for a long-running operation.
+   * Shows initial text immediately, optionally animates while waiting.
+   * Telegram supports message updates, so finish() updates in place.
+   *
+   * @param {string} initialText - Initial status text (e.g., "🔍 Analyzing")
+   * @param {Object} [options] - Options
+   * @param {string[]} [options.frames] - Animation frames to cycle (e.g., ['.', '..', '...'])
+   * @param {number} [options.interval=2000] - Animation interval in ms
+   * @returns {Promise<IStatusIndicator>}
+   */
+  async createStatusIndicator(initialText, options = {}) {
+    const { frames = null, interval = 2000 } = options;
+    const shouldAnimate = Array.isArray(frames) && frames.length > 0;
+
+    // Send initial status message (with first frame if animating)
+    const initialDisplay = shouldAnimate ? `${initialText}${frames[0]}` : initialText;
+    const { messageId } = await this.sendMessage(initialDisplay, {});
+
+    let animationTimer = null;
+    let currentFrame = 0;
+    const baseText = initialText;
+
+    // Start animation if frames provided
+    if (shouldAnimate) {
+      animationTimer = setInterval(async () => {
+        currentFrame = (currentFrame + 1) % frames.length;
+        try {
+          await this.updateMessage(messageId, {
+            text: `${baseText}${frames[currentFrame]}`,
+          });
+        } catch (e) {
+          // Ignore update failures during animation (message may be gone)
+        }
+      }, interval);
+    }
+
+    const cleanup = () => {
+      if (animationTimer) {
+        clearInterval(animationTimer);
+        animationTimer = null;
+      }
+    };
+
+    // Capture `this` for use in returned object methods
+    const ctx = this;
+
+    return {
+      messageId,
+
+      /**
+       * Complete the status with final content.
+       * Updates the message in place (Telegram supports this).
+       * @param {string} content - Final message content
+       * @param {Object} [options] - Options (choices, inline, parseMode)
+       * @returns {Promise<string>} The message ID
+       */
+      async finish(content, options = {}) {
+        cleanup();
+        await ctx.updateMessage(messageId, {
+          text: content,
+          ...options,
+        });
+        return messageId;
+      },
+
+      /**
+       * Cancel the status indicator without sending final content.
+       * Deletes the status message.
+       * @returns {Promise<void>}
+       */
+      async cancel() {
+        cleanup();
+        try {
+          await ctx.deleteMessage(messageId);
+        } catch (e) {
+          // Ignore - message may already be gone
+        }
+      },
+    };
+  }
+
   // ============ Additional Methods (Telegram-specific but useful) ============
 
   /**

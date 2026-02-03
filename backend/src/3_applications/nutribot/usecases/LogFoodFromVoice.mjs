@@ -34,6 +34,7 @@ export class LogFoodFromVoice {
         sendMessage: (text, options) => responseContext.sendMessage(text, options),
         deleteMessage: (msgId) => responseContext.deleteMessage(msgId),
         transcribeVoice: (fileId) => this.#messagingGateway.transcribeVoice(fileId),
+        createStatusIndicator: responseContext.createStatusIndicator?.bind(responseContext),
       };
     }
     // Fallback to gateway directly
@@ -60,6 +61,15 @@ export class LogFoodFromVoice {
 
     const messaging = this.#getMessaging(responseContext, conversationId);
 
+    // Create status indicator for transcription phase
+    let status = null;
+    if (messaging.createStatusIndicator) {
+      status = await messaging.createStatusIndicator(
+        '🎤 Transcribing',
+        { frames: ['.', '..', '...'], interval: 1500 }
+      );
+    }
+
     try {
       // 1. Transcribe voice
       let transcription;
@@ -68,7 +78,11 @@ export class LogFoodFromVoice {
       } catch (transcribeError) {
         // Check if transcription service is not configured
         if (transcribeError.code === 'MISSING_CONFIG' || transcribeError.message?.includes('not configured')) {
-          await messaging.sendMessage( '🎤 Voice messages are not fully supported yet. Please type what you ate.', {});
+          if (status) {
+            await status.finish('🎤 Voice messages are not fully supported yet. Please type what you ate.');
+          } else {
+            await messaging.sendMessage('🎤 Voice messages are not fully supported yet. Please type what you ate.', {});
+          }
           return { success: false, error: 'Voice transcription not available' };
         }
         // Re-throw other errors (network issues, etc.)
@@ -76,8 +90,17 @@ export class LogFoodFromVoice {
       }
 
       if (!transcription || transcription.trim().length === 0) {
-        await messaging.sendMessage( "❓ I couldn't understand the voice message. Could you type what you ate?", {});
+        if (status) {
+          await status.finish("❓ I couldn't understand the voice message. Could you type what you ate?");
+        } else {
+          await messaging.sendMessage("❓ I couldn't understand the voice message. Could you type what you ate?", {});
+        }
         return { success: false, error: 'Empty transcription' };
+      }
+
+      // Cancel transcription status - LogFoodFromText will show its own "Analyzing..." status
+      if (status) {
+        await status.cancel();
       }
 
       this.#logger.debug?.('logVoice.transcribed', {
@@ -121,7 +144,11 @@ export class LogFoodFromVoice {
           ? `⚠️ Network issue while updating the message. Your food may have been logged.\n\nPlease check your recent entries or try again.\n\n_Error: ${error.message || 'Connection issue'}_`
           : `⚠️ Sorry, I couldn't process your voice message. Please try again or type what you ate.\n\n_Error: ${error.message || 'Unknown error'}_`;
 
-        await messaging.sendMessage(errorMessage, { parse_mode: 'Markdown' });
+        if (status) {
+          await status.finish(errorMessage);
+        } else {
+          await messaging.sendMessage(errorMessage, { parse_mode: 'Markdown' });
+        }
       } catch (sendError) {
         this.#logger.error?.('logVoice.errorNotification.failed', {
           conversationId,

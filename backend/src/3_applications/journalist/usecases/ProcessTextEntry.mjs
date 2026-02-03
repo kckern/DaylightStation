@@ -77,6 +77,15 @@ export class ProcessTextEntry {
 
     const messaging = this.#getMessaging(responseContext, chatId);
 
+    // Create status indicator for AI processing
+    let status = null;
+    if (messaging.createStatusIndicator) {
+      status = await messaging.createStatusIndicator(
+        '💭 Thinking',
+        { frames: ['.', '..', '...'], interval: 2000 }
+      );
+    }
+
     try {
       // 1. Save message to history
       const userMessage = ConversationMessage.createUserMessage({
@@ -101,10 +110,13 @@ export class ProcessTextEntry {
 
       if (!response) {
         // Fallback: just acknowledge
-        const { messageId: sentId } = await messaging.sendMessage(
-          '📝 Noted.',
-          {},
-        );
+        let sentId;
+        if (status) {
+          sentId = await status.finish('📝 Noted.');
+        } else {
+          const result = await messaging.sendMessage('📝 Noted.', {});
+          sentId = result.messageId;
+        }
 
         // Save bot response
         if (this.#journalEntryRepository) {
@@ -140,9 +152,13 @@ export class ProcessTextEntry {
         : response.question;
 
       // 6. Send with reply keyboard (attached to chat input)
-      const { messageId: sentId } = await messaging.sendMessage(message, {
-        choices,
-      });
+      let sentId;
+      if (status) {
+        sentId = await status.finish(message, { choices });
+      } else {
+        const result = await messaging.sendMessage(message, { choices });
+        sentId = result.messageId;
+      }
 
       // 7. Save bot response to history
       if (this.#journalEntryRepository) {
@@ -165,6 +181,16 @@ export class ProcessTextEntry {
       };
     } catch (error) {
       this.#logger.error?.('textEntry.process.error', { chatId, error: error.message });
+
+      // Show error in status indicator if available
+      if (status) {
+        try {
+          await status.finish('⚠️ Sorry, something went wrong. Please try again.');
+        } catch (e) {
+          // Ignore
+        }
+      }
+
       throw error;
     }
   }
