@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, forwardRef, useImperativeHandle } from 'react';
-import { DaylightAPI, DaylightMediaPath } from '../../../lib/api.mjs';
+import { DaylightMediaPath } from '../../../lib/api.mjs';
 import Player from '../../Player/Player.jsx';
 import { useFitnessContext } from '../../../context/FitnessContext.jsx';
 import { TouchVolumeButtons, snapToTouchLevel, linearVolumeFromLevel, linearLevelFromVolume } from './TouchVolumeButtons.jsx';
@@ -37,9 +37,6 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
   const [currentTrack, setCurrentTrack] = useState(null);
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [playQueueData, setPlayQueueData] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
   const [isPlaying, setIsPlaying] = useState(true);
   const audioPlayerRef = useRef(null);
   const wasPlayingBeforePauseRef = useRef(false);
@@ -144,6 +141,17 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
     playerRef: audioPlayerRef
   });
 
+  // Memoize Player props to prevent unnecessary useEffect re-runs in useQueueController
+  // Without this, inline objects like queue={{}} and play={{}} are new refs on every render
+  const playerQueueProp = useMemo(() => ({
+    plex: selectedPlaylistId,
+    shuffle: true
+  }), [selectedPlaylistId]);
+
+  const playerPlayProp = useMemo(() => ({
+    volume: musicVolumeState.volume
+  }), [musicVolumeState.volume]);
+
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
     
@@ -175,89 +183,38 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
     };
   }, [videoPlayerRef, videoVolume]);
 
-  // Load playlist when selectedPlaylistId changes
+  // Clear current track when playlist changes
   useEffect(() => {
     if (!selectedPlaylistId) {
-      setPlayQueueData(null);
       setCurrentTrack(null);
-      return;
     }
-
-    const loadPlaylist = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        
-        // Fetch playlist data from the media API
-        // Use path-based shuffle instead of query param to avoid polluting item data
-        const response = await DaylightAPI(`/api/v1/item/plex/${selectedPlaylistId}/playable,shuffle`);
-        
-        console.log('[Playlist] Raw API response:', response);
-        
-        if (response && response.items) {
-          console.log('[Playlist] Loaded new playlist:', {
-            itemCount: response.items.length,
-            firstTrack: response.items[0]?.title,
-            firstTrackData: response.items[0]
-          });
-          setPlayQueueData(response.items);
-          // Set first track as current
-          if (response.items.length > 0) {
-            console.log('[Playlist] Setting initial track:', response.items[0]);
-            setCurrentTrack(response.items[0]);
-          }
-        }
-      } catch (err) {
-        console.error('Error loading playlist:', err);
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadPlaylist();
   }, [selectedPlaylistId]);
 
   const handleProgress = (progressData) => {
-    // Update current track key if changed, but keep original track data from queue
+    // Update current track from progress data (Player handles queue internally)
     if (progressData?.media) {
       const mediaData = progressData.media;
       const newKey = mediaData.key || mediaData.plex || mediaData.assetId;
-      
+
       setCurrentTrack(prev => {
         const prevKey = prev?.key || prev?.plex || prev?.assetId;
         // Only update if track actually changed
         if (newKey && newKey !== prevKey) {
-          // Find the full track data from playQueueData instead of using minimal progressData.media
-          // Search in the original queue data as it's immutable
-          const fullTrackData = playQueueData?.find(track => {
-            const trackKey = track.key || track.plex || track.assetId;
-            return trackKey === newKey;
-          });
-          
-          if (fullTrackData) {
-            if (process.env.NODE_ENV === 'development') {
-              console.log('[Track Change] Detected via progress callback:', {
-                prevKey,
-                newKey,
-                prevTitle: prev?.title,
-                newTitle: fullTrackData?.title,
-                artist: fullTrackData?.artist
-              });
-            }
-            return fullTrackData;
-          }
-          // Fallback: use media data from progress if not found in queue
-          // This can happen when Player auto-advances and we don't have full metadata
           if (process.env.NODE_ENV === 'development') {
-            console.log('[Track Change] Using progress media data (not in queue):', newKey);
+            console.log('[Track Change] Detected via progress callback:', {
+              prevKey,
+              newKey,
+              prevTitle: prev?.title,
+              newTitle: mediaData?.title,
+              artist: mediaData?.artist
+            });
           }
           return mediaData;
         }
         return prev;
       });
     }
-    
+
     // Update progress bar
     if (progressData?.currentTime !== undefined) {
       setProgress(progressData.currentTime);
@@ -441,30 +398,6 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
     );
   }
 
-  // Show loading state
-  if (loading) {
-    return (
-      <div className="fitness-music-player-container">
-        <div className="music-player-empty">
-          <div className="empty-icon">⏳</div>
-          <div className="empty-text">Loading playlist...</div>
-        </div>
-      </div>
-    );
-  }
-
-  // Show error state
-  if (error) {
-    return (
-      <div className="fitness-music-player-container">
-        <div className="music-player-empty">
-          <div className="empty-icon">⚠️</div>
-          <div className="empty-text">{error}</div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className={`fitness-music-player-container${controlsOpen ? ' controls-open' : ''}`}>
       <div className="music-player-content">
@@ -628,24 +561,18 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
           </div>
               )}
 
-              {/* Hidden Player Component */}
-      {playQueueData && playQueueData.length > 0 ? (
-        <div style={{ position: 'absolute', left: '-9999px' }}>
-          <Player
-            ref={audioPlayerRef}
-            key={selectedPlaylistId} // Remount only when playlist ID changes
-            queue={playQueueData}
-            play={{ volume: musicVolumeState.volume }}
-            onProgress={handleProgress}
-            playerType="audio"
-            plexClientSession={musicPlexSession}
-          />
-        </div>
-      ) : (
-        <div style={{ fontSize: '0.7rem', color: 'red', padding: '1ex' }}>
-          No queue data
-        </div>
-      )}
+              {/* Hidden Player Component - Player handles queue fetching and flattening */}
+      <div style={{ position: 'absolute', left: '-9999px' }}>
+        <Player
+          ref={audioPlayerRef}
+          key={selectedPlaylistId}
+          queue={playerQueueProp}
+          play={playerPlayProp}
+          onProgress={handleProgress}
+          playerType="audio"
+          plexClientSession={musicPlexSession}
+        />
+      </div>
     </div>
   );
 });
