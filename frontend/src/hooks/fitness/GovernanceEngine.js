@@ -441,21 +441,13 @@ export class GovernanceEngine {
       });
     }
 
-    // Subscribe to TreasureBox for reactive zone-based evaluation
-    // (removes 1-second polling delay for governance responsiveness)
-    if (this.session?.treasureBox) {
-      this.session.treasureBox.setGovernanceCallback(() => {
-        this._evaluateFromTreasureBox();
-      });
-    }
-
     // Setup playback event subscription for timer coordination
     if (subscribeToAppEvent) {
       this._setupPlaybackSubscription(subscribeToAppEvent);
     }
 
     // Initial evaluation from current state
-    this._evaluateFromTreasureBox();
+    this.evaluate();
   }
 
   _normalizePolicies(policiesRaw) {
@@ -705,20 +697,10 @@ export class GovernanceEngine {
   }
 
   /**
-   * DEPRECATED: Reactive evaluation from TreasureBox removed.
-   * Governance now evaluates on tick boundaries using ZoneProfileStore.
-   *
-   * @deprecated Use evaluate() called from session tick instead
+   * @deprecated Governance is now tick-driven via ZoneProfileStore.
+   * This method exists only for backwards compatibility if called directly.
    */
   _evaluateFromTreasureBox() {
-    // No-op: Reactive evaluation removed
-    // Governance now runs on tick boundaries via session._collectTimelineTick()
-    // and reads stable zone state from ZoneProfileStore
-    getLogger().warn('governance.evaluate_from_treasurebox_deprecated', {
-      message: 'Governance now tick-driven via ZoneProfileStore'
-    });
-
-    // Fallback: Just call regular evaluate() if someone still calls this
     this.evaluate();
   }
 
