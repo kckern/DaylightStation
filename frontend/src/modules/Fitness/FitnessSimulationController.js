@@ -159,6 +159,7 @@ export class FitnessSimulationController {
   _sendHR(deviceId, hr) {
     const message = this._buildHRMessage(deviceId, hr);
     this.wsService?.send?.(message);
+    this._updateChallengeProgress(deviceId);
     this._notifyStateChange();
     return { ok: true, hr, deviceId };
   }
@@ -396,6 +397,198 @@ export class FitnessSimulationController {
     const devices = this.getDevices();
     const results = devices.map(d => this.stopDevice(d.deviceId));
     return { ok: true, count: devices.length, results };
+  }
+
+  /**
+   * Get current governance state
+   */
+  getGovernanceState() {
+    if (!this.governanceOverride) {
+      return { phase: undefined, activeChallenge: null, stats: this.stats };
+    }
+
+    const elapsed = (Date.now() - this.governanceOverride.startTime) / 1000;
+    const { phases } = this.governanceOverride;
+
+    let phase;
+    if (elapsed < phases.warmup) {
+      phase = 'warmup';
+    } else if (phases.main === null || elapsed < phases.warmup + phases.main) {
+      phase = 'main';
+    } else {
+      phase = 'cooldown';
+    }
+
+    return {
+      phase,
+      activeChallenge: this.challengeState ? {
+        type: this.challengeState.type,
+        targetZone: this.challengeState.targetZone,
+        remainingSeconds: Math.max(0, Math.round(
+          this.challengeState.duration - (Date.now() - this.challengeState.startTime) / 1000
+        )),
+        participantProgress: { ...this.challengeState.progress }
+      } : null,
+      stats: { ...this.stats }
+    };
+  }
+
+  /**
+   * Enable governance override on any content
+   */
+  enableGovernance(opts = {}) {
+    if (this.governanceOverride) {
+      return { ok: false, error: 'Governance already enabled. Call disableGovernance first.' };
+    }
+
+    const {
+      phases = { warmup: 120, main: null, cooldown: 120 },
+      challenges = { enabled: true, interval: 120, duration: 30 },
+      targetZones = ['hot', 'fire']
+    } = opts;
+
+    this.governanceOverride = {
+      startTime: Date.now(),
+      phases,
+      challenges,
+      targetZones
+    };
+
+    this._notifyStateChange();
+    return { ok: true };
+  }
+
+  /**
+   * Disable governance override (revert to content default)
+   */
+  disableGovernance() {
+    // Clear any active challenge
+    if (this.challengeState?.timer) {
+      clearTimeout(this.challengeState.timer);
+    }
+    this.challengeState = null;
+    this.governanceOverride = null;
+
+    this._notifyStateChange();
+    return { ok: true };
+  }
+
+  /**
+   * Check if governance is overridden
+   */
+  isGovernanceOverridden() {
+    return this.governanceOverride !== null;
+  }
+
+  /**
+   * Trigger a challenge event
+   */
+  triggerChallenge(opts = {}) {
+    if (!this.governanceOverride) {
+      return { ok: false, error: 'Governance not enabled. Call enableGovernance first.' };
+    }
+
+    if (this.challengeState) {
+      return { ok: false, error: 'Challenge already active. Complete or wait for timeout.' };
+    }
+
+    const {
+      type = 'zone_target',
+      targetZone = 'hot',
+      duration = 30
+    } = opts;
+
+    // Initialize progress tracking for all active devices
+    const devices = this.getActiveDevices();
+    const progress = {};
+
+    // Check initial positions - devices already at target count as reached
+    const targetZones = this._getZonesAtOrAbove(targetZone);
+    devices.forEach(d => {
+      progress[d.deviceId] = targetZones.includes(d.currentZone);
+    });
+
+    this.challengeState = {
+      type,
+      targetZone,
+      duration,
+      startTime: Date.now(),
+      progress,
+      // Track that once reached, always reached
+      reached: new Set(Object.entries(progress).filter(([_, v]) => v).map(([k]) => k))
+    };
+
+    // Set timeout for auto-fail
+    this.challengeState.timer = setTimeout(() => {
+      this._completeChallenge(false);
+    }, duration * 1000);
+
+    this._notifyStateChange();
+    return { ok: true, type, targetZone, duration };
+  }
+
+  /**
+   * Get zones at or above the target (for overshoot handling)
+   */
+  _getZonesAtOrAbove(targetZone) {
+    const zones = this.zoneConfig?.zones || [];
+    const targetIndex = zones.findIndex(z => z.id === targetZone);
+    if (targetIndex < 0) return [targetZone];
+    return zones.slice(targetIndex).map(z => z.id);
+  }
+
+  /**
+   * Update challenge progress when HR changes
+   * Called internally after each _sendHR
+   */
+  _updateChallengeProgress(deviceId) {
+    if (!this.challengeState) return;
+
+    const device = this.getDevices().find(d => d.deviceId === String(deviceId));
+    if (!device) return;
+
+    const targetZones = this._getZonesAtOrAbove(this.challengeState.targetZone);
+
+    // Once reached, always reached (sticky)
+    if (targetZones.includes(device.currentZone)) {
+      this.challengeState.reached.add(String(deviceId));
+    }
+
+    this.challengeState.progress[deviceId] = this.challengeState.reached.has(String(deviceId));
+  }
+
+  /**
+   * Manually complete challenge (for testing)
+   */
+  completeChallenge(success) {
+    if (!this.challengeState) {
+      return { ok: false, error: 'No active challenge' };
+    }
+    return this._completeChallenge(success);
+  }
+
+  /**
+   * Internal challenge completion
+   */
+  _completeChallenge(success) {
+    if (!this.challengeState) return { ok: false };
+
+    // Clear timer
+    if (this.challengeState.timer) {
+      clearTimeout(this.challengeState.timer);
+    }
+
+    // Update stats
+    if (success) {
+      this.stats.challengesWon++;
+    } else {
+      this.stats.challengesFailed++;
+    }
+
+    this.challengeState = null;
+    this._notifyStateChange();
+
+    return { ok: true, success, stats: { ...this.stats } };
   }
 
   /**
