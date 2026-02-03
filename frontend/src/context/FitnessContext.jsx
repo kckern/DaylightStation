@@ -496,7 +496,11 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     session.invalidateUserCaches?.();
 
     // Configure Governance
-    session.governanceEngine.configure(governanceConfig, undefined, { subscribeToAppEvent });
+    session.governanceEngine.configure(
+      { ...governanceConfig, zoneConfig },
+      undefined,
+      { subscribeToAppEvent }
+    );
     session.governanceEngine.setCallbacks({
       onPhaseChange: () => forceUpdate(),
       onPulse: () => forceUpdate()
