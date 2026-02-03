@@ -495,28 +495,22 @@ dash-video {
     }
 
     &.governance-filter-warning {
-      // Warning state: dim video with blur to indicate impending lock
-      // FIX: Blur moved to overlay to avoid GPU-intensive per-frame blur on video decode
-      // Video gets color filters only (no blur) - maintains full FPS
-      .player,
-      .video-player,
-      video,
-      dash-video {
-        filter: sepia(0.65) brightness(0.8) contrast(1.2);
-        transition: filter 0.3s ease;
-      }
+      // FPS FIX: No filters on video elements - all visual effects via overlay only
+      // This prevents GPU from filtering every decoded video frame
+      // See: docs/_wip/bugs/2026-02-02-fps-degradation-governance-warning.md
 
-      // Blur overlay - uses backdrop-filter which composites separately from video decode
-      // This preserves the hazy warning effect without impacting video FPS
       &::before {
         content: '';
         position: absolute;
         inset: 0;
+        // Warm sepia-like tint via semi-transparent overlay
+        background: rgba(139, 92, 42, 0.25);
+        // Slight blur for "hazy warning" effect
         backdrop-filter: blur(2px);
         -webkit-backdrop-filter: blur(2px);
-        z-index: 5; // Above video, below UI overlays
+        z-index: 5;
         pointer-events: none;
-        transition: backdrop-filter 0.3s ease;
+        transition: background 0.3s ease, backdrop-filter 0.3s ease;
       }
     }
 
