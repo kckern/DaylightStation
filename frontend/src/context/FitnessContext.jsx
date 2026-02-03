@@ -1300,28 +1300,37 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
 
   const participantRoster = React.useMemo(() => {
     const roster = fitnessSessionRef.current?.roster || [];
-    if (!roster || roster.length === 0) {
-      rosterCacheRef.current.signature = null;
-      rosterCacheRef.current.value = emptyRosterRef.current;
+
+    // Primary path: full roster with vitals
+    if (roster && roster.length > 0) {
+      const signature = JSON.stringify(
+        roster.map((entry) => ({
+          name: entry?.name || null,
+          hrDeviceId: entry?.hrDeviceId || null,
+          heartRate: Number.isFinite(entry?.heartRate) ? Math.round(entry.heartRate) : null,
+          zoneId: entry?.zoneId || null,
+          zoneColor: entry?.zoneColor || null,
+          isActive: entry?.isActive ?? true // SINGLE SOURCE OF TRUTH - include in signature
+        }))
+      );
+
+      if (rosterCacheRef.current.signature === signature) {
+        return rosterCacheRef.current.value;
+      }
+
+      rosterCacheRef.current = { signature, value: roster };
       return rosterCacheRef.current.value;
     }
 
-    const signature = JSON.stringify(
-      roster.map((entry) => ({
-        name: entry?.name || null,
-        hrDeviceId: entry?.hrDeviceId || null,
-        heartRate: Number.isFinite(entry?.heartRate) ? Math.round(entry.heartRate) : null,
-        zoneId: entry?.zoneId || null,
-        zoneColor: entry?.zoneColor || null,
-        isActive: entry?.isActive ?? true // SINGLE SOURCE OF TRUTH - include in signature
-      }))
-    );
-
-    if (rosterCacheRef.current.signature === signature) {
-      return rosterCacheRef.current.value;
+    // Fallback: identity-only roster (no vitals yet)
+    const identityRoster = fitnessSessionRef.current?.participantRoster?.getIdentityRoster?.() || [];
+    if (identityRoster.length > 0) {
+      return identityRoster;
     }
 
-    rosterCacheRef.current = { signature, value: roster };
+    // Final fallback: empty
+    rosterCacheRef.current.signature = null;
+    rosterCacheRef.current.value = emptyRosterRef.current;
     return rosterCacheRef.current.value;
   }, [version]);
 
