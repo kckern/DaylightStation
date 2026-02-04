@@ -4,6 +4,7 @@ export default {
   provider: 'immich',
   capability: 'gallery',
   displayName: 'Immich Photo Library',
+  mediaTypes: ['photo', 'video'],
 
   adapter: () => import('./ImmichAdapter.mjs'),
 
