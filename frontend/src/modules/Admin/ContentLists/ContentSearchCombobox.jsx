@@ -9,6 +9,7 @@ import {
   IconMusic, IconVideo, IconPhoto, IconFile, IconList
 } from '@tabler/icons-react';
 import { useStreamingSearch } from '../../../hooks/useStreamingSearch';
+import './ContentSearchCombobox.scss';
 
 const TYPE_ICONS = {
   show: IconVideo,

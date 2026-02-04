@@ -1,0 +1,35 @@
+// frontend/src/modules/Admin/ContentLists/ContentSearchCombobox.scss
+
+.pending-sources {
+  background-color: var(--mantine-color-dark-6);
+  animation: pulse 1.5s ease-in-out infinite;
+
+  .mantine-Badge-root {
+    animation: fadeIn 0.2s ease-out;
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+// Fade out sources as they complete
+.pending-sources .mantine-Badge-root {
+  transition: opacity 0.3s ease-out, transform 0.3s ease-out;
+}
