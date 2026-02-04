@@ -440,75 +440,6 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     return map;
   }, [hrOwnerBaseMap, guestAssignmentEntries]);
 
-  // Build a map of deviceId -> displayName applying group_label rule
-  const hrDisplayNameMap = React.useMemo(() => {
-    const logger = getLogger();
-
-    if (!allDevices) {
-      logger.debug('fitness_users.hr_display_name_map.no_devices');
-      return hrOwnerMap;
-    }
-
-    const activeHrDeviceIds = allDevices
-      .filter(d => d.type === 'heart_rate')
-      .map(d => String(d.deviceId));
-
-    logger.debug('fitness_users.hr_display_name_map.recompute', {
-      activeHrCount: activeHrDeviceIds.length,
-      activeHrDeviceIds
-    });
-
-    if (activeHrDeviceIds.length <= 1) {
-      logger.debug('fitness_users.hr_display_name_map.single_device_no_override', {
-        count: activeHrDeviceIds.length
-      });
-      return hrOwnerMap;
-    }
-
-    // Multi-device mode: apply groupLabel overrides
-    const labelLookup = {};
-    heartRateOwners.forEach((descriptor, deviceId) => {
-      if (descriptor?.groupLabel) {
-        labelLookup[String(deviceId)] = descriptor.groupLabel;
-      }
-    });
-
-    if (Object.keys(labelLookup).length === 0) {
-      logger.debug('fitness_users.hr_display_name_map.no_group_labels_configured');
-      return hrOwnerMap;
-    }
-
-    const out = { ...hrOwnerMap };
-    const appliedOverrides = [];
-    const skippedGuests = [];
-
-    Object.keys(labelLookup).forEach(deviceId => {
-      // Only skip group_label for actual guests, not for device owners/members
-      const assignment = getGuestAssignment(deviceId);
-      if (assignment?.occupantType === 'guest') {
-        skippedGuests.push({ deviceId, reason: 'guest_assigned', occupantType: assignment.occupantType });
-        return;
-      }
-      if (out[deviceId]) {
-        appliedOverrides.push({
-          deviceId,
-          from: out[deviceId],
-          to: labelLookup[deviceId]
-        });
-        out[deviceId] = labelLookup[deviceId];
-      }
-    });
-
-    logger.info('fitness_users.hr_display_name_map.group_label_override', {
-      activeHrCount: activeHrDeviceIds.length,
-      appliedOverrides,
-      skippedGuests,
-      availableGroupLabels: labelLookup
-    });
-
-    return out;
-  }, [hrOwnerMap, allDevices, heartRateOwners, getGuestAssignment]);
-
   const resolveCanonicalUserName = React.useCallback((deviceId, fallbackName = null) => {
     if (deviceId == null) return fallbackName;
     const key = String(deviceId);
@@ -935,7 +866,6 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
               const deviceIdStr = String(device.deviceId);
               const isHeartRate = device.type === 'heart_rate';
               const guestAssignment = isHeartRate ? getGuestAssignment(deviceIdStr) : null;
-              const ownerName = isHeartRate ? hrDisplayNameMap[deviceIdStr] : null;
               const equipmentInfo = equipmentMap[String(device.deviceId)];
               const participantEntry = isHeartRate
                 ? (participantByHrId.get(deviceIdStr) || participantsByDevice.get(deviceIdStr) || null)
@@ -961,13 +891,12 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                     || userIdMap[deviceIdStr]
                     || getConfiguredProfileId(guestAssignment?.occupantName || guestAssignment?.metadata?.name)
                     || getConfiguredProfileId(participantEntry?.name)
-                    || getConfiguredProfileId(ownerName)
+                    || getConfiguredProfileId(canonicalUserName)
                     || resolvedUser?.id
                     || 'user') // Fallback to generic avatar instead of slugifying
                 : (equipmentInfo?.id || 'equipment');
               const progressInfo = isHeartRate
                 ? (lookupZoneProgress(participantEntry?.name)
-                    || lookupZoneProgress(ownerName)
                     || lookupZoneProgress(canonicalUserName)
                     || (participantEntry?.displayLabel ? lookupZoneProgress(participantEntry.displayLabel) : null)
                     || (participantEntry?.id ? lookupZoneProgress(participantEntry.id) : null)
@@ -1007,7 +936,6 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                   deviceId: deviceIdStr,
                   deviceName,
                   deviceNameSource,
-                  ownerName,
                   displayLabel,
                   hasGuestAssignment: !!guestAssignment
                 });
