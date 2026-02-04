@@ -51,41 +51,41 @@ const PRIORITY_CHAIN = [
  * Determines if group labels should be preferred.
  * SINGLE calculation - no more 3 different places computing this.
  *
- * A device is considered "active" if:
+ * A device is considered "present" if:
  * - It's a heart_rate device
  * - It's not marked as inactive (no inactiveSince)
- * - It has actual HR data (heartRate > 0)
+ *
+ * NOTE: We intentionally do NOT require heartRate > 0 here.
+ * The trigger for preferring group labels must match the trigger for
+ * card visibility. If a card appears, names should switch immediately -
+ * not moments later when HR goes positive.
  *
  * @param {Array} devices - All devices
- * @returns {boolean} True if 2+ active HR devices
+ * @returns {boolean} True if 2+ present HR devices
  */
 export function shouldPreferGroupLabels(devices) {
   if (!Array.isArray(devices)) return false;
 
-  const activeCount = devices.filter(d =>
+  const presentCount = devices.filter(d =>
     d.type === 'heart_rate' &&
-    !d.inactiveSince &&
-    Number.isFinite(d.heartRate) &&
-    d.heartRate > 0
+    !d.inactiveSince
   ).length;
 
-  return activeCount > 1;
+  return presentCount > 1;
 }
 
 /**
- * Counts active HR devices.
+ * Counts present HR devices (same criteria as shouldPreferGroupLabels).
  *
  * @param {Array} devices - All devices
- * @returns {number} Count of active HR devices
+ * @returns {number} Count of present HR devices
  */
 export function countActiveHrDevices(devices) {
   if (!Array.isArray(devices)) return 0;
 
   return devices.filter(d =>
     d.type === 'heart_rate' &&
-    !d.inactiveSince &&
-    Number.isFinite(d.heartRate) &&
-    d.heartRate > 0
+    !d.inactiveSince
   ).length;
 }
 

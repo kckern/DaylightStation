@@ -1220,15 +1220,15 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
 
   // ==========================================================================
 
-  // Only count ACTIVE HR devices (broadcasting with actual HR data)
-  // This prevents pre-populated/inactive devices from triggering group label mode
-  const activeHeartRateDevices = React.useMemo(() =>
-    heartRateDevices.filter(d =>
-      !d.inactiveSince && Number.isFinite(d.heartRate) && d.heartRate > 0
-    ),
+  // Count PRESENT HR devices (same criteria as card visibility)
+  // NOTE: We intentionally do NOT require heartRate > 0 here.
+  // The trigger for preferring group labels must match the trigger for
+  // card visibility. If a card appears, names should switch immediately.
+  const presentHeartRateDevices = React.useMemo(() =>
+    heartRateDevices.filter(d => !d.inactiveSince),
     [heartRateDevices]
   );
-  const preferGroupLabels = React.useMemo(() => activeHeartRateDevices.length > 1, [activeHeartRateDevices.length]);
+  const preferGroupLabels = React.useMemo(() => presentHeartRateDevices.length > 1, [presentHeartRateDevices.length]);
 
   // Log when participant count crosses the threshold for group label display
   const prevPreferGroupLabelsRef = useRef(preferGroupLabels);
@@ -1238,13 +1238,13 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
         event: 'prefer_group_labels_changed',
         from: prevPreferGroupLabelsRef.current,
         to: preferGroupLabels,
-        activeHeartRateDeviceCount: activeHeartRateDevices.length,
+        presentHeartRateDeviceCount: presentHeartRateDevices.length,
         totalHeartRateDeviceCount: heartRateDevices.length,
-        participantNames: activeHeartRateDevices.map(d => d.name || d.id).slice(0, 5)
+        participantNames: presentHeartRateDevices.map(d => d.name || d.id).slice(0, 5)
       }, { level: 'info', context: { source: 'FitnessContext' } });
       prevPreferGroupLabelsRef.current = preferGroupLabels;
     }
-  }, [preferGroupLabels, activeHeartRateDevices, heartRateDevices.length]);
+  }, [preferGroupLabels, presentHeartRateDevices, heartRateDevices.length]);
 
   const getDisplayLabel = React.useCallback((name, { groupLabelOverride, preferGroupLabel, userId } = {}) => {
     if (!name) return null;

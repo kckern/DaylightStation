@@ -112,22 +112,23 @@ export class ParticipantRoster {
     // Build zone lookup from TreasureBox
     const zoneLookup = this._buildZoneLookup();
 
-    // Determine if we should prefer group labels (2+ ACTIVE participants)
-    // Only count devices that are currently broadcasting:
-    // 1. Not marked as inactive (no inactiveSince)
-    // 2. Has actual HR data (heartRate > 0) - filters out pre-populated devices with no data
-    const activeHeartRateDevices = heartRateDevices.filter(d =>
-      !d.inactiveSince && Number.isFinite(d.heartRate) && d.heartRate > 0
-    );
-    const preferGroupLabels = activeHeartRateDevices.length > 1;
+    // Determine if we should prefer group labels (2+ PRESENT participants)
+    // Count devices that would produce a card:
+    // 1. type === 'heart_rate'
+    // 2. Not marked as inactive (no inactiveSince)
+    // NOTE: We intentionally do NOT require heartRate > 0 here.
+    // The trigger for preferring group labels must match the trigger for
+    // card visibility. If a card appears, names should switch immediately.
+    const presentHeartRateDevices = heartRateDevices.filter(d => !d.inactiveSince);
+    const preferGroupLabels = presentHeartRateDevices.length > 1;
 
     // DEBUG: Log device count and preferGroupLabels decision
     getLogger().debug('participant.roster.build', {
       heartRateDeviceCount: heartRateDevices.length,
-      activeHeartRateDeviceCount: activeHeartRateDevices.length,
+      presentHeartRateDeviceCount: presentHeartRateDevices.length,
       preferGroupLabels,
       deviceIds: heartRateDevices.map(d => String(d.id || d.deviceId)),
-      activeDeviceIds: activeHeartRateDevices.map(d => String(d.id || d.deviceId))
+      presentDeviceIds: presentHeartRateDevices.map(d => String(d.id || d.deviceId))
     });
 
     heartRateDevices.forEach((device) => {
