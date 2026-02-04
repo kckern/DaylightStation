@@ -989,33 +989,13 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                   ? participantEntry.heartRate
                   : (Number.isFinite(device.heartRate) ? device.heartRate : null));
               // Resolve deviceName with source tracking for diagnostics
-              // Priority for guests: guestAssignment > ownerName
-              // Priority for members: ownerName (hrDisplayNameMap - has group_label awareness) > displayLabel > participantEntry
               let deviceName;
               let deviceNameSource;
               if (isHeartRate) {
-                // Only use guestAssignment for actual guests, not for members/owners
-                const isActualGuest = guestAssignment?.occupantType === 'guest';
-                if (isActualGuest && guestAssignment?.occupantName) {
-                  deviceName = guestAssignment.occupantName;
-                  deviceNameSource = 'guestAssignment.occupantName';
-                } else if (isActualGuest && guestAssignment?.metadata?.name) {
-                  deviceName = guestAssignment.metadata.name;
-                  deviceNameSource = 'guestAssignment.metadata.name';
-                } else if (ownerName) {
-                  // ownerName from hrDisplayNameMap takes precedence - it has group_label awareness
-                  deviceName = ownerName;
-                  deviceNameSource = 'ownerName (hrDisplayNameMap)';
-                } else if (displayLabel) {
-                  deviceName = displayLabel;
-                  deviceNameSource = 'displayLabel';
-                } else if (participantEntry?.name) {
-                  deviceName = participantEntry.name;
-                  deviceNameSource = 'participantEntry.name';
-                } else {
-                  deviceName = deviceIdStr;
-                  deviceNameSource = 'deviceIdStr (fallback)';
-                }
+                // Phase 4 SSOT: Use DisplayNameResolver for all HR display names
+                const resolved = getDisplayName(deviceIdStr);
+                deviceName = resolved.displayName;
+                deviceNameSource = `DisplayNameResolver:${resolved.source}`;
               } else {
                 deviceName = device.name || String(device.deviceId);
                 deviceNameSource = device.name ? 'device.name' : 'device.deviceId';
