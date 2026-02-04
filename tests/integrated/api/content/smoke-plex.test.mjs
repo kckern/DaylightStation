@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll } from '@jest/globals';
+import { getDataPath } from '../../../../_lib/configHelper.mjs';
 
 describe('Plex connectivity', () => {
   let plexUrl;
@@ -8,9 +9,9 @@ describe('Plex connectivity', () => {
     // Dynamic import to handle ESM config loading
     // Use new config infrastructure from src/0_system/config
     const { createConfigService } = await import('#backend/src/0_system/config/index.mjs');
-    
-    // Create a config service instance with the data path
-    const dataDir = process.env.DAYLIGHT_DATA_PATH || '/Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStation';
+
+    // Create a config service instance with the data path from config helper (SSOT)
+    const dataDir = getDataPath();
     let configService;
     try {
       configService = createConfigService(dataDir);

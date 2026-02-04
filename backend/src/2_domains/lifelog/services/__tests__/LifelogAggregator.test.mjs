@@ -9,9 +9,10 @@ import { jest } from '@jest/globals';
 import { LifelogAggregator } from '../LifelogAggregator.mjs';
 import { initConfigService, resetConfigService, configService } from '#system/config/index.mjs';
 import { userDataService } from '#system/config/UserDataService.mjs';
+import { getDataPath } from '../../../../../../tests/_lib/configHelper.mjs';
 
-// Get data dir from environment or use default
-const DATA_DIR = process.env.DAYLIGHT_DATA_PATH || '/media/kckern/DockerDrive/Dropbox/Apps/DaylightStation/data';
+// Get data dir from config helper (SSOT)
+const DATA_DIR = getDataPath();
 
 describe('LifelogAggregator', () => {
   let username;

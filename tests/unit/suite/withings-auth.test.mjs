@@ -1,15 +1,16 @@
 /**
  * Withings Token Exchange Unit Test
- * 
+ *
  * Run with: npm test -- tests/unit/withings-auth.test.mjs
- * 
- * Requires DAYLIGHT_DATA_PATH environment variable to load credentials
+ *
+ * Uses configHelper to load data path for credentials
  */
 
 import axios from 'axios';
 import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
+import { getDataPath } from '../../_lib/configHelper.mjs';
 
 describe('Withings Token Exchange', () => {
   const WITHINGS_CLIENT_ID = process.env.WITHINGS_CLIENT_ID || process.env.WITHINGS_CLIENT;
@@ -18,9 +19,9 @@ describe('Withings Token Exchange', () => {
   
   // Load refresh token from auth file - NEVER hardcode tokens!
   const getRefreshToken = () => {
-    const dataPath = process.env.DAYLIGHT_DATA_PATH;
+    const dataPath = getDataPath();
     if (!dataPath) return null;
-    
+
     const authPath = path.join(dataPath, 'users', 'kckern', 'auth', 'withings.yml');
     if (!fs.existsSync(authPath)) return null;
     
