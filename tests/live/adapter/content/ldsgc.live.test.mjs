@@ -8,12 +8,13 @@
 
 import { configService, initConfigService } from '#backend/src/0_system/config/index.mjs';
 import getLDSGCData from '#backend/_legacy/lib/ldsgc.mjs';
+import { getDataPath } from '../../../_lib/configHelper.mjs';
 
 describe('LDSGC Live Integration', () => {
   beforeAll(() => {
-    const dataPath = process.env.DAYLIGHT_DATA_PATH;
+    const dataPath = getDataPath();
     if (!dataPath) {
-      throw new Error('DAYLIGHT_DATA_PATH environment variable required');
+      throw new Error('Could not determine data path from .env');
     }
 
     if (!configService.isReady()) {

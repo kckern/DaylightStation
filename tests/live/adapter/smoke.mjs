@@ -22,6 +22,7 @@ import { configService, initConfigService } from '#backend/src/0_system/config/i
 import { createHarvesterServices } from '#backend/src/0_system/bootstrap.mjs';
 import { loadYaml, saveYaml } from '#backend/src/0_system/utils/FileIO.mjs';
 import axios from 'axios';
+import { getDataPath } from '../../_lib/configHelper.mjs';
 
 /**
  * Create io object compatible with createHarvesterServices
@@ -234,9 +235,9 @@ async function main() {
   const args = parseArgs(process.argv);
 
   // Initialize config
-  const dataPath = process.env.DAYLIGHT_DATA_PATH;
+  const dataPath = getDataPath();
   if (!dataPath) {
-    console.error('Error: DAYLIGHT_DATA_PATH environment variable not set');
+    console.error('Error: Could not determine data path from .env');
     process.exit(1);
   }
 
