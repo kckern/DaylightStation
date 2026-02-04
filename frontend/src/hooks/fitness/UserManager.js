@@ -621,7 +621,12 @@ export class UserManager {
       ...collections.other
     ].map((descriptor) => ({
       ...descriptor,
-      allowWhileAssigned: descriptor.source === 'Friend'
+      // allowWhileAssigned: Users who can be assigned to multiple devices simultaneously
+      // - Friends: always (can visit multiple households)
+      // - Generic Guest (id='guest'): always (placeholder identity)
+      // - Primary returnees: set in FitnessSidebar.jsx when building candidate pool
+      // - Others: single-device assignment only
+      allowWhileAssigned: descriptor.source === 'Friend' || descriptor.id === 'guest'
     }));
   }
 

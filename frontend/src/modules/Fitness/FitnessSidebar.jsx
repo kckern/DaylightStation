@@ -77,13 +77,17 @@ const FitnessSidebar = forwardRef(({ playerRef, videoVolume, onReloadVideo, relo
           getLogger().warn('fitness_sidebar.primary_guest_pool_missing_id', { name: match.name });
           return;
         }
+        // Primary family members who have been displaced by guests can be
+        // assigned to multiple devices (returnee scenario). This allows
+        // the original owner to "reclaim" their device even if they're
+        // temporarily listed as a candidate for another device.
         primaryGuestPool.push({
           ...match,
           id,
           profileId: id,
           category: 'Family',
           source: match.source || 'Family',
-          allowWhileAssigned: true
+          allowWhileAssigned: true  // Returnees can multi-assign
         });
       });
     }
