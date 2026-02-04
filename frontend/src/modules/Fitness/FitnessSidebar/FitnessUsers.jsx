@@ -409,46 +409,11 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     return map;
   }, [deviceConfiguration]);
 
-  // Map of deviceId -> user name (config + roster fallbacks)
-  const hrOwnerBaseMap = React.useMemo(() => {
-    const map = {};
-    participantByHrId.forEach((participant, key) => {
-      if (!participant?.name) return;
-      map[String(key)] = participant.name;
-    });
-    heartRateOwners.forEach((descriptor, deviceId) => {
-      if (descriptor?.name) {
-        map[String(deviceId)] = descriptor.name;
-      }
-    });
-    registeredUsers.forEach((user) => {
-      if (user?.hrDeviceId !== undefined && user?.hrDeviceId !== null && user?.name) {
-        map[String(user.hrDeviceId)] = user.name;
-      }
-    });
-    return map;
-  }, [participantByHrId, heartRateOwners, registeredUsers]);
-
-  const hrOwnerMap = React.useMemo(() => {
-    const map = { ...hrOwnerBaseMap };
-    guestAssignmentEntries.forEach(([deviceId, assignment]) => {
-      const occupantName = assignment?.occupantName || assignment?.metadata?.name;
-      if (occupantName) {
-        map[String(deviceId)] = occupantName;
-      }
-    });
-    return map;
-  }, [hrOwnerBaseMap, guestAssignmentEntries]);
-
   const resolveCanonicalUserName = React.useCallback((deviceId, fallbackName = null) => {
     if (deviceId == null) return fallbackName;
-    const key = String(deviceId);
-    if (hrOwnerMap[key]) return hrOwnerMap[key];
-    const guest = getGuestAssignment(key);
-    if (guest?.occupantName || guest?.metadata?.name) return guest.occupantName || guest.metadata.name;
-    if (hrOwnerBaseMap[key]) return hrOwnerBaseMap[key];
-    return fallbackName;
-  }, [hrOwnerMap, getGuestAssignment, hrOwnerBaseMap]);
+    const resolved = getDisplayName(String(deviceId));
+    return resolved.displayName !== String(deviceId) ? resolved.displayName : fallbackName;
+  }, [getDisplayName]);
 
   // Build color -> zoneId map from zones config
   const colorToZoneId = React.useMemo(() => {
@@ -555,9 +520,10 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
   const handleAvatarClick = React.useCallback((device) => {
     if (!device || device.type !== 'heart_rate') return;
     const deviceId = String(device.deviceId);
-    const defaultName = hrOwnerBaseMap[deviceId] || null;
+    const resolved = getDisplayName(deviceId);
+    const defaultName = resolved.displayName !== deviceId ? resolved.displayName : null;
     onRequestGuestAssignment?.({ deviceId, defaultName });
-  }, [onRequestGuestAssignment, hrOwnerBaseMap]);
+  }, [onRequestGuestAssignment, getDisplayName]);
 
   const canonicalZones = CONFIG.zone.canonical;
   const zoneRankMap = CONFIG.zone.rankMap;
