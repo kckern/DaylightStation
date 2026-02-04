@@ -278,10 +278,14 @@ export class GitHubHarvester extends IHarvester {
         types,
       });
 
+      // Get latest date from first activity (sorted newest first)
+      const latestDate = deduped[0]?.date || null;
+
       return {
         count: deduped.length,
         types,
         status: 'success',
+        latestDate,
       };
 
     } catch (error) {

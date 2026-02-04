@@ -230,10 +230,14 @@ export class ClickUpHarvester extends IHarvester {
         lifelog: { created: createdCount, completed: completedCount },
       });
 
+      // Get latest date from lifelog (keys sorted descending)
+      const latestDate = Object.keys(sortedLifelog).sort().reverse()[0] || null;
+
       return {
         current: processedTickets.length,
         lifelog: { created: createdCount, completed: completedCount },
         status: 'success',
+        latestDate,
       };
 
     } catch (error) {

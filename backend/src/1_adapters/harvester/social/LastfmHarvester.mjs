@@ -189,10 +189,14 @@ export class LastfmHarvester extends IHarvester {
         previousCount: existingScrobbles.length,
       });
 
+      // Get latest date from first scrobble (sorted newest first)
+      const latestDate = allScrobbles[0]?.date || null;
+
       return {
         count: allScrobbles.length,
         newFetched: newScrobbles.length,
         status: 'success',
+        latestDate,
       };
 
     } catch (error) {

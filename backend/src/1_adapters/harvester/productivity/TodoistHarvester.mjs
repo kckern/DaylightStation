@@ -240,10 +240,14 @@ export class TodoistHarvester extends IHarvester {
         lifelog: { created: createdCount, completed: completedCount },
       });
 
+      // Get latest date from lifelog (keys sorted descending)
+      const latestDate = Object.keys(sortedLifelog).sort().reverse()[0] || null;
+
       return {
         current: currentCount,
         lifelog: { created: createdCount, completed: completedCount },
         status: 'success',
+        latestDate,
       };
 
     } catch (error) {

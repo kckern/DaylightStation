@@ -181,7 +181,10 @@ export class RedditHarvester extends IHarvester {
         ...stats,
       });
 
-      return { count: activities.length, stats, status: 'success' };
+      // Get latest date from first activity (sorted newest first)
+      const latestDate = activities[0]?.date || null;
+
+      return { count: activities.length, stats, status: 'success', latestDate };
 
     } catch (error) {
       const statusCode = error.response?.status;

@@ -135,7 +135,10 @@ export class GoodreadsHarvester extends IHarvester {
         bookCount: books.length,
       });
 
-      return { count: books.length, status: 'success' };
+      // Get latest date from first book (sorted newest first)
+      const latestDate = books[0]?.readAt || null;
+
+      return { count: books.length, status: 'success', latestDate };
 
     } catch (error) {
       const statusCode = error.response?.status;

@@ -181,10 +181,14 @@ export class GCalHarvester extends IHarvester {
         calendars: selectedCalendars.length,
       });
 
+      // Get latest date from lifelog (keys sorted descending)
+      const latestDate = Object.keys(updatedLifelog).sort().reverse()[0] || null;
+
       return {
         upcoming: upcomingEvents.length,
         past: pastEvents.length,
         status: 'success',
+        latestDate,
       };
 
     } catch (error) {

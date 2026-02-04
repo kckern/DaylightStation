@@ -354,10 +354,14 @@ export class ShoppingHarvester extends IHarvester {
         falsePositives: falsePositives.size,
       });
 
+      // Get latest date from merged receipts (sorted newest first)
+      const latestDate = mergedReceipts[0]?.date || null;
+
       return {
         count: mergedReceipts.length,
         stats: results,
         status: 'success',
+        latestDate,
       };
 
     } catch (error) {

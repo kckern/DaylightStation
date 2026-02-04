@@ -136,7 +136,10 @@ export class LetterboxdHarvester extends IHarvester {
         movieCount: movies.length,
       });
 
-      return { count: movies.length, status: 'success' };
+      // Get latest date from first movie (sorted newest first)
+      const latestDate = movies[0]?.date || null;
+
+      return { count: movies.length, status: 'success', latestDate };
 
     } catch (error) {
       const statusCode = error.response?.status;

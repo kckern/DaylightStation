@@ -154,11 +154,15 @@ export class GmailHarvester extends IHarvester {
         todaysReceived: todaysReceived.length,
       });
 
+      // Get latest date from lifelog (keys sorted descending)
+      const latestDate = Object.keys(updatedLifelog).sort().reverse()[0] || null;
+
       return {
         inbox: inboxMessages.length,
         sent: sentMessages.length,
         todaysReceived: todaysReceived.length,
         status: 'success',
+        latestDate,
       };
 
     } catch (error) {
