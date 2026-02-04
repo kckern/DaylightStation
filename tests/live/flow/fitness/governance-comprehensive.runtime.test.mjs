@@ -323,13 +323,37 @@ async function extractGovernanceState(page) {
   return page.evaluate(() => {
     const gov = window.__fitnessGovernance;
     if (!gov) return null;
+
+    // Also get the full requirement state from session
+    const session = window.__fitnessSession;
+    const governanceEngine = session?.governanceEngine;
+    const governanceState = governanceEngine?.state || {};
+
     return {
       phase: gov.phase,
       warningDuration: gov.warningDuration,
       lockDuration: gov.lockDuration,
       activeChallenge: gov.activeChallenge,
       videoLocked: gov.videoLocked,
-      mediaId: gov.mediaId
+      mediaId: gov.mediaId,
+      // New fields exposed for test diagnostics
+      satisfiedOnce: gov.satisfiedOnce,
+      userZoneMap: gov.userZoneMap || {},
+      activeParticipants: gov.activeParticipants || [],
+      zoneRankMap: gov.zoneRankMap || {},
+      // Additional debug info from state
+      isGoverned: governanceState.isGoverned,
+      status: governanceState.status,
+      requirementCount: governanceState.requirements?.length,
+      lockRowCount: governanceState.lockRows?.length,
+      watchers: governanceState.watchers?.length,
+      allSatisfied: governanceState.requirements?.every(r => r.satisfied),
+      requirements: governanceState.requirements?.map(r => ({
+        zone: r.zone,
+        satisfied: r.satisfied,
+        met: r.metUsers?.length,
+        miss: r.missingUsers?.length
+      }))
     };
   });
 }
@@ -533,6 +557,7 @@ async function runHydrationVideoFirst(page, sim, devices, timeline, issues) {
 
 /**
  * Standard unlock sequence - move all devices to target zone
+ * Waits for BOTH overlay to disappear AND governance phase to reach 'unlocked'
  */
 async function unlockVideo(page, sim, devices, timeline, issues) {
   const recordEvent = (event, data = {}) => {
@@ -545,45 +570,75 @@ async function unlockVideo(page, sim, devices, timeline, issues) {
   for (const device of devices) {
     await sim.setZone(device.deviceId, 'cool');
   }
-  await page.waitForTimeout(1000);
+  await page.waitForTimeout(500);
 
-  // Move to warm zone (target) one by one
-  let unlocked = false;
+  // Move to warm zone (target) - all devices at once for faster hysteresis
   for (const device of devices) {
-    await sim.setZone(device.deviceId, 'warm');
-    console.log(`  Set device ${device.deviceId} to warm zone`);
-
-    for (let i = 0; i < 15; i++) {
-      await page.waitForTimeout(400);
-      const state = await extractState(page);
-      checkForPlaceholders(state, i * 400, issues);
-
-      if (!state.visible) {
-        unlocked = true;
-        recordEvent('UNLOCKED');
-        console.log('  Video unlocked!');
-        break;
-      }
-    }
-
-    if (unlocked) break;
+    const result = await sim.setZone(device.deviceId, 'warm');
+    console.log(`  Set device ${device.deviceId} to warm zone: ${result?.ok ? 'OK' : result?.error || 'FAILED'}`);
   }
 
-  // Final poll if still locked
-  if (!unlocked) {
-    for (let i = 0; i < 20; i++) {
-      await page.waitForTimeout(300);
-      const state = await extractState(page);
-      if (!state.visible) {
-        unlocked = true;
-        recordEvent('UNLOCKED');
-        console.log('  Video unlocked!');
-        break;
-      }
+  // Wait for overlay to disappear AND governance phase to stabilize
+  // Must maintain HR through the 500ms hysteresis window
+  let unlocked = false;
+  let phaseUnlocked = false;
+
+  for (let i = 0; i < 60; i++) {
+    // Keep sending HR to maintain zone through hysteresis
+    for (const device of devices) {
+      await sim.setZone(device.deviceId, 'warm');
+    }
+
+    await page.waitForTimeout(300);
+
+    const state = await extractState(page);
+    const govState = await extractGovernanceState(page);
+    checkForPlaceholders(state, i * 100, issues);
+
+    // Check overlay visibility
+    if (!state.visible && !unlocked) {
+      unlocked = true;
+      recordEvent('OVERLAY_HIDDEN');
+      console.log('  Overlay hidden');
+    }
+
+    // Check governance phase
+    if (govState?.phase === 'unlocked' && !phaseUnlocked) {
+      phaseUnlocked = true;
+      recordEvent('PHASE_UNLOCKED');
+      console.log('  Governance phase: unlocked');
+    }
+
+    // Success: both conditions met
+    if (unlocked && phaseUnlocked) {
+      recordEvent('UNLOCKED');
+      console.log('  Video fully unlocked (overlay hidden + phase unlocked)');
+      break;
+    }
+
+    // Log progress every 500ms
+    if (i > 0 && i % 5 === 0) {
+      const reqInfo = state.rows?.map(r => `${r.name}:${r.currentZone}->${r.targetZone}`).join(', ') || 'no rows';
+      const govReqs = govState?.requirements?.map(r => `${r.zone}:${r.satisfied}(${r.met}/${r.miss})`).join(', ') || 'none';
+      console.log(`  [${i * 100}ms] visible=${state.visible}, phase=${govState?.phase}, watchers=${govState?.watchers}`);
+      console.log(`    UI: [${reqInfo}]`);
+      console.log(`    Gov: [${govReqs}] allSat=${govState?.allSatisfied}`);
+      const userZones = govState?.userZoneMap ? Object.entries(govState.userZoneMap).map(([k,v]) => `${k}:${v}`).slice(0, 5).join(', ') : 'none';
+      const zoneRanks = govState?.zoneRankMap ? Object.keys(govState.zoneRankMap).join(', ') : 'none';
+      console.log(`    UserZones: [${userZones}]`);
+      console.log(`    ZoneRanks: [${zoneRanks}]`);
+      console.log(`    satisfiedOnce: ${govState?.satisfiedOnce}, participants: ${govState?.activeParticipants?.length || 0}`);
     }
   }
 
-  return { unlocked };
+  // Final verification
+  const finalGovState = await extractGovernanceState(page);
+  if (!phaseUnlocked) {
+    console.warn(`  WARNING: Governance phase is '${finalGovState?.phase}', not 'unlocked'`);
+    console.warn('  This may cause grace period tests to fail (satisfiedOnce not set)');
+  }
+
+  return { unlocked, phaseUnlocked };
 }
 
 /**
