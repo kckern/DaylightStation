@@ -2504,6 +2504,7 @@ export function createAgentsApiRouter(config) {
  * @param {Object} [config.rssParser] - RSS parser instance (defaults to new RSSParser)
  * @param {Object} [config.sharedStore] - Store for shared household data (weather)
  * @param {Function} [config.gmailClientFactory] - Factory to create Gmail client: (username) => gmailClient
+ * @param {Object} [config.dataService] - DataService for hierarchical data access (weather datastore)
  * @param {Object} [config.logger] - Logger instance
  * @returns {Object} Harvester services { harvesterService, jobExecutor, lifelogStore }
  */
@@ -2513,6 +2514,7 @@ export function createHarvesterServices(config) {
     httpClient,
     configService,
     userDataService,
+    dataService,
     todoistApi,
     stravaClient: stravaClientParam,
     authStore: authStoreParam,
@@ -2555,8 +2557,9 @@ export function createHarvesterServices(config) {
   };
 
   // Create or use provided sharedStore (for weather data)
-  const sharedStore = sharedStoreParam || (userDataService ? new YamlWeatherDatastore({
-    dataService: userDataService,
+  // Note: YamlWeatherDatastore requires DataService (with .household.write), not UserDataService
+  const sharedStore = sharedStoreParam || (dataService ? new YamlWeatherDatastore({
+    dataService,
     configService,
     logger,
   }) : null);
