@@ -448,3 +448,46 @@ const preferGroupLabels = activeHeartRateDevices.length > 1;
 - Close all other browser windows with the fitness app open
 - Or stop all simulators in other browser tabs before running the test
 - Debug logs confirm: `preferGroupLabels: false` and `result: "KC Kern"` when properly isolated
+
+---
+
+## Final Resolution: group_label Display Bug (2026-02-03)
+
+### Additional Root Cause Found
+
+The device count fix was necessary but not sufficient. A second bug in the render-time priority chain prevented the group_label from being displayed:
+
+**The Bug:** In `FitnessUsers.jsx`, the device name resolution checked `guestAssignment?.occupantName` for ALL device assignments, not just actual guests. A "member" assignment (like kckern's primary device) still had `occupantName: "KC Kern"`, which bypassed the `hrDisplayNameMap` that correctly computed "Dad".
+
+### The Fix
+
+```javascript
+// Before: Used guestAssignment.occupantName for ALL assignments
+if (guestAssignment?.occupantName) {
+  deviceName = guestAssignment.occupantName;  // Used even for members!
+}
+
+// After: Only use guestAssignment for actual guests
+const isActualGuest = guestAssignment?.occupantType === 'guest';
+if (isActualGuest && guestAssignment?.occupantName) {
+  deviceName = guestAssignment.occupantName;
+} else if (ownerName) {
+  // ownerName from hrDisplayNameMap has group_label awareness
+  deviceName = ownerName;
+}
+```
+
+### Test Result
+
+All 3 phases of `group-label-fallback.runtime.test.mjs` now pass:
+- Phase 1: Single device shows "KC Kern"
+- Phase 2: Second device joins, kckern switches to "Dad"
+- Phase 3: Device drops, kckern restores to "KC Kern"
+
+### Files Changed
+
+- `frontend/src/modules/Fitness/FitnessSidebar/FitnessUsers.jsx`: Lines 991-1020 (device name priority chain)
+
+### Postmortem
+
+See: `docs/_wip/audits/2026-02-03-group-label-fallback-fix-postmortem.md`
