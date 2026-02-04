@@ -423,34 +423,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     session.reconcileAssignments?.();
   }, [session, ledgerVersion]);
   
-  // Legacy/Compatibility State
-  const userGroupLabelMap = React.useMemo(() => {
-    const map = new Map();
-    const registerGroupLabels = (list) => {
-      if (!Array.isArray(list)) return;
-      list.forEach((entry) => {
-        if (!entry?.name) return;
-        const id = entry.id || entry.profileId || entry.name;
-        const label = entry.group_label ?? entry.groupLabel ?? null;
-
-        // Index by ID/profileId
-        if (id && label && !map.has(id)) {
-          map.set(id, label);
-        }
-
-        // Also index by display name for lookups that use name instead of ID
-        if (entry.name && label && entry.name !== id && !map.has(entry.name)) {
-          map.set(entry.name, label);
-        }
-      });
-    };
-    registerGroupLabels(usersConfig?.primary);
-    registerGroupLabels(usersConfig?.secondary);
-    registerGroupLabels(usersConfig?.family);
-    registerGroupLabels(usersConfig?.friends);
-    registerGroupLabels(usersConfig?.guests);
-    return map;
-  }, [usersConfig]);
+  // Legacy compatibility constants (userGroupLabelMap removed - use getDisplayName instead)
   const lastUpdate = 0;
   const governancePulse = 0;
   const effectiveUsersConfig = usersConfig;
@@ -467,6 +440,31 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
         map.set(entry.id, entry);
       }
     });
+    return map;
+  }, [usersConfig]);
+
+  // Group label lookup for getDisplayLabel (replaces userGroupLabelMap)
+  const groupLabelLookup = React.useMemo(() => {
+    const map = new Map();
+    const registerGroupLabels = (list) => {
+      if (!Array.isArray(list)) return;
+      list.forEach((entry) => {
+        if (!entry?.name) return;
+        const id = entry.id || entry.profileId || entry.name;
+        const label = entry.group_label ?? entry.groupLabel ?? null;
+        if (id && label && !map.has(id)) {
+          map.set(id, label);
+        }
+        if (entry.name && label && entry.name !== id && !map.has(entry.name)) {
+          map.set(entry.name, label);
+        }
+      });
+    };
+    registerGroupLabels(usersConfig?.primary);
+    registerGroupLabels(usersConfig?.secondary);
+    registerGroupLabels(usersConfig?.family);
+    registerGroupLabels(usersConfig?.friends);
+    registerGroupLabels(usersConfig?.guests);
     return map;
   }, [usersConfig]);
 
@@ -1254,7 +1252,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     const lookupKey = userId || name;
     const baseGroupLabel = groupLabelOverride !== undefined
       ? groupLabelOverride
-      : (lookupKey ? userGroupLabelMap.get(lookupKey) : null);
+      : (lookupKey ? groupLabelLookup.get(lookupKey) : null);
     const shouldPrefer = typeof preferGroupLabel === 'boolean'
       ? preferGroupLabel
       : (preferGroupLabels && Boolean(baseGroupLabel));
@@ -1264,7 +1262,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       preferGroupLabel: shouldPrefer,
       fallback: 'Participant'
     });
-  }, [userGroupLabelMap, preferGroupLabels]);
+  }, [groupLabelLookup, preferGroupLabels]);
 
   const zoneRankMap = React.useMemo(() => {
     if (!Array.isArray(zoneConfig) || zoneConfig.length === 0) return {};
