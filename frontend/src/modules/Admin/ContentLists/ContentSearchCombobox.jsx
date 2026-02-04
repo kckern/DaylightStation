@@ -3,11 +3,12 @@ import {
   Combobox, TextInput, ScrollArea, Group, Text, Avatar, Badge, Loader,
   Stack, ActionIcon, Box, useCombobox
 } from '@mantine/core';
-import { useDebouncedValue } from '@mantine/hooks';
+import { useDebouncedCallback } from '@mantine/hooks';
 import {
   IconSearch, IconChevronRight, IconArrowLeft, IconFolder,
   IconMusic, IconVideo, IconPhoto, IconFile, IconList
 } from '@tabler/icons-react';
+import { useStreamingSearch } from '../../../hooks/useStreamingSearch';
 
 const TYPE_ICONS = {
   show: IconVideo,
@@ -28,6 +29,22 @@ const TYPE_ICONS = {
   default: IconFile
 };
 
+const SOURCE_ICONS = {
+  plex: '\uD83C\uDFAC',
+  immich: '\uD83D\uDCF7',
+  audiobookshelf: '\uD83D\uDCDA',
+  singing: '\uD83C\uDFB5',
+  media: '\uD83D\uDCC1',
+  default: '\uD83D\uDD0D'
+};
+
+/**
+ * Check if browser supports Server-Sent Events
+ */
+function supportsSSE() {
+  return typeof EventSource !== 'undefined';
+}
+
 function getIcon(item) {
   const type = item.type || item.metadata?.type || item.mediaType;
   const Icon = TYPE_ICONS[type] || TYPE_ICONS.default;
@@ -43,15 +60,68 @@ function isContainer(item) {
 /**
  * ContentSearchCombobox - Searchable combobox for selecting content items
  * Supports search and drilling down into containers
+ * Uses streaming search via SSE for progressive results
  */
 function ContentSearchCombobox({ value, onChange, placeholder = 'Search content...' }) {
   const [search, setSearch] = useState('');
-  const [debouncedSearch] = useDebouncedValue(search, 300);
-  const [results, setResults] = useState([]);
+  const [browseResults, setBrowseResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [breadcrumbs, setBreadcrumbs] = useState([]); // [{id, title, source, localId}]
-
   const [initialLoadDone, setInitialLoadDone] = useState(false);
+
+  // Streaming search hook for SSE-enabled browsers
+  const {
+    results: streamResults,
+    pending: pendingSources,
+    isSearching: streamLoading,
+    search: streamSearch
+  } = useStreamingSearch('/api/v1/content/query/search/stream');
+
+  // Fallback batch search state for non-SSE browsers
+  const [fallbackResults, setFallbackResults] = useState([]);
+  const [fallbackLoading, setFallbackLoading] = useState(false);
+
+  // Batch search fallback for browsers without SSE
+  const doBatchSearch = useCallback(async (text) => {
+    if (!text || text.length < 2) {
+      setFallbackResults([]);
+      return;
+    }
+
+    setFallbackLoading(true);
+    try {
+      const response = await fetch(`/api/v1/content/query/search?text=${encodeURIComponent(text)}&take=20`);
+      if (!response.ok) throw new Error('Search failed');
+      const data = await response.json();
+      setFallbackResults(data.items || []);
+    } catch (err) {
+      console.error('Search error:', err);
+      setFallbackResults([]);
+    } finally {
+      setFallbackLoading(false);
+    }
+  }, []);
+
+  // Debounced search function
+  const debouncedSearch = useDebouncedCallback((text) => {
+    if (breadcrumbs.length > 0) return; // Don't search while browsing
+
+    if (supportsSSE()) {
+      streamSearch(text);
+    } else {
+      doBatchSearch(text);
+    }
+  }, 300);
+
+  // Determine which results to display
+  const results = breadcrumbs.length > 0
+    ? browseResults
+    : supportsSSE()
+      ? streamResults
+      : fallbackResults;
+
+  // Determine loading state
+  const isLoading = loading || streamLoading || fallbackLoading;
 
   const combobox = useCombobox({
     onDropdownClose: () => {
@@ -85,7 +155,7 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
         const response = await fetch(`/api/v1/list/${source}/`);
         if (response.ok) {
           const data = await response.json();
-          setResults(data.items || []);
+          setBrowseResults(data.items || []);
         }
       } catch (err) {
         console.error('Load siblings error:', err);
@@ -104,7 +174,7 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
       const response = await fetch(`/api/v1/list/${source}/${encodeURIComponent(parentPath)}`);
       if (!response.ok) throw new Error('Browse failed');
       const data = await response.json();
-      setResults(data.items || []);
+      setBrowseResults(data.items || []);
       setBreadcrumbs([{ id: `${source}:${parentPath}`, title: parentTitle, source, localId: parentPath }]);
     } catch (err) {
       console.error('Load siblings error:', err);
@@ -119,28 +189,6 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
     setInitialLoadDone(false);
   }, [value]);
 
-  // Search for content
-  const doSearch = useCallback(async (text) => {
-    if (!text || text.length < 2) {
-      setResults([]);
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const response = await fetch(`/api/v1/content/query/search?text=${encodeURIComponent(text)}&take=20`);
-      if (!response.ok) throw new Error('Search failed');
-      const data = await response.json();
-      setResults(data.items || []);
-      setBreadcrumbs([]); // Clear breadcrumbs on new search
-    } catch (err) {
-      console.error('Search error:', err);
-      setResults([]);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
   // Browse into a container
   const browseContainer = useCallback(async (item) => {
     const source = item.source || item.id?.split(':')[0];
@@ -151,7 +199,7 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
       const response = await fetch(`/api/v1/list/${source}/${encodeURIComponent(localId)}`);
       if (!response.ok) throw new Error('Browse failed');
       const data = await response.json();
-      setResults(data.items || []);
+      setBrowseResults(data.items || []);
       setBreadcrumbs(prev => [...prev, { id: item.id, title: item.title, source, localId }]);
     } catch (err) {
       console.error('Browse error:', err);
@@ -163,13 +211,9 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
   // Go back in breadcrumbs
   const goBack = useCallback(async () => {
     if (breadcrumbs.length <= 1) {
-      // Back to search results
+      // Back to search results - just clear breadcrumbs, streaming/fallback results will show
       setBreadcrumbs([]);
-      if (debouncedSearch) {
-        doSearch(debouncedSearch);
-      } else {
-        setResults([]);
-      }
+      setBrowseResults([]);
       return;
     }
 
@@ -182,21 +226,14 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
       const response = await fetch(`/api/v1/list/${parent.source}/${encodeURIComponent(parent.localId)}`);
       if (!response.ok) throw new Error('Browse failed');
       const data = await response.json();
-      setResults(data.items || []);
+      setBrowseResults(data.items || []);
       setBreadcrumbs(newBreadcrumbs);
     } catch (err) {
       console.error('Browse error:', err);
     } finally {
       setLoading(false);
     }
-  }, [breadcrumbs, debouncedSearch, doSearch]);
-
-  // Search when debounced value changes
-  useEffect(() => {
-    if (breadcrumbs.length === 0) {
-      doSearch(debouncedSearch);
-    }
-  }, [debouncedSearch, breadcrumbs.length, doSearch]);
+  }, [breadcrumbs]);
 
   // Handle item click
   const handleItemClick = (item) => {
@@ -231,7 +268,7 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
       const response = await fetch(`/api/v1/list/${source}/${encodeURIComponent(parentPath)}`);
       if (!response.ok) throw new Error('Browse failed');
       const data = await response.json();
-      setResults(data.items || []);
+      setBrowseResults(data.items || []);
       setBreadcrumbs([{ id: `${source}:${parentPath}`, title: parentTitle, source, localId: parentPath }]);
     } catch (err) {
       console.error('Browse parent error:', err);
@@ -305,7 +342,9 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
         <TextInput
           value={displayValue}
           onChange={(e) => {
-            setSearch(e.target.value);
+            const newValue = e.target.value;
+            setSearch(newValue);
+            debouncedSearch(newValue);
             combobox.openDropdown();
             combobox.updateSelectedOptionIndex();
           }}
@@ -314,7 +353,7 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
           onBlur={() => combobox.closeDropdown()}
           placeholder={placeholder}
           leftSection={<IconSearch size={16} />}
-          rightSection={loading ? <Loader size="xs" /> : null}
+          rightSection={isLoading ? <Loader size="xs" /> : null}
         />
       </Combobox.Target>
 
@@ -340,9 +379,24 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
           </Box>
         )}
 
+        {/* Pending sources indicator */}
+        {pendingSources.length > 0 && breadcrumbs.length === 0 && (
+          <Box p="xs" className="pending-sources" data-pending-sources style={{ borderBottom: '1px solid var(--mantine-color-dark-4)' }}>
+            <Group gap="xs">
+              <Loader size="xs" />
+              <Text size="xs" c="dimmed">Searching:</Text>
+              {pendingSources.map(source => (
+                <Badge key={source} size="xs" variant="light" color="gray">
+                  {SOURCE_ICONS[source] || SOURCE_ICONS.default} {source}
+                </Badge>
+              ))}
+            </Group>
+          </Box>
+        )}
+
         <Combobox.Options>
           <ScrollArea.Autosize mah={300}>
-            {loading && results.length === 0 ? (
+            {isLoading && results.length === 0 ? (
               <Combobox.Empty>
                 <Group justify="center" p="md">
                   <Loader size="sm" />
@@ -351,7 +405,7 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
               </Combobox.Empty>
             ) : results.length === 0 ? (
               <Combobox.Empty>
-                {debouncedSearch.length < 2 ? 'Type to search...' : 'No results found'}
+                {search.length < 2 ? 'Type to search...' : 'No results found'}
               </Combobox.Empty>
             ) : (
               options
