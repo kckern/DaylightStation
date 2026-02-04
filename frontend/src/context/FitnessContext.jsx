@@ -1516,6 +1516,10 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     return collections || EMPTY_USER_COLLECTIONS;
   }, [session, version]);
 
+  const configuredUsers = React.useMemo(() => {
+    return userCollections?.all || [];
+  }, [userCollections]);
+
   const deviceOwnership = React.useMemo(() => {
     const ownership = session?.deviceOwnership;
     if (ownership) {
@@ -1523,6 +1527,21 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     }
     return createEmptyOwnership();
   }, [session, version]);
+
+  // Phase 4 SSOT: Build display name context
+  const displayNameContext = React.useMemo(() => {
+    return buildDisplayNameContext({
+      devices: allDevicesRaw,
+      deviceOwnership: deviceOwnership?.heartRate,
+      deviceAssignments: deviceAssignmentMap,
+      userProfiles: new Map(
+        configuredUsers.map(u => [u.id || u.profileId, {
+          displayName: u.name,
+          groupLabel: u.group_label || u.groupLabel
+        }])
+      )
+    });
+  }, [allDevicesRaw, deviceOwnership, deviceAssignmentMap, configuredUsers, version]);
 
   const guestCandidateList = React.useMemo(() => {
     return Array.isArray(session?.guestCandidates) ? session.guestCandidates : [];
