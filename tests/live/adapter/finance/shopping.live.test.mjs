@@ -8,69 +8,83 @@
  * Requires:
  * - Gmail OAuth configured (GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET)
  * - User gmail refresh token
+ *
+ * IMPORTANT: This test will FAIL if preconditions aren't met.
+ * It will NOT silently pass. This is intentional.
  */
 
 import { configService, initConfigService } from '#backend/src/0_system/config/index.mjs';
 import { getDataPath } from '../../../_lib/configHelper.mjs';
+import { requireDataPath, requireSecret, requireConfig, SkipTestError } from '../test-preconditions.mjs';
 
 describe('Shopping Live Integration', () => {
   let processShoppingData;
+  let moduleError = null;
+  let dataPath;
+  let username;
 
   beforeAll(async () => {
-    const dataPath = getDataPath();
-    if (!dataPath) {
-      throw new Error('Could not determine data path from .env');
-    }
+    // FAIL if data path not configured
+    dataPath = requireDataPath(getDataPath);
 
     if (!configService.isReady()) {
       initConfigService(dataPath);
     }
 
-    // Set up Google OAuth credentials before importing
-    process.env.GOOGLE_CLIENT_ID = configService.getSecret('GOOGLE_CLIENT_ID');
-    process.env.GOOGLE_CLIENT_SECRET = configService.getSecret('GOOGLE_CLIENT_SECRET');
+    // FAIL if Google OAuth credentials not configured
+    process.env.GOOGLE_CLIENT_ID = requireSecret('GOOGLE_CLIENT_ID', configService);
+    process.env.GOOGLE_CLIENT_SECRET = requireSecret('GOOGLE_CLIENT_SECRET', configService);
     process.env.GOOGLE_REDIRECT_URI = configService.getSecret('GOOGLE_REDIRECT_URI') || 'http://localhost:3112/auth/google/callback';
+
+    username = configService.getHeadOfHousehold();
+    requireConfig('Head of household', username);
 
     try {
       const mod = await import('#backend/lib/shopping.mjs');
       processShoppingData = mod.default;
     } catch (e) {
-      console.log('shopping.mjs failed to load:', e.message);
+      moduleError = e.message;
+    }
+
+    // FAIL if module didn't load
+    if (moduleError || !processShoppingData) {
+      throw new Error(
+        `[PRECONDITION FAILED] Shopping module not loaded: ${moduleError || 'unknown error'}`
+      );
     }
   });
 
   it('processes shopping data', async () => {
-    if (!processShoppingData) {
-      console.log('Shopping module not loaded - skipping test');
-      return;
-    }
-
-    const username = configService.getHeadOfHousehold();
     const auth = configService.getUserAuth('gmail', username) || {};
 
+    // FAIL if Gmail OAuth not configured
     if (!auth.refresh_token) {
-      console.log('Gmail OAuth not configured for shopping - skipping test');
-      return;
+      throw new Error(
+        `[PRECONDITION FAILED] Gmail OAuth not configured for user '${username}'. ` +
+        `Expected: getUserAuth('gmail', '${username}') with {refresh_token: '...'}`
+      );
     }
 
-    try {
-      const result = await processShoppingData(null, `test-${Date.now()}`, username);
+    const result = await processShoppingData(null, `test-${Date.now()}`, username);
 
-      if (result?.error) {
-        console.log(`Error: ${result.error}`);
-      } else if (result?.skipped) {
-        console.log(`Skipped: ${result.reason}`);
-      } else if (Array.isArray(result)) {
-        console.log(`Processed ${result.length} shopping items`);
-      } else if (result) {
-        console.log('Shopping data processed');
-      }
-    } catch (error) {
-      if (error.message?.includes('AI') || error.message?.includes('API')) {
-        console.log(`API error: ${error.message}`);
-      } else {
-        throw error;
-      }
+    // Explicit skip for rate limiting
+    if (result?.skipped) {
+      throw new SkipTestError(`Shopping skipped: ${result.reason}`);
+    }
+
+    // FAIL on errors - don't silently pass
+    if (result?.error) {
+      throw new Error(`[ASSERTION FAILED] Shopping error: ${result.error}`);
+    }
+
+    // Verify we got actual results
+    expect(result).toBeTruthy();
+
+    if (Array.isArray(result)) {
+      console.log(`Processed ${result.length} shopping items`);
+      expect(result.length).toBeGreaterThanOrEqual(0);
+    } else {
+      console.log('Shopping data processed');
     }
   }, 300000); // 5 min timeout for AI processing
 });

@@ -7,18 +7,22 @@
  * - Buxfer API credentials in secrets.yml or user auth
  *
  * Note: budget.mjs reads process.env.path.data at module load time,
- * so we must set it before importing. This test requires the full
- * server environment with process.env.path set up correctly.
+ * so we must set it before importing.
+ *
+ * IMPORTANT: This test will FAIL if preconditions aren't met.
+ * It will NOT silently pass. This is intentional.
  */
 
 import { configService, initConfigService } from '#backend/src/0_system/config/index.mjs';
 import { getDataPath } from '../../../_lib/configHelper.mjs';
+import { requireDataPath, requireConfig, SkipTestError } from '../test-preconditions.mjs';
 
 // Must set process.env.path before importing budget.mjs
 const dataPath = getDataPath();
-if (dataPath) {
-  process.env.path = { data: dataPath };
+if (!dataPath) {
+  throw new Error('[PRECONDITION FAILED] Data path not configured. Set DAYLIGHT_DATA_PATH.');
 }
+process.env.path = { data: dataPath };
 
 let refreshFinancialData;
 let moduleError = null;
@@ -31,56 +35,60 @@ try {
 
 describe('Budget Live Integration', () => {
   beforeAll(() => {
-    const dataPath = getDataPath();
-    if (!dataPath) {
-      throw new Error('Could not determine data path from .env');
-    }
+    // FAIL if data path not configured
+    requireDataPath(getDataPath);
 
     if (!configService.isReady()) {
       initConfigService(dataPath);
     }
 
-    process.env.BUXFER_USERNAME = configService.getSecret('BUXFER_USERNAME');
-    process.env.BUXFER_PASSWORD = configService.getSecret('BUXFER_PASSWORD');
+    // FAIL if module didn't load
+    if (moduleError || !refreshFinancialData) {
+      throw new Error(
+        `[PRECONDITION FAILED] Budget module not loaded: ${moduleError || 'unknown error'}. ` +
+        'Note: budget.mjs requires full server environment with process.env.path'
+      );
+    }
+
+    // Get Buxfer credentials
+    const buxferUsername = configService.getSecret('BUXFER_USERNAME');
+    const buxferPassword = configService.getSecret('BUXFER_PASSWORD');
+
+    // FAIL if credentials not configured
+    requireConfig('BUXFER_USERNAME', buxferUsername);
+    requireConfig('BUXFER_PASSWORD', buxferPassword);
+
+    process.env.BUXFER_USERNAME = buxferUsername;
+    process.env.BUXFER_PASSWORD = buxferPassword;
   });
 
   it('refreshes financial data', async () => {
-    if (moduleError || !refreshFinancialData) {
-      console.log(`Budget module not loaded: ${moduleError || 'unknown error'}`);
-      console.log('Note: budget.mjs requires full server environment with process.env.path');
-      return;
-    }
-
     const username = configService.getHeadOfHousehold();
+    requireConfig('Head of household', username);
 
-    if (!process.env.BUXFER_USERNAME || !process.env.BUXFER_PASSWORD) {
-      console.log('Buxfer credentials not configured - skipping test');
-      return;
+    const result = await refreshFinancialData(`test-${Date.now()}`, { targetUsername: username });
+
+    // Explicit skip for rate limiting
+    if (result?.skipped) {
+      throw new SkipTestError(`Budget skipped: ${result.reason}`);
     }
 
-    try {
-      const result = await refreshFinancialData(`test-${Date.now()}`, { targetUsername: username });
+    // FAIL on errors - don't silently pass
+    if (result?.error) {
+      throw new Error(`[ASSERTION FAILED] Budget refresh error: ${result.error}`);
+    }
 
-      if (result?.error) {
-        console.log(`Error: ${result.error}`);
-      } else if (result?.skipped) {
-        console.log(`Skipped: ${result.reason}`);
-      } else if (result) {
-        console.log('Budget data refreshed');
-        if (result.accounts) console.log(`Accounts: ${result.accounts.length}`);
-        if (result.transactions) console.log(`Transactions: ${result.transactions.length}`);
-      }
-    } catch (error) {
-      if (error.code === 'ENOENT' || error.message?.includes('ENOENT')) {
-        console.log('Budget config not found - requires full server environment');
-        return; // Skip gracefully
-      } else if (error.message?.includes('auth') || error.message?.includes('login')) {
-        console.log(`Auth error: ${error.message}`);
-      } else if (error.message?.includes('rate')) {
-        console.log('Rate limited');
-      } else {
-        throw error;
-      }
+    // Verify we got actual results
+    expect(result).toBeTruthy();
+
+    console.log('Budget data refreshed');
+    if (result.accounts) {
+      console.log(`Accounts: ${result.accounts.length}`);
+      expect(result.accounts.length).toBeGreaterThan(0);
+    }
+    if (result.transactions) {
+      console.log(`Transactions: ${result.transactions.length}`);
+      expect(result.transactions.length).toBeGreaterThanOrEqual(0);
     }
   }, 120000);
 });

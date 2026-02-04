@@ -98,14 +98,71 @@ Live tests read credentials from ConfigService:
 
 Credentials are stored in household auth config, not hardcoded.
 
+## Test Discipline: Skipping is NOT Passing
+
+**CRITICAL**: Live tests must FAIL or explicitly SKIP - never silently pass.
+
+All live tests use the precondition helpers from `test-preconditions.mjs`:
+
+```javascript
+import { requireDataPath, requireSecret, requireConfig, SkipTestError } from '../test-preconditions.mjs';
+
+describe('My Live Test', () => {
+  beforeAll(() => {
+    // FAIL if data path not configured
+    const dataPath = requireDataPath(getDataPath);
+
+    // FAIL if secret not configured
+    const apiKey = requireSecret('MY_API_KEY', configService);
+  });
+
+  it('does something', async () => {
+    // FAIL if config missing
+    requireConfig('Head of household', username);
+
+    const result = await doThing();
+
+    // Explicit skip for acceptable conditions (rate limiting, etc.)
+    if (result?.skipped) {
+      throw new SkipTestError(`Skipped: ${result.reason}`);
+    }
+
+    // FAIL on errors - don't silently pass
+    if (result?.error) {
+      throw new Error(`[ASSERTION FAILED] Error: ${result.error}`);
+    }
+
+    // Make real assertions
+    expect(result).toBeTruthy();
+  });
+});
+```
+
+**Anti-patterns to avoid:**
+
+```javascript
+// BAD: Silent pass on missing config
+if (!credentials) {
+  console.log('Not configured');
+  return;  // This PASSES the test!
+}
+
+// GOOD: Explicit failure
+if (!credentials) {
+  throw new Error('[PRECONDITION FAILED] Credentials not configured');
+}
+```
+
 ## Writing New Live Tests
 
 1. **No mocks** - Connect to real APIs
-2. **Require explicit flags** - Don't auto-run destructive operations
-3. **Support dry-run** - Always preview before mutating
-4. **Scope appropriately** - Only process configured accounts/users
-5. **Rate limit** - Add delays between API calls
-6. **Log clearly** - Show what's happening for CLI usage
+2. **Fail on missing preconditions** - Use `requireAuth`, `requireSecret`, `requireConfig`
+3. **Explicit skips only** - Use `SkipTestError` for acceptable skip conditions (rate limits, etc.)
+4. **Require explicit flags** - Don't auto-run destructive operations
+5. **Support dry-run** - Always preview before mutating
+6. **Scope appropriately** - Only process configured accounts/users
+7. **Rate limit** - Add delays between API calls
+8. **Log clearly** - Show what's happening for CLI usage
 
 Example pattern:
 

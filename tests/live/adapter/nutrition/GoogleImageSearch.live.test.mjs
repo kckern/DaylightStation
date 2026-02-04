@@ -1,10 +1,13 @@
 /**
  * GoogleImageSearchGateway Live Integration Test
- * 
+ *
  * Tests the Google Image Search gateway with REAL API calls.
  * Requires GOOGLE_API_KEY and GOOGLE_CSE_ID in household/auth/google.yml
- * 
+ *
  * Run with: npm test -- tests/live/nutribot/GoogleImageSearch.live.test.mjs
+ *
+ * IMPORTANT: This test will FAIL if preconditions aren't met.
+ * It will NOT silently pass. This is intentional.
  */
 
 import { GoogleImageSearchGateway } from '#backend/_legacy/chatbots/infrastructure/gateways/GoogleImageSearchGateway.mjs';
@@ -13,48 +16,49 @@ import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
 import { getDataPath } from '../../../_lib/configHelper.mjs';
+import { requireDataPath, requireConfig } from '../test-preconditions.mjs';
 
 describe('GoogleImageSearchGateway Live API', () => {
   let gateway;
   let upcGateway;
-  let isConfigured = false;
+  let apiKey;
+  let cseId;
 
   beforeAll(() => {
-    // Load credentials from household auth file
-    const dataDir = getDataPath();
-    if (!dataDir) {
-      throw new Error('Could not determine data path from .env');
-    }
+    // FAIL if data path not configured
+    const dataDir = requireDataPath(getDataPath);
     const authPath = path.join(dataDir, 'household/auth/google.yml');
-    let apiKey = null;
-    let cseId = null;
-    
-    if (fs.existsSync(authPath)) {
-      const authConfig = yaml.load(fs.readFileSync(authPath, 'utf8'));
-      apiKey = authConfig.GOOGLE_API_KEY;
-      cseId = authConfig.GOOGLE_CSE_ID;
+
+    // FAIL if auth file doesn't exist
+    if (!fs.existsSync(authPath)) {
+      throw new Error(
+        `[PRECONDITION FAILED] Google auth file not found at ${authPath}. ` +
+        'Create household/auth/google.yml with GOOGLE_API_KEY and GOOGLE_CSE_ID.'
+      );
     }
+
+    const authConfig = yaml.load(fs.readFileSync(authPath, 'utf8'));
+    apiKey = authConfig.GOOGLE_API_KEY;
+    cseId = authConfig.GOOGLE_CSE_ID;
+
+    // FAIL if credentials not configured
+    requireConfig('GOOGLE_API_KEY', apiKey);
+    requireConfig('GOOGLE_CSE_ID', cseId);
 
     gateway = new GoogleImageSearchGateway({
       apiKey,
       cseId,
-      timeout: 10000, // Longer timeout for real API
+      timeout: 10000,
     });
-    
+
     upcGateway = new RealUPCGateway({});
 
-    isConfigured = gateway.isConfigured();
-
-    if (!isConfigured) {
-      console.warn('\n⚠️  GOOGLE_API_KEY or GOOGLE_CSE_ID not configured - skipping live tests\n');
-    } else {
-      console.log('\n✅ Google Image Search configured and ready\n');
-    }
+    console.log('Google Image Search configured and ready');
   });
 
   // Sample products with real UPCs
   const testProducts = [
-    { upc: '064384371447', name: null, brand: null }, // User's test UPC - name will be looked up
+    { upc: '064384371447', name: null, brand: null },
     { upc: '016000275287', name: 'Cheerios', brand: 'General Mills' },
     { upc: '038000138416', name: 'Frosted Flakes', brand: 'Kelloggs' },
     { upc: '041196010152', name: 'Greek Yogurt', brand: 'Chobani' },
@@ -65,47 +69,38 @@ describe('GoogleImageSearchGateway Live API', () => {
 
   describe('Full UPC → Image Search Flow', () => {
     it('looks up UPC 064384371447 and finds product image', async () => {
-      if (!isConfigured) {
-        console.log('  ⏭️  Skipped - credentials not configured');
-        return;
-      }
-
-      // Step 1: Look up UPC to get product info
-      console.log('  🔍 Looking up UPC 064384371447...');
+      console.log('  Looking up UPC 064384371447...');
       const product = await upcGateway.lookup('064384371447');
-      
+
       if (!product) {
-        console.log('  ⚠️  UPC not found in database - cannot test image search');
+        console.log('  UPC not found in database - cannot test image search');
+        // This is acceptable - UPC database may not have this product
         return;
       }
-      
-      console.log(`  📦 Found: ${product.name}${product.brand ? ` (${product.brand})` : ''}`);
-      console.log(`  🖼️  UPC database image: ${product.imageUrl || '(none)'}`);
 
-      // Step 2: Try Google search by UPC code first
+      console.log(`  Found: ${product.name}${product.brand ? ` (${product.brand})` : ''}`);
+      console.log(`  UPC database image: ${product.imageUrl || '(none)'}`);
+
       let imageUrl = await gateway.searchProductImage('064384371447', { foodOnly: false });
       let imageSource = 'google-upc';
-      console.log(`  📸 Google UPC search: ${imageUrl || '(no result)'}`);
+      console.log(`  Google UPC search: ${imageUrl || '(no result)'}`);
 
-      // Step 3: If no result, try by product name/brand
       if (!imageUrl) {
         imageUrl = await gateway.searchProductImage(product.name, {
           brand: product.brand,
           foodOnly: true,
         });
         imageSource = 'google-name';
-        console.log(`  📸 Google name search: ${imageUrl || '(no result)'}`);
+        console.log(`  Google name search: ${imageUrl || '(no result)'}`);
       }
 
-      // Step 4: Would fall back to barcode generation (not tested here)
       if (!imageUrl) {
-        console.log('  📊 Would generate barcode as final fallback');
+        console.log('  Would generate barcode as final fallback');
         imageSource = 'barcode-generated';
       }
 
-      console.log(`  ✅ Final image source: ${imageSource}`);
+      console.log(`  Final image source: ${imageSource}`);
 
-      // Should find an image for a real product
       if (imageUrl) {
         expect(imageUrl).toMatch(/^https?:\/\//);
       }
@@ -114,71 +109,50 @@ describe('GoogleImageSearchGateway Live API', () => {
 
   describe('searchProductImage', () => {
     it('finds an image for Cheerios cereal', async () => {
-      if (!isConfigured) {
-        console.log('  ⏭️  Skipped - credentials not configured');
-        return;
-      }
-
       const result = await gateway.searchProductImage('Cheerios', {
         brand: 'General Mills',
         foodOnly: true,
       });
 
-      console.log('  📸 Cheerios image:', result);
+      console.log('  Cheerios image:', result);
 
       expect(result).not.toBeNull();
       expect(result).toMatch(/^https?:\/\//);
     }, 15000);
 
     it('finds an image for Coca-Cola', async () => {
-      if (!isConfigured) {
-        console.log('  ⏭️  Skipped - credentials not configured');
-        return;
-      }
-
       const result = await gateway.searchProductImage('Coca-Cola', {
         brand: 'Coca-Cola',
         foodOnly: true,
       });
 
-      console.log('  📸 Coca-Cola image:', result);
+      console.log('  Coca-Cola image:', result);
 
       expect(result).not.toBeNull();
       expect(result).toMatch(/^https?:\/\//);
     }, 15000);
 
     it('finds an image for Greek Yogurt', async () => {
-      if (!isConfigured) {
-        console.log('  ⏭️  Skipped - credentials not configured');
-        return;
-      }
-
       const result = await gateway.searchProductImage('Greek Yogurt', {
         brand: 'Chobani',
         foodOnly: true,
       });
 
-      console.log('  📸 Greek Yogurt image:', result);
+      console.log('  Greek Yogurt image:', result);
 
       expect(result).not.toBeNull();
       expect(result).toMatch(/^https?:\/\//);
     }, 15000);
 
     it('handles obscure product search gracefully', async () => {
-      if (!isConfigured) {
-        console.log('  ⏭️  Skipped - credentials not configured');
-        return;
-      }
-
-      // This might find something or might not - either is valid
       const result = await gateway.searchProductImage(
         'Super Rare Artisanal Product XYZ12345',
         { foodOnly: true }
       );
 
-      console.log('  📸 Obscure product result:', result || '(null - no results)');
+      console.log('  Obscure product result:', result || '(null - no results)');
 
-      // Result can be null or a valid URL
+      // Result can be null or a valid URL - both are acceptable
       if (result !== null) {
         expect(result).toMatch(/^https?:\/\//);
       }
@@ -186,25 +160,18 @@ describe('GoogleImageSearchGateway Live API', () => {
   });
 
   describe('batch product image search', () => {
-    // Filter out entries with null name (those need UPC lookup first)
     const namedProducts = testProducts.filter(p => p.name !== null);
-    
+
     it.each(namedProducts)(
       'finds image for $name (UPC: $upc)',
       async ({ name, brand }) => {
-        if (!isConfigured) {
-          console.log('  ⏭️  Skipped - credentials not configured');
-          return;
-        }
-
         const result = await gateway.searchProductImage(name, {
           brand,
           foodOnly: true,
         });
 
-        console.log(`  📸 ${name}: ${result || '(no image found)'}`);
+        console.log(`  ${name}: ${result || '(no image found)'}`);
 
-        // Most common products should find an image
         expect(result).not.toBeNull();
         expect(result).toMatch(/^https?:\/\//);
       },
@@ -214,16 +181,8 @@ describe('GoogleImageSearchGateway Live API', () => {
 
   describe('configuration check', () => {
     it('reports configuration status', () => {
-      console.log('\n  🔑 Gateway configured:', isConfigured);
-      
-      if (!isConfigured) {
-        console.log('  📝 To enable live tests, add to config.secrets.yml:');
-        console.log('     GOOGLE_API_KEY: your-api-key');
-        console.log('     GOOGLE_CSE_ID: your-custom-search-engine-id');
-      }
-
-      // This test always passes - it's informational
-      expect(true).toBe(true);
+      console.log('  Gateway configured:', gateway.isConfigured());
+      expect(gateway.isConfigured()).toBe(true);
     });
   });
 });

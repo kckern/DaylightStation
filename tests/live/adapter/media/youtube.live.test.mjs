@@ -5,70 +5,77 @@
  *
  * Requires:
  * - YouTube download configuration
+ * - yt-dlp installed
  *
  * Note: youtube.mjs reads process.env.path at module load time,
  * so we must set it before importing.
+ *
+ * IMPORTANT: This test will FAIL if preconditions aren't met.
+ * It will NOT silently pass. This is intentional.
  */
 
 import { configService, initConfigService } from '#backend/src/0_system/config/index.mjs';
 import { getDataPath } from '../../../_lib/configHelper.mjs';
+import { requireDataPath, requireConfig, SkipTestError } from '../test-preconditions.mjs';
 
-// Must set process.env.path before importing youtube.mjs
+// FAIL early if data path not configured
 const dataPath = getDataPath();
-if (dataPath) {
-  process.env.path = { data: dataPath, media: dataPath };
+if (!dataPath) {
+  throw new Error('[PRECONDITION FAILED] Data path not configured. Set DAYLIGHT_DATA_PATH.');
 }
+process.env.path = { data: dataPath, media: dataPath };
 
 let youtubeHarvest;
+let moduleError = null;
 try {
   const mod = await import('#backend/lib/youtube.mjs');
   youtubeHarvest = mod.default;
 } catch (e) {
-  // Module may fail to load if yt-dlp not installed
-  console.log('youtube.mjs failed to load:', e.message);
+  moduleError = e.message;
 }
 
 describe('YouTube Live Integration', () => {
   beforeAll(() => {
-    const dataPath = getDataPath();
-    if (!dataPath) {
-      throw new Error('Could not determine data path from .env');
-    }
+    // FAIL if data path not configured
+    requireDataPath(getDataPath);
 
     if (!configService.isReady()) {
       initConfigService(dataPath);
     }
+
+    // FAIL if module didn't load
+    if (moduleError || !youtubeHarvest) {
+      throw new Error(
+        `[PRECONDITION FAILED] YouTube module not loaded: ${moduleError || 'unknown error'}. ` +
+        'Ensure yt-dlp is installed and accessible.'
+      );
+    }
   });
 
   it('processes youtube queue', async () => {
-    if (!youtubeHarvest) {
-      console.log('YouTube module not loaded - skipping test');
-      return;
+    const username = configService.getHeadOfHousehold();
+    requireConfig('Head of household', username);
+
+    const result = await youtubeHarvest(`test-${Date.now()}`, { targetUsername: username });
+
+    // Explicit skip for rate limiting
+    if (result?.skipped) {
+      throw new SkipTestError(`YouTube skipped: ${result.reason}`);
     }
 
-    const username = configService.getHeadOfHousehold();
+    // FAIL on errors - don't silently pass
+    if (result?.error) {
+      throw new Error(`[ASSERTION FAILED] YouTube error: ${result.error}`);
+    }
 
-    try {
-      const result = await youtubeHarvest(`test-${Date.now()}`, { targetUsername: username });
+    // Verify we got actual results
+    expect(result).toBeTruthy();
 
-      if (result?.error) {
-        console.log(`Error: ${result.error}`);
-      } else if (result?.skipped) {
-        console.log(`Skipped: ${result.reason}`);
-      } else if (result?.processed !== undefined) {
-        console.log(`Processed ${result.processed} videos`);
-      } else if (result) {
-        console.log('YouTube harvest completed');
-      }
-    } catch (error) {
-      if (error.code === 'ENOENT' || error.message?.includes('ENOENT')) {
-        console.log('YouTube paths not configured - requires full server environment');
-        return; // Skip gracefully
-      } else if (error.message?.includes('yt-dlp') || error.message?.includes('not found')) {
-        console.log('yt-dlp not installed or configured');
-      } else {
-        throw error;
-      }
+    if (result?.processed !== undefined) {
+      console.log(`Processed ${result.processed} videos`);
+      expect(result.processed).toBeGreaterThanOrEqual(0);
+    } else {
+      console.log('YouTube harvest completed');
     }
   }, 120000);
 });

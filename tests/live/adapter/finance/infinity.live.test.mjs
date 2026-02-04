@@ -7,23 +7,27 @@
  * - INFINITY_DEV in secrets.yml (API token)
  * - infinity.workspace in system.yml (workspace ID)
  * - infinity.<tableKey> in system.yml (board IDs)
+ *
+ * IMPORTANT: This test will FAIL if preconditions aren't met.
+ * It will NOT silently pass. This is intentional.
  */
 
 import { configService, initConfigService } from '#backend/src/0_system/config/index.mjs';
 import { InfinityHarvester, createInfinityHarvesters } from '#adapters/harvester/other/InfinityHarvester.mjs';
 import axios from 'axios';
 import { getDataPath } from '../../../_lib/configHelper.mjs';
+import { requireDataPath, requireSecret, requireConfig, SkipTestError } from '../test-preconditions.mjs';
 
 describe('Infinity Live Integration', () => {
   let httpClient;
   let infinityConfig;
   let tableKeys;
+  let token;
+  let workspace;
 
   beforeAll(() => {
-    const dataPath = getDataPath();
-    if (!dataPath) {
-      throw new Error('Could not determine data path from .env');
-    }
+    // FAIL if data path not configured
+    const dataPath = requireDataPath(getDataPath);
 
     if (!configService.isReady()) {
       initConfigService(dataPath);
@@ -32,9 +36,16 @@ describe('Infinity Live Integration', () => {
     // Create HTTP client
     httpClient = axios.create({ timeout: 30000 });
 
+    // FAIL if token not configured
+    token = requireSecret('INFINITY_DEV', configService);
+
     // Get Infinity config
     infinityConfig = configService.get?.('infinity') || {};
-    
+    workspace = infinityConfig.workspace || process.env.INFINITY_WORKSPACE;
+
+    // FAIL if workspace not configured
+    requireConfig('infinity.workspace', workspace);
+
     // Get all table keys (excluding workspace, dev, UUIDs, and deprecated boards)
     const skipKeys = ['workspace', 'INFINITY_DEV', 'dev', 'program'];
     const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -44,19 +55,6 @@ describe('Infinity Live Integration', () => {
   });
 
   it('has valid credentials configured', () => {
-    const token = configService.getSecret('INFINITY_DEV');
-    const workspace = infinityConfig.workspace || process.env.INFINITY_WORKSPACE;
-
-    if (!token) {
-      console.log('INFINITY_DEV token not configured - skipping test');
-      return;
-    }
-
-    if (!workspace) {
-      console.log('infinity.workspace not configured - skipping test');
-      return;
-    }
-
     console.log(`Workspace ID: ${workspace}`);
     console.log(`Table keys configured: ${tableKeys.join(', ') || '(none)'}`);
 
@@ -70,17 +68,10 @@ describe('Infinity Live Integration', () => {
       console.log(`  - ${key}: ${infinityConfig[key]}`);
     }
 
-    // This test passes even if no tables are configured
     expect(Array.isArray(tableKeys)).toBe(true);
   });
 
   it('creates harvesters for all configured tables', () => {
-    const token = configService.getSecret('INFINITY_DEV');
-    if (!token) {
-      console.log('No token - skipping harvester creation test');
-      return;
-    }
-
     const harvesters = createInfinityHarvesters({
       httpClient,
       configService,
@@ -97,15 +88,12 @@ describe('Infinity Live Integration', () => {
   });
 
   it('fetches data from first configured table', async () => {
-    const token = configService.getSecret('INFINITY_DEV');
-    if (!token) {
-      console.log('INFINITY_DEV token not configured - skipping test');
-      return;
-    }
-
+    // FAIL if no tables configured
     if (tableKeys.length === 0) {
-      console.log('No tables configured - skipping fetch test');
-      return;
+      throw new Error(
+        '[PRECONDITION FAILED] No Infinity tables configured. ' +
+        'Add infinity.<tableKey> to system.yml'
+      );
     }
 
     const firstKey = tableKeys[0];
@@ -118,41 +106,37 @@ describe('Infinity Live Integration', () => {
       logger: console,
     });
 
-    try {
-      const username = configService.getHeadOfHousehold();
-      const result = await harvester.harvest(username);
+    const username = configService.getHeadOfHousehold();
+    requireConfig('Head of household', username);
 
-      console.log(`Status: ${result.status}`);
-      console.log(`Items fetched: ${result.count || 0}`);
+    const result = await harvester.harvest(username);
 
-      if (result.items?.length > 0) {
-        console.log('Sample item keys:', Object.keys(result.items[0]).join(', '));
-        console.log('Sample folders:', [...new Set(result.items.map((i) => i.folder))].join(', '));
-      }
-
-      expect(result.status).toBe('success');
-      expect(result.count).toBeGreaterThanOrEqual(0);
-    } catch (error) {
-      if (error.response?.status === 401) {
-        console.log('Invalid or expired token');
-      } else if (error.response?.status === 404) {
-        console.log('Table not found - check table ID');
-      } else {
-        throw error;
-      }
+    // Explicit skip for rate limiting
+    if (result?.skipped || result?.status === 'skipped') {
+      throw new SkipTestError(`Infinity skipped: ${result.reason}`);
     }
+
+    // FAIL on errors - don't silently pass
+    if (result?.error || result?.status === 'error') {
+      throw new Error(`[ASSERTION FAILED] Infinity error: ${result.error || result.reason}`);
+    }
+
+    console.log(`Status: ${result.status}`);
+    console.log(`Items fetched: ${result.count || 0}`);
+
+    if (result.items?.length > 0) {
+      console.log('Sample item keys:', Object.keys(result.items[0]).join(', '));
+      console.log('Sample folders:', [...new Set(result.items.map((i) => i.folder))].join(', '));
+    }
+
+    expect(result.status).toBe('success');
+    expect(result.count).toBeGreaterThanOrEqual(0);
   }, 60000);
 
   it('fetches lists table specifically (if configured)', async () => {
-    const token = configService.getSecret('INFINITY_DEV');
-    if (!token) {
-      console.log('INFINITY_DEV token not configured - skipping test');
-      return;
-    }
-
+    // Skip if lists table not configured
     if (!infinityConfig.lists) {
-      console.log('infinity.lists not configured - skipping test');
-      return;
+      throw new SkipTestError('infinity.lists not configured');
     }
 
     const harvester = new InfinityHarvester({
@@ -162,33 +146,32 @@ describe('Infinity Live Integration', () => {
       logger: console,
     });
 
-    try {
-      const username = configService.getHeadOfHousehold();
-      const result = await harvester.harvest(username);
+    const username = configService.getHeadOfHousehold();
+    const result = await harvester.harvest(username);
 
-      console.log(`Lists table: ${result.count} items`);
-
-      if (result.items?.length > 0) {
-        // Group by folder
-        const byFolder = {};
-        for (const item of result.items) {
-          byFolder[item.folder] = (byFolder[item.folder] || 0) + 1;
-        }
-        console.log('Items per folder:', byFolder);
-      }
-
-      expect(result.status).toBe('success');
-    } catch (error) {
-      console.log(`Error: ${error.message}`);
-      throw error;
+    // FAIL on errors
+    if (result?.status === 'error') {
+      throw new Error(`[ASSERTION FAILED] Lists table error: ${result.reason}`);
     }
+
+    console.log(`Lists table: ${result.count} items`);
+
+    if (result.items?.length > 0) {
+      // Group by folder
+      const byFolder = {};
+      for (const item of result.items) {
+        byFolder[item.folder] = (byFolder[item.folder] || 0) + 1;
+      }
+      console.log('Items per folder:', byFolder);
+    }
+
+    expect(result.status).toBe('success');
   }, 60000);
 
   it('reports status correctly', () => {
-    const token = configService.getSecret('INFINITY_DEV');
-    if (!token || tableKeys.length === 0) {
-      console.log('Skipping status test - no config');
-      return;
+    // FAIL if no tables to test
+    if (tableKeys.length === 0) {
+      throw new Error('[PRECONDITION FAILED] No tables configured for status test');
     }
 
     const harvester = new InfinityHarvester({

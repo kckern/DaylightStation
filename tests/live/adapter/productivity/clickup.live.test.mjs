@@ -6,15 +6,19 @@
  * Requires:
  * - CLICKUP_PK (API key) in secrets.yml or household auth
  * - process.env.clickup config with statuses and team_id
+ *
+ * IMPORTANT: This test will FAIL if preconditions aren't met.
+ * It will NOT silently pass. This is intentional.
  */
 
 import { configService, initConfigService } from '#backend/src/0_system/config/index.mjs';
 import { getDataPath } from '../../../_lib/configHelper.mjs';
+import { requireDataPath, requireConfig, SkipTestError } from '../test-preconditions.mjs';
 
-// Set up env before importing clickup.mjs
+// FAIL early if data path not configured
 const dataPath = getDataPath();
 if (!dataPath) {
-  throw new Error('Could not determine data path from .env');
+  throw new Error('[PRECONDITION FAILED] Data path not configured. Set DAYLIGHT_DATA_PATH.');
 }
 if (!configService.isReady()) {
   initConfigService(dataPath);
@@ -29,48 +33,53 @@ process.env.clickup = {
 process.env.CLICKUP_PK = configService.getSecret('CLICKUP_PK');
 
 let getClickUpTasks;
+let moduleError = null;
 try {
   const mod = await import('#backend/lib/clickup.mjs');
   getClickUpTasks = mod.default;
 } catch (e) {
-  console.log('clickup.mjs failed to load:', e.message);
+  moduleError = e.message;
 }
 
 describe('ClickUp Live Integration', () => {
   beforeAll(() => {
-    // Already initialized above
+    // FAIL if module didn't load
+    if (moduleError || !getClickUpTasks) {
+      throw new Error(
+        `[PRECONDITION FAILED] ClickUp module not loaded: ${moduleError || 'unknown error'}`
+      );
+    }
+
+    // FAIL if credentials not configured
+    requireConfig('CLICKUP_PK', process.env.CLICKUP_PK);
+    requireConfig('ClickUp team_id', process.env.clickup?.team_id);
   });
 
   it('fetches clickup tasks', async () => {
-    if (!getClickUpTasks) {
-      console.log('ClickUp module not loaded - skipping test');
-      return;
-    }
-
     const username = configService.getHeadOfHousehold();
+    requireConfig('Head of household', username);
 
-    if (!process.env.CLICKUP_PK || !process.env.clickup?.team_id) {
-      console.log('ClickUp not fully configured - skipping test');
-      return;
+    const result = await getClickUpTasks(`test-${Date.now()}`, { targetUsername: username });
+
+    // Explicit skip for rate limiting
+    if (result?.skipped) {
+      throw new SkipTestError(`ClickUp skipped: ${result.reason}`);
     }
 
-    try {
-      const result = await getClickUpTasks(`test-${Date.now()}`, { targetUsername: username });
+    // FAIL on errors - don't silently pass
+    if (result?.error) {
+      throw new Error(`[ASSERTION FAILED] ClickUp error: ${result.error}`);
+    }
 
-      if (result?.error) {
-        console.log(`Error: ${result.error}`);
-      } else if (Array.isArray(result)) {
-        console.log(`Fetched ${result.length} ClickUp items`);
-        expect(result.length).toBeGreaterThanOrEqual(0);
-      } else if (result && typeof result === 'object') {
-        console.log('ClickUp data fetched');
-      }
-    } catch (error) {
-      if (error.message?.includes('API') || error.message?.includes('auth')) {
-        console.log(`Auth error: ${error.message}`);
-      } else {
-        throw error;
-      }
+    // Verify we got actual results
+    expect(result).toBeTruthy();
+
+    if (Array.isArray(result)) {
+      console.log(`Fetched ${result.length} ClickUp items`);
+      expect(result.length).toBeGreaterThanOrEqual(0);
+    } else if (typeof result === 'object') {
+      console.log('ClickUp data fetched');
+      expect(Object.keys(result).length).toBeGreaterThanOrEqual(0);
     }
   }, 60000);
 });
