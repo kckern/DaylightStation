@@ -16,6 +16,13 @@ import { VIBRATION_CONSTANTS } from '../modules/Fitness/FitnessPlugins/plugins/V
 // Phase 3 SSOT: Domain model imports
 import ParticipantFactory from '../modules/Fitness/domain/ParticipantFactory.js';
 
+// Phase 4 SSOT: Display name resolution
+import {
+  buildDisplayNameContext,
+  resolveDisplayName,
+  shouldPreferGroupLabels
+} from '../hooks/fitness/DisplayNameResolver.js';
+
 // Create context
 const FitnessContext = createContext(null);
 
@@ -1501,7 +1508,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       });
     });
     return map;
-  }, [allUsers, deviceAssignmentMap, getDisplayLabel]);
+  // Note: preferGroupLabels is included to ensure displayLabel updates when device count changes
+  }, [allUsers, deviceAssignmentMap, getDisplayLabel, preferGroupLabels]);
 
   const userCollections = React.useMemo(() => {
     const collections = session?.userCollections;
