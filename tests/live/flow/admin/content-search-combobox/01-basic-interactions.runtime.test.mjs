@@ -93,21 +93,22 @@ test.describe('ContentSearchCombobox - Basic Interactions', () => {
     await expect(emptyState).toContainText('Type to search');
   });
 
-  test('shows loader during search', async ({ page }) => {
+  test('initiates search on typing', async ({ page }) => {
     await page.goto(TEST_URL);
 
     await ComboboxActions.open(page);
 
-    // Type quickly and check for loader before debounce completes
+    // Type search text
     await ComboboxLocators.input(page).fill('test');
 
-    // Loader should appear during API call - use soft assertion since timing is variable
-    const loader = ComboboxLocators.loader(page);
-    // Wait briefly for loader to potentially appear (API call starts after debounce)
+    // Wait for debounce + API response
     await page.waitForTimeout(500);
 
-    // If the API call takes any time, we should see results or loader
-    // Either results appeared (fast) or still loading
+    // Verify API was actually called - this is the meaningful assertion
+    const apiCheck = harness.assertApiCalled(/\/api\/v1\/content\/query\/search/);
+    expect(apiCheck.passed, 'Search API should be called when typing').toBe(true);
+
+    // Verify dropdown shows results or empty state (not stuck in loading)
     const dropdown = ComboboxLocators.dropdown(page);
     await expect(dropdown).toBeVisible();
   });
