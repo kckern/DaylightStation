@@ -558,6 +558,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     httpClient: axios,
     configService,
     userDataService,
+    dataService, // Required for YamlWeatherDatastore (sharedStore)
     todoistApi: null, // Will use httpClient directly
     aiGateway: null, // AI gateway created later in app initialization
     // Reuse config-driven buxfer adapter from finance domain (use .has() to avoid NoOp)
