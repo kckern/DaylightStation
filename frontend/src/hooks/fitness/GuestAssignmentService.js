@@ -237,7 +237,7 @@ export class GuestAssignmentService {
     // Build metadata for the new assignment
     const metadata = {
       ...value.metadata,
-      baseUserName: value.name,
+      baseUserName: value.baseUserName || value.metadata?.baseUserName || null,  // FIXED: Preserve original owner
       profileId: newOccupantId,
       occupantId: newOccupantId,
       occupantName: value.name,
