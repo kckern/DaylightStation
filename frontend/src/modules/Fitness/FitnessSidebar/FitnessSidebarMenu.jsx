@@ -17,7 +17,6 @@ const FitnessSidebarMenu = ({
   targetDeviceId,
   targetDefaultName,
   assignGuestToDevice,
-  clearGuestAssignment,
   guestCandidates = [],
   playerRef,
   onReloadVideo,
@@ -230,12 +229,6 @@ const FitnessSidebarMenu = ({
       source: option.source,
       baseUserName: baseName
     });
-    if (onClose) onClose();
-  };
-
-  const handleClearGuest = () => {
-    if (!deviceIdStr || !clearGuestAssignment) return;
-    clearGuestAssignment(deviceIdStr);
     if (onClose) onClose();
   };
 

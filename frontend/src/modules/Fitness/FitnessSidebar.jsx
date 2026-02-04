@@ -270,7 +270,6 @@ const FitnessSidebar = forwardRef(({ playerRef, videoVolume, onReloadVideo, relo
             targetDeviceId={menuState.target?.deviceId || null}
             targetDefaultName={menuState.target?.defaultName || null}
             assignGuestToDevice={assignGuestToDevice}
-            clearGuestAssignment={clearGuestAssignment}
             guestCandidates={guestCandidates}
             playerRef={playerRef}
             onReloadVideo={onReloadVideo}
