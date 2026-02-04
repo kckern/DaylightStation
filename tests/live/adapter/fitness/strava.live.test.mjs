@@ -8,12 +8,13 @@ import path from 'path';
 import { configService, initConfigService } from '#backend/src/0_system/config/index.mjs';
 import harvestActivities, { getAccessToken, isStravaInCooldown } from '#backend/_legacy/lib/strava.mjs';
 import { readYamlFile, getDataPath } from '../harness-utils.mjs';
+import { getDataPath as getDataPathFromConfig } from '../../../_lib/configHelper.mjs';
 
 describe('Strava Live Integration', () => {
   let username;
 
   beforeAll(() => {
-    const dataPath = process.env.DAYLIGHT_DATA_PATH;
+    const dataPath = getDataPathFromConfig();
 
     // Set up process.env.path (required by io.mjs and other modules)
     process.env.path = { data: dataPath };
