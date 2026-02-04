@@ -286,13 +286,13 @@ const VoiceMemoOverlay = ({
       reason: 'user_cancel'
     });
 
-    // Cancel any in-flight upload first
-    if (wasProcessing) {
+    // Cancel any in-flight or pending recording
+    if (wasRecording || wasProcessing) {
       cancelUpload?.();
     }
 
-    // Stop recording if active (this will NOT trigger handleRecordingStop
-    // because cancelledRef is now set)
+    // Stop recording if active - cancelledRef was set above, so
+    // handleRecordingStop will discard chunks instead of processing
     if (wasRecording) {
       stopRecording();
     }
