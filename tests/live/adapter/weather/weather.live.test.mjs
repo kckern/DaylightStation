@@ -2,19 +2,22 @@
  * Weather Live Integration Test
  *
  * Run with: npm test -- tests/live/weather/weather.live.test.mjs
+ *
+ * IMPORTANT: This test will FAIL if preconditions aren't met.
+ * It will NOT silently pass. This is intentional.
  */
 
 import { configService, initConfigService } from '#backend/src/0_system/config/index.mjs';
 import { getDataPath } from '../../../_lib/configHelper.mjs';
+import { requireDataPath, SkipTestError } from '../test-preconditions.mjs';
 
 describe('Weather Live Integration', () => {
   let getWeather;
+  let dataPath;
 
   beforeAll(async () => {
-    const dataPath = getDataPath();
-    if (!dataPath) {
-      throw new Error('Could not determine data path from .env');
-    }
+    // FAIL if data path not configured
+    dataPath = requireDataPath(getDataPath);
 
     // Initialize config service
     if (!configService.isReady()) {
@@ -35,30 +38,36 @@ describe('Weather Live Integration', () => {
     // Dynamic import after env setup
     const weatherModule = await import('#backend/lib/weather.mjs');
     getWeather = weatherModule.default;
+
+    // FAIL if module didn't load
+    if (!getWeather) {
+      throw new Error('[PRECONDITION FAILED] Weather module not loaded');
+    }
   });
 
   it('fetches weather data from Open-Meteo', async () => {
-    try {
-      const result = await getWeather(`test-${Date.now()}`);
+    const result = await getWeather(`test-${Date.now()}`);
 
-      // Weather returns undefined but saves to file, or returns the data
-      // Check if we got current weather data
-      if (result?.current) {
-        console.log(`Current temp: ${result.current.temp?.toFixed(1)}°C`);
-        console.log(`Feels like: ${result.current.feel?.toFixed(1)}°C`);
-        console.log(`AQI: ${result.current.aqi}`);
-        expect(result.current.temp).toBeDefined();
-      } else {
-        // Weather saved to file successfully
-        console.log('Weather data saved to household state');
-      }
-    } catch (error) {
-      // Handle rate limiting gracefully
-      if (error.message?.includes('limit exceeded') || error.message?.includes('rate limit')) {
-        console.log(`Rate limited: ${error.message}`);
-        return; // Pass test - rate limit is not a test failure
-      }
-      throw error;
+    // Explicit skip for rate limiting
+    if (result?.skipped) {
+      throw new SkipTestError(`Weather skipped: ${result.reason}`);
+    }
+
+    // FAIL on errors - don't silently pass
+    if (result?.error) {
+      throw new Error(`[ASSERTION FAILED] Weather error: ${result.error}`);
+    }
+
+    // Weather returns undefined but saves to file, or returns the data
+    // Check if we got current weather data
+    if (result?.current) {
+      console.log(`Current temp: ${result.current.temp?.toFixed(1)}°C`);
+      console.log(`Feels like: ${result.current.feel?.toFixed(1)}°C`);
+      console.log(`AQI: ${result.current.aqi}`);
+      expect(result.current.temp).toBeDefined();
+    } else {
+      // Weather saved to file successfully
+      console.log('Weather data saved to household state');
     }
   }, 30000);
 });

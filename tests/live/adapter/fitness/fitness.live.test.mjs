@@ -5,18 +5,22 @@
  *
  * Requires:
  * - Fitness data sources configured (Garmin, Strava, etc.)
+ *
+ * IMPORTANT: This test will FAIL if preconditions aren't met.
+ * It will NOT silently pass. This is intentional.
  */
 
 import { configService, initConfigService } from '#backend/src/0_system/config/index.mjs';
 import fitnessSync from '#backend/_legacy/lib/fitsync.mjs';
 import { getDataPath } from '../../../_lib/configHelper.mjs';
+import { requireDataPath, requireConfig, SkipTestError } from '../test-preconditions.mjs';
 
 describe('Fitness Sync Live Integration', () => {
+  let dataPath;
+
   beforeAll(() => {
-    const dataPath = getDataPath();
-    if (!dataPath) {
-      throw new Error('Could not determine data path from .env');
-    }
+    // FAIL if data path not configured
+    dataPath = requireDataPath(getDataPath);
 
     if (!configService.isReady()) {
       initConfigService(dataPath);
@@ -27,28 +31,31 @@ describe('Fitness Sync Live Integration', () => {
 
   it('syncs fitness data', async () => {
     const username = configService.getHeadOfHousehold();
+    requireConfig('Head of household', username);
 
-    try {
-      const result = await fitnessSync(`test-${Date.now()}`, { targetUsername: username });
+    const result = await fitnessSync(`test-${Date.now()}`, { targetUsername: username });
 
-      if (result?.error) {
-        console.log(`Error: ${result.error}`);
-      } else if (result?.skipped) {
-        console.log(`Skipped: ${result.reason}`);
-      } else if (result && typeof result === 'object') {
-        const dates = Object.keys(result).filter(k => k.match(/^\d{4}-\d{2}-\d{2}$/));
-        if (dates.length > 0) {
-          console.log(`Synced fitness data for ${dates.length} dates`);
-        } else {
-          console.log('Fitness sync completed');
-        }
-      }
-    } catch (error) {
-      if (error.message?.includes('credentials') || error.message?.includes('auth')) {
-        console.log(`Auth error: ${error.message}`);
+    // Explicit skip for rate limiting
+    if (result?.skipped) {
+      throw new SkipTestError(`Fitness sync skipped: ${result.reason}`);
+    }
+
+    // FAIL on errors - don't silently pass
+    if (result?.error) {
+      throw new Error(`[ASSERTION FAILED] Fitness sync error: ${result.error}`);
+    }
+
+    // Verify we got actual results
+    expect(result).toBeTruthy();
+
+    if (typeof result === 'object') {
+      const dates = Object.keys(result).filter(k => k.match(/^\d{4}-\d{2}-\d{2}$/));
+      if (dates.length > 0) {
+        console.log(`Synced fitness data for ${dates.length} dates`);
       } else {
-        throw error;
+        console.log('Fitness sync completed');
       }
+      expect(dates.length).toBeGreaterThanOrEqual(0);
     }
   }, 180000);
 });

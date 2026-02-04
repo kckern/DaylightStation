@@ -5,18 +5,22 @@
  *
  * Requires:
  * - Goodreads user ID/URL in users/{username}/auth/goodreads.yml
+ *
+ * IMPORTANT: This test will FAIL if preconditions aren't met.
+ * It will NOT silently pass. This is intentional.
  */
 
 import { configService, initConfigService } from '#backend/src/0_system/config/index.mjs';
 import getBooks from '#backend/_legacy/lib/goodreads.mjs';
 import { getDataPath } from '../../../_lib/configHelper.mjs';
+import { requireDataPath, requireConfig, SkipTestError } from '../test-preconditions.mjs';
 
 describe('Goodreads Live Integration', () => {
+  let dataPath;
+
   beforeAll(() => {
-    const dataPath = getDataPath();
-    if (!dataPath) {
-      throw new Error('Could not determine data path from .env');
-    }
+    // FAIL if data path not configured
+    dataPath = requireDataPath(getDataPath);
 
     if (!configService.isReady()) {
       initConfigService(dataPath);
@@ -27,33 +31,42 @@ describe('Goodreads Live Integration', () => {
 
   it('scrapes goodreads reading list', async () => {
     const username = configService.getHeadOfHousehold();
+    requireConfig('Head of household', username);
+
     const auth = configService.getUserAuth('goodreads', username) || {};
     const goodreadsUser = auth.user_id || auth.username || process.env.GOODREADS_USER;
 
+    // FAIL if Goodreads user not configured
     if (!goodreadsUser) {
-      console.log('Goodreads user not configured - skipping test');
-      return;
+      throw new Error(
+        `[PRECONDITION FAILED] Goodreads user not configured for user '${username}'. ` +
+        `Expected: getUserAuth('goodreads', '${username}') with {user_id: '...'} ` +
+        `or GOODREADS_USER in secrets.yml`
+      );
     }
 
-    try {
-      const result = await getBooks(username);
+    const result = await getBooks(username);
 
-      if (Array.isArray(result)) {
-        console.log(`Fetched ${result.length} books`);
-        if (result.length > 0) {
-          const recent = result[0];
-          console.log(`Recent: "${recent.title}" by ${recent.author}`);
-        }
-        expect(result.length).toBeGreaterThanOrEqual(0);
-      } else if (result?.error) {
-        console.log(`Error: ${result.error}`);
+    // Explicit skip for rate limiting
+    if (result?.skipped) {
+      throw new SkipTestError(`Goodreads skipped: ${result.reason}`);
+    }
+
+    // FAIL on errors - don't silently pass
+    if (result?.error) {
+      throw new Error(`[ASSERTION FAILED] Goodreads error: ${result.error}`);
+    }
+
+    // Verify we got actual results
+    expect(result).toBeTruthy();
+
+    if (Array.isArray(result)) {
+      console.log(`Fetched ${result.length} books`);
+      if (result.length > 0) {
+        const recent = result[0];
+        console.log(`Recent: "${recent.title}" by ${recent.author}`);
       }
-    } catch (error) {
-      if (error.message?.includes('rate') || error.response?.status === 429) {
-        console.log('Goodreads rate limited');
-      } else {
-        throw error;
-      }
+      expect(result.length).toBeGreaterThanOrEqual(0);
     }
   }, 60000);
 });

@@ -28,7 +28,8 @@ describe('StravaHarvester', () => {
 
     mockConfigService = {
       getUserAuth: jest.fn().mockReturnValue({ token: 'test-token', refresh: 'refresh-token' }),
-      getEnv: jest.fn()
+      getEnv: jest.fn(),
+      getSecret: jest.fn()
     };
 
     mockLogger = {
@@ -89,7 +90,7 @@ describe('StravaHarvester', () => {
     it('should generate reauthorization URL', async () => {
       const { StravaHarvester } = await import('#adapters/harvester/fitness/StravaHarvester.mjs');
 
-      mockConfigService.getEnv.mockImplementation((key) => {
+      mockConfigService.getSecret.mockImplementation((key) => {
         if (key === 'STRAVA_CLIENT_ID') return '12345';
         if (key === 'STRAVA_URL') return 'http://localhost:3000/callback';
         return null;
@@ -114,7 +115,7 @@ describe('StravaHarvester', () => {
     it('should use custom redirect URI when provided', async () => {
       const { StravaHarvester } = await import('#adapters/harvester/fitness/StravaHarvester.mjs');
 
-      mockConfigService.getEnv.mockReturnValue('12345');
+      mockConfigService.getSecret.mockReturnValue('12345');
 
       harvester = new StravaHarvester({
         stravaClient: mockStravaClient,
@@ -130,30 +131,20 @@ describe('StravaHarvester', () => {
       expect(result.url).toContain('redirect_uri=https%3A%2F%2Fexample.com%2Fauth%2Fcallback');
     });
 
-    it('should fall back to process.env when configService not available', async () => {
+    it('should use undefined client_id when configService not available', async () => {
       const { StravaHarvester } = await import('#adapters/harvester/fitness/StravaHarvester.mjs');
 
-      // Set environment variables
-      const originalEnv = process.env.STRAVA_CLIENT_ID;
-      process.env.STRAVA_CLIENT_ID = 'env-client-id';
+      harvester = new StravaHarvester({
+        stravaClient: mockStravaClient,
+        lifelogStore: mockLifelogStore,
+        logger: mockLogger
+        // Note: no configService provided
+      });
 
-      try {
-        harvester = new StravaHarvester({
-          stravaClient: mockStravaClient,
-          lifelogStore: mockLifelogStore,
-          logger: mockLogger
-        });
+      const result = harvester.reauthSequence();
 
-        const result = harvester.reauthSequence();
-
-        expect(result.url).toContain('client_id=env-client-id');
-      } finally {
-        if (originalEnv) {
-          process.env.STRAVA_CLIENT_ID = originalEnv;
-        } else {
-          delete process.env.STRAVA_CLIENT_ID;
-        }
-      }
+      // Without configService, client_id will be undefined
+      expect(result.url).toContain('client_id=undefined');
     });
   });
 

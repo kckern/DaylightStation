@@ -4,18 +4,22 @@
  * Run with: npm test -- tests/live/ldsgc/ldsgc.live.test.mjs
  *
  * Fetches LDS General Conference talk data
+ *
+ * IMPORTANT: This test will FAIL if preconditions aren't met.
+ * It will NOT silently pass. This is intentional.
  */
 
 import { configService, initConfigService } from '#backend/src/0_system/config/index.mjs';
 import getLDSGCData from '#backend/_legacy/lib/ldsgc.mjs';
 import { getDataPath } from '../../../_lib/configHelper.mjs';
+import { requireDataPath, SkipTestError } from '../test-preconditions.mjs';
 
 describe('LDSGC Live Integration', () => {
+  let dataPath;
+
   beforeAll(() => {
-    const dataPath = getDataPath();
-    if (!dataPath) {
-      throw new Error('Could not determine data path from .env');
-    }
+    // FAIL if data path not configured
+    dataPath = requireDataPath(getDataPath);
 
     if (!configService.isReady()) {
       initConfigService(dataPath);
@@ -23,29 +27,28 @@ describe('LDSGC Live Integration', () => {
   });
 
   it('fetches conference data', async () => {
-    const username = configService.getHeadOfHousehold();
+    // ldsgc expects a req object with query property
+    const mockReq = { query: {} };
+    const result = await getLDSGCData(mockReq);
 
-    try {
-      // ldsgc expects a req object with query property
-      // It only takes one argument despite the harvest.mjs wrapper
-      const mockReq = { query: {} };
-      const result = await getLDSGCData(mockReq);
+    // Explicit skip for rate limiting
+    if (result?.skipped) {
+      throw new SkipTestError(`LDSGC skipped: ${result.reason}`);
+    }
 
-      if (result?.error) {
-        console.log(`Error: ${result.error}`);
-      } else if (result?.skipped) {
-        console.log(`Skipped: ${result.reason}`);
-      } else if (Array.isArray(result)) {
-        console.log(`Fetched ${result.length} conference items`);
-      } else if (result) {
-        console.log('Conference data fetched');
-      }
-    } catch (error) {
-      if (error.message?.includes('rate') || error.response?.status === 429) {
-        console.log('Rate limited');
-      } else {
-        throw error;
-      }
+    // FAIL on errors - don't silently pass
+    if (result?.error) {
+      throw new Error(`[ASSERTION FAILED] LDSGC error: ${result.error}`);
+    }
+
+    // Verify we got actual results
+    expect(result).toBeTruthy();
+
+    if (Array.isArray(result)) {
+      console.log(`Fetched ${result.length} conference items`);
+      expect(result.length).toBeGreaterThanOrEqual(0);
+    } else {
+      console.log('Conference data fetched');
     }
   }, 60000);
 });

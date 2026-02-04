@@ -6,18 +6,22 @@
  * Requires:
  * - GitHub username in users/{username}/auth/github.yml
  * - Optional: GitHub token for private repos and higher rate limits
+ *
+ * IMPORTANT: This test will FAIL if preconditions aren't met.
+ * It will NOT silently pass. This is intentional.
  */
 
 import { configService, initConfigService } from '#backend/src/0_system/config/index.mjs';
 import getGitHubActivity from '#backend/_legacy/lib/github.mjs';
 import { getDataPath } from '../../../_lib/configHelper.mjs';
+import { requireDataPath, requireConfig, SkipTestError } from '../test-preconditions.mjs';
 
 describe('GitHub Live Integration', () => {
+  let dataPath;
+
   beforeAll(() => {
-    const dataPath = getDataPath();
-    if (!dataPath) {
-      throw new Error('Could not determine data path from .env');
-    }
+    // FAIL if data path not configured
+    dataPath = requireDataPath(getDataPath);
 
     if (!configService.isReady()) {
       initConfigService(dataPath);
@@ -26,33 +30,40 @@ describe('GitHub Live Integration', () => {
 
   it('fetches github activity', async () => {
     const username = configService.getHeadOfHousehold();
+    requireConfig('Head of household', username);
+
     const auth = configService.getUserAuth('github', username) || {};
 
+    // FAIL if GitHub username not configured
     if (!auth.username) {
-      console.log('GitHub username not configured - skipping test');
-      return;
+      throw new Error(
+        `[PRECONDITION FAILED] GitHub username not configured for user '${username}'. ` +
+        `Expected: getUserAuth('github', '${username}') with {username: 'github_username'}`
+      );
     }
 
-    try {
-      const result = await getGitHubActivity(`test-${Date.now()}`, { targetUsername: username });
+    const result = await getGitHubActivity(`test-${Date.now()}`, { targetUsername: username });
 
-      if (result?.error) {
-        console.log(`Error: ${result.error}`);
-      } else if (Array.isArray(result)) {
-        console.log(`Fetched ${result.length} commits/events`);
-        expect(result.length).toBeGreaterThanOrEqual(0);
-      } else if (result && typeof result === 'object') {
-        const dates = Object.keys(result).filter(k => k.match(/^\d{4}-\d{2}-\d{2}$/));
-        console.log(`Fetched activity for ${dates.length} dates`);
-      }
-    } catch (error) {
-      if (error.message?.includes('rate limit') || error.response?.status === 403) {
-        console.log('GitHub API rate limited');
-      } else if (error.message?.includes('username')) {
-        console.log('GitHub username not configured');
-      } else {
-        throw error;
-      }
+    // Explicit skip for rate limiting
+    if (result?.skipped) {
+      throw new SkipTestError(`GitHub skipped: ${result.reason}`);
+    }
+
+    // FAIL on errors - don't silently pass
+    if (result?.error) {
+      throw new Error(`[ASSERTION FAILED] GitHub error: ${result.error}`);
+    }
+
+    // Verify we got actual results
+    expect(result).toBeTruthy();
+
+    if (Array.isArray(result)) {
+      console.log(`Fetched ${result.length} commits/events`);
+      expect(result.length).toBeGreaterThanOrEqual(0);
+    } else if (typeof result === 'object') {
+      const dates = Object.keys(result).filter(k => k.match(/^\d{4}-\d{2}-\d{2}$/));
+      console.log(`Fetched activity for ${dates.length} dates`);
+      expect(dates.length).toBeGreaterThanOrEqual(0);
     }
   }, 60000);
 });
