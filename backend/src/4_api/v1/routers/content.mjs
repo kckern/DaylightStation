@@ -226,6 +226,8 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
    * - {adapter}.{key}: Adapter-specific keys (e.g., immich.location)
    */
   router.get('/query/search', asyncHandler(async (req, res) => {
+    const requestStart = performance.now();
+
     if (!contentQueryService) {
       return res.status(501).json({
         error: 'Content query service not configured',
@@ -245,14 +247,91 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
 
     try {
       const result = await contentQueryService.search(query);
+      const totalMs = Math.round(performance.now() - requestStart);
+
+      // Log request performance (service-level perf already logged internally)
+      if (totalMs > 5000) {
+        logger.warn?.('content.query.search.slow', {
+          query: { text: query.text, source: query.source },
+          totalMs,
+          resultCount: result.items?.length ?? 0,
+        });
+      }
+
+      // Include perf in response for debugging (can be stripped in production)
+      const { _perf, ...cleanResult } = result;
       res.json({
         query,
-        ...result
+        ...cleanResult,
+        _perf: { ...(_perf || {}), requestMs: totalMs },
       });
     } catch (error) {
       logger.error?.('content.query.search.error', { query, error: error.message });
       res.status(500).json({ error: 'Search failed', message: error.message });
     }
+  }));
+
+  /**
+   * GET /api/content/query/search/stream
+   * Stream search results via SSE as each adapter completes.
+   *
+   * Same query params as /query/search, but returns Server-Sent Events:
+   * - event: pending (initial, lists all sources)
+   * - event: results (per adapter, includes items and remaining pending)
+   * - event: complete (final, includes totalMs)
+   */
+  router.get('/query/search/stream', asyncHandler(async (req, res) => {
+    if (!contentQueryService) {
+      return res.status(501).json({
+        error: 'Content query service not configured',
+        code: 'QUERY_SERVICE_NOT_CONFIGURED'
+      });
+    }
+
+    const query = parseContentQuery(req.query);
+    const validation = validateContentQuery(query);
+
+    if (!validation.valid) {
+      return res.status(400).json({
+        error: 'Validation failed',
+        details: validation.errors
+      });
+    }
+
+    // Validate minimum search length
+    if (!query.text || query.text.length < 2) {
+      return res.status(400).json({
+        error: 'Search text must be at least 2 characters',
+        code: 'SEARCH_TEXT_TOO_SHORT'
+      });
+    }
+
+    // Set up SSE headers
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no'); // Disable nginx buffering
+    res.flushHeaders();
+
+    // Handle client disconnect
+    let closed = false;
+    req.on('close', () => {
+      closed = true;
+    });
+
+    try {
+      for await (const event of contentQueryService.searchStream(query)) {
+        if (closed) break;
+        res.write(`data: ${JSON.stringify(event)}\n\n`);
+      }
+    } catch (error) {
+      if (!closed) {
+        res.write(`data: ${JSON.stringify({ event: 'error', message: error.message })}\n\n`);
+      }
+      logger.error?.('content.query.search.stream.error', { query, error: error.message });
+    }
+
+    res.end();
   }));
 
   /**
