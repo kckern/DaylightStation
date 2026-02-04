@@ -99,6 +99,8 @@ When an activity occurs, author is determined by:
 
 ## Part 2: Licensing
 
+> **Full licensing documentation:** See [docs/reference/licensing.md](/docs/reference/licensing.md) for the complete licensing model, including personal tiers, commercial licenses, badge verification (Freeloader vs Knockoff), and FAQ.
+
 ### License (System-Level)
 
 Purchased by the primary owner. Proves the DaylightStation instance is paid. The license is protocol-agnostic—no npub, no DID, just instance + owner.
@@ -202,7 +204,7 @@ Generated on demand when a user or household links a protocol identity. Proves "
 | Active (lifetime) | Tier badge + 🎖️ |
 | Past due | ⚠️ Delinquent |
 | Cancelled/lapsed | 🪦 Lapsed |
-| No valid badge | 🚨 Intruder |
+| No valid badge | 👜 Knockoff |
 
 ### Badge Issuance Flow
 
@@ -260,11 +262,11 @@ App stores new badge, attaches to future events
 
 | Attack | Result |
 |--------|--------|
-| No badge tag | Shows "🚨 Intruder" |
-| Forged badge signature | Signature verification fails → "🚨 Intruder" |
-| Copy someone else's badge | Identity doesn't match event author → "🚨 Intruder" |
-| Modify badge data | Signature no longer valid → "🚨 Intruder" |
-| Hack client to show fake badge | Other clients still verify → they see "🚨 Intruder" |
+| No badge tag | Shows "👜 Knockoff" |
+| Forged badge signature | Signature verification fails → "👜 Knockoff" |
+| Copy someone else's badge | Identity doesn't match event author → "👜 Knockoff" |
+| Modify badge data | Signature no longer valid → "👜 Knockoff" |
+| Hack client to show fake badge | Other clients still verify → they see "👜 Knockoff" |
 
 **Your signing key is the root of trust. Without it, valid badges cannot be created.**
 
