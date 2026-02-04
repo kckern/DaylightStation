@@ -5,14 +5,15 @@
  */
 
 import { configService, initConfigService } from '#backend/src/0_system/config/index.mjs';
+import { getDataPath } from '../../../_lib/configHelper.mjs';
 
 describe('Weather Live Integration', () => {
   let getWeather;
 
   beforeAll(async () => {
-    const dataPath = process.env.DAYLIGHT_DATA_PATH;
+    const dataPath = getDataPath();
     if (!dataPath) {
-      throw new Error('DAYLIGHT_DATA_PATH environment variable required');
+      throw new Error('Could not determine data path from .env');
     }
 
     // Initialize config service
