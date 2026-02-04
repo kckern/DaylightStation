@@ -366,6 +366,24 @@ export class NutriReportRenderer {
       iconDir: this.#iconDir
     });
 
+    // Log the full report data for debugging
+    this.#logger.info?.('nutribot.renderer.data', {
+      date: report.date,
+      totals: report.totals,
+      goals: report.goals,
+      itemCount: report.items?.length || 0,
+      items: report.items?.map(item => ({
+        name: item.name,
+        label: item.label,
+        grams: item.grams,
+        calories: item.calories,
+        protein: item.protein,
+        carbs: item.carbs,
+        fat: item.fat
+      })) || [],
+      historyDays: report.history?.length || 0
+    });
+
     // Ensure fonts are registered before rendering
     const fontResult = this.#ensureFontsRegistered();
     if (!fontResult) {
