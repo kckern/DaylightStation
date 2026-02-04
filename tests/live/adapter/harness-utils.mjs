@@ -5,12 +5,13 @@
 import fs from 'fs';
 import yaml from 'js-yaml';
 import path from 'path';
+import { getDataPath as _getDataPath } from '../../_lib/configHelper.mjs';
 
 /**
  * Get the data directory from environment
  */
 export function getDataPath() {
-  return process.env.DAYLIGHT_DATA_PATH;
+  return _getDataPath();
 }
 
 /**
