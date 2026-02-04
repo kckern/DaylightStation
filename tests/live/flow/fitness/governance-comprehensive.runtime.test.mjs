@@ -21,11 +21,14 @@
  */
 
 import { test, expect } from '@playwright/test';
+import fs from 'fs';
+import path from 'path';
 import { FRONTEND_URL, BACKEND_URL } from '#fixtures/runtime/urls.mjs';
 import { FitnessSimHelper } from '#testlib/FitnessSimHelper.mjs';
 
 const BASE_URL = FRONTEND_URL;
 const API_URL = BACKEND_URL;
+const DEV_LOG_PATH = path.join(process.cwd(), 'dev.log');
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SCENARIO DEFINITIONS
@@ -85,6 +88,9 @@ const scenarios = [
 // FAIL-FAST CHECKS
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/** @type {{contentId: string, governanceConfig: object} | null} */
+let governedContentFixture = null;
+
 /**
  * Verify fitness API is healthy before running tests
  */
@@ -99,51 +105,75 @@ async function checkApiHealth() {
 }
 
 /**
- * Find governed content ID from testdata or API
- * Falls back to scanning library if hardcoded ID doesn't work
+ * Verify Plex is reachable and find governed content.
+ * FAILS FAST if Plex is down or unreachable.
+ *
+ * @returns {Promise<{contentId: string, governanceConfig: object}>}
+ * @throws {Error} If Plex is down or no governed content available
  */
-async function findGovernedContentId() {
-  // Primary: Known governed content from testdata.yml
-  const PRIMARY_ID = '606052'; // Mario Kart Fitness
+async function checkPlexAndFindGovernedContent() {
+  // Query the governed-content API endpoint - this checks Plex connectivity
+  // 10s timeout to fail fast if Plex is down
+  const response = await fetch(`${API_URL}/api/v1/fitness/governed-content?limit=10`, {
+    signal: AbortSignal.timeout(10000)
+  });
 
-  // Verify primary content exists and has governance
-  try {
-    const response = await fetch(`${API_URL}/api/v1/content/${PRIMARY_ID}`, {
-      signal: AbortSignal.timeout(5000)
-    });
-    if (response.ok) {
-      const data = await response.json();
-      if (data?.governance || data?.fitnessPolicy) {
-        return PRIMARY_ID;
-      }
-    }
-  } catch (e) {
-    console.log(`Primary content ${PRIMARY_ID} check failed: ${e.message}`);
+  if (!response.ok) {
+    throw new Error(`FAIL FAST: Governed content API returned ${response.status} - Plex may be down`);
   }
 
-  // Fallback: Query fitness library for any governed content
+  let data;
   try {
-    const response = await fetch(`${API_URL}/api/v1/fitness/library`, {
-      signal: AbortSignal.timeout(10000)
-    });
-    if (response.ok) {
-      const data = await response.json();
-      const items = data?.items || data || [];
-      const governed = items.find(item =>
-        item.governance || item.fitnessPolicy || item.isGoverned
-      );
-      if (governed) {
-        console.log(`Using fallback governed content: ${governed.id || governed.ratingKey}`);
-        return governed.id || governed.ratingKey;
-      }
-    }
+    data = await response.json();
   } catch (e) {
-    console.log(`Fallback content scan failed: ${e.message}`);
+    throw new Error(`FAIL FAST: Invalid JSON from governed-content API - ${e.message}`);
   }
 
-  // Last resort: use primary anyway and let test fail with clear message
-  console.warn(`WARNING: Could not verify governed content, using ${PRIMARY_ID}`);
-  return PRIMARY_ID;
+  const governanceConfig = data?.governanceConfig || {};
+  const items = data?.items || [];
+
+  // Check if we got items - if empty, fail fast
+  // Using ungoverned fallback content defeats the purpose of governance testing
+  if (items.length === 0) {
+    const labelsStr = governanceConfig.labels?.join(', ') || '(none)';
+    const typesStr = governanceConfig.types?.join(', ') || '(none)';
+    throw new Error(
+      `FAIL FAST: No governed content available.\n` +
+      `  Governance labels: ${labelsStr}\n` +
+      `  Governance types: ${typesStr}\n` +
+      `\n` +
+      `To fix: Add the "${governanceConfig.labels?.[0] || 'KidsFun'}" label to at least one show in Plex,\n` +
+      `or update governance config to include content that exists.`
+    );
+  }
+
+  // Found governed content - prefer shows over movies
+  const shows = items.filter(item => item.type === 'show');
+  const selected = shows.length > 0 ? shows[0] : items[0];
+  const contentId = selected.localId || selected.id?.replace('plex:', '');
+
+  console.log(`Found governed content: "${selected.title}" (${contentId})`);
+  console.log(`  Labels: ${selected.matchedLabels?.join(', ') || selected.labels?.join(', ')}`);
+  console.log(`  Type: ${selected.type}`);
+
+  return {
+    contentId,
+    governanceConfig,
+    title: selected.title,
+    labels: selected.matchedLabels || selected.labels,
+    source: 'api'
+  };
+}
+
+/**
+ * Get the governed content ID (cached from beforeAll)
+ * @returns {string}
+ */
+function getGovernedContentId() {
+  if (!governedContentFixture) {
+    throw new Error('FAIL FAST: governedContentFixture not initialized - beforeAll may have failed');
+  }
+  return governedContentFixture.contentId;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -176,39 +206,41 @@ async function getVideoFps(page) {
 }
 
 /**
- * Sample FPS over a duration and return stats
+ * Sample FPS by waiting and reading from dev.log
+ * Frontend logs playback.render_fps events every 5 seconds
  */
-async function sampleFps(page, durationMs = 2000, sampleIntervalMs = 200) {
-  const samples = [];
-  const startTime = Date.now();
+async function sampleFps(page, durationMs = 2000) {
+  // Wait for at least one FPS log entry
+  await page.waitForTimeout(durationMs);
 
-  while (Date.now() - startTime < durationMs) {
-    const fps = await getVideoFps(page);
-    if (fps?.available) {
-      samples.push({ t: Date.now() - startTime, ...fps });
+  // Read FPS from dev.log
+  try {
+    const content = fs.readFileSync(DEV_LOG_PATH, 'utf-8');
+    const lines = content.split('\n');
+
+    // Find most recent playback.render_fps event
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const line = lines[i];
+      if (line.includes('playback.render_fps')) {
+        try {
+          const json = JSON.parse(line);
+          const fps = json.data?.renderFps;
+          if (typeof fps === 'number') {
+            return {
+              valid: true,
+              effectiveFps: fps,
+              framesRendered: fps,
+              framesDropped: 0,
+              dropRate: '0%'
+            };
+          }
+        } catch { /* ignore parse errors */ }
+      }
     }
-    await page.waitForTimeout(sampleIntervalMs);
+    return { valid: false, effectiveFps: 0, framesRendered: 0, dropRate: '0%' };
+  } catch (e) {
+    return { valid: false, effectiveFps: 0, framesRendered: 0, dropRate: '0%', error: e.message };
   }
-
-  if (samples.length < 2) {
-    return { valid: false, reason: 'Insufficient samples' };
-  }
-
-  const first = samples[0];
-  const last = samples[samples.length - 1];
-  const framesDelta = last.totalFrames - first.totalFrames;
-  const timeDelta = last.t - first.t;
-  const droppedDelta = last.droppedFrames - first.droppedFrames;
-
-  return {
-    valid: true,
-    effectiveFps: timeDelta > 0 ? (framesDelta / (timeDelta / 1000)).toFixed(1) : 0,
-    framesRendered: framesDelta,
-    framesDropped: droppedDelta,
-    dropRate: framesDelta > 0 ? (droppedDelta / framesDelta * 100).toFixed(2) + '%' : '0%',
-    durationMs: timeDelta,
-    samples: samples.length
-  };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -595,12 +627,11 @@ async function runChallengeSuccess(page, sim, devices, timeline, issues) {
   }
 
   if (!challengeAppeared) {
-    console.log('  WARNING: Challenge did not appear (may not be configured for this content)');
-    // Return early with partial success - test can be adjusted for content without challenges
+    console.error('  ERROR: Challenge did not appear - governance may not be properly enabled');
+    console.error(`  Trigger result was: ${JSON.stringify(triggerResult)}`);
     return {
       challengeAppeared: false,
-      challengeVanished: true, // Vacuously true
-      challengeNotConfigured: true,
+      challengeVanished: false,
       fps: { before: fpsBefore, during: fpsBefore, after: fpsBefore }
     };
   }
@@ -702,12 +733,12 @@ async function runChallengeFailRecover(page, sim, devices, timeline, issues) {
   }
 
   if (!challengeAppeared) {
-    console.log('  WARNING: Challenge did not appear (may not be configured for this content)');
+    console.error('  ERROR: Challenge did not appear - governance may not be properly enabled');
+    console.error(`  Trigger result was: ${JSON.stringify(triggerResult)}`);
     return {
       challengeAppeared: false,
       lockedAfterFail: false,
-      recovered: true, // Vacuously true
-      challengeNotConfigured: true,
+      recovered: false,
       fps: { before: fpsBefore, after: fpsBefore }
     };
   }
@@ -953,9 +984,27 @@ async function runGraceRecoverNormal(page, sim, devices, timeline, issues) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 test.describe('Governance Comprehensive Suite', () => {
-  // Run fail-fast check before all tests
+  // Run fail-fast checks before all tests - verifies API and Plex connectivity
   test.beforeAll(async () => {
+    console.log('\n' + '═'.repeat(80));
+    console.log('GOVERNANCE SUITE: PREFLIGHT CHECKS');
+    console.log('═'.repeat(80));
+
+    // Check fitness API health
+    console.log('\n[1/2] Checking fitness API health...');
     await checkApiHealth();
+    console.log('  ✓ Fitness API is healthy');
+
+    // Check Plex connectivity and find governed content
+    console.log('\n[2/2] Checking Plex connectivity and finding governed content...');
+    governedContentFixture = await checkPlexAndFindGovernedContent();
+    console.log(`  ✓ Plex is reachable`);
+    console.log(`  ✓ Content ID: ${governedContentFixture.contentId}`);
+    console.log(`  ✓ Source: ${governedContentFixture.source}`);
+
+    console.log('\n' + '═'.repeat(80));
+    console.log('PREFLIGHT CHECKS PASSED - Starting tests');
+    console.log('═'.repeat(80) + '\n');
   });
 
   for (const scenario of scenarios) {
@@ -969,8 +1018,8 @@ test.describe('Governance Comprehensive Suite', () => {
         console.log(`Category: ${scenario.category}`);
         console.log('═'.repeat(80));
 
-        const contentId = await findGovernedContentId();
-        console.log(`Using content ID: ${contentId}`);
+        const contentId = getGovernedContentId();
+        console.log(`Using content ID: ${contentId} (from: ${governedContentFixture?.source})`);
 
         const context = await browser.newContext();
         const page = await context.newPage();
@@ -1020,10 +1069,23 @@ test.describe('Governance Comprehensive Suite', () => {
             expect(result.unlocked, 'Video should unlock').toBe(true);
 
           } else {
-            // CHALLENGE and GRACE scenarios require unlock first
-            console.log('\n[SETUP] Unlocking video for scenario...');
+            // CHALLENGE and GRACE scenarios require governance enabled first
+            console.log('\n[SETUP] Enabling governance for scenario...');
 
-            // Send HR to all devices
+            // Enable governance with challenge support
+            await sim.enableGovernance({
+              phases: { warmup: 2, main: 120, cooldown: 2 },
+              challenges: { enabled: true, interval: 5, duration: 15 }
+            });
+            timeline.push({ t: Date.now(), event: 'GOVERNANCE_ENABLED' });
+            console.log('  Governance enabled');
+
+            // Activate all devices
+            await sim.activateAll('active');
+            await page.waitForTimeout(1000);
+
+            // Send HR to all devices to get them in warm zone
+            console.log('\n[SETUP] Unlocking video for scenario...');
             for (const device of devices) {
               await sim.setZone(device.deviceId, 'warm');
             }
@@ -1038,50 +1100,32 @@ test.describe('Governance Comprehensive Suite', () => {
             // Wait for video to stabilize
             await page.waitForTimeout(2000);
 
-            // Run the specific scenario
+            // Run the specific scenario - NO SKIPPING, tests must pass or fail
             if (scenario.name === 'challenge-success') {
               result = await runChallengeSuccess(page, sim, devices, timeline, issues);
 
-              // Handle case where challenges aren't configured
-              if (result.challengeNotConfigured) {
-                console.log('  NOTE: Challenges not configured for this content - skipping challenge assertions');
-              } else {
-                expect(result.challengeAppeared, 'Challenge should appear').toBe(true);
-                expect(result.challengeVanished, 'Challenge should complete successfully').toBe(true);
-              }
+              expect(result.challengeAppeared, 'Challenge should appear').toBe(true);
+              expect(result.challengeVanished, 'Challenge should complete successfully').toBe(true);
 
             } else if (scenario.name === 'challenge-fail-recover') {
               result = await runChallengeFailRecover(page, sim, devices, timeline, issues);
 
-              if (result.challengeNotConfigured) {
-                console.log('  NOTE: Challenges not configured for this content - skipping challenge assertions');
-              } else {
-                expect(result.lockedAfterFail, 'Should lock after challenge failure').toBe(true);
-                expect(result.recovered, 'Should recover after meeting requirements').toBe(true);
-              }
+              expect(result.challengeAppeared, 'Challenge should appear').toBe(true);
+              expect(result.lockedAfterFail, 'Should lock after challenge failure').toBe(true);
+              expect(result.recovered, 'Should recover after meeting requirements').toBe(true);
 
             } else if (scenario.name === 'grace-expire-lock') {
               result = await runGraceExpireLock(page, sim, devices, timeline, issues);
 
-              // Grace period may not be configured - at minimum we should see a lock
-              if (!result.warningAppeared && result.lockedAfterGrace) {
-                console.log('  NOTE: Grace period not configured - went directly to lock');
-              } else if (result.warningAppeared) {
-                expect(result.lockedAfterGrace, 'Should lock after grace expires').toBe(true);
-              } else {
-                // Neither warning nor lock - this means base requirement satisfied even in cool zone
-                console.log('  NOTE: Zone drop did not trigger lock - content may not require higher zone');
-              }
+              // Must either see warning then lock, or direct lock
+              const lockedProperly = result.lockedAfterGrace;
+              expect(lockedProperly, 'Should lock after zone drop (with or without warning)').toBe(true);
 
             } else if (scenario.name === 'grace-recover-normal') {
               result = await runGraceRecoverNormal(page, sim, devices, timeline, issues);
 
-              // Grace period may not be configured
-              if (!result.warningAppeared) {
-                console.log('  NOTE: Grace period not configured or zone drop did not trigger warning');
-              } else {
-                expect(result.returnedToNormal, 'Should return to normal after recovery').toBe(true);
-              }
+              expect(result.warningAppeared, 'Warning should appear after zone drop').toBe(true);
+              expect(result.returnedToNormal, 'Should return to normal after recovery').toBe(true);
             }
           }
 
