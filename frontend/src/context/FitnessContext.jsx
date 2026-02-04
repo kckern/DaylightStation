@@ -1543,6 +1543,11 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     });
   }, [allDevicesRaw, deviceOwnership, deviceAssignmentMap, configuredUsers, version]);
 
+  // Phase 4 SSOT: Canonical display name resolver
+  const getDisplayName = React.useCallback((deviceId) => {
+    return resolveDisplayName(deviceId, displayNameContext);
+  }, [displayNameContext]);
+
   const guestCandidateList = React.useMemo(() => {
     return Array.isArray(session?.guestCandidates) ? session.guestCandidates : [];
   }, [session, version]);
@@ -2044,6 +2049,9 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     ambientLedEnabled,
     
     getDisplayLabel,
+    // Phase 4 SSOT: Display name resolution
+    displayNameContext,
+    getDisplayName,
     zoneRankMap,
     colorToZoneId,
     zoneInfoMap,
