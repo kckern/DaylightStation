@@ -12,6 +12,7 @@ import {
   configService
 } from '#backend/src/0_system/config/index.mjs';
 import { defaultMockConfig } from './mockConfigs.mjs';
+import { getDataPath } from '../../_lib/configHelper.mjs';
 
 /**
  * Initialize ConfigService for integration tests.
@@ -21,11 +22,11 @@ import { defaultMockConfig } from './mockConfigs.mjs';
  * @throws {Error} If DAYLIGHT_DATA_PATH not set
  */
 export function initTestConfigService() {
-  const dataDir = process.env.DAYLIGHT_DATA_PATH;
+  const dataDir = getDataPath();
   if (!dataDir) {
     throw new Error(
-      'DAYLIGHT_DATA_PATH not set. Required for integration tests.\n' +
-      'Set it in .env or use createMockConfigService() for unit tests.'
+      'Could not determine data path. Required for integration tests.\n' +
+      'Ensure .env exists with DAYLIGHT_BASE_PATH or use createMockConfigService() for unit tests.'
     );
   }
 
