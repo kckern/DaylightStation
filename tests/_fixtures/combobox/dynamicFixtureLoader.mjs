@@ -11,7 +11,10 @@
 
 import { BACKEND_URL } from '#fixtures/runtime/urls.mjs';
 
-const API_BASE = BACKEND_URL || 'http://localhost:3111';
+const API_BASE = BACKEND_URL;
+if (!API_BASE) {
+  throw new Error('BACKEND_URL not configured. Check tests/_fixtures/runtime/urls.mjs and system.yml');
+}
 
 /**
  * Fetch search results from the API
@@ -58,8 +61,13 @@ async function listContent(source, path = '') {
  * @returns {Array}
  */
 function pickRandom(array, n) {
-  const shuffled = [...array].sort(() => Math.random() - 0.5);
-  return shuffled.slice(0, n);
+  const copy = [...array];
+  // Fisher-Yates partial shuffle (only need first n)
+  for (let i = 0; i < n && i < copy.length; i++) {
+    const j = i + Math.floor(Math.random() * (copy.length - i));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy.slice(0, n);
 }
 
 /**
@@ -89,7 +97,7 @@ async function generateSearchTerms() {
         }
       }
     } catch (e) {
-      console.warn(`Could not fetch from ${source}: ${e.message}`);
+      console.warn(`[dynamicFixtureLoader] Could not fetch from ${source}: ${e.message}`);
     }
   }
 
@@ -111,7 +119,7 @@ async function getContainers() {
       .slice(0, 5);
     containers.push(...plexContainers);
   } catch (e) {
-    console.warn('Could not fetch Plex containers');
+    console.warn('[dynamicFixtureLoader] Could not fetch Plex containers');
   }
 
   // Try to get folders from media
@@ -122,7 +130,7 @@ async function getContainers() {
       .slice(0, 3);
     containers.push(...mediaContainers);
   } catch (e) {
-    console.warn('Could not fetch media containers');
+    console.warn('[dynamicFixtureLoader] Could not fetch media containers');
   }
 
   return containers;
@@ -143,7 +151,7 @@ async function getLeaves() {
       .slice(0, 5);
     leaves.push(...leafItems);
   } catch (e) {
-    console.warn('Could not fetch leaf items');
+    console.warn('[dynamicFixtureLoader] Could not fetch leaf items');
   }
 
   return leaves;
@@ -170,7 +178,7 @@ export async function loadDynamicFixtures() {
   // Group items by source
   const bySource = {};
   for (const item of [...containers, ...leaves]) {
-    const source = item.source || item.id?.split(':')[0] || 'unknown';
+    const source = item.source || (typeof item.id === 'string' && item.id.includes(':') && item.id.split(':')[0]) || 'unknown';
     bySource[source] = bySource[source] || { containers: [], leaves: [] };
 
     if (item.itemType === 'container' || ['show', 'album', 'artist', 'folder', 'playlist'].includes(item.type)) {
