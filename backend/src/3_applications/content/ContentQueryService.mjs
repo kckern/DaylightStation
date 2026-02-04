@@ -10,17 +10,20 @@ export class ContentQueryService {
   #registry;
   #mediaProgressMemory;
   #legacyPrefixMap;
+  #logger;
 
   /**
    * @param {Object} deps
    * @param {import('#domains/content/services/ContentSourceRegistry.mjs').ContentSourceRegistry} deps.registry
    * @param {import('#apps/content/ports/IMediaProgressMemory.mjs').IMediaProgressMemory} [deps.mediaProgressMemory]
    * @param {Object<string, string>} [deps.legacyPrefixMap] - Map of legacy prefixes to canonical format (e.g., { hymn: 'singing:hymn' })
+   * @param {Object} [deps.logger] - Logger instance for performance and debug logging
    */
-  constructor({ registry, mediaProgressMemory = null, legacyPrefixMap = {} }) {
+  constructor({ registry, mediaProgressMemory = null, legacyPrefixMap = {}, logger = console }) {
     this.#registry = registry;
     this.#mediaProgressMemory = mediaProgressMemory;
     this.#legacyPrefixMap = legacyPrefixMap;
+    this.#logger = logger;
   }
 
   /**
@@ -29,9 +32,17 @@ export class ContentQueryService {
    * ID lookup and text search run in parallel for speed.
    *
    * @param {Object} query - Normalized query object
-   * @returns {Promise<{items: Array, total: number, sources: string[], warnings?: Array}>}
+   * @returns {Promise<{items: Array, total: number, sources: string[], warnings?: Array, _perf?: Object}>}
    */
   async search(query) {
+    const searchStart = performance.now();
+    const perf = {
+      totalMs: 0,
+      adapters: {},
+      idLookupMs: null,
+      mergeMs: 0,
+    };
+
     const adapters = this.#registry.resolveSource(query.source);
     const warnings = [];
 
@@ -41,18 +52,38 @@ export class ContentQueryService {
     // Run ID lookup and text search in parallel
     const [idResult, searchResults] = await Promise.all([
       // Direct ID lookup (if text looks like an ID)
-      idMatch ? this.#lookupById(idMatch.source, idMatch.id, warnings) : Promise.resolve(null),
+      (async () => {
+        if (!idMatch) return null;
+        const start = performance.now();
+        const result = await this.#lookupById(idMatch.source, idMatch.id, warnings);
+        perf.idLookupMs = Math.round(performance.now() - start);
+        return result;
+      })(),
 
       // Standard text search across adapters
       Promise.all(
         adapters.map(async (adapter) => {
+          const adapterStart = performance.now();
           try {
-            if (!this.#canHandle(adapter, query)) return null;
+            if (!this.#canHandle(adapter, query)) {
+              perf.adapters[adapter.source] = { ms: 0, skipped: true };
+              return null;
+            }
 
             const translated = this.#translateQuery(adapter, query);
             const result = await adapter.search(translated);
+            const ms = Math.round(performance.now() - adapterStart);
+            perf.adapters[adapter.source] = {
+              ms,
+              count: result?.items?.length ?? 0,
+            };
             return { adapter, result };
           } catch (error) {
+            const ms = Math.round(performance.now() - adapterStart);
+            perf.adapters[adapter.source] = {
+              ms,
+              error: error.message,
+            };
             warnings.push({
               source: adapter.source,
               error: error.message,
@@ -67,7 +98,110 @@ export class ContentQueryService {
     const results = searchResults.filter(Boolean);
 
     // Merge results with ID match leading
-    return this.#mergeResultsWithIdMatch(idResult, results, query, warnings);
+    const mergeStart = performance.now();
+    const merged = this.#mergeResultsWithIdMatch(idResult, results, query, warnings);
+    perf.mergeMs = Math.round(performance.now() - mergeStart);
+    perf.totalMs = Math.round(performance.now() - searchStart);
+
+    // Log performance summary
+    const slowAdapters = Object.entries(perf.adapters)
+      .filter(([, v]) => v.ms > 1000)
+      .map(([k, v]) => `${k}:${v.ms}ms`)
+      .join(', ');
+
+    // Use appropriate log level based on performance
+    const logData = {
+      query: { text: query.text, source: query.source },
+      totalMs: perf.totalMs,
+      adapterCount: adapters.length,
+      resultCount: merged.items?.length ?? 0,
+      slowAdapters: slowAdapters || null,
+      perf,
+    };
+
+    if (perf.totalMs > 10000) {
+      this.#logger.warn?.('content-query.search.slow', logData) ?? this.#logger.warn?.(logData);
+    } else {
+      this.#logger.info?.('content-query.search.perf', logData) ?? this.#logger.info?.(logData);
+    }
+
+    return { ...merged, _perf: perf };
+  }
+
+  /**
+   * Stream search results as each adapter completes.
+   * Yields events: 'pending' (initial), 'results' (per adapter), 'complete' (final).
+   *
+   * @param {Object} query - Normalized query object
+   * @yields {{event: string, ...data}}
+   */
+  async *searchStream(query) {
+    const searchStart = performance.now();
+    const adapters = this.#registry.resolveSource(query.source);
+    const pending = new Set(adapters.map(a => a.source));
+    const warnings = [];
+
+    // Yield initial pending state
+    yield { event: 'pending', sources: [...pending] };
+
+    // Create promises for all adapters
+    const adapterPromises = adapters.map(async (adapter) => {
+      if (!this.#canHandle(adapter, query)) {
+        return { adapter, result: null, skipped: true };
+      }
+
+      try {
+        const translated = this.#translateQuery(adapter, query);
+        const result = await adapter.search(translated);
+        return { adapter, result, error: null };
+      } catch (error) {
+        warnings.push({ source: adapter.source, error: error.message });
+        return { adapter, result: null, error };
+      }
+    });
+
+    // Race all promises and yield results as they complete
+    const remaining = [...adapterPromises];
+    while (remaining.length > 0) {
+      const winner = await Promise.race(
+        remaining.map((p, i) => p.then(result => ({ result, index: i })))
+      );
+
+      // Remove completed promise
+      remaining.splice(winner.index, 1);
+
+      const { adapter, result, skipped, error } = winner.result;
+      pending.delete(adapter.source);
+
+      if (skipped || error || !result?.items?.length) {
+        continue;
+      }
+
+      // Apply capability filter if specified
+      let items = result.items;
+      if (query.capability) {
+        items = items.filter(item => this.#hasCapability(item, query.capability));
+      }
+
+      yield {
+        event: 'results',
+        source: adapter.source,
+        items,
+        pending: [...pending]
+      };
+    }
+
+    const totalMs = Math.round(performance.now() - searchStart);
+
+    // Log performance
+    const logData = {
+      query: { text: query.text, source: query.source },
+      totalMs,
+      adapterCount: adapters.length,
+    };
+    this.#logger.info?.('content-query.searchStream.complete', logData) ?? this.#logger.info?.(logData);
+
+    yield { event: 'complete', totalMs, warnings: warnings.length > 0 ? warnings : undefined };
   }
 
   /**
