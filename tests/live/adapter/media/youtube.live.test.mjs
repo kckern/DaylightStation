@@ -11,9 +11,10 @@
  */
 
 import { configService, initConfigService } from '#backend/src/0_system/config/index.mjs';
+import { getDataPath } from '../../../_lib/configHelper.mjs';
 
 // Must set process.env.path before importing youtube.mjs
-const dataPath = process.env.DAYLIGHT_DATA_PATH;
+const dataPath = getDataPath();
 if (dataPath) {
   process.env.path = { data: dataPath, media: dataPath };
 }
@@ -29,9 +30,9 @@ try {
 
 describe('YouTube Live Integration', () => {
   beforeAll(() => {
-    const dataPath = process.env.DAYLIGHT_DATA_PATH;
+    const dataPath = getDataPath();
     if (!dataPath) {
-      throw new Error('DAYLIGHT_DATA_PATH environment variable required');
+      throw new Error('Could not determine data path from .env');
     }
 
     if (!configService.isReady()) {
