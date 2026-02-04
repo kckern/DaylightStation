@@ -183,6 +183,7 @@ import { HarvesterService, HarvesterJobExecutor } from '#apps/harvester/index.mj
 // Harvester adapter imports
 import {
   YamlLifelogDatastore,
+  YamlCurrentDatastore,
   TodoistHarvester,
   ClickUpHarvester,
   GitHubHarvester,
@@ -2538,6 +2539,10 @@ export function createHarvesterServices(config) {
   // Create lifelog store (shared by all harvesters)
   const lifelogStore = new YamlLifelogDatastore({ io, logger });
 
+  // Create current store for state tracking (used by Todoist, ClickUp, Gmail, GCal)
+  // Uses provided currentStore or creates one from io
+  const effectiveCurrentStore = currentStore || new YamlCurrentDatastore({ io, logger });
+
   // Create or use provided stravaClient
   const stravaClient = stravaClientParam || (httpClient ? new StravaClientAdapter({
     httpClient,
@@ -2622,7 +2627,7 @@ export function createHarvesterServices(config) {
       todoistApi,
       httpClient,
       lifelogStore,
-      currentStore,
+      currentStore: effectiveCurrentStore,
       configService,
       logger,
     }));
@@ -2633,6 +2638,7 @@ export function createHarvesterServices(config) {
     registerHarvester('clickup', () => new ClickUpHarvester({
       httpClient,
       lifelogStore,
+      currentStore: effectiveCurrentStore,
       configService,
       logger,
     }));
@@ -2727,6 +2733,7 @@ export function createHarvesterServices(config) {
     registerHarvester('gmail', () => new GmailHarvester({
       httpClient,
       lifelogStore,
+      currentStore: effectiveCurrentStore,
       configService,
       logger,
     }));
@@ -2737,6 +2744,7 @@ export function createHarvesterServices(config) {
     registerHarvester('gcal', () => new GCalHarvester({
       httpClient,
       lifelogStore,
+      currentStore: effectiveCurrentStore,
       configService,
       logger,
     }));
