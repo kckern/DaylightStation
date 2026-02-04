@@ -5,7 +5,6 @@ import { BuxferAdapter } from '#adapters/finance/BuxferAdapter.mjs';
 describe('BuxferAdapter', () => {
   let adapter;
   let mockHttpClient;
-  let mockGetCredentials;
   let mockLogger;
 
   const validCredentials = {
@@ -19,8 +18,6 @@ describe('BuxferAdapter', () => {
       post: jest.fn()
     };
 
-    mockGetCredentials = jest.fn().mockReturnValue(validCredentials);
-
     mockLogger = {
       debug: jest.fn(),
       info: jest.fn(),
@@ -28,11 +25,10 @@ describe('BuxferAdapter', () => {
       error: jest.fn()
     };
 
-    adapter = new BuxferAdapter({
-      httpClient: mockHttpClient,
-      getCredentials: mockGetCredentials,
-      logger: mockLogger
-    });
+    adapter = new BuxferAdapter(
+      validCredentials,
+      { httpClient: mockHttpClient, logger: mockLogger }
+    );
   });
 
   describe('getToken', () => {
@@ -61,10 +57,11 @@ describe('BuxferAdapter', () => {
       expect(mockHttpClient.post).toHaveBeenCalledTimes(1);
     });
 
-    test('throws when credentials missing', async () => {
-      mockGetCredentials.mockReturnValue({});
-
-      await expect(adapter.getToken()).rejects.toThrow('Buxfer credentials not configured');
+    test('throws when credentials missing', () => {
+      expect(() => new BuxferAdapter(
+        {},
+        { httpClient: mockHttpClient, logger: mockLogger }
+      )).toThrow('Buxfer credentials required');
     });
 
     test('throws when login fails', async () => {
@@ -421,10 +418,9 @@ describe('BuxferAdapter', () => {
       expect(adapter.isConfigured()).toBe(true);
     });
 
-    test('returns false when credentials missing', () => {
-      mockGetCredentials.mockReturnValue({});
-      expect(adapter.isConfigured()).toBe(false);
-    });
+    // Note: Can't test "returns false" because constructor throws when credentials missing
+    // The isConfigured() method is a safety check that should always return true
+    // for a properly constructed adapter
   });
 
   describe('helper methods', () => {

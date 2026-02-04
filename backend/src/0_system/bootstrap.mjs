@@ -943,7 +943,12 @@ export function createFinanceServices(config) {
         systemPrompt: categorizationConfig.chat?.[0]?.content || '',
         logger
       });
+      logger.info?.('finance.categorization.enabled', { validTags: categorizationConfig.validTags?.length || 0 });
+    } else {
+      logger.warn?.('finance.categorization.skipped', { reason: 'no_config', householdId: defaultHouseholdId });
     }
+  } else {
+    logger.warn?.('finance.categorization.skipped', { reason: 'no_ai_gateway' });
   }
 
   // Finance harvest service (optional - requires Buxfer adapter)
