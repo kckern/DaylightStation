@@ -9,6 +9,7 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
+import { getDataPath } from '../configHelper.mjs';
 
 // Load .env from project root
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -31,8 +32,8 @@ import {
 export async function loadTestConfig() {
   const yaml = await import('js-yaml');
 
-  // Use DAYLIGHT_DATA_PATH directly (no pathResolver needed)
-  const dataPath = process.env.DAYLIGHT_DATA_PATH;
+  // Use centralized config helper for data path
+  const dataPath = getDataPath();
 
   if (!dataPath) {
     throw new Error(
