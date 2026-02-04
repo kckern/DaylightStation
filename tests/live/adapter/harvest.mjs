@@ -62,6 +62,8 @@ function convertSinceToOptions(serviceId, sinceDate) {
     gcal: { weeksBack, weeksAhead: 2 },
     lastfm: { since: sinceDate },
     buxfer: { startDate: sinceDate },
+    // Shopping uses days parameter
+    shopping: { days: daysBack },
     // Snapshot-based harvesters ignore --since
     letterboxd: {},
     goodreads: {},
@@ -70,7 +72,6 @@ function convertSinceToOptions(serviceId, sinceDate) {
     gmail: {},
     withings: {},
     weather: {},
-    shopping: {},
   };
 
   return converters[serviceId] || {};
