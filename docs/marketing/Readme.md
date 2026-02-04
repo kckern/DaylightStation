@@ -4,7 +4,7 @@
 
 Your calendar lives in Google. Your runs live in Strava. Your photos live in Immich. Your comics live in Komga. Your media lives in Plex. Your home lives in Home Assistant. They've never been in the same room—until now. Daylight Station is where your scattered digital life finally comes together. Self-hosted and fully yours, it connects to your other self-hosted services and pulls from cloud APIs, refines the noise into signal, and delivers context-aware experiences exactly when and where you need them. No middleman. No algorithms optimizing for someone else's engagement metrics. Just your data, working for you.
 
-![License](https://img.shields.io/badge/license-Polyform%20Noncommercial-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
 ![Docker Pulls](https://img.shields.io/docker/pulls/kckern/daylight-station)
 
 ## One Backbone. Many Taps.
@@ -171,7 +171,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup.
 
 ## License
 
-Polyform Noncommercial 1.0.0. Free for personal and non-commercial use. See [LICENSE](LICENSE) for details.
+MIT. Free for any use. See [LICENSE](LICENSE) for details.
 
 ## Links
 

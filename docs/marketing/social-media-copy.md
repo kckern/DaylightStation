@@ -30,7 +30,7 @@ It's not another dashboard that shows all your data at once. It's about deliveri
 - GitHub: https://github.com/kckern/DaylightStation
 - Docker Hub: https://hub.docker.com/r/kckern/daylight-station
 
-License is Polyform Noncommercial — free for personal use.
+MIT licensed — free for any use.
 
 Happy to answer questions about the architecture or specific integrations.
 
@@ -198,7 +198,7 @@ Stack: Node.js (DDD architecture), React, Docker. Pulls from ~20 APIs.
 
 GitHub: https://github.com/kckern/DaylightStation
 
-License: Polyform Noncommercial (free for personal use)
+License: MIT (free for any use)
 
 ---
 
@@ -256,7 +256,7 @@ Stop checking apps. Let the right data come to you, on the right screen, at the 
 
 7/ The philosophy: Stop checking apps. Let the right data find you, on the right screen, at the right moment.
 
-8/ It's open source (Polyform Noncommercial). Self-hosted on Docker.
+8/ It's open source (MIT). Self-hosted on Docker.
 
 GitHub: https://github.com/kckern/DaylightStation
 
@@ -298,7 +298,7 @@ Examples:
 
 The philosophy: **One backbone. Many taps.** The right data, on the right screen, at the right moment.
 
-It's open source for personal use: https://github.com/kckern/DaylightStation
+It's open source (MIT): https://github.com/kckern/DaylightStation
 
 If you're drowning in dashboards and data silos, maybe it's time to think about your "last mile."
 
@@ -416,7 +416,7 @@ The philosophy: Stop checking apps. Let the right data find you.
 → Garage: Workout video with live heart rate overlay
 → TV: Family photos between episodes
 
-Self-hosted, open source (Polyform NC).
+Self-hosted, open source (MIT).
 
 https://github.com/kckern/DaylightStation
 
@@ -625,7 +625,7 @@ It then displays this data through purpose-built interfaces (kiosks, thermal pri
 
 The trade-off: you still need to connect to external APIs to *get* the data initially. But the synthesis, storage, and display happen entirely locally.
 
-License is Polyform Noncommercial — free for personal use.
+MIT licensed — free for any use.
 
 GitHub: https://github.com/kckern/DaylightStation
 
@@ -879,7 +879,7 @@ I've been working on something for a while, and it's finally ready to share.
 
 **The philosophy:** One backbone, many taps. The right data, on the right screen, at the right moment.
 
-It's open source (Polyform Noncommercial) and runs on Docker.
+It's open source (MIT) and runs on Docker.
 
 **Links:**
 - GitHub: https://github.com/kckern/DaylightStation
@@ -915,7 +915,7 @@ A self-hosted "data refinery" that synthesizes your scattered digital life into 
 🔗 GitHub: https://github.com/kckern/DaylightStation
 🐳 Docker Hub: https://hub.docker.com/r/kckern/daylight-station
 
-License: Polyform Noncommercial (free for personal use)
+License: MIT (free for any use)
 
 Questions? Drop them here 👇
 
@@ -934,7 +934,7 @@ The philosophy: Stop checking apps. Let the right data find you.
 → Garage: Workout video with live heart rate overlay
 → TV: Family photos between episodes
 
-Self-hosted, open source (Polyform NC).
+Self-hosted, open source (MIT).
 
 https://github.com/kckern/DaylightStation
 
@@ -1052,7 +1052,7 @@ Outputs: Kiosks, TV, Telegram, thermal printer, push notifications, ambient ligh
 
 - Stack: Node.js (DDD architecture), React, Docker
 - Deployment: Docker Compose, single command
-- License: Polyform Noncommercial 1.0.0
+- License: MIT
 
 **Links**
 

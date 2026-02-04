@@ -364,7 +364,7 @@ Friction-free logging without opening an app or searching a database.
 
 **Is there a business here?**
 
-The self-hosted version is free (Polyform Noncommercial).
+The software is MIT licensed (free for any use).
 
 Potential models if pursued commercially:
 

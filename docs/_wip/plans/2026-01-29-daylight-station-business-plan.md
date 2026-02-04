@@ -8,7 +8,7 @@ Date: 2026-01-29
 
 The differentiator is **owning the last mile**: instead of another dashboard, Daylight Station pushes the right information to the right place at the right moment—without attention-extractive design.
 
-**Business strategy:** grow an open-source community around the self-hosted core while monetizing through a **commercial license**, optional paid products/services, and curated hardware + onboarding. The Polyform Noncommercial license preserves commercialization rights for the author, enabling a dual-track model.
+**Business strategy:** grow an open-source community around the self-hosted core while monetizing through a **voluntary supporter program**, optional paid products/services, and curated hardware + onboarding. The MIT license removes friction while cryptographic badge verification creates social proof incentives for supporters.
 
 **Near-term wedge:** self-hosters, home automation enthusiasts, quantified-self users—people already running Plex/Home Assistant/Immich and feeling “value trapped in bookmarks.”
 
@@ -114,20 +114,26 @@ Daylight Station is not a direct replacement for any one tool; it is a **synthes
 
 Daylight Station can sustain an open-source community while reserving commercial rights.
 
-### Licensing model (recommended)
+### Licensing model (updated 2026-02-04)
 
-- **Community Edition (CE):** Polyform Noncommercial for personal/noncommercial self-hosting.
-- **Commercial License:** paid license for commercial use (e.g., installers, managed services, organizations).
+- **MIT License:** Free for all use — personal, commercial, enterprise, forks.
+- **Voluntary Supporter Program:** Cryptographically verified badges for supporters who fund development.
 
-This supports both community adoption and monetization without compromising the core brand (local-first, user-owned, anti-attention-economy).
+This maximizes adoption by removing license friction while creating a social proof mechanism that incentivizes voluntary support. Trade-off: no legal leverage over commercial use.
+
+**Risks accepted:**
+- Forks could gain traction (acceptable — if they out-execute, they deserve to win)
+- Commercial OEMs ship free (acceptable — we prefer partnerships but can't enforce them)
+- No legal enforcement (acceptable — social proof via badge verification is the mechanism)
 
 ### Revenue streams (prioritized)
 
-1) **Commercial licensing**
-- For companies, integrators, consultants, or any monetized offering built on Daylight Station.
-- Pricing can be per deployment/site or per org.
+1) **Voluntary supporter program**
+- Supporters pay $1-$50/month for verified badge, community access, and supporters page listing.
+- Cryptographic verification via signed tokens — only official project can issue valid badges.
+- Social proof on network: unverified users display differently than supporters.
 
-2) **Paid onboarding & support** (for CE and commercial)
+2) **Paid onboarding & support**
 - “Installation concierge” over video/SSH + configuration review
 - Priority bug fixes and roadmap influence (support tiers)
 
