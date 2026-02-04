@@ -1,8 +1,9 @@
 // tests/live/api/content-search-stream.test.mjs
-import { describe, it, expect, beforeAll } from 'vitest';
-import { getAppPort } from '#testlib/configHelper.mjs';
+import { describe, it, expect, beforeAll } from '@jest/globals';
 
-const BASE_URL = `http://localhost:${getAppPort()}`;
+// Use environment variable or default port
+const APP_PORT = process.env.APP_PORT || 3111;
+const BASE_URL = `http://localhost:${APP_PORT}`;
 
 // SSE streams can take several seconds to complete all adapter searches
 const SSE_TIMEOUT = 30000;
