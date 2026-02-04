@@ -97,7 +97,18 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup.
 
 ## License
 
-Polyform Noncommercial 1.0.0. Free for personal and non-commercial use. See [LICENSE](LICENSE) for details.
+**Source-available. Free for personal use. Licensable for social proof and commercial rights.**
+
+DaylightStation is released under the [Polyform Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0).
+
+| Use Case | License Required |
+|----------|------------------|
+| Personal, noncommercial use | Free (Freeloader) |
+| Social features + badge | Paid personal license ($1-$50/mo) |
+| Installation/consulting services | Commercial Installer license |
+| Pre-install on hardware | Commercial Distributor license |
+
+See [docs/reference/licensing.md](docs/reference/licensing.md) for the full licensing model, badge verification, and FAQ.
 
 ## Links
 
