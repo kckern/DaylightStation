@@ -48,11 +48,7 @@ const scenarios = [
     category: 'hydration',
     description: 'Lock screen appears first, then HR data sent',
     requiresUnlockFirst: false,
-    expectedTransitions: ['EMPTY_WAITING', 'FULLY_HYDRATED', 'UNLOCKED'],
-    // SKIPPED: Timing-sensitive test that tries to observe transient "waiting" UI state.
-    // The system often hydrates too quickly for the state to be observable.
-    // This is a test environment timing issue, not a production bug.
-    skip: 'Timing-sensitive - waiting state often not observable due to fast hydration'
+    expectedTransitions: ['EMPTY_WAITING', 'FULLY_HYDRATED', 'UNLOCKED']
   },
 
   // CHALLENGE: Triggered governance events (require video playing first)
@@ -68,13 +64,7 @@ const scenarios = [
     category: 'challenge',
     description: 'Challenge triggered → Timeout → Lock → Meet zone → Unlock',
     requiresUnlockFirst: true,
-    expectedTransitions: ['PLAYING', 'CHALLENGE_ACTIVE', 'CHALLENGE_FAILED', 'LOCKED', 'UNLOCKED', 'PLAYING'],
-    // SKIPPED: Zone propagation issue in test environment.
-    // WebSocket HR updates don't consistently reach ZoneProfileStore for all users.
-    // Only kckern's zone updates while other users remain at 'cool'.
-    // This prevents maintaining the base requirement (active: all) needed for
-    // the challenge timer to run. See bug report for details.
-    skip: 'Zone propagation issue - only kckern zone updates in test environment'
+    expectedTransitions: ['PLAYING', 'CHALLENGE_ACTIVE', 'CHALLENGE_FAILED', 'LOCKED', 'UNLOCKED', 'PLAYING']
   },
 
   // GRACE: Zone-drop recovery behavior (require video playing first)
@@ -510,6 +500,14 @@ async function runHydrationVideoFirst(page, sim, devices, timeline, issues) {
     timeline.push({ t: Date.now(), event, ...data });
   };
 
+  // CRITICAL: Stop all devices and clear HR data BEFORE waiting for empty state
+  // This ensures no HR data is present when we observe the lock screen
+  console.log('\n[VIDEO-FIRST] Clearing all device HR data first...');
+  await sim.stopAll();
+  await page.waitForTimeout(500); // Allow state to propagate
+  recordEvent('DEVICES_CLEARED');
+  console.log('  All devices stopped - no HR data should be present');
+
   console.log('\n[VIDEO-FIRST] Waiting for lock screen to appear with empty state...');
 
   let waitingStateObserved = false;
@@ -532,7 +530,7 @@ async function runHydrationVideoFirst(page, sim, devices, timeline, issues) {
     await page.waitForTimeout(50);
   }
 
-  // Now start sending HR data
+  // NOW start sending HR data - only after observing empty state
   console.log('\n[VIDEO-FIRST] Starting HR simulation, observing row population...');
 
   let lastPhase = null;
@@ -565,27 +563,58 @@ async function runHydrationVideoFirst(page, sim, devices, timeline, issues) {
   return { waitingStateObserved };
 }
 
+// Universal HR values that put ALL users in the same zone regardless of age-adjusted thresholds
+// Based on zone config analysis:
+// - Adults (kckern): warm=120, hot=170
+// - Young children (felix/milo): warm=150, hot=180
+// These values are above the HIGHEST threshold for each zone across all users
+const UNIVERSAL_HR = {
+  cool: 70,      // Below all active thresholds
+  active: 115,   // Above all active thresholds (100), below warm (120)
+  warm: 155,     // Above highest warm threshold (150), below hot (170)
+  hot: 185,      // Above highest hot threshold (180), below fire (190)
+  fire: 195      // Above all fire thresholds
+};
+
 /**
  * Standard unlock sequence - move all devices to target zone
  * Waits for BOTH overlay to disappear AND governance phase to reach 'unlocked'
+ * @param {Page} page - Playwright page
+ * @param {FitnessSimHelper} sim - Simulator helper
+ * @param {Array} devices - Array of devices
+ * @param {Array} timeline - Event timeline
+ * @param {Array} issues - Issues array
+ * @param {string} targetZone - Zone to move devices to (default: 'warm', use 'hot' for challenge recovery)
+ * @param {boolean} useUniversalHR - Use universal HR values for per-user threshold compatibility
  */
-async function unlockVideo(page, sim, devices, timeline, issues) {
+async function unlockVideo(page, sim, devices, timeline, issues, targetZone = 'warm', useUniversalHR = false) {
   const recordEvent = (event, data = {}) => {
     timeline.push({ t: Date.now(), event, ...data });
   };
 
-  console.log('\n[UNLOCK] Moving users to target zone...');
+  const hrValue = useUniversalHR ? UNIVERSAL_HR[targetZone] : null;
+  console.log(`\n[UNLOCK] Moving users to ${targetZone} zone${useUniversalHR ? ` (HR=${hrValue})` : ''}...`);
 
   // Ensure all devices are in cool zone first
   for (const device of devices) {
-    await sim.setZone(device.deviceId, 'cool');
+    if (useUniversalHR) {
+      await sim.setHR(device.deviceId, UNIVERSAL_HR.cool);
+    } else {
+      await sim.setZone(device.deviceId, 'cool');
+    }
   }
   await page.waitForTimeout(500);
 
-  // Move to warm zone (target) - all devices at once for faster hysteresis
+  // Move to target zone - all devices at once for faster hysteresis
   for (const device of devices) {
-    const result = await sim.setZone(device.deviceId, 'warm');
-    console.log(`  Set device ${device.deviceId} to warm zone: ${result?.ok ? 'OK' : result?.error || 'FAILED'}`);
+    let result;
+    if (useUniversalHR && hrValue) {
+      result = await sim.setHR(device.deviceId, hrValue);
+      console.log(`  Set device ${device.deviceId} to HR=${hrValue} (${targetZone}): ${result?.ok ? 'OK' : result?.error || 'FAILED'}`);
+    } else {
+      result = await sim.setZone(device.deviceId, targetZone);
+      console.log(`  Set device ${device.deviceId} to ${targetZone} zone: ${result?.ok ? 'OK' : result?.error || 'FAILED'}`);
+    }
   }
 
   // Wait for overlay to disappear AND governance phase to stabilize
@@ -596,7 +625,11 @@ async function unlockVideo(page, sim, devices, timeline, issues) {
   for (let i = 0; i < 60; i++) {
     // Keep sending HR to maintain zone through hysteresis
     for (const device of devices) {
-      await sim.setZone(device.deviceId, 'warm');
+      if (useUniversalHR && hrValue) {
+        await sim.setHR(device.deviceId, hrValue);
+      } else {
+        await sim.setZone(device.deviceId, targetZone);
+      }
     }
 
     await page.waitForTimeout(300);
@@ -768,13 +801,16 @@ async function runChallengeFailRecover(page, sim, devices, timeline, issues) {
   const initialGovState = await extractGovernanceState(page);
   console.log(`  Initial governance phase: ${initialGovState?.phase || 'unknown'}`);
 
-  // Keep devices at 'active' zone (meets base requirement, stays in green phase)
+  // Keep devices at 'warm' zone (meets base requirement, stays in unlocked phase)
+  // Zone ordering: cool < active < warm < hot < fire
+  // Base requirement is 'warm', so we must be at 'warm' or higher
+  // Challenge will require 'hot' zone which they won't meet at 'warm'
   for (const device of devices) {
-    await sim.setZone(device.deviceId, 'active');
+    await sim.setZone(device.deviceId, 'warm');
     await page.waitForTimeout(100);
   }
   await page.waitForTimeout(500);
-  console.log('  Devices set to active zone (meets base requirement, stays green)');
+  console.log('  Devices set to warm zone (meets base requirement, stays unlocked)');
 
   // Capture FPS before
   const fpsBefore = await sampleFps(page, 1000);
@@ -812,20 +848,20 @@ async function runChallengeFailRecover(page, sim, devices, timeline, issues) {
     };
   }
 
-  // DON'T meet the challenge - wait for timeout while maintaining active zone
-  // active zone meets BASE requirement (so phase stays unlocked and timer runs)
+  // DON'T meet the challenge - wait for timeout while maintaining warm zone
+  // warm zone meets BASE requirement (so phase stays unlocked and timer runs)
   // but does NOT meet the CHALLENGE requirement (hot zone)
-  console.log('  Waiting for challenge to timeout (maintaining active zone - meets base, not challenge)...');
+  console.log('  Waiting for challenge to timeout (maintaining warm zone - meets base, not challenge)...');
 
   let lockedAfterFail = false;
   const startTime = Date.now();
   const maxWaitMs = 15000; // 15 seconds max (challenge is 5s + buffer)
 
   while (Date.now() - startTime < maxWaitMs) {
-    // Keep devices at active zone - meets base requirement but not challenge (hot)
+    // Keep devices at warm zone - meets base requirement but not challenge (hot)
     // Send HR updates with small delays to ensure WebSocket can process all
     for (const device of devices) {
-      await sim.setZone(device.deviceId, 'active');
+      await sim.setZone(device.deviceId, 'warm');
       await page.waitForTimeout(50); // Small delay between sends
     }
 
@@ -850,8 +886,10 @@ async function runChallengeFailRecover(page, sim, devices, timeline, issues) {
   }
 
   // Now recover by meeting zone requirements
-  console.log('  Recovering: moving to target zone...');
-  const unlockResult = await unlockVideo(page, sim, devices, timeline, issues);
+  // After challenge failure, the target zone is 'hot' (the challenge zone), not 'warm'
+  // Use universal HR (185 BPM) to ensure ALL users reach 'hot' zone regardless of age thresholds
+  console.log('  Recovering: moving to hot zone (challenge target) with universal HR...');
+  const unlockResult = await unlockVideo(page, sim, devices, timeline, issues, 'hot', true);
 
   // Capture FPS after recovery
   const fpsAfter = await sampleFps(page, 1000);
