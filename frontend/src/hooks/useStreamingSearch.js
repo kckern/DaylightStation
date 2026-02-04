@@ -1,5 +1,5 @@
 // frontend/src/hooks/useStreamingSearch.js
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 
 /**
  * Hook for streaming search via SSE with AbortController for race condition handling.
@@ -17,7 +17,13 @@ export function useStreamingSearch(endpoint) {
   const [pending, setPending] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
   const eventSourceRef = useRef(null);
-  const abortedRef = useRef(false);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      eventSourceRef.current?.close();
+    };
+  }, []);
 
   const search = useCallback((query) => {
     // Cancel any in-flight request
@@ -25,7 +31,6 @@ export function useStreamingSearch(endpoint) {
       eventSourceRef.current.close();
       eventSourceRef.current = null;
     }
-    abortedRef.current = false;
 
     // Short queries: clear and don't search
     if (!query || query.length < 2) {
@@ -46,7 +51,7 @@ export function useStreamingSearch(endpoint) {
 
     eventSource.onmessage = (event) => {
       // Check if this request was cancelled
-      if (abortedRef.current || eventSourceRef.current !== eventSource) {
+      if (eventSourceRef.current !== eventSource) {
         eventSource.close();
         return;
       }
