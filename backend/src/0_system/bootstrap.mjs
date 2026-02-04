@@ -40,6 +40,7 @@ import singingManifest from '#adapters/content/singing/manifest.mjs';
 import narratedManifest from '#adapters/content/narrated/manifest.mjs';
 import { createContentRouter } from '#api/v1/routers/content.mjs';
 import { ContentQueryService } from '#apps/content/ContentQueryService.mjs';
+import { ContentQueryAliasResolver } from '#apps/content/services/ContentQueryAliasResolver.mjs';
 import { createProxyRouter } from '#api/v1/routers/proxy.mjs';
 import { createLocalContentRouter } from '#api/v1/routers/localContent.mjs';
 import { createPlayRouter } from '#api/v1/routers/play.mjs';
@@ -625,8 +626,11 @@ export function createApiRouters(config) {
     logger.debug?.('bootstrap.legacyPrefixes.registered', { prefixes: Object.keys(legacyPrefixMap) });
   }
 
+  // Create ContentQueryAliasResolver for semantic query prefixes (music:, photos:, etc.)
+  const aliasResolver = new ContentQueryAliasResolver({ registry, configService });
+
   // Create ContentQueryService for unified query interface
-  const contentQueryService = new ContentQueryService({ registry, mediaProgressMemory, legacyPrefixMap });
+  const contentQueryService = new ContentQueryService({ registry, mediaProgressMemory, legacyPrefixMap, logger, aliasResolver });
 
   // Get LocalMediaAdapter from registry for local router
   const localMediaAdapter = registry.get('local');
