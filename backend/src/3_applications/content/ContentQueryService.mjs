@@ -11,6 +11,7 @@ export class ContentQueryService {
   #mediaProgressMemory;
   #legacyPrefixMap;
   #logger;
+  #aliasResolver;
 
   /**
    * @param {Object} deps
@@ -18,18 +19,43 @@ export class ContentQueryService {
    * @param {import('#apps/content/ports/IMediaProgressMemory.mjs').IMediaProgressMemory} [deps.mediaProgressMemory]
    * @param {Object<string, string>} [deps.legacyPrefixMap] - Map of legacy prefixes to canonical format (e.g., { hymn: 'singing:hymn' })
    * @param {Object} [deps.logger] - Logger instance for performance and debug logging
+   * @param {import('./services/ContentQueryAliasResolver.mjs').ContentQueryAliasResolver} [deps.aliasResolver] - Optional alias resolver for prefix-based queries
    */
-  constructor({ registry, mediaProgressMemory = null, legacyPrefixMap = {}, logger = console }) {
+  constructor({ registry, mediaProgressMemory = null, legacyPrefixMap = {}, logger = console, aliasResolver = null }) {
     this.#registry = registry;
     this.#mediaProgressMemory = mediaProgressMemory;
     this.#legacyPrefixMap = legacyPrefixMap;
     this.#logger = logger;
+    this.#aliasResolver = aliasResolver;
+  }
+
+  /**
+   * Parse a content query string to extract prefix and search term.
+   * Supports "prefix:term" format (e.g., "music:beethoven", "photos:vacation").
+   *
+   * @param {string} query - Query string to parse
+   * @returns {{prefix: string|null, term: string}} Parsed prefix and term
+   * @private
+   */
+  #parseContentQuery(query) {
+    if (!query || typeof query !== 'string') {
+      return { prefix: null, term: query || '' };
+    }
+
+    const match = query.match(/^(\w+):(.+)$/);
+    if (match) {
+      return { prefix: match[1].toLowerCase(), term: match[2] };
+    }
+    return { prefix: null, term: query };
   }
 
   /**
    * Search across multiple content sources.
    * Supports direct ID lookup (explicit "plex:123" or implicit "123") with text search fallback.
    * ID lookup and text search run in parallel for speed.
+   *
+   * When an aliasResolver is configured, supports prefix-based queries (e.g., "music:beethoven")
+   * that resolve to specific sources with content gatekeepers.
    *
    * @param {Object} query - Normalized query object
    * @returns {Promise<{items: Array, total: number, sources: string[], warnings?: Array, _perf?: Object}>}
@@ -43,7 +69,33 @@ export class ContentQueryService {
       mergeMs: 0,
     };
 
-    const adapters = this.#registry.resolveSource(query.source);
+    // Parse prefix from query text for alias resolution
+    const { prefix, term } = this.#parseContentQuery(query.text);
+
+    // Resolve sources and gatekeeper through alias system if available
+    let adapters;
+    let gatekeeper = null;
+
+    if (this.#aliasResolver && prefix) {
+      const resolved = this.#aliasResolver.resolveContentQuery(prefix);
+
+      // Use resolved sources if available, otherwise fall back to registry
+      if (resolved.sources?.length > 0) {
+        adapters = resolved.sources
+          .map(s => this.#registry.get(s))
+          .filter(Boolean);
+      } else {
+        adapters = this.#registry.resolveSource(query.source || prefix);
+      }
+
+      gatekeeper = resolved.gatekeeper;
+
+      // Update query text to use just the term (without prefix)
+      query = { ...query, text: term };
+    } else {
+      adapters = this.#registry.resolveSource(query.source);
+    }
+
     const warnings = [];
 
     // Check if query.text looks like a direct ID
@@ -99,7 +151,18 @@ export class ContentQueryService {
 
     // Merge results with ID match leading
     const mergeStart = performance.now();
-    const merged = this.#mergeResultsWithIdMatch(idResult, results, query, warnings);
+    let merged = this.#mergeResultsWithIdMatch(idResult, results, query, warnings);
+
+    // Apply gatekeeper filter from alias resolution (after merge to include ID matches)
+    if (gatekeeper && merged.items) {
+      const filteredItems = merged.items.filter(gatekeeper);
+      merged = {
+        ...merged,
+        items: filteredItems,
+        total: filteredItems.length
+      };
+    }
+
     perf.mergeMs = Math.round(performance.now() - mergeStart);
     perf.totalMs = Math.round(performance.now() - searchStart);
 
@@ -132,17 +195,50 @@ export class ContentQueryService {
    * Stream search results as each adapter completes.
    * Yields events: 'pending' (initial), 'results' (per adapter), 'complete' (final).
    *
+   * When an aliasResolver is configured, supports prefix-based queries (e.g., "music:beethoven")
+   * that resolve to specific sources with content gatekeepers.
+   *
    * @param {Object} query - Normalized query object
    * @yields {{event: string, ...data}}
    */
   async *searchStream(query) {
     const searchStart = performance.now();
-    const adapters = this.#registry.resolveSource(query.source);
-    const pending = new Set(adapters.map(a => a.source));
     const warnings = [];
 
+    // Parse prefix from query text (e.g., "music:beethoven" -> { prefix: 'music', term: 'beethoven' })
+    const { prefix, term } = this.#parseContentQuery(query.text);
+
+    // Resolve sources and gatekeeper through alias system if available
+    let adapters;
+    let gatekeeper = null;
+    let resolvedIntent = null;
+
+    if (this.#aliasResolver && prefix) {
+      const resolved = this.#aliasResolver.resolveContentQuery(prefix);
+      resolvedIntent = resolved.intent;
+
+      // Use resolved sources if available, otherwise fall back to registry
+      if (resolved.sources?.length > 0) {
+        adapters = resolved.sources
+          .map(s => this.#registry.get(s))
+          .filter(Boolean);
+      } else {
+        adapters = this.#registry.resolveSource(query.source || prefix);
+      }
+
+      gatekeeper = resolved.gatekeeper;
+
+      // Update query text to use just the term (without prefix)
+      query = { ...query, text: term };
+    } else {
+      // Standard resolution through registry
+      adapters = this.#registry.resolveSource(query.source);
+    }
+
+    const pending = new Set(adapters.map(a => a.source));
+
     // Yield initial pending state
-    yield { event: 'pending', sources: [...pending] };
+    yield { event: 'pending', sources: [...pending], intent: resolvedIntent };
 
     // Create promises for all adapters
     const adapterPromises = adapters.map(async (adapter) => {
@@ -177,10 +273,20 @@ export class ContentQueryService {
         continue;
       }
 
-      // Apply capability filter if specified
+      // Apply gatekeeper filter from alias resolution
       let items = result.items;
+      if (gatekeeper) {
+        items = items.filter(gatekeeper);
+      }
+
+      // Apply capability filter if specified
       if (query.capability) {
         items = items.filter(item => this.#hasCapability(item, query.capability));
+      }
+
+      // Skip if all items filtered out
+      if (items.length === 0) {
+        continue;
       }
 
       yield {
@@ -198,6 +304,7 @@ export class ContentQueryService {
       query: { text: query.text, source: query.source },
       totalMs,
       adapterCount: adapters.length,
+      ...(resolvedIntent && { intent: resolvedIntent })
     };
     this.#logger.info?.('content-query.searchStream.complete', logData) ?? this.#logger.info?.(logData);
 
