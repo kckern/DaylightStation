@@ -25,7 +25,7 @@ test.describe('ContentSearchCombobox - Display Validation', () => {
   test('each option has avatar', async ({ page }) => {
     await ComboboxActions.open(page);
     await ComboboxActions.search(page, 'Office');
-    await ComboboxActions.waitForLoad(page);
+    await ComboboxActions.waitForStreamComplete(page, 30000);
 
     const options = ComboboxLocators.options(page);
     const count = await options.count();
@@ -41,7 +41,7 @@ test.describe('ContentSearchCombobox - Display Validation', () => {
   test('each option has title text', async ({ page }) => {
     await ComboboxActions.open(page);
     await ComboboxActions.search(page, 'Office');
-    await ComboboxActions.waitForLoad(page);
+    await ComboboxActions.waitForStreamComplete(page, 30000);
 
     const options = ComboboxLocators.options(page);
     const count = await options.count();
@@ -64,7 +64,7 @@ test.describe('ContentSearchCombobox - Display Validation', () => {
   test('each option has source badge', async ({ page }) => {
     await ComboboxActions.open(page);
     await ComboboxActions.search(page, 'Office');
-    await ComboboxActions.waitForLoad(page);
+    await ComboboxActions.waitForStreamComplete(page, 30000);
 
     const options = ComboboxLocators.options(page);
     const count = await options.count();
@@ -83,7 +83,7 @@ test.describe('ContentSearchCombobox - Display Validation', () => {
   test('containers show chevron icon', async ({ page }) => {
     await ComboboxActions.open(page);
     await ComboboxActions.search(page, 'Office'); // Shows are containers
-    await ComboboxActions.waitForLoad(page);
+    await ComboboxActions.waitForStreamComplete(page, 30000);
 
     const options = ComboboxLocators.options(page);
     const count = await options.count();
@@ -107,7 +107,7 @@ test.describe('ContentSearchCombobox - Display Validation', () => {
   test('leaves do not show chevron icon', async ({ page }) => {
     await ComboboxActions.open(page);
     await ComboboxActions.search(page, 'Pilot'); // Episodes are leaves
-    await ComboboxActions.waitForLoad(page);
+    await ComboboxActions.waitForStreamComplete(page, 30000);
 
     const options = ComboboxLocators.options(page);
     const count = await options.count();
@@ -126,7 +126,7 @@ test.describe('ContentSearchCombobox - Display Validation', () => {
   test('long titles are truncated', async ({ page }) => {
     await ComboboxActions.open(page);
     await ComboboxActions.search(page, 'Office');
-    await ComboboxActions.waitForLoad(page);
+    await ComboboxActions.waitForStreamComplete(page, 30000);
 
     const options = ComboboxLocators.options(page);
     const count = await options.count();
@@ -144,7 +144,7 @@ test.describe('ContentSearchCombobox - Display Validation', () => {
   test('parent title shows for nested items', async ({ page }) => {
     await ComboboxActions.open(page);
     await ComboboxActions.search(page, 'Pilot'); // Episodes have parents
-    await ComboboxActions.waitForLoad(page);
+    await ComboboxActions.waitForStreamComplete(page, 30000);
 
     const options = ComboboxLocators.options(page);
     const count = await options.count();
@@ -171,7 +171,7 @@ test.describe('ContentSearchCombobox - Display Validation', () => {
   test('API response items pass display validation', async ({ page }) => {
     await ComboboxActions.open(page);
     await ComboboxActions.search(page, 'Office');
-    await ComboboxActions.waitForLoad(page);
+    await ComboboxActions.waitForStreamComplete(page, 30000);
 
     // Check API responses for display field validation
     const searchCalls = harness.getApiCalls(/content\/query\/search/);

@@ -98,17 +98,23 @@ test.describe('ContentSearchCombobox - Basic Interactions', () => {
 
     await ComboboxActions.open(page);
 
-    // Type search text
-    await ComboboxLocators.input(page).fill('test');
+    // Set up request listener BEFORE typing to catch the SSE connection
+    const requestPromise = page.waitForRequest(
+      req => req.url().includes('/api/v1/content/query/search'),
+      { timeout: 30000 }
+    );
 
-    // Wait for debounce + API response
-    await page.waitForTimeout(500);
+    // Type search text (enough to trigger search - minimum 2 chars)
+    await ComboboxLocators.input(page).fill('office');
 
-    // Verify API was actually called - this is the meaningful assertion
-    const apiCheck = harness.assertApiCalled(/\/api\/v1\/content\/query\/search/);
-    expect(apiCheck.passed, 'Search API should be called when typing').toBe(true);
+    // Wait for the search request to be initiated
+    const request = await requestPromise;
+    expect(request.url()).toContain('/api/v1/content/query/search');
 
-    // Verify dropdown shows results or empty state (not stuck in loading)
+    // Wait for streaming search to produce results or empty state
+    await ComboboxActions.waitForStreamComplete(page, 30000);
+
+    // Verify dropdown shows results or empty state
     const dropdown = ComboboxLocators.dropdown(page);
     await expect(dropdown).toBeVisible();
   });

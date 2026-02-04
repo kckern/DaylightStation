@@ -46,7 +46,7 @@ test.describe('ContentSearchCombobox - Source Coverage', () => {
 
         await ComboboxActions.open(page);
         await ComboboxActions.search(page, term);
-        await ComboboxActions.waitForLoad(page);
+        await ComboboxActions.waitForStreamComplete(page, 30000);
 
         // API should be called
         const apiCheck = harness.assertApiCalled(/content\/query\/search/);
@@ -106,7 +106,7 @@ test.describe('ContentSearchCombobox - Source Coverage', () => {
     // Search term that might return results from multiple sources
     await ComboboxActions.open(page);
     await ComboboxActions.search(page, 'test');
-    await ComboboxActions.waitForLoad(page);
+    await ComboboxActions.waitForStreamComplete(page, 30000);
 
     const options = ComboboxLocators.options(page);
     const count = await options.count();
@@ -129,7 +129,7 @@ test.describe('ContentSearchCombobox - Source Coverage', () => {
   test('browsing Plex hierarchy works', async ({ page }) => {
     await ComboboxActions.open(page);
     await ComboboxActions.search(page, 'Office');
-    await ComboboxActions.waitForLoad(page);
+    await ComboboxActions.waitForStreamComplete(page, 30000);
 
     // Find a Plex show and drill into it
     const options = ComboboxLocators.options(page);
