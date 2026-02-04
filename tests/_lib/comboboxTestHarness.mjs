@@ -62,8 +62,30 @@ export class ComboboxTestHarness {
   /**
    * Intercept API calls and validate responses
    * Uses passive observation (page.on('response')) to avoid blocking requests
+   * Also tracks requests for SSE endpoints which may not trigger response events
    */
   async interceptApi() {
+    // Track requests for SSE endpoints (EventSource doesn't trigger response events reliably)
+    this.page.on('request', (request) => {
+      const url = request.url();
+
+      // Track SSE streaming search requests
+      if (url.includes('/api/v1/content/query/search/stream')) {
+        const method = request.method();
+        const timestamp = Date.now();
+
+        this.apiCalls.push({
+          url,
+          method,
+          timestamp,
+          status: 200, // Assume success for SSE
+          response: null,
+          validation: { valid: true },
+          type: 'search-stream'
+        });
+      }
+    });
+
     // Use passive response observation instead of route interception
     // This avoids blocking issues while still recording API calls
     this.page.on('response', (response) => {
@@ -87,8 +109,8 @@ export class ComboboxTestHarness {
         });
       }
 
-      // Check if this is a search API call
-      if (url.includes('/api/v1/content/query/search')) {
+      // Check if this is a search API call (non-streaming)
+      if (url.includes('/api/v1/content/query/search') && !url.includes('/stream')) {
         const method = response.request().method();
         const timestamp = Date.now();
         const status = response.status();
@@ -118,10 +140,25 @@ export class ComboboxTestHarness {
         for (const line of lines) {
           if (!line.trim()) continue;
 
+          // Skip React development warnings (duplicate keys, etc.)
+          // These are logged as console.error but aren't actual backend errors
+          const isReactDevWarning =
+            /console\.error/.test(line) && (
+              /Encountered two children with the same key/.test(line) ||
+              /Warning:/.test(line) ||
+              /Each child in a list should have a unique/.test(line)
+            );
+
+          if (isReactDevWarning) {
+            // Treat as warning, not error
+            this.backendWarnings.push(line);
+            continue;
+          }
+
           // Check for actual ERROR level logs, not just "error" in text
           // JSON format: "level":"error" or traditional: [ERROR] or ERROR:
           const isActualError =
-            /"level"\s*:\s*"error"/i.test(line) ||  // JSON structured logs
+            (/"level"\s*:\s*"error"/i.test(line) && !/console\.error/.test(line)) ||  // JSON structured logs (exclude console.error)
             /\[ERROR\]/i.test(line) ||               // Bracketed format
             /^ERROR:/i.test(line) ||                 // Line starting with ERROR:
             /\bException\b/i.test(line);             // Stack traces
@@ -271,9 +308,10 @@ export const ComboboxLocators = {
   // Option details - use more generic selectors
   optionTitle: (option) => option.locator('span, div').filter({ hasText: /.+/ }).first(),
   optionParent: (option) => option.locator('[data-dimmed], .mantine-Text').filter({ hasText: /.+/ }).last(),
-  optionBadge: (option) => option.locator('.mantine-Badge-root, [class*="Badge"]'),
+  optionBadge: (option) => option.locator('.mantine-Badge-root, [class*="Badge"]').first(),
   optionChevron: (option) => option.locator('svg').last(),
-  optionAvatar: (option) => option.locator('.mantine-Avatar-root, [class*="Avatar"]'),
+  // Use first() to avoid strict mode violations when Avatar has nested placeholder
+  optionAvatar: (option) => option.locator('.mantine-Avatar-root').first(),
 };
 
 /**

@@ -8,7 +8,7 @@
 import { test, expect } from '@playwright/test';
 import { BACKEND_URL, FRONTEND_URL } from '#fixtures/runtime/urls.mjs';
 
-const API_TIMEOUT = 10000; // 10 seconds
+const API_TIMEOUT = 30000; // 30 seconds (search API can be slow on cold start)
 
 test.describe('ContentSearchCombobox - Preflight Checks', () => {
 
@@ -34,20 +34,23 @@ test.describe('ContentSearchCombobox - Preflight Checks', () => {
   });
 
   test('search API endpoint is available', async ({ request }) => {
-    const response = await request.get(`${BACKEND_URL}/api/v1/content/query/search?text=test&take=1`, {
+    // Simple check that search endpoint responds
+    // Don't retry - if backend is healthy, search should work
+    // The actual search tests will exercise this more thoroughly
+    const response = await request.get(`${BACKEND_URL}/api/v1/content/query/search?text=a&take=1`, {
       timeout: API_TIMEOUT,
-    }).catch(e => null);
-
-    if (!response) {
+    }).catch(e => {
       throw new Error(
         `Search API not responding at ${BACKEND_URL}/api/v1/content/query/search\n` +
+        `Error: ${e?.message || 'Unknown'}\n` +
         `\n` +
         `The search endpoint is required for most tests.\n`
       );
-    }
+    });
 
-    // Accept 200 OK or 404 (no results) - both mean API is working
-    expect([200, 404]).toContain(response.status());
+    // Accept 200 OK - search API is working
+    // Note: May return empty results for single char search due to minimum query length
+    expect(response.status()).toBe(200);
   });
 
   test('list API endpoint is available', async ({ request }) => {

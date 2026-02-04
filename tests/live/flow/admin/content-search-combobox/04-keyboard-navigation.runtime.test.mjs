@@ -26,7 +26,7 @@ test.describe('ContentSearchCombobox - Keyboard Navigation', () => {
   test('ArrowDown highlights next option', async ({ page }) => {
     await ComboboxActions.open(page);
     await ComboboxActions.search(page, 'Office');
-    await ComboboxActions.waitForLoad(page);
+    await ComboboxActions.waitForStreamComplete(page, 30000);
 
     const options = ComboboxLocators.options(page);
     const count = await options.count();
@@ -52,7 +52,7 @@ test.describe('ContentSearchCombobox - Keyboard Navigation', () => {
   test('ArrowUp highlights previous option', async ({ page }) => {
     await ComboboxActions.open(page);
     await ComboboxActions.search(page, 'Office');
-    await ComboboxActions.waitForLoad(page);
+    await ComboboxActions.waitForStreamComplete(page, 30000);
 
     const options = ComboboxLocators.options(page);
     const count = await options.count();
@@ -74,7 +74,7 @@ test.describe('ContentSearchCombobox - Keyboard Navigation', () => {
   test('Enter selects highlighted leaf option', async ({ page }) => {
     await ComboboxActions.open(page);
     await ComboboxActions.search(page, 'Pilot'); // Search for episodes (leaves)
-    await ComboboxActions.waitForLoad(page);
+    await ComboboxActions.waitForStreamComplete(page, 30000);
 
     const options = ComboboxLocators.options(page);
     const count = await options.count();
@@ -107,7 +107,7 @@ test.describe('ContentSearchCombobox - Keyboard Navigation', () => {
   test('Enter on container drills in instead of selecting', async ({ page }) => {
     await ComboboxActions.open(page);
     await ComboboxActions.search(page, 'Office'); // Search for shows (containers)
-    await ComboboxActions.waitForLoad(page);
+    await ComboboxActions.waitForStreamComplete(page, 30000);
 
     const options = ComboboxLocators.options(page);
     const count = await options.count();
@@ -141,7 +141,7 @@ test.describe('ContentSearchCombobox - Keyboard Navigation', () => {
   test('Escape while browsing returns to search', async ({ page }) => {
     await ComboboxActions.open(page);
     await ComboboxActions.search(page, 'Office');
-    await ComboboxActions.waitForLoad(page);
+    await ComboboxActions.waitForStreamComplete(page, 30000);
 
     // Try to drill into a container
     const options = ComboboxLocators.options(page);
@@ -178,7 +178,7 @@ test.describe('ContentSearchCombobox - Keyboard Navigation', () => {
   test('typing while navigating resets to search', async ({ page }) => {
     await ComboboxActions.open(page);
     await ComboboxActions.search(page, 'Office');
-    await ComboboxActions.waitForLoad(page);
+    await ComboboxActions.waitForStreamComplete(page, 30000);
 
     // Drill into a result
     const options = ComboboxLocators.options(page);
@@ -190,7 +190,7 @@ test.describe('ContentSearchCombobox - Keyboard Navigation', () => {
 
     // Type new search - should reset to search mode
     await ComboboxActions.search(page, 'Parks');
-    await ComboboxActions.waitForLoad(page);
+    await ComboboxActions.waitForStreamComplete(page, 30000);
 
     // After typing new search text, dropdown should be visible with search results
     const dropdown = ComboboxLocators.dropdown(page);
