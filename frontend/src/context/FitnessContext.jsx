@@ -1548,6 +1548,29 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     return resolveDisplayName(deviceId, displayNameContext);
   }, [displayNameContext]);
 
+  // TEMPORARY: Migration validation - log when old and new disagree
+  if (process.env.NODE_ENV === 'development') {
+    React.useEffect(() => {
+      if (!allDevicesRaw || allDevicesRaw.length === 0) return;
+
+      const hrDevices = allDevicesRaw.filter(d => d.type === 'heart_rate');
+      hrDevices.forEach(device => {
+        const deviceId = String(device.deviceId);
+        const newResult = getDisplayName(deviceId);
+        const oldResult = getDisplayLabel(device.name || deviceId);
+
+        if (newResult.displayName !== oldResult) {
+          console.warn('[DisplayNameResolver] MISMATCH', {
+            deviceId,
+            new: newResult.displayName,
+            newSource: newResult.source,
+            old: oldResult
+          });
+        }
+      });
+    }, [allDevicesRaw, displayNameContext, getDisplayLabel]);
+  }
+
   const guestCandidateList = React.useMemo(() => {
     return Array.isArray(session?.guestCandidates) ? session.guestCandidates : [];
   }, [session, version]);
