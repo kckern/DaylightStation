@@ -8,9 +8,6 @@
 import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
-import { fileURLToPath } from 'url';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /**
  * Get the data path from environment
@@ -22,8 +19,8 @@ function getDataPath() {
   if (dataPath) return dataPath;
   if (basePath) return path.join(basePath, 'data');
 
-  // Fallback: try to find .env in project root
-  const projectRoot = path.resolve(__dirname, '../..');
+  // Fallback: try to find .env in project root (uses process.cwd())
+  const projectRoot = process.cwd();
   const envPath = path.join(projectRoot, '.env');
 
   if (fs.existsSync(envPath)) {
@@ -116,4 +113,5 @@ export function getTestUrls() {
   };
 }
 
-export default { getAppPort, getTestUrls };
+export { getDataPath };
+export default { getAppPort, getTestUrls, getDataPath };

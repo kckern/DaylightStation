@@ -167,45 +167,162 @@ function logSummary(results) {
 // ============================================================================
 
 async function runTestFile(testFile, env, timeout) {
-  // Jest is CommonJS; ESM import returns { default }, so normalize.
-  const { runCLI } = await import('jest').then(mod => mod.default ?? mod);
+  const { spawn } = await import('child_process');
 
   const startTime = Date.now();
 
-  try {
-    const { results } = await runCLI({
-      testPathPattern: [testFile.replace(/\\/g, '/')],
-      runInBand: true,
-      silent: false,
-      testTimeout: timeout,
-      passWithNoTests: false,
-      _: [],
-      $0: 'jest',
-    }, [path.resolve(__dirname, '../..')]);
+  return new Promise((resolve) => {
+    // Run Jest as subprocess with ESM support and proper env
+    const child = spawn('npx', [
+      'jest',
+      testFile.replace(/\\/g, '/'),
+      '--runInBand',
+      '--testTimeout', String(timeout),
+      '--passWithNoTests=false',
+      '--json',
+    ], {
+      env: {
+        ...env,
+        NODE_OPTIONS: '--experimental-vm-modules',
+      },
+      cwd: path.resolve(__dirname, '../..'),
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
 
-    const duration = Date.now() - startTime;
+    let stdout = '';
+    let stderr = '';
 
-    const testResult = results.testResults[0];
-    if (!testResult) {
-      return { success: false, error: 'No test results', duration };
-    }
+    child.stdout.on('data', (data) => { stdout += data.toString(); });
+    child.stderr.on('data', (data) => { stderr += data.toString(); });
 
-    if (testResult.numFailingTests > 0) {
-      const failedTest = testResult.testResults.find(t => t.status === 'failed');
-      const error = failedTest?.failureMessages?.join('\n') || 'Unknown error';
-      return { success: false, error, duration };
-    }
+    child.on('close', (code) => {
+      const duration = Date.now() - startTime;
 
-    const skippedTest = testResult.testResults.find(t => t.status === 'pending');
-    if (skippedTest) {
-      return { success: true, skipped: true, reason: 'no auth configured', duration };
-    }
+      // Try to parse JSON output
+      let jestResults = null;
+      try {
+        // Jest JSON output may have non-JSON prefix (validation warnings)
+        const jsonStart = stdout.indexOf('{');
+        if (jsonStart >= 0) {
+          jestResults = JSON.parse(stdout.slice(jsonStart));
+        }
+      } catch {
+        // JSON parse failed - will fall back to text parsing
+      }
 
-    return { success: true, duration };
-  } catch (error) {
-    const duration = Date.now() - startTime;
-    return { success: false, error: error.message, duration };
-  }
+      // If we got valid Jest results, analyze them
+      if (jestResults) {
+        const testResult = jestResults.testResults?.[0];
+
+        // No test file results = module failed to load
+        if (!testResult) {
+          return resolve({
+            success: false,
+            error: 'No test results - module may have failed to load',
+            duration,
+          });
+        }
+
+        // Zero tests ran = module import failure or empty file
+        const totalTests = (testResult.numPassingTests || 0) +
+                          (testResult.numFailingTests || 0) +
+                          (testResult.numPendingTests || 0);
+
+        if (totalTests === 0) {
+          // JSON might be incomplete due to circular references - check stderr first
+          const stderrPassMatch = stderr.match(/(\d+)\s+passed/);
+          const stderrFailMatch = stderr.match(/(\d+)\s+failed/);
+
+          if (stderrPassMatch || stderrFailMatch) {
+            // stderr has real results - JSON was corrupted, skip to stderr parsing below
+          } else {
+            // Check if the test suite itself failed (module import error)
+            const suiteError = testResult.message || jestResults.testResults?.[0]?.failureMessage;
+            return resolve({
+              success: false,
+              error: suiteError || 'No tests ran - check module imports',
+              duration,
+            });
+          }
+        } else {
+          // JSON has valid test counts - use them
+          if (testResult.numFailingTests > 0) {
+            const failedTest = testResult.assertionResults?.find(t => t.status === 'failed');
+            const error = failedTest?.failureMessages?.join('\n') || testResult.message || 'Test failed';
+            return resolve({ success: false, error, duration });
+          }
+
+          if (testResult.numPendingTests > 0 && testResult.numPassingTests === 0) {
+            return resolve({
+              success: true,
+              skipped: true,
+              reason: 'tests skipped',
+              duration,
+            });
+          }
+
+          // Success
+          return resolve({ success: true, duration });
+        }
+      }
+
+      // No valid JSON - parse stdout/stderr for test results (Jest text output)
+      // Jest format: "Tests:       2 failed, 1 passed, 3 total" - numbers can appear in any order
+      const passMatch = stderr.match(/(\d+)\s+passed/);
+      const failMatch = stderr.match(/(\d+)\s+failed/);
+      const totalMatch = stderr.match(/(\d+)\s+total/);
+
+      if (passMatch || failMatch || totalMatch) {
+        const passed = parseInt(passMatch?.[1] || '0');
+        const failed = parseInt(failMatch?.[1] || '0');
+
+        if (failed > 0) {
+          // Extract error message from stderr
+          const errorLines = stderr.split('\n').filter(l =>
+            l.includes('●') || l.includes('Error') || l.includes('FAIL')
+          );
+          const error = errorLines.slice(0, 5).join('\n') || 'Test failed';
+          return resolve({ success: false, error, duration });
+        }
+
+        if (passed > 0) {
+          return resolve({ success: true, duration });
+        }
+      }
+
+      // Check for module import errors in stderr
+      if (stderr.includes('Could not locate module') || stderr.includes('Cannot find module')) {
+        const errorLines = stderr.split('\n').filter(l =>
+          l.includes('Could not locate') || l.includes('Cannot find')
+        );
+        return resolve({
+          success: false,
+          error: errorLines.slice(0, 3).join('\n') || 'Module import failed',
+          duration,
+        });
+      }
+
+      // Check exit code
+      if (code !== 0) {
+        const errorLines = stderr.split('\n').filter(l =>
+          l.includes('Error') || l.includes('FAIL')
+        );
+        const error = errorLines.length > 0
+          ? errorLines.slice(0, 3).join('\n')
+          : stderr.slice(0, 500) || `Jest exited with code ${code}`;
+
+        return resolve({ success: false, error, duration });
+      }
+
+      // Exit 0 - treat as success
+      resolve({ success: true, duration });
+    });
+
+    child.on('error', (err) => {
+      const duration = Date.now() - startTime;
+      resolve({ success: false, error: err.message, duration });
+    });
+  });
 }
 
 async function sleep(ms) {
