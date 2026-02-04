@@ -9,10 +9,14 @@
  */
 
 import { configService, initConfigService } from '#backend/src/0_system/config/index.mjs';
+import { getDataPath } from '../../../_lib/configHelper.mjs';
 
 // Set up env before importing clickup.mjs
-const dataPath = process.env.DAYLIGHT_DATA_PATH;
-if (dataPath && !configService.isReady()) {
+const dataPath = getDataPath();
+if (!dataPath) {
+  throw new Error('Could not determine data path from .env');
+}
+if (!configService.isReady()) {
   initConfigService(dataPath);
 }
 

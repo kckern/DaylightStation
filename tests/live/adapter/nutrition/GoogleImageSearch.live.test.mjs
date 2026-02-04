@@ -12,6 +12,7 @@ import { RealUPCGateway } from '#backend/_legacy/chatbots/infrastructure/gateway
 import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
+import { getDataPath } from '../../../_lib/configHelper.mjs';
 
 describe('GoogleImageSearchGateway Live API', () => {
   let gateway;
@@ -20,7 +21,10 @@ describe('GoogleImageSearchGateway Live API', () => {
 
   beforeAll(() => {
     // Load credentials from household auth file
-    const dataDir = process.env.DAYLIGHT_DATA_PATH || path.resolve('data');
+    const dataDir = getDataPath();
+    if (!dataDir) {
+      throw new Error('Could not determine data path from .env');
+    }
     const authPath = path.join(dataDir, 'household/auth/google.yml');
     let apiKey = null;
     let cseId = null;
