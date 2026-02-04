@@ -190,8 +190,8 @@ docker-compose up -d
 
 ---
 
-**Daylight Station** is open source under the Polyform Noncommercial License.
+**Daylight Station** is open source under the MIT License.
 
-Where your apps finally meet. Built for personal use. Shared for others who want their data to work together.
+Where your apps finally meet. Built for personal use. Shared for everyone who wants their data to work together.
 
 [GitHub](https://github.com/kckern/DaylightStation) · [Issues](https://github.com/kckern/DaylightStation/issues) · [Docker Hub](https://hub.docker.com/r/kckern/daylight-station)

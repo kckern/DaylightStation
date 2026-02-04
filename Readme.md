@@ -4,7 +4,7 @@
 
 Your calendar lives in Google. Your runs live in Strava. Your photos live in Immich. Your comics live in Komga. Your media lives in Plex. Your home lives in Home Assistant. They've never been in the same room—until now. Daylight Station is where your scattered digital life finally comes together. Self-hosted and fully yours, it connects to your other self-hosted services and pulls from cloud APIs, refines the noise into signal, and delivers context-aware experiences exactly when and where you need them. No middleman. No algorithms optimizing for someone else's engagement metrics. Just your data, working for you.
 
-![License](https://img.shields.io/badge/license-Polyform%20Noncommercial-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
 ![Docker Pulls](https://img.shields.io/docker/pulls/kckern/daylight-station)
 
 ## Why are you checking your apps? They should be checking on you.
@@ -97,18 +97,18 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup.
 
 ## License
 
-**Source-available. Free for personal use. Licensable for social proof and commercial rights.**
+**MIT licensed. Free for any use. Voluntary supporter program for badges and community.**
 
-DaylightStation is released under the [Polyform Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0).
+DaylightStation is released under the [MIT License](https://opensource.org/licenses/MIT).
 
-| Use Case | License Required |
-|----------|------------------|
-| Personal, noncommercial use | Free (Freeloader) |
-| Social features + badge | Paid personal license ($1-$50/mo) |
-| Installation/consulting services | Commercial Installer license |
-| Pre-install on hardware | Commercial Distributor license |
+| Use Case | Cost |
+|----------|------|
+| Personal use | Free |
+| Commercial use | Free |
+| Forking/redistribution | Free |
+| Verified supporter badge | Voluntary ($1-$50/mo) |
 
-See [docs/reference/licensing.md](docs/reference/licensing.md) for the full licensing model, badge verification, and FAQ.
+See [docs/reference/licensing.md](docs/reference/licensing.md) for the supporter program and badge verification.
 
 ## Links
 

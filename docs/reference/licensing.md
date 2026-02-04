@@ -1,167 +1,218 @@
 # DaylightStation Licensing
 
-> Source-available. Free for personal use. Licensable for social proof and commercial rights.
+> MIT licensed. Voluntary supporter program with cryptographic verification.
 
 **Last Updated:** 2026-02-04
 
 ---
 
-## Baseline: Polyform Noncommercial
+## License: MIT
 
-DaylightStation is released under the [Polyform Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0).
+DaylightStation is released under the [MIT License](https://opensource.org/licenses/MIT).
 
 **You can:**
-- Use it for any personal, noncommercial purpose
+- Use it for any purpose, personal or commercial
 - Modify the source code
-- Redistribute (noncommercially)
-- Bypass nag screens via code modification (if you go through the trouble, you've earned it)
+- Redistribute, with or without modifications
+- Sell it, bundle it, pre-install it on hardware
+- Fork it and call it something else
 
-**Reserved rights (require commercial license):**
-- Issue licenses or badges — free or paid, with any signing key
-- Provide paid installation, consulting, or support services
-- Pre-install on commercial hardware (smart hubs, TVs, appliances)
+**You cannot:**
+- Remove the copyright notice
+- Hold the author liable
 
-The licensing mechanism is a commercial right, not just the sale of licenses. Forks cannot establish parallel credentialing systems.
+That's it. No restrictions on commercial use. No "source-available" asterisks. Pure open source.
 
 ---
 
-## Personal Licenses
+## Why MIT?
 
-Personal licenses unlock features and social proof. They do **not** grant additional code rights — all personal users remain bound by Polyform NC regardless of tier.
+We considered restrictive licenses (Polyform NC, AGPL, dual-licensing) but chose MIT because:
+
+1. **No friction.** The self-hosted community rightly scrutinizes non-OSI licenses. MIT removes that barrier.
+
+2. **Contributions flow freely.** Restrictive licenses discourage corporate contributions and integrations.
+
+3. **Trust is earned, not enforced.** If someone wants to fork, they will. Legal restrictions just add friction for legitimate users.
+
+4. **Social proof works better.** Cryptographic verification of supporter status is more meaningful than legal coercion.
+
+### Risks We Accept
+
+**Forks could gain traction.** Someone could fork DaylightStation, rebrand it, and build a community around it. If they do it better, they deserve to win.
+
+**Commercial OEMs ship free.** A hardware vendor could pre-install DaylightStation on smart home devices without paying anything. We can't stop them, and we won't try.
+
+**No legal leverage.** We can't sue anyone for commercial use, competitive forks, or anything else beyond the bare MIT requirements.
+
+We're betting that the value of being the canonical source — with verified supporters, active development, and community trust — outweighs the protection of restrictive licensing.
+
+---
+
+## Supporter Program
+
+Supporting DaylightStation is voluntary. It unlocks social features and funds development.
 
 ### Tiers
 
 | Tier | Monthly | Annual | Lifetime | Badge |
 |------|---------|--------|----------|-------|
-| **Freeloader** | Free | Free | Free | — |
+| **Community** | Free | Free | Free | — |
 | **Backer** | $1 | $10 | $50 | ✓ |
-| **Sponsor** | $3 | $25 | $125 | 🏆 |
-| **Patron** | $5 | $50 | $250 | 💎 |
-| **Benefactor** | $10 | $100 | $500 | 👑 |
-| **Medici** | $50 | $500 | $2,500 | ⭐ |
+| **Sponsor** | $3 | $25 | $125 | bronze |
+| **Patron** | $5 | $50 | $250 | silver |
+| **Benefactor** | $10 | $100 | $500 | gold |
+| **Medici** | $50 | $500 | $2,500 | platinum |
 
-Lifetime = 5× annual. License never expires.
+Lifetime = 5x annual. License token never expires.
 
-### What Personal Licenses Unlock
+### What Supporters Get
 
-| Feature | Freeloader | Paid Tier |
-|---------|------------|-----------|
-| Core functionality | ✅ | ✅ |
-| Nag screens | Yes | No |
-| Social federation | ❌ | ✅ |
-| Network badge | ❌ | ✅ (tier-based) |
+| Feature | Community | Supporter |
+|---------|-----------|-----------|
+| Full software functionality | Yes | Yes |
+| Verified badge in UI | No | Yes |
+| Listed on supporters page | No | Yes |
+| Supporters Discord channel | No | Yes |
+| Network badge (social features) | No | Yes |
+| Warm feeling of contribution | Maybe | Definitely |
 
-### What Personal Licenses Do NOT Grant
+### What Supporters Don't Get
 
-- Right to issue licenses or badges
-- Right to provide paid services
-- Right to commercial distribution
-- Support or guarantees of any kind
+- Priority support (there is no support)
+- Extra features (all features are available to everyone)
+- Legal rights (MIT already grants everything)
+- Guarantees of any kind
 
-Software is provided as-is. All tiers receive the same (lack of) warranty.
-
----
-
-## Commercial Licenses
-
-Commercial licenses grant rights that Polyform NC reserves. Unlike personal licenses, these expand what you're legally permitted to do.
-
-### Baseline: No Commercial Rights
-
-Polyform Noncommercial grants zero commercial rights by default. Any commercial use requires a separate license agreement.
-
-### License Types
-
-| License | Grants Right To | Typical Licensee |
-|---------|-----------------|------------------|
-| **Installer** | Provide paid installation, configuration, or consulting services | IT consultants, smart home integrators, freelancers |
-| **Distributor** | Pre-install on commercial hardware or bundle with paid products | Hardware manufacturers, appliance vendors, system builders |
-| **Licensing** | Operate a licensing/badge infrastructure for a fork | Would-be competitors (priced to discourage, or refused) |
-
-### Terms
-
-- **Per-contract basis** — no public pricing, terms negotiated individually
-- **No implied rights** — a personal license (even Medici) grants zero commercial rights
-- **Scope-limited** — an Installer license doesn't grant Distributor rights, and vice versa
-
-### How to Inquire
-
-Contact [TBD] with:
-- Your intended commercial use
-- Scope (geography, volume, duration)
-- Company information
+The supporter program is about community belonging and funding development, not unlocking functionality.
 
 ---
 
-## Badge Verification
+## Cryptographic Verification
 
-Personal licenses are enforced socially, not legally. The mechanism is cryptographic badge verification via a repo-linked public key.
+Supporter status is verified cryptographically, not legally. The mechanism is a signed license token verified against a public key embedded in the codebase.
 
 ### How It Works
 
-1. **License purchase** → Server issues a signed badge certificate
-2. **Badge contains:** instance ID, protocol identity, tier, expiration
-3. **Local verification:** Codebase has official pubkey burned in; valid badge unlocks features
-4. **Network verification:** Social posts include badge; other clients verify against official pubkey
+```
+1. User subscribes to supporter program
+2. Server generates license token:
+   {
+     "user_id": "abc123",
+     "email": "alice@example.com",
+     "tier": "patron",
+     "issued": "2026-02-04T00:00:00Z",
+     "expires": "2027-02-04T00:00:00Z"
+   }
+3. Server signs token with private key
+4. User adds token to their config (secrets.yml)
+5. Software verifies signature against embedded public key
+6. Valid signature + not expired = badge displays
+```
 
 ### The Public Key
 
-The official signing key is published in the repository. Only the original author holds the corresponding private key. This is what makes badges unforgeable.
+The official signing key is published in the repository at `keys/license-verification.pub`. Only the project maintainer holds the corresponding private key.
 
-### Local vs Network Status
+This means:
+- Only the official project can issue valid license tokens
+- Tokens are verifiable offline (no phone-home required)
+- Forks cannot forge official supporter status
 
-**Freeloader is a local-only status.** The official build paywalls social publishing — Freeloaders can configure their Nostr keys but cannot post to the network. They're configured but dark.
+### Verification Is Informational
 
-To publish without paying, you must fork and remove the paywall. At that point, your badge (if any) fails verification against the official pubkey. The network renders you as Knockoff.
+Verification doesn't gate functionality. An invalid or missing token means:
+- Software works identically
+- Badge doesn't display
+- Network posts show as "unverified"
 
-| User State | Local UX | Network Status |
-|------------|----------|----------------|
-| No license, official build | "Freeloader" — social publishing disabled | Dark (not seen) |
-| Paid license, official build | Full features | Tier badge |
-| No license, forked build | Whatever the fork shows | 👜 Knockoff |
+That's it. No nag screens. No disabled features. No punishment.
 
-### The Fork Scenario
+---
 
-A forker could:
-1. Remove the publishing paywall
-2. Replace the burned-in pubkey with their own
-3. Issue licenses signed by their own private key
-4. Pass local verification — appear "Paid" to themselves
+## Network Verification
 
-**But on the network:**
-- Other users run official code with the official pubkey
-- The forker's badge fails verification
-- The forker appears as 👜 Knockoff to everyone else
+For social/federation features, supporter badges are attached to posts and verified by other clients.
 
-The fork can lie to itself. It cannot lie to the network.
+### How Network Verification Works
+
+1. User publishes content with attached license token
+2. Receiving client extracts token from post
+3. Client verifies signature against embedded public key
+4. Valid = tier badge displayed; Invalid = "unverified" displayed
+
+Each client independently verifies. No central authority. No trust required.
 
 ### Network Badge Display
 
-| Situation | Badge |
-|-----------|-------|
-| Valid badge, active subscription | Tier badge (✓ 🏆 💎 👑 ⭐) |
-| Valid badge, lifetime | Tier badge + 🎖️ |
-| Valid badge, payment past due | ⚠️ Delinquent |
-| Valid badge, subscription cancelled | 🪦 Lapsed |
-| Badge fails official pubkey verification | 👜 Knockoff |
+| Situation | Display |
+|-----------|---------|
+| Valid token, active subscription | Tier badge |
+| Valid token, lifetime | Tier badge |
+| Valid token, expired | "expired" indicator |
+| Invalid signature | "unverified" |
+| No token attached | "unverified" |
 
-### Knockoff Status
+### Unverified Status
 
-Knockoff is the rendered badge when verification fails. Each client independently:
-1. Receives the interaction with attached badge
-2. Verifies signature against the official pubkey
-3. Fails verification → renders 👜 Knockoff
+"Unverified" is not a judgment. It simply means the signature didn't match the official public key. The user might be:
 
-No central authority. No judgment call. Just math.
+- Running a fork (totally fine under MIT)
+- Choosing not to pay (totally fine)
+- Having a configuration issue
+- Using a build with a different public key
 
-The Knockoff might be:
-- A solo hacker who forked to bypass the paywall (legal — personal use)
-- A user of a fork running unauthorized licensing infrastructure (legal for the user, not for the fork operator)
-- Someone with a corrupted badge
+The software doesn't know and doesn't care. Signature valid or not. That's all.
 
-The client doesn't know and doesn't care. Signature failed. Knockoff badge rendered.
+---
 
-**Issuing licenses is the reserved right, not bypassing local restrictions.** A solo hacker is within their Polyform NC rights. A fork that operates licensing infrastructure is not.
+## Fork Scenarios
+
+MIT means anyone can fork. Here's how verification interacts with forks:
+
+### Scenario: Personal Fork
+
+User forks DaylightStation, modifies it, runs it at home.
+
+- **License status:** Fully permitted under MIT
+- **Supporter badge:** Won't verify (no valid token for fork)
+- **Network status:** "unverified" if they post
+- **Our stance:** This is fine. Enjoy.
+
+### Scenario: Community Fork
+
+Someone forks DaylightStation, rebrands it, builds a community.
+
+- **License status:** Fully permitted under MIT
+- **Their supporter program:** They can create their own with their own keys
+- **Cross-verification:** Their badges won't verify on our network, ours won't verify on theirs
+- **Our stance:** Competition is healthy. May the best project win.
+
+### Scenario: Commercial OEM
+
+Hardware vendor ships DaylightStation pre-installed on devices.
+
+- **License status:** Fully permitted under MIT
+- **Payment to us:** None required
+- **Supporter status:** Their users are "unverified" unless they subscribe
+- **Our stance:** We'd prefer a partnership, but we can't and won't enforce it.
+
+### Scenario: Hostile Fork
+
+Someone forks with intent to "take over" the project.
+
+- **License status:** Fully permitted under MIT
+- **What they get:** The code as of fork date
+- **What they don't get:** Our private key, our contributors, our community trust
+- **Our stance:** If they out-execute us, they deserve to win.
+
+---
+
+## Trademark
+
+"DaylightStation" and the Daylight Station logo are trademarks. The MIT license grants rights to the code, not the name or branding.
+
+Forks should use a different name. This is standard practice (e.g., Firefox vs. Iceweasel, Chrome vs. Chromium).
 
 ---
 
@@ -171,61 +222,77 @@ The client doesn't know and doesn't care. Signature failed. Knockoff badge rende
 
 **Is DaylightStation open source?**
 
-It's source-available under Polyform Noncommercial. You can view, modify, and redistribute the code for noncommercial purposes. It is not OSI-approved "open source" because commercial use requires a separate license.
+Yes. MIT is an OSI-approved open source license. No asterisks.
 
 **Is it free?**
 
-Free for personal, noncommercial use. Paid licenses unlock social features and remove nag screens. Commercial use requires a commercial license.
+Yes. Free as in freedom, free as in beer. The supporter program is voluntary.
 
-### Personal Use
+**What's the catch?**
 
-**Can I fork the code?**
+No catch. We're betting that goodwill, community trust, and voluntary support will sustain the project better than legal restrictions.
 
-Yes. You can fork, modify, and run your own version for personal use.
+### Using DaylightStation
 
-**Can I remove the nag screens?**
+**Can I use it commercially?**
 
-Yes. If you go through the trouble of forking and modifying the code to bypass them, you've earned it. This is within your Polyform NC rights.
+Yes. No restrictions.
 
-**Can I bypass the social paywall?**
+**Can I sell services around it?**
 
-Technically yes — by forking. But your badge will fail verification against the official pubkey. The network will render you as 👜 Knockoff. You can participate, but everyone knows.
+Yes. Installation, consulting, support, hosting — all permitted.
 
-**What's the difference between Freeloader and Knockoff?**
+**Can I pre-install it on hardware I sell?**
 
-- **Freeloader:** Local status. Using the official build without paying. Social publishing is disabled — you're configured but dark.
-- **Knockoff:** Network status. Publishing via a fork with credentials that fail official verification. You're visible, but marked.
+Yes. No distributor license required.
 
-Freeloader is honest non-participation. Knockoff is participation with unofficial credentials.
+**Can I fork it?**
 
-### Commercial Use
+Yes. Please change the name if you distribute your fork.
 
-**Can I sell installation or consulting services?**
+### Supporter Program
 
-Not without an Installer license. Providing paid services around DaylightStation is a reserved commercial right.
+**What if I don't want to pay?**
 
-**Can I pre-install on hardware I sell?**
+Use it for free. All features work. You just won't have a verified badge.
 
-Not without a Distributor license. Commercial bundling is a reserved right.
+**What if I'm running a fork?**
 
-**Can I fork and issue my own licenses?**
+Your fork can have its own supporter program with its own keys. Your badges won't verify against our public key, and that's fine.
 
-No. Operating a licensing infrastructure — free or paid — is a reserved commercial right. This is the line between personal hacking (allowed) and commercial activity (requires license).
+**Can I be banned?**
 
-**How do I get a commercial license?**
+No. There's no mechanism to ban users. Verification is informational, not gatekeeping.
 
-Contact [TBD] with your intended use case, scope, and company information. Commercial licenses are negotiated per-contract.
+**What if I lose my license token?**
 
-### The Network
+Log into the supporter portal to regenerate it.
 
-**What if I don't care about being marked Knockoff?**
+### Technical
 
-That's your choice. The software works. You can participate. The badge is informational, not a block. Some people wear knockoffs proudly.
+**Does it phone home?**
 
-**Can I be banned from the network?**
+Verification is offline by default. The public key is embedded in the code. Optional online features (supporters page, update notifications) require network access.
 
-The licensing system doesn't ban anyone. Badge verification is informational. Individual users or relays might block Knockoff badges, but that's their choice, not a platform decision.
+**What if the public key changes?**
 
-**What if the official pubkey changes?**
+Key rotation would be announced with a migration path. Existing tokens would continue to work against the old key for a transition period.
 
-Badge certificates are signed at issuance. If the pubkey rotates, old badges would fail verification. In practice, key rotation would be announced with a migration path for existing licensees.
+**Can I verify badges in my own code?**
+
+Yes. The public key is published. Verification is standard Ed25519 signature checking.
+
+---
+
+## Summary
+
+| Aspect | Approach |
+|--------|----------|
+| License | MIT — use it however you want |
+| Supporter program | Voluntary, funds development |
+| Verification | Cryptographic, offline-capable |
+| Commercial use | Unrestricted |
+| Forks | Permitted, can't forge our badges |
+| Enforcement | Social proof, not legal action |
+
+We're building in the open, funded by people who want to see it succeed. That's the deal.
