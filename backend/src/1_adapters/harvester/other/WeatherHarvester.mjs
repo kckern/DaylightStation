@@ -174,10 +174,14 @@ export class WeatherHarvester extends IHarvester {
         currentTemp: current?.temp,
       });
 
+      // Weather latestDate is the current fetch timestamp
+      const latestDate = now.format('YYYY-MM-DD');
+
       return {
         status: 'success',
         current: weatherData.current,
         hourlyCount: hourly.length,
+        latestDate,
       };
 
     } catch (error) {

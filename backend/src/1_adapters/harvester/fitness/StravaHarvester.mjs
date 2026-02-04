@@ -163,13 +163,17 @@ export class StravaHarvester extends IHarvester {
       this.#circuitBreaker.recordSuccess();
 
       const dateCount = Object.keys(summary).length;
+      // Get latest date from summary keys (sorted descending)
+      const latestDate = Object.keys(summary).sort().reverse()[0] || null;
+
       this.#logger.info?.('strava.harvest.complete', {
         username,
         activityCount: enrichedActivities.length,
         dateCount,
+        latestDate,
       });
 
-      return { count: enrichedActivities.length, status: 'success', dateCount };
+      return { count: enrichedActivities.length, status: 'success', dateCount, latestDate };
 
     } catch (error) {
       const statusCode = error.response?.status;

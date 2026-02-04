@@ -125,6 +125,8 @@ export class HarvesterService {
         username: resolvedUsername,
         status: result.status,
         count: result.count,
+        latestDate: result.latestDate || null,
+        error: result.error || null,
       });
 
       return result;

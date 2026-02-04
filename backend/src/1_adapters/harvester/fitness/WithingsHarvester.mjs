@@ -164,12 +164,16 @@ export class WithingsHarvester extends IHarvester {
       // Success - reset circuit breaker
       this.#circuitBreaker.recordSuccess();
 
+      // Get latest date from measurements (first entry is newest after sort)
+      const latestDate = measurements[0]?.date || null;
+
       this.#logger.info?.('withings.harvest.complete', {
         username,
         measurementCount: measurements.length,
+        latestDate,
       });
 
-      return { count: measurements.length, status: 'success' };
+      return { count: measurements.length, status: 'success', latestDate };
 
     } catch (error) {
       const statusCode = error.response?.status;

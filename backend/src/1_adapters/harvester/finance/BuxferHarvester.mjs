@@ -154,16 +154,21 @@ export class BuxferHarvester extends IHarvester {
       this.#circuitBreaker.recordSuccess();
 
       const dateCount = Object.keys(byDate).length;
+      // Get latest date from merged data (keys are dates, sorted descending)
+      const latestDate = Object.keys(merged).sort().reverse()[0] || null;
+
       this.#logger.info?.('buxfer.harvest.complete', {
         username,
         transactionCount: transactions.length,
         dateCount,
+        latestDate,
       });
 
       return {
         count: transactions.length,
         status: 'success',
         dateCount,
+        latestDate,
       };
 
     } catch (error) {

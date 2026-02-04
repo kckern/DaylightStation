@@ -194,7 +194,10 @@ export class FoursquareHarvester extends IHarvester {
         ...stats,
       });
 
-      return { count: mergedCheckins.length, stats, status: 'success' };
+      // Get latest date from first checkin (sorted newest first)
+      const latestDate = mergedCheckins[0]?.date || null;
+
+      return { count: mergedCheckins.length, stats, status: 'success', latestDate };
 
     } catch (error) {
       const statusCode = error.response?.status;
