@@ -518,9 +518,40 @@ export class FitnessSimulationController {
   }
 
   /**
-   * Trigger a challenge event
+   * Trigger a challenge event.
+   *
+   * If a real GovernanceEngine is available (window.__fitnessGovernance),
+   * this delegates to it. Otherwise falls back to simulator-only behavior.
    */
   triggerChallenge(opts = {}) {
+    // Check for real GovernanceEngine first - delegate to it if available
+    const realGovernance = typeof window !== 'undefined' && window.__fitnessGovernance;
+    if (realGovernance) {
+      // The real GovernanceEngine is managing governance - delegate to it
+      // GovernanceEngine.triggerChallenge expects a payload object
+      const payload = {
+        selection: {
+          zone: opts.targetZone || opts.zone || 'active',
+          rule: opts.rule || 'all',
+          timeAllowedSeconds: opts.duration || opts.timeoutMs ? Math.ceil((opts.timeoutMs || 30000) / 1000) : 30,
+          weight: 1,
+          label: opts.label || 'Test Challenge'
+        }
+      };
+
+      // Access the real engine via session if available
+      const session = this.getSession?.();
+      if (session?.governanceEngine?.triggerChallenge) {
+        session.governanceEngine.triggerChallenge(payload);
+        return { ok: true, delegated: true, ...opts };
+      }
+
+      // GovernanceEngine exposes state on window, but not the triggerChallenge method directly
+      // We need to find the actual engine instance
+      console.warn('[SimController] Real governance detected but triggerChallenge not accessible via session');
+    }
+
+    // Fallback to simulator-only behavior
     if (!this.governanceOverride) {
       return { ok: false, error: 'Governance not enabled. Call enableGovernance first.' };
     }

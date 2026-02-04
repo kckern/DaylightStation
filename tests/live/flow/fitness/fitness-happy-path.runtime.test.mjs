@@ -20,6 +20,39 @@ import { FRONTEND_URL, BACKEND_URL } from '#fixtures/runtime/urls.mjs';
 import { getTestSample, validateExpectations, clearCache } from '#testlib/testDataService.mjs';
 import { FitnessSimHelper } from '#testlib/FitnessSimHelper.mjs';
 
+/**
+ * Read render FPS from dev.log (frontend logs playback.render_fps events)
+ * Returns most recent FPS value from the log
+ */
+function readRenderFpsFromLog(fromPosition = 0) {
+  try {
+    const content = fs.readFileSync(DEV_LOG_PATH, 'utf-8').slice(fromPosition);
+    const lines = content.split('\n');
+
+    // Find most recent playback.render_fps event
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const line = lines[i];
+      if (line.includes('playback.render_fps')) {
+        try {
+          const json = JSON.parse(line);
+          const fps = json.data?.renderFps;
+          if (typeof fps === 'number') {
+            return {
+              valid: true,
+              renderFps: fps,
+              title: json.data?.title,
+              mediaKey: json.data?.mediaKey
+            };
+          }
+        } catch { /* ignore parse errors */ }
+      }
+    }
+    return { valid: false, error: 'no render_fps events found' };
+  } catch (e) {
+    return { valid: false, error: e.message };
+  }
+}
+
 const BASE_URL = FRONTEND_URL;
 const API_URL = BACKEND_URL;
 const DEV_LOG_PATH = path.join(process.cwd(), 'dev.log');
@@ -546,6 +579,10 @@ test.describe('Fitness Happy Path', () => {
       await sharedPage.waitForTimeout(1000);
     }
 
+    // Wait for frontend to log FPS (it logs every 5 seconds)
+    console.log('Waiting for render FPS to be logged...');
+    await sharedPage.waitForTimeout(6000);
+
     // Monitor playback for 5 seconds
     const startTime = state.currentTime || 0;
     let playingCount = 0;
@@ -565,6 +602,20 @@ test.describe('Fitness Happy Path', () => {
         console.log('Video is playing!');
         break;
       }
+    }
+
+    // Read FPS from dev.log (frontend logs playback.render_fps)
+    const fpsFromLog = readRenderFpsFromLog(testLogPosition);
+    console.log('FPS from dev.log:', JSON.stringify(fpsFromLog));
+
+    // Report FPS status
+    if (!fpsFromLog.valid) {
+      console.log(`⚠️  No FPS logged yet: ${fpsFromLog.error || 'unknown'}`);
+    } else if (fpsFromLog.renderFps === 0) {
+      console.log(`⚠️  FPS is 0 (video not rendering)`);
+    } else {
+      console.log(`✓ Render FPS: ${fpsFromLog.renderFps} fps`);
+      expect(fpsFromLog.renderFps, 'Render FPS should be > 0').toBeGreaterThan(0);
     }
 
     // Assert video played (currentTime advanced or ready to play)

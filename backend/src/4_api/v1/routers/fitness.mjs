@@ -3,6 +3,7 @@
  *
  * Endpoints:
  * - GET  /api/fitness - Get fitness config
+ * - GET  /api/fitness/governed-content - Get content with governance labels
  * - GET  /api/fitness/show/:id - Get show info (assumes plex source)
  * - GET  /api/fitness/show/:id/playable - Get playable episodes (assumes plex source)
  * - GET  /api/fitness/sessions/dates - List all session dates
@@ -100,6 +101,65 @@ export function createFitnessRouter(config) {
 
     res.json(hydratedData);
   });
+
+  /**
+   * GET /api/fitness/governed-content - Get content with governance labels
+   * Returns shows/movies that have labels matching the fitness governance config.
+   * Used by tests to dynamically find content for governance testing.
+   */
+  router.get('/governed-content', asyncHandler(async (req, res) => {
+    if (!contentRegistry) {
+      return res.status(503).json({ error: 'Content registry not configured' });
+    }
+
+    const householdId = req.query.household || configService.getDefaultHouseholdId();
+    const fitnessData = loadFitnessConfig(householdId);
+
+    if (!fitnessData) {
+      return res.status(404).json({ error: 'Fitness configuration not found' });
+    }
+
+    // Extract governed labels from config (check both governance and plex sections)
+    const governance = fitnessData.governance || {};
+    const plex = fitnessData.plex || {};
+    const governedLabels = Array.isArray(governance.governed_labels) && governance.governed_labels.length > 0
+      ? governance.governed_labels
+      : plex.governed_labels || [];
+
+    const governedTypes = Array.isArray(governance.governed_types) && governance.governed_types.length > 0
+      ? governance.governed_types
+      : plex.governed_types || ['show', 'movie'];
+
+    if (!governedLabels || governedLabels.length === 0) {
+      return res.json({
+        items: [],
+        governanceConfig: { labels: [], types: governedTypes },
+        message: 'No governed labels configured'
+      });
+    }
+
+    // Get Plex adapter
+    const adapter = contentRegistry.get('plex');
+    if (!adapter) {
+      return res.status(503).json({ error: 'Plex adapter not configured' });
+    }
+
+    // Query for items with matching labels
+    const limit = parseInt(req.query.limit, 10) || 50;
+    const items = await adapter.getItemsByLabel(governedLabels, {
+      types: governedTypes,
+      limit
+    });
+
+    res.json({
+      items,
+      governanceConfig: {
+        labels: governedLabels,
+        types: governedTypes
+      },
+      total: items.length
+    });
+  }));
 
   // =============================================================================
   // Show Endpoints (assumes plex source - fitness content is always from plex)
@@ -240,7 +300,9 @@ export function createFitnessRouter(config) {
       plex: id,
       title: item.title,
       label: item.title,
+      type: item.type || null,
       image: item.thumbnail,
+      labels: item.labels || null,
       info
     });
   }));

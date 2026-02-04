@@ -1898,6 +1898,94 @@ export class PlexAdapter {
   getRootContainers() {
     return ['playlists', 'collections'];
   }
+
+  // ===========================================================================
+  // LABEL-BASED QUERIES
+  // ===========================================================================
+
+  /**
+   * Get all items from library sections that match specified labels.
+   * Uses Plex's label filter API for efficient querying.
+   *
+   * @param {string[]} labels - Labels to match (case-insensitive)
+   * @param {Object} [opts] - Options
+   * @param {string[]} [opts.types] - Content types to search (default: ['show', 'movie'])
+   * @param {number} [opts.limit] - Max items to return (default: 100)
+   * @returns {Promise<Array>} Items with matching labels
+   */
+  async getItemsByLabel(labels, opts = {}) {
+    const {
+      types = ['show', 'movie'],
+      limit = 100
+    } = opts;
+
+    if (!Array.isArray(labels) || labels.length === 0) {
+      return [];
+    }
+
+    try {
+      // Get all library sections
+      const sectionsData = await this.client.getLibrarySections();
+      const sections = sectionsData?.MediaContainer?.Directory || [];
+
+      const matchingItems = [];
+
+      for (const section of sections) {
+        // Filter by section type matching requested content types
+        const sectionType = section.type;
+        const typeMatch =
+          (sectionType === 'show' && types.includes('show')) ||
+          (sectionType === 'movie' && types.includes('movie'));
+
+        if (!typeMatch) continue;
+
+        // For each label, use Plex's label filter API
+        for (const labelName of labels) {
+          if (matchingItems.length >= limit) break;
+
+          // Plex's label filter endpoint - URL encode the label name
+          const path = `/library/sections/${section.key}/all?label=${encodeURIComponent(labelName)}`;
+          const sectionData = await this.client.getContainer(path);
+          const items = sectionData?.MediaContainer?.Metadata || [];
+
+          for (const item of items) {
+            // Check if we already have this item (avoid duplicates from multiple labels)
+            if (matchingItems.some(m => m.localId === String(item.ratingKey))) {
+              continue;
+            }
+
+            // Get full metadata to retrieve labels
+            const fullMeta = await this.client.getMetadata(item.ratingKey);
+            const fullItem = fullMeta?.MediaContainer?.Metadata?.[0];
+            const itemLabels = this._extractLabels(fullItem?.Label || item.Label);
+
+            matchingItems.push({
+              id: `plex:${item.ratingKey}`,
+              source: 'plex',
+              localId: String(item.ratingKey),
+              title: item.title,
+              type: item.type,
+              year: item.year || null,
+              thumbnail: item.thumb ? `${this.proxyPath}${item.thumb}` : null,
+              labels: itemLabels,
+              matchedLabels: [labelName.toLowerCase()],
+              childCount: item.leafCount || item.childCount || 0,
+              librarySectionTitle: item.librarySectionTitle || section.title
+            });
+
+            if (matchingItems.length >= limit) break;
+          }
+        }
+
+        if (matchingItems.length >= limit) break;
+      }
+
+      return matchingItems;
+    } catch (err) {
+      console.error('[PlexAdapter] getItemsByLabel error:', err.message);
+      return [];
+    }
+  }
 }
 
 export default PlexAdapter;

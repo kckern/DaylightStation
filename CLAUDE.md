@@ -317,3 +317,29 @@ When running tests:
 - **Don't guess URLs** - Read from `tests/_fixtures/runtime/urls.mjs`
 
 The test infrastructure is designed to work. If tests fail, debug the actual issue.
+
+### Test Discipline
+
+**Skipping is NOT passing.** Tests must either pass or fail - never silently skip assertions:
+
+- **No "vacuously true" results** - If a precondition fails, return false and let assertions fail
+- **No conditional assertion skipping** - Don't wrap expects in `if (configured)` blocks
+- **Fail fast on infrastructure issues** - If Plex/API is down, fail immediately in `beforeAll`
+- **No fallback to "it works anyway"** - If a test can't set up its scenario, it fails
+
+Bad pattern (cavalier):
+```javascript
+if (!challengeAppeared) {
+  console.log('NOTE: Skipping assertions');
+  return { success: true }; // WRONG: hides failures
+}
+```
+
+Good pattern (disciplined):
+```javascript
+if (!challengeAppeared) {
+  console.error('ERROR: Challenge did not appear');
+  return { challengeAppeared: false }; // Let assertion fail
+}
+expect(result.challengeAppeared).toBe(true); // Will fail with clear message
+```
