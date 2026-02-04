@@ -139,7 +139,7 @@ test.describe('ContentSearchCombobox - Browse Mode', () => {
       if (didDrillIn) {
         // Breadcrumb area should have some text
         const breadcrumbArea = dropdown.locator('text=/').first();
-        // Breadcrumbs use " / " separator
+        await expect(breadcrumbArea).toBeVisible();
       }
     }
   });
@@ -180,6 +180,12 @@ test.describe('ContentSearchCombobox - Browse Mode', () => {
     }
 
     // Should be back at search results or root
+    // Verify we returned to initial state (no back button visible means we're at root/search)
+    if (drillCount > 0) {
+      const backButton = ComboboxLocators.backButton(page);
+      const backVisible = await backButton.isVisible().catch(() => false);
+      expect(backVisible).toBe(false);
+    }
   });
 
   test('clicking parent title navigates to parent', async ({ page }) => {
