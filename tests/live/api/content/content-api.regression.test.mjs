@@ -15,14 +15,14 @@
 import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
+import { getDataPath } from '../../../_lib/configHelper.mjs';
 
 // Backend port from environment or default
 const BACKEND_PORT = process.env.BACKEND_PORT || 3112;
 const BASE_URL = `http://localhost:${BACKEND_PORT}/api/v1`;
 
-// Data path discovery
-const DATA_PATH = process.env.DAYLIGHT_DATA_PATH ||
-  '/Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStation/data';
+// Data path from config helper (SSOT)
+const DATA_PATH = getDataPath();
 
 /**
  * Load YAML file safely
