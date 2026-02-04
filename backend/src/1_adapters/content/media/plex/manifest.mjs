@@ -5,6 +5,10 @@ export default {
   capability: 'media',
   displayName: 'Plex Media Server',
 
+  // Declare supported content types
+  mediaTypes: ['video', 'audio', 'photo'],
+  libraryTypes: ['movie', 'show', 'music', 'photo'],
+
   adapter: () => import('./PlexAdapter.mjs'),
 
   configSchema: {
