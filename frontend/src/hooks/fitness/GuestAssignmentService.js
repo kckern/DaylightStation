@@ -87,6 +87,27 @@ export class GuestAssignmentService {
       return { ok: false, code: 'session-missing', message: 'User manager is not available.' };
     }
 
+    // Validate one-device-per-user constraint
+    const newProfileId = value.profileId || value.metadata?.profileId;
+    const allowMultiAssign = value.allowWhileAssigned || value.metadata?.allowWhileAssigned;
+
+    if (newProfileId && this.ledger && !allowMultiAssign) {
+      for (const [existingDeviceId, entry] of this.ledger.entries.entries()) {
+        if (existingDeviceId === key) continue; // Skip current device (update scenario)
+
+        const existingProfileId = entry?.metadata?.profileId || entry?.occupantId;
+        const existingAllowMulti = entry?.allowWhileAssigned || entry?.metadata?.allowWhileAssigned;
+
+        if (existingProfileId === newProfileId && !existingAllowMulti) {
+          return {
+            ok: false,
+            code: 'user-already-assigned',
+            message: `User ${value.name || newProfileId} is already assigned to device ${existingDeviceId}`
+          };
+        }
+      }
+    }
+
     // Check for previous assignment on this device (Issue #4 remediation)
     // Log GUEST_REPLACED event when a different guest takes over
     const previousEntry = this.ledger?.get?.(key);

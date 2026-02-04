@@ -97,4 +97,113 @@ describe('GuestAssignmentService', () => {
       );
     });
   });
+
+  describe('one-device-per-user constraint', () => {
+    test('should reject assignment if user is already assigned to another device', () => {
+      // Arrange: Bob is already assigned to device-2
+      const existingEntries = new Map([
+        ['device-2', {
+          deviceId: 'device-2',
+          metadata: { profileId: 'bob-123' },
+          occupantId: 'bob-123'
+        }]
+      ]);
+
+      const mockLedger = {
+        get: jest.fn().mockReturnValue(null),
+        entries: existingEntries
+      };
+      const mockUserManager = { assignGuest: jest.fn() };
+      const mockSession = {
+        userManager: mockUserManager,
+        createSessionEntity: jest.fn(),
+        eventJournal: { log: jest.fn() }
+      };
+
+      const service = new GuestAssignmentService({ session: mockSession, ledger: mockLedger });
+
+      // Act: Try to assign Bob to device-1 (he's already on device-2)
+      const result = service.assignGuest('device-1', {
+        name: 'Bob',
+        profileId: 'bob-123',
+        baseUserName: 'Alice'
+      });
+
+      // Assert: Should reject with user-already-assigned error
+      expect(result.ok).toBe(false);
+      expect(result.code).toBe('user-already-assigned');
+      expect(result.message).toContain('device-2');
+      expect(mockUserManager.assignGuest).not.toHaveBeenCalled();
+    });
+
+    test('should allow assignment if user has allowWhileAssigned flag', () => {
+      // Arrange: Generic "Guest" is assigned to device-2 but has allowWhileAssigned
+      const existingEntries = new Map([
+        ['device-2', {
+          deviceId: 'device-2',
+          metadata: { profileId: 'guest', allowWhileAssigned: true },
+          occupantId: 'guest'
+        }]
+      ]);
+
+      const mockLedger = {
+        get: jest.fn().mockReturnValue(null),
+        entries: existingEntries
+      };
+      const mockUserManager = { assignGuest: jest.fn() };
+      const mockSession = {
+        userManager: mockUserManager,
+        createSessionEntity: jest.fn().mockReturnValue({ entityId: 'entity-new' }),
+        eventJournal: { log: jest.fn() }
+      };
+
+      const service = new GuestAssignmentService({ session: mockSession, ledger: mockLedger });
+
+      // Act: Assign "Guest" to device-1 (allowWhileAssigned should bypass)
+      const result = service.assignGuest('device-1', {
+        name: 'Guest',
+        profileId: 'guest',
+        allowWhileAssigned: true,
+        baseUserName: 'Alice'
+      });
+
+      // Assert: Should succeed
+      expect(result.ok).toBe(true);
+      expect(mockUserManager.assignGuest).toHaveBeenCalled();
+    });
+
+    test('should allow re-assignment to same device (update scenario)', () => {
+      // Arrange: Bob is already on device-1, we're updating his assignment
+      const existingEntries = new Map([
+        ['device-1', {
+          deviceId: 'device-1',
+          metadata: { profileId: 'bob-123' },
+          occupantId: 'bob-123'
+        }]
+      ]);
+
+      const mockLedger = {
+        get: jest.fn().mockReturnValue(existingEntries.get('device-1')),
+        entries: existingEntries
+      };
+      const mockUserManager = { assignGuest: jest.fn() };
+      const mockSession = {
+        userManager: mockUserManager,
+        createSessionEntity: jest.fn().mockReturnValue({ entityId: 'entity-new' }),
+        eventJournal: { log: jest.fn() }
+      };
+
+      const service = new GuestAssignmentService({ session: mockSession, ledger: mockLedger });
+
+      // Act: Re-assign Bob to same device (update metadata)
+      const result = service.assignGuest('device-1', {
+        name: 'Bob',
+        profileId: 'bob-123',
+        baseUserName: 'Alice'
+      });
+
+      // Assert: Should succeed (same device)
+      expect(result.ok).toBe(true);
+    });
+  });
 });
