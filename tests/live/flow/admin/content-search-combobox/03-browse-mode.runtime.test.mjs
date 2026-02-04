@@ -52,8 +52,7 @@ test.describe('ContentSearchCombobox - Browse Mode', () => {
       let containerFound = false;
       for (let i = 0; i < count; i++) {
         const option = options.nth(i);
-        const chevron = option.locator('svg').last(); // Chevron is usually last icon
-        const hasChevron = await chevron.isVisible().catch(() => false);
+        const hasChevron = await ComboboxLocators.optionChevron(option).isVisible().catch(() => false);
 
         if (hasChevron) {
           containerFound = true;
@@ -77,9 +76,11 @@ test.describe('ContentSearchCombobox - Browse Mode', () => {
         }
       }
 
-      if (!containerFound) {
-        console.log('No container found in search results - skipping drill-down test');
-      }
+      // Fail explicitly if no container was found to test
+      expect(containerFound, 'Search should return at least one container to test drill-down').toBe(true);
+    } else {
+      // If no results at all, fail explicitly
+      expect(count, 'Search should return results').toBeGreaterThan(0);
     }
   });
 
@@ -103,14 +104,19 @@ test.describe('ContentSearchCombobox - Browse Mode', () => {
       const didDrillIn = await backButton.isVisible().catch(() => false);
 
       if (didDrillIn) {
-        const callsBeforeBack = harness.apiCalls.length;
-
         // Click back
         await ComboboxActions.goBack(page);
-
-        // Should have made another API call or returned to search results
         await page.waitForTimeout(500);
+
+        // Verify we can still see the dropdown (navigation didn't break)
+        const dropdown = ComboboxLocators.dropdown(page);
+        await expect(dropdown).toBeVisible();
+      } else {
+        // If we couldn't drill in, still pass - first item might be a leaf
+        console.log('First option was not a container - back navigation not testable');
       }
+    } else {
+      expect(count, 'Search should return results').toBeGreaterThan(0);
     }
   });
 
