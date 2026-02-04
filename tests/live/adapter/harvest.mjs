@@ -20,7 +20,7 @@
 
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { configService, initConfigService } from '#backend/src/0_system/config/index.mjs';
+import { configService, initConfigService, userDataService } from '#backend/src/0_system/config/index.mjs';
 import { createHarvesterServices } from '#backend/src/0_system/bootstrap.mjs';
 import { loadYaml, saveYaml } from '#backend/src/0_system/utils/FileIO.mjs';
 import axios from 'axios';
@@ -360,6 +360,7 @@ async function main() {
       io,
       httpClient: axios,
       configService,
+      userDataService,
       dataRoot: dataPath,
       logger: args.verbose ? console : { info: () => {}, debug: () => {}, warn: () => {}, error: console.error },
     });
