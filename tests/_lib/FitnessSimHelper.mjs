@@ -93,6 +93,10 @@ export class FitnessSimHelper {
     return this.page.evaluate(() => window.__fitnessSimController.stopAll());
   }
 
+  async clearAllDevices() {
+    return this.page.evaluate(() => window.__fitnessSimController.clearAllDevices());
+  }
+
   // ═══════════════════════════════════════════════════════════════
   // Governance
   // ═══════════════════════════════════════════════════════════════

@@ -428,6 +428,27 @@ export class FitnessSimulationController {
   }
 
   /**
+   * Force-remove all devices from the device manager (for test cleanup)
+   * This bypasses normal timeout behavior
+   */
+  clearAllDevices() {
+    const session = this.getSession?.();
+    if (!session?.deviceManager) {
+      return { ok: false, error: 'No device manager available' };
+    }
+    const devices = session.deviceManager.getAllDevices();
+    const removed = [];
+    devices.forEach(d => {
+      if (d.type === 'heart_rate') {
+        session.deviceManager.removeDevice(d.deviceId);
+        removed.push(d.deviceId);
+      }
+    });
+    this._notifyStateChange();
+    return { ok: true, removed, count: removed.length };
+  }
+
+  /**
    * Get current governance state
    */
   getGovernanceState() {
