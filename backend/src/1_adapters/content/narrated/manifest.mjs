@@ -4,6 +4,8 @@ export default {
   provider: 'narrated',
   capability: 'narrated',
   displayName: 'Follow-Along Narrated Content (Scripture, Talks, Poetry)',
+  mediaTypes: ['audio'],
+  playableType: 'narrated',
 
   // Narrated adapter is implicitly available (no external dependencies)
   implicit: true,

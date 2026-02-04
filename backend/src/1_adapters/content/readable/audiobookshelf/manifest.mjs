@@ -4,6 +4,8 @@ export default {
   provider: 'abs',
   capability: 'readable',
   displayName: 'Audiobookshelf',
+  mediaTypes: ['audio'],
+  contentTypes: ['audiobook', 'podcast'],
 
   adapter: () => import('./AudiobookshelfAdapter.mjs'),
 

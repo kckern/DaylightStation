@@ -4,6 +4,8 @@ export default {
   provider: 'singing',
   capability: 'singing',
   displayName: 'Sing-Along Content (Hymns, Primary Songs)',
+  mediaTypes: ['audio'],
+  playableType: 'singing',
 
   // Singing adapter is implicitly available (no external dependencies)
   implicit: true,
