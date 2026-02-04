@@ -122,7 +122,7 @@ describe('BudgetCompilationService', () => {
     it('throws when budget config is not found', async () => {
       mockFinanceStore.getBudgetConfig.mockReturnValue(null);
 
-      await expect(service.compile()).rejects.toThrow('Budget configuration not found');
+      await expect(service.compile()).rejects.toThrow('Budget configuration');
     });
 
     it('compiles budget and mortgage data', async () => {

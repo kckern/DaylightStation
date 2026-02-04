@@ -89,12 +89,11 @@ export class TransactionCategorizationService {
 
         if (result.success) {
           // Update transaction in external system
-          await this.#transactionSource.updateTransaction(
-            txn.id,
-            result.friendlyName,
-            result.category,
-            result.memo
-          );
+          await this.#transactionSource.updateTransaction(txn.id, {
+            description: result.friendlyName,
+            tags: result.category,
+            memo: result.memo
+          });
 
           // Update local transaction object
           txn.tagNames = [result.category];

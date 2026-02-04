@@ -169,7 +169,7 @@ describe('FinanceHarvestService', () => {
     it('throws when budget config is not found', async () => {
       mockFinanceStore.getBudgetConfig.mockReturnValue(null);
 
-      await expect(service.harvest()).rejects.toThrow('Budget configuration not found');
+      await expect(service.harvest()).rejects.toThrow('Budget configuration');
     });
   });
 

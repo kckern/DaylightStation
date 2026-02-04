@@ -106,9 +106,11 @@ describe('TransactionCategorizationService', () => {
       expect(result.processed[0].friendlyName).toBe('Walmart');
       expect(mockTransactionSource.updateTransaction).toHaveBeenCalledWith(
         '1',
-        'Walmart',
-        'Groceries',
-        'Weekly shopping'
+        {
+          description: 'Walmart',
+          tags: 'Groceries',
+          memo: 'Weekly shopping'
+        }
       );
     });
 

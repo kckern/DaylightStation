@@ -41,3 +41,13 @@ npm run test:live -- --env=test
 # Production (read-only)
 npm run test:live -- --env=prod
 ```
+
+## Live Adapter Tests as CLI Tools
+
+Live adapter tests (`tests/live/adapter/`) connect to real APIs and can be used as CLI utilities for manual operations like backfilling and data maintenance.
+
+See [`tests/live/adapter/README.md`](./live/adapter/README.md) for:
+- Running the test harness with `--backfill-since`
+- Using finance tests to categorize transactions
+- Environment variables for dry-run and batch modes
+- Writing new live tests that serve as CLI tools

@@ -414,6 +414,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     configService,
     // Prefer config-driven adapter from integration system (use .has() to avoid NoOp)
     buxferAdapter: householdAdapters?.has?.('finance') ? householdAdapters.get('finance') : null,
+    // AI gateway for transaction categorization
+    aiGateway: householdAdapters?.has?.('ai') ? householdAdapters.get('ai') : null,
     // Legacy fallback
     buxfer: buxferAuth?.email && buxferAuth?.password ? {
       email: buxferAuth.email,
