@@ -422,4 +422,28 @@ This affects:
 
 ### Status
 
-Investigation paused. The core `group_label` bug fix (checking `occupantType === 'guest'`) is correct but cannot be verified until this device count discrepancy is resolved.
+**Fixed (2026-02-03):** The device count discrepancy was resolved by filtering active HR devices.
+
+**Primary Fix:** Filter active HR devices by both `!inactiveSince` AND `heartRate > 0`
+
+Files changed:
+- `frontend/src/hooks/fitness/ParticipantRoster.js`: Lines 115-122
+- `frontend/src/context/FitnessContext.jsx`: Lines 1218-1226
+
+```javascript
+// Before: Counted all HR devices regardless of state
+const preferGroupLabels = heartRateDevices.length > 1;
+
+// After: Only count actively broadcasting devices with HR data
+const activeHeartRateDevices = heartRateDevices.filter(d =>
+  !d.inactiveSince && Number.isFinite(d.heartRate) && d.heartRate > 0
+);
+const preferGroupLabels = activeHeartRateDevices.length > 1;
+```
+
+**Test Verification Challenge:** The test (`group-label-fallback.runtime.test.mjs`) requires browser session isolation. WebSocket broadcasts HR data to ALL connected clients, so the test browser receives device data from other browser windows with active simulators.
+
+**To verify the fix:**
+- Close all other browser windows with the fitness app open
+- Or stop all simulators in other browser tabs before running the test
+- Debug logs confirm: `preferGroupLabels: false` and `result: "KC Kern"` when properly isolated
