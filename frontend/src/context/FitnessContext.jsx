@@ -1251,27 +1251,13 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     const shouldPrefer = typeof preferGroupLabel === 'boolean'
       ? preferGroupLabel
       : (preferGroupLabels && Boolean(baseGroupLabel));
-    const result = resolveDisplayLabel({
+    return resolveDisplayLabel({
       name,
       groupLabel: baseGroupLabel,
       preferGroupLabel: shouldPrefer,
       fallback: 'Participant'
     });
-    // Debug: Log when group label is used for kckern
-    if (lookupKey === 'kckern' && baseGroupLabel) {
-      playbackLog('fitness-context', {
-        event: 'getDisplayLabel_kckern',
-        name,
-        userId,
-        baseGroupLabel,
-        preferGroupLabels,
-        shouldPrefer,
-        result,
-        activeHrCount: activeHeartRateDevices?.length || 0
-      }, { level: 'info', context: { source: 'FitnessContext' } });
-    }
-    return result;
-  }, [userGroupLabelMap, preferGroupLabels, activeHeartRateDevices?.length]);
+  }, [userGroupLabelMap, preferGroupLabels]);
 
   const zoneRankMap = React.useMemo(() => {
     if (!Array.isArray(zoneConfig) || zoneConfig.length === 0) return {};
