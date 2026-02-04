@@ -1,211 +1,84 @@
 # Live Adapter Tests
 
-Live tests that connect to real external APIs. These tests serve a dual purpose:
+Live tests for external API harvesters. Uses the same code path as production cron jobs.
 
-1. **Integration Testing** - Verify adapters work with real services
-2. **CLI Utilities** - Manual harvesting, backfilling, and data operations
-
-## Philosophy
-
-Unlike isolated/unit tests, live tests **do not use mocks**. They connect to real APIs with real credentials and perform real operations. This makes them useful as operational tools, not just test suites.
-
-## Usage
-
-### Running via Harness
+## Quick Start
 
 ```bash
-# Run all live tests
-node tests/live/adapter/harness.mjs
-
-# Run specific service
-node tests/live/adapter/harness.mjs --only=finance
-
-# Skip specific services
-node tests/live/adapter/harness.mjs --skip=gmail,withings
-
-# Backfill mode
-node tests/live/adapter/harness.mjs --backfill-since=2025-01-01
-
-# Dry run (show what would run)
-node tests/live/adapter/harness.mjs --dry-run
-```
-
-### Running Individual Tests
-
-```bash
-# Set data path
 export DAYLIGHT_DATA_PATH=/path/to/data
 
-# Run specific test
-NODE_OPTIONS=--experimental-vm-modules npx jest tests/live/adapter/finance/buxfer-categorization.live.test.mjs
+# CLI: Run all harvesters (smoke test)
+node tests/live/adapter/harvest.mjs
+
+# CLI: Backfill from date
+node tests/live/adapter/harvest.mjs --since=2025-01-01
+
+# CLI: Specific harvesters
+node tests/live/adapter/harvest.mjs --only=strava,withings
+
+# Jest: Run all tests via harness
+node tests/live/adapter/harness.mjs
+
+# Jest: Single harvester
+NODE_OPTIONS=--experimental-vm-modules npx jest tests/live/adapter/harvesters/strava.live.test.mjs
 ```
 
-## Finance: Buxfer Categorization
+## Harvesters (15)
 
-The `buxfer-categorization.live.test.mjs` test categorizes untagged transactions using AI.
+| Category | Harvesters | Backfill Support |
+|----------|------------|------------------|
+| Productivity | todoist, clickup, github | Yes (daysBack) |
+| Social | lastfm, reddit, letterboxd, goodreads, foursquare | lastfm only |
+| Communication | gmail, gcal | gcal only |
+| Finance | buxfer, shopping | buxfer only |
+| Fitness | strava, withings | strava only |
+| Other | weather | No |
 
-### Dry Run (Preview)
+## CLI Options
 
-```bash
-DRY_RUN=true \
-DAYLIGHT_DATA_PATH=/path/to/data \
-NODE_OPTIONS=--experimental-vm-modules \
-npx jest tests/live/adapter/finance/buxfer-categorization.live.test.mjs \
-  --testNamePattern="batch categorizes"
-```
+| Option | Description |
+|--------|-------------|
+| `--only=a,b` | Run only specified harvesters |
+| `--skip=a,b` | Skip specified harvesters |
+| `--since=YYYY-MM-DD` | Backfill from date |
+| `--dry-run` | Show what would run |
+| `--json` | Output JSON for programmatic use |
+| `--verbose` | Detailed logging |
 
-Shows which transactions would be categorized without making changes.
+## Test Discipline
 
-### Run Batch Categorization
+- **auth_error** = credentials missing or expired → FIX REQUIRED
+- **error** = API failure → triggers circuit breaker
+- **cooldown** = circuit breaker open → ACCEPTABLE (will retry)
+- **pass** = harvest succeeded
 
-```bash
-BATCH_CATEGORIZE=true \
-DAYLIGHT_DATA_PATH=/path/to/data \
-NODE_OPTIONS=--experimental-vm-modules \
-npx jest tests/live/adapter/finance/buxfer-categorization.live.test.mjs \
-  --testNamePattern="batch categorizes"
-```
-
-Categorizes all untagged transactions from budget accounts via OpenAI and updates Buxfer.
-
-### Categorize Single Transaction
-
-```bash
-TEST_TRANSACTION_ID=235351917 \
-DAYLIGHT_DATA_PATH=/path/to/data \
-NODE_OPTIONS=--experimental-vm-modules \
-npx jest tests/live/adapter/finance/buxfer-categorization.live.test.mjs \
-  --testNamePattern="categorizes untagged"
-```
-
-## Environment Variables
-
-| Variable | Description |
-|----------|-------------|
-| `DAYLIGHT_DATA_PATH` | Path to data directory (required) |
-| `DRY_RUN=true` | Preview mode - show what would happen |
-| `BATCH_CATEGORIZE=true` | Enable batch processing |
-| `TEST_TRANSACTION_ID` | Target specific transaction |
-| `BACKFILL_SINCE` | Date for backfill operations (YYYY-MM-DD) |
-
-## Credentials
-
-Live tests read credentials from ConfigService:
-
-- **Buxfer**: `getUserAuth('buxfer')` or `getHouseholdAuth('buxfer')` → `{email, password}`
-- **OpenAI**: `getSecret('OPENAI_API_KEY')`
-- **Google**: `getUserAuth('google', username)` → `{refresh_token}`
-
-Credentials are stored in household auth config, not hardcoded.
-
-## Test Discipline: Skipping is NOT Passing
-
-**CRITICAL**: Live tests must FAIL or explicitly SKIP - never silently pass.
-
-All live tests use the precondition helpers from `test-preconditions.mjs`:
-
-```javascript
-import { requireDataPath, requireSecret, requireConfig, SkipTestError } from '../test-preconditions.mjs';
-
-describe('My Live Test', () => {
-  beforeAll(() => {
-    // FAIL if data path not configured
-    const dataPath = requireDataPath(getDataPath);
-
-    // FAIL if secret not configured
-    const apiKey = requireSecret('MY_API_KEY', configService);
-  });
-
-  it('does something', async () => {
-    // FAIL if config missing
-    requireConfig('Head of household', username);
-
-    const result = await doThing();
-
-    // Explicit skip for acceptable conditions (rate limiting, etc.)
-    if (result?.skipped) {
-      throw new SkipTestError(`Skipped: ${result.reason}`);
-    }
-
-    // FAIL on errors - don't silently pass
-    if (result?.error) {
-      throw new Error(`[ASSERTION FAILED] Error: ${result.error}`);
-    }
-
-    // Make real assertions
-    expect(result).toBeTruthy();
-  });
-});
-```
-
-**Anti-patterns to avoid:**
-
-```javascript
-// BAD: Silent pass on missing config
-if (!credentials) {
-  console.log('Not configured');
-  return;  // This PASSES the test!
-}
-
-// GOOD: Explicit failure
-if (!credentials) {
-  throw new Error('[PRECONDITION FAILED] Credentials not configured');
-}
-```
-
-## Writing New Live Tests
-
-1. **No mocks** - Connect to real APIs
-2. **Fail on missing preconditions** - Use `requireAuth`, `requireSecret`, `requireConfig`
-3. **Explicit skips only** - Use `SkipTestError` for acceptable skip conditions (rate limits, etc.)
-4. **Require explicit flags** - Don't auto-run destructive operations
-5. **Support dry-run** - Always preview before mutating
-6. **Scope appropriately** - Only process configured accounts/users
-7. **Rate limit** - Add delays between API calls
-8. **Log clearly** - Show what's happening for CLI usage
-
-Example pattern:
-
-```javascript
-it('batch processes items', async () => {
-  const dryRun = process.env.DRY_RUN === 'true';
-  const runBatch = process.env.BATCH_PROCESS === 'true';
-
-  if (!dryRun && !runBatch) {
-    console.log('Set DRY_RUN=true to preview or BATCH_PROCESS=true to run');
-    return;
-  }
-
-  const items = await fetchItems();
-
-  if (dryRun) {
-    console.log('=== DRY RUN ===');
-    items.forEach(i => console.log(`Would process: ${i.id}`));
-    return;
-  }
-
-  // Actual processing with rate limiting
-  for (const item of items) {
-    await processItem(item);
-    await sleep(1000); // Rate limit
-  }
-});
-```
+Tests fail on `auth_error` or `error`. Tests pass on `pass`, `cooldown`, `rate_limited`.
 
 ## Directory Structure
 
 ```
 tests/live/adapter/
-├── harness.mjs           # Test runner with quarantine behavior
-├── harness.config.mjs    # Timeouts and service config
-├── README.md             # This file
-├── finance/
-│   ├── buxfer-categorization.live.test.mjs  # CLI for transaction tagging
-│   ├── budget.live.test.mjs
-│   └── shopping.live.test.mjs
-├── fitness/
-│   └── strava.live.test.mjs
-├── music/
-│   └── lastfm.live.test.mjs
-└── ...
+├── harvest.mjs              # CLI tool
+├── harness.mjs              # Jest orchestrator
+├── harness.config.mjs       # Timeouts
+├── test-preconditions.mjs   # Helpers
+├── README.md
+└── harvesters/
+    ├── _test-helper.mjs     # Shared test utilities
+    ├── _jobs-config.live.test.mjs  # Cron validation
+    ├── todoist.live.test.mjs
+    ├── clickup.live.test.mjs
+    ├── github.live.test.mjs
+    ├── lastfm.live.test.mjs
+    ├── reddit.live.test.mjs
+    ├── letterboxd.live.test.mjs
+    ├── goodreads.live.test.mjs
+    ├── foursquare.live.test.mjs
+    ├── gmail.live.test.mjs
+    ├── gcal.live.test.mjs
+    ├── buxfer.live.test.mjs
+    ├── shopping.live.test.mjs
+    ├── strava.live.test.mjs
+    ├── withings.live.test.mjs
+    └── weather.live.test.mjs
 ```
