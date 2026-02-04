@@ -252,7 +252,12 @@ export class GovernanceEngine {
         },
         activeChallenge: this.challengeState?.activeChallenge?.id || null,
         videoLocked: this.challengeState?.videoLocked || false,
-        mediaId: this.media?.id || null
+        mediaId: this.media?.id || null,
+        // Expose internal state for test diagnostics
+        satisfiedOnce: this.meta?.satisfiedOnce || false,
+        userZoneMap: { ...(this._latestInputs?.userZoneMap || {}) },
+        activeParticipants: [...(this._latestInputs?.activeParticipants || [])],
+        zoneRankMap: { ...(this._latestInputs?.zoneRankMap || {}) }
       };
     }
   }

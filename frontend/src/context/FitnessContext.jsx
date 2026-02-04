@@ -1215,7 +1215,15 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
 
   // ==========================================================================
 
-  const preferGroupLabels = React.useMemo(() => heartRateDevices.length > 1, [heartRateDevices.length]);
+  // Only count ACTIVE HR devices (broadcasting with actual HR data)
+  // This prevents pre-populated/inactive devices from triggering group label mode
+  const activeHeartRateDevices = React.useMemo(() =>
+    heartRateDevices.filter(d =>
+      !d.inactiveSince && Number.isFinite(d.heartRate) && d.heartRate > 0
+    ),
+    [heartRateDevices]
+  );
+  const preferGroupLabels = React.useMemo(() => activeHeartRateDevices.length > 1, [activeHeartRateDevices.length]);
 
   // Log when participant count crosses the threshold for group label display
   const prevPreferGroupLabelsRef = useRef(preferGroupLabels);
@@ -1225,12 +1233,13 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
         event: 'prefer_group_labels_changed',
         from: prevPreferGroupLabelsRef.current,
         to: preferGroupLabels,
-        heartRateDeviceCount: heartRateDevices.length,
-        participantNames: heartRateDevices.map(d => d.name || d.id).slice(0, 5)
+        activeHeartRateDeviceCount: activeHeartRateDevices.length,
+        totalHeartRateDeviceCount: heartRateDevices.length,
+        participantNames: activeHeartRateDevices.map(d => d.name || d.id).slice(0, 5)
       }, { level: 'info', context: { source: 'FitnessContext' } });
       prevPreferGroupLabelsRef.current = preferGroupLabels;
     }
-  }, [preferGroupLabels, heartRateDevices]);
+  }, [preferGroupLabels, activeHeartRateDevices, heartRateDevices.length]);
 
   const getDisplayLabel = React.useCallback((name, { groupLabelOverride, preferGroupLabel, userId } = {}) => {
     if (!name) return null;
@@ -1242,13 +1251,27 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     const shouldPrefer = typeof preferGroupLabel === 'boolean'
       ? preferGroupLabel
       : (preferGroupLabels && Boolean(baseGroupLabel));
-    return resolveDisplayLabel({
+    const result = resolveDisplayLabel({
       name,
       groupLabel: baseGroupLabel,
       preferGroupLabel: shouldPrefer,
       fallback: 'Participant'
     });
-  }, [userGroupLabelMap, preferGroupLabels]);
+    // Debug: Log when group label is used for kckern
+    if (lookupKey === 'kckern' && baseGroupLabel) {
+      playbackLog('fitness-context', {
+        event: 'getDisplayLabel_kckern',
+        name,
+        userId,
+        baseGroupLabel,
+        preferGroupLabels,
+        shouldPrefer,
+        result,
+        activeHrCount: activeHeartRateDevices?.length || 0
+      }, { level: 'info', context: { source: 'FitnessContext' } });
+    }
+    return result;
+  }, [userGroupLabelMap, preferGroupLabels, activeHeartRateDevices?.length]);
 
   const zoneRankMap = React.useMemo(() => {
     if (!Array.isArray(zoneConfig) || zoneConfig.length === 0) return {};
@@ -1885,7 +1908,10 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
         logFitnessContext('snapshot-error', { error: error?.message || String(error) }, { level: 'warn' });
       }
     }
-  }, [users, fitnessDevices, fitnessPlayQueue, participantRoster, zoneConfig]);
+  // BUGFIX: Add version to deps - fitnessDevices is a Map reference that doesn't change
+  // when items are updated. version is incremented by forceUpdate/batchedForceUpdate
+  // when WebSocket data arrives, so this ensures updateSnapshot runs with fresh data.
+  }, [users, fitnessDevices, fitnessPlayQueue, participantRoster, zoneConfig, version]);
 
   // Legacy governance logic removed (delegated to GovernanceEngine)
 
