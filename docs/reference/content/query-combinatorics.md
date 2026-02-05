@@ -748,43 +748,72 @@ All routes are prefixed with `/api/v1/`. The primary content access routes are:
 
 | Route | Purpose | Returns |
 |-------|---------|---------|
-| `/item/:source/*` | Unified item access | Item or container contents |
-| `/content/item/:source/*` | Single item info | Item metadata |
-| `/content/playables/:source/*` | Resolve to playables | Playable items array |
-| `/content/progress/:source/*` | Update watch progress | Progress confirmation |
-| `/play/:source/*` | Play info with resume | Playable with resume position |
+| `/info/:source/:id` | Item metadata | Metadata, capabilities[] |
+| `/display/:source/:id` | Displayable image | Image redirect or stream |
+| `/play/:source/:id` | Play info with resume | Playable with resume position |
+| `/list/:source/:id` | List container contents | Children array with action objects |
+| `/read/:source/:id` | Readable content | Reader content, format info |
 | `/play/log` | Log playback progress | Updated progress state |
-| `/list/:source/*` | List container contents | Items array (deprecated) |
 | `/content/query/search` | Unified search | Search results |
 | `/content/query/list` | List containers | Containers array |
 
-### Primary Routes: `/api/v1/item/:source/*`
+### Deprecated Routes (use action routes instead)
 
-The unified item endpoint handles most content access patterns.
+| Deprecated Route | Replacement |
+|------------------|-------------|
+| `/item/:source/:id` | `/info/:source/:id` |
+| `/content/item/:source/*` | `/info/:source/:id` |
+| `/content/:source/image/:id` | `/display/:source/:id` |
+| `/content/:source/info/:id` | `/info/:source/:id` |
+| `/content/playables/:source/*` | `/list/:source/:id` (filter by playable) |
 
-**Path Parameters:**
-- `:source` - Content source (`plex`, `narrated`, `singing`, `folder`, `local`, `filesystem`)
-- `*` - Local ID within source (path-like, may contain `/`)
+### Action Routes
 
-**Path Modifiers (appended to path):**
-- `/playable` - Resolve container to playable items only
-- `/shuffle` - Return items in random order
-- `/recent_on_top` - Sort by recent menu selection time
+The action routes are intent-driven endpoints that map directly to query-combinatorics actions.
 
-**Query Parameters:**
+**GET /api/v1/info/:source/:id**
+
+Returns metadata without assuming intent. Use when you need to inspect capabilities before acting.
+
+```
+GET /api/v1/info/plex/672445                    # Get item metadata and capabilities
+GET /api/v1/info/singing/hymn/123               # Hymn metadata
+```
+
+**GET /api/v1/display/:source/:id**
+
+Returns or redirects to displayable image. Aggressive caching (images are static).
+
+```
+GET /api/v1/display/plex/672445                 # Thumbnail for Plex item
+GET /api/v1/display/immich/abc-def-123          # Photo from Immich
+```
+
+**GET /api/v1/list/:source/:id**
+
+Returns children of a container with action objects.
+
+```
+GET /api/v1/list/plex/672445                    # Container children
+GET /api/v1/list/folder/watchlist/FHE           # Watchlist items
+```
+
+**Query Parameters (for /list/):**
 - `?select=<strategy>` - Use ItemSelectionService to pick item from container
   - `select=watchlist` - Watchlist strategy (priority, skip watched, filter by days)
   - `select=album` - Album strategy (track order)
   - `select=sequential` - Sequential next item
+- `?playable=true` - Filter to playable items only
+- `?shuffle=true` - Return items in random order
 
 **Examples:**
 ```
-GET /api/v1/item/plex/672445                    # Container info
-GET /api/v1/item/plex/672445/playable           # Playable episodes only
-GET /api/v1/item/plex/672445?select=watchlist   # Next unwatched item
-GET /api/v1/item/narrated/scripture/nt?select=watchlist  # Next unfinished NT chapter
-GET /api/v1/item/singing/hymn/123               # Hymn with synced content
-GET /api/v1/item/folder/watchlist/FHE           # Watchlist items
+GET /api/v1/info/plex/672445                    # Container info
+GET /api/v1/list/plex/672445?playable=true      # Playable episodes only
+GET /api/v1/list/plex/672445?select=watchlist   # Next unwatched item
+GET /api/v1/list/narrated/scripture/nt?select=watchlist  # Next unfinished NT chapter
+GET /api/v1/info/singing/hymn/123               # Hymn with synced content
+GET /api/v1/list/folder/watchlist/FHE           # Watchlist items
 ```
 
 ### Play Routes: `/api/v1/play/*`

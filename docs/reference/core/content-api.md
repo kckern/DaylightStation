@@ -267,11 +267,31 @@ All endpoints return errors in this format:
 
 ---
 
-## Unified Item API (New)
+## Action Routes (Preferred)
 
-The Item API (`/api/v1/item/:source/*`) is the **preferred** endpoint for all content sources, providing a unified interface that works for Plex, filesystem, singing, reading, and any future source.
+The action routes are intent-driven endpoints that express what the client wants to do. These are the **preferred** endpoints for content access.
 
-### GET /api/v1/item/:source/*
+| Route | Purpose | Returns |
+|-------|---------|---------|
+| `/api/v1/info/:source/:id` | Item metadata | Metadata, capabilities[] |
+| `/api/v1/display/:source/:id` | Displayable image | Image redirect or stream |
+| `/api/v1/play/:source/:id` | Play info with resume | Playable with resume position |
+| `/api/v1/list/:source/:id` | List container contents | Children array |
+| `/api/v1/read/:source/:id` | Readable content | Reader content, format info |
+
+See [Action Routes Reference](../content/action-routes.md) for full documentation.
+
+---
+
+## Unified Item API (Deprecated)
+
+> **Note:** The Item API is deprecated. Use action routes above instead:
+> - `/api/v1/item/:source/:id` → `/api/v1/info/:source/:id`
+> - `/api/v1/item/:source/:id/playable` → `/api/v1/list/:source/:id?playable=true`
+
+The Item API (`/api/v1/item/:source/*`) provides a unified interface that works for Plex, filesystem, singing, reading, and any future source.
+
+### GET /api/v1/item/:source/* (Deprecated)
 
 Get single item or container with optional modifiers.
 
