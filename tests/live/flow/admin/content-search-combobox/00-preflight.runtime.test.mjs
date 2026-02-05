@@ -54,13 +54,13 @@ test.describe('ContentSearchCombobox - Preflight Checks', () => {
   });
 
   test('list API endpoint is available', async ({ request }) => {
-    const response = await request.get(`${BACKEND_URL}/api/v1/list/media/`, {
+    const response = await request.get(`${BACKEND_URL}/api/v1/item/media/`, {
       timeout: API_TIMEOUT,
     }).catch(e => null);
 
     if (!response) {
       throw new Error(
-        `List API not responding at ${BACKEND_URL}/api/v1/list/media/\n` +
+        `List API not responding at ${BACKEND_URL}/api/v1/item/media/\n` +
         `\n` +
         `The list endpoint is required for browse mode tests.\n`
       );

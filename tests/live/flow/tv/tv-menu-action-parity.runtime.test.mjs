@@ -30,7 +30,7 @@ const TEST_CASES = [
 test.describe('TV Menu Action Parity', () => {
 
   test('API returns correct action types for all test cases', async ({ request }) => {
-    const response = await request.get(`${BASE_URL}/api/v1/list/folder/TVApp`);
+    const response = await request.get(`${BASE_URL}/api/v1/item/folder/TVApp`);
     expect(response.ok()).toBe(true);
 
     const data = await response.json();
@@ -87,7 +87,7 @@ test.describe('TV Menu Action Parity', () => {
   });
 
   test('Queue items include shuffle option when specified', async ({ request }) => {
-    const response = await request.get(`${BASE_URL}/api/v1/list/folder/TVApp`);
+    const response = await request.get(`${BASE_URL}/api/v1/item/folder/TVApp`);
     const data = await response.json();
 
     // Sunday has shuffle: true in YAML
@@ -108,7 +108,7 @@ test.describe('TV Menu Action Parity', () => {
   });
 
   test('Queue items include continuous option when specified', async ({ request }) => {
-    const response = await request.get(`${BASE_URL}/api/v1/list/folder/TVApp`);
+    const response = await request.get(`${BASE_URL}/api/v1/item/folder/TVApp`);
     const data = await response.json();
 
     // Holy Moly has continuous: true in YAML
@@ -121,7 +121,7 @@ test.describe('TV Menu Action Parity', () => {
   });
 
   test('List items use list key not folder key', async ({ request }) => {
-    const response = await request.get(`${BASE_URL}/api/v1/list/folder/TVApp`);
+    const response = await request.get(`${BASE_URL}/api/v1/item/folder/TVApp`);
     const data = await response.json();
 
     // FHE should be list: { list: "FHE" } not list: { folder: "FHE" }

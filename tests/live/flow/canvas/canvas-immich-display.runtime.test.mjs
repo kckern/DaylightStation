@@ -116,7 +116,7 @@ test.describe('Canvas Immich Display', () => {
     // Get photos for the person using the list endpoint
     // discoveredPersonId is "immich:person:uuid", we need just "person:uuid" for the path
     const localId = discoveredPersonId.replace('immich:', '');
-    const url = `${BASE_URL}/api/v1/list/immich/${localId}`;
+    const url = `${BASE_URL}/api/v1/item/immich/${localId}`;
 
     console.log(`\n🔍 Fetching photos for ${discoveredPersonName}`);
     console.log(`   URL: ${url}`);

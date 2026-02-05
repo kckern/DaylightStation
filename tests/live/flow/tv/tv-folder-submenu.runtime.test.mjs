@@ -13,7 +13,7 @@ test.describe('TV Folder Submenu Navigation', () => {
   test('API returns list action for folder items', async ({ request }) => {
     console.log('[TEST] Checking API response for FHE folder...');
 
-    const response = await request.get(`${BASE_URL}/api/v1/list/folder/TVApp`);
+    const response = await request.get(`${BASE_URL}/api/v1/item/folder/TVApp`);
     expect(response.ok()).toBe(true);
 
     const data = await response.json();
