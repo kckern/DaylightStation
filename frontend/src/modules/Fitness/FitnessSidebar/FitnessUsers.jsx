@@ -494,7 +494,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
       const hrValue = Number.isFinite(resolvedVitals?.heartRate)
         ? resolvedVitals.heartRate
         : (Number.isFinite(device.heartRate) ? device.heartRate : null);
-      return Number.isFinite(hrValue) && hrValue > 0 ? `${Math.round(hrValue)}` : '--';
+      return Number.isFinite(hrValue) && hrValue > 0 ? `${Math.round(hrValue)}` : '';
     }
     if (device.type === 'power' && device.power) return `${device.power}`;
     if (device.type === 'cadence' && device.cadence) return `${device.cadence}`;
@@ -509,9 +509,9 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
       if (Number.isFinite(jumps)) {
         return `${Math.round(jumps)}`;
       }
-      return '--';
+      return '';
     }
-    return '--';
+    return '';
   };
 
   const getDeviceUnit = (device) => (CONFIG.devices[device.type] || CONFIG.devices.default).unit;

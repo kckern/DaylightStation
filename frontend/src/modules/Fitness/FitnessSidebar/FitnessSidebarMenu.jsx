@@ -35,6 +35,7 @@ const FitnessSidebarMenu = ({
   const fitnessContext = useFitnessContext();
   const deviceAssignments = fitnessContext?.deviceAssignments || [];
   const getDeviceAssignment = fitnessContext?.getDeviceAssignment;
+  const activeHeartRateParticipants = fitnessContext?.activeHeartRateParticipants || [];
   const [selectedTab, setSelectedTab] = React.useState('friends');
   const playlists = fitnessContext?.plexConfig?.music_playlists || [];
   const suppressDeviceUntilNextReading = fitnessContext?.suppressDeviceUntilNextReading;
@@ -147,6 +148,18 @@ const FitnessSidebarMenu = ({
       if (allowReuse) return;
       blockKeys.forEach((key) => seen.add(key));
     });
+
+    // Bug 06 fix: Exclude users who are actively broadcasting HR data
+    // These users already have their own HR monitor and shouldn't appear as guest options
+    activeHeartRateParticipants.forEach((participant) => {
+      if (!participant?.isActive) return;
+      const blockKeys = [];
+      if (participant.id) blockKeys.push(String(participant.id));
+      if (participant.profileId) blockKeys.push(String(participant.profileId));
+      if (participant.userId) blockKeys.push(String(participant.userId));
+      if (participant.name) blockKeys.push(String(participant.name).toLowerCase());
+      blockKeys.forEach((key) => seen.add(key));
+    });
     
     // Add original owner as first option if a guest is currently assigned
     if (activeAssignment && baseName && (activeAssignment.occupantName || activeAssignment.metadata?.name) !== baseName) {
@@ -207,7 +220,7 @@ const FitnessSidebarMenu = ({
       topOptions,
       filteredOptions: [...withAvatars, ...withoutAvatars]
     };
-    }, [guestCandidates, activeAssignment, baseName, deviceIdStr, selectedTab, deviceAssignments, fitnessContext]);
+    }, [guestCandidates, activeAssignment, baseName, deviceIdStr, selectedTab, deviceAssignments, activeHeartRateParticipants, fitnessContext]);
 
   // Auto-switch to Family tab if Friends tab is empty or all used up
   React.useEffect(() => {

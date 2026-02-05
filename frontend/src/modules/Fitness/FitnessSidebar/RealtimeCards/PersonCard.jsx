@@ -57,10 +57,10 @@ export function PersonCard({
   // Interaction
   onClick,
 }) {
-  // Format heart rate value
+  // Format heart rate value - show blank for invalid/zero values
   const hrValue = Number.isFinite(heartRate) && heartRate > 0
     ? `${Math.round(heartRate)}`
-    : '--';
+    : '';
 
   // Build zone badge if needed
   const zoneBadge = showZoneBadge ? (() => {

@@ -29,11 +29,20 @@ async function searchContent(text, options = {}) {
     ...(options.source && { source: options.source }),
   });
 
-  const response = await fetch(`${API_BASE}/api/v1/content/query/search?${params}`);
-  if (!response.ok) {
-    throw new Error(`Search failed: ${response.status}`);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), options.timeout || 10000);
+
+  try {
+    const response = await fetch(`${API_BASE}/api/v1/content/query/search?${params}`, {
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      throw new Error(`Search failed: ${response.status}`);
+    }
+    return response.json();
+  } finally {
+    clearTimeout(timeout);
   }
-  return response.json();
 }
 
 /**
@@ -42,16 +51,23 @@ async function searchContent(text, options = {}) {
  * @param {string} [path] - Path within source
  * @returns {Promise<{items: Array}>}
  */
-async function listContent(source, path = '') {
+async function listContent(source, path = '', timeout = 10000) {
   const url = path
     ? `${API_BASE}/api/v1/list/${source}/${encodeURIComponent(path)}`
     : `${API_BASE}/api/v1/list/${source}/`;
 
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`List failed: ${response.status}`);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) {
+      throw new Error(`List failed: ${response.status}`);
+    }
+    return response.json();
+  } finally {
+    clearTimeout(timeoutId);
   }
-  return response.json();
 }
 
 /**

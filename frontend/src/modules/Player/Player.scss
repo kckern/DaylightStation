@@ -307,6 +307,9 @@
     padding: 0.75rem 1rem;
     box-sizing: border-box;
     z-index: var(--player-layer-loading, 40);
+    // Bug 05 fix: Allow taps to pass through overlay for fullscreen toggle
+    // Spinner itself has pointer-events: auto to remain clickable
+    pointer-events: none;
 }
 
 .loading-overlay__inner {
@@ -335,6 +338,8 @@
         align-items: center;
         justify-content: center;
         cursor: pointer;
+        // Bug 05 fix: Re-enable pointer events on spinner for manual reset clicks
+        pointer-events: auto;
 }
 
 .loading-overlay .loading-spinner img{

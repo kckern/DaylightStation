@@ -41,8 +41,47 @@ export const TEST_DEVICES = {
   charlie: { deviceId: 28688, userId: 'milo', name: 'Milo' }       // Real device
 };
 
+// Real cadence device IDs from production config (data/household/apps/fitness/config.yml)
 export const TEST_CADENCE_DEVICES = {
-  bike: { deviceId: 54321, equipmentId: 'equipment_bike', name: 'Test Bike' }
+  cycle_ace: { deviceId: 49904, equipmentId: 'cycle_ace', name: 'CycleAce' },
+  ab_roller: { deviceId: 7183, equipmentId: 'ab_roller', name: 'Ab Roller' },
+  tricycle: { deviceId: 7153, equipmentId: 'tricycle', name: 'Tricycle' },
+  niceday: { deviceId: 7138, equipmentId: 'niceday', name: 'NiceDay' }
+};
+
+// RPM device timeout scenarios
+export const RPM_SCENARIOS = {
+  // Simulate cycling then stop - test timeout behavior
+  cycleAndStop: {
+    description: 'Cycle for 10s, then stop transmission',
+    duration: 25,
+    cadence: {
+      cycle_ace: {
+        pattern: 'sequence',
+        sequence: [
+          { rpm: 80, duration: 10 },    // Active cycling
+          { rpm: 0, duration: 5 },      // Stop pedaling (sends 0)
+          { rpm: null, duration: 10 }   // Stop transmission entirely
+        ]
+      }
+    }
+  },
+
+  // Send zero then stop - test "0" display behavior
+  zeroThenStop: {
+    description: 'Send RPM=0 then stop transmission',
+    duration: 15,
+    cadence: {
+      cycle_ace: {
+        pattern: 'sequence',
+        sequence: [
+          { rpm: 70, duration: 5 },     // Active
+          { rpm: 0, duration: 5 },      // Zero value
+          { rpm: null, duration: 5 }    // No transmission
+        ]
+      }
+    }
+  }
 };
 
 // Heart rate zone thresholds (from production config)
@@ -486,10 +525,10 @@ export class FitnessTestSimulator {
    */
   _sendHeartRate(device, heartRate, elapsedSeconds) {
     if (!this.connected || !this.ws) return;
-    
+
     const beatCount = (this.beatCounts.get(device.deviceId) || 0) + Math.round(heartRate / 30);
     this.beatCounts.set(device.deviceId, beatCount);
-    
+
     const message = {
       topic: 'fitness',
       source: 'fitness-simulator',  // Backend expects 'fitness' or 'fitness-simulator'
@@ -516,12 +555,193 @@ export class FitnessTestSimulator {
         OperatingTime: Math.floor(elapsedSeconds * 1000)
       }
     };
-    
+
     this.ws.send(JSON.stringify(message));
-    
+
     if (this.verbose) {
       console.log(`  💓 ${device.name}: ${heartRate} bpm`);
     }
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // RPM/Cadence Simulation
+  // ═══════════════════════════════════════════════════════════════
+
+  /**
+   * Send a single RPM/cadence reading
+   * @param {string} deviceAlias - Device alias (e.g., 'bike')
+   * @param {number|null} rpm - RPM value, or null for no transmission
+   */
+  sendRPM(deviceAlias, rpm) {
+    const device = TEST_CADENCE_DEVICES[deviceAlias];
+    if (!device) {
+      throw new Error(`Unknown cadence device alias: ${deviceAlias}`);
+    }
+    if (rpm !== null) {
+      this._sendCadence(device, rpm, Date.now() / 1000);
+    }
+    // null = no transmission (simulate device dropout)
+  }
+
+  /**
+   * Run an RPM scenario
+   * @param {Object} scenario - Scenario with cadence configurations
+   */
+  async runRPMScenario(scenario) {
+    if (!this.connected) {
+      await this.connect();
+    }
+
+    const { duration, cadence = {} } = scenario;
+
+    if (this.verbose) {
+      console.log(`🚴 Running RPM scenario: ${scenario.description || 'Custom'}`);
+      console.log(`   Duration: ${duration}s, Devices: ${Object.keys(cadence).join(', ')}`);
+    }
+
+    // Set up RPM pattern generators
+    const rpmGenerators = new Map();
+    for (const [alias, config] of Object.entries(cadence)) {
+      const device = TEST_CADENCE_DEVICES[alias];
+      if (!device) {
+        console.warn(`⚠️  Unknown cadence device alias: ${alias}`);
+        continue;
+      }
+
+      const resolvedConfig = typeof config === 'string'
+        ? { rpm: parseInt(config) }
+        : { ...config };
+
+      const generator = new RPMPatternGenerator(resolvedConfig);
+      generator.setTotalDuration(duration);
+      rpmGenerators.set(alias, generator);
+    }
+
+    return new Promise((resolve) => {
+      const startTime = Date.now();
+
+      const interval = setInterval(() => {
+        const elapsed = Math.floor((Date.now() - startTime) / 1000);
+
+        if (elapsed >= duration) {
+          clearInterval(interval);
+          if (this.verbose) console.log('✅ RPM scenario complete');
+          resolve({ duration: elapsed, devices: Object.keys(cadence) });
+          return;
+        }
+
+        // Send RPM data for each device
+        for (const [alias, generator] of rpmGenerators) {
+          const device = TEST_CADENCE_DEVICES[alias];
+          const rpm = generator.getRPM(elapsed);
+
+          if (rpm !== null) {
+            this._sendCadence(device, rpm, elapsed);
+          }
+          // null = dropout, don't send
+        }
+      }, this.updateInterval);
+
+      this.intervals.push(interval);
+    });
+  }
+
+  /**
+   * Internal: Send cadence/RPM data over WebSocket
+   */
+  _sendCadence(device, rpm, elapsedSeconds) {
+    if (!this.connected || !this.ws) return;
+
+    const message = {
+      topic: 'fitness',
+      source: 'fitness-simulator',
+      type: 'ant',
+      timestamp: new Date().toISOString(),
+      profile: 'CAD',  // Cadence profile
+      deviceId: device.deviceId,
+      dongleIndex: 0,
+      data: {
+        ManId: 255,
+        SerialNumber: device.deviceId,
+        HwVersion: 5,
+        SwVersion: 1,
+        ModelNum: 3,
+        BatteryLevel: 100,
+        BatteryVoltage: 4.2,
+        BatteryStatus: 'Good',
+        DeviceID: device.deviceId,
+        Channel: 1,
+        CadenceEventTime: Math.floor(elapsedSeconds * 1024) % 65536,
+        CumulativeCadenceRevolutionCount: Math.floor(elapsedSeconds * rpm / 60),
+        CalculatedCadence: rpm,
+        OperatingTime: Math.floor(elapsedSeconds * 1000)
+      }
+    };
+
+    this.ws.send(JSON.stringify(message));
+
+    if (this.verbose) {
+      console.log(`  🚴 ${device.name}: ${rpm} rpm`);
+    }
+  }
+}
+
+/**
+ * RPM Pattern Generator - similar to HR but for cadence
+ */
+class RPMPatternGenerator {
+  constructor(config) {
+    this.config = config;
+  }
+
+  getRPM(elapsedSeconds) {
+    const { pattern, rpm, variance } = this.config;
+
+    // Simple constant RPM
+    if (rpm !== undefined && !pattern) {
+      if (rpm === null) return null;
+      return this._addVariance(rpm, variance || 0);
+    }
+
+    // Pattern-based RPM
+    switch (pattern) {
+      case 'sequence':
+        return this._sequencePattern(elapsedSeconds);
+      case 'constant':
+        return this._addVariance(this.config.rpm, variance || 0);
+      default:
+        return this._addVariance(rpm || 60, variance || 3);
+    }
+  }
+
+  _addVariance(baseRpm, variance) {
+    if (baseRpm === null) return null;
+    const delta = (Math.random() - 0.5) * 2 * variance;
+    return Math.max(0, Math.round(baseRpm + delta));
+  }
+
+  _sequencePattern(elapsedSeconds) {
+    const { sequence } = this.config;
+    if (!Array.isArray(sequence) || sequence.length === 0) {
+      return 60;
+    }
+
+    let accumulated = 0;
+    for (const step of sequence) {
+      if (elapsedSeconds < accumulated + step.duration) {
+        if (step.rpm === null) return null; // Dropout
+        return this._addVariance(step.rpm, step.variance || 3);
+      }
+      accumulated += step.duration;
+    }
+
+    // Past end - return last value
+    const lastStep = sequence[sequence.length - 1];
+    return lastStep.rpm === null ? null : this._addVariance(lastStep.rpm, lastStep.variance || 3);
+  }
+
+  setTotalDuration(duration) {
+    this.config._totalDuration = duration;
   }
 }
 

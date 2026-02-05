@@ -61,8 +61,10 @@ function useProgressTimeout(timeout = 0, onTimeout, interval = 15) {
  * - Supports alphanumeric key cycling for single-button input
  */
 export function ShowView({ grandparentId, depth, onSelect, onEscape, MENU_TIMEOUT = 0 }) {
-  const { data, loading, error } = useFetchPlexData(grandparentId);
   const navContext = useContext(MenuNavigationContext);
+  // Bug 04 fix: Use refetchCounter to invalidate cache when returning from video
+  const refetchKey = navContext?.refetchCounter || 0;
+  const { data, loading, error } = useFetchPlexData(grandparentId, refetchKey);
   const seasonsRef = useRef(null);
   
   // Local state fallback for OfficeApp (no navContext)

@@ -4,10 +4,75 @@
  * Implements IProxyAdapter for forwarding requests to Plex
  * with token-based authentication.
  *
+ * Includes test infrastructure for simulating network stalls.
+ *
  * @module adapters/proxy
  */
 
 import { configService } from '#system/config/index.mjs';
+
+// ═══════════════════════════════════════════════════════════════
+// Test Infrastructure: Shutoff Valve
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * Global shutoff valve state for testing
+ * When enabled, proxy requests will be delayed or blocked
+ */
+const shutoffValve = {
+  enabled: false,
+  mode: 'block',  // 'block' | 'delay'
+  delayMs: 30000, // Delay duration for 'delay' mode
+  blockedRequests: 0,
+  delayedRequests: 0
+};
+
+/**
+ * Enable the Plex proxy shutoff valve (for testing network stalls)
+ * @param {Object} options
+ * @param {'block'|'delay'} [options.mode='block'] - Block requests entirely or delay them
+ * @param {number} [options.delayMs=30000] - Delay duration in ms (for delay mode)
+ */
+export function enablePlexShutoff(options = {}) {
+  shutoffValve.enabled = true;
+  shutoffValve.mode = options.mode || 'block';
+  shutoffValve.delayMs = options.delayMs || 30000;
+  shutoffValve.blockedRequests = 0;
+  shutoffValve.delayedRequests = 0;
+}
+
+/**
+ * Disable the Plex proxy shutoff valve
+ */
+export function disablePlexShutoff() {
+  shutoffValve.enabled = false;
+}
+
+/**
+ * Get shutoff valve status
+ * @returns {{ enabled: boolean, mode: string, delayMs: number, blockedRequests: number, delayedRequests: number }}
+ */
+export function getPlexShutoffStatus() {
+  return { ...shutoffValve };
+}
+
+/**
+ * Check if request should be blocked/delayed
+ * @returns {Promise<void>} - Resolves immediately if not blocked, delays or rejects if shutoff enabled
+ */
+export async function checkShutoffValve() {
+  if (!shutoffValve.enabled) return;
+
+  if (shutoffValve.mode === 'block') {
+    shutoffValve.blockedRequests++;
+    throw new Error('PLEX_SHUTOFF: Request blocked by test shutoff valve');
+  }
+
+  if (shutoffValve.mode === 'delay') {
+    shutoffValve.delayedRequests++;
+    await new Promise(resolve => setTimeout(resolve, shutoffValve.delayMs));
+  }
+}
 
 /**
  * @implements {import('../../0_system/proxy/IProxyAdapter.mjs').IProxyAdapter}

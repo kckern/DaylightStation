@@ -345,9 +345,9 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
       try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) {}
     }
 
-    // Ignore events that triggered before or during a transition
+    // Ignore events that triggered before a transition (not during - allow same timestamp)
     const eventTime = e?.nativeEvent?.timeStamp || performance.now();
-    if (eventTime <= interactionLockRef.current) {
+    if (eventTime < interactionLockRef.current) {
       return;
     }
 

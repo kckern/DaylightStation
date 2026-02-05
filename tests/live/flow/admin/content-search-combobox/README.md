@@ -229,6 +229,20 @@ The fixture loader couldn't fetch test data from the API.
 - Ensure API sources are available in CI
 - CI may need different `system.yml` config
 
+### Tests timing out on search operations
+
+If tests consistently time out waiting for search results:
+
+**Check:** The search API may be slow. Test response time with:
+```bash
+time curl -s "http://localhost:3111/api/v1/content/query/search?text=test&take=1"
+```
+
+If this takes more than a few seconds, the backend is under load or has performance issues. Tests use 30-60 second timeouts but will naturally be slow when the API is slow. Consider:
+1. Restarting the backend
+2. Checking backend resource usage
+3. Verifying external integrations (Plex, Immich) are responsive
+
 ## Test Discipline
 
 These tests follow strict discipline per project guidelines:

@@ -84,7 +84,8 @@ export function createApiRouter(config) {
     '/dev': 'dev',
     '/canvas': 'canvas',
     '/admin': 'admin',
-    '/stream': 'stream'
+    '/stream': 'stream',
+    '/test': 'test'  // Test infrastructure (dev/test only)
   };
 
   // Mount each router at its path

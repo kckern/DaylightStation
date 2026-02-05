@@ -31,8 +31,8 @@ export function RpmDeviceCard({
   const rpm = device.cadence ?? 0;
   const revolutions = device.revolutionCount ?? null;
 
-  const rpmValue = isStale ? '--' : (Number.isFinite(rpm) && rpm > 0 ? `${Math.round(rpm)}` : '--');
-  const revsValue = Number.isFinite(revolutions) ? `${Math.round(revolutions)}` : '--';
+  const rpmValue = isStale ? '' : (Number.isFinite(rpm) && rpm > 0 ? `${Math.round(rpm)}` : '');
+  const revsValue = Number.isFinite(revolutions) ? `${Math.round(revolutions)}` : '';
 
   const cardClasses = [
     'rpm-device-card',

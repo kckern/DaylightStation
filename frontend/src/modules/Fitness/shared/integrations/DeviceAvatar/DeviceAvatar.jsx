@@ -30,7 +30,7 @@ const DeviceAvatar = ({
   
   const displayValue = typeof valueFormat === 'function'
     ? valueFormat(normalizedRpm, isZero)
-    : (normalizedRpm != null ? normalizedRpm : '--');
+    : (isZero ? '' : normalizedRpm);
 
   const [didFallback, setDidFallback] = useState(false);
 
