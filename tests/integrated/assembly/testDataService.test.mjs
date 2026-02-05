@@ -30,7 +30,7 @@ async function fetchJSON(path) {
  */
 async function isPlexAvailable() {
   try {
-    const res = await fetch(`${BASE_URL}/api/v1/content/plex/info/1`, { method: 'HEAD' });
+    const res = await fetch(`${BASE_URL}/api/v1/info/plex/1`, { method: 'HEAD' });
     // 503 means adapter not configured, 404 means item not found (but adapter works)
     return res.status !== 503;
   } catch (e) {
@@ -167,7 +167,7 @@ describe('testDataService Integration', () => {
       expect(sample.expect).toBeDefined();
 
       // Call the API with the sample ID
-      const apiPath = `/api/v1/content/plex/info/${sample.id}`;
+      const apiPath = `/api/v1/info/plex/${sample.id}`;
       const { status, body } = await fetchJSON(apiPath);
 
       // Plex item might not exist (404) - that's acceptable

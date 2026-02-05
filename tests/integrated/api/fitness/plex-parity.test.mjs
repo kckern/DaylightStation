@@ -194,7 +194,7 @@ async function runFitnessPlexParityTests() {
       process.stdout.write(`  ${ep.title} (${ep.id}): `);
 
       const legacyRes = await fetchJSON(`/media/plex/info/${ep.id}`);
-      const dddRes = await fetchJSON(`/api/v1/content/plex/info/${ep.id}`);
+      const dddRes = await fetchJSON(`/api/v1/info/plex/${ep.id}`);
 
       if (legacyRes.status !== 200 || dddRes.status !== 200) {
         console.log(`❌ Request failed (legacy: ${legacyRes.status}, DDD: ${dddRes.status})`);
@@ -238,7 +238,7 @@ async function runFitnessPlexParityTests() {
   const testEpisodeId = Object.keys(fitnessMemory || {})[0];
   if (testEpisodeId) {
     const legacyRes = await fetchJSON(`/media/plex/info/${testEpisodeId}`);
-    const dddRes = await fetchJSON(`/api/v1/content/plex/info/${testEpisodeId}`);
+    const dddRes = await fetchJSON(`/api/v1/info/plex/${testEpisodeId}`);
 
     if (legacyRes.status === 200 && dddRes.status === 200) {
       const legacyKeys = Object.keys(legacyRes.body).sort();
