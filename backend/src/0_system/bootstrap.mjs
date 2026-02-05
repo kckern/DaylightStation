@@ -56,6 +56,7 @@ import { AmbientLedAdapter } from '#adapters/fitness/AmbientLedAdapter.mjs';
 import { VoiceMemoTranscriptionService } from '#adapters/fitness/VoiceMemoTranscriptionService.mjs';
 import { OpenAIAdapter } from '#adapters/ai/OpenAIAdapter.mjs';
 import { FitnessSyncerAdapter } from '#adapters/harvester/fitness/FitnessSyncerAdapter.mjs';
+import { FitnessConfigService } from '#apps/fitness/FitnessConfigService.mjs';
 import { createFitnessRouter } from '#api/v1/routers/fitness.mjs';
 
 // Home automation imports
@@ -776,6 +777,12 @@ export function createFitnessApiRouter(config) {
     logger = console
   } = config;
 
+  // Create FitnessConfigService for normalized config access
+  const fitnessConfigService = new FitnessConfigService({
+    userDataService,
+    configService
+  });
+
   // Resolve fitness content adapter from config (defaults to plex)
   const fitnessContentSource = fitnessConfig?.content_source || 'plex';
   const fitnessContentAdapter = contentRegistry?.get(fitnessContentSource);
@@ -785,6 +792,7 @@ export function createFitnessApiRouter(config) {
     zoneLedController: fitnessServices.ambientLedController,
     transcriptionService: fitnessServices.transcriptionService,
     createProgressClassifier: (config) => new FitnessProgressClassifier(config),
+    fitnessConfigService,
     fitnessContentAdapter,
     userService,
     userDataService,
