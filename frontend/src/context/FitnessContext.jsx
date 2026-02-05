@@ -348,6 +348,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   // Configuration extraction
   const {
     fitnessRoot,
+    contentSource,
+    contentConfig,
     plexConfig,
     musicPlaylists,
     ant_devices,
@@ -374,9 +376,14 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     const normalizedNomusicLabels = Array.isArray(plex?.nomusic_labels)
       ? plex.nomusic_labels.filter((label) => typeof label === 'string')
       : [];
+    // Content source for media (default: 'plex', configurable for Jellyfin etc.)
+    const contentSource = root?.content_source || 'plex';
+
     return {
       fitnessRoot: root,
-      plexConfig: plex,
+      contentSource,
+      contentConfig: plex,  // Renamed from plexConfig for source-agnostic naming
+      plexConfig: plex,     // Keep for backward compatibility
       musicPlaylists: Array.isArray(plex?.music_playlists) ? plex.music_playlists : [],
       ant_devices: root?.ant_devices || {},
       usersConfig: root?.users || {},
@@ -1951,6 +1958,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
 
   const value = {
     fitnessConfiguration,
+    contentSource,
+    contentConfig,
     usersConfig,
     zoneConfig,
     equipmentConfig,

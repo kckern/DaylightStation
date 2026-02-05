@@ -913,6 +913,7 @@ export function createFinanceServices(config) {
     buxfer,
     aiGateway,
     httpClient,
+    defaultHouseholdId,
     logger = console
   } = config;
 
@@ -937,15 +938,15 @@ export function createFinanceServices(config) {
     logger
   });
 
-  // Transaction categorization service (optional - requires AI gateway)
+  // Transaction categorization service (optional - requires AI gateway AND buxfer adapter)
   let categorizationService = null;
-  if (aiGateway) {
+  if (aiGateway && buxferAdapter) {
     const categorizationConfig = financeStore.getCategorizationConfig(defaultHouseholdId);
     if (categorizationConfig) {
       categorizationService = new TransactionCategorizationService({
         aiGateway,
-        validTags: categorizationConfig.validTags || [],
-        systemPrompt: categorizationConfig.chat?.[0]?.content || '',
+        transactionSource: buxferAdapter,
+        financeStore,
         logger
       });
       logger.info?.('finance.categorization.enabled', { validTags: categorizationConfig.validTags?.length || 0 });
@@ -953,7 +954,7 @@ export function createFinanceServices(config) {
       logger.warn?.('finance.categorization.skipped', { reason: 'no_config', householdId: defaultHouseholdId });
     }
   } else {
-    logger.warn?.('finance.categorization.skipped', { reason: 'no_ai_gateway' });
+    logger.warn?.('finance.categorization.skipped', { reason: aiGateway ? 'no_buxfer_adapter' : 'no_ai_gateway' });
   }
 
   // Finance harvest service (optional - requires Buxfer adapter)

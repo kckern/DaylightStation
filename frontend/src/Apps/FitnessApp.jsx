@@ -611,59 +611,64 @@ const FitnessApp = () => {
     };
   }, []);
   
-  // Derive navItems from the API response
-  const navItems = useMemo(() => {
-    const src =
-      fitnessConfiguration?.fitness?.plex?.nav_items ||
-      fitnessConfiguration?.plex?.nav_items ||
-      [];
-    return Array.isArray(src) ? src : [];
+  // Extract content source from config (default: 'plex')
+  const contentSource = useMemo(() => {
+    const root = fitnessConfiguration?.fitness || fitnessConfiguration || {};
+    return root?.content_source || 'plex';
   }, [fitnessConfiguration]);
+
+  // Derive navItems from the API response (source-agnostic: uses contentConfig section)
+  const navItems = useMemo(() => {
+    const root = fitnessConfiguration?.fitness || fitnessConfiguration || {};
+    const contentConfig = root?.plex || root?.[contentSource] || {};
+    const src = contentConfig?.nav_items || [];
+    return Array.isArray(src) ? src : [];
+  }, [fitnessConfiguration, contentSource]);
 
   // Handle /fitness/play/:id route
   const handlePlayFromUrl = async (episodeId) => {
     try {
       // Fetch episode metadata from API to get labels for governance
-      const response = await DaylightAPI(`api/v1/content/plex/info/${episodeId}`);
+      const response = await DaylightAPI(`api/v1/content/${contentSource}/info/${episodeId}`);
 
       if (!response || response.error) {
         logger.warn('fitness-play-url-no-metadata', { episodeId, error: response?.error });
         // Fallback to basic queue item without labels
-        const plexIdFallback = String(episodeId);
+        const contentId = String(episodeId);
         const fallbackItem = {
-          id: plexIdFallback,
-          plex: plexIdFallback,
+          id: contentId,
+          contentSource,
           type: 'episode',
           title: `Episode ${episodeId}`,
-          videoUrl: DaylightMediaPath(`api/v1/play/plex/mpd/${episodeId}`),
+          videoUrl: DaylightMediaPath(`api/v1/play/${contentSource}/mpd/${episodeId}`),
           thumbId: episodeId,
-          image: DaylightMediaPath(`api/v1/content/plex/image/${episodeId}`)
+          image: DaylightMediaPath(`api/v1/content/${contentSource}/image/${episodeId}`)
         };
         setFitnessPlayQueue([fallbackItem]);
-        logger.info('fitness-play-url-started-fallback', { episodeId });
+        logger.info('fitness-play-url-started-fallback', { episodeId, contentSource });
         return;
       }
 
       // Build queue item from API response (includes labels for governance)
-      const plexId = String(response.key || episodeId);
+      const contentId = String(response.key || episodeId);
       const queueItem = {
-        id: plexId,
-        plex: plexId,
+        id: contentId,
+        contentSource,
         type: response.type || 'episode',
         title: response.title || `Episode ${episodeId}`,
         grandparentTitle: response.grandparentTitle,
         parentTitle: response.parentTitle,
-        videoUrl: response.mediaUrl || DaylightMediaPath(`api/v1/play/plex/mpd/${episodeId}`),
+        videoUrl: response.mediaUrl || DaylightMediaPath(`api/v1/play/${contentSource}/mpd/${episodeId}`),
         thumbId: response.thumbId || episodeId,
-        image: response.image || DaylightMediaPath(`api/v1/content/plex/image/${episodeId}`),
+        image: response.image || DaylightMediaPath(`api/v1/content/${contentSource}/image/${episodeId}`),
         labels: response.labels || [],
         summary: response.summary
       };
 
       setFitnessPlayQueue([queueItem]);
-      logger.info('fitness-play-url-started', { episodeId, hasLabels: queueItem.labels.length > 0 });
+      logger.info('fitness-play-url-started', { episodeId, contentSource, hasLabels: queueItem.labels.length > 0 });
     } catch (err) {
-      logger.error('fitness-play-url-error', { episodeId, error: err.message });
+      logger.error('fitness-play-url-error', { episodeId, contentSource, error: err.message });
       navigate('/fitness', { replace: true });
     }
   };
