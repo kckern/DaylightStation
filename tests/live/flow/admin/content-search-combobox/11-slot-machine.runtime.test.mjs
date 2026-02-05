@@ -24,6 +24,7 @@ test.describe('Slot Machine Query Tests', () => {
   test.beforeEach(async ({ page }) => {
     harness = new ComboboxTestHarness(page);
     await harness.setup();
+    harness.resetApiCalls?.();
     await page.goto(TEST_URL);
   });
 
@@ -35,10 +36,7 @@ test.describe('Slot Machine Query Tests', () => {
   for (let i = 0; i < SPIN_COUNT; i++) {
     test(`spin ${i}`, async ({ page }) => {
       const fixture = getFixture(i);
-      if (!fixture) {
-        console.log(`Spin ${i}: No fixture available`);
-        return;
-      }
+      expect(fixture, `Spin ${i}: fixture must be defined`).toBeDefined();
 
       console.log(`🎰 [${fixture.spinNumber}] ${fixture.query} (${fixture.stress})`);
 
