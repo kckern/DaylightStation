@@ -91,8 +91,8 @@ export class ComboboxTestHarness {
     this.page.on('response', (response) => {
       const url = response.url();
 
-      // Check if this is a list API call
-      if (url.includes('/api/v1/list/')) {
+      // Check if this is an item API call
+      if (url.includes('/api/v1/item/')) {
         const method = response.request().method();
         const timestamp = Date.now();
         const status = response.status();
