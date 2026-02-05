@@ -140,20 +140,19 @@ export function createPlayRouter(config) {
       let storagePath = type;
       let itemMetadata = null;
 
-      // For plex items, get metadata to determine library
+      // For plex items, get storage path and metadata from adapter
       if (type === 'plex') {
         const plexAdapter = registry.get('plex');
-        if (plexAdapter && typeof plexAdapter.getItem === 'function') {
+        if (plexAdapter) {
           try {
-            const item = await plexAdapter.getItem(`plex:${assetId}`);
-            if (item?.metadata?.librarySectionID) {
-              const libraryId = item.metadata.librarySectionID;
-              const libraryName = (item.metadata.librarySectionTitle || 'media')
-                .toLowerCase()
-                .replace(/[^a-z0-9]+/g, '-')
-                .replace(/^-|-$/g, '');
-              storagePath = `plex/${libraryId}_${libraryName}`;
-              itemMetadata = item.metadata;
+            // Get storage path from adapter (adapter handles Plex metadata parsing)
+            if (typeof plexAdapter.getStoragePath === 'function') {
+              storagePath = await plexAdapter.getStoragePath(`plex:${assetId}`);
+            }
+            // Get item metadata for title lookup
+            if (typeof plexAdapter.getItem === 'function') {
+              const item = await plexAdapter.getItem(`plex:${assetId}`);
+              itemMetadata = item?.metadata;
             }
           } catch (e) {
             logger.warn?.('play.log.metadata_fetch_failed', { assetId, error: e.message });
@@ -241,13 +240,10 @@ export function createPlayRouter(config) {
       const opts = Number.isFinite(maxVideoBitrate) ? { maxVideoBitrate } : {};
       let mediaUrl;
 
-      if (typeof plexAdapter.getMediaUrl === 'function') {
-        mediaUrl = await plexAdapter.getMediaUrl(id, 0, opts);
-      } else if (typeof plexAdapter.loadMediaUrl === 'function') {
-        mediaUrl = await plexAdapter.loadMediaUrl(id, 0, opts);
-      } else {
+      if (typeof plexAdapter.getMediaUrl !== 'function') {
         return res.status(501).json({ error: 'Plex adapter does not support media URL retrieval' });
       }
+      mediaUrl = await plexAdapter.getMediaUrl(id, 0, opts);
 
       if (!mediaUrl) {
         return res.status(404).json({ error: 'Media URL not found', id });
