@@ -74,6 +74,122 @@ const TYPE_ICONS = {
   default: IconFile
 };
 
+/**
+ * Fetch siblings data for an item. Returns processed data ready for state.
+ * This is the core fetch logic extracted for use by both preload and direct calls.
+ */
+async function doFetchSiblings(itemId, contentInfo) {
+  const { source } = contentInfo;
+  const localId = itemId.split(':')[1]?.trim();
+
+  // Fetch current item to get parent key or library info
+  const response = await fetch(`/api/v1/content/item/${source}/${localId}`);
+  if (!response.ok) return null;
+
+  const data = await response.json();
+  const parentKey = data.metadata?.parentRatingKey || data.metadata?.parentKey ||
+                   data.metadata?.parentId || data.metadata?.albumId || data.metadata?.artistId;
+  const libraryId = data.metadata?.librarySectionID;
+  const libraryTitle = data.metadata?.librarySectionTitle;
+
+  let childrenUrl = null;
+  let parentInfo = null;
+
+  if (parentKey) {
+    childrenUrl = `/api/v1/item/${source}/${parentKey}`;
+    const parentResponse = await fetch(`/api/v1/content/item/${source}/${parentKey}`);
+    if (parentResponse.ok) {
+      const parentData = await parentResponse.json();
+      parentInfo = {
+        id: `${source}:${parentKey}`,
+        title: parentData.title || data.metadata?.parentTitle,
+        source,
+        thumbnail: parentData.thumbnail,
+        parentKey: parentData.metadata?.parentRatingKey || null,
+        libraryId
+      };
+    }
+  } else if (libraryId) {
+    childrenUrl = `/api/v1/item/${source}/library/sections/${libraryId}/all`;
+    parentInfo = {
+      id: `library:${libraryId}`,
+      title: libraryTitle || 'Library',
+      source,
+      thumbnail: null,
+      parentKey: null,
+      libraryId
+    };
+  } else if (['watchlist', 'query', 'menu', 'program'].includes(source)) {
+    childrenUrl = `/api/v1/item/list/${source}:`;
+    parentInfo = {
+      id: `${source}:`,
+      title: source.charAt(0).toUpperCase() + source.slice(1) + 's',
+      source: 'list',
+      thumbnail: null,
+      parentKey: null,
+      libraryId: null
+    };
+  } else if (source === 'freshvideo') {
+    childrenUrl = `/api/v1/item/filesystem/video/news`;
+    parentInfo = {
+      id: 'filesystem:video/news',
+      title: 'Fresh Video Channels',
+      source: 'filesystem',
+      thumbnail: null,
+      parentKey: null,
+      libraryId: null
+    };
+  } else if (source === 'talk' || source === 'local-content') {
+    childrenUrl = `/api/v1/item/local-content/talk:`;
+    parentInfo = {
+      id: 'talk:',
+      title: 'Talk Series',
+      source: 'local-content',
+      thumbnail: null,
+      parentKey: null,
+      libraryId: null
+    };
+  } else if (localId.includes('/')) {
+    const parts = localId.split('/');
+    const parentPath = parts.slice(0, -1).join('/');
+    const parentTitle = parts[parts.length - 2] || parentPath;
+    childrenUrl = `/api/v1/item/${source}/${parentPath}`;
+    parentInfo = {
+      id: `${source}:${parentPath}`,
+      title: parentTitle,
+      source,
+      thumbnail: null,
+      parentKey: null,
+      libraryId: null
+    };
+  }
+
+  if (!childrenUrl) return null;
+
+  const childrenResponse = await fetch(childrenUrl);
+  if (!childrenResponse.ok) return null;
+
+  const childrenData = await childrenResponse.json();
+  const childItems = childrenData.items || [];
+  const browseItems = childItems.map(item => {
+    const itemSource = item.source || item.id?.split(':')[0];
+    return {
+      value: item.id || `${itemSource}:${item.localId}`,
+      title: item.title,
+      source: itemSource,
+      type: item.metadata?.type || item.type || item.itemType,
+      thumbnail: item.thumbnail,
+      grandparent: item.metadata?.grandparentTitle,
+      parent: item.metadata?.parentTitle,
+      library: item.metadata?.librarySectionTitle,
+      itemCount: item.metadata?.childCount ?? item.metadata?.leafCount ?? item.childCount ?? null,
+      isContainer: isContainerItem(item)
+    };
+  });
+
+  return { browseItems, currentParent: parentInfo };
+}
+
 // Source badge colors
 const SOURCE_COLORS = {
   plex: 'orange',
@@ -961,6 +1077,7 @@ function ContentSearchCombobox({ value, onChange }) {
 
   const handleStartEditing = () => {
     setIsEditing(true);
+    setSearchQuery(value || ''); // Initialize with current value so user can see/edit it
     combobox.openDropdown();
     fetchSiblings();
   };
@@ -1128,6 +1245,7 @@ function ContentSearchCombobox({ value, onChange }) {
               fontSize: 12,
               background: 'transparent',
               borderColor: 'transparent',
+              fontFamily: /^\w+:\S/.test(searchQuery) ? 'monospace' : undefined,
             }
           }}
         />
