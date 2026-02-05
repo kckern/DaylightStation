@@ -1,7 +1,7 @@
 // backend/src/4_api/routers/play.mjs
 import express from 'express';
 import { nowTs24 } from '#system/utils/index.mjs';
-import { parseModifiers } from '../utils/modifierParser.mjs';
+import { parseActionRouteId } from '../utils/actionRouteParser.mjs';
 
 /**
  * Create play API router for retrieving playable media info
@@ -264,16 +264,21 @@ export function createPlayRouter(config) {
 
   /**
    * GET /api/play/:source/*
+   *
+   * Supports three ID formats:
+   * - Path segments: /play/plex/12345
+   * - Compound ID: /play/plex:12345
+   * - Heuristic: /play/12345 (bare digits -> plex)
    */
   router.get('/:source/*', async (req, res) => {
     try {
       const { source } = req.params;
       const rawPath = req.params[0] || '';
-      const { modifiers, localId } = parseModifiers(rawPath);
+      const { source: resolvedSource, localId, compoundId, modifiers } = parseActionRouteId({ source, path: rawPath });
 
-      const adapter = registry.get(source);
+      const adapter = registry.get(resolvedSource);
       if (!adapter) {
-        return res.status(404).json({ error: `Unknown source: ${source}` });
+        return res.status(404).json({ error: `Unknown source: ${resolvedSource}` });
       }
 
       // If shuffle modifier, use resolve with random pick
@@ -281,7 +286,7 @@ export function createPlayRouter(config) {
         let selectedItem;
 
         if (contentQueryService) {
-          const result = await contentQueryService.resolve(source, localId, { now: new Date() }, { pick: 'random' });
+          const result = await contentQueryService.resolve(resolvedSource, localId, { now: new Date() }, { pick: 'random' });
 
           if (!result.items.length) {
             return res.status(404).json({ error: 'No playable items found' });
@@ -302,17 +307,16 @@ export function createPlayRouter(config) {
 
         const storagePath = typeof adapter.getStoragePath === 'function'
           ? await adapter.getStoragePath(selectedItem.id)
-          : source;
+          : resolvedSource;
         const watchState = mediaProgressMemory ? await mediaProgressMemory.get(selectedItem.id, storagePath) : null;
 
         return res.json(toPlayResponse(selectedItem, watchState));
       }
 
-      // Get single item
-      const compoundId = `${source}:${localId}`;
+      // Get single item using the compound ID from parser
       const item = await adapter.getItem(compoundId);
       if (!item) {
-        return res.status(404).json({ error: 'Item not found', source, localId });
+        return res.status(404).json({ error: 'Item not found', source: resolvedSource, localId });
       }
 
       // Check if it's a container (needs resolution to playable)
@@ -320,7 +324,7 @@ export function createPlayRouter(config) {
         let playables;
 
         if (contentQueryService) {
-          const result = await contentQueryService.resolve(source, localId, { now: new Date() });
+          const result = await contentQueryService.resolve(resolvedSource, localId, { now: new Date() });
           playables = result.items;
         } else {
           // Fallback: use adapter directly
@@ -334,7 +338,7 @@ export function createPlayRouter(config) {
         const selectedItem = playables[0];
         const storagePath = typeof adapter.getStoragePath === 'function'
           ? await adapter.getStoragePath(selectedItem.id)
-          : source;
+          : resolvedSource;
         const watchState = mediaProgressMemory ? await mediaProgressMemory.get(selectedItem.id, storagePath) : null;
 
         return res.json(toPlayResponse(selectedItem, watchState));
@@ -343,7 +347,7 @@ export function createPlayRouter(config) {
       // Return playable item
       const storagePath = typeof adapter.getStoragePath === 'function'
         ? await adapter.getStoragePath(item.id)
-        : source;
+        : resolvedSource;
       const watchState = mediaProgressMemory ? await mediaProgressMemory.get(item.id, storagePath) : null;
 
       res.json(toPlayResponse(item, watchState));
