@@ -97,8 +97,21 @@ export function createInfoRouter(config) {
       path: rawPath
     });
 
-    // Get adapter from registry
-    const adapter = registry.get(resolvedSource);
+    // Get adapter from registry - try direct match first, then prefix resolution
+    let adapter = registry.get(resolvedSource);
+    let finalLocalId = localId;
+    let usePrefixResolution = false;
+
+    if (!adapter) {
+      // Try prefix-based resolution (e.g., media:sfx/intro, watchlist:comefollowme2025)
+      const resolved = registry.resolveFromPrefix(resolvedSource, localId);
+      if (resolved) {
+        adapter = resolved.adapter;
+        finalLocalId = resolved.localId;
+        usePrefixResolution = true;
+      }
+    }
+
     if (!adapter) {
       return res.status(404).json({
         error: `Unknown source: ${resolvedSource || source}`
@@ -106,7 +119,9 @@ export function createInfoRouter(config) {
     }
 
     // Fetch item from adapter
-    const item = await adapter.getItem(compoundId);
+    // When using prefix resolution, pass localId directly (adapter handles ID format)
+    // Otherwise, use the compound ID from the parser
+    const item = await adapter.getItem(usePrefixResolution ? finalLocalId : compoundId);
     if (!item) {
       return res.status(404).json({
         error: 'Item not found',
