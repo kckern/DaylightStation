@@ -16,8 +16,8 @@ import { parseContentQuery, validateContentQuery } from '../parsers/contentQuery
  * - POST /api/content/progress/:source/* - Update watch progress
  * - GET /api/content/search - Search across content sources (IMediaSearchable)
  * - POST /api/content/compose - Compose multi-track presentation from sources
- * - GET /api/content/plex/image/:id - Get Plex thumbnail image
- * - GET /api/content/plex/info/:id - Get Plex item metadata
+ * - GET /api/content/:source/image/:id - Get thumbnail image from content source
+ * - GET /api/content/:source/info/:id - Get item metadata from content source
  *
  * Note: List endpoint moved to /api/v1/list/:source/* (list.mjs)
  * Note: Menu logging moved to /api/v1/item/menu-log (item.mjs)
@@ -591,26 +591,26 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
   }));
 
   // ==========================================================================
-  // Plex-specific Routes
+  // Source-Specific Routes (parameterized by :source)
   // ==========================================================================
 
   /**
-   * GET /api/content/plex/image/:id - Get Plex thumbnail image
+   * GET /api/content/:source/image/:id - Get thumbnail image from content source
    *
-   * Proxies and caches Plex thumbnail images.
+   * Proxies and caches thumbnail images from any content source.
    */
-  router.get('/plex/image/:id', async (req, res) => {
+  router.get('/:source/image/:id', async (req, res) => {
     try {
-      const { id } = req.params;
-      const plexAdapter = registry.get('plex');
+      const { source, id } = req.params;
+      const adapter = registry.get(source);
 
-      if (!plexAdapter) {
-        return res.status(503).json({ error: 'Plex adapter not configured' });
+      if (!adapter) {
+        return res.status(503).json({ error: `${source} adapter not configured` });
       }
 
       // Check cache if available
       if (cacheBasePath) {
-        const cacheDir = path.join(cacheBasePath, 'plex');
+        const cacheDir = path.join(cacheBasePath, source);
         const cacheFile = path.join(cacheDir, `${id}.jpg`);
 
         if (fs.existsSync(cacheFile)) {
@@ -620,30 +620,30 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
 
       // Get thumbnail URL from adapter
       let thumbnailUrl;
-      if (typeof plexAdapter.getThumbnailUrl === 'function') {
-        thumbnailUrl = await plexAdapter.getThumbnailUrl(id);
-      } else if (typeof plexAdapter.getItem === 'function') {
-        const item = await plexAdapter.getItem(`plex:${id}`);
+      if (typeof adapter.getThumbnailUrl === 'function') {
+        thumbnailUrl = await adapter.getThumbnailUrl(id);
+      } else if (typeof adapter.getItem === 'function') {
+        const item = await adapter.getItem(`${source}:${id}`);
         thumbnailUrl = item?.thumbnail;
       }
 
       if (!thumbnailUrl) {
-        return res.status(404).json({ error: 'Thumbnail not found', id });
+        return res.status(404).json({ error: 'Thumbnail not found', source, id });
       }
 
       // Redirect to proxy for the actual image fetch
-      const proxyUrl = thumbnailUrl.replace(/https?:\/\/[^\/]+/, '/proxy/plex');
+      const proxyUrl = thumbnailUrl.replace(/https?:\/\/[^\/]+/, `/proxy/${source}`);
       res.redirect(proxyUrl);
     } catch (error) {
-      logger.error?.('content.plex.image.error', { id: req.params.id, error: error.message });
+      logger.error?.('content.image.error', { source: req.params.source, id: req.params.id, error: error.message });
       res.status(500).json({ error: error.message });
     }
   });
 
   /**
-   * GET /api/content/plex/info/:id/:modifiers? - Get Plex item metadata
+   * GET /api/content/:source/info/:id/:modifiers? - Get item metadata from content source
    *
-   * Returns full metadata for a Plex item with legacy-compatible fields.
+   * Returns full metadata for an item with legacy-compatible fields.
    * For containers (shows, albums), can use smart selection to pick a playable item.
    *
    * Modifiers (path or query):
@@ -652,34 +652,34 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
    * Response fields: listkey, listType, key, type, show, season, labels,
    *                   mediaType, mediaUrl, thumbId, image, percent, seconds
    */
-  router.get('/plex/info/:id/:modifiers?', async (req, res) => {
+  router.get('/:source/info/:id/:modifiers?', async (req, res) => {
     try {
-      const { id, modifiers } = req.params;
+      const { source, id, modifiers } = req.params;
       const shuffle = modifiers === 'shuffle' || 'shuffle' in req.query;
 
-      const plexAdapter = registry.get('plex');
+      const adapter = registry.get(source);
 
-      if (!plexAdapter) {
-        return res.status(503).json({ error: 'Plex adapter not configured' });
+      if (!adapter) {
+        return res.status(503).json({ error: `${source} adapter not configured` });
       }
 
       // For containers with shuffle, use smart selection to pick a playable item
       let item;
       let selectedId = id;
-      if (shuffle && typeof plexAdapter.loadPlayableItemFromKey === 'function') {
-        const selected = await plexAdapter.loadPlayableItemFromKey(id, { shuffle: true });
+      if (shuffle && typeof adapter.loadPlayableItemFromKey === 'function') {
+        const selected = await adapter.loadPlayableItemFromKey(id, { shuffle: true });
         if (selected) {
           item = selected;
-          selectedId = item.localId || item.id?.replace(/^plex:/, '') || id;
+          selectedId = item.localId || item.id?.replace(new RegExp(`^${source}:`), '') || id;
         }
       }
 
       // If no smart selection or not a container, get item directly
       if (!item) {
-        item = await plexAdapter.getItem(`plex:${id}`);
+        item = await adapter.getItem(`${source}:${id}`);
       }
       if (!item) {
-        return res.status(404).json({ error: 'Item not found', id });
+        return res.status(404).json({ error: 'Item not found', source, id });
       }
 
       // Determine mediaType
@@ -692,8 +692,8 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
 
       // Generate streaming URL for playable items
       let mediaUrl = null;
-      if (videoTypes.includes(itemType) || audioTypes.includes(itemType)) {
-        mediaUrl = await plexAdapter.loadMediaUrl(selectedId);
+      if ((videoTypes.includes(itemType) || audioTypes.includes(itemType)) && typeof adapter.loadMediaUrl === 'function') {
+        mediaUrl = await adapter.loadMediaUrl(selectedId);
       }
 
       // Load watch state via ContentQueryService (DDD-compliant)
@@ -701,9 +701,9 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
       let seconds = 0;
       if (contentQueryService) {
         const enriched = await contentQueryService.enrichWithWatchState(
-          [{ id: `plex:${selectedId}`, ...item }],
-          'plex',
-          `plex:${id}`
+          [{ id: `${source}:${selectedId}`, ...item }],
+          source,
+          `${source}:${id}`
         );
         if (enriched[0]) {
           percent = enriched[0].percent ?? 0;
@@ -723,6 +723,7 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
         listkey: id,  // Original container ID (for queue context)
         listType: itemType,
         key: selectedId,  // Actual item to play (may differ if smart selection used)
+        source,  // Include source for client reference
         // Core fields
         title: item.title,
         type: itemType,
@@ -748,7 +749,7 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
         metadata: item.metadata
       });
     } catch (error) {
-      logger.error?.('content.plex.info.error', { id: req.params.id, error: error.message });
+      logger.error?.('content.info.error', { source: req.params.source, id: req.params.id, error: error.message });
       res.status(500).json({ error: error.message });
     }
   });

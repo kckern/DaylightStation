@@ -87,7 +87,7 @@ export function createFitnessRouter(config) {
   /**
    * GET /api/fitness - Get fitness config (hydrated with user profiles)
    */
-  router.get('/', (req, res) => {
+  router.get('/', asyncHandler(async (req, res) => {
     const householdId = req.query.household || configService.getDefaultHouseholdId();
     const fitnessData = loadFitnessConfig(householdId);
 
@@ -99,8 +99,33 @@ export function createFitnessRouter(config) {
     const hydratedData = userService.hydrateFitnessConfig(fitnessData, householdId);
     hydratedData._household = householdId;
 
+    // Enrich music playlists with thumbnails from content source
+    const playlists = hydratedData?.plex?.music_playlists;
+    if (Array.isArray(playlists) && playlists.length > 0 && contentRegistry) {
+      const contentSource = hydratedData?.content_source || 'plex';
+      const adapter = contentRegistry.get(contentSource);
+
+      if (adapter?.getThumbnail) {
+        const enrichedPlaylists = await Promise.all(
+          playlists.map(async (playlist) => {
+            // Skip if already has thumbnail
+            if (playlist.thumb || playlist.thumbnail || !playlist.id) {
+              return playlist;
+            }
+            try {
+              const thumb = await adapter.getThumbnail(playlist.id);
+              return { ...playlist, thumb };
+            } catch {
+              return playlist; // Keep original on error
+            }
+          })
+        );
+        hydratedData.plex.music_playlists = enrichedPlaylists;
+      }
+    }
+
     res.json(hydratedData);
-  });
+  }));
 
   /**
    * GET /api/fitness/governed-content - Get content with governance labels

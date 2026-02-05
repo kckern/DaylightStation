@@ -38,6 +38,7 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true);
+  const isPlayingRef = useRef(true); // Track current playing state for sync effects
   const audioPlayerRef = useRef(null);
   const wasPlayingBeforePauseRef = useRef(false);
   const loggedTrackRef = useRef(null);
@@ -54,7 +55,8 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
   const interactionLockRef = useRef(0); // stores timestamp of last major UI transition
   
   const fitnessContext = useFitnessContext();
-  const { videoPlayerPaused } = fitnessContext || {};
+  const { videoPlayerPaused, voiceMemoOverlayState } = fitnessContext || {};
+  const voiceMemoOpen = Boolean(voiceMemoOverlayState?.open);
   const playlists = fitnessContext?.plexConfig?.music_playlists || [];
   const setGlobalPlaylistId = fitnessContext?.setSelectedPlaylistId;
   const setMusicOverride = fitnessContext?.setMusicOverride;
@@ -82,21 +84,33 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
     isPlaying: () => isPlaying
   }), [isPlaying]);
 
-  // Sync music player with video player pause state
+  // Keep isPlayingRef in sync with state for use in effects
   useEffect(() => {
-    if (videoPlayerPaused !== undefined && audioPlayerRef.current) {
-      if (videoPlayerPaused) {
-        // BUG-08: Store playing state before pausing for voice memo
-        wasPlayingBeforePauseRef.current = isPlaying;
-        audioPlayerRef.current.pause();
-        setIsPlaying(false);
-      } else if (wasPlayingBeforePauseRef.current) {
-        // Only resume if it was playing before the pause
-        audioPlayerRef.current.play();
-        setIsPlaying(true);
+    isPlayingRef.current = isPlaying;
+  }, [isPlaying]);
+
+  // Sync music player with video player pause state AND voice memo overlay
+  // Music pauses when: video pauses OR voice memo opens
+  // Music resumes when: video resumes AND voice memo is closed (if was playing before)
+  useEffect(() => {
+    if (!audioPlayerRef.current) return;
+
+    const shouldPause = videoPlayerPaused || voiceMemoOpen;
+
+    if (shouldPause) {
+      // Store playing state before pausing (only if currently playing)
+      if (isPlayingRef.current) {
+        wasPlayingBeforePauseRef.current = true;
       }
+      audioPlayerRef.current.pause();
+      setIsPlaying(false);
+    } else if (wasPlayingBeforePauseRef.current) {
+      // Resume only if it was playing before AND both video is playing and voice memo is closed
+      audioPlayerRef.current.play();
+      setIsPlaying(true);
+      wasPlayingBeforePauseRef.current = false;
     }
-  }, [videoPlayerPaused]);
+  }, [videoPlayerPaused, voiceMemoOpen]);
 
   useEffect(() => {
     if (!selectedPlaylistId) {
@@ -328,7 +342,7 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
   const toggleControls = (e = null) => {
     if (e && typeof e.preventDefault === 'function') {
       e.preventDefault();
-      try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) {}
+      // Removed setPointerCapture - not needed for simple toggle and can interfere with touch events
     }
 
     setControlsOpen(prev => {
@@ -342,7 +356,7 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
   const handlePlaylistButtonClick = (e) => {
     if (e && typeof e.preventDefault === 'function') {
       e.preventDefault();
-      try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) {}
+      // Removed setPointerCapture - not needed for button click
     }
 
     // Ignore events that triggered before a transition (not during - allow same timestamp)
@@ -364,9 +378,14 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
     }
   }, [setMusicOverride, musicEnabled, setGlobalPlaylistId]);
 
-  const handleInfoPointerDown = (e) => {
-    // Interaction Isolation
-    toggleControls(e);
+  const handleInfoTap = (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    setControlsOpen(prev => {
+      // Mark transition timestamp to guard newly revealed UI from accidental taps
+      interactionLockRef.current = e?.nativeEvent?.timeStamp || performance.now();
+      return !prev;
+    });
   };
 
   const handleInfoKeyDown = (event) => {
@@ -436,9 +455,9 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
         </div>
 
         {/* Track Info & Progress */}
-        <div 
+        <div
           className="music-player-info"
-          onPointerDown={handleInfoPointerDown}
+          onPointerDown={handleInfoTap}
           onKeyDown={handleInfoKeyDown}
           role="button"
           tabIndex={0}
@@ -454,7 +473,7 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
                   '--marquee-play-state': scrollDistance < 0 ? 'running' : 'paused'
                 }}
               >
-                {currentTrack?.title || currentTrack?.label || 'No track playing'}
+                {currentTrack?.title || currentTrack?.label || 'Loading...'}
               </span>
             </div>
             <div className="track-artist">
@@ -539,30 +558,21 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
                     <span className="playlist-arrow">▼</span>
                   </button>
 
-                  {playlistModalOpen && (
-                    <div className="playlist-modal-overlay" onClick={() => setPlaylistModalOpen(false)}>
-                      <div className="playlist-modal-content" onClick={e => e.stopPropagation()}>
-                        <div className="playlist-modal-header">
-                          <h3>Select Playlist</h3>
-                          <button className="close-btn" onClick={() => setPlaylistModalOpen(false)}>×</button>
-                        </div>
-                        <FitnessPlaylistSelector
-                          playlists={playlists}
-                          selectedPlaylistId={selectedPlaylistId}
-                          onSelect={(id) => {
-                            if (!id) {
-                              handleMusicToggle();
-                            } else if (setGlobalPlaylistId) {
-                              setGlobalPlaylistId(id);
-                            }
-                            setPlaylistModalOpen(false);
-                            setControlsOpen(false);
-                          }}
-                          onClose={() => setPlaylistModalOpen(false)}
-                        />
-                      </div>
-                    </div>
-                  )}
+                  <FitnessPlaylistSelector
+                    playlists={playlists}
+                    selectedPlaylistId={selectedPlaylistId}
+                    isOpen={playlistModalOpen}
+                    onSelect={(id) => {
+                      if (!id) {
+                        handleMusicToggle();
+                      } else if (setGlobalPlaylistId) {
+                        setGlobalPlaylistId(id);
+                      }
+                      setPlaylistModalOpen(false);
+                      setControlsOpen(false);
+                    }}
+                    onClose={() => setPlaylistModalOpen(false)}
+                  />
                 </>
               ) : (
                 <div className="empty-state">No playlists configured.</div>

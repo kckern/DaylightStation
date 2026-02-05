@@ -199,6 +199,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // This replaces hardcoded adapter imports with manifest-based discovery
   let integrationSystem = null;
   let householdAdapters = null;
+  const defaultHouseholdId = configService.getDefaultHouseholdId() || 'default';
 
   try {
     integrationSystem = await initializeIntegrations({
@@ -207,7 +208,6 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     });
 
     // Load adapters for the default household
-    const defaultHouseholdId = configService.getDefaultHouseholdId() || 'default';
     householdAdapters = await loadHouseholdIntegrations({
       householdId: defaultHouseholdId,
       httpClient: axios,
@@ -412,6 +412,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const buxferAuth = configService.getUserAuth?.('buxfer') || configService.getHouseholdAuth?.('buxfer');
   const financeServices = createFinanceServices({
     configService,
+    defaultHouseholdId,
     // Prefer config-driven adapter from integration system (use .has() to avoid NoOp)
     buxferAdapter: householdAdapters?.has?.('finance') ? householdAdapters.get('finance') : null,
     // AI gateway for transaction categorization

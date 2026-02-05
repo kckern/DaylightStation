@@ -128,14 +128,37 @@ export class PlexAdapter {
       const item = metadata?.MediaContainer?.Metadata?.[0];
       if (!item) return ['', '', ''];
 
-      const { thumb, parentThumb, grandparentThumb } = item;
+      // Playlists use 'composite' (auto-generated mosaic), others use 'thumb'
+      const primaryThumb = item.composite || item.thumb;
+      const { parentThumb, grandparentThumb } = item;
       // Legacy returns empty string "" for missing thumbs
-      return [thumb, parentThumb, grandparentThumb].map(
+      return [primaryThumb, parentThumb, grandparentThumb].map(
         t => t ? `${this.proxyPath}${t}` : ''
       );
     } catch (err) {
       console.error('[PlexAdapter] loadImgFromKey error:', err.message);
       return ['', '', ''];
+    }
+  }
+
+  /**
+   * Get the primary thumbnail URL for an item
+   * Handles different item types (playlists use 'composite', others use 'thumb')
+   * @param {string} ratingKey - Plex rating key
+   * @returns {Promise<string|null>} Thumbnail URL or null
+   */
+  async getThumbnail(ratingKey) {
+    try {
+      const metadata = await this.client.getMetadata(ratingKey);
+      const item = metadata?.MediaContainer?.Metadata?.[0];
+      if (!item) return null;
+
+      // Playlists use 'composite' (auto-generated mosaic), others use 'thumb'
+      const thumbPath = item.composite || item.thumb;
+      return thumbPath ? `${this.proxyPath}${thumbPath}` : null;
+    } catch (err) {
+      console.error('[PlexAdapter] getThumbnail error:', err.message);
+      return null;
     }
   }
 
@@ -399,7 +422,9 @@ export class PlexAdapter {
     const id = item.ratingKey || item.key?.replace(/^\//, '').replace(/\/children$/, '');
 
     // Use proxy URL for thumbnails (not direct Plex URL)
-    const thumbnail = item.thumb ? `${this.proxyPath}${item.thumb}` : null;
+    // Playlists use 'composite' (auto-generated mosaic), others use 'thumb'
+    const thumbPath = item.composite || item.thumb;
+    const thumbnail = thumbPath ? `${this.proxyPath}${thumbPath}` : null;
 
     // Build metadata with hierarchy info
     const metadata = {
