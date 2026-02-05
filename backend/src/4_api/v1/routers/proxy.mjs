@@ -183,74 +183,18 @@ export function createProxyRouter(config) {
   /**
    * GET /proxy/plex/*
    * Passthrough proxy for Plex API requests (thumbnails, transcodes, etc.)
-   * Uses ProxyService if available, otherwise falls back to direct proxy
+   * Requires ProxyService to be configured for Plex.
    */
   router.use('/plex', async (req, res) => {
     try {
-      // Use ProxyService if available
+      // Use ProxyService - required for Plex proxying
       if (proxyService?.isConfigured?.('plex')) {
         await proxyService.proxy('plex', req, res);
         return;
       }
 
-      // Fallback: direct proxy using adapter credentials
-      const adapter = registry.get('plex');
-      if (!adapter) {
-        return res.status(503).json({ error: 'Plex adapter not configured' });
-      }
-
-      const host = adapter.host;
-      const token = adapter.token || adapter.client?.token || '';
-      if (!host || !token) {
-        return res.status(503).json({ error: 'Plex not configured' });
-      }
-
-      // Build target URL - req.url starts with / and contains the path after /plex
-      const targetUrl = new URL(req.url, host);
-      if (!targetUrl.searchParams.has('X-Plex-Token')) {
-        targetUrl.searchParams.set('X-Plex-Token', token);
-      }
-
-      // Forward headers (except host)
-      const headers = { ...req.headers };
-      delete headers.host;
-
-      const protocol = targetUrl.protocol === 'https:' ? https : http;
-      const options = {
-        hostname: targetUrl.hostname,
-        port: targetUrl.port || (targetUrl.protocol === 'https:' ? 443 : 80),
-        path: targetUrl.pathname + targetUrl.search,
-        method: req.method,
-        headers,
-        timeout: 60000
-      };
-
-      const proxyReq = protocol.request(options, (proxyRes) => {
-        if (!res.headersSent) {
-          res.writeHead(proxyRes.statusCode, proxyRes.headers);
-        }
-        proxyRes.pipe(res);
-      });
-
-      proxyReq.on('error', (err) => {
-        console.error('[proxy] plex error:', err.message);
-        if (!res.headersSent) {
-          res.status(502).json({ error: 'Plex proxy error', details: err.message });
-        }
-      });
-
-      proxyReq.on('timeout', () => {
-        proxyReq.destroy();
-        if (!res.headersSent) {
-          res.status(504).json({ error: 'Plex proxy timeout' });
-        }
-      });
-
-      if (['POST', 'PUT', 'PATCH'].includes(req.method)) {
-        req.pipe(proxyReq);
-      } else {
-        proxyReq.end();
-      }
+      // No fallback - ProxyService is required
+      return res.status(503).json({ error: 'Plex proxy not configured (ProxyService required)' });
     } catch (err) {
       console.error('[proxy] plex error:', err);
       if (!res.headersSent) {
