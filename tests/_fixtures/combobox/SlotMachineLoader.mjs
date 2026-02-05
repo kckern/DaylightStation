@@ -68,13 +68,18 @@ export class SlotMachineLoader {
     };
 
     // Harvest with multiple seed queries to get variety
+    // Single vowels + common terms + numbers to ensure variety across alphabet and content types
     const seedQueries = ['a', 'e', 'the', '1', 'love'];
 
     for (const query of seedQueries) {
       try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
         const resp = await fetch(
-          `${this.#baseUrl}/api/v1/content/query/search/stream?text=${encodeURIComponent(query)}&take=30`
+          `${this.#baseUrl}/api/v1/content/query/search/stream?text=${encodeURIComponent(query)}&take=30`,
+          { signal: controller.signal }
         );
+        clearTimeout(timeoutId);
         if (!resp.ok) continue;
 
         const text = await resp.text();
@@ -97,8 +102,8 @@ export class SlotMachineLoader {
                 if (item.year) corpus.years.push(String(item.year));
               }
             }
-          } catch {
-            // Skip unparseable lines
+          } catch (e) {
+            /* Skip unparseable lines - common in SSE */
           }
         }
       } catch (e) {
