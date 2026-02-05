@@ -15,6 +15,7 @@ export { createNutribotRouter } from './nutribot.mjs';
 
 // Domain routers - Content & Media
 export { createContentRouter } from './content.mjs';
+export { createInfoRouter } from './info.mjs';
 export { createLocalContentRouter } from './localContent.mjs';
 export { createPlayRouter } from './play.mjs';
 export { createStreamRouter } from './stream.mjs';
