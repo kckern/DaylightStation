@@ -67,49 +67,39 @@ export class SlotMachineLoader {
       bySource: {},
     };
 
-    // Harvest with multiple seed queries to get variety
-    // Single vowels + common terms + numbers to ensure variety across alphabet and content types
-    const seedQueries = ['a', 'e', 'the', '1', 'love'];
+    // Use non-streaming endpoint for fast corpus harvest
+    const seedQueries = ['the', 'love', '2024'];
 
-    for (const query of seedQueries) {
+    const harvestPromises = seedQueries.map(async (query) => {
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000);
+        const timeoutId = setTimeout(() => controller.abort(), 15000);
         const resp = await fetch(
-          `${this.#baseUrl}/api/v1/content/query/search/stream?text=${encodeURIComponent(query)}&take=30`,
+          `${this.#baseUrl}/api/v1/content/query/search?text=${encodeURIComponent(query)}&take=50`,
           { signal: controller.signal }
         );
         clearTimeout(timeoutId);
-        if (!resp.ok) continue;
+        if (!resp.ok) return;
 
-        const text = await resp.text();
-        const lines = text.split('\n').filter(l => l.startsWith('data:'));
-
-        for (const line of lines) {
-          try {
-            const data = JSON.parse(line.slice(5));
-            if (data.items) {
-              for (const item of data.items) {
-                if (item.title) {
-                  corpus.titles.push(item.title);
-
-                  // Track by source
-                  const source = item.source || 'unknown';
-                  if (!corpus.bySource[source]) corpus.bySource[source] = [];
-                  corpus.bySource[source].push(item.title);
-                }
-                if (item.artist) corpus.artists.push(item.artist);
-                if (item.year) corpus.years.push(String(item.year));
-              }
+        const data = await resp.json();
+        if (data.items) {
+          for (const item of data.items) {
+            if (item.title) {
+              corpus.titles.push(item.title);
+              const source = item.source || 'unknown';
+              if (!corpus.bySource[source]) corpus.bySource[source] = [];
+              corpus.bySource[source].push(item.title);
             }
-          } catch (e) {
-            /* Skip unparseable lines - common in SSE */
+            if (item.artist) corpus.artists.push(item.artist);
+            if (item.year) corpus.years.push(String(item.year));
           }
         }
       } catch (e) {
         console.warn(`SlotMachineLoader: Harvest failed for "${query}":`, e.message);
       }
-    }
+    });
+
+    await Promise.all(harvestPromises);
 
     // Dedupe
     corpus.titles = [...new Set(corpus.titles)];
