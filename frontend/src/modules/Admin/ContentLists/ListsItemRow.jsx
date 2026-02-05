@@ -865,7 +865,7 @@ function ContentSearchCombobox({ value, onChange }) {
         };
       } else if (['watchlist', 'query', 'menu', 'program'].includes(source)) {
         // List-based items - siblings are other lists of same type
-        childrenUrl = `/api/v1/list/list/${source}:`;
+        childrenUrl = `/api/v1/item/list/${source}:`;
         parentInfo = {
           id: `${source}:`,
           title: source.charAt(0).toUpperCase() + source.slice(1) + 's',
@@ -876,7 +876,7 @@ function ContentSearchCombobox({ value, onChange }) {
         };
       } else if (source === 'freshvideo') {
         // Freshvideo channels - siblings are other channels in video/news
-        childrenUrl = `/api/v1/list/filesystem/video/news`;
+        childrenUrl = `/api/v1/item/filesystem/video/news`;
         parentInfo = {
           id: 'filesystem:video/news',
           title: 'Fresh Video Channels',
@@ -887,7 +887,7 @@ function ContentSearchCombobox({ value, onChange }) {
         };
       } else if (source === 'talk' || source === 'local-content') {
         // Talk series - siblings are other talk series
-        childrenUrl = `/api/v1/list/local-content/talk:`;
+        childrenUrl = `/api/v1/item/local-content/talk:`;
         parentInfo = {
           id: 'talk:',
           title: 'Talk Series',
@@ -901,7 +901,7 @@ function ContentSearchCombobox({ value, onChange }) {
         const parts = localId.split('/');
         const parentPath = parts.slice(0, -1).join('/');
         const parentTitle = parts[parts.length - 2] || parentPath;
-        childrenUrl = `/api/v1/list/${source}/${parentPath}`;
+        childrenUrl = `/api/v1/item/${source}/${parentPath}`;
         parentInfo = {
           id: `${source}:${parentPath}`,
           title: parentTitle,
