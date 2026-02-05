@@ -24,7 +24,7 @@ test.describe('TV URL Parsing', () => {
 
     console.log('API Requests:', apiRequests);
 
-    // Should call /api/v1/item/plex/380663 or /content/plex/info/380663
+    // Should call /api/v1/info/plex/380663
     // NOT /media/plex:380663 (which would mean the compound ID wasn't parsed)
     const correctApiCall = apiRequests.some(url =>
       url.includes('/plex/380663') && !url.includes('plex:')

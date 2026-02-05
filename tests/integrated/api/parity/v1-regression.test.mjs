@@ -133,14 +133,14 @@ describe('API v1 Core', () => {
 
 describe('API v1 Content Domain', () => {
   describe('Plex Content', () => {
-    it('GET /api/v1/content/plex/info/{id} returns valid plex info', async () => {
+    it('GET /api/v1/info/plex/{id} returns valid plex info', async () => {
       const plexSample = testData.plex[0];
       if (!plexSample) {
         console.log('No plex test data available, skipping');
         return;
       }
 
-      const res = await fetchJSON(`/api/v1/content/plex/info/${plexSample.id}`);
+      const res = await fetchJSON(`/api/v1/info/plex/${plexSample.id}`);
 
       // May 404 if Plex not configured - that's acceptable
       if (res.status === 404 || res.status === 503) {
@@ -224,8 +224,8 @@ describe('API v1 Content Domain', () => {
 // =============================================================================
 
 describe('API v1 List Domain', () => {
-  it('GET /api/v1/item/folder/{key} returns folder contents', async () => {
-    const res = await fetchJSON('/api/v1/item/folder/FHE');
+  it('GET /api/v1/info/folder/{key} returns folder contents', async () => {
+    const res = await fetchJSON('/api/v1/info/folder/FHE');
 
     if (res.status === 404) {
       console.log('FHE list not available, skipping');
@@ -241,8 +241,8 @@ describe('API v1 List Domain', () => {
     }
   });
 
-  it('GET /api/v1/item/folder/{key}/playable returns playable items', async () => {
-    const res = await fetchJSON('/api/v1/item/folder/FHE/playable');
+  it('GET /api/v1/list/folder/{key}/playable returns playable items', async () => {
+    const res = await fetchJSON('/api/v1/list/folder/FHE/playable');
 
     if (res.status === 404) {
       console.log('FHE list not available, skipping');
@@ -538,13 +538,13 @@ describe('API v1 Baseline Validation', () => {
 
   // Get endpoint mapping
   const endpointMap = {
-    plex: (id) => `/api/v1/content/plex/info/${id}`,
+    plex: (id) => `/api/v1/info/plex/${id}`,
     scripture: (id) => `/api/v1/local-content/scripture/${id}`,
     hymn: (id) => `/api/v1/local-content/hymn/${id}`,
     primary: (id) => `/api/v1/local-content/primary/${id}`,
     talk: (id) => `/api/v1/local-content/talk/${id}`,
     poem: (id) => `/api/v1/local-content/poem/${id}`,
-    list: (id) => `/api/v1/item/folder/${id}`
+    list: (id) => `/api/v1/info/folder/${id}`
   };
 
   // Fallback IDs for domains not in testdata registry

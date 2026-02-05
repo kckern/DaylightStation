@@ -45,13 +45,13 @@ const ENDPOINT_PAIRS = [
   {
     name: 'Plex List - Fitness Shows Collection',
     prod: '/media/plex/list/671468',
-    v1: '/api/v1/item/plex/671468',
+    v1: '/api/v1/info/plex/671468',
     description: 'Collection listing with show items and ratings'
   },
   {
     name: 'Plex List - Speed Train Playable',
     prod: '/media/plex/list/662027/playable',
-    v1: '/api/v1/item/plex/662027/playable',
+    v1: '/api/v1/list/plex/662027/playable',
     description: 'Playable episodes with watch progress and seasons'
   }
 ];
@@ -364,7 +364,7 @@ describe('Production vs Local v1 API Parity', () => {
 
 describe('Image URL Validation', () => {
   it('v1 collection image URLs return valid images', async () => {
-    const res = await fetchJSON(LOCAL_URL, '/api/v1/item/plex/671468');
+    const res = await fetchJSON(LOCAL_URL, '/api/v1/info/plex/671468');
     if (!res.ok) return;
 
     const imagesToCheck = [
@@ -388,7 +388,7 @@ describe('Image URL Validation', () => {
   });
 
   it('v1 playable episode thumbnails return valid images', async () => {
-    const res = await fetchJSON(LOCAL_URL, '/api/v1/item/plex/662027/playable');
+    const res = await fetchJSON(LOCAL_URL, '/api/v1/list/plex/662027/playable');
     if (!res.ok) return;
 
     const items = res.body.items?.slice(0, 5) || [];
