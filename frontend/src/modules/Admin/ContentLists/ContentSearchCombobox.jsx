@@ -129,6 +129,10 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
       combobox.resetSelectedOption();
     },
     onDropdownOpen: () => {
+      // Initialize search with current value so user can see/edit it
+      if (value && !search) {
+        setSearch(value);
+      }
       // When opening, if we have a value and haven't loaded siblings yet, browse to parent
       if (value && !initialLoadDone && results.length === 0) {
         loadSiblings(value);
@@ -153,7 +157,7 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
       // No parent, try to list root
       setLoading(true);
       try {
-        const response = await fetch(`/api/v1/item/${source}/`);
+        const response = await fetch(`/api/v1/info/${source}/`);
         if (response.ok) {
           const data = await response.json();
           setBrowseResults(data.items || []);
@@ -172,7 +176,7 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
 
     setLoading(true);
     try {
-      const response = await fetch(`/api/v1/item/${source}/${encodeURIComponent(parentPath)}`);
+      const response = await fetch(`/api/v1/info/${source}/${encodeURIComponent(parentPath)}`);
       if (!response.ok) throw new Error('Browse failed');
       const data = await response.json();
       setBrowseResults(data.items || []);
@@ -197,7 +201,7 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
 
     setLoading(true);
     try {
-      const response = await fetch(`/api/v1/item/${source}/${encodeURIComponent(localId)}`);
+      const response = await fetch(`/api/v1/info/${source}/${encodeURIComponent(localId)}`);
       if (!response.ok) throw new Error('Browse failed');
       const data = await response.json();
       setBrowseResults(data.items || []);
@@ -224,7 +228,7 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
 
     setLoading(true);
     try {
-      const response = await fetch(`/api/v1/item/${parent.source}/${encodeURIComponent(parent.localId)}`);
+      const response = await fetch(`/api/v1/info/${parent.source}/${encodeURIComponent(parent.localId)}`);
       if (!response.ok) throw new Error('Browse failed');
       const data = await response.json();
       setBrowseResults(data.items || []);
@@ -250,7 +254,9 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
   };
 
   // Get display value for input
-  const displayValue = combobox.dropdownOpened ? search : (value || '');
+  // When dropdown is open: show search term, falling back to value if search is empty
+  // When dropdown is closed: show the selected value
+  const displayValue = combobox.dropdownOpened ? (search || value || '') : (value || '');
 
   // Browse to parent folder
   const browseParent = useCallback(async (item) => {
@@ -266,7 +272,7 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
 
     setLoading(true);
     try {
-      const response = await fetch(`/api/v1/item/${source}/${encodeURIComponent(parentPath)}`);
+      const response = await fetch(`/api/v1/info/${source}/${encodeURIComponent(parentPath)}`);
       if (!response.ok) throw new Error('Browse failed');
       const data = await response.json();
       setBrowseResults(data.items || []);
