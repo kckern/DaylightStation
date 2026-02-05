@@ -50,6 +50,7 @@ import { createLocalRouter } from '#api/v1/routers/local.mjs';
 
 // Fitness domain imports
 import { SessionService } from '#domains/fitness/services/SessionService.mjs';
+import { FitnessProgressClassifier } from '#domains/fitness/index.mjs';
 import { YamlSessionDatastore } from '#adapters/persistence/yaml/YamlSessionDatastore.mjs';
 import { AmbientLedAdapter } from '#adapters/fitness/AmbientLedAdapter.mjs';
 import { VoiceMemoTranscriptionService } from '#adapters/fitness/VoiceMemoTranscriptionService.mjs';
@@ -777,6 +778,7 @@ export function createFitnessApiRouter(config) {
     sessionService: fitnessServices.sessionService,
     zoneLedController: fitnessServices.ambientLedController,
     transcriptionService: fitnessServices.transcriptionService,
+    createProgressClassifier: (config) => new FitnessProgressClassifier(config),
     userService,
     userDataService,
     configService,
