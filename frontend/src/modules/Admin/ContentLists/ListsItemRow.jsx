@@ -544,7 +544,7 @@ function UnresolvedContentDisplay({ item, onClick }) {
 // Cache for content info to avoid re-fetching
 const contentInfoCache = new Map();
 
-async function fetchContentMetadata(value) {
+export async function fetchContentMetadata(value) {
   if (!value) return null;
 
   // Check cache first
