@@ -173,6 +173,14 @@ function ListsFolder() {
     }
   };
 
+  // Context value must be defined before any early returns (React hooks rules)
+  const contextValue = useMemo(() => ({
+    items,
+    contentInfoMap,
+    setContentInfo,
+    getNearbyItems,
+  }), [items, contentInfoMap, setContentInfo, getNearbyItems]);
+
   if (loading && items.length === 0) {
     return (
       <Center h="60vh">
@@ -253,13 +261,6 @@ function ListsFolder() {
       <EmptyItemRow onAdd={handleAddItem} nextIndex={items.length} isWatchlist={type === 'watchlists'} />
     </Box>
   );
-
-  const contextValue = useMemo(() => ({
-    items,
-    contentInfoMap,
-    setContentInfo,
-    getNearbyItems,
-  }), [items, contentInfoMap, setContentInfo, getNearbyItems]);
 
   return (
     <ListsContext.Provider value={contextValue}>
