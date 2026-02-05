@@ -207,10 +207,18 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
     };
   }, [videoPlayerRef, videoVolume]);
 
-  // Clear current track when playlist changes
+  // Clear current track when playlist changes (including switching between playlists)
+  const prevPlaylistIdRef = useRef(selectedPlaylistId);
   useEffect(() => {
-    if (!selectedPlaylistId) {
+    if (prevPlaylistIdRef.current !== selectedPlaylistId) {
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[Playlist Change] Clearing artwork:', {
+          from: prevPlaylistIdRef.current,
+          to: selectedPlaylistId
+        });
+      }
       setCurrentTrack(null);
+      prevPlaylistIdRef.current = selectedPlaylistId;
     }
   }, [selectedPlaylistId]);
 
@@ -431,23 +439,30 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
     <div className={`fitness-music-player-container${controlsOpen ? ' controls-open' : ''}`}>
       <div className="music-player-content">
         {/* Album Art */}
-        <div 
+        <div
           className={`music-player-artwork ${!isPlaying ? 'paused' : ''}`}
-          onPointerDown={handleTogglePlayPause} 
+          onPointerDown={handleTogglePlayPause}
           style={{ cursor: 'pointer' }}
         >
-          {currentTrack?.key || currentTrack?.plex || currentTrack?.assetId ? (
-            <img 
-              key={currentTrack.key || currentTrack.plex || currentTrack.assetId}
-              src={DaylightMediaPath(`api/v1/content/plex/image/${currentTrack.key || currentTrack.plex || currentTrack.assetId}`)} 
-              alt="Album artwork"
-              className="artwork-image"
-            />
-          ) : (
-            <div className="artwork-placeholder">
-              <span className="artwork-icon">🎵</span>
-            </div>
-          )}
+          {(() => {
+            const trackKey = currentTrack?.key || currentTrack?.plex || currentTrack?.assetId;
+            const artworkKey = trackKey ? `${selectedPlaylistId}-${trackKey}` : null;
+            if (process.env.NODE_ENV === 'development' && trackKey) {
+              console.log('[Artwork Render]', { selectedPlaylistId, trackKey, artworkKey });
+            }
+            return trackKey ? (
+              <img
+                key={artworkKey}
+                src={DaylightMediaPath(`api/v1/display/plex/${trackKey}`)}
+                alt="Album artwork"
+                className="artwork-image"
+              />
+            ) : (
+              <div className="artwork-placeholder">
+                <span className="artwork-icon">🎵</span>
+              </div>
+            );
+          })()}
           {/* Play/Pause Overlay - only shows play icon when paused */}
           <div className="playback-overlay">
             <span className="playback-icon">▶</span>

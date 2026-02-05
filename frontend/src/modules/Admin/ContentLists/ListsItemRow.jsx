@@ -97,7 +97,7 @@ async function doFetchSiblings(itemId, contentInfo) {
   let parentInfo = null;
 
   if (parentKey) {
-    childrenUrl = `/api/v1/item/${source}/${parentKey}`;
+    childrenUrl = `/api/v1/info/${source}/${parentKey}`;
     const parentResponse = await fetch(`/api/v1/info/${source}/${parentKey}`);
     if (parentResponse.ok) {
       const parentData = await parentResponse.json();
@@ -111,7 +111,7 @@ async function doFetchSiblings(itemId, contentInfo) {
       };
     }
   } else if (libraryId) {
-    childrenUrl = `/api/v1/item/${source}/library/sections/${libraryId}/all`;
+    childrenUrl = `/api/v1/info/${source}/library/sections/${libraryId}/all`;
     parentInfo = {
       id: `library:${libraryId}`,
       title: libraryTitle || 'Library',
@@ -121,7 +121,7 @@ async function doFetchSiblings(itemId, contentInfo) {
       libraryId
     };
   } else if (['watchlist', 'query', 'menu', 'program'].includes(source)) {
-    childrenUrl = `/api/v1/item/list/${source}:`;
+    childrenUrl = `/api/v1/info/list/${source}:`;
     parentInfo = {
       id: `${source}:`,
       title: source.charAt(0).toUpperCase() + source.slice(1) + 's',
@@ -131,7 +131,7 @@ async function doFetchSiblings(itemId, contentInfo) {
       libraryId: null
     };
   } else if (source === 'freshvideo') {
-    childrenUrl = `/api/v1/item/filesystem/video/news`;
+    childrenUrl = `/api/v1/info/filesystem/video/news`;
     parentInfo = {
       id: 'filesystem:video/news',
       title: 'Fresh Video Channels',
@@ -141,7 +141,7 @@ async function doFetchSiblings(itemId, contentInfo) {
       libraryId: null
     };
   } else if (source === 'talk' || source === 'local-content') {
-    childrenUrl = `/api/v1/item/local-content/talk:`;
+    childrenUrl = `/api/v1/info/local-content/talk:`;
     parentInfo = {
       id: 'talk:',
       title: 'Talk Series',
@@ -154,7 +154,7 @@ async function doFetchSiblings(itemId, contentInfo) {
     const parts = localId.split('/');
     const parentPath = parts.slice(0, -1).join('/');
     const parentTitle = parts[parts.length - 2] || parentPath;
-    childrenUrl = `/api/v1/item/${source}/${parentPath}`;
+    childrenUrl = `/api/v1/info/${source}/${parentPath}`;
     parentInfo = {
       id: `${source}:${parentPath}`,
       title: parentTitle,
@@ -717,7 +717,7 @@ function ContentSearchCombobox({ value, onChange }) {
         libraryId
       });
 
-      const response = await fetch(`/api/v1/item/${source}/${localId}`);
+      const response = await fetch(`/api/v1/info/${source}/${localId}`);
       if (response.ok) {
         const data = await response.json();
         const children = (data.items || []).map(item => ({
@@ -809,7 +809,7 @@ function ContentSearchCombobox({ value, onChange }) {
     try {
       setLoadingBrowse(true);
 
-      const response = await fetch(`/api/v1/item/${source}/library/sections/${libraryId}/all`);
+      const response = await fetch(`/api/v1/info/${source}/library/sections/${libraryId}/all`);
       if (!response.ok) return;
 
       const data = await response.json();
@@ -876,7 +876,7 @@ function ContentSearchCombobox({ value, onChange }) {
 
       if (grandparentKey) {
         // Parent has a parent (e.g., album -> artist) - fetch grandparent's children
-        siblingsUrl = `/api/v1/item/${source}/${grandparentKey}`;
+        siblingsUrl = `/api/v1/info/${source}/${grandparentKey}`;
         newContext = {
           id: `${source}:${grandparentKey}`,
           source,
@@ -885,7 +885,7 @@ function ContentSearchCombobox({ value, onChange }) {
         };
       } else if (libraryId) {
         // Parent is at library level - fetch library items
-        siblingsUrl = `/api/v1/item/${source}/library/sections/${libraryId}/all`;
+        siblingsUrl = `/api/v1/info/${source}/library/sections/${libraryId}/all`;
         newContext = {
           id: `library:${libraryId}`,
           source,
@@ -980,7 +980,7 @@ function ContentSearchCombobox({ value, onChange }) {
 
       if (parentKey) {
         // Has a parent container - fetch parent info and its children
-        childrenUrl = `/api/v1/item/${source}/${parentKey}`;
+        childrenUrl = `/api/v1/info/${source}/${parentKey}`;
 
         // Fetch parent details for the header
         const parentResponse = await fetch(`/api/v1/info/${source}/${parentKey}`);
@@ -997,7 +997,7 @@ function ContentSearchCombobox({ value, onChange }) {
         }
       } else if (libraryId) {
         // Top-level item - show library as parent
-        childrenUrl = `/api/v1/item/${source}/library/sections/${libraryId}/all`;
+        childrenUrl = `/api/v1/info/${source}/library/sections/${libraryId}/all`;
         parentInfo = {
           id: `library:${libraryId}`,
           title: libraryTitle || 'Library',
@@ -1008,7 +1008,7 @@ function ContentSearchCombobox({ value, onChange }) {
         };
       } else if (['watchlist', 'query', 'menu', 'program'].includes(source)) {
         // List-based items - siblings are other lists of same type
-        childrenUrl = `/api/v1/item/list/${source}:`;
+        childrenUrl = `/api/v1/info/list/${source}:`;
         parentInfo = {
           id: `${source}:`,
           title: source.charAt(0).toUpperCase() + source.slice(1) + 's',
@@ -1019,7 +1019,7 @@ function ContentSearchCombobox({ value, onChange }) {
         };
       } else if (source === 'freshvideo') {
         // Freshvideo channels - siblings are other channels in video/news
-        childrenUrl = `/api/v1/item/filesystem/video/news`;
+        childrenUrl = `/api/v1/info/filesystem/video/news`;
         parentInfo = {
           id: 'filesystem:video/news',
           title: 'Fresh Video Channels',
@@ -1030,7 +1030,7 @@ function ContentSearchCombobox({ value, onChange }) {
         };
       } else if (source === 'talk' || source === 'local-content') {
         // Talk series - siblings are other talk series
-        childrenUrl = `/api/v1/item/local-content/talk:`;
+        childrenUrl = `/api/v1/info/local-content/talk:`;
         parentInfo = {
           id: 'talk:',
           title: 'Talk Series',
@@ -1044,7 +1044,7 @@ function ContentSearchCombobox({ value, onChange }) {
         const parts = localId.split('/');
         const parentPath = parts.slice(0, -1).join('/');
         const parentTitle = parts[parts.length - 2] || parentPath;
-        childrenUrl = `/api/v1/item/${source}/${parentPath}`;
+        childrenUrl = `/api/v1/info/${source}/${parentPath}`;
         parentInfo = {
           id: `${source}:${parentPath}`,
           title: parentTitle,
@@ -1440,7 +1440,7 @@ function ItemDetailsDrawer({ opened, onClose, contentValue }) {
       }
 
       // Fetch children
-      const childrenResponse = await fetch(`/api/v1/item/${source}/${localId}`);
+      const childrenResponse = await fetch(`/api/v1/info/${source}/${localId}`);
       if (childrenResponse.ok) {
         const childData = await childrenResponse.json();
         setChildren(childData.items || []);
