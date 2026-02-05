@@ -702,7 +702,7 @@ function MenuItems({
         // If there's a Plex ID but no image, build one
         if (!image && plex) {
           const val = Array.isArray(plex) ? plex[0] : plex;
-          image = DaylightMediaPath(`/api/v1/content/plex/image/${val}`);
+          image = DaylightMediaPath(`/api/v1/display/plex/${val}`);
         }
 
         // Create a unique key for the image to force remount when navigating menus
