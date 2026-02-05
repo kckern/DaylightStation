@@ -28,11 +28,12 @@ import { parseContentQuery, validateContentQuery } from '../parsers/contentQuery
  * @param {string} [options.cacheBasePath] - Base path for image cache
  * @param {import('#apps/content/usecases/ComposePresentationUseCase.mjs').ComposePresentationUseCase} [options.composePresentationUseCase] - Use case for composing presentations
  * @param {import('#apps/content/ContentQueryService.mjs').ContentQueryService} [options.contentQueryService] - Content query service for unified search/list
+ * @param {import('#apps/content/services/ContentQueryAliasResolver.mjs').ContentQueryAliasResolver} [options.aliasResolver] - Alias resolver for content queries
  * @param {Object} [options.logger] - Logger instance
  * @returns {express.Router}
  */
 export function createContentRouter(registry, mediaProgressMemory = null, options = {}) {
-  const { cacheBasePath, composePresentationUseCase, contentQueryService, logger = console } = options;
+  const { cacheBasePath, composePresentationUseCase, contentQueryService, aliasResolver, logger = console } = options;
   const router = express.Router();
 
   /**
@@ -202,6 +203,47 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
       watched: isWatched(state)
     });
   }));
+
+  // ==========================================================================
+  // Discovery Endpoints (Sources and Aliases)
+  // ==========================================================================
+
+  /**
+   * GET /api/content/sources
+   * Returns available sources, categories, and providers from the registry.
+   * Used by slot machine and test fixtures to discover what content is available.
+   */
+  router.get('/sources', (req, res) => {
+    const sources = registry.list();
+    const categories = registry.getCategories();
+    const providers = registry.getProviders();
+    res.json({ sources, categories, providers });
+  });
+
+  /**
+   * GET /api/content/aliases
+   * Returns built-in and user-defined query aliases.
+   * Used by slot machine to generate valid test queries.
+   */
+  router.get('/aliases', (req, res) => {
+    if (!aliasResolver) {
+      return res.status(501).json({
+        error: 'Alias resolver not configured',
+        code: 'ALIAS_RESOLVER_NOT_CONFIGURED'
+      });
+    }
+
+    const builtInAliases = aliasResolver.getBuiltInAliases();
+    const allAliases = aliasResolver.getAvailableAliases();
+    const userDefined = allAliases.filter(a => !Object.keys(builtInAliases).includes(a));
+    const categories = registry.getCategories();
+
+    res.json({
+      builtIn: Object.keys(builtInAliases),
+      userDefined,
+      categories,
+    });
+  });
 
   // ==========================================================================
   // Unified Query Interface (ContentQueryService)
