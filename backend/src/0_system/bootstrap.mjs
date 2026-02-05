@@ -758,6 +758,7 @@ export function createFitnessServices(config) {
  * @param {Object} config.userService - UserService for config hydration
  * @param {Object} config.userDataService - UserDataService for household data
  * @param {Object} config.configService - ConfigService
+ * @param {Object} [config.fitnessConfig] - Fitness app config (for content_source)
  * @param {Object} [config.contentRegistry] - Content source registry (for show endpoint)
  * @param {Object} [config.contentQueryService] - ContentQueryService for watch state enrichment
  * @param {Object} [config.logger] - Logger instance
@@ -769,20 +770,26 @@ export function createFitnessApiRouter(config) {
     userService,
     userDataService,
     configService,
+    fitnessConfig,
     contentRegistry,
     contentQueryService,
     logger = console
   } = config;
+
+  // Resolve fitness content adapter from config (defaults to plex)
+  const fitnessContentSource = fitnessConfig?.content_source || 'plex';
+  const fitnessContentAdapter = contentRegistry?.get(fitnessContentSource);
 
   return createFitnessRouter({
     sessionService: fitnessServices.sessionService,
     zoneLedController: fitnessServices.ambientLedController,
     transcriptionService: fitnessServices.transcriptionService,
     createProgressClassifier: (config) => new FitnessProgressClassifier(config),
+    fitnessContentAdapter,
     userService,
     userDataService,
     configService,
-    contentRegistry,
+    contentRegistry,  // Still needed for playlist thumbnail enrichment
     contentQueryService,
     logger
   });
