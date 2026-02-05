@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Stack, Group, Title, TextInput, Center, Loader, Alert,
@@ -15,8 +15,9 @@ import {
   SortableContext, verticalListSortingStrategy, arrayMove
 } from '@dnd-kit/sortable';
 import { useAdminLists } from '../../../hooks/admin/useAdminLists.js';
-import ListsItemRow, { EmptyItemRow, InsertRowButton } from './ListsItemRow.jsx';
+import ListsItemRow, { EmptyItemRow, InsertRowButton, preloadSiblings, fetchContentMetadata } from './ListsItemRow.jsx';
 import ListsItemEditor from './ListsItemEditor.jsx';
+import { ListsContext } from './ListsContext.js';
 import ListSettingsModal from './ListSettingsModal.jsx';
 import './ContentLists.scss';
 
@@ -41,6 +42,42 @@ function ListsFolder() {
   const [editingItem, setEditingItem] = useState(null);
   const [viewMode, setViewMode] = useState('flat'); // 'flat' or 'grouped'
   const [settingsOpen, setSettingsOpen] = useState(false);
+
+  // Content info cache for preloading
+  const [contentInfoMap, setContentInfoMap] = useState(new Map());
+
+  const setContentInfo = useCallback((itemId, info) => {
+    setContentInfoMap(prev => {
+      const next = new Map(prev);
+      next.set(itemId, info);
+      return next;
+    });
+  }, []);
+
+  const getNearbyItems = useCallback((index, radius = 2) => {
+    const start = Math.max(0, index - radius);
+    const end = Math.min(items.length - 1, index + radius);
+    return items.slice(start, end + 1).map((item, i) => ({
+      ...item,
+      index: start + i,
+      contentInfo: contentInfoMap.get(item.input)
+    }));
+  }, [items, contentInfoMap]);
+
+  // Preload first 10 rows on mount
+  useEffect(() => {
+    const first10 = items.slice(0, 10);
+    first10.forEach(item => {
+      if (item.input && !contentInfoMap.has(item.input)) {
+        fetchContentMetadata(item.input).then(info => {
+          if (info && !info.unresolved) {
+            setContentInfo(item.input, info);
+            preloadSiblings(item.input, info);
+          }
+        });
+      }
+    });
+  }, [items]); // Only run when items change
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -217,8 +254,16 @@ function ListsFolder() {
     </Box>
   );
 
+  const contextValue = useMemo(() => ({
+    items,
+    contentInfoMap,
+    setContentInfo,
+    getNearbyItems,
+  }), [items, contentInfoMap, setContentInfo, getNearbyItems]);
+
   return (
-    <Stack gap="md" className="lists-view">
+    <ListsContext.Provider value={contextValue}>
+      <Stack gap="md" className="lists-view">
       <Group justify="space-between">
         <Group>
           <ActionIcon variant="subtle" onClick={() => navigate(`/admin/content/lists/${type}`)}>
@@ -354,7 +399,8 @@ function ListsFolder() {
         loading={loading}
         existingGroups={existingGroups}
       />
-    </Stack>
+      </Stack>
+    </ListsContext.Provider>
   );
 }
 
