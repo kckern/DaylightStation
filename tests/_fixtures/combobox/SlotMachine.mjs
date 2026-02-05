@@ -61,16 +61,17 @@ export class SlotMachine {
     // Reel 2: Specific prefix value
     const prefix = this.#spinPrefix(prefixType);
 
-    // Reel 3: Keyword from corpus (use source-specific if available)
+    // Reel 3: Keyword from corpus (use source/alias-specific if available)
     let keyword;
     let keywordStrategy;
-    if (prefixType === 'source' && prefix && this.#corpus.bySource[prefix]?.length > 0) {
+    const corpusSource = this.#getCorpusSourceForPrefix(prefixType, prefix);
+    if (corpusSource && this.#corpus.bySource[corpusSource]?.length > 0) {
       // Use a title from this specific source to ensure results
-      const sourceTitle = this.#rng.pick(this.#corpus.bySource[prefix]);
+      const sourceTitle = this.#rng.pick(this.#corpus.bySource[corpusSource]);
       // Extract a word from the title
       const words = sourceTitle.split(/[\s\-:,.']+/).filter(w => w.length > 2);
       keyword = this.#rng.pick(words) || sourceTitle.substring(0, 10);
-      keywordStrategy = 'source-specific';
+      keywordStrategy = `${prefixType}-specific`;
     } else {
       keyword = this.#ransomGenerator.generate();
       keywordStrategy = this.#ransomGenerator.lastStrategy;
@@ -108,7 +109,13 @@ export class SlotMachine {
       case 'none':
         return null;
       case 'source':
-        return this.#rng.pick(this.#reels.sources);
+        // Only use sources that have corpus data (otherwise we can't generate matching keywords)
+        const sourcesWithCorpus = this.#reels.sources.filter(s => this.#corpus.bySource[s]?.length > 0);
+        if (sourcesWithCorpus.length === 0) {
+          // Fall back to all sources if none have corpus (shouldn't happen)
+          return this.#rng.pick(this.#reels.sources);
+        }
+        return this.#rng.pick(sourcesWithCorpus);
       case 'alias':
         const allAliases = [
           ...this.#reels.aliases.builtIn,
@@ -155,6 +162,23 @@ export class SlotMachine {
       audiobooks: { include: ['audiobook'] },
     };
     return rules[alias] || null;
+  }
+
+  #getCorpusSourceForPrefix(prefixType, prefix) {
+    if (prefixType === 'source') {
+      return prefix;
+    }
+    if (prefixType === 'alias') {
+      // Map aliases to their primary content sources
+      const aliasToSource = {
+        music: 'plex',        // Music playlists from Plex
+        photos: 'immich',     // Photos from Immich
+        video: 'plex',        // Video content from Plex
+        audiobooks: 'abs',    // Audiobooks from ABS
+      };
+      return aliasToSource[prefix] || null;
+    }
+    return null;
   }
 
   /**
