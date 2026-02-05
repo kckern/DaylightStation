@@ -1102,7 +1102,18 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Test infrastructure router (dev/test only)
   const { createTestRouter } = await import('./4_api/v1/routers/test.mjs');
+  const {
+    enablePlexShutoff,
+    disablePlexShutoff,
+    getPlexShutoffStatus
+  } = await import('#adapters/proxy/PlexProxyAdapter.mjs');
+
   v1Routers.test = createTestRouter({
+    plexShutoffControls: {
+      enable: enablePlexShutoff,
+      disable: disablePlexShutoff,
+      getStatus: getPlexShutoffStatus
+    },
     logger: rootLogger.child({ module: 'test-api' })
   });
 
