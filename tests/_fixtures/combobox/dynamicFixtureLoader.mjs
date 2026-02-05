@@ -298,10 +298,15 @@ export async function initializeSlotMachine(options = {}) {
     spinCount = parseInt(process.env.SPIN_COUNT) || 50,
   } = options;
 
-  machineInstance = new SlotMachine(seed);
-  await machineInstance.initialize(baseUrl);
-
-  fixturesCache = [...machineInstance.generate(spinCount)];
+  try {
+    machineInstance = new SlotMachine(seed);
+    await machineInstance.initialize(baseUrl);
+    fixturesCache = [...machineInstance.generate(spinCount)];
+  } catch (e) {
+    machineInstance = null;
+    fixturesCache = null;
+    throw new Error(`SlotMachine initialization failed: ${e.message}`);
+  }
 
   console.log(`\n🎰 Dynamic fixtures ready`);
   console.log(`   Seed: ${seed}`);
@@ -321,6 +326,9 @@ export async function initializeSlotMachine(options = {}) {
 export function getFixture(index) {
   if (!fixturesCache) {
     throw new Error('Fixtures not initialized. Call initializeSlotMachine() first.');
+  }
+  if (index < 0 || index >= fixturesCache.length) {
+    throw new Error(`Fixture index ${index} out of bounds (0-${fixturesCache.length - 1})`);
   }
   return fixturesCache[index];
 }
