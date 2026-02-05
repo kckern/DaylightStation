@@ -8,11 +8,12 @@ export function createSeededRNG(seed) {
   let state = seed;
 
   function next() {
-    state |= 0;
-    state = (state + 0x6d2b79f5) | 0;
-    let t = Math.imul(state ^ (state >>> 15), 1 | state);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    // mulberry32 PRNG algorithm - simple, fast, 32-bit generator with good distribution
+    state |= 0; // Ensure 32-bit integer
+    state = (state + 0x6d2b79f5) | 0; // 0x6d2b79f5: golden ratio-derived increment for uniform distribution
+    let t = Math.imul(state ^ (state >>> 15), 1 | state); // XOR-shift and multiply for bit mixing
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; // 61: prime multiplier for additional mixing
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296; // 4294967296 = 2^32, normalizes to [0, 1)
   }
 
   return {
@@ -32,11 +33,20 @@ export function createSeededRNG(seed) {
 
     /** Weighted random choice from array of { weight, value } or { weight, ...rest } */
     weightedChoice(options) {
-      const totalWeight = options.reduce((sum, opt) => sum + opt.weight, 0);
+      // Validate input: return null for empty or invalid arrays
+      if (!options || options.length === 0) return null;
+
+      const totalWeight = options.reduce((sum, opt) => sum + (opt.weight || 0), 0);
+
+      // Handle edge case where all weights are 0 - fall back to uniform random selection
+      if (totalWeight === 0) {
+        return this.pick(options.map((opt) => (opt.value !== undefined ? opt.value : opt)));
+      }
+
       let random = next() * totalWeight;
 
       for (const option of options) {
-        random -= option.weight;
+        random -= option.weight || 0;
         if (random <= 0) {
           return option.value !== undefined ? option.value : option;
         }
