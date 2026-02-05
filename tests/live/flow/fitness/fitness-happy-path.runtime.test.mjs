@@ -290,7 +290,7 @@ test.describe('Fitness Happy Path', () => {
     if (firstCollection) {
       const collectionId = firstCollection.target?.collection_id;
       try {
-        const contentCheck = await request.get(`${API_URL}/api/v1/list/plex/${collectionId}`);
+        const contentCheck = await request.get(`${API_URL}/api/v1/item/plex/${collectionId}`);
         const contentData = await contentCheck.json().catch(() => ({}));
         plexContentAvailable = contentCheck.ok() && !contentData.error;
         console.log(`Plex content available: ${plexContentAvailable}${!plexContentAvailable ? ` (${contentData.error || 'API error'} - will skip content tests)` : ''}`);

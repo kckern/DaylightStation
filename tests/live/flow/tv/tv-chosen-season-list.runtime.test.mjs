@@ -13,7 +13,7 @@ test.describe('The Chosen Season List', () => {
   test('API returns list action for Chosen (not play)', async ({ request }) => {
     console.log('[TEST] Checking API response for Chosen...');
 
-    const response = await request.get(`${BASE_URL}/api/v1/list/folder/TVApp`);
+    const response = await request.get(`${BASE_URL}/api/v1/item/folder/TVApp`);
     expect(response.ok()).toBe(true);
 
     const data = await response.json();

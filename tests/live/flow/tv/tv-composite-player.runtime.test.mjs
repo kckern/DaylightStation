@@ -64,7 +64,7 @@ test.describe('TV Composite Player (Fireworks)', () => {
     console.log('\n[TEST 1] Checking API response for Fireworks...');
 
     // Fetch TVApp menu
-    const listResponse = await request.get(`${BASE_URL}/api/v1/list/folder/TVApp`);
+    const listResponse = await request.get(`${BASE_URL}/api/v1/item/folder/TVApp`);
     expect(listResponse.ok()).toBe(true);
     const listData = await listResponse.json();
 

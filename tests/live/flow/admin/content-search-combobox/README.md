@@ -71,7 +71,7 @@ Tests run in alphabetical order. Preflight runs first to fail fast on infrastruc
 Checks infrastructure before other tests run:
 - Backend API responds (`/api/v1/health`)
 - Search API endpoint works (`/api/v1/content/query/search`)
-- List API endpoint works (`/api/v1/list/media/`)
+- List API endpoint works (`/api/v1/item/media/`)
 - Frontend test page loads (`/admin/test/combobox`)
 - Test harness module imports correctly
 - Dynamic fixture loader can fetch real data

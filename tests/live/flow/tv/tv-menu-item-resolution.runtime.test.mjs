@@ -187,7 +187,7 @@ test.describe('TV Menu Item Resolution', () => {
   const skipped = [];
 
   test.beforeAll(async ({ request }) => {
-    const response = await request.get(`${DEV_API}/api/v1/list/folder/TVApp`);
+    const response = await request.get(`${DEV_API}/api/v1/item/folder/TVApp`);
     expect(response.ok(), `Failed to fetch TVApp menu from ${DEV_API}`).toBe(true);
 
     const data = await response.json();
