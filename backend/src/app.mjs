@@ -515,6 +515,21 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   };
   rootLogger.info('content.routers.created', { keys: ['item', 'content', 'proxy', 'list', 'play', 'localContent', 'local', 'stream'] });
 
+  // Info router (action-based metadata)
+  const { createInfoRouter } = await import('./4_api/v1/routers/info.mjs');
+  v1Routers.info = createInfoRouter({
+    registry: contentRegistry,
+    contentQueryService: contentServices.contentQueryService,
+    logger: rootLogger.child({ module: 'info-api' })
+  });
+
+  // Display router (action-based images)
+  const { createDisplayRouter } = await import('./4_api/v1/routers/display.mjs');
+  v1Routers.display = createDisplayRouter({
+    registry: contentRegistry,
+    logger: rootLogger.child({ module: 'display-api' })
+  });
+
   // Health domain router
   v1Routers.health = createHealthApiRouter({
     healthServices,

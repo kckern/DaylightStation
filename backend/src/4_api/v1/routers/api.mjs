@@ -54,6 +54,8 @@ export function createApiRouter(config) {
   // Change mountPath here to rename routes without touching frontend
   const routeMap = {
     '/item': 'item',  // New unified item-centric API
+    '/info': 'info',  // Action-based metadata (unified ID format)
+    '/display': 'display',  // Action-based images (unified ID format)
     '/config': 'config',
     '/content': 'content',
     '/proxy': 'proxy',
