@@ -1104,9 +1104,55 @@ function ContentSearchCombobox({ value, onChange }) {
 
   const handleStartEditing = () => {
     setIsEditing(true);
-    setSearchQuery(value || ''); // Initialize with current value so user can see/edit it
+    setSearchQuery(value || '');
     combobox.openDropdown();
-    fetchSiblings();
+
+    // Check cache first
+    const cached = getCacheEntry(value);
+
+    if (cached?.status === 'loaded' && cached.data) {
+      // Cache hit - use instantly
+      setBrowseItems(cached.data.browseItems);
+      setCurrentParent(cached.data.currentParent);
+      setLoadingBrowse(false);
+      // Find and highlight current item
+      const normalizedVal = value?.replace(/:\s+/g, ':');
+      const currentIndex = cached.data.browseItems.findIndex(s => s.value === normalizedVal);
+      setHighlightedIdx(currentIndex >= 0 ? currentIndex : 0);
+      // Scroll to current item
+      setTimeout(() => {
+        if (optionsRef.current) {
+          const currentOption = optionsRef.current.querySelector(`[data-value="${normalizedVal}"]`);
+          if (currentOption) {
+            currentOption.scrollIntoView({ block: 'center' });
+          }
+        }
+      }, 50);
+    } else if (cached?.status === 'pending' && cached.promise) {
+      // In flight - wait for it
+      setLoadingBrowse(true);
+      cached.promise.then(data => {
+        if (data) {
+          setBrowseItems(data.browseItems);
+          setCurrentParent(data.currentParent);
+          const normalizedVal = value?.replace(/:\s+/g, ':');
+          const currentIndex = data.browseItems.findIndex(s => s.value === normalizedVal);
+          setHighlightedIdx(currentIndex >= 0 ? currentIndex : 0);
+          setTimeout(() => {
+            if (optionsRef.current) {
+              const currentOption = optionsRef.current.querySelector(`[data-value="${normalizedVal}"]`);
+              if (currentOption) {
+                currentOption.scrollIntoView({ block: 'center' });
+              }
+            }
+          }, 50);
+        }
+        setLoadingBrowse(false);
+      });
+    } else {
+      // Cache miss - fetch normally
+      fetchSiblings();
+    }
   };
 
   const handleBlur = () => {
