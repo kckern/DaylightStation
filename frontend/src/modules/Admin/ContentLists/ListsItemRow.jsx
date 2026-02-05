@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, forwardRef } from 'react';
+import React, { useState, useRef, useEffect, forwardRef, useCallback } from 'react';
 import { Text, Checkbox, ActionIcon, Menu, TextInput, Combobox, useCombobox, InputBase, Loader, Group, Avatar, Badge, Box, Drawer, Stack, ScrollArea, Divider, Progress } from '@mantine/core';
 import { useDebouncedValue } from '@mantine/hooks';
 import {
@@ -15,6 +15,7 @@ import { CSS } from '@dnd-kit/utilities';
 import ConfigIndicators from './ConfigIndicators.jsx';
 import ProgressDisplay from './ProgressDisplay.jsx';
 import { getCacheEntry, setCacheEntry, hasCacheEntry } from './siblingsCache.js';
+import { useListsContext } from './ListsContext.js';
 
 const ACTION_OPTIONS = [
   { value: 'Play', label: 'Play' },
@@ -1783,11 +1784,37 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
     id: item.index
   });
 
+  const { getNearbyItems, setContentInfo, contentInfoMap } = useListsContext();
+
   // Inline editing state
   const [editingLabel, setEditingLabel] = useState(false);
   const [labelValue, setLabelValue] = useState(item.label || '');
   const [drawerOpen, setDrawerOpen] = useState(false);
   const labelInputRef = useRef(null);
+
+  const handleRowHover = useCallback(() => {
+    if (!item.input) return;
+
+    const nearbyItems = getNearbyItems(item.index, 2);
+    nearbyItems.forEach(nearbyItem => {
+      if (!nearbyItem.input) return;
+
+      // Get or fetch content info
+      let info = nearbyItem.contentInfo || contentInfoMap.get(nearbyItem.input);
+
+      if (info && !info.unresolved) {
+        preloadSiblings(nearbyItem.input, info);
+      } else if (!contentInfoMap.has(nearbyItem.input)) {
+        // Fetch content info first, then preload
+        fetchContentMetadata(nearbyItem.input).then(fetchedInfo => {
+          if (fetchedInfo && !fetchedInfo.unresolved) {
+            setContentInfo(nearbyItem.input, fetchedInfo);
+            preloadSiblings(nearbyItem.input, fetchedInfo);
+          }
+        });
+      }
+    });
+  }, [item.input, item.index, getNearbyItems, contentInfoMap, setContentInfo]);
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -1840,7 +1867,7 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
   };
 
   return (
-    <div ref={setNodeRef} style={style} className="item-row" data-testid={`item-row-${item.index}`}>
+    <div ref={setNodeRef} style={style} className="item-row" data-testid={`item-row-${item.index}`} onMouseEnter={handleRowHover}>
       <div className="col-active">
         <Checkbox
           checked={item.active !== false}
