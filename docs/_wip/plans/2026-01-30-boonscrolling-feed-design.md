@@ -2,7 +2,7 @@
 
 > Replacing doomscrolling with grounded, productive scrolling
 
-**Last Updated:** 2026-01-30
+**Last Updated:** 2026-02-03
 **Status:** Design Complete, Ready for Implementation
 
 ---
@@ -30,7 +30,7 @@ Boonscrolling replaces attention-extracting feeds (Reddit, Twitter, etc.) with a
 │   ┌─────────────────────────────────────────────────────────────┐       │
 │   │                    Feed API (Backend)                        │       │
 │   │                                                              │       │
-│   │  Aggregates: RSS, Reddit, YouTube, Photos, Grounding         │       │
+│   │  Aggregates: RSS, Reddit, YouTube, Nostr, Photos, Grounding  │       │
 │   │  Applies: User algorithm, injection ratios, time tracking    │       │
 │   └──────────────────────────┬──────────────────────────────────┘       │
 │                              │                                           │
@@ -75,13 +75,27 @@ The backend Feed API is the core; frontends consume it differently.
 │  │  freshrss │  reddit.yml  │  youtube.yml  │ entropy/etc  │           │
 │  └─────────────────────────────────────────────────────────┘           │
 │                                                                          │
+│  NOSTR (Via Social Layer)                                                │
+│  ────────────────────────                                                │
+│                                                                          │
+│  ┌─────────────────────────────────────────────────────────┐           │
+│  │              Social Layer (SocialNetworkPort)            │           │
+│  │                                                          │           │
+│  │  NostrAdapter ──► Relay Pool ──► Events from Follows     │           │
+│  │       │                                                  │           │
+│  │       ├── General follows ──► External content           │           │
+│  │       └── Family circles ──► Grounding content           │           │
+│  └─────────────────────────────────────────────────────────┘           │
+│                                                                          │
 │  SERVING (On Request)                                                    │
 │  ────────────────────                                                    │
 │                                                                          │
 │  GET /feed/next ──► FeedAlgorithmService                                │
 │                          │                                               │
-│                          ├── Get external (RSS + Reddit + YouTube)      │
-│                          ├── Get grounding (Entropy, Todos, Photos...)  │
+│                          ├── Get external (RSS + Reddit + YouTube +     │
+│                          │                  Nostr general follows)       │
+│                          ├── Get grounding (Entropy, Todos, Photos,     │
+│                          │                  Nostr family circles...)     │
 │                          ├── Apply injection ratio + time decay          │
 │                          ├── Check triggers (time of day, context)       │
 │                          ├── Inject Lifeplan ceremonies if due           │
@@ -111,6 +125,7 @@ backend/src/
 │   │   │   ├── FreshRssContentAdapter.mjs
 │   │   │   ├── RedditRssAdapter.mjs
 │   │   │   ├── YouTubeRssAdapter.mjs
+│   │   │   ├── NostrContentAdapter.mjs      (wraps social layer)
 │   │   │   └── index.mjs
 │   │   ├── grounding/
 │   │   │   ├── PhotoGroundingAdapter.mjs    (Immich)
@@ -119,6 +134,7 @@ backend/src/
 │   │   │   ├── EmailGroundingAdapter.mjs
 │   │   │   ├── NutritionGroundingAdapter.mjs
 │   │   │   ├── LifeplanGroundingAdapter.mjs
+│   │   │   ├── NostrGroundingAdapter.mjs    (family circles)
 │   │   │   └── index.mjs
 │   │   ├── storage/
 │   │   │   ├── YamlFeedDatastore.mjs
@@ -711,6 +727,111 @@ export class YouTubeRssAdapter {
 }
 ```
 
+### Nostr Content Adapter
+
+Nostr posts from general follows appear as external content. This adapter wraps the social layer's NostrAdapter rather than managing relay connections directly.
+
+```javascript
+/**
+ * NostrContentAdapter
+ *
+ * Fetches Nostr posts from general follows (not family circles).
+ * Wraps the social layer's NostrAdapter - does NOT manage relays directly.
+ *
+ * @see docs/roadmap/social-and-licensing.md for NostrAdapter details
+ */
+
+export class NostrContentAdapter {
+  #socialOrchestrator  // From social layer
+  #datastore
+  #logger
+
+  get sourceId() { return 'nostr' }
+
+  /**
+   * Harvest is handled by the social layer's sync process.
+   * This adapter just reads from cached events.
+   */
+  async harvest(config) {
+    // No-op: Social layer handles Nostr sync
+    // Events are already being harvested by SocialOrchestrator
+    this.#logger.debug?.('nostr.harvest.delegated', {
+      message: 'Harvest delegated to social layer'
+    })
+    return 0
+  }
+
+  async getUnconsumed(username, limit) {
+    // Get posts from general follows (not family circles)
+    const events = await this.#socialOrchestrator.getActivities({
+      username,
+      visibility: ['connections', 'public'],  // Exclude circle-only
+      excludeCircles: ['family'],  // Family goes to grounding adapter
+      limit,
+      unconsumedOnly: true,
+    })
+
+    return events.map(event => new FeedItem({
+      id: `nostr:${event.id}`,
+      type: 'external',
+      source: 'nostr',
+      title: this.#extractTitle(event),
+      body: event.content?.substring(0, 280),
+      image: this.#extractImage(event),
+      link: `https://njump.me/${event.id}`,  // Universal Nostr link
+      timestamp: new Date(event.createdAt * 1000),
+      meta: {
+        npub: event.author.npub,
+        authorName: event.author.name,
+        authorAvatar: event.author.avatar,
+        eventKind: event.kind,
+        badge: event.author.daylightBadge,  // 💎 Patron, etc.
+        reactions: event.reactions,
+        replyCount: event.replyCount,
+      },
+      // Nostr posts get quick interactions
+      interaction: FeedInteraction.buttons([
+        { label: '❤️', value: 'like', style: 'icon' },
+        { label: '💬', value: 'reply', style: 'icon' },
+        { label: '🔁', value: 'repost', style: 'icon' },
+      ], { eventId: event.id, protocol: 'nostr' }),
+    }))
+  }
+
+  #extractTitle(event) {
+    // For notes, use author name
+    if (event.kind === 1) {
+      return event.author.name || event.author.npub.slice(0, 12) + '...'
+    }
+    // For articles (kind 30023), use title tag
+    if (event.kind === 30023) {
+      return event.tags?.find(t => t[0] === 'title')?.[1] || 'Article'
+    }
+    return event.author.name
+  }
+
+  #extractImage(event) {
+    // Check for image in content (URL ending in image extension)
+    const imageMatch = event.content?.match(/https?:\/\/[^\s]+\.(jpg|jpeg|png|gif|webp)/i)
+    if (imageMatch) return imageMatch[0]
+
+    // Check for image tag
+    const imageTag = event.tags?.find(t => t[0] === 'image')
+    if (imageTag) return imageTag[1]
+
+    return null
+  }
+
+  async markConsumed(username, itemIds) {
+    const eventIds = itemIds
+      .filter(id => id.startsWith('nostr:'))
+      .map(id => id.slice(6))
+
+    await this.#datastore.markConsumed('nostr', username, eventIds)
+  }
+}
+```
+
 ---
 
 ## Grounding Content Sources
@@ -1061,6 +1182,718 @@ export class LifeplanGroundingAdapter {
     })
   }
 }
+
+/**
+ * NostrGroundingAdapter
+ *
+ * Nostr posts from family/close circles appear as GROUNDING content.
+ * These are real relationships that anchor you, not entertainment.
+ *
+ * Key insight: Family Nostr posts ground you among the Reddit noise.
+ */
+export class NostrGroundingAdapter {
+  #socialOrchestrator
+  #logger
+
+  get sourceId() { return 'nostr_family' }
+  get defaultPriority() { return 12 }  // Between photos (5) and entropy (20)
+
+  async getItems(username, { limit, excludeIds, context }) {
+    // Only fetch from configured grounding circles
+    const config = this.#getConfig(username)
+    const groundingCircles = config.groundingCircles || ['family']
+
+    const events = await this.#socialOrchestrator.getActivities({
+      username,
+      circles: groundingCircles,
+      limit,
+      excludeIds,
+      unconsumedOnly: true,
+    })
+
+    const items = events.map(event => this.#mapToFeedItem(event, config))
+
+    // Also check for DMs/mentions (high priority grounding)
+    const mentions = await this.#socialOrchestrator.getMentions({
+      username,
+      limit: 3,
+      excludeIds,
+      unconsumedOnly: true,
+    })
+
+    const mentionItems = mentions.map(event => this.#mapToFeedItem(event, config, {
+      priority: 22,  // Higher than todos
+      isDirectMention: true,
+    }))
+
+    return [...mentionItems, ...items].slice(0, limit)
+  }
+
+  #mapToFeedItem(event, config, overrides = {}) {
+    const authorName = event.author.name || event.author.npub.slice(0, 12) + '...'
+
+    return new FeedItem({
+      id: `nostr_family:${event.id}`,
+      type: 'grounding',
+      source: 'nostr_family',
+      title: overrides.isDirectMention
+        ? `${authorName} mentioned you`
+        : authorName,
+      body: event.content?.substring(0, 280),
+      image: this.#extractImage(event),
+      timestamp: new Date(event.createdAt * 1000),
+      priority: overrides.priority || this.defaultPriority,
+      meta: {
+        npub: event.author.npub,
+        authorName: event.author.name,
+        authorAvatar: event.author.avatar,
+        badge: event.author.daylightBadge,
+        circle: event.circle,
+        isFamily: true,
+        isDirectMention: overrides.isDirectMention || false,
+      },
+      // Family posts get quick reply interactions
+      interaction: FeedInteraction.buttons([
+        { label: '❤️', value: 'like', style: 'icon' },
+        { label: 'Reply', value: 'reply', style: 'default' },
+      ], { eventId: event.id, protocol: 'nostr' }),
+    })
+  }
+
+  #extractImage(event) {
+    const imageMatch = event.content?.match(/https?:\/\/[^\s]+\.(jpg|jpeg|png|gif|webp)/i)
+    return imageMatch ? imageMatch[0] : null
+  }
+
+  #getConfig(username) {
+    // Would come from ConfigService in real implementation
+    return {
+      groundingCircles: ['family', 'close_friends'],
+    }
+  }
+}
+```
+
+---
+
+## Nostr Feed Interactions
+
+When users interact with Nostr posts in the feed, responses route through the social layer.
+
+### Interaction Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    NOSTR INTERACTION FLOW                                │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  User taps ❤️ on Nostr post in feed                                     │
+│       │                                                                  │
+│       ▼                                                                  │
+│  POST /feed/respond                                                      │
+│  { itemId: "nostr:abc123", response: "like", context: { protocol } }    │
+│       │                                                                  │
+│       ▼                                                                  │
+│  RespondToFeedItem.execute()                                             │
+│       │                                                                  │
+│       ├── Detects "nostr:" prefix                                       │
+│       ├── Calls NostrInteractionHandler                                  │
+│       └── Delegates to SocialOrchestrator                               │
+│               │                                                          │
+│               ▼                                                          │
+│  SocialOrchestrator.react(eventId, 'like')                              │
+│       │                                                                  │
+│       ▼                                                                  │
+│  NostrAdapter.publish(kind:7 reaction)                                   │
+│       │                                                                  │
+│       ▼                                                                  │
+│  Event sent to relays                                                    │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### NostrInteractionHandler
+
+```javascript
+/**
+ * NostrInteractionHandler
+ *
+ * Handles feed interactions for Nostr content.
+ * Routes actions through the social layer.
+ */
+
+export class NostrInteractionHandler {
+  #socialOrchestrator
+  #logger
+
+  /**
+   * Supported actions: like, reply, repost
+   */
+  async handle(username, itemId, response, context) {
+    const eventId = itemId.replace(/^nostr(_family)?:/, '')
+
+    switch (response) {
+      case 'like':
+        return this.#handleLike(username, eventId)
+
+      case 'reply':
+        return this.#handleReply(username, eventId, context)
+
+      case 'repost':
+        return this.#handleRepost(username, eventId)
+
+      default:
+        this.#logger.warn?.('nostr.interaction.unknown', { response })
+        return { success: false, error: 'Unknown action' }
+    }
+  }
+
+  async #handleLike(username, eventId) {
+    await this.#socialOrchestrator.react({
+      username,
+      targetEventId: eventId,
+      reaction: '+',  // NIP-25 like
+      protocol: 'nostr',
+    })
+
+    return { success: true, action: 'liked' }
+  }
+
+  async #handleReply(username, eventId, context) {
+    // If reply text provided, post immediately
+    if (context.replyText) {
+      await this.#socialOrchestrator.reply({
+        username,
+        targetEventId: eventId,
+        content: context.replyText,
+        protocol: 'nostr',
+      })
+      return { success: true, action: 'replied' }
+    }
+
+    // Otherwise, return prompt for reply text
+    return {
+      success: true,
+      action: 'prompt_reply',
+      prompt: {
+        type: 'text_input',
+        placeholder: 'Write a reply...',
+        maxLength: 280,
+        submitAction: 'reply',
+        context: { eventId, protocol: 'nostr' },
+      },
+    }
+  }
+
+  async #handleRepost(username, eventId) {
+    await this.#socialOrchestrator.repost({
+      username,
+      targetEventId: eventId,
+      protocol: 'nostr',
+    })
+
+    return { success: true, action: 'reposted' }
+  }
+}
+```
+
+### Updated RespondToFeedItem Use Case
+
+```javascript
+/**
+ * RespondToFeedItem Use Case (extended for Nostr)
+ */
+export class RespondToFeedItem {
+  #handlers = new Map()
+  #logger
+
+  constructor({ nostrHandler, entropyHandler, todoHandler, lifeplanHandler, logger }) {
+    this.#handlers.set('nostr', nostrHandler)
+    this.#handlers.set('nostr_family', nostrHandler)  // Same handler
+    this.#handlers.set('entropy', entropyHandler)
+    this.#handlers.set('todo', todoHandler)
+    this.#handlers.set('lifeplan', lifeplanHandler)
+    // ... other handlers
+    this.#logger = logger
+  }
+
+  async execute(username, { itemId, response, context }) {
+    // Extract source from itemId (e.g., "nostr:abc123" → "nostr")
+    const [source] = itemId.split(':')
+    const handler = this.#handlers.get(source)
+
+    if (!handler) {
+      this.#logger.warn?.('feed.respond.no_handler', { source, itemId })
+      return { success: false, error: `No handler for source: ${source}` }
+    }
+
+    return handler.handle(username, itemId, response, context)
+  }
+}
+```
+
+---
+
+## Content Bridging
+
+Boonscrolling enables commenting on external content (Reddit, YouTube, RSS) via Nostr, without needing accounts on those platforms. This creates a parallel discussion layer owned by users.
+
+### The Problem
+
+- User sees interesting Reddit post
+- Wants to comment, but doesn't have/use Reddit account
+- Even if they did, Reddit owns that comment forever
+- No way to discuss with family/connections
+
+### The Solution: Bridge Events
+
+When a user comments on external content, the system creates (or finds) a Nostr "bridge event" that references the external content. All comments become replies to this bridge event.
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    CONTENT BRIDGING FLOW                                 │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  Reddit post in feed ──► User taps "💬 Comment"                         │
+│                                │                                         │
+│                                ▼                                         │
+│                    ┌──────────────────────┐                             │
+│                    │ Bridge event exists? │                             │
+│                    └──────────────────────┘                             │
+│                          │           │                                   │
+│                         yes          no                                  │
+│                          │           │                                   │
+│                          │           ▼                                   │
+│                          │    Create bridge event                        │
+│                          │    ┌────────────────────────────────┐        │
+│                          │    │ kind: 1                        │        │
+│                          │    │ content: "📎 r/technology:     │        │
+│                          │    │          [Post title...]"      │        │
+│                          │    │ tags: [                        │        │
+│                          │    │   ["r", "reddit.com/..."],     │        │
+│                          │    │   ["ext", "reddit", "abc123"], │        │
+│                          │    │   ["t", "bridged"]             │        │
+│                          │    │ ]                              │        │
+│                          │    └────────────────────────────────┘        │
+│                          │           │                                   │
+│                          ▼           ▼                                   │
+│                    ┌──────────────────────┐                             │
+│                    │  User writes comment │                             │
+│                    └──────────────────────┘                             │
+│                                │                                         │
+│                                ▼                                         │
+│                    Create Nostr reply to bridge event                    │
+│                                │                                         │
+│                                ▼                                         │
+│          ┌─────────────────────────────────────────────┐                │
+│          │  Other DaylightStation users see:            │                │
+│          │  - Same Reddit post in their feed            │                │
+│          │  - "💬 3" showing Nostr comments exist       │                │
+│          │  - Can join the conversation                 │                │
+│          └─────────────────────────────────────────────┘                │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Bridge Event Format
+
+The bridge event uses a standardized tag format for discoverability:
+
+```javascript
+{
+  kind: 1,
+  content: `📎 From r/${subreddit}: "${title}"\n\n${summary}`,
+  tags: [
+    // Primary reference (URL)
+    ['r', 'https://reddit.com/r/technology/comments/abc123/...'],
+
+    // Structured reference for querying
+    ['ext', 'reddit', 'abc123'],  // ['ext', source, id]
+
+    // Discoverability
+    ['t', 'bridged'],
+    ['t', subreddit],  // e.g., 'technology'
+
+    // Optional: content type
+    ['content-type', 'text/plain'],
+  ],
+  created_at: timestamp
+}
+```
+
+**Tag conventions:**
+| Tag | Purpose | Example |
+|-----|---------|---------|
+| `r` | Reference URL | `['r', 'https://reddit.com/...']` |
+| `ext` | Structured external ref | `['ext', 'reddit', 'abc123']` |
+| `t` | Topic/hashtag | `['t', 'bridged']` |
+
+### ContentBridgeService
+
+```javascript
+/**
+ * ContentBridgeService
+ *
+ * Creates and finds Nostr bridge events for external content.
+ * Enables commenting on Reddit/YouTube/RSS via Nostr.
+ */
+
+export class ContentBridgeService {
+  #nostrAdapter
+  #bridgeCache = new Map()  // externalId → bridgeEventId
+  #logger
+
+  /**
+   * Get or create a bridge event for external content
+   */
+  async getOrCreateBridge(externalItem, username) {
+    const externalId = externalItem.id  // e.g., 'reddit:abc123'
+
+    // Check cache first
+    if (this.#bridgeCache.has(externalId)) {
+      return this.#bridgeCache.get(externalId)
+    }
+
+    // Query relays for existing bridge
+    const existing = await this.#findExistingBridge(externalItem)
+    if (existing) {
+      this.#bridgeCache.set(externalId, existing.id)
+      return existing
+    }
+
+    // Create new bridge event
+    const bridge = await this.#createBridge(externalItem, username)
+    this.#bridgeCache.set(externalId, bridge.id)
+
+    this.#logger.info?.('bridge.created', {
+      externalId,
+      bridgeId: bridge.id,
+    })
+
+    return bridge
+  }
+
+  async #findExistingBridge(externalItem) {
+    const [source, id] = externalItem.id.split(':')
+
+    // Query for events with matching external tag
+    const events = await this.#nostrAdapter.query({
+      kinds: [1],
+      '#ext': [`${source}:${id}`],
+      '#t': ['bridged'],
+      limit: 1,
+    })
+
+    return events[0] || null
+  }
+
+  async #createBridge(externalItem, username) {
+    const [source, id] = externalItem.id.split(':')
+
+    const content = this.#formatBridgeContent(externalItem)
+    const tags = [
+      ['r', externalItem.link],
+      ['ext', source, id],
+      ['t', 'bridged'],
+    ]
+
+    // Add source-specific tags
+    if (source === 'reddit' && externalItem.meta.subreddit) {
+      tags.push(['t', externalItem.meta.subreddit])
+    }
+    if (source === 'youtube' && externalItem.meta.channelName) {
+      tags.push(['t', externalItem.meta.channelName])
+    }
+
+    return this.#nostrAdapter.publish({
+      kind: 1,
+      content,
+      tags,
+    })
+  }
+
+  #formatBridgeContent(item) {
+    const sourceEmoji = {
+      reddit: '📎',
+      youtube: '🎬',
+      rss: '📰',
+    }[item.source] || '🔗'
+
+    const sourceLabel = {
+      reddit: `r/${item.meta.subreddit}`,
+      youtube: item.meta.channelName,
+      rss: item.meta.feedName,
+    }[item.source] || item.source
+
+    let content = `${sourceEmoji} From ${sourceLabel}:\n\n`
+    content += `"${item.title}"\n\n`
+
+    if (item.body) {
+      content += `${item.body.substring(0, 200)}...\n\n`
+    }
+
+    content += `🔗 ${item.link}`
+
+    return content
+  }
+
+  /**
+   * Get comment count and metadata for an external item
+   */
+  async getBridgeStats(externalItem) {
+    const bridge = await this.#findExistingBridge(externalItem)
+    if (!bridge) {
+      return { hasBridge: false, commentCount: 0 }
+    }
+
+    const replies = await this.#nostrAdapter.query({
+      kinds: [1],
+      '#e': [bridge.id],
+    })
+
+    return {
+      hasBridge: true,
+      bridgeEventId: bridge.id,
+      commentCount: replies.length,
+      lastActivity: replies.length > 0
+        ? Math.max(...replies.map(r => r.created_at))
+        : bridge.created_at,
+    }
+  }
+}
+```
+
+### Extended FeedItem with Bridge Data
+
+```javascript
+// FeedItem now includes optional bridge metadata
+{
+  id: 'reddit:abc123',
+  type: 'external',
+  source: 'reddit',
+  title: 'Interesting post about...',
+  // ... normal fields ...
+
+  // Bridge data (populated by FeedContentManager)
+  bridge: {
+    exists: true,
+    eventId: 'note1xyz...',
+    commentCount: 5,
+    lastActivity: 1706900000,
+    userParticipated: true,  // Has current user commented?
+  },
+
+  // Updated interaction to include bridge comment
+  interaction: FeedInteraction.buttons([
+    { label: '💬 5', value: 'comment', style: 'default' },
+    { label: '🔗', value: 'open', style: 'icon' },
+  ], { bridgeEventId: 'note1xyz...', externalUrl: '...' }),
+}
+```
+
+### BridgeInteractionHandler
+
+```javascript
+/**
+ * BridgeInteractionHandler
+ *
+ * Handles comment/reply actions on bridged external content.
+ */
+
+export class BridgeInteractionHandler {
+  #bridgeService
+  #nostrAdapter
+  #logger
+
+  async handle(username, itemId, response, context) {
+    switch (response) {
+      case 'comment':
+        return this.#handleComment(username, itemId, context)
+
+      case 'view_thread':
+        return this.#handleViewThread(itemId, context)
+
+      default:
+        return { success: false, error: 'Unknown action' }
+    }
+  }
+
+  async #handleComment(username, itemId, context) {
+    // Get or create bridge for this external content
+    const externalItem = await this.#getExternalItem(itemId)
+    const bridge = await this.#bridgeService.getOrCreateBridge(externalItem, username)
+
+    // If comment text provided, post it
+    if (context.commentText) {
+      await this.#nostrAdapter.publish({
+        kind: 1,
+        content: context.commentText,
+        tags: [
+          ['e', bridge.id, '', 'root'],  // Reply to bridge
+          ['p', bridge.pubkey],          // Tag bridge author
+        ],
+      })
+
+      return {
+        success: true,
+        action: 'commented',
+        bridgeEventId: bridge.id,
+      }
+    }
+
+    // Otherwise, prompt for comment text
+    return {
+      success: true,
+      action: 'prompt_comment',
+      prompt: {
+        type: 'text_input',
+        placeholder: 'Add your thoughts...',
+        maxLength: 500,
+        submitAction: 'comment',
+        context: {
+          bridgeEventId: bridge.id,
+          externalId: itemId,
+        },
+      },
+      // Include existing comments for display
+      thread: await this.#getThreadPreview(bridge.id),
+    }
+  }
+
+  async #handleViewThread(itemId, context) {
+    const bridge = await this.#bridgeService.findBridge(itemId)
+    if (!bridge) {
+      return { success: false, error: 'No discussion yet' }
+    }
+
+    const thread = await this.#getFullThread(bridge.id)
+
+    return {
+      success: true,
+      action: 'show_thread',
+      thread,
+    }
+  }
+
+  async #getThreadPreview(bridgeEventId, limit = 3) {
+    const replies = await this.#nostrAdapter.query({
+      kinds: [1],
+      '#e': [bridgeEventId],
+      limit,
+    })
+
+    return replies.map(this.#formatComment)
+  }
+
+  async #getFullThread(bridgeEventId) {
+    const replies = await this.#nostrAdapter.query({
+      kinds: [1],
+      '#e': [bridgeEventId],
+    })
+
+    // Build thread tree
+    return this.#buildThreadTree(bridgeEventId, replies)
+  }
+
+  #formatComment(event) {
+    return {
+      id: event.id,
+      author: {
+        npub: event.pubkey,
+        // Profile fetched separately
+      },
+      content: event.content,
+      timestamp: event.created_at,
+      reactions: [],  // Fetched separately if needed
+    }
+  }
+}
+```
+
+### UI Treatment
+
+| Element | Behavior |
+|---------|----------|
+| `💬 0` on Reddit post | Opens compose, creates bridge on first comment |
+| `💬 5` on Reddit post | Opens thread view with existing comments |
+| Thread view | Shows bridge event + all replies as conversation |
+| Reply in thread | Creates Nostr reply to that comment |
+| `❤️` on comment | Nostr kind:7 reaction to that reply |
+
+### Cross-User Discovery
+
+The magic: other DaylightStation users see the same Reddit post and can find the existing bridge:
+
+```javascript
+// In FeedContentManager, when building feed items:
+async enrichWithBridgeData(items) {
+  // Batch query for bridge stats
+  const bridgeQueries = items
+    .filter(item => item.type === 'external')
+    .map(item => this.#bridgeService.getBridgeStats(item))
+
+  const bridgeStats = await Promise.all(bridgeQueries)
+
+  return items.map((item, i) => {
+    if (item.type !== 'external') return item
+
+    return {
+      ...item,
+      bridge: bridgeStats[i],
+    }
+  })
+}
+```
+
+### Privacy & Visibility
+
+Bridge comments respect standard Nostr visibility:
+
+| Setting | Who sees | Use case |
+|---------|----------|----------|
+| Public bridge | Anyone on Nostr | Open discussion |
+| Connections-only reply | Mutual follows | Semi-private reaction |
+| Circle reply (NIP-44 encrypted) | Family only | "Hey look at this!" |
+
+**Default:** Bridge events are public (for discoverability), but replies can be any visibility.
+
+### Configuration
+
+```yaml
+# In feed config
+bridging:
+  enabled: true
+
+  # Auto-create bridges or only on first comment?
+  autoCreateBridges: false  # Only when user comments
+
+  # Default visibility for bridge events
+  bridgeVisibility: public
+
+  # Default visibility for comments
+  defaultCommentVisibility: public
+
+  # Show bridge stats in feed (requires querying relays)
+  showBridgeStats: true
+
+  # Cache TTL for bridge stats
+  bridgeStatsCacheTtl: 300  # seconds
+```
+
+### DDD Layer Placement
+
+```
+backend/src/2_adapters/feed/
+├── bridging/
+│   ├── ContentBridgeService.mjs      # Core bridge logic
+│   ├── BridgeInteractionHandler.mjs  # Handle comment actions
+│   ├── BridgeEventBuilder.mjs        # Format bridge content
+│   └── index.mjs
+
+backend/src/3_applications/feed/
+├── usecases/
+│   ├── CommentOnExternalContent.mjs  # Orchestrates bridging flow
+│   └── GetBridgeThread.mjs           # Fetch thread for display
 ```
 
 ---
@@ -1101,16 +1934,18 @@ export class FeedAlgorithmService {
       rss: 1.0,
       reddit: 1.0,
       youtube: 0.8,
+      nostr: 1.2,      // Slightly prefer over Reddit (real people)
     },
 
     // Grounding source weights
     groundingWeights: {
-      entropy: 2.0,    // High priority
+      entropy: 2.0,       // High priority
       todo: 2.0,
+      nostr_family: 1.8,  // Family posts are grounding
       nutrition: 1.5,
       email: 1.0,
       photo: 1.0,
-      lifeplan: 0.8,   // Less frequent
+      lifeplan: 0.8,      // Less frequent
     },
 
     // Limits
@@ -1536,6 +2371,14 @@ sources:
     enabled: true
     # Uses FreshRSS subscriptions
 
+  nostr:
+    enabled: true
+    # Uses social layer's relay connections
+    # No separate relay config - see social layer config
+    treatAsExternal:
+      - connections  # Posts from connections (not circles)
+      - public       # Public posts from follows
+
 # Grounding sources
 grounding:
   photo:
@@ -1561,6 +2404,15 @@ grounding:
     enabled: true
     maxPerSession: 1
 
+  nostr_family:
+    enabled: true
+    # Which circles count as "grounding" (real relationships)
+    groundingCircles:
+      - family
+      - close_friends
+    # Include DMs/mentions as high-priority grounding
+    includeMentions: true
+
 # Algorithm settings
 algorithm:
   baseGroundingRatio: 5
@@ -1574,10 +2426,12 @@ algorithm:
     rss: 1.0
     reddit: 1.0
     youtube: 0.8
+    nostr: 1.2  # Real people > anonymous content
 
   groundingWeights:
     entropy: 2.0
     todo: 2.0
+    nostr_family: 1.8  # Family posts anchor you
     nutrition: 1.5
     email: 1.0
     photo: 1.0
@@ -1634,10 +2488,56 @@ timeWarnings:
 23. Implement interactive items (buttons, text input, rating)
 24. Implement time warnings
 
-### Phase 6: Mobile App (Future)
-25. Design mobile app architecture
-26. Implement native scroll experience
-27. Push notifications for grounding nudges
+### Phase 6: Nostr Integration
+> Depends on: Social layer (Phase 2 of social-and-licensing.md)
+
+25. Create `NostrContentAdapter` wrapping social layer
+26. Create `NostrGroundingAdapter` for family circles
+27. Create `NostrInteractionHandler` for like/reply/repost
+28. Update `RespondToFeedItem` to route Nostr actions
+29. Add Nostr author display (avatar, name, badge)
+30. Implement quick-reply UI in feed items
+31. Test circle-based content routing
+
+**Integration points with social layer:**
+- Reuse `NostrAdapter` for relay pool, event handling
+- Reuse `SocialOrchestrator` for publish/react/reply
+- Share badge verification for author display
+- Listen to social sync for event harvesting
+
+### Phase 7: Content Bridging
+> Depends on: Phase 6 (Nostr Integration)
+
+32. Create `ContentBridgeService` for bridge event management
+33. Create `BridgeInteractionHandler` for comment actions
+34. Implement bridge discovery (query relays for existing bridges)
+35. Add bridge stats to feed items (comment count, last activity)
+36. Create thread view UI for bridge conversations
+37. Implement reply threading within bridge discussions
+38. Add visibility options for bridge comments
+39. Test cross-user bridge discovery
+
+**Bridge event conventions:**
+- `['ext', source, id]` tag for external content reference
+- `['t', 'bridged']` tag for discoverability
+- Public by default for cross-user discovery
+
+### Phase 8: Mobile App (Future)
+40. Design mobile app architecture
+41. Implement native scroll experience
+42. Push notifications for grounding nudges
+
+---
+
+## Cross-References
+
+| Topic | Document |
+|-------|----------|
+| Nostr/Polycentric protocol details | `docs/roadmap/social-and-licensing.md` |
+| SocialNetworkPort interface | `docs/roadmap/social-and-licensing.md` Part 4 |
+| Badge display & licensing | `docs/roadmap/social-and-licensing.md` Part 2 |
+| Circle/Connection model | `docs/roadmap/social-and-licensing.md` Part 3 |
+| Nostr event kinds | NIP-01 (notes), NIP-25 (reactions), NIP-44 (encryption) |
 
 ---
 
@@ -1646,7 +2546,11 @@ timeWarnings:
 - **Obsidian integration**: Random note resurfacing as grounding content
 - **Paperless-ngx integration**: Unprocessed documents as grounding items
 - **ML-based algorithm**: Learn user preferences from engagement data
-- **Social features**: Share interesting items to Telegram/family
+- **Polycentric support**: Add as second social protocol (see social-and-licensing.md)
+- **Nostr long-form**: Support for kind:30023 articles with full rendering
+- **Thread expansion**: Inline thread viewing for Nostr conversations
+- **Bridge federation**: Standardize `ext` tag so other Nostr clients can find/join bridge discussions
+- **Bridge notifications**: Alert when someone comments on content you bridged
 - **Offline support**: Cache content for offline scrolling
 - **Widget**: Home screen widget showing grounding summary
 - **Voice**: "What should I know right now?" via voice assistant
@@ -1657,4 +2561,6 @@ timeWarnings:
 
 | Date | Change |
 |------|--------|
+| 2026-02-03 | Added Content Bridging: comment on Reddit/YouTube via Nostr without platform accounts |
+| 2026-02-03 | Added Nostr integration: dual-source (external + grounding), interaction handling, social layer reuse |
 | 2026-01-30 | Initial design document |
