@@ -45,6 +45,7 @@ const simulationState = {
  * @param {Object} config.userDataService - UserDataService for reading household data
  * @param {Object} config.configService - ConfigService
  * @param {Object} config.contentRegistry - Content source registry (for show endpoint)
+ * @param {Object} [config.fitnessConfigService] - FitnessConfigService for normalized config access
  * @param {Object} [config.fitnessContentAdapter] - Pre-resolved content adapter for fitness (default: plex)
  * @param {Object} [config.contentQueryService] - ContentQueryService for watch state enrichment
  * @param {Object} config.transcriptionService - OpenAI transcription service (optional)
@@ -60,6 +61,7 @@ export function createFitnessRouter(config) {
     userDataService,
     configService,
     contentRegistry,
+    fitnessConfigService,
     fitnessContentAdapter,
     contentQueryService,
     transcriptionService,
@@ -141,22 +143,16 @@ export function createFitnessRouter(config) {
     }
 
     const householdId = req.query.household || configService.getDefaultHouseholdId();
-    const fitnessData = loadFitnessConfig(householdId);
 
-    if (!fitnessData) {
+    // Use FitnessConfigService for normalized config access (encapsulates Plex-specific structure)
+    const normalizedConfig = fitnessConfigService?.getNormalizedConfig(householdId);
+
+    if (!normalizedConfig) {
       return res.status(404).json({ error: 'Fitness configuration not found' });
     }
 
-    // Extract governed labels from config (check both governance and plex sections)
-    const governance = fitnessData.governance || {};
-    const plex = fitnessData.plex || {};
-    const governedLabels = Array.isArray(governance.governed_labels) && governance.governed_labels.length > 0
-      ? governance.governed_labels
-      : plex.governed_labels || [];
-
-    const governedTypes = Array.isArray(governance.governed_types) && governance.governed_types.length > 0
-      ? governance.governed_types
-      : plex.governed_types || ['show', 'movie'];
+    // Extract governed labels and types from normalized config
+    const { governedLabels, governedTypes } = normalizedConfig;
 
     if (!governedLabels || governedLabels.length === 0) {
       return res.json({
