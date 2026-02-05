@@ -153,7 +153,7 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
       // No parent, try to list root
       setLoading(true);
       try {
-        const response = await fetch(`/api/v1/list/${source}/`);
+        const response = await fetch(`/api/v1/item/${source}/`);
         if (response.ok) {
           const data = await response.json();
           setBrowseResults(data.items || []);
@@ -172,7 +172,7 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
 
     setLoading(true);
     try {
-      const response = await fetch(`/api/v1/list/${source}/${encodeURIComponent(parentPath)}`);
+      const response = await fetch(`/api/v1/item/${source}/${encodeURIComponent(parentPath)}`);
       if (!response.ok) throw new Error('Browse failed');
       const data = await response.json();
       setBrowseResults(data.items || []);
@@ -197,7 +197,7 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
 
     setLoading(true);
     try {
-      const response = await fetch(`/api/v1/list/${source}/${encodeURIComponent(localId)}`);
+      const response = await fetch(`/api/v1/item/${source}/${encodeURIComponent(localId)}`);
       if (!response.ok) throw new Error('Browse failed');
       const data = await response.json();
       setBrowseResults(data.items || []);
@@ -224,7 +224,7 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
 
     setLoading(true);
     try {
-      const response = await fetch(`/api/v1/list/${parent.source}/${encodeURIComponent(parent.localId)}`);
+      const response = await fetch(`/api/v1/item/${parent.source}/${encodeURIComponent(parent.localId)}`);
       if (!response.ok) throw new Error('Browse failed');
       const data = await response.json();
       setBrowseResults(data.items || []);
@@ -266,7 +266,7 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
 
     setLoading(true);
     try {
-      const response = await fetch(`/api/v1/list/${source}/${encodeURIComponent(parentPath)}`);
+      const response = await fetch(`/api/v1/item/${source}/${encodeURIComponent(parentPath)}`);
       if (!response.ok) throw new Error('Browse failed');
       const data = await response.json();
       setBrowseResults(data.items || []);
