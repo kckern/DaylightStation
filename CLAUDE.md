@@ -299,10 +299,10 @@ npm run test:live:api          # API tests only
 2. Start dev server if needed: `npm run dev`
 3. Verify both Vite and backend are running: `ps aux | grep -E 'vite|nodemon'`
 
-**DASH video "Not supported" in headless:**
-- Normal behavior - headless Chrome lacks some codecs
-- Tests skip gracefully when video can't play
-- Run `--headed` for full video playback testing
+**Video "Not supported" errors in tests:**
+- This is a real error that needs investigation, not a headless Chrome limitation
+- Do NOT dismiss as "headless Chrome codec issue" - that's incorrect
+- Debug the actual video streaming/playback code path
 
 **Test passes locally but fails in CI:**
 - Check port configuration matches CI environment
