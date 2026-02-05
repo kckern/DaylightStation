@@ -26,7 +26,6 @@ import { spawn } from 'child_process';
 import { ensureDir, writeBinary } from '#system/utils/FileIO.mjs';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { toListItem } from './list.mjs';
-import { FitnessProgressClassifier } from '#domains/fitness/index.mjs';
 
 // Module-level state for simulation process
 const simulationState = {
@@ -48,6 +47,7 @@ const simulationState = {
  * @param {Object} config.contentRegistry - Content source registry (for show endpoint)
  * @param {Object} [config.contentQueryService] - ContentQueryService for watch state enrichment
  * @param {Object} config.transcriptionService - OpenAI transcription service (optional)
+ * @param {Function} [config.createProgressClassifier] - Factory function to create progress classifier
  * @param {Object} config.logger - Logger instance
  * @returns {express.Router}
  */
@@ -61,6 +61,7 @@ export function createFitnessRouter(config) {
     contentRegistry,
     contentQueryService,
     transcriptionService,
+    createProgressClassifier,
     logger = console
   } = config;
 
@@ -211,12 +212,13 @@ export function createFitnessRouter(config) {
     const compoundId = `plex:${id}`;
 
     // Load config for progress classification thresholds
-    const config = loadFitnessConfig(householdId);
+    const fitnessConfig = loadFitnessConfig(householdId);
 
     // Create fitness progress classifier with config thresholds
-    const classifier = new FitnessProgressClassifier(
-      config?.progressClassification || {}
-    );
+    const classifierConfig = fitnessConfig?.progressClassification || {};
+    const classifier = createProgressClassifier
+      ? createProgressClassifier(classifierConfig)
+      : { classify: () => 'unknown' }; // Graceful fallback if not injected
 
     // Get playable items
     if (!adapter.resolvePlayables) {
