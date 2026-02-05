@@ -84,7 +84,7 @@ const FullScreenContainer = ({
                 <span className="full-screen-jumprope__label">jumps</span>
               </div>
               <div className="full-screen-jumprope__stat">
-                <span className="full-screen-jumprope__value">{Math.round(jumpropeData.rpm) || '--'}</span>
+                <span className="full-screen-jumprope__value">{Math.round(jumpropeData.rpm) || ''}</span>
                 <span className="full-screen-jumprope__label">rpm</span>
               </div>
             </div>

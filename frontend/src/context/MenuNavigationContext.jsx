@@ -17,10 +17,13 @@ const MenuNavigationContext = createContext(null);
 export function MenuNavigationProvider({ children, onBackAtRoot }) {
   // Navigation stack: array of { type, props }
   const [stack, setStack] = useState([]);
-  
+
   // Selection state per depth: { [depth]: { index, key } }
   const [selections, setSelections] = useState({ 0: { index: 0, key: null } });
-  
+
+  // Bug 04 fix: Counter to trigger data refetch when returning from video
+  const [refetchCounter, setRefetchCounter] = useState(0);
+
   // Current depth (derived from stack length)
   const depth = stack.length;
   
@@ -50,6 +53,9 @@ export function MenuNavigationProvider({ children, onBackAtRoot }) {
       }
       return prev.slice(0, -1);
     });
+    // Bug 04 fix: Increment refetch counter to trigger data refresh
+    // This ensures parent lists refresh watched status when returning from video
+    setRefetchCounter(c => c + 1);
     // Note: We don't clear selections when popping so state is preserved
     // when navigating back
     return true;
@@ -120,17 +126,20 @@ export function MenuNavigationProvider({ children, onBackAtRoot }) {
     stack,
     depth,
     currentContent: stack[stack.length - 1] || null,
-    
+
     // Selection
     selections,
     getSelection,
     setSelectionAtDepth,
-    
+
     // Navigation
     push,
     pop,
     reset,
     replace,
+
+    // Bug 04 fix: Refetch counter for data invalidation
+    refetchCounter,
   };
 
   return (

@@ -6,6 +6,7 @@ import AdminLayout from '../modules/Admin/AdminLayout.jsx';
 import ListsIndex from '../modules/Admin/ContentLists/ListsIndex.jsx';
 import ListsFolder from '../modules/Admin/ContentLists/ListsFolder.jsx';
 import ComingSoon from '../modules/Admin/Placeholders/ComingSoon.jsx';
+import ComboboxTestPage from '../modules/Admin/TestHarness/ComboboxTestPage.jsx';
 import './AdminApp.scss';
 import '@mantine/core/styles.css';
 
@@ -25,6 +26,9 @@ function AdminApp() {
     <MantineProvider theme={theme} defaultColorScheme="dark">
       <div className="App admin-app">
         <Routes>
+          {/* Test routes - outside AdminLayout */}
+          <Route path="test/combobox" element={<ComboboxTestPage />} />
+
           <Route element={<AdminLayout />}>
             <Route index element={<Navigate to="content/lists/menus" replace />} />
             <Route path="content/lists/:type" element={<ListsIndex />} />

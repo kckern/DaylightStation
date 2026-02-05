@@ -54,3 +54,6 @@ export { createTTSRouter } from './tts.mjs';
 // Admin routers
 export { createAdminRouter, createAdminContentRouter, createAdminImagesRouter } from './admin/index.mjs';
 export { createEventBusRouter } from './admin/eventbus.mjs';
+
+// Test infrastructure (dev/test only)
+export { createTestRouter } from './test.mjs';

@@ -1099,6 +1099,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'admin-api' })
   });
 
+  // Test infrastructure router (dev/test only)
+  const { createTestRouter } = await import('./4_api/v1/routers/test.mjs');
+  v1Routers.test = createTestRouter({
+    logger: rootLogger.child({ module: 'test-api' })
+  });
+
   // ==========================================================================
   // Mount API v1 Router
   // ==========================================================================

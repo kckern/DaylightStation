@@ -24,7 +24,7 @@ const RpmDeviceAvatar = ({
   const isZero = !Number.isFinite(normalizedRpm) || normalizedRpm <= 0;
   const displayValue = typeof renderValue === 'function'
     ? renderValue(normalizedRpm, isZero)
-    : (normalizedRpm != null ? normalizedRpm : '--');
+    : (isZero ? '' : normalizedRpm);
 
   const [didFallback, setDidFallback] = useState(false);
 

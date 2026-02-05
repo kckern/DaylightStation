@@ -8,7 +8,7 @@ import { DaylightAPI } from '../../../lib/api.mjs';
  * @param {string} plexId - Plex rating key
  * @returns {{ data: object|null, loading: boolean, error: Error|null }}
  */
-export function useFetchPlexData(plexId) {
+export function useFetchPlexData(plexId, refetchKey = 0) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -41,7 +41,7 @@ export function useFetchPlexData(plexId) {
 
     fetchData();
     return () => { canceled = true; };
-  }, [plexId]);
+  }, [plexId, refetchKey]); // Bug 04 fix: refetchKey triggers refetch when returning from video
 
   return { data, loading, error };
 }
