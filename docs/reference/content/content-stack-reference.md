@@ -840,7 +840,7 @@ Current value: media:sfx/intro
                      ↓ extract parent path
 Parent path:   sfx
                      ↓ fetch
-API call:      GET /api/v1/list/media/sfx
+API call:      GET /api/v1/item/media/sfx
                      ↓ returns
 Siblings:      [bgmusic/, error.mp3, intro.mp3, wii.mp3]
 ```
@@ -850,7 +850,7 @@ Siblings:      [bgmusic/, error.mp3, intro.mp3, wii.mp3]
 ```
 Current value: watchlist:comefollowme2025
                      ↓ get all lists of type
-API call:      GET /api/v1/list/list/watchlist:
+API call:      GET /api/v1/item/list/watchlist:
                      ↓ returns
 Siblings:      [cfmscripture, comefollowme2025, parenting, ...]
 ```
@@ -860,7 +860,7 @@ Siblings:      [cfmscripture, comefollowme2025, parenting, ...]
 ```
 Current value: freshvideo:teded
                      ↓ resolves to filesystem:video/news/teded
-API call:      GET /api/v1/list/filesystem/video/news
+API call:      GET /api/v1/item/filesystem/video/news
                      ↓ returns
 Siblings:      [5minnews, bbc, cnn, teded, vox, ...]
 ```
@@ -870,7 +870,7 @@ Siblings:      [5minnews, bbc, cnn, teded, vox, ...]
 ```
 Current value: talk:ldsgc
                      ↓ get all talk series
-API call:      GET /api/v1/list/local-content/talk:
+API call:      GET /api/v1/item/local-content/talk:
                      ↓ returns
 Siblings:      [ldsgc, byu, ...]
 ```
@@ -882,19 +882,19 @@ async function loadSiblings(compoundId) {
 
   // List-based sources (watchlist, query, menu, program)
   if (['watchlist', 'query', 'menu', 'program'].includes(source)) {
-    const response = await fetch(`/api/v1/list/list/${source}:`);
+    const response = await fetch(`/api/v1/item/list/${source}:`);
     return (await response.json()).items;
   }
 
   // Freshvideo channels
   if (source === 'freshvideo') {
-    const response = await fetch(`/api/v1/list/filesystem/video/news`);
+    const response = await fetch(`/api/v1/item/filesystem/video/news`);
     return (await response.json()).items;
   }
 
   // Talk series
   if (source === 'talk' || source === 'local-content') {
-    const response = await fetch(`/api/v1/list/local-content/talk:`);
+    const response = await fetch(`/api/v1/item/local-content/talk:`);
     return (await response.json()).items;
   }
 
@@ -903,7 +903,7 @@ async function loadSiblings(compoundId) {
   if (parts.length <= 1) return [];
 
   const parentPath = parts.slice(0, -1).join('/');
-  const response = await fetch(`/api/v1/list/${source}/${parentPath}`);
+  const response = await fetch(`/api/v1/item/${source}/${parentPath}`);
   return (await response.json()).items;
 }
 ```
@@ -913,7 +913,7 @@ async function loadSiblings(compoundId) {
 | Endpoint | Returns | Use Case |
 |----------|---------|----------|
 | `GET /api/v1/item/{source}/{localId}` | Single item with full metadata | Display selected item |
-| `GET /api/v1/list/{source}/{path}` | Container children as list | Browse folder, load siblings |
+| `GET /api/v1/item/{source}/{path}` | Container children as list | Browse folder, load siblings |
 | `GET /api/v1/content/item/{source}/{localId}` | Item metadata only | Resolve display info |
 | `GET /api/v1/content/query/search?text=...` | Search results | Free-text content search |
 
