@@ -15,11 +15,11 @@ export async function flattenQueueItems(items, level = 1) {
       const shuffle = !!item.queue.shuffle || item.shuffle || false;
       if (item.queue.playlist || item.queue.queue) {
         const queueKey = item.queue.playlist ?? item.queue.queue;
-        const { items: nestedItems } = await DaylightAPI(`api/v1/item/folder/${queueKey}/playable${shuffle ? ',shuffle' : ''}`);
+        const { items: nestedItems } = await DaylightAPI(`api/v1/list/folder/${queueKey}?capability=playable${shuffle ? ',shuffle' : ''}`);
         const nestedFlattened = await flattenQueueItems(nestedItems, level + 1);
         flattened.push(...nestedFlattened);
       } else if (item.queue.plex) {
-        const { items: plexItems } = await DaylightAPI(`api/v1/item/plex/${item.queue.plex}/playable${shuffle ? ',shuffle' : ''}`);
+        const { items: plexItems } = await DaylightAPI(`api/v1/list/plex/${item.queue.plex}?capability=playable${shuffle ? ',shuffle' : ''}`);
         const nestedFlattened = await flattenQueueItems(plexItems, level + 1);
         flattened.push(...nestedFlattened);
       }
@@ -67,7 +67,7 @@ export async function fetchMediaInfo({ plex, media, shuffle, maxVideoBitrate, ma
   }
 
   if (plex) {
-    const base = shuffle ? `api/v1/content/plex/info/${plex}/shuffle` : `api/v1/content/plex/info/${plex}`;
+    const base = shuffle ? `api/v1/info/plex/${plex}/shuffle` : `api/v1/info/plex/${plex}`;
     const url = buildUrl(base, queryCommon);
     const infoResponse = await DaylightAPI(url);
     return { ...infoResponse, assetId: infoResponse.plex };
@@ -80,7 +80,7 @@ export async function fetchMediaInfo({ plex, media, shuffle, maxVideoBitrate, ma
       source = media.substring(0, colonIndex);
       localId = media.substring(colonIndex + 1);
     }
-    const url = buildUrl(`api/v1/content/item/${source}/${localId}`, { shuffle });
+    const url = buildUrl(`api/v1/info/${source}/${localId}`, { shuffle });
     const infoResponse = await DaylightAPI(url);
     return infoResponse;
   }
@@ -104,7 +104,7 @@ export async function initializeQueue(play, queue) {
     const queueAssetId = play?.playlist || play?.queue || queue?.playlist || queue?.queue || queue?.media;
     if (queueAssetId) {
       const shuffle = !!play?.shuffle || !!queue?.shuffle || false;
-      const { items } = await DaylightAPI(`api/v1/item/folder/${queueAssetId}/playable${shuffle ? ',shuffle' : ''}`);
+      const { items } = await DaylightAPI(`api/v1/list/folder/${queueAssetId}?capability=playable${shuffle ? ',shuffle' : ''}`);
       const flatItems = await flattenQueueItems(items);
       newQueue = flatItems.map(item => ({ ...item, guid: guid() }));
     } else {
