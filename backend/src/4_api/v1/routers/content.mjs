@@ -1,7 +1,5 @@
 // backend/src/4_api/routers/content.mjs
 import express from 'express';
-import fs from 'fs';
-import path from 'path';
 import { nowTs24 } from '#system/utils/index.mjs';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { isMediaSearchable, validateSearchQuery } from '#domains/media/IMediaSearchable.mjs';
@@ -16,8 +14,8 @@ import { parseContentQuery, validateContentQuery } from '../parsers/contentQuery
  * - POST /api/content/progress/:source/* - Update watch progress
  * - GET /api/content/search - Search across content sources (IMediaSearchable)
  * - POST /api/content/compose - Compose multi-track presentation from sources
- * - GET /api/content/:source/image/:id - Get thumbnail image from content source
- * - GET /api/content/:source/info/:id - Get item metadata from content source
+ * - GET /api/content/:source/image/:id - DEPRECATED: Redirects to /api/v1/display/:source/:id
+ * - GET /api/content/:source/info/:id - DEPRECATED: Redirects to /api/v1/info/:source/:id
  *
  * Note: List endpoint moved to /api/v1/list/:source/* (list.mjs)
  * Note: Menu logging moved to /api/v1/item/menu-log (item.mjs)
@@ -25,7 +23,6 @@ import { parseContentQuery, validateContentQuery } from '../parsers/contentQuery
  * @param {import('#domains/content/services/ContentSourceRegistry.mjs').ContentSourceRegistry} registry
  * @param {import('#adapters/persistence/yaml/YamlMediaProgressMemory.mjs').YamlMediaProgressMemory} [mediaProgressMemory=null] - Optional media progress memory store
  * @param {Object} [options] - Additional options
- * @param {string} [options.cacheBasePath] - Base path for image cache
  * @param {import('#apps/content/usecases/ComposePresentationUseCase.mjs').ComposePresentationUseCase} [options.composePresentationUseCase] - Use case for composing presentations
  * @param {import('#apps/content/ContentQueryService.mjs').ContentQueryService} [options.contentQueryService] - Content query service for unified search/list
  * @param {import('#apps/content/services/ContentQueryAliasResolver.mjs').ContentQueryAliasResolver} [options.aliasResolver] - Alias resolver for content queries
@@ -33,7 +30,7 @@ import { parseContentQuery, validateContentQuery } from '../parsers/contentQuery
  * @returns {express.Router}
  */
 export function createContentRouter(registry, mediaProgressMemory = null, options = {}) {
-  const { cacheBasePath, composePresentationUseCase, contentQueryService, aliasResolver, logger = console } = options;
+  const { composePresentationUseCase, contentQueryService, aliasResolver, logger = console } = options;
   const router = express.Router();
 
   /**
@@ -591,167 +588,31 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
   }));
 
   // ==========================================================================
-  // Source-Specific Routes (parameterized by :source)
+  // Deprecation Redirects (301 to new action-based routes)
   // ==========================================================================
 
   /**
-   * GET /api/content/:source/image/:id - Get thumbnail image from content source
-   *
-   * Proxies and caches thumbnail images from any content source.
+   * DEPRECATED: Redirect to /api/v1/display/:source/:id
+   * @deprecated Use /api/v1/display/:source/:id instead
    */
-  router.get('/:source/image/:id', async (req, res) => {
-    try {
-      const { source, id } = req.params;
-      const adapter = registry.get(source);
-
-      if (!adapter) {
-        return res.status(503).json({ error: `${source} adapter not configured` });
-      }
-
-      // Check cache if available
-      if (cacheBasePath) {
-        const cacheDir = path.join(cacheBasePath, source);
-        const cacheFile = path.join(cacheDir, `${id}.jpg`);
-
-        if (fs.existsSync(cacheFile)) {
-          return res.sendFile(cacheFile);
-        }
-      }
-
-      // Get thumbnail URL from adapter
-      let thumbnailUrl;
-      if (typeof adapter.getThumbnailUrl === 'function') {
-        thumbnailUrl = await adapter.getThumbnailUrl(id);
-      } else if (typeof adapter.getItem === 'function') {
-        const item = await adapter.getItem(`${source}:${id}`);
-        thumbnailUrl = item?.thumbnail;
-      }
-
-      if (!thumbnailUrl) {
-        return res.status(404).json({ error: 'Thumbnail not found', source, id });
-      }
-
-      // Redirect to proxy for the actual image fetch
-      const proxyUrl = thumbnailUrl.replace(/https?:\/\/[^\/]+/, `/proxy/${source}`);
-      res.redirect(proxyUrl);
-    } catch (error) {
-      logger.error?.('content.image.error', { source: req.params.source, id: req.params.id, error: error.message });
-      res.status(500).json({ error: error.message });
-    }
+  router.get('/:source/image/:id', (req, res) => {
+    const { source, id } = req.params;
+    const newUrl = `/api/v1/display/${source}/${id}`;
+    logger.info?.('content.image.deprecated_redirect', { from: req.originalUrl, to: newUrl });
+    res.redirect(301, newUrl);
   });
 
   /**
-   * GET /api/content/:source/info/:id/:modifiers? - Get item metadata from content source
-   *
-   * Returns full metadata for an item with legacy-compatible fields.
-   * For containers (shows, albums), can use smart selection to pick a playable item.
-   *
-   * Modifiers (path or query):
-   * - shuffle: Randomly select from unwatched items
-   *
-   * Response fields: listkey, listType, key, type, show, season, labels,
-   *                   mediaType, mediaUrl, thumbId, image, percent, seconds
+   * DEPRECATED: Redirect to /api/v1/info/:source/:id
+   * @deprecated Use /api/v1/info/:source/:id instead
    */
-  router.get('/:source/info/:id/:modifiers?', async (req, res) => {
-    try {
-      const { source, id, modifiers } = req.params;
-      const shuffle = modifiers === 'shuffle' || 'shuffle' in req.query;
-
-      const adapter = registry.get(source);
-
-      if (!adapter) {
-        return res.status(503).json({ error: `${source} adapter not configured` });
-      }
-
-      // For containers with shuffle, use smart selection to pick a playable item
-      let item;
-      let selectedId = id;
-      if (shuffle && typeof adapter.loadPlayableItemFromKey === 'function') {
-        const selected = await adapter.loadPlayableItemFromKey(id, { shuffle: true });
-        if (selected) {
-          item = selected;
-          selectedId = item.localId || item.id?.replace(new RegExp(`^${source}:`), '') || id;
-        }
-      }
-
-      // If no smart selection or not a container, get item directly
-      if (!item) {
-        item = await adapter.getItem(`${source}:${id}`);
-      }
-      if (!item) {
-        return res.status(404).json({ error: 'Item not found', source, id });
-      }
-
-      // Determine mediaType
-      const itemType = item.metadata?.type;
-      const videoTypes = ['movie', 'episode', 'clip', 'short', 'trailer'];
-      const audioTypes = ['track'];
-      let mediaType = itemType;
-      if (videoTypes.includes(itemType)) mediaType = 'dash_video';
-      else if (audioTypes.includes(itemType)) mediaType = 'audio';
-
-      // Generate streaming URL for playable items
-      let mediaUrl = null;
-      if ((videoTypes.includes(itemType) || audioTypes.includes(itemType)) && typeof adapter.loadMediaUrl === 'function') {
-        mediaUrl = await adapter.loadMediaUrl(selectedId);
-      }
-
-      // Load watch state via ContentQueryService (DDD-compliant)
-      let percent = 0;
-      let seconds = 0;
-      if (contentQueryService) {
-        const enriched = await contentQueryService.enrichWithWatchState(
-          [{ id: `${source}:${selectedId}`, ...item }],
-          source,
-          `${source}:${id}`
-        );
-        if (enriched[0]) {
-          percent = enriched[0].percent ?? 0;
-          seconds = enriched[0].playhead ?? 0;
-        }
-      }
-
-      // Extract thumbId from Media Part if available, else use rating key
-      let thumbId = selectedId;
-      const mediaPart = item.metadata?.Media?.[0]?.Part?.[0];
-      if (mediaPart?.id) {
-        thumbId = mediaPart.id;
-      }
-
-      res.json({
-        // Legacy identifiers
-        listkey: id,  // Original container ID (for queue context)
-        listType: itemType,
-        key: selectedId,  // Actual item to play (may differ if smart selection used)
-        source,  // Include source for client reference
-        // Core fields
-        title: item.title,
-        type: itemType,
-        // Show/season info (for episodes) - canonical naming
-        grandparentTitle: item.metadata?.grandparentTitle || null,
-        parentTitle: item.metadata?.parentTitle || null,
-        // Labels for governance
-        labels: item.metadata?.labels || [],
-        // Media playback
-        mediaType,
-        mediaUrl,
-        // Thumbnail
-        thumbId,
-        image: item.thumbnail,
-        // Watch state
-        percent,
-        seconds,
-        // Preserve new DDD fields too
-        id: item.id,
-        // Note: mediaType already set above (computed from itemType)
-        duration: item.duration,
-        thumbnail: item.thumbnail,
-        metadata: item.metadata
-      });
-    } catch (error) {
-      logger.error?.('content.info.error', { source: req.params.source, id: req.params.id, error: error.message });
-      res.status(500).json({ error: error.message });
-    }
+  router.get('/:source/info/:id/:modifiers?', (req, res) => {
+    const { source, id, modifiers } = req.params;
+    const newUrl = modifiers
+      ? `/api/v1/info/${source}/${id}/${modifiers}`
+      : `/api/v1/info/${source}/${id}`;
+    logger.info?.('content.info.deprecated_redirect', { from: req.originalUrl, to: newUrl });
+    res.redirect(301, newUrl);
   });
 
   return router;
