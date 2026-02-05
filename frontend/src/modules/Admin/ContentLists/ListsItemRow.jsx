@@ -14,6 +14,7 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import ConfigIndicators from './ConfigIndicators.jsx';
 import ProgressDisplay from './ProgressDisplay.jsx';
+import { getCacheEntry, setCacheEntry, hasCacheEntry } from './siblingsCache.js';
 
 const ACTION_OPTIONS = [
   { value: 'Play', label: 'Play' },
@@ -83,7 +84,7 @@ async function doFetchSiblings(itemId, contentInfo) {
   const localId = itemId.split(':')[1]?.trim();
 
   // Fetch current item to get parent key or library info
-  const response = await fetch(`/api/v1/content/item/${source}/${localId}`);
+  const response = await fetch(`/api/v1/info/${source}/${localId}`);
   if (!response.ok) return null;
 
   const data = await response.json();
@@ -97,7 +98,7 @@ async function doFetchSiblings(itemId, contentInfo) {
 
   if (parentKey) {
     childrenUrl = `/api/v1/item/${source}/${parentKey}`;
-    const parentResponse = await fetch(`/api/v1/content/item/${source}/${parentKey}`);
+    const parentResponse = await fetch(`/api/v1/info/${source}/${parentKey}`);
     if (parentResponse.ok) {
       const parentData = await parentResponse.json();
       parentInfo = {
@@ -188,6 +189,32 @@ async function doFetchSiblings(itemId, contentInfo) {
   });
 
   return { browseItems, currentParent: parentInfo };
+}
+
+/**
+ * Preload siblings for an item into the cache.
+ * Skips if already cached or pending. Returns the promise for optional awaiting.
+ */
+export async function preloadSiblings(itemId, contentInfo) {
+  if (!itemId || !contentInfo || contentInfo.unresolved) return null;
+
+  // Skip if already cached or pending
+  const existing = getCacheEntry(itemId);
+  if (existing) return existing.promise;
+
+  // Mark as pending immediately to prevent duplicate requests
+  const promise = doFetchSiblings(itemId, contentInfo);
+  setCacheEntry(itemId, { status: 'pending', data: null, promise });
+
+  try {
+    const data = await promise;
+    setCacheEntry(itemId, { status: 'loaded', data, promise: null });
+    return data;
+  } catch (err) {
+    console.error('Preload siblings failed:', itemId, err);
+    setCacheEntry(itemId, { status: 'error', data: null, promise: null });
+    return null;
+  }
 }
 
 // Source badge colors
@@ -535,7 +562,7 @@ async function fetchContentMetadata(value) {
   const [, source, localId] = [null, match[1].trim(), match[2].trim()];
 
   try {
-    const response = await fetch(`/api/v1/content/item/${source}/${localId}`);
+    const response = await fetch(`/api/v1/info/${source}/${localId}`);
     if (response.ok) {
       const data = await response.json();
       const info = {
@@ -668,7 +695,7 @@ function ContentSearchCombobox({ value, onChange }) {
       setLoadingBrowse(true);
 
       // Also fetch parent info to get parentKey for going up further
-      const parentResponse = await fetch(`/api/v1/content/item/${source}/${localId}`);
+      const parentResponse = await fetch(`/api/v1/info/${source}/${localId}`);
       let parentKey = null;
       let libraryId = null;
       let containerThumb = thumbnail;
@@ -836,7 +863,7 @@ function ContentSearchCombobox({ value, onChange }) {
       setLoadingBrowse(true);
 
       // First get the parent's info to find its parent
-      const parentResponse = await fetch(`/api/v1/content/item/${source}/${parentKey}`);
+      const parentResponse = await fetch(`/api/v1/info/${source}/${parentKey}`);
       if (!parentResponse.ok) return;
 
       const parentData = await parentResponse.json();
@@ -939,7 +966,7 @@ function ContentSearchCombobox({ value, onChange }) {
     try {
       setLoadingBrowse(true);
       // Fetch current item to get parent key or library info
-      const response = await fetch(`/api/v1/content/item/${source}/${localId}`);
+      const response = await fetch(`/api/v1/info/${source}/${localId}`);
       if (!response.ok) return;
 
       const data = await response.json();
@@ -956,7 +983,7 @@ function ContentSearchCombobox({ value, onChange }) {
         childrenUrl = `/api/v1/item/${source}/${parentKey}`;
 
         // Fetch parent details for the header
-        const parentResponse = await fetch(`/api/v1/content/item/${source}/${parentKey}`);
+        const parentResponse = await fetch(`/api/v1/info/${source}/${parentKey}`);
         if (parentResponse.ok) {
           const parentData = await parentResponse.json();
           parentInfo = {
@@ -1405,7 +1432,7 @@ function ItemDetailsDrawer({ opened, onClose, contentValue }) {
       setLoading(true);
 
       // Fetch item info
-      const itemResponse = await fetch(`/api/v1/content/item/${source}/${localId}`);
+      const itemResponse = await fetch(`/api/v1/info/${source}/${localId}`);
       let info = null;
       if (itemResponse.ok) {
         info = await itemResponse.json();
