@@ -168,7 +168,7 @@ describe('API tests', () => {
 
   it('returns valid plex data', async () => {
     const sample = testData.plex[0];
-    const res = await fetch(`/api/v1/content/plex/info/${sample.id}`);
+    const res = await fetch(`/api/v1/info/plex/${sample.id}`);
     const body = await res.json();
 
     const result = validateExpectations(body, sample.expect);

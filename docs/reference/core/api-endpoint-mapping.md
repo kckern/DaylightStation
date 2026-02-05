@@ -109,11 +109,23 @@ This document maps legacy API endpoints to their DDD (Domain-Driven Design) equi
 
 | Method | Legacy | DDD | Status |
 |--------|--------|-----|--------|
-| GET | `/media/plex/info/:id` | `/api/v1/content/plex/info/:id` | ✅ Parity |
-| GET | `/media/plex/image/:id` | `/api/v1/content/plex/image/:id` | ✅ Parity |
-| GET | `/media/plex/list/:id` | `/api/v1/content/list/plex/:id` | ⚠️ Partial |
-| GET | `/media/plex/url/:id` | `/api/v1/play/plex/mpd/:id` | ✅ Parity |
+| GET | `/media/plex/info/:id` | `/api/v1/info/plex/:id` | ✅ Parity |
+| GET | `/media/plex/image/:id` | `/api/v1/display/plex/:id` | ✅ Parity |
+| GET | `/media/plex/list/:id` | `/api/v1/list/plex/:id` | ✅ Parity |
+| GET | `/media/plex/url/:id` | `/api/v1/play/plex/:id` | ✅ Parity |
 | POST | `/media/log` | `/api/v1/play/log` | ✅ Parity |
+
+#### Deprecated Intermediate Routes
+
+These routes are deprecated; use action routes above instead:
+
+| Deprecated Route | Replacement | Notes |
+|------------------|-------------|-------|
+| `/api/v1/content/plex/info/:id` | `/api/v1/info/plex/:id` | Metadata endpoint |
+| `/api/v1/content/plex/image/:id` | `/api/v1/display/plex/:id` | Image endpoint |
+| `/api/v1/content/list/plex/:id` | `/api/v1/list/plex/:id` | List endpoint |
+| `/api/v1/item/:source/:id` | `/api/v1/info/:source/:id` | Unified item endpoint |
+| `/api/v1/play/plex/mpd/:id` | `/api/v1/play/plex/:id` | MPD manifest |
 
 ### Content (Local)
 
@@ -156,6 +168,24 @@ This document maps legacy API endpoints to their DDD (Domain-Driven Design) equi
 | GET | `/api/ping` | `/api/v1/ping` | ✅ Parity |
 | GET | `/api/status` | `/api/v1/status` | ✅ Parity |
 | GET | `/cron/status` | `/api/v1/scheduling/status` | ✅ Parity |
+
+---
+
+---
+
+## Action Routes (New)
+
+Intent-driven routes that map directly to query-combinatorics actions:
+
+| Method | Route | Purpose | Returns |
+|--------|-------|---------|---------|
+| GET | `/api/v1/info/:source/:id` | Item metadata | Metadata, capabilities[] |
+| GET | `/api/v1/display/:source/:id` | Displayable image | Image redirect or stream |
+| GET | `/api/v1/play/:source/:id` | Play info with resume | Playable with resume position |
+| GET | `/api/v1/list/:source/:id` | List container contents | Children array with action objects |
+| GET | `/api/v1/read/:source/:id` | Readable content | Reader content, format info |
+
+See [Action Routes Reference](../content/action-routes.md) for detailed documentation.
 
 ---
 
