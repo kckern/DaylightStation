@@ -733,12 +733,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   }
 
   // Fitness domain router
-  // Note: contentRegistry passed for /show endpoint - fitness assumes plex source
+  // Note: contentRegistry passed for /show endpoint - playlist thumbnail enrichment is household-specific
   v1Routers.fitness = createFitnessApiRouter({
     fitnessServices,
     userService,
     userDataService,
     configService,
+    fitnessConfig: loadFitnessConfig(householdId),
     contentRegistry,
     contentQueryService: contentServices.contentQueryService,
     logger: rootLogger.child({ module: 'fitness-api' })

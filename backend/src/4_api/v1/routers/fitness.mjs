@@ -45,6 +45,7 @@ const simulationState = {
  * @param {Object} config.userDataService - UserDataService for reading household data
  * @param {Object} config.configService - ConfigService
  * @param {Object} config.contentRegistry - Content source registry (for show endpoint)
+ * @param {Object} [config.fitnessContentAdapter] - Pre-resolved content adapter for fitness (default: plex)
  * @param {Object} [config.contentQueryService] - ContentQueryService for watch state enrichment
  * @param {Object} config.transcriptionService - OpenAI transcription service (optional)
  * @param {Function} [config.createProgressClassifier] - Factory function to create progress classifier
@@ -59,6 +60,7 @@ export function createFitnessRouter(config) {
     userDataService,
     configService,
     contentRegistry,
+    fitnessContentAdapter,
     contentQueryService,
     transcriptionService,
     createProgressClassifier,
@@ -164,10 +166,10 @@ export function createFitnessRouter(config) {
       });
     }
 
-    // Get Plex adapter
-    const adapter = contentRegistry.get('plex');
+    // Use pre-resolved fitness content adapter
+    const adapter = fitnessContentAdapter;
     if (!adapter) {
-      return res.status(503).json({ error: 'Plex adapter not configured' });
+      return res.status(503).json({ error: 'Fitness content adapter not configured' });
     }
 
     // Query for items with matching labels
@@ -203,10 +205,10 @@ export function createFitnessRouter(config) {
     const { id } = req.params;
     const householdId = req.query.household || configService.getDefaultHouseholdId();
 
-    // Fitness content is always from plex
-    const adapter = contentRegistry.get('plex');
+    // Use pre-resolved fitness content adapter
+    const adapter = fitnessContentAdapter;
     if (!adapter) {
-      return res.status(503).json({ error: 'Plex adapter not configured' });
+      return res.status(503).json({ error: 'Fitness content adapter not configured' });
     }
 
     const compoundId = `plex:${id}`;
@@ -305,9 +307,9 @@ export function createFitnessRouter(config) {
     }
 
     const { id } = req.params;
-    const adapter = contentRegistry.get('plex');
+    const adapter = fitnessContentAdapter;
     if (!adapter) {
-      return res.status(503).json({ error: 'Plex adapter not configured' });
+      return res.status(503).json({ error: 'Fitness content adapter not configured' });
     }
 
     const compoundId = `plex:${id}`;
