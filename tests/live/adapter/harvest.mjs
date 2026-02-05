@@ -189,6 +189,7 @@ async function runHarvest(harvesterService, serviceId, username, options, args) 
     status: 'unknown',
     duration: 0,
     error: null,
+    latestDate: null,
     data: null,
   };
 
@@ -219,6 +220,7 @@ async function runHarvest(harvesterService, serviceId, username, options, args) 
 
     result.duration = Date.now() - startTime;
     result.data = harvestResult;
+    result.latestDate = harvestResult.latestDate || null;
 
     // Interpret result
     if (harvestResult.status === 'success') {
@@ -228,7 +230,7 @@ async function runHarvest(harvesterService, serviceId, username, options, args) 
       result.error = harvestResult.reason;
     } else {
       result.status = 'fail';
-      result.error = harvestResult.reason || 'Unknown failure';
+      result.error = harvestResult.reason || harvestResult.error || 'Unknown failure';
     }
 
   } catch (error) {

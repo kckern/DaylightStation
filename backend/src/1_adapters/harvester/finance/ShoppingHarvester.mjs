@@ -232,10 +232,13 @@ export class ShoppingHarvester extends IHarvester {
       this.#logger.info?.('shopping.gmail.found', { count: messageIds.length });
 
       if (messageIds.length === 0) {
+        // Get latest date from existing receipts (sorted newest first)
+        const latestDate = existingReceipts[0]?.date || null;
         return {
           count: existingReceipts.length,
           stats: { processed: 0, new: 0, skipped: 0, errors: 0 },
           status: 'success',
+          latestDate,
         };
       }
 
