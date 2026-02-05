@@ -6,7 +6,7 @@
  * each run instead of hardcoding the same fixtures.
  *
  * Uses backend/src/3_applications/content/ContentQueryService.mjs
- * via /api/v1/content/query/search and /api/v1/list endpoints.
+ * via /api/v1/content/query/search and /api/v1/item endpoints.
  */
 
 import { BACKEND_URL } from '#fixtures/runtime/urls.mjs';
@@ -54,8 +54,8 @@ async function searchContent(text, options = {}) {
  */
 async function listContent(source, path = '', timeout = 10000) {
   const url = path
-    ? `${API_BASE}/api/v1/list/${source}/${encodeURIComponent(path)}`
-    : `${API_BASE}/api/v1/list/${source}/`;
+    ? `${API_BASE}/api/v1/item/${source}/${encodeURIComponent(path)}`
+    : `${API_BASE}/api/v1/item/${source}/`;
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeout);
