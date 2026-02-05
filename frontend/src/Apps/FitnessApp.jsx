@@ -629,7 +629,7 @@ const FitnessApp = () => {
   const handlePlayFromUrl = async (episodeId) => {
     try {
       // Fetch episode metadata from API to get labels for governance
-      const response = await DaylightAPI(`api/v1/content/${contentSource}/info/${episodeId}`);
+      const response = await DaylightAPI(`api/v1/info/${contentSource}/${episodeId}`);
 
       if (!response || response.error) {
         logger.warn('fitness-play-url-no-metadata', { episodeId, error: response?.error });
@@ -642,7 +642,7 @@ const FitnessApp = () => {
           title: `Episode ${episodeId}`,
           videoUrl: DaylightMediaPath(`api/v1/play/${contentSource}/mpd/${episodeId}`),
           thumbId: episodeId,
-          image: DaylightMediaPath(`api/v1/content/${contentSource}/image/${episodeId}`)
+          image: DaylightMediaPath(`api/v1/display/${contentSource}/${episodeId}`)
         };
         setFitnessPlayQueue([fallbackItem]);
         logger.info('fitness-play-url-started-fallback', { episodeId, contentSource });
@@ -660,7 +660,7 @@ const FitnessApp = () => {
         parentTitle: response.parentTitle,
         videoUrl: response.mediaUrl || DaylightMediaPath(`api/v1/play/${contentSource}/mpd/${episodeId}`),
         thumbId: response.thumbId || episodeId,
-        image: response.image || DaylightMediaPath(`api/v1/content/${contentSource}/image/${episodeId}`),
+        image: response.image || DaylightMediaPath(`api/v1/display/${contentSource}/${episodeId}`),
         labels: response.labels || [],
         summary: response.summary
       };
