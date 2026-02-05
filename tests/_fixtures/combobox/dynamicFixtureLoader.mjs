@@ -10,6 +10,7 @@
  */
 
 import { BACKEND_URL } from '#fixtures/runtime/urls.mjs';
+import { SlotMachine } from './SlotMachine.mjs';
 
 const API_BASE = BACKEND_URL;
 if (!API_BASE) {
@@ -280,4 +281,60 @@ export function getAllLeafTypes(fixtures) {
     }
   }
   return Array.from(types);
+}
+
+// === Slot Machine Integration ===
+
+let machineInstance = null;
+let fixturesCache = null;
+
+/**
+ * Initialize the slot machine (call in test.beforeAll)
+ */
+export async function initializeSlotMachine(options = {}) {
+  const {
+    baseUrl = process.env.BACKEND_URL || 'http://localhost:3111',
+    seed = process.env.TEST_SEED ? parseInt(process.env.TEST_SEED) : Date.now(),
+    spinCount = parseInt(process.env.SPIN_COUNT) || 50,
+  } = options;
+
+  machineInstance = new SlotMachine(seed);
+  await machineInstance.initialize(baseUrl);
+
+  fixturesCache = [...machineInstance.generate(spinCount)];
+
+  console.log(`\n🎰 Dynamic fixtures ready`);
+  console.log(`   Seed: ${seed}`);
+  console.log(`   Spins: ${spinCount}`);
+  console.log(`   Reproduce: TEST_SEED=${seed} npm run test:slot-machine\n`);
+
+  return {
+    seed,
+    spinCount,
+    fixtures: fixturesCache,
+  };
+}
+
+/**
+ * Get fixture by index (call in test)
+ */
+export function getFixture(index) {
+  if (!fixturesCache) {
+    throw new Error('Fixtures not initialized. Call initializeSlotMachine() first.');
+  }
+  return fixturesCache[index];
+}
+
+/**
+ * Get all fixtures
+ */
+export function getAllFixtures() {
+  return fixturesCache || [];
+}
+
+/**
+ * Get the seed for reproduction
+ */
+export function getSlotMachineSeed() {
+  return machineInstance?.getSeed() || null;
 }
