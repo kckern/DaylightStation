@@ -200,6 +200,65 @@ export class SingingAdapter {
   getStoragePath() {
     return 'singing';
   }
+
+  /**
+   * Search capabilities for ContentQueryService
+   */
+  getSearchCapabilities() {
+    return {
+      canonical: ['text'],
+      specific: ['collection']
+    };
+  }
+
+  /**
+   * Search singing content by text
+   * @param {Object} query - Search query
+   * @param {string} query.text - Text to search for
+   * @param {string} [query.collection] - Limit to specific collection
+   * @param {number} [query.take] - Limit results
+   * @returns {Promise<{items: Array, total: number}>}
+   */
+  async search(query) {
+    const { text, collection, take = 50 } = query;
+    const searchText = (text || '').toLowerCase();
+    const items = [];
+
+    // Get collections to search
+    const collections = collection
+      ? [collection]
+      : listDirs(this.dataPath);
+
+    for (const coll of collections) {
+      const collectionPath = path.join(this.dataPath, coll);
+      if (!dirExists(collectionPath)) continue;
+
+      const files = listYamlFiles(collectionPath);
+      for (const file of files) {
+        // Skip manifest files
+        if (file === 'manifest.yml') continue;
+
+        const match = file.match(/^0*(\d+)/);
+        if (!match) continue;
+
+        const itemNum = match[1];
+        const item = await this.getItem(`${coll}/${itemNum}`);
+        if (!item) continue;
+
+        // Match on title or number
+        const titleMatch = item.title?.toLowerCase().includes(searchText);
+        const numMatch = itemNum.includes(searchText);
+
+        if (titleMatch || numMatch || !searchText) {
+          items.push(item);
+          if (items.length >= take) break;
+        }
+      }
+      if (items.length >= take) break;
+    }
+
+    return { items, total: items.length };
+  }
 }
 
 export default SingingAdapter;
