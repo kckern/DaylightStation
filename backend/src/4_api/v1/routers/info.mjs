@@ -76,9 +76,12 @@ function transformToInfoResponse(item, source) {
     response.image = item.thumbnail; // AudioPlayer uses image field
   }
 
+  // Pass through displayable fields
+  if (item.imageUrl) response.imageUrl = item.imageUrl;
+  if (item.category) response.category = item.category;
+
   // Pass through content field for singing/narrated scrollers
   if (item.content) response.content = item.content;
-  if (item.category) response.category = item.category;
 
   // Expose plex key at top level for frontend compatibility
   if (source === 'plex' && item.metadata?.plex) {
@@ -160,7 +163,8 @@ export function createInfoRouter(config) {
     // For container items, include children as `items`
     if (item.itemType === 'container' && adapter.getList) {
       const lookupId = usePrefixResolution ? finalLocalId : compoundId;
-      const children = await adapter.getList(lookupId);
+      const result = await adapter.getList(lookupId);
+      const children = Array.isArray(result) ? result : (result?.children || []);
       response.items = children.map(child => {
         const childResponse = transformToInfoResponse(child, child.source || resolvedSource);
         // When accessed via prefix (e.g., media:clips), remap child IDs to use the user-facing prefix

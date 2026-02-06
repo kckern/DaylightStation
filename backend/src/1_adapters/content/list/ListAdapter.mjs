@@ -166,29 +166,55 @@ export class ListAdapter {
    * @returns {string}
    */
   _getListPath(listType, name) {
-    // Check household-specific path first
-    const householdPath = path.join(
-      this.dataPath,
-      `household${this.householdId ? `-${this.householdId}` : ''}`,
-      'config',
-      'lists',
-      listType,
-      `${name}.yml`
-    );
+    const householdSuffix = this.householdId ? `-${this.householdId}` : '';
 
-    if (fileExists(householdPath)) {
-      return householdPath;
+    // Try exact match first (household-specific, then default)
+    for (const base of [`household${householdSuffix}`, 'household']) {
+      const exact = path.join(this.dataPath, base, 'config', 'lists', listType, `${name}.yml`);
+      if (fileExists(exact)) return exact;
     }
 
-    // Fall back to default household path
-    return path.join(
-      this.dataPath,
-      'household',
-      'config',
-      'lists',
-      listType,
-      `${name}.yml`
-    );
+    // Try case-insensitive match in the target directory
+    const caseMatch = this._findFileInsensitive(listType, name);
+    if (caseMatch) return caseMatch;
+
+    // For watchlist: prefix, fall back to menus/ directory (backward compat with FolderAdapter)
+    if (listType === 'watchlists') {
+      for (const base of [`household${householdSuffix}`, 'household']) {
+        const menuPath = path.join(this.dataPath, base, 'config', 'lists', 'menus', `${name}.yml`);
+        if (fileExists(menuPath)) return menuPath;
+      }
+      const menuCaseMatch = this._findFileInsensitive('menus', name);
+      if (menuCaseMatch) return menuCaseMatch;
+    }
+
+    // Return default path (will fail gracefully in _loadList)
+    return path.join(this.dataPath, 'household', 'config', 'lists', listType, `${name}.yml`);
+  }
+
+  /**
+   * Case-insensitive file lookup in a list type directory
+   * @param {string} listType - 'menus', 'programs', 'watchlists'
+   * @param {string} name - List name to find
+   * @returns {string|null} Full path if found, null otherwise
+   * @private
+   */
+  _findFileInsensitive(listType, name) {
+    const nameLower = name.toLowerCase();
+    const householdSuffix = this.householdId ? `-${this.householdId}` : '';
+
+    for (const base of [`household${householdSuffix}`, 'household']) {
+      const dir = path.join(this.dataPath, base, 'config', 'lists', listType);
+      if (!dirExists(dir)) continue;
+
+      const entries = listEntries(dir);
+      for (const entry of entries) {
+        if (entry.toLowerCase() === `${nameLower}.yml` || entry.toLowerCase() === `${nameLower}.yaml`) {
+          return path.join(dir, entry);
+        }
+      }
+    }
+    return null;
   }
 
   /**

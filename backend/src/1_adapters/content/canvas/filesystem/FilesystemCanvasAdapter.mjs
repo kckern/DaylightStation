@@ -1,6 +1,7 @@
 // backend/src/1_adapters/content/canvas/filesystem/FilesystemCanvasAdapter.mjs
 import fs from 'fs';
 import { DisplayableItem } from '#domains/content/capabilities/Displayable.mjs';
+import { ListableItem } from '#domains/content/capabilities/Listable.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
@@ -55,11 +56,37 @@ export class FilesystemCanvasAdapter {
   }
 
   async getItem(id) {
-    const localPath = id.replace(/^canvas:/, '');
-    const fullPath = `${this.#basePath}/${localPath}`;
+    let localPath = id.replace(/^canvas:/, '');
+    let fullPath = `${this.#basePath}/${localPath}`;
 
+    // Try adding image extensions if exact path not found (best-effort, first wins)
     if (!this.#fs.existsSync(fullPath)) {
-      return null;
+      const resolved = IMAGE_EXTENSIONS.find(ext =>
+        this.#fs.existsSync(`${fullPath}${ext}`)
+      );
+      if (resolved) {
+        localPath = `${localPath}${resolved}`;
+        fullPath = `${this.#basePath}/${localPath}`;
+      } else {
+        return null;
+      }
+    }
+
+    // Directory = category container (for sibling browsing)
+    if (this.#fs.statSync(fullPath).isDirectory()) {
+      const files = this.#listImageFiles(fullPath);
+      return new ListableItem({
+        id: `canvas:${localPath}`,
+        source: this.source,
+        title: this.#formatName(localPath),
+        itemType: 'container',
+        type: 'folder',
+        metadata: {
+          type: 'folder',
+          childCount: files.length,
+          librarySectionTitle: 'Canvas',
+        }
+      });
     }
 
     const parts = localPath.split('/');
@@ -134,17 +161,25 @@ export class FilesystemCanvasAdapter {
     const localPath = `${category}/${filename}`;
     const fullPath = `${this.#basePath}/${localPath}`;
     const exif = await this.#readExif(fullPath);
+    const imageUrl = `${this.#proxyPath}/${localPath}`;
 
     return new DisplayableItem({
       id: `canvas:${localPath}`,
       source: this.source,
       title: this.#titleFromFilename(filename),
-      imageUrl: `${this.#proxyPath}/${localPath}`,
+      imageUrl,
+      thumbnail: imageUrl,
+      type: 'image',
       category,
       artist: exif.artist,
       year: exif.year,
       tags: exif.tags || [],
       frameStyle: 'classic',
+      metadata: {
+        type: 'image',
+        parentTitle: this.#formatName(category),
+        librarySectionTitle: 'Canvas',
+      },
     });
   }
 
@@ -177,11 +212,15 @@ export class FilesystemCanvasAdapter {
     return match ? match[1].split(',').map(t => t.trim()) : [];
   }
 
-  #titleFromFilename(filename) {
-    return filename
+  #formatName(name) {
+    return name
       .replace(/\.[^.]+$/, '')
       .replace(/[-_]/g, ' ')
       .replace(/\b\w/g, c => c.toUpperCase());
+  }
+
+  #titleFromFilename(filename) {
+    return this.#formatName(filename);
   }
 }
 
