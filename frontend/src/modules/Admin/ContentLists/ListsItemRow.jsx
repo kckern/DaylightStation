@@ -21,6 +21,7 @@ const ACTION_OPTIONS = [
   { value: 'Play', label: 'Play' },
   { value: 'Queue', label: 'Queue' },
   { value: 'List', label: 'List' },
+  { value: 'Open', label: 'Open' },
   { value: 'Display', label: 'Display' },
   { value: 'Read', label: 'Read' },
 ];
@@ -233,6 +234,7 @@ const SOURCE_COLORS = {
   talk: 'pink',
   'local-content': 'pink',
   list: 'violet',
+  app: 'teal',
   default: 'gray'
 };
 
@@ -284,7 +286,8 @@ const TYPE_LABELS = {
   conference: 'Conference',
   course: 'Course',
   meeting: 'Meeting',
-  collection: 'Collection'
+  collection: 'Collection',
+  app: 'App'
 };
 
 // Color palette for seeded avatars (Mantine color names)
@@ -551,6 +554,28 @@ export async function fetchContentMetadata(value) {
   // Check cache first
   if (contentInfoCache.has(value)) {
     return contentInfoCache.get(value);
+  }
+
+  // Resolve app items locally from registry (no backend call needed)
+  if (value.startsWith('app:')) {
+    const { resolveAppDisplay } = await import('../../lib/appRegistry.js');
+    const appInfo = resolveAppDisplay(value);
+    if (appInfo) {
+      const info = {
+        value,
+        title: appInfo.paramValue
+          ? `${appInfo.label} / ${appInfo.paramValue}`
+          : appInfo.label,
+        source: 'app',
+        type: 'app',
+        thumbnail: null,
+        unresolved: false,
+      };
+      contentInfoCache.set(value, info);
+      return info;
+    }
+    // Unknown app — fall through to unresolved
+    return { value, title: value.slice(4), source: 'app', type: null, unresolved: true };
   }
 
   // Parse source:id format (trim whitespace from parts)
