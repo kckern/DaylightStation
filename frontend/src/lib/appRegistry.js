@@ -22,6 +22,14 @@ export function getApp(id) {
 }
 
 /**
+ * Return all apps as an array with id attached.
+ * @returns {Array<{id: string, label: string, param: object|null, component: Function}>}
+ */
+export function getAllApps() {
+  return Object.entries(APP_REGISTRY).map(([id, entry]) => ({ id, ...entry }));
+}
+
+/**
  * Fuzzy-match against label and id, returns matching entries with id attached.
  * @param {string} query - Search string
  * @returns {Array<{id: string, label: string, param: object|null, component: Function}>}
