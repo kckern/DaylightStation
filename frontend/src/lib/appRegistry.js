@@ -43,7 +43,7 @@ export function searchApps(query) {
  */
 export function resolveAppDisplay(input) {
   if (!input || !input.startsWith('app:')) return null;
-  const rest = input.slice(4); // strip "app:"
+  const rest = input.slice(4).trim(); // strip "app:" and whitespace
   const slashIdx = rest.indexOf('/');
   const appId = slashIdx === -1 ? rest : rest.slice(0, slashIdx);
   const paramValue = slashIdx === -1 ? null : rest.slice(slashIdx + 1) || null;
