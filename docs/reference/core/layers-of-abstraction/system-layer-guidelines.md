@@ -374,7 +374,7 @@ export function createFitnessServices(config) {
 | **Generic Error** | `throw new Error('config missing')` | `throw new ConfigurationError('...', { code })` |
 | **Bootstrap business logic** | Calculating values, transforming data in bootstrap | Bootstrap only wires |
 | **Singletons via module scope** | `export const scheduler = new Scheduler()` | Export class, instantiate in bootstrap |
-| **Domain-specific code** | `PrayerCardRenderer.mjs` in system layer | Move to adapters |
+| **Domain-specific code** | `GratitudeCardRenderer.mjs` in system layer | Move to adapters |
 
 ---
 

@@ -12,7 +12,8 @@ import {
   loadYamlSafe,
   listYamlFiles,
   listEntries,
-  dirExists
+  dirExists,
+  fileExists
 } from '#system/utils/FileIO.mjs';
 
 // Threshold for considering an item "watched" (90%)
@@ -139,6 +140,27 @@ export class LocalContentAdapter {
       { prefix: 'primary', idTransform: (id) => `primary:${id}` },
       { prefix: 'poem', idTransform: (id) => `poem:${id}` }
     ];
+  }
+
+  /**
+   * Build a thumbnail URL for a song collection if an icon exists.
+   * @param {string} collection - Collection name (e.g., 'hymn', 'primary')
+   * @returns {string|null}
+   * @private
+   */
+  _songCollectionThumbnail(collection) {
+    const iconPath = path.resolve(this.dataPath, 'songs', collection, 'icon.svg');
+    return fileExists(iconPath) ? `/api/v1/local-content/collection-icon/local-content/${collection}` : null;
+  }
+
+  /**
+   * Resolve collection icon path on disk for song collections.
+   * @param {string} collection - Collection name (e.g., 'hymn', 'primary')
+   * @returns {string|null} Absolute file path or null
+   */
+  resolveCollectionIcon(collection) {
+    const iconPath = path.resolve(this.dataPath, 'songs', collection, 'icon.svg');
+    return fileExists(iconPath) ? iconPath : null;
   }
 
   /**
@@ -987,6 +1009,7 @@ export class LocalContentAdapter {
       type: collection,
       mediaType: 'audio',
       mediaUrl,
+      thumbnail: this._songCollectionThumbnail(collection),
       duration: metadata.duration || 0,
       resumable: false, // songs don't need resume
       metadata: {

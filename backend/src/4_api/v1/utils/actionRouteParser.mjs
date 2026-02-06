@@ -19,9 +19,9 @@ import { parseModifiers } from './modifierParser.mjs';
 const KNOWN_SOURCES = [
   'plex',
   'immich',
-  'folder',
+  'watchlist',
   'local',
-  'filesystem',
+  'files',
   'canvas',
   'audiobookshelf',
   'komga',
@@ -34,7 +34,8 @@ const KNOWN_SOURCES = [
  * @type {Object<string, string>}
  */
 const SOURCE_ALIASES = {
-  local: 'folder'
+  local: 'watchlist',
+  media: 'files'
 };
 
 /**
@@ -96,9 +97,9 @@ function detectSourceHeuristically(value) {
     return 'immich';
   }
 
-  // Check if it has a file extension -> filesystem
+  // Check if it has a file extension -> files
   if (FILE_EXTENSION_PATTERN.test(value)) {
-    return 'filesystem';
+    return 'files';
   }
 
   return null;

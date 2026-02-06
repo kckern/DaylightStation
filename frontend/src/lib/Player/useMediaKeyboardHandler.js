@@ -136,7 +136,7 @@ export function useMediaKeyboardHandler(config) {
         const { currentTime, percent } = readProgressSnapshot();
         const title = meta.title + (meta.grandparentTitle ? ` (${meta.grandparentTitle} - ${meta.parentTitle})` : '');
         const progressPercent = Number.isFinite(percent) ? percent : 100;
-        const logType = (meta.plex || /^\d+$/.test(String(assetId))) ? 'plex' : type;
+        const logType = meta.source || (meta.plex ? 'plex' : null) || type;
         DaylightAPI('api/v1/play/log', { title, type: logType, assetId, seconds: currentTime, percent: progressPercent });
         DaylightAPI('api/v1/harvest/watchlist');
       }

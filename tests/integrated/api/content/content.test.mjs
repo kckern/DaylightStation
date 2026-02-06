@@ -3,7 +3,7 @@ import express from 'express';
 import request from 'supertest';
 import { createContentRouter } from '#backend/src/4_api/v1/routers/content.mjs';
 import { ContentSourceRegistry } from '#domains/content/services/ContentSourceRegistry.mjs';
-import { FilesystemAdapter } from '#adapters/content/media/filesystem/FilesystemAdapter.mjs';
+import { FileAdapter } from '#adapters/content/media/files/FileAdapter.mjs';
 import { YamlWatchStateDatastore } from '#adapters/persistence/yaml/YamlWatchStateDatastore.mjs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -19,7 +19,7 @@ describe('Content API Router', () => {
 
   beforeAll(() => {
     registry = new ContentSourceRegistry();
-    registry.register(new FilesystemAdapter({ mediaBasePath: fixturesPath }));
+    registry.register(new FileAdapter({ mediaBasePath: fixturesPath }));
     watchStore = new YamlWatchStateDatastore({ basePath: watchStatePath });
 
     app = express();
@@ -27,24 +27,24 @@ describe('Content API Router', () => {
     app.use('/api/content', createContentRouter(registry, watchStore));
   });
 
-  test('GET /api/content/list/filesystem/:path returns directory listing', async () => {
-    const res = await request(app).get('/api/content/list/filesystem/audio');
+  test('GET /api/content/list/files/:path returns directory listing', async () => {
+    const res = await request(app).get('/api/content/list/files/audio');
 
     expect(res.status).toBe(200);
     expect(res.body.items).toBeDefined();
     expect(Array.isArray(res.body.items)).toBe(true);
   });
 
-  test('GET /api/content/item/filesystem/:path returns item info', async () => {
-    const res = await request(app).get('/api/content/item/filesystem/audio/test.mp3');
+  test('GET /api/content/item/files/:path returns item info', async () => {
+    const res = await request(app).get('/api/content/item/files/audio/test.mp3');
 
     expect(res.status).toBe(200);
-    expect(res.body.id).toBe('filesystem:audio/test.mp3');
-    expect(res.body.source).toBe('filesystem');
+    expect(res.body.id).toBe('files:audio/test.mp3');
+    expect(res.body.source).toBe('files');
   });
 
   test('GET /api/content/item returns 404 for missing', async () => {
-    const res = await request(app).get('/api/content/item/filesystem/nonexistent.mp3');
+    const res = await request(app).get('/api/content/item/files/nonexistent.mp3');
 
     expect(res.status).toBe(404);
   });
@@ -56,8 +56,8 @@ describe('Content API Router', () => {
     expect(res.body.error).toContain('Unknown source');
   });
 
-  test('GET /api/content/playables/filesystem/:path returns playable items', async () => {
-    const res = await request(app).get('/api/content/playables/filesystem/audio');
+  test('GET /api/content/playables/files/:path returns playable items', async () => {
+    const res = await request(app).get('/api/content/playables/files/audio');
 
     expect(res.status).toBe(200);
     expect(res.body.items).toBeDefined();
@@ -66,11 +66,11 @@ describe('Content API Router', () => {
 
   test('POST /api/content/progress/:source/* updates watch state', async () => {
     const res = await request(app)
-      .post('/api/content/progress/filesystem/audio/test.mp3')
+      .post('/api/content/progress/files/audio/test.mp3')
       .send({ seconds: 90, duration: 180 });
 
     expect(res.status).toBe(200);
-    expect(res.body.itemId).toBe('filesystem:audio/test.mp3');
+    expect(res.body.itemId).toBe('files:audio/test.mp3');
     expect(res.body.playhead).toBe(90);
     expect(res.body.duration).toBe(180);
     expect(res.body.percent).toBe(50);
@@ -79,7 +79,7 @@ describe('Content API Router', () => {
 
   test('POST /api/content/progress returns 400 for missing params', async () => {
     const res = await request(app)
-      .post('/api/content/progress/filesystem/audio/test.mp3')
+      .post('/api/content/progress/files/audio/test.mp3')
       .send({ seconds: 90 }); // missing duration
 
     expect(res.status).toBe(400);

@@ -62,7 +62,18 @@ export class GratitudeService {
    * @returns {Promise<GratitudeItem[]>}
    */
   async getOptions(householdId, category) {
-    const items = await this.#store.getOptions(householdId, category);
+    let items = await this.#store.getOptions(householdId, category);
+
+    // Recycle: when options are depleted, move discarded items back to options
+    if (items.length === 0) {
+      const discarded = await this.#store.getDiscarded(householdId, category);
+      if (discarded.length > 0) {
+        await this.#store.setOptions(householdId, `options.${category}`, discarded);
+        await this.#store.setOptions(householdId, `discarded.${category}`, []);
+        items = discarded;
+      }
+    }
+
     return shuffleArray(items.map(i => GratitudeItem.fromJSON(i)));
   }
 

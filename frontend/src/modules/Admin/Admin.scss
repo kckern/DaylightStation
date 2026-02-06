@@ -11,5 +11,11 @@
 
   .mantine-AppShell-main {
     background-color: var(--mantine-color-body);
+    min-width: 0;
+
+    // Stretch content to fill the main area
+    > * {
+      width: 100%;
+    }
   }
 }

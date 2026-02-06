@@ -44,7 +44,7 @@ test.describe('TVApp Menu and Playback', () => {
   // TEST 1: API returns menu items
   // ═══════════════════════════════════════════════════════════════════════════
   test('API returns TVApp menu items', async ({ request }) => {
-    const response = await request.get(`${BASE_URL}/api/list/folder/TVApp`);
+    const response = await request.get(`${BASE_URL}/api/v1/list/watchlist/TVApp`);
     expect(response.ok()).toBe(true);
 
     const data = await response.json();

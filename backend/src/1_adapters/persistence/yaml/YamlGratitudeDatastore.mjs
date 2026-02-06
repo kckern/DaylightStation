@@ -53,7 +53,9 @@ export class YamlGratitudeDatastore extends IGratitudeDatastore {
    * @private
    */
   #readArray(householdId, key) {
-    const data = this.#dataService.household.read(`shared/gratitude/${key}`, householdId);
+    // Append .yml explicitly — keys like "options.gratitude" have a dot that
+    // confuses DataService's ensureExtension (treats ".gratitude" as an extension)
+    const data = this.#dataService.household.read(`shared/gratitude/${key}.yml`, householdId);
     return Array.isArray(data) ? data : [];
   }
 
@@ -63,7 +65,7 @@ export class YamlGratitudeDatastore extends IGratitudeDatastore {
    */
   #writeArray(householdId, key, arr) {
     const data = Array.isArray(arr) ? arr : [];
-    this.#dataService.household.write(`shared/gratitude/${key}`, data, householdId);
+    this.#dataService.household.write(`shared/gratitude/${key}.yml`, data, householdId);
   }
 
   /**

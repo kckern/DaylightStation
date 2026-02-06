@@ -61,7 +61,7 @@ export function AudioPlayer({
     isAudio: true,
     isVideo: false,
     meta: media,
-    type: ['track'].includes(type) ? 'plex' : 'media',
+    type: ['track'].includes(type) ? 'plex' : 'files',
     shader,
     setShader,
     cycleThroughClasses,
@@ -218,10 +218,10 @@ export function AudioPlayer({
       title,
       artist,
       album,
-      mediaKey: media?.assetId || media?.key || media?.plex,
+      mediaKey: media?.contentId || media?.assetId || media?.key || media?.plex,
       loadedTs: Date.now()
     });
-  }, [title, artist, album, media?.assetId, media?.key, media?.plex]);
+  }, [title, artist, album, media?.contentId, media?.assetId, media?.key, media?.plex]);
 
   return (
     <div ref={audioPlayerRef} className={`audio-player ${shader}`}>

@@ -1,16 +1,16 @@
-// tests/unit/suite/adapters/content/media/filesystem/manifest.test.mjs
-import manifest from '#adapters/content/media/filesystem/manifest.mjs';
+// tests/unit/suite/adapters/content/media/media/manifest.test.mjs
+import manifest from '#adapters/content/media/files/manifest.mjs';
 
-describe('Filesystem Manifest', () => {
+describe('Media Manifest', () => {
   test('has required fields', () => {
-    expect(manifest.provider).toBe('filesystem');
+    expect(manifest.provider).toBe('files');
     expect(manifest.capability).toBe('media');
     expect(manifest.displayName).toBe('Local Filesystem');
   });
 
-  test('adapter factory returns FilesystemAdapter class', async () => {
-    const { FilesystemAdapter: AdapterClass } = await manifest.adapter();
-    expect(AdapterClass.name).toBe('FilesystemAdapter');
+  test('adapter factory returns FileAdapter class', async () => {
+    const { FileAdapter: AdapterClass } = await manifest.adapter();
+    expect(AdapterClass.name).toBe('FileAdapter');
   });
 
   test('has config schema with basePath', () => {

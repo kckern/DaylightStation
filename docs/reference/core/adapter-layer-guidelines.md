@@ -73,7 +73,7 @@ Format-specific output generation.
 
 | Purpose | Examples | Role |
 |---------|----------|------|
-| Report renderers | `NutriReportRenderer`, `PrayerCardRenderer` | Domain data to visual/print format |
+| Report renderers | `NutriReportRenderer`, `GratitudeCardRenderer` | Domain data to visual/print format |
 
 ---
 
@@ -142,7 +142,7 @@ Adapters import DOWN to system and domains, and SIDEWAYS to application ports on
 | **Datastore** | `{Format}{Entity}Datastore.mjs` | `YamlFoodLogDatastore.mjs`, `YamlSessionDatastore.mjs` |
 | **Input Parser** | `{Vendor}{Type}Parser.mjs` | `TelegramWebhookParser.mjs` |
 | **Input Router** | `{App}InputRouter.mjs` | `NutribotInputRouter.mjs`, `JournalistInputRouter.mjs` |
-| **Renderer** | `{Output}Renderer.mjs` | `PrayerCardRenderer.mjs`, `NutriReportRenderer.mjs` |
+| **Renderer** | `{Output}Renderer.mjs` | `GratitudeCardRenderer.mjs`, `NutriReportRenderer.mjs` |
 
 ### Class Naming
 

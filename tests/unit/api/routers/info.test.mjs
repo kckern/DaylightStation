@@ -75,28 +75,28 @@ describe('Info Router', () => {
         expect(mockAdapter.getItem).toHaveBeenCalledWith('plex:12345');
       });
 
-      it('should handle nested path segments for folder source', async () => {
+      it('should handle nested path segments for watchlist source', async () => {
         const mockItem = {
-          id: 'folder:watchlist/FHE',
-          title: 'FHE Folder',
+          id: 'watchlist:watchlist/FHE',
+          title: 'FHE Watchlist',
           type: 'container',
           items: [{ id: '1' }, { id: '2' }],
-          thumbnail: '/image/folder/watchlist/FHE'
+          thumbnail: '/image/watchlist/watchlist/FHE'
         };
 
         mockRegistry.get.mockReturnValue(mockAdapter);
         mockAdapter.getItem.mockResolvedValue(mockItem);
 
         const response = await request(app)
-          .get('/info/folder/watchlist/FHE')
+          .get('/info/watchlist/watchlist/FHE')
           .expect(200);
 
-        expect(response.body.id).toBe('folder:watchlist/FHE');
-        expect(response.body.source).toBe('folder');
+        expect(response.body.id).toBe('watchlist:watchlist/FHE');
+        expect(response.body.source).toBe('watchlist');
         expect(response.body.capabilities).toContain('listable');
         expect(response.body.capabilities).toContain('displayable');
 
-        expect(mockAdapter.getItem).toHaveBeenCalledWith('folder:watchlist/FHE');
+        expect(mockAdapter.getItem).toHaveBeenCalledWith('watchlist:watchlist/FHE');
       });
     });
 
@@ -126,7 +126,7 @@ describe('Info Router', () => {
 
       it('should handle compound ID with nested path', async () => {
         const mockItem = {
-          id: 'folder:watchlist/movies',
+          id: 'watchlist:watchlist/movies',
           title: 'Movies Watchlist',
           type: 'container',
           itemType: 'container'
@@ -136,14 +136,14 @@ describe('Info Router', () => {
         mockAdapter.getItem.mockResolvedValue(mockItem);
 
         const response = await request(app)
-          .get('/info/folder:watchlist/movies')
+          .get('/info/watchlist:watchlist/movies')
           .expect(200);
 
-        expect(response.body.id).toBe('folder:watchlist/movies');
-        expect(response.body.source).toBe('folder');
+        expect(response.body.id).toBe('watchlist:watchlist/movies');
+        expect(response.body.source).toBe('watchlist');
         expect(response.body.capabilities).toContain('listable');
 
-        expect(mockAdapter.getItem).toHaveBeenCalledWith('folder:watchlist/movies');
+        expect(mockAdapter.getItem).toHaveBeenCalledWith('watchlist:watchlist/movies');
       });
     });
 
@@ -271,7 +271,7 @@ describe('Info Router', () => {
 
       it('should include listable capability when items array exists', async () => {
         const mockItem = {
-          id: 'folder:watchlist',
+          id: 'watchlist:watchlist',
           title: 'Watchlist',
           items: [{ id: '1' }, { id: '2' }]
         };
@@ -280,7 +280,7 @@ describe('Info Router', () => {
         mockAdapter.getItem.mockResolvedValue(mockItem);
 
         const response = await request(app)
-          .get('/info/folder/watchlist')
+          .get('/info/watchlist/watchlist')
           .expect(200);
 
         expect(response.body.capabilities).toContain('listable');
@@ -355,9 +355,9 @@ describe('Info Router', () => {
     });
 
     describe('Source alias normalization', () => {
-      it('should normalize local to folder', async () => {
+      it('should normalize local to watchlist', async () => {
         const mockItem = {
-          id: 'folder:watchlist',
+          id: 'watchlist:watchlist',
           title: 'Watchlist',
           type: 'container'
         };
@@ -369,8 +369,8 @@ describe('Info Router', () => {
           .get('/info/local/watchlist')
           .expect(200);
 
-        expect(response.body.source).toBe('folder');
-        expect(mockRegistry.get).toHaveBeenCalledWith('folder');
+        expect(response.body.source).toBe('watchlist');
+        expect(mockRegistry.get).toHaveBeenCalledWith('watchlist');
       });
     });
   });

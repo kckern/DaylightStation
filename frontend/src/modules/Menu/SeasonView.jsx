@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useContext, useRef } from 'react';
-import { useFetchPlexData, formatDuration, formatProgress } from './hooks/useFetchPlexData';
+import { useFetchContentData, formatDuration, formatProgress } from './hooks/useFetchContentData';
 import MenuNavigationContext from '../../context/MenuNavigationContext';
 import './PlexViews.scss';
 
@@ -60,11 +60,11 @@ function useProgressTimeout(timeout = 0, onTimeout, interval = 15) {
  * - Falls back to local state if MenuNavigationContext is unavailable
  * - Supports alphanumeric key cycling for single-button input
  */
-export function SeasonView({ parentId, depth, onSelect, onEscape, MENU_TIMEOUT = 0 }) {
+export function SeasonView({ parentId, contentId, depth, onSelect, onEscape, MENU_TIMEOUT = 0 }) {
   const navContext = useContext(MenuNavigationContext);
   // Bug 04 fix: Use refetchCounter to invalidate cache when returning from video
   const refetchKey = navContext?.refetchCounter || 0;
-  const { data, loading, error } = useFetchPlexData(parentId, refetchKey);
+  const { data, loading, error } = useFetchContentData(parentId, refetchKey, contentId);
   const gridRef = useRef(null);
   
   // Local state fallback for OfficeApp (no navContext)

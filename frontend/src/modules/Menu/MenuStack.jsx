@@ -8,7 +8,7 @@ import { getLogger } from '../../lib/logging/Logger.js';
 // Lazy load components that may be rendered from the stack
 const Player = lazy(() => import('../Player/Player').then(m => ({ default: m.default || m.Player })));
 const AppContainer = lazy(() => import('../AppContainer/AppContainer').then(m => ({ default: m.default || m.AppContainer })));
-const ArtViewer = lazy(() => import('../AppContainer/Apps/Art/Art').then(m => ({ default: m.default })));
+const Displayer = lazy(() => import('../Displayer/Displayer').then(m => ({ default: m.default })));
 
 /**
  * Loading fallback for lazy-loaded components
@@ -38,24 +38,26 @@ export function MenuStack({ rootMenu }) {
     if (!selection) return;
 
     // If type is already known (e.g., from ShowView/SeasonView selecting a child),
-    // we can route directly to specialized views
-    if (selection.list?.plex && selection.type === 'show') {
+    // we can route directly to specialized views.
+    // Check contentId first (unified), fall back to legacy plex key.
+    const listContentId = selection.list?.contentId || selection.list?.plex;
+    if (listContentId && selection.type === 'show') {
       push({ type: 'show-view', props: selection });
       return;
     }
-    
-    if (selection.list?.plex && selection.type === 'season') {
+
+    if (listContentId && selection.type === 'season') {
       push({ type: 'season-view', props: selection });
       return;
     }
 
-    // For Plex items without known type, use the router to determine view
-    if (selection.list?.plex && !selection.type) {
+    // For items with a content ID but unknown type, use the router to determine view
+    if (listContentId && !selection.type) {
       push({ type: 'plex-menu', props: selection });
       return;
     }
 
-    // Default handling for non-Plex lists
+    // Default handling for other lists
     if (selection.list || selection.menu) {
       push({ type: 'menu', props: selection });
     } else if (selection.play || selection.queue) {
@@ -120,6 +122,7 @@ export function MenuStack({ rootMenu }) {
       return (
         <PlexMenuRouter
           plexId={props.list?.plex}
+          contentId={props.list?.contentId}
           list={props}
           depth={depth}
           onSelect={handleSelect}
@@ -133,6 +136,7 @@ export function MenuStack({ rootMenu }) {
         <Suspense fallback={<LoadingFallback />}>
           <PlexMenuRouter
             plexId={props.list?.plex}
+            contentId={props.list?.contentId}
             list={props}
             depth={depth}
             onSelect={handleSelect}
@@ -147,6 +151,7 @@ export function MenuStack({ rootMenu }) {
         <Suspense fallback={<LoadingFallback />}>
           <PlexMenuRouter
             plexId={props.list?.plex}
+            contentId={props.list?.contentId}
             list={props}
             depth={depth}
             onSelect={handleSelect}
@@ -180,7 +185,7 @@ export function MenuStack({ rootMenu }) {
     case 'display':
       return (
         <Suspense fallback={<LoadingFallback />}>
-          <ArtViewer item={props.display} onClose={clear} />
+          <Displayer display={props.display} onClose={clear} />
         </Suspense>
       );
 

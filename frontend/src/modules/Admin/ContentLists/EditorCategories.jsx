@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Accordion,
   Switch,
@@ -12,7 +12,9 @@ import {
   Text,
   ActionIcon,
   Button,
-  Box
+  Box,
+  Image,
+  UnstyledButton
 } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
 import {
@@ -23,9 +25,12 @@ import {
   IconChartBar,
   IconSettings,
   IconPlus,
-  IconTrash
+  IconTrash,
+  IconPhoto
 } from '@tabler/icons-react';
 import { ACTION_OPTIONS, DAYS_PRESETS, ITEM_DEFAULTS } from './listConstants.js';
+import ImagePickerModal from './ImagePickerModal.jsx';
+import { DaylightMediaPath } from '../../../lib/api.mjs';
 
 // Shader options available in the system
 const SHADER_OPTIONS = [
@@ -43,9 +48,16 @@ const SHADER_OPTIONS = [
  * Category panel for Identity fields
  */
 function IdentityCategory({ item, onChange, existingGroups = [] }) {
+  const [imagePickerOpen, setImagePickerOpen] = useState(false);
   const groupOptions = existingGroups
     .filter(g => g)
     .map(g => ({ value: g, label: g }));
+
+  const imageSrc = item.image
+    ? (item.image.startsWith('/media/') || item.image.startsWith('media/')
+        ? DaylightMediaPath(item.image)
+        : item.image)
+    : null;
 
   return (
     <Stack gap="sm">
@@ -89,12 +101,40 @@ function IdentityCategory({ item, onChange, existingGroups = [] }) {
         }}
         clearable
       />
-      <TextInput
-        label="Image"
-        placeholder="URL or path to thumbnail image"
-        value={item.image || ''}
-        onChange={(e) => onChange('image', e.target.value || null)}
-      />
+      <Box>
+        <Text size="sm" fw={500} mb={4}>Image</Text>
+        <Group align="center" gap="sm">
+          <UnstyledButton onClick={() => setImagePickerOpen(true)}>
+            {imageSrc ? (
+              <Image src={imageSrc} height={60} width={60} fit="cover" radius="sm" />
+            ) : (
+              <Box style={{
+                width: 60, height: 60,
+                border: '2px dashed var(--mantine-color-dark-4)',
+                borderRadius: 'var(--mantine-radius-sm)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center'
+              }}>
+                <IconPhoto size={20} color="var(--mantine-color-dimmed)" />
+              </Box>
+            )}
+          </UnstyledButton>
+          <Button
+            size="xs"
+            variant="light"
+            leftSection={<IconPhoto size={14} />}
+            onClick={() => setImagePickerOpen(true)}
+          >
+            {item.image ? 'Change Image' : 'Set Image'}
+          </Button>
+        </Group>
+        <ImagePickerModal
+          opened={imagePickerOpen}
+          onClose={() => setImagePickerOpen(false)}
+          currentImage={item.image || null}
+          inheritedImage={null}
+          onSave={(path) => onChange('image', path)}
+        />
+      </Box>
     </Stack>
   );
 }

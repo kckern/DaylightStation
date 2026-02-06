@@ -55,7 +55,7 @@ function getIcon(item) {
 function isContainer(item) {
   return item.itemType === 'container' ||
     item.isContainer ||
-    ['show', 'album', 'artist', 'folder', 'channel', 'series', 'conference', 'playlist'].includes(item.type);
+    ['show', 'album', 'artist', 'watchlist', 'channel', 'series', 'conference', 'playlist'].includes(item.type);
 }
 
 /**

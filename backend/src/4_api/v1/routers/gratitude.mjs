@@ -33,7 +33,7 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
  * @param {Object} config.configService - ConfigService for household data
  * @param {Function} config.broadcastToWebsockets - WebSocket broadcast function
  * @param {Object} [config.printerAdapter] - ThermalPrinterAdapter for card printing
- * @param {Function} [config.createPrayerCardCanvas] - Function to create prayer card canvas
+ * @param {Function} [config.createGratitudeCardCanvas] - Function to create gratitude card canvas
  * @param {Object} [config.logger] - Logger instance
  * @returns {express.Router}
  */
@@ -43,7 +43,7 @@ export function createGratitudeRouter(config) {
     configService,
     broadcastToWebsockets,
     printerAdapter,
-    createPrayerCardCanvas,
+    createGratitudeCardCanvas,
     logger = console
   } = config;
 
@@ -467,51 +467,51 @@ export function createGratitudeRouter(config) {
   }));
 
   // ===========================================================================
-  // Prayer Card Endpoints
+  // Gratitude Card Endpoints
   // ===========================================================================
 
   /**
-   * GET /api/gratitude/card - Preview prayer card as PNG image
+   * GET /api/gratitude/card - Preview gratitude card as PNG image
    * Query params:
    *   - upsidedown: 'true' to flip for mounted printer
    *
-   * Note: The createPrayerCardCanvas function fetches selections internally
+   * Note: The createGratitudeCardCanvas function fetches selections internally
    * using the legacy bridge which delegates to the DDD GratitudeService.
    */
   router.get('/card', asyncHandler(async (req, res) => {
-    if (!createPrayerCardCanvas) {
+    if (!createGratitudeCardCanvas) {
       return res.status(501).json({
-        error: 'Prayer card generation not configured'
+        error: 'Gratitude card generation not configured'
       });
     }
 
     const upsidedown = req.query.upsidedown === 'true';
 
     // Generate canvas (function fetches selections internally)
-    const { canvas } = await createPrayerCardCanvas(upsidedown);
+    const { canvas } = await createGratitudeCardCanvas(upsidedown);
 
     // Convert to PNG buffer
     const buffer = canvas.toBuffer('image/png');
 
     res.setHeader('Content-Type', 'image/png');
     res.setHeader('Content-Length', buffer.length);
-    res.setHeader('Content-Disposition', 'inline; filename="prayer-card.png"');
+    res.setHeader('Content-Disposition', 'inline; filename="gratitude-card.png"');
     res.send(buffer);
   }));
 
   /**
-   * GET /api/gratitude/card/print - Generate and print prayer card
+   * GET /api/gratitude/card/print - Generate and print gratitude card
    * Only marks items as printed if print succeeds
    * Query params:
    *   - upsidedown: 'true' to flip for mounted printer (default: true for print)
    *
-   * Note: The createPrayerCardCanvas function returns selectedIds that were
+   * Note: The createGratitudeCardCanvas function returns selectedIds that were
    * included in the generated card, which are then marked as printed.
    */
   router.get('/card/print', asyncHandler(async (req, res) => {
-    if (!createPrayerCardCanvas) {
+    if (!createGratitudeCardCanvas) {
       return res.status(501).json({
-        error: 'Prayer card generation not configured',
+        error: 'Gratitude card generation not configured',
         success: false
       });
     }
@@ -527,11 +527,11 @@ export function createGratitudeRouter(config) {
     const upsidedown = req.query.upsidedown !== 'false'; // default true for print
 
     // Generate canvas (function fetches selections internally and returns selectedIds)
-    const { canvas, width, height, selectedIds } = await createPrayerCardCanvas(upsidedown);
+    const { canvas, width, height, selectedIds } = await createGratitudeCardCanvas(upsidedown);
 
     // Save to temp file
     const buffer = canvas.toBuffer('image/png');
-    const tempPath = `/tmp/prayer_card_${Date.now()}.png`;
+    const tempPath = `/tmp/gratitude_card_${Date.now()}.png`;
     writeBinary(tempPath, buffer);
 
     // Create and execute print job
@@ -564,7 +564,7 @@ export function createGratitudeRouter(config) {
 
     res.json({
       success,
-      message: success ? 'Prayer card printed successfully' : 'Print failed',
+      message: success ? 'Gratitude card printed successfully' : 'Print failed',
       printed,
       timestamp: nowTs()
     });

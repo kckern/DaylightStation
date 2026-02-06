@@ -28,7 +28,7 @@ function buildUrlParam(item) {
   // Priority: queue > play > list (skip open - those are apps, not playable)
 
   if (item.queue && typeof item.queue === 'object') {
-    const sources = ['plex', 'folder', 'media', 'queue'];
+    const sources = ['plex', 'watchlist', 'files', 'queue'];
     for (const source of sources) {
       if (item.queue[source]) {
         // queue action → ?queue=<value>
@@ -45,7 +45,7 @@ function buildUrlParam(item) {
 
   if (item.play && typeof item.play === 'object') {
     // Source-specific params for play actions
-    const sourceParams = ['plex', 'hymn', 'primary', 'scripture', 'talk', 'poem', 'folder', 'media'];
+    const sourceParams = ['plex', 'hymn', 'primary', 'scripture', 'talk', 'poem', 'watchlist', 'files'];
     for (const source of sourceParams) {
       if (item.play[source]) {
         // Use source-specific param: ?hymn=2, ?plex=545064
@@ -61,7 +61,7 @@ function buildUrlParam(item) {
   }
 
   if (item.list && typeof item.list === 'object') {
-    const sources = ['plex', 'folder', 'list'];
+    const sources = ['plex', 'watchlist', 'list'];
     for (const source of sources) {
       if (item.list[source]) {
         // list action → ?list=<value>
@@ -187,7 +187,7 @@ test.describe('TV Menu Item Resolution', () => {
   const skipped = [];
 
   test.beforeAll(async ({ request }) => {
-    const response = await request.get(`${DEV_API}/api/v1/info/folder/TVApp`);
+    const response = await request.get(`${DEV_API}/api/v1/info/watchlist/TVApp`);
     expect(response.ok(), `Failed to fetch TVApp menu from ${DEV_API}`).toBe(true);
 
     const data = await response.json();

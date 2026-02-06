@@ -23,14 +23,14 @@ async function capture() {
     { path: '/api/local-content/talk/ldsgc202410/20', file: 'local-content/talk-ldsgc202410-20.json', category: 'local-content' },
     { path: '/api/local-content/poem/remedy/01', file: 'local-content/poem-remedy-01.json', category: 'local-content' },
     { path: '/api/local-content/scripture/bom/sebom/31103', file: 'local-content/scripture-1-nephi-1.json', category: 'local-content' },
-    // Filesystem (audio files - use actual path with .mp3 extension)
-    { path: '/api/play/filesystem/audio/songs/hymn/_ldsgc/113.mp3', file: 'filesystem/filesystem-hymn-audio.json', category: 'filesystem' },
-    // Folder (lists) - use URL-encoded folder names with spaces
-    { path: '/api/list/folder/TVApp', file: 'folder/folder-tvapp.json', category: 'folder' },
-    { path: '/api/list/folder/TVApp/playable', file: 'folder/folder-tvapp-playable.json', category: 'folder' },
-    { path: '/api/list/folder/Cartoons', file: 'folder/folder-cartoons.json', category: 'folder' },
-    { path: '/api/list/folder/Scripture', file: 'folder/folder-scripture.json', category: 'folder' },
-    { path: '/api/list/folder/Music', file: 'folder/folder-music.json', category: 'folder' },
+    // Media (audio files - use actual path with .mp3 extension)
+    { path: '/api/play/files/audio/songs/hymn/_ldsgc/113.mp3', file: 'media/media-hymn-audio.json', category: 'media' },
+    // Watchlist (lists) - use URL-encoded watchlist names with spaces
+    { path: '/api/list/watchlist/TVApp', file: 'folder/folder-tvapp.json', category: 'watchlist' },
+    { path: '/api/list/watchlist/TVApp/playable', file: 'folder/folder-tvapp-playable.json', category: 'watchlist' },
+    { path: '/api/list/watchlist/Cartoons', file: 'folder/folder-cartoons.json', category: 'watchlist' },
+    { path: '/api/list/watchlist/Scripture', file: 'folder/folder-scripture.json', category: 'watchlist' },
+    { path: '/api/list/watchlist/Music', file: 'folder/folder-music.json', category: 'watchlist' },
     // Plex (requires live Plex server)
     { path: '/api/list/plex/81061', file: 'plex/plex-list-81061.json', category: 'plex' },
     { path: '/api/list/plex/456724', file: 'plex/plex-list-456724.json', category: 'plex' },

@@ -64,7 +64,7 @@ export function VideoPlayer({
     isAudio: false,
     isVideo: true,
     meta: media,
-    type: isPlex ? 'plex' : 'media',
+    type: isPlex ? 'plex' : 'files',
     shader,
     volume,
     setShader,

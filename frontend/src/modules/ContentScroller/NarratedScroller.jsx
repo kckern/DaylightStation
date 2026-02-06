@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import ContentScroller from './ContentScroller.jsx';
 import { DaylightAPI, DaylightMediaPath } from '../../lib/api.mjs';
+import { getNarratedRenderer, getCollectionFromContentId } from '../../lib/contentRenderers.jsx';
 
 /**
  * NarratedScroller
@@ -30,6 +31,8 @@ export function NarratedScroller({
   remountDiagnostics
 }) {
   const [data, setData] = useState(null);
+  const collection = getCollectionFromContentId(contentId);
+  const renderer = getNarratedRenderer(collection);
 
   useEffect(() => {
     if (!contentId) return;
@@ -37,12 +40,14 @@ export function NarratedScroller({
     // Extract path from contentId (narrated:scripture/bom/... → scripture/bom/...)
     const path = contentId.replace(/^narrated:/, '');
 
-    DaylightAPI(`api/v1/item/narrated/${path}`).then(response => {
+    DaylightAPI(`api/v1/info/narrated/${path}`).then(response => {
       setData(response);
     });
   }, [contentId]);
 
   const parseContent = useCallback((contentData) => {
+    if (renderer?.parseContent) return renderer.parseContent(contentData);
+
     if (!contentData?.data) return null;
 
     if (contentData.type === 'verses') {
@@ -70,9 +75,13 @@ export function NarratedScroller({
         })}
       </div>
     );
-  }, []);
+  }, [renderer]);
 
   if (!data) return null;
+
+  const title = renderer?.extractTitle ? renderer.extractTitle(data) : data.title;
+  const subtitle = renderer?.extractSubtitle ? renderer.extractSubtitle(data) : data.subtitle;
+  const cssType = renderer?.cssType || 'narrated';
 
   // Apply style as CSS variables
   const cssVars = {
@@ -103,13 +112,13 @@ export function NarratedScroller({
   })();
 
   return (
-    <div style={cssVars} data-visual-type="narrated" className="narrated-scroller">
+    <div style={cssVars} data-visual-type={cssType} className="narrated-scroller">
       <ContentScroller
         key={`narrated-${contentId}`}
-        type="narrated"
-        title={data.title}
+        type={cssType}
+        title={title}
         assetId={contentId}
-        subtitle={data.subtitle}
+        subtitle={subtitle}
         mainMediaUrl={isVideo ? data.videoUrl : data.mediaUrl}
         isVideo={isVideo}
         mainVolume={mainVolume}

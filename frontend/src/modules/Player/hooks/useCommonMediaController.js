@@ -290,6 +290,7 @@ export function useCommonMediaController({
     return container;
   }, []);
 
+  // Use DASH for dash_video mediaType (set by adapters that serve DASH streams)
   const isDash = meta.mediaType === 'dash_video';
   // Seed current cap if provided on meta
     useEffect(() => {

@@ -13,10 +13,10 @@ describe('ContentSourceRegistry', () => {
     resolvePlayables: async () => []
   };
 
-  const mockFilesystemAdapter = {
-    source: 'filesystem',
+  const mockMediaAdapter = {
+    source: 'files',
     prefixes: [
-      { prefix: 'media' },
+      { prefix: 'files' },
       { prefix: 'file' }
     ],
     getItem: async () => null,
@@ -34,10 +34,10 @@ describe('ContentSourceRegistry', () => {
   });
 
   test('resolves adapter from prefix', () => {
-    registry.register(mockFilesystemAdapter);
+    registry.register(mockMediaAdapter);
 
-    const result = registry.resolveFromPrefix('media', 'audio/song.mp3');
-    expect(result.adapter).toBe(mockFilesystemAdapter);
+    const result = registry.resolveFromPrefix('files', 'audio/song.mp3');
+    expect(result.adapter).toBe(mockMediaAdapter);
     expect(result.localId).toBe('audio/song.mp3');
   });
 
@@ -55,11 +55,11 @@ describe('ContentSourceRegistry', () => {
 
   test('lists registered prefixes', () => {
     registry.register(mockPlexAdapter);
-    registry.register(mockFilesystemAdapter);
+    registry.register(mockMediaAdapter);
 
     const prefixes = registry.getRegisteredPrefixes();
     expect(prefixes).toContain('plex');
-    expect(prefixes).toContain('media');
+    expect(prefixes).toContain('files');
     expect(prefixes).toContain('file');
   });
 
@@ -86,10 +86,10 @@ describe('ContentSourceRegistry', () => {
     expect(registry.canResolve('unknown:123')).toBe(false);
   });
 
-  test('resolve falls back to filesystem for ID without colon', () => {
-    registry.register(mockFilesystemAdapter);
+  test('resolve falls back to files for ID without colon', () => {
+    registry.register(mockMediaAdapter);
     const result = registry.resolve('audio/song.mp3');
-    expect(result.adapter).toBe(mockFilesystemAdapter);
+    expect(result.adapter).toBe(mockMediaAdapter);
     expect(result.localId).toBe('audio/song.mp3');
   });
 

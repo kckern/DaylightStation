@@ -324,7 +324,7 @@ export class ComposePresentationUseCase {
     // Check multiple possible locations for media type
     const mediaType = item.mediaType || item.metadata?.type || item.type;
 
-    if (mediaType === 'video' || mediaType === 'live') {
+    if (mediaType === 'video' || mediaType === 'dash_video' || mediaType === 'live') {
       return 'video';
     }
 

@@ -67,7 +67,7 @@ test.describe('TV URL Parsing', () => {
   test('list=plex:ID parses compound ID for menu browsing', async ({ page }) => {
     const apiRequests = [];
     page.on('request', req => {
-      if (req.url().includes('/api/v1/item/')) {
+      if (req.url().includes('/api/v1/info/')) {
         apiRequests.push(req.url());
       }
     });
@@ -81,7 +81,7 @@ test.describe('TV URL Parsing', () => {
 
     console.log('API Requests:', apiRequests);
 
-    const correctApiCall = apiRequests.some(url => url.includes('/item/plex/380469'));
+    const correctApiCall = apiRequests.some(url => url.includes('/info/plex/380469') || url.includes('/info/plex:380469'));
     expect(correctApiCall).toBe(true);
 
     console.log('✓ List compound ID parsed correctly');

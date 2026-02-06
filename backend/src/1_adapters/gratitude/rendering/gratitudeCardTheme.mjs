@@ -1,12 +1,12 @@
 /**
- * Prayer Card Theme
- * @module 2_adapters/gratitude/rendering/prayerCardTheme
+ * Gratitude Card Theme
+ * @module 2_adapters/gratitude/rendering/gratitudeCardTheme
  *
- * Presentation factors for prayer card rendering.
+ * Presentation factors for gratitude card rendering.
  * Contains all sizes, fonts, colors, and layout constants.
  */
 
-export const prayerCardTheme = {
+export const gratitudeCardTheme = {
   // Canvas dimensions
   canvas: {
     width: 580,
@@ -39,6 +39,7 @@ export const prayerCardTheme = {
     timestamp: '24px "Roboto Condensed"',
     sectionHeader: 'bold 48px "Roboto Condensed"',
     item: '36px "Roboto Condensed"',
+    attribution: '24px "Roboto Condensed"',
   },
 
   // Colors
@@ -55,4 +56,4 @@ export const prayerCardTheme = {
   },
 };
 
-export default prayerCardTheme;
+export default gratitudeCardTheme;

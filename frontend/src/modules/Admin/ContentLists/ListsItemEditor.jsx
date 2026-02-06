@@ -7,15 +7,17 @@ import {
   Group,
   Stack,
   Button,
-  FileInput,
   Image,
   SegmentedControl,
   Text,
-  Box
+  Box,
+  UnstyledButton
 } from '@mantine/core';
-import { IconUpload, IconSettings, IconSettingsAutomation } from '@tabler/icons-react';
+import { IconSettings, IconSettingsAutomation, IconPhoto } from '@tabler/icons-react';
 import EditorCategories from './EditorCategories.jsx';
 import ContentSearchCombobox from './ContentSearchCombobox.jsx';
+import ImagePickerModal from './ImagePickerModal.jsx';
+import { DaylightMediaPath } from '../../../lib/api.mjs';
 import { ACTION_OPTIONS, KNOWN_ITEM_FIELDS, ITEM_DEFAULTS } from './listConstants.js';
 
 /**
@@ -94,10 +96,17 @@ function buildSavePayload(formData, customFields) {
 /**
  * Simple mode - Just the essential fields
  */
-function SimpleMode({ formData, onChange, errors, existingGroups, imageFile, onImageUpload, uploading }) {
+function SimpleMode({ formData, onChange, errors, existingGroups }) {
+  const [imagePickerOpen, setImagePickerOpen] = useState(false);
   const groupOptions = existingGroups
     .filter(g => g)
     .map(g => ({ value: g, label: g }));
+
+  const imageSrc = formData.image
+    ? (formData.image.startsWith('/media/') || formData.image.startsWith('media/')
+        ? DaylightMediaPath(formData.image)
+        : formData.image)
+    : null;
 
   return (
     <Stack>
@@ -156,25 +165,41 @@ function SimpleMode({ formData, onChange, errors, existingGroups, imageFile, onI
         onChange={(e) => onChange('active', e.target.checked)}
       />
 
-      <FileInput
-        label="Image"
-        description="Optional thumbnail image"
-        placeholder="Click to upload"
-        leftSection={<IconUpload size={16} />}
-        accept="image/jpeg,image/png,image/webp"
-        value={imageFile}
-        onChange={onImageUpload}
-        error={errors.image}
-      />
-
-      {formData.image && (
-        <Image
-          src={formData.image}
-          height={100}
-          fit="contain"
-          radius="sm"
+      <Box>
+        <Text size="sm" fw={500} mb={4}>Image</Text>
+        <Group align="center" gap="sm">
+          <UnstyledButton onClick={() => setImagePickerOpen(true)}>
+            {imageSrc ? (
+              <Image src={imageSrc} height={60} width={60} fit="cover" radius="sm" />
+            ) : (
+              <Box style={{
+                width: 60, height: 60,
+                border: '2px dashed var(--mantine-color-dark-4)',
+                borderRadius: 'var(--mantine-radius-sm)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center'
+              }}>
+                <IconPhoto size={20} color="var(--mantine-color-dimmed)" />
+              </Box>
+            )}
+          </UnstyledButton>
+          <Button
+            size="xs"
+            variant="light"
+            leftSection={<IconPhoto size={14} />}
+            onClick={() => setImagePickerOpen(true)}
+          >
+            {formData.image ? 'Change Image' : 'Set Image'}
+          </Button>
+        </Group>
+        {errors.image && <Text size="xs" c="red" mt={4}>{errors.image}</Text>}
+        <ImagePickerModal
+          opened={imagePickerOpen}
+          onClose={() => setImagePickerOpen(false)}
+          currentImage={formData.image || null}
+          inheritedImage={null}
+          onSave={(path) => onChange('image', path)}
         />
-      )}
+      </Box>
     </Stack>
   );
 }
@@ -186,8 +211,6 @@ function ListsItemEditor({ opened, onClose, onSave, item, loading, existingGroup
   const [mode, setMode] = useState('simple');
   const [formData, setFormData] = useState({});
   const [customFields, setCustomFields] = useState({});
-  const [imageFile, setImageFile] = useState(null);
-  const [uploading, setUploading] = useState(false);
   const [errors, setErrors] = useState({});
 
   // Reset form when modal opens
@@ -248,7 +271,6 @@ function ListsItemEditor({ opened, onClose, onSave, item, loading, existingGroup
         });
         setCustomFields({});
       }
-      setImageFile(null);
       setErrors({});
       setMode('simple');
     }
@@ -268,37 +290,6 @@ function ListsItemEditor({ opened, onClose, onSave, item, loading, existingGroup
       }
       return { ...prev, [key]: value };
     });
-  };
-
-  const handleImageUpload = async (file) => {
-    if (!file) {
-      setImageFile(null);
-      return;
-    }
-
-    setImageFile(file);
-    setUploading(true);
-
-    try {
-      const formDataObj = new FormData();
-      formDataObj.append('image', file);
-
-      const response = await fetch('/api/v1/admin/images/upload', {
-        method: 'POST',
-        body: formDataObj
-      });
-
-      if (!response.ok) {
-        throw new Error('Upload failed');
-      }
-
-      const result = await response.json();
-      handleInputChange('image', result.path);
-    } catch (err) {
-      setErrors(prev => ({ ...prev, image: 'Failed to upload image' }));
-    } finally {
-      setUploading(false);
-    }
   };
 
   const validate = () => {
@@ -367,9 +358,6 @@ function ListsItemEditor({ opened, onClose, onSave, item, loading, existingGroup
               onChange={handleInputChange}
               errors={errors}
               existingGroups={existingGroups}
-              imageFile={imageFile}
-              onImageUpload={handleImageUpload}
-              uploading={uploading}
             />
           ) : (
             <EditorCategories
@@ -385,7 +373,7 @@ function ListsItemEditor({ opened, onClose, onSave, item, loading, existingGroup
           {/* Action Buttons */}
           <Group justify="flex-end" mt="md">
             <Button variant="subtle" onClick={onClose}>Cancel</Button>
-            <Button type="submit" loading={loading || uploading} data-testid="save-item-button">
+            <Button type="submit" loading={loading} data-testid="save-item-button">
               {item ? 'Save Changes' : 'Add Item'}
             </Button>
           </Group>

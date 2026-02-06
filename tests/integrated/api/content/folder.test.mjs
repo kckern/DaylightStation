@@ -1,8 +1,8 @@
 // tests/integration/api/folder.api.test.mjs
 /**
- * Folder/Playlist API Integration Tests
+ * Watchlist/Playlist API Integration Tests
  *
- * Tests folder-based content containers and playlist resolution.
+ * Tests watchlist-based content containers and playlist resolution.
  * Uses real lists.yml data from configured household.
  */
 
@@ -15,7 +15,7 @@ import {
   validateErrorResponse
 } from './_utils/schemaValidators.mjs';
 
-describe('Folder API', () => {
+describe('Watchlist API', () => {
   let app;
   let config;
 
@@ -26,29 +26,29 @@ describe('Folder API', () => {
   });
 
   // ===========================================================================
-  // LIST FOLDER CONTENTS
+  // LIST WATCHLIST CONTENTS
   // ===========================================================================
-  describe('GET /api/list/folder/:path', () => {
+  describe('GET /api/list/watchlist/:path', () => {
     describe('schema validation', () => {
       test('returns valid list response schema', async () => {
         const baseline = await loadBaseline('folder/folder-tvapp.json');
 
-        const res = await request(app).get('/api/list/folder/TVApp');
+        const res = await request(app).get('/api/list/watchlist/TVApp');
 
         expect(res.status).toBe(200);
         validateSchema(res.body, 'listResponse');
       });
 
       test('response has source and items array', async () => {
-        const res = await request(app).get('/api/list/folder/TVApp');
+        const res = await request(app).get('/api/list/watchlist/TVApp');
 
         expect(res.status).toBe(200);
-        expect(res.body.source).toBe('folder');
+        expect(res.body.source).toBe('watchlist');
         expect(Array.isArray(res.body.items)).toBe(true);
       });
 
       test('list items have required fields', async () => {
-        const res = await request(app).get('/api/list/folder/TVApp');
+        const res = await request(app).get('/api/list/watchlist/TVApp');
 
         expect(res.status).toBe(200);
         validateListItems(res.body.items);
@@ -56,19 +56,19 @@ describe('Folder API', () => {
     });
 
     describe('baseline comparison', () => {
-      test('folder contents match baseline item count', async () => {
+      test('watchlist contents match baseline item count', async () => {
         const baseline = await loadBaseline('folder/folder-tvapp.json');
 
-        const res = await request(app).get('/api/list/folder/TVApp');
+        const res = await request(app).get('/api/list/watchlist/TVApp');
 
         expect(res.status).toBe(200);
         expect(res.body.items.length).toBe(baseline.items.length);
       });
 
-      test('folder title matches baseline', async () => {
+      test('watchlist title matches baseline', async () => {
         const baseline = await loadBaseline('folder/folder-tvapp.json');
 
-        const res = await request(app).get('/api/list/folder/TVApp');
+        const res = await request(app).get('/api/list/watchlist/TVApp');
 
         expect(res.status).toBe(200);
         // Title may be from container or path
@@ -78,12 +78,12 @@ describe('Folder API', () => {
       });
     });
 
-    describe('nested folder resolution', () => {
+    describe('nested watchlist resolution', () => {
       test('resolves nested path', async () => {
-        // Test assumes a nested folder exists in lists.yml
+        // Test assumes a nested watchlist exists in lists.yml
         const baseline = await loadBaseline('folder/folder-cartoons.json');
 
-        const res = await request(app).get('/api/list/folder/Cartoons');
+        const res = await request(app).get('/api/list/watchlist/Cartoons');
 
         expect(res.status).toBe(200);
         expect(Array.isArray(res.body.items)).toBe(true);
@@ -91,8 +91,8 @@ describe('Folder API', () => {
     });
 
     describe('error handling', () => {
-      test('returns 404 or empty list for non-existent folder', async () => {
-        const res = await request(app).get('/api/list/folder/nonexistent-folder-xyz');
+      test('returns 404 or empty list for non-existent watchlist', async () => {
+        const res = await request(app).get('/api/list/watchlist/nonexistent-watchlist-xyz');
 
         // Either 404 or 200 with empty items is acceptable
         if (res.status === 200) {
@@ -107,19 +107,19 @@ describe('Folder API', () => {
   // ===========================================================================
   // PLAYABLE RESOLUTION
   // ===========================================================================
-  describe('GET /api/list/folder/:path/playable', () => {
+  describe('GET /api/list/watchlist/:path/playable', () => {
     describe('schema validation', () => {
       test('returns flattened playable items', async () => {
         const baseline = await loadBaseline('folder/folder-tvapp-playable.json');
 
-        const res = await request(app).get('/api/list/folder/TVApp/playable');
+        const res = await request(app).get('/api/list/watchlist/TVApp/playable');
 
         expect(res.status).toBe(200);
         expect(Array.isArray(res.body.items)).toBe(true);
       });
 
       test('playable items have media info', async () => {
-        const res = await request(app).get('/api/list/folder/TVApp/playable');
+        const res = await request(app).get('/api/list/watchlist/TVApp/playable');
 
         expect(res.status).toBe(200);
 
@@ -134,7 +134,7 @@ describe('Folder API', () => {
       test('playable returns items (count may vary)', async () => {
         const baseline = await loadBaseline('folder/folder-tvapp-playable.json');
 
-        const res = await request(app).get('/api/list/folder/TVApp/playable');
+        const res = await request(app).get('/api/list/watchlist/TVApp/playable');
 
         expect(res.status).toBe(200);
         // Count may vary due to Plex library changes - just verify we get some items
@@ -145,11 +145,11 @@ describe('Folder API', () => {
     describe('reference resolution', () => {
       test('resolves plex references in playlist', async () => {
         // Playlists may contain plex: references that need resolution
-        const res = await request(app).get('/api/list/folder/TVApp/playable');
+        const res = await request(app).get('/api/list/watchlist/TVApp/playable');
 
         expect(res.status).toBe(200);
 
-        // TVApp folder contains plex references - verify they get resolved
+        // TVApp watchlist contains plex references - verify they get resolved
         // Response should have some plex items
         const responsePlexItems = res.body.items.filter(i =>
           i.id?.includes('plex:') || i.plex
@@ -161,7 +161,7 @@ describe('Folder API', () => {
       test('resolves local content references', async () => {
         const baseline = await loadBaseline('folder/folder-scripture.json');
 
-        const res = await request(app).get('/api/list/folder/Scripture');
+        const res = await request(app).get('/api/list/watchlist/Scripture');
 
         expect(res.status).toBe(200);
         expect(Array.isArray(res.body.items)).toBe(true);
@@ -172,14 +172,14 @@ describe('Folder API', () => {
   // ===========================================================================
   // MODIFIERS
   // ===========================================================================
-  describe('GET /api/list/folder/:path with modifiers', () => {
+  describe('GET /api/list/watchlist/:path with modifiers', () => {
     describe('shuffle modifier', () => {
       test('shuffle modifier returns same items in different order', async () => {
         // Get baseline order
-        const baseline = await request(app).get('/api/list/folder/TVApp/playable');
+        const baseline = await request(app).get('/api/list/watchlist/TVApp/playable');
 
         // Get shuffled
-        const shuffled = await request(app).get('/api/list/folder/TVApp/playable,shuffle');
+        const shuffled = await request(app).get('/api/list/watchlist/TVApp/playable,shuffle');
 
         expect(shuffled.status).toBe(200);
         expect(shuffled.body.items.length).toBe(baseline.body.items.length);
@@ -194,7 +194,7 @@ describe('Folder API', () => {
 
     describe('combined modifiers', () => {
       test('playable,shuffle works together', async () => {
-        const res = await request(app).get('/api/list/folder/TVApp/playable,shuffle');
+        const res = await request(app).get('/api/list/watchlist/TVApp/playable,shuffle');
 
         expect(res.status).toBe(200);
         expect(Array.isArray(res.body.items)).toBe(true);
@@ -206,7 +206,7 @@ describe('Folder API', () => {
   // DATA INTEGRITY
   // ===========================================================================
   describe('data integrity', () => {
-    test('all baseline folders exist', async () => {
+    test('all baseline watchlists exist', async () => {
       const folderBaselines = [
         'folder/folder-tvapp.json',
         'folder/folder-cartoons.json',
@@ -217,10 +217,10 @@ describe('Folder API', () => {
       for (const baselinePath of folderBaselines) {
         try {
           const baseline = await loadBaseline(baselinePath);
-          const folderName = baseline._meta?.source?.replace('/api/list/folder/', '') ||
+          const watchlistName = baseline._meta?.source?.replace('/api/list/watchlist/', '') ||
             baselinePath.replace('folder/folder-', '').replace('.json', '');
 
-          const res = await request(app).get(`/api/list/folder/${folderName}`);
+          const res = await request(app).get(`/api/list/watchlist/${watchlistName}`);
 
           expect(res.status).toBe(200);
         } catch (err) {
@@ -228,15 +228,15 @@ describe('Folder API', () => {
           if (err.message.includes('MISSING BASELINE')) {
             throw err;
           }
-          // Other errors might be expected (folder doesn't exist in test env)
+          // Other errors might be expected (watchlist doesn't exist in test env)
         }
       }
     });
 
-    test('folder items have consistent structure', async () => {
+    test('watchlist items have consistent structure', async () => {
       const baseline = await loadBaseline('folder/folder-tvapp.json');
 
-      const res = await request(app).get('/api/list/folder/TVApp');
+      const res = await request(app).get('/api/list/watchlist/TVApp');
 
       expect(res.status).toBe(200);
 

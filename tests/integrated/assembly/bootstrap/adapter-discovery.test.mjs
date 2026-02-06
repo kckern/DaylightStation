@@ -8,7 +8,7 @@ describe('Adapter Discovery Integration', () => {
 
     // Verify expected adapters were discovered
     expect(registry.getProviders('media')).toContain('plex');
-    expect(registry.getProviders('media')).toContain('filesystem');
+    expect(registry.getProviders('media')).toContain('media');
     expect(registry.getProviders('ai')).toContain('openai');
     expect(registry.getProviders('ai')).toContain('anthropic');
     expect(registry.getProviders('home_automation')).toContain('home_assistant');

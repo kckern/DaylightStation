@@ -26,10 +26,10 @@ export class MediaKeyResolver {
    * @param {Object} config.apps - Per-app configuration overrides
    */
   constructor(config = {}) {
-    this.knownSources = config.knownSources || ['plex', 'folder', 'filesystem'];
+    this.knownSources = config.knownSources || ['plex', 'watchlist', 'files'];
     this.defaults = config.defaults || {
       patterns: [{ match: '^\\d+$', source: 'plex' }],
-      fallbackChain: ['plex', 'folder', 'filesystem']
+      fallbackChain: ['plex', 'watchlist', 'files']
     };
     this.apps = config.apps || {};
   }

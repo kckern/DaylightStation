@@ -39,12 +39,14 @@ export function useQueueController({ play, queue, clear }) {
   }, []);
 
   const isQueue = !!queue || (play && (play.playlist || play.queue)) || Array.isArray(play);
+  const contentIdKey = play?.contentId || queue?.contentId;
   const playlistKey = play?.playlist || play?.queue || queue?.playlist || queue?.queue || queue?.media;
   const plexKey = queue?.plex || play?.plex;
 
   useEffect(() => {
     const signatureParts = [];
 
+    if (contentIdKey) signatureParts.push(`contentId:${contentIdKey}`);
     if (playlistKey) signatureParts.push(`playlist:${playlistKey}`);
     if (plexKey) signatureParts.push(`plex:${plexKey}`);
     signatureParts.push(`shuffle:${isShuffle ? '1' : '0'}`);
@@ -91,14 +93,20 @@ export function useQueueController({ play, queue, clear }) {
       } else if (Array.isArray(queue)) {
         newQueue = queue.map(item => ({ ...item, guid: guid() }));
       } else if ((play && typeof play === 'object') || (queue && typeof queue === 'object')) {
+        const queue_contentId = play?.contentId || queue?.contentId;
         const queue_assetId = play?.playlist || play?.queue || queue?.playlist || queue?.queue || queue?.media;
-        if (queue_assetId) {
-          const { items } = await DaylightAPI(`api/v1/item/folder/${queue_assetId}/playable${isShuffle ? ',shuffle' : ''}`);
+        if (queue_contentId && !queue_assetId && !plexKey) {
+          // Unified contentId path — compound ID like "plex:12345" or "watchlist:path"
+          const { items } = await DaylightAPI(`api/v1/list/${queue_contentId}/playable${isShuffle ? ',shuffle' : ''}`);
+          const flattened = await flattenQueueItems(items);
+          newQueue = flattened.map(item => ({ ...item, ...item.play, ...itemOverrides, guid: guid() }));
+        } else if (queue_assetId) {
+          const { items } = await DaylightAPI(`api/v1/list/watchlist/${queue_assetId}/playable${isShuffle ? ',shuffle' : ''}`);
           const flattened = await flattenQueueItems(items);
           newQueue = flattened.map(item => ({ ...item, ...item.play, ...itemOverrides, guid: guid() }));
         } else if (queue?.plex || play?.plex) {
           const plexId = queue?.plex || play?.plex;
-          const { items } = await DaylightAPI(`api/v1/item/plex/${plexId}/playable${isShuffle ? ',shuffle' : ''}`);
+          const { items } = await DaylightAPI(`api/v1/list/plex/${plexId}/playable${isShuffle ? ',shuffle' : ''}`);
           const flattened = await flattenQueueItems(items);
           newQueue = flattened.map(item => ({ ...item, ...item.play, ...itemOverrides, guid: guid() }));
         } else if (play?.media) {
@@ -125,7 +133,7 @@ export function useQueueController({ play, queue, clear }) {
     return () => {
       isCancelled = true;
     };
-  }, [play, queue, isShuffle, playlistKey, plexKey]);
+  }, [play, queue, isShuffle, contentIdKey, playlistKey, plexKey]);
 
   const advance = useCallback((step = 1) => {
     setQueue((prevQueue) => {

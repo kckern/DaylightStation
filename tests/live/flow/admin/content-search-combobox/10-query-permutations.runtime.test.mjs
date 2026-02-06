@@ -3,7 +3,7 @@
  * Query Permutation Tests
  *
  * Systematically tests combinations of:
- * - Sources: plex, immich, filesystem, audiobookshelf, singing, narrated
+ * - Sources: plex, immich, media, audiobookshelf, singing, narrated
  * - Categories: media, gallery, audiobooks, ebooks, local
  * - Built-in Aliases: music, photos, video, audiobooks
  * - Keywords: common search terms
@@ -20,7 +20,7 @@ const TEST_URL = '/admin/test/combobox';
 // ============================================================================
 
 // Concrete sources from query-combinatorics.md
-const SOURCES = ['plex', 'immich', 'filesystem', 'singing', 'narrated'];
+const SOURCES = ['plex', 'immich', 'media', 'singing', 'narrated'];
 
 // Category aliases
 const CATEGORIES = ['media', 'gallery'];
@@ -376,7 +376,7 @@ test.describe('ContentSearchCombobox - Query Permutations', () => {
         'video:test',
         'plex:test',
         'photos:test',
-        'media:test',
+        'files:test',
       ];
 
       await ComboboxActions.open(page);
@@ -527,7 +527,7 @@ test.describe('ContentSearchCombobox - Query Permutations', () => {
       'plex:office',
       'immich:family',
       // Category
-      'media:home',
+      'files:home',
       'gallery:vacation',
     ];
 

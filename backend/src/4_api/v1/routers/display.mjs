@@ -52,7 +52,7 @@ export function createDisplayRouter(config) {
     if (!adapter) {
       return res.status(404).json({
         error: `Unknown source: ${resolvedSource}`,
-        hint: 'Valid sources: plex, immich, folder, filesystem, canvas'
+        hint: 'Valid sources: plex, immich, watchlist, filesystem, canvas'
       });
     }
 

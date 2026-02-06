@@ -32,6 +32,7 @@ export function SinglePlayer(props = {}) {
     ...play
   } = props;
   const {
+    contentId: contentIdProp,
     plex,
     media,
     hymn,
@@ -60,7 +61,10 @@ export function SinglePlayer(props = {}) {
     assetId: mediaKeyProp,
     upscaleEffects
   } = play || {};
-  
+
+  // Compute effective contentId from whichever identifier is available
+  const effectiveContentId = contentIdProp || (plex ? `plex:${plex}` : null) || media || null;
+
   // Prepare common props for content scroller components
   const contentProps = {
     ...play,
@@ -85,13 +89,12 @@ export function SinglePlayer(props = {}) {
 
   // Extract contentId for category-based routing
   // Also convert legacy props to canonical contentId format
+  // Note: talk and poem use LocalContentAdapter (not NarratedAdapter) and use legacy fallback
   const { contentId: rawContentId } = play || {};
   const contentId = rawContentId
     || (hymn ? `singing:hymn/${hymn}` : null)
     || (primary ? `singing:primary/${primary}` : null)
-    || (scripture ? `narrated:scripture/${scripture}` : null)
-    || (talk ? `narrated:talks/${talk}` : null)
-    || (poem ? `narrated:poetry/${poem}` : null);
+    || (scripture ? `narrated:scripture/${scripture}` : null);
   const category = contentId ? getCategoryFromId(contentId) : null;
 
   // Content scroller types don't use the shader, so disable for them
@@ -152,18 +155,20 @@ export function SinglePlayer(props = {}) {
 
   const playbackSessionKey = useMemo(() => {
     const candidates = [
+      mediaInfo?.contentId,
       mediaInfo?.assetId,
       mediaInfo?.key,
       mediaInfo?.plex,
       mediaInfo?.id,
       mediaInfo?.mediaUrl,
+      effectiveContentId,
       plex,
       mediaKeyProp,
       media
     ];
     const firstDefined = candidates.find((value) => value != null && String(value).length);
     return firstDefined != null ? String(firstDefined) : null;
-  }, [mediaInfo?.assetId, mediaInfo?.key, mediaInfo?.plex, mediaInfo?.id, mediaInfo?.mediaUrl, plex, mediaKeyProp, media]);
+  }, [mediaInfo?.contentId, mediaInfo?.assetId, mediaInfo?.key, mediaInfo?.plex, mediaInfo?.id, mediaInfo?.mediaUrl, effectiveContentId, plex, mediaKeyProp, media]);
 
   const handleProgress = useCallback((payload = {}) => {
     const watchedDuration = accumulateWatchedDuration(payload);
@@ -236,6 +241,7 @@ export function SinglePlayer(props = {}) {
     setIsReady(false);
 
     const info = await fetchMediaInfo({
+      contentId: effectiveContentId,
       plex,
       media,
       shuffle,
@@ -248,17 +254,20 @@ export function SinglePlayer(props = {}) {
       // Detect if this is a collection/folder (no mediaUrl, no playable mediaType)
       const isPlayable = info.mediaUrl || ['dash_video', 'video', 'audio'].includes(info.mediaType);
 
-      if (!isPlayable && plex) {
+      if (!isPlayable && effectiveContentId) {
         // This is a collection - fetch first playable item
         try {
-          const { items } = await DaylightAPI(`/api/v1/list/plex/${plex}?capability=playable`);
+          const { items } = await DaylightAPI(`/api/v1/list/${effectiveContentId}/playable`);
           if (items && items.length > 0) {
             const firstItem = items[0];
-            const firstItemPlex = firstItem.plex || firstItem.play?.plex || firstItem.metadata?.plex;
-            if (firstItemPlex) {
+            const firstItemId = firstItem.play?.contentId || firstItem.contentId || firstItem.id
+                || firstItem.play?.plex || firstItem.plex;
+            if (firstItemId) {
               // Fetch media info for the first playable item
+              const resolvedId = String(firstItemId).includes(':') ? firstItemId : `plex:${firstItemId}`;
               const playableInfo = await fetchMediaInfo({
-                plex: firstItemPlex,
+                contentId: resolvedId,
+                plex: firstItem.play?.plex || firstItem.plex,
                 shuffle: false,
                 maxVideoBitrate: play?.maxVideoBitrate,
                 maxResolution: play?.maxResolution,
@@ -306,7 +315,7 @@ export function SinglePlayer(props = {}) {
     } else if (!!open) {
       setGoToApp(open);
     }
-  }, [plex, media, open, shuffle, continuous, play?.maxVideoBitrate, play?.maxResolution, play?.seconds, play?.resume, plexClientSession]);
+  }, [effectiveContentId, plex, media, open, shuffle, continuous, play?.maxVideoBitrate, play?.maxResolution, play?.seconds, play?.resume, plexClientSession]);
 
   useEffect(() => {
     fetchVideoInfoCallback();

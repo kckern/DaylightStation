@@ -173,13 +173,19 @@ function ListsFolder() {
     }
   };
 
+  // Set of image paths currently assigned to items in this list
+  const inUseImages = useMemo(() => {
+    return new Set(items.filter(i => i.image).map(i => i.image));
+  }, [items]);
+
   // Context value must be defined before any early returns (React hooks rules)
   const contextValue = useMemo(() => ({
     items,
     contentInfoMap,
     setContentInfo,
     getNearbyItems,
-  }), [items, contentInfoMap, setContentInfo, getNearbyItems]);
+    inUseImages,
+  }), [items, contentInfoMap, setContentInfo, getNearbyItems, inUseImages]);
 
   if (loading && items.length === 0) {
     return (
@@ -264,7 +270,7 @@ function ListsFolder() {
 
   return (
     <ListsContext.Provider value={contextValue}>
-      <Stack gap="md" className="lists-view">
+      <Stack gap="xs" className="lists-view">
       <Group justify="space-between">
         <Group>
           <ActionIcon variant="subtle" onClick={() => navigate(`/admin/content/lists/${type}`)}>
@@ -329,8 +335,10 @@ function ListsFolder() {
           <div className="col-active"></div>
           <div className="col-drag"></div>
           <div className="col-index"><Text size="xs" fw={600} c="dimmed">#</Text></div>
+          <div className="col-icon"></div>
           <div className="col-label"><Text size="xs" fw={600} c="dimmed">Label</Text></div>
           <div className="col-action"><Text size="xs" fw={600} c="dimmed">Action</Text></div>
+          <div className="col-preview"></div>
           <div className="col-input"><Text size="xs" fw={600} c="dimmed">Input</Text></div>
           {type === 'watchlists' && (
             <div className="col-progress"><Text size="xs" fw={600} c="dimmed">Progress</Text></div>

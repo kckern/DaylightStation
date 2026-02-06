@@ -447,10 +447,10 @@ describe('ContentQueryService', () => {
 
         const result = await service.resolve('plex', 'shows/123', {
           now: new Date(),
-          containerType: 'folder'
+          containerType: 'watchlist'
         });
 
-        // With watchlist strategy (default for folder), watched items filtered out
+        // With watchlist strategy (default for watchlist), watched items filtered out
         // Should return in_progress first (plex:456), then unwatched (plex:789)
         expect(result.items.length).toBeLessThan(3);
         expect(result.items.some(i => i.id === 'plex:123')).toBe(false); // watched filtered

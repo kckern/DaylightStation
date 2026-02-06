@@ -1,0 +1,291 @@
+// frontend/src/modules/Displayer/Displayer.scss
+
+// ─── Base ──────────────────────────────────────────────────
+.displayer {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #1a1a1a;
+  box-sizing: border-box;
+  position: relative;
+  cursor: pointer;
+}
+
+.displayer--loading,
+.displayer--error {
+  color: #666;
+  font-size: 1.5rem;
+}
+
+// ─── Default Mode ──────────────────────────────────────────
+.displayer__default {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+  }
+}
+
+// ─── Art Mode: Frame Variants ──────────────────────────────
+.displayer__frame {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+.displayer__frame--classic {
+  background: linear-gradient(145deg, #3d3225, #2a2218);
+  box-shadow:
+    inset 2px 2px 4px rgba(255, 255, 255, 0.15),
+    inset -2px -2px 4px rgba(0, 0, 0, 0.3);
+  padding: 1%;
+
+  .displayer__matte {
+    background:
+      url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E"),
+      linear-gradient(165deg, #a89c84 0%, #998c74 50%, #8d7a6b 100%);
+    background-blend-mode: soft-light, normal;
+    box-shadow:
+      inset 3px 3px 6px rgba(0, 0, 0, 0.15),
+      inset -1px -1px 3px rgba(255, 255, 255, 0.8);
+    padding: 5%;
+  }
+
+  .displayer__inner-frame {
+    background: linear-gradient(145deg, #4a4035, #2d261f);
+    padding: 0.4%;
+    box-shadow:
+      inset 1px 1px 2px rgba(255, 255, 255, 0.1),
+      inset -1px -1px 2px rgba(0, 0, 0, 0.3),
+      2px 2px 8px rgba(0, 0, 0, 0.2);
+  }
+}
+
+.displayer__frame--minimal {
+  background: #000;
+  padding: 0.5%;
+
+  .displayer__matte {
+    background: #000;
+    padding: 0;
+  }
+
+  .displayer__inner-frame {
+    background: transparent;
+    padding: 0;
+    box-shadow: none;
+  }
+}
+
+.displayer__frame--ornate {
+  background: linear-gradient(145deg, #8b7355, #5c4a37);
+  box-shadow:
+    inset 3px 3px 6px rgba(255, 215, 0, 0.2),
+    inset -3px -3px 6px rgba(0, 0, 0, 0.4),
+    0 0 20px rgba(0, 0, 0, 0.5);
+  padding: 2%;
+  border: 4px solid #6b5344;
+
+  .displayer__matte {
+    background: linear-gradient(165deg, #f5f0e6 0%, #e8e0d0 100%);
+    box-shadow:
+      inset 4px 4px 8px rgba(0, 0, 0, 0.1),
+      inset -2px -2px 4px rgba(255, 255, 255, 0.9);
+    padding: 6%;
+  }
+
+  .displayer__inner-frame {
+    background: linear-gradient(145deg, #8b7355, #5c4a37);
+    padding: 0.5%;
+    box-shadow:
+      inset 2px 2px 4px rgba(255, 215, 0, 0.15),
+      inset -2px -2px 4px rgba(0, 0, 0, 0.3);
+  }
+}
+
+.displayer__frame--none {
+  background: transparent;
+  padding: 0;
+
+  .displayer__matte {
+    background: transparent;
+    padding: 0;
+    box-shadow: none;
+  }
+
+  .displayer__inner-frame {
+    background: transparent;
+    padding: 0;
+    box-shadow: none;
+  }
+}
+
+// ─── Art Mode: Common Elements ─────────────────────────────
+.displayer__matte {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+.displayer__inner-frame {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+}
+
+.displayer__frame img {
+  height: 100%;
+  width: auto;
+  object-fit: contain;
+  display: block;
+  background: #2a2218;
+}
+
+// ─── Art Mode: Info Overlay ────────────────────────────────
+.displayer__overlay {
+  position: absolute;
+  bottom: 10%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.7);
+  padding: 1rem 2rem;
+  border-radius: 8px;
+  text-align: center;
+  animation: displayer-overlayFadeIn 0.3s ease-out;
+}
+
+.displayer__overlay-title {
+  margin: 0;
+  font-size: 1.5rem;
+  color: #fff;
+  font-weight: 300;
+}
+
+.displayer__overlay-artist {
+  margin: 0.5rem 0 0;
+  font-size: 1rem;
+  color: #ccc;
+  font-style: italic;
+}
+
+.displayer__overlay-year {
+  display: inline-block;
+  margin-top: 0.25rem;
+  font-size: 0.875rem;
+  color: #999;
+}
+
+@keyframes displayer-overlayFadeIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(10px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+// ─── Poster Mode ───────────────────────────────────────────
+.displayer__poster {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.displayer__poster-image {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+
+  img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+  }
+}
+
+.displayer__poster-info {
+  padding: 1rem 2rem;
+  text-align: center;
+  color: #fff;
+
+  h2 {
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: 300;
+  }
+
+  p {
+    margin: 0.5rem 0 0;
+    font-size: 1rem;
+    color: #ccc;
+  }
+}
+
+// ─── Card Mode ─────────────────────────────────────────────
+.displayer__card {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2rem;
+  padding: 2rem;
+}
+
+.displayer__card-image {
+  flex: 0 1 60%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+  }
+}
+
+.displayer__card-meta {
+  flex: 0 1 30%;
+  color: #fff;
+
+  h2 {
+    margin: 0 0 1rem;
+    font-size: 1.5rem;
+    font-weight: 300;
+  }
+}
+
+.displayer__card-artist,
+.displayer__card-year,
+.displayer__card-category,
+.displayer__card-location,
+.displayer__card-people {
+  display: block;
+  margin-top: 0.5rem;
+  font-size: 0.9rem;
+  color: #aaa;
+}
+
+.displayer__card-artist {
+  font-style: italic;
+  color: #ccc;
+}

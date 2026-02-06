@@ -317,7 +317,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       setGovernanceMedia(null);
       return;
     }
-    const mediaId = currentItem.assetId || currentItem.id || currentItem.plex || currentItem.videoUrl || currentItem.mediaUrl || currentItem.guid;
+    const mediaId = currentItem.contentId || currentItem.assetId || currentItem.id || currentItem.plex || currentItem.videoUrl || currentItem.mediaUrl || currentItem.guid;
     setGovernanceMedia({
       id: mediaId || `unknown-${currentItem.title || 'fitness'}`,
       labels: Array.isArray(currentItem.labels) ? currentItem.labels : [],
@@ -494,11 +494,13 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     const enhanced = {
       ...currentItem,
       guid: currentItem.guid
+        || currentItem.contentId
         || currentItem.assetId
         || currentItem.id
         || currentItem.plex
         || currentItem.mediaUrl
         || `fitness-${currentItem.id || ''}`,
+      contentId: currentItem.contentId || (currentItem.plex ? `plex:${currentItem.plex}` : null),
       plex: currentItem.plex || currentItem.id,
       mediaUrl: currentItem.mediaUrl || currentItem.videoUrl,
       title: currentItem.title || currentItem.label,
@@ -811,7 +813,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     }
     if (status === 'none') return null;
 
-    const mediaKey = currentItem.assetId || currentItem.plex || currentItem.id || currentItem.guid || null;
+    const mediaKey = currentItem.contentId || currentItem.assetId || currentItem.plex || currentItem.id || currentItem.guid || null;
     if (!mediaKey) return null;
 
     return {
@@ -824,7 +826,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       naturalEnd: Boolean(naturalEnd),
       isStalled, // Include stall state in payload (3C fix)
       title: currentItem.title || currentItem.label || 'Episode',
-      type: (currentItem.plex || /^\d+$/.test(String(mediaKey))) ? 'plex' : (currentItem.type || 'media'),
+      type: currentItem.source || (currentItem.plex ? 'plex' : null) || currentItem.type || 'files',
       grandparentId: currentItem.grandparentId || null
     };
   }, [currentItem, currentTime, duration, resilienceState]);
@@ -1001,15 +1003,17 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     const canAutoplay = !mediaGoverned || (governance === 'unlocked' || governance === 'warning');
     const stableGuid = String(
       enhancedCurrentItem.guid
+        || enhancedCurrentItem.contentId
         || enhancedCurrentItem.assetId
         || enhancedCurrentItem.plex
         || enhancedCurrentItem.id
         || enhancedCurrentItem.mediaUrl
         || `fitness-${enhancedCurrentItem.id || enhancedCurrentItem.assetId || 'entry'}`
     );
-    
+
     return {
       guid: stableGuid,
+      contentId: enhancedCurrentItem.contentId || (enhancedCurrentItem.plex ? `plex:${enhancedCurrentItem.plex}` : null),
       plex: enhancedCurrentItem.plex,
       mediaUrl: enhancedCurrentItem.mediaUrl,
       mediaType: 'video',
@@ -1427,7 +1431,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
 
   const hasActiveItem = Boolean(currentItem && enhancedCurrentItem && playObject);
   const playerKey = hasActiveItem
-    ? `${enhancedCurrentItem.assetId || enhancedCurrentItem.plex || enhancedCurrentItem.id}:${currentItem?.seconds ?? 0}`
+    ? `${enhancedCurrentItem.contentId || enhancedCurrentItem.assetId || enhancedCurrentItem.plex || enhancedCurrentItem.id}:${currentItem?.seconds ?? 0}`
     : 'fitness-player-empty';
 
   // Video content with overlay and chart

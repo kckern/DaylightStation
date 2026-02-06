@@ -110,7 +110,7 @@ export function createPlayRouter(config) {
    * Updates watch state for an item. Replaces legacy /media/log endpoint.
    *
    * Body:
-   * - type: string (e.g., 'plex', 'filesystem')
+   * - type: string (e.g., 'plex', 'media')
    * - assetId: string - Item ID
    * - percent: number - Playback percentage (0-100)
    * - seconds: number - Current playhead position
