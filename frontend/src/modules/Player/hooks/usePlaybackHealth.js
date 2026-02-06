@@ -39,7 +39,7 @@ const coerceMediaType = (value) => {
 };
 
 const coercePlayerFlavor = (value, mediaType) => {
-  if (!value && mediaType === 'video') return 'html5-video';
+  if (!value && (mediaType === 'video' || mediaType === 'dash_video')) return 'html5-video';
   if (!value && mediaType === 'audio') return 'html5-audio';
   return value || 'generic';
 };
@@ -303,7 +303,7 @@ export function usePlaybackHealth({
   }, [getMediaEl, waitKey, recordProgress, updateElementSignals, logHealthEvent]);
 
   useEffect(() => {
-    if (mediaType !== 'video') {
+    if (mediaType !== 'video' && mediaType !== 'dash_video') {
       setFrameInfo(NO_FRAME_INFO);
       return () => {};
     }

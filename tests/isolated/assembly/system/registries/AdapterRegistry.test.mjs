@@ -90,14 +90,14 @@ describe('AdapterRegistry', () => {
           default: { provider: 'plex', capability: 'media', displayName: 'Plex' }
         })
         .mockResolvedValueOnce({
-          default: { provider: 'filesystem', capability: 'media', displayName: 'Filesystem' }
+          default: { provider: 'media', capability: 'media', displayName: 'Local Media' }
         });
 
       await registry.discover();
 
       const providers = registry.getProviders('media');
       expect(providers).toContain('plex');
-      expect(providers).toContain('filesystem');
+      expect(providers).toContain('media');
       expect(providers.length).toBe(2);
     });
   });

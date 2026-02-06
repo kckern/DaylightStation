@@ -65,36 +65,36 @@ export const CAPTURE_MANIFEST = {
   ],
 
   /**
-   * Folder/list endpoints - playlists and content containers
+   * Watchlist/list endpoints - playlists and content containers
    */
-  'folder': [
+  'watchlist': [
     {
       legacy: '/data/list/morning-shows',
-      new: '/api/list/folder/morning-shows',
+      new: '/api/list/watchlist/morning-shows',
       name: 'folder-morning-shows',
       description: 'Morning shows playlist container'
     },
     {
       legacy: '/data/list/morning-shows/playable',
-      new: '/api/list/folder/morning-shows/playable',
+      new: '/api/list/watchlist/morning-shows/playable',
       name: 'folder-morning-shows-playable',
       description: 'Morning shows resolved to playable items'
     },
     {
       legacy: '/data/list/cartoons',
-      new: '/api/list/folder/cartoons',
+      new: '/api/list/watchlist/cartoons',
       name: 'folder-cartoons',
       description: 'Cartoons playlist'
     },
     {
       legacy: '/data/list/scriptures',
-      new: '/api/list/folder/scriptures',
+      new: '/api/list/watchlist/scriptures',
       name: 'folder-scriptures',
       description: 'Scripture reading playlist'
     },
     {
       legacy: '/data/list/background-music',
-      new: '/api/list/folder/background-music',
+      new: '/api/list/watchlist/background-music',
       name: 'folder-background-music',
       description: 'Background music playlist'
     }
@@ -138,13 +138,13 @@ export const CAPTURE_MANIFEST = {
   ],
 
   /**
-   * Filesystem/media endpoints - direct file access
+   * Media endpoints - direct file access
    */
-  'filesystem': [
+  'media': [
     {
       legacy: '/media/info/audio/hymns/113.mp3',
-      new: '/api/play/filesystem/audio/hymns/113.mp3',
-      name: 'filesystem-hymn-audio',
+      new: '/api/play/files/audio/hymns/113.mp3',
+      name: 'media-hymn-audio',
       description: 'Direct hymn audio file'
     }
   ]

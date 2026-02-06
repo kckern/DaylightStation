@@ -128,13 +128,13 @@ export const DaylightMediaPath = (path) => {
     if (path.startsWith('static/img/')) {
         path = `api/v1/${path}`;
     }
-    // Rewrite legacy /media/plex/img/* paths to new content API
+    // Rewrite legacy /media/plex/img/* paths to display action route
     if (path.startsWith('media/plex/img/')) {
-        path = path.replace('media/plex/img/', 'api/v1/content/plex/image/');
+        path = path.replace('media/plex/img/', 'api/v1/display/plex/');
     }
-    // Rewrite legacy /media/plex/url/* paths to new play API
+    // Rewrite legacy /media/plex/url/* paths to play action route
     if (path.startsWith('media/plex/url/')) {
-        path = path.replace('media/plex/url/', 'api/v1/play/plex/mpd/');
+        path = path.replace('media/plex/url/', 'api/v1/play/plex/');
     }
     // Rewrite legacy /media/audio/* paths to new proxy media endpoint
     if (path.startsWith('media/audio/')) {
@@ -160,8 +160,18 @@ export const DaylightImagePath = (key) => {
     return `${getBaseUrl()}/api/v1/static/img/${key}`;
 }
 
-export const DaylightPlexPath = (key) => {
-    return `${getBaseUrl()}/media/plex/${key}`;
+/**
+ * Build a display URL for any content source.
+ * Accepts a compound contentId (e.g., "plex:12345") or falls back to constructing
+ * from source + localId for backward compatibility.
+ * @param {string} contentId - Compound content ID, or bare numeric Plex ID
+ * @returns {string} Full display URL
+ */
+export const ContentDisplayUrl = (contentId) => {
+    if (!contentId) return '';
+    // If it already contains a colon, it's a compound ID — use directly
+    const id = String(contentId).includes(':') ? contentId : `plex/${contentId}`;
+    return `${getBaseUrl()}/api/v1/display/${id}`;
 }
 
 export const DaylightHostPath = () => {

@@ -1,17 +1,17 @@
-// tests/unit/adapters/filesystem-cover-art.unit.test.mjs
+// tests/unit/adapters/media-cover-art.unit.test.mjs
 import { jest } from '@jest/globals';
-import { FilesystemAdapter } from '#adapters/content/media/filesystem/FilesystemAdapter.mjs';
+import { FileAdapter } from '#adapters/content/media/files/FileAdapter.mjs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const fixturesPath = path.resolve(__dirname, '../../_fixtures/media');
 
-describe('FilesystemAdapter.getCoverArt', () => {
+describe('FileAdapter.getCoverArt', () => {
   let adapter;
 
   beforeEach(() => {
-    adapter = new FilesystemAdapter({ mediaBasePath: fixturesPath });
+    adapter = new FileAdapter({ mediaBasePath: fixturesPath });
   });
 
   test('returns null when file not found (resolvePath returns null)', async () => {

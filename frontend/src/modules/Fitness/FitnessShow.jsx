@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { LoadingOverlay, Alert } from '@mantine/core';
-import { DaylightAPI, DaylightMediaPath, normalizeImageUrl } from '../../lib/api.mjs';
+import { DaylightAPI, DaylightMediaPath, ContentDisplayUrl, normalizeImageUrl } from '../../lib/api.mjs';
 import './FitnessShow.scss';
 import { useFitness } from '../../context/FitnessContext.jsx';
 import moment from 'moment';
@@ -32,7 +32,7 @@ const SeasonInfo = ({ item, type = 'episode', showSummary = null }) => {
       {item.image && (
         <div className="info-image-container">
           <img 
-            src={type === 'season' && item.id ? DaylightMediaPath(`api/v1/display/plex/${item.id}`) : normalizeImageUrl(item.image)} 
+            src={type === 'season' && item.id ? ContentDisplayUrl(item.contentId || item.id) : normalizeImageUrl(item.image)}
             alt={item.title || item.label || item.name} 
             className="info-image" 
           />
@@ -105,11 +105,11 @@ const EpisodeInfo = ({ episode, showInfo, parentsMap, parentsList, onPlay }) => 
   const parentDescription = [parent.summary, parent.description, showInfo?.summary]
     .find(v => typeof v === 'string' && v.trim().length) || '';
 
-  const parentImage = normalizeImageUrl(parent.thumbnail || parent.image) || (parentId ? DaylightMediaPath(`api/v1/display/plex/${parentId}`) : normalizeImageUrl(showInfo?.image));
+  const parentImage = normalizeImageUrl(parent.thumbnail || parent.image) || (parentId ? ContentDisplayUrl(parent.contentId || parentId) : normalizeImageUrl(showInfo?.image));
   // Use the same episode image source as grid: primary is episode.image; fallback to thumbId path
   const episodeImage = (episode.image && episode.image.trim())
     ? normalizeImageUrl(episode.image)
-    : (episode.thumbId ? DaylightMediaPath(`api/v1/display/plex/${episode.thumbId}`) : null);
+    : (episode.thumbId ? ContentDisplayUrl(episode.thumbId) : null);
   const durationText = episode.duration ? formatDuration(episode.duration) : null;
   const epTitle = episode.label || episode.title || `Episode ${episode.itemIndex || ''}`.trim();
   const epNumber = episode.itemIndex;
@@ -550,7 +550,7 @@ const FitnessShow = ({ showId: rawShowId, onBack, viewportRef, setFitnessPlayQue
       const parentData = parentsMap && episode.parentId ? parentsMap[episode.parentId] : null;
       const seasonImageUrl = parentData?.thumbnail
         ? normalizeImageUrl(parentData.thumbnail)
-        : (episode.parentId ? DaylightMediaPath(`api/v1/display/plex/${episode.parentId}`) : undefined);
+        : (episode.parentId ? ContentDisplayUrl(episode.parentId) : undefined);
 
       const queueItem = {
         id: plexId || episode.id || `episode-${Date.now()}`,
@@ -561,7 +561,7 @@ const FitnessShow = ({ showId: rawShowId, onBack, viewportRef, setFitnessPlayQue
         mediaUrl: episodeUrl,
         duration: episode.duration,
         thumbId: episode.thumbId, // Pass thumbId directly to FitnessPlayer
-        image: episode.thumbId ? DaylightMediaPath(`api/v1/display/plex/${episode.thumbId}`) : episode.image,
+        image: episode.thumbId ? ContentDisplayUrl(episode.thumbId) : episode.image,
         parentId: episode.parentId,
         parentImage: seasonImageUrl,
         seasonImage: seasonImageUrl, // Alias for footer seek thumbnails
@@ -964,9 +964,9 @@ const FitnessShow = ({ showId: rawShowId, onBack, viewportRef, setFitnessPlayQue
           mediaUrl: episodeUrl,
           duration: episode.duration,
           thumbId: episode.thumbId, // Pass thumbId directly to FitnessPlayer
-          image: episode.thumbId ? DaylightMediaPath(`api/v1/display/plex/${episode.thumbId}`) : episode.image,
+          image: episode.thumbId ? ContentDisplayUrl(episode.thumbId) : episode.image,
           parentId: episode.parentId,
-          parentImage: episode.parentId ? DaylightMediaPath(`api/v1/display/plex/${episode.parentId}`) : undefined,
+          parentImage: episode.parentId ? ContentDisplayUrl(episode.parentId) : undefined,
           labels: deriveEpisodeLabels(episode),
           type: episode.type || 'episode',
           showId,

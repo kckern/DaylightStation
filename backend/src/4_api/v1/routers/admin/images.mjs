@@ -4,13 +4,15 @@
  * Handles image uploads for list item thumbnails.
  *
  * Endpoints:
- * - POST /upload - Upload an image file (multipart/form-data)
+ * - GET  /list       - List existing uploaded images
+ * - POST /upload     - Upload an image file (multipart/form-data)
+ * - POST /upload-url - Download an image from a URL and save it
  */
 import express from 'express';
 import multer from 'multer';
 import path from 'path';
 import { v7 as uuidv7 } from 'uuid';
-import { ensureDir, writeBinary } from '#system/utils/FileIO.mjs';
+import { ensureDir, writeBinary, listFiles, getStats } from '#system/utils/FileIO.mjs';
 import { ValidationError } from '#system/utils/errors/index.mjs';
 
 // Allowed MIME types
@@ -54,6 +56,50 @@ export function createAdminImagesRouter(config) {
           received: file.mimetype
         }));
       }
+    }
+  });
+
+  // Allowed file extensions for browsing
+  const ALLOWED_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'webp']);
+
+  /**
+   * GET /list
+   * List existing uploaded images in {mediaPath}/img/lists/
+   *
+   * Response: { images: [{ filename, path, size, modified }] }
+   */
+  router.get('/list', (req, res) => {
+    try {
+      const targetDir = path.join(mediaPath, 'img', 'lists');
+      let files;
+      try {
+        files = listFiles(targetDir);
+      } catch {
+        // Directory doesn't exist yet
+        return res.json({ images: [] });
+      }
+
+      const images = files
+        .filter(f => {
+          const ext = path.extname(f).slice(1).toLowerCase();
+          return ALLOWED_EXTENSIONS.has(ext);
+        })
+        .map(f => {
+          const filePath = path.join(targetDir, f);
+          const stats = getStats(filePath);
+          return {
+            filename: f,
+            path: `/media/img/lists/${f}`,
+            size: stats.size,
+            modified: stats.mtime.toISOString()
+          };
+        })
+        .sort((a, b) => new Date(b.modified) - new Date(a.modified));
+
+      res.json({ images });
+    } catch (error) {
+      logger.error?.('admin.images.list.failed', { error: error.message });
+      res.status(500).json({ error: 'Failed to list images' });
     }
   });
 
@@ -110,6 +156,81 @@ export function createAdminImagesRouter(config) {
       }
 
       res.status(500).json({ error: 'Failed to upload image' });
+    }
+  });
+
+  /**
+   * POST /upload-url
+   * Download an image from a URL and save it
+   *
+   * Request: JSON { url: "https://..." }
+   * Response: { ok: true, path: '/media/img/lists/{uuid}.ext', size, type }
+   */
+  router.post('/upload-url', express.json(), async (req, res) => {
+    try {
+      const { url } = req.body;
+      if (!url) {
+        throw new ValidationError('No URL provided', { field: 'url' });
+      }
+
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new ValidationError('Failed to fetch URL', { url, status: response.status });
+      }
+
+      const contentType = response.headers.get('content-type')?.split(';')[0];
+      if (!ALLOWED_MIME_TYPES.includes(contentType)) {
+        throw new ValidationError('URL does not point to an allowed image type', {
+          allowed: ALLOWED_MIME_TYPES,
+          received: contentType
+        });
+      }
+
+      const buffer = Buffer.from(await response.arrayBuffer());
+      if (buffer.length > MAX_FILE_SIZE) {
+        return res.status(413).json({
+          error: 'Image too large',
+          maxSize: MAX_FILE_SIZE,
+          maxSizeMB: MAX_FILE_SIZE / 1024 / 1024
+        });
+      }
+
+      const ext = EXTENSION_MAP[contentType];
+      const uuid = uuidv7();
+      const filename = `${uuid}.${ext}`;
+      const targetDir = path.join(mediaPath, 'img', 'lists');
+      const targetPath = path.join(targetDir, filename);
+
+      ensureDir(targetDir);
+      writeBinary(targetPath, buffer);
+
+      const publicPath = `/media/img/lists/${filename}`;
+
+      logger.info?.('admin.images.uploaded_url', {
+        filename,
+        size: buffer.length,
+        type: contentType,
+        path: publicPath,
+        sourceUrl: url
+      });
+
+      res.json({
+        ok: true,
+        path: publicPath,
+        size: buffer.length,
+        type: contentType
+      });
+    } catch (error) {
+      logger.error?.('admin.images.upload_url.failed', { error: error.message });
+
+      if (error.httpStatus) {
+        return res.status(error.httpStatus).json({
+          error: error.message,
+          context: error.context
+        });
+      }
+
+      res.status(500).json({ error: 'Failed to upload image from URL' });
     }
   });
 

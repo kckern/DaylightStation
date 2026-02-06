@@ -7,14 +7,14 @@ import { createListRouter, toListItem } from '#backend/src/4_api/v1/routers/list
 describe('List API Router', () => {
   let app;
   let mockRegistry;
-  let mockFolderAdapter;
+  let mockWatchlistAdapter;
   let mockPlexAdapter;
 
   beforeEach(() => {
-    mockFolderAdapter = {
-      name: 'folder',
+    mockWatchlistAdapter = {
+      name: 'watchlist',
       getList: jest.fn().mockResolvedValue({
-        id: 'folder:Morning Program',
+        id: 'watchlist:Morning Program',
         title: 'Morning Program',
         children: [
           { id: 'plex:12345', title: 'Show One', itemType: 'container' },
@@ -22,7 +22,7 @@ describe('List API Router', () => {
         ]
       }),
       getItem: jest.fn().mockResolvedValue({
-        id: 'folder:Morning Program',
+        id: 'watchlist:Morning Program',
         title: 'Morning Program',
         metadata: { itemCount: 2 }
       }),
@@ -51,7 +51,7 @@ describe('List API Router', () => {
 
     mockRegistry = {
       get: jest.fn((name) => {
-        if (name === 'folder') return mockFolderAdapter;
+        if (name === 'watchlist') return mockWatchlistAdapter;
         if (name === 'plex') return mockPlexAdapter;
         return null;
       })
@@ -62,8 +62,8 @@ describe('List API Router', () => {
   });
 
   describe('GET /api/list/:source/*', () => {
-    it('returns folder contents', async () => {
-      const res = await request(app).get('/api/list/folder/Morning%20Program');
+    it('returns watchlist contents', async () => {
+      const res = await request(app).get('/api/list/watchlist/Morning%20Program');
 
       expect(res.status).toBe(200);
       expect(res.body.title).toBe('Morning Program');
@@ -211,7 +211,7 @@ describe('List API Router', () => {
 
     it('should include behavior flags from Item', () => {
       const item = {
-        id: 'folder:playlist',
+        id: 'watchlist:playlist',
         title: 'Test Playlist',
         shuffle: true,
         continuous: true,

@@ -705,12 +705,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     mqtt: hardwareAdapters.mqttAdapter?.isConfigured() || false
   });
 
-  // Gratitude domain router - prayer card canvas renderer
-  let createPrayerCardCanvas = null;
+  // Gratitude domain router - gratitude card canvas renderer
+  let createGratitudeCardCanvas = null;
   try {
-    const { createPrayerCardRenderer } = await import('#adapters/gratitude/rendering/PrayerCardRenderer.mjs');
+    const { createGratitudeCardRenderer } = await import('#adapters/gratitude/rendering/GratitudeCardRenderer.mjs');
     const householdId = configService.getDefaultHouseholdId();
-    const renderer = createPrayerCardRenderer({
+    const renderer = createGratitudeCardRenderer({
       getSelectionsForPrint: async () => {
         return gratitudeServices.gratitudeService.getSelectionsForPrint(
           householdId,
@@ -719,7 +719,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       },
       fontDir: configService.getPath('font') || `${mediaBasePath}/fonts`
     });
-    createPrayerCardCanvas = renderer.createCanvas;
+    createGratitudeCardCanvas = renderer.createCanvas;
   } catch (e) {
     rootLogger.warn?.('gratitude.canvas.import_failed', { error: e.message });
   }
@@ -728,7 +728,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     gratitudeServices,
     configService,
     broadcastToWebsockets: broadcastEvent,
-    createPrayerCardCanvas,
+    createGratitudeCardCanvas,
     printerAdapter: hardwareAdapters.printerAdapter,
     logger: rootLogger.child({ module: 'gratitude-api' })
   });

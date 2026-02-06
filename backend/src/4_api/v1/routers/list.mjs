@@ -1,7 +1,9 @@
 // backend/src/4_api/routers/list.mjs
 import express from 'express';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
+import { loadYaml, saveYaml } from '#system/utils/FileIO.mjs';
 import { parseModifiers } from '../utils/modifierParser.mjs';
+import { parseActionRouteId } from '../utils/actionRouteParser.mjs';
 
 /**
  * Compact an object by removing falsy values and converting numeric strings
@@ -58,15 +60,23 @@ function compactItem(obj) {
  */
 export function toListItem(item) {
   // Compute default play/queue/list actions, but allow item.actions to override
-  // For plex items, use plex key with numeric ID; otherwise use media key with full compound ID
+  // Emit both contentId (unified) and legacy keys (plex/media/playlist/watchlist) for backward compat
   const isPlex = item.source === 'plex';
   const isContainer = item.itemType === 'container';
   // Use localId from Item entity (extracted from compound ID at construction)
   const localId = item.localId || item.id;
-  const computedPlay = item.mediaUrl ? (isPlex ? { plex: localId } : { media: item.id }) : undefined;
-  const computedQueue = isContainer ? (isPlex ? { plex: localId } : { playlist: item.id }) : undefined;
+  // item.id is the compound ID (e.g., "plex:12345", "watchlist:FHE")
+  const contentId = item.id;
+  const computedPlay = item.mediaUrl
+    ? { contentId, ...(isPlex ? { plex: localId } : { media: item.id }) }
+    : undefined;
+  const computedQueue = isContainer
+    ? { contentId, ...(isPlex ? { plex: localId } : { playlist: item.id }) }
+    : undefined;
   // List action for containers - allows navigation into the container
-  const computedList = isContainer ? (isPlex ? { plex: localId } : { folder: item.id }) : undefined;
+  const computedList = isContainer
+    ? { contentId, ...(isPlex ? { plex: localId } : { watchlist: item.id }) }
+    : undefined;
 
   const base = {
     id: item.id,
@@ -102,7 +112,7 @@ export function toListItem(item) {
   if (item.playCount !== undefined) base.playCount = item.playCount;
   if (item.isWatched !== undefined) base.isWatched = item.isWatched;
 
-  // Also check metadata for watch state (FolderAdapter pattern)
+  // Also check metadata for watch state (watchlist pattern)
   if (!base.lastPlayed && item.metadata?.lastPlayed) base.lastPlayed = item.metadata.lastPlayed;
   if (base.watchProgress === undefined && item.metadata?.percent !== undefined) base.watchProgress = item.metadata.percent;
   if (base.watchSeconds === undefined && item.metadata?.seconds !== undefined) base.watchSeconds = item.metadata.seconds;
@@ -126,14 +136,14 @@ export function toListItem(item) {
       itemIndex,
       // Rating fields for FitnessMenu sorting
       rating, userRating, year,
-      // FolderAdapter watch state fields
+      // Watchlist watch state fields
       percent, seconds, priority,
-      // FolderAdapter scheduling fields
+      // Watchlist scheduling fields
       hold, skipAfter, waitUntil,
-      // FolderAdapter grouping and legacy fields
+      // Watchlist grouping and legacy fields
       program, src, shuffle, continuous, playable, uid,
-      // FolderAdapter display fields
-      folder, folderColor
+      // Watchlist display fields
+      folder
     } = item.metadata;
 
     // Note: plex is NOT copied to top-level from metadata.
@@ -169,15 +179,15 @@ export function toListItem(item) {
     if (userRating !== undefined) base.userRating = userRating;
     if (year !== undefined) base.year = year;
 
-    // FolderAdapter watch state fields
+    // Watchlist watch state fields
     if (percent !== undefined) base.percent = percent;
     if (seconds !== undefined) base.seconds = seconds;
     if (priority !== undefined) base.priority = priority;
-    // FolderAdapter scheduling fields
+    // Watchlist scheduling fields
     if (hold !== undefined) base.hold = hold;
     if (skipAfter !== undefined) base.skipAfter = skipAfter;
     if (waitUntil !== undefined) base.waitUntil = waitUntil;
-    // FolderAdapter grouping and legacy fields
+    // Watchlist grouping and legacy fields
     if (program !== undefined) base.program = program;
     if (src !== undefined) base.src = src;
     // Note: assetId is NOT copied to top-level from metadata.
@@ -186,9 +196,8 @@ export function toListItem(item) {
     if (continuous !== undefined && base.continuous === undefined) base.continuous = continuous;
     if (playable !== undefined) base.playable = playable;
     if (uid !== undefined) base.uid = uid;
-    // FolderAdapter display fields
+    // Watchlist display fields
     if (folder !== undefined) base.folder = folder;
-    if (folderColor !== undefined) base.folderColor = folderColor;
 
     // Duration from PlayableItem
     if (item.duration !== undefined) base.duration = item.duration;
@@ -224,7 +233,7 @@ export function toListItem(item) {
  * @returns {express.Router}
  */
 export function createListRouter(config) {
-  const { registry, loadFile, configService, contentQueryService } = config;
+  const { registry, loadFile, configService, contentQueryService, menuMemoryPath } = config;
   const router = express.Router();
 
   /**
@@ -256,16 +265,39 @@ export function createListRouter(config) {
   }
 
   /**
+   * POST /api/v1/list/menu-log
+   * Log menu navigation for recent_on_top sorting
+   * Body: { assetId: string }
+   */
+  router.post('/menu-log', asyncHandler(async (req, res) => {
+    const { assetId } = req.body;
+    if (!assetId) {
+      return res.status(400).json({ error: 'assetId is required' });
+    }
+    const menuLog = loadYaml(menuMemoryPath) || {};
+    const nowUnix = Math.floor(Date.now() / 1000);
+    menuLog[assetId] = nowUnix;
+    saveYaml(menuMemoryPath, menuLog);
+    res.json({ [assetId]: nowUnix });
+  }));
+
+  /**
    * GET /api/list/:source/(path)
    */
   router.get('/:source/*', asyncHandler(async (req, res) => {
-      const { source } = req.params;
+      const rawSource = req.params.source;
       const rawPath = req.params[0] || '';
-      const { modifiers, localId } = parseModifiers(rawPath);
+
+      // Use parseActionRouteId to handle compound IDs (plex:12345) in source param
+      const { source, localId, modifiers } = parseActionRouteId({
+        source: rawSource,
+        path: rawPath
+      });
 
       // Try exact source match first, then fall back to prefix resolution
       let adapter = registry.get(source);
       let resolvedLocalId = localId;
+      let resolvedViaPrefix = false;
 
       if (!adapter) {
         // Try prefix resolution (e.g., "media" prefix -> FilesystemAdapter)
@@ -273,6 +305,7 @@ export function createListRouter(config) {
         if (resolved) {
           adapter = resolved.adapter;
           resolvedLocalId = resolved.localId;
+          resolvedViaPrefix = true;
         }
       }
 
@@ -282,9 +315,10 @@ export function createListRouter(config) {
 
       let items;
 
-      // 'local' is an alias for 'folder' - both use FolderAdapter which expects folder: prefix
-      const isFolderSource = source === 'folder' || source === 'local';
-      const compoundId = isFolderSource ? `folder:${resolvedLocalId}` : `${source}:${resolvedLocalId}`;
+      // When resolved via prefix, localId already includes transform (e.g., 'talk:ldsgc202510')
+      // Don't add source prefix again. For watchlist: source, registry.get('watchlist') returns
+      // ListAdapter which accepts watchlist:X compound IDs.
+      const compoundId = resolvedViaPrefix ? resolvedLocalId : `${source}:${resolvedLocalId}`;
 
       if (modifiers.playable) {
         // Resolve to playable items only
@@ -318,17 +352,16 @@ export function createListRouter(config) {
         }));
       }
 
-      // Check if any item has folderColor - if so, maintain fixed order from YAML
-      // (Legacy behavior: folderColor indicates "no dynamic sorting")
-      const hasFixedOrder = items.some(item => item.metadata?.folderColor || item.folderColor);
+      // Check if any item has fixed_order flag - maintain YAML order
+      const hasFixedOrder = items.some(item => item.metadata?.fixedOrder);
 
-      // Apply shuffle if requested (skip if folderColor present)
+      // Apply shuffle if requested (skip if fixed order)
       if (modifiers.shuffle && !hasFixedOrder) {
         items = shuffleArray([...items]);
       }
 
       // Apply recent_on_top sorting if requested (uses menu_memory, not play history)
-      // Skip if folderColor present - maintain YAML order
+      // Skip if fixed order - maintain YAML order
       if (modifiers.recent_on_top && !hasFixedOrder) {
         // Load menu_memory for sorting by menu selection time
         // Note: loadFile is scoped to data dir; household path built by caller
@@ -365,7 +398,7 @@ export function createListRouter(config) {
               index: item.metadata?.parentIndex,
               title: item.metadata?.parentTitle || 'Parent',
               // Use parent (season) thumbnail from metadata, or construct proxy URL for parent
-              thumbnail: item.metadata?.parentThumb || `/api/v1/content/plex/image/${pId}`,
+              thumbnail: item.metadata?.parentThumb || `/api/v1/display/${source}/${pId}`,
               type: item.metadata?.parentType
             };
           }

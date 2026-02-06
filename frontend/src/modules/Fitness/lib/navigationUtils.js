@@ -31,9 +31,11 @@ export function isNavItemActive(item, currentState) {
   if (!item || !item.target) return false;
 
   switch (item.type) {
+    case 'collection':
     case 'plex_collection':
       return String(activeCollection) === String(item.target.collection_id);
-      
+
+    case 'collection_group':
     case 'plex_collection_group':
       if (Array.isArray(activeCollection)) {
         return item.target.collection_ids.some(id => 
@@ -64,9 +66,11 @@ export function getNavItemDeepLink(item) {
   if (!item || !item.target) return '#/fitness';
 
   switch (item.type) {
+    case 'collection':
     case 'plex_collection':
       return `#/fitness/collection/${item.target.collection_id}`;
-      
+
+    case 'collection_group':
     case 'plex_collection_group':
       return `#/fitness/collections/${item.target.collection_ids.join(',')}`;
       

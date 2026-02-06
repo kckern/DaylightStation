@@ -50,20 +50,44 @@ function deriveCapabilities(item) {
 
 /**
  * Transform item to standardized info response format.
+ * Passes through playback-essential fields for PlayableItem instances.
  *
- * @param {Object} item - The raw item from adapter
+ * @param {Object} item - The raw item from adapter (PlayableItem or ListableItem)
  * @param {string} source - The resolved source name
  * @returns {Object} Formatted response object
  */
 function transformToInfoResponse(item, source) {
-  return {
+  const response = {
+    contentId: item.id,  // Compound ID (e.g., "plex:12345") — unified identifier
     id: item.id,
     source,
-    type: item.type,
+    type: item.metadata?.type || item.type || null,
     title: item.title,
     capabilities: deriveCapabilities(item),
     metadata: item.metadata || {}
   };
+
+  // Pass through playback-essential fields from PlayableItem
+  if (item.mediaUrl) response.mediaUrl = item.mediaUrl;
+  if (item.mediaType) response.mediaType = item.mediaType;
+  if (item.duration != null) response.duration = item.duration;
+  if (item.thumbnail) {
+    response.thumbnail = item.thumbnail;
+    response.image = item.thumbnail; // AudioPlayer uses image field
+  }
+
+  // Pass through content field for singing/narrated scrollers
+  if (item.content) response.content = item.content;
+  if (item.category) response.category = item.category;
+
+  // Expose plex key at top level for frontend compatibility
+  if (source === 'plex' && item.metadata?.plex) {
+    response.plex = String(item.metadata.plex);
+  } else if (source === 'plex' && item.localId) {
+    response.plex = String(item.localId);
+  }
+
+  return response;
 }
 
 /**
@@ -132,6 +156,22 @@ export function createInfoRouter(config) {
 
     // Transform and return response
     const response = transformToInfoResponse(item, resolvedSource);
+
+    // For container items, include children as `items`
+    if (item.itemType === 'container' && adapter.getList) {
+      const lookupId = usePrefixResolution ? finalLocalId : compoundId;
+      const children = await adapter.getList(lookupId);
+      response.items = children.map(child => {
+        const childResponse = transformToInfoResponse(child, child.source || resolvedSource);
+        // When accessed via prefix (e.g., media:clips), remap child IDs to use the user-facing prefix
+        if (usePrefixResolution && child.localId) {
+          childResponse.id = `${resolvedSource}:${child.localId}`;
+          childResponse.contentId = childResponse.id;
+          childResponse.source = resolvedSource;
+        }
+        return childResponse;
+      });
+    }
 
     logger.info?.('info.get', {
       source: resolvedSource,

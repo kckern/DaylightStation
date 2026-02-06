@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, forwardRef, useImperativeHandle } from 'react';
-import { DaylightMediaPath } from '../../../lib/api.mjs';
+import { DaylightMediaPath, ContentDisplayUrl } from '../../../lib/api.mjs';
 import Player from '../../Player/Player.jsx';
 import { useFitnessContext } from '../../../context/FitnessContext.jsx';
 import { TouchVolumeButtons, snapToTouchLevel, linearVolumeFromLevel, linearLevelFromVolume } from './TouchVolumeButtons.jsx';
@@ -150,7 +150,8 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
 
   const currentTrackIdentity = useMemo(() => {
     if (!currentTrack) return null;
-    return currentTrack.key
+    return currentTrack.contentId
+      || currentTrack.key
       || currentTrack.plex
       || currentTrack.assetId
       || currentTrack.ratingKey
@@ -168,6 +169,7 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
   // Memoize Player props to prevent unnecessary useEffect re-runs in useQueueController
   // Without this, inline objects like queue={{}} and play={{}} are new refs on every render
   const playerQueueProp = useMemo(() => ({
+    contentId: selectedPlaylistId ? `plex:${selectedPlaylistId}` : null,
     plex: selectedPlaylistId,
     shuffle: true
   }), [selectedPlaylistId]);
@@ -226,10 +228,10 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
     // Update current track from progress data (Player handles queue internally)
     if (progressData?.media) {
       const mediaData = progressData.media;
-      const newKey = mediaData.key || mediaData.plex || mediaData.assetId;
+      const newKey = mediaData.contentId || mediaData.key || mediaData.plex || mediaData.assetId;
 
       setCurrentTrack(prev => {
-        const prevKey = prev?.key || prev?.plex || prev?.assetId;
+        const prevKey = prev?.contentId || prev?.key || prev?.plex || prev?.assetId;
         // Only update if track actually changed
         if (newKey && newKey !== prevKey) {
           if (process.env.NODE_ENV === 'development') {
@@ -445,7 +447,7 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
           style={{ cursor: 'pointer' }}
         >
           {(() => {
-            const trackKey = currentTrack?.key || currentTrack?.plex || currentTrack?.assetId;
+            const trackKey = currentTrack?.contentId || currentTrack?.key || currentTrack?.plex || currentTrack?.assetId;
             const artworkKey = trackKey ? `${selectedPlaylistId}-${trackKey}` : null;
             if (process.env.NODE_ENV === 'development' && trackKey) {
               console.log('[Artwork Render]', { selectedPlaylistId, trackKey, artworkKey });
@@ -453,7 +455,7 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
             return trackKey ? (
               <img
                 key={artworkKey}
-                src={DaylightMediaPath(`api/v1/display/plex/${trackKey}`)}
+                src={ContentDisplayUrl(trackKey)}
                 alt="Album artwork"
                 className="artwork-image"
               />

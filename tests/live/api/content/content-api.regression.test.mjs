@@ -9,7 +9,7 @@
  * - Watch state enrichment in list/item endpoints
  * - Progress fields in canonical format (playhead, percent, duration)
  * - NextUp/selection patterns (scripture volumes, watchlists)
- * - Source resolution (plex, narrated, singing, folder)
+ * - Source resolution (plex, narrated, singing, watchlist)
  */
 
 import fs from 'fs';
@@ -286,7 +286,7 @@ describe('Content API Regression Tests', () => {
       const watchlist = watchlists[0];
 
       try {
-        const list = await fetchJson(`/item/folder/watchlist/${watchlist.name}`);
+        const list = await fetchJson(`/item/watchlist/watchlist/${watchlist.name}`);
 
         // Items should have watch state enrichment
         expect(list.items).toBeDefined();
@@ -313,7 +313,7 @@ describe('Content API Regression Tests', () => {
       const watchlist = watchlists[0];
 
       try {
-        const result = await fetchJson(`/item/folder/watchlist/${watchlist.name}?select=watchlist`);
+        const result = await fetchJson(`/item/watchlist/watchlist/${watchlist.name}?select=watchlist`);
 
         // Should return selected item
         expect(result).toBeDefined();

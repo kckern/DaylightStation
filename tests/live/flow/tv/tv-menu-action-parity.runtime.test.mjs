@@ -30,7 +30,7 @@ const TEST_CASES = [
 test.describe('TV Menu Action Parity', () => {
 
   test('API returns correct action types for all test cases', async ({ request }) => {
-    const response = await request.get(`${BASE_URL}/api/v1/info/folder/TVApp`);
+    const response = await request.get(`${BASE_URL}/api/v1/info/watchlist/TVApp`);
     expect(response.ok()).toBe(true);
 
     const data = await response.json();
@@ -87,7 +87,7 @@ test.describe('TV Menu Action Parity', () => {
   });
 
   test('Queue items include shuffle option when specified', async ({ request }) => {
-    const response = await request.get(`${BASE_URL}/api/v1/info/folder/TVApp`);
+    const response = await request.get(`${BASE_URL}/api/v1/info/watchlist/TVApp`);
     const data = await response.json();
 
     // Sunday has shuffle: true in YAML
@@ -108,7 +108,7 @@ test.describe('TV Menu Action Parity', () => {
   });
 
   test('Queue items include continuous option when specified', async ({ request }) => {
-    const response = await request.get(`${BASE_URL}/api/v1/info/folder/TVApp`);
+    const response = await request.get(`${BASE_URL}/api/v1/info/watchlist/TVApp`);
     const data = await response.json();
 
     // Holy Moly has continuous: true in YAML
@@ -120,16 +120,16 @@ test.describe('TV Menu Action Parity', () => {
     }
   });
 
-  test('List items use list key not folder key', async ({ request }) => {
-    const response = await request.get(`${BASE_URL}/api/v1/info/folder/TVApp`);
+  test('List items use list key not watchlist key', async ({ request }) => {
+    const response = await request.get(`${BASE_URL}/api/v1/info/watchlist/TVApp`);
     const data = await response.json();
 
-    // FHE should be list: { list: "FHE" } not list: { folder: "FHE" }
+    // FHE should be list: { list: "FHE" } not list: { watchlist: "FHE" }
     const fhe = data.items?.find(i => i.label === 'FHE');
     if (fhe) {
       expect(fhe.list).toBeTruthy();
       expect(fhe.list.list).toBe('FHE');
-      expect(fhe.list.folder).toBeUndefined();
+      expect(fhe.list.watchlist).toBeUndefined();
       console.log('[PASS] FHE uses list: { list: "FHE" }');
     }
   });

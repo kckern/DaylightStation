@@ -8,21 +8,21 @@ describe('Play API Router', () => {
   let app;
   let mockRegistry;
   let mockWatchStore;
-  let mockFilesystemAdapter;
+  let mockMediaAdapter;
   let mockPlexAdapter;
 
   beforeEach(() => {
-    mockFilesystemAdapter = {
-      name: 'filesystem',
+    mockMediaAdapter = {
+      name: 'files',
       getItem: jest.fn().mockResolvedValue({
-        id: 'filesystem:audio/test.mp3',
+        id: 'files:audio/test.mp3',
         title: 'Test Song',
         mediaType: 'audio',
-        mediaUrl: '/proxy/filesystem/stream/audio/test.mp3',
+        mediaUrl: '/proxy/media/stream/audio/test.mp3',
         duration: 180,
         resumable: false
       }),
-      getStoragePath: jest.fn().mockReturnValue('media'),
+      getStoragePath: jest.fn().mockReturnValue('files'),
       resolvePlayables: jest.fn()
     };
 
@@ -42,7 +42,7 @@ describe('Play API Router', () => {
 
     mockRegistry = {
       get: jest.fn((name) => {
-        if (name === 'filesystem') return mockFilesystemAdapter;
+        if (name === 'files') return mockMediaAdapter;
         if (name === 'plex') return mockPlexAdapter;
         return null;
       })
@@ -58,12 +58,12 @@ describe('Play API Router', () => {
   });
 
   describe('GET /api/play/:source/*', () => {
-    it('returns playable item from filesystem', async () => {
-      const res = await request(app).get('/api/play/filesystem/audio/test.mp3');
+    it('returns playable item from files', async () => {
+      const res = await request(app).get('/api/play/files/audio/test.mp3');
 
       expect(res.status).toBe(200);
-      expect(res.body.id).toBe('filesystem:audio/test.mp3');
-      expect(res.body.mediaUrl).toBe('/proxy/filesystem/stream/audio/test.mp3');
+      expect(res.body.id).toBe('files:audio/test.mp3');
+      expect(res.body.mediaUrl).toBe('/proxy/media/stream/audio/test.mp3');
       expect(res.body.mediaType).toBe('audio');
     });
 
@@ -84,8 +84,8 @@ describe('Play API Router', () => {
     });
 
     it('returns 404 for missing item', async () => {
-      mockFilesystemAdapter.getItem.mockResolvedValueOnce(null);
-      const res = await request(app).get('/api/play/filesystem/nonexistent.mp3');
+      mockMediaAdapter.getItem.mockResolvedValueOnce(null);
+      const res = await request(app).get('/api/play/files/nonexistent.mp3');
 
       expect(res.status).toBe(404);
     });
@@ -115,21 +115,21 @@ describe('Play API Router', () => {
 
   describe('GET /api/play/:source/*/shuffle', () => {
     it('handles shuffle modifier in path', async () => {
-      mockFilesystemAdapter.resolvePlayables.mockResolvedValue([
-        { id: 'filesystem:audio/song1.mp3', title: 'Song 1', mediaUrl: '/proxy/filesystem/stream/audio/song1.mp3', mediaType: 'audio' },
-        { id: 'filesystem:audio/song2.mp3', title: 'Song 2', mediaUrl: '/proxy/filesystem/stream/audio/song2.mp3', mediaType: 'audio' }
+      mockMediaAdapter.resolvePlayables.mockResolvedValue([
+        { id: 'files:audio/song1.mp3', title: 'Song 1', mediaUrl: '/proxy/media/stream/audio/song1.mp3', mediaType: 'audio' },
+        { id: 'files:audio/song2.mp3', title: 'Song 2', mediaUrl: '/proxy/media/stream/audio/song2.mp3', mediaType: 'audio' }
       ]);
 
-      const res = await request(app).get('/api/play/filesystem/audio/shuffle');
+      const res = await request(app).get('/api/play/files/audio/shuffle');
 
       expect(res.status).toBe(200);
-      expect(mockFilesystemAdapter.resolvePlayables).toHaveBeenCalled();
+      expect(mockMediaAdapter.resolvePlayables).toHaveBeenCalled();
     });
 
     it('returns 404 when shuffle finds no playables', async () => {
-      mockFilesystemAdapter.resolvePlayables.mockResolvedValue([]);
+      mockMediaAdapter.resolvePlayables.mockResolvedValue([]);
 
-      const res = await request(app).get('/api/play/filesystem/audio/shuffle');
+      const res = await request(app).get('/api/play/files/audio/shuffle');
 
       expect(res.status).toBe(404);
       expect(res.body.error).toBe('No playable items found');

@@ -4,7 +4,7 @@ import path from 'path';
 import { parseFile } from 'music-metadata';
 import { lookupReference, generateReference } from 'scripture-guide';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
-import { dirExists, listDirs, getStats, findMediaFileByPrefix } from '#system/utils/FileIO.mjs';
+import { dirExists, listDirs, getStats, findMediaFileByPrefix, fileExists } from '#system/utils/FileIO.mjs';
 import { generatePlaceholderImage } from '#system/utils/placeholderImage.mjs';
 
 // Volume to first verse_id mapping (for determining volume from verse_id)
@@ -260,29 +260,78 @@ export function createLocalContentRouter(config) {
   /**
    * GET /api/local-content/talk/*
    * Returns talk with paragraphs for ContentScroller
+   * If path refers to a conference/series, auto-selects first unwatched talk
    */
   router.get('/talk/*', asyncHandler(async (req, res) => {
-      const path = req.params[0] || '';
+      const talkPath = req.params[0] || '';
       const adapter = registry.get('local-content');
 
       if (!adapter) {
         return res.status(500).json({ error: 'LocalContent adapter not configured' });
       }
 
-      const item = await adapter.getItem(`talk:${path}`);
+      let item = await adapter.getItem(`talk:${talkPath}`);
       if (!item) {
-        return res.status(404).json({ error: 'Talk not found', path });
+        return res.status(404).json({ error: 'Talk not found', path: talkPath });
+      }
+
+      // If this is a container (conference/series), auto-select a talk
+      // Series contain conferences which contain talks — may need to recurse
+      if (item.itemType === 'container' || !item.mediaUrl) {
+        const list = await adapter.getList(`talk:${talkPath}`);
+        let children = list?.children || [];
+
+        // If children are containers (series → conferences), pick the latest and recurse
+        if (children.length > 0 && !children.some(c => c.mediaUrl)) {
+          // Sort conference containers by localId descending (newest first)
+          const sorted = [...children].sort((a, b) => {
+            const aId = a.localId || a.id || '';
+            const bId = b.localId || b.id || '';
+            return bId.localeCompare(aId);
+          });
+          // Get the latest conference's children
+          const latestConf = sorted[0];
+          const confId = latestConf.id?.replace('talk:', '') || latestConf.localId;
+          if (confId) {
+            const confList = await adapter.getList(`talk:${confId}`);
+            children = confList?.children || [];
+          }
+        }
+
+        // Filter to children that have an actual video file on disk
+        if (mediaBasePath) {
+          children = children.filter(child => {
+            const mediaFile = child.metadata?.mediaFile;
+            return mediaFile && fileExists(path.join(mediaBasePath, mediaFile));
+          });
+        }
+
+        // Find first playable item (has mediaUrl and video file)
+        const firstPlayable = children.find(child => child.mediaUrl);
+        if (firstPlayable) {
+          item = firstPlayable;
+        } else if (children.length > 0) {
+          const firstChild = children[0];
+          const childId = firstChild.localId || firstChild.id?.replace('talk:', '');
+          if (childId) {
+            item = await adapter.getItem(`talk:${childId}`);
+          }
+        }
+
+        if (!item || !item.mediaUrl) {
+          return res.status(404).json({ error: 'No playable talks found in conference', path: talkPath });
+        }
       }
 
       res.json({
         title: item.title,
-        speaker: item.metadata.speaker,
+        speaker: item.metadata?.speaker,
         assetId: item.id,
         mediaUrl: item.mediaUrl,
         duration: item.duration,
-        date: item.metadata.date,
-        description: item.metadata.description,
-        content: item.metadata.content || []
+        date: item.metadata?.date,
+        description: item.metadata?.description,
+        content: item.metadata?.content || []
       });
   }));
 
@@ -327,12 +376,12 @@ export function createLocalContentRouter(config) {
       return res.status(400).json({ error: 'No media key provided' });
     }
 
-    // Try filesystem adapter for cover art extraction
-    const fsAdapter = registry.get('filesystem');
+    // Try media adapter for cover art extraction
+    const mediaAdapter = registry.get('media');
 
-    if (fsAdapter?.getCoverArt) {
+    if (mediaAdapter?.getCoverArt) {
       try {
-        const coverArt = await fsAdapter.getCoverArt(mediaKey);
+        const coverArt = await mediaAdapter.getCoverArt(mediaKey);
 
         if (coverArt) {
           res.set({
@@ -356,6 +405,58 @@ export function createLocalContentRouter(config) {
     });
     return res.send(placeholder);
   });
+
+  /**
+   * GET /api/local-content/collection-icon/:adapter/:collection
+   * Serves the SVG icon for a content collection from the data mount.
+   * Resolution: manifest `icon` field → convention `icon.svg` → 404
+   */
+  router.get('/collection-icon/:adapter/:collection', asyncHandler(async (req, res) => {
+    const { adapter: adapterName, collection } = req.params;
+    const adapter = registry.get(adapterName);
+
+    if (!adapter?.resolveCollectionIcon) {
+      return res.status(404).json({ error: 'Adapter not found or does not support icons' });
+    }
+
+    const iconPath = adapter.resolveCollectionIcon(collection);
+    if (!iconPath) {
+      return res.status(404).json({ error: 'No icon found for collection', collection });
+    }
+
+    const ext = path.extname(iconPath).toLowerCase();
+    const mimeTypes = { '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg' };
+    res.set('Content-Type', mimeTypes[ext] || 'image/svg+xml');
+    res.set('Cache-Control', 'public, max-age=86400');
+    res.sendFile(iconPath);
+  }));
+
+  /**
+   * GET /api/local-content/collection/:name
+   * Returns all items in a collection (hymn, primary, talk, scripture, poem)
+   * Used by admin UI for sibling browsing
+   */
+  router.get('/collection/:name', asyncHandler(async (req, res) => {
+    const { name } = req.params;
+    const adapter = registry.get('local-content');
+
+    if (!adapter) {
+      return res.status(500).json({ error: 'LocalContent adapter not configured' });
+    }
+
+    const items = await adapter.listCollection(name);
+    res.json({
+      collection: name,
+      items: items.map(item => ({
+        id: item.id,
+        source: name,
+        localId: item.localId,
+        title: item.title,
+        type: item.type || item.itemType || null,
+        thumbnail: item.thumbnail || null,
+      }))
+    });
+  }));
 
   return router;
 }

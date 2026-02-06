@@ -18,16 +18,16 @@ describe('Item entity', () => {
 
   test('includes optional fields when provided', () => {
     const item = new Item({
-      id: 'filesystem:audio/song.mp3',
+      id: 'files:audio/song.mp3',
       localId: 'audio/song.mp3',
-      source: 'filesystem',
+      source: 'files',
       title: 'My Song',
-      thumbnail: '/proxy/filesystem/thumb/audio/song.mp3',
+      thumbnail: '/proxy/media/thumb/audio/song.mp3',
       description: 'A great song',
       metadata: { artist: 'Artist Name' }
     });
 
-    expect(item.thumbnail).toBe('/proxy/filesystem/thumb/audio/song.mp3');
+    expect(item.thumbnail).toBe('/proxy/media/thumb/audio/song.mp3');
     expect(item.description).toBe('A great song');
     expect(item.metadata.artist).toBe('Artist Name');
   });
@@ -63,9 +63,9 @@ describe('Item entity', () => {
 
   test('getLocalId handles IDs with multiple colons', () => {
     const item = new Item({
-      id: 'filesystem:path/to/file:with:colons.mp3',
+      id: 'files:path/to/file:with:colons.mp3',
       localId: 'path/to/file:with:colons.mp3',
-      source: 'filesystem',
+      source: 'files',
       title: 'Test File'
     });
 
@@ -97,8 +97,8 @@ describe('Item entity', () => {
 
     it('should support queue action', () => {
       const item = new Item({
-        id: 'folder:tvapp',
-        source: 'folder',
+        id: 'watchlist:tvapp',
+        source: 'watchlist',
         title: 'TV App',
         actions: { queue: { playlist: 'tvapp' } }
       });
@@ -167,13 +167,13 @@ describe('Item entity', () => {
       expect(item.assetId).toBe('plex:12345');
     });
 
-    it('should extract filesystem path from compound ID', () => {
+    it('should extract media path from compound ID', () => {
       const item = new Item({
-        id: 'filesystem:audio/music/song.mp3',
-        source: 'filesystem',
+        id: 'files:audio/music/song.mp3',
+        source: 'files',
         title: 'Song'
       });
-      expect(item.assetId).toBe('filesystem:audio/music/song.mp3');
+      expect(item.assetId).toBe('files:audio/music/song.mp3');
     });
 
     it('should allow explicit assetId override', () => {
@@ -188,8 +188,8 @@ describe('Item entity', () => {
 
     it('should return null for plex if not a plex item', () => {
       const item = new Item({
-        id: 'filesystem:test.mp3',
-        source: 'filesystem',
+        id: 'files:test.mp3',
+        source: 'files',
         title: 'Test'
       });
       expect(item.plex).toBeNull();
@@ -197,8 +197,8 @@ describe('Item entity', () => {
 
     it('should check metadata.plex as fallback', () => {
       const item = new Item({
-        id: 'folder:tvapp',
-        source: 'folder',
+        id: 'watchlist:tvapp',
+        source: 'watchlist',
         title: 'Test',
         metadata: { plex: '99999' }
       });

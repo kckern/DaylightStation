@@ -82,20 +82,23 @@ function SeasonViewSkeleton() {
 const LoadingFallback = ShowViewSkeleton;
 
 /**
- * PlexMenuRouter: Loads Plex menu data and routes to appropriate view
- * 
- * For Plex items without a pre-known type, this component:
- * 1. Fetches the data from /api/v1/item/plex/:plexId
+ * PlexMenuRouter: Loads content data and routes to appropriate view
+ *
+ * For items without a pre-known type, this component:
+ * 1. Fetches the data from /api/v1/info/:contentId
  * 2. Checks the response type (show, season, etc.)
  * 3. Renders ShowView, SeasonView, or generic TVMenu accordingly
- * 
- * This solves the problem where menu items don't have type until loaded.
+ *
+ * Accepts a unified contentId (preferred) or legacy plexId.
  */
-export function PlexMenuRouter({ plexId, depth, onSelect, onEscape, list }) {
+export function PlexMenuRouter({ plexId, contentId, depth, onSelect, onEscape, list }) {
   const [routeInfo, setRouteInfo] = useState({ loading: true, type: null, data: null });
 
+  // Prefer contentId, fall back to constructing from plexId
+  const resolvedId = contentId || (plexId ? `plex:${plexId}` : null);
+
   useEffect(() => {
-    if (!plexId) {
+    if (!resolvedId) {
       setRouteInfo({ loading: false, type: null, data: null });
       return;
     }
@@ -105,9 +108,9 @@ export function PlexMenuRouter({ plexId, depth, onSelect, onEscape, list }) {
 
     async function fetchAndRoute() {
       try {
-        // Fetch Plex item data to determine type (show, season, etc.)
-        const data = await DaylightAPI(`api/v1/item/plex/${plexId}`);
-        
+        // Fetch item data to determine type (show, season, etc.)
+        const data = await DaylightAPI(`api/v1/info/${resolvedId}`);
+
         if (!canceled) {
           setRouteInfo({
             loading: false,
@@ -124,7 +127,7 @@ export function PlexMenuRouter({ plexId, depth, onSelect, onEscape, list }) {
 
     fetchAndRoute();
     return () => { canceled = true; };
-  }, [plexId]);
+  }, [resolvedId]);
 
   // Loading state - show appropriate skeleton based on context
   if (routeInfo.loading) {
@@ -148,6 +151,7 @@ export function PlexMenuRouter({ plexId, depth, onSelect, onEscape, list }) {
       <Suspense fallback={<ShowViewSkeleton />}>
         <ShowView
           grandparentId={plexId}
+          contentId={resolvedId}
           depth={depth}
           onSelect={onSelect}
           onEscape={onEscape}
@@ -161,6 +165,7 @@ export function PlexMenuRouter({ plexId, depth, onSelect, onEscape, list }) {
       <Suspense fallback={<SeasonViewSkeleton />}>
         <SeasonView
           parentId={plexId}
+          contentId={resolvedId}
           depth={depth}
           onSelect={onSelect}
           onEscape={onEscape}

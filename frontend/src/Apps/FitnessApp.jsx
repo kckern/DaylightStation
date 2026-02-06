@@ -620,7 +620,7 @@ const FitnessApp = () => {
   // Derive navItems from the API response (source-agnostic: uses contentConfig section)
   const navItems = useMemo(() => {
     const root = fitnessConfiguration?.fitness || fitnessConfiguration || {};
-    const contentConfig = root?.plex || root?.[contentSource] || {};
+    const contentConfig = root?.content || root?.plex || root?.[contentSource] || {};
     const src = contentConfig?.nav_items || [];
     return Array.isArray(src) ? src : [];
   }, [fitnessConfiguration, contentSource]);
@@ -640,7 +640,7 @@ const FitnessApp = () => {
           contentSource,
           type: 'episode',
           title: `Episode ${episodeId}`,
-          videoUrl: DaylightMediaPath(`api/v1/play/${contentSource}/mpd/${episodeId}`),
+          videoUrl: DaylightMediaPath(`api/v1/play/${contentSource}/${episodeId}`),
           thumbId: episodeId,
           image: DaylightMediaPath(`api/v1/display/${contentSource}/${episodeId}`)
         };
@@ -658,7 +658,7 @@ const FitnessApp = () => {
         title: response.title || `Episode ${episodeId}`,
         grandparentTitle: response.grandparentTitle,
         parentTitle: response.parentTitle,
-        videoUrl: response.mediaUrl || DaylightMediaPath(`api/v1/play/${contentSource}/mpd/${episodeId}`),
+        videoUrl: response.mediaUrl || DaylightMediaPath(`api/v1/play/${contentSource}/${episodeId}`),
         thumbId: response.thumbId || episodeId,
         image: response.image || DaylightMediaPath(`api/v1/display/${contentSource}/${episodeId}`),
         labels: response.labels || [],
@@ -677,6 +677,7 @@ const FitnessApp = () => {
     logger.info('fitness-navigate', { type, target });
 
     switch (type) {
+      case 'collection':
       case 'plex_collection':
         setActiveCollection(target.collection_id);
         setActivePlugin(null);
@@ -685,6 +686,7 @@ const FitnessApp = () => {
         navigate(`/fitness/menu/${target.collection_id}`, { replace: true });
         break;
 
+      case 'collection_group':
       case 'plex_collection_group':
         setActiveCollection(target.collection_ids);
         setActivePlugin(null);
@@ -735,8 +737,8 @@ const FitnessApp = () => {
         break;
 
       case 'show':
-        // Strip any prefix to get clean numeric ID
-        const showId = String(target.plex || target.id).replace(/^plex:/, '');
+        // Extract local ID from contentId or legacy plex key
+        const showId = String(target.contentId || target.plex || target.id).replace(/^[a-z]+:/i, '');
         setSelectedShow(showId);
         setCurrentView('show');
         navigate(`/fitness/show/${showId}`, { replace: true });
@@ -744,7 +746,7 @@ const FitnessApp = () => {
 
       case 'movie':
         //send directly to player queue
-        const movieId = String(target.plex || target.id).replace(/^plex:/, '');
+        const movieId = String(target.contentId || target.plex || target.id).replace(/^[a-z]+:/i, '');
         setFitnessPlayQueue(prev => [...prev, target]);
         navigate(`/fitness/play/${movieId}`, { replace: true });
         break;
@@ -799,7 +801,7 @@ const FitnessApp = () => {
         // Provide the normalized config to provider
         setFitnessConfiguration(response);
         logger.info('fitness-config-loaded', {
-          navItems: (response?.fitness?.plex?.nav_items || []).length || 0,
+          navItems: (response?.fitness?.content?.nav_items || response?.fitness?.plex?.nav_items || []).length || 0,
           users: (response?.fitness?.users?.primary || []).length || 0,
           sensors: Array.isArray(response?.fitness?.ant_devices) ? response.fitness.ant_devices.length : 0
         });
@@ -1047,7 +1049,7 @@ const FitnessApp = () => {
                     viewportRef={viewportRef}
                     setFitnessPlayQueue={setFitnessPlayQueue}
                     onPlay={(episode) => {
-                      const episodeId = String(episode.plex || episode.id).replace(/^plex:/, '');
+                      const episodeId = String(episode.contentId || episode.plex || episode.id).replace(/^[a-z]+:/i, '');
                       if (episodeId) {
                         navigate(`/fitness/play/${episodeId}`, { replace: true });
                       }

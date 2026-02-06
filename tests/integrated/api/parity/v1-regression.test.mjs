@@ -224,8 +224,8 @@ describe('API v1 Content Domain', () => {
 // =============================================================================
 
 describe('API v1 List Domain', () => {
-  it('GET /api/v1/info/folder/{key} returns folder contents', async () => {
-    const res = await fetchJSON('/api/v1/info/folder/FHE');
+  it('GET /api/v1/info/watchlist/{key} returns watchlist contents', async () => {
+    const res = await fetchJSON('/api/v1/info/watchlist/FHE');
 
     if (res.status === 404) {
       console.log('FHE list not available, skipping');
@@ -241,8 +241,8 @@ describe('API v1 List Domain', () => {
     }
   });
 
-  it('GET /api/v1/list/folder/{key}/playable returns playable items', async () => {
-    const res = await fetchJSON('/api/v1/list/folder/FHE/playable');
+  it('GET /api/v1/list/watchlist/{key}/playable returns playable items', async () => {
+    const res = await fetchJSON('/api/v1/list/watchlist/FHE/playable');
 
     if (res.status === 404) {
       console.log('FHE list not available, skipping');
@@ -544,7 +544,7 @@ describe('API v1 Baseline Validation', () => {
     primary: (id) => `/api/v1/local-content/primary/${id}`,
     talk: (id) => `/api/v1/local-content/talk/${id}`,
     poem: (id) => `/api/v1/local-content/poem/${id}`,
-    list: (id) => `/api/v1/info/folder/${id}`
+    list: (id) => `/api/v1/info/watchlist/${id}`
   };
 
   // Fallback IDs for domains not in testdata registry

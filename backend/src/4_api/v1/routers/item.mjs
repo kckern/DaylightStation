@@ -70,9 +70,8 @@ export function createItemRouter(options = {}) {
         return res.status(404).json({ error: `Unknown source: ${source}` });
       }
 
-      // 'local' is an alias for 'folder' - both use FolderAdapter
-      const isFolderSource = source === 'folder' || source === 'local';
-      const compoundId = isFolderSource ? `folder:${localId}` : `${source}:${localId}`;
+      // watchlist: source is handled by ListAdapter
+      const compoundId = `${source}:${localId}`;
 
       // Handle ?select=<strategy> for item selection from containers
       // Uses ContentQueryService.resolve() with ItemSelectionService
@@ -183,10 +182,10 @@ export function createItemRouter(options = {}) {
         }));
       }
 
-      // Check if any item has folderColor - if so, maintain fixed order from YAML
-      const hasFixedOrder = items.some(childItem => childItem.metadata?.folderColor || childItem.folderColor);
+      // Check if any item has fixed_order flag - maintain YAML order
+      const hasFixedOrder = items.some(childItem => childItem.metadata?.fixedOrder);
 
-      // Apply shuffle if requested (skip if folderColor present)
+      // Apply shuffle if requested (skip if fixed order)
       if (modifiers.shuffle && !hasFixedOrder) {
         items = shuffleArray([...items]);
       }
@@ -221,7 +220,7 @@ export function createItemRouter(options = {}) {
               index: childItem.metadata?.parentIndex,
               title: childItem.metadata?.parentTitle || 'Parent',
               // Use parent (season) thumbnail from metadata, or construct proxy URL for parent
-              thumbnail: childItem.metadata?.parentThumb || `/api/v1/content/plex/image/${pId}`,
+              thumbnail: childItem.metadata?.parentThumb || `/api/v1/display/plex/${pId}`,
               type: childItem.metadata?.parentType
             };
           }

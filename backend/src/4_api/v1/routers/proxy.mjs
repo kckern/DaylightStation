@@ -21,14 +21,14 @@ export function createProxyRouter(config) {
   const { registry, proxyService, mediaBasePath, logger = console } = config;
 
   /**
-   * GET /proxy/filesystem/stream/*
-   * Stream a file from filesystem
+   * GET /proxy/media/stream/*
+   * Stream a file from media adapter
    */
-  router.get('/filesystem/stream/*', asyncHandler(async (req, res) => {
+  router.get('/media/stream/*', asyncHandler(async (req, res) => {
       const filePath = decodeURIComponent(req.params[0] || '');
-      const adapter = registry.get('filesystem');
+      const adapter = registry.get('files') || registry.get('media');
       if (!adapter) {
-        return res.status(404).json({ error: 'Filesystem adapter not configured' });
+        return res.status(404).json({ error: 'Media adapter not configured' });
       }
 
       const item = await adapter.getItem(filePath);
@@ -86,11 +86,12 @@ export function createProxyRouter(config) {
       return res.status(404).json({ error: 'Plex adapter not configured' });
     }
 
-    // For now, redirect to Plex direct URL
-    // Full transcode support would require session management
-    const token = adapter.client?.token || '';
-    const plexUrl = `${adapter.host}/library/metadata/${ratingKey}?X-Plex-Token=${token}`;
-    res.redirect(plexUrl);
+    // Use adapter.loadMediaUrl for proper streaming URL with authentication
+    const mediaUrl = await adapter.loadMediaUrl(ratingKey, 0, {});
+    if (!mediaUrl) {
+      return res.status(404).json({ error: 'Could not generate stream URL', ratingKey });
+    }
+    res.redirect(mediaUrl);
   }));
 
   /**

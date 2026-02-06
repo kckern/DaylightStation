@@ -29,10 +29,10 @@ describe('List Router API', () => {
   // UNIFIED RESPONSE FORMAT
   // ===========================================================================
   describe('response format consistency', () => {
-    test('folder source returns standard format', async () => {
+    test('watchlist source returns standard format', async () => {
       const baseline = await loadBaseline('folder/folder-morning-shows.json');
 
-      const res = await request(app).get('/api/list/folder/morning-shows');
+      const res = await request(app).get('/api/list/watchlist/morning-shows');
 
       expect(res.status).toBe(200);
       expect(res.body).toHaveProperty('source');
@@ -53,7 +53,7 @@ describe('List Router API', () => {
     test('items have unified structure', async () => {
       const baseline = await loadBaseline('folder/folder-morning-shows.json');
 
-      const res = await request(app).get('/api/list/folder/morning-shows');
+      const res = await request(app).get('/api/list/watchlist/morning-shows');
 
       expect(res.status).toBe(200);
 
@@ -72,14 +72,14 @@ describe('List Router API', () => {
     test('returns only playable items', async () => {
       const baseline = await loadBaseline('folder/folder-morning-shows-playable.json');
 
-      const res = await request(app).get('/api/list/folder/morning-shows/playable');
+      const res = await request(app).get('/api/list/watchlist/morning-shows/playable');
 
       expect(res.status).toBe(200);
       expect(Array.isArray(res.body.items)).toBe(true);
     });
 
     test('playable items are flat (not containers)', async () => {
-      const res = await request(app).get('/api/list/folder/morning-shows/playable');
+      const res = await request(app).get('/api/list/watchlist/morning-shows/playable');
 
       expect(res.status).toBe(200);
 
@@ -95,8 +95,8 @@ describe('List Router API', () => {
 
   describe('shuffle modifier', () => {
     test('shuffle returns same items', async () => {
-      const baseline = await request(app).get('/api/list/folder/morning-shows');
-      const shuffled = await request(app).get('/api/list/folder/morning-shows/shuffle');
+      const baseline = await request(app).get('/api/list/watchlist/morning-shows');
+      const shuffled = await request(app).get('/api/list/watchlist/morning-shows/shuffle');
 
       expect(shuffled.status).toBe(200);
       expect(shuffled.body.items.length).toBe(baseline.body.items.length);
@@ -106,7 +106,7 @@ describe('List Router API', () => {
       // Run multiple times to detect shuffling
       const results = [];
       for (let i = 0; i < 3; i++) {
-        const res = await request(app).get('/api/list/folder/morning-shows/shuffle');
+        const res = await request(app).get('/api/list/watchlist/morning-shows/shuffle');
         results.push(res.body.items.map(i => i.id).join(','));
       }
 
@@ -118,15 +118,15 @@ describe('List Router API', () => {
 
   describe('combined modifiers', () => {
     test('playable,shuffle works together', async () => {
-      const res = await request(app).get('/api/list/folder/morning-shows/playable,shuffle');
+      const res = await request(app).get('/api/list/watchlist/morning-shows/playable,shuffle');
 
       expect(res.status).toBe(200);
       expect(Array.isArray(res.body.items)).toBe(true);
     });
 
     test('modifier order doesnt matter', async () => {
-      const res1 = await request(app).get('/api/list/folder/morning-shows/playable,shuffle');
-      const res2 = await request(app).get('/api/list/folder/morning-shows/shuffle,playable');
+      const res1 = await request(app).get('/api/list/watchlist/morning-shows/playable,shuffle');
+      const res2 = await request(app).get('/api/list/watchlist/morning-shows/shuffle,playable');
 
       expect(res1.status).toBe(200);
       expect(res2.status).toBe(200);
@@ -138,10 +138,10 @@ describe('List Router API', () => {
   // CROSS-SOURCE RESOLUTION
   // ===========================================================================
   describe('cross-source resolution', () => {
-    test('folder can contain plex references', async () => {
+    test('watchlist can contain plex references', async () => {
       const baseline = await loadBaseline('folder/folder-morning-shows.json');
 
-      const res = await request(app).get('/api/list/folder/morning-shows');
+      const res = await request(app).get('/api/list/watchlist/morning-shows');
 
       expect(res.status).toBe(200);
 
@@ -166,10 +166,10 @@ describe('List Router API', () => {
       }
     });
 
-    test('folder can contain local-content references', async () => {
+    test('watchlist can contain local-content references', async () => {
       const baseline = await loadBaseline('folder/folder-scriptures.json');
 
-      const res = await request(app).get('/api/list/folder/scriptures');
+      const res = await request(app).get('/api/list/watchlist/scriptures');
 
       expect(res.status).toBe(200);
       expect(Array.isArray(res.body.items)).toBe(true);
@@ -188,7 +188,7 @@ describe('List Router API', () => {
     });
 
     test('malformed path handled gracefully', async () => {
-      const res = await request(app).get('/api/list/folder/');
+      const res = await request(app).get('/api/list/watchlist/');
 
       // Should either return empty list or 404, not crash
       expect([200, 404]).toContain(res.status);

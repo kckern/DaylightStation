@@ -132,7 +132,7 @@ describe('contentQueryParser', () => {
 
     it('has source aliases', () => {
       expect(QUERY_ALIASES.source.photos).toBe('gallery');
-      expect(QUERY_ALIASES.source.videos).toBe('media');
+      expect(QUERY_ALIASES.source.videos).toBe('files');
       expect(QUERY_ALIASES.source.books).toBe('readable');
     });
   });

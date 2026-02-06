@@ -46,7 +46,7 @@ const IMAGE_EXTS = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
  * Create Local Media API router
  *
  * @param {Object} config
- * @param {Object} config.localMediaAdapter - LocalMediaAdapter instance
+ * @param {Object} config.localMediaAdapter - FileAdapter instance (handles local media browsing)
  * @param {string} config.mediaBasePath - Base path for media files
  * @param {string} config.cacheBasePath - Base path for cache (thumbnails)
  * @param {Object} [config.logger] - Logger instance
@@ -308,12 +308,14 @@ export function createLocalRouter(config) {
  */
 function generateVideoThumbnail(videoPath, outputPath) {
   return new Promise((resolve, reject) => {
-    // Use ffmpeg to extract frame at 10% of duration
-    // -ss 10% would require knowing duration, so we use -vf thumbnail which picks a representative frame
+    // Seek 3 seconds in to skip black intros, then use thumbnail filter
+    // to pick the most representative frame from the next 100 frames
     const ffmpeg = spawn('ffmpeg', [
+      '-ss', '3',
       '-i', videoPath,
-      '-vf', 'thumbnail,scale=300:-1',
+      '-vf', 'thumbnail=100,scale=300:-1',
       '-frames:v', '1',
+      '-update', '1',
       '-y',
       outputPath
     ], {

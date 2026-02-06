@@ -34,15 +34,16 @@ const FitnessMenu = ({ activeCollection, onContentSelect, setFitnessPlayQueue })
 
   const collectionsFromConfig = useMemo(() => {
     if (!fitnessConfig) return [];
-    const navItems = fitnessConfig.plex?.nav_items || [];
+    const contentConfig = fitnessConfig.content || fitnessConfig.plex || {};
+    const navItems = contentConfig.nav_items || [];
     
     // Convert nav_items back to collection-like objects for internal use
     return navItems
-      .filter(item => ['plex_collection', 'plex_collection_group', 'plugin_menu'].includes(item.type))
+      .filter(item => ['collection', 'plex_collection', 'collection_group', 'plex_collection_group', 'plugin_menu'].includes(item.type))
       .map(item => {
-        if (item.type === 'plex_collection') {
+        if (item.type === 'collection' || item.type === 'plex_collection') {
           return { id: item.target.collection_id, name: item.name, icon: item.icon };
-        } else if (item.type === 'plex_collection_group') {
+        } else if (item.type === 'collection_group' || item.type === 'plex_collection_group') {
           return { id: item.target.collection_ids, name: item.name, icon: item.icon };
         } else if (item.type === 'plugin_menu') {
           return { id: item.target.menu_id, name: item.name, icon: item.icon };
@@ -53,8 +54,9 @@ const FitnessMenu = ({ activeCollection, onContentSelect, setFitnessPlayQueue })
   }, [fitnessConfig]);
 
   const activeAppMenu = useMemo(() => {
-    if (!fitnessConfig?.plex?.app_menus) return null;
-    return fitnessConfig.plex.app_menus.find(m => String(m.id) === String(activeCollection));
+    const cc = fitnessConfig?.content || fitnessConfig?.plex;
+    if (!cc?.app_menus) return null;
+    return cc.app_menus.find(m => String(m.id) === String(activeCollection));
   }, [fitnessConfig, activeCollection]);
 
   // Scroll helpers: find nearest scrollable container and ensure element is fully visible
@@ -199,7 +201,7 @@ const FitnessMenu = ({ activeCollection, onContentSelect, setFitnessPlayQueue })
 
         const listResponses = await Promise.all(idsToFetch.map(async (collectionId) => {
           try {
-            const response = await DaylightAPI(`/api/v1/item/plex/${collectionId}`);
+            const response = await DaylightAPI(`/api/v1/list/plex/${collectionId}`);
             return Array.isArray(response?.items) ? response.items : [];
           } catch (apiErr) {
             console.error(`🎬 ERROR: Error loading shows for collection ${collectionId}:`, apiErr);

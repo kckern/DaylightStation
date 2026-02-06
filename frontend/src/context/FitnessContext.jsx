@@ -35,13 +35,14 @@ const normalizeLabelList = (raw) => {
 };
 
 /**
- * Extract plex ID from item's action objects (play, queue, list)
- * This is the canonical way to get the plex ID - not from top-level item.plex
+ * Extract content ID from item's action objects (play, queue, list)
+ * Prefers contentId (compound ID like "plex:12345"), falls back to legacy plex key
  * @param {Object} item - Item with action objects
- * @returns {string|null} The plex ID or null
+ * @returns {string|null} The content ID or null
  */
-const getPlexIdFromActions = (item) => {
-  return item?.play?.plex || item?.queue?.plex || item?.list?.plex || null;
+const getContentIdFromActions = (item) => {
+  return item?.play?.contentId || item?.queue?.contentId || item?.list?.contentId
+    || item?.play?.plex || item?.queue?.plex || item?.list?.plex || null;
 };
 
 /**
@@ -51,11 +52,11 @@ const getPlexIdFromActions = (item) => {
  * @returns {string|null}
  */
 const getItemIdentifier = (item) => {
-  // Prefer action-based plex ID (canonical)
-  const actionPlex = getPlexIdFromActions(item);
-  if (actionPlex) return actionPlex;
+  // Prefer action-based content ID (canonical)
+  const actionId = getContentIdFromActions(item);
+  if (actionId) return actionId;
   // Fall back to top-level fields for backward compatibility
-  return item?.id || item?.ratingKey || item?.plex || null;
+  return item?.contentId || item?.id || item?.ratingKey || item?.plex || null;
 };
 
 const VOICE_MEMO_OVERLAY_INITIAL = {
@@ -363,7 +364,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     governedTypes
   } = React.useMemo(() => {
     const root = fitnessConfiguration?.fitness ? fitnessConfiguration.fitness : fitnessConfiguration?.plex ? fitnessConfiguration : (fitnessConfiguration || {});
-    const plex = root?.plex || {};
+    // Prefer 'content' config key, fall back to legacy 'plex' key
+    const plex = root?.content || root?.plex || {};
     const governance = root?.governance || {};
     const governanceLabelSource = Array.isArray(governance?.governed_labels) && governance.governed_labels.length > 0
       ? governance.governed_labels

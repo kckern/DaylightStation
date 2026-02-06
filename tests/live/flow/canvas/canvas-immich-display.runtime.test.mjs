@@ -172,17 +172,17 @@ test.describe('Canvas Immich Display', () => {
       timeout: 30000
     });
 
-    // Wait for art component to mount
+    // Wait for displayer component to mount
     await sharedPage.waitForTimeout(3000);
 
-    // Check for art-app class (same as canvas display)
-    const artApp = await sharedPage.locator('.art-app').count();
-    console.log(`\n🎨 Art app elements found: ${artApp}`);
+    // Check for displayer class
+    const displayer = await sharedPage.locator('.displayer').count();
+    console.log(`\n🎨 Displayer elements found: ${displayer}`);
 
-    expect(artApp).toBeGreaterThan(0);
+    expect(displayer).toBeGreaterThan(0);
 
     // Check for image element
-    const img = sharedPage.locator('.art-app img').first();
+    const img = sharedPage.locator('.displayer img').first();
     const imgSrc = await img.getAttribute('src');
     console.log(`   Image src: ${imgSrc}`);
 
@@ -199,7 +199,7 @@ test.describe('Canvas Immich Display', () => {
       return;
     }
 
-    const img = sharedPage.locator('.art-app img').first();
+    const img = sharedPage.locator('.displayer img').first();
 
     // Wait for image to load
     await sharedPage.waitForTimeout(2000);

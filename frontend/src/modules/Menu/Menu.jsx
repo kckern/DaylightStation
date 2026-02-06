@@ -5,7 +5,7 @@ import React, {
   useCallback,
   useContext,
 } from "react";
-import { DaylightAPI, DaylightMediaPath } from "../../lib/api.mjs";
+import { DaylightAPI, DaylightMediaPath, ContentDisplayUrl } from "../../lib/api.mjs";
 import "./Menu.scss";
 import { PlayerOverlayLoading } from "../Player/Player";
 import MenuNavigationContext from "../../context/MenuNavigationContext";
@@ -24,7 +24,7 @@ const logMenuSelection = async (item) => {
       : null;
 
   if (selectedKey) {
-    await DaylightAPI("api/v1/item/menu-log", { assetId: selectedKey });
+    await DaylightAPI("api/v1/list/menu-log", { assetId: selectedKey });
   }
 };
 
@@ -257,7 +257,7 @@ function useFetchMenuData(listInput, refreshToken = 0) {
         };
       }
       const data = await DaylightAPI(
-        `api/v1/item/folder/${target}${config ? `/${config}` : ""}`
+        `api/v1/list/watchlist/${target}${config ? `/${config}` : ""}`
       );
       if (canceled) return null;
       return { 
@@ -300,13 +300,13 @@ function useFetchMenuData(listInput, refreshToken = 0) {
         return;
       }
 
-      // (C) If the input is an object with "menu", "list", "plex", or "folder"
+      // (C) If the input is an object with "menu", "list", "plex", or "watchlist"
       if (typeof input === "object") {
-        const { menu, list, plex, folder, shuffle, playable } = input;
+        const { menu, list, plex, watchlist, shuffle, playable } = input;
         const config = [];
         if (shuffle) config.push("shuffle");
         if (playable) config.push("playable");
-        const param = menu || list || plex || folder;
+        const param = menu || list || plex || watchlist;
         if (param) {
           const data = await fetchData(param, config.join("+"));
           if (data) {
@@ -689,7 +689,8 @@ function MenuItems({
   return (
     <div className={`menu-items count_${items.length}`}>
       {items.map((item, index) => {
-        const { plex } = item?.play || item?.queue || item?.list || item?.open || {};
+        const actionObj = item?.play || item?.queue || item?.list || item?.open || {};
+        const { contentId: itemContentId, plex } = actionObj;
         const isActive = index === selectedIndex;
         const itemKey = findKeyForItem(item) || `${index}-${item.label}`;
         let image = item.image;
@@ -699,10 +700,11 @@ function MenuItems({
           image = DaylightMediaPath(image);
         }
 
-        // If there's a Plex ID but no image, build one
-        if (!image && plex) {
-          const val = Array.isArray(plex) ? plex[0] : plex;
-          image = DaylightMediaPath(`/api/v1/display/plex/${val}`);
+        // If there's a content ID but no image, build a display URL
+        if (!image && (itemContentId || plex)) {
+          const displayId = itemContentId || plex;
+          const val = Array.isArray(displayId) ? displayId[0] : displayId;
+          image = ContentDisplayUrl(val);
         }
 
         // Create a unique key for the image to force remount when navigating menus

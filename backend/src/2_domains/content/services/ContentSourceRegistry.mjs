@@ -165,7 +165,7 @@ export class ContentSourceRegistry {
   }
 
   /**
-   * Resolve from prefix (e.g., "media" → FilesystemAdapter)
+   * Resolve from prefix (e.g., "media" → FileAdapter)
    * @param {string} prefix
    * @param {string} value
    * @returns {{adapter: any, localId: string}|null}
@@ -186,8 +186,8 @@ export class ContentSourceRegistry {
   resolve(compoundId) {
     const colonIndex = compoundId.indexOf(':');
     if (colonIndex === -1) {
-      // No colon - treat as filesystem path (default adapter)
-      const defaultAdapter = this.#adapterEntries.get('filesystem')?.adapter;
+      // No colon - treat as media path (default adapter)
+      const defaultAdapter = this.#adapterEntries.get('media')?.adapter;
       return defaultAdapter ? { adapter: defaultAdapter, localId: compoundId } : null;
     }
 

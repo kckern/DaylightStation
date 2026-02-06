@@ -622,7 +622,7 @@ export class PlexAdapter {
       source: 'plex',
       localId: String(item.ratingKey),
       title: item.title || item.titleSort || `[${item.type || 'Untitled'}]`,
-      mediaType: isVideo ? 'video' : 'audio',
+      mediaType: isVideo ? 'dash_video' : 'audio',
       mediaUrl: `/api/v1/proxy/plex/stream/${item.ratingKey}`,
       duration: item.duration ? Math.floor(item.duration / 1000) : null,
       resumable: isVideo,

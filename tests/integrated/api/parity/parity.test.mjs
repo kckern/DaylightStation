@@ -289,7 +289,7 @@ describe('DDD vs Legacy Endpoint Parity', () => {
   describe('Redirect Parity', () => {
     const REDIRECT_TESTS = [
       { legacy: '/media/plex/list/123', expectedDdd: '/api/list/plex' },
-      { legacy: '/data/list/watchlist', expectedDdd: '/api/list/folder' },
+      { legacy: '/data/list/watchlist', expectedDdd: '/api/list/watchlist' },
       { legacy: '/home/entropy', expectedDdd: '/api/entropy' },
       { legacy: '/home/calendar', expectedDdd: '/api/calendar/events' },
       { legacy: '/data/events', expectedDdd: '/api/calendar/events' },

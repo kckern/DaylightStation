@@ -1,9 +1,11 @@
 // backend/src/1_adapters/content/singing/SingingAdapter.mjs
 import path from 'path';
+import { parseFile } from 'music-metadata';
 import {
   loadYamlByPrefix,
   loadContainedYaml,
   findMediaFileByPrefix,
+  fileExists,
   dirExists,
   listDirs,
   listYamlFiles
@@ -74,6 +76,17 @@ export class SingingAdapter {
       metadata.number || itemId
     );
 
+    // Get duration from YAML metadata, or read from media file
+    let duration = metadata.duration || 0;
+    if (!duration && mediaFile) {
+      try {
+        const meta = await parseFile(mediaFile, { duration: true });
+        duration = parseInt(meta?.format?.duration) || 0;
+      } catch {
+        // Ignore metadata parsing errors
+      }
+    }
+
     // Build response with category defaults + manifest overrides
     const style = { ...this._getDefaultStyle(), ...manifest?.style };
     const contentType = manifest?.contentType || 'stanzas';
@@ -85,8 +98,9 @@ export class SingingAdapter {
       collection,
       title: metadata.title || `${collection} ${itemId}`,
       subtitle: metadata.subtitle || `${collection} #${metadata.number || itemId}`,
+      thumbnail: this._collectionThumbnail(collection),
       mediaUrl: `/api/v1/proxy/local-content/stream/${localId}`,
-      duration: metadata.duration || 0,
+      duration,
       content: {
         type: contentType,
         data: metadata.verses || []
@@ -111,6 +125,35 @@ export class SingingAdapter {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Resolve collection icon path on disk.
+   * Checks manifest `icon` field first, then convention `icon.svg`.
+   * @param {string} collection - Collection name (e.g., 'hymn')
+   * @returns {string|null} Absolute file path or null
+   */
+  resolveCollectionIcon(collection) {
+    const collectionPath = path.join(this.dataPath, collection);
+    const manifest = this._loadManifest(collection);
+    if (manifest?.icon) {
+      const explicit = path.join(collectionPath, manifest.icon);
+      if (fileExists(explicit)) return explicit;
+    }
+    const convention = path.join(collectionPath, 'icon.svg');
+    if (fileExists(convention)) return convention;
+    return null;
+  }
+
+  /**
+   * Build a thumbnail URL for a collection if an icon exists.
+   * @param {string} collection - Collection name
+   * @returns {string|null}
+   * @private
+   */
+  _collectionThumbnail(collection) {
+    const icon = this.resolveCollectionIcon(collection);
+    return icon ? `/api/v1/local-content/collection-icon/singing/${collection}` : null;
   }
 
   /**
@@ -144,6 +187,7 @@ export class SingingAdapter {
           id: `singing:${name}`,
           source: 'singing',
           title: name,
+          thumbnail: this._collectionThumbnail(name),
           itemType: 'container'
         }))
       };

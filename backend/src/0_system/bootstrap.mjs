@@ -15,12 +15,10 @@ import { WebSocketEventBus } from './eventbus/WebSocketEventBus.mjs';
 
 // Content domain imports
 import { ContentSourceRegistry } from '#domains/content/services/ContentSourceRegistry.mjs';
-import { FilesystemAdapter } from '#adapters/content/media/filesystem/FilesystemAdapter.mjs';
+import { FileAdapter } from '#adapters/content/media/files/FileAdapter.mjs';
 import { PlexAdapter } from '#adapters/content/media/plex/PlexAdapter.mjs';
 import { MediaKeyResolver } from '#domains/media/MediaKeyResolver.mjs';
 import { LocalContentAdapter } from '#adapters/content/local-content/LocalContentAdapter.mjs';
-import { FolderAdapter } from '#adapters/content/folder/FolderAdapter.mjs';
-import { LocalMediaAdapter } from '#adapters/content/media/local-media/LocalMediaAdapter.mjs';
 import { ListAdapter } from '#adapters/content/list/ListAdapter.mjs';
 import { ImmichAdapter } from '#adapters/content/gallery/immich/ImmichAdapter.mjs';
 import { AudiobookshelfAdapter } from '#adapters/content/readable/audiobookshelf/AudiobookshelfAdapter.mjs';
@@ -31,10 +29,9 @@ import { ImmichClient } from '#adapters/content/gallery/immich/ImmichClient.mjs'
 import { YamlMediaProgressMemory } from '#adapters/persistence/yaml/YamlMediaProgressMemory.mjs';
 
 // Content adapter manifests (for category/provider metadata)
-import filesystemManifest from '#adapters/content/media/filesystem/manifest.mjs';
+import mediaManifest from '#adapters/content/media/files/manifest.mjs';
 import plexManifest from '#adapters/content/media/plex/manifest.mjs';
 import immichManifest from '#adapters/content/gallery/immich/manifest.mjs';
-import localMediaManifest from '#adapters/content/media/local-media/manifest.mjs';
 import listManifest from '#adapters/content/list/manifest.mjs';
 import singingManifest from '#adapters/content/singing/manifest.mjs';
 import narratedManifest from '#adapters/content/narrated/manifest.mjs';
@@ -394,7 +391,7 @@ export function getSystemBotLoader() {
  * @param {string} [config.plex.token] - Plex auth token
  * @param {string} [config.dataPath] - Path to data files (for LocalContentAdapter)
  * @param {string} [config.listDataPath] - Root data path for ListAdapter (household/config/lists/)
- * @param {string} [config.watchlistPath] - Path to watchlist YAML (for FolderAdapter)
+ * @param {string} [config.watchlistPath] - Path to watchlist YAML (for ListAdapter)
  * @param {Object} [config.canvas] - Canvas (displayable art) configuration
  * @param {Object} [config.canvas.filesystem] - Filesystem canvas config
  * @param {string} [config.canvas.filesystem.basePath] - Base path for art images
@@ -417,14 +414,18 @@ export function createContentRegistry(config, deps = {}) {
   const { httpClient, mediaProgressMemory, mediaKeyResolver, app } = deps;
   const registry = new ContentSourceRegistry();
 
-  // Register filesystem adapter
+  // Register media adapter (also handles local media browsing/roots)
   if (config.mediaBasePath) {
     registry.register(
-      new FilesystemAdapter({
+      new FileAdapter({
         mediaBasePath: config.mediaBasePath,
         mediaProgressMemory,
+        dataPath: config.dataPath || null,
+        householdId: config.householdId || null,
+        cacheBasePath: config.cacheBasePath || (config.dataPath ? path.join(config.dataPath, 'system/cache') : null),
+        configService: deps.configService || null
       }),
-      { category: filesystemManifest.capability, provider: filesystemManifest.provider }
+      { category: mediaManifest.capability, provider: mediaManifest.provider }
     );
   }
 
@@ -456,40 +457,8 @@ export function createContentRegistry(config, deps = {}) {
     );
   }
 
-  // Register folder adapter (optional, requires registry reference)
-  // Note: FolderAdapter has no manifest - uses 'local' category
-  if (config.watchlistPath) {
-    const folderAdapter = new FolderAdapter({
-      watchlistPath: config.watchlistPath,
-      mediaProgressMemory,
-      registry,
-      nomusicLabels: config.nomusicLabels || [],
-      musicOverlayPlaylist: config.musicOverlayPlaylist || null
-    });
-    registry.register(folderAdapter, { category: 'local', provider: 'folder' });
-
-    // Also register as 'local' for legacy frontend compatibility
-    // Legacy endpoints use /data/list/{key} which maps to /list/local/{key}
-    registry.adapters.set('local', folderAdapter);
-  }
-
-  // Register LocalMediaAdapter for browsing filesystem paths as content sources
-  if (config.mediaBasePath && config.dataPath) {
-    const localMediaAdapter = new LocalMediaAdapter({
-      mediaBasePath: config.mediaBasePath,
-      dataPath: config.dataPath,
-      cacheBasePath: config.cacheBasePath || path.join(config.dataPath, 'system/cache'),
-      householdId: config.householdId || null,
-      configService: deps.configService || null,
-      mediaProgressMemory
-    });
-    registry.register(localMediaAdapter, {
-      category: localMediaManifest.capability,
-      provider: localMediaManifest.provider
-    });
-  }
-
   // Register ListAdapter for menus/programs/watchlists as content sources
+  // Handles watchlist: prefix (and menu:, program:, query:)
   // Uses listDataPath (root data path) for household/config/lists/*, not dataPath (content/)
   const listDataPath = config.listDataPath || config.dataPath;
   if (listDataPath) {
@@ -498,12 +467,17 @@ export function createContentRegistry(config, deps = {}) {
       householdId: config.householdId || null,
       registry,
       mediaProgressMemory,
-      configService: deps.configService || null
+      configService: deps.configService || null,
+      nomusicLabels: config.nomusicLabels || [],
+      musicOverlayPlaylist: config.musicOverlayPlaylist || null
     });
     registry.register(listAdapter, {
       category: listManifest.capability,
       provider: listManifest.provider
     });
+
+    // Register 'watchlist' alias so registry.get('watchlist') returns ListAdapter
+    registry.adapters.set('watchlist', listAdapter);
   }
 
   // Register Immich adapter if configured
@@ -634,8 +608,8 @@ export function createApiRouters(config) {
   // Create ContentQueryService for unified query interface
   const contentQueryService = new ContentQueryService({ registry, mediaProgressMemory, legacyPrefixMap, logger, aliasResolver });
 
-  // Get LocalMediaAdapter from registry for local router
-  const localMediaAdapter = registry.get('local');
+  // Get FileAdapter from registry for local router (handles local media browsing)
+  const localMediaAdapter = registry.get('files');
 
   return {
     routers: {
@@ -643,7 +617,7 @@ export function createApiRouters(config) {
       proxy: createProxyRouter({ registry, proxyService, mediaBasePath, logger }),
       localContent: createLocalContentRouter({ registry, dataPath, mediaBasePath }),
       play: createPlayRouter({ registry, mediaProgressMemory, contentQueryService, logger }),
-      list: createListRouter({ registry, loadFile, configService, contentQueryService }),
+      list: createListRouter({ registry, loadFile, configService, contentQueryService, menuMemoryPath: configService.getHouseholdPath('history/menu_memory') }),
       local: createLocalRouter({ localMediaAdapter, mediaBasePath, cacheBasePath: cacheBasePath || path.join(dataPath, 'system/cache'), logger }),
       stream: createStreamRouter({
         singingMediaPath: path.join(mediaBasePath, 'singing'),
@@ -1605,7 +1579,7 @@ export function createGratitudeServices(config) {
  * @param {Object} config.configService - ConfigService for household lookup
  * @param {Function} config.broadcastToWebsockets - WebSocket broadcast function
  * @param {Object} [config.printerAdapter] - ThermalPrinterAdapter for card printing
- * @param {Function} [config.createPrayerCardCanvas] - Function to generate prayer card canvas
+ * @param {Function} [config.createGratitudeCardCanvas] - Function to generate gratitude card canvas
  * @param {Object} [config.logger] - Logger instance
  * @returns {express.Router}
  */
@@ -1615,7 +1589,7 @@ export function createGratitudeApiRouter(config) {
     configService,
     broadcastToWebsockets,
     printerAdapter,
-    createPrayerCardCanvas,
+    createGratitudeCardCanvas,
     logger = console
   } = config;
 
@@ -1624,7 +1598,7 @@ export function createGratitudeApiRouter(config) {
     configService,
     broadcastToWebsockets,
     printerAdapter,
-    createPrayerCardCanvas,
+    createGratitudeCardCanvas,
     logger
   });
 }

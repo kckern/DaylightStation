@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, forwardRef, useCallback } from 'react';
-import { Text, Checkbox, ActionIcon, Menu, TextInput, Combobox, useCombobox, InputBase, Loader, Group, Avatar, Badge, Box, Drawer, Stack, ScrollArea, Divider, Progress } from '@mantine/core';
+import { Text, Checkbox, ActionIcon, Menu, TextInput, Combobox, useCombobox, InputBase, Loader, Group, Avatar, Badge, Box, Drawer, Stack, ScrollArea, Divider, Progress, Modal } from '@mantine/core';
 import { useDebouncedValue } from '@mantine/hooks';
 import {
   IconGripVertical, IconTrash, IconCopy, IconDotsVertical, IconPlus,
@@ -8,7 +8,8 @@ import {
   IconChevronRight, IconChevronLeft, IconHome, IconInfoCircle,
   IconEye, IconEyeOff, IconPlayerPlay, IconExternalLink, IconAlertTriangle,
   IconList, IconMicrophone, IconVideo, IconFolder, IconFileText, IconSearch,
-  IconBroadcast, IconPresentation, IconSchool, IconUsers, IconStack3
+  IconBroadcast, IconPresentation, IconSchool, IconUsers, IconStack3,
+  IconCheck
 } from '@tabler/icons-react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -16,6 +17,23 @@ import ConfigIndicators from './ConfigIndicators.jsx';
 import ProgressDisplay from './ProgressDisplay.jsx';
 import { getCacheEntry, setCacheEntry, hasCacheEntry } from './siblingsCache.js';
 import { useListsContext } from './ListsContext.js';
+import { DaylightMediaPath } from '../../../lib/api.mjs';
+import ImagePickerModal from './ImagePickerModal.jsx';
+import Player from '../../Player/Player.jsx';
+
+// Map adapter:localId (e.g. "hymn:113") to canonical contentId (e.g. "singing:hymn/113")
+// SinglePlayer's routing requires the category prefix (singing:/narrated:) for content scrollers
+const ADAPTER_TO_CATEGORY = { hymn: 'singing', primary: 'singing', scripture: 'narrated' };
+function toCanonicalContentId(input) {
+  if (!input) return input;
+  const m = input.match(/^([^:]+):(.+)$/);
+  if (!m) return input;
+  const adapter = m[1].trim();
+  const localId = m[2].trim();
+  const category = ADAPTER_TO_CATEGORY[adapter];
+  if (category) return `${category}:${adapter}/${localId}`;
+  return `${adapter}:${localId}`;
+}
 
 const ACTION_OPTIONS = [
   { value: 'Play', label: 'Play' },
@@ -28,7 +46,7 @@ const ACTION_OPTIONS = [
 
 // Types that represent containers (can be drilled into)
 const CONTAINER_TYPES = [
-  'show', 'season', 'artist', 'album', 'collection', 'playlist', 'folder', 'container',
+  'show', 'season', 'artist', 'album', 'collection', 'playlist', 'watchlist', 'container',
   'series', 'channel', 'conference', 'watchlist', 'query', 'menu', 'program'
 ];
 
@@ -74,6 +92,11 @@ const TYPE_ICONS = {
   course: IconSchool,
   meeting: IconUsers,
   collection: IconStack2,
+  // Content collection types (singing/narrated)
+  hymn: IconMusic,
+  primary: IconMusic,
+  scripture: IconBook,
+  poem: IconFileText,
   default: IconFile
 };
 
@@ -133,11 +156,11 @@ async function doFetchSiblings(itemId, contentInfo) {
       libraryId: null
     };
   } else if (source === 'freshvideo') {
-    childrenUrl = `/api/v1/info/filesystem/video/news`;
+    childrenUrl = `/api/v1/info/files/video/news`;
     parentInfo = {
-      id: 'filesystem:video/news',
+      id: 'files:video/news',
       title: 'Fresh Video Channels',
-      source: 'filesystem',
+      source: 'files',
       thumbnail: null,
       parentKey: null,
       libraryId: null
@@ -225,7 +248,6 @@ const SOURCE_COLORS = {
   immich: 'blue',
   abs: 'green',
   media: 'gray',
-  filesystem: 'gray',
   watchlist: 'violet',
   query: 'cyan',
   menu: 'teal',
@@ -234,6 +256,8 @@ const SOURCE_COLORS = {
   talk: 'pink',
   'local-content': 'pink',
   list: 'violet',
+  hymn: 'indigo',
+  primary: 'grape',
   app: 'teal',
   default: 'gray'
 };
@@ -287,6 +311,8 @@ const TYPE_LABELS = {
   course: 'Course',
   meeting: 'Meeting',
   collection: 'Collection',
+  hymn: 'Hymn',
+  primary: 'Primary',
   app: 'App'
 };
 
@@ -333,6 +359,19 @@ function getAvatarContent(item) {
 function buildSubtitle(item) {
   const parts = [];
   const typeLabel = TYPE_LABELS[item.type];
+
+  // For numbered collection items (e.g., hymn:308, primary:5), show "Hymn: 308"
+  // Generic: any source with a numeric localId and no parent hierarchy
+  const localIdPart = item.value?.split(':')[1]?.trim();
+  const isNumberedCollection = localIdPart && /^\d+$/.test(localIdPart) && !item.parent && !item.library && !item.grandparent;
+  if (isNumberedCollection) {
+    const label = TYPE_LABELS[item.type] || TYPE_LABELS[item.source] || (item.source ? item.source.charAt(0).toUpperCase() + item.source.slice(1) : null);
+    if (label) {
+      parts.push(`${label}: ${localIdPart}`);
+      return parts.join(' • ');
+    }
+  }
+
   if (typeLabel) parts.push(typeLabel);
 
   // Parent info
@@ -418,6 +457,9 @@ function ContentItemDisplay({ item, isHighlighted, isCurrent, showChevron, onChe
           <Text size="xs" truncate fw={isCurrent ? 600 : undefined}>
             {item.title}
           </Text>
+          {isCurrent && (
+            <IconCheck size={12} style={{ flexShrink: 0, opacity: 0.7 }} />
+          )}
           {item.itemCount != null && item.itemCount > 0 && (
             <Badge size="xs" variant="light" color="gray" style={{ flexShrink: 0 }}>
               {item.itemCount}
@@ -489,7 +531,7 @@ function ContentDisplay({ item, onClick, loading }) {
   if (loading) {
     return (
       <Group gap={6} wrap="nowrap" onClick={onClick} className="content-display">
-        <div className="avatar-shimmer" />
+        <div className="avatar-shimmer" style={{ width: 28, height: 28, minWidth: 28 }} />
         <Box style={{ flex: 1, minWidth: 0 }}>
           <div style={{ height: 12, width: '60%', background: 'var(--mantine-color-dark-5)', borderRadius: 2, marginBottom: 4 }} />
           <div style={{ height: 10, width: '40%', background: 'var(--mantine-color-dark-6)', borderRadius: 2 }} />
@@ -502,7 +544,7 @@ function ContentDisplay({ item, onClick, loading }) {
 
   return (
     <div onClick={onClick} className="content-display" style={{ cursor: 'pointer' }}>
-      <ContentItemDisplay item={item} showChevron={false} />
+      <ContentItemDisplay item={item} showChevron={false} compact />
     </div>
   );
 }
@@ -520,7 +562,7 @@ function UnresolvedContentDisplay({ item, onClick }) {
       style={{ cursor: 'pointer' }}
     >
       <Group gap={6} wrap="nowrap" style={{ flex: 1 }}>
-        <Avatar size={36} radius="sm" color="yellow">
+        <Avatar size={28} radius="sm" color="yellow">
           <IconAlertTriangle size={16} />
         </Avatar>
         <Box style={{ flex: 1, minWidth: 0 }}>
@@ -558,9 +600,10 @@ export async function fetchContentMetadata(value) {
 
   // Resolve app items locally from registry (no backend call needed)
   if (value.startsWith('app:')) {
-    const { resolveAppDisplay } = await import('../../../lib/appRegistry.js');
+    const { resolveAppDisplay, getApp } = await import('../../../lib/appRegistry.js');
     const appInfo = resolveAppDisplay(value);
     if (appInfo) {
+      const entry = getApp(appInfo.appId);
       const info = {
         value,
         title: appInfo.paramValue
@@ -568,7 +611,7 @@ export async function fetchContentMetadata(value) {
           : appInfo.label,
         source: 'app',
         type: 'app',
-        thumbnail: null,
+        thumbnail: entry?.icon || null,
         unresolved: false,
       };
       contentInfoCache.set(value, info);
@@ -640,10 +683,54 @@ function ContentSearchCombobox({ value, onChange }) {
   const [navStack, setNavStack] = useState([]); // [{id, title, source, thumbnail}] breadcrumb trail
   const [currentParent, setCurrentParent] = useState(null); // Current parent being browsed {id, title, source, thumbnail, parentKey, libraryId}
   const optionsRef = useRef(null);
+  const blurTimeoutRef = useRef(null);
+  const prevIdxRef = useRef(-1);
+  const scrollAnimRef = useRef(null);
+
+  // Cleanup blur timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (blurTimeoutRef.current) clearTimeout(blurTimeoutRef.current);
+    };
+  }, []);
+
+  // Scroll a specific item into view using rAF for reliable post-render timing.
+  // Cancels any running scroll animation first to prevent race conditions.
+  const scrollOptionIntoView = useCallback((selector) => {
+    if (scrollAnimRef.current) cancelAnimationFrame(scrollAnimRef.current);
+    requestAnimationFrame(() => {
+      if (optionsRef.current) {
+        const option = optionsRef.current.querySelector(selector);
+        if (option) {
+          const container = optionsRef.current;
+          // Position the item ~1 row from the top so the user has room to
+          // navigate downward before scrolling kicks in (VS Code behavior).
+          const topOffset = option.offsetHeight * 1.5;
+          container.scrollTop = option.offsetTop - topOffset;
+        }
+      }
+    });
+  }, []);
+
   const inputRef = useRef(null);
+  const freshOpenRef = useRef(false); // true until first non-navigation keypress after open
   const [pendingApp, setPendingApp] = useState(null); // {appId, param} — waiting for param input
   const [paramOptions, setParamOptions] = useState(null); // [{value, label}] or null
   const [paramInput, setParamInput] = useState('');
+
+  // Shared cleanup for dismissing the combobox (used by blur, Escape, Tab, and selection)
+  const resetComboboxState = useCallback(() => {
+    setSearchQuery('');
+    setIsEditing(false);
+    setBrowseItems([]);
+    setNavStack([]);
+    setCurrentParent(null);
+    setHighlightedIdx(-1);
+    setPendingApp(null);
+    setParamOptions(null);
+    freshOpenRef.current = false;
+    combobox.closeDropdown();
+  }, [combobox]);
 
   // Fetch content info for current value
   useEffect(() => {
@@ -677,6 +764,16 @@ function ContentSearchCombobox({ value, onChange }) {
       setSearchResults([]);
       return;
     }
+    // Don't search when query matches the current value (just opened for browsing)
+    if (debouncedSearch === value) {
+      setSearchResults([]);
+      return;
+    }
+    // Don't search backend when user is refining within loaded browse items (e.g. hymn: 113)
+    const prefix = value?.split(':')[0];
+    if (prefix && debouncedSearch.startsWith(prefix + ':') && browseItems.length > 0) {
+      return;
+    }
 
     const searchContent = async () => {
       setSearching(true);
@@ -696,13 +793,13 @@ function ContentSearchCombobox({ value, onChange }) {
             itemCount: item.metadata?.childCount ?? item.metadata?.leafCount ?? null
           }));
           // Merge in local app results
-          const { searchApps } = await import('../../../lib/appRegistry.js');
+          const { searchApps, APP_REGISTRY: appReg } = await import('../../../lib/appRegistry.js');
           const appMatches = searchApps(debouncedSearch).map(app => ({
             value: `app:${app.id}`,
             title: app.label,
             source: 'app',
             type: 'app',
-            thumbnail: null,
+            thumbnail: appReg[app.id]?.icon || null,
             isApp: true,
             appId: app.id,
             hasParam: !!app.param,
@@ -718,7 +815,7 @@ function ContentSearchCombobox({ value, onChange }) {
     };
 
     searchContent();
-  }, [debouncedSearch]);
+  }, [debouncedSearch, value, browseItems.length]);
 
   const handleOptionSelect = async (val) => {
     // Check if this is an app with params
@@ -729,20 +826,14 @@ function ContentSearchCombobox({ value, onChange }) {
       setParamInput('');
       const { resolveParamOptions } = await import('../../../lib/appRegistry.js');
       const options = await resolveParamOptions(item.param);
-      setParamOptions(options);
+      // Prepend "Random" option for dropdown-style params
+      setParamOptions(options ? [{ value: 'random', label: 'Random' }, ...options] : options);
       combobox.closeDropdown();
       return;
     }
 
     onChange(val);
-    setSearchQuery('');
-    setIsEditing(false);
-    setBrowseItems([]);
-    setNavStack([]);
-    setCurrentParent(null);
-    setPendingApp(null);
-    setParamOptions(null);
-    combobox.closeDropdown();
+    resetComboboxState();
   };
 
   // Fetch children of a container for drill-down
@@ -795,6 +886,7 @@ function ContentSearchCombobox({ value, onChange }) {
       }
     } catch (err) {
       console.error('Failed to fetch container children:', err);
+      setHighlightedIdx(0);
     } finally {
       setLoadingBrowse(false);
     }
@@ -898,17 +990,11 @@ function ContentSearchCombobox({ value, onChange }) {
       setHighlightedIdx(contextIndex >= 0 ? contextIndex : 0);
 
       if (contextIndex >= 0) {
-        setTimeout(() => {
-          if (optionsRef.current) {
-            const contextOption = optionsRef.current.querySelector(`[data-value="${normalizedContextId}"]`);
-            if (contextOption) {
-              contextOption.scrollIntoView({ block: 'center' });
-            }
-          }
-        }, 50);
+        scrollOptionIntoView(`[data-value="${normalizedContextId}"]`);
       }
     } catch (err) {
       console.error('Failed to load library level:', err);
+      setHighlightedIdx(0);
     } finally {
       setLoadingBrowse(false);
     }
@@ -979,17 +1065,11 @@ function ContentSearchCombobox({ value, onChange }) {
       const parentIndex = siblings.findIndex(s => s.value === `${source}:${parentKey}`);
       if (parentIndex >= 0) {
         setHighlightedIdx(parentIndex);
-        setTimeout(() => {
-          if (optionsRef.current) {
-            const parentOption = optionsRef.current.querySelector(`[data-value="${source}:${parentKey}"]`);
-            if (parentOption) {
-              parentOption.scrollIntoView({ block: 'center' });
-            }
-          }
-        }, 50);
+        scrollOptionIntoView(`[data-value="${source}:${parentKey}"]`);
       }
     } catch (err) {
       console.error('Failed to load parent level:', err);
+      setHighlightedIdx(0);
     } finally {
       setLoadingBrowse(false);
     }
@@ -1024,7 +1104,7 @@ function ContentSearchCombobox({ value, onChange }) {
     if (source === 'app') {
       try {
         setLoadingBrowse(true);
-        const { resolveAppDisplay, resolveParamOptions, getAllApps, getApp } = await import('../../../lib/appRegistry.js');
+        const { resolveAppDisplay, resolveParamOptions, getAllApps, getApp, APP_REGISTRY } = await import('../../../lib/appRegistry.js');
         const appInfo = resolveAppDisplay(value);
 
         let siblings;
@@ -1032,15 +1112,19 @@ function ContentSearchCombobox({ value, onChange }) {
 
         if (appInfo && appInfo.paramName) {
           // Parameterized app — siblings are the param options
-          const options = await resolveParamOptions(getApp(appInfo.appId)?.param);
+          const appEntry = getApp(appInfo.appId);
+          const options = await resolveParamOptions(appEntry?.param);
           if (options) {
-            siblings = options.map(o => ({
-              value: `app:${appInfo.appId}/${o.value}`,
-              title: `${appInfo.label} / ${o.label}`,
-              source: 'app',
-              type: 'app',
-              thumbnail: null,
-            }));
+            siblings = [
+              { value: `app:${appInfo.appId}/random`, title: `${appInfo.label} / Random`, source: 'app', type: 'app', thumbnail: null },
+              ...options.map(o => ({
+                value: `app:${appInfo.appId}/${o.value}`,
+                title: `${appInfo.label} / ${o.label}`,
+                source: 'app',
+                type: 'app',
+                thumbnail: o.thumbnail || appEntry?.icon || null,
+              }))
+            ];
             parentTitle = appInfo.label;
           } else {
             // Free-text param (e.g. art) — no siblings, show all apps
@@ -1049,7 +1133,7 @@ function ContentSearchCombobox({ value, onChange }) {
               title: a.label,
               source: 'app',
               type: 'app',
-              thumbnail: null,
+              thumbnail: APP_REGISTRY[a.id]?.icon || null,
             }));
             parentTitle = 'Apps';
           }
@@ -1060,7 +1144,7 @@ function ContentSearchCombobox({ value, onChange }) {
             title: a.label,
             source: 'app',
             type: 'app',
-            thumbnail: null,
+            thumbnail: APP_REGISTRY[a.id]?.icon || null,
           }));
           parentTitle = 'Apps';
         }
@@ -1073,20 +1157,58 @@ function ContentSearchCombobox({ value, onChange }) {
         const currentIndex = siblings.findIndex(s => s.value === normalizedVal);
         setHighlightedIdx(currentIndex >= 0 ? currentIndex : 0);
 
-        setTimeout(() => {
-          if (optionsRef.current) {
-            const currentOption = optionsRef.current.querySelector(`[data-value="${normalizedVal}"]`);
-            if (currentOption) {
-              currentOption.scrollIntoView({ block: 'center' });
-            }
-          }
-        }, 50);
+        scrollOptionIntoView(`[data-value="${normalizedVal}"]`);
       } catch (err) {
         console.error('Failed to fetch app siblings:', err);
       } finally {
         setLoadingBrowse(false);
       }
       return;
+    }
+
+    // Local content collections — try collection endpoint for sources without parent hierarchy
+    // This covers hymn, primary, and any future collections added to the SingingAdapter
+    if (!contentInfo.parent && !contentInfo.library) {
+      try {
+        setLoadingBrowse(true);
+        const response = await fetch(`/api/v1/local-content/collection/${source}`);
+        if (response.ok) {
+          const data = await response.json();
+          const items = data.items || [];
+          if (items.length > 0) {
+            const siblings = items.map(item => ({
+              value: item.id,
+              title: item.title,
+              source: item.source || source,
+              type: item.type,
+              thumbnail: item.thumbnail,
+            }));
+            setBrowseItems(siblings);
+            const collectionTitle = source.charAt(0).toUpperCase() + source.slice(1);
+            setCurrentParent({
+              id: `${source}:`,
+              title: collectionTitle,
+              source,
+              thumbnail: items[0]?.thumbnail || null,
+              parentKey: null,
+              libraryId: null
+            });
+
+            const normalizedVal = value?.replace(/:\s+/g, ':');
+            const currentIndex = siblings.findIndex(s => s.value === normalizedVal);
+            setHighlightedIdx(currentIndex >= 0 ? currentIndex : 0);
+
+            scrollOptionIntoView(`[data-value="${normalizedVal}"]`);
+            setLoadingBrowse(false);
+            return;
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch collection siblings:', err);
+      } finally {
+        setLoadingBrowse(false);
+      }
+      // Fall through to default parent-based browsing if collection returned empty
     }
 
     try {
@@ -1145,11 +1267,11 @@ function ContentSearchCombobox({ value, onChange }) {
         };
       } else if (source === 'freshvideo') {
         // Freshvideo channels - siblings are other channels in video/news
-        childrenUrl = `/api/v1/info/filesystem/video/news`;
+        childrenUrl = `/api/v1/info/files/video/news`;
         parentInfo = {
-          id: 'filesystem:video/news',
+          id: 'files:video/news',
           title: 'Fresh Video Channels',
-          source: 'filesystem',
+          source: 'files',
           thumbnail: null,
           parentKey: null,
           libraryId: null
@@ -1191,7 +1313,7 @@ function ContentSearchCombobox({ value, onChange }) {
       const childrenData = await childrenResponse.json();
       const childItems = childrenData.items || [];
       const siblings = childItems.map(item => {
-        // Extract source from item or from compound ID (e.g., "filesystem:media:path" or "plex:123")
+        // Extract source from item or from compound ID (e.g., "media:path" or "plex:123")
         const itemSource = item.source || item.id?.split(':')[0];
         return {
         value: item.id || `${itemSource}:${item.localId}`,
@@ -1213,14 +1335,7 @@ function ContentSearchCombobox({ value, onChange }) {
       setHighlightedIdx(currentIndex >= 0 ? currentIndex : 0);
 
       // Scroll to current item after render
-      setTimeout(() => {
-        if (optionsRef.current) {
-          const currentOption = optionsRef.current.querySelector(`[data-value="${normalizedVal}"]`);
-          if (currentOption) {
-            currentOption.scrollIntoView({ block: 'center' });
-          }
-        }
-      }, 50);
+      scrollOptionIntoView(`[data-value="${normalizedVal}"]`);
     } catch (err) {
       console.error('Failed to fetch siblings:', err);
     } finally {
@@ -1230,9 +1345,26 @@ function ContentSearchCombobox({ value, onChange }) {
 
   const handleStartEditing = () => {
     setIsEditing(true);
-    // For app items, don't pre-populate search — show siblings (browse) instead
-    setSearchQuery(value?.startsWith('app:') ? '' : (value || ''));
+    const q = value || '';
+    setSearchQuery(q);
     combobox.openDropdown();
+
+    // Auto-select the part after the colon so typing replaces just the
+    // local ID (e.g. "147" in "hymn: 147") while keeping the source prefix.
+    // Backspace on a fully-selected suffix clears everything for a fresh start.
+    const colonIdx = q.indexOf(':');
+    if (colonIdx >= 0) {
+      freshOpenRef.current = true;
+      requestAnimationFrame(() => {
+        const el = inputRef.current;
+        if (el) {
+          const selStart = colonIdx + 1;
+          // skip the space after colon if present
+          const trimmedStart = q[selStart] === ' ' ? selStart + 1 : selStart;
+          el.setSelectionRange(trimmedStart, q.length);
+        }
+      });
+    }
 
     // Check cache first
     const cached = getCacheEntry(value);
@@ -1247,14 +1379,7 @@ function ContentSearchCombobox({ value, onChange }) {
       const currentIndex = cached.data.browseItems.findIndex(s => s.value === normalizedVal);
       setHighlightedIdx(currentIndex >= 0 ? currentIndex : 0);
       // Scroll to current item
-      setTimeout(() => {
-        if (optionsRef.current) {
-          const currentOption = optionsRef.current.querySelector(`[data-value="${normalizedVal}"]`);
-          if (currentOption) {
-            currentOption.scrollIntoView({ block: 'center' });
-          }
-        }
-      }, 50);
+      scrollOptionIntoView(`[data-value="${normalizedVal}"]`);
     } else if (cached?.status === 'pending' && cached.promise) {
       // In flight - wait for it
       setLoadingBrowse(true);
@@ -1265,14 +1390,7 @@ function ContentSearchCombobox({ value, onChange }) {
           const normalizedVal = value?.replace(/:\s+/g, ':');
           const currentIndex = data.browseItems.findIndex(s => s.value === normalizedVal);
           setHighlightedIdx(currentIndex >= 0 ? currentIndex : 0);
-          setTimeout(() => {
-            if (optionsRef.current) {
-              const currentOption = optionsRef.current.querySelector(`[data-value="${normalizedVal}"]`);
-              if (currentOption) {
-                currentOption.scrollIntoView({ block: 'center' });
-              }
-            }
-          }, 50);
+          scrollOptionIntoView(`[data-value="${normalizedVal}"]`);
         }
         setLoadingBrowse(false);
       });
@@ -1284,79 +1402,173 @@ function ContentSearchCombobox({ value, onChange }) {
 
   const handleBlur = () => {
     // Delay to allow click events on dropdown to fire first
-    setTimeout(() => {
-      combobox.closeDropdown();
-      setSearchQuery('');
-      setIsEditing(false);
-      setBrowseItems([]);
-      setNavStack([]);
-      setCurrentParent(null);
-      setHighlightedIdx(-1);
-    }, 150);
+    blurTimeoutRef.current = setTimeout(() => resetComboboxState(), 150);
   };
 
   // Normalize value for comparison (handle "plex: 123" vs "plex:123")
   const normalizeValue = (v) => v?.replace(/:\s+/g, ':');
   const normalizedValue = normalizeValue(value);
 
-  // Use search results if searching, otherwise show browse items
-  const displayItems = searchQuery.length >= 2 ? searchResults : browseItems;
+  // Use search results if actively searching, otherwise show browse items
+  // When searchQuery matches the original value, we're browsing (not searching)
+  const isActiveSearch = searchQuery.length >= 2 && searchQuery !== value;
+
+  // When browseItems are loaded and user refines with same source prefix, filter locally
+  const sourcePrefix = value?.split(':')[0];
+  const queryMatchesSource = sourcePrefix && searchQuery.startsWith(sourcePrefix + ':');
+  const localFilterQuery = queryMatchesSource ? searchQuery.split(':').slice(1).join(':').trim() : '';
+  const canFilterLocally = browseItems.length > 0 && queryMatchesSource && isActiveSearch;
+
+  const displayItems = canFilterLocally
+    ? browseItems.filter(item => {
+        if (!localFilterQuery) return true;
+        const q = localFilterQuery.toLowerCase();
+        const num = item.value?.split(':')[1]?.trim();
+        return (num && num.startsWith(q)) || item.title?.toLowerCase().includes(q);
+      })
+    : isActiveSearch ? searchResults : browseItems;
 
   // Keyboard handler for navigation
   const handleKeyDown = async (e) => {
+    // On fresh open, Backspace clears the entire input (prefix + selected suffix)
+    // so the user can start with a completely different content type.
+    if (e.key === 'Backspace' && freshOpenRef.current) {
+      e.preventDefault();
+      freshOpenRef.current = false;
+      setSearchQuery('');
+      setHighlightedIdx(0);
+      return;
+    }
+    // Any non-navigation key clears the fresh-open state
+    if (freshOpenRef.current && !['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+      freshOpenRef.current = false;
+    }
+
     const items = displayItems;
     if (items.length === 0) return;
 
     if (e.key === 'ArrowDown') {
       e.preventDefault();
-      setHighlightedIdx(prev => Math.min(prev + 1, items.length - 1));
+      setHighlightedIdx(prev => (prev + 1) % items.length);
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
-      setHighlightedIdx(prev => Math.max(prev - 1, 0));
+      setHighlightedIdx(prev => prev <= 0 ? items.length - 1 : prev - 1);
     } else if (e.key === 'ArrowRight') {
-      e.preventDefault();
       const item = items[highlightedIdx];
-      if (item) {
+      if (item && isContainerItem(item)) {
+        e.preventDefault();
         await drillDown(item);
       }
+      // If not a container, let default cursor movement happen
     } else if (e.key === 'ArrowLeft') {
-      e.preventDefault();
-      await goUp();
+      // Only navigate up when cursor is at position 0 (or in browse mode)
+      const cursorAtStart = e.target.selectionStart === 0;
+      if (cursorAtStart || !isActiveSearch) {
+        e.preventDefault();
+        await goUp();
+      }
+      // Otherwise, let default cursor movement happen
     } else if (e.key === 'Enter') {
       e.preventDefault();
       const item = items[highlightedIdx];
       if (item) {
         handleOptionSelect(item.value);
+      } else if (searchQuery) {
+        // No matching item highlighted — save raw text as-is
+        onChange(searchQuery);
+        resetComboboxState();
       }
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      resetComboboxState();
+    } else if (e.key === 'Tab') {
+      // Tab: close dropdown without selecting, let natural focus move happen
+      resetComboboxState();
+      // Don't preventDefault — allow Tab to move focus naturally
     }
   };
 
-  // Scroll highlighted item into view only if it's outside the visible area
-  // Uses minimal scrolling - just enough to bring the item into view
+  // VS Code file-picker scroll: no scroll while item is visible, ease-snap
+  // to nearest edge when it goes off-screen, instant jump + flash on pac-man wrap.
   useEffect(() => {
-    if (highlightedIdx >= 0 && optionsRef.current) {
-      const container = optionsRef.current;
-      const options = container.querySelectorAll('[data-value]');
-      const option = options[highlightedIdx];
-      if (option) {
-        // Calculate positions relative to the scroll container
-        const optionTop = option.offsetTop;
-        const optionBottom = optionTop + option.offsetHeight;
-        const containerScrollTop = container.scrollTop;
-        const containerVisibleBottom = containerScrollTop + container.clientHeight;
+    if (scrollAnimRef.current) cancelAnimationFrame(scrollAnimRef.current);
 
-        // Only scroll the minimum amount needed
-        if (optionTop < containerScrollTop) {
-          // Option is above visible area - scroll up just enough
-          container.scrollTop = optionTop;
-        } else if (optionBottom > containerVisibleBottom) {
-          // Option is below visible area - scroll down just enough
-          container.scrollTop = optionBottom - container.clientHeight;
-        }
-        // Otherwise, option is fully visible - don't scroll at all
+    if (highlightedIdx < 0 || !optionsRef.current) {
+      prevIdxRef.current = highlightedIdx;
+      return;
+    }
+
+    const container = optionsRef.current;
+    const opts = container.querySelectorAll('[data-value]');
+    const option = opts[highlightedIdx];
+    if (!option) {
+      prevIdxRef.current = highlightedIdx;
+      return;
+    }
+
+    const prevIdx = prevIdxRef.current;
+    const itemCount = opts.length;
+
+    // On initial render (prevIdx === -1), skip edge-snap entirely —
+    // scrollOptionIntoView handles initial positioning via rAF.
+    if (prevIdx === -1) {
+      prevIdxRef.current = highlightedIdx;
+      return;
+    }
+
+    // Detect pac-man wrap
+    const isWrap = (prevIdx === itemCount - 1 && highlightedIdx === 0)
+                || (prevIdx === 0 && highlightedIdx === itemCount - 1);
+
+    if (isWrap) {
+      // Instant jump — no animation
+      if (highlightedIdx === 0) {
+        container.scrollTop = 0;
+      } else {
+        container.scrollTop = container.scrollHeight - container.clientHeight;
+      }
+      // Trigger flash
+      option.classList.add('wrap-flash');
+      const onEnd = () => { option.classList.remove('wrap-flash'); option.removeEventListener('animationend', onEnd); };
+      option.addEventListener('animationend', onEnd);
+    } else {
+      // Normal navigation — ease-snap if off-screen.
+      // Reserve 1 row of padding at the top so the item isn't jammed
+      // against the dropdown header (navigation hint / breadcrumb).
+      const headerPad = option.offsetHeight * 2.5;
+      const optTop = option.offsetTop;
+      const optBot = optTop + option.offsetHeight;
+      const visTop = container.scrollTop;
+      const visBot = visTop + container.clientHeight;
+
+      let target = null;
+      if (optTop < visTop + headerPad) {
+        target = Math.max(0, optTop - headerPad);
+      } else if (optBot > visBot) {
+        target = optBot - container.clientHeight;
+      }
+
+      if (target !== null) {
+        const start = container.scrollTop;
+        const delta = target - start;
+        const duration = 120;
+        const t0 = performance.now();
+        const step = (now) => {
+          const p = Math.min((now - t0) / duration, 1);
+          const ease = 1 - (1 - p) * (1 - p); // ease-out quad
+          container.scrollTop = start + delta * ease;
+          if (p < 1) scrollAnimRef.current = requestAnimationFrame(step);
+        };
+        scrollAnimRef.current = requestAnimationFrame(step);
       }
     }
-  }, [highlightedIdx]);
+
+    prevIdxRef.current = highlightedIdx;
+
+    return () => {
+      if (scrollAnimRef.current) cancelAnimationFrame(scrollAnimRef.current);
+    };
+  }, [highlightedIdx, displayItems.length]);
 
   const options = displayItems.map((item, idx) => (
     <ContentOption
@@ -1396,7 +1608,7 @@ function ContentSearchCombobox({ value, onChange }) {
     if (!value) {
       return (
         <Group gap={6} wrap="nowrap" onClick={handleStartEditing} className="content-display">
-          <Avatar size={36} radius="sm" color="dark">
+          <Avatar size={28} radius="sm" color="dark">
             <IconPhoto size={16} />
           </Avatar>
           <Text size="xs" c="dimmed">Click to select content...</Text>
@@ -1455,8 +1667,9 @@ function ContentSearchCombobox({ value, onChange }) {
               onFocus={() => combobox.openDropdown()}
               onKeyDown={(e) => {
                 if (e.key === 'Escape') cancelParam();
+                if (e.key === 'Enter' && paramInput) finishWithParam(paramInput);
               }}
-              placeholder={`Choose ${pendingApp.param.name}...`}
+              placeholder={`Choose or type ${pendingApp.param.name}...`}
               autoFocus
               styles={{ input: { minHeight: 24, height: 24, fontSize: 12 } }}
             />
@@ -1507,7 +1720,7 @@ function ContentSearchCombobox({ value, onChange }) {
       onOptionSubmit={handleOptionSelect}
       withinPortal={true}
     >
-      <Combobox.Target>
+      <Combobox.Target withKeyboardNavigation={false}>
         <InputBase
           ref={inputRef}
           size="xs"
@@ -1522,7 +1735,10 @@ function ContentSearchCombobox({ value, onChange }) {
           }}
           onKeyDown={handleKeyDown}
           onClick={() => combobox.openDropdown()}
-          onFocus={() => combobox.openDropdown()}
+          onFocus={() => {
+            if (blurTimeoutRef.current) clearTimeout(blurTimeoutRef.current);
+            combobox.openDropdown();
+          }}
           onBlur={handleBlur}
           placeholder={navStack.length > 0 ? "Filter..." : "Search or browse..."}
           autoFocus={isEditing}
@@ -1567,7 +1783,7 @@ function ContentSearchCombobox({ value, onChange }) {
         )}
 
         {/* Navigation hint */}
-        {displayItems.length > 0 && !searchQuery && (
+        {displayItems.length > 0 && (!isActiveSearch || canFilterLocally) && (
           <Box px="xs" py={2} style={{ borderBottom: '1px solid var(--mantine-color-dark-5)' }}>
             <Text size="xs" c="dimmed">
               ↑↓ navigate • ← back/up • → drill down • Enter select
@@ -1576,7 +1792,7 @@ function ContentSearchCombobox({ value, onChange }) {
         )}
 
         {/* Current parent header - shows what container we're browsing */}
-        {currentParent && !searchQuery && (
+        {currentParent && (!isActiveSearch || canFilterLocally) && (
           <Box
             px="xs"
             py={4}
@@ -1604,10 +1820,10 @@ function ContentSearchCombobox({ value, onChange }) {
           {(searching || loadingBrowse) && displayItems.length === 0 && (
             <Combobox.Empty>{searching ? 'Searching...' : 'Loading...'}</Combobox.Empty>
           )}
-          {!searching && !loadingBrowse && displayItems.length === 0 && searchQuery.length >= 2 && (
+          {!searching && !loadingBrowse && displayItems.length === 0 && (isActiveSearch || canFilterLocally) && (
             <Combobox.Empty>No results found</Combobox.Empty>
           )}
-          {!searching && !loadingBrowse && displayItems.length === 0 && searchQuery.length < 2 && navStack.length === 0 && (
+          {!searching && !loadingBrowse && displayItems.length === 0 && !isActiveSearch && navStack.length === 0 && (
             <Combobox.Empty>Type to search or wait for items</Combobox.Empty>
           )}
           {!searching && !loadingBrowse && displayItems.length === 0 && navStack.length > 0 && (
@@ -1646,6 +1862,7 @@ function ActionChipSelect({ value, onChange }) {
         combobox.closeDropdown();
       }}
       withinPortal={true}
+      classNames={{ dropdown: 'action-dropdown' }}
     >
       <Combobox.Target>
         <Badge
@@ -1998,7 +2215,44 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
     id: item.index
   });
 
-  const { getNearbyItems, setContentInfo, contentInfoMap } = useListsContext();
+  const { getNearbyItems, setContentInfo, contentInfoMap, inUseImages } = useListsContext();
+
+  const [imagePickerOpen, setImagePickerOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+
+  // Resolve thumbnail for icon column: override image > input thumbnail
+  const [rowThumbnail, setRowThumbnail] = useState(null);
+  const [inheritedImage, setInheritedImage] = useState(null);
+  useEffect(() => {
+    // Resolve inherited image from content input
+    if (item.input) {
+      const cached = contentInfoMap.get(item.input);
+      if (cached?.thumbnail) { setInheritedImage(cached.thumbnail); }
+      else {
+        fetchContentMetadata(item.input).then(info => {
+          if (info?.thumbnail) setInheritedImage(info.thumbnail);
+        });
+      }
+    } else {
+      setInheritedImage(null);
+    }
+
+    // If item has an override image, use it for the row
+    if (item.image) {
+      const img = item.image.startsWith('/media/') || item.image.startsWith('media/')
+        ? DaylightMediaPath(item.image)
+        : item.image;
+      setRowThumbnail(img);
+      return;
+    }
+    // Otherwise inherit from input content
+    if (!item.input) { setRowThumbnail(null); return; }
+    const cached = contentInfoMap.get(item.input);
+    if (cached?.thumbnail) { setRowThumbnail(cached.thumbnail); return; }
+    fetchContentMetadata(item.input).then(info => {
+      if (info?.thumbnail) setRowThumbnail(info.thumbnail);
+    });
+  }, [item.image, item.input, contentInfoMap]);
 
   // Inline editing state
   const [editingLabel, setEditingLabel] = useState(false);
@@ -2098,6 +2352,20 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
         <Text size="xs" c="dimmed">{item.index + 1}</Text>
       </div>
 
+      <div className="col-icon" onClick={() => setImagePickerOpen(true)}>
+        <Avatar src={rowThumbnail} size={28} radius="sm">
+          {item.label ? item.label.charAt(0).toUpperCase() : '#'}
+        </Avatar>
+      </div>
+      <ImagePickerModal
+        opened={imagePickerOpen}
+        onClose={() => setImagePickerOpen(false)}
+        currentImage={item.image || null}
+        inheritedImage={inheritedImage}
+        onSave={(path) => onUpdate({ image: path })}
+        inUseImages={inUseImages || new Set()}
+      />
+
       <div className="col-label">
         {editingLabel ? (
           <div className="inline-edit">
@@ -2123,6 +2391,42 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
           value={item.action || 'Play'}
           onChange={handleActionChange}
         />
+      </div>
+
+      <div className="col-preview">
+        {(item.action === 'Play' || !item.action) && item.input && (
+          <ActionIcon
+            variant="subtle"
+            size="sm"
+            color="gray"
+            onClick={() => setPreviewOpen(true)}
+            title="Preview"
+          >
+            <IconPlayerPlay size={14} />
+          </ActionIcon>
+        )}
+        <Modal
+          opened={previewOpen}
+          onClose={() => setPreviewOpen(false)}
+          title={item.label || 'Preview'}
+          centered
+          size="lg"
+        >
+          {previewOpen && (
+            <Box style={{ minHeight: 200, aspectRatio: '16 / 9', position: 'relative', background: '#000' }}>
+              <Player
+                play={{
+                  contentId: toCanonicalContentId(item.input),
+                  volume: item.volume,
+                  playbackRate: item.playbackRate,
+                }}
+                advance={() => setPreviewOpen(false)}
+                clear={() => setPreviewOpen(false)}
+                playerType="preview"
+              />
+            </Box>
+          )}
+        </Modal>
       </div>
 
       <div className="col-input">
@@ -2217,6 +2521,11 @@ function EmptyItemRow({ onAdd, nextIndex, isWatchlist }) {
       <div className="col-index">
         <Text size="xs" c="dimmed">{nextIndex + 1}</Text>
       </div>
+      <div className="col-icon">
+        <Avatar size={28} radius="sm" color="dark">
+          <IconPlus size={14} />
+        </Avatar>
+      </div>
       <div className="col-label">
         <TextInput
           ref={labelInputRef}
@@ -2231,6 +2540,7 @@ function EmptyItemRow({ onAdd, nextIndex, isWatchlist }) {
       <div className="col-action">
         <ActionChipSelect value={action} onChange={setAction} />
       </div>
+      <div className="col-preview"></div>
       <div className="col-input">
         <ContentSearchCombobox value={input} onChange={setInput} />
       </div>

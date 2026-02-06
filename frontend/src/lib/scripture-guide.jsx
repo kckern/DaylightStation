@@ -8,7 +8,7 @@ export function convertVersesToScriptureData(verses) {
   // Helper to create a new block
   const createBlock = (elementType) => {
     return {
-      e: elementType,      // "p", "blockquote", "h2", etc.
+      e: elementType,      // "p", "blockquote", "h4", etc.
       verse_ids: [],       // Which verse IDs are part of this block
       verses: [],          // The verse numbers (e.g., "1", "2", etc.)
       contents: []         // Array of { line: string, indent: boolean } objects
@@ -29,14 +29,14 @@ export function convertVersesToScriptureData(verses) {
   verses.forEach((verse) => {
     const { verse_id, verse: verseNumber, format, headings, text } = verse;
 
-    // If there is a heading, that becomes its own block (h2)
+    // If there is a heading, that becomes its own block (h4)
     if (headings) {
       const {heading,summary,background, headnote} = headings;
       // Close out any existing block first
       finalizeBlock();
       if(background) blocks.push({  e: "p",  className: "background", contents: [{ line: background}] });
       if(summary) blocks.push({  e: "p",  className: "summary", contents: [{ line: summary}] });
-      if(heading) blocks.push({  e: "h2",  heading});
+      if(heading) blocks.push({  e: "h4",  heading});
       if(headnote) blocks.push({  e: "p",  className: "headnote", contents: [{ line: headnote}] });
     }
 
@@ -167,7 +167,7 @@ export function scriptureDataToJSX(blocks) {
 
         // Decide how to render based on the “e” property
         switch (e) {
-          case "h2":
+          case "h4":
             return (
               <h4 key={index} className="heading">
                 {heading.replace(/｢\d+｣/g, "")}

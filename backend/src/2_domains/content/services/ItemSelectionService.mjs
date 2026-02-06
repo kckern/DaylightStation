@@ -69,7 +69,7 @@ const STRATEGIES = {
 const INFERENCE_RULES = [
   { match: (ctx) => ctx.containerType === 'watchlist', strategy: 'watchlist' },
   { match: (ctx) => ctx.containerType === 'program', strategy: 'program' },
-  { match: (ctx) => ctx.containerType === 'folder', strategy: 'watchlist' }, // deprecated, maps to watchlist
+  { match: (ctx) => ctx.containerType === 'folder', strategy: 'watchlist' }, // legacy alias, maps to watchlist
   { match: (ctx) => ctx.containerType === 'sequential', strategy: 'sequential' }, // scripture, audiobooks
   { match: (ctx) => ctx.containerType === 'freshvideo', strategy: 'freshvideo' }, // news, teded, etc.
   { match: (ctx) => ctx.containerType === 'album', strategy: 'album' },
@@ -281,7 +281,7 @@ export class ItemSelectionService {
    *
    * @param {Object} context - Selection context
    * @param {string} [context.action] - play, queue, display, list, read
-   * @param {string} [context.containerType] - folder, album, playlist, search
+   * @param {string} [context.containerType] - watchlist, album, playlist, search
    * @param {Object} [context.query] - Query filters (person, time, text)
    * @param {Object} [overrides] - Explicit overrides
    * @param {string} [overrides.strategy] - Named strategy to use
@@ -332,7 +332,7 @@ export class ItemSelectionService {
    * @param {Array} items - Pre-enriched items (with metadata.percent, etc.)
    * @param {Object} context - Selection context
    * @param {string} [context.action] - play, queue, display, list, read
-   * @param {string} [context.containerType] - folder, album, playlist, search
+   * @param {string} [context.containerType] - watchlist, album, playlist, search
    * @param {Object} [context.query] - Query filters used (person, time, text)
    * @param {Date} context.now - Current date (required for filtering)
    * @param {Object} [overrides] - Explicit strategy overrides

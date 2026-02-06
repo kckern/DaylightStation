@@ -744,88 +744,140 @@ Example: `plex:nt/kjvf/25065` = Luke 4 with KJV Formatted text
 
 ### Route Overview
 
-All routes are prefixed with `/api/v1/`. The primary content access routes are:
+All routes are prefixed with `/api/v1/`. The five action routes plus supplementary routes:
 
-| Route | Purpose | Returns |
-|-------|---------|---------|
-| `/info/:source/:id` | Item metadata | Metadata, capabilities[] |
-| `/display/:source/:id` | Displayable image | Image redirect or stream |
-| `/play/:source/:id` | Play info with resume | Playable with resume position |
-| `/list/:source/:id` | List container contents | Children array with action objects |
-| `/read/:source/:id` | Readable content | Reader content, format info |
-| `/play/log` | Log playback progress | Updated progress state |
-| `/content/query/search` | Unified search | Search results |
-| `/content/query/list` | List containers | Containers array |
+| Route | Intent | Returns |
+|-------|--------|---------|
+| `/info/:source/:id` | "What is this?" | Metadata, capabilities[] |
+| `/display/:source/:id` | "Show me this" | Image (302 redirect to proxy) |
+| `/list/:source/:id` | "What's inside?" | Children array with action objects |
+| `/play/:source/:id` | "Play this" | mediaUrl, resumePosition, duration |
+| `/read/:source/:id` | "Read this" | Reader content, format info (future) |
+| `/play/log` | Log progress | Updated progress state |
+| `/content/query/search` | Search | Search results |
+| `/content/query/list` | Browse containers | Containers array |
 
-### Deprecated Routes (use action routes instead)
+### ID Resolution (All Action Routes)
 
-| Deprecated Route | Replacement |
-|------------------|-------------|
-| `/item/:source/:id` | `/info/:source/:id` |
-| `/content/item/:source/*` | `/info/:source/:id` |
-| `/content/:source/image/:id` | `/display/:source/:id` |
-| `/content/:source/info/:id` | `/info/:source/:id` |
-| `/content/playables/:source/*` | `/list/:source/:id` (filter by playable) |
+All five action routes support three equivalent ID formats:
 
-### Action Routes
-
-The action routes are intent-driven endpoints that map directly to query-combinatorics actions.
-
-**GET /api/v1/info/:source/:id**
-
-Returns metadata without assuming intent. Use when you need to inspect capabilities before acting.
+| Format | Example | Resolution |
+|--------|---------|------------|
+| Explicit path | `/info/plex/12345` | source=plex, id=12345 |
+| Compound ID | `/info/plex:12345` | Parsed from compound |
+| Heuristic | `/info/12345` | digits->plex, UUID->immich, extension->filesystem |
 
 ```
-GET /api/v1/info/plex/672445                    # Get item metadata and capabilities
-GET /api/v1/info/singing/hymn/123               # Hymn metadata
+/api/v1/info/plex/12345  ≡  /api/v1/info/plex:12345  ≡  /api/v1/info/12345
 ```
 
-**GET /api/v1/display/:source/:id**
+### Known Sources
 
-Returns or redirects to displayable image. Aggressive caching (images are static).
+| Source | ID Format | Capabilities |
+|--------|-----------|-------------|
+| `plex` | digits (ratingKey) | playable, displayable (thumb), listable |
+| `immich` | UUID | displayable, playable (video), listable |
+| `audiobookshelf` | UUID | playable, readable, listable |
+| `komga` | UUID | readable, listable |
+| `folder` | path | listable, mixed references |
+| `canvas` | path | displayable, listable |
+| `filesystem` | path | playable, listable |
+| `singing` | `{collection}/{number}` | playable (with synced content) |
+| `narrated` | `{collection}/{path}` | playable (with synced content) |
+| `list` | `{type}:{name}` | listable (menus, programs, watchlists) |
+| `local-content` | `{type}/{id}` | playable (scripture, hymns, talks) |
+
+Alias: `local` resolves to `folder`.
+
+---
+
+### Action Route Details
+
+#### GET /api/v1/info/:source/:id
+
+Returns metadata without assuming intent. Use to inspect capabilities before acting.
+
+**Does NOT handle modifiers.** If you append `/shuffle` or `/playable`, they are parsed
+but silently ignored. For filtered/shuffled results, use `/list/` instead.
+
+```
+GET /api/v1/info/plex/672445                    # Item metadata + capabilities[]
+GET /api/v1/info/singing/hymn/123               # Hymn metadata with synced content
+GET /api/v1/info/folder/TVApp                   # Folder container metadata
+```
+
+**Response:**
+```json
+{
+  "id": "plex:672445",
+  "source": "plex",
+  "type": "show",
+  "title": "Show Name",
+  "capabilities": ["listable", "displayable"],
+  "metadata": { "year": 2024 },
+  "plex": "672445"
+}
+```
+
+For playable leaf items, also includes: `mediaUrl`, `mediaType`, `duration`, `thumbnail`.
+
+---
+
+#### GET /api/v1/display/:source/:id
+
+Returns or redirects (302) to displayable image via proxy.
 
 ```
 GET /api/v1/display/plex/672445                 # Thumbnail for Plex item
 GET /api/v1/display/immich/abc-def-123          # Photo from Immich
 ```
 
-**GET /api/v1/list/:source/:id**
+Cache: Aggressive (images are static).
 
-Returns children of a container with action objects.
+---
+
+#### GET /api/v1/list/:source/:id
+
+Returns children of a container. This is the route for filtering and ordering.
+
+**Path Modifiers (appended as URL path segments, NOT query params):**
+
+| Modifier | Effect |
+|----------|--------|
+| `/playable` | Filter to playable children only |
+| `/shuffle` | Randomize order |
+| `/recent_on_top` | Sort by recent menu selections |
+| `/playable,shuffle` | Comma-separated: filter AND shuffle |
 
 ```
-GET /api/v1/list/plex/672445                    # Container children
+GET /api/v1/list/plex/672445                    # All children
+GET /api/v1/list/plex/672445/playable           # Playable episodes only
+GET /api/v1/list/plex/672445/shuffle            # Shuffled children
+GET /api/v1/list/plex/672445/playable,shuffle   # Playable + shuffled
 GET /api/v1/list/folder/watchlist/FHE           # Watchlist items
+GET /api/v1/list/folder/TVApp/recent_on_top     # Sorted by recent selections
 ```
 
-**Query Parameters (for /list/):**
-- `?select=<strategy>` - Use ItemSelectionService to pick item from container
-  - `select=watchlist` - Watchlist strategy (priority, skip watched, filter by days)
-  - `select=album` - Album strategy (track order)
-  - `select=sequential` - Sequential next item
-- `?playable=true` - Filter to playable items only
-- `?shuffle=true` - Return items in random order
+> **IMPORTANT: Query params like `?playable=true` or `?shuffle=true` are NOT supported
+> by the list router.** The backend's `parseModifiers()` only reads path segments.
+> Using query params will silently return unfiltered results.
 
-**Examples:**
-```
-GET /api/v1/info/plex/672445                    # Container info
-GET /api/v1/list/plex/672445?playable=true      # Playable episodes only
-GET /api/v1/list/plex/672445?select=watchlist   # Next unwatched item
-GET /api/v1/list/narrated/scripture/nt?select=watchlist  # Next unfinished NT chapter
-GET /api/v1/info/singing/hymn/123               # Hymn with synced content
-GET /api/v1/list/folder/watchlist/FHE           # Watchlist items
-```
+---
 
-### Play Routes: `/api/v1/play/*`
+#### GET /api/v1/play/:source/:id
 
-**GET /api/v1/play/:source/*path**
-
-Returns playable item info with resume position.
+Returns playable item info with resume position. For containers, resolves to a
+playable item.
 
 **Path Modifiers:**
 - `/shuffle` - Random selection from container
 
-**Response Fields:**
+```
+GET /api/v1/play/plex/12345                     # Play single item
+GET /api/v1/play/plex/672445/shuffle            # Random playable from container
+```
+
+**Response:**
 ```json
 {
   "id": "plex:12345",
@@ -835,10 +887,10 @@ Returns playable item info with resume position.
   "title": "Episode Title",
   "duration": 1800,
   "resumable": true,
-  "resume_position": 542,    // Present if in-progress
-  "resume_percent": 30,      // Present if in-progress
+  "resume_position": 542,
+  "resume_percent": 30,
   "thumbnail": "...",
-  "plex": "12345"            // Legacy Plex ID field
+  "plex": "12345"
 }
 ```
 
@@ -851,8 +903,8 @@ Updates watch progress. Request body:
   "assetId": "12345",
   "percent": 50,
   "seconds": 900,
-  "title": "Episode Title",        // optional
-  "watched_duration": 120          // optional, session watch time
+  "title": "Episode Title",
+  "watched_duration": 120
 }
 ```
 
@@ -871,6 +923,8 @@ Response uses canonical field names:
   }
 }
 ```
+
+---
 
 ### Content Query Routes
 
@@ -903,44 +957,54 @@ List containers by type.
 | `pick` | Selection mode | `random` |
 | `sort` | Sort order | `date`, `title` |
 
-### Plex-Specific Routes
+---
 
-**GET /api/v1/content/plex/info/:id/:modifiers?**
+### Deprecated Routes
 
-Legacy Plex info endpoint with smart selection.
+#### Active Redirects (301)
 
-| Modifier | Effect |
-|----------|--------|
-| `shuffle` | Random item from container |
+These old routes have backend redirects to the new action routes:
 
-Response includes both legacy and canonical fields:
-```json
-{
-  "listkey": "672445",           // Original container ID
-  "listType": "show",
-  "key": "123456",               // Selected item ID
-  "type": "episode",
-  "grandparentTitle": "Show Name",
-  "parentTitle": "Season 1",
-  "labels": ["exercise", "nomusic"],
-  "mediaType": "dash_video",
-  "mediaUrl": "/api/v1/proxy/plex/...",
-  "thumbId": "456789",
-  "image": "...",
-  "percent": 45,                 // Canonical
-  "seconds": 542,                // Canonical (maps to playhead)
-  "duration": 1200,
-  "metadata": {...}
-}
-```
+| Deprecated Route | Redirects To | Status |
+|------------------|-------------|--------|
+| `/content/:source/image/:id` | `/display/:source/:id` | 301 redirect active |
+| `/content/:source/info/:id` | `/info/:source/:id` | 301 redirect active |
+| `/content/:source/info/:id/:modifiers` | `/info/:source/:id/:modifiers` | 301 redirect active |
 
-**GET /api/v1/play/plex/mpd/:id**
+#### Still Working (no redirect, will be removed)
 
-Get DASH MPD manifest URL for Plex item.
+These old routes still serve responses directly but should not be used in new code:
 
-| Query Param | Description |
-|-------------|-------------|
-| `maxVideoBitrate` | Maximum video bitrate |
+| Deprecated Route | Use Instead |
+|------------------|-------------|
+| `/item/:source/:id` | `/info/:source/:id` |
+| `/item/:source/:id/playable` | `/list/:source/:id/playable` |
+| `/item/:source/:id/shuffle` | `/list/:source/:id/shuffle` |
+| `/item/:source/:id/recent_on_top` | `/list/:source/:id/recent_on_top` |
+| `/content/item/:source/*` | `/info/:source/:id` |
+| `/play/plex/mpd/:id` | `/play/plex/:id` |
+| `POST /item/menu-log` | (no action-route equivalent yet) |
+
+> **Note:** The `/item/` router also supports `?select=<strategy>` for
+> ItemSelectionService-based selection (e.g., `?select=watchlist`). This
+> feature has NOT been ported to `/list/` or `/info/` yet.
+
+#### Common Antipatterns (silently broken)
+
+These patterns look correct but produce wrong results:
+
+| Antipattern | Problem | Correct Form |
+|-------------|---------|-------------|
+| `/list/plex/123?capability=playable` | Query param ignored | `/list/plex/123/playable` |
+| `/list/plex/123?shuffle=true` | Query param ignored | `/list/plex/123/shuffle` |
+| `/list/plex/123?playable=true` | Query param ignored | `/list/plex/123/playable` |
+| `/info/plex/123/shuffle` | Modifier parsed but ignored by info router | `/list/plex/123/shuffle` |
+| `/info/plex/123/playable` | Modifier parsed but ignored by info router | `/list/plex/123/playable` |
+
+The list router reads modifiers from **path segments only** via `parseModifiers()`.
+Express strips query params before they reach `req.params[0]`, so query-param-based
+modifiers are silently discarded. The info router parses modifiers via
+`parseActionRouteId()` but never reads the `modifiers` field in its handler.
 
 ### Source Aliases
 
@@ -948,7 +1012,7 @@ Multiple paths can resolve to the same content:
 
 | Alias Path | Resolves To |
 |------------|-------------|
-| `/item/local/...` | `/item/folder/...` |
+| `/info/local/...` | `/info/folder/...` |
 | `/play/media/...` | `/play/filesystem/...` |
 | `plex.query:...` | ContentQueryService search with Plex source |
 | `gallery.query:...` | ContentQueryService search with Immich source |

@@ -12,20 +12,20 @@ describe('parseActionRouteId', () => {
       expect(result.compoundId).toBe('plex:12345');
     });
 
-    it('should handle nested path segments for folder source', () => {
-      const result = parseActionRouteId({ source: 'folder', path: 'watchlist/FHE' });
+    it('should handle nested path segments for watchlist source', () => {
+      const result = parseActionRouteId({ source: 'watchlist', path: 'watchlist/FHE' });
 
-      expect(result.source).toBe('folder');
+      expect(result.source).toBe('watchlist');
       expect(result.localId).toBe('watchlist/FHE');
-      expect(result.compoundId).toBe('folder:watchlist/FHE');
+      expect(result.compoundId).toBe('watchlist:watchlist/FHE');
     });
 
     it('should handle deeply nested paths', () => {
-      const result = parseActionRouteId({ source: 'filesystem', path: 'media/videos/vacation.mp4' });
+      const result = parseActionRouteId({ source: 'files', path: 'media/videos/vacation.mp4' });
 
-      expect(result.source).toBe('filesystem');
+      expect(result.source).toBe('files');
       expect(result.localId).toBe('media/videos/vacation.mp4');
-      expect(result.compoundId).toBe('filesystem:media/videos/vacation.mp4');
+      expect(result.compoundId).toBe('files:media/videos/vacation.mp4');
     });
   });
 
@@ -39,11 +39,11 @@ describe('parseActionRouteId', () => {
     });
 
     it('should handle compound ID with path segments in localId', () => {
-      const result = parseActionRouteId({ source: 'folder:watchlist/FHE', path: '' });
+      const result = parseActionRouteId({ source: 'watchlist:watchlist/FHE', path: '' });
 
-      expect(result.source).toBe('folder');
+      expect(result.source).toBe('watchlist');
       expect(result.localId).toBe('watchlist/FHE');
-      expect(result.compoundId).toBe('folder:watchlist/FHE');
+      expect(result.compoundId).toBe('watchlist:watchlist/FHE');
     });
 
     it('should handle undefined path with compound ID', () => {
@@ -72,38 +72,38 @@ describe('parseActionRouteId', () => {
       expect(result.compoundId).toBe('immich:a1b2c3d4-e5f6-7890-abcd-ef1234567890');
     });
 
-    it('should detect filesystem source from file extension', () => {
+    it('should detect files source from file extension', () => {
       const result = parseActionRouteId({ source: 'vacation.mp4', path: '' });
 
-      expect(result.source).toBe('filesystem');
+      expect(result.source).toBe('files');
       expect(result.localId).toBe('vacation.mp4');
-      expect(result.compoundId).toBe('filesystem:vacation.mp4');
+      expect(result.compoundId).toBe('files:vacation.mp4');
     });
 
-    it('should detect filesystem source from path with extension', () => {
+    it('should detect files source from path with extension', () => {
       const result = parseActionRouteId({ source: 'photos/image.jpg', path: '' });
 
-      expect(result.source).toBe('filesystem');
+      expect(result.source).toBe('files');
       expect(result.localId).toBe('photos/image.jpg');
-      expect(result.compoundId).toBe('filesystem:photos/image.jpg');
+      expect(result.compoundId).toBe('files:photos/image.jpg');
     });
   });
 
   describe('Alias normalization', () => {
-    it('should normalize local to folder', () => {
+    it('should normalize local to watchlist', () => {
       const result = parseActionRouteId({ source: 'local', path: 'TVApp' });
 
-      expect(result.source).toBe('folder');
+      expect(result.source).toBe('watchlist');
       expect(result.localId).toBe('TVApp');
-      expect(result.compoundId).toBe('folder:TVApp');
+      expect(result.compoundId).toBe('watchlist:TVApp');
     });
 
     it('should normalize local in compound ID format', () => {
       const result = parseActionRouteId({ source: 'local:watchlist', path: '' });
 
-      expect(result.source).toBe('folder');
+      expect(result.source).toBe('watchlist');
       expect(result.localId).toBe('watchlist');
-      expect(result.compoundId).toBe('folder:watchlist');
+      expect(result.compoundId).toBe('watchlist:watchlist');
     });
   });
 
@@ -118,11 +118,11 @@ describe('parseActionRouteId', () => {
     });
 
     it('should extract playable modifier from path', () => {
-      const result = parseActionRouteId({ source: 'folder', path: 'watchlist/playable' });
+      const result = parseActionRouteId({ source: 'watchlist', path: 'watchlist/playable' });
 
-      expect(result.source).toBe('folder');
+      expect(result.source).toBe('watchlist');
       expect(result.localId).toBe('watchlist');
-      expect(result.compoundId).toBe('folder:watchlist');
+      expect(result.compoundId).toBe('watchlist:watchlist');
       expect(result.modifiers).toEqual({ playable: true });
     });
 
@@ -186,7 +186,7 @@ describe('parseActionRouteId', () => {
     });
 
     it('should preserve all known sources', () => {
-      const knownSources = ['plex', 'immich', 'folder', 'filesystem', 'canvas', 'audiobookshelf', 'komga', 'singing', 'narrated'];
+      const knownSources = ['plex', 'immich', 'watchlist', 'files', 'canvas', 'audiobookshelf', 'komga', 'singing', 'narrated'];
 
       for (const src of knownSources) {
         const result = parseActionRouteId({ source: src, path: 'test-id' });
@@ -205,13 +205,13 @@ describe('parseActionRouteId', () => {
       expect(result.compoundId).toBe('plex:12345');
     });
 
-    it('should handle folder watchlist route with shuffle', () => {
-      // /list/folder/watchlist/shuffle
-      const result = parseActionRouteId({ source: 'folder', path: 'watchlist/shuffle' });
+    it('should handle watchlist route with shuffle', () => {
+      // /list/watchlist/watchlist/shuffle
+      const result = parseActionRouteId({ source: 'watchlist', path: 'watchlist/shuffle' });
 
-      expect(result.source).toBe('folder');
+      expect(result.source).toBe('watchlist');
       expect(result.localId).toBe('watchlist');
-      expect(result.compoundId).toBe('folder:watchlist');
+      expect(result.compoundId).toBe('watchlist:watchlist');
       expect(result.modifiers).toEqual({ shuffle: true });
     });
 

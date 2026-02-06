@@ -4,7 +4,7 @@ import { createContentRegistry, createFitnessSyncerAdapter } from '#backend/src/
 
 describe('bootstrap', () => {
   describe('createContentRegistry', () => {
-    it('registers FilesystemAdapter', () => {
+    it('registers FileAdapter', () => {
       const registry = createContentRegistry({
         mediaBasePath: '/media',
         plex: {
@@ -13,9 +13,9 @@ describe('bootstrap', () => {
         }
       });
 
-      const adapter = registry.get('filesystem');
+      const adapter = registry.get('files');
       expect(adapter).not.toBeNull();
-      expect(adapter.source).toBe('filesystem');
+      expect(adapter.source).toBe('files');
     });
 
     it('registers PlexAdapter', () => {
@@ -58,9 +58,9 @@ describe('bootstrap', () => {
         watchlistPath: '/data/state/watchlist'
       });
 
-      const adapter = registry.get('folder');
+      const adapter = registry.get('watchlist');
       expect(adapter).not.toBeNull();
-      expect(adapter.source).toBe('folder');
+      expect(adapter.source).toBe('watchlist');
     });
 
     it('does not register LocalContentAdapter without mediaBasePath', () => {

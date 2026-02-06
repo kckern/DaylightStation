@@ -4,6 +4,7 @@ import {
   loadYamlByPrefix,
   loadContainedYaml,
   findMediaFileByPrefix,
+  fileExists,
   dirExists,
   listDirs,
   listYamlFiles
@@ -161,6 +162,7 @@ export class NarratedAdapter {
       collection,
       title,
       subtitle,
+      thumbnail: this._collectionThumbnail(collection),
       // Use audio path for streaming URL
       mediaUrl: `/api/v1/proxy/local-content/stream/${collection}/${audioPath}`,
       videoUrl: metadata.videoFile ? `/api/v1/stream/narrated/${collection}/${textPath}/video` : null,
@@ -245,6 +247,35 @@ export class NarratedAdapter {
   }
 
   /**
+   * Resolve collection icon path on disk.
+   * Checks manifest `icon` field first, then convention `icon.svg`.
+   * @param {string} collection - Collection name (e.g., 'scripture')
+   * @returns {string|null} Absolute file path or null
+   */
+  resolveCollectionIcon(collection) {
+    const collectionPath = path.join(this.dataPath, collection);
+    const manifest = this._loadManifest(collection);
+    if (manifest?.icon) {
+      const explicit = path.join(collectionPath, manifest.icon);
+      if (fileExists(explicit)) return explicit;
+    }
+    const convention = path.join(collectionPath, 'icon.svg');
+    if (fileExists(convention)) return convention;
+    return null;
+  }
+
+  /**
+   * Build a thumbnail URL for a collection if an icon exists.
+   * @param {string} collection - Collection name
+   * @returns {string|null}
+   * @private
+   */
+  _collectionThumbnail(collection) {
+    const icon = this.resolveCollectionIcon(collection);
+    return icon ? `/api/v1/local-content/collection-icon/narrated/${collection}` : null;
+  }
+
+  /**
    * Get default style for narrated content
    * @returns {Object}
    * @private
@@ -275,6 +306,7 @@ export class NarratedAdapter {
           id: `narrated:${name}`,
           source: 'narrated',
           title: name,
+          thumbnail: this._collectionThumbnail(name),
           itemType: 'container'
         }))
       };
@@ -613,6 +645,7 @@ export class NarratedAdapter {
       collection,
       title,
       subtitle,
+      thumbnail: this._collectionThumbnail(collection),
       mediaUrl: `/api/v1/proxy/local-content/stream/${collection}/${audioPath}`,
       videoUrl: metadata.videoFile ? `/api/v1/stream/narrated/${collection}/${textPath}/video` : null,
       ambientUrl,

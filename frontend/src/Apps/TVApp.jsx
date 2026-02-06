@@ -39,11 +39,11 @@ function TVAppContent({ rootMenu, autoplay, appParam, logger }) {
         push({ type: 'display', props: autoplay });
       } else if (autoplay.read) {
         push({ type: 'reader', props: autoplay });
-      } else if (autoplay.list?.plex) {
-        // Plex list → use plex-menu router
+      } else if (autoplay.list?.contentId || autoplay.list?.plex) {
+        // Content list with compound ID → use plex-menu router for type detection
         push({ type: 'plex-menu', props: autoplay });
       } else if (autoplay.list) {
-        // Non-plex list (folder, etc.)
+        // Folder-based list
         push({ type: 'menu', props: autoplay });
       } else if (autoplay.open) {
         push({ type: 'app', props: autoplay });
@@ -80,7 +80,7 @@ export default function TVApp({ appParam }) {
 
   useEffect(() => {
     const fetchData = async () => {
-      const data = await DaylightAPI("api/v1/item/folder/TVApp/recent_on_top");
+      const data = await DaylightAPI("api/v1/list/watchlist/TVApp/recent_on_top");
       setList(data);
       logger.info('tvapp-data-loaded', { count: data?.items?.length ?? 0 });
     };
@@ -93,14 +93,14 @@ export default function TVApp({ appParam }) {
     const queryEntries = Object.fromEntries(params.entries());
 
     // Config modifiers that can be combined with any source
-    const configList = ["volume","shader","playbackRate","shuffle","continuous","repeat","loop","overlay","advance","interval"];
+    const configList = ["volume","shader","playbackRate","shuffle","continuous","repeat","loop","overlay","advance","interval","mode","frame"];
     const config = {};
     for (const configKey of configList) {
       if (queryEntries[configKey]) {
-        // Parse overlay as Plex playlist with shuffle
+        // Parse overlay as playlist with shuffle (numeric IDs assumed plex for backward compat)
         if (configKey === 'overlay' && /^\d+$/.test(queryEntries[configKey])) {
           config.overlay = {
-            queue: { plex: queryEntries[configKey] },
+            queue: { contentId: `plex:${queryEntries[configKey]}`, plex: queryEntries[configKey] },
             shuffle: true
           };
         } else {
@@ -131,17 +131,18 @@ export default function TVApp({ appParam }) {
     }
 
     // Parse compound ID format (source:id) or auto-detect source
-    // Returns { source, id } where source is the adapter name and id is the local ID
+    // Returns { source, id, contentId } where source is the adapter name and id is the local ID
     const parseCompoundId = (value) => {
       // Check for explicit source:id format (e.g., plex:380663, immich:abc-123)
       const match = value.match(/^([a-z]+):(.+)$/i);
       if (match) {
-        return { source: match[1].toLowerCase(), id: match[2] };
+        return { source: match[1].toLowerCase(), id: match[2], contentId: value };
       }
       // Fallback: all digits → plex, otherwise → media (use full value as id)
-      return /^\d+$/.test(value)
-        ? { source: 'plex', id: value }
-        : { source: 'media', id: value };
+      if (/^\d+$/.test(value)) {
+        return { source: 'plex', id: value, contentId: `plex:${value}` };
+      }
+      return { source: 'files', id: value, contentId: value };
     };
 
     // Legacy findKey for backwards compatibility (returns just the source)
@@ -151,8 +152,8 @@ export default function TVApp({ appParam }) {
     const mappings = {
       // Queue actions - comma-separated or app: prefix = composed presentation
       playlist:  (value) => {
-        const { source, id } = parseCompoundId(value);
-        return { queue: { [source]: id, ...config } };
+        const { source, id, contentId } = parseCompoundId(value);
+        return { queue: { contentId, [source]: id, ...config } };
       },
       queue:     (value) => {
         if (value.includes(',')) {
@@ -164,8 +165,8 @@ export default function TVApp({ appParam }) {
           // App sources always use composite player (clock, blackout, screensaver)
           return { compose: { sources: [value], ...config } };
         }
-        const { source, id } = parseCompoundId(value);
-        return { queue: { [source]: id, ...config } };
+        const { source, id, contentId } = parseCompoundId(value);
+        return { queue: { contentId, [source]: id, ...config } };
       },
 
       // Play actions - comma-separated or app: prefix = composed presentation
@@ -179,16 +180,12 @@ export default function TVApp({ appParam }) {
           // App sources always use composite player (clock, blackout, screensaver)
           return { compose: { sources: [value], ...config } };
         }
-        const { source, id } = parseCompoundId(value);
-        // For singing/narrated, pass canonical contentId format for category-based routing
-        if (source === 'singing' || source === 'narrated') {
-          return { play: { contentId: value, ...config } };
-        }
-        return { play: { [source]: id, ...config } };
+        const { source, id, contentId } = parseCompoundId(value);
+        return { play: { contentId, [source]: id, ...config } };
       },
       random:    (value) => {
-        const { source, id } = parseCompoundId(value);
-        return { play: { [source]: id, random: true, ...config } };
+        const { source, id, contentId } = parseCompoundId(value);
+        return { play: { contentId, [source]: id, random: true, ...config } };
       },
 
       // Display actions (static images)
@@ -197,21 +194,21 @@ export default function TVApp({ appParam }) {
       // Read actions (ebooks, articles)
       read:      (value) => ({ read: { id: value, ...config } }),
 
-      // Source-specific play
-      plex:      (value) => ({ play: { plex: value, ...config } }),
-      media:     (value) => ({ play: { media: value, ...config } }),
-      folder:    (value) => ({ play: { folder: value, ...config } }),
-      hymn:      (value) => ({ play: { hymn: value, ...config } }),
-      song:      (value) => ({ play: { song: value, ...config } }),
-      primary:   (value) => ({ play: { primary: value, ...config } }),
+      // Source-specific play (include contentId for unified routing)
+      plex:      (value) => ({ play: { contentId: `plex:${value}`, plex: value, ...config } }),
+      media:     (value) => ({ play: { contentId: value, media: value, ...config } }),
+      watchlist: (value) => ({ play: { contentId: `watchlist:${value}`, watchlist: value, ...config } }),
+      hymn:      (value) => ({ play: { contentId: `singing:${value}`, hymn: value, ...config } }),
+      song:      (value) => ({ play: { contentId: `singing:${value}`, song: value, ...config } }),
+      primary:   (value) => ({ play: { contentId: `narrated:${value}`, primary: value, ...config } }),
       talk:      (value) => ({ play: { talk: value, ...config } }),
-      poem:      (value) => ({ play: { poem: value, ...config } }),
-      scripture: (value) => ({ play: { scripture: value, ...config } }),
+      poem:      (value) => ({ play: { contentId: `narrated:${value}`, poem: value, ...config } }),
+      scripture: (value) => ({ play: { contentId: `narrated:${value}`, scripture: value, ...config } }),
 
       // List action (browse as menu)
       list:      (value) => {
-        const { source, id } = parseCompoundId(value);
-        return { list: { [source]: id, ...config } };
+        const { source, id, contentId } = parseCompoundId(value);
+        return { list: { contentId, [source]: id, ...config } };
       },
     };
 

@@ -1,14 +1,14 @@
 /**
- * Prayer Card Renderer
+ * Gratitude Card Renderer
  *
- * Renders prayer cards with gratitude and hopes items for thermal printing.
+ * Renders gratitude cards with gratitude and hopes items for thermal printing.
  * Extracted from legacy printer.mjs to support dependency injection.
  *
- * @module 2_adapters/gratitude/rendering/PrayerCardRenderer
+ * @module 2_adapters/gratitude/rendering/GratitudeCardRenderer
  */
 
 import moment from 'moment-timezone';
-import { prayerCardTheme as theme } from './prayerCardTheme.mjs';
+import { gratitudeCardTheme as theme } from './gratitudeCardTheme.mjs';
 
 /**
  * Select items for print using weighted bucket selection based on age.
@@ -117,7 +117,7 @@ export function selectItemsForPrint(items, count) {
 }
 
 /**
- * Create a prayer card renderer with dependency injection.
+ * Create a gratitude card renderer with dependency injection.
  *
  * @param {Object} config - Configuration object
  * @param {Function} config.getSelectionsForPrint - Async function that returns { gratitude: [], hopes: [] }
@@ -125,20 +125,21 @@ export function selectItemsForPrint(items, count) {
  * @param {Object} [config.canvasService] - Canvas service for rendering (optional, for future use)
  * @returns {Object} Renderer with createCanvas method
  */
-export function createPrayerCardRenderer(config) {
+export function createGratitudeCardRenderer(config) {
   const { getSelectionsForPrint, fontDir, canvasService } = config;
 
   /**
-   * Render a prayer card canvas.
+   * Render a gratitude card canvas.
    *
    * @param {boolean} [upsidedown=false] - Whether to rotate the canvas 180 degrees
    * @returns {Promise<{canvas: Canvas, width: number, height: number, selectedIds: {gratitude: string[], hopes: string[]}}>}
    */
   async function createCanvas(upsidedown = false) {
-    const { width, height } = theme.canvas;
+    const { width } = theme.canvas;
     const fontFamily = theme.fonts.family;
     const margin = theme.layout.margin;
     const lineHeight = theme.layout.lineHeight;
+    const itemMaxWidth = width - margin * 2 - 40;
     const fontPath = fontDir
       ? `${fontDir}/${theme.fonts.fontPath}`
       : `./backend/journalist/fonts/roboto-condensed/${theme.fonts.fontPath}`;
@@ -169,6 +170,60 @@ export function createPrayerCardRenderer(config) {
       // Font loading is optional - will fall back to system fonts
     }
 
+    // Wrap text into lines that fit within maxWidth
+    function wrapText(text, maxWidth, font) {
+      const tempCanvas = createNodeCanvas(1, 1);
+      const tempCtx = tempCanvas.getContext('2d');
+      tempCtx.font = font;
+      const words = text.split(' ');
+      const lines = [];
+      let currentLine = '';
+      for (const word of words) {
+        const testLine = currentLine ? `${currentLine} ${word}` : word;
+        if (tempCtx.measureText(testLine).width > maxWidth && currentLine) {
+          lines.push(currentLine);
+          currentLine = word;
+        } else {
+          currentLine = testLine;
+        }
+      }
+      if (currentLine) lines.push(currentLine);
+      return lines;
+    }
+
+    // Calculate height needed for an item (wrapped text + optional attribution)
+    function calculateItemHeight(item) {
+      const lines = wrapText(item.text, itemMaxWidth, theme.fonts.item);
+      let h = lines.length * lineHeight;
+      if (item.displayName && lines.length > 0) {
+        const tempCanvas = createNodeCanvas(1, 1);
+        const tempCtx = tempCanvas.getContext('2d');
+        tempCtx.font = theme.fonts.item;
+        const lastLineWidth = tempCtx.measureText(lines[lines.length - 1]).width;
+        tempCtx.font = theme.fonts.attribution;
+        const attrWidth = tempCtx.measureText(`(${item.displayName})`).width;
+        if (margin + 40 + lastLineWidth + 10 + attrWidth > width - margin) {
+          h += lineHeight * 0.7;
+        }
+      }
+      return h;
+    }
+
+    // Calculate dynamic canvas height
+    const headerHeight = theme.layout.headerHeight + theme.layout.timestampHeight + theme.layout.sectionGap;
+    const dividerHeight = theme.layout.dividerGapBefore + theme.layout.dividerHeight + theme.layout.dividerGapAfter;
+    const bottomMargin = 30;
+
+    let gratitudeContentHeight = theme.layout.sectionHeaderHeight;
+    for (const item of selectedGratitude) gratitudeContentHeight += calculateItemHeight(item);
+    if (selectedGratitude.length === 0) gratitudeContentHeight += lineHeight;
+
+    let hopesContentHeight = theme.layout.sectionHeaderHeight;
+    for (const item of selectedHopes) hopesContentHeight += calculateItemHeight(item);
+    if (selectedHopes.length === 0) hopesContentHeight += lineHeight;
+
+    const height = Math.max(450, headerHeight + gratitudeContentHeight + dividerHeight + hopesContentHeight + bottomMargin);
+
     const canvas = createNodeCanvas(width, height);
     const ctx = canvas.getContext('2d');
     ctx.textBaseline = 'top';
@@ -187,32 +242,75 @@ export function createPrayerCardRenderer(config) {
       height - theme.layout.borderOffset * 2
     );
 
+    // Wrap text using the main canvas context
+    function wrapTextCtx(text, maxWidth) {
+      const words = text.split(' ');
+      const lines = [];
+      let currentLine = '';
+      for (const word of words) {
+        const testLine = currentLine ? `${currentLine} ${word}` : word;
+        if (ctx.measureText(testLine).width > maxWidth && currentLine) {
+          lines.push(currentLine);
+          currentLine = word;
+        } else {
+          currentLine = testLine;
+        }
+      }
+      if (currentLine) lines.push(currentLine);
+      return lines;
+    }
+
+    // Draw an item with text wrapping and contributor attribution
+    function drawItem(item, startY, indent, maxWidth) {
+      const textIndent = indent + 25;
+      const attributionGap = 10;
+
+      ctx.font = theme.fonts.item;
+      ctx.fillText('\u2022', indent, startY);
+
+      const lines = wrapTextCtx(item.text, maxWidth - 25);
+      let currentY = startY;
+      for (let i = 0; i < lines.length; i++) {
+        ctx.font = theme.fonts.item;
+        ctx.fillText(lines[i], textIndent, currentY);
+
+        if (i === lines.length - 1 && item.displayName) {
+          const textWidth = ctx.measureText(lines[i]).width;
+          ctx.font = theme.fonts.attribution;
+          const attrText = `(${item.displayName})`;
+          const attrWidth = ctx.measureText(attrText).width;
+          if (textIndent + textWidth + attributionGap + attrWidth < width - margin) {
+            ctx.fillText(attrText, textIndent + textWidth + attributionGap, currentY + 8);
+          } else {
+            currentY += lineHeight * 0.7;
+            ctx.fillText(attrText, textIndent, currentY + 8);
+          }
+        }
+
+        if (i < lines.length - 1) currentY += lineHeight;
+      }
+      return currentY + lineHeight;
+    }
+
     let yPos = theme.layout.headerYOffset;
 
-    // Header: "Prayer Card"
+    // Header: "Gratitude Card"
     ctx.fillStyle = theme.colors.text;
     ctx.font = theme.fonts.header;
-    const headerText = 'Prayer Card';
+    const headerText = 'Gratitude Card';
     const headerMetrics = ctx.measureText(headerText);
-    const headerX = (width - headerMetrics.width) / 2;
-    ctx.fillText(headerText, headerX, yPos);
+    ctx.fillText(headerText, (width - headerMetrics.width) / 2, yPos);
     yPos += theme.layout.headerHeight;
 
     // Timestamp
     ctx.font = theme.fonts.timestamp;
     const timestamp = moment().format('ddd, D MMM YYYY, h:mm A');
     const timestampMetrics = ctx.measureText(timestamp);
-    const timestampX = (width - timestampMetrics.width) / 2;
-    ctx.fillText(timestamp, timestampX, yPos);
+    ctx.fillText(timestamp, (width - timestampMetrics.width) / 2, yPos);
     yPos += theme.layout.timestampHeight;
 
     // Divider line
-    ctx.fillRect(
-      theme.layout.borderOffset,
-      yPos,
-      width - theme.layout.borderOffset * 2,
-      theme.layout.dividerHeight
-    );
+    ctx.fillRect(theme.layout.borderOffset, yPos, width - theme.layout.borderOffset * 2, theme.layout.dividerHeight);
     yPos += theme.layout.sectionGap;
 
     // Gratitude section
@@ -220,19 +318,12 @@ export function createPrayerCardRenderer(config) {
     ctx.fillText('Gratitude', margin, yPos + theme.layout.sectionTitlePadding);
     yPos += theme.layout.sectionHeaderHeight;
 
-    ctx.font = theme.fonts.item;
     for (const item of selectedGratitude) {
-      ctx.fillText(`• ${item.text}`, margin + theme.layout.bulletIndent, yPos);
-      yPos += lineHeight;
+      yPos = drawItem(item, yPos, margin + theme.layout.bulletIndent, itemMaxWidth);
     }
 
     yPos += theme.layout.dividerGapBefore;
-    ctx.fillRect(
-      theme.layout.borderOffset,
-      yPos,
-      width - theme.layout.borderOffset * 2,
-      theme.layout.dividerHeight
-    );
+    ctx.fillRect(theme.layout.borderOffset, yPos, width - theme.layout.borderOffset * 2, theme.layout.dividerHeight);
     yPos += theme.layout.dividerGapAfter;
 
     // Hopes section
@@ -240,10 +331,8 @@ export function createPrayerCardRenderer(config) {
     ctx.fillText('Hopes', margin, yPos + theme.layout.sectionTitlePadding);
     yPos += theme.layout.sectionHeaderHeight;
 
-    ctx.font = theme.fonts.item;
     for (const item of selectedHopes) {
-      ctx.fillText(`• ${item.text}`, margin + theme.layout.bulletIndent, yPos);
-      yPos += lineHeight;
+      yPos = drawItem(item, yPos, margin + theme.layout.bulletIndent, itemMaxWidth);
     }
 
     // Track which items were selected for printing

@@ -1,15 +1,24 @@
-import { DaylightAPI } from './api.mjs';
+import { DaylightAPI, DaylightMediaPath } from './api.mjs';
+
+// App icon SVGs (Vite resolves these to hashed URLs)
+import webcamIcon from '../assets/app-icons/webcam.svg';
+import gratitudeIcon from '../assets/app-icons/gratitude.svg';
+import wrapupIcon from '../assets/app-icons/wrapup.svg';
+import officeOffIcon from '../assets/app-icons/office_off.svg';
+import keycodeIcon from '../assets/app-icons/keycode.svg';
+import familySelectorIcon from '../assets/app-icons/family-selector.svg';
+import glympseIcon from '../assets/app-icons/glympse.svg';
+import websocketIcon from '../assets/app-icons/websocket.svg';
 
 export const APP_REGISTRY = {
-  'webcam':          { label: 'Webcam',           param: null, component: () => import('../modules/AppContainer/Apps/Webcam/Webcam.jsx') },
-  'gratitude':       { label: 'Gratitude & Hope',  param: null, component: () => import('../modules/AppContainer/Apps/Gratitude/Gratitude.jsx') },
-  'wrapup':          { label: 'Wrap Up',           param: null, component: () => import('../modules/AppContainer/Apps/WrapUp/WrapUp.jsx') },
-  'office_off':      { label: 'Office Off',        param: null, component: () => import('../modules/AppContainer/Apps/OfficeOff/OfficeOff.jsx') },
-  'keycode':         { label: 'Key Test',          param: null, component: () => import('../modules/AppContainer/Apps/KeyTest/KeyTest.jsx') },
-  'family-selector': { label: 'Family Selector',   param: { name: 'winner', options: 'household' }, component: () => import('../modules/AppContainer/Apps/FamilySelector/FamilySelector.jsx') },
-  'art':             { label: 'Art',               param: { name: 'path' }, component: () => import('../modules/AppContainer/Apps/Art/Art.jsx') },
-  'glympse':         { label: 'Glympse',           param: { name: 'id' }, component: () => import('../modules/AppContainer/Apps/Glympse/Glympse.jsx') },
-  'websocket':       { label: 'WebSocket',         param: { name: 'path' }, component: () => import('../modules/AppContainer/Apps/WebSocket/WebSocket.jsx') },
+  'webcam':          { label: 'Webcam',           icon: webcamIcon,         param: null, component: () => import('../modules/AppContainer/Apps/Webcam/Webcam.jsx') },
+  'gratitude':       { label: 'Gratitude & Hope', icon: gratitudeIcon,      param: null, component: () => import('../modules/AppContainer/Apps/Gratitude/Gratitude.jsx') },
+  'wrapup':          { label: 'Wrap Up',          icon: wrapupIcon,         param: null, component: () => import('../modules/AppContainer/Apps/WrapUp/WrapUp.jsx') },
+  'office_off':      { label: 'Office Off',       icon: officeOffIcon,      param: null, component: () => import('../modules/AppContainer/Apps/OfficeOff/OfficeOff.jsx') },
+  'keycode':         { label: 'Key Test',         icon: keycodeIcon,        param: null, component: () => import('../modules/AppContainer/Apps/KeyTest/KeyTest.jsx') },
+  'family-selector': { label: 'Family Selector',  icon: familySelectorIcon, param: { name: 'winner', options: 'household' }, component: () => import('../modules/AppContainer/Apps/FamilySelector/FamilySelector.jsx') },
+  'glympse':         { label: 'Glympse',          icon: glympseIcon,        param: { name: 'id' }, component: () => import('../modules/AppContainer/Apps/Glympse/Glympse.jsx') },
+  'websocket':       { label: 'WebSocket',        icon: websocketIcon,      param: { name: 'path' }, component: () => import('../modules/AppContainer/Apps/WebSocket/WebSocket.jsx') },
 };
 
 /**
@@ -72,6 +81,7 @@ const OPTION_RESOLVERS = {
     return (data.users || []).map(u => ({
       value: u.id,
       label: u.group_label || u.name || u.id,
+      thumbnail: DaylightMediaPath(`/static/img/users/${u.id}`),
     }));
   },
 };

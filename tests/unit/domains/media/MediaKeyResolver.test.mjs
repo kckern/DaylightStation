@@ -8,24 +8,24 @@ describe('MediaKeyResolver', () => {
 
   beforeEach(() => {
     resolver = new MediaKeyResolver({
-      knownSources: ['plex', 'folder', 'filesystem', 'immich', 'youtube'],
+      knownSources: ['plex', 'watchlist', 'files', 'immich', 'youtube'],
       defaults: {
         patterns: [
           { match: '^\\d+$', source: 'plex' },
           { match: '^[a-f0-9-]{36}$', source: 'immich' },
           { match: '^[A-Za-z0-9_-]{11}$', source: 'youtube' },
-          { match: '/', source: 'filesystem' }
+          { match: '/', source: 'files' }
         ],
-        fallbackChain: ['plex', 'folder', 'filesystem']
+        fallbackChain: ['plex', 'watchlist', 'files']
       },
       apps: {
         fitness: { defaultSource: 'plex' },
         media: {
           patterns: [
             { match: '^\\d+$', source: 'plex' },
-            { match: '^[a-z][a-z0-9-]*$', source: 'folder' }
+            { match: '^[a-z][a-z0-9-]*$', source: 'watchlist' }
           ],
-          fallbackChain: ['plex', 'folder']
+          fallbackChain: ['plex', 'watchlist']
         }
       }
     });
@@ -34,8 +34,8 @@ describe('MediaKeyResolver', () => {
   describe('isCompound()', () => {
     it('returns true for known source prefixes', () => {
       expect(resolver.isCompound('plex:11282')).toBe(true);
-      expect(resolver.isCompound('folder:fhe')).toBe(true);
-      expect(resolver.isCompound('filesystem:/path/to/file')).toBe(true);
+      expect(resolver.isCompound('watchlist:fhe')).toBe(true);
+      expect(resolver.isCompound('files:/path/to/file')).toBe(true);
       expect(resolver.isCompound('immich:abc-123')).toBe(true);
       expect(resolver.isCompound('youtube:dQw4w9WgXcQ')).toBe(true);
     });
@@ -61,13 +61,13 @@ describe('MediaKeyResolver', () => {
   describe('parse()', () => {
     it('splits source and id correctly', () => {
       expect(resolver.parse('plex:11282')).toEqual({ source: 'plex', id: '11282' });
-      expect(resolver.parse('folder:fhe')).toEqual({ source: 'folder', id: 'fhe' });
+      expect(resolver.parse('watchlist:fhe')).toEqual({ source: 'watchlist', id: 'fhe' });
       expect(resolver.parse('youtube:dQw4w9WgXcQ')).toEqual({ source: 'youtube', id: 'dQw4w9WgXcQ' });
     });
 
     it('handles ids containing colons', () => {
-      expect(resolver.parse('filesystem:path/to:file')).toEqual({ source: 'filesystem', id: 'path/to:file' });
-      expect(resolver.parse('filesystem:/some/path:with:colons')).toEqual({ source: 'filesystem', id: '/some/path:with:colons' });
+      expect(resolver.parse('files:path/to:file')).toEqual({ source: 'files', id: 'path/to:file' });
+      expect(resolver.parse('files:/some/path:with:colons')).toEqual({ source: 'files', id: '/some/path:with:colons' });
     });
 
     it('returns null source for bare keys', () => {
@@ -79,8 +79,8 @@ describe('MediaKeyResolver', () => {
   describe('resolve()', () => {
     it('passes through compound keys unchanged', () => {
       expect(resolver.resolve('plex:11282')).toBe('plex:11282');
-      expect(resolver.resolve('folder:fhe')).toBe('folder:fhe');
-      expect(resolver.resolve('filesystem:/path/to/file')).toBe('filesystem:/path/to/file');
+      expect(resolver.resolve('watchlist:fhe')).toBe('watchlist:fhe');
+      expect(resolver.resolve('files:/path/to/file')).toBe('files:/path/to/file');
     });
 
     it('uses app defaultSource when configured (fitness context)', () => {
@@ -94,10 +94,10 @@ describe('MediaKeyResolver', () => {
       expect(resolver.resolve('1')).toBe('plex:1');
     });
 
-    it('matches slug pattern to folder in media context', () => {
-      expect(resolver.resolve('fhe', 'media')).toBe('folder:fhe');
-      expect(resolver.resolve('my-folder-name', 'media')).toBe('folder:my-folder-name');
-      expect(resolver.resolve('abc123', 'media')).toBe('folder:abc123');
+    it('matches slug pattern to watchlist in media context', () => {
+      expect(resolver.resolve('fhe', 'media')).toBe('watchlist:fhe');
+      expect(resolver.resolve('my-watchlist-name', 'media')).toBe('watchlist:my-watchlist-name');
+      expect(resolver.resolve('abc123', 'media')).toBe('watchlist:abc123');
     });
 
     it('matches UUID pattern to immich', () => {
@@ -110,9 +110,9 @@ describe('MediaKeyResolver', () => {
       expect(resolver.resolve('abc-123_ABC')).toBe('youtube:abc-123_ABC');
     });
 
-    it('matches path with slash to filesystem', () => {
-      expect(resolver.resolve('/path/to/file')).toBe('filesystem:/path/to/file');
-      expect(resolver.resolve('relative/path')).toBe('filesystem:relative/path');
+    it('matches path with slash to files', () => {
+      expect(resolver.resolve('/path/to/file')).toBe('files:/path/to/file');
+      expect(resolver.resolve('relative/path')).toBe('files:relative/path');
     });
 
     it('throws UnknownMediaSourceError for unknown source prefix', () => {
@@ -123,7 +123,7 @@ describe('MediaKeyResolver', () => {
         resolver.resolve('bogus:123');
       } catch (e) {
         expect(e.source).toBe('bogus');
-        expect(e.knownSources).toEqual(['plex', 'folder', 'filesystem', 'immich', 'youtube']);
+        expect(e.knownSources).toEqual(['plex', 'watchlist', 'files', 'immich', 'youtube']);
       }
     });
 
@@ -142,10 +142,10 @@ describe('MediaKeyResolver', () => {
       // Key that doesn't match any pattern (not numeric, not UUID, not 11 chars, no slash)
       // but is not in media context so doesn't match slug pattern
       const resolverWithNoPatterns = new MediaKeyResolver({
-        knownSources: ['plex', 'folder', 'filesystem'],
+        knownSources: ['plex', 'watchlist', 'files'],
         defaults: {
           patterns: [], // No patterns
-          fallbackChain: ['plex', 'folder', 'filesystem']
+          fallbackChain: ['plex', 'watchlist', 'files']
         },
         apps: {}
       });
@@ -158,7 +158,7 @@ describe('MediaKeyResolver', () => {
     it('returns resolved key on success', () => {
       expect(resolver.tryResolve('plex:11282')).toBe('plex:11282');
       expect(resolver.tryResolve('11282')).toBe('plex:11282');
-      expect(resolver.tryResolve('fhe', 'media')).toBe('folder:fhe');
+      expect(resolver.tryResolve('fhe', 'media')).toBe('watchlist:fhe');
     });
 
     it('returns null on failure', () => {
@@ -171,14 +171,14 @@ describe('MediaKeyResolver', () => {
   describe('resolveAs()', () => {
     it('resolves bare key with explicit source', () => {
       expect(resolver.resolveAs('11282', 'plex')).toBe('plex:11282');
-      expect(resolver.resolveAs('my-folder', 'folder')).toBe('folder:my-folder');
-      expect(resolver.resolveAs('/path/to/file', 'filesystem')).toBe('filesystem:/path/to/file');
+      expect(resolver.resolveAs('my-watchlist', 'watchlist')).toBe('watchlist:my-watchlist');
+      expect(resolver.resolveAs('/path/to/file', 'files')).toBe('files:/path/to/file');
     });
 
     it('re-prefixes compound key with new source', () => {
-      expect(resolver.resolveAs('plex:11282', 'folder')).toBe('folder:11282');
-      expect(resolver.resolveAs('folder:fhe', 'plex')).toBe('plex:fhe');
-      expect(resolver.resolveAs('filesystem:/path/to/file', 'folder')).toBe('folder:/path/to/file');
+      expect(resolver.resolveAs('plex:11282', 'watchlist')).toBe('watchlist:11282');
+      expect(resolver.resolveAs('watchlist:fhe', 'plex')).toBe('plex:fhe');
+      expect(resolver.resolveAs('files:/path/to/file', 'watchlist')).toBe('watchlist:/path/to/file');
     });
 
     it('throws for unknown source', () => {
@@ -189,7 +189,7 @@ describe('MediaKeyResolver', () => {
         resolver.resolveAs('123', 'bogus');
       } catch (e) {
         expect(e.source).toBe('bogus');
-        expect(e.knownSources).toEqual(['plex', 'folder', 'filesystem', 'immich', 'youtube']);
+        expect(e.knownSources).toEqual(['plex', 'watchlist', 'files', 'immich', 'youtube']);
       }
     });
   });
@@ -199,8 +199,8 @@ describe('MediaKeyResolver', () => {
       const mediaRules = resolver.getRulesForApp('media');
       expect(mediaRules.patterns).toHaveLength(2);
       expect(mediaRules.patterns[0].source).toBe('plex');
-      expect(mediaRules.patterns[1].source).toBe('folder');
-      expect(mediaRules.fallbackChain).toEqual(['plex', 'folder']);
+      expect(mediaRules.patterns[1].source).toBe('watchlist');
+      expect(mediaRules.fallbackChain).toEqual(['plex', 'watchlist']);
 
       const fitnessRules = resolver.getRulesForApp('fitness');
       expect(fitnessRules.defaultSource).toBe('plex');
@@ -209,14 +209,14 @@ describe('MediaKeyResolver', () => {
     it('returns defaults for unconfigured app', () => {
       const rules = resolver.getRulesForApp('unknownapp');
       expect(rules.patterns).toHaveLength(4);
-      expect(rules.fallbackChain).toEqual(['plex', 'folder', 'filesystem']);
+      expect(rules.fallbackChain).toEqual(['plex', 'watchlist', 'files']);
       expect(rules.defaultSource).toBe(null);
     });
 
     it('returns defaults when no context provided', () => {
       const rules = resolver.getRulesForApp(null);
       expect(rules.patterns).toHaveLength(4);
-      expect(rules.fallbackChain).toEqual(['plex', 'folder', 'filesystem']);
+      expect(rules.fallbackChain).toEqual(['plex', 'watchlist', 'files']);
       expect(rules.defaultSource).toBe(null);
 
       const rulesUndefined = resolver.getRulesForApp(undefined);
@@ -227,14 +227,14 @@ describe('MediaKeyResolver', () => {
   describe('Immich UUID pattern', () => {
     it('recognizes immich as known source', () => {
       const resolver = new MediaKeyResolver({
-        knownSources: ['plex', 'immich', 'folder']
+        knownSources: ['plex', 'immich', 'watchlist']
       });
       expect(resolver.isCompound('immich:abc-123-def')).toBe(true);
     });
 
     it('resolves UUID pattern to immich source', () => {
       const resolver = new MediaKeyResolver({
-        knownSources: ['plex', 'immich', 'folder'],
+        knownSources: ['plex', 'immich', 'watchlist'],
         defaults: {
           patterns: [
             { match: '^\\d+$', source: 'plex' },
@@ -250,7 +250,7 @@ describe('MediaKeyResolver', () => {
 
     it('numeric ID still resolves to plex', () => {
       const resolver = new MediaKeyResolver({
-        knownSources: ['plex', 'immich', 'folder'],
+        knownSources: ['plex', 'immich', 'watchlist'],
         defaults: {
           patterns: [
             { match: '^\\d+$', source: 'plex' },

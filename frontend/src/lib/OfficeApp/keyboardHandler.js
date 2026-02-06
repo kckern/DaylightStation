@@ -81,7 +81,7 @@ export const createKeyboardHandler = (dependencies) => {
       return ["plex", p ?? ""];
     }
     // Otherwise default to media
-    return ["media", p ?? ""];
+    return ["files", p ?? ""];
   };
 
   const openPlayer = (type, params) => {

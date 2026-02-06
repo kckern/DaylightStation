@@ -79,7 +79,7 @@ test.describe('Canvas Art Display', () => {
       return;
     }
 
-    const displayUrl = `${BASE_URL}/tv?display=${discoveredArtId}`;
+    const displayUrl = `${BASE_URL}/tv?display=${discoveredArtId}&mode=art`;
     console.log(`\n🖼️  Opening TV app: ${displayUrl}`);
 
     await sharedPage.goto(displayUrl, {
@@ -87,17 +87,17 @@ test.describe('Canvas Art Display', () => {
       timeout: 30000
     });
 
-    // Wait for art component to mount
+    // Wait for displayer component to mount
     await sharedPage.waitForTimeout(3000);
 
     // Check for art-app class
-    const artApp = await sharedPage.locator('.art-app').count();
-    console.log(`\n🎨 Art app elements found: ${artApp}`);
+    const displayer = await sharedPage.locator('.displayer').count();
+    console.log(`\n🎨 Displayer elements found: ${displayer}`);
 
-    expect(artApp).toBeGreaterThan(0);
+    expect(displayer).toBeGreaterThan(0);
 
     // Check for image element
-    const img = sharedPage.locator('.art-app img').first();
+    const img = sharedPage.locator('.displayer img').first();
     const imgSrc = await img.getAttribute('src');
     console.log(`   Image src: ${imgSrc}`);
 
@@ -113,7 +113,7 @@ test.describe('Canvas Art Display', () => {
       return;
     }
 
-    const img = sharedPage.locator('.art-app img').first();
+    const img = sharedPage.locator('.displayer img').first();
 
     // Wait for image to load
     await sharedPage.waitForTimeout(2000);

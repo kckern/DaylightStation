@@ -96,7 +96,7 @@ async function generateSearchTerms() {
   const terms = new Set();
 
   // Get samples from different sources
-  const sources = ['plex', 'media', 'immich'];
+  const sources = ['plex', 'files', 'immich'];
 
   for (const source of sources) {
     try {
@@ -139,9 +139,9 @@ async function getContainers() {
     console.warn('[dynamicFixtureLoader] Could not fetch Plex containers');
   }
 
-  // Try to get folders from media
+  // Try to get folders from files
   try {
-    const result = await listContent('media');
+    const result = await listContent('files');
     const mediaContainers = (result.items || [])
       .filter(i => i.itemType === 'container' || i.type === 'folder')
       .slice(0, 3);

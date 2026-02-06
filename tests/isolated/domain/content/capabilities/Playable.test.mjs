@@ -22,11 +22,11 @@ describe('Playable capability', () => {
 
   test('audio items are not resumable by default', () => {
     const item = new PlayableItem({
-      id: 'filesystem:audio/song.mp3',
-      source: 'filesystem',
+      id: 'files:audio/song.mp3',
+      source: 'files',
       title: 'Song',
       mediaType: 'audio',
-      mediaUrl: '/proxy/filesystem/stream/audio/song.mp3',
+      mediaUrl: '/proxy/media/stream/audio/song.mp3',
       duration: 180,
       resumable: false
     });
@@ -350,8 +350,8 @@ describe('Playable capability', () => {
   describe('behavior flags', () => {
     it('should support shuffle flag', () => {
       const item = new PlayableItem({
-        id: 'folder:music',
-        source: 'folder',
+        id: 'watchlist:music',
+        source: 'watchlist',
         title: 'Music',
         mediaType: 'audio',
         mediaUrl: '/stream/music',
@@ -362,8 +362,8 @@ describe('Playable capability', () => {
 
     it('should support continuous flag', () => {
       const item = new PlayableItem({
-        id: 'folder:ambient',
-        source: 'folder',
+        id: 'watchlist:ambient',
+        source: 'watchlist',
         title: 'Ambient',
         mediaType: 'audio',
         mediaUrl: '/stream/ambient',

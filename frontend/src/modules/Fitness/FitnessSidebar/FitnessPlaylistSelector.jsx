@@ -139,7 +139,7 @@ const FitnessPlaylistSelector = ({ playlists, selectedPlaylistId, onSelect, onCl
                 <div
                   key="nav-prev"
                   className="playlist-grid-item nav-button"
-                  onClick={() => setPage(p => p - 1)}
+                  onClick={(e) => { e.stopPropagation(); setPage(p => p - 1); }}
                 >
                   <div className="nav-icon">←</div>
                   <div className="nav-label">Back</div>
@@ -152,7 +152,7 @@ const FitnessPlaylistSelector = ({ playlists, selectedPlaylistId, onSelect, onCl
                 <div
                   key="nav-next"
                   className="playlist-grid-item nav-button"
-                  onClick={() => setPage(p => p + 1)}
+                  onClick={(e) => { e.stopPropagation(); setPage(p => p + 1); }}
                 >
                   <div className="nav-icon">→</div>
                   <div className="nav-label">More</div>
@@ -165,7 +165,7 @@ const FitnessPlaylistSelector = ({ playlists, selectedPlaylistId, onSelect, onCl
               <div
                 key={item.id ?? 'no-music'}
                 className={`playlist-grid-item ${isSelected ? 'selected' : ''}`}
-                onClick={() => handleSelect(item.id)}
+                onClick={(e) => { e.stopPropagation(); handleSelect(item.id); }}
               >
                 <div className="playlist-thumb">
                   {item.thumb ? (

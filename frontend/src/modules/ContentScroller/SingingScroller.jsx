@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import ContentScroller from './ContentScroller.jsx';
 import { DaylightAPI } from '../../lib/api.mjs';
 import { useCenterByWidest } from '../../lib/Player/useCenterByWidest.js';
+import { getSingingRenderer, getCollectionFromContentId } from '../../lib/contentRenderers.jsx';
 
 /**
  * SingingScroller
@@ -31,6 +32,10 @@ export function SingingScroller({
 }) {
   const [data, setData] = useState(null);
   const textRef = useRef(null);
+  const collection = getCollectionFromContentId(contentId);
+  const renderer = getSingingRenderer(collection);
+  const cssType = renderer?.cssType || 'singing';
+  const wrapperClass = renderer?.wrapperClass || 'singing-text';
 
   useEffect(() => {
     if (!contentId) return;
@@ -38,7 +43,7 @@ export function SingingScroller({
     // Extract path from contentId (singing:hymn/123 → hymn/123)
     const path = contentId.replace(/^singing:/, '');
 
-    DaylightAPI(`api/v1/item/singing/${path}`).then(response => {
+    DaylightAPI(`api/v1/info/singing/${path}`).then(response => {
       setData(response);
     });
   }, [contentId]);
@@ -50,7 +55,7 @@ export function SingingScroller({
     if (!contentData?.data) return null;
 
     return (
-      <div className="singing-text" ref={textRef}>
+      <div className={wrapperClass} ref={textRef}>
         {contentData.data.map((stanza, sIdx) => (
           <div key={`stanza-${sIdx}`} className="stanza">
             {stanza.map((line, lIdx) => (
@@ -60,7 +65,7 @@ export function SingingScroller({
         ))}
       </div>
     );
-  }, []);
+  }, [wrapperClass]);
 
   if (!data) return null;
 
@@ -74,8 +79,10 @@ export function SingingScroller({
   };
 
   // Calculate yStartTime based on duration and verse count
+  // If API doesn't provide duration (returns 0), fall back to default 15s
+  // ContentScroller discovers real duration from the audio element's loadedmetadata event
   const verseCount = data.content?.data?.length || 1;
-  const yStartTime = (data.duration / verseCount) / 1.8;
+  const yStartTime = data.duration ? (data.duration / verseCount) / 1.8 : 15;
 
   // Process volume parameter (same logic as Hymns)
   const mainVolume = (() => {
@@ -91,10 +98,10 @@ export function SingingScroller({
   })();
 
   return (
-    <div style={cssVars} data-visual-type="singing" className="singing-scroller">
+    <div style={cssVars} data-visual-type={cssType} className="singing-scroller">
       <ContentScroller
         key={`singing-${contentId}`}
-        type="singing"
+        type={cssType}
         title={data.title}
         assetId={contentId}
         subtitle={data.subtitle}

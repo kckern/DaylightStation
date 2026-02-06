@@ -5,7 +5,7 @@ import { DisplayableItem } from '#domains/content/capabilities/Displayable.mjs';
 describe('DisplayableItem', () => {
   const validProps = {
     id: 'canvas:test-123',
-    source: 'filesystem',
+    source: 'files',
     title: 'Starry Night',
     imageUrl: '/api/v1/canvas/image/test-123',
     category: 'impressionist',

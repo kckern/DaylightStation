@@ -313,9 +313,9 @@ describe('ItemSelectionService', () => {
 
   describe('resolveStrategy', () => {
     describe('inference from context', () => {
-      test('infers watchlist for folder container', () => {
+      test('infers watchlist for watchlist container', () => {
         const strategy = ItemSelectionService.resolveStrategy({
-          containerType: 'folder'
+          containerType: 'watchlist'
         });
         expect(strategy.sort).toBe('priority');
       });
@@ -386,7 +386,7 @@ describe('ItemSelectionService', () => {
     describe('override priority', () => {
       test('explicit strategy overrides inference', () => {
         const strategy = ItemSelectionService.resolveStrategy(
-          { containerType: 'folder' },
+          { containerType: 'watchlist' },
           { strategy: 'binge' }
         );
         expect(strategy.sort).toBe('source_order');
@@ -394,7 +394,7 @@ describe('ItemSelectionService', () => {
 
       test('explicit sort overrides strategy', () => {
         const strategy = ItemSelectionService.resolveStrategy(
-          { containerType: 'folder' },
+          { containerType: 'watchlist' },
           { sort: 'random' }
         );
         expect(strategy.sort).toBe('random');
@@ -403,7 +403,7 @@ describe('ItemSelectionService', () => {
 
       test('explicit pick overrides strategy', () => {
         const strategy = ItemSelectionService.resolveStrategy(
-          { containerType: 'folder' },
+          { containerType: 'watchlist' },
           { pick: 'all' }
         );
         expect(strategy.pick).toBe('all');
@@ -411,7 +411,7 @@ describe('ItemSelectionService', () => {
 
       test('filter: none disables filtering', () => {
         const strategy = ItemSelectionService.resolveStrategy(
-          { containerType: 'folder' },
+          { containerType: 'watchlist' },
           { filter: 'none' }
         );
         expect(strategy.filter).toEqual([]);
@@ -437,7 +437,7 @@ describe('ItemSelectionService', () => {
         { id: '4', priority: 'in_progress', hold: false, percent: 50 }
       ];
       const result = ItemSelectionService.select(items, {
-        containerType: 'folder',
+        containerType: 'watchlist',
         now
       });
       // Filtered (hold), sorted by priority, pick first
@@ -465,7 +465,7 @@ describe('ItemSelectionService', () => {
       ];
       const result = ItemSelectionService.select(
         items,
-        { containerType: 'folder', now },
+        { containerType: 'watchlist', now },
         { pick: 'all' }
       );
       expect(result.length).toBe(2);
@@ -478,7 +478,7 @@ describe('ItemSelectionService', () => {
       ];
       const result = ItemSelectionService.select(
         items,
-        { containerType: 'folder', now },
+        { containerType: 'watchlist', now },
         { pick: 'all' }
       );
       expect(result[0].id).toBe('1'); // promoted to urgent, before high
@@ -490,7 +490,7 @@ describe('ItemSelectionService', () => {
         { id: '1', hold: true }
       ];
       const result = ItemSelectionService.select(items, {
-        containerType: 'folder',
+        containerType: 'watchlist',
         now
       });
       expect(result).toEqual([]);
@@ -498,7 +498,7 @@ describe('ItemSelectionService', () => {
 
     test('throws if now not provided for watchlist strategy', () => {
       const items = [{ id: '1' }];
-      expect(() => ItemSelectionService.select(items, { containerType: 'folder' }))
+      expect(() => ItemSelectionService.select(items, { containerType: 'watchlist' }))
         .toThrow('now date required');
     });
   });
@@ -512,7 +512,7 @@ describe('ItemSelectionService', () => {
       ];
       const result = ItemSelectionService.select(
         items,
-        { containerType: 'folder', now },
+        { containerType: 'watchlist', now },
         { allowFallback: true }
       );
       expect(result.length).toBe(1);
@@ -525,7 +525,7 @@ describe('ItemSelectionService', () => {
       ];
       const result = ItemSelectionService.select(
         items,
-        { containerType: 'folder', now },
+        { containerType: 'watchlist', now },
         { allowFallback: true }
       );
       expect(result.length).toBe(1);
@@ -537,7 +537,7 @@ describe('ItemSelectionService', () => {
       ];
       const result = ItemSelectionService.select(
         items,
-        { containerType: 'folder', now }
+        { containerType: 'watchlist', now }
       );
       expect(result.length).toBe(0);
     });
@@ -549,7 +549,7 @@ describe('ItemSelectionService', () => {
       ];
       const result = ItemSelectionService.select(
         items,
-        { containerType: 'folder', now },
+        { containerType: 'watchlist', now },
         { allowFallback: true, pick: 'all' }
       );
       expect(result.map(i => i.id)).toEqual(['2', '1']); // sorted by priority

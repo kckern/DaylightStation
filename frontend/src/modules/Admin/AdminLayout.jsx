@@ -12,9 +12,10 @@ function AdminLayout() {
 
   return (
     <AppShell
+      className="admin-layout"
       header={{ height: 60 }}
       navbar={{ width: 250, breakpoint: 'sm', collapsed: { mobile: !opened } }}
-      padding="md"
+      padding={0}
     >
       <AppShell.Header>
         <AdminHeader opened={opened} toggle={toggle} />

@@ -66,7 +66,7 @@ describe('Play Router API', () => {
       const baseline = await loadBaseline('folder/folder-tvapp.json');
 
       // Playing a container should resolve to its first playable item
-      const res = await request(app).get('/api/play/folder/TVApp');
+      const res = await request(app).get('/api/play/watchlist/TVApp');
 
       expect(res.status).toBe(200);
       expect(res.body.assetId).toBeDefined();
@@ -75,7 +75,7 @@ describe('Play Router API', () => {
     test('shuffle on container returns random item', async () => {
       const baseline = await loadBaseline('folder/folder-tvapp.json');
 
-      const res = await request(app).get('/api/play/folder/TVApp/shuffle');
+      const res = await request(app).get('/api/play/watchlist/TVApp/shuffle');
 
       expect(res.status).toBe(200);
       expect(res.body.assetId).toBeDefined();
@@ -96,9 +96,9 @@ describe('Play Router API', () => {
     });
   });
 
-  describe('folder source', () => {
-    test('resolves folder reference to playable', async () => {
-      const res = await request(app).get('/api/play/folder/TVApp');
+  describe('watchlist source', () => {
+    test('resolves watchlist reference to playable', async () => {
+      const res = await request(app).get('/api/play/watchlist/TVApp');
 
       expect(res.status).toBe(200);
       // Should resolve to a playable item
@@ -152,7 +152,7 @@ describe('Play Router API', () => {
 
     test('returns 404 for empty container', async () => {
       // If a container has no playable items
-      const res = await request(app).get('/api/play/folder/nonexistent-folder');
+      const res = await request(app).get('/api/play/watchlist/nonexistent-folder');
 
       expect(res.status).toBe(404);
     });
