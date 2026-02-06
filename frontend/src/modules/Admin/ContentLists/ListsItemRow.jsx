@@ -558,7 +558,7 @@ export async function fetchContentMetadata(value) {
 
   // Resolve app items locally from registry (no backend call needed)
   if (value.startsWith('app:')) {
-    const { resolveAppDisplay } = await import('../../lib/appRegistry.js');
+    const { resolveAppDisplay } = await import('../../../lib/appRegistry.js');
     const appInfo = resolveAppDisplay(value);
     if (appInfo) {
       const info = {
@@ -696,7 +696,7 @@ function ContentSearchCombobox({ value, onChange }) {
             itemCount: item.metadata?.childCount ?? item.metadata?.leafCount ?? null
           }));
           // Merge in local app results
-          const { searchApps } = await import('../../lib/appRegistry.js');
+          const { searchApps } = await import('../../../lib/appRegistry.js');
           const appMatches = searchApps(debouncedSearch).map(app => ({
             value: `app:${app.id}`,
             title: app.label,
@@ -727,7 +727,7 @@ function ContentSearchCombobox({ value, onChange }) {
       // App needs a parameter — show param picker
       setPendingApp({ appId: item.appId, param: item.param });
       setParamInput('');
-      const { resolveParamOptions } = await import('../../lib/appRegistry.js');
+      const { resolveParamOptions } = await import('../../../lib/appRegistry.js');
       const options = await resolveParamOptions(item.param);
       setParamOptions(options);
       combobox.closeDropdown();
