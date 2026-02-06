@@ -641,6 +641,9 @@ function ContentSearchCombobox({ value, onChange }) {
   const [currentParent, setCurrentParent] = useState(null); // Current parent being browsed {id, title, source, thumbnail, parentKey, libraryId}
   const optionsRef = useRef(null);
   const inputRef = useRef(null);
+  const [pendingApp, setPendingApp] = useState(null); // {appId, param} — waiting for param input
+  const [paramOptions, setParamOptions] = useState(null); // [{value, label}] or null
+  const [paramInput, setParamInput] = useState('');
 
   // Fetch content info for current value
   useEffect(() => {
@@ -692,7 +695,20 @@ function ContentSearchCombobox({ value, onChange }) {
             library: item.metadata?.librarySectionTitle,
             itemCount: item.metadata?.childCount ?? item.metadata?.leafCount ?? null
           }));
-          setSearchResults(results);
+          // Merge in local app results
+          const { searchApps } = await import('../../lib/appRegistry.js');
+          const appMatches = searchApps(debouncedSearch).map(app => ({
+            value: `app:${app.id}`,
+            title: app.label,
+            source: 'app',
+            type: 'app',
+            thumbnail: null,
+            isApp: true,
+            appId: app.id,
+            hasParam: !!app.param,
+            param: app.param,
+          }));
+          setSearchResults([...appMatches, ...results]);
         }
       } catch (err) {
         console.error('Search error:', err);
@@ -704,13 +720,28 @@ function ContentSearchCombobox({ value, onChange }) {
     searchContent();
   }, [debouncedSearch]);
 
-  const handleOptionSelect = (val) => {
+  const handleOptionSelect = async (val) => {
+    // Check if this is an app with params
+    const item = [...searchResults, ...browseItems].find(r => r.value === val);
+    if (item?.isApp && item.hasParam) {
+      // App needs a parameter — show param picker
+      setPendingApp({ appId: item.appId, param: item.param });
+      setParamInput('');
+      const { resolveParamOptions } = await import('../../lib/appRegistry.js');
+      const options = await resolveParamOptions(item.param);
+      setParamOptions(options);
+      combobox.closeDropdown();
+      return;
+    }
+
     onChange(val);
     setSearchQuery('');
     setIsEditing(false);
     setBrowseItems([]);
     setNavStack([]);
     setCurrentParent(null);
+    setPendingApp(null);
+    setParamOptions(null);
     combobox.closeDropdown();
   };
 
@@ -1308,6 +1339,94 @@ function ContentSearchCombobox({ value, onChange }) {
       <Text size="xs" c="dimmed" onClick={handleStartEditing} className="content-display">
         {value}
       </Text>
+    );
+  }
+
+  // Param picker mode — app selected, waiting for param
+  if (pendingApp) {
+    const finishWithParam = (paramVal) => {
+      const fullId = paramVal
+        ? `app:${pendingApp.appId}/${paramVal}`
+        : `app:${pendingApp.appId}`;
+      onChange(fullId);
+      setSearchQuery('');
+      setIsEditing(false);
+      setPendingApp(null);
+      setParamOptions(null);
+      setParamInput('');
+    };
+
+    const cancelParam = () => {
+      setPendingApp(null);
+      setParamOptions(null);
+      setParamInput('');
+    };
+
+    // Dropdown options
+    if (paramOptions) {
+      return (
+        <Combobox
+          store={combobox}
+          onOptionSubmit={(val) => finishWithParam(val)}
+        >
+          <Combobox.Target>
+            <InputBase
+              ref={inputRef}
+              size="xs"
+              pointer
+              rightSection={<Combobox.Chevron />}
+              rightSectionPointerEvents="none"
+              value={paramInput}
+              onChange={(e) => {
+                setParamInput(e.currentTarget.value);
+                combobox.openDropdown();
+              }}
+              onClick={() => combobox.openDropdown()}
+              onFocus={() => combobox.openDropdown()}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') cancelParam();
+              }}
+              placeholder={`Choose ${pendingApp.param.name}...`}
+              autoFocus
+              styles={{ input: { minHeight: 24, height: 24, fontSize: 12 } }}
+            />
+          </Combobox.Target>
+          <Combobox.Dropdown>
+            <Combobox.Options>
+              <ScrollArea.Autosize mah={200}>
+                {paramOptions
+                  .filter(o => !paramInput || o.label.toLowerCase().includes(paramInput.toLowerCase()))
+                  .map(o => (
+                    <Combobox.Option key={o.value} value={o.value}>
+                      <Text size="xs">{o.label}</Text>
+                    </Combobox.Option>
+                  ))}
+              </ScrollArea.Autosize>
+            </Combobox.Options>
+          </Combobox.Dropdown>
+        </Combobox>
+      );
+    }
+
+    // Free text input (no options defined)
+    return (
+      <TextInput
+        ref={inputRef}
+        size="xs"
+        value={paramInput}
+        onChange={(e) => setParamInput(e.currentTarget.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && paramInput) finishWithParam(paramInput);
+          if (e.key === 'Escape') cancelParam();
+        }}
+        onBlur={() => {
+          if (paramInput) finishWithParam(paramInput);
+          else cancelParam();
+        }}
+        placeholder={`Type ${pendingApp.param.name}...`}
+        autoFocus
+        styles={{ input: { minHeight: 24, height: 24, fontSize: 12 } }}
+      />
     );
   }
 
