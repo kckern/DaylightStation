@@ -253,6 +253,7 @@ const SOURCE_COLORS = {
   menu: 'teal',
   program: 'teal',
   freshvideo: 'lime',
+  canvas: 'yellow',
   talk: 'pink',
   'local-content': 'pink',
   list: 'violet',
