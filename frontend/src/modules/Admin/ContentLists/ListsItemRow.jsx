@@ -1020,6 +1020,75 @@ function ContentSearchCombobox({ value, onChange }) {
     const { source } = contentInfo;
     const localId = value.split(':')[1]?.trim();
 
+    // App items — resolve siblings locally from registry
+    if (source === 'app') {
+      try {
+        setLoadingBrowse(true);
+        const { resolveAppDisplay, resolveParamOptions, getAllApps, getApp } = await import('../../../lib/appRegistry.js');
+        const appInfo = resolveAppDisplay(value);
+
+        let siblings;
+        let parentTitle;
+
+        if (appInfo && appInfo.paramName) {
+          // Parameterized app — siblings are the param options
+          const options = await resolveParamOptions(getApp(appInfo.appId)?.param);
+          if (options) {
+            siblings = options.map(o => ({
+              value: `app:${appInfo.appId}/${o.value}`,
+              title: `${appInfo.label} / ${o.label}`,
+              source: 'app',
+              type: 'app',
+              thumbnail: null,
+            }));
+            parentTitle = appInfo.label;
+          } else {
+            // Free-text param (e.g. art) — no siblings, show all apps
+            siblings = getAllApps().map(a => ({
+              value: `app:${a.id}`,
+              title: a.label,
+              source: 'app',
+              type: 'app',
+              thumbnail: null,
+            }));
+            parentTitle = 'Apps';
+          }
+        } else {
+          // Non-parameterized app — siblings are all apps
+          siblings = getAllApps().map(a => ({
+            value: `app:${a.id}`,
+            title: a.label,
+            source: 'app',
+            type: 'app',
+            thumbnail: null,
+          }));
+          parentTitle = 'Apps';
+        }
+
+        setBrowseItems(siblings);
+        setCurrentParent({ id: 'app:', title: parentTitle, source: 'app', thumbnail: null, parentKey: null, libraryId: null });
+
+        // Highlight current item
+        const normalizedVal = value?.replace(/:\s+/g, ':');
+        const currentIndex = siblings.findIndex(s => s.value === normalizedVal);
+        setHighlightedIdx(currentIndex >= 0 ? currentIndex : 0);
+
+        setTimeout(() => {
+          if (optionsRef.current) {
+            const currentOption = optionsRef.current.querySelector(`[data-value="${normalizedVal}"]`);
+            if (currentOption) {
+              currentOption.scrollIntoView({ block: 'center' });
+            }
+          }
+        }, 50);
+      } catch (err) {
+        console.error('Failed to fetch app siblings:', err);
+      } finally {
+        setLoadingBrowse(false);
+      }
+      return;
+    }
+
     try {
       setLoadingBrowse(true);
       // Fetch current item to get parent key or library info
@@ -1161,7 +1230,8 @@ function ContentSearchCombobox({ value, onChange }) {
 
   const handleStartEditing = () => {
     setIsEditing(true);
-    setSearchQuery(value || '');
+    // For app items, don't pre-populate search — show siblings (browse) instead
+    setSearchQuery(value?.startsWith('app:') ? '' : (value || ''));
     combobox.openDropdown();
 
     // Check cache first
