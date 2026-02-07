@@ -198,7 +198,8 @@ export class PlexProxyAdapter {
 export function createPlexProxyAdapter(options = {}) {
   const adapterConfig = configService.getAdapterConfig('plex') || {};
   const host = adapterConfig.host;
-  const token = configService.getSecret('PLEX_TOKEN');
+  const token = configService.getSecret('PLEX_TOKEN')
+    || configService.getHouseholdAuth('plex')?.token;
 
   return new PlexProxyAdapter({ host, token }, options);
 }

@@ -21,9 +21,9 @@ import { DaylightMediaPath } from '../../../lib/api.mjs';
 import ImagePickerModal from './ImagePickerModal.jsx';
 import Player from '../../Player/Player.jsx';
 
-// Map adapter:localId (e.g. "hymn:113") to canonical contentId (e.g. "singing:hymn/113")
-// SinglePlayer's routing requires the category prefix (singing:/narrated:) for content scrollers
-const ADAPTER_TO_CATEGORY = { hymn: 'singing', primary: 'singing', scripture: 'narrated' };
+// Map adapter:localId (e.g. "hymn:113") to canonical contentId (e.g. "singalong:hymn/113")
+// SinglePlayer's routing requires the category prefix (singalong:/readalong:) for content scrollers
+const ADAPTER_TO_CATEGORY = { hymn: 'singalong', primary: 'singalong', scripture: 'readalong' };
 function toCanonicalContentId(input) {
   if (!input) return input;
   const m = input.match(/^([^:]+):(.+)$/);
@@ -92,7 +92,7 @@ const TYPE_ICONS = {
   course: IconSchool,
   meeting: IconUsers,
   collection: IconStack2,
-  // Content collection types (singing/narrated)
+  // Content collection types (singalong/readalong)
   hymn: IconMusic,
   primary: IconMusic,
   scripture: IconBook,
@@ -1168,7 +1168,7 @@ function ContentSearchCombobox({ value, onChange }) {
     }
 
     // Local content collections — try collection endpoint for sources without parent hierarchy
-    // This covers hymn, primary, and any future collections added to the SingingAdapter
+    // This covers hymn, primary, and any future collections added to the SingalongAdapter
     if (!contentInfo.parent && !contentInfo.library) {
       try {
         setLoadingBrowse(true);

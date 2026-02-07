@@ -186,7 +186,7 @@ describe('parseActionRouteId', () => {
     });
 
     it('should preserve all known sources', () => {
-      const knownSources = ['plex', 'immich', 'watchlist', 'files', 'canvas', 'audiobookshelf', 'komga', 'singing', 'narrated'];
+      const knownSources = ['plex', 'immich', 'watchlist', 'files', 'canvas', 'audiobookshelf', 'komga', 'singalong', 'readalong'];
 
       for (const src of knownSources) {
         const result = parseActionRouteId({ source: src, path: 'test-id' });

@@ -9,7 +9,7 @@
  * - Watch state enrichment in list/item endpoints
  * - Progress fields in canonical format (playhead, percent, duration)
  * - NextUp/selection patterns (scripture volumes, watchlists)
- * - Source resolution (plex, narrated, singing, watchlist)
+ * - Source resolution (plex, readalong, singalong, watchlist)
  */
 
 import fs from 'fs';
@@ -71,7 +71,7 @@ function discoverWatchHistory() {
     }
   }
 
-  // Discover narrated content history
+  // Discover readalong content history
   discovered.scriptures = loadYamlSafe(path.join(historyPath, 'scriptures.yml'));
   discovered.hymn = loadYamlSafe(path.join(historyPath, 'hymn.yml'));
   discovered.talk = loadYamlSafe(path.join(historyPath, 'talk.yml'));
@@ -222,10 +222,10 @@ describe('Content API Regression Tests', () => {
   });
 
   // ===========================================================================
-  // Watch State Enrichment - Narrated Content
+  // Watch State Enrichment - Readalong Content
   // ===========================================================================
 
-  describe('Narrated Content (Scripture) Watch State', () => {
+  describe('Readalong Content (Scripture) Watch State', () => {
     it('should have scripture watch history', () => {
       // May or may not exist depending on usage
       if (!watchHistory.scriptures) {
@@ -236,7 +236,7 @@ describe('Content API Regression Tests', () => {
     it('should support volume-level selection (nextUp pattern)', async () => {
       // Test the scripture/nt pattern for "next unfinished chapter"
       try {
-        const result = await fetchJson('/item/narrated/scripture/nt?select=watchlist');
+        const result = await fetchJson('/item/readalong/scripture/nt?select=watchlist');
 
         // Should return a single selected item
         expect(result).toBeDefined();
@@ -258,7 +258,7 @@ describe('Content API Regression Tests', () => {
 
     it('should support direct chapter reference', async () => {
       try {
-        const result = await fetchJson('/item/narrated/scripture/john-1');
+        const result = await fetchJson('/item/readalong/scripture/john-1');
 
         expect(result).toBeDefined();
         expect(result.id).toContain('scripture');
@@ -447,23 +447,23 @@ describe('Content API Regression Tests', () => {
   });
 
   // ===========================================================================
-  // Singing Content
+  // Singalong Content
   // ===========================================================================
 
-  describe('Singing Content', () => {
+  describe('Singalong Content', () => {
     it('should return hymn with watch state', async () => {
       try {
-        const hymn = await fetchJson('/item/singing/hymn/1');
+        const hymn = await fetchJson('/item/singalong/hymn/1');
 
         expect(hymn).toBeDefined();
-        expect(hymn.id).toContain('singing');
+        expect(hymn.id).toContain('singalong');
 
         // Should have content array for synchronized display
         if (hymn.content) {
           expect(Array.isArray(hymn.content)).toBe(true);
         }
       } catch (e) {
-        console.log('[SKIP] Singing content not available:', e.message);
+        console.log('[SKIP] Singalong content not available:', e.message);
       }
     });
   });

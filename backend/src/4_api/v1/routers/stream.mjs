@@ -69,40 +69,40 @@ function streamFile(fullPath, req, res, logger) {
 }
 
 /**
- * Create stream router for local content (singing, narrated)
+ * Create stream router for local content (singalong, readalong)
  *
  * Endpoints:
- * - GET /stream/singing/:collection/:id - Stream singing content (hymns, primary)
- * - GET /stream/narrated/:collection/* - Stream narrated content (scripture, talks, poetry)
+ * - GET /stream/singalong/:collection/:id - Stream singalong content (hymns, primary)
+ * - GET /stream/readalong/:collection/* - Stream readalong content (scripture, talks, poetry)
  *
  * @param {Object} config
- * @param {string} config.singingMediaPath - Base path for singing media files
- * @param {string} config.narratedMediaPath - Base path for narrated media files
+ * @param {string} config.singalongMediaPath - Base path for singalong media files
+ * @param {string} config.readalongMediaPath - Base path for readalong media files
  * @param {Object} [config.logger] - Logger instance
  * @returns {express.Router}
  */
 export function createStreamRouter(config) {
-  const { singingMediaPath, narratedMediaPath, logger = console } = config;
+  const { singalongMediaPath, readalongMediaPath, logger = console } = config;
   const router = express.Router();
 
   /**
-   * GET /stream/singing/:collection/:id
-   * Stream singing content (hymns, primary songs)
+  * GET /stream/singalong/:collection/:id
+  * Stream singalong content (hymns, primary songs)
    *
    * Examples:
-   * - /stream/singing/hymn/2 → finds 0002-*.mp3
-   * - /stream/singing/primary/123 → finds 0123-*.mp3
+   * - /stream/singalong/hymn/2 → finds 0002-*.mp3
+   * - /stream/singalong/primary/123 → finds 0123-*.mp3
    */
-  router.get('/singing/:collection/:id', asyncHandler(async (req, res) => {
+  router.get('/singalong/:collection/:id', asyncHandler(async (req, res) => {
     const { collection, id } = req.params;
-    const searchDir = path.join(singingMediaPath, collection);
+    const searchDir = path.join(singalongMediaPath, collection);
 
     // Find media file by prefix (handles 0002-the-spirit-of-god.mp3 format)
     // findMediaFileByPrefix returns full path or null
     const fullPath = findMediaFileByPrefix(searchDir, id);
 
     if (!fullPath || !fileExists(fullPath)) {
-      logger?.warn?.('stream.singing.not_found', { collection, id, searchDir });
+      logger?.warn?.('stream.singalong.not_found', { collection, id, searchDir });
       return res.status(404).json({ error: 'Media file not found', collection, id });
     }
 
@@ -110,14 +110,14 @@ export function createStreamRouter(config) {
   }));
 
   /**
-   * GET /stream/narrated/:collection/*
-   * Stream narrated content (scripture, talks, poetry)
+  * GET /stream/readalong/:collection/*
+  * Stream readalong content (scripture, talks, poetry)
    *
    * Examples:
-   * - /stream/narrated/scripture/nt/nirv/26046 → nt/nirv/26046.mp3
-   * - /stream/narrated/talks/ldsgc202410/smith → talks/ldsgc202410/smith.mp3
+   * - /stream/readalong/scripture/nt/nirv/26046 → nt/nirv/26046.mp3
+   * - /stream/readalong/talks/ldsgc202410/smith → talks/ldsgc202410/smith.mp3
    */
-  router.get('/narrated/:collection/*', asyncHandler(async (req, res) => {
+  router.get('/readalong/:collection/*', asyncHandler(async (req, res) => {
     const { collection } = req.params;
     const itemPath = req.params[0] || '';
 
@@ -125,7 +125,7 @@ export function createStreamRouter(config) {
       return res.status(400).json({ error: 'No item path specified' });
     }
 
-    const searchDir = path.join(narratedMediaPath, collection);
+    const searchDir = path.join(readalongMediaPath, collection);
     const pathParts = itemPath.split('/');
     const fileName = pathParts.pop();
     const subDir = pathParts.join('/');
@@ -138,7 +138,7 @@ export function createStreamRouter(config) {
     const fullPath = findMediaFileByPrefix(fullSearchDir, fileName);
 
     if (!fullPath || !fileExists(fullPath)) {
-      logger?.warn?.('stream.narrated.not_found', { collection, itemPath, fullSearchDir });
+      logger?.warn?.('stream.readalong.not_found', { collection, itemPath, fullSearchDir });
       return res.status(404).json({ error: 'Media file not found', collection, itemPath });
     }
 
@@ -154,7 +154,7 @@ export function createStreamRouter(config) {
 
     // Ambient tracks are in a dedicated ambient directory
     // Adjust path as needed based on actual location
-    const ambientDir = path.join(narratedMediaPath, '..', 'ambient');
+    const ambientDir = path.join(readalongMediaPath, '..', 'ambient');
     // findMediaFileByPrefix returns full path or null
     const fullPath = findMediaFileByPrefix(ambientDir, id);
 

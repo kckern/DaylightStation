@@ -17,7 +17,7 @@ export class ContentQueryService {
    * @param {Object} deps
    * @param {import('#domains/content/services/ContentSourceRegistry.mjs').ContentSourceRegistry} deps.registry
    * @param {import('#apps/content/ports/IMediaProgressMemory.mjs').IMediaProgressMemory} [deps.mediaProgressMemory]
-   * @param {Object<string, string>} [deps.legacyPrefixMap] - Map of legacy prefixes to canonical format (e.g., { hymn: 'singing:hymn' })
+  * @param {Object<string, string>} [deps.legacyPrefixMap] - Map of legacy prefixes to canonical format (e.g., { hymn: 'singalong:hymn' })
    * @param {Object} [deps.logger] - Logger instance for performance and debug logging
    * @param {import('./services/ContentQueryAliasResolver.mjs').ContentQueryAliasResolver} [deps.aliasResolver] - Optional alias resolver for prefix-based queries
    */
@@ -323,7 +323,7 @@ export class ContentQueryService {
    *   getIdPattern(): { pattern: RegExp, priority: number }
    *
    * Supports:
-   * - Legacy prefix mapping (e.g., "hymn:123" → {source: 'singing', id: 'hymn/123'})
+  * - Legacy prefix mapping (e.g., "hymn:123" → {source: 'singalong', id: 'hymn/123'})
    * - Explicit "source:id" format (e.g., "plex:456724", "immich:abc-123")
    * - Implicit all-digits → plex (e.g., "456724")
    * - Implicit UUID → immich (e.g., "ff940f1a-f5ea-4580-a517-dfc68413e215")
@@ -342,12 +342,12 @@ export class ContentQueryService {
       const prefix = explicitMatch[1].toLowerCase();
       const localId = explicitMatch[2];
 
-      // Check if prefix is in legacy map (e.g., "hymn" -> "singing:hymn")
+      // Check if prefix is in legacy map (e.g., "hymn" -> "singalong:hymn")
       const legacyMapping = this.#legacyPrefixMap[prefix];
       if (legacyMapping) {
-        // legacyMapping is like "singing:hymn" - split to get source and category
+        // legacyMapping is like "singalong:hymn" - split to get source and category
         const [source, category] = legacyMapping.split(':');
-        // Transform to canonical format: source='singing', id='hymn/123'
+        // Transform to canonical format: source='singalong', id='hymn/123'
         return { source, id: `${category}/${localId}` };
       }
 

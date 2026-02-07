@@ -13,8 +13,8 @@ The query system operates across these orthogonal dimensions:
 | Dimension | Values | Count |
 |-----------|--------|-------|
 | **Action** | `play`, `queue`, `display`, `list`, `read`, `open` | 6 |
-| **Source** | `plex`, `immich`, `audiobookshelf`, `komga`, `list`, `canvas`, `files`, `local-content`, `singing`, `narrated` | 10 |
-| **Category Alias** | `gallery`, `media`, `audiobooks`, `ebooks`, `local`, `singing`, `narrated` | 7 |
+| **Source** | `plex`, `immich`, `audiobookshelf`, `komga`, `list`, `canvas`, `files`, `local-content`, `singalong`, `readalong` | 10 |
+| **Category Alias** | `gallery`, `media`, `audiobooks`, `ebooks`, `local`, `singalong`, `readalong` | 7 |
 | **Resolution Strategy** | explicit, query, heuristic, alias, nested | 5 |
 | **Target Type** | leaf, container | 2 |
 | **Capability** | `playable`, `displayable`, `readable`, `listable` | 4 |
@@ -128,12 +128,12 @@ Each child is resolved using **its own container type's strategy**, not the pare
 | `canvas` | gallery | displayable, listable | path |
 | `files` | media | playable, listable | path |
 | `local-content` | local | playable, listable, searchable | `{type}/{id}` |
-| `singing` | singing | playable, listable (with synced stanzas) | `{collection}/{number}` |
-| `narrated` | narrated | playable, listable (with synced paragraphs) | `{collection}/{path}` |
+| `singalong` | singalong | playable, listable (with synced stanzas) | `{collection}/{number}` |
+| `readalong` | readalong | playable, listable (with synced paragraphs) | `{collection}/{path}` |
 
 #### local-content Detail
 
-`local-content` serves locally-hosted religious/educational content. It is the **infrastructure layer** that singing and narrated adapters delegate audio streaming to.
+`local-content` serves locally-hosted religious/educational content. It is the **infrastructure layer** that singalong and readalong adapters delegate audio streaming to.
 
 **Content types served:**
 
@@ -145,7 +145,7 @@ Each child is resolved using **its own container type's strategy**, not the pare
 | Primary songs audio | `primary:` | `{number}` | `primary:56` |
 | Poems audio | `poem:` | `{slug}` | `poem:invictus` |
 
-**Dedicated router:** `/api/v1/local-content/` with endpoints for each content type, cover art, collection icons, and collection listings. Also provides `/api/v1/proxy/local-content/stream/...` used by singing and narrated adapters for audio proxy.
+**Dedicated router:** `/api/v1/local-content/` with endpoints for each content type, cover art, collection icons, and collection listings. Also provides `/api/v1/proxy/local-content/stream/...` used by singalong and readalong adapters for audio proxy.
 
 **Search:** Supports text search across talks (title, speaker), hymns (number, title), primary songs, and poems (title, author) via `search()` method.
 
@@ -158,8 +158,8 @@ Each child is resolved using **its own container type's strategy**, not the pare
 | `audiobooks` | audiobookshelf | Audio long-form |
 | `ebooks` | audiobookshelf, komga | Readable content |
 | `local` | list, local-content | Local content sources |
-| `singing` | singing | Participatory sing-along content |
-| `narrated` | narrated | Follow-along narrated content |
+| `singalong` | singalong | Participatory sing-along content |
+| `readalong` | readalong | Follow-along readalong content |
 
 ### Prefix Aliases (ID Resolution)
 
@@ -169,8 +169,8 @@ Each child is resolved using **its own container type's strategy**, not the pare
 | `file:` | files | `file:video/movie.mp4` |
 | `fs:` | files | `fs:sfx/intro.mp3` |
 | `local:` | list (via actionRouteParser alias) | `local:TVApp` → `watchlist:TVApp` |
-| `singing:` | singing | `singing:hymn/123` |
-| `narrated:` | narrated | `narrated:scripture/alma-32` |
+| `singalong:` | singalong | `singalong:hymn/123` |
+| `readalong:` | readalong | `readalong:scripture/alma-32` |
 | `menu:` | list | `menu:TVApp/main` |
 | `program:` | list | `program:daily` |
 | `watchlist:` | list | `watchlist:FHE` |
@@ -180,7 +180,7 @@ Each child is resolved using **its own container type's strategy**, not the pare
 | `primary:` | local-content | `primary:56` |
 | `poem:` | local-content | `poem:invictus` |
 
-> **Note:** `talk:`, `scripture:`, `hymn:`, `primary:`, and `poem:` are NOT in actionRouteParser's `KNOWN_SOURCES`. They resolve exclusively via prefix registration in the ContentSourceRegistry. The singing and narrated adapters provide higher-level interactive experiences (synced scrollers) on top of `local-content` audio.
+> **Note:** `talk:`, `scripture:`, `hymn:`, `primary:`, and `poem:` are NOT in actionRouteParser's `KNOWN_SOURCES`. They resolve exclusively via prefix registration in the ContentSourceRegistry. The singalong and readalong adapters provide higher-level interactive experiences (synced scrollers) on top of `local-content` audio.
 
 ---
 
@@ -257,16 +257,16 @@ Input ID
 │                   │  hymns,     │             │             │
 │                   │  scripture) │             │             │
 ├───────────────────┼─────────────┼─────────────┼─────────────┤
-│ singing           │ ✓ audio     │ ✗           │ ✗           │
+│ singalong         │ ✓ audio     │ ✗           │ ✗           │
 │                   │ + content   │             │             │
 ├───────────────────┼─────────────┼─────────────┼─────────────┤
-│ narrated          │ ✓ audio,    │ ✗           │ ✗           │
+│ readalong         │ ✓ audio,    │ ✗           │ ✗           │
 │                   │   video     │             │             │
 │                   │ + content   │             │             │
 └───────────────────┴─────────────┴─────────────┴─────────────┘
 
 Legend: ✓ = native support, ~ = partial/derived, ✗ = not supported
-Note: singing/narrated produce playable items with synchronized `content` for UI rendering
+Note: singalong/readalong produce playable items with synchronized `content` for UI rendering
 ```
 
 ### Action × Capability Validity
@@ -653,7 +653,7 @@ play=plex.query:Mozart&sort=date&take=10
 
 ## 14. Scripture Query Permutations
 
-Scripture is accessed via the `narrated` source with the `scripture` collection. The resolution supports multiple formats.
+Scripture is accessed via the `readalong` source with the `scripture` collection. The resolution supports multiple formats.
 
 ### Reference Types
 
@@ -683,7 +683,7 @@ Scripture queries support text version and audio recording specification with fa
 Resolution priority (most specific → least):
 1. Explicit in query:     scripture/{version}/{recording}/{ref}
 2. Query params:          scripture/{ref}?text=kjvf&audio=nirv
-3. Manifest defaults:     config/narrated/scripture.yml → defaults
+3. Manifest defaults:     config/readalong/scripture.yml → defaults
 ```
 
 ### Query Permutations
@@ -733,8 +733,8 @@ play=scripture/kjvf/nirv/john-1      # Both explicit
 
 **Full compound ID format:**
 ```
-play=narrated:scripture/nt           # Explicit source prefix
-play=narrated:scripture/kjvf/john-1  # With version
+play=readalong:scripture/nt           # Explicit source prefix
+play=readalong:scripture/kjvf/john-1  # With version
 ```
 
 **With query params (alternative to path segments):**
@@ -810,12 +810,12 @@ All five action routes support three equivalent ID formats:
 | `canvas` | path | displayable, listable |
 | `files` | path | playable, listable |
 | `local-content` | `{type}/{id}` | playable, listable, searchable (talks, scripture, hymns, primary, poems) |
-| `singing` | `{collection}/{number}` | playable (with synced stanzas for sing-along UI) |
-| `narrated` | `{collection}/{path}` | playable (with synced paragraphs for follow-along UI) |
+| `singalong` | `{collection}/{number}` | playable (with synced stanzas for sing-along UI) |
+| `readalong` | `{collection}/{path}` | playable (with synced paragraphs for follow-along UI) |
 
 **Aliases:** `local` → `watchlist` (via actionRouteParser), `media`/`file`/`fs` → `files` (via prefix registration).
 
-**Adapter layering:** `singing` and `narrated` provide interactive scroller UIs. Their audio streaming is proxied through `local-content` (`/api/v1/proxy/local-content/stream/...`). The `local-content` adapter owns the raw audio files and content metadata; singing/narrated add synchronized text overlay.
+**Adapter layering:** `singalong` and `readalong` provide interactive scroller UIs. Their audio streaming is proxied through `local-content` (`/api/v1/proxy/local-content/stream/...`). The `local-content` adapter owns the raw audio files and content metadata; singalong/readalong add synchronized text overlay.
 
 ---
 
@@ -830,7 +830,7 @@ but silently ignored. For filtered/shuffled results, use `/list/` instead.
 
 ```
 GET /api/v1/info/plex/672445                    # Item metadata + capabilities[]
-GET /api/v1/info/singing/hymn/123               # Hymn metadata with synced content
+GET /api/v1/info/singalong/hymn/123             # Hymn metadata with synced content
 GET /api/v1/info/watchlist/TVApp                 # Watchlist container metadata
 ```
 
@@ -1084,3 +1084,9 @@ All endpoints return consistent error format:
 | 404 | `NOT_FOUND` | Item/source not found |
 | 501 | `*_NOT_CONFIGURED` | Service not available |
 | 503 | - | External service offline |
+
+## Related code:
+
+- backend/src/4_api/v1/utils/actionRouteParser.mjs
+- backend/src/3_applications/content/ContentQueryService.mjs
+- frontend/src/lib/queryParamResolver.js

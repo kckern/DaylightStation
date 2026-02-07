@@ -80,10 +80,10 @@ function transformToInfoResponse(item, source) {
   if (item.imageUrl) response.imageUrl = item.imageUrl;
   if (item.category) response.category = item.category;
 
-  // Pass through content field for singing/narrated scrollers
+  // Pass through content field for singalong/readalong scrollers
   if (item.content) response.content = item.content;
 
-  // Pass through subtitle for narrated/singing content
+  // Pass through subtitle for readalong/singalong content
   if (item.subtitle) response.subtitle = item.subtitle;
 
   // Expose plex key at top level for frontend compatibility

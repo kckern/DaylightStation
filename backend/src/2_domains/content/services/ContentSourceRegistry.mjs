@@ -206,17 +206,17 @@ export class ContentSourceRegistry {
 
   /**
    * Register legacy prefix aliases from config.
-   * Maps legacy prefixes (e.g., "hymn") to canonical format (e.g., "singing:hymn").
+  * Maps legacy prefixes (e.g., "hymn") to canonical format (e.g., "singalong:hymn").
    * @param {Object<string, string>} legacyMap - Map of legacy prefix to canonical format
    * @example
    * registry.registerLegacyPrefixes({
-   *   hymn: 'singing:hymn',      // hymn:123 → singing adapter with localId hymn/123
-   *   talk: 'narrated:talks'     // talk:foo → narrated adapter with localId talks/foo
+  *   hymn: 'singalong:hymn',      // hymn:123 → singalong adapter with localId hymn/123
+  *   talk: 'readalong:talks'     // talk:foo → readalong adapter with localId talks/foo
    * });
    */
   registerLegacyPrefixes(legacyMap) {
     for (const [legacyPrefix, canonical] of Object.entries(legacyMap)) {
-      // Parse canonical format: "source:pathPrefix" (e.g., "singing:hymn")
+      // Parse canonical format: "source:pathPrefix" (e.g., "singalong:hymn")
       const colonIndex = canonical.indexOf(':');
       if (colonIndex === -1) continue;
 

@@ -14,11 +14,11 @@ async function loadPrefixMap() {
   } catch {
     // Fallback to hardcoded if config unavailable
     legacyPrefixMap = {
-      hymn: 'singing:hymn',
-      primary: 'singing:primary',
-      scripture: 'narrated:scripture',
-      talk: 'narrated:talks',
-      poem: 'narrated:poetry'
+      hymn: 'singalong:hymn',
+      primary: 'singalong:primary',
+      scripture: 'readalong:scripture',
+      talk: 'readalong:talks',
+      poem: 'readalong:poetry'
     };
   }
   return legacyPrefixMap;
@@ -59,7 +59,7 @@ export async function resolvePlayParams(params) {
  */
 export function getCategoryFromId(contentId) {
   if (!contentId) return null;
-  const match = contentId.match(/^(singing|narrated):/);
+  const match = contentId.match(/^(singalong|readalong):/);
   return match ? match[1] : null;
 }
 

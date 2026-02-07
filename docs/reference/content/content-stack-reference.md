@@ -35,8 +35,8 @@ The content system has five key concepts:
 | `local` | Browses configured filesystem paths as content sources. See [LocalMediaAdapter](./local-media-adapter.md). | `/api/v1/local/*` |
 | `list` | Exposes menus/programs/watchlists as content. Prefixes: `menu:`, `program:`, `watchlist:`. See [ListAdapter](./list-adapter.md). | |
 | `canvas` | Static art images from filesystem or Immich libraries. | |
-| `singing` | Participatory sing-along content (hymns, primary songs). Playable with synced stanzas. | |
-| `narrated` | Follow-along narrated content (scripture, talks, poetry). Playable with synced paragraphs. | |
+| `singalong` | Participatory sing-along content (hymns, primary songs). Playable with synced stanzas. | |
+| `readalong` | Follow-along readalong content (scripture, talks, poetry). Playable with synced paragraphs. | |
 
 ---
 
@@ -418,8 +418,8 @@ Capabilities describe what you can do with an **item**, not a source. A single s
 | `canvas` | art images | displayable, listable (directory) |
 | `folder` | YAML-defined menus | listable, may reference playable items |
 | `filesystem` | audio, video files | playable, listable (directory) |
-| `singing` | hymns, primary songs | playable (with synced stanzas), listable |
-| `narrated` | scripture, talks, poetry | playable (with synced paragraphs), listable |
+| `singalong` | hymns, primary songs | playable (with synced stanzas), listable |
+| `readalong` | scripture, talks, poetry | playable (with synced paragraphs), listable |
 | `list` | menus, programs, watchlists | listable, references other sources |
 
 ### Capability Filtering
@@ -1028,3 +1028,10 @@ Browser components maintain navigation state for drill-down:
 | `2025-06-15` | Specific date |
 | `summer` | Semantic (June-August) |
 | `2024..2025` | Year range |
+
+## Related code:
+
+- backend/src/2_domains/content/services/ContentSourceRegistry.mjs
+- backend/src/3_applications/content/ContentQueryService.mjs
+- backend/src/4_api/v1/routers/item.mjs
+- frontend/src/lib/queryParamResolver.js

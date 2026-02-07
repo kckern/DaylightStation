@@ -5,7 +5,7 @@
  * 1. API confirms Scripture item exists in TVApp watchlist with src=scripture
  * 2. Scripture content API resolves NT to a valid chapter with audio
  * 3. TV page loads with menu items
- * 4. Selecting "Scripture" starts NarratedScroller playback (audio + verses)
+ * 4. Selecting "Scripture" starts ReadalongScroller playback (audio + verses)
  *
  * Created: 2026-02-06
  */
@@ -150,9 +150,9 @@ test.describe('TV Scripture (New Testament) Playback', () => {
     await sharedPage.keyboard.press('Enter');
     console.log('Pressed Enter to select Scripture');
 
-    // Scripture uses NarratedScroller (audio + text), not video
-    // Wait for the narrated scroller or audio element to appear
-    await sharedPage.waitForSelector('.narrated-scroller, .content-scroller, audio', {
+    // Scripture uses ReadalongScroller (audio + text), not video
+    // Wait for the readalong scroller or audio element to appear
+    await sharedPage.waitForSelector('.readalong-scroller, .content-scroller, audio', {
       timeout: 15000
     });
     console.log('Scripture player appeared');
@@ -160,13 +160,13 @@ test.describe('TV Scripture (New Testament) Playback', () => {
     // Give it time to load content and start audio
     await sharedPage.waitForTimeout(5000);
 
-    // Check for narrated scroller
-    const hasNarratedScroller = await sharedPage.locator('.narrated-scroller').count() > 0;
+    // Check for readalong scroller
+    const hasReadalongScroller = await sharedPage.locator('.readalong-scroller').count() > 0;
     const hasContentScroller = await sharedPage.locator('.content-scroller').count() > 0;
-    console.log(`Narrated scroller: ${hasNarratedScroller}, Content scroller: ${hasContentScroller}`);
+    console.log(`Readalong scroller: ${hasReadalongScroller}, Content scroller: ${hasContentScroller}`);
 
     // Check for verse text (scripture renders verses)
-    const hasVerses = await sharedPage.locator('.verse, .verse-text, .narrated-text').count() > 0;
+    const hasVerses = await sharedPage.locator('.verse, .verse-text, .readalong-text').count() > 0;
     console.log(`Has verse content: ${hasVerses}`);
 
     // Check audio state
@@ -204,7 +204,7 @@ test.describe('TV Scripture (New Testament) Playback', () => {
     }
 
     // Verify scroller content loaded (scripture reference or verse text visible)
-    expect(hasNarratedScroller || hasContentScroller, 'Should have a content scroller').toBe(true);
+    expect(hasReadalongScroller || hasContentScroller, 'Should have a content scroller').toBe(true);
 
     console.log('Scripture (New Testament) playback confirmed');
   });

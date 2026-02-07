@@ -66,7 +66,7 @@ test('preview play buttons open modal and media actually plays', async ({ page }
   expect(btnCount).toBeGreaterThan(4);
   console.log(`Found ${btnCount} preview buttons`);
 
-  // Test first button (audio/singing content)
+  // Test first button (audio/singalong content)
   await testPreviewButton(page, 0);
 
   // Test second button (plex/DASH video content)

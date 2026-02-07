@@ -334,14 +334,16 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const mediaProgressPath = configService.getPath('watchState') || `${householdDir}/history/media_memory`;
   const mediaProgressMemory = createMediaProgressMemory({ mediaProgressPath });
 
-  // Singing/Narrated adapters - point to canonical data directories (no symlinks)
-  const singingConfig = {
+  // Singalong/Readalong adapters - point to canonical data directories (no symlinks)
+  const singalongConfig = {
     dataPath: path.join(contentPath, 'songs'),  // hymn, primary
     mediaPath: path.join(mediaBasePath, 'audio', 'songs')
   };
-  const narratedConfig = {
-    dataPath: contentPath,  // scripture, poetry subdirectories
-    mediaPath: path.join(mediaBasePath, 'audio')  // scripture, poetry subdirectories
+  const canonicalReadalongDataPath = path.join(contentPath, 'readalong');
+  const canonicalReadalongMediaPath = path.join(mediaBasePath, 'audio', 'readalong');
+  const readalongConfig = {
+    dataPath: existsSync(canonicalReadalongDataPath) ? canonicalReadalongDataPath : contentPath,
+    mediaPath: existsSync(canonicalReadalongMediaPath) ? canonicalReadalongMediaPath : path.join(mediaBasePath, 'audio')
   };
 
   const contentRegistry = createContentRegistry({
@@ -356,8 +358,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     mediaMemoryPath,
     nomusicLabels,
     musicOverlayPlaylist,
-    singing: singingConfig,  // Sing-along content (hymns, primary songs)
-    narrated: narratedConfig   // Follow-along narrated content (scripture, talks, poetry)
+    singalong: singalongConfig,  // Sing-along content (hymns, primary songs)
+    readalong: readalongConfig   // Follow-along readalong content (scripture, talks, poetry)
   }, { httpClient: axios, mediaProgressMemory, app });
 
   // Create proxy service for content domain (used for media library passthrough)
@@ -374,7 +376,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const contentLoadFile = (relativePath) => loadYaml(path.join(householdDir, relativePath));
   const contentSaveFile = (relativePath, data) => saveYaml(path.join(householdDir, relativePath), data);
 
-  // Load legacy prefix mapping for ContentQueryService (e.g., hymn:123 -> singing:hymn/123)
+  // Load legacy prefix mapping for ContentQueryService (e.g., hymn:123 -> singalong:hymn/123)
   const contentPrefixesPath = path.join(dataBasePath, 'config', 'content-prefixes');
   const contentPrefixes = loadYaml(contentPrefixesPath) || {};
   const legacyPrefixMap = contentPrefixes.legacy || {};
@@ -510,7 +512,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     localContent: contentRouters.localContent,
     // Local media browsing and streaming
     local: contentRouters.local,
-    // Stream router for singing/narrated content
+    // Stream router for singalong/readalong content
     stream: contentRouters.stream,
   };
   rootLogger.info('content.routers.created', { keys: ['item', 'content', 'proxy', 'list', 'play', 'localContent', 'local', 'stream'] });
