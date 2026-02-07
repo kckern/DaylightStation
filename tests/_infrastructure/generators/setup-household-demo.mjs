@@ -209,7 +209,7 @@ async function main() {
   // ============== Create directory structure ==============
   console.log('\nCreating directory structure...');
   ensureDir(OUTPUT_DIR);
-  ensureDir(path.join(OUTPUT_DIR, 'apps/fitness/sessions'));
+  ensureDir(path.join(OUTPUT_DIR, 'history/fitness/sessions'));
   ensureDir(path.join(OUTPUT_DIR, 'apps/finances'));
   ensureDir(path.join(OUTPUT_DIR, 'apps/nutribot'));
   ensureDir(path.join(OUTPUT_DIR, 'shared/gratitude'));
@@ -260,7 +260,7 @@ async function main() {
   const sessions = generateSessionsForRange(startDate, args.days, USERS);
   let sessionCount = 0;
   for (const [dateStr, daySessions] of Object.entries(sessions)) {
-    const dateDir = path.join(OUTPUT_DIR, 'apps/fitness/sessions', dateStr);
+    const dateDir = path.join(OUTPUT_DIR, 'history/fitness/sessions', dateStr);
     ensureDir(dateDir);
     for (const session of daySessions) {
       const filename = `${session.id}.yml`;

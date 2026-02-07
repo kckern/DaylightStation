@@ -219,6 +219,12 @@ export function prepareTimelineForApi(timeline, timezone = 'UTC') {
     events: []
   };
 
+  // Preserve timeline metadata fields
+  if (timeline.interval_seconds != null) result.interval_seconds = timeline.interval_seconds;
+  if (timeline.tick_count != null) result.tick_count = timeline.tick_count;
+  if (timeline.encoding) result.encoding = timeline.encoding;
+  if (timeline.timebase) result.timebase = timeline.timebase;
+
   // Parse event timestamps
   if (Array.isArray(timeline.events)) {
     result.events = timeline.events.map(evt => {
@@ -233,19 +239,28 @@ export function prepareTimelineForApi(timeline, timezone = 'UTC') {
 }
 
 /**
- * Prepare timeline for file storage (encode series)
+ * Prepare timeline for file storage (encode series, preserve metadata)
  * @param {Object} timeline - Timeline with decoded series
- * @returns {Object} Timeline with encoded series
+ * @returns {Object} Timeline with encoded series and preserved metadata
  */
 export function prepareTimelineForStorage(timeline) {
   if (!timeline || typeof timeline !== 'object') {
     return { series: {}, events: [] };
   }
 
-  return {
+  const result = {
     series: encodeSeries(timeline.series || {}),
     events: timeline.events || []
   };
+
+  // Preserve timeline metadata fields (flat form only — timebase is redundant)
+  if (timeline.interval_seconds != null) result.interval_seconds = timeline.interval_seconds;
+  if (timeline.tick_count != null) result.tick_count = timeline.tick_count;
+  if (timeline.encoding) result.encoding = timeline.encoding;
+  // Note: timeline.timebase intentionally omitted from storage — it duplicates
+  // the flattened interval_seconds / tick_count / encoding fields above.
+
+  return result;
 }
 
 export default {

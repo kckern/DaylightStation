@@ -20,7 +20,14 @@ export class Session {
     roster = [],
     timeline = { series: {}, events: [] },
     snapshots = { captures: [], updatedAt: null },
-    metadata = {}
+    metadata = {},
+    // v3 fields
+    version = 3,
+    events = [],
+    participants = {},
+    entities = [],
+    treasureBox = null,
+    session = null
   }) {
     // Normalize sessionId to SessionId value object
     this.sessionId = sessionId instanceof SessionId ? sessionId : new SessionId(sessionId);
@@ -32,6 +39,13 @@ export class Session {
     this.timeline = timeline;
     this.snapshots = snapshots;
     this.metadata = metadata;
+    // v3 fields - preserved through persistence round-trip
+    this.version = version;
+    this.events = Array.isArray(events) ? events : [];
+    this.participants = participants && typeof participants === 'object' ? participants : {};
+    this.entities = Array.isArray(entities) ? entities : [];
+    this.treasureBox = treasureBox;
+    this.session = session;
   }
 
   /**
@@ -184,17 +198,58 @@ export class Session {
    * Serialize to plain object (for persistence)
    */
   toJSON() {
-    return {
-      sessionId: this.sessionId.toString(),
-      startTime: this.startTime,
-      endTime: this.endTime,
-      durationMs: this.durationMs,
-      timezone: this.timezone,
-      roster: this.roster,
-      timeline: this.timeline,
-      snapshots: this.snapshots,
-      metadata: this.metadata
+    const hasV3Session = !!this.session;
+    const hasV3Participants = Object.keys(this.participants).length > 0;
+
+    const result = {
+      version: this.version,
+      sessionId: this.sessionId.toString()
     };
+
+    // v3: session block at top with human-readable times
+    if (hasV3Session) result.session = this.session;
+
+    // Timezone (needed for parsing readable timestamps on read)
+    if (this.timezone) result.timezone = this.timezone;
+
+    // v3: participants is canonical; roster is reconstructed on read
+    if (hasV3Participants) {
+      result.participants = this.participants;
+    }
+
+    // Legacy root-level fields — only include when no v3 session block
+    // (v3 derives these from session.start/end/duration_seconds and participants)
+    if (!hasV3Session) {
+      result.startTime = this.startTime;
+      result.endTime = this.endTime;
+      result.durationMs = this.durationMs;
+    }
+    if (!hasV3Participants) {
+      result.roster = this.roster;
+    }
+
+    // Timeline data
+    result.timeline = this.timeline;
+
+    // Events at root level (v3)
+    if (this.events.length > 0) result.events = this.events;
+
+    // Treasure box (v3 gamification)
+    if (this.treasureBox) result.treasureBox = this.treasureBox;
+
+    // Entities (participation segments)
+    if (this.entities.length > 0) result.entities = this.entities;
+
+    // Snapshots — only include if non-empty
+    const hasSnapshots = this.snapshots &&
+      (Array.isArray(this.snapshots.captures) && this.snapshots.captures.length > 0 ||
+       this.snapshots.updatedAt != null);
+    if (hasSnapshots) result.snapshots = this.snapshots;
+
+    // Metadata — only include if non-empty
+    if (this.metadata && Object.keys(this.metadata).length > 0) result.metadata = this.metadata;
+
+    return result;
   }
 
   /**

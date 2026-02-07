@@ -2,7 +2,7 @@
  * YamlSessionDatastore - YAML-based session persistence
  *
  * Implements ISessionDatastore port for fitness session storage.
- * Sessions are stored at: household[-{id}]/apps/fitness/sessions/{YYYY-MM-DD}/{sessionId}.yml
+ * Sessions are stored at: household[-{id}]/history/fitness/sessions/{YYYY-MM-DD}/{sessionId}.yml
  * Screenshots at: {mediaRoot}/apps/fitness/sessions/{YYYY-MM-DD}/{sessionId}/screenshots/
  */
 import path from 'path';
@@ -71,7 +71,7 @@ export class YamlSessionDatastore extends ISessionDatastore {
     if (!sessionDate) return null;
 
     const sessionsDir = path.join(
-      this.configService.getHouseholdPath('apps/fitness/sessions', householdId),
+      this.configService.getHouseholdPath('history/fitness/sessions', householdId),
       sessionDate
     );
 
@@ -131,17 +131,35 @@ export class YamlSessionDatastore extends ISessionDatastore {
     if (!data) return null;
 
     // Parse timestamps to unix ms for API compatibility
+    // New v3 files use session.start/end; older files use root startTime/endTime
     const tz = typeof data.timezone === 'string' ? data.timezone : 'UTC';
-    const startMs = parseToUnixMs(data.startTime, tz);
-    const endMs = parseToUnixMs(data.endTime, tz);
+    const startMs = parseToUnixMs(data.startTime, tz)
+      || parseToUnixMs(data.session?.start, tz);
+    const endMs = parseToUnixMs(data.endTime, tz)
+      || parseToUnixMs(data.session?.end, tz);
     if (startMs != null) data.startTime = startMs;
     if (endMs != null) data.endTime = endMs;
 
-    // Parse event timestamps
+    // Derive durationMs from session block if missing at root
+    if (data.durationMs == null && data.session?.duration_seconds != null) {
+      data.durationMs = data.session.duration_seconds * 1000;
+    }
+
+    // Parse event timestamps (timeline.events)
     if (data.timeline?.events && Array.isArray(data.timeline.events)) {
       data.timeline.events = data.timeline.events.map(evt => {
         if (!evt || typeof evt !== 'object') return evt;
-        const ts = parseToUnixMs(evt.timestamp, tz);
+        const ts = parseToUnixMs(evt.timestamp, tz) || parseToUnixMs(evt.at, tz);
+        if (ts == null) return evt;
+        return { ...evt, timestamp: ts };
+      });
+    }
+
+    // Parse event timestamps (root events with 'at' field from v3 format)
+    if (Array.isArray(data.events)) {
+      data.events = data.events.map(evt => {
+        if (!evt || typeof evt !== 'object') return evt;
+        const ts = parseToUnixMs(evt.at, tz) || parseToUnixMs(evt.timestamp, tz);
         if (ts == null) return evt;
         return { ...evt, timestamp: ts };
       });
@@ -172,7 +190,7 @@ export class YamlSessionDatastore extends ISessionDatastore {
    * @returns {Promise<string[]>}
    */
   async listDates(householdId) {
-    const sessionsRoot = this.configService.getHouseholdPath('apps/fitness/sessions', householdId);
+    const sessionsRoot = this.configService.getHouseholdPath('history/fitness/sessions', householdId);
 
     return listDirsMatching(sessionsRoot, /^\d{4}-\d{2}-\d{2}$/)
       .sort()
@@ -187,7 +205,7 @@ export class YamlSessionDatastore extends ISessionDatastore {
    */
   async findByDate(date, householdId) {
     const sessionsDir = path.join(
-      this.configService.getHouseholdPath('apps/fitness/sessions', householdId),
+      this.configService.getHouseholdPath('history/fitness/sessions', householdId),
       date
     );
 
@@ -202,16 +220,23 @@ export class YamlSessionDatastore extends ISessionDatastore {
       if (!data) continue;
 
       const tz = typeof data.timezone === 'string' ? data.timezone : 'UTC';
-      const startTime = parseToUnixMs(data.startTime, tz);
-      const endTime = parseToUnixMs(data.endTime, tz);
+      const startTime = parseToUnixMs(data.startTime, tz)
+        || parseToUnixMs(data.session?.start, tz);
+      const endTime = parseToUnixMs(data.endTime, tz)
+        || parseToUnixMs(data.session?.end, tz);
+
+      // Derive durationMs: root field → session.duration_seconds → computed from timestamps
+      const durationMs = Number.isFinite(Number(data.durationMs))
+        ? Number(data.durationMs)
+        : (data.session?.duration_seconds != null
+            ? data.session.duration_seconds * 1000
+            : (startTime && endTime ? Math.max(0, endTime - startTime) : null));
 
       sessions.push({
         sessionId: data.sessionId || baseName,
         startTime: startTime || null,
         endTime: endTime || null,
-        durationMs: Number.isFinite(Number(data.durationMs))
-          ? Number(data.durationMs)
-          : (startTime && endTime ? Math.max(0, endTime - startTime) : null),
+        durationMs,
         rosterCount: Array.isArray(data.roster) && data.roster.length
           ? data.roster.length
           : (data.participants && typeof data.participants === 'object'

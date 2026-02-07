@@ -253,4 +253,65 @@ describe('Session', () => {
       expect(Session.sanitizeSessionId(null)).toBeNull();
     });
   });
+
+  describe('v3 field preservation', () => {
+    test('round-trips v3 fields through toJSON/fromJSON', () => {
+      const v3Session = new Session({
+        sessionId: '20260206182302',
+        startTime: 1770459782635,
+        endTime: 1770461372635,
+        durationMs: 1590000,
+        timezone: 'America/Los_Angeles',
+        version: 3,
+        events: [
+          { at: '2026-02-06 10:23:02', type: 'media_start', data: { title: 'Workout Mix', source: 'music_player' } },
+          { at: '2026-02-06 10:30:00', type: 'voice_memo', data: { transcript: 'Feeling good' } }
+        ],
+        participants: {
+          alan: { display_name: 'Alan', is_primary: true, hr_device: '28676' }
+        },
+        entities: [
+          { entityId: 'e1', profileId: 'alan', status: 'active', coins: 100 }
+        ],
+        treasureBox: { totalCoins: 313, buckets: { green: 209, yellow: 104 } },
+        session: { id: '20260206182302', date: '2026-02-06', start: '2026-02-06 10:23:02' },
+        roster: [{ name: 'Alan', isPrimary: true }]
+      });
+
+      const json = v3Session.toJSON();
+      const restored = Session.fromJSON(json);
+
+      // v3 fields survive round-trip
+      expect(restored.version).toBe(3);
+      expect(restored.events).toHaveLength(2);
+      expect(restored.events[0].type).toBe('media_start');
+      expect(restored.events[1].type).toBe('voice_memo');
+      expect(restored.participants.alan.display_name).toBe('Alan');
+      expect(restored.entities).toHaveLength(1);
+      expect(restored.entities[0].coins).toBe(100);
+      expect(restored.treasureBox.totalCoins).toBe(313);
+      expect(restored.session.id).toBe('20260206182302');
+
+      // Core fields: startTime/roster are NOT persisted at root in v3 —
+      // they are derived from session block and participants by the infrastructure layer.
+      // The entity round-trip preserves the session block and participants as canonical sources.
+      expect(restored.session.start).toBe('2026-02-06 10:23:02');
+      expect(restored.participants.alan.display_name).toBe('Alan');
+    });
+
+    test('toJSON omits empty v3 fields', () => {
+      const minimal = new Session({
+        sessionId: '20260111120000',
+        startTime: 1736596800000
+      });
+
+      const json = minimal.toJSON();
+      expect(json.version).toBe(3);
+      expect(json.events).toBeUndefined();
+      expect(json.participants).toBeUndefined();
+      expect(json.entities).toBeUndefined();
+      expect(json.treasureBox).toBeUndefined();
+      expect(json.session).toBeUndefined();
+    });
+  });
 });

@@ -306,6 +306,91 @@ describe('SessionService', () => {
       // Verify timeline series were preserved (and encoded for storage)
       expect(Object.keys(session.timeline.series)).toContain('kckern:hr');
       expect(typeof session.timeline.series['kckern:hr']).toBe('string');
+
+      // Verify v3 fields are preserved
+      expect(session.events).toHaveLength(1);
+      expect(session.events[0].type).toBe('media_start');
+      expect(session.version).toBe(3);
+      expect(session.participants.kckern.display_name).toBe('Kirk');
+    });
+
+    test('merges root events into timeline.events when timeline.events is empty', async () => {
+      mockStore.findById.mockResolvedValue(null);
+
+      const session = await service.saveSession({
+        version: 3,
+        session: {
+          id: '20260206182302',
+          start: '2026-02-06 10:23:02',
+          end: '2026-02-06 10:50:00',
+          duration_seconds: 1618
+        },
+        participants: {},
+        timeline: {
+          interval_seconds: 5,
+          tick_count: 320,
+          encoding: 'rle',
+          series: {}
+          // Note: no timeline.events here
+        },
+        events: [
+          { at: '2026-02-06 10:25:00', type: 'media_start', data: { title: 'Track 1', source: 'music_player' } },
+          { at: '2026-02-06 10:35:00', type: 'voice_memo', data: { transcript: 'Great session' } }
+        ]
+      }, 'test-hid');
+
+      // Root events should be merged into timeline.events
+      expect(session.timeline.events).toHaveLength(2);
+      expect(session.timeline.events[0].type).toBe('media_start');
+      expect(session.timeline.events[1].type).toBe('voice_memo');
+
+      // Root events should also be preserved as v3 field
+      expect(session.events).toHaveLength(2);
+    });
+
+    test('preserves timeline metadata (interval_seconds, tick_count, encoding)', async () => {
+      mockStore.findById.mockResolvedValue(null);
+
+      const session = await service.saveSession({
+        version: 3,
+        session: {
+          id: '20260206182302',
+          start: '2026-02-06 10:23:02',
+          end: '2026-02-06 10:50:00'
+        },
+        participants: {},
+        timeline: {
+          interval_seconds: 5,
+          tick_count: 320,
+          encoding: 'rle',
+          series: { 'alan:hr': '[[120,320]]' }
+        }
+      }, 'test-hid');
+
+      expect(session.timeline.interval_seconds).toBe(5);
+      expect(session.timeline.tick_count).toBe(320);
+      expect(session.timeline.encoding).toBe('rle');
+    });
+
+    test('preserves treasureBox and entities through save', async () => {
+      mockStore.findById.mockResolvedValue(null);
+
+      const session = await service.saveSession({
+        version: 3,
+        session: {
+          id: '20260206182302',
+          start: '2026-02-06 10:23:02',
+          end: '2026-02-06 10:50:00'
+        },
+        participants: {},
+        timeline: { series: {} },
+        treasureBox: { totalCoins: 500, buckets: { green: 300, yellow: 200 } },
+        entities: [{ entityId: 'e1', profileId: 'alan', coins: 250 }]
+      }, 'test-hid');
+
+      expect(session.treasureBox).toEqual({ totalCoins: 500, buckets: { green: 300, yellow: 200 } });
+      expect(session.entities).toHaveLength(1);
+      expect(session.entities[0].coins).toBe(250);
     });
   });
 

@@ -606,8 +606,7 @@ export class PersistenceManager {
       persistSessionData.timeline.tick_count = Number.isFinite(tickCount) ? tickCount : null;
       persistSessionData.timeline.encoding = 'rle';
 
-      // Remove timeline.events to avoid duplicate storage (events are at root level)
-      delete persistSessionData.timeline.events;
+      // Keep timeline.events for backend persistence (backend uses timeline.events as canonical source)
     }
 
     // Add entities array (session participation segments)
@@ -626,17 +625,19 @@ export class PersistenceManager {
       }).filter(Boolean);
     }
 
-    // Remove legacy duplicates - use session.* as canonical source
+    // Remove legacy duplicates — session block + participants are canonical v3 sources
     delete persistSessionData.roster;
     delete persistSessionData.voiceMemos;
     delete persistSessionData.deviceAssignments;
     delete persistSessionData.timebase;
-
-    // Remove root-level duplicates of session.* fields
-    delete persistSessionData.sessionId;
-    delete persistSessionData.startTime;
-    delete persistSessionData.endTime;
     delete persistSessionData.durationMs;
+    // startTime/endTime kept at root as readable strings (backend parses them as fallback)
+    // sessionId kept for backward compat with backend normalizePayload detection
+
+    // Drop redundant timeline.timebase (flattened fields are canonical)
+    if (persistSessionData.timeline) {
+      delete persistSessionData.timeline.timebase;
+    }
 
     // Encode series
     if (persistSessionData.timeline?.series) {

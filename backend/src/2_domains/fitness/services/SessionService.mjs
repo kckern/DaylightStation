@@ -60,29 +60,61 @@ function convertParticipantsToRoster(participants) {
  * @returns {Object} - Normalized payload
  */
 function normalizePayload(data) {
-  // Detect v3 format: has session.id but no root sessionId/startTime
-  const isV3 = data.session && typeof data.session === 'object' && !data.startTime;
+  // Detect v3 format: has session block or version marker
+  const isV3 = (data.version === 3 || (data.session && typeof data.session === 'object'));
 
   if (!isV3) {
+    // Even for non-v3, merge root events into timeline.events if timeline.events is empty
+    if (Array.isArray(data.events) && data.events.length > 0) {
+      const timelineEvents = data.timeline?.events || [];
+      if (!timelineEvents.length) {
+        data.timeline = {
+          ...(data.timeline || {}),
+          events: data.events
+        };
+      }
+    }
     return data;
   }
 
-  const session = data.session;
+  const session = data.session || {};
+
+  // Merge root events into timeline.events (frontend sends events at root, not timeline.events)
+  const rootEvents = Array.isArray(data.events) ? data.events : [];
+  const timelineEvents = data.timeline?.events || [];
+  const mergedEvents = timelineEvents.length > 0 ? timelineEvents : rootEvents;
+
+  // Preserve timeline metadata (interval_seconds, tick_count, encoding)
+  const timelineBase = data.timeline || {};
+
+  // Parse timestamps: prefer session.start/end (readable), fall back to root startTime/endTime
+  const startTime = parseTimestamp(session.start) || parseTimestamp(data.startTime) || data.startTime;
+  const endTime = parseTimestamp(session.end) || parseTimestamp(data.endTime) || data.endTime;
 
   return {
     ...data,
-    // Extract sessionId from nested session block
+    // Extract sessionId from nested session block or root
     sessionId: session.id || data.sessionId,
-    // Parse timestamp strings to Unix ms
-    startTime: parseTimestamp(session.start) || data.startTime,
-    endTime: parseTimestamp(session.end) || data.endTime,
+    startTime,
+    endTime,
     durationMs: session.duration_seconds != null
       ? session.duration_seconds * 1000
       : data.durationMs,
     // Convert participants object to roster array
     roster: convertParticipantsToRoster(data.participants) || data.roster || [],
-    // Timeline series should be preserved as-is (already at timeline.series)
-    timeline: data.timeline || { series: {}, events: [] }
+    // Timeline: preserve all metadata + merge events
+    timeline: {
+      ...timelineBase,
+      series: timelineBase.series || {},
+      events: mergedEvents
+    },
+    // Preserve v3 fields for round-trip through Session entity
+    events: rootEvents,
+    participants: data.participants || {},
+    entities: data.entities || [],
+    treasureBox: data.treasureBox || null,
+    session: data.session,
+    version: data.version || 3
   };
 }
 
