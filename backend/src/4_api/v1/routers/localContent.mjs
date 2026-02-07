@@ -92,10 +92,11 @@ function resolveScripturePath(input, dataPath) {
  * @param {Object} config.registry - ContentSourceRegistry
  * @param {string} config.dataPath - Base data path
  * @param {string} config.mediaBasePath - Base path for media files
+ * @param {Object} [config.mediaProgressMemory] - Media progress memory for watch history
  * @returns {express.Router}
  */
 export function createLocalContentRouter(config) {
-  const { registry, dataPath, mediaBasePath } = config;
+  const { registry, dataPath, mediaBasePath, mediaProgressMemory } = config;
   const router = express.Router();
 
   /**
@@ -260,7 +261,7 @@ export function createLocalContentRouter(config) {
   /**
    * GET /api/local-content/talk/*
    * Returns talk with paragraphs for ContentScroller
-   * If path refers to a conference/series, auto-selects first unwatched talk
+   * If path refers to a conference/series, auto-selects next unwatched talk
    */
   router.get('/talk/*', asyncHandler(async (req, res) => {
       const talkPath = req.params[0] || '';
@@ -275,7 +276,7 @@ export function createLocalContentRouter(config) {
         return res.status(404).json({ error: 'Talk not found', path: talkPath });
       }
 
-      // If this is a container (conference/series), auto-select a talk
+      // If this is a container (conference/series), auto-select next unwatched talk
       // Series contain conferences which contain talks — may need to recurse
       if (item.itemType === 'container' || !item.mediaUrl) {
         const list = await adapter.getList(`talk:${talkPath}`);
@@ -283,13 +284,11 @@ export function createLocalContentRouter(config) {
 
         // If children are containers (series → conferences), pick the latest and recurse
         if (children.length > 0 && !children.some(c => c.mediaUrl)) {
-          // Sort conference containers by localId descending (newest first)
           const sorted = [...children].sort((a, b) => {
             const aId = a.localId || a.id || '';
             const bId = b.localId || b.id || '';
             return bId.localeCompare(aId);
           });
-          // Get the latest conference's children
           const latestConf = sorted[0];
           const confId = latestConf.id?.replace('talk:', '') || latestConf.localId;
           if (confId) {
@@ -306,15 +305,82 @@ export function createLocalContentRouter(config) {
           });
         }
 
-        // Find first playable item (has mediaUrl and video file)
-        const firstPlayable = children.find(child => child.mediaUrl);
-        if (firstPlayable) {
-          item = firstPlayable;
-        } else if (children.length > 0) {
-          const firstChild = children[0];
-          const childId = firstChild.localId || firstChild.id?.replace('talk:', '');
-          if (childId) {
-            item = await adapter.getItem(`talk:${childId}`);
+        // Use watch history to find next unwatched talk
+        let selectedItem = null;
+        if (mediaProgressMemory && children.length > 0) {
+          const allProgress = await mediaProgressMemory.getAll('talk');
+
+          // Build watch map: normalize keys to conferenceId/talkNum
+          const watchMap = new Map();
+          for (const p of allProgress) {
+            const key = p.itemId || '';
+            let talkId = null;
+            if (key.startsWith('plex:video/talks/')) {
+              talkId = key.replace('plex:video/talks/', '');
+            } else if (key.startsWith('plex:talks/')) {
+              talkId = key.replace('plex:talks/', '');
+            } else if (key.startsWith('talk:')) {
+              talkId = key.replace('talk:', '');
+            }
+            if (talkId) {
+              const parts = talkId.split('/');
+              if (parts.length >= 2) {
+                const normalized = `${parts[parts.length - 2]}/${parts[parts.length - 1]}`;
+                const existing = watchMap.get(normalized) || 0;
+                const percent = p.percent || 0;
+                if (percent > existing) {
+                  watchMap.set(normalized, percent);
+                }
+              }
+            }
+          }
+
+          // Sort children by talk number (ascending, sequential order)
+          const sortedChildren = [...children].sort((a, b) => {
+            const aNum = parseInt((a.localId || '').split('/').pop(), 10) || 0;
+            const bNum = parseInt((b.localId || '').split('/').pop(), 10) || 0;
+            return aNum - bNum;
+          });
+
+          // Helper to normalize a child's localId for watch map lookup
+          const normalizeTalkId = (localId) => {
+            const parts = (localId || '').split('/');
+            return `${parts[parts.length - 2] || ''}/${parts[parts.length - 1] || ''}`;
+          };
+
+          // Prefer in-progress talks (started but not finished, >0% and <90%)
+          const inProgress = sortedChildren.find(child => {
+            const normalized = normalizeTalkId(child.localId);
+            const percent = watchMap.get(normalized) || 0;
+            return percent > 0 && percent < 90;
+          });
+
+          if (inProgress) {
+            selectedItem = inProgress;
+          } else {
+            // Next completely unwatched talk (<90%)
+            const unwatched = sortedChildren.find(child => {
+              const normalized = normalizeTalkId(child.localId);
+              const percent = watchMap.get(normalized) || 0;
+              return percent < 90;
+            });
+            selectedItem = unwatched || sortedChildren[0]; // fallback to first if all watched
+          }
+        }
+
+        if (selectedItem) {
+          item = selectedItem;
+        } else {
+          // Fallback when no mediaProgressMemory: first playable
+          const firstPlayable = children.find(child => child.mediaUrl);
+          if (firstPlayable) {
+            item = firstPlayable;
+          } else if (children.length > 0) {
+            const firstChild = children[0];
+            const childId = firstChild.localId || firstChild.id?.replace('talk:', '');
+            if (childId) {
+              item = await adapter.getItem(`talk:${childId}`);
+            }
           }
         }
 
@@ -323,12 +389,29 @@ export function createLocalContentRouter(config) {
         }
       }
 
+      // Get duration from mp4 file if not already set
+      let duration = item.duration || 0;
+      if (!duration && mediaBasePath) {
+        const mediaFile = item.metadata?.mediaFile;
+        if (mediaFile) {
+          const mediaFilePath = path.join(mediaBasePath, mediaFile);
+          if (fileExists(mediaFilePath)) {
+            try {
+              const meta = await parseFile(mediaFilePath, { native: true });
+              duration = Math.round(meta?.format?.duration) || 0;
+            } catch (e) {
+              // Ignore metadata parsing errors
+            }
+          }
+        }
+      }
+
       res.json({
         title: item.title,
         speaker: item.metadata?.speaker,
         assetId: item.id,
         mediaUrl: item.mediaUrl,
-        duration: item.duration,
+        duration,
         date: item.metadata?.date,
         description: item.metadata?.description,
         content: item.metadata?.content || []

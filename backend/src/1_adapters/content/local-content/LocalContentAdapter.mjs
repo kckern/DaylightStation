@@ -197,8 +197,60 @@ export class LocalContentAdapter {
   }
 
   /**
+   * Build a watch map from talk.yml history with multi-format key matching.
+   * Normalizes keys to "conferenceId/talkNum" for consistent lookup.
+   * @returns {Promise<Map<string, number>>} Map of normalized talk ID → best percent
+   * @private
+   */
+  async _buildTalkWatchMap() {
+    if (!this.mediaProgressMemory) return new Map();
+
+    const allProgress = await this.mediaProgressMemory.getAll('talk');
+    const watchMap = new Map();
+
+    for (const p of allProgress) {
+      const key = p.itemId || '';
+      let talkId = null;
+      if (key.startsWith('plex:video/talks/')) {
+        talkId = key.replace('plex:video/talks/', '');
+      } else if (key.startsWith('plex:talks/')) {
+        talkId = key.replace('plex:talks/', '');
+      } else if (key.startsWith('talk:')) {
+        talkId = key.replace('talk:', '');
+      }
+      if (talkId) {
+        const parts = talkId.split('/');
+        if (parts.length >= 2) {
+          const normalized = `${parts[parts.length - 2]}/${parts[parts.length - 1]}`;
+          const existing = watchMap.get(normalized) || 0;
+          const percent = p.percent || 0;
+          if (percent > existing) {
+            watchMap.set(normalized, percent);
+          }
+        }
+      }
+    }
+
+    return watchMap;
+  }
+
+  /**
+   * Normalize a talk localId to "conferenceId/talkNum" for watch map lookup.
+   * E.g., "ldsgc/ldsgc202510/12" → "ldsgc202510/12"
+   * @param {string} localId
+   * @returns {string}
+   * @private
+   */
+  _normalizeTalkId(localId) {
+    const parts = (localId || '').split('/');
+    const confId = parts[parts.length - 2] || '';
+    const talkNum = parts[parts.length - 1] || '';
+    return `${confId}/${talkNum}`;
+  }
+
+  /**
    * Select a random unwatched talk from a folder using ItemSelectionService.
-   * If all are watched, clears the folder's watch history and picks randomly.
+   * If all are watched, picks randomly from all.
    * Uses mediaProgressMemory for async watch state loading.
    * @param {string} folderId - Folder ID (e.g., "ldsgc202510")
    * @returns {Promise<string|null>} Selected talk localId or null
@@ -208,19 +260,14 @@ export class LocalContentAdapter {
     const folder = await this._getTalkFolder(folderId);
     if (!folder?.children?.length) return null;
 
-    // Enrich items with watch state (percent) from mediaProgressMemory
-    const enrichedItems = await Promise.all(folder.children.map(async (child) => {
-      let percent = 0;
-      if (this.mediaProgressMemory) {
-        try {
-          const state = await this.mediaProgressMemory.get('talks', child.localId);
-          percent = state?.percent || 0;
-        } catch (err) {
-          // Ignore errors, treat as unwatched
-        }
-      }
+    // Build watch map with multi-format key matching
+    const watchMap = await this._buildTalkWatchMap();
+
+    const enrichedItems = folder.children.map(child => {
+      const normalized = this._normalizeTalkId(child.localId);
+      const percent = watchMap.get(normalized) || 0;
       return { ...child, percent, watched: percent >= WATCHED_THRESHOLD };
-    }));
+    });
 
     // Use ItemSelectionService: filter watched, random sort, pick first
     const context = { containerType: 'talk', now: new Date() };
@@ -229,21 +276,11 @@ export class LocalContentAdapter {
       filter: 'none'          // we handle watched filter below
     });
 
-    // Apply watched filter manually (ItemSelectionService's watched filter checks percent)
+    // Apply watched filter manually
     selected = selected.filter(item => !item.watched);
 
-    // If all watched, clear watch history and pick random from all
+    // If all watched, re-select from all
     if (selected.length === 0) {
-      if (this.mediaProgressMemory) {
-        for (const item of enrichedItems) {
-          try {
-            await this.mediaProgressMemory.delete('talks', item.localId);
-          } catch (err) {
-            // Ignore delete errors
-          }
-        }
-      }
-      // Re-select without watched filter
       selected = ItemSelectionService.select(enrichedItems, context, {
         strategy: 'discovery',
         filter: 'none'
@@ -269,7 +306,7 @@ export class LocalContentAdapter {
    */
   getStoragePath(id) {
     const prefix = id.split(':')[0];
-    if (prefix === 'talk') return 'talks';
+    if (prefix === 'talk') return 'talk';
     if (prefix === 'scripture') return 'scripture';
     if (prefix === 'hymn') return 'songs';
     if (prefix === 'primary') return 'songs';
