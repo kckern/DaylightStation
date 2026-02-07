@@ -6,7 +6,8 @@ import { parseInput } from './endpoint-map.mjs';
 
 // Data path from environment or default
 const DATA_PATH = process.env.DAYLIGHT_DATA_PATH || path.resolve('data');
-const LISTS_PATH = path.join(DATA_PATH, 'household/state/lists.yml');
+// Lists now in config/lists/ directory (individual YAML files)
+const LISTS_DIR = path.join(DATA_PATH, 'household/config/lists');
 
 /**
  * Load test fixtures from lists.yml

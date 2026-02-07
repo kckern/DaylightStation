@@ -165,33 +165,33 @@ Part of DDD domain layer cleanup."
 ### Task 2: Move AI Domain Ports
 
 **Files:**
-- Move: `backend/src/1_domains/ai/ports/IAIGateway.mjs` → `backend/src/3_applications/shared/ports/IAIGateway.mjs`
-- Move: `backend/src/1_domains/ai/ports/ITranscriptionService.mjs` → `backend/src/3_applications/shared/ports/ITranscriptionService.mjs`
-- Create: `backend/src/3_applications/shared/ports/index.mjs`
+- Move: `backend/src/1_domains/ai/ports/IAIGateway.mjs` → `backend/src/3_applications/common/ports/IAIGateway.mjs`
+- Move: `backend/src/1_domains/ai/ports/ITranscriptionService.mjs` → `backend/src/3_applications/common/ports/ITranscriptionService.mjs`
+- Create: `backend/src/3_applications/common/ports/index.mjs`
 - Delete: `backend/src/1_domains/ai/ports/` (directory)
 
 **Step 1: Create target directory structure**
 
 ```bash
-mkdir -p backend/src/3_applications/shared/ports
+mkdir -p backend/src/3_applications/common/ports
 ```
 
 **Step 2: Move IAIGateway.mjs**
 
 ```bash
-mv backend/src/1_domains/ai/ports/IAIGateway.mjs backend/src/3_applications/shared/ports/
+mv backend/src/1_domains/ai/ports/IAIGateway.mjs backend/src/3_applications/common/ports/
 ```
 
 **Step 3: Move ITranscriptionService.mjs**
 
 ```bash
-mv backend/src/1_domains/ai/ports/ITranscriptionService.mjs backend/src/3_applications/shared/ports/
+mv backend/src/1_domains/ai/ports/ITranscriptionService.mjs backend/src/3_applications/common/ports/
 ```
 
 **Step 4: Create barrel export**
 
 ```javascript
-// backend/src/3_applications/shared/ports/index.mjs
+// backend/src/3_applications/common/ports/index.mjs
 export { IAIGateway } from './IAIGateway.mjs';
 export { ITranscriptionService } from './ITranscriptionService.mjs';
 ```
@@ -200,7 +200,7 @@ export { ITranscriptionService } from './ITranscriptionService.mjs';
 
 Run: `grep -r "1_domains/ai/ports" backend/src --include="*.mjs" --include="*.js"`
 
-Update each file to import from `#applications/shared/ports/index.mjs`
+Update each file to import from `#applications/common/ports/index.mjs`
 
 **Step 6: Remove empty directory**
 
@@ -219,7 +219,7 @@ Expected: PASS (or fix any import issues)
 git add -A
 git commit -m "refactor(ai): move ports from domain to application layer
 
-IAIGateway and ITranscriptionService now in 3_applications/shared/ports/.
+IAIGateway and ITranscriptionService now in 3_applications/common/ports/.
 Ports define contracts for external systems and belong in application layer per DDD."
 ```
 
@@ -228,23 +228,23 @@ Ports define contracts for external systems and belong in application layer per 
 ### Task 3: Move Messaging Domain Ports
 
 **Files:**
-- Move: `backend/src/1_domains/messaging/ports/*.mjs` → `backend/src/3_applications/shared/ports/`
-- Update: `backend/src/3_applications/shared/ports/index.mjs`
+- Move: `backend/src/1_domains/messaging/ports/*.mjs` → `backend/src/3_applications/common/ports/`
+- Update: `backend/src/3_applications/common/ports/index.mjs`
 - Delete: `backend/src/1_domains/messaging/ports/`
 
 **Step 1: Move all messaging ports**
 
 ```bash
-mv backend/src/1_domains/messaging/ports/INotificationChannel.mjs backend/src/3_applications/shared/ports/
-mv backend/src/1_domains/messaging/ports/IMessagingGateway.mjs backend/src/3_applications/shared/ports/
-mv backend/src/1_domains/messaging/ports/IConversationStateStore.mjs backend/src/3_applications/shared/ports/
-mv backend/src/1_domains/messaging/ports/IConversationStore.mjs backend/src/3_applications/shared/ports/
+mv backend/src/1_domains/messaging/ports/INotificationChannel.mjs backend/src/3_applications/common/ports/
+mv backend/src/1_domains/messaging/ports/IMessagingGateway.mjs backend/src/3_applications/common/ports/
+mv backend/src/1_domains/messaging/ports/IConversationStateStore.mjs backend/src/3_applications/common/ports/
+mv backend/src/1_domains/messaging/ports/IConversationStore.mjs backend/src/3_applications/common/ports/
 ```
 
 **Step 2: Update barrel export**
 
 ```javascript
-// backend/src/3_applications/shared/ports/index.mjs
+// backend/src/3_applications/common/ports/index.mjs
 export { IAIGateway } from './IAIGateway.mjs';
 export { ITranscriptionService } from './ITranscriptionService.mjs';
 export { INotificationChannel } from './INotificationChannel.mjs';

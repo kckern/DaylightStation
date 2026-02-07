@@ -23,9 +23,9 @@ The intern made substantial progress on Issues 9A and 9B, but Issue 9C (audio me
 ### What Was Done
 
 1. **Deleted components:**
-   - `shared/VoiceMemoModal/VoiceMemoModal.jsx` (deleted)
-   - `shared/VoiceMemoModal/VoiceMemoModal.scss` (deleted)
-   - `shared/VoiceMemoModal/index.js` (deleted)
+   - `common/VoiceMemoModal/VoiceMemoModal.jsx` (deleted)
+   - `common/VoiceMemoModal/VoiceMemoModal.scss` (deleted)
+   - `common/VoiceMemoModal/index.js` (deleted)
    - `FitnessVoiceMemoStandalone.jsx` (deleted)
    - `FitnessSidebar/FitnessVoiceMemoStandalone.scss` (deleted)
 
@@ -205,9 +205,9 @@ test('meter responds with full range to normal speech levels', async ({ page }) 
 - `FitnessContext.jsx` - State management for overlay
 
 ### Deleted (May Cause Import Errors)
-- `shared/VoiceMemoModal/VoiceMemoModal.jsx`
-- `shared/VoiceMemoModal/VoiceMemoModal.scss`
-- `shared/VoiceMemoModal/index.js`
+- `common/VoiceMemoModal/VoiceMemoModal.jsx`
+- `common/VoiceMemoModal/VoiceMemoModal.scss`
+- `common/VoiceMemoModal/index.js`
 - `FitnessVoiceMemoStandalone.jsx`
 - `FitnessSidebar/FitnessVoiceMemoStandalone.scss`
 

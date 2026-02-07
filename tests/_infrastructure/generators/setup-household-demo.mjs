@@ -211,9 +211,9 @@ async function main() {
   ensureDir(OUTPUT_DIR);
   ensureDir(path.join(OUTPUT_DIR, 'history/fitness'));
   ensureDir(path.join(OUTPUT_DIR, 'common/finances'));
-  ensureDir(path.join(OUTPUT_DIR, 'state/nutribot/conversations'));
+  ensureDir(path.join(OUTPUT_DIR, 'common/infinity'));  // Infinity harvested data
   ensureDir(path.join(OUTPUT_DIR, 'common/gratitude'));
-  ensureDir(path.join(OUTPUT_DIR, 'state'));
+  ensureDir(path.join(OUTPUT_DIR, 'config/lists'));  // List definitions
   ensureDir(path.join(OUTPUT_DIR, 'history'));
   ensureDir(path.join(OUTPUT_DIR, 'users'));
 
@@ -221,6 +221,9 @@ async function main() {
   for (const user of USERS) {
     ensureDir(path.join(OUTPUT_DIR, 'users', user.id, 'lifelog/nutrition/archives/nutrilog'));
     ensureDir(path.join(OUTPUT_DIR, 'users', user.id, 'lifelog'));
+    ensureDir(path.join(OUTPUT_DIR, 'users', user.id, 'conversations/nutribot'));
+    ensureDir(path.join(OUTPUT_DIR, 'users', user.id, 'conversations/journalist'));
+    ensureDir(path.join(OUTPUT_DIR, 'users', user.id, 'conversations/homebot'));
   }
 
   // ============== Generate core config files ==============
@@ -282,19 +285,19 @@ async function main() {
 
   // Budget config
   const budgetConfig = generateBudgetConfig();
-  writeYaml(path.join(OUTPUT_DIR, 'shared/finances/budget.config.yml'), budgetConfig);
-  console.log('  ✓ shared/finances/budget.config.yml');
+  writeYaml(path.join(OUTPUT_DIR, 'common/finances/budget.config.yml'), budgetConfig);
+  console.log('  ✓ common/finances/budget.config.yml');
 
   // Account balances
   const balances = generateAccountBalances();
-  writeYaml(path.join(OUTPUT_DIR, 'shared/finances/account.balances.yml'), balances);
-  console.log('  ✓ shared/finances/account.balances.yml');
+  writeYaml(path.join(OUTPUT_DIR, 'common/finances/account.balances.yml'), balances);
+  console.log('  ✓ common/finances/account.balances.yml');
 
   // Transactions
   const transactions = generateTransactionsForRange(startDate, args.days);
   const groupedTransactions = groupTransactionsByMonth(transactions);
   for (const [month, monthData] of Object.entries(groupedTransactions)) {
-    const monthDir = path.join(OUTPUT_DIR, 'shared/finances', month);
+    const monthDir = path.join(OUTPUT_DIR, 'common/finances', month);
     ensureDir(monthDir);
     writeYaml(path.join(monthDir, 'transactions.yml'), monthData);
   }
@@ -305,13 +308,13 @@ async function main() {
 
   // Calendar events
   const calendarEvents = generateCalendarEvents(startDate, args.days + 30); // Include future events
-  writeYaml(path.join(OUTPUT_DIR, 'shared/calendar.yml'), calendarEvents);
-  console.log(`  ✓ shared/calendar.yml (${calendarEvents.items.length} events)`);
+  writeYaml(path.join(OUTPUT_DIR, 'common/calendar.yml'), calendarEvents);
+  console.log(`  ✓ common/calendar.yml (${calendarEvents.items.length} events)`);
 
   // Shared events
   const sharedEvents = generateSharedEvents(startDate, args.days);
-  writeYaml(path.join(OUTPUT_DIR, 'shared/events.yml'), sharedEvents);
-  console.log(`  ✓ shared/events.yml (${sharedEvents.events.length} events)`);
+  writeYaml(path.join(OUTPUT_DIR, 'common/events.yml'), sharedEvents);
+  console.log(`  ✓ common/events.yml (${sharedEvents.events.length} events)`);
 
   // ============== Generate nutrition data ==============
   console.log('\nGenerating nutrition data...');
@@ -337,30 +340,30 @@ async function main() {
   // ============== Generate media data ==============
   console.log('\nGenerating media data...');
 
-  // Watchlist
+  // Watchlist (moved to common/infinity/watchlist.yml for Infinity-harvested data)
   const watchlist = generateWatchlist();
-  writeYaml(path.join(OUTPUT_DIR, 'state/watchlist.yml'), watchlist);
-  console.log(`  ✓ state/watchlist.yml (${watchlist.items.length} items)`);
+  writeYaml(path.join(OUTPUT_DIR, 'common/infinity/watchlist.yml'), watchlist);
+  console.log(`  ✓ common/infinity/watchlist.yml (${watchlist.items.length} items)`);
 
   // Watch history
   const watchHistory = generateWatchHistory(30);
-  writeYaml(path.join(OUTPUT_DIR, 'state/watch_history.yml'), watchHistory);
-  console.log(`  ✓ state/watch_history.yml (${watchHistory.history.length} entries)`);
+  writeYaml(path.join(OUTPUT_DIR, 'history/watch_history.yml'), watchHistory);
+  console.log(`  ✓ history/watch_history.yml (${watchHistory.history.length} entries)`);
 
   // Media menu
   const mediaMenu = generateMediaMenu();
-  writeYaml(path.join(OUTPUT_DIR, 'state/mediamenu.yml'), mediaMenu);
-  console.log('  ✓ state/mediamenu.yml');
+  writeYaml(path.join(OUTPUT_DIR, 'config/lists/media_menu.yml'), mediaMenu);
+  console.log('  ✓ config/lists/media_menu.yml');
 
   // Playlists
   const playlists = generatePlaylists();
-  writeYaml(path.join(OUTPUT_DIR, 'state/playlists.yml'), playlists);
-  console.log(`  ✓ state/playlists.yml (${playlists.playlists.length} playlists)`);
+  writeYaml(path.join(OUTPUT_DIR, 'config/lists/playlists.yml'), playlists);
+  console.log(`  ✓ config/lists/playlists.yml (${playlists.playlists.length} playlists)`);
 
   // Gratitude entries
   const gratitude = generateGratitudeEntries(args.days);
-  writeYaml(path.join(OUTPUT_DIR, 'shared/gratitude/entries.yml'), gratitude);
-  console.log(`  ✓ shared/gratitude/entries.yml (${gratitude.entries.length} entries)`);
+  writeYaml(path.join(OUTPUT_DIR, 'common/gratitude/entries.yml'), gratitude);
+  console.log(`  ✓ common/gratitude/entries.yml (${gratitude.entries.length} entries)`);
 
   // ============== Generate chatbot config ==============
   console.log('\nGenerating app configs...');

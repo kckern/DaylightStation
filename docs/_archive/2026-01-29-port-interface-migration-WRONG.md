@@ -403,7 +403,7 @@ Note: Domain is `nutrition` but app is `nutribot` - keep interfaces in nutrition
 
 ---
 
-## Phase 4: Shared/Cross-Cutting Ports
+## Phase 4: common/Cross-Cutting Ports
 
 ### Task 13: Migrate shared ports to messaging domain
 
@@ -426,9 +426,9 @@ Note: Domain is `nutrition` but app is `nutribot` - keep interfaces in nutrition
 - Modify: `backend/src/2_adapters/persistence/yaml/YamlConversationDatastore.mjs`
 - Modify: `backend/src/2_adapters/telegram/IInputEvent.mjs`
 - Modify: `backend/src/2_adapters/homebot/HomeBotInputRouter.mjs`
-- Delete: `backend/src/3_applications/shared/ports/`
+- Delete: `backend/src/3_applications/common/ports/`
 
-Note: Also move `InputEventType.mjs` from `#apps/shared/` to `#domains/messaging/`.
+Note: Also move `InputEventType.mjs` from `#apps/common/` to `#domains/messaging/`.
 
 **Commit message:** `refactor(messaging): consolidate shared ports into messaging domain`
 

@@ -7,7 +7,7 @@
  * @module applications/devices/services
  */
 
-import { ApplicationError } from '#apps/shared/errors/index.mjs';
+import { ApplicationError } from '#apps/common/errors/index.mjs';
 
 export class DeviceService {
   #devices;

@@ -1,4 +1,4 @@
-// tests/unit/suite/applications/shared/ports/IAIGateway.test.mjs
+// tests/unit/suite/applications/common/ports/IAIGateway.test.mjs
 import {
   IAIGateway,
   isAIGateway,
@@ -6,7 +6,7 @@ import {
   systemMessage,
   userMessage,
   assistantMessage
-} from '#backend/src/3_applications/shared/ports/IAIGateway.mjs';
+} from '#backend/src/3_applications/common/ports/IAIGateway.mjs';
 
 describe('IAIGateway', () => {
   describe('interface methods', () => {

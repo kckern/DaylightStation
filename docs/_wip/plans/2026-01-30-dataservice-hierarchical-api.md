@@ -16,8 +16,8 @@
 // New hierarchical API
 dataService.user.read('lifelog/nutrition', username?)      // defaults to head of household
 dataService.user.write('lifelog/nutrition', data, username?)
-dataService.household.read('shared/weather', hid?)         // defaults to main household
-dataService.household.write('shared/weather', data, hid?)
+dataService.household.read('common/weather', hid?)         // defaults to main household
+dataService.household.write('common/weather', data, hid?)
 dataService.system.read('state/cron-runtime')              // no default needed
 dataService.system.write('state/cron-runtime', data)
 ```
@@ -341,7 +341,7 @@ git commit -m "test: add user scope read/write tests for DataService"
       const filePath = path.join(testDir, 'household', 'shared', 'weather.yml');
       fs.writeFileSync(filePath, yaml.dump(testData));
 
-      const result = ds.household.read('shared/weather');
+      const result = ds.household.read('common/weather');
       expect(result).toEqual(testData);
     });
 
@@ -351,7 +351,7 @@ git commit -m "test: add user scope read/write tests for DataService"
       const filePath = path.join(testDir, 'household-other', 'shared', 'weather.yml');
       fs.writeFileSync(filePath, yaml.dump(testData));
 
-      const result = ds.household.read('shared/weather', 'other');
+      const result = ds.household.read('common/weather', 'other');
       expect(result).toEqual(testData);
     });
 
@@ -612,7 +612,7 @@ export class YamlWeatherDatastore {
 
   async save(data) {
     this.#logger.debug?.('weather.store.save', { householdId: this.#householdId });
-    const result = this.#dataService.household.write('shared/weather', data, this.#householdId);
+    const result = this.#dataService.household.write('common/weather', data, this.#householdId);
     if (!result) {
       this.#logger.error?.('weather.store.save.failed', { householdId: this.#householdId });
     }
@@ -620,7 +620,7 @@ export class YamlWeatherDatastore {
   }
 
   async load() {
-    const data = this.#dataService.household.read('shared/weather', this.#householdId);
+    const data = this.#dataService.household.read('common/weather', this.#householdId);
     if (!data) {
       this.#logger.debug?.('weather.store.load.notFound', { householdId: this.#householdId });
     }

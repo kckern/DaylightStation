@@ -176,10 +176,10 @@ export class InfinityHarvester extends IHarvester {
         ? await this.#saveImages(processedItems)
         : processedItems;
 
-      // Save to household state file (Infinity data is household-level, not user-level)
-      // This matches legacy behavior: saveFile('state/lists') -> household/state/lists
+      // Save to household common data (Infinity data is household-level, not user-level)
+      // Migrated from deprecated state/ to common/infinity/
       if (this.#io?.householdSaveFile) {
-        await this.#io.householdSaveFile(`state/${this.#tableKey}`, finalItems);
+        await this.#io.householdSaveFile(`common/infinity/${this.#tableKey}`, finalItems);
       }
 
       this.#circuitBreaker.recordSuccess();

@@ -217,7 +217,7 @@ export class OpenAIAdapter {
 Adapters implement port interfaces from `3_applications/*/ports/`:
 
 ```javascript
-import { IMessagingGateway } from '#applications/shared/ports/IMessagingGateway.mjs';
+import { IMessagingGateway } from '#applications/common/ports/IMessagingGateway.mjs';
 
 export class TelegramMessagingAdapter extends IMessagingGateway {
   // Implement all port methods

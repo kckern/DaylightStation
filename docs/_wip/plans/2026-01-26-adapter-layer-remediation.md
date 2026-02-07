@@ -595,14 +595,14 @@ git commit -m "feat(system): add services barrel export"
 
 **Files:**
 - Modify: `backend/src/2_adapters/telegram/IInputEvent.mjs`
-- Create: `backend/src/3_applications/shared/InputEventType.mjs`
+- Create: `backend/src/3_applications/common/InputEventType.mjs`
 - Modify: `backend/src/2_adapters/homebot/HomeBotInputRouter.mjs`
 - Modify: `backend/src/2_adapters/journalist/JournalistInputRouter.mjs`
 
 **Step 1: Create shared InputEventType**
 
 ```javascript
-// backend/src/3_applications/shared/InputEventType.mjs
+// backend/src/3_applications/common/InputEventType.mjs
 
 /**
  * Input event types for bot message routing.
@@ -627,7 +627,7 @@ export default InputEventType;
 // At top of backend/src/2_adapters/telegram/IInputEvent.mjs
 // Replace the existing InputEventType definition with:
 
-export { InputEventType } from '../../3_applications/shared/InputEventType.mjs';
+export { InputEventType } from '../../3_applications/common/InputEventType.mjs';
 ```
 
 **Step 3: Update HomeBotInputRouter import**
@@ -637,7 +637,7 @@ export { InputEventType } from '../../3_applications/shared/InputEventType.mjs';
 // Change line 3 from:
 import { InputEventType } from '../telegram/IInputEvent.mjs';
 // To:
-import { InputEventType } from '../../3_applications/shared/InputEventType.mjs';
+import { InputEventType } from '../../3_applications/common/InputEventType.mjs';
 ```
 
 **Step 4: Update JournalistInputRouter import**
@@ -647,13 +647,13 @@ import { InputEventType } from '../../3_applications/shared/InputEventType.mjs';
 // Change line 9 from:
 import { InputEventType } from '../telegram/IInputEvent.mjs';
 // To:
-import { InputEventType } from '../../3_applications/shared/InputEventType.mjs';
+import { InputEventType } from '../../3_applications/common/InputEventType.mjs';
 ```
 
 **Step 5: Commit**
 
 ```bash
-git add backend/src/3_applications/shared/InputEventType.mjs \
+git add backend/src/3_applications/common/InputEventType.mjs \
         backend/src/2_adapters/telegram/IInputEvent.mjs \
         backend/src/2_adapters/homebot/HomeBotInputRouter.mjs \
         backend/src/2_adapters/journalist/JournalistInputRouter.mjs
@@ -1141,7 +1141,7 @@ git commit -m "refactor(<domain>): add port interface extends to datastores"
 
 **For each gateway adapter, add extends for its port interface.**
 
-Note: Some ports may not exist yet - create them in `3_applications/shared/ports/` as needed.
+Note: Some ports may not exist yet - create them in `3_applications/common/ports/` as needed.
 
 **Commit in batches.**
 

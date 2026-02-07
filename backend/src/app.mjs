@@ -326,7 +326,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     proxyPath: canvasConfig.proxyPath || '/api/v1/canvas/image'
   };
 
-  const watchlistPath = `${householdDir}/state/lists.yml`;
+  // watchlistPath removed - lists now in config/lists/ directory (managed by ListAdapter)
   const contentPath = `${dataBasePath}/content`;  // LocalContentAdapter expects content/ subdirectory
   const mediaMemoryPath = `${householdDir}/history/media_memory`;
 
@@ -358,7 +358,6 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     canvas,  // Canvas art display (filesystem-based)
     dataPath: contentPath,
     listDataPath: dataBasePath,  // ListAdapter needs root data path for household/config/lists/
-    watchlistPath,
     mediaMemoryPath,
     nomusicLabels,
     musicOverlayPlaylist,
@@ -559,6 +558,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Harvester application services
   // Create shared IO functions for lifelog persistence
   const userSaveFile = (username, service, data) => userDataService.saveLifelogData(username, service, data);
+  // Current store needs direct writeUserData (no 'lifelog/' prefix)
+  const userSaveFileDirect = (username, path, data) => userDataService.writeUserData(username, path, data);
 
   // Image saving for Infinity harvester (mirrors legacy io.saveImage behavior)
   // Images are saved to media/img/{folder}/{uid}.jpg with 24-hour caching
@@ -572,7 +573,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   };
 
   const harvesterIo = {
-    userLoadFile, userSaveFile, saveImage, householdSaveFile,
+    userLoadFile,
+    userSaveFile,
+    userSaveFileDirect,
+    saveImage,
+    householdSaveFile,
     userSaveAuth: (username, service, data) => userDataService.saveAuthToken(username, service, data),
   };
 
@@ -914,8 +919,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // Create conversation state store for nutribot (persists lastReportMessageId for cleanup)
+  // Per-user storage: users/{username}/conversations/nutribot/
   const nutribotStateStore = new YamlConversationStateDatastore({
-    basePath: configService.getHouseholdPath('state/nutribot/conversations')
+    userDataService,
+    botName: 'nutribot',
+    userResolver,
+    logger: rootLogger.child({ module: 'nutribot-state' })
   });
 
   // Get nutribot adapter from config-driven SystemBotLoader
@@ -953,8 +962,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const journalistTelegramAdapter = getMessagingAdapter(householdId, 'journalist');
 
   // Create conversation state store for journalist
+  // Per-user storage: users/{username}/conversations/journalist/
   const journalistStateStore = new YamlConversationStateDatastore({
-    basePath: configService.getHouseholdPath('state/journalist/conversations')
+    userDataService,
+    botName: 'journalist',
+    userResolver,
+    logger: rootLogger.child({ module: 'journalist-state' })
   });
 
   const journalistServices = createJournalistServices({
@@ -988,8 +1001,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const homebotTelegramAdapter = getMessagingAdapter(householdId, 'homebot');
 
   // Create conversation state store for homebot
+  // Per-user storage: users/{username}/conversations/homebot/
   const homebotStateStore = new YamlConversationStateDatastore({
-    basePath: configService.getHouseholdPath('state/homebot/conversations')
+    userDataService,
+    botName: 'homebot',
+    userResolver,
+    logger: rootLogger.child({ module: 'homebot-state' })
   });
 
   const homebotServices = createHomebotServices({

@@ -33,8 +33,11 @@ export class TelegramWebhookParser {
     this.#logger = config.logger || console;
   }
 
-  #buildConversationId(chatId) {
-    return `telegram:${this.#botId}_${chatId}`;
+  #buildConversationId(chatId, fromId = null) {
+    // Use fromId (user id) if available, otherwise fall back to chatId
+    // This ensures per-user state even in group chats
+    const userId = fromId || chatId;
+    return `telegram:${this.#botId}_${userId}`;
   }
 
   #isUPC(text) {
@@ -76,9 +79,10 @@ export class TelegramWebhookParser {
 
   #parseCallback(callbackQuery) {
     const chatId = callbackQuery.message?.chat?.id || callbackQuery.from?.id;
+    const fromId = callbackQuery.from?.id;
     return {
       type: 'callback',
-      userId: this.#buildConversationId(chatId),
+      userId: this.#buildConversationId(chatId, fromId),
       callbackData: callbackQuery.data,
       callbackId: callbackQuery.id,
       messageId: String(callbackQuery.message?.message_id),
@@ -93,7 +97,7 @@ export class TelegramWebhookParser {
     const photo = message.photo[message.photo.length - 1];
     return {
       type: 'image',
-      userId: this.#buildConversationId(message.chat.id),
+      userId: this.#buildConversationId(message.chat.id, message.from?.id),
       fileId: photo.file_id,
       text: message.caption || '',
       messageId: String(message.message_id),
@@ -110,7 +114,7 @@ export class TelegramWebhookParser {
     const doc = message.document;
     return {
       type: 'image',
-      userId: this.#buildConversationId(message.chat.id),
+      userId: this.#buildConversationId(message.chat.id, message.from?.id),
       fileId: doc.file_id,
       text: message.caption || '',
       messageId: String(message.message_id),
@@ -127,7 +131,7 @@ export class TelegramWebhookParser {
   #parseVoice(message) {
     return {
       type: 'voice',
-      userId: this.#buildConversationId(message.chat.id),
+      userId: this.#buildConversationId(message.chat.id, message.from?.id),
       fileId: message.voice.file_id,
       messageId: String(message.message_id),
       metadata: {
@@ -146,7 +150,7 @@ export class TelegramWebhookParser {
       const [command, ...args] = text.slice(1).split(/\s+/);
       return {
         type: 'command',
-        userId: this.#buildConversationId(message.chat.id),
+        userId: this.#buildConversationId(message.chat.id, message.from?.id),
         command: command.toLowerCase(),
         text: args.join(' '),
         messageId: String(message.message_id),
@@ -160,7 +164,7 @@ export class TelegramWebhookParser {
     if (this.#isUPC(text)) {
       return {
         type: 'upc',
-        userId: this.#buildConversationId(message.chat.id),
+        userId: this.#buildConversationId(message.chat.id, message.from?.id),
         text: text.replace(/-/g, ''),
         messageId: String(message.message_id),
         metadata: {
@@ -172,7 +176,7 @@ export class TelegramWebhookParser {
 
     return {
       type: 'text',
-      userId: this.#buildConversationId(message.chat.id),
+      userId: this.#buildConversationId(message.chat.id, message.from?.id),
       text,
       messageId: String(message.message_id),
       metadata: {

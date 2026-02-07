@@ -315,7 +315,7 @@ class SessionCompleted {
 ### Port Interface Pattern
 
 ```javascript
-// 3_applications/shared/ports/IMessagingGateway.mjs
+// 3_applications/common/ports/IMessagingGateway.mjs
 
 /**
  * @interface IMessagingGateway
@@ -342,7 +342,7 @@ export function isMessagingGateway(obj) {
 ```javascript
 // 2_adapters/telegram/TelegramMessagingAdapter.mjs
 
-import { IMessagingGateway } from '#apps/shared/ports/IMessagingGateway.mjs';
+import { IMessagingGateway } from '#apps/common/ports/IMessagingGateway.mjs';
 
 export class TelegramMessagingAdapter extends IMessagingGateway {
   #token;

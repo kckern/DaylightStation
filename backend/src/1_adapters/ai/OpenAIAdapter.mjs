@@ -5,7 +5,7 @@
  * Supports chat completions, vision, transcription (Whisper), and embeddings.
  */
 
-import { IAIGateway } from '#apps/shared/ports/IAIGateway.mjs';
+import { IAIGateway } from '#apps/common/ports/IAIGateway.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 const OPENAI_API_BASE = 'https://api.openai.com/v1';

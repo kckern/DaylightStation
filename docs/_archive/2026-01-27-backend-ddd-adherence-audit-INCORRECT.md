@@ -132,7 +132,7 @@ In canonical DDD/hexagonal architecture, ports belong to the domain layer becaus
 **Current:**
 ```
 3_applications/
-├── shared/ports/
+├── common/ports/
 │   ├── IAIGateway.mjs
 │   ├── IMessagingGateway.mjs
 │   └── IConversationDatastore.mjs
@@ -141,7 +141,7 @@ In canonical DDD/hexagonal architecture, ports belong to the domain layer becaus
 **Canonical:**
 ```
 1_domains/
-├── shared/ports/
+├── common/ports/
 │   ├── IAIGateway.mjs
 │   └── IConversationDatastore.mjs
 ```

@@ -155,7 +155,7 @@ export class GCalHarvester extends IHarvester {
 
       // Save upcoming to current store
       if (this.#currentStore) {
-        await this.#currentStore.save(username, upcomingEvents);
+        await this.#currentStore.save(username, 'calendar', upcomingEvents);
       }
 
       // Save to shared household store if available

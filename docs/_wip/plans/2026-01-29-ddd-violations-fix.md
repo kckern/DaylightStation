@@ -736,8 +736,8 @@ git commit -m "refactor(journalist): rename vendor source keys to generic terms"
 ## Task 7: Clean Up Port Interface Comments
 
 **Files:**
-- Modify: `backend/src/3_applications/shared/ports/IMessagingGateway.mjs`
-- Modify: `backend/src/3_applications/shared/ports/IAIGateway.mjs`
+- Modify: `backend/src/3_applications/common/ports/IMessagingGateway.mjs`
+- Modify: `backend/src/3_applications/common/ports/IAIGateway.mjs`
 
 **Step 1: Update IMessagingGateway**
 
@@ -786,7 +786,7 @@ To:
 **Step 3: Commit**
 
 ```bash
-git add backend/src/3_applications/shared/ports/
+git add backend/src/3_applications/common/ports/
 git commit -m "refactor(ports): remove vendor names from port interface comments"
 ```
 

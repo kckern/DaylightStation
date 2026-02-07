@@ -146,7 +146,7 @@ export { IStateDatastore } from '#apps/scheduling/ports/IStateDatastore.mjs';
 
 **File:** `backend/src/1_domains/messaging/index.mjs`
 
-**Remove:** All port re-exports from `#apps/shared/ports/...`:
+**Remove:** All port re-exports from `#apps/common/ports/...`:
 - `IAIGateway`
 - `IMessagingGateway`
 - `ITranscriptionService`

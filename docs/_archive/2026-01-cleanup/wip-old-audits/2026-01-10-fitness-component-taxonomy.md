@@ -303,7 +303,7 @@ These are the **main content** that fills ContentSlot.
 
 ### Level 3: Primitives (Atomic UI)
 
-Already well-organized in `shared/primitives/`. No changes needed.
+Already well-organized in `common/primitives/`. No changes needed.
 
 ---
 
@@ -388,7 +388,7 @@ frontend/src/modules/Fitness/
 │       ├── CameraViewApp/
 │       └── ...
 │
-├── shared/                           # Level 3: Primitives (unchanged)
+├── common/                           # Level 3: Primitives (unchanged)
 │   ├── primitives/
 │   ├── composites/
 │   ├── integrations/

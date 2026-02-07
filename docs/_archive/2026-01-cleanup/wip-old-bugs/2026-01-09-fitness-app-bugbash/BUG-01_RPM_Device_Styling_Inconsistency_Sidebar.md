@@ -61,7 +61,7 @@ In `FullscreenVitalsOverlay.scss`:
 Create a shared device rendering component that both views can use:
 
 ```jsx
-// Create: shared/components/DeviceVitalsCard.jsx
+// Create: common/components/DeviceVitalsCard.jsx
 const DeviceVitalsCard = ({ device, size = 'default' }) => {
   // Single source of truth for device rendering
   const sizeClass = `device-card--${size}`;

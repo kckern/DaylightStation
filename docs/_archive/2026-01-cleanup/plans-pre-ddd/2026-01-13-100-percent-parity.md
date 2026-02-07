@@ -243,7 +243,7 @@ Expected: FAIL with "Cannot find module"
 
 ```javascript
 // backend/src/2_adapters/harvester/fitness/FitnessSyncerAdapter.mjs
-import { CircuitBreaker } from '../../shared/CircuitBreaker.mjs';
+import { CircuitBreaker } from '../../common/CircuitBreaker.mjs';
 
 const FITSYNC_BASE_URL = 'https://api.fitnesssyncer.com';
 const TOKEN_BUFFER_MS = 300000; // 5 minutes before expiry

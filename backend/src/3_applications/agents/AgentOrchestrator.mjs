@@ -1,7 +1,7 @@
 // backend/src/3_applications/agents/AgentOrchestrator.mjs
 
 import { ValidationError } from '#system/utils/errors/index.mjs';
-import { ServiceNotFoundError } from '../shared/errors/index.mjs';
+import { ServiceNotFoundError } from '../common/errors/index.mjs';
 
 /**
  * AgentOrchestrator - Central service for agent registration and invocation

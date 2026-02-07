@@ -5,7 +5,7 @@
  * Downloads audio from URL and transcribes via OpenAI Whisper.
  */
 
-import { ITranscriptionService } from '#apps/shared/ports/ITranscriptionService.mjs';
+import { ITranscriptionService } from '#apps/common/ports/ITranscriptionService.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 export class TelegramVoiceTranscriptionService extends ITranscriptionService {

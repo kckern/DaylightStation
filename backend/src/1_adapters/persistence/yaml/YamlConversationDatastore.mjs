@@ -16,7 +16,7 @@ import {
   saveYaml,
   deleteYaml
 } from '#system/utils/FileIO.mjs';
-import { IConversationDatastore } from '#apps/shared/ports/IConversationDatastore.mjs';
+import { IConversationDatastore } from '#apps/common/ports/IConversationDatastore.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import { listHouseholdDirs, parseHouseholdId } from '#system/config/configLoader.mjs';
 

@@ -6,7 +6,7 @@
  * Note: Does not support transcription or embeddings (use OpenAI for those).
  */
 
-import { IAIGateway } from '#apps/shared/ports/IAIGateway.mjs';
+import { IAIGateway } from '#apps/common/ports/IAIGateway.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 const ANTHROPIC_API_BASE = 'https://api.anthropic.com/v1';

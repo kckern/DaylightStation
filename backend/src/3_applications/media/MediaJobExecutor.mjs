@@ -9,7 +9,7 @@
  */
 
 import { ValidationError } from '#system/utils/errors/index.mjs';
-import { ServiceNotFoundError } from '../shared/errors/index.mjs';
+import { ServiceNotFoundError } from '../common/errors/index.mjs';
 
 export class MediaJobExecutor {
   /** @type {Map<string, Function>} */

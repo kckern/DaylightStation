@@ -33,7 +33,7 @@ The Fitness Player recorder UI does not match the Fitness Show recorder UI. Thes
 - Status display (timer/saving)
 
 **Unified Modal (newer):**
-- **File:** `frontend/src/modules/Fitness/shared/VoiceMemoModal/VoiceMemoModal.jsx`
+- **File:** `frontend/src/modules/Fitness/common/VoiceMemoModal/VoiceMemoModal.jsx`
 - Recording view → Preview view flow
 - Mic level bars + timer + stop button
 - Auto-accept countdown
@@ -134,7 +134,7 @@ The visualization is not sensitive enough - only bottom 2 bars light up for typi
 - Linear mapping to 0-100 scale
 
 **Meter Component:**
-- **File:** `frontend/src/modules/Fitness/shared/primitives/MicLevelIndicator/MicLevelIndicator.jsx`
+- **File:** `frontend/src/modules/Fitness/common/primitives/MicLevelIndicator/MicLevelIndicator.jsx`
 
 | Prop | Purpose |
 |------|---------|

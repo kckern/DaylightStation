@@ -50,14 +50,14 @@ git commit -m "fix(voice-memo): ensure MicLevelIndicator visibility"
 ## Task 2: Create VoiceMemoModal Component
 
 **Files:**
-- Create: `frontend/src/modules/Fitness/shared/VoiceMemoModal/VoiceMemoModal.jsx`
-- Create: `frontend/src/modules/Fitness/shared/VoiceMemoModal/VoiceMemoModal.scss`
-- Create: `frontend/src/modules/Fitness/shared/VoiceMemoModal/index.js`
+- Create: `frontend/src/modules/Fitness/common/VoiceMemoModal/VoiceMemoModal.jsx`
+- Create: `frontend/src/modules/Fitness/common/VoiceMemoModal/VoiceMemoModal.scss`
+- Create: `frontend/src/modules/Fitness/common/VoiceMemoModal/index.js`
 
 **Step 1: Create directory and index**
 
 ```bash
-mkdir -p frontend/src/modules/Fitness/shared/VoiceMemoModal
+mkdir -p frontend/src/modules/Fitness/common/VoiceMemoModal
 ```
 
 **Step 2: Create VoiceMemoModal.jsx**
@@ -606,7 +606,7 @@ export { default as VoiceMemoModal } from './VoiceMemoModal';
 **Step 5: Commit**
 
 ```bash
-git add frontend/src/modules/Fitness/shared/VoiceMemoModal/
+git add frontend/src/modules/Fitness/common/VoiceMemoModal/
 git commit -m "feat(voice-memo): add VoiceMemoModal unified component"
 ```
 
@@ -688,7 +688,7 @@ In FitnessPlayer.jsx, add the mic FAB when in fullscreen:
 
 ```jsx
 // Add import
-import { VoiceMemoModal } from './shared/VoiceMemoModal';
+import { VoiceMemoModal } from './common/VoiceMemoModal';
 
 // Add state
 const [voiceMemoModalOpen, setVoiceMemoModalOpen] = useState(false);
@@ -784,7 +784,7 @@ In FitnessShow.jsx:
 
 ```jsx
 // Add import
-import { VoiceMemoModal } from './shared/VoiceMemoModal';
+import { VoiceMemoModal } from './common/VoiceMemoModal';
 
 // Add state
 const [voiceMemoOpen, setVoiceMemoOpen] = useState(false);

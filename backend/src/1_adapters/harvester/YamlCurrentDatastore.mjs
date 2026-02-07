@@ -21,12 +21,12 @@ export class YamlCurrentDatastore {
 
   /**
    * @param {Object} config
-   * @param {Object} config.io - IO functions { userLoadFile, userSaveFile }
+   * @param {Object} config.io - IO functions { userLoadFile, userSaveFileDirect }
    * @param {Object} [config.logger] - Logger instance
    */
   constructor({ io, logger = console }) {
-    if (!io?.userLoadFile || !io?.userSaveFile) {
-      throw new InfrastructureError('YamlCurrentDatastore requires io.userLoadFile and io.userSaveFile', {
+    if (!io?.userLoadFile || !io?.userSaveFileDirect) {
+      throw new InfrastructureError('YamlCurrentDatastore requires io.userLoadFile and io.userSaveFileDirect', {
         code: 'MISSING_DEPENDENCY',
         dependency: 'io'
       });
@@ -86,7 +86,7 @@ export class YamlCurrentDatastore {
       }
 
       const path = `current/${service}`;
-      this.#io.userSaveFile(username, path, saveData);
+      this.#io.userSaveFileDirect(username, path, saveData);
 
       this.#logger.debug?.('currentStore.save.success', {
         username,

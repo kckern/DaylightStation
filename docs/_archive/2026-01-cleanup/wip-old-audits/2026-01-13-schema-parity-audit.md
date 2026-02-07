@@ -840,7 +840,7 @@ Same structure as hot storage. Archive rotation after 30 days retention.
 ### Gratitude Files
 
 #### options.{category}.yml
-**Path:** `data/households/{hid}/shared/gratitude/options.{gratitude|hopes}.yml`
+**Path:** `data/households/{hid}/common/gratitude/options.{gratitude|hopes}.yml`
 
 | Field | Legacy | DDD | Type | Status |
 |-------|--------|-----|------|--------|
@@ -850,7 +850,7 @@ Same structure as hot storage. Archive rotation after 30 days retention.
 **Parity: 100%**
 
 #### selections.{category}.yml
-**Path:** `data/households/{hid}/shared/gratitude/selections.{gratitude|hopes}.yml`
+**Path:** `data/households/{hid}/common/gratitude/selections.{gratitude|hopes}.yml`
 
 | Field | Legacy | DDD | Type | Status |
 |-------|--------|-----|------|--------|
@@ -862,12 +862,12 @@ Same structure as hot storage. Archive rotation after 30 days retention.
 **Parity: 100%**
 
 #### discarded.{category}.yml
-**Path:** `data/households/{hid}/shared/gratitude/discarded.{gratitude|hopes}.yml`
+**Path:** `data/households/{hid}/common/gratitude/discarded.{gratitude|hopes}.yml`
 
 Same structure as options. **Parity: 100%**
 
 #### Snapshots
-**Path:** `data/households/{hid}/shared/gratitude/snapshots/{timestamp}_{id}.yml`
+**Path:** `data/households/{hid}/common/gratitude/snapshots/{timestamp}_{id}.yml`
 
 | Field | Legacy | DDD | Type | Status |
 |-------|--------|-----|------|--------|
@@ -948,7 +948,7 @@ Legacy bucket-based format with different structure. `YamlJobStore.migrateLegacy
 ### Conversation Files
 
 #### Conversation YAML
-**Path:** `data/households/{hid}/shared/messaging/conversations/{conversationId}.yml`
+**Path:** `data/households/{hid}/common/messaging/conversations/{conversationId}.yml`
 
 | Field | Legacy | DDD | Type | Status |
 |-------|--------|-----|------|--------|

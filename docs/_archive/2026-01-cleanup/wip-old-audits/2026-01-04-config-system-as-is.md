@@ -222,7 +222,7 @@ data/households/{householdId}/
 │   └── fitness/
 │       ├── config.yml       # Runtime config (Tier 5)
 │       └── sessions/{date}/ # Workout sessions
-├── shared/                  # Shared household data
+├── common/                  # Shared household data
 │   └── gratitude/
 ├── auth/                    # Household-level auth
 └── history/                 # Household history
@@ -249,7 +249,7 @@ data/content/
 ├── songs/                   # Song lyrics
 ├── talks/                   # Conference talks
 ├── plex/                    # Plex metadata cache
-├── households/{hid}/shared/ # Household shared content
+├── households/{hid}/common/ # Household shared content
 └── users/{username}/        # User content
 ```
 
@@ -620,7 +620,7 @@ DAYLIGHT_DATA_ROOT=/path/to/data  # Single root for all config/data
 │   └── {householdId}/
 │       ├── household.yml
 │       ├── apps/{app}/config.yml
-│       ├── shared/
+│       ├── common/
 │       └── auth/                 # Household-level auth
 ├── users/                        # Moved up from data/
 │   └── {username}/
@@ -885,7 +885,7 @@ const fitnessConfig = configService.householdPath('default', 'apps', 'fitness', 
 ```
 Auth currently lives in correct places:
 ├── users/{username}/auth/{service}.yml      # User OAuth tokens
-└── households/{householdId}/auth/{service}.yml  # Shared/household tokens
+└── households/{householdId}/auth/{service}.yml  # common/household tokens
 ```
 
 #### Abstraction Layer for Future Secrets Management

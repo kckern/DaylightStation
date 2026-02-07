@@ -136,7 +136,7 @@ const FitnessPluginContainer = ({ pluginId, mode, onClose, config }) => {
 Extract sidebar as a standalone layout component:
 
 ```jsx
-// New: shared/layouts/WithSidebar.jsx
+// New: common/layouts/WithSidebar.jsx
 const WithSidebar = ({ children, sidebarContent, position = 'right' }) => {
   return (
     <div className={`with-sidebar sidebar-${position}`}>
