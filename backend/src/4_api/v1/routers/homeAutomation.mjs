@@ -295,7 +295,7 @@ export function createHomeAutomationRouter(config) {
     }
 
     // loadFile already prepends household path, just use relative path
-    const weatherData = loadFile('shared/weather') || {};
+    const weatherData = loadFile('common/weather') || {};
     res.json(weatherData);
   }));
 
@@ -309,7 +309,7 @@ export function createHomeAutomationRouter(config) {
     }
 
     // loadFile already prepends household path, just use relative path
-    const eventsData = loadFile('shared/events') || [];
+    const eventsData = loadFile('common/events') || [];
     res.json(eventsData);
   }));
 

@@ -133,7 +133,7 @@ narrated:talks/ldsgc202410 → list talks in that folder
 ### Config-Driven Prefix Mapping
 
 ```yaml
-# data/config/content-prefixes.yml
+# data/household/config/content-prefixes.yml
 legacy:
   hymn: singing:hymn
   primary: singing:primary
@@ -512,7 +512,7 @@ function SingingScroller({ style, content, ...props }) {
 - Create `SingingAdapter` and `ReadingAdapter`
 - Register with ContentSourceRegistry as `singing` and `narrated`
 - Keep `LocalContentAdapter` running for legacy IDs
-- Add legacy prefix mapping to `data/config/content-prefixes.yml`
+- Add legacy prefix mapping to `data/household/config/content-prefixes.yml`
 
 ### Phase 2: Migrate Data Folders
 

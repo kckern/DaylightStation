@@ -2,7 +2,7 @@
  * YamlConversationDatastore - YAML-based conversation persistence
  *
  * Implements IConversationDatastore port for conversation storage.
- * Conversations stored at: household[-{hid}]/shared/messaging/conversations/{id}.yml
+ * Conversations stored at: household[-{hid}]/common/messaging/conversations/{id}.yml
  *
  * @module adapters/persistence/yaml
  */

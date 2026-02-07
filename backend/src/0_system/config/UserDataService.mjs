@@ -273,6 +273,7 @@ class UserDataService {
    * Get household app data path (for household-level app config/data)
    * Checks config/<appName>.yml first (migrated config-only apps),
    * then falls back to legacy apps/<appName>/... path.
+   * @deprecated Prefer ConfigService.getHouseholdAppConfig() for config reads
    * @param {string} householdId - Household identifier
    * @param {string} appName - App name (e.g., 'fitness')
    * @param {...string} segments - Additional path segments
@@ -293,7 +294,7 @@ class UserDataService {
       }
     }
 
-    // Legacy: apps/<appName>/<segments>
+    // Legacy fallback: apps/<appName>/<segments> (deprecated - directory removed)
     return path.join(householdDir, 'apps', appName, ...flatSegments);
   }
 
@@ -390,10 +391,13 @@ class UserDataService {
 
     const subdirs = [
       '',                        // household root
-      'shared',                  // shared data stores
-      'shared/gratitude',        // gratitude bank/options
-      'apps',                    // app-specific data
-      'apps/fitness'             // fitness runtime config
+      'common',                  // common data stores
+      'common/gratitude',        // gratitude bank/options
+      'state',                   // runtime state data
+      'state/nutribot/conversations',  // nutribot conversation state
+      'state/journalist/conversations', // journalist conversation state
+      'state/homebot/conversations',   // homebot conversation state
+      // Note: apps/ directory removed - configs now in config/, state in state/, finances in common/
     ];
 
     for (const subdir of subdirs) {
@@ -405,7 +409,7 @@ class UserDataService {
   }
 
   /**
-   * Get a direct path within a household directory (no 'shared/' prefix)
+   * Get a direct path within a household directory (no 'common/' prefix)
    * Used for legacy compatibility with saveFile('state/lists') pattern
    * @param {string} householdId - Household identifier
    * @param {...string} segments - Path segments (e.g., 'state', 'lists')

@@ -15,12 +15,12 @@
 ## Task 1: Create Legacy Prefix Config
 
 **Files:**
-- Create: `data/config/content-prefixes.yml`
+- Create: `data/household/config/content-prefixes.yml`
 
 **Step 1: Create the config file**
 
 ```yaml
-# data/config/content-prefixes.yml
+# data/household/config/content-prefixes.yml
 # Maps legacy content prefixes to canonical singing/narrated format
 # Used by both backend (ContentQueryService) and frontend (query param resolver)
 
@@ -34,13 +34,13 @@ legacy:
 
 **Step 2: Verify file exists**
 
-Run: `cat data/config/content-prefixes.yml`
+Run: `cat data/household/config/content-prefixes.yml`
 Expected: File contents displayed
 
 **Step 3: Commit**
 
 ```bash
-git add data/config/content-prefixes.yml
+git add data/household/config/content-prefixes.yml
 git commit -m "config: add content-prefixes.yml for legacy ID mapping"
 ```
 

@@ -7,8 +7,8 @@
  * Usage:
  *   dataService.user.read('lifelog/nutrition', username?)
  *   dataService.user.write('lifelog/nutrition', data, username?)
- *   dataService.household.read('shared/weather', hid?)
- *   dataService.household.write('shared/weather', data, hid?)
+ *   dataService.household.read('common/weather', hid?)
+ *   dataService.household.write('common/weather', data, hid?)
  *   dataService.system.read('state/cron-runtime')
  *   dataService.system.write('state/cron-runtime', data)
  *
@@ -168,7 +168,7 @@ export class DataService {
 
       /**
        * Read household data file
-       * @param {string} relativePath - Path relative to household directory (e.g., 'shared/weather')
+       * @param {string} relativePath - Path relative to household directory (e.g., 'common/weather')
        * @param {string} [householdId] - Household ID (defaults to default household)
        * @returns {object|null} Parsed data or null
        */

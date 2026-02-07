@@ -27,7 +27,7 @@ dataService.system.write('state/cron-runtime', data)
 | Scope | Base Path | Example Full Path |
 |-------|-----------|-------------------|
 | user | `{dataDir}/users/{username}/` | `data/users/kenny/lifelog/nutrition.yml` |
-| household | `{dataDir}/household[-{hid}]/` | `data/household/shared/weather.yml` |
+| household | `{dataDir}/household[-{hid}]/` | `data/household/common/weather.yml` |
 | system | `{dataDir}/system/` | `data/system/state/cron-runtime.yml` |
 
 ---
@@ -358,10 +358,10 @@ git commit -m "test: add user scope read/write tests for DataService"
     it('should write household data', () => {
       const testData = { gratitude: ['item1'] };
 
-      const result = ds.household.write('shared/gratitude', testData);
+      const result = ds.household.write('common/gratitude', testData);
 
       expect(result).toBe(true);
-      const filePath = path.join(testDir, 'household', 'shared', 'gratitude.yml');
+      const filePath = path.join(testDir, 'household', 'common', 'gratitude.yml');
       expect(fs.existsSync(filePath)).toBe(true);
     });
   });
