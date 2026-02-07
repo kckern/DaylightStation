@@ -615,7 +615,7 @@ export function createApiRouters(config) {
     routers: {
       content: createContentRouter(registry, mediaProgressMemory, { loadFile, saveFile, cacheBasePath, composePresentationUseCase, contentQueryService, logger, aliasResolver }),
       proxy: createProxyRouter({ registry, proxyService, mediaBasePath, logger }),
-      localContent: createLocalContentRouter({ registry, dataPath, mediaBasePath }),
+      localContent: createLocalContentRouter({ registry, dataPath, mediaBasePath, mediaProgressMemory }),
       play: createPlayRouter({ registry, mediaProgressMemory, contentQueryService, logger }),
       list: createListRouter({ registry, loadFile, configService, contentQueryService, menuMemoryPath: configService.getHouseholdPath('history/menu_memory') }),
       local: createLocalRouter({ localMediaAdapter, mediaBasePath, cacheBasePath: cacheBasePath || path.join(dataPath, 'system/cache'), logger }),
