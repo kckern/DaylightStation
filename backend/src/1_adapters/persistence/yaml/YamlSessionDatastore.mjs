@@ -2,7 +2,7 @@
  * YamlSessionDatastore - YAML-based session persistence
  *
  * Implements ISessionDatastore port for fitness session storage.
- * Sessions are stored at: household[-{id}]/history/fitness/sessions/{YYYY-MM-DD}/{sessionId}.yml
+ * Sessions are stored at: household[-{id}]/history/fitness/{YYYY-MM-DD}/{sessionId}.yml
  * Screenshots at: {mediaRoot}/apps/fitness/sessions/{YYYY-MM-DD}/{sessionId}/screenshots/
  */
 import path from 'path';
@@ -71,7 +71,7 @@ export class YamlSessionDatastore extends ISessionDatastore {
     if (!sessionDate) return null;
 
     const sessionsDir = path.join(
-      this.configService.getHouseholdPath('history/fitness/sessions', householdId),
+      this.configService.getHouseholdPath('history/fitness', householdId),
       sessionDate
     );
 
@@ -190,7 +190,7 @@ export class YamlSessionDatastore extends ISessionDatastore {
    * @returns {Promise<string[]>}
    */
   async listDates(householdId) {
-    const sessionsRoot = this.configService.getHouseholdPath('history/fitness/sessions', householdId);
+    const sessionsRoot = this.configService.getHouseholdPath('history/fitness', householdId);
 
     return listDirsMatching(sessionsRoot, /^\d{4}-\d{2}-\d{2}$/)
       .sort()
@@ -205,7 +205,7 @@ export class YamlSessionDatastore extends ISessionDatastore {
    */
   async findByDate(date, householdId) {
     const sessionsDir = path.join(
-      this.configService.getHouseholdPath('history/fitness/sessions', householdId),
+      this.configService.getHouseholdPath('history/fitness', householdId),
       date
     );
 
