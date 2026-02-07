@@ -271,11 +271,16 @@ export class WithingsHarvester extends IHarvester {
       if (body.refresh_token && this.#authStore) {
         const newAuthData = {
           ...authData,
-          refresh: body.refresh_token,
+          refresh_token: body.refresh_token,
           access_token: body.access_token,
           expires_at: this.#tokenCache.expiresAt.toISOString(),
         };
+        // Remove legacy 'refresh' key if present
+        delete newAuthData.refresh;
+        // Remove legacy 'expires_in' - use absolute expires_at instead
+        delete newAuthData.expires_in;
         await this.#authStore.save(username, 'withings', newAuthData);
+        this.#logger.info?.('withings.auth.refresh_token_saved', { username });
       }
 
       this.#logger.info?.('withings.auth.token_refreshed', {

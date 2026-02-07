@@ -199,6 +199,7 @@ import {
   WeatherHarvester,
   StravaHarvester,
   WithingsHarvester,
+  YamlAuthDatastore,
   createInfinityHarvesters
 } from '#adapters/harvester/index.mjs';
 
@@ -2547,15 +2548,16 @@ export function createHarvesterServices(config) {
   }) : null);
 
   // Create or use provided authStore (for OAuth token persistence)
-  const authStore = authStoreParam || {
+  // Use YamlAuthDatastore when io.userSaveAuth is available, otherwise fallback to stub
+  const authStore = authStoreParam || (io?.userSaveAuth ? new YamlAuthDatastore({ io, logger }) : {
     async load(username, provider) {
       return configService?.getUserAuth?.(provider, username) || null;
     },
     async save(username, provider, tokenData) {
-      // Auth store save is optional - tokens are typically managed by configService
-      logger.debug?.('authStore.save', { username, provider });
+      // Auth store save is a no-op when userSaveAuth is not available
+      logger.warn?.('authStore.save.noop', { username, provider, reason: 'userSaveAuth not available' });
     },
-  };
+  });
 
   // Create or use provided sharedStore (for weather data)
   // Note: YamlWeatherDatastore requires DataService (with .household.write), not UserDataService

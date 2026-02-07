@@ -334,14 +334,14 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const mediaProgressPath = configService.getPath('watchState') || `${householdDir}/history/media_memory`;
   const mediaProgressMemory = createMediaProgressMemory({ mediaProgressPath });
 
-  // Singing/Narrated adapters - use content subdirectories
+  // Singing/Narrated adapters - point to canonical data directories (no symlinks)
   const singingConfig = {
-    dataPath: path.join(contentPath, 'singing'),
-    mediaPath: path.join(mediaBasePath, 'singing')
+    dataPath: path.join(contentPath, 'songs'),  // hymn, primary
+    mediaPath: path.join(mediaBasePath, 'audio', 'songs')
   };
   const narratedConfig = {
-    dataPath: path.join(contentPath, 'narrated'),
-    mediaPath: path.join(mediaBasePath, 'narrated')
+    dataPath: contentPath,  // scripture, poetry subdirectories
+    mediaPath: path.join(mediaBasePath, 'audio')  // scripture, poetry subdirectories
   };
 
   const contentRegistry = createContentRegistry({
@@ -565,7 +565,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     return userDataService.saveHouseholdData(householdId, relativePath, data);
   };
 
-  const harvesterIo = { userLoadFile, userSaveFile, saveImage, householdSaveFile };
+  const harvesterIo = {
+    userLoadFile, userSaveFile, saveImage, householdSaveFile,
+    userSaveAuth: (username, service, data) => userDataService.saveAuthToken(username, service, data),
+  };
 
   // Note: nutribotAiGateway is created later; pass null for now
   // (shopping extraction will use httpClient directly if AI gateway unavailable)
