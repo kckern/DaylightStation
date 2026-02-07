@@ -121,7 +121,8 @@ const FitnessApp = () => {
 
     // Get video FPS metrics using getVideoPlaybackQuality API
     const getVideoFps = () => {
-      const video = document.querySelector('video, dash-video');
+      const globalVideo = typeof window !== 'undefined' ? window.__fitnessVideoElement : null;
+      const video = globalVideo || document.querySelector('video, dash-video');
       if (!video) return null;
 
       const quality = video.getVideoPlaybackQuality?.();

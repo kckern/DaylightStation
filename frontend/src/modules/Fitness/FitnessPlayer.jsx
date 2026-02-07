@@ -18,8 +18,7 @@ import { FitnessPlayerFrame } from './frames';
 import HRSimTrigger from './HRSimTrigger.jsx';
 import { useVolumeSync } from './hooks/useVolumeSync.js';
 import { useRenderProfiler } from '../../hooks/fitness/useRenderProfiler.js';
-
-const DEBUG_FITNESS_INTERACTIONS = false;
+import { getLogger } from '../../lib/logging/Logger.js';
 
 // Helper function to generate Plex thumbnail URLs for specific timestamps
 const generateThumbnailUrl = (plexObj, timeInSeconds) => {
@@ -575,20 +574,16 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   });
 
   const logFitnessEvent = useCallback((event, details = {}, options = {}) => {
-    if (!DEBUG_FITNESS_INTERACTIONS) return;
     const { level: detailLevel, ...restDetails } = details || {};
     const resolvedOptions = typeof options === 'object' && options !== null ? options : {};
-    playbackLog('fitness-player', {
-      event,
-      ...restDetails
-    }, {
-      ...resolvedOptions,
-      level: resolvedOptions.level || detailLevel || 'debug',
-      context: {
-        ...fitnessLogContext,
-        ...(resolvedOptions.context || {})
-      }
-    });
+    const maxPerMinute = Number.isFinite(resolvedOptions.maxPerMinute)
+      ? resolvedOptions.maxPerMinute
+      : 20;
+    getLogger().sampled(`fitness.player.${event}`, {
+      ...fitnessLogContext,
+      ...restDetails,
+      detailLevel: resolvedOptions.level || detailLevel || null
+    }, { maxPerMinute });
   }, [fitnessLogContext]);
 
   // IMPORTANT: Register player ref globally for coordination with overlays
@@ -597,6 +592,20 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       registerVideoPlayer(playerRef);
     }
   }, [registerVideoPlayer, playerRef]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    if (mediaElement) {
+      window.__fitnessVideoElement = mediaElement;
+    } else if (window.__fitnessVideoElement) {
+      window.__fitnessVideoElement = null;
+    }
+    return () => {
+      if (window.__fitnessVideoElement === mediaElement) {
+        window.__fitnessVideoElement = null;
+      }
+    };
+  }, [mediaElement]);
 
   // Memoize keyboard overrides to prevent recreation on every render
   const keyboardOverrides = useMemo(() => ({
