@@ -184,8 +184,8 @@ export function createLocalContentRouter(config) {
         const preferences = ['_ldsgc', ''];
         for (const pref of preferences) {
           const searchDir = pref
-            ? path.join(mediaBasePath, 'audio', 'songs', 'hymn', pref)
-            : path.join(mediaBasePath, 'audio', 'songs', 'hymn');
+            ? path.join(mediaBasePath, 'audio', 'singalong', 'hymn', pref)
+            : path.join(mediaBasePath, 'audio', 'singalong', 'hymn');
           const mediaFilePath = findMediaFileByPrefix(searchDir, hymnNumber);
           if (mediaFilePath) {
             try {
@@ -236,7 +236,7 @@ export function createLocalContentRouter(config) {
 
       // Get duration from media file if not already set
       if (!duration && mediaBasePath) {
-        const searchDir = path.join(mediaBasePath, 'audio', 'songs', 'primary');
+        const searchDir = path.join(mediaBasePath, 'audio', 'singalong', 'primary');
         const mediaFilePath = findMediaFileByPrefix(searchDir, songNumber);
         if (mediaFilePath) {
           try {

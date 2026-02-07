@@ -67,7 +67,7 @@ IDs follow the format `{source}:{collection}/{path}`:
 | `singalong:hymn/1` | `dataPath/hymn/0001-*.yml` + `mediaPath/hymn/0001-*.mp3` |
 | `singalong:primary/2` | `dataPath/primary/0002-*.yml` + `mediaPath/primary/0002-*.mp3` |
 | `readalong:scripture/nt` | Resolved by scripture resolver to specific chapter |
-| `readalong:talks/ldsgc202410/smith` | `dataPath/talks/ldsgc202410/smith.yml` |
+| `readalong:talks/ldsgc202410/smith` | `dataPath/readalong/talks/ldsgc202410/smith.yml` |
 
 ### Number prefix matching
 
@@ -75,7 +75,7 @@ When the ID segment is numeric (like `1`), the adapter uses `loadYamlByPrefix()`
 
 ### Path mapping
 
-For the **singalong adapter**, `dataPath` points to `data/content/songs/` — so collections are `hymn/`, `primary/`, etc. For the **readalong adapter**, `dataPath` points to `data/content/readalong/` — so collections are `scripture/`, `talks/`, `poetry/`, etc. Media files live under `media/audio/songs/` and `media/audio/readalong/` respectively.
+For the **singalong adapter**, `dataPath` points to `data/content/singalong/` — so collections are `hymn/`, `primary/`, etc. Media files live under `media/audio/singalong/`. For the **readalong adapter**, `dataPath` points to `data/content/readalong/` — so collections are `scripture/`, `talks/`, `poetry/`, etc. Readalong audio lives under `media/audio/readalong/`, while talk videos live under `media/video/readalong/`.
 
 ---
 

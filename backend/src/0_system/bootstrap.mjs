@@ -545,6 +545,7 @@ export function createContentRegistry(config, deps = {}) {
       new ReadalongAdapter({
         dataPath: config.readalong.dataPath,
         mediaPath: config.readalong.mediaPath,
+        mediaPathMap: config.readalong.mediaPathMap || null,
         mediaProgressMemory
       }),
       { category: readalongManifest.capability, provider: readalongManifest.provider }
@@ -621,8 +622,9 @@ export function createApiRouters(config) {
       list: createListRouter({ registry, loadFile, configService, contentQueryService, menuMemoryPath: configService.getHouseholdPath('history/menu_memory') }),
       local: createLocalRouter({ localMediaAdapter, mediaBasePath, cacheBasePath: cacheBasePath || path.join(dataPath, 'system/cache'), logger }),
       stream: createStreamRouter({
-        singalongMediaPath: path.join(mediaBasePath, 'audio', 'songs'),
-        readalongMediaPath: path.join(mediaBasePath, 'audio', 'readalong'),
+        singalongMediaPath: path.join(mediaBasePath, 'audio', 'singalong'),
+        readalongAudioPath: path.join(mediaBasePath, 'audio', 'readalong'),
+        readalongVideoPath: path.join(mediaBasePath, 'video', 'readalong'),
         logger
       }),
     },

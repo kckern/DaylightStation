@@ -99,7 +99,7 @@ export class SingalongAdapter {
       title: metadata.title || `${collection} ${itemId}`,
       subtitle: metadata.subtitle || `${collection} #${metadata.number || itemId}`,
       thumbnail: this._collectionThumbnail(collection),
-      mediaUrl: `/api/v1/proxy/local-content/stream/${localId}`,
+      mediaUrl: `/api/v1/stream/singalong/${localId}`,
       duration,
       content: {
         type: contentType,

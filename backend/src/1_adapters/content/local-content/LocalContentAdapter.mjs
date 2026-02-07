@@ -57,7 +57,7 @@ function resolveContainerType(folderId, mediaPath) {
   if (!folderId) return 'folder';
 
   // Check for metadata.yml with explicit containerType
-  const folderPath = path.join(mediaPath, 'video', 'talks', folderId);
+  const folderPath = path.join(mediaPath, 'video', 'readalong', 'talks', folderId);
   const metadataPath = path.join(folderPath, 'metadata');
   const metadata = loadYamlSafe(metadataPath);
   if (metadata?.containerType) {
@@ -115,7 +115,7 @@ function formatSeriesTitle(seriesId, mediaPath) {
   if (!seriesId) return null;
 
   // Try loading metadata.yml from series folder
-  const metadataPath = path.join(mediaPath, 'video', 'talks', seriesId, 'metadata');
+  const metadataPath = path.join(mediaPath, 'video', 'readalong', 'talks', seriesId, 'metadata');
   const metadata = loadYamlSafe(metadataPath);
   if (metadata?.title) {
     return metadata.title;
@@ -172,7 +172,7 @@ export class LocalContentAdapter {
    * @private
    */
   _songCollectionThumbnail(collection) {
-    const iconPath = path.resolve(this.dataPath, 'songs', collection, 'icon.svg');
+    const iconPath = path.resolve(this.dataPath, 'singalong', collection, 'icon.svg');
     return fileExists(iconPath) ? `/api/v1/local-content/collection-icon/local-content/${collection}` : null;
   }
 
@@ -182,7 +182,7 @@ export class LocalContentAdapter {
    * @returns {string|null} Absolute file path or null
    */
   resolveCollectionIcon(collection) {
-    const iconPath = path.resolve(this.dataPath, 'songs', collection, 'icon.svg');
+    const iconPath = path.resolve(this.dataPath, 'singalong', collection, 'icon.svg');
     return fileExists(iconPath) ? iconPath : null;
   }
 
@@ -308,8 +308,8 @@ export class LocalContentAdapter {
     const prefix = id.split(':')[0];
     if (prefix === 'talk') return 'talk';
     if (prefix === 'scripture') return 'scripture';
-    if (prefix === 'hymn') return 'songs';
-    if (prefix === 'primary') return 'songs';
+    if (prefix === 'hymn') return 'singalong';
+    if (prefix === 'primary') return 'singalong';
     if (prefix === 'poem') return 'poetry';
     return 'local';
   }
@@ -465,7 +465,7 @@ export class LocalContentAdapter {
    * @private
    */
   async _listSongs(collection) {
-    const basePath = path.resolve(this.dataPath, 'songs', collection);
+    const basePath = path.resolve(this.dataPath, 'singalong', collection);
     try {
       const files = listYamlFiles(basePath);
       const items = [];
@@ -493,8 +493,8 @@ export class LocalContentAdapter {
    * @private
    */
   async _listTalkFolders() {
-    const dataBasePath = path.resolve(this.dataPath, 'talks');
-    const mediaBasePath = path.resolve(this.mediaPath, 'video', 'talks');
+    const dataBasePath = path.resolve(this.dataPath, 'readalong', 'talks');
+    const mediaBasePath = path.resolve(this.mediaPath, 'video', 'readalong', 'talks');
     const folders = [];
     const seenIds = new Set();
 
@@ -567,7 +567,7 @@ export class LocalContentAdapter {
    * @private
    */
   async _listScriptureVolumes() {
-    const basePath = path.resolve(this.dataPath, 'scripture');
+    const basePath = path.resolve(this.dataPath, 'readalong', 'scripture');
     try {
       if (!dirExists(basePath)) return [];
 
@@ -595,7 +595,7 @@ export class LocalContentAdapter {
    * @private
    */
   async _listPoemCollections() {
-    const basePath = path.resolve(this.dataPath, 'poetry');
+    const basePath = path.resolve(this.dataPath, 'readalong', 'poetry');
     try {
       if (!dirExists(basePath)) return [];
 
@@ -625,7 +625,7 @@ export class LocalContentAdapter {
    * @private
    */
   _resolveLatestFolder(alias) {
-    const basePath = path.resolve(this.dataPath, 'talks');
+    const basePath = path.resolve(this.dataPath, 'readalong', 'talks');
     if (!dirExists(basePath)) return null;
 
     const entries = listEntries(basePath);
@@ -651,13 +651,13 @@ export class LocalContentAdapter {
    * @private
    */
   async _getTalk(localId) {
-    const basePath = path.resolve(this.dataPath, 'talks');
+    const basePath = path.resolve(this.dataPath, 'readalong', 'talks');
     let metadata = loadContainedYaml(basePath, localId);
 
     // If not found as file, check if it's a folder/series reference
     if (!metadata) {
       // Check if localId refers to a series folder in media path
-      const mediaBasePath = path.resolve(this.mediaPath, 'video', 'talks');
+      const mediaBasePath = path.resolve(this.mediaPath, 'video', 'readalong', 'talks');
       const seriesPath = path.join(mediaBasePath, localId);
 
       if (dirExists(seriesPath)) {
@@ -720,7 +720,7 @@ export class LocalContentAdapter {
         date: metadata.date,
         description: metadata.description,
         content: metadata.content || [],
-        mediaFile: `video/talks/${localId}.mp4`,
+        mediaFile: `video/readalong/talks/${localId}.mp4`,
         // Parent info for UI display
         parentTitle: parentTitle,
         grandparentTitle: metadata.speaker
@@ -735,7 +735,7 @@ export class LocalContentAdapter {
    * @private
    */
   async _getScripture(localId) {
-    const basePath = path.resolve(this.dataPath, 'scripture');
+    const basePath = path.resolve(this.dataPath, 'readalong', 'scripture');
     const pathParts = localId.split('/');
     const requestedVolume = pathParts[0] || null;
     const requestedVersion = pathParts[1] || null;
@@ -793,14 +793,14 @@ export class LocalContentAdapter {
     let mediaFile = rawData.mediaFile;
     if (!mediaFile && volume && verseId) {
       // Try requested version with any audio extension
-      const versionDir = path.join(this.mediaPath, 'audio', 'scripture', volume, version || '');
+      const versionDir = path.join(this.mediaPath, 'audio', 'readalong', 'scripture', volume, version || '');
       const found = version ? findMediaFileByPrefix(versionDir, verseId) : null;
 
       if (found) {
         mediaFile = path.relative(this.mediaPath, found);
       } else {
         // Version fallback: scan other version dirs in this volume
-        const volumeDir = path.join(this.mediaPath, 'audio', 'scripture', volume);
+        const volumeDir = path.join(this.mediaPath, 'audio', 'readalong', 'scripture', volume);
         if (dirExists(volumeDir)) {
           for (const altVersion of listEntries(volumeDir)) {
             if (altVersion === version) continue;
@@ -815,7 +815,7 @@ export class LocalContentAdapter {
       }
       // Final fallback: hardcoded .mp3 path (for legacy compat)
       if (!mediaFile) {
-        mediaFile = `audio/scripture/${volume}/${version}/${verseId}.mp3`;
+        mediaFile = `audio/readalong/scripture/${volume}/${version}/${verseId}.mp3`;
       }
     }
 
@@ -851,8 +851,8 @@ export class LocalContentAdapter {
    * @private
    */
   async _getTalkFolder(folderId) {
-    const basePath = path.resolve(this.dataPath, 'talks');
-    const mediaBasePath = path.resolve(this.mediaPath, 'video', 'talks');
+    const basePath = path.resolve(this.dataPath, 'readalong', 'talks');
+    const mediaBasePath = path.resolve(this.mediaPath, 'video', 'readalong', 'talks');
 
     // Check for nested path first (series/conference pattern in media)
     const nestedMediaPath = path.join(mediaBasePath, folderId);
@@ -946,7 +946,7 @@ export class LocalContentAdapter {
       if (dirExists(folderMediaPath)) {
         for (const imgName of imgNames) {
           if (fs.existsSync(path.join(folderMediaPath, imgName))) {
-            thumbnail = `/api/v1/proxy/filesystem/stream/${encodeURIComponent(`video/talks/${folderId}/${imgName}`)}`;
+            thumbnail = `/api/v1/proxy/filesystem/stream/${encodeURIComponent(`video/readalong/talks/${folderId}/${imgName}`)}`;
             break;
           }
         }
@@ -958,7 +958,7 @@ export class LocalContentAdapter {
         if (dirExists(seriesMediaPath)) {
           for (const imgName of imgNames) {
             if (fs.existsSync(path.join(seriesMediaPath, imgName))) {
-              thumbnail = `/api/v1/proxy/filesystem/stream/${encodeURIComponent(`video/talks/${parentSeriesId}/${imgName}`)}`;
+              thumbnail = `/api/v1/proxy/filesystem/stream/${encodeURIComponent(`video/readalong/talks/${parentSeriesId}/${imgName}`)}`;
               break;
             }
           }
@@ -974,7 +974,7 @@ export class LocalContentAdapter {
           if (dirExists(seriesMediaPath)) {
             for (const imgName of imgNames) {
               if (fs.existsSync(path.join(seriesMediaPath, imgName))) {
-                thumbnail = `/api/v1/proxy/filesystem/stream/${encodeURIComponent(`video/talks/${seriesId}/${imgName}`)}`;
+                thumbnail = `/api/v1/proxy/filesystem/stream/${encodeURIComponent(`video/readalong/talks/${seriesId}/${imgName}`)}`;
                 break;
               }
             }
@@ -1011,7 +1011,7 @@ export class LocalContentAdapter {
    * @private
    */
   async _getSeriesFolder(seriesId) {
-    const mediaBasePath = path.resolve(this.mediaPath, 'video', 'talks');
+    const mediaBasePath = path.resolve(this.mediaPath, 'video', 'readalong', 'talks');
     const seriesPath = path.join(mediaBasePath, seriesId);
 
     if (!dirExists(seriesPath)) return null;
@@ -1050,7 +1050,7 @@ export class LocalContentAdapter {
       const fs = await import('fs');
       for (const imgName of ['cover.jpg', 'show.jpg', 'cover.png', 'show.png']) {
         if (fs.existsSync(path.join(seriesPath, imgName))) {
-          thumbnail = `/api/v1/proxy/filesystem/stream/${encodeURIComponent(`video/talks/${seriesId}/${imgName}`)}`;
+          thumbnail = `/api/v1/proxy/filesystem/stream/${encodeURIComponent(`video/readalong/talks/${seriesId}/${imgName}`)}`;
           break;
         }
       }
@@ -1087,7 +1087,7 @@ export class LocalContentAdapter {
     // Song files are named with zero-padded prefixes: "0304-title.yml"
     // Use loadYamlByPrefix to find by numeric prefix
     // dataPath is already the content directory (e.g., /data/content)
-    const basePath = path.resolve(this.dataPath, 'songs', collection);
+    const basePath = path.resolve(this.dataPath, 'singalong', collection);
     const metadata = loadYamlByPrefix(basePath, number);
     if (!metadata) return null;
 
@@ -1106,12 +1106,12 @@ export class LocalContentAdapter {
       const preferences = collection === 'hymn' ? ['_ldsgc', ''] : [''];
       for (const pref of preferences) {
         const searchDir = pref
-          ? path.join(this.mediaPath, 'audio', 'songs', collection, pref)
-          : path.join(this.mediaPath, 'audio', 'songs', collection);
+          ? path.join(this.mediaPath, 'audio', 'singalong', collection, pref)
+          : path.join(this.mediaPath, 'audio', 'singalong', collection);
         const mediaFilePath = findMediaFileByPrefix(searchDir, songNumber);
         if (mediaFilePath) {
           const subDir = pref ? `${pref}/` : '';
-          mediaFile = `audio/songs/${collection}/${subDir}${path.basename(mediaFilePath)}`;
+          mediaFile = `audio/singalong/${collection}/${subDir}${path.basename(mediaFilePath)}`;
           break;
         }
       }
@@ -1145,7 +1145,7 @@ export class LocalContentAdapter {
    * @private
    */
   async _getPoem(localId) {
-    const basePath = path.resolve(this.dataPath, 'poetry');
+    const basePath = path.resolve(this.dataPath, 'readalong', 'poetry');
     const metadata = loadContainedYaml(basePath, localId);
     if (!metadata) return null;
 
@@ -1227,8 +1227,8 @@ export class LocalContentAdapter {
   async _searchTalks(searchText, limit) {
     if (limit <= 0) return [];
 
-    const basePath = path.resolve(this.dataPath, 'talks');
-    const mediaBasePath = path.resolve(this.mediaPath, 'video', 'talks');
+    const basePath = path.resolve(this.dataPath, 'readalong', 'talks');
+    const mediaBasePath = path.resolve(this.mediaPath, 'video', 'readalong', 'talks');
     const results = [];
 
     if (!dirExists(basePath)) return [];
@@ -1316,7 +1316,7 @@ export class LocalContentAdapter {
   async _searchSongs(collection, searchText, limit) {
     if (limit <= 0) return [];
 
-    const basePath = path.resolve(this.dataPath, 'songs', collection);
+    const basePath = path.resolve(this.dataPath, 'singalong', collection);
     const results = [];
 
     try {
