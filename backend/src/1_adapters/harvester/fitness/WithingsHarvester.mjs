@@ -18,6 +18,7 @@ import { IHarvester, HarvesterCategory } from '../ports/IHarvester.mjs';
 import { CircuitBreaker } from '../CircuitBreaker.mjs';
 import { configService } from '#system/config/index.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
+import { WeightProcessor } from '#backend/src/2_domains/health/services/WeightProcessor.mjs';
 
 /**
  * Withings measurement type codes
@@ -44,6 +45,7 @@ export class WithingsHarvester extends IHarvester {
   #timezone;
   #logger;
   #tokenCache;
+  #weightProcessor;
 
   /**
    * @param {Object} config
@@ -51,6 +53,7 @@ export class WithingsHarvester extends IHarvester {
    * @param {Object} config.lifelogStore - Store for reading/writing lifelog YAML
    * @param {Object} config.authStore - Store for reading/writing auth tokens
    * @param {Object} config.configService - ConfigService for credentials
+   * @param {Object} [config.weightProcessor] - WeightProcessor for analytics (auto-created if not provided)
    * @param {string} [config.timezone] - Timezone for date parsing
    * @param {Object} [config.logger] - Logger instance
    */
@@ -59,6 +62,7 @@ export class WithingsHarvester extends IHarvester {
     lifelogStore,
     authStore,
     configService,
+    weightProcessor,
     timezone = configService?.isReady?.() ? configService.getTimezone() : 'America/Los_Angeles',
     logger = console,
   }) {
@@ -83,6 +87,13 @@ export class WithingsHarvester extends IHarvester {
     this.#configService = configService;
     this.#timezone = timezone;
     this.#logger = logger;
+
+    // Initialize or use provided weight processor
+    this.#weightProcessor = weightProcessor || new WeightProcessor({
+      lifelogStore,
+      timezone,
+      logger,
+    });
 
     this.#tokenCache = {
       token: null,
@@ -157,9 +168,10 @@ export class WithingsHarvester extends IHarvester {
       // 3. Save to lifelog
       await this.#lifelogStore.save(username, 'withings', measurements);
 
-      // Note: Call processWeight(jobId) after harvest to compute weight analytics
-      // (interpolation, rolling averages, trendlines, caloric balance)
-      // See: backend/_legacy/jobs/weight.mjs for the full implementation
+      // 4. Process weight analytics (ALWAYS runs after withings harvest)
+      this.#logger.info?.('withings.weight_processor.start', { username });
+      await this.#weightProcessor.process(username);
+      this.#logger.info?.('withings.weight_processor.complete', { username });
 
       // Success - reset circuit breaker
       this.#circuitBreaker.recordSuccess();

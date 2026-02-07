@@ -247,7 +247,7 @@ export function createHomeAutomationRouter(config) {
 
     const { keyboard_id } = req.params;
 
-    const keyboardData = loadFile('state/keyboard') || [];
+    const keyboardData = loadFile('config/keyboard') || [];
     const filtered = keyboardData.filter(k =>
       k.folder?.replace(/\s+/g, '').toLowerCase() === keyboard_id?.replace(/\s+/g, '').toLowerCase()
     );
