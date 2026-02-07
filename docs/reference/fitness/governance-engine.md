@@ -399,7 +399,7 @@ window.__fitnessGovernance = {
 
 ### Governance Policies
 
-Located in `data/household/apps/fitness/config.yml`:
+Located in `data/household/config/fitness.yml`:
 
 ```yaml
 governance:

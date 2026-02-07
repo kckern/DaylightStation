@@ -40,7 +40,7 @@ Block all traffic unless:
 | Journalist | `https://app.example.com/api/v1/journalist/webhook` |
 | Homebot | `https://app.example.com/api/v1/homebot/webhook` |
 
-See `data/system/apps/chatbots.yml` for bot configuration and secret tokens.
+See `data/system/config/chatbots.yml` for bot configuration and secret tokens.
 
 ### Public Endpoints
 

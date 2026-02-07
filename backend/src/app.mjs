@@ -433,7 +433,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // Cost domain
-  const costDataRoot = configService.getHouseholdPath('apps/cost');
+  const costDataRoot = configService.getHouseholdPath('shared/cost');
   const costServices = createCostServices({
     dataRoot: costDataRoot,
     // budgetRepository not yet implemented - will be added when YamlBudgetDatastore is created

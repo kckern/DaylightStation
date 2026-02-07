@@ -166,7 +166,7 @@ const userPrefs = await this.#configRepository.getUserConfig(userId);
 const householdSettings = await this.#configRepository.getHouseholdConfig(householdId);
 
 // BAD - knows storage details
-const householdFitnessConfig = yaml.load(`${dataDir}/household/apps/fitness/config.yml`);
+const householdFitnessConfig = yaml.load(`${dataDir}/household/config/fitness.yml`);
 ```
 
 ---

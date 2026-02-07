@@ -1,4 +1,4 @@
-/**
+  /**
  * Config Loader
  * 
  * Reads YAML files from disk and assembles a unified config object.
@@ -186,10 +186,32 @@ export function toFolderName(householdId) {
 
 /**
  * Load apps for a household.
+ * Merges from two locations:
+ *   1. config/<appName>.yml  (config-only apps, preferred)
+ *   2. apps/ directory        (legacy: subdirs with config.yml, top-level YAMLs)
+ * config/ entries take precedence over apps/ entries with the same key.
  */
 function loadHouseholdApps(dataDir, folderName) {
+  // Legacy: load from apps/ directory
   const appsDir = path.join(dataDir, folderName, 'apps');
-  return loadAppsFromDir(appsDir);
+  const appsFromLegacy = loadAppsFromDir(appsDir);
+
+  // New: load app configs from config/ directory
+  // Excludes known non-app configs (household, integrations, devices)
+  const NON_APP_CONFIGS = new Set(['household', 'integrations', 'devices']);
+  const configDir = path.join(dataDir, folderName, 'config');
+  const appsFromConfig = {};
+  for (const file of listYamlFiles(configDir)) {
+    const name = path.basename(file, '.yml');
+    if (NON_APP_CONFIGS.has(name)) continue;
+    const config = readYaml(file);
+    if (config) {
+      appsFromConfig[name] = config;
+    }
+  }
+
+  // Merge: config/ takes precedence over apps/
+  return { ...appsFromLegacy, ...appsFromConfig };
 }
 
 /**
@@ -309,15 +331,41 @@ function loadHouseholdAuth(dataDir) {
 
 // ─── Apps ────────────────────────────────────────────────────
 
+/**
+ * Load system-level app configs from system/config/.
+ * Excludes infrastructure configs (system, adapters, services, etc.)
+ * which are loaded by their own dedicated loaders.
+ */
 function loadAllApps(dataDir) {
+  const INFRASTRUCTURE_CONFIGS = new Set([
+    'system', 'adapters', 'services', 'bots', 'logging',
+    'archive', 'dev', 'jobs', 'media', 'testdata', 'secrets',
+  ]);
+
+  const configDir = path.join(dataDir, 'system', 'config');
+
+  // Also check legacy system/apps/ for backward compat
   const appsDir = path.join(dataDir, 'system', 'apps');
+
   const apps = {};
 
+  // Legacy: load from system/apps/ first (if still exists)
   for (const file of listYamlFiles(appsDir)) {
     const appName = path.basename(file, '.yml');
     const config = readYaml(file);
     if (config) {
       apps[appName] = config;
+    }
+  }
+
+  // New: load app configs from system/config/, excluding infrastructure
+  for (const file of listYamlFiles(configDir)) {
+    const name = path.basename(file, '.yml');
+    if (INFRASTRUCTURE_CONFIGS.has(name)) continue;
+    if (name.startsWith('system-local.')) continue;
+    const config = readYaml(file);
+    if (config) {
+      apps[name] = config;
     }
   }
 
