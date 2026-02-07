@@ -32,7 +32,7 @@ When the finger is still "down" during the UI transition (thumbnail → player),
 |------|------------|---------|
 | [`FitnessPlayer.jsx:1292-1328`](file:///Users/kckern/Documents/GitHub/DaylightStation/frontend/src/modules/Fitness/FitnessPlayer.jsx#L1292-L1328) | Touch handler for fullscreen toggle |
 | [`FitnessShow.jsx:475-557`](file:///Users/kckern/Documents/GitHub/DaylightStation/frontend/src/modules/Fitness/FitnessShow.jsx#L475-L557) | Episode play handler |
-| [`useTouchGestures.js`](file:///Users/kckern/Documents/GitHub/DaylightStation/frontend/src/modules/Fitness/shared/hooks/useTouchGestures.js) | Touch gesture handling hook |
+| [`useTouchGestures.js`](file:///Users/kckern/Documents/GitHub/DaylightStation/frontend/src/modules/Fitness/common/hooks/useTouchGestures.js) | Touch gesture handling hook |
 
 ### Root Cause
 
@@ -151,7 +151,7 @@ export const useSingleTouchEnforcement = () => {
    - Add mount-time debounce around line 1292
    - Update `handleGlobalPointerDown` function
 
-2. **Secondary**: [`useTouchGestures.js`](file:///Users/kckern/Documents/GitHub/DaylightStation/frontend/src/modules/Fitness/shared/hooks/useTouchGestures.js)
+2. **Secondary**: [`useTouchGestures.js`](file:///Users/kckern/Documents/GitHub/DaylightStation/frontend/src/modules/Fitness/common/hooks/useTouchGestures.js)
    - Add touch state tracking if implementing global solution
 
 3. **Also affected**: Music Player (mentioned in bug) - apply same fix pattern

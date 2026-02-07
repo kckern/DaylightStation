@@ -217,7 +217,7 @@
 | `/home/entropy` | `/api/entropy` | GET |
 | `/home/calendar` | `/api/calendar/events` | GET |
 | `/data/events` | `/api/calendar/events` | GET |
-| `/data/weather` | `/data/households/{hid}/shared/weather` | GET |
+| `/data/weather` | `/data/households/{hid}/common/weather` | GET |
 | `/data/lifelog/weight` | `/api/health/weight` | GET |
 | `/data/menu_log` | `/api/content/menu-log` | POST |
 | `/exe/tv/off` | `/api/home/tv/power?action=off` | GET |
@@ -362,7 +362,7 @@ Add to server.mjs:
 ```javascript
 app.get('/data/weather', (req, res) => {
   const hid = process.env.household_id || 'default';
-  res.redirect(307, `/data/households/${hid}/shared/weather`);
+  res.redirect(307, `/data/households/${hid}/common/weather`);
 });
 ```
 

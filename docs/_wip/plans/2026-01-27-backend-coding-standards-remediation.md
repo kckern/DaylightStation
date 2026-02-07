@@ -306,7 +306,7 @@ git commit -m "refactor(adapters): use InfrastructureError for external failures
 
 **Step 1: Create application error classes (if not exist)**
 
-Create `backend/src/3_applications/shared/errors/ApplicationError.mjs`:
+Create `backend/src/3_applications/common/errors/ApplicationError.mjs`:
 ```javascript
 import { DomainError } from '#system/utils/errors/index.mjs';
 
@@ -337,7 +337,7 @@ Change pattern:
 throw new Error(`Harvester not found: ${serviceId}`);
 
 // TO:
-import { ServiceNotFoundError } from '../shared/errors/ApplicationError.mjs';
+import { ServiceNotFoundError } from '../common/errors/ApplicationError.mjs';
 throw new ServiceNotFoundError('Harvester', serviceId);
 ```
 

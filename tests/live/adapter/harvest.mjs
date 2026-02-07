@@ -112,6 +112,10 @@ function createIo(dataDir) {
       const filePath = path.join(dataDir, 'users', username, 'lifelog', relativePath);
       saveYaml(filePath, content);
     },
+    userSaveFileDirect(username, relativePath, content) {
+      const filePath = path.join(dataDir, 'users', username, relativePath);
+      saveYaml(filePath, content);
+    },
     householdSaveFile(relativePath, content) {
       const filePath = path.join(dataDir, 'households', 'default', relativePath);
       saveYaml(filePath, content);

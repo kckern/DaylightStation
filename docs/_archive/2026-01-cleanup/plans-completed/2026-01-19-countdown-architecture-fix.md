@@ -46,7 +46,7 @@ if (this._stateCache.countdownSecondsRemaining != null && this.meta?.deadline) {
 
 ### Step 3: Create useCountdown hook
 
-**File:** `frontend/src/modules/Fitness/shared/hooks/useCountdown.js` (new file)
+**File:** `frontend/src/modules/Fitness/common/hooks/useCountdown.js` (new file)
 
 ```javascript
 import { useState, useEffect } from 'react';
@@ -96,7 +96,7 @@ export default useCountdown;
 
 1. Import the hook:
 ```javascript
-import { useCountdown } from '../shared/hooks/useCountdown';
+import { useCountdown } from '../common/hooks/useCountdown';
 ```
 
 2. Replace the useMemo countdown calculation with the hook:
@@ -115,7 +115,7 @@ const { progress: graceProgress } = useCountdown(
 
 1. Import the hook:
 ```javascript
-import { useCountdown } from './shared/hooks/useCountdown';
+import { useCountdown } from './common/hooks/useCountdown';
 ```
 
 2. Use the hook for countdown display:

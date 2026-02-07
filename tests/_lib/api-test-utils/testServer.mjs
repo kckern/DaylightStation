@@ -102,7 +102,7 @@ export async function createTestServer(options = {}) {
   const mediaPath = config.mounts.media || dataPath;
   const contentPath = path.join(dataPath, 'content');  // LocalContentAdapter looks in content/
   const householdDir = path.join(dataPath, 'households', config.householdId);
-  const watchlistPath = path.join(householdDir, 'state', 'lists.yml');
+  // watchlistPath removed - lists now in config/lists/
   const watchStatePath = path.join(dataPath, 'media_memory');
 
   // Create content registry with real adapters

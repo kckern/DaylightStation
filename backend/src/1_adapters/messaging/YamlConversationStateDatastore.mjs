@@ -5,7 +5,7 @@
  * Supports message-keyed sessions for complex flows.
  *
  * Storage format:
- *   {basePath}/{conversationId}.yml
+ *   users/{username}/conversations/{botName}/{conversationId}.yml
  *
  * File structure:
  *   activeFlow: string
@@ -29,25 +29,34 @@ import {
   deleteFile
 } from '#system/utils/FileIO.mjs';
 import { nowTs24 } from '#system/utils/index.mjs';
-import { IConversationStateDatastore } from '#apps/shared/ports/index.mjs';
+import { IConversationStateDatastore } from '#apps/common/ports/index.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 export class YamlConversationStateDatastore extends IConversationStateDatastore {
-  #basePath;
+  #userDataService;
+  #botName;
+  #userResolver;
+  #logger;
 
   /**
    * @param {Object} config
-   * @param {string} config.basePath - Directory for state files
+   * @param {Object} config.userDataService - UserDataService for per-user storage
+   * @param {string} config.botName - Bot name for path (nutribot, journalist, homebot)
+   * @param {Object} config.userResolver - UserResolver for platform ID -> username
+   * @param {Object} [config.logger] - Logger instance
    */
   constructor(config) {
     super();
-    if (!config?.basePath) {
-      throw new InfrastructureError('YamlConversationStateDatastore requires basePath', {
+    if (!config?.userDataService || !config?.botName || !config?.userResolver) {
+      throw new InfrastructureError('YamlConversationStateDatastore requires userDataService, botName, userResolver', {
         code: 'MISSING_DEPENDENCY',
-        dependency: 'basePath'
+        missing: [!config?.userDataService && 'userDataService', !config?.botName && 'botName', !config?.userResolver && 'userResolver'].filter(Boolean)
       });
     }
-    this.#basePath = config.basePath;
+    this.#userDataService = config.userDataService;
+    this.#botName = config.botName;
+    this.#userResolver = config.userResolver;
+    this.#logger = config.logger || console;
   }
 
   // ===========================================================================
@@ -63,12 +72,41 @@ export class YamlConversationStateDatastore extends IConversationStateDatastore 
   }
 
   /**
+   * Resolve username from conversationId
+   * @private
+   */
+  #resolveUsername(conversationId) {
+    // conversationId format: "telegram:{botId}_{userId}" or "telegram:{userId}"
+    if (!conversationId?.startsWith('telegram:')) {
+      this.#logger.warn?.('conversation.state.unknown_platform', { conversationId });
+      return null;
+    }
+    
+    const identifier = conversationId.substring('telegram:'.length);
+    // Extract userId (may have botId_ prefix)
+    const userId = identifier.includes('_') ? identifier.split('_')[1] : identifier;
+    
+    const username = this.#userResolver.resolveUser('telegram', userId);
+    if (!username) {
+      this.#logger.warn?.('conversation.state.user_not_found', { conversationId, userId });
+    }
+    return username;
+  }
+
+  /**
    * Get file path for a conversation
    * @private
    */
   #getFilePath(conversationId) {
+    const username = this.#resolveUsername(conversationId);
+    if (!username) {
+      // Fallback to sanitized ID for unknown users
+      const safeId = this.#sanitizeId(conversationId);
+      return path.join(this.#userDataService.getUserDir(username || '_unknown'), 'conversations', this.#botName, `${safeId}.yml`);
+    }
+    
     const safeId = this.#sanitizeId(conversationId);
-    return path.join(this.#basePath, `${safeId}.yml`);
+    return path.join(this.#userDataService.getUserDir(username), 'conversations', this.#botName, `${safeId}.yml`);
   }
 
   /**

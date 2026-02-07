@@ -393,11 +393,12 @@ class UserDataService {
       '',                        // household root
       'common',                  // common data stores
       'common/gratitude',        // gratitude bank/options
-      'state',                   // runtime state data
-      'state/nutribot/conversations',  // nutribot conversation state
-      'state/journalist/conversations', // journalist conversation state
-      'state/homebot/conversations',   // homebot conversation state
-      // Note: apps/ directory removed - configs now in config/, state in state/, finances in common/
+      'common/infinity',         // Infinity harvested data
+      'config',                  // Configuration files
+      'config/lists',            // List definitions
+      'history',                 // Time-series data
+      // Note: Bot conversations now per-user (users/{username}/conversations/{bot}/)
+      // Note: apps/ directory removed - configs in config/, shared data in common/
     ];
 
     for (const subdir of subdirs) {
@@ -410,9 +411,9 @@ class UserDataService {
 
   /**
    * Get a direct path within a household directory (no 'common/' prefix)
-   * Used for legacy compatibility with saveFile('state/lists') pattern
+   * @deprecated Use getHouseholdSharedPath or specific path methods instead
    * @param {string} householdId - Household identifier
-   * @param {...string} segments - Path segments (e.g., 'state', 'lists')
+   * @param {...string} segments - Path segments
    * @returns {string|null}
    */
   getHouseholdDataPath(householdId, ...segments) {
@@ -423,10 +424,10 @@ class UserDataService {
   }
 
   /**
-   * Save data file directly to household directory (matches legacy io.householdSaveFile)
-   * Used for Infinity harvester state files like 'state/lists.yml'
+   * Save data file directly to household directory
+   * @deprecated Migrate to common/* or config/* paths instead of state/*
    * @param {string} householdId - Household identifier
-   * @param {string} dataPath - Relative path within household (e.g., 'state/lists')
+   * @param {string} dataPath - Relative path within household
    * @param {object} data - Data to write
    * @returns {boolean}
    */

@@ -24,7 +24,7 @@ Voice memos allow users to record spoken notes during workouts. The feature capt
 |-----------|------|----------------|
 | `VoiceMemoOverlay` | `FitnessPlayerOverlay/VoiceMemoOverlay.jsx` | Main UI overlay with modes |
 | `useVoiceMemoRecorder` | `FitnessSidebar/useVoiceMemoRecorder.js` | Recording hook, MediaRecorder, metering |
-| `MicLevelIndicator` | `shared/primitives/MicLevelIndicator/` | Audio level visualization |
+| `MicLevelIndicator` | `common/primitives/MicLevelIndicator/` | Audio level visualization |
 | `VoiceMemoManager` | `hooks/fitness/VoiceMemoManager.js` | In-memory memo storage |
 | `FitnessVoiceMemo` | `FitnessSidebar/FitnessVoiceMemo.jsx` | Sidebar trigger button |
 | Backend endpoint | `backend/routers/fitness.mjs:493-554` | Whisper + GPT-4o transcription |
@@ -292,7 +292,7 @@ const resumeMediaIfNeeded = (playerRef, wasPlayingBeforeRecordingRef) => {
 
 ### Component
 
-**Location:** `shared/primitives/MicLevelIndicator/MicLevelIndicator.jsx`
+**Location:** `common/primitives/MicLevelIndicator/MicLevelIndicator.jsx`
 
 **Props:**
 | Prop | Type | Default | Description |

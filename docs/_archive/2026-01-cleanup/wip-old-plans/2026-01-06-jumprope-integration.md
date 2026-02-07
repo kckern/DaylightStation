@@ -117,7 +117,7 @@ getMetricsSnapshot() {
 
 ### 3. DeviceAvatar.jsx (UI Component)
 
-**Location:** `frontend/src/modules/Fitness/shared/integrations/DeviceAvatar/`
+**Location:** `frontend/src/modules/Fitness/common/integrations/DeviceAvatar/`
 
 **Status:** ⚠️ Needs enhancement for jumprope-specific display
 
@@ -315,4 +315,4 @@ Future consideration: Jumprope could contribute to coin earning:
 | `frontend/src/modules/Fitness/FitnessSidebar/FitnessUsers.jsx` | Type config | ✅ Done |
 | `frontend/src/modules/Fitness/FitnessSidebar.scss` | Jumprope color | ✅ Done |
 | `frontend/src/modules/Fitness/MiniMonitor.scss` | Jumprope color | ✅ Done |
-| `frontend/src/modules/Fitness/shared/integrations/DeviceAvatar/` | Bounce animation | ⏳ Optional |
+| `frontend/src/modules/Fitness/common/integrations/DeviceAvatar/` | Bounce animation | ⏳ Optional |

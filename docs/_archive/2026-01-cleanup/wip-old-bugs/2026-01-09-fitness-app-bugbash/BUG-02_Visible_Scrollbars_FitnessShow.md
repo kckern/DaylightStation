@@ -81,7 +81,7 @@ In `FitnessShow.scss`, multiple elements have `overflow-y: auto` without scrollb
 
 ### Existing Scrollbar Hide Pattern
 
-The codebase already has a scrollbar-hide mixin in `shared/styles/_mixins.scss`:
+The codebase already has a scrollbar-hide mixin in `common/styles/_mixins.scss`:
 
 ```scss
 @mixin scrollbar-hide {
@@ -102,7 +102,7 @@ The codebase already has a scrollbar-hide mixin in `shared/styles/_mixins.scss`:
 Add the scrollbar-hide mixin to all overflow areas in `FitnessShow.scss`:
 
 ```scss
-@import '../shared/styles/_mixins.scss';
+@import '../common/styles/_mixins.scss';
 
 .episode-info {
   overflow-y: auto;
@@ -173,7 +173,7 @@ Add global scrollbar hiding to the root Fitness App styles:
 
 These files already implement proper scrollbar hiding (for reference):
 
-- [`FullScreenContainer.scss:66`](file:///Users/kckern/Documents/GitHub/DaylightStation/frontend/src/modules/Fitness/shared/containers/FullScreenContainer/FullScreenContainer.scss#L66) - Uses `@include scrollbar-hide`
+- [`FullScreenContainer.scss:66`](file:///Users/kckern/Documents/GitHub/DaylightStation/frontend/src/modules/Fitness/common/containers/FullScreenContainer/FullScreenContainer.scss#L66) - Uses `@include scrollbar-hide`
 - [`VoiceMemoOverlay.scss:125`](file:///Users/kckern/Documents/GitHub/DaylightStation/frontend/src/modules/Fitness/FitnessPlayerOverlay/VoiceMemoOverlay.scss#L125) - Hides webkit scrollbar
 
 ---

@@ -50,7 +50,7 @@ backend/src/
 │   │   │   ├── IAgentRuntime.mjs
 │   │   │   ├── ITool.mjs
 │   │   │   └── IMemoryStore.mjs
-│   │   ├── shared/
+│   │   ├── common/
 │   │   │   ├── tools/
 │   │   │   │   ├── ApplicationTools.mjs
 │   │   │   │   ├── DataQueryTools.mjs
@@ -259,7 +259,7 @@ export class AgentOrchestrator {
 Tools wrap existing capabilities for agent use:
 
 ```javascript
-// agents/shared/tools/ApplicationTools.mjs
+// agents/common/tools/ApplicationTools.mjs
 export const ApplicationTools = {
   /**
    * Create tools for nutribot use cases
@@ -298,7 +298,7 @@ export const ApplicationTools = {
 ```
 
 ```javascript
-// agents/shared/tools/SystemTools.mjs
+// agents/common/tools/SystemTools.mjs
 export const SystemTools = {
   forConfig(configRepository) {
     return [

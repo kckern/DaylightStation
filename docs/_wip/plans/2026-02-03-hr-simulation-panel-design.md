@@ -500,7 +500,7 @@ This is not the same as `FitnessSimHelper.setParticipantZone()`. You cannot "upd
 You've listed "Works in both browser and Node.js environments" as an acceptance criterion but provided zero implementation guidance.
 
 **Fix:** Specify exactly HOW this cross-environment sharing will work. Options:
-- Place SimulationProtocol in a shared location (e.g., `shared/` or `lib/`)
+- Place SimulationProtocol in a shared location (e.g., `common/` or `lib/`)
 - Use package.json exports field
 - Duplicate with a comment explaining why
 

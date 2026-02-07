@@ -136,7 +136,7 @@ export class GmailHarvester extends IHarvester {
 
       // Save current inbox state
       if (this.#currentStore) {
-        await this.#currentStore.save(username, {
+        await this.#currentStore.save(username, 'gmail', {
           lastUpdated: nowTs24(),
           unreadCount: inboxMessages.filter(m => m.isUnread).length,
           totalCount: inboxMessages.length,

@@ -97,7 +97,7 @@ New `RpmDeviceCard` component that:
 | `frontend/src/modules/Fitness/FitnessSidebar/RealtimeCards/JumpropeCard.jsx` | Jump rope display |
 | `frontend/src/modules/Fitness/FitnessSidebar/RealtimeCards/JumpropeAvatar.jsx` | Jump rope gauge |
 | `frontend/src/modules/Fitness/components/RpmDeviceAvatar.jsx` | Spinning animation |
-| `frontend/src/modules/Fitness/shared/integrations/DeviceAvatar/DeviceAvatar.jsx` | Unified avatar |
+| `frontend/src/modules/Fitness/common/integrations/DeviceAvatar/DeviceAvatar.jsx` | Unified avatar |
 
 ### Configuration
 | File | Purpose |

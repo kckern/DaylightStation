@@ -29,7 +29,7 @@ The Fullscreen Vitals Overlay displays circular avatar widgets for active fitnes
 | `RpmDeviceAvatar` | `FitnessSidebar/RealtimeCards/RpmDeviceAvatar.jsx` | RPM device avatar with spinning gauge |
 | `rpmUtils.mjs` | `FitnessSidebar/RealtimeCards/rpmUtils.mjs` | RPM progress/color calculations |
 
-**Alternate implementation:** `frontend/src/modules/Fitness/shared/integrations/FullscreenVitalsOverlay/` contains a shared version for plugin contexts. This version uses an older `RpmDeviceAvatar` from `components/` with different styling (`.vital-rpm` class vs `.fullscreen-rpm-item` wrapper). The implementations have diverged and should be consolidated.
+**Alternate implementation:** `frontend/src/modules/Fitness/common/integrations/FullscreenVitalsOverlay/` contains a shared version for plugin contexts. This version uses an older `RpmDeviceAvatar` from `components/` with different styling (`.vital-rpm` class vs `.fullscreen-rpm-item` wrapper). The implementations have diverged and should be consolidated.
 
 ---
 

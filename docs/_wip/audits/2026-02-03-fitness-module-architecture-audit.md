@@ -42,10 +42,10 @@ Additional large files (500-800 lines):
 
 ### 2. Abandoned Shared Library (HIGH)
 
-The `shared/` directory contains 30+ component directories:
+The `common/` directory contains 30+ component directories:
 
 ```
-shared/
+common/
 ├── primitives/       # 14 components (ProgressBar, Timer, CountdownRing, etc.)
 ├── composites/       # 7 components (AppModal, ConfirmDialog, ActionBar, etc.)
 ├── integrations/     # 11 components (DeviceAvatar, HeartRateDisplay, etc.)
@@ -65,7 +65,7 @@ shared/
 | `FitnessSessionApp.jsx` | FullscreenVitalsOverlay |
 | `GovernanceStateOverlay.jsx` | useDeadlineCountdown |
 
-**Only 5-6 production files import from shared/.** The majority of imports come from `ComponentShowcase/`—a demo/documentation app, not production code.
+**Only 5-6 production files import from common/.** The majority of imports come from `ComponentShowcase/`—a demo/documentation app, not production code.
 
 **The five god-object files do not use the shared library at all.**
 
@@ -81,7 +81,7 @@ Beyond the originally documented `device-wrapper` violation:
 | `device-timeout-bar` | `BaseRealtimeCard.jsx:98` | `FitnessUsers.jsx:1019` | `RpmDeviceCard.jsx:54` |
 | `device-zone-info` | `BaseRealtimeCard.jsx:81` | `FitnessUsers.jsx:978` | — |
 | `zone-progress-bar` | `PersonCard.jsx:89` | `FitnessUsers.jsx:1069` | — |
-| DeviceAvatar | `shared/integrations/DeviceAvatar/` | `components/RpmDeviceAvatar.jsx` | — |
+| DeviceAvatar | `common/integrations/DeviceAvatar/` | `components/RpmDeviceAvatar.jsx` | — |
 
 Each duplicate creates maintenance burden and divergence risk.
 
@@ -119,13 +119,13 @@ Each duplicate creates maintenance burden and divergence risk.
 
 Evidence from codebase comments suggests planned but incomplete refactoring:
 
-1. **`shared/primitives/index.js`:**
+1. **`common/primitives/index.js`:**
    ```javascript
    // Phase 1 primitives (extracted from shell components)
    export { default as StripedProgressBar } from './StripedProgressBar';
    ```
 
-2. **`shared/integrations/index.js`:**
+2. **`common/integrations/index.js`:**
    ```javascript
    // Phase 2: Migrated from components/
    export { default as DeviceAvatar } from './DeviceAvatar';
@@ -155,7 +155,7 @@ Evidence from codebase comments suggests planned but incomplete refactoring:
 | Files over 1000 lines | 5 |
 | Files over 500 lines | 10 |
 | Shared library components | 30+ |
-| Production files using shared/ | 5-6 |
+| Production files using common/ | 5-6 |
 | Duplicate pattern instances | 5+ |
 
 ---
@@ -175,15 +175,15 @@ Evidence from codebase comments suggests planned but incomplete refactoring:
 
 ### Short Term (Low Effort)
 
-1. **Document the architectural intent** — Add a README to `shared/` explaining what it is and that adoption is incomplete
-2. **Delete truly dead code** — Audit shared/ for components that were never used and remove them
+1. **Document the architectural intent** — Add a README to `common/` explaining what it is and that adoption is incomplete
+2. **Delete truly dead code** — Audit common/ for components that were never used and remove them
 3. **Fix the documented DRY violation** — Migrate FitnessUsers.jsx to use BaseRealtimeCard (as outlined in the bug doc)
 
 ### Medium Term (Moderate Effort)
 
-4. **Create a migration tracker** — Document which god-object files should adopt which shared/ components
-5. **Establish review guidelines** — New sidebar cards must use BaseRealtimeCard; new UI must check shared/ first
-6. **Consolidate DeviceAvatar** — Delete `components/RpmDeviceAvatar.jsx` and use `shared/integrations/DeviceAvatar`
+4. **Create a migration tracker** — Document which god-object files should adopt which common/ components
+5. **Establish review guidelines** — New sidebar cards must use BaseRealtimeCard; new UI must check common/ first
+6. **Consolidate DeviceAvatar** — Delete `components/RpmDeviceAvatar.jsx` and use `common/integrations/DeviceAvatar`
 
 ### Long Term (High Effort)
 
@@ -196,7 +196,7 @@ Evidence from codebase comments suggests planned but incomplete refactoring:
 ## Related Documents
 
 - `docs/_wip/bugs/2026-02-03-fitness-device-wrapper-dry-violation.md` — Original bug report that triggered this audit
-- `frontend/src/modules/Fitness/shared/DESIGN.md` — Shared library design document
+- `frontend/src/modules/Fitness/common/DESIGN.md` — Shared library design document
 - `frontend/src/modules/Fitness/ARCHITECTURE.md` — Module architecture documentation
 
 ---
@@ -243,6 +243,6 @@ Files over 300 lines in the Fitness module:
 1. Line count analysis of all JS/JSX files
 2. Grep analysis for `BaseRealtimeCard` imports
 3. Grep analysis for duplicate CSS class patterns
-4. Directory structure review of `shared/`
+4. Directory structure review of `common/`
 5. Import analysis for shared library adoption
 6. Review of inline comments indicating migration plans

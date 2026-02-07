@@ -8,7 +8,7 @@ import {
   createAudioTrack,
   createComposedPresentation
 } from '#domains/content/capabilities/Composable.mjs';
-import { ApplicationError, ServiceNotFoundError } from '#apps/shared/errors/index.mjs';
+import { ApplicationError, ServiceNotFoundError } from '#apps/common/errors/index.mjs';
 
 /**
  * @typedef {Object} ComposePresentationConfig

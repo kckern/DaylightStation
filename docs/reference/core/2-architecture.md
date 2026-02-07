@@ -50,7 +50,7 @@ DaylightStation/
     │   │   ├── fitness/config.yml
     │   │   └── finances/config.yml
     │   │
-    │   ├── shared/                             # Household shared data
+    │   ├── common/                             # Household shared data
     │   │   ├── calendar.yml                    # Aggregated family calendar
     │   │   ├── weather.yml                     # Cached weather data
     │   │   └── gratitude/                      # Shared gratitude selections
@@ -125,8 +125,8 @@ saveFile(path, data)                // saveFile('state/cron', data)
 // HOUSEHOLD LEVEL - household[-{hid}]/
 // =============================================================================
 
-householdLoadFile(hid, path)        // householdLoadFile('default', 'shared/calendar')
-householdSaveFile(hid, path, data)  // householdSaveFile('default', 'shared/weather', data)
+householdLoadFile(hid, path)        // householdLoadFile('default', 'common/calendar')
+householdSaveFile(hid, path, data)  // householdSaveFile('default', 'common/weather', data)
 householdLoadAuth(hid, service)     // householdLoadAuth('default', 'plex')
 householdSaveAuth(hid, service, data)
 householdLoadConfig(hid)            // Returns household.yml contents
@@ -674,7 +674,7 @@ data/
         └── events.yml              # Aggregated upcoming items
 
 household[-{hid}]/
-└── shared/
+└── common/
     ├── events.yml                  # Household aggregated upcoming events (for TV display)
     └── current/                    # Household-level current data
         └── calendar.yml            # Shared family calendar (upcoming)
@@ -1088,7 +1088,7 @@ const listCalendarEvents = async (logger, job_id, targetUsername = null) => {
     
     // Also save to household shared (for TV display)
     const hid = process.env.household_id || 'default';
-    householdSaveFile(hid, 'shared/calendar', formatEvents(upcomingEvents));
+    householdSaveFile(hid, 'common/calendar', formatEvents(upcomingEvents));
     
     // === LIFELOG DATA: Past events (last 6 weeks) ===
     let pastEvents = [];
@@ -1159,7 +1159,7 @@ export default async (job_id) => {
     
     // Save to household shared location (for Upcoming module)
     const hid = process.env.household_id || 'default';
-    householdSaveFile(hid, 'shared/events', allItems);
+    householdSaveFile(hid, 'common/events', allItems);
     
     return allItems;
 };
@@ -1404,7 +1404,7 @@ sources:
 | **Gmail** | `lifelog/gmail.yml` (flat array) | `lifelog/gmail.yml` (date-keyed: sent + today's inbox) + `current/gmail.yml` (full inbox) |
 | **Todoist** | `lifelog/todoist.yml` (open tasks) | `lifelog/todoist.yml` (completed) + `current/todoist.yml` (open) |
 | **ClickUp** | `lifelog/clickup.yml` (in-progress) | `lifelog/clickup.yml` (done) + `current/clickup.yml` (active) |
-| **Calendar** | `shared/calendar.yml` (upcoming) | `lifelog/calendar.yml` (past) + `current/calendar.yml` (upcoming) |
+| **Calendar** | `common/calendar.yml` (upcoming) | `lifelog/calendar.yml` (past) + `current/calendar.yml` (upcoming) |
 | **Events** | Reads lifelog sources | Reads current sources |
 | **Entropy** | Mixed sources | Explicit `dataSource: lifelog|current` |
 

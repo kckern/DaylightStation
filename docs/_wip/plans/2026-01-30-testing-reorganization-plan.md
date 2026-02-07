@@ -1028,7 +1028,7 @@ git commit -m "refactor(tests): migrate application tests to isolated/flow"
 ```bash
 # Application ports
 mkdir -p tests/isolated/contract/applications/ports
-mv tests/unit/suite/applications/shared/ports/*.test.mjs tests/isolated/contract/applications/ports/
+mv tests/unit/suite/applications/common/ports/*.test.mjs tests/isolated/contract/applications/ports/
 
 # Content ports
 mkdir -p tests/isolated/contract/content/ports

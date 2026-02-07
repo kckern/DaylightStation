@@ -171,8 +171,8 @@ These usages normalize zone IDs, not user IDs. Zone IDs are static configuration
 | [FitnessSidebarMenu.jsx](frontend/src/modules/Fitness/FitnessSidebar/FitnessSidebarMenu.jsx#L207) | 207 | `profileId: candidate.id \|\| slugifyId(candidate.name)` | `profileId: candidate.id` |
 | [FullscreenVitalsOverlay.jsx](frontend/src/modules/Fitness/FitnessPlayerOverlay/FullscreenVitalsOverlay.jsx#L119) | 119 | `slugifyId(slugSource, 'equipment')` | Use `equipment.id` |
 | [FullscreenVitalsOverlay.jsx](frontend/src/modules/Fitness/FitnessPlayerOverlay/FullscreenVitalsOverlay.jsx#L186-187) | 186-187 | Multiple slug fallbacks | Use explicit `equipmentId` |
-| [FullscreenVitalsOverlay.jsx (shared)](frontend/src/modules/Fitness/shared/integrations/FullscreenVitalsOverlay/FullscreenVitalsOverlay.jsx#L124) | 124 | Same as above | Same fix |
-| [FullscreenVitalsOverlay.jsx (shared)](frontend/src/modules/Fitness/shared/integrations/FullscreenVitalsOverlay/FullscreenVitalsOverlay.jsx#L191-192) | 191-192 | Same as above | Same fix |
+| [FullscreenVitalsOverlay.jsx (shared)](frontend/src/modules/Fitness/common/integrations/FullscreenVitalsOverlay/FullscreenVitalsOverlay.jsx#L124) | 124 | Same as above | Same fix |
+| [FullscreenVitalsOverlay.jsx (shared)](frontend/src/modules/Fitness/common/integrations/FullscreenVitalsOverlay/FullscreenVitalsOverlay.jsx#L191-192) | 191-192 | Same as above | Same fix |
 | [FitnessChartApp.jsx](frontend/src/modules/Fitness/FitnessPlugins/plugins/FitnessChartApp/FitnessChartApp.jsx#L73-74) | 73-74 | Profile/entry ID derivation | Use `entry.profileId \|\| entry.id` |
 | [FitnessChartApp.jsx](frontend/src/modules/Fitness/FitnessPlugins/plugins/FitnessChartApp/FitnessChartApp.jsx#L128) | 128 | Roster ID mapping | Use `r.profileId \|\| r.id` |
 | [FitnessChartApp.jsx](frontend/src/modules/Fitness/FitnessPlugins/plugins/FitnessChartApp/FitnessChartApp.jsx#L598) | 598 | Clip safe ID for SVG | Use `avatar.id` (sanitize for SVG separately if needed) |

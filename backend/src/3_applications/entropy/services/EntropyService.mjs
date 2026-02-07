@@ -12,7 +12,7 @@
 
 import moment from 'moment';
 import { EntropyItem, MetricType } from '#domains/entropy/entities/EntropyItem.mjs';
-import { UnsupportedOperationError } from '../../shared/errors/index.mjs';
+import { UnsupportedOperationError } from '../../common/errors/index.mjs';
 
 /**
  * Service for calculating entropy (data staleness) reports
@@ -157,6 +157,14 @@ export class EntropyService {
         filter: config.filter,
         listProperty: config.listProperty,
         checkField: config.checkField,
+        dataSource: config.dataSource,
+      });
+
+      this.#logger.debug?.('entropy.metric.days_since', {
+        sourceId,
+        result,
+        hasTimestamp: !!result?.timestamp,
+        hasDate: !!result?.date,
       });
 
       const daysSince = this.#calculateDaysSince(result?.timestamp);
@@ -171,6 +179,7 @@ export class EntropyService {
       const result = await this.#entropyReader.getCount(username, dataPath, {
         countField: config.countField,
         listProperty: config.listProperty,
+        dataSource: config.dataSource,
       });
 
       return { value: result.count, lastUpdate: result.lastUpdated, lastItem: null };

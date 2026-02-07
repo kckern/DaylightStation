@@ -15,7 +15,7 @@
  */
 
 import { ValidationError } from '#system/utils/errors/index.mjs';
-import { ServiceNotFoundError } from '../shared/errors/index.mjs';
+import { ServiceNotFoundError } from '../common/errors/index.mjs';
 
 /**
  * Application service that orchestrates harvester operations

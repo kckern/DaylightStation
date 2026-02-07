@@ -286,7 +286,7 @@ backend/routers/media.mjs → userDataService
    import { loadFile, saveFile } from '../io.mjs';
 
    readHouseholdSharedData(householdId, dataPath) {
-     const relativePath = `households/${householdId}/shared/${dataPath}`;
+     const relativePath = `households/${householdId}/common/${dataPath}`;
      return loadFile(relativePath);
    }
    ```

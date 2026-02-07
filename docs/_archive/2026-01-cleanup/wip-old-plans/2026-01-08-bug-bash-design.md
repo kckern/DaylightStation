@@ -74,9 +74,9 @@ Change RPM device size in fullscreen overlay to match user avatars.
 - `FitnessShow.jsx` - Same change
 
 **Files to delete:**
-- `shared/VoiceMemoModal/VoiceMemoModal.jsx`
-- `shared/VoiceMemoModal/VoiceMemoModal.scss`
-- `shared/VoiceMemoModal/index.js` (if exists)
+- `common/VoiceMemoModal/VoiceMemoModal.jsx`
+- `common/VoiceMemoModal/VoiceMemoModal.scss`
+- `common/VoiceMemoModal/index.js` (if exists)
 
 **Files to check for removal:**
 - `FitnessVoiceMemoStandalone.jsx` - verify if still used
@@ -165,9 +165,9 @@ addMemo(memo) {
 - `frontend/src/hooks/fitness/VoiceMemoManager.js`
 
 ### Deleted
-- `frontend/src/modules/Fitness/shared/VoiceMemoModal/VoiceMemoModal.jsx`
-- `frontend/src/modules/Fitness/shared/VoiceMemoModal/VoiceMemoModal.scss`
-- `frontend/src/modules/Fitness/shared/VoiceMemoModal/` (entire folder)
+- `frontend/src/modules/Fitness/common/VoiceMemoModal/VoiceMemoModal.jsx`
+- `frontend/src/modules/Fitness/common/VoiceMemoModal/VoiceMemoModal.scss`
+- `frontend/src/modules/Fitness/common/VoiceMemoModal/` (entire folder)
 
 ### To Verify Before Deleting
 - `frontend/src/modules/Fitness/FitnessVoiceMemoStandalone.jsx`
