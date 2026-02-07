@@ -10,6 +10,7 @@ import {
   listYamlFiles
 } from '#system/utils/FileIO.mjs';
 import { ItemSelectionService } from '#domains/content/index.mjs';
+import { generateReference } from 'scripture-guide';
 
 /**
  * Adapter for follow-along narrated content (scripture, talks, poetry).
@@ -153,14 +154,7 @@ export class NarratedAdapter {
 
     // Extract title - handle both object and array metadata
     const titleSource = Array.isArray(metadata) ? metadata[0] : metadata;
-    const title = titleSource?.title
-      || titleSource?.headings?.heading
-      || titleSource?.headings?.title
-      || textPath;
-    const subtitle = titleSource?.speaker
-      || titleSource?.author
-      || titleSource?.headings?.section_title
-      || null;
+    const { title, subtitle } = this._extractTitles(collection, titleSource, resolvedMeta, textPath);
 
     return {
       id: canonicalId,
@@ -293,6 +287,47 @@ export class NarratedAdapter {
       fontSize: '1.2rem',
       textAlign: 'left'
     };
+  }
+
+  /**
+   * Extract title and subtitle for an item.
+   * For scripture, generates "Book Chapter" from the verse ID.
+   * @param {string} collection - Collection name
+   * @param {Object} titleSource - First metadata entry
+   * @param {Object|null} resolvedMeta - Resolution metadata with verseId
+   * @param {string} fallback - Fallback title (textPath)
+   * @returns {{ title: string, subtitle: string|null }}
+   * @private
+   */
+  _extractTitles(collection, titleSource, resolvedMeta, fallback) {
+    let title = null;
+    let subtitle = null;
+
+    // For scripture with a resolved verseId, use generateReference for the title
+    if (collection === 'scripture' && resolvedMeta?.verseId) {
+      try {
+        const ref = generateReference(parseInt(resolvedMeta.verseId, 10));
+        // Strip verse number: "Luke 4:1" → "Luke 4"
+        title = ref?.replace(/:\d+$/, '') || null;
+        // Use heading as subtitle
+        subtitle = titleSource?.headings?.heading || null;
+      } catch {
+        // Fall through to default
+      }
+    }
+
+    if (!title) {
+      title = titleSource?.title
+        || titleSource?.headings?.heading
+        || titleSource?.headings?.title
+        || fallback;
+      subtitle = titleSource?.speaker
+        || titleSource?.author
+        || titleSource?.headings?.section_title
+        || null;
+    }
+
+    return { title, subtitle };
   }
 
   /**
@@ -630,7 +665,7 @@ export class NarratedAdapter {
         };
       }
       return fullItem;
-    } catch (error) {
+    } catch {
       // Selection failed, return null to fall back to default behavior
       return null;
     }
@@ -692,14 +727,7 @@ export class NarratedAdapter {
     const canonicalId = `narrated:${collection}/${textPath}`;
 
     const titleSource = Array.isArray(metadata) ? metadata[0] : metadata;
-    const title = titleSource?.title
-      || titleSource?.headings?.heading
-      || titleSource?.headings?.title
-      || textPath;
-    const subtitle = titleSource?.speaker
-      || titleSource?.author
-      || titleSource?.headings?.section_title
-      || null;
+    const { title, subtitle } = this._extractTitles(collection, titleSource, resolvedMeta, textPath);
 
     return {
       id: canonicalId,
