@@ -120,7 +120,7 @@ Households can define custom query aliases that override or extend built-in beha
 ### Full Example
 
 ```yaml
-# household/apps/content/config.yml
+# household/config/content.yml
 
 # User-defined query alias overrides
 contentQueryAliases:

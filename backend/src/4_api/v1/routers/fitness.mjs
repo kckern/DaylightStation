@@ -81,7 +81,7 @@ export function createFitnessRouter(config) {
     if (!householdConfig) {
       logger.error?.('fitness.config.not-found', {
         householdId: hid,
-        expectedPath: `household[-${hid}]/apps/fitness/config.yml`
+        expectedPath: `household[-${hid}]/config/fitness.yml`
       });
       return null;
     }

@@ -210,7 +210,7 @@ async function main() {
   console.log('\nCreating directory structure...');
   ensureDir(OUTPUT_DIR);
   ensureDir(path.join(OUTPUT_DIR, 'history/fitness'));
-  ensureDir(path.join(OUTPUT_DIR, 'apps/finances'));
+  ensureDir(path.join(OUTPUT_DIR, 'shared/finances'));
   ensureDir(path.join(OUTPUT_DIR, 'apps/nutribot'));
   ensureDir(path.join(OUTPUT_DIR, 'shared/gratitude'));
   ensureDir(path.join(OUTPUT_DIR, 'state'));
@@ -253,8 +253,8 @@ async function main() {
 
   // Fitness config
   const fitnessConfig = generateFitnessConfig();
-  writeYaml(path.join(OUTPUT_DIR, 'apps/fitness/config.yml'), fitnessConfig);
-  console.log('  ✓ apps/fitness/config.yml');
+  writeYaml(path.join(OUTPUT_DIR, 'config/fitness.yml'), fitnessConfig);
+  console.log('  ✓ config/fitness.yml');
 
   // Fitness sessions
   const sessions = generateSessionsForRange(startDate, args.days, USERS);
@@ -282,19 +282,19 @@ async function main() {
 
   // Budget config
   const budgetConfig = generateBudgetConfig();
-  writeYaml(path.join(OUTPUT_DIR, 'apps/finances/budget.config.yml'), budgetConfig);
-  console.log('  ✓ apps/finances/budget.config.yml');
+  writeYaml(path.join(OUTPUT_DIR, 'shared/finances/budget.config.yml'), budgetConfig);
+  console.log('  ✓ shared/finances/budget.config.yml');
 
   // Account balances
   const balances = generateAccountBalances();
-  writeYaml(path.join(OUTPUT_DIR, 'apps/finances/account.balances.yml'), balances);
-  console.log('  ✓ apps/finances/account.balances.yml');
+  writeYaml(path.join(OUTPUT_DIR, 'shared/finances/account.balances.yml'), balances);
+  console.log('  ✓ shared/finances/account.balances.yml');
 
   // Transactions
   const transactions = generateTransactionsForRange(startDate, args.days);
   const groupedTransactions = groupTransactionsByMonth(transactions);
   for (const [month, monthData] of Object.entries(groupedTransactions)) {
-    const monthDir = path.join(OUTPUT_DIR, 'apps/finances', month);
+    const monthDir = path.join(OUTPUT_DIR, 'shared/finances', month);
     ensureDir(monthDir);
     writeYaml(path.join(monthDir, 'transactions.yml'), monthData);
   }
@@ -366,8 +366,8 @@ async function main() {
   console.log('\nGenerating app configs...');
 
   const chatbotsConfig = generateChatbotsConfig();
-  writeYaml(path.join(OUTPUT_DIR, 'apps/chatbots.yml'), chatbotsConfig);
-  console.log('  ✓ apps/chatbots.yml');
+  writeYaml(path.join(OUTPUT_DIR, 'config/chatbots.yml'), chatbotsConfig);
+  console.log('  ✓ config/chatbots.yml');
 
   // ============== Summary ==============
   console.log('\n' + '='.repeat(50));

@@ -271,6 +271,8 @@ class UserDataService {
 
   /**
    * Get household app data path (for household-level app config/data)
+   * Checks config/<appName>.yml first (migrated config-only apps),
+   * then falls back to legacy apps/<appName>/... path.
    * @param {string} householdId - Household identifier
    * @param {string} appName - App name (e.g., 'fitness')
    * @param {...string} segments - Additional path segments
@@ -280,6 +282,18 @@ class UserDataService {
     const householdDir = this.getHouseholdDir(householdId);
     if (!householdDir) return null;
     const flatSegments = segments.flatMap(s => s.split('/').filter(Boolean));
+
+    // For config reads (e.g., readHouseholdAppData(hid, 'fitness', 'config')),
+    // check if config/<appName>.yml exists in the new location first
+    if (flatSegments.length <= 1 && (!flatSegments[0] || flatSegments[0] === 'config')) {
+      const configDirPath = path.join(householdDir, 'config', `${appName}.yml`);
+      if (fs.existsSync(configDirPath)) {
+        // Return path without extension — caller adds .yml
+        return path.join(householdDir, 'config', appName);
+      }
+    }
+
+    // Legacy: apps/<appName>/<segments>
     return path.join(householdDir, 'apps', appName, ...flatSegments);
   }
 

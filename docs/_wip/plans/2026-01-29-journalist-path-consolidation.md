@@ -17,14 +17,14 @@
 | `users/kckern/lifelog/journalist/` | Keep (canonical) | - |
 | `users/kckern/ai/journalist/prompts.yml` | Move | `users/kckern/lifelog/journalist/prompts.yml` |
 | `_trash/chatbots/journalist/` | Already trash | Delete contents |
-| `system/apps/journalist.yml` | Update | Fix `data_paths` to match reality |
+| `system/config/journalist.yml` | Update | Fix `data_paths` to match reality |
 
 ---
 
 ### Task 1: Update journalist.yml Config to Match Reality
 
 **Files:**
-- Modify: `data/system/apps/journalist.yml`
+- Modify: `data/system/config/journalist.yml`
 
 **Step 1: Update the config file**
 
@@ -59,7 +59,7 @@ mysql:
 
 **Step 2: Verify the file was updated**
 
-Run: `cat data/system/apps/journalist.yml`
+Run: `cat data/system/config/journalist.yml`
 Expected: Shows updated `data_paths` section with all paths
 
 **Step 3: Commit**
