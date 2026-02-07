@@ -10,6 +10,12 @@ The Governance Engine controls video playback based on heart rate zone requireme
 
 **Key concept**: Governance is about zone requirements, not raw heart rate values. A user at 130 BPM might be in different zones depending on their personal zone configuration.
 
+## Related code:
+
+- frontend/src/hooks/fitness/GovernanceEngine.js
+- frontend/src/modules/Fitness/FitnessPlayer.jsx
+- frontend/src/Apps/FitnessApp.jsx
+
 ---
 
 ## Architecture
@@ -35,6 +41,18 @@ The Governance Engine controls video playback based on heart rate zone requireme
 │                                                                     │
 └─────────────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## Telemetry & Observability
+
+Telemetry is distributed across governance, playback, and profiling:
+
+- `governance.*` events are emitted by `GovernanceEngine` for phase changes, lock triggers, and zone change detection.
+- `fitness.player.*` events are emitted by `FitnessPlayer` for seek and fullscreen interactions (sampled to avoid log flooding).
+- `fitness-profile` events are emitted by `FitnessApp` and include FPS, dropped frame, heap, and governance correlation data.
+
+Note: The FPS profiler uses a global `window.__fitnessVideoElement` reference (seeded by `FitnessPlayer`) to avoid `querySelector` misses during player transitions.
 
 ---
 
