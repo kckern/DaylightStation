@@ -6,6 +6,7 @@ import { MenuStack } from "../modules/Menu/MenuStack";
 import Player from "../modules/Player/Player";
 import AppContainer from "../modules/AppContainer/AppContainer";
 import { PlayerOverlayLoading } from "../modules/Player/Player";
+import { MenuSkeleton } from "../modules/Menu/MenuSkeleton";
 import { getChildLogger } from "../lib/logging/singleton.js";
 
 export function TVAppWrapper({ children }) {
@@ -237,7 +238,7 @@ export default function TVApp({ appParam }) {
   }
 
   if (!list) {
-    return <TVAppWrapper><PlayerOverlayLoading shouldRender isVisible /></TVAppWrapper>;
+    return <TVAppWrapper><MenuSkeleton /></TVAppWrapper>;
   }
 
   return (

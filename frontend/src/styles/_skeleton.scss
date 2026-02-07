@@ -1,0 +1,42 @@
+@keyframes skeleton-pulse {
+  0% { opacity: 0.6; }
+  50% { opacity: 0.3; }
+  100% { opacity: 0.6; }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skeleton {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+  animation: skeleton-pulse 1.5s infinite ease-in-out;
+
+  &.text {
+    height: 1em;
+    width: 100%;
+    margin-bottom: 0.5em;
+  }
+
+  &.rect {
+    width: 100%;
+    height: 100%;
+  }
+
+  &.circle {
+    border-radius: 50%;
+  }
+
+  &.shimmer {
+    background: linear-gradient(
+      90deg,
+      rgba(30, 30, 30, 1) 0%,
+      rgba(50, 50, 50, 1) 50%,
+      rgba(30, 30, 30, 1) 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s ease-in-out infinite;
+  }
+}

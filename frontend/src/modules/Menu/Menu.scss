@@ -13,6 +13,8 @@ $color-border-hover: rgba(255, 255, 255, 0.15);
 $spacing-unit: 0.75rem;
 $item-radius: 0.75rem;
 
+@import "../../styles/skeleton";
+
 /* 2. Mixins & Functions */
 @mixin transition($property: all, $duration: 0.3s, $timing: ease-out) {
   transition: #{$property} #{$duration} #{$timing};
@@ -49,6 +51,7 @@ $item-radius: 0.75rem;
   padding: 1.5 * $spacing-unit;
   position: relative;
   @include transition(transform, 0.35s, cubic-bezier(0.4, 0, 0.2, 1));
+  animation: menu-fade-in 0.2s ease-in;
 
   .menu-header {
     display: flex;
@@ -152,6 +155,87 @@ $item-radius: 0.75rem;
   gap: $spacing-unit;
   flex-grow: 1;
   padding-bottom: 30%;
+}
+
+.menu-skeleton {
+  .menu-header {
+    background: linear-gradient(
+      135deg,
+      rgba(30, 30, 30, 0.55) 0%,
+      rgba(20, 20, 20, 0.75) 100%
+    );
+  }
+
+  .menu-skeleton-thumb {
+    width: 36px;
+    height: 36px;
+    border-radius: 6px;
+  }
+
+  .menu-skeleton-title {
+    height: 1rem;
+    width: 12rem;
+    border-radius: 6px;
+  }
+
+  .menu-skeleton-time {
+    height: 0.85rem;
+    width: 5rem;
+    margin-bottom: 0.35rem;
+    border-radius: 6px;
+  }
+
+  .menu-skeleton-date {
+    height: 0.55rem;
+    width: 4.5rem;
+    border-radius: 6px;
+  }
+
+  .menu-skeleton-count {
+    height: 0.75rem;
+    width: 3.5rem;
+    border-radius: 4px;
+  }
+
+  .menu-item-skeleton {
+    cursor: default;
+    background: transparent;
+    border-color: $color-border;
+    box-shadow: none;
+    pointer-events: none;
+
+    &:not(.active):hover {
+      transform: none;
+      border-color: $color-border;
+      box-shadow: none;
+    }
+  }
+
+  .menu-item-skeleton .menu-item-img {
+    background: transparent;
+  }
+
+  .menu-item-skeleton .menu-item-img-skeleton {
+    border-radius: $item-radius $item-radius 0 0;
+  }
+
+  .menu-item-skeleton .menu-item-label {
+    height: 0.75rem;
+    width: 70%;
+    margin: 0.6rem auto 0.75rem;
+    border-radius: 4px;
+    color: transparent;
+  }
+}
+
+.menu-empty-state {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.95rem;
 }
 
 .menu-items.count_1,
@@ -437,12 +521,6 @@ $item-radius: 0.75rem;
     filter: brightness(1.02);
   }
 
-  // Animations
-  @keyframes shimmer {
-    0% { background-position: -200% 0; }
-    100% { background-position: 200% 0; }
-  }
-
   @keyframes glowPulse {
     0%, 100% { opacity: 0.4; }
     50% { opacity: 0.8; }
@@ -470,4 +548,9 @@ $item-radius: 0.75rem;
   }
 
 
+}
+
+@keyframes menu-fade-in {
+  from { opacity: 0.7; }
+  to { opacity: 1; }
 }

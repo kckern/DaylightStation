@@ -1,3 +1,5 @@
+@import "../styles/skeleton";
+
 #root{
     height: 100vh;
 
@@ -75,29 +77,3 @@ h2{
     pointer-events: all;
 }
 
-@keyframes skeleton-pulse {
-  0% { opacity: 0.6; }
-  50% { opacity: 0.3; }
-  100% { opacity: 0.6; }
-}
-
-.skeleton {
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 4px;
-  animation: skeleton-pulse 1.5s infinite ease-in-out;
-  
-  &.text {
-    height: 1em;
-    width: 100%;
-    margin-bottom: 0.5em;
-  }
-  
-  &.rect {
-    width: 100%;
-    height: 100%;
-  }
-  
-  &.circle {
-    border-radius: 50%;
-  }
-}
