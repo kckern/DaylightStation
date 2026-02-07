@@ -30,10 +30,27 @@ function getVolumeFromVerseId(verseId) {
 }
 
 /**
+ * Resolve the base path for scripture data.
+ * Supports canonical readalong layout and legacy locations.
+ */
+function getScriptureBasePath(dataPath) {
+  const candidates = [
+    path.join(dataPath, 'readalong', 'scripture'),
+    path.join(dataPath, 'content', 'readalong', 'scripture'),
+    path.join(dataPath, 'content', 'scripture'),
+    path.join(dataPath, 'scripture')
+  ];
+
+  return candidates.find(dirExists) || candidates[0];
+}
+
+/**
  * Get default version for a volume (first directory found)
  */
 function getDefaultVersion(dataPath, volume) {
-  const volumePath = path.join(dataPath, 'content', 'scripture', volume);
+  const basePath = getScriptureBasePath(dataPath);
+  if (!dirExists(basePath)) return null;
+  const volumePath = path.join(basePath, volume);
   if (!dirExists(volumePath)) return null;
   const dirs = listDirs(volumePath);
   return dirs[0] || null;
@@ -118,7 +135,7 @@ export function createLocalContentRouter(config) {
       }
 
       // Resolve input to path
-      const resolved = resolveScripturePath(input, dataPath || adapter.dataPath);
+      const resolved = resolveScripturePath(input, adapter?.dataPath || dataPath);
       if (!resolved || !resolved.volume || !resolved.version || !resolved.verseId) {
         return res.status(400).json({ error: 'Invalid scripture reference', input });
       }
