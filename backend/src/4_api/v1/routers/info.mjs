@@ -83,6 +83,9 @@ function transformToInfoResponse(item, source) {
   // Pass through content field for singing/narrated scrollers
   if (item.content) response.content = item.content;
 
+  // Pass through subtitle for narrated/singing content
+  if (item.subtitle) response.subtitle = item.subtitle;
+
   // Expose plex key at top level for frontend compatibility
   if (source === 'plex' && item.metadata?.plex) {
     response.plex = String(item.metadata.plex);

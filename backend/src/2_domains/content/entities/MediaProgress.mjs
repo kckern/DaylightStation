@@ -28,15 +28,18 @@ export class MediaProgress {
     this.playCount = props.playCount ?? 0;
     this.lastPlayed = props.lastPlayed ?? null;
     this.watchTime = props.watchTime ?? 0;
+    this._storedPercent = props.percent ?? null;
   }
 
   /**
-   * Calculate percentage watched (0-100)
+   * Calculate percentage watched (0-100).
+   * Uses stored percent as fallback when duration is missing.
    * @returns {number}
    */
   get percent() {
-    if (!this.duration) return 0;
-    return Math.round((this.playhead / this.duration) * 100);
+    if (this.duration) return Math.round((this.playhead / this.duration) * 100);
+    if (this._storedPercent != null) return this._storedPercent;
+    return 0;
   }
 
   /**
