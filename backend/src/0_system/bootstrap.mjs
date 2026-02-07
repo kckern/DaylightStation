@@ -199,6 +199,7 @@ import {
   WeatherHarvester,
   StravaHarvester,
   WithingsHarvester,
+  FitnessSyncerHarvester,
   YamlAuthDatastore,
   createInfinityHarvesters
 } from '#adapters/harvester/index.mjs';
@@ -2808,6 +2809,18 @@ export function createHarvesterServices(config) {
       lifelogStore,
       authStore,
       configService,
+      logger,
+    }));
+  }
+
+  // FitnessSyncer - requires httpClient and authStore
+  if (httpClient && authStore) {
+    registerHarvester('fitsync', () => new FitnessSyncerHarvester({
+      httpClient,
+      lifelogStore,
+      authStore,
+      configService,
+      timezone: configService?.getTimezone?.() || 'America/New_York',
       logger,
     }));
   }
