@@ -42,13 +42,25 @@ export class YamlJournalEntryRepository {
   // ===========================================================================
 
   /**
+   * Extract platform from conversation ID
+   * @private
+   */
+  #extractPlatform(conversationId) {
+    // Format: "telegram:..." -> "telegram"
+    const colonIdx = conversationId.indexOf(':');
+    return colonIdx > 0 ? conversationId.substring(0, colonIdx) : null;
+  }
+
+  /**
    * Extract user ID from conversation ID
    * @private
    */
   #extractUserId(conversationId) {
-    // Format: "telegram:botId_userId" -> extract userId
+    // Format: "telegram:botId_userId" or "telegram:b{botId}_c{chatId}" -> extract userId
     if (conversationId.includes('_')) {
-      return conversationId.split('_').pop();
+      const raw = conversationId.split('_').pop();
+      // Strip canonical 'c' prefix from chat IDs (e.g. "c575596036" -> "575596036")
+      return raw.replace(/^c/, '');
     }
     // Fallback: remove "telegram:" prefix if present
     return conversationId.replace(/^telegram:/, '');
@@ -60,8 +72,9 @@ export class YamlJournalEntryRepository {
    */
   #getUsername(conversationId) {
     const userId = this.#extractUserId(conversationId);
-    if (this.#userResolver?.resolveUsername) {
-      return this.#userResolver.resolveUsername(userId) || userId;
+    const platform = this.#extractPlatform(conversationId);
+    if (platform && this.#userResolver?.resolveUser) {
+      return this.#userResolver.resolveUser(platform, userId) || userId;
     }
     return userId;
   }
