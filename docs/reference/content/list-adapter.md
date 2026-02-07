@@ -4,6 +4,10 @@ Exposes menus, programs, and watchlists as content sources, enabling YAML-define
 
 **Location:** `backend/src/1_adapters/content/list/ListAdapter.mjs`
 
+## Related code:
+
+- [backend/src/1_adapters/content/list/ListAdapter.mjs](../../../backend/src/1_adapters/content/list/ListAdapter.mjs)
+
 ---
 
 ## Overview
@@ -19,7 +23,7 @@ ListAdapter bridges configuration YAML files and the content source system. It h
 | Property | Value |
 |----------|-------|
 | Source name | `list` |
-| Prefixes | `menu:`, `program:`, `watchlist:` |
+| Prefixes | `menu:`, `program:`, `watchlist:` (alias: `list:` → `menu:`) |
 | Category | `list` |
 | Provider | `list` |
 | Relevance Score | 40 (between CONTAINER:125 and EPISODE:20) |
@@ -54,6 +58,7 @@ data/household/config/lists/
 - `menu:fhe` → `lists/menus/fhe.yml`
 - `program:music-queue` → `lists/programs/music-queue.yml`
 - `watchlist:kids-movies` → `lists/watchlists/kids-movies.yml`
+- `list:fhe` → Alias for `menu:fhe`
 
 **Browsing all lists of a type:**
 - `menu:` → Returns all menus

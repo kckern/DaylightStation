@@ -154,9 +154,10 @@ export class ListAdapter {
    * @returns {{prefix: string, name: string}|null}
    */
   _parseId(id) {
-    const match = id.match(/^(menu|program|watchlist|query):(.+)$/);
+    const match = id.match(/^(menu|program|watchlist|query|list):(.+)$/);
     if (!match) return null;
-    return { prefix: match[1], name: match[2] };
+    const prefix = match[1] === 'list' ? 'menu' : match[1];
+    return { prefix, name: match[2] };
   }
 
   /**
@@ -368,11 +369,12 @@ export class ListAdapter {
       query: 'Queries'
     };
     const librarySectionTitle = listData.group || typeLabels[parsed.prefix] || 'Lists';
+    const canonicalId = `${parsed.prefix}:${parsed.name}`;
 
     return new ListableItem({
-      id,
+      id: canonicalId,
       source: 'list',
-      localId: `${parsed.prefix}:${parsed.name}`,
+      localId: canonicalId,
       title,
       type: parsed.prefix,  // 'watchlist', 'query', 'program', 'menu'
       thumbnail,
@@ -394,8 +396,8 @@ export class ListAdapter {
    * @returns {Promise<ListableItem[]|ListableItem|null>}
    */
   async getList(id) {
-    // Strip source prefix if present (e.g., "list:watchlist:" → "watchlist:")
-    const strippedId = id.replace(/^list:/, '');
+    // Strip source prefix only when it wraps a known list prefix
+    const strippedId = id.replace(/^list:(?=(menu|program|watchlist|query):)/, '');
 
     // Handle "menu:", "program:", "watchlist:", "query:" - return all lists of that type
     const prefixMatch = strippedId.match(/^(menu|program|watchlist|query):$/);
@@ -453,10 +455,12 @@ export class ListAdapter {
       thumbnail = items[0].image;
     }
 
+    const canonicalId = `${parsed.prefix}:${parsed.name}`;
+
     return new ListableItem({
-      id,
+      id: canonicalId,
       source: 'list',
-      localId: `${parsed.prefix}:${parsed.name}`,
+      localId: canonicalId,
       title,
       type: parsed.prefix,
       thumbnail,
@@ -674,6 +678,10 @@ export class ListAdapter {
         localId = inputMatch[2].trim();
       }
 
+      if (source === 'list') {
+        source = 'menu';
+      }
+
       // Build the asset ID for watch state lookup
       const assetId = item.assetId || localId;
 
@@ -682,8 +690,9 @@ export class ListAdapter {
 
       // Build the base action key - use src override or parsed source
       const src = item.src || source;
+      const normalizedSrc = src === 'list' ? 'menu' : src;
       const baseAction = {};
-      baseAction[src] = assetId;
+      baseAction[normalizedSrc] = assetId;
 
       // Add options to action object
       if (item.shuffle) baseAction.shuffle = true;
@@ -788,7 +797,7 @@ export class ListAdapter {
         playable: item.playable,
         uid: item.uid,
         // Original source for reference
-        src: item.src || source,
+        src: normalizedSrc,
         assetId: assetId,
         // Display fields
         folder: listName,

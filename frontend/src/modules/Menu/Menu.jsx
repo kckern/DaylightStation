@@ -7,8 +7,8 @@ import React, {
 } from "react";
 import { DaylightAPI, DaylightMediaPath, ContentDisplayUrl } from "../../lib/api.mjs";
 import "./Menu.scss";
-import { PlayerOverlayLoading } from "../Player/Player";
 import MenuNavigationContext from "../../context/MenuNavigationContext";
+import { MenuSkeleton } from "./MenuSkeleton";
 
 /**
  * Logs a menu selection to the server.
@@ -93,6 +93,15 @@ function MenuHeader({ title, itemCount, image }) {
   );
 }
 
+function MenuEmpty({ title, image, message }) {
+  return (
+    <div className="menu-items-container">
+      <MenuHeader title={title} itemCount={0} image={image} />
+      <div className="menu-empty-state">{message}</div>
+    </div>
+  );
+}
+
 /**
  * TVMenu: Main menu component.
  * Supports both legacy controlled mode and new context-based mode.
@@ -115,7 +124,7 @@ export function TVMenu({
   const handleSelect = useSelectAndLog(onSelect);
 
   if (!loaded) {
-    return null;
+    return <MenuSkeleton />;
   }
 
   return (
@@ -160,8 +169,18 @@ export function KeypadMenu({
     return () => onMenuState?.(false);
   }, [onMenuState]);
 
-  if (!loaded || !menuItems.length) {
-    return <PlayerOverlayLoading shouldRender isVisible />;
+  if (!loaded) {
+    return <MenuSkeleton />;
+  }
+
+  if (!menuItems.length) {
+    return (
+      <MenuEmpty
+        title={menuMeta.title || menuMeta.label || "Menu"}
+        image={menuMeta.image}
+        message="No items available"
+      />
+    );
   }
 
   return (
@@ -630,8 +649,24 @@ function MenuItems({
     if (!containerRef?.current || !items.length) return;
     const containerEl = containerRef.current;
     const containerHeight = containerEl.offsetHeight;
-    const selectedElem =
-      containerEl.querySelector(".menu-items")?.children[selectedIndex];
+    
+    // Get the items container to check dimensions
+    const menuItemsEl = containerEl.querySelector(".menu-items");
+    if (!menuItemsEl) return;
+
+    // Check if scrolling is needed by verifying if the last item is already visible
+    // This prevents unnecessary panning/scrolling when the content fits on screen
+    const lastElem = menuItemsEl.children[menuItemsEl.children.length - 1];
+    if (lastElem) {
+      const lastItemBottom = lastElem.offsetTop + lastElem.offsetHeight;
+      // If the bottom of the last item is within the container (plus small buffer), don't scroll
+      if (lastItemBottom <= containerHeight + 5) {
+        containerEl.style.transform = `translateY(0px)`;
+        return;
+      }
+    }
+
+    const selectedElem = menuItemsEl.children[selectedIndex];
     if (!selectedElem) return;
 
     const selectedHeight = selectedElem.offsetHeight;

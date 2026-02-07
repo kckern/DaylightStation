@@ -33,7 +33,7 @@ The content system has five key concepts:
 |--------|-------|-----------|
 | `folder` | Bridges YAML data files and filesystem. Provides content, config, and menus. | |
 | `local` | Browses configured filesystem paths as content sources. See [LocalMediaAdapter](./local-media-adapter.md). | `/api/v1/local/*` |
-| `list` | Exposes menus/programs/watchlists as content. Prefixes: `menu:`, `program:`, `watchlist:`. See [ListAdapter](./list-adapter.md). | |
+| `list` | Exposes menus/programs/watchlists as content. Prefixes: `menu:`, `program:`, `watchlist:` (alias: `list:` → `menu:`). See [ListAdapter](./list-adapter.md). | |
 | `canvas` | Static art images from filesystem or Immich libraries. | |
 | `singalong` | Participatory sing-along content (hymns, primary songs). Playable with synced stanzas. | |
 | `readalong` | Follow-along readalong content (scripture, talks, poetry). Playable with synced paragraphs. | |

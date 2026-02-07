@@ -58,6 +58,10 @@ function isContainer(item) {
     ['show', 'album', 'artist', 'watchlist', 'channel', 'series', 'conference', 'playlist'].includes(item.type);
 }
 
+function normalizeListSource(source) {
+  return source === 'list' ? 'menu' : source;
+}
+
 /**
  * ContentSearchCombobox - Searchable combobox for selecting content items
  * Supports search and drilling down into containers
@@ -148,7 +152,7 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
     const colonIndex = inputValue.indexOf(':');
     if (colonIndex === -1) return;
 
-    const source = inputValue.substring(0, colonIndex);
+    const source = normalizeListSource(inputValue.substring(0, colonIndex));
     const localId = inputValue.substring(colonIndex + 1);
 
     // Get parent path
@@ -196,7 +200,7 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
 
   // Browse into a container
   const browseContainer = useCallback(async (item) => {
-    const source = item.source || item.id?.split(':')[0];
+    const source = normalizeListSource(item.source || item.id?.split(':')[0]);
     const localId = item.localId || item.id?.replace(`${source}:`, '');
 
     setLoading(true);
@@ -260,7 +264,7 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
 
   // Browse to parent folder
   const browseParent = useCallback(async (item) => {
-    const source = item.source || item.id?.split(':')[0];
+    const source = normalizeListSource(item.source || item.id?.split(':')[0]);
     const localId = item.localId || item.id?.replace(`${source}:`, '');
 
     // Get parent path by removing the last segment

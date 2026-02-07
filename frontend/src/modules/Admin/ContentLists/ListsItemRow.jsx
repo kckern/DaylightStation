@@ -100,12 +100,16 @@ const TYPE_ICONS = {
   default: IconFile
 };
 
+function normalizeListSource(source) {
+  return source === 'list' ? 'menu' : source;
+}
+
 /**
  * Fetch siblings data for an item. Returns processed data ready for state.
  * This is the core fetch logic extracted for use by both preload and direct calls.
  */
 async function doFetchSiblings(itemId, contentInfo) {
-  const { source } = contentInfo;
+  const source = normalizeListSource(contentInfo.source);
   const localId = itemId.split(':')[1]?.trim();
 
   // Fetch current item to get parent key or library info
@@ -146,7 +150,7 @@ async function doFetchSiblings(itemId, contentInfo) {
       libraryId
     };
   } else if (['watchlist', 'query', 'menu', 'program'].includes(source)) {
-    childrenUrl = `/api/v1/info/list/${source}:`;
+    childrenUrl = `/api/v1/list/${source}/`;
     parentInfo = {
       id: `${source}:`,
       title: source.charAt(0).toUpperCase() + source.slice(1) + 's',
@@ -554,7 +558,7 @@ function ContentDisplay({ item, onClick, loading }) {
  * Display for unresolved content - warning state
  */
 function UnresolvedContentDisplay({ item, onClick }) {
-  const source = parseSource(item.value);
+  const source = normalizeListSource(parseSource(item.value));
 
   return (
     <div
@@ -630,15 +634,16 @@ export async function fetchContentMetadata(value) {
   }
 
   const [, source, localId] = [null, match[1].trim(), match[2].trim()];
+  const normalizedSource = normalizeListSource(source);
 
   try {
-    const response = await fetch(`/api/v1/info/${source}/${localId}`);
+    const response = await fetch(`/api/v1/info/${normalizedSource}/${localId}`);
     if (response.ok) {
       const data = await response.json();
       const info = {
         value: value,
         title: data.title || localId,
-        source: source,
+        source: normalizedSource,
         type: data.metadata?.type || data.type || null,
         thumbnail: data.thumbnail,
         grandparent: data.metadata?.grandparentTitle,
@@ -652,12 +657,12 @@ export async function fetchContentMetadata(value) {
     } else {
       // API returned error status - return unresolved
       console.warn(`Content API returned ${response.status} for ${value}`);
-      return { value, title: localId, source, type: null, unresolved: true };
+      return { value, title: localId, source: normalizedSource, type: null, unresolved: true };
     }
   } catch (err) {
     console.error('Failed to fetch content info:', err);
     // Return unresolved on network/parse failure
-    return { value, title: localId, source, type: null, unresolved: true };
+    return { value, title: localId, source: normalizedSource, type: null, unresolved: true };
   }
 }
 
@@ -1096,10 +1101,11 @@ function ContentSearchCombobox({ value, onChange }) {
 
   // Fetch siblings (items from the same parent) when opening dropdown
   const fetchSiblings = async () => {
-    if (!contentInfo) return;
+    const rawSource = value?.split(':')[0]?.trim();
+    const source = normalizeListSource(contentInfo?.source || rawSource);
+    const localId = value?.split(':').slice(1).join(':').trim();
 
-    const { source } = contentInfo;
-    const localId = value.split(':')[1]?.trim();
+    if (!source || !localId) return;
 
     // App items — resolve siblings locally from registry
     if (source === 'app') {
@@ -1169,7 +1175,8 @@ function ContentSearchCombobox({ value, onChange }) {
 
     // Local content collections — try collection endpoint for sources without parent hierarchy
     // This covers hymn, primary, and any future collections added to the SingalongAdapter
-    if (!contentInfo.parent && !contentInfo.library) {
+    const isListLikeSource = ['watchlist', 'query', 'menu', 'program', 'list', 'app'].includes(source);
+    if (!contentInfo?.parent && !contentInfo?.library && !isListLikeSource) {
       try {
         setLoadingBrowse(true);
         const response = await fetch(`/api/v1/local-content/collection/${source}`);
@@ -1257,7 +1264,7 @@ function ContentSearchCombobox({ value, onChange }) {
         };
       } else if (['watchlist', 'query', 'menu', 'program'].includes(source)) {
         // List-based items - siblings are other lists of same type
-        childrenUrl = `/api/v1/info/list/${source}:`;
+        childrenUrl = `/api/v1/list/${source}/`;
         parentInfo = {
           id: `${source}:`,
           title: source.charAt(0).toUpperCase() + source.slice(1) + 's',
