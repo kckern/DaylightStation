@@ -76,7 +76,7 @@ export function createFitnessRouter(config) {
    */
   function loadFitnessConfig(householdId) {
     const hid = householdId || configService.getDefaultHouseholdId();
-    const householdConfig = userDataService.readHouseholdAppData(hid, 'fitness', 'config');
+    const householdConfig = configService.getHouseholdAppConfig(hid, 'fitness');
 
     if (!householdConfig) {
       logger.error?.('fitness.config.not-found', {

@@ -3,7 +3,7 @@
  *
  * Simple YAML-based datastore for household weather data.
  * Weather data is shared at household level (not user-specific).
- * Path: household[-{id}]/shared/weather
+ * Path: household[-{id}]/common/weather
  *
  * Uses DataService for filesystem abstraction - adapter does not
  * interact with filesystem directly.
@@ -13,7 +13,7 @@
 
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
-const WEATHER_PATH = 'shared/weather';
+const WEATHER_PATH = 'common/weather';
 
 export class YamlWeatherDatastore {
   #dataService;

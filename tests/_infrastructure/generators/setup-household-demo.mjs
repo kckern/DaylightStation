@@ -210,9 +210,9 @@ async function main() {
   console.log('\nCreating directory structure...');
   ensureDir(OUTPUT_DIR);
   ensureDir(path.join(OUTPUT_DIR, 'history/fitness'));
-  ensureDir(path.join(OUTPUT_DIR, 'shared/finances'));
-  ensureDir(path.join(OUTPUT_DIR, 'apps/nutribot'));
-  ensureDir(path.join(OUTPUT_DIR, 'shared/gratitude'));
+  ensureDir(path.join(OUTPUT_DIR, 'common/finances'));
+  ensureDir(path.join(OUTPUT_DIR, 'state/nutribot/conversations'));
+  ensureDir(path.join(OUTPUT_DIR, 'common/gratitude'));
   ensureDir(path.join(OUTPUT_DIR, 'state'));
   ensureDir(path.join(OUTPUT_DIR, 'history'));
   ensureDir(path.join(OUTPUT_DIR, 'users'));

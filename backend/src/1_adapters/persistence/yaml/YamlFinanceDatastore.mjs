@@ -10,7 +10,7 @@
  * - transaction.memos - User annotations on transactions
  * - gpt - AI categorization configuration
  *
- * Base path (via ConfigService.getHouseholdPath): household[-{id}]/shared/finances/
+ * Base path (via ConfigService.getHouseholdPath): household[-{id}]/common/finances/
  */
 import path from 'path';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
@@ -47,7 +47,7 @@ export class YamlFinanceDatastore {
    * @returns {string}
    */
   getBasePath(householdId) {
-    return this.#configService.getHouseholdPath('shared/finances', householdId);
+    return this.#configService.getHouseholdPath('common/finances', householdId);
   }
 
   // ==========================================================================

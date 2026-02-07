@@ -18,7 +18,7 @@ export class FitnessConfigService {
    */
   getNormalizedConfig(householdId) {
     const hid = householdId || this.configService.getDefaultHouseholdId();
-    const raw = this.userDataService.readHouseholdAppData(hid, 'fitness', 'config');
+    const raw = this.configService.getHouseholdAppConfig(hid, 'fitness');
 
     if (!raw) return null;
 

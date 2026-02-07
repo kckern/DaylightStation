@@ -149,7 +149,7 @@ getDefaultUsername()                // Returns head of household
 | Function | Example | Resolves To |
 |----------|---------|-------------|
 | `loadFile('state/cron')` | System | `{dataDir}/state/cron.yml` |
-| `householdLoadFile('default', 'shared/calendar')` | Household | `{dataDir}/household/shared/calendar.yml` |
+| `householdLoadFile('default', 'common/calendar')` | Household | `{dataDir}/household/common/calendar.yml` |
 | `householdLoadAuth('default', 'plex')` | Household | `{dataDir}/household/auth/plex.yml` |
 | `userLoadFile('{username}', 'events')` | User | `{dataDir}/users/{username}/lifelog/events.yml` |
 | `userLoadAuth('{username}', 'strava')` | User | `{dataDir}/users/{username}/auth/strava.yml` |
@@ -1116,7 +1116,7 @@ const listCalendarEvents = async (logger, job_id, targetUsername = null) => {
 **Data Structures:**
 
 ```yaml
-# users/{username}/current/calendar.yml (also household[-{hid}]/shared/calendar.yml)
+# users/{username}/current/calendar.yml (also household[-{hid}]/common/calendar.yml)
 - id: 'event123'
   start: '2025-12-31T14:00:00Z'
   end: '2025-12-31T15:00:00Z'

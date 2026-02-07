@@ -39,18 +39,18 @@ export function createCalendarRouter(config) {
     configService.getHouseholdTimezone?.(householdId) || 'UTC';
 
   /**
-   * Load calendar events from shared storage
+   * Load calendar events from common storage
    */
   const loadCalendarEvents = (householdId) => {
     try {
-      // Try reading from shared/calendar in household directory
+      // Try reading from common/calendar in household directory
       const events = userDataService.readHouseholdSharedData?.(householdId, 'calendar');
       if (events && Array.isArray(events)) {
         return events;
       }
 
-      // Fallback: try reading from shared/calendar.yml
-      const fallback = userDataService.readHouseholdAppData?.(householdId, 'shared', 'calendar');
+      // Fallback: try reading from common/calendar.yml
+      const fallback = userDataService.readHouseholdAppData?.(householdId, 'common', 'calendar');
       if (fallback && Array.isArray(fallback)) {
         return fallback;
       }

@@ -30,7 +30,7 @@ export function createConfigRouter(config) {
 
   /**
    * GET /api/v1/config/content-prefixes
-   * Load legacy content prefix mapping from data/config/content-prefixes.yml
+   * Load legacy content prefix mapping from data/household/config/content-prefixes.yml
    * This is used by the frontend queryParamResolver to map legacy query params
   * to canonical singalong: and readalong: format.
    *
@@ -46,7 +46,7 @@ export function createConfigRouter(config) {
    * }
    */
   router.get('/content-prefixes', asyncHandler(async (req, res) => {
-    const configPath = path.join(dataPath, 'config', 'content-prefixes');
+    const configPath = path.join(dataPath, 'household', 'config', 'content-prefixes');
 
     logger.debug?.('config.content-prefixes.request', { configPath });
 

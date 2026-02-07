@@ -40,7 +40,7 @@ User → Remote/Keyboard → React State → API POST → YAML Files
 
 **Data Storage (household-scoped):**
 ```
-data/household/shared/gratitude/
+data/household/common/gratitude/
 ├── options.gratitude.yaml
 ├── options.hopes.yaml
 ├── selections.gratitude.yaml

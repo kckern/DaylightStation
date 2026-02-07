@@ -381,7 +381,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const contentSaveFile = (relativePath, data) => saveYaml(path.join(householdDir, relativePath), data);
 
   // Load legacy prefix mapping for ContentQueryService (e.g., hymn:123 -> singalong:hymn/123)
-  const contentPrefixesPath = path.join(dataBasePath, 'config', 'content-prefixes');
+  const contentPrefixesPath = path.join(dataBasePath, 'household', 'config', 'content-prefixes');
   const contentPrefixes = loadYaml(contentPrefixesPath) || {};
   const legacyPrefixMap = contentPrefixes.legacy || {};
 
@@ -433,7 +433,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // Cost domain
-  const costDataRoot = configService.getHouseholdPath('shared/cost');
+  const costDataRoot = configService.getHouseholdPath('common/cost');
   const costServices = createCostServices({
     dataRoot: costDataRoot,
     // budgetRepository not yet implemented - will be added when YamlBudgetDatastore is created
@@ -470,7 +470,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const haAuth = configService.getHouseholdAuth('homeassistant') || {};
   const loadFitnessConfig = (hid) => {
     const targetHouseholdId = hid || configService.getDefaultHouseholdId();
-    return userDataService.readHouseholdAppData(targetHouseholdId, 'fitness', 'config');
+    return configService.getHouseholdAppConfig(targetHouseholdId, 'fitness');
   };
 
   const fitnessServices = createFitnessServices({
@@ -694,7 +694,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Initialize MQTT sensor adapter if configured and enabled
   if (enableMqtt && hardwareAdapters.mqttAdapter?.isConfigured()) {
     // Load equipment with vibration sensors for MQTT topic mapping
-    const fitnessConfig = userDataService.readHouseholdAppData(householdId, 'fitness', 'config') || {};
+    const fitnessConfig = configService.getHouseholdAppConfig(householdId, 'fitness') || {};
     const equipment = fitnessConfig.equipment || [];
     if (hardwareAdapters.mqttAdapter.init(equipment)) {
       rootLogger.info('mqtt.initialized', {
@@ -915,7 +915,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Create conversation state store for nutribot (persists lastReportMessageId for cleanup)
   const nutribotStateStore = new YamlConversationStateDatastore({
-    basePath: configService.getHouseholdPath('apps/nutribot/conversations')
+    basePath: configService.getHouseholdPath('state/nutribot/conversations')
   });
 
   // Get nutribot adapter from config-driven SystemBotLoader
@@ -954,7 +954,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Create conversation state store for journalist
   const journalistStateStore = new YamlConversationStateDatastore({
-    basePath: configService.getHouseholdPath('apps/journalist/conversations')
+    basePath: configService.getHouseholdPath('state/journalist/conversations')
   });
 
   const journalistServices = createJournalistServices({
@@ -989,7 +989,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Create conversation state store for homebot
   const homebotStateStore = new YamlConversationStateDatastore({
-    basePath: configService.getHouseholdPath('apps/homebot/conversations')
+    basePath: configService.getHouseholdPath('state/homebot/conversations')
   });
 
   const homebotServices = createHomebotServices({
