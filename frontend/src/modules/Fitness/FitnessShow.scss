@@ -671,6 +671,7 @@
       /* Zoom via column spans; 2 tracks is baseline (4 columns). */
       .episode-card.vertical {
         grid-column: span 2;
+        gap:0;
       }
 
       /* zoom-150: show 3 tiles per row by switching to 6 tracks and span 2 */
