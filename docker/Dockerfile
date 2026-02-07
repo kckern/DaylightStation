@@ -35,9 +35,6 @@ RUN npm ci --include=dev \
 # Layer 7: Copy application source (uses .dockerignore)
 COPY --chown=node:node backend/ ./backend/
 COPY --chown=node:node frontend/ ./frontend/
-COPY --chown=node:node config/ ./config/
-COPY --chown=node:node cli/ ./cli/
-COPY --chown=node:node scripts/ ./scripts/
 COPY --chown=node:node package*.json ./
 
 # Layer 8: Build frontend

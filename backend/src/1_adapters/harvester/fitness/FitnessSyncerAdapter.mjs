@@ -32,6 +32,7 @@ const TOKEN_BUFFER_MS = 5 * 60 * 1000;
 export class FitnessSyncerAdapter {
   #httpClient;
   #authStore;
+  #configService;
   #logger;
   #clientId;
   #clientSecret;
@@ -42,7 +43,8 @@ export class FitnessSyncerAdapter {
   /**
    * @param {Object} config
    * @param {Object} config.httpClient - HTTP client with get/post methods
-   * @param {Object} config.authStore - Auth store with get/set methods
+   * @param {Object} config.authStore - Auth store with load/save methods
+   * @param {Object} [config.configService] - ConfigService for user auth
    * @param {Object} [config.logger] - Logger instance
    * @param {string} [config.clientId] - OAuth client ID (can also come from authStore)
    * @param {string} [config.clientSecret] - OAuth client secret (can also come from authStore)
@@ -51,6 +53,7 @@ export class FitnessSyncerAdapter {
   constructor({
     httpClient,
     authStore,
+    configService,
     logger = console,
     clientId,
     clientSecret,
@@ -71,6 +74,7 @@ export class FitnessSyncerAdapter {
 
     this.#httpClient = httpClient;
     this.#authStore = authStore;
+    this.#configService = configService;
     this.#logger = logger;
     this.#clientId = clientId;
     this.#clientSecret = clientSecret;
@@ -96,9 +100,10 @@ export class FitnessSyncerAdapter {
   /**
    * Get a valid access token, refreshing if necessary
    *
+   * @param {string} username - Target user
    * @returns {Promise<string|null>} Access token or null if unavailable
    */
-  async getAccessToken() {
+  async getAccessToken(username) {
     const now = Date.now();
 
     // Check in-memory cache first
@@ -109,8 +114,9 @@ export class FitnessSyncerAdapter {
       return this.#tokenCache.token;
     }
 
-    // Check persistent store
-    const authData = await this.#authStore.get('fitsync');
+    // Check persistent store (use configService if available, otherwise authStore)
+    const authData = this.#configService?.getUserAuth?.('fitsync', username) || 
+                     await this.#authStore?.load?.(username, 'fitsync');
 
     // Check if stored token is still valid (with buffer)
     if (authData?.access_token && authData.expires_at) {
@@ -131,14 +137,15 @@ export class FitnessSyncerAdapter {
     }
 
     // Need to refresh token
-    return this.#refreshToken(authData);
+    return this.#refreshToken(username, authData);
   }
 
   /**
    * Refresh the OAuth access token
    * @private
+   * @param {string} username - Target user
    */
-  async #refreshToken(authData) {
+  async #refreshToken(username, authData) {
     const refreshToken = authData?.refresh || authData?.refresh_token;
 
     if (!refreshToken) {
@@ -200,7 +207,9 @@ export class FitnessSyncerAdapter {
         client_secret: clientSecret,
       };
 
-      await this.#authStore.set('fitsync', newAuthData);
+      await this.#authStore?.save?.(username, 'fitsync', newAuthData);
+      // Also update via configService if available
+      this.#configService?.setUserAuth?.(username, 'fitsync', newAuthData);
 
       this.#logger.info?.('fitsync.auth.token_refreshed', {
         expiresAt: new Date(expiresAt).toISOString(),
@@ -342,6 +351,7 @@ export class FitnessSyncerAdapter {
    * Fetch activities from FitnessSyncer API
    *
    * @param {Object} options - Fetch options
+   * @param {string} options.username - Target user
    * @param {number} [options.daysBack=7] - Number of days back to fetch
    * @param {string} [options.sourceKey='GarminWellness'] - Provider key to fetch activities from
    * @returns {Promise<Array>} Raw activity array from API
@@ -349,7 +359,7 @@ export class FitnessSyncerAdapter {
    * @throws {Error} If no access token is available
    * @throws {Error} If source ID cannot be resolved
    */
-  async getActivities({ daysBack = 7, sourceKey = 'GarminWellness' } = {}) {
+  async getActivities({ username, daysBack = 7, sourceKey = 'GarminWellness' } = {}) {
     // Check circuit breaker first
     if (this.#circuitBreaker.isOpen()) {
       const cooldown = this.#circuitBreaker.getCooldownStatus();
@@ -365,7 +375,7 @@ export class FitnessSyncerAdapter {
 
     try {
       // Get access token
-      const token = await this.getAccessToken();
+      const token = await this.getAccessToken(username);
       if (!token) {
         throw new InfrastructureError('No access token available', {
         code: 'AUTHENTICATION_ERROR',
