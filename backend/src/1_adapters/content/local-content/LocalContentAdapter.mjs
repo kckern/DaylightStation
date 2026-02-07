@@ -13,7 +13,8 @@ import {
   listYamlFiles,
   listEntries,
   dirExists,
-  fileExists
+  fileExists,
+  findMediaFileByPrefix
 } from '#system/utils/FileIO.mjs';
 
 // Threshold for considering an item "watched" (90%)
@@ -79,6 +80,28 @@ function resolveContainerType(folderId, mediaPath) {
   }
 
   return 'folder';
+}
+
+/**
+ * Resolve a folder ID to its full nested path by scanning parent directories.
+ * E.g., "ldsgc202510" → "ldsgc/ldsgc202510" if it exists as a child of any folder.
+ * Checks both data and media paths.
+ * @param {string} folderId - Folder ID to find
+ * @param {string} dataBasePath - Base path for talk data
+ * @param {string} mediaBasePath - Base path for talk media
+ * @returns {string|null} Nested path (e.g., "parent/folderId") or null
+ */
+function resolveNestedConferencePath(folderId, dataBasePath, mediaBasePath) {
+  if (!folderId || folderId.includes('/')) return null;
+  for (const base of [dataBasePath, mediaBasePath]) {
+    if (!dirExists(base)) continue;
+    for (const parent of listEntries(base)) {
+      if (dirExists(path.join(base, parent, folderId))) {
+        return `${parent}/${folderId}`;
+      }
+    }
+  }
+  return null;
 }
 
 /**
@@ -610,6 +633,13 @@ export class LocalContentAdapter {
         }
       }
 
+      // Check if localId is nested under a parent folder (e.g., "ldsgc202510" → "ldsgc/ldsgc202510")
+      const nestedPath = resolveNestedConferencePath(localId, basePath, mediaBasePath);
+      if (nestedPath) {
+        const folder = await this._getTalkFolder(nestedPath);
+        if (folder) return folder;
+      }
+
       // Check if localId is an alias for a dated folder
       const resolvedFolder = this._resolveLatestFolder(localId);
       const folderId = resolvedFolder || localId;
@@ -669,14 +699,34 @@ export class LocalContentAdapter {
    */
   async _getScripture(localId) {
     const basePath = path.resolve(this.dataPath, 'scripture');
-    const rawData = loadContainedYaml(basePath, localId);
+    const pathParts = localId.split('/');
+    const requestedVolume = pathParts[0] || null;
+    const requestedVersion = pathParts[1] || null;
+    const requestedVerseId = pathParts[2] || null;
+
+    // Try loading YAML for requested version, fall back to other versions
+    let rawData = loadContainedYaml(basePath, localId);
+    let resolvedVersion = requestedVersion;
+    if (!rawData && requestedVolume && requestedVersion && requestedVerseId) {
+      const volumeDir = path.join(basePath, requestedVolume);
+      if (dirExists(volumeDir)) {
+        for (const altVersion of listEntries(volumeDir)) {
+          if (altVersion === requestedVersion) continue;
+          const altId = `${requestedVolume}/${altVersion}/${requestedVerseId}`;
+          rawData = loadContainedYaml(basePath, altId);
+          if (rawData) {
+            resolvedVersion = altVersion;
+            break;
+          }
+        }
+      }
+    }
     if (!rawData) return null;
 
     // Parse path components: volume/version/verseId
-    const pathParts = localId.split('/');
-    const volume = rawData.volume || pathParts[0] || null;
-    const version = pathParts[1] || null;
-    const verseId = rawData.chapter || pathParts[2] || null;
+    const volume = rawData.volume || requestedVolume;
+    const version = requestedVersion;
+    const verseId = rawData.chapter || requestedVerseId;
 
     // Use reference from YAML if present, otherwise generate from verse_id
     let reference = rawData.reference || localId;
@@ -704,9 +754,32 @@ export class LocalContentAdapter {
 
     // Construct media file path if not in YAML
     let mediaFile = rawData.mediaFile;
-    if (!mediaFile) {
-      // Default path: audio/scripture/{volume}/{version}/{verseId}.mp3
-      mediaFile = `audio/scripture/${volume}/${version}/${verseId}.mp3`;
+    if (!mediaFile && volume && verseId) {
+      // Try requested version with any audio extension
+      const versionDir = path.join(this.mediaPath, 'audio', 'scripture', volume, version || '');
+      const found = version ? findMediaFileByPrefix(versionDir, verseId) : null;
+
+      if (found) {
+        mediaFile = path.relative(this.mediaPath, found);
+      } else {
+        // Version fallback: scan other version dirs in this volume
+        const volumeDir = path.join(this.mediaPath, 'audio', 'scripture', volume);
+        if (dirExists(volumeDir)) {
+          for (const altVersion of listEntries(volumeDir)) {
+            if (altVersion === version) continue;
+            const altDir = path.join(volumeDir, altVersion);
+            const altFound = findMediaFileByPrefix(altDir, verseId);
+            if (altFound) {
+              mediaFile = path.relative(this.mediaPath, altFound);
+              break;
+            }
+          }
+        }
+      }
+      // Final fallback: hardcoded .mp3 path (for legacy compat)
+      if (!mediaFile) {
+        mediaFile = `audio/scripture/${volume}/${version}/${verseId}.mp3`;
+      }
     }
 
     const compoundId = `scripture:${localId}`;
@@ -765,6 +838,12 @@ export class LocalContentAdapter {
       const resolvedFolder = this._resolveLatestFolder(folderId);
       if (resolvedFolder) {
         actualFolderId = resolvedFolder;
+      } else {
+        // Check if folderId is nested under a parent folder
+        const nestedPath = resolveNestedConferencePath(folderId, basePath, mediaBasePath);
+        if (nestedPath) {
+          return this._getTalkFolder(nestedPath);
+        }
       }
     } else {
       // Parse nested path: series/conference
