@@ -13,8 +13,8 @@ The query system operates across these orthogonal dimensions:
 | Dimension | Values | Count |
 |-----------|--------|-------|
 | **Action** | `play`, `queue`, `display`, `list`, `read`, `open` | 6 |
-| **Source** | `plex`, `immich`, `audiobookshelf`, `komga`, `folder`, `canvas`, `filesystem` | 7 |
-| **Category Alias** | `gallery`, `media`, `audiobooks`, `ebooks`, `local` | 5 |
+| **Source** | `plex`, `immich`, `audiobookshelf`, `komga`, `list`, `canvas`, `files`, `local-content`, `singing`, `narrated` | 10 |
+| **Category Alias** | `gallery`, `media`, `audiobooks`, `ebooks`, `local`, `singing`, `narrated` | 7 |
 | **Resolution Strategy** | explicit, query, heuristic, alias, nested | 5 |
 | **Target Type** | leaf, container | 2 |
 | **Capability** | `playable`, `displayable`, `readable`, `listable` | 4 |
@@ -124,22 +124,40 @@ Each child is resolved using **its own container type's strategy**, not the pare
 | `immich` | gallery | displayable, playable (video), listable | UUID |
 | `audiobookshelf` | audiobooks, ebooks | playable, readable, listable | UUID |
 | `komga` | ebooks | readable, listable | UUID |
-| `folder` | local | listable, mixed references | path |
+| `list` | local | listable (menus, programs, watchlists) | `{type}:{name}` |
 | `canvas` | gallery | displayable, listable | path |
-| `filesystem` | media | playable, listable | path |
+| `files` | media | playable, listable | path |
+| `local-content` | local | playable, listable, searchable | `{type}/{id}` |
 | `singing` | singing | playable, listable (with synced stanzas) | `{collection}/{number}` |
 | `narrated` | narrated | playable, listable (with synced paragraphs) | `{collection}/{path}` |
-| `list` | local | listable (menus, programs, watchlists) | `{type}:{name}` |
+
+#### local-content Detail
+
+`local-content` serves locally-hosted religious/educational content. It is the **infrastructure layer** that singing and narrated adapters delegate audio streaming to.
+
+**Content types served:**
+
+| Type | Prefix | ID Format | Example |
+|------|--------|-----------|---------|
+| General Conference talks | `talk:` | `ldsgc{YYYYMM}:{slug}` | `talk:ldsgc202510:eyring-trust` |
+| Scripture audio/text | `scripture:` | `{book}-{chapter}` | `scripture:john-3` |
+| Hymns audio | `hymn:` | `{number}` | `hymn:123` |
+| Primary songs audio | `primary:` | `{number}` | `primary:56` |
+| Poems audio | `poem:` | `{slug}` | `poem:invictus` |
+
+**Dedicated router:** `/api/v1/local-content/` with endpoints for each content type, cover art, collection icons, and collection listings. Also provides `/api/v1/proxy/local-content/stream/...` used by singing and narrated adapters for audio proxy.
+
+**Search:** Supports text search across talks (title, speaker), hymns (number, title), primary songs, and poems (title, author) via `search()` method.
 
 ### Category Aliases
 
 | Alias | Resolves To | Notes |
 |-------|-------------|-------|
 | `gallery` | immich, canvas | All visual sources |
-| `media` | plex, filesystem | All playable media |
+| `media` | plex, files | All playable media |
 | `audiobooks` | audiobookshelf | Audio long-form |
 | `ebooks` | audiobookshelf, komga | Readable content |
-| `local` | folder, list | Local content sources |
+| `local` | list, local-content | Local content sources |
 | `singing` | singing | Participatory sing-along content |
 | `narrated` | narrated | Follow-along narrated content |
 
@@ -147,16 +165,22 @@ Each child is resolved using **its own container type's strategy**, not the pare
 
 | Prefix | Resolves To | Example |
 |--------|-------------|---------|
-| `media:` | filesystem | `media:audio/song.mp3` |
-| `file:` | filesystem | `file:video/movie.mp4` |
-| `local:` | folder | `local:TVApp/menu` |
+| `media:` | files | `media:audio/song.mp3` |
+| `file:` | files | `file:video/movie.mp4` |
+| `fs:` | files | `fs:sfx/intro.mp3` |
+| `local:` | list (via actionRouteParser alias) | `local:TVApp` → `watchlist:TVApp` |
 | `singing:` | singing | `singing:hymn/123` |
 | `narrated:` | narrated | `narrated:scripture/alma-32` |
 | `menu:` | list | `menu:TVApp/main` |
 | `program:` | list | `program:daily` |
 | `watchlist:` | list | `watchlist:FHE` |
-| `hymn:` | singing (legacy) | `hymn:123` → `singing:hymn/123` |
-| `scripture:` | narrated (legacy) | `scripture:alma-32` → `narrated:scripture/alma-32` |
+| `talk:` | local-content | `talk:ldsgc202510:eyring-trust` |
+| `scripture:` | local-content | `scripture:john-3` |
+| `hymn:` | local-content | `hymn:123` |
+| `primary:` | local-content | `primary:56` |
+| `poem:` | local-content | `poem:invictus` |
+
+> **Note:** `talk:`, `scripture:`, `hymn:`, `primary:`, and `poem:` are NOT in actionRouteParser's `KNOWN_SOURCES`. They resolve exclusively via prefix registration in the ContentSourceRegistry. The singing and narrated adapters provide higher-level interactive experiences (synced scrollers) on top of `local-content` audio.
 
 ---
 
@@ -169,9 +193,9 @@ Each child is resolved using **its own container type's strategy**, not the pare
 | `source:localId` | Explicit | `plex:12345`, `immich:abc-def` |
 | `source.query:term` | Query | `plex.query:Mozart`, `gallery.query:beach` |
 | Digits only | Heuristic → plex | `12345` |
-| Path-like | Heuristic → filesystem | `audio/song.mp3` |
+| Path-like | Heuristic → files | `audio/song.mp3` |
 | `source:type:id` | Nested | `immich:person:uuid`, `immich:album:uuid` |
-| `alias:id` | Alias expansion | `media:audio/song.mp3` → `filesystem:audio/song.mp3` |
+| `alias:id` | Alias expansion | `media:audio/song.mp3` → `files:audio/song.mp3` |
 
 ### Resolution Flow
 
@@ -188,7 +212,7 @@ Input ID
                                         ├── Known alias? ───► Expand, retry
                                         │
                                         └── No colon? ──────► Heuristic detection
-                                                              (digits→plex, path→filesystem)
+                                                              (digits→plex, path→files)
 ```
 
 ---
@@ -221,21 +245,24 @@ Input ID
 ├───────────────────┼─────────────┼─────────────┼─────────────┤
 │ komga             │ ✗           │ ~ cover     │ ✓ comic     │
 ├───────────────────┼─────────────┼─────────────┼─────────────┤
-│ folder            │ ~ refs      │ ~ refs      │ ~ refs      │
+│ list              │ ~ refs      │ ~ refs      │ ~ refs      │
 ├───────────────────┼─────────────┼─────────────┼─────────────┤
 │ canvas            │ ✗           │ ✓ image     │ ✗           │
 ├───────────────────┼─────────────┼─────────────┼─────────────┤
-│ filesystem        │ ✓ audio,    │ ~ image     │ ✗           │
+│ files             │ ✓ audio,    │ ~ image     │ ✗           │
 │                   │   video     │             │             │
+├───────────────────┼─────────────┼─────────────┼─────────────┤
+│ local-content     │ ✓ audio     │ ~ cover     │ ✗           │
+│                   │ (talks,     │   art       │             │
+│                   │  hymns,     │             │             │
+│                   │  scripture) │             │             │
 ├───────────────────┼─────────────┼─────────────┼─────────────┤
 │ singing           │ ✓ audio     │ ✗           │ ✗           │
 │                   │ + content   │             │             │
 ├───────────────────┼─────────────┼─────────────┼─────────────┤
-│ narrated           │ ✓ audio,    │ ✗           │ ✗           │
+│ narrated          │ ✓ audio,    │ ✗           │ ✗           │
 │                   │   video     │             │             │
 │                   │ + content   │             │             │
-├───────────────────┼─────────────┼─────────────┼─────────────┤
-│ list              │ ~ refs      │ ✗           │ ✗           │
 └───────────────────┴─────────────┴─────────────┴─────────────┘
 
 Legend: ✓ = native support, ~ = partial/derived, ✗ = not supported
@@ -307,17 +334,17 @@ Track labels (`visual:`, `audio:`) assign content to presentation layers.
 ### Filter × Source Support
 
 ```
-                    plex    immich   abs      komga   filesystem   canvas
-    text            ✓       ✓        ✓        ✓       ~            ✗
-    person          ✗       ✓        ✗        ✗       ✗            ✗
-    time            ✓year   ✓range   ✗        ✗       ~mtime       ✗
-    duration        ~       ✓        ✓        ✗       ~            ✗
-    mediaType       ✓       ✓        ✓        ✓       ✓            ✗
-    creator         ✓dir    ✗        ✓author  ✓author ✗            ✗
-    rating          ✓       ✗        ✗        ✗       ✗            ✗
-    genre           ✓       ✗        ✓        ✓       ✗            ✗
-    location        ✗       ✓        ✗        ✗       ✗            ✗
-    camera          ✗       ✓        ✗        ✗       ✗            ✗
+                    plex    immich   abs      komga   files   canvas  local-content
+    text            ✓       ✓        ✓        ✓       ~       ✗       ✓
+    person          ✗       ✓        ✗        ✗       ✗       ✗       ✓speaker
+    time            ✓year   ✓range   ✗        ✗       ~mtime  ✗       ✗
+    duration        ~       ✓        ✓        ✗       ~       ✗       ✗
+    mediaType       ✓       ✓        ✓        ✓       ✓       ✗       ~type
+    creator         ✓dir    ✗        ✓author  ✓author ✗       ✗       ✗
+    rating          ✓       ✗        ✗        ✗       ✗       ✗       ✗
+    genre           ✓       ✗        ✓        ✓       ✗       ✗       ✗
+    location        ✗       ✓        ✗        ✗       ✗       ✗       ✗
+    camera          ✗       ✓        ✗        ✗       ✗       ✗       ✗
 ```
 
 ### Filter Combination Semantics
@@ -454,7 +481,7 @@ play=visual:{source}:{id},audio:{source}:{id}
 
 ```
 play ──✗── readable-only (komga comic, audiobookshelf ebook)
-read ──✗── playable-only (plex video, filesystem audio)
+read ──✗── playable-only (plex video, files audio)
 read ──✗── displayable-only (canvas image, immich photo)
 list ──✗── leaf target (not listable)
 *.query: ──✗── source without search() implementation
@@ -580,7 +607,7 @@ play=plex:12345                    # Play single Plex item
 queue=plex:12345                   # Queue single item, play it
 display=immich:abc-def             # Display single photo
 display=canvas:art/nativity.jpg   # Display canvas image
-list=folder:TVApp/FHE             # Browse folder contents
+list=watchlist:FHE                # Browse watchlist contents
 read=komga:comic-123              # Open comic in reader
 ```
 
@@ -588,7 +615,7 @@ read=komga:comic-123              # Open comic in reader
 
 ```
 play=12345                         # Digits → plex:12345
-queue=audio/song.mp3               # Path → filesystem:audio/song.mp3
+queue=audio/song.mp3               # Path → files:audio/song.mp3
 ```
 
 ### Query Resolution
@@ -765,7 +792,7 @@ All five action routes support three equivalent ID formats:
 |--------|---------|------------|
 | Explicit path | `/info/plex/12345` | source=plex, id=12345 |
 | Compound ID | `/info/plex:12345` | Parsed from compound |
-| Heuristic | `/info/12345` | digits->plex, UUID->immich, extension->filesystem |
+| Heuristic | `/info/12345` | digits->plex, UUID->immich, extension->files |
 
 ```
 /api/v1/info/plex/12345  ≡  /api/v1/info/plex:12345  ≡  /api/v1/info/12345
@@ -779,15 +806,16 @@ All five action routes support three equivalent ID formats:
 | `immich` | UUID | displayable, playable (video), listable |
 | `audiobookshelf` | UUID | playable, readable, listable |
 | `komga` | UUID | readable, listable |
-| `folder` | path | listable, mixed references |
-| `canvas` | path | displayable, listable |
-| `filesystem` | path | playable, listable |
-| `singing` | `{collection}/{number}` | playable (with synced content) |
-| `narrated` | `{collection}/{path}` | playable (with synced content) |
 | `list` | `{type}:{name}` | listable (menus, programs, watchlists) |
-| `local-content` | `{type}/{id}` | playable (scripture, hymns, talks) |
+| `canvas` | path | displayable, listable |
+| `files` | path | playable, listable |
+| `local-content` | `{type}/{id}` | playable, listable, searchable (talks, scripture, hymns, primary, poems) |
+| `singing` | `{collection}/{number}` | playable (with synced stanzas for sing-along UI) |
+| `narrated` | `{collection}/{path}` | playable (with synced paragraphs for follow-along UI) |
 
-Alias: `local` resolves to `folder`.
+**Aliases:** `local` → `watchlist` (via actionRouteParser), `media`/`file`/`fs` → `files` (via prefix registration).
+
+**Adapter layering:** `singing` and `narrated` provide interactive scroller UIs. Their audio streaming is proxied through `local-content` (`/api/v1/proxy/local-content/stream/...`). The `local-content` adapter owns the raw audio files and content metadata; singing/narrated add synchronized text overlay.
 
 ---
 
@@ -803,7 +831,7 @@ but silently ignored. For filtered/shuffled results, use `/list/` instead.
 ```
 GET /api/v1/info/plex/672445                    # Item metadata + capabilities[]
 GET /api/v1/info/singing/hymn/123               # Hymn metadata with synced content
-GET /api/v1/info/folder/TVApp                   # Folder container metadata
+GET /api/v1/info/watchlist/TVApp                 # Watchlist container metadata
 ```
 
 **Response:**
@@ -854,8 +882,8 @@ GET /api/v1/list/plex/672445                    # All children
 GET /api/v1/list/plex/672445/playable           # Playable episodes only
 GET /api/v1/list/plex/672445/shuffle            # Shuffled children
 GET /api/v1/list/plex/672445/playable,shuffle   # Playable + shuffled
-GET /api/v1/list/folder/watchlist/FHE           # Watchlist items
-GET /api/v1/list/folder/TVApp/recent_on_top     # Sorted by recent selections
+GET /api/v1/list/watchlist/FHE                  # Watchlist items
+GET /api/v1/list/watchlist/TVApp/recent_on_top  # Sorted by recent selections
 ```
 
 > **IMPORTANT: Query params like `?playable=true` or `?shuffle=true` are NOT supported
@@ -1010,12 +1038,15 @@ modifiers are silently discarded. The info router parses modifiers via
 
 Multiple paths can resolve to the same content:
 
-| Alias Path | Resolves To |
-|------------|-------------|
-| `/info/local/...` | `/info/folder/...` |
-| `/play/media/...` | `/play/filesystem/...` |
-| `plex.query:...` | ContentQueryService search with Plex source |
-| `gallery.query:...` | ContentQueryService search with Immich source |
+| Alias Path | Resolves To | Mechanism |
+|------------|-------------|-----------|
+| `/info/local/...` | `/info/watchlist/...` | actionRouteParser `SOURCE_ALIASES` |
+| `/play/media/...` | `/play/files/...` | Registry prefix resolution |
+| `/info/talk/...` | local-content adapter | Registry prefix resolution |
+| `/info/scripture/...` | local-content adapter | Registry prefix resolution |
+| `/info/hymn/...` | local-content adapter | Registry prefix resolution |
+| `plex.query:...` | ContentQueryService search with Plex source | Query path |
+| `gallery.query:...` | ContentQueryService search with Immich source | Query path |
 
 ### Watch State Field Mapping
 

@@ -45,10 +45,17 @@ export class NarratedAdapter {
   }
 
   /**
-   * Get storage path for watch state persistence
+   * Get storage path for watch state persistence.
+   * Scripture content uses 'scriptures' to share history with legacy Plex entries.
+   * @param {string} [id] - Item ID (compound or local) to determine collection
    * @returns {string}
    */
-  getStoragePath() {
+  getStoragePath(id) {
+    if (id) {
+      const localId = id.replace(/^narrated:/, '');
+      const collection = localId.split('/')[0];
+      if (collection === 'scripture') return 'scriptures';
+    }
     return 'narrated';
   }
 
@@ -445,26 +452,14 @@ export class NarratedAdapter {
 
     if (!range) return [];
 
-    // Read scripture watch history from scriptures.yml
-    // Keys are like "plex:nt/kjvf/25065" where 25065 is the first verse of a chapter
+    // Read scripture watch history
+    // Keys may be legacy "plex:nt/kjvf/25065" or new "narrated:scripture/nt/kjvf/25065"
     let nextChapterId = range.start;
     let inProgressChapter = null;
 
     if (this.mediaProgressMemory) {
       try {
-        // Get all scripture progress entries
-        const allProgress = await this.mediaProgressMemory.getAll('scriptures');
-
-        // Filter to this volume and version, extract chapter verse IDs
-        const volumePrefix = `plex:${volume}/${textVersion}/`;
-        const chapterProgress = allProgress
-          .filter(p => p.itemId?.startsWith(volumePrefix))
-          .map(p => {
-            const verseId = parseInt(p.itemId.split('/').pop(), 10);
-            return { verseId, percent: p.percent || 0 };
-          })
-          .filter(p => p.verseId >= range.start && p.verseId <= range.end)
-          .sort((a, b) => a.verseId - b.verseId);
+        const chapterProgress = await this._collectScriptureProgress(volume, textVersion, range);
 
         // Find in-progress chapter (< 90% watched) or next unwatched
         for (const cp of chapterProgress) {
@@ -511,18 +506,86 @@ export class NarratedAdapter {
   }
 
   /**
-   * Get watch percent for a specific chapter
+   * Get watch percent for a specific chapter.
+   * Checks both legacy (plex:) and new (narrated:scripture/) key formats.
    * @private
    */
   async _getChapterPercent(volume, textVersion, verseId) {
     if (!this.mediaProgressMemory) return 0;
     try {
-      const key = `plex:${volume}/${textVersion}/${verseId}`;
-      const progress = await this.mediaProgressMemory.get(key, 'scriptures');
-      return progress?.percent || 0;
+      // Check scriptures.yml with both key formats
+      const legacyKey = `plex:${volume}/${textVersion}/${verseId}`;
+      const narratedKey = `narrated:scripture/${volume}/${textVersion}/${verseId}`;
+
+      const legacyProgress = await this.mediaProgressMemory.get(legacyKey, 'scriptures');
+      if (legacyProgress?.percent) return legacyProgress.percent;
+
+      const narratedProgress = await this.mediaProgressMemory.get(narratedKey, 'scriptures');
+      if (narratedProgress?.percent) return narratedProgress.percent;
+
+      // Fallback: check narrated.yml for old entries written there
+      const fallbackProgress = await this.mediaProgressMemory.get(narratedKey, 'narrated');
+      return fallbackProgress?.percent || 0;
     } catch {
       return 0;
     }
+  }
+
+  /**
+   * Collect scripture progress from all known storage locations.
+   * Checks scriptures.yml (primary) with both plex: and narrated:scripture/ key formats,
+   * then falls back to narrated.yml if no matches found.
+   * @param {string} volume - Volume name (nt, ot, bom, dc, pgp)
+   * @param {string} textVersion - Text version (e.g., kjvf)
+   * @param {Object} range - { start, end } verse ID range for the volume
+   * @returns {Promise<Array<{ verseId: number, percent: number }>>} Sorted chapter progress
+   * @private
+   */
+  async _collectScriptureProgress(volume, textVersion, range) {
+    const legacyPrefix = `plex:${volume}/${textVersion}/`;
+    const narratedPrefix = `narrated:scripture/${volume}/${textVersion}/`;
+
+    // Primary: read from scriptures.yml
+    const allProgress = await this.mediaProgressMemory.getAll('scriptures');
+
+    // Extract verse IDs from both key formats
+    const seen = new Map(); // verseId → highest percent
+    for (const p of allProgress) {
+      let verseId = null;
+      if (p.itemId?.startsWith(legacyPrefix)) {
+        verseId = parseInt(p.itemId.split('/').pop(), 10);
+      } else if (p.itemId?.startsWith(narratedPrefix)) {
+        verseId = parseInt(p.itemId.split('/').pop(), 10);
+      }
+      if (verseId && verseId >= range.start && verseId <= range.end) {
+        const existing = seen.get(verseId);
+        const percent = p.percent || 0;
+        if (!existing || percent > existing) {
+          seen.set(verseId, percent);
+        }
+      }
+    }
+
+    // Fallback: if no matches in scriptures.yml, check narrated.yml
+    if (seen.size === 0) {
+      const fallbackProgress = await this.mediaProgressMemory.getAll('narrated');
+      for (const p of fallbackProgress) {
+        if (p.itemId?.startsWith(narratedPrefix)) {
+          const verseId = parseInt(p.itemId.split('/').pop(), 10);
+          if (verseId && verseId >= range.start && verseId <= range.end) {
+            const existing = seen.get(verseId);
+            const percent = p.percent || 0;
+            if (!existing || percent > existing) {
+              seen.set(verseId, percent);
+            }
+          }
+        }
+      }
+    }
+
+    return Array.from(seen.entries())
+      .map(([verseId, percent]) => ({ verseId, percent }))
+      .sort((a, b) => a.verseId - b.verseId);
   }
 
   /**
