@@ -69,6 +69,8 @@ function transformToInfoResponse(item, source) {
 
   // Pass through playback-essential fields from PlayableItem
   if (item.mediaUrl) response.mediaUrl = item.mediaUrl;
+  if (item.videoUrl) response.videoUrl = item.videoUrl;
+  if (item.ambientUrl) response.ambientUrl = item.ambientUrl;
   if (item.mediaType) response.mediaType = item.mediaType;
   if (item.duration != null) response.duration = item.duration;
   if (item.thumbnail) {
@@ -82,6 +84,9 @@ function transformToInfoResponse(item, source) {
 
   // Pass through content field for singalong/readalong scrollers
   if (item.content) response.content = item.content;
+
+  // Pass through style for readalong/singalong scrollers
+  if (item.style) response.style = item.style;
 
   // Pass through subtitle for readalong/singalong content
   if (item.subtitle) response.subtitle = item.subtitle;

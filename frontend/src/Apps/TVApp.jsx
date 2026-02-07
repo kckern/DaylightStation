@@ -203,7 +203,7 @@ export default function TVApp({ appParam }) {
       primary:   (value) => ({ play: { contentId: `readalong:${value}`, primary: value, ...config } }),
       talk:      (value) => ({ play: { talk: value, ...config } }),
       poem:      (value) => ({ play: { contentId: `readalong:${value}`, poem: value, ...config } }),
-      scripture: (value) => ({ play: { contentId: `readalong:${value}`, scripture: value, ...config } }),
+      scripture: (value) => ({ play: { contentId: `readalong:scripture/${value}`, scripture: value, ...config } }),
 
       // List action (browse as menu)
       list:      (value) => {

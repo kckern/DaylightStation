@@ -202,7 +202,7 @@ import { useMediaReporter } from '../Player/hooks/useMediaReporter.js';
           const finalVolume = Math.min(1, Math.max(0, processedVolume));
           mainEl.volume = finalVolume;
         }
-        if (isVideo || !ambientMediaUrl) {
+        if (!ambientMediaUrl) {
           mainEl.play().catch(() => {});
         }
         applyPendingSeek();
@@ -247,6 +247,7 @@ import { useMediaReporter } from '../Player/hooks/useMediaReporter.js';
     const startAudioAfterDelay = useCallback(() => {
       if (!ambientRef.current) return;
       ambientRef.current.volume = ambientVolume;
+      ambientRef.current.play().catch(() => {});
       setTimeout(() => {
         if (mainRef.current) {
           mainRef.current.play().catch(() => {});
@@ -771,6 +772,9 @@ import { useMediaReporter } from '../Player/hooks/useMediaReporter.js';
     const [videoUrl, setVideoUrl] = useState(null);
     const [transcriptData, setTranscriptData] = useState(null);
     const [assetId, setMediaKey] = useState(null);
+    const [ambientTrack] = useState(
+      String(Math.floor(Math.random() * 115) + 1).padStart(3, "0")
+    );
 
     useEffect(() => {
 
@@ -800,7 +804,7 @@ import { useMediaReporter } from '../Player/hooks/useMediaReporter.js';
     })}
     </div>
   );
-    const ambientMusicUrl = `${DaylightMediaPath(`media/audio/ambient/${String(Math.floor(Math.random() * 115) + 1).padStart(3, "0")}`)}`;
+    const ambientMusicUrl = DaylightMediaPath(`media/audio/ambient/${ambientTrack}`);
 
     // Process volume parameter for both main video and ambient audio
     const processVolumeForTalk = (defaultValue) => {
