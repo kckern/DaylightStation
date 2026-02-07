@@ -23,12 +23,14 @@ export class ReadalongAdapter {
   /**
    * @param {Object} config
    * @param {string} config.dataPath - Path to data files (YAML metadata)
-   * @param {string} config.mediaPath - Path to media files
+   * @param {string} config.mediaPath - Default path to media files
+   * @param {Object<string, string>} [config.mediaPathMap] - Optional per-collection media base paths
    * @param {Object} [config.mediaProgressMemory] - Media progress memory instance
    */
-  constructor({ dataPath, mediaPath, mediaProgressMemory }) {
+  constructor({ dataPath, mediaPath, mediaPathMap, mediaProgressMemory }) {
     this.dataPath = dataPath;
     this.mediaPath = mediaPath;
+    this.mediaPathMap = mediaPathMap || {};
     this.mediaProgressMemory = mediaProgressMemory || null;
     this.resolvers = {};
   }
@@ -73,7 +75,7 @@ export class ReadalongAdapter {
     const [collection, ...rest] = localId.split('/');
     let itemPath = rest.join('/');
     const collectionPath = path.join(this.dataPath, collection);
-    const mediaCollectionPath = path.join(this.mediaPath, collection);
+    const mediaCollectionPath = path.join(this._getMediaBasePath(collection), collection);
 
     // Load collection manifest
     const manifest = this._loadManifest(collection);
@@ -165,7 +167,7 @@ export class ReadalongAdapter {
       subtitle,
       thumbnail: this._collectionThumbnail(collection),
       // Use audio path for streaming URL
-      mediaUrl: `/api/v1/proxy/local-content/stream/${collection}/${audioPath}`,
+      mediaUrl: `/api/v1/stream/readalong/${collection}/${audioPath}`,
       videoUrl: metadata.videoFile ? `/api/v1/stream/readalong/${collection}/${textPath}/video` : null,
       ambientUrl,
       duration: metadata.duration || 0,
@@ -221,7 +223,7 @@ export class ReadalongAdapter {
    * @private
    */
   _findMediaFile(collection, itemPath, metadata) {
-    const searchPath = path.join(this.mediaPath, collection);
+    const searchPath = path.join(this._getMediaBasePath(collection), collection);
     return findMediaFileByPrefix(searchPath, metadata.number || itemPath);
   }
 
@@ -233,8 +235,18 @@ export class ReadalongAdapter {
    * @private
    */
   _findVideoFile(collection, itemPath) {
-    const searchPath = path.join(this.mediaPath, collection);
+    const searchPath = path.join(this._getMediaBasePath(collection), collection);
     return findMediaFileByPrefix(searchPath, itemPath);
+  }
+
+  /**
+   * Resolve media base path for a collection.
+   * @param {string} collection
+   * @returns {string}
+   * @private
+   */
+  _getMediaBasePath(collection) {
+    return this.mediaPathMap?.[collection] || this.mediaPath;
   }
 
   /**
@@ -446,7 +458,7 @@ export class ReadalongAdapter {
         const resolver = await this._loadResolver('scripture');
         if (resolver) {
           const collectionPath = path.join(this.dataPath, collection);
-          const mediaCollectionPath = path.join(this.mediaPath, collection);
+          const mediaCollectionPath = path.join(this._getMediaBasePath(collection), collection);
 
           // Check if this resolves to a container (volume-only)
           const resolved = resolver.resolve(itemPath, collectionPath, {
@@ -534,7 +546,7 @@ export class ReadalongAdapter {
       volume,
       textVersion,
       audioRecording: audioRecording || textVersion,
-      mediaUrl: `/api/v1/proxy/local-content/stream/scripture/${audioPath}`,
+      mediaUrl: `/api/v1/stream/readalong/scripture/${audioPath}`,
       itemIndex: targetChapterId - range.start,
       // Include watch state for ItemSelectionService
       percent: inProgressChapter ? (await this._getChapterPercent(volume, textVersion, targetChapterId)) : 0
@@ -712,7 +724,7 @@ export class ReadalongAdapter {
     const [collection, ...rest] = localId.split('/');
     const itemPath = rest.join('/');
     const collectionPath = path.join(this.dataPath, collection);
-    const mediaCollectionPath = path.join(this.mediaPath, collection);
+    const mediaCollectionPath = path.join(this._getMediaBasePath(collection), collection);
 
     let textPath = itemPath;
     let audioPath = itemPath;
@@ -766,7 +778,7 @@ export class ReadalongAdapter {
       title,
       subtitle,
       thumbnail: this._collectionThumbnail(collection),
-      mediaUrl: `/api/v1/proxy/local-content/stream/${collection}/${audioPath}`,
+      mediaUrl: `/api/v1/stream/readalong/${collection}/${audioPath}`,
       videoUrl: metadata.videoFile ? `/api/v1/stream/readalong/${collection}/${textPath}/video` : null,
       ambientUrl,
       duration: metadata.duration || 0,

@@ -9,3 +9,4 @@ To restore: `git checkout -b branch-name <commit-hash>`
 | 2026-01-29 | refactor/ddd-migration | c4d71d55 | DDD architecture refactor - merged to main |
 | 2026-02-03 | feature/display-name-resolver | ad2e1cba | DisplayNameResolver SSOT module - merged to main |
 | 2026-02-03 | feature/governance-test-refactor | 8c6ba47d | Fix skipped governance tests - merged to main |
+| 2026-02-06 | save/2026-02-06-plex-token | 1efa08dd | Singalong/readalong rename and Plex token adjustments |

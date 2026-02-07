@@ -336,14 +336,18 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Singalong/Readalong adapters - point to canonical data directories (no symlinks)
   const singalongConfig = {
-    dataPath: path.join(contentPath, 'songs'),  // hymn, primary
-    mediaPath: path.join(mediaBasePath, 'audio', 'songs')
+    dataPath: path.join(contentPath, 'singalong'),  // hymn, primary
+    mediaPath: path.join(mediaBasePath, 'audio', 'singalong')
   };
   const canonicalReadalongDataPath = path.join(contentPath, 'readalong');
-  const canonicalReadalongMediaPath = path.join(mediaBasePath, 'audio', 'readalong');
+  const canonicalReadalongAudioPath = path.join(mediaBasePath, 'audio', 'readalong');
+  const canonicalReadalongVideoPath = path.join(mediaBasePath, 'video', 'readalong');
   const readalongConfig = {
     dataPath: existsSync(canonicalReadalongDataPath) ? canonicalReadalongDataPath : contentPath,
-    mediaPath: existsSync(canonicalReadalongMediaPath) ? canonicalReadalongMediaPath : path.join(mediaBasePath, 'audio')
+    mediaPath: existsSync(canonicalReadalongAudioPath) ? canonicalReadalongAudioPath : path.join(mediaBasePath, 'audio'),
+    mediaPathMap: {
+      talks: existsSync(canonicalReadalongVideoPath) ? canonicalReadalongVideoPath : path.join(mediaBasePath, 'video')
+    }
   };
 
   const contentRegistry = createContentRegistry({

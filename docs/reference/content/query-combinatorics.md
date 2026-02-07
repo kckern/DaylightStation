@@ -133,7 +133,7 @@ Each child is resolved using **its own container type's strategy**, not the pare
 
 #### local-content Detail
 
-`local-content` serves locally-hosted religious/educational content. It is the **infrastructure layer** that singalong and readalong adapters delegate audio streaming to.
+`local-content` serves locally-hosted religious/educational content. It is the **infrastructure layer** that singalong and readalong adapters delegate media lookup to.
 
 **Content types served:**
 
@@ -145,7 +145,7 @@ Each child is resolved using **its own container type's strategy**, not the pare
 | Primary songs audio | `primary:` | `{number}` | `primary:56` |
 | Poems audio | `poem:` | `{slug}` | `poem:invictus` |
 
-**Dedicated router:** `/api/v1/local-content/` with endpoints for each content type, cover art, collection icons, and collection listings. Also provides `/api/v1/proxy/local-content/stream/...` used by singalong and readalong adapters for audio proxy.
+**Dedicated router:** `/api/v1/local-content/` with endpoints for each content type, cover art, collection icons, and collection listings. Streaming uses `/api/v1/stream/singalong/...` and `/api/v1/stream/readalong/...` for the new media layout.
 
 **Search:** Supports text search across talks (title, speaker), hymns (number, title), primary songs, and poems (title, author) via `search()` method.
 
