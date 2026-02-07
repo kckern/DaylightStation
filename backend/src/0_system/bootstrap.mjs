@@ -22,8 +22,8 @@ import { LocalContentAdapter } from '#adapters/content/local-content/LocalConten
 import { ListAdapter } from '#adapters/content/list/ListAdapter.mjs';
 import { ImmichAdapter } from '#adapters/content/gallery/immich/ImmichAdapter.mjs';
 import { AudiobookshelfAdapter } from '#adapters/content/readable/audiobookshelf/AudiobookshelfAdapter.mjs';
-import { SingingAdapter } from '#adapters/content/singing/SingingAdapter.mjs';
-import { NarratedAdapter } from '#adapters/content/narrated/NarratedAdapter.mjs';
+import { SingalongAdapter } from '#adapters/content/singalong/SingalongAdapter.mjs';
+import { ReadalongAdapter } from '#adapters/content/readalong/ReadalongAdapter.mjs';
 import { FilesystemCanvasAdapter, ImmichCanvasAdapter } from '#adapters/content/canvas/index.mjs';
 import { ImmichClient } from '#adapters/content/gallery/immich/ImmichClient.mjs';
 import { YamlMediaProgressMemory } from '#adapters/persistence/yaml/YamlMediaProgressMemory.mjs';
@@ -33,8 +33,8 @@ import mediaManifest from '#adapters/content/media/files/manifest.mjs';
 import plexManifest from '#adapters/content/media/plex/manifest.mjs';
 import immichManifest from '#adapters/content/gallery/immich/manifest.mjs';
 import listManifest from '#adapters/content/list/manifest.mjs';
-import singingManifest from '#adapters/content/singing/manifest.mjs';
-import narratedManifest from '#adapters/content/narrated/manifest.mjs';
+import singalongManifest from '#adapters/content/singalong/manifest.mjs';
+import readalongManifest from '#adapters/content/readalong/manifest.mjs';
 import { createContentRouter } from '#api/v1/routers/content.mjs';
 import { ContentQueryService } from '#apps/content/ContentQueryService.mjs';
 import { ContentQueryAliasResolver } from '#apps/content/services/ContentQueryAliasResolver.mjs';
@@ -398,12 +398,12 @@ export function getSystemBotLoader() {
  * @param {string} [config.canvas.filesystem.basePath] - Base path for art images
  * @param {Object} [config.canvas.immich] - Immich canvas config (reuses immich host/apiKey)
  * @param {string} [config.canvas.immich.library] - Immich library/album to use for art
- * @param {Object} [config.singing] - Singing adapter configuration (hymns, primary songs)
- * @param {string} [config.singing.dataPath] - Path to singing content data files
- * @param {string} [config.singing.mediaPath] - Path to singing content media files
- * @param {Object} [config.narrated] - Narrated adapter configuration (scripture, talks, poetry)
- * @param {string} [config.narrated.dataPath] - Path to narrated content data files
- * @param {string} [config.narrated.mediaPath] - Path to narrated content media files
+ * @param {Object} [config.singalong] - Singalong adapter configuration (hymns, primary songs)
+ * @param {string} [config.singalong.dataPath] - Path to singalong content data files
+ * @param {string} [config.singalong.mediaPath] - Path to singalong content media files
+ * @param {Object} [config.readalong] - Readalong adapter configuration (scripture, talks, poetry)
+ * @param {string} [config.readalong.dataPath] - Path to readalong content data files
+ * @param {string} [config.readalong.mediaPath] - Path to readalong content media files
  * @param {Object} deps - Dependencies
  * @param {Object} [deps.httpClient] - HTTP client for making requests
  * @param {Object} [deps.mediaProgressMemory] - Media progress memory for progress persistence
@@ -527,27 +527,27 @@ export function createContentRegistry(config, deps = {}) {
     }, { client: immichClient }));
   }
 
-  // Register SingingAdapter for participatory sing-along content (hymns, primary songs)
-  if (config.singing?.dataPath && config.singing?.mediaPath) {
+  // Register SingalongAdapter for participatory sing-along content (hymns, primary songs)
+  if (config.singalong?.dataPath && config.singalong?.mediaPath) {
     registry.register(
-      new SingingAdapter({
-        dataPath: config.singing.dataPath,
-        mediaPath: config.singing.mediaPath,
+      new SingalongAdapter({
+        dataPath: config.singalong.dataPath,
+        mediaPath: config.singalong.mediaPath,
         mediaProgressMemory
       }),
-      { category: singingManifest.capability, provider: singingManifest.provider }
+      { category: singalongManifest.capability, provider: singalongManifest.provider }
     );
   }
 
-  // Register NarratedAdapter for follow-along narrated content (scripture, talks, poetry)
-  if (config.narrated?.dataPath && config.narrated?.mediaPath) {
+  // Register ReadalongAdapter for follow-along readalong content (scripture, talks, poetry)
+  if (config.readalong?.dataPath && config.readalong?.mediaPath) {
     registry.register(
-      new NarratedAdapter({
-        dataPath: config.narrated.dataPath,
-        mediaPath: config.narrated.mediaPath,
+      new ReadalongAdapter({
+        dataPath: config.readalong.dataPath,
+        mediaPath: config.readalong.mediaPath,
         mediaProgressMemory
       }),
-      { category: narratedManifest.capability, provider: narratedManifest.provider }
+      { category: readalongManifest.capability, provider: readalongManifest.provider }
     );
   }
 
@@ -589,14 +589,14 @@ export function createMediaProgressMemory(config) {
  * @param {string} [config.dataPath] - Base data path for local content
  * @param {import('./proxy/ProxyService.mjs').ProxyService} [config.proxyService] - Proxy service for external services
  * @param {import('#apps/content/usecases/ComposePresentationUseCase.mjs').ComposePresentationUseCase} [config.composePresentationUseCase] - Use case for composing presentations
- * @param {Object<string, string>} [config.legacyPrefixMap] - Legacy prefix mapping (e.g., { hymn: 'singing:hymn' })
+ * @param {Object<string, string>} [config.legacyPrefixMap] - Legacy prefix mapping (e.g., { hymn: 'singalong:hymn' })
  * @param {Object} [config.logger] - Logger instance
  * @returns {Object} Router configuration
  */
 export function createApiRouters(config) {
   const { registry, mediaProgressMemory, loadFile, saveFile, cacheBasePath, dataPath, mediaBasePath, proxyService, composePresentationUseCase, configService, legacyPrefixMap = {}, logger = console } = config;
 
-  // Register legacy prefix aliases (e.g., hymn → singing:hymn) from config
+  // Register legacy prefix aliases (e.g., hymn → singalong:hymn) from config
   // This enables the content API to resolve legacy prefixes via registry.resolveFromPrefix()
   if (Object.keys(legacyPrefixMap).length > 0) {
     registry.registerLegacyPrefixes(legacyPrefixMap);
@@ -621,8 +621,8 @@ export function createApiRouters(config) {
       list: createListRouter({ registry, loadFile, configService, contentQueryService, menuMemoryPath: configService.getHouseholdPath('history/menu_memory') }),
       local: createLocalRouter({ localMediaAdapter, mediaBasePath, cacheBasePath: cacheBasePath || path.join(dataPath, 'system/cache'), logger }),
       stream: createStreamRouter({
-        singingMediaPath: path.join(mediaBasePath, 'singing'),
-        narratedMediaPath: path.join(mediaBasePath, 'narrated'),
+        singalongMediaPath: path.join(mediaBasePath, 'audio', 'songs'),
+        readalongMediaPath: path.join(mediaBasePath, 'audio', 'readalong'),
         logger
       }),
     },

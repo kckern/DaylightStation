@@ -29,7 +29,7 @@ describe('ContentQueryService', () => {
 
       const service = new ContentQueryService({
         registry: mockRegistry,
-        legacyPrefixMap: { hymn: 'singing:hymn' }
+        legacyPrefixMap: { hymn: 'singalong:hymn' }
       });
 
       expect(service).toBeDefined();
@@ -37,31 +37,31 @@ describe('ContentQueryService', () => {
   });
 
   describe('legacy prefix mapping', () => {
-    it('maps hymn:123 to singing:hymn/123', () => {
+    it('maps hymn:123 to singalong:hymn/123', () => {
       const mockRegistry = { get: vi.fn(), list: vi.fn(() => []), resolveSource: vi.fn(() => []) };
       const service = new ContentQueryService({
         registry: mockRegistry,
         legacyPrefixMap: {
-          hymn: 'singing:hymn',
-          scripture: 'narrated:scripture'
+          hymn: 'singalong:hymn',
+          scripture: 'readalong:scripture'
         }
       });
 
       const result = service._parseIdFromTextPublic('hymn:123');
-      expect(result).toEqual({ source: 'singing', id: 'hymn/123' });
+      expect(result).toEqual({ source: 'singalong', id: 'hymn/123' });
     });
 
-    it('maps scripture:alma-32 to narrated:scripture/alma-32', () => {
+    it('maps scripture:alma-32 to readalong:scripture/alma-32', () => {
       const mockRegistry = { get: vi.fn(), list: vi.fn(() => []), resolveSource: vi.fn(() => []) };
       const service = new ContentQueryService({
         registry: mockRegistry,
         legacyPrefixMap: {
-          scripture: 'narrated:scripture'
+          scripture: 'readalong:scripture'
         }
       });
 
       const result = service._parseIdFromTextPublic('scripture:alma-32');
-      expect(result).toEqual({ source: 'narrated', id: 'scripture/alma-32' });
+      expect(result).toEqual({ source: 'readalong', id: 'scripture/alma-32' });
     });
 
     it('passes through canonical IDs unchanged', () => {
@@ -71,15 +71,15 @@ describe('ContentQueryService', () => {
         legacyPrefixMap: {}
       });
 
-      const result = service._parseIdFromTextPublic('singing:hymn/123');
-      expect(result).toEqual({ source: 'singing', id: 'hymn/123' });
+      const result = service._parseIdFromTextPublic('singalong:hymn/123');
+      expect(result).toEqual({ source: 'singalong', id: 'hymn/123' });
     });
 
     it('passes through plex IDs unchanged when not in legacy map', () => {
       const mockRegistry = { get: vi.fn(), list: vi.fn(() => []), resolveSource: vi.fn(() => []) };
       const service = new ContentQueryService({
         registry: mockRegistry,
-        legacyPrefixMap: { hymn: 'singing:hymn' }
+        legacyPrefixMap: { hymn: 'singalong:hymn' }
       });
 
       const result = service._parseIdFromTextPublic('plex:456724');
@@ -90,7 +90,7 @@ describe('ContentQueryService', () => {
       const mockRegistry = { get: vi.fn(), list: vi.fn(() => []), resolveSource: vi.fn(() => []) };
       const service = new ContentQueryService({
         registry: mockRegistry,
-        legacyPrefixMap: { hymn: 'singing:hymn' }
+        legacyPrefixMap: { hymn: 'singalong:hymn' }
       });
 
       const result = service._parseIdFromTextPublic('456724');
@@ -101,7 +101,7 @@ describe('ContentQueryService', () => {
       const mockRegistry = { get: vi.fn(), list: vi.fn(() => []), resolveSource: vi.fn(() => []) };
       const service = new ContentQueryService({
         registry: mockRegistry,
-        legacyPrefixMap: { hymn: 'singing:hymn' }
+        legacyPrefixMap: { hymn: 'singalong:hymn' }
       });
 
       const result = service._parseIdFromTextPublic('ff940f1a-f5ea-4580-a517-dfc68413e215');

@@ -1,34 +1,34 @@
-// tests/unit/adapters/content/singing/SingingAdapter.test.mjs
+// tests/unit/adapters/content/singalong/SingalongAdapter.test.mjs
 // Basic unit tests that don't require mocking
 import { describe, test, expect, beforeEach } from '@jest/globals';
-import { SingingAdapter } from '#adapters/content/singing/SingingAdapter.mjs';
+import { SingalongAdapter } from '#adapters/content/singalong/SingalongAdapter.mjs';
 
-describe('SingingAdapter', () => {
+describe('SingalongAdapter', () => {
   let adapter;
 
   beforeEach(() => {
-    adapter = new SingingAdapter({
-      dataPath: '/mock/data/content/singing',
-      mediaPath: '/mock/media/singing'
+    adapter = new SingalongAdapter({
+      dataPath: '/mock/data/content/singalong',
+      mediaPath: '/mock/media/singalong'
     });
   });
 
   describe('source and prefixes', () => {
-    test('source returns "singing"', () => {
-      expect(adapter.source).toBe('singing');
+    test('source returns "singalong"', () => {
+      expect(adapter.source).toBe('singalong');
     });
 
-    test('prefixes returns singing prefix', () => {
-      expect(adapter.prefixes).toEqual([{ prefix: 'singing' }]);
+    test('prefixes returns singalong prefix', () => {
+      expect(adapter.prefixes).toEqual([{ prefix: 'singalong' }]);
     });
 
-    test('canResolve returns true for singing: IDs', () => {
-      expect(adapter.canResolve('singing:hymn/123')).toBe(true);
-      expect(adapter.canResolve('singing:primary/1')).toBe(true);
+    test('canResolve returns true for singalong: IDs', () => {
+      expect(adapter.canResolve('singalong:hymn/123')).toBe(true);
+      expect(adapter.canResolve('singalong:primary/1')).toBe(true);
     });
 
     test('canResolve returns false for other IDs', () => {
-      expect(adapter.canResolve('narrated:scripture/bom')).toBe(false);
+      expect(adapter.canResolve('readalong:scripture/bom')).toBe(false);
       expect(adapter.canResolve('plex:12345')).toBe(false);
     });
   });

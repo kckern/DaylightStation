@@ -54,8 +54,8 @@ export class PlexClient {
   async request(path, options = {}) {
     let url = `${this.#host}${path}`;
 
-    // Some endpoints need token as query param instead of header
-    if (options.includeToken) {
+    // Always include token as query param when available to support reverse proxies
+    if (this.#token) {
       const separator = url.includes('?') ? '&' : '?';
       url = `${url}${separator}X-Plex-Token=${this.#token}`;
     }
@@ -64,7 +64,7 @@ export class PlexClient {
       const response = await this.#httpClient.get(url, {
         headers: {
           'Accept': 'application/json',
-          'X-Plex-Token': this.#token
+          ...(this.#token ? { 'X-Plex-Token': this.#token } : {})
         }
       });
 

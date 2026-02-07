@@ -34,7 +34,7 @@ const SOURCE_ICONS = {
   plex: '\uD83C\uDFAC',
   immich: '\uD83D\uDCF7',
   audiobookshelf: '\uD83D\uDCDA',
-  singing: '\uD83C\uDFB5',
+  singalong: '\uD83C\uDFB5',
   media: '\uD83D\uDCC1',
   default: '\uD83D\uDD0D'
 };

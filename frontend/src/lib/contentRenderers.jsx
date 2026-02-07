@@ -2,8 +2,8 @@ import React from 'react';
 import { generateReference } from 'scripture-guide';
 import { convertVersesToScriptureData, scriptureDataToJSX } from './scripture-guide.jsx';
 
-// Narrated renderers (used by NarratedScroller)
-const narratedRenderers = {
+// Readalong renderers (used by ReadalongScroller)
+const readalongRenderers = {
   scripture: {
     cssType: 'scriptures',
     parseContent: (contentData) => {
@@ -30,20 +30,20 @@ const narratedRenderers = {
   }
 };
 
-// Singing renderers (used by SingingScroller)
-const singingRenderers = {
+// Singalong renderers (used by SingalongScroller)
+const singalongRenderers = {
   hymn:    { cssType: 'hymn', wrapperClass: 'hymn-text' },
   primary: { cssType: 'hymn', wrapperClass: 'hymn-text' }
 };
 
 // Exported helpers
 export function getCollectionFromContentId(contentId) {
-  // "narrated:scripture/dc88" -> "scripture"
-  // "singing:hymn/2" -> "hymn"
+  // "readalong:scripture/dc88" -> "scripture"
+  // "singalong:hymn/2" -> "hymn"
   if (!contentId) return null;
-  const afterPrefix = contentId.replace(/^(narrated|singing):/, '');
+  const afterPrefix = contentId.replace(/^(readalong|singalong):/, '');
   return afterPrefix.split('/')[0] || null;
 }
 
-export function getNarratedRenderer(collection)  { return narratedRenderers[collection] || null; }
-export function getSingingRenderer(collection)   { return singingRenderers[collection] || null; }
+export function getReadalongRenderer(collection)  { return readalongRenderers[collection] || null; }
+export function getSingalongRenderer(collection)   { return singalongRenderers[collection] || null; }

@@ -1,45 +1,45 @@
-// tests/unit/adapters/content/narrated/NarratedAdapter.test.mjs
+// tests/unit/adapters/content/readalong/ReadalongAdapter.test.mjs
 // Basic unit tests that don't require mocking
 import { describe, test, expect, beforeEach } from '@jest/globals';
-import { NarratedAdapter } from '#adapters/content/narrated/NarratedAdapter.mjs';
+import { ReadalongAdapter } from '#adapters/content/readalong/ReadalongAdapter.mjs';
 
-describe('NarratedAdapter', () => {
+describe('ReadalongAdapter', () => {
   let adapter;
 
   beforeEach(() => {
-    adapter = new NarratedAdapter({
-      dataPath: '/mock/data/content/narrated',
-      mediaPath: '/mock/media/narrated'
+    adapter = new ReadalongAdapter({
+      dataPath: '/mock/data/content/readalong',
+      mediaPath: '/mock/media/readalong'
     });
   });
 
   describe('source and prefixes', () => {
-    test('source returns "narrated"', () => {
-      expect(adapter.source).toBe('narrated');
+    test('source returns "readalong"', () => {
+      expect(adapter.source).toBe('readalong');
     });
 
-    test('prefixes returns narrated prefix', () => {
-      expect(adapter.prefixes).toEqual([{ prefix: 'narrated' }]);
+    test('prefixes returns readalong prefix', () => {
+      expect(adapter.prefixes).toEqual([{ prefix: 'readalong' }]);
     });
 
-    test('canResolve returns true for narrated: IDs', () => {
-      expect(adapter.canResolve('narrated:scripture/bom')).toBe(true);
-      expect(adapter.canResolve('narrated:talks/ldsgc')).toBe(true);
+    test('canResolve returns true for readalong: IDs', () => {
+      expect(adapter.canResolve('readalong:scripture/bom')).toBe(true);
+      expect(adapter.canResolve('readalong:talks/ldsgc')).toBe(true);
     });
 
     test('canResolve returns false for other IDs', () => {
-      expect(adapter.canResolve('singing:hymn/1')).toBe(false);
+      expect(adapter.canResolve('singalong:hymn/1')).toBe(false);
     });
   });
 
   describe('storage path', () => {
-    test('getStoragePath returns "narrated"', () => {
-      expect(adapter.getStoragePath()).toBe('narrated');
+    test('getStoragePath returns "readalong" for talks', () => {
+      expect(adapter.getStoragePath('talks/ldsgc')).toBe('readalong');
     });
   });
 
   describe('default style', () => {
-    test('_getDefaultStyle returns narrated-appropriate defaults', () => {
+    test('_getDefaultStyle returns readalong defaults', () => {
       const style = adapter._getDefaultStyle();
       expect(style.fontFamily).toBe('sans-serif');
       expect(style.fontSize).toBe('1.2rem');

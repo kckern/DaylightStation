@@ -20,11 +20,11 @@ All items use compound IDs:
 - `plex:12345` - Plex item by rating key
 - `filesystem:audio/music/song.mp3` - Filesystem path
 - `folder:Morning Program` - Named folder
-- `singing:hymn/2` - Hymn by number
-- `singing:primary/5` - Primary song by number
-- `reading:scripture/bom/sebom/31103` - Scripture chapter
-- `reading:talk/general/1` - Talk
-- `reading:poem/remedy/01` - Poetry item
+- `singalong:hymn/2` - Hymn by number
+- `singalong:primary/5` - Primary song by number
+- `readalong:scripture/bom/sebom/31103` - Scripture chapter
+- `readalong:talks/general/1` - Talk
+- `readalong:poetry/remedy/01` - Poetry item
 
 **Note:** Legacy IDs (e.g., `hymn:113`) are supported via prefix mapping in the unified query interface.
 
@@ -289,20 +289,20 @@ See [Action Routes Reference](../content/action-routes.md) for full documentatio
 > - `/api/v1/item/:source/:id` → `/api/v1/info/:source/:id`
 > - `/api/v1/item/:source/:id/playable` → `/api/v1/list/:source/:id?playable=true`
 
-The Item API (`/api/v1/item/:source/*`) provides a unified interface that works for Plex, filesystem, singing, reading, and any future source.
+The Item API (`/api/v1/item/:source/*`) provides a unified interface that works for Plex, filesystem, singalong, readalong, and any future source.
 
 ### GET /api/v1/item/:source/* (Deprecated)
 
 Get single item or container with optional modifiers.
 
-**Singing Example:**
+**Singalong Example:**
 ```bash
-GET /api/v1/item/singing/hymn/2
+GET /api/v1/item/singalong/hymn/2
 ```
 
-**Reading Example:**
+**Readalong Example:**
 ```bash
-GET /api/v1/item/reading/scripture/bom/sebom/31103
+GET /api/v1/item/readalong/scripture/bom/sebom/31103
 ```
 
 **Path Modifiers:**
@@ -313,8 +313,8 @@ GET /api/v1/item/reading/scripture/bom/sebom/31103
 **Response:**
 ```json
 {
-  "id": "singing:hymn/2",
-  "source": "singing",
+  "id": "singalong:hymn/2",
+  "source": "singalong",
   "path": "hymn/2",
   "title": "All Creatures of Our God and King",
   "itemType": "item",
@@ -330,20 +330,20 @@ Log menu navigation for `recent_on_top` sorting.
 **Body:**
 ```json
 {
-  "assetId": "singing:hymn/2"
+  "assetId": "singalong:hymn/2"
 }
 ```
 
 **Response:**
 ```json
 {
-  "singing:hymn/2": 1738506234
+  "singalong:hymn/2": 1738506234
 }
 ```
 
 ---
 
-## Related Code
+## Related code:
 
 - `backend/src/4_api/v1/routers/item.mjs` - Unified Item API router (new)
 - `backend/src/4_api/v1/routers/play.mjs` - Play API router (legacy)
@@ -353,5 +353,5 @@ Log menu navigation for `recent_on_top` sorting.
 - `backend/src/4_api/v1/routers/proxy.mjs` - Proxy API router
 - `backend/src/1_domains/content/` - Domain entities and ports
 - `backend/src/2_adapters/content/` - Source adapters
-  - `singing/SingingAdapter.mjs` - Hymns and primary songs
-  - `reading/ReadingAdapter.mjs` - Scripture, talks, poetry
+  - `singalong/SingalongAdapter.mjs` - Hymns and primary songs
+  - `readalong/ReadalongAdapter.mjs` - Scripture, talks, poetry

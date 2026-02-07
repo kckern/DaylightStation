@@ -25,8 +25,8 @@ const KNOWN_SOURCES = [
   'canvas',
   'audiobookshelf',
   'komga',
-  'singing',
-  'narrated'
+  'singalong',
+  'readalong'
 ];
 
 /**
@@ -35,7 +35,9 @@ const KNOWN_SOURCES = [
  */
 const SOURCE_ALIASES = {
   local: 'watchlist',
-  media: 'files'
+  media: 'files',
+  singing: 'singalong',
+  narrated: 'readalong'
 };
 
 /**

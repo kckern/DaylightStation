@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import PropTypes from 'prop-types';
 import { Scriptures, Hymns, Talk, Poetry } from '../../ContentScroller/ContentScroller.jsx';
-import { SingingScroller } from '../../ContentScroller/SingingScroller.jsx';
-import { NarratedScroller } from '../../ContentScroller/NarratedScroller.jsx';
+import { SingalongScroller } from '../../ContentScroller/SingalongScroller.jsx';
+import { ReadalongScroller } from '../../ContentScroller/ReadalongScroller.jsx';
 import AppContainer from '../../AppContainer/AppContainer.jsx';
 import { getCategoryFromId } from '../../../lib/queryParamResolver.js';
 import { fetchMediaInfo } from '../lib/api.js';
@@ -89,16 +89,16 @@ export function SinglePlayer(props = {}) {
 
   // Extract contentId for category-based routing
   // Also convert legacy props to canonical contentId format
-  // Note: talk and poem use LocalContentAdapter (not NarratedAdapter) and use legacy fallback
+  // Note: talk and poem use LocalContentAdapter (not ReadalongAdapter) and use legacy fallback
   const { contentId: rawContentId } = play || {};
   const contentId = rawContentId
-    || (hymn ? `singing:hymn/${hymn}` : null)
-    || (primary ? `singing:primary/${primary}` : null)
-    || (scripture ? `narrated:scripture/${scripture}` : null);
+    || (hymn ? `singalong:hymn/${hymn}` : null)
+    || (primary ? `singalong:primary/${primary}` : null)
+    || (scripture ? `readalong:scripture/${scripture}` : null);
   const category = contentId ? getCategoryFromId(contentId) : null;
 
   // Content scroller types don't use the shader, so disable for them
-  const isContentScrollerType = !!(category === 'singing' || category === 'narrated');
+  const isContentScrollerType = !!(category === 'singalong' || category === 'readalong');
   useShaderDiagnostics({
     shaderRef: loadingShaderRef,
     containerRef: playerContainerRef,
@@ -108,11 +108,11 @@ export function SinglePlayer(props = {}) {
   });
 
   // Category-based routing (new canonical contentId format)
-  if (contentId && category === 'singing') {
-    return <SingingScroller contentId={contentId} {...contentProps} {...contentScrollerBridge} />;
+  if (contentId && category === 'singalong') {
+    return <SingalongScroller contentId={contentId} {...contentProps} {...contentScrollerBridge} />;
   }
-  if (contentId && category === 'narrated') {
-    return <NarratedScroller contentId={contentId} {...contentProps} {...contentScrollerBridge} />;
+  if (contentId && category === 'readalong') {
+    return <ReadalongScroller contentId={contentId} {...contentProps} {...contentScrollerBridge} />;
   }
 
   // Legacy fallback (keep for backwards compatibility during migration)
