@@ -38,12 +38,23 @@ export class YamlMessageQueueRepository {
   // ===========================================================================
 
   /**
+   * Extract platform from conversation ID
+   * @private
+   */
+  #extractPlatform(conversationId) {
+    const colonIdx = conversationId.indexOf(':');
+    return colonIdx > 0 ? conversationId.substring(0, colonIdx) : null;
+  }
+
+  /**
    * Extract user ID from conversation ID
    * @private
    */
   #extractUserId(conversationId) {
     if (conversationId.includes('_')) {
-      return conversationId.split('_').pop();
+      const raw = conversationId.split('_').pop();
+      // Strip canonical 'c' prefix from chat IDs (e.g. "c575596036" -> "575596036")
+      return raw.replace(/^c/, '');
     }
     return conversationId.replace(/^telegram:/, '');
   }
@@ -54,8 +65,9 @@ export class YamlMessageQueueRepository {
    */
   #getUsername(conversationId) {
     const userId = this.#extractUserId(conversationId);
-    if (this.#userResolver?.resolveUsername) {
-      return this.#userResolver.resolveUsername(userId) || userId;
+    const platform = this.#extractPlatform(conversationId);
+    if (platform && this.#userResolver?.resolveUser) {
+      return this.#userResolver.resolveUser(platform, userId) || userId;
     }
     return userId;
   }

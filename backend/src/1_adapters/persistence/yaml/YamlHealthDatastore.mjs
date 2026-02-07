@@ -52,8 +52,10 @@ export class YamlHealthDatastore extends IHealthDataDatastore {
    * @private
    */
   #resolveUsername(userId) {
-    if (this.#userResolver?.resolveUsername) {
-      return this.#userResolver.resolveUsername(userId) || userId;
+    if (this.#userResolver?.resolveUser) {
+      // Strip canonical 'c' prefix from chat IDs if present
+      const cleanId = String(userId).replace(/^c/, '');
+      return this.#userResolver.resolveUser('telegram', cleanId) || userId;
     }
     return userId;
   }
