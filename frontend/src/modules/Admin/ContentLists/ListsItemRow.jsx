@@ -109,115 +109,38 @@ function normalizeListSource(source) {
  * This is the core fetch logic extracted for use by both preload and direct calls.
  */
 async function doFetchSiblings(itemId, contentInfo) {
-  const source = normalizeListSource(contentInfo.source);
-  const localId = itemId.split(':')[1]?.trim();
+  const match = itemId.match(/^([^:]+):\s*(.+)$/);
+  if (!match) return null;
 
-  // Fetch current item to get parent key or library info
-  const response = await fetch(`/api/v1/info/${source}/${localId}`);
+  const source = contentInfo?.source || normalizeListSource(match[1].trim());
+  const localId = match[2].trim();
+  const response = await fetch(`/api/v1/siblings/${source}/${encodeURIComponent(localId)}`);
   if (!response.ok) return null;
 
   const data = await response.json();
-  const parentKey = data.metadata?.parentRatingKey || data.metadata?.parentKey ||
-                   data.metadata?.parentId || data.metadata?.albumId || data.metadata?.artistId;
-  const libraryId = data.metadata?.librarySectionID;
-  const libraryTitle = data.metadata?.librarySectionTitle;
+  const browseItems = (data.items || []).map(item => ({
+    value: item.id,
+    title: item.title,
+    source: item.source,
+    type: item.type || item.itemType,
+    thumbnail: item.thumbnail,
+    grandparent: item.grandparentTitle,
+    parent: item.parentTitle,
+    library: item.libraryTitle,
+    itemCount: item.childCount ?? null,
+    isContainer: item.isContainer || item.itemType === 'container'
+  }));
 
-  let childrenUrl = null;
-  let parentInfo = null;
+  const currentParent = data.parent ? {
+    id: data.parent.id,
+    title: data.parent.title,
+    source: data.parent.source,
+    thumbnail: data.parent.thumbnail,
+    parentKey: data.parent.parentId ?? null,
+    libraryId: data.parent.libraryId ?? null
+  } : null;
 
-  if (parentKey) {
-    childrenUrl = `/api/v1/info/${source}/${parentKey}`;
-    const parentResponse = await fetch(`/api/v1/info/${source}/${parentKey}`);
-    if (parentResponse.ok) {
-      const parentData = await parentResponse.json();
-      parentInfo = {
-        id: `${source}:${parentKey}`,
-        title: parentData.title || data.metadata?.parentTitle,
-        source,
-        thumbnail: parentData.thumbnail,
-        parentKey: parentData.metadata?.parentRatingKey || null,
-        libraryId
-      };
-    }
-  } else if (libraryId) {
-    childrenUrl = `/api/v1/info/${source}/library/sections/${libraryId}/all`;
-    parentInfo = {
-      id: `library:${libraryId}`,
-      title: libraryTitle || 'Library',
-      source,
-      thumbnail: null,
-      parentKey: null,
-      libraryId
-    };
-  } else if (['watchlist', 'query', 'menu', 'program'].includes(source)) {
-    childrenUrl = `/api/v1/list/${source}/`;
-    parentInfo = {
-      id: `${source}:`,
-      title: source.charAt(0).toUpperCase() + source.slice(1) + 's',
-      source: 'list',
-      thumbnail: null,
-      parentKey: null,
-      libraryId: null
-    };
-  } else if (source === 'freshvideo') {
-    childrenUrl = `/api/v1/info/files/video/news`;
-    parentInfo = {
-      id: 'files:video/news',
-      title: 'Fresh Video Channels',
-      source: 'files',
-      thumbnail: null,
-      parentKey: null,
-      libraryId: null
-    };
-  } else if (source === 'talk' || source === 'local-content') {
-    childrenUrl = `/api/v1/info/local-content/talk:`;
-    parentInfo = {
-      id: 'talk:',
-      title: 'Talk Series',
-      source: 'local-content',
-      thumbnail: null,
-      parentKey: null,
-      libraryId: null
-    };
-  } else if (localId.includes('/')) {
-    const parts = localId.split('/');
-    const parentPath = parts.slice(0, -1).join('/');
-    const parentTitle = parts[parts.length - 2] || parentPath;
-    childrenUrl = `/api/v1/info/${source}/${parentPath}`;
-    parentInfo = {
-      id: `${source}:${parentPath}`,
-      title: parentTitle,
-      source,
-      thumbnail: null,
-      parentKey: null,
-      libraryId: null
-    };
-  }
-
-  if (!childrenUrl) return null;
-
-  const childrenResponse = await fetch(childrenUrl);
-  if (!childrenResponse.ok) return null;
-
-  const childrenData = await childrenResponse.json();
-  const childItems = childrenData.items || [];
-  const browseItems = childItems.map(item => {
-    const itemSource = item.source || item.id?.split(':')[0];
-    return {
-      value: item.id || `${itemSource}:${item.localId}`,
-      title: item.title,
-      source: itemSource,
-      type: item.metadata?.type || item.type || item.itemType,
-      thumbnail: item.thumbnail,
-      grandparent: item.metadata?.grandparentTitle,
-      parent: item.metadata?.parentTitle,
-      library: item.metadata?.librarySectionTitle,
-      itemCount: item.metadata?.childCount ?? item.metadata?.leafCount ?? item.childCount ?? null,
-      isContainer: isContainerItem(item)
-    };
-  });
-
-  return { browseItems, currentParent: parentInfo };
+  return { browseItems, currentParent };
 }
 
 /**
@@ -871,7 +794,7 @@ function ContentSearchCombobox({ value, onChange }) {
         libraryId
       });
 
-      const response = await fetch(`/api/v1/info/${source}/${localId}`);
+      const response = await fetch(`/api/v1/list/${source}/${localId}`);
       if (response.ok) {
         const data = await response.json();
         const children = (data.items || []).map(item => ({
@@ -964,7 +887,7 @@ function ContentSearchCombobox({ value, onChange }) {
     try {
       setLoadingBrowse(true);
 
-      const response = await fetch(`/api/v1/info/${source}/library/sections/${libraryId}/all`);
+      const response = await fetch(`/api/v1/list/${source}/library/sections/${libraryId}/all`);
       if (!response.ok) return;
 
       const data = await response.json();
@@ -1025,7 +948,7 @@ function ContentSearchCombobox({ value, onChange }) {
 
       if (grandparentKey) {
         // Parent has a parent (e.g., album -> artist) - fetch grandparent's children
-        siblingsUrl = `/api/v1/info/${source}/${grandparentKey}`;
+        siblingsUrl = `/api/v1/list/${source}/${grandparentKey}`;
         newContext = {
           id: `${source}:${grandparentKey}`,
           source,
@@ -1034,7 +957,7 @@ function ContentSearchCombobox({ value, onChange }) {
         };
       } else if (libraryId) {
         // Parent is at library level - fetch library items
-        siblingsUrl = `/api/v1/info/${source}/library/sections/${libraryId}/all`;
+        siblingsUrl = `/api/v1/list/${source}/library/sections/${libraryId}/all`;
         newContext = {
           id: `library:${libraryId}`,
           source,
@@ -1173,176 +1096,16 @@ function ContentSearchCombobox({ value, onChange }) {
       return;
     }
 
-    // Local content collections — try collection endpoint for sources without parent hierarchy
-    // This covers hymn, primary, and any future collections added to the SingalongAdapter
-    const isListLikeSource = ['watchlist', 'query', 'menu', 'program', 'list', 'app'].includes(source);
-    if (!contentInfo?.parent && !contentInfo?.library && !isListLikeSource) {
-      try {
-        setLoadingBrowse(true);
-        const response = await fetch(`/api/v1/local-content/collection/${source}`);
-        if (response.ok) {
-          const data = await response.json();
-          const items = data.items || [];
-          if (items.length > 0) {
-            const siblings = items.map(item => ({
-              value: item.id,
-              title: item.title,
-              source: item.source || source,
-              type: item.type,
-              thumbnail: item.thumbnail,
-            }));
-            setBrowseItems(siblings);
-            const collectionTitle = source.charAt(0).toUpperCase() + source.slice(1);
-            setCurrentParent({
-              id: `${source}:`,
-              title: collectionTitle,
-              source,
-              thumbnail: items[0]?.thumbnail || null,
-              parentKey: null,
-              libraryId: null
-            });
-
-            const normalizedVal = value?.replace(/:\s+/g, ':');
-            const currentIndex = siblings.findIndex(s => s.value === normalizedVal);
-            setHighlightedIdx(currentIndex >= 0 ? currentIndex : 0);
-
-            scrollOptionIntoView(`[data-value="${normalizedVal}"]`);
-            setLoadingBrowse(false);
-            return;
-          }
-        }
-      } catch (err) {
-        console.error('Failed to fetch collection siblings:', err);
-      } finally {
-        setLoadingBrowse(false);
-      }
-      // Fall through to default parent-based browsing if collection returned empty
-    }
-
     try {
       setLoadingBrowse(true);
-      // Fetch current item to get parent key or library info
-      const response = await fetch(`/api/v1/info/${source}/${localId}`);
-      if (!response.ok) return;
+      const data = await doFetchSiblings(value, contentInfo);
+      if (!data) return;
+      setBrowseItems(data.browseItems);
+      setCurrentParent(data.currentParent);
 
-      const data = await response.json();
-      const parentKey = data.metadata?.parentRatingKey || data.metadata?.parentKey ||
-                       data.metadata?.parentId || data.metadata?.albumId || data.metadata?.artistId;
-      const libraryId = data.metadata?.librarySectionID;
-      const libraryTitle = data.metadata?.librarySectionTitle;
-
-      let childrenUrl = null;
-      let parentInfo = null;
-
-      if (parentKey) {
-        // Has a parent container - fetch parent info and its children
-        childrenUrl = `/api/v1/info/${source}/${parentKey}`;
-
-        // Fetch parent details for the header
-        const parentResponse = await fetch(`/api/v1/info/${source}/${parentKey}`);
-        if (parentResponse.ok) {
-          const parentData = await parentResponse.json();
-          parentInfo = {
-            id: `${source}:${parentKey}`,
-            title: parentData.title || data.metadata?.parentTitle,
-            source,
-            thumbnail: parentData.thumbnail,
-            parentKey: parentData.metadata?.parentRatingKey || null,
-            libraryId
-          };
-        }
-      } else if (libraryId) {
-        // Top-level item - show library as parent
-        childrenUrl = `/api/v1/info/${source}/library/sections/${libraryId}/all`;
-        parentInfo = {
-          id: `library:${libraryId}`,
-          title: libraryTitle || 'Library',
-          source,
-          thumbnail: null,
-          parentKey: null,
-          libraryId
-        };
-      } else if (['watchlist', 'query', 'menu', 'program'].includes(source)) {
-        // List-based items - siblings are other lists of same type
-        childrenUrl = `/api/v1/list/${source}/`;
-        parentInfo = {
-          id: `${source}:`,
-          title: source.charAt(0).toUpperCase() + source.slice(1) + 's',
-          source: 'list',
-          thumbnail: null,
-          parentKey: null,
-          libraryId: null
-        };
-      } else if (source === 'freshvideo') {
-        // Freshvideo channels - siblings are other channels in video/news
-        childrenUrl = `/api/v1/info/files/video/news`;
-        parentInfo = {
-          id: 'files:video/news',
-          title: 'Fresh Video Channels',
-          source: 'files',
-          thumbnail: null,
-          parentKey: null,
-          libraryId: null
-        };
-      } else if (source === 'talk' || source === 'local-content') {
-        // Talk series - siblings are other talk series
-        childrenUrl = `/api/v1/info/local-content/talk:`;
-        parentInfo = {
-          id: 'talk:',
-          title: 'Talk Series',
-          source: 'local-content',
-          thumbnail: null,
-          parentKey: null,
-          libraryId: null
-        };
-      } else if (localId.includes('/')) {
-        // Path-based item (e.g., media:sfx/intro) - use parent path as container
-        const parts = localId.split('/');
-        const parentPath = parts.slice(0, -1).join('/');
-        const parentTitle = parts[parts.length - 2] || parentPath;
-        childrenUrl = `/api/v1/info/${source}/${parentPath}`;
-        parentInfo = {
-          id: `${source}:${parentPath}`,
-          title: parentTitle,
-          source,
-          thumbnail: null,
-          parentKey: null,
-          libraryId: null
-        };
-      }
-
-      setCurrentParent(parentInfo);
-
-      if (!childrenUrl) return;
-
-      const childrenResponse = await fetch(childrenUrl);
-      if (!childrenResponse.ok) return;
-
-      const childrenData = await childrenResponse.json();
-      const childItems = childrenData.items || [];
-      const siblings = childItems.map(item => {
-        // Extract source from item or from compound ID (e.g., "media:path" or "plex:123")
-        const itemSource = item.source || item.id?.split(':')[0];
-        return {
-        value: item.id || `${itemSource}:${item.localId}`,
-        title: item.title,
-        source: itemSource,
-        type: item.metadata?.type || item.type || item.itemType,
-        thumbnail: item.thumbnail,
-        grandparent: item.metadata?.grandparentTitle,
-        parent: item.metadata?.parentTitle,
-        library: item.metadata?.librarySectionTitle,
-        itemCount: item.metadata?.childCount ?? item.metadata?.leafCount ?? item.childCount ?? null,
-        isContainer: isContainerItem(item)
-      };});
-      setBrowseItems(siblings);
-
-      // Find and highlight current item
       const normalizedVal = value?.replace(/:\s+/g, ':');
-      const currentIndex = siblings.findIndex(s => s.value === normalizedVal);
+      const currentIndex = data.browseItems.findIndex(s => s.value === normalizedVal);
       setHighlightedIdx(currentIndex >= 0 ? currentIndex : 0);
-
-      // Scroll to current item after render
       scrollOptionIntoView(`[data-value="${normalizedVal}"]`);
     } catch (err) {
       console.error('Failed to fetch siblings:', err);

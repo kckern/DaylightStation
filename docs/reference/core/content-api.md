@@ -274,9 +274,16 @@ The action routes are intent-driven endpoints that express what the client wants
 | Route | Purpose | Returns |
 |-------|---------|---------|
 | `/api/v1/info/:source/:id` | Item metadata | Metadata, capabilities[] |
+
+Scripture info requests accept short refs via the resolver:
+- `/api/v1/info/scripture/nt` (volume selector)
+- `/api/v1/info/scripture/dc88` (reference)
+
+When the resolver returns a volume container (e.g., `scripture/nt`), the info response returns a container item (no chapter listing). Volume titles can be overridden via `volumeTitles` in the scripture manifest.
 | `/api/v1/display/:source/:id` | Displayable image | Image redirect or stream |
 | `/api/v1/play/:source/:id` | Play info with resume | Playable with resume position |
 | `/api/v1/list/:source/:id` | List container contents | Children array |
+| `/api/v1/siblings/:source/:id` | Sibling browse | Parent descriptor plus peer items |
 | `/api/v1/read/:source/:id` | Readable content | Reader content, format info |
 
 See [Action Routes Reference](../content/action-routes.md) for full documentation.

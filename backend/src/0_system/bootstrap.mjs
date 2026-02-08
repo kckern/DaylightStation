@@ -42,6 +42,9 @@ import { createProxyRouter } from '#api/v1/routers/proxy.mjs';
 import { createLocalContentRouter } from '#api/v1/routers/localContent.mjs';
 import { createPlayRouter } from '#api/v1/routers/play.mjs';
 import { createListRouter } from '#api/v1/routers/list.mjs';
+import { createQueueRouter } from '#api/v1/routers/queue.mjs';
+import { createSiblingsRouter } from '#api/v1/routers/siblings.mjs';
+import { SiblingsService } from '#apps/content/services/SiblingsService.mjs';
 import { createStreamRouter } from '#api/v1/routers/stream.mjs';
 import { createLocalRouter } from '#api/v1/routers/local.mjs';
 
@@ -611,6 +614,9 @@ export function createApiRouters(config) {
   // Create ContentQueryService for unified query interface
   const contentQueryService = new ContentQueryService({ registry, mediaProgressMemory, legacyPrefixMap, logger, aliasResolver });
 
+  // Create SiblingsService for sibling resolution
+  const siblingsService = new SiblingsService({ registry, logger });
+
   // Get FileAdapter from registry for local router (handles local media browsing)
   const localMediaAdapter = registry.get('files');
 
@@ -621,6 +627,8 @@ export function createApiRouters(config) {
       localContent: createLocalContentRouter({ registry, dataPath, mediaBasePath, mediaProgressMemory }),
       play: createPlayRouter({ registry, mediaProgressMemory, contentQueryService, logger }),
       list: createListRouter({ registry, loadFile, configService, contentQueryService, menuMemoryPath: configService.getHouseholdPath('history/menu_memory') }),
+      siblings: createSiblingsRouter({ siblingsService, logger }),
+      queue: createQueueRouter({ registry, logger }),
       local: createLocalRouter({ localMediaAdapter, mediaBasePath, cacheBasePath: cacheBasePath || path.join(dataPath, 'system/cache'), logger }),
       stream: createStreamRouter({
         singalongMediaPath: path.join(mediaBasePath, 'audio', 'singalong'),

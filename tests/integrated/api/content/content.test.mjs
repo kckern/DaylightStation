@@ -56,12 +56,12 @@ describe('Content API Router', () => {
     expect(res.body.error).toContain('Unknown source');
   });
 
-  test('GET /api/content/playables/files/:path returns playable items', async () => {
+  test('GET /api/content/playables/files/:path redirects to queue', async () => {
     const res = await request(app).get('/api/content/playables/files/audio');
 
-    expect(res.status).toBe(200);
-    expect(res.body.items).toBeDefined();
-    expect(Array.isArray(res.body.items)).toBe(true);
+    expect(res.status).toBe(307);
+    expect(res.headers.location).toBe('/api/v1/queue/files/audio');
+    expect(res.headers.deprecation).toBe('true');
   });
 
   test('POST /api/content/progress/:source/* updates watch state', async () => {

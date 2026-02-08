@@ -186,7 +186,7 @@ curl /api/v1/item/list/menu:fhe
 
 ```bash
 # With schedule filtering (default)
-curl /api/v1/item/list/program:music-queue/playables
+curl /api/v1/queue/program:music-queue
 
 # Without schedule filtering
 # (handled internally via options.applySchedule)
@@ -281,6 +281,14 @@ Lists rank below curated containers but above individual media items in search r
 - **ContentSourceRegistry:** For resolving referenced items
 - **MediaProgressMemory:** Optional, for watch state on items
 - **ConfigService:** Optional, for household config lookup
+
+---
+
+## Related code:
+
+- backend/src/1_adapters/content/list/ListAdapter.mjs
+- backend/src/4_api/v1/routers/queue.mjs
+- backend/src/4_api/v1/routers/list.mjs
 
 ---
 

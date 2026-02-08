@@ -10,7 +10,7 @@ import { parseContentQuery, validateContentQuery } from '../parsers/contentQuery
  *
  * Endpoints:
  * - GET /api/content/item/:source/* - Get single item info
- * - GET /api/content/playables/:source/* - Resolve to playable items
+ * - GET /api/content/playables/:source/* - Resolve to playable items (DEPRECATED: use /api/v1/queue)
  * - POST /api/content/progress/:source/* - Update watch progress
  * - GET /api/content/search - Search across content sources (IMediaSearchable)
  * - POST /api/content/compose - Compose multi-track presentation from sources
@@ -111,35 +111,20 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
 
   /**
    * GET /api/content/playables/:source/*
-   * Resolve to playable items
+     * Resolve to playable items (deprecated: use /api/v1/queue)
    */
-  router.get('/playables/:source/*', asyncHandler(async (req, res) => {
-    const { source } = req.params;
-    const localId = req.params[0] || '';
+    router.get('/playables/:source/*', asyncHandler(async (req, res) => {
+      const { source } = req.params;
+      const localId = req.params[0] || '';
+      const queryIndex = req.url.indexOf('?');
+      const query = queryIndex >= 0 ? req.url.slice(queryIndex) : '';
+      const newUrl = `/api/v1/queue/${source}/${localId}${query}`;
 
-    // Try exact source match first, then prefix resolution
-    let adapter = registry.get(source);
-    let resolvedLocalId = localId;
-
-    if (!adapter) {
-      const resolved = registry.resolveFromPrefix(source, localId);
-      if (resolved) {
-        adapter = resolved.adapter;
-        resolvedLocalId = resolved.localId;
-      }
-    }
-
-    if (!adapter) {
-      return res.status(404).json({ error: `Unknown source: ${source}` });
-    }
-
-    const playables = await adapter.resolvePlayables(resolvedLocalId);
-    res.json({
-      source,
-      path: resolvedLocalId,
-      items: playables
-    });
-  }));
+      res.set('Deprecation', 'true');
+      res.set('Sunset', 'Fri, 21 Feb 2026 00:00:00 GMT');
+      res.set('Link', `<${newUrl}>; rel="successor-version"`);
+      res.redirect(307, newUrl);
+    }));
 
   /**
    * POST /api/content/progress/:source/*

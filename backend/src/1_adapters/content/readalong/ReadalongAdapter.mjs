@@ -809,6 +809,64 @@ export class ReadalongAdapter {
     // Talks and poetry use watchlist-style selection
     return 'watchlist';
   }
+
+  // ---------------------------------------------------------------------------
+  // Sibling resolution (ISiblingsCapable)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Resolve siblings for readalong items.
+   * Uses path-based parent resolution within collections.
+   * e.g., "readalong:talks/ldsgc/ldsgc202510/12" → parent is "talks/ldsgc/ldsgc202510"
+   *
+   * @param {string} compoundId - e.g., "readalong:scripture/bom-alma-32"
+   * @returns {Promise<{parent: Object|null, items: Array}|null>}
+   */
+  async resolveSiblings(compoundId) {
+    const localId = compoundId.replace(/^readalong:/, '');
+    if (!localId) return null;
+
+    // Path-based parent: strip last segment
+    if (localId.includes('/')) {
+      const parts = localId.split('/');
+      const parentPath = parts.slice(0, -1).join('/');
+      const parentName = parts[parts.length - 2] || parentPath;
+
+      const listResult = await this.getList(parentPath);
+      const items = Array.isArray(listResult)
+        ? listResult
+        : (listResult?.items || listResult?.children || []);
+
+      const parent = {
+        id: `readalong:${parentPath}`,
+        title: parentName,
+        source: 'readalong',
+        thumbnail: items[0]?.thumbnail || null,
+        parentId: null,
+        libraryId: null
+      };
+
+      return { parent, items };
+    }
+
+    // Single-segment ID (collection root like "scripture") — list the collection
+    const listResult = await this.getList(localId);
+    const items = Array.isArray(listResult)
+      ? listResult
+      : (listResult?.items || listResult?.children || []);
+
+    const titleized = localId.charAt(0).toUpperCase() + localId.slice(1);
+    const parent = {
+      id: `readalong:${localId}`,
+      title: titleized,
+      source: 'readalong',
+      thumbnail: items[0]?.thumbnail || null,
+      parentId: null,
+      libraryId: null
+    };
+
+    return { parent, items };
+  }
 }
 
 export default ReadalongAdapter;

@@ -17,6 +17,8 @@ export { createNutribotRouter } from './nutribot.mjs';
 export { createContentRouter } from './content.mjs';
 export { createDisplayRouter } from './display.mjs';
 export { createInfoRouter } from './info.mjs';
+export { createQueueRouter } from './queue.mjs';
+export { createSiblingsRouter } from './siblings.mjs';
 export { createLocalContentRouter } from './localContent.mjs';
 export { createPlayRouter } from './play.mjs';
 export { createStreamRouter } from './stream.mjs';

@@ -55,7 +55,7 @@ function getIcon(item) {
 function isContainer(item) {
   return item.itemType === 'container' ||
     item.isContainer ||
-    ['show', 'album', 'artist', 'watchlist', 'channel', 'series', 'conference', 'playlist'].includes(item.type);
+    ['show', 'album', 'artist', 'watchlist', 'channel', 'series', 'conference', 'playlist', 'container'].includes(item.type);
 }
 
 function normalizeListSource(source) {
@@ -155,36 +155,26 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
     const source = normalizeListSource(inputValue.substring(0, colonIndex));
     const localId = inputValue.substring(colonIndex + 1);
 
-    // Get parent path
-    const parts = localId.split('/');
-    if (parts.length <= 1) {
-      // No parent, try to list root
-      setLoading(true);
-      try {
-        const response = await fetch(`/api/v1/info/${source}/`);
-        if (response.ok) {
-          const data = await response.json();
-          setBrowseResults(data.items || []);
-        }
-      } catch (err) {
-        console.error('Load siblings error:', err);
-      } finally {
-        setLoading(false);
-        setInitialLoadDone(true);
-      }
-      return;
-    }
-
-    const parentPath = parts.slice(0, -1).join('/');
-    const parentTitle = parts[parts.length - 2] || source;
-
     setLoading(true);
     try {
-      const response = await fetch(`/api/v1/info/${source}/${encodeURIComponent(parentPath)}`);
+      const response = await fetch(`/api/v1/siblings/${source}/${encodeURIComponent(localId)}`);
       if (!response.ok) throw new Error('Browse failed');
       const data = await response.json();
       setBrowseResults(data.items || []);
-      setBreadcrumbs([{ id: `${source}:${parentPath}`, title: parentTitle, source, localId: parentPath }]);
+
+      if (data.parent?.id) {
+        const parentLocalId = data.parent.id.split(':').slice(1).join(':');
+        setBreadcrumbs([
+          {
+            id: data.parent.id,
+            title: data.parent.title,
+            source: data.parent.source || source,
+            localId: parentLocalId
+          }
+        ]);
+      } else {
+        setBreadcrumbs([]);
+      }
     } catch (err) {
       console.error('Load siblings error:', err);
     } finally {
@@ -205,7 +195,7 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
 
     setLoading(true);
     try {
-      const response = await fetch(`/api/v1/info/${source}/${encodeURIComponent(localId)}`);
+      const response = await fetch(`/api/v1/list/${source}/${encodeURIComponent(localId)}`);
       if (!response.ok) throw new Error('Browse failed');
       const data = await response.json();
       setBrowseResults(data.items || []);
@@ -232,7 +222,7 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
 
     setLoading(true);
     try {
-      const response = await fetch(`/api/v1/info/${parent.source}/${encodeURIComponent(parent.localId)}`);
+      const response = await fetch(`/api/v1/list/${parent.source}/${encodeURIComponent(parent.localId)}`);
       if (!response.ok) throw new Error('Browse failed');
       const data = await response.json();
       setBrowseResults(data.items || []);
@@ -276,7 +266,7 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
 
     setLoading(true);
     try {
-      const response = await fetch(`/api/v1/info/${source}/${encodeURIComponent(parentPath)}`);
+      const response = await fetch(`/api/v1/list/${source}/${encodeURIComponent(parentPath)}`);
       if (!response.ok) throw new Error('Browse failed');
       const data = await response.json();
       setBrowseResults(data.items || []);

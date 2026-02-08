@@ -13,6 +13,7 @@
  * @property {function(string): Promise<import('../entities/Item.mjs').Item|null>} getItem
  * @property {function(string): Promise<import('../capabilities/Listable.mjs').ListableItem[]>} getList
  * @property {function(string): Promise<import('../capabilities/Playable.mjs').PlayableItem[]>} resolvePlayables
+ * @property {function(string): Promise<{parent: Object|null, items: Array}>} resolveSiblings - Resolve parent + siblings for an item
  * @property {function(string): Promise<string>} [getStoragePath] - Optional storage path for watch state
  */
 
@@ -40,6 +41,10 @@ export function validateAdapter(adapter) {
 
   if (typeof adapter.resolvePlayables !== 'function') {
     throw new Error('Adapter must implement resolvePlayables(id): Promise<Playable[]>');
+  }
+
+  if (typeof adapter.resolveSiblings !== 'function') {
+    throw new Error('Adapter must implement resolveSiblings(compoundId): Promise<{parent, items}|null>');
   }
 }
 
@@ -86,6 +91,18 @@ export class ContentSourceBase {
    */
   async resolvePlayables(id) {
     throw new Error('resolvePlayables must be implemented');
+  }
+
+  /**
+   * Resolve parent info and sibling items for a given compound ID.
+   * Each adapter implements its own parent-finding strategy.
+   * Return null to indicate no sibling resolution is possible.
+   *
+   * @param {string} compoundId - e.g., "plex:12345", "files:video/news/channel"
+   * @returns {Promise<{parent: Object|null, items: Array}|null>}
+   */
+  async resolveSiblings(compoundId) {
+    throw new Error('resolveSiblings must be implemented');
   }
 }
 

@@ -303,6 +303,44 @@ export class SingalongAdapter {
 
     return { items, total: items.length };
   }
+
+  // ---------------------------------------------------------------------------
+  // Sibling resolution (ISiblingsCapable)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Resolve siblings for singalong items.
+   * Singalong items belong to collections (hymn, primary).
+   * Siblings are all items in the same collection.
+   *
+   * @param {string} compoundId - e.g., "singalong:hymn/123", "hymn/123"
+   * @returns {Promise<{parent: Object|null, items: Array}|null>}
+   */
+  async resolveSiblings(compoundId) {
+    const localId = compoundId.replace(/^singalong:/, '');
+    if (!localId) return null;
+
+    // Extract collection from ID path: "hymn/123" → "hymn"
+    const [collection] = localId.split('/');
+    if (!collection) return null;
+
+    const listResult = await this.getList(collection);
+    const items = Array.isArray(listResult)
+      ? listResult
+      : (listResult?.items || listResult?.children || []);
+
+    const titleized = collection.charAt(0).toUpperCase() + collection.slice(1);
+    const parent = {
+      id: `singalong:${collection}`,
+      title: `${titleized}s`,
+      source: 'singalong',
+      thumbnail: items[0]?.thumbnail || null,
+      parentId: null,
+      libraryId: null
+    };
+
+    return { parent, items };
+  }
 }
 
 export default SingalongAdapter;

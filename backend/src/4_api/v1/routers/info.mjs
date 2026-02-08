@@ -20,9 +20,10 @@ import { parseActionRouteId } from '../utils/actionRouteParser.mjs';
  * Derive capabilities from item properties.
  *
  * @param {Object} item - The item to analyze
- * @returns {string[]} Array of capability strings
+ * @param {Object} adapter - The content adapter for the item
+ * @returns {Promise<string[]>} Array of capability strings
  */
-function deriveCapabilities(item) {
+async function deriveCapabilities(item, adapter) {
   const capabilities = [];
 
   // playable: can be played as video/audio
@@ -36,8 +37,21 @@ function deriveCapabilities(item) {
   }
 
   // listable: is a container with children
-  if (item.items || item.itemType === 'container') {
+  const isListable = item.items || item.itemType === 'container';
+  if (isListable) {
     capabilities.push('listable');
+  }
+
+  // queueable: is a container that resolves to playable items
+  if (isListable && adapter?.resolvePlayables) {
+    try {
+      const playables = await adapter.resolvePlayables(item.id);
+      if (playables && playables.length > 0) {
+        capabilities.push('queueable');
+      }
+    } catch (err) {
+      // Failed to resolve playables - item is not queueable
+    }
   }
 
   // readable: has readable content (books, comics, documents)
@@ -54,16 +68,17 @@ function deriveCapabilities(item) {
  *
  * @param {Object} item - The raw item from adapter (PlayableItem or ListableItem)
  * @param {string} source - The resolved source name
- * @returns {Object} Formatted response object
+ * @param {Object} adapter - The content adapter for the item
+ * @returns {Promise<Object>} Formatted response object
  */
-function transformToInfoResponse(item, source) {
+async function transformToInfoResponse(item, source, adapter) {
   const response = {
     contentId: item.id,  // Compound ID (e.g., "plex:12345") — unified identifier
     id: item.id,
     source,
     type: item.metadata?.type || item.type || null,
     title: item.title,
-    capabilities: deriveCapabilities(item),
+    capabilities: await deriveCapabilities(item, adapter),
     metadata: item.metadata || {}
   };
 
@@ -165,24 +180,18 @@ export function createInfoRouter(config) {
       });
     }
 
-    // Transform and return response
-    const response = transformToInfoResponse(item, resolvedSource);
+    // Transform response with capability evaluation.
+    const response = await transformToInfoResponse(item, resolvedSource, adapter);
 
-    // For container items, include children as `items`
+    // For container items, include itemCount (not full children array - use /list for that)
     if (item.itemType === 'container' && adapter.getList) {
       const lookupId = usePrefixResolution ? finalLocalId : compoundId;
       const result = await adapter.getList(lookupId);
       const children = Array.isArray(result) ? result : (result?.children || []);
-      response.items = children.map(child => {
-        const childResponse = transformToInfoResponse(child, child.source || resolvedSource);
-        // When accessed via prefix (e.g., media:clips), remap child IDs to use the user-facing prefix
-        if (usePrefixResolution && child.localId) {
-          childResponse.id = `${resolvedSource}:${child.localId}`;
-          childResponse.contentId = childResponse.id;
-          childResponse.source = resolvedSource;
-        }
-        return childResponse;
-      });
+      response.itemCount = children.length;
+    } else if (item.itemType === 'container') {
+      // Fallback to metadata childCount if getList not available
+      response.itemCount = item.metadata?.childCount ?? item.metadata?.leafCount ?? 0;
     }
 
     logger.info?.('info.get', {
