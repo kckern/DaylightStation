@@ -150,6 +150,11 @@ const Player = forwardRef(function Player(props, ref) {
       cloned.guid = currentMediaGuid;
     }
 
+    // Ensure plex ID is a string (fix prop type error)
+    if (cloned.plex != null) {
+      cloned.plex = String(cloned.plex);
+    }
+
     const rootPlay = (play && typeof play === 'object' && !Array.isArray(play)) ? play : null;
     const rootQueue = (queue && typeof queue === 'object' && !Array.isArray(queue)) ? queue : null;
     const resolvedMaxVideoBitrate =
