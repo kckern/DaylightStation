@@ -221,6 +221,100 @@ When action doesn't match capability:
 
 ---
 
+## Siblings and Queue Routes
+
+These routes complement the action routes but serve distinct use cases.
+
+### GET /api/v1/siblings/:source/:localId
+
+Returns peer items within the same parent container. Used by admin UIs for content selection ("show me what else is in this folder/collection/season").
+
+**Architecture:** The router delegates to `SiblingsService`, which delegates to the adapter's `resolveSiblings()`. Each adapter implements its own strategy (path-based, metadata-based, collection-based). Zero domain knowledge in the application layer.
+
+**Response:**
+```json
+{
+  "parent": {
+    "id": "plex:662028",
+    "title": "Season 1",
+    "source": "plex",
+    "thumbnail": "/api/v1/proxy/plex/photo/..."
+  },
+  "items": [
+    {
+      "id": "plex:12345",
+      "title": "Episode 1",
+      "source": "plex",
+      "type": "episode",
+      "isContainer": false
+    }
+  ]
+}
+```
+
+**Errors:**
+- 404: Unknown source or item not found
+- 500: Adapter error
+
+**Cache:** Short TTL (5 min) — siblings change infrequently.
+
+### GET /api/v1/queue/:source/:localId
+
+Flattens containers into playable items for playback. This is the "Play All" endpoint.
+
+**Distinct from `/list`:** The queue endpoint applies watch state filtering, schedule checks, and returns queue-shaped items (no navigation actions). See behavioral comparison below.
+
+**Query Parameters:**
+
+| Param | Type | Default | Effect |
+|-------|------|---------|--------|
+| `shuffle` | boolean | false | Fisher-Yates shuffle on resolved items |
+| `limit` | number | — | Cap queue to first N items |
+
+**Response:**
+```json
+{
+  "source": "watchlist",
+  "id": "watchlist:cfm2025",
+  "count": 5,
+  "totalDuration": 3420,
+  "items": [
+    {
+      "id": "plex:12345",
+      "title": "Episode Title",
+      "source": "plex",
+      "mediaUrl": "/api/v1/proxy/plex/video/...",
+      "mediaType": "video",
+      "duration": 1800,
+      "resumePosition": 542,
+      "thumbnail": "/api/v1/proxy/plex/photo/..."
+    }
+  ]
+}
+```
+
+**Errors:**
+- 400: Source does not support queue resolution
+- 404: Unknown source
+
+**Cache:** No cache — watch state must be fresh.
+
+**Deprecation:** `GET /api/content/playables/:source/*` redirects to `/api/v1/queue` with `Deprecation` headers.
+
+### List vs Queue: Behavioral Differences
+
+| Dimension | `/list` (getList) | `/queue` (resolvePlayables) |
+|-----------|-------------------|---------|
+| **Depth** | 1 level (direct children) | Recursive (flattens through containers) |
+| **Item types** | Mixed: containers, leaves, openers | Playables only — no containers |
+| **Watch state** | None — shows all items | Filters watched (≥90%), held, past skipAfter, future waitUntil |
+| **Sorting** | Preserves source order | Priority: `in_progress` > `urgent` > `high` > `medium` > `low` |
+| **Schedule** | None | Programs: day-of-week matching |
+| **Item shape** | Rich: `toListItem()` with actions, thumbnails, parents | Bare: queue-shaped (mediaUrl, duration, resume) |
+| **Modifiers** | `?playable`, `?shuffle`, `?recent_on_top` | `?shuffle`, `?limit` |
+
+---
+
 ## Related Documents
 
 - [Query Combinatorics](./query-combinatorics.md) - Full query syntax reference

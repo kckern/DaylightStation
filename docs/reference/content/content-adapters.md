@@ -14,6 +14,7 @@ Both adapters share the same contract:
 | `getItem(id)` | Load YAML metadata + find media file, return normalized item |
 | `getList(localId)` | Browse collections and their contents |
 | `resolvePlayables(localId)` | Resolve what to actually play (may use watch history) |
+| `resolveSiblings(localId)` | Find peer items within the same parent container |
 | `search(query)` | Text search across collections |
 
 The split between them reflects **presentation mode**, not content type:
@@ -375,8 +376,20 @@ The resolver receives the raw path segments and returns `{ textPath, audioPath }
 - Bootstrap/wiring code — adapters scan their `dataPath` for subdirectories
 - Frontend rendering — the content renderer registry handles display by category
 
+## resolveSiblings()
+
+All content adapters implement `resolveSiblings(compoundId)` as part of the `IContentSource` interface. Each adapter encapsulates its own strategy for determining what "siblings" means in its domain.
+
+**Singalong:** Extracts the collection from the path (`hymn/123` → `hymn`), then returns all items in that collection.
+
+**Readalong:** For deep items (multi-segment paths), strips the last segment to find the parent. For single-segment collection roots, returns null (ambiguous parent).
+
+Adapters return `{ parent, items }` or `null` (unsupported/ambiguous). The application-layer `SiblingsService` normalizes null into `{ parent: null, items: [] }`. See [Content Stack Reference § Sibling Resolution](./content-stack-reference.md) for the full architecture.
+
 ## Related code:
 
 - backend/src/1_adapters/content/singalong/SingalongAdapter.mjs
 - backend/src/1_adapters/content/readalong/ReadalongAdapter.mjs
 - backend/src/1_adapters/content/readalong/resolvers/scripture.mjs
+- backend/src/3_applications/content/ports/IContentSource.mjs
+- backend/src/3_applications/content/services/SiblingsService.mjs
