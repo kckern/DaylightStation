@@ -852,84 +852,99 @@ function isContainerItem(item) {
 
 Containers show a chevron (`>`) for drill-down navigation.
 
-### Sibling Loading Pattern
+### Sibling Resolution
 
-When editing a content reference, load siblings by browsing the appropriate parent container.
+Siblings are peer items within the same parent container. The system resolves siblings via a dedicated backend service that delegates entirely to the owning adapter — no source-specific branching in the application layer or frontend.
 
-#### Path-based Items (media, filesystem)
-
-```
-Current value: media:sfx/intro
-                     ↓ extract parent path
-Parent path:   sfx
-                     ↓ fetch
-API call:      GET /api/v1/item/media/sfx
-                     ↓ returns
-Siblings:      [bgmusic/, error.mp3, intro.mp3, wii.mp3]
-```
-
-#### List-based Items (watchlist, query, menu, program)
+#### Architecture
 
 ```
-Current value: watchlist:comefollowme2025
-                     ↓ get all lists of type
-API call:      GET /api/v1/item/list/watchlist:
-                     ↓ returns
-Siblings:      [cfmscripture, comefollowme2025, parenting, ...]
+Frontend                 API Layer              Application Layer        Adapter Layer
+  │                        │                        │                      │
+  │ GET /siblings/plex/123 │                        │                      │
+  │──────────────────────→ │                        │                      │
+  │                        │ siblingsService        │                      │
+  │                        │  .resolveSiblings()    │                      │
+  │                        │──────────────────────→ │                      │
+  │                        │                        │ adapter              │
+  │                        │                        │  .resolveSiblings()  │
+  │                        │                        │─────────────────────→│
+  │                        │                        │                      │ (adapter-specific
+  │                        │                        │     { parent, items }│  strategy)
+  │                        │                        │←─────────────────────│
+  │                        │     { parent, items }  │                      │
+  │                        │←──────────────────────│                      │
+  │     { parent, items }  │                        │                      │
+  │←──────────────────────│                        │                      │
 ```
 
-#### Freshvideo Channels
+**Key design principle:** Each adapter owns its sibling resolution strategy. The `SiblingsService` (application layer) is a pure delegator with zero domain knowledge. Adding a new adapter never requires changing the service.
 
-```
-Current value: freshvideo:teded
-                     ↓ resolves to filesystem:video/news/teded
-API call:      GET /api/v1/item/filesystem/video/news
-                     ↓ returns
-Siblings:      [5minnews, bbc, cnn, teded, vox, ...]
-```
+#### Adapter Sibling Strategies
 
-#### Talk Series
+| Adapter | Strategy | Parent Determination |
+|---------|----------|---------------------|
+| FileAdapter | Path-based | Parent directory |
+| PlexAdapter | Metadata-based | `parentRatingKey` → `librarySectionID` chain |
+| LocalContentAdapter | Collection-based | YAML collection root |
+| ListAdapter | Prefix-based | List type (`watchlist:`, `menu:`, etc.) |
+| SingalongAdapter | Collection-based | Collection name (`hymn`, `primary`) |
+| ReadalongAdapter | Path-based | Strip last path segment for deep items |
+| AudiobookshelfAdapter | Library-based | `libraryId` from item metadata |
+| ImmichAdapter | Container-based | `album:`, `person:`, `tag:` containers; null for ambiguous assets |
+| Canvas adapters | N/A | Returns null (display-only, no siblings) |
 
-```
-Current value: talk:ldsgc
-                     ↓ get all talk series
-API call:      GET /api/v1/item/local-content/talk:
-                     ↓ returns
-Siblings:      [ldsgc, byu, ...]
-```
+#### Response Shape
 
-**Algorithm:**
-```javascript
-async function loadSiblings(compoundId) {
-  const [source, localId] = compoundId.split(':');
-
-  // List-based sources (watchlist, query, menu, program)
-  if (['watchlist', 'query', 'menu', 'program'].includes(source)) {
-    const response = await fetch(`/api/v1/item/list/${source}:`);
-    return (await response.json()).items;
-  }
-
-  // Freshvideo channels
-  if (source === 'freshvideo') {
-    const response = await fetch(`/api/v1/item/filesystem/video/news`);
-    return (await response.json()).items;
-  }
-
-  // Talk series
-  if (source === 'talk' || source === 'local-content') {
-    const response = await fetch(`/api/v1/item/local-content/talk:`);
-    return (await response.json()).items;
-  }
-
-  // Path-based sources (media, filesystem)
-  const parts = localId.split('/');
-  if (parts.length <= 1) return [];
-
-  const parentPath = parts.slice(0, -1).join('/');
-  const response = await fetch(`/api/v1/item/${source}/${parentPath}`);
-  return (await response.json()).items;
+```json
+{
+  "parent": {
+    "id": "plex:662028",
+    "title": "Season 1",
+    "source": "plex",
+    "thumbnail": "/api/v1/proxy/plex/photo/...",
+    "parentId": "plex:662027",
+    "libraryId": null
+  },
+  "items": [
+    {
+      "id": "plex:12345",
+      "title": "Episode 1",
+      "source": "plex",
+      "type": "episode",
+      "thumbnail": "/api/v1/proxy/plex/photo/...",
+      "parentTitle": "Season 1",
+      "grandparentTitle": "Show Name",
+      "libraryTitle": null,
+      "childCount": null,
+      "isContainer": false
+    }
+  ]
 }
 ```
+
+When an adapter returns null (unsupported or ambiguous), the service returns `{ parent: null, items: [] }`.
+
+#### Frontend Usage
+
+```javascript
+// Simple — one call, no source-specific logic
+async function loadSiblings(compoundId) {
+  const [source, ...rest] = compoundId.split(':');
+  const localId = rest.join(':');
+  const response = await fetch(`/api/v1/siblings/${source}/${localId}`);
+  return response.json(); // { parent, items }
+}
+```
+
+#### Related Code
+
+| File | Purpose |
+|------|---------|
+| `backend/src/4_api/v1/routers/siblings.mjs` | Thin HTTP router (parses params, calls service, sends JSON) |
+| `backend/src/3_applications/content/services/SiblingsService.mjs` | Pure delegator — resolves adapter via registry, normalizes DTO |
+| `backend/src/3_applications/content/ports/ISiblingsService.mjs` | Port interface with JSDoc typedefs |
+| `backend/src/3_applications/content/ports/IContentSource.mjs` | `resolveSiblings()` in interface + `ContentSourceBase` |
 
 ### API Endpoints for Browsing
 
