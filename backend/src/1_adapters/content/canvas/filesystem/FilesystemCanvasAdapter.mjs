@@ -222,6 +222,15 @@ export class FilesystemCanvasAdapter {
   #titleFromFilename(filename) {
     return this.#formatName(filename);
   }
+
+  /**
+   * Canvas items are standalone display art — no meaningful sibling navigation.
+   * @param {string} _compoundId
+   * @returns {Promise<null>}
+   */
+  async resolveSiblings(_compoundId) {
+    return null;
+  }
 }
 
 export default FilesystemCanvasAdapter;

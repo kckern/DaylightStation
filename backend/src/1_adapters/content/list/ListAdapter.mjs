@@ -1136,6 +1136,51 @@ export class ListAdapter {
 
     return `list_${parsed.prefix}`;
   }
+
+  // ---------------------------------------------------------------------------
+  // Sibling resolution (ISiblingsCapable)
+  // ---------------------------------------------------------------------------
+
+  /** @type {Set<string>} Known list type prefixes */
+  static #LIST_PREFIXES = new Set(['menu', 'program', 'watchlist', 'query', 'list']);
+
+  /**
+   * Resolve siblings for list items.
+   * When the request targets a list-type prefix root (e.g., "menu:"),
+   * returns all lists of that type as siblings.
+   * Returns null for specific list items to let the default fallback handle them.
+   *
+   * @param {string} compoundId - e.g., "menu:fhe", "menu:", "watchlist:"
+   * @returns {Promise<{parent: Object, items: Array}|null>}
+   */
+  async resolveSiblings(compoundId) {
+    const colonIdx = compoundId.indexOf(':');
+    const prefix = colonIdx !== -1 ? compoundId.substring(0, colonIdx) : compoundId;
+    const name = colonIdx !== -1 ? compoundId.substring(colonIdx + 1) : '';
+
+    if (!ListAdapter.#LIST_PREFIXES.has(prefix)) {
+      return null; // Not a recognized list prefix
+    }
+
+    // Normalize 'list' → 'menu'
+    const listPrefix = prefix === 'list' ? 'menu' : prefix;
+
+    // If a specific list name is given, find its siblings (other lists of same type)
+    // If no name (root request), list all of this type
+    const listResult = await this.getList(`${listPrefix}:`);
+    const listItems = Array.isArray(listResult) ? listResult : (listResult?.children || []);
+    const titleized = listPrefix.charAt(0).toUpperCase() + listPrefix.slice(1);
+    const parent = {
+      id: `${listPrefix}:`,
+      title: `${titleized}s`,
+      source: 'list',
+      thumbnail: listItems[0]?.thumbnail || null,
+      parentId: null,
+      libraryId: null
+    };
+
+    return { parent, items: listItems };
+  }
 }
 
 export default ListAdapter;

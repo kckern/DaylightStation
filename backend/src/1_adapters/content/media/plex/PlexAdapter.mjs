@@ -520,7 +520,7 @@ export class PlexAdapter {
         title: item.title || item.titleSort || `[${item.type || 'Untitled'}]`,
         itemType: 'container',
         childCount: item.leafCount || 0,
-        thumbnail: item.thumb ? `${this.proxyPath}${item.thumb}` : null,
+        thumbnail: (item.composite || item.thumb) ? `${this.proxyPath}${(item.composite || item.thumb)}` : null,
         metadata: containerMetadata
       });
     }
@@ -2010,6 +2010,69 @@ export class PlexAdapter {
       console.error('[PlexAdapter] getItemsByLabel error:', err.message);
       return [];
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Sibling resolution (ISiblingsCapable)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Resolve siblings for Plex items using Plex's own metadata hierarchy.
+   * Episodes → season siblings, tracks → album siblings, seasons → show's seasons, etc.
+   *
+   * @param {string} compoundId - e.g., "plex:12345" or "12345"
+   * @returns {Promise<{parent: Object|null, items: Array}|null>}
+   */
+  async resolveSiblings(compoundId) {
+    const localId = compoundId.replace(/^plex:/, '');
+    const item = await this.getItem(localId);
+    if (!item) return null;
+
+    // Plex metadata provides parent chain — use it directly
+    const parentKey = item.metadata?.parentRatingKey
+      || item.metadata?.parentId
+      || item.metadata?.albumId
+      || item.metadata?.artistId
+      || null;
+    const libraryId = item.metadata?.librarySectionID || null;
+    const libraryTitle = item.metadata?.librarySectionTitle || null;
+
+    let parent = null;
+    let listId = null;
+
+    if (parentKey) {
+      // Has a direct parent (episode→season, track→album, season→show)
+      const parentItem = await this.getItem(String(parentKey));
+      parent = parentItem ? {
+        id: parentItem.id || `plex:${parentKey}`,
+        title: parentItem.title || 'Parent',
+        source: 'plex',
+        thumbnail: parentItem.thumbnail || null,
+        parentId: parentItem.metadata?.parentRatingKey || null,
+        libraryId
+      } : null;
+      listId = String(parentKey);
+    } else if (libraryId) {
+      // Top-level items — siblings are library contents
+      listId = `library/sections/${libraryId}/all`;
+      parent = {
+        id: `library:${libraryId}`,
+        title: libraryTitle || 'Library',
+        source: 'plex',
+        thumbnail: null,
+        parentId: null,
+        libraryId
+      };
+    }
+
+    if (!listId) {
+      return { parent, items: [] };
+    }
+
+    const listItems = await this.getList(listId);
+    const items = Array.isArray(listItems) ? listItems : (listItems?.children || []);
+
+    return { parent, items };
   }
 }
 

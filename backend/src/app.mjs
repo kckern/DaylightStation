@@ -511,6 +511,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     content: contentRouters.content,
     proxy: contentRouters.proxy,
     list: contentRouters.list,
+    siblings: contentRouters.siblings,
+    queue: contentRouters.queue,
     play: contentRouters.play,
     localContent: contentRouters.localContent,
     // Local media browsing and streaming
@@ -518,7 +520,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     // Stream router for singalong/readalong content
     stream: contentRouters.stream,
   };
-  rootLogger.info('content.routers.created', { keys: ['item', 'content', 'proxy', 'list', 'play', 'localContent', 'local', 'stream'] });
+  rootLogger.info('content.routers.created', { keys: ['item', 'content', 'proxy', 'list', 'siblings', 'queue', 'play', 'localContent', 'local', 'stream'] });
 
   // Info router (action-based metadata)
   const { createInfoRouter } = await import('./4_api/v1/routers/info.mjs');

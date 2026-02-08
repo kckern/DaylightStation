@@ -60,6 +60,8 @@ export function createApiRouter(config) {
     '/content': 'content',
     '/proxy': 'proxy',
     '/list': 'list',
+    '/siblings': 'siblings',
+    '/queue': 'queue',
     '/play': 'play',
     '/local-content': 'localContent',
     '/local': 'local',

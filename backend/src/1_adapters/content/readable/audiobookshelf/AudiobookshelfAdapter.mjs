@@ -647,6 +647,45 @@ export class AudiobookshelfAdapter {
   getRootContainers() {
     return ['libraries', 'authors', 'series'];
   }
+
+  // ---------------------------------------------------------------------------
+  // Sibling resolution (ISiblingsCapable)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Resolve siblings for Audiobookshelf items.
+   * Books belong to libraries — siblings are other books in the same library.
+   *
+   * @param {string} compoundId - e.g., "abs:abc123"
+   * @returns {Promise<{parent: Object|null, items: Array}|null>}
+   */
+  async resolveSiblings(compoundId) {
+    const localId = compoundId.replace(/^abs:/, '');
+    if (!localId) return null;
+
+    const item = await this.getItem(localId);
+    if (!item) return null;
+
+    const libraryId = item.metadata?.libraryId;
+    if (!libraryId) {
+      return { parent: null, items: [] };
+    }
+
+    // List all items in the same library
+    const items = await this.getList(`lib:${libraryId}`);
+    const listItems = Array.isArray(items) ? items : (items?.children || []);
+
+    const parent = {
+      id: `abs:lib:${libraryId}`,
+      title: 'Library',
+      source: 'abs',
+      thumbnail: null,
+      parentId: null,
+      libraryId
+    };
+
+    return { parent, items: listItems };
+  }
 }
 
 export default AudiobookshelfAdapter;

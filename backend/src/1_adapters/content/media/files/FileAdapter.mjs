@@ -738,6 +738,54 @@ export class FileAdapter {
       specific: []
     };
   }
+
+  // ---------------------------------------------------------------------------
+  // Sibling resolution (ISiblingsCapable)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Resolve siblings for file-based items using path-based parent resolution.
+   * Handles freshvideo (video/news/*) and general directory navigation.
+   * Returns null only if path has no parent (root-level item).
+   *
+   * @param {string} compoundId - e.g., "files:video/news/channel/episode.mp4" or "video/news"
+   * @returns {Promise<{parent: Object, items: Array}|null>}
+   */
+  async resolveSiblings(compoundId) {
+    // Strip source prefix if present
+    const localId = compoundId.replace(/^(files|media|local|file|fs):/, '');
+
+    if (!localId || !localId.includes('/')) {
+      return null; // Root-level item, no parent to resolve
+    }
+
+    const parts = localId.split('/');
+    const parentPath = parts.slice(0, -1).join('/');
+    const parentName = parts[parts.length - 2] || parentPath;
+
+    // Get parent item for richer metadata (title, thumbnail)
+    const parentItem = await this.getItem(parentPath);
+    const parent = parentItem ? {
+      id: parentItem.id || `files:${parentPath}`,
+      title: parentItem.title || parentName,
+      source: 'files',
+      thumbnail: parentItem.thumbnail || null,
+      parentId: null,
+      libraryId: null
+    } : {
+      id: `files:${parentPath}`,
+      title: parentName,
+      source: 'files',
+      thumbnail: null,
+      parentId: null,
+      libraryId: null
+    };
+
+    const items = await this.getList(`files:${parentPath}`);
+    const listItems = Array.isArray(items) ? items : (items?.children || []);
+
+    return { parent, items: listItems };
+  }
 }
 
 export default FileAdapter;

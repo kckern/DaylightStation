@@ -193,6 +193,22 @@ paragraphs:
   - "When we face uncertainty..."
 ```
 
+Optional talk metadata fields used for container thumbnails:
+
+```yaml
+date: "2025-10-05"
+servedLive: true
+selected: true
+```
+
+When a talk folder has no cover image (`cover.jpg`/`show.jpg`), the adapter selects a child talk in this order to generate a thumbnail via ffmpeg:
+1. Served live (with valid video file)
+2. Selected/featured (with valid video file)
+3. Most recent (by `date`, falling back to conference folder date, with valid video file)
+4. First item (with valid video file)
+
+The generated thumbnail is served via `/api/v1/local/thumbnail/{videoPath}` which extracts a frame using ffmpeg on-demand.
+
 ### Duration
 
 Both adapters read `duration` from YAML metadata. If absent, the singalong adapter probes the audio file using `music-metadata` (`parseFile()`) to extract duration automatically. The readalong adapter falls back to `0` if no duration is specified.

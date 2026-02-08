@@ -100,6 +100,15 @@ export class ImmichCanvasAdapter {
       .replace(/[-_]/g, ' ')
       .replace(/\b\w/g, c => c.toUpperCase());
   }
+
+  /**
+   * Canvas items are standalone display art — no meaningful sibling navigation.
+   * @param {string} _compoundId
+   * @returns {Promise<null>}
+   */
+  async resolveSiblings(_compoundId) {
+    return null;
+  }
 }
 
 export default ImmichCanvasAdapter;

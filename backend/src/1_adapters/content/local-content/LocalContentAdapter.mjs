@@ -1,6 +1,7 @@
 // backend/src/2_adapters/content/local-content/LocalContentAdapter.mjs
 import path from 'path';
 import { generateReference } from 'scripture-guide';
+import { ScriptureResolver } from '#adapters/content/readalong/resolvers/scripture.mjs';
 import { PlayableItem } from '#domains/content/capabilities/Playable.mjs';
 import { ListableItem } from '#domains/content/capabilities/Listable.mjs';
 import { ItemSelectionService } from '#domains/content/index.mjs';
@@ -125,6 +126,114 @@ function formatSeriesTitle(seriesId, mediaPath) {
   return seriesId
     .replace(/([a-z])([A-Z])/g, '$1 $2')
     .replace(/^./, c => c.toUpperCase());
+}
+
+function isTruthyFlag(value) {
+  if (value === true) return true;
+  if (typeof value === 'number') return value > 0;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    return normalized === 'true' || normalized === 'yes' || normalized === '1' || normalized === 'live';
+  }
+  return false;
+}
+
+function extractConferenceDate(folderId) {
+  const match = (folderId || '').match(/^[a-z]+(\d{4})(\d{2})$/i);
+  if (!match) return null;
+  const [, year, month] = match;
+  const iso = `${year}-${month}-01T00:00:00Z`;
+  const parsed = new Date(iso);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function parseTalkDate(value) {
+  if (!value) return null;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  if (typeof value === 'number') {
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+  if (typeof value !== 'string') return null;
+
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  if (/^\d{6}$/.test(trimmed)) {
+    const year = trimmed.slice(0, 4);
+    const month = trimmed.slice(4, 6);
+    const parsed = new Date(`${year}-${month}-01T00:00:00Z`);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  if (/^\d{4}-\d{2}$/.test(trimmed)) {
+    const parsed = new Date(`${trimmed}-01T00:00:00Z`);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  const parsed = new Date(trimmed);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function resolveTalkDateCandidate(child) {
+  const meta = child?.metadata || {};
+  const directDate = parseTalkDate(meta.date || meta.servedAt || meta.served_at || meta.recordedAt || meta.recorded_at);
+  if (directDate) return directDate;
+
+  const parts = (child?.localId || '').split('/');
+  const confId = parts.length >= 2 ? parts[parts.length - 2] : null;
+  return extractConferenceDate(confId);
+}
+
+function isServedLive(meta) {
+  if (!meta) return false;
+  return Boolean(
+    isTruthyFlag(meta.servedLive)
+    || isTruthyFlag(meta.served_live)
+    || isTruthyFlag(meta.isLive)
+    || isTruthyFlag(meta.live)
+  );
+}
+
+function isSelectedTalk(meta) {
+  if (!meta) return false;
+  return Boolean(isTruthyFlag(meta.selected) || isTruthyFlag(meta.featured));
+}
+
+function selectTalkForThumbnail(children) {
+  if (!Array.isArray(children) || children.length === 0) return null;
+
+  const candidates = children.map(child => ({
+    child,
+    meta: child.metadata || {},
+    date: resolveTalkDateCandidate(child)
+  }));
+
+  const byMostRecent = (items) => {
+    const withDates = items.filter(item => item.date instanceof Date);
+    if (withDates.length === 0) return items[0]?.child || null;
+    withDates.sort((a, b) => b.date - a.date);
+    return withDates[0].child || null;
+  };
+
+  const servedLive = candidates.filter(item => isServedLive(item.meta));
+  if (servedLive.length > 0) return byMostRecent(servedLive);
+
+  const selected = candidates.filter(item => isSelectedTalk(item.meta));
+  if (selected.length > 0) return byMostRecent(selected);
+
+  const mostRecent = candidates.filter(item => item.date instanceof Date);
+  if (mostRecent.length > 0) {
+    mostRecent.sort((a, b) => b.date - a.date);
+    return mostRecent[0].child || null;
+  }
+
+  return children[0] || null;
+}
+
+function buildLocalThumbnailUrl(relativePath) {
+  if (!relativePath) return null;
+  return `/api/v1/local/thumbnail/${relativePath}`;
 }
 
 /**
@@ -571,6 +680,9 @@ export class LocalContentAdapter {
     try {
       if (!dirExists(basePath)) return [];
 
+      const manifest = loadYamlSafe(path.join(basePath, 'manifest')) || {};
+      const volumeTitles = manifest.volumeTitles || {};
+
       const fs = await import('fs');
       const entries = fs.readdirSync(basePath, { withFileTypes: true });
       const volumes = entries
@@ -579,7 +691,7 @@ export class LocalContentAdapter {
           id: `scripture:${e.name}`,
           source: 'local-content',
           localId: e.name,
-          title: e.name.toUpperCase(),
+          title: volumeTitles[e.name] || e.name.toUpperCase(),
           itemType: 'container'
         }));
 
@@ -718,6 +830,8 @@ export class LocalContentAdapter {
         type: 'talk',
         speaker: metadata.speaker,
         date: metadata.date,
+        servedLive: metadata.servedLive ?? metadata.served_live ?? metadata.live ?? metadata.isLive ?? null,
+        selected: metadata.selected ?? metadata.featured ?? null,
         description: metadata.description,
         content: metadata.content || [],
         mediaFile: `video/readalong/talks/${localId}.mp4`,
@@ -736,13 +850,57 @@ export class LocalContentAdapter {
    */
   async _getScripture(localId) {
     const basePath = path.resolve(this.dataPath, 'readalong', 'scripture');
-    const pathParts = localId.split('/');
+    const mediaBasePath = path.resolve(this.mediaPath, 'audio', 'readalong', 'scripture');
+    const manifest = loadYamlSafe(path.join(basePath, 'manifest')) || {};
+
+    const parts = localId.split('/');
+      const isExplicitPath = parts.length === 3 && /^\d+$/.test(parts[2]);
+    let resolvedLocalId = localId;
+    let resolvedAudioPath = null;
+
+    if (!isExplicitPath) {
+      const resolved = ScriptureResolver.resolve(localId, basePath, {
+        mediaPath: mediaBasePath,
+        defaults: manifest.defaults || {},
+        allowVolumeAsContainer: true
+      });
+      if (!resolved) return null;
+
+      if (resolved.isContainer && resolved.volume) {
+        const volumeTitles = manifest.volumeTitles || {};
+        const title = volumeTitles[resolved.volume] || resolved.volume.toUpperCase();
+        return new ListableItem({
+          id: `scripture:${resolved.volume}`,
+          source: this.source,
+          localId: resolved.volume,
+          title,
+          type: 'scripture',
+          itemType: 'container',
+          childCount: null,
+          metadata: {
+            type: 'scripture',
+            volume: resolved.volume,
+            volumeTitle: title,
+            librarySectionTitle: 'Scripture'
+          }
+        });
+      }
+
+      if (!resolved.textPath) return null;
+      resolvedLocalId = resolved.textPath;
+      resolvedAudioPath = resolved.audioPath || resolved.textPath;
+    }
+
+    const pathParts = resolvedLocalId.split('/');
     const requestedVolume = pathParts[0] || null;
     const requestedVersion = pathParts[1] || null;
     const requestedVerseId = pathParts[2] || null;
+    const audioParts = (resolvedAudioPath || resolvedLocalId).split('/');
+    const audioVersion = audioParts[1] || requestedVersion;
+    const audioVerseId = audioParts[2] || requestedVerseId;
 
     // Try loading YAML for requested version, fall back to other versions
-    let rawData = loadContainedYaml(basePath, localId);
+    let rawData = loadContainedYaml(basePath, resolvedLocalId);
     let resolvedVersion = requestedVersion;
     if (!rawData && requestedVolume && requestedVersion && requestedVerseId) {
       const volumeDir = path.join(basePath, requestedVolume);
@@ -766,12 +924,12 @@ export class LocalContentAdapter {
     const verseId = rawData.chapter || requestedVerseId;
 
     // Use reference from YAML if present, otherwise generate from verse_id
-    let reference = rawData.reference || localId;
+    let reference = rawData.reference || resolvedLocalId;
     if (!rawData.reference && verseId && /^\d+$/.test(verseId)) {
       try {
         reference = generateReference(verseId).replace(/:1$/, '');
       } catch (e) {
-        reference = localId;
+        reference = resolvedLocalId;
       }
     }
 
@@ -793,8 +951,8 @@ export class LocalContentAdapter {
     let mediaFile = rawData.mediaFile;
     if (!mediaFile && volume && verseId) {
       // Try requested version with any audio extension
-      const versionDir = path.join(this.mediaPath, 'audio', 'readalong', 'scripture', volume, version || '');
-      const found = version ? findMediaFileByPrefix(versionDir, verseId) : null;
+      const versionDir = path.join(this.mediaPath, 'audio', 'readalong', 'scripture', volume, audioVersion || '');
+      const found = audioVersion ? findMediaFileByPrefix(versionDir, audioVerseId) : null;
 
       if (found) {
         mediaFile = path.relative(this.mediaPath, found);
@@ -815,17 +973,17 @@ export class LocalContentAdapter {
       }
       // Final fallback: hardcoded .mp3 path (for legacy compat)
       if (!mediaFile) {
-        mediaFile = `audio/readalong/scripture/${volume}/${version}/${verseId}.mp3`;
+        mediaFile = `audio/readalong/scripture/${volume}/${audioVersion}/${audioVerseId}.mp3`;
       }
     }
 
-    const compoundId = `scripture:${localId}`;
-    const mediaUrl = `/api/v1/proxy/local-content/stream/scripture/${localId}`;
+    const compoundId = `scripture:${resolvedLocalId}`;
+    const mediaUrl = `/api/v1/proxy/local-content/stream/scripture/${resolvedLocalId}`;
 
     return new PlayableItem({
       id: compoundId,
       source: this.source,
-      localId,
+      localId: resolvedLocalId,
       title: reference,
       type: 'scripture',
       mediaType: 'audio',
@@ -946,7 +1104,7 @@ export class LocalContentAdapter {
       if (dirExists(folderMediaPath)) {
         for (const imgName of imgNames) {
           if (fs.existsSync(path.join(folderMediaPath, imgName))) {
-            thumbnail = `/api/v1/proxy/filesystem/stream/${encodeURIComponent(`video/readalong/talks/${folderId}/${imgName}`)}`;
+            thumbnail = `/api/v1/local/stream/video/readalong/talks/${folderId}/${imgName}`;
             break;
           }
         }
@@ -958,7 +1116,7 @@ export class LocalContentAdapter {
         if (dirExists(seriesMediaPath)) {
           for (const imgName of imgNames) {
             if (fs.existsSync(path.join(seriesMediaPath, imgName))) {
-              thumbnail = `/api/v1/proxy/filesystem/stream/${encodeURIComponent(`video/readalong/talks/${parentSeriesId}/${imgName}`)}`;
+              thumbnail = `/api/v1/local/stream/video/readalong/talks/${parentSeriesId}/${imgName}`;
               break;
             }
           }
@@ -974,11 +1132,27 @@ export class LocalContentAdapter {
           if (dirExists(seriesMediaPath)) {
             for (const imgName of imgNames) {
               if (fs.existsSync(path.join(seriesMediaPath, imgName))) {
-                thumbnail = `/api/v1/proxy/filesystem/stream/${encodeURIComponent(`video/readalong/talks/${seriesId}/${imgName}`)}`;
+                thumbnail = `/api/v1/local/stream/video/readalong/talks/${seriesId}/${imgName}`;
                 break;
               }
             }
           }
+        }
+      }
+
+      if (!thumbnail) {
+        // Filter children to only those with valid video files
+        const childrenWithMedia = children.filter(child => {
+          const mediaFile = child.metadata?.mediaFile || (child.localId ? `video/readalong/talks/${child.localId}.mp4` : null);
+          if (!mediaFile) return false;
+          const fullMediaPath = path.join(this.mediaPath, mediaFile);
+          return fileExists(fullMediaPath);
+        });
+
+        const selectedChild = selectTalkForThumbnail(childrenWithMedia);
+        if (selectedChild) {
+          const mediaFile = selectedChild.metadata?.mediaFile || `video/readalong/talks/${selectedChild.localId}.mp4`;
+          thumbnail = buildLocalThumbnailUrl(mediaFile);
         }
       }
 
@@ -1050,7 +1224,7 @@ export class LocalContentAdapter {
       const fs = await import('fs');
       for (const imgName of ['cover.jpg', 'show.jpg', 'cover.png', 'show.png']) {
         if (fs.existsSync(path.join(seriesPath, imgName))) {
-          thumbnail = `/api/v1/proxy/filesystem/stream/${encodeURIComponent(`video/readalong/talks/${seriesId}/${imgName}`)}`;
+          thumbnail = `/api/v1/local/stream/video/readalong/talks/${seriesId}/${imgName}`;
           break;
         }
       }
@@ -1424,6 +1598,59 @@ export class LocalContentAdapter {
     return {
       creator: 'speaker',
       person: 'speaker'
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Sibling resolution (ISiblingsCapable)
+  // ---------------------------------------------------------------------------
+
+  /** @type {Set<string>} Collections that support root-level sibling listing */
+  static #COLLECTIONS = new Set(['scripture', 'hymn', 'primary', 'talk', 'poem']);
+  /** @type {Set<string>} Scripture volume codes treated as collection roots */
+  static #SCRIPTURE_VOLUMES = new Set(['ot', 'nt', 'bom', 'dc', 'pgp']);
+
+  /**
+   * Resolve siblings for local content items.
+   * Handles collection roots (all hymns, all talks, scripture volumes).
+   * Returns null for deep items to let the default fallback handle them.
+   *
+   * @param {string} compoundId - e.g., "hymn:123", "talk:", "scripture:ot"
+   * @returns {Promise<{parent: Object, items: Array}|null>}
+   */
+  async resolveSiblings(compoundId) {
+    const [prefix, localId] = compoundId.split(':');
+
+    if (!LocalContentAdapter.#COLLECTIONS.has(prefix)) {
+      return null; // Not a known collection, use default fallback
+    }
+
+    // Scripture: only volume roots (ot, nt, bom, dc, pgp) are treated as collection siblings
+    if (prefix === 'scripture') {
+      const isVolumeRoot = localId
+        && !localId.includes('/')
+        && LocalContentAdapter.#SCRIPTURE_VOLUMES.has(localId.toLowerCase());
+      if (!isVolumeRoot) {
+        return null; // Deep scripture item, use default fallback
+      }
+    }
+
+    // Collection root — list all items in this collection
+    const items = await this.listCollection(prefix);
+    const titleized = prefix.charAt(0).toUpperCase() + prefix.slice(1);
+    const parent = {
+      id: `${prefix}:`,
+      title: titleized,
+      source: prefix,
+      thumbnail: items[0]?.thumbnail || null,
+      parentId: null,
+      libraryId: null
+    };
+
+    return {
+      parent,
+      items,
+      sourceOverride: prefix
     };
   }
 }

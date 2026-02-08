@@ -812,6 +812,46 @@ export class ImmichAdapter {
       }
     });
   }
+
+  // ---------------------------------------------------------------------------
+  // Sibling resolution (ISiblingsCapable)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Resolve siblings for Immich items.
+   * Assets have parentId metadata when listed within an album/person context.
+   * Falls back to null if no parent context is available.
+   *
+   * @param {string} compoundId - e.g., "immich:uuid", "immich:album:uuid"
+   * @returns {Promise<{parent: Object|null, items: Array}|null>}
+   */
+  async resolveSiblings(compoundId) {
+    const localId = compoundId.replace(/^immich:/, '');
+    if (!localId) return null;
+
+    // For container items (album:id, person:id, tag:id), list their children
+    if (localId.startsWith('album:') || localId.startsWith('person:') || localId.startsWith('tag:')) {
+      const items = await this.getList(localId);
+      const listItems = Array.isArray(items) ? items : (items?.children || []);
+      const containerItem = await this.getItem(localId);
+
+      const parent = containerItem ? {
+        id: containerItem.id || `immich:${localId}`,
+        title: containerItem.title || localId,
+        source: 'immich',
+        thumbnail: containerItem.thumbnail || null,
+        parentId: null,
+        libraryId: null
+      } : null;
+
+      return { parent, items: listItems };
+    }
+
+    // For individual assets, we'd need the album context.
+    // Since an asset can belong to multiple albums, return null to indicate
+    // the caller needs to provide parent context.
+    return null;
+  }
 }
 
 export default ImmichAdapter;

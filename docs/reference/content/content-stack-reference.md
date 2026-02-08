@@ -50,7 +50,7 @@ The content system has five key concepts:
 
 | Component | Required | Description |
 |-----------|----------|-------------|
-| `action` | Yes | Operation type: `item`, `play`, `proxy`, `content` |
+| `action` | Yes | Operation type: `item`, `list`, `siblings`, `queue`, `play`, `proxy`, `content` |
 | `source` | Yes | Adapter name: `plex`, `immich`, `folder`, `canvas` |
 | `localId` | Usually | Source-specific identifier (rating key, UUID, path) |
 | `modifier` | No | Behavior flags: `playable`, `shuffle`, `recent_on_top` |
@@ -61,6 +61,8 @@ The content system has five key concepts:
 |---------|---------|-------------|
 | `GET /item/:source/:localId` | Item + `items:[]` | Single item. For containers, includes children array. |
 | `GET /item/:source/:localId/playables` | Item + `items:[]` | Recursively resolves nested containers to leaf playables. Includes `groups` metadata for skipped hierarchy levels. |
+| `GET /siblings/:source/:localId` | Siblings response | Returns a parent descriptor plus items at the same level. |
+| `GET /queue/:source/:localId` | Queue response | Flattens containers into playables and returns queue-shaped items (no navigation actions). |
 | `GET /item/:source/:localId/shuffle` | Same, shuffled | Randomizes `items:[]` order. |
 | `GET /item/:source/:localId/recent_on_top` | Same, sorted | Sorts by last menu selection timestamp (`menu_memory.yml`). |
 
@@ -71,6 +73,27 @@ The content system has five key concepts:
 - **`recent_on_top`:** Sorts by menu selection history.
 
 Modifiers combine: `/item/plex/123/playables,shuffle`
+
+### Queue Routes
+
+| Pattern | Returns | Description |
+|---------|---------|-------------|
+| `GET /queue/:source/:localId` | Queue response | Flattened playables for playback. Supports `?shuffle=true` and `?limit=10`. |
+
+Queue responses include:
+- `count` (items returned)
+- `totalDuration` (seconds)
+- `items` (queue-shaped items)
+
+### Deprecated Routes
+
+- `GET /api/content/playables/:source/*` - Redirects to `/api/v1/queue/:source/:localId` with deprecation headers.
+
+### Siblings Routes
+
+| Pattern | Returns | Description |
+|---------|---------|-------------|
+| `GET /siblings/:source/:localId` | Siblings response | Returns `{ parent, items }` for peer browsing in admin UI. |
 
 ### Unified Query Routes
 
@@ -1034,4 +1057,6 @@ Browser components maintain navigation state for drill-down:
 - backend/src/2_domains/content/services/ContentSourceRegistry.mjs
 - backend/src/3_applications/content/ContentQueryService.mjs
 - backend/src/4_api/v1/routers/item.mjs
+- backend/src/4_api/v1/routers/siblings.mjs
+- backend/src/4_api/v1/routers/queue.mjs
 - frontend/src/lib/queryParamResolver.js

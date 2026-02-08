@@ -90,21 +90,12 @@ describe('Content Router API', () => {
   // PLAYABLES OPERATION
   // ===========================================================================
   describe('GET /api/content/playables/:source/*', () => {
-    test('resolves container to playables', async () => {
+    test('redirects to /api/v1/queue', async () => {
       const res = await request(app).get('/api/content/playables/local-content/talk:general');
 
-      if (res.status === 200) {
-        expect(res.body).toHaveProperty('items');
-        expect(Array.isArray(res.body.items)).toBe(true);
-      }
-    });
-
-    test('playables response has source', async () => {
-      const res = await request(app).get('/api/content/playables/local-content/talk:general');
-
-      if (res.status === 200) {
-        expect(res.body.source).toBe('local-content');
-      }
+      expect(res.status).toBe(307);
+      expect(res.headers.location).toBe('/api/v1/queue/local-content/talk:general');
+      expect(res.headers.deprecation).toBe('true');
     });
   });
 
