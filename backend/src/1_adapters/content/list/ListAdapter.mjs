@@ -134,6 +134,41 @@ export class ListAdapter {
   }
 
   /**
+   * Derive capabilities for a list item.
+   * Domain knowledge: lists (menus, programs, watchlists) are always queueable if listable.
+   *
+   * @param {Object} item - The item to analyze
+   * @returns {string[]} Array of capability strings
+   */
+  getCapabilities(item) {
+    const capabilities = [];
+
+    // playable: has media URL
+    if (item.mediaUrl) {
+      capabilities.push('playable');
+    }
+
+    // displayable: has visual representation
+    if (item.thumbnail || item.imageUrl) {
+      capabilities.push('displayable');
+    }
+
+    // listable: is a container with children
+    const isListable = item.items || item.itemType === 'container';
+    if (isListable) {
+      capabilities.push('listable');
+    }
+
+    // queueable: all list containers are queueable by design
+    // Domain knowledge: menus, programs, and watchlists all resolve to playable items
+    if (isListable) {
+      capabilities.push('queueable');
+    }
+
+    return capabilities;
+  }
+
+  /**
    * Get the list type from a prefix
    * @param {string} prefix
    * @returns {'menus'|'programs'|'watchlists'|'queries'|null}

@@ -275,6 +275,45 @@ export class LocalContentAdapter {
   }
 
   /**
+   * Derive capabilities for a local content item.
+   * Domain knowledge: local content knows which of its types are queueable.
+   *
+   * @param {Object} item - The item to analyze
+   * @returns {string[]} Array of capability strings
+   */
+  getCapabilities(item) {
+    const capabilities = [];
+    const itemType = item.metadata?.type || item.type;
+
+    // playable: has media URL
+    if (item.mediaUrl) {
+      capabilities.push('playable');
+    }
+
+    // displayable: has visual representation
+    if (item.thumbnail || item.imageUrl) {
+      capabilities.push('displayable');
+    }
+
+    // listable: is a container with children
+    const isListable = item.items || item.itemType === 'container';
+    if (isListable) {
+      capabilities.push('listable');
+    }
+
+    // queueable: local content containers that resolve to playable items
+    // Domain knowledge: series and conference types have playable children
+    if (isListable) {
+      const queueableTypes = ['series', 'conference'];
+      if (queueableTypes.includes(itemType)) {
+        capabilities.push('queueable');
+      }
+    }
+
+    return capabilities;
+  }
+
+  /**
    * Build a thumbnail URL for a song collection if an icon exists.
    * @param {string} collection - Collection name (e.g., 'hymn', 'primary')
    * @returns {string|null}

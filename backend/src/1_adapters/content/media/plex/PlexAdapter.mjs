@@ -101,6 +101,48 @@ export class PlexAdapter {
     return [{ prefix: 'plex' }];
   }
 
+  
+
+
+  /**
+   * Derive capabilities for a Plex item.
+   * Domain knowledge: Plex knows which of its types are queueable, playable, etc.
+   *
+   * @param {Object} item - The item to analyze
+   * @returns {string[]} Array of capability strings
+   */
+  getCapabilities(item) {
+    const capabilities = [];
+    const itemType = item.metadata?.type || item.type;
+
+    // playable: has media URL
+    if (item.mediaUrl) {
+      capabilities.push('playable');
+    }
+
+    // displayable: has visual representation
+    if (item.thumbnail || item.imageUrl) {
+      capabilities.push('displayable');
+    }
+
+    // listable: is a container with children
+    const isListable = item.items || item.itemType === 'container';
+    if (isListable) {
+      capabilities.push('listable');
+    }
+
+    // queueable: Plex containers that resolve to playable items
+    // Domain knowledge: these Plex types have playable children
+    if (isListable) {
+      const queueableTypes = ['artist', 'show', 'season', 'album', 'collection', 'playlist'];
+      if (queueableTypes.includes(itemType)) {
+        capabilities.push('queueable');
+      }
+    }
+
+    return capabilities;
+  }
+
   /**
    * Get raw Plex metadata for a rating key
    * @param {string} ratingKey - Plex rating key
