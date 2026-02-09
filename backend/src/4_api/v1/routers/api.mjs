@@ -42,6 +42,7 @@ import express from 'express';
  * @param {express.Router} [config.routers.printer] - Printer router (optional)
  * @param {express.Router} [config.routers.screens] - Screens router (optional)
  * @param {express.Router} [config.routers.tts] - TTS router (optional)
+ * @param {express.Router} [config.routers.device] - Device router (optional)
  * @param {Function} [config.plexProxyHandler] - Plex proxy handler function
  * @param {Object} [config.logger] - Logger instance
  * @returns {express.Router}
@@ -86,6 +87,7 @@ export function createApiRouter(config) {
     '/screens': 'screens',
     '/agents': 'agents',
     '/dev': 'dev',
+    '/device': 'device',
     '/canvas': 'canvas',
     '/admin': 'admin',
     '/stream': 'stream',
