@@ -35,6 +35,10 @@ export class SingalongAdapter {
     return 'singalong';
   }
 
+  get contentFormat() {
+    return 'singalong';
+  }
+
   get prefixes() {
     return [{ prefix: 'singalong' }];
   }

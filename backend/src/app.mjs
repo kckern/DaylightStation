@@ -527,6 +527,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   v1Routers.info = createInfoRouter({
     registry: contentRegistry,
     contentQueryService: contentServices.contentQueryService,
+    contentIdResolver: contentServices.contentIdResolver,
     logger: rootLogger.child({ module: 'info-api' })
   });
 
@@ -534,6 +535,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const { createDisplayRouter } = await import('./4_api/v1/routers/display.mjs');
   v1Routers.display = createDisplayRouter({
     registry: contentRegistry,
+    contentIdResolver: contentServices.contentIdResolver,
     logger: rootLogger.child({ module: 'display-api' })
   });
 

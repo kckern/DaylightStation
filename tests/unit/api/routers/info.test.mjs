@@ -30,10 +30,24 @@ describe('Info Router', () => {
       error: vi.fn()
     };
 
+    // Create mock contentIdResolver that delegates to mockRegistry
+    const mockContentIdResolver = {
+      resolve: (compoundId) => {
+        // Parse source:localId from compound ID
+        const colonIdx = compoundId.indexOf(':');
+        const source = colonIdx >= 0 ? compoundId.slice(0, colonIdx) : compoundId;
+        const localId = colonIdx >= 0 ? compoundId.slice(colonIdx + 1) : '';
+        const adapter = mockRegistry.get(source);
+        if (!adapter) return null;
+        return { source, localId, adapter };
+      }
+    };
+
     // Create Express app with the router
     app = express();
     app.use('/info', createInfoRouter({
       registry: mockRegistry,
+      contentIdResolver: mockContentIdResolver,
       logger: mockLogger
     }));
   });
@@ -72,7 +86,7 @@ describe('Info Router', () => {
         });
 
         expect(mockRegistry.get).toHaveBeenCalledWith('plex');
-        expect(mockAdapter.getItem).toHaveBeenCalledWith('plex:12345');
+        expect(mockAdapter.getItem).toHaveBeenCalledWith('12345');
       });
 
       it('should handle nested path segments for watchlist source', async () => {
@@ -96,7 +110,7 @@ describe('Info Router', () => {
         expect(response.body.capabilities).toContain('listable');
         expect(response.body.capabilities).toContain('displayable');
 
-        expect(mockAdapter.getItem).toHaveBeenCalledWith('watchlist:watchlist/FHE');
+        expect(mockAdapter.getItem).toHaveBeenCalledWith('watchlist/FHE');
       });
     });
 
@@ -121,7 +135,7 @@ describe('Info Router', () => {
         expect(response.body.capabilities).toContain('playable');
 
         expect(mockRegistry.get).toHaveBeenCalledWith('plex');
-        expect(mockAdapter.getItem).toHaveBeenCalledWith('plex:12345');
+        expect(mockAdapter.getItem).toHaveBeenCalledWith('12345');
       });
 
       it('should handle compound ID with nested path', async () => {
@@ -143,7 +157,7 @@ describe('Info Router', () => {
         expect(response.body.source).toBe('watchlist');
         expect(response.body.capabilities).toContain('listable');
 
-        expect(mockAdapter.getItem).toHaveBeenCalledWith('watchlist:watchlist/movies');
+        expect(mockAdapter.getItem).toHaveBeenCalledWith('watchlist/movies');
       });
     });
 
@@ -167,7 +181,7 @@ describe('Info Router', () => {
         expect(response.body.source).toBe('plex');
 
         expect(mockRegistry.get).toHaveBeenCalledWith('plex');
-        expect(mockAdapter.getItem).toHaveBeenCalledWith('plex:12345');
+        expect(mockAdapter.getItem).toHaveBeenCalledWith('12345');
       });
 
       it('should detect immich source from UUID', async () => {
@@ -355,22 +369,16 @@ describe('Info Router', () => {
     });
 
     describe('Source alias normalization', () => {
-      it('should normalize local to watchlist', async () => {
-        const mockItem = {
-          id: 'watchlist:watchlist',
-          title: 'Watchlist',
-          type: 'container'
-        };
-
-        mockRegistry.get.mockReturnValue(mockAdapter);
-        mockAdapter.getItem.mockResolvedValue(mockItem);
+      it('should return 404 for removed legacy alias "local"', async () => {
+        // "local" alias was removed in Phase 3 (source-agnostic parser).
+        // ContentIdResolver does not know "local" — returns 404.
+        mockRegistry.get.mockReturnValue(null);
 
         const response = await request(app)
           .get('/info/local/watchlist')
-          .expect(200);
+          .expect(404);
 
-        expect(response.body.source).toBe('watchlist');
-        expect(mockRegistry.get).toHaveBeenCalledWith('watchlist');
+        expect(response.body.error).toContain('Unknown source');
       });
     });
   });

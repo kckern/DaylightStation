@@ -171,7 +171,6 @@ export class FileAdapter {
     return [
       { prefix: 'files' },
       { prefix: 'media' },
-      { prefix: 'local' },
       { prefix: 'file' },
       { prefix: 'fs' },
       { prefix: 'freshvideo', idTransform: (id) => `video/news/${id}` }

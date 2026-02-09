@@ -3,8 +3,6 @@ import "./TVApp.scss";
 import { DaylightAPI } from "../lib/api.mjs";
 import { MenuNavigationProvider, useMenuNavigationContext } from "../context/MenuNavigationContext";
 import { MenuStack } from "../modules/Menu/MenuStack";
-import Player from "../modules/Player/Player";
-import AppContainer from "../modules/AppContainer/AppContainer";
 import { PlayerOverlayLoading } from "../modules/Player/Player";
 import { MenuSkeleton } from "../modules/Menu/MenuSkeleton";
 import { getChildLogger } from "../lib/logging/singleton.js";
@@ -40,8 +38,8 @@ function TVAppContent({ rootMenu, autoplay, appParam, logger }) {
         push({ type: 'display', props: autoplay });
       } else if (autoplay.read) {
         push({ type: 'reader', props: autoplay });
-      } else if (autoplay.list?.contentId || autoplay.list?.plex) {
-        // Content list with compound ID → use plex-menu router for type detection
+      } else if (autoplay.list?.contentId) {
+        // Content list with compound ID — backend resolves source/type
         push({ type: 'plex-menu', props: autoplay });
       } else if (autoplay.list) {
         // Folder-based list
@@ -93,15 +91,24 @@ export default function TVApp({ appParam }) {
     const params = new URLSearchParams(window.location.search);
     const queryEntries = Object.fromEntries(params.entries());
 
+    // Ensure value is a compound content ID.
+    // Values already in source:id format pass through unchanged.
+    // Bare digits default to plex: prefix; bare paths stay as-is (media files).
+    const toContentId = (value) => {
+      if (/^[a-z]+:.+$/i.test(value)) return value;
+      if (/^\d+$/.test(value)) return `plex:${value}`;
+      return value;
+    };
+
     // Config modifiers that can be combined with any source
     const configList = ["volume","shader","playbackRate","shuffle","continuous","repeat","loop","overlay","advance","interval","mode","frame"];
     const config = {};
     for (const configKey of configList) {
       if (queryEntries[configKey]) {
-        // Parse overlay as playlist with shuffle (numeric IDs assumed plex for backward compat)
-        if (configKey === 'overlay' && /^\d+$/.test(queryEntries[configKey])) {
+        // Parse overlay as playlist with shuffle
+        if (configKey === 'overlay') {
           config.overlay = {
-            queue: { contentId: `plex:${queryEntries[configKey]}`, plex: queryEntries[configKey] },
+            queue: { contentId: toContentId(queryEntries[configKey]) },
             shuffle: true
           };
         } else {
@@ -131,96 +138,46 @@ export default function TVApp({ appParam }) {
       config.trackModifiers = trackModifiers;
     }
 
-    // Parse compound ID format (source:id) or auto-detect source
-    // Returns { source, id, contentId } where source is the adapter name and id is the local ID
-    const parseCompoundId = (value) => {
-      // Check for explicit source:id format (e.g., plex:380663, immich:abc-123)
-      const match = value.match(/^([a-z]+):(.+)$/i);
-      if (match) {
-        return { source: match[1].toLowerCase(), id: match[2], contentId: value };
-      }
-      // Fallback: all digits → plex, otherwise → media (use full value as id)
-      if (/^\d+$/.test(value)) {
-        return { source: 'plex', id: value, contentId: `plex:${value}` };
-      }
-      return { source: 'files', id: value, contentId: value };
-    };
-
-    // Legacy findKey for backwards compatibility (returns just the source)
-    const findKey = (value) => parseCompoundId(value).source;
-
-    // Source mappings - first match wins
+    // Action mappings — source-agnostic.
+    // Only action verbs are mapped; source resolution is handled by the backend.
     const mappings = {
-      // Queue actions - comma-separated or app: prefix = composed presentation
-      playlist:  (value) => {
-        const { source, id, contentId } = parseCompoundId(value);
-        return { queue: { contentId, [source]: id, ...config } };
-      },
+      playlist:  (value) => ({ queue: { contentId: toContentId(value), ...config } }),
       queue:     (value) => {
         if (value.includes(',')) {
-          // Comma-separated sources = composed presentation (backend infers tracks)
-          const sources = value.split(',').map(s => s.trim());
-          return { compose: { sources, ...config } };
+          return { compose: { sources: value.split(',').map(s => s.trim()), ...config } };
         }
         if (value.startsWith('app:')) {
-          // App sources always use composite player (clock, blackout, screensaver)
           return { compose: { sources: [value], ...config } };
         }
-        const { source, id, contentId } = parseCompoundId(value);
-        return { queue: { contentId, [source]: id, ...config } };
+        return { queue: { contentId: toContentId(value), ...config } };
       },
-
-      // Play actions - comma-separated or app: prefix = composed presentation
       play:      (value) => {
         if (value.includes(',')) {
-          // Comma-separated sources = composed presentation (backend infers tracks)
-          const sources = value.split(',').map(s => s.trim());
-          return { compose: { sources, ...config } };
+          return { compose: { sources: value.split(',').map(s => s.trim()), ...config } };
         }
         if (value.startsWith('app:')) {
-          // App sources always use composite player (clock, blackout, screensaver)
           return { compose: { sources: [value], ...config } };
         }
-        const { source, id, contentId } = parseCompoundId(value);
-        return { play: { contentId, [source]: id, ...config } };
+        return { play: { contentId: toContentId(value), ...config } };
       },
-      random:    (value) => {
-        const { source, id, contentId } = parseCompoundId(value);
-        return { play: { contentId, [source]: id, random: true, ...config } };
-      },
-
-      // Display actions (static images)
+      random:    (value) => ({ play: { contentId: toContentId(value), random: true, ...config } }),
       display:   (value) => ({ display: { id: value, ...config } }),
-
-      // Read actions (ebooks, articles)
       read:      (value) => ({ read: { id: value, ...config } }),
-
-      // Source-specific play (include contentId for unified routing)
-      plex:      (value) => ({ play: { contentId: `plex:${value}`, plex: value, ...config } }),
-      media:     (value) => ({ play: { contentId: value, media: value, ...config } }),
-      watchlist: (value) => ({ play: { contentId: `watchlist:${value}`, watchlist: value, ...config } }),
-      hymn:      (value) => ({ play: { contentId: `singalong:hymn/${value}`, hymn: value, ...config } }),
-      song:      (value) => ({ play: { contentId: `singalong:song/${value}`, song: value, ...config } }),
-      primary:   (value) => ({ play: { contentId: `readalong:primary/${value}`, primary: value, ...config } }),
-      talk:      (value) => ({ play: { talk: value, ...config } }),
-      poem:      (value) => ({ play: { contentId: `readalong:poem/${value}`, poem: value, ...config } }),
-      scripture: (value) => ({ play: { contentId: `readalong:scripture/${value}`, scripture: value, ...config } }),
-
-      // List action (browse as menu)
-      list:      (value) => {
-        const { source, id, contentId } = parseCompoundId(value);
-        return { list: { contentId, [source]: id, ...config } };
-      },
+      open:      (value) => ({ open: { app: value } }),
+      list:      (value) => ({ list: { contentId: toContentId(value), ...config } }),
     };
 
     for (const [key, value] of Object.entries(queryEntries)) {
       if (mappings[key]) {
         return mappings[key](value);
       }
-      // Check if it's an app open command
-      if (!configList.includes(key)) {
-        return { open: { app: key, param: value } };
+      // Skip config modifiers and track modifiers (handled above)
+      if (configList.includes(key) || key.match(/^\w+\.(visual|audio)$/)) {
+        continue;
       }
+      // Unknown key: treat as shorthand for ?play=key:value
+      // e.g., ?hymn=166 → play hymn:166, ?plex=12345 → play plex:12345
+      return { play: { contentId: `${key}:${value}`, ...config } };
     }
 
     return null;

@@ -202,6 +202,26 @@ export class KomgaAdapter {
   }
 
   /**
+   * Resolve parent + siblings for an item.
+   * Returns sibling books in the same series, or sibling series in the same library.
+   * @param {string} compoundId - e.g. "komga:abc123"
+   * @returns {Promise<{parent: Object|null, items: Array}>}
+   */
+  async resolveSiblings(compoundId) {
+    try {
+      const localId = this.#stripPrefix(compoundId);
+      const book = await this.#client.getBook(localId);
+      if (!book?.seriesId) return { parent: null, items: [] };
+
+      const result = await this.#client.getBooks(book.seriesId);
+      const items = (result.content || []).map(b => this.#toBookListable(b));
+      return { parent: { id: `komga:series:${book.seriesId}`, title: book.seriesTitle || 'Series' }, items };
+    } catch {
+      return { parent: null, items: [] };
+    }
+  }
+
+  /**
    * Get storage path for progress persistence
    * @returns {Promise<string>}
    */

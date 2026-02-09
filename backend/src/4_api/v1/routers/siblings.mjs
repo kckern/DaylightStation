@@ -19,17 +19,22 @@ import { parseActionRouteId } from '../utils/actionRouteParser.mjs';
  * @returns {express.Router}
  */
 export function createSiblingsRouter(config) {
-  const { siblingsService } = config;
+  const { siblingsService, contentIdResolver } = config;
   const router = express.Router();
 
   const handleSiblingsRequest = asyncHandler(async (req, res) => {
     const rawSource = req.params.source;
     const rawPath = req.params[0] || '';
 
-    const { source, localId } = parseActionRouteId({
+    const { source: parsedSource, localId: parsedLocalId, compoundId } = parseActionRouteId({
       source: rawSource,
       path: rawPath
     });
+
+    // Resolve through ContentIdResolver (handles aliases, prefixes, exact matches)
+    const resolved = contentIdResolver.resolve(compoundId);
+    const source = resolved?.source ?? parsedSource;
+    const localId = resolved?.localId ?? parsedLocalId;
 
     const result = await siblingsService.resolveSiblings(source, localId);
 

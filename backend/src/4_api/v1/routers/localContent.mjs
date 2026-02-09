@@ -116,6 +116,14 @@ export function createLocalContentRouter(config) {
   const { registry, dataPath, mediaBasePath, mediaProgressMemory } = config;
   const router = express.Router();
 
+  // Deprecation notice: these endpoints are superseded by the unified Play API
+  // (GET /api/v1/play/:source/*) which returns a `format` field for frontend dispatch.
+  router.use((req, res, next) => {
+    res.set('Deprecation', 'true');
+    res.set('Sunset', 'Sat, 01 Aug 2026 00:00:00 GMT');
+    next();
+  });
+
   /**
    * GET /api/local-content/scripture/*
    * Returns scripture with verse timings for ContentScroller

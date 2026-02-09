@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import ContentScroller from './ContentScroller.jsx';
 import { DaylightAPI } from '../../lib/api.mjs';
-import { getReadalongRenderer, getCollectionFromContentId } from '../../lib/contentRenderers.jsx';
+import { getReadalongRenderer } from '../../lib/contentRenderers.jsx';
 
 /**
  * ReadalongScroller
@@ -31,16 +31,18 @@ export function ReadalongScroller({
   remountDiagnostics
 }) {
   const [data, setData] = useState(null);
-  const collection = getCollectionFromContentId(contentId);
-  const renderer = getReadalongRenderer(collection);
+  const renderer = getReadalongRenderer();
 
   useEffect(() => {
     if (!contentId) return;
 
-    // Extract path from contentId (readalong:scripture/bom/... → scripture/bom/...)
-    const path = contentId.replace(/^readalong:/, '');
+    // Convert contentId to URL path segments for the info endpoint.
+    // Handles any prefix: readalong:scripture/..., talk:ldsgc/..., scripture:alma-32, etc.
+    const path = contentId.includes(':')
+      ? contentId.replace(':', '/')
+      : contentId;
 
-    DaylightAPI(`api/v1/info/readalong/${path}`).then(response => {
+    DaylightAPI(`api/v1/info/${path}`).then(response => {
       setData(response);
     });
   }, [contentId]);

@@ -89,21 +89,30 @@ describe('parseActionRouteId', () => {
     });
   });
 
-  describe('Alias normalization', () => {
-    it('should normalize local to watchlist', () => {
+  describe('Source passthrough (no alias normalization)', () => {
+    it('should pass through legacy source names unchanged', () => {
       const result = parseActionRouteId({ source: 'local', path: 'TVApp' });
 
-      expect(result.source).toBe('watchlist');
+      // Parser is source-agnostic — alias resolution happens in ContentIdResolver
+      expect(result.source).toBe('local');
       expect(result.localId).toBe('TVApp');
-      expect(result.compoundId).toBe('watchlist:TVApp');
+      expect(result.compoundId).toBe('local:TVApp');
     });
 
-    it('should normalize local in compound ID format', () => {
+    it('should pass through legacy source in compound ID format', () => {
       const result = parseActionRouteId({ source: 'local:watchlist', path: '' });
 
-      expect(result.source).toBe('watchlist');
+      expect(result.source).toBe('local');
       expect(result.localId).toBe('watchlist');
-      expect(result.compoundId).toBe('watchlist:watchlist');
+      expect(result.compoundId).toBe('local:watchlist');
+    });
+
+    it('should pass through any source name without validation', () => {
+      const result = parseActionRouteId({ source: 'singing', path: 'hymn/166' });
+
+      expect(result.source).toBe('singing');
+      expect(result.localId).toBe('hymn/166');
+      expect(result.compoundId).toBe('singing:hymn/166');
     });
   });
 
@@ -185,10 +194,10 @@ describe('parseActionRouteId', () => {
       expect(result.compoundId).toBe('plex:');
     });
 
-    it('should preserve all known sources', () => {
-      const knownSources = ['plex', 'immich', 'watchlist', 'files', 'canvas', 'audiobookshelf', 'komga', 'singalong', 'readalong'];
+    it('should pass through any source name', () => {
+      const sources = ['plex', 'immich', 'watchlist', 'files', 'canvas', 'audiobookshelf', 'komga', 'singalong', 'readalong', 'local', 'media', 'singing', 'narrated', 'custom'];
 
-      for (const src of knownSources) {
+      for (const src of sources) {
         const result = parseActionRouteId({ source: src, path: 'test-id' });
         expect(result.source).toBe(src);
       }

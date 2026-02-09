@@ -48,30 +48,26 @@ export function toQueueItem(item) {
 }
 
 export function createQueueRouter(config) {
-  const { registry, logger = console } = config;
+  const { registry, contentIdResolver, logger = console } = config;
   const router = express.Router();
 
   const handleQueueRequest = asyncHandler(async (req, res) => {
     const { source } = req.params;
     const rawPath = req.params[0] || '';
 
-    const { source: resolvedSource, localId, compoundId } = parseActionRouteId({
+    const { source: parsedSource, localId, compoundId } = parseActionRouteId({
       source,
       path: rawPath
     });
 
     const { shuffle, limit } = parseQueueQuery(req.query);
 
-    let adapter = registry.get(resolvedSource);
-    let finalId = compoundId;
+    // Resolve through ContentIdResolver (handles aliases, prefixes, exact matches)
+    const resolved = contentIdResolver.resolve(compoundId);
 
-    if (!adapter) {
-      const resolved = registry.resolveFromPrefix(resolvedSource, localId);
-      if (resolved) {
-        adapter = resolved.adapter;
-        finalId = resolved.localId;
-      }
-    }
+    let adapter = resolved?.adapter;
+    let finalId = resolved ? `${resolved.source}:${resolved.localId}` : compoundId;
+    const resolvedSource = resolved?.source ?? parsedSource;
 
     if (!adapter) {
       return res.status(404).json({ error: `Unknown source: ${resolvedSource}` });
