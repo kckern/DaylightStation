@@ -18,10 +18,13 @@ function compactItem(obj) {
     // Skip metadata object entirely - fields already flattened to top level
     if (key === 'metadata') continue;
 
-    // Skip falsy values (null, undefined, 0, false, "")
+    // Fields where 0 is a meaningful value (episode 0, 0% progress, 0 seconds, etc.)
+    const zeroIsValid = ['itemIndex', 'parentIndex', 'watchProgress', 'watchSeconds', 'resumePosition', 'resumeSeconds', 'playCount', 'index'].includes(key);
+    
+    // Skip falsy values (null, undefined, false, "") but preserve 0 for valid fields
     if (!value && value !== 0) continue;
-    // Also skip 0 explicitly (falsy but sometimes meaningful - we decided to filter it)
-    if (value === 0) continue;
+    // Skip 0 for fields where it's not meaningful (but allow for fields like itemIndex)
+    if (value === 0 && !zeroIsValid) continue;
 
     // Recurse into objects (including action objects like play, queue, list)
     if (typeof value === 'object' && value !== null) {

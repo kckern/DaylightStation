@@ -35,6 +35,8 @@ export function SinglePlayer(props = {}) {
     contentId: contentIdProp,
     plex,
     media,
+    singalong,
+    readalong,
     hymn,
     primary,
     scripture,
@@ -92,6 +94,8 @@ export function SinglePlayer(props = {}) {
   // Note: talk and poem use LocalContentAdapter (not ReadalongAdapter) and use legacy fallback
   const { contentId: rawContentId } = play || {};
   const contentId = rawContentId
+    || (singalong ? `singalong:${singalong}` : null)
+    || (readalong ? `readalong:${readalong}` : null)
     || (hymn ? `singalong:hymn/${hymn}` : null)
     || (primary ? `singalong:primary/${primary}` : null)
     || (scripture ? `readalong:scripture/${scripture}` : null);
