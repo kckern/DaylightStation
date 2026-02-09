@@ -206,6 +206,7 @@ const FitnessShow = ({ showId: rawShowId, onBack, viewportRef, setFitnessPlayQue
   const [selectedEpisode, setSelectedEpisode] = useState(null);
   const [posterWidth, setPosterWidth] = useState(0);
   const posterRef = useRef(null);
+  const prevQueueLengthRef = useRef(0);
   const [activeSeasonId, setActiveSeasonId] = useState(null);
   const seasonBarRef = useRef(null);
   const [seasonBarWidth, setSeasonBarWidth] = useState(0);
@@ -326,6 +327,18 @@ const FitnessShow = ({ showId: rawShowId, onBack, viewportRef, setFitnessPlayQue
     window.addEventListener('fitness-show-refresh', handleRefresh);
     return () => window.removeEventListener('fitness-show-refresh', handleRefresh);
   }, [showId, fetchShowData]);
+
+  // Re-fetch episode data when playback ends (queue transitions from non-empty to empty).
+  // This ensures the latest watchSeconds from play.log POSTs (sent every ~10s during playback)
+  // are reflected in episode data, preventing stale playhead regression on re-entry.
+  useEffect(() => {
+    const prevLen = prevQueueLengthRef.current;
+    const curLen = Array.isArray(fitnessPlayQueue) ? fitnessPlayQueue.length : 0;
+    prevQueueLengthRef.current = curLen;
+    if (prevLen > 0 && curLen === 0) {
+      fetchShowData();
+    }
+  }, [fitnessPlayQueue, fetchShowData]);
 
   // Handle poster aspect ratio with JavaScript
   // Poster size effect: run on mount and when showId changes; guard against state churn
