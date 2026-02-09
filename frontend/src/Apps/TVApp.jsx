@@ -199,11 +199,11 @@ export default function TVApp({ appParam }) {
       plex:      (value) => ({ play: { contentId: `plex:${value}`, plex: value, ...config } }),
       media:     (value) => ({ play: { contentId: value, media: value, ...config } }),
       watchlist: (value) => ({ play: { contentId: `watchlist:${value}`, watchlist: value, ...config } }),
-      hymn:      (value) => ({ play: { contentId: `singalong:${value}`, hymn: value, ...config } }),
-      song:      (value) => ({ play: { contentId: `singalong:${value}`, song: value, ...config } }),
-      primary:   (value) => ({ play: { contentId: `readalong:${value}`, primary: value, ...config } }),
+      hymn:      (value) => ({ play: { contentId: `singalong:hymn/${value}`, hymn: value, ...config } }),
+      song:      (value) => ({ play: { contentId: `singalong:song/${value}`, song: value, ...config } }),
+      primary:   (value) => ({ play: { contentId: `readalong:primary/${value}`, primary: value, ...config } }),
       talk:      (value) => ({ play: { talk: value, ...config } }),
-      poem:      (value) => ({ play: { contentId: `readalong:${value}`, poem: value, ...config } }),
+      poem:      (value) => ({ play: { contentId: `readalong:poem/${value}`, poem: value, ...config } }),
       scripture: (value) => ({ play: { contentId: `readalong:scripture/${value}`, scripture: value, ...config } }),
 
       // List action (browse as menu)
