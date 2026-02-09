@@ -49,10 +49,10 @@ export function PianoVisualizer({ onClose, onSessionEnd }) {
         if (pianoConfig?.on_open) {
           DaylightAPI(`/api/v1/home/ha/script/${pianoConfig.on_open}`, {}, 'POST')
             .then(() => console.debug('[Piano] HA on_open script executed'))
-            .catch(err => console.debug('[Piano] HA on_open script failed:', err.message));
+            .catch(err => console.warn('[Piano] HA on_open script failed:', err.message));
         }
       } catch (err) {
-        console.debug('[Piano] Config load failed (non-blocking):', err.message);
+        console.warn('[Piano] Config load failed — HDMI auto-switch disabled:', err.message);
       }
     };
     initPiano();
@@ -62,7 +62,7 @@ export function PianoVisualizer({ onClose, onSessionEnd }) {
       const config = pianoConfigRef.current;
       if (config?.on_close) {
         DaylightAPI(`/api/v1/home/ha/script/${config.on_close}`, {}, 'POST')
-          .catch(err => console.debug('[Piano] HA on_close script failed:', err.message));
+          .catch(err => console.warn('[Piano] HA on_close script failed:', err.message));
       }
     };
   }, []);
