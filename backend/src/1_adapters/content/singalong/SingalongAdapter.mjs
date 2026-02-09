@@ -74,10 +74,9 @@ export class SingalongAdapter {
 
     if (!metadata) return null;
 
-    // Find media file
-    const mediaFile = findMediaFileByPrefix(
-      path.join(this.mediaPath, collection),
-      metadata.number || itemId
+    // Find media file - search preferred subdirectories if configured
+    const mediaFile = this._findPreferredMedia(
+      collection, manifest, metadata.number || itemId
     );
 
     // Get duration from YAML metadata, or read from media file
@@ -129,6 +128,44 @@ export class SingalongAdapter {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Find media file using manifest-driven subdirectory preference.
+   *
+   * When the manifest defines `mediaPreference.subdirs`, the adapter iterates
+   * each entry in order, calling `findMediaFileByPrefix()` on:
+   *   - `{mediaPath}/{collection}/{subdir}` for non-empty entries
+   *   - `{mediaPath}/{collection}` for empty-string entries (collection root)
+   *
+   * Returns the first match, or null if none found.
+   * Falls back to searching only the collection root when no preference is set.
+   *
+   * @param {string} collection - Collection name (e.g., 'hymn', 'primary')
+   * @param {Object|null} manifest - Loaded manifest (may be null)
+   * @param {string|number} prefix - Numeric prefix to match media files
+   * @returns {string|null} Full path to media file, or null
+   * @private
+   */
+  _findPreferredMedia(collection, manifest, prefix) {
+    const collectionMediaDir = path.join(this.mediaPath, collection);
+    const subdirs = manifest?.mediaPreference?.subdirs;
+
+    if (!subdirs || !Array.isArray(subdirs) || subdirs.length === 0) {
+      // No preference configured - search collection root only
+      return findMediaFileByPrefix(collectionMediaDir, prefix);
+    }
+
+    // Search each configured subdirectory in order
+    for (const subdir of subdirs) {
+      const searchDir = subdir
+        ? path.join(collectionMediaDir, subdir)
+        : collectionMediaDir;
+      const found = findMediaFileByPrefix(searchDir, prefix);
+      if (found) return found;
+    }
+
+    return null;
   }
 
   /**
