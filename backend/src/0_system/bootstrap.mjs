@@ -1404,17 +1404,20 @@ export async function createDeviceServices(config) {
  * Create device API router
  * @param {Object} config
  * @param {Object} config.deviceServices - Services from createDeviceServices
+ * @param {import('#system/config/index.mjs').ConfigService} [config.configService] - Config service for device configuration
  * @param {Object} [config.logger] - Logger instance
  * @returns {express.Router}
  */
 export function createDeviceApiRouter(config) {
   const {
     deviceServices,
+    configService,
     logger = console
   } = config;
 
   return createDeviceRouter({
     deviceService: deviceServices.deviceService,
+    configService,
     logger
   });
 }
