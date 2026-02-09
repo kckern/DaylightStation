@@ -1691,7 +1691,7 @@ export class GovernanceEngine {
     const assignNextChallengePreview = (scheduledForTs, payload) => {
       const challengeZone = payload.selection.zone ? String(payload.selection.zone).toLowerCase() : null;
       const timeLimitSeconds = payload.selection.timeAllowedSeconds;
-      const requiredCount = this._normalizeRequiredCount(payload.selection.rule, totalCount);
+      const requiredCount = this._normalizeRequiredCount(payload.selection.rule, totalCount, activeParticipants);
       
       this.challengeState.nextChallenge = {
         configId: challengeConfig.id,
@@ -1843,29 +1843,37 @@ export class GovernanceEngine {
         const zoneId = challenge.zone;
         const zoneInfo = this._getZoneInfo(zoneId);
         const requiredRank = this._getZoneRank(zoneId) ?? 0;
-        
+
         const metUsers = [];
-      activeParticipants.forEach((participantId) => {
-        const pZone = userZoneMap[participantId];
-        if (!pZone) {
-          getLogger().warn('participant.zone.lookup_failed', {
-          key: participantId,
-          availableKeys: Object.keys(userZoneMap),
-          caller: 'GovernanceEngine.buildChallengeSummary'
-          });
-        }
-            const pRank = this._getZoneRank(pZone) ?? 0;
-        if (pRank >= requiredRank) metUsers.push(participantId);
+        activeParticipants.forEach((participantId) => {
+          const pZone = userZoneMap[participantId];
+          if (!pZone) {
+            getLogger().warn('participant.zone.lookup_failed', {
+              key: participantId,
+              availableKeys: Object.keys(userZoneMap),
+              caller: 'GovernanceEngine.buildChallengeSummary'
+            });
+          }
+          const pRank = this._getZoneRank(pZone) ?? 0;
+          if (pRank >= requiredRank) metUsers.push(participantId);
         });
-        
-        const satisfied = metUsers.length >= challenge.requiredCount;
-      const missingUsers = activeParticipants.filter((participantId) => !metUsers.includes(participantId));
-        
+
+        // Recompute requiredCount from current roster (not frozen value)
+        const liveRequiredCount = this._normalizeRequiredCount(challenge.rule, totalCount, activeParticipants);
+        const satisfied = metUsers.length >= liveRequiredCount;
+
+        // Filter exempt users from missingUsers (same logic as _evaluateZoneRequirement)
+        const exemptUsers = (this.config.exemptions || []).map(u => normalizeName(u));
+        const missingUsers = activeParticipants.filter((participantId) =>
+          !metUsers.includes(participantId) && !exemptUsers.includes(normalizeName(participantId))
+        );
+
         return {
             satisfied,
             metUsers,
             missingUsers,
             actualCount: metUsers.length,
+            requiredCount: liveRequiredCount,
             zoneLabel: zoneInfo?.name || zoneId
         };
     };
