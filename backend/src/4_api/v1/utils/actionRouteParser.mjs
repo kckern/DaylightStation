@@ -1,7 +1,10 @@
 /**
  * Action Route ID Parser
  *
- * Parses route parameters into normalized source/localId/compoundId.
+ * Parses route parameters into source/localId/compoundId.
+ * Purely structural — splits compound IDs and applies heuristic detection.
+ * All alias/prefix resolution is handled by ContentIdResolver.
+ *
  * Supports three ID formats:
  * - Path segments: /plex/12345 -> { source: 'plex', localId: '12345' }
  * - Compound ID: /plex:12345 -> { source: 'plex', localId: '12345' }
@@ -11,36 +14,6 @@
  */
 
 import { parseModifiers } from './modifierParser.mjs';
-
-/**
- * Known content sources in the system.
- * @type {string[]}
- */
-const KNOWN_SOURCES = [
-  'plex',
-  'immich',
-  'watchlist',
-  'local',
-  'files',
-  'canvas',
-  'audiobookshelf',
-  'komga',
-  'singalong',
-  'readalong',
-  'list'
-];
-
-/**
- * Source aliases that should be normalized.
- * @type {Object<string, string>}
- */
-const SOURCE_ALIASES = {
-  local: 'watchlist',
-  media: 'files',
-  singing: 'singalong',
-  narrated: 'readalong',
-  list: 'menu'
-};
 
 /**
  * UUID v4 pattern for detecting immich IDs.
@@ -59,28 +32,6 @@ const FILE_EXTENSION_PATTERN = /\.[a-zA-Z0-9]{2,5}$/;
  * @type {RegExp}
  */
 const DIGITS_ONLY_PATTERN = /^\d+$/;
-
-/**
- * Normalize a source name by applying aliases.
- *
- * @param {string} source - The source name to normalize
- * @returns {string} The normalized source name
- */
-function normalizeSource(source) {
-  if (!source) return '';
-  return SOURCE_ALIASES[source] || source;
-}
-
-/**
- * Check if a string is a known source.
- *
- * @param {string} str - The string to check
- * @returns {boolean} True if the string is a known source
- */
-function isKnownSource(str) {
-  if (!str) return false;
-  return KNOWN_SOURCES.includes(str.toLowerCase());
-}
 
 /**
  * Detect the source type from a value using heuristics.
@@ -112,11 +63,15 @@ function detectSourceHeuristically(value) {
 /**
  * Parse action route parameters into a normalized ID structure.
  *
+ * This parser is source-agnostic: it does not validate or normalize source names.
+ * Alias resolution (e.g., local→watchlist, media→files) is handled by
+ * ContentIdResolver in the router layer.
+ *
  * @param {Object} params - The route parameters
  * @param {string} [params.source] - The source parameter (may be compound ID or heuristic value)
  * @param {string} [params.path] - The path parameter (may contain localId and modifiers)
  * @returns {Object} Normalized ID structure
- * @returns {string} returns.source - The normalized source type
+ * @returns {string} returns.source - The source type (raw, no alias resolution)
  * @returns {string} returns.localId - The local identifier within the source
  * @returns {string} returns.compoundId - The compound ID (source:localId)
  * @returns {Object} returns.modifiers - Extracted modifiers (shuffle, playable, recent_on_top)
@@ -143,7 +98,7 @@ export function parseActionRouteId(params = {}) {
     const parsedSource = source.substring(0, colonIndex);
     const parsedLocalId = source.substring(colonIndex + 1);
 
-    source = normalizeSource(parsedSource);
+    source = parsedSource;
     localId = parsedLocalId;
 
     // If there's also a path, append it
@@ -152,15 +107,6 @@ export function parseActionRouteId(params = {}) {
       if (cleanPath) {
         localId = localId ? `${localId}/${cleanPath}` : cleanPath;
       }
-      modifiers = pathModifiers;
-    }
-  } else if (isKnownSource(source)) {
-    // Source is a known source, path contains localId and possibly modifiers
-    source = normalizeSource(source);
-
-    if (path) {
-      const { modifiers: pathModifiers, localId: cleanPath } = parseModifiers(path);
-      localId = cleanPath;
       modifiers = pathModifiers;
     }
   } else {
@@ -181,8 +127,7 @@ export function parseActionRouteId(params = {}) {
         modifiers = pathModifiers;
       }
     } else {
-      // Unknown pattern - treat as-is
-      source = normalizeSource(source);
+      // Non-heuristic source — treat as source name, path as localId
       if (path) {
         const { modifiers: pathModifiers, localId: cleanPath } = parseModifiers(path);
         localId = cleanPath;

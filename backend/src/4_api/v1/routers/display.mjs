@@ -30,7 +30,7 @@ import { parseActionRouteId } from '../utils/actionRouteParser.mjs';
  * @returns {express.Router}
  */
 export function createDisplayRouter(config) {
-  const { registry, logger = console } = config;
+  const { registry, contentIdResolver, logger = console } = config;
   const router = express.Router();
 
   /**
@@ -46,9 +46,15 @@ export function createDisplayRouter(config) {
     const pathParam = req.params[0] || '';
 
     // Parse ID using unified parser
-    const { source: resolvedSource, localId, compoundId } = parseActionRouteId({ source, path: pathParam });
+    const { source: parsedSource, localId: parsedLocalId, compoundId } = parseActionRouteId({ source, path: pathParam });
 
-    const adapter = registry.get(resolvedSource);
+    // Resolve through ContentIdResolver (handles aliases, prefixes, exact matches)
+    const resolved = contentIdResolver.resolve(compoundId);
+
+    const adapter = resolved?.adapter;
+    const resolvedSource = resolved?.source ?? parsedSource;
+    const localId = resolved?.localId ?? parsedLocalId;
+
     if (!adapter) {
       return res.status(404).json({
         error: `Unknown source: ${resolvedSource}`,

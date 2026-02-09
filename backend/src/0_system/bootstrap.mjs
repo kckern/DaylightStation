@@ -2,7 +2,6 @@
 
 import path from 'path';
 import { fileURLToPath } from 'url';
-
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Integration registry imports
@@ -24,6 +23,10 @@ import { ImmichAdapter } from '#adapters/content/gallery/immich/ImmichAdapter.mj
 import { AudiobookshelfAdapter } from '#adapters/content/readable/audiobookshelf/AudiobookshelfAdapter.mjs';
 import { SingalongAdapter } from '#adapters/content/singalong/SingalongAdapter.mjs';
 import { ReadalongAdapter } from '#adapters/content/readalong/ReadalongAdapter.mjs';
+import { AppRegistryDriver } from '#adapters/content/app-registry/AppRegistryDriver.mjs';
+import { KomgaAdapter } from '#adapters/content/readable/komga/KomgaAdapter.mjs';
+import { QueryDriver } from '#adapters/content/query/QueryDriver.mjs';
+import { SavedQueryService } from '#apps/content/SavedQueryService.mjs';
 import { FilesystemCanvasAdapter, ImmichCanvasAdapter } from '#adapters/content/canvas/index.mjs';
 import { ImmichClient } from '#adapters/content/gallery/immich/ImmichClient.mjs';
 import { YamlMediaProgressMemory } from '#adapters/persistence/yaml/YamlMediaProgressMemory.mjs';
@@ -35,9 +38,13 @@ import immichManifest from '#adapters/content/gallery/immich/manifest.mjs';
 import listManifest from '#adapters/content/list/manifest.mjs';
 import singalongManifest from '#adapters/content/singalong/manifest.mjs';
 import readalongManifest from '#adapters/content/readalong/manifest.mjs';
+import appRegistryManifest from '#adapters/content/app-registry/manifest.mjs';
+import komgaManifest from '#adapters/content/readable/komga/manifest.mjs';
+import queryManifest from '#adapters/content/query/manifest.mjs';
 import { createContentRouter } from '#api/v1/routers/content.mjs';
 import { ContentQueryService } from '#apps/content/ContentQueryService.mjs';
 import { ContentQueryAliasResolver } from '#apps/content/services/ContentQueryAliasResolver.mjs';
+import { ContentIdResolver } from '#apps/content/ContentIdResolver.mjs';
 import { createProxyRouter } from '#api/v1/routers/proxy.mjs';
 import { createLocalContentRouter } from '#api/v1/routers/localContent.mjs';
 import { createPlayRouter } from '#api/v1/routers/play.mjs';
@@ -47,6 +54,7 @@ import { createSiblingsRouter } from '#api/v1/routers/siblings.mjs';
 import { SiblingsService } from '#apps/content/services/SiblingsService.mjs';
 import { createStreamRouter } from '#api/v1/routers/stream.mjs';
 import { createLocalRouter } from '#api/v1/routers/local.mjs';
+import { createQueriesRouter } from '#api/v1/routers/queries.mjs';
 
 // Fitness domain imports
 import { SessionService } from '#domains/fitness/services/SessionService.mjs';
@@ -211,7 +219,7 @@ import {
 import RSSParser from 'rss-parser';
 
 // FileIO utilities for image saving
-import { saveImage as saveImageToFile } from './utils/FileIO.mjs';
+import { saveImage as saveImageToFile, loadYamlSafe, listYamlFiles, saveYaml, deleteYaml } from './utils/FileIO.mjs';
 
 // Additional adapters for harvesters
 import { StravaClientAdapter } from '#adapters/fitness/StravaClientAdapter.mjs';
@@ -485,6 +493,24 @@ export function createContentRegistry(config, deps = {}) {
     registry.adapters.set('watchlist', listAdapter);
   }
 
+  // Register QueryDriver for saved queries (query:dailynews, etc.)
+  // Reads query YAML files from household/config/lists/queries/
+  let savedQueryService = null;
+  if (listDataPath) {
+    const queriesDir = path.join(listDataPath, 'household', 'config', 'lists', 'queries');
+    savedQueryService = new SavedQueryService({
+      readQuery: (name) => loadYamlSafe(path.join(queriesDir, name)),
+      listQueries: () => listYamlFiles(queriesDir),
+      writeQuery: (name, data) => saveYaml(path.join(queriesDir, name), data),
+      deleteQuery: (name) => deleteYaml(path.join(queriesDir, name)),
+    });
+    const fileAdapter = registry.get('files');
+    registry.register(
+      new QueryDriver({ savedQueryService, fileAdapter, mediaProgressMemory }),
+      { category: queryManifest.capability, provider: queryManifest.provider }
+    );
+  }
+
   // Register Immich adapter if configured
   if (config.immich?.host && config.immich?.apiKey && httpClient) {
     registry.register(
@@ -503,6 +529,18 @@ export function createContentRegistry(config, deps = {}) {
       host: config.audiobookshelf.host,
       token: config.audiobookshelf.token
     }, { httpClient }));
+  }
+
+  // Register Komga adapter for comic/manga reading if configured
+  if (config.komga?.host && config.komga?.apiKey && httpClient) {
+    registry.register(
+      new KomgaAdapter({
+        host: config.komga.host,
+        apiKey: config.komga.apiKey,
+        proxyPath: config.komga.proxyPath
+      }, { httpClient }),
+      { category: komgaManifest.capability, provider: komgaManifest.provider }
+    );
   }
 
   // Register canvas-filesystem adapter if configured
@@ -556,6 +594,23 @@ export function createContentRegistry(config, deps = {}) {
     );
   }
 
+  // Register AppRegistryDriver for native app content IDs (app:webcam, app:gratitude, etc.)
+  // App definitions mirror the frontend registry (label + param only, no component imports).
+  const appDefs = {
+    webcam:            { label: 'Webcam' },
+    gratitude:         { label: 'Gratitude & Hope' },
+    wrapup:            { label: 'Wrap Up' },
+    office_off:        { label: 'Office Off' },
+    keycode:           { label: 'Key Test' },
+    'family-selector': { label: 'Family Selector', param: { name: 'winner', options: 'household' } },
+    glympse:           { label: 'Glympse', param: { name: 'id' } },
+    websocket:         { label: 'WebSocket', param: { name: 'path' } },
+  };
+  registry.register(
+    new AppRegistryDriver({ apps: appDefs }),
+    { category: appRegistryManifest.capability, provider: appRegistryManifest.provider }
+  );
+
   return registry;
 }
 
@@ -608,6 +663,24 @@ export function createApiRouters(config) {
     logger.debug?.('bootstrap.legacyPrefixes.registered', { prefixes: Object.keys(legacyPrefixMap) });
   }
 
+  // Create ContentIdResolver for unified content ID resolution.
+  // Legacy prefixes (hymn, scripture, etc.) are already registered in the registry
+  // via registerLegacyPrefixes() above — ContentIdResolver Layer 2 resolves them.
+  // systemAliases is reserved for future aliases not backed by registry prefixes.
+  const contentIdResolver = new ContentIdResolver(registry, {
+    systemAliases: {
+      // Simple source renames (legacy names → canonical adapter names).
+      // Note: "media" is handled by FileAdapter's prefix list (Layer 2).
+      // "local" was removed from FileAdapter's prefix list since local:X should
+      // resolve to ListAdapter (watchlist) via this alias (Layer 3), not FileAdapter.
+      local: 'watchlist:',
+      singing: 'singalong:',
+      narrated: 'readalong:',
+      list: 'menu:',
+    },
+    householdAliases: {},
+  });
+
   // Create ContentQueryAliasResolver for semantic query prefixes (music:, photos:, etc.)
   const aliasResolver = new ContentQueryAliasResolver({ registry, configService });
 
@@ -625,10 +698,10 @@ export function createApiRouters(config) {
       content: createContentRouter(registry, mediaProgressMemory, { loadFile, saveFile, cacheBasePath, composePresentationUseCase, contentQueryService, logger, aliasResolver }),
       proxy: createProxyRouter({ registry, proxyService, mediaBasePath, logger }),
       localContent: createLocalContentRouter({ registry, dataPath, mediaBasePath, mediaProgressMemory }),
-      play: createPlayRouter({ registry, mediaProgressMemory, contentQueryService, logger }),
-      list: createListRouter({ registry, loadFile, configService, contentQueryService, menuMemoryPath: configService.getHouseholdPath('history/menu_memory') }),
-      siblings: createSiblingsRouter({ siblingsService, logger }),
-      queue: createQueueRouter({ registry, logger }),
+      play: createPlayRouter({ registry, mediaProgressMemory, contentQueryService, contentIdResolver, logger }),
+      list: createListRouter({ registry, loadFile, configService, contentQueryService, contentIdResolver, menuMemoryPath: configService.getHouseholdPath('history/menu_memory') }),
+      siblings: createSiblingsRouter({ siblingsService, contentIdResolver, logger }),
+      queue: createQueueRouter({ registry, contentIdResolver, logger }),
       local: createLocalRouter({ localMediaAdapter, mediaBasePath, cacheBasePath: cacheBasePath || path.join(dataPath, 'system/cache'), logger }),
       stream: createStreamRouter({
         singalongMediaPath: path.join(mediaBasePath, 'audio', 'singalong'),
@@ -636,10 +709,13 @@ export function createApiRouters(config) {
         readalongVideoPath: path.join(mediaBasePath, 'video', 'readalong'),
         logger
       }),
+      ...(savedQueryService ? { queries: createQueriesRouter({ savedQueryService }) } : {}),
     },
     // Expose services for other routers that need them
     services: {
-      contentQueryService
+      contentQueryService,
+      contentIdResolver,
+      savedQueryService,
     }
   };
 }

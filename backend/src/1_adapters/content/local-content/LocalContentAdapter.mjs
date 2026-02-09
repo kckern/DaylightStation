@@ -867,6 +867,7 @@ export class LocalContentAdapter {
       description: metadata.description,
       metadata: {
         type: 'talk',
+        contentFormat: 'readalong',
         speaker: metadata.speaker,
         date: metadata.date,
         servedLive: metadata.servedLive ?? metadata.served_live ?? metadata.live ?? metadata.isLive ?? null,
@@ -1030,6 +1031,7 @@ export class LocalContentAdapter {
       duration: rawData.duration || 0,
       resumable: true,
       metadata: {
+        contentFormat: 'readalong',
         reference,
         volume,
         version,
@@ -1342,6 +1344,7 @@ export class LocalContentAdapter {
       duration: metadata.duration || 0,
       resumable: false, // songs don't need resume
       metadata: {
+        contentFormat: 'singalong',
         number: songNumber,
         collection: metadata.collection || collection,
         verses: metadata.verses || [],
@@ -1376,6 +1379,7 @@ export class LocalContentAdapter {
       duration: metadata.duration || 0,
       resumable: false, // poems don't track progress
       metadata: {
+        contentFormat: 'readalong',
         poem_id: localId,
         author: metadata.author,
         condition: metadata.condition,

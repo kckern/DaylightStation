@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import ContentScroller from './ContentScroller.jsx';
 import { DaylightAPI } from '../../lib/api.mjs';
 import { useCenterByWidest } from '../../lib/Player/useCenterByWidest.js';
-import { getSingalongRenderer, getCollectionFromContentId } from '../../lib/contentRenderers.jsx';
+import { getSingalongRenderer } from '../../lib/contentRenderers.jsx';
 
 /**
  * SingalongScroller
@@ -32,18 +32,20 @@ export function SingalongScroller({
 }) {
   const [data, setData] = useState(null);
   const textRef = useRef(null);
-  const collection = getCollectionFromContentId(contentId);
-  const renderer = getSingalongRenderer(collection);
-  const cssType = renderer?.cssType || 'singalong';
-  const wrapperClass = renderer?.wrapperClass || 'singalong-text';
+  const renderer = getSingalongRenderer();
+  const cssType = renderer.cssType;
+  const wrapperClass = renderer.wrapperClass;
 
   useEffect(() => {
     if (!contentId) return;
 
-    // Extract path from contentId (singalong:hymn/123 → hymn/123)
-    const path = contentId.replace(/^singalong:/, '');
+    // Convert contentId to URL path segments for the info endpoint.
+    // Handles any prefix: singalong:hymn/123, hymn:166, primary:42, etc.
+    const path = contentId.includes(':')
+      ? contentId.replace(':', '/')
+      : contentId;
 
-    DaylightAPI(`api/v1/info/singalong/${path}`).then(response => {
+    DaylightAPI(`api/v1/info/${path}`).then(response => {
       setData(response);
     });
   }, [contentId]);

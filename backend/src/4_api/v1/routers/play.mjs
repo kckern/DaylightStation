@@ -1,7 +1,10 @@
 // backend/src/4_api/routers/play.mjs
 import express from 'express';
+import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { nowTs24 } from '#system/utils/index.mjs';
 import { parseActionRouteId } from '../utils/actionRouteParser.mjs';
+import { resolveFormat } from '../utils/resolveFormat.mjs';
+import { MediaProgress } from '#domains/content/entities/MediaProgress.mjs';
 
 /**
  * Create play API router for retrieving playable media info
@@ -20,58 +23,21 @@ import { parseActionRouteId } from '../utils/actionRouteParser.mjs';
  * @returns {express.Router}
  */
 export function createPlayRouter(config) {
-  const { registry, mediaProgressMemory, contentQueryService, logger = console } = config;
+  const { registry, mediaProgressMemory, contentQueryService, contentIdResolver, logger = console } = config;
   const router = express.Router();
 
-  /**
-   * Check if watch state is in progress (started but not finished)
-   * @param {Object} state - Plain watch state object
-   * @returns {boolean}
-   */
-  function isInProgress(state) {
-    if (!state || !state.playhead || !state.duration) return false;
-    const percent = Math.round((state.playhead / state.duration) * 100);
-    return state.playhead > 0 && percent < 90;
-  }
-
-  /**
-   * Create media progress object with toJSON method for datastore compatibility
-   * @param {Object} props - Media progress properties
-   * @returns {Object}
-   */
-  function createMediaProgressDTO(props) {
-    const { itemId, playhead = 0, duration = 0, percent, playCount = 0, lastPlayed = null, watchTime = 0 } = props;
-    return {
-      itemId,
-      playhead,
-      duration,
-      percent,
-      playCount,
-      lastPlayed,
-      watchTime,
-      toJSON() {
-        return {
-          itemId: this.itemId,
-          playhead: this.playhead,
-          duration: this.duration,
-          percent: this.percent,
-          playCount: this.playCount,
-          lastPlayed: this.lastPlayed,
-          watchTime: this.watchTime
-        };
-      }
-    };
-  }
+  // MediaProgress domain entity handles isInProgress() and toJSON().
 
   /**
    * Transform internal item to legacy-compatible response
    */
-  function toPlayResponse(item, watchState = null) {
+  function toPlayResponse(item, watchState = null, { adapter } = {}) {
     const response = {
       id: item.id,
       assetId: item.id,
       mediaUrl: item.mediaUrl,
       mediaType: item.mediaType,
+      format: resolveFormat(item, adapter),
       title: item.title,
       duration: item.duration,
       resumable: item.resumable ?? false,
@@ -79,10 +45,13 @@ export function createPlayRouter(config) {
       metadata: item.metadata
     };
 
-    // Add resume position if in progress
-    if (isInProgress(watchState)) {
-      response.resume_position = watchState.playhead;
-      response.resume_percent = watchState.percent;
+    // Add resume position if in progress (use domain entity)
+    if (watchState?.playhead > 0 && watchState?.duration > 0) {
+      const progress = new MediaProgress(watchState);
+      if (progress.isInProgress()) {
+        response.resume_position = progress.playhead;
+        response.resume_percent = progress.percent;
+      }
     }
 
     // Legacy field mapping for Plex items
@@ -92,9 +61,11 @@ export function createPlayRouter(config) {
       if (item.metadata.type === 'episode') response.episode = item.title;
     }
 
-    // Legacy field for source identification
-    if (item.id.startsWith('plex:')) {
-      response.plex = item.id.replace('plex:', '');
+    // Legacy field: expose localId under source key for backward compatibility
+    const colonIdx = item.id.indexOf(':');
+    if (colonIdx > 0) {
+      const sourceKey = item.id.slice(0, colonIdx);
+      response[sourceKey] = item.id.slice(colonIdx + 1);
     }
 
     return response;
@@ -117,14 +88,13 @@ export function createPlayRouter(config) {
    * - title: string (optional) - Item title
    * - watched_duration: number (optional) - Duration watched this session
    */
-  router.post('/log', async (req, res) => {
+  router.post('/log', asyncHandler(async (req, res) => {
     logger.info?.('play.log.request_received', {
       body: req.body,
       headers: { 'content-type': req.headers['content-type'] }
     });
 
-    try {
-      const { type, assetId, percent, seconds, title, watched_duration } = req.body;
+    const { type, assetId, percent, seconds, title, watched_duration } = req.body;
 
       // Validate required fields
       if (!type || !assetId || percent === undefined) {
@@ -139,29 +109,25 @@ export function createPlayRouter(config) {
       // Determine storage path based on type
       let storagePath = type;
       let itemMetadata = null;
+      const compoundId = assetId.includes(':') ? assetId : `${type}:${assetId}`;
 
-      // For plex items, get storage path and metadata from adapter
-      if (type === 'plex') {
-        const plexAdapter = registry.get('plex');
-        if (plexAdapter) {
-          try {
-            // Get storage path from adapter (adapter handles Plex metadata parsing)
-            if (typeof plexAdapter.getStoragePath === 'function') {
-              storagePath = await plexAdapter.getStoragePath(`plex:${assetId}`);
-            }
-            // Get item metadata for title lookup
-            if (typeof plexAdapter.getItem === 'function') {
-              const item = await plexAdapter.getItem(`plex:${assetId}`);
-              itemMetadata = item?.metadata;
-            }
-          } catch (e) {
-            logger.warn?.('play.log.metadata_fetch_failed', { assetId, error: e.message });
+      // Use adapter (if available) for storage path and metadata enrichment
+      const adapter = registry.get(type);
+      if (adapter) {
+        try {
+          if (typeof adapter.getStoragePath === 'function') {
+            storagePath = await adapter.getStoragePath(compoundId);
           }
+          if (typeof adapter.getItem === 'function') {
+            const item = await adapter.getItem(compoundId);
+            itemMetadata = item?.metadata;
+          }
+        } catch (e) {
+          logger.warn?.('play.log.metadata_fetch_failed', { assetId, error: e.message });
         }
       }
 
       // Get existing watch state
-      const compoundId = type === 'plex' ? `plex:${assetId}` : assetId;
       const existingState = mediaProgressMemory ? await mediaProgressMemory.get(compoundId, storagePath) : null;
 
       // Calculate duration from percent if not in metadata
@@ -181,8 +147,8 @@ export function createPlayRouter(config) {
         ? Math.round((normalizedSeconds / estimatedDuration) * 100)
         : 0;
 
-      // Create updated media progress DTO
-      const newState = createMediaProgressDTO({
+      // Create updated media progress via domain entity
+      const newState = new MediaProgress({
         itemId: compoundId,
         playhead: normalizedSeconds,
         duration: estimatedDuration,
@@ -213,11 +179,7 @@ export function createPlayRouter(config) {
           ...newState
         }
       });
-    } catch (error) {
-      logger.error?.('play.log.error', { error: error.message });
-      res.status(500).json({ error: 'Failed to process log' });
-    }
-  });
+  }));
 
   /**
    * GET /api/play/plex/mpd/:id - Get MPD manifest URL for Plex item
@@ -226,9 +188,8 @@ export function createPlayRouter(config) {
    * Query params:
    * - maxVideoBitrate: number (optional) - Maximum video bitrate
    */
-  router.get('/plex/mpd/:id', async (req, res) => {
-    try {
-      const { id } = req.params;
+  router.get('/plex/mpd/:id', asyncHandler(async (req, res) => {
+    const { id } = req.params;
       const maxVideoBitrate = parseInt(req.query.maxVideoBitrate, 10);
 
       const plexAdapter = registry.get('plex');
@@ -252,11 +213,7 @@ export function createPlayRouter(config) {
       // Redirect through proxy (replace plex host with proxy path)
       const proxyUrl = mediaUrl.replace(/https?:\/\/[^\/]+/, '/api/v1/proxy/plex');
       res.redirect(proxyUrl);
-    } catch (error) {
-      logger.error?.('play.plex.mpd.error', { id: req.params.id, error: error.message });
-      res.status(500).json({ error: error.message });
-    }
-  });
+  }));
 
   // ==========================================================================
   // Wildcard Routes
@@ -270,23 +227,29 @@ export function createPlayRouter(config) {
    * - Compound ID: /play/plex:12345
    * - Heuristic: /play/12345 (bare digits -> plex)
    */
-  router.get('/:source/*', async (req, res) => {
-    try {
-      const { source } = req.params;
+  router.get('/:source/*', asyncHandler(async (req, res) => {
+    const { source } = req.params;
       const rawPath = req.params[0] || '';
-      const { source: resolvedSource, localId, compoundId, modifiers } = parseActionRouteId({ source, path: rawPath });
+      const { compoundId, modifiers } = parseActionRouteId({ source, path: rawPath });
 
-      const adapter = registry.get(resolvedSource);
-      if (!adapter) {
-        return res.status(404).json({ error: `Unknown source: ${resolvedSource}` });
+      // Resolve content ID through unified resolver (handles all layers:
+      // exact source, prefix resolution, system aliases, household aliases)
+      const resolved = contentIdResolver.resolve(compoundId);
+
+      if (!resolved?.adapter) {
+        return res.status(404).json({ error: `Unknown source: ${source}` });
       }
+
+      const adapter = resolved.adapter;
+      const finalSource = resolved.source;
+      const finalLocalId = resolved.localId;
 
       // If shuffle modifier, use resolve with random pick
       if (modifiers.shuffle) {
         let selectedItem;
 
         if (contentQueryService) {
-          const result = await contentQueryService.resolve(resolvedSource, localId, { now: new Date() }, { pick: 'random' });
+          const result = await contentQueryService.resolve(finalSource, finalLocalId, { now: new Date() }, { pick: 'random' });
 
           if (!result.items.length) {
             return res.status(404).json({ error: 'No playable items found' });
@@ -295,7 +258,7 @@ export function createPlayRouter(config) {
           selectedItem = result.items[0];
         } else if (adapter.resolvePlayables) {
           // Fallback: use adapter directly
-          const playables = await adapter.resolvePlayables(localId);
+          const playables = await adapter.resolvePlayables(finalLocalId);
           if (!playables.length) {
             return res.status(404).json({ error: 'No playable items found' });
           }
@@ -307,16 +270,16 @@ export function createPlayRouter(config) {
 
         const storagePath = typeof adapter.getStoragePath === 'function'
           ? await adapter.getStoragePath(selectedItem.id)
-          : resolvedSource;
+          : finalSource;
         const watchState = mediaProgressMemory ? await mediaProgressMemory.get(selectedItem.id, storagePath) : null;
 
-        return res.json(toPlayResponse(selectedItem, watchState));
+        return res.json(toPlayResponse(selectedItem, watchState, { adapter }));
       }
 
-      // Get single item using the compound ID from parser
-      const item = await adapter.getItem(compoundId);
+      // Get single item using resolver's localId
+      const item = await adapter.getItem(finalLocalId);
       if (!item) {
-        return res.status(404).json({ error: 'Item not found', source: resolvedSource, localId });
+        return res.status(404).json({ error: 'Item not found', source: finalSource, localId: finalLocalId });
       }
 
       // Check if it's a container (needs resolution to playable)
@@ -324,11 +287,16 @@ export function createPlayRouter(config) {
         let playables;
 
         if (contentQueryService) {
-          const result = await contentQueryService.resolve(resolvedSource, localId, { now: new Date() });
-          playables = result.items;
+          try {
+            const result = await contentQueryService.resolve(finalSource, finalLocalId, { now: new Date() });
+            playables = result.items;
+          } catch {
+            // Fallback if contentQueryService can't resolve this source
+            playables = adapter.resolvePlayables ? await adapter.resolvePlayables(finalLocalId) : [];
+          }
         } else {
           // Fallback: use adapter directly
-          playables = await adapter.resolvePlayables(compoundId);
+          playables = adapter.resolvePlayables ? await adapter.resolvePlayables(finalLocalId) : [];
         }
 
         if (!playables.length) {
@@ -338,24 +306,20 @@ export function createPlayRouter(config) {
         const selectedItem = playables[0];
         const storagePath = typeof adapter.getStoragePath === 'function'
           ? await adapter.getStoragePath(selectedItem.id)
-          : resolvedSource;
+          : finalSource;
         const watchState = mediaProgressMemory ? await mediaProgressMemory.get(selectedItem.id, storagePath) : null;
 
-        return res.json(toPlayResponse(selectedItem, watchState));
+        return res.json(toPlayResponse(selectedItem, watchState, { adapter }));
       }
 
       // Return playable item
       const storagePath = typeof adapter.getStoragePath === 'function'
         ? await adapter.getStoragePath(item.id)
-        : resolvedSource;
+        : finalSource;
       const watchState = mediaProgressMemory ? await mediaProgressMemory.get(item.id, storagePath) : null;
 
-      res.json(toPlayResponse(item, watchState));
-    } catch (err) {
-      console.error('[play] Error:', err);
-      res.status(500).json({ error: err.message });
-    }
-  });
+      res.json(toPlayResponse(item, watchState, { adapter }));
+  }));
 
   return router;
 }

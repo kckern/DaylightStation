@@ -15,6 +15,7 @@
 import express from 'express';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { parseActionRouteId } from '../utils/actionRouteParser.mjs';
+import { resolveFormat } from '../utils/resolveFormat.mjs';
 
 /**
  * Derive capabilities from item properties.
@@ -78,6 +79,7 @@ function transformToInfoResponse(item, source, adapter) {
     source,
     type: item.metadata?.type || item.type || null,
     title: item.title,
+    format: resolveFormat(item, adapter),
     capabilities: deriveCapabilities(item, adapter),
     metadata: item.metadata || {}
   };
@@ -126,7 +128,7 @@ function transformToInfoResponse(item, source, adapter) {
  * @returns {express.Router} Express router instance
  */
 export function createInfoRouter(config) {
-  const { registry, contentQueryService, logger = console } = config;
+  const { registry, contentQueryService, contentIdResolver, logger = console } = config;
   const router = express.Router();
 
   /**
@@ -147,41 +149,33 @@ export function createInfoRouter(config) {
       path: rawPath
     });
 
-    // Get adapter from registry - try direct match first, then prefix resolution
-    let adapter = registry.get(resolvedSource);
-    let finalLocalId = localId;
-    let usePrefixResolution = false;
+    // Resolve content ID through unified resolver (handles all layers:
+    // exact source, prefix resolution, system aliases, household aliases)
+    const resolved = contentIdResolver.resolve(compoundId);
 
-    if (!adapter) {
-      // Try prefix-based resolution (e.g., media:sfx/intro, watchlist:comefollowme2025)
-      const resolved = registry.resolveFromPrefix(resolvedSource, localId);
-      if (resolved) {
-        adapter = resolved.adapter;
-        finalLocalId = resolved.localId;
-        usePrefixResolution = true;
-      }
-    }
-
-    if (!adapter) {
+    if (!resolved?.adapter) {
       return res.status(404).json({
         error: `Unknown source: ${resolvedSource || source}`
       });
     }
 
-    // Fetch item from adapter
-    // When using prefix resolution, pass localId directly (adapter handles ID format)
-    // Otherwise, use the compound ID from the parser
-    const item = await adapter.getItem(usePrefixResolution ? finalLocalId : compoundId);
+    const adapter = resolved.adapter;
+    const finalSource = resolved.source;
+    const finalLocalId = resolved.localId;
+
+    // Fetch item from adapter using resolved localId
+    const item = await adapter.getItem(finalLocalId);
     if (!item) {
       return res.status(404).json({
         error: 'Item not found',
-        source: resolvedSource,
-        localId
+        source: finalSource,
+        localId: finalLocalId
       });
     }
 
     // Transform response with capability evaluation.
-    const response = transformToInfoResponse(item, resolvedSource, adapter);
+    // Use resolved source (not parser source) to get correct format from adapter.
+    const response = transformToInfoResponse(item, finalSource, adapter);
 
     // For container items, prefer metadata childCount over expensive getList() call
     if (item.itemType === 'container') {
@@ -189,8 +183,8 @@ export function createInfoRouter(config) {
     }
 
     logger.info?.('info.get', {
-      source: resolvedSource,
-      localId,
+      source: finalSource,
+      localId: finalLocalId,
       capabilities: response.capabilities
     });
 

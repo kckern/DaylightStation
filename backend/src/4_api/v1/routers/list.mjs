@@ -62,23 +62,23 @@ function compactItem(obj) {
  * @returns {Object} Flattened list item
  */
 export function toListItem(item) {
-  // Compute default play/queue/list actions, but allow item.actions to override
-  // Emit both contentId (unified) and legacy keys (plex/media/playlist/watchlist) for backward compat
-  const isPlex = item.source === 'plex';
+  // Compute default play/queue/list actions using contentId only.
+  // Legacy source-specific keys (plex, media, etc.) are derived generically.
   const isContainer = item.itemType === 'container';
-  // Use localId from Item entity (extracted from compound ID at construction)
   const localId = item.localId || item.id;
-  // item.id is the compound ID (e.g., "plex:12345", "watchlist:FHE")
   const contentId = item.id;
+  // Derive source key from compound ID for backward compat (e.g., "plex" from "plex:12345")
+  const colonIdx = contentId.indexOf(':');
+  const sourceKey = colonIdx > 0 ? contentId.slice(0, colonIdx) : null;
+  const legacySourceField = sourceKey ? { [sourceKey]: localId } : {};
   const computedPlay = item.mediaUrl
-    ? { contentId, ...(isPlex ? { plex: localId } : { media: item.id }) }
+    ? { contentId, ...legacySourceField }
     : undefined;
   const computedQueue = isContainer
-    ? { contentId, ...(isPlex ? { plex: localId } : { playlist: item.id }) }
+    ? { contentId, ...legacySourceField }
     : undefined;
-  // List action for containers - allows navigation into the container
   const computedList = isContainer
-    ? { contentId, ...(isPlex ? { plex: localId } : { watchlist: item.id }) }
+    ? { contentId, ...legacySourceField }
     : undefined;
 
   const base = {
@@ -236,7 +236,7 @@ export function toListItem(item) {
  * @returns {express.Router}
  */
 export function createListRouter(config) {
-  const { registry, loadFile, configService, contentQueryService, menuMemoryPath } = config;
+  const { registry, loadFile, configService, contentQueryService, contentIdResolver, menuMemoryPath } = config;
   const router = express.Router();
 
   /**
@@ -297,20 +297,14 @@ export function createListRouter(config) {
         path: rawPath
       });
 
-      // Try exact source match first, then fall back to prefix resolution
-      let adapter = registry.get(source);
-      let resolvedLocalId = localId;
-      let resolvedViaPrefix = false;
+      // Resolve through ContentIdResolver (handles aliases, prefixes, exact matches)
+      const compoundIdForResolver = `${source}:${localId}`;
+      const resolved = contentIdResolver.resolve(compoundIdForResolver);
 
-      if (!adapter) {
-        // Try prefix resolution (e.g., "media" prefix -> FilesystemAdapter)
-        const resolved = registry.resolve(`${source}:${localId}`);
-        if (resolved) {
-          adapter = resolved.adapter;
-          resolvedLocalId = resolved.localId;
-          resolvedViaPrefix = true;
-        }
-      }
+      let adapter = resolved?.adapter;
+      let resolvedLocalId = resolved?.localId ?? localId;
+      let resolvedSource = resolved?.source ?? source;
+      let resolvedViaPrefix = resolvedSource !== source;
 
       if (!adapter) {
         return res.status(404).json({ error: `Unknown source: ${source}` });
@@ -416,8 +410,8 @@ export function createListRouter(config) {
       // This is intentional - extra fields don't break frontend, and provide richer data.
       // Critical parity requirements: plex, type, image, rating, title, label must match prod.
       const response = {
-        // Add plex field for plex source (matches prod format)
-        ...(source === 'plex' && { plex: localId }),
+        // Add source-specific field for backward compatibility (e.g., plex: localId)
+        ...(source && { [source]: localId }),
         // Legacy compat field - frontend uses this for menu logging
         assetId: localId,
         source,

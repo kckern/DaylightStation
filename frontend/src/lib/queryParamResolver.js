@@ -52,15 +52,4 @@ export async function resolvePlayParams(params) {
   return null;
 }
 
-/**
- * Get category from contentId
- * @param {string} contentId
- * @returns {string|null}
- */
-export function getCategoryFromId(contentId) {
-  if (!contentId) return null;
-  const match = contentId.match(/^(singalong|readalong):/);
-  return match ? match[1] : null;
-}
-
-export default { resolvePlayParams, getCategoryFromId };
+export default { resolvePlayParams };

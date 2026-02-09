@@ -39,6 +39,10 @@ export class ReadalongAdapter {
     return 'readalong';
   }
 
+  get contentFormat() {
+    return 'readalong';
+  }
+
   get prefixes() {
     return [{ prefix: 'readalong' }];
   }

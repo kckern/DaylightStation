@@ -21,20 +21,6 @@ import { DaylightMediaPath } from '../../../lib/api.mjs';
 import ImagePickerModal from './ImagePickerModal.jsx';
 import Player from '../../Player/Player.jsx';
 
-// Map adapter:localId (e.g. "hymn:113") to canonical contentId (e.g. "singalong:hymn/113")
-// SinglePlayer's routing requires the category prefix (singalong:/readalong:) for content scrollers
-const ADAPTER_TO_CATEGORY = { hymn: 'singalong', primary: 'singalong', scripture: 'readalong' };
-function toCanonicalContentId(input) {
-  if (!input) return input;
-  const m = input.match(/^([^:]+):(.+)$/);
-  if (!m) return input;
-  const adapter = m[1].trim();
-  const localId = m[2].trim();
-  const category = ADAPTER_TO_CATEGORY[adapter];
-  if (category) return `${category}:${adapter}/${localId}`;
-  return `${adapter}:${localId}`;
-}
-
 const ACTION_OPTIONS = [
   { value: 'Play', label: 'Play' },
   { value: 'Queue', label: 'Queue' },
@@ -2187,7 +2173,7 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
             <Box style={{ minHeight: 200, aspectRatio: '16 / 9', position: 'relative', background: '#000' }}>
               <Player
                 play={{
-                  contentId: toCanonicalContentId(item.input),
+                  contentId: item.input?.replace(/^(\w+):\s+/, '$1:').trim(),
                   volume: item.volume,
                   playbackRate: item.playbackRate,
                 }}

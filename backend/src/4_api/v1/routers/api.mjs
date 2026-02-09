@@ -91,6 +91,7 @@ export function createApiRouter(config) {
     '/canvas': 'canvas',
     '/admin': 'admin',
     '/stream': 'stream',
+    '/queries': 'queries',
     '/test': 'test'  // Test infrastructure (dev/test only)
   };
 

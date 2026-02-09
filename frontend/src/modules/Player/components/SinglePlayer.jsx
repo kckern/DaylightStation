@@ -1,16 +1,29 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import PropTypes from 'prop-types';
-import { Scriptures, Hymns, Talk, Poetry } from '../../ContentScroller/ContentScroller.jsx';
 import { SingalongScroller } from '../../ContentScroller/SingalongScroller.jsx';
 import { ReadalongScroller } from '../../ContentScroller/ReadalongScroller.jsx';
 import AppContainer from '../../AppContainer/AppContainer.jsx';
-import { getCategoryFromId } from '../../../lib/queryParamResolver.js';
+import PlayableAppShell from './PlayableAppShell.jsx';
+import PagedReader from './PagedReader.jsx';
+import FlowReader from './FlowReader.jsx';
 import { fetchMediaInfo } from '../lib/api.js';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { AudioPlayer } from './AudioPlayer.jsx';
 import { VideoPlayer } from './VideoPlayer.jsx';
 import { PlayerOverlayLoading } from './PlayerOverlayLoading.jsx';
 import { useShaderDiagnostics } from '../hooks/useShaderDiagnostics.js';
+
+/** Formats that render via the video/audio player (not scrollers or apps). */
+const MEDIA_PLAYBACK_FORMATS = ['video', 'dash_video', 'audio'];
+
+/** Format → component registry: declarative mapping from API format to renderer. */
+const CONTENT_FORMAT_COMPONENTS = {
+  singalong: SingalongScroller,
+  readalong: ReadalongScroller,
+  app: PlayableAppShell,
+  readable_paged: PagedReader,
+  readable_flow: FlowReader,
+};
 
 /**
  * Single player component that handles different media types
@@ -35,13 +48,6 @@ export function SinglePlayer(props = {}) {
     contentId: contentIdProp,
     plex,
     media,
-    singalong,
-    readalong,
-    hymn,
-    primary,
-    scripture,
-    talk,
-    poem,
     rate,
     advance,
     open,
@@ -64,8 +70,12 @@ export function SinglePlayer(props = {}) {
     upscaleEffects
   } = play || {};
 
-  // Compute effective contentId from whichever identifier is available
-  const effectiveContentId = contentIdProp || (plex ? `plex:${plex}` : null) || media || null;
+  // Compute effective contentId. Prefers the canonical contentId prop;
+  // falls back to legacy plex/media props for backward compatibility.
+  const effectiveContentId = contentIdProp
+    || (plex ? `plex:${plex}` : null)
+    || media
+    || null;
 
   // Prepare common props for content scroller components
   const contentProps = {
@@ -85,52 +95,26 @@ export function SinglePlayer(props = {}) {
     onStartupSignal
   };
 
-  // Shader diagnostics for loading state - must be called before early returns
+  // Shader diagnostics for loading state
   const loadingShaderRef = useRef(null);
   const playerContainerRef = useRef(null);
-
-  // Extract contentId for category-based routing
-  // Also convert legacy props to canonical contentId format
-  // Note: talk and poem use LocalContentAdapter (not ReadalongAdapter) and use legacy fallback
-  const { contentId: rawContentId } = play || {};
-  const contentId = rawContentId
-    || (singalong ? `singalong:${singalong}` : null)
-    || (readalong ? `readalong:${readalong}` : null)
-    || (hymn ? `singalong:hymn/${hymn}` : null)
-    || (primary ? `singalong:primary/${primary}` : null)
-    || (scripture ? `readalong:scripture/${scripture}` : null);
-  const category = contentId ? getCategoryFromId(contentId) : null;
-
-  // Content scroller types don't use the shader, so disable for them
-  const isContentScrollerType = !!(category === 'singalong' || category === 'readalong');
-  useShaderDiagnostics({
-    shaderRef: loadingShaderRef,
-    containerRef: playerContainerRef,
-    label: 'loading-shader',
-    shaderState: 'on',
-    enabled: !isContentScrollerType && !suppressLocalOverlay
-  });
-
-  // Category-based routing (new canonical contentId format)
-  if (contentId && category === 'singalong') {
-    return <SingalongScroller contentId={contentId} {...contentProps} {...contentScrollerBridge} />;
-  }
-  if (contentId && category === 'readalong') {
-    return <ReadalongScroller contentId={contentId} {...contentProps} {...contentScrollerBridge} />;
-  }
-
-  // Legacy fallback (keep for backwards compatibility during migration)
-  if (!!scripture) return <Scriptures {...contentProps} {...contentScrollerBridge} />;
-  if (!!hymn) return <Hymns {...contentProps} {...contentScrollerBridge} />;
-  if (!!primary) return <Hymns {...contentProps} {...contentScrollerBridge} hymn={primary} subfolder="primary" />;
-  if (!!talk) return <Talk {...contentProps} {...contentScrollerBridge} />;
-  if (!!poem) return <Poetry {...contentProps} {...contentScrollerBridge} />;
 
   const [mediaInfo, setMediaInfo] = useState({});
   const [isReady, setIsReady] = useState(false);
   const [goToApp, setGoToApp] = useState(false);
   const watchedDurationRef = useRef(0);
   const playbackTimerRef = useRef({ lastTickTs: null });
+
+  // Shader is only used for media playback formats (video/audio).
+  // Non-media formats (scrollers, apps, etc.) handle their own chrome.
+  const isMediaPlayback = isReady && MEDIA_PLAYBACK_FORMATS.includes(mediaInfo?.format);
+  useShaderDiagnostics({
+    shaderRef: loadingShaderRef,
+    containerRef: playerContainerRef,
+    label: 'loading-shader',
+    shaderState: 'on',
+    enabled: (!isReady || isMediaPlayback) && !suppressLocalOverlay
+  });
 
   const setWatchedDurationValue = useCallback((value = 0) => {
     const numeric = Number(value);
@@ -326,7 +310,7 @@ export function SinglePlayer(props = {}) {
   }, [fetchVideoInfoCallback]);
 
   useEffect(() => {
-    if (!isReady || !mediaInfo?.mediaType) {
+    if (!isReady || (!mediaInfo?.mediaType && !mediaInfo?.format)) {
       return;
     }
     onResolvedMeta?.(mediaInfo);
@@ -371,6 +355,57 @@ export function SinglePlayer(props = {}) {
     };
   }, [resilienceBridge, onRegisterResilienceBridge]);
 
+  // Format-based dispatch: the API's `format` field drives which component renders.
+  function renderByFormat() {
+    if (!isReady) return null;
+
+    const format = mediaInfo?.format;
+
+    // Media playback formats → video/audio player
+    if (MEDIA_PLAYBACK_FORMATS.includes(format)) {
+      const PlayerComponent = format === 'audio' ? AudioPlayer : VideoPlayer;
+      return (
+        <PlayerComponent
+          media={mediaInfo}
+          advance={advance}
+          clear={clear}
+          shader={shader}
+          volume={volume}
+          playbackRate={playbackRate}
+          setShader={setShader}
+          cycleThroughClasses={cycleThroughClasses}
+          classes={classes}
+          playbackKeys={playbackKeys}
+          queuePosition={queuePosition}
+          fetchVideoInfo={fetchVideoInfoCallback}
+          ignoreKeys={ignoreKeys}
+          onProgress={handleProgress}
+          onMediaRef={onMediaRef}
+          keyboardOverrides={play?.keyboardOverrides}
+          onController={play?.onController}
+          resilienceBridge={resilienceBridge}
+          maxVideoBitrate={mediaInfo?.maxVideoBitrate ?? play?.maxVideoBitrate ?? null}
+          maxResolution={mediaInfo?.maxResolution ?? play?.maxResolution ?? null}
+          watchedDurationProvider={getWatchedDuration}
+          upscaleEffects={upscaleEffects}
+        />
+      );
+    }
+
+    // Content format → registered component (scrollers, readers, etc.)
+    const ContentComponent = CONTENT_FORMAT_COMPONENTS[format];
+    if (ContentComponent) {
+      return <ContentComponent contentId={mediaInfo.id || effectiveContentId} {...contentProps} {...contentScrollerBridge} />;
+    }
+
+    // Unknown format: render debug info
+    return (
+      <pre>
+        {JSON.stringify(mediaInfo, null, 2)}
+      </pre>
+    );
+  }
+
   const playerBody = (
     <>
       {!isReady && !suppressLocalOverlay && (
@@ -389,44 +424,7 @@ export function SinglePlayer(props = {}) {
           />
         </div>
       )}
-      {isReady && ['dash_video', 'video', 'audio'].includes(mediaInfo.mediaType) && (
-        React.createElement(
-          {
-            audio: AudioPlayer,
-            video: VideoPlayer,
-            dash_video: VideoPlayer
-          }[mediaInfo.mediaType],
-          {
-            media: mediaInfo,
-            advance,
-            clear,
-            shader,
-            volume,
-            playbackRate,
-            setShader,
-            cycleThroughClasses,
-            classes,
-            playbackKeys,
-            queuePosition,
-            fetchVideoInfo: fetchVideoInfoCallback,
-            ignoreKeys,
-            onProgress: handleProgress,
-            onMediaRef,
-            keyboardOverrides: play?.keyboardOverrides,
-            onController: play?.onController,
-            resilienceBridge,
-            maxVideoBitrate: mediaInfo?.maxVideoBitrate ?? play?.maxVideoBitrate ?? null,
-            maxResolution: mediaInfo?.maxResolution ?? play?.maxResolution ?? null,
-            watchedDurationProvider: getWatchedDuration,
-            upscaleEffects
-          }
-        )
-      )}
-      {isReady && !['dash_video', 'video', 'audio'].includes(mediaInfo.mediaType) && (
-        <pre>
-          {JSON.stringify(mediaInfo, null, 2)}
-        </pre>
-      )}
+      {renderByFormat()}
     </>
   );
 
@@ -445,11 +443,6 @@ SinglePlayer.propTypes = {
   contentId: PropTypes.string,
   plex: PropTypes.string,
   media: PropTypes.string,
-  hymn: PropTypes.any,
-  primary: PropTypes.any,
-  scripture: PropTypes.any,
-  talk: PropTypes.any,
-  poem: PropTypes.any,
   rate: PropTypes.number,
   advance: PropTypes.func,
   open: PropTypes.string,

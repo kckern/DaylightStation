@@ -3,7 +3,6 @@ import path from 'path';
 import { ListableItem } from '#domains/content/capabilities/Listable.mjs';
 import { Item } from '#domains/content/entities/Item.mjs';
 import { ContentCategory } from '#domains/content/value-objects/ContentCategory.mjs';
-import { ItemSelectionService } from '#domains/content/index.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import {
   dirExists,
@@ -11,6 +10,7 @@ import {
   fileExists,
   loadYaml
 } from '#system/utils/FileIO.mjs';
+import { normalizeListItem, extractContentId } from './listConfigNormalizer.mjs';
 
 // Threshold for considering an item "watched" (90%)
 const WATCHED_THRESHOLD = 90;
@@ -128,8 +128,7 @@ export class ListAdapter {
     return [
       { prefix: 'menu', idTransform: (id) => `menu:${id}` },
       { prefix: 'program', idTransform: (id) => `program:${id}` },
-      { prefix: 'watchlist', idTransform: (id) => `watchlist:${id}` },
-      { prefix: 'query', idTransform: (id) => `query:${id}` }
+      { prefix: 'watchlist', idTransform: (id) => `watchlist:${id}` }
     ];
   }
 
@@ -178,7 +177,6 @@ export class ListAdapter {
       menu: 'menus',
       program: 'programs',
       watchlist: 'watchlists',
-      query: 'queries'
     };
     return map[prefix] || null;
   }
@@ -189,7 +187,7 @@ export class ListAdapter {
    * @returns {{prefix: string, name: string}|null}
    */
   _parseId(id) {
-    const match = id.match(/^(menu|program|watchlist|query|list):(.+)$/);
+    const match = id.match(/^(menu|program|watchlist|list):(.+)$/);
     if (!match) return null;
     const prefix = match[1] === 'list' ? 'menu' : match[1];
     return { prefix, name: match[2] };
@@ -480,7 +478,8 @@ export class ListAdapter {
     const listData = this._loadList(listType, parsed.name);
     if (!listData) return null;
 
-    const items = Array.isArray(listData) ? listData : (listData.items || []);
+    const rawItems = Array.isArray(listData) ? listData : (listData.items || []);
+    const items = rawItems.map(normalizeListItem);
     const children = await this._buildListItems(items, parsed.prefix, parsed.name);
     const title = listData.title || listData.label || formatListTitle(parsed.name);
 
@@ -701,13 +700,13 @@ export class ListAdapter {
     for (const item of items) {
       if (item.active === false) continue;
 
-      // Parse input field to determine source
-      const input = item.input || '';
+      // Extract content ID from normalized item (play/list/queue/display action keys or legacy input)
+      const contentId = extractContentId(item);
       let source = 'list';
-      let localId = input;
+      let localId = contentId;
 
       // Handle various input formats (trim whitespace after colon for YAML compat)
-      const inputMatch = input.match(/^(\w+):\s*(.+?)(?:;.*)?$/);
+      const inputMatch = contentId.match(/^(\w+):\s*(.+?)(?:;.*)?$/);
       if (inputMatch) {
         source = inputMatch[1];
         localId = inputMatch[2].trim();
@@ -845,10 +844,10 @@ export class ListAdapter {
       };
 
       results.push(new Item({
-        id: compoundId || `${listPrefix}:${item.label}`,
+        id: compoundId || `${listPrefix}:${item.title || item.label}`,
         source,
         localId,
-        title: item.label || localId,
+        title: item.title || item.label || localId,
         type: isWatchlist ? (actionType === 'queue' ? 'queue' : 'list') : undefined,
         thumbnail: item.image,
         metadata,
@@ -902,11 +901,6 @@ export class ListAdapter {
 
     const parsed = this._parseId(id);
     if (!parsed) return [];
-
-    // Handle query: prefix specially
-    if (parsed.prefix === 'query') {
-      return this._resolveQuery(parsed.name);
-    }
 
     const listType = this._getListType(parsed.prefix);
     if (!listType) return [];
@@ -963,7 +957,8 @@ export class ListAdapter {
     const listData = this._loadList(listType, parsed.name);
     if (!listData) return [];
 
-    const items = Array.isArray(listData) ? listData : (listData.items || []);
+    const rawItems = Array.isArray(listData) ? listData : (listData.items || []);
+    const items = rawItems.map(normalizeListItem);
     const playables = [];
 
     for (const item of items) {
@@ -978,7 +973,8 @@ export class ListAdapter {
         }
       }
 
-      const input = item.input || '';
+      // Extract content ID from normalized item (play/list/queue/display action keys or legacy input)
+      const input = extractContentId(item);
       if (!input) continue;
 
       // Resolve through registry
@@ -1001,105 +997,8 @@ export class ListAdapter {
    * @returns {Promise<Array>}
    * @private
    */
-  async _resolveQuery(queryName) {
-    const queryData = this._loadList('queries', queryName);
-    if (!queryData) return [];
-
-    const queryType = queryData.type;
-
-    if (queryType === 'freshvideo') {
-      return this._resolveFreshVideoQuery(queryData);
-    }
-
-    // Unknown query type
-    console.warn(`[ListAdapter] Unknown query type: ${queryType}`);
-    return [];
-  }
-
-  /**
-   * Resolve a freshvideo query to a single playable item.
-   * Lists videos from each source, adds sourcePriority and date,
-   * then applies freshvideo strategy (filter watched, sort by date desc + priority, pick first).
-   * @param {Object} queryData - Query definition { type: 'freshvideo', sources: [...] }
-   * @returns {Promise<Array>}
-   * @private
-   */
-  async _resolveFreshVideoQuery(queryData) {
-    const sources = queryData.sources || [];
-    if (sources.length === 0) return [];
-
-    const allItems = [];
-    const mediaAdapter = this.registry?.get('files');
-
-    if (!mediaAdapter) {
-      console.warn('[ListAdapter] FileAdapter not available for freshvideo query');
-      return [];
-    }
-
-    // Collect videos from each source with priority
-    for (let i = 0; i < sources.length; i++) {
-      const sourcePath = sources[i];
-      const videoPath = `video/${sourcePath}`;
-
-      try {
-        // Get list of videos from the source directory
-        const items = await mediaAdapter.getList(videoPath);
-
-        for (const item of items) {
-          if (item.itemType !== 'leaf') continue;
-
-          // Extract date from filename (YYYYMMDD.mp4 -> YYYYMMDD)
-          const filename = item.localId?.split('/').pop() || '';
-          const dateMatch = filename.match(/^(\d{8})/);
-          const date = dateMatch ? dateMatch[1] : '00000000';
-
-          // Get full item with media URL
-          const fullItem = await mediaAdapter.getItem(item.localId);
-          if (!fullItem) continue;
-
-          allItems.push({
-            ...fullItem,
-            date,
-            sourcePriority: i,
-            // Add metadata for display
-            metadata: {
-              ...fullItem.metadata,
-              querySource: sourcePath,
-              date
-            }
-          });
-        }
-      } catch (err) {
-        console.warn(`[ListAdapter] Failed to list freshvideo source ${sourcePath}:`, err.message);
-      }
-    }
-
-    if (allItems.length === 0) return [];
-
-    // Enrich with watch state if available
-    let enrichedItems = allItems;
-    if (this.mediaProgressMemory) {
-      enrichedItems = await Promise.all(allItems.map(async (item) => {
-        const mediaKey = item.localId || item.id?.replace(/^(files|media):/, '');
-        const state = await this.mediaProgressMemory.get(mediaKey, 'files');
-        const percent = state?.percent || 0;
-        return {
-          ...item,
-          percent,
-          watched: percent >= 90
-        };
-      }));
-    }
-
-    // Apply freshvideo strategy using ItemSelectionService
-    const context = {
-      containerType: 'freshvideo',
-      now: new Date()
-    };
-
-    const selected = ItemSelectionService.select(enrichedItems, context);
-    return selected;
-  }
+  // Note: Query resolution (query:dailynews etc.) is now handled by QueryDriver.
+  // See backend/src/1_adapters/content/query/QueryDriver.mjs
 
   /**
    * Search list names and item labels

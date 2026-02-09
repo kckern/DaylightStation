@@ -19,9 +19,20 @@ describe('GET /display/:source/*', () => {
     mockRegistry.get.mockReturnValue(mockAdapter);
   });
 
+  const mockContentIdResolver = {
+    resolve: (compoundId) => {
+      const colonIdx = compoundId.indexOf(':');
+      const source = colonIdx >= 0 ? compoundId.slice(0, colonIdx) : compoundId;
+      const localId = colonIdx >= 0 ? compoundId.slice(colonIdx + 1) : '';
+      const adapter = mockRegistry.get(source);
+      if (!adapter) return null;
+      return { source, localId, adapter };
+    }
+  };
+
   function createApp() {
     const app = express();
-    app.use('/display', createDisplayRouter({ registry: mockRegistry }));
+    app.use('/display', createDisplayRouter({ registry: mockRegistry, contentIdResolver: mockContentIdResolver }));
     return app;
   }
 
