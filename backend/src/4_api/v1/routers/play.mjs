@@ -54,6 +54,13 @@ export function createPlayRouter(config) {
       }
     }
 
+    // Pass through content/style/subtitle for readalong/singalong scrollers
+    // Content may be on item directly or nested in metadata (adapter-dependent)
+    const contentData = item.content || item.metadata?.content;
+    if (contentData) response.content = contentData;
+    if (item.style || item.metadata?.style) response.style = item.style || item.metadata.style;
+    if (item.subtitle || item.metadata?.speaker) response.subtitle = item.subtitle || item.metadata.speaker;
+
     // Legacy field mapping for Plex items
     if (item.metadata) {
       if (item.metadata.grandparentTitle) response.grandparentTitle = item.metadata.grandparentTitle;
@@ -319,6 +326,59 @@ export function createPlayRouter(config) {
       const watchState = mediaProgressMemory ? await mediaProgressMemory.get(item.id, storagePath) : null;
 
       res.json(toPlayResponse(item, watchState, { adapter }));
+  }));
+
+  // GET /:source - handles compound IDs like /play/plex:12345 and heuristics like /play/12345
+  // Must come after /:source/* so that slashed paths match first
+  router.get('/:source', asyncHandler(async (req, res) => {
+    const { source } = req.params;
+    const { compoundId, modifiers } = parseActionRouteId({ source, path: '' });
+
+    const resolved = contentIdResolver.resolve(compoundId);
+    if (!resolved?.adapter) {
+      return res.status(404).json({ error: `Unknown source: ${source}` });
+    }
+
+    const adapter = resolved.adapter;
+    const finalSource = resolved.source;
+    const finalLocalId = resolved.localId;
+
+    const item = await adapter.getItem(finalLocalId);
+    if (!item) {
+      return res.status(404).json({ error: 'Item not found', source: finalSource, localId: finalLocalId });
+    }
+
+    // Check if it's a container (needs resolution to playable)
+    if (item.isContainer?.() || item.itemType === 'container') {
+      let playables;
+      if (contentQueryService) {
+        try {
+          const result = await contentQueryService.resolve(finalSource, finalLocalId, { now: new Date() });
+          playables = result.items;
+        } catch {
+          playables = adapter.resolvePlayables ? await adapter.resolvePlayables(finalLocalId) : [];
+        }
+      } else {
+        playables = adapter.resolvePlayables ? await adapter.resolvePlayables(finalLocalId) : [];
+      }
+
+      if (!playables.length) {
+        return res.status(404).json({ error: 'No playable items in container' });
+      }
+
+      const selectedItem = playables[0];
+      const storagePath = typeof adapter.getStoragePath === 'function'
+        ? await adapter.getStoragePath(selectedItem.id)
+        : finalSource;
+      const watchState = mediaProgressMemory ? await mediaProgressMemory.get(selectedItem.id, storagePath) : null;
+      return res.json(toPlayResponse(selectedItem, watchState, { adapter }));
+    }
+
+    const storagePath = typeof adapter.getStoragePath === 'function'
+      ? await adapter.getStoragePath(item.id)
+      : finalSource;
+    const watchState = mediaProgressMemory ? await mediaProgressMemory.get(item.id, storagePath) : null;
+    res.json(toPlayResponse(item, watchState, { adapter }));
   }));
 
   return router;

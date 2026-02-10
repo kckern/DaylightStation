@@ -611,7 +611,7 @@ export function createContentRegistry(config, deps = {}) {
     { category: appRegistryManifest.capability, provider: appRegistryManifest.provider }
   );
 
-  return registry;
+  return { registry, savedQueryService };
 }
 
 /**
@@ -654,7 +654,7 @@ export function createMediaProgressMemory(config) {
  * @returns {Object} Router configuration
  */
 export function createApiRouters(config) {
-  const { registry, mediaProgressMemory, loadFile, saveFile, cacheBasePath, dataPath, mediaBasePath, proxyService, composePresentationUseCase, configService, legacyPrefixMap = {}, logger = console } = config;
+  const { registry, mediaProgressMemory, loadFile, saveFile, cacheBasePath, dataPath, mediaBasePath, proxyService, composePresentationUseCase, configService, legacyPrefixMap = {}, savedQueryService = null, logger = console } = config;
 
   // Register legacy prefix aliases (e.g., hymn → singalong:hymn) from config
   // This enables the content API to resolve legacy prefixes via registry.resolveFromPrefix()

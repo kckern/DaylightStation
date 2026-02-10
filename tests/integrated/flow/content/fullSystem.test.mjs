@@ -17,10 +17,10 @@ describe('Content Domain Integration', () => {
   let registry;
 
   beforeAll(async () => {
-    registry = createContentRegistry({
+    ({ registry } = createContentRegistry({
       mediaBasePath: path.join(fixturesPath, 'media'),
       dataPath: path.join(fixturesPath, 'local-content')
-    });
+    }));
 
     const watchStore = createWatchStore({
       watchStatePath: path.join(fixturesPath, 'watch-state')

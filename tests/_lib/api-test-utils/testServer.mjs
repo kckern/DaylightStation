@@ -120,7 +120,7 @@ export async function createTestServer(options = {}) {
     };
   }
 
-  const registry = createContentRegistry(registryConfig);
+  const { registry } = createContentRegistry(registryConfig);
 
   // Create watch store
   const watchStore = createWatchStore({ watchStatePath });
@@ -167,7 +167,7 @@ export async function createTestServer(options = {}) {
 export async function createFixtureServer() {
   const fixturesPath = path.resolve(__dirname, '../../../_fixtures');
 
-  const registry = createContentRegistry({
+  const { registry } = createContentRegistry({
     mediaBasePath: path.join(fixturesPath, 'media'),
     dataPath: path.join(fixturesPath, 'local-content')
   });
