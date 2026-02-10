@@ -119,7 +119,7 @@ export class QueryAdapter {
         const items = await this.#fileAdapter.getList(videoPath);
 
         for (const item of items) {
-          if (item.itemType !== 'leaf') continue;
+          if (item.itemType === 'container') continue;
 
           // Extract date from filename (YYYYMMDD.mp4 -> YYYYMMDD)
           const filename = item.localId?.split('/').pop() || '';

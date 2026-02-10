@@ -172,6 +172,71 @@ describe('QueryAdapter', () => {
       // Same date, CNN has higher priority (index 0)
       expect(playables[0].localId).toBe('video/news/cnn/20260208.mp4');
     });
+
+    it('handles items without itemType (real FileAdapter.getList returns PlayableItem objects)', async () => {
+      // FileAdapter.getList() returns PlayableItem objects for files, which do NOT
+      // have itemType set (only ListableItem has itemType). The adapter must not
+      // require itemType:'leaf' — it should include any item that is NOT a container.
+      const videos = [
+        { localId: 'video/news/cnn/20260208.mp4', title: 'CNN Feb 8', id: 'files:video/news/cnn/20260208.mp4', source: 'files', mediaUrl: '/api/v1/proxy/media/stream/video%2Fnews%2Fcnn%2F20260208.mp4' },
+        { localId: 'video/news/cnn/20260207.mp4', title: 'CNN Feb 7', id: 'files:video/news/cnn/20260207.mp4', source: 'files', mediaUrl: '/api/v1/proxy/media/stream/video%2Fnews%2Fcnn%2F20260207.mp4' },
+      ];
+
+      const adapter = new QueryAdapter({
+        savedQueryService: {
+          getQuery: () => ({
+            title: 'Daily News',
+            source: 'freshvideo',
+            filters: { sources: ['news/cnn'] },
+          }),
+        },
+        fileAdapter: {
+          source: 'files',
+          getList: vi.fn(async () => videos),
+          getItem: vi.fn(async (id) => {
+            const v = videos.find(v => v.localId === id);
+            return v ? { ...v } : null;
+          }),
+        },
+        mediaProgressMemory: createMockProgress([]),
+      });
+
+      const playables = await adapter.resolvePlayables('query:dailynews');
+      expect(playables.length).toBeGreaterThan(0);
+      expect(playables[0].localId).toBe('video/news/cnn/20260208.mp4');
+    });
+
+    it('skips container items from getList (directories)', async () => {
+      // FileAdapter.getList() returns ListableItem objects for directories
+      // with itemType:'container'. These should be skipped.
+      const items = [
+        { localId: 'video/news/cnn/subfolder', title: 'Subfolder', itemType: 'container' },
+        { localId: 'video/news/cnn/20260208.mp4', title: 'CNN Feb 8', id: 'files:video/news/cnn/20260208.mp4', source: 'files', mediaUrl: '/api/v1/proxy/media/stream/video%2Fnews%2Fcnn%2F20260208.mp4' },
+      ];
+
+      const adapter = new QueryAdapter({
+        savedQueryService: {
+          getQuery: () => ({
+            title: 'Daily News',
+            source: 'freshvideo',
+            filters: { sources: ['news/cnn'] },
+          }),
+        },
+        fileAdapter: {
+          source: 'files',
+          getList: vi.fn(async () => items),
+          getItem: vi.fn(async (id) => {
+            const v = items.find(v => v.localId === id);
+            return v ? { ...v } : null;
+          }),
+        },
+        mediaProgressMemory: createMockProgress([]),
+      });
+
+      const playables = await adapter.resolvePlayables('query:dailynews');
+      expect(playables.length).toBe(1);
+      expect(playables[0].localId).toBe('video/news/cnn/20260208.mp4');
+    });
   });
 
   describe('getList', () => {
