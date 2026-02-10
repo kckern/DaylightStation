@@ -1,5 +1,7 @@
 // backend/src/1_adapters/content/query/QueryAdapter.mjs
 
+import path from 'path';
+import { fileExists } from '#system/utils/FileIO.mjs';
 import { ItemSelectionService } from '#domains/content/index.mjs';
 
 /** Percentage threshold above which a video is considered "watched". */
@@ -168,7 +170,19 @@ export class QueryAdapter {
       now: new Date(),
     };
 
-    return ItemSelectionService.select(enrichedItems, context);
+    const selected = ItemSelectionService.select(enrichedItems, context);
+
+    // Use parent folder's show.jpg as thumbnail (channel branding > video frame)
+    for (const item of selected) {
+      const querySource = item.metadata?.querySource;
+      if (!querySource || !this.#fileAdapter) continue;
+      const folderPath = path.join(this.#fileAdapter.mediaBasePath, 'video', querySource);
+      if (fileExists(path.join(folderPath, 'show.jpg'))) {
+        item.thumbnail = `/api/v1/proxy/media/stream/${encodeURIComponent(`video/${querySource}/show.jpg`)}`;
+      }
+    }
+
+    return selected;
   }
 
   /**
