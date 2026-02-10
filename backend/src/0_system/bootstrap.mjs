@@ -26,6 +26,7 @@ import { ReadalongAdapter } from '#adapters/content/readalong/ReadalongAdapter.m
 import { AppRegistryAdapter } from '#adapters/content/app-registry/AppRegistryAdapter.mjs';
 import { KomgaAdapter } from '#adapters/content/readable/komga/KomgaAdapter.mjs';
 import { QueryAdapter } from '#adapters/content/query/QueryAdapter.mjs';
+import { FreshVideoAdapter } from '#adapters/content/freshvideo/FreshVideoAdapter.mjs';
 import { SavedQueryService } from '#apps/content/SavedQueryService.mjs';
 import { FilesystemCanvasAdapter, ImmichCanvasAdapter } from '#adapters/content/canvas/index.mjs';
 import { ImmichClient } from '#adapters/content/gallery/immich/ImmichClient.mjs';
@@ -41,6 +42,7 @@ import readalongManifest from '#adapters/content/readalong/manifest.mjs';
 import appRegistryManifest from '#adapters/content/app-registry/manifest.mjs';
 import komgaManifest from '#adapters/content/readable/komga/manifest.mjs';
 import queryManifest from '#adapters/content/query/manifest.mjs';
+import freshvideoManifest from '#adapters/content/freshvideo/manifest.mjs';
 import { createContentRouter } from '#api/v1/routers/content.mjs';
 import { ContentQueryService } from '#apps/content/ContentQueryService.mjs';
 import { ContentQueryAliasResolver } from '#apps/content/services/ContentQueryAliasResolver.mjs';
@@ -50,6 +52,7 @@ import { createLocalContentRouter } from '#api/v1/routers/localContent.mjs';
 import { createPlayRouter } from '#api/v1/routers/play.mjs';
 import { createListRouter } from '#api/v1/routers/list.mjs';
 import { createQueueRouter } from '#api/v1/routers/queue.mjs';
+import { QueueService } from '#domains/content/services/QueueService.mjs';
 import { createSiblingsRouter } from '#api/v1/routers/siblings.mjs';
 import { SiblingsService } from '#apps/content/services/SiblingsService.mjs';
 import { createStreamRouter } from '#api/v1/routers/stream.mjs';
@@ -511,6 +514,18 @@ export function createContentRegistry(config, deps = {}) {
     );
   }
 
+  // Register FreshVideoAdapter for freshvideo: prefix (teded, kidnuz, etc.)
+  // Uses FileAdapter for file listing and mediaProgressMemory for watch state
+  if (config.mediaBasePath) {
+    const fileAdapter = registry.get('files');
+    if (fileAdapter) {
+      registry.register(
+        new FreshVideoAdapter({ fileAdapter, mediaProgressMemory }),
+        { category: freshvideoManifest.capability, provider: freshvideoManifest.provider }
+      );
+    }
+  }
+
   // Register Immich adapter if configured
   if (config.immich?.host && config.immich?.apiKey && httpClient) {
     registry.register(
@@ -663,6 +678,18 @@ export function createApiRouters(config) {
     logger.debug?.('bootstrap.legacyPrefixes.registered', { prefixes: Object.keys(legacyPrefixMap) });
   }
 
+  // Scan list directories for bare name resolution (Layer 4a).
+  // Priority: menu > program > watchlist (later iterations overwrite).
+  const bareNameMap = {};
+  const listAdapterForScan = registry.get('list');
+  if (listAdapterForScan?._getAllListNames) {
+    for (const [prefix, listType] of [['watchlist', 'watchlists'], ['program', 'programs'], ['menu', 'menus']]) {
+      for (const name of listAdapterForScan._getAllListNames(listType)) {
+        bareNameMap[name] = prefix;
+      }
+    }
+  }
+
   // Create ContentIdResolver for unified content ID resolution.
   // Legacy prefixes (hymn, scripture, etc.) are already registered in the registry
   // via registerLegacyPrefixes() above — ContentIdResolver Layer 2 resolves them.
@@ -679,6 +706,7 @@ export function createApiRouters(config) {
       list: 'menu:',
     },
     householdAliases: {},
+    bareNameMap,
   });
 
   // Create ContentQueryAliasResolver for semantic query prefixes (music:, photos:, etc.)
@@ -701,7 +729,7 @@ export function createApiRouters(config) {
       play: createPlayRouter({ registry, mediaProgressMemory, contentQueryService, contentIdResolver, logger }),
       list: createListRouter({ registry, loadFile, configService, contentQueryService, contentIdResolver, menuMemoryPath: configService.getHouseholdPath('history/menu_memory') }),
       siblings: createSiblingsRouter({ siblingsService, contentIdResolver, logger }),
-      queue: createQueueRouter({ registry, contentIdResolver, logger }),
+      queue: createQueueRouter({ contentIdResolver, queueService: new QueueService({ mediaProgressMemory }), logger }),
       local: createLocalRouter({ localMediaAdapter, mediaBasePath, cacheBasePath: cacheBasePath || path.join(dataPath, 'system/cache'), logger }),
       stream: createStreamRouter({
         singalongMediaPath: path.join(mediaBasePath, 'audio', 'singalong'),
