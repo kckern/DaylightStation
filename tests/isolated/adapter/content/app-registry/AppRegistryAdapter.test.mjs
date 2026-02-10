@@ -6,6 +6,7 @@ const MOCK_APPS = {
   gratitude: { label: 'Gratitude & Hope' },
   'family-selector': { label: 'Family Selector', param: { name: 'winner', options: 'household' } },
   glympse: { label: 'Glympse', param: { name: 'id' } },
+  wrapup: { label: 'Wrap Up' },
 };
 
 describe('AppRegistryAdapter', () => {
@@ -67,7 +68,7 @@ describe('AppRegistryAdapter', () => {
   describe('getList', () => {
     it('returns all apps when called with empty ID', async () => {
       const items = await adapter.getList('');
-      expect(items.length).toBe(4);
+      expect(items.length).toBe(5);
       expect(items[0].title).toBeTruthy();
     });
 
@@ -81,16 +82,39 @@ describe('AppRegistryAdapter', () => {
   });
 
   describe('resolvePlayables', () => {
-    it('returns empty array (apps are not playable media)', async () => {
-      const result = await adapter.resolvePlayables('webcam');
-      expect(result).toEqual([]);
+    it('returns a single app item with format "app"', async () => {
+      const result = await adapter.resolvePlayables('app:wrapup');
+
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatchObject({
+        id: 'app:wrapup',
+        title: 'Wrap Up',
+        source: 'app',
+        mediaType: 'app',
+        format: 'app',
+        duration: 0,
+        resumable: false,
+      });
+    });
+
+    it('returns app item even without prefix', async () => {
+      const result = await adapter.resolvePlayables('wrapup');
+
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe('app:wrapup');
+    });
+
+    it('returns empty array for unknown app', async () => {
+      const result = await adapter.resolvePlayables('app:nonexistent');
+
+      expect(result).toHaveLength(0);
     });
   });
 
   describe('resolveSiblings', () => {
     it('returns all apps as siblings', async () => {
       const result = await adapter.resolveSiblings('app:webcam');
-      expect(result.items.length).toBe(4);
+      expect(result.items.length).toBe(5);
       expect(result.parent).toBeNull();
     });
   });
