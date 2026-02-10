@@ -46,6 +46,7 @@ Every driver implements a standard interface. Not every method is required — d
 | `search(query)` | `searchable` | Return items matching a text query |
 | `getThumbnail(localId)` | `displayable` | Return an image/thumbnail for the item |
 | `getCapabilities(localId)` | — | Return the list of capabilities for a specific item |
+| `getContainerType(id)` | — | Return a container type string for selection strategy inference (see Content Progress) |
 
 ### getPlayInfo Response
 

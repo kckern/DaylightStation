@@ -265,3 +265,49 @@ Composite playback layers a visual track and an audio track into a coordinated p
 ?play=app:screensaver,plex-main:99    # screensaver visual + plex audio
 ?play=plex:12345&overlay=plex:99      # video + audio overlay
 ```
+
+---
+
+## Display API
+
+**Route**: `GET /api/v1/display/:source/*`
+
+Returns a visual representation of a content item (thumbnail, poster art, cover image). Used by menu grids, queue previews, and anywhere an item needs a visual.
+
+### Resolution Order
+
+1. `adapter.getThumbnailUrl(localId)` — dedicated thumbnail method
+2. `adapter.getItem(compoundId)` → `item.thumbnail || item.imageUrl` — fallback from item metadata
+3. **Placeholder SVG** — generated fallback when no image exists
+
+### Placeholder SVG Fallback
+
+Non-displayable content (programs, playlists, config lists) typically has no thumbnail. Instead of returning a 404, the display endpoint generates a lightweight SVG with:
+
+- Dark background (`#1a1a1a`)
+- Color-coded type badge (source-specific colors: talk=green, scripture=brown, hymn=purple, plex=gold, etc.)
+- Item title (from `getItem()`, falling back to the raw localId)
+
+The SVG is returned with `Content-Type: image/svg+xml` and renders natively in `<img>` tags. This means menu items and list views always have a visual — no broken image icons.
+
+**Utility**: `backend/src/4_api/v1/utils/placeholderSvg.mjs`
+
+---
+
+## Ambient Audio
+
+Readalong content types (talks, scriptures) support ambient background audio — soft music layered under the main narration.
+
+### How It Works
+
+1. The collection manifest declares `ambient: true`
+2. The frontend (ReadalongScroller) generates a random track from 115 numbered ambient MP3s
+3. The ambient track plays at 10% of the main audio volume
+4. Ambient audio fades in after a delay and fades out when playback ends
+
+### Configuration
+
+- **Track pool**: `/media/audio/ambient/001.mp3` through `/media/audio/ambient/115.mp3`
+- **Volume**: Always 10% of the main volume (`mainVolume * 0.1`)
+- **Fade**: `fadeInDelay: 750ms`, `fadeOutStep: 0.01`, `fadeOutInterval: 400ms`
+- **Eligible types**: Determined by CSS type — `talk` and `scriptures` get ambient audio

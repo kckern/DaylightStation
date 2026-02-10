@@ -135,6 +135,15 @@ Capabilities describe **what actions are available** on an item.
 - **`displayable`** = capability. Item can produce a thumbnail. A Plex movie is `displayable` (poster art) but format is `video`.
 - **`image`** = format. Item IS an image, rendered full-screen. An Immich photo is both `displayable` AND format `image`.
 
+### Display Placeholder SVG
+
+When the Display API (`/api/v1/display/:source/*`) cannot find a thumbnail for an item (no `getThumbnailUrl()` result and no `thumbnail`/`imageUrl` on the item), it returns a generated placeholder SVG instead of a 404. The placeholder is a square SVG with a dark background, a color-coded type badge, and the item title.
+
+- **Utility**: `backend/src/4_api/v1/utils/placeholderSvg.mjs`
+- **Badge colors**: Per-source-type color map (talk=green, scripture=brown, hymn=purple, plex=gold, etc.)
+- **Content**: Type badge label (uppercase source name) + item title (truncated, XML-escaped)
+- **Response**: `Content-Type: image/svg+xml` — renders natively in `<img>` tags and browsers
+
 ---
 
 ## Axis 4: Item Type
@@ -260,6 +269,7 @@ Query params: `take=N`, `skip=N`
 | `getThumbnail(localId)` | displayable | Image/thumbnail URL |
 | `getCapabilities(localId)` | — | List of capabilities for an item |
 | `resolveSiblings(localId)` | — | Peer items + parent info |
+| `getContainerType(id)` | — | Container type string for selection strategy inference |
 
 ---
 
@@ -498,6 +508,23 @@ Readalong collections can customize ID resolution and rendering via two thin plu
 | (default) | Generic verse arrays or paragraph blocks based on `contentType` |
 
 To add a new collection with custom resolution (e.g., Shakespeare with act/scene references), declare `resolver: shakespeare` and `renderer: shakespeare` in the manifest, implement the thin interfaces, and the rest of the readalong pipeline (scrolling, audio sync, queue, progress) works unchanged.
+
+**Container Type** — controls selection strategy when playing a container:
+
+The `containerType` manifest field (or the adapter's `getContainerType()` method) tells `ItemSelectionService` how to select from a container's children. The service maps container types to named strategies via inference rules:
+
+| Container Type | Strategy | Behavior |
+|---------------|----------|----------|
+| `watchlist` | watchlist | Priority-sorted, skip watched |
+| `conference` | sequential | Source-order, skip watched, pick first unwatched |
+| `series` | sequential | Source-order, skip watched |
+| `playlist` | binge | Play all in order |
+
+To add a new selection behavior for a container type: add an inference rule in `ItemSelectionService.mjs` mapping the container type to an existing strategy, or define a new strategy if the existing ones don't fit.
+
+**Ambient Audio** — background music during readalong playback:
+
+Collections with `ambient: true` in their manifest get background audio layered under the main content. The frontend generates a random track reference from 115 numbered ambient MP3s in `/media/audio/ambient/`. Ambient volume is always 10% of the main audio volume. Talks and scriptures use ambient audio; hymns and poetry do not.
 
 ### Directory Structures
 
