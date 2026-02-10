@@ -181,12 +181,12 @@ export class ReadalongAdapter {
       },
       style,
       type: collection,
-      metadata: Array.isArray(metadata) ? metadata : {
+      metadata: {
         contentFormat: 'readalong',
         collection,
         category: 'readalong',
         ...(resolvedMeta && { resolved: resolvedMeta }),
-        ...metadata
+        ...(Array.isArray(metadata) ? {} : metadata)
       }
     });
   }
@@ -802,8 +802,13 @@ export class ReadalongAdapter {
         data: contentData
       },
       style,
-      ...(resolvedMeta && { resolved: resolvedMeta }),
-      metadata
+      metadata: {
+        contentFormat: 'readalong',
+        collection,
+        category: 'readalong',
+        ...(resolvedMeta && { resolved: resolvedMeta }),
+        ...(Array.isArray(metadata) ? {} : metadata)
+      }
     };
   }
 
