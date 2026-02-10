@@ -6,24 +6,29 @@
  * Layer 1: Exact source match (e.g., "plex:457385" → PlexAdapter)
  * Layer 2: Prefix match via registry (e.g., registered prefixes with transforms)
  * Layer 3: System alias (e.g., "hymn:166" → "singalong:hymn/166")
- * Layer 4: No colon → default to media adapter
+ * Layer 4a: No colon → check bareNameMap (discovered list names)
+ * Layer 4b: No colon → default to media adapter
  * Layer 5: Household alias (e.g., "music:" → "plex:12345")
+ * Layer 6: Empty-rest fallback → check bareNameMap (e.g., "fhe:" → "menu:fhe")
  */
 export class ContentIdResolver {
   #registry;
   #systemAliases;
   #householdAliases;
+  #bareNameMap;
 
   /**
    * @param {import('../../2_domains/content/services/ContentSourceRegistry.mjs').ContentSourceRegistry} registry
    * @param {Object} options
    * @param {Object<string, string>} [options.systemAliases] - e.g., { hymn: 'singalong:hymn' }
    * @param {Object<string, string>} [options.householdAliases] - e.g., { music: 'plex:12345' }
+   * @param {Object<string, string>} [options.bareNameMap] - e.g., { fhe: 'menu' } for Layer 4a
    */
-  constructor(registry, { systemAliases = {}, householdAliases = {} } = {}) {
+  constructor(registry, { systemAliases = {}, householdAliases = {}, bareNameMap = {} } = {}) {
     this.#registry = registry;
     this.#systemAliases = systemAliases;
     this.#householdAliases = householdAliases;
+    this.#bareNameMap = bareNameMap;
   }
 
   /**
@@ -40,7 +45,12 @@ export class ContentIdResolver {
     // Split on first colon
     const colonIdx = normalized.indexOf(':');
     if (colonIdx === -1) {
-      // Layer 4: No colon → default to media
+      // Layer 4a: Check bareNameMap (discovered list names: menu, program, watchlist)
+      const mappedPrefix = this.#bareNameMap[normalized];
+      if (mappedPrefix) {
+        return this.resolve(`${mappedPrefix}:${normalized}`);
+      }
+      // Layer 4b: Default to media (original behavior)
       const adapter = this.#registry.get('media');
       return adapter ? { source: 'media', localId: normalized, adapter } : null;
     }
@@ -87,6 +97,12 @@ export class ContentIdResolver {
           return { source: aliasSource, localId: rest || aliasLocalId, adapter };
         }
       }
+    }
+
+    // Layer 6: Empty-rest fallback — when "fhe:" arrives (parseActionRouteId adds colon),
+    // strip the colon and try bare name resolution via Layer 4a.
+    if (rest === '' && this.#bareNameMap[prefix]) {
+      return this.resolve(prefix);
     }
 
     return null;

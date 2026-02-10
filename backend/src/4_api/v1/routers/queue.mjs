@@ -16,39 +16,51 @@ function parseQueueQuery(query = {}) {
   };
 }
 
-function shuffleArray(items) {
-  for (let i = items.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [items[i], items[j]] = [items[j], items[i]];
-  }
-  return items;
-}
-
 export function toQueueItem(item) {
   return {
+    // Identity
     id: item.id,
+    contentId: item.id,
     title: item.title,
     source: item.source,
+
+    // Playback
     mediaUrl: item.mediaUrl,
     mediaType: item.mediaType,
-    thumbnail: item.thumbnail,
+    format: item.metadata?.format || item.mediaType,
     duration: item.duration,
+
+    // Display
+    thumbnail: item.thumbnail,
+    image: item.thumbnail,
+
+    // Resume state
     resumable: item.resumable,
     resumePosition: item.resumePosition,
     watchProgress: item.watchProgress,
+
+    // Behavior flags
     shuffle: item.shuffle || false,
     continuous: item.continuous || false,
     resume: item.resume || false,
+    active: item.active !== false,
+
+    // Hierarchy context
     parentTitle: item.metadata?.parentTitle,
     grandparentTitle: item.metadata?.grandparentTitle,
     parentId: item.metadata?.parentId,
     parentIndex: item.metadata?.parentIndex,
-    itemIndex: item.metadata?.itemIndex
+    itemIndex: item.metadata?.itemIndex,
+
+    // Audio metadata
+    artist: item.metadata?.artist || item.metadata?.grandparentTitle,
+    albumArtist: item.metadata?.albumArtist,
+    album: item.metadata?.album || item.metadata?.parentTitle,
   };
 }
 
 export function createQueueRouter(config) {
-  const { registry, contentIdResolver, logger = console } = config;
+  const { contentIdResolver, queueService, logger = console } = config;
   const router = express.Router();
 
   const handleQueueRequest = asyncHandler(async (req, res) => {
@@ -81,11 +93,8 @@ export function createQueueRouter(config) {
     }
 
     const playables = await adapter.resolvePlayables(finalId);
-    let items = playables;
 
-    if (shuffle) {
-      items = shuffleArray([...items]);
-    }
+    let items = await queueService.resolveQueue(playables, resolvedSource, { shuffle });
 
     if (limit) {
       items = items.slice(0, limit);

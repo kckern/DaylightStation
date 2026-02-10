@@ -182,3 +182,66 @@ describe('ContentIdResolver', () => {
     expect(result.adapter).toBe(menuAdapter);
   });
 });
+
+describe('ContentIdResolver — Layer 4a bareNameMap', () => {
+  let registry, mediaAdapter, menuAdapter, programAdapter;
+
+  beforeEach(() => {
+    registry = createMockRegistry();
+    mediaAdapter = createMockAdapter('media');
+    menuAdapter = createMockAdapter('menu');
+    programAdapter = createMockAdapter('program');
+
+    registry.register('media', mediaAdapter);
+    registry.register('menu', menuAdapter);
+    registry.register('program', programAdapter);
+  });
+
+  test('Layer 4a: bare name resolves to menu via bareNameMap', () => {
+    const resolver = new ContentIdResolver(registry, { bareNameMap: { fhe: 'menu' } });
+    const result = resolver.resolve('fhe');
+    expect(result.source).toBe('menu');
+    expect(result.localId).toBe('fhe');
+    expect(result.adapter).toBe(menuAdapter);
+  });
+
+  test('Layer 4a: bare name resolves to program via bareNameMap', () => {
+    const resolver = new ContentIdResolver(registry, { bareNameMap: { morningprogram: 'program' } });
+    const result = resolver.resolve('morningprogram');
+    expect(result.source).toBe('program');
+    expect(result.localId).toBe('morningprogram');
+    expect(result.adapter).toBe(programAdapter);
+  });
+
+  test('Layer 4b: bare name not in bareNameMap falls back to media', () => {
+    const resolver = new ContentIdResolver(registry, { bareNameMap: { fhe: 'menu' } });
+    const result = resolver.resolve('sfx/intro');
+    expect(result.source).toBe('media');
+    expect(result.localId).toBe('sfx/intro');
+    expect(result.adapter).toBe(mediaAdapter);
+  });
+
+  test('Layer 4a: collision priority — menu wins over program', () => {
+    // bareNameMap is built with menu last, so menu overwrites program for shared names
+    const resolver = new ContentIdResolver(registry, { bareNameMap: { shared: 'menu' } });
+    const result = resolver.resolve('shared');
+    expect(result.source).toBe('menu');
+    expect(result.localId).toBe('shared');
+    expect(result.adapter).toBe(menuAdapter);
+  });
+
+  test('Layer 6: "fhe:" (empty rest) falls back to bareNameMap → menu', () => {
+    // parseActionRouteId produces "fhe:" when path is empty — colon with empty rest
+    const resolver = new ContentIdResolver(registry, { bareNameMap: { fhe: 'menu' } });
+    const result = resolver.resolve('fhe:');
+    expect(result.source).toBe('menu');
+    expect(result.localId).toBe('fhe');
+    expect(result.adapter).toBe(menuAdapter);
+  });
+
+  test('Layer 6: "unknown:" without bareNameMap entry still returns null', () => {
+    const resolver = new ContentIdResolver(registry, { bareNameMap: { fhe: 'menu' } });
+    const result = resolver.resolve('unknown:');
+    expect(result).toBeNull();
+  });
+});

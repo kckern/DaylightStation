@@ -1,5 +1,6 @@
-// backend/src/domains/content/services/QueueService.mjs
+// backend/src/2_domains/content/services/QueueService.mjs
 import { PlayableItem } from '../capabilities/Playable.mjs';
+import { DefaultMediaProgressClassifier } from './DefaultMediaProgressClassifier.mjs';
 
 /**
  * Day-of-week presets mapping strings to ISO weekday numbers.
@@ -289,11 +290,53 @@ export class QueueService {
   }
 
   /**
+   * Shuffle an array in place using Fisher-Yates.
+   * @param {Array} items
+   * @returns {Array} The same array, shuffled
+   */
+  static shuffleArray(items) {
+    for (let i = items.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [items[i], items[j]] = [items[j], items[i]];
+    }
+    return items;
+  }
+
+  /**
+   * Partition items into unwatched and watched groups using a classifier.
+   * @param {Array} items - Playable items with .id property
+   * @param {Map<string, Object>} progressMap - Map of itemId -> MediaProgress-like object
+   * @param {Object} classifier - Object with classify(progress, contentMeta) method
+   * @returns {{ unwatched: Array, watched: Array }}
+   */
+  static partitionByWatchStatus(items, progressMap, classifier) {
+    const unwatched = [];
+    const watched = [];
+
+    for (const item of items) {
+      const progress = progressMap.get(item.id);
+      const status = progress
+        ? classifier.classify(progress, { duration: item.duration })
+        : 'unwatched';
+
+      if (status === 'watched') {
+        watched.push(item);
+      } else {
+        unwatched.push(item);
+      }
+    }
+
+    return { unwatched, watched };
+  }
+
+  /**
    * @param {Object} config
    * @param {Object} config.mediaProgressMemory - IMediaProgressMemory instance for watch state
+   * @param {Object} [config.classifier] - IMediaProgressClassifier instance (defaults to DefaultMediaProgressClassifier)
    */
   constructor(config) {
     this.mediaProgressMemory = config.mediaProgressMemory;
+    this.classifier = config.classifier || new DefaultMediaProgressClassifier();
   }
 
   /**
@@ -335,6 +378,43 @@ export class QueueService {
    */
   async getAllPlayables(items) {
     return items;
+  }
+
+  /**
+   * Resolve a queue: enrich with media memory, partition by watch status, optionally shuffle.
+   *
+   * @param {PlayableItem[]} playables - Raw playable items from adapter
+   * @param {string} source - Source identifier (e.g. 'plex') for loading media memory
+   * @param {Object} [options]
+   * @param {boolean} [options.shuffle=false] - Shuffle within each partition
+   * @returns {Promise<PlayableItem[]>} Ordered items: unwatched/in-progress first, watched last
+   */
+  async resolveQueue(playables, source, { shuffle = false } = {}) {
+    if (!this.mediaProgressMemory) {
+      return shuffle ? QueueService.shuffleArray([...playables]) : playables;
+    }
+
+    const allProgress = await this.mediaProgressMemory.getAllFromAllLibraries(source);
+    const progressMap = new Map(allProgress.map(p => [p.itemId, p]));
+
+    // Enrich items with resume positions from media memory
+    const enriched = playables.map(item => {
+      const progress = progressMap.get(item.id);
+      if (progress && item.resumable && progress.playhead) {
+        return this._withResumePosition(item, progress);
+      }
+      return item;
+    });
+
+    // Partition by watch status: unwatched/in-progress first, watched last
+    const { unwatched, watched } = QueueService.partitionByWatchStatus(
+      enriched, progressMap, this.classifier
+    );
+
+    return [
+      ...(shuffle ? QueueService.shuffleArray([...unwatched]) : unwatched),
+      ...(shuffle ? QueueService.shuffleArray([...watched]) : watched)
+    ];
   }
 
   /**

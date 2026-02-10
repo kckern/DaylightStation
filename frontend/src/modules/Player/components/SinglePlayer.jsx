@@ -228,6 +228,30 @@ export function SinglePlayer(props = {}) {
   const fetchVideoInfoCallback = useCallback(async () => {
     setIsReady(false);
 
+    // Direct-play bypass: if the play prop already contains mediaUrl and format,
+    // skip the /play API call entirely. This happens when queue items come from
+    // the /queue endpoint with pre-resolved media URLs.
+    const directFormat = play?.format;
+    const directMediaUrl = play?.mediaUrl;
+    if (directMediaUrl && directFormat) {
+      const directInfo = {
+        ...play,
+        id: play.id || play.contentId || effectiveContentId,
+        assetId: play.assetId || play.id || play.contentId || effectiveContentId,
+        continuous,
+        maxVideoBitrate: play?.maxVideoBitrate ?? null,
+        maxResolution: play?.maxResolution ?? null,
+      };
+      if (play?.seconds !== undefined) directInfo.seconds = play.seconds;
+      if (play?.resume !== undefined) directInfo.resume = play.resume;
+      if (play?.resumePosition !== undefined && directInfo.seconds === undefined) {
+        directInfo.seconds = play.resumePosition;
+      }
+      setMediaInfo(directInfo);
+      setIsReady(true);
+      return;
+    }
+
     const info = await fetchMediaInfo({
       contentId: effectiveContentId,
       plex,
@@ -247,17 +271,15 @@ export function SinglePlayer(props = {}) {
       if (!isPlayable && effectiveContentId) {
         // This is a collection - fetch first playable item
         try {
-          const { items } = await DaylightAPI(`/api/v1/list/${effectiveContentId}/playable`);
+          const { items } = await DaylightAPI(`/api/v1/queue/${effectiveContentId}?limit=1`);
           if (items && items.length > 0) {
             const firstItem = items[0];
-            const firstItemId = firstItem.play?.contentId || firstItem.contentId || firstItem.id
-                || firstItem.play?.plex || firstItem.plex;
+            const firstItemId = firstItem.contentId || firstItem.id;
             if (firstItemId) {
               // Fetch media info for the first playable item
               const resolvedId = String(firstItemId).includes(':') ? firstItemId : `plex:${firstItemId}`;
               const playableInfo = await fetchMediaInfo({
                 contentId: resolvedId,
-                plex: firstItem.play?.plex || firstItem.plex,
                 shuffle: false,
                 maxVideoBitrate: play?.maxVideoBitrate,
                 maxResolution: play?.maxResolution,
