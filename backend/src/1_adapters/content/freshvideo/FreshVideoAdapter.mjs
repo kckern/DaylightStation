@@ -1,4 +1,6 @@
 // backend/src/1_adapters/content/freshvideo/FreshVideoAdapter.mjs
+import path from 'path';
+import { fileExists } from '#system/utils/FileIO.mjs';
 
 const WATCHED_THRESHOLD = 90;
 
@@ -65,11 +67,24 @@ export class FreshVideoAdapter {
       }
 
       const unwatched = items.find(item => !item.watched);
-      if (unwatched) return [unwatched];
+      if (unwatched) return [this.#applyShowThumbnail(unwatched, localId)];
     }
 
     // Fallback: newest video (never empty)
-    return [items[0]];
+    return [this.#applyShowThumbnail(items[0], localId)];
+  }
+
+  /**
+   * If the source folder has a show.jpg, use it as the thumbnail
+   * (channel branding is better than a random video frame).
+   */
+  #applyShowThumbnail(item, localId) {
+    const folderPath = path.join(this.#fileAdapter.mediaBasePath, 'video', 'news', localId);
+    const showJpg = path.join(folderPath, 'show.jpg');
+    if (fileExists(showJpg)) {
+      item.thumbnail = `/api/v1/proxy/media/stream/${encodeURIComponent(`video/news/${localId}/show.jpg`)}`;
+    }
+    return item;
   }
 
   async getItem(id) {
