@@ -48,12 +48,30 @@ export function ReadalongScroller({
   }, [contentId]);
 
   const parseContent = useCallback((contentData) => {
-    if (renderer?.parseContent) return renderer.parseContent(contentData);
+    // Try renderer first (handles scripture verses with special formatting)
+    if (renderer?.parseContent) {
+      const result = renderer.parseContent(contentData);
+      if (result) return result;
+    }
 
+    // Plain array of strings (talks, poetry) — most common for non-scripture
+    if (Array.isArray(contentData)) {
+      return (
+        <div className="readalong-text paragraphs">
+          {contentData.map((para, idx) => {
+            if (typeof para === 'string' && para.startsWith('##')) {
+              return <h4 key={idx}>{para.slice(2).trim()}</h4>;
+            }
+            return <p key={idx}>{typeof para === 'string' ? para : ''}</p>;
+          })}
+        </div>
+      );
+    }
+
+    // Structured { type, data } format
     if (!contentData?.data) return null;
 
     if (contentData.type === 'verses') {
-      // Scripture-style verses
       return (
         <div className="readalong-text verses">
           {contentData.data.map((verse, idx) => (
@@ -66,14 +84,14 @@ export function ReadalongScroller({
       );
     }
 
-    // Paragraphs (talks, poetry, etc.)
+    // Structured paragraphs
     return (
       <div className="readalong-text paragraphs">
         {contentData.data.map((para, idx) => {
-          if (para.startsWith('##')) {
+          if (typeof para === 'string' && para.startsWith('##')) {
             return <h4 key={idx}>{para.slice(2).trim()}</h4>;
           }
-          return <p key={idx}>{para}</p>;
+          return <p key={idx}>{typeof para === 'string' ? para : ''}</p>;
         })}
       </div>
     );
@@ -83,7 +101,8 @@ export function ReadalongScroller({
 
   const title = renderer?.extractTitle ? renderer.extractTitle(data) : data.title;
   const subtitle = renderer?.extractSubtitle ? renderer.extractSubtitle(data) : data.subtitle;
-  const cssType = renderer?.cssType || 'readalong';
+  // Scripture content uses { type: 'verses', data: [...] } and needs 'scriptures' CSS class
+  const cssType = data.content?.type === 'verses' ? 'scriptures' : (renderer?.cssType || 'readalong');
 
   // Apply style as CSS variables
   const cssVars = {
