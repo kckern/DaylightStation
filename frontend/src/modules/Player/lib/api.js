@@ -2,10 +2,8 @@ import { DaylightAPI } from '../../../lib/api.mjs';
 import { guid } from './helpers.js';
 
 /**
- * Recursively flatten queue items, handling nested playlists and queues
- * @param {Array} items - Array of queue items
- * @param {number} level - Current recursion level
- * @returns {Promise<Array>} Flattened array of playable items
+ * @deprecated Recursive flattening now happens server-side in /api/v1/queue.
+ * Retained for backward compatibility — do not use in new code.
  */
 export async function flattenQueueItems(items, level = 1) {
   const flattened = [];
@@ -99,18 +97,11 @@ export async function fetchMediaInfo({ contentId, plex, media, shuffle, maxVideo
   // Legacy plex path
   if (plex) {
     if (shuffle) {
-      // Get shuffled playable items from list router, then fetch info for first item
-      const { items: shuffledItems } = await DaylightAPI(
-        buildUrl(`api/v1/list/plex/${plex}/playable,shuffle`, queryCommon)
+      const { items } = await DaylightAPI(
+        buildUrl(`api/v1/queue/plex/${plex}`, { ...queryCommon, shuffle: true })
       );
-      if (shuffledItems?.length > 0) {
-        const firstItem = shuffledItems[0];
-        const firstPlex = firstItem.play?.plex || firstItem.plex || firstItem.key;
-        if (firstPlex) {
-          const infoUrl = buildUrl(`api/v1/info/plex/${firstPlex}`, queryCommon);
-          const infoResponse = await DaylightAPI(infoUrl);
-          return { ...infoResponse, assetId: infoResponse.plex };
-        }
+      if (items?.length > 0) {
+        return { ...items[0], assetId: items[0].id };
       }
       return null;
     }
@@ -130,9 +121,9 @@ export async function fetchMediaInfo({ contentId, plex, media, shuffle, maxVideo
       localId = media.substring(colonIndex + 1);
     }
     if (shuffle) {
-      const { items: shuffledItems } = await DaylightAPI(`api/v1/list/${source}/${localId}/playable,shuffle`);
-      if (shuffledItems?.length > 0) {
-        return shuffledItems[0];
+      const { items } = await DaylightAPI(`api/v1/queue/${source}/${localId}?shuffle=true`);
+      if (items?.length > 0) {
+        return items[0];
       }
       return null;
     }
@@ -152,7 +143,7 @@ export async function fetchMediaInfo({ contentId, plex, media, shuffle, maxVideo
  */
 export async function initializeQueue(play, queue) {
   let newQueue = [];
-  
+
   if (Array.isArray(play)) {
     newQueue = play.map(item => ({ ...item, guid: guid() }));
   } else if (Array.isArray(queue)) {
@@ -161,14 +152,13 @@ export async function initializeQueue(play, queue) {
     const queueAssetId = play?.playlist || play?.queue || queue?.playlist || queue?.queue || queue?.media;
     if (queueAssetId) {
       const shuffle = !!play?.shuffle || !!queue?.shuffle || false;
-      const initModifiers = ['playable', ...(shuffle ? ['shuffle'] : [])].join(',');
-      const { items } = await DaylightAPI(`api/v1/list/watchlist/${queueAssetId}/${initModifiers}`);
-      const flatItems = await flattenQueueItems(items);
-      newQueue = flatItems.map(item => ({ ...item, guid: guid() }));
+      const shuffleParam = shuffle ? '?shuffle=true' : '';
+      const { items } = await DaylightAPI(`api/v1/queue/watchlist/${queueAssetId}${shuffleParam}`);
+      newQueue = items.map(item => ({ ...item, guid: guid() }));
     } else {
       newQueue = [{ ...(play || queue), guid: guid() }];
     }
   }
-  
+
   return newQueue;
 }

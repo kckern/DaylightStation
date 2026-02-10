@@ -119,7 +119,7 @@ const Player = forwardRef(function Player(props, ref) {
     playbackRate: queuePlaybackRate,
     playQueue,
     advance
-  } = useQueueController({ play, queue, clear });
+  } = useQueueController({ play, queue, clear, shuffle: props?.shuffle });
 
   const hasNextQueueItem = useMemo(() => (
     isQueue

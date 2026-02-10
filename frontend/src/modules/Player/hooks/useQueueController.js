@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { DaylightAPI } from '../../../lib/api.mjs';
-import { flattenQueueItems } from '../lib/api.js';
+
 import { guid } from '../lib/helpers.js';
 import { playbackLog } from '../lib/playbackLogger.js';
 
@@ -8,7 +8,7 @@ import { playbackLog } from '../lib/playbackLogger.js';
  * Queue controller hook for managing playlist/queue playback
  * Handles queue initialization, advancement, and shader management
  */
-export function useQueueController({ play, queue, clear }) {
+export function useQueueController({ play, queue, clear, shuffle }) {
   const classes = ['default', 'focused', 'night', 'blackout'];
   // Legacy aliases: multiple old names can map to the same canonical shader
   const shaderAliases = {
@@ -24,7 +24,7 @@ export function useQueueController({ play, queue, clear }) {
   const [isContinuous] = useState(!!queue?.continuous || !!play?.continuous || false);
   const [playQueue, setQueue] = useState([]);
   const [originalQueue, setOriginalQueue] = useState([]);
-  const [isShuffle, setIsShuffle] = useState(!!play?.shuffle || !!queue?.shuffle || false);
+  const [isShuffle, setIsShuffle] = useState(!!play?.shuffle || !!queue?.shuffle || !!shuffle || false);
   const sourceSignatureRef = useRef(null);
 
   const cycleThroughClasses = useCallback((upOrDownInt) => {
@@ -75,13 +75,11 @@ export function useQueueController({ play, queue, clear }) {
 
     async function initQueue() {
       let newQueue = [];
-      
+
       // Extract overrides that should apply to all generated items
-      // This ensures that props like 'resume: false' or 'seconds: 0' from CompositePlayer
-      // are propagated to items fetched from the API.
-      const sourceObj = (play && typeof play === 'object' && !Array.isArray(play)) ? play : 
+      const sourceObj = (play && typeof play === 'object' && !Array.isArray(play)) ? play :
                        (queue && typeof queue === 'object' && !Array.isArray(queue)) ? queue : {};
-      
+
       const itemOverrides = {};
       if (sourceObj.resume !== undefined) itemOverrides.resume = sourceObj.resume;
       if (sourceObj.seconds !== undefined) itemOverrides.seconds = sourceObj.seconds;
@@ -95,22 +93,22 @@ export function useQueueController({ play, queue, clear }) {
       } else if ((play && typeof play === 'object') || (queue && typeof queue === 'object')) {
         const queue_contentId = play?.contentId || queue?.contentId;
         const queue_assetId = play?.playlist || play?.queue || queue?.playlist || queue?.queue || queue?.media;
+        const shuffleParam = isShuffle ? '?shuffle=true' : '';
+
+        let queueUrl = null;
         if (queue_contentId && !queue_assetId && !plexKey) {
-          // Unified contentId path — compound ID like "plex:12345" or "watchlist:path"
-          const { items } = await DaylightAPI(`api/v1/list/${queue_contentId}/playable${isShuffle ? ',shuffle' : ''}`);
-          const flattened = await flattenQueueItems(items);
-          newQueue = flattened.map(item => ({ ...item, ...item.play, ...itemOverrides, guid: guid() }));
+          queueUrl = `api/v1/queue/${queue_contentId}${shuffleParam}`;
         } else if (queue_assetId) {
-          const { items } = await DaylightAPI(`api/v1/list/watchlist/${queue_assetId}/playable${isShuffle ? ',shuffle' : ''}`);
-          const flattened = await flattenQueueItems(items);
-          newQueue = flattened.map(item => ({ ...item, ...item.play, ...itemOverrides, guid: guid() }));
+          queueUrl = `api/v1/queue/watchlist/${queue_assetId}${shuffleParam}`;
         } else if (queue?.plex || play?.plex) {
           const plexId = queue?.plex || play?.plex;
-          const { items } = await DaylightAPI(`api/v1/list/plex/${plexId}/playable${isShuffle ? ',shuffle' : ''}`);
-          const flattened = await flattenQueueItems(items);
-          newQueue = flattened.map(item => ({ ...item, ...item.play, ...itemOverrides, guid: guid() }));
+          queueUrl = `api/v1/queue/plex/${plexId}${shuffleParam}`;
+        }
+
+        if (queueUrl) {
+          const { items } = await DaylightAPI(queueUrl);
+          newQueue = items.map(item => ({ ...item, ...itemOverrides, guid: guid() }));
         } else if (play?.media) {
-          // Single media file - create queue from this item directly
           newQueue = [{ ...play, ...itemOverrides, guid: guid() }];
         }
       }
