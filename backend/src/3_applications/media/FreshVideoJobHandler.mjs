@@ -30,7 +30,20 @@ export function createFreshVideoJobHandler({ videoSourceGateway, loadFile, media
 
   const service = new FreshVideoService({
     videoSourceGateway,
-    configLoader: () => loadFile('state/youtube'),
+    configLoader: async () => {
+      const raw = await loadFile('state/youtube');
+      if (!Array.isArray(raw)) return [];
+      return raw.map(s => ({
+        provider: s.shortcode,
+        src: s.src || 'youtube',
+        type: (s.type || 'playlist').toLowerCase(),
+        id: s.playlist,
+        volume: s.volume,
+        rate: s.rate,
+        sort: s.sort,
+        folder: s.folder,
+      }));
+    },
     mediaPath,
     logger,
   });
@@ -49,7 +62,7 @@ export function createFreshVideoJobHandler({ videoSourceGateway, loadFile, media
         log.info?.('freshvideo.job.complete', {
           executionId,
           deleted: result.deleted.length,
-          sources: result.sources.length,
+          providers: result.providers.length,
           files: result.files.length,
         });
       }

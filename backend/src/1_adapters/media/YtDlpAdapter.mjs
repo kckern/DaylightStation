@@ -218,6 +218,7 @@ export class YtDlpAdapter {
     // Note: Don't use --flat-playlist as it omits channel_url/uploader_url needed for avatar
     const cmd = [
       'yt-dlp',
+      '--js-runtimes node',
       '--dump-json',
       '--playlist-items 1',  // Get just the first item to extract playlist metadata
       `"${url}"`
@@ -327,10 +328,10 @@ export class YtDlpAdapter {
       const formatArgs = this.#buildFormatArgs(maxHeight, codec);
 
       // Build yt-dlp command
-      // Critical: --js-runtimes node:auto fixes YouTube 403 errors
+      // Critical: --js-runtimes node enables JS-based extraction (fixes 403s)
       const cmd = [
         'yt-dlp',
-        '--js-runtimes node:auto',
+        '--js-runtimes node',
         extractorArgs,
         formatArgs,
         '--remux-video mp4',
