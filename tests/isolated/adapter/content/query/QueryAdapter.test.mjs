@@ -1,6 +1,6 @@
-// tests/isolated/adapter/content/query/QueryDriver.test.mjs
+// tests/isolated/adapter/content/query/QueryAdapter.test.mjs
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { QueryDriver } from '#adapters/content/query/QueryDriver.mjs';
+import { QueryAdapter } from '#adapters/content/query/QueryAdapter.mjs';
 
 // Mock file adapter that returns video items
 function createMockFileAdapter(videos = []) {
@@ -24,33 +24,33 @@ function createMockProgress(watchedIds = []) {
   };
 }
 
-describe('QueryDriver', () => {
+describe('QueryAdapter', () => {
   describe('IContentSource interface', () => {
     it('has source = "query"', () => {
-      const driver = new QueryDriver({
+      const adapter = new QueryAdapter({
         savedQueryService: { getQuery: () => null },
       });
-      expect(driver.source).toBe('query');
+      expect(adapter.source).toBe('query');
     });
 
     it('has prefix "query"', () => {
-      const driver = new QueryDriver({
+      const adapter = new QueryAdapter({
         savedQueryService: { getQuery: () => null },
       });
-      expect(driver.prefixes).toEqual([{ prefix: 'query' }]);
+      expect(adapter.prefixes).toEqual([{ prefix: 'query' }]);
     });
   });
 
   describe('getItem', () => {
     it('returns query definition as item', async () => {
-      const driver = new QueryDriver({
+      const adapter = new QueryAdapter({
         savedQueryService: {
           getQuery: (name) => name === 'dailynews'
             ? { title: 'Daily News', source: 'freshvideo', filters: { sources: ['news/cnn'] } }
             : null,
         },
       });
-      const item = await driver.getItem('query:dailynews');
+      const item = await adapter.getItem('query:dailynews');
       expect(item).not.toBeNull();
       expect(item.title).toBe('Daily News');
       expect(item.id).toBe('query:dailynews');
@@ -58,21 +58,21 @@ describe('QueryDriver', () => {
     });
 
     it('returns null for unknown query', async () => {
-      const driver = new QueryDriver({
+      const adapter = new QueryAdapter({
         savedQueryService: { getQuery: () => null },
       });
-      expect(await driver.getItem('query:nonexistent')).toBeNull();
+      expect(await adapter.getItem('query:nonexistent')).toBeNull();
     });
 
     it('strips query: prefix from id', async () => {
-      const driver = new QueryDriver({
+      const adapter = new QueryAdapter({
         savedQueryService: {
           getQuery: (name) => name === 'dailynews'
             ? { title: 'Daily News', source: 'freshvideo', filters: { sources: [] } }
             : null,
         },
       });
-      const item = await driver.getItem('dailynews');
+      const item = await adapter.getItem('dailynews');
       expect(item).not.toBeNull();
     });
   });
@@ -84,7 +84,7 @@ describe('QueryDriver', () => {
         { localId: 'video/news/cnn/20260207.mp4', itemType: 'leaf', title: 'CNN Feb 7' },
       ];
 
-      const driver = new QueryDriver({
+      const adapter = new QueryAdapter({
         savedQueryService: {
           getQuery: () => ({
             title: 'Daily News',
@@ -96,7 +96,7 @@ describe('QueryDriver', () => {
         mediaProgressMemory: createMockProgress([]),
       });
 
-      const playables = await driver.resolvePlayables('query:dailynews');
+      const playables = await adapter.resolvePlayables('query:dailynews');
       expect(playables.length).toBeGreaterThan(0);
       // Should pick the latest (20260208) since none are watched
       expect(playables[0].localId).toBe('video/news/cnn/20260208.mp4');
@@ -108,7 +108,7 @@ describe('QueryDriver', () => {
         { localId: 'video/news/cnn/20260207.mp4', itemType: 'leaf', title: 'CNN Feb 7' },
       ];
 
-      const driver = new QueryDriver({
+      const adapter = new QueryAdapter({
         savedQueryService: {
           getQuery: () => ({
             title: 'Daily News',
@@ -120,16 +120,16 @@ describe('QueryDriver', () => {
         mediaProgressMemory: createMockProgress(['video/news/cnn/20260208.mp4']),
       });
 
-      const playables = await driver.resolvePlayables('query:dailynews');
+      const playables = await adapter.resolvePlayables('query:dailynews');
       expect(playables.length).toBe(1);
       expect(playables[0].localId).toBe('video/news/cnn/20260207.mp4');
     });
 
     it('returns empty array for unknown query', async () => {
-      const driver = new QueryDriver({
+      const adapter = new QueryAdapter({
         savedQueryService: { getQuery: () => null },
       });
-      const playables = await driver.resolvePlayables('query:nonexistent');
+      const playables = await adapter.resolvePlayables('query:nonexistent');
       expect(playables).toEqual([]);
     });
 
@@ -155,7 +155,7 @@ describe('QueryDriver', () => {
         })),
       };
 
-      const driver = new QueryDriver({
+      const adapter = new QueryAdapter({
         savedQueryService: {
           getQuery: () => ({
             title: 'Daily News',
@@ -167,7 +167,7 @@ describe('QueryDriver', () => {
         mediaProgressMemory: createMockProgress([]),
       });
 
-      const playables = await driver.resolvePlayables('query:dailynews');
+      const playables = await adapter.resolvePlayables('query:dailynews');
       expect(playables.length).toBe(1);
       // Same date, CNN has higher priority (index 0)
       expect(playables[0].localId).toBe('video/news/cnn/20260208.mp4');
@@ -176,7 +176,7 @@ describe('QueryDriver', () => {
 
   describe('getList', () => {
     it('returns query definition as list container', async () => {
-      const driver = new QueryDriver({
+      const adapter = new QueryAdapter({
         savedQueryService: {
           getQuery: () => ({
             title: 'Daily News',
@@ -186,7 +186,7 @@ describe('QueryDriver', () => {
           listQueries: () => ['dailynews'],
         },
       });
-      const result = await driver.getList('query:dailynews');
+      const result = await adapter.getList('query:dailynews');
       expect(result).not.toBeNull();
       expect(result.title).toBe('Daily News');
     });

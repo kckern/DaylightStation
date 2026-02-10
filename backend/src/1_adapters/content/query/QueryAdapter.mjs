@@ -1,4 +1,4 @@
-// backend/src/1_adapters/content/query/QueryDriver.mjs
+// backend/src/1_adapters/content/query/QueryAdapter.mjs
 
 import { ItemSelectionService } from '#domains/content/index.mjs';
 
@@ -14,7 +14,7 @@ const WATCHED_THRESHOLD = 90;
  *
  * Implements IContentSource interface.
  */
-export class QueryDriver {
+export class QueryAdapter {
   #savedQueryService;
   #fileAdapter;
   #mediaProgressMemory;
@@ -89,7 +89,7 @@ export class QueryDriver {
       return this.#resolveFreshVideo(query);
     }
 
-    console.warn(`[QueryDriver] Unknown query type: ${query.source}`);
+    console.warn(`[QueryAdapter] Unknown query type: ${query.source}`);
     return [];
   }
 
@@ -105,7 +105,7 @@ export class QueryDriver {
     if (sources.length === 0) return [];
 
     if (!this.#fileAdapter) {
-      console.warn('[QueryDriver] FileAdapter not available for freshvideo query');
+      console.warn('[QueryAdapter] FileAdapter not available for freshvideo query');
       return [];
     }
 
@@ -141,7 +141,7 @@ export class QueryDriver {
           });
         }
       } catch (err) {
-        console.warn(`[QueryDriver] Failed to list freshvideo source ${sourcePath}:`, err.message);
+        console.warn(`[QueryAdapter] Failed to list freshvideo source ${sourcePath}:`, err.message);
       }
     }
 

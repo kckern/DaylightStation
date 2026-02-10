@@ -62,12 +62,13 @@ export function createPlayRouter(config) {
       response.videoUrl = item.mediaUrl;
     }
 
-    // Pass through content/style/subtitle for readalong/singalong scrollers
+    // Pass through content/style/subtitle/ambientUrl for readalong/singalong scrollers
     // Content may be on item directly or nested in metadata (adapter-dependent)
     const contentData = item.content || item.metadata?.content;
     if (contentData) response.content = contentData;
     if (item.style || item.metadata?.style) response.style = item.style || item.metadata.style;
     if (item.subtitle || item.metadata?.speaker) response.subtitle = item.subtitle || item.metadata.speaker;
+    if (item.ambientUrl) response.ambientUrl = item.ambientUrl;
 
     // Legacy field mapping for Plex items
     if (item.metadata) {

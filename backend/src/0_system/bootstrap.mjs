@@ -23,9 +23,9 @@ import { ImmichAdapter } from '#adapters/content/gallery/immich/ImmichAdapter.mj
 import { AudiobookshelfAdapter } from '#adapters/content/readable/audiobookshelf/AudiobookshelfAdapter.mjs';
 import { SingalongAdapter } from '#adapters/content/singalong/SingalongAdapter.mjs';
 import { ReadalongAdapter } from '#adapters/content/readalong/ReadalongAdapter.mjs';
-import { AppRegistryDriver } from '#adapters/content/app-registry/AppRegistryDriver.mjs';
+import { AppRegistryAdapter } from '#adapters/content/app-registry/AppRegistryAdapter.mjs';
 import { KomgaAdapter } from '#adapters/content/readable/komga/KomgaAdapter.mjs';
-import { QueryDriver } from '#adapters/content/query/QueryDriver.mjs';
+import { QueryAdapter } from '#adapters/content/query/QueryAdapter.mjs';
 import { SavedQueryService } from '#apps/content/SavedQueryService.mjs';
 import { FilesystemCanvasAdapter, ImmichCanvasAdapter } from '#adapters/content/canvas/index.mjs';
 import { ImmichClient } from '#adapters/content/gallery/immich/ImmichClient.mjs';
@@ -493,7 +493,7 @@ export function createContentRegistry(config, deps = {}) {
     registry.adapters.set('watchlist', listAdapter);
   }
 
-  // Register QueryDriver for saved queries (query:dailynews, etc.)
+  // Register QueryAdapter for saved queries (query:dailynews, etc.)
   // Reads query YAML files from household/config/lists/queries/
   let savedQueryService = null;
   if (listDataPath) {
@@ -506,7 +506,7 @@ export function createContentRegistry(config, deps = {}) {
     });
     const fileAdapter = registry.get('files');
     registry.register(
-      new QueryDriver({ savedQueryService, fileAdapter, mediaProgressMemory }),
+      new QueryAdapter({ savedQueryService, fileAdapter, mediaProgressMemory }),
       { category: queryManifest.capability, provider: queryManifest.provider }
     );
   }
@@ -594,7 +594,7 @@ export function createContentRegistry(config, deps = {}) {
     );
   }
 
-  // Register AppRegistryDriver for native app content IDs (app:webcam, app:gratitude, etc.)
+  // Register AppRegistryAdapter for native app content IDs (app:webcam, app:gratitude, etc.)
   // App definitions mirror the frontend registry (label + param only, no component imports).
   const appDefs = {
     webcam:            { label: 'Webcam' },
@@ -607,7 +607,7 @@ export function createContentRegistry(config, deps = {}) {
     websocket:         { label: 'WebSocket', param: { name: 'path' } },
   };
   registry.register(
-    new AppRegistryDriver({ apps: appDefs }),
+    new AppRegistryAdapter({ apps: appDefs }),
     { category: appRegistryManifest.capability, provider: appRegistryManifest.provider }
   );
 

@@ -7,7 +7,7 @@ export default {
   mediaTypes: [],
   playableType: 'app',
   implicit: true,
-  adapter: () => import('./AppRegistryDriver.mjs'),
+  adapter: () => import('./AppRegistryAdapter.mjs'),
   configSchema: {
     apps: {
       type: 'object',

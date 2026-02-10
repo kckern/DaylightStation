@@ -169,14 +169,14 @@
   }
 }
 
-/* Hymn-specific */
-.content-scroller.hymn {
+/* Hymn / Singalong-specific */
+.content-scroller.hymn, .content-scroller.singalong {
   background-color: #fdf0d588;
   // var for height of this panel
   --textpanel-height: 100%;
-  
-  
-  .hymn-text {
+
+
+  .hymn-text, .singalong-text {
     padding-top: 2rem;
     padding-bottom: calc(0.2 * var(--textpanel-height)); // 60% of .textpanel height
     font-size: 3rem;
@@ -357,7 +357,7 @@
     h2, h3, .controls { display: none; height: 0 !important; color: #ff000022 !important; }
     .current-time { border-color: #ffffff11 !important; background-color: #00000000 !important; }
     .seek-progress { background-color: #ffffff11 !important; }
-    .hymn-text { background-image: none!important; }
+    .hymn-text, .singalong-text { background-image: none!important; }
   }
 
   &.dark {

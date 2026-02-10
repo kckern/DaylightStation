@@ -78,7 +78,10 @@ const TYPE_ICONS = {
   course: IconSchool,
   meeting: IconUsers,
   collection: IconStack2,
-  // Content collection types (singalong/readalong)
+  // Format-based icons (preferred over collection-specific)
+  singalong: IconMusic,
+  readalong: IconBook,
+  // Legacy collection names (backward compat)
   hymn: IconMusic,
   primary: IconMusic,
   scripture: IconBook,
@@ -170,6 +173,8 @@ const SOURCE_COLORS = {
   talk: 'pink',
   'local-content': 'pink',
   list: 'violet',
+  singalong: 'indigo',
+  readalong: 'orange',
   hymn: 'indigo',
   primary: 'grape',
   app: 'teal',
@@ -225,6 +230,8 @@ const TYPE_LABELS = {
   course: 'Course',
   meeting: 'Meeting',
   collection: 'Collection',
+  singalong: 'Song',
+  readalong: 'Reading',
   hymn: 'Hymn',
   primary: 'Primary',
   app: 'App'

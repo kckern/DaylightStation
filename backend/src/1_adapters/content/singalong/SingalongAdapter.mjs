@@ -10,6 +10,7 @@ import {
   listDirs,
   listYamlFiles
 } from '#system/utils/FileIO.mjs';
+import { PlayableItem } from '#domains/content/capabilities/Playable.mjs';
 
 /**
  * Adapter for participatory sing-along content (hymns, primary songs).
@@ -94,26 +95,29 @@ export class SingalongAdapter {
     const style = { ...this._getDefaultStyle(), ...manifest?.style };
     const contentType = manifest?.contentType || 'stanzas';
 
-    return {
+    return new PlayableItem({
       id: `singalong:${localId}`,
       source: 'singalong',
-      category: 'singalong',
-      collection,
       title: metadata.title || `${collection} ${itemId}`,
       subtitle: metadata.subtitle || `${collection} #${metadata.number || itemId}`,
       thumbnail: this._collectionThumbnail(collection),
       mediaUrl: `/api/v1/stream/singalong/${localId}`,
+      mediaType: 'audio',
       duration,
       content: {
         type: contentType,
         data: metadata.verses || []
       },
       style,
+      type: collection,
       metadata: {
         number: metadata.number,
+        contentFormat: 'singalong',
+        collection,
+        category: 'singalong',
         ...metadata
       }
-    };
+    });
   }
 
   /**

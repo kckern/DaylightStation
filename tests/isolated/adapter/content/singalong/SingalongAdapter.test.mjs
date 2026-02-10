@@ -1,14 +1,14 @@
 // tests/isolated/adapter/content/singalong/SingalongAdapter.test.mjs
-import { jest, describe, test, expect, beforeEach } from '@jest/globals';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-// Mock FileIO at top of file
-jest.unstable_mockModule('#system/utils/FileIO.mjs', () => ({
-  loadYamlByPrefix: jest.fn(),
-  loadContainedYaml: jest.fn(),
-  findMediaFileByPrefix: jest.fn(),
-  dirExists: jest.fn(() => true),
-  listDirs: jest.fn(() => []),
-  listYamlFiles: jest.fn(() => [])
+vi.mock('#system/utils/FileIO.mjs', () => ({
+  loadYamlByPrefix: vi.fn(),
+  loadContainedYaml: vi.fn(),
+  findMediaFileByPrefix: vi.fn(),
+  fileExists: vi.fn(() => false),
+  dirExists: vi.fn(() => true),
+  listDirs: vi.fn(() => []),
+  listYamlFiles: vi.fn(() => [])
 }));
 
 const { loadYamlByPrefix, loadContainedYaml, findMediaFileByPrefix, listDirs, listYamlFiles } = await import('#system/utils/FileIO.mjs');
@@ -18,8 +18,7 @@ describe('SingalongAdapter', () => {
   let adapter;
 
   beforeEach(() => {
-    // Clear all mocks before each test
-    jest.clearAllMocks();
+    vi.clearAllMocks();
 
     adapter = new SingalongAdapter({
       dataPath: '/mock/data/content/singalong',
@@ -28,27 +27,27 @@ describe('SingalongAdapter', () => {
   });
 
   describe('source and prefixes', () => {
-    test('source returns "singalong"', () => {
+    it('source returns "singalong"', () => {
       expect(adapter.source).toBe('singalong');
     });
 
-    test('prefixes returns singalong prefix', () => {
+    it('prefixes returns singalong prefix', () => {
       expect(adapter.prefixes).toEqual([{ prefix: 'singalong' }]);
     });
 
-    test('canResolve returns true for singalong: IDs', () => {
+    it('canResolve returns true for singalong: IDs', () => {
       expect(adapter.canResolve('singalong:hymn/123')).toBe(true);
       expect(adapter.canResolve('singalong:primary/1')).toBe(true);
     });
 
-    test('canResolve returns false for other IDs', () => {
+    it('canResolve returns false for other IDs', () => {
       expect(adapter.canResolve('readalong:scripture/bom')).toBe(false);
       expect(adapter.canResolve('plex:12345')).toBe(false);
     });
   });
 
   describe('getItem', () => {
-    test('uses prefix matching for numeric IDs', async () => {
+    it('uses prefix matching for numeric IDs', async () => {
       loadYamlByPrefix.mockReturnValue({
         title: 'The Spirit of God',
         number: 2,
@@ -65,11 +64,11 @@ describe('SingalongAdapter', () => {
       );
       expect(item.id).toBe('singalong:hymn/2');
       expect(item.title).toBe('The Spirit of God');
-      expect(item.category).toBe('singalong');
-      expect(item.collection).toBe('hymn');
+      expect(item.metadata.category).toBe('singalong');
+      expect(item.metadata.collection).toBe('hymn');
     });
 
-    test('uses direct path for non-numeric IDs', async () => {
+    it('uses direct path for non-numeric IDs', async () => {
       loadContainedYaml.mockImplementation((dir, name) => {
         if (name === 'manifest') return null;
         if (name === 'custom-song') return {
@@ -85,7 +84,7 @@ describe('SingalongAdapter', () => {
       expect(item.id).toBe('singalong:hymn/custom-song');
     });
 
-    test('returns null when item not found', async () => {
+    it('returns null when item not found', async () => {
       loadYamlByPrefix.mockReturnValue(null);
       loadContainedYaml.mockReturnValue(null);
 
@@ -94,7 +93,7 @@ describe('SingalongAdapter', () => {
       expect(item).toBeNull();
     });
 
-    test('includes content with stanzas type', async () => {
+    it('includes content with stanzas type', async () => {
       loadYamlByPrefix.mockReturnValue({
         title: 'Test Hymn',
         number: 5,
@@ -111,7 +110,7 @@ describe('SingalongAdapter', () => {
       });
     });
 
-    test('includes default style settings', async () => {
+    it('includes default style settings', async () => {
       loadYamlByPrefix.mockReturnValue({
         title: 'Test Hymn',
         number: 7,
@@ -129,7 +128,7 @@ describe('SingalongAdapter', () => {
       });
     });
 
-    test('generates subtitle from collection and number', async () => {
+    it('generates subtitle from collection and number', async () => {
       loadYamlByPrefix.mockReturnValue({
         title: 'Test Hymn',
         number: 42,
@@ -143,7 +142,7 @@ describe('SingalongAdapter', () => {
       expect(item.subtitle).toBe('hymn #42');
     });
 
-    test('generates mediaUrl based on localId', async () => {
+    it('generates mediaUrl based on localId', async () => {
       loadYamlByPrefix.mockReturnValue({
         title: 'Test Song',
         number: 10,
@@ -159,7 +158,7 @@ describe('SingalongAdapter', () => {
   });
 
   describe('getList', () => {
-    test('lists collections when no localId', async () => {
+    it('lists collections when no localId', async () => {
       listDirs.mockReturnValue(['hymn', 'primary']);
 
       const result = await adapter.getList('');
@@ -169,7 +168,7 @@ describe('SingalongAdapter', () => {
       expect(result.items[0].itemType).toBe('container');
     });
 
-    test('lists items in collection', async () => {
+    it('lists items in collection', async () => {
       listYamlFiles.mockReturnValue(['0001-song.yml', '0002-song.yml']);
       loadYamlByPrefix.mockReturnValue({
         title: 'Test Song',
@@ -186,7 +185,7 @@ describe('SingalongAdapter', () => {
   });
 
   describe('resolvePlayables', () => {
-    test('returns single item as array', async () => {
+    it('returns single item as array', async () => {
       loadYamlByPrefix.mockReturnValue({
         title: 'Test Song',
         number: 1,
@@ -203,7 +202,7 @@ describe('SingalongAdapter', () => {
   });
 
   describe('getStoragePath', () => {
-    test('returns singalong as storage key', () => {
+    it('returns singalong as storage key', () => {
       expect(adapter.getStoragePath()).toBe('singalong');
     });
   });

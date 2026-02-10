@@ -14,7 +14,11 @@ vi.mock('#system/utils/FileIO.mjs', () => ({
 
 // Mock domains/content index for ItemSelectionService
 vi.mock('#domains/content/index.mjs', () => ({
-  ItemSelectionService: { select: vi.fn(() => []) }
+  ItemSelectionService: {
+    select: vi.fn(() => []),
+    applySort: vi.fn((items) => items),
+    applyPick: vi.fn((items) => [items[0]])
+  }
 }));
 
 const { loadYamlByPrefix, loadContainedYaml, findMediaFileByPrefix, listDirs, listYamlFiles } = await import('#system/utils/FileIO.mjs');
@@ -67,8 +71,8 @@ describe('ReadalongAdapter', () => {
 
       const item = await adapter.getItem('scripture/alma-32');
 
-      expect(item.category).toBe('readalong');
-      expect(item.collection).toBe('scripture');
+      expect(item.metadata.category).toBe('readalong');
+      expect(item.metadata.collection).toBe('scripture');
     });
 
     it('loads item directly when no resolver', async () => {

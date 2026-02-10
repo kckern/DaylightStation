@@ -116,6 +116,16 @@ export function VideoPlayer({
     }
   });
 
+  // Hard reset: seek to position, reload, and resume playback
+  const hardReset = useCallback(({ seekToSeconds } = {}) => {
+    const mediaEl = containerRef.current;
+    if (!mediaEl) return;
+    const normalized = Number.isFinite(seekToSeconds) ? Math.max(0, seekToSeconds) : 0;
+    try { mediaEl.currentTime = normalized; } catch (_) {}
+    mediaEl.load?.();
+    mediaEl.play?.().catch(() => {});
+  }, [containerRef]);
+
   // Register accessors with resilience bridge
   useEffect(() => {
     if (resilienceBridge?.registerAccessors) {
@@ -125,7 +135,7 @@ export function VideoPlayer({
     if (typeof resilienceBridge?.onRegisterMediaAccess === 'function') {
       resilienceBridge.onRegisterMediaAccess({
         getMediaEl,
-        hardReset: null,
+        hardReset,
         fetchVideoInfo: fetchVideoInfo || null
       });
     }
@@ -134,7 +144,7 @@ export function VideoPlayer({
         resilienceBridge.onRegisterMediaAccess({});
       }
     };
-  }, [resilienceBridge, getMediaEl, getContainerEl, fetchVideoInfo]);
+  }, [resilienceBridge, getMediaEl, getContainerEl, hardReset, fetchVideoInfo]);
 
   const { grandparentTitle, parentTitle, title, mediaUrl } = media;
 

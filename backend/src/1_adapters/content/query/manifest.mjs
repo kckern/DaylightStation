@@ -6,6 +6,6 @@ export default {
   mediaTypes: [],
   playableType: 'query',
   implicit: true,
-  adapter: () => import('./QueryDriver.mjs'),
+  adapter: () => import('./QueryAdapter.mjs'),
   configSchema: {},
 };

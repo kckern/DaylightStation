@@ -32,45 +32,39 @@ Every driver implements a standard interface. Not every method is required — d
 
 ### Required
 
+Validated by `IContentSource.mjs`:
+
 | Method | Purpose |
 |--------|---------|
-| `getItem(localId)` | Return metadata for a single item (title, thumbnail, format, capabilities) |
+| `getItem(localId)` | Return metadata for a single item (title, thumbnail, mediaType, capabilities) |
+| `getList(localId)` | Return children of a container |
+| `resolvePlayables(localId)` | Flatten a container to an ordered list of playable leaves |
+| `resolveSiblings(compoundId)` | Return peer items + parent info for navigation |
 
-### Optional (capability-based)
+### Optional (capability-based, not validated)
 
 | Method | Capability | Purpose |
 |--------|-----------|---------|
-| `getList(localId)` | `listable` | Return children of a container |
-| `getPlayInfo(localId)` | `playable` | Return everything needed to render the content (format-specific) |
-| `resolvePlayables(localId)` | `queueable` | Flatten a container to an ordered list of playable leaves |
 | `search(query)` | `searchable` | Return items matching a text query |
 | `getThumbnail(localId)` | `displayable` | Return an image/thumbnail for the item |
 | `getCapabilities(localId)` | — | Return the list of capabilities for a specific item |
 | `getContainerType(id)` | — | Return a container type string for selection strategy inference (see Content Progress) |
+| `getStoragePath(id)` | — | Return a persistence key for watch state storage |
+| `getSearchCapabilities()` | `searchable` | Report supported search filters and query mappings |
 
-### getPlayInfo Response
+### How Playable Data Is Returned
 
-Every driver's `getPlayInfo()` must return a `format` field. The remaining fields are format-specific:
+Adapters do **not** have a separate `getPlayInfo()` method. Instead, adapters return playback data directly from `getItem()` as `PlayableItem` instances (or plain objects with equivalent fields). The adapter sets `mediaType` on the item (e.g., `'audio'`, `'video'`, `'dash_video'`).
 
-```javascript
-// Video/dash_video format
-{ format: 'video', mediaUrl, mediaType, duration, resumePosition, title, thumbnail }
+The API layer adds a `format` field to the HTTP response via `resolveFormat.mjs` (located in `backend/src/4_api/v1/utils/`). The format resolution priority chain:
 
-// Audio format
-{ format: 'audio', mediaUrl, mediaType, duration, title, albumArt, artist, album }
+1. `item.metadata.contentFormat` — item-level override (e.g., `'singalong'`, `'readalong'`)
+2. `adapter.contentFormat` — adapter-level default (e.g., filesystem with `content_format: singalong`)
+3. `item.mediaType` — media type fallback (e.g., `'audio'`, `'video'`)
+4. Container detection — if no mediaUrl but has children → `'list'`
+5. Fallback → `'video'`
 
-// Singalong format
-{ format: 'singalong', audioUrl, verses, verseCount, duration, title }
-
-// Readalong format
-{ format: 'readalong', audioUrl, text, ambientAudioUrl, duration, title }
-
-// App format
-{ format: 'app', appId, appParam, appConfig, title }
-
-// Image format
-{ format: 'image', imageUrl, dimensions, title }
-```
+This means the `format` field in Play API responses is **not** set by adapters — it's derived at the API boundary. Adapters deal in `mediaType`; the frontend deals in `format`.
 
 ### Adapter Registration
 
@@ -106,7 +100,7 @@ Connects to an Immich photo/video management server.
 - **Multi-instance**: Yes
 - **Config**: host, API key, albums
 
-### audiobookshelf
+### audiobookshelf (source name: `abs`)
 
 Connects to an Audiobookshelf server. A single ABS instance can produce both playable and readable content — audiobooks return `audio` format, ebooks return `readable_flow` format. The adapter detects the media type and produces the appropriate format.
 
@@ -491,6 +485,36 @@ Frontend-only driver that resolves app content IDs against the app registry.
 - **Capabilities**: `playable`
 - **Multi-instance**: No — global registry
 - **Config**: none (apps self-register)
+
+### local-content (deprecated)
+
+Legacy adapter that handles hymn, primary, scripture, talk, and poem content via hardcoded if/else branches. Being replaced by SingalongAdapter + ReadalongAdapter which handle the same content via config-driven manifests.
+
+- **Protocol**: Local disk read (same as filesystem)
+- **Formats produced**: `singalong`, `readalong`
+- **Capabilities**: `playable`, `listable`
+- **Multi-instance**: No
+- **Status**: Deprecated. Legacy `/api/v1/local-content/*` endpoints have RFC 8594 deprecation headers (Sunset: 2026-08-01). New code should use the unified Play API with SingalongAdapter/ReadalongAdapter.
+
+### list (yaml-config lists)
+
+Handles yaml-config lists (menus, watchlists, programs). Items are references to content in other sources.
+
+- **Protocol**: YAML file parse
+- **Formats produced**: none (references only)
+- **Capabilities**: `listable`, `queueable`
+- **Multi-instance**: No — scoped to household
+- **Config**: path to lists directory
+- **List subtypes**: menu, watchlist, program
+
+### canvas adapters
+
+Dedicated adapter classes for the `displayable` capability on image content. Not content source drivers — they serve thumbnails and display images.
+
+- `FilesystemCanvasAdapter` — serves images from local filesystem directories
+- `ImmichCanvasAdapter` — serves images from Immich via its API
+
+While `canvas:` is an alias for content IDs (resolving to a filesystem instance), these adapters provide the thumbnail/display rendering layer.
 
 ---
 

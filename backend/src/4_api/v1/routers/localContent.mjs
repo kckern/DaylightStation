@@ -1,4 +1,15 @@
 // backend/src/4_api/routers/localContent.mjs
+/**
+ * DEPRECATED: All endpoints in this router are deprecated.
+ * Sunset date: 2026-08-01
+ *
+ * Replacements:
+ *   GET /local-content/hymn/:number     → GET /play/singalong/hymn/:number
+ *   GET /local-content/primary/:number  → GET /play/singalong/primary/:number
+ *   GET /local-content/scripture/*      → GET /play/readalong/scripture/*
+ *   GET /local-content/talk/*           → GET /play/readalong/talks/*
+ *   GET /local-content/poem/*           → GET /play/readalong/poetry/*
+ */
 import express from 'express';
 import path from 'path';
 import { parseFile } from 'music-metadata';
