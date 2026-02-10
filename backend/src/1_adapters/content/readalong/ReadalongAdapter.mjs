@@ -1,5 +1,6 @@
 // backend/src/1_adapters/content/readalong/ReadalongAdapter.mjs
 import path from 'path';
+import { parseFile } from 'music-metadata';
 import {
   loadYamlByPrefix,
   loadContainedYaml,
@@ -151,6 +152,22 @@ export class ReadalongAdapter {
     // Find media files using audio path
     const mediaFile = this._findMediaFile(collection, audioPath, metadata);
 
+    // Probe media file for duration if not in YAML metadata (cached)
+    // mediaFile is an absolute path from findMediaFileByPrefix
+    let duration = metadata.duration || 0;
+    if (!duration && mediaFile) {
+      if (!this._durationCache) this._durationCache = new Map();
+      if (this._durationCache.has(mediaFile)) {
+        duration = this._durationCache.get(mediaFile);
+      } else {
+        try {
+          const probedMeta = await parseFile(mediaFile, { duration: true });
+          duration = probedMeta?.format?.duration ? Math.round(probedMeta.format.duration) : 0;
+        } catch (err) { /* leave as 0 */ }
+        this._durationCache.set(mediaFile, duration);
+      }
+    }
+
     // Resolve ambient if enabled
     const ambientUrl = manifest?.ambient ? this._resolveAmbientUrl() : null;
 
@@ -174,7 +191,7 @@ export class ReadalongAdapter {
       mediaType: metadata.videoFile ? 'video' : 'audio',
       videoUrl: metadata.videoFile ? `/api/v1/stream/readalong/${collection}/${textPath}/video` : null,
       ambientUrl,
-      duration: metadata.duration || 0,
+      duration,
       content: {
         type: contentType,
         data: contentData
@@ -232,8 +249,13 @@ export class ReadalongAdapter {
    * @private
    */
   _findMediaFile(collection, itemPath, metadata) {
-    const searchPath = path.join(this._getMediaBasePath(collection), collection);
-    return findMediaFileByPrefix(searchPath, metadata.number || itemPath);
+    const prefix = metadata.number || itemPath;
+    const basePath = path.join(this._getMediaBasePath(collection), collection);
+    // Support nested paths (e.g., "dc/rex/37746") by extending the search directory
+    const dir = path.dirname(prefix);
+    const searchPath = dir !== '.' ? path.join(basePath, dir) : basePath;
+    const searchPrefix = path.basename(prefix);
+    return findMediaFileByPrefix(searchPath, searchPrefix);
   }
 
   /**

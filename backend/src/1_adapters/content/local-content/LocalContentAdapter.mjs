@@ -6,6 +6,7 @@ import { PlayableItem } from '#domains/content/capabilities/Playable.mjs';
 import { ListableItem } from '#domains/content/capabilities/Listable.mjs';
 import { ItemSelectionService } from '#domains/content/index.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
+import { parseFile } from 'music-metadata';
 import {
   buildContainedPath,
   loadContainedYaml,
@@ -258,6 +259,7 @@ export class LocalContentAdapter {
     this.dataPath = config.dataPath;
     this.mediaPath = config.mediaPath;
     this.mediaProgressMemory = config.mediaProgressMemory || null;
+    this._durationCache = new Map();
   }
 
   get source() {
@@ -890,6 +892,21 @@ export class LocalContentAdapter {
     const manifest = loadYamlSafe(path.join(basePath, 'manifest')) || {};
     const ambientUrl = manifest.ambient ? this._selectAmbientUrl() : null;
 
+    // Probe video file for duration if not in YAML metadata (cached)
+    let duration = metadata.duration || 0;
+    if (!duration) {
+      const videoPath = path.resolve(this.mediaPath, 'video', 'readalong', 'talks', `${localId}.mp4`);
+      if (this._durationCache.has(videoPath)) {
+        duration = this._durationCache.get(videoPath);
+      } else {
+        try {
+          const probedMeta = await parseFile(videoPath, { duration: true });
+          duration = probedMeta?.format?.duration ? Math.round(probedMeta.format.duration) : 0;
+        } catch (err) { /* leave as 0 */ }
+        this._durationCache.set(videoPath, duration);
+      }
+    }
+
     return new PlayableItem({
       id: compoundId,
       source: this.source,
@@ -900,7 +917,7 @@ export class LocalContentAdapter {
       mediaUrl: videoUrl,
       videoUrl,
       ambientUrl,
-      duration: metadata.duration || 0,
+      duration,
       resumable: true,
       description: metadata.description,
       style: manifest.style || null,

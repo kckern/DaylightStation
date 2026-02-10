@@ -496,7 +496,7 @@ export function createLocalContentRouter(config) {
     }
 
     // Try media adapter for cover art extraction
-    const mediaAdapter = registry.get('media');
+    const mediaAdapter = registry.get('files') || registry.get('media');
 
     if (mediaAdapter?.getCoverArt) {
       try {
