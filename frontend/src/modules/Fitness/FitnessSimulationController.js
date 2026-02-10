@@ -468,16 +468,30 @@ export class FitnessSimulationController {
       phase = 'cooldown';
     }
 
-    return {
-      phase,
-      activeChallenge: this.challengeState ? {
+    // Check real GovernanceEngine state when challenge was delegated
+    let activeChallenge = null;
+    if (this.challengeState) {
+      activeChallenge = {
         type: this.challengeState.type,
         targetZone: this.challengeState.targetZone,
         remainingSeconds: Math.max(0, Math.round(
           this.challengeState.duration - (Date.now() - this.challengeState.startTime) / 1000
         )),
         participantProgress: { ...this.challengeState.progress }
-      } : null,
+      };
+    } else if (typeof window !== 'undefined' && window.__fitnessGovernance?.activeChallenge) {
+      // Real governance engine handled the challenge — read from its state
+      const realState = window.__fitnessGovernance;
+      activeChallenge = {
+        type: 'zone_target',
+        targetZone: realState.activeChallenge,
+        delegated: true
+      };
+    }
+
+    return {
+      phase,
+      activeChallenge,
       stats: { ...this.stats }
     };
   }

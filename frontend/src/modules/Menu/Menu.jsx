@@ -390,6 +390,7 @@ function MenuIMG({ img, label }) {
   const [orientation, setOrientation] = useState(null);
   const [loading, setLoading] = useState(true);
   const [aspectRatio, setAspectRatio] = useState(1);
+  const [imgError, setImgError] = useState(false);
 
   const handleImageLoad = (e) => {
     const { naturalWidth, naturalHeight } = e.target;
@@ -399,6 +400,11 @@ function MenuIMG({ img, label }) {
 
     setOrientation(newOrientation);
     setAspectRatio(ratio);
+    setLoading(false);
+  };
+
+  const handleImageError = () => {
+    setImgError(true);
     setLoading(false);
   };
 
@@ -430,8 +436,8 @@ function MenuIMG({ img, label }) {
     }
   };
 
-  // If no image, show a gradient placeholder
-  if (!img) {
+  // If no image or image failed to load, show a gradient placeholder
+  if (!img || imgError) {
     const gradient = generateGradientFromLabel(label);
     return (
       <div className="menu-item-img no-image" style={{ background: gradient }}>
@@ -463,6 +469,7 @@ function MenuIMG({ img, label }) {
         src={img}
         alt={label}
         onLoad={handleImageLoad}
+        onError={handleImageError}
         style={{ display: loading ? "none" : "block" }}
       />
     </div>
