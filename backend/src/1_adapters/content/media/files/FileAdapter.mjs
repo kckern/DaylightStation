@@ -106,11 +106,32 @@ export class FileAdapter {
         album: common.album,
         year: common.year,
         track: common.track?.no,
-        genre: Array.isArray(common.genre) ? common.genre.join(', ') : common.genre
+        genre: Array.isArray(common.genre) ? common.genre.join(', ') : common.genre,
+        duration: metadata?.format?.duration ? Math.round(metadata.format.duration) : null
       };
     } catch (err) {
       // File doesn't have ID3 tags or can't be parsed
       return {};
+    }
+  }
+
+  /**
+   * Probe a media file for duration using music-metadata.
+   * @param {string} filePath - Full path to the media file
+   * @returns {Promise<number|null>} Duration in seconds, or null
+   * @private
+   */
+  async _probeFileDuration(filePath) {
+    if (!this._durationCache) this._durationCache = new Map();
+    if (this._durationCache.has(filePath)) return this._durationCache.get(filePath);
+    try {
+      const metadata = await (this._parseFile || parseFile)(filePath, { duration: true });
+      const duration = metadata?.format?.duration ? Math.round(metadata.format.duration) : null;
+      this._durationCache.set(filePath, duration);
+      return duration;
+    } catch (err) {
+      this._durationCache.set(filePath, null);
+      return null;
     }
   }
 
@@ -416,12 +437,18 @@ export class FileAdapter {
       // Load media progress for resume position (canonical format after P0 migration)
       const progress = this._getMediaProgress(localId);
       const resumePosition = progress?.playhead ?? null;
-      const duration = progress?.duration ?? null;
+      let duration = progress?.duration ?? null;
 
       // Parse ID3 tags for audio files
       let audioMetadata = {};
       if (mediaType === 'audio') {
         audioMetadata = await this._parseAudioMetadata(resolved.path);
+        if (duration == null) duration = audioMetadata.duration ?? null;
+      }
+
+      // Probe file for duration if not available from progress memory or ID3
+      if (duration == null) {
+        duration = await this._probeFileDuration(resolved.path);
       }
 
       // Extract parent folder name for parentTitle (e.g., "audio/sfx/intro.mp3" -> "SFX")
