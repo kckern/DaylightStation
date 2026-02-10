@@ -638,6 +638,10 @@ export class ListAdapter {
   async _getNextPlayableFromChild(child, resolved) {
     const { adapter } = resolved;
 
+    // Build canonical ID from resolved info so legacy prefixes (e.g. "scriptures:")
+    // are translated to the adapter's expected format (e.g. "readalong:scripture/...")
+    const canonicalId = `${adapter.source}:${resolved.localId}`;
+
     // Fast path: adapter with built-in smart selection (PlexAdapter)
     // Uses drill-down (show→season→episode) + bulk history instead of resolving ALL episodes
     if (adapter.loadPlayableItemFromKey) {
@@ -648,9 +652,10 @@ export class ListAdapter {
 
     let items = [];
     if (adapter.resolvePlayables) {
-      items = await adapter.resolvePlayables(child.id);
+      // Only need a few items to find next playable (in-progress > unwatched > first)
+      items = await adapter.resolvePlayables(canonicalId, { limit: 10 });
     } else if (adapter.getItem) {
-      const item = await adapter.getItem(child.id);
+      const item = await adapter.getItem(canonicalId);
       if (item?.mediaUrl || item?.isPlayable?.()) {
         items = [item];
       }
@@ -923,7 +928,7 @@ export class ListAdapter {
    * @returns {Promise<Array>}
    */
   async resolvePlayables(id, options = {}) {
-    const { applySchedule = true, forceAll = false } = options;
+    const { applySchedule = true, forceAll = false, limit = 0 } = options;
 
     // Strip source prefix only when it wraps a known list prefix (same as getList)
     const strippedId = id.replace(/^list:(?=(menu|program|watchlist|query):)/, '');
@@ -970,7 +975,8 @@ export class ListAdapter {
         } else {
           // Queue action: get ALL playables
           if (resolved.adapter.resolvePlayables) {
-            tasks.push(() => resolved.adapter.resolvePlayables(child.id));
+            const canonicalId = `${resolved.adapter.source}:${resolved.localId}`;
+            tasks.push(() => resolved.adapter.resolvePlayables(canonicalId));
           }
         }
       }
@@ -984,6 +990,7 @@ export class ListAdapter {
         for (const items of batchResults) {
           if (items?.length) playables.push(...items);
         }
+        if (limit > 0 && playables.length >= limit) break;
       }
 
       // Watchlist "never empty" fallback: if all items were filtered out
@@ -1006,7 +1013,9 @@ export class ListAdapter {
 
     const rawItems = Array.isArray(listData) ? listData : (listData.items || []);
     const items = rawItems.map(normalizeListItem);
-    const playables = [];
+
+    // Build resolution tasks (preserving order) then run in parallel batches
+    const tasks = [];
 
     for (const item of items) {
       if (item.active === false) continue;
@@ -1033,16 +1042,27 @@ export class ListAdapter {
           // Programs: pick ONE "next up" item per slot (same as watchlist play-action)
           const colonIdx = input.indexOf(':');
           const child = { id: input, source: colonIdx !== -1 ? input.substring(0, colonIdx) : 'files' };
-          const nextItem = await this._getNextPlayableFromChild(child, resolved);
-          if (nextItem) playables.push(nextItem);
+          tasks.push(() => this._getNextPlayableFromChild(child, resolved).then(item => item ? [item] : []));
         } else {
           // Menus: return ALL playables
           if (resolved.adapter.resolvePlayables) {
-            const childPlayables = await resolved.adapter.resolvePlayables(input);
-            playables.push(...childPlayables);
+            const canonicalId = `${resolved.adapter.source}:${resolved.localId}`;
+            tasks.push(() => resolved.adapter.resolvePlayables(canonicalId));
           }
         }
       }
+    }
+
+    // Run in parallel batches to avoid overwhelming external APIs
+    const BATCH_SIZE = 10;
+    const playables = [];
+    for (let i = 0; i < tasks.length; i += BATCH_SIZE) {
+      const batch = tasks.slice(i, i + BATCH_SIZE);
+      const batchResults = await Promise.all(batch.map(fn => fn()));
+      for (const items of batchResults) {
+        if (items?.length) playables.push(...items);
+      }
+      if (limit > 0 && playables.length >= limit) break;
     }
 
     return playables;
