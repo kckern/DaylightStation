@@ -53,7 +53,7 @@ export class ReadalongAdapter {
 
   /**
    * Get storage path for watch state persistence.
-   * Scripture content uses 'scriptures' to share history with legacy Plex entries.
+   * Returns manifest.storagePath if configured, otherwise 'readalong'.
    * @param {string} [id] - Item ID (compound or local) to determine collection
    * @returns {string}
    */
@@ -61,7 +61,8 @@ export class ReadalongAdapter {
     if (id) {
       const localId = id.replace(/^readalong:/, '');
       const collection = localId.split('/')[0];
-      if (collection === 'scripture') return 'scriptures';
+      const manifest = this._loadManifest(collection);
+      if (manifest?.storagePath) return manifest.storagePath;
     }
     return 'readalong';
   }
@@ -160,7 +161,7 @@ export class ReadalongAdapter {
 
     // Extract title - handle both object and array metadata
     const titleSource = Array.isArray(metadata) ? metadata[0] : metadata;
-    const { title, subtitle } = this._extractTitles(collection, titleSource, resolvedMeta, textPath);
+    const { title, subtitle } = this._extractTitles(manifest, titleSource, resolvedMeta, textPath);
 
     return {
       id: canonicalId,
@@ -307,20 +308,21 @@ export class ReadalongAdapter {
 
   /**
    * Extract title and subtitle for an item.
-   * For scripture, generates "Book Chapter" from the verse ID.
-   * @param {string} collection - Collection name
+   * When manifest specifies titleGenerator: 'scripture-reference', uses
+   * generateReference() to build "Book Chapter" from the verse ID.
+   * @param {Object|null} manifest - Collection manifest
    * @param {Object} titleSource - First metadata entry
    * @param {Object|null} resolvedMeta - Resolution metadata with verseId
    * @param {string} fallback - Fallback title (textPath)
    * @returns {{ title: string, subtitle: string|null }}
    * @private
    */
-  _extractTitles(collection, titleSource, resolvedMeta, fallback) {
+  _extractTitles(manifest, titleSource, resolvedMeta, fallback) {
     let title = null;
     let subtitle = null;
 
-    // For scripture with a resolved verseId, use generateReference for the title
-    if (collection === 'scripture' && resolvedMeta?.verseId) {
+    // Use manifest-configured title generator
+    if (manifest?.titleGenerator === 'scripture-reference' && resolvedMeta?.verseId) {
       try {
         const ref = generateReference(parseInt(resolvedMeta.verseId, 10));
         // Strip verse number: "Luke 4:1" → "Luke 4"
@@ -444,8 +446,8 @@ export class ReadalongAdapter {
   }
 
   /**
-   * Resolve playable items from a local ID
-   * For scripture volumes, returns items based on bookmark tracking
+   * Resolve playable items from a local ID.
+   * For volumes with a manifest resolver, returns items based on bookmark tracking.
    * @param {string} localId - Item or collection/folder ID
    * @returns {Promise<Array>}
    */
@@ -455,11 +457,11 @@ export class ReadalongAdapter {
     const [collection, ...rest] = cleanId.split('/');
     const itemPath = rest.join('/');
 
-    // Check if this is a scripture volume-level request
-    if (collection === 'scripture' && itemPath) {
+    // Check if this is a volume-level request with a resolver
+    if (itemPath) {
       const manifest = this._loadManifest(collection);
-      if (manifest?.resolver === 'scripture') {
-        const resolver = await this._loadResolver('scripture');
+      if (manifest?.resolver) {
+        const resolver = await this._loadResolver(manifest.resolver);
         if (resolver) {
           const collectionPath = path.join(this.dataPath, collection);
           const mediaCollectionPath = path.join(this._getMediaBasePath(collection), collection);
@@ -473,7 +475,7 @@ export class ReadalongAdapter {
 
           if (resolved?.isContainer && resolved.volume) {
             // Volume-level request - return items based on bookmark
-            return this._resolveScriptureVolumePlayables(resolved, manifest);
+            return this._resolveContainerPlayables(resolved, manifest);
           }
         }
       }
@@ -488,14 +490,14 @@ export class ReadalongAdapter {
   }
 
   /**
-   * Resolve playable items for a scripture volume using watch history
-   * Reads from scriptures.yml to find next chapter to play
-   * @param {Object} resolved - Resolved volume info from scripture resolver
-   * @param {Object} manifest - Scripture manifest with defaults
+   * Resolve playable items for a container volume using watch history.
+   * Reads from the configured storage path to find next item to play.
+   * @param {Object} resolved - Resolved volume info from resolver
+   * @param {Object} manifest - Collection manifest with defaults
    * @returns {Promise<Array>}
    * @private
    */
-  async _resolveScriptureVolumePlayables(resolved, manifest) {
+  async _resolveContainerPlayables(resolved, manifest) {
     const { volume, textVersion, audioRecording } = resolved;
     const resolver = await this._loadResolver('scripture');
     const volumeRanges = resolver?.VOLUME_RANGES || {};
@@ -511,7 +513,7 @@ export class ReadalongAdapter {
 
     if (this.mediaProgressMemory) {
       try {
-        const chapterProgress = await this._collectScriptureProgress(volume, textVersion, range);
+        const chapterProgress = await this._collectProgress(volume, textVersion, range);
 
         // Find in-progress chapter (< 90% watched) or next unwatched
         for (const cp of chapterProgress) {
@@ -553,16 +555,16 @@ export class ReadalongAdapter {
       mediaUrl: `/api/v1/stream/readalong/scripture/${audioPath}`,
       itemIndex: targetChapterId - range.start,
       // Include watch state for ItemSelectionService
-      percent: inProgressChapter ? (await this._getChapterPercent(volume, textVersion, targetChapterId)) : 0
+      percent: inProgressChapter ? (await this._getItemPercent(volume, textVersion, targetChapterId)) : 0
     }];
   }
 
   /**
-   * Get watch percent for a specific chapter.
-   * Checks legacy (plex:) and readalong/narrated scripture key formats.
+   * Get watch percent for a specific item.
+   * Checks legacy (plex:) and readalong/narrated key formats.
    * @private
    */
-  async _getChapterPercent(volume, textVersion, verseId) {
+  async _getItemPercent(volume, textVersion, verseId) {
     if (!this.mediaProgressMemory) return 0;
     try {
       // Check scriptures.yml with both key formats
@@ -592,16 +594,16 @@ export class ReadalongAdapter {
   }
 
   /**
-   * Collect scripture progress from all known storage locations.
-   * Checks scriptures.yml (primary) with plex:, readalong:, and narrated:scripture/ key formats,
+   * Collect progress from all known storage locations.
+   * Checks primary storage with plex:, readalong:, and narrated: key formats,
    * then falls back to readalong.yml and narrated.yml if no matches found.
-   * @param {string} volume - Volume name (nt, ot, bom, dc, pgp)
-   * @param {string} textVersion - Text version (e.g., kjvf)
-   * @param {Object} range - { start, end } verse ID range for the volume
-   * @returns {Promise<Array<{ verseId: number, percent: number }>>} Sorted chapter progress
+   * @param {string} volume - Volume name
+   * @param {string} textVersion - Text version
+   * @param {Object} range - { start, end } ID range for the volume
+   * @returns {Promise<Array<{ verseId: number, percent: number }>>} Sorted progress entries
    * @private
    */
-  async _collectScriptureProgress(volume, textVersion, range) {
+  async _collectProgress(volume, textVersion, range) {
     const legacyPrefix = `plex:${volume}/${textVersion}/`;
     const readalongPrefix = `readalong:scripture/${volume}/${textVersion}/`;
     const narratedPrefix = `narrated:scripture/${volume}/${textVersion}/`;
@@ -669,16 +671,16 @@ export class ReadalongAdapter {
   }
 
   /**
-   * Select next item from a scripture volume using ItemSelectionService
-   * Called by getItem() for volume-level requests (e.g., scripture/nt)
-   * @param {Object} resolved - Resolved volume info from scripture resolver
+   * Select next item from a volume using ItemSelectionService.
+   * Called by getItem() for volume-level requests.
+   * @param {Object} resolved - Resolved volume info from resolver
    * @param {Object} manifest - Collection manifest with defaults
-   * @returns {Promise<Object|null>} Full item for the selected verse, or null
+   * @returns {Promise<Object|null>} Full item for the selected entry, or null
    * @private
    */
   async _selectNextItem(resolved, manifest) {
     // Get candidate items for selection
-    const candidates = await this._resolveScriptureVolumePlayables(resolved, manifest);
+    const candidates = await this._resolveContainerPlayables(resolved, manifest);
     if (candidates.length === 0) return null;
 
     // Apply ItemSelectionService with sequential strategy
@@ -772,7 +774,7 @@ export class ReadalongAdapter {
     const canonicalId = `readalong:${collection}/${textPath}`;
 
     const titleSource = Array.isArray(metadata) ? metadata[0] : metadata;
-    const { title, subtitle } = this._extractTitles(collection, titleSource, resolvedMeta, textPath);
+    const { title, subtitle } = this._extractTitles(manifest, titleSource, resolvedMeta, textPath);
 
     return {
       id: canonicalId,
@@ -804,14 +806,8 @@ export class ReadalongAdapter {
   getContainerType(localId) {
     const cleanId = localId.replace(/^readalong:/, '');
     const [collection] = cleanId.split('/');
-
-    // Scripture volumes are sequential - you progress through in order
-    if (collection === 'scripture') {
-      return 'sequential';
-    }
-
-    // Talks and poetry use watchlist-style selection
-    return 'watchlist';
+    const manifest = this._loadManifest(collection);
+    return manifest?.containerType || 'watchlist';
   }
 
   // ---------------------------------------------------------------------------
