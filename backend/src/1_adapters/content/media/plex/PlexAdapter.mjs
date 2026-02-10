@@ -419,37 +419,56 @@ export class PlexAdapter {
           // Directly playable (movie, episode, track)
           return [item];
         }
-        // It's a container - get its children
+        // It's a container - get its children and collect playables
         const children = await this.getList(localId);
-        const playables = [];
-        for (const child of children) {
-          const childId = child.id.replace('plex:', '');
-          const resolved = await this._resolvePlayablesWithCache(childId, showLabelCache);
-          playables.push(...resolved);
-        }
-        return playables;
+        return this._collectPlayables(children, showLabelCache);
       }
 
-      // Otherwise get list and recurse
+      // Otherwise get list and collect playables
       const list = await this.getList(localId);
-      const playables = [];
-
-      for (const item of list) {
-        if (item.itemType === 'leaf') {
-          const ratingKey = item.id.replace('plex:', '');
-          const playable = await this.getItem(ratingKey, { showLabelCache });
-          if (playable?.mediaUrl) playables.push(playable);
-        } else if (item.itemType === 'container') {
-          const childId = item.id.replace('plex:', '');
-          const children = await this._resolvePlayablesWithCache(childId, showLabelCache);
-          playables.push(...children);
-        }
-      }
-
-      return playables;
+      return this._collectPlayables(list, showLabelCache);
     } catch (err) {
       return [];
     }
+  }
+
+  /**
+   * Collect playable items from a list, reusing already-resolved PlayableItems
+   * from getList() instead of re-fetching each one via getItem().
+   * Containers are resolved in parallel via getList() (skipping getItem()).
+   * @param {Array} items - Items from getList()
+   * @param {Map} showLabelCache
+   * @returns {Promise<PlayableItem[]>}
+   * @private
+   */
+  async _collectPlayables(items, showLabelCache) {
+    const playables = [];
+    const containerPromises = [];
+
+    for (const item of items) {
+      if (item.mediaUrl) {
+        // Already a fully-resolved PlayableItem from getList()
+        playables.push(item);
+      } else if (item.itemType === 'container') {
+        // Skip getItem() — we already know it's a container.
+        // Go directly to getList() and resolve children in parallel.
+        const childId = item.id.replace('plex:', '');
+        containerPromises.push(
+          this.getList(childId)
+            .then(children => this._collectPlayables(children, showLabelCache))
+            .catch(() => [])
+        );
+      }
+    }
+
+    if (containerPromises.length > 0) {
+      const nestedResults = await Promise.all(containerPromises);
+      for (const nested of nestedResults) {
+        playables.push(...nested);
+      }
+    }
+
+    return playables;
   }
 
   /**
