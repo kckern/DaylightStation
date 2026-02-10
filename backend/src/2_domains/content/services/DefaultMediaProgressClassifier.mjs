@@ -40,7 +40,9 @@ export class DefaultMediaProgressClassifier extends IMediaProgressClassifier {
     }
 
     // Insufficient actual watch time (anti-seeking protection)
-    if (watchTime !== undefined && watchTime < minWatchTimeSeconds) {
+    // Only apply when watchTime is positively recorded (> 0); legacy entries
+    // without watchTime tracking default to 0, which should not trigger this guard.
+    if (watchTime > 0 && watchTime < minWatchTimeSeconds) {
       return 'in_progress';
     }
 
