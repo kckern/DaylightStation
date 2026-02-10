@@ -15,8 +15,10 @@ const readalongRenderer = {
     return <div className="scripture-text">{scriptureDataToJSX(blocks)}</div>;
   },
   extractTitle: (data) => {
-    if (data.resolved?.verseId) {
-      try { return generateReference(data.resolved.verseId).replace(/:1$/, ''); }
+    // resolved may be at top level or nested in metadata (backend passes it in metadata object)
+    const verseId = data.resolved?.verseId || data.metadata?.resolved?.verseId;
+    if (verseId) {
+      try { return generateReference(verseId).replace(/:1$/, ''); }
       catch { /* fall through */ }
     }
     return data.metadata?.reference || data.title;
@@ -24,8 +26,8 @@ const readalongRenderer = {
   extractSubtitle: (data) => {
     const verses = data.content?.data;
     if (Array.isArray(verses) && verses[0]?.headings) {
-      const { title, subtitle } = verses[0].headings;
-      const parts = [title, subtitle].filter(Boolean);
+      const { heading, section_title } = verses[0].headings;
+      const parts = [heading, section_title].filter(Boolean);
       if (parts.length) return parts.join(' \u2022 ');
     }
     return data.subtitle;
