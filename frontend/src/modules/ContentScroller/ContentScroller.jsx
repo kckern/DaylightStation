@@ -298,7 +298,7 @@ import { useMediaReporter } from '../Player/hooks/useMediaReporter.js';
       return Math.max(0, Math.min(maxOffset, baseOffset));
     }, [yProgress, contentHeight, panelHeight]); 
     return (
-      <div className={`content-scroller ${type} ${className} ${shader}`} style={{ 
+      <div className={`content-scroller ${type} ${className} ${shader}${isSeeking ? ' seeking' : ''}`} style={{
         backgroundImage: `url(${paperBackground})`,
         backgroundPosition: `0px ${-yOffset}px`
       }}>

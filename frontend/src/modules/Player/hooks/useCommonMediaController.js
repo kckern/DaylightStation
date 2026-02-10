@@ -332,6 +332,7 @@ export function useCommonMediaController({
     if (!duration || !containerRef.current) return;
     const mediaEl = getMediaEl();
     if (!mediaEl) return;
+    mediaEl.__seekSource = 'click';
     const rect = event.target.getBoundingClientRect();
     const clickX = event.clientX - rect.left;
     mediaEl.currentTime = (clickX / rect.width) * duration;

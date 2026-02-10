@@ -168,6 +168,7 @@ export function useMediaKeyboardHandler(config) {
         deltaSeconds: increment,
         trigger: 'keyboard'
       }, 'debug');
+      try { const el = getMediaEl?.(); if (el) el.__seekSource = 'bump'; } catch { /* ignore */ }
       applySeekDelta(increment);
     },
 
@@ -178,6 +179,7 @@ export function useMediaKeyboardHandler(config) {
         deltaSeconds: increment,
         trigger: 'keyboard'
       }, 'debug');
+      try { const el = getMediaEl?.(); if (el) el.__seekSource = 'bump'; } catch { /* ignore */ }
       applySeekDelta(-increment);
     }
   };
