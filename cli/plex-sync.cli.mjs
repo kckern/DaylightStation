@@ -28,30 +28,17 @@
  * @module cli/plex-sync
  */
 
-import 'dotenv/config';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { existsSync } from 'fs';
 import fs from 'fs';
 import yaml from 'js-yaml';
-import axios from '../backend/lib/http.mjs';
-import { configService } from '../backend/lib/config/ConfigService.mjs';
-import { resolveConfigPaths } from '../backend/lib/config/pathResolver.mjs';
-import { hydrateProcessEnvFromConfigs } from '../backend/lib/logging/config.js';
+import axios from 'axios';
 
-// Bootstrap config (same as backend/index.js)
+// Resolve data directory (same search order as backend)
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const isDocker = existsSync('/.dockerenv');
-const configPaths = resolveConfigPaths({ isDocker, codebaseDir: path.join(__dirname, '..') });
-
-if (configPaths.error) {
-    console.error('Config error:', configPaths.error);
-    console.error('Set DAYLIGHT_DATA_PATH environment variable');
-    process.exit(1);
-}
-
-hydrateProcessEnvFromConfigs(configPaths.configDir);
-configService.init({ dataDir: configPaths.dataDir });
+const DATA_PATH = process.env.DAYLIGHT_DATA_PATH
+    || '/Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStation/data';
 
 // ============================================================================
 // Argument Parsing
@@ -108,24 +95,31 @@ const command = positionalArgs[0];
 
 class PlexSync {
     constructor() {
-        // Load auth from ConfigService (same pattern as plex.cli.mjs)
-        const auth = configService.getHouseholdAuth('plex') || {};
+        // Load Plex auth from data/household/auth/plex.yml
+        const authPath = path.join(DATA_PATH, 'household/auth/plex.yml');
+        if (!existsSync(authPath)) {
+            console.error(`Error: Plex auth not found at ${authPath}`);
+            process.exit(1);
+        }
+        const auth = yaml.load(fs.readFileSync(authPath, 'utf-8')) || {};
         this.token = auth.token;
 
         if (!this.token) {
-            console.error('Error: Plex token not found in config');
-            console.error('Ensure secrets.yml has plex.token configured');
+            console.error('Error: Plex token not found in auth config');
             process.exit(1);
         }
 
-        // Get server URL from auth config
-        const host = auth.server_url?.replace(/:\d+$/, '') || '';
-        const { plex: plexEnv } = process.env;
-        const port = plexEnv?.port;
-        this.baseUrl = port ? `${host}:${port}` : host;
+        // Load Plex host from data/household/config/media-app.yml
+        const mediaAppPath = path.join(DATA_PATH, 'household/config/media-app.yml');
+        if (!existsSync(mediaAppPath)) {
+            console.error(`Error: media-app.yml not found at ${mediaAppPath}`);
+            process.exit(1);
+        }
+        const mediaApp = yaml.load(fs.readFileSync(mediaAppPath, 'utf-8')) || {};
+        this.baseUrl = mediaApp.plex?.host;
 
         if (!this.baseUrl) {
-            console.error('Error: Plex server URL not configured');
+            console.error('Error: plex.host not found in media-app.yml');
             process.exit(1);
         }
 
