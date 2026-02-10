@@ -54,6 +54,14 @@ export function createPlayRouter(config) {
       }
     }
 
+    // Include type from item for CSS resolution (talk, scripture, etc.)
+    if (item.type) response.type = item.type;
+
+    // Set videoUrl when media is video (readalong scrollers check this field)
+    if (item.mediaType === 'video' && item.mediaUrl) {
+      response.videoUrl = item.mediaUrl;
+    }
+
     // Pass through content/style/subtitle for readalong/singalong scrollers
     // Content may be on item directly or nested in metadata (adapter-dependent)
     const contentData = item.content || item.metadata?.content;

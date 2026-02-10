@@ -77,25 +77,23 @@ export async function fetchMediaInfo({ contentId, plex, media, shuffle, maxVideo
   }
 
   // Unified contentId path — compound ID like "plex:12345" or "watchlist:path"
+  // Uses the play API which handles container resolution and includes resume state.
   if (contentId && !plex && !media) {
     if (shuffle) {
-      const { items: shuffledItems } = await DaylightAPI(
-        buildUrl(`api/v1/list/${contentId}/playable,shuffle`, queryCommon)
-      );
-      if (shuffledItems?.length > 0) {
-        const firstItem = shuffledItems[0];
-        const firstId = firstItem.play?.contentId || firstItem.contentId || firstItem.id;
-        if (firstId) {
-          const infoUrl = buildUrl(`api/v1/info/${firstId}`, queryCommon);
-          const infoResponse = await DaylightAPI(infoUrl);
-          return { ...infoResponse, assetId: infoResponse.contentId || infoResponse.id };
-        }
+      const url = buildUrl(`api/v1/play/${contentId}/shuffle`, queryCommon);
+      const playResponse = await DaylightAPI(url);
+      if (playResponse) {
+        return { ...playResponse, assetId: playResponse.assetId || playResponse.id };
       }
       return null;
     }
-    const url = buildUrl(`api/v1/info/${contentId}`, queryCommon);
-    const infoResponse = await DaylightAPI(url);
-    return { ...infoResponse, assetId: infoResponse.contentId || infoResponse.id };
+    const url = buildUrl(`api/v1/play/${contentId}`, queryCommon);
+    const playResponse = await DaylightAPI(url);
+    // Map resume_position → seconds so VideoPlayer/AudioPlayer can seek on load
+    if (playResponse.resume_position !== undefined && playResponse.seconds === undefined) {
+      playResponse.seconds = playResponse.resume_position;
+    }
+    return { ...playResponse, assetId: playResponse.assetId || playResponse.id };
   }
 
   // Legacy plex path

@@ -15,6 +15,7 @@
 import express from 'express';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { parseActionRouteId } from '../utils/actionRouteParser.mjs';
+import { generatePlaceholderSvg } from '../utils/placeholderSvg.mjs';
 
 /**
  * Create display API router for retrieving displayable content (images/thumbnails)
@@ -68,6 +69,7 @@ export function createDisplayRouter(config) {
 
     // Get thumbnail URL from adapter
     let thumbnailUrl;
+    let itemTitle;
     try {
       if (typeof adapter.getThumbnailUrl === 'function') {
         thumbnailUrl = await adapter.getThumbnailUrl(localId);
@@ -77,6 +79,7 @@ export function createDisplayRouter(config) {
       if (!thumbnailUrl && typeof adapter.getItem === 'function') {
         const item = await adapter.getItem(compoundId);
         thumbnailUrl = item?.thumbnail || item?.imageUrl;
+        itemTitle = item?.title;
       }
     } catch (err) {
       logger.error?.('display.getThumbnail.error', { compoundId, error: err.message });
@@ -84,12 +87,9 @@ export function createDisplayRouter(config) {
     }
 
     if (!thumbnailUrl) {
-      return res.status(404).json({
-        error: `Thumbnail not found: ${compoundId}`,
-        source: resolvedSource,
-        localId,
-        hint: 'Item may not have a displayable representation'
-      });
+      const svg = generatePlaceholderSvg({ type: resolvedSource, title: itemTitle || localId });
+      res.setHeader('Content-Type', 'image/svg+xml');
+      return res.send(svg);
     }
 
     // Redirect through proxy (replace external host with proxy path)

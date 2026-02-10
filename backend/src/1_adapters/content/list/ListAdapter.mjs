@@ -479,8 +479,17 @@ export class ListAdapter {
     if (!listData) return null;
 
     const rawItems = Array.isArray(listData) ? listData : (listData.items || []);
+    const menuFixedOrder = !Array.isArray(listData) && listData.fixed_order;
     const items = rawItems.map(normalizeListItem);
     const children = await this._buildListItems(items, parsed.prefix, parsed.name);
+
+    // Propagate menu-level fixed_order to all children
+    if (menuFixedOrder) {
+      for (const child of children) {
+        if (child.metadata) child.metadata.fixedOrder = true;
+      }
+    }
+
     const title = listData.title || listData.label || formatListTitle(parsed.name);
 
     // Try to get thumbnail from list config or first item
@@ -840,7 +849,8 @@ export class ListAdapter {
         category: ContentCategory.LIST,
         listType: listPrefix,
         days: item.days,
-        applySchedule: item.applySchedule
+        applySchedule: item.applySchedule,
+        fixedOrder: item.fixed_order || false
       };
 
       results.push(new Item({

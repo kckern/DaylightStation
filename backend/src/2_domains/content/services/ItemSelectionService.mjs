@@ -71,6 +71,7 @@ const INFERENCE_RULES = [
   { match: (ctx) => ctx.containerType === 'program', strategy: 'program' },
   { match: (ctx) => ctx.containerType === 'folder', strategy: 'watchlist' }, // legacy alias, maps to watchlist
   { match: (ctx) => ctx.containerType === 'sequential', strategy: 'sequential' }, // scripture, audiobooks
+  { match: (ctx) => ctx.containerType === 'conference', strategy: 'sequential' }, // talk conferences: skip watched, source order, pick first
   { match: (ctx) => ctx.containerType === 'freshvideo', strategy: 'freshvideo' }, // news, teded, etc.
   { match: (ctx) => ctx.containerType === 'album', strategy: 'album' },
   { match: (ctx) => ctx.containerType === 'playlist', strategy: 'playlist' },

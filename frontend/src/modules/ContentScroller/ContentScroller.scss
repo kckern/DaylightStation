@@ -59,6 +59,9 @@
     transition: transform 0.2s;
     width: 100%;
     padding-left: 2rem;
+    &.seeking {
+      transition: none !important;
+    }
   }
 
   .controls {
@@ -255,6 +258,9 @@
   margin-bottom: 2rem;
   text-align: justify;
 }
+.talk .talk-text.paragraphs {
+  margin-left: 0;
+}
 .talk .talk-text p{
   margin: 0;
   margin-bottom: 1rem;
@@ -284,6 +290,12 @@
 .talk.content-scroller {
   * {
     transition: all 0.5s ease-in-out;
+  }
+  .seek-bar, .seek-bar *, .seek-progress, .current-time, .controls * {
+    transition: none;
+  }
+  .seek-progress {
+    transition: width 0.1s linear;
   }
   &.night {
     video { filter: brightness(0.2) grayscale(100%) sepia(2) hue-rotate(-20deg); }

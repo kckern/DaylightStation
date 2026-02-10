@@ -287,6 +287,28 @@ function useFetchMenuData(listInput, refreshToken = 0) {
       };
     }
 
+    async function fetchContentIdList(target, config) {
+      config = config ? `${config}+recent_on_top` : "recent_on_top";
+      if (!target) {
+        return {
+          title: "No Menu",
+          image: "",
+          kind: "default",
+          items: [],
+        };
+      }
+      const data = await DaylightAPI(
+        `api/v1/list/${target}${config ? `/${config}` : ""}`
+      );
+      if (canceled) return null;
+      return {
+        title: data.title || data.label,
+        image: data.image,
+        kind: data.kind,
+        items: data.items
+      };
+    }
+
     async function loadListData(input) {
       if (!input) {
         setMenuItems([]);
@@ -319,15 +341,20 @@ function useFetchMenuData(listInput, refreshToken = 0) {
         return;
       }
 
-      // (C) If the input is an object with "menu", "list", "plex", or "watchlist"
+      // (C) If the input is an object with "menu", "list", "plex", "watchlist", or "contentId"
       if (typeof input === "object") {
-        const { menu, list, plex, watchlist, shuffle, playable } = input;
+        const { menu, list, plex, watchlist, contentId, shuffle, playable } = input;
         const config = [];
         if (shuffle) config.push("shuffle");
         if (playable) config.push("playable");
         const param = menu || list || plex || watchlist;
-        if (param) {
-          const data = await fetchData(param, config.join("+"));
+        // contentId uses api/v1/list/ directly (already includes source type)
+        const resolvedParam = param || (contentId ? contentId.replace(':', '/') : null);
+        const useWatchlistPrefix = !!param; // Only use watchlist/ prefix for legacy keys
+        if (resolvedParam) {
+          const data = useWatchlistPrefix
+            ? await fetchData(resolvedParam, config.join("+"))
+            : await fetchContentIdList(resolvedParam, config.join("+"));
           if (data) {
             setMenuItems(data.items);
             setMenuMeta({

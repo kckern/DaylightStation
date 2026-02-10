@@ -452,6 +452,23 @@ export class LocalContentAdapter {
    * @param {string} id
    * @returns {string}
    */
+  /**
+   * Get container type for selection strategy inference.
+   * Delegates to resolveContainerType() for talk containers.
+   * @param {string} id - Compound ID, e.g., "talk:ldsgc202510"
+   * @returns {string} Container type (conference, series, folder, etc.)
+   */
+  getContainerType(id) {
+    const [prefix, localId] = id.split(':');
+    if (prefix === 'talk' && localId) {
+      // Strip any leading path segments to get the folder ID
+      const parts = localId.split('/');
+      const folderId = parts[parts.length - 1];
+      return resolveContainerType(folderId, this.mediaPath);
+    }
+    return 'folder';
+  }
+
   getStoragePath(id) {
     const prefix = id.split(':')[0];
     if (prefix === 'talk') return 'talk';
@@ -847,27 +864,33 @@ export class LocalContentAdapter {
     }
 
     const compoundId = `talk:${localId}`;
-    const mediaUrl = `/api/v1/proxy/local-content/stream/talk/${localId}`;
+    const videoUrl = `/api/v1/proxy/local-content/stream/talk/${localId}`;
 
     // Extract parent folder from localId (e.g., "ldsgc202510/13" → "ldsgc202510")
     const pathParts = localId.split('/');
     const folderId = pathParts.length > 1 ? pathParts[0] : null;
     const parentTitle = formatConferenceName(folderId);
 
+    // Load talk manifest for style/cssType config
+    const manifest = loadYamlSafe(path.join(basePath, 'manifest')) || {};
+
     return new PlayableItem({
       id: compoundId,
       source: this.source,
       localId,
       title: metadata.title || localId,
-      type: 'talk',
+      type: manifest.cssType || 'talk',
       mediaType: 'video',
-      mediaUrl,
+      mediaUrl: videoUrl,
+      videoUrl,
       duration: metadata.duration || 0,
       resumable: true,
       description: metadata.description,
+      style: manifest.style || null,
       metadata: {
-        type: 'talk',
+        type: manifest.cssType || 'talk',
         contentFormat: 'readalong',
+        cssType: manifest.cssType || 'talk',
         speaker: metadata.speaker,
         date: metadata.date,
         servedLive: metadata.servedLive ?? metadata.served_live ?? metadata.live ?? metadata.isLive ?? null,
@@ -1111,6 +1134,9 @@ export class LocalContentAdapter {
         const talkPath = parentSeriesId
           ? `${parentSeriesId}/${actualFolderId}/${talkId}`
           : `${actualFolderId}/${talkId}`;
+        // Skip talks that have no corresponding media file
+        const mediaFilePath = path.join(mediaBasePath, `${talkPath}.mp4`);
+        if (!fileExists(mediaFilePath)) continue;
         const item = await this._getTalk(talkPath);
         if (item) children.push(item);
       }

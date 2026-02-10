@@ -51,8 +51,12 @@ export function MenuStack({ rootMenu }) {
       return;
     }
 
-    // For items with a content ID but unknown type, use the router to determine view
-    if (listContentId && !selection.type) {
+    // For Plex items with unknown type, use the router to determine view
+    // Non-plex lists (menu:, watchlist:, program:, query:) go through generic menu handler
+    const isPlex = listContentId && (
+      listContentId.startsWith('plex:') || /^\d+$/.test(listContentId)
+    );
+    if (isPlex && !selection.type) {
       push({ type: 'plex-menu', props: selection });
       return;
     }
