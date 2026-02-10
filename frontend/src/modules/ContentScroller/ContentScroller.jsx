@@ -89,6 +89,8 @@ import { useMediaReporter } from '../Player/hooks/useMediaReporter.js';
     const [duration, setDuration] = useState(0);
     const [currentTime, setCurrentTime] = useState(0);
     const [progress, setProgress] = useState(0);
+    const [isSeeking, setIsSeeking] = useState(false);
+    const seekTimerRef = useRef(null);
   
     // Use dynamic dimensions hook for layout measurement
     const {
@@ -216,8 +218,13 @@ import { useMediaReporter } from '../Player/hooks/useMediaReporter.js';
       const rect = e.currentTarget.getBoundingClientRect();
       const offsetX = e.clientX - rect.left;
       const newTime = (offsetX / rect.width) * duration;
-  
+
       if (mainRef.current) {
+        // Disable scroll transition for instant jump
+        setIsSeeking(true);
+        clearTimeout(seekTimerRef.current);
+        seekTimerRef.current = setTimeout(() => setIsSeeking(false), 100);
+
         mainRef.current.currentTime = newTime;
         setCurrentTime(newTime);
         clearPendingSeek();
@@ -319,7 +326,7 @@ import { useMediaReporter } from '../Player/hooks/useMediaReporter.js';
         >
           <div
             ref={contentRef}
-            className="scrolled-content"
+            className={`scrolled-content${isSeeking ? ' seeking' : ''}`}
             style={{ position: "absolute", transform: `translateY(-${yOffset}px)` }}
           >
             {renderedContent}

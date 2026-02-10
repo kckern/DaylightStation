@@ -397,7 +397,7 @@ export function SinglePlayer(props = {}) {
     // Content format → registered component (scrollers, readers, etc.)
     const ContentComponent = CONTENT_FORMAT_COMPONENTS[format];
     if (ContentComponent) {
-      return <ContentComponent contentId={mediaInfo.id || effectiveContentId} {...contentProps} {...contentScrollerBridge} />;
+      return <ContentComponent contentId={mediaInfo.id || effectiveContentId} initialData={mediaInfo} {...contentProps} {...contentScrollerBridge} />;
     }
 
     // Unknown format: render debug info

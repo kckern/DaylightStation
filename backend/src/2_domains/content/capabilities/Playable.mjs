@@ -35,6 +35,10 @@ export class PlayableItem extends Item {
     super(props);
     this.mediaType = props.mediaType;
     this.mediaUrl = props.mediaUrl;
+    this.videoUrl = props.videoUrl ?? null;
+    this.ambientUrl = props.ambientUrl ?? null;
+    this.style = props.style ?? null;
+    this.content = props.content ?? null;
     this.duration = props.duration ?? null;
     this.resumable = props.resumable;
     this.resumePosition = props.resumePosition ?? null;

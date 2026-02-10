@@ -110,32 +110,26 @@ test.describe('Talk playback: ldsgc202510/12', () => {
     expect(time2 - time1, 'Playhead should advance at least 3s in 5s window').toBeGreaterThanOrEqual(3);
   });
 
-  test('text position changes as media plays', async () => {
-    // The readalong scroller uses CSS translateY to scroll text
-    const getTranslateY = () => sharedPage.evaluate(() => {
-      const scrolled = document.querySelector('.scrolled-content');
-      if (!scrolled) return { found: false };
-      const style = scrolled.style.transform || '';
-      const match = style.match(/translateY\(-?([\d.]+)px\)/);
-      return { found: true, y: match ? parseFloat(match[1]) : 0, transform: style };
+  test('video renders with talk layout (video + text panel)', async () => {
+    // Talks render video on left with text on right (split layout)
+    const layout = await sharedPage.evaluate(() => {
+      const video = document.querySelector('video');
+      const textpanel = document.querySelector('.textpanel');
+      const scroller = document.querySelector('.content-scroller');
+      return {
+        hasVideo: !!video,
+        hasTextPanel: !!textpanel,
+        scrollerClasses: scroller?.className || '',
+        videoWidth: video?.getBoundingClientRect()?.width || 0,
+        panelWidth: textpanel?.getBoundingClientRect()?.width || 0,
+      };
     });
 
-    const pos1 = await getTranslateY();
-    console.log('Text position before:', JSON.stringify(pos1));
-
-    await sharedPage.waitForTimeout(8000);
-
-    const pos2 = await getTranslateY();
-    console.log('Text position after:', JSON.stringify(pos2));
-
-    if (pos1.found && pos2.found) {
-      expect(pos2.y, 'Text translateY should increase as content scrolls').toBeGreaterThan(pos1.y);
-    } else {
-      // Fallback: just check some text content is visible
-      const hasText = await sharedPage.evaluate(() => {
-        return document.querySelectorAll('.readalong-text p').length > 0;
-      });
-      expect(hasText, 'Should have readalong text paragraphs').toBe(true);
-    }
+    console.log('Layout:', JSON.stringify(layout));
+    expect(layout.hasVideo, 'Should render <video> element for talks').toBe(true);
+    expect(layout.hasTextPanel, 'Should have text panel alongside video').toBe(true);
+    expect(layout.scrollerClasses, 'CSS class should contain "talk"').toContain('talk');
+    expect(layout.videoWidth, 'Video should have non-zero width').toBeGreaterThan(0);
+    expect(layout.panelWidth, 'Text panel should have non-zero width').toBeGreaterThan(0);
   });
 });

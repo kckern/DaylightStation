@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import ContentScroller from './ContentScroller.jsx';
-import { DaylightAPI } from '../../lib/api.mjs';
+import { DaylightAPI, DaylightMediaPath } from '../../lib/api.mjs';
 import { getReadalongRenderer } from '../../lib/contentRenderers.jsx';
 
 /**
@@ -18,6 +18,7 @@ import { getReadalongRenderer } from '../../lib/contentRenderers.jsx';
  */
 export function ReadalongScroller({
   contentId,
+  initialData,
   advance,
   clear,
   volume,
@@ -30,10 +31,12 @@ export function ReadalongScroller({
   onSeekRequestConsumed,
   remountDiagnostics
 }) {
-  const [data, setData] = useState(null);
+  const [data, setData] = useState(initialData || null);
   const renderer = getReadalongRenderer();
 
   useEffect(() => {
+    // Skip fetch if data was provided by parent (e.g., SinglePlayer already fetched it)
+    if (initialData) { setData(initialData); return; }
     if (!contentId) return;
 
     // Convert contentId to URL path segments for the info endpoint.
@@ -45,7 +48,16 @@ export function ReadalongScroller({
     DaylightAPI(`api/v1/info/${path}`).then(response => {
       setData(response);
     });
-  }, [contentId]);
+  }, [contentId, initialData]);
+
+  // Generate ambient track for content types that use it (talks, scriptures)
+  const [ambientTrack] = useState(
+    String(Math.floor(Math.random() * 115) + 1).padStart(3, '0')
+  );
+
+  // Determine wrapper class: talks use "talk-text" to match legacy CSS, others use "readalong-text"
+  const contentCssType = data?.type || data?.metadata?.cssType;
+  const textWrapperClass = contentCssType === 'talk' ? 'talk-text' : 'readalong-text';
 
   const parseContent = useCallback((contentData) => {
     // Try renderer first (handles scripture verses with special formatting)
@@ -57,7 +69,7 @@ export function ReadalongScroller({
     // Plain array of strings (talks, poetry) — most common for non-scripture
     if (Array.isArray(contentData)) {
       return (
-        <div className="readalong-text paragraphs">
+        <div className={`${textWrapperClass} paragraphs`}>
           {contentData.map((para, idx) => {
             if (typeof para === 'string' && para.startsWith('##')) {
               return <h4 key={idx}>{para.slice(2).trim()}</h4>;
@@ -86,7 +98,7 @@ export function ReadalongScroller({
 
     // Structured paragraphs
     return (
-      <div className="readalong-text paragraphs">
+      <div className={`${textWrapperClass} paragraphs`}>
         {contentData.data.map((para, idx) => {
           if (typeof para === 'string' && para.startsWith('##')) {
             return <h4 key={idx}>{para.slice(2).trim()}</h4>;
@@ -95,14 +107,16 @@ export function ReadalongScroller({
         })}
       </div>
     );
-  }, [renderer]);
+  }, [renderer, textWrapperClass]);
 
   if (!data) return null;
 
   const title = renderer?.extractTitle ? renderer.extractTitle(data) : data.title;
   const subtitle = renderer?.extractSubtitle ? renderer.extractSubtitle(data) : data.subtitle;
-  // Scripture content uses { type: 'verses', data: [...] } and needs 'scriptures' CSS class
-  const cssType = data.content?.type === 'verses' ? 'scriptures' : (renderer?.cssType || 'readalong');
+  // Determine CSS type: scripture verses get 'scriptures', talks get 'talk', etc.
+  // Prefer explicit type from API response, fall back to content-type detection
+  const cssType = data.content?.type === 'verses' ? 'scriptures'
+    : (data.type || data.metadata?.cssType || renderer?.cssType || 'readalong');
 
   // Apply style as CSS variables
   const cssVars = {
@@ -113,7 +127,7 @@ export function ReadalongScroller({
     '--color': data.style?.color || 'inherit'
   };
 
-  const isVideo = !!data.videoUrl;
+  const isVideo = !!data.videoUrl || data.mediaType === 'video';
 
   // Process volume parameter (same pattern as other scrollers)
   const mainVolume = (() => {
@@ -143,7 +157,7 @@ export function ReadalongScroller({
         mainMediaUrl={isVideo ? data.videoUrl : data.mediaUrl}
         isVideo={isVideo}
         mainVolume={mainVolume}
-        ambientMediaUrl={data.ambientUrl}
+        ambientMediaUrl={data.ambientUrl || (['talk', 'scriptures'].includes(cssType) ? DaylightMediaPath(`media/audio/ambient/${ambientTrack}`) : null)}
         ambientConfig={{
           fadeOutStep: 0.01,
           fadeOutInterval: 400,

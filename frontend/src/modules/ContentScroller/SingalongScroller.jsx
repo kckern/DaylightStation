@@ -18,6 +18,7 @@ import { getSingalongRenderer } from '../../lib/contentRenderers.jsx';
  */
 export function SingalongScroller({
   contentId,
+  initialData,
   advance,
   clear,
   volume,
@@ -30,13 +31,15 @@ export function SingalongScroller({
   onSeekRequestConsumed,
   remountDiagnostics
 }) {
-  const [data, setData] = useState(null);
+  const [data, setData] = useState(initialData || null);
   const textRef = useRef(null);
   const renderer = getSingalongRenderer();
   const cssType = renderer.cssType;
   const wrapperClass = renderer.wrapperClass;
 
   useEffect(() => {
+    // Skip fetch if data was provided by parent (e.g., SinglePlayer already fetched it)
+    if (initialData) { setData(initialData); return; }
     if (!contentId) return;
 
     // Convert contentId to URL path segments for the info endpoint.
@@ -48,7 +51,7 @@ export function SingalongScroller({
     DaylightAPI(`api/v1/info/${path}`).then(response => {
       setData(response);
     });
-  }, [contentId]);
+  }, [contentId, initialData]);
 
   // Center text by widest line
   useCenterByWidest(textRef, [data?.content?.data]);
