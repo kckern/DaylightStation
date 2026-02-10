@@ -33,20 +33,21 @@ export class FreshVideoAdapter {
     const videoPath = `video/news/${localId}`;
 
     const listing = await this.#fileAdapter.getList(videoPath);
-    const leaves = (listing || []).filter(item => item.itemType === 'leaf');
-    if (leaves.length === 0) return [];
+    // FileAdapter.getList returns PlayableItem (no itemType) for files
+    // and ListableItem (itemType: 'container') for directories — skip containers
+    const files = (listing || []).filter(item => item.itemType !== 'container');
+    if (files.length === 0) return [];
 
-    // Build full items with date extracted from filename
+    // Build items with date extracted from filename
+    // FileAdapter.getList already returns full items via getItem(), so use directly
     const items = [];
-    for (const leaf of leaves) {
-      const fullItem = await this.#fileAdapter.getItem(leaf.localId);
-      if (!fullItem) continue;
-
-      const filename = leaf.localId.split('/').pop() || '';
+    for (const file of files) {
+      const localId = file.localId || file.id?.replace(/^(files|media):/, '');
+      const filename = localId?.split('/').pop() || '';
       const dateMatch = filename.match(/^(\d{8})/);
       const date = dateMatch ? dateMatch[1] : '00000000';
 
-      items.push({ ...fullItem, date });
+      items.push({ ...file, date });
     }
 
     if (items.length === 0) return [];
