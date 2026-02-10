@@ -36,7 +36,7 @@ A **driver** is a protocol adapter. A **source instance** is a named config that
 |--------|----------|-----------------|----------------|
 | `plex` | Remote HTTP API | video, dash_video, audio, image | Yes |
 | `immich` | Remote HTTP API | image, video | Yes |
-| `audiobookshelf` | Remote HTTP API | audio, readable_flow, readable_paged | Yes |
+| `audiobookshelf` (source: `abs`) | Remote HTTP API | audio, readable_flow, readable_paged | Yes |
 | `komga` | Remote HTTP API | readable_paged | Yes |
 | `filesystem` | Local disk | video, audio, image, singalong, readalong | Yes |
 | `yaml-config` | YAML file parse | (static references) | No (one per household) |
@@ -110,8 +110,8 @@ Capabilities describe **what actions are available** on an item.
 
 | Capability | Meaning | Adapter Method | API Route |
 |------------|---------|---------------|-----------|
-| `playable` | Can render content | `getPlayInfo()` | `GET /api/v1/play/:source/*` |
-| `readable` | Can render paged/flow text | `resolveReadables()` | `GET /api/v1/read/:source/*` |
+| `playable` | Can render content | `getItem()` (returns PlayableItem) | `GET /api/v1/play/:source/*` |
+| `readable` | Can render paged/flow text | `getItem()` (returns ReadableItem) | `GET /api/v1/play/:source/*` |
 | `listable` | Has children, browsable | `getList()` | `GET /api/v1/list/:source/*` |
 | `queueable` | Flatten to playable list | `resolvePlayables()` | `GET /api/v1/queue/:source/*` |
 | `searchable` | Cross-source search | `search()` | `GET /api/v1/content/query/search` |
@@ -198,7 +198,7 @@ Actions determine what happens when a user selects content.
 | `list` | Browse container children | `menu` | No |
 | `open` | Launch standalone app | `app` | No |
 | `display` | Show static image | `display` | No |
-| `read` | Open paged/flow reader | `reader` | No |
+| `read` | Open paged/flow reader (served via play route) | `reader` | No |
 
 ### `play` vs `open` (apps)
 
@@ -216,8 +216,7 @@ Same app component, different lifecycle wrapper.
 
 | Route | Capability | Purpose |
 |-------|-----------|---------|
-| `GET /api/v1/play/:source/*` | playable | Resolve content → format + render data |
-| `GET /api/v1/read/:source/*` | readable | Resolve readable content |
+| `GET /api/v1/play/:source/*` | playable, readable | Resolve content → format + render data (readable content also served here) |
 | `GET /api/v1/list/:source/*` | listable | Browse container children |
 | `GET /api/v1/queue/:source/*` | queueable | Flatten container to playable list |
 | `GET /api/v1/display/:source/*` | displayable | Get thumbnail/image |
@@ -251,25 +250,25 @@ Query params: `take=N`, `skip=N`
 
 ## Adapter Contract (Driver Interface)
 
-### Required
+### Required (validated by `IContentSource.mjs`)
 
 | Method | Returns |
 |--------|---------|
-| `getItem(localId)` | Item metadata (title, thumbnail, format, capabilities) |
+| `getItem(localId)` | Item metadata (title, thumbnail, mediaType, capabilities). For playable content, returns PlayableItem. |
+| `getList(localId)` | Children of a container |
+| `resolvePlayables(localId)` | Ordered list of playable leaves |
+| `resolveSiblings(compoundId)` | Peer items + parent info |
 
-### Optional (capability-gated)
+### Optional (capability-gated, not validated)
 
 | Method | Capability | Returns |
 |--------|-----------|---------|
-| `getList(localId)` | listable | Children of a container |
-| `getPlayInfo(localId)` | playable | Format + everything needed to render |
-| `resolvePlayables(localId)` | queueable | Ordered list of playable leaves |
-| `resolveReadables(localId)` | readable | Paged/flow content for reading |
 | `search(query)` | searchable | Items matching text/filters |
 | `getThumbnail(localId)` | displayable | Image/thumbnail URL |
 | `getCapabilities(localId)` | — | List of capabilities for an item |
-| `resolveSiblings(localId)` | — | Peer items + parent info |
 | `getContainerType(id)` | — | Container type string for selection strategy inference |
+| `getStoragePath(id)` | — | Persistence key for watch state storage |
+| `getSearchCapabilities()` | searchable | Supported search filters and query mappings |
 
 ---
 
@@ -306,9 +305,9 @@ All renderers implement this interface so the queue controller is format-agnosti
 | AudioPlayer | audio | `useCommonMediaController` | Complete |
 | SingalongScroller | singalong | ContentScroller → `useMediaReporter` | Complete |
 | ReadalongScroller | readalong | ContentScroller → `useMediaReporter` | Complete |
-| PlayableAppShell | app | App calls `advance()` when done | Planned |
-| PagedReader | readable_paged | Page navigation | Planned |
-| FlowReader | readable_flow | CFI-based position | Planned |
+| PlayableAppShell | app | Delegates to AppContainer | Minimal stub (exists, delegates to AppContainer) |
+| PagedReader | readable_paged | Page navigation | Placeholder stub |
+| FlowReader | readable_flow | CFI-based position | Placeholder stub |
 
 ---
 
@@ -319,8 +318,8 @@ Player.jsx
 ├─ Composite? → CompositePlayer
 │   ├─ Visual track → VisualRenderer (app, image, video)
 │   └─ Audio track → nested Player
-└─ Single? → ContentResolver
-    ├─ Resolve: GET /api/v1/play/{contentId} → { format, ...data }
+└─ Single? → SinglePlayer.jsx
+    ├─ Resolve: fetchMediaInfo() → /api/v1/play/ + /api/v1/info/
     └─ Dispatch by format → [renderer from table above]
 ```
 

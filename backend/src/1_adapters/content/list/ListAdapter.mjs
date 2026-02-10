@@ -752,7 +752,8 @@ export class ListAdapter {
       if (item.play) {
         Object.assign(playAction, item.play);
       } else if (item.open) {
-        Object.assign(openAction, item.open);
+        // open is a string (e.g., "family-selector/alan") — wrap as { app: value }
+        Object.assign(openAction, typeof item.open === 'string' ? { app: item.open } : item.open);
       } else if (item.queue) {
         Object.assign(queueAction, item.queue);
       } else if (item.list) {
@@ -1007,8 +1008,8 @@ export class ListAdapter {
    * @returns {Promise<Array>}
    * @private
    */
-  // Note: Query resolution (query:dailynews etc.) is now handled by QueryDriver.
-  // See backend/src/1_adapters/content/query/QueryDriver.mjs
+  // Note: Query resolution (query:dailynews etc.) is now handled by QueryAdapter.
+  // See backend/src/1_adapters/content/query/QueryAdapter.mjs
 
   /**
    * Search list names and item labels

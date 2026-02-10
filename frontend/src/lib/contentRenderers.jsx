@@ -34,7 +34,7 @@ const readalongRenderer = {
 
 // Singalong format renderer (used by SingalongScroller).
 // All singalong collections (hymn, primary) share the same config.
-const singalongRenderer = { cssType: 'hymn', wrapperClass: 'hymn-text' };
+const singalongRenderer = { cssType: 'singalong', wrapperClass: 'singalong-text' };
 
 // Format-level accessors — no collection parameter needed.
 export function getReadalongRenderer()  { return readalongRenderer; }

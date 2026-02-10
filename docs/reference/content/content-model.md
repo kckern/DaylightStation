@@ -163,7 +163,7 @@ All content formats resolve through a single Play API endpoint:
 GET /api/v1/play/{contentId}
 ```
 
-The response always includes a `format` field plus format-specific data:
+The response always includes a `format` field plus format-specific data. Note: the `format` field is added at the API layer by `resolveFormat.mjs` (`backend/src/4_api/v1/utils/resolveFormat.mjs`), not returned directly by adapters. Adapters return `mediaType` on PlayableItem or set `metadata.contentFormat`. The resolve chain is: `item.metadata.contentFormat` → `adapter.contentFormat` → `item.mediaType` → container detection → fallback `'video'`.
 
 ```json
 // All formats include:
@@ -210,8 +210,8 @@ Capabilities describe **what actions are available** on a content item. They are
 
 | Capability | Meaning | Adapter Method |
 |------------|---------|----------------|
-| `playable` | Can produce renderable content (media, scroller, app) | `getPlayInfo()` |
-| `readable` | Can produce paged or reflowable text content (ebooks, comics) | `resolveReadables()` |
+| `playable` | Can produce renderable content (media, scroller, app) | `getItem()` (returns PlayableItem with `mediaType`) |
+| `readable` | Can produce paged or reflowable text content (ebooks, comics) | `getItem()` (returns ReadableItem) |
 | `listable` | Has children, can list contents (container) | `getList()` |
 | `queueable` | Can be flattened to ordered playable items | `resolvePlayables()` |
 | `searchable` | Appears in cross-source search results | `search()` |
@@ -226,7 +226,7 @@ Capabilities map to API routes:
 | Capability | API Route |
 |------------|-----------|
 | `playable` | `GET /api/v1/play/:source/*` |
-| `readable` | `GET /api/v1/read/:source/*` |
+| `readable` | `GET /api/v1/play/:source/*` (same endpoint — readable content is served via the play route) |
 | `listable` | `GET /api/v1/list/:source/*` |
 | `queueable` | `GET /api/v1/queue/:source/*` |
 | `searchable` | `GET /api/v1/content/query/search` |

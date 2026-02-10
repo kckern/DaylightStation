@@ -787,6 +787,21 @@ export class LocalContentAdapter {
 
   /**
    * Resolve a talk folder alias (e.g., "ldsgc") to the latest matching folder.
+   * Select an ambient track URL using ItemSelectionService discovery strategy.
+   * @returns {string} Ambient stream URL
+   * @private
+   */
+  _selectAmbientUrl() {
+    const tracks = Array.from({ length: 115 }, (_, i) => ({ id: i + 1 }));
+    const [selected] = ItemSelectionService.applyPick(
+      ItemSelectionService.applySort(tracks, 'random'),
+      'first'
+    );
+    const trackNum = String(selected.id).padStart(3, '0');
+    return `/api/v1/stream/ambient/${trackNum}`;
+  }
+
+  /**
    * Similar to freshvideo logic - finds folders matching the prefix and returns the most recent.
    * @param {string} alias - Folder alias (e.g., "ldsgc")
    * @returns {string|null} Latest matching folder ID (e.g., "ldsgc202510") or null
@@ -873,6 +888,7 @@ export class LocalContentAdapter {
 
     // Load talk manifest for style/cssType config
     const manifest = loadYamlSafe(path.join(basePath, 'manifest')) || {};
+    const ambientUrl = manifest.ambient ? this._selectAmbientUrl() : null;
 
     return new PlayableItem({
       id: compoundId,
@@ -883,6 +899,7 @@ export class LocalContentAdapter {
       mediaType: 'video',
       mediaUrl: videoUrl,
       videoUrl,
+      ambientUrl,
       duration: metadata.duration || 0,
       resumable: true,
       description: metadata.description,
@@ -1042,6 +1059,7 @@ export class LocalContentAdapter {
 
     const compoundId = `scripture:${resolvedLocalId}`;
     const mediaUrl = `/api/v1/proxy/local-content/stream/scripture/${resolvedLocalId}`;
+    const ambientUrl = manifest.ambient ? this._selectAmbientUrl() : null;
 
     return new PlayableItem({
       id: compoundId,
@@ -1051,6 +1069,7 @@ export class LocalContentAdapter {
       type: 'scripture',
       mediaType: 'audio',
       mediaUrl,
+      ambientUrl,
       duration: rawData.duration || 0,
       resumable: true,
       metadata: {

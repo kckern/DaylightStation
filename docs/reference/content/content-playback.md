@@ -10,7 +10,7 @@ All content formats resolve through a single Play API endpoint. The frontend nev
 
 **Route**: `GET /api/v1/play/:source/*`
 
-The content ID goes through the resolution chain (see content-model.md), the appropriate driver's `getPlayInfo()` is called, and the response includes a `format` field that tells the frontend which renderer to use.
+The content ID goes through the resolution chain (see content-model.md), the appropriate driver's `getItem()` is called (returning a PlayableItem), the API layer adds a `format` field via `resolveFormat.mjs`, and the response tells the frontend which renderer to use.
 
 **Request examples** (all equivalent via resolution chain):
 ```
@@ -137,18 +137,17 @@ Player.jsx (orchestrator)
 │
 ├─ Routing decision (top-level):
 │  ├─ Composite props (visual + audio, sources, overlay) → CompositePlayer
-│  └─ Single item → ContentResolver
+│  └─ Single item → SinglePlayer
 │
 ├─ CompositePlayer
 │  ├─ Resolves sources via Compose API if unresolved
 │  ├─ Visual track → VisualRenderer
 │  └─ Audio track → nested Player instance
 │
-└─ ContentResolver (evolved from SinglePlayer)
-   ├─ Step 1: Resolve content ID via unified Play API
-   │  └─ GET /api/v1/play/{contentId} → { format, ...data }
+└─ SinglePlayer.jsx
+   ├─ Step 1: Resolve via fetchMediaInfo() → /api/v1/play/ + /api/v1/info/
    │
-   └─ Step 2: Dispatch to renderer by format
+   └─ Step 2: Dispatch by format field
       ├─ video / dash_video → VideoPlayer
       ├─ audio → AudioPlayer
       ├─ singalong → SingalongScroller
@@ -203,11 +202,13 @@ Every renderer of playable content implements the Playable Contract. This is the
 
 | Renderer | Format(s) | Media Element | Contract Status |
 |----------|-----------|---------------|----------------|
-| VideoPlayer | video, dash_video | `<video>` / `<dash-video>` | Full (via useCommonMediaController) |
-| AudioPlayer | audio | `<audio>` | Full (via useCommonMediaController) |
+| VideoPlayer | video, dash_video | `<video>` / `<dash-video>` | Full (via useCommonMediaController). Note: `onStartupSignal` not called by VideoPlayer directly. |
+| AudioPlayer | audio | `<audio>` | Full (via useCommonMediaController). Note: `onStartupSignal` not called by AudioPlayer directly. |
 | SingalongScroller | singalong | `<audio>` (embedded) | Full (via ContentScroller → useMediaReporter) |
 | ReadalongScroller | readalong | `<audio>` (embedded, optional) | Full (via ContentScroller → useMediaReporter) |
-| PlayableAppShell | app | None (app-defined) | Planned |
+| PlayableAppShell | app | None (app-defined) | Minimal stub — delegates to AppContainer |
+
+Note: `onResolvedMeta` is called at the SinglePlayer level after content resolution, not by individual renderers. `onStartupSignal` is currently only implemented by ContentScroller-based renderers (SingalongScroller, ReadalongScroller) via `useMediaReporter`.
 
 ### PlayableAppShell
 
@@ -310,4 +311,4 @@ Readalong content types (talks, scriptures) support ambient background audio —
 - **Track pool**: `/media/audio/ambient/001.mp3` through `/media/audio/ambient/115.mp3`
 - **Volume**: Always 10% of the main volume (`mainVolume * 0.1`)
 - **Fade**: `fadeInDelay: 750ms`, `fadeOutStep: 0.01`, `fadeOutInterval: 400ms`
-- **Eligible types**: Determined by CSS type — `talk` and `scriptures` get ambient audio
+- **Eligible types**: Determined by the collection manifest's `ambient: true` setting. The backend returns an `ambientUrl` field in the Play API response when ambient audio is enabled.

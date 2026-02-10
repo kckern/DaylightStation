@@ -1,4 +1,4 @@
-// backend/src/1_adapters/content/app-registry/AppRegistryDriver.mjs
+// backend/src/1_adapters/content/app-registry/AppRegistryAdapter.mjs
 
 /**
  * Content adapter for native apps (webcam, gratitude, family-selector, etc.).
@@ -8,7 +8,7 @@
  *
  * Apps are not playable media — resolvePlayables() returns [].
  */
-export class AppRegistryDriver {
+export class AppRegistryAdapter {
   #apps;
 
   /**

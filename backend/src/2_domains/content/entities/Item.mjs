@@ -46,6 +46,7 @@ export class Item {
     this.localId = this.itemId.localId;
 
     this.title = props.title;
+    this.subtitle = props.subtitle ?? null;
     this.type = props.type ?? null;
     this.thumbnail = props.thumbnail ?? null;
     this.imageUrl = props.imageUrl ?? null;

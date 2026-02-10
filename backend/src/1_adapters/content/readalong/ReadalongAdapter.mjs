@@ -10,6 +10,7 @@ import {
   listYamlFiles
 } from '#system/utils/FileIO.mjs';
 import { ItemSelectionService } from '#domains/content/index.mjs';
+import { PlayableItem } from '#domains/content/capabilities/Playable.mjs';
 import { generateReference } from 'scripture-guide';
 
 /**
@@ -163,16 +164,14 @@ export class ReadalongAdapter {
     const titleSource = Array.isArray(metadata) ? metadata[0] : metadata;
     const { title, subtitle } = this._extractTitles(manifest, titleSource, resolvedMeta, textPath);
 
-    return {
+    return new PlayableItem({
       id: canonicalId,
       source: 'readalong',
-      category: 'readalong',
-      collection,
       title,
       subtitle,
       thumbnail: this._collectionThumbnail(collection),
-      // Use audio path for streaming URL
       mediaUrl: `/api/v1/stream/readalong/${collection}/${audioPath}`,
+      mediaType: metadata.videoFile ? 'video' : 'audio',
       videoUrl: metadata.videoFile ? `/api/v1/stream/readalong/${collection}/${textPath}/video` : null,
       ambientUrl,
       duration: metadata.duration || 0,
@@ -181,10 +180,15 @@ export class ReadalongAdapter {
         data: contentData
       },
       style,
-      // Include resolution metadata if available
-      ...(resolvedMeta && { resolved: resolvedMeta }),
-      metadata
-    };
+      type: collection,
+      metadata: Array.isArray(metadata) ? metadata : {
+        contentFormat: 'readalong',
+        collection,
+        category: 'readalong',
+        ...(resolvedMeta && { resolved: resolvedMeta }),
+        ...metadata
+      }
+    });
   }
 
   /**
@@ -255,12 +259,17 @@ export class ReadalongAdapter {
   }
 
   /**
-   * Generate random ambient URL
-   * @returns {string}
+   * Select an ambient track using ItemSelectionService discovery strategy.
+   * @returns {string} Ambient stream URL
    * @private
    */
   _resolveAmbientUrl() {
-    const trackNum = String(Math.floor(Math.random() * 115) + 1).padStart(3, '0');
+    const tracks = Array.from({ length: 115 }, (_, i) => ({ id: i + 1 }));
+    const [selected] = ItemSelectionService.applyPick(
+      ItemSelectionService.applySort(tracks, 'random'),
+      'first'
+    );
+    const trackNum = String(selected.id).padStart(3, '0');
     return `/api/v1/stream/ambient/${trackNum}`;
   }
 

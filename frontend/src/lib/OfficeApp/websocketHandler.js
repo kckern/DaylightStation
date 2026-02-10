@@ -130,7 +130,11 @@ export const createWebSocketHandler = (callbacks) => {
     // Only use 'queue' when explicitly specified or when it's clearly a playlist
     const hasPlayKey = Object.keys(data).includes('play');
     const hasQueueKey = Object.keys(data).includes('queue');
-    const isContentItem = data.hymn || data.scripture || data.talk || data.primary; // These are always 'play' actions
+    // Content items have a play action or are recognized by the presence of a contentId
+    const hasContentId = data.play || data.contentId;
+    // Legacy: specific collection keys indicate a play action
+    const hasLegacyContentKey = data.hymn || data.scripture || data.talk || data.primary || data.poem;
+    const isContentItem = hasContentId || hasLegacyContentKey; // These are always 'play' actions
     const isPlaylistItem = (/^\d+$/.test(Object.values(data)[0]) || data.plex) && !isContentItem; // Numeric IDs or plex usually indicate playlists, but not if it's content
     
     // Use an object with test functions to determine the action type

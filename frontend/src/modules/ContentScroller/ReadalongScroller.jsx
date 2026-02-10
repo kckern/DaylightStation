@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import ContentScroller from './ContentScroller.jsx';
-import { DaylightAPI, DaylightMediaPath } from '../../lib/api.mjs';
+import { DaylightAPI } from '../../lib/api.mjs';
 import { getReadalongRenderer } from '../../lib/contentRenderers.jsx';
 
 /**
@@ -49,11 +49,6 @@ export function ReadalongScroller({
       setData(response);
     });
   }, [contentId, initialData]);
-
-  // Generate ambient track for content types that use it (talks, scriptures)
-  const [ambientTrack] = useState(
-    String(Math.floor(Math.random() * 115) + 1).padStart(3, '0')
-  );
 
   // Determine wrapper class: talks use "talk-text" to match legacy CSS, others use "readalong-text"
   const contentCssType = data?.type || data?.metadata?.cssType;
@@ -113,10 +108,13 @@ export function ReadalongScroller({
 
   const title = renderer?.extractTitle ? renderer.extractTitle(data) : data.title;
   const subtitle = renderer?.extractSubtitle ? renderer.extractSubtitle(data) : data.subtitle;
-  // Determine CSS type: scripture verses get 'scriptures', talks get 'talk', etc.
-  // Prefer explicit type from API response, fall back to content-type detection
-  const cssType = data.content?.type === 'verses' ? 'scriptures'
-    : (data.type || data.metadata?.cssType || renderer?.cssType || 'readalong');
+  // Determine CSS type from backend data, with fallback for verse content
+  const rawCssType = data.type || data.metadata?.cssType || renderer?.cssType
+    || (data.content?.type === 'verses' ? 'scriptures' : null)
+    || 'readalong';
+  // CSS class mapping: collection names that differ from their CSS class
+  const CSS_TYPE_MAP = { scripture: 'scriptures' };
+  const cssType = CSS_TYPE_MAP[rawCssType] || rawCssType;
 
   // Apply style as CSS variables
   const cssVars = {
@@ -157,7 +155,7 @@ export function ReadalongScroller({
         mainMediaUrl={isVideo ? data.videoUrl : data.mediaUrl}
         isVideo={isVideo}
         mainVolume={mainVolume}
-        ambientMediaUrl={data.ambientUrl || (['talk', 'scriptures'].includes(cssType) ? DaylightMediaPath(`media/audio/ambient/${ambientTrack}`) : null)}
+        ambientMediaUrl={data.ambientUrl || null}
         ambientConfig={{
           fadeOutStep: 0.01,
           fadeOutInterval: 400,
