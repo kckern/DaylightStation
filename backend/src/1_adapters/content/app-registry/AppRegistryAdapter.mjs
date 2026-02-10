@@ -6,7 +6,8 @@
  * Returns items with `metadata.contentFormat = 'app'` so the frontend dispatches
  * to PlayableAppShell via format-based routing.
  *
- * Apps are not playable media — resolvePlayables() returns [].
+ * resolvePlayables() returns a single item with format:'app' so the queue
+ * can include app items alongside regular media.
  */
 export class AppRegistryAdapter {
   #apps;
@@ -73,11 +74,27 @@ export class AppRegistryAdapter {
   }
 
   /**
-   * Apps are not playable media.
+   * Return app as a playable queue item so it appears in program queues.
+   * Frontend PlayableAppShell.jsx handles rendering via format: 'app'.
+   * @param {string} [id] - e.g. "app:wrapup" or "wrapup"
    * @returns {Promise<Array>}
    */
-  async resolvePlayables() {
-    return [];
+  async resolvePlayables(id) {
+    if (!id) return [];
+    const item = await this.getItem(id);
+    if (!item) return [];
+
+    return [{
+      id: item.id,
+      title: item.title,
+      source: 'app',
+      mediaUrl: null,
+      mediaType: 'app',
+      format: 'app',
+      duration: 0,
+      resumable: false,
+      metadata: item.metadata,
+    }];
   }
 
   /**
