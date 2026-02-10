@@ -149,7 +149,8 @@ describe('_getNextPlayableFromChild — Plex fast path', () => {
         adapter: {
           loadPlayableItemFromKey,
           resolvePlayables,
-          getStoragePath: vi.fn(() => 'plex'),
+          getStoragePath: vi.fn(async () => 'plex/17_lectures'),
+          source: 'plex',
         },
         localId: 'show123',
       })),
@@ -165,8 +166,35 @@ describe('_getNextPlayableFromChild — Plex fast path', () => {
 
     expect(result).toHaveLength(1);
     expect(result[0].id).toBe('plex:ep42');
-    expect(loadPlayableItemFromKey).toHaveBeenCalledWith('plex:show123', { storagePath: 'plex' });
+    expect(loadPlayableItemFromKey).toHaveBeenCalledWith('plex:show123', { storagePath: 'plex/17_lectures' });
     expect(resolvePlayables).not.toHaveBeenCalled();
+  });
+
+  it('falls back to adapter source when getStoragePath is not available', async () => {
+    const fastItem = { id: 'plex:ep42', title: 'Smart Pick', mediaUrl: '/media/ep42.mp4' };
+    const loadPlayableItemFromKey = vi.fn(async () => fastItem);
+
+    const registry = {
+      resolve: vi.fn(() => ({
+        adapter: {
+          loadPlayableItemFromKey,
+          source: 'plex',
+          // no getStoragePath
+        },
+        localId: 'show123',
+      })),
+    };
+    const memory = makeMockMemory();
+    const adapter = makeAdapter({ registry, mediaProgressMemory: memory });
+
+    adapter._listCache.set('programs:fallback-program', [
+      { label: 'Show', input: 'plex:show123' },
+    ]);
+
+    const result = await adapter.resolvePlayables('program:fallback-program', { applySchedule: false });
+
+    expect(result).toHaveLength(1);
+    expect(loadPlayableItemFromKey).toHaveBeenCalledWith('plex:show123', { storagePath: 'plex' });
   });
 
   it('returns null when loadPlayableItemFromKey returns nothing', async () => {
@@ -176,7 +204,8 @@ describe('_getNextPlayableFromChild — Plex fast path', () => {
       resolve: vi.fn(() => ({
         adapter: {
           loadPlayableItemFromKey,
-          getStoragePath: vi.fn(() => 'plex'),
+          getStoragePath: vi.fn(async () => 'plex/17_lectures'),
+          source: 'plex',
         },
         localId: 'show123',
       })),

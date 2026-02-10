@@ -645,7 +645,7 @@ export class ListAdapter {
     // Fast path: adapter with built-in smart selection (PlexAdapter)
     // Uses drill-down (show→season→episode) + bulk history instead of resolving ALL episodes
     if (adapter.loadPlayableItemFromKey) {
-      const storagePath = child.source || 'plex';
+      const storagePath = (adapter.getStoragePath ? await adapter.getStoragePath(child.id) : null) || child.source || 'plex';
       const item = await adapter.loadPlayableItemFromKey(child.id, { storagePath });
       return item || null;
     }
@@ -907,6 +907,24 @@ export class ListAdapter {
           return 0;
         });
       }
+    }
+
+    // For programs: resolve thumbnails from would-play items
+    if (listPrefix === 'program' && this.registry) {
+      await Promise.all(results.map(async (item) => {
+        if (item.thumbnail) return;
+        const resolved = this.registry.resolve(item.id);
+        if (!resolved?.adapter) return;
+        try {
+          const child = { id: item.id, source: item.source };
+          const playable = await this._getNextPlayableFromChild(child, resolved);
+          if (playable?.thumbnail) {
+            item.thumbnail = playable.thumbnail;
+          }
+        } catch {
+          // Thumbnail is decorative — skip on failure
+        }
+      }));
     }
 
     return results;
