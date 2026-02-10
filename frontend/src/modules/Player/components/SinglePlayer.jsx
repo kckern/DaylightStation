@@ -239,8 +239,10 @@ export function SinglePlayer(props = {}) {
     });
 
     if (info) {
-      // Detect if this is a collection/folder (no mediaUrl, no playable mediaType)
-      const isPlayable = info.mediaUrl || ['dash_video', 'video', 'audio'].includes(info.mediaType);
+      // Detect if this is a collection/folder (format: "list", or no mediaUrl/playable mediaType)
+      const isPlayable = info.format !== 'list'
+        && (info.mediaUrl || ['dash_video', 'video', 'audio'].includes(info.mediaType)
+            || CONTENT_FORMAT_COMPONENTS[info.format]);
 
       if (!isPlayable && effectiveContentId) {
         // This is a collection - fetch first playable item

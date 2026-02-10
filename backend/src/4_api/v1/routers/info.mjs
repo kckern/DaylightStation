@@ -100,13 +100,15 @@ function transformToInfoResponse(item, source, adapter) {
   if (item.category) response.category = item.category;
 
   // Pass through content field for singalong/readalong scrollers
-  if (item.content) response.content = item.content;
+  // Content may be on item directly or nested in metadata (adapter-dependent)
+  const contentData = item.content || item.metadata?.content;
+  if (contentData) response.content = contentData;
 
   // Pass through style for readalong/singalong scrollers
-  if (item.style) response.style = item.style;
+  if (item.style || item.metadata?.style) response.style = item.style || item.metadata.style;
 
-  // Pass through subtitle for readalong/singalong content
-  if (item.subtitle) response.subtitle = item.subtitle;
+  // Pass through subtitle/speaker for readalong/singalong content
+  if (item.subtitle || item.metadata?.speaker) response.subtitle = item.subtitle || item.metadata.speaker;
 
   // Expose plex key at top level for frontend compatibility
   if (source === 'plex' && item.metadata?.plex) {

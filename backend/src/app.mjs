@@ -350,7 +350,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     }
   };
 
-  const contentRegistry = createContentRegistry({
+  const { registry: contentRegistry, savedQueryService } = createContentRegistry({
     mediaBasePath,
     plex: mediaLibConfig,  // Bootstrap key stays 'plex' for now
     immich: immichConfig,  // Gallery source (photos/videos)
@@ -402,6 +402,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     composePresentationUseCase,
     configService,
     legacyPrefixMap,
+    savedQueryService,
     logger: rootLogger.child({ module: 'content' })
   });
 

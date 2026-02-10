@@ -5,7 +5,7 @@ import { createContentRegistry, createFitnessSyncerAdapter } from '#backend/src/
 describe('bootstrap', () => {
   describe('createContentRegistry', () => {
     it('registers FileAdapter', () => {
-      const registry = createContentRegistry({
+      const { registry } = createContentRegistry({
         mediaBasePath: '/media',
         plex: {
           host: 'http://localhost:32400',
@@ -19,7 +19,7 @@ describe('bootstrap', () => {
     });
 
     it('registers PlexAdapter', () => {
-      const registry = createContentRegistry({
+      const { registry } = createContentRegistry({
         mediaBasePath: '/media',
         plex: {
           host: 'http://localhost:32400',
@@ -33,7 +33,7 @@ describe('bootstrap', () => {
     });
 
     it('registers LocalContentAdapter when dataPath provided', () => {
-      const registry = createContentRegistry({
+      const { registry } = createContentRegistry({
         mediaBasePath: '/media',
         plex: {
           host: 'http://localhost:32400',
@@ -48,7 +48,7 @@ describe('bootstrap', () => {
     });
 
     it('registers FolderAdapter when watchlistPath provided', () => {
-      const registry = createContentRegistry({
+      const { registry } = createContentRegistry({
         mediaBasePath: '/media',
         plex: {
           host: 'http://localhost:32400',
@@ -64,7 +64,7 @@ describe('bootstrap', () => {
     });
 
     it('does not register LocalContentAdapter without mediaBasePath', () => {
-      const registry = createContentRegistry({
+      const { registry } = createContentRegistry({
         plex: {
           host: 'http://localhost:32400',
           token: 'test'
@@ -77,7 +77,7 @@ describe('bootstrap', () => {
     });
 
     it('does not register LocalContentAdapter without dataPath', () => {
-      const registry = createContentRegistry({
+      const { registry } = createContentRegistry({
         mediaBasePath: '/media',
         plex: {
           host: 'http://localhost:32400',
