@@ -115,15 +115,16 @@ Enriched fields are mapped to the API response contract:
 
 The ItemSelectionService uses progress data to intelligently select content from lists. It provides composable strategies for filtering and sorting.
 
-### Strategies
+### Named Strategies
 
-| Strategy | Behavior |
-|----------|----------|
-| **unwatched-first** | Prioritize items with no watch history |
-| **continue-watching** | Prioritize in-progress items |
-| **most-recent** | Sort by lastPlayed descending |
-| **least-recent** | Sort by lastPlayed ascending |
-| **random** | Random selection from eligible items |
+Each strategy defines a `filter`, `sort`, and `pick` behavior:
+
+| Strategy | Filter | Sort | Pick | Use Case |
+|----------|--------|------|------|----------|
+| **watchlist** | watched | priority, source_order | first | Watchlists with priority metadata |
+| **sequential** | watched | source_order | first | Conferences, series — skip watched, play next in order |
+| **binge** | (none) | source_order | first | Play all in order regardless of watch state |
+| **random** | (none) | random | first | Shuffle from any eligible items |
 
 ### Pipeline
 
@@ -138,11 +139,27 @@ All items
   → Enrich (add watch state to selected items)
 ```
 
+### Container Type Inference
+
+When the Play API resolves a container (e.g., a conference or TV show), `ContentQueryService` asks the adapter for the container type via `adapter.getContainerType(id)`. The `ItemSelectionService` then maps the container type to a named strategy via inference rules:
+
+| Container Type | Inferred Strategy | Effect |
+|---------------|-------------------|--------|
+| `watchlist` | watchlist | Priority-sorted, skip watched |
+| `conference` | sequential | Source-order, skip watched, pick first unwatched |
+| `series` | sequential | Source-order, skip watched |
+| `playlist` | binge | Play all in order |
+
+Inference rules are ordered — the first matching rule wins. If no rule matches, the default strategy is `watchlist`.
+
+This mechanism allows new container types to map to existing strategies by adding a single inference rule — no new strategy code needed.
+
 ### Usage Contexts
 
 | Context | Typical Strategy |
 |---------|-----------------|
-| Watchlist "next up" | unwatched-first with continue-watching |
+| Watchlist "next up" | watchlist (unwatched-first with priority) |
+| Conference talks | sequential (skip watched, source order) |
 | Program scheduling | Strategy defined per program in config |
 | Queue building | Ordered by source, filtered by unwatched |
 | Search results | Relevance-based, no watch state filtering |
