@@ -32,6 +32,8 @@ import 'dotenv/config';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { existsSync } from 'fs';
+import fs from 'fs';
+import yaml from 'js-yaml';
 import axios from '../backend/lib/http.mjs';
 import { configService } from '../backend/lib/config/ConfigService.mjs';
 import { resolveConfigPaths } from '../backend/lib/config/pathResolver.mjs';
@@ -169,11 +171,211 @@ class PlexSync {
 }
 
 // ============================================================================
-// Command Stubs
+// Helpers — Migrate
+// ============================================================================
+
+/**
+ * Recursively scan a directory for files matching a given name.
+ * Returns array of full paths. Silently skips unreadable directories.
+ */
+function findFiles(dir, filename) {
+    const results = [];
+    let entries;
+    try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+        return results;
+    }
+    for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+            results.push(...findFiles(fullPath, filename));
+        } else if (entry.name === filename) {
+            results.push(fullPath);
+        }
+    }
+    return results;
+}
+
+/**
+ * Known music-library directory names (substrings of the Plex media path).
+ * "Stage" is intentionally excluded — concerts stored there are movies.
+ */
+const MUSIC_PATH_TOKENS = ['Music', 'Industrial', 'Ambient', "Children's Music"];
+
+/**
+ * Determine YML type from nfo.json content.
+ *  - Has seasons[] with length > 0 → 'show'
+ *  - Has guids, contentRating, or tagline → 'movie'
+ *  - Path contains a known music directory token → 'artist'
+ *  - Fallback → 'movie'
+ */
+function detectTypeFromNfo(data) {
+    if (Array.isArray(data.seasons) && data.seasons.length > 0) {
+        return 'show';
+    }
+    if (data.guids || data.contentRating || data.tagline) {
+        return 'movie';
+    }
+    if (data.path) {
+        const p = data.path;
+        for (const token of MUSIC_PATH_TOKENS) {
+            // Match as a path segment (preceded by / or start, followed by / or end)
+            const re = new RegExp(`(^|/)${token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(/|$)`, 'i');
+            if (re.test(p)) return 'artist';
+        }
+    }
+    return 'movie';
+}
+
+/**
+ * Parse a potentially comma-separated string into an array of trimmed strings.
+ * Returns empty array for falsy input.
+ */
+function splitTrimArray(value) {
+    if (!value || typeof value !== 'string') return [];
+    return value.split(',').map(s => s.trim()).filter(Boolean);
+}
+
+/**
+ * Convert nfo.json content to a clean YAML-ready object.
+ */
+function normalizeNfoToYml(data, type) {
+    const out = {};
+
+    // --- Common fields ---
+    if (data.ratingKey != null) out.ratingKey = String(data.ratingKey);
+    if (data.title) out.title = data.title;
+    if (data.titleSort && data.titleSort !== data.title) out.titleSort = data.titleSort;
+    if (data.summary) out.summary = data.summary;
+    if (data.year != null) out.year = parseInt(data.year, 10) || undefined;
+    if (data.studio) out.studio = data.studio;
+
+    // --- Normalize tag fields ---
+
+    // labels: empty string → omit; comma-separated → array of lowercase trimmed
+    if (data.labels && typeof data.labels === 'string' && data.labels.trim() !== '') {
+        out.labels = splitTrimArray(data.labels).map(s => s.toLowerCase());
+    }
+
+    // collection → collections array
+    if (data.collection) {
+        out.collections = splitTrimArray(data.collection);
+    }
+
+    // genre — can be a plain string OR the quirky "genre[0].tag.tag" key
+    const genreRaw = data.genre || data['genre[0].tag.tag'];
+    if (genreRaw) {
+        out.genres = splitTrimArray(genreRaw);
+    }
+
+    // --- Type-specific fields ---
+
+    if (type === 'show') {
+        if (data.director) out.director = data.director;
+        if (data.cast) out.cast = data.cast;
+        if (data.originallyAvailableAt) out.originallyAvailableAt = data.originallyAvailableAt;
+
+        if (Array.isArray(data.seasons) && data.seasons.length > 0) {
+            out.seasons = data.seasons.map(s => {
+                const season = {};
+                season.index = parseInt(s.index, 10);
+                if (isNaN(season.index)) season.index = s.index; // keep original if not numeric
+                if (s.title) season.title = s.title;
+                // Keep summary only if it differs from the show-level summary
+                if (s.summary && s.summary !== data.summary) {
+                    season.summary = s.summary;
+                }
+                return season;
+            });
+        }
+    }
+
+    if (type === 'movie') {
+        if (data.director) out.director = data.director;
+        if (data.cast) out.cast = data.cast;
+        if (data.tagline) out.tagline = data.tagline;
+        if (data.contentRating) out.contentRating = data.contentRating;
+        if (data.originallyAvailableAt) out.originallyAvailableAt = data.originallyAvailableAt;
+        if (data.country) out.country = data.country;
+        if (data.guids && typeof data.guids === 'object' && Object.keys(data.guids).length > 0) {
+            out.guids = data.guids;
+        }
+    }
+
+    if (type === 'artist') {
+        if (data.country) out.country = data.country;
+    }
+
+    // Remove any keys that ended up undefined/null
+    for (const key of Object.keys(out)) {
+        if (out[key] === undefined || out[key] === null) {
+            delete out[key];
+        }
+    }
+
+    return out;
+}
+
+// ============================================================================
+// Commands
 // ============================================================================
 
 async function cmdMigrate(plex) {
-    console.log('migrate: not yet implemented');
+    const scanDir = flags.dir || plex.mount;
+    if (!scanDir) {
+        console.error('Error: No directory to scan. Set PLEX_MOUNT or use --dir <path>.');
+        process.exit(1);
+    }
+
+    console.log(`Scanning ${scanDir} for nfo.json files...`);
+    const nfoFiles = findFiles(scanDir, 'nfo.json');
+    console.log(`Found ${nfoFiles.length} nfo.json files`);
+
+    let migrated = 0;
+    let skipped = 0;
+    let errors = 0;
+
+    for (const nfoPath of nfoFiles) {
+        try {
+            const dir = path.dirname(nfoPath);
+            const raw = fs.readFileSync(nfoPath, 'utf-8');
+            let data;
+            try {
+                data = JSON.parse(raw);
+            } catch (parseErr) {
+                console.error(`\u{1F534} ${path.relative(scanDir, nfoPath)}: JSON parse error — ${parseErr.message}`);
+                errors++;
+                continue;
+            }
+
+            const type = detectTypeFromNfo(data);
+            const ymlFilename = `${type}.yml`;
+            const ymlPath = path.join(dir, ymlFilename);
+
+            if (existsSync(ymlPath)) {
+                skipped++;
+                continue;
+            }
+
+            const normalized = normalizeNfoToYml(data, type);
+
+            if (flags.dryRun) {
+                console.log(`[DRY] ${path.relative(scanDir, nfoPath)} \u2192 ${ymlFilename}`);
+                migrated++;
+            } else {
+                const ymlContent = yaml.dump(normalized, { lineWidth: 120, noRefs: true });
+                fs.writeFileSync(ymlPath, ymlContent, 'utf-8');
+                console.log(`\u2705 ${path.relative(scanDir, nfoPath)} \u2192 ${ymlFilename}`);
+                migrated++;
+            }
+        } catch (err) {
+            console.error(`\u{1F534} ${path.relative(scanDir, nfoPath)}: ${err.message}`);
+            errors++;
+        }
+    }
+
+    console.log(`\n${migrated} migrated, ${skipped} skipped (yml exists), ${errors} errors`);
 }
 
 async function cmdPull(plex) {
