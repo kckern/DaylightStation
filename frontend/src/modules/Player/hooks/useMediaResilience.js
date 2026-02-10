@@ -21,6 +21,9 @@ const USER_INTENT = Object.freeze({
   seeking: 'seeking'
 });
 
+// Grace period (ms) to suppress overlay during brief seeks (ffwd/rew bumps)
+const SEEK_OVERLAY_GRACE_MS = 600;
+
 /**
  * Simplified Media Resilience Hook
  * Gutted after backend bug fix to provide only basic stall recovery.
@@ -171,6 +174,94 @@ export function useMediaResilience({
     }
   }, [targetTimeSeconds]);
 
+  // SYNCHRONOUS: read the media element's state directly during render.
+  // This catches seeks BEFORE React's isSeeking prop propagates (which can lag behind
+  // isBuffering, causing the overlay to flash with the old position).
+  // Also reads __seekSource ('bump' for arrow keys, 'click' for progress bar) to decide
+  // whether the seek grace period should apply.
+  const mediaElSnapshot = (() => {
+    try {
+      const el = getMediaEl?.();
+      return { seeking: el?.seeking === true, seekSource: el?.__seekSource || null };
+    } catch {
+      return { seeking: false, seekSource: null };
+    }
+  })();
+  const effectiveSeeking = isSeeking || mediaElSnapshot.seeking;
+  const isBumpSeek = mediaElSnapshot.seekSource === 'bump';
+
+  // Sticky intent: preserve last known intent display for overlay use after consumption.
+  // Uses SYNCHRONOUS render-time capture so the intent is available on the same render
+  // that seeking starts (useEffect would be too late, causing a flash).
+  const stickyIntentDisplayRef = useRef(null);
+  const stickyIntentUpdatedAtRef = useRef(null);
+  const prevEffectiveSeekingRef = useRef(false);
+
+  // Capture intent from targetTimeSeconds (queue-initiated seeks) — useEffect is fine
+  // here because targetTimeSeconds is set BEFORE seeking transitions.
+  useEffect(() => {
+    if (Number.isFinite(targetTimeSeconds)) {
+      stickyIntentDisplayRef.current = formatTime(Math.max(0, targetTimeSeconds));
+      stickyIntentUpdatedAtRef.current = Date.now();
+    }
+  }, [targetTimeSeconds]);
+
+  // SYNCHRONOUS: capture sticky intent from media element on the render where
+  // effectiveSeeking transitions to true (for progress bar clicks that bypass targetTimeSeconds).
+  // Clear sticky intent on the render where effectiveSeeking transitions to false.
+  if (effectiveSeeking && !prevEffectiveSeekingRef.current) {
+    // Just started seeking — capture target from media element if no intent yet
+    if (!stickyIntentDisplayRef.current) {
+      try {
+        const el = getMediaEl?.();
+        if (el && Number.isFinite(el.currentTime)) {
+          stickyIntentDisplayRef.current = formatTime(Math.max(0, el.currentTime));
+          stickyIntentUpdatedAtRef.current = Date.now();
+        }
+      } catch { /* ignore */ }
+    }
+  }
+  if (!effectiveSeeking && prevEffectiveSeekingRef.current) {
+    // Just stopped seeking — clear sticky intent
+    stickyIntentDisplayRef.current = null;
+    stickyIntentUpdatedAtRef.current = null;
+  }
+  prevEffectiveSeekingRef.current = effectiveSeeking;
+
+  // Seek grace period: suppress overlay during brief seeks (ffwd/rew bumps).
+  // Uses a SYNCHRONOUS ref to suppress on the very first render (prevents flash),
+  // plus an async timer to force re-render when the grace period expires.
+  const seekGraceTimerRef = useRef(null);
+  const seekStartedAtRef = useRef(null);
+  const [seekGraceExpired, setSeekGraceExpired] = useState(false);
+
+  // SYNCHRONOUS: track when seeking starts/stops (ref only, no setState during render)
+  if (effectiveSeeking && seekStartedAtRef.current === null) {
+    seekStartedAtRef.current = Date.now();
+  }
+  if (!effectiveSeeking) {
+    seekStartedAtRef.current = null;
+  }
+
+  // Async timer: force re-render when grace expires so overlay can appear for long seeks
+  useEffect(() => {
+    if (effectiveSeeking) {
+      clearTimeout(seekGraceTimerRef.current);
+      seekGraceTimerRef.current = setTimeout(() => {
+        setSeekGraceExpired(true);
+      }, SEEK_OVERLAY_GRACE_MS);
+    } else {
+      setSeekGraceExpired(false);
+      clearTimeout(seekGraceTimerRef.current);
+      seekGraceTimerRef.current = null;
+    }
+    return () => clearTimeout(seekGraceTimerRef.current);
+  }, [effectiveSeeking]);
+
+  // Effective grace: only suppress overlay for bump seeks (arrow key ffwd/rew),
+  // NOT for progress bar click seeks which should show the spinner immediately.
+  const seekGraceActive = isBumpSeek && effectiveSeeking && !seekGraceExpired;
+
   // Presentation logic
   // Stall detection is now handled externally by useCommonMediaController
   const isStalled = externalStalled === true;
@@ -194,14 +285,15 @@ export function useMediaResilience({
 
   // The overlay should appear if:
   // - We are in a resilience error state (stalling, recovering, startup)
-  // - We are actively seeking
-  // - We are buffering (CSS 300ms delay handles brief buffering)
+  // - We are buffering AND not in a seek grace period
   // - The user has paused the video (and wants the overlay shown)
+  // Seek grace: brief seeks (ffwd/rew bumps) suppress the overlay for SEEK_OVERLAY_GRACE_MS.
+  // If the seek stalls beyond the grace period, buffering/stall triggers show the overlay.
   // Note: isLoopTransition still handles loop restart case
-  const shouldShowOverlay = !isLoopTransition && (isStalled || isRecovering || (isStartup && !hasEverPlayedRef.current) || isSeeking || isBuffering || isUserPaused);
+  const shouldShowOverlay = !isLoopTransition && !seekGraceActive && (isStalled || isRecovering || (isStartup && !hasEverPlayedRef.current) || isBuffering || isUserPaused);
 
   const overlayProps = useMemo(() => ({
-    status: isSeeking ? 'seeking' : status,
+    status: effectiveSeeking ? 'seeking' : status,
     isVisible: shouldShowOverlay && (isUserPaused ? showPauseOverlay : true),
     shouldRender: shouldShowOverlay,
     waitingToPlay: isStartup || isRecovering || isBuffering,
@@ -212,20 +304,22 @@ export function useMediaResilience({
     seconds,
     stalled: isStalled || isBuffering,
     showPauseOverlay,
-    showDebug: isStalled || isRecovering || isSeeking,
+    showDebug: isStalled || isRecovering || effectiveSeeking,
     initialStart,
     message,
     plexId,
     debugContext,
     lastProgressTs: playbackHealth.lastProgressAt,
     togglePauseOverlay: () => setShowPauseOverlay(p => !p),
-    isSeeking,
+    isSeeking: effectiveSeeking,
     waitKey: logWaitKey,
     onRequestHardReset: () => triggerRecovery('manual-reset'),
     playerPositionDisplay: formatTime(Math.max(0, seconds)),
-    intentPositionDisplay: Number.isFinite(targetTimeSeconds) ? formatTime(Math.max(0, targetTimeSeconds)) : null,
+    intentPositionDisplay: (Number.isFinite(targetTimeSeconds) ? formatTime(Math.max(0, targetTimeSeconds)) : null)
+      || (effectiveSeeking ? stickyIntentDisplayRef.current : null),
     playerPositionUpdatedAt,
-    intentPositionUpdatedAt,
+    intentPositionUpdatedAt: intentPositionUpdatedAt
+      || (effectiveSeeking ? stickyIntentUpdatedAtRef.current : null),
     mediaDetails: {
       hasElement: true,
       currentTime: seconds.toFixed(1),
@@ -239,8 +333,13 @@ export function useMediaResilience({
     isRecovering,
     isStartup,
     isSeeking,
+    mediaElSnapshot.seeking,
+    effectiveSeeking,
+    isBumpSeek,
     isBuffering,
     isUserPaused,
+    seekGraceActive,
+    seekGraceExpired,
     shouldShowOverlay,
     showPauseOverlay,
     userIntent,

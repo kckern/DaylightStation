@@ -6,6 +6,9 @@
   display: flex;
   flex-direction: column;
   transition: background-position 0.2s linear;
+  &.seeking {
+    transition: none !important;
+  }
   h2 {
     text-align: center;
     background-color: #222;
