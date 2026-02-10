@@ -638,6 +638,14 @@ export class ListAdapter {
   async _getNextPlayableFromChild(child, resolved) {
     const { adapter } = resolved;
 
+    // Fast path: adapter with built-in smart selection (PlexAdapter)
+    // Uses drill-down (show→season→episode) + bulk history instead of resolving ALL episodes
+    if (adapter.loadPlayableItemFromKey) {
+      const storagePath = child.source || 'plex';
+      const item = await adapter.loadPlayableItemFromKey(child.id, { storagePath });
+      return item || null;
+    }
+
     let items = [];
     if (adapter.resolvePlayables) {
       items = await adapter.resolvePlayables(child.id);
@@ -651,16 +659,23 @@ export class ListAdapter {
     if (!items || items.length === 0) return null;
     if (items.length === 1) return items[0];
 
-    const storagePath = adapter.getStoragePath?.(child.id) || child.source || 'files';
+    const storagePath = (adapter.getStoragePath ? await adapter.getStoragePath(child.id) : null) || child.source || 'files';
 
     if (!this.mediaProgressMemory) {
       return items[0];
     }
 
+    // Bulk-load progress for this storage path (1 read instead of 2N sequential .get() calls)
+    const allProgress = await this.mediaProgressMemory.getAll(storagePath);
+    const progressMap = new Map();
+    for (const p of allProgress) {
+      progressMap.set(p.itemId, p);
+    }
+
     // First pass: find any in-progress item
     for (const item of items) {
       const mediaKey = item.localId || item.id.split(':')[1];
-      const state = await this.mediaProgressMemory.get(mediaKey, storagePath);
+      const state = progressMap.get(mediaKey);
       const percent = state?.percent || 0;
       if (percent > 1 && percent < 90) {
         return item;
@@ -670,7 +685,7 @@ export class ListAdapter {
     // Second pass: find first unwatched item
     for (const item of items) {
       const mediaKey = item.localId || item.id.split(':')[1];
-      const state = await this.mediaProgressMemory.get(mediaKey, storagePath);
+      const state = progressMap.get(mediaKey);
       const percent = state?.percent || 0;
       if (percent < 90) {
         return item;
@@ -910,7 +925,10 @@ export class ListAdapter {
   async resolvePlayables(id, options = {}) {
     const { applySchedule = true, forceAll = false } = options;
 
-    const parsed = this._parseId(id);
+    // Strip source prefix only when it wraps a known list prefix (same as getList)
+    const strippedId = id.replace(/^list:(?=(menu|program|watchlist|query):)/, '');
+
+    const parsed = this._parseId(strippedId);
     if (!parsed) return [];
 
     const listType = this._getListType(parsed.prefix);
@@ -924,7 +942,8 @@ export class ListAdapter {
       const list = await this.getList(id);
       if (!list) return [];
 
-      const playables = [];
+      // Build resolution tasks (preserving order) then run in parallel batches
+      const tasks = [];
 
       for (const child of list.children) {
         // Determine action type from child's actions object
@@ -945,19 +964,36 @@ export class ListAdapter {
         const resolved = this.registry.resolve(child.id);
         if (!resolved?.adapter) continue;
 
-        // For play action (or no explicit action type), get SINGLE next playable
         if (!forceAll && hasPlayAction && !hasQueueAction) {
-          const nextItem = await this._getNextPlayableFromChild(child, resolved);
-          if (nextItem) {
-            playables.push(nextItem);
+          // Play action: get SINGLE next playable
+          tasks.push(() => this._getNextPlayableFromChild(child, resolved).then(item => item ? [item] : []));
+        } else {
+          // Queue action: get ALL playables
+          if (resolved.adapter.resolvePlayables) {
+            tasks.push(() => resolved.adapter.resolvePlayables(child.id));
           }
-          continue;
         }
+      }
 
-        // For queue action, get ALL playables
-        if (resolved.adapter.resolvePlayables) {
-          const childPlayables = await resolved.adapter.resolvePlayables(child.id);
-          playables.push(...childPlayables);
+      // Run in parallel batches to avoid overwhelming external APIs
+      const BATCH_SIZE = 10;
+      const playables = [];
+      for (let i = 0; i < tasks.length; i += BATCH_SIZE) {
+        const batch = tasks.slice(i, i + BATCH_SIZE);
+        const batchResults = await Promise.all(batch.map(fn => fn()));
+        for (const items of batchResults) {
+          if (items?.length) playables.push(...items);
+        }
+      }
+
+      // Watchlist "never empty" fallback: if all items were filtered out
+      // but the list has children, resolve the first child as fallback
+      if (playables.length === 0 && list.children?.length > 0) {
+        const firstChild = list.children[0];
+        const resolved = this.registry.resolve(firstChild.id);
+        if (resolved?.adapter) {
+          const fallback = await this._getNextPlayableFromChild(firstChild, resolved);
+          if (fallback) playables.push(fallback);
         }
       }
 
@@ -991,9 +1027,20 @@ export class ListAdapter {
       // Resolve through registry
       if (this.registry) {
         const resolved = this.registry.resolve(input);
-        if (resolved?.adapter?.resolvePlayables) {
-          const childPlayables = await resolved.adapter.resolvePlayables(input);
-          playables.push(...childPlayables);
+        if (!resolved?.adapter) continue;
+
+        if (listType === 'programs') {
+          // Programs: pick ONE "next up" item per slot (same as watchlist play-action)
+          const colonIdx = input.indexOf(':');
+          const child = { id: input, source: colonIdx !== -1 ? input.substring(0, colonIdx) : 'files' };
+          const nextItem = await this._getNextPlayableFromChild(child, resolved);
+          if (nextItem) playables.push(nextItem);
+        } else {
+          // Menus: return ALL playables
+          if (resolved.adapter.resolvePlayables) {
+            const childPlayables = await resolved.adapter.resolvePlayables(input);
+            playables.push(...childPlayables);
+          }
         }
       }
     }
