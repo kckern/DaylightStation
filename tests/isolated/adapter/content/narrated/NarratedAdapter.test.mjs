@@ -1,14 +1,20 @@
-// tests/isolated/adapter/content/readalong/ReadalongAdapter.test.mjs
-import { jest, describe, test, expect, beforeEach } from '@jest/globals';
+// tests/isolated/adapter/content/narrated/NarratedAdapter.test.mjs
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-// Mock FileIO at top of file
-jest.unstable_mockModule('#system/utils/FileIO.mjs', () => ({
-  loadYamlByPrefix: jest.fn(),
-  loadContainedYaml: jest.fn(),
-  findMediaFileByPrefix: jest.fn(),
-  dirExists: jest.fn(() => true),
-  listDirs: jest.fn(() => []),
-  listYamlFiles: jest.fn(() => [])
+// Mock FileIO
+vi.mock('#system/utils/FileIO.mjs', () => ({
+  loadYamlByPrefix: vi.fn(),
+  loadContainedYaml: vi.fn(),
+  findMediaFileByPrefix: vi.fn(),
+  fileExists: vi.fn(() => false),
+  dirExists: vi.fn(() => true),
+  listDirs: vi.fn(() => []),
+  listYamlFiles: vi.fn(() => [])
+}));
+
+// Mock domains/content index for ItemSelectionService
+vi.mock('#domains/content/index.mjs', () => ({
+  ItemSelectionService: { select: vi.fn(() => []) }
 }));
 
 const { loadYamlByPrefix, loadContainedYaml, findMediaFileByPrefix, listDirs, listYamlFiles } = await import('#system/utils/FileIO.mjs');
@@ -18,8 +24,7 @@ describe('ReadalongAdapter', () => {
   let adapter;
 
   beforeEach(() => {
-    // Clear all mocks before each test
-    jest.clearAllMocks();
+    vi.clearAllMocks();
 
     adapter = new ReadalongAdapter({
       dataPath: '/mock/data/content/readalong',
@@ -28,33 +33,31 @@ describe('ReadalongAdapter', () => {
   });
 
   describe('source and prefixes', () => {
-    test('source returns "readalong"', () => {
+    it('source returns "readalong"', () => {
       expect(adapter.source).toBe('readalong');
     });
 
-    test('prefixes returns readalong prefix', () => {
+    it('prefixes returns readalong prefix', () => {
       expect(adapter.prefixes).toEqual([{ prefix: 'readalong' }]);
     });
 
-    test('canResolve returns true for readalong: IDs', () => {
+    it('canResolve returns true for readalong: IDs', () => {
       expect(adapter.canResolve('readalong:scripture/bom')).toBe(true);
       expect(adapter.canResolve('readalong:talks/ldsgc202410')).toBe(true);
     });
 
-    test('canResolve returns false for other IDs', () => {
+    it('canResolve returns false for other IDs', () => {
       expect(adapter.canResolve('singalong:hymn/123')).toBe(false);
       expect(adapter.canResolve('plex:12345')).toBe(false);
     });
   });
 
   describe('getItem', () => {
-    test('applies resolver when manifest declares one', async () => {
-      // Mock manifest with resolver
+    it('applies resolver when manifest declares one', async () => {
       loadContainedYaml.mockImplementation((basePath, name) => {
         if (name === 'manifest') {
           return { resolver: 'scripture' };
         }
-        // Mock scripture data
         return {
           title: 'Alma 32',
           verses: [{ verse_id: 34541, text: 'And now...' }]
@@ -62,23 +65,13 @@ describe('ReadalongAdapter', () => {
       });
       findMediaFileByPrefix.mockReturnValue('/mock/media/readalong/scripture/bom/sebom/34541.mp3');
 
-      // Mock the scripture resolver module
-      jest.unstable_mockModule('#adapters/content/readalong/resolvers/scripture.mjs', () => ({
-        default: {
-          resolve: jest.fn(() => 'bom/sebom/34541')
-        },
-        ScriptureResolver: {
-          resolve: jest.fn(() => 'bom/sebom/34541')
-        }
-      }));
-
       const item = await adapter.getItem('scripture/alma-32');
 
       expect(item.category).toBe('readalong');
       expect(item.collection).toBe('scripture');
     });
 
-    test('loads item directly when no resolver', async () => {
+    it('loads item directly when no resolver', async () => {
       loadContainedYaml.mockImplementation((basePath, name) => {
         if (name === 'manifest') return null;
         return {
@@ -95,7 +88,7 @@ describe('ReadalongAdapter', () => {
       expect(item.content.type).toBe('paragraphs');
     });
 
-    test('returns null when item not found', async () => {
+    it('returns null when item not found', async () => {
       loadContainedYaml.mockReturnValue(null);
 
       const item = await adapter.getItem('talks/nonexistent');
@@ -103,7 +96,7 @@ describe('ReadalongAdapter', () => {
       expect(item).toBeNull();
     });
 
-    test('includes content with paragraphs type by default', async () => {
+    it('includes content with paragraphs type by default', async () => {
       loadContainedYaml.mockImplementation((basePath, name) => {
         if (name === 'manifest') return null;
         return {
@@ -121,7 +114,7 @@ describe('ReadalongAdapter', () => {
       });
     });
 
-    test('uses verses as content data when available', async () => {
+    it('uses verses as content data when available', async () => {
       loadContainedYaml.mockImplementation((basePath, name) => {
         if (name === 'manifest') return { contentType: 'verses' };
         return {
@@ -137,7 +130,7 @@ describe('ReadalongAdapter', () => {
       expect(item.content.data).toEqual([{ verse_id: 1, text: 'First verse' }]);
     });
 
-    test('includes default style settings', async () => {
+    it('includes default style settings', async () => {
       loadContainedYaml.mockImplementation((basePath, name) => {
         if (name === 'manifest') return null;
         return {
@@ -156,7 +149,7 @@ describe('ReadalongAdapter', () => {
       });
     });
 
-    test('merges manifest style with defaults', async () => {
+    it('merges manifest style with defaults', async () => {
       loadContainedYaml.mockImplementation((basePath, name) => {
         if (name === 'manifest') {
           return {
@@ -177,10 +170,10 @@ describe('ReadalongAdapter', () => {
 
       expect(item.style.fontFamily).toBe('Georgia');
       expect(item.style.lineHeight).toBe('1.8');
-      expect(item.style.textAlign).toBe('left'); // default preserved
+      expect(item.style.textAlign).toBe('left');
     });
 
-    test('includes subtitle from speaker field', async () => {
+    it('includes subtitle from speaker field', async () => {
       loadContainedYaml.mockImplementation((basePath, name) => {
         if (name === 'manifest') return null;
         return {
@@ -196,7 +189,7 @@ describe('ReadalongAdapter', () => {
       expect(item.subtitle).toBe('Elder Smith');
     });
 
-    test('includes subtitle from author field when no speaker', async () => {
+    it('includes subtitle from author field when no speaker', async () => {
       loadContainedYaml.mockImplementation((basePath, name) => {
         if (name === 'manifest') return null;
         return {
@@ -212,7 +205,7 @@ describe('ReadalongAdapter', () => {
       expect(item.subtitle).toBe('Emily Dickinson');
     });
 
-    test('generates mediaUrl based on localId', async () => {
+    it('generates mediaUrl based on localId', async () => {
       loadContainedYaml.mockImplementation((basePath, name) => {
         if (name === 'manifest') return null;
         return {
@@ -227,7 +220,7 @@ describe('ReadalongAdapter', () => {
       expect(item.mediaUrl).toBe('/api/v1/stream/readalong/talks/ldsgc202410/smith');
     });
 
-    test('includes videoUrl when videoFile metadata present', async () => {
+    it('includes videoUrl when videoFile metadata present', async () => {
       loadContainedYaml.mockImplementation((basePath, name) => {
         if (name === 'manifest') return null;
         return {
@@ -243,7 +236,7 @@ describe('ReadalongAdapter', () => {
       expect(item.videoUrl).toBe('/api/v1/stream/readalong/talks/video-talk/video');
     });
 
-    test('includes ambientUrl when manifest enables ambient', async () => {
+    it('includes ambientUrl when manifest enables ambient', async () => {
       loadContainedYaml.mockImplementation((basePath, name) => {
         if (name === 'manifest') {
           return { ambient: true };
@@ -260,7 +253,7 @@ describe('ReadalongAdapter', () => {
       expect(item.ambientUrl).toMatch(/^\/api\/v1\/stream\/ambient\/\d{3}$/);
     });
 
-    test('passes through full metadata', async () => {
+    it('passes through full metadata', async () => {
       loadContainedYaml.mockImplementation((basePath, name) => {
         if (name === 'manifest') return null;
         return {
@@ -282,17 +275,25 @@ describe('ReadalongAdapter', () => {
   });
 
   describe('getStoragePath', () => {
-    test('returns readalong as storage key for talks', () => {
+    it('returns readalong as storage key for talks', () => {
+      loadContainedYaml.mockImplementation((_dir, name) => {
+        if (name === 'manifest') return {};
+        return null;
+      });
       expect(adapter.getStoragePath('talks/ldsgc202410')).toBe('readalong');
     });
 
-    test('returns scriptures as storage key for scripture', () => {
+    it('returns scriptures as storage key for scripture', () => {
+      loadContainedYaml.mockImplementation((_dir, name) => {
+        if (name === 'manifest') return { storagePath: 'scriptures' };
+        return null;
+      });
       expect(adapter.getStoragePath('scripture/bom')).toBe('scriptures');
     });
   });
 
   describe('getList', () => {
-    test('lists collections when no localId', async () => {
+    it('lists collections when no localId', async () => {
       listDirs.mockReturnValue(['scripture', 'talks', 'poetry']);
 
       const result = await adapter.getList('');
@@ -306,11 +307,12 @@ describe('ReadalongAdapter', () => {
         id: 'readalong:scripture',
         source: 'readalong',
         title: 'scripture',
+        thumbnail: null,
         itemType: 'container'
       });
     });
 
-    test('lists items and subfolders in collection', async () => {
+    it('lists items and subfolders in collection', async () => {
       listDirs.mockReturnValue(['bom', 'dc']);
       listYamlFiles.mockReturnValue(['introduction.yml', 'manifest.yml']);
       loadContainedYaml.mockImplementation((basePath, name) => {
@@ -330,7 +332,6 @@ describe('ReadalongAdapter', () => {
       expect(result.id).toBe('readalong:scripture');
       expect(result.collection).toBe('scripture');
       expect(result.itemType).toBe('container');
-      // Should have 2 subfolders (bom, dc) + 1 file (introduction, excluding manifest.yml)
       expect(result.items).toHaveLength(3);
       expect(result.items[0]).toEqual({
         id: 'readalong:scripture/bom',
@@ -340,7 +341,7 @@ describe('ReadalongAdapter', () => {
       });
     });
 
-    test('excludes manifest folder from collection listing', async () => {
+    it('excludes manifest folder from collection listing', async () => {
       listDirs.mockReturnValue(['bom', 'manifest']);
       listYamlFiles.mockReturnValue([]);
 
@@ -350,7 +351,7 @@ describe('ReadalongAdapter', () => {
       expect(result.items[0].title).toBe('bom');
     });
 
-    test('excludes manifest.yml from file listing', async () => {
+    it('excludes manifest.yml from file listing', async () => {
       listDirs.mockReturnValue([]);
       listYamlFiles.mockReturnValue(['talk1.yml', 'manifest.yml', 'talk2.yml']);
       loadContainedYaml.mockImplementation((basePath, name) => {
@@ -367,7 +368,7 @@ describe('ReadalongAdapter', () => {
       expect(result.items).toHaveLength(2);
     });
 
-    test('lists items in subfolder', async () => {
+    it('lists items in subfolder', async () => {
       listDirs.mockReturnValue(['sebom']);
       listYamlFiles.mockReturnValue(['chapter1.yml', 'chapter2.yml']);
       loadContainedYaml.mockImplementation((basePath, name) => {
@@ -384,11 +385,10 @@ describe('ReadalongAdapter', () => {
       expect(result.id).toBe('readalong:scripture/bom');
       expect(result.collection).toBe('scripture');
       expect(result.itemType).toBe('container');
-      // Should have 1 subfolder (sebom) + 2 files (chapter1, chapter2)
       expect(result.items).toHaveLength(3);
     });
 
-    test('handles deeply nested subfolders', async () => {
+    it('handles deeply nested subfolders', async () => {
       listDirs.mockReturnValue([]);
       listYamlFiles.mockReturnValue(['31103.yml', '31104.yml']);
       loadContainedYaml.mockImplementation((basePath, name) => {
@@ -409,7 +409,7 @@ describe('ReadalongAdapter', () => {
   });
 
   describe('resolvePlayables', () => {
-    test('returns single item as array when item has mediaUrl', async () => {
+    it('returns single item as array when item has mediaUrl', async () => {
       loadContainedYaml.mockImplementation((basePath, name) => {
         if (name === 'manifest') return null;
         return {
@@ -426,12 +426,11 @@ describe('ReadalongAdapter', () => {
       expect(items[0].mediaUrl).toBeTruthy();
     });
 
-    test('returns items from list when localId is a collection', async () => {
+    it('returns items from list when localId is a collection', async () => {
       listDirs.mockReturnValue([]);
       listYamlFiles.mockReturnValue(['talk1.yml', 'talk2.yml']);
       loadContainedYaml.mockImplementation((basePath, name) => {
         if (name === 'manifest') return null;
-        // Empty string path means collection root (not an item)
         if (name === '') return null;
         return {
           title: `Talk ${name}`,
@@ -446,7 +445,7 @@ describe('ReadalongAdapter', () => {
       expect(items.every(i => i.mediaUrl)).toBe(true);
     });
 
-    test('filters out items without mediaUrl', async () => {
+    it('filters out items without mediaUrl', async () => {
       listDirs.mockReturnValue([]);
       listYamlFiles.mockReturnValue(['talk1.yml']);
       loadContainedYaml.mockImplementation((basePath, name) => {
@@ -458,15 +457,12 @@ describe('ReadalongAdapter', () => {
       });
       findMediaFileByPrefix.mockReturnValue(null);
 
-      // The item will still have mediaUrl (API route), so it should be included
-      // In real scenario, items without actual media files would still have the route
       const items = await adapter.resolvePlayables('talks');
 
-      // Items will have mediaUrl since it's generated from the API route pattern
       expect(items.length).toBeGreaterThanOrEqual(0);
     });
 
-    test('returns empty array when item not found and list has no playables', async () => {
+    it('returns empty array when item not found and list has no playables', async () => {
       loadContainedYaml.mockReturnValue(null);
       listDirs.mockReturnValue([]);
       listYamlFiles.mockReturnValue([]);
