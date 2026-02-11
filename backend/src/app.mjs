@@ -727,7 +727,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Gratitude domain router - gratitude card canvas renderer
   let createGratitudeCardCanvas = null;
   try {
-    const { createGratitudeCardRenderer } = await import('#adapters/gratitude/rendering/GratitudeCardRenderer.mjs');
+    const { createGratitudeCardRenderer } = await import('#rendering/gratitude/GratitudeCardRenderer.mjs');
     const householdId = configService.getDefaultHouseholdId();
     const renderer = createGratitudeCardRenderer({
       getSelectionsForPrint: async () => {
@@ -769,7 +769,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Fitness receipt renderer (canvas-based PNG generation)
   let createFitnessReceiptCanvas = null;
   try {
-    const { createFitnessReceiptRenderer } = await import('#adapters/fitness/rendering/FitnessReceiptRenderer.mjs');
+    const { createFitnessReceiptRenderer } = await import('#rendering/fitness/FitnessReceiptRenderer.mjs');
     const renderer = createFitnessReceiptRenderer({
       getSessionData: async (sessionId) => {
         const session = await fitnessServices.sessionService.getSession(sessionId, householdId, { decodeTimeline: false });
