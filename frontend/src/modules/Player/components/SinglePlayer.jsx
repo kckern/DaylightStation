@@ -1,29 +1,13 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import PropTypes from 'prop-types';
-import { SingalongScroller } from '../../ContentScroller/SingalongScroller.jsx';
-import { ReadalongScroller } from '../../ContentScroller/ReadalongScroller.jsx';
 import AppContainer from '../../AppContainer/AppContainer.jsx';
-import PlayableAppShell from './PlayableAppShell.jsx';
-import PagedReader from './PagedReader.jsx';
-import FlowReader from './FlowReader.jsx';
+import { getRenderer, isMediaFormat } from '../../../lib/playable/index.js';
 import { fetchMediaInfo } from '../lib/api.js';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { AudioPlayer } from './AudioPlayer.jsx';
 import { VideoPlayer } from './VideoPlayer.jsx';
 import { PlayerOverlayLoading } from './PlayerOverlayLoading.jsx';
 import { useShaderDiagnostics } from '../hooks/useShaderDiagnostics.js';
-
-/** Formats that render via the video/audio player (not scrollers or apps). */
-const MEDIA_PLAYBACK_FORMATS = ['video', 'dash_video', 'audio'];
-
-/** Format → component registry: declarative mapping from API format to renderer. */
-const CONTENT_FORMAT_COMPONENTS = {
-  singalong: SingalongScroller,
-  readalong: ReadalongScroller,
-  app: PlayableAppShell,
-  readable_paged: PagedReader,
-  readable_flow: FlowReader,
-};
 
 /**
  * Single player component that handles different media types
@@ -107,7 +91,7 @@ export function SinglePlayer(props = {}) {
 
   // Shader is only used for media playback formats (video/audio).
   // Non-media formats (scrollers, apps, etc.) handle their own chrome.
-  const isMediaPlayback = isReady && MEDIA_PLAYBACK_FORMATS.includes(mediaInfo?.format);
+  const isMediaPlayback = isReady && isMediaFormat(mediaInfo?.format);
   useShaderDiagnostics({
     shaderRef: loadingShaderRef,
     containerRef: playerContainerRef,
@@ -266,7 +250,7 @@ export function SinglePlayer(props = {}) {
       // Detect if this is a collection/folder (format: "list", or no mediaUrl/playable mediaType)
       const isPlayable = info.format !== 'list'
         && (info.mediaUrl || ['dash_video', 'video', 'audio'].includes(info.mediaType)
-            || CONTENT_FORMAT_COMPONENTS[info.format]);
+            || getRenderer(info.format));
 
       if (!isPlayable && effectiveContentId) {
         // This is a collection - fetch first playable item
@@ -386,7 +370,7 @@ export function SinglePlayer(props = {}) {
     const format = mediaInfo?.format;
 
     // Media playback formats → video/audio player
-    if (MEDIA_PLAYBACK_FORMATS.includes(format)) {
+    if (isMediaFormat(format)) {
       const PlayerComponent = format === 'audio' ? AudioPlayer : VideoPlayer;
       return (
         <PlayerComponent
@@ -417,7 +401,7 @@ export function SinglePlayer(props = {}) {
     }
 
     // Content format → registered component (scrollers, readers, etc.)
-    const ContentComponent = CONTENT_FORMAT_COMPONENTS[format];
+    const ContentComponent = getRenderer(format);
     if (ContentComponent) {
       return <ContentComponent contentId={mediaInfo.id || effectiveContentId} initialData={mediaInfo} {...contentProps} {...contentScrollerBridge} />;
     }
