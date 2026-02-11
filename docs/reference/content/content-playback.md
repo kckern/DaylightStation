@@ -160,6 +160,24 @@ Player.jsx (orchestrator)
 
 All renderers implement the **Playable Contract** (see content-model.md), which means the queue controller doesn't need to know what format is being rendered — it just passes `advance`, `clear`, `shader`, `volume` and receives `onPlaybackMetrics` back.
 
+### Playable Format Registry
+
+The format→component mapping lives in `frontend/src/lib/playable/registry.js`, not in SinglePlayer. To add a new playable content type:
+
+1. Create the renderer component implementing the Playable Contract (see below)
+2. Import and register it in `frontend/src/lib/playable/registry.js`
+3. No changes needed in SinglePlayer
+
+**Registry API:**
+
+| Export | Purpose |
+|--------|---------|
+| `getRenderer(format)` | Returns the component for a content format, or `null` |
+| `isMediaFormat(format)` | Returns `true` for video/audio/dash_video |
+| `getRegisteredFormats()` | Returns array of registered format names |
+
+**For non-media renderers** (apps, future slideshow/pageturner), use the `usePlayableLifecycle` hook from `frontend/src/lib/playable/usePlayableLifecycle.js` to handle startup signal, metadata reporting, and media access registration in one call instead of manual `useEffect` wiring.
+
 ### Queue Controller
 
 The `useQueueController` hook manages queue state independently of renderers:
@@ -206,7 +224,7 @@ Every renderer of playable content implements the Playable Contract. This is the
 | AudioPlayer | audio | `<audio>` | Full (via useCommonMediaController). Note: `onStartupSignal` not called by AudioPlayer directly. |
 | SingalongScroller | singalong | `<audio>` (embedded) | Full (via ContentScroller → useMediaReporter) |
 | ReadalongScroller | readalong | `<audio>` (embedded, optional) | Full (via ContentScroller → useMediaReporter) |
-| PlayableAppShell | app | None (app-defined) | Minimal stub — delegates to AppContainer |
+| PlayableAppShell | app | None (app-defined) | Via `usePlayableLifecycle` hook — delegates to AppContainer |
 
 Note: `onResolvedMeta` is called at the SinglePlayer level after content resolution, not by individual renderers. `onStartupSignal` is currently only implemented by ContentScroller-based renderers (SingalongScroller, ReadalongScroller) via `useMediaReporter`.
 
