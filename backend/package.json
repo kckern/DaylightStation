@@ -22,6 +22,7 @@
     "#system/*": "./src/0_system/*",
     "#domains/*": "./src/2_domains/*",
     "#adapters/*": "./src/1_adapters/*",
+    "#rendering/*": "./src/1_rendering/*",
     "#apps/*": "./src/3_applications/*",
     "#api/*": "./src/4_api/*"
   },
