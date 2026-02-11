@@ -16,6 +16,7 @@
  * - GET  /api/fitness/zone_led/status - Get LED controller status
  * - GET  /api/fitness/zone_led/metrics - Get LED controller metrics
  * - POST /api/fitness/zone_led/reset - Reset LED controller state
+ * - GET  /api/fitness/receipt/:sessionId - Get fitness receipt PNG
  * - POST /api/fitness/simulate - Start fitness simulation
  * - DELETE /api/fitness/simulate - Stop running simulation
  * - GET  /api/fitness/simulate/status - Get simulation status
@@ -23,7 +24,7 @@
 import express from 'express';
 import path from 'path';
 import { spawn } from 'child_process';
-import { ensureDir, writeBinary } from '#system/utils/FileIO.mjs';
+import { ensureDir, writeBinary, deleteFile } from '#system/utils/FileIO.mjs';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { toListItem } from './list.mjs';
 
@@ -50,6 +51,7 @@ const simulationState = {
  * @param {Object} [config.contentQueryService] - ContentQueryService for watch state enrichment
  * @param {Object} config.transcriptionService - OpenAI transcription service (optional)
  * @param {Function} [config.createProgressClassifier] - Factory function to create progress classifier
+ * @param {Function} [config.createReceiptCanvas] - async (sessionId, upsidedown) => { canvas, width, height }
  * @param {Object} config.logger - Logger instance
  * @returns {express.Router}
  */
@@ -66,6 +68,8 @@ export function createFitnessRouter(config) {
     contentQueryService,
     transcriptionService,
     createProgressClassifier,
+    createReceiptCanvas,
+    printerAdapter,
     logger = console
   } = config;
 
@@ -390,6 +394,77 @@ export function createFitnessRouter(config) {
     } catch (err) {
       logger.error?.('fitness.sessions.detail.error', { sessionId, error: err?.message });
       return res.status(500).json({ error: 'Failed to load session' });
+    }
+  });
+
+  /**
+   * GET /api/fitness/receipt/:sessionId - Get fitness receipt as PNG
+   */
+  router.get('/receipt/:sessionId', async (req, res) => {
+    if (!createReceiptCanvas) {
+      return res.status(501).json({ error: 'Receipt renderer not configured' });
+    }
+    const { sessionId } = req.params;
+    const upsidedown = req.query.upsidedown === 'true';
+    if (!sessionId) {
+      return res.status(400).json({ error: 'sessionId is required' });
+    }
+    try {
+      const result = await createReceiptCanvas(sessionId, upsidedown);
+      if (!result) {
+        return res.status(404).json({ error: 'Session not found' });
+      }
+      const buffer = result.canvas.toBuffer('image/png');
+      res.set('Content-Type', 'image/png');
+      res.set('Content-Length', buffer.length);
+      return res.send(buffer);
+    } catch (err) {
+      logger.error?.('fitness.receipt.error', { sessionId, error: err?.message });
+      return res.status(500).json({ error: 'Failed to generate receipt' });
+    }
+  });
+
+  /**
+   * GET /api/fitness/receipt/:sessionId/print - Generate and print fitness receipt
+   * Query params:
+   *   - upsidedown: 'true'/'false' (default: true for print)
+   */
+  router.get('/receipt/:sessionId/print', async (req, res) => {
+    if (!createReceiptCanvas) {
+      return res.status(501).json({ error: 'Receipt renderer not configured' });
+    }
+    if (!printerAdapter) {
+      return res.status(501).json({ error: 'Printer not configured' });
+    }
+    const { sessionId } = req.params;
+    const upsidedown = req.query.upsidedown !== 'false'; // default true for print
+    try {
+      const result = await createReceiptCanvas(sessionId, upsidedown);
+      if (!result) {
+        return res.status(404).json({ error: 'Session not found' });
+      }
+      const buffer = result.canvas.toBuffer('image/png');
+      const tempPath = `/tmp/fitness_receipt_${sessionId}_${Date.now()}.png`;
+      writeBinary(tempPath, buffer);
+
+      const printJob = printerAdapter.createImagePrint(tempPath, {
+        width: result.width,
+        height: result.height,
+        align: 'left',
+        threshold: 128
+      });
+      const success = await printerAdapter.print(printJob);
+
+      try { deleteFile(tempPath); } catch {}
+
+      return res.json({
+        success,
+        message: success ? 'Fitness receipt printed' : 'Print failed',
+        sessionId
+      });
+    } catch (err) {
+      logger.error?.('fitness.receipt.print.error', { sessionId, error: err?.message });
+      return res.status(500).json({ error: 'Failed to print receipt' });
     }
   });
 
