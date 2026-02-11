@@ -228,6 +228,31 @@ Every renderer of playable content implements the Playable Contract. This is the
 
 Note: `onResolvedMeta` is called at the SinglePlayer level after content resolution, not by individual renderers. `onStartupSignal` is currently only implemented by ContentScroller-based renderers (SingalongScroller, ReadalongScroller) via `useMediaReporter`.
 
+### Future Extension: Intra-Item Stepping
+
+The current Playable Contract handles **inter-item** advancement only: `advance()` moves to the next queue item. Some content types (slideshow, pageturner, presentation) need **intra-item** stepping — advancing within a single queue item (next slide, next page).
+
+**Planned approach:** Follow the `onRegisterMediaAccess` pattern. A steppable renderer would register step accessors:
+
+```javascript
+onRegisterStepAccess({
+  step: (direction) => { /* +1 next, -1 prev */ },
+  totalSteps: 20,
+  currentStep: 3
+})
+```
+
+Player would use this to:
+- Route arrow keys to the step function instead of seek
+- Display step progress (e.g., "3 / 20") in the seek bar area
+
+**Key design decisions:**
+- **Renderer-driven, not queue-driven** — the queue controller stays unaware of intra-item state. Stepping is a UI concern between the user, the player chrome, and the renderer.
+- **Optional capability** — renderers that don't register step access behave exactly as today. No changes to existing renderers.
+- **`usePlayableLifecycle` extension** — when built, add a `stepAccess` parameter alongside the existing `mediaAccess` parameter.
+
+**Not yet implemented.** Build this when the first steppable renderer (Slideshow) is created.
+
 ### PlayableAppShell
 
 The new renderer for `app` format content. Wraps interactive apps (webcam, gratitude, family-selector, etc.) with the Playable Contract.
