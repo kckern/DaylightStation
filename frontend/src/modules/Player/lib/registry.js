@@ -1,4 +1,4 @@
-// frontend/src/lib/playable/registry.js
+// frontend/src/modules/Player/lib/registry.js
 
 /**
  * Playable Content Format Registry
@@ -12,11 +12,11 @@
  * 2. Import and register it here
  * 3. No changes needed in SinglePlayer
  */
-import { SingalongScroller } from '../../modules/ContentScroller/SingalongScroller.jsx';
-import { ReadalongScroller } from '../../modules/ContentScroller/ReadalongScroller.jsx';
-import PlayableAppShell from '../../modules/Player/components/PlayableAppShell.jsx';
-import PagedReader from '../../modules/Player/components/PagedReader.jsx';
-import FlowReader from '../../modules/Player/components/FlowReader.jsx';
+import { SingalongScroller } from '../../ContentScroller/SingalongScroller.jsx';
+import { ReadalongScroller } from '../../ContentScroller/ReadalongScroller.jsx';
+import PlayableAppShell from '../components/PlayableAppShell.jsx';
+import PagedReader from '../components/PagedReader.jsx';
+import FlowReader from '../components/FlowReader.jsx';
 
 /**
  * Content format → renderer component.

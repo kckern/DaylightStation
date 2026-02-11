@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import PropTypes from 'prop-types';
 import AppContainer from '../../AppContainer/AppContainer.jsx';
-import { getRenderer, isMediaFormat } from '../../../lib/playable/index.js';
+import { getRenderer, isMediaFormat } from '../lib/registry.js';
 import { fetchMediaInfo } from '../lib/api.js';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { AudioPlayer } from './AudioPlayer.jsx';
