@@ -1,5 +1,6 @@
 import express from 'express';
 import { createAdminContentRouter } from './content.mjs';
+import { createAdminConfigRouter } from './config.mjs';
 import { createAdminImagesRouter } from './images.mjs';
 import { createEventBusRouter } from './eventbus.mjs';
 import { createAdminMediaRouter } from './media.mjs';
@@ -9,6 +10,7 @@ import { createAdminMediaRouter } from './media.mjs';
  *
  * Mounts all admin sub-routers:
  *   /content/* - List/folder management
+ *   /config/*  - Generic YAML config file CRUD
  *   /images/*  - Image uploads
  *   /media/*   - Media operations (freshvideo metadata)
  *   /ws/*      - EventBus/WebSocket management
@@ -33,6 +35,13 @@ export function createAdminRouter(config) {
     logger: logger.child?.({ submodule: 'content' }) || logger
   });
   router.use('/content', contentRouter);
+
+  // Mount config router
+  const configRouter = createAdminConfigRouter({
+    configService,
+    logger: logger.child?.({ submodule: 'config' }) || logger
+  });
+  router.use('/config', configRouter);
 
   // Mount images router
   const imagesRouter = createAdminImagesRouter({
@@ -60,11 +69,12 @@ export function createAdminRouter(config) {
     router.use('/ws', eventBusRouter);
   }
 
-  logger.info?.('admin.router.mounted', { subroutes: ['/content', '/images', '/media', '/ws'] });
+  logger.info?.('admin.router.mounted', { subroutes: ['/content', '/config', '/images', '/media', '/ws'] });
   return router;
 }
 
 export { createAdminContentRouter } from './content.mjs';
+export { createAdminConfigRouter } from './config.mjs';
 export { createAdminImagesRouter } from './images.mjs';
 export { createAdminMediaRouter } from './media.mjs';
 export { createEventBusRouter } from './eventbus.mjs';
