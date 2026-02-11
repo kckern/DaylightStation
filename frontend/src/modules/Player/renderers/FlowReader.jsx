@@ -1,4 +1,4 @@
-// frontend/src/modules/Player/components/FlowReader.jsx
+// frontend/src/modules/Player/renderers/FlowReader.jsx
 
 /**
  * Stub: Flow/scroll reader for webtoons and long-strip comics.

@@ -1,4 +1,4 @@
-// frontend/src/lib/playable/usePlayableLifecycle.js
+// frontend/src/modules/Player/hooks/usePlayableLifecycle.js
 
 /**
  * Hook for non-media playable content types.
