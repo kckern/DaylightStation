@@ -6,6 +6,8 @@ import AdminLayout from '../modules/Admin/AdminLayout.jsx';
 import ListsIndex from '../modules/Admin/ContentLists/ListsIndex.jsx';
 import ListsFolder from '../modules/Admin/ContentLists/ListsFolder.jsx';
 import ComingSoon from '../modules/Admin/Placeholders/ComingSoon.jsx';
+import ConfigIndex from '../modules/Admin/Config/ConfigIndex.jsx';
+import ConfigFileEditor from '../modules/Admin/Config/ConfigFileEditor.jsx';
 import ComboboxTestPage from '../modules/Admin/TestHarness/ComboboxTestPage.jsx';
 import './AdminApp.scss';
 import '@mantine/core/styles.css';
@@ -47,7 +49,8 @@ function AdminApp() {
             <Route path="system/integrations/:provider" element={<ComingSoon title="Integration Detail" />} />
             <Route path="system/scheduler" element={<ComingSoon title="Scheduler" />} />
             <Route path="system/scheduler/:jobId" element={<ComingSoon title="Job Detail" />} />
-            <Route path="system/config" element={<ComingSoon title="Config Editor" />} />
+            <Route path="system/config" element={<ConfigIndex />} />
+            <Route path="system/config/*" element={<ConfigFileEditor />} />
             <Route path="*" element={<Navigate to="content/lists/menus" replace />} />
           </Route>
         </Routes>
