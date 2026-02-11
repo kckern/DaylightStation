@@ -2,7 +2,7 @@ import React, { useState, useCallback, useEffect, useRef } from 'react';
 import PropTypes from 'prop-types';
 import 'dash-video-element';
 import { useCommonMediaController } from '../hooks/useCommonMediaController.js';
-import { ProgressBar } from './ProgressBar.jsx';
+import { ProgressBar } from '../components/ProgressBar.jsx';
 import { useUpscaleEffects } from '../hooks/useUpscaleEffects.js';
 import { useRenderFpsMonitor } from '../hooks/useRenderFpsMonitor.js';
 import { getLogger } from '../../../lib/logging/Logger.js';
