@@ -5,16 +5,19 @@ import { createAdminImagesRouter } from './images.mjs';
 import { createEventBusRouter } from './eventbus.mjs';
 import { createAdminMediaRouter } from './media.mjs';
 import { createAdminSchedulerRouter } from './scheduler.mjs';
+import { createAdminHouseholdRouter } from './household.mjs';
 
 /**
  * Combined Admin Router
  *
  * Mounts all admin sub-routers:
- *   /content/* - List/folder management
- *   /config/*  - Generic YAML config file CRUD
- *   /images/*  - Image uploads
- *   /media/*   - Media operations (freshvideo metadata)
- *   /ws/*      - EventBus/WebSocket management
+ *   /content/*   - List/folder management
+ *   /config/*    - Generic YAML config file CRUD
+ *   /scheduler/* - Cron job management
+ *   /household/* - Household config, members, and devices
+ *   /images/*    - Image uploads
+ *   /media/*     - Media operations (freshvideo metadata)
+ *   /ws/*        - EventBus/WebSocket management
  *
  * @param {Object} config
  * @param {Object} config.userDataService - UserDataService for household paths
@@ -51,6 +54,13 @@ export function createAdminRouter(config) {
   });
   router.use('/scheduler', schedulerRouter);
 
+  // Mount household router
+  const householdRouter = createAdminHouseholdRouter({
+    configService,
+    logger: logger.child?.({ submodule: 'household' }) || logger
+  });
+  router.use('/household', householdRouter);
+
   // Mount images router
   const imagesRouter = createAdminImagesRouter({
     mediaPath,
@@ -77,7 +87,7 @@ export function createAdminRouter(config) {
     router.use('/ws', eventBusRouter);
   }
 
-  logger.info?.('admin.router.mounted', { subroutes: ['/content', '/config', '/scheduler', '/images', '/media', '/ws'] });
+  logger.info?.('admin.router.mounted', { subroutes: ['/content', '/config', '/scheduler', '/household', '/images', '/media', '/ws'] });
   return router;
 }
 
@@ -87,3 +97,4 @@ export { createAdminImagesRouter } from './images.mjs';
 export { createAdminMediaRouter } from './media.mjs';
 export { createEventBusRouter } from './eventbus.mjs';
 export { createAdminSchedulerRouter } from './scheduler.mjs';
+export { createAdminHouseholdRouter } from './household.mjs';
