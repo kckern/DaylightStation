@@ -10,6 +10,10 @@ import ConfigIndex from '../modules/Admin/Config/ConfigIndex.jsx';
 import ConfigFileEditor from '../modules/Admin/Config/ConfigFileEditor.jsx';
 import SchedulerIndex from '../modules/Admin/Scheduler/SchedulerIndex.jsx';
 import JobDetail from '../modules/Admin/Scheduler/JobDetail.jsx';
+import MembersIndex from '../modules/Admin/Household/MembersIndex.jsx';
+import MemberEditor from '../modules/Admin/Household/MemberEditor.jsx';
+import DevicesIndex from '../modules/Admin/Household/DevicesIndex.jsx';
+import DeviceEditor from '../modules/Admin/Household/DeviceEditor.jsx';
 import ComboboxTestPage from '../modules/Admin/TestHarness/ComboboxTestPage.jsx';
 import './AdminApp.scss';
 import '@mantine/core/styles.css';
@@ -41,10 +45,10 @@ function AdminApp() {
             <Route path="apps/:appId" element={<ComingSoon title="App Config" />} />
 
             {/* Household */}
-            <Route path="household/members" element={<ComingSoon title="Members" />} />
-            <Route path="household/members/:username" element={<ComingSoon title="Member Editor" />} />
-            <Route path="household/devices" element={<ComingSoon title="Devices" />} />
-            <Route path="household/devices/:deviceId" element={<ComingSoon title="Device Editor" />} />
+            <Route path="household/members" element={<MembersIndex />} />
+            <Route path="household/members/:username" element={<MemberEditor />} />
+            <Route path="household/devices" element={<DevicesIndex />} />
+            <Route path="household/devices/:deviceId" element={<DeviceEditor />} />
 
             {/* System */}
             <Route path="system/integrations" element={<ComingSoon title="Integrations" />} />
