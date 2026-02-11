@@ -12,8 +12,8 @@
  * 2. Import and register it here
  * 3. No changes needed in SinglePlayer
  */
-import { SingalongScroller } from '../../ContentScroller/SingalongScroller.jsx';
-import { ReadalongScroller } from '../../ContentScroller/ReadalongScroller.jsx';
+import { SingalongScroller } from '../renderers/SingalongScroller.jsx';
+import { ReadalongScroller } from '../renderers/ReadalongScroller.jsx';
 import PlayableAppShell from '../components/PlayableAppShell.jsx';
 import PagedReader from '../components/PagedReader.jsx';
 import FlowReader from '../components/FlowReader.jsx';

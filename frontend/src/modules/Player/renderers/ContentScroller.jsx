@@ -8,13 +8,13 @@ import React, {
   } from "react";
   import moment from "moment";
   import "./ContentScroller.scss";
-import { DaylightAPI, DaylightMediaPath } from "../../lib/api.mjs";
-import { useCenterByWidest } from '../../lib/Player/useCenterByWidest.js';
-import paperBackground from "../../assets/backgrounds/paper.jpg";
-import { convertVersesToScriptureData, scriptureDataToJSX } from "../../lib/scripture-guide.jsx";
-import { useMediaKeyboardHandler } from '../../lib/Player/useMediaKeyboardHandler.js';
-import { useDynamicDimensions } from '../../lib/Player/useDynamicDimensions.js';
-import { useMediaReporter } from '../Player/hooks/useMediaReporter.js';
+import { DaylightAPI, DaylightMediaPath } from "../../../lib/api.mjs";
+import { useCenterByWidest } from '../../../lib/Player/useCenterByWidest.js';
+import paperBackground from "../../../assets/backgrounds/paper.jpg";
+import { convertVersesToScriptureData, scriptureDataToJSX } from "../../../lib/scripture-guide.jsx";
+import { useMediaKeyboardHandler } from '../../../lib/Player/useMediaKeyboardHandler.js';
+import { useDynamicDimensions } from '../../../lib/Player/useDynamicDimensions.js';
+import { useMediaReporter } from '../hooks/useMediaReporter.js';
   
   /**
    * ContentScroller (superclass)
