@@ -19,14 +19,18 @@
   flex-direction: column;
   overflow: hidden;
 
-  // Items container - scrollable area for rows
+  // Scrollable area wrapping sections or flat search results
+  .sections-scroll {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0; // Allow flex item to shrink
+  }
+
+  // Items container - rows within a section
   .items-container {
     display: flex;
     flex-direction: column;
     gap: 0;
-    overflow-y: auto;
-    flex: 1;
-    min-height: 0; // Allow flex item to shrink
   }
 
   // Table header - fixed column widths with icon column

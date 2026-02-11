@@ -58,6 +58,21 @@ function makeAdapter({ registry, mediaProgressMemory } = {}) {
   return adapter;
 }
 
+/** Build a normalized list cache entry (matches normalizeListConfig output) */
+function makeNormalizedList(items) {
+  return {
+    title: undefined,
+    description: undefined,
+    image: undefined,
+    metadata: {},
+    sections: [{ items: items.map(i => ({
+      title: i.label || i.title,
+      play: { contentId: i.input?.replace(/^(\w+):\s+/, '$1:') || i.play?.contentId },
+      ...(i.uid ? { uid: i.uid } : {}),
+    })) }]
+  };
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────
 
 describe('ListAdapter.resolvePlayables — program "next up" resolution', () => {
@@ -69,9 +84,9 @@ describe('ListAdapter.resolvePlayables — program "next up" resolution', () => 
     const adapter = makeAdapter({ registry, mediaProgressMemory: memory });
 
     // Pre-populate list cache: program with one slot pointing to a plex show
-    adapter._listCache.set('programs:morning-program', [
+    adapter._listCache.set('programs:morning-program', makeNormalizedList([
       { label: 'Kids Show', input: 'plex:show123' },
-    ]);
+    ]));
 
     const result = await adapter.resolvePlayables('program:morning-program', { applySchedule: false });
 
@@ -90,9 +105,9 @@ describe('ListAdapter.resolvePlayables — program "next up" resolution', () => 
     });
     const adapter = makeAdapter({ registry, mediaProgressMemory: memory });
 
-    adapter._listCache.set('programs:test-program', [
+    adapter._listCache.set('programs:test-program', makeNormalizedList([
       { label: 'Show', input: 'plex:show123' },
-    ]);
+    ]));
 
     const result = await adapter.resolvePlayables('program:test-program', { applySchedule: false });
 
@@ -111,9 +126,9 @@ describe('ListAdapter.resolvePlayables — program "next up" resolution', () => 
     });
     const adapter = makeAdapter({ registry, mediaProgressMemory: memory });
 
-    adapter._listCache.set('programs:watched-program', [
+    adapter._listCache.set('programs:watched-program', makeNormalizedList([
       { label: 'Show', input: 'plex:show123' },
-    ]);
+    ]));
 
     const result = await adapter.resolvePlayables('program:watched-program', { applySchedule: false });
 
@@ -126,9 +141,9 @@ describe('ListAdapter.resolvePlayables — program "next up" resolution', () => 
     const memory = makeMockMemory();
     const adapter = makeAdapter({ registry, mediaProgressMemory: memory });
 
-    adapter._listCache.set('menus:main-menu', [
+    adapter._listCache.set('menus:main-menu', makeNormalizedList([
       { label: 'Show', input: 'plex:show123' },
-    ]);
+    ]));
 
     const result = await adapter.resolvePlayables('menu:main-menu');
 
@@ -158,9 +173,9 @@ describe('_getNextPlayableFromChild — Plex fast path', () => {
     const memory = makeMockMemory();
     const adapter = makeAdapter({ registry, mediaProgressMemory: memory });
 
-    adapter._listCache.set('programs:fast-program', [
+    adapter._listCache.set('programs:fast-program', makeNormalizedList([
       { label: 'Show', input: 'plex:show123' },
-    ]);
+    ]));
 
     const result = await adapter.resolvePlayables('program:fast-program', { applySchedule: false });
 
@@ -187,9 +202,9 @@ describe('_getNextPlayableFromChild — Plex fast path', () => {
     const memory = makeMockMemory();
     const adapter = makeAdapter({ registry, mediaProgressMemory: memory });
 
-    adapter._listCache.set('programs:fallback-program', [
+    adapter._listCache.set('programs:fallback-program', makeNormalizedList([
       { label: 'Show', input: 'plex:show123' },
-    ]);
+    ]));
 
     const result = await adapter.resolvePlayables('program:fallback-program', { applySchedule: false });
 
@@ -213,9 +228,9 @@ describe('_getNextPlayableFromChild — Plex fast path', () => {
     const memory = makeMockMemory();
     const adapter = makeAdapter({ registry, mediaProgressMemory: memory });
 
-    adapter._listCache.set('programs:empty-program', [
+    adapter._listCache.set('programs:empty-program', makeNormalizedList([
       { label: 'Show', input: 'plex:show123' },
-    ]);
+    ]));
 
     const result = await adapter.resolvePlayables('program:empty-program', { applySchedule: false });
 
@@ -232,9 +247,9 @@ describe('_getNextPlayableFromChild — generic fallback with bulk getAll', () =
     const memory = makeMockMemory({ ep1: 0, ep2: 0, ep3: 50, ep4: 0, ep5: 0 });
     const adapter = makeAdapter({ registry, mediaProgressMemory: memory });
 
-    adapter._listCache.set('programs:bulk-program', [
+    adapter._listCache.set('programs:bulk-program', makeNormalizedList([
       { label: 'Show', input: 'plex:show123' },
-    ]);
+    ]));
 
     const result = await adapter.resolvePlayables('program:bulk-program', { applySchedule: false });
 

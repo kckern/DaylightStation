@@ -10,7 +10,7 @@ import {
   fileExists,
   loadYaml
 } from '#system/utils/FileIO.mjs';
-import { normalizeListItem, extractContentId } from './listConfigNormalizer.mjs';
+import { normalizeListItem, extractContentId, normalizeListConfig } from './listConfigNormalizer.mjs';
 
 // Threshold for considering an item "watched" (90%)
 const WATCHED_THRESHOLD = 90;
@@ -298,7 +298,8 @@ export class ListAdapter {
     }
 
     try {
-      const data = loadYaml(filePath.replace(/\.yml$/, ''));
+      const raw = loadYaml(filePath.replace(/\.yml$/, ''));
+      const data = normalizeListConfig(raw, name);
       this._listCache.set(cacheKey, data);
       return data;
     } catch (err) {
@@ -383,10 +384,10 @@ export class ListAdapter {
     if (!listData) return null;
 
     // Return list metadata
-    const items = Array.isArray(listData) ? listData : (listData.items || []);
+    const items = listData.sections.flatMap(s => s.items);
 
     // Get title: prefer explicit title, then format from name
-    const title = listData.title || listData.label || formatListTitle(parsed.name);
+    const title = listData.title || formatListTitle(parsed.name);
 
     // Try to get thumbnail from first item in list (if available)
     let thumbnail = listData.image || null;
@@ -401,7 +402,7 @@ export class ListAdapter {
       menu: 'Menus',
       query: 'Queries'
     };
-    const librarySectionTitle = listData.group || typeLabels[parsed.prefix] || 'Lists';
+    const librarySectionTitle = listData.metadata?.group || typeLabels[parsed.prefix] || 'Lists';
     const canonicalId = `${parsed.prefix}:${parsed.name}`;
 
     return new ListableItem({
@@ -441,8 +442,8 @@ export class ListAdapter {
 
       return names.map(name => {
         const listData = this._loadList(listType, name);
-        const items = Array.isArray(listData) ? listData : (listData?.items || []);
-        const title = listData?.title || listData?.label || formatListTitle(name);
+        const items = listData?.sections?.flatMap(s => s.items) || [];
+        const title = listData?.title || formatListTitle(name);
 
         // Try to get thumbnail from list config or first item
         let thumbnail = listData?.image || null;
@@ -478,9 +479,8 @@ export class ListAdapter {
     const listData = this._loadList(listType, parsed.name);
     if (!listData) return null;
 
-    const rawItems = Array.isArray(listData) ? listData : (listData.items || []);
-    const menuFixedOrder = !Array.isArray(listData) && listData.fixed_order;
-    const items = rawItems.map(normalizeListItem);
+    const items = listData.sections.flatMap(s => s.items);
+    const menuFixedOrder = listData.metadata?.fixed_order;
     const children = await this._buildListItems(items, parsed.prefix, parsed.name);
 
     // Propagate menu-level fixed_order to all children
@@ -490,7 +490,7 @@ export class ListAdapter {
       }
     }
 
-    const title = listData.title || listData.label || formatListTitle(parsed.name);
+    const title = listData.title || formatListTitle(parsed.name);
 
     // Try to get thumbnail from list config or first item
     let thumbnail = listData.image || null;
@@ -1029,8 +1029,7 @@ export class ListAdapter {
     const listData = this._loadList(listType, parsed.name);
     if (!listData) return [];
 
-    const rawItems = Array.isArray(listData) ? listData : (listData.items || []);
-    const items = rawItems.map(normalizeListItem);
+    const items = listData.sections.flatMap(s => s.items);
 
     // Build resolution tasks (preserving order) then run in parallel batches
     const tasks = [];
@@ -1117,7 +1116,7 @@ export class ListAdapter {
         const listData = this._loadList(listType, name);
         if (!listData) continue;
 
-        const title = listData.title || listData.label || name;
+        const title = listData.title || name;
 
         // Check if list name matches
         if (name.toLowerCase().includes(searchLower) ||
@@ -1125,10 +1124,10 @@ export class ListAdapter {
           results.push(await this.getItem(`${prefix}:${name}`));
         }
 
-        // Check if any item labels match
-        const items = Array.isArray(listData) ? listData : (listData.items || []);
+        // Check if any item titles match
+        const items = listData.sections?.flatMap(s => s.items) || [];
         for (const item of items) {
-          if (item.label?.toLowerCase().includes(searchLower)) {
+          if ((item.title || item.label)?.toLowerCase().includes(searchLower)) {
             // Return the parent list as a result (contains matching item)
             const existing = results.find(r => r?.id === `${prefix}:${name}`);
             if (!existing) {

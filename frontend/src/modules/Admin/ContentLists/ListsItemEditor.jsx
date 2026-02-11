@@ -75,10 +75,7 @@ function buildSavePayload(formData, customFields) {
     }
   }
 
-  // Add group and image if they have values (not in ITEM_DEFAULTS)
-  if (formData.group && formData.group.trim()) {
-    payload.group = formData.group.trim();
-  }
+  // Add image if it has a value (not in ITEM_DEFAULTS)
   if (formData.image) {
     payload.image = formData.image;
   }
@@ -96,12 +93,8 @@ function buildSavePayload(formData, customFields) {
 /**
  * Simple mode - Just the essential fields
  */
-function SimpleMode({ formData, onChange, errors, existingGroups }) {
+function SimpleMode({ formData, onChange, errors, sections }) {
   const [imagePickerOpen, setImagePickerOpen] = useState(false);
-  const groupOptions = existingGroups
-    .filter(g => g)
-    .map(g => ({ value: g, label: g }));
-
   const imageSrc = formData.image
     ? (formData.image.startsWith('/media/') || formData.image.startsWith('media/')
         ? DaylightMediaPath(formData.image)
@@ -142,20 +135,11 @@ function SimpleMode({ formData, onChange, errors, existingGroups }) {
       />
 
       <Select
-        label="Group"
-        description="Optional grouping for organization"
-        placeholder="Select or type a group"
-        data={groupOptions}
-        value={formData.group}
-        onChange={(value) => onChange('group', value || '')}
-        searchable
-        creatable
-        getCreateLabel={(query) => `+ Create "${query}"`}
-        onCreate={(query) => {
-          groupOptions.push({ value: query, label: query });
-          return query;
-        }}
-        clearable
+        label="Section"
+        description="Which section this item belongs to"
+        data={sections.map((s, i) => ({ value: String(i), label: s.title || `Section ${i + 1}` }))}
+        value={String(formData.sectionIndex ?? 0)}
+        onChange={(val) => onChange('sectionIndex', parseInt(val))}
       />
 
       <Switch
@@ -207,7 +191,7 @@ function SimpleMode({ formData, onChange, errors, existingGroups }) {
 /**
  * ListsItemEditor - Modal for editing list items with Simple/Full mode toggle
  */
-function ListsItemEditor({ opened, onClose, onSave, item, loading, existingGroups = [], isWatchlist = false }) {
+function ListsItemEditor({ opened, onClose, onSave, item, loading, sections = [], isWatchlist = false }) {
   const [mode, setMode] = useState('simple');
   const [formData, setFormData] = useState({});
   const [customFields, setCustomFields] = useState({});
@@ -224,7 +208,7 @@ function ListsItemEditor({ opened, onClose, onSave, item, loading, existingGroup
           action: item.action || ITEM_DEFAULTS.action,
           active: item.active !== false,
           image: item.image || null,
-          group: item.group || '',
+          sectionIndex: item.sectionIndex ?? 0,
           // Playback
           shuffle: item.shuffle ?? ITEM_DEFAULTS.shuffle,
           continuous: item.continuous ?? ITEM_DEFAULTS.continuous,
@@ -253,7 +237,6 @@ function ListsItemEditor({ opened, onClose, onSave, item, loading, existingGroup
           action: ITEM_DEFAULTS.action,
           active: ITEM_DEFAULTS.active,
           image: null,
-          group: '',
           shuffle: ITEM_DEFAULTS.shuffle,
           continuous: ITEM_DEFAULTS.continuous,
           loop: ITEM_DEFAULTS.loop,
@@ -357,7 +340,7 @@ function ListsItemEditor({ opened, onClose, onSave, item, loading, existingGroup
               formData={formData}
               onChange={handleInputChange}
               errors={errors}
-              existingGroups={existingGroups}
+              sections={sections}
             />
           ) : (
             <EditorCategories
@@ -366,7 +349,7 @@ function ListsItemEditor({ opened, onClose, onSave, item, loading, existingGroup
               customFields={customFields}
               onCustomFieldChange={handleCustomFieldChange}
               isWatchlist={isWatchlist}
-              existingGroups={existingGroups}
+              existingGroups={[]}
             />
           )}
 

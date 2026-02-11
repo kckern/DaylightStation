@@ -1,6 +1,6 @@
 // tests/isolated/adapter/content/list/listConfigNormalizer.test.mjs
 import { describe, it, expect } from 'vitest';
-import { normalizeListItem, extractContentId } from '#adapters/content/list/listConfigNormalizer.mjs';
+import { normalizeListItem, extractContentId, normalizeListConfig, serializeListConfig, applyCascade, INHERITABLE_FIELDS } from '#adapters/content/list/listConfigNormalizer.mjs';
 
 describe('normalizeListItem', () => {
 
@@ -229,5 +229,374 @@ describe('extractContentId', () => {
 
   it('returns empty string for null', () => {
     expect(extractContentId(null)).toBe('');
+  });
+});
+
+describe('normalizeListConfig', () => {
+
+  // ── Input format normalization ────────────────────────
+  describe('input format normalization', () => {
+    it('wraps bare array into single anonymous section', () => {
+      const raw = [
+        { label: 'Bluey', input: 'plex: 59493' },
+        { label: 'Yoda', input: 'plex: 530423' }
+      ];
+      const result = normalizeListConfig(raw);
+      expect(result.sections).toHaveLength(1);
+      expect(result.sections[0].title).toBeUndefined();
+      expect(result.sections[0].items).toHaveLength(2);
+    });
+
+    it('wraps {items} format into single anonymous section', () => {
+      const raw = {
+        title: 'Kids',
+        description: 'Cartoons',
+        image: '/img.png',
+        items: [
+          { title: 'Bluey', play: { plex: '59493' } }
+        ]
+      };
+      const result = normalizeListConfig(raw);
+      expect(result.title).toBe('Kids');
+      expect(result.description).toBe('Cartoons');
+      expect(result.image).toBe('/img.png');
+      expect(result.sections).toHaveLength(1);
+      expect(result.sections[0].items).toHaveLength(1);
+    });
+
+    it('passes through {sections} format', () => {
+      const raw = {
+        title: 'Scripture Study',
+        sections: [
+          { title: 'BibleProject', items: [{ title: 'Gen', play: { plex: '1' } }] },
+          { title: 'Yale', items: [{ title: 'Intro', play: { plex: '2' } }] }
+        ]
+      };
+      const result = normalizeListConfig(raw);
+      expect(result.sections).toHaveLength(2);
+      expect(result.sections[0].title).toBe('BibleProject');
+      expect(result.sections[1].title).toBe('Yale');
+    });
+
+    it('handles null/undefined input', () => {
+      const result = normalizeListConfig(null);
+      expect(result.sections).toHaveLength(1);
+      expect(result.sections[0].items).toHaveLength(0);
+    });
+
+    it('handles empty object', () => {
+      const result = normalizeListConfig({});
+      expect(result.sections).toHaveLength(1);
+      expect(result.sections[0].items).toHaveLength(0);
+    });
+  });
+
+  // ── List-level metadata extraction ────────────────────
+  describe('list-level metadata', () => {
+    it('extracts title, description, image from {items} format', () => {
+      const raw = { title: 'FHE', description: 'Family night', image: '/fhe.png', items: [] };
+      const result = normalizeListConfig(raw);
+      expect(result.title).toBe('FHE');
+      expect(result.description).toBe('Family night');
+      expect(result.image).toBe('/fhe.png');
+    });
+
+    it('extracts metadata object with inheritable fields', () => {
+      const raw = {
+        title: 'Study',
+        metadata: { priority: 'medium', playbackrate: 2, group: 'Scripture' },
+        items: []
+      };
+      const result = normalizeListConfig(raw);
+      expect(result.metadata.priority).toBe('medium');
+      expect(result.metadata.playbackrate).toBe(2);
+      expect(result.metadata.group).toBe('Scripture');
+    });
+
+    it('lifts fixed_order from top level into metadata', () => {
+      const raw = { title: 'FHE', fixed_order: true, items: [] };
+      const result = normalizeListConfig(raw);
+      expect(result.metadata.fixed_order).toBe(true);
+    });
+  });
+
+  // ── Section-level fields ──────────────────────────────
+  describe('section-level fields', () => {
+    it('preserves section title, description, image', () => {
+      const raw = {
+        title: 'Lists',
+        sections: [{
+          title: 'Favorites',
+          description: 'Top picks',
+          image: '/fav.png',
+          items: []
+        }]
+      };
+      const result = normalizeListConfig(raw);
+      expect(result.sections[0].title).toBe('Favorites');
+      expect(result.sections[0].description).toBe('Top picks');
+      expect(result.sections[0].image).toBe('/fav.png');
+    });
+
+    it('preserves section ordering fields (fixed_order, shuffle, limit)', () => {
+      const raw = {
+        title: 'Mix',
+        sections: [{
+          shuffle: true,
+          limit: 3,
+          items: [{ title: 'A', play: { plex: '1' } }]
+        }]
+      };
+      const result = normalizeListConfig(raw);
+      expect(result.sections[0].shuffle).toBe(true);
+      expect(result.sections[0].limit).toBe(3);
+    });
+
+    it('preserves section inheritable fields (priority, days, etc.)', () => {
+      const raw = {
+        title: 'Watch',
+        sections: [{
+          title: 'BibleProject',
+          priority: 'medium',
+          skip_after: '2025-05-04',
+          wait_until: '2025-04-27',
+          playbackrate: 2,
+          items: []
+        }]
+      };
+      const result = normalizeListConfig(raw);
+      const s = result.sections[0];
+      expect(s.priority).toBe('medium');
+      expect(s.skip_after).toBe('2025-05-04');
+      expect(s.wait_until).toBe('2025-04-27');
+      expect(s.playbackrate).toBe(2);
+    });
+  });
+
+  // ── Item normalization within sections ────────────────
+  describe('item normalization', () => {
+    it('normalizes legacy items (label/input/action) within sections', () => {
+      const raw = {
+        title: 'Test',
+        sections: [{
+          items: [{ label: 'Hymn', input: 'singalong:hymn/166' }]
+        }]
+      };
+      const result = normalizeListConfig(raw);
+      const item = result.sections[0].items[0];
+      expect(item.title).toBe('Hymn');
+      expect(item.play.contentId).toBe('singalong:hymn/166');
+    });
+
+    it('normalizes legacy items in bare array format', () => {
+      const raw = [{ label: 'News', input: 'query: dailynews', action: 'Play' }];
+      const result = normalizeListConfig(raw);
+      const item = result.sections[0].items[0];
+      expect(item.title).toBe('News');
+      expect(item.play.contentId).toBe('query:dailynews');
+    });
+
+    it('passes through new-format items unchanged', () => {
+      const raw = {
+        title: 'Test',
+        sections: [{
+          items: [{ title: 'Video', play: { plex: '123' }, uid: 'abc' }]
+        }]
+      };
+      const result = normalizeListConfig(raw);
+      const item = result.sections[0].items[0];
+      expect(item.title).toBe('Video');
+      expect(item.play.plex).toBe('123');
+      expect(item.uid).toBe('abc');
+    });
+  });
+
+  // ── Immutability ──────────────────────────────────────
+  describe('immutability', () => {
+    it('does not mutate the input object', () => {
+      const raw = {
+        title: 'Test',
+        items: [{ label: 'A', input: 'plex:123' }]
+      };
+      const frozen = JSON.parse(JSON.stringify(raw));
+      normalizeListConfig(raw);
+      expect(raw).toEqual(frozen);
+    });
+  });
+
+  // ── Filename fallback ─────────────────────────────────
+  describe('filename fallback', () => {
+    it('uses filename as title for bare array', () => {
+      const result = normalizeListConfig([{ label: 'A', input: 'plex:1' }], 'morning-program');
+      expect(result.title).toBe('morning-program');
+    });
+
+    it('uses filename as title for null input', () => {
+      const result = normalizeListConfig(null, 'test-list');
+      expect(result.title).toBe('test-list');
+    });
+  });
+});
+
+describe('serializeListConfig', () => {
+  it('serializes single anonymous section as {title, items} (compact)', () => {
+    const config = {
+      title: 'Kids',
+      description: undefined,
+      image: undefined,
+      metadata: {},
+      sections: [{ items: [{ title: 'Bluey', play: { plex: '59493' } }] }]
+    };
+    const result = serializeListConfig(config);
+    expect(result.title).toBe('Kids');
+    expect(result.items).toHaveLength(1);
+    expect(result.sections).toBeUndefined();
+  });
+
+  it('serializes multiple sections with sections key', () => {
+    const config = {
+      title: 'Scripture',
+      metadata: {},
+      sections: [
+        { title: 'BP', items: [{ title: 'A', play: { plex: '1' } }] },
+        { title: 'Yale', items: [{ title: 'B', play: { plex: '2' } }] }
+      ]
+    };
+    const result = serializeListConfig(config);
+    expect(result.sections).toHaveLength(2);
+    expect(result.items).toBeUndefined();
+  });
+
+  it('serializes named single section with sections key', () => {
+    const config = {
+      title: 'Mix',
+      metadata: {},
+      sections: [{ title: 'Favs', shuffle: true, items: [{ title: 'A', play: { plex: '1' } }] }]
+    };
+    const result = serializeListConfig(config);
+    expect(result.sections).toHaveLength(1);
+    expect(result.sections[0].title).toBe('Favs');
+    expect(result.items).toBeUndefined();
+  });
+
+  it('serializes section with config (shuffle, limit) using sections key', () => {
+    const config = {
+      title: 'Grab Bag',
+      metadata: {},
+      sections: [{ shuffle: true, limit: 3, items: [{ title: 'A', play: { plex: '1' } }] }]
+    };
+    const result = serializeListConfig(config);
+    expect(result.sections).toHaveLength(1);
+    expect(result.sections[0].shuffle).toBe(true);
+    expect(result.sections[0].limit).toBe(3);
+  });
+
+  it('omits empty metadata', () => {
+    const config = {
+      title: 'Test',
+      metadata: {},
+      sections: [{ items: [] }]
+    };
+    const result = serializeListConfig(config);
+    expect(result.metadata).toBeUndefined();
+  });
+
+  it('includes non-empty metadata', () => {
+    const config = {
+      title: 'Test',
+      metadata: { group: 'Scripture', fixed_order: true },
+      sections: [{ items: [] }]
+    };
+    const result = serializeListConfig(config);
+    expect(result.metadata.group).toBe('Scripture');
+    expect(result.metadata.fixed_order).toBe(true);
+  });
+
+  it('omits undefined description and image', () => {
+    const config = {
+      title: 'Test',
+      description: undefined,
+      image: undefined,
+      metadata: {},
+      sections: [{ items: [] }]
+    };
+    const result = serializeListConfig(config);
+    expect(result.description).toBeUndefined();
+    expect(result.image).toBeUndefined();
+  });
+});
+
+describe('applyCascade', () => {
+  it('merges list metadata into items with no overrides', () => {
+    const config = {
+      metadata: { playbackrate: 2, priority: 'medium' },
+      sections: [{
+        items: [{ title: 'A', play: { plex: '1' } }]
+      }]
+    };
+    const result = applyCascade(config);
+    expect(result.sections[0].items[0].playbackrate).toBe(2);
+    expect(result.sections[0].items[0].priority).toBe('medium');
+  });
+
+  it('section fields override list metadata', () => {
+    const config = {
+      metadata: { playbackrate: 2 },
+      sections: [{
+        playbackrate: 1.5,
+        items: [{ title: 'A', play: { plex: '1' } }]
+      }]
+    };
+    const result = applyCascade(config);
+    expect(result.sections[0].items[0].playbackrate).toBe(1.5);
+  });
+
+  it('item fields override section fields', () => {
+    const config = {
+      metadata: { priority: 'medium' },
+      sections: [{
+        priority: 'high',
+        items: [{ title: 'A', play: { plex: '1' }, priority: 'urgent' }]
+      }]
+    };
+    const result = applyCascade(config);
+    expect(result.sections[0].items[0].priority).toBe('urgent');
+  });
+
+  it('does not cascade non-inheritable fields', () => {
+    const config = {
+      metadata: { group: 'Scripture' },
+      sections: [{
+        items: [{ title: 'A', play: { plex: '1' } }]
+      }]
+    };
+    const result = applyCascade(config);
+    expect(result.sections[0].items[0].group).toBeUndefined();
+  });
+
+  it('cascades days from section to items', () => {
+    const config = {
+      metadata: {},
+      sections: [{
+        days: 'weekdays',
+        items: [
+          { title: 'A', play: { plex: '1' } },
+          { title: 'B', play: { plex: '2' }, days: 'daily' }
+        ]
+      }]
+    };
+    const result = applyCascade(config);
+    expect(result.sections[0].items[0].days).toBe('weekdays');
+    expect(result.sections[0].items[1].days).toBe('daily');
+  });
+
+  it('returns new object without mutating input', () => {
+    const config = {
+      metadata: { playbackrate: 2 },
+      sections: [{ items: [{ title: 'A', play: { plex: '1' } }] }]
+    };
+    const result = applyCascade(config);
+    expect(config.sections[0].items[0].playbackrate).toBeUndefined();
+    expect(result.sections[0].items[0].playbackrate).toBe(2);
   });
 });

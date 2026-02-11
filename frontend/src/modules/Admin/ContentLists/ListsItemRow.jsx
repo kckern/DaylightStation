@@ -9,7 +9,7 @@ import {
   IconEye, IconEyeOff, IconPlayerPlay, IconExternalLink, IconAlertTriangle,
   IconList, IconMicrophone, IconVideo, IconFolder, IconFileText, IconSearch,
   IconBroadcast, IconPresentation, IconSchool, IconUsers, IconStack3,
-  IconCheck
+  IconCheck, IconArrowBarDown
 } from '@tabler/icons-react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -1974,7 +1974,7 @@ function ItemDetailsDrawer({ opened, onClose, contentValue }) {
   );
 }
 
-function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, isWatchlist, onEdit }) {
+function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, isWatchlist, onEdit, onSplit }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: item.index
   });
@@ -2224,6 +2224,11 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
             <Menu.Item leftSection={<IconCopy size={14} />} onClick={onDuplicate}>
               Duplicate
             </Menu.Item>
+            {onSplit && (
+              <Menu.Item leftSection={<IconArrowBarDown size={14} />} onClick={onSplit}>
+                Split Below
+              </Menu.Item>
+            )}
             <Menu.Divider />
             <Menu.Item color="red" leftSection={<IconTrash size={14} />} onClick={onDelete}>
               Delete
