@@ -2034,26 +2034,33 @@ export class FitnessSession {
        }
     }
 
-    // Deduplicate challenge events (e.g., repeated challenge_end at same tick)
+    // Deduplicate challenge events: keep only the LAST event per challengeId+type
+    // (challenge_end fires on every status change; we only want the final outcome)
     if (Array.isArray(sessionData.timeline?.events)) {
-      const seen = new Set();
-      sessionData.timeline.events = sessionData.timeline.events.filter((evt) => {
-        if (!evt || typeof evt !== 'object') return false;
+      const lastChallenge = new Map();
+      const nonChallengeEvents = [];
+      for (let i = 0; i < sessionData.timeline.events.length; i++) {
+        const evt = sessionData.timeline.events[i];
+        if (!evt || typeof evt !== 'object') continue;
         const type = evt.type || evt.eventType || null;
-        if (!type) return false;
-        const tickIndex = Number.isFinite(evt.tickIndex) ? evt.tickIndex : null;
-        const challengeId = evt.data?.challengeId
-          || evt.data?.challenge_id
-          || evt.data?.challenge
-          || evt.data?.challengeID
-          || null;
-        const key = `${type}|${tickIndex}|${challengeId || ''}`;
+        if (!type) continue;
         if (type.startsWith('challenge_')) {
-          if (seen.has(key)) return false;
-          seen.add(key);
+          const challengeId = evt.data?.challengeId
+            || evt.data?.challenge_id
+            || evt.data?.challenge
+            || evt.data?.challengeID
+            || null;
+          const key = `${type}|${challengeId || ''}`;
+          lastChallenge.set(key, { evt, index: i });
+        } else {
+          nonChallengeEvents.push({ evt, index: i });
         }
-        return true;
-      });
+      }
+      // Merge back in original order (by index), keeping only last per challenge key
+      const merged = [...nonChallengeEvents, ...lastChallenge.values()]
+        .sort((a, b) => a.index - b.index)
+        .map(e => e.evt);
+      sessionData.timeline.events = merged;
     }
 
     // CRITICAL: Require minimum ticks to prevent useless 1-tick ghost sessions

@@ -766,6 +766,23 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     rootLogger.warn?.('nutribot.renderer.import_failed', { error: e.message });
   }
 
+  // Fitness receipt renderer (canvas-based PNG generation)
+  let createFitnessReceiptCanvas = null;
+  try {
+    const { createFitnessReceiptRenderer } = await import('#adapters/fitness/rendering/FitnessReceiptRenderer.mjs');
+    const renderer = createFitnessReceiptRenderer({
+      getSessionData: async (sessionId) => {
+        const session = await fitnessServices.sessionService.getSession(sessionId, householdId, { decodeTimeline: false });
+        return session ? session.toJSON() : null;
+      },
+      resolveDisplayName: (slug) => userService.resolveDisplayName(slug),
+      fontDir: configService.getPath('font') || `${mediaBasePath}/fonts`
+    });
+    createFitnessReceiptCanvas = renderer.createCanvas;
+  } catch (e) {
+    rootLogger.warn?.('fitness.receipt.import_failed', { error: e.message });
+  }
+
   // Fitness domain router
   // Note: contentRegistry passed for /show endpoint - playlist thumbnail enrichment is household-specific
   v1Routers.fitness = createFitnessApiRouter({
@@ -776,6 +793,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     fitnessConfig: loadFitnessConfig(householdId),
     contentRegistry,
     contentQueryService: contentServices.contentQueryService,
+    createReceiptCanvas: createFitnessReceiptCanvas,
+    printerAdapter: hardwareAdapters.printerAdapter,
     logger: rootLogger.child({ module: 'fitness-api' })
   });
 

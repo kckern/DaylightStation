@@ -356,7 +356,8 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
     }
     const tracker = challengeEventRef.current;
     if (!activeChallenge) {
-      if (tracker.id) {
+      // Only log 'cleared' if the challenge wasn't already resolved (success/failed)
+      if (tracker.id && tracker.status !== 'success' && tracker.status !== 'failed') {
         sessionInstance.logEvent('challenge_end', {
           challengeId: tracker.id,
           result: 'cleared'
@@ -387,7 +388,8 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
           result: status
         });
       }
-      challengeEventRef.current = { id: null, status };
+      // Keep challengeId in tracker so repeated renders don't re-log
+      challengeEventRef.current = { id: challengeId, status };
       return;
     }
     challengeEventRef.current = { id: challengeId, status };

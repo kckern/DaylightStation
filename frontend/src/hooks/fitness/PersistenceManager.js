@@ -446,14 +446,12 @@ export class PersistenceManager {
       return { ok: false, reason: 'device-assignments-required' };
     }
 
-    // Spam prevention - reject short, empty sessions
-    const hasVoiceMemos = Array.isArray(sessionData.voiceMemos) && sessionData.voiceMemos.length > 0;
-    const hasEvents = Array.isArray(sessionData.timeline?.events) && sessionData.timeline.events.length > 0;
-    
-    if (sessionData.durationMs < 10000 && !hasUserSeries && !hasVoiceMemos && !hasEvents) {
-      if (roster.length === 0 || sessionData.durationMs < 1000) {
-        return { ok: false, reason: 'session-too-short-and-empty' };
-      }
+    // Hard minimums: must have participants and be over 60 seconds
+    if (roster.length === 0) {
+      return { ok: false, reason: 'no-participants' };
+    }
+    if (sessionData.durationMs < 60000) {
+      return { ok: false, reason: 'session-too-short', durationMs: sessionData.durationMs };
     }
 
     // Deduplicate challenge events
