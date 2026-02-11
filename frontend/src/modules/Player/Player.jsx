@@ -2,7 +2,7 @@ import React, { useRef, useCallback, useState, useEffect, useMemo, forwardRef, u
 import PropTypes from 'prop-types';
 import './Player.scss';
 import { useQueueController } from './hooks/useQueueController.js';
-import { CompositePlayer } from './components/CompositePlayer.jsx';
+import { CompositePlayer } from './renderers/CompositePlayer.jsx';
 import { SinglePlayer } from './components/SinglePlayer.jsx';
 import { PlayerOverlayLoading } from './components/PlayerOverlayLoading.jsx';
 import { PlayerOverlayPaused } from './components/PlayerOverlayPaused.jsx';
@@ -832,5 +832,5 @@ export default Player;
 export { PlayerOverlayLoading } from './components/PlayerOverlayLoading.jsx';
 export { PlayerOverlayPaused } from './components/PlayerOverlayPaused.jsx';
 export { SinglePlayer } from './components/SinglePlayer.jsx';
-export { AudioPlayer } from './components/AudioPlayer.jsx';
-export { VideoPlayer } from './components/VideoPlayer.jsx';
+export { AudioPlayer } from './renderers/AudioPlayer.jsx';
+export { VideoPlayer } from './renderers/VideoPlayer.jsx';

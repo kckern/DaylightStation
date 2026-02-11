@@ -1,8 +1,8 @@
 import React from 'react';
 import PropTypes from 'prop-types';
-import { CompositeControllerProvider } from './CompositeControllerContext.jsx';
+import { CompositeControllerProvider } from '../components/CompositeControllerContext.jsx';
 import { CompositeProvider, useCompositeContext, VISUAL_STATUS, AUDIO_STATUS } from './CompositeContext.jsx';
-import { VisualRenderer } from './VisualRenderer.jsx';
+import { VisualRenderer } from '../components/VisualRenderer.jsx';
 import { useAdvanceController } from '../hooks/useAdvanceController.js';
 import { guid } from '../lib/helpers.js';
 

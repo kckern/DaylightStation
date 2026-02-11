@@ -15,8 +15,8 @@
 import { SingalongScroller } from '../renderers/SingalongScroller.jsx';
 import { ReadalongScroller } from '../renderers/ReadalongScroller.jsx';
 import PlayableAppShell from '../components/PlayableAppShell.jsx';
-import PagedReader from '../components/PagedReader.jsx';
-import FlowReader from '../components/FlowReader.jsx';
+import PagedReader from '../renderers/PagedReader.jsx';
+import FlowReader from '../renderers/FlowReader.jsx';
 
 /**
  * Content format → renderer component.

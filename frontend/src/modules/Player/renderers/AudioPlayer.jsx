@@ -2,7 +2,7 @@ import React, { useMemo, useCallback, useRef, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { formatTime } from '../lib/helpers.js';
 import { useCommonMediaController } from '../hooks/useCommonMediaController.js';
-import { ProgressBar } from './ProgressBar.jsx';
+import { ProgressBar } from '../components/ProgressBar.jsx';
 import { getLogger } from '../../../lib/logging/Logger.js';
 import { useImageUpscaleBlur } from '../hooks/useImageUpscaleBlur.js';
 import { useShaderDiagnostics } from '../hooks/useShaderDiagnostics.js';

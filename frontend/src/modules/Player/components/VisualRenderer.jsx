@@ -7,7 +7,7 @@ import { Screensaver } from './visuals/Screensaver.jsx';
 import { ClockDisplay } from './visuals/ClockDisplay.jsx';
 
 // Media components
-import { VideoPlayer } from './VideoPlayer.jsx';
+import { VideoPlayer } from '../renderers/VideoPlayer.jsx';
 import { ImageCarousel } from './ImageCarousel.jsx';
 
 /**

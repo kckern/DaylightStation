@@ -4,8 +4,8 @@ import AppContainer from '../../AppContainer/AppContainer.jsx';
 import { getRenderer, isMediaFormat } from '../lib/registry.js';
 import { fetchMediaInfo } from '../lib/api.js';
 import { DaylightAPI } from '../../../lib/api.mjs';
-import { AudioPlayer } from './AudioPlayer.jsx';
-import { VideoPlayer } from './VideoPlayer.jsx';
+import { AudioPlayer } from '../renderers/AudioPlayer.jsx';
+import { VideoPlayer } from '../renderers/VideoPlayer.jsx';
 import { PlayerOverlayLoading } from './PlayerOverlayLoading.jsx';
 import { useShaderDiagnostics } from '../hooks/useShaderDiagnostics.js';
 
