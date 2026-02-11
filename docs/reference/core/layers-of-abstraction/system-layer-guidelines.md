@@ -13,11 +13,12 @@ This is the foundation layer. Domain, adapters, and applications all import from
 | Layer | Contains | Examples |
 |-------|----------|----------|
 | **System** | Runtime plumbing, cross-cutting utilities | Config loading, logging, scheduling, time formatting |
-| **Domain** | Timeless business logic | Entities, value objects, domain services |
 | **Adapters** | External integrations | Repositories, API clients, messaging |
+| **Rendering** | Server-side presentation | Thermal receipts, PDF output, canvas layout |
+| **Domain** | Timeless business logic | Entities, value objects, domain services |
 | **Applications** | Workflow orchestration | Use cases, containers, ports |
 
-**The Isolation Test:** If your system code would need to import from `1_domains/`, `2_adapters/`, or `3_applications/`, it doesn't belong in system layer.
+**The Isolation Test:** If your system code would need to import from `2_domains/`, `1_adapters/`, or `3_applications/`, it doesn't belong in system layer.
 
 **What the system layer does NOT know:**
 - What business domains exist (fitness, nutrition, finance)
@@ -151,8 +152,8 @@ Bootstrap is the **only** system code that imports from other layers. It's the c
 
 ```javascript
 // bootstrap.mjs - ONLY place this is allowed
-import { SessionService } from '../1_domains/fitness/services/SessionService.mjs';
-import { YamlSessionStore } from '../2_adapters/persistence/yaml/YamlSessionStore.mjs';
+import { SessionService } from '../2_domains/fitness/services/SessionService.mjs';
+import { YamlSessionStore } from '../1_adapters/persistence/yaml/YamlSessionStore.mjs';
 import { createFitnessRouter } from '../4_api/routers/fitness.mjs';
 ```
 
@@ -374,7 +375,7 @@ export function createFitnessServices(config) {
 | **Generic Error** | `throw new Error('config missing')` | `throw new ConfigurationError('...', { code })` |
 | **Bootstrap business logic** | Calculating values, transforming data in bootstrap | Bootstrap only wires |
 | **Singletons via module scope** | `export const scheduler = new Scheduler()` | Export class, instantiate in bootstrap |
-| **Domain-specific code** | `GratitudeCardRenderer.mjs` in system layer | Move to adapters |
+| **Domain-specific code** | `GratitudeCardRenderer.mjs` in system layer | Move to rendering layer (`1_rendering/`) |
 
 ---
 
@@ -386,8 +387,9 @@ export function createFitnessServices(config) {
 {
   "imports": {
     "#system/*": "./backend/src/0_system/*",
-    "#domains/*": "./backend/src/1_domains/*",
-    "#adapters/*": "./backend/src/2_adapters/*",
+    "#adapters/*": "./backend/src/1_adapters/*",
+    "#rendering/*": "./backend/src/1_rendering/*",
+    "#domains/*": "./backend/src/2_domains/*",
     "#applications/*": "./backend/src/3_applications/*"
   }
 }

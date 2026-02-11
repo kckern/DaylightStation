@@ -122,8 +122,8 @@ These components remain in `_legacy/` but are tracked for eventual removal:
 
 ### 1. Numbered Layers
 Layers are numbered to enforce dependency direction:
-- `4_api` → `3_applications` → `2_adapters` → `1_domains` → `0_system`
-- Exception: `2_adapters` imports port interfaces from `3_applications/*/ports/`
+- `4_api` → `3_applications` → `2_domains` → `1_adapters`/`1_rendering` → `0_system`
+- Exception: `1_adapters` imports port interfaces from `3_applications/*/ports/`
 
 ### 2. Port/Adapter Pattern
 Applications define interfaces (ports), adapters implement them. Domains remain pure with no external dependencies.

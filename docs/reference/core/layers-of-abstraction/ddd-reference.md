@@ -25,24 +25,25 @@
 │  ┌─────────────────────────────────────────┐    │
 │  │  3_applications (Use Cases)             │    │
 │  │  ┌─────────────────────────────────┐    │    │
-│  │  │  1_domains (Core Business)      │    │    │
+│  │  │  2_domains (Core Business)      │    │    │
 │  │  │                                 │    │    │
 │  │  │    Entities, Value Objects,     │    │    │
 │  │  │    Domain Services, Rules       │    │    │
 │  │  │                                 │    │    │
 │  │  └─────────────────────────────────┘    │    │
 │  │                 ↑                       │    │
-│  │  2_adapters (Infrastructure)            │    │
+│  │  1_adapters (Infrastructure)            │    │
 │  └─────────────────────────────────────────┘    │
 └─────────────────────────────────────────────────┘
 ```
 
 | Layer | Can Import From | Cannot Import From |
 |-------|-----------------|-------------------|
-| `4_api` | 3_applications, 1_domains, 0_system | - |
-| `3_applications` | 1_domains, 0_system | 2_adapters, 4_api |
-| `2_adapters` | 1_domains, 0_system | 3_applications, 4_api |
-| `1_domains` | 1_domains (lower level), 0_system/utils | Everything else |
+| `4_api` | 3_applications, 2_domains, 1_adapters, 1_rendering, 0_system | - |
+| `3_applications` | 2_domains, 1_adapters, 1_rendering, 0_system | 4_api |
+| `2_domains` | 2_domains (lower level), 0_system/utils | Everything else |
+| `1_adapters` | 2_domains, 3_applications (ports only), 0_system | 4_api, 1_rendering |
+| `1_rendering` | 2_domains, 0_system | 4_api, 3_applications, 1_adapters |
 | `0_system` | External packages only | All src layers |
 
 **The inner layers are stable; the outer layers are volatile.**
@@ -98,12 +99,12 @@ Level 3 (aggregators):  lifelog, health, journalist
 
 | Building Block | Purpose | Identity | Mutability | Location |
 |----------------|---------|----------|------------|----------|
-| **Entity** | Objects with identity that persists over time | Has unique ID | Controlled mutation | `1_domains/*/entities/` |
-| **Value Object** | Objects defined by their attributes, not identity | No ID, identified by value | Immutable | `1_domains/*/value-objects/` |
-| **Aggregate** | Cluster of entities/value objects with a root | Root has ID | Root controls mutation | `1_domains/*/entities/` |
-| **Domain Service** | Stateless operations across multiple entities | N/A | N/A | `1_domains/*/services/` |
-| **Domain Event** | Something that happened in the domain | Has ID + timestamp | Immutable | `1_domains/*/events/` |
-| **Repository** | Abstraction for entity persistence | N/A | N/A | `2_adapters/*/` |
+| **Entity** | Objects with identity that persists over time | Has unique ID | Controlled mutation | `2_domains/*/entities/` |
+| **Value Object** | Objects defined by their attributes, not identity | No ID, identified by value | Immutable | `2_domains/*/value-objects/` |
+| **Aggregate** | Cluster of entities/value objects with a root | Root has ID | Root controls mutation | `2_domains/*/entities/` |
+| **Domain Service** | Stateless operations across multiple entities | N/A | N/A | `2_domains/*/services/` |
+| **Domain Event** | Something that happened in the domain | Has ID + timestamp | Immutable | `2_domains/*/events/` |
+| **Repository** | Abstraction for entity persistence | N/A | N/A | `1_adapters/*/` |
 | **Factory** | Complex object creation | N/A | N/A | Entity static methods |
 
 ### Entities
@@ -340,7 +341,7 @@ export function isMessagingGateway(obj) {
 ### Adapter Implementation Pattern
 
 ```javascript
-// 2_adapters/telegram/TelegramMessagingAdapter.mjs
+// 1_adapters/telegram/TelegramMessagingAdapter.mjs
 
 import { IMessagingGateway } from '#apps/common/ports/IMessagingGateway.mjs';
 
@@ -379,7 +380,7 @@ export class TelegramMessagingAdapter extends IMessagingGateway {
 | Layer | Contains |
 |-------|----------|
 | `3_applications/*/ports/` | Port interfaces (what the app needs) |
-| `2_adapters/*/` | Adapter implementations (how it's done) |
+| `1_adapters/*/` | Adapter implementations (how it's done) |
 
 ---
 
@@ -414,7 +415,7 @@ export class ISessionRepository {
 ### Repository Implementation
 
 ```javascript
-// 2_adapters/persistence/yaml/YamlSessionDatastore.mjs
+// 1_adapters/persistence/yaml/YamlSessionDatastore.mjs
 
 import { ISessionRepository } from '#apps/fitness/ports/ISessionRepository.mjs';
 import { Session } from '#domains/fitness/entities/Session.mjs';
@@ -677,8 +678,9 @@ describe('CompleteSession', () => {
 | Layer | Responsibility | Contains |
 |-------|---------------|----------|
 | `0_system` | Infrastructure wiring | Config, logging, bootstrap, utils |
-| `1_domains` | Pure business logic | Entities, value objects, domain services |
-| `2_adapters` | External integrations | Repositories, gateways, API clients |
+| `1_adapters` | External integrations | Repositories, gateways, API clients |
+| `1_rendering` | Server-side presentation | Thermal receipts, PDF output, canvas layout |
+| `2_domains` | Pure business logic | Entities, value objects, domain services |
 | `3_applications` | Use case orchestration | Use cases, containers, ports |
 | `4_api` | HTTP presentation | Routes, handlers, middleware |
 
@@ -686,12 +688,12 @@ describe('CompleteSession', () => {
 
 | Artifact | Location |
 |----------|----------|
-| Entity | `1_domains/{domain}/entities/{Entity}.mjs` |
-| Value Object | `1_domains/{domain}/value-objects/{ValueObject}.mjs` |
-| Domain Service | `1_domains/{domain}/services/{Service}Service.mjs` |
+| Entity | `2_domains/{domain}/entities/{Entity}.mjs` |
+| Value Object | `2_domains/{domain}/value-objects/{ValueObject}.mjs` |
+| Domain Service | `2_domains/{domain}/services/{Service}Service.mjs` |
 | Port Interface | `3_applications/{app}/ports/I{Name}.mjs` |
-| Adapter | `2_adapters/{category}/{Name}Adapter.mjs` |
-| Repository | `2_adapters/persistence/{format}/{Entity}Datastore.mjs` |
+| Adapter | `1_adapters/{category}/{Name}Adapter.mjs` |
+| Repository | `1_adapters/persistence/{format}/{Entity}Datastore.mjs` |
 | Use Case | `3_applications/{app}/usecases/{Verb}{Noun}.mjs` |
 | Container | `3_applications/{app}/{App}Container.mjs` |
 | Router | `4_api/v1/routers/{domain}.mjs` |
@@ -700,14 +702,14 @@ describe('CompleteSession', () => {
 
 ```
 Is this logic specific to DaylightStation?
-├── No → 1_domains (universal truth)
+├── No → 2_domains (universal truth)
 └── Yes → 3_applications (application-specific)
 
 Does this touch external systems?
-├── Yes → 2_adapters (implementation)
+├── Yes → 1_adapters (implementation)
 └── No → Is it orchestration?
          ├── Yes → 3_applications
-         └── No → 1_domains
+         └── No → 2_domains
 
 Does this handle HTTP?
 ├── Yes → 4_api

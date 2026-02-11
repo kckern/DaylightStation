@@ -49,8 +49,9 @@ Use `#` aliases for cross-layer imports. Never use relative paths that traverse 
 
 | Alias | Points To | Use For |
 |-------|-----------|---------|
-| `#domains/*` | `1_domains/*` | Entities, value objects, domain services |
-| `#adapters/*` | `2_adapters/*` | Repository implementations, gateways |
+| `#domains/*` | `2_domains/*` | Entities, value objects, domain services |
+| `#adapters/*` | `1_adapters/*` | Repository implementations, gateways |
+| `#rendering/*` | `1_rendering/*` | Server-side presentation (thermal, PDF) |
 | `#apps/*` | `3_applications/*` | Use cases, containers, ports |
 | `#system/*` | `0_system/*` | Utils, config, logging |
 
@@ -60,7 +61,7 @@ import { Session } from '#domains/fitness';
 import { formatLocalTimestamp } from '#system/utils/time.mjs';
 
 // BAD - relative path hell
-import { Session } from '../../../../1_domains/fitness/entities/Session.mjs';
+import { Session } from '../../../../2_domains/fitness/entities/Session.mjs';
 ```
 
 ### Import Organization
@@ -526,7 +527,7 @@ export const MessageType = Object.freeze({
 
 | Anti-Pattern | Example | Instead |
 |--------------|---------|---------|
-| Relative path traversal | `../../../1_domains/fitness/...` | `#domains/fitness` |
+| Relative path traversal | `../../../2_domains/fitness/...` | `#domains/fitness` |
 | Explicit index.mjs | `#domains/fitness/index.mjs` | `#domains/fitness` |
 | Reaching into internals | `#domains/fitness/entities/Session.mjs` | `#domains/fitness` |
 | Importing from wrong layer | Adapter imports in domain | Use dependency injection |

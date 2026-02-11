@@ -1,6 +1,6 @@
 # Adapter Layer Guidelines
 
-> Guidelines for `backend/src/2_adapters/` - the translation layer in DDD architecture.
+> Guidelines for `backend/src/1_adapters/` - the translation layer in DDD architecture.
 
 ---
 
@@ -8,7 +8,7 @@
 
 **The adapter layer translates between abstract ports and vendor-specific APIs - it's the replaceable bridge that knows vendor contracts but not implementation mechanics.**
 
-Adapters in `2_adapters/` implement the abstractions defined elsewhere:
+Adapters in `1_adapters/` implement the abstractions defined elsewhere:
 - They implement **ports** defined in `3_applications/`
 - They use **services** from `0_system/` for I/O mechanics (HTTP client, file I/O)
 - They are **vendor/format-specific** - one adapter per external system or format
@@ -67,19 +67,14 @@ Inbound event parsing and routing.
 | Webhook parsers | `TelegramWebhookParser` | Translate vendor payloads to `IInputEvent` |
 | Input routers | `NutribotInputRouter`, `JournalistInputRouter` | Route events to appropriate handlers |
 
-### Rendering Adapters
-
-Format-specific output generation.
-
-| Purpose | Examples | Role |
-|---------|----------|------|
-| Report renderers | `NutriReportRenderer`, `GratitudeCardRenderer` | Domain data to visual/print format |
-
 ---
+
+> **Note:** Rendering was previously listed as an adapter category. Renderers have moved to `1_rendering/` — a peer layer for server-side presentation. See [Rendering Layer Guidelines](./layers-of-abstraction/rendering-layer-guidelines.md).
+
 
 ## Import Rules
 
-### ALLOWED imports in `2_adapters/`
+### ALLOWED imports in `1_adapters/`
 
 | Source | Purpose | Examples |
 |--------|---------|----------|
@@ -88,7 +83,7 @@ Format-specific output generation.
 | **`0_system/utils/time`** | Timestamp formatting | `formatLocalTimestamp`, `parseToDate` |
 | **`0_system/utils/media`** | Buffer/stream handling | Media type detection, buffer operations |
 | **`0_system/utils/collections`** | List/array utilities | Filtering, grouping helpers |
-| `1_domains/` | Entity types for hydration | `NutriLog`, `Session`, `Message` |
+| `2_domains/` | Entity types for hydration | `NutriLog`, `Session`, `Message` |
 | `3_applications/*/ports/` | Interfaces to implement | `IMessagingGateway`, `IFoodLogDatastore` |
 
 ### Config Handling
@@ -110,7 +105,7 @@ constructor(deps) {
 }
 ```
 
-### FORBIDDEN imports in `2_adapters/`
+### FORBIDDEN imports in `1_adapters/`
 
 | Forbidden | Why | Instead |
 |-----------|-----|---------|
@@ -118,17 +113,20 @@ constructor(deps) {
 | Raw `axios`, `fetch`, `node-fetch` | HTTP mechanics belong in system | Use `#system/services/HttpClient` |
 | Raw `fs`, `path` | File I/O belongs in system | Use `#system/utils/FileIO` |
 | Other adapters | No cross-adapter coupling | Extract shared logic to system |
+| `1_rendering/*` | Peer layer, no cross-imports | Rendering is a separate concern |
 | `3_applications/*/usecases/` | Adapters don't orchestrate | Application calls adapter |
 
 ### Import Direction
 
 ```
-0_system <── 2_adapters ──> 1_domains
+0_system <── 1_adapters ──> 2_domains
                 │
                 └──> 3_applications/*/ports/
 ```
 
 Adapters import DOWN to system and domains, and SIDEWAYS to application ports only.
+
+> **Peer layer:** `1_rendering/` sits at the same tier but adapters do NOT import from it (or vice versa).
 
 ---
 
@@ -142,7 +140,7 @@ Adapters import DOWN to system and domains, and SIDEWAYS to application ports on
 | **Datastore** | `{Format}{Entity}Datastore.mjs` | `YamlFoodLogDatastore.mjs`, `YamlSessionDatastore.mjs` |
 | **Input Parser** | `{Vendor}{Type}Parser.mjs` | `TelegramWebhookParser.mjs` |
 | **Input Router** | `{App}InputRouter.mjs` | `NutribotInputRouter.mjs`, `JournalistInputRouter.mjs` |
-| **Renderer** | `{Output}Renderer.mjs` | `GratitudeCardRenderer.mjs`, `NutriReportRenderer.mjs` |
+| **Renderer** | _(moved to `1_rendering/`)_ | See [Rendering Layer Guidelines](./layers-of-abstraction/rendering-layer-guidelines.md) |
 
 ### Class Naming
 
@@ -155,7 +153,7 @@ Adapters import DOWN to system and domains, and SIDEWAYS to application ports on
 ### Folder Structure
 
 ```
-2_adapters/
+1_adapters/
 ├── ai/
 │   ├── OpenAIAdapter.mjs
 │   ├── AnthropicAdapter.mjs
@@ -169,12 +167,9 @@ Adapters import DOWN to system and domains, and SIDEWAYS to application ports on
 │       ├── YamlFoodLogDatastore.mjs
 │       ├── YamlSessionDatastore.mjs
 │       └── index.mjs
-├── {app}/                          # App-specific adapters
-│   ├── {App}InputRouter.mjs
-│   └── index.mjs
-└── {domain}/
-    └── rendering/
-        └── {Output}Renderer.mjs
+└── {app}/                          # App-specific adapters
+    ├── {App}InputRouter.mjs
+    └── index.mjs
 ```
 
 ---

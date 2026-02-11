@@ -119,7 +119,7 @@ Tests use path aliases instead of relative paths. Configured in `jest.config.js`
 
 | Alias | Resolves To | Example |
 |-------|-------------|---------|
-| `@backend/` | `backend/` | `import { X } from '@backend/src/1_domains/...'` |
+| `@backend/` | `backend/` | `import { X } from '@backend/src/2_domains/...'` |
 | `@frontend/` | `frontend/src/` | `import { X } from '@frontend/hooks/...'` |
 | `@extensions/` | `_extensions/` | `import { X } from '@extensions/fitness/...'` |
 | `@fixtures/` | `tests/_fixtures/` | `import { X } from '@fixtures/media/...'` |

@@ -215,8 +215,9 @@ git rev-parse HEAD > docs/docs-last-updated.txt
 - `frontend/src/modules/` - Reusable UI modules
 - `frontend/src/hooks/` - Custom hooks
 - `backend/src/0_system/` - Bootstrap, config loading
-- `backend/src/1_domains/` - Domain entities and logic
-- `backend/src/2_adapters/` - External service integrations (Plex, HA, etc.)
+- `backend/src/1_adapters/` - External service integrations (Plex, HA, etc.)
+- `backend/src/1_rendering/` - Server-side presentation (thermal printer, PDF)
+- `backend/src/2_domains/` - Domain entities and logic
 - `backend/src/3_applications/` - Use cases, orchestration
 - `backend/src/4_api/` - Express routers, HTTP layer
 - `cli/` - CLI tools

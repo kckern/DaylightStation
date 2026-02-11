@@ -1,6 +1,6 @@
 # DDD File Map
 
-**Last Updated:** 2026-01-12
+**Last Updated:** 2026-02-11
 
 Complete mapping of `backend/src/` structure with references to legacy code locations.
 
@@ -11,11 +11,11 @@ Complete mapping of `backend/src/` structure with references to legacy code loca
 | Layer | Files | Description |
 |-------|-------|-------------|
 | 0_system | 26 | Cross-cutting concerns |
-| 1_domains | 111 | Business logic |
-| 2_adapters | 76 | External integrations |
+| 1_adapters | 76 | External integrations |
+| 1_rendering | — | Server-side presentation (thermal, PDF) |
+| 2_domains | 111 | Business logic |
 | 3_applications | 60 | Use case orchestration |
 | 4_api | 39 | HTTP routes |
-| **Total** | **313** | |
 
 ---
 
@@ -67,7 +67,29 @@ Complete mapping of `backend/src/` structure with references to legacy code loca
 
 ---
 
-## 1_domains/ (111 files)
+## 1_adapters/ (76 files)
+
+See below (moved from former `2_adapters/` section).
+
+---
+
+## 1_rendering/
+
+Server-side presentation layer — renderers for thermal printer, PDF, and other non-browser output.
+
+| New File | Legacy Source |
+|----------|---------------|
+| `lib/CanvasFactory.mjs` | Extracted from both renderers |
+| `lib/TextRenderer.mjs` | Extracted from both renderers |
+| `lib/LayoutHelpers.mjs` | Extracted from both renderers |
+| `fitness/FitnessReceiptRenderer.mjs` | `1_adapters/fitness/rendering/FitnessReceiptRenderer.mjs` |
+| `fitness/fitnessReceiptTheme.mjs` | `1_adapters/fitness/rendering/fitnessReceiptTheme.mjs` |
+| `gratitude/GratitudeCardRenderer.mjs` | `1_adapters/gratitude/rendering/GratitudeCardRenderer.mjs` |
+| `gratitude/gratitudeCardTheme.mjs` | `1_adapters/gratitude/rendering/gratitudeCardTheme.mjs` |
+
+---
+
+## 2_domains/ (111 files)
 
 ### content/
 | New File | Legacy Source |
@@ -169,7 +191,7 @@ Complete mapping of `backend/src/` structure with references to legacy code loca
 
 ---
 
-## 2_adapters/ (76 files)
+## 1_adapters/ (76 files)
 
 ### persistence/yaml/
 | New File | Implements | Legacy Source |
