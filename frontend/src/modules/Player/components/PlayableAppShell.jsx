@@ -8,7 +8,7 @@
  */
 import { useMemo } from 'react';
 import AppContainer from '../../AppContainer/AppContainer.jsx';
-import { usePlayableLifecycle } from '../../../lib/playable/index.js';
+import { usePlayableLifecycle } from '../hooks/usePlayableLifecycle.js';
 
 export default function PlayableAppShell({
   contentId,
