@@ -4,6 +4,7 @@ import { createAdminConfigRouter } from './config.mjs';
 import { createAdminImagesRouter } from './images.mjs';
 import { createEventBusRouter } from './eventbus.mjs';
 import { createAdminMediaRouter } from './media.mjs';
+import { createAdminSchedulerRouter } from './scheduler.mjs';
 
 /**
  * Combined Admin Router
@@ -43,6 +44,13 @@ export function createAdminRouter(config) {
   });
   router.use('/config', configRouter);
 
+  // Mount scheduler router
+  const schedulerRouter = createAdminSchedulerRouter({
+    configService,
+    logger: logger.child?.({ submodule: 'scheduler' }) || logger
+  });
+  router.use('/scheduler', schedulerRouter);
+
   // Mount images router
   const imagesRouter = createAdminImagesRouter({
     mediaPath,
@@ -69,7 +77,7 @@ export function createAdminRouter(config) {
     router.use('/ws', eventBusRouter);
   }
 
-  logger.info?.('admin.router.mounted', { subroutes: ['/content', '/config', '/images', '/media', '/ws'] });
+  logger.info?.('admin.router.mounted', { subroutes: ['/content', '/config', '/scheduler', '/images', '/media', '/ws'] });
   return router;
 }
 
@@ -78,3 +86,4 @@ export { createAdminConfigRouter } from './config.mjs';
 export { createAdminImagesRouter } from './images.mjs';
 export { createAdminMediaRouter } from './media.mjs';
 export { createEventBusRouter } from './eventbus.mjs';
+export { createAdminSchedulerRouter } from './scheduler.mjs';
