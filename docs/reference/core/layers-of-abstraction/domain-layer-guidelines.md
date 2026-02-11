@@ -1,6 +1,6 @@
 # Domain Layer Guidelines
 
-> Guidelines for `backend/src/1_domains/` - the pure business logic layer in DDD architecture.
+> Guidelines for `backend/src/2_domains/` - the pure business logic layer in DDD architecture.
 
 ---
 
@@ -8,7 +8,7 @@
 
 **The domain layer contains timeless business logic that would be true in ANY application using these concepts.**
 
-The Abstraction Test: If your domain logic would work identically in a completely different application (a competitor's fitness app, a different nutrition tracker), it belongs in `1_domains/`. If it's specific to how DaylightStation uses these concepts, it belongs in `3_applications/`.
+The Abstraction Test: If your domain logic would work identically in a completely different application (a competitor's fitness app, a different nutrition tracker), it belongs in `2_domains/`. If it's specific to how DaylightStation uses these concepts, it belongs in `3_applications/`.
 
 | Layer | Contains | Example |
 |-------|----------|---------|
@@ -209,12 +209,12 @@ complete(completedAt) {
 
 ## Import Rules
 
-### ALLOWED imports in `1_domains/`
+### ALLOWED imports in `2_domains/`
 
 - Other domains (lower in hierarchy only - see Cross-Domain Dependencies)
 - Pure utilities that don't touch infrastructure (`uuid`, `lodash` for pure functions)
 
-### FORBIDDEN imports in `1_domains/`
+### FORBIDDEN imports in `2_domains/`
 
 | Forbidden | Why | Instead |
 |-----------|-----|---------|
@@ -252,7 +252,7 @@ static create({ startTime, zones, participants }) {
 | Infrastructure | Formatting utilities (`time.mjs`, etc.) |
 
 ```javascript
-// 2_adapters/fitness/SessionRepository.mjs
+// 1_adapters/fitness/SessionRepository.mjs
 import { formatLocalTimestamp, parseToDate } from '#infrastructure/utils/time.mjs';
 
 async save(session) {
@@ -277,7 +277,7 @@ async findById(id) {
 
 ## No Ports in Domain Layer
 
-**Ports (abstract interfaces for external services) belong in `3_applications/`, not `1_domains/`.**
+**Ports (abstract interfaces for external services) belong in `3_applications/`, not `2_domains/`.**
 
 The domain layer is pure business logic with no external dependencies. It doesn't need to "call out" to anything - it just calculates, validates, and enforces rules.
 
@@ -319,7 +319,7 @@ import { parseToDate } from '#infrastructure/utils/time.mjs';
 session.complete(parseToDate(new Date()));
 ```
 
-**Existing `1_domains/*/ports/` folders should be migrated to `3_applications/`.**
+**Existing `2_domains/*/ports/` folders should be migrated to `3_applications/`.**
 
 ---
 
@@ -378,7 +378,7 @@ async execute(date, userId) {
 ### Standard Domain Folder Structure
 
 ```
-1_domains/
+2_domains/
 └── {domain}/
     ├── entities/           # Aggregates and entities
     │   ├── Session.mjs
@@ -410,7 +410,7 @@ async execute(date, userId) {
 ### Barrel Exports
 
 ```javascript
-// 1_domains/fitness/index.mjs
+// 2_domains/fitness/index.mjs
 export { Session } from './entities/Session.mjs';
 export { Zone } from './entities/Zone.mjs';
 export { Distance } from './value-objects/Distance.mjs';
@@ -437,8 +437,9 @@ import { Session } from '#domains/fitness/entities/Session.mjs';
 ```json
 {
   "imports": {
-    "#domains/*": "./backend/src/1_domains/*",
-    "#adapters/*": "./backend/src/2_adapters/*",
+    "#domains/*": "./backend/src/2_domains/*",
+    "#adapters/*": "./backend/src/1_adapters/*",
+    "#rendering/*": "./backend/src/1_rendering/*",
     "#applications/*": "./backend/src/3_applications/*",
     "#infrastructure/*": "./backend/src/0_system/*"
   }
@@ -454,16 +455,17 @@ import { ValidationError } from '#domains/core/errors/index.mjs';
 import { formatLocalTimestamp } from '#infrastructure/utils/time.mjs';
 
 // BAD - relative path hell
-import { Session } from '../../../../1_domains/fitness/entities/Session.mjs';
-import { ValidationError } from '../../../1_domains/core/errors/ValidationError.mjs';
+import { Session } from '../../../../2_domains/fitness/entities/Session.mjs';
+import { ValidationError } from '../../../2_domains/core/errors/ValidationError.mjs';
 ```
 
 ### Alias Naming Convention
 
 | Alias | Points To | Used For |
 |-------|-----------|----------|
-| `#domains/*` | `1_domains/*` | Domain entities, value objects, services |
-| `#adapters/*` | `2_adapters/*` | Repository implementations, gateways |
+| `#domains/*` | `2_domains/*` | Domain entities, value objects, services |
+| `#adapters/*` | `1_adapters/*` | Repository implementations, gateways |
+| `#rendering/*` | `1_rendering/*` | Server-side presentation (thermal, PDF) |
 | `#applications/*` | `3_applications/*` | Use cases, containers, ports |
 | `#infrastructure/*` | `0_system/*` | Utils, config, logging |
 
@@ -634,7 +636,7 @@ class ZoneService {
 | **Adapter imports** | `import { PlexClient } from '#adapters/...'` | Domain has no external dependencies |
 | **Raw time functions** | `Date.now()`, `new Date()` | Receive timestamp as parameter from caller |
 | **Date formatting** | `this.#time.toISOString()` | Pass pre-formatted or let adapter format |
-| **Ports in domain** | `1_domains/ai/ports/IAIGateway.mjs` | Move to `3_applications/{app}/ports/` |
+| **Ports in domain** | `2_domains/ai/ports/IAIGateway.mjs` | Move to `3_applications/{app}/ports/` |
 | **Upward domain imports** | `fitness` imports from `lifelog` | Only import from lower-level domains |
 | **Circular dependencies** | `fitness` ↔ `nutrition` | Coordinate in application layer |
 | **Anemic entities** | All logic in services, entities are data bags | Entity owns logic about itself |
@@ -643,4 +645,4 @@ class ZoneService {
 | **Swallowed errors** | `catch (e) { }` | Throw domain errors, let app layer handle |
 | **Generic Error** | `throw new Error('bad')` | `throw new ValidationError('...', { code })` |
 | **Mutable value objects** | `distance.meters = 500` | Value objects are frozen, return new instances |
-| **Relative path imports** | `../../../1_domains/fitness/...` | Use `#domains/fitness/...` alias |
+| **Relative path imports** | `../../../2_domains/fitness/...` | Use `#domains/fitness/...` alias |

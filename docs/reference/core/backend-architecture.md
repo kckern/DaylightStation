@@ -1,25 +1,28 @@
 # Backend Architecture
 
-**Last Updated:** 2026-01-29
+**Last Updated:** 2026-02-11
 **Status:** DDD Migration Complete (95%)
 
 ---
 
 ## Overview
 
-The backend uses Domain-Driven Design (DDD) with a layered architecture. Code is organized into numbered layers that enforce dependency rules: higher layers can import from lower layers, but not vice versa.
+The backend uses Domain-Driven Design (DDD) with a layered architecture. Code is organized into numbered layers that enforce dependency rules. The number prefix indicates the dependency tier — layers can import from lower-numbered tiers but not higher ones.
 
 ```
 backend/
-├── src/                    # New DDD architecture (313 files)
-│   ├── 0_system/   # Framework, cross-cutting concerns
-│   ├── 1_domains/          # Business logic (pure, no I/O)
-│   ├── 2_adapters/         # External integrations
-│   ├── 3_applications/     # Use cases, orchestration
-│   ├── 4_api/              # HTTP routes, handlers
-│   └── server.mjs          # Entry point
-└── _legacy/                # Legacy code (being phased out)
+├── src/
+│   ├── 0_system/       # Framework, cross-cutting concerns
+│   ├── 1_adapters/     # External integrations
+│   ├── 1_rendering/    # Server-side presentation (thermal, PDF)
+│   ├── 2_domains/      # Business logic (pure, no I/O)
+│   ├── 3_applications/ # Use cases, orchestration
+│   ├── 4_api/          # HTTP routes, handlers
+│   └── server.mjs      # Entry point
+└── _legacy/            # Legacy code (being phased out)
 ```
+
+**Note:** The `1_` prefix appears on two directories — `1_adapters/` and `1_rendering/` are peers at the same dependency tier.
 
 ---
 
@@ -41,31 +44,7 @@ Cross-cutting concerns shared across all layers.
 
 **Key Pattern:** `bootstrap.mjs` contains factory functions for creating all domain services with proper dependency injection.
 
-### 1_domains/ (111 files)
-
-Pure business logic with no external dependencies. Each domain has:
-- `entities/` - Data models with validation
-- `services/` - Business logic
-- `value-objects/` - Immutable value types (optional)
-
-| Domain | Purpose | Entities |
-|--------|---------|----------|
-| `content/` | Media browsing/playback | ContentItem, WatchState |
-| `fitness/` | Workout sessions | Session, Participant, Zone |
-| `finance/` | Budget tracking | Budget, Transaction, Account, Mortgage |
-| `messaging/` | Notifications | Message, Conversation, Notification |
-| `nutrition/` | Food logging | FoodLog, NutritionEntry |
-| `journaling/` | Daily journaling | JournalEntry |
-| `journalist/` | Journal chatbot logic | ConversationMessage, QuizQuestion |
-| `health/` | Health metrics | Aggregated health data |
-| `gratitude/` | Gratitude tracking | Selection |
-| `entropy/` | Random content | Entropy reader |
-| `home-automation/` | Smart home control | Device states |
-| `ai/` | AI abstraction | AI-related value objects |
-| `lifelog/` | Activity aggregation | Lifelog entries |
-| `core/` | Shared value objects | Common types |
-
-### 2_adapters/ (76 files)
+### 1_adapters/ (76 files)
 
 Concrete implementations that connect domains to external systems.
 
@@ -88,6 +67,44 @@ Concrete implementations that connect domains to external systems.
 - `communication/` - Gmail, GCal
 - `finance/` - Shopping (receipt scanning)
 - `other/` - Weather, Scripture
+
+### 1_rendering/
+
+Server-side presentation layer for non-browser output targets (thermal printer, PDF). Peer to `1_adapters/` at the same dependency tier.
+
+| Directory | Purpose |
+|-----------|---------|
+| `lib/` | Shared rendering primitives (canvas, text, layout) |
+| `fitness/` | Fitness receipt renderer + theme |
+| `gratitude/` | Gratitude card renderer + theme |
+
+Renderers receive pre-computed domain data via DI callbacks and produce visual output (PNG canvases). They share drawing primitives via `lib/` — unlike adapters, which are domain-isolated.
+
+See [Rendering Layer Guidelines](./layers-of-abstraction/rendering-layer-guidelines.md) for details.
+
+### 2_domains/ (111 files)
+
+Pure business logic with no external dependencies. Each domain has:
+- `entities/` - Data models with validation
+- `services/` - Business logic
+- `value-objects/` - Immutable value types (optional)
+
+| Domain | Purpose | Entities |
+|--------|---------|----------|
+| `content/` | Media browsing/playback | ContentItem, WatchState |
+| `fitness/` | Workout sessions | Session, Participant, Zone |
+| `finance/` | Budget tracking | Budget, Transaction, Account, Mortgage |
+| `messaging/` | Notifications | Message, Conversation, Notification |
+| `nutrition/` | Food logging | FoodLog, NutritionEntry |
+| `journaling/` | Daily journaling | JournalEntry |
+| `journalist/` | Journal chatbot logic | ConversationMessage, QuizQuestion |
+| `health/` | Health metrics | Aggregated health data |
+| `gratitude/` | Gratitude tracking | Selection |
+| `entropy/` | Random content | Entropy reader |
+| `home-automation/` | Smart home control | Device states |
+| `ai/` | AI abstraction | AI-related value objects |
+| `lifelog/` | Activity aggregation | Lifelog entries |
+| `core/` | Shared value objects | Common types |
 
 ### 3_applications/ (60 files)
 
@@ -132,17 +149,19 @@ HTTP layer - Express routers and handlers.
 ## Dependency Rules
 
 ```
-4_api       → can import from → 3, 2, 1, 0
-3_applications → can import from → 2, 1, 0
-2_adapters  → can import from → 3 (ports only), 1, 0
-1_domains   → can import from → 0 (minimal)
-0_system → standalone (no upward imports)
+4_api          → can import from → 3, 2, 1_adapters, 1_rendering, 0
+3_applications → can import from → 2, 1_adapters, 1_rendering, 0
+1_adapters     → can import from → 3 (ports only), 2, 0
+1_rendering    → can import from → 2, 0
+2_domains      → can import from → 0 (minimal)
+0_system       → standalone (no upward imports)
 ```
 
 **Key Principles:**
-- Domains (1_domains/) are **pure** - no imports from adapters or applications
-- Applications (3_applications/) define **ports** (interfaces) that adapters implement
-- Adapters import port interfaces from applications to implement them
+- Domains (`2_domains/`) are **pure** — no imports from adapters, rendering, or applications
+- Applications (`3_applications/`) define **ports** (interfaces) that adapters implement
+- Adapters and rendering are **peers** at tier 1 — they do not import from each other
+- Rendering receives domain data via DI callbacks, not direct service imports
 
 ---
 
@@ -175,7 +194,7 @@ export class ISessionDatastore {
   async listByDate(date) { throw new Error('Not implemented'); }
 }
 
-// 2_adapters/persistence/yaml/YamlSessionDatastore.mjs
+// 1_adapters/persistence/yaml/YamlSessionDatastore.mjs
 import { ISessionDatastore } from '#apps/fitness/ports/ISessionDatastore.mjs';
 
 export class YamlSessionDatastore extends ISessionDatastore {
@@ -198,4 +217,6 @@ Legacy code is gradually replaced:
 ## Related Documentation
 
 - [DDD File Map](./ddd-file-map.md) - Complete file listing with legacy mapping
+- [Rendering Layer Guidelines](./layers-of-abstraction/rendering-layer-guidelines.md) - Server-side presentation layer
+- [Adapter Layer Guidelines](./adapter-layer-guidelines.md) - External integration layer
 - [Migration Summary](./migration-summary.md) - What was migrated and current status

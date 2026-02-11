@@ -35,13 +35,13 @@ Use cases in `3_applications/` coordinate domain entities and call abstract gate
 
 ### ALLOWED imports in `3_applications/`
 
-- `1_domains/` - Entities, value objects, domain services
+- `2_domains/` - Entities, value objects, domain services
 - `0_system/utils/` - Pure utilities (time, formatting, uuid)
 - External packages for domain logic (moment-timezone, uuid)
 
 ### FORBIDDEN imports in `3_applications/`
 
-- `2_adapters/` - Never import adapters directly
+- `1_adapters/` - Never import adapters directly
 - `0_system/config/` - Config internals (paths, loaders)
 - Vendor SDKs (telegraf, openai, @anthropic-ai/sdk, plex-api)
 - Node fs/path for data operations (use repositories)
@@ -117,11 +117,11 @@ export function isMessagingGateway(obj) {
 }
 ```
 
-**Why in `3_applications/` not `1_domains/`?**
+**Why in `3_applications/` not `2_domains/`?**
 
 - Ports define what the *application* needs from the outside world
 - Domain layer is pure business logic with no external dependencies
-- Adapters (`2_adapters/`) *implement* these ports
+- Adapters (`1_adapters/`) *implement* these ports
 
 ---
 
@@ -226,7 +226,7 @@ const isTransportError = error.code === 'ETIMEDOUT' ||
 |--------------|---------|-----|
 | **Vendor name in code** | `telegramGateway`, `plexClient` | Use `messagingGateway`, `mediaRepository` |
 | **Vendor name in comments** | `// TelegramAdapter instance` | `// Gateway for sending messages` |
-| **Direct adapter import** | `import { TelegramAdapter } from '2_adapters/...'` | Inject via container |
+| **Direct adapter import** | `import { TelegramAdapter } from '1_adapters/...'` | Inject via container |
 | **Path construction** | `` `${dataDir}/users/${id}/file.yml` `` | Delegate to repository |
 | **Config key knowledge** | `config.getUserAuth('payroll').base_url` | Receive resolved config object |
 | **Format-specific logic** | `if (file.endsWith('.mp4'))` | Use `mediaItem.type === 'video'` |

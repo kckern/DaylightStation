@@ -25,8 +25,9 @@ The API layer is a driving adapter - it drives the application from HTTP. Its on
 |-------|----------------|
 | **API (4_api)** | HTTP ↔ application translation |
 | **Application (3_applications)** | Orchestrates use cases via containers |
-| **Adapters (2_adapters)** | External system integration |
-| **Domain (1_domains)** | Pure business logic |
+| **Domain (2_domains)** | Pure business logic |
+| **Adapters (1_adapters)** | External system integration |
+| **Rendering (1_rendering)** | Server-side presentation (thermal, PDF) |
 | **System (0_system)** | Runtime utilities, bootstrap wiring |
 
 ---
@@ -47,8 +48,8 @@ The API layer is a driving adapter - it drives the application from HTTP. Its on
 | Forbidden | Why | Instead |
 |-----------|-----|---------|
 | `3_applications/*` | Containers are injected | Receive via factory params |
-| `2_adapters/*` | Webhook handlers, parsers are injected | Receive via factory params |
-| `1_domains/*` | API has no domain knowledge | Work with plain objects from use cases |
+| `1_adapters/*` | Webhook handlers, parsers are injected | Receive via factory params |
+| `2_domains/*` | API has no domain knowledge | Work with plain objects from use cases |
 | `0_system/config/` | Config values come from bootstrap | Receive resolved values via params |
 
 ### The Injection Rule
@@ -57,7 +58,7 @@ Everything except system utilities comes through the factory function:
 
 ```javascript
 // BAD - router imports and instantiates adapter
-import { TelegramWebhookParser } from '../../2_adapters/telegram/index.mjs';
+import { TelegramWebhookParser } from '../../1_adapters/telegram/index.mjs';
 const parser = new TelegramWebhookParser({ botId });
 
 // GOOD - router receives pre-built handler
@@ -346,9 +347,9 @@ Concerns specific to API layer evolution:
 
 | Anti-Pattern | Example | Fix |
 |--------------|---------|-----|
-| **Adapter import** | `import { TelegramWebhookParser } from '2_adapters/...'` | Receive via factory params |
+| **Adapter import** | `import { TelegramWebhookParser } from '1_adapters/...'` | Receive via factory params |
 | **Container import** | `import { NutribotContainer } from '3_applications/...'` | Receive via factory params |
-| **Domain import** | `import { Session } from '1_domains/...'` | Work with plain objects |
+| **Domain import** | `import { Session } from '2_domains/...'` | Work with plain objects |
 | **Instantiating adapters** | `new YamlJournalDatastore({ dataRoot })` | Bootstrap wires, router receives |
 | **Business logic in handler** | `if (calories > 2000) grade = 'F'` | Move to domain or use case |
 | **Config access** | `configService.get('nutribot.botId')` | Receive resolved values via params |

@@ -358,7 +358,7 @@ Log menu navigation for `recent_on_top` sorting.
 - `backend/src/4_api/v1/routers/content.mjs` - Content API router (legacy)
 - `backend/src/4_api/v1/routers/localContent.mjs` - LocalContent API router
 - `backend/src/4_api/v1/routers/proxy.mjs` - Proxy API router
-- `backend/src/1_domains/content/` - Domain entities and ports
-- `backend/src/2_adapters/content/` - Source adapters
+- `backend/src/2_domains/content/` - Domain entities and ports
+- `backend/src/1_adapters/content/` - Source adapters
   - `singalong/SingalongAdapter.mjs` - Hymns and primary songs
   - `readalong/ReadalongAdapter.mjs` - Scripture, talks, poetry
