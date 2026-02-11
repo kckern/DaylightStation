@@ -6,8 +6,9 @@
  * When the Play API returns format: 'app', SinglePlayer renders this component.
  * It extracts the appId and param from the contentId and delegates to AppContainer.
  */
-import { useEffect } from 'react';
+import { useMemo } from 'react';
 import AppContainer from '../../AppContainer/AppContainer.jsx';
+import { usePlayableLifecycle } from '../../../lib/playable/index.js';
 
 export default function PlayableAppShell({
   contentId,
@@ -20,23 +21,17 @@ export default function PlayableAppShell({
 }) {
   const localId = contentId?.replace(/^app:/, '') || '';
 
-  // Signal startup when mounted
-  useEffect(() => {
-    onStartupSignal?.();
-  }, []);
+  const meta = useMemo(
+    () => localId ? { title: localId, contentId } : null,
+    [localId, contentId]
+  );
 
-  // Report resolved metadata
-  useEffect(() => {
-    if (localId) {
-      onResolvedMeta?.({ title: localId, contentId });
-    }
-  }, [localId]);
+  usePlayableLifecycle({
+    onStartupSignal,
+    onResolvedMeta,
+    onRegisterMediaAccess,
+    meta
+  });
 
-  // Register empty media access (apps have no media element)
-  useEffect(() => {
-    onRegisterMediaAccess?.({ getMediaEl: () => null, hardReset: null });
-  }, []);
-
-  // AppContainer parses "family-selector/alan" into appId + param internally
   return <AppContainer open={localId} clear={clear || advance || (() => {})} />;
 }
