@@ -14,6 +14,8 @@ import MembersIndex from '../modules/Admin/Household/MembersIndex.jsx';
 import MemberEditor from '../modules/Admin/Household/MemberEditor.jsx';
 import DevicesIndex from '../modules/Admin/Household/DevicesIndex.jsx';
 import DeviceEditor from '../modules/Admin/Household/DeviceEditor.jsx';
+import IntegrationsIndex from '../modules/Admin/System/IntegrationsIndex.jsx';
+import IntegrationDetail from '../modules/Admin/System/IntegrationDetail.jsx';
 import ComboboxTestPage from '../modules/Admin/TestHarness/ComboboxTestPage.jsx';
 import './AdminApp.scss';
 import '@mantine/core/styles.css';
@@ -51,8 +53,8 @@ function AdminApp() {
             <Route path="household/devices/:deviceId" element={<DeviceEditor />} />
 
             {/* System */}
-            <Route path="system/integrations" element={<ComingSoon title="Integrations" />} />
-            <Route path="system/integrations/:provider" element={<ComingSoon title="Integration Detail" />} />
+            <Route path="system/integrations" element={<IntegrationsIndex />} />
+            <Route path="system/integrations/:provider" element={<IntegrationDetail />} />
             <Route path="system/scheduler" element={<SchedulerIndex />} />
             <Route path="system/scheduler/:jobId" element={<JobDetail />} />
             <Route path="system/config" element={<ConfigIndex />} />
