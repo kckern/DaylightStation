@@ -33,9 +33,21 @@ function AdminApp() {
             <Route index element={<Navigate to="content/lists/menus" replace />} />
             <Route path="content/lists/:type" element={<ListsIndex />} />
             <Route path="content/lists/:type/:name" element={<ListsFolder />} />
-            <Route path="apps/*" element={<ComingSoon title="App Config" />} />
-            <Route path="household/*" element={<ComingSoon title="Household" />} />
-            <Route path="system/*" element={<ComingSoon title="System" />} />
+            {/* Apps */}
+            <Route path="apps/:appId" element={<ComingSoon title="App Config" />} />
+
+            {/* Household */}
+            <Route path="household/members" element={<ComingSoon title="Members" />} />
+            <Route path="household/members/:username" element={<ComingSoon title="Member Editor" />} />
+            <Route path="household/devices" element={<ComingSoon title="Devices" />} />
+            <Route path="household/devices/:deviceId" element={<ComingSoon title="Device Editor" />} />
+
+            {/* System */}
+            <Route path="system/integrations" element={<ComingSoon title="Integrations" />} />
+            <Route path="system/integrations/:provider" element={<ComingSoon title="Integration Detail" />} />
+            <Route path="system/scheduler" element={<ComingSoon title="Scheduler" />} />
+            <Route path="system/scheduler/:jobId" element={<ComingSoon title="Job Detail" />} />
+            <Route path="system/config" element={<ComingSoon title="Config Editor" />} />
             <Route path="*" element={<Navigate to="content/lists/menus" replace />} />
           </Route>
         </Routes>

@@ -1,0 +1,11 @@
+.yaml-editor-wrapper {
+  .yaml-editor-container {
+    border: 1px solid var(--mantine-color-dark-4);
+    border-radius: var(--mantine-radius-sm);
+    overflow: hidden;
+
+    .cm-editor {
+      border-radius: var(--mantine-radius-sm);
+    }
+  }
+}

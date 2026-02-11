@@ -3,9 +3,9 @@ import { NavLink as RouterNavLink, useLocation } from 'react-router-dom';
 import { NavLink, Stack, Text, Divider } from '@mantine/core';
 import {
   IconMenu2, IconPlayerRecord, IconCalendarEvent,
-  IconDeviceTv, IconKeyboard, IconRun,
-  IconUsers, IconDevices, IconHome,
-  IconPlayerPlay, IconSettings
+  IconRun, IconCoin, IconHeart, IconShoppingCart,
+  IconUsers, IconDevices,
+  IconPlugConnected, IconClock, IconFileCode
 } from '@tabler/icons-react';
 
 const navSections = [
@@ -20,24 +20,25 @@ const navSections = [
   {
     label: 'APPS',
     items: [
-      { label: 'TV', icon: IconDeviceTv, to: '/admin/apps/tv' },
-      { label: 'Office', icon: IconKeyboard, to: '/admin/apps/office' },
       { label: 'Fitness', icon: IconRun, to: '/admin/apps/fitness' },
+      { label: 'Finance', icon: IconCoin, to: '/admin/apps/finance' },
+      { label: 'Gratitude', icon: IconHeart, to: '/admin/apps/gratitude' },
+      { label: 'Shopping', icon: IconShoppingCart, to: '/admin/apps/shopping' },
     ]
   },
   {
     label: 'HOUSEHOLD',
     items: [
-      { label: 'Users', icon: IconUsers, to: '/admin/household/users' },
+      { label: 'Members', icon: IconUsers, to: '/admin/household/members' },
       { label: 'Devices', icon: IconDevices, to: '/admin/household/devices' },
-      { label: 'Rooms', icon: IconHome, to: '/admin/household/rooms' },
     ]
   },
   {
     label: 'SYSTEM',
     items: [
-      { label: 'Playback', icon: IconPlayerPlay, to: '/admin/system/playback' },
-      { label: 'Integrations', icon: IconSettings, to: '/admin/system/integrations' },
+      { label: 'Integrations', icon: IconPlugConnected, to: '/admin/system/integrations' },
+      { label: 'Scheduler', icon: IconClock, to: '/admin/system/scheduler' },
+      { label: 'Config', icon: IconFileCode, to: '/admin/system/config' },
     ]
   }
 ];

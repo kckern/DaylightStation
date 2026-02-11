@@ -1,0 +1,90 @@
+import React, { useEffect } from 'react';
+import {
+  Stack, Group, Button, Alert, Center, Loader, Badge, Text, Divider
+} from '@mantine/core';
+import { IconAlertCircle, IconDeviceFloppy, IconArrowBack } from '@tabler/icons-react';
+import { useAdminConfig } from '../../../hooks/admin/useAdminConfig.js';
+
+/**
+ * Wraps a config form with standard load/save/revert/dirty-state chrome.
+ *
+ * Props:
+ *   filePath    - YAML file path relative to data root (e.g. 'household/config/fitness.yml')
+ *   title       - Page title
+ *   children    - Render function: ({ data, setData }) => JSX
+ *                 Receives the parsed config object and a setter.
+ *                 The setter accepts a new object or an updater function: setData(prev => ({...prev, ...}))
+ *   validate    - Optional (data) => string|null - return error message or null
+ */
+function ConfigFormWrapper({ filePath, title, children, validate }) {
+  const {
+    data, loading, saving, error, dirty,
+    load, save, revert, setData, clearError
+  } = useAdminConfig(filePath);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const handleSave = async () => {
+    if (validate) {
+      const validationError = validate(data);
+      if (validationError) return;
+    }
+    await save();
+  };
+
+  if (loading && !data) {
+    return (
+      <Center h="60vh">
+        <Loader size="lg" />
+      </Center>
+    );
+  }
+
+  return (
+    <Stack gap="md">
+      <Group justify="space-between">
+        <Group gap="xs">
+          <Text fw={600} size="lg">{title}</Text>
+          {dirty && <Badge color="yellow" variant="light">Unsaved changes</Badge>}
+        </Group>
+        <Group gap="xs">
+          <Button
+            variant="subtle"
+            leftSection={<IconArrowBack size={16} />}
+            onClick={revert}
+            disabled={!dirty || saving}
+          >
+            Revert
+          </Button>
+          <Button
+            leftSection={<IconDeviceFloppy size={16} />}
+            onClick={handleSave}
+            loading={saving}
+            disabled={!dirty}
+          >
+            Save
+          </Button>
+        </Group>
+      </Group>
+
+      {error && (
+        <Alert
+          icon={<IconAlertCircle size={16} />}
+          color="red"
+          withCloseButton
+          onClose={clearError}
+        >
+          {error.message || 'An error occurred'}
+        </Alert>
+      )}
+
+      <Divider />
+
+      {data !== null && children({ data, setData })}
+    </Stack>
+  );
+}
+
+export default ConfigFormWrapper;
