@@ -1,4 +1,4 @@
-// frontend/src/modules/Player/components/PagedReader.jsx
+// frontend/src/modules/Player/renderers/PagedReader.jsx
 
 /**
  * Stub: Paged reader for comics/manga (Komga).

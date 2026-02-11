@@ -162,11 +162,12 @@ All renderers implement the **Playable Contract** (see content-model.md), which 
 
 ### Playable Format Registry
 
-The format→component mapping lives in `frontend/src/lib/playable/registry.js`, not in SinglePlayer. To add a new playable content type:
+The format→component mapping lives in `frontend/src/modules/Player/lib/registry.js`, not in SinglePlayer. To add a new playable content type:
 
 1. Create the renderer component implementing the Playable Contract (see below)
-2. Import and register it in `frontend/src/lib/playable/registry.js`
-3. No changes needed in SinglePlayer
+2. Add it to `frontend/src/modules/Player/renderers/`
+3. Import and register it in `frontend/src/modules/Player/lib/registry.js`
+4. No changes needed in SinglePlayer
 
 **Registry API:**
 
@@ -176,7 +177,7 @@ The format→component mapping lives in `frontend/src/lib/playable/registry.js`,
 | `isMediaFormat(format)` | Returns `true` for video/audio/dash_video |
 | `getRegisteredFormats()` | Returns array of registered format names |
 
-**For non-media renderers** (apps, future slideshow/pageturner), use the `usePlayableLifecycle` hook from `frontend/src/lib/playable/usePlayableLifecycle.js` to handle startup signal, metadata reporting, and media access registration in one call instead of manual `useEffect` wiring.
+**For non-media renderers** (apps, future slideshow/pageturner), use the `usePlayableLifecycle` hook from `frontend/src/modules/Player/hooks/usePlayableLifecycle.js` to handle startup signal, metadata reporting, and media access registration in one call instead of manual `useEffect` wiring.
 
 ### Queue Controller
 
