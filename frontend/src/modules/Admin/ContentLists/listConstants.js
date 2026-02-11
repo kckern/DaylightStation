@@ -31,7 +31,7 @@ export const DAYS_PRESETS = [
 // Known item fields that the editor manages
 export const KNOWN_ITEM_FIELDS = [
   // Identity
-  'label', 'input', 'action', 'active', 'group', 'image', 'uid',
+  'label', 'input', 'action', 'active', 'image', 'uid',
   // Playback
   'shuffle', 'continuous', 'loop', 'fixedOrder', 'volume', 'playbackRate',
   // Scheduling
@@ -94,3 +94,27 @@ export const LIST_DEFAULTS = {
   defaultVolume: null,
   defaultPlaybackRate: null
 };
+
+export const SECTION_DEFAULTS = {
+  title: null,
+  description: null,
+  image: null,
+  fixed_order: false,
+  shuffle: false,
+  limit: null,
+  priority: null,
+  playbackrate: null,
+  continuous: false,
+  days: null,
+  applySchedule: true,
+  hold: false,
+  skip_after: null,
+  wait_until: null,
+  active: true
+};
+
+export const SECTION_INHERITABLE_FIELDS = [
+  'priority', 'hold', 'skip_after', 'wait_until',
+  'playbackrate', 'continuous', 'shuffle',
+  'days', 'applySchedule', 'active', 'fixed_order'
+];

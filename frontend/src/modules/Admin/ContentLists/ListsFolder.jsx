@@ -2,11 +2,11 @@ import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Stack, Group, Title, TextInput, Center, Loader, Alert,
-  ActionIcon, Menu, Text, SegmentedControl, Box
+  ActionIcon, Menu, Text, Collapse, Button, Box
 } from '@mantine/core';
 import {
   IconSearch, IconArrowLeft, IconAlertCircle,
-  IconTrash, IconDotsVertical, IconList, IconLayoutGrid, IconSettings
+  IconTrash, IconDotsVertical, IconPlus, IconSettings
 } from '@tabler/icons-react';
 import {
   DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors
@@ -15,10 +15,12 @@ import {
   SortableContext, verticalListSortingStrategy, arrayMove
 } from '@dnd-kit/sortable';
 import { useAdminLists } from '../../../hooks/admin/useAdminLists.js';
-import ListsItemRow, { EmptyItemRow, InsertRowButton, preloadSiblings, fetchContentMetadata } from './ListsItemRow.jsx';
+import ListsItemRow, { EmptyItemRow, preloadSiblings, fetchContentMetadata } from './ListsItemRow.jsx';
+import SectionHeader from './SectionHeader.jsx';
 import ListsItemEditor from './ListsItemEditor.jsx';
 import { ListsContext } from './ListsContext.js';
 import ListSettingsModal from './ListSettingsModal.jsx';
+import SectionSettingsModal from './SectionSettingsModal.jsx';
 import './ContentLists.scss';
 
 // Type display names (singular)
@@ -32,16 +34,24 @@ function ListsFolder() {
   const { type, name: listName } = useParams();
   const navigate = useNavigate();
   const {
-    items, loading, error, listMetadata,
-    fetchItems, addItem, updateItem, deleteItem, reorderItems, toggleItemActive,
-    deleteList, updateListSettings
+    sections, flatItems, loading, error, listMetadata,
+    fetchList, addItem, updateItem, deleteItem, reorderItems, toggleItemActive,
+    deleteList, updateListSettings, addSection, updateSection, deleteSection, reorderSections, moveItem, splitSection
   } = useAdminLists();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
-  const [viewMode, setViewMode] = useState('flat'); // 'flat' or 'grouped'
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [sectionSettingsOpen, setSectionSettingsOpen] = useState(null);
+  const [collapsedSections, setCollapsedSections] = useState(new Set());
+  const toggleCollapse = (si) => {
+    setCollapsedSections(prev => {
+      const next = new Set(prev);
+      next.has(si) ? next.delete(si) : next.add(si);
+      return next;
+    });
+  };
 
   // Content info cache for preloading
   const [contentInfoMap, setContentInfoMap] = useState(new Map());
@@ -56,17 +66,17 @@ function ListsFolder() {
 
   const getNearbyItems = useCallback((index, radius = 2) => {
     const start = Math.max(0, index - radius);
-    const end = Math.min(items.length - 1, index + radius);
-    return items.slice(start, end + 1).map((item, i) => ({
+    const end = Math.min(flatItems.length - 1, index + radius);
+    return flatItems.slice(start, end + 1).map((item, i) => ({
       ...item,
       index: start + i,
       contentInfo: contentInfoMap.get(item.input)
     }));
-  }, [items, contentInfoMap]);
+  }, [flatItems, contentInfoMap]);
 
   // Preload first 10 rows on mount
   useEffect(() => {
-    const first10 = items.slice(0, 10);
+    const first10 = flatItems.slice(0, 10);
     first10.forEach(item => {
       if (item.input && !contentInfoMap.has(item.input)) {
         fetchContentMetadata(item.input).then(info => {
@@ -77,7 +87,7 @@ function ListsFolder() {
         });
       }
     });
-  }, [items]); // Only run when items change
+  }, [flatItems]); // Only run when flatItems change
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -86,63 +96,28 @@ function ListsFolder() {
 
   useEffect(() => {
     if (type && listName) {
-      fetchItems(type, listName);
+      fetchList(type, listName);
     }
-  }, [type, listName, fetchItems]);
-
-  // Get unique groups from items
-  const existingGroups = useMemo(() => {
-    const groups = new Set();
-    items.forEach(item => {
-      if (item.group) groups.add(item.group);
-    });
-    return Array.from(groups).sort();
-  }, [items]);
+  }, [type, listName, fetchList]);
 
   // Filter items by search query
   const filteredItems = useMemo(() => {
-    if (!searchQuery) return items;
+    if (!searchQuery) return null;
     const query = searchQuery.toLowerCase();
-    return items.filter(item =>
-      item.label?.toLowerCase().includes(query) ||
-      item.input?.toLowerCase().includes(query) ||
-      item.group?.toLowerCase().includes(query)
+    return flatItems.filter(item =>
+      item.title?.toLowerCase().includes(query) ||
+      item.label?.toLowerCase().includes(query)
     );
-  }, [items, searchQuery]);
+  }, [flatItems, searchQuery]);
 
-  // Group items by group field
-  const groupedItems = useMemo(() => {
-    if (viewMode === 'flat') return null;
-
-    const groups = {};
-    const ungrouped = [];
-
-    filteredItems.forEach(item => {
-      if (item.group) {
-        if (!groups[item.group]) {
-          groups[item.group] = [];
-        }
-        groups[item.group].push(item);
-      } else {
-        ungrouped.push(item);
-      }
-    });
-
-    // Sort groups alphabetically
-    const sortedGroups = Object.keys(groups).sort();
-
-    return { groups, sortedGroups, ungrouped };
-  }, [filteredItems, viewMode]);
-
-  const handleDragEnd = async (event) => {
+  const handleDragEnd = async (event, sectionIndex) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
-
-    const oldIndex = items.findIndex(i => i.index === active.id);
-    const newIndex = items.findIndex(i => i.index === over.id);
-
-    const reordered = arrayMove(items, oldIndex, newIndex);
-    await reorderItems(reordered);
+    const sectionItems = sections[sectionIndex]?.items || [];
+    const oldIndex = parseInt(String(active.id).split('-')[1]);
+    const newIndex = parseInt(String(over.id).split('-')[1]);
+    const reordered = arrayMove(sectionItems, oldIndex, newIndex);
+    await reorderItems(sectionIndex, reordered);
   };
 
   const handleAddItem = () => {
@@ -157,12 +132,33 @@ function ListsFolder() {
 
   const handleSaveItem = async (itemData) => {
     if (editingItem) {
-      await updateItem(editingItem.index, itemData);
+      const oldSection = editingItem.sectionIndex ?? 0;
+      const newSection = itemData.sectionIndex ?? oldSection;
+      const { sectionIndex, ...cleanData } = itemData;
+
+      if (newSection !== oldSection) {
+        await moveItem(
+          { section: oldSection, index: editingItem.itemIndex },
+          { section: newSection, index: 0 }
+        );
+        await updateItem(newSection, 0, cleanData);
+      } else {
+        await updateItem(oldSection, editingItem.itemIndex, cleanData);
+      }
     } else {
-      await addItem(itemData);
+      const { sectionIndex, ...cleanData } = itemData;
+      await addItem(sectionIndex ?? 0, cleanData);
     }
     setEditorOpen(false);
     setEditingItem(null);
+  };
+
+  const handleMoveSection = async (fromIndex, direction) => {
+    const newOrder = sections.map((_, i) => i);
+    const toIndex = fromIndex + direction;
+    if (toIndex < 0 || toIndex >= sections.length) return;
+    [newOrder[fromIndex], newOrder[toIndex]] = [newOrder[toIndex], newOrder[fromIndex]];
+    await reorderSections(newOrder);
   };
 
   const handleDeleteList = async () => {
@@ -175,19 +171,20 @@ function ListsFolder() {
 
   // Set of image paths currently assigned to items in this list
   const inUseImages = useMemo(() => {
-    return new Set(items.filter(i => i.image).map(i => i.image));
-  }, [items]);
+    return new Set(flatItems.filter(i => i.image).map(i => i.image));
+  }, [flatItems]);
 
   // Context value must be defined before any early returns (React hooks rules)
   const contextValue = useMemo(() => ({
-    items,
+    sections,
+    flatItems,
     contentInfoMap,
     setContentInfo,
     getNearbyItems,
     inUseImages,
-  }), [items, contentInfoMap, setContentInfo, getNearbyItems, inUseImages]);
+  }), [sections, flatItems, contentInfoMap, setContentInfo, getNearbyItems, inUseImages]);
 
-  if (loading && items.length === 0) {
+  if (loading && sections.length === 0) {
     return (
       <Center h="60vh">
         <Loader size="lg" />
@@ -197,74 +194,42 @@ function ListsFolder() {
 
   const listTitle = listName.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
   const typeLabel = TYPE_LABELS[type] || type;
-  const hasGroups = existingGroups.length > 0;
-
-  const handleInlineUpdate = async (index, updates) => {
-    await updateItem(index, updates);
+  const handleInlineUpdate = async (sectionIndex, itemIndex, updates) => {
+    await updateItem(sectionIndex, itemIndex, updates);
   };
 
-  const handleDuplicateItem = async (item) => {
+  const handleDuplicateItem = async (sectionIndex, item) => {
     const newItem = {
-      label: `${item.label} (copy)`,
-      input: item.input,
-      action: item.action,
-      active: item.active,
-      group: item.group
+      ...item,
+      title: `${item.title || item.label} (copy)`,
     };
-    await addItem(newItem);
+    delete newItem.sectionIndex;
+    delete newItem.itemIndex;
+    delete newItem.sectionTitle;
+    await addItem(sectionIndex, newItem);
   };
 
-  // Insert item at a specific position
-  const handleInsertAt = async (atIndex) => {
-    const newItem = {
-      label: `Item ${items.length + 1}`,
-      action: 'Play',
-      input: '',
-      active: true
-    };
-    const result = await addItem(newItem);
-    // After adding, reorder to move the new item to the desired position
-    if (result && items.length > 0) {
-      const newIndex = result.index;
-      if (newIndex !== atIndex) {
-        // Create new order with the item moved to atIndex
-        const newOrder = [...items.map(i => i.index)];
-        newOrder.push(newIndex);
-        // Remove from end and insert at desired position
-        newOrder.pop();
-        newOrder.splice(atIndex, 0, newIndex);
-        await reorderItems(newOrder);
-      }
-    }
-  };
-
-  const renderItems = (itemsToRender, showInsertButtons = true) => (
+  const renderItems = (itemsToRender, sectionIndex) => (
     <Box className="items-container">
       <SortableContext
-        items={itemsToRender.map(i => i.index)}
+        items={itemsToRender.map((_, i) => `${sectionIndex}-${i}`)}
         strategy={verticalListSortingStrategy}
       >
         {itemsToRender.map((item, idx) => (
-          <React.Fragment key={item.index}>
-            {showInsertButtons && idx === 0 && (
-              <InsertRowButton onInsert={() => handleInsertAt(0)} />
-            )}
-            <ListsItemRow
-              item={item}
-              onUpdate={(updates) => handleInlineUpdate(item.index, updates)}
-              onDelete={() => deleteItem(item.index)}
-              onToggleActive={() => toggleItemActive(item.index)}
-              onDuplicate={() => handleDuplicateItem(item)}
-              isWatchlist={type === 'watchlists'}
-              onEdit={() => { setEditingItem(item); setEditorOpen(true); }}
-            />
-            {showInsertButtons && (
-              <InsertRowButton onInsert={() => handleInsertAt(idx + 1)} />
-            )}
-          </React.Fragment>
+          <ListsItemRow
+            key={item.uid || `${sectionIndex}-${idx}`}
+            item={{ ...item, index: idx }}
+            onUpdate={(updates) => handleInlineUpdate(sectionIndex, idx, updates)}
+            onDelete={() => deleteItem(sectionIndex, idx)}
+            onToggleActive={() => toggleItemActive(sectionIndex, idx)}
+            onDuplicate={() => handleDuplicateItem(sectionIndex, item)}
+            isWatchlist={type === 'watchlists'}
+            onEdit={() => { setEditingItem({ ...item, sectionIndex, itemIndex: idx }); setEditorOpen(true); }}
+            onSplit={idx < itemsToRender.length - 1 ? () => splitSection(sectionIndex, idx) : undefined}
+          />
         ))}
       </SortableContext>
-      <EmptyItemRow onAdd={handleAddItem} nextIndex={items.length} isWatchlist={type === 'watchlists'} />
+      <EmptyItemRow onAdd={handleAddItem} nextIndex={itemsToRender.length} isWatchlist={type === 'watchlists'} />
     </Box>
   );
 
@@ -279,17 +244,6 @@ function ListsFolder() {
           <Title order={2}>{listTitle}</Title>
         </Group>
         <Group>
-          {hasGroups && (
-            <SegmentedControl
-              size="xs"
-              value={viewMode}
-              onChange={setViewMode}
-              data={[
-                { value: 'flat', label: <IconList size={16} /> },
-                { value: 'grouped', label: <IconLayoutGrid size={16} /> }
-              ]}
-            />
-          )}
           <TextInput
             placeholder="Search items..."
             leftSection={<IconSearch size={16} />}
@@ -330,7 +284,7 @@ function ListsFolder() {
       )}
 
       {/* Table header */}
-      {filteredItems.length > 0 && (
+      {flatItems.length > 0 && (
         <div className="table-header">
           <div className="col-active"></div>
           <div className="col-drag"></div>
@@ -348,36 +302,47 @@ function ListsFolder() {
         </div>
       )}
 
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragEnd={handleDragEnd}
-      >
-        {viewMode === 'grouped' && groupedItems ? (
-          <Stack gap="lg">
-            {groupedItems.sortedGroups.map(groupName => (
-              <Box key={groupName} className="item-group">
-                <Text size="sm" fw={600} c="dimmed" tt="uppercase" mb="xs" className="group-header">
-                  {groupName}
-                </Text>
-                {renderItems(groupedItems.groups[groupName])}
+      <div className="sections-scroll">
+        {filteredItems ? (
+          // Search mode — flat list
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(e) => handleDragEnd(e, 0)}>
+            {renderItems(filteredItems, 0)}
+          </DndContext>
+        ) : (
+          // Normal mode — sections
+          <Stack gap="md">
+            {sections.map((section, si) => (
+              <Box key={si} className="section-container">
+                <SectionHeader
+                  section={section}
+                  sectionIndex={si}
+                  collapsed={collapsedSections.has(si)}
+                  onToggleCollapse={toggleCollapse}
+                  onUpdate={(idx, updates) => updates ? updateSection(idx, updates) : setSectionSettingsOpen(idx)}
+                  onDelete={deleteSection}
+                  onMoveUp={(idx) => handleMoveSection(idx, -1)}
+                  onMoveDown={(idx) => handleMoveSection(idx, 1)}
+                  isFirst={si === 0}
+                  isLast={si === sections.length - 1}
+                  itemCount={section.items.length}
+                />
+                <Collapse in={!collapsedSections.has(si)}>
+                  <DndContext sensors={sensors} collisionDetection={closestCenter}
+                    onDragEnd={(e) => handleDragEnd(e, si)}>
+                    {renderItems(section.items, si)}
+                  </DndContext>
+                </Collapse>
               </Box>
             ))}
-            {groupedItems.ungrouped.length > 0 && (
-              <Box className="item-group">
-                <Text size="sm" fw={600} c="dimmed" tt="uppercase" mb="xs" className="group-header">
-                  Ungrouped
-                </Text>
-                {renderItems(groupedItems.ungrouped)}
-              </Box>
-            )}
+            <Button variant="light" leftSection={<IconPlus size={16} />}
+              onClick={() => addSection({ title: `Section ${sections.length + 1}` })}>
+              Add Section
+            </Button>
           </Stack>
-        ) : (
-          renderItems(filteredItems)
         )}
-      </DndContext>
+      </div>
 
-      {filteredItems.length === 0 && !loading && (
+      {flatItems.length === 0 && !filteredItems && !loading && (
         <Center h="40vh">
           <Stack align="center">
             <IconSearch size={48} stroke={1} color="gray" />
@@ -394,11 +359,11 @@ function ListsFolder() {
         onSave={handleSaveItem}
         item={editingItem}
         loading={loading}
-        existingGroups={existingGroups}
+        sections={sections}
       />
 
       <ListSettingsModal
-        opened={settingsOpen}
+        opened={settingsOpen === true}
         onClose={() => setSettingsOpen(false)}
         metadata={listMetadata}
         onSave={async (settings) => {
@@ -406,7 +371,18 @@ function ListsFolder() {
           setSettingsOpen(false);
         }}
         loading={loading}
-        existingGroups={existingGroups}
+      />
+
+      <SectionSettingsModal
+        opened={sectionSettingsOpen !== null}
+        onClose={() => setSectionSettingsOpen(null)}
+        section={sectionSettingsOpen !== null ? sections[sectionSettingsOpen] : null}
+        sectionIndex={sectionSettingsOpen}
+        onSave={async (idx, updates) => {
+          await updateSection(idx, updates);
+          setSectionSettingsOpen(null);
+        }}
+        loading={loading}
       />
       </Stack>
     </ListsContext.Provider>

@@ -13,10 +13,15 @@ export function useAdminLists() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [lists, setLists] = useState([]);
-  const [items, setItems] = useState([]);
+  const [sections, setSections] = useState([]);
   const [listMetadata, setListMetadata] = useState(null);
   const [currentType, setCurrentType] = useState(null);
   const [currentList, setCurrentList] = useState(null);
+
+  const flatItems = useMemo(() =>
+    sections.flatMap((section, si) =>
+      section.items.map((item, ii) => ({ ...item, sectionIndex: si, itemIndex: ii, sectionTitle: section.title }))
+    ), [sections]);
 
   // Fetch all lists of a specific type
   const fetchLists = useCallback(async (type) => {
@@ -37,23 +42,22 @@ export function useAdminLists() {
     }
   }, [logger]);
 
-  // Fetch items in a list
-  const fetchItems = useCallback(async (type, listName) => {
+  // Fetch a list (sections + metadata)
+  const fetchList = useCallback(async (type, listName) => {
     setLoading(true);
     setError(null);
     try {
       const data = await DaylightAPI(`${API_BASE}/lists/${type}/${listName}`);
-      setItems(data.items || []);
-      // Store list metadata (everything except items)
-      const { items: _, ...metadata } = data;
+      setSections(data.sections || []);
+      const { sections: _, ...metadata } = data;
       setListMetadata(metadata);
       setCurrentType(type);
       setCurrentList(listName);
-      logger.info('admin.lists.items.fetched', { type, list: listName, count: data.items?.length });
-      return data.items;
+      logger.info('admin.lists.fetched', { type, list: listName, sectionCount: data.sections?.length });
+      return data.sections;
     } catch (err) {
       setError(err);
-      logger.error('admin.lists.items.fetch.failed', { type, list: listName, message: err.message });
+      logger.error('admin.lists.fetch.failed', { type, list: listName, message: err.message });
       throw err;
     } finally {
       setLoading(false);
@@ -95,85 +99,191 @@ export function useAdminLists() {
     }
   }, [fetchLists, logger]);
 
-  // Add an item to current list
-  const addItem = useCallback(async (item) => {
+  // Add an item to a section in the current list
+  const addItem = useCallback(async (sectionIndex, item) => {
     if (!currentType || !currentList) throw new Error('No list selected');
     setLoading(true);
     setError(null);
     try {
       const result = await DaylightAPI(`${API_BASE}/lists/${currentType}/${currentList}/items`, item, 'POST');
-      logger.info('admin.lists.item.added', { type: currentType, list: currentList, index: result.index });
-      await fetchItems(currentType, currentList);
+      logger.info('admin.lists.item.added', { type: currentType, list: currentList, sectionIndex });
+      await fetchList(currentType, currentList);
       return result;
     } catch (err) {
       setError(err);
-      logger.error('admin.lists.item.add.failed', { type: currentType, list: currentList, message: err.message });
       throw err;
     } finally {
       setLoading(false);
     }
-  }, [currentType, currentList, fetchItems, logger]);
+  }, [currentType, currentList, fetchList, logger]);
 
   // Update an item
-  const updateItem = useCallback(async (index, updates) => {
+  const updateItem = useCallback(async (sectionIndex, itemIndex, updates) => {
     if (!currentType || !currentList) throw new Error('No list selected');
     setLoading(true);
     setError(null);
     try {
-      await DaylightAPI(`${API_BASE}/lists/${currentType}/${currentList}/items/${index}`, updates, 'PUT');
-      logger.info('admin.lists.item.updated', { type: currentType, list: currentList, index });
-      await fetchItems(currentType, currentList);
+      await DaylightAPI(`${API_BASE}/lists/${currentType}/${currentList}/items/${itemIndex}`, updates, 'PUT');
+      logger.info('admin.lists.item.updated', { type: currentType, list: currentList, sectionIndex, itemIndex });
+      await fetchList(currentType, currentList);
     } catch (err) {
       setError(err);
-      logger.error('admin.lists.item.update.failed', { type: currentType, list: currentList, index, message: err.message });
       throw err;
     } finally {
       setLoading(false);
     }
-  }, [currentType, currentList, fetchItems, logger]);
+  }, [currentType, currentList, fetchList, logger]);
 
   // Delete an item
-  const deleteItem = useCallback(async (index) => {
+  const deleteItem = useCallback(async (sectionIndex, itemIndex) => {
     if (!currentType || !currentList) throw new Error('No list selected');
     setLoading(true);
     setError(null);
     try {
-      await DaylightAPI(`${API_BASE}/lists/${currentType}/${currentList}/items/${index}`, {}, 'DELETE');
-      logger.info('admin.lists.item.deleted', { type: currentType, list: currentList, index });
-      await fetchItems(currentType, currentList);
+      await DaylightAPI(`${API_BASE}/lists/${currentType}/${currentList}/items/${itemIndex}`, {}, 'DELETE');
+      logger.info('admin.lists.item.deleted', { type: currentType, list: currentList, sectionIndex, itemIndex });
+      await fetchList(currentType, currentList);
     } catch (err) {
       setError(err);
-      logger.error('admin.lists.item.delete.failed', { type: currentType, list: currentList, index, message: err.message });
       throw err;
     } finally {
       setLoading(false);
     }
-  }, [currentType, currentList, fetchItems, logger]);
+  }, [currentType, currentList, fetchList, logger]);
 
-  // Reorder items (full replacement)
-  const reorderItems = useCallback(async (newItems) => {
+  // Reorder items within a section
+  const reorderItems = useCallback(async (sectionIndex, newItems) => {
     if (!currentType || !currentList) throw new Error('No list selected');
     setLoading(true);
     setError(null);
     try {
       await DaylightAPI(`${API_BASE}/lists/${currentType}/${currentList}`, { items: newItems }, 'PUT');
-      setItems(newItems.map((item, index) => ({ ...item, index })));
-      logger.info('admin.lists.reordered', { type: currentType, list: currentList, count: newItems.length });
+      setSections(prev => prev.map((s, i) => i === sectionIndex ? { ...s, items: newItems } : s));
+      logger.info('admin.lists.reordered', { type: currentType, list: currentList, sectionIndex, count: newItems.length });
     } catch (err) {
       setError(err);
-      logger.error('admin.lists.reorder.failed', { type: currentType, list: currentList, message: err.message });
       throw err;
     } finally {
       setLoading(false);
     }
   }, [currentType, currentList, logger]);
 
-  // Toggle item active state (inline)
-  const toggleItemActive = useCallback(async (index) => {
-    const item = items.find(i => i.index === index);
+  // Toggle item active state
+  const toggleItemActive = useCallback(async (sectionIndex, itemIndex) => {
+    const section = sections[sectionIndex];
+    if (!section) return;
+    const item = section.items[itemIndex];
     if (!item) return;
-    await updateItem(index, { active: !item.active });
-  }, [items, updateItem]);
+    await updateItem(sectionIndex, itemIndex, { active: item.active === false ? true : false });
+  }, [sections, updateItem]);
+
+  // Add a section
+  const addSection = useCallback(async (sectionData) => {
+    if (!currentType || !currentList) throw new Error('No list selected');
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await DaylightAPI(`${API_BASE}/lists/${currentType}/${currentList}/sections`, sectionData, 'POST');
+      logger.info('admin.lists.section.added', { type: currentType, list: currentList });
+      await fetchList(currentType, currentList);
+      return result;
+    } catch (err) {
+      setError(err);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [currentType, currentList, fetchList, logger]);
+
+  // Update a section
+  const updateSection = useCallback(async (sectionIndex, updates) => {
+    if (!currentType || !currentList) throw new Error('No list selected');
+    setLoading(true);
+    setError(null);
+    try {
+      await DaylightAPI(`${API_BASE}/lists/${currentType}/${currentList}/sections/${sectionIndex}`, updates, 'PUT');
+      logger.info('admin.lists.section.updated', { type: currentType, list: currentList, sectionIndex });
+      await fetchList(currentType, currentList);
+    } catch (err) {
+      setError(err);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [currentType, currentList, fetchList, logger]);
+
+  // Delete a section
+  const deleteSection = useCallback(async (sectionIndex) => {
+    if (!currentType || !currentList) throw new Error('No list selected');
+    setLoading(true);
+    setError(null);
+    try {
+      await DaylightAPI(`${API_BASE}/lists/${currentType}/${currentList}/sections/${sectionIndex}`, {}, 'DELETE');
+      logger.info('admin.lists.section.deleted', { type: currentType, list: currentList, sectionIndex });
+      await fetchList(currentType, currentList);
+    } catch (err) {
+      setError(err);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [currentType, currentList, fetchList, logger]);
+
+  // Reorder sections
+  const reorderSections = useCallback(async (newOrder) => {
+    if (!currentType || !currentList) throw new Error('No list selected');
+    setLoading(true);
+    setError(null);
+    try {
+      await DaylightAPI(`${API_BASE}/lists/${currentType}/${currentList}/sections/reorder`, { order: newOrder }, 'PUT');
+      logger.info('admin.lists.sections.reordered', { type: currentType, list: currentList });
+      await fetchList(currentType, currentList);
+    } catch (err) {
+      setError(err);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [currentType, currentList, fetchList, logger]);
+
+  // Move an item between sections
+  const moveItem = useCallback(async (from, to) => {
+    if (!currentType || !currentList) throw new Error('No list selected');
+    setLoading(true);
+    setError(null);
+    try {
+      await DaylightAPI(`${API_BASE}/lists/${currentType}/${currentList}/items/move`, { from, to }, 'PUT');
+      logger.info('admin.lists.item.moved', { type: currentType, list: currentList, from, to });
+      await fetchList(currentType, currentList);
+    } catch (err) {
+      setError(err);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [currentType, currentList, fetchList, logger]);
+
+  // Split a section at a given item index
+  const splitSection = useCallback(async (sectionIndex, afterItemIndex, title) => {
+    if (!currentType || !currentList) throw new Error('No list selected');
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await DaylightAPI(
+        `${API_BASE}/lists/${currentType}/${currentList}/sections/split`,
+        { sectionIndex, afterItemIndex, title },
+        'POST'
+      );
+      logger.info('admin.lists.section.split', { type: currentType, list: currentList, sectionIndex, afterItemIndex });
+      await fetchList(currentType, currentList);
+      return result;
+    } catch (err) {
+      setError(err);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [currentType, currentList, fetchList, logger]);
 
   // Update list settings (metadata)
   const updateListSettings = useCallback(async (settings) => {
@@ -187,7 +297,7 @@ export function useAdminLists() {
         'PUT'
       );
       // Update local metadata state
-      const { items: _, ...metadata } = data;
+      const { sections: _, ...metadata } = data;
       setListMetadata(metadata);
       logger.info('admin.lists.settings.updated', { type: currentType, list: currentList });
       return data;
@@ -205,32 +315,11 @@ export function useAdminLists() {
   }, [currentType, currentList, logger]);
 
   return {
-    // State
-    loading,
-    error,
-    lists,
-    items,
-    listMetadata,
-    currentType,
-    currentList,
-
-    // List operations
-    fetchLists,
-    createList,
-    deleteList,
-
-    // Item operations
-    fetchItems,
-    addItem,
-    updateItem,
-    deleteItem,
-    reorderItems,
-    toggleItemActive,
-
-    // Settings operations
+    loading, error, lists, sections, flatItems, listMetadata, currentType, currentList,
+    fetchLists, createList, deleteList, fetchList,
+    addItem, updateItem, deleteItem, reorderItems, toggleItemActive,
+    addSection, updateSection, deleteSection, reorderSections, moveItem, splitSection,
     updateListSettings,
-
-    // Helpers
     clearError: () => setError(null)
   };
 }

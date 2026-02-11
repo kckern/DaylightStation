@@ -2,10 +2,12 @@
 import { createContext, useContext } from 'react';
 
 export const ListsContext = createContext({
-  items: [],
+  sections: [],
+  flatItems: [],
   contentInfoMap: new Map(),
   setContentInfo: () => {},
   getNearbyItems: () => [],
+  inUseImages: new Set(),
 });
 
 export function useListsContext() {

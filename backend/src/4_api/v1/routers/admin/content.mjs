@@ -34,6 +34,7 @@ import {
   NotFoundError,
   ConflictError
 } from '#system/utils/errors/index.mjs';
+import { normalizeListConfig, serializeListConfig, extractContentId, extractActionName } from '#adapters/content/list/listConfigNormalizer.mjs';
 
 // Valid list types
 const LIST_TYPES = ['menus', 'watchlists', 'programs'];
@@ -55,45 +56,6 @@ function toKebabCase(name) {
 }
 
 /**
- * Parse list file content - supports both old (array) and new (object with items) formats
- * @param {string} filename - List filename (without extension)
- * @param {any} content - Parsed YAML content
- * @returns {Object} - Normalized list object with metadata and items
- */
-function parseListContent(filename, content) {
-  // Old format: array at root
-  if (Array.isArray(content)) {
-    return {
-      title: formatFilename(filename),
-      items: content
-    };
-  }
-
-  // New format: object with items key
-  if (content && typeof content === 'object') {
-    return {
-      title: content.title || formatFilename(filename),
-      description: content.description || null,
-      group: content.group || null,
-      icon: content.icon || null,
-      sorting: content.sorting || 'manual',
-      days: content.days || null,
-      active: content.active !== false,
-      defaultAction: content.defaultAction || 'Play',
-      defaultVolume: content.defaultVolume || null,
-      defaultPlaybackRate: content.defaultPlaybackRate || null,
-      items: Array.isArray(content.items) ? content.items : []
-    };
-  }
-
-  // Fallback for empty/null
-  return {
-    title: formatFilename(filename),
-    items: []
-  };
-}
-
-/**
  * Convert filename to display title
  * @param {string} filename - Kebab-case filename
  * @returns {string} - Title case display name
@@ -108,31 +70,6 @@ function formatFilename(filename) {
 }
 
 /**
- * Serialize list to YAML-ready object (new format, omitting defaults)
- * @param {Object} list - List object with metadata and items
- * @returns {Object} - Clean object for YAML serialization
- */
-function serializeList(list) {
-  const output = {};
-
-  // Only write non-default metadata
-  if (list.title) output.title = list.title;
-  if (list.description) output.description = list.description;
-  if (list.group) output.group = list.group;
-  if (list.icon) output.icon = list.icon;
-  if (list.sorting && list.sorting !== 'manual') output.sorting = list.sorting;
-  if (list.days) output.days = list.days;
-  if (list.active === false) output.active = false;
-  if (list.defaultAction && list.defaultAction !== 'Play') output.defaultAction = list.defaultAction;
-  if (list.defaultVolume != null) output.defaultVolume = list.defaultVolume;
-  if (list.defaultPlaybackRate != null) output.defaultPlaybackRate = list.defaultPlaybackRate;
-
-  output.items = list.items;
-
-  return output;
-}
-
-/**
  * Validate list type parameter
  */
 function validateType(type) {
@@ -142,6 +79,19 @@ function validateType(type) {
       hint: `Must be one of: ${LIST_TYPES.join(', ')}`
     });
   }
+}
+
+/**
+ * Convert a normalized item back to admin-friendly format.
+ * Adds label, input, and action fields that the admin UI expects,
+ * while preserving all original fields.
+ */
+function denormalizeForAdmin(item) {
+  const result = { ...item };
+  if (!result.label) result.label = result.title || '';
+  if (!result.input) result.input = extractContentId(result);
+  if (!result.action) result.action = extractActionName(result);
+  return result;
 }
 
 /**
@@ -242,18 +192,14 @@ export function createAdminContentRouter(config) {
 
       const lists = listNames.map(name => {
         const content = loadYamlSafe(path.join(typeDir, name));
-        const list = parseListContent(name, content);
-        // parseListContent already normalizes all fields with proper defaults
+        const list = normalizeListConfig(content, name);
+        const itemCount = list.sections.reduce((sum, s) => sum + s.items.length, 0);
         return {
           name,
           title: list.title,
           description: list.description,
-          group: list.group,
-          icon: list.icon,
-          sorting: list.sorting,
-          days: list.days,
-          active: list.active,
-          itemCount: list.items.length
+          metadata: list.metadata,
+          itemCount
         };
       });
 
@@ -343,22 +289,25 @@ export function createAdminContentRouter(config) {
       throw new NotFoundError('List', `${type}/${listName}`);
     }
 
-    // Parse list content to get metadata and items
-    const list = parseListContent(listName, content);
+    // Parse list content to get metadata and sections
+    const list = normalizeListConfig(content, listName);
 
-    // Add indices to items
-    const indexedItems = list.items.map((item, index) => ({
-      index,
-      ...item
-    }));
+    const totalItems = list.sections.reduce((sum, s) => sum + s.items.length, 0);
 
-    logger.info?.('admin.lists.loaded', { type, list: listName, count: indexedItems.length, household: householdId });
+    logger.info?.('admin.lists.loaded', { type, list: listName, count: totalItems, household: householdId });
 
     res.json({
       type,
       name: listName,
-      ...list,
-      items: indexedItems,
+      title: list.title,
+      description: list.description,
+      image: list.image,
+      metadata: list.metadata,
+      sections: list.sections.map((section, si) => ({
+        ...section,
+        index: si,
+        items: section.items.map((item, ii) => ({ ...denormalizeForAdmin(item), sectionIndex: si, itemIndex: ii }))
+      })),
       household: householdId
     });
   });
@@ -382,18 +331,26 @@ export function createAdminContentRouter(config) {
     }
 
     // Parse and merge settings
-    const list = parseListContent(listName, content);
+    const list = normalizeListConfig(content, listName);
 
-    // Only update allowed fields
-    const allowedFields = ['title', 'description', 'group', 'icon', 'sorting', 'days', 'active', 'defaultAction', 'defaultVolume', 'defaultPlaybackRate'];
-    for (const field of allowedFields) {
+    // Top-level fields
+    const topLevelFields = ['title', 'description', 'image'];
+    for (const field of topLevelFields) {
       if (settings[field] !== undefined) {
         list[field] = settings[field];
       }
     }
 
+    // Metadata fields
+    const metadataFields = ['group', 'icon', 'sorting', 'days', 'active', 'fixed_order', 'defaultAction', 'defaultVolume', 'defaultPlaybackRate'];
+    for (const field of metadataFields) {
+      if (settings[field] !== undefined) {
+        list.metadata[field] = settings[field];
+      }
+    }
+
     // Save with new format
-    saveYaml(listPath, serializeList(list));
+    saveYaml(listPath, serializeListConfig(list));
 
     logger.info?.('admin.lists.settings.updated', { type, list: listName, household: householdId });
 
@@ -429,16 +386,20 @@ export function createAdminContentRouter(config) {
 
     try {
       // Parse existing list to get metadata
-      const list = parseListContent(listName, existing);
+      const list = normalizeListConfig(existing, listName);
 
-      // Remove index field if present (it's computed, not stored)
-      const cleanItems = items.map(({ index, ...item }) => item);
+      // Remove index/section fields if present (they're computed, not stored)
+      const cleanItems = items.map(({ index, sectionIndex, itemIndex, ...item }) => item);
 
-      // Replace items while preserving metadata
-      list.items = cleanItems;
+      // Replace items in first section (backward compat)
+      if (list.sections.length > 0) {
+        list.sections[0].items = cleanItems;
+      } else {
+        list.sections = [{ items: cleanItems }];
+      }
 
-      // Save with serializeList to preserve metadata
-      saveYaml(listPath, serializeList(list));
+      // Save with serializeListConfig to preserve metadata
+      saveYaml(listPath, serializeListConfig(list));
 
       logger.info?.('admin.lists.reordered', { type, list: listName, count: cleanItems.length, household: householdId });
 
@@ -516,8 +477,8 @@ export function createAdminContentRouter(config) {
     }
 
     try {
-      // Parse list to get metadata and items
-      const list = parseListContent(listName, content);
+      // Parse list to get metadata and sections
+      const list = normalizeListConfig(content, listName);
 
       // Build new item - preserve all provided fields
       const newItem = {
@@ -536,10 +497,11 @@ export function createAdminContentRouter(config) {
       if (itemData.priority !== undefined) newItem.priority = itemData.priority;
       if (itemData.group !== undefined) newItem.group = itemData.group;
 
-      list.items.push(newItem);
-      saveYaml(listPath, serializeList(list));
+      const section = list.sections[0] || (list.sections[0] = { items: [] });
+      section.items.push(newItem);
+      saveYaml(listPath, serializeListConfig(list));
 
-      const newIndex = list.items.length - 1;
+      const newIndex = section.items.length - 1;
 
       logger.info?.('admin.lists.item.added', { type, list: listName, index: newIndex, label: newItem.label, household: householdId });
 
@@ -553,6 +515,38 @@ export function createAdminContentRouter(config) {
       logger.error?.('admin.lists.item.add.failed', { type, list: listName, label: itemData.label, error: error.message });
       res.status(500).json({ error: 'Failed to add item' });
     }
+  });
+
+  /**
+   * PUT /lists/:type/:name/items/move - Move item between sections
+   * NOTE: Must be registered BEFORE items/:index to avoid Express treating "move" as an index param
+   */
+  router.put('/lists/:type/:name/items/move', (req, res) => {
+    const { type, name: listName } = req.params;
+    const householdId = req.query.household || configService.getDefaultHouseholdId();
+    const { from, to } = req.body || {};
+
+    validateType(type);
+
+    if (!from || !to) throw new ValidationError('from and to required');
+
+    const listPath = getListPath(type, listName, householdId);
+    const content = loadYamlSafe(listPath);
+    if (content === null) throw new NotFoundError('List', `${type}/${listName}`);
+
+    const list = normalizeListConfig(content, listName);
+    const fromSection = list.sections[from.section];
+    const toSection = list.sections[to.section];
+    if (!fromSection || !toSection) throw new NotFoundError('Section');
+
+    const [item] = fromSection.items.splice(from.index, 1);
+    if (!item) throw new NotFoundError('Item', from.index);
+    toSection.items.splice(to.index, 0, item);
+    saveYaml(listPath, serializeListConfig(list));
+
+    logger.info?.('admin.lists.item.moved', { type, list: listName, from, to, household: householdId });
+
+    res.json({ ok: true });
   });
 
   /**
@@ -577,16 +571,17 @@ export function createAdminContentRouter(config) {
       throw new NotFoundError('List', `${type}/${listName}`);
     }
 
-    // Parse list to get metadata and items
-    const list = parseListContent(listName, content);
+    // Parse list to get metadata and sections
+    const list = normalizeListConfig(content, listName);
+    const section = list.sections[0];
 
-    if (index >= list.items.length) {
+    if (!section || index >= section.items.length) {
       throw new NotFoundError('Item', index, { type, list: listName });
     }
 
     try {
       // Merge updates with existing item
-      const existingItem = list.items[index];
+      const existingItem = section.items[index];
       const updatedItem = { ...existingItem };
 
       // Apply updates for any provided field
@@ -597,8 +592,8 @@ export function createAdminContentRouter(config) {
         }
       }
 
-      list.items[index] = updatedItem;
-      saveYaml(listPath, serializeList(list));
+      section.items[index] = updatedItem;
+      saveYaml(listPath, serializeListConfig(list));
 
       logger.info?.('admin.lists.item.updated', { type, list: listName, index, household: householdId });
 
@@ -635,17 +630,18 @@ export function createAdminContentRouter(config) {
       throw new NotFoundError('List', `${type}/${listName}`);
     }
 
-    // Parse list to get metadata and items
-    const list = parseListContent(listName, content);
+    // Parse list to get metadata and sections
+    const list = normalizeListConfig(content, listName);
+    const section = list.sections[0];
 
-    if (index >= list.items.length) {
+    if (!section || index >= section.items.length) {
       throw new NotFoundError('Item', index, { type, list: listName });
     }
 
     try {
-      const deletedItem = list.items[index];
-      list.items.splice(index, 1);
-      saveYaml(listPath, serializeList(list));
+      const deletedItem = section.items[index];
+      section.items.splice(index, 1);
+      saveYaml(listPath, serializeListConfig(list));
 
       logger.info?.('admin.lists.item.deleted', { type, list: listName, index, label: deletedItem.label, household: householdId });
 
@@ -660,6 +656,166 @@ export function createAdminContentRouter(config) {
       logger.error?.('admin.lists.item.delete.failed', { type, list: listName, index, error: error.message });
       res.status(500).json({ error: 'Failed to delete item' });
     }
+  });
+
+  // =============================================================================
+  // Section Endpoints
+  // =============================================================================
+
+  /**
+   * POST /lists/:type/:name/sections - Add new section
+   */
+  router.post('/lists/:type/:name/sections', (req, res) => {
+    const { type, name: listName } = req.params;
+    const householdId = req.query.household || configService.getDefaultHouseholdId();
+    const sectionData = req.body || {};
+
+    validateType(type);
+
+    const listPath = getListPath(type, listName, householdId);
+    const content = loadYamlSafe(listPath);
+    if (content === null) throw new NotFoundError('List', `${type}/${listName}`);
+
+    const list = normalizeListConfig(content, listName);
+    const { items: _, ...rest } = sectionData;
+    const newSection = { ...rest, items: [] };
+    list.sections.push(newSection);
+    saveYaml(listPath, serializeListConfig(list));
+
+    logger.info?.('admin.lists.section.added', { type, list: listName, household: householdId });
+
+    res.status(201).json({ ok: true, sectionIndex: list.sections.length - 1 });
+  });
+
+  /**
+   * POST /lists/:type/:name/sections/split - Split a section at an item index
+   * Items after the split point move to a new section inserted right after.
+   * NOTE: Must be registered BEFORE sections/:sectionIndex
+   */
+  router.post('/lists/:type/:name/sections/split', (req, res) => {
+    const { type, name: listName } = req.params;
+    const householdId = req.query.household || configService.getDefaultHouseholdId();
+    const { sectionIndex = 0, afterItemIndex, title } = req.body || {};
+
+    validateType(type);
+
+    if (afterItemIndex == null || afterItemIndex < 0) {
+      throw new ValidationError('afterItemIndex is required', { field: 'afterItemIndex' });
+    }
+
+    const listPath = getListPath(type, listName, householdId);
+    const content = loadYamlSafe(listPath);
+    if (content === null) throw new NotFoundError('List', `${type}/${listName}`);
+
+    const list = normalizeListConfig(content, listName);
+    const section = list.sections[sectionIndex];
+    if (!section) throw new NotFoundError('Section', sectionIndex);
+    if (afterItemIndex >= section.items.length - 1) {
+      throw new ValidationError('Nothing to split — afterItemIndex is at or beyond last item');
+    }
+
+    // Split: items 0..afterItemIndex stay, afterItemIndex+1..end go to new section
+    const keepItems = section.items.slice(0, afterItemIndex + 1);
+    const moveItems = section.items.slice(afterItemIndex + 1);
+
+    section.items = keepItems;
+    const newSection = { items: moveItems };
+    if (title) newSection.title = title;
+    list.sections.splice(sectionIndex + 1, 0, newSection);
+
+    saveYaml(listPath, serializeListConfig(list));
+
+    logger.info?.('admin.lists.section.split', {
+      type, list: listName, sectionIndex, afterItemIndex,
+      kept: keepItems.length, moved: moveItems.length, household: householdId
+    });
+
+    res.status(201).json({ ok: true, newSectionIndex: sectionIndex + 1, movedCount: moveItems.length });
+  });
+
+  /**
+   * PUT /lists/:type/:name/sections/reorder - Reorder sections
+   * NOTE: Must be registered BEFORE sections/:sectionIndex to avoid Express treating "reorder" as a sectionIndex param
+   */
+  router.put('/lists/:type/:name/sections/reorder', (req, res) => {
+    const { type, name: listName } = req.params;
+    const householdId = req.query.household || configService.getDefaultHouseholdId();
+    const { order } = req.body || {};
+
+    validateType(type);
+
+    if (!Array.isArray(order)) throw new ValidationError('order array required', { field: 'order' });
+
+    const listPath = getListPath(type, listName, householdId);
+    const content = loadYamlSafe(listPath);
+    if (content === null) throw new NotFoundError('List', `${type}/${listName}`);
+
+    const list = normalizeListConfig(content, listName);
+    const reordered = order.map(i => list.sections[i]).filter(Boolean);
+    list.sections = reordered;
+    saveYaml(listPath, serializeListConfig(list));
+
+    logger.info?.('admin.lists.sections.reordered', { type, list: listName, household: householdId });
+
+    res.json({ ok: true });
+  });
+
+  /**
+   * PUT /lists/:type/:name/sections/:sectionIndex - Update section settings
+   */
+  router.put('/lists/:type/:name/sections/:sectionIndex', (req, res) => {
+    const { type, name: listName, sectionIndex: siStr } = req.params;
+    const householdId = req.query.household || configService.getDefaultHouseholdId();
+    const updates = req.body || {};
+
+    validateType(type);
+
+    const si = parseInt(siStr, 10);
+    const listPath = getListPath(type, listName, householdId);
+    const content = loadYamlSafe(listPath);
+    if (content === null) throw new NotFoundError('List', `${type}/${listName}`);
+
+    const list = normalizeListConfig(content, listName);
+    if (si < 0 || si >= list.sections.length) throw new NotFoundError('Section', si);
+
+    const section = list.sections[si];
+    const allowed = ['title', 'description', 'image', 'fixed_order', 'shuffle', 'limit',
+      'priority', 'playbackrate', 'continuous', 'days', 'applySchedule',
+      'hold', 'skip_after', 'wait_until', 'active'];
+    for (const field of allowed) {
+      if (updates[field] !== undefined) section[field] = updates[field];
+    }
+    saveYaml(listPath, serializeListConfig(list));
+
+    logger.info?.('admin.lists.section.updated', { type, list: listName, sectionIndex: si, household: householdId });
+
+    res.json({ ok: true, sectionIndex: si });
+  });
+
+  /**
+   * DELETE /lists/:type/:name/sections/:sectionIndex - Delete section
+   */
+  router.delete('/lists/:type/:name/sections/:sectionIndex', (req, res) => {
+    const { type, name: listName, sectionIndex: siStr } = req.params;
+    const householdId = req.query.household || configService.getDefaultHouseholdId();
+
+    validateType(type);
+
+    const si = parseInt(siStr, 10);
+    const listPath = getListPath(type, listName, householdId);
+    const content = loadYamlSafe(listPath);
+    if (content === null) throw new NotFoundError('List', `${type}/${listName}`);
+
+    const list = normalizeListConfig(content, listName);
+    if (si < 0 || si >= list.sections.length) throw new NotFoundError('Section', si);
+
+    list.sections.splice(si, 1);
+    if (list.sections.length === 0) list.sections.push({ items: [] });
+    saveYaml(listPath, serializeListConfig(list));
+
+    logger.info?.('admin.lists.section.deleted', { type, list: listName, sectionIndex: si, household: householdId });
+
+    res.json({ ok: true });
   });
 
   return router;

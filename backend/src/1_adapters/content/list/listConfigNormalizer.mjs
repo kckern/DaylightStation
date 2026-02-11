@@ -116,3 +116,200 @@ export function extractContentId(item) {
     || (item.open ? `app:${item.open}` : '')
     || '';
 }
+
+/**
+ * Extract the action name from a normalized list item.
+ * Returns the capitalized action key name (Play, Queue, List, Display, Open).
+ * Falls back to action field or 'Play'.
+ * @param {Object} item
+ * @returns {string}
+ */
+export function extractActionName(item) {
+  if (!item) return 'Play';
+  if (item.action) return item.action;
+  if (item.play) return 'Play';
+  if (item.queue) return 'Queue';
+  if (item.list) return 'List';
+  if (item.display) return 'Display';
+  if (item.open) return 'Open';
+  return 'Play';
+}
+
+/**
+ * Inheritable fields that cascade from list metadata → section → item.
+ */
+export const INHERITABLE_FIELDS = [
+  'priority', 'hold', 'watched', 'skip_after', 'wait_until',
+  'playbackrate', 'continuous', 'shuffle',
+  'days', 'applySchedule',
+  'active', 'fixed_order'
+];
+
+/**
+ * Normalize raw YAML list config into a canonical sections-based structure.
+ *
+ * Accepts three input shapes:
+ * - Array: bare item list → single anonymous section
+ * - { items: [] }: flat list with metadata → single anonymous section
+ * - { sections: [] }: full sections format → pass through
+ *
+ * Each item is run through normalizeListItem() for old→new format compat.
+ *
+ * @param {any} raw - Parsed YAML content
+ * @param {string} [filename] - Optional filename for deriving title
+ * @returns {{ title, description, image, metadata, sections: Array }}
+ */
+export function normalizeListConfig(raw, filename) {
+  // Handle null/undefined
+  if (!raw) {
+    return {
+      title: filename || undefined,
+      description: undefined,
+      image: undefined,
+      metadata: {},
+      sections: [{ items: [] }]
+    };
+  }
+
+  // Bare array → single anonymous section
+  if (Array.isArray(raw)) {
+    return {
+      title: filename || undefined,
+      description: undefined,
+      image: undefined,
+      metadata: {},
+      sections: [{
+        items: raw.map(item => normalizeListItem(item)).filter(Boolean)
+      }]
+    };
+  }
+
+  // Object format
+  const title = raw.title || raw.label || filename || undefined;
+  const description = raw.description || undefined;
+  const image = raw.image || undefined;
+
+  // Build metadata from known top-level fields
+  const metadata = { ...(raw.metadata || {}) };
+
+  // Lift only fields known to exist at top-level in current YAML files.
+  // Other inheritable fields belong inside the metadata: block.
+  if (raw.fixed_order != null && metadata.fixed_order == null) metadata.fixed_order = raw.fixed_order;
+  // Backward compat: ListAdapter.getItem reads listData.group for section titles
+  if (raw.group != null && metadata.group == null) metadata.group = raw.group;
+
+  // { sections: [] } → pass through
+  if (Array.isArray(raw.sections)) {
+    const sections = raw.sections.map(section => {
+      const { items: rawItems, ...sectionFields } = section;
+      return {
+        ...sectionFields,
+        items: (rawItems || []).map(item => normalizeListItem(item)).filter(Boolean)
+      };
+    });
+    return { title, description, image, metadata, sections };
+  }
+
+  // { items: [] } → single anonymous section
+  const rawItems = Array.isArray(raw.items) ? raw.items : [];
+  return {
+    title,
+    description,
+    image,
+    metadata,
+    sections: [{
+      items: rawItems.map(item => normalizeListItem(item)).filter(Boolean)
+    }]
+  };
+}
+
+/**
+ * Serialize a normalized list config back to a YAML-ready object.
+ * Uses the most compact valid format:
+ * - Single anonymous section with no config → { title, items }
+ * - Otherwise → { title, sections }
+ *
+ * @param {{ title, description, image, metadata, sections }} config
+ * @returns {Object} YAML-ready object
+ */
+export function serializeListConfig(config) {
+  const output = {};
+
+  if (config.title) output.title = config.title;
+  if (config.description) output.description = config.description;
+  if (config.image) output.image = config.image;
+  if (config.metadata && Object.keys(config.metadata).length > 0) {
+    output.metadata = config.metadata;
+  }
+
+  const sections = config.sections || [];
+
+  // Compact form: single section with no title and no section-level config
+  const canCompact = sections.length <= 1 && !sectionHasConfig(sections[0]);
+  if (canCompact) {
+    output.items = sections[0]?.items || [];
+  } else {
+    output.sections = sections.map(section => {
+      const { items, ...rest } = section;
+      const s = { ...rest };
+      s.items = items || [];
+      return s;
+    });
+  }
+
+  return output;
+}
+
+/**
+ * Apply cascading inheritance: list metadata → section defaults → item fields.
+ * Returns a new config with resolved items (does not mutate input).
+ *
+ * @param {{ metadata, sections }} config - Normalized config from normalizeListConfig
+ * @returns {{ metadata, sections }} Config with cascaded item fields
+ */
+export function applyCascade(config) {
+  const listDefaults = {};
+  for (const field of INHERITABLE_FIELDS) {
+    if (config.metadata?.[field] != null) {
+      listDefaults[field] = config.metadata[field];
+    }
+  }
+
+  const sections = (config.sections || []).map(section => {
+    // Build section-level defaults (list defaults + section overrides)
+    const sectionDefaults = { ...listDefaults };
+    for (const field of INHERITABLE_FIELDS) {
+      if (section[field] != null) {
+        sectionDefaults[field] = section[field];
+      }
+    }
+
+    // Apply to each item (item overrides section)
+    const items = (section.items || []).map(item => {
+      const resolved = {};
+      for (const field of INHERITABLE_FIELDS) {
+        if (item[field] != null) {
+          resolved[field] = item[field];
+        } else if (sectionDefaults[field] != null) {
+          resolved[field] = sectionDefaults[field];
+        }
+      }
+      return { ...item, ...resolved };
+    });
+
+    return { ...section, items };
+  });
+
+  return { ...config, sections };
+}
+
+/**
+ * Check if a section has any config beyond just items.
+ * @param {Object} section
+ * @returns {boolean}
+ */
+function sectionHasConfig(section) {
+  if (!section) return false;
+  const { items, ...rest } = section;
+  return Object.keys(rest).some(key => rest[key] != null);
+}
