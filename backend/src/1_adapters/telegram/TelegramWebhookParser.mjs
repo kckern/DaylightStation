@@ -1,11 +1,12 @@
 // backend/src/2_adapters/telegram/TelegramWebhookParser.mjs
 
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
+import { TelegramChatRef } from './TelegramChatRef.mjs';
 
 /**
  * @typedef {Object} NormalizedInput
  * @property {'text'|'image'|'voice'|'callback'|'command'|'upc'} type
- * @property {string} userId - Conversation ID format: "telegram:botId_chatId"
+ * @property {string} userId - Conversation ID format: "telegram:b{botId}_c{chatId}"
  * @property {string} [text]
  * @property {string} [command]
  * @property {string} [fileId]
@@ -37,7 +38,9 @@ export class TelegramWebhookParser {
     // Use fromId (user id) if available, otherwise fall back to chatId
     // This ensures per-user state even in group chats
     const userId = fromId || chatId;
-    return `telegram:${this.#botId}_${userId}`;
+    // Use TelegramChatRef for canonical format (telegram:b{botId}_c{chatId})
+    const chatRef = new TelegramChatRef(this.#botId, userId);
+    return chatRef.toConversationId().toString();
   }
 
   #isUPC(text) {
