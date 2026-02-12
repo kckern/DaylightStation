@@ -72,23 +72,10 @@ export const createKeyboardHandler = (dependencies) => {
     return false;
   };
 
-  const parseParams = (p) => {
-    if (p?.includes?.(":")) {
-      return p.split(":").map(s => s.trim());
-    }
-    // Only default to plex if value is numeric
-    if (/^\d+$/.test(p)) {
-      return ["plex", p ?? ""];
-    }
-    // Otherwise default to media
-    return ["files", p ?? ""];
-  };
-
   const openPlayer = (type, params) => {
-    const [key, val] = parseParams(params);
     handleMenuSelection({
       label: "keypad",
-      [type]: { [key]: val },
+      [type]: { contentId: params },
     });
   };
 
