@@ -6,6 +6,7 @@ import AdminLayout from '../modules/Admin/AdminLayout.jsx';
 import ListsIndex from '../modules/Admin/ContentLists/ListsIndex.jsx';
 import ListsFolder from '../modules/Admin/ContentLists/ListsFolder.jsx';
 import ComingSoon from '../modules/Admin/Placeholders/ComingSoon.jsx';
+import AppConfigEditor from '../modules/Admin/Apps/AppConfigEditor.jsx';
 import ConfigIndex from '../modules/Admin/Config/ConfigIndex.jsx';
 import ConfigFileEditor from '../modules/Admin/Config/ConfigFileEditor.jsx';
 import SchedulerIndex from '../modules/Admin/Scheduler/SchedulerIndex.jsx';
@@ -44,7 +45,7 @@ function AdminApp() {
             <Route path="content/lists/:type" element={<ListsIndex />} />
             <Route path="content/lists/:type/:name" element={<ListsFolder />} />
             {/* Apps */}
-            <Route path="apps/:appId" element={<ComingSoon title="App Config" />} />
+            <Route path="apps/:appId" element={<AppConfigEditor />} />
 
             {/* Household */}
             <Route path="household/members" element={<MembersIndex />} />
