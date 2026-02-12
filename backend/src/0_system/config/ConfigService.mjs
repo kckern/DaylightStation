@@ -103,6 +103,10 @@ export class ConfigService {
     return new Map(Object.entries(this.#config.users ?? {}));
   }
 
+  getIdentityMappings() {
+    return this.#config.identityMappings ?? {};
+  }
+
   resolveUsername(platform, platformId) {
     return this.#config.identityMappings?.[platform]?.[String(platformId)] ?? null;
   }

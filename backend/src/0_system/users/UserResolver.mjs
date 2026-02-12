@@ -2,26 +2,30 @@
  * User Resolver
  * @module infrastructure/users/UserResolver
  *
- * Resolves platform-specific user identifiers to system usernames
- * using household-scoped identity mappings from ConfigService.
+ * @deprecated Use UserIdentityService from 2_domains/messaging/services/ instead.
+ * This wrapper exists for backward compatibility during migration.
  */
 
 import { createLogger } from '../logging/logger.mjs';
 
 /**
  * Resolves platform users to system usernames
+ * @deprecated Use UserIdentityService instead
  */
 export class UserResolver {
   #configService;
+  #userIdentityService;
   #logger;
 
   /**
    * @param {Object} configService - ConfigService instance
    * @param {Object} [options]
    * @param {Object} [options.logger] - Logger instance
+   * @param {Object} [options.userIdentityService] - Domain identity service (preferred)
    */
   constructor(configService, options = {}) {
     this.#configService = configService;
+    this.#userIdentityService = options.userIdentityService || null;
     this.#logger = options.logger || createLogger({ source: 'user-resolver', app: 'chatbots' });
   }
 
@@ -36,7 +40,12 @@ export class UserResolver {
   resolveUser(platform, platformUserId, householdId = null) {
     if (!platform || !platformUserId) return null;
 
-    // Use ConfigService's pre-built identity mappings from user profiles
+    // Prefer domain service if injected
+    if (this.#userIdentityService) {
+      return this.#userIdentityService.resolveUsername(platform, platformUserId);
+    }
+
+    // Legacy fallback
     const username = this.#configService.resolveUsername(platform, platformUserId);
 
     if (!username) {
