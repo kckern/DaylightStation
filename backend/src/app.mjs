@@ -103,6 +103,14 @@ import { createCanvasRouter } from './4_api/v1/routers/canvas.mjs';
 // Screens domain
 import { createScreensRouter } from './4_api/v1/routers/screens.mjs';
 
+// Auth system
+import { AuthService } from '#apps/auth/AuthService.mjs';
+import { networkTrustResolver } from '#api/middleware/networkTrustResolver.mjs';
+import { tokenResolver } from '#api/middleware/tokenResolver.mjs';
+import { permissionGate } from '#api/middleware/permissionGate.mjs';
+import { createAuthRouter } from '#api/v1/routers/auth.mjs';
+import { householdResolver } from '#api/middleware/householdResolver.mjs';
+
 // Conversation state persistence
 import { YamlConversationStateDatastore } from '#adapters/messaging/YamlConversationStateDatastore.mjs';
 
@@ -190,6 +198,32 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     rootLogger.warn('routing.toggle.fallback', { error: error.message });
     routingConfig = { default: 'legacy', routing: {} };
   }
+
+  // ==========================================================================
+  // Auth System
+  // ==========================================================================
+
+  const authService = new AuthService({ dataService, configService, logger: rootLogger.child({ module: 'auth' }) });
+  const authConfig = dataService.system.read('config/auth') || {};
+  const jwtSecret = authConfig?.jwt?.secret || '';
+  const jwtConfig = authConfig?.jwt || { issuer: 'daylight-station', expiry: '10y', algorithm: 'HS256' };
+
+  // Auth middleware pipeline — runs on all /api/v1/* requests
+  // 1. householdResolver sets req.householdId from Host header
+  const domainConfig = dataService.system.read('config/domains') || {};
+  app.use('/api/v1', householdResolver({ domainConfig, configService }));
+
+  // 2. networkTrustResolver assigns household roles for LAN requests
+  app.use('/api/v1', networkTrustResolver({ householdRoles: authConfig?.household_roles || {} }));
+
+  // 3. tokenResolver parses JWT, merges roles
+  app.use('/api/v1', tokenResolver({ jwtSecret, jwtConfig }));
+
+  // 4. permissionGate enforces role-based access (auth endpoints are exempt — they're unrestricted in app_routes)
+  app.use('/api/v1', permissionGate({
+    roles: authConfig?.roles || {},
+    appRoutes: authConfig?.app_routes || {}
+  }));
 
   // ==========================================================================
   // Initialize Integration System (Config-Driven Adapter Loading)
@@ -1156,6 +1190,16 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   v1Routers.screens = createScreensRouter({
     dataPath: dataBasePath,
     logger: rootLogger.child({ module: 'screens-api' })
+  });
+
+  // Auth router
+  v1Routers.auth = createAuthRouter({
+    authService,
+    jwtSecret,
+    jwtConfig,
+    configService,
+    dataService,
+    logger: rootLogger.child({ module: 'auth-api' })
   });
 
   // Admin router - combined content, images, and eventbus management
