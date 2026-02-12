@@ -118,7 +118,7 @@ import { ComposePresentationUseCase } from './3_applications/content/usecases/Co
 import { createHarvestRouter } from './4_api/v1/routers/harvest.mjs';
 
 // FileIO utilities for image saving
-import { saveImage as saveImageToFile } from './0_system/utils/FileIO.mjs';
+import { saveImage as saveImageToFile, loadYaml as loadYamlStatic } from './0_system/utils/FileIO.mjs';
 // API versioning
 import { createApiRouter } from './4_api/v1/routers/api.mjs';
 import { createConfigRouter } from './4_api/v1/routers/config.mjs';
@@ -352,7 +352,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Load content prefix config early — needed by both createContentRegistry and createApiRouters
   const contentPrefixesPath = path.join(dataBasePath, 'household', 'config', 'content-prefixes');
-  const contentPrefixes = loadYaml(contentPrefixesPath) || {};
+  const contentPrefixes = loadYamlStatic(contentPrefixesPath) || {};
   const prefixAliases = contentPrefixes.aliases || {};
   const storagePaths = contentPrefixes.storagePaths || {};
 
