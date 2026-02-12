@@ -169,7 +169,7 @@ export function directImageHandler(container, options = {}) {
       imgDomain: new URL(imgUrl).hostname,
       durationMs: duration,
       success: result?.success,
-      itemsLogged: result?.items?.length || 0,
+      itemsLogged: result?.itemCount || 0,
     });
 
     res.status(200).json({
