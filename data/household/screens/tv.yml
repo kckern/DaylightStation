@@ -1,0 +1,21 @@
+# TV media screen
+screen: tv
+route: /tv
+profile: media-browser
+input:
+  type: remote
+  keyboard_id: tvremote
+
+layout:
+  type: grid
+  columns: 1
+  rows: 1
+  gap: 0
+
+widgets:
+  menu:
+    row: 1
+    col: 1
+  player:
+    row: 1
+    col: 1

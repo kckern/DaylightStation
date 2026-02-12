@@ -1,0 +1,31 @@
+# Office dashboard screen
+screen: office
+route: /office
+profile: dashboard
+input:
+  type: numpad
+  keyboard_id: officekeypad
+
+layout:
+  type: grid
+  columns: 2
+  rows: 3
+  gap: 1rem
+
+widgets:
+  clock:
+    row: 1
+    col: 1
+  weather:
+    row: 1
+    col: 2
+  calendar:
+    row: 2
+    col: 1
+    colspan: 2
+  finance:
+    row: 3
+    col: 1
+  entropy:
+    row: 3
+    col: 2

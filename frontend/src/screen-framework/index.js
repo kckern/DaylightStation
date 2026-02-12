@@ -13,6 +13,12 @@ export { GridLayout } from './layouts/GridLayout.jsx';
 
 // Input system
 export { ActionBus, getActionBus, resetActionBus } from './input/ActionBus.js';
+export { createInputManager } from './input/InputManager.js';
+export { useScreenAction } from './input/useScreenAction.js';
+export { translateAction, translateSecondary, ACTION_MAP } from './input/actionMap.js';
+export { KeyboardAdapter } from './input/adapters/KeyboardAdapter.js';
+export { NumpadAdapter } from './input/adapters/NumpadAdapter.js';
+export { RemoteAdapter } from './input/adapters/RemoteAdapter.js';
 
 // Data layer
 export { DataManager, getDataManager, resetDataManager } from './data/DataManager.js';

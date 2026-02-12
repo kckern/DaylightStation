@@ -5,6 +5,7 @@ import { GridLayout } from './layouts/GridLayout.jsx';
 import { WidgetWrapper } from './widgets/WidgetWrapper.jsx';
 import { registerBuiltinWidgets } from './widgets/builtins.js';
 import { getActionBus } from './input/ActionBus.js';
+import { createInputManager } from './input/InputManager.js';
 
 // Register built-ins on module load
 registerBuiltinWidgets();
@@ -42,6 +43,13 @@ export function ScreenRenderer({ screenId: propScreenId }) {
       setLoading(false);
     }
   }, [screenId]);
+
+  // Initialize input system when config loads
+  useEffect(() => {
+    if (!config?.input) return;
+    const manager = createInputManager(getActionBus(), config.input);
+    return () => manager.destroy();
+  }, [config]);
 
   if (loading) {
     return (
