@@ -89,6 +89,7 @@ export function createApiRouter(config) {
     '/dev': 'dev',
     '/device': 'device',
     '/canvas': 'canvas',
+    '/auth': 'auth',
     '/admin': 'admin',
     '/stream': 'stream',
     '/queries': 'queries',
