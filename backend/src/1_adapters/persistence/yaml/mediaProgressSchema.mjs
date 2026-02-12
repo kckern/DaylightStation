@@ -16,7 +16,8 @@ export const CANONICAL_FIELDS = Object.freeze([
   'percent',
   'playCount',
   'lastPlayed',
-  'watchTime'
+  'watchTime',
+  'bookmark'
 ]);
 
 /**

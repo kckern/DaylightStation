@@ -91,7 +91,8 @@ export class YamlMediaProgressMemory extends IMediaProgressMemory {
       percent: data.percent ?? null,
       playCount: data.playCount ?? 0,
       lastPlayed: data.lastPlayed ?? null,
-      watchTime: data.watchTime ?? 0
+      watchTime: data.watchTime ?? 0,
+      bookmark: data.bookmark ?? null
     });
   }
 
