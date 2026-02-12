@@ -1,11 +1,16 @@
 .yaml-editor-wrapper {
   .yaml-editor-container {
-    border: 1px solid var(--mantine-color-dark-4);
-    border-radius: var(--mantine-radius-sm);
+    border: 1px solid var(--ds-border);
+    border-radius: var(--ds-radius-md);
     overflow: hidden;
 
     .cm-editor {
-      border-radius: var(--mantine-radius-sm);
+      border-radius: var(--ds-radius-md);
+    }
+
+    &:focus-within {
+      border-color: var(--ds-border-focus);
+      box-shadow: 0 0 0 1px var(--ds-accent-glow);
     }
   }
 }
