@@ -1,7 +1,7 @@
 /**
  * resolveProgressConflict — Pure domain function
  *
- * Determines which progress source (local DS or remote ABS) wins when
+ * Determines which progress source (local or remote) wins when
  * the two disagree at play start.
  *
  * Rules (evaluated in order):
@@ -78,7 +78,7 @@ function formatLocal(local) {
   };
 }
 
-/** Format remote (ABS) progress into the canonical output shape. */
+/** Format remote progress into the canonical output shape. */
 function formatRemote(remote) {
   return {
     playhead: remote.currentTime ?? 0,

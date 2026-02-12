@@ -23,7 +23,7 @@ import { MediaProgress } from '#domains/content/entities/MediaProgress.mjs';
  * @returns {express.Router}
  */
 export function createPlayRouter(config) {
-  const { registry, mediaProgressMemory, contentQueryService, contentIdResolver, progressSyncService, logger = console } = config;
+  const { registry, mediaProgressMemory, contentQueryService, contentIdResolver, progressSyncService, progressSyncSources, logger = console } = config;
   const router = express.Router();
 
   // MediaProgress domain entity handles isInProgress() and toJSON().
@@ -92,7 +92,7 @@ export function createPlayRouter(config) {
    * Get watch state for an item, using progress sync for items with a sync service.
    */
   async function getWatchState(item, storagePath, adapter) {
-    if (progressSyncService && adapter?.source === 'abs') {
+    if (progressSyncService && progressSyncSources?.has(adapter?.source)) {
       const colonIdx = item.id.indexOf(':');
       const localId = colonIdx > 0 ? item.id.slice(colonIdx + 1) : item.id;
       return progressSyncService.reconcileOnPlay(item.id, storagePath, localId);
@@ -193,7 +193,7 @@ export function createPlayRouter(config) {
       }
 
       // Progress sync: debounced write-back (fire-and-forget)
-      if (type === 'abs' && progressSyncService) {
+      if (progressSyncSources?.has(type) && progressSyncService) {
         const localId = assetId.includes(':') ? assetId.split(':').slice(1).join(':') : assetId;
         progressSyncService.onProgressUpdate(compoundId, localId, {
           playhead: normalizedSeconds,
@@ -216,7 +216,13 @@ export function createPlayRouter(config) {
           type,
           library: storagePath,
           title: itemMetadata?.title || title,
-          ...newState
+          itemId: newState.itemId,
+          playhead: newState.playhead,
+          duration: newState.duration,
+          percent: newState.percent,
+          playCount: newState.playCount,
+          lastPlayed: newState.lastPlayed,
+          watchTime: newState.watchTime
         }
       });
   }));
