@@ -150,7 +150,7 @@ export function ReadalongScroller({
         key={`readalong-${contentId}`}
         type={cssType}
         title={title}
-        assetId={contentId}
+        assetId={data.id || contentId}
         subtitle={subtitle}
         mainMediaUrl={isVideo ? data.videoUrl : data.mediaUrl}
         isVideo={isVideo}

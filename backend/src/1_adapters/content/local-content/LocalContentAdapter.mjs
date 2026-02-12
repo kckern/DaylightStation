@@ -259,6 +259,7 @@ export class LocalContentAdapter {
     this.dataPath = config.dataPath;
     this.mediaPath = config.mediaPath;
     this.mediaProgressMemory = config.mediaProgressMemory || null;
+    this.contentRegistry = config.contentRegistry || null;
     this._durationCache = new Map();
   }
 
@@ -473,12 +474,16 @@ export class LocalContentAdapter {
 
   getStoragePath(id) {
     const prefix = id.split(':')[0];
-    if (prefix === 'talk') return 'talk';
-    if (prefix === 'scripture') return 'scripture';
-    if (prefix === 'hymn') return 'singalong';
-    if (prefix === 'primary') return 'singalong';
-    if (prefix === 'poem') return 'poetry';
-    return 'local';
+    const localId = id.split(':').slice(1).join(':');
+
+    if (this.contentRegistry) {
+      const resolved = this.contentRegistry.resolveFromPrefix(prefix, localId);
+      if (resolved?.adapter && resolved.adapter !== this && typeof resolved.adapter.getStoragePath === 'function') {
+        return resolved.adapter.getStoragePath(`${resolved.adapter.source}:${resolved.localId}`);
+      }
+    }
+
+    return prefix;
   }
 
   /**

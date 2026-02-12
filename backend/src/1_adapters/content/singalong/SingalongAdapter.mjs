@@ -26,10 +26,11 @@ export class SingalongAdapter {
    * @param {string} config.mediaPath - Path to media files
    * @param {Object} [config.mediaProgressMemory] - Media progress memory instance
    */
-  constructor({ dataPath, mediaPath, mediaProgressMemory }) {
+  constructor({ dataPath, mediaPath, mediaProgressMemory, storagePaths }) {
     this.dataPath = dataPath;
     this.mediaPath = mediaPath;
     this.mediaProgressMemory = mediaProgressMemory || null;
+    this.storagePaths = storagePaths || {};
   }
 
   get source() {
@@ -286,7 +287,12 @@ export class SingalongAdapter {
    * Get storage path for watch state persistence
    * @returns {string}
    */
-  getStoragePath() {
+  getStoragePath(id) {
+    if (id) {
+      const localId = id.replace(/^singalong:/, '');
+      const collection = localId.split('/')[0];
+      if (this.storagePaths[collection]) return this.storagePaths[collection];
+    }
     return 'singalong';
   }
 

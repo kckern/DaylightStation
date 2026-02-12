@@ -108,7 +108,7 @@ export function SingalongScroller({
         key={`singalong-${contentId}`}
         type={cssType}
         title={data.title}
-        assetId={contentId}
+        assetId={data.id || contentId}
         subtitle={data.subtitle}
         mainMediaUrl={data.mediaUrl}
         mainVolume={mainVolume}
