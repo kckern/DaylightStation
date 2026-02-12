@@ -20,10 +20,12 @@ export const DaylightAPI = async (path, data = {}, method = 'GET') => {
     path = path.replace(/^\/|\/$/g,'');
     const baseUrl = getBaseUrl();
 
+    const token = localStorage.getItem('ds_token');
     const options = {
         method,
         headers: {
             'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
         },
     };
 
@@ -101,10 +103,12 @@ export const DaylightStatusCheck = async (path, data = {}, method = 'GET') => {
     path = path.replace(/^\/|\/$/g, '');
     const baseUrl = getBaseUrl();
     //same as DaylightAPI but only returns the status code
+    const token = localStorage.getItem('ds_token');
     const options = {
         method,
         headers: {
             'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
         },
     };
     if (method !== 'GET') {
