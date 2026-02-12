@@ -11,7 +11,7 @@ Player/
 ├── Player.jsx.backup              # Original file backup
 ├── lib/                           # Utility functions
 │   ├── helpers.js                 # Helper functions (guid, formatTime, etc.)
-│   └── api.js                     # API functions (fetchMediaInfo, flattenQueueItems)
+│   └── api.js                     # API functions (fetchMediaInfo)
 ├── hooks/                         # Custom React hooks
 │   ├── useCommonMediaController.js  # Media playback controller
 │   └── useQueueController.js        # Queue/playlist management
@@ -40,9 +40,7 @@ Player/
   - `mapNetworkState()`: Map network state to text
 
 - **lib/api.js**: API-related functions
-  - `flattenQueueItems()`: Recursively flatten nested playlists/queues
-  - `fetchMediaInfo()`: Fetch media information from API
-  - `initializeQueue()`: Initialize queue from props
+  - `fetchMediaInfo()`: Fetch media information from API (normalizes legacy plex/media params to contentId)
 
 ### Custom Hooks
 - **hooks/useCommonMediaController.js**: Manages media playback state
