@@ -16,7 +16,9 @@ Configs are stored in the data mount:
 screen: office
 route: /office
 profile: dashboard
-input: numpad
+input:
+  type: numpad
+  keyboard_id: officekeypad
 
 layout:
   type: grid
@@ -52,7 +54,7 @@ widgets:
 | screen | Yes | Unique identifier |
 | route | No | URL path (defaults to /screen/{id}) |
 | profile | No | Base profile (dashboard, media-browser) |
-| input | No | Input mode (touch, remote, numpad, keyboard) |
+| input | No | Input configuration object (see Input section) |
 | layout | Yes | Layout configuration |
 | widgets | Yes | Widget definitions |
 
@@ -65,6 +67,30 @@ widgets:
 | rows | Number of rows (grid) |
 | gap | Gap between cells (CSS value) |
 | template | Template name (regions) |
+
+### Input
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| type | Yes | Adapter type: `numpad`, `remote`, `keyboard` |
+| keyboard_id | Depends | Keymap ID for API lookup. Required for `numpad` and `remote`. |
+
+Types:
+- **numpad** — Fetches keymap from `/api/v1/home/keyboard/{keyboard_id}`, translates numpad keys to actions via the action map. Supports secondary fallback.
+- **remote** — Same keymap fetch, but unmapped arrow/enter/escape keys fall through to navigation actions.
+- **keyboard** — Dev fallback. Hardcoded: arrows → navigate, Enter → select, Escape → escape. No keymap fetch.
+
+```yaml
+# Office numpad
+input:
+  type: numpad
+  keyboard_id: officekeypad
+
+# TV remote
+input:
+  type: remote
+  keyboard_id: tvremote
+```
 
 ### Widgets
 

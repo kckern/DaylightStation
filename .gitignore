@@ -27,6 +27,8 @@ data/household/apps/canvas/*
 data/household/config/*
 !data/household/config/*.example
 !data/household/config/*.example.yml
+!data/household/screens/
+!data/household/screens/*.yml
 !**/DataService.mjs
 !**/DataService.test.mjs
 node_modules/*
