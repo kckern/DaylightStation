@@ -18,12 +18,18 @@ import { nowTs } from '#system/utils/index.mjs';
 function resolveUserContext(container, body, query = {}) {
   const config = container.getConfig?.() || {};
 
-  // Support legacy format: bot_id + user_id
-  // Also accept chat_id as alias for user_id (IFTTT compatibility)
   const botId =
     body.bot_id || query.bot_id || config.telegram?.botId || process.env.NUTRIBOT_TELEGRAM_BOT_ID || '6898194425';
-  const userId =
-    body.user_id || query.user_id || body.chat_id || query.chat_id || config.users?.defaultUserId || '575596036';
+
+  // Resolve member name to Telegram user ID if provided
+  const member = body.member || query.member;
+  let userId;
+  if (member && config.resolvePlatformId) {
+    userId = config.resolvePlatformId('telegram', member);
+  }
+  if (!userId) {
+    userId = body.user_id || query.user_id || body.chat_id || query.chat_id || config.users?.defaultUserId || '575596036';
+  }
 
   // Build conversation ID in new format
   const conversationId = `telegram:${botId}_${userId}`;

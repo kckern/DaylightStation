@@ -21,9 +21,7 @@ Phone → IFTTT Button Widget → Take Photo → Upload to IFTTT → GET request
 
 ## User ID
 
-The `/pinhole` endpoint defaults to the primary household user (configured in `data/system/config/chatbots.yml`). For multi-user households, append `&user_id={TELEGRAM_ID}` to the URL.
-
-To find your Telegram user ID, send `/start` to `@userinfobot` on Telegram.
+The `/pinhole` endpoint defaults to the head of household. For other household members, append `&member={USERNAME}` to the URL (e.g., `&member=olive`). The username is resolved to a Telegram ID via identity mappings in the user's `profile.yml`.
 
 ## Setup Steps
 

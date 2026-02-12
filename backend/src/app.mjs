@@ -353,7 +353,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Load content prefix config early — needed by both createContentRegistry and createApiRouters
   const contentPrefixesPath = path.join(dataBasePath, 'household', 'config', 'content-prefixes');
   const contentPrefixes = loadYaml(contentPrefixesPath) || {};
-  const legacyPrefixMap = contentPrefixes.legacy || {};
+  const prefixAliases = contentPrefixes.aliases || {};
   const storagePaths = contentPrefixes.storagePaths || {};
 
   const { registry: contentRegistry, savedQueryService } = createContentRegistry({
@@ -403,7 +403,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     proxyService: contentProxyService,
     composePresentationUseCase,
     configService,
-    legacyPrefixMap,
+    prefixAliases,
     savedQueryService,
     logger: rootLogger.child({ module: 'content' })
   });

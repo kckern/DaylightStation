@@ -205,17 +205,17 @@ export class ContentSourceRegistry {
   }
 
   /**
-   * Register legacy prefix aliases from config.
-  * Maps legacy prefixes (e.g., "hymn") to canonical format (e.g., "singalong:hymn").
-   * @param {Object<string, string>} legacyMap - Map of legacy prefix to canonical format
+   * Register prefix aliases from config.
+   * Maps aliased prefixes (e.g., "hymn") to canonical format (e.g., "singalong:hymn").
+   * @param {Object<string, string>} aliasMap - Map of alias prefix to canonical format
    * @example
-   * registry.registerLegacyPrefixes({
-  *   hymn: 'singalong:hymn',      // hymn:123 → singalong adapter with localId hymn/123
-  *   talk: 'readalong:talks'     // talk:foo → readalong adapter with localId talks/foo
+   * registry.registerPrefixAliases({
+   *   hymn: 'singalong:hymn',      // hymn:123 → singalong adapter with localId hymn/123
+   *   talk: 'readalong:talks'     // talk:foo → readalong adapter with localId talks/foo
    * });
    */
-  registerLegacyPrefixes(legacyMap) {
-    for (const [legacyPrefix, canonical] of Object.entries(legacyMap)) {
+  registerPrefixAliases(aliasMap) {
+    for (const [aliasPrefix, canonical] of Object.entries(aliasMap)) {
       // Parse canonical format: "source:pathPrefix" (e.g., "singalong:hymn")
       const colonIndex = canonical.indexOf(':');
       if (colonIndex === -1) continue;
@@ -226,12 +226,12 @@ export class ContentSourceRegistry {
       // Look up the target adapter
       const adapter = this.get(targetSource);
       if (!adapter) {
-        console.warn(`[ContentSourceRegistry] Legacy prefix "${legacyPrefix}" targets unknown source "${targetSource}"`);
+        console.warn(`[ContentSourceRegistry] Prefix alias "${aliasPrefix}" targets unknown source "${targetSource}"`);
         continue;
       }
 
-      // Register the legacy prefix with transform: id → pathPrefix/id
-      this.#prefixMap.set(legacyPrefix, {
+      // Register the alias prefix with transform: id → pathPrefix/id
+      this.#prefixMap.set(aliasPrefix, {
         adapter,
         transform: (id) => `${pathPrefix}/${id}`
       });
