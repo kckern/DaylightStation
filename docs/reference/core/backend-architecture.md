@@ -214,9 +214,58 @@ Legacy code is gradually replaced:
 
 ---
 
+## Admin API Layer
+
+The admin panel has a dedicated router tree mounted at `/api/v1/admin/`. It follows the same factory pattern as other routers but is organized as a composite router with sub-routers for each admin concern.
+
+### Router Index
+
+The entry point is `backend/src/4_api/v1/routers/admin/index.mjs`, which exports `createAdminRouter(config)`. This factory creates and mounts all sub-routers:
+
+| Sub-router | Mount | Factory | Purpose |
+|------------|-------|---------|---------|
+| Config | `/config` | `createAdminConfigRouter` | Generic YAML config file CRUD |
+| Content | `/content` | `createAdminContentRouter` | List/folder management |
+| Scheduler | `/scheduler` | `createAdminSchedulerRouter` | Cron job management |
+| Household | `/household` | `createAdminHouseholdRouter` | Members, devices, household config |
+| Integrations | `/integrations` | `createAdminIntegrationsRouter` | Integration status and health checks |
+| Apps | `/apps` | `createAdminAppsRouter` | Per-app configuration |
+| Images | `/images` | `createAdminImagesRouter` | Image uploads |
+| Media | `/media` | `createAdminMediaRouter` | Media operations (freshvideo metadata) |
+| EventBus | `/ws` | `createEventBusRouter` | WebSocket/EventBus management |
+
+### Factory Pattern
+
+Each sub-router uses the standard `createXRouter({ configService, logger })` factory signature. The parent `createAdminRouter` injects child loggers:
+
+```javascript
+const configRouter = createAdminConfigRouter({
+  configService,
+  logger: logger.child?.({ submodule: 'config' }) || logger
+});
+router.use('/config', configRouter);
+```
+
+Some sub-routers require additional dependencies (`userDataService`, `mediaPath`, `loadFile`, `eventBus`). The Media and EventBus routers are conditionally mounted based on whether their dependencies are provided.
+
+### Config Sub-router
+
+The config router (`/api/v1/admin/config`) provides generic YAML file CRUD and serves as the backbone for both the YAML editor fallback and purpose-built config forms:
+
+- `GET /files` -- List all editable config files
+- `GET /files/*` -- Read a file (returns both raw YAML and parsed object)
+- `PUT /files/*` -- Write a file (accepts raw YAML string or parsed object)
+
+Access is restricted to allowed directories (`system/config`, `household/config`). Auth-related directories are masked -- they appear in listings but cannot be read or written. Path traversal is blocked.
+
+See [Admin Components Reference](../admin-components.md) for the frontend component library that consumes this API.
+
+---
+
 ## Related Documentation
 
 - [DDD File Map](./ddd-file-map.md) - Complete file listing with legacy mapping
 - [Rendering Layer Guidelines](./layers-of-abstraction/rendering-layer-guidelines.md) - Server-side presentation layer
 - [Adapter Layer Guidelines](./adapter-layer-guidelines.md) - External integration layer
 - [Migration Summary](./migration-summary.md) - What was migrated and current status
+- [Admin Components Reference](../admin-components.md) - Frontend component library for admin panel
