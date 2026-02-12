@@ -18,8 +18,10 @@ import DeviceEditor from '../modules/Admin/Household/DeviceEditor.jsx';
 import IntegrationsIndex from '../modules/Admin/System/IntegrationsIndex.jsx';
 import IntegrationDetail from '../modules/Admin/System/IntegrationDetail.jsx';
 import ComboboxTestPage from '../modules/Admin/TestHarness/ComboboxTestPage.jsx';
+import { Notifications } from '@mantine/notifications';
 import './AdminApp.scss';
 import '@mantine/core/styles.css';
+import '@mantine/notifications/styles.css';
 
 const DS_BLUE = [
   '#e8f0fe', '#c4d7fc', '#9ebcfa', '#789ff7', '#4A7BF7',
@@ -120,6 +122,7 @@ function AdminApp() {
 
   return (
     <MantineProvider theme={theme} defaultColorScheme="dark">
+      <Notifications position="bottom-right" autoClose={3000} />
       <div className="App admin-app">
         <Routes>
           {/* Test routes - outside AdminLayout */}
