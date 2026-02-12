@@ -7,6 +7,7 @@ import { createAdminMediaRouter } from './media.mjs';
 import { createAdminSchedulerRouter } from './scheduler.mjs';
 import { createAdminHouseholdRouter } from './household.mjs';
 import { createAdminIntegrationsRouter } from './integrations.mjs';
+import { createAdminAppsRouter } from './apps.mjs';
 
 /**
  * Combined Admin Router
@@ -70,6 +71,13 @@ export function createAdminRouter(config) {
   });
   router.use('/integrations', integrationsRouter);
 
+  // Mount apps config router
+  const appsRouter = createAdminAppsRouter({
+    configService,
+    logger: logger.child?.({ submodule: 'apps' }) || logger
+  });
+  router.use('/apps', appsRouter);
+
   // Mount images router
   const imagesRouter = createAdminImagesRouter({
     mediaPath,
@@ -96,7 +104,7 @@ export function createAdminRouter(config) {
     router.use('/ws', eventBusRouter);
   }
 
-  logger.info?.('admin.router.mounted', { subroutes: ['/content', '/config', '/scheduler', '/household', '/integrations', '/images', '/media', '/ws'] });
+  logger.info?.('admin.router.mounted', { subroutes: ['/content', '/config', '/scheduler', '/household', '/integrations', '/apps', '/images', '/media', '/ws'] });
   return router;
 }
 
@@ -108,3 +116,4 @@ export { createEventBusRouter } from './eventbus.mjs';
 export { createAdminSchedulerRouter } from './scheduler.mjs';
 export { createAdminHouseholdRouter } from './household.mjs';
 export { createAdminIntegrationsRouter } from './integrations.mjs';
+export { createAdminAppsRouter } from './apps.mjs';
