@@ -183,6 +183,18 @@ export class UserService {
     const profile = this.getProfile(userId);
     return profile?.display_name || profile?.username || userId;
   }
+
+  /**
+   * Resolve a userId to its group label (e.g. "Mom", "Dad")
+   * Falls back to display name if no group label is set.
+   * @param {string} userId - User ID / username
+   * @returns {string} Group label, display name, or userId if not found
+   */
+  resolveGroupLabel(userId) {
+    if (!userId) return 'Unknown';
+    const profile = this.getProfile(userId);
+    return profile?.group_label || profile?.display_name || profile?.username || userId;
+  }
 }
 
 // Singleton instance - lazily created to avoid circular dependency issues

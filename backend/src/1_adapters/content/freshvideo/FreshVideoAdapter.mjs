@@ -60,7 +60,7 @@ export class FreshVideoAdapter {
     // Enrich with watch state and pick latest unwatched
     if (this.#mediaProgressMemory) {
       for (const item of items) {
-        const mediaKey = item.localId || item.id?.replace(/^(files|media):/, '');
+        const mediaKey = item.id || `files:${item.localId}`;
         const state = await this.#mediaProgressMemory.get(mediaKey, 'files');
         item.percent = state?.percent || 0;
         item.watched = item.percent >= WATCHED_THRESHOLD;
