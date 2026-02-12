@@ -1,7 +1,10 @@
+@import '../modules/Admin/Admin.variables.scss';
+
 .admin-app {
   display: block;
   width: 100vw;
   height: 100vh;
-  background-color: var(--mantine-color-body);
-  overflow: hidden;
+  background-color: var(--ds-bg-base);
+  font-family: var(--ds-font-body);
+  color: var(--ds-text-primary);
 }
