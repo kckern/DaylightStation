@@ -1,6 +1,6 @@
 import React from 'react';
-import { Outlet, useLocation } from 'react-router-dom';
-import { AppShell, Burger, Group, Text } from '@mantine/core';
+import { Outlet } from 'react-router-dom';
+import { AppShell } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import AdminNav from './AdminNav.jsx';
 import AdminHeader from './AdminHeader.jsx';
@@ -8,20 +8,19 @@ import './Admin.scss';
 
 function AdminLayout() {
   const [opened, { toggle }] = useDisclosure();
-  const location = useLocation();
 
   return (
     <AppShell
       className="admin-layout"
-      header={{ height: 60 }}
-      navbar={{ width: 250, breakpoint: 'sm', collapsed: { mobile: !opened } }}
+      header={{ height: 48 }}
+      navbar={{ width: 260, breakpoint: 'sm', collapsed: { mobile: !opened } }}
       padding={0}
     >
       <AppShell.Header>
         <AdminHeader opened={opened} toggle={toggle} />
       </AppShell.Header>
 
-      <AppShell.Navbar p="md">
+      <AppShell.Navbar>
         <AdminNav />
       </AppShell.Navbar>
 
