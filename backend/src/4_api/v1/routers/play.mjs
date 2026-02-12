@@ -42,6 +42,7 @@ export function createPlayRouter(config) {
       duration: item.duration,
       resumable: item.resumable ?? false,
       thumbnail: item.thumbnail,
+      image: item.thumbnail,
       metadata: item.metadata
     };
 
