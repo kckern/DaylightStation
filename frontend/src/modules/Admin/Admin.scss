@@ -1,5 +1,9 @@
 @import './Admin.variables.scss';
 
+// ──────────────────────────────────────────────
+// Admin Layout Shell
+// ──────────────────────────────────────────────
+
 .admin-layout {
   // Sidebar
   .mantine-AppShell-navbar {
@@ -7,28 +11,137 @@
     border-right: 1px solid var(--ds-border);
   }
 
-  // Header
+  // Header — sits atop the content area, inherits its background
   .mantine-AppShell-header {
-    background-color: transparent;
-    border-bottom: none;
+    background-color: var(--ds-bg-surface);
+    border-bottom: 1px solid var(--ds-border);
   }
 
-  // Main content area
+  // Main content area — the recessed "instrument panel"
+  // DO NOT set padding shorthand here — Mantine uses padding-top/inline-start
+  // for header (48px) and navbar (260px) offsets. Overriding kills those.
   .mantine-AppShell-main {
     background-color: var(--ds-bg-surface);
     min-width: 0;
-    overflow-y: auto;
-    padding: var(--ds-space-8);
+    height: 100dvh;          // Fixed height so overflow-y actually engages
+    overflow-y: auto;         // Independent scroll for the main area
+    overflow-x: hidden;
+    box-shadow: var(--ds-shadow-inset);
 
-    > * {
-      width: 100%;
-      max-width: 1200px;
-      margin-inline: auto;
-    }
+    @include ds-scrollbar;
+  }
+
+  // Apply themed scrollbar to all scrollable elements inside admin
+  .mantine-ScrollArea-viewport,
+  .mantine-Modal-body,
+  .image-picker-grid {
+    @include ds-scrollbar;
   }
 }
 
-// Navigation item styling
+// ──────────────────────────────────────────────
+// Content wrapper — sits inside AppShell.Main, provides padding + width constraints
+// ──────────────────────────────────────────────
+
+.admin-content {
+  padding: var(--ds-space-6) var(--ds-space-8);
+
+  @media (max-width: 768px) {
+    padding: var(--ds-space-4);
+  }
+
+  // Constrain all page-level children
+  > * {
+    width: 100%;
+    max-width: var(--ds-content-max);
+    margin-inline: auto;
+  }
+
+  // Spreadsheet-style pages need a tighter width
+  > .lists-view {
+    max-width: 1000px;
+  }
+}
+
+// ──────────────────────────────────────────────
+// Sticky action bar — used by config form wrappers
+// ──────────────────────────────────────────────
+
+.ds-action-bar {
+  position: sticky;
+  top: 0;
+  z-index: var(--ds-z-sticky);
+  background-color: var(--ds-bg-surface);
+  padding: var(--ds-space-4) 0;
+  margin-bottom: var(--ds-space-4);
+  border-bottom: 1px solid transparent;
+  transition: border-color var(--ds-transition-base);
+
+  &--dirty {
+    border-bottom-color: var(--ds-border);
+  }
+}
+
+// ──────────────────────────────────────────────
+// Page Header — used by index pages and config titles
+// ──────────────────────────────────────────────
+
+.ds-page-header {
+  padding-bottom: var(--ds-space-5);
+  margin-bottom: var(--ds-space-6);
+  border-bottom: 1px solid var(--ds-border);
+
+  .ds-page-title {
+    font-family: var(--ds-font-mono);
+    font-weight: 600;
+    font-size: 22px;
+    letter-spacing: -0.01em;
+    color: var(--ds-text-primary);
+    line-height: 1.3;
+  }
+}
+
+// ──────────────────────────────────────────────
+// Config form content constraint
+// ──────────────────────────────────────────────
+
+.ds-config-body {
+  max-width: var(--ds-form-max);
+}
+
+// Field-width utilities for config forms
+.ds-field--id { max-width: 180px; }
+.ds-field--select { max-width: 360px; }
+
+// ──────────────────────────────────────────────
+// Section Panels — replaces raw Paper for config sections
+// ──────────────────────────────────────────────
+
+.ds-section-panel {
+  position: relative;
+  border-left: 3px solid var(--ds-border);
+  transition: border-color var(--ds-transition-base);
+  padding: var(--ds-space-5) var(--ds-space-6) !important;
+
+  .ds-section-label {
+    font-family: var(--ds-font-mono);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--ds-text-secondary);
+    margin-bottom: var(--ds-space-4);
+    text-transform: uppercase;
+  }
+
+  &:hover {
+    border-left-color: var(--ds-accent);
+  }
+}
+
+// ──────────────────────────────────────────────
+// Navigation items
+// ──────────────────────────────────────────────
+
 .ds-nav-item {
   border-radius: 0;
   padding: var(--ds-space-2) var(--ds-space-4);
@@ -56,4 +169,34 @@
 // Brand area
 .ds-nav-brand {
   border-bottom: 1px solid var(--ds-border);
+}
+
+// ──────────────────────────────────────────────
+// Mantine component refinements for admin context
+// ──────────────────────────────────────────────
+
+// Paper sections inside the admin
+.admin-layout .mantine-Paper-root {
+  box-shadow: var(--ds-shadow-card);
+}
+
+// Number inputs — constrain width (they don't need full row)
+.ds-config-body .mantine-NumberInput-root {
+  max-width: 280px;
+}
+
+// Text inputs in config forms — moderate width
+.ds-config-body .mantine-TextInput-root {
+  max-width: 420px;
+}
+
+// Switch alignment
+.ds-config-body .mantine-Switch-root {
+  padding-top: var(--ds-space-1);
+}
+
+// Dividers inside config forms — subtle
+.ds-config-body .mantine-Divider-root {
+  border-color: var(--ds-border);
+  opacity: 0.5;
 }

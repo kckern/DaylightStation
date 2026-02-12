@@ -1,5 +1,5 @@
 import React from 'react';
-import { Stack, NumberInput, TextInput, Switch, Paper, Text, Divider, Group } from '@mantine/core';
+import { Stack, NumberInput, TextInput, Switch, Paper, Text, Group } from '@mantine/core';
 import ConfigFormWrapper from '../shared/ConfigFormWrapper.jsx';
 import CrudTable from '../shared/CrudTable.jsx';
 
@@ -30,8 +30,8 @@ function GratitudeConfigContent({ data, setData }) {
   return (
     <Stack gap="lg">
       {/* Categories */}
-      <Paper p="md" withBorder>
-        <Text fw={600} mb="sm">Categories</Text>
+      <Paper p="md" withBorder className="ds-section-panel">
+        <Text className="ds-section-label">Categories</Text>
         <CrudTable
           items={data.categories || []}
           onChange={(updated) => setData({ ...data, categories: updated })}
@@ -42,11 +42,9 @@ function GratitudeConfigContent({ data, setData }) {
         />
       </Paper>
 
-      <Divider />
-
       {/* Display Settings */}
-      <Paper p="md" withBorder>
-        <Text fw={600} mb="sm">Display Settings</Text>
+      <Paper p="md" withBorder className="ds-section-panel">
+        <Text className="ds-section-label">Display</Text>
         <Stack gap="sm">
           <NumberInput
             label="Options Per Page"
@@ -69,11 +67,9 @@ function GratitudeConfigContent({ data, setData }) {
         </Stack>
       </Paper>
 
-      <Divider />
-
       {/* Snapshots */}
-      <Paper p="md" withBorder>
-        <Text fw={600} mb="sm">Snapshots</Text>
+      <Paper p="md" withBorder className="ds-section-panel">
+        <Text className="ds-section-label">Snapshots</Text>
         <Stack gap="sm">
           <Group>
             <Switch

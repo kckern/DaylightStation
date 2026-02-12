@@ -286,8 +286,8 @@ function MemberEditor() {
 
         {/* Identities Tab */}
         <Tabs.Panel value="identities" pt="md">
-          <Paper withBorder p="md">
-            <Text fw={600} mb="sm">Telegram</Text>
+          <Paper withBorder p="md" className="ds-section-panel">
+            <Text fw={600} mb="sm" className="ds-section-label">Telegram</Text>
             <Stack gap="sm">
               <TextInput
                 label="User ID"
@@ -305,8 +305,8 @@ function MemberEditor() {
 
         {/* Nutribot Tab */}
         <Tabs.Panel value="nutribot" pt="md">
-          <Paper withBorder p="md">
-            <Text fw={600} mb="sm">Nutrition Goals</Text>
+          <Paper withBorder p="md" className="ds-section-panel">
+            <Text fw={600} mb="sm" className="ds-section-label">Nutrition Goals</Text>
             <Stack gap="sm">
               <Group grow>
                 <NumberInput
@@ -362,8 +362,8 @@ function MemberEditor() {
 
         {/* Fitness Tab */}
         <Tabs.Panel value="fitness" pt="md">
-          <Paper withBorder p="md">
-            <Text fw={600} mb="sm">Heart Rate Zone Overrides</Text>
+          <Paper withBorder p="md" className="ds-section-panel">
+            <Text fw={600} mb="sm" className="ds-section-label">Heart Rate Zone Overrides</Text>
             <Stack gap="sm">
               <NumberInput
                 label="Active (bpm)"

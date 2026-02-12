@@ -1,6 +1,6 @@
 import React, { useRef, useCallback, useState, useEffect, useMemo, forwardRef, useImperativeHandle } from 'react';
 import PropTypes from 'prop-types';
-import './Player.scss';
+import './styles/Player.scss';
 import { useQueueController } from './hooks/useQueueController.js';
 import { CompositePlayer } from './renderers/CompositePlayer.jsx';
 import { SinglePlayer } from './components/SinglePlayer.jsx';

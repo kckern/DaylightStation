@@ -127,8 +127,8 @@ function DevicesIndex() {
 
   return (
     <Stack gap="lg">
-      <Group justify="space-between">
-        <Text size="xl" fw={600}>Devices</Text>
+      <Group justify="space-between" className="ds-page-header">
+        <span className="ds-page-title">Devices</span>
         <Button
           leftSection={<IconPlus size={16} />}
           onClick={() => setCreateModalOpen(true)}

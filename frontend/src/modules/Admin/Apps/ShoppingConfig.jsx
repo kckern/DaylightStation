@@ -1,10 +1,9 @@
 import React, { useState } from 'react';
 import {
-  Stack, Switch, TextInput, Paper, Text, Group, Button, ActionIcon, Divider, Select
+  Stack, Switch, TextInput, TagsInput, Paper, Text, Group, Button, ActionIcon, Select
 } from '@mantine/core';
 import { IconPlus, IconTrash } from '@tabler/icons-react';
 import ConfigFormWrapper from '../shared/ConfigFormWrapper.jsx';
-import TagInput from '../shared/TagInput.jsx';
 import ConfirmModal from '../shared/ConfirmModal.jsx';
 
 const US_TIMEZONES = [
@@ -59,7 +58,7 @@ function ShoppingConfigContent({ data, setData }) {
   return (
     <Stack gap="lg">
       {/* General Settings */}
-      <Text fw={600} size="md">General Settings</Text>
+      <Text className="ds-section-label">General Settings</Text>
 
       <Group gap="lg">
         <Switch
@@ -76,14 +75,12 @@ function ShoppingConfigContent({ data, setData }) {
         onChange={(val) => updateShopping('timezone', val)}
         placeholder="Select timezone"
         searchable
-        style={{ maxWidth: 360 }}
+        className="ds-field--select"
       />
-
-      <Divider />
 
       {/* Retailers */}
       <Group justify="space-between">
-        <Text fw={600} size="md">Retailers</Text>
+        <Text className="ds-section-label">Retailers</Text>
         <Button
           leftSection={<IconPlus size={16} />}
           variant="light"
@@ -99,7 +96,7 @@ function ShoppingConfigContent({ data, setData }) {
       )}
 
       {retailers.map((retailer, index) => (
-        <Paper key={index} p="md" withBorder>
+        <Paper key={index} p="md" withBorder className="ds-section-panel">
           <Stack gap="sm">
             <Group justify="space-between" align="flex-start">
               <Group gap="sm" grow style={{ flex: 1 }}>
@@ -114,7 +111,7 @@ function ShoppingConfigContent({ data, setData }) {
                   placeholder="e.g. amazon"
                   value={retailer.id || ''}
                   onChange={(e) => updateRetailerField(index, 'id', e.target.value)}
-                  style={{ maxWidth: 180 }}
+                  className="ds-field--id"
                 />
               </Group>
               <ActionIcon
@@ -128,18 +125,18 @@ function ShoppingConfigContent({ data, setData }) {
               </ActionIcon>
             </Group>
 
-            <TagInput
+            <TagsInput
               label="Senders"
-              values={retailer.senders || []}
+              value={retailer.senders || []}
               onChange={(val) => updateRetailerField(index, 'senders', val)}
-              placeholder="Add sender email and press Enter"
+              placeholder="Add sender email..."
             />
 
-            <TagInput
+            <TagsInput
               label="Keywords"
-              values={retailer.keywords || []}
+              value={retailer.keywords || []}
               onChange={(val) => updateRetailerField(index, 'keywords', val)}
-              placeholder="Add keyword and press Enter"
+              placeholder="Add keyword..."
             />
           </Stack>
         </Paper>

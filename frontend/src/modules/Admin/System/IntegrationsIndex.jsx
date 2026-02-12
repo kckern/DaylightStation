@@ -81,8 +81,8 @@ function IntegrationsIndex() {
 
   return (
     <Stack gap="lg">
-      <Group justify="space-between">
-        <Text size="xl" fw={600}>Integrations</Text>
+      <Group justify="space-between" className="ds-page-header">
+        <span className="ds-page-title">Integrations</span>
       </Group>
 
       {error && (

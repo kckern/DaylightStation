@@ -67,7 +67,7 @@ function normalizeListSource(source) {
  * Supports search and drilling down into containers
  * Uses streaming search via SSE for progressive results
  */
-function ContentSearchCombobox({ value, onChange, placeholder = 'Search content...' }) {
+function ContentSearchCombobox({ value, onChange, placeholder = 'Search content...', selectContainers = false, searchParams = '' }) {
   const [search, setSearch] = useState('');
   const [browseResults, setBrowseResults] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -80,7 +80,7 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
     pending: pendingSources,
     isSearching: streamLoading,
     search: streamSearch
-  } = useStreamingSearch('/api/v1/content/query/search/stream');
+  } = useStreamingSearch('/api/v1/content/query/search/stream', searchParams);
 
   // Fallback batch search state for non-SSE browsers
   const [fallbackResults, setFallbackResults] = useState([]);
@@ -95,7 +95,7 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
 
     setFallbackLoading(true);
     try {
-      const response = await fetch(`/api/v1/content/query/search?text=${encodeURIComponent(text)}&take=20`);
+      const response = await fetch(`/api/v1/content/query/search?text=${encodeURIComponent(text)}&take=20${searchParams ? '&' + searchParams : ''}`);
       if (!response.ok) throw new Error('Search failed');
       const data = await response.json();
       setFallbackResults(data.items || []);
@@ -236,13 +236,14 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
 
   // Handle item click
   const handleItemClick = (item) => {
-    if (isContainer(item)) {
+    if (isContainer(item) && !selectContainers) {
       browseContainer(item);
     } else {
-      // Select the item
-      onChange(item.id);
+      // Select the item (or container when selectContainers is true)
+      onChange(item.id, item);
       setSearch('');
       setBreadcrumbs([]);
+      setBrowseResults([]);
       combobox.closeDropdown();
     }
   };
@@ -322,7 +323,7 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
           <Group gap="xs" wrap="nowrap">
             <Badge size="xs" variant="light" color="gray">{source}</Badge>
             {type && <Badge size="xs" variant="outline" color="blue">{type}</Badge>}
-            {isContainerItem && (
+            {isContainerItem && !selectContainers && (
               <IconChevronRight size={16} color="var(--mantine-color-dimmed)" />
             )}
           </Group>

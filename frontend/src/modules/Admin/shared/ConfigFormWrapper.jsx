@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import {
-  Stack, Group, Button, Alert, Center, Loader, Badge, Text, Divider
+  Stack, Group, Button, Alert, Center, Loader, Badge, Text
 } from '@mantine/core';
 import { IconAlertCircle, IconDeviceFloppy, IconArrowBack } from '@tabler/icons-react';
 import { useHotkeys } from '@mantine/hooks';
@@ -58,16 +58,7 @@ function ConfigFormWrapper({ filePath, title, children, validate }) {
     <Stack gap="md">
       <Group
         justify="space-between"
-        style={{
-          position: 'sticky',
-          top: 0,
-          zIndex: 10,
-          backgroundColor: 'var(--ds-bg-surface)',
-          padding: 'var(--ds-space-4) 0',
-          marginBottom: 'var(--ds-space-4)',
-          borderBottom: dirty ? '1px solid var(--ds-border)' : '1px solid transparent',
-          transition: 'border-color var(--ds-transition-base)',
-        }}
+        className={`ds-action-bar${dirty ? ' ds-action-bar--dirty' : ''}`}
       >
         <Group gap="xs">
           <Text fw={600} size="lg" ff="var(--ds-font-mono)">{title}</Text>
@@ -111,9 +102,9 @@ function ConfigFormWrapper({ filePath, title, children, validate }) {
         </Alert>
       )}
 
-      <Divider />
-
-      {data !== null && children({ data, setData })}
+      <div className="ds-config-body">
+        {data !== null && children({ data, setData })}
+      </div>
     </Stack>
   );
 }
