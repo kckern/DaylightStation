@@ -68,33 +68,46 @@ export class FullyKioskContentAdapter {
   async prepareForContent() {
     const startTime = Date.now();
     this.#metrics.prepares++;
+    const FK_PACKAGE = 'de.ozerov.fully';
+    const MAX_FOREGROUND_ATTEMPTS = 5;
+    const FOREGROUND_RETRY_MS = 500;
 
     this.#logger.debug?.('fullykiosk.prepareForContent.start', { host: this.#host, port: this.#port });
 
     try {
       // Wake screen
-      this.#logger.debug?.('fullykiosk.prepareForContent.screenOn.start');
       const screenResult = await this.#sendCommand('screenOn');
-      this.#logger.debug?.('fullykiosk.prepareForContent.screenOn.done', { result: screenResult });
       if (!screenResult.ok) {
         this.#logger.error?.('fullykiosk.prepareForContent.screenOn.failed', { error: screenResult.error });
         return { ok: false, step: 'screenOn', error: screenResult.error };
       }
 
-      // Bring to foreground
-      this.#logger.debug?.('fullykiosk.prepareForContent.toForeground.start');
-      const foregroundResult = await this.#sendCommand('toForeground');
-      this.#logger.debug?.('fullykiosk.prepareForContent.toForeground.done', { result: foregroundResult });
-      if (!foregroundResult.ok) {
-        this.#logger.error?.('fullykiosk.prepareForContent.toForeground.failed', { error: foregroundResult.error });
-        return { ok: false, step: 'toForeground', error: foregroundResult.error };
+      // Bring to foreground with verification loop
+      for (let attempt = 1; attempt <= MAX_FOREGROUND_ATTEMPTS; attempt++) {
+        await this.#sendCommand('toForeground');
+        await new Promise(r => setTimeout(r, FOREGROUND_RETRY_MS));
+
+        // Verify FK is actually in the foreground
+        const info = await this.#sendCommand('getDeviceInfo');
+        const foreground = info.data?.foreground;
+
+        if (foreground === FK_PACKAGE) {
+          this.#logger.info?.('fullykiosk.prepareForContent.foregroundConfirmed', {
+            attempt, elapsedMs: Date.now() - startTime
+          });
+          return { ok: true, elapsedMs: Date.now() - startTime };
+        }
+
+        this.#logger.warn?.('fullykiosk.prepareForContent.notInForeground', {
+          attempt, foreground, expected: FK_PACKAGE
+        });
       }
 
-      this.#logger.debug?.('fullykiosk.prepareForContent.success', { elapsedMs: Date.now() - startTime });
-      return {
-        ok: true,
-        elapsedMs: Date.now() - startTime
-      };
+      // All attempts exhausted
+      this.#logger.error?.('fullykiosk.prepareForContent.foregroundFailed', {
+        attempts: MAX_FOREGROUND_ATTEMPTS, elapsedMs: Date.now() - startTime
+      });
+      return { ok: false, step: 'toForeground', error: 'Could not bring Fully Kiosk to foreground' };
     } catch (error) {
       this.#metrics.errors++;
       this.#logger.error?.('fullykiosk.prepareForContent.exception', { error: error.message, stack: error.stack });
