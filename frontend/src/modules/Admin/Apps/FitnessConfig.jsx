@@ -4,10 +4,14 @@ import {
   Stack,
   NumberInput,
   TextInput,
+  TagsInput,
   Text,
   Group,
   Divider,
-  SimpleGrid
+  SimpleGrid,
+  ActionIcon,
+  Avatar,
+  Badge
 } from '@mantine/core';
 import {
   IconSettings,
@@ -18,11 +22,12 @@ import {
   IconBulb,
   IconRoute,
   IconHeart,
-  IconBarbell
+  IconBarbell,
+  IconTrash
 } from '@tabler/icons-react';
 import ConfigFormWrapper from '../shared/ConfigFormWrapper.jsx';
 import CrudTable from '../shared/CrudTable.jsx';
-import TagInput from '../shared/TagInput.jsx';
+import ContentSearchCombobox from '../ContentLists/ContentSearchCombobox.jsx';
 
 /**
  * Deep-clone data and set a nested property by dot-path.
@@ -116,11 +121,6 @@ function KeyValueEditor({ data, onChange, keyLabel = 'Device ID', valueLabel = '
 
 /* ── Column Definitions ─────────────────────────────────────── */
 
-const PLAYLIST_COLUMNS = [
-  { key: 'name', label: 'Name', type: 'text' },
-  { key: 'id', label: 'Plex ID', type: 'number', width: 140 },
-];
-
 const NAV_ITEM_COLUMNS = [
   { key: 'name', label: 'Name', type: 'text' },
   {
@@ -192,45 +192,82 @@ function PlexSection({ data, update }) {
           onChange={(val) => update('plex.voice_memo_prompt_threshold_seconds', val)}
         />
       </SimpleGrid>
-      <TagInput
-        label="No-Music Labels"
-        values={plex.nomusic_labels || []}
-        onChange={(vals) => update('plex.nomusic_labels', vals)}
-        placeholder="Add label and press Enter"
-      />
-      <TagInput
-        label="Governed Labels"
-        values={plex.governed_labels || []}
-        onChange={(vals) => update('plex.governed_labels', vals)}
-        placeholder="Add label and press Enter"
-      />
-      <TagInput
-        label="Resumable Labels"
-        values={plex.resumable_labels || []}
-        onChange={(vals) => update('plex.resumable_labels', vals)}
-        placeholder="Add label and press Enter"
-      />
-      <TagInput
-        label="Governed Types"
-        values={plex.governed_types || []}
-        onChange={(vals) => update('plex.governed_types', vals)}
-        placeholder="Add type and press Enter"
-      />
+      <SimpleGrid cols={2}>
+        <TagsInput
+          label="No-Music Labels"
+          value={plex.nomusic_labels || []}
+          onChange={(vals) => update('plex.nomusic_labels', vals)}
+          placeholder="Add label..."
+        />
+        <TagsInput
+          label="Governed Labels"
+          value={plex.governed_labels || []}
+          onChange={(vals) => update('plex.governed_labels', vals)}
+          placeholder="Add label..."
+        />
+        <TagsInput
+          label="Resumable Labels"
+          value={plex.resumable_labels || []}
+          onChange={(vals) => update('plex.resumable_labels', vals)}
+          placeholder="Add label..."
+        />
+        <TagsInput
+          label="Governed Types"
+          value={plex.governed_types || []}
+          onChange={(vals) => update('plex.governed_types', vals)}
+          placeholder="Add type..."
+        />
+      </SimpleGrid>
     </Stack>
   );
 }
 
 function MusicPlaylistsSection({ data, update }) {
   const playlists = data.plex?.music_playlists || [];
+
+  function handleSelect(_id, item) {
+    if (!item) return;
+    const localId = item.localId || item.id?.split(':').slice(1).join(':');
+    const numericId = Number(localId);
+    // Prevent duplicates
+    if (playlists.some(p => p.id === numericId)) return;
+    update('plex.music_playlists', [...playlists, { name: item.title, id: numericId }]);
+  }
+
+  function handleRemove(index) {
+    update('plex.music_playlists', playlists.filter((_, i) => i !== index));
+  }
+
   return (
-    <CrudTable
-      items={playlists}
-      onChange={(items) => update('plex.music_playlists', items)}
-      columns={PLAYLIST_COLUMNS}
-      createDefaults={{ name: '', id: '' }}
-      addLabel="Add Playlist"
-      emptyMessage="No music playlists configured."
-    />
+    <Stack gap="sm">
+      {playlists.map((pl, index) => (
+        <Group key={`${pl.id}-${index}`} gap="sm" wrap="nowrap" style={{
+          padding: '6px 10px',
+          borderRadius: 'var(--mantine-radius-sm)',
+          border: '1px solid var(--ds-border)',
+          backgroundColor: 'var(--ds-bg-base)',
+        }}>
+          <Avatar size="sm" radius="sm" color="blue">
+            <IconMusic size={14} />
+          </Avatar>
+          <Text size="sm" fw={500} style={{ flex: 1 }}>{pl.name}</Text>
+          <Badge size="sm" variant="light" color="gray">plex:{pl.id}</Badge>
+          <ActionIcon size="sm" variant="subtle" color="red" onClick={() => handleRemove(index)}>
+            <IconTrash size={14} />
+          </ActionIcon>
+        </Group>
+      ))}
+      <ContentSearchCombobox
+        value=""
+        onChange={handleSelect}
+        placeholder="Search for a playlist or album..."
+        selectContainers
+        searchParams="capability=listable"
+      />
+      {playlists.length === 0 && (
+        <Text size="sm" c="dimmed">No music playlists configured. Search above to add one.</Text>
+      )}
+    </Stack>
   );
 }
 
@@ -337,11 +374,11 @@ function UserGroupsSection({ data, update }) {
   const users = data.users || {};
   return (
     <Stack gap="lg">
-      <TagInput
+      <TagsInput
         label="Primary Users"
-        values={users.primary || []}
+        value={users.primary || []}
         onChange={(vals) => update('users.primary', vals)}
-        placeholder="Add user ID and press Enter"
+        placeholder="Add user ID..."
       />
       <Divider />
       <div>
@@ -390,17 +427,17 @@ function GovernanceSection({ data, update }) {
           onChange={(val) => update('coin_time_unit_ms', val)}
         />
       </SimpleGrid>
-      <TagInput
+      <TagsInput
         label="Superusers"
-        values={governance.superusers || []}
+        value={governance.superusers || []}
         onChange={(vals) => update('governance.superusers', vals)}
-        placeholder="Add user ID and press Enter"
+        placeholder="Add user ID..."
       />
-      <TagInput
+      <TagsInput
         label="Exemptions"
-        values={governance.exemptions || []}
+        value={governance.exemptions || []}
         onChange={(vals) => update('governance.exemptions', vals)}
-        placeholder="Add user ID and press Enter"
+        placeholder="Add user ID..."
       />
     </Stack>
   );

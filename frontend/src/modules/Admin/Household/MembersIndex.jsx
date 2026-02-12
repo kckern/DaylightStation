@@ -171,8 +171,8 @@ function MembersIndex() {
       )}
 
       {/* Header with Add button */}
-      <Group justify="space-between">
-        <Text size="xl" fw={600}>Household Members</Text>
+      <Group justify="space-between" className="ds-page-header">
+        <span className="ds-page-title">Household Members</span>
         <Button
           leftSection={<IconPlus size={16} />}
           onClick={() => setCreateModalOpen(true)}

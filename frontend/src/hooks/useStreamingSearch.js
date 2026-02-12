@@ -5,6 +5,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
  * Hook for streaming search via SSE with AbortController for race condition handling.
  *
  * @param {string} endpoint - SSE endpoint URL (without query params)
+ * @param {string} [extraQueryString] - Additional query params to append (e.g. 'capability=listable&source=plex')
  * @returns {{
  *   results: Array,
  *   pending: string[],
@@ -12,7 +13,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
  *   search: (query: string) => void
  * }}
  */
-export function useStreamingSearch(endpoint) {
+export function useStreamingSearch(endpoint, extraQueryString = '') {
   const [results, setResults] = useState([]);
   const [pending, setPending] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -45,7 +46,7 @@ export function useStreamingSearch(endpoint) {
     setResults([]);
     setPending([]);
 
-    const url = `${endpoint}?text=${encodeURIComponent(query)}`;
+    const url = `${endpoint}?text=${encodeURIComponent(query)}${extraQueryString ? '&' + extraQueryString : ''}`;
     const eventSource = new EventSource(url);
     eventSourceRef.current = eventSource;
 
@@ -85,7 +86,7 @@ export function useStreamingSearch(endpoint) {
       }
       eventSource.close();
     };
-  }, [endpoint]);
+  }, [endpoint, extraQueryString]);
 
   return { results, pending, isSearching, search };
 }

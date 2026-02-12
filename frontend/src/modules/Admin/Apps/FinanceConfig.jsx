@@ -1,7 +1,6 @@
 import React from 'react';
-import { Stack, NumberInput, Paper, Text, Divider } from '@mantine/core';
+import { Stack, NumberInput, TagsInput, Paper, Text } from '@mantine/core';
 import ConfigFormWrapper from '../shared/ConfigFormWrapper.jsx';
-import TagInput from '../shared/TagInput.jsx';
 
 function updateNested(data, path, value) {
   const next = JSON.parse(JSON.stringify(data));
@@ -22,8 +21,8 @@ function FinanceConfigContent({ data, setData }) {
   return (
     <Stack gap="lg">
       {/* Buxfer Integration */}
-      <Paper p="md" withBorder>
-        <Text fw={600} mb="sm">Buxfer Integration</Text>
+      <Paper p="md" withBorder className="ds-section-panel">
+        <Text className="ds-section-label">Buxfer Integration</Text>
         <Stack gap="sm">
           <NumberInput
             label="Payroll Account ID"
@@ -47,44 +46,42 @@ function FinanceConfigContent({ data, setData }) {
         </Stack>
       </Paper>
 
-      <Divider />
-
       {/* ClickUp Integration */}
-      <Paper p="md" withBorder>
-        <Text fw={600} mb="sm">ClickUp Integration</Text>
+      <Paper p="md" withBorder className="ds-section-panel">
+        <Text className="ds-section-label">ClickUp Integration</Text>
         <Stack gap="sm">
           <NumberInput
             label="Team ID"
             value={clickup.team_id ?? ''}
             onChange={(val) => setData(updateNested(data, 'clickup.team_id', val))}
           />
-          <TagInput
+          <TagsInput
             label="Assignees"
-            values={(clickup.assignees || []).map(String)}
+            value={(clickup.assignees || []).map(String)}
             onChange={(tags) =>
               setData(updateNested(data, 'clickup.assignees', tags.map(Number)))
             }
-            placeholder="Add assignee ID and press Enter"
+            placeholder="Add assignee ID..."
           />
-          <TagInput
+          <TagsInput
             label="Statuses"
-            values={clickup.statuses || []}
+            value={clickup.statuses || []}
             onChange={(tags) => setData(updateNested(data, 'clickup.statuses', tags))}
-            placeholder="Add status and press Enter"
+            placeholder="Add status..."
           />
-          <TagInput
+          <TagsInput
             label="Todo Lists"
-            values={(clickup.todo_lists || []).map(String)}
+            value={(clickup.todo_lists || []).map(String)}
             onChange={(tags) =>
               setData(updateNested(data, 'clickup.todo_lists', tags.map(Number)))
             }
-            placeholder="Add list ID and press Enter"
+            placeholder="Add list ID..."
           />
-          <TagInput
+          <TagsInput
             label="Todo Statuses"
-            values={clickup.todo_statuses || []}
+            value={clickup.todo_statuses || []}
             onChange={(tags) => setData(updateNested(data, 'clickup.todo_statuses', tags))}
-            placeholder="Add todo status and press Enter"
+            placeholder="Add todo status..."
           />
           <NumberInput
             label="Todo Count"

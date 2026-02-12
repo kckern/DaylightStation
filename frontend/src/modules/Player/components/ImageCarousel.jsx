@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { useImagePreloader } from '../hooks/useImagePreloader.js';
-import './ImageCarousel.scss';
+import '../styles/ImageCarousel.scss';
 
 /**
  * ImageCarousel - Fullscreen image carousel with fade transitions

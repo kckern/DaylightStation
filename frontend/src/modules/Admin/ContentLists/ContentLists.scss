@@ -2,34 +2,31 @@
   cursor: pointer;
   background: var(--ds-bg-elevated) !important;
   border: 1px solid var(--ds-border) !important;
+  border-left: 3px solid var(--ds-border) !important;
+  padding: var(--ds-space-4) var(--ds-space-5) !important;
   transition:
     transform var(--ds-transition-base),
     box-shadow var(--ds-transition-base),
     border-color var(--ds-transition-base);
 
   &:hover {
-    transform: translateY(-2px);
+    transform: translateY(-1px);
     box-shadow: var(--ds-shadow-elevated);
-    border-color: var(--ds-accent) !important;
+    border-left-color: var(--ds-accent) !important;
   }
 }
 
 .lists-view {
-  // Fixed width table - columns don't change based on content
   width: 100%;
-  max-width: 1000px;
-  margin-inline: auto;
-  table-layout: fixed;
-  height: calc(100vh - 120px); // Full viewport minus header
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
+  max-width: 1000px; // Spreadsheet table is calibrated for this width
 
   // Scrollable area wrapping sections or flat search results
   .sections-scroll {
-    flex: 1;
-    overflow-y: auto;
-    min-height: 0; // Allow flex item to shrink
+    // No inner scroll — AppShell.Main handles scrolling
+  }
+
+  .lists-folder-search {
+    width: 200px;
   }
 
   // Items container - rows within a section
@@ -43,7 +40,7 @@
   .table-header {
     display: flex;
     align-items: center;
-    padding: 2px 4px;
+    padding: var(--ds-space-1) var(--ds-space-2);
     border-bottom: 1px solid var(--ds-border);
     margin-bottom: 0;
 
@@ -64,7 +61,7 @@
   .item-row {
     display: flex;
     align-items: center;
-    padding: 2px 4px;
+    padding: var(--ds-space-1) var(--ds-space-2);
     background: var(--ds-bg-surface);
     border-bottom: 1px solid var(--ds-border);
     border-left: 3px solid transparent;

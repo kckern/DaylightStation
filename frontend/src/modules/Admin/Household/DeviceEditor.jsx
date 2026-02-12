@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Stack, Group, Text, Badge, Button, Paper, TextInput, NumberInput, Select,
-  Alert, Center, Loader, Divider, Anchor
+  Alert, Center, Loader, Anchor
 } from '@mantine/core';
 import {
   IconArrowBack, IconDeviceFloppy, IconTrash, IconAlertCircle
@@ -31,10 +31,9 @@ function typeBadgeColor(type) {
  */
 function Section({ title, children }) {
   return (
-    <Paper p="md" withBorder>
+    <Paper p="md" withBorder className="ds-section-panel">
       <Stack gap="sm">
-        <Text size="sm" fw={600} c="dimmed" tt="uppercase">{title}</Text>
-        <Divider />
+        <Text size="sm" fw={600} c="dimmed" tt="uppercase" className="ds-section-label">{title}</Text>
         {children}
       </Stack>
     </Paper>
@@ -364,9 +363,9 @@ function DeviceEditor() {
         <IconArrowBack size={14} /> Back to Devices
       </Anchor>
 
-      <Group justify="space-between" align="center">
+      <Group justify="space-between" align="center" className="ds-page-header">
         <Group gap="sm" align="center">
-          <Text size="xl" fw={600}>{device.id}</Text>
+          <span className="ds-page-title">{device.id}</span>
           <Badge color={typeBadgeColor(device.type)} variant="light" size="lg">
             {device.type || 'unknown'}
           </Badge>

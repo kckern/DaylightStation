@@ -236,12 +236,12 @@ function ListsFolder() {
   return (
     <ListsContext.Provider value={contextValue}>
       <Stack gap="xs" className="lists-view">
-      <Group justify="space-between">
+      <Group justify="space-between" className="ds-page-header" style={{ marginBottom: 0 }}>
         <Group>
           <ActionIcon variant="subtle" onClick={() => navigate(`/admin/content/lists/${type}`)}>
             <IconArrowLeft size={20} />
           </ActionIcon>
-          <Title order={2}>{listTitle}</Title>
+          <span className="ds-page-title">{listTitle}</span>
         </Group>
         <Group>
           <TextInput
@@ -249,7 +249,7 @@ function ListsFolder() {
             leftSection={<IconSearch size={16} />}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            style={{ width: 200 }}
+            className="lists-folder-search"
           />
           <Menu position="bottom-end">
             <Menu.Target>

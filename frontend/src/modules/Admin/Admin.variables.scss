@@ -57,6 +57,25 @@
   --ds-shadow-card:     0 1px 3px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.2);
   --ds-shadow-elevated: 0 4px 16px rgba(0, 0, 0, 0.4), 0 2px 4px rgba(0, 0, 0, 0.3);
   --ds-shadow-glow:     0 0 20px var(--ds-accent-glow);
+  --ds-shadow-inset:    inset 2px 0 12px rgba(0, 0, 0, 0.25), inset 0 2px 8px rgba(0, 0, 0, 0.15);
+
+  // Scrollbar
+  --ds-scrollbar-thumb:       #2A2E3D;
+  --ds-scrollbar-thumb-hover: #3A3F52;
+  --ds-scrollbar-track:       transparent;
+  --ds-scrollbar-width:       6px;
+
+  // Content widths
+  --ds-content-max:  1200px;
+  --ds-form-max:     720px;
+
+  // Z-index layers
+  --ds-z-base:     0;
+  --ds-z-sticky:   10;
+  --ds-z-dropdown: 100;
+  --ds-z-overlay:  200;
+  --ds-z-modal:    300;
+  --ds-z-toast:    400;
 }
 
 // Reduced motion support
@@ -65,5 +84,25 @@
     --ds-transition-fast: 0ms;
     --ds-transition-base: 0ms;
     --ds-transition-slow: 0ms;
+  }
+}
+
+// ── Scrollbar mixin ──
+@mixin ds-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: var(--ds-scrollbar-thumb) var(--ds-scrollbar-track);
+
+  &::-webkit-scrollbar {
+    width: var(--ds-scrollbar-width);
+  }
+  &::-webkit-scrollbar-track {
+    background: var(--ds-scrollbar-track);
+  }
+  &::-webkit-scrollbar-thumb {
+    background-color: var(--ds-scrollbar-thumb);
+    border-radius: 3px;
+    &:hover {
+      background-color: var(--ds-scrollbar-thumb-hover);
+    }
   }
 }

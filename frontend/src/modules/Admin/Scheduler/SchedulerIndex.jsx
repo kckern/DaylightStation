@@ -184,8 +184,8 @@ function SchedulerIndex() {
 
   return (
     <Stack gap="lg">
-      <Group justify="space-between">
-        <Text size="xl" fw={600}>Scheduler Jobs</Text>
+      <Group justify="space-between" className="ds-page-header">
+        <span className="ds-page-title">Scheduler Jobs</span>
         <Button
           leftSection={<IconPlus size={16} />}
           onClick={() => setCreateModalOpen(true)}

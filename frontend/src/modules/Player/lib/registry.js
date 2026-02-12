@@ -17,6 +17,7 @@ import { ReadalongScroller } from '../renderers/ReadalongScroller.jsx';
 import PlayableAppShell from '../components/PlayableAppShell.jsx';
 import PagedReader from '../renderers/PagedReader.jsx';
 import FlowReader from '../renderers/FlowReader.jsx';
+import SlideShow from '../renderers/SlideShow.jsx';
 
 /**
  * Content format → renderer component.
@@ -29,6 +30,7 @@ const CONTENT_FORMAT_COMPONENTS = {
   app: PlayableAppShell,
   readable_paged: PagedReader,
   readable_flow: FlowReader,
+  slideshow: SlideShow,
 };
 
 const MEDIA_PLAYBACK_FORMATS = new Set(['video', 'dash_video', 'audio']);

@@ -25,7 +25,9 @@ function AdminLayout() {
       </AppShell.Navbar>
 
       <AppShell.Main>
-        <Outlet />
+        <div className="admin-content">
+          <Outlet />
+        </div>
       </AppShell.Main>
     </AppShell>
   );

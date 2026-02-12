@@ -2,7 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   SimpleGrid, Card, Text, Badge, Group, Button,
-  Center, Loader, Alert, Stack, Title, Box
+  Center, Loader, Alert, Stack, Box
 } from '@mantine/core';
 import {
   IconPlus, IconList, IconAlertCircle,
@@ -128,12 +128,13 @@ function ListsIndex() {
 
   return (
     <Stack gap="md">
-      <Group justify="space-between">
-        <Title order={2}>{typeLabel}</Title>
+      <Group justify="space-between" className="ds-page-header">
+        <span className="ds-page-title">{typeLabel}</span>
         <Button
           leftSection={<IconPlus size={16} />}
           onClick={() => setCreateModalOpen(true)}
           data-testid="new-list-button"
+          size="sm"
         >
           New {typeLabel.slice(0, -1)}
         </Button>
