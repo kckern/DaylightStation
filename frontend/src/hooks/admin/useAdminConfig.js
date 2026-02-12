@@ -1,5 +1,6 @@
 import { useState, useCallback, useMemo, useRef } from 'react';
 import { DaylightAPI } from '../../lib/api.mjs';
+import { notifications } from '@mantine/notifications';
 import getLogger from '../../lib/logging/Logger.js';
 
 const API_BASE = '/api/v1/admin/config/files';
@@ -64,10 +65,22 @@ export function useAdminConfig(filePath) {
       originalRef.current = { data: savedData, raw: savedRaw };
       setDirty(false);
       logger.info('admin.config.saved', { filePath, useRaw });
+      notifications.show({
+        title: 'Saved',
+        message: `${filePath} updated`,
+        color: 'green',
+        autoClose: 3000,
+      });
       return result;
     } catch (err) {
       setError(err);
       logger.error('admin.config.save.failed', { filePath, message: err.message });
+      notifications.show({
+        title: 'Save failed',
+        message: err.message || 'An error occurred',
+        color: 'red',
+        autoClose: false,
+      });
       throw err;
     } finally {
       setSaving(false);
@@ -81,6 +94,12 @@ export function useAdminConfig(filePath) {
     setDirty(false);
     setError(null);
     logger.info('admin.config.reverted', { filePath });
+    notifications.show({
+      title: 'Reverted',
+      message: 'Changes discarded',
+      color: 'gray',
+      autoClose: 2000,
+    });
   }, [filePath, logger]);
 
   // Stage a parsed data update and mark dirty.
