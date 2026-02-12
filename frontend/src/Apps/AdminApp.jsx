@@ -19,6 +19,7 @@ import IntegrationsIndex from '../modules/Admin/System/IntegrationsIndex.jsx';
 import IntegrationDetail from '../modules/Admin/System/IntegrationDetail.jsx';
 import ComboboxTestPage from '../modules/Admin/TestHarness/ComboboxTestPage.jsx';
 import { Notifications } from '@mantine/notifications';
+import AuthGate from '../modules/Auth/AuthGate.jsx';
 import './AdminApp.scss';
 import '@mantine/core/styles.css';
 import '@mantine/notifications/styles.css';
@@ -121,38 +122,40 @@ function AdminApp() {
   }, [logger]);
 
   return (
-    <MantineProvider theme={theme} defaultColorScheme="dark">
-      <Notifications position="bottom-right" autoClose={3000} />
-      <div className="App admin-app">
-        <Routes>
-          {/* Test routes - outside AdminLayout */}
-          <Route path="test/combobox" element={<ComboboxTestPage />} />
+    <AuthGate app="admin">
+      <MantineProvider theme={theme} defaultColorScheme="dark">
+        <Notifications position="bottom-right" autoClose={3000} />
+        <div className="App admin-app">
+          <Routes>
+            {/* Test routes - outside AdminLayout */}
+            <Route path="test/combobox" element={<ComboboxTestPage />} />
 
-          <Route element={<AdminLayout />}>
-            <Route index element={<Navigate to="content/lists/menus" replace />} />
-            <Route path="content/lists/:type" element={<ListsIndex />} />
-            <Route path="content/lists/:type/:name" element={<ListsFolder />} />
-            {/* Apps */}
-            <Route path="apps/:appId" element={<AppConfigEditor />} />
+            <Route element={<AdminLayout />}>
+              <Route index element={<Navigate to="content/lists/menus" replace />} />
+              <Route path="content/lists/:type" element={<ListsIndex />} />
+              <Route path="content/lists/:type/:name" element={<ListsFolder />} />
+              {/* Apps */}
+              <Route path="apps/:appId" element={<AppConfigEditor />} />
 
-            {/* Household */}
-            <Route path="household/members" element={<MembersIndex />} />
-            <Route path="household/members/:username" element={<MemberEditor />} />
-            <Route path="household/devices" element={<DevicesIndex />} />
-            <Route path="household/devices/:deviceId" element={<DeviceEditor />} />
+              {/* Household */}
+              <Route path="household/members" element={<MembersIndex />} />
+              <Route path="household/members/:username" element={<MemberEditor />} />
+              <Route path="household/devices" element={<DevicesIndex />} />
+              <Route path="household/devices/:deviceId" element={<DeviceEditor />} />
 
-            {/* System */}
-            <Route path="system/integrations" element={<IntegrationsIndex />} />
-            <Route path="system/integrations/:provider" element={<IntegrationDetail />} />
-            <Route path="system/scheduler" element={<SchedulerIndex />} />
-            <Route path="system/scheduler/:jobId" element={<JobDetail />} />
-            <Route path="system/config" element={<ConfigIndex />} />
-            <Route path="system/config/*" element={<ConfigFileEditor />} />
-            <Route path="*" element={<Navigate to="content/lists/menus" replace />} />
-          </Route>
-        </Routes>
-      </div>
-    </MantineProvider>
+              {/* System */}
+              <Route path="system/integrations" element={<IntegrationsIndex />} />
+              <Route path="system/integrations/:provider" element={<IntegrationDetail />} />
+              <Route path="system/scheduler" element={<SchedulerIndex />} />
+              <Route path="system/scheduler/:jobId" element={<JobDetail />} />
+              <Route path="system/config" element={<ConfigIndex />} />
+              <Route path="system/config/*" element={<ConfigFileEditor />} />
+              <Route path="*" element={<Navigate to="content/lists/menus" replace />} />
+            </Route>
+          </Routes>
+        </div>
+      </MantineProvider>
+    </AuthGate>
   );
 }
 
