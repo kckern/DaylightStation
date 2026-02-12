@@ -68,13 +68,14 @@ function buildApp(config) {
 // ---------------------------------------------------------------------------
 
 describe('Play router — ProgressSyncService integration', () => {
-  let registry, contentIdResolver, mediaProgressMemory, progressSyncService, logger;
+  let registry, contentIdResolver, mediaProgressMemory, progressSyncService, progressSyncSources, logger;
 
   beforeEach(() => {
     registry = createStubRegistry();
     contentIdResolver = createStubContentIdResolver(registry);
     mediaProgressMemory = createStubMediaProgressMemory();
     progressSyncService = createStubProgressSyncService();
+    progressSyncSources = new Set(['abs']);
     logger = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
   });
 
@@ -84,7 +85,7 @@ describe('Play router — ProgressSyncService integration', () => {
 
   describe('GET /play/abs:itemId — play start', () => {
     it('calls progressSyncService.reconcileOnPlay for abs items', async () => {
-      const app = buildApp({ registry, mediaProgressMemory, contentIdResolver, progressSyncService, logger });
+      const app = buildApp({ registry, mediaProgressMemory, contentIdResolver, progressSyncService, progressSyncSources, logger });
 
       await request(app).get('/play/abs:abc123');
 
@@ -110,7 +111,7 @@ describe('Play router — ProgressSyncService integration', () => {
         duration: 19766
       });
 
-      const app = buildApp({ registry, mediaProgressMemory, contentIdResolver, progressSyncService, logger });
+      const app = buildApp({ registry, mediaProgressMemory, contentIdResolver, progressSyncService, progressSyncSources, logger });
 
       const res = await request(app).get('/play/abs:abc123');
 
@@ -125,7 +126,7 @@ describe('Play router — ProgressSyncService integration', () => {
 
   describe('POST /play/log — progress update', () => {
     it('calls progressSyncService.onProgressUpdate for abs items', async () => {
-      const app = buildApp({ registry, mediaProgressMemory, contentIdResolver, progressSyncService, logger });
+      const app = buildApp({ registry, mediaProgressMemory, contentIdResolver, progressSyncService, progressSyncSources, logger });
 
       await request(app)
         .post('/play/log')
@@ -170,7 +171,7 @@ describe('Play router — ProgressSyncService integration', () => {
         return null;
       });
 
-      const app = buildApp({ registry, mediaProgressMemory, contentIdResolver, progressSyncService, logger });
+      const app = buildApp({ registry, mediaProgressMemory, contentIdResolver, progressSyncService, progressSyncSources, logger });
 
       await request(app)
         .post('/play/log')
@@ -199,7 +200,7 @@ describe('Play router — ProgressSyncService integration', () => {
         bookmark: { playhead: 1000, reason: 'session-start', createdAt: new Date().toISOString() }
       });
 
-      const app = buildApp({ registry, mediaProgressMemory, contentIdResolver, progressSyncService, logger });
+      const app = buildApp({ registry, mediaProgressMemory, contentIdResolver, progressSyncService, progressSyncSources, logger });
 
       const res = await request(app).get('/play/abs:abc123?bookmark=true');
 

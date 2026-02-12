@@ -65,7 +65,12 @@ export class ProgressSyncService {
     // 2. Session-start bookmark
     if (local && local.playhead > 0) {
       const bookmarked = new MediaProgress({
-        ...local.toJSON(),
+        itemId: local.itemId,
+        playhead: local.playhead,
+        duration: local.duration,
+        playCount: local.playCount,
+        lastPlayed: local.lastPlayed,
+        watchTime: local.watchTime,
         bookmark: {
           playhead: local.playhead,
           reason: 'session-start',
@@ -290,7 +295,12 @@ export class ProgressSyncService {
       if (!existing) return;
 
       const bookmarked = new MediaProgress({
-        ...existing.toJSON(),
+        itemId: existing.itemId,
+        playhead: existing.playhead,
+        duration: existing.duration,
+        playCount: existing.playCount,
+        lastPlayed: existing.lastPlayed,
+        watchTime: existing.watchTime,
         bookmark: {
           playhead,
           reason: 'pre-jump',

@@ -414,10 +414,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'compose-presentation' })
   });
 
+  const progressSyncSources = progressSyncService ? new Set(['abs']) : null;
+
   const { routers: contentRouters, services: contentServices } = createApiRouters({
     registry: contentRegistry,
     mediaProgressMemory,
     progressSyncService,
+    progressSyncSources,
     loadFile: contentLoadFile,
     saveFile: contentSaveFile,
     cacheBasePath: mediaBasePath ? `${mediaBasePath}/img/cache` : null,
