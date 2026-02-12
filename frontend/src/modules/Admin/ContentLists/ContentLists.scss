@@ -1,10 +1,16 @@
 .list-card {
   cursor: pointer;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  background: var(--ds-bg-elevated) !important;
+  border: 1px solid var(--ds-border) !important;
+  transition:
+    transform var(--ds-transition-base),
+    box-shadow var(--ds-transition-base),
+    border-color var(--ds-transition-base);
 
   &:hover {
     transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    box-shadow: var(--ds-shadow-elevated);
+    border-color: var(--ds-accent) !important;
   }
 }
 
@@ -38,7 +44,7 @@
     display: flex;
     align-items: center;
     padding: 2px 4px;
-    border-bottom: 1px solid var(--mantine-color-dark-4);
+    border-bottom: 1px solid var(--ds-border);
     margin-bottom: 0;
 
     .col-active { width: 28px; flex-shrink: 0; flex-grow: 0; }
@@ -59,21 +65,27 @@
     display: flex;
     align-items: center;
     padding: 2px 4px;
-    background: var(--mantine-color-dark-7);
-    border-bottom: 1px solid var(--mantine-color-dark-6);
-    height: 36px;
-    min-height: 36px;
-    max-height: 36px;
+    background: var(--ds-bg-surface);
+    border-bottom: 1px solid var(--ds-border);
+    border-left: 3px solid transparent;
+    height: 44px;
+    min-height: 44px;
+    max-height: 44px;
+    transition:
+      background-color var(--ds-transition-fast),
+      border-color var(--ds-transition-fast);
 
     &:hover {
-      background: var(--mantine-color-dark-6);
+      background: var(--ds-bg-elevated);
+      border-left-color: var(--ds-accent);
     }
 
     &:nth-child(even) {
-      background: var(--mantine-color-dark-6);
+      background: var(--ds-bg-elevated);
 
       &:hover {
-        background: var(--mantine-color-dark-5);
+        background: var(--ds-bg-overlay);
+        border-left-color: var(--ds-accent);
       }
     }
 
@@ -91,7 +103,7 @@
       align-items: center;
       justify-content: center;
       cursor: grab;
-      color: var(--mantine-color-dark-3);
+      color: var(--ds-text-muted);
       flex-shrink: 0;
       flex-grow: 0;
 
@@ -100,7 +112,7 @@
       }
 
       &:hover {
-        color: var(--mantine-color-dark-1);
+        color: var(--ds-text-secondary);
       }
     }
 
@@ -121,9 +133,9 @@
       cursor: pointer;
 
       .mantine-Avatar-root:hover {
-        outline: 2px solid var(--mantine-color-blue-5);
+        outline: 2px solid var(--ds-accent);
         outline-offset: 1px;
-        border-radius: var(--mantine-radius-sm);
+        border-radius: var(--ds-radius-sm);
       }
     }
 
@@ -140,7 +152,7 @@
         border-radius: 2px;
 
         &:hover {
-          background: var(--mantine-color-dark-5);
+          background: var(--ds-bg-overlay);
         }
       }
 
@@ -178,7 +190,7 @@
         gap: 6px;
 
         &:hover {
-          background: var(--mantine-color-dark-5);
+          background: var(--ds-bg-overlay);
         }
 
         .mantine-Avatar-root {
@@ -202,9 +214,9 @@
           border-radius: 4px;
           background: linear-gradient(
             90deg,
-            var(--mantine-color-dark-6) 25%,
-            var(--mantine-color-dark-5) 50%,
-            var(--mantine-color-dark-6) 75%
+            var(--ds-bg-elevated) 25%,
+            var(--ds-bg-overlay) 50%,
+            var(--ds-bg-elevated) 75%
           );
           background-size: 200% 100%;
           animation: shimmer 1.5s infinite;
@@ -231,7 +243,7 @@
       cursor: pointer;
 
       &:hover {
-        background: var(--mantine-color-dark-5);
+        background: var(--ds-bg-overlay);
         border-radius: 4px;
       }
     }
@@ -252,7 +264,7 @@
 
       &:hover {
         opacity: 1;
-        background: var(--mantine-color-dark-7);
+        background: var(--ds-bg-surface);
       }
     }
   }
@@ -283,7 +295,7 @@
 
     .group-header {
       padding: 6px 8px 4px;
-      border-bottom: 2px solid var(--mantine-color-dark-4);
+      border-bottom: 2px solid var(--ds-border);
     }
   }
 }
@@ -292,9 +304,9 @@
 .avatar-shimmer {
   background: linear-gradient(
     90deg,
-    var(--mantine-color-dark-6) 25%,
-    var(--mantine-color-dark-5) 50%,
-    var(--mantine-color-dark-6) 75%
+    var(--ds-bg-elevated) 25%,
+    var(--ds-bg-overlay) 50%,
+    var(--ds-bg-elevated) 75%
   );
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
@@ -309,9 +321,10 @@
 // Content search dropdown (portaled)
 .mantine-Combobox-dropdown {
   min-width: 350px !important;
-  border: 2px solid var(--mantine-color-blue-6) !important;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(59, 130, 246, 0.3) !important;
-  border-radius: 8px !important;
+  border: 2px solid var(--ds-accent) !important;
+  box-shadow: var(--ds-shadow-elevated), var(--ds-shadow-glow) !important;
+  border-radius: var(--ds-radius-lg) !important;
+  background: var(--ds-bg-elevated) !important;
 }
 
 // Action chip dropdown - narrower (portaled, so target by class)
@@ -332,8 +345,8 @@
   // Keyboard-highlighted item - primary blue (ONLY source of blue)
   &.highlighted,
   &[data-highlighted="true"] {
-    background: var(--mantine-color-blue-7) !important;
-    border-left: 3px solid var(--mantine-color-blue-4);
+    background: var(--ds-accent) !important;
+    border-left: 3px solid var(--ds-accent-hover);
 
     // Ensure text is readable on blue background
     color: white !important;
@@ -359,8 +372,8 @@
   // Current item (originally selected) - subtle gray, NO blue
   &.current:not(.highlighted):not([data-highlighted="true"]),
   &[data-current="true"]:not(.highlighted):not([data-highlighted="true"]) {
-    background: var(--mantine-color-dark-6) !important;
-    border-left: 3px solid var(--mantine-color-gray-6);
+    background: var(--ds-bg-elevated) !important;
+    border-left: 3px solid var(--ds-text-muted);
   }
 
   // Wrap-around flash — draws eye to new position after pac-man wrap
@@ -371,11 +384,11 @@
 
 @keyframes wrap-flash {
   0% {
-    background: var(--mantine-color-blue-5) !important;
-    box-shadow: 0 0 8px rgba(59, 130, 246, 0.4);
+    background: var(--ds-accent) !important;
+    box-shadow: 0 0 8px var(--ds-accent-glow);
   }
   100% {
-    background: var(--mantine-color-blue-7) !important;
+    background: var(--ds-accent) !important;
     box-shadow: none;
   }
 }
@@ -392,7 +405,7 @@
 .image-picker-thumb {
   width: 100%;
   aspect-ratio: 1;
-  border-radius: var(--mantine-radius-sm);
+  border-radius: var(--ds-radius-sm);
   overflow: hidden;
   cursor: pointer;
   position: relative;
@@ -405,15 +418,15 @@
   }
 
   &:hover {
-    outline: 2px solid var(--mantine-color-gray-5);
+    outline: 2px solid var(--ds-text-secondary);
     outline-offset: 1px;
   }
 
   &.in-use {
-    box-shadow: 0 0 0 2px var(--mantine-color-blue-5);
+    box-shadow: 0 0 0 2px var(--ds-accent);
   }
 
   &.selected {
-    box-shadow: 0 0 0 2px var(--mantine-color-green-5);
+    box-shadow: 0 0 0 2px var(--ds-success);
   }
 }
