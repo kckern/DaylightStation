@@ -71,11 +71,22 @@ export function useAdminHousehold() {
     }
   }, [logger]);
 
+  const generateInvite = useCallback(async (username) => {
+    try {
+      const result = await DaylightAPI('/api/v1/auth/invite', { username }, 'POST');
+      logger.info('admin.household.invite.generated', { username });
+      return result;
+    } catch (err) {
+      setError(err);
+      throw err;
+    }
+  }, [logger]);
+
   const clearError = useCallback(() => setError(null), []);
 
   return {
     household, members, loading, error,
-    fetchHousehold, updateHousehold, createMember, removeMember, clearError
+    fetchHousehold, updateHousehold, createMember, removeMember, generateInvite, clearError
   };
 }
 

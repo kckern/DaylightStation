@@ -2,23 +2,32 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Stack, Group, Text, Badge, Button, Tabs, TextInput, NumberInput, Select,
-  Paper, Alert, Center, Loader, Divider, Anchor
+  Paper, Alert, Center, Loader, Divider, Anchor, MultiSelect, CopyButton,
+  ActionIcon, Tooltip
 } from '@mantine/core';
 import {
   IconArrowBack, IconDeviceFloppy, IconAlertCircle, IconUser,
-  IconSettings, IconLink, IconApple, IconHeartbeat
+  IconSettings, IconLink, IconApple, IconHeartbeat, IconShield,
+  IconCopy, IconCheck
 } from '@tabler/icons-react';
 import { DaylightAPI } from '../../../lib/api.mjs';
+import { useAdminHousehold } from '../../../hooks/admin/useAdminHousehold';
+
+const AVAILABLE_ROLES = ['sysadmin', 'admin', 'parent', 'member', 'kiosk'];
 
 function MemberEditor() {
   const { username } = useParams();
   const navigate = useNavigate();
+  const { generateInvite } = useAdminHousehold();
 
   const [profile, setProfile] = useState(null);
   const [original, setOriginal] = useState(null);
+  const [authStatus, setAuthStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  const [inviteUrl, setInviteUrl] = useState(null);
+  const [inviteLoading, setInviteLoading] = useState(false);
 
   const dirty = JSON.stringify(profile) !== JSON.stringify(original);
 
@@ -29,12 +38,27 @@ function MemberEditor() {
       const result = await DaylightAPI(`/api/v1/admin/household/members/${username}`);
       setProfile(result.member);
       setOriginal(JSON.parse(JSON.stringify(result.member)));
+      setAuthStatus(result.authStatus || null);
     } catch (err) {
       setError(err.message || 'Failed to load member profile');
     } finally {
       setLoading(false);
     }
   }, [username]);
+
+  const handleGenerateInvite = useCallback(async () => {
+    setInviteLoading(true);
+    setInviteUrl(null);
+    try {
+      const result = await generateInvite(username);
+      const fullUrl = `${window.location.origin}${result.inviteUrl}`;
+      setInviteUrl(fullUrl);
+    } catch (err) {
+      setError(err.message || 'Failed to generate invite link');
+    } finally {
+      setInviteLoading(false);
+    }
+  }, [username, generateInvite]);
 
   useEffect(() => {
     fetchProfile();
@@ -180,6 +204,7 @@ function MemberEditor() {
           <Tabs.Tab value="identities" leftSection={<IconLink size={14} />}>Identities</Tabs.Tab>
           <Tabs.Tab value="nutribot" leftSection={<IconApple size={14} />}>Nutribot</Tabs.Tab>
           <Tabs.Tab value="fitness" leftSection={<IconHeartbeat size={14} />}>Fitness</Tabs.Tab>
+          <Tabs.Tab value="auth" leftSection={<IconShield size={14} />}>Auth</Tabs.Tab>
         </Tabs.List>
 
         {/* Identity Tab */}
@@ -391,6 +416,107 @@ function MemberEditor() {
               />
             </Stack>
           </Paper>
+        </Tabs.Panel>
+
+        {/* Auth Tab */}
+        <Tabs.Panel value="auth" pt="md">
+          <Stack gap="md">
+            {/* Roles Section */}
+            <Paper withBorder p="md" className="ds-section-panel">
+              <Text fw={600} mb="sm" className="ds-section-label">Roles</Text>
+              <MultiSelect
+                label="Assigned Roles"
+                description="Controls what this user can access"
+                data={AVAILABLE_ROLES}
+                value={getField('roles') || []}
+                onChange={(value) => updateField('roles', value)}
+                placeholder="Select roles"
+                searchable
+                clearable
+              />
+            </Paper>
+
+            {/* Auth Status Section */}
+            <Paper withBorder p="md" className="ds-section-panel">
+              <Text fw={600} mb="sm" className="ds-section-label">Auth Status</Text>
+              <Stack gap="xs">
+                <Group gap="sm">
+                  <Text size="sm" c="dimmed" w={120}>Password set:</Text>
+                  <Badge
+                    color={authStatus?.hasPassword ? 'green' : 'red'}
+                    variant="light"
+                    size="sm"
+                  >
+                    {authStatus?.hasPassword ? 'Yes' : 'No'}
+                  </Badge>
+                </Group>
+                <Group gap="sm">
+                  <Text size="sm" c="dimmed" w={120}>Last login:</Text>
+                  <Text size="sm">
+                    {authStatus?.lastLogin
+                      ? new Date(authStatus.lastLogin).toLocaleString()
+                      : 'Never'}
+                  </Text>
+                </Group>
+                <Group gap="sm">
+                  <Text size="sm" c="dimmed" w={120}>Invited by:</Text>
+                  <Text size="sm">{authStatus?.invitedBy || 'N/A'}</Text>
+                </Group>
+                {authStatus?.invitedAt && (
+                  <Group gap="sm">
+                    <Text size="sm" c="dimmed" w={120}>Invited at:</Text>
+                    <Text size="sm">
+                      {new Date(authStatus.invitedAt).toLocaleString()}
+                    </Text>
+                  </Group>
+                )}
+              </Stack>
+            </Paper>
+
+            {/* Invite Link Section */}
+            <Paper withBorder p="md" className="ds-section-panel">
+              <Text fw={600} mb="sm" className="ds-section-label">Invite Link</Text>
+              <Stack gap="sm">
+                <Text size="sm" c="dimmed">
+                  Generate a one-time invite link for this user to set their password.
+                  This will reset any existing password.
+                </Text>
+                <Button
+                  variant="light"
+                  onClick={handleGenerateInvite}
+                  loading={inviteLoading}
+                  size="sm"
+                >
+                  Generate Invite Link
+                </Button>
+                {inviteUrl && (
+                  <Group gap="xs" align="flex-end">
+                    <TextInput
+                      label="Invite URL"
+                      value={inviteUrl}
+                      readOnly
+                      variant="filled"
+                      style={{ flex: 1 }}
+                    />
+                    <CopyButton value={inviteUrl} timeout={2000}>
+                      {({ copied, copy }) => (
+                        <Tooltip label={copied ? 'Copied' : 'Copy'} withArrow position="right">
+                          <ActionIcon
+                            color={copied ? 'teal' : 'gray'}
+                            variant="subtle"
+                            onClick={copy}
+                            mb={2}
+                          >
+                            {copied ? <IconCheck size={16} /> : <IconCopy size={16} />}
+                          </ActionIcon>
+                        </Tooltip>
+                      )}
+                    </CopyButton>
+                  </Group>
+                )}
+              </Stack>
+            </Paper>
+          </Stack>
         </Tabs.Panel>
       </Tabs>
     </Stack>

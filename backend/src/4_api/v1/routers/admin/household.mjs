@@ -110,6 +110,21 @@ export function createAdminHouseholdRouter(config) {
   }
 
   // ---------------------------------------------------------------------------
+  // Auth/login helpers
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Read a user's login data from users/{username}/auth/login.yml
+   * @param {string} username
+   * @returns {Object|null} Login data or null if not found
+   */
+  function readLoginData(username) {
+    const absPath = path.join(getDataRoot(), `users/${username}/auth/login.yml`);
+    if (!fs.existsSync(absPath)) return null;
+    return yaml.load(fs.readFileSync(absPath, 'utf8')) || {};
+  }
+
+  // ---------------------------------------------------------------------------
   // Device helpers
   // ---------------------------------------------------------------------------
 
@@ -251,8 +266,17 @@ export function createAdminHouseholdRouter(config) {
         return res.status(404).json({ error: `Profile for "${username}" not found` });
       }
 
+      // Read auth status for the member
+      const loginData = readLoginData(username);
+      const authStatus = {
+        hasPassword: !!loginData?.password_hash,
+        invitedAt: loginData?.invited_at || null,
+        invitedBy: loginData?.invited_by || null,
+        lastLogin: loginData?.last_login || null
+      };
+
       logger.info?.('admin.household.member.read', { username });
-      res.json({ member: profile });
+      res.json({ member: profile, authStatus });
     } catch (error) {
       logger.error?.('admin.household.member.read.failed', { error: error.message });
       res.status(500).json({ error: 'Failed to read member profile' });
