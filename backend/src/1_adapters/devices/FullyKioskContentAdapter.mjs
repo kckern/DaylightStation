@@ -88,7 +88,7 @@ export class FullyKioskContentAdapter {
         await new Promise(r => setTimeout(r, FOREGROUND_RETRY_MS));
 
         // Verify FK is actually in the foreground
-        const info = await this.#sendCommand('getDeviceInfo');
+        const info = await this.#sendCommand('getDeviceInfo', { type: 'json' });
         const foreground = info.data?.foreground;
 
         if (foreground === FK_PACKAGE) {
