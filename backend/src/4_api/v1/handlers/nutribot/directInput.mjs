@@ -7,48 +7,32 @@
  */
 
 import { nowTs } from '#system/utils/index.mjs';
-import { configService } from '#system/config/index.mjs';
 
 /**
- * Get default user/chat config for direct API calls
- * @param {Object} container
- * @param {Object} body - Request body with optional user_id, chat_id, bot_id
- * @param {Object} [query] - Request query params (for GET requests)
- * @returns {{ userId: string, conversationId: string, chatId: string, botId: string }}
+ * Resolve user identity for direct API calls using TelegramIdentityAdapter
+ * @param {Object} options
+ * @param {import('#adapters/messaging/TelegramIdentityAdapter.mjs').TelegramIdentityAdapter} options.identityAdapter
+ * @param {Object} options.body - Request body
+ * @param {Object} [options.query] - Request query params
+ * @returns {{ userId: string, conversationId: string }}
  */
-function resolveUserContext(container, body, query = {}) {
-  const nutribotConfig = container.getConfig?.() || {};
-
-  const botId =
-    body.bot_id || query.bot_id || nutribotConfig.messagingBotId;
-
-  // Resolve member name to Telegram user ID if provided
+function resolveUserContext({ identityAdapter, body, query = {} }) {
   const member = body.member || query.member;
-  let userId = body.user_id || query.user_id || body.chat_id || query.chat_id;
+  const platformUserId = body.user_id || query.user_id || body.chat_id || query.chat_id;
 
-  if (!userId && member && configService?.resolvePlatformId) {
-    userId = configService.resolvePlatformId('telegram', member);
-  }
-
-  // Default to head of household's Telegram ID
-  if (!userId && configService?.resolvePlatformId) {
-    const head = configService.getHeadOfHousehold();
-    if (head) {
-      userId = configService.resolvePlatformId('telegram', head);
-    }
-  }
-
-  if (!userId) {
+  let identity;
+  if (platformUserId) {
+    identity = identityAdapter.resolve('nutribot', { platformUserId: String(platformUserId) });
+  } else if (member) {
+    identity = identityAdapter.resolve('nutribot', { username: member });
+  } else {
     throw new Error('Could not resolve user. Provide member or user_id parameter.');
   }
 
-  // Build conversation ID in new format
-  const conversationId = `telegram:${botId}_${userId}`;
-
-  // Legacy chat_id format for backward compatibility with db operations
-  const chatId = body.chat_id || query.chat_id || `b${botId}_u${userId}`;
-
-  return { userId, conversationId, chatId, botId };
+  return {
+    userId: identity.username || platformUserId || member,
+    conversationId: identity.conversationIdString,
+  };
 }
 
 /**
@@ -60,6 +44,7 @@ function resolveUserContext(container, body, query = {}) {
  */
 export function directUPCHandler(container, options = {}) {
   const logger = options.logger || console;
+  const identityAdapter = options.identityAdapter;
 
   return async (req, res) => {
     const traceId = req.traceId || 'direct-upc';
@@ -86,7 +71,7 @@ export function directUPCHandler(container, options = {}) {
       });
     }
 
-    const { userId, conversationId } = resolveUserContext(container, req.body, req.query);
+    const { userId, conversationId } = resolveUserContext({ identityAdapter, body: req.body, query: req.query });
 
     logger.info?.('direct.upc.received', {
       traceId,
@@ -124,6 +109,7 @@ export function directUPCHandler(container, options = {}) {
  */
 export function directImageHandler(container, options = {}) {
   const logger = options.logger || console;
+  const identityAdapter = options.identityAdapter;
 
   return async (req, res) => {
     const traceId = req.traceId || 'direct-image';
@@ -161,7 +147,7 @@ export function directImageHandler(container, options = {}) {
       });
     }
 
-    const { userId, conversationId } = resolveUserContext(container, req.body, req.query);
+    const { userId, conversationId } = resolveUserContext({ identityAdapter, body: req.body, query: req.query });
 
     logger.info?.('direct.image.received', {
       ...requestMetadata,
@@ -208,6 +194,7 @@ export function directImageHandler(container, options = {}) {
  */
 export function directTextHandler(container, options = {}) {
   const logger = options.logger || console;
+  const identityAdapter = options.identityAdapter;
 
   return async (req, res) => {
     const traceId = req.traceId || 'direct-text';
@@ -223,7 +210,7 @@ export function directTextHandler(container, options = {}) {
       });
     }
 
-    const { userId, conversationId } = resolveUserContext(container, req.body, req.query);
+    const { userId, conversationId } = resolveUserContext({ identityAdapter, body: req.body, query: req.query });
 
     logger.info?.('direct.text.received', {
       traceId,
