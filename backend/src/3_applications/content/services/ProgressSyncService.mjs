@@ -1,9 +1,9 @@
 /**
- * ABSProgressSyncService — Application-layer sync orchestration
+ * ProgressSyncService — Application-layer sync orchestration
  *
  * Orchestrates bidirectional progress sync between DS media_memory
- * and Audiobookshelf. Manages:
- *   - debounceMap: pending ABS writes (30s debounce)
+ * and a remote media server. Manages:
+ *   - debounceMap: pending remote writes (30s debounce)
  *   - skepticalMap: jump tracking (large-jump skepticism)
  */
 
@@ -14,33 +14,33 @@ import { isProgressCommittable } from '#domains/content/services/isProgressCommi
 const DEBOUNCE_MS = 30_000; // 30 seconds
 const LARGE_JUMP_THRESHOLD = 300; // 5 minutes in seconds
 
-export class ABSProgressSyncService {
+export class ProgressSyncService {
   /**
    * @param {Object} deps
-   * @param {Object} deps.absClient           - AudiobookshelfClient
-   * @param {Object} deps.mediaProgressMemory - IMediaProgressMemory
+   * @param {import('#apps/content/ports/IRemoteProgressProvider.mjs').IRemoteProgressProvider} deps.remoteProgressProvider
+   * @param {import('#apps/content/ports/IMediaProgressMemory.mjs').IMediaProgressMemory} deps.mediaProgressMemory
    * @param {Object} [deps.logger]            - Logger (defaults to console)
    */
   constructor(deps) {
-    this.#absClient = deps.absClient;
+    this.#remoteProgressProvider = deps.remoteProgressProvider;
     this.#mediaProgressMemory = deps.mediaProgressMemory;
     this.#logger = deps.logger || console;
 
     /** @type {Map<string, { timer: any, localId: string, latestProgress: Object }>} */
     this._debounceMap = new Map();
 
-    /** @type {Map<string, { lastCommittedPlayhead: number, watchTimeAccumulated: number, skepticalTarget: number|null }>} */
+    /** @type {Map<string, { lastCommittedPlayhead: number, watchTimeAccumulated: number, skepticalTarget: number|null, storagePath: string }>} */
     this._skepticalMap = new Map();
   }
 
-  /** @type {Object} */ #absClient;
+  /** @type {import('#apps/content/ports/IRemoteProgressProvider.mjs').IRemoteProgressProvider} */ #remoteProgressProvider;
   /** @type {Object} */ #mediaProgressMemory;
   /** @type {Object} */ #logger;
 
   // ── Public API ───────────────────────────────────────────────────
 
   /**
-   * Called on play start for ABS items. Read path.
+   * Called on play start for remote-synced items. Read path.
    *
    * 1. Parallel fetch: local + remote (catch errors -> null)
    * 2. If local exists with playhead > 0: save session-start bookmark
@@ -48,11 +48,11 @@ export class ABSProgressSyncService {
    * 4. If resolution is null: return local or null
    * 5. Initialize skepticalMap entry
    * 6. If remote won: update DS media_memory, return updated
-   * 7. If local won: buffer debounced ABS write-back, return local
+   * 7. If local won: buffer debounced remote write-back, return local
    *
    * @param {string} itemId
    * @param {string} storagePath
-   * @param {string} localId - ABS library item ID
+   * @param {string} localId - Remote server-native item ID
    * @returns {Promise<MediaProgress|null>}
    */
   async reconcileOnPlay(itemId, storagePath, localId) {
@@ -68,7 +68,7 @@ export class ABSProgressSyncService {
         ...local.toJSON(),
         bookmark: {
           playhead: local.playhead,
-          label: 'session-start',
+          reason: 'session-start',
           createdAt: new Date().toISOString(),
         },
       });
@@ -86,10 +86,11 @@ export class ABSProgressSyncService {
       return local || null;
     }
 
-    // 5. Initialize skeptical tracking
+    // 5. Initialize skeptical tracking (including storagePath)
     this._skepticalMap.set(itemId, {
       lastCommittedPlayhead: resolution.playhead,
       watchTimeAccumulated: 0,
+      storagePath,
     });
 
     // 6. Remote won — update local store
@@ -105,9 +106,9 @@ export class ABSProgressSyncService {
       return updated;
     }
 
-    // 7. Local won — buffer ABS write-back
+    // 7. Local won — buffer remote write-back
     if (local) {
-      this.#bufferABSWrite(itemId, localId, {
+      this.#bufferRemoteWrite(itemId, localId, {
         currentTime: local.playhead,
         isFinished: local.percent >= 90,
       });
@@ -118,7 +119,7 @@ export class ABSProgressSyncService {
   }
 
   /**
-   * Called on each progress update for ABS items. Write path.
+   * Called on each progress update for remote-synced items. Write path.
    *
    * 1. Get or create skepticalMap tracking entry
    * 2. Calculate jumpDistance from lastCommittedPlayhead
@@ -126,7 +127,7 @@ export class ABSProgressSyncService {
    * 4. Accumulate watchTime
    * 5. Check isProgressCommittable
    * 6. If not committable: skip
-   * 7. If committable: update tracking, buffer ABS write
+   * 7. If committable: update tracking, buffer remote write
    *
    * @param {string} itemId
    * @param {string} localId
@@ -140,6 +141,7 @@ export class ABSProgressSyncService {
       this._skepticalMap.set(itemId, {
         lastCommittedPlayhead: 0,
         watchTimeAccumulated: 0,
+        storagePath: null,
       });
     }
     const tracking = this._skepticalMap.get(itemId);
@@ -154,7 +156,7 @@ export class ABSProgressSyncService {
         Math.abs(playhead - tracking.skepticalTarget) > LARGE_JUMP_THRESHOLD;
 
       if (isNewJump) {
-        this.#savePreJumpBookmark(itemId, tracking.lastCommittedPlayhead, duration);
+        this.#savePreJumpBookmark(itemId, tracking.lastCommittedPlayhead, duration, tracking.storagePath);
         tracking.watchTimeAccumulated = 0;
         tracking.skepticalTarget = playhead;
       }
@@ -175,19 +177,19 @@ export class ABSProgressSyncService {
       return;
     }
 
-    // 7. Committable — update tracking and buffer ABS write
+    // 7. Committable — update tracking and buffer remote write
     tracking.lastCommittedPlayhead = playhead;
     tracking.watchTimeAccumulated = 0;
     tracking.skepticalTarget = null;
 
-    this.#bufferABSWrite(itemId, localId, {
+    this.#bufferRemoteWrite(itemId, localId, {
       currentTime: playhead,
       isFinished: percent >= 90,
     });
   }
 
   /**
-   * Called on SIGTERM. Immediately writes all pending debounced updates to ABS.
+   * Called on SIGTERM. Immediately writes all pending debounced updates to remote.
    *
    * @param {number} [timeoutMs=5000]
    * @returns {Promise<void>}
@@ -204,7 +206,7 @@ export class ABSProgressSyncService {
     if (entries.length === 0) return;
 
     const promises = entries.map(([itemId, entry]) => {
-      const write = this.#absClient.updateProgress(entry.localId, entry.latestProgress);
+      const write = this.#remoteProgressProvider.updateProgress(entry.localId, entry.latestProgress);
 
       // Apply timeout
       const timeout = new Promise((_, reject) =>
@@ -212,7 +214,7 @@ export class ABSProgressSyncService {
       );
 
       return Promise.race([write, timeout]).catch((err) => {
-        this.#logger.error(`[ABSProgressSync] flush error for ${itemId}:`, err.message);
+        this.#logger.error(`[ProgressSync] flush error for ${itemId}:`, err.message);
       });
     });
 
@@ -233,26 +235,26 @@ export class ABSProgressSyncService {
   // ── Private helpers ──────────────────────────────────────────────
 
   /**
-   * Wraps absClient.getProgress with try/catch -> null on error
+   * Wraps remoteProgressProvider.getProgress with try/catch -> null on error
    * @param {string} localId
    * @returns {Promise<Object|null>}
    */
   async #fetchRemoteProgress(localId) {
     try {
-      return await this.#absClient.getProgress(localId);
+      return await this.#remoteProgressProvider.getProgress(localId);
     } catch (err) {
-      this.#logger.warn(`[ABSProgressSync] failed to fetch remote progress for ${localId}:`, err.message);
+      this.#logger.warn(`[ProgressSync] failed to fetch remote progress for ${localId}:`, err.message);
       return null;
     }
   }
 
   /**
-   * Manages debounceMap with 30s timer for buffered ABS writes.
+   * Manages debounceMap with 30s timer for buffered remote writes.
    * @param {string} itemId
    * @param {string} localId
    * @param {Object} progress - { currentTime, isFinished }
    */
-  #bufferABSWrite(itemId, localId, progress) {
+  #bufferRemoteWrite(itemId, localId, progress) {
     // Cancel existing timer if any
     const existing = this._debounceMap.get(itemId);
     if (existing) {
@@ -262,9 +264,9 @@ export class ABSProgressSyncService {
     const timer = setTimeout(async () => {
       this._debounceMap.delete(itemId);
       try {
-        await this.#absClient.updateProgress(localId, progress);
+        await this.#remoteProgressProvider.updateProgress(localId, progress);
       } catch (err) {
-        this.#logger.error(`[ABSProgressSync] debounced write failed for ${itemId}:`, err.message);
+        this.#logger.error(`[ProgressSync] debounced write failed for ${itemId}:`, err.message);
       }
     }, DEBOUNCE_MS);
 
@@ -280,25 +282,26 @@ export class ABSProgressSyncService {
    * @param {string} itemId
    * @param {number} playhead
    * @param {number} duration
+   * @param {string|null} storagePath
    */
-  #savePreJumpBookmark(itemId, playhead, duration) {
+  #savePreJumpBookmark(itemId, playhead, duration, storagePath) {
     // Fire-and-forget: get current progress, add bookmark, save
-    this.#mediaProgressMemory.get(itemId).then((existing) => {
+    this.#mediaProgressMemory.get(itemId, storagePath).then((existing) => {
       if (!existing) return;
 
       const bookmarked = new MediaProgress({
         ...existing.toJSON(),
         bookmark: {
           playhead,
-          label: 'pre-jump',
+          reason: 'pre-jump',
           createdAt: new Date().toISOString(),
         },
       });
-      return this.#mediaProgressMemory.set(bookmarked);
+      return this.#mediaProgressMemory.set(bookmarked, storagePath);
     }).catch((err) => {
-      this.#logger.warn(`[ABSProgressSync] pre-jump bookmark save failed for ${itemId}:`, err.message);
+      this.#logger.warn(`[ProgressSync] pre-jump bookmark save failed for ${itemId}:`, err.message);
     });
   }
 }
 
-export default ABSProgressSyncService;
+export default ProgressSyncService;

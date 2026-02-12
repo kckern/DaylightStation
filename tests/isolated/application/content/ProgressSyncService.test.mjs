@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach, jest, afterEach } from '@jest/globals';
-import { ABSProgressSyncService } from '#apps/content/services/ABSProgressSyncService.mjs';
+import { ProgressSyncService } from '#apps/content/services/ProgressSyncService.mjs';
 import { MediaProgress } from '#domains/content/entities/MediaProgress.mjs';
 
 // ── Mock factories ───────────────────────────────────────────────────
 
-function createMockAbsClient() {
+function createMockRemoteProgressProvider() {
   return {
     getProgress: jest.fn(),
     updateProgress: jest.fn(),
@@ -30,18 +30,18 @@ function createMockLogger() {
 }
 
 function createService(overrides = {}) {
-  const absClient = createMockAbsClient();
+  const remoteProgressProvider = createMockRemoteProgressProvider();
   const mediaProgressMemory = createMockMediaProgressMemory();
   const logger = createMockLogger();
 
-  const service = new ABSProgressSyncService({
-    absClient,
+  const service = new ProgressSyncService({
+    remoteProgressProvider,
     mediaProgressMemory,
     logger,
     ...overrides,
   });
 
-  return { service, absClient, mediaProgressMemory, logger };
+  return { service, remoteProgressProvider, mediaProgressMemory, logger };
 }
 
 // ── Helper: build a MediaProgress with sensible defaults ─────────────
@@ -70,12 +70,12 @@ function makeRemoteProgress(overrides = {}) {
 
 // ── Tests ────────────────────────────────────────────────────────────
 
-describe('ABSProgressSyncService', () => {
-  let service, absClient, mediaProgressMemory, logger;
+describe('ProgressSyncService', () => {
+  let service, remoteProgressProvider, mediaProgressMemory, logger;
 
   beforeEach(() => {
     jest.useFakeTimers();
-    ({ service, absClient, mediaProgressMemory, logger } = createService());
+    ({ service, remoteProgressProvider, mediaProgressMemory, logger } = createService());
   });
 
   afterEach(() => {
@@ -86,10 +86,10 @@ describe('ABSProgressSyncService', () => {
   // ── reconcileOnPlay ──────────────────────────────────────────────
 
   describe('reconcileOnPlay', () => {
-    it('returns local when ABS fetch fails (network error)', async () => {
+    it('returns local when remote fetch fails (network error)', async () => {
       const local = makeLocalProgress();
       mediaProgressMemory._store.set('abs:book-1', local);
-      absClient.getProgress.mockRejectedValue(new Error('Network error'));
+      remoteProgressProvider.getProgress.mockRejectedValue(new Error('Network error'));
 
       const result = await service.reconcileOnPlay('abs:book-1', 'plex/audiobooks', 'li_abc123');
 
@@ -101,7 +101,7 @@ describe('ABSProgressSyncService', () => {
     it('returns remote values when local is null', async () => {
       // No local progress in store
       const remote = makeRemoteProgress({ currentTime: 900 });
-      absClient.getProgress.mockResolvedValue(remote);
+      remoteProgressProvider.getProgress.mockResolvedValue(remote);
 
       const result = await service.reconcileOnPlay('abs:book-1', 'plex/audiobooks', 'li_abc123');
 
@@ -112,7 +112,7 @@ describe('ABSProgressSyncService', () => {
     it('saves session-start bookmark when local has playhead > 0', async () => {
       const local = makeLocalProgress({ playhead: 600 });
       mediaProgressMemory._store.set('abs:book-1', local);
-      absClient.getProgress.mockResolvedValue(null);
+      remoteProgressProvider.getProgress.mockResolvedValue(null);
 
       await service.reconcileOnPlay('abs:book-1', 'plex/audiobooks', 'li_abc123');
 
@@ -121,7 +121,7 @@ describe('ABSProgressSyncService', () => {
       const savedProgress = mediaProgressMemory.set.mock.calls[0][0];
       expect(savedProgress.bookmark).toBeDefined();
       expect(savedProgress.bookmark.playhead).toBe(600);
-      expect(savedProgress.bookmark.label).toBe('session-start');
+      expect(savedProgress.bookmark.reason).toBe('session-start');
     });
 
     it('updates local when remote wins (remote is newer)', async () => {
@@ -135,7 +135,7 @@ describe('ABSProgressSyncService', () => {
         currentTime: 900,
         lastUpdate: Math.floor(new Date('2026-02-11T12:00:00Z').getTime() / 1000),
       });
-      absClient.getProgress.mockResolvedValue(remote);
+      remoteProgressProvider.getProgress.mockResolvedValue(remote);
 
       const result = await service.reconcileOnPlay('abs:book-1', 'plex/audiobooks', 'li_abc123');
 
@@ -147,26 +147,27 @@ describe('ABSProgressSyncService', () => {
 
     it('returns null when both local and remote are null', async () => {
       // No local in store, remote returns null
-      absClient.getProgress.mockResolvedValue(null);
+      remoteProgressProvider.getProgress.mockResolvedValue(null);
 
       const result = await service.reconcileOnPlay('abs:book-1', 'plex/audiobooks', 'li_abc123');
 
       expect(result).toBeNull();
     });
 
-    it('initializes skepticalMap entry with resolved playhead', async () => {
+    it('initializes skepticalMap entry with resolved playhead and storagePath', async () => {
       const local = makeLocalProgress({ playhead: 600 });
       mediaProgressMemory._store.set('abs:book-1', local);
-      absClient.getProgress.mockResolvedValue(null);
+      remoteProgressProvider.getProgress.mockResolvedValue(null);
 
       await service.reconcileOnPlay('abs:book-1', 'plex/audiobooks', 'li_abc123');
 
       const tracking = service._skepticalMap.get('abs:book-1');
       expect(tracking).toBeDefined();
       expect(tracking.lastCommittedPlayhead).toBe(600);
+      expect(tracking.storagePath).toBe('plex/audiobooks');
     });
 
-    it('buffers ABS write-back when local wins', async () => {
+    it('buffers remote write-back when local wins', async () => {
       const local = makeLocalProgress({
         playhead: 900,
         lastPlayed: '2026-02-11T14:00:00Z',
@@ -177,12 +178,12 @@ describe('ABSProgressSyncService', () => {
         currentTime: 300,
         lastUpdate: Math.floor(new Date('2026-02-09T12:00:00Z').getTime() / 1000),
       });
-      absClient.getProgress.mockResolvedValue(remote);
+      remoteProgressProvider.getProgress.mockResolvedValue(remote);
 
       const result = await service.reconcileOnPlay('abs:book-1', 'plex/audiobooks', 'li_abc123');
 
       expect(result.playhead).toBe(900);
-      // Should have buffered a write-back to ABS
+      // Should have buffered a write-back to remote
       expect(service._debounceMap.has('abs:book-1')).toBe(true);
     });
   });
@@ -190,11 +191,12 @@ describe('ABSProgressSyncService', () => {
   // ── onProgressUpdate ─────────────────────────────────────────────
 
   describe('onProgressUpdate', () => {
-    it('buffers small jump for debounced ABS write', async () => {
+    it('buffers small jump for debounced remote write', async () => {
       // Set up skeptical tracking with a close playhead
       service._skepticalMap.set('abs:book-1', {
         lastCommittedPlayhead: 600,
         watchTimeAccumulated: 0,
+        storagePath: 'plex/audiobooks',
       });
 
       await service.onProgressUpdate('abs:book-1', 'li_abc123', {
@@ -213,6 +215,7 @@ describe('ABSProgressSyncService', () => {
       service._skepticalMap.set('abs:book-1', {
         lastCommittedPlayhead: 600,
         watchTimeAccumulated: 0,
+        storagePath: 'plex/audiobooks',
       });
 
       await service.onProgressUpdate('abs:book-1', 'li_abc123', {
@@ -230,6 +233,7 @@ describe('ABSProgressSyncService', () => {
       service._skepticalMap.set('abs:book-1', {
         lastCommittedPlayhead: 600,
         watchTimeAccumulated: 0,
+        storagePath: 'plex/audiobooks',
       });
 
       // First update: large jump, not yet committed
@@ -263,6 +267,7 @@ describe('ABSProgressSyncService', () => {
       service._skepticalMap.set('abs:book-1', {
         lastCommittedPlayhead: 600,
         watchTimeAccumulated: 0,
+        storagePath: 'plex/audiobooks',
       });
 
       await service.onProgressUpdate('abs:book-1', 'li_abc123', {
@@ -282,8 +287,37 @@ describe('ABSProgressSyncService', () => {
       expect(mediaProgressMemory.set).toHaveBeenCalled();
       const savedProgress = mediaProgressMemory.set.mock.calls[0][0];
       expect(savedProgress.bookmark).toBeDefined();
-      expect(savedProgress.bookmark.label).toBe('pre-jump');
+      expect(savedProgress.bookmark.reason).toBe('pre-jump');
       expect(savedProgress.bookmark.playhead).toBe(600);
+    });
+
+    it('passes storagePath to mediaProgressMemory in pre-jump bookmark', async () => {
+      const existing = makeLocalProgress({ playhead: 600 });
+      mediaProgressMemory._store.set('abs:book-1', existing);
+
+      service._skepticalMap.set('abs:book-1', {
+        lastCommittedPlayhead: 600,
+        watchTimeAccumulated: 0,
+        storagePath: 'plex/audiobooks',
+      });
+
+      await service.onProgressUpdate('abs:book-1', 'li_abc123', {
+        playhead: 5000,
+        duration: 36000,
+        percent: 14,
+        watchTime: 5,
+      });
+
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      // Verify get was called with storagePath
+      expect(mediaProgressMemory.get).toHaveBeenCalledWith('abs:book-1', 'plex/audiobooks');
+      // Verify set was called with storagePath
+      expect(mediaProgressMemory.set).toHaveBeenCalled();
+      const setCall = mediaProgressMemory.set.mock.calls[0];
+      expect(setCall[1]).toBe('plex/audiobooks');
     });
 
     it('creates skepticalMap entry if not present', async () => {
@@ -302,7 +336,7 @@ describe('ABSProgressSyncService', () => {
 
   describe('flush', () => {
     it('writes all pending debounced updates', async () => {
-      absClient.updateProgress.mockResolvedValue(undefined);
+      remoteProgressProvider.updateProgress.mockResolvedValue(undefined);
 
       // Manually populate the debounce map with pending writes
       service._debounceMap.set('abs:book-1', {
@@ -318,14 +352,14 @@ describe('ABSProgressSyncService', () => {
 
       await service.flush(5000);
 
-      expect(absClient.updateProgress).toHaveBeenCalledTimes(2);
-      expect(absClient.updateProgress).toHaveBeenCalledWith('li_abc123', { currentTime: 900, isFinished: false });
-      expect(absClient.updateProgress).toHaveBeenCalledWith('li_def456', { currentTime: 1200, isFinished: true });
+      expect(remoteProgressProvider.updateProgress).toHaveBeenCalledTimes(2);
+      expect(remoteProgressProvider.updateProgress).toHaveBeenCalledWith('li_abc123', { currentTime: 900, isFinished: false });
+      expect(remoteProgressProvider.updateProgress).toHaveBeenCalledWith('li_def456', { currentTime: 1200, isFinished: true });
       expect(service._debounceMap.size).toBe(0);
     });
 
-    it('handles ABS errors during flush gracefully (does not throw)', async () => {
-      absClient.updateProgress.mockRejectedValue(new Error('ABS down'));
+    it('handles remote errors during flush gracefully (does not throw)', async () => {
+      remoteProgressProvider.updateProgress.mockRejectedValue(new Error('Remote server down'));
 
       service._debounceMap.set('abs:book-1', {
         timer: setTimeout(() => {}, 30000),
@@ -340,7 +374,7 @@ describe('ABSProgressSyncService', () => {
 
     it('resolves immediately when debounce map is empty', async () => {
       await expect(service.flush(5000)).resolves.not.toThrow();
-      expect(absClient.updateProgress).not.toHaveBeenCalled();
+      expect(remoteProgressProvider.updateProgress).not.toHaveBeenCalled();
     });
   });
 
@@ -363,6 +397,7 @@ describe('ABSProgressSyncService', () => {
       service._skepticalMap.set('abs:book-1', {
         lastCommittedPlayhead: 600,
         watchTimeAccumulated: 0,
+        storagePath: 'plex/audiobooks',
       });
 
       service.dispose();
