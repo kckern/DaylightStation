@@ -67,6 +67,16 @@ describe('Queue API Router', () => {
     }
   });
 
+  test('GET /api/v1/queue/:source resolves compound IDs in source segment', async () => {
+    // Compound ID in source position: files:audio
+    const res = await request(app).get('/api/v1/queue/files:audio');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('count');
+    expect(res.body).toHaveProperty('source', 'files');
+    expect(Array.isArray(res.body.items)).toBe(true);
+  });
+
   test('toQueueItem includes contentId, format, image, and active fields', () => {
     const mockItem = {
       id: 'files:audio/test.mp3',
