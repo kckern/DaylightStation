@@ -125,41 +125,58 @@ export const createWebSocketHandler = (callbacks) => {
       return;
     }
 
-    // Determine action type (play or queue)
-    // Default to 'play' for single items like scripture, hymn, talk, etc.
-    // Only use 'queue' when explicitly specified or when it's clearly a playlist
-    const hasPlayKey = Object.keys(data).includes('play');
-    const hasQueueKey = Object.keys(data).includes('queue');
-    // Content items have a play action or are recognized by the presence of a contentId
-    const hasContentId = data.play || data.contentId;
-    // Legacy: specific collection keys indicate a play action
-    const hasLegacyContentKey = data.hymn || data.scripture || data.talk || data.primary || data.poem;
-    const isContentItem = hasContentId || hasLegacyContentKey; // These are always 'play' actions
-    const isPlaylistItem = (/^\d+$/.test(Object.values(data)[0]) || data.plex) && !isContentItem; // Numeric IDs or plex usually indicate playlists, but not if it's content
-    
-    // Use an object with test functions to determine the action type
-    const actionTests = {
-      play: () => hasPlayKey || isContentItem,
-      queue: () => hasQueueKey || isPlaylistItem
-    };
+    // ─── Content Reference Extraction ───────────────────────────────
+    // Normalize all content identifiers to a single `contentId` key.
+    // The backend's ContentIdResolver handles all source resolution —
+    // the frontend should not detect source types (plex, watchlist, etc.)
 
-    const action =
-      data.action ||
-      Object.keys(actionTests).find(key => actionTests[key]()) ||
-      'play';
-      
-    // Transform numeric values to plex, otherwise to media
-    if (/^\d+$/.test(data.play || data.queue)) {
-      data.plex = data.play || data.queue;
-      delete data.play;
-      delete data.queue;
+    // Keys that carry the content reference (in priority order)
+    const CONTENT_KEYS = ['contentId', 'play', 'queue', 'plex', 'media', 'playlist', 'files'];
+    // Legacy collection keys that become compound IDs (e.g., hymn:113)
+    const LEGACY_COLLECTION_KEYS = ['hymn', 'scripture', 'talk', 'primary', 'poem'];
+    // Keys that are modifiers, not content references
+    const MODIFIER_KEYS = new Set(['shuffle', 'shader', 'volume', 'continuous', 'playbackrate',
+                                    'maxVideoBitrate', 'maxResolution', 'resume', 'seconds',
+                                    'topic', 'source']);
+
+    // 1. Determine action from original keys (before any normalization)
+    const action = data.action || (Object.keys(data).includes('queue') ? 'queue' : 'play');
+
+    // 2. Extract the content reference
+    let contentRef = null;
+
+    // Check legacy collection keys first (hymn:113, scripture:gen/1, etc.)
+    for (const key of LEGACY_COLLECTION_KEYS) {
+      if (data[key] != null) {
+        contentRef = `${key}:${data[key]}`;
+        break;
+      }
     }
 
-    delete data.action;
+    // Then check standard content keys
+    if (!contentRef) {
+      for (const key of CONTENT_KEYS) {
+        const val = data[key];
+        if (val != null && typeof val !== 'object') {
+          contentRef = String(val);
+          break;
+        }
+      }
+    }
 
+    // 3. Extract modifiers (non-content, non-metadata keys)
+    const payload = {};
+    if (contentRef) payload.contentId = contentRef;
+    for (const [key, value] of Object.entries(data)) {
+      if (MODIFIER_KEYS.has(key)) {
+        payload[key] = value;
+      }
+    }
+
+    // 4. Build selection
     const selection = {
       label: "wscmd",
-      [action]: data
+      [action]: payload
     };
 
     logger.info('office.websocket.selection', { selection, action });
