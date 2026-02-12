@@ -855,7 +855,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     devicesConfig: devicesConfig.devices || {},
     haGateway: homeAutomationAdapters.haGateway,
     httpClient: axios,
-    wsBus: null, // Will be set after EventBus is created
+    wsBus: eventBus,
     remoteExec: homeAutomationAdapters.remoteExecAdapter,
     daylightHost,
     configService,
