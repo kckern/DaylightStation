@@ -17,20 +17,13 @@ import { nowTs } from '#system/utils/index.mjs';
  * @returns {{ userId: string, conversationId: string }}
  */
 function resolveUserContext({ identityAdapter, body, query = {}, defaultMember }) {
-  const member = body.member || query.member || defaultMember;
-  const platformUserId = body.user_id || query.user_id || body.chat_id || query.chat_id;
+  const user = body.user || query.user || defaultMember;
+  if (!user) throw new Error('Missing required parameter: user');
 
-  let identity;
-  if (platformUserId) {
-    identity = identityAdapter.resolve('nutribot', { platformUserId: String(platformUserId) });
-  } else if (member) {
-    identity = identityAdapter.resolve('nutribot', { username: member });
-  } else {
-    throw new Error('Could not resolve user. Provide member or user_id parameter.');
-  }
+  const identity = identityAdapter.resolve('nutribot', { username: user });
 
   return {
-    userId: identity.username || platformUserId || member,
+    userId: identity.username || user,
     conversationId: identity.conversationIdString,
   };
 }
