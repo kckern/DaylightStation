@@ -11,15 +11,18 @@ import { decodeCallback, CallbackActions } from './lib/callback.mjs';
  */
 export class NutribotInputRouter extends BaseInputRouter {
   #userResolver;
+  #userIdentityService;
 
   /**
    * @param {import('../../3_applications/nutribot/NutribotContainer.mjs').NutribotContainer} container
    * @param {Object} [options]
    * @param {import('../../0_system/users/UserResolver.mjs').UserResolver} [options.userResolver] - For resolving platform users to system usernames
+   * @param {import('../../2_domains/messaging/services/UserIdentityService.mjs').UserIdentityService} [options.userIdentityService] - Domain identity service (preferred)
    * @param {Object} [options.logger]
    */
   constructor(container, options = {}) {
     super(container, options);
+    this.#userIdentityService = options.userIdentityService || null;
     this.#userResolver = options.userResolver;
   }
 
@@ -393,34 +396,25 @@ export class NutribotInputRouter extends BaseInputRouter {
    * @returns {string}
    */
   #resolveUserId(event) {
-    // Debug: Log resolution attempt
-    this.logger.debug?.('nutribot.resolveUserId.attempt', {
-      hasUserResolver: !!this.#userResolver,
-      platform: event.platform,
-      platformUserId: event.platformUserId,
-      conversationId: event.conversationId,
-    });
-
-    if (this.#userResolver && event.platform && event.platformUserId) {
-      const username = this.#userResolver.resolveUser(event.platform, event.platformUserId);
+    // Prefer domain identity service
+    if (this.#userIdentityService && event.platform && event.platformUserId) {
+      const username = this.#userIdentityService.resolveUsername(event.platform, event.platformUserId);
       if (username) {
         this.logger.debug?.('nutribot.resolveUserId.resolved', { username, platformUserId: event.platformUserId });
         return username;
       }
-      this.logger.warn?.('nutribot.userResolver.notFound', {
+      this.logger.warn?.('nutribot.identity.notFound', {
         platform: event.platform,
         platformUserId: event.platformUserId,
-        fallback: event.conversationId,
-      });
-    } else {
-      // Log which condition failed
-      this.logger.warn?.('nutribot.resolveUserId.skipResolution', {
-        hasUserResolver: !!this.#userResolver,
-        hasPlatform: !!event.platform,
-        hasPlatformUserId: !!event.platformUserId,
-        fallback: event.conversationId,
       });
     }
+
+    // Fallback to legacy UserResolver
+    if (this.#userResolver && event.platform && event.platformUserId) {
+      const username = this.#userResolver.resolveUser(event.platform, event.platformUserId);
+      if (username) return username;
+    }
+
     // Fallback to conversationId for backwards compatibility
     return event.conversationId;
   }
