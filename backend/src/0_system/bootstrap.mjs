@@ -672,7 +672,7 @@ export function createMediaProgressMemory(config) {
  * @returns {Object} Router configuration
  */
 export function createApiRouters(config) {
-  const { registry, mediaProgressMemory, loadFile, saveFile, cacheBasePath, dataPath, mediaBasePath, proxyService, composePresentationUseCase, configService, prefixAliases = {}, savedQueryService = null, logger = console } = config;
+  const { registry, mediaProgressMemory, progressSyncService, loadFile, saveFile, cacheBasePath, dataPath, mediaBasePath, proxyService, composePresentationUseCase, configService, prefixAliases = {}, savedQueryService = null, logger = console } = config;
 
   // Register prefix aliases (e.g., hymn → singalong:hymn) from config
   // This enables the content API to resolve aliased prefixes via registry.resolveFromPrefix()
@@ -729,7 +729,7 @@ export function createApiRouters(config) {
       content: createContentRouter(registry, mediaProgressMemory, { loadFile, saveFile, cacheBasePath, composePresentationUseCase, contentQueryService, logger, aliasResolver }),
       proxy: createProxyRouter({ registry, proxyService, mediaBasePath, logger }),
       localContent: createLocalContentRouter({ registry, dataPath, mediaBasePath, mediaProgressMemory }),
-      play: createPlayRouter({ registry, mediaProgressMemory, contentQueryService, contentIdResolver, logger }),
+      play: createPlayRouter({ registry, mediaProgressMemory, contentQueryService, contentIdResolver, progressSyncService, logger }),
       list: createListRouter({ registry, loadFile, configService, contentQueryService, contentIdResolver, menuMemoryPath: configService.getHouseholdPath('history/menu_memory') }),
       siblings: createSiblingsRouter({ siblingsService, contentIdResolver, logger }),
       queue: createQueueRouter({ contentIdResolver, queueService: new QueueService({ mediaProgressMemory }), logger }),

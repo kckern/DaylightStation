@@ -341,6 +341,21 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const mediaProgressPath = configService.getPath('watchState') || `${householdDir}/history/media_memory`;
   const mediaProgressMemory = createMediaProgressMemory({ mediaProgressPath });
 
+  // Progress sync — bidirectional progress sync for remote media servers
+  let progressSyncService = null;
+  if (audiobookshelfConfig) {
+    const { AudiobookshelfClient } = await import('./1_adapters/content/readable/audiobookshelf/AudiobookshelfClient.mjs');
+    const { ABSProgressAdapter } = await import('./1_adapters/content/readable/audiobookshelf/ABSProgressAdapter.mjs');
+    const { ProgressSyncService } = await import('./3_applications/content/services/ProgressSyncService.mjs');
+    const absClient = new AudiobookshelfClient(audiobookshelfConfig, { httpClient: axios });
+    const remoteProgressProvider = new ABSProgressAdapter(absClient);
+    progressSyncService = new ProgressSyncService({
+      remoteProgressProvider,
+      mediaProgressMemory,
+      logger: rootLogger.child({ module: 'progress-sync' })
+    });
+  }
+
   // Singalong/Readalong adapters - point to canonical data directories (no symlinks)
   const singalongConfig = {
     dataPath: path.join(contentPath, 'singalong'),  // hymn, primary
@@ -402,6 +417,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const { routers: contentRouters, services: contentServices } = createApiRouters({
     registry: contentRegistry,
     mediaProgressMemory,
+    progressSyncService,
     loadFile: contentLoadFile,
     saveFile: contentSaveFile,
     cacheBasePath: mediaBasePath ? `${mediaBasePath}/img/cache` : null,
@@ -1292,6 +1308,14 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Error handler middleware - must be last
   app.use(errorHandlerMiddleware());
+
+  // Graceful shutdown: flush pending progress sync writes
+  if (progressSyncService) {
+    process.on('SIGTERM', async () => {
+      await progressSyncService.flush();
+      progressSyncService.dispose();
+    });
+  }
 
   return app;
 }
