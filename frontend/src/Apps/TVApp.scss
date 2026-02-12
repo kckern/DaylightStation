@@ -16,7 +16,7 @@
     display: flex;
     justify-content: center;
     align-items: center;
-    background-color: #111111; // optional background color
+    background-color: #000000;
     * { -webkit-tap-highlight-color: rgba(0,0,0,0); }
     * {
         -webkit-user-select: none;
@@ -35,7 +35,7 @@
 .tv-app {
     width: 1024px; /* TODO: Should get from config */
     height: 575px; /* TODO: Should get from config */
-    background-color: #222222; /* optional background color */
+    background-color: #000000;
     box-shadow: 0 4px 8px #000000; /* optional shadow */
     display: flex;
     flex-direction: column;

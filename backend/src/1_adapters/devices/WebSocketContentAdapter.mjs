@@ -69,12 +69,10 @@ export class WebSocketContentAdapter {
     this.#metrics.loads++;
 
     try {
-      // Build payload
+      // Build payload — spread query params at top level so the
+      // frontend websocketHandler can detect keys (play, queue, hymn, etc.)
       const payload = {
-        action: 'load',
-        path,
-        query,
-        url: `${this.#daylightHost}${path}`,
+        ...query,
         timestamp: Date.now()
       };
 
