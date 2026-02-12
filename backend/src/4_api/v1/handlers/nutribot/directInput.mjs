@@ -7,6 +7,7 @@
  */
 
 import { nowTs } from '#system/utils/index.mjs';
+import { configService } from '#system/config/index.mjs';
 
 /**
  * Get default user/chat config for direct API calls
@@ -16,19 +17,29 @@ import { nowTs } from '#system/utils/index.mjs';
  * @returns {{ userId: string, conversationId: string, chatId: string, botId: string }}
  */
 function resolveUserContext(container, body, query = {}) {
-  const config = container.getConfig?.() || {};
+  const nutribotConfig = container.getConfig?.() || {};
 
   const botId =
-    body.bot_id || query.bot_id || config.telegram?.botId || process.env.NUTRIBOT_TELEGRAM_BOT_ID || '6898194425';
+    body.bot_id || query.bot_id || nutribotConfig.messagingBotId;
 
   // Resolve member name to Telegram user ID if provided
   const member = body.member || query.member;
-  let userId;
-  if (member && config.resolvePlatformId) {
-    userId = config.resolvePlatformId('telegram', member);
+  let userId = body.user_id || query.user_id || body.chat_id || query.chat_id;
+
+  if (!userId && member && configService?.resolvePlatformId) {
+    userId = configService.resolvePlatformId('telegram', member);
   }
+
+  // Default to head of household's Telegram ID
+  if (!userId && configService?.resolvePlatformId) {
+    const head = configService.getHeadOfHousehold();
+    if (head) {
+      userId = configService.resolvePlatformId('telegram', head);
+    }
+  }
+
   if (!userId) {
-    userId = body.user_id || query.user_id || body.chat_id || query.chat_id || config.users?.defaultUserId || '575596036';
+    throw new Error('Could not resolve user. Provide member or user_id parameter.');
   }
 
   // Build conversation ID in new format
