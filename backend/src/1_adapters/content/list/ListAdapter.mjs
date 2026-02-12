@@ -958,6 +958,16 @@ export class ListAdapter {
     // Strip source prefix only when it wraps a known list prefix (same as getList)
     const strippedId = id.replace(/^list:(?=(menu|program|watchlist|query):)/, '');
 
+    // Handle generic 'list:' prefix — try programs, watchlists, menus in order
+    if (/^list:[^:]+$/.test(strippedId)) {
+      const name = strippedId.replace(/^list:/, '');
+      for (const prefix of ['program', 'watchlist', 'menu']) {
+        const result = await this.resolvePlayables(`${prefix}:${name}`, options);
+        if (result.length > 0) return result;
+      }
+      return [];
+    }
+
     const parsed = this._parseId(strippedId);
     if (!parsed) return [];
 

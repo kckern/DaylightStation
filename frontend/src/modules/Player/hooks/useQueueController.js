@@ -99,7 +99,7 @@ export function useQueueController({ play, queue, clear, shuffle }) {
         if (queue_contentId && !queue_assetId && !plexKey) {
           queueUrl = `api/v1/queue/${queue_contentId}${shuffleParam}`;
         } else if (queue_assetId) {
-          queueUrl = `api/v1/queue/watchlist/${queue_assetId}${shuffleParam}`;
+          queueUrl = `api/v1/queue/list/${queue_assetId}${shuffleParam}`;
         } else if (queue?.plex || play?.plex) {
           const plexId = queue?.plex || play?.plex;
           queueUrl = `api/v1/queue/plex/${plexId}${shuffleParam}`;
