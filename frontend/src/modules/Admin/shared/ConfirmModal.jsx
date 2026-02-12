@@ -26,7 +26,7 @@ function ConfirmModal({
   loading = false
 }) {
   return (
-    <Modal opened={opened} onClose={onClose} title={title} centered size="sm">
+    <Modal opened={opened} onClose={onClose} title={title} centered size="sm" transitionProps={{ transition: 'pop', duration: 150 }}>
       <Stack gap="md">
         <Text size="sm">{message}</Text>
 
