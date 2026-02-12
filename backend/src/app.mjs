@@ -735,7 +735,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       getSelectionsForPrint: async () => {
         return gratitudeServices.gratitudeService.getSelectionsForPrint(
           householdId,
-          (userId) => userService.resolveDisplayName(userId)
+          (userId) => userService.resolveGroupLabel(userId)
         );
       },
       fontDir: configService.getPath('font') || `${mediaBasePath}/fonts`
