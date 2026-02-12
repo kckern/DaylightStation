@@ -56,10 +56,26 @@ function ConfigFormWrapper({ filePath, title, children, validate }) {
 
   return (
     <Stack gap="md">
-      <Group justify="space-between">
+      <Group
+        justify="space-between"
+        style={{
+          position: 'sticky',
+          top: 0,
+          zIndex: 10,
+          backgroundColor: 'var(--ds-bg-surface)',
+          padding: 'var(--ds-space-4) 0',
+          marginBottom: 'var(--ds-space-4)',
+          borderBottom: dirty ? '1px solid var(--ds-border)' : '1px solid transparent',
+          transition: 'border-color var(--ds-transition-base)',
+        }}
+      >
         <Group gap="xs">
-          <Text fw={600} size="lg">{title}</Text>
-          {dirty && <Badge color="yellow" variant="light">Unsaved changes</Badge>}
+          <Text fw={600} size="lg" ff="var(--ds-font-mono)">{title}</Text>
+          {dirty && (
+            <Badge color="yellow" variant="light" size="sm">
+              Unsaved
+            </Badge>
+          )}
         </Group>
         <Group gap="xs">
           <Button
@@ -67,6 +83,7 @@ function ConfigFormWrapper({ filePath, title, children, validate }) {
             leftSection={<IconArrowBack size={16} />}
             onClick={revert}
             disabled={!dirty || saving}
+            size="sm"
           >
             Revert
           </Button>
@@ -75,6 +92,8 @@ function ConfigFormWrapper({ filePath, title, children, validate }) {
             onClick={handleSave}
             loading={saving}
             disabled={!dirty}
+            size="sm"
+            data-testid="config-save-button"
           >
             Save
           </Button>
