@@ -36,7 +36,7 @@ import {
  */
 export function createJournalistRouter(container, options = {}) {
   const router = Router();
-  const { webhookHandler, botId, secretToken, gateway, configService, logger = console } = options;
+  const { webhookHandler, telegramIdentityAdapter, botId, secretToken, gateway, configService, logger = console } = options;
 
   // Webhook endpoint using pre-built handler
   if (webhookHandler) {
@@ -59,7 +59,7 @@ export function createJournalistRouter(container, options = {}) {
   // Morning debrief endpoint (triggered by cron or manual)
   router.get(
     '/morning',
-    asyncHandler(journalistMorningDebriefHandler(container, { configService, logger })),
+    asyncHandler(journalistMorningDebriefHandler(container, { configService, telegramIdentityAdapter, logger })),
   );
 
   // Health check endpoint

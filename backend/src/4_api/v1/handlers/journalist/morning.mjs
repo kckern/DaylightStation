@@ -18,7 +18,7 @@
  * @returns {Function} Express handler (req, res) => Promise<void>
  */
 export function journalistMorningDebriefHandler(container, options = {}) {
-  const { configService, logger = console } = options;
+  const { configService, telegramIdentityAdapter, logger = console } = options;
 
   return async (req, res) => {
     const username = req.query.user || configService?.getHeadOfHousehold?.() || 'kckern';
@@ -41,8 +41,7 @@ export function journalistMorningDebriefHandler(container, options = {}) {
     });
 
     // Step 2: Resolve user's conversation ID
-    const userResolver = container.getUserResolver?.() || null;
-    const conversationId = await resolveConversationId(userResolver, username, logger);
+    const conversationId = resolveConversationId(telegramIdentityAdapter, username, logger);
 
     if (!conversationId) {
       logger.error?.('morning.handler.no-conversation-id', { username });
@@ -77,34 +76,23 @@ export function journalistMorningDebriefHandler(container, options = {}) {
 }
 
 /**
- * Resolve username to Telegram conversation ID
- *
- * For MVP: Build conversation ID from user profile telegram identity
- * Format: telegram:{bot_id}_{user_id}
+ * Resolve username to Telegram conversation ID using TelegramIdentityAdapter
  */
-async function resolveConversationId(userResolver, username, logger) {
-  if (!userResolver) {
-    logger.warn?.('morning.no-user-resolver', { username });
+function resolveConversationId(identityAdapter, username, logger) {
+  if (!username) {
+    logger.warn?.('journalist.morning.noUsername');
     return null;
   }
 
-  // Get user data from resolver
-  const user = userResolver.getUser(username);
-
-  if (!user || !user.telegram_user_id || !user.telegram_bot_id) {
-    logger.warn?.('morning.incomplete-telegram-config', {
-      username,
-      hasUser: !!user,
-      hasTelegramUserId: !!user?.telegram_user_id,
-      hasTelegramBotId: !!user?.telegram_bot_id,
+  try {
+    const identity = identityAdapter.resolve('journalist', { username });
+    return identity.conversationIdString;
+  } catch (e) {
+    logger.warn?.('journalist.morning.identityResolutionFailed', {
+      username, error: e.message,
     });
     return null;
   }
-
-  const conversationId = `telegram:${user.telegram_bot_id}_${user.telegram_user_id}`;
-  logger.debug?.('morning.conversation-resolved', { username, conversationId });
-
-  return conversationId;
 }
 
 export default journalistMorningDebriefHandler;
