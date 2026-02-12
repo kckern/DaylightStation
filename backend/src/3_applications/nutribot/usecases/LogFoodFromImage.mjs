@@ -84,7 +84,14 @@ export class LogFoodFromImage {
   async execute(input) {
     const { userId, conversationId, imageData, messageId: userMessageId, responseContext } = input;
 
-    this.#logger.debug?.('logImage.start', { conversationId, hasResponseContext: !!responseContext });
+    this.#logger.info?.('logImage.start', {
+      conversationId,
+      userId,
+      hasResponseContext: !!responseContext,
+      hasImageUrl: !!imageData?.url,
+      hasFileId: !!imageData?.fileId,
+      imageUrl: imageData?.url?.substring(0, 120),
+    });
 
     const messaging = this.#getMessaging(responseContext, conversationId);
 
@@ -135,20 +142,40 @@ export class LogFoodFromImage {
           const base64Image = await this.#imageProcessor.downloadAndProcess(imageUrl);
           if (base64Image) {
             imageForAI = base64Image;
+            this.#logger.info?.('logImage.imageProcessed', { conversationId, format: 'base64' });
           }
         } catch (e) {
-          this.#logger.warn?.('logImage.download.failed', { error: e.message });
+          this.#logger.warn?.('logImage.download.failed', { conversationId, error: e.message });
         }
       }
+
+      this.#logger.info?.('logImage.aiCall', {
+        conversationId,
+        imageType: typeof imageForAI === 'string' && imageForAI.startsWith('data:') ? 'base64' : 'url',
+        imageUrl: typeof imageForAI === 'string' && !imageForAI.startsWith('data:') ? imageForAI.substring(0, 120) : undefined,
+        hasImageProcessor: !!this.#imageProcessor,
+      });
 
       // 3. Call AI for food detection
       const prompt = this.#buildDetectionPrompt();
       const response = await this.#aiGateway.chatWithImage(prompt, imageForAI, { maxTokens: 1000 });
 
+      this.#logger.info?.('logImage.aiResponse', {
+        conversationId,
+        responseLength: response?.length || 0,
+        responsePreview: response?.substring(0, 200),
+      });
+
       // 4. Parse response into food items
       const foodItems = this.#parseFoodResponse(response);
 
       if (foodItems.length === 0) {
+        this.#logger.warn?.('logImage.noFoodDetected', {
+          conversationId,
+          imageUrl: imageUrl?.substring(0, 120),
+          aiResponseLength: response?.length || 0,
+          aiResponsePreview: response?.substring(0, 300),
+        });
         if (status) {
           await status.finish("❓ I couldn't identify any food in this image. Could you describe what you're eating?");
         } else {
@@ -261,7 +288,12 @@ export class LogFoodFromImage {
         itemCount: foodItems.length,
       };
     } catch (error) {
-      this.#logger.error?.('logImage.error', { conversationId, error: error.message });
+      this.#logger.error?.('logImage.error', {
+        conversationId,
+        error: error.message,
+        stack: error.stack?.split('\n').slice(0, 5).join('\n'),
+        imageUrl: imageData?.url?.substring(0, 120),
+      });
       throw error;
     }
   }
@@ -321,9 +353,17 @@ Be conservative with estimates.`,
   #parseFoodResponse(response) {
     try {
       const jsonMatch = response.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        this.#logger.warn?.('logImage.parse.noJson', {
+          responseLength: response?.length || 0,
+          responsePreview: response?.substring(0, 300),
+        });
+        return [];
+      }
       if (jsonMatch) {
         const data = JSON.parse(jsonMatch[0]);
         const rawItems = data.items || [];
+        this.#logger.info?.('logImage.parse.success', { itemCount: rawItems.length });
 
         return rawItems.map((item) => ({
           id: uuidv4(),
@@ -345,7 +385,10 @@ Be conservative with estimates.`,
       }
       return [];
     } catch (e) {
-      this.#logger.warn?.('logImage.parseError', { error: e.message });
+      this.#logger.warn?.('logImage.parse.error', {
+        error: e.message,
+        responsePreview: response?.substring(0, 300),
+      });
       return [];
     }
   }
