@@ -34,7 +34,7 @@ import {
  */
 export function createNutribotRouter(container, options = {}) {
   const router = Router();
-  const { webhookHandler, telegramIdentityAdapter, botId, secretToken, gateway, logger = console } = options;
+  const { webhookHandler, telegramIdentityAdapter, defaultMember, botId, secretToken, gateway, logger = console } = options;
 
   // Apply middleware
   router.use(tracingMiddleware());
@@ -53,7 +53,7 @@ export function createNutribotRouter(container, options = {}) {
   }
 
   // Direct input endpoints (programmatic API access)
-  const handlerOpts = { logger, identityAdapter: telegramIdentityAdapter };
+  const handlerOpts = { logger, identityAdapter: telegramIdentityAdapter, defaultMember };
   router.all('/upc', asyncHandler(directUPCHandler(container, handlerOpts)));
   router.all('/image', asyncHandler(directImageHandler(container, handlerOpts)));
   router.all('/text', asyncHandler(directTextHandler(container, handlerOpts)));

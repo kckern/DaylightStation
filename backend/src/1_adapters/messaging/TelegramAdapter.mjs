@@ -237,11 +237,11 @@ export class TelegramAdapter {
    * Alias for sendImage (IMessagingGateway interface)
    * @param {string} chatId - Chat ID or conversationId
    * @param {string} imageSource - File ID or URL
-   * @param {Object} options - Options including caption, choices, inline
+   * @param {string} [caption] - Photo caption
+   * @param {Object} [options] - Options including choices, inline
    */
-  async sendPhoto(chatId, imageSource, options = {}) {
-    const { caption = '', ...rest } = options;
-    return this.sendImage(chatId, imageSource, caption, rest);
+  async sendPhoto(chatId, imageSource, caption = '', options = {}) {
+    return this.sendImage(chatId, imageSource, caption, options);
   }
 
   /**

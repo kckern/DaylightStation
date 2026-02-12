@@ -49,7 +49,7 @@ export class LogFoodFromUPC {
     }
     return {
       sendMessage: (text, options) => this.#messagingGateway.sendMessage(conversationId, text, options),
-      sendPhoto: (src, options) => this.#messagingGateway.sendPhoto(conversationId, src, options),
+      sendPhoto: (src, caption, options) => this.#messagingGateway.sendPhoto(conversationId, src, caption, options),
       updateMessage: (msgId, updates) => this.#messagingGateway.updateMessage(conversationId, msgId, updates),
       deleteMessage: (msgId) => this.#messagingGateway.deleteMessage(conversationId, msgId),
     };

@@ -60,7 +60,7 @@ export class LogFoodFromImage {
       // Otherwise, wrap with bound methods from gateway
       return {
         sendMessage: (text, options) => responseContext.sendMessage(text, options),
-        sendPhoto: (src, options) => responseContext.sendPhoto(src, options),
+        sendPhoto: (src, caption, options) => responseContext.sendPhoto(src, caption, options),
         updateMessage: (msgId, updates) => responseContext.updateMessage(msgId, updates),
         deleteMessage: (msgId) => responseContext.deleteMessage(msgId),
         getFileUrl: this.#messagingGateway?.getFileUrl?.bind(this.#messagingGateway),
@@ -69,7 +69,7 @@ export class LogFoodFromImage {
     }
     return {
       sendMessage: (text, options) => this.#messagingGateway.sendMessage(conversationId, text, options),
-      sendPhoto: (src, options) => this.#messagingGateway.sendPhoto(conversationId, src, options),
+      sendPhoto: (src, caption, options) => this.#messagingGateway.sendPhoto(conversationId, src, caption, options),
       updateMessage: (msgId, updates) => this.#messagingGateway.updateMessage(conversationId, msgId, updates),
       deleteMessage: (msgId) => this.#messagingGateway.deleteMessage(conversationId, msgId),
       getFileUrl: this.#messagingGateway?.getFileUrl?.bind(this.#messagingGateway),

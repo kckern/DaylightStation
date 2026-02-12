@@ -2313,6 +2313,7 @@ export function createNutribotApiRouter(config) {
   return createNutribotRouter(nutribotServices.nutribotContainer, {
     webhookHandler,
     telegramIdentityAdapter,
+    defaultMember: config.defaultMember,
     botId,
     secretToken,
     gateway,

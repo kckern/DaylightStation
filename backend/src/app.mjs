@@ -959,8 +959,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   const upcHttpClient = new HttpClient({ logger: rootLogger.child({ module: 'upc-http' }) });
+  const nxConfig = nutribotConfig.integrations?.nutritionix;
   const upcGateway = new UPCGateway({
     httpClient: upcHttpClient,
+    nutritionix: nxConfig?.app_id ? {
+      appId: nxConfig.app_id,
+      appKey: configService.getSystemAuth('food', 'nutritionix_api_key'),
+    } : null,
     logger: rootLogger.child({ module: 'upc-gateway' }),
   });
 
@@ -994,6 +999,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     userResolver,
     userIdentityService,
     telegramIdentityAdapter,
+    defaultMember: configService.getHeadOfHousehold(),
     botId: systemBots.nutribot?.telegram?.bot_id || '',
     secretToken: systemBots.nutribot?.telegram?.secret_token || '',
     gateway: nutribotTelegramAdapter,
