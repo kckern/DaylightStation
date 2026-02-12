@@ -1,0 +1,69 @@
+// DaylightStation Admin — Design Tokens
+// Mission Control aesthetic: deep blue-black backgrounds, blue accent, monospace technical feel
+
+:root {
+  // Background layers (darkest → lightest)
+  --ds-bg-base:       #0C0E14;
+  --ds-bg-surface:    #12141C;
+  --ds-bg-elevated:   #1A1D28;
+  --ds-bg-overlay:    #222636;
+
+  // Borders
+  --ds-border:        #2A2E3D;
+  --ds-border-focus:  #4A7BF7;
+
+  // Text
+  --ds-text-primary:   #E8EAF0;
+  --ds-text-secondary: #8B90A0;
+  --ds-text-muted:     #555A6E;
+
+  // Accent
+  --ds-accent:         #4A7BF7;
+  --ds-accent-glow:    rgba(74, 123, 247, 0.15);
+  --ds-accent-hover:   #5D8AFF;
+  --ds-accent-subtle:  rgba(74, 123, 247, 0.08);
+
+  // Semantic
+  --ds-success:    #34D399;
+  --ds-warning:    #FBBF24;
+  --ds-danger:     #F87171;
+  --ds-info:       #60A5FA;
+
+  // Typography
+  --ds-font-body:  'IBM Plex Sans', -apple-system, sans-serif;
+  --ds-font-mono:  'JetBrains Mono', 'Fira Code', monospace;
+
+  // Spacing (4px grid)
+  --ds-space-1:  4px;
+  --ds-space-2:  8px;
+  --ds-space-3:  12px;
+  --ds-space-4:  16px;
+  --ds-space-5:  20px;
+  --ds-space-6:  24px;
+  --ds-space-8:  32px;
+  --ds-space-10: 40px;
+
+  // Transitions
+  --ds-transition-fast: 100ms ease;
+  --ds-transition-base: 150ms ease;
+  --ds-transition-slow: 250ms ease;
+
+  // Radii
+  --ds-radius-sm: 4px;
+  --ds-radius-md: 6px;
+  --ds-radius-lg: 8px;
+
+  // Shadows
+  --ds-shadow-card:     0 1px 3px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.2);
+  --ds-shadow-elevated: 0 4px 16px rgba(0, 0, 0, 0.4), 0 2px 4px rgba(0, 0, 0, 0.3);
+  --ds-shadow-glow:     0 0 20px var(--ds-accent-glow);
+}
+
+// Reduced motion support
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --ds-transition-fast: 0ms;
+    --ds-transition-base: 0ms;
+    --ds-transition-slow: 0ms;
+  }
+}
