@@ -75,7 +75,14 @@ export function createQueueRouter(config) {
     const { shuffle, limit } = parseQueueQuery(req.query);
 
     // Resolve through ContentIdResolver (handles aliases, prefixes, exact matches)
-    const resolved = contentIdResolver.resolve(compoundId);
+    let resolved = contentIdResolver.resolve(compoundId);
+
+    // Fallback: if resolution failed and there's no localId, the source segment
+    // might be a bare content reference (e.g., "music-queue", "fhe").
+    // Try resolving the raw source name directly through ContentIdResolver.
+    if (!resolved?.adapter && !localId && parsedSource) {
+      resolved = contentIdResolver.resolve(parsedSource);
+    }
 
     let adapter = resolved?.adapter;
     let finalId = resolved ? `${resolved.source}:${resolved.localId}` : compoundId;
