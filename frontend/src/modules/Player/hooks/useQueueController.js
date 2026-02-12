@@ -39,16 +39,16 @@ export function useQueueController({ play, queue, clear, shuffle }) {
   }, []);
 
   const isQueue = !!queue || (play && (play.playlist || play.queue)) || Array.isArray(play);
-  const contentIdKey = play?.contentId || queue?.contentId;
-  const playlistKey = play?.playlist || play?.queue || queue?.playlist || queue?.queue || queue?.media;
-  const plexKey = queue?.plex || play?.plex;
+  const contentRef = play?.contentId || queue?.contentId
+                  || play?.plex || queue?.plex
+                  || play?.playlist || play?.queue
+                  || queue?.playlist || queue?.queue || queue?.media
+                  || null;
 
   useEffect(() => {
     const signatureParts = [];
 
-    if (contentIdKey) signatureParts.push(`contentId:${contentIdKey}`);
-    if (playlistKey) signatureParts.push(`playlist:${playlistKey}`);
-    if (plexKey) signatureParts.push(`plex:${plexKey}`);
+    if (contentRef) signatureParts.push(`ref:${contentRef}`);
     signatureParts.push(`shuffle:${isShuffle ? '1' : '0'}`);
 
     if (Array.isArray(play)) {
@@ -91,24 +91,12 @@ export function useQueueController({ play, queue, clear, shuffle }) {
       } else if (Array.isArray(queue)) {
         newQueue = queue.map(item => ({ ...item, guid: guid() }));
       } else if ((play && typeof play === 'object') || (queue && typeof queue === 'object')) {
-        const queue_contentId = play?.contentId || queue?.contentId;
-        const queue_assetId = play?.playlist || play?.queue || queue?.playlist || queue?.queue || queue?.media;
-        const shuffleParam = isShuffle ? '?shuffle=true' : '';
-
-        let queueUrl = null;
-        if (queue_contentId && !queue_assetId && !plexKey) {
-          queueUrl = `api/v1/queue/${queue_contentId}${shuffleParam}`;
-        } else if (queue_assetId) {
-          queueUrl = `api/v1/queue/list/${queue_assetId}${shuffleParam}`;
-        } else if (queue?.plex || play?.plex) {
-          const plexId = queue?.plex || play?.plex;
-          queueUrl = `api/v1/queue/plex/${plexId}${shuffleParam}`;
-        }
-
-        if (queueUrl) {
-          const { items } = await DaylightAPI(queueUrl);
+        if (contentRef) {
+          const shuffleParam = isShuffle ? '?shuffle=true' : '';
+          const { items } = await DaylightAPI(`api/v1/queue/${contentRef}${shuffleParam}`);
           newQueue = items.map(item => ({ ...item, ...itemOverrides, guid: guid() }));
         } else if (play?.media) {
+          // Inline media object — no API resolution needed
           newQueue = [{ ...play, ...itemOverrides, guid: guid() }];
         }
       }
@@ -119,8 +107,7 @@ export function useQueueController({ play, queue, clear, shuffle }) {
     }
     initQueue().catch((error) => {
       playbackLog('queue-init-failed', {
-        playlistKey,
-        plexKey,
+        contentRef,
         error: error?.message
       }, { level: 'error' });
       if (!isCancelled) {
@@ -131,7 +118,7 @@ export function useQueueController({ play, queue, clear, shuffle }) {
     return () => {
       isCancelled = true;
     };
-  }, [play, queue, isShuffle, contentIdKey, playlistKey, plexKey]);
+  }, [play, queue, isShuffle, contentRef]);
 
   const advance = useCallback((step = 1) => {
     setQueue((prevQueue) => {
