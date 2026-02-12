@@ -3,6 +3,7 @@ import {
   Stack, Group, Button, Alert, Center, Loader, Badge, Text, Divider
 } from '@mantine/core';
 import { IconAlertCircle, IconDeviceFloppy, IconArrowBack } from '@tabler/icons-react';
+import { useHotkeys } from '@mantine/hooks';
 import { useAdminConfig } from '../../../hooks/admin/useAdminConfig.js';
 
 /**
@@ -33,6 +34,17 @@ function ConfigFormWrapper({ filePath, title, children, validate }) {
     }
     await save();
   };
+
+  useHotkeys([
+    ['mod+s', (e) => {
+      e.preventDefault();
+      if (dirty && !saving) handleSave();
+    }],
+    ['mod+z', (e) => {
+      e.preventDefault();
+      if (dirty && !saving) revert();
+    }],
+  ]);
 
   if (loading && !data) {
     return (
