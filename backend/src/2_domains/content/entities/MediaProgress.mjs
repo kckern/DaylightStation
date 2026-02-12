@@ -10,6 +10,7 @@ import { ValidationError } from '../../core/errors/index.mjs';
  * @property {number} [playCount=0] - Number of times started
  * @property {string} [lastPlayed] - ISO timestamp of last play
  * @property {number} [watchTime=0] - Total seconds spent watching
+ * @property {Object} [bookmark] - Position recovery bookmark (auto-expires after 7 days)
  */
 
 /**
@@ -29,6 +30,15 @@ export class MediaProgress {
     this.lastPlayed = props.lastPlayed ?? null;
     this.watchTime = props.watchTime ?? 0;
     this._storedPercent = props.percent ?? null;
+
+    // Bookmark for position recovery (optional, expires after 7 days)
+    const rawBookmark = props.bookmark ?? null;
+    if (rawBookmark && rawBookmark.createdAt) {
+      const age = Date.now() - Date.parse(rawBookmark.createdAt);
+      this.bookmark = age <= 7 * 24 * 60 * 60 * 1000 ? rawBookmark : null;
+    } else {
+      this.bookmark = rawBookmark;
+    }
   }
 
   /**
@@ -63,7 +73,7 @@ export class MediaProgress {
    * @returns {Object}
    */
   toJSON() {
-    return {
+    const json = {
       itemId: this.itemId,
       playhead: this.playhead,
       duration: this.duration,
@@ -72,6 +82,8 @@ export class MediaProgress {
       lastPlayed: this.lastPlayed,
       watchTime: this.watchTime
     };
+    if (this.bookmark) json.bookmark = this.bookmark;
+    return json;
   }
 }
 
