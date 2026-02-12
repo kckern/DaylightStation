@@ -31,6 +31,7 @@ data/household/config/*
 !**/DataService.test.mjs
 node_modules/*
 *.sh
+!docker/entrypoint.sh
 docker.local.sh
 known_hosts
 /_extentions/fitness/node_modules
