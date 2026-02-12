@@ -992,6 +992,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   v1Routers.nutribot = createNutribotApiRouter({
     nutribotServices,
     userResolver,
+    userIdentityService,
     telegramIdentityAdapter,
     botId: systemBots.nutribot?.telegram?.bot_id || '',
     secretToken: systemBots.nutribot?.telegram?.secret_token || '',
@@ -1032,6 +1033,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     journalistServices,
     configService,
     userResolver,
+    userIdentityService,
     telegramIdentityAdapter,
     botId: systemBots.journalist?.telegram?.bot_id || '',
     secretToken: systemBots.journalist?.telegram?.secret_token || '',
@@ -1070,6 +1072,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   v1Routers.homebot = createHomebotApiRouter({
     homebotServices,
     userResolver,
+    userIdentityService,
     telegramIdentityAdapter,
     botId: systemBots.homebot?.telegram?.bot_id || '',
     secretToken: systemBots.homebot?.telegram?.secret_token || '',

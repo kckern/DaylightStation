@@ -2040,6 +2040,7 @@ export function createJournalistApiRouter(config) {
     journalistServices,
     configService,
     userResolver,
+    userIdentityService,
     telegramIdentityAdapter,
     botId,
     secretToken,
@@ -2049,7 +2050,7 @@ export function createJournalistApiRouter(config) {
 
   // Create webhook parser and input router
   const webhookParser = botId ? new TelegramWebhookParser({ botId, logger }) : null;
-  const inputRouter = new JournalistInputRouter(journalistServices.journalistContainer, { userResolver, logger });
+  const inputRouter = new JournalistInputRouter(journalistServices.journalistContainer, { userResolver, userIdentityService, logger });
 
   // Build webhook handler (adapter layer concern, not API layer)
   const webhookHandler = (webhookParser && inputRouter)
@@ -2141,6 +2142,7 @@ export function createHomebotApiRouter(config) {
   const {
     homebotServices,
     userResolver,
+    userIdentityService,
     telegramIdentityAdapter,
     botId,
     secretToken,
@@ -2152,7 +2154,7 @@ export function createHomebotApiRouter(config) {
 
   // Create webhook parser and input router
   const webhookParser = botId ? new TelegramWebhookParser({ botId, logger }) : null;
-  const inputRouter = new HomeBotInputRouter(homebotServices.homebotContainer, { userResolver, logger });
+  const inputRouter = new HomeBotInputRouter(homebotServices.homebotContainer, { userResolver, userIdentityService, logger });
 
   // Build webhook handler (adapter layer concern, not API layer)
   const webhookHandler = (webhookParser && inputRouter)
@@ -2279,6 +2281,7 @@ export function createNutribotApiRouter(config) {
   const {
     nutribotServices,
     userResolver,
+    userIdentityService,
     telegramIdentityAdapter,
     botId,
     secretToken,
@@ -2290,6 +2293,7 @@ export function createNutribotApiRouter(config) {
   const webhookParser = botId ? new TelegramWebhookParser({ botId, logger }) : null;
   const inputRouter = new NutribotInputRouter(nutribotServices.nutribotContainer, {
     userResolver,
+    userIdentityService,
     config: nutribotServices.nutribotContainer.getConfig?.(),
     logger,
   });
