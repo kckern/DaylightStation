@@ -16,6 +16,8 @@ import path, { join } from 'path';
 // Infrastructure imports
 import { ConfigValidationError, configService, dataService, userDataService, userService } from './0_system/config/index.mjs';
 import { UserResolver } from './0_system/users/UserResolver.mjs';
+import { UserIdentityService } from './2_domains/messaging/services/UserIdentityService.mjs';
+import { TelegramIdentityAdapter } from './1_adapters/messaging/TelegramIdentityAdapter.mjs';
 import { HttpClient } from './0_system/services/HttpClient.mjs';
 
 // Logging system
@@ -246,6 +248,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const userResolver = new UserResolver(configService, {
     logger: rootLogger.child({ module: 'user-resolver' })
   });
+
+  // Domain identity service (replaces UserResolver for identity resolution)
+  const userIdentityService = new UserIdentityService(
+    configService.getIdentityMappings()
+  );
 
   // EventBus (WebSocket)
   const eventBus = await createEventBus({
@@ -875,6 +882,19 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const systemBots = configService.getSystemConfig('bots') || {};
   const gmailConfig = configService.getAppConfig('gmail') || {};
 
+  // TelegramIdentityAdapter — single place for Telegram conversationId construction
+  const telegramBotConfigs = {};
+  for (const [botName, botConfig] of Object.entries(systemBots)) {
+    if (botConfig?.telegram?.bot_id) {
+      telegramBotConfigs[botName] = { botId: botConfig.telegram.bot_id };
+    }
+  }
+  const telegramIdentityAdapter = new TelegramIdentityAdapter({
+    userIdentityService,
+    botConfigs: telegramBotConfigs,
+    logger: rootLogger.child({ module: 'telegram-identity' }),
+  });
+
   // NutriBot application config
   const nutribotConfig = configService.getAppConfig('nutribot') || {};
   const openaiApiKey = configService.getSecret('OPENAI_API_KEY') || '';
@@ -972,6 +992,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   v1Routers.nutribot = createNutribotApiRouter({
     nutribotServices,
     userResolver,
+    telegramIdentityAdapter,
     botId: systemBots.nutribot?.telegram?.bot_id || '',
     secretToken: systemBots.nutribot?.telegram?.secret_token || '',
     gateway: nutribotTelegramAdapter,
@@ -1011,6 +1032,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     journalistServices,
     configService,
     userResolver,
+    telegramIdentityAdapter,
     botId: systemBots.journalist?.telegram?.bot_id || '',
     secretToken: systemBots.journalist?.telegram?.secret_token || '',
     gateway: journalistTelegramAdapter,
@@ -1048,6 +1070,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   v1Routers.homebot = createHomebotApiRouter({
     homebotServices,
     userResolver,
+    telegramIdentityAdapter,
     botId: systemBots.homebot?.telegram?.bot_id || '',
     secretToken: systemBots.homebot?.telegram?.secret_token || '',
     gateway: homebotTelegramAdapter,

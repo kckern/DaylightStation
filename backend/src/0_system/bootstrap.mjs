@@ -2040,6 +2040,7 @@ export function createJournalistApiRouter(config) {
     journalistServices,
     configService,
     userResolver,
+    telegramIdentityAdapter,
     botId,
     secretToken,
     gateway,
@@ -2064,6 +2065,7 @@ export function createJournalistApiRouter(config) {
 
   return createJournalistRouter(journalistServices.journalistContainer, {
     webhookHandler,
+    telegramIdentityAdapter,
     botId,
     secretToken,
     gateway,
@@ -2139,6 +2141,7 @@ export function createHomebotApiRouter(config) {
   const {
     homebotServices,
     userResolver,
+    telegramIdentityAdapter,
     botId,
     secretToken,
     gateway,
@@ -2165,6 +2168,7 @@ export function createHomebotApiRouter(config) {
 
   return createHomebotRouter(homebotServices.homebotContainer, {
     webhookHandler,
+    telegramIdentityAdapter,
     botId,
     secretToken,
     gateway,
@@ -2275,6 +2279,7 @@ export function createNutribotApiRouter(config) {
   const {
     nutribotServices,
     userResolver,
+    telegramIdentityAdapter,
     botId,
     secretToken,
     gateway,
@@ -2303,6 +2308,7 @@ export function createNutribotApiRouter(config) {
 
   return createNutribotRouter(nutribotServices.nutribotContainer, {
     webhookHandler,
+    telegramIdentityAdapter,
     botId,
     secretToken,
     gateway,
