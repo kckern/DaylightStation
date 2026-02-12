@@ -16,8 +16,8 @@ import { nowTs } from '#system/utils/index.mjs';
  * @param {Object} [options.query] - Request query params
  * @returns {{ userId: string, conversationId: string }}
  */
-function resolveUserContext({ identityAdapter, body, query = {} }) {
-  const member = body.member || query.member;
+function resolveUserContext({ identityAdapter, body, query = {}, defaultMember }) {
+  const member = body.member || query.member || defaultMember;
   const platformUserId = body.user_id || query.user_id || body.chat_id || query.chat_id;
 
   let identity;
@@ -45,6 +45,7 @@ function resolveUserContext({ identityAdapter, body, query = {} }) {
 export function directUPCHandler(container, options = {}) {
   const logger = options.logger || console;
   const identityAdapter = options.identityAdapter;
+  const defaultMember = options.defaultMember;
 
   return async (req, res) => {
     const traceId = req.traceId || 'direct-upc';
@@ -71,7 +72,7 @@ export function directUPCHandler(container, options = {}) {
       });
     }
 
-    const { userId, conversationId } = resolveUserContext({ identityAdapter, body: req.body, query: req.query });
+    const { userId, conversationId } = resolveUserContext({ identityAdapter, body: req.body, query: req.query, defaultMember });
 
     logger.info?.('direct.upc.received', {
       traceId,
@@ -110,6 +111,7 @@ export function directUPCHandler(container, options = {}) {
 export function directImageHandler(container, options = {}) {
   const logger = options.logger || console;
   const identityAdapter = options.identityAdapter;
+  const defaultMember = options.defaultMember;
 
   return async (req, res) => {
     const traceId = req.traceId || 'direct-image';
@@ -147,7 +149,7 @@ export function directImageHandler(container, options = {}) {
       });
     }
 
-    const { userId, conversationId } = resolveUserContext({ identityAdapter, body: req.body, query: req.query });
+    const { userId, conversationId } = resolveUserContext({ identityAdapter, body: req.body, query: req.query, defaultMember });
 
     logger.info?.('direct.image.received', {
       ...requestMetadata,
@@ -195,6 +197,7 @@ export function directImageHandler(container, options = {}) {
 export function directTextHandler(container, options = {}) {
   const logger = options.logger || console;
   const identityAdapter = options.identityAdapter;
+  const defaultMember = options.defaultMember;
 
   return async (req, res) => {
     const traceId = req.traceId || 'direct-text';
@@ -210,7 +213,7 @@ export function directTextHandler(container, options = {}) {
       });
     }
 
-    const { userId, conversationId } = resolveUserContext({ identityAdapter, body: req.body, query: req.query });
+    const { userId, conversationId } = resolveUserContext({ identityAdapter, body: req.body, query: req.query, defaultMember });
 
     logger.info?.('direct.text.received', {
       traceId,
