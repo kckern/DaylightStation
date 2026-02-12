@@ -107,6 +107,15 @@ export class ConfigService {
     return this.#config.identityMappings?.[platform]?.[String(platformId)] ?? null;
   }
 
+  resolvePlatformId(platform, username) {
+    const mappings = this.#config.identityMappings?.[platform];
+    if (!mappings) return null;
+    for (const [platformId, user] of Object.entries(mappings)) {
+      if (user === username) return platformId;
+    }
+    return null;
+  }
+
   // ─── Auth ──────────────────────────────────────────────────
 
   getUserAuth(service, username = null) {

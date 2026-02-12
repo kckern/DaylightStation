@@ -28,7 +28,8 @@ GET https://{APP_DOMAIN}/api/v1/nutribot/upc?upc={BARCODE}
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | `upc` | Yes | 8-14 digit barcode (UPC-A, UPC-E, EAN-13, EAN-8) |
-| `user_id` | No | Telegram user ID. Defaults to primary household user. |
+| `member` | No | Household member username (e.g., `popeye`). Resolves to Telegram ID via identity mappings. |
+| `user_id` | No | Raw Telegram user ID. Fallback if `member` not provided. Defaults to head of household. |
 
 ## Setup Steps
 
@@ -43,10 +44,10 @@ Install from [F-Droid](https://f-droid.org/packages/de.markusfisch.android.binar
 3. Set the custom URL to:
 
 ```
-https://{APP_DOMAIN}/api/v1/nutribot/upc?upc=%s
+https://{APP_DOMAIN}/api/v1/nutribot/upc?upc=%s&member={YOUR_USERNAME}
 ```
 
-The `%s` placeholder is replaced by the scanned barcode value.
+The `%s` placeholder is replaced by the scanned barcode value. Replace `{YOUR_USERNAME}` with your household member name (e.g., `popeye`). Omit `&member=...` if you're the head of household.
 
 ### 3. Set Default Action
 

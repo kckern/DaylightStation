@@ -667,18 +667,18 @@ export function createMediaProgressMemory(config) {
  * @param {string} [config.dataPath] - Base data path for local content
  * @param {import('./proxy/ProxyService.mjs').ProxyService} [config.proxyService] - Proxy service for external services
  * @param {import('#apps/content/usecases/ComposePresentationUseCase.mjs').ComposePresentationUseCase} [config.composePresentationUseCase] - Use case for composing presentations
- * @param {Object<string, string>} [config.legacyPrefixMap] - Legacy prefix mapping (e.g., { hymn: 'singalong:hymn' })
+ * @param {Object<string, string>} [config.prefixAliases] - Prefix aliases (e.g., { hymn: 'singalong:hymn' })
  * @param {Object} [config.logger] - Logger instance
  * @returns {Object} Router configuration
  */
 export function createApiRouters(config) {
-  const { registry, mediaProgressMemory, loadFile, saveFile, cacheBasePath, dataPath, mediaBasePath, proxyService, composePresentationUseCase, configService, legacyPrefixMap = {}, savedQueryService = null, logger = console } = config;
+  const { registry, mediaProgressMemory, loadFile, saveFile, cacheBasePath, dataPath, mediaBasePath, proxyService, composePresentationUseCase, configService, prefixAliases = {}, savedQueryService = null, logger = console } = config;
 
-  // Register legacy prefix aliases (e.g., hymn → singalong:hymn) from config
-  // This enables the content API to resolve legacy prefixes via registry.resolveFromPrefix()
-  if (Object.keys(legacyPrefixMap).length > 0) {
-    registry.registerLegacyPrefixes(legacyPrefixMap);
-    logger.debug?.('bootstrap.legacyPrefixes.registered', { prefixes: Object.keys(legacyPrefixMap) });
+  // Register prefix aliases (e.g., hymn → singalong:hymn) from config
+  // This enables the content API to resolve aliased prefixes via registry.resolveFromPrefix()
+  if (Object.keys(prefixAliases).length > 0) {
+    registry.registerPrefixAliases(prefixAliases);
+    logger.debug?.('bootstrap.prefixAliases.registered', { prefixes: Object.keys(prefixAliases) });
   }
 
   // Scan list directories for bare name resolution (Layer 4a).
@@ -694,8 +694,8 @@ export function createApiRouters(config) {
   }
 
   // Create ContentIdResolver for unified content ID resolution.
-  // Legacy prefixes (hymn, scripture, etc.) are already registered in the registry
-  // via registerLegacyPrefixes() above — ContentIdResolver Layer 2 resolves them.
+  // Prefix aliases (hymn, scripture, etc.) are already registered in the registry
+  // via registerPrefixAliases() above — ContentIdResolver Layer 2 resolves them.
   // systemAliases is reserved for future aliases not backed by registry prefixes.
   const contentIdResolver = new ContentIdResolver(registry, {
     systemAliases: {
@@ -716,7 +716,7 @@ export function createApiRouters(config) {
   const aliasResolver = new ContentQueryAliasResolver({ registry, configService });
 
   // Create ContentQueryService for unified query interface
-  const contentQueryService = new ContentQueryService({ registry, mediaProgressMemory, legacyPrefixMap, logger, aliasResolver });
+  const contentQueryService = new ContentQueryService({ registry, mediaProgressMemory, prefixAliases, logger, aliasResolver });
 
   // Create SiblingsService for sibling resolution
   const siblingsService = new SiblingsService({ registry, logger });

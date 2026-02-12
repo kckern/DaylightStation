@@ -9,7 +9,7 @@ import { ItemSelectionService, RelevanceScoringService } from '#domains/content/
 export class ContentQueryService {
   #registry;
   #mediaProgressMemory;
-  #legacyPrefixMap;
+  #prefixAliases;
   #logger;
   #aliasResolver;
 
@@ -17,14 +17,14 @@ export class ContentQueryService {
    * @param {Object} deps
    * @param {import('#domains/content/services/ContentSourceRegistry.mjs').ContentSourceRegistry} deps.registry
    * @param {import('#apps/content/ports/IMediaProgressMemory.mjs').IMediaProgressMemory} [deps.mediaProgressMemory]
-  * @param {Object<string, string>} [deps.legacyPrefixMap] - Map of legacy prefixes to canonical format (e.g., { hymn: 'singalong:hymn' })
+  * @param {Object<string, string>} [deps.prefixAliases] - Map of prefix aliases to canonical format (e.g., { hymn: 'singalong:hymn' })
    * @param {Object} [deps.logger] - Logger instance for performance and debug logging
    * @param {import('./services/ContentQueryAliasResolver.mjs').ContentQueryAliasResolver} [deps.aliasResolver] - Optional alias resolver for prefix-based queries
    */
-  constructor({ registry, mediaProgressMemory = null, legacyPrefixMap = {}, logger = console, aliasResolver = null }) {
+  constructor({ registry, mediaProgressMemory = null, prefixAliases = {}, logger = console, aliasResolver = null }) {
     this.#registry = registry;
     this.#mediaProgressMemory = mediaProgressMemory;
-    this.#legacyPrefixMap = legacyPrefixMap;
+    this.#prefixAliases = prefixAliases;
     this.#logger = logger;
     this.#aliasResolver = aliasResolver;
   }
@@ -342,8 +342,8 @@ export class ContentQueryService {
       const prefix = explicitMatch[1].toLowerCase();
       const localId = explicitMatch[2];
 
-      // Check if prefix is in legacy map (e.g., "hymn" -> "singalong:hymn")
-      const legacyMapping = this.#legacyPrefixMap[prefix];
+      // Check if prefix is an alias (e.g., "hymn" -> "singalong:hymn")
+      const legacyMapping = this.#prefixAliases[prefix];
       if (legacyMapping) {
         // legacyMapping is like "singalong:hymn" - split to get source and category
         const [source, category] = legacyMapping.split(':');
