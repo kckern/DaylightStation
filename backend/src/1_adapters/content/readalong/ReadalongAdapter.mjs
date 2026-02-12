@@ -29,11 +29,12 @@ export class ReadalongAdapter {
    * @param {Object<string, string>} [config.mediaPathMap] - Optional per-collection media base paths
    * @param {Object} [config.mediaProgressMemory] - Media progress memory instance
    */
-  constructor({ dataPath, mediaPath, mediaPathMap, mediaProgressMemory }) {
+  constructor({ dataPath, mediaPath, mediaPathMap, mediaProgressMemory, storagePaths }) {
     this.dataPath = dataPath;
     this.mediaPath = mediaPath;
     this.mediaPathMap = mediaPathMap || {};
     this.mediaProgressMemory = mediaProgressMemory || null;
+    this.storagePaths = storagePaths || {};
     this.resolvers = {};
   }
 
@@ -63,8 +64,7 @@ export class ReadalongAdapter {
     if (id) {
       const localId = id.replace(/^readalong:/, '');
       const collection = localId.split('/')[0];
-      const manifest = this._loadManifest(collection);
-      if (manifest?.storagePath) return manifest.storagePath;
+      if (this.storagePaths[collection]) return this.storagePaths[collection];
     }
     return 'readalong';
   }

@@ -467,7 +467,8 @@ export function createContentRegistry(config, deps = {}) {
         mediaPath: config.mediaBasePath,
         mediaProgressMemory,
         householdId: config.householdId || null,
-        householdsBasePath: config.householdsBasePath || null
+        householdsBasePath: config.householdsBasePath || null,
+        contentRegistry: registry
       }),
       { category: 'local', provider: 'local-content' }
     );
@@ -590,7 +591,8 @@ export function createContentRegistry(config, deps = {}) {
       new SingalongAdapter({
         dataPath: config.singalong.dataPath,
         mediaPath: config.singalong.mediaPath,
-        mediaProgressMemory
+        mediaProgressMemory,
+        storagePaths: config.storagePaths
       }),
       { category: singalongManifest.capability, provider: singalongManifest.provider }
     );
@@ -603,7 +605,8 @@ export function createContentRegistry(config, deps = {}) {
         dataPath: config.readalong.dataPath,
         mediaPath: config.readalong.mediaPath,
         mediaPathMap: config.readalong.mediaPathMap || null,
-        mediaProgressMemory
+        mediaProgressMemory,
+        storagePaths: config.storagePaths
       }),
       { category: readalongManifest.capability, provider: readalongManifest.provider }
     );

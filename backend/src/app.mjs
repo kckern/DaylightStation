@@ -350,6 +350,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     }
   };
 
+  // Load content prefix config early — needed by both createContentRegistry and createApiRouters
+  const contentPrefixesPath = path.join(dataBasePath, 'household', 'config', 'content-prefixes');
+  const contentPrefixes = loadYaml(contentPrefixesPath) || {};
+  const legacyPrefixMap = contentPrefixes.legacy || {};
+  const storagePaths = contentPrefixes.storagePaths || {};
+
   const { registry: contentRegistry, savedQueryService } = createContentRegistry({
     mediaBasePath,
     plex: mediaLibConfig,  // Bootstrap key stays 'plex' for now
@@ -362,7 +368,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     nomusicLabels,
     musicOverlayPlaylist,
     singalong: singalongConfig,  // Sing-along content (hymns, primary songs)
-    readalong: readalongConfig   // Follow-along readalong content (scripture, talks, poetry)
+    readalong: readalongConfig,  // Follow-along readalong content (scripture, talks, poetry)
+    storagePaths                 // Collection → media_memory filename mapping
   }, { httpClient: axios, mediaProgressMemory, app });
 
   // Create proxy service for content domain (used for media library passthrough)
@@ -378,11 +385,6 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const { loadYaml, saveYaml } = await import('./0_system/utils/FileIO.mjs');
   const contentLoadFile = (relativePath) => loadYaml(path.join(householdDir, relativePath));
   const contentSaveFile = (relativePath, data) => saveYaml(path.join(householdDir, relativePath), data);
-
-  // Load legacy prefix mapping for ContentQueryService (e.g., hymn:123 -> singalong:hymn/123)
-  const contentPrefixesPath = path.join(dataBasePath, 'household', 'config', 'content-prefixes');
-  const contentPrefixes = loadYaml(contentPrefixesPath) || {};
-  const legacyPrefixMap = contentPrefixes.legacy || {};
 
   // Create compose presentation use case for multi-track content composition
   const composePresentationUseCase = new ComposePresentationUseCase({
