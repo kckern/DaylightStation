@@ -333,7 +333,14 @@ export class ListAdapter {
     // String preset
     if (typeof days === 'string') {
       const preset = days.toLowerCase();
-      return DAY_PRESETS[preset] || [days];
+      if (DAY_PRESETS[preset]) return DAY_PRESETS[preset];
+
+      // Split on bullet separator (e.g., "M•W•F" or "T•Th")
+      if (days.includes('•')) {
+        return days.split('•').map(d => d.trim()).filter(Boolean);
+      }
+
+      return [days];
     }
 
     // Already an array
