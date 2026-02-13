@@ -69,6 +69,7 @@ import { VoiceMemoTranscriptionService } from '#adapters/fitness/VoiceMemoTransc
 import { OpenAIAdapter } from '#adapters/ai/OpenAIAdapter.mjs';
 import { FitnessSyncerAdapter } from '#adapters/harvester/fitness/FitnessSyncerAdapter.mjs';
 import { FitnessConfigService } from '#apps/fitness/FitnessConfigService.mjs';
+import { FitnessPlayableService } from '#apps/fitness/FitnessPlayableService.mjs';
 import { createFitnessRouter } from '#api/v1/routers/fitness.mjs';
 
 // Home automation imports
@@ -880,28 +881,36 @@ export function createFitnessApiRouter(config) {
     logger = console
   } = config;
 
-  // Create FitnessConfigService for normalized config access
+  // Create FitnessConfigService for normalized config access, playlist enrichment, and member names
   const fitnessConfigService = new FitnessConfigService({
     userDataService,
-    configService
+    configService,
+    logger
   });
 
   // Resolve fitness content adapter from config (defaults to plex)
   const fitnessContentSource = fitnessConfig?.content_source || 'plex';
   const fitnessContentAdapter = contentRegistry?.get(fitnessContentSource);
 
+  // Create FitnessPlayableService for show/playable orchestration
+  const fitnessPlayableService = new FitnessPlayableService({
+    fitnessConfigService,
+    contentAdapter: fitnessContentAdapter,
+    contentQueryService,
+    createProgressClassifier: (cfg) => new FitnessProgressClassifier(cfg),
+    logger
+  });
+
   return createFitnessRouter({
     sessionService: fitnessServices.sessionService,
     zoneLedController: fitnessServices.ambientLedController,
     transcriptionService: fitnessServices.transcriptionService,
-    createProgressClassifier: (config) => new FitnessProgressClassifier(config),
     fitnessConfigService,
+    fitnessPlayableService,
     fitnessContentAdapter,
     userService,
-    userDataService,
     configService,
     contentRegistry,  // Still needed for playlist thumbnail enrichment
-    contentQueryService,
     createReceiptCanvas,
     printerAdapter,
     logger
