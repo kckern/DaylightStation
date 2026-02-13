@@ -3,17 +3,19 @@
  *
  * This runs the continuous scheduler that checks for and executes due jobs.
  * Only runs in production (Docker) unless ENABLE_CRON=true.
+ *
+ * Uses SchedulerOrchestrator (application layer) for all I/O operations.
  */
 
 import { existsSync } from 'fs';
 
 export class Scheduler {
   constructor({
-    schedulerService,
+    schedulerOrchestrator,
     intervalMs = 5000,
     logger = console
   }) {
-    this.schedulerService = schedulerService;
+    this.schedulerOrchestrator = schedulerOrchestrator;
     this.intervalMs = intervalMs;
     this.logger = logger;
     this.intervalId = null;
@@ -75,9 +77,9 @@ export class Scheduler {
    */
   async initialize() {
     try {
-      const jobsWithState = await this.schedulerService.loadJobsWithState();
+      const jobsWithState = await this.schedulerOrchestrator.loadJobsWithState();
       const now = new Date();
-      await this.schedulerService.initializeStates(jobsWithState, now);
+      await this.schedulerOrchestrator.initializeStates(jobsWithState, now);
       this.logger.info?.('scheduler.initialized', {
         jobCount: jobsWithState.length
       });
@@ -100,7 +102,7 @@ export class Scheduler {
 
     try {
       const now = new Date();
-      const executions = await this.schedulerService.runDueJobs(now);
+      const executions = await this.schedulerOrchestrator.runDueJobs(now);
       if (executions.length > 0) {
         this.logger.debug?.('scheduler.tick_complete', {
           jobsRun: executions.map(e => e.jobId)

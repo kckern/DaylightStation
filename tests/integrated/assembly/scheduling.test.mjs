@@ -9,6 +9,7 @@ import { jest, describe, it, expect, beforeAll, beforeEach } from '@jest/globals
 import express from 'express';
 import request from 'supertest';
 import { SchedulerService } from '#domains/scheduling/services/SchedulerService.mjs';
+import { SchedulerOrchestrator } from '#apps/scheduling/SchedulerOrchestrator.mjs';
 import { createSchedulingRouter } from '#backend/src/4_api/v1/routers/scheduling.mjs';
 import { Job } from '#domains/scheduling/entities/Job.mjs';
 import { JobState } from '#domains/scheduling/entities/JobState.mjs';
@@ -16,6 +17,7 @@ import { JobState } from '#domains/scheduling/entities/JobState.mjs';
 describe('scheduling integration', () => {
   let app;
   let schedulerService;
+  let schedulerOrchestrator;
   let mockJobStore;
   let mockStateStore;
   let mockScheduler;
@@ -106,18 +108,23 @@ describe('scheduling integration', () => {
       })
     };
 
-    // Create scheduler service with mocked stores
+    // Create pure domain service
     schedulerService = new SchedulerService({
+      timezone: 'America/Los_Angeles'
+    });
+
+    // Create orchestrator with mocked stores
+    schedulerOrchestrator = new SchedulerOrchestrator({
+      schedulerService,
       jobStore: mockJobStore,
-      stateStore: mockStateStore,
-      timezone: 'America/Los_Angeles',
-      logger: mockLogger
+      stateStore: mockStateStore
     });
 
     // Create Express app with scheduling router
     app = express();
     app.use(express.json());
     app.use('/scheduling', createSchedulingRouter({
+      schedulerOrchestrator,
       schedulerService,
       scheduler: mockScheduler,
       logger: mockLogger

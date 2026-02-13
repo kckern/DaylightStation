@@ -92,8 +92,9 @@ import { createDevProxy, errorHandlerMiddleware } from './0_system/http/middlewa
 import { createEventBusRouter } from './4_api/v1/routers/admin/eventbus.mjs';
 import { createAdminRouter } from './4_api/v1/routers/admin/index.mjs';
 
-// Scheduling domain
+// Scheduling domain + orchestrator
 import { SchedulerService } from '#domains/scheduling/services/SchedulerService.mjs';
+import { SchedulerOrchestrator } from '#apps/scheduling/SchedulerOrchestrator.mjs';
 import { YamlJobDatastore } from '#adapters/scheduling/YamlJobDatastore.mjs';
 import { YamlStateDatastore } from '#adapters/scheduling/YamlStateDatastore.mjs';
 import { Scheduler } from './0_system/scheduling/Scheduler.mjs';
@@ -1206,15 +1207,19 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   }
 
   const schedulerService = new SchedulerService({
+    timezone: 'America/Los_Angeles'
+  });
+
+  const schedulerOrchestrator = new SchedulerOrchestrator({
+    schedulerService,
     jobStore: schedulingJobStore,
     stateStore: schedulingStateStore,
-    timezone: 'America/Los_Angeles',
     harvesterExecutor: harvesterServices.jobExecutor,
     mediaExecutor
   });
 
   const scheduler = new Scheduler({
-    schedulerService,
+    schedulerOrchestrator,
     intervalMs: 5000,
     logger: rootLogger.child({ module: 'scheduler' })
   });
@@ -1227,6 +1232,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   }
 
   v1Routers.scheduling = createSchedulingRouter({
+    schedulerOrchestrator,
     schedulerService,
     scheduler,
     logger: rootLogger.child({ module: 'scheduling-api' })
