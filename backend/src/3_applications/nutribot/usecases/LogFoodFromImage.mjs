@@ -60,16 +60,15 @@ export class LogFoodFromImage {
       // Otherwise, wrap with bound methods from gateway
       return {
         sendMessage: (text, options) => responseContext.sendMessage(text, options),
-        sendPhoto: (src, options) => responseContext.sendPhoto(src, options),
+        sendPhoto: (src, caption, options) => responseContext.sendPhoto(src, caption, options),
         updateMessage: (msgId, updates) => responseContext.updateMessage(msgId, updates),
         deleteMessage: (msgId) => responseContext.deleteMessage(msgId),
         getFileUrl: this.#messagingGateway?.getFileUrl?.bind(this.#messagingGateway),
-        createStatusIndicator: responseContext.createStatusIndicator?.bind(responseContext),
       };
     }
     return {
       sendMessage: (text, options) => this.#messagingGateway.sendMessage(conversationId, text, options),
-      sendPhoto: (src, options) => this.#messagingGateway.sendPhoto(conversationId, src, options),
+      sendPhoto: (src, caption, options) => this.#messagingGateway.sendPhoto(conversationId, src, caption, options),
       updateMessage: (msgId, updates) => this.#messagingGateway.updateMessage(conversationId, msgId, updates),
       deleteMessage: (msgId) => this.#messagingGateway.deleteMessage(conversationId, msgId),
       getFileUrl: this.#messagingGateway?.getFileUrl?.bind(this.#messagingGateway),
@@ -84,7 +83,14 @@ export class LogFoodFromImage {
   async execute(input) {
     const { userId, conversationId, imageData, messageId: userMessageId, responseContext } = input;
 
-    this.#logger.debug?.('logImage.start', { conversationId, hasResponseContext: !!responseContext });
+    this.#logger.info?.('logImage.start', {
+      conversationId,
+      userId,
+      hasResponseContext: !!responseContext,
+      hasImageUrl: !!imageData?.url,
+      hasFileId: !!imageData?.fileId,
+      imageUrl: imageData?.url?.substring(0, 120),
+    });
 
     const messaging = this.#getMessaging(responseContext, conversationId);
 
@@ -96,7 +102,7 @@ export class LogFoodFromImage {
           const oldStatusMsgId = existingState?.flowState?.statusMessageId;
           if (oldStatusMsgId) {
             try {
-              await messaging.deleteMessage( oldStatusMsgId);
+              await messaging.deleteMessage(oldStatusMsgId);
             } catch (e) {
               this.#logger.debug?.('logImage.deleteOldStatus.failed', { error: e.message });
             }
@@ -106,60 +112,93 @@ export class LogFoodFromImage {
         }
       }
 
-      // 1. Create status indicator with animation
-      let status = null;
-      let statusMsgId;
-
-      if (messaging.createStatusIndicator) {
-        status = await messaging.createStatusIndicator(
-          '🔍 Analyzing image for nutrition',
-          { frames: ['.', '..', '...'], interval: 2000 }
-        );
-        statusMsgId = status.messageId;
-      } else {
-        // Fallback for gateways without status indicator support
-        const result = await messaging.sendMessage('🔍 Analyzing image for nutrition...', {});
-        statusMsgId = result.messageId;
-      }
-
-      // 2. Get image URL/data for AI
+      // 1. Resolve image URL
       let imageUrl = imageData.url;
       if (imageData.fileId && messaging.getFileUrl) {
         imageUrl = await messaging.getFileUrl(imageData.fileId);
       }
 
-      // 2b. Process image if processor available
-      let imageForAI = imageUrl;
+      // 2. Download image to buffer for sendPhoto
+      let photoSource;
+      if (imageUrl && imageUrl.startsWith('http')) {
+        try {
+          const dlResponse = await fetch(imageUrl);
+          const arrayBuffer = await dlResponse.arrayBuffer();
+          photoSource = Buffer.from(arrayBuffer);
+        } catch (e) {
+          this.#logger.warn?.('logImage.download.failed', { conversationId, error: e.message });
+          photoSource = imageUrl; // Fallback to URL
+        }
+      } else {
+        photoSource = imageUrl || imageData.fileId;
+      }
+
+      // 3. Send photo with analyzing caption as status
+      const { messageId: photoMsgId } = await messaging.sendPhoto(
+        photoSource,
+        '🔍 Analyzing image for nutrition...',
+        {}
+      );
+
+      // Delete user's original image (now that we've re-sent it)
+      if (userMessageId) {
+        try {
+          await messaging.deleteMessage(userMessageId);
+        } catch (e) {
+          this.#logger.debug?.('logImage.deleteUserMessage.failed', { error: e.message });
+        }
+      }
+
+      // 4. Process image for AI if processor available
+      let imageForAI = photoSource;
       if (this.#imageProcessor && imageUrl?.startsWith('http')) {
         try {
           const base64Image = await this.#imageProcessor.downloadAndProcess(imageUrl);
           if (base64Image) {
             imageForAI = base64Image;
+            this.#logger.info?.('logImage.imageProcessed', { conversationId, format: 'base64' });
           }
         } catch (e) {
-          this.#logger.warn?.('logImage.download.failed', { error: e.message });
+          this.#logger.warn?.('logImage.imageProcessor.failed', { conversationId, error: e.message });
         }
+      } else if (typeof photoSource === 'string') {
+        imageForAI = photoSource;
       }
 
-      // 3. Call AI for food detection
+      this.#logger.info?.('logImage.aiCall', {
+        conversationId,
+        imageType: Buffer.isBuffer(imageForAI) ? 'buffer' : (typeof imageForAI === 'string' && imageForAI.startsWith('data:') ? 'base64' : 'url'),
+        imageUrl: typeof imageForAI === 'string' && !imageForAI.startsWith('data:') ? imageForAI.substring(0, 120) : undefined,
+        hasImageProcessor: !!this.#imageProcessor,
+      });
+
+      // 5. Call AI for food detection
       const prompt = this.#buildDetectionPrompt();
       const response = await this.#aiGateway.chatWithImage(prompt, imageForAI, { maxTokens: 1000 });
 
-      // 4. Parse response into food items
+      this.#logger.info?.('logImage.aiResponse', {
+        conversationId,
+        responseLength: response?.length || 0,
+        responsePreview: response?.substring(0, 200),
+      });
+
+      // 6. Parse response into food items
       const foodItems = this.#parseFoodResponse(response);
 
       if (foodItems.length === 0) {
-        if (status) {
-          await status.finish("❓ I couldn't identify any food in this image. Could you describe what you're eating?");
-        } else {
-          await messaging.updateMessage(statusMsgId, {
-            text: "❓ I couldn't identify any food in this image. Could you describe what you're eating?",
-          });
-        }
+        this.#logger.warn?.('logImage.noFoodDetected', {
+          conversationId,
+          imageUrl: imageUrl?.substring(0, 120),
+          aiResponseLength: response?.length || 0,
+          aiResponsePreview: response?.substring(0, 300),
+        });
+        await messaging.updateMessage(photoMsgId, {
+          caption: "❓ I couldn't identify any food in this image. Could you describe what you're eating?",
+        });
         return { success: false, error: 'No food detected' };
       }
 
-      // 5. Create NutriLog domain entity
+      // 7. Create NutriLog domain entity
       const timezone = this.#getTimezone();
       const now = new Date();
       const localDate = now.toLocaleDateString('en-CA', { timeZone: timezone });
@@ -186,61 +225,22 @@ export class LogFoodFromImage {
         timestamp: now,
       });
 
-      // 6. Save NutriLog
+      // 8. Save NutriLog
       if (this.#foodLogStore) {
         await this.#foodLogStore.save(nutriLog);
       }
 
-      // 7. Cancel status indicator (deletes message) before sending photo
-      if (status) {
-        await status.cancel();
-      } else {
-        try {
-          await messaging.deleteMessage(statusMsgId);
-        } catch (e) {
-          this.#logger.debug?.('logImage.deleteStatus.failed', { error: e.message });
-        }
-      }
-
-      // 8. Send photo message with food list as caption
+      // 9. Update photo caption with food list + action buttons
       const caption = this.#formatFoodCaption(foodItems, nutriLog.date || localDate);
       const buttons = this.#buildActionButtons(nutriLog.id);
 
-      // Convert to buffer - either from base64 or by downloading
-      let photoSource;
-      if (typeof imageForAI === 'string' && imageForAI.startsWith('data:')) {
-        // Already have base64, convert to buffer
-        const base64Data = imageForAI.split(',')[1];
-        photoSource = Buffer.from(base64Data, 'base64');
-      } else if (imageUrl && imageUrl.startsWith('http')) {
-        // Download image to buffer
-        try {
-          const response = await fetch(imageUrl);
-          const arrayBuffer = await response.arrayBuffer();
-          photoSource = Buffer.from(arrayBuffer);
-        } catch (e) {
-          this.#logger.warn?.('logImage.download.failed', { error: e.message });
-          photoSource = imageUrl; // Fallback to URL
-        }
-      } else {
-        photoSource = imageUrl || imageData.fileId;
-      }
-
-      const { messageId: photoMsgId } = await messaging.sendPhoto(photoSource, caption, {
+      await messaging.updateMessage(photoMsgId, {
+        caption,
         choices: buttons,
         inline: true,
       });
 
-      // Delete user's original image
-      if (userMessageId) {
-        try {
-          await messaging.deleteMessage( userMessageId);
-        } catch (e) {
-          this.#logger.debug?.('logImage.deleteUserMessage.failed', { error: e.message });
-        }
-      }
-
-      // Update NutriLog with messageId
+      // 10. Update NutriLog with messageId
       if (this.#foodLogStore && photoMsgId) {
         const updatedLog = nutriLog.with({
           metadata: { ...nutriLog.metadata, messageId: String(photoMsgId) },
@@ -261,7 +261,12 @@ export class LogFoodFromImage {
         itemCount: foodItems.length,
       };
     } catch (error) {
-      this.#logger.error?.('logImage.error', { conversationId, error: error.message });
+      this.#logger.error?.('logImage.error', {
+        conversationId,
+        error: error.message,
+        stack: error.stack?.split('\n').slice(0, 5).join('\n'),
+        imageUrl: imageData?.url?.substring(0, 120),
+      });
       throw error;
     }
   }
@@ -321,31 +326,39 @@ Be conservative with estimates.`,
   #parseFoodResponse(response) {
     try {
       const jsonMatch = response.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const data = JSON.parse(jsonMatch[0]);
-        const rawItems = data.items || [];
-
-        return rawItems.map((item) => ({
-          id: uuidv4(),
-          label: item.name || item.label || 'Unknown',
-          grams: item.grams || this.#estimateGrams(item),
-          unit: item.unit || 'serving',
-          amount: item.quantity || item.amount || 1,
-          color: this.#normalizeNoomColor(item.noom_color || item.color),
-          icon: item.icon || 'default',
-          calories: item.calories ?? 0,
-          protein: item.protein ?? 0,
-          carbs: item.carbs ?? 0,
-          fat: item.fat ?? 0,
-          fiber: item.fiber ?? 0,
-          sugar: item.sugar ?? 0,
-          sodium: item.sodium ?? 0,
-          cholesterol: item.cholesterol ?? 0,
-        }));
+      if (!jsonMatch) {
+        this.#logger.warn?.('logImage.parse.noJson', {
+          responseLength: response?.length || 0,
+          responsePreview: response?.substring(0, 300),
+        });
+        return [];
       }
-      return [];
+      const data = JSON.parse(jsonMatch[0]);
+      const rawItems = data.items || [];
+      this.#logger.info?.('logImage.parse.success', { itemCount: rawItems.length });
+
+      return rawItems.map((item) => ({
+        id: uuidv4(),
+        label: item.name || item.label || 'Unknown',
+        grams: item.grams || this.#estimateGrams(item),
+        unit: item.unit || 'serving',
+        amount: item.quantity || item.amount || 1,
+        color: this.#normalizeNoomColor(item.noom_color || item.color),
+        icon: item.icon || 'default',
+        calories: item.calories ?? 0,
+        protein: item.protein ?? 0,
+        carbs: item.carbs ?? 0,
+        fat: item.fat ?? 0,
+        fiber: item.fiber ?? 0,
+        sugar: item.sugar ?? 0,
+        sodium: item.sodium ?? 0,
+        cholesterol: item.cholesterol ?? 0,
+      }));
     } catch (e) {
-      this.#logger.warn?.('logImage.parseError', { error: e.message });
+      this.#logger.warn?.('logImage.parse.error', {
+        error: e.message,
+        responsePreview: response?.substring(0, 300),
+      });
       return [];
     }
   }

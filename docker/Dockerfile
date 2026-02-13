@@ -57,5 +57,5 @@ RUN echo "Build Time: ${BUILD_TIME:-unknown}" > /build.txt \
 
 USER node
 ENV NODE_ENV=production
-EXPOSE 3111 3119
+EXPOSE 3111
 ENTRYPOINT ["/usr/src/app/entrypoint.sh"]

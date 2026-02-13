@@ -16,7 +16,8 @@ export const CANONICAL_FIELDS = Object.freeze([
   'percent',
   'playCount',
   'lastPlayed',
-  'watchTime'
+  'watchTime',
+  'bookmark'
 ]);
 
 /**
@@ -43,6 +44,26 @@ export const LEGACY_TO_CANONICAL = Object.freeze({
   mediaDuration: 'duration',
   time: 'lastPlayed'
 });
+
+/**
+ * Serialize a MediaProgress domain entity to a plain object for persistence.
+ * This is the adapter-layer responsibility (not domain entity's concern).
+ * @param {import('#domains/content/entities/MediaProgress.mjs').MediaProgress} entity
+ * @returns {{ itemId: string, playhead: number, duration: number, percent: number, playCount: number, lastPlayed: string|null, watchTime: number, bookmark?: Object }}
+ */
+export function serializeMediaProgress(entity) {
+  const json = {
+    itemId: entity.itemId,
+    playhead: entity.playhead,
+    duration: entity.duration,
+    percent: entity.percent,
+    playCount: entity.playCount,
+    lastPlayed: entity.lastPlayed,
+    watchTime: entity.watchTime
+  };
+  if (entity.bookmark) json.bookmark = entity.bookmark;
+  return json;
+}
 
 /**
  * Validate that a data object contains only canonical fields.

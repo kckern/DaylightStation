@@ -23,7 +23,7 @@ import { MediaProgress } from '#domains/content/entities/MediaProgress.mjs';
  * @returns {express.Router}
  */
 export function createPlayRouter(config) {
-  const { registry, mediaProgressMemory, contentQueryService, contentIdResolver, logger = console } = config;
+  const { registry, mediaProgressMemory, contentQueryService, contentIdResolver, progressSyncService, progressSyncSources, logger = console } = config;
   const router = express.Router();
 
   // MediaProgress domain entity handles isInProgress() and toJSON().
@@ -42,6 +42,7 @@ export function createPlayRouter(config) {
       duration: item.duration,
       resumable: item.resumable ?? false,
       thumbnail: item.thumbnail,
+      image: item.thumbnail,
       metadata: item.metadata
     };
 
@@ -85,6 +86,18 @@ export function createPlayRouter(config) {
     }
 
     return response;
+  }
+
+  /**
+   * Get watch state for an item, using progress sync for items with a sync service.
+   */
+  async function getWatchState(item, storagePath, adapter) {
+    if (progressSyncService && progressSyncSources?.has(adapter?.source)) {
+      const colonIdx = item.id.indexOf(':');
+      const localId = colonIdx > 0 ? item.id.slice(colonIdx + 1) : item.id;
+      return progressSyncService.reconcileOnPlay(item.id, storagePath, localId);
+    }
+    return mediaProgressMemory ? mediaProgressMemory.get(item.id, storagePath) : null;
   }
 
   // ==========================================================================
@@ -179,6 +192,17 @@ export function createPlayRouter(config) {
         await mediaProgressMemory.set(newState, storagePath);
       }
 
+      // Progress sync: debounced write-back (fire-and-forget)
+      if (progressSyncSources?.has(type) && progressSyncService) {
+        const localId = assetId.includes(':') ? assetId.split(':').slice(1).join(':') : assetId;
+        progressSyncService.onProgressUpdate(compoundId, localId, {
+          playhead: normalizedSeconds,
+          duration: estimatedDuration,
+          percent: statePercent,
+          watchTime: sessionWatchTime
+        });
+      }
+
       logger.info?.('play.log.updated', {
         assetId,
         type,
@@ -192,7 +216,13 @@ export function createPlayRouter(config) {
           type,
           library: storagePath,
           title: itemMetadata?.title || title,
-          ...newState
+          itemId: newState.itemId,
+          playhead: newState.playhead,
+          duration: newState.duration,
+          percent: newState.percent,
+          playCount: newState.playCount,
+          lastPlayed: newState.lastPlayed,
+          watchTime: newState.watchTime
         }
       });
   }));
@@ -287,7 +317,7 @@ export function createPlayRouter(config) {
         const storagePath = typeof adapter.getStoragePath === 'function'
           ? await adapter.getStoragePath(selectedItem.id)
           : finalSource;
-        const watchState = mediaProgressMemory ? await mediaProgressMemory.get(selectedItem.id, storagePath) : null;
+        const watchState = await getWatchState(selectedItem, storagePath, adapter);
 
         return res.json(toPlayResponse(selectedItem, watchState, { adapter }));
       }
@@ -323,7 +353,7 @@ export function createPlayRouter(config) {
         const storagePath = typeof adapter.getStoragePath === 'function'
           ? await adapter.getStoragePath(selectedItem.id)
           : finalSource;
-        const watchState = mediaProgressMemory ? await mediaProgressMemory.get(selectedItem.id, storagePath) : null;
+        const watchState = await getWatchState(selectedItem, storagePath, adapter);
 
         return res.json(toPlayResponse(selectedItem, watchState, { adapter }));
       }
@@ -332,7 +362,12 @@ export function createPlayRouter(config) {
       const storagePath = typeof adapter.getStoragePath === 'function'
         ? await adapter.getStoragePath(item.id)
         : finalSource;
-      const watchState = mediaProgressMemory ? await mediaProgressMemory.get(item.id, storagePath) : null;
+      const watchState = await getWatchState(item, storagePath, adapter);
+
+      // Bookmark restore: override playhead with bookmark position
+      if (req.query.bookmark === 'true' && watchState?.bookmark) {
+        watchState.playhead = watchState.bookmark.playhead;
+      }
 
       res.json(toPlayResponse(item, watchState, { adapter }));
   }));
@@ -379,14 +414,20 @@ export function createPlayRouter(config) {
       const storagePath = typeof adapter.getStoragePath === 'function'
         ? await adapter.getStoragePath(selectedItem.id)
         : finalSource;
-      const watchState = mediaProgressMemory ? await mediaProgressMemory.get(selectedItem.id, storagePath) : null;
+      const watchState = await getWatchState(selectedItem, storagePath, adapter);
       return res.json(toPlayResponse(selectedItem, watchState, { adapter }));
     }
 
     const storagePath = typeof adapter.getStoragePath === 'function'
       ? await adapter.getStoragePath(item.id)
       : finalSource;
-    const watchState = mediaProgressMemory ? await mediaProgressMemory.get(item.id, storagePath) : null;
+    const watchState = await getWatchState(item, storagePath, adapter);
+
+    // Bookmark restore: override playhead with bookmark position
+    if (req.query.bookmark === 'true' && watchState?.bookmark) {
+      watchState.playhead = watchState.bookmark.playhead;
+    }
+
     res.json(toPlayResponse(item, watchState, { adapter }));
   }));
 

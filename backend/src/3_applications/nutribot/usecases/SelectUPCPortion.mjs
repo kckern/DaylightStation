@@ -5,6 +5,8 @@
  * Applies portion selection to a UPC-based food log.
  */
 
+import { formatFoodList, formatDateHeader } from '#domains/nutrition/entities/formatters.mjs';
+
 /**
  * Select UPC portion use case (stateless - UUID in callback data)
  */
@@ -124,12 +126,13 @@ export class SelectUPCPortion {
         this.#logger.debug?.('selectPortion.statusUpdated', { logUuid, userId, newStatus: 'accepted' });
       }
 
+      // Compute logDate before conditional blocks so it's accessible for both nutrilist and message update
+      const now = new Date();
+      const fallbackDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      const logDate = nutriLog.meal?.date || nutriLog.date || fallbackDate;
+
       // Add to nutrilist
       if (this.#nutriListStore) {
-        const now = new Date();
-        const fallbackDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-        const logDate = nutriLog.meal?.date || nutriLog.date || fallbackDate;
-
         this.#logger.debug?.('selectPortion.savingToNutrilist', { logUuid, logDate });
 
         const listItems = scaledItems.map((item) => ({
@@ -140,18 +143,26 @@ export class SelectUPCPortion {
           date: logDate,
         }));
         await this.#nutriListStore.saveMany(listItems);
-
-        // Send confirmation message
-        const confirmMsg = this.#formatConfirmation(scaledItems, logDate);
-        await this.#messagingGateway.sendMessage(conversationId, confirmMsg, { responseContext });
       }
 
-      // Delete the portion selection message
+      // Update the existing message in-place (preserving photo if present)
       if (messageId) {
         try {
-          await this.#messagingGateway.deleteMessage(conversationId, messageId);
+          const dateHeader = logDate ? formatDateHeader(logDate, { now: new Date() }).replace('🕒', '✅') : '';
+          const foodList = formatFoodList(scaledItems);
+          const acceptedText = `${dateHeader}\n\n${foodList}`;
+
+          // UPC messages are photo messages — update caption to preserve image
+          await this.#messagingGateway.updateMessage(conversationId, messageId, {
+            caption: acceptedText,
+            choices: [],
+            inline: true,
+          });
         } catch (e) {
-          // Ignore
+          this.#logger.warn?.('selectPortion.updateMessageFailed', { error: e.message });
+          // Fallback: send text confirmation if update fails
+          const confirmMsg = this.#formatConfirmation(scaledItems, logDate);
+          await this.#messagingGateway.sendMessage(conversationId, confirmMsg, { responseContext });
         }
       }
 

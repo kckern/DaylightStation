@@ -16,6 +16,8 @@ import path, { join } from 'path';
 // Infrastructure imports
 import { ConfigValidationError, configService, dataService, userDataService, userService } from './0_system/config/index.mjs';
 import { UserResolver } from './0_system/users/UserResolver.mjs';
+import { UserIdentityService } from './2_domains/messaging/services/UserIdentityService.mjs';
+import { TelegramIdentityAdapter } from './1_adapters/messaging/TelegramIdentityAdapter.mjs';
 import { HttpClient } from './0_system/services/HttpClient.mjs';
 
 // Logging system
@@ -281,6 +283,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'user-resolver' })
   });
 
+  // Domain identity service (replaces UserResolver for identity resolution)
+  const userIdentityService = new UserIdentityService(
+    configService.getIdentityMappings()
+  );
+
   // EventBus (WebSocket)
   const eventBus = await createEventBus({
     httpServer: server,
@@ -368,6 +375,21 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const mediaProgressPath = configService.getPath('watchState') || `${householdDir}/history/media_memory`;
   const mediaProgressMemory = createMediaProgressMemory({ mediaProgressPath });
 
+  // Progress sync — bidirectional progress sync for remote media servers
+  let progressSyncService = null;
+  if (audiobookshelfConfig) {
+    const { AudiobookshelfClient } = await import('./1_adapters/content/readable/audiobookshelf/AudiobookshelfClient.mjs');
+    const { ABSProgressAdapter } = await import('./1_adapters/content/readable/audiobookshelf/ABSProgressAdapter.mjs');
+    const { ProgressSyncService } = await import('./3_applications/content/services/ProgressSyncService.mjs');
+    const absClient = new AudiobookshelfClient(audiobookshelfConfig, { httpClient: axios });
+    const remoteProgressProvider = new ABSProgressAdapter(absClient);
+    progressSyncService = new ProgressSyncService({
+      remoteProgressProvider,
+      mediaProgressMemory,
+      logger: rootLogger.child({ module: 'progress-sync' })
+    });
+  }
+
   // Singalong/Readalong adapters - point to canonical data directories (no symlinks)
   const singalongConfig = {
     dataPath: path.join(contentPath, 'singalong'),  // hymn, primary
@@ -426,9 +448,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'compose-presentation' })
   });
 
+  const progressSyncSources = progressSyncService ? new Set(['abs']) : null;
+
   const { routers: contentRouters, services: contentServices } = createApiRouters({
     registry: contentRegistry,
     mediaProgressMemory,
+    progressSyncService,
+    progressSyncSources,
     loadFile: contentLoadFile,
     saveFile: contentSaveFile,
     cacheBasePath: mediaBasePath ? `${mediaBasePath}/img/cache` : null,
@@ -909,6 +935,19 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const systemBots = configService.getSystemConfig('bots') || {};
   const gmailConfig = configService.getAppConfig('gmail') || {};
 
+  // TelegramIdentityAdapter — single place for Telegram conversationId construction
+  const telegramBotConfigs = {};
+  for (const [botName, botConfig] of Object.entries(systemBots)) {
+    if (botConfig?.telegram?.bot_id) {
+      telegramBotConfigs[botName] = { botId: botConfig.telegram.bot_id };
+    }
+  }
+  const telegramIdentityAdapter = new TelegramIdentityAdapter({
+    userIdentityService,
+    botConfigs: telegramBotConfigs,
+    logger: rootLogger.child({ module: 'telegram-identity' }),
+  });
+
   // NutriBot application config
   const nutribotConfig = configService.getAppConfig('nutribot') || {};
   const openaiApiKey = configService.getSecret('OPENAI_API_KEY') || '';
@@ -973,8 +1012,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   const upcHttpClient = new HttpClient({ logger: rootLogger.child({ module: 'upc-http' }) });
+  const nxConfig = nutribotConfig.integrations?.nutritionix;
   const upcGateway = new UPCGateway({
     httpClient: upcHttpClient,
+    nutritionix: nxConfig?.app_id ? {
+      appId: nxConfig.app_id,
+      appKey: configService.getSystemAuth('food', 'nutritionix_api_key'),
+    } : null,
     logger: rootLogger.child({ module: 'upc-gateway' }),
   });
 
@@ -1006,6 +1050,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   v1Routers.nutribot = createNutribotApiRouter({
     nutribotServices,
     userResolver,
+    userIdentityService,
+    telegramIdentityAdapter,
+    defaultMember: configService.getHeadOfHousehold(),
     botId: systemBots.nutribot?.telegram?.bot_id || '',
     secretToken: systemBots.nutribot?.telegram?.secret_token || '',
     gateway: nutribotTelegramAdapter,
@@ -1045,6 +1092,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     journalistServices,
     configService,
     userResolver,
+    userIdentityService,
+    telegramIdentityAdapter,
     botId: systemBots.journalist?.telegram?.bot_id || '',
     secretToken: systemBots.journalist?.telegram?.secret_token || '',
     gateway: journalistTelegramAdapter,
@@ -1082,6 +1131,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   v1Routers.homebot = createHomebotApiRouter({
     homebotServices,
     userResolver,
+    userIdentityService,
+    telegramIdentityAdapter,
     botId: systemBots.homebot?.telegram?.bot_id || '',
     secretToken: systemBots.homebot?.telegram?.secret_token || '',
     gateway: homebotTelegramAdapter,
@@ -1304,6 +1355,14 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Error handler middleware - must be last
   app.use(errorHandlerMiddleware());
+
+  // Graceful shutdown: flush pending progress sync writes
+  if (progressSyncService) {
+    process.on('SIGTERM', async () => {
+      await progressSyncService.flush();
+      progressSyncService.dispose();
+    });
+  }
 
   return app;
 }
