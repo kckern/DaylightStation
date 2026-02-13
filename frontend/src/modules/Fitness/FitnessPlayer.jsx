@@ -250,7 +250,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   } = usePlayerController(playerRef);
   const lastKnownTimeRef = useRef(0);
   const statusUpdateRef = useRef({ lastSent: 0, inflight: false, endSent: false });
-  const [playIsGoverned, setPlayIsGoverned] = useState(false);
+  // GovernanceEngine is the sole authority for lock decisions (SSoT)
   const [showChart, setShowChart] = useState(true);
 
   // Use participantRoster from context, with session roster as fallback for immediate data
@@ -295,13 +295,13 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   }, [contextGovernedTypeSet, governedTypes]);
 
   const pauseDecision = useMemo(() => resolvePause({
-    governance: { locked: playIsGoverned || governanceState?.videoLocked },
+    governance: { locked: Boolean(governanceState?.videoLocked) },
     resilience: {
       stalled: resilienceState?.stalled,
       waiting: resilienceState?.waitingToPlay
     },
     user: { paused: isPaused }
-  }), [playIsGoverned, governanceState?.videoLocked, resilienceState?.stalled, resilienceState?.waitingToPlay, isPaused]);
+  }), [governanceState?.videoLocked, resilienceState?.stalled, resilienceState?.waitingToPlay, isPaused]);
 
   const governancePaused = pauseDecision.reason === PAUSE_REASON.GOVERNANCE && pauseDecision.paused;
 
@@ -324,31 +324,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     });
   }, [currentItem, setGovernanceMedia]);
 
-  useEffect(() => {
-    const hasLabelGovernance = governedLabelSet.size > 0;
-    const hasTypeGovernance = governedTypeSet.size > 0;
-    if (!currentItem || (!hasLabelGovernance && !hasTypeGovernance)) {
-      setPlayIsGoverned(false);
-      return;
-    }
-    const rawLabels = Array.isArray(currentItem.labels) ? currentItem.labels : [];
-    const normalizedLabels = rawLabels
-      .map((label) => (typeof label === 'string' ? label.trim().toLowerCase() : ''))
-      .filter(Boolean);
-    const labelGoverned = hasLabelGovernance && normalizedLabels.some((label) => governedLabelSet.has(label));
-    const normalizedType = typeof currentItem.type === 'string' ? currentItem.type.trim().toLowerCase() : '';
-    const typeGoverned = hasTypeGovernance && normalizedType && governedTypeSet.has(normalizedType);
-    const mediaGoverned = labelGoverned || typeGoverned;
-    if (!mediaGoverned) {
-      setPlayIsGoverned(false);
-      return;
-    }
-    // Only allow playback when governance is unlocked or warning
-    // pending and locked phases should lock playback
-    const governanceVideoLocked = Boolean(governanceState?.videoLocked);
-    const locked = governanceVideoLocked || (governance !== 'unlocked' && governance !== 'warning');
-    setPlayIsGoverned(locked);
-  }, [currentItem, governedLabelSet, governedTypeSet, governance, governanceState?.videoLocked]);
+  // Governance lock decision is now solely from GovernanceEngine.state.videoLocked (SSoT)
+  // Removed: local label/type matching that duplicated GovernanceEngine._mediaIsGoverned()
 
   // Sync current item with global context for AI transcription context injection (BUG-07)
   useEffect(() => {
@@ -555,8 +532,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     grandparentTitle: enhancedCurrentItem?.grandparentTitle,
     parentTitle: enhancedCurrentItem?.parentTitle,
     playerMode,
-    isGoverned: playIsGoverned
-  }), [currentItem, enhancedCurrentItem, playerMode, playIsGoverned]);
+    isGoverned: Boolean(governanceState?.videoLocked)
+  }), [currentItem, enhancedCurrentItem, playerMode, governanceState?.videoLocked]);
 
   const { videoVolume } = useFitnessVolumeControls({
     videoPlayerRef: playerRef,
@@ -662,7 +639,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
         seekTo(newTime);
       }
     }
-  }), [getPlayerTime, getPlayerDuration, seekTo, playIsGoverned, logFitnessEvent]);
+  }), [getPlayerTime, getPlayerDuration, seekTo, logFitnessEvent]);
 
   
 
@@ -1074,12 +1051,12 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       durationSeconds,
       resumeSeconds: Number.isFinite(media.seconds) ? Math.round(media.seconds) : null,
       autoplay: autoplayEnabled,
-      governed: Boolean(playIsGoverned),
+      governed: Boolean(governanceState?.videoLocked),
       labels: Array.isArray(media.labels) ? media.labels : [],
       type: media.type || media.mediaType || 'video',
       queueSize
     });
-  }, [fitnessSessionInstance, currentMediaIdentity, enhancedCurrentItem, currentItem, autoplayEnabled, playIsGoverned, queueSize]);
+  }, [fitnessSessionInstance, currentMediaIdentity, enhancedCurrentItem, currentItem, autoplayEnabled, governanceState?.videoLocked, queueSize]);
 
   const resilienceMediaIdentity = useMemo(
     () => resolveMediaIdentity(resilienceState?.meta),
@@ -1530,7 +1507,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       generateThumbnailUrl={generateThumbnailUrl}
       thumbnailsCommitRef={thumbnailsCommitRef}
       thumbnailsGetTimeRef={thumbnailsGetTimeRef}
-      playIsGoverned={playIsGoverned}
+      playIsGoverned={Boolean(governanceState?.videoLocked)}
       mediaElementKey={playerElementKey}
     />
   );

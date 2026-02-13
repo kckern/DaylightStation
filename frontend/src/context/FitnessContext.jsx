@@ -1631,10 +1631,18 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     const mergedHeartRate = Number.isFinite(participantHeartRate)
       ? participantHeartRate
       : (Number.isFinite(existing?.heartRate) ? existing.heartRate : null);
-    const mergedZoneId = existing?.zoneId
-      || (participant?.zoneId ? String(participant.zoneId).toLowerCase() : null);
-    const mergedZoneColor = existing?.zoneColor || participant?.zoneColor || null;
+    // SSoT: Prefer ZoneProfileStore for stabilized zone (matches GovernanceEngine)
     const mergedProfileId = existing?.profileId || participant?.profileId || participant?.id || nameOrId;
+    const zoneProfile = zoneProfileLookup.get(mergedProfileId);
+    const stabilizedZoneId = zoneProfile?.currentZoneId
+      ? String(zoneProfile.currentZoneId).toLowerCase()
+      : null;
+    const stabilizedZoneColor = zoneProfile?.currentZoneColor || null;
+    const mergedZoneId = stabilizedZoneId
+      || existing?.zoneId
+      || (participant?.zoneId ? String(participant.zoneId).toLowerCase() : null);
+    const mergedZoneColor = stabilizedZoneColor
+      || existing?.zoneColor || participant?.zoneColor || null;
     const mergedDeviceId = existing?.deviceId || participant?.hrDeviceId || null;
     const mergedSource = existing?.source || (participant?.isGuest ? 'Guest' : null);
     const mergedDisplayLabel = existing?.displayLabel
@@ -1673,7 +1681,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       source: mergedSource ?? existing.source ?? null,
       displayLabel: mergedDisplayLabel
     };
-  }, [userVitalsMap, participantLookupByName, getDisplayLabel]);
+  }, [userVitalsMap, participantLookupByName, getDisplayLabel, zoneProfileLookup]);
 
   const getUserHeartRate = React.useCallback((name) => {
     const vitals = getUserVitals(name);
