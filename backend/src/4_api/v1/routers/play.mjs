@@ -3,7 +3,6 @@ import express from 'express';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { nowTs24 } from '#system/utils/index.mjs';
 import { parseActionRouteId } from '../utils/actionRouteParser.mjs';
-import { resolveFormat } from '../utils/resolveFormat.mjs';
 import { MediaProgress } from '#domains/content/entities/MediaProgress.mjs';
 
 /**
@@ -18,87 +17,14 @@ import { MediaProgress } from '#domains/content/entities/MediaProgress.mjs';
  * @param {Object} config
  * @param {Object} config.registry - ContentSourceRegistry
  * @param {Object} config.mediaProgressMemory - MediaProgressMemory
+ * @param {Object} config.playResponseService - PlayResponseService (toPlayResponse, getWatchState)
  * @param {Object} [config.contentQueryService] - ContentQueryService for smart selection
  * @param {Object} [config.logger] - Logger instance
  * @returns {express.Router}
  */
 export function createPlayRouter(config) {
-  const { registry, mediaProgressMemory, contentQueryService, contentIdResolver, progressSyncService, progressSyncSources, logger = console } = config;
+  const { registry, mediaProgressMemory, playResponseService, contentQueryService, contentIdResolver, progressSyncSources, progressSyncService, logger = console } = config;
   const router = express.Router();
-
-  // MediaProgress domain entity handles isInProgress() and toJSON().
-
-  /**
-   * Transform internal item to legacy-compatible response
-   */
-  function toPlayResponse(item, watchState = null, { adapter } = {}) {
-    const response = {
-      id: item.id,
-      assetId: item.id,
-      mediaUrl: item.mediaUrl,
-      mediaType: item.mediaType,
-      format: resolveFormat(item, adapter),
-      title: item.title,
-      duration: item.duration,
-      resumable: item.resumable ?? false,
-      thumbnail: item.thumbnail,
-      image: item.thumbnail,
-      metadata: item.metadata
-    };
-
-    // Add resume position if in progress (use domain entity)
-    if (watchState?.playhead > 0 && watchState?.duration > 0) {
-      const progress = new MediaProgress(watchState);
-      if (progress.isInProgress()) {
-        response.resume_position = progress.playhead;
-        response.resume_percent = progress.percent;
-      }
-    }
-
-    // Include type from item for CSS resolution (talk, scripture, etc.)
-    if (item.type) response.type = item.type;
-
-    // Set videoUrl when media is video (readalong scrollers check this field)
-    if (item.mediaType === 'video' && item.mediaUrl) {
-      response.videoUrl = item.mediaUrl;
-    }
-
-    // Pass through content/style/subtitle/ambientUrl for readalong/singalong scrollers
-    // Content may be on item directly or nested in metadata (adapter-dependent)
-    const contentData = item.content || item.metadata?.content;
-    if (contentData) response.content = contentData;
-    if (item.style || item.metadata?.style) response.style = item.style || item.metadata.style;
-    if (item.subtitle || item.metadata?.speaker) response.subtitle = item.subtitle || item.metadata.speaker;
-    if (item.ambientUrl) response.ambientUrl = item.ambientUrl;
-
-    // Legacy field mapping for Plex items
-    if (item.metadata) {
-      if (item.metadata.grandparentTitle) response.grandparentTitle = item.metadata.grandparentTitle;
-      if (item.metadata.parentTitle) response.parentTitle = item.metadata.parentTitle;
-      if (item.metadata.type === 'episode') response.episode = item.title;
-    }
-
-    // Legacy field: expose localId under source key for backward compatibility
-    const colonIdx = item.id.indexOf(':');
-    if (colonIdx > 0) {
-      const sourceKey = item.id.slice(0, colonIdx);
-      response[sourceKey] = item.id.slice(colonIdx + 1);
-    }
-
-    return response;
-  }
-
-  /**
-   * Get watch state for an item, using progress sync for items with a sync service.
-   */
-  async function getWatchState(item, storagePath, adapter) {
-    if (progressSyncService && progressSyncSources?.has(adapter?.source)) {
-      const colonIdx = item.id.indexOf(':');
-      const localId = colonIdx > 0 ? item.id.slice(colonIdx + 1) : item.id;
-      return progressSyncService.reconcileOnPlay(item.id, storagePath, localId);
-    }
-    return mediaProgressMemory ? mediaProgressMemory.get(item.id, storagePath) : null;
-  }
 
   // ==========================================================================
   // Specific Routes (must come before wildcard route)
@@ -317,9 +243,9 @@ export function createPlayRouter(config) {
         const storagePath = typeof adapter.getStoragePath === 'function'
           ? await adapter.getStoragePath(selectedItem.id)
           : finalSource;
-        const watchState = await getWatchState(selectedItem, storagePath, adapter);
+        const watchState = await playResponseService.getWatchState(selectedItem, storagePath, adapter);
 
-        return res.json(toPlayResponse(selectedItem, watchState, { adapter }));
+        return res.json(playResponseService.toPlayResponse(selectedItem, watchState, { adapter }));
       }
 
       // Get single item using resolver's localId
@@ -353,23 +279,23 @@ export function createPlayRouter(config) {
         const storagePath = typeof adapter.getStoragePath === 'function'
           ? await adapter.getStoragePath(selectedItem.id)
           : finalSource;
-        const watchState = await getWatchState(selectedItem, storagePath, adapter);
+        const watchState = await playResponseService.getWatchState(selectedItem, storagePath, adapter);
 
-        return res.json(toPlayResponse(selectedItem, watchState, { adapter }));
+        return res.json(playResponseService.toPlayResponse(selectedItem, watchState, { adapter }));
       }
 
       // Return playable item
       const storagePath = typeof adapter.getStoragePath === 'function'
         ? await adapter.getStoragePath(item.id)
         : finalSource;
-      const watchState = await getWatchState(item, storagePath, adapter);
+      const watchState = await playResponseService.getWatchState(item, storagePath, adapter);
 
       // Bookmark restore: override playhead with bookmark position
       if (req.query.bookmark === 'true' && watchState?.bookmark) {
         watchState.playhead = watchState.bookmark.playhead;
       }
 
-      res.json(toPlayResponse(item, watchState, { adapter }));
+      res.json(playResponseService.toPlayResponse(item, watchState, { adapter }));
   }));
 
   // GET /:source - handles compound IDs like /play/plex:12345 and heuristics like /play/12345
@@ -414,21 +340,21 @@ export function createPlayRouter(config) {
       const storagePath = typeof adapter.getStoragePath === 'function'
         ? await adapter.getStoragePath(selectedItem.id)
         : finalSource;
-      const watchState = await getWatchState(selectedItem, storagePath, adapter);
-      return res.json(toPlayResponse(selectedItem, watchState, { adapter }));
+      const watchState = await playResponseService.getWatchState(selectedItem, storagePath, adapter);
+      return res.json(playResponseService.toPlayResponse(selectedItem, watchState, { adapter }));
     }
 
     const storagePath = typeof adapter.getStoragePath === 'function'
       ? await adapter.getStoragePath(item.id)
       : finalSource;
-    const watchState = await getWatchState(item, storagePath, adapter);
+    const watchState = await playResponseService.getWatchState(item, storagePath, adapter);
 
     // Bookmark restore: override playhead with bookmark position
     if (req.query.bookmark === 'true' && watchState?.bookmark) {
       watchState.playhead = watchState.bookmark.playhead;
     }
 
-    res.json(toPlayResponse(item, watchState, { adapter }));
+    res.json(playResponseService.toPlayResponse(item, watchState, { adapter }));
   }));
 
   return router;
