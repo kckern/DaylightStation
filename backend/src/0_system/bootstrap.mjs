@@ -1932,7 +1932,7 @@ export function createHomebotApiRouter(config) {
  * @param {Object} [config.logger] - Logger instance
  * @returns {Object} Nutribot services
  */
-export function createNutribotServices(config) {
+export async function createNutribotServices(config) {
   const {
     configService,
     userDataService,
@@ -1975,6 +1975,10 @@ export function createNutribotServices(config) {
     logger
   });
 
+  // Barcode image generator (for UPC photo status)
+  const { BarcodeImageAdapter } = await import('#adapters/nutribot/BarcodeImageAdapter.mjs');
+  const barcodeGenerator = new BarcodeImageAdapter({ logger });
+
   // Create nutribot container with all dependencies
   // Note: Identity resolution (conversation ID -> username) is handled by
   // UserResolver in the adapter layer (NutribotInputRouter), not here.
@@ -1988,6 +1992,7 @@ export function createNutribotServices(config) {
     nutriCoachStore,
     conversationStateStore,
     reportRenderer,
+    barcodeGenerator,
     logger
   });
 
