@@ -1,8 +1,11 @@
 /**
- * HealthAggregationService
+ * HealthAggregator
  *
- * Aggregates health data from multiple sources (weight, Strava,
- * FitnessSyncer, nutrition) into unified daily health metrics.
+ * Pure domain utility for aggregating health data from multiple sources
+ * (weight, Strava, FitnessSyncer, nutrition) into unified daily health metrics.
+ *
+ * All methods are static and pure — no I/O, no side effects.
+ * I/O orchestration lives in AggregateHealthUseCase (application layer).
  *
  * @module domains/health/services
  */
@@ -10,111 +13,15 @@
 import { HealthMetric } from '../entities/HealthMetric.mjs';
 import { WorkoutEntry } from '../entities/WorkoutEntry.mjs';
 
-export class HealthAggregationService {
-  #healthStore;
+export class HealthAggregator {
 
   /**
-   * @param {Object} config
-   * @param {Object} config.healthStore - IHealthDataStore implementation
-   */
-  constructor(config) {
-    if (!config.healthStore) {
-      throw new Error('HealthAggregationService requires healthStore');
-    }
-    this.#healthStore = config.healthStore;
-  }
-
-  /**
-   * Aggregate daily health data for a user
-   * @param {string} userId
-   * @param {number} [daysBack=15] - Number of days to look back
-   * @param {Date} today - Reference date for "today" (required, from application layer)
-   * @returns {Promise<Object<string, HealthMetric>>} Health metrics keyed by date
-   */
-  async aggregateDailyHealth(userId, daysBack = 15, today) {
-    if (!today || !(today instanceof Date)) {
-      throw new Error('today date required for aggregateDailyHealth');
-    }
-
-    // Load all data sources in parallel
-    const [weightData, activityData, fitnessData, nutritionData, existingHealth, coachingData] =
-      await Promise.all([
-        this.#healthStore.loadWeightData(userId),
-        this.#healthStore.loadActivityData(userId),
-        this.#healthStore.loadFitnessData(userId),
-        this.#healthStore.loadNutritionData(userId),
-        this.#healthStore.loadHealthData(userId),
-        this.#healthStore.loadCoachingData(userId)
-      ]);
-
-    // Generate date range
-    const dates = this.#generateDateRange(daysBack, today);
-
-    // Aggregate metrics for each day
-    const metrics = {};
-    for (const date of dates) {
-      const metric = this.#aggregateDayMetrics(date, {
-        weight: weightData[date],
-        strava: activityData[date] || [],
-        fitness: fitnessData[date],
-        nutrition: nutritionData[date],
-        coaching: coachingData[date]
-      });
-      metrics[date] = metric;
-    }
-
-    // Merge with existing health data
-    const mergedHealth = this.#mergeHealthData(existingHealth, metrics);
-
-    // Save aggregated data
-    await this.#healthStore.saveHealthData(userId, mergedHealth);
-
-    return metrics;
-  }
-
-  /**
-   * Get health metrics for a specific date
-   * @param {string} userId
-   * @param {string} date - YYYY-MM-DD
-   * @returns {Promise<HealthMetric|null>}
-   */
-  async getHealthForDate(userId, date) {
-    const healthData = await this.#healthStore.loadHealthData(userId);
-    const dayData = healthData[date];
-    return dayData ? HealthMetric.fromJSON(dayData) : null;
-  }
-
-  /**
-   * Get health metrics for a date range
-   * @param {string} userId
-   * @param {string} startDate - YYYY-MM-DD
-   * @param {string} endDate - YYYY-MM-DD
-   * @returns {Promise<Object<string, HealthMetric>>}
-   */
-  async getHealthForRange(userId, startDate, endDate) {
-    const healthData = await this.#healthStore.loadHealthData(userId);
-    const result = {};
-
-    for (const [date, data] of Object.entries(healthData)) {
-      if (date >= startDate && date <= endDate) {
-        result[date] = HealthMetric.fromJSON(data);
-      }
-    }
-
-    return result;
-  }
-
-  // ==========================================================================
-  // Private Helpers
-  // ==========================================================================
-
-  /**
-   * Generate array of dates going back N days
+   * Generate array of date strings going back N days from a reference date
    * @param {number} daysBack - Number of days to look back
-   * @param {Date} today - Reference date for "today" (from application layer)
-   * @private
+   * @param {Date} today - Reference date for "today"
+   * @returns {string[]} Array of YYYY-MM-DD date strings
    */
-  #generateDateRange(daysBack, today) {
+  static generateDateRange(daysBack, today) {
     const dates = [];
 
     for (let i = 0; i < daysBack; i++) {
@@ -127,14 +34,21 @@ export class HealthAggregationService {
   }
 
   /**
-   * Aggregate metrics for a single day
-   * @private
+   * Aggregate metrics for a single day from multiple data sources
+   * @param {string} date - YYYY-MM-DD
+   * @param {Object} sources - Data sources for the day
+   * @param {Object} [sources.weight] - Weight data
+   * @param {Array} [sources.strava] - Strava activities
+   * @param {Object} [sources.fitness] - FitnessSyncer data
+   * @param {Object} [sources.nutrition] - Nutrition data
+   * @param {Object} [sources.coaching] - Coaching data
+   * @returns {HealthMetric}
    */
-  #aggregateDayMetrics(date, sources) {
+  static aggregateDayMetrics(date, sources) {
     const { weight, strava, fitness, nutrition, coaching } = sources;
 
     // Merge workouts from all sources
-    const workouts = this.#mergeWorkouts(strava, fitness?.activities || []);
+    const workouts = HealthAggregator.mergeWorkouts(strava, fitness?.activities || []);
 
     // Build weight data
     const weightData = weight ? {
@@ -175,10 +89,12 @@ export class HealthAggregationService {
   }
 
   /**
-   * Merge workouts from Strava and FitnessSyncer
-   * @private
+   * Merge workouts from Strava and FitnessSyncer, matching by duration
+   * @param {Array} stravaActivities - Strava workout data
+   * @param {Array} fitnessActivities - FitnessSyncer workout data
+   * @returns {WorkoutEntry[]}
    */
-  #mergeWorkouts(stravaActivities, fitnessActivities) {
+  static mergeWorkouts(stravaActivities, fitnessActivities) {
     const mergedWorkouts = [];
     const usedFitnessIds = new Set();
 
@@ -252,10 +168,12 @@ export class HealthAggregationService {
   }
 
   /**
-   * Merge new health data with existing data
-   * @private
+   * Merge new health metrics into existing health data, sorted by date descending
+   * @param {Object} existing - Existing health data keyed by date
+   * @param {Object<string, HealthMetric>} newData - New metrics keyed by date
+   * @returns {Object} Merged health data keyed by date (sorted descending)
    */
-  #mergeHealthData(existing, newData) {
+  static mergeHealthData(existing, newData) {
     const merged = { ...existing };
 
     for (const [date, metric] of Object.entries(newData)) {
@@ -273,4 +191,4 @@ export class HealthAggregationService {
   }
 }
 
-export default HealthAggregationService;
+export default HealthAggregator;

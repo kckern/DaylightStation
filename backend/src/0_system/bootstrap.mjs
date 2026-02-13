@@ -173,8 +173,8 @@ import { AgentOrchestrator, EchoAgent } from '#apps/agents/index.mjs';
 import { MastraAdapter } from '#adapters/agents/index.mjs';
 import { createAgentsRouter } from '#api/v1/routers/agents.mjs';
 
-// Health domain imports
-import { HealthAggregationService } from '#domains/health/services/HealthAggregationService.mjs';
+// Health domain + application imports
+import { AggregateHealthUseCase } from '#apps/health/AggregateHealthUseCase.mjs';
 import { YamlHealthDatastore } from '#adapters/persistence/yaml/YamlHealthDatastore.mjs';
 import { createHealthRouter } from '#api/v1/routers/health.mjs';
 
@@ -2413,8 +2413,8 @@ export function createHealthServices(config) {
     logger
   });
 
-  // Health aggregation service
-  const healthService = new HealthAggregationService({
+  // Health aggregation use case (application layer)
+  const healthService = new AggregateHealthUseCase({
     healthStore
   });
 
