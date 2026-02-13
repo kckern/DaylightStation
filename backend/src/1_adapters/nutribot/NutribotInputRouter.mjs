@@ -311,15 +311,28 @@ export class NutribotInputRouter extends BaseInputRouter {
       }
 
       case 'dn': {
-        // Done - close adjustment flow, remove buttons
-        if (responseContext?.updateMessage) {
-          try {
-            await responseContext.updateMessage(event.messageId, { choices: [] });
-          } catch (e) {
-            this.logger.warn?.('nutribot.callback.dn.updateFailed', { error: e.message });
+        // Done - regenerate report chart to reflect any adjustments
+        try {
+          const useCase = this.container.getGenerateDailyReport();
+          return await useCase.execute({
+            userId: this.#resolveUserId(event),
+            conversationId: event.conversationId,
+            messageId: event.messageId,
+            skipPendingCheck: true,
+            responseContext,
+          });
+        } catch (e) {
+          this.logger.warn?.('nutribot.callback.dn.regenFailed', { error: e.message });
+          // Fallback: just remove buttons if regen fails
+          if (responseContext?.updateMessage) {
+            try {
+              await responseContext.updateMessage(event.messageId, { choices: [] });
+            } catch (updateErr) {
+              this.logger.warn?.('nutribot.callback.dn.updateFailed', { error: updateErr.message });
+            }
           }
+          return { ok: true, handled: true };
         }
-        return { ok: true, handled: true };
       }
 
       case 'cr': {
