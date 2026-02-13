@@ -70,6 +70,7 @@ import { OpenAIAdapter } from '#adapters/ai/OpenAIAdapter.mjs';
 import { FitnessSyncerAdapter } from '#adapters/harvester/fitness/FitnessSyncerAdapter.mjs';
 import { FitnessConfigService } from '#apps/fitness/FitnessConfigService.mjs';
 import { FitnessPlayableService } from '#apps/fitness/FitnessPlayableService.mjs';
+import { ScreenshotService } from '#apps/fitness/services/ScreenshotService.mjs';
 import { createFitnessRouter } from '#api/v1/routers/fitness.mjs';
 
 // Home automation imports
@@ -225,7 +226,7 @@ import {
 import RSSParser from 'rss-parser';
 
 // FileIO utilities for image saving
-import { saveImage as saveImageToFile, loadYamlSafe, listYamlFiles, saveYaml, deleteYaml } from './utils/FileIO.mjs';
+import { saveImage as saveImageToFile, loadYamlSafe, listYamlFiles, saveYaml, deleteYaml, ensureDir, writeBinary } from './utils/FileIO.mjs';
 
 // Additional adapters for harvesters
 import { StravaClientAdapter } from '#adapters/fitness/StravaClientAdapter.mjs';
@@ -901,10 +902,18 @@ export function createFitnessApiRouter(config) {
     logger
   });
 
+  // Create ScreenshotService for session screenshot handling
+  const screenshotService = new ScreenshotService({
+    sessionService: fitnessServices.sessionService,
+    fileIO: { ensureDir, writeBinary },
+    logger
+  });
+
   return createFitnessRouter({
     sessionService: fitnessServices.sessionService,
     zoneLedController: fitnessServices.ambientLedController,
     transcriptionService: fitnessServices.transcriptionService,
+    screenshotService,
     fitnessConfigService,
     fitnessPlayableService,
     fitnessContentAdapter,
