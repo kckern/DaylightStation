@@ -1979,6 +1979,23 @@ export async function createNutribotServices(config) {
   const { BarcodeImageAdapter } = await import('#adapters/nutribot/BarcodeImageAdapter.mjs');
   const barcodeGenerator = new BarcodeImageAdapter({ logger });
 
+  // Build food icon list from available icon files on disk
+  const foodIconDir = configService.getPath('icons') + '/food';
+  let foodIconsString = 'apple banana bread cheese chicken default';
+  try {
+    const { readdirSync } = await import('fs');
+    const iconFiles = readdirSync(foodIconDir)
+      .filter(f => f.endsWith('.png'))
+      .map(f => f.replace('.png', ''))
+      .sort();
+    if (iconFiles.length > 0) {
+      foodIconsString = iconFiles.join(' ');
+      logger.info?.('nutribot.icons.loaded', { count: iconFiles.length, dir: foodIconDir });
+    }
+  } catch (e) {
+    logger.warn?.('nutribot.icons.readFailed', { dir: foodIconDir, error: e.message });
+  }
+
   // Create nutribot container with all dependencies
   // Note: Identity resolution (conversation ID -> username) is handled by
   // UserResolver in the adapter layer (NutribotInputRouter), not here.
@@ -1993,6 +2010,7 @@ export async function createNutribotServices(config) {
     conversationStateStore,
     reportRenderer,
     barcodeGenerator,
+    foodIconsString,
     logger
   });
 
