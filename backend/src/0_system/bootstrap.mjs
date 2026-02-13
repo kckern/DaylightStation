@@ -117,6 +117,7 @@ import createCostRouter from '#api/v1/routers/cost.mjs';
 // Gratitude domain imports
 import { GratitudeService } from '#domains/gratitude/services/GratitudeService.mjs';
 import { YamlGratitudeDatastore } from '#adapters/persistence/yaml/YamlGratitudeDatastore.mjs';
+import { GratitudeHouseholdService } from '#apps/gratitude/services/GratitudeHouseholdService.mjs';
 import { createGratitudeRouter } from '#api/v1/routers/gratitude.mjs';
 
 // Journaling domain imports
@@ -1726,9 +1727,16 @@ export function createGratitudeApiRouter(config) {
     logger = console
   } = config;
 
+  // Application service for household-related helpers
+  const gratitudeHouseholdService = new GratitudeHouseholdService({
+    configService,
+    gratitudeService: gratitudeServices.gratitudeService
+  });
+
   return createGratitudeRouter({
     gratitudeService: gratitudeServices.gratitudeService,
     configService,
+    gratitudeHouseholdService,
     broadcastToWebsockets,
     printerAdapter,
     createGratitudeCardCanvas,

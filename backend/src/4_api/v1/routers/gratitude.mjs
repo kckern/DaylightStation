@@ -22,7 +22,7 @@
 
 import express from 'express';
 import { writeBinary, deleteFile } from '#system/utils/FileIO.mjs';
-import { nowTs, nowTs24 } from '#system/utils/index.mjs';
+import { nowTs } from '#system/utils/index.mjs';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 
 /**
@@ -31,6 +31,7 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
  * @param {Object} config
  * @param {import('#domains/gratitude/services/GratitudeService.mjs').GratitudeService} config.gratitudeService
  * @param {Object} config.configService - ConfigService for household data
+ * @param {import('#apps/gratitude/services/GratitudeHouseholdService.mjs').GratitudeHouseholdService} config.gratitudeHouseholdService - Household helpers
  * @param {Function} config.broadcastToWebsockets - WebSocket broadcast function
  * @param {Object} [config.printerAdapter] - ThermalPrinterAdapter for card printing
  * @param {Function} [config.createGratitudeCardCanvas] - Function to create gratitude card canvas
@@ -41,6 +42,7 @@ export function createGratitudeRouter(config) {
   const {
     gratitudeService,
     configService,
+    gratitudeHouseholdService,
     broadcastToWebsockets,
     printerAdapter,
     createGratitudeCardCanvas,
@@ -50,63 +52,10 @@ export function createGratitudeRouter(config) {
   const router = express.Router();
 
   /**
-   * Get household ID from request
+   * Get household ID from request (HTTP-specific, stays in router)
    */
   const getHouseholdId = (req) =>
     req.query.household || configService.getDefaultHouseholdId();
-
-  /**
-   * Get household timezone
-   */
-  const getTimezone = (householdId) =>
-    configService.getHouseholdTimezone?.(householdId) || 'UTC';
-
-  /**
-   * Generate timestamp in household's timezone
-   */
-  const generateTimestamp = (householdId) => {
-    const timezone = getTimezone(householdId);
-    if (timezone && timezone !== 'UTC') {
-      return new Date().toLocaleString('en-US', { timeZone: timezone });
-    }
-    return nowTs24();
-  };
-
-  /**
-   * Validate category parameter
-   */
-  const validateCategory = (category) => {
-    const cat = String(category || '').toLowerCase();
-    return gratitudeService.isValidCategory(cat) ? cat : null;
-  };
-
-  /**
-   * Resolve display name for a user
-   */
-  const resolveDisplayName = (userId) => {
-    if (!userId) return 'Unknown';
-    const profile = configService.getUserProfile?.(userId);
-    return profile?.group_label
-      || profile?.display_name
-      || profile?.name
-      || userId.charAt(0).toUpperCase() + userId.slice(1);
-  };
-
-  /**
-   * Get household users from config
-   */
-  const getHouseholdUsers = (householdId) => {
-    const usernames = configService.getHouseholdUsers?.(householdId) || [];
-    return usernames.map(username => {
-      const profile = configService.getUserProfile?.(username);
-      return {
-        id: username,
-        name: profile?.display_name || profile?.name ||
-          username.charAt(0).toUpperCase() + username.slice(1),
-        group_label: profile?.group_label || null
-      };
-    });
-  };
 
   // ===========================================================================
   // Bootstrap
@@ -120,7 +69,7 @@ export function createGratitudeRouter(config) {
     const data = await gratitudeService.bootstrap(householdId);
 
     // Get users from household config
-    const users = getHouseholdUsers(householdId);
+    const users = gratitudeHouseholdService.getHouseholdUsers(householdId);
 
     res.json({
       users,
@@ -138,7 +87,7 @@ export function createGratitudeRouter(config) {
    */
   router.get('/users', (req, res) => {
     const householdId = getHouseholdId(req);
-    const users = getHouseholdUsers(householdId);
+    const users = gratitudeHouseholdService.getHouseholdUsers(householdId);
     res.json({ users, _household: householdId });
   });
 
@@ -166,7 +115,7 @@ export function createGratitudeRouter(config) {
    * GET /api/gratitude/options/:category - Get options for category
    */
   router.get('/options/:category', asyncHandler(async (req, res) => {
-    const category = validateCategory(req.params.category);
+    const category = gratitudeHouseholdService.validateCategory(req.params.category);
     if (!category) {
       return res.status(400).json({ error: 'Invalid category' });
     }
@@ -184,7 +133,7 @@ export function createGratitudeRouter(config) {
    * POST /api/gratitude/options/:category - Add a new option
    */
   router.post('/options/:category', asyncHandler(async (req, res) => {
-    const category = validateCategory(req.params.category);
+    const category = gratitudeHouseholdService.validateCategory(req.params.category);
     if (!category) {
       return res.status(400).json({ error: 'Invalid category' });
     }
@@ -211,7 +160,7 @@ export function createGratitudeRouter(config) {
    * GET /api/gratitude/selections/:category - Get selections for category
    */
   router.get('/selections/:category', asyncHandler(async (req, res) => {
-    const category = validateCategory(req.params.category);
+    const category = gratitudeHouseholdService.validateCategory(req.params.category);
     if (!category) {
       return res.status(400).json({ error: 'Invalid category' });
     }
@@ -229,7 +178,7 @@ export function createGratitudeRouter(config) {
    * POST /api/gratitude/selections/:category - Add a selection
    */
   router.post('/selections/:category', asyncHandler(async (req, res) => {
-    const category = validateCategory(req.params.category);
+    const category = gratitudeHouseholdService.validateCategory(req.params.category);
     if (!category) {
       return res.status(400).json({ error: 'Invalid category' });
     }
@@ -241,7 +190,7 @@ export function createGratitudeRouter(config) {
 
     try {
       const householdId = getHouseholdId(req);
-      const timestamp = generateTimestamp(householdId);
+      const timestamp = gratitudeHouseholdService.generateTimestamp(householdId);
       const selection = await gratitudeService.addSelection(
         householdId,
         category,
@@ -266,7 +215,7 @@ export function createGratitudeRouter(config) {
    * DELETE /api/gratitude/selections/:category/:selectionId - Remove a selection
    */
   router.delete('/selections/:category/:selectionId', asyncHandler(async (req, res) => {
-    const category = validateCategory(req.params.category);
+    const category = gratitudeHouseholdService.validateCategory(req.params.category);
     if (!category) {
       return res.status(400).json({ error: 'Invalid category' });
     }
@@ -293,7 +242,7 @@ export function createGratitudeRouter(config) {
    * GET /api/gratitude/discarded/:category - Get discarded items
    */
   router.get('/discarded/:category', asyncHandler(async (req, res) => {
-    const category = validateCategory(req.params.category);
+    const category = gratitudeHouseholdService.validateCategory(req.params.category);
     if (!category) {
       return res.status(400).json({ error: 'Invalid category' });
     }
@@ -311,7 +260,7 @@ export function createGratitudeRouter(config) {
    * POST /api/gratitude/discarded/:category - Discard an item
    */
   router.post('/discarded/:category', asyncHandler(async (req, res) => {
-    const category = validateCategory(req.params.category);
+    const category = gratitudeHouseholdService.validateCategory(req.params.category);
     if (!category) {
       return res.status(400).json({ error: 'Invalid category' });
     }
@@ -339,7 +288,7 @@ export function createGratitudeRouter(config) {
    */
   router.post('/snapshot/save', asyncHandler(async (req, res) => {
     const householdId = getHouseholdId(req);
-    const timestamp = generateTimestamp(householdId);
+    const timestamp = gratitudeHouseholdService.generateTimestamp(householdId);
     const result = await gratitudeService.saveSnapshot(householdId, timestamp);
 
     res.status(201).json({
@@ -432,7 +381,7 @@ export function createGratitudeRouter(config) {
     const householdId = getHouseholdId(req);
     const result = await gratitudeService.getSelectionsForPrint(
       householdId,
-      resolveDisplayName
+      (userId) => gratitudeHouseholdService.resolveDisplayName(userId)
     );
 
     res.json({
@@ -451,13 +400,13 @@ export function createGratitudeRouter(config) {
       return res.status(400).json({ error: 'Missing category or selectionIds' });
     }
 
-    const validCategory = validateCategory(category);
+    const validCategory = gratitudeHouseholdService.validateCategory(category);
     if (!validCategory) {
       return res.status(400).json({ error: 'Invalid category' });
     }
 
     const householdId = getHouseholdId(req);
-    const timestamp = generateTimestamp(householdId);
+    const timestamp = gratitudeHouseholdService.generateTimestamp(householdId);
     await gratitudeService.markAsPrinted(householdId, validCategory, selectionIds, timestamp);
 
     res.json({
@@ -551,7 +500,7 @@ export function createGratitudeRouter(config) {
     const printed = { gratitude: [], hopes: [] };
 
     if (success && selectedIds) {
-      const timestamp = generateTimestamp(householdId);
+      const timestamp = gratitudeHouseholdService.generateTimestamp(householdId);
       if (selectedIds.gratitude?.length > 0) {
         await gratitudeService.markAsPrinted(householdId, 'gratitude', selectedIds.gratitude, timestamp);
         printed.gratitude = selectedIds.gratitude;
