@@ -1,13 +1,14 @@
 // backend/src/0_system/registries/SystemBotLoader.mjs
 
-import { TelegramAdapter } from '#adapters/messaging/TelegramAdapter.mjs';
-
 /**
  * SystemBotLoader - Loads bot adapters based on system config
  *
  * Reads bot definitions from system/bots.yml and creates adapters with tokens
  * from system/auth/{platform}.yml. Provides lookup by app name and platform,
  * with household-specific platform selection via getHouseholdMessagingPlatform.
+ *
+ * Adapter creation is delegated to factory functions provided via constructor,
+ * keeping this system-layer module free of adapter imports.
  *
  * Config sources:
  * - Bot definitions: system/bots.yml via configService.getSystemConfig('bots')
@@ -17,16 +18,19 @@ import { TelegramAdapter } from '#adapters/messaging/TelegramAdapter.mjs';
 export class SystemBotLoader {
   #configService;
   #logger;
+  #adapterFactories;
   #bots = new Map();  // appName -> Map<platform, adapter>
 
   /**
    * @param {Object} options
    * @param {ConfigService} options.configService - For config lookups
    * @param {Object} [options.logger] - Logger instance
+   * @param {Object<string, Function>} [options.adapterFactories] - Map of platform -> factory function
    */
-  constructor({ configService, logger = console }) {
+  constructor({ configService, logger = console, adapterFactories = {} }) {
     this.#configService = configService;
     this.#logger = logger;
+    this.#adapterFactories = adapterFactories;
   }
 
   /**
@@ -176,23 +180,22 @@ export class SystemBotLoader {
       return null;
     }
 
-    switch (platform) {
-      case 'telegram':
-        return new TelegramAdapter({
-          token,
-          secretToken: auth?.secret_token,
-          httpClient: deps.httpClient,
-          transcriptionService: deps.transcriptionService,
-          logger: this.#logger
-        });
-
-      default:
-        this.#logger.warn?.('bot.loader.unsupported-platform', {
-          appName,
-          platform
-        });
-        return null;
+    const factory = this.#adapterFactories[platform];
+    if (!factory) {
+      this.#logger.warn?.('bot.loader.unsupported-platform', {
+        appName,
+        platform
+      });
+      return null;
     }
+
+    return factory({
+      token,
+      secretToken: auth?.secret_token,
+      httpClient: deps.httpClient,
+      transcriptionService: deps.transcriptionService,
+      logger: this.#logger
+    });
   }
 }
 
