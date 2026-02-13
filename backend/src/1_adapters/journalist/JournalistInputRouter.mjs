@@ -19,6 +19,7 @@ export class JournalistInputRouter {
   #container;
   #logger;
   #userResolver;
+  #userIdentityService;
   /** @type {import('../telegram/IInputEvent.mjs').IInputEvent|null} */
   #currentEvent;
   /** @type {import('../../3_applications/nutribot/ports/IResponseContext.mjs').IResponseContext|null} */
@@ -28,6 +29,7 @@ export class JournalistInputRouter {
    * @param {import('../../3_applications/journalist/JournalistContainer.mjs').JournalistContainer} container
    * @param {Object} [options]
    * @param {import('../../0_system/users/UserResolver.mjs').UserResolver} [options.userResolver] - For resolving platform users to system usernames
+   * @param {import('../../2_domains/messaging/services/UserIdentityService.mjs').UserIdentityService} [options.userIdentityService] - Domain identity service (preferred)
    * @param {Object} [options.logger]
    */
   constructor(container, options = {}) {
@@ -36,6 +38,7 @@ export class JournalistInputRouter {
         field: 'container'
       });
     this.#container = container;
+    this.#userIdentityService = options.userIdentityService || null;
     this.#userResolver = options.userResolver;
     this.#logger = options.logger || console;
     this.#currentEvent = null;
@@ -446,35 +449,25 @@ export class JournalistInputRouter {
   #resolveUserId() {
     const event = this.#currentEvent;
 
-    this.#logger.debug?.('journalist.resolveUserId.attempt', {
-      hasUserResolver: !!this.#userResolver,
-      platform: event?.platform,
-      platformUserId: event?.platformUserId,
-      conversationId: event?.conversationId,
-    });
-
-    if (this.#userResolver && event?.platform && event?.platformUserId) {
-      const username = this.#userResolver.resolveUser(event.platform, event.platformUserId);
+    // Prefer domain identity service
+    if (this.#userIdentityService && event?.platform && event?.platformUserId) {
+      const username = this.#userIdentityService.resolveUsername(event.platform, event.platformUserId);
       if (username) {
-        this.#logger.debug?.('journalist.resolveUserId.resolved', {
-          username,
-          platformUserId: event.platformUserId,
-        });
+        this.#logger.debug?.('journalist.resolveUserId.resolved', { username, platformUserId: event.platformUserId });
         return username;
       }
-      this.#logger.warn?.('journalist.userResolver.notFound', {
+      this.#logger.warn?.('journalist.identity.notFound', {
         platform: event.platform,
         platformUserId: event.platformUserId,
-        fallback: event.conversationId,
-      });
-    } else {
-      this.#logger.warn?.('journalist.resolveUserId.skipResolution', {
-        hasUserResolver: !!this.#userResolver,
-        hasPlatform: !!event?.platform,
-        hasPlatformUserId: !!event?.platformUserId,
-        fallback: event?.conversationId,
       });
     }
+
+    // Fallback to legacy UserResolver
+    if (this.#userResolver && event?.platform && event?.platformUserId) {
+      const username = this.#userResolver.resolveUser(event.platform, event.platformUserId);
+      if (username) return username;
+    }
+
     // Fallback to conversationId for backwards compatibility
     return event?.conversationId || null;
   }

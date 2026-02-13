@@ -2,7 +2,8 @@
  * UPC Gateway
  * @module adapters/nutribot/UPCGateway
  *
- * Implements UPC barcode lookup using Open Food Facts API.
+ * Implements UPC barcode lookup using Open Food Facts API
+ * with Nutritionix fallback.
  */
 
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
@@ -13,18 +14,23 @@ const BARCODE_IMAGE_FALLBACK = (upc) => `https://images.barcodespider.com/upcima
 // Open Food Facts API
 const OPEN_FOOD_FACTS_API = 'https://world.openfoodfacts.org/api/v0/product';
 
+// Nutritionix API
+const NUTRITIONIX_API = 'https://trackapi.nutritionix.com/v2/search/item';
+
 /**
  * UPC Gateway - looks up products by barcode
  */
 export class UPCGateway {
   #httpClient;
   #calorieColorService;
+  #nutritionix;
   #logger;
 
   /**
    * @param {Object} deps
    * @param {import('#system/services/HttpClient.mjs').HttpClient} deps.httpClient
    * @param {import('#domains/nutrition/services/CalorieColorService.mjs').CalorieColorService} [deps.calorieColorService]
+   * @param {{ appId: string, appKey: string }} [deps.nutritionix] - Nutritionix credentials for fallback lookups
    * @param {Object} [deps.logger]
    */
   constructor(deps = {}) {
@@ -36,6 +42,7 @@ export class UPCGateway {
     }
     this.#httpClient = deps.httpClient;
     this.#calorieColorService = deps.calorieColorService;
+    this.#nutritionix = (deps.nutritionix?.appId && deps.nutritionix?.appKey) ? deps.nutritionix : null;
     this.#logger = deps.logger || console;
   }
 
@@ -54,10 +61,24 @@ export class UPCGateway {
       if (product) {
         this.#logger.info?.('upc.lookup.found', {
           upc: normalizedUpc,
+          source: 'openfoodfacts',
           name: product.name,
           hasImage: !!product.imageUrl,
         });
         return product;
+      }
+
+      // Fallback to Nutritionix
+      if (this.#nutritionix) {
+        const nxProduct = await this.#lookupNutritionix(normalizedUpc);
+        if (nxProduct) {
+          this.#logger.info?.('upc.lookup.found', {
+            upc: normalizedUpc,
+            source: 'nutritionix',
+            name: nxProduct.name,
+          });
+          return nxProduct;
+        }
       }
 
       this.#logger.info?.('upc.lookup.notFound', { upc: normalizedUpc });
@@ -130,6 +151,57 @@ export class UPCGateway {
       };
     } catch (error) {
       this.#logger.debug?.('upc.off.error', { upc, error: error.message });
+      return null;
+    }
+  }
+
+  /**
+   * Look up product from Nutritionix (fallback)
+   * @private
+   */
+  async #lookupNutritionix(upc) {
+    try {
+      const response = await this.#httpClient.get(`${NUTRITIONIX_API}?upc=${upc}`, {
+        headers: {
+          'x-app-id': this.#nutritionix.appId,
+          'x-app-key': this.#nutritionix.appKey,
+        },
+      });
+
+      if (!response.ok || !response.data?.foods?.length) {
+        this.#logger.debug?.('upc.nutritionix.notFound', { upc, status: response.status });
+        return null;
+      }
+
+      const food = response.data.foods[0];
+      const servingGrams = food.serving_weight_grams || 100;
+
+      const nutrition = {
+        calories: Math.round(food.nf_calories || 0),
+        protein: Math.round((food.nf_protein || 0) * 10) / 10,
+        carbs: Math.round((food.nf_total_carbohydrate || 0) * 10) / 10,
+        fat: Math.round((food.nf_total_fat || 0) * 10) / 10,
+        fiber: Math.round((food.nf_dietary_fiber || 0) * 10) / 10,
+        sugar: Math.round((food.nf_sugars || 0) * 10) / 10,
+        sodium: Math.round(food.nf_sodium || 0),
+        cholesterol: Math.round(food.nf_cholesterol || 0),
+      };
+
+      return {
+        upc,
+        name: food.food_name || 'Unknown Product',
+        brand: food.brand_name || null,
+        imageUrl: food.photo?.thumb || BARCODE_IMAGE_FALLBACK(upc),
+        icon: '🍽️',
+        noomColor: this.#inferNoomColor(nutrition, [], servingGrams),
+        serving: {
+          size: servingGrams,
+          unit: food.serving_unit || 'g',
+        },
+        nutrition,
+      };
+    } catch (error) {
+      this.#logger.debug?.('upc.nutritionix.error', { upc, error: error.message });
       return null;
     }
   }

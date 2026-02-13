@@ -9,7 +9,7 @@ import {
 } from '#system/utils/FileIO.mjs';
 import { IMediaProgressMemory } from '#apps/content/ports/IMediaProgressMemory.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
-import { validateCanonicalSchema, LEGACY_TO_CANONICAL } from './mediaProgressSchema.mjs';
+import { validateCanonicalSchema, LEGACY_TO_CANONICAL, serializeMediaProgress } from './mediaProgressSchema.mjs';
 
 /**
  * YAML-based media progress persistence
@@ -91,7 +91,8 @@ export class YamlMediaProgressMemory extends IMediaProgressMemory {
       percent: data.percent ?? null,
       playCount: data.playCount ?? 0,
       lastPlayed: data.lastPlayed ?? null,
-      watchTime: data.watchTime ?? 0
+      watchTime: data.watchTime ?? 0,
+      bookmark: data.bookmark ?? null
     });
   }
 
@@ -116,7 +117,7 @@ export class YamlMediaProgressMemory extends IMediaProgressMemory {
    */
   async set(state, storagePath) {
     const data = this._readFile(storagePath);
-    const { itemId, ...rest } = state.toJSON();
+    const { itemId, ...rest } = serializeMediaProgress(state);
 
     // Validate schema before writing
     const validation = validateCanonicalSchema(rest);

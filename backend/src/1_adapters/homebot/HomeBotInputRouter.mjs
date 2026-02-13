@@ -11,6 +11,7 @@ export class HomeBotInputRouter {
   #container;
   #logger;
   #userResolver;
+  #userIdentityService;
   /** @type {import('../telegram/IInputEvent.mjs').IInputEvent|null} */
   #currentEvent;
   /** @type {import('../../3_applications/nutribot/ports/IResponseContext.mjs').IResponseContext|null} */
@@ -20,6 +21,7 @@ export class HomeBotInputRouter {
    * @param {Object} container - HomeBotContainer
    * @param {Object} [options]
    * @param {import('../../0_system/users/UserResolver.mjs').UserResolver} [options.userResolver] - For resolving platform users to system usernames
+   * @param {import('../../2_domains/messaging/services/UserIdentityService.mjs').UserIdentityService} [options.userIdentityService] - Domain identity service (preferred)
    * @param {Object} [options.logger]
    */
   constructor(container, options = {}) {
@@ -28,6 +30,7 @@ export class HomeBotInputRouter {
       // Old signature: { container, logger }
       this.#container = container.container;
       this.#userResolver = container.userResolver;
+      this.#userIdentityService = container.userIdentityService || null;
       this.#logger = container.logger || console;
     } else {
       // New signature: (container, { logger, userResolver })
@@ -36,6 +39,7 @@ export class HomeBotInputRouter {
         dependency: 'container'
       });
       this.#container = container;
+      this.#userIdentityService = options.userIdentityService || null;
       this.#userResolver = options.userResolver;
       this.#logger = options.logger || console;
     }
@@ -168,35 +172,25 @@ export class HomeBotInputRouter {
   #resolveUserId() {
     const event = this.#currentEvent;
 
-    this.#logger.debug?.('homebot.resolveUserId.attempt', {
-      hasUserResolver: !!this.#userResolver,
-      platform: event?.platform,
-      platformUserId: event?.platformUserId,
-      conversationId: event?.conversationId,
-    });
-
-    if (this.#userResolver && event?.platform && event?.platformUserId) {
-      const username = this.#userResolver.resolveUser(event.platform, event.platformUserId);
+    // Prefer domain identity service
+    if (this.#userIdentityService && event?.platform && event?.platformUserId) {
+      const username = this.#userIdentityService.resolveUsername(event.platform, event.platformUserId);
       if (username) {
-        this.#logger.debug?.('homebot.resolveUserId.resolved', {
-          username,
-          platformUserId: event.platformUserId,
-        });
+        this.#logger.debug?.('homebot.resolveUserId.resolved', { username, platformUserId: event.platformUserId });
         return username;
       }
-      this.#logger.warn?.('homebot.userResolver.notFound', {
+      this.#logger.warn?.('homebot.identity.notFound', {
         platform: event.platform,
         platformUserId: event.platformUserId,
-        fallback: event.conversationId,
-      });
-    } else {
-      this.#logger.warn?.('homebot.resolveUserId.skipResolution', {
-        hasUserResolver: !!this.#userResolver,
-        hasPlatform: !!event?.platform,
-        hasPlatformUserId: !!event?.platformUserId,
-        fallback: event?.conversationId,
       });
     }
+
+    // Fallback to legacy UserResolver
+    if (this.#userResolver && event?.platform && event?.platformUserId) {
+      const username = this.#userResolver.resolveUser(event.platform, event.platformUserId);
+      if (username) return username;
+    }
+
     // Fallback to conversationId for backwards compatibility
     return event?.conversationId || 'unknown';
   }

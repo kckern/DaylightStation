@@ -2,3 +2,4 @@
 
 export { AudiobookshelfClient } from './AudiobookshelfClient.mjs';
 export { AudiobookshelfAdapter } from './AudiobookshelfAdapter.mjs';
+export { ABSProgressAdapter } from './ABSProgressAdapter.mjs';

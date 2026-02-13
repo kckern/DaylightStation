@@ -30,7 +30,8 @@ export function AudioPlayer({
   resilienceBridge,
   watchedDurationProvider
 }) {
-  const { mediaUrl, title, artist, albumArtist, album, image, type } = media || {};
+  const { mediaUrl, title, artist, albumArtist, album, image, thumbnail, type } = media || {};
+  const effectiveImage = image || thumbnail || null;
   
   // Fallback for artist/album from metadata if not directly available
   // (Plex track metadata uses canonical hierarchy: grandparentTitle=artist, parentTitle=album)
@@ -229,11 +230,11 @@ export function AudioPlayer({
       <ProgressBar percent={percent} onClick={handleProgressClick} />
       <div className="audio-content">
         <div className="image-container">
-          {image && (
+          {effectiveImage && (
             <>
               <img
                 ref={coverImageRef}
-                src={image}
+                src={effectiveImage}
                 alt={title}
                 className="cover"
                 style={coverBlurStyle}

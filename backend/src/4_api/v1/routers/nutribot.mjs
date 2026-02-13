@@ -34,7 +34,7 @@ import {
  */
 export function createNutribotRouter(container, options = {}) {
   const router = Router();
-  const { webhookHandler, botId, secretToken, gateway, logger = console } = options;
+  const { webhookHandler, telegramIdentityAdapter, defaultMember, botId, secretToken, gateway, logger = console } = options;
 
   // Apply middleware
   router.use(tracingMiddleware());
@@ -53,13 +53,14 @@ export function createNutribotRouter(container, options = {}) {
   }
 
   // Direct input endpoints (programmatic API access)
-  router.all('/upc', asyncHandler(directUPCHandler(container, { logger })));
-  router.all('/image', asyncHandler(directImageHandler(container, { logger })));
-  router.all('/text', asyncHandler(directTextHandler(container, { logger })));
+  const handlerOpts = { logger, identityAdapter: telegramIdentityAdapter, defaultMember };
+  router.all('/upc', asyncHandler(directUPCHandler(container, handlerOpts)));
+  router.all('/image', asyncHandler(directImageHandler(container, handlerOpts)));
+  router.all('/text', asyncHandler(directTextHandler(container, handlerOpts)));
 
   // Pinhole endpoint - public access for IFTTT/external integrations
   // Uses same handler as /image, but with dedicated Cloudflare Access bypass
-  router.all('/pinhole', asyncHandler(directImageHandler(container, { logger })));
+  router.all('/pinhole', asyncHandler(directImageHandler(container, handlerOpts)));
 
   // Report endpoints
   router.get('/report', asyncHandler(nutribotReportHandler(container, { logger })));
