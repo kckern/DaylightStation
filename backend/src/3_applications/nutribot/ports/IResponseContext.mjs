@@ -89,6 +89,19 @@ export const IResponseContext = {
    * const { messageId } = await ctx.sendPhoto(photo, caption);
    */
   async createStatusIndicator(initialText, options = {}) {},
+
+  /**
+   * Create a photo-based status indicator for a long-running operation.
+   * Sends a photo with animated caption while waiting.
+   *
+   * @param {Buffer|string} imageSource - Photo buffer, URL, or file ID
+   * @param {string} initialCaption - Initial caption text
+   * @param {Object} [options] - Options
+   * @param {string[]} [options.frames] - Animation frames to append to caption
+   * @param {number} [options.interval=2000] - Animation interval in ms
+   * @returns {Promise<IStatusIndicator>}
+   */
+  async createPhotoStatusIndicator(imageSource, initialCaption, options = {}) {},
 };
 
 /**
