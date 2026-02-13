@@ -55,6 +55,7 @@ export class NutribotContainer {
   #conversationStateStore;
   #reportRenderer;
   #barcodeGenerator;
+  #foodIconsString;
 
   // Use Cases (lazy-loaded)
   #logFoodFromImage;
@@ -112,6 +113,7 @@ export class NutribotContainer {
     this.#conversationStateStore = options.conversationStateStore;
     this.#reportRenderer = options.reportRenderer;
     this.#barcodeGenerator = options.barcodeGenerator;
+    this.#foodIconsString = options.foodIconsString;
   }
 
   // ==================== Config Getter ====================
@@ -184,6 +186,7 @@ export class NutribotContainer {
         foodLogStore: this.#foodLogStore,
         conversationStateStore: this.#conversationStateStore,
         config: this.#config,
+        foodIconsString: this.#foodIconsString,
         logger: this.#logger,
       });
     }
@@ -198,6 +201,7 @@ export class NutribotContainer {
         foodLogStore: this.#foodLogStore,
         conversationStateStore: this.#conversationStateStore,
         config: this.#config,
+        foodIconsString: this.#foodIconsString,
         logger: this.#logger,
       });
     }
@@ -225,6 +229,7 @@ export class NutribotContainer {
         foodLogStore: this.#foodLogStore,
         conversationStateStore: this.#conversationStateStore,
         config: this.#config,
+        foodIconsString: this.#foodIconsString,
         logger: this.#logger,
         barcodeGenerator: this.#barcodeGenerator,
       });
