@@ -457,72 +457,23 @@ labels: response.labels || response.metadata?.labels || []
 
 ---
 
-## Known Remaining SSoT Violations
+## Resolved SSoT Violations
 
-Issues identified but not yet resolved. Tracked here for future work.
+All previously documented SSoT violations have been addressed:
 
-### 1. getUserVitals().zoneId — Raw Zone Exposure
+| # | Violation | Resolution |
+|---|-----------|-----------|
+| 1 | `getUserVitals().zoneId` raw zone | Now reads from ZoneProfileStore first, falls back to raw zone for initial state |
+| 2 | FitnessPlayer dual governance check | Removed local label check; `governanceState.videoLocked` is sole lock authority |
+| 3 | Heart rate triple-storage | Documented propagation chain in `ingestData()`; removed stale snapshot fallback in ZoneProfileStore |
+| 4 | Progress bar data source split | Fallback path now prefers `progressEntry.currentHR` over raw `heartRate` |
+| 5 | Heart rate structure inconsistency | Removed dead `hr.value` checks; standardized on flat `heartRate` (the only shape the roster produces) |
 
-**Location:** `FitnessContext.jsx:1634-1635`
+### Design Decisions
 
-```javascript
-const mergedZoneId = existing?.zoneId
-  || (participant?.zoneId ? String(participant.zoneId).toLowerCase() : null);
-```
-
-`getUserVitals()` returns a `zoneId` derived from raw participant/device data, **not** from ZoneProfileStore. Any component reading `getUserVitals().zoneId` gets the unstabilized zone.
-
-**Consumers at risk:**
-- `resolveParticipantVitals()` in FitnessPlayerOverlay — **mitigated** by `getParticipantZone()` preferring ZoneProfileStore
-- Any future code that reads `getUserVitals(name).zoneId` directly
-
-**Recommended fix:** Have `getUserVitals()` read zone from ZoneProfileStore, or remove `zoneId` from vitals entirely and require explicit ZoneProfileStore lookups.
-
-### 2. FitnessPlayer Dual Governance Check
-
-**Location:** `FitnessPlayer.jsx:327-351` (local check) AND `GovernanceEngine.evaluate()` (engine check)
-
-Two independent systems decide if media is governed:
-1. **FitnessPlayer** compares `currentItem.labels` against `governedLabelSet` (React-side)
-2. **GovernanceEngine** calls `_mediaIsGoverned()` internally
-
-Both should agree, but they use different normalization paths. If they diverge, FitnessPlayer may lock when the engine says unlocked (or vice versa).
-
-**Current risk:** Low — both normalize to lowercase trimmed strings. But the dual check is technical debt.
-
-### 3. Heart Rate Triple-Storage
-
-**Locations:**
-- `DeviceManager.device.heartRate` — raw sensor value
-- `UserManager.user.currentData.heartRate` — copied from device
-- `ZoneProfileStore.profile.heartRate` — copied during sync
-
-All three should match, but updates propagate through different code paths. A timing glitch could cause UserManager to have an older HR than ZoneProfileStore.
-
-**Current risk:** Low — all updated in the same `ingestData()` call. Would become a problem if any path becomes async.
-
-### 4. Progress Bar Data Source Split
-
-**Location:** `FitnessPlayerOverlay.jsx:684-750` (`computeProgressData`)
-
-Progress toward target zone is calculated from two different sources:
-1. `calculateZoneProgressTowardsTarget()` — uses zone progress snapshot
-2. Direct HR comparison: `(hrValue - floor) / span` — uses raw heart rate
-
-The fallback to raw HR can produce a different progress percentage than the zone-based calculation. This is visible as progress bar jumps when switching between sources.
-
-### 5. Heart Rate Structure Inconsistency
-
-**Locations:**
-- `GovernanceEngine.js:296` reads `rosterEntry?.hr?.value || rosterEntry?.heartRate`
-- `FitnessContext.jsx:1333` roster signature reads only `entry?.heartRate`
-- `FitnessContext.jsx:1611` HR map reads only `entry.heartRate`
-
-The roster has two HR representations: structured `hr: { value, percent }` and flat `heartRate`. GovernanceEngine defensively checks both, but the roster signature and HR map only check the flat form. If a roster entry only has `hr.value`, the signature won't detect HR changes and the HR map will miss it entirely.
-
-**Current risk:** Medium — most entries use flat `heartRate`, but the inconsistency means some HR updates could be silently dropped.
-
-**Recommended fix:** Standardize on one HR shape in the roster, or have all consumers check both.
+- **Triple HR storage retained:** DeviceManager, UserManager, and ZoneProfileStore each serve different roles. The three stores update synchronously in `ingestData()`. If any path becomes async, this must be collapsed to a single authoritative store.
+- **Raw zone fields retained in vitals:** `getUserVitals().zoneId` now prefers ZoneProfileStore but falls back to raw zone for initial state before first stabilization cycle.
+- **`computeProgressData` two paths retained:** Zone-based and HR-based are fundamentally different algorithms for different scenarios. The fix ensures both use the same HR source (snapshot preferred over raw).
 
 ---
 

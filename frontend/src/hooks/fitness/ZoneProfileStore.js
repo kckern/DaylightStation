@@ -165,7 +165,7 @@ export class ZoneProfileStore {
 
     const heartRate = Number.isFinite(user?.currentData?.heartRate)
       ? Math.max(0, user.currentData.heartRate)
-      : (Number.isFinite(user?.zoneSnapshot?.currentHR) ? Math.max(0, user.zoneSnapshot.currentHR) : 0);
+      : 0; // No fallback — UserManager.currentData.heartRate is the SSoT for HR
 
     const snapshot = Array.isArray(sourceZoneConfig)
       ? deriveZoneProgressSnapshot({ zoneConfig: sourceZoneConfig, heartRate })
