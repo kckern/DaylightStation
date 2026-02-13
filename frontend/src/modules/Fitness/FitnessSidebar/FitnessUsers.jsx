@@ -535,35 +535,39 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
       ? getUserByDevice(deviceKey)
       : registeredUsers.find(u => String(u.hrDeviceId) === deviceKey);
     const canonicalName = resolveCanonicalUserName(device.deviceId, participantEntry?.name || userObj?.name);
-    const vitals = canonicalName && typeof getUserVitals === 'function' ? getUserVitals(canonicalName) : null;
-    let zoneId = vitals?.zoneId ? String(vitals.zoneId).toLowerCase() : null;
 
-    if (!zoneId && vitals?.zoneColor) {
-      const mapped = colorToZoneId[String(vitals.zoneColor).toLowerCase()] || null;
-      if (mapped) {
-        zoneId = String(mapped).toLowerCase();
+    // ZoneProfileStore is the SSOT — synchronously updated on every HR event
+    const profileName = canonicalName || participantEntry?.name || userObj?.name;
+    const zoneProfile = resolveZoneProfile(profileName);
+    let zoneId = null;
+
+    if (zoneProfile?.currentZoneId) {
+      zoneId = String(zoneProfile.currentZoneId).toLowerCase();
+    } else if (zoneProfile?.zoneSnapshot?.currentZoneId) {
+      zoneId = String(zoneProfile.zoneSnapshot.currentZoneId).toLowerCase();
+    } else if (zoneProfile) {
+      const hrValue = Number(device?.heartRate);
+      if (Number.isFinite(hrValue) && hrValue > 0) {
+        const derivedId = deriveZoneFromProfile(zoneProfile, hrValue);
+        if (derivedId) {
+          zoneId = String(derivedId).toLowerCase();
+        }
       }
     }
 
-    if (!zoneId && participantEntry?.zoneId) {
-      zoneId = String(participantEntry.zoneId).toLowerCase();
-    }
-
-    if (!zoneId || !canonicalZones.includes(zoneId)) {
-      const profileName = canonicalName || participantEntry?.name || userObj?.name;
-      const zoneProfile = resolveZoneProfile(profileName);
-      if (zoneProfile?.currentZoneId) {
-        zoneId = String(zoneProfile.currentZoneId).toLowerCase();
-      } else if (zoneProfile?.zoneSnapshot?.currentZoneId) {
-        zoneId = String(zoneProfile.zoneSnapshot.currentZoneId).toLowerCase();
-      } else if (zoneProfile) {
-        const hrValue = Number(device?.heartRate);
-        if (Number.isFinite(hrValue) && hrValue > 0) {
-          const derivedId = deriveZoneFromProfile(zoneProfile, hrValue);
-          if (derivedId) {
-            zoneId = String(derivedId).toLowerCase();
-          }
+    // Fallback to vitals/participant only when ZoneProfileStore has no data
+    if (!zoneId) {
+      const vitals = canonicalName && typeof getUserVitals === 'function' ? getUserVitals(canonicalName) : null;
+      if (vitals?.zoneId) {
+        zoneId = String(vitals.zoneId).toLowerCase();
+      } else if (vitals?.zoneColor) {
+        const mapped = colorToZoneId[String(vitals.zoneColor).toLowerCase()] || null;
+        if (mapped) {
+          zoneId = String(mapped).toLowerCase();
         }
+      }
+      if (!zoneId && participantEntry?.zoneId) {
+        zoneId = String(participantEntry.zoneId).toLowerCase();
       }
     }
 

@@ -298,7 +298,7 @@ test.describe('Zone Propagation Diagnosis', () => {
       console.log('\nFAILURE POINT: UserManager - user.updateFromDevice() may have skipped');
       console.log('Check: Does user.hrDeviceId match device.id?');
     } else if (!profileUpdated) {
-      console.log('\nFAILURE POINT: ZoneProfileStore - sync may be throttled or user not included');
+      console.log('\nFAILURE POINT: ZoneProfileStore - user not included in sync');
     } else if (!govUpdated) {
       console.log('\nFAILURE POINT: GovernanceEngine - user may not be in activeParticipants');
     } else {

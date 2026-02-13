@@ -73,10 +73,9 @@ describe('GovernanceEngine zone source', () => {
     expect(engine.phase).toBe('unlocked');
   });
 
-  test('zone state only changes at tick boundaries, not per HR reading', async () => {
-    // This test verifies the architectural guarantee:
-    // ZoneProfileStore only updates every 5 seconds (tick-driven)
-    // So governance phase can only change at tick boundaries
+  test('governance phase changes when ZoneProfileStore reports new zone', async () => {
+    // ZoneProfileStore is the single source of truth for zone state.
+    // Governance phase changes when the store reports a different zone.
 
     mockGetProfile
       .mockReturnValueOnce({ id: 'user-1', currentZoneId: 'active' }) // First tick

@@ -37,11 +37,18 @@ const cloneSnapshot = (snapshot) => {
 
 const now = () => Date.now();
 
+// Hysteresis: after a zone commit, rapid toggling protection activates for this window
+const HYSTERESIS_COOLDOWN_MS = 5000;
+// During rapid toggling, the new zone must be stable for this long before committing
+const HYSTERESIS_STABILITY_MS = 3000;
+
 export class ZoneProfileStore {
   constructor() {
     this._profiles = new Map();
     this._signature = null;
     this._baseZoneConfig = null;
+    // Per-user hysteresis state: Map<userId, { committedZoneId, lastCommitTs, rawZoneId, rawZoneStableSince }>
+    this._hysteresis = new Map();
   }
 
   setBaseZoneConfig(zoneConfig) {
@@ -64,6 +71,7 @@ export class ZoneProfileStore {
   clear() {
     this._profiles.clear();
     this._signature = null;
+    this._hysteresis.clear();
   }
 
   syncFromUsers(usersIterable) {
@@ -165,6 +173,10 @@ export class ZoneProfileStore {
     const normalizedSnapshot = cloneSnapshot(snapshot);
     const zoneSequence = normalizedSnapshot?.zoneSequence || this.#buildZoneSequence(normalizedZoneConfig);
 
+    // Apply zone hysteresis: instant first transition, debounce rapid toggling
+    const rawZoneId = normalizedSnapshot?.currentZoneId ?? null;
+    const stabilized = this.#applyHysteresis(userId, rawZoneId, normalizedZoneConfig);
+
     return {
       id: userId,
       slug: userId,
@@ -175,9 +187,9 @@ export class ZoneProfileStore {
       zoneConfig: normalizedZoneConfig,
       zoneSequence,
       zoneSnapshot: normalizedSnapshot,
-      currentZoneId: normalizedSnapshot?.currentZoneId ?? null,
-      currentZoneName: normalizedSnapshot?.currentZoneName ?? null,
-      currentZoneColor: normalizedSnapshot?.currentZoneColor ?? null,
+      currentZoneId: stabilized.zoneId,
+      currentZoneName: stabilized.zoneName,
+      currentZoneColor: stabilized.zoneColor,
       currentZoneThreshold: normalizedSnapshot?.currentZoneThreshold ?? null,
       nextZoneId: normalizedSnapshot?.nextZoneId ?? null,
       nextZoneThreshold: normalizedSnapshot?.nextZoneThreshold ?? null,
@@ -190,6 +202,75 @@ export class ZoneProfileStore {
       source: user.source || null,
       updatedAt: now()
     };
+  }
+
+  /**
+   * Apply zone hysteresis to prevent rapid visual toggling at zone boundaries.
+   * - First zone transition: always instant
+   * - Rapid toggling (second change within HYSTERESIS_COOLDOWN_MS): require
+   *   the new zone to be stable for HYSTERESIS_STABILITY_MS before committing
+   *
+   * @param {string} userId
+   * @param {string|null} rawZoneId - zone derived directly from current HR
+   * @param {Array} zoneConfig - normalized zone config for name/color lookup
+   * @returns {{ zoneId: string|null, zoneName: string|null, zoneColor: string|null }}
+   */
+  #applyHysteresis(userId, rawZoneId, zoneConfig) {
+    const ts = now();
+    const lookupZone = (id) => {
+      if (!id) return { zoneId: null, zoneName: null, zoneColor: null };
+      const zone = (zoneConfig || []).find(z => z.id === id);
+      return {
+        zoneId: id,
+        zoneName: zone?.name ?? id,
+        zoneColor: zone?.color ?? null
+      };
+    };
+
+    let state = this._hysteresis.get(userId);
+
+    // First time seeing this user — commit whatever we have, no delay
+    if (!state) {
+      this._hysteresis.set(userId, {
+        committedZoneId: rawZoneId,
+        lastCommitTs: ts,
+        rawZoneId,
+        rawZoneStableSince: ts
+      });
+      return lookupZone(rawZoneId);
+    }
+
+    // Track when the raw zone changed
+    if (rawZoneId !== state.rawZoneId) {
+      state.rawZoneId = rawZoneId;
+      state.rawZoneStableSince = ts;
+    }
+
+    // Raw zone matches committed — no change needed
+    if (rawZoneId === state.committedZoneId) {
+      return lookupZone(state.committedZoneId);
+    }
+
+    // Raw zone differs from committed — decide whether to commit
+    const timeSinceLastCommit = ts - state.lastCommitTs;
+    const rawStableDuration = ts - state.rawZoneStableSince;
+
+    if (timeSinceLastCommit > HYSTERESIS_COOLDOWN_MS) {
+      // No recent zone change — this is a "first" transition, commit instantly
+      state.committedZoneId = rawZoneId;
+      state.lastCommitTs = ts;
+      return lookupZone(rawZoneId);
+    }
+
+    if (rawStableDuration >= HYSTERESIS_STABILITY_MS) {
+      // Rapid toggling detected but new zone has been stable long enough — commit
+      state.committedZoneId = rawZoneId;
+      state.lastCommitTs = ts;
+      return lookupZone(rawZoneId);
+    }
+
+    // Rapid toggling, not yet stable — keep the committed zone
+    return lookupZone(state.committedZoneId);
   }
 
   #buildZoneSequence(zoneConfig = []) {

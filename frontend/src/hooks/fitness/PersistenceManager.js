@@ -264,6 +264,201 @@ const mapSeriesKeysForPersist = (series) => {
   return mapped;
 };
 
+// -------------------- Event Consolidation --------------------
+
+/**
+ * Consolidate raw session events into grouped, meaningful records.
+ *
+ * - challenge_start + challenge_end → single { type: 'challenge', start, end, result, ... }
+ * - media_start + media_end → single { type: 'media', start, end, pauses, ... }
+ * - overlay.warning_offenders_changed / overlay.lock_rows_changed → collapsed into
+ *   phase-transition events: one record per meaningful governance phase (warning, locked, unlocked)
+ * - voice_memo_start dropped (voice_memo is the consolidated version)
+ * - All other events pass through unchanged.
+ *
+ * @param {Array} events - Raw event list
+ * @returns {Array} Consolidated events sorted by timestamp
+ */
+const _consolidateEvents = (events) => {
+  if (!Array.isArray(events)) return [];
+
+  // ── Challenges: pair start+end by challengeId ──
+  const challengeMap = new Map(); // challengeId → { startEvt, endEvt }
+  // ── Media: pair start+end by mediaId ──
+  const mediaMap = new Map(); // mediaId → { startEvt, endEvt, pauses }
+  // ── Governance overlay: collapse into phase transitions ──
+  let govPhase = null; // current governance phase
+  let govPhaseStart = null; // timestamp when phase began
+  let govPhaseUsers = []; // users in current phase
+  const govEvents = []; // collapsed governance events
+  // ── Pass-through events ──
+  const otherEvents = [];
+
+  for (const evt of events) {
+    if (!evt || typeof evt !== 'object') continue;
+    const type = evt.type || evt.eventType || null;
+    if (!type) continue;
+    if (type === 'voice_memo_start') continue;
+
+    const ts = Number(evt.timestamp) || 0;
+
+    // ── Challenge grouping ──
+    if (type === 'challenge_start') {
+      const id = evt.data?.challengeId || evt.data?.challenge_id || `unknown_${ts}`;
+      if (!challengeMap.has(id)) challengeMap.set(id, { startEvt: evt, endEvt: null });
+      else challengeMap.get(id).startEvt = evt;
+      continue;
+    }
+    if (type === 'challenge_end') {
+      const id = evt.data?.challengeId || evt.data?.challenge_id || `unknown_${ts}`;
+      if (!challengeMap.has(id)) challengeMap.set(id, { startEvt: null, endEvt: evt });
+      else challengeMap.get(id).endEvt = evt;
+      continue;
+    }
+
+    // ── Media grouping ──
+    if (type === 'media_start') {
+      const id = evt.data?.mediaId || evt.data?.mediaKey || `unknown_${ts}`;
+      if (!mediaMap.has(id)) mediaMap.set(id, { startEvt: evt, endEvt: null, pauses: [] });
+      else mediaMap.get(id).startEvt = evt;
+      continue;
+    }
+    if (type === 'media_end') {
+      const id = evt.data?.mediaId || evt.data?.mediaKey || `unknown_${ts}`;
+      if (!mediaMap.has(id)) mediaMap.set(id, { startEvt: null, endEvt: evt, pauses: [] });
+      else mediaMap.get(id).endEvt = evt;
+      continue;
+    }
+    if (type === 'media_pause' || type === 'media_resume') {
+      const id = evt.data?.mediaId || evt.data?.mediaKey || null;
+      if (id && mediaMap.has(id)) {
+        mediaMap.get(id).pauses.push({ type, timestamp: ts });
+      }
+      continue;
+    }
+
+    // ── Governance overlay: track phase transitions ──
+    // Meaningful phases: warning, locked, pending. "unlocked" is just the end-marker.
+    if (type === 'overlay.warning_offenders_changed' || type === 'overlay.lock_rows_changed') {
+      const phase = evt.data?.phase || null;
+      const users = evt.data?.currentUsers || [];
+      const isEnd = phase === 'unlocked' || users.length === 0;
+
+      if (isEnd) {
+        // Close the active governance phase
+        if (govPhase && govPhaseStart) {
+          govEvents.push({
+            type: 'governance',
+            phase: govPhase,
+            start: govPhaseStart,
+            end: ts,
+            users: govPhaseUsers
+          });
+        }
+        govPhase = null;
+        govPhaseStart = null;
+        govPhaseUsers = [];
+      } else if (phase && phase !== govPhase) {
+        // New meaningful phase — flush previous if any
+        if (govPhase && govPhaseStart) {
+          govEvents.push({
+            type: 'governance',
+            phase: govPhase,
+            start: govPhaseStart,
+            end: ts,
+            users: govPhaseUsers
+          });
+        }
+        govPhase = phase;
+        govPhaseStart = ts;
+        govPhaseUsers = users;
+      } else if (phase === govPhase && users.length > govPhaseUsers.length) {
+        // Same phase but more users joined — update the user list
+        govPhaseUsers = users;
+      }
+      continue;
+    }
+
+    // ── Everything else passes through ──
+    otherEvents.push(evt);
+  }
+
+  // Flush final governance phase
+  if (govPhase && govPhaseStart) {
+    govEvents.push({
+      type: 'governance',
+      phase: govPhase,
+      start: govPhaseStart,
+      end: null,
+      users: govPhaseUsers
+    });
+  }
+
+  // ── Build consolidated challenge events ──
+  const challengeEvents = [];
+  for (const [id, { startEvt, endEvt }] of challengeMap) {
+    const s = startEvt?.data || {};
+    const e = endEvt?.data || {};
+    challengeEvents.push({
+      timestamp: Number(startEvt?.timestamp || endEvt?.timestamp) || 0,
+      type: 'challenge',
+      data: {
+        challengeId: id,
+        zoneId: s.zoneId || e.zoneId || null,
+        zoneLabel: s.zoneLabel || e.zoneLabel || null,
+        title: s.title || e.title || null,
+        requiredCount: s.requiredCount ?? e.requiredCount ?? null,
+        start: Number(startEvt?.timestamp) || null,
+        end: Number(endEvt?.timestamp) || null,
+        result: e.result || e.status || (endEvt ? 'ended' : 'started'),
+        metUsers: e.metUsers || [],
+        missingUsers: e.missingUsers || []
+      }
+    });
+  }
+
+  // ── Build consolidated media events ──
+  const mediaEvents = [];
+  for (const [id, { startEvt, endEvt, pauses }] of mediaMap) {
+    const s = startEvt?.data || {};
+    const e = endEvt?.data || {};
+    mediaEvents.push({
+      timestamp: Number(startEvt?.timestamp || endEvt?.timestamp) || 0,
+      type: 'media',
+      data: {
+        mediaId: id,
+        title: s.title || e.title || null,
+        grandparentTitle: s.grandparentTitle || null,
+        parentTitle: s.parentTitle || null,
+        labels: s.labels || [],
+        contentType: s.type || null,
+        governed: s.governed ?? null,
+        durationSeconds: s.durationSeconds ?? e.durationSeconds ?? null,
+        start: Number(startEvt?.timestamp) || null,
+        end: Number(endEvt?.timestamp) || null,
+        ...(pauses.length > 0 ? { pauses } : {})
+      }
+    });
+  }
+
+  // ── Build consolidated governance events ──
+  const consolidatedGov = govEvents.map((g) => ({
+    timestamp: g.start,
+    type: 'governance',
+    data: {
+      phase: g.phase,
+      start: g.start,
+      end: g.end,
+      users: g.users
+    }
+  }));
+
+  // Merge and sort by timestamp
+  const all = [...challengeEvents, ...mediaEvents, ...consolidatedGov, ...otherEvents];
+  all.sort((a, b) => (Number(a.timestamp) || 0) - (Number(b.timestamp) || 0));
+  return all;
+};
+
 // -------------------- PersistenceManager Class --------------------
 
 /**
@@ -454,53 +649,9 @@ export class PersistenceManager {
       return { ok: false, reason: 'session-too-short', durationMs: sessionData.durationMs };
     }
 
-    // Deduplicate events
+    // Consolidate events: group start/end pairs and collapse overlay spam
     if (Array.isArray(sessionData.timeline?.events)) {
-      const seen = new Set();
-      let lastOverlayState = null;
-      let lastOverlayTimestamp = null;
-      
-      sessionData.timeline.events = sessionData.timeline.events.filter((evt) => {
-        if (!evt || typeof evt !== 'object') return false;
-        const type = evt.type || evt.eventType || null;
-        if (!type) return false;
-
-        // Drop voice_memo_start — voice_memo is the final consolidated version
-        if (type === 'voice_memo_start') return false;
-
-        // Challenge event deduplication: each challenge can have multiple sub-events
-        // (start, lock, recover, end) but duplicates of same type+tick+id are removed
-        if (type.startsWith('challenge_')) {
-          const tickIndex = Number.isFinite(evt.tickIndex) ? evt.tickIndex : null;
-          const challengeId = evt.data?.challengeId || evt.data?.challenge_id || evt.data?.challenge || null;
-          const key = `${type}|${tickIndex}|${challengeId || ''}`;
-          if (seen.has(key)) return false;
-          seen.add(key);
-          return true;
-        }
-        
-        // UI state event deduplication: rapid-fire overlay changes
-        // Keep first and last state, dedupe identical consecutive states within 5 seconds
-        if (type === 'overlay.lock_rows_changed' || type === 'overlay.warning_offenders_changed') {
-          const stateUsers = evt.data?.currentUsers || evt.data?.offenders || [];
-          const timestamp = Number(evt.timestamp) || 0;
-          const stateKey = `${type}|${JSON.stringify([...stateUsers].sort())}`;
-          
-          // Keep if state changed or enough time elapsed (>5s)
-          if (lastOverlayState !== stateKey || 
-              lastOverlayTimestamp === null ||
-              timestamp - lastOverlayTimestamp > 5000) {
-            lastOverlayState = stateKey;
-            lastOverlayTimestamp = timestamp;
-            return true;
-          }
-          
-          // Dedupe rapid-fire identical states
-          return false;
-        }
-        
-        return true;
-      });
+      sessionData.timeline.events = _consolidateEvents(sessionData.timeline.events);
     }
 
     // Require minimum ticks
@@ -591,6 +742,9 @@ export class PersistenceManager {
       },
       participants
     };
+
+    // Remove root-level events — timeline.events is the canonical source (already consolidated)
+    delete persistSessionData.events;
 
     if (persistSessionData.timeline && typeof persistSessionData.timeline === 'object') {
       persistSessionData.timeline = { ...persistSessionData.timeline };

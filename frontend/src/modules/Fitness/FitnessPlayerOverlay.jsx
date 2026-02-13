@@ -428,6 +428,7 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
   const sessionRoster = fitnessCtx?.fitnessSessionInstance?.roster;
   const participants = contextRoster.length > 0 ? contextRoster : (Array.isArray(sessionRoster) ? sessionRoster : []);
   const getUserVitals = fitnessCtx?.getUserVitals;
+  const getZoneProfile = fitnessCtx?.getZoneProfile;
   const clamp01 = (value) => Math.max(0, Math.min(1, value));
   const normalizeZoneId = (value) => {
     if (!value) return null;
@@ -507,6 +508,21 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
   // Stabilize getParticipantZone with useCallback
   const getParticipantZone = React.useCallback((participant, resolvedVitals = null) => {
     if (!participant && !resolvedVitals) return null;
+
+    // SSoT: Prefer ZoneProfileStore (stabilized, hysteresis-applied)
+    // This matches what GovernanceEngine uses for evaluation
+    const profileId = resolvedVitals?.profileId || participant?.id || participant?.profileId || participant?.name;
+    if (profileId && typeof getZoneProfile === 'function') {
+      const zoneProfile = getZoneProfile(profileId);
+      const stabilizedId = zoneProfile?.currentZoneId
+        ? normalizeZoneId(zoneProfile.currentZoneId)
+        : null;
+      if (stabilizedId && zoneMetadata.map[stabilizedId]) {
+        return zoneMetadata.map[stabilizedId];
+      }
+    }
+
+    // Fallback: raw vitals zone
     const zoneId = normalizeZoneId(resolvedVitals?.zoneId) || normalizeZoneId(participant?.zoneId);
     if (zoneId && zoneMetadata.map[zoneId]) {
       const base = zoneMetadata.map[zoneId];
@@ -537,7 +553,7 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
       };
     }
     return null;
-  }, [zoneMetadata.map, findZoneByLabel]);
+  }, [zoneMetadata.map, findZoneByLabel, getZoneProfile]);
 
   const computeGovernanceProgress = React.useCallback((heartRate, targetThreshold, margin = COOL_ZONE_PROGRESS_MARGIN) => {
     if (!Number.isFinite(targetThreshold) || !Number.isFinite(heartRate)) {
@@ -1001,10 +1017,13 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
         });
         return;
       }
-      if (!missing.length) {
-        return;
-      }
-      missing.forEach((userName) => {
+      // When missingUsers is empty (e.g. governance in pending state before evaluation),
+      // fall back to all named participants — same SSOT the sidebar uses
+      const userNames = missing.length
+        ? missing
+        : participants.filter((p) => p?.name).map((p) => p.name);
+      userNames.forEach((userName) => {
+        if (!userName) return;
         const participant = participantMap.get(normalizeName(userName));
         addRow({
           name: userName,

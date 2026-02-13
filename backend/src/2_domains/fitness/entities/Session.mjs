@@ -231,8 +231,10 @@ export class Session {
     // Timeline data
     result.timeline = this.timeline;
 
-    // Events at root level (v3)
-    if (this.events.length > 0) result.events = this.events;
+    // Events at root level (v3) — only when timeline.events is absent
+    if (this.events.length > 0 && !(this.timeline?.events?.length > 0)) {
+      result.events = this.events;
+    }
 
     // Treasure box (v3 gamification)
     if (this.treasureBox) result.treasureBox = this.treasureBox;

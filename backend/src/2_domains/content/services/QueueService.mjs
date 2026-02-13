@@ -394,8 +394,19 @@ export class QueueService {
       return shuffle ? QueueService.shuffleArray([...playables]) : playables;
     }
 
-    const allProgress = await this.mediaProgressMemory.getAllFromAllLibraries(source);
-    const progressMap = new Map(allProgress.map(p => [p.itemId, p]));
+    // Collect unique sources from items — a "list" or "menu" queue contains
+    // items from various actual sources (e.g., plex). Progress is stored under
+    // the item's source, not the parent container's source.
+    const itemSources = new Set(playables.map(p => p.source).filter(Boolean));
+    if (!itemSources.size) itemSources.add(source);
+
+    const progressMap = new Map();
+    for (const src of itemSources) {
+      const progress = await this.mediaProgressMemory.getAllFromAllLibraries(src);
+      for (const p of progress) {
+        progressMap.set(p.itemId, p);
+      }
+    }
 
     // Enrich items with resume positions from media memory
     const enriched = playables.map(item => {
