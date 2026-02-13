@@ -54,6 +54,7 @@ export class NutribotContainer {
   #nutriCoachStore;
   #conversationStateStore;
   #reportRenderer;
+  #barcodeGenerator;
 
   // Use Cases (lazy-loaded)
   #logFoodFromImage;
@@ -110,6 +111,7 @@ export class NutribotContainer {
     this.#nutriCoachStore = options.nutriCoachStore;
     this.#conversationStateStore = options.conversationStateStore;
     this.#reportRenderer = options.reportRenderer;
+    this.#barcodeGenerator = options.barcodeGenerator;
   }
 
   // ==================== Config Getter ====================
@@ -224,6 +226,7 @@ export class NutribotContainer {
         conversationStateStore: this.#conversationStateStore,
         config: this.#config,
         logger: this.#logger,
+        barcodeGenerator: this.#barcodeGenerator,
       });
     }
     return this.#logFoodFromUPC;

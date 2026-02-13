@@ -1003,7 +1003,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Get nutribot adapter from config-driven SystemBotLoader
   const nutribotTelegramAdapter = getMessagingAdapter(householdId, 'nutribot');
 
-  const nutribotServices = createNutribotServices({
+  const nutribotServices = await createNutribotServices({
     configService,
     userDataService,
     telegramAdapter: nutribotTelegramAdapter,
