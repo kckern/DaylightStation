@@ -454,20 +454,51 @@ export class PersistenceManager {
       return { ok: false, reason: 'session-too-short', durationMs: sessionData.durationMs };
     }
 
-    // Deduplicate challenge events
+    // Deduplicate events
     if (Array.isArray(sessionData.timeline?.events)) {
       const seen = new Set();
+      let lastOverlayState = null;
+      let lastOverlayTimestamp = null;
+      
       sessionData.timeline.events = sessionData.timeline.events.filter((evt) => {
         if (!evt || typeof evt !== 'object') return false;
         const type = evt.type || evt.eventType || null;
         if (!type) return false;
-        const tickIndex = Number.isFinite(evt.tickIndex) ? evt.tickIndex : null;
-        const challengeId = evt.data?.challengeId || evt.data?.challenge_id || evt.data?.challenge || null;
-        const key = `${type}|${tickIndex}|${challengeId || ''}`;
+
+        // Drop voice_memo_start — voice_memo is the final consolidated version
+        if (type === 'voice_memo_start') return false;
+
+        // Challenge event deduplication: each challenge can have multiple sub-events
+        // (start, lock, recover, end) but duplicates of same type+tick+id are removed
         if (type.startsWith('challenge_')) {
+          const tickIndex = Number.isFinite(evt.tickIndex) ? evt.tickIndex : null;
+          const challengeId = evt.data?.challengeId || evt.data?.challenge_id || evt.data?.challenge || null;
+          const key = `${type}|${tickIndex}|${challengeId || ''}`;
           if (seen.has(key)) return false;
           seen.add(key);
+          return true;
         }
+        
+        // UI state event deduplication: rapid-fire overlay changes
+        // Keep first and last state, dedupe identical consecutive states within 5 seconds
+        if (type === 'overlay.lock_rows_changed' || type === 'overlay.warning_offenders_changed') {
+          const stateUsers = evt.data?.currentUsers || evt.data?.offenders || [];
+          const timestamp = Number(evt.timestamp) || 0;
+          const stateKey = `${type}|${JSON.stringify([...stateUsers].sort())}`;
+          
+          // Keep if state changed or enough time elapsed (>5s)
+          if (lastOverlayState !== stateKey || 
+              lastOverlayTimestamp === null ||
+              timestamp - lastOverlayTimestamp > 5000) {
+            lastOverlayState = stateKey;
+            lastOverlayTimestamp = timestamp;
+            return true;
+          }
+          
+          // Dedupe rapid-fire identical states
+          return false;
+        }
+        
         return true;
       });
     }
@@ -525,8 +556,9 @@ export class PersistenceManager {
     const validation = this.validateSessionPayload(sessionData);
     getLogger().debug('fitness.persistence.validation', { validation });
     if (!validation?.ok) {
-      // DEBUG: Always log validation failures
-      console.error(`⚠️ VALIDATION_FAIL: ${sessionData?.sessionId}, reason="${validation?.reason}"`, validation);
+      if ((this._debugValidationCount = (this._debugValidationCount || 0) + 1) <= 3) {
+        console.error(`⚠️ VALIDATION_FAIL [${this._debugValidationCount}/3]: ${sessionData?.sessionId}, reason="${validation?.reason}"`, validation);
+      }
       this._log('persist_validation_fail', { reason: validation.reason, detail: validation });
       return false;
     }
@@ -564,36 +596,29 @@ export class PersistenceManager {
       persistSessionData.timeline = { ...persistSessionData.timeline };
     }
 
-    // Convert event timestamps and build v2 events array
-    const v2Events = this._buildV2Events(sessionData, timezone);
-
-    // Move voice memos into events (skip if already in events from timeline)
-    const existingMemoIds = this._lastVoiceMemoIds || new Set();
-    const voiceMemos = Array.isArray(sessionData.voiceMemos) ? sessionData.voiceMemos : [];
-    voiceMemos.forEach((memo) => {
-      if (!memo || typeof memo !== 'object') return;
-
-      // Skip if this memo was already added from timeline events
-      const memoId = memo.memoId ?? memo.id;
-      if (memoId && existingMemoIds.has(memoId)) {
-        return;
-      }
-
-      const rawTs = Number(memo.createdAt ?? memo.startedAt ?? memo.endedAt);
-      const at = Number.isFinite(rawTs) ? toReadable(rawTs, timezone) : null;
-      v2Events.push({
-        ...(at ? { at } : {}),
-        type: 'voice_memo',
-        data: {
-          id: memoId ?? null,
-          duration_seconds: Number.isFinite(memo.durationSeconds) ? memo.durationSeconds : null,
-          transcript: memo.transcriptClean ?? memo.transcript ?? null
-        }
+    // Merge orphan voice memos into timeline.events
+    const timelineEvents = persistSessionData.timeline?.events;
+    if (Array.isArray(timelineEvents)) {
+      const existingMemoIds = new Set();
+      timelineEvents.forEach((evt) => {
+        if (evt?.type === 'voice_memo' && evt.data?.memoId) existingMemoIds.add(evt.data.memoId);
       });
-    });
-
-    if (v2Events.length) {
-      persistSessionData.events = v2Events;
+      const voiceMemos = Array.isArray(sessionData.voiceMemos) ? sessionData.voiceMemos : [];
+      voiceMemos.forEach((memo) => {
+        if (!memo || typeof memo !== 'object') return;
+        const memoId = memo.memoId ?? memo.id;
+        if (memoId && existingMemoIds.has(memoId)) return;
+        const rawTs = Number(memo.createdAt ?? memo.startedAt ?? memo.endedAt);
+        timelineEvents.push({
+          ...(Number.isFinite(rawTs) ? { timestamp: rawTs } : {}),
+          type: 'voice_memo',
+          data: {
+            memoId: memoId ?? null,
+            duration_seconds: Number.isFinite(memo.durationSeconds) ? memo.durationSeconds : null,
+            transcript: memo.transcriptClean ?? memo.transcript ?? null
+          }
+        });
+      });
     }
 
     // Restructure timeline with v2 fields
@@ -715,42 +740,6 @@ export class PersistenceManager {
     }
   }
 
-  _buildV2Events(sessionData, timezone) {
-    const v2Events = [];
-
-    // Track voice memo IDs to avoid duplicates (voice_memo_start + voice_memo for same memo)
-    const voiceMemoIds = new Set();
-
-    if (sessionData.timeline && Array.isArray(sessionData.timeline.events)) {
-      sessionData.timeline.events.forEach((evt) => {
-        if (!evt || typeof evt !== 'object') return;
-
-        // Skip voice_memo_start events - voice_memo is the final consolidated version
-        if (evt.type === 'voice_memo_start') {
-          return;
-        }
-
-        // Track voice_memo IDs to dedupe with voiceMemos array
-        if (evt.type === 'voice_memo' && evt.data?.memoId) {
-          voiceMemoIds.add(evt.data.memoId);
-        }
-
-        const rawTs = Number(evt.timestamp);
-        const readableTs = Number.isFinite(rawTs) ? toReadable(rawTs, timezone) : null;
-        if (readableTs) {
-          v2Events.push({
-            at: readableTs,
-            type: evt.type,
-            data: evt.data ?? null
-          });
-        }
-      });
-    }
-
-    // Store voiceMemoIds on this for use by persistSession
-    this._lastVoiceMemoIds = voiceMemoIds;
-    return v2Events;
-  }
 }
 
 /**
