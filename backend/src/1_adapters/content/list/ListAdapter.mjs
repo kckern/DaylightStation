@@ -1062,16 +1062,26 @@ export class ListAdapter {
         const resolved = this.registry.resolve(input);
         if (!resolved?.adapter) continue;
 
-        if (listType === 'programs') {
-          // Programs: pick ONE "next up" item per slot (same as watchlist play-action)
+        if (listType === 'programs' && !item.queue) {
+          // Programs with play action: pick ONE "next up" item per slot
           const colonIdx = input.indexOf(':');
           const child = { id: input, source: colonIdx !== -1 ? input.substring(0, colonIdx) : 'files' };
           tasks.push(() => this._getNextPlayableFromChild(child, resolved).then(item => item ? [item] : []));
         } else {
-          // Menus: return ALL playables
+          // Queue action (programs) or menus: return ALL playables
           if (resolved.adapter.resolvePlayables) {
             const canonicalId = `${resolved.adapter.source}:${resolved.localId}`;
-            tasks.push(() => resolved.adapter.resolvePlayables(canonicalId));
+            const shouldShuffle = !!item.shuffle;
+            tasks.push(async () => {
+              const resolved_items = await resolved.adapter.resolvePlayables(canonicalId);
+              if (shouldShuffle && resolved_items?.length > 1) {
+                for (let i = resolved_items.length - 1; i > 0; i--) {
+                  const j = Math.floor(Math.random() * (i + 1));
+                  [resolved_items[i], resolved_items[j]] = [resolved_items[j], resolved_items[i]];
+                }
+              }
+              return resolved_items;
+            });
           }
         }
       }
