@@ -284,7 +284,10 @@ export async function initializeIntegrations(config) {
   if (!systemBotLoaderInstance) {
     systemBotLoaderInstance = new SystemBotLoader({
       configService,
-      logger
+      logger,
+      adapterFactories: {
+        telegram: (deps) => new TelegramAdapter(deps)
+      }
     });
     logger.info?.('integrations.systemBotLoader.created');
   }

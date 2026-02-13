@@ -25,6 +25,22 @@ function createMockConfigService({
 }
 
 /**
+ * Create mock adapter factories for testing.
+ * The telegram factory mimics TelegramAdapter by assigning deps to properties.
+ */
+function createMockAdapterFactories() {
+  return {
+    telegram: ({ token, secretToken, httpClient, transcriptionService, logger }) => ({
+      token,
+      secretToken,
+      httpClient,
+      transcriptionService,
+      logger,
+    }),
+  };
+}
+
+/**
  * Create mock dependencies for bot loading.
  */
 function createMockDeps() {
@@ -58,6 +74,7 @@ describe('SystemBotLoader', () => {
       const loader = new SystemBotLoader({
         configService: mockConfigService,
         logger: mockLogger,
+        adapterFactories: createMockAdapterFactories(),
       });
 
       expect(loader).toBeInstanceOf(SystemBotLoader);
@@ -94,6 +111,7 @@ describe('SystemBotLoader', () => {
       const loader = new SystemBotLoader({
         configService: mockConfigService,
         logger: mockLogger,
+        adapterFactories: createMockAdapterFactories(),
       });
 
       const count = loader.loadBots(createMockDeps());
@@ -131,6 +149,7 @@ describe('SystemBotLoader', () => {
       const loader = new SystemBotLoader({
         configService: mockConfigService,
         logger: mockLogger,
+        adapterFactories: createMockAdapterFactories(),
       });
 
       const count = loader.loadBots(createMockDeps());
@@ -149,6 +168,7 @@ describe('SystemBotLoader', () => {
       const loader = new SystemBotLoader({
         configService: mockConfigService,
         logger: mockLogger,
+        adapterFactories: createMockAdapterFactories(),
       });
 
       const count = loader.loadBots(createMockDeps());
@@ -174,6 +194,7 @@ describe('SystemBotLoader', () => {
       const loader = new SystemBotLoader({
         configService: mockConfigService,
         logger: mockLogger,
+        adapterFactories: createMockAdapterFactories(),
       });
 
       const count = loader.loadBots(createMockDeps());
@@ -203,6 +224,7 @@ describe('SystemBotLoader', () => {
       const loader = new SystemBotLoader({
         configService: mockConfigService,
         logger: mockLogger,
+        adapterFactories: createMockAdapterFactories(),
       });
 
       const count = loader.loadBots(createMockDeps());
@@ -232,6 +254,7 @@ describe('SystemBotLoader', () => {
       const loader = new SystemBotLoader({
         configService: mockConfigService,
         logger: mockLogger,
+        adapterFactories: createMockAdapterFactories(),
       });
 
       const count = loader.loadBots(createMockDeps());
@@ -262,6 +285,7 @@ describe('SystemBotLoader', () => {
       const loader = new SystemBotLoader({
         configService: mockConfigService,
         logger: mockLogger,
+        adapterFactories: createMockAdapterFactories(),
       });
 
       const count = loader.loadBots(createMockDeps());
@@ -288,6 +312,7 @@ describe('SystemBotLoader', () => {
       const loader = new SystemBotLoader({
         configService: mockConfigService,
         logger: mockLogger,
+        adapterFactories: createMockAdapterFactories(),
       });
 
       loader.loadBots(createMockDeps());
@@ -317,6 +342,7 @@ describe('SystemBotLoader', () => {
       const loader = new SystemBotLoader({
         configService: mockConfigService,
         logger: mockLogger,
+        adapterFactories: createMockAdapterFactories(),
       });
 
       loader.loadBots(createMockDeps());
@@ -335,6 +361,7 @@ describe('SystemBotLoader', () => {
       const loader = new SystemBotLoader({
         configService: mockConfigService,
         logger: mockLogger,
+        adapterFactories: createMockAdapterFactories(),
       });
 
       loader.loadBots(createMockDeps());
@@ -359,6 +386,7 @@ describe('SystemBotLoader', () => {
       const loader = new SystemBotLoader({
         configService: mockConfigService,
         logger: mockLogger,
+        adapterFactories: createMockAdapterFactories(),
       });
 
       loader.loadBots(createMockDeps());
@@ -390,6 +418,7 @@ describe('SystemBotLoader', () => {
       const loader = new SystemBotLoader({
         configService: mockConfigService,
         logger: mockLogger,
+        adapterFactories: createMockAdapterFactories(),
       });
 
       loader.loadBots(createMockDeps());
@@ -422,6 +451,7 @@ describe('SystemBotLoader', () => {
       const loader = new SystemBotLoader({
         configService: mockConfigService,
         logger: mockLogger,
+        adapterFactories: createMockAdapterFactories(),
       });
 
       loader.loadBots(createMockDeps());
@@ -457,6 +487,7 @@ describe('SystemBotLoader', () => {
       const loader = new SystemBotLoader({
         configService: mockConfigService,
         logger: mockLogger,
+        adapterFactories: createMockAdapterFactories(),
       });
 
       loader.loadBots(createMockDeps());
@@ -490,6 +521,7 @@ describe('SystemBotLoader', () => {
       const loader = new SystemBotLoader({
         configService: mockConfigService,
         logger: mockLogger,
+        adapterFactories: createMockAdapterFactories(),
       });
 
       loader.loadBots(createMockDeps());
@@ -509,6 +541,7 @@ describe('SystemBotLoader', () => {
       const loader = new SystemBotLoader({
         configService: mockConfigService,
         logger: mockLogger,
+        adapterFactories: createMockAdapterFactories(),
       });
 
       loader.loadBots(createMockDeps());
@@ -535,6 +568,7 @@ describe('SystemBotLoader', () => {
       const loader = new SystemBotLoader({
         configService: mockConfigService,
         logger: mockLogger,
+        adapterFactories: createMockAdapterFactories(),
       });
 
       loader.loadBots(createMockDeps());
@@ -550,6 +584,7 @@ describe('SystemBotLoader', () => {
       const loader = new SystemBotLoader({
         configService: mockConfigService,
         logger: mockLogger,
+        adapterFactories: createMockAdapterFactories(),
       });
 
       loader.loadBots(createMockDeps());
@@ -576,6 +611,7 @@ describe('SystemBotLoader', () => {
       const loader = new SystemBotLoader({
         configService: mockConfigService,
         logger: mockLogger,
+        adapterFactories: createMockAdapterFactories(),
       });
 
       loader.loadBots(createMockDeps());
@@ -591,6 +627,7 @@ describe('SystemBotLoader', () => {
       const loader = new SystemBotLoader({
         configService: mockConfigService,
         logger: mockLogger,
+        adapterFactories: createMockAdapterFactories(),
       });
 
       loader.loadBots(createMockDeps());
@@ -617,6 +654,7 @@ describe('SystemBotLoader', () => {
       const loader = new SystemBotLoader({
         configService: mockConfigService,
         logger: mockLogger,
+        adapterFactories: createMockAdapterFactories(),
       });
 
       const mockDeps = createMockDeps();
@@ -644,6 +682,7 @@ describe('SystemBotLoader', () => {
       const loader = new SystemBotLoader({
         configService: mockConfigService,
         logger: mockLogger,
+        adapterFactories: createMockAdapterFactories(),
       });
 
       const mockDeps = createMockDeps();
@@ -671,6 +710,7 @@ describe('SystemBotLoader', () => {
       const loader = new SystemBotLoader({
         configService: mockConfigService,
         logger: mockLogger,
+        adapterFactories: createMockAdapterFactories(),
       });
 
       loader.loadBots(createMockDeps());
@@ -702,6 +742,7 @@ describe('SystemBotLoader', () => {
       const loader = new SystemBotLoader({
         configService: mockConfigService,
         logger: mockLogger,
+        adapterFactories: createMockAdapterFactories(),
       });
 
       // Should not throw, but log the error
