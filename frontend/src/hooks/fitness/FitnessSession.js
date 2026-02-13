@@ -432,6 +432,12 @@ export class FitnessSession {
   }
 
   ingestData(payload) {
+    // HR propagation chain (SSoT note):
+    // 1. DeviceManager stores raw sensor value (device.heartRate)
+    // 2. UserManager copies from DeviceManager (user.currentData.heartRate)
+    // 3. ZoneProfileStore reads from UserManager (profile.heartRate)
+    // All three update synchronously in this call. If any path becomes async,
+    // the triple-storage must be collapsed to a single authoritative store.
     if (!payload) return;
 
     // Route through DeviceEventRouter for all device types

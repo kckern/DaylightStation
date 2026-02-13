@@ -723,11 +723,13 @@ const FitnessPlayerOverlay = ({ overlay, playerRef, showFullscreenVitals }) => {
           };
         }
       }
+      // Fallback: Direct HR-to-target comparison (only when no zone snapshot available)
+      // Prefer snapshot HR to stay consistent with zone-based path above
       if (Number.isFinite(targetHeartRate) && targetHeartRate > 0) {
-        const hrValue = Number.isFinite(heartRate)
-          ? heartRate
-          : Number.isFinite(progressEntry?.currentHR)
-            ? progressEntry.currentHR
+        const hrValue = Number.isFinite(progressEntry?.currentHR)
+          ? progressEntry.currentHR
+          : Number.isFinite(heartRate)
+            ? heartRate
             : null;
         if (!Number.isFinite(hrValue)) {
           return null;
