@@ -132,6 +132,31 @@ export class Session {
   }
 
   /**
+   * Replace timeline (for encoding/decoding transforms)
+   */
+  replaceTimeline(timeline) {
+    this.timeline = timeline;
+  }
+
+  /**
+   * Replace snapshots (for merging from existing session data)
+   */
+  replaceSnapshots(snapshots) {
+    this.snapshots = snapshots;
+  }
+
+  /**
+   * Remove snapshot by filename (dedup before adding new)
+   */
+  removeDuplicateSnapshot(filename) {
+    if (this.snapshots?.captures) {
+      this.snapshots.captures = this.snapshots.captures.filter(
+        entry => entry?.filename !== filename
+      );
+    }
+  }
+
+  /**
    * Add heart rate value to a participant's series
    */
   addHeartRate(participantName, value) {
