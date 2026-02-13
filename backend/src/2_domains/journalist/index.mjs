@@ -2,8 +2,8 @@
  * Journalist Domain barrel export
  * @module journalist/domain
  *
- * Note: Lifelog extractors have been moved to the lifelog domain.
- * Import from '../lifelog/index.mjs' for extractors and LifelogAggregator.
+ * Note: Lifelog extractors live in the lifelog domain ('#domains/lifelog').
+ * LifelogAggregator lives in the application layer ('#apps/lifelog/LifelogAggregator.mjs').
  */
 
 // Entities
