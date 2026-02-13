@@ -293,8 +293,8 @@ export class GovernanceEngine {
         const rosterEntry = this.session?.roster?.find(
           e => (e.id || e.profileId) === userId
         );
-        const hr = rosterEntry?.hr?.value || rosterEntry?.heartRate || null;
-        const hrPercent = rosterEntry?.hr?.percent || rosterEntry?.hrPercent || null;
+        const hr = Number.isFinite(rosterEntry?.heartRate) ? rosterEntry.heartRate : null;
+        const hrPercent = Number.isFinite(rosterEntry?.hrPercent) ? rosterEntry.hrPercent : null;
 
         logger.sampled('governance.user_zone_change', {
           oderId: userId,
@@ -720,7 +720,7 @@ export class GovernanceEngine {
         name: rosterEntry?.name || rosterEntry?.displayName || userId,
         zone: zoneId,
         zoneLabel: this._getZoneInfo(zoneId)?.name || zoneId,
-        hr: rosterEntry?.hr?.value || rosterEntry?.heartRate || null
+        hr: Number.isFinite(rosterEntry?.heartRate) ? rosterEntry.heartRate : null
       });
     }
     return states.slice(0, 10); // Limit for log size
