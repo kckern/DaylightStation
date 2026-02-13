@@ -34,6 +34,11 @@ export class DefaultMediaProgressClassifier extends IMediaProgressClassifier {
       remainingSecondsThreshold
     } = this.config;
 
+    // Previously completed = watched (even if current playhead is mid-episode)
+    if (progress.playCount > 0) {
+      return 'watched';
+    }
+
     // No progress = unwatched
     if (!playhead || playhead === 0) {
       return 'unwatched';

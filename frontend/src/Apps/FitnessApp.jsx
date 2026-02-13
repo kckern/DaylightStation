@@ -662,7 +662,7 @@ const FitnessApp = () => {
         videoUrl: response.mediaUrl || DaylightMediaPath(`api/v1/play/${contentSource}/${episodeId}`),
         thumbId: response.thumbId || episodeId,
         image: response.image || DaylightMediaPath(`api/v1/display/${contentSource}/${episodeId}`),
-        labels: response.labels || [],
+        labels: response.labels || response.metadata?.labels || [],
         summary: response.summary
       };
 

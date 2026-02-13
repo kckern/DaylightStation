@@ -339,11 +339,6 @@ export class FitnessSession {
     this._deviceRouter = new DeviceEventRouter();
     this._deviceRouter.setDeviceManager(this.deviceManager);
 
-    // ZoneProfileStore sync scheduling (avoid blocking + queue buildup)
-    this._zoneProfileSyncPending = false;
-    this._zoneProfileSyncLastScheduledAt = 0;
-    this._zoneProfileSyncMinIntervalMs = 1000;
-    
     // Legacy: these are now managed by MetricsRecorder but kept for backward compatibility
     // TODO: Remove after full migration to MetricsRecorder
     this._cumulativeBeats = new Map();
@@ -399,55 +394,24 @@ export class FitnessSession {
   }
 
   /**
-   * Schedule a ZoneProfileStore sync without blocking updateSnapshot.
-   * Throttles to avoid repeated queued work when snapshots arrive frequently.
+   * Synchronously sync ZoneProfileStore from current user state.
+   * The signature check inside syncFromUsers() already guards against redundant work.
    *
    * @param {Array<any>} allUsers
-   * @returns {boolean} True if a sync was scheduled
+   * @returns {boolean} True if sync produced changes
    */
-  _scheduleZoneProfileSync(allUsers) {
+  _syncZoneProfiles(allUsers) {
     if (!this.zoneProfileStore) return false;
-
-    const nowMs = Date.now();
-    if (this._zoneProfileSyncPending) return false;
-    if (nowMs - (this._zoneProfileSyncLastScheduledAt || 0) < (this._zoneProfileSyncMinIntervalMs || 0)) {
+    try {
+      const changed = this.zoneProfileStore.syncFromUsers(allUsers);
+      return changed;
+    } catch (err) {
+      getLogger().error('fitness.zone_profile_store.sync_failed', {
+        message: err?.message || String(err),
+        userCount: Array.isArray(allUsers) ? allUsers.length : null
+      });
       return false;
     }
-
-    this._zoneProfileSyncPending = true;
-    this._zoneProfileSyncLastScheduledAt = nowMs;
-
-    const runSync = () => {
-      const startedAt = Date.now();
-      try {
-        this.zoneProfileStore.syncFromUsers(allUsers);
-      } catch (err) {
-        getLogger().error('fitness.zone_profile_store.sync_failed', {
-          message: err?.message || String(err),
-          stack: err?.stack || null,
-          userCount: Array.isArray(allUsers) ? allUsers.length : null
-        });
-      } finally {
-        this._zoneProfileSyncPending = false;
-      }
-
-      const durationMs = Date.now() - startedAt;
-      if (durationMs > 200) {
-        getLogger().warn('fitness.zone_profile_store.sync_slow', {
-          durationMs,
-          userCount: Array.isArray(allUsers) ? allUsers.length : null
-        });
-      }
-    };
-
-    // Use requestIdleCallback to avoid blocking the main thread when available.
-    if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
-      window.requestIdleCallback(runSync, { timeout: 1000 });
-    } else {
-      setTimeout(runSync, 0);
-    }
-
-    return true;
   }
 
   /**
@@ -541,6 +505,15 @@ export class FitnessSession {
             profileId: currentOccupantId,
             fallbackUserId: currentOccupantId
           });
+        }
+
+        // Sync ZoneProfileStore immediately so governance sees fresh zone data
+        if (this.zoneProfileStore && deviceData.type === 'heart_rate') {
+          const allUsers = this.userManager.getAllUsers();
+          const changed = this._syncZoneProfiles(allUsers);
+          if (changed && this.governanceEngine) {
+            this.governanceEngine.notifyZoneChange(resolvedSlug, {});
+          }
         }
       }
       const ledger = this.userManager?.assignmentLedger;
@@ -1488,7 +1461,7 @@ export class FitnessSession {
         this.snapshot.participantSeries.set(userId, series);
       });
 
-    this._scheduleZoneProfileSync(allUsers);
+    this._syncZoneProfiles(allUsers);
 
     // Process Devices (from DeviceManager)
     const allDevices = this.deviceManager.getAllDevices();

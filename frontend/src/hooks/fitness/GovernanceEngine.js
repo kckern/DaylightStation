@@ -72,10 +72,15 @@ const buildRequirementKey = (req) => {
 export const normalizeRequirements = (rawReqs, comparator = compareSeverity, options = {}) => {
   const list = Array.isArray(rawReqs) ? rawReqs.filter(Boolean) : [];
   const perParticipant = new Map();
+  const noParticipantReqs = []; // Requirements without specific missing users (e.g. pre-populated)
 
   list.forEach((req, index) => {
     const missing = Array.isArray(req?.missingUsers) ? req.missingUsers.filter(Boolean) : [];
-    if (!missing.length) return;
+    if (!missing.length) {
+      // Pass through requirements with no missingUsers (governance pending/pre-populated state)
+      noParticipantReqs.push(req);
+      return;
+    }
 
     missing.forEach((name) => {
       const key = normalizeName(name);
@@ -130,6 +135,16 @@ export const normalizeRequirements = (rawReqs, comparator = compareSeverity, opt
       grouped.set(key, base);
     }
   });
+
+  // Include requirements without specific participants (only if no participant-specific ones exist)
+  if (grouped.size === 0 && noParticipantReqs.length > 0) {
+    noParticipantReqs.forEach((req) => {
+      const key = buildRequirementKey(req);
+      if (!grouped.has(key)) {
+        grouped.set(key, { ...req });
+      }
+    });
+  }
 
   return Array.from(grouped.values());
 };
@@ -1163,7 +1178,8 @@ export class GovernanceEngine {
     const now = Date.now();
     const hasGovernanceRules = (this._governedLabelSet.size + this._governedTypeSet.size) > 0;
 
-    // If no data passed in, read directly from session.roster
+    // If no data passed in, read participant list from session.roster
+    // Zone data comes exclusively from ZoneProfileStore (below)
     if (!activeParticipants && this.session?.roster) {
       const roster = this.session.roster || [];
       activeParticipants = roster
@@ -1171,13 +1187,6 @@ export class GovernanceEngine {
         .map((entry) => entry.id || entry.profileId);
 
       userZoneMap = {};
-      roster.forEach((entry) => {
-        const participantId = entry.id || entry.profileId;
-        if (participantId) {
-          userZoneMap[participantId] = entry.zoneId || null;
-        }
-      });
-
       totalCount = activeParticipants.length;
     }
 
@@ -1221,13 +1230,18 @@ export class GovernanceEngine {
       });
     }
 
-    // NEW: Populate userZoneMap from ZoneProfileStore (stable, tick-aligned zone state)
-    // This overrides any volatile zone data with the stable source used by UI
+    // Populate userZoneMap exclusively from ZoneProfileStore (synchronously synced on every HR update)
     if (this.session?.zoneProfileStore) {
       activeParticipants.forEach((participantId) => {
         const profile = this.session.zoneProfileStore.getProfile(participantId);
         if (profile?.currentZoneId) {
           userZoneMap[participantId] = profile.currentZoneId.toLowerCase();
+        } else if (participantId) {
+          getLogger().debug('governance.evaluate.no_zone_profile', {
+            participantId,
+            hasProfile: !!profile,
+            currentZoneId: profile?.currentZoneId ?? null
+          });
         }
       });
     }

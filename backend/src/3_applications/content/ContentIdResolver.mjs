@@ -46,16 +46,19 @@ export class ContentIdResolver {
     const colonIdx = normalized.indexOf(':');
     if (colonIdx === -1) {
       // Layer 4a: Check bareNameMap (discovered list names: menu, program, watchlist)
-      const mappedPrefix = this.#bareNameMap[normalized];
+      // Case-insensitive lookup — route params like "Cartoons" should match "cartoons"
+      const bareKey = normalized.toLowerCase();
+      const mappedPrefix = this.#bareNameMap[bareKey];
       if (mappedPrefix) {
-        return this.resolve(`${mappedPrefix}:${normalized}`);
+        return this.resolve(`${mappedPrefix}:${bareKey}`);
       }
       // Layer 4b: Default to media (original behavior)
       const adapter = this.#registry.get('media');
       return adapter ? { source: 'media', localId: normalized, adapter } : null;
     }
 
-    const prefix = normalized.slice(0, colonIdx);
+    const rawPrefix = normalized.slice(0, colonIdx);
+    const prefix = rawPrefix.toLowerCase();
     const rest = normalized.slice(colonIdx + 1).trim();
 
     // Layer 1: Exact source match

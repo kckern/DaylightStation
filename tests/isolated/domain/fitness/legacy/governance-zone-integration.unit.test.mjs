@@ -147,6 +147,90 @@ describe('Governance + TreasureBox Zone Integration', () => {
     expect(engine._latestInputs?.zoneInfoMap).toEqual(zoneInfoMap);
   });
 
+  test('zone change is reflected in ZoneProfileStore before governance evaluates', async () => {
+    const { GovernanceEngine } = await import('#frontend/hooks/fitness/GovernanceEngine.js');
+
+    const mockGetProfile = jest.fn();
+    const mockZoneProfileStore = { getProfile: mockGetProfile };
+
+    const session = {
+      zoneProfileStore: mockZoneProfileStore,
+      roster: [{ id: 'user1', isActive: true }],
+      treasureBox: null
+    };
+
+    const engine = new GovernanceEngine(session);
+
+    engine.configure({
+      governed_labels: ['workout'],
+      policies: {
+        'test-policy': {
+          min_participants: 1,
+          base_requirement: [{ warm: 'all' }]
+        }
+      }
+    });
+
+    engine.setMedia({ id: '123', labels: ['workout'] });
+
+    const zoneRankMap = { blue: 0, active: 1, warm: 2, hot: 3 };
+    const zoneInfoMap = {
+      active: { id: 'active', name: 'Active' },
+      warm: { id: 'warm', name: 'Warm' }
+    };
+
+    const realDateNow = Date.now;
+    let mockTime = realDateNow.call(Date);
+    Date.now = () => mockTime;
+
+    try {
+      // First evaluate: user in 'active' (below warm requirement)
+      mockGetProfile.mockReturnValue({ id: 'user1', currentZoneId: 'active' });
+      engine.evaluate({
+        activeParticipants: ['user1'],
+        userZoneMap: {},  // Empty — governance reads exclusively from ZoneProfileStore
+        zoneRankMap,
+        zoneInfoMap,
+        totalCount: 1
+      });
+
+      expect(engine.phase).toBe('pending'); // Requirement not met
+
+      // ZoneProfileStore now returns 'warm' (synchronous sync after HR update)
+      mockGetProfile.mockReturnValue({ id: 'user1', currentZoneId: 'warm' });
+
+      // Second evaluate: satisfied, starts hysteresis timer
+      engine.evaluate({
+        activeParticipants: ['user1'],
+        userZoneMap: {},
+        zoneRankMap,
+        zoneInfoMap,
+        totalCount: 1
+      });
+
+      // Still pending — hysteresis requires 500ms of sustained satisfaction
+      expect(engine.phase).toBe('pending');
+
+      // Advance time past hysteresis (500ms)
+      mockTime += 600;
+
+      // Third evaluate: hysteresis satisfied, transitions to unlocked
+      engine.evaluate({
+        activeParticipants: ['user1'],
+        userZoneMap: {},
+        zoneRankMap,
+        zoneInfoMap,
+        totalCount: 1
+      });
+
+      expect(engine.phase).toBe('unlocked');
+      // Verify governance read zone data from ZoneProfileStore
+      expect(mockGetProfile).toHaveBeenCalledWith('user1');
+    } finally {
+      Date.now = realDateNow;
+    }
+  });
+
   test('GovernanceEngine should not lose state after internal evaluate()', async () => {
     const { GovernanceEngine } = await import('#frontend/hooks/fitness/GovernanceEngine.js');
 

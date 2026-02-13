@@ -16,11 +16,8 @@ export class AuthService {
 
   needsSetup() {
     const users = this.#configService.getAllUserProfiles();
-    for (const [username] of users) {
-      const login = this.#dataService.user.read('auth/login', username);
-      if (login?.password_hash) return false;
-    }
-    return true;
+    // If any user profiles exist (even without password hashes), station is configured
+    return users.size === 0;
   }
 
   async setup({ username, password, householdName }) {
