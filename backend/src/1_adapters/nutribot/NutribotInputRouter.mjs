@@ -388,6 +388,7 @@ export class NutribotInputRouter extends BaseInputRouter {
         return await useCase.execute({
           userId: this.#resolveUserId(event),
           conversationId: event.conversationId,
+          messageId: event.messageId,
           autoAcceptPending: true,
           responseContext,
         });
