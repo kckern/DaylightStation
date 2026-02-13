@@ -55,6 +55,7 @@ import { createQueueRouter } from '#api/v1/routers/queue.mjs';
 import { QueueService } from '#domains/content/services/QueueService.mjs';
 import { createSiblingsRouter } from '#api/v1/routers/siblings.mjs';
 import { SiblingsService } from '#apps/content/services/SiblingsService.mjs';
+import { PlayResponseService } from '#apps/content/services/PlayResponseService.mjs';
 import { createStreamRouter } from '#api/v1/routers/stream.mjs';
 import { createLocalRouter } from '#api/v1/routers/local.mjs';
 import { createQueriesRouter } from '#api/v1/routers/queries.mjs';
@@ -724,6 +725,9 @@ export function createApiRouters(config) {
   // Create SiblingsService for sibling resolution
   const siblingsService = new SiblingsService({ registry, logger });
 
+  // Create PlayResponseService for play response building and watch state reconciliation
+  const playResponseService = new PlayResponseService({ mediaProgressMemory, progressSyncService, progressSyncSources });
+
   // Get FileAdapter from registry for local router (handles local media browsing)
   const localMediaAdapter = registry.get('files');
 
@@ -732,7 +736,7 @@ export function createApiRouters(config) {
       content: createContentRouter(registry, mediaProgressMemory, { loadFile, saveFile, cacheBasePath, composePresentationUseCase, contentQueryService, logger, aliasResolver }),
       proxy: createProxyRouter({ registry, proxyService, mediaBasePath, logger }),
       localContent: createLocalContentRouter({ registry, dataPath, mediaBasePath, mediaProgressMemory }),
-      play: createPlayRouter({ registry, mediaProgressMemory, contentQueryService, contentIdResolver, progressSyncService, progressSyncSources, logger }),
+      play: createPlayRouter({ registry, mediaProgressMemory, playResponseService, contentQueryService, contentIdResolver, progressSyncService, progressSyncSources, logger }),
       list: createListRouter({ registry, loadFile, configService, contentQueryService, contentIdResolver, menuMemoryPath: configService.getHouseholdPath('history/menu_memory') }),
       siblings: createSiblingsRouter({ siblingsService, contentIdResolver, logger }),
       queue: createQueueRouter({ contentIdResolver, queueService: new QueueService({ mediaProgressMemory }), logger }),
