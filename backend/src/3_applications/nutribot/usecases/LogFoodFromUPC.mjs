@@ -79,16 +79,29 @@ export class LogFoodFromUPC {
         }
       }
 
-      // 2. Create status indicator with animation
-      if (messaging.createStatusIndicator) {
-        status = await messaging.createStatusIndicator(
-          `🔍 Looking up barcode ${upc}`,
-          { frames: ['.', '..', '...'], interval: 2000 }
-        );
-        statusMsgId = status.messageId;
-      } else {
-        const statusMsg = await messaging.sendMessage(`🔍 Looking up barcode ${upc}...`);
-        statusMsgId = statusMsg.messageId;
+      // 2. Create status indicator — photo with barcode if available, text otherwise
+      const animationOpts = { frames: ['.', '..', '...'], interval: 2000 };
+      const statusCaption = `🔍 Looking up barcode ${upc}`;
+
+      if (this.#barcodeGenerator && messaging.createPhotoStatusIndicator) {
+        try {
+          const barcodeBuffer = await this.#barcodeGenerator.generate(upc);
+          status = await messaging.createPhotoStatusIndicator(barcodeBuffer, statusCaption, animationOpts);
+          statusMsgId = status.messageId;
+        } catch (e) {
+          this.#logger.warn?.('logUPC.barcodeGenFailed', { upc, error: e.message });
+          // Fall through to text status below
+        }
+      }
+
+      if (!status) {
+        if (messaging.createStatusIndicator) {
+          status = await messaging.createStatusIndicator(statusCaption, animationOpts);
+          statusMsgId = status.messageId;
+        } else {
+          const statusMsg = await messaging.sendMessage(`${statusCaption}...`);
+          statusMsgId = statusMsg.messageId;
+        }
       }
 
       // 3. Call UPC gateway
