@@ -6,6 +6,9 @@
  *
  * Consumers: health, fitness, journalist, entropy domains
  *
+ * Note: LifelogAggregator has moved to the application layer (3_applications/lifelog)
+ * because it orchestrates I/O. Import from '#apps/lifelog/LifelogAggregator.mjs'.
+ *
  * @module domains/lifelog
  */
 
@@ -14,6 +17,3 @@ export * from './entities/index.mjs';
 
 // Extractors
 export * from './extractors/index.mjs';
-
-// Services
-export { LifelogAggregator } from './services/LifelogAggregator.mjs';

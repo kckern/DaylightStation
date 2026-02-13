@@ -183,8 +183,8 @@ import { EntropyService } from '#apps/entropy/services/EntropyService.mjs';
 import { YamlEntropyReader } from '#adapters/entropy/YamlEntropyReader.mjs';
 import { createEntropyRouter } from '#api/v1/routers/entropy.mjs';
 
-// Lifelog domain imports
-import { LifelogAggregator } from '#domains/lifelog/services/LifelogAggregator.mjs';
+// Lifelog application imports
+import { LifelogAggregator } from '#apps/lifelog/LifelogAggregator.mjs';
 import { createLifelogRouter } from '#api/v1/routers/lifelog.mjs';
 
 // Static assets router
