@@ -316,8 +316,17 @@ export class OpenAIAdapter extends IAIGateway {
   /**
    * Send conversation with image for vision analysis
    */
-  async chatWithImage(messages, imageUrl, options = {}) {
+  async chatWithImage(messages, imageSource, options = {}) {
     const model = options.model || 'gpt-4o';
+
+    // Convert Buffer to base64 data URI (OpenAI requires URL or data URI, not raw buffers)
+    let imageUrl;
+    if (Buffer.isBuffer(imageSource)) {
+      const base64 = imageSource.toString('base64');
+      imageUrl = `data:image/png;base64,${base64}`;
+    } else {
+      imageUrl = imageSource;
+    }
 
     // Build messages with image in last user message
     const messagesWithImage = messages.map((msg, index) => {
