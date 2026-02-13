@@ -119,6 +119,7 @@ import { YamlConversationStateDatastore } from '#adapters/messaging/YamlConversa
 
 // Media jobs (fresh video downloads)
 import { MediaJobExecutor } from './3_applications/media/MediaJobExecutor.mjs';
+import { MediaDownloadService } from './3_applications/media/services/MediaDownloadService.mjs';
 import { createFreshVideoJobHandler } from './3_applications/media/FreshVideoJobHandler.mjs';
 import { YtDlpAdapter } from '#adapters/media/YtDlpAdapter.mjs';
 
@@ -1187,11 +1188,18 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // Register fresh video download handler (only if mediaBasePath is configured)
+  let mediaDownloadService = null;
   if (mediaBasePath) {
     const mediaPath = join(mediaBasePath, 'video', 'news');
 
     const videoSourceGateway = new YtDlpAdapter({
       logger: rootLogger.child({ module: 'ytdlp' })
+    });
+
+    mediaDownloadService = new MediaDownloadService({
+      videoSourceGateway,
+      mediaPath: mediaBasePath,
+      logger: rootLogger.child({ module: 'media-download' })
     });
 
     mediaExecutor.register('freshvideo', createFreshVideoJobHandler({
@@ -1265,6 +1273,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     configService,
     mediaPath: mediaBasePath || imgBasePath, // Use base media path for admin operations
     loadFile,
+    mediaDownloadService,
     eventBus,
     logger: rootLogger.child({ module: 'admin-api' })
   });
