@@ -24,9 +24,10 @@
 import express from 'express';
 import path from 'path';
 import { spawn } from 'child_process';
-import { ensureDir, writeBinary, deleteFile } from '#system/utils/FileIO.mjs';
+import { writeBinary, deleteFile } from '#system/utils/FileIO.mjs';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { toListItem } from './list.mjs';
+import { ScreenshotValidationError } from '#apps/fitness/services/ScreenshotService.mjs';
 
 // Module-level state for simulation process
 const simulationState = {
@@ -49,6 +50,7 @@ const simulationState = {
  * @param {Object} [config.fitnessPlayableService] - FitnessPlayableService for show/playable orchestration
  * @param {Object} [config.fitnessContentAdapter] - Pre-resolved content adapter for fitness (default: plex)
  * @param {Object} config.transcriptionService - OpenAI transcription service (optional)
+ * @param {Object} [config.screenshotService] - ScreenshotService for saving session screenshots
  * @param {Function} [config.createReceiptCanvas] - async (sessionId, upsidedown) => { canvas, width, height }
  * @param {Object} config.logger - Logger instance
  * @returns {express.Router}
@@ -64,6 +66,7 @@ export function createFitnessRouter(config) {
     fitnessPlayableService,
     fitnessContentAdapter,
     transcriptionService,
+    screenshotService,
     createReceiptCanvas,
     printerAdapter,
     logger = console
@@ -385,66 +388,20 @@ export function createFitnessRouter(config) {
         return res.status(400).json({ ok: false, error: 'sessionId and imageBase64 are required' });
       }
 
-      const paths = sessionService.getStoragePaths(sessionId, household);
-      if (!paths) {
-        return res.status(400).json({ ok: false, error: 'Invalid sessionId' });
-      }
-
-      // Decode base64
-      const trimmed = imageBase64.replace(/^data:[^;]+;base64,/, '');
-      if (!trimmed) {
-        return res.status(400).json({ ok: false, error: 'Invalid base64 payload' });
-      }
-
-      const buffer = Buffer.from(trimmed, 'base64');
-      if (!buffer.length) {
-        return res.status(400).json({ ok: false, error: 'Failed to decode image data' });
-      }
-
-      // Determine extension
-      const normalizedMime = typeof mimeType === 'string' ? mimeType.toLowerCase() : '';
-      const extension = normalizedMime.includes('png') ? 'png'
-        : normalizedMime.includes('webp') ? 'webp'
-        : normalizedMime.includes('jpeg') || normalizedMime.includes('jpg') ? 'jpg'
-        : 'jpg';
-
-      // Build filename
-      const indexValue = Number.isFinite(index) ? Number(index) : null;
-      const indexFragment = indexValue != null
-        ? String(indexValue).padStart(4, '0')
-        : Date.now().toString(36);
-      const filename = `${paths.sessionDate}_${indexFragment}.${extension}`;
-
-      // Ensure directories exist
-      ensureDir(paths.screenshotsDir);
-
-      // Write file
-      const filePath = path.join(paths.screenshotsDir, filename);
-      writeBinary(filePath, buffer);
-
-      const relativePath = `${paths.screenshotsRelativeBase}/${filename}`;
-
-      // Use request timestamp or current time
-      const captureTimestamp = timestamp || Date.now();
-
-      const captureInfo = {
-        index: indexValue,
-        filename,
-        path: relativePath,
-        timestamp: captureTimestamp,
-        size: buffer.length
-      };
-
-      // Update session with snapshot
-      await sessionService.addSnapshot(sessionId, captureInfo, household, captureTimestamp);
-
-      return res.json({
-        ok: true,
-        sessionId: paths.sessionDate.replace(/-/g, '') + (sessionId.slice(8) || ''),
-        ...captureInfo,
-        mimeType: normalizedMime || 'image/jpeg'
+      const result = await screenshotService.saveScreenshot({
+        sessionId,
+        imageBase64,
+        mimeType,
+        index,
+        timestamp,
+        householdId: household
       });
+
+      return res.json({ ok: true, ...result });
     } catch (error) {
+      if (error instanceof ScreenshotValidationError) {
+        return res.status(400).json({ ok: false, error: error.message });
+      }
       logger.error?.('fitness.screenshot.error', { error: error.message });
       return res.status(500).json({ ok: false, error: 'Failed to save screenshot' });
     }
