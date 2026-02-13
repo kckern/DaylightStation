@@ -31,8 +31,6 @@ import {
   // Integration system (config-driven adapter loading)
   initializeIntegrations,
   loadHouseholdIntegrations,
-  getHouseholdAdapters,
-  hasCapability,
   loadSystemBots,
   getMessagingAdapter,
   // Content domain
@@ -54,12 +52,8 @@ import {
   createDeviceServices,
   createDeviceApiRouter,
   createHardwareAdapters,
-  createPrinterApiRouter,
-  createTTSApiRouter,
   createProxyService,
-  createExternalProxyApiRouter,
   createMessagingServices,
-  createMessagingApiRouter,
   createJournalistServices,
   createJournalistApiRouter,
   createHomebotServices,
@@ -264,6 +258,22 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       reason: err.message,
       message: 'Falling back to hardcoded adapter initialization'
     });
+  }
+
+  // ==========================================================================
+  // Shared AI Gateway (single OpenAI adapter for all consumers)
+  // ==========================================================================
+
+  const openaiApiKey = configService.getSecret('OPENAI_API_KEY') || '';
+
+  // Create shared AI adapter (used by all bots, voice transcription, harvesters)
+  // Prefer config-driven adapter from integration system, fall back to hardcoded creation
+  // Note: .get() returns NoOp adapter if not configured, so check .has() first
+  let sharedAiGateway = householdAdapters?.has?.('ai') ? householdAdapters.get('ai') : null;
+  if (!sharedAiGateway && openaiApiKey) {
+    const { OpenAIAdapter } = await import('#adapters/ai/OpenAIAdapter.mjs');
+    sharedAiGateway = new OpenAIAdapter({ apiKey: openaiApiKey }, { httpClient: axios, logger: rootLogger.child({ module: 'shared-ai' }) });
+    rootLogger.debug('ai.adapter.fallback', { reason: 'Using hardcoded OpenAI adapter creation' });
   }
 
   // ==========================================================================
@@ -478,20 +488,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // Finance domain
-  // Prefer config-driven buxfer adapter, fall back to legacy auth lookup
-  const buxferAuth = configService.getUserAuth?.('buxfer') || configService.getHouseholdAuth?.('buxfer');
   const financeServices = createFinanceServices({
     configService,
     defaultHouseholdId,
-    // Prefer config-driven adapter from integration system (use .has() to avoid NoOp)
+    // Config-driven adapter from integration system (use .has() to avoid NoOp)
     buxferAdapter: householdAdapters?.has?.('finance') ? householdAdapters.get('finance') : null,
     // AI gateway for transaction categorization
     aiGateway: householdAdapters?.has?.('ai') ? householdAdapters.get('ai') : null,
-    // Legacy fallback
-    buxfer: buxferAuth?.email && buxferAuth?.password ? {
-      email: buxferAuth.email,
-      password: buxferAuth.password
-    } : null,
     httpClient: axios,
     logger: rootLogger.child({ module: 'finance' })
   });
@@ -528,10 +531,6 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // Fitness domain
-  // Get Home Assistant config from ConfigService
-  // Use resolveServiceUrl for services.yml (environment-aware) and getHouseholdAuth for token
-  const haBaseUrl = configService.resolveServiceUrl('homeassistant') || '';
-  const haAuth = configService.getHouseholdAuth('homeassistant') || {};
   const loadFitnessConfig = (hid) => {
     const targetHouseholdId = hid || configService.getDefaultHouseholdId();
     return configService.getHouseholdAppConfig(targetHouseholdId, 'fitness');
@@ -541,15 +540,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     configService,
     mediaRoot: mediaBasePath,
     defaultHouseholdId: householdId,
-    // Prefer config-driven HA adapter, fall back to config-based creation (use .has() to avoid NoOp)
+    // Config-driven HA adapter (use .has() to avoid NoOp)
     haGateway: householdAdapters?.has?.('home_automation') ? householdAdapters.get('home_automation') : null,
-    homeAssistant: {
-      baseUrl: haBaseUrl,
-      token: haAuth.token || ''
-    },
     loadFitnessConfig,
-    openaiApiKey: configService.getSecret('OPENAI_API_KEY') || '',
-    httpClient: axios,
+    openaiAdapter: sharedAiGateway,
     logger: rootLogger.child({ module: 'fitness' })
   });
 
@@ -650,8 +644,6 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     userSaveAuth: (username, service, data) => userDataService.saveAuthToken(username, service, data),
   };
 
-  // Note: nutribotAiGateway is created later; pass null for now
-  // (shopping extraction will use httpClient directly if AI gateway unavailable)
   const harvesterServices = createHarvesterServices({
     io: harvesterIo,
     httpClient: axios,
@@ -659,7 +651,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     userDataService,
     dataService, // Required for YamlWeatherDatastore (sharedStore)
     todoistApi: null, // Will use httpClient directly
-    aiGateway: null, // AI gateway created later in app initialization
+    aiGateway: sharedAiGateway, // Shared OpenAI adapter
     // Reuse config-driven buxfer adapter from finance domain (use .has() to avoid NoOp)
     buxferAdapter: householdAdapters?.has?.('finance') ? householdAdapters.get('finance') : null,
     logger: rootLogger.child({ module: 'harvester' })
@@ -703,16 +695,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // DevProxy control routes (toggle proxy on/off)
   v1Routers.dev = devProxy.router;
 
-  // Media library proxy service (for thumbnail transcoding, etc.)
+  // Media library proxy handler (reuses contentProxyService — no separate instance needed)
   let mediaLibProxyHandler = null;
 
   if (mediaLibConfig?.host && mediaLibConfig?.token) {
-    const mediaLibProxyService = createProxyService({
-      plex: mediaLibConfig,  // Bootstrap key stays 'plex' for now
-      logger: rootLogger.child({ module: 'media-proxy' })
-    });
     mediaLibProxyHandler = async (req, res) => {
-      await mediaLibProxyService.proxy('plex', req, res);
+      await contentProxyService.proxy('plex', req, res);
     };
   } else {
     rootLogger.warn('mediaLibProxy.disabled', { reason: 'Missing host or token' });
@@ -867,12 +855,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const taskerConfig = configService.getAppConfig('tasker') || {};
   const remoteExecConfig = configService.getAppConfig('remote_exec') || {};
   const homeAutomationAdapters = createHomeAutomationAdapters({
-    // Prefer config-driven HA adapter, fall back to config-based creation (use .has() to avoid NoOp)
+    // Config-driven HA adapter (use .has() to avoid NoOp)
     haGateway: householdAdapters?.has?.('home_automation') ? householdAdapters.get('home_automation') : null,
-    homeAssistant: {
-      baseUrl: haBaseUrl,
-      token: haAuth.token || ''
-    },
     kiosk: {
       host: kioskConfig.host || '',
       port: kioskConfig.port || 5000,
@@ -890,7 +874,6 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       privateKey: remoteExecConfig.privateKey || remoteExecConfig.private_key || '',
       knownHostsPath: remoteExecConfig.knownHostsPath || remoteExecConfig.known_hosts_path || ''
     },
-    httpClient: axios,
     logger: rootLogger.child({ module: 'home-automation' })
   });
 
@@ -952,31 +935,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // NutriBot application config
   const nutribotConfig = configService.getAppConfig('nutribot') || {};
-  const openaiApiKey = configService.getSecret('OPENAI_API_KEY') || '';
-
-  // Create shared AI adapter (used by all bots)
-  // Prefer config-driven adapter from integration system, fall back to hardcoded creation
-  // Note: .get() returns NoOp adapter if not configured, so check .has() first
-  let sharedAiGateway = householdAdapters?.has?.('ai') ? householdAdapters.get('ai') : null;
-  if (!sharedAiGateway && openaiApiKey) {
-    const { OpenAIAdapter } = await import('#adapters/ai/OpenAIAdapter.mjs');
-    sharedAiGateway = new OpenAIAdapter({ apiKey: openaiApiKey }, { httpClient: axios, logger: rootLogger.child({ module: 'shared-ai' }) });
-    rootLogger.debug('ai.adapter.fallback', { reason: 'Using hardcoded OpenAI adapter creation' });
-  }
 
   // Create shared voice transcription service (used by all bot TelegramAdapters)
-  // ALWAYS use OpenAI for transcription (requires Whisper API support)
+  // Reuses sharedAiGateway (same OpenAI adapter) for Whisper API transcription
   let voiceTranscriptionService = null;
-  if (openaiApiKey) {
-    const { OpenAIAdapter } = await import('#adapters/ai/OpenAIAdapter.mjs');
-    const openaiForTranscription = new OpenAIAdapter(
-      { apiKey: openaiApiKey },
-      { httpClient: axios, logger: rootLogger.child({ module: 'openai-transcription' }) }
-    );
+  if (sharedAiGateway) {
     const { TelegramVoiceTranscriptionService } = await import('#adapters/messaging/TelegramVoiceTranscriptionService.mjs');
     const voiceHttpClient = new HttpClient({ logger: rootLogger.child({ module: 'voice-http' }) });
     voiceTranscriptionService = new TelegramVoiceTranscriptionService(
-      { openaiAdapter: openaiForTranscription },
+      { openaiAdapter: sharedAiGateway },
       { httpClient: voiceHttpClient, logger: rootLogger.child({ module: 'voice-transcription' }) }
     );
   }
