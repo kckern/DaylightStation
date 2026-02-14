@@ -356,7 +356,12 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
 
     if (governancePaused) {
       wasGovernancePausedRef.current = true;
-      if (media) media.muted = true;
+      if (media) {
+        media.muted = true;
+        if (!media.paused) {
+          media.pause();
+        }
+      }
       // Clear any pending unlock timers
       if (governanceUnlockTimerRef.current) {
         clearTimeout(governanceUnlockTimerRef.current);
