@@ -1691,6 +1691,19 @@ export class GovernanceEngine {
       return;
     }
 
+    // Guard: don't run challenges if below minimum participant count
+    if (
+      Number.isFinite(challengeConfig.minParticipants) &&
+      challengeConfig.minParticipants > 0 &&
+      totalCount < challengeConfig.minParticipants
+    ) {
+      this.challengeState.activeChallenge = null;
+      this.challengeState.nextChallenge = null;
+      this.challengeState.nextChallengeAt = null;
+      this.challengeState.nextChallengeRemainingMs = null;
+      return;
+    }
+
     const chooseSelectionPayload = () => {
       if (!challengeConfig.selections || !challengeConfig.selections.length) return null;
       let selection = null;
