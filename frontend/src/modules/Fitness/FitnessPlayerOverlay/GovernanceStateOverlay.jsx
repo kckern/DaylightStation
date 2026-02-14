@@ -326,7 +326,8 @@ const GovernanceStateOverlay = ({ display, overlay = null, lockRows = [], warnin
   // Self-updating countdown from deadline
   const { remaining: countdown } = useDeadlineCountdown(
     useNewPath ? display.deadline : overlay?.deadline,
-    useNewPath ? (display.gracePeriodTotal || 30) : (overlay?.countdownTotal || 30)
+    useNewPath ? (display.gracePeriodTotal || 30) : (overlay?.countdownTotal || 30),
+    TOTAL_NOTCHES
   );
 
   // Determine which audio track to play (or null for none)
