@@ -5,7 +5,7 @@ import { useDeadlineCountdown } from '../shared';
 import GovernanceAudioPlayer from './GovernanceAudioPlayer.jsx';
 import './GovernanceStateOverlay.scss';
 
-const TOTAL_NOTCHES = 28;
+const TOTAL_NOTCHES = 56;
 
 const GovernanceWarningOverlay = React.memo(function GovernanceWarningOverlay({ countdown, countdownTotal, rows, offenders }) {
   const remaining = Number.isFinite(countdown) ? Math.max(countdown, 0) : 0;
