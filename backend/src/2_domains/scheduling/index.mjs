@@ -1,8 +1,11 @@
 /**
  * Scheduling Domain
  *
- * Manages scheduled task execution with cron expressions,
- * dependency management, and state persistence.
+ * Pure scheduling logic: cron computation, dependency checks,
+ * window offsets, date formatting.
+ *
+ * I/O orchestration (stores, executors) lives in
+ * 3_applications/scheduling/SchedulerOrchestrator.mjs
  */
 
 export { Job } from './entities/Job.mjs';

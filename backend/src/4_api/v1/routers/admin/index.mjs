@@ -27,12 +27,13 @@ import { createAdminAppsRouter } from './apps.mjs';
  * @param {Object} config.configService - ConfigService for default household
  * @param {string} config.mediaPath - Base path for media storage
  * @param {Function} [config.loadFile] - Function to load config files
+ * @param {Object} [config.mediaDownloadService] - MediaDownloadService instance (optional)
  * @param {Object} [config.eventBus] - WebSocketEventBus instance (optional)
  * @param {Object} [config.logger=console] - Logger instance
  * @returns {express.Router}
  */
 export function createAdminRouter(config) {
-  const { userDataService, configService, mediaPath, loadFile, eventBus, logger = console } = config;
+  const { userDataService, configService, mediaPath, loadFile, mediaDownloadService, eventBus, logger = console } = config;
   const router = express.Router();
 
   // Mount content router
@@ -86,9 +87,9 @@ export function createAdminRouter(config) {
   router.use('/images', imagesRouter);
 
   // Mount media router (freshvideo metadata, etc.)
-  if (loadFile) {
+  if (mediaDownloadService && loadFile) {
     const mediaRouter = createAdminMediaRouter({
-      mediaPath,
+      mediaDownloadService,
       loadFile,
       logger: logger.child?.({ submodule: 'media' }) || logger
     });

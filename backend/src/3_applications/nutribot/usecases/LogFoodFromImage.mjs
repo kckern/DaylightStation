@@ -93,6 +93,7 @@ export class LogFoodFromImage {
     });
 
     const messaging = this.#getMessaging(responseContext, conversationId);
+    let photoMsgId = null;
 
     try {
       // 0. Clean up lingering status messages
@@ -134,11 +135,11 @@ export class LogFoodFromImage {
       }
 
       // 3. Send photo with analyzing caption as status
-      const { messageId: photoMsgId } = await messaging.sendPhoto(
+      ({ messageId: photoMsgId } = await messaging.sendPhoto(
         photoSource,
         '🔍 Analyzing image for nutrition...',
         {}
-      );
+      ));
 
       // Delete user's original image (now that we've re-sent it)
       if (userMessageId) {
@@ -267,6 +268,18 @@ export class LogFoodFromImage {
         stack: error.stack?.split('\n').slice(0, 5).join('\n'),
         imageUrl: imageData?.url?.substring(0, 120),
       });
+
+      // Update the status photo so the user isn't left hanging
+      if (photoMsgId) {
+        try {
+          await messaging.updateMessage(photoMsgId, {
+            caption: '❌ Sorry, I had trouble analyzing this image. Please try again or describe the food instead.',
+          });
+        } catch (e) {
+          this.#logger.debug?.('logImage.updateError.failed', { error: e.message });
+        }
+      }
+
       throw error;
     }
   }

@@ -1,13 +1,16 @@
 /**
  * Lifelog Aggregator - Extractor-Based Version
- * @module lifelog/services/LifelogAggregator
+ * @module apps/lifelog/LifelogAggregator
  *
  * Aggregates data from all harvested sources for a specific date using
  * source-specific extractors that know how to parse each format.
+ *
+ * Lives in the application layer because it orchestrates I/O (file loading)
+ * via the injected userLoadFile callback. Pure extractors remain in the domain.
  */
 
 import moment from 'moment-timezone';
-import { extractors } from '../extractors/index.mjs';
+import { extractors } from '#domains/lifelog/extractors/index.mjs';
 
 /**
  * Lifelog aggregator using pluggable extractors

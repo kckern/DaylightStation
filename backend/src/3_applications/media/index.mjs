@@ -11,6 +11,7 @@ export { createFreshVideoJobHandler } from './FreshVideoJobHandler.mjs';
 
 // Application services
 export { FreshVideoService } from './services/FreshVideoService.mjs';
+export { MediaDownloadService } from './services/MediaDownloadService.mjs';
 export { MediaJobExecutor } from './MediaJobExecutor.mjs';
 
 // Ports (interfaces)

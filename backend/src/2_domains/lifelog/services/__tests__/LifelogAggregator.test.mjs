@@ -1,12 +1,12 @@
 /**
  * LifelogAggregator Integration Test
  *
- * Tests that LifelogAggregator correctly loads lifelog data using
- * userDataService with default household and head of household.
+ * Tests that LifelogAggregator (now in application layer) correctly loads
+ * lifelog data using userDataService with default household and head of household.
  */
 
 import { jest } from '@jest/globals';
-import { LifelogAggregator } from '../LifelogAggregator.mjs';
+import { LifelogAggregator } from '#apps/lifelog/LifelogAggregator.mjs';
 import { initConfigService, resetConfigService, configService } from '#system/config/index.mjs';
 import { userDataService } from '#system/config/UserDataService.mjs';
 import { getDataPath } from '../../../../../../tests/_lib/configHelper.mjs';

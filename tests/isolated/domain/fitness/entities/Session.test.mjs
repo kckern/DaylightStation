@@ -17,7 +17,7 @@ describe('Session', () => {
 
   describe('constructor', () => {
     test('creates session with required fields', () => {
-      expect(session.sessionId.toString()).toBe('20260111120000');
+      expect(session.sessionId).toBe('20260111120000');
       expect(session.startTime).toBe(1736596800000);
       expect(session.endTime).toBeNull();
     });
@@ -36,20 +36,20 @@ describe('Session', () => {
     });
 
     test('returns stored durationMs if available', () => {
-      session.durationMs = 3600000;
-      expect(session.getDurationMs()).toBe(3600000);
+      const s = new Session({ sessionId: '20260111120000', startTime: 1736596800000, durationMs: 3600000 });
+      expect(s.getDurationMs()).toBe(3600000);
     });
 
     test('calculates duration from timestamps', () => {
-      session.endTime = 1736600400000; // 1 hour later
-      expect(session.getDurationMs()).toBe(3600000);
+      const s = new Session({ sessionId: '20260111120000', startTime: 1736596800000, endTime: 1736600400000 });
+      expect(s.getDurationMs()).toBe(3600000);
     });
   });
 
   describe('getDurationMinutes', () => {
     test('returns duration in minutes', () => {
-      session.endTime = session.startTime + 1800000; // 30 minutes
-      expect(session.getDurationMinutes()).toBe(30);
+      const s = new Session({ sessionId: '20260111120000', startTime: 1736596800000, endTime: 1736596800000 + 1800000 });
+      expect(s.getDurationMinutes()).toBe(30);
     });
 
     test('returns null for active session', () => {
@@ -64,9 +64,9 @@ describe('Session', () => {
     });
 
     test('isCompleted returns true when endTime set', () => {
-      session.endTime = Date.now();
-      expect(session.isActive()).toBe(false);
-      expect(session.isCompleted()).toBe(true);
+      const s = new Session({ sessionId: '20260111120000', startTime: 1736596800000, endTime: Date.now() });
+      expect(s.isActive()).toBe(false);
+      expect(s.isCompleted()).toBe(true);
     });
   });
 
@@ -87,13 +87,13 @@ describe('Session', () => {
     });
 
     test('returns first participant if no primary', () => {
-      session.roster = [{ name: 'A' }, { name: 'B' }];
-      expect(session.getPrimaryParticipant().name).toBe('A');
+      const s = new Session({ sessionId: '20260111120000', startTime: 1736596800000, roster: [{ name: 'A' }, { name: 'B' }] });
+      expect(s.getPrimaryParticipant().name).toBe('A');
     });
 
     test('returns null for empty roster', () => {
-      session.roster = [];
-      expect(session.getPrimaryParticipant()).toBeNull();
+      const s = new Session({ sessionId: '20260111120000', startTime: 1736596800000, roster: [] });
+      expect(s.getPrimaryParticipant()).toBeNull();
     });
   });
 
@@ -181,8 +181,7 @@ describe('Session', () => {
     });
 
     test('throws for invalid sessionId', () => {
-      // SessionId value object validates on construction — invalid IDs throw
-      expect(() => new Session({ sessionId: '123', startTime: Date.now() })).toThrow();
+      expect(() => new Session({ sessionId: '123', startTime: Date.now() })).toThrow('Invalid SessionId');
     });
   });
 
@@ -197,22 +196,30 @@ describe('Session', () => {
 
   describe('toJSON/fromJSON', () => {
     test('round-trips session data', () => {
-      session.endTime = session.startTime + 3600000;
-      session.durationMs = 3600000;
-      session.metadata = { type: 'workout' };
+      const s = new Session({
+        sessionId: '20260111120000',
+        startTime: 1736596800000,
+        endTime: 1736596800000 + 3600000,
+        durationMs: 3600000,
+        roster: [
+          { name: 'John', isPrimary: true },
+          { name: 'Jane', isPrimary: false }
+        ],
+        metadata: { type: 'workout' }
+      });
 
-      const json = session.toJSON();
+      const json = s.toJSON();
       const restored = Session.fromJSON(json);
 
-      expect(restored.sessionId.toString()).toBe(session.sessionId.toString());
-      expect(restored.startTime).toBe(session.startTime);
-      expect(restored.endTime).toBe(session.endTime);
-      expect(restored.roster).toEqual(session.roster);
+      expect(restored.sessionId).toBe(s.sessionId);
+      expect(restored.startTime).toBe(s.startTime);
+      expect(restored.endTime).toBe(s.endTime);
+      expect(restored.roster).toEqual(s.roster);
     });
 
     test('handles legacy id field', () => {
       const restored = Session.fromJSON({ id: '20260111120000', startTime: 123 });
-      expect(restored.sessionId.toString()).toBe('20260111120000');
+      expect(restored.sessionId).toBe('20260111120000');
     });
   });
 

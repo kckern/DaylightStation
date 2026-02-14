@@ -311,23 +311,43 @@ export class NutribotInputRouter extends BaseInputRouter {
       }
 
       case 'dn': {
-        // Done - close adjustment flow, remove buttons
-        if (responseContext?.updateMessage) {
-          try {
-            await responseContext.updateMessage(event.messageId, { choices: [] });
-          } catch (e) {
-            this.logger.warn?.('nutribot.callback.dn.updateFailed', { error: e.message });
+        // Done - regenerate report chart to reflect any adjustments
+        try {
+          const useCase = this.container.getGenerateDailyReport();
+          return await useCase.execute({
+            userId: this.#resolveUserId(event),
+            conversationId: event.conversationId,
+            messageId: event.messageId,
+            skipPendingCheck: true,
+            responseContext,
+          });
+        } catch (e) {
+          this.logger.warn?.('nutribot.callback.dn.regenFailed', { error: e.message });
+          // Fallback: just remove buttons if regen fails
+          if (responseContext?.updateMessage) {
+            try {
+              await responseContext.updateMessage(event.messageId, { choices: [] });
+            } catch (updateErr) {
+              this.logger.warn?.('nutribot.callback.dn.updateFailed', { error: updateErr.message });
+            }
           }
+          return { ok: true, handled: true };
         }
-        return { ok: true, handled: true };
       }
 
       case 'cr': {
-        // Cancel revision - exit revision mode, restore original buttons
-        // For now, just remove buttons (the log is still pending)
+        // Cancel revision - clear state and restore original buttons
+        const conversationStateStore = this.container.getConversationStateStore?.();
+        if (conversationStateStore) {
+          try {
+            await conversationStateStore.clear(event.conversationId);
+          } catch (e) {
+            this.logger.debug?.('nutribot.callback.cr.clearState.failed', { error: e.message });
+          }
+        }
+
         if (responseContext?.updateMessage) {
           try {
-            // Restore the original Accept/Revise/Discard buttons
             const encodeCallback = (cmd, data) => JSON.stringify({ cmd, ...data });
             const buttons = [
               [
@@ -336,7 +356,7 @@ export class NutribotInputRouter extends BaseInputRouter {
                 { text: '🗑️ Discard', callback_data: encodeCallback('x', { id: decoded.id }) },
               ],
             ];
-            await responseContext.updateMessage(event.messageId, { choices: buttons });
+            await responseContext.updateMessage(event.messageId, { choices: buttons, inline: true });
           } catch (e) {
             this.logger.warn?.('nutribot.callback.cr.updateFailed', { error: e.message });
           }
@@ -375,6 +395,7 @@ export class NutribotInputRouter extends BaseInputRouter {
         return await useCase.execute({
           userId: this.#resolveUserId(event),
           conversationId: event.conversationId,
+          messageId: event.messageId,
           autoAcceptPending: true,
           responseContext,
         });

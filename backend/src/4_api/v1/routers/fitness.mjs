@@ -24,9 +24,10 @@
 import express from 'express';
 import path from 'path';
 import { spawn } from 'child_process';
-import { ensureDir, writeBinary, deleteFile } from '#system/utils/FileIO.mjs';
+import { writeBinary, deleteFile } from '#system/utils/FileIO.mjs';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { toListItem } from './list.mjs';
+import { ScreenshotValidationError } from '#apps/fitness/services/ScreenshotService.mjs';
 
 // Module-level state for simulation process
 const simulationState = {
@@ -43,14 +44,13 @@ const simulationState = {
  * @param {Object} config.sessionService - SessionService instance
  * @param {Object} config.zoneLedController - AmbientLedAdapter instance
  * @param {Object} config.userService - UserService for hydrating config
- * @param {Object} config.userDataService - UserDataService for reading household data
  * @param {Object} config.configService - ConfigService
  * @param {Object} config.contentRegistry - Content source registry (for show endpoint)
- * @param {Object} [config.fitnessConfigService] - FitnessConfigService for normalized config access
+ * @param {Object} [config.fitnessConfigService] - FitnessConfigService for config + playlist enrichment
+ * @param {Object} [config.fitnessPlayableService] - FitnessPlayableService for show/playable orchestration
  * @param {Object} [config.fitnessContentAdapter] - Pre-resolved content adapter for fitness (default: plex)
- * @param {Object} [config.contentQueryService] - ContentQueryService for watch state enrichment
  * @param {Object} config.transcriptionService - OpenAI transcription service (optional)
- * @param {Function} [config.createProgressClassifier] - Factory function to create progress classifier
+ * @param {Object} [config.screenshotService] - ScreenshotService for saving session screenshots
  * @param {Function} [config.createReceiptCanvas] - async (sessionId, upsidedown) => { canvas, width, height }
  * @param {Object} config.logger - Logger instance
  * @returns {express.Router}
@@ -60,14 +60,13 @@ export function createFitnessRouter(config) {
     sessionService,
     zoneLedController,
     userService,
-    userDataService,
     configService,
     contentRegistry,
     fitnessConfigService,
+    fitnessPlayableService,
     fitnessContentAdapter,
-    contentQueryService,
     transcriptionService,
-    createProgressClassifier,
+    screenshotService,
     createReceiptCanvas,
     printerAdapter,
     logger = console
@@ -76,29 +75,11 @@ export function createFitnessRouter(config) {
   const router = express.Router();
 
   /**
-   * Load fitness config from household-scoped path
-   */
-  function loadFitnessConfig(householdId) {
-    const hid = householdId || configService.getDefaultHouseholdId();
-    const householdConfig = configService.getHouseholdAppConfig(hid, 'fitness');
-
-    if (!householdConfig) {
-      logger.error?.('fitness.config.not-found', {
-        householdId: hid,
-        expectedPath: `household[-${hid}]/config/fitness.yml`
-      });
-      return null;
-    }
-
-    return householdConfig;
-  }
-
-  /**
    * GET /api/fitness - Get fitness config (hydrated with user profiles)
    */
   router.get('/', asyncHandler(async (req, res) => {
     const householdId = req.query.household || configService.getDefaultHouseholdId();
-    const fitnessData = loadFitnessConfig(householdId);
+    const fitnessData = fitnessConfigService?.loadRawConfig(householdId);
 
     if (!fitnessData) {
       return res.status(404).json({ error: 'Fitness configuration not found' });
@@ -113,24 +94,7 @@ export function createFitnessRouter(config) {
     if (Array.isArray(playlists) && playlists.length > 0 && contentRegistry) {
       const contentSource = hydratedData?.content_source || 'plex';
       const adapter = contentRegistry.get(contentSource);
-
-      if (adapter?.getThumbnail) {
-        const enrichedPlaylists = await Promise.all(
-          playlists.map(async (playlist) => {
-            // Skip if already has thumbnail
-            if (playlist.thumb || playlist.thumbnail || !playlist.id) {
-              return playlist;
-            }
-            try {
-              const thumb = await adapter.getThumbnail(playlist.id);
-              return { ...playlist, thumb };
-            } catch {
-              return playlist; // Keep original on error
-            }
-          })
-        );
-        hydratedData.plex.music_playlists = enrichedPlaylists;
-      }
+      hydratedData.plex.music_playlists = await fitnessConfigService.enrichPlaylistThumbnails(playlists, adapter);
     }
 
     res.json(hydratedData);
@@ -198,103 +162,25 @@ export function createFitnessRouter(config) {
    * Assumes plex source - no need to specify source in URL
    */
   router.get('/show/:id/playable', asyncHandler(async (req, res) => {
-    if (!contentRegistry) {
-      return res.status(503).json({ error: 'Content registry not configured' });
+    if (!fitnessPlayableService) {
+      return res.status(503).json({ error: 'Fitness playable service not configured' });
     }
 
     const { id } = req.params;
     const householdId = req.query.household || configService.getDefaultHouseholdId();
 
-    // Use pre-resolved fitness content adapter
-    const adapter = fitnessContentAdapter;
-    if (!adapter) {
-      return res.status(503).json({ error: 'Fitness content adapter not configured' });
-    }
+    const result = await fitnessPlayableService.getPlayableEpisodes(id, householdId);
 
-    const compoundId = `plex:${id}`;
-
-    // Load config for progress classification thresholds
-    const fitnessConfig = loadFitnessConfig(householdId);
-
-    // Create fitness progress classifier with config thresholds
-    const classifierConfig = fitnessConfig?.progressClassification || {};
-    const classifier = createProgressClassifier
-      ? createProgressClassifier(classifierConfig)
-      : { classify: () => 'unknown' }; // Graceful fallback if not injected
-
-    // Get playable items
-    if (!adapter.resolvePlayables) {
-      return res.status(400).json({ error: 'Plex adapter does not support playable resolution' });
-    }
-    let items = await adapter.resolvePlayables(compoundId);
-
-    // Enrich with watch state via ContentQueryService (DDD-compliant)
-    if (contentQueryService) {
-      items = await contentQueryService.enrichWithWatchState(items, 'plex', compoundId);
-    }
-
-    // Map domain fields to API contract and apply fitness-specific classification
-    items = items.map(item => {
-      const playhead = item.playhead ?? 0;
-      const percent = item.percent ?? 0;
-      const duration = item.duration ?? 0;
-
-      return {
-        ...item,
-        watchProgress: percent,
-        watchSeconds: playhead,
-        watchedDate: item.lastPlayed ?? null,
-        // Backend-computed watch status using fitness-specific classifier (SSOT)
-        // Preserve undefined for watchTime so classifier can skip anti-seeking check when data is missing
-        isWatched: classifier.classify(
-          { playhead, percent, watchTime: item.watchTime },
-          { duration }
-        ) === 'watched'
-      };
+    res.json({
+      id: result.compoundId,
+      plex: id,
+      title: result.containerItem?.title || id,
+      label: result.containerItem?.title || id,
+      image: result.containerItem?.thumbnail,
+      info: result.info,
+      parents: result.parents,
+      items: result.items.map(toListItem)
     });
-
-      // Get container info for show metadata
-      let info = null;
-      if (adapter.getContainerInfo) {
-        info = await adapter.getContainerInfo(compoundId);
-      }
-
-      // Build parents map from items' hierarchy metadata (canonical relative fields)
-      let parents = null;
-      if (items.length > 0) {
-        const parentsMap = {};
-        for (const item of items) {
-          const pId = item.metadata?.parentId;
-          if (pId && !parentsMap[pId]) {
-            parentsMap[pId] = {
-              index: item.metadata?.parentIndex,
-              title: item.metadata?.parentTitle || 'Parent',
-              // Use parent (season) thumbnail from metadata, or construct proxy URL for parent
-              thumbnail: item.metadata?.parentThumb || `/api/v1/content/plex/image/${pId}`,
-              type: item.metadata?.parentType
-            };
-          }
-        }
-        if (Object.keys(parentsMap).length > 0) {
-          parents = parentsMap;
-        }
-      }
-
-      // Get container item for title/image
-      const containerItem = adapter.getItem ? await adapter.getItem(compoundId) : null;
-
-      const response = {
-        id: compoundId,
-        plex: id,
-        title: containerItem?.title || id,
-        label: containerItem?.title || id,
-        image: containerItem?.thumbnail,
-        info,
-        parents,
-        items: items.map(toListItem)
-      };
-
-    res.json(response);
   }));
 
   /**
@@ -502,66 +388,20 @@ export function createFitnessRouter(config) {
         return res.status(400).json({ ok: false, error: 'sessionId and imageBase64 are required' });
       }
 
-      const paths = sessionService.getStoragePaths(sessionId, household);
-      if (!paths) {
-        return res.status(400).json({ ok: false, error: 'Invalid sessionId' });
-      }
-
-      // Decode base64
-      const trimmed = imageBase64.replace(/^data:[^;]+;base64,/, '');
-      if (!trimmed) {
-        return res.status(400).json({ ok: false, error: 'Invalid base64 payload' });
-      }
-
-      const buffer = Buffer.from(trimmed, 'base64');
-      if (!buffer.length) {
-        return res.status(400).json({ ok: false, error: 'Failed to decode image data' });
-      }
-
-      // Determine extension
-      const normalizedMime = typeof mimeType === 'string' ? mimeType.toLowerCase() : '';
-      const extension = normalizedMime.includes('png') ? 'png'
-        : normalizedMime.includes('webp') ? 'webp'
-        : normalizedMime.includes('jpeg') || normalizedMime.includes('jpg') ? 'jpg'
-        : 'jpg';
-
-      // Build filename
-      const indexValue = Number.isFinite(index) ? Number(index) : null;
-      const indexFragment = indexValue != null
-        ? String(indexValue).padStart(4, '0')
-        : Date.now().toString(36);
-      const filename = `${paths.sessionDate}_${indexFragment}.${extension}`;
-
-      // Ensure directories exist
-      ensureDir(paths.screenshotsDir);
-
-      // Write file
-      const filePath = path.join(paths.screenshotsDir, filename);
-      writeBinary(filePath, buffer);
-
-      const relativePath = `${paths.screenshotsRelativeBase}/${filename}`;
-
-      // Use request timestamp or current time
-      const captureTimestamp = timestamp || Date.now();
-
-      const captureInfo = {
-        index: indexValue,
-        filename,
-        path: relativePath,
-        timestamp: captureTimestamp,
-        size: buffer.length
-      };
-
-      // Update session with snapshot
-      await sessionService.addSnapshot(sessionId, captureInfo, household, captureTimestamp);
-
-      return res.json({
-        ok: true,
-        sessionId: paths.sessionDate.replace(/-/g, '') + (sessionId.slice(8) || ''),
-        ...captureInfo,
-        mimeType: normalizedMime || 'image/jpeg'
+      const result = await screenshotService.saveScreenshot({
+        sessionId,
+        imageBase64,
+        mimeType,
+        index,
+        timestamp,
+        householdId: household
       });
+
+      return res.json({ ok: true, ...result });
     } catch (error) {
+      if (error instanceof ScreenshotValidationError) {
+        return res.status(400).json({ ok: false, error: error.message });
+      }
       logger.error?.('fitness.screenshot.error', { error: error.message });
       return res.status(500).json({ ok: false, error: 'Failed to save screenshot' });
     }
@@ -582,18 +422,9 @@ export function createFitnessRouter(config) {
       }
 
       const householdId = sessionContext.householdId || configService.getDefaultHouseholdId();
-      const fitnessConfig = loadFitnessConfig(householdId);
 
-      // Build household member names for transcription hints
-      const householdMembers = [];
-      if (fitnessConfig?.users) {
-        if (Array.isArray(fitnessConfig.users.primary)) {
-          householdMembers.push(...fitnessConfig.users.primary.map(u => typeof u === 'string' ? u : u.name));
-        }
-        if (Array.isArray(fitnessConfig.users.family)) {
-          householdMembers.push(...fitnessConfig.users.family.map(u => u.name));
-        }
-      }
+      // Get household member names for transcription hints (via FitnessConfigService)
+      const householdMembers = fitnessConfigService?.getHouseholdMemberNames(householdId) || [];
 
       const memo = await transcriptionService.transcribeVoiceMemo({
         audioBase64,
@@ -603,7 +434,7 @@ export function createFitnessRouter(config) {
         endedAt,
         context: {
           ...sessionContext,
-          householdMembers: [...new Set(householdMembers)]
+          householdMembers
         }
       });
 

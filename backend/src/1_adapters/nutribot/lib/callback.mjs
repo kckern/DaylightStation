@@ -35,6 +35,7 @@ export const CallbackActions = {
   REJECT_LOG: 'reject_log',
   DELETE_LOG: 'delete_log',
   REVISE_ITEM: 'revise_item',
+  CANCEL_REVISION: 'cancel_revision',
   DATE_SELECT: 'date_select',
   PORTION_ADJUST: 'portion_adjust',
   CONFIRM_ALL: 'confirm_all'
