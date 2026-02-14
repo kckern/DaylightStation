@@ -1,5 +1,5 @@
 // tests/unit/governance/GovernanceEngine.test.mjs
-import { describe, it, expect, beforeEach, jest } from '@jest/globals';
+import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
 
 // Mock the Logger module before importing GovernanceEngine
 jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
@@ -144,6 +144,10 @@ describe('GovernanceEngine', () => {
       }, [], {});
     });
 
+    afterEach(() => {
+      engine.destroy();
+    });
+
     it('should reduce requiredCount when exempt users are in activeParticipants', () => {
       const result = engine._normalizeRequiredCount(
         'all',
@@ -187,6 +191,10 @@ describe('GovernanceEngine', () => {
           intervalRangeSeconds: [60, 120]
         }]
       }, [], {});
+    });
+
+    afterEach(() => {
+      engine.destroy();
     });
 
     it('should compute requiredCount excluding exempt users when creating challenge preview', () => {
@@ -252,6 +260,10 @@ describe('GovernanceEngine', () => {
           intervalRangeSeconds: [60, 120]
         }]
       }, [], {});
+    });
+
+    afterEach(() => {
+      engine.destroy();
     });
 
     it('should mark challenge as satisfied when all non-exempt users meet the zone', () => {
@@ -379,6 +391,10 @@ describe('GovernanceEngine', () => {
       }, [], {});
     });
 
+    afterEach(() => {
+      engine.destroy();
+    });
+
     it('should recover from failed challenge when roster shrinks and remaining users meet zone', () => {
       // Scenario: challenge expired as failed with stale requiredCount=5.
       // User removes soren from roster. Now 3 non-exempt users all at hot.
@@ -450,6 +466,10 @@ describe('GovernanceEngine', () => {
         governed_labels: ['kidsfun'],
         grace_period_seconds: 30
       }, [], {});
+    });
+
+    afterEach(() => {
+      engine.destroy();
     });
 
     it('should set videoLocked=true when media is governed and phase is pending', () => {
@@ -545,6 +565,10 @@ describe('GovernanceEngine', () => {
           }
         }
       }, [], {});
+    });
+
+    afterEach(() => {
+      engine.destroy();
     });
 
     it('videoLocked=true when governed media in pending phase (no HR data)', () => {
