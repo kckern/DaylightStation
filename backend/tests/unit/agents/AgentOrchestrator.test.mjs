@@ -180,4 +180,69 @@ describe('AgentOrchestrator', () => {
       assert.strictEqual(orchestrator.has('exists'), true);
     });
   });
+
+  describe('runAssignment', () => {
+    it('should delegate to agent.runAssignment', async () => {
+      const orchestrator = new AgentOrchestrator({
+        agentRuntime: mockAgentRuntime,
+        logger: mockLogger,
+      });
+
+      let capturedArgs;
+
+      class TestAgent {
+        static id = 'test';
+        constructor() {}
+        getTools() { return []; }
+        getSystemPrompt() { return 'test'; }
+        async run() { return { output: '', toolCalls: [] }; }
+        async runAssignment(assignmentId, opts) {
+          capturedArgs = { assignmentId, opts };
+          return { result: 'assignment done' };
+        }
+      }
+
+      orchestrator.register(TestAgent, {});
+      const result = await orchestrator.runAssignment('test', 'daily-dashboard', { userId: 'kevin' });
+
+      assert.strictEqual(capturedArgs.assignmentId, 'daily-dashboard');
+      assert.strictEqual(capturedArgs.opts.userId, 'kevin');
+      assert.deepStrictEqual(result, { result: 'assignment done' });
+    });
+
+    it('should throw for unknown agent', async () => {
+      const orchestrator = new AgentOrchestrator({
+        agentRuntime: mockAgentRuntime,
+        logger: mockLogger,
+      });
+
+      await assert.rejects(
+        () => orchestrator.runAssignment('nonexistent', 'task', {}),
+        /not found/
+      );
+    });
+  });
+
+  describe('listInstances', () => {
+    it('should return agent instances', () => {
+      const orchestrator = new AgentOrchestrator({
+        agentRuntime: mockAgentRuntime,
+        logger: mockLogger,
+      });
+
+      class AgentA {
+        static id = 'agent-a';
+        constructor() {}
+        getTools() { return []; }
+        getSystemPrompt() { return ''; }
+        async run() { return { output: '', toolCalls: [] }; }
+      }
+
+      orchestrator.register(AgentA, {});
+      const instances = orchestrator.listInstances();
+
+      assert.strictEqual(instances.length, 1);
+      assert.strictEqual(instances[0].constructor.id, 'agent-a');
+    });
+  });
 });
