@@ -15,7 +15,7 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
  * Create Health API router
  *
  * @param {Object} config
- * @param {Object} config.healthService - HealthAggregationService instance
+ * @param {Object} config.healthService - AggregateHealthUseCase instance
  * @param {Object} config.healthStore - YamlHealthStore instance
  * @param {Object} config.configService - ConfigService for user lookup
  * @param {Object} [config.nutriListStore] - YamlNutriListStore for nutrilist operations
@@ -68,7 +68,7 @@ export function createHealthRouter(config) {
 
     logger.debug?.('health.daily.request', { username, days });
 
-    const healthData = await healthService.aggregateDailyHealth(username, days, new Date());
+    const healthData = await healthService.execute(username, days, new Date());
 
     logger.info?.('health.daily.success', {
       username,

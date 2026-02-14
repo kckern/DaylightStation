@@ -55,6 +55,7 @@ import { createQueueRouter } from '#api/v1/routers/queue.mjs';
 import { QueueService } from '#domains/content/services/QueueService.mjs';
 import { createSiblingsRouter } from '#api/v1/routers/siblings.mjs';
 import { SiblingsService } from '#apps/content/services/SiblingsService.mjs';
+import { PlayResponseService } from '#apps/content/services/PlayResponseService.mjs';
 import { createStreamRouter } from '#api/v1/routers/stream.mjs';
 import { createLocalRouter } from '#api/v1/routers/local.mjs';
 import { createQueriesRouter } from '#api/v1/routers/queries.mjs';
@@ -65,13 +66,12 @@ import { FitnessProgressClassifier } from '#domains/fitness/index.mjs';
 import { YamlSessionDatastore } from '#adapters/persistence/yaml/YamlSessionDatastore.mjs';
 import { AmbientLedAdapter } from '#adapters/fitness/AmbientLedAdapter.mjs';
 import { VoiceMemoTranscriptionService } from '#adapters/fitness/VoiceMemoTranscriptionService.mjs';
-import { OpenAIAdapter } from '#adapters/ai/OpenAIAdapter.mjs';
-import { FitnessSyncerAdapter } from '#adapters/harvester/fitness/FitnessSyncerAdapter.mjs';
 import { FitnessConfigService } from '#apps/fitness/FitnessConfigService.mjs';
+import { FitnessPlayableService } from '#apps/fitness/FitnessPlayableService.mjs';
+import { ScreenshotService } from '#apps/fitness/services/ScreenshotService.mjs';
 import { createFitnessRouter } from '#api/v1/routers/fitness.mjs';
 
 // Home automation imports
-import { HomeAssistantAdapter } from '#adapters/home-automation/homeassistant/HomeAssistantAdapter.mjs';
 import { TVControlAdapter } from '#adapters/home-automation/tv/TVControlAdapter.mjs';
 import { KioskAdapter } from '#adapters/home-automation/kiosk/KioskAdapter.mjs';
 import { TaskerAdapter } from '#adapters/home-automation/tasker/TaskerAdapter.mjs';
@@ -87,8 +87,6 @@ import { createDeviceRouter } from '#api/v1/routers/device.mjs';
 import { ThermalPrinterAdapter } from '#adapters/hardware/thermal-printer/ThermalPrinterAdapter.mjs';
 import { TTSAdapter } from '#adapters/hardware/tts/TTSAdapter.mjs';
 import { MQTTSensorAdapter } from '#adapters/hardware/mqtt-sensor/MQTTSensorAdapter.mjs';
-import { createPrinterRouter } from '#api/v1/routers/printer.mjs';
-import { createTTSRouter } from '#api/v1/routers/tts.mjs';
 
 // Proxy infrastructure imports
 import { ProxyService } from './proxy/ProxyService.mjs';
@@ -96,11 +94,9 @@ import { PlexProxyAdapter } from '#adapters/proxy/PlexProxyAdapter.mjs';
 import { ImmichProxyAdapter } from '#adapters/proxy/ImmichProxyAdapter.mjs';
 import { AudiobookshelfProxyAdapter } from '#adapters/proxy/AudiobookshelfProxyAdapter.mjs';
 import { FreshRSSProxyAdapter } from '#adapters/proxy/FreshRSSProxyAdapter.mjs';
-import { createExternalProxyRouter } from '#api/v1/routers/externalProxy.mjs';
 
 // Finance domain imports
 import { YamlFinanceDatastore } from '#adapters/persistence/yaml/YamlFinanceDatastore.mjs';
-import { BuxferAdapter } from '#adapters/finance/BuxferAdapter.mjs';
 import { BudgetCompilationService } from '#apps/finance/BudgetCompilationService.mjs';
 import { FinanceHarvestService } from '#apps/finance/FinanceHarvestService.mjs';
 import { TransactionCategorizationService } from '#apps/finance/TransactionCategorizationService.mjs';
@@ -116,17 +112,11 @@ import createCostRouter from '#api/v1/routers/cost.mjs';
 // Gratitude domain imports
 import { GratitudeService } from '#domains/gratitude/services/GratitudeService.mjs';
 import { YamlGratitudeDatastore } from '#adapters/persistence/yaml/YamlGratitudeDatastore.mjs';
+import { GratitudeHouseholdService } from '#apps/gratitude/services/GratitudeHouseholdService.mjs';
 import { createGratitudeRouter } from '#api/v1/routers/gratitude.mjs';
 
-// Journaling domain imports
-import { JournalService } from '#domains/journaling/services/JournalService.mjs';
-import { YamlJournalDatastore } from '#adapters/persistence/yaml/YamlJournalDatastore.mjs';
-import { createJournalingRouter } from '#api/v1/routers/journaling.mjs';
-
-// Nutrition domain imports
-import { FoodLogService } from '#domains/nutrition/services/FoodLogService.mjs';
+// Nutrition domain imports (YamlFoodLogDatastore still used by createNutribotServices)
 import { YamlFoodLogDatastore } from '#adapters/persistence/yaml/YamlFoodLogDatastore.mjs';
-import { createNutritionRouter } from '#api/v1/routers/nutrition.mjs';
 
 // Messaging domain imports
 import { ConversationService } from '#domains/messaging/services/ConversationService.mjs';
@@ -134,7 +124,6 @@ import { NotificationService } from '#domains/messaging/services/NotificationSer
 import { YamlConversationDatastore } from '#adapters/persistence/yaml/YamlConversationDatastore.mjs';
 import { TelegramAdapter } from '#adapters/messaging/TelegramAdapter.mjs';
 import { GmailAdapter } from '#adapters/messaging/GmailAdapter.mjs';
-import { createMessagingRouter } from '#api/v1/routers/messaging.mjs';
 
 // Journalist application imports
 import { JournalistContainer } from '#apps/journalist/JournalistContainer.mjs';
@@ -153,13 +142,9 @@ import { YamlNutriCoachDatastore } from '#adapters/persistence/yaml/YamlNutriCoa
 import { NutribotInputRouter } from '#adapters/nutribot/index.mjs';
 import { createNutribotRouter } from '#api/v1/routers/nutribot.mjs';
 
-// Nutribot DDD adapters
-import { YamlNutriLogDatastore } from '#adapters/persistence/yaml/YamlNutriLogDatastore.mjs';
-import { TelegramMessagingAdapter } from '#adapters/telegram/TelegramMessagingAdapter.mjs';
+// Telegram bot adapters (used by journalist, homebot, nutribot router factories)
 import { TelegramWebhookParser } from '#adapters/telegram/TelegramWebhookParser.mjs';
 import { createBotWebhookHandler } from '#adapters/telegram/createBotWebhookHandler.mjs';
-import { OpenAIFoodParserAdapter } from '#adapters/ai/OpenAIFoodParserAdapter.mjs';
-import { NutritionixAdapter } from '#adapters/nutrition/NutritionixAdapter.mjs';
 
 // Homebot application imports
 import { HomeBotContainer } from '#apps/homebot/HomeBotContainer.mjs';
@@ -171,8 +156,8 @@ import { AgentOrchestrator, EchoAgent } from '#apps/agents/index.mjs';
 import { MastraAdapter } from '#adapters/agents/index.mjs';
 import { createAgentsRouter } from '#api/v1/routers/agents.mjs';
 
-// Health domain imports
-import { HealthAggregationService } from '#domains/health/services/HealthAggregationService.mjs';
+// Health domain + application imports
+import { AggregateHealthUseCase } from '#apps/health/AggregateHealthUseCase.mjs';
 import { YamlHealthDatastore } from '#adapters/persistence/yaml/YamlHealthDatastore.mjs';
 import { createHealthRouter } from '#api/v1/routers/health.mjs';
 
@@ -181,8 +166,8 @@ import { EntropyService } from '#apps/entropy/services/EntropyService.mjs';
 import { YamlEntropyReader } from '#adapters/entropy/YamlEntropyReader.mjs';
 import { createEntropyRouter } from '#api/v1/routers/entropy.mjs';
 
-// Lifelog domain imports
-import { LifelogAggregator } from '#domains/lifelog/services/LifelogAggregator.mjs';
+// Lifelog application imports
+import { LifelogAggregator } from '#apps/lifelog/LifelogAggregator.mjs';
 import { createLifelogRouter } from '#api/v1/routers/lifelog.mjs';
 
 // Static assets router
@@ -222,7 +207,7 @@ import {
 import RSSParser from 'rss-parser';
 
 // FileIO utilities for image saving
-import { saveImage as saveImageToFile, loadYamlSafe, listYamlFiles, saveYaml, deleteYaml } from './utils/FileIO.mjs';
+import { saveImage as saveImageToFile, loadYamlSafe, listYamlFiles, saveYaml, deleteYaml, ensureDir, writeBinary } from './utils/FileIO.mjs';
 
 // Additional adapters for harvesters
 import { StravaClientAdapter } from '#adapters/fitness/StravaClientAdapter.mjs';
@@ -284,7 +269,10 @@ export async function initializeIntegrations(config) {
   if (!systemBotLoaderInstance) {
     systemBotLoaderInstance = new SystemBotLoader({
       configService,
-      logger
+      logger,
+      adapterFactories: {
+        telegram: (deps) => new TelegramAdapter(deps)
+      }
     });
     logger.info?.('integrations.systemBotLoader.created');
   }
@@ -329,25 +317,6 @@ export async function loadHouseholdIntegrations(config) {
 }
 
 /**
- * Get the loaded adapters for a household
- * @param {string} householdId
- * @returns {Object|undefined} Adapters keyed by capability
- */
-export function getHouseholdAdapters(householdId) {
-  return integrationLoaderInstance?.getAdapters(householdId);
-}
-
-/**
- * Check if a capability is configured for a household
- * @param {string} householdId
- * @param {string} capability
- * @returns {boolean}
- */
-export function hasCapability(householdId, capability) {
-  return integrationLoaderInstance?.hasCapability(householdId, capability) ?? false;
-}
-
-/**
  * Load system-level bots from system config.
  *
  * This loads all bots defined in system/bots.yml and creates adapters
@@ -384,14 +353,6 @@ export function getMessagingAdapter(householdId, appName) {
   }
 
   return systemBotLoaderInstance.getBotForHousehold(householdId, appName);
-}
-
-/**
- * Get the system bot loader instance.
- * @returns {SystemBotLoader|null}
- */
-export function getSystemBotLoader() {
-  return systemBotLoaderInstance;
 }
 
 // =============================================================================
@@ -633,16 +594,6 @@ export function createContentRegistry(config, deps = {}) {
 }
 
 /**
- * Create media key resolver from config
- * @param {Object} config - Media key resolution config from configService.get('system', 'media')
- * @param {Object} [config.mediaKeyResolution] - Resolution configuration
- * @returns {MediaKeyResolver}
- */
-export function createMediaKeyResolver(config = {}) {
-  return new MediaKeyResolver(config.mediaKeyResolution || {});
-}
-
-/**
  * Create media progress memory
  * @param {Object} config
  * @param {string} config.mediaProgressPath - Path for media progress files
@@ -721,6 +672,9 @@ export function createApiRouters(config) {
   // Create SiblingsService for sibling resolution
   const siblingsService = new SiblingsService({ registry, logger });
 
+  // Create PlayResponseService for play response building and watch state reconciliation
+  const playResponseService = new PlayResponseService({ mediaProgressMemory, progressSyncService, progressSyncSources });
+
   // Get FileAdapter from registry for local router (handles local media browsing)
   const localMediaAdapter = registry.get('files');
 
@@ -729,7 +683,7 @@ export function createApiRouters(config) {
       content: createContentRouter(registry, mediaProgressMemory, { loadFile, saveFile, cacheBasePath, composePresentationUseCase, contentQueryService, logger, aliasResolver }),
       proxy: createProxyRouter({ registry, proxyService, mediaBasePath, logger }),
       localContent: createLocalContentRouter({ registry, dataPath, mediaBasePath, mediaProgressMemory }),
-      play: createPlayRouter({ registry, mediaProgressMemory, contentQueryService, contentIdResolver, progressSyncService, progressSyncSources, logger }),
+      play: createPlayRouter({ registry, mediaProgressMemory, playResponseService, contentQueryService, contentIdResolver, progressSyncService, progressSyncSources, logger }),
       list: createListRouter({ registry, loadFile, configService, contentQueryService, contentIdResolver, menuMemoryPath: configService.getHouseholdPath('history/menu_memory') }),
       siblings: createSiblingsRouter({ siblingsService, contentIdResolver, logger }),
       queue: createQueueRouter({ contentIdResolver, queueService: new QueueService({ mediaProgressMemory }), logger }),
@@ -761,13 +715,9 @@ export function createApiRouters(config) {
  * @param {Object} config.configService - ConfigService instance for path resolution
  * @param {string} config.mediaRoot - Base media directory
  * @param {string} config.defaultHouseholdId - Default household ID
- * @param {Object} [config.homeAssistant] - Home Assistant configuration (legacy)
- * @param {string} [config.homeAssistant.baseUrl] - HA base URL
- * @param {string} [config.homeAssistant.token] - HA long-lived token
- * @param {Object} [config.haGateway] - Pre-loaded Home Assistant adapter (preferred)
+ * @param {Object} [config.haGateway] - Home Assistant adapter (from composition root)
  * @param {Function} config.loadFitnessConfig - Function to load fitness config for household
- * @param {string} [config.openaiApiKey] - OpenAI API key for voice memo transcription
- * @param {Object} [config.httpClient] - HTTP client for making requests
+ * @param {Object} [config.openaiAdapter] - OpenAI adapter for voice memo transcription (from shared AI gateway)
  * @param {Object} [config.logger] - Logger instance
  * @returns {Object} Fitness services
  */
@@ -776,11 +726,9 @@ export function createFitnessServices(config) {
     configService,
     mediaRoot,
     defaultHouseholdId,
-    homeAssistant,
     haGateway: preloadedHaGateway,
     loadFitnessConfig,
-    openaiApiKey,
-    httpClient,
+    openaiAdapter,
     logger = console
   } = config;
 
@@ -795,20 +743,9 @@ export function createFitnessServices(config) {
     defaultHouseholdId
   });
 
-  // Home automation gateway - prefer pre-loaded adapter, fall back to config-based creation
-  let haGateway = preloadedHaGateway ?? null;
+  // Home automation gateway (provided by composition root)
+  const haGateway = preloadedHaGateway ?? null;
   let ambientLedController = null;
-
-  if (!haGateway && homeAssistant?.baseUrl && homeAssistant?.token && httpClient) {
-    haGateway = new HomeAssistantAdapter(
-      {
-        baseUrl: homeAssistant.baseUrl,
-        token: homeAssistant.token
-      },
-      { httpClient, logger }
-    );
-    logger.debug?.('fitness.haGateway.fallback', { reason: 'Using config-based HA adapter creation' });
-  }
 
   // Ambient LED controller (uses home automation gateway)
   if (haGateway) {
@@ -823,13 +760,9 @@ export function createFitnessServices(config) {
     });
   }
 
-  // Voice memo transcription (optional - requires OpenAI API key and httpClient)
+  // Voice memo transcription (optional - requires AI gateway)
   let transcriptionService = null;
-  if (openaiApiKey && httpClient) {
-    const openaiAdapter = new OpenAIAdapter(
-      { apiKey: openaiApiKey },
-      { httpClient, logger }
-    );
+  if (openaiAdapter) {
     transcriptionService = new VoiceMemoTranscriptionService({
       openaiAdapter,
       logger
@@ -872,66 +805,47 @@ export function createFitnessApiRouter(config) {
     logger = console
   } = config;
 
-  // Create FitnessConfigService for normalized config access
+  // Create FitnessConfigService for normalized config access, playlist enrichment, and member names
   const fitnessConfigService = new FitnessConfigService({
     userDataService,
-    configService
+    configService,
+    logger
   });
 
   // Resolve fitness content adapter from config (defaults to plex)
   const fitnessContentSource = fitnessConfig?.content_source || 'plex';
   const fitnessContentAdapter = contentRegistry?.get(fitnessContentSource);
 
+  // Create FitnessPlayableService for show/playable orchestration
+  const fitnessPlayableService = new FitnessPlayableService({
+    fitnessConfigService,
+    contentAdapter: fitnessContentAdapter,
+    contentQueryService,
+    createProgressClassifier: (cfg) => new FitnessProgressClassifier(cfg),
+    logger
+  });
+
+  // Create ScreenshotService for session screenshot handling
+  const screenshotService = new ScreenshotService({
+    sessionService: fitnessServices.sessionService,
+    fileIO: { ensureDir, writeBinary },
+    logger
+  });
+
   return createFitnessRouter({
     sessionService: fitnessServices.sessionService,
     zoneLedController: fitnessServices.ambientLedController,
     transcriptionService: fitnessServices.transcriptionService,
-    createProgressClassifier: (config) => new FitnessProgressClassifier(config),
+    screenshotService,
     fitnessConfigService,
+    fitnessPlayableService,
     fitnessContentAdapter,
     userService,
-    userDataService,
     configService,
     contentRegistry,  // Still needed for playlist thumbnail enrichment
-    contentQueryService,
     createReceiptCanvas,
     printerAdapter,
     logger
-  });
-}
-
-/**
- * Create FitnessSyncer adapter for OAuth token management and activity harvesting
- *
- * The adapter expects an authStore with get/set methods for a single service.
- * Create a scoped auth store wrapper if using the multi-service YamlAuthStore.
- *
- * @param {Object} config
- * @param {Object} config.httpClient - HTTP client with get/post methods (e.g., axios)
- * @param {Object} config.authStore - Auth store with get(service)/set(service, data) interface
- * @param {string} [config.clientId] - OAuth client ID (can also be in authStore)
- * @param {string} [config.clientSecret] - OAuth client secret (can also be in authStore)
- * @param {number} [config.cooldownMinutes=5] - Base cooldown in minutes for circuit breaker
- * @param {Object} [config.logger] - Logger instance
- * @returns {FitnessSyncerAdapter}
- */
-export function createFitnessSyncerAdapter(config) {
-  const {
-    httpClient,
-    authStore,
-    clientId,
-    clientSecret,
-    cooldownMinutes = 5,
-    logger = console
-  } = config;
-
-  return new FitnessSyncerAdapter({
-    httpClient,
-    authStore,
-    logger,
-    clientId,
-    clientSecret,
-    cooldownMinutes
   });
 }
 
@@ -1011,10 +925,7 @@ export async function restartEventBus() {
  * Create finance domain services
  * @param {Object} config
  * @param {Object} config.configService - ConfigService instance for path resolution
- * @param {Object} [config.buxferAdapter] - Pre-loaded Buxfer adapter (preferred)
- * @param {Object} [config.buxfer] - Buxfer configuration (legacy fallback)
- * @param {string} [config.buxfer.email] - Buxfer email
- * @param {string} [config.buxfer.password] - Buxfer password
+ * @param {Object} [config.buxferAdapter] - Buxfer adapter (from composition root)
  * @param {Object} [config.aiGateway] - AI gateway for transaction categorization
  * @param {Object} [config.httpClient] - HTTP client for payroll sync
  * @param {Object} [config.logger] - Logger instance
@@ -1024,7 +935,6 @@ export function createFinanceServices(config) {
   const {
     configService,
     buxferAdapter: preloadedBuxferAdapter,
-    buxfer,
     aiGateway,
     httpClient,
     defaultHouseholdId,
@@ -1036,15 +946,8 @@ export function createFinanceServices(config) {
     configService
   });
 
-  // Buxfer adapter - prefer pre-loaded adapter, fall back to config-based creation
-  let buxferAdapter = preloadedBuxferAdapter ?? null;
-  if (!buxferAdapter && buxfer?.email && buxfer?.password && httpClient) {
-    buxferAdapter = new BuxferAdapter(
-      { email: buxfer.email, password: buxfer.password },
-      { httpClient, logger }
-    );
-    logger.debug?.('finance.buxferAdapter.fallback', { reason: 'Using config-based Buxfer adapter creation' });
-  }
+  // Buxfer adapter (provided by composition root)
+  const buxferAdapter = preloadedBuxferAdapter ?? null;
 
   // Budget compilation service
   const compilationService = new BudgetCompilationService({
@@ -1294,17 +1197,6 @@ export function createProxyService(config) {
   return proxyService;
 }
 
-/**
- * Create external proxy API router
- * @param {Object} config
- * @param {ProxyService} config.proxyService - ProxyService instance
- * @param {Object} [config.logger] - Logger instance
- * @returns {express.Router}
- */
-export function createExternalProxyApiRouter(config) {
-  return createExternalProxyRouter(config);
-}
-
 // =============================================================================
 // Home Automation Bootstrap
 // =============================================================================
@@ -1312,10 +1204,7 @@ export function createExternalProxyApiRouter(config) {
 /**
  * Create home automation adapters
  * @param {Object} config
- * @param {Object} [config.homeAssistant] - Home Assistant config (legacy)
- * @param {string} [config.homeAssistant.baseUrl] - HA base URL
- * @param {string} [config.homeAssistant.token] - HA long-lived token
- * @param {Object} [config.haGateway] - Pre-loaded Home Assistant adapter (preferred)
+ * @param {Object} [config.haGateway] - Home Assistant adapter (from composition root)
  * @param {Object} [config.kiosk] - Kiosk config
  * @param {string} [config.kiosk.host] - Kiosk device host
  * @param {number} [config.kiosk.port] - Kiosk port
@@ -1330,27 +1219,15 @@ export function createExternalProxyApiRouter(config) {
  * @param {number} [config.remoteExec.port] - SSH port
  * @param {string} [config.remoteExec.privateKey] - Path to SSH private key
  * @param {string} [config.remoteExec.knownHostsPath] - Path to known_hosts
- * @param {Object} [config.httpClient] - HTTP client for making requests
  * @param {Object} [config.logger] - Logger instance
  * @returns {Object} Home automation adapters
  */
 export function createHomeAutomationAdapters(config) {
-  const { httpClient, logger = console, haGateway: preloadedHaGateway } = config;
+  const { logger = console, haGateway: preloadedHaGateway } = config;
 
-  // Home Assistant gateway - prefer pre-loaded adapter, fall back to config-based creation
-  let haGateway = preloadedHaGateway ?? null;
+  // Home Assistant gateway (provided by composition root)
+  const haGateway = preloadedHaGateway ?? null;
   let tvAdapter = null;
-
-  if (!haGateway && config.homeAssistant?.baseUrl && config.homeAssistant?.token && httpClient) {
-    haGateway = new HomeAssistantAdapter(
-      {
-        baseUrl: config.homeAssistant.baseUrl,
-        token: config.homeAssistant.token
-      },
-      { httpClient, logger }
-    );
-    logger.debug?.('homeAutomation.haGateway.fallback', { reason: 'Using config-based HA adapter creation' });
-  }
 
   // TV control adapter (uses HA gateway)
   if (haGateway) {
@@ -1646,28 +1523,6 @@ export function createHardwareAdapters(config) {
   };
 }
 
-/**
- * Create printer API router
- * @param {Object} config
- * @param {ThermalPrinterAdapter} config.printerAdapter
- * @param {Object} [config.logger]
- * @returns {express.Router}
- */
-export function createPrinterApiRouter(config) {
-  return createPrinterRouter(config);
-}
-
-/**
- * Create TTS API router
- * @param {Object} config
- * @param {TTSAdapter} config.ttsAdapter
- * @param {Object} [config.logger]
- * @returns {express.Router}
- */
-export function createTTSApiRouter(config) {
-  return createTTSRouter(config);
-}
-
 // =============================================================================
 // Gratitude Domain Bootstrap
 // =============================================================================
@@ -1719,116 +1574,19 @@ export function createGratitudeApiRouter(config) {
     logger = console
   } = config;
 
+  // Application service for household-related helpers
+  const gratitudeHouseholdService = new GratitudeHouseholdService({
+    configService,
+    gratitudeService: gratitudeServices.gratitudeService
+  });
+
   return createGratitudeRouter({
     gratitudeService: gratitudeServices.gratitudeService,
     configService,
+    gratitudeHouseholdService,
     broadcastToWebsockets,
     printerAdapter,
     createGratitudeCardCanvas,
-    logger
-  });
-}
-
-// =============================================================================
-// Journaling Domain Bootstrap
-// =============================================================================
-
-/**
- * Create journaling domain services
- * @param {Object} config
- * @param {Object} config.configService - ConfigService instance for path resolution
- * @param {Object} [config.logger] - Logger instance
- * @returns {Object} Journaling services
- */
-export function createJournalingServices(config) {
-  const { configService, logger = console } = config;
-
-  // Journal store (YAML persistence)
-  const journalStore = new YamlJournalDatastore({
-    configService,
-    logger
-  });
-
-  // Journal service
-  const journalService = new JournalService({
-    journalStore,
-    logger
-  });
-
-  return {
-    journalStore,
-    journalService
-  };
-}
-
-/**
- * Create journaling API router
- * @param {Object} config
- * @param {Object} config.journalingServices - Services from createJournalingServices
- * @param {Object} [config.logger] - Logger instance
- * @returns {express.Router}
- */
-export function createJournalingApiRouter(config) {
-  const {
-    journalingServices,
-    logger = console
-  } = config;
-
-  return createJournalingRouter({
-    journalService: journalingServices.journalService,
-    journalStore: journalingServices.journalStore,
-    logger
-  });
-}
-
-// =============================================================================
-// Nutrition Domain Bootstrap
-// =============================================================================
-
-/**
- * Create nutrition domain services
- * @param {Object} config
- * @param {Object} config.configService - ConfigService instance for path resolution
- * @param {Object} [config.logger] - Logger instance
- * @returns {Object} Nutrition services
- */
-export function createNutritionServices(config) {
-  const { configService, logger = console } = config;
-
-  // Food log store (YAML persistence)
-  const foodLogStore = new YamlFoodLogDatastore({
-    configService,
-    logger
-  });
-
-  // Food log service
-  const foodLogService = new FoodLogService({
-    foodLogStore,
-    logger
-  });
-
-  return {
-    foodLogStore,
-    foodLogService
-  };
-}
-
-/**
- * Create nutrition API router
- * @param {Object} config
- * @param {Object} config.nutritionServices - Services from createNutritionServices
- * @param {Object} [config.logger] - Logger instance
- * @returns {express.Router}
- */
-export function createNutritionApiRouter(config) {
-  const {
-    nutritionServices,
-    logger = console
-  } = config;
-
-  return createNutritionRouter({
-    foodLogService: nutritionServices.foodLogService,
-    foodLogStore: nutritionServices.foodLogStore,
     logger
   });
 }
@@ -1911,31 +1669,6 @@ export function createMessagingServices(config) {
     telegramAdapter,
     gmailAdapter
   };
-}
-
-/**
- * Create messaging API router
- * @param {Object} config
- * @param {Object} config.messagingServices - Services from createMessagingServices
- * @param {Object} config.configService - ConfigService for household lookup
- * @param {Object} [config.logger] - Logger instance
- * @returns {express.Router}
- */
-export function createMessagingApiRouter(config) {
-  const {
-    messagingServices,
-    configService,
-    logger = console
-  } = config;
-
-  return createMessagingRouter({
-    conversationService: messagingServices.conversationService,
-    notificationService: messagingServices.notificationService,
-    telegramAdapter: messagingServices.telegramAdapter,
-    gmailAdapter: messagingServices.gmailAdapter,
-    configService,
-    logger
-  });
 }
 
 // =============================================================================
@@ -2199,7 +1932,7 @@ export function createHomebotApiRouter(config) {
  * @param {Object} [config.logger] - Logger instance
  * @returns {Object} Nutribot services
  */
-export function createNutribotServices(config) {
+export async function createNutribotServices(config) {
   const {
     configService,
     userDataService,
@@ -2242,6 +1975,27 @@ export function createNutribotServices(config) {
     logger
   });
 
+  // Barcode image generator (for UPC photo status)
+  const { BarcodeImageAdapter } = await import('#adapters/nutribot/BarcodeImageAdapter.mjs');
+  const barcodeGenerator = new BarcodeImageAdapter({ logger });
+
+  // Build food icon list from available icon files on disk
+  const foodIconDir = configService.getPath('icons') + '/food';
+  let foodIconsString = 'apple banana bread cheese chicken default';
+  try {
+    const { readdirSync } = await import('fs');
+    const iconFiles = readdirSync(foodIconDir)
+      .filter(f => f.endsWith('.png'))
+      .map(f => f.replace('.png', ''))
+      .sort();
+    if (iconFiles.length > 0) {
+      foodIconsString = iconFiles.join(' ');
+      logger.info?.('nutribot.icons.loaded', { count: iconFiles.length, dir: foodIconDir });
+    }
+  } catch (e) {
+    logger.warn?.('nutribot.icons.readFailed', { dir: foodIconDir, error: e.message });
+  }
+
   // Create nutribot container with all dependencies
   // Note: Identity resolution (conversation ID -> username) is handled by
   // UserResolver in the adapter layer (NutribotInputRouter), not here.
@@ -2255,6 +2009,8 @@ export function createNutribotServices(config) {
     nutriCoachStore,
     conversationStateStore,
     reportRenderer,
+    barcodeGenerator,
+    foodIconsString,
     logger
   });
 
@@ -2321,54 +2077,6 @@ export function createNutribotApiRouter(config) {
   });
 }
 
-/**
- * Create nutribot services with DDD architecture
- * @param {Object} config
- * @param {Object} config.userDataService - UserDataService for YamlNutriListDatastore
- * @param {Object} config.telegram - { token, botId }
- * @param {Object} config.openai - { apiKey }
- * @param {Object} config.nutritionix - { appId, appKey }
- * @param {Object} [config.logger]
- * @returns {Object}
- */
-export function createNutribotDDDServices(config) {
-  const { userDataService, telegram, openai, nutritionix, logger = console } = config;
-
-  // Persistence adapters
-  const nutriLogStore = new YamlNutriLogDatastore({ dataService, logger });
-  const nutriListStore = new YamlNutriListDatastore({ userDataService, logger });
-
-  // External service adapters
-  const messagingGateway = telegram?.token
-    ? new TelegramMessagingAdapter({ token: telegram.token, logger })
-    : null;
-
-  const webhookParser = telegram?.botId
-    ? new TelegramWebhookParser({ botId: telegram.botId, logger })
-    : null;
-
-  const foodParser = openai?.apiKey
-    ? new OpenAIFoodParserAdapter({ apiKey: openai.apiKey, logger })
-    : null;
-
-  const nutritionLookup = nutritionix?.appId
-    ? new NutritionixAdapter({
-        appId: nutritionix.appId,
-        appKey: nutritionix.appKey,
-        logger
-      })
-    : null;
-
-  return {
-    nutriLogStore,
-    nutriListStore,
-    messagingGateway,
-    webhookParser,
-    foodParser,
-    nutritionLookup
-  };
-}
-
 // =============================================================================
 // Health Domain Bootstrap
 // =============================================================================
@@ -2398,8 +2106,8 @@ export function createHealthServices(config) {
     logger
   });
 
-  // Health aggregation service
-  const healthService = new HealthAggregationService({
+  // Health aggregation use case (application layer)
+  const healthService = new AggregateHealthUseCase({
     healthStore
   });
 
@@ -2725,12 +2433,8 @@ export function createHarvesterServices(config) {
     return google.gmail({ version: 'v1', auth: oAuth2Client });
   });
 
-  // Create AI gateway if not provided (for Shopping harvester)
-  const effectiveAiGateway = aiGateway || (() => {
-    const openaiKey = configService.getSecret('OPENAI_API_KEY');
-    if (!openaiKey || !httpClient) return null;
-    return new OpenAIAdapter({ apiKey: openaiKey }, { httpClient, logger });
-  })();
+  // AI gateway (provided by composition root)
+  const effectiveAiGateway = aiGateway ?? null;
 
   // Create harvester service
   const harvesterService = new HarvesterService({ configService, logger });
@@ -2899,18 +2603,8 @@ export function createHarvesterServices(config) {
     }));
   }
 
-  // Buxfer - prefer pre-loaded adapter, fall back to config-based creation
-  let buxferAdapter = preloadedBuxferAdapter ?? null;
-  if (!buxferAdapter && httpClient) {
-    const buxferAuth = configService?.getHouseholdAuth?.('buxfer') || configService?.getUserAuth?.('buxfer');
-    if (buxferAuth?.email && buxferAuth?.password) {
-      buxferAdapter = new BuxferAdapter(
-        { email: buxferAuth.email, password: buxferAuth.password },
-        { httpClient, logger }
-      );
-      logger.debug?.('harvester.buxferAdapter.fallback', { reason: 'Using config-based Buxfer adapter creation' });
-    }
-  }
+  // Buxfer adapter (provided by composition root)
+  const buxferAdapter = preloadedBuxferAdapter ?? null;
   if (buxferAdapter) {
     registerHarvester('buxfer', () => new BuxferHarvester({
       buxferAdapter,

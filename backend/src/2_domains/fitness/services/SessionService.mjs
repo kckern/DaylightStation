@@ -182,7 +182,7 @@ export class SessionService {
     // Optionally decode timeline series for API consumption
     if (options.decodeTimeline !== false) {
       const tz = options.timezone || session.timezone || 'UTC';
-      session.timeline = prepareTimelineForApi(session.timeline, tz);
+      session.replaceTimeline(prepareTimelineForApi(session.timeline, tz));
     }
 
     return session;
@@ -252,12 +252,12 @@ export class SessionService {
     });
 
     // Encode timeline series for storage
-    session.timeline = prepareTimelineForStorage(session.timeline);
+    session.replaceTimeline(prepareTimelineForStorage(session.timeline));
 
     // Merge with existing file to preserve snapshots
     const existing = await this.sessionStore.findById(sanitizedId, hid);
     if (existing?.snapshots) {
-      session.snapshots = existing.snapshots;
+      session.replaceSnapshots(existing.snapshots);
     }
 
     await this.sessionStore.save(session, hid);
@@ -283,7 +283,7 @@ export class SessionService {
     }
 
     session.end(endTime);
-    session.timeline = prepareTimelineForStorage(session.timeline);
+    session.replaceTimeline(prepareTimelineForStorage(session.timeline));
     await this.sessionStore.save(session, this.resolveHouseholdId(householdId));
     return session;
   }
@@ -333,11 +333,7 @@ export class SessionService {
     const session = existing ? Session.fromJSON(existing) : new Session({ sessionId: sanitizedId });
 
     // Remove duplicate by filename if exists
-    if (session.snapshots?.captures) {
-      session.snapshots.captures = session.snapshots.captures.filter(
-        entry => entry?.filename !== capture.filename
-      );
-    }
+    session.removeDuplicateSnapshot(capture.filename);
 
     session.addSnapshot(capture, timestamp);
     await this.sessionStore.save(session, hid);

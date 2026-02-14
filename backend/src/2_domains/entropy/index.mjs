@@ -10,5 +10,5 @@
 // Entities
 export * from './entities/index.mjs';
 
-// Services
-export * from './services/index.mjs';
+// Services — EntropyService is in the application layer (3_applications/entropy/services/)
+// See ./services/index.mjs for details.

@@ -191,6 +191,75 @@ export class TelegramResponseContext {
     };
   }
 
+  /**
+   * Create a photo-based status indicator with animated caption.
+   * Sends photo immediately, then cycles caption frames via editMessageCaption.
+   *
+   * @param {Buffer|string} imageSource - Photo buffer, URL, or file ID
+   * @param {string} initialCaption - Initial caption text
+   * @param {Object} [options] - Options
+   * @param {string[]} [options.frames] - Animation frames to append to caption
+   * @param {number} [options.interval=2000] - Animation interval in ms
+   * @returns {Promise<IStatusIndicator>}
+   */
+  async createPhotoStatusIndicator(imageSource, initialCaption, options = {}) {
+    const { frames = null, interval = 2000 } = options;
+    const shouldAnimate = Array.isArray(frames) && frames.length > 0;
+
+    // Send photo with initial caption
+    const initialDisplay = shouldAnimate ? `${initialCaption}${frames[0]}` : initialCaption;
+    const { messageId } = await this.sendPhoto(imageSource, initialDisplay, {});
+
+    let animationTimer = null;
+    let currentFrame = 0;
+    const baseCaption = initialCaption;
+
+    // Start caption animation if frames provided
+    if (shouldAnimate) {
+      animationTimer = setInterval(async () => {
+        currentFrame = (currentFrame + 1) % frames.length;
+        try {
+          await this.updateMessage(messageId, {
+            caption: `${baseCaption}${frames[currentFrame]}`,
+          });
+        } catch (e) {
+          // Ignore update failures during animation (message may be gone)
+        }
+      }, interval);
+    }
+
+    const cleanup = () => {
+      if (animationTimer) {
+        clearInterval(animationTimer);
+        animationTimer = null;
+      }
+    };
+
+    const ctx = this;
+
+    return {
+      messageId,
+
+      async finish(content, options = {}) {
+        cleanup();
+        await ctx.updateMessage(messageId, {
+          caption: content,
+          ...options,
+        });
+        return messageId;
+      },
+
+      async cancel() {
+        cleanup();
+        try {
+          await ctx.deleteMessage(messageId);
+        } catch (e) {
+          // Ignore - message may already be gone
+        }
+      },
+    };
+  }
+
   // ============ Additional Methods (Telegram-specific but useful) ============
 
   /**

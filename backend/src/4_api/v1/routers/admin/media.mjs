@@ -8,26 +8,19 @@
  * - GET  /freshvideo/sources - List configured freshvideo sources
  */
 import express from 'express';
-import path from 'path';
-import fs from 'fs';
-import { YtDlpAdapter } from '#adapters/media/YtDlpAdapter.mjs';
-import { loadYamlSafe, saveYaml, ensureDir } from '#system/utils/FileIO.mjs';
 
 /**
  * Create Admin Media Router
  *
  * @param {Object} config
- * @param {string} config.mediaPath - Base path for media storage
+ * @param {Object} config.mediaDownloadService - MediaDownloadService instance
  * @param {Function} config.loadFile - Function to load config files
  * @param {Object} [config.logger] - Logger instance
  * @returns {express.Router}
  */
 export function createAdminMediaRouter(config) {
-  const { mediaPath, loadFile, logger = console } = config;
+  const { mediaDownloadService, loadFile, logger = console } = config;
   const router = express.Router();
-
-  // Create YtDlpAdapter for metadata fetching
-  const ytDlpAdapter = new YtDlpAdapter({ logger });
 
   /**
    * GET /freshvideo/sources - List configured freshvideo sources
@@ -77,62 +70,27 @@ export function createAdminMediaRouter(config) {
         return res.status(404).json({ error: `Source not found: ${provider}` });
       }
 
-      // Transform to adapter format
-      const adapterSource = {
+      // Transform to service format
+      const serviceSource = {
         provider: source.shortcode,
         src: 'youtube',
         type: source.type?.toLowerCase() === 'channel' ? 'channel' : 'playlist',
         id: source.playlist
       };
 
-      // Determine provider directory
-      const providerDir = path.join(mediaPath, 'video', 'news', provider);
-      ensureDir(providerDir);
+      const result = await mediaDownloadService.fetchAndSaveMetadata(serviceSource);
 
-      const metadataPath = path.join(providerDir, 'metadata');
-      const thumbnailPath = path.join(providerDir, 'show.jpg');
-
-      // Check if metadata already exists
-      const existingMetadata = loadYamlSafe(metadataPath);
-      const hasThumbnail = fs.existsSync(thumbnailPath);
-
-      // Fetch channel metadata
-      logger.info?.('admin.media.metadata.fetching', { provider });
-      const metadata = await ytDlpAdapter.fetchChannelMetadata(adapterSource);
-
-      if (!metadata) {
-        return res.status(500).json({ error: 'Failed to fetch channel metadata' });
-      }
-
-      // Save metadata.yml
-      saveYaml(metadataPath, {
-        title: metadata.title,
-        description: metadata.description,
-        uploader: metadata.uploader,
-        thumbnailUrl: metadata.thumbnailUrl
-      });
-
-      logger.info?.('admin.media.metadata.saved', { provider, title: metadata.title });
-
-      // Download thumbnail if available and not already present
-      let thumbnailDownloaded = false;
-      if (metadata.thumbnailUrl && !hasThumbnail) {
-        thumbnailDownloaded = await ytDlpAdapter.downloadThumbnail(
-          metadata.thumbnailUrl,
-          thumbnailPath
-        );
-        if (thumbnailDownloaded) {
-          logger.info?.('admin.media.thumbnail.saved', { provider, path: thumbnailPath });
-        }
+      if (!result.ok) {
+        return res.status(500).json({ error: result.error });
       }
 
       res.json({
         ok: true,
         provider,
-        title: metadata.title,
-        thumbnailDownloaded,
-        metadataPath: `media/video/news/${provider}/metadata.yml`,
-        thumbnailPath: thumbnailDownloaded ? `media/video/news/${provider}/show.jpg` : null
+        title: result.title,
+        thumbnailDownloaded: result.thumbnailDownloaded,
+        metadataPath: result.metadataRelPath,
+        thumbnailPath: result.thumbnailRelPath
       });
 
     } catch (error) {
@@ -151,76 +109,17 @@ export function createAdminMediaRouter(config) {
         return res.json({ results: [], count: 0 });
       }
 
-      const results = [];
+      // Transform all sources to service format
+      const serviceSources = sources.map(source => ({
+        provider: source.shortcode,
+        src: 'youtube',
+        type: source.type?.toLowerCase() === 'channel' ? 'channel' : 'playlist',
+        id: source.playlist
+      }));
 
-      for (const source of sources) {
-        const provider = source.shortcode;
-        try {
-          const adapterSource = {
-            provider,
-            src: 'youtube',
-            type: source.type?.toLowerCase() === 'channel' ? 'channel' : 'playlist',
-            id: source.playlist
-          };
+      const { results, total, success } = await mediaDownloadService.fetchAndSaveMetadataAll(serviceSources);
 
-          const providerDir = path.join(mediaPath, 'video', 'news', provider);
-          ensureDir(providerDir);
-
-          const metadataPath = path.join(providerDir, 'metadata');
-          const thumbnailPath = path.join(providerDir, 'show.jpg');
-          const hasThumbnail = fs.existsSync(thumbnailPath);
-
-          const metadata = await ytDlpAdapter.fetchChannelMetadata(adapterSource);
-
-          if (metadata) {
-            saveYaml(metadataPath, {
-              title: metadata.title,
-              description: metadata.description,
-              uploader: metadata.uploader,
-              thumbnailUrl: metadata.thumbnailUrl
-            });
-
-            let thumbnailDownloaded = false;
-            if (metadata.thumbnailUrl && !hasThumbnail) {
-              thumbnailDownloaded = await ytDlpAdapter.downloadThumbnail(
-                metadata.thumbnailUrl,
-                thumbnailPath
-              );
-            }
-
-            results.push({
-              provider,
-              success: true,
-              title: metadata.title,
-              thumbnailDownloaded
-            });
-          } else {
-            results.push({
-              provider,
-              success: false,
-              error: 'Failed to fetch metadata'
-            });
-          }
-        } catch (err) {
-          results.push({
-            provider,
-            success: false,
-            error: err.message
-          });
-        }
-      }
-
-      const successCount = results.filter(r => r.success).length;
-      logger.info?.('admin.media.metadata.all.complete', {
-        total: results.length,
-        success: successCount
-      });
-
-      res.json({
-        results,
-        total: results.length,
-        success: successCount
-      });
+      res.json({ results, total, success });
 
     } catch (error) {
       logger.error?.('admin.media.metadata.all.error', { error: error.message });

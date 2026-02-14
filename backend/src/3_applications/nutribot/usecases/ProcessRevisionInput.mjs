@@ -61,6 +61,7 @@ export class ProcessRevisionInput {
       }
 
       const logUuid = state.flowState?.pendingLogUuid;
+      const originalMessageId = state.flowState?.originalMessageId;
 
       // 2. Delete user's revision message
       if (messageId) {
@@ -71,7 +72,20 @@ export class ProcessRevisionInput {
         }
       }
 
-      // 3. Load current log
+      // 3. Show processing indicator on original message
+      if (originalMessageId) {
+        try {
+          const processingButton = [[{ text: '⏳ Processing...', callback_data: 'noop' }]];
+          await this.#messagingGateway.updateMessage(conversationId, originalMessageId, {
+            choices: processingButton,
+            inline: true,
+          });
+        } catch (e) {
+          this.#logger.debug?.('processRevision.processingIndicator.failed', { error: e.message });
+        }
+      }
+
+      // 4. Load current log
       let nutriLog = null;
       if (this.#foodLogStore) {
         nutriLog = await this.#foodLogStore.findByUuid(logUuid, userId);
@@ -81,11 +95,11 @@ export class ProcessRevisionInput {
         return { success: false, error: 'Log not found' };
       }
 
-      // 4. Call AI to apply revisions
+      // 5. Call AI to apply revisions
       const prompt = this.#buildRevisionPrompt(nutriLog.items, text);
       const response = await this.#aiGateway.chat(prompt, { maxTokens: 1000 });
 
-      // 5. Parse revised items
+      // 6. Parse revised items
       const revisedItems = this.#parseRevisionResponse(response);
 
       if (revisedItems.length === 0) {
@@ -93,12 +107,12 @@ export class ProcessRevisionInput {
         return { success: false, error: 'Could not parse revision' };
       }
 
-      // 6. Update log with revised items
+      // 7. Update log with revised items
       if (this.#foodLogStore) {
         await this.#foodLogStore.updateItems(userId, logUuid, revisedItems);
       }
 
-      // 7. Update state back to confirmation
+      // 8. Update state back to confirmation
       if (this.#conversationStateStore) {
         const newState = {
           conversationId,
@@ -108,7 +122,7 @@ export class ProcessRevisionInput {
         await this.#conversationStateStore.set(conversationId, newState);
       }
 
-      // 8. Show revised items with buttons
+      // 9. Show revised items with buttons
       const logDate = nutriLog.meal?.date || nutriLog.date;
       const dateHeader = logDate ? formatDateHeader(logDate, { timezone: this.#getTimezone(), now: new Date() }) : '';
       const foodList = formatFoodList(revisedItems);
@@ -116,7 +130,6 @@ export class ProcessRevisionInput {
       const messageText = dateHeader ? `${dateHeader}\n\n${foodList}` : foodList;
 
       const isImageLog = nutriLog?.metadata?.source === 'image';
-      const originalMessageId = state.flowState?.originalMessageId;
       if (originalMessageId) {
         const updatePayload = isImageLog ? { caption: messageText, choices: buttons, inline: true } : { text: messageText, choices: buttons, inline: true };
         await this.#messagingGateway.updateMessage(conversationId, originalMessageId, updatePayload);
