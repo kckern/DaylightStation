@@ -1076,7 +1076,7 @@ export class GovernanceEngine {
       : [];
     const combinedRequirements = (() => {
       const list = [...unsatisfied];
-      if (challengeSnapshot && challengeSnapshot.status === 'pending') {
+      if (challengeSnapshot && (challengeSnapshot.status === 'pending' || challengeSnapshot.status === 'failed')) {
         const challengeRequirement = {
           zone: challengeSnapshot.zone || challengeSnapshot.zoneLabel,
           targetZoneId: challengeSnapshot.zone || challengeSnapshot.zoneLabel || null,
