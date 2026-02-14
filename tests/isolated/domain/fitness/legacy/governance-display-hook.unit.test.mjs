@@ -190,7 +190,7 @@ describe('resolveGovernanceDisplay', () => {
         requirements: [],
         videoLocked: true,
         challenge: {
-          id: 'ch-1', status: 'active', zone: 'warm',
+          id: 'ch-1', status: 'pending', zone: 'warm',
           missingUsers: ['user-1'], metUsers: [],
           requiredCount: 1, actualCount: 0
         },
