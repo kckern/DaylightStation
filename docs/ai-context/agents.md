@@ -13,6 +13,12 @@ Autonomous AI agents that use LLM reasoning for complex tasks. Unlike rule-based
 | **Tool** | Function an agent can call (JSON Schema parameters) |
 | **IAgentRuntime** | Port interface for LLM execution (framework-agnostic) |
 | **MastraAdapter** | Mastra SDK implementation of IAgentRuntime |
+| **BaseAgent** | Common lifecycle base class (memory, tools, assignments) |
+| **ToolFactory** | Grouped tool creation base class |
+| **WorkingMemoryState** | In-memory key-value store with TTL-based expiry |
+| **Assignment** | Structured multi-step workflow template method |
+| **OutputValidator** | JSON Schema validation with LLM self-correction retry |
+| **Scheduler** | In-process cron for triggering agent assignments |
 
 ## Architecture
 
@@ -34,8 +40,18 @@ Autonomous AI agents that use LLM reasoning for complex tasks. Unlike rule-based
 - `echo/EchoAgent.mjs` - Demo agent with echo and time tools
 - `index.mjs` - Barrel exports
 
-### Adapter Layer (`2_adapters/agents/`)
+### Framework (`3_applications/agents/framework/`)
+- `BaseAgent.mjs` - Common lifecycle (memory, tools, assignments)
+- `ToolFactory.mjs` - Grouped tool creation base class
+- `WorkingMemory.mjs` - WorkingMemoryState with TTL-based expiry
+- `Assignment.mjs` - Structured workflow template method
+- `OutputValidator.mjs` - JSON Schema validation with LLM retry
+- `Scheduler.mjs` - Cron-based assignment triggering
+- `ports/IWorkingMemory.mjs` - Memory persistence port
+
+### Adapter Layer (`1_adapters/agents/`)
 - `MastraAdapter.mjs` - Mastra SDK implementation
+- `YamlWorkingMemoryAdapter.mjs` - YAML file persistence for working memory
 - `index.mjs` - Exports
 
 ### API Layer (`4_api/routers/`)
@@ -45,8 +61,15 @@ Autonomous AI agents that use LLM reasoning for complex tasks. Unlike rule-based
 - `bootstrap.mjs` - `createAgentsApiRouter()` function
 
 ### Tests (`tests/unit/agents/`)
-- `AgentOrchestrator.test.mjs` - 10 tests
+- `AgentOrchestrator.test.mjs` - 12 tests
 - `EchoAgent.test.mjs` - 10 tests
+- `framework/WorkingMemoryState.test.mjs` - 17 tests
+- `framework/YamlWorkingMemoryAdapter.test.mjs` - 5 tests
+- `framework/ToolFactory.test.mjs` - 4 tests
+- `framework/OutputValidator.test.mjs` - 9 tests
+- `framework/Assignment.test.mjs` - 4 tests
+- `framework/BaseAgent.test.mjs` - 9 tests
+- `framework/Scheduler.test.mjs` - 6 tests
 
 ## API Endpoints
 
@@ -55,6 +78,8 @@ Autonomous AI agents that use LLM reasoning for complex tasks. Unlike rule-based
 | GET | `/agents` | List registered agents |
 | POST | `/agents/:agentId/run` | Run agent synchronously |
 | POST | `/agents/:agentId/run-background` | Run agent async (fire-and-forget) |
+| GET | `/agents/:agentId/assignments` | List agent assignments |
+| POST | `/agents/:agentId/assignments/:assignmentId/run` | Manually trigger assignment |
 
 ## Creating a New Agent
 
@@ -69,57 +94,39 @@ Autonomous AI agents that use LLM reasoning for complex tasks. Unlike rule-based
     └── index.mjs
 ```
 
-### 2. Define agent class
+### 2. Define agent class (extending BaseAgent)
 
 ```javascript
-// MyAgent.mjs
-import { systemPrompt } from './prompts/system.mjs';
+import { BaseAgent } from '../framework/BaseAgent.mjs';
+import { ToolFactory } from '../framework/ToolFactory.mjs';
 import { createTool } from '../ports/ITool.mjs';
 
-export class MyAgent {
-  static id = 'my-agent';
-  static description = 'Does something useful';
-
-  #agentRuntime;
-  #logger;
-
-  constructor(deps) {
-    if (!deps.agentRuntime) throw new Error('agentRuntime is required');
-    this.#agentRuntime = deps.agentRuntime;
-    this.#logger = deps.logger || console;
-  }
-
-  getTools() {
+class MyToolFactory extends ToolFactory {
+  static domain = 'my-domain';
+  createTools() {
     return [
       createTool({
         name: 'my_tool',
         description: 'Does a thing',
         parameters: {
           type: 'object',
-          properties: {
-            param: { type: 'string', description: 'Input param' }
-          },
+          properties: { param: { type: 'string' } },
           required: ['param']
         },
-        execute: async ({ param }, context) => {
-          return { result: `Processed: ${param}` };
-        }
+        execute: async ({ param }) => ({ result: `Processed: ${param}` })
       })
     ];
   }
+}
 
-  getSystemPrompt() {
-    return systemPrompt;
-  }
+export class MyAgent extends BaseAgent {
+  static id = 'my-agent';
+  static description = 'Does something useful';
 
-  async run(input, options = {}) {
-    return this.#agentRuntime.execute({
-      agent: this,
-      input,
-      tools: this.getTools(),
-      systemPrompt: this.getSystemPrompt(),
-      ...options
-    });
+  getSystemPrompt() { return 'You are a helpful agent.'; }
+
+  registerTools() {
+    this.addToolFactory(new MyToolFactory(this.deps));
   }
 }
 ```
@@ -149,4 +156,6 @@ curl -X POST http://localhost:3112/agents/echo/run \
 ## Related Docs
 
 - Design: `docs/plans/2026-01-26-ai-agents-architecture-design.md`
+- Agent Framework Design: `docs/roadmap/2026-02-14-fitness-dashboard-health-agent-design.md`
+- Implementation Plan: `docs/plans/2026-02-14-agent-framework.md`
 - Smoke test: `docs/runbooks/agents-smoke-test.md`
