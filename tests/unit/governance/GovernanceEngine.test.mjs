@@ -629,4 +629,107 @@ describe('GovernanceEngine', () => {
       expect(engine.state.isGoverned).toBe(true);
     });
   });
+
+  describe('_evaluateChallenges() minParticipants guard', () => {
+    let engine;
+
+    beforeEach(() => {
+      jest.useFakeTimers();
+      engine = new GovernanceEngine({
+        roster: [],
+        zoneProfileStore: null,
+        snapshot: {
+          zoneConfig: [
+            { id: 'cool', name: 'Cool', color: '#94a3b8' },
+            { id: 'active', name: 'Active', color: '#22c55e' },
+            { id: 'warm', name: 'Warm Up', color: '#eab308' },
+          ]
+        }
+      });
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('should NOT start a challenge when totalCount < minParticipants', () => {
+      engine.configure({
+        governed_labels: ['exercise'],
+        grace_period_seconds: 30,
+        policies: {
+          fitness: {
+            zones: ['active'],
+            rule: 'all_above',
+            challenges: [{
+              interval_range: [30, 60],
+              minParticipants: 2,
+              selections: [
+                { zone: 'warm', min_participants: 'some', time_allowed: 5, label: 'some warm' }
+              ]
+            }]
+          }
+        }
+      });
+
+      const activeParticipants = ['alan'];
+      const userZoneMap = { alan: 'active' };
+      const zoneRankMap = { cool: 0, active: 1, warm: 2 };
+      const zoneInfoMap = { cool: { name: 'Cool' }, active: { name: 'Active' }, warm: { name: 'Warm Up' } };
+      const totalCount = 1;
+
+      const activePolicy = engine.policies[0];
+
+      // Must be in unlocked phase for challenges to trigger
+      engine.phase = 'unlocked';
+
+      // Force a challenge to be "ready to start" by setting nextChallengeAt in the past
+      engine.challengeState.nextChallengeAt = Date.now() - 1000;
+      engine.challengeState.nextChallenge = { selectionLabel: 'some warm', zone: 'warm' };
+
+      engine._evaluateChallenges(activePolicy, activeParticipants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount);
+
+      // Challenge should NOT have started
+      expect(engine.challengeState.activeChallenge).toBeNull();
+      // Next challenge scheduling should be cleared
+      expect(engine.challengeState.nextChallengeAt).toBeNull();
+    });
+
+    it('should allow challenge when totalCount >= minParticipants', () => {
+      engine.configure({
+        governed_labels: ['exercise'],
+        grace_period_seconds: 30,
+        policies: {
+          fitness: {
+            zones: ['active'],
+            rule: 'all_above',
+            challenges: [{
+              interval_range: [30, 60],
+              minParticipants: 2,
+              selections: [
+                { zone: 'warm', min_participants: 'some', time_allowed: 5, label: 'some warm' }
+              ]
+            }]
+          }
+        }
+      });
+
+      const activePolicy = engine.policies[0];
+
+      // Must be in unlocked phase for challenges to trigger
+      engine.phase = 'unlocked';
+
+      const activeParticipants = ['alan', 'bob'];
+      const userZoneMap = { alan: 'active', bob: 'active' };
+      const zoneRankMap = { cool: 0, active: 1, warm: 2 };
+      const zoneInfoMap = { cool: { name: 'Cool' }, active: { name: 'Active' }, warm: { name: 'Warm Up' } };
+      const totalCount = 2;
+
+      engine._evaluateChallenges(activePolicy, activeParticipants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount);
+
+      // Should NOT have cleared challenge state — challenge evaluation proceeds
+      const scheduled = engine.challengeState.nextChallengeAt != null
+        || engine.challengeState.activeChallenge != null;
+      expect(scheduled).toBe(true);
+    });
+  });
 });
