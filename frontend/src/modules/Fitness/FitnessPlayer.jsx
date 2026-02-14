@@ -157,12 +157,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     sidebarSizeMode,
     videoPlayerPaused,
     setVideoPlayerPaused,
-    governance,
     setGovernanceMedia,
-    governedLabels,
-    governedTypes,
-    governedLabelSet: contextGovernedLabelSet,
-    governedTypeSet: contextGovernedTypeSet,
     governanceState,
     plexConfig,
     fitnessSessionInstance,
@@ -276,25 +271,6 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     return classes.join(' ');
   }, [governanceState?.status]);
 
-  const governedLabelSet = useMemo(() => {
-    if (contextGovernedLabelSet instanceof Set) return contextGovernedLabelSet;
-    if (!Array.isArray(governedLabels) || !governedLabels.length) return new Set();
-    return new Set(
-      governedLabels
-        .map((label) => (typeof label === 'string' ? label.trim().toLowerCase() : ''))
-        .filter(Boolean)
-    );
-  }, [contextGovernedLabelSet, governedLabels]);
-
-  const governedTypeSet = useMemo(() => {
-    if (contextGovernedTypeSet instanceof Set) return contextGovernedTypeSet;
-    if (!Array.isArray(governedTypes) || !governedTypes.length) return new Set();
-    return new Set(
-      governedTypes
-        .map((type) => (typeof type === 'string' ? type.trim().toLowerCase() : ''))
-        .filter(Boolean)
-    );
-  }, [contextGovernedTypeSet, governedTypes]);
 
   const pauseDecision = useMemo(() => resolvePause({
     governance: { locked: Boolean(governanceState?.videoLocked) },
@@ -978,22 +954,10 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   const playObject = useMemo(() => {
     if (!enhancedCurrentItem) return null;
     
-    // Check if this media is governed
-    const rawLabels = Array.isArray(currentItem?.labels) ? currentItem.labels : [];
-    const normalizedLabels = rawLabels
-      .map((label) => (typeof label === 'string' ? label.trim().toLowerCase() : ''))
-      .filter(Boolean);
-    const labelGoverned = governedLabelSet.size > 0 && normalizedLabels.some((label) => governedLabelSet.has(label));
-    const normalizedType = typeof currentItem?.type === 'string'
-      ? currentItem.type.trim().toLowerCase()
-      : (typeof enhancedCurrentItem?.type === 'string' ? enhancedCurrentItem.type.trim().toLowerCase() : '');
-    const typeGoverned = governedTypeSet.size > 0 && normalizedType ? governedTypeSet.has(normalizedType) : false;
-    const mediaGoverned = labelGoverned || typeGoverned;
-    
-    // Only autoplay if:
-    // 1. Media is not governed, OR
-    // 2. Media is governed AND governance is unlocked or warning
-    const canAutoplay = !mediaGoverned || (governance === 'unlocked' || governance === 'warning');
+    // SSoT: GovernanceEngine is sole authority for lock decisions.
+    // videoLocked=true when media is governed AND phase is pending/locked.
+    // Autoplay is allowed when video is not locked (ungoverned, unlocked, or warning phase).
+    const canAutoplay = !governanceState?.videoLocked;
     const stableGuid = String(
       enhancedCurrentItem.guid
         || enhancedCurrentItem.contentId
@@ -1021,7 +985,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       continuous: false,
       autoplay: canAutoplay
     };
-  }, [enhancedCurrentItem, videoVolume.volume, videoVolume.volumeRef, currentItem?.playbackRate, currentItem?.labels, currentItem?.type, governedLabelSet, governedTypeSet, governance]);
+  }, [enhancedCurrentItem, videoVolume.volume, videoVolume.volumeRef, currentItem?.playbackRate, governanceState?.videoLocked]);
 
   const autoplayEnabled = Boolean(playObject?.autoplay);
 
