@@ -321,4 +321,74 @@ describe('resolveGovernanceDisplay', () => {
     expect(row.progress).toBe(0.3);
     expect(row.intermediateZones).toHaveLength(0);
   });
+
+  test('includes failed challenge missingUsers in lock screen rows', () => {
+    const displayMap = makeDisplayMap([
+      {
+        id: 'alan', displayName: 'Alan', avatarSrc: '/img/alan.jpg',
+        heartRate: 134, zoneId: 'active', zoneName: 'Active', zoneColor: '#22c55e',
+        progress: 0.5, zoneSequence: FULL_ZONE_SEQUENCE, targetHeartRate: 130
+      }
+    ]);
+
+    const result = resolveGovernanceDisplay(
+      {
+        isGoverned: true,
+        status: 'locked',
+        videoLocked: true,
+        requirements: [
+          { zone: 'active', rule: 'all_above', missingUsers: [], satisfied: true }
+        ],
+        challenge: {
+          status: 'failed',
+          zone: 'warm',
+          missingUsers: ['alan'],
+          metUsers: [],
+          requiredCount: 1,
+          actualCount: 0,
+          selectionLabel: 'some warm'
+        }
+      },
+      displayMap,
+      ZONE_META
+    );
+
+    expect(result.show).toBe(true);
+    expect(result.rows.length).toBe(1);
+    expect(result.rows[0].userId).toBe('alan');
+    expect(result.rows[0].targetZone.id).toBe('warm');
+  });
+
+  test('includes pending challenge missingUsers (existing behavior preserved)', () => {
+    const displayMap = makeDisplayMap([
+      {
+        id: 'alan', displayName: 'Alan', avatarSrc: '/img/alan.jpg',
+        heartRate: 134, zoneId: 'active', zoneName: 'Active', zoneColor: '#22c55e',
+        progress: 0.5, zoneSequence: FULL_ZONE_SEQUENCE, targetHeartRate: 130
+      }
+    ]);
+
+    const result = resolveGovernanceDisplay(
+      {
+        isGoverned: true,
+        status: 'pending',
+        requirements: [],
+        challenge: {
+          status: 'pending',
+          zone: 'warm',
+          missingUsers: ['alan'],
+          metUsers: [],
+          requiredCount: 1,
+          actualCount: 0,
+          selectionLabel: 'some warm'
+        }
+      },
+      displayMap,
+      ZONE_META
+    );
+
+    expect(result.show).toBe(true);
+    expect(result.rows.length).toBe(1);
+    expect(result.rows[0].userId).toBe('alan');
+  });
 });
