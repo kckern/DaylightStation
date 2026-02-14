@@ -1,6 +1,8 @@
 import { useMemo } from 'react';
+import { DaylightMediaPath } from '../../../lib/api.mjs';
+import { calculateZoneProgressTowardsTarget } from '../../../hooks/fitness/types.js';
 
-const FALLBACK_AVATAR = '/static/img/users/user';
+const FALLBACK_AVATAR = DaylightMediaPath('/static/img/users/user');
 const normalize = (v) => (typeof v === 'string' ? v.trim().toLowerCase() : '');
 
 /**
@@ -55,6 +57,26 @@ export function resolveGovernanceDisplay(govState, displayMap, zoneMeta, options
     const currentZoneId = display?.zoneId || null;
     const currentZone = currentZoneId ? (zoneMap[currentZoneId] || null) : null;
 
+    // Compute target-aware progress (full span to governance target)
+    const zoneSequence = display?.zoneSequence || [];
+    const currentZoneIndex = zoneSequence.findIndex(z => z.id === currentZoneId);
+    const targetResult = (zoneSequence.length > 0 && currentZoneIndex >= 0)
+      ? calculateZoneProgressTowardsTarget({
+          snapshot: {
+            zoneSequence,
+            currentZoneIndex,
+            heartRate: display?.heartRate ?? 0
+          },
+          targetZoneId
+        })
+      : null;
+
+    // Use target-aware progress if available, otherwise fall back to display map progress
+    const resolvedProgress = (targetResult && targetResult.progress != null)
+      ? targetResult.progress
+      : (display?.progress ?? null);
+    const intermediateZones = targetResult?.intermediateZones || [];
+
     const resolvedName = (preferGroupLabels && display?.groupLabel)
       ? display.groupLabel
       : (display?.displayName || userId);
@@ -66,8 +88,9 @@ export function resolveGovernanceDisplay(govState, displayMap, zoneMeta, options
       heartRate: display?.heartRate ?? null,
       currentZone,
       targetZone,
-      zoneSequence: display?.zoneSequence || [],
-      progress: display?.progress ?? null,
+      zoneSequence,
+      progress: resolvedProgress,
+      intermediateZones,
       targetHeartRate: display?.targetHeartRate ?? null,
       groupLabel: display?.groupLabel || null
     });
