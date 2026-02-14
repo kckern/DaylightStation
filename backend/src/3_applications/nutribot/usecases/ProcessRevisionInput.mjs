@@ -130,7 +130,6 @@ export class ProcessRevisionInput {
       const messageText = dateHeader ? `${dateHeader}\n\n${foodList}` : foodList;
 
       const isImageLog = nutriLog?.metadata?.source === 'image';
-      const originalMessageId = state.flowState?.originalMessageId;
       if (originalMessageId) {
         const updatePayload = isImageLog ? { caption: messageText, choices: buttons, inline: true } : { text: messageText, choices: buttons, inline: true };
         await this.#messagingGateway.updateMessage(conversationId, originalMessageId, updatePayload);
