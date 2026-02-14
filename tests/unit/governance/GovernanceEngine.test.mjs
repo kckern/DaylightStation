@@ -431,4 +431,57 @@ describe('GovernanceEngine', () => {
       expect(engine.challengeState.videoLocked).toBe(false);
     });
   });
+
+  describe('videoLocked in _composeState()', () => {
+    let engine;
+
+    beforeEach(() => {
+      const mockSession = {
+        roster: ['alice'],
+        zoneProfileStore: null,
+        snapshot: {
+          zoneConfig: [
+            { id: 'active', name: 'Active', color: '#ff0000' },
+          ]
+        }
+      };
+      engine = new GovernanceEngine(mockSession);
+      engine.configure({
+        governed_labels: ['kidsfun'],
+        grace_period_seconds: 30
+      }, [], {});
+    });
+
+    it('should set videoLocked=true when media is governed and phase is pending', () => {
+      engine.setMedia({ id: 'plex:603409', labels: ['kidsfun'], type: 'episode' });
+      engine.phase = 'pending';
+
+      const state = engine._composeState();
+      expect(state.videoLocked).toBe(true);
+    });
+
+    it('should set videoLocked=true when media is governed and phase is locked', () => {
+      engine.setMedia({ id: 'plex:603409', labels: ['kidsfun'], type: 'episode' });
+      engine.phase = 'locked';
+
+      const state = engine._composeState();
+      expect(state.videoLocked).toBe(true);
+    });
+
+    it('should NOT set videoLocked when media is governed and phase is unlocked', () => {
+      engine.setMedia({ id: 'plex:603409', labels: ['kidsfun'], type: 'episode' });
+      engine.phase = 'unlocked';
+
+      const state = engine._composeState();
+      expect(state.videoLocked).toBe(false);
+    });
+
+    it('should NOT set videoLocked when media is NOT governed and phase is pending', () => {
+      engine.setMedia({ id: 'plex:999', labels: ['documentary'], type: 'movie' });
+      engine.phase = 'pending';
+
+      const state = engine._composeState();
+      expect(state.videoLocked).toBe(false);
+    });
+  });
 });
