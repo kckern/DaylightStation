@@ -6,5 +6,8 @@ export { AgentOrchestrator } from './AgentOrchestrator.mjs';
 // Ports
 export * from './ports/index.mjs';
 
+// Framework
+export * from './framework/index.mjs';
+
 // Agents
 export { EchoAgent } from './echo/index.mjs';
