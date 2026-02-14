@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import FitnessChartApp from '../FitnessChartApp/FitnessChartApp.jsx';
 import './SessionBrowserApp.scss';
 
 const Calendar = ({ year, month, selectedDate, activeDates, onSelectDate, onMonthChange }) => {
@@ -190,33 +191,12 @@ const SessionBrowserApp = () => {
               {detailLoading ? (
                 <div className="loading">Loading details...</div>
               ) : sessionDetail ? (
-                <div>
-                  <header className="detail-header">
-                    <h2>Session Details</h2>
-                    <span className="session-id">{sessionDetail.sessionId}</span>
-                  </header>
-                  
-                  <div className="detail-grid">
-                      <div className="detail-item">
-                          <label>Start Time</label>
-                          <div className="value">{new Date(sessionDetail.startTime).toLocaleString()}</div>
-                      </div>
-                      <div className="detail-item">
-                          <label>Duration</label>
-                          <div className="value">{formatDuration(sessionDetail.durationMs)}</div>
-                      </div>
-                      <div className="detail-item">
-                          <label>Participants</label>
-                          <div className="value">{sessionDetail.roster?.length || 0}</div>
-                      </div>
-                      <div className="detail-item">
-                          <label>Total Ticks</label>
-                          <div className="value">{sessionDetail.timeline?.timebase?.tickCount || 0}</div>
-                      </div>
-                  </div>
-
-                  <h4>Raw Data Preview</h4>
-                  <pre>{JSON.stringify(sessionDetail, null, 2)}</pre>
+                <div className="session-detail__content">
+                  <FitnessChartApp
+                    sessionData={sessionDetail}
+                    mode="standalone"
+                    onClose={() => setSelectedSessionId(null)}
+                  />
                 </div>
               ) : (
                 <div className="error">Failed to load details</div>
