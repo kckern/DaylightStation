@@ -153,13 +153,13 @@ export class ZoneProfileStore {
     if (userId && normalizedZoneConfig.length > 0) {
       const warmZone = normalizedZoneConfig.find(z => z.id === 'warm' || z.name === 'Warm');
       const logger = getLogger();
-      if (logger?.warn) {
-        logger.warn('zoneprofilestore.build_profile', {
+      if (logger?.sampled) {
+        logger.sampled('zoneprofilestore.build_profile', {
           userId,
           hasCustomZones,
           warmThreshold: warmZone?.min ?? null,
           zoneCount: normalizedZoneConfig.length
-        });
+        }, { maxPerMinute: 5 });
       }
     }
 
