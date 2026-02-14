@@ -494,24 +494,14 @@ dash-video {
       pointer-events: none; /* Allow clicks to pass through except for the close button */
     }
 
-    &.governance-filter-warning {
-      // FPS FIX: No filters on video elements - all visual effects via overlay only
-      // This prevents GPU from filtering every decoded video frame
-      // See: docs/_wip/bugs/2026-02-02-fps-degradation-governance-warning.md
-
-      &::before {
-        content: '';
-        position: absolute;
-        inset: 0;
-        // Warm sepia-like tint via semi-transparent overlay
-        background: rgba(139, 92, 42, 0.25);
-        // Slight blur for "hazy warning" effect
-        backdrop-filter: blur(2px);
-        -webkit-backdrop-filter: blur(2px);
-        z-index: 5;
-        pointer-events: none;
-        transition: background 0.3s ease, backdrop-filter 0.3s ease;
-      }
+    .governance-warning-scrim {
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(4px) grayscale(1) sepia(0.4);
+      -webkit-backdrop-filter: blur(4px) grayscale(1) sepia(0.4);
+      z-index: 5;
+      pointer-events: none;
     }
 
     &.governance-filter-critical {

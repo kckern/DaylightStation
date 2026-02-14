@@ -257,19 +257,18 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
 
   renderCountRef.current += 1;
 
+  const govStatus = typeof governanceState?.status === 'string' ? governanceState.status.toLowerCase() : '';
+
   const playerContentClassName = useMemo(() => {
     const classes = ['fitness-player-content'];
-    const govStatus = typeof governanceState?.status === 'string' ? governanceState.status.toLowerCase() : '';
-    if (govStatus === 'warning') {
-      classes.push('governance-filter-warning');
-    } else if (govStatus === 'locked') {
+    if (govStatus === 'locked') {
       classes.push('governance-filter-critical');
     }
     if (govStatus) {
       classes.push(`governance-status-${govStatus}`);
     }
     return classes.join(' ');
-  }, [governanceState?.status]);
+  }, [govStatus]);
 
 
   const pauseDecision = useMemo(() => resolvePause({
@@ -1499,6 +1498,9 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       <div className="fitness-player-video-host">
         {hasActiveItem ? videoContent : null}
       </div>
+      {govStatus === 'warning' && (
+        <div className="governance-warning-scrim" aria-hidden="true" />
+      )}
     </div>
   );
 
