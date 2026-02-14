@@ -840,6 +840,12 @@
           }
         }
 
+        &.locked {
+          filter: grayscale(1);
+          opacity: 0.5;
+          pointer-events: none;
+        }
+
         /* Hover removed */
 
         &.selected:not(.watched):not(.in-progress) {

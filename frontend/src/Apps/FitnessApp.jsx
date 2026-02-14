@@ -626,6 +626,16 @@ const FitnessApp = () => {
     return Array.isArray(src) ? src : [];
   }, [fitnessConfiguration, contentSource]);
 
+  // Derive sequential labels config for route-based play blocking
+  const sequentialLabelSet = useMemo(() => {
+    const root = fitnessConfiguration?.fitness || fitnessConfiguration || {};
+    const contentConfig = root?.content || root?.plex || root?.[contentSource] || {};
+    const labels = contentConfig?.sequential_labels;
+    return Array.isArray(labels)
+      ? new Set(labels.map(l => l.toLowerCase()))
+      : new Set();
+  }, [fitnessConfiguration, contentSource]);
+
   // Handle /fitness/play/:id route
   const handlePlayFromUrl = async (episodeId) => {
     try {
@@ -648,6 +658,22 @@ const FitnessApp = () => {
         setFitnessPlayQueue([fallbackItem]);
         logger.info('fitness-play-url-started-fallback', { episodeId, contentSource });
         return;
+      }
+
+      // Block route-based play for sequential shows — redirect to show UI
+      const episodeLabels = (response.labels || response.metadata?.labels || [])
+        .map(l => typeof l === 'string' ? l.toLowerCase() : '');
+      const isInSequentialShow = sequentialLabelSet.size > 0 &&
+        episodeLabels.some(l => sequentialLabelSet.has(l));
+      if (isInSequentialShow) {
+        const showId = response.metadata?.grandparentId || response.metadata?.grandparentRatingKey;
+        if (showId) {
+          logger.info('fitness-play-url-sequential-blocked', { episodeId, showId });
+          setSelectedShow(String(showId));
+          setCurrentView('show');
+          navigate(`/fitness/show/${showId}`, { replace: true });
+          return;
+        }
       }
 
       // Build queue item from API response (includes labels for governance)

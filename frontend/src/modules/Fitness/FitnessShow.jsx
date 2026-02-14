@@ -644,6 +644,44 @@ const FitnessShow = ({ showId: rawShowId, onBack, viewportRef, setFitnessPlayQue
     return info.labels.some(label => resumableLabels.has(label.toLowerCase()));
   }, [info, resumableLabels]);
 
+  const sequentialLabels = useMemo(() => {
+    const labels = plexConfig?.sequential_labels;
+    return Array.isArray(labels)
+      ? new Set(labels.map(l => l.toLowerCase()))
+      : new Set();
+  }, [plexConfig]);
+
+  const isSequential = useMemo(() => {
+    if (!info?.labels) return false;
+    return info.labels.some(label => sequentialLabels.has(label.toLowerCase()));
+  }, [info, sequentialLabels]);
+
+  // Compute set of locked episode IDs for sequential shows (linear across all seasons)
+  const lockedEpisodeIds = useMemo(() => {
+    if (!isSequential) return new Set();
+    // Sort all items by season number then itemIndex to get global order
+    const sorted = [...items].sort((a, b) => {
+      const sa = seasons.find(s => String(s.id) === String(a.parentId));
+      const sb = seasons.find(s => String(s.id) === String(b.parentId));
+      const sn = (sa?.number ?? 0) - (sb?.number ?? 0);
+      if (sn !== 0) return sn;
+      const ai = Number.isFinite(a.itemIndex) ? a.itemIndex : Infinity;
+      const bi = Number.isFinite(b.itemIndex) ? b.itemIndex : Infinity;
+      return ai - bi;
+    });
+    const locked = new Set();
+    let gateClosed = false;
+    for (const ep of sorted) {
+      if (gateClosed) {
+        locked.add(ep.plex || ep.id);
+      }
+      if (!gateClosed && !(ep.isWatched ?? false)) {
+        gateClosed = true;
+      }
+    }
+    return locked;
+  }, [isSequential, items, seasons]);
+
   const governedLabelSet = useMemo(() => {
     if (contextGovernedLabelSet instanceof Set) return contextGovernedLabelSet;
     if (!Array.isArray(governedLabels) || !governedLabels.length) return new Set();
@@ -1110,11 +1148,12 @@ const FitnessShow = ({ showId: rawShowId, onBack, viewportRef, setFitnessPlayQue
                           const episodeNumber = Number.isFinite(episode?.itemIndex)
                             ? episode.itemIndex
                             : null;
+                          const isLocked = lockedEpisodeIds.has(episode.plex || episode.id);
 
                           return (
                           <div
                             key={episode.plex || index}
-                            className={`episode-card vertical ${selectedEpisode?.plex === episode.plex ? 'selected' : ''} ${isWatched ? 'watched' : ''} ${showProgressBar ? 'in-progress' : ''}`}
+                            className={`episode-card vertical ${selectedEpisode?.plex === episode.plex ? 'selected' : ''} ${isWatched ? 'watched' : ''} ${showProgressBar ? 'in-progress' : ''} ${isLocked ? 'locked' : ''}`}
                             title={episode.label}
                           >
                             {episode.image && (
@@ -1122,8 +1161,8 @@ const FitnessShow = ({ showId: rawShowId, onBack, viewportRef, setFitnessPlayQue
                                 className="episode-thumbnail"
                                 data-testid="episode-thumbnail"
                                 data-plex-id={episode.plex || episode.id}
-                                onPointerDown={(e) => handlePlayEpisode(episode, e.currentTarget.closest('.episode-card'), e)}
-                                onClick={(e) => handlePlayEpisode(episode, e.currentTarget.closest('.episode-card'), e)}
+                                onPointerDown={isLocked ? undefined : (e) => handlePlayEpisode(episode, e.currentTarget.closest('.episode-card'), e)}
+                                onClick={isLocked ? undefined : (e) => handlePlayEpisode(episode, e.currentTarget.closest('.episode-card'), e)}
                               >
                                 <img
                                   src={normalizeImageUrl(episode.image)}
@@ -1158,10 +1197,10 @@ const FitnessShow = ({ showId: rawShowId, onBack, viewportRef, setFitnessPlayQue
                                 )}
                               </div>
                             )}
-                            <div 
-                              className="episode-title" 
+                            <div
+                              className="episode-title"
                               aria-label={episode.label}
-                              onPointerDown={(e) => {
+                              onPointerDown={isLocked ? undefined : (e) => {
                                 const card = e.currentTarget.closest('.episode-card');
                                 const { didScroll } = scrollIntoViewIfNeeded(card, { axis: 'y', margin: 24 });
                                 if (didScroll) return; // require second tap when visible
@@ -1171,11 +1210,15 @@ const FitnessShow = ({ showId: rawShowId, onBack, viewportRef, setFitnessPlayQue
                               }}
                             >
                               <div className="episode-title-flex">
-                                {typeof episodeNumber === 'number' && (
+                                {isLocked ? (
+                                  <span className="episode-pill episode-pill-locked" aria-hidden="true">
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M18 10h-1V7c0-2.76-2.24-5-5-5S7 4.24 7 7v3H6c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2v-8c0-1.1-.9-2-2-2ZM12 17c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2Zm3-7H9V7c0-1.66 1.34-3 3-3s3 1.34 3 3v3Z"/></svg>
+                                  </span>
+                                ) : typeof episodeNumber === 'number' ? (
                                   <span className="episode-pill" aria-hidden="true">
                                     {episodeNumber}
                                   </span>
-                                )}
+                                ) : null}
                                 <span className="episode-title-text">{episode.label}</span>
                               </div>
                             </div>

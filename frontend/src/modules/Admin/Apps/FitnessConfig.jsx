@@ -212,6 +212,12 @@ function PlexSection({ data, update }) {
           placeholder="Add label..."
         />
         <TagsInput
+          label="Sequential Labels"
+          value={plex.sequential_labels || []}
+          onChange={(vals) => update('plex.sequential_labels', vals)}
+          placeholder="Add label..."
+        />
+        <TagsInput
           label="Governed Types"
           value={plex.governed_types || []}
           onChange={(vals) => update('plex.governed_types', vals)}
