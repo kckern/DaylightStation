@@ -483,5 +483,126 @@ describe('GovernanceEngine', () => {
       const state = engine._composeState();
       expect(state.videoLocked).toBe(false);
     });
+
+    it('should set videoLocked=true when media is governed and phase is null (idle)', () => {
+      engine.setMedia({ id: 'plex:603409', labels: ['kidsfun'], type: 'episode' });
+      engine.phase = null;
+
+      const state = engine._composeState();
+      expect(state.videoLocked).toBe(true);
+    });
+
+    it('should NOT set videoLocked when media is governed and phase is warning', () => {
+      engine.setMedia({ id: 'plex:603409', labels: ['kidsfun'], type: 'episode' });
+      engine.phase = 'warning';
+
+      const state = engine._composeState();
+      expect(state.videoLocked).toBe(false);
+    });
+
+    it('should NOT set videoLocked when media is NOT governed and phase is null', () => {
+      engine.setMedia({ id: 'plex:999', labels: ['documentary'], type: 'movie' });
+      engine.phase = null;
+
+      const state = engine._composeState();
+      expect(state.videoLocked).toBe(false);
+    });
+  });
+
+  describe('state.videoLocked as autoplay SSoT', () => {
+    // These tests confirm videoLocked is the correct single source for autoplay decisions.
+    // FitnessPlayer.playObject should use !governanceState.videoLocked for canAutoplay
+    // instead of locally re-deriving mediaGoverned from labels/types.
+
+    let engine;
+    // Mutable zone so individual tests can control what zoneProfileStore returns
+    let currentZone = 'cool';
+    const mockSession = {
+      roster: [{ id: 'user1', isActive: true, heartRate: 80 }],
+      zoneProfileStore: {
+        getProfile: () => ({ currentZoneId: currentZone })
+      },
+      snapshot: {
+        zoneConfig: [
+          { id: 'cool', name: 'Cool', color: '#00f' },
+          { id: 'active', name: 'Active', color: '#f00' }
+        ]
+      }
+    };
+
+    beforeEach(() => {
+      currentZone = 'cool'; // Reset to default
+      engine = new GovernanceEngine(mockSession);
+      engine.configure({
+        governed_labels: ['exercise'],
+        governed_types: ['workout'],
+        grace_period_seconds: 30,
+        policies: {
+          default: {
+            min_participants: 1,
+            base_requirement: [{ active: 'all' }],
+            challenges: []
+          }
+        }
+      }, [], {});
+    });
+
+    it('videoLocked=true when governed media in pending phase (no HR data)', () => {
+      engine.setMedia({ id: 'test-1', labels: ['exercise'], type: 'video' });
+      engine.evaluate({
+        activeParticipants: ['user1'],
+        userZoneMap: { user1: 'cool' },
+        zoneRankMap: { cool: 0, active: 1 },
+        zoneInfoMap: { cool: { id: 'cool', name: 'Cool' }, active: { id: 'active', name: 'Active' } },
+        totalCount: 1
+      });
+
+      expect(engine.phase).toBe('pending');
+      expect(engine.state.videoLocked).toBe(true);
+    });
+
+    it('videoLocked=false when governed media in unlocked phase', () => {
+      engine.setMedia({ id: 'test-2', labels: ['exercise'], type: 'video' });
+      // Update mock zoneProfileStore to return 'active' zone
+      currentZone = 'active';
+      // Satisfy requirements: user in 'active' zone meets 'active: all' requirement
+      engine.evaluate({
+        activeParticipants: ['user1'],
+        userZoneMap: { user1: 'active' },
+        zoneRankMap: { cool: 0, active: 1 },
+        zoneInfoMap: { cool: { id: 'cool', name: 'Cool' }, active: { id: 'active', name: 'Active' } },
+        totalCount: 1
+      });
+      // Satisfy hysteresis
+      engine._hysteresisMs = 0;
+      engine.evaluate({
+        activeParticipants: ['user1'],
+        userZoneMap: { user1: 'active' },
+        zoneRankMap: { cool: 0, active: 1 },
+        zoneInfoMap: { cool: { id: 'cool', name: 'Cool' }, active: { id: 'active', name: 'Active' } },
+        totalCount: 1
+      });
+
+      expect(engine.phase).toBe('unlocked');
+      expect(engine.state.videoLocked).toBe(false);
+    });
+
+    it('videoLocked=false when media is NOT governed', () => {
+      engine.setMedia({ id: 'test-3', labels: ['comedy'], type: 'movie' });
+      // Non-governed media should never lock
+      const state = engine.state;
+      expect(state.videoLocked).toBe(false);
+      expect(state.isGoverned).toBe(false);
+    });
+
+    it('isGoverned reflects _mediaIsGoverned() for label match', () => {
+      engine.setMedia({ id: 'test-4', labels: ['exercise'], type: 'video' });
+      expect(engine.state.isGoverned).toBe(true);
+    });
+
+    it('isGoverned reflects _mediaIsGoverned() for type match', () => {
+      engine.setMedia({ id: 'test-5', labels: [], type: 'workout' });
+      expect(engine.state.isGoverned).toBe(true);
+    });
   });
 });
