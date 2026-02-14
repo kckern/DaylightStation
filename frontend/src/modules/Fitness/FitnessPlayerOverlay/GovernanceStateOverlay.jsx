@@ -5,10 +5,13 @@ import { useDeadlineCountdown } from '../shared';
 import GovernanceAudioPlayer from './GovernanceAudioPlayer.jsx';
 import './GovernanceStateOverlay.scss';
 
+const TOTAL_NOTCHES = 28;
+
 const GovernanceWarningOverlay = React.memo(function GovernanceWarningOverlay({ countdown, countdownTotal, rows, offenders }) {
   const remaining = Number.isFinite(countdown) ? Math.max(countdown, 0) : 0;
   const total = Number.isFinite(countdownTotal) ? Math.max(countdownTotal, 1) : 1;
   const progress = Math.max(0, Math.min(1, remaining / total));
+  const visibleNotches = Math.round(progress * TOTAL_NOTCHES);
 
   // Support both new (rows) and legacy (offenders) format
   const items = Array.isArray(rows) && rows.length > 0 ? rows : (Array.isArray(offenders) ? offenders : []);
@@ -27,7 +30,7 @@ const GovernanceWarningOverlay = React.memo(function GovernanceWarningOverlay({ 
             const percentValue = clamped != null ? Math.round(clamped * 100) : null;
             const borderColor = item.currentZone?.color || item.zoneColor || null;
             const borderStyle = borderColor ? { borderColor } : undefined;
-            const progressColor = item.targetZone?.color || item.targetZoneColor || borderColor || 'rgba(56, 189, 248, 0.95)';
+            const progressColor = item.currentZone?.color || item.zoneColor || borderColor || 'rgba(56, 189, 248, 0.95)';
             return (
               <div
                 className="governance-progress-overlay__chip"
@@ -74,11 +77,15 @@ const GovernanceWarningOverlay = React.memo(function GovernanceWarningOverlay({ 
           })}
         </div>
       ) : null}
-      <div className="governance-progress-overlay__track">
-        <div
-          className="governance-progress-overlay__fill"
-          style={{ transform: `scaleX(${progress})` }}
-        />
+      <div className="governance-life-meter" aria-hidden="true">
+        <div className="governance-life-meter__frame">
+          {Array.from({ length: TOTAL_NOTCHES }, (_, i) => (
+            <div
+              key={i}
+              className={`governance-life-meter__notch${i < visibleNotches ? ' governance-life-meter__notch--active' : ''}`}
+            />
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -120,7 +127,19 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
     const showIndicator = widthPercent > 0;
     const progressClass = `governance-lock__progress${variant === 'compact' ? ' governance-lock__progress--compact' : ''}`;
     const intermediateZones = Array.isArray(row.intermediateZones) ? row.intermediateZones : [];
-    const fillBackground = row.progressGradient || (row.targetZone?.color ? row.targetZone.color : undefined);
+    const currentColor = row.currentZone?.color || 'rgba(148, 163, 184, 0.6)';
+    const targetColor = row.targetZone?.color || 'rgba(34, 197, 94, 0.85)';
+    let fillBackground;
+    if (intermediateZones.length > 0) {
+      const stops = [`${currentColor} 0%`];
+      intermediateZones.forEach((zone) => {
+        stops.push(`${zone.color || currentColor} ${Math.round((zone.position || 0) * 100)}%`);
+      });
+      stops.push(`${targetColor} 100%`);
+      fillBackground = `linear-gradient(90deg, ${stops.join(', ')})`;
+    } else {
+      fillBackground = row.progressGradient || `linear-gradient(90deg, ${currentColor}, ${targetColor})`;
+    }
     return (
       <div className={progressClass} aria-hidden="true">
         <div className="governance-lock__progress-track">
