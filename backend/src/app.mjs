@@ -1110,7 +1110,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Agents application router
   v1Routers.agents = createAgentsApiRouter({
-    logger: rootLogger.child({ module: 'agents-api' })
+    logger: rootLogger.child({ module: 'agents-api' }),
+    healthStore: healthServices.healthStore,
+    healthService: healthServices.healthService,
+    fitnessPlayableService: null, // TODO: expose from fitness bootstrap when refactored
+    dataService,
+    configService,
   });
 
   // AI API router - provides direct AI endpoints (/api/ai/*)
