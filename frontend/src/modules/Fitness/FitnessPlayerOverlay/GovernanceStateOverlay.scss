@@ -367,17 +367,9 @@ $lock-zone-hues: (
 
 .governance-progress-overlay {
   position: absolute;
-  left: clamp(18px, 4vw, 48px);
-  right: clamp(18px, 4vw, 48px);
-  bottom: clamp(18px, 4vw, 48px);
+  inset: 0;
   z-index: var(--fitness-parent-overlay-z, 60);
   pointer-events: none;
-  transform-origin: bottom left;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: flex-end;
-  gap: clamp(10px, 2vw, 18px);
   contain: layout style;
 
 
@@ -389,38 +381,19 @@ $lock-zone-hues: (
   opacity: 0;
   pointer-events: none;
 }
-  &__track {
-    width: 100%;
-    max-width: 100%;
-    height: 10px;
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.24);
-    overflow: hidden;
-    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.2);
-    pointer-events: none;
-  }
-
-  &__fill {
-    height: 100%;
-    width: 100%;
-    background: linear-gradient(90deg, rgba(249, 115, 22, 0.9), rgba(234, 179, 8, 0.9));
-    border-radius: inherit;
-    transform-origin: left;
-    transform: scaleX(0);
-    transition: transform 0.25s ease;
-    will-change: transform;
-    pointer-events: none;
-  }
 
   &__offenders {
+    position: absolute;
+    bottom: clamp(18px, 4vw, 48px);
+    left: 50%;
+    transform: translateX(-50%);
     display: flex;
     flex-wrap: wrap;
     gap: 10px;
     max-width: min(560px, 100%);
     justify-content: center;
     align-items: center;
-    align-self: center;
-    width: 100%;
+    width: auto;
   }
 
   &__chip {
@@ -495,6 +468,44 @@ $lock-zone-hues: (
     transform: scaleX(0);
     transition: transform 0.25s ease;
     will-change: transform;
+  }
+}
+
+.governance-life-meter {
+  position: absolute;
+  left: clamp(12px, 2vw, 32px);
+  top: 50%;
+  transform: translateY(-50%);
+  height: 80%;
+  width: clamp(32px, 3.5vw, 56px);
+  pointer-events: none;
+
+  &__frame {
+    height: 100%;
+    width: 100%;
+    display: flex;
+    flex-direction: column-reverse;
+    gap: clamp(1px, 0.15vh, 3px);
+    padding: clamp(4px, 0.5vw, 8px);
+    background: #0a0a12;
+    border: clamp(2px, 0.3vw, 5px) solid #1a1a2e;
+    border-radius: clamp(6px, 0.8vw, 14px);
+    box-shadow:
+      inset 0 0 0 clamp(1px, 0.1vw, 2px) rgba(255, 255, 255, 0.08),
+      0 0 clamp(8px, 1.5vw, 20px) rgba(0, 0, 0, 0.6);
+  }
+
+  &__notch {
+    flex: 1;
+    width: 100%;
+    border-radius: clamp(1px, 0.1vw, 2px);
+    background: transparent;
+  }
+
+  &__notch--active {
+    background: #e8b830;
+    box-shadow: inset 0 clamp(-1px, -0.1vh, -2px) 0 rgba(0, 0, 0, 0.35);
+    border-top: clamp(1px, 0.08vh, 2px) solid rgba(255, 235, 150, 0.6);
   }
 }
 

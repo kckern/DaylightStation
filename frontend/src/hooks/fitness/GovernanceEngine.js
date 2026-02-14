@@ -198,7 +198,8 @@ export class GovernanceEngine {
 
     this.callbacks = {
       onPhaseChange: null,
-      onPulse: null
+      onPulse: null,
+      onStateChange: null
     };
 
     this._governedLabelSet = new Set();
@@ -610,9 +611,10 @@ export class GovernanceEngine {
     }
   }
 
-  setCallbacks({ onPhaseChange, onPulse }) {
+  setCallbacks({ onPhaseChange, onPulse, onStateChange }) {
     this.callbacks.onPhaseChange = onPhaseChange;
     this.callbacks.onPulse = onPulse;
+    this.callbacks.onStateChange = onStateChange || null;
   }
 
   _setPhase(newPhase) {
@@ -1046,10 +1048,14 @@ export class GovernanceEngine {
   }
 
   /**
-   * Invalidate state cache - call this when significant state changes occur
+   * Invalidate state cache - call this when significant state changes occur.
+   * Fires onStateChange callback so React can re-render with fresh state.
    */
   _invalidateStateCache() {
     this._stateVersion++;
+    if (this.callbacks.onStateChange) {
+      this.callbacks.onStateChange();
+    }
   }
 
   _composeState() {
@@ -1343,8 +1349,8 @@ export class GovernanceEngine {
         totalCount: totalCount || 0
       };
       this._invalidateStateCache();
-      // Note: No polling needed here - governance is now reactive via TreasureBox callback.
-      // When a participant starts exercising, TreasureBox notifies us immediately.
+      // No polling needed here - governance is reactive via TreasureBox mutation callback
+      // in FitnessContext, which calls _triggerPulse() to re-evaluate when HR data arrives.
       return;
     }
 

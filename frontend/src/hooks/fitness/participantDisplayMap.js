@@ -1,3 +1,5 @@
+import { DaylightMediaPath } from '../../lib/api.mjs';
+
 /**
  * Builds a display-ready map of participants from ZoneProfileStore + roster.
  * Single source of truth for "how to render a participant."
@@ -25,8 +27,9 @@ export function buildParticipantDisplayMap(profiles, roster) {
     const rosterEntry = rosterIndex.get(nameKey)
       || rosterIndex.get(idKey);
     const resolvedProfileId = profile.profileId || profile.id;
-    const avatarSrc = rosterEntry?.avatarUrl
+    const rawAvatar = rosterEntry?.avatarUrl
       || (resolvedProfileId ? `/static/img/users/${resolvedProfileId}` : '/static/img/users/user');
+    const avatarSrc = DaylightMediaPath(rawAvatar);
 
     const entry = {
       id: profile.id,

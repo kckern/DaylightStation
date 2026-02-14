@@ -523,7 +523,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     );
     session.governanceEngine.setCallbacks({
       onPhaseChange: () => forceUpdate(),
-      onPulse: () => forceUpdate()
+      onPulse: () => forceUpdate(),
+      onStateChange: () => forceUpdate()
     });
 
     // Expose governance engine for testing
@@ -579,7 +580,13 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       });
     }
 
-    box.setMutationCallback(forceUpdate);
+    box.setMutationCallback(() => {
+      // Trigger governance re-evaluation when TreasureBox mutates (HR data arrives).
+      // Without this, GovernanceEngine stays stuck at 0 participants and the lock screen
+      // shows "Waiting for participant data..." even when the sidebar already has HR data.
+      session.governanceEngine?._triggerPulse();
+      forceUpdate();
+    });
     return () => {
       if (box === session?.treasureBox) {
         box.setMutationCallback(null);

@@ -66,7 +66,7 @@
     button.danger { background: #6b2020; }
     button.danger:hover { background: #8b3030; }
     .device-list {
-      max-height: 320px;
+      max-height: none;
       overflow-y: auto;
     }
     .device {
@@ -89,6 +89,45 @@
       font-size: 14px;
     }
     .device-hr.inactive { color: #666; }
+    .hr-slider-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .hr-slider {
+      flex: 1;
+      -webkit-appearance: none;
+      appearance: none;
+      height: 6px;
+      border-radius: 3px;
+      background: #444;
+      outline: none;
+    }
+    .hr-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #e0e0e0;
+      cursor: pointer;
+      border: 2px solid #888;
+    }
+    .hr-slider::-moz-range-thumb {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #e0e0e0;
+      cursor: pointer;
+      border: 2px solid #888;
+    }
+    .hr-value {
+      font-family: monospace;
+      font-size: 13px;
+      min-width: 52px;
+      text-align: right;
+    }
     .zone-buttons {
       display: flex;
       gap: 4px;
@@ -137,6 +176,10 @@
 
   <script>
     let controller = null;
+    // Track slider values per device so render() preserves them during drags
+    const sliderValues = {};
+    // Track which slider is being actively dragged (suppress render overwrites)
+    let activeSlider = null;
 
     function init() {
       if (!window.opener) {
@@ -201,10 +244,31 @@
         const hrClass = d.isActive ? '' : 'inactive';
         const autoLabel = d.autoMode ? `<span class="auto-indicator">${d.autoMode}</span>` : '';
 
+        // Use tracked slider value if actively dragging, else current HR or 80
+        const sliderHR = (activeSlider === d.deviceId)
+          ? (sliderValues[d.deviceId] || d.currentHR || 80)
+          : (d.currentHR || sliderValues[d.deviceId] || 80);
+        sliderValues[d.deviceId] = sliderHR;
+
+        const zoneColor = getZoneColor(d.currentZone);
+
         html += `<div class="device">
           <div class="device-header">
             <span class="device-name">${d.name} (${d.deviceId})${autoLabel}</span>
             <span class="device-hr ${hrClass}">${hrDisplay}</span>
+          </div>
+          <div class="hr-slider-row">
+            <span style="font-size:10px;color:#666">40</span>
+            <input type="range" class="hr-slider" min="40" max="220" value="${sliderHR}"
+                   id="slider-${d.deviceId}"
+                   style="accent-color:${zoneColor}"
+                   oninput="onSliderInput('${d.deviceId}', this.value)"
+                   onchange="onSliderChange('${d.deviceId}', this.value)"
+                   onmousedown="activeSlider='${d.deviceId}'"
+                   onmouseup="activeSlider=null"
+                   ontouchstart="activeSlider='${d.deviceId}'"
+                   ontouchend="activeSlider=null">
+            <span class="hr-value" id="hr-val-${d.deviceId}" style="color:${zoneColor}">${sliderHR} bpm</span>
           </div>
           <div class="zone-buttons">
             ${['cool', 'active', 'warm', 'hot', 'fire'].map(z =>
@@ -223,6 +287,39 @@
       html += '</div></div>';
 
       document.getElementById('content').innerHTML = html;
+    }
+
+    function getZoneColor(zone) {
+      const colors = {
+        cool: '#2563eb',
+        active: '#059669',
+        warm: '#d97706',
+        hot: '#dc2626',
+        fire: '#7c2d12'
+      };
+      return colors[zone] || '#888';
+    }
+
+    // Slider: live preview (updates label only, sends HR on every input for responsiveness)
+    function onSliderInput(deviceId, value) {
+      const hr = parseInt(value, 10);
+      sliderValues[deviceId] = hr;
+      const label = document.getElementById('hr-val-' + deviceId);
+      if (label) {
+        const zone = controller._hrToZone(hr);
+        label.textContent = hr + ' bpm';
+        label.style.color = getZoneColor(zone);
+      }
+      // Send HR on every input tick for real-time feedback
+      controller.setHR(deviceId, hr);
+    }
+
+    // Slider: final value on release
+    function onSliderChange(deviceId, value) {
+      const hr = parseInt(value, 10);
+      sliderValues[deviceId] = hr;
+      activeSlider = null;
+      controller.setHR(deviceId, hr);
     }
 
     // Actions
