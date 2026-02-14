@@ -266,7 +266,8 @@ export class GovernanceEngine {
           return self._lockStartTime ? Date.now() - self._lockStartTime : 0;
         },
         activeChallenge: this.challengeState?.activeChallenge?.id || null,
-        videoLocked: this.challengeState?.videoLocked || false,
+        videoLocked: this.challengeState?.videoLocked
+          || (this._mediaIsGoverned() && (this.phase === 'pending' || this.phase === 'locked')),
         mediaId: this.media?.id || null,
         // Expose internal state for test diagnostics
         satisfiedOnce: this.meta?.satisfiedOnce || false,
