@@ -31,6 +31,17 @@ export class HealthCoachAgent extends BaseAgent {
     if (!opts.userId) {
       opts.userId = this.deps.configService?.getHeadOfHousehold?.() || 'default';
     }
-    return super.runAssignment(assignmentId, opts);
+    const result = await super.runAssignment(assignmentId, opts);
+
+    // Persist the dashboard for daily-dashboard assignment
+    if (assignmentId === 'daily-dashboard' && result) {
+      const writeTool = this.getTools().find(t => t.name === 'write_dashboard');
+      if (writeTool) {
+        const today = new Date().toISOString().split('T')[0];
+        await writeTool.execute({ userId: opts.userId, date: today, dashboard: result });
+      }
+    }
+
+    return result;
   }
 }

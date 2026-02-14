@@ -153,10 +153,5 @@ Produce a JSON object matching the dashboard schema.
     for (const cta of ctas) {
       memory.set(`cta_${cta.type}_${today}`, cta.message, { ttl: 48 * 60 * 60 * 1000 }); // 48h
     }
-
-    // Store validated dashboard on the instance for the caller to persist
-    this._lastValidated = validated;
-    this._lastDate = today;
-    this._lastUserId = userId;
   }
 }
