@@ -30,5 +30,5 @@ export { default as GovernanceStateOverlay } from '../../FitnessPlayerOverlay/Go
 export { ChallengeOverlay, useChallengeMachine, CHALLENGE_PHASES } from '../../FitnessPlayerOverlay/ChallengeOverlay.jsx';
 export { default as FullscreenVitalsOverlay } from '../../FitnessPlayerOverlay/FullscreenVitalsOverlay.jsx';
 
-// Re-export the governance overlay hook
-export { useGovernanceOverlay } from '../../FitnessPlayerOverlay.jsx';
+// Re-export the governance display hook (replaces useGovernanceOverlay)
+export { useGovernanceDisplay } from '../../hooks/useGovernanceDisplay.js';

@@ -17,9 +17,11 @@ const createMockSession = (zoneProfileStore) => ({
 const mockSampled = jest.fn();
 const mockInfo = jest.fn();
 const mockWarn = jest.fn();
+const mockDebug = jest.fn();
+const mockError = jest.fn();
 jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
-  default: () => ({ sampled: mockSampled, info: mockInfo, warn: mockWarn }),
-  getLogger: () => ({ sampled: mockSampled, info: mockInfo, warn: mockWarn })
+  default: () => ({ sampled: mockSampled, info: mockInfo, warn: mockWarn, debug: mockDebug, error: mockError }),
+  getLogger: () => ({ sampled: mockSampled, info: mockInfo, warn: mockWarn, debug: mockDebug, error: mockError })
 }));
 
 const { GovernanceEngine } = await import('#frontend/hooks/fitness/GovernanceEngine.js');
@@ -42,6 +44,7 @@ describe('GovernanceEngine zone source', () => {
 
     const session = createMockSession(mockZoneProfileStore);
     const engine = new GovernanceEngine(session);
+    engine._hysteresisMs = 0; // Disable hysteresis for instant phase transitions in tests
 
     // Configure with a policy requiring 'warm' zone
     engine.configure({
@@ -83,6 +86,7 @@ describe('GovernanceEngine zone source', () => {
 
     const session = createMockSession(mockZoneProfileStore);
     const engine = new GovernanceEngine(session);
+    engine._hysteresisMs = 0; // Disable hysteresis for instant phase transitions in tests
 
     engine.configure({
       governed_labels: ['fitness'],

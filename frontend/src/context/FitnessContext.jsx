@@ -16,6 +16,12 @@ import { VIBRATION_CONSTANTS } from '../modules/Fitness/FitnessPlugins/plugins/V
 // Phase 3 SSOT: Domain model imports
 import ParticipantFactory from '../modules/Fitness/domain/ParticipantFactory.js';
 
+// Phase 5 SSOT: Participant display map — single source for "how to render a participant"
+import { buildParticipantDisplayMap } from '../hooks/fitness/participantDisplayMap.js';
+
+// Phase 5 SSOT: Zone metadata — single source for zone system info
+import { buildZoneMetadata } from '../hooks/fitness/zoneMetadata.js';
+
 // Phase 4 SSOT: Display name resolution
 import {
   buildDisplayNameContext,
@@ -1273,21 +1279,13 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     });
   }, [groupLabelLookup, preferGroupLabels]);
 
-  const zoneRankMap = React.useMemo(() => {
-    if (!Array.isArray(zoneConfig) || zoneConfig.length === 0) return {};
-    const sorted = [...zoneConfig].filter(Boolean).sort((a, b) => {
-      const aMin = Number.isFinite(a?.min) ? a.min : 0;
-      const bMin = Number.isFinite(b?.min) ? b.min : 0;
-      if (aMin === bMin) return 0;
-      return aMin - bMin;
-    });
-    const map = {};
-    sorted.forEach((zone, index) => {
-      if (!zone || zone.id == null) return;
-      map[String(zone.id).toLowerCase()] = index;
-    });
-    return map;
-  }, [zoneConfig]);
+  // Phase 5 SSOT: Single zone system computation
+  const zoneMetadata = React.useMemo(
+    () => buildZoneMetadata(zoneConfig),
+    [zoneConfig]
+  );
+  const zoneRankMap = zoneMetadata.rankMap;
+  const zoneInfoMap = zoneMetadata.infoMap;
 
   const colorToZoneId = React.useMemo(() => {
     if (!Array.isArray(zoneConfig) || zoneConfig.length === 0) return {};
@@ -1298,20 +1296,6 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       if (zoneId && color) {
         acc[color] = zoneId;
       }
-      return acc;
-    }, {});
-  }, [zoneConfig]);
-
-  const zoneInfoMap = React.useMemo(() => {
-    if (!Array.isArray(zoneConfig) || zoneConfig.length === 0) return {};
-    return zoneConfig.reduce((acc, zone) => {
-      if (!zone || zone.id == null) return acc;
-      const key = String(zone.id).toLowerCase();
-      acc[key] = {
-        id: key,
-        name: zone.name || String(zone.id),
-        color: zone.color || null
-      };
       return acc;
     }, {});
   }, [zoneConfig]);
@@ -1354,6 +1338,13 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const activeParticipantNames = React.useMemo(() => {
     return participantRoster.map(p => p.name).filter(Boolean);
   }, [participantRoster]);
+
+  // Phase 5 SSOT: Single source for "how to render a participant"
+  const participantDisplayMap = React.useMemo(() => {
+    const profiles = session?.zoneProfileStore?.getProfiles() || [];
+    const roster = session?.roster || [];
+    return buildParticipantDisplayMap(profiles, roster);
+  }, [session, version]);
 
   // ==========================================================================
   // Phase 3 SSOT: Participant Domain Entities
@@ -1992,6 +1983,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     users,
     deviceAssignments,
     zoneProfiles,
+    // DEPRECATED: Use participantDisplayMap.get(name).zoneId/zoneName/zoneColor instead
     getZoneProfile,
     userCollections,
     deviceOwnership,
@@ -2069,6 +2061,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     // Phase 4 SSOT: Display name resolution
     displayNameContext,
     getDisplayName,
+    zoneMetadata,
     zoneRankMap,
     colorToZoneId,
     zoneInfoMap,
@@ -2106,12 +2099,15 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     userCount: users.size,
     usersConfigRaw: usersConfig,
     participantRoster,
+    participantDisplayMap,
     // Phase 1 SSOT: Canonical participant list - USE THIS instead of filtering devices
     activeHeartRateParticipants,
     participantsByDevice: participantLookupByDevice,
     participantsByName: participantLookupByName,
     userVitals: userVitalsMap,
+    // DEPRECATED: Use participantDisplayMap.get(name) instead — single source for participant display data
     getUserVitals,
+    // DEPRECATED: Use participantDisplayMap.get(name).progress instead
     userZoneProgress,
     getUserZoneThreshold,
     userHeartRates: new Map(), // TODO

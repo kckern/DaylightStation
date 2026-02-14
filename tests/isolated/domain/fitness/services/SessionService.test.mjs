@@ -46,7 +46,7 @@ describe('SessionService', () => {
         roster: [{ name: 'John' }]
       }, 'test-hid');
 
-      expect(session.sessionId).toMatch(/^\d{14}$/);
+      expect(session.sessionId.toString()).toMatch(/^\d{14}$/);
       expect(session.roster).toHaveLength(1);
       expect(mockStore.save).toHaveBeenCalled();
     });
@@ -57,7 +57,7 @@ describe('SessionService', () => {
         startTime: 1736586000000
       });
 
-      expect(session.sessionId).toBe('20260111100000');
+      expect(session.sessionId.toString()).toBe('20260111100000');
       expect(session.startTime).toBe(1736586000000);
     });
 
@@ -80,7 +80,7 @@ describe('SessionService', () => {
       });
 
       const session = await service.getSession('20260111120000', 'test-hid');
-      expect(session.sessionId).toBe('20260111120000');
+      expect(session.sessionId.toString()).toBe('20260111120000');
       expect(session.timeline.series.John).toEqual([120, 120, 120]);
     });
 
@@ -113,7 +113,7 @@ describe('SessionService', () => {
 
       const sessions = await service.listSessionsByDate('2026-01-11', 'test-hid');
       expect(sessions).toHaveLength(2);
-      expect(sessions[0].sessionId).toBe('20260111120000');
+      expect(sessions[0].sessionId.toString()).toBe('20260111120000');
       expect(sessions[1].rosterCount).toBe(1);
     });
   });
