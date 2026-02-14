@@ -24,10 +24,11 @@ export function buildParticipantDisplayMap(profiles, roster) {
     const key = nameKey || idKey;
     const rosterEntry = rosterIndex.get(nameKey)
       || rosterIndex.get(idKey);
+    const resolvedProfileId = profile.profileId || profile.id;
     const avatarSrc = rosterEntry?.avatarUrl
-      || (profile.profileId ? `/static/img/users/${profile.profileId}` : '/static/img/users/user');
+      || (resolvedProfileId ? `/static/img/users/${resolvedProfileId}` : '/static/img/users/user');
 
-    map.set(key, {
+    const entry = {
       id: profile.id,
       displayName: profile.displayName || profile.name || profile.id,
       avatarSrc,
@@ -41,7 +42,12 @@ export function buildParticipantDisplayMap(profiles, roster) {
       groupLabel: profile.groupLabel || null,
       source: profile.source || null,
       updatedAt: profile.updatedAt || null
-    });
+    };
+    map.set(key, entry);
+    // Also index by normalized ID so governance engine lookups by ID work
+    if (idKey && idKey !== key) {
+      map.set(idKey, entry);
+    }
   });
 
   return map;

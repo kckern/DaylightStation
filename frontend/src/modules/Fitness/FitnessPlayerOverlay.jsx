@@ -51,7 +51,8 @@ const FitnessPlayerOverlay = ({ playerRef, showFullscreenVitals }) => {
   const sessionInstance = fitnessCtx?.fitnessSessionInstance || null;
   const participantDisplayMap = fitnessCtx?.participantDisplayMap;
   const ctxZoneMetadata = fitnessCtx?.zoneMetadata;
-  const governanceDisplay = useGovernanceDisplay(governanceState, participantDisplayMap, ctxZoneMetadata);
+  const preferGroupLabels = fitnessCtx?.activeHeartRateParticipants?.length > 1;
+  const governanceDisplay = useGovernanceDisplay(governanceState, participantDisplayMap, ctxZoneMetadata, { preferGroupLabels });
   const { current: currentChallengeOverlay, upcoming: upcomingChallengeOverlay } = useChallengeOverlays(
     governanceState,
     fitnessCtx?.zones

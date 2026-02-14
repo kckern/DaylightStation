@@ -7,7 +7,8 @@ const normalize = (v) => (typeof v === 'string' ? v.trim().toLowerCase() : '');
  * Pure function: resolve governance decisions + display map → display rows.
  * Exported for testability. Used via useGovernanceDisplay hook.
  */
-export function resolveGovernanceDisplay(govState, displayMap, zoneMeta) {
+export function resolveGovernanceDisplay(govState, displayMap, zoneMeta, options) {
+  const preferGroupLabels = options?.preferGroupLabels ?? false;
   if (!govState?.isGoverned) return null;
 
   const { status, requirements, challenge, deadline, gracePeriodTotal, videoLocked } = govState;
@@ -54,10 +55,13 @@ export function resolveGovernanceDisplay(govState, displayMap, zoneMeta) {
     const currentZoneId = display?.zoneId || null;
     const currentZone = currentZoneId ? (zoneMap[currentZoneId] || null) : null;
 
+    const resolvedName = (preferGroupLabels && display?.groupLabel)
+      ? display.groupLabel
+      : (display?.displayName || userId);
     rows.push({
       key: key,
       userId,
-      displayName: display?.displayName || userId,
+      displayName: resolvedName,
       avatarSrc: display?.avatarSrc || FALLBACK_AVATAR,
       heartRate: display?.heartRate ?? null,
       currentZone,
@@ -89,9 +93,10 @@ export function resolveGovernanceDisplay(govState, displayMap, zoneMeta) {
  * React hook: joins governance decisions with participant display data.
  * Replaces useGovernanceOverlay + warningOffenders + lockRows.
  */
-export function useGovernanceDisplay(govState, displayMap, zoneMeta) {
+export function useGovernanceDisplay(govState, displayMap, zoneMeta, options) {
+  const preferGroupLabels = options?.preferGroupLabels ?? false;
   return useMemo(
-    () => resolveGovernanceDisplay(govState, displayMap, zoneMeta),
-    [govState, displayMap, zoneMeta]
+    () => resolveGovernanceDisplay(govState, displayMap, zoneMeta, { preferGroupLabels }),
+    [govState, displayMap, zoneMeta, preferGroupLabels]
   );
 }
