@@ -353,33 +353,130 @@ export class OpenAIAdapter extends IAIGateway {
   }
 
   /**
-   * Get structured JSON response
+   * Attempt to repair common JSON issues
+   * @private
+   */
+  #repairJSON(jsonString) {
+    let repaired = jsonString;
+
+    // Remove trailing commas before closing brackets/braces
+    repaired = repaired.replace(/,(\s*[\]}])/g, '$1');
+
+    // Fix missing commas between array elements (common AI error)
+    repaired = repaired.replace(/}\s*{(?!\s*[,\]])/g, '},\n{');
+
+    // Fix missing commas between object properties
+    repaired = repaired.replace(/"\s*\n\s*"/g, '","');
+
+    // Remove comments (sometimes AI adds them)
+    repaired = repaired.replace(/\/\/.*$/gm, '');
+    repaired = repaired.replace(/\/\*[\s\S]*?\*\//g, '');
+
+    return repaired;
+  }
+
+  /**
+   * Extract and parse JSON from response (handles wrapped JSON)
+   * @private
+   */
+  #extractAndParseJSON(response) {
+    // Try to extract JSON object from response
+    const jsonMatch = response.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      throw new Error('No JSON object found in response');
+    }
+
+    let jsonString = jsonMatch[0];
+
+    // First attempt: direct parse
+    try {
+      return JSON.parse(jsonString);
+    } catch (directError) {
+      this.logger.debug?.('openai.json.attemptRepair', {
+        error: directError.message,
+        position: directError.message.match(/position (\d+)/)?.[1],
+      });
+
+      // Second attempt: repair and parse
+      try {
+        const repaired = this.#repairJSON(jsonString);
+        const parsed = JSON.parse(repaired);
+        this.logger.info?.('openai.json.repairSucceeded', {
+          originalError: directError.message,
+        });
+        return parsed;
+      } catch (repairError) {
+        // Both attempts failed
+        const error = new Error(`JSON parse failed: ${directError.message}`);
+        error.originalError = directError;
+        error.repairError = repairError;
+        error.sample = jsonString.substring(0, 200);
+        throw error;
+      }
+    }
+  }
+
+  /**
+   * Get structured JSON response with validation and repair
+   * 
+   * Uses jsonMode for OpenAI, validates and repairs malformed JSON,
+   * retries with explicit instructions on parse failures.
+   * 
+   * @param {ChatMessage[]} messages - Conversation messages
+   * @param {ChatOptions} options - Optional configuration
+   * @param {number} [options.maxParseAttempts=2] - Max parse retry attempts
+   * @returns {Promise<Object>} - Parsed JSON response
+   * @throws {InfrastructureError} If JSON parsing fails after all attempts
    */
   async chatWithJson(messages, options = {}) {
-    const response = await this.chat(messages, { ...options, jsonMode: true });
+    const maxParseAttempts = options.maxParseAttempts || 2;
 
-    try {
-      return JSON.parse(response);
-    } catch (parseError) {
-      this.logger.warn?.('openai.json.parseError', { error: parseError.message });
-
-      // Retry with explicit instruction
-      const retryMessages = [
-        ...messages,
-        { role: 'assistant', content: response },
-        { role: 'user', content: 'Please respond with valid JSON only. No additional text.' }
-      ];
-
-      const retryResponse = await this.chat(retryMessages, { ...options, jsonMode: true });
+    for (let attempt = 1; attempt <= maxParseAttempts; attempt++) {
+      const isRetry = attempt > 1;
+      const messagesToSend = isRetry
+        ? [
+            ...messages,
+            { role: 'user', content: 'Please respond with valid, complete JSON only. No additional text. Ensure all arrays and objects are properly closed.' }
+          ]
+        : messages;
 
       try {
-        return JSON.parse(retryResponse);
-      } catch (retryParseError) {
-        this.logger.error?.('openai.json.retryFailed', { response: retryResponse });
-        throw new InfrastructureError('Failed to parse JSON response after retry', {
-          code: 'INVALID_RESPONSE',
-          service: 'OpenAI'
+        const response = await this.chat(messagesToSend, { ...options, jsonMode: true });
+
+        // Extract and parse with repair capability
+        const parsed = this.#extractAndParseJSON(response);
+
+        if (isRetry) {
+          this.logger.info?.('openai.json.parseRecovered', { attempt });
+        }
+
+        return parsed;
+      } catch (parseError) {
+        const isLastAttempt = attempt === maxParseAttempts;
+
+        this.logger.warn?.('openai.json.parseError', {
+          attempt,
+          maxAttempts: maxParseAttempts,
+          error: parseError.message,
+          sample: parseError.sample,
         });
+
+        if (isLastAttempt) {
+          this.logger.error?.('openai.json.exhausted', {
+            attempts: maxParseAttempts,
+            originalError: parseError.originalError?.message,
+            repairError: parseError.repairError?.message,
+          });
+
+          throw new InfrastructureError('Failed to parse JSON response after all attempts', {
+            code: 'INVALID_JSON_RESPONSE',
+            service: 'OpenAI',
+            attempts: maxParseAttempts,
+            details: parseError.message,
+          });
+        }
+
+        // Continue to next attempt
       }
     }
   }
