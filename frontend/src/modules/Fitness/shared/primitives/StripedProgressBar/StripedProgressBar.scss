@@ -3,7 +3,7 @@
 .striped-progress-bar {
   --stripe-speed: 2s;
   --bar-height: 8px;
-  
+
   display: flex;
   align-items: center;
   gap: var(--app-spacing-sm);
@@ -21,7 +21,17 @@
     height: 100%;
     border-radius: var(--app-radius-full);
     transition: width var(--app-transition-normal);
-    background-size: 28.28px 100%; // √2 * 20px for 45° stripes
+    position: relative;
+    overflow: hidden;
+
+    &::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: -30px;
+      right: -30px;
+    }
   }
 
   &__value {
@@ -32,30 +42,32 @@
     text-align: right;
   }
 
-  // Animation
-  &--animated &__fill {
+  // Animation on pseudo-element using transform (GPU-accelerated)
+  &--animated &__fill::after {
     animation-duration: var(--stripe-speed);
     animation-timing-function: linear;
     animation-iteration-count: infinite;
   }
 
-  &--left.striped-progress-bar--animated &__fill {
+  &--left.striped-progress-bar--animated &__fill::after {
     animation-name: stripe-left;
   }
 
-  &--right.striped-progress-bar--animated &__fill {
+  &--right.striped-progress-bar--animated &__fill::after {
     animation-name: stripe-right;
   }
 
-  // Color variants with stripes
+  // Color variants — gradient lives on the ::after pseudo
   @mixin stripe-colors($color1, $color2) {
-    background: repeating-linear-gradient(
-      45deg,
-      $color1,
-      $color1 10px,
-      $color2 10px,
-      $color2 20px
-    );
+    &::after {
+      background: repeating-linear-gradient(
+        45deg,
+        $color1,
+        $color1 10px,
+        $color2 10px,
+        $color2 20px
+      );
+    }
   }
 
   &--gray &__fill,
@@ -90,11 +102,11 @@
 }
 
 @keyframes stripe-left {
-  from { background-position: 0 0; }
-  to { background-position: -28.28px 0; }
+  from { transform: translateX(0); }
+  to { transform: translateX(-28.284px); }
 }
 
 @keyframes stripe-right {
-  from { background-position: 0 0; }
-  to { background-position: 28.28px 0; }
+  from { transform: translateX(0); }
+  to { transform: translateX(28.284px); }
 }
