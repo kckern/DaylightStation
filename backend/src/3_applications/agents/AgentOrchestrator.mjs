@@ -113,6 +113,29 @@ export class AgentOrchestrator {
   }
 
   /**
+   * Run a specific assignment on a registered agent
+   * @param {string} agentId - Agent identifier
+   * @param {string} assignmentId - Assignment identifier
+   * @param {Object} [options={}] - Options including userId, context, triggeredBy
+   * @returns {Promise<any>} Assignment result
+   */
+  async runAssignment(agentId, assignmentId, options = {}) {
+    const agent = this.#getAgent(agentId);
+
+    this.#logger.info?.('orchestrator.runAssignment', { agentId, assignmentId });
+
+    return agent.runAssignment(assignmentId, options);
+  }
+
+  /**
+   * List agent instances (for scheduler registration)
+   * @returns {Array<Object>} Agent instances
+   */
+  listInstances() {
+    return Array.from(this.#agents.values());
+  }
+
+  /**
    * Get agent instance (internal)
    * @param {string} agentId
    * @returns {Object}
