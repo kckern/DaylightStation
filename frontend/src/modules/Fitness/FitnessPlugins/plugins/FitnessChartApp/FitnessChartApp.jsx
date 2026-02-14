@@ -12,6 +12,7 @@ import {
 } from '../../../FitnessSidebar/FitnessChart.helpers.js';
 import { ParticipantStatus, getZoneColor, isBroadcasting } from '../../../domain';
 import { LayoutManager } from './layout';
+import { createChartDataSource } from './sessionDataAdapter.js';
 
 const DEFAULT_CHART_WIDTH = 420;
 const DEFAULT_CHART_HEIGHT = 390;
@@ -681,7 +682,7 @@ const RaceChartSvg = ({ paths, avatars, badges, connectors = [], xTicks, yTicks,
 	</svg>
 );
 
-const FitnessChartApp = ({ mode, onClose, config, onMount }) => {
+const FitnessChartApp = ({ mode, onClose, config, onMount, sessionData }) => {
 	useRenderProfiler('FitnessChart');
 	const {
 		participants,
@@ -693,6 +694,25 @@ const FitnessChartApp = ({ mode, onClose, config, onMount }) => {
 		zoneConfig,       // Zone config for coin rate lookup (fixes sawtooth)
 		sessionId         // Session ID for cache cleanup on session change
 	} = useFitnessPlugin('fitness_chart');
+
+	// Historical mode: use static session data instead of live plugin data
+	const staticSource = useMemo(() => {
+		if (!sessionData) return null;
+		// Handle both { session: {...} } wrapper and direct session object
+		const session = sessionData.session || sessionData;
+		return createChartDataSource(session);
+	}, [sessionData]);
+	const isHistorical = !!staticSource;
+
+	// Choose data source: static (historical) or live (plugin)
+	const chartParticipants = isHistorical ? staticSource.roster : participants;
+	const chartGetSeries = isHistorical ? staticSource.getSeries : getUserTimelineSeries;
+	const chartTimebase = isHistorical ? staticSource.timebase : timebase;
+	const chartHistorical = isHistorical ? [] : historicalParticipants;
+	const chartActivityMonitor = isHistorical ? null : activityMonitor;
+	const chartZoneConfig = isHistorical ? null : zoneConfig;
+	const chartSessionId = isHistorical ? (sessionData?.session?.id || sessionData?.sessionId || 'historical') : sessionId;
+
 	const containerRef = useRef(null);
 	const [chartSize, setChartSize] = useState({ width: DEFAULT_CHART_WIDTH, height: DEFAULT_CHART_HEIGHT });
 	const lastWarmupLogRef = useRef(null);
@@ -702,12 +722,13 @@ const FitnessChartApp = ({ mode, onClose, config, onMount }) => {
     }, [onMount]);
 
     useEffect(() => {
+        if (isHistorical) return;
         registerLifecycle({
             onPause: () => {},
             onResume: () => {},
             onSessionEnd: () => {}
         });
-    }, [registerLifecycle]);
+    }, [registerLifecycle, isHistorical]);
 
 	useLayoutEffect(() => {
 		const el = containerRef.current;
@@ -736,11 +757,11 @@ const FitnessChartApp = ({ mode, onClose, config, onMount }) => {
 	// Pass zoneConfig for zone-based slope enforcement (fixes sawtooth pattern)
 	// Pass sessionId to clear cache on session change (memory leak fix)
 	const { allEntries, presentEntries, absentEntries, dropoutMarkers, maxValue, maxIndex } = useRaceChartWithHistory(
-		participants,
-		getUserTimelineSeries,
-		timebase,
-		historicalParticipants,
-		{ activityMonitor, zoneConfig, sessionId }
+		chartParticipants,
+		chartGetSeries,
+		chartTimebase,
+		chartHistorical,
+		{ activityMonitor: chartActivityMonitor, zoneConfig: chartZoneConfig, sessionId: chartSessionId }
 	);
 
 	// TELEMETRY: Expose chart stats for memory leak profiling
@@ -760,7 +781,7 @@ const FitnessChartApp = ({ mode, onClose, config, onMount }) => {
 
 	// Diagnostic logging to dev.log to understand warmup failures without spamming
 	useEffect(() => {
-		const rosterCount = Array.isArray(participants) ? participants.length : 0;
+		const rosterCount = Array.isArray(chartParticipants) ? chartParticipants.length : 0;
 		const hasSeries = allEntries.length > 0;
 		const tickCount = Number(timebase?.tickCount || timebase?.intervalCount || 0) || 0;
 		if (hasSeries || rosterCount === 0) {
@@ -771,12 +792,12 @@ const FitnessChartApp = ({ mode, onClose, config, onMount }) => {
 		const snapshot = {
 			rosterCount,
 			tickCount,
-			seriesPerUser: (participants || []).map((p) => {
+			seriesPerUser: (chartParticipants || []).map((p) => {
 				const id = p.profileId || p.hrDeviceId || p.name || p.id;
 				const slug = id ? String(id).toLowerCase() : 'unknown';
-				const hr = typeof getUserTimelineSeries === 'function' ? (getUserTimelineSeries(slug, 'heart_rate', { clone: true }) || []) : [];
-				const beats = typeof getUserTimelineSeries === 'function' ? (getUserTimelineSeries(slug, 'heart_beats', { clone: true }) || []) : [];
-				const coins = typeof getUserTimelineSeries === 'function' ? (getUserTimelineSeries(slug, 'coins_total', { clone: true }) || []) : [];
+				const hr = typeof chartGetSeries === 'function' ? (chartGetSeries(slug, 'heart_rate', { clone: true }) || []) : [];
+				const beats = typeof chartGetSeries === 'function' ? (chartGetSeries(slug, 'heart_beats', { clone: true }) || []) : [];
+				const coins = typeof chartGetSeries === 'function' ? (chartGetSeries(slug, 'coins_total', { clone: true }) || []) : [];
 				return {
 					id: slug,
 					heartRateSamples: hr.length,
@@ -792,20 +813,20 @@ const FitnessChartApp = ({ mode, onClose, config, onMount }) => {
 			lastWarmupLogRef.current = signature;
 			console.warn('[FitnessChart][warmup]', snapshot);
 		}
-	}, [participants, allEntries, timebase, getUserTimelineSeries]);
+	}, [chartParticipants, allEntries, timebase, chartGetSeries]);
 	
 	// Guardrail: Verify chart present count matches roster count
 	// If mismatch, dump debug info to help diagnose state synchronization issues
 	useEffect(() => {
-		const rosterCount = Array.isArray(participants) ? participants.length : 0;
+		const rosterCount = Array.isArray(chartParticipants) ? chartParticipants.length : 0;
 		const chartPresentCount = presentEntries.length;
-		
+
 		if (rosterCount > 0 && chartPresentCount !== rosterCount) {
-			const rosterIds = (participants || []).map(p => p.profileId || p.id || p.name);
+			const rosterIds = (chartParticipants || []).map(p => p.profileId || p.id || p.name);
 			const chartPresentIds = presentEntries.map(e => e.profileId || e.id);
 			const chartAbsentIds = absentEntries.map(e => e.profileId || e.id);
 			const allChartIds = allEntries.map(e => ({ id: e.profileId || e.id, status: e.status }));
-			
+
 			console.warn('[FitnessChart] Participant count mismatch!', {
 				rosterCount,
 				chartPresentCount,
@@ -821,7 +842,7 @@ const FitnessChartApp = ({ mode, onClose, config, onMount }) => {
 				extraInChart: chartPresentIds.filter(id => !rosterIds.includes(id))
 			});
 		}
-	}, [participants, presentEntries, absentEntries, allEntries]);
+	}, [chartParticipants, presentEntries, absentEntries, allEntries]);
 	
 	const { width: chartWidth, height: chartHeight } = chartSize;
 	const effectiveTicks = Math.max(MIN_VISIBLE_TICKS, maxIndex + 1, 1);
