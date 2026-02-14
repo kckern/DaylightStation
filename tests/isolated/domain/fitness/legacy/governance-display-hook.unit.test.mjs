@@ -7,21 +7,32 @@ jest.unstable_mockModule('react', () => ({
   default: { useMemo: mockUseMemo }
 }));
 
+// Mock api.mjs to avoid window reference in Node test environment
+jest.unstable_mockModule('#frontend/lib/api.mjs', () => ({
+  DaylightMediaPath: (p) => p,
+  default: {}
+}));
+
 const { resolveGovernanceDisplay } = await import(
   '#frontend/modules/Fitness/hooks/useGovernanceDisplay.js'
 );
+
+// Realistic zone sequence matching DEFAULT_ZONE_CONFIG thresholds
+const FULL_ZONE_SEQUENCE = [
+  { id: 'cool', name: 'Cool', color: '#38bdf8', threshold: 60, index: 0 },
+  { id: 'active', name: 'Active', color: '#22c55e', threshold: 100, index: 1 },
+  { id: 'warm', name: 'Warm', color: '#eab308', threshold: 120, index: 2 },
+  { id: 'hot', name: 'Hot', color: '#fb923c', threshold: 140, index: 3 },
+  { id: 'fire', name: 'On Fire', color: '#ef4444', threshold: 160, index: 4 }
+];
 
 const ZONE_META = {
   map: {
     cool: { id: 'cool', name: 'Cool', color: '#94a3b8', rank: 0, min: 0 },
     active: { id: 'active', name: 'Active', color: '#22c55e', rank: 1, min: 100 },
-    warm: { id: 'warm', name: 'Warm', color: '#eab308', rank: 2, min: 130 }
-  },
-  rankMap: { cool: 0, active: 1, warm: 2 },
-  infoMap: {
-    cool: { id: 'cool', name: 'Cool', color: '#94a3b8' },
-    active: { id: 'active', name: 'Active', color: '#22c55e' },
-    warm: { id: 'warm', name: 'Warm', color: '#eab308' }
+    warm: { id: 'warm', name: 'Warm', color: '#eab308', rank: 2, min: 130 },
+    hot: { id: 'hot', name: 'Hot', color: '#fb923c', rank: 3, min: 140 },
+    fire: { id: 'fire', name: 'On Fire', color: '#ef4444', rank: 4, min: 160 }
   }
 };
 
@@ -192,5 +203,122 @@ describe('resolveGovernanceDisplay', () => {
     expect(result.show).toBe(true);
     expect(result.rows.length).toBe(1);
     expect(result.rows[0].targetZone.id).toBe('warm');
+  });
+
+  test('computes target-aware progress for COOL user targeting HOT', () => {
+    const displayMap = makeDisplayMap([
+      {
+        id: 'user-1', displayName: 'Alice', avatarSrc: '/img/alice.jpg',
+        heartRate: 85, zoneId: 'cool', zoneName: 'Cool', zoneColor: '#38bdf8',
+        progress: 0.625, zoneSequence: FULL_ZONE_SEQUENCE, targetHeartRate: 100
+      }
+    ]);
+
+    const result = resolveGovernanceDisplay(
+      {
+        isGoverned: true,
+        status: 'pending',
+        requirements: [
+          { zone: 'hot', rule: 'all', missingUsers: ['user-1'], satisfied: false }
+        ]
+      },
+      displayMap,
+      ZONE_META
+    );
+
+    const row = result.rows[0];
+
+    // Progress should be toward HOT (140), not just ACTIVE (100)
+    // rangeMin = max(0, 100 - 40) = 60, rangeMax = 140, span = 80
+    // progress = (85 - 60) / 80 = 0.3125
+    expect(row.progress).toBeCloseTo(0.3125, 2);
+
+    // Should have intermediate zones: ACTIVE and WARM
+    expect(row.intermediateZones).toHaveLength(2);
+    expect(row.intermediateZones[0].id).toBe('active');
+    expect(row.intermediateZones[0].position).toBeCloseTo(0.5, 2);
+    expect(row.intermediateZones[1].id).toBe('warm');
+    expect(row.intermediateZones[1].position).toBeCloseTo(0.75, 2);
+  });
+
+  test('single-zone transition has no intermediate zones', () => {
+    const displayMap = makeDisplayMap([
+      {
+        id: 'user-1', displayName: 'Alice', avatarSrc: '/img/alice.jpg',
+        heartRate: 110, zoneId: 'active', zoneName: 'Active', zoneColor: '#22c55e',
+        progress: 0.5, zoneSequence: FULL_ZONE_SEQUENCE, targetHeartRate: 120
+      }
+    ]);
+
+    const result = resolveGovernanceDisplay(
+      {
+        isGoverned: true,
+        status: 'pending',
+        requirements: [
+          { zone: 'warm', rule: 'all', missingUsers: ['user-1'], satisfied: false }
+        ]
+      },
+      displayMap,
+      ZONE_META
+    );
+
+    const row = result.rows[0];
+    // ACTIVE (100) → WARM (120), HR 110: progress = (110-100)/(120-100) = 0.5
+    expect(row.progress).toBeCloseTo(0.5, 2);
+    expect(row.intermediateZones).toHaveLength(0);
+  });
+
+  test('user at or above target zone has progress 1', () => {
+    const displayMap = makeDisplayMap([
+      {
+        id: 'user-1', displayName: 'Alice', avatarSrc: '/img/alice.jpg',
+        heartRate: 145, zoneId: 'hot', zoneName: 'Hot', zoneColor: '#fb923c',
+        progress: 0.25, zoneSequence: FULL_ZONE_SEQUENCE, targetHeartRate: 160
+      }
+    ]);
+
+    const result = resolveGovernanceDisplay(
+      {
+        isGoverned: true,
+        status: 'pending',
+        requirements: [
+          { zone: 'warm', rule: 'all', missingUsers: ['user-1'], satisfied: false }
+        ]
+      },
+      displayMap,
+      ZONE_META
+    );
+
+    const row = result.rows[0];
+    // HOT (index 3) >= WARM (index 2), so progress = 1
+    expect(row.progress).toBe(1);
+    expect(row.intermediateZones).toHaveLength(0);
+  });
+
+  test('falls back to display map progress when zoneSequence is empty', () => {
+    const displayMap = makeDisplayMap([
+      {
+        id: 'user-1', displayName: 'Alice', avatarSrc: '/img/alice.jpg',
+        heartRate: 95, zoneId: 'cool', zoneName: 'Cool', zoneColor: '#38bdf8',
+        progress: 0.3, zoneSequence: [], targetHeartRate: 100
+      }
+    ]);
+
+    const result = resolveGovernanceDisplay(
+      {
+        isGoverned: true,
+        status: 'pending',
+        requirements: [
+          { zone: 'warm', rule: 'all', missingUsers: ['user-1'], satisfied: false }
+        ]
+      },
+      displayMap,
+      ZONE_META
+    );
+
+    const row = result.rows[0];
+    // Can't compute target-aware progress without zoneSequence, so fallback
+    expect(row.progress).toBe(0.3);
+    expect(row.intermediateZones).toHaveLength(0);
   });
 });
