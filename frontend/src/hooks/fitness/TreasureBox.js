@@ -39,7 +39,7 @@ export class FitnessTreasureBox {
     // REMOVED: _governanceCb - governance now reads from ZoneProfileStore on tick boundaries
   }
 
-  _log(event, data = {}, level = 'warn') { // Default to warn to match legacy behavior
+  _log(event, data = {}, level = 'debug') {
     const logger = getLogger();
     if (logger && typeof logger[level] === 'function') {
       logger[level](`treasurebox.${event}`, data);
@@ -461,13 +461,16 @@ export class FitnessTreasureBox {
     // If callers pass an entityId, require profileId to map it back to userId.
     const isEntityId = entityOrUserId?.startsWith?.('entity-');
     const profileId = options.profileId || (isEntityId ? null : entityOrUserId);
-    this._log('record_heart_rate', { 
-      entityOrUserId, 
-      hr, 
-      profileId,
-      hasGlobalZones: this.globalZones.length > 0,
-      isEntityId
-    });
+    const rhLogger = getLogger();
+    if (rhLogger?.sampled) {
+      rhLogger.sampled('treasurebox.record_heart_rate', {
+        entityOrUserId,
+        hr,
+        profileId,
+        hasGlobalZones: this.globalZones.length > 0,
+        isEntityId
+      }, { maxPerMinute: 5 });
+    }
     if (!profileId) {
       this._log('missing_profile_id_for_entity', { entityOrUserId });
       return;
