@@ -1246,6 +1246,15 @@ export class GovernanceEngine {
       });
     }
 
+    // Capture zone maps early so _getZoneRank()/_getZoneInfo() work during evaluation
+    // (Previously stored only after evaluation, causing first-call misses)
+    if (zoneRankMap && Object.keys(zoneRankMap).length > 0) {
+      this._latestInputs.zoneRankMap = zoneRankMap;
+    }
+    if (zoneInfoMap && Object.keys(zoneInfoMap).length > 0) {
+      this._latestInputs.zoneInfoMap = zoneInfoMap;
+    }
+
     // 1. Check if media is governed
     if (!this.media || !this.media.id || !hasGovernanceRules) {
       getLogger().warn('governance.evaluate.no_media_or_rules', {

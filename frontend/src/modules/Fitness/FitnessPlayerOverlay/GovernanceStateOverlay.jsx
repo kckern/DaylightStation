@@ -5,33 +5,39 @@ import { useDeadlineCountdown } from '../shared';
 import GovernanceAudioPlayer from './GovernanceAudioPlayer.jsx';
 import './GovernanceStateOverlay.scss';
 
-const GovernanceWarningOverlay = React.memo(function GovernanceWarningOverlay({ countdown, countdownTotal, offenders }) {
+const GovernanceWarningOverlay = React.memo(function GovernanceWarningOverlay({ countdown, countdownTotal, rows, offenders }) {
   const remaining = Number.isFinite(countdown) ? Math.max(countdown, 0) : 0;
   const total = Number.isFinite(countdownTotal) ? Math.max(countdownTotal, 1) : 1;
   const progress = Math.max(0, Math.min(1, remaining / total));
 
+  // Support both new (rows) and legacy (offenders) format
+  const items = Array.isArray(rows) && rows.length > 0 ? rows : (Array.isArray(offenders) ? offenders : []);
+
   return (
     <div className="governance-progress-overlay" aria-hidden="true">
-      {Array.isArray(offenders) && offenders.length > 0 ? (
+      {items.length > 0 ? (
         <div className="governance-progress-overlay__offenders">
-          {offenders.map((offender) => {
-            const clamped = Number.isFinite(offender.progressPercent)
-              ? Math.max(0, Math.min(1, offender.progressPercent))
+          {items.map((item) => {
+            // New format: item.progress (0-1), item.currentZone?.color, item.targetZone?.color
+            // Legacy format: item.progressPercent (0-1), item.zoneColor, item.targetZoneColor
+            const rawProgress = item.progress ?? item.progressPercent ?? null;
+            const clamped = Number.isFinite(rawProgress)
+              ? Math.max(0, Math.min(1, rawProgress))
               : null;
             const percentValue = clamped != null ? Math.round(clamped * 100) : null;
-            const chipProgress = Number.isFinite(percentValue) ? Math.max(0, percentValue) : 0;
-            const borderStyle = offender.zoneColor ? { borderColor: offender.zoneColor } : undefined;
-            const progressColor = offender.targetZoneColor || offender.zoneColor || 'rgba(56, 189, 248, 0.95)';
+            const borderColor = item.currentZone?.color || item.zoneColor || null;
+            const borderStyle = borderColor ? { borderColor } : undefined;
+            const progressColor = item.targetZone?.color || item.targetZoneColor || borderColor || 'rgba(56, 189, 248, 0.95)';
             return (
               <div
                 className="governance-progress-overlay__chip"
-                key={offender.key}
+                key={item.key}
                 style={borderStyle}
               >
                 <div className="governance-progress-overlay__chip-main">
                   <div className="governance-progress-overlay__chip-avatar" style={borderStyle}>
                     <img
-                      src={offender.avatarSrc}
+                      src={item.avatarSrc}
                       alt=""
                       onError={(event) => {
                         const img = event.currentTarget;
@@ -43,11 +49,11 @@ const GovernanceWarningOverlay = React.memo(function GovernanceWarningOverlay({ 
                   </div>
                   <div className="governance-progress-overlay__chip-text">
                     <span className="governance-progress-overlay__chip-name">
-                      {offender.displayLabel || offender.name}
+                      {item.displayName || item.displayLabel || item.name}
                     </span>
                     <span className="governance-progress-overlay__chip-meta">
-                      {Number.isFinite(offender.heartRate)
-                        ? offender.heartRate
+                      {Number.isFinite(item.heartRate)
+                        ? item.heartRate
                         : 'No HR data'}
                     </span>
                   </div>
@@ -77,9 +83,9 @@ const GovernanceWarningOverlay = React.memo(function GovernanceWarningOverlay({ 
     </div>
   );
 }, (prevProps, nextProps) => {
-  // Skip re-render if countdown delta < 0.3s and offenders reference unchanged
+  // Skip re-render if countdown delta < 0.3s and rows/offenders reference unchanged
   const countdownDelta = Math.abs((prevProps.countdown || 0) - (nextProps.countdown || 0));
-  if (countdownDelta < 0.3 && prevProps.offenders === nextProps.offenders) {
+  if (countdownDelta < 0.3 && prevProps.rows === nextProps.rows && prevProps.offenders === nextProps.offenders) {
     return true; // props are equal, skip re-render
   }
   return false;
@@ -88,36 +94,33 @@ const GovernanceWarningOverlay = React.memo(function GovernanceWarningOverlay({ 
 GovernanceWarningOverlay.propTypes = {
   countdown: PropTypes.number,
   countdownTotal: PropTypes.number,
-  offenders: PropTypes.arrayOf(PropTypes.shape({
-    key: PropTypes.string.isRequired,
-    name: PropTypes.string.isRequired,
-    displayLabel: PropTypes.string,
-    heartRate: PropTypes.number,
-    avatarSrc: PropTypes.string.isRequired,
-    zoneId: PropTypes.string,
-    zoneColor: PropTypes.string,
-    progressPercent: PropTypes.number
-  }))
+  rows: PropTypes.array,
+  offenders: PropTypes.array
 };
 
-const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ overlay, lockRows = [] }) {
-  const title = overlay.title || 'Video Locked';
-  const primaryMessage = Array.isArray(overlay.descriptions) && overlay.descriptions.length > 0
+const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ display, overlay, lockRows = [] }) {
+  // Support both new (display) and legacy (overlay + lockRows) format
+  const status = display?.status || overlay?.status || 'unknown';
+  const title = overlay?.title || 'Video Locked';
+  const primaryMessage = Array.isArray(overlay?.descriptions) && overlay.descriptions.length > 0
     ? overlay.descriptions[0]
     : 'Meet these conditions to unlock playback.';
-  const rows = Array.isArray(lockRows) ? lockRows : [];
+  const rows = (display ? display.rows : lockRows) || [];
   const hasRows = rows.length > 0;
   const isCompact = rows.length > 6;
   const showTableHeader = !isCompact;
 
   const renderProgressBlock = (row, variant = 'default') => {
-    if (row.progressPercent == null) return null;
-    const clamped = Math.max(0, Math.min(1, row.progressPercent));
+    // Support both formats: progress (new) and progressPercent (legacy)
+    const rawProgress = row.progress ?? row.progressPercent ?? null;
+    if (rawProgress == null) return null;
+    const clamped = Math.max(0, Math.min(1, rawProgress));
     const percentValue = Math.round(clamped * 100);
     const widthPercent = Number.isFinite(percentValue) ? Math.max(0, percentValue) : 0;
     const showIndicator = widthPercent > 0;
     const progressClass = `governance-lock__progress${variant === 'compact' ? ' governance-lock__progress--compact' : ''}`;
     const intermediateZones = Array.isArray(row.intermediateZones) ? row.intermediateZones : [];
+    const fillBackground = row.progressGradient || (row.targetZone?.color ? row.targetZone.color : undefined);
     return (
       <div className={progressClass} aria-hidden="true">
         <div className="governance-lock__progress-track">
@@ -125,7 +128,7 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ over
             className="governance-lock__progress-fill"
             style={{
               transform: `scaleX(${clamped})`,
-              background: row.progressGradient || undefined
+              background: fillBackground
             }}
           />
           {intermediateZones.map((zone) => {
@@ -171,7 +174,7 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ over
   };
 
   return (
-    <div className={`governance-overlay governance-overlay--${overlay.status || 'unknown'}`}>
+    <div className={`governance-overlay governance-overlay--${status}`}>
       <div className={`governance-overlay__panel governance-lock${isCompact ? ' governance-lock--compact' : ''}`}>
         <div className="governance-lock__title">{title}</div>
         {primaryMessage ? (
@@ -203,7 +206,7 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ over
                   />
                 </div>
                 <div className="governance-lock__chip-text">
-                  <span className="governance-lock__chip-name">{row.displayLabel || row.name}</span>
+                  <span className="governance-lock__chip-name">{row.displayName || row.displayLabel || row.name}</span>
                   <span className="governance-lock__chip-meta">{renderChipMeta(row)}</span>
                 </div>
               </div>
@@ -227,12 +230,12 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ over
                 </div>
                 <div className="governance-lock__cell" role="cell">
                   <span className={`governance-lock__pill ${currentClass}`}>
-                    {row.currentLabel || 'No signal'}
+                    {row.currentZone?.name || row.currentLabel || 'No signal'}
                   </span>
                 </div>
                 <div className="governance-lock__cell" role="cell">
                   <span className={`governance-lock__pill governance-lock__pill--target ${targetClass}`}>
-                    {row.targetLabel || 'Target'}
+                    {row.targetZone?.name || row.targetLabel || 'Target'}
                   </span>
                 </div>
                 {renderProgressBlock(row)}
@@ -252,32 +255,16 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ over
 });
 
 GovernancePanelOverlay.propTypes = {
+  display: PropTypes.shape({
+    status: PropTypes.string,
+    rows: PropTypes.array
+  }),
   overlay: PropTypes.shape({
     status: PropTypes.string,
     title: PropTypes.string,
     descriptions: PropTypes.arrayOf(PropTypes.string)
-  }).isRequired,
-  lockRows: PropTypes.arrayOf(PropTypes.shape({
-    key: PropTypes.string.isRequired,
-    name: PropTypes.string.isRequired,
-    displayLabel: PropTypes.string,
-    groupLabel: PropTypes.string,
-    avatarSrc: PropTypes.string.isRequired,
-    currentZone: PropTypes.shape({
-      id: PropTypes.string,
-      name: PropTypes.string
-    }),
-    targetZone: PropTypes.shape({
-      id: PropTypes.string,
-      name: PropTypes.string
-    }),
-    currentLabel: PropTypes.string,
-    targetLabel: PropTypes.string,
-    heartRate: PropTypes.number,
-    targetHeartRate: PropTypes.number,
-    progressPercent: PropTypes.number,
-    progressGradient: PropTypes.string
-  }))
+  }),
+  lockRows: PropTypes.array
 };
 
 const GenericOverlay = React.memo(function GenericOverlay({ overlay }) {
@@ -306,35 +293,62 @@ GenericOverlay.propTypes = {
   }).isRequired
 };
 
-const GovernanceStateOverlay = ({ overlay = null, lockRows = [], warningOffenders = [] }) => {
-  const overlayShow = Boolean(overlay?.show);
-  const overlayCategory = overlay?.category || null;
-  const overlayStatus = typeof overlay?.status === 'string' ? overlay.status.toLowerCase() : '';
+const GovernanceStateOverlay = ({ display, overlay = null, lockRows = [], warningOffenders = [] }) => {
+  // New path: display prop from useGovernanceDisplay
+  // Legacy path: overlay + lockRows + warningOffenders
+  const useNewPath = display != null;
 
-  // Self-updating countdown from deadline - only runs interval when deadline is set
+  const effectiveStatus = useNewPath
+    ? (display.status || '')
+    : (typeof overlay?.status === 'string' ? overlay.status.toLowerCase() : '');
+  const effectiveShow = useNewPath ? display.show : Boolean(overlay?.show);
+  const effectiveCategory = useNewPath ? null : (overlay?.category || null);
+
+  // Self-updating countdown from deadline
   const { remaining: countdown } = useDeadlineCountdown(
-    overlay?.deadline,
-    overlay?.countdownTotal || 30
+    useNewPath ? display.deadline : overlay?.deadline,
+    useNewPath ? (display.gracePeriodTotal || 30) : (overlay?.countdownTotal || 30)
   );
-  
+
   // Determine which audio track to play (or null for none)
   const audioTrackKey = useMemo(() => {
-    if (!overlayShow || overlayCategory !== 'governance') {
-      return null;
-    }
-    if (overlayStatus === 'pending') {
-      return 'init';
-    }
-    if (overlayStatus === 'locked') {
-      return 'locked';
-    }
+    if (!effectiveShow) return null;
+    // Legacy path uses category check; new path just uses status
+    if (!useNewPath && effectiveCategory !== 'governance') return null;
+    if (effectiveStatus === 'pending') return 'init';
+    if (effectiveStatus === 'locked') return 'locked';
     return null;
-  }, [overlayShow, overlayCategory, overlayStatus]);
+  }, [effectiveShow, effectiveCategory, effectiveStatus, useNewPath]);
 
-  if (!overlay?.show) {
+  if (!effectiveShow) {
     return null;
   }
 
+  // New path: dispatch on status
+  if (useNewPath) {
+    if (effectiveStatus === 'warning') {
+      return (
+        <>
+          <GovernanceAudioPlayer trackKey={audioTrackKey} />
+          <GovernanceWarningOverlay
+            countdown={countdown}
+            countdownTotal={display.gracePeriodTotal}
+            rows={display.rows}
+          />
+        </>
+      );
+    }
+
+    // pending, locked, challenge-failed
+    return (
+      <>
+        <GovernanceAudioPlayer trackKey={audioTrackKey} />
+        <GovernancePanelOverlay display={display} />
+      </>
+    );
+  }
+
+  // Legacy path: dispatch on category
   if (overlay.category === 'governance-warning-progress') {
     return (
       <>
@@ -369,6 +383,15 @@ const GovernanceStateOverlay = ({ overlay = null, lockRows = [], warningOffender
 };
 
 GovernanceStateOverlay.propTypes = {
+  display: PropTypes.shape({
+    show: PropTypes.bool,
+    status: PropTypes.string,
+    deadline: PropTypes.number,
+    gracePeriodTotal: PropTypes.number,
+    rows: PropTypes.array,
+    challenge: PropTypes.object,
+    videoLocked: PropTypes.bool
+  }),
   overlay: PropTypes.shape({
     show: PropTypes.bool,
     category: PropTypes.string,
@@ -379,15 +402,8 @@ GovernanceStateOverlay.propTypes = {
     descriptions: PropTypes.arrayOf(PropTypes.string),
     requirements: PropTypes.array
   }),
-  lockRows: PropTypes.arrayOf(PropTypes.shape({
-    key: PropTypes.string.isRequired
-  })),
-  warningOffenders: PropTypes.arrayOf(PropTypes.shape({
-    key: PropTypes.string.isRequired,
-    name: PropTypes.string.isRequired,
-    heartRate: PropTypes.number,
-    avatarSrc: PropTypes.string.isRequired
-  }))
+  lockRows: PropTypes.array,
+  warningOffenders: PropTypes.array
 };
 
 export default GovernanceStateOverlay;

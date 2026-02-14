@@ -17,7 +17,7 @@ describe('Session', () => {
 
   describe('constructor', () => {
     test('creates session with required fields', () => {
-      expect(session.sessionId).toBe('20260111120000');
+      expect(session.sessionId.toString()).toBe('20260111120000');
       expect(session.startTime).toBe(1736596800000);
       expect(session.endTime).toBeNull();
     });
@@ -180,9 +180,9 @@ describe('Session', () => {
       expect(session.getDate()).toBe('2026-01-11');
     });
 
-    test('returns null for invalid sessionId', () => {
-      session.sessionId = '123';
-      expect(session.getDate()).toBeNull();
+    test('throws for invalid sessionId', () => {
+      // SessionId value object validates on construction — invalid IDs throw
+      expect(() => new Session({ sessionId: '123', startTime: Date.now() })).toThrow();
     });
   });
 
@@ -204,7 +204,7 @@ describe('Session', () => {
       const json = session.toJSON();
       const restored = Session.fromJSON(json);
 
-      expect(restored.sessionId).toBe(session.sessionId);
+      expect(restored.sessionId.toString()).toBe(session.sessionId.toString());
       expect(restored.startTime).toBe(session.startTime);
       expect(restored.endTime).toBe(session.endTime);
       expect(restored.roster).toEqual(session.roster);
@@ -212,7 +212,7 @@ describe('Session', () => {
 
     test('handles legacy id field', () => {
       const restored = Session.fromJSON({ id: '20260111120000', startTime: 123 });
-      expect(restored.sessionId).toBe('20260111120000');
+      expect(restored.sessionId.toString()).toBe('20260111120000');
     });
   });
 

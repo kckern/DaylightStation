@@ -7,7 +7,7 @@ import usePlayerController from '../Player/usePlayerController.js';
 import { usePlayheadStallDetection } from '../Player/hooks/usePlayheadStallDetection.js';
 import { DaylightMediaPath, DaylightAPI } from '../../lib/api.mjs';
 import FitnessPlayerFooter from './FitnessPlayerFooter.jsx';
-import FitnessPlayerOverlay, { useGovernanceOverlay } from './FitnessPlayerOverlay.jsx';
+import FitnessPlayerOverlay from './FitnessPlayerOverlay.jsx';
 import { playbackLog } from '../Player/lib/playbackLogger.js';
 import { useFitnessVolumeControls } from './useFitnessVolumeControls.js';
 import { resolveMediaIdentity, normalizeDuration } from '../Player/utils/mediaIdentity.js';
@@ -260,19 +260,21 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
     ? contextParticipantRoster
     : (Array.isArray(sessionRoster) ? sessionRoster : []);
 
-  const governanceOverlay = useGovernanceOverlay(governanceState, participants);
   renderCountRef.current += 1;
 
   const playerContentClassName = useMemo(() => {
     const classes = ['fitness-player-content'];
-    if (governanceOverlay.filterClass) {
-      classes.push(governanceOverlay.filterClass);
+    const govStatus = typeof governanceState?.status === 'string' ? governanceState.status.toLowerCase() : '';
+    if (govStatus === 'warning') {
+      classes.push('governance-filter-warning');
+    } else if (govStatus === 'locked') {
+      classes.push('governance-filter-critical');
     }
-    if (governanceOverlay.status) {
-      classes.push(`governance-status-${governanceOverlay.status}`);
+    if (govStatus) {
+      classes.push(`governance-status-${govStatus}`);
     }
     return classes.join(' ');
-  }, [governanceOverlay.filterClass, governanceOverlay.status]);
+  }, [governanceState?.status]);
 
   const governedLabelSet = useMemo(() => {
     if (contextGovernedLabelSet instanceof Set) return contextGovernedLabelSet;
@@ -1424,8 +1426,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
   const videoContent = (
     <div className="fitness-video-shell">
       <div className="player-controls-blocker"></div>
-      <FitnessPlayerOverlay 
-        overlay={governanceOverlay} 
+      <FitnessPlayerOverlay
         playerRef={playerRef}
         showFullscreenVitals={playerMode === 'fullscreen'}
       />
