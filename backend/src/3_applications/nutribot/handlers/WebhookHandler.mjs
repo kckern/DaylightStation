@@ -113,6 +113,7 @@ export class WebhookHandler {
       'a': CallbackActions.ACCEPT_LOG,
       'r': CallbackActions.REVISE_ITEM,
       'x': CallbackActions.REJECT_LOG,
+      'cr': CallbackActions.CANCEL_REVISION,
     };
     if (legacyActionMap[action]) {
       action = legacyActionMap[action];
@@ -147,6 +148,32 @@ export class WebhookHandler {
           itemId: decoded.itemId,
           messageId: input.messageId
         });
+      }
+      case CallbackActions.CANCEL_REVISION: {
+        // Clear revision state
+        const stateStore = this.#container.getConversationStateStore?.();
+        if (stateStore) {
+          try {
+            await stateStore.clear(input.conversationId || input.userId);
+          } catch (e) {
+            this.#logger.debug?.('webhook.callback.cr.clearState.failed', { error: e.message });
+          }
+        }
+        // Restore Accept/Revise/Discard buttons
+        const encodeCallback = (cmd, data) => JSON.stringify({ cmd, ...data });
+        const buttons = [
+          [
+            { text: '✅ Accept', callback_data: encodeCallback('a', { id: decoded.id }) },
+            { text: '✏️ Revise', callback_data: encodeCallback('r', { id: decoded.id }) },
+            { text: '🗑️ Discard', callback_data: encodeCallback('x', { id: decoded.id }) },
+          ],
+        ];
+        try {
+          await messaging.updateMessage(input.conversationId || input.userId, input.messageId, { choices: buttons, inline: true });
+        } catch (e) {
+          this.#logger.warn?.('webhook.callback.cr.updateFailed', { error: e.message });
+        }
+        return { ok: true, handled: true };
       }
       default:
         this.#logger.warn?.('webhook.callback.unknown', { action, decoded });
