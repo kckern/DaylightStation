@@ -199,6 +199,27 @@ describe('BaseAgent', () => {
       );
     });
 
+    it('should register assignment using static id from constructor', async () => {
+      let executed = false;
+
+      class RealAssignment {
+        static id = 'real-assignment';
+        async execute() { executed = true; return { done: true }; }
+      }
+
+      class TestAgent extends BaseAgent {
+        static id = 'test';
+        getSystemPrompt() { return 'test'; }
+        registerTools() {}
+      }
+
+      const agent = new TestAgent({ agentRuntime: mockRuntime, workingMemory: mockWorkingMemory, logger: mockLogger });
+      agent.registerAssignment(new RealAssignment());
+
+      const result = await agent.runAssignment('real-assignment', { userId: 'kevin' });
+      assert.ok(executed);
+    });
+
     it('should list registered assignments via getAssignments', () => {
       const mockAssignment = { id: 'a1', constructor: { id: 'a1' } };
 

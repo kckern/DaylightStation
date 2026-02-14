@@ -85,7 +85,8 @@ export class BaseAgent {
   }
 
   registerAssignment(assignment) {
-    this.#assignments.set(assignment.id, assignment);
+    const id = assignment.constructor.id || assignment.id;
+    this.#assignments.set(id, assignment);
   }
 
   getAssignments() {
