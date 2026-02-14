@@ -152,8 +152,9 @@ import { ConfigHouseholdAdapter, HomeBotInputRouter } from '#adapters/homebot/in
 import { createHomebotRouter } from '#api/v1/routers/homebot.mjs';
 
 // Agents application imports
-import { AgentOrchestrator, EchoAgent } from '#apps/agents/index.mjs';
-import { MastraAdapter } from '#adapters/agents/index.mjs';
+import { AgentOrchestrator, EchoAgent, Scheduler } from '#apps/agents/index.mjs';
+import { HealthCoachAgent } from '#apps/agents/health-coach/index.mjs';
+import { MastraAdapter, YamlWorkingMemoryAdapter } from '#adapters/agents/index.mjs';
 import { createAgentsRouter } from '#api/v1/routers/agents.mjs';
 
 // Health domain + application imports
@@ -2303,25 +2304,61 @@ export function createCalendarApiRouter(config) {
  * Create agents API router
  * @param {Object} config
  * @param {Object} [config.logger] - Logger instance
+ * @param {Object} [config.healthStore] - YamlHealthDatastore for health data persistence
+ * @param {Object} [config.healthService] - AggregateHealthUseCase for health aggregation
+ * @param {Object} [config.fitnessPlayableService] - FitnessPlayableService for episode browsing
+ * @param {Object} [config.dataService] - DataService for user data read/write
+ * @param {Object} [config.configService] - ConfigService for household/user config
  * @returns {express.Router}
  */
 export function createAgentsApiRouter(config) {
-  const { logger = console } = config;
+  const {
+    logger = console,
+    healthStore,
+    healthService,
+    fitnessPlayableService,
+    dataService,
+    configService,
+  } = config;
 
   // Create Mastra adapter (IAgentRuntime implementation)
   const agentRuntime = new MastraAdapter({ logger });
 
+  // Create working memory adapter for agent state persistence
+  const workingMemory = new YamlWorkingMemoryAdapter({ dataService, logger });
+
   // Create orchestrator
   const agentOrchestrator = new AgentOrchestrator({ agentRuntime, logger });
+
+  // Create scheduler for cron-triggered assignments
+  const scheduler = new Scheduler({ logger });
 
   // Register available agents
   agentOrchestrator.register(EchoAgent);
 
+  // Register health coach agent (requires health services)
+  if (healthStore && healthService) {
+    agentOrchestrator.register(HealthCoachAgent, {
+      workingMemory,
+      healthStore,
+      healthService,
+      fitnessPlayableService,
+      dataService,
+      configService,
+    });
+  }
+
+  // Register scheduled assignments for all agents
+  for (const agent of agentOrchestrator.listInstances()) {
+    scheduler.registerAgent(agent, agentOrchestrator);
+  }
+
   logger.info?.('agents.bootstrap.complete', {
     registeredAgents: agentOrchestrator.list().map(a => a.id),
+    scheduledJobs: scheduler.list(),
   });
 
-  return createAgentsRouter({ agentOrchestrator, logger });
+  return createAgentsRouter({ agentOrchestrator, scheduler, logger });
 }
 
 // =============================================================================
