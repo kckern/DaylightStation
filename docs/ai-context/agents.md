@@ -40,6 +40,16 @@ Autonomous AI agents that use LLM reasoning for complex tasks. Unlike rule-based
 - `echo/EchoAgent.mjs` - Demo agent with echo and time tools
 - `index.mjs` - Barrel exports
 
+### Health Coach Agent (`3_applications/agents/health-coach/`)
+- `HealthCoachAgent.mjs` - Main agent class (extends BaseAgent)
+- `assignments/DailyDashboard.mjs` - Daily dashboard preparation assignment
+- `tools/HealthToolFactory.mjs` - Weight, nutrition, workout tools (5 tools)
+- `tools/FitnessContentToolFactory.mjs` - Plex content browsing, program state (3 tools)
+- `tools/DashboardToolFactory.mjs` - Dashboard write, goals, coaching notes (3 tools)
+- `schemas/dashboard.mjs` - Dashboard output JSON Schema
+- `prompts/system.mjs` - System prompt
+- `index.mjs` - Barrel exports
+
 ### Framework (`3_applications/agents/framework/`)
 - `BaseAgent.mjs` - Common lifecycle (memory, tools, assignments)
 - `ToolFactory.mjs` - Grouped tool creation base class
@@ -68,8 +78,14 @@ Autonomous AI agents that use LLM reasoning for complex tasks. Unlike rule-based
 - `framework/ToolFactory.test.mjs` - 4 tests
 - `framework/OutputValidator.test.mjs` - 9 tests
 - `framework/Assignment.test.mjs` - 4 tests
-- `framework/BaseAgent.test.mjs` - 9 tests
+- `framework/BaseAgent.test.mjs` - 10 tests
 - `framework/Scheduler.test.mjs` - 6 tests
+- `health-coach/dashboard-schema.test.mjs` - 5 tests
+- `health-coach/HealthToolFactory.test.mjs` - 7 tests
+- `health-coach/FitnessContentToolFactory.test.mjs` - 5 tests
+- `health-coach/DashboardToolFactory.test.mjs` - 5 tests
+- `health-coach/DailyDashboard.test.mjs` - 8 tests
+- `health-coach/HealthCoachAgent.test.mjs` - 8 tests
 
 ## API Endpoints
 
@@ -80,6 +96,8 @@ Autonomous AI agents that use LLM reasoning for complex tasks. Unlike rule-based
 | POST | `/agents/:agentId/run-background` | Run agent async (fire-and-forget) |
 | GET | `/agents/:agentId/assignments` | List agent assignments |
 | POST | `/agents/:agentId/assignments/:assignmentId/run` | Manually trigger assignment |
+| GET | `/health-dashboard/:userId/:date` | Read agent-generated dashboard |
+| GET | `/health-dashboard/:userId` | Read today's dashboard |
 
 ## Creating a New Agent
 
@@ -158,4 +176,5 @@ curl -X POST http://localhost:3112/agents/echo/run \
 - Design: `docs/plans/2026-01-26-ai-agents-architecture-design.md`
 - Agent Framework Design: `docs/roadmap/2026-02-14-fitness-dashboard-health-agent-design.md`
 - Implementation Plan: `docs/plans/2026-02-14-agent-framework.md`
+- Health Coach Plan: `docs/plans/2026-02-14-health-coach-agent.md`
 - Smoke test: `docs/runbooks/agents-smoke-test.md`

@@ -11,3 +11,4 @@ export * from './framework/index.mjs';
 
 // Agents
 export { EchoAgent } from './echo/index.mjs';
+export { HealthCoachAgent } from './health-coach/index.mjs';
