@@ -161,6 +161,7 @@ import { createAgentsRouter } from '#api/v1/routers/agents.mjs';
 import { AggregateHealthUseCase } from '#apps/health/AggregateHealthUseCase.mjs';
 import { YamlHealthDatastore } from '#adapters/persistence/yaml/YamlHealthDatastore.mjs';
 import { createHealthRouter } from '#api/v1/routers/health.mjs';
+import { createHealthDashboardRouter } from '#api/v1/routers/health-dashboard.mjs';
 
 // Entropy application imports (uses config/logging)
 import { EntropyService } from '#apps/entropy/services/EntropyService.mjs';
@@ -2148,6 +2149,25 @@ export function createHealthApiRouter(config) {
     healthStore: healthServices.healthStore,
     nutriListStore: healthServices.nutriListStore,
     configService,
+    logger
+  });
+}
+
+/**
+ * Create health dashboard API router
+ * @param {Object} config
+ * @param {Object} config.dataService - DataService for YAML persistence
+ * @param {Object} [config.logger] - Logger instance
+ * @returns {express.Router}
+ */
+export function createHealthDashboardApiRouter(config) {
+  const {
+    dataService,
+    logger = console
+  } = config;
+
+  return createHealthDashboardRouter({
+    dataService,
     logger
   });
 }

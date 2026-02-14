@@ -45,6 +45,7 @@ import {
   createEntropyApiRouter,
   createHealthServices,
   createHealthApiRouter,
+  createHealthDashboardApiRouter,
   createGratitudeServices,
   createGratitudeApiRouter,
   createHomeAutomationAdapters,
@@ -603,6 +604,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     healthServices,
     configService,
     logger: rootLogger.child({ module: 'health-api' })
+  });
+
+  // Health dashboard router (agent-generated dashboards)
+  v1Routers['health-dashboard'] = createHealthDashboardApiRouter({
+    dataService,
+    logger: rootLogger.child({ module: 'health-dashboard-api' })
   });
 
   // Finance domain router
