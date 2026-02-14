@@ -1145,7 +1145,8 @@ export class GovernanceEngine {
       countdownSecondsTotal: gracePeriodTotal,
       deadline: this.meta?.deadline || null,
       gracePeriodTotal,
-      videoLocked: !!(this.challengeState && this.challengeState.videoLocked),
+      videoLocked: !!(this.challengeState && this.challengeState.videoLocked)
+        || (this._mediaIsGoverned() && (this.phase === 'pending' || this.phase === 'locked')),
       challengePaused: challengeSnapshot ? Boolean(challengeSnapshot.paused) : false,
       challenge: challengeSnapshot,
       challengeHistory: Array.isArray(this.challengeState?.challengeHistory)
