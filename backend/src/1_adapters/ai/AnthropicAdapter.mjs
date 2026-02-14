@@ -254,23 +254,33 @@ export class AnthropicAdapter extends IAIGateway {
   }
 
   /**
-   * Get structured JSON response
+   * Attempt to repair common JSON issues
+   * @private
    */
-  async chatWithJson(messages, options = {}) {
-    // Anthropic doesn't have a native JSON mode, so we add instruction
-    const jsonMessages = [...messages];
-    const lastMsg = jsonMessages[jsonMessages.length - 1];
+  #repairJSON(jsonString) {
+    let repaired = jsonString;
 
-    if (lastMsg.role === 'user') {
-      jsonMessages[jsonMessages.length - 1] = {
-        ...lastMsg,
-        content: lastMsg.content + '\n\nRespond with valid JSON only. No additional text or markdown.'
-      };
-    }
+    // Remove trailing commas before closing brackets/braces
+    repaired = repaired.replace(/,(\s*[\]}])/g, '$1');
 
-    const response = await this.chat(jsonMessages, options);
+    // Fix missing commas between array elements (common AI error)
+    repaired = repaired.replace(/}\s*{(?!\s*[,\]])/g, '},\n{');
 
-    // Try to extract JSON from response
+    // Fix missing commas between object properties
+    repaired = repaired.replace(/"\s*\n\s*"/g, '","');
+
+    // Remove comments (sometimes AI adds them)
+    repaired = repaired.replace(/\/\/.*$/gm, '');
+    repaired = repaired.replace(/\/\*[\s\S]*?\*\//g, '');
+
+    return repaired;
+  }
+
+  /**
+   * Extract and parse JSON from response (handles wrapped JSON and markdown)
+   * @private
+   */
+  #extractAndParseJSON(response) {
     let jsonStr = response.trim();
 
     // Remove markdown code block if present
@@ -284,32 +294,107 @@ export class AnthropicAdapter extends IAIGateway {
     }
     jsonStr = jsonStr.trim();
 
+    // Try to extract JSON object from response if not already cleaned
+    if (!jsonStr.startsWith('{')) {
+      const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        jsonStr = jsonMatch[0];
+      } else {
+        throw new Error('No JSON object found in response');
+      }
+    }
+
+    // First attempt: direct parse
     try {
       return JSON.parse(jsonStr);
-    } catch (parseError) {
-      this.logger.warn?.('anthropic.json.parseError', { error: parseError.message });
+    } catch (directError) {
+      this.logger.debug?.('anthropic.json.attemptRepair', {
+        error: directError.message,
+        position: directError.message.match(/position (\d+)/)?.[1],
+      });
 
-      // Retry with explicit instruction
-      const retryMessages = [
-        ...messages,
-        { role: 'assistant', content: response },
-        { role: 'user', content: 'Please respond with valid JSON only. No markdown, no explanation.' }
-      ];
+      // Second attempt: repair and parse
+      try {
+        const repaired = this.#repairJSON(jsonStr);
+        const parsed = JSON.parse(repaired);
+        this.logger.info?.('anthropic.json.repairSucceeded', {
+          originalError: directError.message,
+        });
+        return parsed;
+      } catch (repairError) {
+        // Both attempts failed
+        const error = new Error(`JSON parse failed: ${directError.message}`);
+        error.originalError = directError;
+        error.repairError = repairError;
+        error.sample = jsonStr.substring(0, 200);
+        throw error;
+      }
+    }
+  }
 
-      const retryResponse = await this.chat(retryMessages, options);
+  /**
+   * Get structured JSON response with validation and repair
+   */
+  async chatWithJson(messages, options = {}) {
+    const maxParseAttempts = options.maxParseAttempts || 2;
+
+    // Anthropic doesn't have a native JSON mode, so we add instruction
+    const jsonMessages = [...messages];
+    const lastMsg = jsonMessages[jsonMessages.length - 1];
+
+    if (lastMsg.role === 'user') {
+      jsonMessages[jsonMessages.length - 1] = {
+        ...lastMsg,
+        content: lastMsg.content + '\n\nRespond with valid JSON only. No additional text or markdown.'
+      };
+    }
+
+    for (let attempt = 1; attempt <= maxParseAttempts; attempt++) {
+      const isRetry = attempt > 1;
+      const messagesToSend = isRetry
+        ? [
+            ...messages,
+            { role: 'user', content: 'Please respond with valid, complete JSON only. No markdown, no explanation. Ensure all arrays and objects are properly closed.' }
+          ]
+        : jsonMessages;
 
       try {
-        let retryJson = retryResponse.trim();
-        if (retryJson.startsWith('```')) {
-          retryJson = retryJson.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
+        const response = await this.chat(messagesToSend, options);
+
+        // Extract and parse with repair capability
+        const parsed = this.#extractAndParseJSON(response);
+
+        if (isRetry) {
+          this.logger.info?.('anthropic.json.parseRecovered', { attempt });
         }
-        return JSON.parse(retryJson);
-      } catch (retryParseError) {
-        this.logger.error?.('anthropic.json.retryFailed', { response: retryResponse });
-        throw new InfrastructureError('Failed to parse JSON response after retry', {
-          code: 'INVALID_RESPONSE',
-          service: 'Anthropic'
+
+        return parsed;
+      } catch (parseError) {
+        const isLastAttempt = attempt === maxParseAttempts;
+
+        this.logger.warn?.('anthropic.json.parseError', {
+          attempt,
+          maxAttempts: maxParseAttempts,
+          error: parseError.message,
+          sample: parseError.sample,
         });
+
+        if (isLastAttempt) {
+          this.logger.error?.('anthropic.json.exhausted', {
+            attempts: maxParseAttempts,
+            originalError: parseError.originalError?.message,
+            repairError: parseError.repairError?.message,
+          });
+
+          throw new InfrastructureError('Failed to parse JSON response after all attempts', {
+            code: 'INVALID_JSON_RESPONSE',
+            service: 'Anthropic',
+            attempts: maxParseAttempts,
+            details: parseError.message,
+          });
+        }
+
+        // Continue to next attempt
       }
     }
   }
