@@ -464,7 +464,7 @@ All previously documented SSoT violations have been addressed:
 | # | Violation | Resolution |
 |---|-----------|-----------|
 | 1 | `getUserVitals().zoneId` raw zone | Now reads from ZoneProfileStore first, falls back to raw zone for initial state |
-| 2 | FitnessPlayer dual governance check | Removed local label check; `governanceState.videoLocked` is sole lock authority |
+| 2 | FitnessPlayer dual governance check | Removed local label check from `pauseDecision` and `playObject.autoplay`; `governanceState.videoLocked` is sole lock authority |
 | 3 | Heart rate triple-storage | Documented propagation chain in `ingestData()`; removed stale snapshot fallback in ZoneProfileStore |
 | 4 | Progress bar data source split | Fallback path now prefers `progressEntry.currentHR` over raw `heartRate` |
 | 5 | Heart rate structure inconsistency | Removed dead `hr.value` checks; standardized on flat `heartRate` (the only shape the roster produces) |
