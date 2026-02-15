@@ -1142,9 +1142,8 @@ const FitnessShow = ({ showId: rawShowId, onBack, viewportRef, setFitnessPlayQue
                           const watchedDate = episode.watchedDate;
                           // Trust backend-computed isWatched (SSOT)
                           const isWatched = episode.isWatched ?? false;
-                          const hasProgress = watchProgress > 15;
                           const progressPercent = Math.max(0, Math.min(100, watchProgress));
-                          const showProgressBar = isResumable && hasProgress && !isWatched;
+                          const showProgressBar = isResumable && watchProgress > 0 && !isWatched;
                           const episodeNumber = Number.isFinite(episode?.itemIndex)
                             ? episode.itemIndex
                             : null;
