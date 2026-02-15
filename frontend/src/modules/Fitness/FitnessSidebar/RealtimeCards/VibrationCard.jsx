@@ -7,7 +7,7 @@
 
 import React from 'react';
 import { BaseRealtimeCard, StatsRow } from './BaseRealtimeCard.jsx';
-import { DaylightMediaPath } from '../../../../lib/api.mjs';
+import { DaylightMediaPath } from '@/lib/api.mjs';
 
 // Equipment type to icon mapping
 const EQUIPMENT_ICONS = {

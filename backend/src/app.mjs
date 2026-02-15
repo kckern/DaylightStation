@@ -488,6 +488,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Health domain
   const healthServices = createHealthServices({
+    dataService,
     userDataService,
     configService,
     logger: rootLogger

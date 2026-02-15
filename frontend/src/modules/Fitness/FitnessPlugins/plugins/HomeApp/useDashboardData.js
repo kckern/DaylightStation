@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { DaylightAPI } from '../../../../../lib/api.mjs';
+import { DaylightAPI } from '@/lib/api.mjs';
 
 /**
  * Hook that fetches and combines agent dashboard data with live health API data.
@@ -24,13 +24,11 @@ export function useDashboardData(userId) {
       // Fetch agent dashboard and live health APIs in parallel.
       // Using Promise.allSettled so a 404 on dashboard (agent hasn't run)
       // doesn't block live data from loading.
-      const [dashboardRes, weightRes, nutritionRes, healthRes] = await Promise.allSettled([
+      const [dashboardRes, weightRes, healthRes, sessionsRes] = await Promise.allSettled([
         DaylightAPI(`/api/v1/health-dashboard/${userId}`),
         DaylightAPI('/api/v1/health/weight'),
-        DaylightAPI('/api/v1/health/nutrilist'),
-        // days is a query param — pass it in the URL to avoid DaylightAPI
-        // auto-converting to POST when data object is provided.
-        DaylightAPI('/api/v1/health/daily?days=7'),
+        DaylightAPI('/api/v1/health/daily?days=10'),
+        fetchRecentSessions(5),
       ]);
 
       if (!mountedRef.current) return;
@@ -42,14 +40,14 @@ export function useDashboardData(userId) {
       const weightData = weightRes.status === 'fulfilled' ? weightRes.value : null;
       const weight = parseWeightData(weightData);
 
-      const nutritionData = nutritionRes.status === 'fulfilled' ? nutritionRes.value : null;
-      const nutrition = parseNutritionData(nutritionData);
-
       const healthData = healthRes.status === 'fulfilled' ? healthRes.value?.data : null;
+      const nutritionHistory = parseNutritionHistory(healthData);
       const workouts = parseWorkoutData(healthData);
 
+      const sessions = sessionsRes.status === 'fulfilled' ? sessionsRes.value : [];
+
       setDashboard(agentDashboard);
-      setLiveData({ weight, nutrition, workouts });
+      setLiveData({ weight, nutrition: nutritionHistory, workouts, sessions });
     } catch (err) {
       if (mountedRef.current) setError(err.message || 'Failed to load dashboard');
     } finally {
@@ -96,22 +94,68 @@ function parseWeightData(raw) {
 }
 
 /**
- * Parse raw nutrition API response into daily totals.
- * Expects { data: [...items] } or a bare array.
+ * Parse daily health data into a 10-day nutrition history.
+ * Returns an array sorted newest-first with per-day totals.
  */
-function parseNutritionData(raw) {
-  if (!raw) return null;
-  const items = raw.data || raw;
-  if (!Array.isArray(items)) return null;
+function parseNutritionHistory(raw) {
+  if (!raw || typeof raw !== 'object') return [];
+  return Object.entries(raw)
+    .filter(([, v]) => v?.nutrition)
+    .map(([date, v]) => ({
+      date,
+      calories: v.nutrition.calories || 0,
+      protein: v.nutrition.protein || 0,
+      carbs: v.nutrition.carbs || 0,
+      fat: v.nutrition.fat || 0,
+      foodCount: v.nutrition.foodCount || 0,
+    }))
+    .sort((a, b) => b.date.localeCompare(a.date));
+}
 
-  const totals = { calories: 0, protein: 0, carbs: 0, fat: 0, count: items.length };
-  for (const item of items) {
-    totals.calories += item.calories || 0;
-    totals.protein += item.protein || 0;
-    totals.carbs += item.carbs || 0;
-    totals.fat += item.fat || 0;
+/**
+ * Fetch recent fitness sessions with media info.
+ * Gets session dates, then fetches session details to extract content played.
+ */
+async function fetchRecentSessions(limit = 10) {
+  const datesRes = await DaylightAPI('/api/v1/fitness/sessions/dates');
+  const dates = (Array.isArray(datesRes) ? datesRes : datesRes?.dates || [])
+    .sort((a, b) => b.localeCompare(a));
+
+  const sessions = [];
+  for (const date of dates) {
+    if (sessions.length >= limit) break;
+    const dayRes = await DaylightAPI(`/api/v1/fitness/sessions?date=${date}`);
+    const daySessions = Array.isArray(dayRes) ? dayRes : dayRes?.sessions || [];
+    for (const s of daySessions) {
+      if (sessions.length >= limit) break;
+      const detail = await DaylightAPI(`/api/v1/fitness/sessions/${s.sessionId}`);
+      const session = detail?.session || detail;
+      const events = session?.timeline?.events || [];
+      const media = events.find(e => e.type === 'media');
+      if (!media) continue; // Skip sessions without content
+      const participants = Object.entries(session?.participants || {}).map(([id, info]) => ({
+        id,
+        displayName: info.display_name || id,
+      }));
+      const totalCoins = session?.treasureBox?.totalCoins || 0;
+      sessions.push({
+        sessionId: s.sessionId,
+        date: session?.session?.date || date,
+        durationMs: s.durationMs,
+        participants,
+        totalCoins,
+        media: {
+          mediaId: media.data?.mediaId,
+          title: media.data?.title,
+          showTitle: media.data?.grandparentTitle,
+          seasonTitle: media.data?.parentTitle,
+          grandparentId: media.data?.grandparentId || null,
+          parentId: media.data?.parentId || null,
+        },
+      });
+    }
   }
-  return { ...totals, logged: items.length > 0 };
+  return sessions;
 }
 
 /**

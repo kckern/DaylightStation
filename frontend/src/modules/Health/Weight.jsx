@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { DaylightAPI } from "../../lib/api.mjs";
-import "./Health.scss";
+import "./Weight.scss";
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
 import moment from 'moment';
@@ -9,7 +9,7 @@ import downArrow from '../../assets/icons/down.svg';
 import plusIcon from '../../assets/icons/plus.svg';
 import minusIcon from '../../assets/icons/minus.svg';
 
-export default function Health() {
+export default function Weight() {
     const [weightData, setWeightData] = useState([]);
     const [today, setToday] = useState({});
   const reloadData = () => {
@@ -33,7 +33,7 @@ export default function Health() {
 
     if (!today || Object.keys(today).length === 0) {
         return (
-            <div className="health">
+            <div className="weight">
                 <table style={{width: "100%", borderCollapse: "collapse"}}>
                     <tbody>
                         <tr>
@@ -70,7 +70,7 @@ export default function Health() {
 	<span>{calorie_balance}<img src={plusIcon} alt="+" style={{height: "1.3em", marginBottom: "-0.3em", marginLeft:"0.5ex"}} /></span> :
 	<span>{Math.abs(calorie_balance)}<img src={minusIcon} alt="-" style={{height: "1.3em", marginBottom: "-0.3em", marginLeft:"0.5ex"}} /></span>;
 	return (
-		<div className="health">
+		<div className="weight">
 			<table style={{width: "100%", borderCollapse: "collapse"}}>
 				<thead style={{textAlign: "left"}}>
 					<tr>

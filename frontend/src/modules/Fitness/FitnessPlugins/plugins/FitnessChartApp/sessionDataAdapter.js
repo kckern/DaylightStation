@@ -1,4 +1,4 @@
-import { DaylightMediaPath } from '../../../../../lib/api.mjs';
+import { DaylightMediaPath } from '@/lib/api.mjs';
 import { getZoneColor } from '../../../domain';
 
 /**

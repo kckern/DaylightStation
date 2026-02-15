@@ -10,7 +10,7 @@
  */
 
 import React from 'react';
-import { DaylightMediaPath } from '../../../../lib/api.mjs';
+import { DaylightMediaPath } from '@/lib/api.mjs';
 
 /**
  * Format time ago string

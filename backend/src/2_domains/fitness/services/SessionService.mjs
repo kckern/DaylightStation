@@ -205,11 +205,7 @@ export class SessionService {
    */
   async listSessionsByDate(date, householdId) {
     const hid = this.resolveHouseholdId(householdId);
-    const sessions = await this.sessionStore.findByDate(date, hid);
-    return sessions.map(s => {
-      const session = Session.fromJSON(s);
-      return session.toSummary();
-    });
+    return this.sessionStore.findByDate(date, hid);
   }
 
   /**
@@ -220,8 +216,7 @@ export class SessionService {
    */
   async listSessionsInRange(startDate, endDate, householdId) {
     const hid = this.resolveHouseholdId(householdId);
-    const sessions = await this.sessionStore.findInRange(startDate, endDate, hid);
-    return sessions.map(s => Session.fromJSON(s).toSummary());
+    return this.sessionStore.findInRange(startDate, endDate, hid);
   }
 
   /**

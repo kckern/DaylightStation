@@ -10,6 +10,7 @@
 import express from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
+import { nowDate } from '#system/utils/time.mjs';
 
 /**
  * Create Health API router
@@ -245,12 +246,12 @@ export function createHealthRouter(config) {
      * Get today's nutrilist items
      */
     router.get('/nutrilist', asyncHandler(async (req, res) => {
-      const hid = getDefaultHouseholdId();
+      const userId = getDefaultUsername();
       const today = getToday();
 
-      logger.debug?.('health.nutrilist.today', { hid, date: today });
+      logger.debug?.('health.nutrilist.today', { userId, date: today });
 
-      const items = await nutriListStore.findByDate(hid, today);
+      const items = await nutriListStore.findByDate(userId, today);
 
       res.json({
         message: "Today's nutrilist items retrieved successfully",
@@ -266,11 +267,11 @@ export function createHealthRouter(config) {
      */
     router.get('/nutrilist/item/:uuid', asyncHandler(async (req, res) => {
       const { uuid } = req.params;
-      const hid = getDefaultHouseholdId();
+      const userId = getDefaultUsername();
 
-      logger.debug?.('health.nutrilist.item', { hid, uuid });
+      logger.debug?.('health.nutrilist.item', { userId, uuid });
 
-      const item = await nutriListStore.findByUuid(hid, uuid);
+      const item = await nutriListStore.findByUuid(userId, uuid);
 
       if (!item) {
         return res.status(404).json({ error: 'Nutrilist item not found' });
@@ -288,15 +289,15 @@ export function createHealthRouter(config) {
      */
     router.get('/nutrilist/:date', asyncHandler(async (req, res) => {
       const { date } = req.params;
-      const hid = getDefaultHouseholdId();
+      const userId = getDefaultUsername();
 
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
         return res.status(400).json({ error: 'Invalid date format. Use YYYY-MM-DD' });
       }
 
-      logger.debug?.('health.nutrilist.byDate', { hid, date });
+      logger.debug?.('health.nutrilist.byDate', { userId, date });
 
-      const items = await nutriListStore.findByDate(hid, date);
+      const items = await nutriListStore.findByDate(userId, date);
 
       res.json({
         message: 'Nutrilist items retrieved successfully',
@@ -311,7 +312,7 @@ export function createHealthRouter(config) {
      * Create a new nutrilist item
      */
     router.post('/nutrilist', asyncHandler(async (req, res) => {
-      const hid = getDefaultHouseholdId();
+      const userId = getDefaultUsername();
       const itemData = req.body;
 
       if (!itemData.item && !itemData.name) {
@@ -320,7 +321,7 @@ export function createHealthRouter(config) {
 
       const newItem = {
         uuid: uuidv4(),
-        userId: hid,
+        userId,
         item: itemData.item || itemData.name,
         name: itemData.name || itemData.item,
         unit: itemData.unit || 'g',
@@ -340,7 +341,7 @@ export function createHealthRouter(config) {
         log_uuid: itemData.log_uuid || 'MANUAL'
       };
 
-      logger.debug?.('health.nutrilist.create', { hid, item: newItem.item });
+      logger.debug?.('health.nutrilist.create', { userId, item: newItem.item });
 
       await nutriListStore.saveMany([newItem]);
 
@@ -356,11 +357,11 @@ export function createHealthRouter(config) {
      */
     router.put('/nutrilist/:uuid', asyncHandler(async (req, res) => {
       const { uuid } = req.params;
-      const hid = getDefaultHouseholdId();
+      const userId = getDefaultUsername();
       const updateData = req.body;
 
       // Check if item exists
-      const existingItem = await nutriListStore.findByUuid(hid, uuid);
+      const existingItem = await nutriListStore.findByUuid(userId, uuid);
       if (!existingItem) {
         return res.status(404).json({ error: 'Nutrilist item not found' });
       }
@@ -377,9 +378,9 @@ export function createHealthRouter(config) {
         }
       });
 
-      logger.debug?.('health.nutrilist.update', { hid, uuid, fields: Object.keys(filteredUpdate) });
+      logger.debug?.('health.nutrilist.update', { userId, uuid, fields: Object.keys(filteredUpdate) });
 
-      const updatedItem = await nutriListStore.update(hid, uuid, filteredUpdate);
+      const updatedItem = await nutriListStore.update(userId, uuid, filteredUpdate);
 
       res.json({
         message: 'Nutrilist item updated successfully',
@@ -393,17 +394,17 @@ export function createHealthRouter(config) {
      */
     router.delete('/nutrilist/:uuid', asyncHandler(async (req, res) => {
       const { uuid } = req.params;
-      const hid = getDefaultHouseholdId();
+      const userId = getDefaultUsername();
 
       // Check if item exists
-      const existingItem = await nutriListStore.findByUuid(hid, uuid);
+      const existingItem = await nutriListStore.findByUuid(userId, uuid);
       if (!existingItem) {
         return res.status(404).json({ error: 'Nutrilist item not found' });
       }
 
-      logger.debug?.('health.nutrilist.delete', { hid, uuid });
+      logger.debug?.('health.nutrilist.delete', { userId, uuid });
 
-      const result = await nutriListStore.deleteById(hid, uuid);
+      const result = await nutriListStore.deleteById(userId, uuid);
 
       if (result) {
         res.json({

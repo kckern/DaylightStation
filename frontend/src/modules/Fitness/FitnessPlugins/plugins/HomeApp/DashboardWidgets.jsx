@@ -70,71 +70,28 @@ export function WeightTrendCard({ weight }) {
   );
 }
 
-// ─── Nutrition Card ────────────────────────────────────────────
+// ─── Nutrition History Card ────────────────────────────────────
 
-export function NutritionCard({ nutrition, goals }) {
-  if (!nutrition || !nutrition.logged) {
+export function NutritionCard({ nutrition }) {
+  if (!nutrition || !Array.isArray(nutrition) || nutrition.length === 0) {
     return (
       <DashboardCard title="Nutrition" className="dashboard-card--nutrition">
-        <Text c="dimmed" ta="center" py="md">No meals logged today</Text>
-      </DashboardCard>
-    );
-  }
-
-  const calTarget = goals?.nutrition?.daily_calories || 2200;
-  const calRatio = nutrition.calories / calTarget;
-  const calPercent = Math.min(100, Math.round(calRatio * 100));
-
-  return (
-    <DashboardCard title="Nutrition" className="dashboard-card--nutrition">
-      <Stack gap="xs">
-        <Group justify="space-between">
-          <Title order={3} className="dashboard-stat-value">{nutrition.calories}</Title>
-          <Text size="sm" c="dimmed">/ {calTarget} cal</Text>
-        </Group>
-        <Progress value={calPercent} color={calRatio > 1 ? 'red' : 'blue'} size="sm" />
-        <Group justify="space-between" mt="xs">
-          <MacroLabel label="Protein" value={nutrition.protein} unit="g" />
-          <MacroLabel label="Carbs" value={nutrition.carbs} unit="g" />
-          <MacroLabel label="Fat" value={nutrition.fat} unit="g" />
-        </Group>
-      </Stack>
-    </DashboardCard>
-  );
-}
-
-function MacroLabel({ label, value, unit }) {
-  return (
-    <Stack gap={0} align="center">
-      <Text size="lg" fw={600}>{Math.round(value)}</Text>
-      <Text size="xs" c="dimmed">{label} ({unit})</Text>
-    </Stack>
-  );
-}
-
-// ─── Recent Workouts Card ──────────────────────────────────────
-
-export function WorkoutsCard({ workouts }) {
-  if (!workouts || workouts.length === 0) {
-    return (
-      <DashboardCard title="Recent Workouts" className="dashboard-card--workouts">
-        <Text c="dimmed" ta="center" py="md">No recent workouts</Text>
+        <Text c="dimmed" ta="center" py="md">No nutrition data</Text>
       </DashboardCard>
     );
   }
 
   return (
-    <DashboardCard title="Recent Workouts" className="dashboard-card--workouts">
-      <Stack gap="xs">
-        {workouts.slice(0, 4).map((w, i) => (
-          <Group key={i} justify="space-between" className="workout-row">
-            <div>
-              <Text size="sm" fw={500}>{w.title}</Text>
-              <Text size="xs" c="dimmed">{formatDate(w.date)}</Text>
-            </div>
-            <Group gap="xs">
-              {w.duration && <Badge variant="light" size="sm">{w.duration} min</Badge>}
-              {w.calories && <Badge variant="light" color="orange" size="sm">{w.calories} cal</Badge>}
+    <DashboardCard title="Nutrition (cal)" className="dashboard-card--nutrition">
+      <Stack gap={4}>
+        {nutrition.map((day) => (
+          <Group key={day.date} justify="space-between" className="nutrition-row" wrap="nowrap">
+            <Text size="xs" c="dimmed" w={70}>{formatDateShort(day.date)}</Text>
+            <Text size="sm" fw={600} w={55} ta="right">{day.calories}</Text>
+            <Group gap={4} style={{ flex: 1 }} justify="flex-end" wrap="nowrap">
+              <Badge variant="light" size="xs" color="blue">{Math.round(day.protein)}p</Badge>
+              <Badge variant="light" size="xs" color="yellow">{Math.round(day.carbs)}c</Badge>
+              <Badge variant="light" size="xs" color="orange">{Math.round(day.fat)}f</Badge>
             </Group>
           </Group>
         ))}
@@ -143,13 +100,104 @@ export function WorkoutsCard({ workouts }) {
   );
 }
 
-function formatDate(dateStr) {
+function formatDateShort(dateStr) {
   if (!dateStr) return '';
   const d = new Date(dateStr + 'T12:00:00');
-  const today = new Date();
-  const diff = Math.floor((today - d) / 86400000);
-  if (diff === 0) return 'Today';
-  if (diff === 1) return 'Yesterday';
+  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
+// ─── Recent Sessions Card ─────────────────────────────────────
+
+export function WorkoutsCard({ sessions }) {
+  if (!sessions || sessions.length === 0) {
+    return (
+      <DashboardCard title="Recent Sessions" className="dashboard-card--workouts">
+        <Text c="dimmed" ta="center" py="md">No recent sessions</Text>
+      </DashboardCard>
+    );
+  }
+
+  // Group sessions by date
+  const groups = [];
+  let currentDate = null;
+  for (const s of sessions) {
+    if (s.date !== currentDate) {
+      currentDate = s.date;
+      groups.push({ date: s.date, label: formatDate(s.date), sessions: [] });
+    }
+    groups[groups.length - 1].sessions.push(s);
+  }
+
+  return (
+    <DashboardCard title="Recent Sessions" className="dashboard-card--workouts">
+      <Stack gap="xs">
+        {groups.map((group) => (
+          <div key={group.date}>
+            <Text size="xs" fw={600} c="dimmed" tt="uppercase" className="session-date-header">
+              {group.label}
+            </Text>
+            {group.sessions.map((s) => (
+              <Group key={s.sessionId} gap="sm" wrap="nowrap" className="session-row">
+                <img
+                  src={`/api/v1/display/plex/${s.media.mediaId}`}
+                  alt=""
+                  className="session-thumbnail"
+                  onError={(e) => { e.target.style.display = 'none'; }}
+                />
+                <Stack gap={2} style={{ flex: 1, minWidth: 0 }}>
+                  <Text size="sm" fw={500} truncate>{s.media.title}</Text>
+                  {s.media.showTitle && (
+                    <Text size="xs" c="dimmed" truncate>{s.media.showTitle}</Text>
+                  )}
+                  <Group gap="xs" wrap="nowrap">
+                    {s.durationMs && (
+                      <Badge variant="light" size="xs">{Math.round(s.durationMs / 60000)} min</Badge>
+                    )}
+                    {s.totalCoins > 0 && (
+                      <Badge variant="light" size="xs" color="yellow">{s.totalCoins} coins</Badge>
+                    )}
+                  </Group>
+                  {s.participants?.length > 0 && (
+                    <Group gap={6} className="session-avatars">
+                      {s.participants.map((p) => (
+                        <img
+                          key={p.id}
+                          src={`/api/v1/static/users/${p.id}`}
+                          alt={p.displayName}
+                          title={p.displayName}
+                          className="session-avatar"
+                          onError={(e) => { e.target.style.display = 'none'; }}
+                        />
+                      ))}
+                    </Group>
+                  )}
+                </Stack>
+                {s.media.grandparentId && (
+                  <img
+                    src={`/api/v1/display/plex/${s.media.grandparentId}`}
+                    alt=""
+                    className="session-poster"
+                    onError={(e) => { e.target.style.display = 'none'; }}
+                  />
+                )}
+              </Group>
+            ))}
+          </div>
+        ))}
+      </Stack>
+    </DashboardCard>
+  );
+}
+
+function formatDate(dateStr) {
+  if (!dateStr) return '';
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+  const yesterdayStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
+  if (dateStr === todayStr) return 'Today';
+  if (dateStr === yesterdayStr) return 'Yesterday';
+  const d = new Date(dateStr + 'T12:00:00');
   return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 }
 

@@ -9,7 +9,7 @@
 
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import PropTypes from 'prop-types';
-import { DaylightMediaPath } from '../../../../lib/api.mjs';
+import { DaylightMediaPath } from '@/lib/api.mjs';
 import { calculateRpmProgress, getRpmZoneColor } from './rpmUtils.mjs';
 import './RpmDeviceAvatar.scss';
 

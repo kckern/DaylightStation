@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect, useCallback } from 'react';
-import { DaylightAPI, DaylightMediaPath } from '../../../../lib/api.mjs';
+import { DaylightAPI, DaylightMediaPath } from '@/lib/api.mjs';
 import './FamilySelector.scss';
 
 /**

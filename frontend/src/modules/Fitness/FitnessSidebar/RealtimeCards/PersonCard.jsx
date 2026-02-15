@@ -7,7 +7,7 @@
 import React from 'react';
 import { Badge } from '@mantine/core';
 import { BaseRealtimeCard, StatsRow } from './BaseRealtimeCard.jsx';
-import { DaylightMediaPath } from '../../../../lib/api.mjs';
+import { DaylightMediaPath } from '@/lib/api.mjs';
 
 // Heart icons by color
 const HEART_ICONS = {

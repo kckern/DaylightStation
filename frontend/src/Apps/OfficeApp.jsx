@@ -7,7 +7,7 @@ import Clock from '../modules/Time/Time'
 import WeatherForecast from '../modules/Weather/WeatherForecast'
 import Weather from '../modules/Weather/Weather'
 import Upcoming from '../modules/Upcoming/Upcoming'
-import Health from '../modules/Health/Health'
+import Weight from '../modules/Health/Weight'
 import { FinanceChart } from '../modules/Finance/Finance'
 import EntropyPanel from '../modules/Entropy/EntropyPanel'
 
@@ -351,7 +351,7 @@ function OfficeApp() {
               <FinanceChart />
             </div>
             <div style={{ width: 'calc(50% - 0.5rem)' }}>
-              <Health />
+              <Weight />
             </div>
           </div>
         </div>

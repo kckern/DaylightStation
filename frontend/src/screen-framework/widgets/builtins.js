@@ -70,9 +70,9 @@ export function registerBuiltinWidgets() {
     }
   );
 
-  // Health widget
-  registry.register('health',
-    () => import('../../modules/Health/Health.jsx').then(m => m.default),
+  // Weight widget
+  registry.register('weight',
+    () => import('../../modules/Health/Weight.jsx').then(m => m.default),
     {
       defaultSource: '/api/v1/health',
       refreshInterval: 300000,

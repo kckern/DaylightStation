@@ -1,7 +1,7 @@
 import React, { memo } from 'react';
 import PropTypes from 'prop-types';
 import FitnessTreasureBox from '../../FitnessSidebar/FitnessTreasureBox.jsx';
-import { useFitnessContext } from '../../../../context/FitnessContext.jsx';
+import { useFitnessContext } from '@/context/FitnessContext.jsx';
 import './panels.scss';
 
 /**

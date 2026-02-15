@@ -1,5 +1,5 @@
 import { useCallback, useRef } from 'react';
-import getLogger from '../../../../lib/logging/Logger.js';
+import getLogger from '@/lib/logging/Logger.js';
 
 const useAudioFeedback = ({
   volume = 0.5,

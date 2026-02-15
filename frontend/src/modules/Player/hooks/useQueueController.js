@@ -25,10 +25,12 @@ export function useQueueController({ play, queue, clear, shuffle }) {
   const [playQueue, setQueue] = useState([]);
   const [originalQueue, setOriginalQueue] = useState([]);
   const [isShuffle, setIsShuffle] = useState(!!play?.shuffle || !!queue?.shuffle || !!shuffle || false);
+  const [shaderUserCycled, setShaderUserCycled] = useState(false);
   const sourceSignatureRef = useRef(null);
 
   const cycleThroughClasses = useCallback((upOrDownInt) => {
     upOrDownInt = parseInt(upOrDownInt) || 1;
+    setShaderUserCycled(true);
     setShader((prevClass) => {
       const currentIndex = classes.indexOf(prevClass);
       const newIndex = (currentIndex + upOrDownInt + classes.length) % classes.length;
@@ -217,6 +219,7 @@ export function useQueueController({ play, queue, clear, shuffle }) {
     classes,
     cycleThroughClasses,
     shader,
+    shaderUserCycled,
     setShader,
     isQueue,
     volume,

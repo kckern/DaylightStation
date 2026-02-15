@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import useFitnessPlugin from '../../useFitnessPlugin';
 import { Webcam as FitnessWebcam } from '../../../components/FitnessWebcam.jsx';
-import { DaylightAPI } from '../../../../../lib/api.mjs';
-import getLogger from '../../../../../lib/logging/Logger.js';
+import { DaylightAPI } from '@/lib/api.mjs';
+import getLogger from '@/lib/logging/Logger.js';
 import './CameraViewApp.scss';
 
 const DEFAULT_CAPTURE_INTERVAL_MS = 5000;

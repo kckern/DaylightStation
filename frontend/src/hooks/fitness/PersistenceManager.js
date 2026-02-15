@@ -430,6 +430,8 @@ const _consolidateEvents = (events) => {
         title: s.title || e.title || null,
         grandparentTitle: s.grandparentTitle || null,
         parentTitle: s.parentTitle || null,
+        grandparentId: s.grandparentId || null,
+        parentId: s.parentId || null,
         labels: s.labels || [],
         contentType: s.type || null,
         governed: s.governed ?? null,

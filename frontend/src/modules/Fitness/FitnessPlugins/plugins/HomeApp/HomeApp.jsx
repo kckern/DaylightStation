@@ -2,16 +2,16 @@
 
 import React, { useMemo, Component } from 'react';
 import { Grid, Text, Loader } from '@mantine/core';
-import { useFitnessContext } from '../../../../../context/FitnessContext.jsx';
+import { useFitnessContext } from '@/context/FitnessContext.jsx';
 import { useDashboardData, parseContentId } from './useDashboardData.js';
 import {
-  WeightTrendCard,
   NutritionCard,
   WorkoutsCard,
+  WeightTrendCard,
   UpNextCard,
   CoachCard,
 } from './DashboardWidgets.jsx';
-import { DaylightMediaPath } from '../../../../../lib/api.mjs';
+import { DaylightMediaPath } from '@/lib/api.mjs';
 import './HomeApp.scss';
 
 class DashboardErrorBoundary extends Component {
@@ -58,9 +58,6 @@ const HomeApp = () => {
   }, [fitnessCtx?.fitnessConfiguration]);
 
   const { loading, error, dashboard, liveData, refetch } = useDashboardData(userId);
-
-  // Goals from agent dashboard (if available)
-  const goals = dashboard?.goals || null;
 
   // Play handler -- adds content to fitness play queue
   const handlePlay = (contentItem) => {
@@ -120,40 +117,32 @@ const HomeApp = () => {
     <div className="health-dashboard">
       <DashboardErrorBoundary>
         <Grid gutter="md">
-          {/* Row 1: Up Next (large) + Coach Card */}
-          <Grid.Col span={{ base: 12, md: 7 }}>
-            {dashboard?.curated ? (
-              <UpNextCard curated={dashboard.curated} onPlay={handlePlay} />
-            ) : (
-              <div className="dashboard-empty">
-                <Text c="dimmed">No workout recommendations yet</Text>
-              </div>
-            )}
+          {/* Row 1: Recent Sessions (expand if no curated data) */}
+          <Grid.Col span={{ base: 12, md: dashboard?.curated ? 7 : 12 }}>
+            <WorkoutsCard sessions={liveData?.sessions} />
           </Grid.Col>
-          <Grid.Col span={{ base: 12, md: 5 }}>
-            {dashboard?.coach ? (
+          {dashboard?.curated && (
+            <Grid.Col span={{ base: 12, md: 5 }}>
+              <UpNextCard curated={dashboard.curated} onPlay={handlePlay} />
+            </Grid.Col>
+          )}
+
+          {/* Row 2: Weight + Nutrition (expand if no coach) */}
+          <Grid.Col span={{ base: 12, md: 4 }}>
+            <WeightTrendCard weight={liveData?.weight} />
+          </Grid.Col>
+          <Grid.Col span={{ base: 12, md: dashboard?.coach ? 4 : 8 }}>
+            <NutritionCard nutrition={liveData?.nutrition} />
+          </Grid.Col>
+          {dashboard?.coach && (
+            <Grid.Col span={{ base: 12, md: 4 }}>
               <CoachCard
                 coach={dashboard.coach}
                 liveNutrition={liveData?.nutrition}
                 onCtaAction={handleCtaAction}
               />
-            ) : (
-              <div className="dashboard-empty">
-                <Text c="dimmed">Coach insights will appear here</Text>
-              </div>
-            )}
-          </Grid.Col>
-
-          {/* Row 2: Stat widgets */}
-          <Grid.Col span={{ base: 12, sm: 4 }}>
-            <WeightTrendCard weight={liveData?.weight} />
-          </Grid.Col>
-          <Grid.Col span={{ base: 12, sm: 4 }}>
-            <NutritionCard nutrition={liveData?.nutrition} goals={goals} />
-          </Grid.Col>
-          <Grid.Col span={{ base: 12, sm: 4 }}>
-            <WorkoutsCard workouts={liveData?.workouts} />
-          </Grid.Col>
+            </Grid.Col>
+          )}
         </Grid>
       </DashboardErrorBoundary>
     </div>
