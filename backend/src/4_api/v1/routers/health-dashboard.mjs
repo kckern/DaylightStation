@@ -9,6 +9,7 @@
  */
 
 import express from 'express';
+import fs from 'node:fs';
 
 /**
  * Create Health Dashboard API router
@@ -71,6 +72,33 @@ export function createHealthDashboardRouter(config) {
     }
 
     res.json({ userId, date: today, dashboard });
+  });
+
+  /**
+   * DELETE /:userId/:date
+   * Remove the dashboard file for a specific user and date
+   */
+  router.delete('/:userId/:date', (req, res) => {
+    const { userId, date } = req.params;
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return res.status(400).json({ error: 'Date must be YYYY-MM-DD format' });
+    }
+
+    const filePath = dataService.user.resolvePath(`health-dashboard/${date}`, userId);
+
+    try {
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+        logger.info?.('health-dashboard.deleted', { userId, date, filePath });
+        res.json({ userId, date, deleted: true });
+      } else {
+        res.status(404).json({ error: 'No dashboard file for this date', userId, date });
+      }
+    } catch (err) {
+      logger.error?.('health-dashboard.delete.error', { userId, date, error: err.message });
+      res.status(500).json({ error: 'Failed to delete dashboard file' });
+    }
   });
 
   return router;
