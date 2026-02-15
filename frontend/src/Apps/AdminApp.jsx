@@ -17,6 +17,8 @@ import DevicesIndex from '../modules/Admin/Household/DevicesIndex.jsx';
 import DeviceEditor from '../modules/Admin/Household/DeviceEditor.jsx';
 import IntegrationsIndex from '../modules/Admin/System/IntegrationsIndex.jsx';
 import IntegrationDetail from '../modules/Admin/System/IntegrationDetail.jsx';
+import AgentsIndex from '../modules/Admin/Agents/AgentsIndex.jsx';
+import AgentDetail from '../modules/Admin/Agents/AgentDetail.jsx';
 import ComboboxTestPage from '../modules/Admin/TestHarness/ComboboxTestPage.jsx';
 import { Notifications } from '@mantine/notifications';
 import AuthGate from '../modules/Auth/AuthGate.jsx';
@@ -142,6 +144,10 @@ function AdminApp() {
               <Route path="household/members/:username" element={<MemberEditor />} />
               <Route path="household/devices" element={<DevicesIndex />} />
               <Route path="household/devices/:deviceId" element={<DeviceEditor />} />
+
+              {/* Agents */}
+              <Route path="agents" element={<AgentsIndex />} />
+              <Route path="agents/:agentId" element={<AgentDetail />} />
 
               {/* System */}
               <Route path="system/integrations" element={<IntegrationsIndex />} />
