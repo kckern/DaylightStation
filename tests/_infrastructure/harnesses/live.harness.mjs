@@ -8,7 +8,7 @@ import yaml from 'js-yaml';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const LIVE_DIR = path.resolve(__dirname, '../../live');
 const ENV_CONFIG = path.resolve(__dirname, '../environments.yml');
-const TARGETS = ['api', 'adapter', 'flow'];
+const TARGETS = ['api', 'adapter', 'flow', 'agent'];
 
 function loadEnvironments() {
   if (fs.existsSync(ENV_CONFIG)) {

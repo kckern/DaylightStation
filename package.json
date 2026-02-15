@@ -79,6 +79,7 @@
     "test:live:api": "node tests/_infrastructure/harnesses/live.harness.mjs --only=api",
     "test:live:flow": "node tests/_infrastructure/harnesses/live.harness.mjs --only=flow",
     "test:live:adapter": "node tests/_infrastructure/harnesses/live.harness.mjs --only=adapter",
+    "test:live:agent": "node tests/_infrastructure/harnesses/live.harness.mjs --only=agent",
     "test:all": "npm run test && npm run test:live",
     "test:reset-data": "node tests/_infrastructure/generators/setup-household-demo.mjs",
     "test:clean-ports": "node scripts/port-manager.mjs clean-all",
