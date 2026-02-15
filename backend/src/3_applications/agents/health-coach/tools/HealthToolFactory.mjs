@@ -7,7 +7,7 @@ export class HealthToolFactory extends ToolFactory {
   static domain = 'health';
 
   createTools() {
-    const { healthStore, healthService } = this.deps;
+    const { healthStore, healthService, sessionService } = this.deps;
 
     return [
       createTool({
@@ -189,6 +189,37 @@ export class HealthToolFactory extends ToolFactory {
             };
           } catch (err) {
             return { error: err.message, date: today() };
+          }
+        },
+      }),
+
+      createTool({
+        name: 'get_recent_fitness_sessions',
+        description: 'Recent household fitness sessions with date, duration, and participant count (from heart rate monitoring system)',
+        parameters: {
+          type: 'object',
+          properties: {
+            days: { type: 'number', description: 'Lookback window in days', default: 7 },
+          },
+        },
+        execute: async ({ days = 7 }) => {
+          if (!sessionService) return { error: 'Session service not available', sessions: [], total: 0 };
+          try {
+            const endDate = today();
+            const startDate = daysAgo(days);
+            const sessions = await sessionService.listSessionsInRange(startDate, endDate);
+
+            return {
+              sessions: sessions.map(s => ({
+                sessionId: s.sessionId,
+                date: s.sessionId.slice(0, 4) + '-' + s.sessionId.slice(4, 6) + '-' + s.sessionId.slice(6, 8),
+                durationMinutes: s.durationMs ? Math.round(s.durationMs / 60000) : null,
+                participants: s.rosterCount,
+              })),
+              total: sessions.length,
+            };
+          } catch (err) {
+            return { error: err.message, sessions: [], total: 0 };
           }
         },
       }),

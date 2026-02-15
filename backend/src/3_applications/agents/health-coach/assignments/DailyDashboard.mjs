@@ -40,23 +40,42 @@ export class DailyDashboard extends Assignment {
       });
     };
 
-    const [weight, nutrition, nutritionHistory, workouts, programState, goals] =
+    const [weight, nutrition, nutritionHistory, workouts, fitnessSessions, recentlyWatched, programState, goals] =
       await Promise.all([
         call('get_weight_trend', { userId, days: 7 }),
         call('get_today_nutrition', { userId }),
         call('get_nutrition_history', { userId, days: 7 }),
         call('get_recent_workouts', { userId, days: 7 }),
+        call('get_recent_fitness_sessions', { days: 7 }),
+        call('get_recently_watched_fitness', { days: 7 }),
         call('get_program_state', { userId }),
         call('get_user_goals', { userId }),
       ]);
 
-    // Get fitness content — if active program, get that show's episodes
+    // Get fitness content — if active program, get that show's episodes;
+    // otherwise browse the full catalog so the LLM can recommend from real content
     const showId = programState?.program?.content_source?.replace('plex:', '') || null;
-    const content = showId
-      ? await call('get_fitness_content', { showId })
-      : null;
+    let content = null;
+    let catalog = null;
 
-    return { weight, nutrition, nutritionHistory, workouts, content, programState, goals };
+    if (showId) {
+      content = await call('get_fitness_content', { showId });
+    } else {
+      catalog = await call('browse_fitness_catalog', {});
+    }
+
+    logger?.info?.('gather.complete', {
+      hasWeight: !!weight?.current,
+      hasNutrition: !!nutrition?.logged,
+      stravaWorkouts: workouts?.totalThisWeek || 0,
+      fitnessSessions: fitnessSessions?.total || 0,
+      recentlyWatched: recentlyWatched?.total || 0,
+      hasContent: !!content,
+      catalogShows: catalog?.total || 0,
+      hasGoals: !!goals,
+    });
+
+    return { weight, nutrition, nutritionHistory, workouts, fitnessSessions, recentlyWatched, content, catalog, programState, goals };
   }
 
   /**
@@ -70,12 +89,16 @@ export class DailyDashboard extends Assignment {
     sections.push(`\n## Health Data\n${JSON.stringify(gathered.weight || {}, null, 2)}`);
     sections.push(`\n## Nutrition Today\n${JSON.stringify(gathered.nutrition || {}, null, 2)}`);
     sections.push(`\n## Nutrition History (7 days)\n${JSON.stringify(gathered.nutritionHistory || {}, null, 2)}`);
-    sections.push(`\n## Recent Workouts\n${JSON.stringify(gathered.workouts || {}, null, 2)}`);
+    sections.push(`\n## Recent Workouts (Strava)\n${JSON.stringify(gathered.workouts || {}, null, 2)}`);
+    sections.push(`\n## Recent Fitness Sessions (Home Gym)\n${JSON.stringify(gathered.fitnessSessions || {}, null, 2)}`);
+    sections.push(`\n## Recently Watched Fitness Videos\n${JSON.stringify(gathered.recentlyWatched || {}, null, 2)}`);
     sections.push(`\n## Program State\n${JSON.stringify(gathered.programState || {}, null, 2)}`);
     sections.push(`\n## User Goals\n${JSON.stringify(gathered.goals || {}, null, 2)}`);
 
     if (gathered.content) {
-      sections.push(`\n## Available Fitness Content\n${JSON.stringify(gathered.content, null, 2)}`);
+      sections.push(`\n## Available Fitness Content (Active Program)\n${JSON.stringify(gathered.content, null, 2)}`);
+    } else if (gathered.catalog) {
+      sections.push(`\n## Fitness Content Catalog (No Active Program)\nThese shows are available in the fitness library. Use their IDs (prefixed with "plex:") as content_ids.\n${JSON.stringify(gathered.catalog, null, 2)}`);
     }
 
     sections.push(`\n## Working Memory\n${memory.serialize()}`);
@@ -121,13 +144,17 @@ Produce a JSON object matching the dashboard schema.
       throw new Error(`Dashboard validation failed: ${JSON.stringify(result.errors)}`);
     }
 
-    // Domain validation: check content IDs exist in gathered catalog
+    // Domain validation: check content IDs exist in gathered data
+    const primary = result.data.curated.up_next.primary;
     if (gathered.content?.episodes) {
       const knownIds = new Set(gathered.content.episodes.map(e => e.id));
-      const primary = result.data.curated.up_next.primary;
       if (!knownIds.has(primary.content_id)) {
         logger?.warn?.('validate.unknown_content_id', { id: primary.content_id });
-        // Warn but don't fail — the content ID may be from another source
+      }
+    } else if (gathered.catalog?.shows) {
+      const knownIds = new Set(gathered.catalog.shows.map(s => `plex:${s.id}`));
+      if (!knownIds.has(primary.content_id)) {
+        logger?.warn?.('validate.unknown_content_id', { id: primary.content_id });
       }
     }
 

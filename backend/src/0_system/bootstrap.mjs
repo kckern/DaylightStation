@@ -2327,6 +2327,8 @@ export function createCalendarApiRouter(config) {
  * @param {Object} [config.healthStore] - YamlHealthDatastore for health data persistence
  * @param {Object} [config.healthService] - AggregateHealthUseCase for health aggregation
  * @param {Object} [config.fitnessPlayableService] - FitnessPlayableService for episode browsing
+ * @param {Object} [config.sessionService] - SessionService for fitness session history
+ * @param {Object} [config.mediaProgressMemory] - YamlMediaProgressMemory for watch history
  * @param {Object} [config.dataService] - DataService for user data read/write
  * @param {Object} [config.configService] - ConfigService for household/user config
  * @returns {express.Router}
@@ -2337,6 +2339,8 @@ export function createAgentsApiRouter(config) {
     healthStore,
     healthService,
     fitnessPlayableService,
+    sessionService,
+    mediaProgressMemory,
     dataService,
     configService,
   } = config;
@@ -2371,6 +2375,8 @@ export function createAgentsApiRouter(config) {
       healthStore,
       healthService,
       fitnessPlayableService,
+      sessionService,
+      mediaProgressMemory,
       dataService,
       configService,
     });
