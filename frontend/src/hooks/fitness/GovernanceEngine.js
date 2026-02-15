@@ -1074,32 +1074,7 @@ export class GovernanceEngine {
     const unsatisfied = Array.isArray(summary.requirements)
       ? summary.requirements.filter((rule) => rule && !rule.satisfied)
       : [];
-    const combinedRequirements = (() => {
-      const list = [...unsatisfied];
-      if (challengeSnapshot && (challengeSnapshot.status === 'pending' || challengeSnapshot.status === 'failed')) {
-        const challengeRequirement = {
-          zone: challengeSnapshot.zone || challengeSnapshot.zoneLabel,
-          targetZoneId: challengeSnapshot.zone || challengeSnapshot.zoneLabel || null,
-          zoneLabel: challengeSnapshot.zoneLabel || challengeSnapshot.zone || null,
-          rule: challengeSnapshot.rule ?? null,
-          ruleLabel: challengeSnapshot.selectionLabel || challengeSnapshot.rule || 'Challenge requirement',
-          satisfied: false,
-          missingUsers: Array.isArray(challengeSnapshot.missingUsers)
-            ? challengeSnapshot.missingUsers.filter(Boolean)
-            : [],
-          metUsers: Array.isArray(challengeSnapshot.metUsers)
-            ? challengeSnapshot.metUsers.filter(Boolean)
-            : [],
-          requiredCount: Number.isFinite(challengeSnapshot.requiredCount) ? challengeSnapshot.requiredCount : null,
-          actualCount: Number.isFinite(challengeSnapshot.actualCount) ? challengeSnapshot.actualCount : null,
-          selectionLabel: challengeSnapshot.selectionLabel || '',
-          participantKey: null,
-          severity: this._getZoneRank(challengeSnapshot.zone)
-        };
-        list.unshift(challengeRequirement);
-      }
-      return list;
-    })();
+    const combinedRequirements = [...unsatisfied];
 
     const lockRowsNormalized = normalizeRequirements(
       combinedRequirements,
