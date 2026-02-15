@@ -656,32 +656,6 @@ const FitnessShow = ({ showId: rawShowId, onBack, viewportRef, setFitnessPlayQue
     return info.labels.some(label => sequentialLabels.has(label.toLowerCase()));
   }, [info, sequentialLabels]);
 
-  // Compute set of locked episode IDs for sequential shows (linear across all seasons)
-  const lockedEpisodeIds = useMemo(() => {
-    if (!isSequential) return new Set();
-    // Sort all items by season number then itemIndex to get global order
-    const sorted = [...items].sort((a, b) => {
-      const sa = seasons.find(s => String(s.id) === String(a.parentId));
-      const sb = seasons.find(s => String(s.id) === String(b.parentId));
-      const sn = (sa?.number ?? 0) - (sb?.number ?? 0);
-      if (sn !== 0) return sn;
-      const ai = Number.isFinite(a.itemIndex) ? a.itemIndex : Infinity;
-      const bi = Number.isFinite(b.itemIndex) ? b.itemIndex : Infinity;
-      return ai - bi;
-    });
-    const locked = new Set();
-    let gateClosed = false;
-    for (const ep of sorted) {
-      if (gateClosed) {
-        locked.add(ep.plex || ep.id);
-      }
-      if (!gateClosed && !(ep.isWatched ?? false)) {
-        gateClosed = true;
-      }
-    }
-    return locked;
-  }, [isSequential, items, seasons]);
-
   const governedLabelSet = useMemo(() => {
     if (contextGovernedLabelSet instanceof Set) return contextGovernedLabelSet;
     if (!Array.isArray(governedLabels) || !governedLabels.length) return new Set();
@@ -799,6 +773,32 @@ const FitnessShow = ({ showId: rawShowId, onBack, viewportRef, setFitnessPlayQue
     }));
     return arr;
   }, [items, parentsMap]);
+
+  // Compute set of locked episode IDs for sequential shows (linear across all seasons)
+  const lockedEpisodeIds = useMemo(() => {
+    if (!isSequential) return new Set();
+    // Sort all items by season number then itemIndex to get global order
+    const sorted = [...items].sort((a, b) => {
+      const sa = seasons.find(s => String(s.id) === String(a.parentId));
+      const sb = seasons.find(s => String(s.id) === String(b.parentId));
+      const sn = (sa?.number ?? 0) - (sb?.number ?? 0);
+      if (sn !== 0) return sn;
+      const ai = Number.isFinite(a.itemIndex) ? a.itemIndex : Infinity;
+      const bi = Number.isFinite(b.itemIndex) ? b.itemIndex : Infinity;
+      return ai - bi;
+    });
+    const locked = new Set();
+    let gateClosed = false;
+    for (const ep of sorted) {
+      if (gateClosed) {
+        locked.add(ep.plex || ep.id);
+      }
+      if (!gateClosed && !(ep.isWatched ?? false)) {
+        gateClosed = true;
+      }
+    }
+    return locked;
+  }, [isSequential, items, seasons]);
 
   // Initialize load tracking when items/seasons change
   useEffect(() => {
