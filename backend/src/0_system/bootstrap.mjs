@@ -2378,7 +2378,7 @@ export function createAgentsApiRouter(config) {
     scheduledJobs: scheduler.list(),
   });
 
-  return createAgentsRouter({ agentOrchestrator, scheduler, logger });
+  return createAgentsRouter({ agentOrchestrator, workingMemory, scheduler, logger });
 }
 
 // =============================================================================
