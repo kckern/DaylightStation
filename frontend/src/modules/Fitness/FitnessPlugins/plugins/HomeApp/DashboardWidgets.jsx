@@ -30,7 +30,7 @@ export function DashboardCard({ title, icon, children, className = '', onClick }
 // ─── Weight Trend Card ─────────────────────────────────────────
 
 export function WeightTrendCard({ weight }) {
-  if (!weight) {
+  if (!weight || weight.current == null) {
     return (
       <DashboardCard title="Weight" icon={null} className="dashboard-card--weight">
         <Text c="dimmed" ta="center" py="md">No weight data</Text>
@@ -73,7 +73,8 @@ export function NutritionCard({ nutrition, goals }) {
   }
 
   const calTarget = goals?.nutrition?.daily_calories || 2200;
-  const calPercent = Math.min(100, Math.round((nutrition.calories / calTarget) * 100));
+  const calRatio = nutrition.calories / calTarget;
+  const calPercent = Math.min(100, Math.round(calRatio * 100));
 
   return (
     <DashboardCard title="Nutrition" className="dashboard-card--nutrition">
@@ -82,7 +83,7 @@ export function NutritionCard({ nutrition, goals }) {
           <Title order={3} className="dashboard-stat-value">{nutrition.calories}</Title>
           <Text size="sm" c="dimmed">/ {calTarget} cal</Text>
         </Group>
-        <Progress value={calPercent} color={calPercent > 100 ? 'red' : 'blue'} size="sm" />
+        <Progress value={calPercent} color={calRatio > 1 ? 'red' : 'blue'} size="sm" />
         <Group justify="space-between" mt="xs">
           <MacroLabel label="Protein" value={nutrition.protein} unit="g" />
           <MacroLabel label="Carbs" value={nutrition.carbs} unit="g" />
