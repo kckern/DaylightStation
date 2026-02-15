@@ -698,8 +698,10 @@ const FitnessChartApp = ({ mode, onClose, config, onMount, sessionData }) => {
 	// Historical mode: use static session data instead of live plugin data
 	const staticSource = useMemo(() => {
 		if (!sessionData) return null;
-		// Handle both { session: {...} } wrapper and direct session object
-		const session = sessionData.session || sessionData;
+		// Use the object that has timeline data — sessionData itself if it has .timeline,
+		// otherwise check .session wrapper (but only if that wrapper has .timeline too)
+		const session = sessionData.timeline ? sessionData
+			: (sessionData.session?.timeline ? sessionData.session : sessionData);
 		return createChartDataSource(session);
 	}, [sessionData]);
 	const isHistorical = !!staticSource;
@@ -710,7 +712,7 @@ const FitnessChartApp = ({ mode, onClose, config, onMount, sessionData }) => {
 	const chartTimebase = isHistorical ? staticSource.timebase : timebase;
 	const chartHistorical = isHistorical ? [] : historicalParticipants;
 	const chartActivityMonitor = isHistorical ? null : activityMonitor;
-	const chartZoneConfig = isHistorical ? null : zoneConfig;
+	const chartZoneConfig = zoneConfig;
 	const chartSessionId = isHistorical ? (sessionData?.session?.id || sessionData?.sessionId || 'historical') : sessionId;
 
 	const containerRef = useRef(null);
@@ -1137,7 +1139,8 @@ const FitnessChartApp = ({ mode, onClose, config, onMount, sessionData }) => {
 
 	return (
 		<div className={`fitness-chart-app ${layoutClass}`} ref={containerRef}>
-			{!hasData && !persisted && <div className="race-chart-panel__empty">Timeline warming up…</div>}
+			{!hasData && !persisted && !isHistorical && <div className="race-chart-panel__empty">Timeline warming up…</div>}
+			{!hasData && !persisted && isHistorical && <div className="race-chart-panel__empty">No timeline data for this session</div>}
 			{(hasData || persisted) && (
 				<div className="race-chart-panel__body">
 					<RaceChartSvg
