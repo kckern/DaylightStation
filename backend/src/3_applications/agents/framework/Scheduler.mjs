@@ -1,24 +1,27 @@
 // backend/src/3_applications/agents/framework/Scheduler.mjs
 
-import cron from 'node-cron';
+import { CronExpressionParser } from 'cron-parser';
 
 /**
- * Scheduler - In-process cron that triggers agent assignments on configured schedules.
+ * Scheduler - In-process scheduler that triggers agent assignments on configured schedules.
  *
- * The scheduler triggers assignments; multi-user fan-out is the assignment's responsibility.
- *
- * @see docs/roadmap/2026-02-14-fitness-dashboard-health-agent-design.md — Scheduler section
+ * Uses cron-parser (shared with system scheduler) for cron expression handling
+ * and setInterval for the tick loop.
  */
 export class Scheduler {
   #jobs = new Map();
   #logger;
+  #intervalId = null;
+  #intervalMs;
+  #running = false;
 
-  constructor({ logger = console }) {
+  constructor({ logger = console, intervalMs = 30_000 }) {
     this.#logger = logger;
+    this.#intervalMs = intervalMs;
   }
 
   /**
-   * Scan an agent's assignments and register cron jobs.
+   * Scan an agent's assignments and register scheduled jobs.
    * @param {Object} agent - Agent instance with getAssignments()
    * @param {Object} orchestrator - AgentOrchestrator instance
    */
@@ -31,26 +34,75 @@ export class Scheduler {
       const jobKey = `${agent.constructor.id}:${assignment.constructor.id}`;
       const cronExpr = assignment.constructor.schedule;
 
-      if (!cron.validate(cronExpr)) {
+      try {
+        CronExpressionParser.parse(cronExpr);
+      } catch {
         this.#logger.error?.('scheduler.invalid_cron', { jobKey, cronExpr });
         continue;
       }
 
-      const job = cron.schedule(cronExpr, async () => {
-        this.#logger.info?.('scheduler.trigger', { jobKey });
-        try {
-          await orchestrator.runAssignment(
-            agent.constructor.id,
-            assignment.constructor.id,
-            { triggeredBy: 'scheduler' }
-          );
-        } catch (err) {
-          this.#logger.error?.('scheduler.failed', { jobKey, error: err.message });
-        }
+      this.#jobs.set(jobKey, {
+        cronExpr,
+        orchestrator,
+        agentId: agent.constructor.id,
+        assignmentId: assignment.constructor.id,
+        lastRun: null,
       });
 
-      this.#jobs.set(jobKey, job);
       this.#logger.info?.('scheduler.registered', { jobKey, cronExpr });
+    }
+
+    this.#ensureRunning();
+  }
+
+  /**
+   * Start the interval loop if jobs exist and it isn't already running.
+   */
+  #ensureRunning() {
+    if (this.#intervalId || this.#jobs.size === 0) return;
+    this.#intervalId = setInterval(() => this.#tick(), this.#intervalMs);
+  }
+
+  /**
+   * Single tick: check each job to see if it's due.
+   */
+  async #tick() {
+    if (this.#running) return;
+    this.#running = true;
+
+    try {
+      const now = new Date();
+      for (const [jobKey, job] of this.#jobs) {
+        if (this.#isDue(job, now)) {
+          job.lastRun = now;
+          this.#logger.info?.('scheduler.trigger', { jobKey });
+          try {
+            await job.orchestrator.runAssignment(
+              job.agentId,
+              job.assignmentId,
+              { triggeredBy: 'scheduler' }
+            );
+          } catch (err) {
+            this.#logger.error?.('scheduler.failed', { jobKey, error: err.message });
+          }
+        }
+      }
+    } finally {
+      this.#running = false;
+    }
+  }
+
+  /**
+   * Check if a job is due to run based on its cron expression.
+   */
+  #isDue(job, now) {
+    try {
+      const ref = job.lastRun || new Date(now.getTime() - this.#intervalMs);
+      const interval = CronExpressionParser.parse(job.cronExpr, { currentDate: ref });
+      const nextRun = interval.next().toDate();
+      return nextRun <= now;
+    } catch {
+      return false;
     }
   }
 
@@ -66,10 +118,13 @@ export class Scheduler {
   }
 
   /**
-   * Stop all cron jobs.
+   * Stop all scheduled jobs.
    */
   stop() {
-    for (const job of this.#jobs.values()) job.stop();
+    if (this.#intervalId) {
+      clearInterval(this.#intervalId);
+      this.#intervalId = null;
+    }
     this.#jobs.clear();
   }
 
