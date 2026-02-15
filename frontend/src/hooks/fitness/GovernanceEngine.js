@@ -225,6 +225,9 @@ export class GovernanceEngine {
     this._timersPaused = false;
     this._pausedAt = null;
     this._remainingMs = null;
+
+    // Debounce flag for _invalidateStateCache microtask batching
+    this._stateChangePending = false;
   }
 
   /**
@@ -934,6 +937,7 @@ export class GovernanceEngine {
     this._stateCacheThrottleMs = 200;
     this._stateVersion = 0; // Incremented on evaluate() to invalidate cache
     this._stateCacheVersion = -1; // Track which version the cache represents
+    this._stateChangePending = false;
   }
 
   /**
@@ -995,6 +999,7 @@ export class GovernanceEngine {
     this._stateCacheThrottleMs = 200;
     this._stateVersion = 0;
     this._stateCacheVersion = -1;
+    this._stateChangePending = false;
 
     // Only set phase if actually changing to avoid unnecessary callbacks
     if (this.phase !== null) {
@@ -1053,8 +1058,14 @@ export class GovernanceEngine {
    */
   _invalidateStateCache() {
     this._stateVersion++;
-    if (this.callbacks.onStateChange) {
-      this.callbacks.onStateChange();
+    if (this.callbacks.onStateChange && !this._stateChangePending) {
+      this._stateChangePending = true;
+      queueMicrotask(() => {
+        this._stateChangePending = false;
+        if (this.callbacks.onStateChange) {
+          this.callbacks.onStateChange();
+        }
+      });
     }
   }
 
