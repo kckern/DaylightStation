@@ -61,6 +61,29 @@ export function createAuthRouter({ authService, jwtSecret, jwtConfig, configServ
     res.json({ token });
   }));
 
+  // POST /auth/claim — first-boot: claim existing profile and set password
+  router.post('/claim', asyncHandler(async (req, res) => {
+    const { username, password } = req.body;
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Missing required fields: username, password' });
+    }
+
+    let user;
+    try {
+      user = await authService.claim(username, password);
+    } catch (err) {
+      return res.status(403).json({ error: err.message });
+    }
+
+    if (!user) {
+      return res.status(404).json({ error: 'Username not found' });
+    }
+
+    const token = issueToken(user);
+    logger.info('auth.claim.complete', { username });
+    res.json({ token });
+  }));
+
   // GET /auth/context — public household info for login screen
   router.get('/context', (req, res) => {
     const householdId = req.householdId || configService.getDefaultHouseholdId();
@@ -70,7 +93,8 @@ export function createAuthRouter({ authService, jwtSecret, jwtConfig, configServ
       householdId,
       householdName: household?.name || 'DaylightStation',
       authMethod: 'password',
-      isLocal: req.isLocal || false
+      isLocal: req.isLocal || false,
+      needsSetup: authService.needsSetup()
     });
   });
 
