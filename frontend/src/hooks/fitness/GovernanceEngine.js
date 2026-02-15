@@ -1391,7 +1391,7 @@ export class GovernanceEngine {
     const defaultGrace = this.config.grace_period_seconds || 0;
     const baseGraceSeconds = Number.isFinite(baseRequirement.grace_period_seconds) ? baseRequirement.grace_period_seconds : defaultGrace;
 
-    if (challengeForcesRed) {
+    if (challengeForcesRed && !allSatisfied) {
       if (this.timers.governance) clearTimeout(this.timers.governance);
       this.meta.deadline = null;
       this.meta.gracePeriodTotal = null;
