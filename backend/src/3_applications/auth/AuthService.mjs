@@ -89,6 +89,32 @@ export class AuthService {
     };
   }
 
+  async claim(username, password) {
+    if (!this.needsSetup()) {
+      throw new Error('Setup already complete');
+    }
+
+    const profile = this.#dataService.user.read('profile', username);
+    if (!profile) return null;
+
+    const passwordHash = await hashPassword(password);
+    this.#dataService.user.write('auth/login', {
+      password_hash: passwordHash,
+      invite_token: null,
+      invited_by: null,
+      invited_at: null,
+      last_login: new Date().toISOString()
+    }, username);
+
+    this.#logger.info('auth.claim.complete', { username });
+
+    return {
+      username: profile.username,
+      householdId: profile.household_id || this.#configService.getDefaultHouseholdId(),
+      roles: profile.roles || []
+    };
+  }
+
   async generateInvite(username, invitedBy) {
     const profile = this.#dataService.user.read('profile', username);
     if (!profile) throw new Error(`User not found: ${username}`);
