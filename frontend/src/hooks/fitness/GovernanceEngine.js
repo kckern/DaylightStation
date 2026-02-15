@@ -1226,6 +1226,20 @@ export class GovernanceEngine {
     zoneInfoMap = zoneInfoMap || {};
     totalCount = totalCount || activeParticipants.length;
 
+    // Filter out ghost participants — users in the roster but with no zone data.
+    // These are disconnected participants whose roster entries are stale.
+    if (userZoneMap && typeof userZoneMap === 'object') {
+      const beforeCount = activeParticipants.length;
+      activeParticipants = activeParticipants.filter(id => id in userZoneMap);
+      totalCount = activeParticipants.length;
+      if (activeParticipants.length < beforeCount) {
+        getLogger().debug('governance.filtered_ghost_participants', {
+          removed: beforeCount - activeParticipants.length,
+          remaining: activeParticipants.length
+        });
+      }
+    }
+
     // DIAGNOSTIC: Warn if zoneRankMap is empty but we have participants
     // This was the exact bug condition - zones not configured, causing false warnings
     if (activeParticipants.length > 0 && Object.keys(zoneRankMap).length === 0) {
