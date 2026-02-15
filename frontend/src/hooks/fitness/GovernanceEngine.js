@@ -702,14 +702,22 @@ export class GovernanceEngine {
    */
   _getParticipantsBelowThreshold() {
     const requirements = this.requirementSummary?.requirements || [];
+    const userZoneMap = this._latestInputs.userZoneMap || {};
     const below = [];
     for (const req of requirements) {
-      if (Array.isArray(req.missingUsers)) {
-        below.push(...req.missingUsers.map(name => ({
-          name,
-          zone: req.zone || req.zoneLabel,
-          required: req.requiredCount
-        })));
+      if (!Array.isArray(req.missingUsers)) continue;
+      const requiredRank = this._getZoneRank(req.zone || req.zoneLabel);
+      for (const name of req.missingUsers) {
+        const currentZone = userZoneMap[name];
+        const currentRank = this._getZoneRank(currentZone) ?? 0;
+        // Only include if they are actually below the required zone right now
+        if (!Number.isFinite(requiredRank) || currentRank < requiredRank) {
+          below.push({
+            name,
+            zone: req.zone || req.zoneLabel,
+            required: req.requiredCount
+          });
+        }
       }
     }
     return below.slice(0, 10); // Limit for log size
