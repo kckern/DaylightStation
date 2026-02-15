@@ -21,7 +21,6 @@
     "multer": "^2.0.2",
     "music-metadata": "^11.10.6",
     "mysql2": "^3.12.0",
-    "node-cron": "^4.2.1",
     "node-fetch": "^3.3.2",
     "openai": "^4.77.0",
     "openai-gpt-token-counter": "^1.1.1",
