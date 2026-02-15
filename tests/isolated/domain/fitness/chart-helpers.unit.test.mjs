@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildBeatsSeries } from '#frontend/modules/Fitness/FitnessSidebar/FitnessChart.helpers.js';
+import { buildBeatsSeries, getZoneCoinRate } from '#frontend/modules/Fitness/FitnessSidebar/FitnessChart.helpers.js';
 
 describe('buildBeatsSeries — coins quality gate (O3)', () => {
   const makeGetSeries = (data) => (userId, metric) => {
@@ -72,5 +72,28 @@ describe('buildBeatsSeries — forward-fill cumulative metrics (O4)', () => {
     expect(result.beats[4]).toBe(5);  // forward-filled from index 3
     expect(result.beats[7]).toBe(12); // forward-filled from index 6
     expect(result.beats[9]).toBe(20);
+  });
+});
+
+describe('getZoneCoinRate — DEFAULT_ZONE_COIN_RATES (O2)', () => {
+  // Test WITHOUT zoneConfig to exercise the default fallback
+  it('returns 0 for cool zone (blue — no coins)', () => {
+    expect(getZoneCoinRate('cool')).toBe(0);
+  });
+
+  it('returns non-zero for active zone (green — earns coins)', () => {
+    expect(getZoneCoinRate('active')).toBeGreaterThan(0);
+  });
+
+  it('returns higher rate for warm than active', () => {
+    expect(getZoneCoinRate('warm')).toBeGreaterThan(getZoneCoinRate('active'));
+  });
+
+  it('returns higher rate for hot than warm', () => {
+    expect(getZoneCoinRate('hot')).toBeGreaterThan(getZoneCoinRate('warm'));
+  });
+
+  it('returns higher rate for fire than hot', () => {
+    expect(getZoneCoinRate('fire')).toBeGreaterThan(getZoneCoinRate('hot'));
   });
 });

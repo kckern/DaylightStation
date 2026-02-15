@@ -14,10 +14,12 @@ export const ZONE_COLOR_MAP = ZoneColors;
 
 // Default zone coin rates (used if zoneConfig not provided)
 const DEFAULT_ZONE_COIN_RATES = {
-  active: 0,    // blue - no coins
-  warm: 1,      // yellow
-  hot: 3,       // orange
-  fire: 5       // red
+  rest: 0,      // gray — no coins
+  cool: 0,      // blue — no coins
+  active: 1,    // green — earns coins
+  warm: 3,      // yellow
+  hot: 5,       // orange
+  fire: 7       // red
 };
 
 /**
