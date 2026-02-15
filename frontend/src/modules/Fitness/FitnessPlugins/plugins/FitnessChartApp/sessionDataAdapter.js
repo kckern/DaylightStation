@@ -12,6 +12,13 @@ const METRIC_KEY_MAP = {
 };
 
 /**
+ * Reverse of ZONE_SYMBOL_MAP from PersistenceManager:
+ * Persistence abbreviates zone names when writing (cool→c, active→a, etc.)
+ * We expand them back so getZoneColor() can resolve colors.
+ */
+const ZONE_ABBREV_MAP = { r: 'rest', c: 'cool', a: 'active', w: 'warm', h: 'hot', f: 'fire' };
+
+/**
  * Transform a session API response into the data interface
  * that FitnessChartApp's chart hooks expect.
  *
@@ -21,7 +28,31 @@ const METRIC_KEY_MAP = {
 export function createChartDataSource(session) {
   if (!session) return { getSeries: () => [], roster: [], timebase: {} };
 
-  const timelineParticipants = session.timeline?.participants || {};
+  // Build per-user timeline data from either format:
+  //   V1: timeline.participants = { userId: { hr: [...], zone: [...] } }
+  //   V2: timeline.series = { "userId:metric": [...], ... } (flat keys)
+  let timelineParticipants = session.timeline?.participants || {};
+  if (Object.keys(timelineParticipants).length === 0 && session.timeline?.series) {
+    const grouped = {};
+    const CHART_METRICS = new Set(['hr', 'zone', 'coins', 'beats']);
+    for (const [key, values] of Object.entries(session.timeline.series)) {
+      const colonIdx = key.lastIndexOf(':');
+      if (colonIdx === -1) continue;
+      const userId = key.slice(0, colonIdx);
+      const metric = key.slice(colonIdx + 1);
+      if (!CHART_METRICS.has(metric)) continue;
+      if (!grouped[userId]) grouped[userId] = {};
+      // Expand abbreviated zone IDs back to full names for getZoneColor()
+      if (metric === 'zone' && Array.isArray(values)) {
+        grouped[userId][metric] = values.map(v =>
+          v != null ? (ZONE_ABBREV_MAP[v] || v) : v
+        );
+      } else {
+        grouped[userId][metric] = values;
+      }
+    }
+    timelineParticipants = grouped;
+  }
 
   const getLastZone = (userId) => {
     const series = timelineParticipants[userId]?.zone;
@@ -44,23 +75,32 @@ export function createChartDataSource(session) {
   };
 
   // --- roster ---
+  // Merge participants metadata with users discovered from timeline series
   const participantsMeta = session.participants || {};
   const legacyRoster = session.roster || [];
 
+  // Collect all user IDs from both sources
+  const allUserIds = new Set([
+    ...Object.keys(participantsMeta),
+    ...Object.keys(timelineParticipants),
+  ]);
+
   let roster;
-  if (Object.keys(participantsMeta).length > 0) {
-    // V3 format: participants is an object keyed by userId
-    roster = Object.entries(participantsMeta).map(([userId, meta]) => ({
-      id: userId,
-      profileId: userId,
-      name: meta.display_name || userId,
-      displayLabel: meta.display_name || userId,
-      isActive: true, // completed session — everyone shown as present
-      zoneColor: getZoneColor(getLastZone(userId)),
-      avatarUrl: DaylightMediaPath(`/static/img/users/${userId}`),
-      isPrimary: meta.is_primary || false,
-      hrDeviceId: meta.hr_device || null,
-    }));
+  if (allUserIds.size > 0) {
+    roster = [...allUserIds].map(userId => {
+      const meta = participantsMeta[userId] || {};
+      return {
+        id: userId,
+        profileId: userId,
+        name: meta.display_name || userId,
+        displayLabel: meta.display_name || userId,
+        isActive: true,
+        zoneColor: getZoneColor(getLastZone(userId)),
+        avatarUrl: DaylightMediaPath(`/static/img/users/${userId}`),
+        isPrimary: meta.is_primary || false,
+        hrDeviceId: meta.hr_device || null,
+      };
+    });
   } else {
     // Legacy format: roster is an array
     roster = legacyRoster.map((entry, idx) => {
