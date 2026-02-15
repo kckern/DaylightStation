@@ -183,6 +183,7 @@ export function createAgentsRouter(config) {
     const state = await workingMemory.load(agentId, userId);
     const entries = state.toJSON();
 
+    logger.info?.('agents.memory.read', { agentId, userId, count: Object.keys(entries).length });
     res.json({ agentId, userId, entries });
   }));
 
