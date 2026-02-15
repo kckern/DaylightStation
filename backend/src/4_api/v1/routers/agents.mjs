@@ -16,6 +16,7 @@
 
 import express from 'express';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
+import { WorkingMemoryState } from '#apps/agents/framework/WorkingMemory.mjs';
 
 /**
  * Create agents API router
@@ -202,7 +203,6 @@ export function createAgentsRouter(config) {
       return res.status(501).json({ error: 'Working memory not configured' });
     }
 
-    const { WorkingMemoryState } = await import('#apps/agents/framework/WorkingMemory.mjs');
     await workingMemory.save(agentId, userId, new WorkingMemoryState());
 
     logger.info?.('agents.memory.cleared', { agentId, userId });

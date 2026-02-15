@@ -67,11 +67,11 @@ export class MastraAdapter {
 
   /**
    * @param {Object} deps
-   * @param {string} [deps.model='openai:gpt-4o'] - Model identifier (provider:model format)
+   * @param {string} [deps.model='openai/gpt-4o'] - Model identifier (provider/model format)
    * @param {Object} [deps.logger] - Logger instance
    */
   constructor(deps = {}) {
-    this.#model = deps.model || 'openai:gpt-4o';
+    this.#model = deps.model || 'openai/gpt-4o';
     this.#logger = deps.logger || console;
   }
 
@@ -111,18 +111,19 @@ export class MastraAdapter {
    * Execute an agent synchronously
    * @implements IAgentRuntime.execute
    */
-  async execute({ agent, input, tools, systemPrompt, context = {} }) {
+  async execute({ agent, agentId, input, tools, systemPrompt, context = {} }) {
+    const name = agentId || agent?.constructor?.id || 'unknown';
     const mastraTools = this.#translateTools(tools || [], context);
 
     const mastraAgent = new Agent({
-      name: agent.constructor.id,
+      name,
       instructions: systemPrompt,
       model: this.#model,
       tools: mastraTools,
     });
 
     this.#logger.info?.('agent.execute.start', {
-      agentId: agent.constructor.id,
+      agentId: name,
       inputLength: input?.length,
       toolCount: Object.keys(mastraTools).length,
     });
@@ -131,7 +132,7 @@ export class MastraAdapter {
       const response = await mastraAgent.generate(input);
 
       this.#logger.info?.('agent.execute.complete', {
-        agentId: agent.constructor.id,
+        agentId: name,
         outputLength: response.text?.length,
       });
 
@@ -141,7 +142,7 @@ export class MastraAdapter {
       };
     } catch (error) {
       this.#logger.error?.('agent.execute.error', {
-        agentId: agent.constructor.id,
+        agentId: name,
         error: error.message,
       });
       throw error;

@@ -1,9 +1,9 @@
 // tests/live/agent/_agent-test-helper.mjs
 
-import { getAppPort } from '../../_lib/configHelper.mjs';
-
-const APP_PORT = getAppPort();
-const BASE_URL = `http://localhost:${APP_PORT}`;
+// Use TEST_BASE_URL set by the live harness, falling back to localhost:3112.
+// We avoid importing configHelper.mjs directly because its import.meta.url
+// usage conflicts with Jest's Babel CJS transform.
+const BASE_URL = process.env.TEST_BASE_URL || 'http://localhost:3112';
 
 /**
  * Fetch a JSON endpoint and return { res, data }.
