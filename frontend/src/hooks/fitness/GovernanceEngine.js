@@ -161,7 +161,7 @@ export class GovernanceEngine {
 
     // Hysteresis: require satisfaction for minimum duration before unlocking
     // This prevents rapid phase cycling when HR hovers around threshold
-    this._hysteresisMs = 500;
+    this._hysteresisMs = 1500;
 
     this.meta = {
       satisfiedOnce: false,
