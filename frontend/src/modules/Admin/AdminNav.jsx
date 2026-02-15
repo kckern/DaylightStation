@@ -5,7 +5,8 @@ import {
   IconMenu2, IconPlayerRecord, IconCalendarEvent,
   IconRun, IconCoin, IconHeart, IconShoppingCart,
   IconUsers, IconDevices,
-  IconPlugConnected, IconClock, IconFileCode
+  IconPlugConnected, IconClock, IconFileCode,
+  IconRobot
 } from '@tabler/icons-react';
 
 const navSections = [
@@ -24,6 +25,12 @@ const navSections = [
       { label: 'Finance', icon: IconCoin, to: '/admin/apps/finance' },
       { label: 'Gratitude', icon: IconHeart, to: '/admin/apps/gratitude' },
       { label: 'Shopping', icon: IconShoppingCart, to: '/admin/apps/shopping' },
+    ]
+  },
+  {
+    label: 'AGENTS',
+    items: [
+      { label: 'All Agents', icon: IconRobot, to: '/admin/agents' },
     ]
   },
   {
