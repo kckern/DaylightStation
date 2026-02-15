@@ -16,10 +16,10 @@ export class HealthCoachAgent extends BaseAgent {
   }
 
   registerTools() {
-    const { healthStore, healthService, fitnessPlayableService, dataService } = this.deps;
+    const { healthStore, healthService, fitnessPlayableService, sessionService, mediaProgressMemory, dataService } = this.deps;
 
-    this.addToolFactory(new HealthToolFactory({ healthStore, healthService }));
-    this.addToolFactory(new FitnessContentToolFactory({ fitnessPlayableService, dataService }));
+    this.addToolFactory(new HealthToolFactory({ healthStore, healthService, sessionService }));
+    this.addToolFactory(new FitnessContentToolFactory({ fitnessPlayableService, mediaProgressMemory, dataService }));
     this.addToolFactory(new DashboardToolFactory({ dataService, healthStore }));
 
     // Register assignments

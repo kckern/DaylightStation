@@ -96,6 +96,33 @@ export class FitnessPlayableService {
   }
 
   /**
+   * List all fitness shows available in the configured fitness library.
+   * Returns a simplified catalog suitable for agent content selection.
+   *
+   * @param {string} [householdId] - Household ID for config lookup
+   * @returns {Promise<{shows: Array, libraryId: string|number}>}
+   */
+  async listFitnessShows(householdId) {
+    if (!this.#contentAdapter) {
+      throw new Error('Fitness content adapter not configured');
+    }
+
+    const fitnessConfig = this.#fitnessConfigService.loadRawConfig(householdId);
+    const libraryId = fitnessConfig?.plex?.library_id || 14;
+
+    const items = await this.#contentAdapter.getList(`library/sections/${libraryId}/all`);
+
+    const shows = items.map(item => ({
+      id: item.localId || item.id?.replace('plex:', ''),
+      title: item.title,
+      type: item.itemType || item.metadata?.type,
+      episodeCount: item.metadata?.leafCount || item.metadata?.childCount || null,
+    }));
+
+    return { shows, libraryId };
+  }
+
+  /**
    * Classify a single item's watch progress using fitness-specific thresholds.
    *
    * Maps domain fields (playhead, percent, duration) to API contract fields
