@@ -1,7 +1,7 @@
 // frontend/src/modules/Fitness/FitnessPlugins/plugins/HomeApp/DashboardWidgets.jsx
 
 import React from 'react';
-import { Paper, Text, Title, Group, Stack, Badge, Progress } from '@mantine/core';
+import { Paper, Text, Title, Group, Stack, Badge, Progress, Skeleton } from '@mantine/core';
 
 // ─── Shared card wrapper ───────────────────────────────────────
 
@@ -23,6 +23,15 @@ export function DashboardCard({ title, icon, children, className = '', onClick }
         </Group>
       )}
       {children}
+    </Paper>
+  );
+}
+
+export function DashboardCardSkeleton({ height = 150 }) {
+  return (
+    <Paper className="dashboard-card" p="md" radius="md">
+      <Skeleton height={12} width="40%" mb="sm" />
+      <Skeleton height={height - 40} />
     </Paper>
   );
 }
