@@ -7,7 +7,7 @@
 
 // Note: These imports assume @tensorflow/tfjs and @tensorflow-models/pose-detection are installed
 // Run: npm install @tensorflow/tfjs-core @tensorflow/tfjs-converter @tensorflow/tfjs-backend-webgl @tensorflow-models/pose-detection
-import getLogger from '../../../../lib/logging/Logger.js';
+import getLogger from '@/lib/logging/Logger.js';
 
 const MODEL_TYPES = {
   lite: 'lite',

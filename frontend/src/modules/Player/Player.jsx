@@ -112,6 +112,7 @@ const Player = forwardRef(function Player(props, ref) {
     classes,
     cycleThroughClasses,
     shader: queueShader,
+    shaderUserCycled,
     setShader,
     isQueue,
     volume: queueVolume,
@@ -621,7 +622,11 @@ const Player = forwardRef(function Player(props, ref) {
   const explicitShader = shaderAliases[rawExplicitShader] ?? rawExplicitShader;
   const willLoop = (isQueue && playQueue?.length === 1) ||
                    (!isQueue && singlePlayerProps?.continuous);
-  const effectiveShader = explicitShader || (willLoop ? 'focused' : queueShader);
+  // Once the user manually cycles the shader (ArrowUp/ArrowDown), their choice takes
+  // precedence over item-level and queue-level metadata until the queue resets.
+  const effectiveShader = shaderUserCycled
+    ? queueShader
+    : explicitShader || (willLoop ? 'focused' : queueShader);
 
   // Create appropriate advance function for single continuous items
   const singleAdvance = useCallback(() => {

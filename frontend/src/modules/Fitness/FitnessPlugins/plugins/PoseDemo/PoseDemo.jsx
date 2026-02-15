@@ -10,7 +10,7 @@
 
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import useFitnessPlugin from '../../useFitnessPlugin';
-import getLogger from '../../../../../lib/logging/Logger.js';
+import getLogger from '@/lib/logging/Logger.js';
 import { PoseProvider } from '../../../context/PoseContext.jsx';
 import { usePoseProvider } from '../../../hooks/usePoseProvider.js';
 import { Webcam as FitnessWebcam } from '../../../components/FitnessWebcam.jsx';

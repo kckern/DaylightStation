@@ -64,7 +64,7 @@ export default defineConfig(({ command, mode }) => {
     },
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, 'public'),
+        '@': path.resolve(__dirname, 'src'),
       }
     },
     server: {

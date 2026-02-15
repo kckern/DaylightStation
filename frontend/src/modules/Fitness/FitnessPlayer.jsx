@@ -1016,6 +1016,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       title: media.title || media.label || null,
       grandparentTitle: media.grandparentTitle || null,
       parentTitle: media.parentTitle || null,
+      grandparentId: media.grandparentId || null,
+      parentId: media.parentId || null,
       plexId: media.plex || media.id || null,
       mediaKey: media.assetId || null,
       durationSeconds,

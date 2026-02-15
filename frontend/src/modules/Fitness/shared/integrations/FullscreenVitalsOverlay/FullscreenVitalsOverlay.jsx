@@ -1,7 +1,7 @@
 import React, { useMemo, useState, useCallback } from 'react';
 import PropTypes from 'prop-types';
-import { useFitnessContext } from '../../../../../context/FitnessContext.jsx';
-import { DaylightMediaPath } from '../../../../../lib/api.mjs';
+import { useFitnessContext } from '@/context/FitnessContext.jsx';
+import { DaylightMediaPath } from '@/lib/api.mjs';
 import CircularUserAvatar from '../../../components/CircularUserAvatar.jsx';
 import RpmDeviceAvatar from '../../../components/RpmDeviceAvatar.jsx';
 import './FullscreenVitalsOverlay.scss';

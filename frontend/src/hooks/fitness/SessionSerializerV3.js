@@ -193,6 +193,8 @@ export class SessionSerializerV3 {
       ...(d.grandparentTitle && { grandparentTitle: d.grandparentTitle }),
       ...(d.parentTitle && { parentTitle: d.parentTitle }),
       plex_id: d.plexId || d.plex_id || d.mediaId,
+      ...(d.grandparentId && { grandparent_id: d.grandparentId }),
+      ...(d.parentId && { parent_id: d.parentId }),
       duration_seconds: d.durationSeconds || d.duration_seconds,
       ...(d.labels?.length && { labels: d.labels })
     };

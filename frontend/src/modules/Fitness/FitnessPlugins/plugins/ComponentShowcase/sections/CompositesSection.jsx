@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { ActionBar, AppNavigation, AppList, ConfirmDialog, AppModal, MultiChoice, AppButton } from '../../../../shared';
-import { DaylightMediaPath } from '../../../../../../lib/api.mjs';
+import { DaylightMediaPath } from '@/lib/api.mjs';
 import useFitnessPlugin from '../../../useFitnessPlugin';
 import ComponentCard from '../components/ComponentCard';
 

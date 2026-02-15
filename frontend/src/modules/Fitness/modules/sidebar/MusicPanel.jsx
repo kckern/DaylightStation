@@ -1,7 +1,7 @@
 import React, { forwardRef } from 'react';
 import PropTypes from 'prop-types';
 import FitnessMusicPlayer from '../../FitnessSidebar/FitnessMusicPlayer.jsx';
-import { useFitnessContext } from '../../../../context/FitnessContext.jsx';
+import { useFitnessContext } from '@/context/FitnessContext.jsx';
 import './panels.scss';
 
 /**

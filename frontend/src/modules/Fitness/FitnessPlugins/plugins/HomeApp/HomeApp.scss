@@ -36,12 +36,6 @@
   color: white;
 }
 
-.workout-row {
-  padding: 0.25rem 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-  &:last-child { border-bottom: none; }
-}
-
 // --- Up Next Card (curated) ---
 
 .dashboard-card--upnext {
@@ -141,6 +135,66 @@
   user-select: none;
 
   &:active { background: rgba(255, 255, 255, 0.12); }
+}
+
+// --- Session Thumbnails ---
+
+.session-date-header {
+  padding: 0.4rem 0 0.15rem;
+  letter-spacing: 0.05em;
+}
+
+// Remove top padding from the first date group
+.dashboard-card--workouts > .mantine-Stack-root > div:first-child > .session-date-header {
+  padding-top: 0;
+}
+
+.session-row {
+  padding: 0.35rem 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  align-items: center;
+  &:last-child { border-bottom: none; }
+}
+
+.session-thumbnail {
+  width: 64px;
+  min-width: 64px;
+  height: 40px;
+  border-radius: 4px;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.session-poster {
+  width: 40px;
+  min-width: 40px;
+  height: 60px;
+  border-radius: 4px;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+// --- Session Avatars ---
+
+.session-avatars {
+  display: inline-flex;
+  align-items: center;
+}
+
+.session-avatar {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+// --- Nutrition History ---
+
+.nutrition-row {
+  padding: 0.2rem 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+  &:last-child { border-bottom: none; }
 }
 
 // --- Empty State ---

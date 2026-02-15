@@ -100,7 +100,7 @@ export class YamlHealthDatastore extends IHealthDataDatastore {
    */
   async loadWeightData(userId) {
     this.#logger.debug?.('health.store.loadWeight', { userId });
-    return this.#loadUserFile(userId, 'weight');
+    return this.#loadUserFile(userId, 'lifelog/weight');
   }
 
   /**
@@ -110,7 +110,7 @@ export class YamlHealthDatastore extends IHealthDataDatastore {
    */
   async loadActivityData(userId) {
     this.#logger.debug?.('health.store.loadActivity', { userId });
-    return this.#loadUserFile(userId, 'strava');
+    return this.#loadUserFile(userId, 'lifelog/strava');
   }
 
   /**
@@ -120,7 +120,7 @@ export class YamlHealthDatastore extends IHealthDataDatastore {
    */
   async loadFitnessData(userId) {
     this.#logger.debug?.('health.store.loadFitness', { userId });
-    return this.#loadUserFile(userId, 'fitness');
+    return this.#loadUserFile(userId, 'lifelog/fitness');
   }
 
   /**
@@ -130,7 +130,7 @@ export class YamlHealthDatastore extends IHealthDataDatastore {
    */
   async loadNutritionData(userId) {
     this.#logger.debug?.('health.store.loadNutrition', { userId });
-    return this.#loadUserFile(userId, 'nutrition/nutriday');
+    return this.#loadUserFile(userId, 'lifelog/nutrition/nutriday');
   }
 
   /**
@@ -140,7 +140,7 @@ export class YamlHealthDatastore extends IHealthDataDatastore {
    */
   async loadHealthData(userId) {
     this.#logger.debug?.('health.store.loadHealth', { userId });
-    return this.#loadUserFile(userId, 'health');
+    return this.#loadUserFile(userId, 'lifelog/health');
   }
 
   /**
@@ -151,7 +151,7 @@ export class YamlHealthDatastore extends IHealthDataDatastore {
    */
   async saveHealthData(userId, healthData) {
     this.#logger.debug?.('health.store.saveHealth', { userId, dates: Object.keys(healthData).length });
-    this.#saveUserFile(userId, 'health', healthData);
+    this.#saveUserFile(userId, 'lifelog/health', healthData);
   }
 
   /**
@@ -161,7 +161,7 @@ export class YamlHealthDatastore extends IHealthDataDatastore {
    */
   async loadCoachingData(userId) {
     this.#logger.debug?.('health.store.loadCoaching', { userId });
-    return this.#loadUserFile(userId, 'health_coaching');
+    return this.#loadUserFile(userId, 'lifelog/health_coaching');
   }
 
   /**

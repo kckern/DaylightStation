@@ -2094,6 +2094,7 @@ export function createNutribotApiRouter(config) {
  */
 export function createHealthServices(config) {
   const {
+    dataService,
     userDataService,
     userResolver,
     configService,
@@ -2101,8 +2102,9 @@ export function createHealthServices(config) {
   } = config;
 
   // Health store (YAML persistence)
+  // YamlHealthDatastore uses dataService.user.read() API
   const healthStore = new YamlHealthDatastore({
-    dataService: userDataService,
+    dataService,
     userResolver,
     configService,
     logger

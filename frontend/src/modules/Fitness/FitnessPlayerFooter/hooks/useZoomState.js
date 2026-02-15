@@ -12,7 +12,7 @@
  */
 
 import { useState, useCallback, useRef, useMemo, useEffect } from 'react';
-import { getDaylightLogger } from '../../../../lib/logging/singleton.js';
+import { getDaylightLogger } from '@/lib/logging/singleton.js';
 
 const logger = getDaylightLogger({ context: { component: 'useZoomState' } });
 

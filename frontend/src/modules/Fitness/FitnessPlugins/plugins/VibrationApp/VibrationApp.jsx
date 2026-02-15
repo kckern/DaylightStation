@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'recharts';
 import './VibrationApp.scss';
-import { useFitnessContext } from '../../../../../context/FitnessContext.jsx';
+import { useFitnessContext } from '@/context/FitnessContext.jsx';
 import VIBRATION_CONSTANTS from './constants.js';
 
 const resolveLevel = (intensity = 0, thresholds = VIBRATION_CONSTANTS.DEFAULT_THRESHOLDS) => {
