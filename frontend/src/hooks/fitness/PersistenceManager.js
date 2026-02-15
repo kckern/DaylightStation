@@ -20,16 +20,19 @@
 import { DaylightAPI } from '../../lib/api.mjs';
 import getLogger from '../../lib/logging/Logger.js';
 import { SessionSerializerV3 } from './SessionSerializerV3.js';
+import { buildSessionSummary } from './buildSessionSummary.js';
 
 // -------------------- Constants --------------------
 
 const MAX_SERIALIZED_SERIES_POINTS = 200000;
 
 const ZONE_SYMBOL_MAP = {
+  rest: 'r',
   cool: 'c',
   active: 'a',
   warm: 'w',
-  hot: 'h'
+  hot: 'h',
+  fire: 'f'
 };
 
 // -------------------- Helper Functions --------------------
@@ -64,9 +67,15 @@ const roundValue = (key, value) => {
  */
 const toReadable = (unixMs, timezone) => {
   if (!Number.isFinite(unixMs)) return null;
-  // Dynamic import would be cleaner but we'll use Date for simplicity
-  const date = new Date(unixMs);
-  return date.toISOString().replace('T', ' ').replace('Z', '');
+  const tz = timezone || Intl?.DateTimeFormat?.()?.resolvedOptions?.()?.timeZone || 'UTC';
+  const d = new Date(unixMs);
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+  }).formatToParts(d);
+  const get = (type) => parts.find(p => p.type === type)?.value;
+  const ms = String(d.getTime() % 1000).padStart(3, '0');
+  return `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}:${get('second')}.${ms}`;
 };
 
 /**
@@ -816,6 +825,18 @@ export class PersistenceManager {
     // Drop redundant timeline.timebase (flattened fields are canonical)
     if (persistSessionData.timeline) {
       delete persistSessionData.timeline.timebase;
+    }
+
+    // Compute summary block from raw (pre-encoded) series
+    if (persistSessionData.timeline?.series) {
+      const intervalSeconds = persistSessionData.timeline.interval_seconds || 5;
+      persistSessionData.summary = buildSessionSummary({
+        participants: persistSessionData.participants || {},
+        series: persistSessionData.timeline.series,
+        events: persistSessionData.timeline?.events || [],
+        treasureBox: persistSessionData.treasureBox || sessionData.treasureBox,
+        intervalSeconds,
+      });
     }
 
     // Encode series

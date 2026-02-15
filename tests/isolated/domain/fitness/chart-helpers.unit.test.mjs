@@ -120,6 +120,16 @@ describe('buildSegments + enforceZoneSlopes — blue zone flatness (O7)', () => 
   });
 });
 
+describe('ZONE_SYMBOL_MAP completeness (O6)', () => {
+  it('abbreviates rest and fire zones', async () => {
+    const { PersistenceManager } = await import('#frontend/hooks/fitness/PersistenceManager.js');
+    const pm = new PersistenceManager({ persistApi: () => Promise.resolve() });
+
+    const encoded = pm._runLengthEncode('zone_id', ['rest', 'cool', 'active', 'warm', 'hot', 'fire']);
+    expect(encoded).toEqual(['r', 'c', 'a', 'w', 'h', 'f']);
+  });
+});
+
 describe('zone color consolidation (O5)', () => {
   it('domain ZoneColors match shared constants ZONE_COLORS for all zone IDs', () => {
     const zoneIds = ['cool', 'active', 'warm', 'hot', 'fire'];
