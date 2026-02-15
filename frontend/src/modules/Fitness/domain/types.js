@@ -153,12 +153,12 @@ export const createChartSegment = ({ participantId, status, points, color, zone 
  * Matches existing ZONE_COLOR_MAP but centralized here
  */
 export const ZoneColors = Object.freeze({
-  cool: '#4fb1ff',
-  active: '#4ade80',
-  warm: '#facc15',
-  hot: '#fb923c',
-  fire: '#f87171',
-  default: '#9ca3af'
+  cool: '#6ab8ff',
+  active: '#51cf66',
+  warm: '#ffd43b',
+  hot: '#ff922b',
+  fire: '#ff6b6b',
+  default: '#888888'
 });
 
 /**

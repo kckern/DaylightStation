@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { buildBeatsSeries, getZoneCoinRate } from '#frontend/modules/Fitness/FitnessSidebar/FitnessChart.helpers.js';
+import { buildBeatsSeries, getZoneCoinRate, buildSegments } from '#frontend/modules/Fitness/FitnessSidebar/FitnessChart.helpers.js';
+import { ZoneColors } from '#frontend/modules/Fitness/domain/types.js';
+import { ZONE_COLORS } from '#frontend/modules/Fitness/shared/constants/fitness.js';
 
 describe('buildBeatsSeries — coins quality gate (O3)', () => {
   const makeGetSeries = (data) => (userId, metric) => {
@@ -95,5 +97,34 @@ describe('getZoneCoinRate — DEFAULT_ZONE_COIN_RATES (O2)', () => {
 
   it('returns higher rate for fire than hot', () => {
     expect(getZoneCoinRate('fire')).toBeGreaterThan(getZoneCoinRate('hot'));
+  });
+});
+
+describe('buildSegments + enforceZoneSlopes — blue zone flatness (O7)', () => {
+  it('produces flat values for cool (blue) zone segments', () => {
+    const beats = [0, 5, 10, 15, 20, 20, 20, 20, 20, 25, 30];
+    const zones = ['warm', 'warm', 'warm', 'warm', 'warm', 'cool', 'cool', 'cool', 'cool', 'warm', 'warm'];
+    const active = Array(11).fill(true);
+
+    const segments = buildSegments(beats, zones, active, { zoneConfig: [] });
+
+    const coolSegments = segments.filter(s => s.zone === 'cool' && !s.isGap);
+    expect(coolSegments.length).toBeGreaterThan(0);
+
+    coolSegments.forEach(seg => {
+      const values = seg.points.map(p => p.v);
+      for (let i = 1; i < values.length; i++) {
+        expect(values[i]).toBeLessThanOrEqual(values[0]);
+      }
+    });
+  });
+});
+
+describe('zone color consolidation (O5)', () => {
+  it('domain ZoneColors match shared constants ZONE_COLORS for all zone IDs', () => {
+    const zoneIds = ['cool', 'active', 'warm', 'hot', 'fire'];
+    zoneIds.forEach(zone => {
+      expect(ZoneColors[zone]).toBe(ZONE_COLORS[zone]);
+    });
   });
 });
