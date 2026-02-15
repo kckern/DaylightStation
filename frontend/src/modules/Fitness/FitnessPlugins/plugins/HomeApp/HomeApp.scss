@@ -1,0 +1,164 @@
+// frontend/src/modules/Fitness/FitnessPlugins/plugins/HomeApp/HomeApp.scss
+
+.health-dashboard {
+  height: 100%;
+  width: 100%;
+  padding: 1rem;
+  overflow-y: auto;
+  overflow-x: hidden;
+
+  // Scrollbar styling for kiosk
+  &::-webkit-scrollbar { width: 6px; }
+  &::-webkit-scrollbar-track { background: transparent; }
+  &::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 3px; }
+}
+
+// --- Dashboard Card Base ---
+
+.dashboard-card {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: background 0.15s ease;
+  height: 100%;
+
+  &[role="button"] {
+    cursor: pointer;
+    &:active { background: rgba(255, 255, 255, 0.1); }
+  }
+}
+
+// --- State Widget Cards ---
+
+.dashboard-stat-value {
+  font-size: 2.5rem;
+  font-weight: 700;
+  line-height: 1;
+  color: white;
+}
+
+.workout-row {
+  padding: 0.25rem 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  &:last-child { border-bottom: none; }
+}
+
+// --- Up Next Card (curated) ---
+
+.dashboard-card--upnext {
+  background: rgba(34, 139, 230, 0.08);
+  border-color: rgba(34, 139, 230, 0.2);
+}
+
+.content-thumbnail {
+  width: 160px;
+  min-width: 160px;
+  height: 100px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.05);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+}
+
+.dashboard-play-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.6rem 2rem;
+  background: #228be6;
+  border-radius: 8px;
+  cursor: pointer;
+  min-height: 48px;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+
+  &:active {
+    background: #1c7ed6;
+    transform: scale(0.97);
+  }
+}
+
+.alternate-chip {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  cursor: pointer;
+  min-height: 48px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  user-select: none;
+
+  &:active { background: rgba(255, 255, 255, 0.12); }
+}
+
+// --- Coach Card ---
+
+.dashboard-card--coach {
+  background: rgba(255, 255, 255, 0.04);
+  border-left: 3px solid rgba(34, 139, 230, 0.5);
+}
+
+.coach-briefing {
+  font-style: italic;
+  opacity: 0.9;
+}
+
+.coach-cta {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+
+  &--data_gap { border-left: 3px solid #fab005; }
+  &--observation { border-left: 3px solid #40c057; }
+  &--nudge { border-left: 3px solid #228be6; }
+
+  &[role="button"] {
+    cursor: pointer;
+    &:active { background: rgba(255, 255, 255, 0.1); }
+  }
+}
+
+.coach-prompt {
+  padding: 0.5rem 0;
+}
+
+.prompt-option {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  cursor: pointer;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  user-select: none;
+
+  &:active { background: rgba(255, 255, 255, 0.12); }
+}
+
+// --- Empty State ---
+
+.dashboard-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  opacity: 0.6;
+}
+
+// --- Loading State ---
+
+.dashboard-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+}
