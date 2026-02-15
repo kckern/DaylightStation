@@ -42,8 +42,10 @@ export class YamlAuthDatastore {
    */
   async load(username, service) {
     try {
-      // configService.getUserAuth handles the loading
-      return null; // Let configService handle reads
+      if (this.#io.userLoadAuth) {
+        return this.#io.userLoadAuth(username, service) ?? null;
+      }
+      return null;
     } catch (error) {
       this.#logger.warn?.('authStore.load.error', {
         username,

@@ -87,6 +87,11 @@ import { createDevProxy, errorHandlerMiddleware } from './0_system/http/middlewa
 import { createEventBusRouter } from './4_api/v1/routers/admin/eventbus.mjs';
 import { createAdminRouter } from './4_api/v1/routers/admin/index.mjs';
 
+// Fitness application services (shared between fitness router and agents router)
+import { FitnessPlayableService } from '#apps/fitness/FitnessPlayableService.mjs';
+import { FitnessConfigService } from '#apps/fitness/FitnessConfigService.mjs';
+import { FitnessProgressClassifier } from '#domains/fitness/services/FitnessProgressClassifier.mjs';
+
 // Scheduling domain + orchestrator
 import { SchedulerService } from '#domains/scheduling/services/SchedulerService.mjs';
 import { SchedulerOrchestrator } from '#apps/scheduling/SchedulerOrchestrator.mjs';
@@ -648,6 +653,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     userSaveFileDirect,
     saveImage,
     householdSaveFile,
+    userLoadAuth: (username, service) => userDataService.getAuthToken(username, service),
     userSaveAuth: (username, service, data) => userDataService.saveAuthToken(username, service, data),
   };
 
@@ -841,6 +847,21 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   } catch (e) {
     rootLogger.warn?.('fitness.receipt.import_failed', { error: e.message });
   }
+
+  // Create shared FitnessPlayableService (used by both fitness router and agents router)
+  const fitnessConfigService = new FitnessConfigService({
+    userDataService,
+    configService,
+    logger: rootLogger.child({ module: 'fitness-config' })
+  });
+  const fitnessContentAdapter = contentRegistry?.get(loadFitnessConfig(householdId)?.content_source || 'plex');
+  const fitnessPlayableService = new FitnessPlayableService({
+    fitnessConfigService,
+    contentAdapter: fitnessContentAdapter,
+    contentQueryService: contentServices.contentQueryService,
+    createProgressClassifier: (cfg) => new FitnessProgressClassifier(cfg),
+    logger: rootLogger.child({ module: 'fitness-playable' })
+  });
 
   // Fitness domain router
   // Note: contentRegistry passed for /show endpoint - playlist thumbnail enrichment is household-specific
@@ -1120,7 +1141,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'agents-api' }),
     healthStore: healthServices.healthStore,
     healthService: healthServices.healthService,
-    fitnessPlayableService: null, // TODO: expose from fitness bootstrap when refactored
+    fitnessPlayableService,
+    sessionService: fitnessServices.sessionService,
+    mediaProgressMemory,
     dataService,
     configService,
   });

@@ -120,6 +120,14 @@ function createIo(dataDir) {
       const filePath = path.join(dataDir, 'households', 'default', relativePath);
       saveYaml(filePath, content);
     },
+    userLoadAuth(username, service) {
+      const filePath = path.join(dataDir, 'users', username, 'auth', `${service}.yml`);
+      return loadYaml(filePath);
+    },
+    userSaveAuth(username, service, data) {
+      const filePath = path.join(dataDir, 'users', username, 'auth', `${service}.yml`);
+      saveYaml(filePath, data);
+    },
   };
 }
 
