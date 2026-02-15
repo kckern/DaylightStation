@@ -265,7 +265,11 @@ export class StravaHarvester extends IHarvester {
    */
   async #refreshAccessToken(username) {
     try {
-      const authData = this.#configService?.getUserAuth?.('strava', username) || {};
+      // Read from disk (authStore) to get latest refresh token,
+      // NOT configService which caches at boot and never reloads.
+      const authData = (await this.#authStore?.load?.(username, 'strava'))
+        || this.#configService?.getUserAuth?.('strava', username)
+        || {};
       const refreshToken = authData.refresh;
 
       if (!refreshToken) {

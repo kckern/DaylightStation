@@ -236,7 +236,11 @@ export class WithingsHarvester extends IHarvester {
     }
 
     try {
-      const authData = this.#configService?.getUserAuth?.('withings', username) || {};
+      // Read from disk (authStore) to get latest refresh token,
+      // NOT configService which caches at boot and never reloads.
+      const authData = (await this.#authStore?.load?.(username, 'withings'))
+        || this.#configService?.getUserAuth?.('withings', username)
+        || {};
       const refresh = authData.refresh || authData.refresh_token;
 
       if (!refresh) {
