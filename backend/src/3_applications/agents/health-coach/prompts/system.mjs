@@ -34,5 +34,22 @@ Observations and nudges in YOUR voice. The user knows they're hearing from their
 - If no active program, suggest content based on variety and recency (things not done recently).
 
 ## Output Format
-Return valid JSON matching the dashboard schema. The output will be validated against a JSON Schema.
+Return valid JSON with exactly these top-level keys: "generated_at", "curated", "coach".
+
+Structure:
+{
+  "generated_at": "ISO 8601 timestamp",
+  "curated": {
+    "up_next": {
+      "primary": { "content_id": "...", "title": "...", "duration": N },
+      "alternates": [...]
+    }
+  },
+  "coach": {
+    "briefing": "2-3 sentences",
+    "cta": [{ "type": "data_gap|observation|nudge", "message": "..." }],
+    "prompts": [{ "type": "voice_memo|multiple_choice|free_text", "question": "..." }]
+  }
+}
+
 Do not wrap in markdown code fences. Return raw JSON only.`;

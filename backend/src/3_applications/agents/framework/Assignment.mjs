@@ -40,6 +40,7 @@ export class Assignment {
 
     // 4. Reason — LLM call
     const raw = await agentRuntime.execute({
+      agentId,
       input: prompt,
       tools,
       systemPrompt,

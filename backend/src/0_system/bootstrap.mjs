@@ -2341,6 +2341,14 @@ export function createAgentsApiRouter(config) {
     configService,
   } = config;
 
+  // Mastra reads API keys from process.env — bridge from ConfigService
+  if (configService) {
+    const openaiKey = configService.getSecret('OPENAI_API_KEY');
+    if (openaiKey && !process.env.OPENAI_API_KEY) {
+      process.env.OPENAI_API_KEY = openaiKey;
+    }
+  }
+
   // Create Mastra adapter (IAgentRuntime implementation)
   const agentRuntime = new MastraAdapter({ logger });
 
