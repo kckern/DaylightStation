@@ -254,11 +254,13 @@ export const buildBeatsSeries = (rosterEntry, getSeries, timebase = {}, options 
   // Primary source: coins_total from TreasureBox (single source of truth)
   // Phase 5: Uses entity series when available
   const coinsRaw = getSeriesForParticipant('coins_total');
-  
-  if (Array.isArray(coinsRaw) && coinsRaw.length > 0) {
+  const coinsNonNullCount = Array.isArray(coinsRaw) ? coinsRaw.filter(v => Number.isFinite(v)).length : 0;
+  const coinsQualityThreshold = Math.max(3, (coinsRaw?.length || 0) * 0.05);
+
+  if (Array.isArray(coinsRaw) && coinsNonNullCount >= coinsQualityThreshold) {
     // Apply Math.floor for consistency with TreasureBox accumulator
     // Use startAtZero to anchor cumulative values to origin (0,0)
-    const beats = fillEdgesOnly(coinsRaw.map((v) => (Number.isFinite(v) && v >= 0 ? Math.floor(v) : null)), { startAtZero: true });
+    const beats = forwardFill(fillEdgesOnly(coinsRaw.map((v) => (Number.isFinite(v) && v >= 0 ? Math.floor(v) : null)), { startAtZero: true }));
     return { beats, zones, active };
   }
 
@@ -456,6 +458,24 @@ export const buildSegments = (beats = [], zones = [], active = [], options = {})
       segments.push(gapSegment);
       inGap = false;
       gapStartPoint = null;
+    }
+  }
+
+  // PERMANENT DROPOUT: If loop ended with an open gap (user never rejoined),
+  // close it with a flat line to the end of the series so the line is visible
+  if (inGap && gapStartPoint && beats.length > 0) {
+    const endTick = beats.length - 1;
+    if (endTick > gapStartPoint.i) {
+      segments.push({
+        zone: null,
+        color: getZoneColor(null),
+        status: ParticipantStatus.IDLE,
+        isGap: true,
+        points: [
+          { ...gapStartPoint },
+          { i: endTick, v: gapStartPoint.v }
+        ]
+      });
     }
   }
 
