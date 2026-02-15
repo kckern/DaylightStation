@@ -41,7 +41,6 @@ const FitnessApp = () => {
   });
   const viewportRef = useRef(null);
   const logger = useMemo(() => getLogger().child({ app: 'fitness' }), []);
-  const initialNavDone = useRef(false); // Track if we've done initial navigation
 
   // URL-based navigation
   const { urlState } = useFitnessUrlParams();
@@ -919,10 +918,6 @@ const FitnessApp = () => {
 
   // Initialize to the first nav item once navItems arrive
   useEffect(() => {
-    // Skip if we've already done initial navigation
-    if (initialNavDone.current) {
-      return;
-    }
     // Don't auto-navigate if we're on a special view like 'users' or 'show'
     if (currentView === 'users' || currentView === 'show') {
       return;
@@ -943,7 +938,6 @@ const FitnessApp = () => {
           target: firstItem.target
         });
         handleNavigate(firstItem.type, firstItem.target, firstItem);
-        initialNavDone.current = true; // Mark initial navigation as done
       }
     }
   }, [navItems, activeCollection, activePlugin, currentView, urlInitialized, urlState]);

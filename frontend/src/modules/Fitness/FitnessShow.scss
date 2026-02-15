@@ -841,7 +841,7 @@
         }
 
         &.locked {
-          filter: grayscale(1);
+          filter: grayscale(0.8) brightness(0.8);
           opacity: 0.5;
           pointer-events: none;
         }
