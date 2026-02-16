@@ -95,6 +95,13 @@ import { ImmichProxyAdapter } from '#adapters/proxy/ImmichProxyAdapter.mjs';
 import { AudiobookshelfProxyAdapter } from '#adapters/proxy/AudiobookshelfProxyAdapter.mjs';
 import { FreshRSSProxyAdapter } from '#adapters/proxy/FreshRSSProxyAdapter.mjs';
 
+// Feed domain imports
+import { FreshRSSFeedAdapter } from '#adapters/feed/FreshRSSFeedAdapter.mjs';
+import { RssHeadlineHarvester } from '#adapters/feed/RssHeadlineHarvester.mjs';
+import { YamlHeadlineCacheStore } from '#adapters/persistence/yaml/YamlHeadlineCacheStore.mjs';
+import { HeadlineService } from '#apps/feed/services/HeadlineService.mjs';
+import { createFeedRouter } from '#api/v1/routers/feed.mjs';
+
 // Finance domain imports
 import { YamlFinanceDatastore } from '#adapters/persistence/yaml/YamlFinanceDatastore.mjs';
 import { BudgetCompilationService } from '#apps/finance/BudgetCompilationService.mjs';
@@ -922,6 +929,53 @@ export async function restartEventBus() {
 // =============================================================================
 // Finance Domain Bootstrap
 // =============================================================================
+
+/**
+ * Create feed domain services (FreshRSS reader + headline harvesting)
+ * @param {Object} config
+ * @param {Object} config.dataService - DataService for YAML I/O
+ * @param {Object} config.configService - ConfigService for user lookup
+ * @param {string} config.freshrssHost - FreshRSS server URL
+ * @param {Object} [config.logger]
+ * @returns {{ freshRSSAdapter, headlineService, feedRouter, headlineHarvestJob }}
+ */
+export function createFeedServices(config) {
+  const { dataService, configService, freshrssHost, logger = console } = config;
+
+  const freshRSSAdapter = new FreshRSSFeedAdapter({
+    freshrssHost,
+    dataService,
+    logger,
+  });
+
+  const rssParser = new RSSParser();
+  const harvester = new RssHeadlineHarvester({ rssParser, logger });
+
+  const headlineStore = new YamlHeadlineCacheStore({ dataService, logger });
+
+  const headlineService = new HeadlineService({
+    headlineStore,
+    harvester,
+    dataService,
+    configService,
+    logger,
+  });
+
+  const feedRouter = createFeedRouter({
+    freshRSSAdapter,
+    headlineService,
+    configService,
+    logger,
+  });
+
+  // Harvest job for manual or scheduled triggering
+  const headlineHarvestJob = async () => {
+    const username = configService.getHeadOfHousehold();
+    return headlineService.harvestAll(username);
+  };
+
+  return { freshRSSAdapter, headlineService, feedRouter, headlineHarvestJob };
+}
 
 /**
  * Create finance domain services
