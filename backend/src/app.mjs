@@ -77,6 +77,9 @@ import {
 // AI router import
 import { createAIRouter } from './4_api/v1/routers/ai.mjs';
 
+// Feed harvester adapter for scheduler integration
+import { HeadlineHarvesterAdapter } from './1_adapters/feed/HeadlineHarvesterAdapter.mjs';
+
 // Routing toggle system
 import { loadRoutingConfig } from './0_system/routing/index.mjs';
 
@@ -788,6 +791,16 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     buxferAdapter: householdAdapters?.has?.('finance') ? householdAdapters.get('finance') : null,
     logger: rootLogger.child({ module: 'harvester' })
   });
+
+  // Register headline harvester so scheduler can run feed-headlines job
+  try {
+    harvesterServices.harvesterService.register(new HeadlineHarvesterAdapter({
+      headlineService: feedServices.headlineService,
+      logger: rootLogger.child({ module: 'feed-headline-harvester' }),
+    }));
+  } catch (err) {
+    rootLogger.warn?.('feed-headline-harvester.register.failed', { error: err.message });
+  }
 
   // Create harvest router using HarvesterService
   v1Routers.harvest = createHarvestRouter({

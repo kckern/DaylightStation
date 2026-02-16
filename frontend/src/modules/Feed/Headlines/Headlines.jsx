@@ -37,6 +37,7 @@ export default function Headlines() {
 
   const grid = data?.grid;
   const sources = data?.sources || {};
+  const paywallProxy = data?.paywallProxy || null;
   const rows = grid?.rows || [];
   const cols = grid?.cols || [];
 
@@ -78,6 +79,7 @@ export default function Headlines() {
                 source={cell}
                 col={c}
                 totalCols={cols.length}
+                paywallProxy={paywallProxy}
                 onRefresh={fetchHeadlines}
               />
             ))}

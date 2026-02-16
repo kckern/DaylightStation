@@ -22,7 +22,7 @@ export class RssHeadlineHarvester {
         title: item.title,
         desc: this.#extractDesc(item),
         link: item.link,
-        timestamp: item.pubDate ? new Date(item.pubDate).toISOString() : new Date().toISOString(),
+        timestamp: this.#parseDate(item),
       }));
 
       this.#logger.debug?.('headline.harvest.success', { source: source.id, count: items.length });
@@ -31,6 +31,17 @@ export class RssHeadlineHarvester {
       this.#logger.error?.('headline.harvest.error', { source: source.id, url: source.url, error: error.message });
       return { source: source.id, label: source.label, lastHarvest: new Date().toISOString(), items: [], error: error.message };
     }
+  }
+
+  #parseDate(item) {
+    // Prefer rss-parser's pre-parsed ISO date
+    if (item.isoDate) return item.isoDate;
+    // Try native Date parsing
+    if (item.pubDate) {
+      const d = new Date(item.pubDate);
+      if (!isNaN(d.getTime())) return d.toISOString();
+    }
+    return new Date().toISOString();
   }
 
   #extractDesc(item) {

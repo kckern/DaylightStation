@@ -115,6 +115,9 @@ export class HeadlineService {
     const dedupeWordCount = headlineConfig.dedupe_word_count || 8;
     const excludePatterns = (headlineConfig.exclude_patterns || []).map(p => new RegExp(p, 'i'));
 
+    const paywallConfig = config.paywall_proxy || {};
+    const paywallSources = new Set(paywallConfig.sources || []);
+
     // Merge row/col/url from config into cached data, then filter
     const sources = {};
     for (const src of configSources) {
@@ -126,6 +129,8 @@ export class HeadlineService {
         row: src.row,
         col: src.col,
         url: src.url,
+        siteUrl: src.site_url || null,
+        paywall: paywallSources.has(src.id),
       };
     }
 
@@ -139,6 +144,7 @@ export class HeadlineService {
       grid: config.headline_grid || null,
       sources,
       lastHarvest,
+      paywallProxy: paywallConfig.url_prefix || null,
     };
   }
 
