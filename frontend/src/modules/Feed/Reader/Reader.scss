@@ -1,0 +1,123 @@
+.reader-view {
+  display: grid;
+  grid-template-columns: 220px 300px 1fr;
+  height: calc(100vh - 42px);
+}
+
+.reader-sidebar {
+  border-right: 1px solid #e0e0e0;
+  overflow-y: auto;
+  background: #f8f9fa;
+  padding: 0.5rem 0;
+}
+
+.reader-sidebar-title {
+  padding: 0.5rem 1rem;
+  margin: 0;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  color: #888;
+  letter-spacing: 0.05em;
+}
+
+.reader-feed-item {
+  display: block;
+  width: 100%;
+  padding: 0.5rem 1rem;
+  border: none;
+  background: none;
+  text-align: left;
+  font-size: 0.85rem;
+  cursor: pointer;
+  color: #333;
+
+  &:hover { background: #e9ecef; }
+  &.active { background: #dee2e6; font-weight: 600; }
+}
+
+.reader-articles {
+  border-right: 1px solid #e0e0e0;
+  overflow-y: auto;
+  background: #fff;
+}
+
+.reader-article-item {
+  display: block;
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: none;
+  border-bottom: 1px solid #f0f0f0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+
+  &:hover { background: #f8f9fa; }
+  &.active { background: #e7f5ff; }
+}
+
+.reader-article-title {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 500;
+  line-height: 1.3;
+  color: #1a1b1e;
+}
+
+.reader-article-meta {
+  display: block;
+  font-size: 0.7rem;
+  color: #999;
+  margin-top: 4px;
+}
+
+.reader-content {
+  overflow-y: auto;
+  padding: 2rem;
+  background: #fff;
+}
+
+.reader-content-title {
+  margin: 0 0 0.5rem;
+  font-size: 1.5rem;
+  line-height: 1.3;
+}
+
+.reader-content-meta {
+  font-size: 0.8rem;
+  color: #888;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #eee;
+}
+
+.reader-content-body {
+  font-size: 0.95rem;
+  line-height: 1.7;
+  color: #333;
+
+  img { max-width: 100%; height: auto; border-radius: 4px; }
+  a { color: #228be6; }
+  pre { background: #f8f9fa; padding: 1rem; border-radius: 4px; overflow-x: auto; }
+}
+
+.reader-content-link {
+  display: inline-block;
+  margin-top: 1.5rem;
+  padding: 0.5rem 1rem;
+  background: #228be6;
+  color: #fff;
+  border-radius: 4px;
+  text-decoration: none;
+  font-size: 0.85rem;
+
+  &:hover { background: #1c7ed6; }
+}
+
+.reader-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #aaa;
+  font-size: 0.9rem;
+}

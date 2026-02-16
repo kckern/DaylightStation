@@ -1,0 +1,46 @@
+.feed-app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #f8f9fa;
+}
+
+.feed-tabs {
+  display: flex;
+  gap: 0;
+  background: #1a1b1e;
+  padding: 0 1rem;
+
+  a {
+    padding: 0.75rem 1.5rem;
+    color: #888;
+    text-decoration: none;
+    font-weight: 500;
+    font-size: 0.9rem;
+    border-bottom: 2px solid transparent;
+    transition: color 0.15s, border-color 0.15s;
+
+    &:hover {
+      color: #ccc;
+    }
+
+    &.active {
+      color: #fff;
+      border-bottom-color: #228be6;
+    }
+  }
+}
+
+.feed-content {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.feed-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 50vh;
+  color: #888;
+  font-size: 1.2rem;
+}

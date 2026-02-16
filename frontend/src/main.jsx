@@ -12,6 +12,7 @@ import FinanceApp from './Apps/FinanceApp.jsx';
 import HealthApp from './Apps/HealthApp.jsx';
 import LifelogApp from './Apps/LifelogApp.jsx';
 import FitnessApp from './Apps/FitnessApp.jsx';
+import FeedApp from './Apps/FeedApp.jsx';
 import AdminApp from './Apps/AdminApp.jsx';
 import Blank from './modules/Blank/Blank.jsx';
 import SetupWizard from './modules/Auth/SetupWizard.jsx';
@@ -133,6 +134,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <Route path="/screen/:screenId" element={<ScreenRenderer />} />
         <Route path="/setup" element={<SetupWizard onComplete={() => window.location.href = '/'} />} />
         <Route path="/invite/:token" element={<InviteAccept />} />
+        <Route path="/feed/*" element={<FeedApp />} />
         <Route path="*" element={<Blank />} />
       </Routes>
     </SetupCheck>
