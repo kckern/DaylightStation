@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useCallback } from 'react';
+import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { DaylightAPI, DaylightMediaPath } from '@/lib/api.mjs';
 import './FamilySelector.scss';
 
@@ -131,12 +131,14 @@ function WheelSegment({ member, index, total, radius, cx, cy, isWinner, rotation
     setImgError(true);
   };
 
+  const avatarTransition = isSpinning
+    ? `transform ${SPIN_CONFIG.durationMs}ms cubic-bezier(0.17, 0.67, 0.12, 0.99)`
+    : 'none';
+
   const avatarStyle = {
     transformOrigin: `${center.x}px ${center.y}px`,
     transform: `rotate(${-rotation}deg)`,
-    transition: isSpinning
-      ? `transform ${SPIN_CONFIG.durationMs}ms cubic-bezier(0.17, 0.67, 0.12, 0.99)`
-      : 'none',
+    transition: avatarTransition,
   };
 
   return (
@@ -186,18 +188,31 @@ function WheelSegment({ member, index, total, radius, cx, cy, isWinner, rotation
 /**
  * Roulette Wheel Component
  */
-function RouletteWheel({ members, rotation, isSpinning, winnerIndex, showResult }) {
+function RouletteWheel({ members, rotation, isSpinning, winnerIndex, showResult, onSpinEnd }) {
   const size = 400;
   const cx = size / 2;
   const cy = size / 2;
   const radius = size / 2 - 10;
+  const wheelRef = useRef(null);
+
+  useEffect(() => {
+    const el = wheelRef.current;
+    if (!el || !isSpinning) return;
+    const handler = (e) => {
+      if (e.propertyName === 'transform') onSpinEnd?.();
+    };
+    el.addEventListener('transitionend', handler);
+    return () => el.removeEventListener('transitionend', handler);
+  }, [isSpinning, onSpinEnd]);
+
+  const wheelTransition = isSpinning
+    ? `transform ${SPIN_CONFIG.durationMs}ms cubic-bezier(0.17, 0.67, 0.12, 0.99)`
+    : 'none';
 
   const wheelStyle = {
     transform: `rotate(${rotation}deg)`,
     '--wheel-rotation': `${rotation}deg`,
-    transition: isSpinning
-      ? `transform ${SPIN_CONFIG.durationMs}ms cubic-bezier(0.17, 0.67, 0.12, 0.99)`
-      : 'none',
+    transition: wheelTransition,
   };
 
   // Calculate flick timing: time for one segment to pass
@@ -215,7 +230,7 @@ function RouletteWheel({ members, rotation, isSpinning, winnerIndex, showResult 
         width={size}
         height={size}
       >
-        <g className="wheel-segments" style={wheelStyle}>
+        <g className="wheel-segments" style={wheelStyle} ref={wheelRef}>
         {members.map((member, index) => (
           <WheelSegment
             key={member.id}
@@ -277,6 +292,10 @@ function FamilySelectorInner({ members, winner, title, exclude }) {
     return { index, member };
   }, [activeMembers, riggedWinner]);
 
+  const handleSpinEnd = useCallback(() => {
+    setWheelState(WHEEL_STATE.RESULT);
+  }, []);
+
   /**
    * Start the spin
    */
@@ -285,15 +304,18 @@ function FamilySelectorInner({ members, winner, title, exclude }) {
 
     const { index, member } = selectWinner();
     const angle = calculateSpinAngle(index, activeMembers.length, rotation);
-    
+
     setWinnerIndex(index);
     setSelectedMember(member);
-    setRotation(prev => prev + angle);
+    // Apply transition FIRST by entering SPINNING state
     setWheelState(WHEEL_STATE.SPINNING);
 
-    setTimeout(() => {
-      setWheelState(WHEEL_STATE.RESULT);
-    }, SPIN_CONFIG.durationMs);
+    // Double-RAF: first RAF reaches paint-ready, second RAF fires after paint commits
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        setRotation(prev => prev + angle);
+      });
+    });
   }, [wheelState, selectWinner, activeMembers.length, rotation]);
 
   /**
@@ -350,6 +372,7 @@ useEffect(() => {
             isSpinning={wheelState === WHEEL_STATE.SPINNING}
             winnerIndex={winnerIndex}
             showResult={wheelState === WHEEL_STATE.RESULT}
+            onSpinEnd={handleSpinEnd}
           />
         </div>
 

@@ -37,7 +37,7 @@ export default function SetupWizard({ onComplete }) {
 
   return (
     <div className="auth-container">
-      <Paper className="auth-card" p="xl" radius="md">
+      <Paper className="auth-card setup-card" p="xl" radius="md">
         <Stepper active={step} size="sm" mb="xl">
           <Stepper.Step label="Welcome" />
           <Stepper.Step label="Account" />

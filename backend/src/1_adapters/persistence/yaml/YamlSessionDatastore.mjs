@@ -232,17 +232,54 @@ export class YamlSessionDatastore extends ISessionDatastore {
             ? data.session.duration_seconds * 1000
             : (startTime && endTime ? Math.max(0, endTime - startTime) : null));
 
+      const summary = data.summary;
+
+      // Build participants from summary block (keyed object with stats)
+      const participants = {};
+      for (const [slug, info] of Object.entries(data.participants || {})) {
+        const ps = summary?.participants?.[slug];
+        participants[slug] = {
+          displayName: info.display_name || slug,
+          coins: ps?.coins ?? 0,
+          hrAvg: ps?.hr_avg ?? 0,
+          hrMax: ps?.hr_max ?? 0,
+        };
+      }
+
+      // Build media from summary block: { primary, others }
+      let media = null;
+      if (summary?.media?.length > 0) {
+        const primaryItem = summary.media.find(m => m.primary);
+        const otherItems = summary.media.filter(m => !m.primary);
+        const formatMedia = (m) => ({
+          mediaId: m.mediaId,
+          title: m.title,
+          showTitle: m.showTitle,
+          seasonTitle: m.seasonTitle,
+          grandparentId: m.grandparentId || null,
+          parentId: m.parentId || null,
+        });
+        media = {
+          primary: primaryItem ? formatMedia(primaryItem) : null,
+          others: otherItems.map(formatMedia),
+        };
+      }
+
+      const totalCoins = summary?.coins?.total ?? data.treasureBox?.totalCoins ?? 0;
+      const challengeCount = summary?.challenges?.total ?? 0;
+      const voiceMemoCount = summary?.voiceMemos?.length ?? 0;
+
       sessions.push({
         sessionId: data.sessionId || baseName,
+        date: date,
         startTime: startTime || null,
-        endTime: endTime || null,
         durationMs,
-        rosterCount: Array.isArray(data.roster) && data.roster.length
-          ? data.roster.length
-          : (data.participants && typeof data.participants === 'object'
-              ? Object.keys(data.participants).length
-              : 0),
-        timezone: data.timezone
+        timezone: data.timezone,
+        participants,
+        media,
+        totalCoins,
+        challengeCount,
+        voiceMemoCount,
       });
     }
 
@@ -264,7 +301,8 @@ export class YamlSessionDatastore extends ISessionDatastore {
     const sessions = [];
     for (const date of filtered) {
       const dateSessions = await this.findByDate(date, householdId);
-      sessions.push(...dateSessions);
+      // Add date field to each session for proper grouping by date
+      sessions.push(...dateSessions.map(s => ({ ...s, date })));
     }
 
     return sessions.sort((a, b) => (b.startTime || 0) - (a.startTime || 0));

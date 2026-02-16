@@ -200,6 +200,10 @@ export class HomeAssistantAdapter {
     return !!(this.#baseUrl && this.#token);
   }
 
+  isConfigured() {
+    return this.isConnected();
+  }
+
   /**
    * Get provider name
    * @returns {string}

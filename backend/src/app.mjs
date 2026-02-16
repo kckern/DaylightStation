@@ -444,7 +444,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     singalong: singalongConfig,  // Sing-along content (hymns, primary songs)
     readalong: readalongConfig,  // Follow-along readalong content (scripture, talks, poetry)
     storagePaths                 // Collection → media_memory filename mapping
-  }, { httpClient: axios, mediaProgressMemory, app });
+  }, { httpClient: axios, mediaProgressMemory, app, configService });
 
   // Create proxy service for content domain (used for media library passthrough)
   const contentProxyService = createProxyService({

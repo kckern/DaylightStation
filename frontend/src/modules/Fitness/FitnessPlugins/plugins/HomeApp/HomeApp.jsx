@@ -1,6 +1,6 @@
 // frontend/src/modules/Fitness/FitnessPlugins/plugins/HomeApp/HomeApp.jsx
 
-import React, { useMemo, Component } from 'react';
+import React, { useMemo, useState, useEffect, Component } from 'react';
 import { Grid, Text, Loader } from '@mantine/core';
 import { useFitnessContext } from '@/context/FitnessContext.jsx';
 import { useDashboardData, parseContentId } from './useDashboardData.js';
@@ -11,6 +11,7 @@ import {
   UpNextCard,
   CoachCard,
 } from './DashboardWidgets.jsx';
+import FitnessChartApp from '../FitnessChartApp/FitnessChartApp.jsx';
 import { DaylightMediaPath } from '@/lib/api.mjs';
 import './HomeApp.scss';
 
@@ -58,6 +59,26 @@ const HomeApp = () => {
   }, [fitnessCtx?.fitnessConfiguration]);
 
   const { loading, error, dashboard, liveData, refetch } = useDashboardData(userId);
+
+  // Session detail state
+  const [selectedSessionId, setSelectedSessionId] = useState(null);
+  const [sessionDetail, setSessionDetail] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+
+  useEffect(() => {
+    if (!selectedSessionId) {
+      setSessionDetail(null);
+      return;
+    }
+    let cancelled = false;
+    setDetailLoading(true);
+    fetch(`/api/v1/fitness/sessions/${selectedSessionId}`)
+      .then(res => res.ok ? res.json() : Promise.reject(new Error('Failed to fetch session')))
+      .then(data => { if (!cancelled) setSessionDetail(data.session); })
+      .catch(err => console.error('Failed to fetch session detail', err))
+      .finally(() => { if (!cancelled) setDetailLoading(false); });
+    return () => { cancelled = true; };
+  }, [selectedSessionId]);
 
   // Play handler -- adds content to fitness play queue
   const handlePlay = (contentItem) => {
@@ -114,36 +135,68 @@ const HomeApp = () => {
   }
 
   return (
-    <div className="health-dashboard">
+    <div className="home-app">
       <DashboardErrorBoundary>
-        <Grid gutter="md">
-          {/* Row 1: Recent Sessions (expand if no curated data) */}
-          <Grid.Col span={{ base: 12, md: dashboard?.curated ? 7 : 12 }}>
-            <WorkoutsCard sessions={liveData?.sessions} />
-          </Grid.Col>
-          {dashboard?.curated && (
-            <Grid.Col span={{ base: 12, md: 5 }}>
-              <UpNextCard curated={dashboard.curated} onPlay={handlePlay} />
-            </Grid.Col>
-          )}
+        <div className={`dashboard-grid${selectedSessionId ? ' dashboard-grid--detail' : ''}`}>
+          {/* Column 1: History */}
+          <div className="dashboard-column column-history">
+            <WorkoutsCard
+              sessions={liveData?.sessions}
+              onSessionClick={setSelectedSessionId}
+              selectedSessionId={selectedSessionId}
+            />
+          </div>
 
-          {/* Row 2: Weight + Nutrition (expand if no coach) */}
-          <Grid.Col span={{ base: 12, md: 4 }}>
-            <WeightTrendCard weight={liveData?.weight} />
-          </Grid.Col>
-          <Grid.Col span={{ base: 12, md: dashboard?.coach ? 4 : 8 }}>
-            <NutritionCard nutrition={liveData?.nutrition} />
-          </Grid.Col>
-          {dashboard?.coach && (
-            <Grid.Col span={{ base: 12, md: 4 }}>
-              <CoachCard
-                coach={dashboard.coach}
-                liveNutrition={liveData?.nutrition}
-                onCtaAction={handleCtaAction}
-              />
-            </Grid.Col>
+          {selectedSessionId ? (
+            /* Detail view: FitnessChartApp */
+            <div className="dashboard-column detail-panel">
+              <div
+                className="detail-panel__close"
+                role="button"
+                tabIndex={0}
+                onPointerDown={() => setSelectedSessionId(null)}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setSelectedSessionId(null); }}
+              >
+                <Text size="sm" fw={500}>Back to dashboard</Text>
+              </div>
+              {detailLoading ? (
+                <div className="dashboard-loading"><Loader color="blue" size="lg" /></div>
+              ) : sessionDetail ? (
+                <FitnessChartApp
+                  sessionData={sessionDetail}
+                  mode="standalone"
+                  onClose={() => setSelectedSessionId(null)}
+                />
+              ) : (
+                <div className="dashboard-empty">
+                  <Text c="dimmed">Session data unavailable</Text>
+                </div>
+              )}
+            </div>
+          ) : (
+            <>
+              {/* Column 2: Metrics (1/3) */}
+              <div className="dashboard-column column-metrics">
+                <WeightTrendCard weight={liveData?.weight} />
+                <NutritionCard nutrition={liveData?.nutrition} />
+              </div>
+
+              {/* Column 3: Interactions (1/3) */}
+              <div className="dashboard-column column-interactions">
+                {dashboard?.curated && (
+                  <UpNextCard curated={dashboard.curated} onPlay={handlePlay} />
+                )}
+                {dashboard?.coach && (
+                  <CoachCard
+                    coach={dashboard.coach}
+                    liveNutrition={liveData?.nutrition}
+                    onCtaAction={handleCtaAction}
+                  />
+                )}
+              </div>
+            </>
           )}
-        </Grid>
+        </div>
       </DashboardErrorBoundary>
     </div>
   );

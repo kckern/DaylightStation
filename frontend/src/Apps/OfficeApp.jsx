@@ -361,13 +361,15 @@ function OfficeApp() {
 
   // Main render with consistent outer wrapper and shader
   return (
-    <div className='App'>
-      <div 
-        className='shader' 
-        style={{opacity: shaderOpacity}}
-        data-opacity={shaderOpacity === 1 ? "1" : "0"}
-      ></div>
-      {renderContent()}
+    <div className='office-root'>
+      <div className='office-app'>
+        <div 
+          className='shader' 
+          style={{opacity: shaderOpacity}}
+          data-opacity={shaderOpacity === 1 ? "1" : "0"}
+        ></div>
+        {renderContent()}
+      </div>
     </div>
   )
 }

@@ -7,6 +7,8 @@ export const ACTION_OPTIONS = [
   { value: 'Play', label: 'Play' },
   { value: 'Queue', label: 'Queue' },
   { value: 'List', label: 'List' },
+  { value: 'Open', label: 'Open' },
+  { value: 'Display', label: 'Display' },
   { value: 'Shuffle', label: 'Shuffle' }
 ];
 
@@ -39,7 +41,9 @@ export const KNOWN_ITEM_FIELDS = [
   // Display
   'shader', 'composite', 'playable',
   // Progress (usually read-only)
-  'progress', 'watched'
+  'progress', 'watched',
+  // Derived action keys (stripped at write time, rebuilt at read time)
+  'play', 'open', 'display', 'list', 'queue', 'title'
 ];
 
 // Default values for item fields

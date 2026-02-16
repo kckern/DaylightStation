@@ -1,41 +1,70 @@
 // tests/isolated/adapter/content/list/listConfigNormalizer.test.mjs
 import { describe, it, expect } from 'vitest';
-import { normalizeListItem, extractContentId, normalizeListConfig, serializeListConfig, applyCascade, INHERITABLE_FIELDS } from '#adapters/content/list/listConfigNormalizer.mjs';
+import { normalizeListItem, extractContentId, normalizeListConfig, serializeListConfig, applyCascade, denormalizeItem, INHERITABLE_FIELDS } from '#adapters/content/list/listConfigNormalizer.mjs';
 
 describe('normalizeListItem', () => {
 
-  // ── New format passthrough ──────────────────────────────
-  describe('new format passthrough', () => {
-    it('passes through item with play key unchanged', () => {
+  // ── New format passthrough (only when input/label are absent) ──
+  describe('new format passthrough (no input/label)', () => {
+    it('passes through item with play key when no input present', () => {
       const item = { title: 'Opening Hymn', play: { contentId: 'hymn:198' } };
       const result = normalizeListItem(item);
       expect(result.title).toBe('Opening Hymn');
       expect(result.play.contentId).toBe('hymn:198');
     });
 
-    it('passes through item with open key unchanged', () => {
+    it('passes through item with open key when no input present', () => {
       const item = { title: 'Webcam', open: 'webcam' };
       const result = normalizeListItem(item);
       expect(result.open).toBe('webcam');
     });
 
-    it('passes through item with list key unchanged', () => {
+    it('passes through item with list key when no input present', () => {
       const item = { title: 'Movies', list: { contentId: 'plex:81061' } };
       const result = normalizeListItem(item);
       expect(result.list.contentId).toBe('plex:81061');
     });
 
-    it('passes through item with queue key unchanged', () => {
+    it('passes through item with queue key when no input present', () => {
       const item = { title: 'Fireworks', queue: { contentId: 'plex:663846' }, shuffle: true };
       const result = normalizeListItem(item);
       expect(result.queue.contentId).toBe('plex:663846');
       expect(result.shuffle).toBe(true);
     });
 
-    it('passes through item with display key unchanged', () => {
+    it('passes through item with display key when no input present', () => {
       const item = { title: 'Art', display: { contentId: 'canvas:religious/treeoflife.jpg' } };
       const result = normalizeListItem(item);
       expect(result.display.contentId).toBe('canvas:religious/treeoflife.jpg');
+    });
+  });
+
+  // ── Mixed format: input wins over stale action keys ───
+  describe('mixed format (input + action key)', () => {
+    it('input wins when both input and play exist with different values', () => {
+      const item = { title: 'Felix', input: 'plex:457387', play: { contentId: 'plex:457385' } };
+      const result = normalizeListItem(item);
+      expect(result.play.contentId).toBe('plex:457387');
+      // stale play value is replaced
+    });
+
+    it('input wins when both input and play exist with matching values', () => {
+      const item = { title: 'Hymn', input: 'singalong:hymn/1030', play: { contentId: 'singalong:hymn/1030' } };
+      const result = normalizeListItem(item);
+      expect(result.play.contentId).toBe('singalong:hymn/1030');
+    });
+
+    it('label triggers input branch even when action key present', () => {
+      const item = { label: 'Webcam', input: 'app:webcam', action: 'Open', open: 'stale-value' };
+      const result = normalizeListItem(item);
+      expect(result.open).toBe('webcam');
+      expect(result.title).toBe('Webcam');
+    });
+
+    it('drops stale display key when input is present', () => {
+      const item = { title: 'Art', input: 'canvas:new.jpg', action: 'Display', display: { contentId: 'canvas:old.jpg' } };
+      const result = normalizeListItem(item);
+      expect(result.display.contentId).toBe('canvas:new.jpg');
     });
   });
 
@@ -598,5 +627,178 @@ describe('applyCascade', () => {
     const result = applyCascade(config);
     expect(config.sections[0].items[0].playbackrate).toBeUndefined();
     expect(result.sections[0].items[0].playbackrate).toBe(2);
+  });
+});
+
+describe('denormalizeItem', () => {
+  it('converts play item to input format', () => {
+    const item = { title: 'Hymn', play: { contentId: 'plex:123' }, uid: 'abc' };
+    const result = denormalizeItem(item);
+    expect(result.input).toBe('plex:123');
+    expect(result.label).toBe('Hymn');
+    expect(result.title).toBeUndefined();
+    expect(result.play).toBeUndefined();
+  });
+
+  it('omits action when it is Play (default)', () => {
+    const item = { title: 'Video', play: { contentId: 'plex:456' } };
+    const result = denormalizeItem(item);
+    expect(result.input).toBe('plex:456');
+    expect(result.action).toBeUndefined();
+  });
+
+  it('sets action for Queue', () => {
+    const item = { title: 'Fireworks', queue: { contentId: 'plex:663846' }, shuffle: true };
+    const result = denormalizeItem(item);
+    expect(result.input).toBe('plex:663846');
+    expect(result.action).toBe('Queue');
+    expect(result.queue).toBeUndefined();
+    expect(result.shuffle).toBe(true);
+  });
+
+  it('sets action for List', () => {
+    const item = { title: 'Movies', list: { contentId: 'plex:81061' } };
+    const result = denormalizeItem(item);
+    expect(result.input).toBe('plex:81061');
+    expect(result.action).toBe('List');
+    expect(result.list).toBeUndefined();
+  });
+
+  it('converts open key to input with app: prefix and Open action', () => {
+    const item = { title: 'Webcam', open: 'webcam' };
+    const result = denormalizeItem(item);
+    expect(result.input).toBe('app:webcam');
+    expect(result.action).toBe('Open');
+    expect(result.open).toBeUndefined();
+  });
+
+  it('converts display key to input with Display action', () => {
+    const item = { title: 'Art', display: { contentId: 'canvas:religious/ark.jpg' } };
+    const result = denormalizeItem(item);
+    expect(result.input).toBe('canvas:religious/ark.jpg');
+    expect(result.action).toBe('Display');
+    expect(result.display).toBeUndefined();
+  });
+
+  it('preserves existing input field', () => {
+    const item = { title: 'Test', input: 'plex:789', play: { contentId: 'plex:000' } };
+    const result = denormalizeItem(item);
+    expect(result.input).toBe('plex:789');
+    expect(result.play).toBeUndefined();
+  });
+
+  it('preserves uid, image, and common fields', () => {
+    const item = { title: 'T', play: { contentId: 'plex:1' }, uid: 'u1', image: '/img.png', continuous: true };
+    const result = denormalizeItem(item);
+    expect(result.uid).toBe('u1');
+    expect(result.image).toBe('/img.png');
+    expect(result.continuous).toBe(true);
+  });
+
+  it('is idempotent on already-denormalized items', () => {
+    const item = { label: 'Test', input: 'plex:123' };
+    const result = denormalizeItem(item);
+    expect(result.input).toBe('plex:123');
+    expect(result.label).toBe('Test');
+  });
+
+  it('handles null/undefined', () => {
+    expect(denormalizeItem(null)).toBeNull();
+    expect(denormalizeItem(undefined)).toBeUndefined();
+  });
+});
+
+describe('serializeListConfig denormalization', () => {
+  it('strips action keys from items in compact form', () => {
+    const config = {
+      title: 'FHE',
+      metadata: {},
+      sections: [{ items: [
+        { title: 'Hymn', play: { contentId: 'singalong:hymn/166' }, uid: 'abc' },
+        { title: 'App', open: 'webcam', uid: 'def' }
+      ]}]
+    };
+    const result = serializeListConfig(config);
+    expect(result.items).toHaveLength(2);
+    expect(result.items[0].input).toBe('singalong:hymn/166');
+    expect(result.items[0].play).toBeUndefined();
+    expect(result.items[1].input).toBe('app:webcam');
+    expect(result.items[1].action).toBe('Open');
+    expect(result.items[1].open).toBeUndefined();
+  });
+
+  it('strips action keys from items in sections form', () => {
+    const config = {
+      title: 'TV',
+      metadata: {},
+      sections: [
+        { title: 'Main', items: [
+          { title: 'Fireworks', queue: { contentId: 'plex:663846' }, shuffle: true }
+        ]}
+      ]
+    };
+    const result = serializeListConfig(config);
+    const item = result.sections[0].items[0];
+    expect(item.input).toBe('plex:663846');
+    expect(item.action).toBe('Queue');
+    expect(item.queue).toBeUndefined();
+    expect(item.shuffle).toBe(true);
+  });
+});
+
+describe('round-trip: normalizeListConfig → serializeListConfig', () => {
+  it('produces clean input+action format from input-based YAML', () => {
+    const raw = {
+      title: 'FHE',
+      items: [
+        { label: 'Hymn', input: 'singalong:hymn/166', fixed_order: true },
+        { label: 'Gratitude', input: 'app: gratitude', action: 'Open' },
+        { label: 'Art', input: 'canvas:religious/treeoflife.jpg', action: 'Display' }
+      ]
+    };
+    const normalized = normalizeListConfig(raw);
+    const serialized = serializeListConfig(normalized);
+    expect(serialized.items[0].input).toBe('singalong:hymn/166');
+    expect(serialized.items[0].play).toBeUndefined();
+    expect(serialized.items[1].input).toBe('app:gratitude');
+    expect(serialized.items[1].action).toBe('Open');
+    expect(serialized.items[1].open).toBeUndefined();
+    expect(serialized.items[2].input).toBe('canvas:religious/treeoflife.jpg');
+    expect(serialized.items[2].action).toBe('Display');
+    expect(serialized.items[2].display).toBeUndefined();
+  });
+
+  it('produces clean input+action format from action-key-only YAML', () => {
+    const raw = {
+      title: 'TV',
+      sections: [{ items: [
+        { title: 'Fireworks', queue: { contentId: 'plex:663846' }, shuffle: true },
+        { title: 'FHE', list: { contentId: 'menu:fhe' } },
+        { title: 'Webcam', open: 'webcam' }
+      ]}]
+    };
+    const normalized = normalizeListConfig(raw);
+    const serialized = serializeListConfig(normalized);
+    const items = serialized.items; // single anonymous section → compact form
+    expect(items[0].input).toBe('plex:663846');
+    expect(items[0].action).toBe('Queue');
+    expect(items[0].queue).toBeUndefined();
+    expect(items[1].input).toBe('menu:fhe');
+    expect(items[1].action).toBe('List');
+    expect(items[2].input).toBe('app:webcam');
+    expect(items[2].action).toBe('Open');
+  });
+
+  it('cleans up mixed-format items (input wins)', () => {
+    const raw = {
+      title: 'FHE',
+      items: [
+        { title: 'Felix', input: 'plex:457387', play: { contentId: 'plex:457385' }, uid: 'abc' }
+      ]
+    };
+    const normalized = normalizeListConfig(raw);
+    const serialized = serializeListConfig(normalized);
+    expect(serialized.items[0].input).toBe('plex:457387');
+    expect(serialized.items[0].play).toBeUndefined();
   });
 });

@@ -79,7 +79,13 @@ export function createAuthRouter({ authService, jwtSecret, jwtConfig, configServ
       return res.status(404).json({ error: 'Username not found' });
     }
 
-    const token = issueToken(user);
+    // Re-read auth config for fresh JWT secret (may have just been created)
+    const freshAuthConfig = authService.getAuthConfig();
+    const token = signToken(
+      { sub: user.username, hid: user.householdId, roles: user.roles },
+      freshAuthConfig.jwt.secret,
+      { issuer: freshAuthConfig.jwt.issuer, expiresIn: freshAuthConfig.jwt.expiry, algorithm: freshAuthConfig.jwt.algorithm }
+    );
     logger.info('auth.claim.complete', { username });
     res.json({ token });
   }));
@@ -89,12 +95,27 @@ export function createAuthRouter({ authService, jwtSecret, jwtConfig, configServ
     const householdId = req.householdId || configService.getDefaultHouseholdId();
     const household = dataService.household.read('config/household');
 
+    const needsSetup = authService.needsSetup();
+    const users = configService.getAllUserProfiles();
+
+    // Find the first sysadmin for autofill during claim flow
+    let setupAdmin = null;
+    if (needsSetup && users.size > 0) {
+      for (const [username, profile] of users) {
+        if ((profile.roles || []).includes('sysadmin')) {
+          setupAdmin = username;
+          break;
+        }
+      }
+    }
+
     res.json({
       householdId,
       householdName: household?.name || 'DaylightStation',
       authMethod: 'password',
       isLocal: req.isLocal || false,
-      needsSetup: authService.needsSetup()
+      needsSetup,
+      setupAdmin
     });
   });
 

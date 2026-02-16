@@ -240,24 +240,54 @@ export function createFitnessRouter(config) {
   });
 
   /**
-   * GET /api/fitness/sessions - List sessions for a specific date
+   * GET /api/fitness/sessions - List sessions for a specific date or date range
+   * Query params:
+   * - date: YYYY-MM-DD (list sessions for this date)
+   * - since: YYYY-MM-DD (list sessions from this date to today, sorted desc)
+   * - limit: number (max sessions to return when using since, default: 20)
    */
   router.get('/sessions', async (req, res) => {
-    const { date, household } = req.query;
-    if (!date) {
-      return res.status(400).json({ error: 'date query param required (YYYY-MM-DD)' });
+    const { date, since, limit, household } = req.query;
+    
+    // Mode 1: Single date query (backwards compat)
+    if (date && !since) {
+      try {
+        const sessions = await sessionService.listSessionsByDate(date, household);
+        return res.json({
+          sessions,
+          date,
+          household: sessionService.resolveHouseholdId(household)
+        });
+      } catch (err) {
+        logger.error?.('fitness.sessions.list.error', { date, error: err?.message });
+        return res.status(500).json({ error: 'Failed to list sessions' });
+      }
     }
-    try {
-      const sessions = await sessionService.listSessionsByDate(date, household);
-      return res.json({
-        sessions,
-        date,
-        household: sessionService.resolveHouseholdId(household)
-      });
-    } catch (err) {
-      logger.error?.('fitness.sessions.list.error', { date, error: err?.message });
-      return res.status(500).json({ error: 'Failed to list sessions' });
+    
+    // Mode 2: Date range query (since -> today)
+    if (since) {
+      try {
+        const endDate = new Date().toISOString().split('T')[0]; // Today
+        const sessions = await sessionService.listSessionsInRange(since, endDate, household);
+        const maxLimit = parseInt(limit) || 20;
+        const limited = sessions.slice(0, maxLimit);
+        
+        return res.json({
+          sessions: limited,
+          since,
+          endDate,
+          total: sessions.length,
+          returned: limited.length,
+          household: sessionService.resolveHouseholdId(household)
+        });
+      } catch (err) {
+        logger.error?.('fitness.sessions.range.error', { since, error: err?.message });
+        return res.status(500).json({ error: 'Failed to list sessions in range' });
+      }
     }
+    
+    // Neither date nor since provided
+    return res.status(400).json({ error: 'Either date or since query param required (YYYY-MM-DD)' });
   });
 
   /**

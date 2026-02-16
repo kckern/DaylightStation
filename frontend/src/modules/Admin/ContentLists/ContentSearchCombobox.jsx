@@ -352,7 +352,25 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
           }}
           onClick={() => combobox.openDropdown()}
           onFocus={() => combobox.openDropdown()}
-          onBlur={() => combobox.closeDropdown()}
+          onBlur={() => {
+            // Commit freeform text if user typed something different from current value
+            if (search && search !== value) {
+              onChange(search);
+            }
+            combobox.closeDropdown();
+          }}
+          onKeyDown={(e) => {
+            // Commit freeform text on Enter when no dropdown option is highlighted
+            if (e.key === 'Enter' && search && search !== value) {
+              const idx = combobox.getSelectedOptionIndex();
+              if (idx === -1 || results.length === 0) {
+                e.preventDefault();
+                onChange(search);
+                setSearch('');
+                combobox.closeDropdown();
+              }
+            }
+          }}
           placeholder={placeholder}
           leftSection={<IconSearch size={16} />}
           rightSection={isLoading ? <Loader size="xs" /> : null}
@@ -407,7 +425,7 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
               </Combobox.Empty>
             ) : results.length === 0 ? (
               <Combobox.Empty>
-                {search.length < 2 ? 'Type to search...' : 'No results found'}
+                {search.length < 2 ? 'Type to search...' : 'No results — press Enter to use as-is'}
               </Combobox.Empty>
             ) : (
               options

@@ -1,6 +1,6 @@
 @import "../styles/skeleton";
 
-#root{
+.office-root{
     height: 100vh;
 
     display: flex;
@@ -9,11 +9,11 @@
     background-color: #282c34;
     outline: none!important;
 }
-#root:focus,
-.App:focus{
+.office-root:focus,
+.office-app:focus{
     outline: none!important;
 }
-.App{
+.office-app{
     font-family: 'Roboto Condensed', sans-serif!important;
     color: #FFFFFFAA!important;
     display: flex;
@@ -29,7 +29,7 @@
 
 }
 
-.sidebar{
+.office-app .sidebar{
     width: 25%;
     height: auto;
     flex-grow: 0;
@@ -41,7 +41,7 @@
     justify-content: flex-start
 }
 
-.content{
+.office-app .content{
     flex-grow: 1;
     width: calc(75% - 4rem);
     height: calc(100% - 2rem);
@@ -56,11 +56,11 @@
 }
 
 
-h2{
+.office-app h2{
     margin: 0;
 }
 
-.shader{
+.office-app .shader{
     position: absolute;
     top: 0;
     left: 0;
@@ -72,7 +72,7 @@ h2{
     z-index: 999999;
 }
 
-.shader[data-opacity="1"] {
+.office-app .shader[data-opacity="1"] {
     //cursor: none;
     pointer-events: all;
 }

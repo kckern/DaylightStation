@@ -124,10 +124,10 @@ function AdminApp() {
   }, [logger]);
 
   return (
-    <AuthGate app="admin">
-      <MantineProvider theme={theme} defaultColorScheme="dark">
-        <Notifications position="bottom-right" autoClose={3000} />
-        <div className="App admin-app">
+    <MantineProvider theme={theme} defaultColorScheme="dark" forceColorScheme="dark">
+      <Notifications position="bottom-right" autoClose={3000} />
+      <div className="App admin-app">
+        <AuthGate app="admin">
           <Routes>
             {/* Test routes - outside AdminLayout */}
             <Route path="test/combobox" element={<ComboboxTestPage />} />
@@ -159,9 +159,9 @@ function AdminApp() {
               <Route path="*" element={<Navigate to="content/lists/menus" replace />} />
             </Route>
           </Routes>
-        </div>
-      </MantineProvider>
-    </AuthGate>
+        </AuthGate>
+      </div>
+    </MantineProvider>
   );
 }
 

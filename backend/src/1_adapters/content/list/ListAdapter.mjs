@@ -774,6 +774,7 @@ export class ListAdapter {
       const openAction = {};
       const listAction = {};
       const queueAction = {};
+      const displayAction = {};
 
       // Handle raw YAML action overrides first
       if (item.play) {
@@ -785,12 +786,16 @@ export class ListAdapter {
         Object.assign(queueAction, item.queue);
       } else if (item.list) {
         Object.assign(listAction, item.list);
+      } else if (item.display) {
+        Object.assign(displayAction, item.display);
       } else if (actionType === 'open' || source === 'app') {
         Object.assign(openAction, baseAction);
       } else if (actionType === 'queue') {
         Object.assign(queueAction, baseAction);
       } else if (actionType === 'list') {
         Object.assign(listAction, baseAction);
+      } else if (actionType === 'display') {
+        Object.assign(displayAction, baseAction);
       } else {
         // Default: play
         Object.assign(playAction, baseAction);
@@ -840,7 +845,8 @@ export class ListAdapter {
         play: Object.keys(finalPlayAction).length > 0 ? finalPlayAction : undefined,
         queue: Object.keys(finalQueueAction).length > 0 ? finalQueueAction : undefined,
         list: Object.keys(listAction).length > 0 ? listAction : undefined,
-        open: Object.keys(openAction).length > 0 ? openAction : undefined
+        open: Object.keys(openAction).length > 0 ? openAction : undefined,
+        display: Object.keys(displayAction).length > 0 ? displayAction : undefined
       };
 
       // Build compound ID
@@ -881,13 +887,20 @@ export class ListAdapter {
         fixedOrder: item.fixed_order || false
       };
 
+      // Auto-resolve thumbnail from uploaded list images when no explicit image
+      let thumbnail = item.image || null;
+      if (!thumbnail && item.uid && this.configService) {
+        const imgPath = path.join(this.configService.getMediaDir(), 'img', 'lists', `${item.uid}.jpg`);
+        if (fileExists(imgPath)) thumbnail = `/media/img/lists/${item.uid}.jpg`;
+      }
+
       results.push(new Item({
         id: compoundId || `${listPrefix}:${item.title || item.label}`,
         source,
         localId,
         title: item.title || item.label || localId,
         type: isWatchlist ? (actionType === 'queue' ? 'queue' : 'list') : undefined,
-        thumbnail: item.image,
+        thumbnail,
         metadata,
         actions
       }));

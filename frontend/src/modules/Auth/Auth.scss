@@ -12,4 +12,27 @@
   max-width: 440px;
   background: var(--ds-bg-surface, #12141C);
   border: 1px solid var(--ds-border, #2A2E3D);
+  color: var(--ds-text-primary, #E8EBF5);
+}
+
+.setup-card {
+  max-width: 760px;
+}
+
+.auth-card .mantine-Title-root,
+.auth-card .mantine-Text-root,
+.auth-card .mantine-Stepper-stepLabel,
+.auth-card .mantine-Stepper-stepDescription,
+.auth-card .mantine-InputLabel-root {
+  color: var(--ds-text-primary, #E8EBF5);
+}
+
+.auth-card .mantine-Input-input {
+  background-color: var(--ds-bg-base, #0C0E14);
+  border-color: var(--ds-border, #2A2E3D);
+  color: var(--ds-text-primary, #E8EBF5);
+}
+
+.auth-card .mantine-Input-input::placeholder {
+  color: var(--ds-text-secondary, #9CA3B8);
 }
