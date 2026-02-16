@@ -183,4 +183,65 @@ describe('FeedAssemblyService scroll config integration', () => {
     const result = await service.getNextBatch('kckern', { limit: 8 });
     expect(result.items.length).toBeLessThanOrEqual(8);
   });
+
+  test('focus mode filters external items to focused source', async () => {
+    const redditAdapter = {
+      sourceType: 'reddit',
+      fetchItems: jest.fn().mockResolvedValue([
+        { ...makeExternalItem('reddit', 'r1'), meta: { subreddit: 'science', sourceName: 'reddit' } },
+        { ...makeExternalItem('reddit', 'r2'), meta: { subreddit: 'tech', sourceName: 'reddit' } },
+      ]),
+    };
+    const headlinesAdapter = {
+      sourceType: 'headlines',
+      fetchItems: jest.fn().mockResolvedValue([
+        makeExternalItem('headline', 'h1'),
+      ]),
+    };
+    const weatherAdapter = {
+      sourceType: 'weather',
+      fetchItems: jest.fn().mockResolvedValue([
+        makeGroundingItem('weather', 'w1', 3),
+      ]),
+    };
+
+    const service = createService(
+      [
+        { type: 'reddit', feed_type: 'external', _filename: 'reddit.yml' },
+        { type: 'headlines', feed_type: 'external', _filename: 'headlines.yml' },
+        { type: 'weather', feed_type: 'grounding', _filename: 'weather.yml' },
+      ],
+      [redditAdapter, headlinesAdapter, weatherAdapter],
+    );
+
+    const result = await service.getNextBatch('kckern', { focus: 'reddit' });
+    const sources = result.items.map(i => i.source);
+    // Should have reddit and weather (grounding), but NOT headlines
+    expect(sources).not.toContain('headline');
+    // Reddit should be present (it's the focused external source)
+    const hasReddit = sources.includes('reddit');
+    expect(hasReddit).toBe(true);
+  });
+
+  test('focus mode with subsource filters to specific subsource', async () => {
+    const redditAdapter = {
+      sourceType: 'reddit',
+      fetchItems: jest.fn().mockResolvedValue([
+        { ...makeExternalItem('reddit', 'r1'), meta: { subreddit: 'science', sourceName: 'reddit' } },
+        { ...makeExternalItem('reddit', 'r2'), meta: { subreddit: 'tech', sourceName: 'reddit' } },
+      ]),
+    };
+
+    const service = createService(
+      [{ type: 'reddit', feed_type: 'external', _filename: 'reddit.yml' }],
+      [redditAdapter],
+    );
+
+    const result = await service.getNextBatch('kckern', { focus: 'reddit:science' });
+    const redditItems = result.items.filter(i => i.source === 'reddit');
+    expect(redditItems.length).toBeGreaterThan(0);
+    for (const item of redditItems) {
+      expect(item.meta?.subreddit).toBe('science');
+    }
+  });
 });

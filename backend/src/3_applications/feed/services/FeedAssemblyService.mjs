@@ -109,13 +109,26 @@ export class FeedAssemblyService {
     }
 
     // Separate external vs grounding
-    const external = allItems
+    let external = allItems
       .filter(item => item.type === 'external')
       .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 
     const grounding = allItems
       .filter(item => item.type === 'grounding')
       .sort((a, b) => (b.priority || 0) - (a.priority || 0));
+
+    // Focus mode: filter external to focused source/subsource
+    if (focus) {
+      const [focusSource, focusSubsource] = focus.split(':');
+      external = external.filter(item => {
+        if (item.source !== focusSource) return false;
+        if (focusSubsource) {
+          const subKey = item.meta?.subreddit || item.meta?.sourceId || item.meta?.feedTitle;
+          if (subKey !== focusSubsource) return false;
+        }
+        return true;
+      });
+    }
 
     // Calculate grounding ratio based on session duration
     const sessionMinutes = sessionStartedAt
