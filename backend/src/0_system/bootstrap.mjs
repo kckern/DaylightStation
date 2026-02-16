@@ -100,7 +100,6 @@ import { FreshRSSFeedAdapter } from '#adapters/feed/FreshRSSFeedAdapter.mjs';
 import { RssHeadlineHarvester } from '#adapters/feed/RssHeadlineHarvester.mjs';
 import { YamlHeadlineCacheStore } from '#adapters/persistence/yaml/YamlHeadlineCacheStore.mjs';
 import { HeadlineService } from '#apps/feed/services/HeadlineService.mjs';
-import { createFeedRouter } from '#api/v1/routers/feed.mjs';
 
 // Finance domain imports
 import { YamlFinanceDatastore } from '#adapters/persistence/yaml/YamlFinanceDatastore.mjs';
@@ -961,20 +960,14 @@ export function createFeedServices(config) {
     logger,
   });
 
-  const feedRouter = createFeedRouter({
-    freshRSSAdapter,
-    headlineService,
-    configService,
-    logger,
-  });
-
   // Harvest job for manual or scheduled triggering
   const headlineHarvestJob = async () => {
     const username = configService.getHeadOfHousehold();
     return headlineService.harvestAll(username);
   };
 
-  return { freshRSSAdapter, headlineService, feedRouter, headlineHarvestJob };
+  // Note: feedRouter is created in app.mjs after FeedAssemblyService is wired
+  return { freshRSSAdapter, headlineService, headlineHarvestJob };
 }
 
 /**
