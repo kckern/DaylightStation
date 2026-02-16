@@ -2,9 +2,11 @@
 
 .headlines-view {
   padding: 0.75rem;
-  background: #1a1b1e;
-  min-height: 100%;
+  background: #111214;
+  color: #ccc;
+  min-height: 100vh;
   font-family: 'Roboto Condensed', sans-serif;
+  color-scheme: dark;
 }
 
 .headlines-toolbar {
@@ -54,9 +56,9 @@
 
 .source-cell {
   flex: 1;
-  background: #222326;
+  background: #1a1b1e;
   border-radius: 6px;
-  overflow: hidden;
+  overflow: visible;
   min-width: 0;
 
   &--empty {
@@ -132,14 +134,13 @@
   list-style: disc;
   margin: 0;
   padding: 0.3rem 0.4rem 0.35rem 1.2rem;
-  max-height: 200px;
-  overflow-y: auto;
 }
 
 .source-headline {
   font-size: 0.68rem;
   line-height: 1.25;
   padding: 0.1rem 0;
+  position: relative;
 
   &::marker {
     color: #444;
@@ -154,5 +155,82 @@
     display: block;
 
     &:hover { color: #ccc; }
+  }
+
+  .headline-tooltip {
+    display: none;
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: -0.5rem;
+    z-index: 200;
+    width: 300px;
+    padding: 0.5rem 0.65rem;
+    border-radius: 6px;
+    background: #c8c8c8;
+    border: 1px solid #aaa;
+    box-shadow: 0 -2px 16px rgba(0,0,0,0.4);
+    pointer-events: none;
+
+    &::after {
+      content: '';
+      position: absolute;
+      top: 100%;
+      left: 1.2rem;
+      border: 5px solid transparent;
+      border-top-color: #c8c8c8;
+    }
+  }
+
+  &:hover .headline-tooltip {
+    display: block;
+  }
+
+  .headline-tooltip-header {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    margin-bottom: 0.3rem;
+  }
+
+  .headline-tooltip-icon {
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+
+  .headline-tooltip-icon-fallback {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 12px;
+    height: 12px;
+    border-radius: 2px;
+    background: rgba(0,0,0,0.12);
+    color: rgba(0,0,0,0.5);
+    font-size: 0.5rem;
+    font-weight: 700;
+  }
+
+  .headline-tooltip-source {
+    font-size: 0.6rem;
+    font-weight: 600;
+    color: rgba(0,0,0,0.4);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  .headline-tooltip-title {
+    color: #111;
+    font-size: 0.75rem;
+    font-weight: 500;
+    line-height: 1.35;
+    white-space: normal;
+  }
+
+  .headline-tooltip-desc {
+    margin-top: 0.25rem;
+    color: rgba(0,0,0,0.5);
+    font-size: 0.68rem;
+    line-height: 1.35;
+    white-space: normal;
   }
 }

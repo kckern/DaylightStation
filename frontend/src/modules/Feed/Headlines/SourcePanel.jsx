@@ -4,25 +4,25 @@ import './Headlines.scss';
 
 // Muted color palette by column position (left→right political spectrum)
 const COL_COLORS = [
-  'hsl(215, 40%, 45%)',  // left — muted blue
-  'hsl(195, 35%, 42%)',  // center-left — teal
-  'hsl(260, 20%, 45%)',  // center — muted purple
-  'hsl(30, 40%, 45%)',   // center-right — amber
-  'hsl(0, 35%, 45%)',    // right — muted red
+  'hsl(215, 50%, 40%)',  // left — blue
+  'hsl(210, 30%, 35%)',  // center-left — muted steel blue
+  'hsl(220, 8%, 38%)',   // center — neutral grey
+  'hsl(0, 25%, 35%)',    // center-right — muted dusty red
+  'hsl(0, 45%, 38%)',    // right — red
 ];
 
-export function SourcePanel({ source, col, totalCols, onRefresh }) {
+export function SourcePanel({ source, col, totalCols, paywallProxy, onRefresh }) {
   const [refreshing, setRefreshing] = useState(false);
   const [faviconError, setFaviconError] = useState(false);
   const imgRef = useRef(null);
 
   if (!source) return <div className="source-cell source-cell--empty" />;
 
-  const domain = extractDomain(source.url);
-  const siteUrl = 'https://' + domain;
+  const siteUrl = source.siteUrl || ('https://' + extractDomain(source.url));
   const faviconUrl = `/api/v1/feed/icon?url=${encodeURIComponent(siteUrl)}`;
   const items = source.items || [];
   const headerColor = COL_COLORS[col] || COL_COLORS[Math.floor(totalCols / 2)];
+  const isPaywalled = source.paywall && paywallProxy;
 
   const handleRefresh = async (e) => {
     e.stopPropagation();
@@ -70,17 +70,47 @@ export function SourcePanel({ source, col, totalCols, onRefresh }) {
       </a>
       {items.length > 0 && (
         <ul className="source-headlines">
-          {items.map((item, i) => (
-            <li key={i} className="source-headline" title={[item.title, item.desc].filter(Boolean).join('\n\n')}>
-              <a href={item.link} target="_blank" rel="noopener noreferrer">
-                {smartQuotes(item.title)}
-              </a>
-            </li>
-          ))}
+          {items.map((item, i) => {
+            const link = stripTracking((item.link || '').trim());
+            const href = isPaywalled ? paywallProxy + link : link;
+            const desc = item.desc && item.desc !== item.title ? item.desc : null;
+            return (
+              <li key={i} className="source-headline">
+                <a href={href} target="_blank" rel="noopener noreferrer">
+                  {smartQuotes(item.title)}
+                </a>
+                <div className="headline-tooltip">
+                  <div className="headline-tooltip-header">
+                    {!faviconError ? (
+                      <img className="headline-tooltip-icon" src={faviconUrl} alt="" width={12} height={12} />
+                    ) : (
+                      <span className="headline-tooltip-icon-fallback">{source.label.charAt(0)}</span>
+                    )}
+                    <span className="headline-tooltip-source">{source.label}</span>
+                  </div>
+                  <div className="headline-tooltip-title">{smartQuotes(item.title)}</div>
+                  {desc && <div className="headline-tooltip-desc">{smartQuotes(desc)}</div>}
+                </div>
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>
   );
+}
+
+const TRACKING_PARAMS = /^(utm_\w+|fbclid|gclid|mc_[ce]id|msclkid|ref|source|ncid|ocid|_ga)$/i;
+
+function stripTracking(url) {
+  try {
+    const u = new URL(url);
+    const keysToDelete = [...u.searchParams.keys()].filter(k => TRACKING_PARAMS.test(k));
+    keysToDelete.forEach(k => u.searchParams.delete(k));
+    return u.toString();
+  } catch {
+    return url;
+  }
 }
 
 function extractDomain(url) {
