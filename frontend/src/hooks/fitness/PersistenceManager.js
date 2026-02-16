@@ -670,6 +670,15 @@ export class PersistenceManager {
       return { ok: false, reason: 'insufficient-ticks', tickCount };
     }
 
+    // Require at least one series with meaningful (non-zero, non-null) HR data
+    const hasNonEmptyHrSeries = Object.entries(series).some(([key, values]) => {
+      if (!key.endsWith(':hr') || !Array.isArray(values)) return false;
+      return values.some(v => v != null && v > 0);
+    });
+    if (!hasNonEmptyHrSeries) {
+      return { ok: false, reason: 'no-meaningful-data' };
+    }
+
     // Validate series lengths
     if (this._validateSeriesLengths) {
       const { ok: lengthsOk, issues } = this._validateSeriesLengths(sessionData.timeline?.timebase || {}, series);

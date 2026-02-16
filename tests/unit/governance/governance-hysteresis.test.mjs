@@ -66,7 +66,8 @@ describe('GovernanceEngine — hysteresis', () => {
     engine.evaluate({ activeParticipants: participants, userZoneMap: activeMap, zoneRankMap, zoneInfoMap, totalCount: 2 });
     expect(engine.phase).toBe('unlocked');
 
-    // Drop to cool → warning
+    // Drop to cool → warning (expire relock grace first)
+    engine._lastUnlockTime = Date.now() - 6000;
     const coolMap = { alice: 'cool', bob: 'active' };
     engine.evaluate({ activeParticipants: participants, userZoneMap: coolMap, zoneRankMap, zoneInfoMap, totalCount: 2 });
     expect(engine.phase).toBe('warning');

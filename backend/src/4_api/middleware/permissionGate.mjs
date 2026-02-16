@@ -27,7 +27,7 @@ export function resolveRouteApp(routePath, appRoutes) {
   return null;
 }
 
-export function permissionGate({ roles, appRoutes }) {
+export function permissionGate({ roles, appRoutes, logger }) {
   return (req, res, next) => {
     const app = resolveRouteApp(req.path, appRoutes);
 
@@ -43,7 +43,20 @@ export function permissionGate({ roles, appRoutes }) {
     if (userApps.includes(app)) return next();
 
     // Denied — 401 if no user identity, 403 if authenticated but insufficient
-    if (!req.user) {
+    const status = req.user ? 403 : 401;
+    const detail = {
+      status,
+      path: req.path,
+      app,
+      userRoles: req.roles || [],
+      allowedApps: userApps,
+      userId: req.user?.id || null,
+      ip: req.ip
+    };
+    if (logger) {
+      logger.warn('permission_denied', detail);
+    }
+    if (status === 401) {
       return res.status(401).json({ error: 'Authentication required' });
     }
     return res.status(403).json({ error: 'Insufficient permissions' });

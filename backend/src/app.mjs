@@ -226,7 +226,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // 4. permissionGate enforces role-based access (auth endpoints are exempt — they're unrestricted in app_routes)
   app.use('/api/v1', permissionGate({
     roles: authConfig?.roles || {},
-    appRoutes: authConfig?.app_routes || {}
+    appRoutes: authConfig?.app_routes || {},
+    logger: rootLogger.child({ module: 'permissionGate' })
   }));
 
   // ==========================================================================

@@ -93,7 +93,8 @@ describe('GovernanceEngine — lock row separation', () => {
       summary: { satisfied: false, missingUsers: ['alice', 'bob'], metUsers: [], actualCount: 0 }
     };
 
-    // alice drops to cool — base requirement unsatisfied → warning
+    // alice drops to cool — base requirement unsatisfied → warning (expire relock grace first)
+    engine._lastUnlockTime = Date.now() - 6000;
     const droppedMap = { alice: 'cool', bob: 'active' };
     engine.evaluate({ activeParticipants: participants, userZoneMap: droppedMap, zoneRankMap, zoneInfoMap, totalCount: 2 });
     expect(engine.phase).toBe('warning');
