@@ -111,7 +111,10 @@ export function createFeedRouter(config) {
     const { cursor, limit = 20 } = req.query;
 
     // Phase 1: merge FreshRSS unread + headline cache chronologically
-    const [rssItems, headlines] = await Promise.all([
+    // FreshRSS may be unreachable — gracefully fall back to headlines only
+    let rssItems = [];
+    let headlines = { sources: {} };
+    const results = await Promise.allSettled([
       freshRSSAdapter.getItems('user/-/state/com.google/reading-list', username, {
         count: Number(limit),
         continuation: cursor,
@@ -119,6 +122,8 @@ export function createFeedRouter(config) {
       }),
       headlineService.getAllHeadlines(username),
     ]);
+    if (results[0].status === 'fulfilled') rssItems = results[0].value;
+    if (results[1].status === 'fulfilled') headlines = results[1].value;
 
     // Flatten headline items with source metadata
     const headlineItems = Object.values(headlines.sources || {}).flatMap(src =>

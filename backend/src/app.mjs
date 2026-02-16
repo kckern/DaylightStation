@@ -510,7 +510,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Feed domain (FreshRSS reader + headline harvesting)
   const freshrssHost = configService.resolveServiceUrl('freshrss');
   const feedServices = freshrssHost ? createFeedServices({
-    dataService: userDataService,
+    dataService,
     configService,
     freshrssHost,
     logger: rootLogger.child({ module: 'feed' }),
