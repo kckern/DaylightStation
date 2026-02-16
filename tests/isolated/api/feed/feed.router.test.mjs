@@ -126,4 +126,49 @@ describe('Feed Router', () => {
       expect(mockHeadlineService.harvestAll).toHaveBeenCalledWith('kckern');
     });
   });
+
+  // Scroll endpoints
+  describe('GET /scroll', () => {
+    let scrollApp;
+    let mockFeedAssemblyService;
+
+    beforeEach(() => {
+      mockFeedAssemblyService = {
+        getNextBatch: jest.fn().mockResolvedValue({ items: [], hasMore: false }),
+      };
+      const router = createFeedRouter({
+        freshRSSAdapter: mockFreshRSSAdapter,
+        headlineService: mockHeadlineService,
+        feedAssemblyService: mockFeedAssemblyService,
+        configService: mockConfigService,
+      });
+      scrollApp = express();
+      scrollApp.use(express.json());
+      scrollApp.use('/api/v1/feed', router);
+    });
+
+    test('passes focus param to feedAssemblyService', async () => {
+      await request(scrollApp).get('/api/v1/feed/scroll?focus=reddit:science');
+      expect(mockFeedAssemblyService.getNextBatch).toHaveBeenCalledWith(
+        'kckern',
+        expect.objectContaining({ focus: 'reddit:science' }),
+      );
+    });
+
+    test('limit defaults to undefined when not provided', async () => {
+      await request(scrollApp).get('/api/v1/feed/scroll');
+      expect(mockFeedAssemblyService.getNextBatch).toHaveBeenCalledWith(
+        'kckern',
+        expect.objectContaining({ limit: undefined }),
+      );
+    });
+
+    test('passes explicit limit as number', async () => {
+      await request(scrollApp).get('/api/v1/feed/scroll?limit=20');
+      expect(mockFeedAssemblyService.getNextBatch).toHaveBeenCalledWith(
+        'kckern',
+        expect.objectContaining({ limit: 20 }),
+      );
+    });
+  });
 });
