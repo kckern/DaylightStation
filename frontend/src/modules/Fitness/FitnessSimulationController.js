@@ -484,7 +484,8 @@ export class FitnessSimulationController {
       const realState = window.__fitnessGovernance;
       activeChallenge = {
         type: 'zone_target',
-        targetZone: realState.activeChallenge,
+        targetZone: realState.activeChallengeZone || null,
+        challengeId: realState.activeChallenge,
         delegated: true
       };
     }
@@ -665,6 +666,18 @@ export class FitnessSimulationController {
    */
   completeChallenge(success) {
     if (!this.challengeState) {
+      // Check for delegated challenge on real GovernanceEngine
+      const realChallenge = typeof window !== 'undefined' && window.__fitnessGovernance?.activeChallenge;
+      if (realChallenge) {
+        // Update sim stats for the delegated challenge
+        if (success) {
+          this.stats.challengesWon++;
+        } else {
+          this.stats.challengesFailed++;
+        }
+        this._notifyStateChange();
+        return { ok: true, success, delegated: true, stats: { ...this.stats } };
+      }
       return { ok: false, error: 'No active challenge' };
     }
     return this._completeChallenge(success);

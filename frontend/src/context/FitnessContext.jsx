@@ -1249,13 +1249,12 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   
   // Phase 2 SSOT: Wrap allDevices with deprecation warning in development
   // Components should use domain selectors (activeHeartRateParticipants, rpmDevices, equipmentDevices) instead
+  const allDevicesWarnedRef = React.useRef(new Set());
   const allDevices = React.useMemo(() => {
     if (process.env.NODE_ENV === 'development') {
-      // Track which components access allDevices for future cleanup
-      const warned = new Set();
+      const warned = allDevicesWarnedRef.current;
       return new Proxy(allDevicesRaw, {
         get(target, prop) {
-          // Only warn once per property access pattern, and skip common array methods
           if (prop === 'filter' && !warned.has('filter')) {
             warned.add('filter');
             console.warn(
