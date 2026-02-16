@@ -20,7 +20,18 @@ export class FeedAssemblyService {
   #entropyService;
   #queryConfigs;
   #sourceAdapters;
+  #scrollConfigLoader;
+  #spacingEnforcer;
   #logger;
+
+  /** Inline defaults used when no scrollConfigLoader is provided */
+  static #INLINE_DEFAULTS = Object.freeze({
+    batch_size: 15,
+    algorithm: Object.freeze({ grounding_ratio: 5, decay_rate: 0.85, min_ratio: 2 }),
+    focus_mode: Object.freeze({ grounding_ratio: 8, decay_rate: 0.9, min_ratio: 3 }),
+    spacing: Object.freeze({ max_consecutive: 1 }),
+    sources: Object.freeze({}),
+  });
 
   constructor({
     freshRSSAdapter,
@@ -28,6 +39,8 @@ export class FeedAssemblyService {
     entropyService = null,
     queryConfigs = null,
     sourceAdapters = null,
+    scrollConfigLoader = null,
+    spacingEnforcer = null,
     logger = console,
     // Legacy params accepted but unused (kept for bootstrap compat)
     dataService,
@@ -40,6 +53,8 @@ export class FeedAssemblyService {
     this.#headlineService = headlineService;
     this.#entropyService = entropyService;
     this.#queryConfigs = queryConfigs;
+    this.#scrollConfigLoader = scrollConfigLoader;
+    this.#spacingEnforcer = spacingEnforcer;
     this.#logger = logger;
 
     this.#sourceAdapters = new Map();
@@ -55,13 +70,25 @@ export class FeedAssemblyService {
    *
    * @param {string} username
    * @param {Object} options
-   * @param {number} [options.limit=15] - Max items to return
+   * @param {number} [options.limit] - Max items to return (defaults to scroll config batch_size)
    * @param {string} [options.cursor] - Pagination cursor (unused in Phase 1)
    * @param {string} [options.sessionStartedAt] - ISO timestamp for grounding ratio calc
+   * @param {string} [options.focus] - Focus source key (e.g. 'reddit:science'); uses focus_mode params
    * @returns {Promise<{ items: FeedItem[], hasMore: boolean }>}
    */
-  async getNextBatch(username, { limit = 15, cursor, sessionStartedAt } = {}) {
-    const queries = this.#queryConfigs || [];
+  async getNextBatch(username, { limit, cursor, sessionStartedAt, focus } = {}) {
+    // Load scroll config (fallback to inline defaults when no loader)
+    const scrollConfig = this.#scrollConfigLoader?.load(username)
+      || FeedAssemblyService.#INLINE_DEFAULTS;
+
+    // Resolve effective limit: explicit param > config batch_size > 15
+    const effectiveLimit = limit ?? scrollConfig.batch_size ?? 15;
+
+    // Select algorithm params based on focus mode
+    const algoParams = focus ? scrollConfig.focus_mode : scrollConfig.algorithm;
+
+    // Filter query configs to enabled sources
+    const queries = this.#filterQueries(this.#queryConfigs || [], scrollConfig);
 
     // Fan out to all source handlers in parallel
     const results = await Promise.allSettled(
@@ -94,7 +121,7 @@ export class FeedAssemblyService {
     const sessionMinutes = sessionStartedAt
       ? (Date.now() - new Date(sessionStartedAt).getTime()) / 60000
       : 0;
-    const ratio = this.#calculateGroundingRatio(sessionMinutes);
+    const ratio = this.#calculateGroundingRatio(sessionMinutes, algoParams);
 
     // Interleave
     const interleaved = this.#interleave(external, grounding, ratio);
@@ -107,9 +134,12 @@ export class FeedAssemblyService {
       return true;
     });
 
+    // Enforce spacing rules
+    const spaced = this.#spacingEnforcer?.enforce(deduplicated, scrollConfig) ?? deduplicated;
+
     // Paginate
-    const items = deduplicated.slice(0, limit);
-    const hasMore = deduplicated.length > limit || external.length >= 10;
+    const items = spaced.slice(0, effectiveLimit);
+    const hasMore = spaced.length > effectiveLimit || external.length >= 10;
 
     this.#logger.info?.('feed.assembly.batch', {
       username,
@@ -263,8 +293,26 @@ export class FeedAssemblyService {
     } catch { return null; }
   }
 
-  #calculateGroundingRatio(sessionMinutes) {
-    return Math.max(2, Math.floor(5 * Math.pow(0.85, sessionMinutes / 5)));
+  /**
+   * Filter query configs to sources enabled in scroll config.
+   * When `scrollConfig.sources` is empty, all queries pass (empty = all enabled).
+   *
+   * Uses `query._filename` (stripped of `.yml`) as the source key to check
+   * against the scroll config sources map.
+   */
+  #filterQueries(queries, scrollConfig) {
+    const sourceKeys = Object.keys(scrollConfig.sources || {});
+    if (sourceKeys.length === 0) return queries; // empty means all enabled
+
+    return queries.filter(query => {
+      const key = query._filename?.replace('.yml', '');
+      return key && sourceKeys.includes(key);
+    });
+  }
+
+  #calculateGroundingRatio(sessionMinutes, params) {
+    const { grounding_ratio = 5, decay_rate = 0.85, min_ratio = 2 } = params || {};
+    return Math.max(min_ratio, Math.floor(grounding_ratio * Math.pow(decay_rate, sessionMinutes / 5)));
   }
 
   #interleave(external, grounding, ratio) {
