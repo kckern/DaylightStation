@@ -11,12 +11,14 @@ import { IFeedSourceAdapter } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
 
 export class ImmichFeedAdapter extends IFeedSourceAdapter {
   #contentQueryService;
+  #webUrl;
   #logger;
 
-  constructor({ contentQueryService, logger = console }) {
+  constructor({ contentQueryService, webUrl = null, logger = console }) {
     super();
     if (!contentQueryService) throw new Error('ImmichFeedAdapter requires contentQueryService');
     this.#contentQueryService = contentQueryService;
+    this.#webUrl = webUrl;
     this.#logger = logger;
   }
 
@@ -42,8 +44,8 @@ export class ImmichFeedAdapter extends IFeedSourceAdapter {
           source: 'photo',
           title: yearsAgo ? `${yearsAgo} year${yearsAgo !== 1 ? 's' : ''} ago` : 'Memory',
           body: item.metadata?.location || null,
-          image: item.thumbnail || `/api/v1/proxy/immich/assets/${localId}/thumbnail`,
-          link: null,
+          image: item.thumbnail || `/api/v1/proxy/immich/assets/${localId}/original`,
+          link: this.#webUrl ? `${this.#webUrl}/photos/${localId}` : null,
           timestamp: created || new Date().toISOString(),
           priority: query.priority || 5,
           meta: {

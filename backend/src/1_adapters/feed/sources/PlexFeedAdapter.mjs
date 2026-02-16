@@ -15,10 +15,13 @@ export class PlexFeedAdapter extends IFeedSourceAdapter {
   #contentQueryService;
   #logger;
 
-  constructor({ contentRegistry = null, contentQueryService = null, logger = console }) {
+  #webUrl;
+
+  constructor({ contentRegistry = null, contentQueryService = null, webUrl = null, logger = console }) {
     super();
     this.#contentRegistry = contentRegistry;
     this.#contentQueryService = contentQueryService;
+    this.#webUrl = webUrl;
     this.#logger = logger;
   }
 
@@ -63,7 +66,7 @@ export class PlexFeedAdapter extends IFeedSourceAdapter {
         title: item.title || item.label || 'Media',
         body: item.subtitle || item.description || null,
         image: item.thumbnail || null,
-        link: null,
+        link: this.#plexWebLink(localId),
         timestamp: item.metadata?.addedAt || new Date().toISOString(),
         priority: query.priority || 5,
         meta: {
@@ -96,7 +99,7 @@ export class PlexFeedAdapter extends IFeedSourceAdapter {
         title: item.title || item.label || 'Media',
         body: item.subtitle || item.description || null,
         image: item.thumbnail || null,
-        link: null,
+        link: this.#plexWebLink(localId),
         timestamp: item.metadata?.addedAt || new Date().toISOString(),
         priority: query.priority || 5,
         meta: {
@@ -107,5 +110,10 @@ export class PlexFeedAdapter extends IFeedSourceAdapter {
         },
       };
     });
+  }
+
+  #plexWebLink(ratingKey) {
+    if (!this.#webUrl) return null;
+    return `${this.#webUrl}/web/index.html#!/details?key=${encodeURIComponent(`/library/metadata/${ratingKey}`)}`;
   }
 }

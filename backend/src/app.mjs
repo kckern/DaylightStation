@@ -698,13 +698,17 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       userDataService,
       logger: rootLogger.child({ module: 'todoist-feed' }),
     });
+    const immichConfig = configService.getAdapterConfig('immich');
+    const plexConfig = configService.getAdapterConfig('plex');
     const immichAdapter = contentServices?.contentQueryService ? new ImmichFeedAdapter({
       contentQueryService: contentServices.contentQueryService,
+      webUrl: immichConfig?.webUrl || null,
       logger: rootLogger.child({ module: 'immich-feed' }),
     }) : null;
     const plexAdapter = new PlexFeedAdapter({
       contentRegistry: contentRegistry || null,
       contentQueryService: contentServices?.contentQueryService || null,
+      webUrl: plexConfig?.webUrl || plexConfig?.host || null,
       logger: rootLogger.child({ module: 'plex-feed' }),
     });
 

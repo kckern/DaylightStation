@@ -59,13 +59,22 @@ export default function MediaCard({ item }) {
     );
   }
 
+  const Wrapper = item.link ? 'a' : 'div';
+  const wrapperProps = item.link
+    ? { href: item.link, target: '_blank', rel: 'noopener noreferrer' }
+    : {};
+
   return (
-    <div
+    <Wrapper
+      {...wrapperProps}
       className="feed-card feed-card-media feed-card-photo"
       style={{
+        display: 'block',
         borderRadius: '12px',
         overflow: 'hidden',
         position: 'relative',
+        textDecoration: 'none',
+        color: 'inherit',
       }}
     >
       <img
@@ -134,6 +143,6 @@ export default function MediaCard({ item }) {
           </p>
         )}
       </div>
-    </div>
+    </Wrapper>
   );
 }
