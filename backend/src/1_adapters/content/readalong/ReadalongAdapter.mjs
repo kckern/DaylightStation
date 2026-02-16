@@ -536,31 +536,41 @@ export class ReadalongAdapter {
 
     if (!range) return [];
 
-    // Read scripture watch history
-    // Keys may be legacy "plex:nt/kjvf/25065" or new "readalong:scripture/nt/kjvf/25065"
-    // or legacy narrated:scripture/nt/kjvf/25065
-    let nextChapterId = range.start;
+    // List all chapter files in the data directory (source of truth for available chapters)
+    const chapterDir = path.join(this.dataPath, 'scripture', volume, textVersion);
+    const chapterFiles = listYamlFiles(chapterDir);
+    const allChapterIds = chapterFiles
+      .map(f => parseInt(f, 10))
+      .filter(id => !isNaN(id) && id >= range.start && id <= range.end)
+      .sort((a, b) => a - b);
+
+    if (allChapterIds.length === 0) return [];
+
+    let targetChapterId = allChapterIds[0];
     let inProgressChapter = null;
 
     if (this.mediaProgressMemory) {
       try {
         const chapterProgress = await this._collectProgress(volume, textVersion, range);
+        const watchedMap = new Map(chapterProgress.map(cp => [cp.verseId, cp.percent]));
 
-        // Find in-progress chapter (< 90% watched) or next unwatched
+        // Find in-progress chapter (< 90% watched) — prioritize resuming
         for (const cp of chapterProgress) {
           if (cp.percent < 90) {
-            // Found an in-progress chapter - this is next up
             inProgressChapter = cp.verseId;
             break;
           }
         }
 
-        if (!inProgressChapter && chapterProgress.length > 0) {
-          // All watched chapters are complete, find next chapter after highest watched
-          const highestWatched = chapterProgress[chapterProgress.length - 1].verseId;
-          // We need to find the next chapter start after highestWatched
-          // For now, just increment (this is approximate - chapters vary in length)
-          nextChapterId = highestWatched + 1;
+        if (!inProgressChapter) {
+          // Find first chapter with no progress at all
+          const firstUnread = allChapterIds.find(id => !watchedMap.has(id));
+          if (firstUnread) {
+            targetChapterId = firstUnread;
+          } else {
+            // All chapters have progress — wrap to first chapter
+            targetChapterId = allChapterIds[0];
+          }
         }
       } catch {
         // No history, start from beginning
@@ -568,7 +578,7 @@ export class ReadalongAdapter {
     }
 
     // Use in-progress chapter if found, otherwise next chapter
-    const targetChapterId = inProgressChapter || nextChapterId;
+    if (inProgressChapter) targetChapterId = inProgressChapter;
 
     // Build single item for the target chapter
     const simplePath = `${textVersion}/${targetChapterId}`;

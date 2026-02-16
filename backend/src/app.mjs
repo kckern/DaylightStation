@@ -375,8 +375,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Canvas art display config - filesystem path for art images
   const canvasConfig = configService.getAppConfig('canvas') || {};
-  // Default to Dropbox path if not configured
-  const defaultCanvasPath = '/Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStation/media/img/art';
+  const defaultCanvasPath = mediaBasePath ? `${mediaBasePath}/img/art` : null;
   const canvas = {
     filesystem: {
       basePath: canvasConfig.filesystem?.basePath || defaultCanvasPath
