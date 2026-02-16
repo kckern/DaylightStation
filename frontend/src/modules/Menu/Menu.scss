@@ -1,5 +1,5 @@
 // TEMP: kill animations/transitions for menu performance
-.menu-container, .menu-stack {
+.menu-items-container {
   *, *::before, *::after {
     animation-duration: 0s !important;
     animation-delay: 0s !important;
