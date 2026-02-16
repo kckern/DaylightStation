@@ -87,10 +87,11 @@ export class YamlHeadlineCacheStore extends IHeadlineStore {
    */
   async loadAllSources(username) {
     const result = {};
-    const userDataDir = this.#dataService.user.getBasePath?.(username);
-    if (!userDataDir) return result;
+    // Derive cache directory from resolvePath (which adds .yml) by getting dirname of a dummy file
+    const dummyPath = this.#dataService.user.resolvePath?.(`${CACHE_BASE}/_probe`, username);
+    if (!dummyPath) return result;
 
-    const cacheDir = path.join(userDataDir, CACHE_BASE.split('/').join(path.sep));
+    const cacheDir = path.dirname(dummyPath);
     if (!fs.existsSync(cacheDir)) return result;
 
     const files = fs.readdirSync(cacheDir).filter(f => f.endsWith('.yml'));
