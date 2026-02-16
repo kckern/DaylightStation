@@ -597,16 +597,6 @@ describe('GovernanceEngine', () => {
         zoneInfoMap: { cool: { id: 'cool', name: 'Cool' }, active: { id: 'active', name: 'Active' } },
         totalCount: 1
       });
-      // Satisfy hysteresis
-      engine._hysteresisMs = 0;
-      engine.evaluate({
-        activeParticipants: ['user1'],
-        userZoneMap: { user1: 'active' },
-        zoneRankMap: { cool: 0, active: 1 },
-        zoneInfoMap: { cool: { id: 'cool', name: 'Cool' }, active: { id: 'active', name: 'Active' } },
-        totalCount: 1
-      });
-
       expect(engine.phase).toBe('unlocked');
       expect(engine.state.videoLocked).toBe(false);
     });

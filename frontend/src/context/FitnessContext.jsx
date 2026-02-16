@@ -630,10 +630,12 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     }
 
     box.setMutationCallback(() => {
-      // Trigger governance re-evaluation when TreasureBox mutates (HR data arrives).
-      // Without this, GovernanceEngine stays stuck at 0 participants and the lock screen
-      // shows "Waiting for participant data..." even when the sidebar already has HR data.
-      session.governanceEngine?._triggerPulse();
+      // TreasureBox mutated (HR data / coin update).
+      // Governance re-evaluation happens via:
+      //   1. recordDeviceActivity() -> ZoneProfileStore sync -> notifyZoneChange()
+      //   2. batchedForceUpdate() -> updateSnapshot() -> evaluate() with full data
+      // Calling _triggerPulse() here caused the ghost participant oscillation bug
+      // because it evaluated with empty userZoneMap before ZoneProfileStore could populate it.
       batchedForceUpdate();
     });
     return () => {

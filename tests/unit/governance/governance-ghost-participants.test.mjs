@@ -55,8 +55,6 @@ describe('GovernanceEngine — ghost participant filtering', () => {
     const userZoneMap = { alice: 'active', bob: 'active' };
     const { engine, zoneRankMap, zoneInfoMap } = createEngine({ participants, grace: 30 });
 
-    engine._hysteresisMs = 0;
-    engine.meta.satisfiedSince = Date.now() - 5000;
     engine.evaluate({ activeParticipants: participants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount: 3 });
 
     // ghost should not appear in requirement summaries
@@ -75,8 +73,6 @@ describe('GovernanceEngine — ghost participant filtering', () => {
     const userZoneMap = { alice: 'active', bob: 'cool' };
     const { engine, zoneRankMap, zoneInfoMap } = createEngine({ participants, grace: 30 });
 
-    engine._hysteresisMs = 0;
-    engine.meta.satisfiedSince = Date.now() - 5000;
     engine.meta.satisfiedOnce = true;
     engine.evaluate({ activeParticipants: participants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount: 2 });
 
