@@ -3,6 +3,7 @@ import { formatAge } from './utils.js';
 export default function MediaCard({ item }) {
   const age = formatAge(item.timestamp);
   const isPlex = item.source === 'plex';
+  const isPhoto = item.source === 'photo';
   const subtitle = item.body || item.meta?.location || null;
 
   if (!item.image) {
@@ -117,9 +118,11 @@ export default function MediaCard({ item }) {
               Plex
             </span>
           )}
-          <span style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.7)' }}>
-            {age}
-          </span>
+          {!isPhoto && (
+            <span style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.7)' }}>
+              {age}
+            </span>
+          )}
         </div>
         {item.title && (
           <h3 style={{
