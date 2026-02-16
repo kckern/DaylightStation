@@ -131,14 +131,12 @@ function WheelSegment({ member, index, total, radius, cx, cy, isWinner, rotation
     setImgError(true);
   };
 
-  const avatarTransition = isSpinning
-    ? `transform ${SPIN_CONFIG.durationMs}ms cubic-bezier(0.17, 0.67, 0.12, 0.99)`
-    : 'none';
-
   const avatarStyle = {
     transformOrigin: `${center.x}px ${center.y}px`,
     transform: `rotate(${-rotation}deg)`,
-    transition: avatarTransition,
+    transition: isSpinning
+      ? `transform ${SPIN_CONFIG.durationMs}ms cubic-bezier(0.17, 0.67, 0.12, 0.99)`
+      : 'none',
   };
 
   return (
@@ -188,67 +186,46 @@ function WheelSegment({ member, index, total, radius, cx, cy, isWinner, rotation
 /**
  * Roulette Wheel Component
  */
-function RouletteWheel({ members, rotation, isSpinning, winnerIndex, showResult, onSpinEnd }) {
+function RouletteWheel({ members, rotation, isSpinning, winnerIndex, showResult, wheelRef }) {
   const size = 400;
   const cx = size / 2;
   const cy = size / 2;
   const radius = size / 2 - 10;
-  const wheelRef = useRef(null);
-
-  useEffect(() => {
-    const el = wheelRef.current;
-    if (!el || !isSpinning) return;
-    const handler = (e) => {
-      if (e.propertyName === 'transform') onSpinEnd?.();
-    };
-    el.addEventListener('transitionend', handler);
-    return () => el.removeEventListener('transitionend', handler);
-  }, [isSpinning, onSpinEnd]);
-
-  const wheelTransition = isSpinning
-    ? `transform ${SPIN_CONFIG.durationMs}ms cubic-bezier(0.17, 0.67, 0.12, 0.99)`
-    : 'none';
 
   const wheelStyle = {
     transform: `rotate(${rotation}deg)`,
-    transition: wheelTransition,
-  };
-
-  // Calculate flick timing: time for one segment to pass
-  const segmentPassDuration = rotation > 0
-    ? (SPIN_CONFIG.durationMs * 360) / (rotation * members.length)
-    : 1000;
-  const pointerStyle = {
-    '--flick-duration': `${segmentPassDuration}ms`,
+    '--wheel-rotation': `${rotation}deg`,
   };
 
   return (
     <>
-      <div className={`wheel-pointer ${isSpinning ? 'flicking' : ''}`} style={pointerStyle}>▼</div>
-      <svg
-        viewBox={`0 0 ${size} ${size}`}
-        className={`roulette-wheel ${isSpinning ? 'spinning' : ''} ${showResult ? 'show-result' : ''}`}
-        width={size}
-        height={size}
-      >
-        <g className="wheel-segments" style={wheelStyle} ref={wheelRef}>
-        {members.map((member, index) => (
-          <WheelSegment
-            key={member.id}
-            member={member}
-            index={index}
-            total={members.length}
-            radius={radius}
-            cx={cx}
-            cy={cy}
-            isWinner={showResult && index === winnerIndex}
-            rotation={rotation}
-            isSpinning={isSpinning}
-          />
-        ))}
-        <circle cx={cx} cy={cy} r={30} fill="#333" stroke="#fff" strokeWidth="3" />
-      </g>
-    </svg>
+      <div className={`wheel-pointer ${isSpinning ? 'flicking' : ''}`}>▼</div>
+      <div className="wheel-rotator" ref={wheelRef} style={wheelStyle}>
+        <svg
+          viewBox={`0 0 ${size} ${size}`}
+          className={`roulette-wheel ${isSpinning ? 'spinning' : ''} ${showResult ? 'show-result' : ''}`}
+          width={size}
+          height={size}
+        >
+          <g className="wheel-segments">
+          {members.map((member, index) => (
+            <WheelSegment
+              key={member.id}
+              member={member}
+              index={index}
+              total={members.length}
+              radius={radius}
+              cx={cx}
+              cy={cy}
+              isWinner={showResult && index === winnerIndex}
+              rotation={rotation}
+              isSpinning={isSpinning}
+            />
+          ))}
+          <circle cx={cx} cy={cy} r={30} fill="#333" stroke="#fff" strokeWidth="3" />
+        </g>
+      </svg>
+      </div>
     </>
   );
 }
@@ -270,6 +247,8 @@ function FamilySelectorInner({ members, winner, title, exclude }) {
   );
 
   // Spin state
+  const wheelRef = useRef(null);
+  const animRef = useRef(null);
   const [wheelState, setWheelState] = useState(WHEEL_STATE.IDLE);
   const [rotation, setRotation] = useState(0);
   const [winnerIndex, setWinnerIndex] = useState(null);
@@ -293,30 +272,44 @@ function FamilySelectorInner({ members, winner, title, exclude }) {
     return { index, member };
   }, [activeMembers, riggedWinner]);
 
-  const handleSpinEnd = useCallback(() => {
-    setWheelState(WHEEL_STATE.RESULT);
-  }, []);
-
   /**
-   * Start the spin
+   * Start the spin — uses Web Animations API to bypass TVApp's
+   * global transition-duration: 0s !important.
    */
   const spin = useCallback(() => {
     if (wheelState === WHEEL_STATE.SPINNING) return;
 
+    if (animRef.current) {
+      animRef.current.cancel();
+      animRef.current = null;
+    }
+
     const { index, member } = selectWinner();
     const angle = calculateSpinAngle(index, activeMembers.length, rotation);
+    const newRotation = rotation + angle;
 
     setWinnerIndex(index);
     setSelectedMember(member);
-    // Apply transition FIRST by entering SPINNING state
     setWheelState(WHEEL_STATE.SPINNING);
+    setRotation(newRotation);
 
-    // Double-RAF: first RAF reaches paint-ready, second RAF fires after paint commits
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        setRotation(prev => prev + angle);
-      });
-    });
+    const el = wheelRef.current;
+    if (el) {
+      animRef.current = el.animate(
+        [
+          { transform: `rotate(${rotation}deg)` },
+          { transform: `rotate(${newRotation}deg)` },
+        ],
+        {
+          duration: SPIN_CONFIG.durationMs,
+          easing: 'cubic-bezier(0.17, 0.67, 0.12, 0.99)',
+          fill: 'forwards',
+        }
+      );
+      animRef.current.onfinish = () => {
+        setWheelState(WHEEL_STATE.RESULT);
+      };
+    }
   }, [wheelState, selectWinner, activeMembers.length, rotation]);
 
   /**
@@ -328,7 +321,7 @@ useEffect(() => {
         const isPlayButton = e.code === 'Space' || e.code === 'Enter' || e.code === 'MediaPlayPause' || e.keyCode === 13;
         // Arrow keys (left/right)
         const isArrowKey = e.code === 'ArrowLeft' || e.code === 'ArrowRight';
-        
+
         if ((isPlayButton || isArrowKey) && wheelState !== WHEEL_STATE.SPINNING) {
             e.preventDefault();
             spin();
@@ -351,18 +344,29 @@ useEffect(() => {
     );
   }
 
+  const getInstructionText = () => {
+    switch (wheelState) {
+      case WHEEL_STATE.SPINNING:
+        return 'Spinning...';
+      case WHEEL_STATE.RESULT:
+        return 'Press SPACE to spin again!';
+      default:
+        return 'Press SPACE to spin!';
+    }
+  };
+
   return (
     <div className="family-selector" data-state={wheelState}>
       <div className="family-selector-container">
 
         <div className="wheel-wrapper">
           <RouletteWheel
+            wheelRef={wheelRef}
             members={activeMembers}
             rotation={rotation}
             isSpinning={wheelState === WHEEL_STATE.SPINNING}
             winnerIndex={winnerIndex}
             showResult={wheelState === WHEEL_STATE.RESULT}
-            onSpinEnd={handleSpinEnd}
           />
         </div>
 
