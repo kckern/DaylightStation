@@ -35,22 +35,19 @@ export class ImmichFeedAdapter extends IFeedSourceAdapter {
       return (result.items || []).map(item => {
         const localId = item.localId || item.id?.replace?.('immich:', '') || item.id;
         const created = item.metadata?.capturedAt || item.metadata?.createdAt || null;
-        const yearsAgo = created
-          ? Math.floor((Date.now() - new Date(created).getTime()) / (365.25 * 24 * 60 * 60 * 1000))
-          : null;
+        const location = item.metadata?.location || null;
         return {
           id: `immich:${localId}`,
           type: query.feed_type || 'grounding',
           source: 'photo',
-          title: yearsAgo ? `${yearsAgo} year${yearsAgo !== 1 ? 's' : ''} ago` : 'Memory',
-          body: item.metadata?.location || null,
+          title: created ? this.#formatDate(created) : 'Memory',
+          body: location,
           image: item.thumbnail || `/api/v1/proxy/immich/assets/${localId}/original`,
           link: this.#webUrl ? `${this.#webUrl}/photos/${localId}` : null,
           timestamp: created || new Date().toISOString(),
           priority: query.priority || 5,
           meta: {
-            yearsAgo,
-            location: item.metadata?.location || null,
+            location,
             originalDate: created,
             sourceName: 'Photos',
             sourceIcon: null,
@@ -61,5 +58,21 @@ export class ImmichFeedAdapter extends IFeedSourceAdapter {
       this.#logger.warn?.('immich.adapter.error', { error: err.message });
       return [];
     }
+  }
+
+  #formatDate(iso) {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return 'Memory';
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const day = days[d.getDay()];
+    const date = d.getDate();
+    const month = months[d.getMonth()];
+    const year = d.getFullYear();
+    let hours = d.getHours();
+    const mins = String(d.getMinutes()).padStart(2, '0');
+    const ampm = hours >= 12 ? 'pm' : 'am';
+    hours = hours % 12 || 12;
+    return `${day} ${date} ${month}, ${year} ${hours}:${mins}${ampm}`;
   }
 }
