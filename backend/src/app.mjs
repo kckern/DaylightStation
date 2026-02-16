@@ -39,6 +39,7 @@ import {
   createApiRouters,
   createFitnessServices,
   createFitnessApiRouter,
+  createFeedServices,
   createFinanceServices,
   createFinanceApiRouter,
   createEntropyServices,
@@ -506,6 +507,18 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'finance' })
   });
 
+  // Feed domain (FreshRSS reader + headline harvesting)
+  const freshrssHost = configService.resolveServiceUrl('freshrss');
+  const feedServices = freshrssHost ? createFeedServices({
+    dataService: userDataService,
+    configService,
+    freshrssHost,
+    logger: rootLogger.child({ module: 'feed' }),
+  }) : null;
+  if (!freshrssHost) {
+    rootLogger.warn('feed.disabled', { reason: 'FreshRSS service URL not configured' });
+  }
+
   // Cost domain
   const costDataRoot = configService.getHouseholdPath('common/cost');
   const costServices = createCostServices({
@@ -624,6 +637,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     configService,
     logger: rootLogger.child({ module: 'finance-api' })
   });
+
+  // Feed domain router (FreshRSS reader + headline harvesting)
+  if (feedServices) {
+    v1Routers.feed = feedServices.feedRouter;
+  }
 
   // Cost domain router
   v1Routers.cost = createCostApiRouter({

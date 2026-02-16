@@ -68,6 +68,7 @@ export function createApiRouter(config) {
     '/local': 'local',
     '/health': 'health',
     '/health-dashboard': 'health-dashboard',
+    '/feed': 'feed',
     '/finance': 'finance',
     '/cost': 'cost',
     '/harvest': 'harvest',

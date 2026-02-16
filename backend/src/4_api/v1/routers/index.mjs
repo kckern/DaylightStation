@@ -23,6 +23,9 @@ export { createLocalContentRouter } from './localContent.mjs';
 export { createPlayRouter } from './play.mjs';
 export { createStreamRouter } from './stream.mjs';
 
+// Domain routers - Feed
+export { createFeedRouter } from './feed.mjs';
+
 // Domain routers - Finance
 export { createFinanceRouter } from './finance.mjs';
 
