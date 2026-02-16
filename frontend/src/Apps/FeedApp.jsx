@@ -32,7 +32,7 @@ const FeedApp = () => {
     <MantineProvider>
       <Routes>
         <Route element={<FeedLayout />}>
-          <Route index element={<Navigate to="/feed/headlines" replace />} />
+          <Route index element={<Navigate to="/feed/scroll" replace />} />
           <Route path="reader" element={<Reader />} />
           <Route path="headlines" element={<Headlines />} />
           <Route path="scroll" element={<Scroll />} />

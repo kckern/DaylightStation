@@ -6,7 +6,7 @@ import './Headlines.scss';
 export default function Headlines() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [harvesting, setHarvesting] = useState(false);
+  const [harvestingAll, setHarvestingAll] = useState(false);
 
   const fetchHeadlines = async () => {
     try {
@@ -19,15 +19,15 @@ export default function Headlines() {
     }
   };
 
-  const triggerHarvest = async () => {
-    setHarvesting(true);
+  const triggerHarvestAll = async () => {
+    setHarvestingAll(true);
     try {
       await DaylightAPI('/api/v1/feed/headlines/harvest', {}, 'POST');
       await fetchHeadlines();
     } catch (err) {
       console.error('Harvest failed:', err);
     } finally {
-      setHarvesting(false);
+      setHarvestingAll(false);
     }
   };
 
@@ -35,39 +35,67 @@ export default function Headlines() {
 
   if (loading) return <div className="feed-placeholder">Loading headlines...</div>;
 
+  const grid = data?.grid;
   const sources = data?.sources || {};
-  const sourceKeys = Object.keys(sources);
+  const rows = grid?.rows || [];
+  const cols = grid?.cols || [];
+
+  // Build 2D array from sources
+  const cells = [];
+  for (let r = 0; r < rows.length; r++) {
+    const row = [];
+    for (let c = 0; c < cols.length; c++) {
+      const entry = Object.entries(sources).find(
+        ([, s]) => s.row === r && s.col === c
+      );
+      row.push(entry ? { id: entry[0], ...entry[1] } : null);
+    }
+    cells.push(row);
+  }
 
   return (
     <div className="headlines-view">
       <div className="headlines-toolbar">
         <span className="headlines-meta">
-          {sourceKeys.length} sources
-          {data?.lastHarvest && ` \u00b7 Last updated ${new Date(data.lastHarvest).toLocaleTimeString()}`}
+          {Object.keys(sources).length} sources
+          {data?.lastHarvest && ` · ${formatTime(data.lastHarvest)}`}
         </span>
         <button
           className="headlines-harvest-btn"
-          onClick={triggerHarvest}
-          disabled={harvesting}
+          onClick={triggerHarvestAll}
+          disabled={harvestingAll}
         >
-          {harvesting ? 'Harvesting...' : 'Refresh'}
+          {harvestingAll ? 'Harvesting...' : 'Refresh All'}
         </button>
       </div>
-      <div className="headlines-grid">
-        {sourceKeys.map(key => (
-          <SourcePanel
-            key={key}
-            source={key}
-            label={sources[key].label}
-            items={sources[key].items || []}
-          />
-        ))}
-        {sourceKeys.length === 0 && (
-          <div className="feed-placeholder">
-            No headline sources configured. Run a harvest first.
+
+      <div className="headlines-matrix">
+        {cells.map((row, r) => (
+          <div key={r} className="matrix-row">
+            {row.map((cell, c) => (
+              <SourcePanel
+                key={cell?.id || `empty-${r}-${c}`}
+                source={cell}
+                col={c}
+                totalCols={cols.length}
+                onRefresh={fetchHeadlines}
+              />
+            ))}
           </div>
-        )}
+        ))}
       </div>
     </div>
   );
+}
+
+function formatTime(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const now = new Date();
+  const diffMin = Math.floor((now - d) / 60000);
+  if (diffMin < 1) return 'just now';
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+  return d.toLocaleDateString();
 }

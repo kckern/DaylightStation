@@ -4,7 +4,7 @@
  * YAML-based cache store for per-source headline data.
  * Implements IHeadlineStore port for headline persistence.
  *
- * User cache path pattern: cache/feed/headlines/{sourceId}
+ * User cache path pattern: current/feed/{sourceId}
  * DataService auto-appends .yml extension.
  *
  * Uses DataService for YAML I/O and fs for directory listing
@@ -18,7 +18,7 @@ import path from 'path';
 import { IHeadlineStore } from '#apps/feed/ports/IHeadlineStore.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
-const CACHE_BASE = 'cache/feed/headlines';
+const CACHE_BASE = 'current/feed';
 
 export class YamlHeadlineCacheStore extends IHeadlineStore {
   #dataService;

@@ -509,15 +509,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Feed domain (FreshRSS reader + headline harvesting)
   const freshrssHost = configService.resolveServiceUrl('freshrss');
-  const feedServices = freshrssHost ? createFeedServices({
+  if (!freshrssHost) {
+    rootLogger.warn('feed.freshrss.disabled', { reason: 'FreshRSS service URL not configured' });
+  }
+  const feedServices = createFeedServices({
     dataService,
     configService,
-    freshrssHost,
+    freshrssHost: freshrssHost || null,
     logger: rootLogger.child({ module: 'feed' }),
-  }) : null;
-  if (!freshrssHost) {
-    rootLogger.warn('feed.disabled', { reason: 'FreshRSS service URL not configured' });
-  }
+  });
 
   // Cost domain
   const costDataRoot = configService.getHouseholdPath('common/cost');
@@ -638,9 +638,101 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'finance-api' })
   });
 
-  // Feed domain router (FreshRSS reader + headline harvesting)
+  // Feed domain router (FreshRSS reader + headline harvesting + boonscrolling)
   if (feedServices) {
-    v1Routers.feed = feedServices.feedRouter;
+    const { FeedAssemblyService } = await import('./3_applications/feed/services/FeedAssemblyService.mjs');
+    const { FeedContentService } = await import('./3_applications/feed/services/FeedContentService.mjs');
+    const { WebContentAdapter } = await import('./1_adapters/feed/WebContentAdapter.mjs');
+    const { createFeedRouter } = await import('./4_api/v1/routers/feed.mjs');
+    const { RedditFeedAdapter } = await import('./1_adapters/feed/sources/RedditFeedAdapter.mjs');
+    const { WeatherFeedAdapter } = await import('./1_adapters/feed/sources/WeatherFeedAdapter.mjs');
+    const { HealthFeedAdapter } = await import('./1_adapters/feed/sources/HealthFeedAdapter.mjs');
+    const { GratitudeFeedAdapter } = await import('./1_adapters/feed/sources/GratitudeFeedAdapter.mjs');
+    const { StravaFeedAdapter } = await import('./1_adapters/feed/sources/StravaFeedAdapter.mjs');
+    const { TodoistFeedAdapter } = await import('./1_adapters/feed/sources/TodoistFeedAdapter.mjs');
+    const { ImmichFeedAdapter } = await import('./1_adapters/feed/sources/ImmichFeedAdapter.mjs');
+    const { PlexFeedAdapter } = await import('./1_adapters/feed/sources/PlexFeedAdapter.mjs');
+
+    // Load query configs at bootstrap time (moves fs access out of application layer)
+    const { readdirSync } = await import('fs');
+    const queriesPath = configService.getHouseholdPath('config/lists/queries');
+    let queryConfigs = [];
+    if (queriesPath) {
+      try {
+        const files = readdirSync(queriesPath).filter(f => f.endsWith('.yml'));
+        queryConfigs = files.map(file => {
+          const key = file.replace('.yml', '');
+          const data = dataService.household.read(`config/lists/queries/${key}`);
+          return data ? { ...data, _filename: file } : null;
+        }).filter(Boolean);
+      } catch (err) {
+        rootLogger.warn('feed.queries.load.error', { error: err.message });
+      }
+    }
+
+    // Feed source adapters (extracted from FeedAssemblyService)
+    const redditAdapter = new RedditFeedAdapter({
+      dataService,
+      logger: rootLogger.child({ module: 'reddit-feed' }),
+    });
+    const weatherAdapter = new WeatherFeedAdapter({
+      dataService,
+      logger: rootLogger.child({ module: 'weather-feed' }),
+    });
+    const healthAdapter = new HealthFeedAdapter({
+      userDataService,
+      logger: rootLogger.child({ module: 'health-feed' }),
+    });
+    const gratitudeAdapter = new GratitudeFeedAdapter({
+      dataService,
+      logger: rootLogger.child({ module: 'gratitude-feed' }),
+    });
+    const stravaAdapter = new StravaFeedAdapter({
+      userDataService,
+      logger: rootLogger.child({ module: 'strava-feed' }),
+    });
+    const todoistAdapter = new TodoistFeedAdapter({
+      userDataService,
+      logger: rootLogger.child({ module: 'todoist-feed' }),
+    });
+    const immichAdapter = contentServices?.contentQueryService ? new ImmichFeedAdapter({
+      contentQueryService: contentServices.contentQueryService,
+      logger: rootLogger.child({ module: 'immich-feed' }),
+    }) : null;
+    const plexAdapter = new PlexFeedAdapter({
+      contentRegistry: contentRegistry || null,
+      contentQueryService: contentServices?.contentQueryService || null,
+      logger: rootLogger.child({ module: 'plex-feed' }),
+    });
+
+    const feedAssemblyService = new FeedAssemblyService({
+      dataService,
+      configService,
+      freshRSSAdapter: feedServices.freshRSSAdapter,
+      headlineService: feedServices.headlineService,
+      entropyService: entropyServices?.entropyService || null,
+      contentQueryService: contentServices?.contentQueryService || null,
+      contentRegistry: contentRegistry || null,
+      userDataService,
+      queryConfigs,
+      sourceAdapters: [redditAdapter, weatherAdapter, healthAdapter, gratitudeAdapter, stravaAdapter, todoistAdapter, immichAdapter, plexAdapter].filter(Boolean),
+      logger: rootLogger.child({ module: 'feed-assembly' }),
+    });
+    const webContentAdapter = new WebContentAdapter({
+      logger: rootLogger.child({ module: 'web-content' }),
+    });
+    const feedContentService = new FeedContentService({
+      webContentGateway: webContentAdapter,
+      logger: rootLogger.child({ module: 'feed-content' }),
+    });
+    v1Routers.feed = createFeedRouter({
+      freshRSSAdapter: feedServices.freshRSSAdapter,
+      headlineService: feedServices.headlineService,
+      feedAssemblyService,
+      feedContentService,
+      configService,
+      logger: rootLogger.child({ module: 'feed' }),
+    });
   }
 
   // Cost domain router

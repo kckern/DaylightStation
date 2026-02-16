@@ -1,78 +1,84 @@
 .scroll-view {
-  max-width: 600px;
+  max-width: 540px;
   margin: 0 auto;
-  padding: 1rem;
+  padding: 0.75rem;
+  min-height: 100vh;
+  background: #1a1b1e;
 }
 
 .scroll-items {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 12px;
 }
 
-.scroll-card {
-  display: block;
-  padding: 1rem;
-  background: #fff;
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
-  text-decoration: none;
-  color: inherit;
-
-  &:hover { border-color: #228be6; }
+.scroll-item-wrapper {
+  // Photo cards get full-bleed treatment
+  .feed-card-photo {
+    margin: 0 -0.75rem;
+    border-radius: 0;
+  }
 }
 
-.scroll-card-source {
+// Loading skeleton
+.scroll-skeleton {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 0.4rem;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 1rem;
 }
 
-.scroll-card-source-label {
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: #228be6;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
+.scroll-skeleton-card {
+  height: 120px;
+  background: #25262b;
+  border-radius: 12px;
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
 }
 
-.scroll-card-age {
-  font-size: 0.7rem;
-  color: #999;
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.7; }
 }
 
-.scroll-card-title {
-  margin: 0;
-  font-size: 1rem;
-  font-weight: 600;
-  line-height: 1.3;
-  color: #1a1b1e;
-}
-
-.scroll-card-desc {
-  margin: 0.3rem 0 0;
-  font-size: 0.85rem;
-  color: #666;
-  line-height: 1.4;
-}
-
-.scroll-card--headline {
-  border-left: 3px solid #fab005;
-}
-
-.scroll-card--article {
-  border-left: 3px solid #228be6;
-}
-
+// Sentinel and loading
 .scroll-sentinel {
   height: 100px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.scroll-loading,
-.scroll-end {
-  text-align: center;
+.scroll-loading {
   padding: 1rem;
-  color: #999;
+}
+
+.scroll-loading-dots {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+
+  span {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #5c636a;
+    animation: dot-bounce 1.2s ease-in-out infinite;
+
+    &:nth-child(2) { animation-delay: 0.15s; }
+    &:nth-child(3) { animation-delay: 0.3s; }
+  }
+}
+
+@keyframes dot-bounce {
+  0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+  40% { opacity: 1; transform: scale(1); }
+}
+
+// End states
+.scroll-end,
+.scroll-empty {
+  text-align: center;
+  padding: 2rem 1rem;
+  color: #5c636a;
   font-size: 0.85rem;
 }

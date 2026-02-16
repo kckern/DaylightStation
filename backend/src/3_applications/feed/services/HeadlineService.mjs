@@ -8,7 +8,7 @@
  * @module applications/feed/services
  */
 
-const FEED_CONFIG_PATH = 'apps/feed/config';
+const FEED_CONFIG_PATH = 'config/feed';
 
 export class HeadlineService {
   #headlineStore;
@@ -101,19 +101,100 @@ export class HeadlineService {
   }
 
   /**
-   * Get all cached headlines grouped by source
+   * Get all cached headlines grouped by source, with grid layout metadata
    * @param {string} username
-   * @returns {Promise<{ sources: Object, lastHarvest: string|null }>}
+   * @returns {Promise<{ grid: Object, sources: Object, lastHarvest: string|null }>}
    */
   async getAllHeadlines(username) {
-    const sources = await this.#headlineStore.loadAllSources(username);
+    const config = this.#getUserConfig(username);
+    const configSources = config.headline_sources || [];
+    const cached = await this.#headlineStore.loadAllSources(username);
+
+    const headlineConfig = config.headlines || {};
+    const maxPerSource = headlineConfig.max_per_source || 10;
+    const dedupeWordCount = headlineConfig.dedupe_word_count || 8;
+    const excludePatterns = (headlineConfig.exclude_patterns || []).map(p => new RegExp(p, 'i'));
+
+    // Merge row/col/url from config into cached data, then filter
+    const sources = {};
+    for (const src of configSources) {
+      const data = cached[src.id] || { label: src.label, items: [], lastHarvest: null };
+      const filtered = this.#filterItems(data.items || [], excludePatterns, dedupeWordCount, maxPerSource);
+      sources[src.id] = {
+        ...data,
+        items: filtered,
+        row: src.row,
+        col: src.col,
+        url: src.url,
+      };
+    }
+
     const lastHarvest = Object.values(sources)
       .map(s => s.lastHarvest)
       .filter(Boolean)
       .sort()
       .pop() || null;
 
-    return { sources, lastHarvest };
+    return {
+      grid: config.headline_grid || null,
+      sources,
+      lastHarvest,
+    };
+  }
+
+  /**
+   * Filter, dedupe, and limit headline items
+   * @param {Array} items
+   * @param {RegExp[]} excludePatterns - regex patterns to exclude
+   * @param {number} dedupeWordCount - number of leading words to use for dedup
+   * @param {number} max - max items to return
+   * @returns {Array}
+   */
+  #filterItems(items, excludePatterns, dedupeWordCount, max) {
+    let filtered = items;
+
+    // Exclude by regex patterns
+    if (excludePatterns.length > 0) {
+      filtered = filtered.filter(item =>
+        !excludePatterns.some(re => re.test(item.title))
+      );
+    }
+
+    // Dedupe by first N words
+    if (dedupeWordCount > 0) {
+      const seen = new Set();
+      filtered = filtered.filter(item => {
+        const key = (item.title || '').split(/\s+/).slice(0, dedupeWordCount).join(' ').toLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    }
+
+    // Limit
+    return filtered.slice(0, max);
+  }
+
+  /**
+   * Harvest a single source by ID
+   * @param {string} sourceId
+   * @param {string} username
+   * @returns {Promise<{ items: number, error: boolean }>}
+   */
+  async harvestSource(sourceId, username) {
+    const sources = this.#getSources(username);
+    const source = sources.find(s => s.id === sourceId);
+    if (!source) throw new Error(`Source not found: ${sourceId}`);
+
+    const config = this.#getUserConfig(username);
+    const retentionHours = config.headlines?.retention_hours || 48;
+    const cutoff = new Date(Date.now() - retentionHours * 60 * 60 * 1000);
+
+    const result = await this.#harvester.harvest(source);
+    await this.#headlineStore.saveSource(source.id, result, username);
+    await this.#headlineStore.pruneOlderThan(source.id, cutoff, username);
+
+    return { items: result.items.length, error: !!result.error };
   }
 
   /**

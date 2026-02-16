@@ -17,12 +17,14 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
  * @param {Object} config
  * @param {Object} config.freshRSSAdapter - FreshRSSFeedAdapter instance
  * @param {Object} config.headlineService - HeadlineService instance
+ * @param {Object} config.feedAssemblyService - FeedAssemblyService for scroll endpoint
+ * @param {Object} config.feedContentService - FeedContentService for icon/readable endpoints
  * @param {Object} config.configService - ConfigService for user lookup
  * @param {Object} [config.logger]
  * @returns {express.Router}
  */
 export function createFeedRouter(config) {
-  const { freshRSSAdapter, headlineService, configService, logger = console } = config;
+  const { freshRSSAdapter, headlineService, feedAssemblyService, feedContentService, configService, logger = console } = config;
   const router = express.Router();
 
   const getUsername = () => {
@@ -102,65 +104,59 @@ export function createFeedRouter(config) {
     res.json(result);
   }));
 
+  router.post('/headlines/harvest/:source', asyncHandler(async (req, res) => {
+    const username = getUsername();
+    const result = await headlineService.harvestSource(req.params.source, username);
+    res.json(result);
+  }));
+
   // =========================================================================
   // Scroll (merged feed -- skeleton)
   // =========================================================================
 
   router.get('/scroll', asyncHandler(async (req, res) => {
     const username = getUsername();
-    const { cursor, limit = 20 } = req.query;
+    const { cursor, limit = 15, session } = req.query;
 
-    // Phase 1: merge FreshRSS unread + headline cache chronologically
-    // FreshRSS may be unreachable — gracefully fall back to headlines only
-    let rssItems = [];
-    let headlines = { sources: {} };
-    const results = await Promise.allSettled([
-      freshRSSAdapter.getItems('user/-/state/com.google/reading-list', username, {
-        count: Number(limit),
-        continuation: cursor,
-        excludeRead: true,
-      }),
-      headlineService.getAllHeadlines(username),
-    ]);
-    if (results[0].status === 'fulfilled') rssItems = results[0].value;
-    if (results[1].status === 'fulfilled') headlines = results[1].value;
-
-    // Flatten headline items with source metadata
-    const headlineItems = Object.values(headlines.sources || {}).flatMap(src =>
-      (src.items || []).map(item => ({
-        id: `headline:${src.source}:${item.link}`,
-        type: 'headline',
-        source: src.source,
-        sourceLabel: src.label,
-        title: item.title,
-        desc: item.desc || null,
-        link: item.link,
-        timestamp: item.timestamp,
-      }))
-    );
-
-    // Map RSS items to common format
-    const rssItemsMapped = rssItems.map(item => ({
-      id: item.id,
-      type: 'article',
-      source: 'freshrss',
-      sourceLabel: item.feedTitle,
-      title: item.title,
-      desc: null,
-      link: item.link,
-      content: item.content,
-      timestamp: item.published?.toISOString() || new Date().toISOString(),
-    }));
-
-    // Merge and sort by timestamp descending
-    const merged = [...rssItemsMapped, ...headlineItems]
-      .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
-      .slice(0, Number(limit));
-
-    res.json({
-      items: merged,
-      hasMore: rssItems.length >= Number(limit),
+    const result = await feedAssemblyService.getNextBatch(username, {
+      limit: Number(limit),
+      cursor,
+      sessionStartedAt: session || null,
     });
+
+    res.json(result);
+  }));
+
+  // =========================================================================
+  // Icon proxy (favicon/subreddit icons — avoids CORS)
+  // =========================================================================
+
+  router.get('/icon', asyncHandler(async (req, res) => {
+    const { url } = req.query;
+    if (!url) return res.status(400).json({ error: 'url parameter required' });
+
+    const result = await feedContentService.resolveIcon(url);
+    if (!result) return res.status(404).json({ error: 'Icon not found' });
+
+    res.set('Content-Type', result.contentType);
+    res.set('Cache-Control', 'public, max-age=3600');
+    res.send(result.data);
+  }));
+
+  // =========================================================================
+  // Readable content extraction (for content drawer)
+  // =========================================================================
+
+  router.get('/readable', asyncHandler(async (req, res) => {
+    const { url } = req.query;
+    if (!url) return res.status(400).json({ error: 'url parameter required' });
+
+    try {
+      const result = await feedContentService.extractReadableContent(url);
+      res.json(result);
+    } catch (err) {
+      res.status(502).json({ error: err.message || 'Failed to extract content' });
+    }
   }));
 
   // =========================================================================
