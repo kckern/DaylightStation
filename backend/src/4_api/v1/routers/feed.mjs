@@ -116,12 +116,13 @@ export function createFeedRouter(config) {
 
   router.get('/scroll', asyncHandler(async (req, res) => {
     const username = getUsername();
-    const { cursor, limit = 15, session } = req.query;
+    const { cursor, limit, session, focus } = req.query;
 
     const result = await feedAssemblyService.getNextBatch(username, {
-      limit: Number(limit),
+      limit: limit ? Number(limit) : undefined,
       cursor,
       sessionStartedAt: session || null,
+      focus: focus || null,
     });
 
     res.json(result);

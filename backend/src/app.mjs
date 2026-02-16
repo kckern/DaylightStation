@@ -705,6 +705,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       logger: rootLogger.child({ module: 'plex-feed' }),
     });
 
+    const { ScrollConfigLoader } = await import('./3_applications/feed/services/ScrollConfigLoader.mjs');
+    const { SpacingEnforcer } = await import('./3_applications/feed/services/SpacingEnforcer.mjs');
+
+    const scrollConfigLoader = new ScrollConfigLoader({ dataService });
+    const spacingEnforcer = new SpacingEnforcer();
+
     const feedAssemblyService = new FeedAssemblyService({
       dataService,
       configService,
@@ -716,6 +722,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       userDataService,
       queryConfigs,
       sourceAdapters: [redditAdapter, weatherAdapter, healthAdapter, gratitudeAdapter, stravaAdapter, todoistAdapter, immichAdapter, plexAdapter].filter(Boolean),
+      scrollConfigLoader,
+      spacingEnforcer,
       logger: rootLogger.child({ module: 'feed-assembly' }),
     });
     const webContentAdapter = new WebContentAdapter({
