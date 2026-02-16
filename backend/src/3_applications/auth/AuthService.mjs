@@ -97,6 +97,13 @@ export class AuthService {
     const profile = this.#dataService.user.read('profile', username);
     if (!profile) return null;
 
+    // Ensure auth config exists (generates JWT secret if missing)
+    if (!this.#dataService.system.read('config/auth')) {
+      const authConfig = getDefaultAuthConfig();
+      authConfig.jwt.secret = generateJwtSecret();
+      this.#dataService.system.write('config/auth', authConfig);
+    }
+
     const passwordHash = await hashPassword(password);
     this.#dataService.user.write('auth/login', {
       password_hash: passwordHash,

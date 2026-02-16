@@ -82,6 +82,10 @@ export function MenuStack({ rootMenu }) {
         intentTs: Date.now()
       });
       push({ type: 'player', props: selection });
+    } else if (selection.display) {
+      // Map contentId to id for the Displayer component
+      const display = { ...selection.display, id: selection.display.contentId || selection.display.id };
+      push({ type: 'display', props: { ...selection, display } });
     } else if (selection.open) {
       push({ type: 'app', props: selection });
     }

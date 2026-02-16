@@ -95,10 +95,13 @@ function SetupCheck({ children }) {
       setChecked(true);
       return;
     }
-    fetch('/api/v1/auth/setup-status')
+    fetch('/api/v1/auth/context')
       .then(r => r.json())
       .then(data => {
-        setNeedsSetup(data.needsSetup);
+        // Only redirect to setup wizard for fresh installs (no profiles at all).
+        // When profiles exist but no passwords (setupAdmin present), the
+        // LoginScreen claim flow handles it instead.
+        setNeedsSetup(data.needsSetup && !data.setupAdmin);
         setChecked(true);
       })
       .catch(() => setChecked(true));

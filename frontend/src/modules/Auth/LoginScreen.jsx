@@ -19,7 +19,13 @@ export default function LoginScreen({ onLogin }) {
     DaylightAPI('/api/v1/auth/context')
       .then((ctx) => {
         setContext(ctx);
-        if (ctx.needsSetup) setStep('setup-username');
+        if (ctx.needsSetup && ctx.setupAdmin) {
+          // Sysadmin exists — autofill and skip to password step
+          setUsername(ctx.setupAdmin);
+          setStep('setup-password');
+        } else if (ctx.needsSetup) {
+          setStep('setup-username');
+        }
       })
       .catch(() => {});
   }, []);

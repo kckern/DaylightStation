@@ -108,7 +108,7 @@ function formatDateShort(dateStr) {
 
 // ─── Recent Sessions Card ─────────────────────────────────────
 
-export function WorkoutsCard({ sessions }) {
+export function WorkoutsCard({ sessions, onSessionClick, selectedSessionId }) {
   if (!sessions || sessions.length === 0) {
     return (
       <DashboardCard title="Recent Sessions" className="dashboard-card--workouts">
@@ -130,57 +130,121 @@ export function WorkoutsCard({ sessions }) {
 
   return (
     <DashboardCard title="Recent Sessions" className="dashboard-card--workouts">
-      <Stack gap="xs">
+      <Stack gap={4}>
         {groups.map((group) => (
           <div key={group.date}>
             <Text size="xs" fw={600} c="dimmed" tt="uppercase" className="session-date-header">
               {group.label}
             </Text>
             {group.sessions.map((s) => (
-              <Group key={s.sessionId} gap="sm" wrap="nowrap" className="session-row">
-                <img
-                  src={`/api/v1/display/plex/${s.media.mediaId}`}
-                  alt=""
-                  className="session-thumbnail"
-                  onError={(e) => { e.target.style.display = 'none'; }}
-                />
-                <Stack gap={2} style={{ flex: 1, minWidth: 0 }}>
-                  <Text size="sm" fw={500} truncate>{s.media.title}</Text>
-                  {s.media.showTitle && (
-                    <Text size="xs" c="dimmed" truncate>{s.media.showTitle}</Text>
-                  )}
-                  <Group gap="xs" wrap="nowrap">
-                    {s.durationMs && (
-                      <Badge variant="light" size="xs">{Math.round(s.durationMs / 60000)} min</Badge>
-                    )}
-                    {s.totalCoins > 0 && (
-                      <Badge variant="light" size="xs" color="yellow">{s.totalCoins} coins</Badge>
-                    )}
-                  </Group>
-                  {s.participants?.length > 0 && (
-                    <Group gap={6} className="session-avatars">
-                      {s.participants.map((p) => (
-                        <img
-                          key={p.id}
-                          src={`/api/v1/static/users/${p.id}`}
-                          alt={p.displayName}
-                          title={p.displayName}
-                          className="session-avatar"
-                          onError={(e) => { e.target.style.display = 'none'; }}
-                        />
-                      ))}
-                    </Group>
-                  )}
-                </Stack>
-                {s.media.grandparentId && (
+              <div
+                key={s.sessionId}
+                className={`session-row${s.sessionId === selectedSessionId ? ' session-row--selected' : ''}`}
+                onPointerDown={() => onSessionClick?.(s.sessionId)}
+              >
+                <div className="session-row__top">
+                  {/* Thumbnail */}
                   <img
-                    src={`/api/v1/display/plex/${s.media.grandparentId}`}
+                    src={`/api/v1/display/plex/${s.media.mediaId}`}
                     alt=""
-                    className="session-poster"
+                    className="session-thumbnail"
                     onError={(e) => { e.target.style.display = 'none'; }}
                   />
+
+                  {/* Title + metadata */}
+                  <div className="session-row__info">
+                    <div className="session-row__title-line">
+                      <Text size="sm" fw={700} truncate="end" title={s.media.title}>
+                        {s.media.title}
+                      </Text>
+                      {s.media.showTitle && (
+                        <Text size="xs" c="dimmed" truncate="end" title={s.media.showTitle}>
+                          {s.media.showTitle}
+                        </Text>
+                      )}
+                    </div>
+
+                    <div className="session-row__meta">
+                      <Text size="xs" c="dimmed" fw={500}>
+                        {s.startTime ? new Date(s.startTime).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', ...(s.timezone ? { timeZone: s.timezone } : {}) }).toLowerCase().replace(' ', '') : '--'}
+                      </Text>
+                      <span className="session-row__sep" />
+                      {s.durationMs > 0 && (
+                        <Badge variant="filled" color="dark" size="xs" radius="sm">
+                          {Math.round(s.durationMs / 60000)}m
+                        </Badge>
+                      )}
+                      {s.totalCoins > 0 && (
+                        <Badge variant="transparent" size="xs" color="yellow" p={0}>
+                          +{s.totalCoins}
+                        </Badge>
+                      )}
+                      {s.participants?.length === 1 && s.participants.map((p) => (
+                        <span key={p.id} className="session-row__participant">
+                          <img
+                            src={`/api/v1/static/users/${p.id}`}
+                            alt={p.displayName}
+                            title={p.displayName}
+                            className="session-avatar"
+                            onError={(e) => { e.target.style.display = 'none'; }}
+                          />
+                          {p.hrAvg > 0 && (
+                            <span className="session-row__hr">{Math.round(p.hrAvg)}</span>
+                          )}
+                        </span>
+                      ))}
+                    </div>
+                    {s.participants?.length > 1 && (
+                      <div
+                        className="session-row__participants"
+                        style={{ gridTemplateColumns: `repeat(${s.participants.length <= 3 ? s.participants.length : Math.ceil(s.participants.length / 2)}, auto)` }}
+                      >
+                        {s.participants.map((p) => (
+                          <span key={p.id} className="session-row__participant">
+                            <img
+                              src={`/api/v1/static/users/${p.id}`}
+                              alt={p.displayName}
+                              title={p.displayName}
+                              className="session-avatar"
+                              onError={(e) => { e.target.style.display = 'none'; }}
+                            />
+                            {p.hrAvg > 0 && (
+                              <span className="session-row__hr">{Math.round(p.hrAvg)}</span>
+                            )}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Show poster */}
+                  {s.media.grandparentId && (
+                    <img
+                      src={`/api/v1/display/plex/${s.media.grandparentId}`}
+                      alt=""
+                      className="session-poster"
+                      onError={(e) => { e.target.style.display = 'none'; }}
+                    />
+                  )}
+                </div>
+
+                {/* Secondary media row */}
+                {s.media.others?.length > 0 && (
+                  <div className="session-row__others">
+                    {s.media.others.map((m) => (
+                      <div key={m.mediaId} className="session-row__other-item">
+                        <img
+                          src={`/api/v1/display/plex/${m.mediaId}`}
+                          alt=""
+                          className="session-row__other-thumb"
+                          onError={(e) => { e.target.style.display = 'none'; }}
+                        />
+                        <Text size="xs" c="dimmed" truncate="end" title={m.title}>{m.title}</Text>
+                      </div>
+                    ))}
+                  </div>
                 )}
-              </Group>
+              </div>
             ))}
           </div>
         ))}

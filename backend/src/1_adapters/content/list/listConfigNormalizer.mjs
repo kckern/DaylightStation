@@ -31,8 +31,8 @@ function normalizeInput(input) {
 export function normalizeListItem(item) {
   if (!item) return item;
 
-  // Already new format — pass through
-  if (item.play || item.open || item.display || item.list || item.queue) {
+  // Already new format with no old-format keys — pass through
+  if (!item.input && !item.label && (item.play || item.open || item.display || item.list || item.queue)) {
     return { ...item };
   }
 
@@ -224,6 +224,45 @@ export function normalizeListConfig(raw, filename) {
 }
 
 /**
+ * Convert a normalized (action-key) item back to input+action format for persistence.
+ * Strips derived action keys (play/open/display/list/queue) and ensures input+action are set.
+ *
+ * @param {Object} item - Normalized list item
+ * @returns {Object} Denormalized item with input+action (SSOT format)
+ */
+export function denormalizeItem(item) {
+  if (!item) return item;
+  const result = { ...item };
+
+  // Derive input from action keys if missing
+  if (!result.input) {
+    const contentId = extractContentId(result);
+    if (contentId) result.input = contentId;
+  }
+
+  // Derive action name; omit if default (Play)
+  if (!result.action) {
+    const actionName = extractActionName(result);
+    if (actionName !== 'Play') result.action = actionName;
+  }
+
+  // Normalize title → label for admin-format consistency
+  if (result.title && !result.label) {
+    result.label = result.title;
+  }
+  delete result.title;
+
+  // Strip derived action keys — these are rebuilt at read time
+  delete result.play;
+  delete result.open;
+  delete result.display;
+  delete result.list;
+  delete result.queue;
+
+  return result;
+}
+
+/**
  * Serialize a normalized list config back to a YAML-ready object.
  * Uses the most compact valid format:
  * - Single anonymous section with no config → { title, items }
@@ -247,12 +286,12 @@ export function serializeListConfig(config) {
   // Compact form: single section with no title and no section-level config
   const canCompact = sections.length <= 1 && !sectionHasConfig(sections[0]);
   if (canCompact) {
-    output.items = sections[0]?.items || [];
+    output.items = (sections[0]?.items || []).map(denormalizeItem);
   } else {
     output.sections = sections.map(section => {
       const { items, ...rest } = section;
       const s = { ...rest };
-      s.items = items || [];
+      s.items = (items || []).map(denormalizeItem);
       return s;
     });
   }

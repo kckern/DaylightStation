@@ -28,7 +28,7 @@ export function useDashboardData(userId) {
         DaylightAPI(`/api/v1/health-dashboard/${userId}`),
         DaylightAPI('/api/v1/health/weight'),
         DaylightAPI('/api/v1/health/daily?days=10'),
-        fetchRecentSessions(5),
+        fetchRecentSessions(20),
       ]);
 
       if (!mountedRef.current) return;
@@ -114,46 +114,50 @@ function parseNutritionHistory(raw) {
 
 /**
  * Fetch recent fitness sessions with media info.
- * Gets session dates, then fetches session details to extract content played.
+ * Uses the efficient /api/v1/fitness/sessions?since=YYYY-MM-DD endpoint.
+ * Sessions now include all needed data in the summary response.
  */
 async function fetchRecentSessions(limit = 10) {
-  const datesRes = await DaylightAPI('/api/v1/fitness/sessions/dates');
-  const dates = (Array.isArray(datesRes) ? datesRes : datesRes?.dates || [])
-    .sort((a, b) => b.localeCompare(a));
+  // Calculate 'since' date (30 days ago to ensure we get enough sessions)
+  const since = new Date();
+  since.setDate(since.getDate() - 30);
+  const sinceStr = since.toISOString().split('T')[0];
 
+  // Fetch sessions in date range with full summary data
+  const response = await DaylightAPI(`/api/v1/fitness/sessions?since=${sinceStr}&limit=${limit * 2}`);
+  const sessionSummaries = response?.sessions || [];
+
+  // Filter sessions with media and reshape for display
   const sessions = [];
-  for (const date of dates) {
+  for (const s of sessionSummaries) {
     if (sessions.length >= limit) break;
-    const dayRes = await DaylightAPI(`/api/v1/fitness/sessions?date=${date}`);
-    const daySessions = Array.isArray(dayRes) ? dayRes : dayRes?.sessions || [];
-    for (const s of daySessions) {
-      if (sessions.length >= limit) break;
-      const detail = await DaylightAPI(`/api/v1/fitness/sessions/${s.sessionId}`);
-      const session = detail?.session || detail;
-      const events = session?.timeline?.events || [];
-      const media = events.find(e => e.type === 'media');
-      if (!media) continue; // Skip sessions without content
-      const participants = Object.entries(session?.participants || {}).map(([id, info]) => ({
-        id,
-        displayName: info.display_name || id,
-      }));
-      const totalCoins = session?.treasureBox?.totalCoins || 0;
-      sessions.push({
-        sessionId: s.sessionId,
-        date: session?.session?.date || date,
-        durationMs: s.durationMs,
-        participants,
-        totalCoins,
-        media: {
-          mediaId: media.data?.mediaId,
-          title: media.data?.title,
-          showTitle: media.data?.grandparentTitle,
-          seasonTitle: media.data?.parentTitle,
-          grandparentId: media.data?.grandparentId || null,
-          parentId: media.data?.parentId || null,
-        },
-      });
-    }
+    if (!s.media?.primary) continue; // Skip sessions without primary media
+
+    // Convert participants keyed object → array for component consumption
+    const participants = Object.entries(s.participants || {}).map(([id, p]) => ({
+      id,
+      displayName: p.displayName,
+      coins: p.coins,
+      hrAvg: p.hrAvg,
+      hrMax: p.hrMax,
+    }));
+
+    // Flatten media.primary into s.media for backward compat, keep others available
+    const media = {
+      ...s.media.primary,
+      others: s.media.others || [],
+    };
+
+    sessions.push({
+      sessionId: s.sessionId,
+      date: s.date || (s.startTime ? new Date(s.startTime).toISOString().split('T')[0] : null),
+      startTime: s.startTime,
+      durationMs: s.durationMs,
+      timezone: s.timezone,
+      participants,
+      totalCoins: s.totalCoins || 0,
+      media,
+    });
   }
   return sessions;
 }

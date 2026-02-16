@@ -100,8 +100,9 @@ export function toListItem(item) {
     list: item.actions?.list ?? computedList
   };
 
-  // Action properties from Item (check item.actions for open)
+  // Action properties from Item (check item.actions for open, display)
   if (item.actions?.open) base.open = item.actions.open;
+  if (item.actions?.display) base.display = item.actions.display;
 
   // Note: plex and assetId are NOT copied to top-level.
   // These identifiers belong in action objects (play.plex, queue.plex, list.plex).
