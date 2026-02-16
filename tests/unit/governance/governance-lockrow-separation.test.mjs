@@ -64,9 +64,6 @@ function createEngine({ participants = [], userZoneMap = {}, grace = 30 } = {}) 
 
 function advanceToUnlocked(engine, participants, userZoneMap, zoneRankMap, zoneInfoMap) {
   engine.evaluate({ activeParticipants: participants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount: participants.length });
-  engine._hysteresisMs = 0;
-  engine.meta.satisfiedSince = Date.now() - 1000;
-  engine.evaluate({ activeParticipants: participants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount: participants.length });
 }
 
 describe('GovernanceEngine — lock row separation', () => {
@@ -93,8 +90,7 @@ describe('GovernanceEngine — lock row separation', () => {
       summary: { satisfied: false, missingUsers: ['alice', 'bob'], metUsers: [], actualCount: 0 }
     };
 
-    // alice drops to cool — base requirement unsatisfied → warning (expire relock grace first)
-    engine._lastUnlockTime = Date.now() - 6000;
+    // alice drops to cool — base requirement unsatisfied → warning
     const droppedMap = { alice: 'cool', bob: 'active' };
     engine.evaluate({ activeParticipants: participants, userZoneMap: droppedMap, zoneRankMap, zoneInfoMap, totalCount: 2 });
     expect(engine.phase).toBe('warning');

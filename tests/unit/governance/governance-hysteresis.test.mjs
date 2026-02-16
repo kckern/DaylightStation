@@ -48,47 +48,37 @@ function createEngine({ participants = [], grace = 30 } = {}) {
   return { engine, zoneRankMap, zoneInfoMap };
 }
 
-describe('GovernanceEngine — hysteresis', () => {
-  it('should have default hysteresis of 1500ms', () => {
-    const { engine } = createEngine();
-    expect(engine._hysteresisMs).toBe(1500);
-  });
-
-  it('should require 1500ms of sustained satisfaction before unlocking from warning', () => {
+describe('GovernanceEngine — immediate unlock (no hysteresis)', () => {
+  it('should unlock immediately when requirements are first met', () => {
     const participants = ['alice', 'bob'];
     const { engine, zoneRankMap, zoneInfoMap } = createEngine({ participants, grace: 30 });
     const activeMap = { alice: 'active', bob: 'active' };
 
-    // Get to unlocked first (bypass hysteresis temporarily)
-    engine._hysteresisMs = 0;
-    engine.meta.satisfiedSince = Date.now() - 5000;
-    engine.meta.satisfiedOnce = true;
+    engine.evaluate({ activeParticipants: participants, userZoneMap: activeMap, zoneRankMap, zoneInfoMap, totalCount: 2 });
+    expect(engine.phase).toBe('unlocked');
+  });
+
+  it('should unlock immediately from warning when requirements recover', () => {
+    const participants = ['alice', 'bob'];
+    const { engine, zoneRankMap, zoneInfoMap } = createEngine({ participants, grace: 30 });
+    const activeMap = { alice: 'active', bob: 'active' };
+    const coolMap = { alice: 'cool', bob: 'active' };
+
+    // Get to unlocked
     engine.evaluate({ activeParticipants: participants, userZoneMap: activeMap, zoneRankMap, zoneInfoMap, totalCount: 2 });
     expect(engine.phase).toBe('unlocked');
 
-    // Drop to cool → warning (expire relock grace first)
-    engine._lastUnlockTime = Date.now() - 6000;
-    const coolMap = { alice: 'cool', bob: 'active' };
+    // Drop to warning
     engine.evaluate({ activeParticipants: participants, userZoneMap: coolMap, zoneRankMap, zoneInfoMap, totalCount: 2 });
     expect(engine.phase).toBe('warning');
 
-    // Restore hysteresis to real value
-    engine._hysteresisMs = 1500;
-
-    // Satisfy requirements — reset satisfiedSince to "just now"
-    engine.meta.satisfiedSince = null;
-    engine.evaluate({ activeParticipants: participants, userZoneMap: activeMap, zoneRankMap, zoneInfoMap, totalCount: 2 });
-    // Should still be warning — just became satisfied, 0ms elapsed
-    expect(engine.phase).toBe('warning');
-
-    // After 600ms — should STILL be warning (old 500ms threshold would have passed)
-    engine.meta.satisfiedSince = Date.now() - 600;
-    engine.evaluate({ activeParticipants: participants, userZoneMap: activeMap, zoneRankMap, zoneInfoMap, totalCount: 2 });
-    expect(engine.phase).toBe('warning');
-
-    // After 1600ms — should transition to unlocked
-    engine.meta.satisfiedSince = Date.now() - 1600;
+    // Recover — should unlock IMMEDIATELY, no 1500ms wait
     engine.evaluate({ activeParticipants: participants, userZoneMap: activeMap, zoneRankMap, zoneInfoMap, totalCount: 2 });
     expect(engine.phase).toBe('unlocked');
+  });
+
+  it('should not have _hysteresisMs property', () => {
+    const { engine } = createEngine();
+    expect(engine._hysteresisMs).toBeUndefined();
   });
 });

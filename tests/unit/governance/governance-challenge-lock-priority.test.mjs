@@ -61,12 +61,6 @@ function createEngine({ participants = [], userZoneMap = {}, grace = 30 } = {}) 
  * and bypassing hysteresis.
  */
 function advanceToUnlocked(engine, participants, userZoneMap, zoneRankMap, zoneInfoMap) {
-  // First evaluate seeds satisfiedSince
-  engine.evaluate({ activeParticipants: participants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount: participants.length });
-  // Bypass hysteresis
-  engine._hysteresisMs = 0;
-  engine.meta.satisfiedSince = Date.now() - 1000;
-  // Second evaluate transitions to unlocked
   engine.evaluate({ activeParticipants: participants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount: participants.length });
 }
 

@@ -48,38 +48,18 @@ function createEngine({ participants = [], grace = 30 } = {}) {
   return { engine, zoneRankMap, zoneInfoMap };
 }
 
-describe('GovernanceEngine — relock grace period', () => {
-  it('should have default relock grace of 5000ms', () => {
+describe('GovernanceEngine — grace period (replaces relock grace)', () => {
+  it('should not have _relockGraceMs property', () => {
     const { engine } = createEngine();
-    expect(engine._relockGraceMs).toBe(5000);
+    expect(engine._relockGraceMs).toBeUndefined();
   });
 
-  it('should stay unlocked for 5s even if requirements briefly break', () => {
-    const participants = ['alice'];
-    const { engine, zoneRankMap, zoneInfoMap } = createEngine({ participants, grace: 30 });
-    const evalOpts = (zones) => ({
-      activeParticipants: participants,
-      userZoneMap: zones,
-      zoneRankMap,
-      zoneInfoMap,
-      totalCount: 1
-    });
-
-    // Get to unlocked (bypass hysteresis)
-    engine._hysteresisMs = 0;
-    engine.meta.satisfiedSince = Date.now() - 5000;
-    engine.evaluate(evalOpts({ alice: 'active' }));
-    expect(engine.phase).toBe('unlocked');
-
-    // Simulate _lastUnlockTime being very recent
-    engine._lastUnlockTime = Date.now();
-
-    // Requirements break — should stay unlocked during grace
-    engine.evaluate(evalOpts({ alice: 'cool' }));
-    expect(engine.phase).toBe('unlocked');
+  it('should not have _lastUnlockTime property', () => {
+    const { engine } = createEngine();
+    expect(engine._lastUnlockTime).toBeUndefined();
   });
 
-  it('should transition to warning after relock grace expires', () => {
+  it('should transition to warning (not locked) when requirements break after unlock', () => {
     const participants = ['alice'];
     const { engine, zoneRankMap, zoneInfoMap } = createEngine({ participants, grace: 30 });
     const evalOpts = (zones) => ({
@@ -91,52 +71,42 @@ describe('GovernanceEngine — relock grace period', () => {
     });
 
     // Get to unlocked
-    engine._hysteresisMs = 0;
-    engine.meta.satisfiedSince = Date.now() - 5000;
     engine.evaluate(evalOpts({ alice: 'active' }));
     expect(engine.phase).toBe('unlocked');
 
-    // Simulate unlock happened 6 seconds ago (past the 5s grace)
-    engine._lastUnlockTime = Date.now() - 6000;
-
-    // Requirements break — should now transition to warning
+    // Requirements break — should go to warning (with grace period), not locked
     engine.evaluate(evalOpts({ alice: 'cool' }));
     expect(engine.phase).toBe('warning');
+    expect(engine.meta.deadline).not.toBeNull();
+    expect(engine.meta.gracePeriodTotal).toBe(30);
   });
 
-  it('should track _lastUnlockTime when transitioning to unlocked', () => {
+  it('should go directly to locked when grace=0 and requirements break', () => {
     const participants = ['alice'];
-    const { engine, zoneRankMap, zoneInfoMap } = createEngine({ participants });
-
-    expect(engine._lastUnlockTime).toBeNull();
-
-    // Transition to unlocked
-    engine._hysteresisMs = 0;
-    engine.meta.satisfiedSince = Date.now() - 5000;
-    engine.evaluate({
+    const { engine, zoneRankMap, zoneInfoMap } = createEngine({ participants, grace: 0 });
+    const evalOpts = (zones) => ({
       activeParticipants: participants,
-      userZoneMap: { alice: 'active' },
+      userZoneMap: zones,
       zoneRankMap,
       zoneInfoMap,
       totalCount: 1
     });
 
+    // Get to unlocked
+    engine.evaluate(evalOpts({ alice: 'active' }));
     expect(engine.phase).toBe('unlocked');
-    expect(engine._lastUnlockTime).not.toBeNull();
-    expect(typeof engine._lastUnlockTime).toBe('number');
+
+    // Requirements break with no grace → locked immediately
+    engine.evaluate(evalOpts({ alice: 'cool' }));
+    expect(engine.phase).toBe('locked');
   });
 
-  it('should clear _lastUnlockTime on reset()', () => {
+  it('should clear deadline and gracePeriodTotal on reset()', () => {
     const { engine } = createEngine();
-    engine._lastUnlockTime = Date.now();
+    engine.meta.deadline = Date.now() + 30000;
+    engine.meta.gracePeriodTotal = 30;
     engine.reset();
-    expect(engine._lastUnlockTime).toBeNull();
-  });
-
-  it('should clear _lastUnlockTime on _resetToIdle()', () => {
-    const { engine } = createEngine();
-    engine._lastUnlockTime = Date.now();
-    engine._resetToIdle();
-    expect(engine._lastUnlockTime).toBeNull();
+    expect(engine.meta.deadline).toBeNull();
+    expect(engine.meta.gracePeriodTotal).toBeNull();
   });
 });

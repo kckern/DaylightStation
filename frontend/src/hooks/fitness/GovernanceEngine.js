@@ -159,15 +159,8 @@ export class GovernanceEngine {
     this.pulse = 0;
     this._zoneChangeDebounceTimer = null;
 
-    // Hysteresis: require satisfaction for minimum duration before unlocking
-    // This prevents rapid phase cycling when HR hovers around threshold
-    this._hysteresisMs = 1500;
-    this._lastUnlockTime = null;
-    this._relockGraceMs = 5000;
-
     this.meta = {
       satisfiedOnce: false,
-      satisfiedSince: null,  // Timestamp when requirements first became satisfied
       deadline: null,
       gracePeriodTotal: null
     };
@@ -628,9 +621,6 @@ export class GovernanceEngine {
       const oldPhase = this.phase;
       const now = Date.now();
       this.phase = newPhase;
-      if (newPhase === 'unlocked') {
-        this._lastUnlockTime = Date.now();
-      }
       this._invalidateStateCache(); // Invalidate cache on phase change
 
       // Track warning/lock timing for production correlation
@@ -909,11 +899,9 @@ export class GovernanceEngine {
     }
     this.meta = {
       satisfiedOnce: false,
-      satisfiedSince: null,
       deadline: null,
       gracePeriodTotal: null
     };
-    this._lastUnlockTime = null;
     this.challengeState = {
       activePolicyId: null,
       activePolicyName: null,
@@ -965,7 +953,7 @@ export class GovernanceEngine {
    */
   _resetToIdle() {
     // Already idle — skip all work to avoid thousands of wasted onStateChange callbacks
-    if (this.phase === null && !this.meta.satisfiedOnce && !this.challengeState.activeChallenge && !this._lastUnlockTime) {
+    if (this.phase === null && !this.meta.satisfiedOnce && !this.challengeState.activeChallenge) {
       return;
     }
     this._clearTimers();
@@ -976,11 +964,9 @@ export class GovernanceEngine {
     }
     this.meta = {
       satisfiedOnce: false,
-      satisfiedSince: null,
       deadline: null,
       gracePeriodTotal: null
     };
-    this._lastUnlockTime = null;
     this.challengeState = {
       activePolicyId: null,
       activePolicyName: null,
@@ -1238,20 +1224,6 @@ export class GovernanceEngine {
     zoneInfoMap = zoneInfoMap || {};
     totalCount = totalCount || activeParticipants.length;
 
-    // Filter out ghost participants — users in the roster but with no zone data.
-    // These are disconnected participants whose roster entries are stale.
-    if (userZoneMap && typeof userZoneMap === 'object') {
-      const beforeCount = activeParticipants.length;
-      activeParticipants = activeParticipants.filter(id => id in userZoneMap);
-      totalCount = activeParticipants.length;
-      if (activeParticipants.length < beforeCount) {
-        getLogger().debug('governance.filtered_ghost_participants', {
-          removed: beforeCount - activeParticipants.length,
-          remaining: activeParticipants.length
-        });
-      }
-    }
-
     // DIAGNOSTIC: Warn if zoneRankMap is empty but we have participants
     // This was the exact bug condition - zones not configured, causing false warnings
     if (activeParticipants.length > 0 && Object.keys(zoneRankMap).length === 0) {
@@ -1263,7 +1235,8 @@ export class GovernanceEngine {
       });
     }
 
-    // Populate userZoneMap exclusively from ZoneProfileStore (synchronously synced on every HR update)
+    // Populate userZoneMap from ZoneProfileStore FIRST
+    // (Must happen before ghost filter so participants have zone data)
     if (this.session?.zoneProfileStore) {
       activeParticipants.forEach((participantId) => {
         const profile = this.session.zoneProfileStore.getProfile(participantId);
@@ -1277,6 +1250,21 @@ export class GovernanceEngine {
           });
         }
       });
+    }
+
+    // Filter out ghost participants — users in the roster but with no zone data.
+    // These are disconnected participants whose roster entries are stale.
+    // IMPORTANT: Must run AFTER ZoneProfileStore population above.
+    if (userZoneMap && typeof userZoneMap === 'object') {
+      const beforeCount = activeParticipants.length;
+      activeParticipants = activeParticipants.filter(id => id in userZoneMap);
+      totalCount = activeParticipants.length;
+      if (activeParticipants.length < beforeCount) {
+        getLogger().debug('governance.filtered_ghost_participants', {
+          removed: beforeCount - activeParticipants.length,
+          remaining: activeParticipants.length
+        });
+      }
     }
 
     // Capture zone maps early so _getZoneRank()/_getZoneInfo() work during evaluation
@@ -1416,70 +1404,52 @@ export class GovernanceEngine {
     const baseGraceSeconds = Number.isFinite(baseRequirement.grace_period_seconds) ? baseRequirement.grace_period_seconds : defaultGrace;
 
     if (challengeForcesRed && !allSatisfied) {
+      // Failed challenge + requirements not met -> locked
       if (this.timers.governance) clearTimeout(this.timers.governance);
       this.meta.deadline = null;
       this.meta.gracePeriodTotal = null;
-      this.meta.satisfiedSince = null;
       this._setPhase('locked');
     } else if (allSatisfied) {
-      // Hysteresis: require satisfaction to persist for minimum duration
-      // This prevents rapid phase cycling when HR hovers around threshold
-      if (!this.meta.satisfiedSince) {
-        this.meta.satisfiedSince = now;
-      }
-      const satisfiedDuration = now - this.meta.satisfiedSince;
-      if (satisfiedDuration >= this._hysteresisMs) {
-        // Satisfied long enough - transition to unlocked
-        this.meta.satisfiedOnce = true;
-        this.meta.deadline = null;
-        this.meta.gracePeriodTotal = null;
-        this._setPhase('unlocked');
-      } else {
-        // Not satisfied long enough yet - stay in current phase, schedule re-check
-        const remainingHysteresis = this._hysteresisMs - satisfiedDuration;
-        if (this.timers.governance) clearTimeout(this.timers.governance);
-        this.timers.governance = setTimeout(() => this._triggerPulse(), remainingHysteresis);
-        // Don't change phase yet - keep warning/pending until hysteresis passes
-      }
+      // Requirements met -> unlocked immediately (no hysteresis delay)
+      this.meta.satisfiedOnce = true;
+      this.meta.deadline = null;
+      this.meta.gracePeriodTotal = null;
+      this._setPhase('unlocked');
     } else if (!this.meta.satisfiedOnce) {
-      // Not satisfied - reset hysteresis tracking
-      this.meta.satisfiedSince = null;
+      // Never been satisfied -> pending
       this.meta.deadline = null;
       this.meta.gracePeriodTotal = null;
       this._setPhase('pending');
     } else {
-      // Relock grace: stay unlocked for _relockGraceMs after last unlock
-      if (this.phase === 'unlocked' && this._lastUnlockTime &&
-          (now - this._lastUnlockTime) < this._relockGraceMs) {
-        // Don't transition yet — within relock grace period
-        return;
-      }
-      // Grace period logic - requirements not satisfied, reset hysteresis
-      this.meta.satisfiedSince = null;
+      // Was satisfied, now failing -> warning with grace period
       let graceSeconds = baseGraceSeconds;
       if (!Number.isFinite(graceSeconds) || graceSeconds <= 0) {
+        // No grace period configured -> locked immediately
         if (this.timers.governance) clearTimeout(this.timers.governance);
         this.meta.deadline = null;
         this.meta.gracePeriodTotal = null;
         this._setPhase('locked');
       } else {
+        // Start or continue grace period countdown
         if (!Number.isFinite(this.meta.deadline) && this.phase !== 'locked') {
           this.meta.deadline = now + graceSeconds * 1000;
           this.meta.gracePeriodTotal = graceSeconds;
         }
-        
+
         if (!Number.isFinite(this.meta.deadline)) {
-           if (this.timers.governance) clearTimeout(this.timers.governance);
-           this.meta.gracePeriodTotal = null;
-           this._setPhase('locked');
+          if (this.timers.governance) clearTimeout(this.timers.governance);
+          this.meta.gracePeriodTotal = null;
+          this._setPhase('locked');
         } else {
           const remainingMs = this.meta.deadline - now;
           if (remainingMs <= 0) {
+            // Grace period expired -> locked
             if (this.timers.governance) clearTimeout(this.timers.governance);
             this.meta.deadline = null;
             this.meta.gracePeriodTotal = null;
             this._setPhase('locked');
           } else {
+            // Grace period active -> warning
             if (this.timers.governance) clearTimeout(this.timers.governance);
             this.timers.governance = setTimeout(() => this._triggerPulse(), remainingMs);
             this._setPhase('warning');

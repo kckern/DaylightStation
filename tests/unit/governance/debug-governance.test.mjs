@@ -67,8 +67,6 @@ describe('debug governance phase transition', () => {
     console.log('After first evaluate, phase:', engine.phase, 'meta:', JSON.stringify(engine.meta));
     console.log('requirementSummary:', JSON.stringify(engine.requirementSummary));
 
-    engine._hysteresisMs = 0;
-    engine.meta.satisfiedSince = Date.now() - 1000;
     console.log('meta before second eval:', JSON.stringify(engine.meta));
     engine.evaluate({ activeParticipants: participants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount: 3 });
     console.log('After second evaluate, phase:', engine.phase, 'meta:', JSON.stringify(engine.meta));
