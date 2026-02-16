@@ -323,6 +323,8 @@ export class FitnessSession {
     this._bufferThresholdMet = false;
     this._preSessionThreshold = 3; // Require N valid HR samples before starting
     this._lastPreSessionLogAt = 0;
+    this._lastSessionEndTime = 0;
+    this._sessionEndDebounceMs = 5000;
     
     // Configure lifecycle callbacks
     this._lifecycle.setCallbacks({
@@ -353,6 +355,8 @@ export class FitnessSession {
     this._lastAutosaveAt = 0;
     this._autosaveTimer = null;
     this._tickTimer = null;
+    this._timerGeneration = 0;
+    this._lastTimerStartAt = 0;
     this._tickIntervalMs = 5000;
     this._pendingSnapshotRef = null;
     this._chartDebugLogged = { noSeries: false };
@@ -967,6 +971,10 @@ export class FitnessSession {
 
   _maybeStartSessionFromBuffer(deviceData, timestamp) {
     if (this.sessionId) return false;
+    // Debounce: don't start a new session within 5s of the last one ending
+    if (this._lastSessionEndTime && (timestamp - this._lastSessionEndTime) < this._sessionEndDebounceMs) {
+      return false;
+    }
     const eligible = this._isValidPreSessionSample(deviceData);
     if (eligible) {
       this._preSessionBuffer.push({ ...deviceData, timestamp });
@@ -1753,7 +1761,8 @@ export class FitnessSession {
     // 6A: Notify listeners that session has ended
     const endedSessionId = this.sessionId;
     this._notifySessionEnded(endedSessionId, reason);
-    
+
+    this._lastSessionEndTime = Date.now();
     this.reset();
     return true;
   }
@@ -2092,19 +2101,38 @@ export class FitnessSession {
   // See: /docs/postmortem-entityid-migration-fitnessapp.md #13
 
   _startTickTimer() {
-    this._stopTickTimer();
     const interval = this.timeline?.timebase.intervalMs || this._tickIntervalMs;
     if (!(interval > 0)) return;
 
-    // TELEMETRY: Track timer lifecycle for memory leak debugging
-    this._tickTimerStartedAt = Date.now();
+    // Rate limiter: don't restart within 4 seconds of last start
+    const now = Date.now();
+    if (this._tickTimer && (now - this._lastTimerStartAt) < 4000) {
+      getLogger().debug('fitness.tick_timer.rate_limited', {
+        sessionId: this.sessionId,
+        msSinceLastStart: now - this._lastTimerStartAt
+      });
+      return;
+    }
+
+    this._stopTickTimer();
+    const gen = ++this._timerGeneration;
+
+    this._lastTimerStartAt = now;
+    this._tickTimerStartedAt = now;
     this._tickTimerTickCount = 0;
     getLogger().sampled('fitness.tick_timer.started', {
       sessionId: this.sessionId,
-      intervalMs: interval
+      intervalMs: interval,
+      generation: gen
     }, { maxPerMinute: 10 });
 
     this._tickTimer = setInterval(() => {
+      // Generation check: stale timer from old session
+      if (this._timerGeneration !== gen) {
+        clearInterval(this._tickTimer);
+        this._tickTimer = null;
+        return;
+      }
       this._tickTimerTickCount++;
       try {
         this._collectTimelineTick();
@@ -2128,6 +2156,7 @@ export class FitnessSession {
   }
 
   _stopTickTimer() {
+    ++this._timerGeneration; // Invalidate any in-flight timer
     if (this._tickTimer) {
       const tickCount = this._tickTimerTickCount || 0;
       const ranForMs = Date.now() - (this._tickTimerStartedAt || Date.now());
@@ -2138,7 +2167,8 @@ export class FitnessSession {
         getLogger().info('fitness.tick_timer.stopped', {
           sessionId: this.sessionId,
           tickCount,
-          ranForMs
+          ranForMs,
+          generation: this._timerGeneration
         });
       }
 

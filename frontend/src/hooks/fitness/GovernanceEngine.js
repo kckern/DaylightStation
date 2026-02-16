@@ -162,6 +162,8 @@ export class GovernanceEngine {
     // Hysteresis: require satisfaction for minimum duration before unlocking
     // This prevents rapid phase cycling when HR hovers around threshold
     this._hysteresisMs = 1500;
+    this._lastUnlockTime = null;
+    this._relockGraceMs = 5000;
 
     this.meta = {
       satisfiedOnce: false,
@@ -625,6 +627,9 @@ export class GovernanceEngine {
       const oldPhase = this.phase;
       const now = Date.now();
       this.phase = newPhase;
+      if (newPhase === 'unlocked') {
+        this._lastUnlockTime = Date.now();
+      }
       this._invalidateStateCache(); // Invalidate cache on phase change
 
       // Track warning/lock timing for production correlation
@@ -907,6 +912,7 @@ export class GovernanceEngine {
       deadline: null,
       gracePeriodTotal: null
     };
+    this._lastUnlockTime = null;
     this.challengeState = {
       activePolicyId: null,
       activePolicyName: null,
@@ -957,6 +963,10 @@ export class GovernanceEngine {
    * to ensure zone label fallbacks work even when no media/participants are present.
    */
   _resetToIdle() {
+    // Already idle — skip all work to avoid thousands of wasted onStateChange callbacks
+    if (this.phase === null && !this.meta.satisfiedOnce && !this.challengeState.activeChallenge && !this._lastUnlockTime) {
+      return;
+    }
     this._clearTimers();
     this._cleanupPlaybackSubscription();
     if (this._zoneChangeDebounceTimer) {
@@ -969,6 +979,7 @@ export class GovernanceEngine {
       deadline: null,
       gracePeriodTotal: null
     };
+    this._lastUnlockTime = null;
     this.challengeState = {
       activePolicyId: null,
       activePolicyName: null,
@@ -1432,6 +1443,12 @@ export class GovernanceEngine {
       this.meta.gracePeriodTotal = null;
       this._setPhase('pending');
     } else {
+      // Relock grace: stay unlocked for _relockGraceMs after last unlock
+      if (this.phase === 'unlocked' && this._lastUnlockTime &&
+          (now - this._lastUnlockTime) < this._relockGraceMs) {
+        // Don't transition yet — within relock grace period
+        return;
+      }
       // Grace period logic - requirements not satisfied, reset hysteresis
       this.meta.satisfiedSince = null;
       let graceSeconds = baseGraceSeconds;

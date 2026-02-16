@@ -10,6 +10,7 @@ import { DeviceAssignmentLedger } from '../hooks/fitness/DeviceAssignmentLedger.
 import { GuestAssignmentService } from '../hooks/fitness/GuestAssignmentService.js';
 import { useZoneLedSync } from '../hooks/fitness/useZoneLedSync.js';
 import { playbackLog } from '../modules/Player/lib/playbackLogger.js';
+import getLogger from '../lib/logging/Logger.js';
 import { getPluginManifest } from '../modules/Fitness/FitnessPlugins/registry.js';
 import { VIBRATION_CONSTANTS } from '../modules/Fitness/FitnessPlugins/plugins/VibrationApp/constants.js';
 
@@ -138,6 +139,9 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const guestAssignmentServiceRef = useRef(null);
   const musicPlayerRef = useRef(null);
   const videoPlayerRef = useRef(null);
+  const reconnectCountRef = React.useRef(0);
+  const reconnectStabilityTimerRef = React.useRef(null);
+  const wasConnectedRef = React.useRef(false);
   const [ledgerVersion, setLedgerVersion] = useState(0);
   const [transferVersion, setTransferVersion] = useState(0);
   const [currentMedia, setCurrentMedia] = useState(null);
@@ -264,6 +268,16 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   // MEMORY LEAK TRACKING: Count forceUpdate calls and renders for profiling
   const renderStatsRef = useRef({ forceUpdateCount: 0, renderCount: 0, lastResetTime: Date.now() });
 
+  // Circuit breaker: pause updates when render rate exceeds threshold
+  const circuitBreakerRef = React.useRef({
+    renderTimestamps: [],
+    tripped: false,
+    trippedAt: 0,
+    cooldownMs: 2000,
+    thresholdPerSec: 100,
+    sustainedMs: 5000,
+  });
+
   const forceUpdate = React.useCallback(() => {
     renderStatsRef.current.forceUpdateCount++;
     setVersion((v) => v + 1);
@@ -271,8 +285,43 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
 
   // Batched forceUpdate - coalesces multiple calls within same frame into single render
   // Use this for high-frequency updates (WebSocket messages, etc.)
+  // Includes circuit breaker: trips when render rate exceeds threshold sustained over window
   const batchedForceUpdate = React.useCallback(() => {
-    if (scheduledUpdateRef.current) return; // Already scheduled
+    // Circuit breaker check
+    const cb = circuitBreakerRef.current;
+    const now = Date.now();
+
+    if (cb.tripped) {
+      if ((now - cb.trippedAt) < cb.cooldownMs) {
+        return; // Breaker is tripped — drop this update
+      }
+      // Cooldown expired — reset breaker
+      cb.tripped = false;
+      cb.renderTimestamps = [];
+      getLogger().info('fitness.circuit_breaker.reset');
+    }
+
+    // Track render timestamps (keep last sustainedMs window)
+    cb.renderTimestamps.push(now);
+    const cutoff = now - cb.sustainedMs;
+    while (cb.renderTimestamps.length > 0 && cb.renderTimestamps[0] < cutoff) {
+      cb.renderTimestamps.shift();
+    }
+
+    // Check if sustained rate exceeds threshold
+    if (cb.renderTimestamps.length > (cb.thresholdPerSec * (cb.sustainedMs / 1000))) {
+      cb.tripped = true;
+      cb.trippedAt = now;
+      const ratePerSec = Math.round(cb.renderTimestamps.length / (cb.sustainedMs / 1000));
+      getLogger().warn('fitness.circuit_breaker.tripped', {
+        ratePerSec,
+        windowSize: cb.renderTimestamps.length,
+        droppingUpdatesForMs: cb.cooldownMs
+      });
+      return; // Drop this update
+    }
+
+    if (scheduledUpdateRef.current) return;
     scheduledUpdateRef.current = true;
     requestAnimationFrame(() => {
       scheduledUpdateRef.current = false;
@@ -522,9 +571,9 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       { subscribeToAppEvent }
     );
     session.governanceEngine.setCallbacks({
-      onPhaseChange: () => forceUpdate(),
-      onPulse: () => forceUpdate(),
-      onStateChange: () => forceUpdate()
+      onPhaseChange: () => batchedForceUpdate(),
+      onPulse: () => batchedForceUpdate(),
+      onStateChange: () => batchedForceUpdate()
     });
 
     // Expose governance engine for testing
@@ -585,14 +634,14 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       // Without this, GovernanceEngine stays stuck at 0 participants and the lock screen
       // shows "Waiting for participant data..." even when the sidebar already has HR data.
       session.governanceEngine?._triggerPulse();
-      forceUpdate();
+      batchedForceUpdate();
     });
     return () => {
       if (box === session?.treasureBox) {
         box.setMutationCallback(null);
       }
     };
-  }, [coinTimeUnitMs, zoneConfig, usersConfig, forceUpdate, version]);
+  }, [coinTimeUnitMs, zoneConfig, usersConfig, batchedForceUpdate, version]);
 
   useEffect(() => {
     const session = fitnessSessionRef.current;
@@ -1082,6 +1131,12 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
             handleVibrationEvent(data);
             return;
           }
+
+          // Reconnection backoff: if we've reconnected >3 times rapidly, skip processing
+          if (reconnectCountRef.current > 3) {
+            return;
+          }
+
           const session = fitnessSessionRef.current;
           if (session) {
             session.ingestData(data);
@@ -1092,6 +1147,20 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
 
       // Subscribe to connection status
       unsubscribeStatus = wsService.onStatusChange(({ connected: isConnected }) => {
+        // Track reconnections: false→true transition = a reconnection event
+        if (isConnected && !wasConnectedRef.current) {
+          reconnectCountRef.current++;
+
+          // Reset counter after 60 seconds of stability
+          if (reconnectStabilityTimerRef.current) {
+            clearTimeout(reconnectStabilityTimerRef.current);
+          }
+          reconnectStabilityTimerRef.current = setTimeout(() => {
+            reconnectCountRef.current = 0;
+          }, 60000);
+        }
+        wasConnectedRef.current = isConnected;
+
         setConnected(isConnected);
       });
     });
@@ -1101,6 +1170,9 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       mounted = false;
       unsubscribe?.();
       unsubscribeStatus?.();
+      if (reconnectStabilityTimerRef.current) {
+        clearTimeout(reconnectStabilityTimerRef.current);
+      }
       Object.values(vibrationTimeoutRefs.current || {}).forEach(clearTimeout);
       vibrationTimeoutRefs.current = {};
     };
