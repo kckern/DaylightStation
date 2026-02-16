@@ -211,12 +211,13 @@ function RouletteWheel({ members, rotation, isSpinning, winnerIndex, showResult,
 
   const wheelStyle = {
     transform: `rotate(${rotation}deg)`,
-    '--wheel-rotation': `${rotation}deg`,
     transition: wheelTransition,
   };
 
   // Calculate flick timing: time for one segment to pass
-  const segmentPassDuration = (SPIN_CONFIG.durationMs / ((rotation || 1) / 360)) * (360 / members.length);
+  const segmentPassDuration = rotation > 0
+    ? (SPIN_CONFIG.durationMs * 360) / (rotation * members.length)
+    : 1000;
   const pointerStyle = {
     '--flick-duration': `${segmentPassDuration}ms`,
   };
@@ -300,7 +301,7 @@ function FamilySelectorInner({ members, winner, title, exclude }) {
    * Start the spin
    */
   const spin = useCallback(() => {
-    if (wheelState !== WHEEL_STATE.IDLE) return;
+    if (wheelState === WHEEL_STATE.SPINNING) return;
 
     const { index, member } = selectWinner();
     const angle = calculateSpinAngle(index, activeMembers.length, rotation);
@@ -328,7 +329,7 @@ useEffect(() => {
         // Arrow keys (left/right)
         const isArrowKey = e.code === 'ArrowLeft' || e.code === 'ArrowRight';
         
-        if ((isPlayButton || isArrowKey) && wheelState === WHEEL_STATE.IDLE) {
+        if ((isPlayButton || isArrowKey) && wheelState !== WHEEL_STATE.SPINNING) {
             e.preventDefault();
             spin();
         }
@@ -349,17 +350,6 @@ useEffect(() => {
       </div>
     );
   }
-
-  const getInstructionText = () => {
-    switch (wheelState) {
-      case WHEEL_STATE.SPINNING:
-        return 'Spinning...';
-      case WHEEL_STATE.RESULT:
-        return 'Press SPACE to spin again!';
-      default:
-        return 'Press SPACE to spin!';
-    }
-  };
 
   return (
     <div className="family-selector" data-state={wheelState}>

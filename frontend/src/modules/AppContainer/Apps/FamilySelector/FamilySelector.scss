@@ -73,19 +73,7 @@
 }
 
 .wheel-segments {
-  transform-origin: center center;
-  --wheel-rotation: 0deg;
-}
-
-/* Avatar wrapper for counter-rotation (ferris wheel effect) */
-.avatar-wrapper {
-  transform: rotate(calc(-1 * var(--wheel-rotation)));
-  transform-origin: center center;
-}
-
-/* When spinning, sync the counter-rotation with wheel animation */
-.roulette-wheel.spinning .avatar-wrapper {
-  transition: transform 4000ms cubic-bezier(0.17, 0.67, 0.12, 0.99);
+  transform-origin: 200px 200px;
 }
 
 .wheel-segment {
@@ -139,28 +127,7 @@
   object-fit: cover;
 }
 
-.wheel-instructions {
-  font-size: 1.25rem;
-  color: rgba(255, 255, 255, 0.7);
-  margin: 0;
-  animation: pulse-opacity 2s ease-in-out infinite;
-  transition: all 0.3s ease;
-
-  &.winner-text {
-    font-size: 2rem;
-    font-weight: 700;
-    color: #fff;
-    animation: none;
-    text-shadow: 0 0 20px rgba(255, 215, 0, 0.8);
-  }
-}
-
 .family-selector[data-state="spinning"] {
-  .wheel-instructions {
-    animation: none;
-    opacity: 0.5;
-  }
-  
   .wheel-segment:hover path {
     filter: none;
   }
@@ -179,15 +146,6 @@
   }
   to {
     filter: drop-shadow(0 0 15px rgba(255, 215, 0, 1));
-  }
-}
-
-@keyframes pulse-opacity {
-  0%, 100% {
-    opacity: 0.7;
-  }
-  50% {
-    opacity: 1;
   }
 }
 
@@ -224,10 +182,6 @@
   .wheel-pointer {
     font-size: 2rem;
     top: -15px;
-  }
-  
-  .wheel-instructions {
-    font-size: 1rem;
   }
 }
 

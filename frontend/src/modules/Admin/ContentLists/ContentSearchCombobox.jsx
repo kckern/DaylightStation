@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Combobox, TextInput, ScrollArea, Group, Text, Avatar, Badge, Loader,
   Stack, ActionIcon, Box, useCombobox
@@ -9,6 +9,7 @@ import {
   IconMusic, IconVideo, IconPhoto, IconFile, IconList
 } from '@tabler/icons-react';
 import { useStreamingSearch } from '../../../hooks/useStreamingSearch';
+import { getChildLogger } from '../../../lib/logging/singleton.js';
 import './ContentSearchCombobox.scss';
 
 const TYPE_ICONS = {
@@ -68,11 +69,17 @@ function normalizeListSource(source) {
  * Uses streaming search via SSE for progressive results
  */
 function ContentSearchCombobox({ value, onChange, placeholder = 'Search content...', selectContainers = false, searchParams = '' }) {
+  const log = useMemo(() => getChildLogger({ component: 'ContentSearchCombobox' }), []);
   const [search, setSearch] = useState('');
   const [browseResults, setBrowseResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [breadcrumbs, setBreadcrumbs] = useState([]); // [{id, title, source, localId}]
   const [initialLoadDone, setInitialLoadDone] = useState(false);
+
+  // Log prop changes
+  useEffect(() => {
+    log.debug('props.value_changed', { value, selectContainers, searchParams });
+  }, [value, selectContainers, searchParams]);
 
   // Streaming search hook for SSE-enabled browsers
   const {
@@ -89,18 +96,21 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
   // Batch search fallback for browsers without SSE
   const doBatchSearch = useCallback(async (text) => {
     if (!text || text.length < 2) {
+      log.debug('batch_search.skip', { text, reason: 'too_short' });
       setFallbackResults([]);
       return;
     }
 
+    log.info('batch_search.start', { text });
     setFallbackLoading(true);
     try {
       const response = await fetch(`/api/v1/content/query/search?text=${encodeURIComponent(text)}&take=20${searchParams ? '&' + searchParams : ''}`);
       if (!response.ok) throw new Error('Search failed');
       const data = await response.json();
+      log.info('batch_search.done', { text, resultCount: (data.items || []).length });
       setFallbackResults(data.items || []);
     } catch (err) {
-      console.error('Search error:', err);
+      log.error('batch_search.error', { text, error: err.message });
       setFallbackResults([]);
     } finally {
       setFallbackLoading(false);
@@ -109,8 +119,13 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
 
   // Debounced search function
   const debouncedSearch = useDebouncedCallback((text) => {
-    if (breadcrumbs.length > 0) return; // Don't search while browsing
+    if (breadcrumbs.length > 0) {
+      log.debug('search.skip_browsing', { text, breadcrumbDepth: breadcrumbs.length });
+      return;
+    }
 
+    const mode = supportsSSE() ? 'sse' : 'batch';
+    log.info('search.dispatch', { text, mode });
     if (supportsSSE()) {
       streamSearch(text);
     } else {
@@ -130,15 +145,19 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
 
   const combobox = useCombobox({
     onDropdownClose: () => {
+      log.debug('dropdown.close', { search, value, breadcrumbDepth: breadcrumbs.length, resultCount: results.length });
       combobox.resetSelectedOption();
     },
     onDropdownOpen: () => {
+      log.debug('dropdown.open', { value, search, initialLoadDone, resultCount: results.length });
       // Initialize search with current value so user can see/edit it
       if (value && !search) {
+        log.debug('dropdown.open.init_search_from_value', { value });
         setSearch(value);
       }
       // When opening, if we have a value and haven't loaded siblings yet, browse to parent
       if (value && !initialLoadDone && results.length === 0) {
+        log.info('dropdown.open.load_siblings', { value });
         loadSiblings(value);
       }
     }
@@ -146,37 +165,44 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
 
   // Load siblings of the current value (browse to parent folder)
   const loadSiblings = useCallback(async (inputValue) => {
-    if (!inputValue) return;
+    if (!inputValue) {
+      log.debug('load_siblings.skip', { reason: 'no_input' });
+      return;
+    }
 
     // Parse source:localId format
     const colonIndex = inputValue.indexOf(':');
-    if (colonIndex === -1) return;
+    if (colonIndex === -1) {
+      log.debug('load_siblings.skip', { reason: 'no_colon', inputValue });
+      return;
+    }
 
     const source = normalizeListSource(inputValue.substring(0, colonIndex));
     const localId = inputValue.substring(colonIndex + 1);
 
+    log.info('load_siblings.start', { inputValue, source, localId });
     setLoading(true);
     try {
-      const response = await fetch(`/api/v1/siblings/${source}/${encodeURIComponent(localId)}`);
-      if (!response.ok) throw new Error('Browse failed');
+      const url = `/api/v1/siblings/${source}/${encodeURIComponent(localId)}`;
+      log.debug('load_siblings.fetch', { url });
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`Browse failed: ${response.status}`);
       const data = await response.json();
+      const itemCount = (data.items || []).length;
+      log.info('load_siblings.done', { source, localId, itemCount, hasParent: !!data.parent?.id, parentId: data.parent?.id });
       setBrowseResults(data.items || []);
 
       if (data.parent?.id) {
         const parentLocalId = data.parent.id.split(':').slice(1).join(':');
-        setBreadcrumbs([
-          {
-            id: data.parent.id,
-            title: data.parent.title,
-            source: data.parent.source || source,
-            localId: parentLocalId
-          }
-        ]);
+        const crumb = { id: data.parent.id, title: data.parent.title, source: data.parent.source || source, localId: parentLocalId };
+        log.debug('load_siblings.set_breadcrumb', crumb);
+        setBreadcrumbs([crumb]);
       } else {
+        log.debug('load_siblings.no_parent', { source, localId });
         setBreadcrumbs([]);
       }
     } catch (err) {
-      console.error('Load siblings error:', err);
+      log.error('load_siblings.error', { inputValue, source, localId, error: err.message });
     } finally {
       setLoading(false);
       setInitialLoadDone(true);
@@ -185,6 +211,7 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
 
   // Reset initial load state when value changes
   useEffect(() => {
+    log.debug('value_changed.reset_initial_load', { value, prevInitialLoadDone: initialLoadDone });
     setInitialLoadDone(false);
   }, [value]);
 
@@ -193,24 +220,39 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
     const source = normalizeListSource(item.source || item.id?.split(':')[0]);
     const localId = item.localId || item.id?.replace(`${source}:`, '');
 
+    log.info('browse_container.start', {
+      itemId: item.id, title: item.title, source, localId,
+      type: item.type, isContainer: item.isContainer, itemType: item.itemType,
+      prevBreadcrumbDepth: breadcrumbs.length
+    });
     setLoading(true);
     try {
-      const response = await fetch(`/api/v1/list/${source}/${encodeURIComponent(localId)}`);
-      if (!response.ok) throw new Error('Browse failed');
+      const url = `/api/v1/list/${source}/${encodeURIComponent(localId)}`;
+      log.debug('browse_container.fetch', { url });
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`Browse failed: ${response.status}`);
       const data = await response.json();
+      const itemCount = (data.items || []).length;
+      const newCrumb = { id: item.id, title: item.title, source, localId };
+      log.info('browse_container.done', { source, localId, itemCount, newCrumb });
       setBrowseResults(data.items || []);
-      setBreadcrumbs(prev => [...prev, { id: item.id, title: item.title, source, localId }]);
+      setBreadcrumbs(prev => [...prev, newCrumb]);
     } catch (err) {
-      console.error('Browse error:', err);
+      log.error('browse_container.error', { itemId: item.id, source, localId, error: err.message });
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [breadcrumbs.length]);
 
   // Go back in breadcrumbs
   const goBack = useCallback(async () => {
+    log.info('go_back.start', {
+      breadcrumbDepth: breadcrumbs.length,
+      breadcrumbs: breadcrumbs.map(b => ({ id: b.id, title: b.title }))
+    });
+
     if (breadcrumbs.length <= 1) {
-      // Back to search results - just clear breadcrumbs, streaming/fallback results will show
+      log.info('go_back.to_search_results', { reason: 'at_root_or_single_crumb' });
       setBreadcrumbs([]);
       setBrowseResults([]);
       return;
@@ -220,15 +262,20 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
     const newBreadcrumbs = breadcrumbs.slice(0, -1);
     const parent = newBreadcrumbs[newBreadcrumbs.length - 1];
 
+    log.info('go_back.to_parent', { parentId: parent.id, parentTitle: parent.title, source: parent.source, localId: parent.localId, newDepth: newBreadcrumbs.length });
     setLoading(true);
     try {
-      const response = await fetch(`/api/v1/list/${parent.source}/${encodeURIComponent(parent.localId)}`);
-      if (!response.ok) throw new Error('Browse failed');
+      const url = `/api/v1/list/${parent.source}/${encodeURIComponent(parent.localId)}`;
+      log.debug('go_back.fetch', { url });
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`Browse failed: ${response.status}`);
       const data = await response.json();
+      const itemCount = (data.items || []).length;
+      log.info('go_back.done', { parentId: parent.id, itemCount, newDepth: newBreadcrumbs.length });
       setBrowseResults(data.items || []);
       setBreadcrumbs(newBreadcrumbs);
     } catch (err) {
-      console.error('Browse error:', err);
+      log.error('go_back.error', { parentId: parent.id, error: err.message });
     } finally {
       setLoading(false);
     }
@@ -236,10 +283,18 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
 
   // Handle item click
   const handleItemClick = (item) => {
-    if (isContainer(item) && !selectContainers) {
+    const container = isContainer(item);
+    log.info('item_click', {
+      itemId: item.id, title: item.title, type: item.type,
+      isContainer: container, selectContainers,
+      action: (container && !selectContainers) ? 'browse_into' : 'select',
+      breadcrumbDepth: breadcrumbs.length
+    });
+
+    if (container && !selectContainers) {
       browseContainer(item);
     } else {
-      // Select the item (or container when selectContainers is true)
+      log.info('item_select', { itemId: item.id, title: item.title, prevValue: value });
       onChange(item.id, item);
       setSearch('');
       setBreadcrumbs([]);
@@ -260,20 +315,32 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
 
     // Get parent path by removing the last segment
     const parts = localId.split('/');
-    if (parts.length <= 1) return; // No parent to browse
+    if (parts.length <= 1) {
+      log.debug('browse_parent.skip', { reason: 'no_parent_path', itemId: item.id, localId });
+      return;
+    }
 
     const parentPath = parts.slice(0, -1).join('/');
     const parentTitle = item.metadata?.parentTitle || parts[parts.length - 2];
 
+    log.info('browse_parent.start', {
+      itemId: item.id, title: item.title, source, localId,
+      parentPath, parentTitle, pathParts: parts
+    });
     setLoading(true);
     try {
-      const response = await fetch(`/api/v1/list/${source}/${encodeURIComponent(parentPath)}`);
-      if (!response.ok) throw new Error('Browse failed');
+      const url = `/api/v1/list/${source}/${encodeURIComponent(parentPath)}`;
+      log.debug('browse_parent.fetch', { url });
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`Browse failed: ${response.status}`);
       const data = await response.json();
+      const itemCount = (data.items || []).length;
+      const crumb = { id: `${source}:${parentPath}`, title: parentTitle, source, localId: parentPath };
+      log.info('browse_parent.done', { parentPath, itemCount, crumb });
       setBrowseResults(data.items || []);
-      setBreadcrumbs([{ id: `${source}:${parentPath}`, title: parentTitle, source, localId: parentPath }]);
+      setBreadcrumbs([crumb]);
     } catch (err) {
-      console.error('Browse parent error:', err);
+      log.error('browse_parent.error', { itemId: item.id, parentPath, error: err.message });
     } finally {
       setLoading(false);
     }
@@ -311,6 +378,7 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
                   onClick={hasParent ? (e) => {
                     e.preventDefault();
                     e.stopPropagation();
+                    log.debug('parent_title.click', { itemId: item.id, parentTitle });
                     browseParent(item);
                   } : undefined}
                   style={hasParent ? { cursor: 'pointer', textDecoration: 'underline' } : undefined}
@@ -337,6 +405,7 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
       store={combobox}
       onOptionSubmit={(val) => {
         const item = results.find(r => r.id === val);
+        log.debug('option_submit', { val, found: !!item, title: item?.title });
         if (item) handleItemClick(item);
       }}
     >
@@ -345,25 +414,36 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
           value={displayValue}
           onChange={(e) => {
             const newValue = e.target.value;
+            log.debug('input.change', { newValue, prevSearch: search, breadcrumbDepth: breadcrumbs.length });
             setSearch(newValue);
             debouncedSearch(newValue);
             combobox.openDropdown();
             combobox.updateSelectedOptionIndex();
           }}
-          onClick={() => combobox.openDropdown()}
-          onFocus={() => combobox.openDropdown()}
+          onClick={() => {
+            log.debug('input.click');
+            combobox.openDropdown();
+          }}
+          onFocus={() => {
+            log.debug('input.focus', { value, search });
+            combobox.openDropdown();
+          }}
           onBlur={() => {
+            log.debug('input.blur', { search, value, willCommitFreeform: !!(search && search !== value) });
             // Commit freeform text if user typed something different from current value
             if (search && search !== value) {
+              log.info('freeform.commit_on_blur', { freeformValue: search, prevValue: value });
               onChange(search);
             }
             combobox.closeDropdown();
           }}
           onKeyDown={(e) => {
-            // Commit freeform text on Enter when no dropdown option is highlighted
             if (e.key === 'Enter' && search && search !== value) {
               const idx = combobox.getSelectedOptionIndex();
+              log.debug('input.enter', { search, value, selectedOptionIndex: idx, resultCount: results.length });
+              // Commit freeform text on Enter when no dropdown option is highlighted
               if (idx === -1 || results.length === 0) {
+                log.info('freeform.commit_on_enter', { freeformValue: search, prevValue: value });
                 e.preventDefault();
                 onChange(search);
                 setSearch('');
@@ -387,6 +467,7 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
                 variant="subtle"
                 onClick={(e) => {
                   e.stopPropagation();
+                  log.debug('back_button.click', { breadcrumbDepth: breadcrumbs.length });
                   goBack();
                 }}
               >
