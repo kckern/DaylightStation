@@ -1,3 +1,13 @@
+// TEMP: kill animations/transitions for menu performance
+.menu-container, .menu-stack {
+  *, *::before, *::after {
+    animation-duration: 0s !important;
+    animation-delay: 0s !important;
+    transition-duration: 0s !important;
+    transition-delay: 0s !important;
+  }
+}
+
 $font-primary: 'Roboto', sans-serif;
 $font-secondary: 'Open Sans', sans-serif;
 
