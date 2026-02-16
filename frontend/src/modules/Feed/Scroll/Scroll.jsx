@@ -10,6 +10,7 @@ export default function Scroll() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [expandedItemId, setExpandedItemId] = useState(null);
+  const [focusSource, setFocusSource] = useState(null);
   const observerRef = useRef(null);
   const sentinelRef = useRef(null);
   const sessionStartRef = useRef(new Date().toISOString());
@@ -22,10 +23,10 @@ export default function Scroll() {
     try {
       const cursor = append && items.length > 0 ? items[items.length - 1].id : undefined;
       const params = new URLSearchParams({
-        limit: '15',
         session: sessionStartRef.current,
       });
       if (cursor) params.set('cursor', cursor);
+      if (focusSource) params.set('focus', focusSource);
 
       const result = await DaylightAPI(`/api/v1/feed/scroll?${params}`);
 
@@ -45,7 +46,7 @@ export default function Scroll() {
       setLoading(false);
       setLoadingMore(false);
     }
-  }, [items]);
+  }, [items, focusSource]);
 
   useEffect(() => { fetchItems(); }, []);
 
