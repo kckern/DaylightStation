@@ -272,6 +272,7 @@ export class GovernanceEngine {
           return self._lockStartTime ? Date.now() - self._lockStartTime : 0;
         },
         activeChallenge: this.challengeState?.activeChallenge?.id || null,
+        activeChallengeZone: this.challengeState?.activeChallenge?.zone || null,
         videoLocked: this.challengeState?.videoLocked
           || (this._mediaIsGoverned() && this.phase !== 'unlocked' && this.phase !== 'warning'),
         mediaId: this.media?.id || null,
@@ -1308,6 +1309,10 @@ export class GovernanceEngine {
 
     // 2. Check participants
     if (activeParticipants.length === 0) {
+      // Already pending with no participants — skip redundant work to avoid feedback loop
+      if (this.phase === 'pending' && this._latestInputs?.activeParticipants?.length === 0) {
+        return;
+      }
       getLogger().warn('governance.evaluate.no_participants');
 
       // DIAGNOSTIC: Log if zone maps are empty when pre-populating

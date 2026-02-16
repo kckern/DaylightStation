@@ -93,14 +93,17 @@ describe('shouldPreferGroupLabels', () => {
     expect(shouldPreferGroupLabels(devices)).toBe(true);
   });
 
-  test('ignores devices without heartRate data', () => {
+  test('counts present HR devices regardless of heartRate value', () => {
+    // Code intentionally does NOT require heartRate > 0 — presence (type + not inactive)
+    // is enough to trigger group labels, matching card visibility logic.
     const devices = [
       createDevice({ deviceId: '1', heartRate: 120 }),
       createDevice({ deviceId: '2', heartRate: null }),
       createDevice({ deviceId: '3', heartRate: undefined }),
       createDevice({ deviceId: '4', heartRate: 0 }),
     ];
-    expect(shouldPreferGroupLabels(devices)).toBe(false);
+    // All 4 are type=heart_rate with no inactiveSince → 4 present → true
+    expect(shouldPreferGroupLabels(devices)).toBe(true);
   });
 
   test('ignores inactive devices', () => {
@@ -130,14 +133,14 @@ describe('countActiveHrDevices', () => {
     expect(countActiveHrDevices(undefined)).toBe(0);
   });
 
-  test('counts only active HR devices', () => {
+  test('counts present HR devices (type + not inactive)', () => {
     const devices = [
       createDevice({ deviceId: '1', heartRate: 120 }),
       createDevice({ deviceId: '2', heartRate: 130 }),
-      createDevice({ deviceId: '3', heartRate: 0 }), // No HR
-      createDevice({ deviceId: '4', type: 'cadence', heartRate: 60 }), // Wrong type
+      createDevice({ deviceId: '3', heartRate: 0 }), // Present (HR=0 still counts)
+      createDevice({ deviceId: '4', type: 'cadence', heartRate: 60 }), // Wrong type — excluded
     ];
-    expect(countActiveHrDevices(devices)).toBe(2);
+    expect(countActiveHrDevices(devices)).toBe(3);
   });
 });
 
