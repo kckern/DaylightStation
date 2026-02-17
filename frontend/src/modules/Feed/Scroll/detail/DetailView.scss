@@ -7,6 +7,7 @@
   color: #e0e0e0;
   overflow-x: hidden;
   position: relative;
+  padding: 0;
 }
 
 .detail-close {
@@ -205,5 +206,61 @@
 @media (max-width: 899px) {
   .detail-modal-scrim {
     display: none;
+  }
+}
+
+// ─── Scripture Detail Section ──────────────────────────────
+.detail-scripture {
+  .scriptures {
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: 1rem;
+    line-height: 1.8;
+    color: #c1c2c5;
+
+    h4.heading {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: #e0e0e0;
+      margin: 1.5rem 0 0.5rem;
+      text-align: center;
+    }
+
+    p.verse {
+      margin: 0.25rem 0;
+      text-indent: 0;
+    }
+
+    p.background,
+    p.summary,
+    p.headnote {
+      font-style: italic;
+      color: #868e96;
+      margin: 0.5rem 0;
+    }
+
+    .verse-number {
+      font-weight: 700;
+      font-size: 0.75em;
+      color: #868e96;
+      margin-right: 0.25em;
+      vertical-align: super;
+    }
+
+    .verse-text {
+      color: #c1c2c5;
+    }
+
+    blockquote {
+      margin: 0.5rem 0 0.5rem 1.5rem;
+      padding: 0;
+      border: none;
+      font-style: italic;
+      color: #c1c2c5;
+
+      .verse-text {
+        display: block;
+        line-height: 1.6;
+      }
+    }
   }
 }
