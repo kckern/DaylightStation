@@ -1,6 +1,6 @@
 // backend/src/1_adapters/komga/KomgaPagedMediaAdapter.mjs
 
-import { IPagedMediaGateway } from '#apps/agents/komga-toc/ports/IPagedMediaGateway.mjs';
+import { IPagedMediaGateway } from '#apps/agents/paged-media-toc/ports/IPagedMediaGateway.mjs';
 
 /**
  * KomgaPagedMediaAdapter — Komga implementation of IPagedMediaGateway.
