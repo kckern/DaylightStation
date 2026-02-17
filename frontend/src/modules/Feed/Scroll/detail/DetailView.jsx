@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { formatAge, proxyIcon, colorFromLabel } from '../cards/utils.js';
+import { formatAge, proxyIcon, proxyImage, colorFromLabel } from '../cards/utils.js';
 import { renderSection } from './sections/index.jsx';
 import './DetailView.scss';
 
@@ -14,13 +14,68 @@ export default function DetailView({ item, sections, ogImage, ogDescription, loa
   const dateStr = item.timestamp ? new Date(item.timestamp).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }) : null;
 
   const [imageLoaded, setImageLoaded] = useState(false);
+  const [imagePhase, setImagePhase] = useState('original'); // original → proxy → hidden
   const contentRef = useRef(null);
   const dirRef = useRef(0); // -1 = prev, 1 = next
+  const titleAreaRef = useRef(null);
+  const stickyRef = useRef(null);
+  const stickyInitRef = useRef(true);
+  const [stickyVisible, setStickyVisible] = useState(false);
 
-  // Reset image loaded state when hero image changes
+  // Reset image state when hero image changes
   useEffect(() => {
     setImageLoaded(false);
+    setImagePhase('original');
   }, [heroImage]);
+
+  // Reset sticky header and scroll position on item change
+  useEffect(() => {
+    setStickyVisible(false);
+    stickyInitRef.current = true;
+    const el = stickyRef.current;
+    if (el) {
+      el.getAnimations().forEach(a => a.cancel());
+      el.style.opacity = '0';
+      el.style.pointerEvents = 'none';
+    }
+    contentRef.current?.closest('.detail-modal-panel')?.scrollTo(0, 0);
+  }, [item.id]);
+
+  // Clear ancestor overflow that captures sticky (mobile only; modal scrolls correctly)
+  useEffect(() => {
+    const inModal = stickyRef.current?.closest('.detail-modal-panel');
+    if (inModal) return;
+    const fc = stickyRef.current?.closest('.feed-content');
+    if (!fc) return;
+    const orig = fc.style.overflowY;
+    fc.style.overflowY = 'visible';
+    return () => { fc.style.overflowY = orig; };
+  }, []);
+
+  // IntersectionObserver for sticky header
+  useEffect(() => {
+    const el = titleAreaRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => setStickyVisible(!entry.isIntersecting),
+      { threshold: 0 }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  // Animate sticky header visibility (Web Animations API for TV compat)
+  useEffect(() => {
+    const el = stickyRef.current;
+    if (!el) return;
+    if (stickyInitRef.current) { stickyInitRef.current = false; return; }
+    el.getAnimations().forEach(a => a.cancel());
+    el.animate(
+      [{ opacity: stickyVisible ? 0 : 1 }, { opacity: stickyVisible ? 1 : 0 }],
+      { duration: 150, easing: 'ease-out', fill: 'forwards' }
+    );
+    el.style.pointerEvents = stickyVisible ? 'auto' : 'none';
+  }, [stickyVisible]);
 
   // Slide-in animation when item changes (Web Animations API for TV compat)
   useEffect(() => {
@@ -91,6 +146,16 @@ export default function DetailView({ item, sections, ogImage, ogDescription, loa
           <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
         </svg>
       </button>
+      <div ref={stickyRef} className="detail-sticky-header" style={{ borderTop: `2px solid ${borderColor}` }}>
+        <button className="detail-sticky-back" onClick={onBack} aria-label="Back to feed">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z" />
+          </svg>
+        </button>
+        {iconUrl && <img src={iconUrl} alt="" className="detail-sticky-icon" onError={(e) => { e.target.style.display = 'none'; }} />}
+        <span className="detail-sticky-title">{item.title}</span>
+      </div>
+      <div className="detail-content-clip">
       <div ref={contentRef} className="detail-content">
         <div className="detail-source-bar" style={{ borderTop: `2px solid ${borderColor}` }}>
           {iconUrl && <img src={iconUrl} alt="" className="detail-source-icon" onError={(e) => { e.target.style.display = 'none'; }} />}
@@ -98,23 +163,34 @@ export default function DetailView({ item, sections, ogImage, ogDescription, loa
           <span className="detail-source-age">{age}</span>
         </div>
 
-        {heroImage && !sections.some(s => s.type === 'player' || s.type === 'embed') && (
-          <div className="detail-hero" style={{
-            aspectRatio: (item.meta?.imageWidth && item.meta?.imageHeight)
-              ? `${item.meta.imageWidth} / ${item.meta.imageHeight}`
-              : '16 / 9',
-          }}>
-            {!imageLoaded && <div className="detail-hero-shimmer" />}
-            <img
-              src={heroImage}
-              alt=""
-              onLoad={() => setImageLoaded(true)}
-              style={imageLoaded ? undefined : { position: 'absolute', opacity: 0 }}
-            />
-          </div>
-        )}
+        {heroImage && imagePhase !== 'hidden' && !sections.some(s => s.type === 'player' || s.type === 'embed') && (() => {
+          const isPortrait = item.meta?.imageHeight > item.meta?.imageWidth;
+          const imgSrc = imagePhase === 'proxy' ? (proxyImage(heroImage) || heroImage) : heroImage;
+          return (
+            <div className={`detail-hero${isPortrait ? ' detail-hero--portrait' : ''}`} style={{
+              aspectRatio: (item.meta?.imageWidth && item.meta?.imageHeight)
+                ? `${item.meta.imageWidth} / ${item.meta.imageHeight}`
+                : '16 / 9',
+            }}>
+              {!imageLoaded && <div className="detail-hero-shimmer" />}
+              <img
+                src={imgSrc}
+                alt=""
+                onLoad={() => setImageLoaded(true)}
+                onError={() => {
+                  if (imagePhase === 'original' && proxyImage(heroImage)) {
+                    setImagePhase('proxy');
+                  } else {
+                    setImagePhase('hidden');
+                  }
+                }}
+                style={imageLoaded ? undefined : { position: 'absolute', opacity: 0 }}
+              />
+            </div>
+          );
+        })()}
 
-        <div className="detail-title-area">
+        <div ref={titleAreaRef} className="detail-title-area">
           <h2 className="detail-title">{item.title}</h2>
           {dateStr && <span className="detail-date">{dateStr}</span>}
           {!hasArticle && subtitle && <p className="detail-subtitle">{subtitle}</p>}
@@ -140,6 +216,7 @@ export default function DetailView({ item, sections, ogImage, ogDescription, loa
           </div>
         ))}
 
+      </div>
       </div>
     </div>
   );

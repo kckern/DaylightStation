@@ -11,12 +11,14 @@ import { IFeedSourceAdapter } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
 
 export class GratitudeFeedAdapter extends IFeedSourceAdapter {
   #dataService;
+  #userService;
   #logger;
 
-  constructor({ dataService, logger = console }) {
+  constructor({ dataService, userService, logger = console }) {
     super();
     if (!dataService) throw new Error('GratitudeFeedAdapter requires dataService');
     this.#dataService = dataService;
+    this.#userService = userService;
     this.#logger = logger;
   }
 
@@ -28,23 +30,43 @@ export class GratitudeFeedAdapter extends IFeedSourceAdapter {
       const data = this.#dataService.household.read('common/gratitude/selections.gratitude.yml');
       if (!data || !Array.isArray(data)) return [];
 
-      const limit = query.limit || 1;
+      const limit = Math.min(query.limit || 3, 3);
       const shuffled = [...data].sort(() => Math.random() - 0.5);
-      return shuffled.slice(0, limit).map((entry, i) => {
+      const picked = shuffled.slice(0, limit);
+
+      // Build sub-items with submitter info
+      const items = picked.map(entry => {
         const text = entry.item?.text || (typeof entry.item === 'string' ? entry.item : null) || entry.text || '';
-        return {
-          id: `gratitude:${entry.id || i}`,
-          tier: query.tier || 'compass',
-          source: 'gratitude',
-          title: 'Gratitude',
-          body: text,
-          image: null,
-          link: null,
-          timestamp: entry.datetime || new Date().toISOString(),
-          priority: query.priority || 5,
-          meta: { category: 'gratitude', userId: entry.userId, sourceName: 'Gratitude', sourceIcon: null },
-        };
+        const userId = entry.userId || null;
+        const displayName = userId && this.#userService
+          ? this.#userService.resolveGroupLabel(userId)
+          : userId || '';
+        return { text, userId, displayName };
       });
+
+      // Use the most recent entry's timestamp
+      const latestTs = picked.reduce((best, e) => {
+        const t = e.datetime || '';
+        return t > best ? t : best;
+      }, '') || new Date().toISOString();
+
+      return [{
+        id: `gratitude:bundle:${Date.now()}`,
+        tier: query.tier || 'compass',
+        source: 'gratitude',
+        title: 'Gratitude',
+        body: items[0]?.text || '',
+        image: null,
+        link: null,
+        timestamp: latestTs,
+        priority: query.priority || 5,
+        meta: {
+          category: 'gratitude',
+          sourceName: 'Gratitude',
+          sourceIcon: null,
+          items,
+        },
+      }];
     } catch (err) {
       this.#logger.warn?.('gratitude.adapter.error', { error: err.message });
       return [];

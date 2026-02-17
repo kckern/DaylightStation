@@ -172,6 +172,7 @@ export class GoodreadsHarvester extends IHarvester {
     const author = item.content?.match(/author: (.*?)<br\/>/i)?.[1]?.replace(/\s+/g, ' ').trim() || '';
     const bookId = parseInt(item.link?.match(/review\/show\/(\d+)/i)?.[1]) || null;
     const review = item.contentSnippet || null;
+    const coverImage = item.content?.match(/<img[^>]+src="([^"]+)"/i)?.[1] || null;
 
     return {
       bookId,
@@ -180,6 +181,7 @@ export class GoodreadsHarvester extends IHarvester {
       readAt,
       rating,
       review,
+      coverImage,
     };
   }
 }

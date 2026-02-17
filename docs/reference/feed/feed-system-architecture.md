@@ -175,10 +175,11 @@ Every source adapter returns items normalized to this shape:
 2. **Get pool** — `FeedPoolManager.getPool()` returns all unseen items (initializes on first call by fetching page 1 from all sources in parallel, with age filtering)
 3. **Source filter mode** — if `?source=reddit,youtube`, bypass tier assembly and return filtered items sorted by timestamp
 3b. **Filter mode** — if `?filter=reddit` or `?filter=compass`, resolve via `FeedFilterResolver` and bypass assembly (see `docs/reference/feed/feed-assembly-process.md`)
-4. **Tier assembly** — `TierAssemblyService.assemble()` buckets items by tier, applies within-tier selection/sort, interleaves non-wire into wire backbone, deduplicates, enforces spacing
-5. **Padding** — fill short batches from sources marked `padding: true`
-6. **Mark seen** — `FeedPoolManager.markSeen()` triggers proactive refill (when pool thins) or silent recycling (when all sources exhausted)
-7. **Cache** — stores returned items in an LRU cache (max 500) for deep-link resolution
+4. **Wire decay** — `TierAssemblyService` adjusts tier allocations based on batch number: wire slots decay linearly to 0 over `wire_decay_batches` (default: 10), freed slots redistribute proportionally to compass/library/scrapbook
+5. **Tier assembly** — `TierAssemblyService.assemble()` buckets items by tier, applies within-tier selection/sort, interleaves non-wire into wire backbone, deduplicates, enforces spacing
+6. **Padding** — fill short batches from sources marked `padding: true`
+7. **Mark seen** — `FeedPoolManager.markSeen()` triggers proactive refill (when pool thins) or silent recycling (when all sources exhausted)
+8. **Cache** — stores returned items in an LRU cache (max 500) for deep-link resolution
 
 ### Pagination and Pool Management
 
@@ -373,9 +374,7 @@ headlines:
 # Scroll settings
 scroll:
   batch_size: 15
-  grounding_ratio: 1.0
-  grounding_min: 0.1
-  decay_rate: 0.05
+  wire_decay_batches: 10  # wire tier decays to 0 over this many batches (default: 10)
 
 # Reddit config (moved from config/reddit.yml)
 reddit:
@@ -421,3 +420,4 @@ params:
 7. **Config consolidation** — User feed config moved from separate `config/scroll.yml` and `config/reddit.yml` into unified `config/feed.yml`
 8. **ContentDrawer replaced by DetailView** — The old inline drawer was replaced with a full-page route-driven detail view supporting typed sections, swipe navigation, and deep-linking
 9. **Two-tier query configs** — Queries are split between household (shared infrastructure like weather, headlines) and user scope (personal subscriptions like Reddit, YouTube, Komga). User queries override household by filename, loaded on demand and cached per-user in `FeedPoolManager`
+11. **Wire decay** — Wire tier allocation decays linearly to 0 over `wire_decay_batches` (default: 10). Freed slots redistribute proportionally to non-wire tiers based on base allocations, creating a "news first, personal later" scroll experience

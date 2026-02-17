@@ -24,10 +24,10 @@ export class TodoistFeedAdapter extends IFeedSourceAdapter {
 
   async fetchItems(query, username) {
     try {
-      const data = this.#userDataService.getLifelogData(username, 'tasks');
+      const data = this.#userDataService.readUserData(username, 'current/todoist');
       if (!data) return [];
 
-      let tasks = Array.isArray(data) ? data : [];
+      let tasks = Array.isArray(data?.tasks) ? data.tasks : [];
       tasks = tasks.filter(t => !t.isCompleted);
 
       if (query.params?.filter === 'overdue_or_due_today') {

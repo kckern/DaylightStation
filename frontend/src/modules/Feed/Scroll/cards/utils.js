@@ -31,6 +31,20 @@ export function proxyIcon(rawUrl) {
 }
 
 /**
+ * Proxy a raw image URL through the feed image endpoint.
+ * The backend returns an SVG placeholder on upstream failure,
+ * so the result is always renderable.
+ * Returns null if already proxied or empty.
+ * @param {string} rawUrl
+ * @returns {string|null}
+ */
+export function proxyImage(rawUrl) {
+  if (!rawUrl) return null;
+  if (rawUrl.startsWith('/api/')) return null;
+  return `/api/v1/feed/image?url=${encodeURIComponent(rawUrl)}`;
+}
+
+/**
  * Format an ISO date into a human-readable relative age (long form).
  * @param {string} isoDate
  * @returns {string|null}
@@ -49,6 +63,32 @@ export function memoryAge(isoDate) {
   const remMonths = Math.floor((days - years * 365.25) / 30.44);
   if (remMonths > 0) return `${years} year${years === 1 ? '' : 's'}, ${remMonths} month${remMonths === 1 ? '' : 's'} ago`;
   return `${years} year${years === 1 ? '' : 's'} ago`;
+}
+
+/**
+ * Format a date as "Mon 1 Jan at 6:12pm" (current year) or "Mon 1 Jan 2024 at 6:12pm".
+ * @param {string|number|Date} date
+ * @returns {string|null}
+ */
+export function formatPhotoDate(date) {
+  if (!date) return null;
+  const d = new Date(date);
+  if (isNaN(d)) return null;
+  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const day = days[d.getDay()];
+  const dom = d.getDate();
+  const mon = months[d.getMonth()];
+  const year = d.getFullYear();
+  const currentYear = new Date().getFullYear();
+  let h = d.getHours();
+  const m = d.getMinutes().toString().padStart(2, '0');
+  const ampm = h >= 12 ? 'pm' : 'am';
+  h = h % 12 || 12;
+  const datePart = year === currentYear
+    ? `${day} ${dom} ${mon}`
+    : `${day} ${dom} ${mon} ${year}`;
+  return `${datePart} at ${h}:${m}${ampm}`;
 }
 
 /**

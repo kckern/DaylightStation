@@ -90,11 +90,11 @@ export class FeedPoolManager {
    * @param {Object} scrollConfig - Merged scroll config from ScrollConfigLoader
    * @returns {Promise<Object[]>}
    */
-  async getPool(username, scrollConfig) {
+  async getPool(username, scrollConfig, { stripLimits = false } = {}) {
     this.#scrollConfigs.set(username, scrollConfig);
 
     if (!this.#pools.has(username)) {
-      await this.#initializePool(username, scrollConfig);
+      await this.#initializePool(username, scrollConfig, { stripLimits });
     }
 
     // Increment batch counter (1-indexed: first getPool call = batch 1)
@@ -197,10 +197,13 @@ export class FeedPoolManager {
   // Internal: Pool Initialization
   // =========================================================================
 
-  async #initializePool(username, scrollConfig) {
-    const queries = this.#filterQueries(scrollConfig, username);
+  async #initializePool(username, scrollConfig, { stripLimits = false } = {}) {
+    let queries = this.#filterQueries(scrollConfig, username);
+    if (stripLimits) {
+      queries = queries.map(q => ({ ...q, limit: 10000 }));
+    }
     const results = await Promise.allSettled(
-      queries.map(query => this.#fetchSourcePage(query, username, scrollConfig))
+      queries.map(query => this.#fetchSourcePage(query, username, scrollConfig, undefined, { noCache: stripLimits }))
     );
 
     const allItems = [];
@@ -233,7 +236,7 @@ export class FeedPoolManager {
   // Internal: Source Fetching (Page-Aware)
   // =========================================================================
 
-  async #fetchSourcePage(query, username, scrollConfig, cursorToken = undefined) {
+  async #fetchSourcePage(query, username, scrollConfig, cursorToken = undefined, { noCache = false } = {}) {
     const sourceKey = query._filename?.replace('.yml', '') || query.type;
     const maxAgeMs = ScrollConfigLoader.getMaxAgeMs(scrollConfig, sourceKey);
     const now = Date.now();
@@ -242,7 +245,7 @@ export class FeedPoolManager {
 
     const adapter = this.#sourceAdapters.get(query.type);
     if (adapter && typeof adapter.fetchPage === 'function') {
-      if (this.#feedCacheService && cursorToken === undefined) {
+      if (this.#feedCacheService && cursorToken === undefined && !noCache) {
         // First page: use cache service.
         // The fetchFn may not be invoked (cache hit), so persist cursor
         // separately: when the callback runs, store cursor in #firstPageCursors;
@@ -263,7 +266,7 @@ export class FeedPoolManager {
     } else if (adapter) {
       // Legacy adapter without fetchPage
       const fetchFn = () => adapter.fetchItems(query, username);
-      if (this.#feedCacheService) {
+      if (this.#feedCacheService && !noCache) {
         items = await this.#feedCacheService.getItems(sourceKey, fetchFn, username);
       } else {
         items = await fetchFn();

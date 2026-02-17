@@ -1,10 +1,10 @@
-import { memoryAge } from '../utils.js';
+import { formatPhotoDate } from '../utils.js';
 
 export default function PhotoBody({ item }) {
   const location = item.body || item.meta?.location || null;
-  const photoAge = memoryAge(item.meta?.originalDate);
+  const photoDate = formatPhotoDate(item.meta?.originalDate);
   const heading = location || item.title;
-  const desc = location ? photoAge : null;
+  const desc = photoDate;
 
   return (
     <>

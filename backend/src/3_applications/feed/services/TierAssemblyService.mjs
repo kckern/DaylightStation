@@ -60,8 +60,12 @@ export class TierAssemblyService {
    * @param {string} [options.focus] - Focus source key (wire-only filtering)
    * @returns {{ items: Object[], hasMore: boolean }}
    */
-  assemble(allItems, scrollConfig, { effectiveLimit, focus, selectionCounts } = {}) {
+  assemble(allItems, scrollConfig, { effectiveLimit, focus, selectionCounts, batchNumber = 1 } = {}) {
     const tierConfig = this.#resolveTierConfig(scrollConfig);
+    const wireDecayBatches = scrollConfig.wire_decay_batches ?? 10;
+
+    // Apply wire decay: adjust allocations based on batch number
+    const decayedConfig = this.#applyWireDecay(tierConfig, effectiveLimit, batchNumber, wireDecayBatches);
 
     // Bucket items by tier
     const buckets = this.#bucketByTier(allItems);
@@ -70,12 +74,12 @@ export class TierAssemblyService {
     const selected = {};
     for (const tier of Object.values(TIERS)) {
       const candidates = buckets[tier] || [];
-      const config = tierConfig[tier] || TIER_DEFAULTS[tier];
+      const config = decayedConfig[tier] || TIER_DEFAULTS[tier];
       selected[tier] = this.#selectForTier(tier, candidates, config, { focus, selectionCounts });
     }
 
     // Level 1: allocate slots and interleave
-    const interleaved = this.#interleave(selected, tierConfig, effectiveLimit);
+    const interleaved = this.#interleave(selected, decayedConfig, effectiveLimit);
 
     // Deduplicate
     const seen = new Set();
@@ -93,6 +97,8 @@ export class TierAssemblyService {
 
     this.#logger.info?.('tier.assembly.batch', {
       total: allItems.length,
+      batchNumber,
+      wireDecayFactor: Math.max(0, Math.min(1, 1 - (batchNumber - 1) / wireDecayBatches)).toFixed(2),
       wire: selected.wire?.length || 0,
       library: selected.library?.length || 0,
       scrapbook: selected.scrapbook?.length || 0,
@@ -140,6 +146,67 @@ export class TierAssemblyService {
   }
 
   // ======================================================================
+  // Wire Decay
+  // ======================================================================
+
+  /**
+   * Compute decayed tier allocations based on batch number.
+   * Wire allocation decays linearly from its base value to 0 over wireDecayBatches.
+   * Freed slots are distributed proportionally to non-wire tiers.
+   *
+   * @param {Object} tierConfig - Resolved tier config
+   * @param {number} batchSize - Target batch size
+   * @param {number} batchNumber - Current batch (1-indexed)
+   * @param {number} wireDecayBatches - Batches until wire reaches 0
+   * @returns {Object} New tier config with adjusted allocations
+   */
+  #applyWireDecay(tierConfig, batchSize, batchNumber, wireDecayBatches) {
+    if (wireDecayBatches <= 0 || batchNumber <= 1) return tierConfig;
+
+    // Compute base wire slots (batch_size minus all non-wire allocations)
+    const compassAlloc = tierConfig.compass?.allocation ?? TIER_DEFAULTS.compass.allocation;
+    const libraryAlloc = tierConfig.library?.allocation ?? TIER_DEFAULTS.library.allocation;
+    const scrapbookAlloc = tierConfig.scrapbook?.allocation ?? TIER_DEFAULTS.scrapbook.allocation;
+    const totalNonWire = compassAlloc + libraryAlloc + scrapbookAlloc;
+    const baseWire = Math.max(0, batchSize - totalNonWire);
+
+    if (baseWire === 0) return tierConfig;
+
+    // Linear decay: batch 1 = full wire, batch wireDecayBatches+1 = 0 wire
+    const decayFactor = Math.max(0, Math.min(1, 1 - (batchNumber - 1) / wireDecayBatches));
+    const decayedWire = Math.round(baseWire * decayFactor);
+    const freed = baseWire - decayedWire;
+
+    if (freed === 0) return tierConfig;
+
+    // Distribute freed slots proportionally to non-wire tiers
+    const compassShare = Math.round(freed * compassAlloc / totalNonWire);
+    const libraryShare = Math.round(freed * libraryAlloc / totalNonWire);
+    // Scrapbook gets the remainder to avoid rounding drift
+    const scrapbookShare = freed - compassShare - libraryShare;
+
+    return {
+      ...tierConfig,
+      wire: {
+        ...tierConfig.wire,
+        allocation: decayedWire,
+      },
+      compass: {
+        ...tierConfig.compass,
+        allocation: compassAlloc + compassShare,
+      },
+      library: {
+        ...tierConfig.library,
+        allocation: libraryAlloc + libraryShare,
+      },
+      scrapbook: {
+        ...tierConfig.scrapbook,
+        allocation: scrapbookAlloc + scrapbookShare,
+      },
+    };
+  }
+
+  // ======================================================================
   // Level 2: Within-Tier Selection
   // ======================================================================
 
@@ -167,8 +234,8 @@ export class TierAssemblyService {
     items = this.#applyTierSort(items, config.selection, selectionCounts);
     items = this.#applySourceCaps(items, config.sources);
 
-    // For non-wire tiers, cap to allocation
-    if (tier !== TIERS.WIRE && config.allocation) {
+    // Cap to allocation (non-wire always; wire only during decay)
+    if (config.allocation != null) {
       items = items.slice(0, config.allocation);
     }
 

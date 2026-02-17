@@ -8,12 +8,37 @@ import Reader from '../modules/Feed/Reader/Reader.jsx';
 import { DaylightAPI } from '../lib/api.mjs';
 import './FeedApp.scss';
 
+// PWA: inject feed-scoped manifest and register service worker
+function useFeedPWA() {
+  useEffect(() => {
+    // Inject manifest link
+    let link = document.querySelector('link[rel="manifest"][data-feed-pwa]');
+    if (!link) {
+      link = document.createElement('link');
+      link.rel = 'manifest';
+      link.href = '/feed-manifest.json';
+      link.setAttribute('data-feed-pwa', '');
+      document.head.appendChild(link);
+    }
+
+    // Register service worker scoped to /feed
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/feed-sw.js', { scope: '/feed' });
+    }
+
+    return () => {
+      if (link.parentNode) link.parentNode.removeChild(link);
+    };
+  }, []);
+}
+
 function HeadlinesPage() {
   const { pageId } = useParams();
   return <Headlines pageId={pageId} />;
 }
 
 function FeedLayout() {
+  useFeedPWA();
   const [headlinePages, setHeadlinePages] = useState([]);
   const location = useLocation();
   const isScroll = location.pathname.startsWith('/feed/scroll');

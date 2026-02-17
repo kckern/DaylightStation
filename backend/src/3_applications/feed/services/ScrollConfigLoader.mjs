@@ -37,6 +37,7 @@ const TIER_DEFAULTS = Object.freeze({
 
 const DEFAULTS = Object.freeze({
   batch_size: 15,
+  wire_decay_batches: 10,
   spacing: Object.freeze({
     max_consecutive: 1,
   }),
@@ -171,6 +172,7 @@ export class ScrollConfigLoader {
   #merge(user) {
     return {
       batch_size: user.batch_size ?? DEFAULTS.batch_size,
+      wire_decay_batches: user.wire_decay_batches ?? DEFAULTS.wire_decay_batches,
       spacing: {
         ...DEFAULTS.spacing,
         ...user.spacing,
