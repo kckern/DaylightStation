@@ -12,6 +12,7 @@
  */
 
 import { ScrollConfigLoader } from './ScrollConfigLoader.mjs';
+import { FeedFilterResolver } from './FeedFilterResolver.mjs';
 
 export class FeedAssemblyService {
   #feedPoolManager;
@@ -20,6 +21,7 @@ export class FeedAssemblyService {
   #tierAssemblyService;
   #feedContentService;
   #selectionTrackingStore;
+  #feedFilterResolver;
   #logger;
 
   /** LRU cache of recently-served items (keyed by item.id) */
@@ -32,6 +34,7 @@ export class FeedAssemblyService {
     tierAssemblyService = null,
     feedContentService = null,
     selectionTrackingStore = null,
+    feedFilterResolver = null,
     logger = console,
     // Keep sourceAdapters for getDetail()
     sourceAdapters = null,
@@ -53,6 +56,7 @@ export class FeedAssemblyService {
     this.#tierAssemblyService = tierAssemblyService;
     this.#feedContentService = feedContentService || null;
     this.#selectionTrackingStore = selectionTrackingStore;
+    this.#feedFilterResolver = feedFilterResolver;
     this.#logger = logger;
 
     this.#sourceAdapters = new Map();
@@ -74,11 +78,19 @@ export class FeedAssemblyService {
    * @param {string[]} [options.sources] - Filter to specific source types (e.g. ['komga','reddit'])
    * @returns {Promise<{ items: FeedItem[], hasMore: boolean }>}
    */
-  async getNextBatch(username, { limit, cursor, focus, sources, nocache } = {}) {
+  async getNextBatch(username, { limit, cursor, focus, sources, nocache, filter } = {}) {
     const scrollConfig = this.#scrollConfigLoader?.load(username)
       || { batch_size: 15, spacing: { max_consecutive: 1 }, tiers: {} };
 
     const effectiveLimit = limit ?? scrollConfig.batch_size ?? 15;
+
+    // Resolve ?filter= param (takes precedence over ?source= and ?focus=)
+    if (filter && this.#feedFilterResolver) {
+      const resolved = this.#feedFilterResolver.resolve(filter);
+      if (resolved) {
+        return this.#getFilteredBatch(username, resolved, scrollConfig, effectiveLimit, cursor);
+      }
+    }
 
     // Fresh load: reset pool manager
     if (!cursor) {
@@ -197,6 +209,54 @@ export class FeedAssemblyService {
       sections: detail?.sections || [],
       ogImage: detail?.ogImage || null,
       ogDescription: detail?.ogDescription || null,
+    };
+  }
+
+  /**
+   * Return a filtered batch — bypasses tier assembly.
+   * Items are sorted by timestamp (newest first).
+   */
+  async #getFilteredBatch(username, resolved, scrollConfig, effectiveLimit, cursor) {
+    if (!cursor) {
+      this.#feedPoolManager.reset(username);
+    }
+
+    const freshPool = await this.#feedPoolManager.getPool(username, scrollConfig);
+
+    let filtered;
+    switch (resolved.type) {
+      case 'tier':
+        filtered = freshPool.filter(item => item.tier === resolved.tier);
+        break;
+      case 'source':
+        filtered = freshPool.filter(item => item.source === resolved.sourceType);
+        if (resolved.subsources) {
+          const subs = new Set(resolved.subsources.map(s => s.toLowerCase()));
+          filtered = filtered.filter(item => {
+            const itemSub = (item.meta?.subreddit || item.meta?.sourceName || '').toLowerCase();
+            return subs.has(itemSub);
+          });
+        }
+        break;
+      case 'query':
+        filtered = freshPool.filter(item =>
+          item.meta?.queryName === resolved.queryName
+        );
+        break;
+      default:
+        filtered = freshPool;
+    }
+
+    filtered.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    const batch = filtered.slice(0, effectiveLimit);
+
+    for (const item of batch) this.#cacheItem(item);
+    this.#feedPoolManager.markSeen(username, batch.map(i => i.id));
+
+    return {
+      items: batch,
+      hasMore: this.#feedPoolManager.hasMore(username),
+      colors: ScrollConfigLoader.extractColors(scrollConfig),
     };
   }
 

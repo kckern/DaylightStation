@@ -25,10 +25,11 @@ export class FeedFilterResolver {
    * @param {Object} options
    * @param {string[]} options.sourceTypes - Registered adapter sourceType values (e.g. ['reddit', 'youtube'])
    * @param {string[]} options.queryNames - Query config filenames without .yml (e.g. ['scripture-bom'])
+   * @param {string[]} [options.builtinTypes] - Built-in source types not registered as adapters (e.g. ['freshrss', 'headlines', 'entropy'])
    * @param {Object<string, string>} [options.aliases] - Shortcut map (e.g. { photos: 'immich' })
    */
-  constructor({ sourceTypes = [], queryNames = [], aliases = {} } = {}) {
-    this.#sourceTypes = new Set(sourceTypes);
+  constructor({ sourceTypes = [], queryNames = [], aliases = {}, builtinTypes = [] } = {}) {
+    this.#sourceTypes = new Set([...sourceTypes, ...builtinTypes]);
     this.#queryNames = new Set(queryNames);
     this.#aliases = aliases;
   }
