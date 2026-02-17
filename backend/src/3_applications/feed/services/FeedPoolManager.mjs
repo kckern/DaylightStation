@@ -22,9 +22,6 @@ export class FeedPoolManager {
   #feedCacheService;
   #queryConfigs;
   #loadUserQueries;
-  #freshRSSAdapter;
-  #headlineService;
-  #entropyService;
   #dismissedItemsStore;
   #logger;
 
@@ -63,9 +60,6 @@ export class FeedPoolManager {
     feedCacheService = null,
     queryConfigs = [],
     loadUserQueries = null,
-    freshRSSAdapter = null,
-    headlineService = null,
-    entropyService = null,
     dismissedItemsStore = null,
     logger = console,
   }) {
@@ -78,9 +72,6 @@ export class FeedPoolManager {
     this.#feedCacheService = feedCacheService;
     this.#queryConfigs = queryConfigs;
     this.#loadUserQueries = loadUserQueries;
-    this.#freshRSSAdapter = freshRSSAdapter;
-    this.#headlineService = headlineService;
-    this.#entropyService = entropyService;
     this.#dismissedItemsStore = dismissedItemsStore;
     this.#logger = logger;
   }
@@ -278,10 +269,9 @@ export class FeedPoolManager {
       }
       cursor = null;
     } else {
-      // Built-in handlers (freshrss, headlines, entropy)
-      const result = await this.#fetchBuiltinPage(query, username, cursorToken);
-      items = result.items;
-      cursor = result.cursor;
+      this.#logger.warn?.('feed.pool.unknown.type', { type: query.type });
+      items = [];
+      cursor = null;
     }
 
     // Age filter: discard items older than max_age_hours
@@ -313,114 +303,6 @@ export class FeedPoolManager {
     }
 
     return { items, cursor, sourceKey };
-  }
-
-  async #fetchBuiltinPage(query, username, cursorToken) {
-    switch (query.type) {
-      case 'freshrss': return this.#fetchFreshRSSPage(query, username, cursorToken);
-      case 'headlines': return this.#fetchHeadlinesPage(query, username, cursorToken);
-      case 'entropy':   return { items: await this.#fetchEntropy(query, username), cursor: null };
-      default:
-        this.#logger.warn?.('feed.pool.unknown.type', { type: query.type });
-        return { items: [], cursor: null };
-    }
-  }
-
-  async #fetchFreshRSSPage(query, username, cursorToken) {
-    if (!this.#freshRSSAdapter) return { items: [], cursor: null };
-    const { items: rawItems, continuation } = await this.#freshRSSAdapter.getItems(
-      'user/-/state/com.google/reading-list',
-      username,
-      {
-        excludeRead: query.params?.excludeRead ?? true,
-        count: query.limit || 20,
-        continuation: cursorToken || undefined,
-      }
-    );
-    const items = (rawItems || []).map(item => ({
-      id: `freshrss:${item.id}`,
-      tier: query.tier || 'wire',
-      source: 'freshrss',
-      title: item.title,
-      body: item.content ? item.content.replace(/<[^>]*>/g, '').slice(0, 200) : null,
-      image: this.#extractImage(item.content),
-      link: item.link,
-      timestamp: item.published?.toISOString?.() || item.published || new Date().toISOString(),
-      priority: query.priority || 0,
-      meta: {
-        feedTitle: item.feedTitle,
-        author: item.author,
-        sourceName: item.feedTitle || 'RSS',
-        sourceIcon: item.link ? (() => { try { return new URL(item.link).origin; } catch { return null; } })() : null,
-      },
-    }));
-    return { items, cursor: continuation || null };
-  }
-
-  async #fetchHeadlinesPage(query, username, cursorToken) {
-    if (!this.#headlineService) return { items: [], cursor: null };
-    const pages = this.#headlineService.getPageList(username);
-    const firstPageId = pages[0]?.id;
-    if (!firstPageId) return { items: [], cursor: null };
-
-    const result = await this.#headlineService.getAllHeadlines(username, firstPageId);
-    const totalLimit = query.limit || 30;
-    const offset = cursorToken ? parseInt(cursorToken, 10) : 0;
-    const allItems = [];
-
-    for (const [sourceId, source] of Object.entries(result.sources || {})) {
-      for (const item of (source.items || [])) {
-        allItems.push({
-          id: `headline:${item.id || sourceId + ':' + item.link}`,
-          tier: query.tier || 'wire',
-          source: 'headline',
-          title: item.title,
-          body: item.desc || null,
-          image: item.image || null,
-          link: item.link,
-          timestamp: item.timestamp || new Date().toISOString(),
-          priority: query.priority || 0,
-          meta: {
-            sourceId,
-            sourceLabel: source.label,
-            sourceName: source.label || sourceId,
-            sourceIcon: item.link ? (() => { try { return new URL(item.link).origin; } catch { return null; } })() : null,
-            paywall: source.paywall || false,
-            paywallProxy: source.paywall ? result.paywallProxy : null,
-            ...(item.imageWidth && item.imageHeight
-              ? { imageWidth: item.imageWidth, imageHeight: item.imageHeight }
-              : {}),
-          },
-        });
-      }
-    }
-
-    allItems.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-    const page = allItems.slice(offset, offset + totalLimit);
-    const nextOffset = offset + totalLimit;
-    const hasMore = nextOffset < allItems.length;
-    return { items: page, cursor: hasMore ? String(nextOffset) : null };
-  }
-
-  async #fetchEntropy(query, username) {
-    if (!this.#entropyService) return [];
-    const report = await this.#entropyService.getReport(username);
-    let items = report.items || [];
-    if (query.params?.onlyYellowRed) {
-      items = items.filter(item => item.status === 'yellow' || item.status === 'red');
-    }
-    return items.map(item => ({
-      id: `entropy:${item.source}`,
-      tier: query.tier || 'compass',
-      source: 'entropy',
-      title: item.name || item.source,
-      body: item.label || `${item.value} since last update`,
-      image: null,
-      link: item.url || null,
-      timestamp: item.lastUpdate || new Date().toISOString(),
-      priority: query.priority || 20,
-      meta: { status: item.status, icon: item.icon, value: item.value, weight: item.weight, sourceName: 'Data Freshness', sourceIcon: null },
-    }));
   }
 
   // =========================================================================
@@ -540,11 +422,6 @@ export class FeedPoolManager {
     });
   }
 
-  #extractImage(html) {
-    if (!html) return null;
-    const match = html.match(/<img[^>]+src=["']([^"']+)["']/i);
-    return match ? match[1] : null;
-  }
 }
 
 export default FeedPoolManager;

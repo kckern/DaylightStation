@@ -800,27 +800,38 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     const dismissedItemsStore = new YamlDismissedItemsStore({ dataService, logger: rootLogger.child({ module: 'feed-dismissed' }) });
 
     const { FeedPoolManager } = await import('./3_applications/feed/services/FeedPoolManager.mjs');
+    const { FreshRSSSourceAdapter } = await import('./1_adapters/feed/sources/FreshRSSSourceAdapter.mjs');
+    const { HeadlineFeedAdapter } = await import('./1_adapters/feed/sources/HeadlineFeedAdapter.mjs');
+    const { EntropyFeedAdapter } = await import('./1_adapters/feed/sources/EntropyFeedAdapter.mjs');
 
-    const feedSourceAdapters = [redditAdapter, weatherAdapter, healthAdapter, gratitudeAdapter, stravaAdapter, todoistAdapter, immichAdapter, plexAdapter, journalAdapter, youtubeAdapter, googleNewsAdapter, komgaFeedAdapter, readalongFeedAdapter, goodreadsFeedAdapter].filter(Boolean);
+    const freshRSSFeedAdapter = new FreshRSSSourceAdapter({
+      freshRSSAdapter: feedServices.freshRSSAdapter,
+      logger: rootLogger.child({ module: 'freshrss-feed' }),
+    });
+    const headlineFeedAdapter = new HeadlineFeedAdapter({
+      headlineService: feedServices.headlineService,
+      logger: rootLogger.child({ module: 'headline-feed' }),
+    });
+    const entropyFeedAdapter = new EntropyFeedAdapter({
+      entropyService: entropyServices?.entropyService || null,
+      logger: rootLogger.child({ module: 'entropy-feed' }),
+    });
+
+    const feedSourceAdapters = [redditAdapter, weatherAdapter, healthAdapter, gratitudeAdapter, stravaAdapter, todoistAdapter, immichAdapter, plexAdapter, journalAdapter, youtubeAdapter, googleNewsAdapter, komgaFeedAdapter, readalongFeedAdapter, goodreadsFeedAdapter, freshRSSFeedAdapter, headlineFeedAdapter, entropyFeedAdapter].filter(Boolean);
 
     const feedPoolManager = new FeedPoolManager({
       sourceAdapters: feedSourceAdapters,
       feedCacheService,
       queryConfigs,
       loadUserQueries,
-      freshRSSAdapter: feedServices.freshRSSAdapter,
-      headlineService: feedServices.headlineService,
-      entropyService: entropyServices?.entropyService || null,
       dismissedItemsStore,
       logger: rootLogger.child({ module: 'feed-pool' }),
     });
 
     const { FeedFilterResolver } = await import('./3_applications/feed/services/FeedFilterResolver.mjs');
     const feedFilterResolver = new FeedFilterResolver({
-      sourceTypes: [redditAdapter, weatherAdapter, healthAdapter, gratitudeAdapter, stravaAdapter, todoistAdapter, immichAdapter, plexAdapter, journalAdapter, youtubeAdapter, googleNewsAdapter, komgaFeedAdapter, readalongFeedAdapter, goodreadsFeedAdapter]
-        .filter(Boolean).map(a => a.sourceType),
+      sourceTypes: feedSourceAdapters.map(a => a.sourceType),
       queryNames: queryConfigs.map(q => q._filename?.replace('.yml', '')).filter(Boolean),
-      builtinTypes: ['freshrss', 'headlines', 'entropy'],
       aliases: {},
     });
 
