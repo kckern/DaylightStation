@@ -1,13 +1,5 @@
 import { formatAge, colorFromLabel, proxyIcon } from './utils.js';
 
-// ─── Tier → left border color ────────────────────────────
-const TIER_COLORS = {
-  wire: null,          // dynamic per-source via colorFromLabel
-  library: '#be4bdb',  // purple
-  scrapbook: '#748ffc', // indigo
-  compass: '#fab005',  // amber
-};
-
 const STATUS_COLORS = {
   red: '#ff6b6b',
   yellow: '#fab005',
@@ -418,12 +410,12 @@ const BODY_MODULES = {
 
 // ─── Main Component ──────────────────────────────────────
 
-export default function FeedCard({ item }) {
+export default function FeedCard({ item, colors = {} }) {
   const tier = item.tier || 'wire';
   const sourceName = item.meta?.sourceName || item.meta?.feedTitle || item.source || '';
   const age = formatAge(item.timestamp);
   const iconUrl = proxyIcon(item.meta?.sourceIcon);
-  const borderColor = TIER_COLORS[tier] ?? colorFromLabel(sourceName);
+  const borderColor = colors[item.source] || colors[tier] || colorFromLabel(item.source);
 
   const BodyModule = BODY_MODULES[item.source] || DefaultBody;
 
@@ -441,13 +433,21 @@ export default function FeedCard({ item }) {
     >
       {/* Hero image */}
       {item.image && (
-        <div style={{ overflow: 'hidden', position: 'relative' }}>
+        <div style={{
+            overflow: 'hidden',
+            position: 'relative',
+            aspectRatio: (item.meta?.imageWidth && item.meta?.imageHeight)
+              ? `${item.meta.imageWidth} / ${item.meta.imageHeight}`
+              : '16 / 9',
+            backgroundColor: '#1a1b1e',
+          }}>
           <img
             src={item.image}
             alt=""
             className="feed-card-image"
             style={{
               width: '100%',
+              height: '100%',
               display: 'block',
               objectFit: 'cover',
             }}

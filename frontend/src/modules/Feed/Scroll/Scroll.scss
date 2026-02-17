@@ -160,6 +160,18 @@
   font-size: 0.85rem;
 }
 
+.scroll-load-more {
+  background: none;
+  border: 1px solid #5c636a;
+  border-radius: 6px;
+  color: #5c636a;
+  padding: 0.5rem 1.5rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+  &:hover { background: rgba(255,255,255,0.05); }
+  &:disabled { opacity: 0.5; cursor: default; }
+}
+
 // Mini player bar
 .feed-mini-bar {
   position: fixed;
