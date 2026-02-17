@@ -76,20 +76,21 @@ const apiKey = komgaAuth.token;
 
 const args = process.argv.slice(2);
 const dryRun = args.includes('--dry-run');
+const force = args.includes('--force');
 const specificBook = args.includes('--book') ? args[args.indexOf('--book') + 1] : null;
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-async function fetchThumbnail(bookId, page) {
-  const url = `${komgaHost}/api/v1/books/${bookId}/pages/${page}/thumbnail`;
+async function fetchPageImage(bookId, page) {
+  const url = `${komgaHost}/api/v1/books/${bookId}/pages/${page}`;
   const maxRetries = 3;
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       const res = await fetch(url, {
         headers: { 'X-API-Key': apiKey, 'Accept': 'image/jpeg' },
-        signal: AbortSignal.timeout(15000),
+        signal: AbortSignal.timeout(30000),
       });
       if (!res.ok) return null;
       const buffer = Buffer.from(await res.arrayBuffer());
@@ -107,11 +108,13 @@ async function fetchThumbnail(bookId, page) {
 }
 
 async function detectOffset(bookId, startPage, maxAttempts = 10) {
+  const readings = [];
+
   for (let i = 0; i < maxAttempts; i++) {
     const vendorPage = startPage + i;
     process.stdout.write(`    page ${vendorPage}...`);
 
-    const imageDataUri = await fetchThumbnail(bookId, vendorPage);
+    const imageDataUri = await fetchPageImage(bookId, vendorPage);
     if (!imageDataUri) {
       console.log(' (skip)');
       continue;
@@ -131,15 +134,36 @@ async function detectOffset(bookId, startPage, maxAttempts = 10) {
 
       if (!isNaN(parsed) && parsed > 0) {
         const offset = vendorPage - parsed;
+        readings.push({ vendorPage, printedPage: parsed, offset });
         console.log(` printed="${parsed}" → offset=${offset}`);
-        return offset;
+      } else {
+        console.log(` "${answer}"`);
       }
-      console.log(` "${answer}"`);
     } catch (err) {
       console.log(` error: ${err.message}`);
     }
   }
-  return null;
+
+  if (readings.length < 2) {
+    console.log(`    ⚠ Only ${readings.length} reading(s) — insufficient for consensus`);
+    return null;
+  }
+
+  // Find consensus offset (mode)
+  const counts = {};
+  for (const r of readings) {
+    counts[r.offset] = (counts[r.offset] || 0) + 1;
+  }
+  const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  const [bestOffset, bestCount] = sorted[0];
+
+  if (bestCount < 2) {
+    console.log(`    ⚠ No consensus — offsets: ${readings.map(r => r.offset).join(', ')}`);
+    return null;
+  }
+
+  console.log(`    ✓ Consensus: offset=${bestOffset} (${bestCount}/${readings.length} agree)`);
+  return parseInt(bestOffset, 10);
 }
 
 // ---------------------------------------------------------------------------
@@ -149,7 +173,7 @@ async function detectOffset(bookId, startPage, maxAttempts = 10) {
 async function main() {
   console.log('Backfill tocPageOffset');
   console.log(`  Host: ${komgaHost}`);
-  console.log(`  Mode: ${dryRun ? 'DRY RUN' : 'LIVE'}\n`);
+  console.log(`  Mode: ${dryRun ? 'DRY RUN' : 'LIVE'}${force ? ' (FORCE)' : ''}\n`);
 
   const tocDir = join(dataDir, 'household', 'common', 'komga', 'toc');
   const files = readdirSync(tocDir).filter(f => f.endsWith('.yml'));
@@ -163,8 +187,8 @@ async function main() {
     const cached = dataService.household.read(cachePath);
     if (!cached) continue;
 
-    // Skip if already has offset
-    if (cached.tocPageOffset !== undefined && cached.tocPageOffset !== null) continue;
+    // Skip if already has offset (unless --force)
+    if (!force && cached.tocPageOffset !== undefined && cached.tocPageOffset !== null) continue;
 
     // Need a TOC page to know where to start scanning
     const tocPages = cached.tocPages || (cached.tocPage ? [cached.tocPage] : []);
