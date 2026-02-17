@@ -1,8 +1,8 @@
 /**
- * Canvas Service
- * @module 0_system/canvas/CanvasService
+ * Canvas Renderer
+ * @module 0_system/canvas/CanvasRenderer
  *
- * System-level service for canvas instance management.
+ * System-level renderer for canvas instance management.
  * Handles font registration and canvas creation.
  */
 
@@ -11,9 +11,9 @@ import fs from 'fs';
 import path from 'path';
 
 /**
- * Canvas service for creating and managing canvas instances
+ * Canvas renderer for creating and managing canvas instances
  */
-export class CanvasService {
+export class CanvasRenderer {
   #fontDir;
   #registeredFonts = new Set();
   #logger;
@@ -25,7 +25,7 @@ export class CanvasService {
    */
   constructor({ fontDir, logger = console }) {
     if (!fontDir) {
-      throw new Error('CanvasService requires fontDir');
+      throw new Error('CanvasRenderer requires fontDir');
     }
     this.#fontDir = fontDir;
     this.#logger = logger;
@@ -86,4 +86,4 @@ export class CanvasService {
 
 export { loadImage };
 
-export default CanvasService;
+export default CanvasRenderer;

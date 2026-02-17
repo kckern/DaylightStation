@@ -2,11 +2,11 @@
  * Canvas System Module
  * @module 0_system/canvas
  *
- * Exports canvas service and drawing utilities.
+ * Exports canvas renderer and drawing utilities.
  */
 
-import { CanvasService } from './CanvasService.mjs';
-import { loadImage } from './CanvasService.mjs';
+import { CanvasRenderer } from './CanvasRenderer.mjs';
+import { loadImage } from './CanvasRenderer.mjs';
 
-export { CanvasService, loadImage };
+export { CanvasRenderer, loadImage };
 export * from './drawingUtils.mjs';
