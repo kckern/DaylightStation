@@ -28,38 +28,41 @@ export class HeadlineFeedAdapter extends IFeedSourceAdapter {
   async fetchPage(query, username, { cursor } = {}) {
     if (!this.#headlineService) return { items: [], cursor: null };
     const pages = this.#headlineService.getPageList(username);
-    const firstPageId = pages[0]?.id;
-    if (!firstPageId) return { items: [], cursor: null };
+    if (!pages.length) return { items: [], cursor: null };
 
-    const result = await this.#headlineService.getAllHeadlines(username, firstPageId);
     const totalLimit = query.limit || 30;
     const offset = cursor ? parseInt(cursor, 10) : 0;
     const allItems = [];
 
-    for (const [sourceId, source] of Object.entries(result.sources || {})) {
-      for (const item of (source.items || [])) {
-        allItems.push({
-          id: `headline:${item.id || sourceId + ':' + item.link}`,
-          tier: query.tier || 'wire',
-          source: 'headline',
-          title: item.title,
-          body: item.desc || null,
-          image: item.image || null,
-          link: item.link,
-          timestamp: item.timestamp || new Date().toISOString(),
-          priority: query.priority || 0,
-          meta: {
-            sourceId,
-            sourceLabel: source.label,
-            sourceName: source.label || sourceId,
-            sourceIcon: item.link ? (() => { try { return new URL(item.link).origin; } catch { return null; } })() : null,
-            paywall: source.paywall || false,
-            paywallProxy: source.paywall ? result.paywallProxy : null,
-            ...(item.imageWidth && item.imageHeight
-              ? { imageWidth: item.imageWidth, imageHeight: item.imageHeight }
-              : {}),
-          },
-        });
+    for (const page of pages) {
+      const result = await this.#headlineService.getAllHeadlines(username, page.id);
+      if (!result?.sources) continue;
+
+      for (const [sourceId, source] of Object.entries(result.sources)) {
+        for (const item of (source.items || [])) {
+          allItems.push({
+            id: `headline:${item.id || sourceId + ':' + item.link}`,
+            tier: query.tier || 'wire',
+            source: 'headline',
+            title: item.title,
+            body: item.desc || null,
+            image: item.image || null,
+            link: item.link,
+            timestamp: item.timestamp || new Date().toISOString(),
+            priority: query.priority || 0,
+            meta: {
+              sourceId,
+              sourceLabel: source.label,
+              sourceName: source.label || sourceId,
+              sourceIcon: item.link ? (() => { try { return new URL(item.link).origin; } catch { return null; } })() : null,
+              paywall: source.paywall || false,
+              paywallProxy: source.paywall ? result.paywallProxy : null,
+              ...(item.imageWidth && item.imageHeight
+                ? { imageWidth: item.imageWidth, imageHeight: item.imageHeight }
+                : {}),
+            },
+          });
+        }
       }
     }
 

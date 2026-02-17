@@ -17,6 +17,16 @@ import { IFeedSourceAdapter } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
 const RSS_BASE = 'https://news.google.com/rss/search';
 const CACHE_TTL_MS = 20 * 60 * 1000; // 20 minutes
 
+/**
+ * Image URL patterns known to be generic Google News publisher icons/logos
+ * rather than legitimate article hero images. These appear as og:image
+ * when scraping articles served through Google News aggregation.
+ */
+export const GOOGLE_NEWS_BLOCKED_IMAGE_PATTERNS = [
+  // Google-hosted publisher icon/logo placeholder (lh3.googleusercontent.com/HASH=sN-wN)
+  /^https?:\/\/lh3\.googleusercontent\.com\/[A-Za-z0-9_-]+=s\d+-w\d+$/,
+];
+
 export class GoogleNewsFeedAdapter extends IFeedSourceAdapter {
   #logger;
   /** @type {Map<string, { items: Object[], ts: number }>} */

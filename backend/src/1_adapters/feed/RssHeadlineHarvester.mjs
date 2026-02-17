@@ -8,6 +8,16 @@
 
 import { Headline } from '#domains/feed/entities/Headline.mjs';
 
+/**
+ * Known generic default/placeholder image URLs used by specific news sources.
+ * These are publisher logos or site-wide defaults, not article-specific images.
+ */
+export const SOURCE_BLOCKED_IMAGE_URLS = new Set([
+  'https://s.abcnews.com/images/US/abc_news_default_2000x2000_update_4x3t_384.jpg',
+  'https://www.seattletimes.com/wp-content/themes/st_refresh/img/st-meta-facebook.png',
+  'https://r.yna.co.kr/global/home/v01/img/yonhapnews_logo_1200x800_en01.jpg',
+]);
+
 export class RssHeadlineHarvester {
   #rssParser;
   #logger;
