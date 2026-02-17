@@ -8,6 +8,9 @@
  * @module applications/feed/services
  */
 
+import { GOOGLE_NEWS_BLOCKED_IMAGE_PATTERNS } from '#adapters/feed/sources/GoogleNewsFeedAdapter.mjs';
+import { SOURCE_BLOCKED_IMAGE_URLS } from '#adapters/feed/RssHeadlineHarvester.mjs';
+
 export class HeadlineService {
   #headlineStore;
   #harvester;
@@ -102,6 +105,9 @@ export class HeadlineService {
     for (const source of sources) {
       try {
         const result = await this.#harvester.harvest(source);
+
+        // Strip generic placeholder images from RSS harvest
+        this.#stripGenericImages(result.items);
 
         // Enrich new imageless items with og:image
         const cached = await this.#headlineStore.loadSource(source.id, username);
@@ -222,7 +228,7 @@ export class HeadlineService {
           active++;
           this.#webContentGateway.extractReadableContent(item.link)
             .then(result => {
-              if (result?.ogImage) item.image = result.ogImage;
+              if (result?.ogImage && !this.#isGenericImage(result.ogImage)) item.image = result.ogImage;
             })
             .catch(err => {
               this.#logger.debug?.('headline.enrich.skip', { link: item.link, error: err.message });
@@ -236,6 +242,31 @@ export class HeadlineService {
       };
       next();
     });
+  }
+
+  /**
+   * Check whether a URL is a known generic placeholder image.
+   * @param {string} url
+   * @returns {boolean}
+   */
+  #isGenericImage(url) {
+    if (!url) return false;
+    if (SOURCE_BLOCKED_IMAGE_URLS.has(url)) return true;
+    return GOOGLE_NEWS_BLOCKED_IMAGE_PATTERNS.some(re => re.test(url));
+  }
+
+  /**
+   * Strip generic placeholder images from harvest items (mutates in-place).
+   * @param {Array} items
+   */
+  #stripGenericImages(items) {
+    for (const item of items) {
+      if (item.image && this.#isGenericImage(item.image)) {
+        delete item.image;
+        delete item.imageWidth;
+        delete item.imageHeight;
+      }
+    }
   }
 
   /**
@@ -288,6 +319,9 @@ export class HeadlineService {
     const cutoff = new Date(Date.now() - retentionHours * 60 * 60 * 1000);
 
     const result = await this.#harvester.harvest(source);
+
+    // Strip generic placeholder images from RSS harvest
+    this.#stripGenericImages(result.items);
 
     // Enrich new imageless items with og:image
     const cached = await this.#headlineStore.loadSource(source.id, username);

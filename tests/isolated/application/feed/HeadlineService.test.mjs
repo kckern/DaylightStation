@@ -259,6 +259,97 @@ describe('HeadlineService', () => {
       expect(savedResult.items[0].image).toBeUndefined();
     });
 
+    test('rejects generic placeholder og:image (Google News icon)', async () => {
+      mockWebContentGateway.extractReadableContent.mockResolvedValue({
+        title: 'Article',
+        content: 'body',
+        wordCount: 1,
+        ogImage: 'https://lh3.googleusercontent.com/J6_coFbogxhRI9iM864NL_liGXvsQp2AupsKei7z0cNNfDvGUmWUy20nuUhkREQyrpY4bEeIBuc=s0-w300',
+        ogDescription: 'desc',
+      });
+
+      const svc = buildServiceWithAdapter();
+      const now = new Date().toISOString();
+
+      mockHarvester.harvest.mockResolvedValue({
+        source: 'src1',
+        label: 'Source One',
+        lastHarvest: now,
+        items: [
+          { id: 'item-1', title: 'Google News article', link: 'https://example.com/article', timestamp: now },
+        ],
+      });
+
+      mockStore.loadSource.mockResolvedValue(null);
+
+      await svc.harvestAll('kckern');
+
+      const savedResult = mockStore.saveSource.mock.calls[0][1];
+      expect(savedResult.items[0].image).toBeUndefined();
+    });
+
+    test('rejects generic placeholder og:image (exact URL match)', async () => {
+      mockWebContentGateway.extractReadableContent.mockResolvedValue({
+        title: 'Article',
+        content: 'body',
+        wordCount: 1,
+        ogImage: 'https://s.abcnews.com/images/US/abc_news_default_2000x2000_update_4x3t_384.jpg',
+        ogDescription: 'desc',
+      });
+
+      const svc = buildServiceWithAdapter();
+      const now = new Date().toISOString();
+
+      mockHarvester.harvest.mockResolvedValue({
+        source: 'src1',
+        label: 'Source One',
+        lastHarvest: now,
+        items: [
+          { id: 'item-1', title: 'ABC article', link: 'https://example.com/abc', timestamp: now },
+        ],
+      });
+
+      mockStore.loadSource.mockResolvedValue(null);
+
+      await svc.harvestAll('kckern');
+
+      const savedResult = mockStore.saveSource.mock.calls[0][1];
+      expect(savedResult.items[0].image).toBeUndefined();
+    });
+
+    test('strips generic placeholder images from RSS harvest results', async () => {
+      // No webContentGateway — use the default service (no enrichment)
+      const ds = { user: { read: jest.fn().mockReturnValue(singleSourceConfig) } };
+      const svc = new HeadlineService({
+        headlineStore: mockStore,
+        harvester: mockHarvester,
+        dataService: ds,
+      });
+      const now = new Date().toISOString();
+
+      mockHarvester.harvest.mockResolvedValue({
+        source: 'src1',
+        label: 'Source One',
+        lastHarvest: now,
+        items: [
+          { id: 'item-1', title: 'Has generic image', link: 'https://example.com/a1', image: 'https://lh3.googleusercontent.com/ABC123=s0-w300', imageWidth: 300, imageHeight: 200, timestamp: now },
+          { id: 'item-2', title: 'Has legit image', link: 'https://example.com/a2', image: 'https://cdn.example.com/photo.jpg', timestamp: now },
+        ],
+      });
+
+      mockStore.loadSource.mockResolvedValue(null);
+
+      await svc.harvestAll('kckern');
+
+      const savedResult = mockStore.saveSource.mock.calls[0][1];
+      // Generic image should be stripped
+      expect(savedResult.items[0].image).toBeUndefined();
+      expect(savedResult.items[0].imageWidth).toBeUndefined();
+      expect(savedResult.items[0].imageHeight).toBeUndefined();
+      // Legit image should remain
+      expect(savedResult.items[1].image).toBe('https://cdn.example.com/photo.jpg');
+    });
+
     test('works without webContentGateway (backward compat)', async () => {
       // Default service has no webContentGateway
       const now = new Date().toISOString();
