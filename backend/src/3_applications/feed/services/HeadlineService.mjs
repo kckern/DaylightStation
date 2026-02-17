@@ -8,21 +8,26 @@
  * @module applications/feed/services
  */
 
-const FEED_CONFIG_PATH = 'config/feed';
-
 export class HeadlineService {
   #headlineStore;
   #harvester;
   #dataService;
-  #configService;
+  #configPath;
+  #defaults;
   #webContentGateway;
   #logger;
 
-  constructor({ headlineStore, harvester, dataService, configService, webContentGateway, logger = console }) {
+  constructor({ headlineStore, harvester, dataService, config = {}, webContentGateway, logger = console }) {
     this.#headlineStore = headlineStore;
     this.#harvester = harvester;
     this.#dataService = dataService;
-    this.#configService = configService;
+    this.#configPath = config.configPath || 'config/feed';
+    this.#defaults = {
+      retentionHours: 48,
+      maxPerSource: 10,
+      dedupeWordCount: 8,
+      ...config.defaults,
+    };
     this.#webContentGateway = webContentGateway || null;
     this.#logger = logger;
   }
@@ -33,7 +38,7 @@ export class HeadlineService {
    * @returns {Object}
    */
   #getUserConfig(username) {
-    return this.#dataService.user.read(FEED_CONFIG_PATH, username) || {};
+    return this.#dataService.user.read(this.#configPath, username) || {};
   }
 
   /**
@@ -87,8 +92,8 @@ export class HeadlineService {
   async harvestAll(username, pageId) {
     const sources = this.#getSources(username, pageId);
     const config = this.#getUserConfig(username);
-    const retentionHours = config.headlines?.retention_hours || 48;
-    const minItems = config.headlines?.max_per_source || 12;
+    const retentionHours = config.headlines?.retention_hours || this.#defaults.retentionHours;
+    const minItems = config.headlines?.max_per_source || this.#defaults.maxPerSource;
     const cutoff = new Date(Date.now() - retentionHours * 60 * 60 * 1000);
 
     let errors = 0;
@@ -152,8 +157,8 @@ export class HeadlineService {
     const cached = await this.#headlineStore.loadAllSources(username);
 
     const headlineConfig = config.headlines || {};
-    const maxPerSource = headlineConfig.max_per_source || 10;
-    const dedupeWordCount = headlineConfig.dedupe_word_count || 8;
+    const maxPerSource = headlineConfig.max_per_source || this.#defaults.maxPerSource;
+    const dedupeWordCount = headlineConfig.dedupe_word_count || this.#defaults.dedupeWordCount;
     const excludePatterns = (headlineConfig.exclude_patterns || []).map(p => new RegExp(p, 'i'));
 
     const paywallConfig = config.paywall_proxy || {};
@@ -278,8 +283,8 @@ export class HeadlineService {
     if (!source) throw new Error(`Source not found: ${sourceId}`);
 
     const config = this.#getUserConfig(username);
-    const retentionHours = config.headlines?.retention_hours || 48;
-    const minItems = config.headlines?.max_per_source || 12;
+    const retentionHours = config.headlines?.retention_hours || this.#defaults.retentionHours;
+    const minItems = config.headlines?.max_per_source || this.#defaults.maxPerSource;
     const cutoff = new Date(Date.now() - retentionHours * 60 * 60 * 1000);
 
     const result = await this.#harvester.harvest(source);
