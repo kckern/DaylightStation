@@ -24,7 +24,7 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
  * @returns {express.Router}
  */
 export function createFeedRouter(config) {
-  const { freshRSSAdapter, headlineService, feedAssemblyService, feedContentService, configService, logger = console } = config;
+  const { freshRSSAdapter, headlineService, feedAssemblyService, feedContentService, dismissedItemsStore, configService, logger = console } = config;
   const router = express.Router();
 
   const getUsername = () => {
@@ -168,6 +168,46 @@ export function createFeedRouter(config) {
     if (!result) return res.status(404).json({ error: 'Item not found or expired' });
 
     res.json(result);
+  }));
+
+  // Dismiss / mark-read items (removes from future scroll batches)
+  router.post('/scroll/dismiss', asyncHandler(async (req, res) => {
+    const { itemIds } = req.body;
+    if (!Array.isArray(itemIds) || itemIds.length === 0) {
+      return res.status(400).json({ error: 'itemIds array required' });
+    }
+
+    const username = getUsername();
+
+    // Partition by source: freshrss items use markRead API, others go to YAML store
+    const freshrssIds = [];
+    const otherIds = [];
+
+    for (const id of itemIds) {
+      if (id.startsWith('freshrss:')) {
+        freshrssIds.push(id.slice('freshrss:'.length));
+      } else {
+        otherIds.push(id);
+      }
+    }
+
+    const promises = [];
+
+    if (freshrssIds.length > 0 && freshRSSAdapter) {
+      promises.push(
+        freshRSSAdapter.markRead(freshrssIds, username).catch(err => {
+          logger.warn?.('feed.dismiss.freshrss.error', { error: err.message, count: freshrssIds.length });
+        })
+      );
+    }
+
+    if (otherIds.length > 0 && dismissedItemsStore) {
+      dismissedItemsStore.add(otherIds);
+    }
+
+    await Promise.all(promises);
+
+    res.json({ dismissed: itemIds.length });
   }));
 
   // =========================================================================
