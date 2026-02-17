@@ -25,6 +25,7 @@
   -webkit-tap-highlight-color: transparent;
   -webkit-touch-callout: none;
   user-select: none;
+  will-change: transform, opacity;
 
   .feed-card-overlay {
     border-radius: 0;
