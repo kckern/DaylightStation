@@ -94,6 +94,7 @@ import { PlexProxyAdapter } from '#adapters/proxy/PlexProxyAdapter.mjs';
 import { ImmichProxyAdapter } from '#adapters/proxy/ImmichProxyAdapter.mjs';
 import { AudiobookshelfProxyAdapter } from '#adapters/proxy/AudiobookshelfProxyAdapter.mjs';
 import { FreshRSSProxyAdapter } from '#adapters/proxy/FreshRSSProxyAdapter.mjs';
+import { KomgaProxyAdapter } from '#adapters/proxy/KomgaProxyAdapter.mjs';
 
 // Feed domain imports
 import { FreshRSSFeedAdapter } from '#adapters/feed/FreshRSSFeedAdapter.mjs';
@@ -160,6 +161,7 @@ import { createHomebotRouter } from '#api/v1/routers/homebot.mjs';
 // Agents application imports
 import { AgentOrchestrator, EchoAgent, Scheduler } from '#apps/agents/index.mjs';
 import { HealthCoachAgent } from '#apps/agents/health-coach/index.mjs';
+import { KomgaTocAgent } from '#apps/agents/komga-toc/index.mjs';
 import { MastraAdapter, YamlWorkingMemoryAdapter } from '#adapters/agents/index.mjs';
 import { createAgentsRouter } from '#api/v1/routers/agents.mjs';
 
@@ -689,7 +691,7 @@ export function createApiRouters(config) {
   return {
     routers: {
       content: createContentRouter(registry, mediaProgressMemory, { loadFile, saveFile, cacheBasePath, composePresentationUseCase, contentQueryService, logger, aliasResolver }),
-      proxy: createProxyRouter({ registry, proxyService, mediaBasePath, logger }),
+      proxy: createProxyRouter({ registry, proxyService, mediaBasePath, dataPath, logger }),
       localContent: createLocalContentRouter({ registry, dataPath, mediaBasePath, mediaProgressMemory }),
       play: createPlayRouter({ registry, mediaProgressMemory, playResponseService, contentQueryService, contentIdResolver, progressSyncService, progressSyncSources, logger }),
       list: createListRouter({ registry, loadFile, configService, contentQueryService, contentIdResolver, menuMemoryPath: configService.getHouseholdPath('history/menu_memory') }),
@@ -947,7 +949,14 @@ export function createFeedServices(config) {
     logger,
   });
 
-  const rssParser = new RSSParser();
+  const rssParser = new RSSParser({
+    customFields: {
+      item: [
+        ['media:content', 'media:content', { keepArray: true }],
+        ['media:thumbnail', 'media:thumbnail'],
+      ]
+    }
+  });
   const harvester = new RssHeadlineHarvester({ rssParser, logger });
 
   const headlineStore = new YamlHeadlineCacheStore({ dataService, logger });
@@ -1239,6 +1248,14 @@ export function createProxyService(config) {
         password: config.freshrss.password,
         apiKey: config.freshrss.apiKey
       },
+      { logger }
+    ));
+  }
+
+  // Register Komga adapter if configured
+  if (config.komga?.host) {
+    proxyService.register(new KomgaProxyAdapter(
+      { host: config.komga.host, apiKey: config.komga.apiKey },
       { logger }
     ));
   }
@@ -2392,6 +2409,7 @@ export function createAgentsApiRouter(config) {
     mediaProgressMemory,
     dataService,
     configService,
+    aiGateway,
   } = config;
 
   // Mastra reads API keys from process.env — bridge from ConfigService
@@ -2426,6 +2444,16 @@ export function createAgentsApiRouter(config) {
       fitnessPlayableService,
       sessionService,
       mediaProgressMemory,
+      dataService,
+      configService,
+    });
+  }
+
+  // Register Komga TOC agent (requires AI gateway + data services)
+  if (aiGateway && dataService && configService) {
+    agentOrchestrator.register(KomgaTocAgent, {
+      workingMemory,
+      aiGateway,
       dataService,
       configService,
     });
