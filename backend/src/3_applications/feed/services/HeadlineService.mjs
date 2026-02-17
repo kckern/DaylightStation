@@ -15,13 +15,15 @@ export class HeadlineService {
   #harvester;
   #dataService;
   #configService;
+  #webContentGateway;
   #logger;
 
-  constructor({ headlineStore, harvester, dataService, configService, logger = console }) {
+  constructor({ headlineStore, harvester, dataService, configService, webContentGateway, logger = console }) {
     this.#headlineStore = headlineStore;
     this.#harvester = harvester;
     this.#dataService = dataService;
     this.#configService = configService;
+    this.#webContentGateway = webContentGateway || null;
     this.#logger = logger;
   }
 
@@ -95,6 +97,12 @@ export class HeadlineService {
     for (const source of sources) {
       try {
         const result = await this.#harvester.harvest(source);
+
+        // Enrich new imageless items with og:image
+        const cached = await this.#headlineStore.loadSource(source.id, username);
+        const existingIds = new Set((cached?.items || []).map(i => i.id));
+        await this.#enrichImages(result.items, existingIds);
+
         await this.#headlineStore.saveSource(source.id, result, username);
         // Only prune if enough items would survive — low-volume feeds keep all items
         const survivorCount = result.items.filter(i => new Date(i.timestamp).getTime() >= cutoff.getTime()).length;
@@ -184,6 +192,48 @@ export class HeadlineService {
   }
 
   /**
+   * Enrich imageless items by fetching og:image from their article pages.
+   * Skips items that already have an image or already exist in the cache.
+   * Runs with limited concurrency to avoid overwhelming upstream servers.
+   *
+   * @param {Array} items - Harvested items (mutated in-place)
+   * @param {Set<string>} existingIds - IDs already present in the cache
+   * @returns {Promise<void>}
+   */
+  async #enrichImages(items, existingIds) {
+    if (!this.#webContentGateway) return;
+    const CONCURRENCY = 3;
+
+    const candidates = items.filter(i => !i.image && i.link && !existingIds.has(i.id));
+    if (candidates.length === 0) return;
+
+    let active = 0;
+    let idx = 0;
+
+    await new Promise((resolve) => {
+      const next = () => {
+        while (active < CONCURRENCY && idx < candidates.length) {
+          const item = candidates[idx++];
+          active++;
+          this.#webContentGateway.extractReadableContent(item.link)
+            .then(result => {
+              if (result?.ogImage) item.image = result.ogImage;
+            })
+            .catch(err => {
+              this.#logger.debug?.('headline.enrich.skip', { link: item.link, error: err.message });
+            })
+            .finally(() => {
+              active--;
+              if (idx >= candidates.length && active === 0) resolve();
+              else next();
+            });
+        }
+      };
+      next();
+    });
+  }
+
+  /**
    * Filter, dedupe, and limit headline items
    * @param {Array} items
    * @param {RegExp[]} excludePatterns - regex patterns to exclude
@@ -233,6 +283,12 @@ export class HeadlineService {
     const cutoff = new Date(Date.now() - retentionHours * 60 * 60 * 1000);
 
     const result = await this.#harvester.harvest(source);
+
+    // Enrich new imageless items with og:image
+    const cached = await this.#headlineStore.loadSource(source.id, username);
+    const existingIds = new Set((cached?.items || []).map(i => i.id));
+    await this.#enrichImages(result.items, existingIds);
+
     await this.#headlineStore.saveSource(source.id, result, username);
     const survivorCount = result.items.filter(i => new Date(i.timestamp).getTime() >= cutoff.getTime()).length;
     if (survivorCount >= minItems) {
