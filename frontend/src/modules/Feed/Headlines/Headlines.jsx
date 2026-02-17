@@ -3,14 +3,14 @@ import { SourcePanel } from './SourcePanel.jsx';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import './Headlines.scss';
 
-export default function Headlines() {
+export default function Headlines({ pageId }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [harvestingAll, setHarvestingAll] = useState(false);
 
   const fetchHeadlines = async () => {
     try {
-      const result = await DaylightAPI('/api/v1/feed/headlines');
+      const qs = pageId ? `?page=${pageId}` : '';
+      const result = await DaylightAPI(`/api/v1/feed/headlines${qs}`);
       setData(result);
     } catch (err) {
       console.error('Failed to fetch headlines:', err);
@@ -20,22 +20,28 @@ export default function Headlines() {
   };
 
   const triggerHarvestAll = async () => {
-    setHarvestingAll(true);
+    setLoading(true);
     try {
-      await DaylightAPI('/api/v1/feed/headlines/harvest', {}, 'POST');
+      const qs = pageId ? `?page=${pageId}` : '';
+      await DaylightAPI(`/api/v1/feed/headlines/harvest${qs}`, {}, 'POST');
       await fetchHeadlines();
     } catch (err) {
       console.error('Harvest failed:', err);
     } finally {
-      setHarvestingAll(false);
+      setLoading(false);
     }
   };
 
-  useEffect(() => { fetchHeadlines(); }, []);
+  useEffect(() => {
+    setLoading(true);
+    setData(null);
+    fetchHeadlines();
+  }, [pageId]);
 
   if (loading) return <div className="feed-placeholder">Loading headlines...</div>;
 
   const grid = data?.grid;
+  const colColors = data?.col_colors || null;
   const sources = data?.sources || {};
   const paywallProxy = data?.paywallProxy || null;
   const rows = grid?.rows || [];
@@ -64,9 +70,9 @@ export default function Headlines() {
         <button
           className="headlines-harvest-btn"
           onClick={triggerHarvestAll}
-          disabled={harvestingAll}
+          disabled={loading}
         >
-          {harvestingAll ? 'Harvesting...' : 'Refresh All'}
+          Refresh All
         </button>
       </div>
 
@@ -81,6 +87,7 @@ export default function Headlines() {
                 totalCols={cols.length}
                 paywallProxy={paywallProxy}
                 onRefresh={fetchHeadlines}
+                colColors={colColors}
               />
             ))}
           </div>

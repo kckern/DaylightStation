@@ -61,7 +61,7 @@ export class PlexFeedAdapter extends IFeedSourceAdapter {
       const localId = item.localId || item.id?.replace?.('plex:', '') || item.id;
       return {
         id: `plex:${localId}`,
-        type: query.feed_type || 'grounding',
+        tier: query.tier || 'compass',
         source: 'plex',
         title: item.title || item.label || 'Media',
         body: item.subtitle || item.description || null,
@@ -94,7 +94,7 @@ export class PlexFeedAdapter extends IFeedSourceAdapter {
       const localId = item.localId || item.id?.replace?.('plex:', '') || item.id;
       return {
         id: `plex:${localId}`,
-        type: query.feed_type || 'grounding',
+        tier: query.tier || 'compass',
         source: 'plex',
         title: item.title || item.label || 'Media',
         body: item.subtitle || item.description || null,
@@ -110,6 +110,19 @@ export class PlexFeedAdapter extends IFeedSourceAdapter {
         },
       };
     });
+  }
+
+  async getDetail(localId, meta, _username) {
+    const sections = [];
+
+    sections.push({ type: 'player', data: { contentId: `plex:${localId}` } });
+
+    const items = [];
+    if (meta.type) items.push({ label: 'Type', value: meta.type });
+    if (meta.year) items.push({ label: 'Year', value: String(meta.year) });
+    if (items.length > 0) sections.push({ type: 'metadata', data: { items } });
+
+    return { sections };
   }
 
   #plexWebLink(ratingKey) {

@@ -287,6 +287,28 @@ export function createProxyRouter(config) {
   });
 
   /**
+   * GET /proxy/reddit/*
+   * Passthrough proxy for Reddit image CDNs (i.redd.it, preview.redd.it)
+   * that block direct hotlinking from external referrers.
+   * URL scheme: /proxy/reddit/{host}/{path}
+   */
+  router.use('/reddit', async (req, res) => {
+    try {
+      if (proxyService?.isConfigured?.('reddit')) {
+        await proxyService.proxy('reddit', req, res);
+        return;
+      }
+      return res.status(503).json({ error: 'Reddit proxy not configured' });
+    } catch (err) {
+      console.error('[proxy] reddit error:', err.message);
+      if (!res.headersSent) {
+        res.status(err.message?.includes('not allowed') ? 403 : 502)
+          .json({ error: err.message });
+      }
+    }
+  });
+
+  /**
    * GET /proxy/komga/composite/:bookId/:page
    * Generate a composite 16:9 hero image from Komga book cover + article pages.
    * On-demand generation with disk cache.

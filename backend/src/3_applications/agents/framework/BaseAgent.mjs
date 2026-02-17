@@ -26,8 +26,8 @@ export class BaseAgent {
     this.#workingMemory = workingMemory;
     this.#logger = logger;
 
-    // Allow subclasses to store extra deps
-    this.deps = rest;
+    // Allow subclasses to store extra deps (include logger for tool factories)
+    this.deps = { ...rest, logger };
 
     // Let subclass register tool factories
     this.registerTools();

@@ -25,6 +25,7 @@
     "openai": "^4.77.0",
     "openai-gpt-token-counter": "^1.1.1",
     "openmeteo": "^1.1.5",
+    "pdfjs-dist": "^5.4.624",
     "react-flip-move": "^3.0.5",
     "smartquotes": "^2.3.2",
     "string-similarity": "^4.0.4",

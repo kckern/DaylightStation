@@ -6,9 +6,21 @@
  */
 
 import { createServer } from 'http';
-import { existsSync } from 'fs';
+import { existsSync, appendFileSync } from 'fs';
 import path, { join } from 'path';
 import dotenv from 'dotenv';
+
+// Trap unhandled errors to /tmp/agent-crash.log
+process.on('uncaughtException', (err) => {
+  const msg = `[${new Date().toISOString()}] UNCAUGHT: ${err.stack || err.message}\n`;
+  appendFileSync('/tmp/agent-crash.log', msg);
+  console.error('UNCAUGHT EXCEPTION:', err);
+});
+process.on('unhandledRejection', (reason) => {
+  const msg = `[${new Date().toISOString()}] UNHANDLED REJECTION: ${reason?.stack || reason}\n`;
+  appendFileSync('/tmp/agent-crash.log', msg);
+  console.error('UNHANDLED REJECTION:', reason);
+});
 
 import { initConfigService, ConfigValidationError, configService } from '#system/config/index.mjs';
 import { hydrateProcessEnvFromConfigs, loadLoggingConfig, resolveLoggerLevel, getLoggingTags, resolveLogglyToken } from '#system/logging/config.mjs';
