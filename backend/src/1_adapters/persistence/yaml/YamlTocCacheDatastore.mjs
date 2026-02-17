@@ -1,6 +1,6 @@
 // backend/src/1_adapters/persistence/yaml/YamlTocCacheDatastore.mjs
 
-import { ITocCacheDatastore } from '#apps/agents/komga-toc/ports/ITocCacheDatastore.mjs';
+import { ITocCacheDatastore } from '#apps/agents/paged-media-toc/ports/ITocCacheDatastore.mjs';
 
 /**
  * YamlTocCacheDatastore — YAML-backed persistence for TOC cache.
