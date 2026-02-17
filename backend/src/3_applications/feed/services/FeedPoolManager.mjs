@@ -55,6 +55,15 @@ export class FeedPoolManager {
   static #REFILL_THRESHOLD_MULTIPLIER = 2;
   static #MAX_SEEN_ITEMS = 500;
 
+  /**
+   * @param {Object} deps
+   * @param {Object[]} deps.sourceAdapters - Feed source adapters keyed by sourceType (required for any fetching)
+   * @param {Object} [deps.feedCacheService=null] - Cache layer; without it every first-page fetch hits the source adapter directly
+   * @param {Object[]} [deps.queryConfigs=[]] - Household-level query configs; without them no sources are fetched unless user queries supply them
+   * @param {Function} [deps.loadUserQueries=null] - Loader for per-user query overrides; without it all users share household queries only
+   * @param {Object} [deps.dismissedItemsStore=null] - Dismissed-items store; without it dismissed items reappear on recycle and pool filtering
+   * @param {Object} [deps.logger=console] - Logger instance; falls back to console (throws if explicitly null)
+   */
   constructor({
     sourceAdapters = [],
     feedCacheService = null,

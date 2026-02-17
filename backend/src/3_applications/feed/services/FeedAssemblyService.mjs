@@ -33,6 +33,18 @@ export class FeedAssemblyService {
   #assembledCache = new Map();
   static #ASSEMBLED_TTL = 60_000; // 1 minute
 
+  /**
+   * @param {Object} deps
+   * @param {FeedPoolManager} deps.feedPoolManager - Pool manager for source fetching (required)
+   * @param {Object} [deps.scrollConfigLoader=null] - Scroll config loader; without it batch_size defaults to 15 with minimal spacing/tier config
+   * @param {Object} [deps.tierAssemblyService=null] - Tier interleaver; without it items are not sorted into wire/library/scrapbook/compass tiers
+   * @param {Object} [deps.feedContentService=null] - Article content extractor; without it article detail view returns null for link-based items
+   * @param {Object} [deps.selectionTrackingStore=null] - Selection tracking store; without it headline sort bias and selection counts are skipped
+   * @param {FeedFilterResolver} [deps.feedFilterResolver=null] - Filter resolver for ?filter= param; without it filter queries are ignored
+   * @param {Object} [deps.spacingEnforcer=null] - Consecutive-subsource spacing enforcer; without it no max_consecutive spacing rules are applied
+   * @param {Object} [deps.logger=console] - Logger instance; falls back to console
+   * @param {Object[]} [deps.sourceAdapters=null] - Source adapters for getDetail(); without them detail requests fall back to generic article extraction only
+   */
   constructor({
     feedPoolManager,
     scrollConfigLoader = null,
