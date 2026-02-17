@@ -1,7 +1,9 @@
 import { Headline } from '#domains/feed/entities/Headline.mjs';
+import { shortIdFromUuid } from '#domains/core/utils/id.mjs';
 
 describe('Headline', () => {
   const validData = {
+    id: 'testid1234',
     source: 'cnn',
     title: 'Breaking: Something happened',
     desc: 'Officials confirmed today that the situation has developed...',
@@ -41,6 +43,7 @@ describe('Headline', () => {
     const headline = new Headline(validData);
     const json = headline.toJSON();
     expect(json).toEqual({
+      id: 'testid1234',
       source: 'cnn',
       title: 'Breaking: Something happened',
       desc: 'Officials confirmed today that the situation has developed...',
@@ -70,5 +73,35 @@ describe('Headline', () => {
   test('throws on missing link', () => {
     const { link, ...noLink } = validData;
     expect(() => new Headline(noLink)).toThrow();
+  });
+
+  test('throws on missing id', () => {
+    const { id, ...noId } = validData;
+    expect(() => new Headline(noId)).toThrow('Headline requires id');
+  });
+
+  test('create() generates deterministic id from link', () => {
+    const { id, ...dataWithoutId } = validData;
+    const headline = Headline.create(dataWithoutId);
+    expect(headline.id).toBe(shortIdFromUuid(validData.link));
+  });
+
+  test('create() produces same id for same link', () => {
+    const { id, ...dataWithoutId } = validData;
+    const h1 = Headline.create(dataWithoutId);
+    const h2 = Headline.create(dataWithoutId);
+    expect(h1.id).toBe(h2.id);
+  });
+
+  test('toJSON includes id', () => {
+    const headline = new Headline(validData);
+    const json = headline.toJSON();
+    expect(json.id).toBe('testid1234');
+  });
+
+  test('fromJSON roundtrips with id', () => {
+    const headline = new Headline(validData);
+    const restored = Headline.fromJSON(headline.toJSON());
+    expect(restored.id).toBe(headline.id);
   });
 });
