@@ -86,7 +86,7 @@ export class FreshRSSFeedAdapter {
    * @param {string} streamId - e.g., 'feed/1' or 'user/-/label/Tech'
    * @param {string} username
    * @param {Object} [options] - { count, continuation, excludeRead }
-   * @returns {Promise<Array>}
+   * @returns {Promise<{ items: Array, continuation: string|null }>}
    */
   async getItems(streamId, username, options = {}) {
     const count = options.count || 50;
@@ -96,7 +96,7 @@ export class FreshRSSFeedAdapter {
 
     const data = await this.#greaderRequest(path, username);
 
-    return (data.items || []).map(item => ({
+    const items = (data.items || []).map(item => ({
       id: item.id,
       title: item.title,
       content: item.summary?.content || '',
@@ -107,6 +107,8 @@ export class FreshRSSFeedAdapter {
       feedId: item.origin?.streamId || null,
       categories: item.categories || [],
     }));
+
+    return { items, continuation: data.continuation || null };
   }
 
   /**
