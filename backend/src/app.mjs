@@ -831,6 +831,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       feedContentService,
       selectionTrackingStore,
       feedFilterResolver,
+      spacingEnforcer,
       logger: rootLogger.child({ module: 'feed-assembly' }),
     });
     v1Routers.feed = createFeedRouter({
