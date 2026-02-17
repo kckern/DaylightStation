@@ -113,7 +113,8 @@ export class KomgaFeedAdapter extends IFeedSourceAdapter {
     const article = this.#pickArticle(toc, pageCount);
     if (!article) return null;
 
-    const pageNum = article.page;
+    const offset = toc.tocPageOffset || 0;
+    const pageNum = article.page + offset;
     const imageUrl = `/api/v1/proxy/komga/composite/${bookId}/${pageNum}`;
     const readerLink = this.#webUrl ? `${this.#webUrl}/book/${bookId}/read?page=${pageNum}` : null;
 
@@ -153,15 +154,27 @@ export class KomgaFeedAdapter extends IFeedSourceAdapter {
   async getDetail(localId, meta, _username) {
     const colonIdx = localId.lastIndexOf(':');
     const bookId = colonIdx > 0 ? localId.slice(0, colonIdx) : localId;
-    const page = colonIdx > 0 ? parseInt(localId.slice(colonIdx + 1), 10) || 1 : 1;
+    const vendorPage = colonIdx > 0 ? parseInt(localId.slice(colonIdx + 1), 10) || 1 : 1;
     const sections = [];
 
-    // Determine article page range from TOC
-    const endPage = this.#getArticleEndPage(bookId, page, meta.pageCount || 0);
+    // Read TOC for offset and article boundaries
+    const cachePath = `common/komga/toc/${bookId}.yml`;
+    const toc = this.#dataService.household.read(cachePath);
+    const offset = toc?.tocPageOffset || 0;
+
+    // Convert vendor page back to printed page for boundary lookup
+    const printedPage = vendorPage - offset;
+
+    // Determine article page range from TOC (in printed page numbers)
+    const printedEndPage = this.#getArticleEndPage(bookId, printedPage, meta.pageCount || 0);
+
+    // Convert back to vendor pages for image URLs
+    const vendorStartPage = printedPage + offset;
+    const vendorEndPage = printedEndPage + offset;
 
     // All article page images (vertically stacked in detail view)
     const images = [];
-    for (let p = page; p <= endPage; p++) {
+    for (let p = vendorStartPage; p <= vendorEndPage; p++) {
       images.push({ url: this.#pageImageUrl(bookId, p) });
     }
 
@@ -169,8 +182,6 @@ export class KomgaFeedAdapter extends IFeedSourceAdapter {
       type: 'media',
       data: { images },
     });
-
-    // No metadata section — the article pages speak for themselves
 
     return { sections };
   }
