@@ -7,44 +7,12 @@ export class KomgaTocToolFactory extends ToolFactory {
   static domain = 'komga-toc';
 
   createTools() {
-    const { dataService, configService, aiGateway, logger } = this.deps;
+    const { pagedMediaGateway, tocCacheDatastore, aiGateway, logger } = this.deps;
 
-    const komgaAuth = configService.getHouseholdAuth('komga');
-    const komgaHost = configService.resolveServiceUrl('komga');
-    const apiKey = komgaAuth?.token;
-
-    if (!komgaHost || !apiKey) {
-      logger.warn?.('komga-toc.tools.not_configured');
+    if (!pagedMediaGateway) {
+      logger.warn?.('komga-toc.tools.no_gateway');
       return [];
     }
-
-    const authHeaders = { 'X-API-Key': apiKey, 'Accept': 'application/json' };
-
-    // Shared: fetch image from Komga with retry for SSL/network errors
-    const fetchImageWithRetry = async (url, timeoutMs = 15000) => {
-      const maxRetries = 3;
-      for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        try {
-          const res = await fetch(url, {
-            headers: { 'X-API-Key': apiKey, 'Accept': 'image/jpeg' },
-            signal: AbortSignal.timeout(timeoutMs),
-          });
-          if (!res.ok) return { error: `HTTP ${res.status}` };
-          const buffer = Buffer.from(await res.arrayBuffer());
-          const contentType = res.headers.get('content-type') || 'image/jpeg';
-          return { imageDataUri: `data:${contentType};base64,${buffer.toString('base64')}`, sizeBytes: buffer.length };
-        } catch (err) {
-          if (attempt < maxRetries && /SSL|ECONNRESET|socket|ETIMEDOUT/i.test(err.message)) {
-            const delay = attempt * 2000;
-            logger.warn?.('komga-toc.fetch.retry', { url, attempt, delay, error: err.message });
-            await new Promise(r => setTimeout(r, delay));
-            continue;
-          }
-          return { error: err.message };
-        }
-      }
-      return { error: 'Max retries exceeded' };
-    };
 
     // ---------------------------------------------------------------
     // Tool 1: scan_toc_cache
@@ -58,37 +26,35 @@ export class KomgaTocToolFactory extends ToolFactory {
         required: [],
       },
       execute: async () => {
-        const komgaConfig = dataService.household.read('config/lists/queries/komga');
-        if (!komgaConfig?.params?.series) {
-          return { error: 'No komga series configured', booksToProcess: [], count: 0 };
+        const config = tocCacheDatastore.readQueryConfig();
+        if (!config?.params?.series) {
+          return { error: 'No series configured', booksToProcess: [], count: 0 };
         }
 
-        const seriesList = komgaConfig.params.series;
-        const recentCount = komgaConfig.params.recent_issues || 6;
+        const seriesList = config.params.series;
+        const recentCount = config.params.recent_issues || 6;
         const booksToProcess = [];
 
         for (const series of seriesList) {
-          const booksUrl = `${komgaHost}/api/v1/series/${series.id}/books?sort=metadata.numberSort,desc&size=${recentCount}`;
-          const booksRes = await fetch(booksUrl, { headers: authHeaders });
-          if (!booksRes.ok) continue;
-
-          const booksData = await booksRes.json();
-          const books = booksData?.content || [];
+          let books;
+          try {
+            books = await pagedMediaGateway.getRecentBooks(series.id, recentCount);
+          } catch (err) {
+            logger.warn?.('komga-toc.scan.series.error', { seriesId: series.id, error: err.message });
+            continue;
+          }
 
           for (const book of books) {
-            const bookId = book.id;
-            const cachePath = `common/komga/toc/${bookId}.yml`;
-            const cached = dataService.household.read(cachePath);
-
+            const cached = tocCacheDatastore.readCache(book.id);
             if (cached?.tocScanned) continue;
             if (cached?.articles?.length > 0) continue;
 
             booksToProcess.push({
-              bookId,
+              bookId: book.id,
               seriesId: series.id,
               seriesLabel: series.label,
-              issueTitle: book.metadata?.title || book.name || 'Unknown',
-              pageCount: book.media?.pagesCount || 0,
+              issueTitle: book.title,
+              pageCount: book.pageCount,
             });
           }
         }
@@ -103,8 +69,6 @@ export class KomgaTocToolFactory extends ToolFactory {
 
     // ---------------------------------------------------------------
     // Tool 2: scan_page_for_toc
-    // Merged fetch_page_thumbnail + check_page_is_toc into one tool.
-    // Image data stays in-process — never passes through the LLM context.
     // ---------------------------------------------------------------
     const scanPageForToc = createTool({
       name: 'scan_page_for_toc',
@@ -118,17 +82,17 @@ export class KomgaTocToolFactory extends ToolFactory {
         required: ['bookId', 'page'],
       },
       execute: async ({ bookId, page }) => {
-        // Fetch thumbnail
-        const thumbUrl = `${komgaHost}/api/v1/books/${bookId}/pages/${page}/thumbnail`;
-        const fetchResult = await fetchImageWithRetry(thumbUrl, 15000);
-        if (fetchResult.error) {
-          return { error: `Failed to fetch thumbnail: ${fetchResult.error}`, bookId, page };
+        let fetchResult;
+        try {
+          fetchResult = await pagedMediaGateway.getPageThumbnail(bookId, page);
+        } catch (err) {
+          return { error: `Failed to fetch thumbnail: ${err.message}`, bookId, page };
         }
 
-        // Check with AI vision
         if (!aiGateway?.isConfigured?.()) {
           return { error: 'AI gateway not configured' };
         }
+
         const messages = [
           { role: 'user', content: 'Is this page a table of contents or index page from a magazine? A table of contents typically lists article titles with corresponding page numbers. Answer with ONLY "yes" or "no".' },
         ];
@@ -145,7 +109,6 @@ export class KomgaTocToolFactory extends ToolFactory {
 
     // ---------------------------------------------------------------
     // Tool 3: extract_toc_from_page
-    // Fetches full-res image internally and sends to AI vision.
     // ---------------------------------------------------------------
     const extractTocFromPage = createTool({
       name: 'extract_toc_from_page',
@@ -164,10 +127,11 @@ export class KomgaTocToolFactory extends ToolFactory {
           return { error: 'AI gateway not configured' };
         }
 
-        const url = `${komgaHost}/api/v1/books/${bookId}/pages/${page}`;
-        const fetchResult = await fetchImageWithRetry(url, 30000);
-        if (fetchResult.error) {
-          return { error: `Failed to fetch page: ${fetchResult.error}`, bookId, page };
+        let fetchResult;
+        try {
+          fetchResult = await pagedMediaGateway.getPageImage(bookId, page);
+        } catch (err) {
+          return { error: `Failed to fetch page: ${err.message}`, bookId, page };
         }
 
         const messages = [
@@ -184,7 +148,6 @@ export class KomgaTocToolFactory extends ToolFactory {
           imageDetail: 'high',
         });
 
-        // Parse JSON from response
         let articles = [];
         try {
           const jsonMatch = response.match(/\[[\s\S]*\]/);
@@ -196,7 +159,6 @@ export class KomgaTocToolFactory extends ToolFactory {
           return { error: 'Failed to parse AI response as JSON', bookId, page, rawResponse: response };
         }
 
-        // Validate structure and filter invalid page numbers
         articles = articles
           .filter(a => a && typeof a.title === 'string' && typeof a.page === 'number')
           .map(a => ({ title: a.title.trim(), page: Math.round(a.page) }))
@@ -229,7 +191,6 @@ export class KomgaTocToolFactory extends ToolFactory {
         required: ['bookId', 'seriesLabel', 'issueTitle', 'pageCount', 'articles'],
       },
       execute: async ({ bookId, seriesLabel, issueTitle, pageCount, tocPage, articles }) => {
-        const cachePath = `common/komga/toc/${bookId}.yml`;
         const tocData = {
           bookId,
           series: seriesLabel,
@@ -239,9 +200,9 @@ export class KomgaTocToolFactory extends ToolFactory {
           tocPage: tocPage || null,
           articles: articles || [],
         };
-        dataService.household.write(cachePath, tocData);
+        tocCacheDatastore.writeCache(bookId, tocData);
         logger.info?.('komga-toc.cache.written', { bookId, articleCount: (articles || []).length });
-        return { success: true, bookId, articleCount: (articles || []).length, cachePath };
+        return { success: true, bookId, articleCount: (articles || []).length };
       },
     });
 
