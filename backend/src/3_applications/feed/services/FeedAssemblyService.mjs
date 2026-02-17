@@ -28,6 +28,7 @@ export class FeedAssemblyService {
   #feedContentService;
   #feedCacheService;
   #logger;
+  #selectionTrackingStore;
 
   /** LRU cache of recently-served items (keyed by item.id) */
   #itemCache = new Map();
@@ -46,6 +47,7 @@ export class FeedAssemblyService {
     tierAssemblyService = null,
     feedContentService = null,
     feedCacheService = null,
+    selectionTrackingStore = null,
     logger = console,
     // Legacy params accepted but unused (kept for bootstrap compat)
     dataService,
@@ -63,6 +65,7 @@ export class FeedAssemblyService {
     this.#tierAssemblyService = tierAssemblyService;
     this.#feedContentService = feedContentService || null;
     this.#feedCacheService = feedCacheService;
+    this.#selectionTrackingStore = selectionTrackingStore;
     this.#logger = logger;
 
     this.#sourceAdapters = new Map();
@@ -116,9 +119,14 @@ export class FeedAssemblyService {
     // Remove already-seen items
     const freshPool = allItems.filter(i => !seenIds.has(i.id));
 
+    // Load selection tracking for sort bias
+    const selectionCounts = this.#selectionTrackingStore
+      ? await this.#selectionTrackingStore.getAll(username)
+      : null;
+
     // Primary pass: normal tier assembly
     const { items: primary } = this.#tierAssemblyService.assemble(
-      freshPool, scrollConfig, { effectiveLimit, focus }
+      freshPool, scrollConfig, { effectiveLimit, focus, selectionCounts }
     );
 
     let batch = primary.slice(0, effectiveLimit);
@@ -144,6 +152,16 @@ export class FeedAssemblyService {
       this.#cacheItem(item);
     }
     this.#seenIds.set(username, seenIds);
+
+    // Increment selection tracking for headline items
+    if (this.#selectionTrackingStore) {
+      const trackableIds = batch
+        .filter(i => i.id?.startsWith('headline:'))
+        .map(i => i.id.replace(/^headline:/, ''));
+      if (trackableIds.length) {
+        await this.#selectionTrackingStore.incrementBatch(trackableIds, username);
+      }
+    }
 
     return {
       items: batch,
