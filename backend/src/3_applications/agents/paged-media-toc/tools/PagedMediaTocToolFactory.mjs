@@ -170,7 +170,63 @@ export class PagedMediaTocToolFactory extends ToolFactory {
     });
 
     // ---------------------------------------------------------------
-    // Tool 4: write_toc_cache
+    // Tool 4: detect_page_offset
+    // ---------------------------------------------------------------
+    const detectPageOffset = createTool({
+      name: 'detect_page_offset',
+      description: 'Detect the offset between printed page numbers and vendor page indices. Scans thumbnails starting from a given page, asking AI to read the printed page number. Returns the offset (vendor_page - printed_page). Tries up to 10 pages. Uses cheap thumbnail + mini model.',
+      parameters: {
+        type: 'object',
+        properties: {
+          bookId: { type: 'string', description: 'Book ID' },
+          startPage: { type: 'integer', description: '1-indexed page to start scanning from (typically tocPage + 1)' },
+        },
+        required: ['bookId', 'startPage'],
+      },
+      execute: async ({ bookId, startPage }) => {
+        const maxAttempts = 10;
+
+        for (let i = 0; i < maxAttempts; i++) {
+          const vendorPage = startPage + i;
+          let fetchResult;
+          try {
+            fetchResult = await pagedMediaGateway.getPageThumbnail(bookId, vendorPage);
+          } catch (err) {
+            logger.warn?.('paged-media-toc.offset.fetch_error', { bookId, vendorPage, error: err.message });
+            continue;
+          }
+
+          if (!aiGateway?.isConfigured?.()) {
+            return { error: 'AI gateway not configured' };
+          }
+
+          const messages = [
+            { role: 'user', content: 'What page number is printed on this page? Look for a number at the top or bottom of the page that indicates the page number. Reply with ONLY the number (e.g. "42"), or "none" if no page number is visible.' },
+          ];
+          const response = await aiGateway.chatWithImage(messages, fetchResult.imageDataUri, {
+            model: 'gpt-4o-mini',
+            maxTokens: 10,
+          });
+
+          const answer = (response || '').trim().toLowerCase();
+          const parsed = parseInt(answer, 10);
+
+          if (!isNaN(parsed) && parsed > 0) {
+            const tocPageOffset = vendorPage - parsed;
+            logger.info?.('paged-media-toc.offset.detected', { bookId, vendorPage, printedPage: parsed, tocPageOffset });
+            return { bookId, tocPageOffset, detectedOnPage: vendorPage, printedPageNumber: parsed };
+          }
+
+          logger.info?.('paged-media-toc.offset.no_number', { bookId, vendorPage, answer });
+        }
+
+        logger.info?.('paged-media-toc.offset.not_detected', { bookId, startPage, attempts: maxAttempts });
+        return { bookId, tocPageOffset: 0, reason: 'not_detected' };
+      },
+    });
+
+    // ---------------------------------------------------------------
+    // Tool 5: write_toc_cache
     // ---------------------------------------------------------------
     const writeTocCache = createTool({
       name: 'write_toc_cache',
@@ -183,6 +239,7 @@ export class PagedMediaTocToolFactory extends ToolFactory {
           issueTitle: { type: 'string', description: 'Issue title' },
           pageCount: { type: 'integer', description: 'Total pages in book' },
           tocPage: { type: 'integer', description: 'Page number where TOC was found (null if not found)' },
+          tocPageOffset: { type: 'integer', description: 'Offset between vendor page indices and printed page numbers (vendor_page = printed_page + offset). 0 if not detected.' },
           articles: {
             type: 'array',
             description: 'Array of {title, page} objects extracted from the TOC',
@@ -190,7 +247,7 @@ export class PagedMediaTocToolFactory extends ToolFactory {
         },
         required: ['bookId', 'seriesLabel', 'issueTitle', 'pageCount', 'articles'],
       },
-      execute: async ({ bookId, seriesLabel, issueTitle, pageCount, tocPage, articles }) => {
+      execute: async ({ bookId, seriesLabel, issueTitle, pageCount, tocPage, tocPageOffset, articles }) => {
         const tocData = {
           bookId,
           series: seriesLabel,
@@ -198,6 +255,7 @@ export class PagedMediaTocToolFactory extends ToolFactory {
           pages: pageCount,
           tocScanned: true,
           tocPage: tocPage || null,
+          tocPageOffset: tocPageOffset || 0,
           articles: articles || [],
         };
         tocCacheDatastore.writeCache(bookId, tocData);
@@ -206,6 +264,6 @@ export class PagedMediaTocToolFactory extends ToolFactory {
       },
     });
 
-    return [scanTocCache, scanPageForToc, extractTocFromPage, writeTocCache];
+    return [scanTocCache, scanPageForToc, extractTocFromPage, detectPageOffset, writeTocCache];
   }
 }
