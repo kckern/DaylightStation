@@ -27,6 +27,7 @@ describe('Feed Router', () => {
       markRead: jest.fn().mockResolvedValue(undefined),
     };
     mockHeadlineService = {
+      getPageList: jest.fn().mockReturnValue([{ id: 'main', label: 'Main' }]),
       getAllHeadlines: jest.fn().mockResolvedValue({
         sources: {
           cnn: { source: 'cnn', label: 'CNN', items: [{ title: 'News', link: 'https://cnn.com/1' }] },
@@ -104,7 +105,7 @@ describe('Feed Router', () => {
       const res = await request(app).get('/api/v1/feed/headlines');
       expect(res.status).toBe(200);
       expect(res.body.sources).toHaveProperty('cnn');
-      expect(mockHeadlineService.getAllHeadlines).toHaveBeenCalledWith('kckern');
+      expect(mockHeadlineService.getAllHeadlines).toHaveBeenCalledWith('kckern', 'main');
     });
   });
 
@@ -127,7 +128,7 @@ describe('Feed Router', () => {
       const res = await request(app).post('/api/v1/feed/headlines/harvest');
       expect(res.status).toBe(200);
       expect(res.body.harvested).toBe(2);
-      expect(mockHeadlineService.harvestAll).toHaveBeenCalledWith('kckern');
+      expect(mockHeadlineService.harvestAll).toHaveBeenCalledWith('kckern', undefined);
     });
   });
 
