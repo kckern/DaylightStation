@@ -1,16 +1,16 @@
-// backend/src/3_applications/agents/komga-toc/tools/KomgaTocToolFactory.mjs
+// backend/src/3_applications/agents/paged-media-toc/tools/PagedMediaTocToolFactory.mjs
 
 import { ToolFactory } from '../../framework/ToolFactory.mjs';
 import { createTool } from '../../ports/ITool.mjs';
 
-export class KomgaTocToolFactory extends ToolFactory {
-  static domain = 'komga-toc';
+export class PagedMediaTocToolFactory extends ToolFactory {
+  static domain = 'paged-media-toc';
 
   createTools() {
     const { pagedMediaGateway, tocCacheDatastore, aiGateway, logger } = this.deps;
 
     if (!pagedMediaGateway) {
-      logger.warn?.('komga-toc.tools.no_gateway');
+      logger.warn?.('paged-media-toc.tools.no_gateway');
       return [];
     }
 
@@ -19,7 +19,7 @@ export class KomgaTocToolFactory extends ToolFactory {
     // ---------------------------------------------------------------
     const scanTocCache = createTool({
       name: 'scan_toc_cache',
-      description: 'Scan the TOC cache and return a list of books that need TOC extraction. Returns books with empty articles arrays that have not been previously scanned (no tocScanned flag). Also fetches the full book list from Komga for all configured series to find books not yet cached.',
+      description: 'Scan the TOC cache and return a list of books that need TOC extraction. Returns books with empty articles arrays that have not been previously scanned (no tocScanned flag). Also fetches the full book list from the media server for all configured series to find books not yet cached.',
       parameters: {
         type: 'object',
         properties: {},
@@ -40,7 +40,7 @@ export class KomgaTocToolFactory extends ToolFactory {
           try {
             books = await pagedMediaGateway.getRecentBooks(series.id, recentCount);
           } catch (err) {
-            logger.warn?.('komga-toc.scan.series.error', { seriesId: series.id, error: err.message });
+            logger.warn?.('paged-media-toc.scan.series_error', { seriesId: series.id, error: err.message });
             continue;
           }
 
@@ -72,11 +72,11 @@ export class KomgaTocToolFactory extends ToolFactory {
     // ---------------------------------------------------------------
     const scanPageForToc = createTool({
       name: 'scan_page_for_toc',
-      description: 'Fetch a thumbnail of a specific page from a Komga book and use AI vision to check if it is a table of contents page. Returns { isToc: true/false }. This is the cheap detection step — use before committing to full-res extraction.',
+      description: 'Fetch a thumbnail of a specific page from a book and use AI vision to check if it is a table of contents page. Returns { isToc: true/false }. This is the cheap detection step — use before committing to full-res extraction.',
       parameters: {
         type: 'object',
         properties: {
-          bookId: { type: 'string', description: 'Komga book ID' },
+          bookId: { type: 'string', description: 'Book ID' },
           page: { type: 'integer', description: '1-indexed page number' },
         },
         required: ['bookId', 'page'],
@@ -102,7 +102,7 @@ export class KomgaTocToolFactory extends ToolFactory {
         });
         const answer = (response || '').trim().toLowerCase();
         const isToc = answer.startsWith('yes');
-        logger.info?.('komga-toc.scan_page', { bookId, page, isToc, answer });
+        logger.info?.('paged-media-toc.scan_page', { bookId, page, isToc, answer });
         return { bookId, page, isToc, rawAnswer: answer };
       },
     });
@@ -112,11 +112,11 @@ export class KomgaTocToolFactory extends ToolFactory {
     // ---------------------------------------------------------------
     const extractTocFromPage = createTool({
       name: 'extract_toc_from_page',
-      description: 'Fetch a full-resolution page image from Komga and send it to AI vision to extract structured table-of-contents data. Returns an array of {title, page} objects. This is the expensive step — only call after confirming the page is a TOC via scan_page_for_toc.',
+      description: 'Fetch a full-resolution page image and send it to AI vision to extract structured table-of-contents data. Returns an array of {title, page} objects. This is the expensive step — only call after confirming the page is a TOC via scan_page_for_toc.',
       parameters: {
         type: 'object',
         properties: {
-          bookId: { type: 'string', description: 'Komga book ID' },
+          bookId: { type: 'string', description: 'Book ID' },
           page: { type: 'integer', description: '1-indexed page number of the TOC page' },
           pageCount: { type: 'integer', description: 'Total pages in the book (for validation)' },
         },
@@ -155,7 +155,7 @@ export class KomgaTocToolFactory extends ToolFactory {
             articles = JSON.parse(jsonMatch[0]);
           }
         } catch (err) {
-          logger.warn?.('komga-toc.extract.parse_error', { bookId, page, error: err.message, response });
+          logger.warn?.('paged-media-toc.extract.parse_error', { bookId, page, error: err.message, response });
           return { error: 'Failed to parse AI response as JSON', bookId, page, rawResponse: response };
         }
 
@@ -164,7 +164,7 @@ export class KomgaTocToolFactory extends ToolFactory {
           .map(a => ({ title: a.title.trim(), page: Math.round(a.page) }))
           .filter(a => a.page >= 1 && (!pageCount || a.page <= pageCount));
 
-        logger.info?.('komga-toc.extract.success', { bookId, page, articleCount: articles.length });
+        logger.info?.('paged-media-toc.extract.success', { bookId, page, articleCount: articles.length });
         return { bookId, tocPage: page, articles };
       },
     });
@@ -174,11 +174,11 @@ export class KomgaTocToolFactory extends ToolFactory {
     // ---------------------------------------------------------------
     const writeTocCache = createTool({
       name: 'write_toc_cache',
-      description: 'Write extracted TOC data to the YAML cache for a Komga book. Sets tocScanned: true so the book is not re-processed. If no articles were found, writes an empty array with tocScanned: true.',
+      description: 'Write extracted TOC data to the YAML cache for a book. Sets tocScanned: true so the book is not re-processed. If no articles were found, writes an empty array with tocScanned: true.',
       parameters: {
         type: 'object',
         properties: {
-          bookId: { type: 'string', description: 'Komga book ID' },
+          bookId: { type: 'string', description: 'Book ID' },
           seriesLabel: { type: 'string', description: 'Series name' },
           issueTitle: { type: 'string', description: 'Issue title' },
           pageCount: { type: 'integer', description: 'Total pages in book' },
@@ -201,7 +201,7 @@ export class KomgaTocToolFactory extends ToolFactory {
           articles: articles || [],
         };
         tocCacheDatastore.writeCache(bookId, tocData);
-        logger.info?.('komga-toc.cache.written', { bookId, articleCount: (articles || []).length });
+        logger.info?.('paged-media-toc.cache.written', { bookId, articleCount: (articles || []).length });
         return { success: true, bookId, articleCount: (articles || []).length };
       },
     });
