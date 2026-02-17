@@ -89,14 +89,17 @@ export class KomgaFeedAdapter extends IFeedSourceAdapter {
    * @returns {Promise<Object|null>} A single FeedItem or null
    */
   async #fetchOneSeries(series, recentCount, query) {
-    const booksUrl = `${this.#client.host}/api/v1/series/${series.id}/books?sort=metadata.numberSort,desc&size=${recentCount}`;
-    const booksRes = await fetch(booksUrl, { headers: this.#authHeaders() });
-    if (!booksRes.ok) {
-      this.#logger.warn?.('komga.adapter.books.error', { status: booksRes.status, seriesId: series.id });
+    let booksData;
+    try {
+      booksData = await this.#client.getBooks(series.id, {
+        size: recentCount,
+        sort: 'metadata.numberSort,desc',
+      });
+    } catch (err) {
+      this.#logger.warn?.('komga.adapter.books.error', { seriesId: series.id, error: err.message });
       return null;
     }
 
-    const booksData = await booksRes.json();
     const books = booksData?.content || [];
     if (books.length === 0) return null;
 
@@ -222,17 +225,6 @@ export class KomgaFeedAdapter extends IFeedSourceAdapter {
   // ---------------------------------------------------------------------------
   // Private helpers
   // ---------------------------------------------------------------------------
-
-  /**
-   * Build auth headers for Komga API requests.
-   * @returns {Object}
-   */
-  #authHeaders() {
-    return {
-      'X-API-Key': this.#apiKey,
-      'Accept': 'application/json',
-    };
-  }
 
   /**
    * Build proxied page image URL.
