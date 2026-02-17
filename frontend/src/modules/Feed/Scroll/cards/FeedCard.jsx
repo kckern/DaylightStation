@@ -407,6 +407,8 @@ const BODY_MODULES = {
   plex: MediaBody,
 };
 
+const OVERLAY_SOURCES = new Set(['photo', 'plex']);
+
 // ─── Main Component ──────────────────────────────────────
 
 export default function FeedCard({ item }) {
@@ -415,51 +417,79 @@ export default function FeedCard({ item }) {
   const age = formatAge(item.timestamp);
   const iconUrl = proxyIcon(item.meta?.sourceIcon);
   const borderColor = TIER_COLORS[tier] ?? colorFromLabel(sourceName);
+  const useOverlay = item.image && OVERLAY_SOURCES.has(item.source);
 
   const BodyModule = BODY_MODULES[item.source] || DefaultBody;
 
-  const Wrapper = item.link ? 'a' : 'div';
-  const wrapperProps = item.link
-    ? { href: item.link, target: '_blank', rel: 'noopener noreferrer' }
-    : {};
-
   return (
-    <Wrapper
-      {...wrapperProps}
-      className={`feed-card feed-card-${tier}`}
+    <div
+      className={`feed-card feed-card-${tier}${useOverlay ? ' feed-card-overlay' : ''}`}
       style={{
         display: 'block',
         background: '#25262b',
         borderRadius: '12px',
-        borderLeft: `4px solid ${borderColor}`,
-        textDecoration: 'none',
-        color: 'inherit',
+        borderLeft: useOverlay ? 'none' : `4px solid ${borderColor}`,
         overflow: 'hidden',
+        position: 'relative',
       }}
     >
       {/* Hero image */}
       {item.image && (
-        <div style={{ overflow: 'hidden', maxHeight: '180px' }}>
+        <div style={{ overflow: 'hidden', position: 'relative' }}>
           <img
             src={item.image}
             alt=""
+            className="feed-card-image"
             style={{
               width: '100%',
-              maxHeight: '180px',
-              objectFit: 'cover',
               display: 'block',
+              objectFit: 'cover',
             }}
           />
+          {/* Plex play button overlay */}
+          {item.source === 'plex' && (
+            <div style={{
+              position: 'absolute',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              width: '48px',
+              height: '48px',
+              borderRadius: '50%',
+              background: 'rgba(0,0,0,0.55)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="#fff">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+            </div>
+          )}
+          {/* Overlay scrim with body content */}
+          {useOverlay && (
+            <div style={{
+              position: 'absolute',
+              bottom: 0,
+              left: 0,
+              right: 0,
+              padding: '2.5rem 1rem 0.75rem',
+              background: 'linear-gradient(transparent, rgba(0,0,0,0.75))',
+            }}>
+              <BodyModule item={item} />
+            </div>
+          )}
         </div>
       )}
 
+      {/* Standard layout: source bar + body below image */}
       <div style={{ padding: '0.75rem 1rem' }}>
-        {/* Header */}
+        {/* Source bar */}
         <div style={{
           display: 'flex',
           alignItems: 'center',
           gap: '0.4rem',
-          marginBottom: '0.35rem',
+          marginBottom: useOverlay ? '0' : '0.35rem',
         }}>
           {item.meta?.status && <StatusDot status={item.meta.status} />}
           {iconUrl && (
@@ -497,8 +527,8 @@ export default function FeedCard({ item }) {
           </span>
         </div>
 
-        {/* Body — delegated to source-specific module */}
-        <BodyModule item={item} />
+        {/* Body — only render below if NOT overlay mode */}
+        {!useOverlay && <BodyModule item={item} />}
 
         {/* Overdue badge (tasks) */}
         {item.source === 'tasks' && item.meta?.isOverdue && (
@@ -517,6 +547,6 @@ export default function FeedCard({ item }) {
           </span>
         )}
       </div>
-    </Wrapper>
+    </div>
   );
 }
