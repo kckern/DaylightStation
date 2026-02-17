@@ -162,7 +162,7 @@ import { createHomebotRouter } from '#api/v1/routers/homebot.mjs';
 // Agents application imports
 import { AgentOrchestrator, EchoAgent, Scheduler } from '#apps/agents/index.mjs';
 import { HealthCoachAgent } from '#apps/agents/health-coach/index.mjs';
-import { KomgaTocAgent } from '#apps/agents/komga-toc/index.mjs';
+import { PagedMediaTocAgent } from '#apps/agents/paged-media-toc/index.mjs';
 import { KomgaClient } from '#adapters/content/readable/komga/KomgaClient.mjs';
 import { KomgaPagedMediaAdapter } from '#adapters/komga/KomgaPagedMediaAdapter.mjs';
 import { YamlTocCacheDatastore } from '#adapters/persistence/yaml/YamlTocCacheDatastore.mjs';
@@ -2457,7 +2457,7 @@ export function createAgentsApiRouter(config) {
     });
   }
 
-  // Register Komga TOC agent (requires AI gateway + Komga access)
+  // Register paged-media-toc agent (requires AI gateway + paged media server access)
   if (aiGateway && dataService && configService) {
     const komgaAuth = configService.getHouseholdAuth('komga');
     const komgaHost = configService.resolveServiceUrl('komga');
@@ -2472,7 +2472,7 @@ export function createAgentsApiRouter(config) {
         logger,
       });
       const tocCacheDatastore = new YamlTocCacheDatastore({ dataService });
-      agentOrchestrator.register(KomgaTocAgent, {
+      agentOrchestrator.register(PagedMediaTocAgent, {
         workingMemory,
         aiGateway,
         pagedMediaGateway,

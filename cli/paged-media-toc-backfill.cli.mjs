@@ -1,17 +1,17 @@
 #!/usr/bin/env node
 /**
- * Komga TOC Backfill CLI
+ * Paged Media TOC Backfill CLI
  *
- * Directly executes the Komga TOC extraction pipeline without the Mastra
- * agent framework. Calls the same logic as KomgaTocToolFactory tools but
+ * Directly executes the paged-media TOC extraction pipeline without the Mastra
+ * agent framework. Calls the same logic as PagedMediaTocToolFactory tools but
  * sequentially in-process, avoiding the LLM orchestration overhead.
  *
  * Usage:
- *   node cli/komga-toc-backfill.cli.mjs              # Process all books missing TOC
- *   node cli/komga-toc-backfill.cli.mjs --dry-run     # Show what would be processed
- *   node cli/komga-toc-backfill.cli.mjs --book ID     # Process a specific book
+ *   node cli/paged-media-toc-backfill.cli.mjs              # Process all books missing TOC
+ *   node cli/paged-media-toc-backfill.cli.mjs --dry-run     # Show what would be processed
+ *   node cli/paged-media-toc-backfill.cli.mjs --book ID     # Process a specific book
  *
- * @module cli/komga-toc-backfill
+ * @module cli/paged-media-toc-backfill
  */
 
 import dotenv from 'dotenv';
@@ -258,7 +258,7 @@ function writeTocCache(bookId, seriesLabel, issueTitle, pageCount, tocPages, art
 // ---------------------------------------------------------------------------
 
 async function main() {
-  console.log('Komga TOC Backfill');
+  console.log('Paged Media TOC Backfill');
   console.log(`  Host: ${komgaHost}`);
   console.log(`  Mode: ${dryRun ? 'DRY RUN' : 'LIVE'}${rescan ? ' (rescan)' : ''}`);
   if (specificBook) console.log(`  Book: ${specificBook}`);
