@@ -59,7 +59,7 @@ function StatusDot({ status }) {
   );
 }
 
-export default function FeedCard({ item, colors = {} }) {
+export default function FeedCard({ item, colors = {}, onDismiss }) {
   const tier = item.tier || 'wire';
   const sourceName = item.meta?.sourceName || item.meta?.feedTitle || item.source || '';
   const age = formatAge(item.timestamp);
@@ -110,6 +110,35 @@ export default function FeedCard({ item, colors = {} }) {
                 <path d="M8 5v14l11-7z" />
               </svg>
             </div>
+          )}
+          {/* Dismiss button overlay */}
+          {onDismiss && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onDismiss(item); }}
+              style={{
+                position: 'absolute',
+                top: '8px',
+                right: '8px',
+                width: '28px',
+                height: '28px',
+                borderRadius: '50%',
+                background: 'rgba(0,0,0,0.55)',
+                border: 'none',
+                color: '#fff',
+                fontSize: '14px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: 0,
+                lineHeight: 1,
+                zIndex: 2,
+              }}
+              aria-label="Dismiss"
+            >
+              ✕
+            </button>
           )}
         </div>
       )}
@@ -177,6 +206,35 @@ export default function FeedCard({ item, colors = {} }) {
           }}>
             Overdue
           </span>
+        )}
+        {/* Dismiss footer for text-only cards */}
+        {onDismiss && !(item.image && isImageUrl(item.image)) && (
+          <div style={{
+            display: 'flex',
+            justifyContent: 'flex-end',
+            marginTop: '0.4rem',
+            paddingTop: '0.3rem',
+            borderTop: '1px solid rgba(255,255,255,0.05)',
+          }}>
+            <button
+              onClick={(e) => { e.stopPropagation(); onDismiss(item); }}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#5c636a',
+                fontSize: '0.65rem',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.25rem',
+                padding: '0.15rem 0.3rem',
+                borderRadius: '4px',
+              }}
+              aria-label="Dismiss"
+            >
+              ✕ <span>Dismiss</span>
+            </button>
+          </div>
         )}
       </div>
     </div>

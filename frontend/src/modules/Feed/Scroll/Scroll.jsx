@@ -19,6 +19,72 @@ function decodeItemId(slug) {
   try { return atob(s); } catch { return null; }
 }
 
+function ScrollCard({ item, colors, onDismiss, onClick }) {
+  const wrapperRef = useRef(null);
+  const touchRef = useRef(null);
+
+  const handleTouchStart = (e) => {
+    const touch = e.touches[0];
+    touchRef.current = { x: touch.clientX, y: touch.clientY, time: Date.now() };
+  };
+
+  const handleTouchMove = (e) => {
+    if (!touchRef.current) return;
+    const touch = e.touches[0];
+    const dx = touch.clientX - touchRef.current.x;
+    const dy = touch.clientY - touchRef.current.y;
+
+    // Only track leftward horizontal swipes
+    if (dx < -10 && Math.abs(dx) > Math.abs(dy)) {
+      if (wrapperRef.current) {
+        wrapperRef.current.style.transform = `translateX(${dx}px)`;
+        wrapperRef.current.style.opacity = Math.max(0, 1 + dx / 300);
+      }
+    }
+  };
+
+  const handleTouchEnd = (e) => {
+    if (!touchRef.current) return;
+    const touch = e.changedTouches[0];
+    const dx = touch.clientX - touchRef.current.x;
+    const elapsed = Date.now() - touchRef.current.time;
+    touchRef.current = null;
+
+    if (dx < -100 && elapsed < 600) {
+      // Threshold met — dismiss
+      onDismiss(item, wrapperRef.current);
+    } else if (wrapperRef.current) {
+      // Spring back
+      wrapperRef.current.animate(
+        [
+          { transform: wrapperRef.current.style.transform || 'translateX(0)', opacity: wrapperRef.current.style.opacity || '1' },
+          { transform: 'translateX(0)', opacity: '1' },
+        ],
+        { duration: 150, easing: 'ease-out', fill: 'forwards' }
+      ).onfinish = () => {
+        if (wrapperRef.current) {
+          wrapperRef.current.style.transform = '';
+          wrapperRef.current.style.opacity = '';
+        }
+      };
+    }
+  };
+
+  return (
+    <div
+      ref={wrapperRef}
+      className="scroll-item-wrapper"
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+    >
+      <div onClick={onClick}>
+        {renderFeedCard(item, colors, (cardItem) => onDismiss(cardItem, wrapperRef.current))}
+      </div>
+    </div>
+  );
+}
+
 export default function Scroll() {
   const { itemId: urlSlug } = useParams();
   const navigate = useNavigate();
@@ -117,6 +183,26 @@ export default function Scroll() {
     return () => observerRef.current?.disconnect();
   }, [hasMore, loadingMore, fetchItems, loading]);
 
+  /** Queue of item IDs to batch-dismiss via API. */
+  const dismissQueueRef = useRef([]);
+  const dismissTimerRef = useRef(null);
+
+  const flushDismissQueue = useCallback(() => {
+    const ids = dismissQueueRef.current.splice(0);
+    if (ids.length === 0) return;
+    DaylightAPI('/api/v1/feed/scroll/dismiss', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ itemIds: ids }),
+    }).catch(err => console.error('Dismiss failed:', err));
+  }, []);
+
+  const queueDismiss = useCallback((itemId) => {
+    dismissQueueRef.current.push(itemId);
+    clearTimeout(dismissTimerRef.current);
+    dismissTimerRef.current = setTimeout(flushDismissQueue, 500);
+  }, [flushDismissQueue]);
+
   // Fetch detail when URL slug changes (route-driven)
   const prevSlugRef = useRef(null);
   useEffect(() => {
@@ -124,6 +210,9 @@ export default function Scroll() {
     prevSlugRef.current = urlSlug;
 
     if (!fullId) return;
+
+    // Auto-dismiss: mark item as read when detail opens
+    queueDismiss(fullId);
 
     // Check if item is already in the loaded list
     const item = items.find(i => i.id === fullId);
@@ -168,7 +257,7 @@ export default function Scroll() {
         })
         .finally(() => setDetailLoading(false));
     }
-  }, [urlSlug, items, fullId, navigate]);
+  }, [urlSlug, items, fullId, navigate, queueDismiss]);
 
   // Restore scroll position when navigating back to list
   useEffect(() => {
@@ -219,6 +308,28 @@ export default function Scroll() {
     navigate(`/feed/scroll/${encodeItemId(galleryItem.id)}`, { replace: true });
   }, [navigate]);
 
+  const handleDismiss = useCallback((item, wrapperEl) => {
+    queueDismiss(item.id);
+
+    if (wrapperEl) {
+      // Slide left + collapse using Web Animations API
+      const slideAnim = wrapperEl.animate(
+        [{ transform: 'translateX(0)', opacity: 1 }, { transform: 'translateX(-100%)', opacity: 0 }],
+        { duration: 250, easing: 'ease-in', fill: 'forwards' }
+      );
+      slideAnim.onfinish = () => {
+        wrapperEl.animate(
+          [{ height: wrapperEl.offsetHeight + 'px', marginBottom: '12px' }, { height: '0px', marginBottom: '0px' }],
+          { duration: 200, easing: 'ease-out', fill: 'forwards' }
+        ).onfinish = () => {
+          setItems(prev => prev.filter(i => i.id !== item.id));
+        };
+      };
+    } else {
+      setItems(prev => prev.filter(i => i.id !== item.id));
+    }
+  }, [queueDismiss]);
+
   if (loading) {
     return (
       <div className="scroll-layout">
@@ -240,11 +351,13 @@ export default function Scroll() {
       <div className="scroll-view" style={{ display: (urlSlug && !isDesktop) ? 'none' : undefined }}>
         <div className="scroll-items">
           {items.map((item, i) => (
-            <div key={item.id || i} className="scroll-item-wrapper">
-              <div onClick={(e) => handleCardClick(e, item)}>
-                {renderFeedCard(item, colors)}
-              </div>
-            </div>
+            <ScrollCard
+              key={item.id || i}
+              item={item}
+              colors={colors}
+              onDismiss={handleDismiss}
+              onClick={(e) => handleCardClick(e, item)}
+            />
           ))}
         </div>
         {hasMore && (
