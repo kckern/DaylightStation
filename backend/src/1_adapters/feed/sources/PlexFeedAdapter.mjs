@@ -3,7 +3,7 @@
  * PlexFeedAdapter
  *
  * Fetches Plex media items via ContentRegistry (children mode)
- * or ContentQueryService (search mode) and normalizes to FeedItem shape.
+ * or IContentQueryPort (search mode) and normalizes to FeedItem shape.
  *
  * @module adapters/feed/sources/PlexFeedAdapter
  */
@@ -12,15 +12,15 @@ import { IFeedSourceAdapter } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
 
 export class PlexFeedAdapter extends IFeedSourceAdapter {
   #contentRegistry;
-  #contentQueryService;
+  #contentQueryPort;
   #logger;
 
   #webUrl;
 
-  constructor({ contentRegistry = null, contentQueryService = null, webUrl = null, logger = console }) {
+  constructor({ contentRegistry = null, contentQueryPort = null, webUrl = null, logger = console }) {
     super();
     this.#contentRegistry = contentRegistry;
-    this.#contentQueryService = contentQueryService;
+    this.#contentQueryPort = contentQueryPort;
     this.#webUrl = webUrl;
     this.#logger = logger;
   }
@@ -29,7 +29,7 @@ export class PlexFeedAdapter extends IFeedSourceAdapter {
 
   async fetchItems(query, _username) {
     const plexAdapter = this.#contentRegistry?.get('plex');
-    if (!plexAdapter && !this.#contentQueryService) return [];
+    if (!plexAdapter && !this.#contentQueryPort) return [];
 
     try {
       const mode = query.params?.mode || 'search';
@@ -80,12 +80,12 @@ export class PlexFeedAdapter extends IFeedSourceAdapter {
   }
 
   async #fetchSearch(query) {
-    if (!this.#contentQueryService) return [];
+    if (!this.#contentQueryPort) return [];
     const searchTerms = query.params?.search || ['new', 'recent'];
     const terms = Array.isArray(searchTerms) ? searchTerms : [searchTerms];
     const term = terms[Math.floor(Math.random() * terms.length)];
 
-    const result = await this.#contentQueryService.search({
+    const result = await this.#contentQueryPort.search({
       text: `plex:${term}`,
       take: query.limit || 3,
     });
