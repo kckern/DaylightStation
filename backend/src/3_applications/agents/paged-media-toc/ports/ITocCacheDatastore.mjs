@@ -1,4 +1,4 @@
-// backend/src/3_applications/agents/komga-toc/ports/ITocCacheDatastore.mjs
+// backend/src/3_applications/agents/paged-media-toc/ports/ITocCacheDatastore.mjs
 
 /**
  * ITocCacheDatastore — port interface for TOC cache persistence.
@@ -6,7 +6,7 @@
  * Abstracts how TOC extraction results and query config are stored,
  * so the agent never touches file paths, DataService, or YAML.
  *
- * @module applications/agents/komga-toc/ports/ITocCacheDatastore
+ * @module applications/agents/paged-media-toc/ports/ITocCacheDatastore
  */
 export class ITocCacheDatastore {
   /**

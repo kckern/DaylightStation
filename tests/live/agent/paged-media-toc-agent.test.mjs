@@ -1,17 +1,17 @@
-// tests/live/agent/komga-toc-agent.test.mjs
+// tests/live/agent/paged-media-toc-agent.test.mjs
 /**
- * Komga TOC Agent — Live Tests
+ * Paged Media TOC Agent — Live Tests
  *
  * Tests agent registration and the background run endpoint.
  * Does NOT test full vision extraction (too slow for CI).
- * Use cli/komga-toc-backfill.mjs for actual backfill execution.
+ * Use cli/paged-media-toc-backfill.cli.mjs for actual backfill execution.
  */
 
 import { agentAPI } from './_agent-test-helper.mjs';
 
-const AGENT_ID = 'komga-toc';
+const AGENT_ID = 'paged-media-toc';
 
-describe('Komga TOC Agent', () => {
+describe('Paged Media TOC Agent', () => {
   beforeAll(async () => {
     const { res, data } = await agentAPI('/');
     if (!res.ok) throw new Error(`Agent API not responding: ${res.status}`);
@@ -22,16 +22,16 @@ describe('Komga TOC Agent', () => {
     }
   });
 
-  test('GET /agents — lists komga-toc agent', async () => {
+  test('GET /agents — lists paged-media-toc agent', async () => {
     const { res, data } = await agentAPI('/');
     expect(res.status).toBe(200);
     const agent = data.agents.find(a => a.id === AGENT_ID);
     expect(agent).toBeDefined();
     expect(agent.id).toBe(AGENT_ID);
-    expect(agent.description).toMatch(/komga/i);
+    expect(agent.description).toMatch(/paged.media/i);
   });
 
-  test('GET /agents/komga-toc/assignments — returns assignments array', async () => {
+  test('GET /agents/paged-media-toc/assignments — returns assignments array', async () => {
     const { res, data } = await agentAPI(`/${AGENT_ID}/assignments`);
     expect(res.status).toBe(200);
     expect(data).toHaveProperty('agentId', AGENT_ID);
@@ -39,7 +39,7 @@ describe('Komga TOC Agent', () => {
     expect(Array.isArray(data.assignments)).toBe(true);
   });
 
-  test('POST /agents/komga-toc/run-background — accepts background run', async () => {
+  test('POST /agents/paged-media-toc/run-background — accepts background run', async () => {
     const { res, data } = await agentAPI(`/${AGENT_ID}/run-background`, {
       method: 'POST',
       body: { input: 'Scan for books that need TOC extraction and process them.' },

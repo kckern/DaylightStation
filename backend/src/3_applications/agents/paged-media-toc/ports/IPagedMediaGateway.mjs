@@ -1,4 +1,4 @@
-// backend/src/3_applications/agents/komga-toc/ports/IPagedMediaGateway.mjs
+// backend/src/3_applications/agents/paged-media-toc/ports/IPagedMediaGateway.mjs
 
 /**
  * IPagedMediaGateway — port interface for accessing paged media (magazines, comics).
@@ -6,7 +6,7 @@
  * Abstracts how the agent discovers books and fetches page images,
  * independent of the backing media server.
  *
- * @module applications/agents/komga-toc/ports/IPagedMediaGateway
+ * @module applications/agents/paged-media-toc/ports/IPagedMediaGateway
  */
 export class IPagedMediaGateway {
   /**
