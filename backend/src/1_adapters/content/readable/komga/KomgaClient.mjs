@@ -103,11 +103,12 @@ export class KomgaClient {
   async getBooks(seriesId, options = {}) {
     const page = options.page ?? 0;
     const size = options.size ?? 50;
+    const sort = options.sort;
 
-    const response = await this.#httpClient.get(
-      `${this.#host}/api/v1/series/${seriesId}/books?page=${page}&size=${size}`,
-      { headers: this.#getHeaders() }
-    );
+    let url = `${this.#host}/api/v1/series/${seriesId}/books?page=${page}&size=${size}`;
+    if (sort) url += `&sort=${sort}`;
+
+    const response = await this.#httpClient.get(url, { headers: this.#getHeaders() });
     return response.data;
   }
 
