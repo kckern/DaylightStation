@@ -1,14 +1,14 @@
-// backend/src/3_applications/agents/komga-toc/KomgaTocAgent.mjs
+// backend/src/3_applications/agents/paged-media-toc/PagedMediaTocAgent.mjs
 import { BaseAgent } from '../framework/BaseAgent.mjs';
-import { KomgaTocToolFactory } from './tools/KomgaTocToolFactory.mjs';
+import { PagedMediaTocToolFactory } from './tools/PagedMediaTocToolFactory.mjs';
 import { systemPrompt } from './prompts/system.mjs';
 
-export class KomgaTocAgent extends BaseAgent {
-  static id = 'komga-toc';
-  static description = 'Extracts table-of-contents data from Komga magazine PDFs using AI vision';
+export class PagedMediaTocAgent extends BaseAgent {
+  static id = 'paged-media-toc';
+  static description = 'Extracts table-of-contents data from paged media (magazines, comics) using AI vision';
 
   registerTools() {
-    this.addToolFactory(new KomgaTocToolFactory(this.deps));
+    this.addToolFactory(new PagedMediaTocToolFactory(this.deps));
   }
 
   getSystemPrompt() {

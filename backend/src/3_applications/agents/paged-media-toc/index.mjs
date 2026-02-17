@@ -1,2 +1,2 @@
-// backend/src/3_applications/agents/komga-toc/index.mjs
-export { KomgaTocAgent } from './KomgaTocAgent.mjs';
+// backend/src/3_applications/agents/paged-media-toc/index.mjs
+export { PagedMediaTocAgent } from './PagedMediaTocAgent.mjs';
