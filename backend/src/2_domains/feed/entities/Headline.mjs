@@ -10,6 +10,8 @@
 import { shortIdFromUuid } from '../../core/utils/id.mjs';
 
 export class Headline {
+  #id; #source; #title; #desc; #link; #timestamp;
+
   /**
    * @param {Object} data
    * @param {string} data.id - Deterministic short ID (derived from link)
@@ -25,13 +27,22 @@ export class Headline {
     if (!data.title) throw new Error('Headline requires title');
     if (!data.link) throw new Error('Headline requires link');
 
-    this.id = data.id;
-    this.source = data.source;
-    this.title = data.title;
-    this.desc = data.desc || null;
-    this.link = data.link;
-    this.timestamp = data.timestamp ? new Date(data.timestamp) : new Date();
+    this.#id = data.id;
+    this.#source = data.source;
+    this.#title = data.title;
+    this.#desc = data.desc || null;
+    this.#link = data.link;
+    this.#timestamp = data.timestamp ? new Date(data.timestamp) : new Date();
+
+    Object.freeze(this);
   }
+
+  get id() { return this.#id; }
+  get source() { return this.#source; }
+  get title() { return this.#title; }
+  get desc() { return this.#desc; }
+  get link() { return this.#link; }
+  get timestamp() { return this.#timestamp; }
 
   /**
    * Factory for creating new Headlines (e.g., during harvesting).
