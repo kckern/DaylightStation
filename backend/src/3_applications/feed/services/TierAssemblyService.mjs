@@ -60,7 +60,7 @@ export class TierAssemblyService {
    * @param {string} [options.focus] - Focus source key (wire-only filtering)
    * @returns {{ items: Object[], hasMore: boolean }}
    */
-  assemble(allItems, scrollConfig, { effectiveLimit, focus } = {}) {
+  assemble(allItems, scrollConfig, { effectiveLimit, focus, selectionCounts } = {}) {
     const tierConfig = this.#resolveTierConfig(scrollConfig);
 
     // Bucket items by tier
@@ -71,7 +71,7 @@ export class TierAssemblyService {
     for (const tier of Object.values(TIERS)) {
       const candidates = buckets[tier] || [];
       const config = tierConfig[tier] || TIER_DEFAULTS[tier];
-      selected[tier] = this.#selectForTier(tier, candidates, config, { focus });
+      selected[tier] = this.#selectForTier(tier, candidates, config, { focus, selectionCounts });
     }
 
     // Level 1: allocate slots and interleave
@@ -152,7 +152,7 @@ export class TierAssemblyService {
    * @param {Object} options
    * @returns {Object[]} Selected items for this tier
    */
-  #selectForTier(tier, candidates, config, { focus } = {}) {
+  #selectForTier(tier, candidates, config, { focus, selectionCounts } = {}) {
     if (!candidates.length) return [];
 
     let items = [...candidates];
@@ -164,7 +164,7 @@ export class TierAssemblyService {
 
     // Apply tier selection strategy
     items = this.#applyTierFilters(items, config.selection);
-    items = this.#applyTierSort(items, config.selection);
+    items = this.#applyTierSort(items, config.selection, selectionCounts);
     items = this.#applySourceCaps(items, config.sources);
 
     // For non-wire tiers, cap to allocation
@@ -191,13 +191,21 @@ export class TierAssemblyService {
   /**
    * Apply tier-level sort strategy.
    */
-  #applyTierSort(items, selection) {
+  #applyTierSort(items, selection, selectionCounts) {
     const sort = selection?.sort || 'timestamp_desc';
 
     switch (sort) {
       case 'timestamp_desc':
-        return [...items].sort((a, b) =>
-          new Date(b.timestamp) - new Date(a.timestamp));
+        return [...items].sort((a, b) => {
+          const timeDiff = new Date(b.timestamp) - new Date(a.timestamp);
+          // Within same hour, prefer lower selection count
+          if (selectionCounts && Math.abs(timeDiff) < 3600000) {
+            const aCount = selectionCounts.get(a.id)?.count || 0;
+            const bCount = selectionCounts.get(b.id)?.count || 0;
+            if (aCount !== bCount) return aCount - bCount;
+          }
+          return timeDiff;
+        });
 
       case 'priority':
         return [...items].sort((a, b) =>
