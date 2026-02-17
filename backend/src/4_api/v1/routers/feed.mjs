@@ -208,6 +208,20 @@ export function createFeedRouter(config) {
   }));
 
   // =========================================================================
+  // Image proxy (hero images — avoids CORS, SVG placeholder on failure)
+  // =========================================================================
+
+  router.get('/image', asyncHandler(async (req, res) => {
+    const { url } = req.query;
+    if (!url) return res.status(400).json({ error: 'url parameter required' });
+
+    const result = await feedContentService.proxyImage(url);
+    res.set('Content-Type', result.contentType);
+    res.set('Cache-Control', 'public, max-age=3600');
+    res.send(result.data);
+  }));
+
+  // =========================================================================
   // Readable content extraction (for content drawer)
   // =========================================================================
 

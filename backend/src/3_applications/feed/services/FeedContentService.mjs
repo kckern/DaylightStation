@@ -33,6 +33,15 @@ export class FeedContentService {
   }
 
   /**
+   * Proxy an image URL, returning an SVG placeholder on failure.
+   * @param {string} url
+   * @returns {Promise<{ data: Buffer, contentType: string }>}
+   */
+  async proxyImage(url) {
+    return this.#webContentGateway.proxyImage(url);
+  }
+
+  /**
    * Extract readable content from a web page.
    * @param {string} url
    * @returns {Promise<{ title: string|null, content: string, wordCount: number, ogImage: string|null }>}

@@ -9,6 +9,7 @@ import ActionsSection from './ActionsSection.jsx';
 import PlayerSection from './PlayerSection.jsx';
 import GallerySection from './GallerySection.jsx';
 import ScriptureSection from './ScriptureSection.jsx';
+import TimelineSection from './TimelineSection.jsx';
 
 const SECTION_MAP = {
   body: BodySection,
@@ -22,6 +23,7 @@ const SECTION_MAP = {
   player: PlayerSection,
   gallery: GallerySection,
   scripture: ScriptureSection,
+  timeline: TimelineSection,
 };
 
 export function renderSection(section, context) {

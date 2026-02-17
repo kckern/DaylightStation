@@ -446,21 +446,22 @@ Each query declares a `tier` that determines how its items are distributed in th
 
 ### Assembly Algorithm (TierAssemblyService)
 
-1. **Bucket** — partition all fetched items by `item.tier`
-2. **Within-tier select** — apply sort strategy and source caps per tier config
-3. **Interleave** — non-wire items are distributed evenly into the wire backbone at regular intervals
-4. **Deduplicate** — remove items with duplicate IDs
-5. **Spacing** — `SpacingEnforcer` prevents consecutive items from the same source
+1. **Wire decay** — adjust allocations based on batch number (wire decays to 0 over `wire_decay_batches`, freed slots go proportionally to non-wire tiers)
+2. **Bucket** — partition all fetched items by `item.tier`
+3. **Within-tier select** — apply sort strategy and source caps per tier config
+4. **Interleave** — non-wire items are distributed evenly into the wire backbone at regular intervals
+5. **Deduplicate** — remove items with duplicate IDs
+6. **Spacing** — `SpacingEnforcer` prevents consecutive items from the same source
 
-### Interleaving Example
+### Interleaving Example (Batch 1)
 
-With default allocations (batch_size=15):
+With default allocations (batch_size=15, first batch):
 - compass: 6 items (weather, health, fitness, plex, tasks, gratitude)
 - library: 2 items (komga)
 - scrapbook: 2 items (photos, journal)
 - wire: remaining 5 slots (reddit, headlines, youtube, etc.)
 
-Non-wire items are inserted at even intervals into the wire list, producing a mixed feed.
+Non-wire items are inserted at even intervals into the wire list, producing a mixed feed. As the user scrolls deeper, wire decay shifts the balance: by batch N+1 (where N = `wire_decay_batches`), wire has 0 slots and all 15 items are personal content.
 
 ---
 
@@ -471,6 +472,7 @@ Per-user overrides in `data/users/{username}/config/feed.yml` under the `scroll:
 ```yaml
 scroll:
   batch_size: 15
+  wire_decay_batches: 10  # wire decays to 0 over N batches (default: 10, set 0 to disable)
   spacing:
     max_consecutive: 1
   tiers:
@@ -492,6 +494,7 @@ scroll:
 | Default Key | Value |
 |------------|-------|
 | `batch_size` | 15 |
+| `wire_decay_batches` | 10 |
 | `spacing.max_consecutive` | 1 |
 | `wire.selection.sort` | `timestamp_desc` |
 | `library.allocation` | 2 |
@@ -594,7 +597,8 @@ Files like `dailynews.yml` (`type: freshvideo`) are consumed by the content syst
 |------|---------|
 | `backend/src/app.mjs` | Bootstrap: loads YAML, creates adapters, wires FeedPoolManager + FeedAssemblyService |
 | `backend/src/3_applications/feed/services/FeedPoolManager.mjs` | Pool management: paginated fetching, age filtering, refill, recycling |
-| `backend/src/3_applications/feed/services/FeedAssemblyService.mjs` | Orchestrator: pool → tier assembly → padding → caching, detail delegation |
+| `backend/src/3_applications/feed/services/FeedAssemblyService.mjs` | Orchestrator: pool → filter/tier assembly → padding → caching, detail delegation |
+| `backend/src/3_applications/feed/services/FeedFilterResolver.mjs` | 4-layer resolution chain for `?filter=` param (tier → source → query → alias) |
 | `backend/src/3_applications/feed/services/TierAssemblyService.mjs` | Four-tier interleaving: bucket → select → interleave → dedupe → space |
 | `backend/src/3_applications/feed/services/ScrollConfigLoader.mjs` | Per-user scroll config loading, merging with defaults, age threshold resolution |
 | `backend/src/3_applications/feed/services/SpacingEnforcer.mjs` | Prevents consecutive same-source items |

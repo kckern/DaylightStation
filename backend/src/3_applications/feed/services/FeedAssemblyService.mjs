@@ -120,9 +120,10 @@ export class FeedAssemblyService {
       ? await this.#selectionTrackingStore.getAll(username)
       : null;
 
-    // Primary pass: tier assembly
+    // Primary pass: tier assembly (with wire decay based on batch number)
+    const batchNumber = this.#feedPoolManager.getBatchNumber(username);
     const { items: primary } = this.#tierAssemblyService.assemble(
-      freshPool, scrollConfig, { effectiveLimit, focus, selectionCounts }
+      freshPool, scrollConfig, { effectiveLimit, focus, selectionCounts, batchNumber }
     );
 
     let batch = primary.slice(0, effectiveLimit);
@@ -221,7 +222,7 @@ export class FeedAssemblyService {
       this.#feedPoolManager.reset(username);
     }
 
-    const freshPool = await this.#feedPoolManager.getPool(username, scrollConfig);
+    const freshPool = await this.#feedPoolManager.getPool(username, scrollConfig, { stripLimits: true });
 
     let filtered;
     switch (resolved.type) {

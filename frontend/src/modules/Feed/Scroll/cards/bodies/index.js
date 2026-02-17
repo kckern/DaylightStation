@@ -15,6 +15,7 @@ import HealthBody from './HealthBody.jsx';
 import PhotoBody from './PhotoBody.jsx';
 import MediaBody from './MediaBody.jsx';
 import ReadalongBody from './ReadalongBody.jsx';
+import GoodreadsBody from './GoodreadsBody.jsx';
 
 const BODY_MODULES = {
   reddit: RedditBody,
@@ -26,6 +27,7 @@ const BODY_MODULES = {
   photo: PhotoBody,
   plex: MediaBody,
   readalong: ReadalongBody,
+  goodreads: GoodreadsBody,
 };
 
 export { DefaultBody };

@@ -1,4 +1,5 @@
-import { formatAge, colorFromLabel, proxyIcon, isImageUrl } from './utils.js';
+import { useState, useEffect } from 'react';
+import { formatAge, colorFromLabel, proxyIcon, proxyImage, isImageUrl } from './utils.js';
 import { getBodyModule } from './bodies/index.js';
 
 const STATUS_COLORS = {
@@ -6,6 +7,43 @@ const STATUS_COLORS = {
   yellow: '#fab005',
   green: '#51cf66',
 };
+
+function HeroImage({ src }) {
+  const proxied = proxyImage(src);
+  const [imgSrc, setImgSrc] = useState(src);
+  const [phase, setPhase] = useState('original'); // original → proxy → hidden
+
+  useEffect(() => {
+    setImgSrc(src);
+    setPhase('original');
+  }, [src]);
+
+  const handleError = () => {
+    if (phase === 'original' && proxied) {
+      setPhase('proxy');
+      setImgSrc(proxied);
+    } else {
+      setPhase('hidden');
+    }
+  };
+
+  if (phase === 'hidden') return null;
+
+  return (
+    <img
+      src={imgSrc}
+      alt=""
+      className="feed-card-image"
+      style={{
+        width: '100%',
+        height: '100%',
+        display: 'block',
+        objectFit: 'cover',
+      }}
+      onError={handleError}
+    />
+  );
+}
 
 function StatusDot({ status }) {
   const color = STATUS_COLORS[status] || '#5c636a';
@@ -52,17 +90,7 @@ export default function FeedCard({ item, colors = {} }) {
               : '16 / 9',
             backgroundColor: '#1a1b1e',
           }}>
-          <img
-            src={item.image}
-            alt=""
-            className="feed-card-image"
-            style={{
-              width: '100%',
-              height: '100%',
-              display: 'block',
-              objectFit: 'cover',
-            }}
-          />
+          <HeroImage src={item.image} />
           {/* Play button overlay */}
           {(item.source === 'plex' || item.meta?.youtubeId) && (
             <div style={{

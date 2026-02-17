@@ -18,6 +18,15 @@ const READABLE_TIMEOUT = 8000;
 const MAX_WORDS = 500;
 const USER_AGENT = 'Mozilla/5.0 (compatible; DaylightStation/1.0)';
 
+const PLACEHOLDER_SVG = Buffer.from(
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 225" fill="none">' +
+  '<rect width="400" height="225" fill="#1a1b1e"/>' +
+  '<circle cx="200" cy="100" r="18" stroke="#5c636a" stroke-width="3" fill="none"/>' +
+  '<path d="M192 100l6-8 4 5 3-2 7 9h-24z" fill="#5c636a"/>' +
+  '<circle cx="208" cy="94" r="3" fill="#5c636a"/>' +
+  '</svg>'
+);
+
 export class WebContentAdapter {
   #iconCache = new Map();
   #logger;
@@ -101,6 +110,35 @@ export class WebContentAdapter {
   }
 
   // ===========================================================================
+  // Image proxy (with SVG placeholder fallback)
+  // ===========================================================================
+
+  /**
+   * Fetch an image by URL and return its bytes.
+   * On any failure (network error, non-200), returns an SVG placeholder
+   * so the frontend always gets a renderable response.
+   *
+   * @param {string} url
+   * @returns {Promise<{ data: Buffer, contentType: string }>}
+   */
+  async proxyImage(url) {
+    try {
+      const res = await fetch(url, {
+        headers: { 'User-Agent': USER_AGENT },
+        signal: AbortSignal.timeout(READABLE_TIMEOUT),
+      });
+      if (!res.ok) return { data: PLACEHOLDER_SVG, contentType: 'image/svg+xml' };
+
+      const contentType = res.headers.get('content-type') || 'image/png';
+      const buffer = Buffer.from(await res.arrayBuffer());
+      return { data: buffer, contentType };
+    } catch (err) {
+      this.#logger.warn?.('webcontent.proxyImage.error', { url, error: err.message });
+      return { data: PLACEHOLDER_SVG, contentType: 'image/svg+xml' };
+    }
+  }
+
+  // ===========================================================================
   // Readable content extraction
   // ===========================================================================
 
@@ -151,6 +189,12 @@ export class WebContentAdapter {
       .replace(/<header[\s\S]*?<\/header>/gi, '')
       .replace(/<footer[\s\S]*?<\/footer>/gi, '')
       .replace(/<aside[\s\S]*?<\/aside>/gi, '');
+
+    // Strip leading heading that duplicates the page title
+    if (title) {
+      const escaped = title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      bodyHtml = bodyHtml.replace(new RegExp(`^\\s*<h[1-3][^>]*>\\s*${escaped}\\s*</h[1-3]>`, 'i'), '');
+    }
 
     const text = bodyHtml
       .replace(/<br\s*\/?>/gi, '\n')
