@@ -6,19 +6,33 @@ How YAML query configs drive the feed scroll — from data files through adapter
 
 ## Overview
 
-The feed scroll is assembled from **query configs** — YAML files that each define a single content source. At server startup, all `*.yml` files in `data/household/config/lists/queries/` are read into memory and passed to `FeedAssemblyService`. On each scroll request, every query is dispatched to its matching source adapter in parallel, and the results are assembled into a unified feed using the four-tier system.
+The feed scroll is assembled from **query configs** — YAML files that each define a single content source. Queries live in two locations: **household-level** (shared across all users) and **user-level** (personal preferences). At server startup, household queries are loaded into memory. User queries are loaded on demand when a user requests their feed, and merged with household queries (user overrides household by filename).
 
 ### Where Queries Live
 
 ```
 data/household/config/lists/
-├── queries/       ← Feed source configs (this document)
+├── queries/       ← Household-level feed source configs (shared)
 ├── menus/         ← Content playlists for kiosk/TV app
 ├── programs/      ← Sequenced media programs (morning, evening)
 └── watchlists/    ← Scripture/reading tracking lists
+
+data/users/{username}/config/
+└── queries/       ← User-scoped feed source configs (personal)
 ```
 
-Only `queries/` is consumed by the feed system. The sibling directories serve other DaylightStation subsystems (content domain's `ListAdapter`).
+Only `queries/` directories are consumed by the feed system. The sibling directories serve other DaylightStation subsystems (content domain's `ListAdapter`).
+
+### Household vs User Queries
+
+Queries are split by scope:
+
+| Scope | Path | Examples | Rationale |
+|-------|------|----------|-----------|
+| **Household** | `data/household/config/lists/queries/` | weather, entropy, headlines, health, photos, news | Shared infrastructure — same data regardless of user |
+| **User** | `data/users/{username}/config/queries/` | reddit, youtube, googlenews, plex, komga, journal, tasks, fitness, gratitude, scripture-bom, goodreads | Personal subscriptions, accounts, and preferences |
+
+**Merge behavior:** When a user query has the same filename as a household query, the user version takes precedence. This allows household-level defaults that individual users can override. The merge is cached per-user and invalidated on `FeedPoolManager.reset()`.
 
 ---
 
@@ -50,21 +64,24 @@ params:                  # Optional — adapter-specific configuration
 | Field | Source | Description |
 |-------|--------|-------------|
 | `_filename` | Bootstrap | The original filename (e.g., `reddit.yml`). Used by `#filterQueries()` to match against user-enabled sources |
+| `meta.queryName` | `FeedPoolManager` | The query filename (sans `.yml`), tagged onto each item during `#fetchSourcePage()`. Used by filter mode to match `?filter=` query-name expressions |
 
 ---
 
 ## All Query Files
 
+> Queries below are marked **(H)** for household-scoped or **(U)** for user-scoped.
+
 ### Wire Tier (external content streams)
 
-**`headlines.yml`** — Harvested RSS headlines from the multi-page newspaper system
+**`headlines.yml`** **(H)** — Harvested RSS headlines from the multi-page newspaper system
 ```yaml
 type: headlines
 tier: wire
 limit: 30
 ```
 
-**`news.yml`** — FreshRSS self-hosted feed reader
+**`news.yml`** **(H)** — FreshRSS self-hosted feed reader
 ```yaml
 type: freshrss
 tier: wire
@@ -73,7 +90,7 @@ params:
   excludeRead: true
 ```
 
-**`reddit.yml`** — Reddit posts from configured subreddits
+**`reddit.yml`** **(U)** — Reddit posts from configured subreddits
 ```yaml
 type: reddit
 tier: wire
@@ -86,7 +103,7 @@ params:
     - science
 ```
 
-**`googlenews.yml`** — Google News RSS by topic
+**`googlenews.yml`** **(U)** — Google News RSS by topic
 ```yaml
 type: googlenews
 tier: wire
@@ -99,7 +116,7 @@ params:
     - Utah
 ```
 
-**`youtube.yml`** — YouTube videos from channels and keyword searches
+**`youtube.yml`** **(U)** — YouTube videos from channels and keyword searches
 ```yaml
 type: youtube
 tier: wire
@@ -114,7 +131,7 @@ params:
 
 ### Library Tier (long-form reading material)
 
-**`komga.yml`** — Digital magazine issues from Komga
+**`komga.yml`** **(U)** — Digital magazine issues from Komga
 ```yaml
 type: komga
 tier: library
@@ -133,7 +150,7 @@ params:
 
 ### Scrapbook Tier (personal memories)
 
-**`photos.yml`** — Random photos and memories from Immich
+**`photos.yml`** **(H)** — Random photos and memories from Immich
 ```yaml
 type: immich
 tier: scrapbook
@@ -144,7 +161,7 @@ params:
   preferMemories: true
 ```
 
-**`journal.yml`** — Personal journal entries
+**`journal.yml`** **(U)** — Personal journal entries
 ```yaml
 type: journal
 tier: scrapbook
@@ -154,14 +171,14 @@ limit: 2
 
 ### Compass Tier (life dashboard data)
 
-**`weather.yml`** — Current weather conditions
+**`weather.yml`** **(H)** — Current weather conditions
 ```yaml
 type: weather
 tier: compass
 priority: 3
 ```
 
-**`gratitude.yml`** — Daily gratitude selections
+**`gratitude.yml`** **(U)** — Daily gratitude selections
 ```yaml
 type: gratitude
 tier: compass
@@ -169,7 +186,7 @@ priority: 5
 limit: 1
 ```
 
-**`plex.yml`** — Recently added/watched Plex media
+**`plex.yml`** **(U)** — Recently added/watched Plex media
 ```yaml
 type: plex
 tier: compass
@@ -182,7 +199,7 @@ params:
     - family
 ```
 
-**`plex-music.yml`** — Unwatched music from a specific Plex library
+**`plex-music.yml`** **(U)** — Unwatched music from a specific Plex library
 ```yaml
 type: plex
 tier: compass
@@ -194,7 +211,7 @@ params:
   unwatched: true
 ```
 
-**`fitness.yml`** — Recent Strava activities
+**`fitness.yml`** **(U)** — Recent Strava activities
 ```yaml
 type: strava
 tier: compass
@@ -204,14 +221,14 @@ params:
   daysBack: 3
 ```
 
-**`health.yml`** — Health metrics (weight, steps, calories)
+**`health.yml`** **(H)** — Health metrics (weight, steps, calories)
 ```yaml
 type: health
 tier: compass
 priority: 15
 ```
 
-**`entropy.yml`** — Data freshness alerts (stale integrations)
+**`entropy.yml`** **(H)** — Data freshness alerts (stale integrations)
 ```yaml
 type: entropy
 tier: compass
@@ -220,7 +237,7 @@ params:
   onlyYellowRed: true
 ```
 
-**`tasks.yml`** — Todoist tasks due today or overdue
+**`tasks.yml`** **(U)** — Todoist tasks due today or overdue
 ```yaml
 type: tasks
 tier: compass
@@ -232,7 +249,7 @@ params:
 
 ### Non-Feed Query (content domain)
 
-**`dailynews.yml`** — Used by the content domain's `SavedQueryService`, not the feed scroll
+**`dailynews.yml`** **(H)** — Used by the content domain's `SavedQueryService`, not the feed scroll
 ```yaml
 type: freshvideo
 sources:
@@ -249,59 +266,69 @@ sources:
 ```
 ┌─────────────────────────────────────────────────────────┐
 │  data/household/config/lists/queries/*.yml               │
-│  17 YAML files, each defining one source                 │
+│  Household-level queries (weather, headlines, etc.)      │
 └──────────────────────┬──────────────────────────────────┘
                        │ Server startup (app.mjs)
                        │ readdirSync + dataService.household.read()
                        │ Each parsed object gets _filename appended
                        ▼
 ┌─────────────────────────────────────────────────────────┐
-│  queryConfigs[] array                                    │
-│  Injected into FeedAssemblyService constructor           │
+│  queryConfigs[] (household) + loadUserQueries() function │
+│  Both injected into FeedPoolManager constructor          │
 └──────────────────────┬──────────────────────────────────┘
                        │ GET /api/v1/feed/scroll
                        ▼
 ┌─────────────────────────────────────────────────────────┐
-│  ScrollConfigLoader.load(username)                       │
-│  Reads users/{username}/config/feed.yml → scroll section │
-│  Merges with TIER_DEFAULTS                               │
+│  FeedAssemblyService.getNextBatch()                      │
+│  Fresh load? → FeedPoolManager.reset()                   │
+│  Load ScrollConfig, then get pool                        │
 └──────────────────────┬──────────────────────────────────┘
                        │
                        ▼
 ┌─────────────────────────────────────────────────────────┐
-│  #filterQueries()                                        │
-│  Matches query._filename against getEnabledSources()     │
-│  (If no sources configured, all queries pass through)    │
+│  FeedPoolManager.getPool()                               │
+│  First call → #initializePool():                         │
+│    #getQueryConfigs(username) — merge household + user   │
+│      data/users/{username}/config/queries/*.yml           │
+│      User queries override household by filename          │
+│      Result cached per-user in #userQueryConfigs          │
+│    #filterQueries() → match _filename to enabled sources │
+│    Promise.allSettled fan-out to all sources              │
+│    Age-filter results, record cursors                    │
+│  Empty pool + sources remain → await #proactiveRefill()  │
 └──────────────────────┬──────────────────────────────────┘
                        │
                        ▼
 ┌─────────────────────────────────────────────────────────┐
-│  Promise.allSettled — parallel fan-out                    │
-│  Each query dispatched to matching adapter by query.type  │
+│  #fetchSourcePage() — per source                         │
 │                                                          │
 │  Adapter registry (Map<sourceType, IFeedSourceAdapter>): │
 │    reddit, googlenews, youtube, komga, immich, journal,  │
-│    plex, weather, gratitude, strava, health, tasks        │
+│    plex, weather, gratitude, strava, health, tasks,      │
+│    readalong, goodreads                                  │
 │                                                          │
 │  Built-in handlers (application-layer dependencies):     │
 │    freshrss, headlines, entropy                          │
+│                                                          │
+│  Each returns { items, cursor }                          │
+│  First page → FeedCacheService (stale-while-revalidate)  │
+│  Subsequent pages → direct fetch (bypass cache)          │
 └──────────────────────┬──────────────────────────────────┘
-                       │ Each adapter returns FeedItem[]
+                       │ Pool of unseen items
                        ▼
-┌─────────────────────────────────────────────────────────┐
-│  #normalizeToFeedItem()                                  │
-│  Strips inline markdown, ensures uniform shape           │
-│  Sets tier from query config                             │
-└──────────────────────┬──────────────────────────────────┘
-                       │
               ┌────────┴────────┐
-              │ ?source= param? │
+              │ ?filter= param? │  (FeedFilterResolver)
               └────────┬────────┘
            yes ┌───────┴───────┐ no
                ▼               ▼
-     Filter + sort by    TierAssemblyService
-     timestamp, return   .assemble()
-     directly               │
+     #getFilteredBatch() ┌────────┴────────┐
+     Filter by tier,     │ ?source= param? │
+     source, or query    └────────┬────────┘
+     Sort by timestamp  yes ┌────┴────┐ no
+     Return directly        ▼         ▼
+                    Filter + sort  TierAssemblyService
+                    by timestamp   .assemble()
+                    return directly    │
                              ▼
                     ┌────────────────────┐
                     │ Bucket by tier      │
@@ -313,7 +340,8 @@ sources:
                              │
                              ▼
                     ┌────────────────────┐
-                    │ Slice to limit     │
+                    │ Padding pass       │
+                    │ markSeen() → refill│
                     │ Cache in LRU (500) │
                     │ Return JSON        │
                     └────────────────────┘
@@ -323,26 +351,44 @@ sources:
 
 ## Bootstrap Wiring
 
-In `backend/src/app.mjs` (lines 666–777):
+In `backend/src/app.mjs`:
 
-1. **Load query YAML files** — `readdirSync` the queries directory, parse each with `dataService.household.read()`, append `_filename`
-2. **Instantiate adapters** — each adapter gets its required dependencies (dataService, API keys, etc.)
-3. **Create assembly pipeline** — `ScrollConfigLoader` → `SpacingEnforcer` → `TierAssemblyService` → `FeedAssemblyService`
-4. **Inject everything** — `FeedAssemblyService` receives `queryConfigs`, `sourceAdapters[]`, `scrollConfigLoader`, `tierAssemblyService`
+1. **Load household query YAML files** — `readdirSync` the household queries directory, parse each with `dataService.household.read()`, append `_filename`
+2. **Create `loadUserQueries` function** — a closure that reads `data/users/{username}/config/queries/*.yml` on demand using `dataService.user.read()`
+3. **Instantiate adapters** — each adapter gets its required dependencies (dataService, API keys, etc.)
+4. **Create pool manager** — `FeedPoolManager` receives `sourceAdapters`, `feedCacheService`, `queryConfigs` (household), `loadUserQueries` (user), and built-in service references
+5. **Create assembly pipeline** — `ScrollConfigLoader` → `SpacingEnforcer` → `TierAssemblyService` → `FeedAssemblyService`
+6. **Inject everything** — `FeedAssemblyService` receives `feedPoolManager`, `sourceAdapters` (for detail resolution), `scrollConfigLoader`, `tierAssemblyService`
 
 ```javascript
 // Simplified bootstrap flow
+const { readdirSync, existsSync } = await import('fs');
+
+// Household queries — loaded at startup
 const queryConfigs = readdirSync(queriesPath)
   .filter(f => f.endsWith('.yml'))
   .map(file => ({ ...dataService.household.read(`config/lists/queries/${key}`), _filename: file }))
   .filter(Boolean);
 
-const feedAssemblyService = new FeedAssemblyService({
-  queryConfigs,
-  sourceAdapters: [redditAdapter, weatherAdapter, /* ... 10 more */],
-  scrollConfigLoader,
-  tierAssemblyService,
-  // ...
+// User queries — loaded on demand per-user
+const loadUserQueries = (username) => {
+  const userQueriesPath = path.join(dataDir, 'users', username, 'config', 'queries');
+  if (!existsSync(userQueriesPath)) return [];
+  return readdirSync(userQueriesPath)
+    .filter(f => f.endsWith('.yml'))
+    .map(file => ({ ...dataService.user.read(`config/queries/${key}`, username), _filename: file }))
+    .filter(Boolean);
+};
+
+const feedPoolManager = new FeedPoolManager({
+  sourceAdapters: feedSourceAdapters,
+  feedCacheService,
+  queryConfigs,      // household-level
+  loadUserQueries,   // user-level (on demand)
+  freshRSSAdapter,
+  headlineService,
+  entropyService,
+  logger,
 });
 ```
 
@@ -354,13 +400,14 @@ Every source adapter extends `IFeedSourceAdapter` (`backend/src/3_applications/f
 
 ```javascript
 class IFeedSourceAdapter {
-  get sourceType()                           // Returns string matching query.type
-  async fetchItems(query, username)          // Returns FeedItem[] from the query config
-  async getDetail(localId, meta, username)   // Optional: returns { sections: [...] }
+  get sourceType()                                        // Returns string matching query.type
+  async fetchPage(query, username, { cursor } = {})      // Returns { items: Object[], cursor: string|null }
+  async fetchItems(query, username)                      // @deprecated — use fetchPage instead
+  async getDetail(localId, meta, username)               // Optional: returns { sections: [...] }
 }
 ```
 
-The `query` parameter passed to `fetchItems()` is the full parsed YAML object — adapters read `query.params`, `query.limit`, `query.tier`, and `query.priority` as needed.
+The `query` parameter passed to `fetchPage()` is the full parsed YAML object — adapters read `query.params`, `query.limit`, `query.tier`, and `query.priority` as needed. The `cursor` parameter is an opaque string from a previous `fetchPage` call; `undefined` on first fetch, a source-specific token for subsequent pages. Return `cursor: null` when no more pages are available.
 
 ### Type-to-Adapter Mapping
 
@@ -470,18 +517,20 @@ scroll:
 | `cursor` | string | Pagination cursor (item ID of last loaded item) |
 | `focus` | string | Focus on a source key, e.g., `reddit:science` |
 | `source` | string | Comma-separated source filter, e.g., `komga,reddit` — bypasses tier assembly |
+| `filter` | string | Compound ID expression resolved by `FeedFilterResolver` — see Filter Mode below |
 
 ### API Router
 
 ```javascript
 // backend/src/4_api/v1/routers/feed.mjs
 router.get('/scroll', asyncHandler(async (req, res) => {
-  const { cursor, limit, focus, source } = req.query;
+  const { cursor, limit, focus, source, filter } = req.query;
   const result = await feedAssemblyService.getNextBatch(username, {
     limit: limit ? Number(limit) : undefined,
     cursor,
     focus: focus || null,
     sources: source ? source.split(',').map(s => s.trim()) : null,
+    filter: filter || null,
   });
   res.json(result);
 }));
@@ -517,19 +566,25 @@ router.get('/scroll', asyncHandler(async (req, res) => {
 
 ## Adding a New Query
 
-1. Create `data/household/config/lists/queries/{name}.yml` with `type`, `tier`, `priority`, `limit`, and `params`
-2. Ensure a matching adapter exists (or create one extending `IFeedSourceAdapter`)
-3. Register the adapter in `app.mjs` by adding it to the `sourceAdapters` array
-4. Restart the server (queries are loaded at bootstrap time)
-5. The new source will automatically appear in the scroll feed
+1. Decide scope: **household** (shared infrastructure like weather, headlines) or **user** (personal subscriptions, accounts)
+2. Create the YAML file in the appropriate directory:
+   - Household: `data/household/config/lists/queries/{name}.yml`
+   - User: `data/users/{username}/config/queries/{name}.yml`
+3. Define `type`, `tier`, `priority`, `limit`, and `params`
+4. Ensure a matching adapter exists (or create one extending `IFeedSourceAdapter`)
+5. Register the adapter in `app.mjs` by adding it to the `sourceAdapters` array
+6. Restart the server (household queries are loaded at startup; user queries are loaded on demand)
+7. The new source will automatically appear in the scroll feed
 
 ### Dual-System Note
 
-The `queries/` directory is read by two independent systems:
-- **Feed system** (`FeedAssemblyService`) — interprets `type` as a feed adapter key
+The household `queries/` directory is read by two independent systems:
+- **Feed system** (`FeedPoolManager`) — interprets `type` as a feed adapter key
 - **Content domain** (`SavedQueryService`) — interprets `type` as a content adapter key
 
 Files like `dailynews.yml` (`type: freshvideo`) are consumed by the content system but silently ignored by the feed system (no matching feed adapter). This coexistence is by design — both systems share the same directory for operational convenience.
+
+> **Note:** User-scoped queries are only consumed by the feed system. The content domain's `SavedQueryService` only reads from the household directory.
 
 ---
 
@@ -537,12 +592,13 @@ Files like `dailynews.yml` (`type: freshvideo`) are consumed by the content syst
 
 | File | Purpose |
 |------|---------|
-| `backend/src/app.mjs` (L666–777) | Bootstrap: loads YAML, creates adapters, wires FeedAssemblyService |
-| `backend/src/3_applications/feed/services/FeedAssemblyService.mjs` | Orchestrator: fan-out, normalization, source filtering, detail delegation |
+| `backend/src/app.mjs` | Bootstrap: loads YAML, creates adapters, wires FeedPoolManager + FeedAssemblyService |
+| `backend/src/3_applications/feed/services/FeedPoolManager.mjs` | Pool management: paginated fetching, age filtering, refill, recycling |
+| `backend/src/3_applications/feed/services/FeedAssemblyService.mjs` | Orchestrator: pool → tier assembly → padding → caching, detail delegation |
 | `backend/src/3_applications/feed/services/TierAssemblyService.mjs` | Four-tier interleaving: bucket → select → interleave → dedupe → space |
-| `backend/src/3_applications/feed/services/ScrollConfigLoader.mjs` | Per-user scroll config loading and merging with defaults |
+| `backend/src/3_applications/feed/services/ScrollConfigLoader.mjs` | Per-user scroll config loading, merging with defaults, age threshold resolution |
 | `backend/src/3_applications/feed/services/SpacingEnforcer.mjs` | Prevents consecutive same-source items |
-| `backend/src/3_applications/feed/ports/IFeedSourceAdapter.mjs` | Port interface: `sourceType`, `fetchItems()`, `getDetail()` |
-| `backend/src/1_adapters/feed/sources/*.mjs` | 12 source adapter implementations |
+| `backend/src/3_applications/feed/ports/IFeedSourceAdapter.mjs` | Port interface: `sourceType`, `fetchPage()`, `getDetail()` |
+| `backend/src/1_adapters/feed/sources/*.mjs` | 14 source adapter implementations |
 | `backend/src/4_api/v1/routers/feed.mjs` | Express router: `/scroll`, `/detail`, `/scroll/item/:slug` |
 | `frontend/src/modules/Feed/Scroll/Scroll.jsx` | React scroll component: infinite scroll, detail navigation |

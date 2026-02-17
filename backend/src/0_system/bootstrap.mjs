@@ -2471,7 +2471,7 @@ export function createAgentsApiRouter(config) {
         apiKey: komgaAuth.token,
         logger,
       });
-      const tocCacheDatastore = new YamlTocCacheDatastore({ dataService });
+      const tocCacheDatastore = new YamlTocCacheDatastore({ dataService, configService });
       agentOrchestrator.register(PagedMediaTocAgent, {
         workingMemory,
         aiGateway,
