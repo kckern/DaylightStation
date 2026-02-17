@@ -14,8 +14,6 @@
  * @module applications/feed/services
  */
 
-const CACHE_PATH = 'current/feed/_cache';
-
 /** Default TTLs in milliseconds, keyed by source type */
 const DEFAULT_TTLS = Object.freeze({
   headlines:  15 * 60 * 1000,
@@ -41,6 +39,7 @@ const FLUSH_DEBOUNCE_MS = 30 * 1000; // 30 seconds
 
 export class FeedCacheService {
   #dataService;
+  #cachePath;
   #logger;
 
   /** @type {Map<string, { items: Object[], fetchedAt: string }>} */
@@ -56,10 +55,12 @@ export class FeedCacheService {
   /**
    * @param {Object} config
    * @param {Object} config.dataService - DataService for YAML I/O
+   * @param {string} [config.cachePath='current/feed/_cache'] - User-scoped storage path for cache
    * @param {Object} [config.logger]
    */
-  constructor({ dataService, logger = console }) {
+  constructor({ dataService, cachePath = 'current/feed/_cache', logger = console }) {
     this.#dataService = dataService;
+    this.#cachePath = cachePath;
     this.#logger = logger;
   }
 
@@ -111,7 +112,7 @@ export class FeedCacheService {
     this.#hydrated = true;
 
     try {
-      const data = this.#dataService.user.read(CACHE_PATH, username);
+      const data = this.#dataService.user.read(this.#cachePath, username);
       if (data && typeof data === 'object') {
         for (const [key, entry] of Object.entries(data)) {
           if (entry?.items && entry?.fetchedAt) {
@@ -193,7 +194,7 @@ export class FeedCacheService {
           items: entry.items,
         };
       }
-      this.#dataService.user.write(CACHE_PATH, data, username);
+      this.#dataService.user.write(this.#cachePath, data, username);
       this.#logger.debug?.('feed.cache.flushed', { sources: Object.keys(data).length });
     } catch (err) {
       this.#logger.warn?.('feed.cache.flush.error', { error: err.message });

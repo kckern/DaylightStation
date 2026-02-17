@@ -783,6 +783,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     });
     const feedCacheService = new FeedCacheService({
       dataService,
+      cachePath: 'current/feed/_cache',
       logger: rootLogger.child({ module: 'feed-cache' }),
     });
 
