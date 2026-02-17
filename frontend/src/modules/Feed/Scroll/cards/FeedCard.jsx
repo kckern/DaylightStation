@@ -59,7 +59,7 @@ function StatusDot({ status }) {
   );
 }
 
-export default function FeedCard({ item, colors = {}, onDismiss }) {
+export default function FeedCard({ item, colors = {}, onDismiss, onPlay }) {
   const tier = item.tier || 'wire';
   const sourceName = item.meta?.sourceName || item.meta?.feedTitle || item.source || '';
   const age = formatAge(item.timestamp);
@@ -93,23 +93,30 @@ export default function FeedCard({ item, colors = {}, onDismiss }) {
           <HeroImage src={item.image} />
           {/* Play button overlay */}
           {(item.source === 'plex' || item.meta?.youtubeId) && (
-            <div style={{
-              position: 'absolute',
-              top: '50%',
-              left: '50%',
-              transform: 'translate(-50%, -50%)',
-              width: '48px',
-              height: '48px',
-              borderRadius: '50%',
-              background: 'rgba(0,0,0,0.55)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}>
+            <button
+              onClick={(e) => { e.stopPropagation(); onPlay?.(item); }}
+              style={{
+                position: 'absolute',
+                top: '50%',
+                left: '50%',
+                transform: 'translate(-50%, -50%)',
+                width: '48px',
+                height: '48px',
+                borderRadius: '50%',
+                background: 'rgba(0,0,0,0.55)',
+                border: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                padding: 0,
+              }}
+              aria-label="Play"
+            >
               <svg width="20" height="20" viewBox="0 0 24 24" fill="#fff">
                 <path d="M8 5v14l11-7z" />
               </svg>
-            </div>
+            </button>
           )}
           {/* Dismiss button overlay */}
           {onDismiss && (

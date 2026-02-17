@@ -89,6 +89,11 @@ export class ImmichProxyAdapter {
   }
 
   /**
+   * Opt in to SVG placeholder on upstream failure
+   */
+  getErrorFallback() { return 'svg'; }
+
+  /**
    * Default retry configuration
    * @returns {{ maxRetries: number, delayMs: number }}
    */

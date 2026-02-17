@@ -4,6 +4,8 @@ import { renderFeedCard } from './cards/index.jsx';
 import DetailView from './detail/DetailView.jsx';
 import DetailModal from './detail/DetailModal.jsx';
 import FeedPlayerMiniBar from './FeedPlayerMiniBar.jsx';
+import PersistentPlayer from './PersistentPlayer.jsx';
+import { usePlaybackObserver } from './hooks/usePlaybackObserver.js';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import './Scroll.scss';
 
@@ -19,7 +21,7 @@ function decodeItemId(slug) {
   try { return atob(s); } catch { return null; }
 }
 
-function ScrollCard({ item, colors, onDismiss, onClick }) {
+function ScrollCard({ item, colors, onDismiss, onPlay, onClick }) {
   const wrapperRef = useRef(null);
   const touchRef = useRef(null);
 
@@ -79,7 +81,7 @@ function ScrollCard({ item, colors, onDismiss, onClick }) {
       onTouchEnd={handleTouchEnd}
     >
       <div onClick={onClick}>
-        {renderFeedCard(item, colors, (cardItem) => onDismiss(cardItem, wrapperRef.current))}
+        {renderFeedCard(item, colors, { onDismiss: (cardItem) => onDismiss(cardItem, wrapperRef.current), onPlay })}
       </div>
     </div>
   );
@@ -102,8 +104,16 @@ export default function Scroll() {
   const [detailData, setDetailData] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [activeMedia, setActiveMedia] = useState(null);
+  const playerRef = useRef(null);
   const [colors, setColors] = useState({});
   const savedScrollRef = useRef(0);
+
+  const playback = usePlaybackObserver(playerRef, !!activeMedia);
+
+  const handlePlay = useCallback((item) => {
+    if (!item) { setActiveMedia(null); return; }
+    setActiveMedia({ item, contentId: item.id });
+  }, []);
 
   // Deep-linked item (fetched from server when not in scroll batch)
   const [deepLinkedItem, setDeepLinkedItem] = useState(null);
@@ -356,6 +366,7 @@ export default function Scroll() {
               item={item}
               colors={colors}
               onDismiss={handleDismiss}
+              onPlay={handlePlay}
               onClick={(e) => handleCardClick(e, item)}
             />
           ))}
@@ -396,8 +407,9 @@ export default function Scroll() {
           onBack={handleBack}
           onNext={currentIdx < items.length - 1 ? () => handleNav(1) : null}
           onPrev={currentIdx > 0 ? () => handleNav(-1) : null}
-          onPlay={(item) => setActiveMedia(item ? { item } : null)}
+          onPlay={handlePlay}
           activeMedia={activeMedia}
+          playback={playback}
           onNavigateToItem={handleGalleryNav}
         />
       )}
@@ -411,18 +423,25 @@ export default function Scroll() {
           onBack={handleBack}
           onNext={currentIdx < items.length - 1 ? () => handleNav(1) : null}
           onPrev={currentIdx > 0 ? () => handleNav(-1) : null}
-          onPlay={(item) => setActiveMedia(item ? { item } : null)}
+          onPlay={handlePlay}
           activeMedia={activeMedia}
+          playback={playback}
           onNavigateToItem={handleGalleryNav}
         />
       )}
       {activeMedia && !urlSlug && (
         <FeedPlayerMiniBar
           item={activeMedia.item}
+          playback={playback}
           onOpen={() => navigate(`/feed/scroll/${encodeItemId(activeMedia.item.id)}`)}
           onClose={() => setActiveMedia(null)}
         />
       )}
+      <PersistentPlayer
+        ref={playerRef}
+        contentId={activeMedia?.contentId || null}
+        onEnd={() => setActiveMedia(null)}
+      />
     </div>
   );
 }
