@@ -175,5 +175,21 @@ describe('Feed Router', () => {
         expect.objectContaining({ limit: 20 }),
       );
     });
+
+    test('passes filter param to feedAssemblyService', async () => {
+      await request(scrollApp).get('/api/v1/feed/scroll?filter=reddit:worldnews,usnews');
+      expect(mockFeedAssemblyService.getNextBatch).toHaveBeenCalledWith(
+        'kckern',
+        expect.objectContaining({ filter: 'reddit:worldnews,usnews' }),
+      );
+    });
+
+    test('filter param defaults to null when not provided', async () => {
+      await request(scrollApp).get('/api/v1/feed/scroll');
+      expect(mockFeedAssemblyService.getNextBatch).toHaveBeenCalledWith(
+        'kckern',
+        expect.objectContaining({ filter: null }),
+      );
+    });
   });
 });

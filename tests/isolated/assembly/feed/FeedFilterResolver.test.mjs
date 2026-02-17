@@ -62,6 +62,21 @@ describe('FeedFilterResolver', () => {
         type: 'source', sourceType: 'reddit', subsources: ['worldnews', 'usnews'],
       });
     });
+
+    test('resolves built-in types merged via builtinTypes param', () => {
+      const r = new FeedFilterResolver({
+        sourceTypes: ['reddit'],
+        queryNames: [],
+        aliases: {},
+        builtinTypes: ['freshrss', 'headlines', 'entropy'],
+      });
+      expect(r.resolve('freshrss')).toEqual({
+        type: 'source', sourceType: 'freshrss', subsources: null,
+      });
+      expect(r.resolve('headlines:cnn,cbs')).toEqual({
+        type: 'source', sourceType: 'headlines', subsources: ['cnn', 'cbs'],
+      });
+    });
   });
 
   describe('Layer 3: query name match (exact)', () => {

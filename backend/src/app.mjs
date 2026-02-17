@@ -697,6 +697,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     });
     const gratitudeAdapter = new GratitudeFeedAdapter({
       dataService,
+      userService,
       logger: rootLogger.child({ module: 'gratitude-feed' }),
     });
     const stravaAdapter = new StravaFeedAdapter({
@@ -794,6 +795,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       logger: rootLogger.child({ module: 'feed-pool' }),
     });
 
+    const { FeedFilterResolver } = await import('./3_applications/feed/services/FeedFilterResolver.mjs');
+    const feedFilterResolver = new FeedFilterResolver({
+      sourceTypes: [redditAdapter, weatherAdapter, healthAdapter, gratitudeAdapter, stravaAdapter, todoistAdapter, immichAdapter, plexAdapter, journalAdapter, youtubeAdapter, googleNewsAdapter, komgaFeedAdapter, readalongFeedAdapter, goodreadsFeedAdapter]
+        .filter(Boolean).map(a => a.sourceType),
+      queryNames: queryConfigs.map(q => q._filename?.replace('.yml', '')).filter(Boolean),
+      builtinTypes: ['freshrss', 'headlines', 'entropy'],
+      aliases: {},
+    });
+
     const feedAssemblyService = new FeedAssemblyService({
       feedPoolManager,
       sourceAdapters: feedSourceAdapters,
@@ -801,6 +811,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       tierAssemblyService,
       feedContentService,
       selectionTrackingStore,
+      feedFilterResolver,
       logger: rootLogger.child({ module: 'feed-assembly' }),
     });
     v1Routers.feed = createFeedRouter({
