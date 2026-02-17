@@ -584,3 +584,101 @@ describe('padding', () => {
     expect(result.items.some(i => i.source === 'photos')).toBe(true);
   });
 });
+
+describe('selection tracking integration', () => {
+  let mockScrollConfigLoader;
+  let mockTierAssemblyService;
+
+  const defaultScrollConfig = {
+    batch_size: 15,
+    spacing: { max_consecutive: 1 },
+    tiers: {
+      wire: { selection: { sort: 'timestamp_desc' }, sources: {} },
+      library: { allocation: 2, selection: { sort: 'random' }, sources: {} },
+      scrapbook: { allocation: 2, selection: { sort: 'random' }, sources: {} },
+      compass: { allocation: 3, selection: { sort: 'priority' }, sources: {} },
+    },
+  };
+
+  beforeEach(() => {
+    mockScrollConfigLoader = {
+      load: jest.fn().mockReturnValue(defaultScrollConfig),
+    };
+    mockTierAssemblyService = {
+      assemble: jest.fn().mockImplementation((items, config, opts) => {
+        return { items, hasMore: false };
+      }),
+    };
+  });
+
+  function createService(queryConfigs, adapters = [], overrides = {}) {
+    return new FeedAssemblyService({
+      freshRSSAdapter: null,
+      headlineService: null,
+      entropyService: null,
+      queryConfigs,
+      sourceAdapters: adapters,
+      scrollConfigLoader: mockScrollConfigLoader,
+      tierAssemblyService: mockTierAssemblyService,
+      logger: { info: jest.fn(), warn: jest.fn(), debug: jest.fn() },
+      ...overrides,
+    });
+  }
+
+  test('passes selectionCounts to tier assembly and increments after batch', async () => {
+    const mockTrackingStore = {
+      getAll: jest.fn().mockResolvedValue(new Map([
+        ['abc123', { count: 5, last: '2026-02-17T00:00:00Z' }],
+      ])),
+      incrementBatch: jest.fn().mockResolvedValue(undefined),
+    };
+    const adapter = {
+      sourceType: 'reddit',
+      fetchItems: jest.fn().mockResolvedValue([
+        { id: 'headline:abc123', tier: 'wire', source: 'headline', title: 'H1', timestamp: new Date().toISOString() },
+        { id: 'reddit:xyz', tier: 'wire', source: 'reddit', title: 'R1', timestamp: new Date().toISOString() },
+      ]),
+    };
+
+    const service = createService(
+      [{ type: 'reddit', _filename: 'reddit.yml' }],
+      [adapter],
+      { selectionTrackingStore: mockTrackingStore },
+    );
+
+    await service.getNextBatch('testuser');
+
+    // Should have loaded tracking
+    expect(mockTrackingStore.getAll).toHaveBeenCalledWith('testuser');
+
+    // Should have passed selectionCounts to assemble
+    expect(mockTierAssemblyService.assemble).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.any(Object),
+      expect.objectContaining({ selectionCounts: expect.any(Map) }),
+    );
+
+    // Should have incremented for headline-prefixed items only
+    expect(mockTrackingStore.incrementBatch).toHaveBeenCalledWith(
+      ['abc123'], // only headline-prefixed items, with prefix stripped
+      'testuser'
+    );
+  });
+
+  test('works without selectionTrackingStore (backwards compat)', async () => {
+    const adapter = {
+      sourceType: 'reddit',
+      fetchItems: jest.fn().mockResolvedValue([
+        { id: 'reddit:xyz', tier: 'wire', source: 'reddit', title: 'R1', timestamp: new Date().toISOString() },
+      ]),
+    };
+
+    const service = createService(
+      [{ type: 'reddit', _filename: 'reddit.yml' }],
+      [adapter],
+    );
+
+    const result = await service.getNextBatch('testuser');
+    expect(result.items.length).toBe(1);
+  });
+});
