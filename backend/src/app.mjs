@@ -451,10 +451,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   }, { httpClient: axios, mediaProgressMemory, app, configService });
 
   // Create proxy service for content domain (used for media library passthrough)
+  const komgaProxyAuth = configService.getHouseholdAuth('komga');
+  const komgaProxyHost = configService.resolveServiceUrl('komga');
   const contentProxyService = createProxyService({
     plex: mediaLibConfig,  // Bootstrap key stays 'plex' for now
     immich: immichConfig,  // Photo/video gallery
     audiobookshelf: audiobookshelfConfig,  // Ebooks/audiobooks
+    komga: komgaProxyHost ? { host: komgaProxyHost, apiKey: komgaProxyAuth?.token } : null,
     logger: rootLogger.child({ module: 'content-proxy' })
   });
 
@@ -655,6 +658,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     const { TodoistFeedAdapter } = await import('./1_adapters/feed/sources/TodoistFeedAdapter.mjs');
     const { ImmichFeedAdapter } = await import('./1_adapters/feed/sources/ImmichFeedAdapter.mjs');
     const { PlexFeedAdapter } = await import('./1_adapters/feed/sources/PlexFeedAdapter.mjs');
+    const { JournalFeedAdapter } = await import('./1_adapters/feed/sources/JournalFeedAdapter.mjs');
+    const { YouTubeFeedAdapter } = await import('./1_adapters/feed/sources/YouTubeFeedAdapter.mjs');
+    const { GoogleNewsFeedAdapter } = await import('./1_adapters/feed/sources/GoogleNewsFeedAdapter.mjs');
+    const { KomgaFeedAdapter } = await import('./1_adapters/feed/sources/KomgaFeedAdapter.mjs');
+    const { ReadalongFeedAdapter } = await import('./1_adapters/feed/sources/ReadalongFeedAdapter.mjs');
 
     // Load query configs at bootstrap time (moves fs access out of application layer)
     const { readdirSync } = await import('fs');
@@ -702,22 +710,67 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     const plexConfig = configService.getAdapterConfig('plex');
     const immichAdapter = contentServices?.contentQueryService ? new ImmichFeedAdapter({
       contentQueryService: contentServices.contentQueryService,
+      contentRegistry: contentRegistry || null,
       webUrl: immichConfig?.webUrl || null,
       logger: rootLogger.child({ module: 'immich-feed' }),
     }) : null;
+    const journalAdapter = new JournalFeedAdapter({
+      userDataService,
+      logger: rootLogger.child({ module: 'journal-feed' }),
+    });
     const plexAdapter = new PlexFeedAdapter({
       contentRegistry: contentRegistry || null,
       contentQueryService: contentServices?.contentQueryService || null,
       webUrl: plexConfig?.webUrl || plexConfig?.host || null,
       logger: rootLogger.child({ module: 'plex-feed' }),
     });
+    const googleAuth = dataService.system.read('auth/google');
+    const youtubeAdapter = googleAuth?.api_key ? new YouTubeFeedAdapter({
+      apiKey: googleAuth.api_key,
+      logger: rootLogger.child({ module: 'youtube-feed' }),
+    }) : null;
+    const googleNewsAdapter = new GoogleNewsFeedAdapter({
+      logger: rootLogger.child({ module: 'googlenews-feed' }),
+    });
+    const komgaAuth = configService.getHouseholdAuth('komga');
+    const komgaHost = configService.resolveServiceUrl('komga');
+    const komgaFeedAdapter = komgaAuth?.token && komgaHost ? new KomgaFeedAdapter({
+      host: komgaHost,
+      apiKey: komgaAuth.token,
+      webUrl: komgaHost,
+      dataService,
+      logger: rootLogger.child({ module: 'komga-feed' }),
+    }) : null;
+
+    const readalongContentAdapter = contentRegistry?.get('readalong') || null;
+    const readalongFeedAdapter = readalongContentAdapter ? new ReadalongFeedAdapter({
+      readalongAdapter: readalongContentAdapter,
+      logger: rootLogger.child({ module: 'readalong-feed' }),
+    }) : null;
 
     const { ScrollConfigLoader } = await import('./3_applications/feed/services/ScrollConfigLoader.mjs');
     const { SpacingEnforcer } = await import('./3_applications/feed/services/SpacingEnforcer.mjs');
+    const { TierAssemblyService } = await import('./3_applications/feed/services/TierAssemblyService.mjs');
+    const { FeedCacheService } = await import('./3_applications/feed/services/FeedCacheService.mjs');
 
     const scrollConfigLoader = new ScrollConfigLoader({ dataService });
     const spacingEnforcer = new SpacingEnforcer();
+    const tierAssemblyService = new TierAssemblyService({
+      spacingEnforcer,
+      logger: rootLogger.child({ module: 'tier-assembly' }),
+    });
+    const feedCacheService = new FeedCacheService({
+      dataService,
+      logger: rootLogger.child({ module: 'feed-cache' }),
+    });
 
+    const webContentAdapter = new WebContentAdapter({
+      logger: rootLogger.child({ module: 'web-content' }),
+    });
+    const feedContentService = new FeedContentService({
+      webContentGateway: webContentAdapter,
+      logger: rootLogger.child({ module: 'feed-content' }),
+    });
     const feedAssemblyService = new FeedAssemblyService({
       dataService,
       configService,
@@ -728,17 +781,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       contentRegistry: contentRegistry || null,
       userDataService,
       queryConfigs,
-      sourceAdapters: [redditAdapter, weatherAdapter, healthAdapter, gratitudeAdapter, stravaAdapter, todoistAdapter, immichAdapter, plexAdapter].filter(Boolean),
+      sourceAdapters: [redditAdapter, weatherAdapter, healthAdapter, gratitudeAdapter, stravaAdapter, todoistAdapter, immichAdapter, plexAdapter, journalAdapter, youtubeAdapter, googleNewsAdapter, komgaFeedAdapter, readalongFeedAdapter].filter(Boolean),
       scrollConfigLoader,
-      spacingEnforcer,
+      tierAssemblyService,
+      feedCacheService,
+      feedContentService,
       logger: rootLogger.child({ module: 'feed-assembly' }),
-    });
-    const webContentAdapter = new WebContentAdapter({
-      logger: rootLogger.child({ module: 'web-content' }),
-    });
-    const feedContentService = new FeedContentService({
-      webContentGateway: webContentAdapter,
-      logger: rootLogger.child({ module: 'feed-content' }),
     });
     v1Routers.feed = createFeedRouter({
       freshRSSAdapter: feedServices.freshRSSAdapter,
@@ -1282,6 +1330,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     mediaProgressMemory,
     dataService,
     configService,
+    aiGateway: sharedAiGateway,
   });
 
   // AI API router - provides direct AI endpoints (/api/ai/*)
