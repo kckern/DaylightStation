@@ -663,6 +663,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     const { GoogleNewsFeedAdapter } = await import('./1_adapters/feed/sources/GoogleNewsFeedAdapter.mjs');
     const { KomgaFeedAdapter } = await import('./1_adapters/feed/sources/KomgaFeedAdapter.mjs');
     const { ReadalongFeedAdapter } = await import('./1_adapters/feed/sources/ReadalongFeedAdapter.mjs');
+    const { GoodreadsFeedAdapter } = await import('./1_adapters/feed/sources/GoodreadsFeedAdapter.mjs');
 
     // Load query configs at bootstrap time (moves fs access out of application layer)
     const { readdirSync } = await import('fs');
@@ -748,6 +749,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       logger: rootLogger.child({ module: 'readalong-feed' }),
     }) : null;
 
+    const goodreadsFeedAdapter = new GoodreadsFeedAdapter({
+      userDataService,
+      logger: rootLogger.child({ module: 'goodreads-feed' }),
+    });
+
     const { ScrollConfigLoader } = await import('./3_applications/feed/services/ScrollConfigLoader.mjs');
     const { SpacingEnforcer } = await import('./3_applications/feed/services/SpacingEnforcer.mjs');
     const { TierAssemblyService } = await import('./3_applications/feed/services/TierAssemblyService.mjs');
@@ -774,20 +780,23 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     const { YamlSelectionTrackingStore } = await import('./1_adapters/persistence/yaml/YamlSelectionTrackingStore.mjs');
     const selectionTrackingStore = new YamlSelectionTrackingStore({ dataService, logger: rootLogger.child({ module: 'selection-tracking' }) });
 
-    const feedAssemblyService = new FeedAssemblyService({
-      dataService,
-      configService,
+    const { FeedPoolManager } = await import('./3_applications/feed/services/FeedPoolManager.mjs');
+
+    const feedPoolManager = new FeedPoolManager({
+      sourceAdapters: [redditAdapter, weatherAdapter, healthAdapter, gratitudeAdapter, stravaAdapter, todoistAdapter, immichAdapter, plexAdapter, journalAdapter, youtubeAdapter, googleNewsAdapter, komgaFeedAdapter, readalongFeedAdapter, goodreadsFeedAdapter].filter(Boolean),
+      feedCacheService,
+      queryConfigs,
       freshRSSAdapter: feedServices.freshRSSAdapter,
       headlineService: feedServices.headlineService,
       entropyService: entropyServices?.entropyService || null,
-      contentQueryService: contentServices?.contentQueryService || null,
-      contentRegistry: contentRegistry || null,
-      userDataService,
-      queryConfigs,
-      sourceAdapters: [redditAdapter, weatherAdapter, healthAdapter, gratitudeAdapter, stravaAdapter, todoistAdapter, immichAdapter, plexAdapter, journalAdapter, youtubeAdapter, googleNewsAdapter, komgaFeedAdapter, readalongFeedAdapter].filter(Boolean),
+      logger: rootLogger.child({ module: 'feed-pool' }),
+    });
+
+    const feedAssemblyService = new FeedAssemblyService({
+      feedPoolManager,
+      sourceAdapters: [redditAdapter, weatherAdapter, healthAdapter, gratitudeAdapter, stravaAdapter, todoistAdapter, immichAdapter, plexAdapter, journalAdapter, youtubeAdapter, googleNewsAdapter, komgaFeedAdapter, readalongFeedAdapter, goodreadsFeedAdapter].filter(Boolean),
       scrollConfigLoader,
       tierAssemblyService,
-      feedCacheService,
       feedContentService,
       selectionTrackingStore,
       logger: rootLogger.child({ module: 'feed-assembly' }),
