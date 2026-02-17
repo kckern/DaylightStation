@@ -26,7 +26,7 @@ describe('YamlHeadlineCacheStore', () => {
       });
 
       const result = await store.loadSource('cnn', 'kckern');
-      expect(mockDataService.user.read).toHaveBeenCalledWith('cache/feed/headlines/cnn', 'kckern');
+      expect(mockDataService.user.read).toHaveBeenCalledWith('current/feed/cnn', 'kckern');
       expect(result.source).toBe('cnn');
       expect(result.items).toHaveLength(1);
     });
@@ -48,10 +48,29 @@ describe('YamlHeadlineCacheStore', () => {
       };
       await store.saveSource('cnn', data, 'kckern');
       expect(mockDataService.user.write).toHaveBeenCalledWith(
-        'cache/feed/headlines/cnn',
+        'current/feed/cnn',
         expect.objectContaining({ source: 'cnn' }),
         'kckern'
       );
+    });
+  });
+
+  describe('id persistence', () => {
+    test('saveSource and loadSource roundtrip preserves item id', async () => {
+      const data = {
+        source: 'cnn',
+        label: 'CNN',
+        lastHarvest: '2026-02-17T00:00:00Z',
+        items: [{ id: 'abc123defg', title: 'Test', link: 'https://cnn.com/1', timestamp: '2026-02-17T00:00:00Z' }],
+      };
+      // Capture what saveSource writes, and return it from loadSource
+      let savedData = null;
+      mockDataService.user.write.mockImplementation((path, d) => { savedData = d; return true; });
+      mockDataService.user.read.mockImplementation(() => savedData);
+
+      await store.saveSource('cnn', data, 'testuser');
+      const loaded = await store.loadSource('cnn', 'testuser');
+      expect(loaded.items[0].id).toBe('abc123defg');
     });
   });
 
@@ -71,7 +90,7 @@ describe('YamlHeadlineCacheStore', () => {
       const pruned = await store.pruneOlderThan('cnn', cutoff, 'kckern');
       expect(pruned).toBe(1);
       expect(mockDataService.user.write).toHaveBeenCalledWith(
-        'cache/feed/headlines/cnn',
+        'current/feed/cnn',
         expect.objectContaining({
           items: [expect.objectContaining({ title: 'New' })],
         }),
