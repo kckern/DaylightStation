@@ -154,16 +154,18 @@ export class KomgaFeedAdapter extends IFeedSourceAdapter {
     const page = colonIdx > 0 ? parseInt(localId.slice(colonIdx + 1), 10) || 1 : 1;
     const sections = [];
 
-    // Large page image
-    const imageUrl = this.#pageImageUrl(bookId, page);
+    // Determine article page range from TOC
+    const endPage = this.#getArticleEndPage(bookId, page, meta.pageCount || 0);
+
+    // All article page images (vertically stacked in detail view)
+    const images = [];
+    for (let p = page; p <= endPage; p++) {
+      images.push({ url: this.#pageImageUrl(bookId, p) });
+    }
+
     sections.push({
       type: 'media',
-      data: {
-        images: [{
-          url: imageUrl,
-          caption: meta.issueTitle || null,
-        }],
-      },
+      data: { images },
     });
 
     // Metadata items
@@ -171,13 +173,46 @@ export class KomgaFeedAdapter extends IFeedSourceAdapter {
     if (meta.seriesLabel) items.push({ label: 'Series', value: meta.seriesLabel });
     if (meta.issueTitle) items.push({ label: 'Issue', value: meta.issueTitle });
     if (meta.pageCount) items.push({ label: 'Pages', value: String(meta.pageCount) });
-    if (meta.page) items.push({ label: 'Page', value: String(meta.page) });
+    items.push({ label: 'Article', value: `pp. ${page}–${endPage}` });
 
     if (items.length > 0) {
       sections.push({ type: 'metadata', data: { items } });
     }
 
     return { sections };
+  }
+
+  /**
+   * Determine the last page of an article by finding the next TOC entry.
+   *
+   * @param {string} bookId
+   * @param {number} startPage - 1-indexed start page of this article
+   * @param {number} totalPages - Total pages in the book
+   * @returns {number} Last page of the article (inclusive)
+   */
+  #getArticleEndPage(bookId, startPage, totalPages) {
+    const cachePath = `common/komga/toc/${bookId}.yml`;
+    const toc = this.#dataService.household.read(cachePath);
+
+    if (!toc?.articles?.length) {
+      // No TOC — show a reasonable number of pages (up to 8)
+      return Math.min(startPage + 7, totalPages || startPage);
+    }
+
+    // Sort articles by page number
+    const sorted = [...toc.articles]
+      .map(a => a.page)
+      .sort((a, b) => a - b);
+
+    // Find the next article's start page after this one
+    const nextPage = sorted.find(p => p > startPage);
+
+    if (nextPage) {
+      return nextPage - 1;
+    }
+
+    // Last article in the book — go to end of book
+    return totalPages || startPage;
   }
 
   // ---------------------------------------------------------------------------
