@@ -2,24 +2,10 @@
 import express from 'express';
 import fs from 'fs';
 import nodePath from 'path';
-import http from 'http';
-import https from 'https';
-import { URL } from 'url';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
+import { streamFileWithRanges } from '#system/http/streamFile.mjs';
+import { sendPlaceholderSvg } from '#system/proxy/placeholders.mjs';
 import { compositeHeroImage } from '#system/canvas/compositeHero.mjs';
-
-const PLACEHOLDER_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>';
-
-function sendPlaceholderSvg(res) {
-  if (res.headersSent) return;
-  res.writeHead(200, {
-    'Content-Type': 'image/svg+xml',
-    'Content-Length': Buffer.byteLength(PLACEHOLDER_SVG),
-    'Cache-Control': 'public, max-age=300',
-    'X-Proxy-Fallback': 'true',
-  });
-  res.end(PLACEHOLDER_SVG);
-}
 
 /**
  * Create proxy router for streaming and thumbnails
@@ -51,42 +37,14 @@ export function createProxyRouter(config) {
       }
 
       const fullPath = item.metadata.filePath;
-      const stat = fs.statSync(fullPath);
       const mimeType = item.metadata.mimeType || 'application/octet-stream';
 
-      // Common headers for caching and security
-      const commonHeaders = {
+      streamFileWithRanges(req, res, fullPath, mimeType, {
         'Cache-Control': 'public, max-age=31536000',
         'X-Content-Type-Options': 'nosniff',
         'X-Frame-Options': 'DENY',
-        'Access-Control-Allow-Origin': '*'
-      };
-
-      // Handle range requests for video seeking
-      const range = req.headers.range;
-      if (range) {
-        const parts = range.replace(/bytes=/, '').split('-');
-        const start = parseInt(parts[0], 10);
-        const end = parts[1] ? parseInt(parts[1], 10) : stat.size - 1;
-        const chunkSize = end - start + 1;
-
-        res.writeHead(206, {
-          ...commonHeaders,
-          'Content-Range': `bytes ${start}-${end}/${stat.size}`,
-          'Accept-Ranges': 'bytes',
-          'Content-Length': chunkSize,
-          'Content-Type': mimeType
-        });
-
-        fs.createReadStream(fullPath, { start, end }).pipe(res);
-      } else {
-        res.writeHead(200, {
-          ...commonHeaders,
-          'Content-Length': stat.size,
-          'Content-Type': mimeType
-        });
-        fs.createReadStream(fullPath).pipe(res);
-      }
+        'Access-Control-Allow-Origin': '*',
+      });
   }));
 
   /**
@@ -149,7 +107,6 @@ export function createProxyRouter(config) {
         return res.status(404).json({ error: 'Media file not found on disk', path: fullPath });
       }
 
-      const stat = fs.statSync(fullPath);
       const ext = nodePath.extname(fullPath).toLowerCase();
       const mimeTypes = {
         '.mp3': 'audio/mpeg',
@@ -160,39 +117,12 @@ export function createProxyRouter(config) {
       };
       const mimeType = mimeTypes[ext] || 'application/octet-stream';
 
-      // Common headers for caching and security
-      const commonHeaders = {
+      streamFileWithRanges(req, res, fullPath, mimeType, {
         'Cache-Control': 'public, max-age=31536000',
         'X-Content-Type-Options': 'nosniff',
         'X-Frame-Options': 'DENY',
-        'Access-Control-Allow-Origin': '*'
-      };
-
-      // Handle range requests for audio seeking
-      const range = req.headers.range;
-      if (range) {
-        const parts = range.replace(/bytes=/, '').split('-');
-        const start = parseInt(parts[0], 10);
-        const end = parts[1] ? parseInt(parts[1], 10) : stat.size - 1;
-        const chunkSize = end - start + 1;
-
-        res.writeHead(206, {
-          ...commonHeaders,
-          'Content-Range': `bytes ${start}-${end}/${stat.size}`,
-          'Accept-Ranges': 'bytes',
-          'Content-Length': chunkSize,
-          'Content-Type': mimeType
-        });
-
-        fs.createReadStream(fullPath, { start, end }).pipe(res);
-      } else {
-        res.writeHead(200, {
-          ...commonHeaders,
-          'Content-Length': stat.size,
-          'Content-Type': mimeType
-        });
-        fs.createReadStream(fullPath).pipe(res);
-      }
+        'Access-Control-Allow-Origin': '*',
+      });
   }));
 
   /**
@@ -221,80 +151,22 @@ export function createProxyRouter(config) {
   /**
    * GET /proxy/immich/*
    * Passthrough proxy for Immich API requests (thumbnails, videos, etc.)
-   * Uses ProxyService if available, otherwise falls back to direct proxy
+   * Requires ProxyService to be configured for Immich.
    */
   router.use('/immich', async (req, res) => {
     try {
-      // Use ProxyService if available
       if (proxyService?.isConfigured?.('immich')) {
         await proxyService.proxy('immich', req, res);
         return;
       }
 
-      // Fallback: direct proxy using adapter credentials
-      const adapter = registry.get('immich');
-      if (!adapter) {
-        return sendPlaceholderSvg(res);
-      }
-
-      const host = adapter.host;
-      const apiKey = adapter.apiKey;
-      if (!host || !apiKey) {
-        return sendPlaceholderSvg(res);
-      }
-
-      // Build target URL - map /assets/{id}/video/playback to Immich API
-      let targetPath = req.url;
-      // Immich video playback endpoint is /api/assets/{id}/video/playback
-      if (!targetPath.startsWith('/api/')) {
-        targetPath = '/api' + targetPath;
-      }
-      const targetUrl = new URL(targetPath, host);
-
-      // Forward headers (except host) and add API key
-      const headers = { ...req.headers, 'x-api-key': apiKey };
-      delete headers.host;
-
-      const protocol = targetUrl.protocol === 'https:' ? https : http;
-      const options = {
-        hostname: targetUrl.hostname,
-        port: targetUrl.port || (targetUrl.protocol === 'https:' ? 443 : 80),
-        path: targetUrl.pathname + targetUrl.search,
-        method: req.method,
-        headers,
-        timeout: 60000
-      };
-
-      const proxyReq = protocol.request(options, (proxyRes) => {
-        if (proxyRes.statusCode >= 400) {
-          proxyRes.resume();
-          sendPlaceholderSvg(res);
-          return;
-        }
-        if (!res.headersSent) {
-          res.writeHead(proxyRes.statusCode, proxyRes.headers);
-        }
-        proxyRes.pipe(res);
-      });
-
-      proxyReq.on('error', (err) => {
-        console.error('[proxy] immich error:', err.message);
-        sendPlaceholderSvg(res);
-      });
-
-      proxyReq.on('timeout', () => {
-        proxyReq.destroy();
-        sendPlaceholderSvg(res);
-      });
-
-      if (['POST', 'PUT', 'PATCH'].includes(req.method)) {
-        req.pipe(proxyReq);
-      } else {
-        proxyReq.end();
-      }
+      // No fallback - ProxyService is required
+      return res.status(503).json({ error: 'Immich proxy not configured (ProxyService required)' });
     } catch (err) {
       console.error('[proxy] immich error:', err);
-      sendPlaceholderSvg(res);
+      if (!res.headersSent) {
+        res.status(500).json({ error: err.message });
+      }
     }
   });
 
@@ -500,38 +372,11 @@ export function createProxyRouter(config) {
       };
       const mimeType = mimeTypes[ext] || 'application/octet-stream';
 
-      const commonHeaders = {
+      streamFileWithRanges(req, res, resolvedPath, mimeType, {
         'Cache-Control': 'public, max-age=31536000',
         'X-Content-Type-Options': 'nosniff',
-        'Access-Control-Allow-Origin': '*'
-      };
-
-      // Handle range requests for audio seeking
-      const range = req.headers.range;
-      if (range) {
-        const parts = range.replace(/bytes=/, '').split('-');
-        const start = parseInt(parts[0], 10);
-        const end = parts[1] ? parseInt(parts[1], 10) : stat.size - 1;
-        const chunkSize = end - start + 1;
-
-        res.writeHead(206, {
-          ...commonHeaders,
-          'Content-Range': `bytes ${start}-${end}/${stat.size}`,
-          'Accept-Ranges': 'bytes',
-          'Content-Length': chunkSize,
-          'Content-Type': mimeType
-        });
-
-        fs.createReadStream(resolvedPath, { start, end }).pipe(res);
-      } else {
-        res.writeHead(200, {
-          ...commonHeaders,
-          'Accept-Ranges': 'bytes',
-          'Content-Length': stat.size,
-          'Content-Type': mimeType
-        });
-        fs.createReadStream(resolvedPath).pipe(res);
-      }
+        'Access-Control-Allow-Origin': '*',
+      });
 
       logger.debug?.('proxy.media.served', { path: relativePath, mimeType });
   }));
