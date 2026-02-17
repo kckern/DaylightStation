@@ -271,6 +271,15 @@ export class FeedPoolManager {
       }
     }
 
+    // Tag items with query name for filter matching
+    const queryName = query._filename?.replace('.yml', '') || null;
+    if (queryName) {
+      for (const item of items) {
+        item.meta = item.meta || {};
+        item.meta.queryName = queryName;
+      }
+    }
+
     return { items, cursor, sourceKey };
   }
 

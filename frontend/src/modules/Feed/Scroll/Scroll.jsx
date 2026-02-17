@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { renderFeedCard } from './cards/index.jsx';
 import DetailView from './detail/DetailView.jsx';
 import DetailModal from './detail/DetailModal.jsx';
@@ -22,6 +22,7 @@ function decodeItemId(slug) {
 export default function Scroll() {
   const { itemId: urlSlug } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -70,6 +71,8 @@ export default function Scroll() {
       const params = new URLSearchParams();
       if (cursor) params.set('cursor', cursor);
       if (focusSource) params.set('focus', focusSource);
+      const filterParam = searchParams.get('filter');
+      if (filterParam) params.set('filter', filterParam);
 
       const result = await DaylightAPI(`/api/v1/feed/scroll?${params}`);
 
@@ -93,7 +96,7 @@ export default function Scroll() {
       setLoading(false);
       setLoadingMore(false);
     }
-  }, [focusSource]);
+  }, [focusSource, searchParams]);
 
   useEffect(() => { fetchItems(); }, []);
 
