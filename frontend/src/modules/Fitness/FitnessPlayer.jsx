@@ -1028,6 +1028,15 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       type: media.type || media.mediaType || 'video',
       queueSize
     });
+    // Prod-visible log for autoplay SSoT verification
+    getLogger().info('fitness.media_start.autoplay', {
+      mediaId: currentMediaIdentity,
+      autoplay: autoplayEnabled,
+      videoLocked: governanceState?.videoLocked ?? null,
+      isGoverned: governanceState?.isGoverned ?? null,
+      governancePhase: governanceState?.status ?? null,
+      labels: Array.isArray(media.labels) ? media.labels : []
+    });
   }, [fitnessSessionInstance, currentMediaIdentity, enhancedCurrentItem, currentItem, autoplayEnabled, governanceState?.videoLocked, queueSize]);
 
   const resilienceMediaIdentity = useMemo(

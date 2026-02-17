@@ -1,6 +1,7 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { DaylightMediaPath } from '../../../lib/api.mjs';
+import { getLogger } from '../../../lib/logging/Logger.js';
 import { useDeadlineCountdown } from '../shared';
 import GovernanceAudioPlayer from './GovernanceAudioPlayer.jsx';
 import './GovernanceStateOverlay.scss';
@@ -116,6 +117,23 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
   const hasRows = rows.length > 0;
   const isCompact = rows.length > 6;
   const showTableHeader = !isCompact;
+
+  // Log when "Waiting for participant data" renders (rate-limited)
+  const lastWaitingLogRef = useRef(0);
+  useEffect(() => {
+    if (!hasRows && status === 'pending') {
+      const now = Date.now();
+      if (now - lastWaitingLogRef.current > 5000) {
+        lastWaitingLogRef.current = now;
+        getLogger().sampled('governance.overlay.waiting_for_participants', {
+          status,
+          displayRowCount: display?.rows?.length ?? -1,
+          lockRowCount: lockRows?.length ?? -1,
+          hasDisplay: !!display
+        }, { maxPerMinute: 6 });
+      }
+    }
+  }, [hasRows, status, display, lockRows]);
 
   const renderProgressBlock = (row, variant = 'default') => {
     // Support both formats: progress (new) and progressPercent (legacy)
