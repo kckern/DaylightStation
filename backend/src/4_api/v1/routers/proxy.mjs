@@ -294,7 +294,7 @@ export function createProxyRouter(config) {
   router.get('/komga/composite/:bookId/:page', asyncHandler(async (req, res) => {
     const { bookId, page } = req.params;
     const pageNum = parseInt(page, 10);
-    if (!bookId || isNaN(pageNum)) {
+    if (!bookId || isNaN(pageNum) || pageNum < 1 || !/^[\w-]+$/.test(bookId)) {
       return res.status(400).json({ error: 'Invalid bookId or page' });
     }
 
@@ -356,8 +356,8 @@ export function createProxyRouter(config) {
 
     // Cache to disk
     if (cacheDir) {
-      fs.mkdirSync(cacheDir, { recursive: true });
-      fs.writeFileSync(cacheFile, jpegBuffer);
+      await fs.promises.mkdir(cacheDir, { recursive: true });
+      await fs.promises.writeFile(cacheFile, jpegBuffer);
     }
 
     // Serve
