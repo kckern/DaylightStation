@@ -53,12 +53,12 @@ export function createFeedRouter(config) {
       return res.status(400).json({ error: 'feed parameter required' });
     }
     const username = getUsername();
-    const items = await freshRSSAdapter.getItems(feed, username, {
+    const { items, continuation: nextContinuation } = await freshRSSAdapter.getItems(feed, username, {
       count: count ? Number(count) : undefined,
       continuation,
       excludeRead: excludeRead === 'true',
     });
-    res.json(items);
+    res.json({ items, continuation: nextContinuation });
   }));
 
   router.post('/reader/items/mark', asyncHandler(async (req, res) => {

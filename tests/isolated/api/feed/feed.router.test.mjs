@@ -18,9 +18,12 @@ describe('Feed Router', () => {
       getFeeds: jest.fn().mockResolvedValue([
         { id: 'feed/1', title: 'Hacker News', categories: [] },
       ]),
-      getItems: jest.fn().mockResolvedValue([
-        { id: 'item1', title: 'Test Article', link: 'https://example.com', content: '<p>Body</p>' },
-      ]),
+      getItems: jest.fn().mockResolvedValue({
+        items: [
+          { id: 'item1', title: 'Test Article', link: 'https://example.com', content: '<p>Body</p>' },
+        ],
+        continuation: null,
+      }),
       markRead: jest.fn().mockResolvedValue(undefined),
     };
     mockHeadlineService = {
@@ -74,7 +77,8 @@ describe('Feed Router', () => {
     test('returns items for a feed', async () => {
       const res = await request(app).get('/api/v1/feed/reader/items?feed=feed/1');
       expect(res.status).toBe(200);
-      expect(res.body).toHaveLength(1);
+      expect(res.body.items).toHaveLength(1);
+      expect(res.body.continuation).toBeNull();
       expect(mockFreshRSSAdapter.getItems).toHaveBeenCalledWith('feed/1', 'kckern', expect.any(Object));
     });
 

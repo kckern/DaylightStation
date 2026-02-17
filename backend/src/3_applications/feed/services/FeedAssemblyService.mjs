@@ -319,7 +319,7 @@ export class FeedAssemblyService {
 
   async #fetchFreshRSS(query, username) {
     if (!this.#freshRSSAdapter) return [];
-    const items = await this.#freshRSSAdapter.getItems(
+    const { items } = await this.#freshRSSAdapter.getItems(
       'user/-/state/com.google/reading-list',
       username,
       { excludeRead: query.params?.excludeRead ?? true, count: query.limit || 20 }
