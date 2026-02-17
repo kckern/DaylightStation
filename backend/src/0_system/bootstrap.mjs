@@ -972,7 +972,10 @@ export function createFeedServices(config) {
     headlineStore,
     harvester,
     dataService,
-    configService,
+    config: {
+      configPath: 'config/feed',
+      defaults: { retentionHours: 48, maxPerSource: 10, dedupeWordCount: 8 },
+    },
     webContentGateway,
     logger,
   });

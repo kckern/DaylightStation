@@ -6,7 +6,6 @@ describe('HeadlineService', () => {
   let service;
   let mockStore;
   let mockHarvester;
-  let mockConfigService;
   let mockDataService;
 
   const userConfig = {
@@ -48,14 +47,10 @@ describe('HeadlineService', () => {
         read: jest.fn().mockReturnValue(userConfig),
       },
     };
-    mockConfigService = {
-      getHeadOfHousehold: jest.fn().mockReturnValue('kckern'),
-    };
     service = new HeadlineService({
       headlineStore: mockStore,
       harvester: mockHarvester,
       dataService: mockDataService,
-      configService: mockConfigService,
     });
   });
 
@@ -147,13 +142,12 @@ describe('HeadlineService', () => {
       };
     });
 
-    function buildServiceWithAdapter(config) {
-      const ds = { user: { read: jest.fn().mockReturnValue(config || singleSourceConfig) } };
+    function buildServiceWithAdapter(feedConfig) {
+      const ds = { user: { read: jest.fn().mockReturnValue(feedConfig || singleSourceConfig) } };
       return new HeadlineService({
         headlineStore: mockStore,
         harvester: mockHarvester,
         dataService: ds,
-        configService: mockConfigService,
         webContentGateway: mockWebContentGateway,
       });
     }
