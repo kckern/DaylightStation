@@ -31,8 +31,8 @@ export class JournalFeedAdapter extends IFeedSourceAdapter {
       const userMessages = data.messages.filter(msg =>
         msg.senderId !== 'bot' &&
         msg.role !== 'assistant' &&
-        msg.content &&
-        msg.content.length > 20
+        typeof msg.content === 'string' &&
+        msg.content.trim().length > 20
       );
 
       if (userMessages.length === 0) return [];
@@ -46,9 +46,10 @@ export class JournalFeedAdapter extends IFeedSourceAdapter {
         const ts = msg.timestamp || new Date().toISOString();
         const date = new Date(ts);
         const headline = `Journal Entry for ${date.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}`;
-        const preview = msg.content.length > 140
-          ? msg.content.slice(0, 140).replace(/\s+\S*$/, '') + '...'
-          : msg.content;
+        const trimmed = msg.content.trim();
+        const preview = trimmed.length > 140
+          ? trimmed.slice(0, 140).replace(/\s+\S*$/, '') + '...'
+          : trimmed;
         return {
           id: `journal:${msg.id || ts}`,
           tier: query.tier || 'scrapbook',

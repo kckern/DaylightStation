@@ -258,17 +258,22 @@ function FitnessBody({ item }) {
 }
 
 function JournalBody({ item }) {
+  const hasBody = item.body && item.body.trim();
   return (
     <>
-      <p style={{
-        margin: 0,
-        fontSize: '0.9rem',
-        color: '#dee2e6',
-        lineHeight: 1.5,
-        fontStyle: 'italic',
-      }}>
-        &ldquo;{item.body}&rdquo;
-      </p>
+      {hasBody ? (
+        <p style={{
+          margin: 0,
+          fontSize: '0.9rem',
+          color: '#dee2e6',
+          lineHeight: 1.5,
+          fontStyle: 'italic',
+        }}>
+          &ldquo;{item.body}&rdquo;
+        </p>
+      ) : (
+        <DefaultBody item={item} />
+      )}
       {item.meta?.senderName && (
         <p style={{
           margin: '0.4rem 0 0',
