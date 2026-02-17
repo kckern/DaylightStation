@@ -10,17 +10,19 @@
  *
  * @module adapters/persistence/yaml
  */
+import { IDismissedItemsStore } from '#apps/feed/ports/IDismissedItemsStore.mjs';
 
 const DISMISSED_PATH = 'common/feed/dismissed';
 const MAX_AGE_SECONDS = 30 * 24 * 60 * 60; // 30 days
 
-export class YamlDismissedItemsStore {
+export class YamlDismissedItemsStore extends IDismissedItemsStore {
   #dataService;
   #logger;
   /** @type {Set<string>|null} Cached set, loaded once per session */
   #cache = null;
 
   constructor({ dataService, logger = console }) {
+    super();
     this.#dataService = dataService;
     this.#logger = logger;
   }
