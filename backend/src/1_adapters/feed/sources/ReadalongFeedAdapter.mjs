@@ -38,11 +38,15 @@ export class ReadalongFeedAdapter extends IFeedSourceAdapter {
    * @param {string} username
    * @returns {Promise<Object[]>} Single-element array with the FeedItem, or []
    */
-  async fetchItems(query, username) {
+  async fetchItems(query, _username) {
+    const collection = query.params?.collection;
+    const volume = query.params?.volume;
+    if (!collection || !volume) {
+      this.#logger.warn?.('readalong.feed.missing_params', { collection, volume });
+      return [];
+    }
+
     try {
-      const collection = query.params?.collection;
-      const volume = query.params?.volume;
-      if (!collection || !volume) return [];
 
       const localId = `${collection}/${volume}`;
       const item = await this.#readalongAdapter.getItem(localId);
@@ -76,7 +80,7 @@ export class ReadalongFeedAdapter extends IFeedSourceAdapter {
         },
       }];
     } catch (err) {
-      this.#logger.warn?.('readalong.adapter.error', { error: err.message });
+      this.#logger.warn?.('readalong.feed.error', { error: err.message });
       return [];
     }
   }
@@ -89,18 +93,23 @@ export class ReadalongFeedAdapter extends IFeedSourceAdapter {
    * @param {string} username
    * @returns {Promise<{ sections: Array<{ type: string, data: Object }> } | null>}
    */
-  async getDetail(localId, meta, username) {
+  async getDetail(localId, meta, _username) {
     try {
       const compoundId = meta?.contentId || `readalong:${localId}`;
       const item = await this.#readalongAdapter.getItem(compoundId);
       if (!item) return null;
 
-      const sections = [
-        { type: 'player', data: { contentId: item.id } },
-        { type: 'scripture', data: { blocks: item.content.data, contentType: item.content.type } },
-      ];
+      const sections = [];
 
-      return { sections };
+      if (item.mediaUrl) {
+        sections.push({ type: 'player', data: { contentId: item.id } });
+      }
+
+      if (item.content?.data) {
+        sections.push({ type: 'scripture', data: { blocks: item.content.data, contentType: item.content.type } });
+      }
+
+      return sections.length > 0 ? { sections } : null;
     } catch (err) {
       this.#logger.warn?.('readalong.detail.error', { error: err.message, localId });
       return null;
