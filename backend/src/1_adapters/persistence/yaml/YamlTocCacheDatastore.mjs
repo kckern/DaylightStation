@@ -12,11 +12,13 @@ import { ITocCacheDatastore } from '#apps/agents/paged-media-toc/ports/ITocCache
  */
 export class YamlTocCacheDatastore extends ITocCacheDatastore {
   #dataService;
+  #configService;
 
-  constructor({ dataService }) {
+  constructor({ dataService, configService }) {
     super();
     if (!dataService) throw new Error('YamlTocCacheDatastore requires dataService');
     this.#dataService = dataService;
+    this.#configService = configService;
   }
 
   readCache(bookId) {
@@ -28,6 +30,11 @@ export class YamlTocCacheDatastore extends ITocCacheDatastore {
   }
 
   readQueryConfig() {
+    const username = this.#configService?.getHeadOfHousehold?.();
+    if (username) {
+      const userConfig = this.#dataService.user.read('config/queries/komga', username);
+      if (userConfig) return userConfig;
+    }
     return this.#dataService.household.read('config/lists/queries/komga');
   }
 }

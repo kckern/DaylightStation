@@ -31,10 +31,17 @@ The feed system aggregates content from external services (RSS, Reddit, YouTube,
 │  └────────────────────────────┬────────────────────────────────────┘ │
 │                               │                                      │
 │  ┌────────────────────────────┼───────────────────────────┐         │
+│  │         FeedPoolManager                                │         │
+│  │  • Paginated source fetching (fetchPage + cursors)     │         │
+│  │  • Per-source age filtering (max_age_hours)            │         │
+│  │  • Proactive refill when pool runs thin                │         │
+│  │  • Silent recycling when all sources exhaust           │         │
+│  └────────────────────────────┬───────────────────────────┘         │
+│                               │                                      │
+│  ┌────────────────────────────┼───────────────────────────┐         │
 │  │         FeedAssemblyService                            │         │
-│  │  • Dispatches queries to source adapters               │         │
-│  │  • Interleaves external vs grounding items             │         │
-│  │  • Enforces spacing rules (SpacingEnforcer)            │         │
+│  │  • Four-tier assembly via TierAssemblyService          │         │
+│  │  • Spacing enforcement (SpacingEnforcer)               │         │
 │  │  • LRU item cache for deep-link resolution             │         │
 │  │  • Detail delegation to source adapters                │         │
 │  └────────────────────────────┬───────────────────────────┘         │
@@ -91,7 +98,9 @@ The feed system aggregates content from external services (RSS, Reddit, YouTube,
 | **Adapter** | `backend/src/1_adapters/feed/WebContentAdapter.mjs` | Fetches web pages, extracts readable content + og:image + og:description |
 | **Adapter** | `backend/src/1_adapters/feed/sources/*.mjs` | 12 source adapters (see Source Adapters section) |
 | **Application** | `backend/src/3_applications/feed/ports/IFeedSourceAdapter.mjs` | Base class defining `fetchItems()` and optional `getDetail()` |
-| **Application** | `backend/src/3_applications/feed/services/FeedAssemblyService.mjs` | Core scroll orchestration — dispatching, interleaving, spacing, caching, detail delegation |
+| **Application** | `backend/src/3_applications/feed/services/FeedAssemblyService.mjs` | Scroll orchestration — pool → tier assembly → padding → caching, detail delegation, filter bypass |
+| **Application** | `backend/src/3_applications/feed/services/FeedFilterResolver.mjs` | 4-layer resolution chain for `?filter=` param — tier → source type → query name → alias |
+| **Application** | `backend/src/3_applications/feed/services/FeedPoolManager.mjs` | Item pool management — paginated source fetching, age filtering, proactive refill, silent recycling |
 | **Application** | `backend/src/3_applications/feed/services/HeadlineService.mjs` | Multi-page headline management — harvesting, caching, pruning |
 | **Application** | `backend/src/3_applications/feed/services/ScrollConfigLoader.mjs` | Loads scroll config from `config/feed` user data |
 | **Application** | `backend/src/3_applications/feed/services/SpacingEnforcer.mjs` | Prevents consecutive items from same source/subsource |
@@ -101,7 +110,7 @@ The feed system aggregates content from external services (RSS, Reddit, YouTube,
 
 ## Source Adapters
 
-Each adapter extends `IFeedSourceAdapter` and implements `fetchItems(query, username)`. Adapters that support expanded detail also implement `getDetail(localId, meta, username)`.
+Each adapter extends `IFeedSourceAdapter` and implements `fetchPage(query, username, { cursor })` (or the legacy `fetchItems(query, username)`). Adapters that support pagination return a `cursor` for the next page; those that don't return `cursor: null`. Adapters that support expanded detail also implement `getDetail(localId, meta, username)`.
 
 | Adapter | Source Type | Feed Type | Detail Support | Data Source |
 |---------|------------|-----------|----------------|-------------|
@@ -121,11 +130,12 @@ Each adapter extends `IFeedSourceAdapter` and implements `fetchItems(query, user
 ### Adding a New Source Adapter
 
 1. Create `backend/src/1_adapters/feed/sources/{Name}FeedAdapter.mjs`
-2. Extend `IFeedSourceAdapter`, implement `get sourceType()` and `fetchItems(query, username)`
-3. Optionally implement `getDetail(localId, meta, username)` for detail view support
-4. Register in `backend/src/app.mjs` by importing and adding to the `sourceAdapters` array
-5. Add a query config YAML in `data/household/shared/apps/feed/queries/` (e.g., `youtube.yml`)
-6. Map the source type to a card component in `frontend/src/modules/Feed/Scroll/cards/index.jsx`
+2. Extend `IFeedSourceAdapter`, implement `get sourceType()` and `fetchPage(query, username, { cursor })`
+3. Return `{ items, cursor }` — set `cursor` to `null` if the source has no pagination
+4. Optionally implement `getDetail(localId, meta, username)` for detail view support
+5. Register in `backend/src/app.mjs` by adding to the `feedSourceAdapters` array
+6. Add a query config YAML — household queries in `data/household/config/lists/queries/`, user-scoped queries in `data/users/{username}/config/queries/` (see `docs/reference/feed/feed-query-system.md`)
+7. Map the source type to a card component in `frontend/src/modules/Feed/Scroll/cards/index.jsx`
 
 ---
 
@@ -157,28 +167,22 @@ Every source adapter returns items normalized to this shape:
 
 ## Scroll Assembly Algorithm
 
-`FeedAssemblyService.getNextBatch()` orchestrates the scroll:
+`FeedAssemblyService.getNextBatch()` orchestrates the scroll via a multi-stage pipeline. See `docs/reference/feed/feed-assembly-process.md` for the complete walkthrough.
 
-1. **Load scroll config** — batch size, grounding ratios, decay parameters from `config/feed` user data
-2. **Dispatch queries** — sends each YAML query config to the matching source adapter in parallel
-3. **Source filtering** — if `?source=reddit,youtube` is specified, bypasses interleaving and returns filtered items sorted by timestamp
-4. **Focus mode** — if `?focus=reddit:science` is specified, uses `focus_mode` params from scroll config
-5. **Classify items** — separates `external` from `grounding` types
-6. **Calculate grounding ratio** — based on session duration and decay curve (`grounding_ratio`, `grounding_min`, `decay_rate`)
-7. **Interleave** — merges external and grounding items according to the calculated ratio
-8. **Deduplicate** — removes items with duplicate IDs
-9. **Enforce spacing** — `SpacingEnforcer` prevents consecutive items from same source (configurable min gaps per source)
-10. **Cache** — stores returned items in an LRU cache (max 500) for deep-link resolution
+**Summary:**
 
-### Grounding Ratio
+1. **Reset pool** — on fresh load (no cursor), `FeedPoolManager.reset()` clears per-user state
+2. **Get pool** — `FeedPoolManager.getPool()` returns all unseen items (initializes on first call by fetching page 1 from all sources in parallel, with age filtering)
+3. **Source filter mode** — if `?source=reddit,youtube`, bypass tier assembly and return filtered items sorted by timestamp
+3b. **Filter mode** — if `?filter=reddit` or `?filter=compass`, resolve via `FeedFilterResolver` and bypass assembly (see `docs/reference/feed/feed-assembly-process.md`)
+4. **Tier assembly** — `TierAssemblyService.assemble()` buckets items by tier, applies within-tier selection/sort, interleaves non-wire into wire backbone, deduplicates, enforces spacing
+5. **Padding** — fill short batches from sources marked `padding: true`
+6. **Mark seen** — `FeedPoolManager.markSeen()` triggers proactive refill (when pool thins) or silent recycling (when all sources exhausted)
+7. **Cache** — stores returned items in an LRU cache (max 500) for deep-link resolution
 
-The ratio of grounding-to-external items decreases over session time:
+### Pagination and Pool Management
 
-```
-ratio = max(grounding_min, grounding_ratio × e^(-decay_rate × sessionMinutes))
-```
-
-Default: starts at 1:1, decays to 0.1 over ~60 minutes.
+`FeedPoolManager` accumulates items across paginated source fetches. Adapters that support pagination (`RedditFeedAdapter`, `FreshRSSFeedAdapter`, `GoogleNewsFeedAdapter`) return continuation cursors. When the unseen pool drops below `2 × batch_size`, the pool manager proactively fetches the next page from non-exhausted sources. When all sources exhaust (hit age threshold or have no more content), seen items are Fisher-Yates shuffled back into the pool for infinite scroll.
 
 ---
 
@@ -273,7 +277,7 @@ Headlines from sources marked with `paywall: true` in config are proxied through
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/api/v1/feed/scroll` | Fetch next batch of scroll items |
-| | Query: `limit`, `cursor`, `session`, `focus`, `source` | |
+| | Query: `limit`, `cursor`, `focus`, `source`, `filter` | |
 | `GET` | `/api/v1/feed/scroll/item/:slug` | Deep-link resolution (base64url item ID) |
 | `GET` | `/api/v1/feed/detail/:itemId` | Fetch detail sections for an item |
 | | Query: `link`, `meta` (JSON) | |
@@ -378,41 +382,42 @@ reddit:
   subreddits: [science, technology, worldnews]
 ```
 
-### Query Configs: `data/household/shared/apps/feed/queries/*.yml`
+### Query Configs (Two-Tier)
 
-Each YAML file defines a source query:
+Queries live in two locations. Household queries (shared) load at startup; user queries (personal) load on demand per-user. User queries override household by filename. See `docs/reference/feed/feed-query-system.md` for full details.
+
+| Scope | Path | Examples |
+|-------|------|----------|
+| Household | `data/household/config/lists/queries/*.yml` | weather, headlines, entropy, health, photos, news |
+| User | `data/users/{username}/config/queries/*.yml` | reddit, youtube, komga, plex, journal, tasks, fitness |
 
 ```yaml
-# reddit.yml
-source: reddit
-feed_type: external
-limit: 10
-priority: 0
-params:
-  subreddits: [science, technology]
+# weather.yml (household) — same for all users
+type: weather
+tier: compass
+priority: 3
 ```
 
 ```yaml
-# komga.yml
-source: komga
-feed_type: grounding
-limit: 1
-priority: 5
+# reddit.yml (user) — personal subreddit selections
+type: reddit
+tier: wire
+limit: 10
 params:
-  series:
-    - id: "abc123"
-      label: "Scientific American"
-  recent_issues: 6
+  subreddits: [science, technology, worldnews]
 ```
 
 ---
 
 ## Key Design Decisions
 
-1. **Inline markdown stripping** — `FeedAssemblyService.#stripInlineMarkdown()` removes `[text](url)`, `**bold**`, `*italic*`, `` `code` `` from titles/bodies, extracting the first URL as a fallback link
-2. **LRU item cache** — 500-item Map-based cache enables deep-link resolution without a database; items expire naturally as new items push old ones out
-3. **Base64url encoding** — Item IDs (which contain colons) are base64url-encoded for URL-safe routing
-4. **Grounding ratio decay** — Session-aware algorithm reduces "grounding" content (personal data) over time, shifting toward external content as the user scrolls longer
-5. **SpacingEnforcer subsource** — Only uses `meta.subreddit` for subsource spacing (not sourceId or feedTitle), preventing Reddit domination without over-constraining other sources
-6. **Config consolidation** — User feed config moved from separate `config/scroll.yml` and `config/reddit.yml` into unified `config/feed.yml`
-7. **ContentDrawer replaced by DetailView** — The old inline drawer was replaced with a full-page route-driven detail view supporting typed sections, swipe navigation, and deep-linking
+1. **Pool-based pagination** — `FeedPoolManager` accumulates items across paginated source fetches, enabling infinite scroll beyond initial source limits. Proactive refill fetches next pages when pool runs thin; silent recycling reshuffles seen items when all sources exhaust
+10. **Filter mode** — `?filter=` param resolves through a 4-layer chain (tier → source type → query name → alias) via `FeedFilterResolver`, bypassing tier assembly and returning items sorted by timestamp for single-source or single-tier browsing
+2. **Age-filtered pagination** — Per-source `max_age_hours` thresholds prevent pagination from reaching arbitrarily old content. Entire stale pages mark the source as exhausted
+3. **LRU item cache** — 500-item Map-based cache enables deep-link resolution without a database; items expire naturally as new items push old ones out
+4. **Base64url encoding** — Item IDs (which contain colons) are base64url-encoded for URL-safe routing
+5. **Four-tier assembly** — Items are bucketed into wire/library/scrapbook/compass tiers with configurable allocations, sort strategies, and source caps. Non-wire items are interleaved into the wire backbone at even intervals
+6. **SpacingEnforcer subsource** — Only uses `meta.subreddit` for subsource spacing (not sourceId or feedTitle), preventing Reddit domination without over-constraining other sources
+7. **Config consolidation** — User feed config moved from separate `config/scroll.yml` and `config/reddit.yml` into unified `config/feed.yml`
+8. **ContentDrawer replaced by DetailView** — The old inline drawer was replaced with a full-page route-driven detail view supporting typed sections, swipe navigation, and deep-linking
+9. **Two-tier query configs** — Queries are split between household (shared infrastructure like weather, headlines) and user scope (personal subscriptions like Reddit, YouTube, Komga). User queries override household by filename, loaded on demand and cached per-user in `FeedPoolManager`

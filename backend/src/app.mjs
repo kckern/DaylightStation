@@ -666,7 +666,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     const { GoodreadsFeedAdapter } = await import('./1_adapters/feed/sources/GoodreadsFeedAdapter.mjs');
 
     // Load query configs at bootstrap time (moves fs access out of application layer)
-    const { readdirSync } = await import('fs');
+    const { readdirSync, existsSync } = await import('fs');
     const queriesPath = configService.getHouseholdPath('config/lists/queries');
     let queryConfigs = [];
     if (queriesPath) {
@@ -681,6 +681,21 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         rootLogger.warn('feed.queries.load.error', { error: err.message });
       }
     }
+
+    // Load user-scoped query configs on demand (personal subreddits, Plex, etc.)
+    const loadUserQueries = (username) => {
+      const dataDir = configService.getDataDir();
+      const userQueriesPath = path.join(dataDir, 'users', username, 'config', 'queries');
+      try {
+        if (!existsSync(userQueriesPath)) return [];
+        const files = readdirSync(userQueriesPath).filter(f => f.endsWith('.yml'));
+        return files.map(file => {
+          const key = file.replace('.yml', '');
+          const data = dataService.user.read(`config/queries/${key}`, username);
+          return data ? { ...data, _filename: file } : null;
+        }).filter(Boolean);
+      } catch { return []; }
+    };
 
     // Feed source adapters (extracted from FeedAssemblyService)
     const redditAdapter = new RedditFeedAdapter({
@@ -789,6 +804,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       sourceAdapters: feedSourceAdapters,
       feedCacheService,
       queryConfigs,
+      loadUserQueries,
       freshRSSAdapter: feedServices.freshRSSAdapter,
       headlineService: feedServices.headlineService,
       entropyService: entropyServices?.entropyService || null,

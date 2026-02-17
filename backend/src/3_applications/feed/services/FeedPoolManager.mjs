@@ -21,10 +21,14 @@ export class FeedPoolManager {
   #sourceAdapters;
   #feedCacheService;
   #queryConfigs;
+  #loadUserQueries;
   #freshRSSAdapter;
   #headlineService;
   #entropyService;
   #logger;
+
+  /** @type {Map<string, Object[]>} Per-user cached merged query configs */
+  #userQueryConfigs = new Map();
 
   /** @type {Map<string, Object[]>} Per-user accumulated pool */
   #pools = new Map();
@@ -41,6 +45,9 @@ export class FeedPoolManager {
   /** @type {Map<string, boolean>} Per-user refill-in-progress flag */
   #refilling = new Map();
 
+  /** @type {Map<string, number>} Per-user batch counter (1-indexed after first getPool call) */
+  #batchCounts = new Map();
+
   /** @type {Map<string, Object>} Per-user cached scrollConfig */
   #scrollConfigs = new Map();
 
@@ -54,6 +61,7 @@ export class FeedPoolManager {
     sourceAdapters = [],
     feedCacheService = null,
     queryConfigs = [],
+    loadUserQueries = null,
     freshRSSAdapter = null,
     headlineService = null,
     entropyService = null,
@@ -67,6 +75,7 @@ export class FeedPoolManager {
     }
     this.#feedCacheService = feedCacheService;
     this.#queryConfigs = queryConfigs;
+    this.#loadUserQueries = loadUserQueries;
     this.#freshRSSAdapter = freshRSSAdapter;
     this.#headlineService = headlineService;
     this.#entropyService = entropyService;
@@ -87,6 +96,9 @@ export class FeedPoolManager {
     if (!this.#pools.has(username)) {
       await this.#initializePool(username, scrollConfig);
     }
+
+    // Increment batch counter (1-indexed: first getPool call = batch 1)
+    this.#batchCounts.set(username, (this.#batchCounts.get(username) || 0) + 1);
 
     const pool = this.#pools.get(username) || [];
     const seen = this.#seenIds.get(username) || new Set();
@@ -167,6 +179,18 @@ export class FeedPoolManager {
     this.#refilling.delete(username);
     this.#scrollConfigs.delete(username);
     this.#firstPageCursors.clear();
+    this.#batchCounts.delete(username);
+    this.#userQueryConfigs.delete(username);
+  }
+
+  /**
+   * Get the current batch number for a user (1-indexed).
+   * Returns 0 if no batches have been served yet.
+   * @param {string} username
+   * @returns {number}
+   */
+  getBatchNumber(username) {
+    return this.#batchCounts.get(username) || 0;
   }
 
   // =========================================================================
@@ -174,7 +198,7 @@ export class FeedPoolManager {
   // =========================================================================
 
   async #initializePool(username, scrollConfig) {
-    const queries = this.#filterQueries(scrollConfig);
+    const queries = this.#filterQueries(scrollConfig, username);
     const results = await Promise.allSettled(
       queries.map(query => this.#fetchSourcePage(query, username, scrollConfig))
     );
@@ -410,7 +434,7 @@ export class FeedPoolManager {
 
     try {
       const cursorMap = this.#cursors.get(username) || new Map();
-      const queries = this.#filterQueries(scrollConfig);
+      const queries = this.#filterQueries(scrollConfig, username);
       const pool = this.#pools.get(username) || [];
       const existingIds = new Set(pool.map(i => i.id));
 
@@ -477,10 +501,28 @@ export class FeedPoolManager {
   // Internal: Helpers
   // =========================================================================
 
-  #filterQueries(scrollConfig) {
+  #getQueryConfigs(username) {
+    if (this.#userQueryConfigs.has(username)) {
+      return this.#userQueryConfigs.get(username);
+    }
+    // Start with household queries keyed by filename
+    const merged = new Map(this.#queryConfigs.map(q => [q._filename, q]));
+    // User queries override household with same filename
+    if (this.#loadUserQueries) {
+      for (const q of this.#loadUserQueries(username)) {
+        merged.set(q._filename, q);
+      }
+    }
+    const configs = Array.from(merged.values());
+    this.#userQueryConfigs.set(username, configs);
+    return configs;
+  }
+
+  #filterQueries(scrollConfig, username) {
+    const queryConfigs = username ? this.#getQueryConfigs(username) : this.#queryConfigs;
     const enabledSources = ScrollConfigLoader.getEnabledSources(scrollConfig);
-    if (enabledSources.size === 0) return this.#queryConfigs;
-    return this.#queryConfigs.filter(query => {
+    if (enabledSources.size === 0) return queryConfigs;
+    return queryConfigs.filter(query => {
       const key = query._filename?.replace('.yml', '');
       return key && enabledSources.has(key);
     });
