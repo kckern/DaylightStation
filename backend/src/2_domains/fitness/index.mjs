@@ -18,6 +18,5 @@ export {
 } from './entities/Zone.mjs';
 
 // Services
-export { SessionService } from './services/SessionService.mjs';
 export { ZoneService } from './services/ZoneService.mjs';
 export { FitnessProgressClassifier } from './services/FitnessProgressClassifier.mjs';

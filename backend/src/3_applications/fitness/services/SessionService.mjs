@@ -1,13 +1,13 @@
 /**
  * SessionService - Session CRUD and listing operations
  *
- * Domain service that orchestrates session operations through ISessionStore port.
+ * Application service that orchestrates session operations through ISessionStore port.
  * Uses Session entity for domain logic and TimelineService for series encoding.
  */
 
-import { Session } from '../entities/Session.mjs';
-import { prepareTimelineForApi, prepareTimelineForStorage } from './TimelineService.mjs';
-import { ValidationError, EntityNotFoundError } from '../../core/errors/index.mjs';
+import { Session } from '#domains/fitness/entities/Session.mjs';
+import { prepareTimelineForApi, prepareTimelineForStorage } from '#domains/fitness/services/TimelineService.mjs';
+import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
 
 /**
  * Parse a timestamp string into Unix milliseconds.
