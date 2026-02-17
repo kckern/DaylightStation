@@ -25,6 +25,7 @@ export class FeedPoolManager {
   #freshRSSAdapter;
   #headlineService;
   #entropyService;
+  #dismissedItemsStore;
   #logger;
 
   /** @type {Map<string, Object[]>} Per-user cached merged query configs */
@@ -65,6 +66,7 @@ export class FeedPoolManager {
     freshRSSAdapter = null,
     headlineService = null,
     entropyService = null,
+    dismissedItemsStore = null,
     logger = console,
   }) {
     if (!logger) throw new Error('FeedPoolManager requires a logger');
@@ -79,6 +81,7 @@ export class FeedPoolManager {
     this.#freshRSSAdapter = freshRSSAdapter;
     this.#headlineService = headlineService;
     this.#entropyService = entropyService;
+    this.#dismissedItemsStore = dismissedItemsStore;
     this.#logger = logger;
   }
 
@@ -102,14 +105,15 @@ export class FeedPoolManager {
 
     const pool = this.#pools.get(username) || [];
     const seen = this.#seenIds.get(username) || new Set();
-    const remaining = pool.filter(item => !seen.has(item.id));
+    const dismissed = this.#dismissedItemsStore?.load() || new Set();
+    const remaining = pool.filter(item => !seen.has(item.id) && !dismissed.has(item.id));
 
     // If pool is empty but sources remain, await a refill instead of
     // returning nothing while fire-and-forget refill runs in background.
     if (remaining.length === 0 && this.#hasRefillableSources(username)) {
       await this.#proactiveRefill(username, scrollConfig);
       const refreshed = this.#pools.get(username) || [];
-      return refreshed.filter(item => !seen.has(item.id));
+      return refreshed.filter(item => !seen.has(item.id) && !dismissed.has(item.id));
     }
 
     return remaining;
@@ -181,6 +185,7 @@ export class FeedPoolManager {
     this.#firstPageCursors.clear();
     this.#batchCounts.delete(username);
     this.#userQueryConfigs.delete(username);
+    this.#dismissedItemsStore?.clearCache();
   }
 
   /**
@@ -489,7 +494,11 @@ export class FeedPoolManager {
     const history = this.#seenItems.get(username) || [];
     if (history.length === 0) return;
 
-    const shuffled = [...history];
+    const dismissed = this.#dismissedItemsStore?.load() || new Set();
+    const eligible = history.filter(item => !dismissed.has(item.id));
+    if (eligible.length === 0) return;
+
+    const shuffled = [...eligible];
     for (let i = shuffled.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];

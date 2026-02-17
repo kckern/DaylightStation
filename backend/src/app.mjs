@@ -795,6 +795,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     });
     const { YamlSelectionTrackingStore } = await import('./1_adapters/persistence/yaml/YamlSelectionTrackingStore.mjs');
     const selectionTrackingStore = new YamlSelectionTrackingStore({ dataService, logger: rootLogger.child({ module: 'selection-tracking' }) });
+    const { YamlDismissedItemsStore } = await import('./1_adapters/persistence/yaml/YamlDismissedItemsStore.mjs');
+    const dismissedItemsStore = new YamlDismissedItemsStore({ dataService, logger: rootLogger.child({ module: 'feed-dismissed' }) });
 
     const { FeedPoolManager } = await import('./3_applications/feed/services/FeedPoolManager.mjs');
 
@@ -808,6 +810,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       freshRSSAdapter: feedServices.freshRSSAdapter,
       headlineService: feedServices.headlineService,
       entropyService: entropyServices?.entropyService || null,
+      dismissedItemsStore,
       logger: rootLogger.child({ module: 'feed-pool' }),
     });
 
@@ -835,6 +838,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       headlineService: feedServices.headlineService,
       feedAssemblyService,
       feedContentService,
+      dismissedItemsStore,
       configService,
       logger: rootLogger.child({ module: 'feed' }),
     });
