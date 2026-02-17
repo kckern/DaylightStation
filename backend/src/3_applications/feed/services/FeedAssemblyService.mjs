@@ -15,6 +15,7 @@
  */
 
 import { ScrollConfigLoader } from './ScrollConfigLoader.mjs';
+import { probeImageDimensions } from '#system/utils/probeImageDimensions.mjs';
 
 export class FeedAssemblyService {
   #freshRSSAdapter;
@@ -31,6 +32,10 @@ export class FeedAssemblyService {
   /** LRU cache of recently-served items (keyed by item.id) */
   #itemCache = new Map();
   static #CACHE_MAX = 500;
+
+  /** Assembled-list cache for cursor pagination (keyed by username) */
+  #assembledCache = new Map();
+  static #ASSEMBLED_TTL = 60_000; // 1 minute
 
   constructor({
     freshRSSAdapter,
@@ -75,7 +80,7 @@ export class FeedAssemblyService {
    * @param {string} username
    * @param {Object} options
    * @param {number} [options.limit] - Max items to return (defaults to scroll config batch_size)
-   * @param {string} [options.cursor] - Pagination cursor (unused in Phase 1)
+   * @param {string} [options.cursor] - ID of last item seen; slices into cached assembled list
    * @param {string} [options.focus] - Focus source key (e.g. 'reddit:science')
    * @param {string[]} [options.sources] - Filter to specific source types (e.g. ['komga','reddit'])
    * @returns {Promise<{ items: FeedItem[], hasMore: boolean }>}
@@ -88,57 +93,87 @@ export class FeedAssemblyService {
     // Resolve effective limit
     const effectiveLimit = limit ?? scrollConfig.batch_size ?? 15;
 
-    // Filter query configs to enabled sources
-    const queries = this.#filterQueries(this.#queryConfigs || [], scrollConfig);
+    // Try assembled cache for cursor pagination (skip on nocache or first load)
+    const cached = this.#assembledCache.get(username);
+    const cacheValid = cached && !nocache && !sources
+      && (Date.now() - cached.timestamp < FeedAssemblyService.#ASSEMBLED_TTL)
+      && cached.focus === (focus || null);
 
-    // Pass nocache flag to each query for cache bypass
-    if (nocache) {
-      for (const q of queries) q._noCache = true;
-    }
+    let assembledItems;
 
-    // Fan out to all source handlers in parallel
-    const results = await Promise.allSettled(
-      queries.map(query => this.#fetchSource(query, username))
-    );
+    if (cursor && cacheValid) {
+      // Use cached assembled list for pagination
+      assembledItems = cached.items;
+    } else {
+      // Fresh fetch + assemble
+      const queries = this.#filterQueries(this.#queryConfigs || [], scrollConfig);
 
-    // Collect successful results, log failures
-    const allItems = [];
-    for (let i = 0; i < results.length; i++) {
-      if (results[i].status === 'fulfilled') {
-        allItems.push(...results[i].value);
-      } else {
-        this.#logger.warn?.('feed.assembly.source.failed', {
-          query: queries[i].type,
-          error: results[i].reason?.message || 'Unknown error',
-        });
+      if (nocache) {
+        for (const q of queries) q._noCache = true;
       }
-    }
 
-    // Source filter: when specified, bypass tier assembly and return filtered items directly
-    if (sources && sources.length > 0) {
-      const filtered = allItems
-        .filter(item => sources.includes(item.source))
-        .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
-        .slice(0, effectiveLimit);
-      for (const item of filtered) { this.#cacheItem(item); }
-      this.#logger.info?.('feed.assembly.batch', {
-        username, total: allItems.length, filtered: filtered.length,
-        sources: sources.join(','), returned: filtered.length,
+      const results = await Promise.allSettled(
+        queries.map(query => this.#fetchSource(query, username))
+      );
+
+      const allItems = [];
+      for (let i = 0; i < results.length; i++) {
+        if (results[i].status === 'fulfilled') {
+          allItems.push(...results[i].value);
+        } else {
+          this.#logger.warn?.('feed.assembly.source.failed', {
+            query: queries[i].type,
+            error: results[i].reason?.message || 'Unknown error',
+          });
+        }
+      }
+
+      // Source filter: bypass tier assembly
+      if (sources && sources.length > 0) {
+        const filtered = allItems
+          .filter(item => sources.includes(item.source))
+          .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        const startIdx = cursor
+          ? Math.max(0, filtered.findIndex(i => i.id === cursor) + 1)
+          : 0;
+        const batch = filtered.slice(startIdx, startIdx + effectiveLimit);
+        for (const item of batch) { this.#cacheItem(item); }
+        return { items: batch, hasMore: startIdx + effectiveLimit < filtered.length, colors: ScrollConfigLoader.extractColors(scrollConfig) };
+      }
+
+      // Assemble full list (no slice — we paginate below)
+      const { items: fullList } = this.#tierAssemblyService.assemble(
+        allItems, scrollConfig, { effectiveLimit: allItems.length, focus }
+      );
+
+      assembledItems = fullList;
+
+      // Cache for subsequent cursor requests
+      this.#assembledCache.set(username, {
+        items: assembledItems,
+        timestamp: Date.now(),
+        focus: focus || null,
       });
-      return { items: filtered, hasMore: filtered.length >= effectiveLimit };
     }
 
-    // Delegate to TierAssemblyService for tier-based interleaving
-    const { items, hasMore } = this.#tierAssemblyService.assemble(
-      allItems, scrollConfig, { effectiveLimit, focus }
-    );
+    // Cursor pagination: find position and slice
+    let startIdx = 0;
+    if (cursor) {
+      const cursorIdx = assembledItems.findIndex(item => item.id === cursor);
+      if (cursorIdx !== -1) startIdx = cursorIdx + 1;
+    }
 
-    // Cache all returned items for deep-link resolution
-    for (const item of items) {
+    const batch = assembledItems.slice(startIdx, startIdx + effectiveLimit);
+
+    for (const item of batch) {
       this.#cacheItem(item);
     }
 
-    return { items, hasMore };
+    return {
+      items: batch,
+      hasMore: startIdx + effectiveLimit < assembledItems.length,
+      colors: ScrollConfigLoader.extractColors(scrollConfig),
+    };
   }
 
   /**
@@ -270,7 +305,7 @@ export class FeedAssemblyService {
       username,
       { excludeRead: query.params?.excludeRead ?? true, count: query.limit || 20 }
     );
-    return (items || []).map(item => this.#normalizeToFeedItem({
+    const mapped = (items || []).map(item => this.#normalizeToFeedItem({
       id: `freshrss:${item.id}`,
       tier: query.tier || 'wire',
       source: 'freshrss',
@@ -287,6 +322,19 @@ export class FeedAssemblyService {
         sourceIcon: this.#getFaviconUrl(item.link),
       },
     }));
+
+    // Probe FreshRSS image dimensions in parallel
+    await Promise.all(mapped.map(async (item) => {
+      if (!item.image) return;
+      try {
+        const dims = await probeImageDimensions(item.image);
+        if (dims) {
+          item.meta = { ...item.meta, imageWidth: dims.width, imageHeight: dims.height };
+        }
+      } catch { /* ignore probe failures */ }
+    }));
+
+    return mapped;
   }
 
   async #fetchHeadlines(query, username) {
@@ -323,6 +371,9 @@ export class FeedAssemblyService {
             sourceIcon: this.#getFaviconUrl(item.link),
             paywall: source.paywall || false,
             paywallProxy: source.paywall ? result.paywallProxy : null,
+            ...(item.imageWidth && item.imageHeight
+              ? { imageWidth: item.imageWidth, imageHeight: item.imageHeight }
+              : {}),
           },
         }));
       }
