@@ -1331,6 +1331,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     dataService,
     configService,
     aiGateway: sharedAiGateway,
+    httpClient: axios,
   });
 
   // AI API router - provides direct AI endpoints (/api/ai/*)
