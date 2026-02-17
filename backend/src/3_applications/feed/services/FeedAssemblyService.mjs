@@ -374,7 +374,7 @@ export class FeedAssemblyService {
 
       for (const item of (source.items || []).slice(0, sourceLimit)) {
         items.push(this.#normalizeToFeedItem({
-          id: `headline:${sourceId}:${item.link}`,
+          id: `headline:${item.id || sourceId + ':' + item.link}`,
           tier: query.tier || 'wire',
           source: 'headline',
           title: item.title,
