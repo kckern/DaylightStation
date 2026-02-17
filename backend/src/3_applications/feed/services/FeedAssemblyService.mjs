@@ -3,74 +3,61 @@
  * FeedAssemblyService
  *
  * Orchestrator for mixed-content feed assembly.
- * Loads query configs, fans out to source adapters/handlers in parallel,
- * normalizes results to FeedItem shape, and delegates to TierAssemblyService
+ * Delegates source fetching to FeedPoolManager and uses TierAssemblyService
  * for four-tier interleaving (wire, library, scrapbook, compass).
  *
- * Source-specific logic lives in adapters (1_adapters/feed/sources/).
- * Only FreshRSS, Headlines, and Entropy remain inline (they depend on
- * application-layer services rather than external APIs).
+ * Source-specific logic lives in FeedPoolManager and adapters (1_adapters/feed/sources/).
  *
  * @module applications/feed/services
  */
 
 import { ScrollConfigLoader } from './ScrollConfigLoader.mjs';
-import { probeImageDimensions } from '#system/utils/probeImageDimensions.mjs';
 
 export class FeedAssemblyService {
-  #freshRSSAdapter;
-  #headlineService;
-  #entropyService;
-  #queryConfigs;
+  #feedPoolManager;
   #sourceAdapters;
   #scrollConfigLoader;
   #tierAssemblyService;
   #feedContentService;
-  #feedCacheService;
-  #logger;
   #selectionTrackingStore;
+  #logger;
 
   /** LRU cache of recently-served items (keyed by item.id) */
   #itemCache = new Map();
   static #CACHE_MAX = 500;
 
-  /** Per-user seen-ID tracking (cleared on fresh load, populated each batch) */
-  #seenIds = new Map();
-
   constructor({
-    freshRSSAdapter,
-    headlineService,
-    entropyService = null,
-    queryConfigs = null,
-    sourceAdapters = null,
+    feedPoolManager,
     scrollConfigLoader = null,
     tierAssemblyService = null,
     feedContentService = null,
-    feedCacheService = null,
     selectionTrackingStore = null,
     logger = console,
+    // Keep sourceAdapters for getDetail()
+    sourceAdapters = null,
     // Legacy params accepted but unused (kept for bootstrap compat)
     dataService,
     configService,
+    freshRSSAdapter,
+    headlineService,
+    entropyService,
     contentQueryService,
     contentRegistry,
     userDataService,
+    queryConfigs,
+    feedCacheService,
     spacingEnforcer,
   }) {
-    this.#freshRSSAdapter = freshRSSAdapter;
-    this.#headlineService = headlineService;
-    this.#entropyService = entropyService;
-    this.#queryConfigs = queryConfigs;
+    this.#feedPoolManager = feedPoolManager;
     this.#scrollConfigLoader = scrollConfigLoader;
     this.#tierAssemblyService = tierAssemblyService;
     this.#feedContentService = feedContentService || null;
-    this.#feedCacheService = feedCacheService;
     this.#selectionTrackingStore = selectionTrackingStore;
     this.#logger = logger;
 
     this.#sourceAdapters = new Map();
     if (sourceAdapters) {
-      for (const adapter of sourceAdapters) {
+      for (const adapter of (Array.isArray(sourceAdapters) ? sourceAdapters : [])) {
         this.#sourceAdapters.set(adapter.sourceType, adapter);
       }
     }
@@ -93,38 +80,35 @@ export class FeedAssemblyService {
 
     const effectiveLimit = limit ?? scrollConfig.batch_size ?? 15;
 
-    // Fresh load: clear seen IDs
+    // Fresh load: reset pool manager
     if (!cursor) {
-      this.#seenIds.delete(username);
+      this.#feedPoolManager.reset(username);
     }
-    const seenIds = this.#seenIds.get(username) || new Set();
 
-    // Fetch all sources
-    const allItems = await this.#fetchAllSources(scrollConfig, username, { nocache, sources });
+    // Get available items from pool
+    const freshPool = await this.#feedPoolManager.getPool(username, scrollConfig);
 
     // Source filter: bypass tier assembly
     if (sources && sources.length > 0) {
-      const filtered = allItems
-        .filter(item => sources.includes(item.source) && !seenIds.has(item.id))
+      const filtered = freshPool
+        .filter(item => sources.includes(item.source))
         .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
       const batch = filtered.slice(0, effectiveLimit);
-      for (const item of batch) {
-        seenIds.add(item.id);
-        this.#cacheItem(item);
-      }
-      this.#seenIds.set(username, seenIds);
-      return { items: batch, hasMore: filtered.length > batch.length, colors: ScrollConfigLoader.extractColors(scrollConfig) };
+      for (const item of batch) this.#cacheItem(item);
+      this.#feedPoolManager.markSeen(username, batch.map(i => i.id));
+      return {
+        items: batch,
+        hasMore: this.#feedPoolManager.hasMore(username),
+        colors: ScrollConfigLoader.extractColors(scrollConfig),
+      };
     }
-
-    // Remove already-seen items
-    const freshPool = allItems.filter(i => !seenIds.has(i.id));
 
     // Load selection tracking for sort bias
     const selectionCounts = this.#selectionTrackingStore
       ? await this.#selectionTrackingStore.getAll(username)
       : null;
 
-    // Primary pass: normal tier assembly
+    // Primary pass: tier assembly
     const { items: primary } = this.#tierAssemblyService.assemble(
       freshPool, scrollConfig, { effectiveLimit, focus, selectionCounts }
     );
@@ -146,12 +130,10 @@ export class FeedAssemblyService {
       }
     }
 
-    // Record seen IDs
-    for (const item of batch) {
-      seenIds.add(item.id);
-      this.#cacheItem(item);
-    }
-    this.#seenIds.set(username, seenIds);
+    // Mark seen + cache
+    const batchIds = batch.map(i => i.id);
+    this.#feedPoolManager.markSeen(username, batchIds);
+    for (const item of batch) this.#cacheItem(item);
 
     // Increment selection tracking for headline items
     if (this.#selectionTrackingStore) {
@@ -165,7 +147,7 @@ export class FeedAssemblyService {
 
     return {
       items: batch,
-      hasMore: freshPool.length > seenIds.size,
+      hasMore: this.#feedPoolManager.hasMore(username),
       colors: ScrollConfigLoader.extractColors(scrollConfig),
     };
   }
@@ -246,247 +228,6 @@ export class FeedAssemblyService {
       this.#logger.warn?.('feed.detail.article.error', { url, error: err.message });
       return null;
     }
-  }
-
-  // ======================================================================
-  // Source Dispatch
-  // ======================================================================
-
-  async #fetchAllSources(scrollConfig, username, { nocache, sources } = {}) {
-    const queries = this.#filterQueries(this.#queryConfigs || [], scrollConfig);
-
-    if (nocache) {
-      for (const q of queries) q._noCache = true;
-    }
-
-    const results = await Promise.allSettled(
-      queries.map(query => this.#fetchSource(query, username))
-    );
-
-    const allItems = [];
-    for (let i = 0; i < results.length; i++) {
-      if (results[i].status === 'fulfilled') {
-        allItems.push(...results[i].value);
-      } else {
-        this.#logger.warn?.('feed.assembly.source.failed', {
-          query: queries[i].type,
-          error: results[i].reason?.message || 'Unknown error',
-        });
-      }
-    }
-    return allItems;
-  }
-
-  async #fetchSource(query, username) {
-    const sourceKey = query._filename?.replace('.yml', '') || query.type;
-
-    // If no cache service, fetch directly (backwards compat)
-    if (!this.#feedCacheService) {
-      return this.#fetchSourceDirect(query, username);
-    }
-
-    const noCache = query._noCache || false;
-    return this.#feedCacheService.getItems(
-      sourceKey,
-      () => this.#fetchSourceDirect(query, username),
-      username,
-      { noCache }
-    );
-  }
-
-  async #fetchSourceDirect(query, username) {
-    // Check adapter registry first
-    const adapter = this.#sourceAdapters.get(query.type);
-    if (adapter) {
-      const items = await adapter.fetchItems(query, username);
-      return items.map(item => this.#normalizeToFeedItem(item));
-    }
-
-    // Built-in handlers (depend on application-layer services)
-    switch (query.type) {
-      case 'freshrss': return this.#fetchFreshRSS(query, username);
-      case 'headlines': return this.#fetchHeadlines(query, username);
-      case 'entropy': return this.#fetchEntropy(query, username);
-      default:
-        this.#logger.warn?.('feed.assembly.unknown.type', { type: query.type });
-        return [];
-    }
-  }
-
-  // ======================================================================
-  // Built-in Handlers (application-layer service dependencies)
-  // ======================================================================
-
-  async #fetchFreshRSS(query, username) {
-    if (!this.#freshRSSAdapter) return [];
-    const { items } = await this.#freshRSSAdapter.getItems(
-      'user/-/state/com.google/reading-list',
-      username,
-      { excludeRead: query.params?.excludeRead ?? true, count: query.limit || 20 }
-    );
-    const mapped = (items || []).map(item => this.#normalizeToFeedItem({
-      id: `freshrss:${item.id}`,
-      tier: query.tier || 'wire',
-      source: 'freshrss',
-      title: item.title,
-      body: item.content ? item.content.replace(/<[^>]*>/g, '').slice(0, 200) : null,
-      image: this.#extractImage(item.content),
-      link: item.link,
-      timestamp: item.published?.toISOString?.() || item.published || new Date().toISOString(),
-      priority: query.priority || 0,
-      meta: {
-        feedTitle: item.feedTitle,
-        author: item.author,
-        sourceName: item.feedTitle || 'RSS',
-        sourceIcon: this.#getFaviconUrl(item.link),
-      },
-    }));
-
-    // Probe FreshRSS image dimensions in parallel
-    await Promise.all(mapped.map(async (item) => {
-      if (!item.image) return;
-      try {
-        const dims = await probeImageDimensions(item.image);
-        if (dims) {
-          item.meta = { ...item.meta, imageWidth: dims.width, imageHeight: dims.height };
-        }
-      } catch { /* ignore probe failures */ }
-    }));
-
-    return mapped;
-  }
-
-  async #fetchHeadlines(query, username) {
-    if (!this.#headlineService) return [];
-    const pages = this.#headlineService.getPageList(username);
-    const firstPageId = pages[0]?.id;
-    if (!firstPageId) return [];
-    const result = await this.#headlineService.getAllHeadlines(username, firstPageId);
-    const items = [];
-    const totalLimit = query.limit || 30;
-    const sourceEntries = Object.entries(result.sources || {});
-    const perSourceLimit = Math.ceil(totalLimit / Math.max(1, sourceEntries.length));
-
-    for (const [sourceId, source] of sourceEntries) {
-      if (items.length >= totalLimit) break;
-      const remaining = totalLimit - items.length;
-      const sourceLimit = Math.min(perSourceLimit, remaining);
-
-      for (const item of (source.items || []).slice(0, sourceLimit)) {
-        items.push(this.#normalizeToFeedItem({
-          id: `headline:${item.id || sourceId + ':' + item.link}`,
-          tier: query.tier || 'wire',
-          source: 'headline',
-          title: item.title,
-          body: item.desc || null,
-          image: item.image || null,
-          link: item.link,
-          timestamp: item.timestamp || new Date().toISOString(),
-          priority: query.priority || 0,
-          meta: {
-            sourceId,
-            sourceLabel: source.label,
-            sourceName: source.label || sourceId,
-            sourceIcon: this.#getFaviconUrl(item.link),
-            paywall: source.paywall || false,
-            paywallProxy: source.paywall ? result.paywallProxy : null,
-            ...(item.imageWidth && item.imageHeight
-              ? { imageWidth: item.imageWidth, imageHeight: item.imageHeight }
-              : {}),
-          },
-        }));
-      }
-    }
-    return items;
-  }
-
-  async #fetchEntropy(query, username) {
-    if (!this.#entropyService) return [];
-    const report = await this.#entropyService.getReport(username);
-    let items = report.items || [];
-    if (query.params?.onlyYellowRed) {
-      items = items.filter(item => item.status === 'yellow' || item.status === 'red');
-    }
-    return items.map(item => this.#normalizeToFeedItem({
-      id: `entropy:${item.source}`,
-      tier: query.tier || 'compass',
-      source: 'entropy',
-      title: item.name || item.source,
-      body: item.label || `${item.value} since last update`,
-      image: null,
-      link: item.url || null,
-      timestamp: item.lastUpdate || new Date().toISOString(),
-      priority: query.priority || 20,
-      meta: { status: item.status, icon: item.icon, value: item.value, weight: item.weight, sourceName: 'Data Freshness', sourceIcon: null },
-    }));
-  }
-
-  // ======================================================================
-  // Helpers
-  // ======================================================================
-
-  static #stripInlineMarkdown(text) {
-    if (!text) return { text: text || '', firstUrl: null };
-    let firstUrl = null;
-    const stripped = text.replace(/\[([^\]]*)\]\(([^)]+)\)/g, (_, label, url) => {
-      if (!firstUrl) firstUrl = url;
-      return label;
-    });
-    const cleaned = stripped
-      .replace(/\*\*(.+?)\*\*/g, '$1')
-      .replace(/\*(.+?)\*/g, '$1')
-      .replace(/`(.+?)`/g, '$1');
-    return { text: cleaned, firstUrl };
-  }
-
-  #normalizeToFeedItem(raw) {
-    const { text: title, firstUrl: titleUrl } = FeedAssemblyService.#stripInlineMarkdown(raw.title);
-    const { text: body, firstUrl: bodyUrl } = FeedAssemblyService.#stripInlineMarkdown(raw.body);
-    const link = raw.link || titleUrl || bodyUrl || null;
-
-    return {
-      id: raw.id,
-      tier: raw.tier,
-      source: raw.source,
-      title,
-      body: body || null,
-      image: raw.image || null,
-      link,
-      timestamp: raw.timestamp || new Date().toISOString(),
-      priority: raw.priority || 0,
-      meta: {
-        ...raw.meta,
-        sourceName: raw.meta?.sourceName || raw.source,
-        sourceIcon: raw.meta?.sourceIcon || null,
-      },
-    };
-  }
-
-  #getFaviconUrl(link) {
-    if (!link) return null;
-    try {
-      return new URL(link).origin;
-    } catch { return null; }
-  }
-
-  /**
-   * Filter query configs to sources enabled in scroll config tiers.
-   * When no sources are configured across any tier, all queries pass.
-   */
-  #filterQueries(queries, scrollConfig) {
-    const enabledSources = ScrollConfigLoader.getEnabledSources(scrollConfig);
-    if (enabledSources.size === 0) return queries;
-
-    return queries.filter(query => {
-      const key = query._filename?.replace('.yml', '');
-      return key && enabledSources.has(key);
-    });
-  }
-
-  #extractImage(html) {
-    if (!html) return null;
-    const match = html.match(/<img[^>]+src=["']([^"']+)["']/i);
-    return match ? match[1] : null;
   }
 }
 
