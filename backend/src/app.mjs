@@ -771,6 +771,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       webContentGateway: webContentAdapter,
       logger: rootLogger.child({ module: 'feed-content' }),
     });
+    const { YamlSelectionTrackingStore } = await import('./1_adapters/persistence/yaml/YamlSelectionTrackingStore.mjs');
+    const selectionTrackingStore = new YamlSelectionTrackingStore({ dataService, logger: rootLogger.child({ module: 'selection-tracking' }) });
+
     const feedAssemblyService = new FeedAssemblyService({
       dataService,
       configService,
@@ -786,6 +789,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       tierAssemblyService,
       feedCacheService,
       feedContentService,
+      selectionTrackingStore,
       logger: rootLogger.child({ module: 'feed-assembly' }),
     });
     v1Routers.feed = createFeedRouter({
