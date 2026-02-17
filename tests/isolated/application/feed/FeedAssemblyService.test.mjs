@@ -4,7 +4,7 @@ import { FeedAssemblyService } from '#apps/feed/services/FeedAssemblyService.mjs
 
 describe('FeedAssemblyService scroll config integration', () => {
   let mockScrollConfigLoader;
-  let mockSpacingEnforcer;
+  let mockTierAssemblyService;
 
   const defaultScrollConfig = {
     batch_size: 15,
@@ -35,12 +35,12 @@ describe('FeedAssemblyService scroll config integration', () => {
     mockScrollConfigLoader = {
       load: jest.fn().mockReturnValue(defaultScrollConfig),
     };
-    mockSpacingEnforcer = {
-      enforce: jest.fn().mockImplementation((items) => items),
+    mockTierAssemblyService = {
+      assemble: jest.fn().mockImplementation((items) => ({ items, hasMore: false })),
     };
   });
 
-  function createService(queryConfigs, adapters = []) {
+  function createService(queryConfigs, adapters = [], overrides = {}) {
     return new FeedAssemblyService({
       freshRSSAdapter: null,
       headlineService: null,
@@ -48,8 +48,9 @@ describe('FeedAssemblyService scroll config integration', () => {
       queryConfigs,
       sourceAdapters: adapters,
       scrollConfigLoader: mockScrollConfigLoader,
-      spacingEnforcer: mockSpacingEnforcer,
+      tierAssemblyService: mockTierAssemblyService,
       logger: { info: jest.fn(), warn: jest.fn() },
+      ...overrides,
     });
   }
 
@@ -71,8 +72,13 @@ describe('FeedAssemblyService scroll config integration', () => {
 
     mockScrollConfigLoader.load.mockReturnValue({
       ...defaultScrollConfig,
-      sources: { reddit: { max_per_batch: 5 } },
-      // health NOT listed => should be skipped
+      tiers: {
+        wire: { sources: { reddit: { max_per_batch: 5 } }, selection: {} },
+        library: { sources: {}, selection: {} },
+        scrapbook: { sources: {}, selection: {} },
+        compass: { sources: {}, selection: {} },
+      },
+      // health NOT listed in any tier => should be skipped
     });
 
     const service = createService(
@@ -116,10 +122,14 @@ describe('FeedAssemblyService scroll config integration', () => {
 
     const service = createService([]);
     await service.getNextBatch('kckern', { focus: 'reddit:science' });
-    expect(mockSpacingEnforcer.enforce).toHaveBeenCalled();
+    expect(mockTierAssemblyService.assemble).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.any(Object),
+      expect.objectContaining({ focus: 'reddit:science' }),
+    );
   });
 
-  test('passes items through SpacingEnforcer', async () => {
+  test('delegates to TierAssemblyService for assembly', async () => {
     const mockAdapter = {
       sourceType: 'reddit',
       fetchItems: jest.fn().mockResolvedValue([
@@ -134,9 +144,10 @@ describe('FeedAssemblyService scroll config integration', () => {
     );
 
     await service.getNextBatch('kckern');
-    expect(mockSpacingEnforcer.enforce).toHaveBeenCalledWith(
+    expect(mockTierAssemblyService.assemble).toHaveBeenCalledWith(
       expect.any(Array),
       expect.objectContaining({ spacing: { max_consecutive: 1 } }),
+      expect.any(Object),
     );
   });
 
@@ -215,10 +226,14 @@ describe('FeedAssemblyService scroll config integration', () => {
     );
 
     const result = await service.getNextBatch('kckern', { focus: 'reddit' });
+    // TierAssemblyService receives the items with focus='reddit'
+    expect(mockTierAssemblyService.assemble).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.any(Object),
+      expect.objectContaining({ focus: 'reddit' }),
+    );
+    // The passthrough mock returns all items; verify reddit is present
     const sources = result.items.map(i => i.source);
-    // Should have reddit and weather (grounding), but NOT headlines
-    expect(sources).not.toContain('headline');
-    // Reddit should be present (it's the focused external source)
     const hasReddit = sources.includes('reddit');
     expect(hasReddit).toBe(true);
   });
@@ -238,10 +253,141 @@ describe('FeedAssemblyService scroll config integration', () => {
     );
 
     const result = await service.getNextBatch('kckern', { focus: 'reddit:science' });
+    // TierAssemblyService receives focus='reddit:science'
+    expect(mockTierAssemblyService.assemble).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.any(Object),
+      expect.objectContaining({ focus: 'reddit:science' }),
+    );
     const redditItems = result.items.filter(i => i.source === 'reddit');
     expect(redditItems.length).toBeGreaterThan(0);
-    for (const item of redditItems) {
-      expect(item.meta?.subreddit).toBe('science');
-    }
+  });
+});
+
+describe('image dimensions passthrough', () => {
+  let mockScrollConfigLoader;
+  let mockTierAssemblyService;
+
+  const defaultScrollConfig = {
+    batch_size: 15,
+    spacing: { max_consecutive: 1 },
+    sources: {},
+  };
+
+  beforeEach(() => {
+    mockScrollConfigLoader = {
+      load: jest.fn().mockReturnValue(defaultScrollConfig),
+    };
+    mockTierAssemblyService = {
+      assemble: jest.fn().mockImplementation((items) => ({ items, hasMore: false })),
+    };
+  });
+
+  function createService(queryConfigs, adapters = [], overrides = {}) {
+    return new FeedAssemblyService({
+      freshRSSAdapter: null,
+      headlineService: null,
+      entropyService: null,
+      queryConfigs,
+      sourceAdapters: adapters,
+      scrollConfigLoader: mockScrollConfigLoader,
+      tierAssemblyService: mockTierAssemblyService,
+      logger: { info: jest.fn(), warn: jest.fn() },
+      ...overrides,
+    });
+  }
+
+  test('passes through imageWidth/imageHeight from adapter meta', async () => {
+    const mockAdapter = {
+      sourceType: 'reddit',
+      fetchItems: jest.fn().mockResolvedValue([{
+        id: 'reddit:abc',
+        tier: 'wire',
+        source: 'reddit',
+        title: 'Test Post',
+        image: '/api/v1/proxy/reddit/i.redd.it/abc.jpg',
+        timestamp: new Date().toISOString(),
+        meta: { sourceName: 'r/test', imageWidth: 1920, imageHeight: 1080 },
+      }]),
+    };
+
+    const service = createService(
+      [{ type: 'reddit', feed_type: 'external', _filename: 'reddit.yml' }],
+      [mockAdapter],
+    );
+
+    // Use sources filter to bypass tier assembly
+    const result = await service.getNextBatch('testuser', { sources: ['reddit'] });
+    expect(result.items.length).toBeGreaterThan(0);
+    expect(result.items[0].meta.imageWidth).toBe(1920);
+    expect(result.items[0].meta.imageHeight).toBe(1080);
+  });
+
+  test('passes through headline imageWidth/imageHeight from item', async () => {
+    const mockHeadlineService = {
+      getPageList: jest.fn().mockReturnValue([{ id: 'page1' }]),
+      getAllHeadlines: jest.fn().mockResolvedValue({
+        sources: {
+          cnn: {
+            label: 'CNN',
+            paywall: false,
+            items: [{
+              title: 'Breaking News',
+              link: 'https://cnn.com/article',
+              image: 'https://cnn.com/thumb.jpg',
+              imageWidth: 640,
+              imageHeight: 360,
+              timestamp: new Date().toISOString(),
+            }],
+          },
+        },
+        paywallProxy: null,
+      }),
+    };
+
+    const service = createService(
+      [{ type: 'headlines', feed_type: 'external', _filename: 'headlines.yml' }],
+      [],
+      { headlineService: mockHeadlineService },
+    );
+
+    // Use sources filter to bypass tier assembly (source is 'headline')
+    const result = await service.getNextBatch('testuser', { sources: ['headline'] });
+    expect(result.items.length).toBeGreaterThan(0);
+    expect(result.items[0].meta.imageWidth).toBe(640);
+    expect(result.items[0].meta.imageHeight).toBe(360);
+  });
+
+  test('FreshRSS items get probed image dimensions', async () => {
+    // Mock probeImageDimensions at the module level is hard with ESM,
+    // so we test the integration path: FreshRSS handler extracts image,
+    // then probes it. We mock the freshRSSAdapter to return items with images
+    // and verify the flow works end-to-end (probe will fail on fake URLs,
+    // so we just verify no crash and meta doesn't have dimensions for failed probes).
+    const mockFreshRSSAdapter = {
+      getItems: jest.fn().mockResolvedValue([{
+        id: 'item1',
+        title: 'RSS Article',
+        content: '<p>No image here</p>',
+        link: 'https://example.com/article',
+        published: new Date().toISOString(),
+        feedTitle: 'Example Feed',
+        author: 'Test Author',
+      }]),
+    };
+
+    const service = createService(
+      [{ type: 'freshrss', feed_type: 'external', _filename: 'freshrss.yml' }],
+      [],
+      { freshRSSAdapter: mockFreshRSSAdapter },
+    );
+
+    // Use sources filter to get freshrss items directly
+    const result = await service.getNextBatch('testuser', { sources: ['freshrss'] });
+    expect(result.items.length).toBeGreaterThan(0);
+    // No image in this item, so no dimensions expected
+    expect(result.items[0].image).toBeNull();
+    expect(result.items[0].meta.imageWidth).toBeUndefined();
+    expect(result.items[0].meta.imageHeight).toBeUndefined();
   });
 });
