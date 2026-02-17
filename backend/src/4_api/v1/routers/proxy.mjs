@@ -6,6 +6,7 @@ import http from 'http';
 import https from 'https';
 import { URL } from 'url';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
+import { compositeHeroImage } from '#system/canvas/compositeHero.mjs';
 
 /**
  * Create proxy router for streaming and thumbnails
@@ -18,7 +19,7 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
  */
 export function createProxyRouter(config) {
   const router = express.Router();
-  const { registry, proxyService, mediaBasePath, logger = console } = config;
+  const { registry, proxyService, mediaBasePath, dataPath, logger = console } = config;
 
   /**
    * GET /proxy/media/stream/*
@@ -279,6 +280,110 @@ export function createProxyRouter(config) {
       }
     } catch (err) {
       console.error('[proxy] immich error:', err);
+      if (!res.headersSent) {
+        res.status(500).json({ error: err.message });
+      }
+    }
+  });
+
+  /**
+   * GET /proxy/komga/composite/:bookId/:page
+   * Generate a composite 16:9 hero image from Komga book cover + article pages.
+   * On-demand generation with disk cache.
+   */
+  router.get('/komga/composite/:bookId/:page', asyncHandler(async (req, res) => {
+    const { bookId, page } = req.params;
+    const pageNum = parseInt(page, 10);
+    if (!bookId || isNaN(pageNum)) {
+      return res.status(400).json({ error: 'Invalid bookId or page' });
+    }
+
+    // Check disk cache
+    const cacheDir = dataPath
+      ? nodePath.join(dataPath, 'household', 'shared', 'komga', 'hero')
+      : null;
+    const cacheFile = cacheDir
+      ? nodePath.join(cacheDir, `${bookId}-${pageNum}.jpg`)
+      : null;
+
+    if (cacheFile && fs.existsSync(cacheFile)) {
+      res.set({
+        'Content-Type': 'image/jpeg',
+        'Cache-Control': 'public, max-age=31536000',
+        'X-Cache': 'HIT',
+      });
+      return fs.createReadStream(cacheFile).pipe(res);
+    }
+
+    // Get Komga credentials from ProxyService
+    const komgaAdapter = proxyService?.getAdapter?.('komga');
+    if (!komgaAdapter?.isConfigured?.()) {
+      return res.status(503).json({ error: 'Komga proxy not configured' });
+    }
+
+    const baseUrl = komgaAdapter.getBaseUrl();
+    const authHeaders = komgaAdapter.getAuthHeaders();
+
+    // Fetch source images in parallel
+    const imageUrls = [
+      `${baseUrl}/api/v1/books/${bookId}/thumbnail`,    // cover
+      `${baseUrl}/api/v1/books/${bookId}/pages/${pageNum}`,  // article page
+      `${baseUrl}/api/v1/books/${bookId}/pages/${pageNum + 1}`, // next page
+    ];
+
+    const fetchResults = await Promise.allSettled(
+      imageUrls.map(async (url) => {
+        const resp = await fetch(url, {
+          headers: authHeaders,
+          signal: AbortSignal.timeout(30000),
+        });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        return Buffer.from(await resp.arrayBuffer());
+      })
+    );
+
+    // Collect successful fetches (skip failures gracefully)
+    const buffers = fetchResults
+      .filter(r => r.status === 'fulfilled')
+      .map(r => r.value);
+
+    if (buffers.length === 0) {
+      return res.status(502).json({ error: 'Failed to fetch any images from Komga' });
+    }
+
+    // Composite
+    const jpegBuffer = await compositeHeroImage(buffers);
+
+    // Cache to disk
+    if (cacheDir) {
+      fs.mkdirSync(cacheDir, { recursive: true });
+      fs.writeFileSync(cacheFile, jpegBuffer);
+    }
+
+    // Serve
+    res.set({
+      'Content-Type': 'image/jpeg',
+      'Content-Length': jpegBuffer.length,
+      'Cache-Control': 'public, max-age=31536000',
+      'X-Cache': 'MISS',
+    });
+    res.send(jpegBuffer);
+  }));
+
+  /**
+   * GET /proxy/komga/*
+   * Passthrough proxy for Komga API requests (page images, thumbnails, etc.)
+   * Uses ProxyService with X-API-Key header auth
+   */
+  router.use('/komga', async (req, res) => {
+    try {
+      if (proxyService?.isConfigured?.('komga')) {
+        await proxyService.proxy('komga', req, res);
+        return;
+      }
+      return res.status(503).json({ error: 'Komga proxy not configured' });
+    } catch (err) {
+      console.error('[proxy] komga error:', err);
       if (!res.headersSent) {
         res.status(500).json({ error: err.message });
       }
