@@ -22,6 +22,7 @@ export class FeedAssemblyService {
   #feedContentService;
   #selectionTrackingStore;
   #feedFilterResolver;
+  #spacingEnforcer;
   #logger;
 
   /** LRU cache of recently-served items (keyed by item.id) */
@@ -35,6 +36,7 @@ export class FeedAssemblyService {
     feedContentService = null,
     selectionTrackingStore = null,
     feedFilterResolver = null,
+    spacingEnforcer = null,
     logger = console,
     // Keep sourceAdapters for getDetail()
     sourceAdapters = null,
@@ -49,7 +51,6 @@ export class FeedAssemblyService {
     userDataService,
     queryConfigs,
     feedCacheService,
-    spacingEnforcer,
   }) {
     this.#feedPoolManager = feedPoolManager;
     this.#scrollConfigLoader = scrollConfigLoader;
@@ -57,6 +58,7 @@ export class FeedAssemblyService {
     this.#feedContentService = feedContentService || null;
     this.#selectionTrackingStore = selectionTrackingStore;
     this.#feedFilterResolver = feedFilterResolver;
+    this.#spacingEnforcer = spacingEnforcer;
     this.#logger = logger;
 
     this.#sourceAdapters = new Map();
@@ -102,9 +104,12 @@ export class FeedAssemblyService {
 
     // Source filter: bypass tier assembly
     if (sources && sources.length > 0) {
-      const filtered = freshPool
+      let filtered = freshPool
         .filter(item => sources.includes(item.source))
         .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+      if (this.#spacingEnforcer) {
+        filtered = this.#spacingEnforcer.enforce(filtered, scrollConfig);
+      }
       const batch = filtered.slice(0, effectiveLimit);
       for (const item of batch) this.#cacheItem(item);
       this.#feedPoolManager.markSeen(username, batch.map(i => i.id));
@@ -249,6 +254,9 @@ export class FeedAssemblyService {
     }
 
     filtered.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    if (this.#spacingEnforcer) {
+      filtered = this.#spacingEnforcer.enforce(filtered, scrollConfig);
+    }
     const batch = filtered.slice(0, effectiveLimit);
 
     for (const item of batch) this.#cacheItem(item);
