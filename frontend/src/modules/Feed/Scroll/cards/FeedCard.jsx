@@ -352,8 +352,9 @@ function PhotoBody({ item }) {
   );
 }
 
-function PlexBody({ item }) {
+function MediaBody({ item }) {
   const subtitle = item.body || null;
+  const label = item.meta?.sourceName || item.source || 'Media';
   return (
     <>
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
@@ -367,7 +368,7 @@ function PlexBody({ item }) {
           borderRadius: '4px',
           textTransform: 'uppercase',
         }}>
-          Plex
+          {label}
         </span>
       </div>
       <h3 style={{
@@ -403,7 +404,7 @@ const BODY_MODULES = {
   journal: JournalBody,
   health: HealthBody,
   photo: PhotoBody,
-  plex: PlexBody,
+  plex: MediaBody,
 };
 
 // ─── Main Component ──────────────────────────────────────
