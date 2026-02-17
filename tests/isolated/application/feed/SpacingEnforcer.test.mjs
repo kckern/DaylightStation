@@ -108,5 +108,64 @@ describe('SpacingEnforcer', () => {
       const result = enforcer.enforce([], { spacing: { max_consecutive: 1 }, sources: {} });
       expect(result).toEqual([]);
     });
+
+    test('enforces subsource max_per_batch for headline sourceId', () => {
+      const items = [
+        item('headline', null, 'a'),
+        item('headline', null, 'b'),
+        item('headline', null, 'c'),
+        item('headline', null, 'd'),
+      ];
+      // Simulate headline items with sourceId instead of subreddit
+      items[0].meta = { sourceId: 'cnn', sourceName: 'CNN' };
+      items[1].meta = { sourceId: 'cnn', sourceName: 'CNN' };
+      items[2].meta = { sourceId: 'cnn', sourceName: 'CNN' };
+      items[3].meta = { sourceId: 'nyt', sourceName: 'NYT' };
+
+      const config = {
+        spacing: { max_consecutive: 99 },
+        tiers: {
+          wire: {
+            sources: {
+              headline: { subsources: { max_per_batch: 2 } },
+            },
+          },
+        },
+      };
+      const result = enforcer.enforce(items, config);
+      const cnnCount = result.filter(i => i.meta?.sourceId === 'cnn').length;
+      expect(cnnCount).toBe(2);
+    });
+
+    test('enforces subsource min_spacing for headline sourceId', () => {
+      const items = [
+        item('headline', null, 'a'),
+        item('headline', null, 'b'),
+        item('headline', null, 'c'),
+        item('headline', null, 'd'),
+      ];
+      items[0].meta = { sourceId: 'cnn' };
+      items[1].meta = { sourceId: 'nyt' };
+      items[2].meta = { sourceId: 'cnn' };
+      items[3].meta = { sourceId: 'bbc' };
+
+      const config = {
+        spacing: { max_consecutive: 99 },
+        tiers: {
+          wire: {
+            sources: {
+              headline: { subsources: { min_spacing: 3 } },
+            },
+          },
+        },
+      };
+      const result = enforcer.enforce(items, config);
+      const cnnIndices = result
+        .map((it, idx) => it.meta?.sourceId === 'cnn' ? idx : -1)
+        .filter(i => i >= 0);
+      for (let i = 1; i < cnnIndices.length; i++) {
+        expect(cnnIndices[i] - cnnIndices[i - 1]).toBeGreaterThanOrEqual(3);
+      }
+    });
   });
 });
