@@ -163,6 +163,9 @@ import { createHomebotRouter } from '#api/v1/routers/homebot.mjs';
 import { AgentOrchestrator, EchoAgent, Scheduler } from '#apps/agents/index.mjs';
 import { HealthCoachAgent } from '#apps/agents/health-coach/index.mjs';
 import { KomgaTocAgent } from '#apps/agents/komga-toc/index.mjs';
+import { KomgaClient } from '#adapters/content/readable/komga/KomgaClient.mjs';
+import { KomgaPagedMediaAdapter } from '#adapters/komga/KomgaPagedMediaAdapter.mjs';
+import { YamlTocCacheDatastore } from '#adapters/persistence/yaml/YamlTocCacheDatastore.mjs';
 import { MastraAdapter, YamlWorkingMemoryAdapter } from '#adapters/agents/index.mjs';
 import { createAgentsRouter } from '#api/v1/routers/agents.mjs';
 
@@ -2414,6 +2417,7 @@ export function createAgentsApiRouter(config) {
     dataService,
     configService,
     aiGateway,
+    httpClient,
   } = config;
 
   // Mastra reads API keys from process.env — bridge from ConfigService
@@ -2453,14 +2457,28 @@ export function createAgentsApiRouter(config) {
     });
   }
 
-  // Register Komga TOC agent (requires AI gateway + data services)
+  // Register Komga TOC agent (requires AI gateway + Komga access)
   if (aiGateway && dataService && configService) {
-    agentOrchestrator.register(KomgaTocAgent, {
-      workingMemory,
-      aiGateway,
-      dataService,
-      configService,
-    });
+    const komgaAuth = configService.getHouseholdAuth('komga');
+    const komgaHost = configService.resolveServiceUrl('komga');
+    if (komgaHost && komgaAuth?.token) {
+      const komgaClient = new KomgaClient(
+        { host: komgaHost, apiKey: komgaAuth.token },
+        { httpClient, logger }
+      );
+      const pagedMediaGateway = new KomgaPagedMediaAdapter({
+        client: komgaClient,
+        apiKey: komgaAuth.token,
+        logger,
+      });
+      const tocCacheDatastore = new YamlTocCacheDatastore({ dataService });
+      agentOrchestrator.register(KomgaTocAgent, {
+        workingMemory,
+        aiGateway,
+        pagedMediaGateway,
+        tocCacheDatastore,
+      });
+    }
   }
 
   // Register scheduled assignments for all agents
