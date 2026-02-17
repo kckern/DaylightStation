@@ -662,6 +662,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     const { YouTubeFeedAdapter } = await import('./1_adapters/feed/sources/YouTubeFeedAdapter.mjs');
     const { GoogleNewsFeedAdapter } = await import('./1_adapters/feed/sources/GoogleNewsFeedAdapter.mjs');
     const { KomgaFeedAdapter } = await import('./1_adapters/feed/sources/KomgaFeedAdapter.mjs');
+    const { KomgaClient } = await import('./1_adapters/content/readable/komga/KomgaClient.mjs');
     const { ReadalongFeedAdapter } = await import('./1_adapters/feed/sources/ReadalongFeedAdapter.mjs');
     const { GoodreadsFeedAdapter } = await import('./1_adapters/feed/sources/GoodreadsFeedAdapter.mjs');
 
@@ -752,7 +753,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     const komgaAuth = configService.getHouseholdAuth('komga');
     const komgaHost = configService.resolveServiceUrl('komga');
     const komgaFeedAdapter = komgaAuth?.token && komgaHost ? new KomgaFeedAdapter({
-      host: komgaHost,
+      client: new KomgaClient(
+        { host: komgaHost, apiKey: komgaAuth.token },
+        { httpClient: axios, logger: rootLogger.child({ module: 'komga-feed-client' }) }
+      ),
       apiKey: komgaAuth.token,
       webUrl: komgaHost,
       dataService,
