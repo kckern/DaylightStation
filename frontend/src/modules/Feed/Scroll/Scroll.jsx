@@ -35,6 +35,7 @@ export default function Scroll() {
   const [detailData, setDetailData] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [activeMedia, setActiveMedia] = useState(null);
+  const [colors, setColors] = useState({});
   const savedScrollRef = useRef(0);
 
   // Deep-linked item (fetched from server when not in scroll batch)
@@ -73,11 +74,13 @@ export default function Scroll() {
       const result = await DaylightAPI(`/api/v1/feed/scroll?${params}`);
 
       const incoming = result.items || [];
+      if (result.colors) setColors(result.colors);
 
       if (append) {
         setItems(prev => {
           const existingIds = new Set(prev.map(i => i.id));
           const newItems = incoming.filter(i => !existingIds.has(i.id));
+          if (newItems.length === 0) return prev;
           return [...prev, ...newItems];
         });
       } else {
@@ -109,7 +112,7 @@ export default function Scroll() {
 
     observerRef.current.observe(sentinelRef.current);
     return () => observerRef.current?.disconnect();
-  }, [hasMore, loadingMore, fetchItems]);
+  }, [hasMore, loadingMore, fetchItems, loading]);
 
   // Fetch detail when URL slug changes (route-driven)
   const prevSlugRef = useRef(null);
@@ -236,7 +239,7 @@ export default function Scroll() {
           {items.map((item, i) => (
             <div key={item.id || i} className="scroll-item-wrapper">
               <div onClick={(e) => handleCardClick(e, item)}>
-                {renderFeedCard(item)}
+                {renderFeedCard(item, colors)}
               </div>
             </div>
           ))}
@@ -253,7 +256,15 @@ export default function Scroll() {
           </div>
         )}
         {!hasMore && items.length > 0 && (
-          <div className="scroll-end">You're all caught up</div>
+          <div className="scroll-end">
+            <button
+              className="scroll-load-more"
+              disabled={loadingMore}
+              onClick={() => fetchItems(true)}
+            >
+              {loadingMore ? 'Loading…' : 'Load More…'}
+            </button>
+          </div>
         )}
         {!hasMore && items.length === 0 && (
           <div className="scroll-empty">Nothing in your feed yet</div>

@@ -1,7 +1,7 @@
 import FeedCard from './FeedCard.jsx';
 
-export function renderFeedCard(item) {
-  return <FeedCard key={item.id} item={item} />;
+export function renderFeedCard(item, colors = {}) {
+  return <FeedCard key={item.id} item={item} colors={colors} />;
 }
 
 export default {};

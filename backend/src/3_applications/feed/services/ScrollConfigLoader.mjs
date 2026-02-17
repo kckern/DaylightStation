@@ -80,6 +80,25 @@ export class ScrollConfigLoader {
     return sources;
   }
 
+  /**
+   * Build a flat color map from merged scroll config.
+   * Source-level colors override tier-level colors.
+   *
+   * @param {Object} scrollConfig - Merged scroll config
+   * @returns {Object<string, string>} { source: hexColor, tier: hexColor }
+   */
+  static extractColors(scrollConfig) {
+    const colors = {};
+    const tiers = scrollConfig.tiers || {};
+    for (const [tierName, tier] of Object.entries(tiers)) {
+      if (tier.color) colors[tierName] = tier.color;
+      for (const [sourceKey, sourceCfg] of Object.entries(tier.sources || {})) {
+        if (sourceCfg.color) colors[sourceKey] = sourceCfg.color;
+      }
+    }
+    return colors;
+  }
+
   #merge(user) {
     return {
       batch_size: user.batch_size ?? DEFAULTS.batch_size,
@@ -97,6 +116,7 @@ export class ScrollConfigLoader {
       const user = userTiers[tierName] || {};
       result[tierName] = {
         allocation: user.allocation ?? defaults.allocation,
+        ...(user.color ? { color: user.color } : {}),
         selection: {
           ...defaults.selection,
           ...user.selection,
