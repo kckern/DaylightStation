@@ -31,6 +31,27 @@ export function proxyIcon(rawUrl) {
 }
 
 /**
+ * Format an ISO date into a human-readable relative age (long form).
+ * @param {string} isoDate
+ * @returns {string|null}
+ */
+export function memoryAge(isoDate) {
+  if (!isoDate) return null;
+  const diff = Date.now() - new Date(isoDate).getTime();
+  if (diff < 0) return null;
+  const days = Math.floor(diff / 86400000);
+  if (days === 0) return 'today';
+  if (days === 1) return 'yesterday';
+  if (days < 30) return `${days} days ago`;
+  const months = Math.floor(days / 30.44);
+  if (months < 12) return `${months} month${months === 1 ? '' : 's'} ago`;
+  const years = Math.floor(days / 365.25);
+  const remMonths = Math.floor((days - years * 365.25) / 30.44);
+  if (remMonths > 0) return `${years} year${years === 1 ? '' : 's'}, ${remMonths} month${remMonths === 1 ? '' : 's'} ago`;
+  return `${years} year${years === 1 ? '' : 's'} ago`;
+}
+
+/**
  * Generate a deterministic color from a string label.
  * Returns a hex color from a curated palette.
  * @param {string} label

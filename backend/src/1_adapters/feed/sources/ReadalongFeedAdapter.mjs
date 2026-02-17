@@ -58,6 +58,11 @@ export class ReadalongFeedAdapter extends IFeedSourceAdapter {
         || firstBlock?.headings?.summary
         || null;
 
+      // Extract first sentence of text for card preview
+      const blocks = item.content?.data || [];
+      const firstText = blocks.find(b => b.text)?.text || '';
+      const firstSentence = firstText.split(/[.!?]/)[0]?.trim() || null;
+
       return [{
         id: item.id,
         tier: query.tier || 'compass',
@@ -75,6 +80,7 @@ export class ReadalongFeedAdapter extends IFeedSourceAdapter {
           audioUrl: item.mediaUrl || null,
           duration: item.duration || 0,
           subtitle: item.subtitle || null,
+          firstLine: firstSentence,
           sourceName: collection.charAt(0).toUpperCase() + collection.slice(1),
           sourceIcon: item.thumbnail || null,
         },
