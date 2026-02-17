@@ -30,6 +30,8 @@ export default function Scroll() {
   const [focusSource, setFocusSource] = useState(null);
   const observerRef = useRef(null);
   const sentinelRef = useRef(null);
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
   const [detailData, setDetailData] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [activeMedia, setActiveMedia] = useState(null);
@@ -62,7 +64,8 @@ export default function Scroll() {
     else setLoading(true);
 
     try {
-      const cursor = append && items.length > 0 ? items[items.length - 1].id : undefined;
+      const cur = itemsRef.current;
+      const cursor = append && cur.length > 0 ? cur[cur.length - 1].id : undefined;
       const params = new URLSearchParams();
       if (cursor) params.set('cursor', cursor);
       if (focusSource) params.set('focus', focusSource);
@@ -87,7 +90,7 @@ export default function Scroll() {
       setLoading(false);
       setLoadingMore(false);
     }
-  }, [items, focusSource]);
+  }, [focusSource]);
 
   useEffect(() => { fetchItems(); }, []);
 

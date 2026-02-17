@@ -10,11 +10,12 @@
 
 import { IFeedSourceAdapter } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
 
-const USER_AGENT = 'Mozilla/5.0 (compatible; DaylightStation/1.0)';
+const USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
 export class RedditFeedAdapter extends IFeedSourceAdapter {
   #dataService;
   #logger;
+  #rotationIndex = 0;
 
   /**
    * @param {Object} deps
@@ -36,38 +37,71 @@ export class RedditFeedAdapter extends IFeedSourceAdapter {
    * @returns {Promise<Object[]>} Normalized FeedItem-shaped objects
    */
   async fetchItems(query, username) {
-    let subreddits = query.params?.subreddits;
+    let subredditConfig = query.params?.subreddits;
 
     // Prefer user-specific config
     try {
       const feedConfig = this.#dataService.user.read('config/feed', username);
-      if (feedConfig?.reddit?.subreddits?.length) {
-        subreddits = feedConfig.reddit.subreddits;
+      if (feedConfig?.reddit?.subreddits) {
+        subredditConfig = feedConfig.reddit.subreddits;
       }
     } catch { /* user config not found */ }
 
-    if (!subreddits || !Array.isArray(subreddits) || subreddits.length === 0) return [];
+    if (!subredditConfig) return [];
 
     try {
-      const maxSubs = query.params?.maxSubs || 5;
-      const sampled = [...subreddits].sort(() => Math.random() - 0.5).slice(0, maxSubs);
-      const perSub = Math.ceil((query.limit || 10) / sampled.length);
+      const limit = query.limit || 15;
+      const subs = this.#resolveSubreddits(subredditConfig);
 
-      const results = await Promise.allSettled(
-        sampled.map(sub => this.#fetchSubreddit(sub, perSub, query))
-      );
-
-      const items = [];
-      for (const result of results) {
-        if (result.status === 'fulfilled') items.push(...result.value);
-      }
-
-      items.sort(() => Math.random() - 0.5);
-      return items.slice(0, query.limit || 10);
+      // Single request using r/sub1+sub2+sub3 pattern
+      const items = await this.#fetchMultiSubreddit(subs, limit, query);
+      return items.slice(0, limit);
     } catch (err) {
       this.#logger.warn?.('reddit.adapter.error', { error: err.message });
       return [];
     }
+  }
+
+  /**
+   * Resolve subreddit config into a flat list for the current batch.
+   * Supports both legacy flat array and tiered { daily, regular, occasional } objects.
+   */
+  #resolveSubreddits(config) {
+    // Legacy flat array — random sample
+    if (Array.isArray(config)) {
+      return [...config].sort(() => Math.random() - 0.5).slice(0, 15);
+    }
+
+    const idx = this.#rotationIndex++;
+    const subs = [];
+
+    // Daily: all groups every batch
+    if (config.daily) {
+      for (const group of Object.values(config.daily)) {
+        subs.push(...group.split('+'));
+      }
+    }
+
+    // Regular: rotate ~half of groups per batch
+    if (config.regular) {
+      const groups = Object.values(config.regular);
+      const half = Math.max(1, Math.ceil(groups.length / 2));
+      const start = (idx * half) % groups.length;
+      for (let i = 0; i < half; i++) {
+        const group = groups[(start + i) % groups.length];
+        subs.push(...group.split('+'));
+      }
+    }
+
+    // Occasional: rotate one group per batch
+    if (config.occasional) {
+      const groups = Object.values(config.occasional);
+      const group = groups[idx % groups.length];
+      subs.push(...group.split('+'));
+    }
+
+    // Deduplicate
+    return [...new Set(subs)];
   }
 
   async getDetail(localId, meta, _username) {
@@ -149,11 +183,16 @@ export class RedditFeedAdapter extends IFeedSourceAdapter {
     return null;
   }
 
-  async #fetchSubreddit(subreddit, limit, query) {
-    const url = `https://www.reddit.com/r/${subreddit}.json?limit=${limit}`;
+  async #fetchMultiSubreddit(subreddits, limit, query, attempt = 0) {
+    const combined = subreddits.join('+');
+    const url = `https://www.reddit.com/r/${combined}.json?limit=${limit}`;
     const res = await fetch(url, {
       headers: { 'User-Agent': USER_AGENT, 'Accept': 'application/json' },
     });
+    if (res.status === 429 && attempt < 2) {
+      await new Promise(r => setTimeout(r, 3000 * (attempt + 1)));
+      return this.#fetchMultiSubreddit(subreddits, limit, query, attempt + 1);
+    }
     if (!res.ok) return [];
 
     const data = await res.json();
@@ -163,6 +202,7 @@ export class RedditFeedAdapter extends IFeedSourceAdapter {
       .filter(p => p.kind === 't3' && !p.data.stickied)
       .map(p => {
         const post = p.data;
+        const subreddit = post.subreddit;
         const youtubeId = this.#extractYoutubeId(post.url);
         const rawImage = this.#extractImage(post) || (youtubeId ? `https://img.youtube.com/vi/${youtubeId}/hqdefault.jpg` : null);
         const image = rawImage ? this.#proxyUrl(rawImage) : null;
