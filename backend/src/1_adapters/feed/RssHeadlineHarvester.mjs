@@ -106,7 +106,14 @@ export class RssHeadlineHarvester {
   #extractImageWithDims(item) {
     const mediaContent = item['media:content'];
     if (Array.isArray(mediaContent)) {
-      const img = mediaContent.find(m => m?.['$']?.type?.startsWith('image/') || m?.['$']?.url);
+      // Prefer explicit image type, then fall back to untyped URLs that look like images
+      const img = mediaContent.find(m => m?.['$']?.type?.startsWith('image/'))
+        || mediaContent.find(m => {
+          const attrs = m?.['$'];
+          if (!attrs?.url) return false;
+          if (attrs.type) return false; // has non-image type, skip
+          return !this.#isNonImageUrl(attrs.url);
+        });
       if (img?.['$']?.url) {
         const w = parseInt(img['$'].width, 10);
         const h = parseInt(img['$'].height, 10);
@@ -129,6 +136,10 @@ export class RssHeadlineHarvester {
       return { url: item.enclosure.url };
     }
     return null;
+  }
+
+  #isNonImageUrl(url) {
+    return /\.(?:m3u8|mp4|webm|ogg|mp3|m4a|wav|flac|mpd)(?:[?#]|$)/i.test(url);
   }
 
   #stripHtml(html) {
