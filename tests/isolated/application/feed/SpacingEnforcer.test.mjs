@@ -153,6 +153,63 @@ describe('SpacingEnforcer', () => {
       expect(cnnCount).toBe(2);
     });
 
+    test('enforces max_consecutive_subsource globally', () => {
+      const items = [
+        item('headline', null, 'a'),
+        item('headline', null, 'b'),
+        item('headline', null, 'c'),
+        item('headline', null, 'd'),
+        item('headline', null, 'e'),
+      ];
+      items[0].meta = { sourceId: 'cnn' };
+      items[1].meta = { sourceId: 'cnn' };
+      items[2].meta = { sourceId: 'cnn' };
+      items[3].meta = { sourceId: 'nyt' };
+      items[4].meta = { sourceId: 'bbc' };
+
+      const config = {
+        spacing: { max_consecutive: 99, max_consecutive_subsource: 2 },
+        tiers: {},
+      };
+      const result = enforcer.enforce(items, config);
+
+      // Check no 3+ CNN items in a row
+      for (let i = 2; i < result.length; i++) {
+        const sub0 = result[i - 2].meta?.sourceId;
+        const sub1 = result[i - 1].meta?.sourceId;
+        const sub2 = result[i].meta?.sourceId;
+        if (sub0 && sub0 === sub1 && sub1 === sub2) {
+          throw new Error(`3 consecutive items from subsource "${sub0}" at indices ${i-2},${i-1},${i}`);
+        }
+      }
+    });
+
+    test('max_consecutive_subsource works across different source types', () => {
+      const items = [
+        item('reddit', 'science', 'a'),
+        item('reddit', 'science', 'b'),
+        item('reddit', 'science', 'c'),
+        item('reddit', 'tech', 'd'),
+        item('headline', null, 'e'),
+      ];
+      items[4].meta = { sourceId: 'nyt' };
+
+      const config = {
+        spacing: { max_consecutive: 99, max_consecutive_subsource: 2 },
+        tiers: {},
+      };
+      const result = enforcer.enforce(items, config);
+
+      // No 3+ consecutive from r/science
+      let maxRun = 0, run = 0, lastSub = null;
+      for (const it of result) {
+        const sub = it.meta?.subreddit || it.meta?.sourceId;
+        if (sub === lastSub) { run++; } else { run = 1; lastSub = sub; }
+        maxRun = Math.max(maxRun, run);
+      }
+      expect(maxRun).toBeLessThanOrEqual(2);
+    });
+
     test('enforces subsource min_spacing for headline sourceId', () => {
       const items = [
         item('headline', null, 'a'),

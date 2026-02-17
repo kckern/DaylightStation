@@ -8,6 +8,7 @@
  *   1. Source-level max_per_batch — drop excess items per source
  *   2. Subsource-level max_per_batch — drop excess items per subsource
  *   3. max_consecutive — no N+ items from same source in a row
+ *  3b. max_consecutive_subsource — no N+ items from same subsource in a row (global)
  *   4. Source-level min_spacing — reposition items that are too close
  *   5. Subsource-level min_spacing — reposition items from same subsource that are too close
  *
@@ -31,6 +32,12 @@ export class SpacingEnforcer {
 
     // 3. max_consecutive (no N+ same source in a row)
     result = this.#enforceMaxConsecutive(result, config.spacing?.max_consecutive ?? 1);
+
+    // 3b. max_consecutive_subsource (no N+ same subsource in a row)
+    const maxConsecSub = config.spacing?.max_consecutive_subsource ?? 0;
+    if (maxConsecSub > 0) {
+      result = this.#enforceMaxConsecutiveSubsource(result, maxConsecSub);
+    }
 
     // 4. Source-level min_spacing
     result = this.#enforceMinSpacing(result, sources);
@@ -227,6 +234,62 @@ export class SpacingEnforcer {
       if (arr[i].source === source && this.#getSubsourceKey(arr[i]) === subKey) return false;
     }
     return true;
+  }
+
+  #enforceMaxConsecutiveSubsource(items, maxConsecutive) {
+    if (maxConsecutive <= 0 || items.length <= 1) return items;
+
+    const result = [items[0]];
+    const deferred = [];
+
+    for (let i = 1; i < items.length; i++) {
+      const itemSub = this.#getSubsourceKey(items[i]);
+      if (!itemSub) {
+        result.push(items[i]);
+        continue;
+      }
+
+      let consecutive = 0;
+      for (let j = result.length - 1; j >= 0; j--) {
+        if (this.#getSubsourceKey(result[j]) === itemSub) consecutive++;
+        else break;
+      }
+
+      if (consecutive < maxConsecutive) {
+        result.push(items[i]);
+      } else {
+        deferred.push(items[i]);
+      }
+    }
+
+    for (const item of deferred) {
+      const itemSub = this.#getSubsourceKey(item);
+      let inserted = false;
+      for (let pos = 0; pos <= result.length; pos++) {
+        if (this.#canInsertSubsourceAt(result, pos, itemSub, maxConsecutive)) {
+          result.splice(pos, 0, item);
+          inserted = true;
+          break;
+        }
+      }
+      if (!inserted) result.push(item);
+    }
+
+    return result;
+  }
+
+  #canInsertSubsourceAt(arr, pos, subsourceKey, maxConsecutive) {
+    let before = 0;
+    for (let i = pos - 1; i >= 0; i--) {
+      if (this.#getSubsourceKey(arr[i]) === subsourceKey) before++;
+      else break;
+    }
+    let after = 0;
+    for (let i = pos; i < arr.length; i++) {
+      if (this.#getSubsourceKey(arr[i]) === subsourceKey) after++;
+      else break;
+    }
+    return (before + after + 1) <= maxConsecutive;
   }
 
   #getSubsourceKey(item) {

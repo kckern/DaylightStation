@@ -40,6 +40,7 @@ const DEFAULTS = Object.freeze({
   wire_decay_batches: 10,
   spacing: Object.freeze({
     max_consecutive: 1,
+    max_consecutive_subsource: 2,
   }),
   tiers: TIER_DEFAULTS,
 });
