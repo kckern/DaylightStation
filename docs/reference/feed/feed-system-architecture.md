@@ -74,16 +74,16 @@ The feed system aggregates content from external services (RSS, Reddit, YouTube,
 │                                                                      │
 │  ┌────────────────────┐  ┌──────────────────────┐                   │
 │  │ Card Components    │  │ Detail Sections       │                   │
-│  │ ExternalCard       │  │ ArticleSection        │                   │
-│  │ GroundingCard      │  │ CommentsSection        │                   │
-│  │ MediaCard          │  │ PlayerSection          │                   │
-│  └────────────────────┘  │ EmbedSection           │                   │
-│                          │ StatsSection           │                   │
-│                          │ MetadataSection        │                   │
-│                          │ MediaSection           │                   │
-│                          │ BodySection            │                   │
-│                          │ ActionsSection         │                   │
-│                          └──────────────────────┘                   │
+│  │ FeedCard           │  │ ArticleSection        │                   │
+│  │ (body modules)     │  │ CommentsSection        │                   │
+│  └────────────────────┘  │ PlayerSection (ctrl)   │                   │
+│                          │ EmbedSection           │                   │
+│  ┌────────────────────┐  │ StatsSection           │                   │
+│  │ Playback           │  │ MetadataSection        │                   │
+│  │ PersistentPlayer   │  │ MediaSection           │                   │
+│  │ FeedPlayerMiniBar  │  │ BodySection            │                   │
+│  │ usePlaybackObserver│  │ ActionsSection         │                   │
+│  └────────────────────┘  └──────────────────────┘                   │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -219,8 +219,11 @@ Adapters return sections with these types, rendered by matching React components
 | `metadata` | `MetadataSection` | Key-value metadata list (EXIF, task info) |
 | `embed` | `EmbedSection` | Embedded iframe (YouTube videos) |
 | `media` | `MediaSection` | Image gallery with captions |
-| `player` | `PlayerSection` | Integrated content player (Plex, Immich video) |
+| `player` | `PlayerSection` | Playback controller — play button (idle) or scrubber/controls (active). Actual Player lives in PersistentPlayer at Scroll level |
 | `actions` | `ActionsSection` | Action buttons |
+| `gallery` | `GallerySection` | Photo gallery with navigation |
+| `scripture` | `ScriptureSection` | Scripture verse display |
+| `timeline` | `TimelineSection` | Timeline/history display |
 
 ---
 
@@ -313,16 +316,18 @@ Headlines from sources marked with `paywall: true` in config are proxied through
 | `frontend/src/modules/Feed/Headlines/Headlines.jsx` | Headline page — fetches data, renders grid of SourcePanels |
 | `frontend/src/modules/Feed/Headlines/SourcePanel.jsx` | Single source column — favicon, headline list, tooltips with images |
 | `frontend/src/modules/Feed/Headlines/Headlines.scss` | Headline styles — grid layout, tooltips, dark theme |
-| `frontend/src/modules/Feed/Scroll/Scroll.jsx` | Scroll feed — infinite scroll, route-driven detail, swipe navigation |
+| `frontend/src/modules/Feed/Scroll/Scroll.jsx` | Scroll feed — infinite scroll, route-driven detail, swipe navigation, persistent player owner |
 | `frontend/src/modules/Feed/Scroll/Scroll.scss` | Scroll styles — 3-column layout on wide screens, mini player bar |
-| `frontend/src/modules/Feed/Scroll/FeedPlayerMiniBar.jsx` | Persistent mini player bar for active media playback |
-| `frontend/src/modules/Feed/Scroll/cards/index.jsx` | Card registry — maps source types to card components |
-| `frontend/src/modules/Feed/Scroll/cards/ExternalCard.jsx` | External content card (headlines, Reddit, YouTube, Google News) |
-| `frontend/src/modules/Feed/Scroll/cards/GroundingCard.jsx` | Grounding card (weather, health, journal, tasks, gratitude) |
-| `frontend/src/modules/Feed/Scroll/cards/MediaCard.jsx` | Media card (photos, Plex) — inline player support for Plex |
+| `frontend/src/modules/Feed/Scroll/PersistentPlayer.jsx` | Persistent Player wrapper — keeps `<Player>` alive at Scroll level across navigation |
+| `frontend/src/modules/Feed/Scroll/FeedPlayerMiniBar.jsx` | Mini player bar — thumbnail, play/pause, progress bar, source/title |
+| `frontend/src/modules/Feed/Scroll/hooks/usePlaybackObserver.js` | Polls playerRef for playback state (playing, currentTime, duration), drives progress bar via rAF |
+| `frontend/src/modules/Feed/Scroll/cards/FeedCard.jsx` | Feed card — hero image, source bar, body module, direct-play button for media items |
+| `frontend/src/modules/Feed/Scroll/cards/index.jsx` | Card factory — `renderFeedCard(item, colors, { onDismiss, onPlay })` |
+| `frontend/src/modules/Feed/Scroll/cards/bodies/index.js` | Body module registry — maps source types to body components |
 | `frontend/src/modules/Feed/Scroll/detail/DetailView.jsx` | Detail overlay — hero image, sections, swipe/touch navigation |
 | `frontend/src/modules/Feed/Scroll/detail/DetailView.scss` | Detail view styles |
-| `frontend/src/modules/Feed/Scroll/detail/sections/*.jsx` | Section renderers (9 types — see Section Types table) |
+| `frontend/src/modules/Feed/Scroll/detail/DetailModal.jsx` | Desktop modal wrapper for DetailView |
+| `frontend/src/modules/Feed/Scroll/detail/sections/*.jsx` | Section renderers (12 types — see Section Types table) |
 
 ### Routing
 
@@ -342,6 +347,33 @@ Headlines from sources marked with `paywall: true` in config are proxied through
 - **Swipe left/right** → navigates to next/previous item in the loaded list
 - **Tabs** are hidden when viewing the scroll (immersive mode)
 - **3-column layout** on wide screens (>900px) with sidebars flanking the 540px feed column
+
+### Persistent Media Player
+
+Media playback (Plex, Immich video) uses a persistent player architecture where the `<Player>` component lives at the Scroll level and never unmounts during navigation.
+
+```
+Scroll.jsx
+├── scroll-view (card list)
+│   └── FeedCard → play button (e.stopPropagation → handlePlay, bypasses detail)
+├── DetailView / DetailModal
+│   └── PlayerSection (controller-only: play/pause, scrubber, time — no <Player>)
+├── PersistentPlayer (owns <Player ref={playerRef}>, visually hidden for audio)
+└── FeedPlayerMiniBar (thumbnail, play/pause toggle, progress bar)
+```
+
+**State flow:**
+- `activeMedia` (`{ item, contentId }`) lives in Scroll — set by card play button or detail play button
+- `playerRef` (useRef) points to Player's imperative handle: `seek()`, `play()`, `pause()`, `toggle()`, `getCurrentTime()`, `getDuration()`, `getMediaElement()`
+- `usePlaybackObserver` hook polls playerRef at 500ms intervals for React state (`playing`, `currentTime`, `duration`) and uses `requestAnimationFrame` for smooth progress bar updates via direct DOM manipulation (`progressElRef`)
+
+**Card-level play:** Clicking the play triangle overlay on a card's hero image starts playback directly without opening the detail view. The mini bar appears at the bottom. `e.stopPropagation()` prevents the card click from navigating to detail.
+
+**Mini bar:** Shows when media is active and detail view is closed (`activeMedia && !urlSlug`). Displays: thumbnail (40x40), source name, title, play/pause toggle, close button, and a full-width progress bar.
+
+**Detail controller:** When detail view is open for the playing item, `PlayerSection` renders a controller UI (seekable scrubber, play/pause, time labels, stop button) that talks to the persistent player via the shared `playback` prop.
+
+**`contentId` derivation:** For Plex items, `contentId` equals `item.id` (both use `plex:{ratingKey}` format), so no extra API call is needed for card-level play.
 
 ---
 
