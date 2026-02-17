@@ -26,7 +26,11 @@ describe('SpacingEnforcer', () => {
       ];
       const config = {
         spacing: { max_consecutive: 99 },
-        sources: { reddit: { max_per_batch: 2 } },
+        tiers: {
+          wire: {
+            sources: { reddit: { max_per_batch: 2 } },
+          },
+        },
       };
       const result = enforcer.enforce(items, config);
       const redditCount = result.filter(i => i.source === 'reddit').length;
@@ -54,7 +58,11 @@ describe('SpacingEnforcer', () => {
       ];
       const config = {
         spacing: { max_consecutive: 1 },
-        sources: { photos: { min_spacing: 3 } },
+        tiers: {
+          wire: {
+            sources: { photos: { min_spacing: 3 } },
+          },
+        },
       };
       const result = enforcer.enforce(items, config);
       const photoIndices = result
@@ -72,8 +80,12 @@ describe('SpacingEnforcer', () => {
       ];
       const config = {
         spacing: { max_consecutive: 99 },
-        sources: {
-          reddit: { max_per_batch: 10, subsources: { max_per_batch: 2 } },
+        tiers: {
+          wire: {
+            sources: {
+              reddit: { max_per_batch: 10, subsources: { max_per_batch: 2 } },
+            },
+          },
         },
       };
       const result = enforcer.enforce(items, config);
@@ -91,8 +103,12 @@ describe('SpacingEnforcer', () => {
       ];
       const config = {
         spacing: { max_consecutive: 99 },
-        sources: {
-          reddit: { subsources: { min_spacing: 3 } },
+        tiers: {
+          wire: {
+            sources: {
+              reddit: { subsources: { min_spacing: 3 } },
+            },
+          },
         },
       };
       const result = enforcer.enforce(items, config);
