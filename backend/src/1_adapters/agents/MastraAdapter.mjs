@@ -64,15 +64,21 @@ function jsonSchemaToZod(jsonSchema) {
 export class MastraAdapter {
   #model;
   #logger;
+  #maxToolCalls;
+  #timeoutMs;
 
   /**
    * @param {Object} deps
    * @param {string} [deps.model='openai/gpt-4o'] - Model identifier (provider/model format)
    * @param {Object} [deps.logger] - Logger instance
+   * @param {number} [deps.maxToolCalls=50] - Maximum tool calls before aborting
+   * @param {number} [deps.timeoutMs=120000] - Execution timeout in ms
    */
   constructor(deps = {}) {
     this.#model = deps.model || 'openai/gpt-4o';
     this.#logger = deps.logger || console;
+    this.#maxToolCalls = deps.maxToolCalls || 50;
+    this.#timeoutMs = deps.timeoutMs || 120000;
   }
 
   /**
@@ -81,7 +87,7 @@ export class MastraAdapter {
    * @param {Object} context - Execution context
    * @returns {Object} Mastra tools object
    */
-  #translateTools(tools, context) {
+  #translateTools(tools, context, callCounter) {
     const mastraTools = {};
 
     for (const tool of tools) {
@@ -90,6 +96,19 @@ export class MastraAdapter {
         description: tool.description,
         inputSchema: jsonSchemaToZod(tool.parameters),
         execute: async (inputData) => {
+          callCounter.count++;
+          this.#logger.info?.('tool.execute.call', {
+            tool: tool.name,
+            callNumber: callCounter.count,
+            maxCalls: this.#maxToolCalls,
+          });
+
+          if (callCounter.count > this.#maxToolCalls) {
+            const msg = `Tool call limit reached (${this.#maxToolCalls}). Aborting to prevent runaway costs.`;
+            this.#logger.warn?.('tool.execute.limit_reached', { tool: tool.name, count: callCounter.count });
+            return { error: msg };
+          }
+
           try {
             const result = await tool.execute(inputData, context);
             return result;
@@ -113,7 +132,8 @@ export class MastraAdapter {
    */
   async execute({ agent, agentId, input, tools, systemPrompt, context = {} }) {
     const name = agentId || agent?.constructor?.id || 'unknown';
-    const mastraTools = this.#translateTools(tools || [], context);
+    const callCounter = { count: 0 };
+    const mastraTools = this.#translateTools(tools || [], context, callCounter);
 
     const mastraAgent = new Agent({
       name,
@@ -126,14 +146,23 @@ export class MastraAdapter {
       agentId: name,
       inputLength: input?.length,
       toolCount: Object.keys(mastraTools).length,
+      maxToolCalls: this.#maxToolCalls,
+      timeoutMs: this.#timeoutMs,
     });
 
     try {
-      const response = await mastraAgent.generate(input);
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error(`Agent execution timed out after ${this.#timeoutMs}ms`)), this.#timeoutMs)
+      );
+      const response = await Promise.race([
+        mastraAgent.generate(input),
+        timeoutPromise,
+      ]);
 
       this.#logger.info?.('agent.execute.complete', {
         agentId: name,
         outputLength: response.text?.length,
+        toolCallsUsed: callCounter.count,
       });
 
       return {
@@ -144,6 +173,7 @@ export class MastraAdapter {
       this.#logger.error?.('agent.execute.error', {
         agentId: name,
         error: error.message,
+        toolCallsUsed: callCounter.count,
       });
       throw error;
     }

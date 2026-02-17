@@ -77,15 +77,44 @@ export function createFeedRouter(config) {
   }));
 
   // =========================================================================
-  // Headlines (cached)
+  // Headlines (cached, multi-page config-driven)
   // =========================================================================
 
-  router.get('/headlines', asyncHandler(async (req, res) => {
+  // Page list — returns [{id, label}] for all configured headline pages
+  router.get('/headlines/pages', asyncHandler(async (req, res) => {
     const username = getUsername();
-    const result = await headlineService.getAllHeadlines(username);
+    res.json(headlineService.getPageList(username));
+  }));
+
+  // Harvest all pages (or one page via ?page=ID)
+  router.post('/headlines/harvest', asyncHandler(async (req, res) => {
+    const username = getUsername();
+    const pageId = req.query.page || undefined;
+    const result = await headlineService.harvestAll(username, pageId);
     res.json(result);
   }));
 
+  // Harvest a single source by ID
+  router.post('/headlines/harvest/:source', asyncHandler(async (req, res) => {
+    const username = getUsername();
+    const result = await headlineService.harvestSource(req.params.source, username);
+    res.json(result);
+  }));
+
+  // Get headlines for a page — ?page=ID (defaults to first page)
+  router.get('/headlines', asyncHandler(async (req, res) => {
+    const username = getUsername();
+    const pages = headlineService.getPageList(username);
+    const pageId = req.query.page || pages[0]?.id;
+
+    if (!pageId) return res.json({ grid: null, sources: {}, lastHarvest: null });
+
+    const result = await headlineService.getAllHeadlines(username, pageId);
+    if (!result) return res.status(404).json({ error: 'Page not found', page: pageId });
+    res.json(result);
+  }));
+
+  // Get headlines for a single source
   router.get('/headlines/:source', asyncHandler(async (req, res) => {
     const { source } = req.params;
     const username = getUsername();
@@ -98,32 +127,65 @@ export function createFeedRouter(config) {
     res.json(result);
   }));
 
-  router.post('/headlines/harvest', asyncHandler(async (req, res) => {
-    const username = getUsername();
-    const result = await headlineService.harvestAll(username);
-    res.json(result);
-  }));
-
-  router.post('/headlines/harvest/:source', asyncHandler(async (req, res) => {
-    const username = getUsername();
-    const result = await headlineService.harvestSource(req.params.source, username);
-    res.json(result);
-  }));
-
   // =========================================================================
   // Scroll (merged feed -- skeleton)
   // =========================================================================
 
   router.get('/scroll', asyncHandler(async (req, res) => {
     const username = getUsername();
-    const { cursor, limit, session, focus } = req.query;
+    const { cursor, limit, focus, source, nocache } = req.query;
 
     const result = await feedAssemblyService.getNextBatch(username, {
       limit: limit ? Number(limit) : undefined,
       cursor,
-      sessionStartedAt: session || null,
       focus: focus || null,
+      sources: source ? source.split(',').map(s => s.trim()) : null,
+      nocache: nocache === '1',
     });
+
+    res.json(result);
+  }));
+
+  // Single-item lookup (deep-link resolution — returns item + detail)
+  // Accepts base64url-encoded item ID slug (same encoding used in frontend URLs)
+  router.get('/scroll/item/:slug', asyncHandler(async (req, res) => {
+    const { slug } = req.params;
+    if (!slug) return res.status(400).json({ error: 'slug required' });
+
+    // Decode base64url → original item ID
+    let itemId;
+    try {
+      let s = slug.replace(/-/g, '+').replace(/_/g, '/');
+      while (s.length % 4) s += '=';
+      itemId = Buffer.from(s, 'base64').toString('utf-8');
+    } catch {
+      return res.status(400).json({ error: 'Invalid slug' });
+    }
+
+    const username = getUsername();
+    const result = await feedAssemblyService.getItemWithDetail(itemId, username);
+    if (!result) return res.status(404).json({ error: 'Item not found or expired' });
+
+    res.json(result);
+  }));
+
+  // =========================================================================
+  // Detail (level 2 expanded content)
+  // =========================================================================
+
+  router.get('/detail/:itemId', asyncHandler(async (req, res) => {
+    const { itemId } = req.params;
+    if (!itemId) return res.status(400).json({ error: 'itemId required' });
+
+    const username = getUsername();
+    let meta = {};
+    if (req.query.meta) {
+      try { meta = JSON.parse(req.query.meta); } catch { /* ignore */ }
+    }
+    if (req.query.link) meta.link = req.query.link;
+
+    const result = await feedAssemblyService.getDetail(itemId, meta, username);
+    if (!result) return res.status(404).json({ error: 'No detail available' });
 
     res.json(result);
   }));

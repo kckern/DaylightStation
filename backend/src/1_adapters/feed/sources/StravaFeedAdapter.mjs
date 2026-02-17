@@ -44,7 +44,7 @@ export class StravaFeedAdapter extends IFeedSourceAdapter {
 
       return activities.slice(0, 5).map(activity => ({
         id: `strava:${activity.id || activity._date || Math.random()}`,
-        type: query.feed_type || 'grounding',
+        tier: query.tier || 'compass',
         source: 'fitness',
         title: activity.title || activity.type || 'Activity',
         body: this.#formatSummary(activity),
@@ -66,6 +66,17 @@ export class StravaFeedAdapter extends IFeedSourceAdapter {
       this.#logger.warn?.('strava.adapter.error', { error: err.message });
       return [];
     }
+  }
+
+  async getDetail(localId, meta, _username) {
+    const items = [];
+    if (meta.type) items.push({ label: 'Type', value: meta.type });
+    if (meta.minutes) items.push({ label: 'Duration', value: `${Math.round(meta.minutes)} min` });
+    if (meta.avgHeartrate) items.push({ label: 'Avg HR', value: `${Math.round(meta.avgHeartrate)} bpm` });
+    if (meta.maxHeartrate) items.push({ label: 'Max HR', value: `${Math.round(meta.maxHeartrate)} bpm` });
+    if (meta.sufferScore) items.push({ label: 'Suffer Score', value: String(meta.sufferScore) });
+    if (items.length === 0) return null;
+    return { sections: [{ type: 'stats', data: { items } }] };
   }
 
   #formatSummary(activity) {

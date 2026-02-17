@@ -2,26 +2,28 @@ import { useState, useRef } from 'react';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import './Headlines.scss';
 
-// Muted color palette by column position (left→right political spectrum)
-const COL_COLORS = [
-  'hsl(215, 50%, 40%)',  // left — blue
-  'hsl(210, 30%, 35%)',  // center-left — muted steel blue
-  'hsl(220, 8%, 38%)',   // center — neutral grey
-  'hsl(0, 25%, 35%)',    // center-right — muted dusty red
-  'hsl(0, 45%, 38%)',    // right — red
+// Default neutral color palette (used if no col_colors in config)
+const DEFAULT_COL_COLORS = [
+  'hsl(220, 15%, 35%)',
+  'hsl(220, 15%, 35%)',
+  'hsl(220, 15%, 35%)',
+  'hsl(220, 15%, 35%)',
+  'hsl(220, 15%, 35%)',
 ];
 
-export function SourcePanel({ source, col, totalCols, paywallProxy, onRefresh }) {
+export function SourcePanel({ source, col, totalCols, paywallProxy, onRefresh, colColors }) {
   const [refreshing, setRefreshing] = useState(false);
   const [faviconError, setFaviconError] = useState(false);
   const imgRef = useRef(null);
 
   if (!source) return <div className="source-cell source-cell--empty" />;
 
-  const siteUrl = source.siteUrl || ('https://' + extractDomain(source.url));
+  const feedUrl = source.url || (source.urls && source.urls[0]) || '';
+  const siteUrl = source.siteUrl || ('https://' + extractDomain(feedUrl));
   const faviconUrl = `/api/v1/feed/icon?url=${encodeURIComponent(siteUrl)}`;
   const items = source.items || [];
-  const headerColor = COL_COLORS[col] || COL_COLORS[Math.floor(totalCols / 2)];
+  const colors = colColors || DEFAULT_COL_COLORS;
+  const headerColor = colors[col] || colors[Math.floor(totalCols / 2)];
   const isPaywalled = source.paywall && paywallProxy;
 
   const handleRefresh = async (e) => {
@@ -88,6 +90,7 @@ export function SourcePanel({ source, col, totalCols, paywallProxy, onRefresh })
                     )}
                     <span className="headline-tooltip-source">{source.label}</span>
                   </div>
+                  {item.image && <img className="headline-tooltip-image" src={item.image} alt="" />}
                   <div className="headline-tooltip-title">{smartQuotes(item.title)}</div>
                   {desc && <div className="headline-tooltip-desc">{smartQuotes(desc)}</div>}
                 </div>

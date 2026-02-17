@@ -41,8 +41,8 @@ export class TodoistFeedAdapter extends IFeedSourceAdapter {
       tasks.sort((a, b) => (b.priority || 1) - (a.priority || 1));
 
       return tasks.slice(0, 5).map(task => ({
-        id: `todoist:${task.id}`,
-        type: query.feed_type || 'grounding',
+        id: `tasks:${task.id}`,
+        tier: query.tier || 'compass',
         source: 'tasks',
         title: task.content || 'Task',
         body: task.description || null,
@@ -63,5 +63,15 @@ export class TodoistFeedAdapter extends IFeedSourceAdapter {
       this.#logger.warn?.('todoist.adapter.error', { error: err.message });
       return [];
     }
+  }
+
+  async getDetail(localId, meta, _username) {
+    const sections = [];
+    const items = [];
+    if (meta.taskPriority) items.push({ label: 'Priority', value: `P${meta.taskPriority}` });
+    if (meta.projectId) items.push({ label: 'Project', value: meta.projectId });
+    if (meta.labels?.length) items.push({ label: 'Labels', value: meta.labels.join(', ') });
+    if (items.length > 0) sections.push({ type: 'metadata', data: { items } });
+    return sections.length > 0 ? { sections } : null;
   }
 }

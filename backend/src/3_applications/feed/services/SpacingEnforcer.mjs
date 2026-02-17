@@ -18,40 +18,57 @@ export class SpacingEnforcer {
   enforce(items, config) {
     if (!items.length) return [];
 
+    // Build flat source config from tier-structured config
+    const sources = this.#flattenSources(config);
+
     let result = [...items];
 
     // 1. Source-level max_per_batch
-    result = this.#enforceMaxPerBatch(result, config);
+    result = this.#enforceMaxPerBatch(result, sources);
 
     // 2. Subsource-level max_per_batch
-    result = this.#enforceSubsourceMaxPerBatch(result, config);
+    result = this.#enforceSubsourceMaxPerBatch(result, sources);
 
     // 3. max_consecutive (no N+ same source in a row)
     result = this.#enforceMaxConsecutive(result, config.spacing?.max_consecutive ?? 1);
 
     // 4. Source-level min_spacing
-    result = this.#enforceMinSpacing(result, config);
+    result = this.#enforceMinSpacing(result, sources);
 
     // 5. Subsource-level min_spacing
-    result = this.#enforceSubsourceMinSpacing(result, config);
+    result = this.#enforceSubsourceMinSpacing(result, sources);
 
     return result;
   }
 
-  #enforceMaxPerBatch(items, config) {
+  /**
+   * Flatten tier-structured sources into a single { [sourceName]: config } map.
+   */
+  #flattenSources(config) {
+    const flat = {};
+    const tiers = config.tiers || {};
+    for (const tier of Object.values(tiers)) {
+      for (const [key, val] of Object.entries(tier.sources || {})) {
+        flat[key] = val;
+      }
+    }
+    return flat;
+  }
+
+  #enforceMaxPerBatch(items, sources) {
     const counts = {};
     return items.filter(item => {
-      const sourceConfig = config.sources?.[item.source];
+      const sourceConfig = sources[item.source];
       if (!sourceConfig?.max_per_batch) return true;
       counts[item.source] = (counts[item.source] || 0) + 1;
       return counts[item.source] <= sourceConfig.max_per_batch;
     });
   }
 
-  #enforceSubsourceMaxPerBatch(items, config) {
+  #enforceSubsourceMaxPerBatch(items, sources) {
     const counts = {};
     return items.filter(item => {
-      const sourceConfig = config.sources?.[item.source];
+      const sourceConfig = sources[item.source];
       if (!sourceConfig?.subsources?.max_per_batch) return true;
       const subKey = this.#getSubsourceKey(item);
       if (!subKey) return true;
@@ -111,12 +128,12 @@ export class SpacingEnforcer {
     return (before + after + 1) <= maxConsecutive;
   }
 
-  #enforceMinSpacing(items, config) {
+  #enforceMinSpacing(items, sources) {
     const result = [];
     const deferred = [];
 
     for (const item of items) {
-      const minSpacing = config.sources?.[item.source]?.min_spacing || 0;
+      const minSpacing = sources[item.source]?.min_spacing || 0;
       if (minSpacing <= 0) {
         result.push(item);
         continue;
@@ -135,7 +152,7 @@ export class SpacingEnforcer {
     }
 
     for (const item of deferred) {
-      const minSpacing = config.sources?.[item.source]?.min_spacing || 0;
+      const minSpacing = sources[item.source]?.min_spacing || 0;
       let inserted = false;
       for (let pos = 0; pos <= result.length; pos++) {
         if (this.#canInsertWithSpacing(result, pos, item.source, minSpacing)) {
@@ -160,19 +177,17 @@ export class SpacingEnforcer {
     return true;
   }
 
-  #enforceSubsourceMinSpacing(items, config) {
+  #enforceSubsourceMinSpacing(items, sources) {
     const result = [];
     const deferred = [];
 
     for (const item of items) {
-      const minSpacing = config.sources?.[item.source]?.subsources?.min_spacing || 0;
+      const minSpacing = sources[item.source]?.subsources?.min_spacing || 0;
       const subKey = this.#getSubsourceKey(item);
       if (minSpacing <= 0 || !subKey) {
         result.push(item);
         continue;
       }
-
-      const compositeKey = `${item.source}:${subKey}`;
 
       let lastIdx = -1;
       for (let i = result.length - 1; i >= 0; i--) {
@@ -188,7 +203,7 @@ export class SpacingEnforcer {
     }
 
     for (const item of deferred) {
-      const minSpacing = config.sources?.[item.source]?.subsources?.min_spacing || 0;
+      const minSpacing = sources[item.source]?.subsources?.min_spacing || 0;
       const subKey = this.#getSubsourceKey(item);
       let inserted = false;
       for (let pos = 0; pos <= result.length; pos++) {
@@ -215,6 +230,6 @@ export class SpacingEnforcer {
   }
 
   #getSubsourceKey(item) {
-    return item.meta?.subreddit || item.meta?.sourceId || item.meta?.feedTitle || null;
+    return item.meta?.subreddit || null;
   }
 }

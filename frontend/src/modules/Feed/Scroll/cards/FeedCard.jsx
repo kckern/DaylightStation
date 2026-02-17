@@ -322,30 +322,34 @@ function HealthBody({ item }) {
 }
 
 function PhotoBody({ item }) {
-  const photoAge = memoryAge(item.meta?.originalDate);
   const location = item.body || item.meta?.location || null;
+  const photoAge = memoryAge(item.meta?.originalDate);
+  const heading = location || item.title;
+  const desc = location ? photoAge : null;
+
   return (
     <>
-      {(location || photoAge) && (
-        <h3 style={{
-          margin: 0,
-          fontSize: '0.95rem',
-          fontWeight: 600,
-          color: '#fff',
-          lineHeight: 1.25,
-          wordBreak: 'break-word',
-        }}>
-          {location}{location && photoAge ? ' · ' : ''}{photoAge}
-        </h3>
-      )}
-      {item.title && (
+      <h3 style={{
+        margin: 0,
+        fontSize: '0.95rem',
+        fontWeight: 600,
+        color: '#fff',
+        lineHeight: 1.3,
+        display: '-webkit-box',
+        WebkitLineClamp: 2,
+        WebkitBoxOrient: 'vertical',
+        overflow: 'hidden',
+      }}>
+        {heading}
+      </h3>
+      {desc && (
         <p style={{
-          margin: '0.15rem 0 0',
+          margin: '0.3rem 0 0',
           fontSize: '0.8rem',
           color: '#868e96',
-          wordBreak: 'break-word',
+          lineHeight: 1.35,
         }}>
-          {item.title}
+          {desc}
         </p>
       )}
     </>
@@ -407,8 +411,6 @@ const BODY_MODULES = {
   plex: MediaBody,
 };
 
-const OVERLAY_SOURCES = new Set(['photo', 'plex']);
-
 // ─── Main Component ──────────────────────────────────────
 
 export default function FeedCard({ item }) {
@@ -417,18 +419,17 @@ export default function FeedCard({ item }) {
   const age = formatAge(item.timestamp);
   const iconUrl = proxyIcon(item.meta?.sourceIcon);
   const borderColor = TIER_COLORS[tier] ?? colorFromLabel(sourceName);
-  const useOverlay = item.image && OVERLAY_SOURCES.has(item.source);
 
   const BodyModule = BODY_MODULES[item.source] || DefaultBody;
 
   return (
     <div
-      className={`feed-card feed-card-${tier}${useOverlay ? ' feed-card-overlay' : ''}`}
+      className={`feed-card feed-card-${tier}`}
       style={{
         display: 'block',
         background: '#25262b',
         borderRadius: '12px',
-        borderLeft: useOverlay ? 'none' : `4px solid ${borderColor}`,
+        borderLeft: `4px solid ${borderColor}`,
         overflow: 'hidden',
         position: 'relative',
       }}
@@ -446,8 +447,8 @@ export default function FeedCard({ item }) {
               objectFit: 'cover',
             }}
           />
-          {/* Plex play button overlay */}
-          {item.source === 'plex' && (
+          {/* Play button overlay */}
+          {(item.source === 'plex' || item.meta?.youtubeId) && (
             <div style={{
               position: 'absolute',
               top: '50%',
@@ -466,19 +467,6 @@ export default function FeedCard({ item }) {
               </svg>
             </div>
           )}
-          {/* Overlay scrim with body content */}
-          {useOverlay && (
-            <div style={{
-              position: 'absolute',
-              bottom: 0,
-              left: 0,
-              right: 0,
-              padding: '2.5rem 1rem 0.75rem',
-              background: 'linear-gradient(transparent, rgba(0,0,0,0.75))',
-            }}>
-              <BodyModule item={item} />
-            </div>
-          )}
         </div>
       )}
 
@@ -489,7 +477,7 @@ export default function FeedCard({ item }) {
           display: 'flex',
           alignItems: 'center',
           gap: '0.4rem',
-          marginBottom: useOverlay ? '0' : '0.35rem',
+          marginBottom: '0.35rem',
         }}>
           {item.meta?.status && <StatusDot status={item.meta.status} />}
           {iconUrl && (
@@ -527,8 +515,8 @@ export default function FeedCard({ item }) {
           </span>
         </div>
 
-        {/* Body — only render below if NOT overlay mode */}
-        {!useOverlay && <BodyModule item={item} />}
+        {/* Body */}
+        <BodyModule item={item} />
 
         {/* Overdue badge (tasks) */}
         {item.source === 'tasks' && item.meta?.isOverdue && (

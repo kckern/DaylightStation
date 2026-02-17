@@ -2,10 +2,10 @@
 /**
  * FeedAssemblyService
  *
- * Pure orchestrator for mixed-content feed assembly.
+ * Orchestrator for mixed-content feed assembly.
  * Loads query configs, fans out to source adapters/handlers in parallel,
- * normalizes results to FeedItem shape, and interleaves external
- * content with grounding content using a time-decay ratio.
+ * normalizes results to FeedItem shape, and delegates to TierAssemblyService
+ * for four-tier interleaving (wire, library, scrapbook, compass).
  *
  * Source-specific logic lives in adapters (1_adapters/feed/sources/).
  * Only FreshRSS, Headlines, and Entropy remain inline (they depend on
@@ -14,6 +14,8 @@
  * @module applications/feed/services
  */
 
+import { ScrollConfigLoader } from './ScrollConfigLoader.mjs';
+
 export class FeedAssemblyService {
   #freshRSSAdapter;
   #headlineService;
@@ -21,17 +23,14 @@ export class FeedAssemblyService {
   #queryConfigs;
   #sourceAdapters;
   #scrollConfigLoader;
-  #spacingEnforcer;
+  #tierAssemblyService;
+  #feedContentService;
+  #feedCacheService;
   #logger;
 
-  /** Inline defaults used when no scrollConfigLoader is provided */
-  static #INLINE_DEFAULTS = Object.freeze({
-    batch_size: 15,
-    algorithm: Object.freeze({ grounding_ratio: 5, decay_rate: 0.85, min_ratio: 2 }),
-    focus_mode: Object.freeze({ grounding_ratio: 8, decay_rate: 0.9, min_ratio: 3 }),
-    spacing: Object.freeze({ max_consecutive: 1 }),
-    sources: Object.freeze({}),
-  });
+  /** LRU cache of recently-served items (keyed by item.id) */
+  #itemCache = new Map();
+  static #CACHE_MAX = 500;
 
   constructor({
     freshRSSAdapter,
@@ -40,7 +39,9 @@ export class FeedAssemblyService {
     queryConfigs = null,
     sourceAdapters = null,
     scrollConfigLoader = null,
-    spacingEnforcer = null,
+    tierAssemblyService = null,
+    feedContentService = null,
+    feedCacheService = null,
     logger = console,
     // Legacy params accepted but unused (kept for bootstrap compat)
     dataService,
@@ -48,13 +49,16 @@ export class FeedAssemblyService {
     contentQueryService,
     contentRegistry,
     userDataService,
+    spacingEnforcer,
   }) {
     this.#freshRSSAdapter = freshRSSAdapter;
     this.#headlineService = headlineService;
     this.#entropyService = entropyService;
     this.#queryConfigs = queryConfigs;
     this.#scrollConfigLoader = scrollConfigLoader;
-    this.#spacingEnforcer = spacingEnforcer;
+    this.#tierAssemblyService = tierAssemblyService;
+    this.#feedContentService = feedContentService || null;
+    this.#feedCacheService = feedCacheService;
     this.#logger = logger;
 
     this.#sourceAdapters = new Map();
@@ -72,23 +76,25 @@ export class FeedAssemblyService {
    * @param {Object} options
    * @param {number} [options.limit] - Max items to return (defaults to scroll config batch_size)
    * @param {string} [options.cursor] - Pagination cursor (unused in Phase 1)
-   * @param {string} [options.sessionStartedAt] - ISO timestamp for grounding ratio calc
-   * @param {string} [options.focus] - Focus source key (e.g. 'reddit:science'); uses focus_mode params
+   * @param {string} [options.focus] - Focus source key (e.g. 'reddit:science')
+   * @param {string[]} [options.sources] - Filter to specific source types (e.g. ['komga','reddit'])
    * @returns {Promise<{ items: FeedItem[], hasMore: boolean }>}
    */
-  async getNextBatch(username, { limit, cursor, sessionStartedAt, focus } = {}) {
-    // Load scroll config (fallback to inline defaults when no loader)
+  async getNextBatch(username, { limit, cursor, focus, sources, nocache } = {}) {
+    // Load scroll config
     const scrollConfig = this.#scrollConfigLoader?.load(username)
-      || FeedAssemblyService.#INLINE_DEFAULTS;
+      || { batch_size: 15, spacing: { max_consecutive: 1 }, tiers: {} };
 
-    // Resolve effective limit: explicit param > config batch_size > 15
+    // Resolve effective limit
     const effectiveLimit = limit ?? scrollConfig.batch_size ?? 15;
-
-    // Select algorithm params based on focus mode
-    const algoParams = focus ? scrollConfig.focus_mode : scrollConfig.algorithm;
 
     // Filter query configs to enabled sources
     const queries = this.#filterQueries(this.#queryConfigs || [], scrollConfig);
+
+    // Pass nocache flag to each query for cache bypass
+    if (nocache) {
+      for (const q of queries) q._noCache = true;
+    }
 
     // Fan out to all source handlers in parallel
     const results = await Promise.allSettled(
@@ -108,62 +114,109 @@ export class FeedAssemblyService {
       }
     }
 
-    // Separate external vs grounding
-    let external = allItems
-      .filter(item => item.type === 'external')
-      .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-
-    const grounding = allItems
-      .filter(item => item.type === 'grounding')
-      .sort((a, b) => (b.priority || 0) - (a.priority || 0));
-
-    // Focus mode: filter external to focused source/subsource
-    if (focus) {
-      const [focusSource, focusSubsource] = focus.split(':');
-      external = external.filter(item => {
-        if (item.source !== focusSource) return false;
-        if (focusSubsource) {
-          const subKey = item.meta?.subreddit || item.meta?.sourceId || item.meta?.feedTitle;
-          if (subKey !== focusSubsource) return false;
-        }
-        return true;
+    // Source filter: when specified, bypass tier assembly and return filtered items directly
+    if (sources && sources.length > 0) {
+      const filtered = allItems
+        .filter(item => sources.includes(item.source))
+        .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+        .slice(0, effectiveLimit);
+      for (const item of filtered) { this.#cacheItem(item); }
+      this.#logger.info?.('feed.assembly.batch', {
+        username, total: allItems.length, filtered: filtered.length,
+        sources: sources.join(','), returned: filtered.length,
       });
+      return { items: filtered, hasMore: filtered.length >= effectiveLimit };
     }
 
-    // Calculate grounding ratio based on session duration
-    const sessionMinutes = sessionStartedAt
-      ? (Date.now() - new Date(sessionStartedAt).getTime()) / 60000
-      : 0;
-    const ratio = this.#calculateGroundingRatio(sessionMinutes, algoParams);
+    // Delegate to TierAssemblyService for tier-based interleaving
+    const { items, hasMore } = this.#tierAssemblyService.assemble(
+      allItems, scrollConfig, { effectiveLimit, focus }
+    );
 
-    // Interleave
-    const interleaved = this.#interleave(external, grounding, ratio);
-
-    // Deduplicate by id
-    const seen = new Set();
-    const deduplicated = interleaved.filter(item => {
-      if (seen.has(item.id)) return false;
-      seen.add(item.id);
-      return true;
-    });
-
-    // Enforce spacing rules
-    const spaced = this.#spacingEnforcer?.enforce(deduplicated, scrollConfig) ?? deduplicated;
-
-    // Paginate
-    const items = spaced.slice(0, effectiveLimit);
-    const hasMore = spaced.length > effectiveLimit || external.length >= 10;
-
-    this.#logger.info?.('feed.assembly.batch', {
-      username,
-      total: allItems.length,
-      external: external.length,
-      grounding: grounding.length,
-      ratio,
-      returned: items.length,
-    });
+    // Cache all returned items for deep-link resolution
+    for (const item of items) {
+      this.#cacheItem(item);
+    }
 
     return { items, hasMore };
+  }
+
+  /**
+   * Fetch detail sections for a specific feed item.
+   * @param {string} itemId - Full item ID (e.g. "reddit:abc123")
+   * @param {Object} itemMeta - The item's meta object (passed from frontend)
+   * @param {string} username
+   * @returns {Promise<{ sections: Array } | null>}
+   */
+  async getDetail(itemId, itemMeta, username) {
+    const colonIdx = itemId.indexOf(':');
+    if (colonIdx === -1) return null;
+
+    const source = itemId.slice(0, colonIdx);
+    const localId = itemId.slice(colonIdx + 1);
+
+    // Check registered source adapters first
+    const adapter = this.#sourceAdapters.get(source);
+    if (adapter && typeof adapter.getDetail === 'function') {
+      const result = await adapter.getDetail(localId, itemMeta || {}, username);
+      if (result) return result;
+    }
+
+    // Generic fallback: any item with a link gets article extraction
+    if (itemMeta?.link) {
+      return this.#getArticleDetail(itemMeta.link);
+    }
+
+    return null;
+  }
+
+  /**
+   * Retrieve a cached item and its detail in one call (for deep-link resolution).
+   * @param {string} itemId - Full item ID (e.g. "reddit:abc123")
+   * @param {string} username
+   * @returns {Promise<{ item: FeedItem, sections, ogImage, ogDescription } | null>}
+   */
+  async getItemWithDetail(itemId, username) {
+    const item = this.#itemCache.get(itemId);
+    if (!item) return null;
+
+    const detail = await this.getDetail(itemId, item.meta || {}, username);
+    return {
+      item,
+      sections: detail?.sections || [],
+      ogImage: detail?.ogImage || null,
+      ogDescription: detail?.ogDescription || null,
+    };
+  }
+
+  #cacheItem(item) {
+    if (!item?.id) return;
+    this.#itemCache.delete(item.id);
+    this.#itemCache.set(item.id, item);
+    if (this.#itemCache.size > FeedAssemblyService.#CACHE_MAX) {
+      const oldest = this.#itemCache.keys().next().value;
+      this.#itemCache.delete(oldest);
+    }
+  }
+
+  async #getArticleDetail(url) {
+    if (!this.#feedContentService) {
+      this.#logger.warn?.('feed.detail.no_content_service');
+      return null;
+    }
+    try {
+      const result = await this.#feedContentService.extractReadableContent(url);
+      return {
+        ogImage: result.ogImage || null,
+        ogDescription: result.ogDescription || null,
+        sections: [
+          { type: 'article', data: { title: result.title, html: result.content, wordCount: result.wordCount } },
+        ],
+      };
+    } catch (err) {
+      this.#logger.warn?.('feed.detail.article.error', { url, error: err.message });
+      return null;
+    }
   }
 
   // ======================================================================
@@ -171,6 +224,23 @@ export class FeedAssemblyService {
   // ======================================================================
 
   async #fetchSource(query, username) {
+    const sourceKey = query._filename?.replace('.yml', '') || query.type;
+
+    // If no cache service, fetch directly (backwards compat)
+    if (!this.#feedCacheService) {
+      return this.#fetchSourceDirect(query, username);
+    }
+
+    const noCache = query._noCache || false;
+    return this.#feedCacheService.getItems(
+      sourceKey,
+      () => this.#fetchSourceDirect(query, username),
+      username,
+      { noCache }
+    );
+  }
+
+  async #fetchSourceDirect(query, username) {
     // Check adapter registry first
     const adapter = this.#sourceAdapters.get(query.type);
     if (adapter) {
@@ -202,7 +272,7 @@ export class FeedAssemblyService {
     );
     return (items || []).map(item => this.#normalizeToFeedItem({
       id: `freshrss:${item.id}`,
-      type: query.feed_type || 'external',
+      tier: query.tier || 'wire',
       source: 'freshrss',
       title: item.title,
       body: item.content ? item.content.replace(/<[^>]*>/g, '').slice(0, 200) : null,
@@ -221,7 +291,10 @@ export class FeedAssemblyService {
 
   async #fetchHeadlines(query, username) {
     if (!this.#headlineService) return [];
-    const result = await this.#headlineService.getAllHeadlines(username);
+    const pages = this.#headlineService.getPageList(username);
+    const firstPageId = pages[0]?.id;
+    if (!firstPageId) return [];
+    const result = await this.#headlineService.getAllHeadlines(username, firstPageId);
     const items = [];
     const totalLimit = query.limit || 30;
     const sourceEntries = Object.entries(result.sources || {});
@@ -235,11 +308,11 @@ export class FeedAssemblyService {
       for (const item of (source.items || []).slice(0, sourceLimit)) {
         items.push(this.#normalizeToFeedItem({
           id: `headline:${sourceId}:${item.link}`,
-          type: query.feed_type || 'external',
+          tier: query.tier || 'wire',
           source: 'headline',
           title: item.title,
           body: item.desc || null,
-          image: null,
+          image: item.image || null,
           link: item.link,
           timestamp: item.timestamp || new Date().toISOString(),
           priority: query.priority || 0,
@@ -248,6 +321,8 @@ export class FeedAssemblyService {
             sourceLabel: source.label,
             sourceName: source.label || sourceId,
             sourceIcon: this.#getFaviconUrl(item.link),
+            paywall: source.paywall || false,
+            paywallProxy: source.paywall ? result.paywallProxy : null,
           },
         }));
       }
@@ -264,7 +339,7 @@ export class FeedAssemblyService {
     }
     return items.map(item => this.#normalizeToFeedItem({
       id: `entropy:${item.source}`,
-      type: query.feed_type || 'grounding',
+      tier: query.tier || 'compass',
       source: 'entropy',
       title: item.name || item.source,
       body: item.label || `${item.value} since last update`,
@@ -280,15 +355,33 @@ export class FeedAssemblyService {
   // Helpers
   // ======================================================================
 
+  static #stripInlineMarkdown(text) {
+    if (!text) return { text: text || '', firstUrl: null };
+    let firstUrl = null;
+    const stripped = text.replace(/\[([^\]]*)\]\(([^)]+)\)/g, (_, label, url) => {
+      if (!firstUrl) firstUrl = url;
+      return label;
+    });
+    const cleaned = stripped
+      .replace(/\*\*(.+?)\*\*/g, '$1')
+      .replace(/\*(.+?)\*/g, '$1')
+      .replace(/`(.+?)`/g, '$1');
+    return { text: cleaned, firstUrl };
+  }
+
   #normalizeToFeedItem(raw) {
+    const { text: title, firstUrl: titleUrl } = FeedAssemblyService.#stripInlineMarkdown(raw.title);
+    const { text: body, firstUrl: bodyUrl } = FeedAssemblyService.#stripInlineMarkdown(raw.body);
+    const link = raw.link || titleUrl || bodyUrl || null;
+
     return {
       id: raw.id,
-      type: raw.type,
+      tier: raw.tier,
       source: raw.source,
-      title: raw.title || '',
-      body: raw.body || null,
+      title,
+      body: body || null,
       image: raw.image || null,
-      link: raw.link || null,
+      link,
       timestamp: raw.timestamp || new Date().toISOString(),
       priority: raw.priority || 0,
       meta: {
@@ -307,43 +400,17 @@ export class FeedAssemblyService {
   }
 
   /**
-   * Filter query configs to sources enabled in scroll config.
-   * When `scrollConfig.sources` is empty, all queries pass (empty = all enabled).
-   *
-   * Uses `query._filename` (stripped of `.yml`) as the source key to check
-   * against the scroll config sources map.
+   * Filter query configs to sources enabled in scroll config tiers.
+   * When no sources are configured across any tier, all queries pass.
    */
   #filterQueries(queries, scrollConfig) {
-    const sourceKeys = Object.keys(scrollConfig.sources || {});
-    if (sourceKeys.length === 0) return queries; // empty means all enabled
+    const enabledSources = ScrollConfigLoader.getEnabledSources(scrollConfig);
+    if (enabledSources.size === 0) return queries;
 
     return queries.filter(query => {
       const key = query._filename?.replace('.yml', '');
-      return key && sourceKeys.includes(key);
+      return key && enabledSources.has(key);
     });
-  }
-
-  #calculateGroundingRatio(sessionMinutes, params) {
-    const { grounding_ratio = 5, decay_rate = 0.85, min_ratio = 2 } = params || {};
-    return Math.max(min_ratio, Math.floor(grounding_ratio * Math.pow(decay_rate, sessionMinutes / 5)));
-  }
-
-  #interleave(external, grounding, ratio) {
-    const result = [];
-    let gIdx = 0;
-
-    for (let i = 0; i < external.length; i++) {
-      result.push(external[i]);
-      if ((i + 1) % ratio === 0 && gIdx < grounding.length) {
-        result.push(grounding[gIdx++]);
-      }
-    }
-
-    while (gIdx < grounding.length) {
-      result.push(grounding[gIdx++]);
-    }
-
-    return result;
   }
 
   #extractImage(html) {

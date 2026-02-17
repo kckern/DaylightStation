@@ -3,7 +3,7 @@
  * HeadlineService
  *
  * Orchestrates headline harvesting, caching, and retrieval.
- * Reads user config for source list, delegates to harvester and store.
+ * Reads user config for headline pages (multi-page, config-driven).
  *
  * @module applications/feed/services
  */
@@ -35,34 +35,58 @@ export class HeadlineService {
   }
 
   /**
-   * Get all headline sources from config (standalone + FreshRSS)
+   * Get all configured headline pages
    * @param {string} username
-   * @returns {Array<{ id, label, url }>}
+   * @returns {Array<{ id, label, grid, col_colors, sources }>}
    */
-  #getSources(username) {
+  #getPages(username) {
     const config = this.#getUserConfig(username);
-    const sources = [];
-
-    // Standalone RSS sources
-    if (config.headline_sources) {
-      sources.push(...config.headline_sources);
-    }
-
-    // FreshRSS headline feeds would be resolved here
-    // (requires FreshRSS adapter to map feed_id to URL — future enhancement)
-
-    return sources;
+    return config.headline_pages || [];
   }
 
   /**
-   * Harvest all configured headline sources
+   * Get a single headline page config by ID
    * @param {string} username
+   * @param {string} pageId
+   * @returns {{ id, label, grid, col_colors, sources }|null}
+   */
+  #getPage(username, pageId) {
+    return this.#getPages(username).find(p => p.id === pageId) || null;
+  }
+
+  /**
+   * Get all sources across all pages (or for a specific page)
+   * @param {string} username
+   * @param {string} [pageId]
+   * @returns {Array<{ id, label, url }>}
+   */
+  #getSources(username, pageId) {
+    const pages = pageId
+      ? [this.#getPage(username, pageId)].filter(Boolean)
+      : this.#getPages(username);
+    return pages.flatMap(p => p.sources || []);
+  }
+
+  /**
+   * Return page metadata (id + label) for all headline pages
+   * @param {string} username
+   * @returns {Array<{ id, label }>}
+   */
+  getPageList(username) {
+    return this.#getPages(username).map(p => ({ id: p.id, label: p.label }));
+  }
+
+  /**
+   * Harvest all configured headline sources (optionally filtered to one page)
+   * @param {string} username
+   * @param {string} [pageId]
    * @returns {Promise<{ harvested, errors, totalItems }>}
    */
-  async harvestAll(username) {
-    const sources = this.#getSources(username);
+  async harvestAll(username, pageId) {
+    const sources = this.#getSources(username, pageId);
     const config = this.#getUserConfig(username);
     const retentionHours = config.headlines?.retention_hours || 48;
+    const minItems = config.headlines?.max_per_source || 12;
     const cutoff = new Date(Date.now() - retentionHours * 60 * 60 * 1000);
 
     let errors = 0;
@@ -72,7 +96,11 @@ export class HeadlineService {
       try {
         const result = await this.#harvester.harvest(source);
         await this.#headlineStore.saveSource(source.id, result, username);
-        await this.#headlineStore.pruneOlderThan(source.id, cutoff, username);
+        // Only prune if enough items would survive — low-volume feeds keep all items
+        const survivorCount = result.items.filter(i => new Date(i.timestamp).getTime() >= cutoff.getTime()).length;
+        if (survivorCount >= minItems) {
+          await this.#headlineStore.pruneOlderThan(source.id, cutoff, username);
+        }
 
         if (result.error) errors++;
         totalItems += result.items.length;
@@ -92,6 +120,7 @@ export class HeadlineService {
 
     this.#logger.info?.('headline.service.harvestAll.complete', {
       username,
+      pageId: pageId || 'all',
       harvested: sources.length,
       errors,
       totalItems,
@@ -101,13 +130,17 @@ export class HeadlineService {
   }
 
   /**
-   * Get all cached headlines grouped by source, with grid layout metadata
+   * Get all cached headlines for a specific page, with grid layout metadata
    * @param {string} username
-   * @returns {Promise<{ grid: Object, sources: Object, lastHarvest: string|null }>}
+   * @param {string} pageId
+   * @returns {Promise<{ grid, col_colors, sources, lastHarvest, paywallProxy }|null>}
    */
-  async getAllHeadlines(username) {
+  async getAllHeadlines(username, pageId) {
+    const page = this.#getPage(username, pageId);
+    if (!page) return null;
+
     const config = this.#getUserConfig(username);
-    const configSources = config.headline_sources || [];
+    const configSources = page.sources || [];
     const cached = await this.#headlineStore.loadAllSources(username);
 
     const headlineConfig = config.headlines || {};
@@ -128,7 +161,8 @@ export class HeadlineService {
         items: filtered,
         row: src.row,
         col: src.col,
-        url: src.url,
+        url: src.url || null,
+        urls: src.urls || null,
         siteUrl: src.site_url || null,
         paywall: paywallSources.has(src.id),
       };
@@ -141,7 +175,8 @@ export class HeadlineService {
       .pop() || null;
 
     return {
-      grid: config.headline_grid || null,
+      grid: page.grid || null,
+      col_colors: page.col_colors || null,
       sources,
       lastHarvest,
       paywallProxy: paywallConfig.url_prefix || null,
@@ -182,7 +217,7 @@ export class HeadlineService {
   }
 
   /**
-   * Harvest a single source by ID
+   * Harvest a single source by ID (searches all pages)
    * @param {string} sourceId
    * @param {string} username
    * @returns {Promise<{ items: number, error: boolean }>}
@@ -194,11 +229,15 @@ export class HeadlineService {
 
     const config = this.#getUserConfig(username);
     const retentionHours = config.headlines?.retention_hours || 48;
+    const minItems = config.headlines?.max_per_source || 12;
     const cutoff = new Date(Date.now() - retentionHours * 60 * 60 * 1000);
 
     const result = await this.#harvester.harvest(source);
     await this.#headlineStore.saveSource(source.id, result, username);
-    await this.#headlineStore.pruneOlderThan(source.id, cutoff, username);
+    const survivorCount = result.items.filter(i => new Date(i.timestamp).getTime() >= cutoff.getTime()).length;
+    if (survivorCount >= minItems) {
+      await this.#headlineStore.pruneOlderThan(source.id, cutoff, username);
+    }
 
     return { items: result.items.length, error: !!result.error };
   }

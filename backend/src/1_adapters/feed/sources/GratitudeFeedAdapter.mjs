@@ -34,7 +34,7 @@ export class GratitudeFeedAdapter extends IFeedSourceAdapter {
         const text = entry.item?.text || (typeof entry.item === 'string' ? entry.item : null) || entry.text || '';
         return {
           id: `gratitude:${entry.id || i}`,
-          type: query.feed_type || 'grounding',
+          tier: query.tier || 'compass',
           source: 'gratitude',
           title: 'Gratitude',
           body: text,

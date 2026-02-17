@@ -25,6 +25,19 @@ export class IFeedSourceAdapter {
   async fetchItems(query, username) {
     throw new Error('IFeedSourceAdapter.fetchItems must be implemented');
   }
+
+  /**
+   * Fetch detail content for a specific item.
+   * Optional — adapters that don't support detail return null.
+   *
+   * @param {string} localId - The local portion of the item ID
+   * @param {Object} meta - The item's meta object from the scroll response
+   * @param {string} username - Current user
+   * @returns {Promise<{ sections: Array<{ type: string, data: Object }> } | null>}
+   */
+  async getDetail(localId, meta, username) {
+    return null;
+  }
 }
 
 /**

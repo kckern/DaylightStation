@@ -218,6 +218,14 @@
     letter-spacing: 0.03em;
   }
 
+  .headline-tooltip-image {
+    width: 100%;
+    max-height: 160px;
+    object-fit: cover;
+    border-radius: 4px;
+    margin-bottom: 0.35rem;
+  }
+
   .headline-tooltip-title {
     color: #111;
     font-size: 0.75rem;

@@ -44,7 +44,7 @@ export class WeatherFeedAdapter extends IFeedSourceAdapter {
 
       return [{
         id: `weather:${new Date().toISOString().split('T')[0]}`,
-        type: query.feed_type || 'grounding',
+        tier: query.tier || 'compass',
         source: 'weather',
         title: condition,
         body: `${tempF}\u00b0F (feels ${feelsF}\u00b0F)`,
@@ -63,5 +63,16 @@ export class WeatherFeedAdapter extends IFeedSourceAdapter {
       this.#logger.warn?.('weather.adapter.error', { error: err.message });
       return [];
     }
+  }
+
+  async getDetail(localId, meta, _username) {
+    const items = [];
+    if (meta.tempF != null) items.push({ label: 'Temperature', value: `${meta.tempF}°F` });
+    if (meta.feelsF != null) items.push({ label: 'Feels Like', value: `${meta.feelsF}°F` });
+    if (meta.cloud != null) items.push({ label: 'Cloud Cover', value: `${meta.cloud}%` });
+    if (meta.precip != null) items.push({ label: 'Precipitation', value: `${meta.precip} mm` });
+    if (meta.aqi) items.push({ label: 'AQI', value: String(meta.aqi) });
+    if (items.length === 0) return null;
+    return { sections: [{ type: 'stats', data: { items } }] };
   }
 }

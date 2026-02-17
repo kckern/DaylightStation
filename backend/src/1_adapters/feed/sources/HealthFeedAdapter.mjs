@@ -33,7 +33,7 @@ export class HealthFeedAdapter extends IFeedSourceAdapter {
 
       return [{
         id: `health:${today}`,
-        type: query.feed_type || 'grounding',
+        tier: query.tier || 'compass',
         source: 'health',
         title: 'Daily Health',
         body: this.#formatSummary(dayData),
@@ -47,6 +47,17 @@ export class HealthFeedAdapter extends IFeedSourceAdapter {
       this.#logger.warn?.('health.adapter.error', { error: err.message });
       return [];
     }
+  }
+
+  async getDetail(localId, meta, _username) {
+    const items = [];
+    if (meta.weight?.lbs) items.push({ label: 'Weight', value: `${meta.weight.lbs} lbs` });
+    if (meta.weight?.trend != null) items.push({ label: 'Trend', value: `${meta.weight.trend > 0 ? '+' : ''}${meta.weight.trend}` });
+    if (meta.steps) items.push({ label: 'Steps', value: meta.steps.toLocaleString() });
+    if (meta.nutrition?.calories) items.push({ label: 'Calories', value: String(meta.nutrition.calories) });
+    if (meta.nutrition?.protein) items.push({ label: 'Protein', value: `${meta.nutrition.protein}g` });
+    if (items.length === 0) return null;
+    return { sections: [{ type: 'stats', data: { items } }] };
   }
 
   #formatSummary(data) {

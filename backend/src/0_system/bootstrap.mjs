@@ -95,6 +95,7 @@ import { ImmichProxyAdapter } from '#adapters/proxy/ImmichProxyAdapter.mjs';
 import { AudiobookshelfProxyAdapter } from '#adapters/proxy/AudiobookshelfProxyAdapter.mjs';
 import { FreshRSSProxyAdapter } from '#adapters/proxy/FreshRSSProxyAdapter.mjs';
 import { KomgaProxyAdapter } from '#adapters/proxy/KomgaProxyAdapter.mjs';
+import { RedditImageProxyAdapter } from '#adapters/proxy/RedditImageProxyAdapter.mjs';
 
 // Feed domain imports
 import { FreshRSSFeedAdapter } from '#adapters/feed/FreshRSSFeedAdapter.mjs';
@@ -1259,6 +1260,9 @@ export function createProxyService(config) {
       { logger }
     ));
   }
+
+  // Register Reddit image proxy (no config needed — proxies public CDNs)
+  proxyService.register(new RedditImageProxyAdapter({ logger }));
 
   return proxyService;
 }

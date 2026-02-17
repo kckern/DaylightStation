@@ -11,13 +11,15 @@ import { IFeedSourceAdapter } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
 
 export class ImmichFeedAdapter extends IFeedSourceAdapter {
   #contentQueryService;
+  #contentRegistry;
   #webUrl;
   #logger;
 
-  constructor({ contentQueryService, webUrl = null, logger = console }) {
+  constructor({ contentQueryService, contentRegistry = null, webUrl = null, logger = console }) {
     super();
     if (!contentQueryService) throw new Error('ImmichFeedAdapter requires contentQueryService');
     this.#contentQueryService = contentQueryService;
+    this.#contentRegistry = contentRegistry;
     this.#webUrl = webUrl;
     this.#logger = logger;
   }
@@ -32,17 +34,22 @@ export class ImmichFeedAdapter extends IFeedSourceAdapter {
         take: query.limit || 3,
         sort: 'random',
       });
-      return (result.items || []).map(item => {
+      const items = result.items || [];
+
+      // Enrich with EXIF data (capturedAt, location) via individual asset lookups
+      const enriched = await this.#enrichWithExif(items);
+
+      return enriched.map(({ item, exif }) => {
         const localId = item.localId || item.id?.replace?.('immich:', '') || item.id;
-        const created = item.metadata?.capturedAt || item.metadata?.createdAt || null;
-        const location = item.metadata?.location || null;
+        const created = exif?.capturedAt || item.metadata?.capturedAt || null;
+        const location = exif?.location || item.metadata?.location || null;
         return {
           id: `immich:${localId}`,
-          type: query.feed_type || 'grounding',
+          tier: query.tier || 'scrapbook',
           source: 'photo',
           title: created ? this.#formatDate(created) : 'Memory',
           body: location,
-          image: item.thumbnail || `/api/v1/proxy/immich/assets/${localId}/original`,
+          image: item.imageUrl || `/api/v1/proxy/immich/assets/${localId}/original`,
           link: this.#webUrl ? `${this.#webUrl}/photos/${localId}` : null,
           timestamp: created || new Date().toISOString(),
           priority: query.priority || 5,
@@ -50,7 +57,7 @@ export class ImmichFeedAdapter extends IFeedSourceAdapter {
             location,
             originalDate: created,
             sourceName: 'Photos',
-            sourceIcon: null,
+            sourceIcon: 'https://immich.app',
           },
         };
       });
@@ -58,6 +65,113 @@ export class ImmichFeedAdapter extends IFeedSourceAdapter {
       this.#logger.warn?.('immich.adapter.error', { error: err.message });
       return [];
     }
+  }
+
+  async getDetail(localId, meta, _username) {
+    const sections = [];
+
+    let capturedAt = null;
+    let isVideo = false;
+    const exifItems = [];
+    const immichAdapter = this.#contentRegistry?.get('immich');
+    if (immichAdapter && typeof immichAdapter.getViewable === 'function') {
+      try {
+        const viewable = await immichAdapter.getViewable(localId);
+        isVideo = viewable?.metadata?.type === 'VIDEO';
+        capturedAt = viewable?.metadata?.capturedAt || null;
+        const exif = viewable?.metadata?.exif;
+        if (exif) {
+          if (exif.make) exifItems.push({ label: 'Camera', value: `${exif.make} ${exif.model || ''}`.trim() });
+        }
+      } catch { /* proceed without EXIF */ }
+    }
+
+    if (isVideo) {
+      sections.push({ type: 'player', data: { contentId: `immich:${localId}` } });
+    }
+
+    if (exifItems.length > 0) {
+      sections.push({ type: 'metadata', data: { items: exifItems } });
+    }
+
+    // Fetch sibling photos from the same time period
+    if (capturedAt && immichAdapter && typeof immichAdapter.search === 'function') {
+      try {
+        const gallery = await this.#fetchSiblingPhotos(immichAdapter, localId, capturedAt);
+        if (gallery.length > 0) {
+          sections.push({ type: 'gallery', data: { items: gallery } });
+        }
+      } catch { /* proceed without gallery */ }
+    }
+
+    return { sections };
+  }
+
+  async #fetchSiblingPhotos(adapter, excludeId, capturedAt) {
+    const d = new Date(capturedAt);
+    const MAX = 16;
+
+    const ranges = [
+      [new Date(d.getFullYear(), d.getMonth(), d.getDate()),
+       new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999)],
+      [new Date(d.getFullYear(), d.getMonth(), d.getDate() - d.getDay()),
+       new Date(d.getFullYear(), d.getMonth(), d.getDate() + (6 - d.getDay()), 23, 59, 59, 999)],
+      [new Date(d.getFullYear(), d.getMonth(), 1),
+       new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999)],
+    ];
+
+    for (const [start, end] of ranges) {
+      const result = await adapter.search({
+        dateFrom: start.toISOString(),
+        dateTo: end.toISOString(),
+        take: MAX + 1,
+        mediaType: 'IMAGE',
+      });
+
+      const items = (result.items || [])
+        .filter(item => {
+          const id = item.localId || item.id?.replace?.('immich:', '') || item.id;
+          return id !== excludeId;
+        })
+        .slice(0, MAX)
+        .map(item => {
+          const id = item.localId || item.id?.replace?.('immich:', '') || item.id;
+          return {
+            id: `immich:${id}`,
+            source: 'photo',
+            image: `/api/v1/proxy/immich/assets/${id}/thumbnail`,
+            timestamp: item.metadata?.capturedAt || null,
+            meta: { sourceName: 'Photos', sourceIcon: 'https://immich.app' },
+          };
+        });
+
+      if (items.length >= 2) return items;
+    }
+
+    return [];
+  }
+
+  async #enrichWithExif(items) {
+    const immichAdapter = this.#contentRegistry?.get('immich');
+    if (!immichAdapter || typeof immichAdapter.getViewable !== 'function') {
+      return items.map(item => ({ item, exif: null }));
+    }
+
+    return Promise.all(items.map(async (item) => {
+      try {
+        const localId = item.localId || item.id?.replace?.('immich:', '') || item.id;
+        const viewable = await immichAdapter.getViewable(localId);
+        return {
+          item,
+          exif: viewable?.metadata ? {
+            capturedAt: viewable.metadata.capturedAt,
+            location: viewable.metadata.exif?.city || null,
+          } : null,
+        };
+      } catch {
+        return { item, exif: null };
+      }
+    }));
   }
 
   #formatDate(iso) {

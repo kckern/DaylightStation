@@ -4,15 +4,11 @@
   background: #111;
 }
 
-.scroll-sidebar {
-  display: none;
-}
-
 .scroll-view {
   max-width: 540px;
   width: 100%;
   margin: 0 auto;
-  padding: 0.75rem;
+  padding: 0.75rem 0;
   min-height: 100vh;
   background: #111;
 }
@@ -25,22 +21,31 @@
 
 .scroll-item-wrapper {
   cursor: pointer;
+  container-type: inline-size;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  user-select: none;
 
-  // Photo cards get full-bleed treatment on mobile
   .feed-card-overlay {
-    margin: 0 -0.75rem;
     border-radius: 0;
   }
 }
 
+// Flush cards on mobile — override inline border-radius
+.scroll-item-wrapper .feed-card {
+  border-radius: 0 !important;
+}
+
+// Cap portrait images at 9:16 (tallest allowed ratio)
+.feed-card-image {
+  max-height: calc(100cqi * 16 / 9);
+  object-fit: cover;
+}
+
 // Desktop: masonry grid
 @media (min-width: 900px) {
-  .scroll-sidebar {
-    display: none;
-  }
-
   .scroll-view {
-    max-width: 1400px;
+    max-width: none;
     flex: 1;
     padding: 1rem 2rem;
     border: none;
@@ -56,16 +61,17 @@
     break-inside: avoid;
     margin-bottom: 16px;
 
+    .feed-card {
+      border-radius: 12px !important;
+    }
+
     .feed-card-overlay {
       margin: 0;
       border-radius: 12px;
     }
   }
 
-  // 16:9 image crop in masonry
-  .feed-card-image {
-    aspect-ratio: 16 / 9;
-  }
+  // Remove forced 16:9 landscape — images use natural ratio (capped at 9:16 portrait above)
 
   // Hover state for cards
   .feed-card {
@@ -74,6 +80,20 @@
     &:hover {
       filter: brightness(1.1);
     }
+  }
+
+  .scroll-skeleton {
+    display: block;
+    column-width: 320px;
+    column-gap: 16px;
+  }
+
+  .scroll-skeleton-card {
+    break-inside: avoid;
+    margin-bottom: 16px;
+
+    &:nth-child(odd) { height: 200px; }
+    &:nth-child(even) { height: 160px; }
   }
 }
 

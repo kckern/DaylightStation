@@ -135,6 +135,9 @@ export class WebContentAdapter {
       ?.replace(/&amp;/g, '&')?.replace(/&lt;/g, '<')?.replace(/&gt;/g, '>') || null;
 
     const ogImage = html.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i)?.[1] || null;
+    const ogDescription = html.match(/<meta[^>]*property=["']og:description["'][^>]*content=["']([^"']+)["']/i)?.[1]
+      || html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([^"']+)["']/i)?.[1]
+      || null;
 
     let bodyHtml = html.match(/<article[^>]*>([\s\S]*?)<\/article>/i)?.[1]
       || html.match(/<main[^>]*>([\s\S]*?)<\/main>/i)?.[1]
@@ -165,6 +168,6 @@ export class WebContentAdapter {
     const words = text.split(/\s+/);
     const content = words.length > MAX_WORDS ? words.slice(0, MAX_WORDS).join(' ') + '...' : text;
 
-    return { title, content, wordCount: words.length, ogImage };
+    return { title, content, wordCount: words.length, ogImage, ogDescription };
   }
 }
