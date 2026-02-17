@@ -61,7 +61,7 @@ import { createLocalRouter } from '#api/v1/routers/local.mjs';
 import { createQueriesRouter } from '#api/v1/routers/queries.mjs';
 
 // Fitness domain imports
-import { SessionService } from '#domains/fitness/services/SessionService.mjs';
+import { SessionService } from '#apps/fitness/services/SessionService.mjs';
 import { FitnessProgressClassifier } from '#domains/fitness/index.mjs';
 import { YamlSessionDatastore } from '#adapters/persistence/yaml/YamlSessionDatastore.mjs';
 import { AmbientLedAdapter } from '#adapters/fitness/AmbientLedAdapter.mjs';
@@ -100,6 +100,7 @@ import { RedditImageProxyAdapter } from '#adapters/proxy/RedditImageProxyAdapter
 // Feed domain imports
 import { FreshRSSFeedAdapter } from '#adapters/feed/FreshRSSFeedAdapter.mjs';
 import { RssHeadlineHarvester } from '#adapters/feed/RssHeadlineHarvester.mjs';
+import { WebContentAdapter } from '#adapters/feed/WebContentAdapter.mjs';
 import { YamlHeadlineCacheStore } from '#adapters/persistence/yaml/YamlHeadlineCacheStore.mjs';
 import { HeadlineService } from '#apps/feed/services/HeadlineService.mjs';
 
@@ -965,11 +966,14 @@ export function createFeedServices(config) {
 
   const headlineStore = new YamlHeadlineCacheStore({ dataService, logger });
 
+  const webContentGateway = new WebContentAdapter({ logger });
+
   const headlineService = new HeadlineService({
     headlineStore,
     harvester,
     dataService,
     configService,
+    webContentGateway,
     logger,
   });
 

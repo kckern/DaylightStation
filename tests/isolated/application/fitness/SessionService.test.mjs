@@ -1,6 +1,6 @@
-// tests/unit/domains/fitness/services/SessionService.test.mjs
+// tests/isolated/domain/fitness/services/SessionService.test.mjs
 import { jest } from '@jest/globals';
-import { SessionService } from '#domains/fitness/services/SessionService.mjs';
+import { SessionService } from '#apps/fitness/services/SessionService.mjs';
 
 describe('SessionService', () => {
   let service;
