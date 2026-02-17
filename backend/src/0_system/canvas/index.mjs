@@ -6,6 +6,7 @@
  */
 
 import { CanvasService } from './CanvasService.mjs';
+import { loadImage } from './CanvasService.mjs';
 
-export { CanvasService };
+export { CanvasService, loadImage };
 export * from './drawingUtils.mjs';

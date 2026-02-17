@@ -6,7 +6,7 @@
  * Handles font registration and canvas creation.
  */
 
-import { createCanvas, registerFont } from 'canvas';
+import { createCanvas, registerFont, loadImage } from 'canvas';
 import fs from 'fs';
 import path from 'path';
 
@@ -83,5 +83,7 @@ export class CanvasService {
     return { canvas, ctx };
   }
 }
+
+export { loadImage };
 
 export default CanvasService;
