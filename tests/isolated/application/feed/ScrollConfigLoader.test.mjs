@@ -16,45 +16,51 @@ describe('ScrollConfigLoader', () => {
   });
 
   describe('load()', () => {
-    test('returns defaults when no scroll.yml exists', () => {
+    test('returns defaults when no config/feed exists', () => {
       const config = loader.load('kckern');
       expect(config.batch_size).toBe(15);
-      expect(config.algorithm.grounding_ratio).toBe(5);
-      expect(config.algorithm.decay_rate).toBe(0.85);
-      expect(config.algorithm.min_ratio).toBe(2);
-      expect(config.spacing.max_consecutive).toBe(1);
-      expect(config.sources).toEqual({});
-      expect(mockDataService.user.read).toHaveBeenCalledWith('config/scroll', 'kckern');
+      expect(config.wire_decay_batches).toBe(10);
+      expect(config.spacing).toEqual({
+        max_consecutive: 1,
+        max_consecutive_subsource: 2,
+      });
+      expect(config.tiers.wire.sources).toEqual({});
+      expect(config.tiers.library.sources).toEqual({});
+      expect(mockDataService.user.read).toHaveBeenCalledWith('config/feed', 'kckern');
     });
 
     test('merges user overrides with defaults', () => {
       mockDataService.user.read.mockReturnValue({
-        batch_size: 20,
-        algorithm: { grounding_ratio: 8 },
-        sources: {
-          reddit: { max_per_batch: 5, min_spacing: 2 },
+        scroll: {
+          batch_size: 20,
+          spacing: { max_consecutive: 3 },
+          tiers: {
+            wire: {
+              sources: { reddit: { max_per_batch: 5 } },
+            },
+          },
         },
       });
       const config = loader.load('kckern');
       expect(config.batch_size).toBe(20);
-      expect(config.algorithm.grounding_ratio).toBe(8);
-      expect(config.algorithm.decay_rate).toBe(0.85); // default preserved
-      expect(config.algorithm.min_ratio).toBe(2);      // default preserved
-      expect(config.sources.reddit.max_per_batch).toBe(5);
+      expect(config.spacing.max_consecutive).toBe(3);
+      expect(config.spacing.max_consecutive_subsource).toBe(2); // default preserved
+      expect(config.tiers.wire.sources.reddit.max_per_batch).toBe(5);
     });
 
-    test('merges focus_mode with defaults', () => {
+    test('merges spacing subsource override with defaults', () => {
       mockDataService.user.read.mockReturnValue({
-        focus_mode: { grounding_ratio: 10 },
+        scroll: {
+          spacing: { max_consecutive_subsource: 5 },
+        },
       });
       const config = loader.load('kckern');
-      expect(config.focus_mode.grounding_ratio).toBe(10);
-      expect(config.focus_mode.decay_rate).toBe(0.9);  // default
-      expect(config.focus_mode.min_ratio).toBe(3);      // default
+      expect(config.spacing.max_consecutive).toBe(1);            // default preserved
+      expect(config.spacing.max_consecutive_subsource).toBe(5);  // overridden
     });
 
     test('does not mutate defaults across calls', () => {
-      mockDataService.user.read.mockReturnValue({ batch_size: 99 });
+      mockDataService.user.read.mockReturnValue({ scroll: { batch_size: 99 } });
       loader.load('alice');
       mockDataService.user.read.mockReturnValue(null);
       const config = loader.load('bob');
