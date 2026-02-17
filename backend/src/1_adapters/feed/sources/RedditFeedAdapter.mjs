@@ -104,6 +104,37 @@ export class RedditFeedAdapter extends IFeedSourceAdapter {
     return [...new Set(subs)];
   }
 
+  /**
+   * Paginated fetch — returns items plus a cursor for the next page.
+   *
+   * @param {Object} query - Query config from YAML
+   * @param {string} username
+   * @param {Object} [options]
+   * @param {string|null} [options.cursor] - Reddit "after" token from a previous call
+   * @returns {Promise<{ items: Object[], cursor: string|null }>}
+   */
+  async fetchPage(query, username, { cursor } = {}) {
+    let subredditConfig = query.params?.subreddits;
+    try {
+      const feedConfig = this.#dataService.user.read('config/feed', username);
+      if (feedConfig?.reddit?.subreddits) {
+        subredditConfig = feedConfig.reddit.subreddits;
+      }
+    } catch { /* user config not found */ }
+
+    if (!subredditConfig) return { items: [], cursor: null };
+
+    try {
+      const limit = query.limit || 15;
+      const subs = this.#resolveSubreddits(subredditConfig);
+      const { items, after } = await this.#fetchMultiSubredditPaginated(subs, limit, query, cursor);
+      return { items: items.slice(0, limit), cursor: after || null };
+    } catch (err) {
+      this.#logger.warn?.('reddit.adapter.error', { error: err.message });
+      return { items: [], cursor: null };
+    }
+  }
+
   async getDetail(localId, meta, _username) {
     const postId = meta.postId || localId;
     const subreddit = meta.subreddit || 'all';
@@ -231,5 +262,59 @@ export class RedditFeedAdapter extends IFeedSourceAdapter {
           },
         };
       });
+  }
+
+  async #fetchMultiSubredditPaginated(subreddits, limit, query, afterToken, attempt = 0) {
+    const combined = subreddits.join('+');
+    const afterParam = afterToken ? `&after=${afterToken}` : '';
+    const url = `https://www.reddit.com/r/${combined}.json?limit=${limit}${afterParam}`;
+    const res = await fetch(url, {
+      headers: { 'User-Agent': USER_AGENT, 'Accept': 'application/json' },
+    });
+    if (res.status === 429 && attempt < 2) {
+      await new Promise(r => setTimeout(r, 3000 * (attempt + 1)));
+      return this.#fetchMultiSubredditPaginated(subreddits, limit, query, afterToken, attempt + 1);
+    }
+    if (!res.ok) return { items: [], after: null };
+
+    const data = await res.json();
+    const posts = data?.data?.children || [];
+    const after = data?.data?.after || null;
+
+    const items = posts
+      .filter(p => p.kind === 't3' && !p.data.stickied)
+      .map(p => {
+        const post = p.data;
+        const subreddit = post.subreddit;
+        const youtubeId = this.#extractYoutubeId(post.url);
+        const previewSource = post.preview?.images?.[0]?.source;
+        const imageWidth = previewSource?.width || undefined;
+        const imageHeight = previewSource?.height || undefined;
+        const rawImage = this.#extractImage(post) || (youtubeId ? `https://img.youtube.com/vi/${youtubeId}/hqdefault.jpg` : null);
+        const image = rawImage ? this.#proxyUrl(rawImage) : null;
+        return {
+          id: `reddit:${post.id}`,
+          tier: query.tier || 'wire',
+          source: 'reddit',
+          title: post.title,
+          body: post.selftext?.slice(0, 200) || null,
+          image,
+          link: `https://www.reddit.com${post.permalink}`,
+          timestamp: new Date(post.created_utc * 1000).toISOString(),
+          priority: query.priority || 0,
+          meta: {
+            subreddit,
+            score: post.score,
+            numComments: post.num_comments,
+            postId: post.id,
+            youtubeId: youtubeId || undefined,
+            sourceName: `r/${subreddit}`,
+            sourceIcon: `https://www.reddit.com/r/${subreddit}`,
+            ...(imageWidth && imageHeight ? { imageWidth, imageHeight } : {}),
+          },
+        };
+      });
+
+    return { items, after };
   }
 }
