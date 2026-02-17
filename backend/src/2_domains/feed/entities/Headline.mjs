@@ -2,14 +2,17 @@
  * Headline Entity
  *
  * Lightweight representation of a news headline for the Headlines view.
- * Stores only source, title, desc, link, timestamp.
+ * Stores only id, source, title, desc, link, timestamp.
  *
  * @module domains/feed/entities
  */
 
+import { shortIdFromUuid } from '../../core/utils/id.mjs';
+
 export class Headline {
   /**
    * @param {Object} data
+   * @param {string} data.id - Deterministic short ID (derived from link)
    * @param {string} data.source - Source ID (e.g., 'cnn', 'freshrss-12')
    * @param {string} data.title - Headline text
    * @param {string|null} [data.desc] - Short description (first sentence or 120 chars)
@@ -17,15 +20,27 @@ export class Headline {
    * @param {Date|string} [data.timestamp] - Publication time
    */
   constructor(data) {
+    if (!data.id) throw new Error('Headline requires id');
     if (!data.source) throw new Error('Headline requires source');
     if (!data.title) throw new Error('Headline requires title');
     if (!data.link) throw new Error('Headline requires link');
 
+    this.id = data.id;
     this.source = data.source;
     this.title = data.title;
     this.desc = data.desc || null;
     this.link = data.link;
     this.timestamp = data.timestamp ? new Date(data.timestamp) : new Date();
+  }
+
+  /**
+   * Factory for creating new Headlines (e.g., during harvesting).
+   * Generates a deterministic id from the link URL.
+   * @param {Object} data - Same as constructor but without id
+   * @returns {Headline}
+   */
+  static create(data) {
+    return new Headline({ ...data, id: shortIdFromUuid(data.link) });
   }
 
   truncateDesc(maxLength = 120) {
@@ -36,6 +51,7 @@ export class Headline {
 
   toJSON() {
     return {
+      id: this.id,
       source: this.source,
       title: this.title,
       desc: this.desc,
