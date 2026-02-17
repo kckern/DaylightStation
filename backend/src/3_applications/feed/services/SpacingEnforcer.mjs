@@ -230,6 +230,8 @@ export class SpacingEnforcer {
   }
 
   #getSubsourceKey(item) {
-    return item.meta?.subreddit || null;
+    const m = item.meta;
+    if (!m) return null;
+    return m.subreddit || m.sourceId || m.outlet || m.feedTitle || null;
   }
 }
