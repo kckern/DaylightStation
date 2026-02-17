@@ -77,4 +77,46 @@ describe('RssHeadlineHarvester', () => {
     expect(result.items).toHaveLength(0);
     expect(result.error).toBe('Network error');
   });
+
+  test('includes imageWidth and imageHeight from media:content attributes', async () => {
+    mockRssParser.parseURL.mockResolvedValue({
+      title: 'Feed with image dims',
+      items: [
+        {
+          title: 'Story with image dimensions',
+          link: 'https://example.com/article/1',
+          pubDate: 'Sat, 15 Feb 2026 09:00:00 GMT',
+          'media:content': [
+            { '$': { url: 'https://example.com/image.jpg', type: 'image/jpeg', width: '1200', height: '630' } },
+          ],
+        },
+      ],
+    });
+    const result = await harvester.harvest({ id: 'test', label: 'Test', url: 'http://example.com/rss' });
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0].image).toBe('https://example.com/image.jpg');
+    expect(result.items[0].imageWidth).toBe(1200);
+    expect(result.items[0].imageHeight).toBe(630);
+  });
+
+  test('omits imageWidth/imageHeight when media:content lacks dimensions', async () => {
+    mockRssParser.parseURL.mockResolvedValue({
+      title: 'Feed without image dims',
+      items: [
+        {
+          title: 'Story without image dimensions',
+          link: 'https://example.com/article/2',
+          pubDate: 'Sat, 15 Feb 2026 08:00:00 GMT',
+          'media:content': [
+            { '$': { url: 'https://example.com/photo.jpg', type: 'image/png' } },
+          ],
+        },
+      ],
+    });
+    const result = await harvester.harvest({ id: 'test', label: 'Test', url: 'http://example.com/rss' });
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0].image).toBe('https://example.com/photo.jpg');
+    expect(result.items[0].imageWidth).toBeUndefined();
+    expect(result.items[0].imageHeight).toBeUndefined();
+  });
 });

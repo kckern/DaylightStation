@@ -35,8 +35,12 @@ export class RssHeadlineHarvester {
               link: item.link?.trim(),
               timestamp: this.#parseDate(item),
             };
-            const image = this.#extractImage(item);
-            if (image) entry.image = image;
+            const imageData = this.#extractImageWithDims(item);
+            if (imageData) {
+              entry.image = imageData.url;
+              if (imageData.width) entry.imageWidth = imageData.width;
+              if (imageData.height) entry.imageHeight = imageData.height;
+            }
             allItems.push(entry);
           }
         } catch (err) {
@@ -94,18 +98,31 @@ export class RssHeadlineHarvester {
       .trim();
   }
 
-  #extractImage(item) {
-    // media:content (array of { $: { url, type } })
+  #extractImageWithDims(item) {
     const mediaContent = item['media:content'];
     if (Array.isArray(mediaContent)) {
       const img = mediaContent.find(m => m?.['$']?.type?.startsWith('image/') || m?.['$']?.url);
-      if (img?.['$']?.url) return img['$'].url;
+      if (img?.['$']?.url) {
+        const w = parseInt(img['$'].width, 10);
+        const h = parseInt(img['$'].height, 10);
+        return {
+          url: img['$'].url,
+          ...(w > 0 && h > 0 ? { width: w, height: h } : {}),
+        };
+      }
     }
-    // media:thumbnail
     const thumb = item['media:thumbnail'];
-    if (thumb?.['$']?.url) return thumb['$'].url;
-    // enclosure
-    if (item.enclosure?.url && item.enclosure?.type?.startsWith('image/')) return item.enclosure.url;
+    if (thumb?.['$']?.url) {
+      const w = parseInt(thumb['$'].width, 10);
+      const h = parseInt(thumb['$'].height, 10);
+      return {
+        url: thumb['$'].url,
+        ...(w > 0 && h > 0 ? { width: w, height: h } : {}),
+      };
+    }
+    if (item.enclosure?.url && item.enclosure?.type?.startsWith('image/')) {
+      return { url: item.enclosure.url };
+    }
     return null;
   }
 

@@ -134,6 +134,8 @@ export class KomgaFeedAdapter extends IFeedSourceAdapter {
         seriesLabel: series.label,
         issueTitle: bookTitle,
         pageCount,
+        imageWidth: 1280,
+        imageHeight: 720,
         sourceName: 'Komga',
         sourceIcon: null,
       },

@@ -17,6 +17,14 @@ const API_BASE = 'https://www.googleapis.com/youtube/v3/search';
 const RSS_BASE = 'https://www.youtube.com/feeds/videos.xml';
 const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
+const YT_THUMB_DIMS = {
+  'maxresdefault': { w: 1280, h: 720 },
+  'sddefault':     { w: 640,  h: 480 },
+  'hqdefault':     { w: 480,  h: 360 },
+  'mqdefault':     { w: 320,  h: 180 },
+  'default':       { w: 120,  h: 90 },
+};
+
 export class YouTubeFeedAdapter extends IFeedSourceAdapter {
   #apiKey;
   #logger;
@@ -169,6 +177,7 @@ export class YouTubeFeedAdapter extends IFeedSourceAdapter {
           videoId,
           sourceName: channelName || 'YouTube',
           sourceIcon: 'https://www.youtube.com',
+          ...this.#thumbDimensions(image),
         },
       };
     }).filter(Boolean);
@@ -217,13 +226,14 @@ export class YouTubeFeedAdapter extends IFeedSourceAdapter {
       .map(v => {
         const snippet = v.snippet;
         const videoId = v.id.videoId;
+        const image = snippet.thumbnails?.high?.url || snippet.thumbnails?.medium?.url || null;
         return {
           id: `youtube:${videoId}`,
           tier: query.tier || 'wire',
           source: 'youtube',
           title: snippet.title,
           body: snippet.description?.slice(0, 200) || null,
-          image: snippet.thumbnails?.high?.url || snippet.thumbnails?.medium?.url || null,
+          image,
           link: `https://www.youtube.com/watch?v=${videoId}`,
           timestamp: snippet.publishedAt || new Date().toISOString(),
           priority: query.priority || 0,
@@ -233,6 +243,7 @@ export class YouTubeFeedAdapter extends IFeedSourceAdapter {
             videoId,
             sourceName: snippet.channelTitle || 'YouTube',
             sourceIcon: 'https://www.youtube.com',
+            ...this.#apiThumbDimensions(snippet, image),
           },
         };
       });
@@ -259,6 +270,28 @@ export class YouTubeFeedAdapter extends IFeedSourceAdapter {
       const oldest = this.#cache.keys().next().value;
       this.#cache.delete(oldest);
     }
+  }
+
+  // ======================================================================
+  // Thumbnail dimension helpers
+  // ======================================================================
+
+  #thumbDimensions(url) {
+    if (!url) return {};
+    for (const [key, dims] of Object.entries(YT_THUMB_DIMS)) {
+      if (url.includes(key)) return { imageWidth: dims.w, imageHeight: dims.h };
+    }
+    return {};
+  }
+
+  #apiThumbDimensions(snippet, imageUrl) {
+    for (const key of ['high', 'medium', 'default', 'maxres', 'standard']) {
+      const t = snippet.thumbnails?.[key];
+      if (t?.url === imageUrl && t.width && t.height) {
+        return { imageWidth: t.width, imageHeight: t.height };
+      }
+    }
+    return this.#thumbDimensions(imageUrl);
   }
 
   // ======================================================================
