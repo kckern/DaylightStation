@@ -29,6 +29,10 @@ export class FeedAssemblyService {
   #itemCache = new Map();
   static #CACHE_MAX = 500;
 
+  /** Assembled-list cache for cursor pagination (keyed by username) */
+  #assembledCache = new Map();
+  static #ASSEMBLED_TTL = 60_000; // 1 minute
+
   constructor({
     feedPoolManager,
     scrollConfigLoader = null,
