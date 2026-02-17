@@ -782,8 +782,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
     const { FeedPoolManager } = await import('./3_applications/feed/services/FeedPoolManager.mjs');
 
+    const feedSourceAdapters = [redditAdapter, weatherAdapter, healthAdapter, gratitudeAdapter, stravaAdapter, todoistAdapter, immichAdapter, plexAdapter, journalAdapter, youtubeAdapter, googleNewsAdapter, komgaFeedAdapter, readalongFeedAdapter, goodreadsFeedAdapter].filter(Boolean);
+
     const feedPoolManager = new FeedPoolManager({
-      sourceAdapters: [redditAdapter, weatherAdapter, healthAdapter, gratitudeAdapter, stravaAdapter, todoistAdapter, immichAdapter, plexAdapter, journalAdapter, youtubeAdapter, googleNewsAdapter, komgaFeedAdapter, readalongFeedAdapter, goodreadsFeedAdapter].filter(Boolean),
+      sourceAdapters: feedSourceAdapters,
       feedCacheService,
       queryConfigs,
       freshRSSAdapter: feedServices.freshRSSAdapter,
@@ -794,7 +796,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
     const feedAssemblyService = new FeedAssemblyService({
       feedPoolManager,
-      sourceAdapters: [redditAdapter, weatherAdapter, healthAdapter, gratitudeAdapter, stravaAdapter, todoistAdapter, immichAdapter, plexAdapter, journalAdapter, youtubeAdapter, googleNewsAdapter, komgaFeedAdapter, readalongFeedAdapter, goodreadsFeedAdapter].filter(Boolean),
+      sourceAdapters: feedSourceAdapters,
       scrollConfigLoader,
       tierAssemblyService,
       feedContentService,
