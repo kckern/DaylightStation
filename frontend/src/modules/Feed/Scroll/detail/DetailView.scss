@@ -1,0 +1,209 @@
+.detail-view {
+  max-width: 540px;
+  width: 100%;
+  margin: 0 auto;
+  min-height: 100vh;
+  background: #111;
+  color: #e0e0e0;
+  overflow-x: hidden;
+  position: relative;
+}
+
+.detail-close {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.5rem;
+  z-index: 10;
+  background: rgba(17, 17, 17, 0.7);
+  border: none;
+  color: #868e96;
+  cursor: pointer;
+  padding: 0.35rem;
+  display: flex;
+  align-items: center;
+  border-radius: 50%;
+
+  &:hover { color: #fff; background: rgba(37, 38, 43, 0.9); }
+}
+
+.detail-source-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.5rem 1rem 0.4rem;
+}
+
+.detail-source-icon {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.detail-source-label {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: #868e96;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.detail-source-age {
+  font-size: 0.6rem;
+  color: #5c636a;
+  flex-shrink: 0;
+}
+
+.detail-hero {
+  position: relative;
+  overflow: hidden;
+
+  img {
+    width: 100%;
+    display: block;
+    max-height: 400px;
+    object-fit: cover;
+  }
+}
+
+.detail-hero-shimmer {
+  width: 100%;
+  height: 220px;
+  background: #1a1b1e;
+  background-image: linear-gradient(
+    90deg,
+    #1a1b1e 0%,
+    #25262b 40%,
+    #1a1b1e 80%
+  );
+  background-size: 200% 100%;
+  animation: detail-shimmer 1.5s ease-in-out infinite;
+}
+
+@keyframes detail-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.detail-title-area {
+  padding: 0.75rem 1rem;
+}
+
+.detail-title {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #fff;
+  line-height: 1.3;
+}
+
+.detail-subtitle {
+  margin: 0.3rem 0 0;
+  font-size: 0.85rem;
+  color: #868e96;
+  line-height: 1.4;
+}
+
+.detail-loading {
+  display: flex;
+  justify-content: center;
+  padding: 2rem;
+}
+
+.detail-section {
+  padding: 0 1rem 0.75rem;
+}
+
+.detail-open-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.7rem 1rem;
+  background: #1a1b1e;
+  border: 1px solid #25262b;
+  border-radius: 8px;
+  color: #868e96;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+
+  &:hover {
+    color: #228be6;
+    border-color: #228be6;
+  }
+}
+
+// ─── Desktop Modal/Lightbox ────────────────────────────────
+.detail-modal-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+}
+
+.detail-modal-panel {
+  position: relative;
+  max-width: 640px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  border-radius: 12px;
+  border: 1px solid #25262b;
+  background: #111;
+
+  // Override DetailView styles inside modal
+  .detail-view {
+    max-width: none;
+    min-height: auto;
+    border-radius: 12px;
+  }
+}
+
+.detail-modal-arrow {
+  position: fixed;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 210;
+  background: rgba(255, 255, 255, 0.08);
+  border: none;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 2.5rem;
+  width: 48px;
+  height: 80px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.15);
+    color: #fff;
+  }
+
+  &--left {
+    left: 1rem;
+  }
+
+  &--right {
+    right: 1rem;
+  }
+}
+
+// Hide modal on narrow screens (safety)
+@media (max-width: 899px) {
+  .detail-modal-scrim {
+    display: none;
+  }
+}
