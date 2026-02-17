@@ -60,6 +60,8 @@ export class RedditImageProxyAdapter {
     return fullUrl;
   }
 
+  getErrorFallback() { return 'svg'; }
+
   getRetryConfig() { return { maxRetries: 1, delayMs: 300 }; }
 
   shouldRetry(statusCode) { return statusCode >= 500; }

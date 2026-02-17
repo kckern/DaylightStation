@@ -7,6 +7,7 @@
  * @module adapters/feed/sources/GoodreadsFeedAdapter
  */
 
+import imageSize from 'image-size';
 import { IFeedSourceAdapter } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
 
 export class GoodreadsFeedAdapter extends IFeedSourceAdapter {
@@ -22,6 +23,18 @@ export class GoodreadsFeedAdapter extends IFeedSourceAdapter {
 
   get sourceType() { return 'goodreads'; }
 
+  async #getImageDimensions(url) {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+      if (!res.ok) return {};
+      const buf = Buffer.from(await res.arrayBuffer());
+      const dims = imageSize(buf);
+      return { imageWidth: dims.width, imageHeight: dims.height };
+    } catch {
+      return {};
+    }
+  }
+
   async fetchItems(query, username) {
     try {
       const books = this.#userDataService.getLifelogData(username, 'goodreads');
@@ -29,11 +42,15 @@ export class GoodreadsFeedAdapter extends IFeedSourceAdapter {
 
       const limit = query.limit || 2;
       const shuffled = [...books].sort(() => Math.random() - 0.5);
+      const selected = shuffled.slice(0, limit);
 
-      return shuffled.slice(0, limit).map(book => {
+      const items = await Promise.all(selected.map(async book => {
         const ts = book.readAt
           ? new Date(book.readAt).toISOString()
           : new Date().toISOString();
+
+        const imageUrl = book.coverImage?.replace(/\.(_S[XY]\d+)+_\./, '.') || null;
+        const dims = imageUrl ? await this.#getImageDimensions(imageUrl) : {};
 
         return {
           id: `goodreads:${book.bookId || book.title}`,
@@ -41,7 +58,7 @@ export class GoodreadsFeedAdapter extends IFeedSourceAdapter {
           source: 'goodreads',
           title: book.title || 'Unknown Book',
           body: book.author || '',
-          image: book.coverImage?.replace(/\.(_S[XY]\d+)+_\./, '.') || null,
+          image: imageUrl,
           link: book.bookId ? `https://www.goodreads.com/book/show/${book.bookId}` : null,
           timestamp: ts,
           priority: query.priority || 5,
@@ -52,11 +69,12 @@ export class GoodreadsFeedAdapter extends IFeedSourceAdapter {
             rating: book.rating,
             review: book.review,
             readAt: book.readAt,
-            imageWidth: 300,
-            imageHeight: 450,
+            ...dims,
           },
         };
-      });
+      }));
+
+      return items;
     } catch (err) {
       this.#logger.warn?.('goodreads.adapter.error', { error: err.message });
       return [];

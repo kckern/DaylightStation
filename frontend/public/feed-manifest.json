@@ -3,17 +3,17 @@
   "name": "Daylight Feed",
   "icons": [
     {
-      "src": "/feed-icon-192.png",
+      "src": "/icon-192.png",
       "type": "image/png",
       "sizes": "192x192"
     },
     {
-      "src": "/feed-icon-512.png",
+      "src": "/icon-512.png",
       "type": "image/png",
       "sizes": "512x512"
     },
     {
-      "src": "/feed-icon.svg",
+      "src": "/icon.svg",
       "type": "image/svg+xml",
       "sizes": "any"
     }

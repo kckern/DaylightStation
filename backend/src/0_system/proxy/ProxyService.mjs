@@ -18,6 +18,27 @@ import https from 'https';
 import { URL } from 'url';
 
 /**
+ * Minimal placeholder SVG for failed image proxies.
+ * Transparent 1x1 — renders as "nothing" rather than a broken image icon.
+ */
+const PLACEHOLDER_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>';
+
+/**
+ * Send a placeholder SVG response
+ * @param {Object} res - Express response
+ */
+function sendPlaceholderSvg(res) {
+  if (res.headersSent) return;
+  res.writeHead(200, {
+    'Content-Type': 'image/svg+xml',
+    'Content-Length': Buffer.byteLength(PLACEHOLDER_SVG),
+    'Cache-Control': 'public, max-age=300',
+    'X-Proxy-Fallback': 'true',
+  });
+  res.end(PLACEHOLDER_SVG);
+}
+
+/**
  * ProxyService class
  */
 export class ProxyService {
@@ -163,13 +184,28 @@ export class ProxyService {
           return;
         }
 
-        // Forward response
+        // Forward response — or fall back to placeholder SVG for image proxies
+        const isImageProxy = typeof adapter.getErrorFallback === 'function';
+        if (statusCode >= 400 && isImageProxy) {
+          proxyRes.resume(); // discard upstream error body
+          this.#logger.warn?.('proxy.imageFallback', {
+            service: serviceName,
+            statusCode,
+            url: targetUrl.href,
+          });
+          sendPlaceholderSvg(res);
+          resolve();
+          return;
+        }
+
         if (!res.headersSent) {
           res.writeHead(statusCode, proxyRes.headers);
         }
         proxyRes.pipe(res);
         proxyRes.on('end', resolve);
       });
+
+      const isImageProxy = typeof adapter.getErrorFallback === 'function';
 
       proxyReq.on('error', (err) => {
         this.#logger.error?.('proxy.error', {
@@ -178,7 +214,9 @@ export class ProxyService {
           attempt
         });
 
-        if (!res.headersSent) {
+        if (isImageProxy) {
+          sendPlaceholderSvg(res);
+        } else if (!res.headersSent) {
           res.status(502).json({
             error: 'Proxy error',
             service: serviceName,
@@ -196,7 +234,9 @@ export class ProxyService {
           attempt
         });
 
-        if (!res.headersSent) {
+        if (isImageProxy) {
+          sendPlaceholderSvg(res);
+        } else if (!res.headersSent) {
           res.status(504).json({
             error: 'Gateway timeout',
             service: serviceName

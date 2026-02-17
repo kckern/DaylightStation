@@ -60,6 +60,11 @@ export function isProxyAdapter(obj) {
  * getTimeout(): number
  *   Request timeout in milliseconds.
  *   Default: 30000 (30 seconds)
+ *
+ * getErrorFallback(): string | undefined
+ *   If defined, ProxyService returns a placeholder SVG instead of JSON errors
+ *   on upstream failure. Use for image-serving proxies (Reddit, Komga, Immich).
+ *   Return 'svg' to opt in. Omit to get default JSON error behavior.
  */
 
 export const IProxyAdapter = {

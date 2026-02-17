@@ -1,7 +1,7 @@
 import DetailView from './DetailView.jsx';
 import './DetailView.scss';
 
-export default function DetailModal({ item, sections, ogImage, ogDescription, loading, onBack, onNext, onPrev, onPlay, activeMedia, onNavigateToItem }) {
+export default function DetailModal({ item, sections, ogImage, ogDescription, loading, onBack, onNext, onPrev, onPlay, activeMedia, playback, onNavigateToItem }) {
   return (
     <div className="detail-modal-scrim" onClick={onBack}>
       {onPrev && (
@@ -25,6 +25,7 @@ export default function DetailModal({ item, sections, ogImage, ogDescription, lo
           onPrev={onPrev}
           onPlay={onPlay}
           activeMedia={activeMedia}
+          playback={playback}
           onNavigateToItem={onNavigateToItem}
         />
       </div>

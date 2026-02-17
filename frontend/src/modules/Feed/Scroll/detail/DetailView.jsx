@@ -3,7 +3,7 @@ import { formatAge, proxyIcon, proxyImage, colorFromLabel } from '../cards/utils
 import { renderSection } from './sections/index.jsx';
 import './DetailView.scss';
 
-export default function DetailView({ item, sections, ogImage, ogDescription, loading, onBack, onNext, onPrev, onPlay, activeMedia, onNavigateToItem }) {
+export default function DetailView({ item, sections, ogImage, ogDescription, loading, onBack, onNext, onPrev, onPlay, activeMedia, playback, onNavigateToItem }) {
   const sourceName = item.meta?.sourceName || item.source || '';
   const iconUrl = proxyIcon(item.meta?.sourceIcon);
   const borderColor = colorFromLabel(sourceName);
@@ -212,7 +212,7 @@ export default function DetailView({ item, sections, ogImage, ogDescription, loa
 
         {!loading && sections.map((section, i) => (
           <div key={i} className="detail-section">
-            {renderSection(section, { onPlay, activeMedia, item, onNavigateToItem })}
+            {renderSection(section, { onPlay, activeMedia, playback, item, onNavigateToItem })}
           </div>
         ))}
 

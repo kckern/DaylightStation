@@ -8,6 +8,19 @@ import { URL } from 'url';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { compositeHeroImage } from '#system/canvas/compositeHero.mjs';
 
+const PLACEHOLDER_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>';
+
+function sendPlaceholderSvg(res) {
+  if (res.headersSent) return;
+  res.writeHead(200, {
+    'Content-Type': 'image/svg+xml',
+    'Content-Length': Buffer.byteLength(PLACEHOLDER_SVG),
+    'Cache-Control': 'public, max-age=300',
+    'X-Proxy-Fallback': 'true',
+  });
+  res.end(PLACEHOLDER_SVG);
+}
+
 /**
  * Create proxy router for streaming and thumbnails
  * @param {Object} config
@@ -221,13 +234,13 @@ export function createProxyRouter(config) {
       // Fallback: direct proxy using adapter credentials
       const adapter = registry.get('immich');
       if (!adapter) {
-        return res.status(503).json({ error: 'Immich adapter not configured' });
+        return sendPlaceholderSvg(res);
       }
 
       const host = adapter.host;
       const apiKey = adapter.apiKey;
       if (!host || !apiKey) {
-        return res.status(503).json({ error: 'Immich not configured' });
+        return sendPlaceholderSvg(res);
       }
 
       // Build target URL - map /assets/{id}/video/playback to Immich API
@@ -253,6 +266,11 @@ export function createProxyRouter(config) {
       };
 
       const proxyReq = protocol.request(options, (proxyRes) => {
+        if (proxyRes.statusCode >= 400) {
+          proxyRes.resume();
+          sendPlaceholderSvg(res);
+          return;
+        }
         if (!res.headersSent) {
           res.writeHead(proxyRes.statusCode, proxyRes.headers);
         }
@@ -261,16 +279,12 @@ export function createProxyRouter(config) {
 
       proxyReq.on('error', (err) => {
         console.error('[proxy] immich error:', err.message);
-        if (!res.headersSent) {
-          res.status(502).json({ error: 'Immich proxy error', details: err.message });
-        }
+        sendPlaceholderSvg(res);
       });
 
       proxyReq.on('timeout', () => {
         proxyReq.destroy();
-        if (!res.headersSent) {
-          res.status(504).json({ error: 'Immich proxy timeout' });
-        }
+        sendPlaceholderSvg(res);
       });
 
       if (['POST', 'PUT', 'PATCH'].includes(req.method)) {
@@ -280,9 +294,7 @@ export function createProxyRouter(config) {
       }
     } catch (err) {
       console.error('[proxy] immich error:', err);
-      if (!res.headersSent) {
-        res.status(500).json({ error: err.message });
-      }
+      sendPlaceholderSvg(res);
     }
   });
 
@@ -298,13 +310,10 @@ export function createProxyRouter(config) {
         await proxyService.proxy('reddit', req, res);
         return;
       }
-      return res.status(503).json({ error: 'Reddit proxy not configured' });
+      sendPlaceholderSvg(res);
     } catch (err) {
       console.error('[proxy] reddit error:', err.message);
-      if (!res.headersSent) {
-        res.status(err.message?.includes('not allowed') ? 403 : 502)
-          .json({ error: err.message });
-      }
+      sendPlaceholderSvg(res);
     }
   });
 
@@ -370,7 +379,7 @@ export function createProxyRouter(config) {
       .map(r => r.value);
 
     if (buffers.length === 0) {
-      return res.status(502).json({ error: 'Failed to fetch any images from Komga' });
+      return sendPlaceholderSvg(res);
     }
 
     // Composite
@@ -403,12 +412,10 @@ export function createProxyRouter(config) {
         await proxyService.proxy('komga', req, res);
         return;
       }
-      return res.status(503).json({ error: 'Komga proxy not configured' });
+      sendPlaceholderSvg(res);
     } catch (err) {
       console.error('[proxy] komga error:', err);
-      if (!res.headersSent) {
-        res.status(500).json({ error: err.message });
-      }
+      sendPlaceholderSvg(res);
     }
   });
 
