@@ -3,14 +3,19 @@
   "name": "Daylight Feed",
   "icons": [
     {
-      "src": "/logo192.png",
+      "src": "/feed-icon-192.png",
       "type": "image/png",
       "sizes": "192x192"
     },
     {
-      "src": "/logo512.png",
+      "src": "/feed-icon-512.png",
       "type": "image/png",
       "sizes": "512x512"
+    },
+    {
+      "src": "/feed-icon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any"
     }
   ],
   "start_url": "/feed",
