@@ -174,7 +174,7 @@ export class PagedMediaTocToolFactory extends ToolFactory {
     // ---------------------------------------------------------------
     const detectPageOffset = createTool({
       name: 'detect_page_offset',
-      description: 'Detect the offset between printed page numbers and vendor page indices. Scans thumbnails starting from a given page, asking AI to read the printed page number. Returns the offset (vendor_page - printed_page). Tries up to 10 pages. Uses cheap thumbnail + mini model.',
+      description: 'Detect the offset between printed page numbers and vendor page indices. Scans full-resolution pages starting from a given page, asking AI to read the printed page number. Reads up to 10 pages and requires 2+ to agree on the same offset (consensus). Returns the offset (vendor_page - printed_page).',
       parameters: {
         type: 'object',
         properties: {
@@ -185,19 +185,20 @@ export class PagedMediaTocToolFactory extends ToolFactory {
       },
       execute: async ({ bookId, startPage }) => {
         const maxAttempts = 10;
+        const readings = [];
+
+        if (!aiGateway?.isConfigured?.()) {
+          return { error: 'AI gateway not configured' };
+        }
 
         for (let i = 0; i < maxAttempts; i++) {
           const vendorPage = startPage + i;
           let fetchResult;
           try {
-            fetchResult = await pagedMediaGateway.getPageThumbnail(bookId, vendorPage);
+            fetchResult = await pagedMediaGateway.getPageImage(bookId, vendorPage);
           } catch (err) {
             logger.warn?.('paged-media-toc.offset.fetch_error', { bookId, vendorPage, error: err.message });
             continue;
-          }
-
-          if (!aiGateway?.isConfigured?.()) {
-            return { error: 'AI gateway not configured' };
           }
 
           const messages = [
@@ -212,16 +213,35 @@ export class PagedMediaTocToolFactory extends ToolFactory {
           const parsed = parseInt(answer, 10);
 
           if (!isNaN(parsed) && parsed > 0) {
-            const tocPageOffset = vendorPage - parsed;
-            logger.info?.('paged-media-toc.offset.detected', { bookId, vendorPage, printedPage: parsed, tocPageOffset });
-            return { bookId, tocPageOffset, detectedOnPage: vendorPage, printedPageNumber: parsed };
+            const offset = vendorPage - parsed;
+            readings.push({ vendorPage, printedPage: parsed, offset });
+            logger.info?.('paged-media-toc.offset.reading', { bookId, vendorPage, printedPage: parsed, offset });
+          } else {
+            logger.info?.('paged-media-toc.offset.no_number', { bookId, vendorPage, answer });
           }
-
-          logger.info?.('paged-media-toc.offset.no_number', { bookId, vendorPage, answer });
         }
 
-        logger.info?.('paged-media-toc.offset.not_detected', { bookId, startPage, attempts: maxAttempts });
-        return { bookId, tocPageOffset: 0, reason: 'not_detected' };
+        if (readings.length < 2) {
+          logger.info?.('paged-media-toc.offset.insufficient_readings', { bookId, startPage, readings: readings.length });
+          return { bookId, tocPageOffset: 0, reason: 'insufficient_readings', readings };
+        }
+
+        // Find consensus offset (mode)
+        const counts = {};
+        for (const r of readings) {
+          counts[r.offset] = (counts[r.offset] || 0) + 1;
+        }
+        const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+        const [bestOffset, bestCount] = sorted[0];
+
+        if (bestCount < 2) {
+          logger.info?.('paged-media-toc.offset.no_consensus', { bookId, counts, readings });
+          return { bookId, tocPageOffset: 0, reason: 'no_consensus', readings };
+        }
+
+        const tocPageOffset = parseInt(bestOffset, 10);
+        logger.info?.('paged-media-toc.offset.consensus', { bookId, tocPageOffset, agreement: `${bestCount}/${readings.length}`, readings });
+        return { bookId, tocPageOffset, agreement: `${bestCount}/${readings.length}`, readings };
       },
     });
 
