@@ -58,6 +58,9 @@ export class ImmichFeedAdapter extends IFeedSourceAdapter {
             originalDate: created,
             sourceName: 'Photos',
             sourceIcon: 'https://immich.app',
+            ...(exif?.imageWidth && exif?.imageHeight
+              ? { imageWidth: exif.imageWidth, imageHeight: exif.imageHeight }
+              : {}),
           },
         };
       });
@@ -166,6 +169,8 @@ export class ImmichFeedAdapter extends IFeedSourceAdapter {
           exif: viewable?.metadata ? {
             capturedAt: viewable.metadata.capturedAt,
             location: viewable.metadata.exif?.city || null,
+            imageWidth: viewable.width || null,
+            imageHeight: viewable.height || null,
           } : null,
         };
       } catch {

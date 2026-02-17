@@ -204,6 +204,9 @@ export class RedditFeedAdapter extends IFeedSourceAdapter {
         const post = p.data;
         const subreddit = post.subreddit;
         const youtubeId = this.#extractYoutubeId(post.url);
+        const previewSource = post.preview?.images?.[0]?.source;
+        const imageWidth = previewSource?.width || undefined;
+        const imageHeight = previewSource?.height || undefined;
         const rawImage = this.#extractImage(post) || (youtubeId ? `https://img.youtube.com/vi/${youtubeId}/hqdefault.jpg` : null);
         const image = rawImage ? this.#proxyUrl(rawImage) : null;
         return {
@@ -224,6 +227,7 @@ export class RedditFeedAdapter extends IFeedSourceAdapter {
             youtubeId: youtubeId || undefined,
             sourceName: `r/${subreddit}`,
             sourceIcon: `https://www.reddit.com/r/${subreddit}`,
+            ...(imageWidth && imageHeight ? { imageWidth, imageHeight } : {}),
           },
         };
       });
