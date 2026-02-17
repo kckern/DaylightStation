@@ -16,27 +16,7 @@
 import http from 'http';
 import https from 'https';
 import { URL } from 'url';
-
-/**
- * Minimal placeholder SVG for failed image proxies.
- * Transparent 1x1 — renders as "nothing" rather than a broken image icon.
- */
-const PLACEHOLDER_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>';
-
-/**
- * Send a placeholder SVG response
- * @param {Object} res - Express response
- */
-function sendPlaceholderSvg(res) {
-  if (res.headersSent) return;
-  res.writeHead(200, {
-    'Content-Type': 'image/svg+xml',
-    'Content-Length': Buffer.byteLength(PLACEHOLDER_SVG),
-    'Cache-Control': 'public, max-age=300',
-    'X-Proxy-Fallback': 'true',
-  });
-  res.end(PLACEHOLDER_SVG);
-}
+import { sendPlaceholderSvg } from './placeholders.mjs';
 
 /**
  * ProxyService class

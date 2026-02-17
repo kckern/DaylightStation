@@ -18,6 +18,7 @@
 
 export { IProxyAdapter, isProxyAdapter } from './IProxyAdapter.mjs';
 export { ProxyService, createProxyService } from './ProxyService.mjs';
+export { PLACEHOLDER_SVG, sendPlaceholderSvg } from './placeholders.mjs';
 
 // Default export
 import { ProxyService } from './ProxyService.mjs';
