@@ -334,7 +334,7 @@ export function createProxyRouter(config) {
     const fetchResults = await Promise.allSettled(
       imageUrls.map(async (url) => {
         const resp = await fetch(url, {
-          headers: authHeaders,
+          headers: { ...authHeaders, 'Accept': 'image/jpeg' },
           signal: AbortSignal.timeout(30000),
         });
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
