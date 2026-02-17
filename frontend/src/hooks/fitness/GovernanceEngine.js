@@ -642,6 +642,7 @@ export class GovernanceEngine {
       if (oldPhase !== null || newPhase !== null) {
         // Include requirement summary for debugging lock screen label issues
         const firstReq = this.requirementSummary?.requirements?.[0];
+        const cachedState = this._getCachedState();
         logger.sampled('governance.phase_change', {
           from: oldPhase,
           to: newPhase,
@@ -653,7 +654,11 @@ export class GovernanceEngine {
             zone: firstReq.zone,
             zoneLabel: firstReq.zoneLabel,
             satisfied: firstReq.satisfied
-          } : null
+          } : null,
+          lockRowCount: cachedState?.lockRows?.length ?? -1,
+          activeParticipantCount: this._latestInputs?.activeParticipants?.length ?? -1,
+          videoLocked: cachedState?.videoLocked ?? null,
+          evaluatePath: this._lastEvaluatePath || null
         }, { maxPerMinute: 30 });
       }
 
@@ -1174,6 +1179,9 @@ export class GovernanceEngine {
    * @param {number} params.totalCount - Total number of active participants
    */
   evaluate({ activeParticipants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount } = {}) {
+    // Tag which code path triggered this evaluation (for prod log diagnostics)
+    this._lastEvaluatePath = activeParticipants ? 'snapshot' : 'pulse';
+
     // Skip evaluation while timers are paused (playback stalled)
     if (this._timersPaused) {
       getLogger().debug('governance.evaluate.skipped_paused', { phase: this.phase });
@@ -1184,7 +1192,8 @@ export class GovernanceEngine {
     const hasGovernanceRules = (this._governedLabelSet.size + this._governedTypeSet.size) > 0;
 
     // If no data passed in, read participant list from session.roster
-    // Zone data comes exclusively from ZoneProfileStore (below)
+    // P1: Also pre-populate userZoneMap from roster entries (matches updateSnapshot path).
+    // ZoneProfileStore will supplement/override below.
     if (!activeParticipants && this.session?.roster) {
       const roster = this.session.roster || [];
       activeParticipants = roster
@@ -1192,6 +1201,13 @@ export class GovernanceEngine {
         .map((entry) => entry.id || entry.profileId);
 
       userZoneMap = {};
+      roster.forEach((entry) => {
+        const userId = entry.id || entry.profileId;
+        const zoneId = entry.zoneId || entry.currentZoneId;
+        if (userId && zoneId) {
+          userZoneMap[userId] = typeof zoneId === 'string' ? zoneId.toLowerCase() : String(zoneId).toLowerCase();
+        }
+      });
       totalCount = activeParticipants.length;
     }
 
