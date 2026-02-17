@@ -33,9 +33,8 @@ export class FeedAssemblyService {
   #itemCache = new Map();
   static #CACHE_MAX = 500;
 
-  /** Assembled-list cache for cursor pagination (keyed by username) */
-  #assembledCache = new Map();
-  static #ASSEMBLED_TTL = 60_000; // 1 minute
+  /** Per-user seen-ID tracking (cleared on fresh load, populated each batch) */
+  #seenIds = new Map();
 
   constructor({
     freshRSSAdapter,
@@ -86,92 +85,69 @@ export class FeedAssemblyService {
    * @returns {Promise<{ items: FeedItem[], hasMore: boolean }>}
    */
   async getNextBatch(username, { limit, cursor, focus, sources, nocache } = {}) {
-    // Load scroll config
     const scrollConfig = this.#scrollConfigLoader?.load(username)
       || { batch_size: 15, spacing: { max_consecutive: 1 }, tiers: {} };
 
-    // Resolve effective limit
     const effectiveLimit = limit ?? scrollConfig.batch_size ?? 15;
 
-    // Try assembled cache for cursor pagination (skip on nocache or first load)
-    const cached = this.#assembledCache.get(username);
-    const cacheValid = cached && !nocache && !sources
-      && (Date.now() - cached.timestamp < FeedAssemblyService.#ASSEMBLED_TTL)
-      && cached.focus === (focus || null);
+    // Fresh load: clear seen IDs
+    if (!cursor) {
+      this.#seenIds.delete(username);
+    }
+    const seenIds = this.#seenIds.get(username) || new Set();
 
-    let assembledItems;
+    // Fetch all sources
+    const allItems = await this.#fetchAllSources(scrollConfig, username, { nocache, sources });
 
-    if (cursor && cacheValid) {
-      // Use cached assembled list for pagination
-      assembledItems = cached.items;
-    } else {
-      // Fresh fetch + assemble
-      const queries = this.#filterQueries(this.#queryConfigs || [], scrollConfig);
-
-      if (nocache) {
-        for (const q of queries) q._noCache = true;
+    // Source filter: bypass tier assembly
+    if (sources && sources.length > 0) {
+      const filtered = allItems
+        .filter(item => sources.includes(item.source) && !seenIds.has(item.id))
+        .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+      const batch = filtered.slice(0, effectiveLimit);
+      for (const item of batch) {
+        seenIds.add(item.id);
+        this.#cacheItem(item);
       }
+      this.#seenIds.set(username, seenIds);
+      return { items: batch, hasMore: filtered.length > batch.length, colors: ScrollConfigLoader.extractColors(scrollConfig) };
+    }
 
-      const results = await Promise.allSettled(
-        queries.map(query => this.#fetchSource(query, username))
-      );
+    // Remove already-seen items
+    const freshPool = allItems.filter(i => !seenIds.has(i.id));
 
-      const allItems = [];
-      for (let i = 0; i < results.length; i++) {
-        if (results[i].status === 'fulfilled') {
-          allItems.push(...results[i].value);
-        } else {
-          this.#logger.warn?.('feed.assembly.source.failed', {
-            query: queries[i].type,
-            error: results[i].reason?.message || 'Unknown error',
-          });
+    // Primary pass: normal tier assembly
+    const { items: primary } = this.#tierAssemblyService.assemble(
+      freshPool, scrollConfig, { effectiveLimit, focus }
+    );
+
+    let batch = primary.slice(0, effectiveLimit);
+
+    // Padding pass: fill remaining slots from padding sources
+    if (batch.length < effectiveLimit) {
+      const paddingSources = ScrollConfigLoader.getPaddingSources(scrollConfig);
+      if (paddingSources.size > 0) {
+        const batchIds = new Set(batch.map(i => i.id));
+        const padding = freshPool.filter(i => paddingSources.has(i.source) && !batchIds.has(i.id));
+        // Shuffle padding
+        for (let i = padding.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [padding[i], padding[j]] = [padding[j], padding[i]];
         }
+        batch = [...batch, ...padding.slice(0, effectiveLimit - batch.length)];
       }
-
-      // Source filter: bypass tier assembly
-      if (sources && sources.length > 0) {
-        const filtered = allItems
-          .filter(item => sources.includes(item.source))
-          .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-        const startIdx = cursor
-          ? Math.max(0, filtered.findIndex(i => i.id === cursor) + 1)
-          : 0;
-        const batch = filtered.slice(startIdx, startIdx + effectiveLimit);
-        for (const item of batch) { this.#cacheItem(item); }
-        return { items: batch, hasMore: startIdx + effectiveLimit < filtered.length, colors: ScrollConfigLoader.extractColors(scrollConfig) };
-      }
-
-      // Assemble full list (no slice — we paginate below)
-      const { items: fullList } = this.#tierAssemblyService.assemble(
-        allItems, scrollConfig, { effectiveLimit: allItems.length, focus }
-      );
-
-      assembledItems = fullList;
-
-      // Cache for subsequent cursor requests
-      this.#assembledCache.set(username, {
-        items: assembledItems,
-        timestamp: Date.now(),
-        focus: focus || null,
-      });
     }
 
-    // Cursor pagination: find position and slice
-    let startIdx = 0;
-    if (cursor) {
-      const cursorIdx = assembledItems.findIndex(item => item.id === cursor);
-      if (cursorIdx !== -1) startIdx = cursorIdx + 1;
-    }
-
-    const batch = assembledItems.slice(startIdx, startIdx + effectiveLimit);
-
+    // Record seen IDs
     for (const item of batch) {
+      seenIds.add(item.id);
       this.#cacheItem(item);
     }
+    this.#seenIds.set(username, seenIds);
 
     return {
       items: batch,
-      hasMore: startIdx + effectiveLimit < assembledItems.length,
+      hasMore: freshPool.length > seenIds.size,
       colors: ScrollConfigLoader.extractColors(scrollConfig),
     };
   }
@@ -257,6 +233,31 @@ export class FeedAssemblyService {
   // ======================================================================
   // Source Dispatch
   // ======================================================================
+
+  async #fetchAllSources(scrollConfig, username, { nocache, sources } = {}) {
+    const queries = this.#filterQueries(this.#queryConfigs || [], scrollConfig);
+
+    if (nocache) {
+      for (const q of queries) q._noCache = true;
+    }
+
+    const results = await Promise.allSettled(
+      queries.map(query => this.#fetchSource(query, username))
+    );
+
+    const allItems = [];
+    for (let i = 0; i < results.length; i++) {
+      if (results[i].status === 'fulfilled') {
+        allItems.push(...results[i].value);
+      } else {
+        this.#logger.warn?.('feed.assembly.source.failed', {
+          query: queries[i].type,
+          error: results[i].reason?.message || 'Unknown error',
+        });
+      }
+    }
+    return allItems;
+  }
 
   async #fetchSource(query, username) {
     const sourceKey = query._filename?.replace('.yml', '') || query.type;

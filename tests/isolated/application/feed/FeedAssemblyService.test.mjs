@@ -391,3 +391,196 @@ describe('image dimensions passthrough', () => {
     expect(result.items[0].meta.imageHeight).toBeUndefined();
   });
 });
+
+describe('seenIds dedup', () => {
+  let mockScrollConfigLoader;
+  let mockTierAssemblyService;
+
+  const defaultScrollConfig = {
+    batch_size: 15,
+    spacing: { max_consecutive: 1 },
+    tiers: {
+      wire: { selection: { sort: 'timestamp_desc' }, sources: {} },
+      library: { allocation: 2, selection: { sort: 'random' }, sources: {} },
+      scrapbook: { allocation: 2, selection: { sort: 'random' }, sources: {} },
+      compass: { allocation: 3, selection: { sort: 'priority' }, sources: {} },
+    },
+  };
+
+  beforeEach(() => {
+    mockScrollConfigLoader = {
+      load: jest.fn().mockReturnValue(defaultScrollConfig),
+    };
+    mockTierAssemblyService = {
+      assemble: jest.fn().mockImplementation((items, config, opts) => {
+        const limit = opts?.effectiveLimit || 15;
+        return { items: items.slice(0, limit), hasMore: items.length > limit };
+      }),
+    };
+  });
+
+  function createService(queryConfigs, adapters = [], overrides = {}) {
+    return new FeedAssemblyService({
+      freshRSSAdapter: null,
+      headlineService: null,
+      entropyService: null,
+      queryConfigs,
+      sourceAdapters: adapters,
+      scrollConfigLoader: mockScrollConfigLoader,
+      tierAssemblyService: mockTierAssemblyService,
+      logger: { info: jest.fn(), warn: jest.fn(), debug: jest.fn() },
+      ...overrides,
+    });
+  }
+
+  test('fresh load (no cursor) returns full batch', async () => {
+    const adapter = {
+      sourceType: 'reddit',
+      fetchItems: jest.fn().mockResolvedValue(
+        Array.from({ length: 20 }, (_, i) => ({
+          id: `reddit:r${i}`, tier: 'wire', source: 'reddit',
+          title: `Post ${i}`, timestamp: new Date(2026, 1, 17, 10 - i).toISOString(),
+        }))
+      ),
+    };
+    const service = createService(
+      [{ type: 'reddit', _filename: 'reddit.yml' }],
+      [adapter],
+    );
+    const result = await service.getNextBatch('testuser');
+    expect(result.items.length).toBe(15);
+    expect(result.hasMore).toBe(true);
+  });
+
+  test('continuation (with cursor) excludes previously sent items', async () => {
+    const items = Array.from({ length: 20 }, (_, i) => ({
+      id: `reddit:r${i}`, tier: 'wire', source: 'reddit',
+      title: `Post ${i}`, timestamp: new Date(2026, 1, 17, 10 - i).toISOString(),
+    }));
+    const adapter = {
+      sourceType: 'reddit',
+      fetchItems: jest.fn().mockResolvedValue(items),
+    };
+    const service = createService(
+      [{ type: 'reddit', _filename: 'reddit.yml' }],
+      [adapter],
+    );
+
+    const batch1 = await service.getNextBatch('testuser');
+    const batch2 = await service.getNextBatch('testuser', { cursor: 'continue' });
+
+    const batch1Ids = new Set(batch1.items.map(i => i.id));
+    const batch2Ids = new Set(batch2.items.map(i => i.id));
+    // No overlap
+    for (const id of batch2Ids) {
+      expect(batch1Ids.has(id)).toBe(false);
+    }
+  });
+
+  test('fresh load clears seenIds from previous session', async () => {
+    const items = Array.from({ length: 10 }, (_, i) => ({
+      id: `reddit:r${i}`, tier: 'wire', source: 'reddit',
+      title: `Post ${i}`, timestamp: new Date(2026, 1, 17, 10 - i).toISOString(),
+    }));
+    const adapter = {
+      sourceType: 'reddit',
+      fetchItems: jest.fn().mockResolvedValue(items),
+    };
+    const service = createService(
+      [{ type: 'reddit', _filename: 'reddit.yml' }],
+      [adapter],
+    );
+
+    const batch1 = await service.getNextBatch('testuser');
+    // Fresh load (no cursor) — same items should come back
+    const batch2 = await service.getNextBatch('testuser');
+    expect(batch2.items.length).toBe(batch1.items.length);
+  });
+});
+
+describe('padding', () => {
+  let mockScrollConfigLoader;
+  let mockTierAssemblyService;
+
+  beforeEach(() => {
+    mockTierAssemblyService = {
+      assemble: jest.fn().mockImplementation((items, config, opts) => {
+        const limit = opts?.effectiveLimit || 10;
+        return { items: items.slice(0, limit), hasMore: items.length > limit };
+      }),
+    };
+  });
+
+  function createService(queryConfigs, adapters = [], overrides = {}) {
+    return new FeedAssemblyService({
+      freshRSSAdapter: null,
+      headlineService: null,
+      entropyService: null,
+      queryConfigs,
+      sourceAdapters: adapters,
+      scrollConfigLoader: overrides.scrollConfigLoader || { load: jest.fn() },
+      tierAssemblyService: mockTierAssemblyService,
+      logger: { info: jest.fn(), warn: jest.fn(), debug: jest.fn() },
+      ...overrides,
+    });
+  }
+
+  test('fills remaining slots from padding sources', async () => {
+    const paddingScrollConfig = {
+      batch_size: 10,
+      spacing: { max_consecutive: 1 },
+      tiers: {
+        wire: { selection: { sort: 'timestamp_desc' }, sources: {} },
+        library: { allocation: 2, selection: { sort: 'random' }, sources: {} },
+        scrapbook: {
+          allocation: 2,
+          selection: { sort: 'random' },
+          sources: { photos: { max_per_batch: 4, padding: true } },
+        },
+        compass: { allocation: 3, selection: { sort: 'priority' }, sources: {} },
+      },
+    };
+    const mockScrollConfigLoader = {
+      load: jest.fn().mockReturnValue(paddingScrollConfig),
+    };
+
+    // Only 3 wire items available, but 10 photos for padding
+    const wireAdapter = {
+      sourceType: 'reddit',
+      fetchItems: jest.fn().mockResolvedValue(
+        Array.from({ length: 3 }, (_, i) => ({
+          id: `reddit:r${i}`, tier: 'wire', source: 'reddit',
+          title: `Post ${i}`, timestamp: new Date().toISOString(),
+        }))
+      ),
+    };
+    const photoAdapter = {
+      sourceType: 'photos',
+      fetchItems: jest.fn().mockResolvedValue(
+        Array.from({ length: 10 }, (_, i) => ({
+          id: `photo:p${i}`, tier: 'scrapbook', source: 'photos',
+          title: `Photo ${i}`, timestamp: new Date().toISOString(),
+        }))
+      ),
+    };
+
+    // Mock tierAssembly to only return 3 wire items (simulating primary pass getting few items)
+    mockTierAssemblyService.assemble.mockImplementation((items) => {
+      const wireOnly = items.filter(i => i.source === 'reddit');
+      return { items: wireOnly, hasMore: false };
+    });
+
+    const service = createService(
+      [
+        { type: 'reddit', _filename: 'reddit.yml' },
+        { type: 'photos', _filename: 'photos.yml' },
+      ],
+      [wireAdapter, photoAdapter],
+      { scrollConfigLoader: mockScrollConfigLoader },
+    );
+
+    const result = await service.getNextBatch('testuser');
+    expect(result.items.length).toBeGreaterThan(3); // padded beyond just wire items
+    expect(result.items.some(i => i.source === 'photos')).toBe(true);
+  });
+});
