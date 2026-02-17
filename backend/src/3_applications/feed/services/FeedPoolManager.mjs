@@ -44,7 +44,11 @@ export class FeedPoolManager {
   /** @type {Map<string, Object>} Per-user cached scrollConfig */
   #scrollConfigs = new Map();
 
+  /** @type {Map<string, string|null>} Cached first-page cursors keyed by sourceKey */
+  #firstPageCursors = new Map();
+
   static #REFILL_THRESHOLD_MULTIPLIER = 2;
+  static #MAX_SEEN_ITEMS = 500;
 
   constructor({
     sourceAdapters = [],
@@ -55,6 +59,8 @@ export class FeedPoolManager {
     entropyService = null,
     logger = console,
   }) {
+    if (!logger) throw new Error('FeedPoolManager requires a logger');
+
     this.#sourceAdapters = new Map();
     for (const adapter of sourceAdapters) {
       this.#sourceAdapters.set(adapter.sourceType, adapter);
@@ -84,7 +90,17 @@ export class FeedPoolManager {
 
     const pool = this.#pools.get(username) || [];
     const seen = this.#seenIds.get(username) || new Set();
-    return pool.filter(item => !seen.has(item.id));
+    const remaining = pool.filter(item => !seen.has(item.id));
+
+    // If pool is empty but sources remain, await a refill instead of
+    // returning nothing while fire-and-forget refill runs in background.
+    if (remaining.length === 0 && this.#hasRefillableSources(username)) {
+      await this.#proactiveRefill(username, scrollConfig);
+      const refreshed = this.#pools.get(username) || [];
+      return refreshed.filter(item => !seen.has(item.id));
+    }
+
+    return remaining;
   }
 
   /**
@@ -107,6 +123,10 @@ export class FeedPoolManager {
     }
 
     this.#seenIds.set(username, seen);
+    // Cap history to prevent unbounded memory growth
+    if (history.length > FeedPoolManager.#MAX_SEEN_ITEMS) {
+      history.splice(0, history.length - FeedPoolManager.#MAX_SEEN_ITEMS);
+    }
     this.#seenItems.set(username, history);
 
     const remaining = pool.filter(i => !seen.has(i.id)).length;
@@ -146,6 +166,7 @@ export class FeedPoolManager {
     this.#cursors.delete(username);
     this.#refilling.delete(username);
     this.#scrollConfigs.delete(username);
+    this.#firstPageCursors.clear();
   }
 
   // =========================================================================
@@ -198,15 +219,17 @@ export class FeedPoolManager {
     const adapter = this.#sourceAdapters.get(query.type);
     if (adapter && typeof adapter.fetchPage === 'function') {
       if (this.#feedCacheService && cursorToken === undefined) {
-        // First page: use cache service
-        let storedCursor = null;
+        // First page: use cache service.
+        // The fetchFn may not be invoked (cache hit), so persist cursor
+        // separately: when the callback runs, store cursor in #firstPageCursors;
+        // on cache hit, read back the previously stored cursor.
         const cached = await this.#feedCacheService.getItems(sourceKey, async () => {
           const result = await adapter.fetchPage(query, username, { cursor: cursorToken });
-          storedCursor = result.cursor;
+          this.#firstPageCursors.set(sourceKey, result.cursor);
           return result.items;
         }, username);
         items = cached;
-        cursor = storedCursor;
+        cursor = this.#firstPageCursors.get(sourceKey) ?? null;
       } else {
         // Subsequent pages or no cache: direct fetch
         const result = await adapter.fetchPage(query, username, { cursor: cursorToken });
