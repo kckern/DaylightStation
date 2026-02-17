@@ -99,6 +99,24 @@ export class ScrollConfigLoader {
     return colors;
   }
 
+  /**
+   * Get source keys marked as padding sources.
+   * Padding sources fill remaining batch slots when primary content is exhausted.
+   *
+   * @param {Object} scrollConfig - Merged scroll config
+   * @returns {Set<string>} Set of source keys with padding: true
+   */
+  static getPaddingSources(scrollConfig) {
+    const padding = new Set();
+    const tiers = scrollConfig.tiers || {};
+    for (const tier of Object.values(tiers)) {
+      for (const [key, cfg] of Object.entries(tier.sources || {})) {
+        if (cfg.padding) padding.add(key);
+      }
+    }
+    return padding;
+  }
+
   #merge(user) {
     return {
       batch_size: user.batch_size ?? DEFAULTS.batch_size,
