@@ -168,16 +168,7 @@ export class KomgaFeedAdapter extends IFeedSourceAdapter {
       data: { images },
     });
 
-    // Metadata items
-    const items = [];
-    if (meta.seriesLabel) items.push({ label: 'Series', value: meta.seriesLabel });
-    if (meta.issueTitle) items.push({ label: 'Issue', value: meta.issueTitle });
-    if (meta.pageCount) items.push({ label: 'Pages', value: String(meta.pageCount) });
-    items.push({ label: 'Article', value: `pp. ${page}–${endPage}` });
-
-    if (items.length > 0) {
-      sections.push({ type: 'metadata', data: { items } });
-    }
+    // No metadata section — the article pages speak for themselves
 
     return { sections };
   }
