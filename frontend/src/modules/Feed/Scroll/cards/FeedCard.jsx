@@ -1,4 +1,4 @@
-import { formatAge, colorFromLabel, proxyIcon } from './utils.js';
+import { formatAge, colorFromLabel, proxyIcon, isImageUrl } from './utils.js';
 import { getBodyModule } from './bodies/index.js';
 
 const STATUS_COLORS = {
@@ -43,7 +43,7 @@ export default function FeedCard({ item, colors = {} }) {
       }}
     >
       {/* Hero image */}
-      {item.image && (
+      {item.image && isImageUrl(item.image) && (
         <div style={{
             overflow: 'hidden',
             position: 'relative',

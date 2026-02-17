@@ -52,6 +52,18 @@ export function memoryAge(isoDate) {
 }
 
 /**
+ * Check whether a URL looks like it can be rendered as an <img> src.
+ * Rejects known non-image media types (video streams, audio, etc.).
+ * @param {string} url
+ * @returns {boolean}
+ */
+const NON_IMAGE_RE = /\.(?:m3u8|mp4|webm|ogg|mp3|m4a|wav|flac|mpd)(?:[?#]|$)/i;
+export function isImageUrl(url) {
+  if (!url) return false;
+  return !NON_IMAGE_RE.test(url);
+}
+
+/**
  * Generate a deterministic color from a string label.
  * Returns a hex color from a curated palette.
  * @param {string} label
