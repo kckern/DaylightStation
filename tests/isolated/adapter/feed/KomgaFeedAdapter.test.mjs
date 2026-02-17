@@ -22,6 +22,26 @@ describe('KomgaFeedAdapter', () => {
     mockDataService.household.read.mockReturnValue(null);
   });
 
+  describe('constructor with client', () => {
+    test('throws error when client is missing', () => {
+      expect(() => new KomgaFeedAdapter({
+        apiKey: 'test-key',
+        dataService: mockDataService,
+      })).toThrow('KomgaFeedAdapter requires client');
+    });
+
+    test('accepts client and apiKey without host', () => {
+      const mockClient = { host: 'http://localhost:25600', getBooks: jest.fn() };
+      const adapter = new KomgaFeedAdapter({
+        client: mockClient,
+        apiKey: 'test-key',
+        dataService: mockDataService,
+        logger,
+      });
+      expect(adapter.sourceType).toBe('komga');
+    });
+  });
+
   describe('fetchItems image URL', () => {
     test('uses composite hero URL pattern', async () => {
       // Mock books list response
@@ -46,8 +66,9 @@ describe('KomgaFeedAdapter', () => {
         articles: [{ title: 'Article One', page: 12 }],
       });
 
+      const mockClient = { host: 'http://localhost:25600', getBooks: jest.fn() };
       const adapter = new KomgaFeedAdapter({
-        host: 'http://localhost:25600',
+        client: mockClient,
         apiKey: 'test-key',
         dataService: mockDataService,
         logger,
@@ -90,8 +111,9 @@ describe('KomgaFeedAdapter', () => {
         articles: [{ title: 'Article One', page: 12 }],
       });
 
+      const mockClient = { host: 'http://localhost:25600', getBooks: jest.fn() };
       const adapter = new KomgaFeedAdapter({
-        host: 'http://localhost:25600',
+        client: mockClient,
         apiKey: 'test-key',
         dataService: mockDataService,
         logger,
