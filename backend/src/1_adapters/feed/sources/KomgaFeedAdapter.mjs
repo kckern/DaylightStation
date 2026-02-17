@@ -14,7 +14,7 @@
 import { IFeedSourceAdapter } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
 
 export class KomgaFeedAdapter extends IFeedSourceAdapter {
-  #host;
+  #client;
   #apiKey;
   #webUrl;
   #dataService;
@@ -22,18 +22,18 @@ export class KomgaFeedAdapter extends IFeedSourceAdapter {
 
   /**
    * @param {Object} deps
-   * @param {string} deps.host - Komga server base URL (e.g., 'http://localhost:25600')
+   * @param {Object} deps.client - KomgaClient instance with `.host` property
    * @param {string} deps.apiKey - Komga API key for X-API-Key header
    * @param {string} [deps.webUrl] - Komga web UI base URL for reader links
    * @param {Object} deps.dataService - DataService for TOC cache persistence
    * @param {Object} [deps.logger]
    */
-  constructor({ host, apiKey, webUrl = null, dataService, logger = console }) {
+  constructor({ client, apiKey, webUrl = null, dataService, logger = console }) {
     super();
-    if (!host) throw new Error('KomgaFeedAdapter requires host');
+    if (!client) throw new Error('KomgaFeedAdapter requires client');
     if (!apiKey) throw new Error('KomgaFeedAdapter requires apiKey');
     if (!dataService) throw new Error('KomgaFeedAdapter requires dataService');
-    this.#host = host.replace(/\/$/, '');
+    this.#client = client;
     this.#apiKey = apiKey;
     this.#webUrl = webUrl ? webUrl.replace(/\/$/, '') : null;
     this.#dataService = dataService;
@@ -89,7 +89,7 @@ export class KomgaFeedAdapter extends IFeedSourceAdapter {
    * @returns {Promise<Object|null>} A single FeedItem or null
    */
   async #fetchOneSeries(series, recentCount, query) {
-    const booksUrl = `${this.#host}/api/v1/series/${series.id}/books?sort=metadata.numberSort,desc&size=${recentCount}`;
+    const booksUrl = `${this.#client.host}/api/v1/series/${series.id}/books?sort=metadata.numberSort,desc&size=${recentCount}`;
     const booksRes = await fetch(booksUrl, { headers: this.#authHeaders() });
     if (!booksRes.ok) {
       this.#logger.warn?.('komga.adapter.books.error', { status: booksRes.status, seriesId: series.id });
@@ -296,7 +296,7 @@ export class KomgaFeedAdapter extends IFeedSourceAdapter {
    */
   async #extractBookmarks(bookId) {
     // Download the PDF file
-    const fileUrl = `${this.#host}/api/v1/books/${bookId}/file`;
+    const fileUrl = `${this.#client.host}/api/v1/books/${bookId}/file`;
     const fileRes = await fetch(fileUrl, {
       headers: { 'X-API-Key': this.#apiKey },
       signal: AbortSignal.timeout(60000),
