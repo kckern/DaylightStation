@@ -61,4 +61,45 @@ describe('ScrollConfigLoader', () => {
       expect(config.batch_size).toBe(15); // not 99
     });
   });
+
+  describe('getPaddingSources', () => {
+    test('returns empty set when no padding sources configured', () => {
+      const config = {
+        tiers: {
+          wire: { sources: { reddit: { max_per_batch: 10 } } },
+          library: { sources: { komga: { max_per_batch: 5 } } },
+        },
+      };
+      const result = ScrollConfigLoader.getPaddingSources(config);
+      expect(result).toBeInstanceOf(Set);
+      expect(result.size).toBe(0);
+    });
+
+    test('returns sources with padding: true', () => {
+      const config = {
+        tiers: {
+          library: { sources: { komga: { max_per_batch: 5, padding: true } } },
+          scrapbook: { sources: { photos: { max_per_batch: 4, padding: true }, journal: { max_per_batch: 1 } } },
+        },
+      };
+      const result = ScrollConfigLoader.getPaddingSources(config);
+      expect(result).toEqual(new Set(['komga', 'photos']));
+    });
+
+    test('handles missing tiers gracefully', () => {
+      const result = ScrollConfigLoader.getPaddingSources({});
+      expect(result).toBeInstanceOf(Set);
+      expect(result.size).toBe(0);
+    });
+
+    test('ignores padding: false', () => {
+      const config = {
+        tiers: {
+          library: { sources: { komga: { max_per_batch: 5, padding: false } } },
+        },
+      };
+      const result = ScrollConfigLoader.getPaddingSources(config);
+      expect(result.size).toBe(0);
+    });
+  });
 });
