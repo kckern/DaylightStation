@@ -36,7 +36,7 @@ describe('ImmichFeedAdapter', () => {
       contentRegistry.set('immich', mockImmichContent);
 
       const adapter = new ImmichFeedAdapter({
-        contentQueryService: mockContentQueryService,
+        contentQueryPort: mockContentQueryService,
         contentRegistry,
         logger,
       });
@@ -75,7 +75,7 @@ describe('ImmichFeedAdapter', () => {
       contentRegistry.set('immich', mockImmichContent);
 
       const adapter = new ImmichFeedAdapter({
-        contentQueryService: mockContentQueryService,
+        contentQueryPort: mockContentQueryService,
         contentRegistry,
         logger,
       });

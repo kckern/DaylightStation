@@ -2,7 +2,7 @@
 /**
  * ImmichFeedAdapter
  *
- * Fetches random photos from Immich via ContentQueryService and normalizes to FeedItem shape.
+ * Fetches random photos from Immich via IContentQueryPort and normalizes to FeedItem shape.
  *
  * @module adapters/feed/sources/ImmichFeedAdapter
  */
@@ -10,15 +10,15 @@
 import { IFeedSourceAdapter } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
 
 export class ImmichFeedAdapter extends IFeedSourceAdapter {
-  #contentQueryService;
+  #contentQueryPort;
   #contentRegistry;
   #webUrl;
   #logger;
 
-  constructor({ contentQueryService, contentRegistry = null, webUrl = null, logger = console }) {
+  constructor({ contentQueryPort, contentRegistry = null, webUrl = null, logger = console }) {
     super();
-    if (!contentQueryService) throw new Error('ImmichFeedAdapter requires contentQueryService');
-    this.#contentQueryService = contentQueryService;
+    if (!contentQueryPort) throw new Error('ImmichFeedAdapter requires contentQueryPort');
+    this.#contentQueryPort = contentQueryPort;
     this.#contentRegistry = contentRegistry;
     this.#webUrl = webUrl;
     this.#logger = logger;
@@ -28,7 +28,7 @@ export class ImmichFeedAdapter extends IFeedSourceAdapter {
 
   async fetchItems(query, _username) {
     try {
-      const result = await this.#contentQueryService.search({
+      const result = await this.#contentQueryPort.search({
         text: '',
         source: 'immich',
         take: query.limit || 3,
