@@ -75,7 +75,7 @@ describe('RssHeadlineHarvester', () => {
     mockRssParser.parseURL.mockRejectedValue(new Error('Network error'));
     const result = await harvester.harvest({ id: 'cnn', label: 'CNN', url: 'http://bad-url.com/rss' });
     expect(result.items).toHaveLength(0);
-    expect(result.error).toBe('Network error');
+    expect(result.error).toBe('http://bad-url.com/rss: Network error');
   });
 
   test('includes imageWidth and imageHeight from media:content attributes', async () => {
@@ -97,6 +97,25 @@ describe('RssHeadlineHarvester', () => {
     expect(result.items[0].image).toBe('https://example.com/image.jpg');
     expect(result.items[0].imageWidth).toBe(1200);
     expect(result.items[0].imageHeight).toBe(630);
+  });
+
+  test('harvested items have deterministic id from link', async () => {
+    const result = await harvester.harvest({
+      id: 'cnn',
+      label: 'CNN',
+      url: 'http://example.com/rss',
+    });
+    for (const item of result.items) {
+      expect(item.id).toBeDefined();
+      expect(typeof item.id).toBe('string');
+      expect(item.id.length).toBe(10);
+    }
+  });
+
+  test('same link produces same id across harvests', async () => {
+    const result1 = await harvester.harvest({ id: 'cnn', label: 'CNN', url: 'http://example.com/rss' });
+    const result2 = await harvester.harvest({ id: 'cnn', label: 'CNN', url: 'http://example.com/rss' });
+    expect(result1.items[0].id).toBe(result2.items[0].id);
   });
 
   test('omits imageWidth/imageHeight when media:content lacks dimensions', async () => {

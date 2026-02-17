@@ -6,6 +6,8 @@
  * @module adapters/feed
  */
 
+import { Headline } from '#domains/feed/entities/Headline.mjs';
+
 export class RssHeadlineHarvester {
   #rssParser;
   #logger;
@@ -29,12 +31,15 @@ export class RssHeadlineHarvester {
         try {
           const feed = await this.#rssParser.parseURL(url);
           for (const item of feed.items) {
-            const entry = {
-              title: item.title?.trim(),
+            if (!item.title?.trim() || !item.link?.trim()) continue;
+            const headline = Headline.create({
+              source: source.id,
+              title: item.title.trim(),
               desc: this.#extractDesc(item),
-              link: item.link?.trim(),
+              link: item.link.trim(),
               timestamp: this.#parseDate(item),
-            };
+            });
+            const entry = headline.toJSON();
             const imageData = this.#extractImageWithDims(item);
             if (imageData) {
               entry.image = imageData.url;
