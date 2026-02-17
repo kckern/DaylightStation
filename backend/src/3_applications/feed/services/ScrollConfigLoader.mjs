@@ -43,6 +43,20 @@ const DEFAULTS = Object.freeze({
   tiers: TIER_DEFAULTS,
 });
 
+const DEFAULT_MAX_AGE_HOURS = Object.freeze({
+  freshrss: 336,    // 2 weeks
+  reddit: 168,      // 1 week
+  headlines: 48,
+  googlenews: 48,
+});
+
+const TIER_DEFAULT_MAX_AGE = Object.freeze({
+  wire: 48,
+  library: null,      // timeless
+  scrapbook: null,    // timeless
+  compass: 48,
+});
+
 export class ScrollConfigLoader {
   #dataService;
 
@@ -115,6 +129,43 @@ export class ScrollConfigLoader {
       }
     }
     return padding;
+  }
+
+  /**
+   * Get max age in milliseconds for a source.
+   * Returns null if the source has no age limit (timeless content).
+   *
+   * Priority: source-level config > hardcoded source default > tier-level default > 48h fallback
+   *
+   * @param {Object} scrollConfig - Merged scroll config
+   * @param {string} sourceKey - Source identifier (e.g. 'reddit', 'freshrss')
+   * @returns {number|null} Max age in ms, or null for unlimited
+   */
+  static getMaxAgeMs(scrollConfig, sourceKey) {
+    // Check source-level override in any tier
+    const tiers = scrollConfig.tiers || {};
+    for (const [tierName, tier] of Object.entries(tiers)) {
+      const sourceCfg = tier.sources?.[sourceKey];
+      if (sourceCfg && 'max_age_hours' in sourceCfg) {
+        return sourceCfg.max_age_hours === null ? null : sourceCfg.max_age_hours * 3600000;
+      }
+    }
+
+    // Check hardcoded source defaults
+    if (sourceKey in DEFAULT_MAX_AGE_HOURS) {
+      return DEFAULT_MAX_AGE_HOURS[sourceKey] * 3600000;
+    }
+
+    // Check tier-level default (find which tier this source belongs to)
+    for (const [tierName, tier] of Object.entries(tiers)) {
+      if (tier.sources?.[sourceKey] !== undefined) {
+        const tierDefault = TIER_DEFAULT_MAX_AGE[tierName];
+        return tierDefault === null ? null : (tierDefault ?? 48) * 3600000;
+      }
+    }
+
+    // Absolute fallback: 48 hours
+    return 48 * 3600000;
   }
 
   #merge(user) {
