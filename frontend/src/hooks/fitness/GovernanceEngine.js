@@ -717,15 +717,40 @@ export class GovernanceEngine {
     for (const req of requirements) {
       if (!Array.isArray(req.missingUsers)) continue;
       const requiredRank = this._getZoneRank(req.zone || req.zoneLabel);
+      const requiredZoneId = (req.zone || req.zoneLabel || '').toLowerCase();
       for (const name of req.missingUsers) {
         const currentZone = userZoneMap[name];
         const currentRank = this._getZoneRank(currentZone) ?? 0;
         // Only include if they are actually below the required zone right now
         if (!Number.isFinite(requiredRank) || currentRank < requiredRank) {
+          // Get HR from roster
+          const rosterEntry = this.session?.roster?.find(
+            e => (e.id || e.profileId) === name
+          );
+          const hr = Number.isFinite(rosterEntry?.heartRate) ? rosterEntry.heartRate : null;
+
+          // Get per-user zone threshold from ZoneProfileStore
+          let threshold = null;
+          if (this.session?.zoneProfileStore) {
+            const profile = this.session.zoneProfileStore.getProfile(name);
+            if (profile?.zoneConfig) {
+              const requiredZone = profile.zoneConfig.find(
+                z => z.id === requiredZoneId
+              );
+              threshold = requiredZone?.min ?? null;
+            }
+          }
+
+          const delta = (hr != null && threshold != null) ? hr - threshold : null;
+
           below.push({
             name,
-            zone: req.zone || req.zoneLabel,
-            required: req.requiredCount
+            zone: currentZone || req.zone || req.zoneLabel,
+            requiredZone: requiredZoneId,
+            required: req.requiredCount,
+            hr,
+            threshold,
+            delta
           });
         }
       }
