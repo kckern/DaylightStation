@@ -9,6 +9,7 @@
  */
 
 import { IFeedSourceAdapter } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
+import { probeImageDimensions } from '#system/utils/probeImageDimensions.mjs';
 
 export class PlexFeedAdapter extends IFeedSourceAdapter {
   #contentRegistry;
@@ -16,12 +17,16 @@ export class PlexFeedAdapter extends IFeedSourceAdapter {
   #logger;
 
   #webUrl;
+  #plexHost;
+  #plexToken;
 
-  constructor({ contentRegistry = null, contentQueryPort = null, webUrl = null, logger = console }) {
+  constructor({ contentRegistry = null, contentQueryPort = null, webUrl = null, plexHost = null, plexToken = null, logger = console }) {
     super();
     this.#contentRegistry = contentRegistry;
     this.#contentQueryPort = contentQueryPort;
     this.#webUrl = webUrl;
+    this.#plexHost = plexHost;
+    this.#plexToken = plexToken;
     this.#logger = logger;
   }
 
@@ -62,8 +67,9 @@ export class PlexFeedAdapter extends IFeedSourceAdapter {
     }
 
     filtered.sort(() => Math.random() - 0.5);
-    return filtered.slice(0, query.limit || 3).map(item => {
+    return Promise.all(filtered.slice(0, query.limit || 3).map(async item => {
       const localId = item.localId || item.id?.replace?.('plex:', '') || item.id;
+      const dims = await this.#getThumbDimensions(item.thumbnail);
       return {
         id: `plex:${localId}`,
         tier: query.tier || 'compass',
@@ -80,9 +86,10 @@ export class PlexFeedAdapter extends IFeedSourceAdapter {
           year: item.year || item.metadata?.year,
           sourceName: 'Plex',
           sourceIcon: null,
+          ...dims,
         },
       };
-    });
+    }));
   }
 
   async #fetchWeightedChildren(plexAdapter, query) {
@@ -107,8 +114,9 @@ export class PlexFeedAdapter extends IFeedSourceAdapter {
     }
 
     filtered.sort(() => Math.random() - 0.5);
-    return filtered.slice(0, query.limit || 3).map(item => {
+    return Promise.all(filtered.slice(0, query.limit || 3).map(async item => {
       const localId = item.localId || item.id?.replace?.('plex:', '') || item.id;
+      const dims = await this.#getThumbDimensions(item.thumbnail);
       return {
         id: `plex:${localId}`,
         tier: query.tier || 'library',
@@ -127,9 +135,10 @@ export class PlexFeedAdapter extends IFeedSourceAdapter {
           artistName: item.metadata?.artist || item.metadata?.parentTitle || null,
           sourceName: item.metadata?.artist || item.metadata?.parentTitle || 'Audio',
           sourceIcon: null,
+          ...dims,
         },
       };
-    });
+    }));
   }
 
   async #fetchSearch(query) {
@@ -143,8 +152,9 @@ export class PlexFeedAdapter extends IFeedSourceAdapter {
       take: query.limit || 3,
     });
 
-    return (result.items || []).map(item => {
+    return Promise.all((result.items || []).map(async item => {
       const localId = item.localId || item.id?.replace?.('plex:', '') || item.id;
+      const dims = await this.#getThumbDimensions(item.thumbnail);
       return {
         id: `plex:${localId}`,
         tier: query.tier || 'compass',
@@ -161,9 +171,10 @@ export class PlexFeedAdapter extends IFeedSourceAdapter {
           year: item.year || item.metadata?.year,
           sourceName: 'Plex',
           sourceIcon: null,
+          ...dims,
         },
       };
-    });
+    }));
   }
 
   async getDetail(localId, meta, _username) {
@@ -177,6 +188,20 @@ export class PlexFeedAdapter extends IFeedSourceAdapter {
     if (items.length > 0) sections.push({ type: 'metadata', data: { items } });
 
     return { sections };
+  }
+
+  async #getThumbDimensions(thumbProxy) {
+    if (!this.#plexHost || !thumbProxy) return {};
+    try {
+      // thumbProxy is like /api/v1/proxy/plex/library/metadata/123/thumb
+      const plexPath = thumbProxy.replace(/^\/api\/v1\/proxy\/plex/, '');
+      const separator = plexPath.includes('?') ? '&' : '?';
+      const url = `${this.#plexHost}${plexPath}${separator}X-Plex-Token=${this.#plexToken}`;
+      const dims = await probeImageDimensions(url);
+      return dims ? { imageWidth: dims.width, imageHeight: dims.height } : {};
+    } catch {
+      return {};
+    }
   }
 
   #plexWebLink(ratingKey) {

@@ -1,5 +1,10 @@
 import { jest } from '@jest/globals';
 import { PlexFeedAdapter } from '#adapters/feed/sources/PlexFeedAdapter.mjs';
+import { probeImageDimensions } from '#system/utils/probeImageDimensions.mjs';
+
+jest.mock('#system/utils/probeImageDimensions.mjs', () => ({
+  probeImageDimensions: jest.fn().mockResolvedValue(null),
+}));
 
 function makeMockRegistry(items) {
   return {
@@ -118,6 +123,55 @@ describe('PlexFeedAdapter', () => {
       expect(mockGetList).toHaveBeenCalledWith('99999');
       expect(result).toHaveLength(1);
       expect(result[0].meta.playable).toBe(true);
+    });
+
+    test('probes image dimensions when plexHost is provided', async () => {
+      probeImageDimensions.mockResolvedValueOnce({ width: 500, height: 500 });
+      const mockItems = [{
+        localId: '200',
+        id: 'plex:200',
+        title: 'Album Art',
+        thumbnail: '/api/v1/proxy/plex/library/metadata/200/thumb',
+        metadata: { type: 'album', viewCount: 0 },
+      }];
+      const registry = makeMockRegistry(mockItems);
+      const adapter = new PlexFeedAdapter({
+        contentRegistry: registry,
+        plexHost: 'http://10.0.0.10:32400',
+        plexToken: 'test-token',
+        logger,
+      });
+
+      const query = {
+        tier: 'library',
+        limit: 1,
+        params: { mode: 'children', parentIds: [{ id: 1, weight: 1 }] },
+      };
+
+      const result = await adapter.fetchItems(query, 'testuser');
+      expect(probeImageDimensions).toHaveBeenCalledWith(
+        'http://10.0.0.10:32400/library/metadata/200/thumb?X-Plex-Token=test-token'
+      );
+      expect(result[0].meta.imageWidth).toBe(500);
+      expect(result[0].meta.imageHeight).toBe(500);
+    });
+
+    test('omits dimensions when plexHost not provided', async () => {
+      probeImageDimensions.mockClear();
+      const mockItems = makeItems(1);
+      const registry = makeMockRegistry(mockItems);
+      const adapter = new PlexFeedAdapter({ contentRegistry: registry, logger });
+
+      const query = {
+        tier: 'library',
+        limit: 1,
+        params: { mode: 'children', parentIds: [{ id: 1, weight: 1 }] },
+      };
+
+      const result = await adapter.fetchItems(query, 'testuser');
+      expect(probeImageDimensions).not.toHaveBeenCalled();
+      expect(result[0].meta.imageWidth).toBeUndefined();
+      expect(result[0].meta.imageHeight).toBeUndefined();
     });
 
     test('filters unwatched items when unwatched=true', async () => {
