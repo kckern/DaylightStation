@@ -29,7 +29,9 @@ describe('StravaHarvester', () => {
     mockConfigService = {
       getUserAuth: jest.fn().mockReturnValue({ token: 'test-token', refresh: 'refresh-token' }),
       getEnv: jest.fn(),
-      getSecret: jest.fn()
+      getSecret: jest.fn(),
+      getMediaDir: jest.fn().mockReturnValue('/tmp/test-media'),
+      getUserDir: jest.fn().mockImplementation((u) => `/tmp/test-users/${u}`)
     };
 
     mockLogger = {
@@ -69,6 +71,20 @@ describe('StravaHarvester', () => {
       expect(() => new StravaHarvester({
         stravaClient: mockStravaClient
       })).toThrow('StravaHarvester requires lifelogStore');
+    });
+
+    it('should accept fitnessHistoryDir dependency', async () => {
+      const { StravaHarvester } = await import('#adapters/harvester/fitness/StravaHarvester.mjs');
+
+      harvester = new StravaHarvester({
+        stravaClient: mockStravaClient,
+        lifelogStore: mockLifelogStore,
+        configService: mockConfigService,
+        fitnessHistoryDir: '/tmp/test-fitness-history',
+        logger: mockLogger
+      });
+
+      expect(harvester).toBeInstanceOf(StravaHarvester);
     });
   });
 
