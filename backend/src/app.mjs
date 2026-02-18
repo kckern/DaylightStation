@@ -740,9 +740,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     const plexAdapter = new PlexFeedAdapter({
       contentRegistry: contentRegistry || null,
       contentQueryPort: contentServices?.contentQueryService || null,
-      webUrl: plexConfig?.webUrl || plexConfig?.host || null,
-      plexHost: plexConfig?.host || null,
-      plexToken: plexConfig?.token || null,
+      webUrl: mediaLibConfig?.webUrl || mediaLibConfig?.host || null,
+      plexHost: mediaLibConfig?.host || null,
+      plexToken: mediaLibConfig?.token || null,
       logger: rootLogger.child({ module: 'plex-feed' }),
     });
     const googleAuth = dataService.system.read('auth/google');
@@ -781,9 +781,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     const absEbookFeedAdapter = audiobookshelfConfig ? new ABSEbookFeedAdapter({
       absClient: new AudiobookshelfClient(audiobookshelfConfig, { httpClient: axios }),
       token: audiobookshelfConfig.token,
-      dataService,
+      mediaDir: mediaBasePath,
       logger: rootLogger.child({ module: 'abs-ebooks-feed' }),
     }) : null;
+
+    // Start daily prefetch timer for abs-ebooks chapter cache
+    if (absEbookFeedAdapter) {
+      const allQueries = [...queryConfigs, ...loadUserQueries('kckern')];
+      absEbookFeedAdapter.startPrefetchTimer(allQueries);
+    }
 
     const { ScrollConfigLoader } = await import('./3_applications/feed/services/ScrollConfigLoader.mjs');
     const { SpacingEnforcer } = await import('./3_applications/feed/services/SpacingEnforcer.mjs');
