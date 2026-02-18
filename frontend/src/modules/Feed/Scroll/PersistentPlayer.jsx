@@ -1,9 +1,15 @@
-import { lazy, Suspense, forwardRef } from 'react';
+import { lazy, Suspense, forwardRef, useMemo } from 'react';
 
 const Player = lazy(() => import('../../Player/Player.jsx'));
 
 const PersistentPlayer = forwardRef(function PersistentPlayer({ contentId, onEnd }, ref) {
-  if (!contentId) return null;
+  // Memoize the play prop so Player receives a stable object reference.
+  // Without this, every parent re-render creates a new { contentId } object,
+  // which Player's WeakMap-based ensureEntryGuid treats as "new media",
+  // causing a full SinglePlayer remount that destroys the audio element.
+  const play = useMemo(() => contentId ? { contentId } : null, [contentId]);
+
+  if (!play) return null;
 
   return (
     <div
@@ -19,7 +25,7 @@ const PersistentPlayer = forwardRef(function PersistentPlayer({ contentId, onEnd
       <Suspense fallback={null}>
         <Player
           ref={ref}
-          play={{ contentId }}
+          play={play}
           clear={onEnd}
           ignoreKeys
           playerType="feed"

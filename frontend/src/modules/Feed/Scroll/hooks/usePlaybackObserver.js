@@ -59,6 +59,8 @@ export function usePlaybackObserver(playerRef, active) {
     };
   }, [playerRef, active]);
 
+  const [speed, setSpeedState] = useState(1);
+
   const toggle = useCallback(() => {
     playerRef.current?.toggle?.();
   }, [playerRef]);
@@ -67,5 +69,11 @@ export function usePlaybackObserver(playerRef, active) {
     playerRef.current?.seek?.(t);
   }, [playerRef]);
 
-  return { ...state, toggle, seek, progressElRef };
+  const setSpeed = useCallback((rate) => {
+    const el = playerRef.current?.getMediaElement?.();
+    if (el) el.playbackRate = rate;
+    setSpeedState(rate);
+  }, [playerRef]);
+
+  return { ...state, toggle, seek, speed, setSpeed, progressElRef };
 }

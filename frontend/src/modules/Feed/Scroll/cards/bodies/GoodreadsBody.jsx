@@ -48,7 +48,7 @@ export default function GoodreadsBody({ item }) {
           lineHeight: 1.35,
           fontStyle: 'italic',
           display: '-webkit-box',
-          WebkitLineClamp: 2,
+          WebkitLineClamp: 8,
           WebkitBoxOrient: 'vertical',
           overflow: 'hidden',
         }}>

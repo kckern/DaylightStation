@@ -15,6 +15,27 @@ const STATUS = RESILIENCE_STATUS;
 // Stable no-op function to avoid creating new function references on each render
 const NOOP = () => {};
 
+// ── Module-level recovery tracker ──────────────────────────────────────
+// Persists across React remounts caused by onReload → scheduleSinglePlayerRemount.
+// Without this, lastReloadAt (React state) resets to 0 on every remount,
+// bypassing the cooldown check and creating an infinite remount loop.
+const _recoveryTracker = new Map();
+function _getTracker(key) {
+  if (!key) return { count: 0, lastAt: 0 };
+  return _recoveryTracker.get(key) || { count: 0, lastAt: 0 };
+}
+function _recordRecovery(key) {
+  if (!key) return 0;
+  const entry = _recoveryTracker.get(key) || { count: 0, lastAt: 0 };
+  entry.count += 1;
+  entry.lastAt = Date.now();
+  _recoveryTracker.set(key, entry);
+  return entry.count;
+}
+function _clearTracker(key) {
+  if (key) _recoveryTracker.delete(key);
+}
+
 const USER_INTENT = Object.freeze({
   playing: 'playing',
   paused: 'paused',
@@ -53,17 +74,26 @@ export function useMediaResilience({
   externalStalled = null,
   externalStallState = null
 }) {
-  const { monitorSettings } = useResilienceConfig({ configOverrides });
+  const { monitorSettings, recoveryConfig } = useResilienceConfig({ configOverrides });
   const {
     epsilonSeconds,
     hardRecoverLoadingGraceMs,
     recoveryCooldownMs
   } = monitorSettings;
+  const { maxAttempts } = recoveryConfig;
 
   const { state: resilienceState, status, statusRef, actions } = useResilienceState(STATUS.startup);
-  
+
   const [showPauseOverlay, setShowPauseOverlay] = useState(true);
-  const [lastReloadAt, setLastReloadAt] = useState(0);
+
+  // Clean up module-level tracker when media changes (new session key)
+  const prevSessionKeyRef = useRef(playbackSessionKey);
+  useEffect(() => {
+    if (prevSessionKeyRef.current && prevSessionKeyRef.current !== playbackSessionKey) {
+      _clearTracker(prevSessionKeyRef.current);
+    }
+    prevSessionKeyRef.current = playbackSessionKey;
+  }, [playbackSessionKey]);
 
   const logWaitKey = useMemo(() => getLogWaitKey(waitKey), [waitKey]);
 
@@ -99,21 +129,36 @@ export function useMediaResilience({
 
   const triggerRecovery = useCallback((reason) => {
     const now = Date.now();
-    if (now - lastReloadAt < recoveryCooldownMs) return;
+    const tracker = _getTracker(playbackSessionKey);
 
-    playbackLog('resilience-recovery', { reason, waitKey: logWaitKey, status: statusRef.current });
-    setLastReloadAt(now);
+    // Cooldown check — uses module-level timestamp that survives remounts
+    if (now - tracker.lastAt < recoveryCooldownMs) return;
+
+    // Max attempts check — prevents infinite remount loop
+    if (tracker.count >= maxAttempts) {
+      playbackLog('resilience-recovery-exhausted', {
+        reason, waitKey: logWaitKey,
+        attempts: tracker.count, maxAttempts
+      });
+      return;
+    }
+
+    const attempt = _recordRecovery(playbackSessionKey);
+    playbackLog('resilience-recovery', {
+      reason, waitKey: logWaitKey,
+      status: statusRef.current, attempt, maxAttempts
+    });
     actions.setStatus(STATUS.recovering);
 
     if (typeof onReload === 'function') {
-      onReload({ 
-        reason, 
-        meta, 
-        waitKey, 
-        seekToIntentMs: (targetTimeSeconds || playbackHealth.lastProgressSeconds || seconds || 0) * 1000 
+      onReload({
+        reason,
+        meta,
+        waitKey,
+        seekToIntentMs: (targetTimeSeconds || playbackHealth.lastProgressSeconds || seconds || 0) * 1000
       });
     }
-  }, [actions, lastReloadAt, logWaitKey, meta, onReload, playbackHealth.lastProgressSeconds, recoveryCooldownMs, seconds, statusRef, targetTimeSeconds, waitKey]);
+  }, [actions, logWaitKey, meta, onReload, playbackHealth.lastProgressSeconds, recoveryCooldownMs, maxAttempts, seconds, statusRef, targetTimeSeconds, waitKey, playbackSessionKey]);
 
   useEffect(() => {
     if (userIntent === USER_INTENT.paused) {
@@ -128,6 +173,7 @@ export function useMediaResilience({
       hasEverPlayedRef.current = true;
       clearTimeout(startupDeadlineRef.current);
       startupDeadlineRef.current = null;
+      _clearTracker(playbackSessionKey);
       return;
     }
 
@@ -140,7 +186,7 @@ export function useMediaResilience({
         }, hardRecoverLoadingGraceMs);
       }
     }
-  }, [status, playbackHealth.progressToken, userIntent, actions, triggerRecovery, hardRecoverLoadingGraceMs]);
+  }, [status, playbackHealth.progressToken, userIntent, actions, triggerRecovery, hardRecoverLoadingGraceMs, playbackSessionKey]);
 
   // Clean up timers on unmount or waitKey change
   useEffect(() => {

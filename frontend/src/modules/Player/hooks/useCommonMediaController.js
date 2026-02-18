@@ -946,7 +946,11 @@ export function useCommonMediaController({
       // Reset ended flag for new media
       stallStateRef.current.hasEnded = false;
       stallStateRef.current.recoveryAttempt = 0;
-      stallStateRef.current.lastProgressTs = Date.now();
+      // Don't set lastProgressTs here — let real playback progress (timeupdate
+      // → markProgress) set it. Setting it at metadata-load time causes stall
+      // detection to fire during initial buffering (after only softMs=1.2s),
+      // triggering needless nudge/reload recovery on audio that just needs time
+      // to buffer from a remote server.
       scheduleStallDetection();
 
       if (snapshot) {
