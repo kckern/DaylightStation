@@ -8,7 +8,7 @@
  */
 
 import imageSize from 'image-size';
-import { IFeedSourceAdapter } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
+import { IFeedSourceAdapter, CONTENT_TYPES } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
 
 export class GoodreadsFeedAdapter extends IFeedSourceAdapter {
   #userDataService;
@@ -22,6 +22,7 @@ export class GoodreadsFeedAdapter extends IFeedSourceAdapter {
   }
 
   get sourceType() { return 'goodreads'; }
+  get provides() { return [CONTENT_TYPES.BOOK_REVIEWS]; }
 
   async #getImageDimensions(url) {
     try {

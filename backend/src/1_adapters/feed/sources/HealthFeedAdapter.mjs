@@ -7,7 +7,7 @@
  * @module adapters/feed/sources/HealthFeedAdapter
  */
 
-import { IFeedSourceAdapter } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
+import { IFeedSourceAdapter, CONTENT_TYPES } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
 
 export class HealthFeedAdapter extends IFeedSourceAdapter {
   #userDataService;
@@ -21,6 +21,7 @@ export class HealthFeedAdapter extends IFeedSourceAdapter {
   }
 
   get sourceType() { return 'health'; }
+  get provides() { return [CONTENT_TYPES.HEALTH]; }
 
   async fetchItems(query, username) {
     try {

@@ -8,7 +8,7 @@
  * @module adapters/feed/sources/RedditFeedAdapter
  */
 
-import { IFeedSourceAdapter } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
+import { IFeedSourceAdapter, CONTENT_TYPES } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
 
 const USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
@@ -30,6 +30,7 @@ export class RedditFeedAdapter extends IFeedSourceAdapter {
   }
 
   get sourceType() { return 'reddit'; }
+  get provides() { return [CONTENT_TYPES.SOCIAL]; }
 
   /**
    * @param {Object} query - Query config from YAML

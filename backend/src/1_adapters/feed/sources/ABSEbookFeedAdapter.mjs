@@ -13,7 +13,7 @@
  * @module adapters/feed/sources/ABSEbookFeedAdapter
  */
 
-import { IFeedSourceAdapter } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
+import { IFeedSourceAdapter, CONTENT_TYPES } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
 import imageSize from 'image-size';
 import fs from 'fs';
 import path from 'path';
@@ -67,6 +67,7 @@ export class ABSEbookFeedAdapter extends IFeedSourceAdapter {
   }
 
   get sourceType() { return 'abs-ebooks'; }
+  get provides() { return [CONTENT_TYPES.EBOOKS]; }
 
   /**
    * Fetch feed items from AudioBookShelf.

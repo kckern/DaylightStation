@@ -12,7 +12,7 @@
  * @module adapters/feed/sources/GoogleNewsFeedAdapter
  */
 
-import { IFeedSourceAdapter } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
+import { IFeedSourceAdapter, CONTENT_TYPES } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
 
 const RSS_BASE = 'https://news.google.com/rss/search';
 const CACHE_TTL_MS = 20 * 60 * 1000; // 20 minutes
@@ -38,6 +38,7 @@ export class GoogleNewsFeedAdapter extends IFeedSourceAdapter {
   }
 
   get sourceType() { return 'googlenews'; }
+  get provides() { return [CONTENT_TYPES.NEWS]; }
 
   async fetchItems(query, _username) {
     const topics = query.params?.topics || [];

@@ -7,7 +7,7 @@
  * @module adapters/feed/sources/JournalFeedAdapter
  */
 
-import { IFeedSourceAdapter } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
+import { IFeedSourceAdapter, CONTENT_TYPES } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
 
 export class JournalFeedAdapter extends IFeedSourceAdapter {
   #userDataService;
@@ -21,6 +21,7 @@ export class JournalFeedAdapter extends IFeedSourceAdapter {
   }
 
   get sourceType() { return 'journal'; }
+  get provides() { return [CONTENT_TYPES.JOURNAL]; }
 
   async fetchItems(query, username) {
     try {

@@ -7,7 +7,7 @@
  * @module adapters/feed/sources/TodoistFeedAdapter
  */
 
-import { IFeedSourceAdapter } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
+import { IFeedSourceAdapter, CONTENT_TYPES } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
 
 export class TodoistFeedAdapter extends IFeedSourceAdapter {
   #userDataService;
@@ -21,6 +21,7 @@ export class TodoistFeedAdapter extends IFeedSourceAdapter {
   }
 
   get sourceType() { return 'tasks'; }
+  get provides() { return [CONTENT_TYPES.TASKS]; }
 
   async fetchItems(query, username) {
     try {

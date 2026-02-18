@@ -9,7 +9,7 @@
  * @module adapters/feed/sources/ReadalongFeedAdapter
  */
 
-import { IFeedSourceAdapter } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
+import { IFeedSourceAdapter, CONTENT_TYPES } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
 
 export class ReadalongFeedAdapter extends IFeedSourceAdapter {
   #readalongAdapter;
@@ -28,6 +28,7 @@ export class ReadalongFeedAdapter extends IFeedSourceAdapter {
   }
 
   get sourceType() { return 'readalong'; }
+  get provides() { return [CONTENT_TYPES.SCRIPTURE]; }
 
   /**
    * Fetch the next unread chapter for a given collection/volume.

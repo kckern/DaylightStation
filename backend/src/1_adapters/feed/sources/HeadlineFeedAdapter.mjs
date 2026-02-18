@@ -11,7 +11,7 @@
  * @module adapters/feed/sources/HeadlineFeedAdapter
  */
 
-import { IFeedSourceAdapter } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
+import { IFeedSourceAdapter, CONTENT_TYPES } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
 
 export class HeadlineFeedAdapter extends IFeedSourceAdapter {
   #headlineService;
@@ -24,6 +24,7 @@ export class HeadlineFeedAdapter extends IFeedSourceAdapter {
   }
 
   get sourceType() { return 'headlines'; }
+  get provides() { return [CONTENT_TYPES.NEWS]; }
 
   async fetchPage(query, username, { cursor } = {}) {
     if (!this.#headlineService) return { items: [], cursor: null };
