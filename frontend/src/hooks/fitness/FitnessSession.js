@@ -520,7 +520,11 @@ export class FitnessSession {
         // Sync ZoneProfileStore immediately so governance sees fresh zone data
         if (this.zoneProfileStore && deviceData.type === 'heart_rate') {
           const allUsers = this.userManager.getAllUsers();
-          const changed = this._syncZoneProfiles(allUsers);
+          const activeRoster = this._participantRoster?.getActive();
+          const usersForZones = activeRoster
+            ? (() => { const ids = new Set(activeRoster.map(e => e.id)); return allUsers.filter(u => ids.has(u.id)); })()
+            : allUsers;
+          const changed = this._syncZoneProfiles(usersForZones);
           if (changed && this.governanceEngine) {
             this.governanceEngine.notifyZoneChange(resolvedSlug, {});
           }
@@ -1475,7 +1479,11 @@ export class FitnessSession {
         this.snapshot.participantSeries.set(userId, series);
       });
 
-    this._syncZoneProfiles(allUsers);
+    const activeRoster = this._participantRoster?.getActive();
+    const activeUsersForZones = activeRoster
+      ? (() => { const ids = new Set(activeRoster.map(e => e.id)); return allUsers.filter(u => ids.has(u.id)); })()
+      : allUsers;
+    this._syncZoneProfiles(activeUsersForZones);
 
     // Process Devices (from DeviceManager)
     const allDevices = this.deviceManager.getAllDevices();
