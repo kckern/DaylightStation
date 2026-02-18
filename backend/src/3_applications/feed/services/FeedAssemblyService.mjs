@@ -143,7 +143,7 @@ export class FeedAssemblyService {
 
     // Primary pass: tier assembly (with wire decay based on batch number)
     const batchNumber = this.#feedPoolManager.getBatchNumber(username);
-    const { items: primary } = this.#tierAssemblyService.assemble(
+    const { items: primary, feed_assembly } = this.#tierAssemblyService.assemble(
       freshPool, scrollConfig, { effectiveLimit, focus, selectionCounts, batchNumber }
     );
 
@@ -179,10 +179,13 @@ export class FeedAssemblyService {
       }
     }
 
+    this.#logger.info?.('feed.assembly.batch', feed_assembly);
+
     return {
       items: batch,
       hasMore: this.#feedPoolManager.hasMore(username),
       colors: ScrollConfigLoader.extractColors(scrollConfig),
+      feed_assembly,
     };
   }
 
