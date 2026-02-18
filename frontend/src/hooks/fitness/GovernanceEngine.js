@@ -212,6 +212,7 @@ export class GovernanceEngine {
     this._previousUserZoneMap = {};
     this._warningStartTime = null;
     this._lockStartTime = null;
+    this._warningCooldownUntil = null;
 
     // Expose governance state globally for cross-component correlation
     this._updateGlobalState();
@@ -630,6 +631,14 @@ export class GovernanceEngine {
         this._warningStartTime = null;
       }
 
+      // Start warning cooldown when warning dismisses to unlocked
+      if (oldPhase === 'warning' && newPhase === 'unlocked') {
+        const cooldownSeconds = Number(this.config?.warning_cooldown_seconds);
+        if (Number.isFinite(cooldownSeconds) && cooldownSeconds > 0) {
+          this._warningCooldownUntil = now + cooldownSeconds * 1000;
+        }
+      }
+
       if (newPhase === 'locked' && oldPhase !== 'locked') {
         this._lockStartTime = now;
       } else if (newPhase !== 'locked') {
@@ -938,6 +947,7 @@ export class GovernanceEngine {
     this._timersPaused = false;
     this._pausedAt = null;
     this._remainingMs = null;
+    this._warningCooldownUntil = null;
 
     // State caching for performance - throttle recomputation to 200ms
     this._stateCache = null;
@@ -1005,6 +1015,7 @@ export class GovernanceEngine {
     this._timersPaused = false;
     this._pausedAt = null;
     this._remainingMs = null;
+    this._warningCooldownUntil = null;
     this._stateCache = null;
     this._stateCacheTs = 0;
     this._stateCacheThrottleMs = 200;
@@ -1438,37 +1449,44 @@ export class GovernanceEngine {
       this._setPhase('pending');
     } else {
       // Was satisfied, now failing -> warning with grace period
-      let graceSeconds = baseGraceSeconds;
-      if (!Number.isFinite(graceSeconds) || graceSeconds <= 0) {
-        // No grace period configured -> locked immediately
-        if (this.timers.governance) clearTimeout(this.timers.governance);
-        this.meta.deadline = null;
-        this.meta.gracePeriodTotal = null;
-        this._setPhase('locked');
+      // Check warning cooldown: if recently dismissed a warning, suppress re-entry
+      const inCooldown = this._warningCooldownUntil && now < this._warningCooldownUntil;
+      if (inCooldown) {
+        // Stay in current phase (unlocked) during cooldown
+        // Don't clear satisfiedOnce so next eval after cooldown works normally
       } else {
-        // Start or continue grace period countdown
-        if (!Number.isFinite(this.meta.deadline) && this.phase !== 'locked') {
-          this.meta.deadline = now + graceSeconds * 1000;
-          this.meta.gracePeriodTotal = graceSeconds;
-        }
-
-        if (!Number.isFinite(this.meta.deadline)) {
+        let graceSeconds = baseGraceSeconds;
+        if (!Number.isFinite(graceSeconds) || graceSeconds <= 0) {
+          // No grace period configured -> locked immediately
           if (this.timers.governance) clearTimeout(this.timers.governance);
+          this.meta.deadline = null;
           this.meta.gracePeriodTotal = null;
           this._setPhase('locked');
         } else {
-          const remainingMs = this.meta.deadline - now;
-          if (remainingMs <= 0) {
-            // Grace period expired -> locked
+          // Start or continue grace period countdown
+          if (!Number.isFinite(this.meta.deadline) && this.phase !== 'locked') {
+            this.meta.deadline = now + graceSeconds * 1000;
+            this.meta.gracePeriodTotal = graceSeconds;
+          }
+
+          if (!Number.isFinite(this.meta.deadline)) {
             if (this.timers.governance) clearTimeout(this.timers.governance);
-            this.meta.deadline = null;
             this.meta.gracePeriodTotal = null;
             this._setPhase('locked');
           } else {
-            // Grace period active -> warning
-            if (this.timers.governance) clearTimeout(this.timers.governance);
-            this.timers.governance = setTimeout(() => this._triggerPulse(), remainingMs);
-            this._setPhase('warning');
+            const remainingMs = this.meta.deadline - now;
+            if (remainingMs <= 0) {
+              // Grace period expired -> locked
+              if (this.timers.governance) clearTimeout(this.timers.governance);
+              this.meta.deadline = null;
+              this.meta.gracePeriodTotal = null;
+              this._setPhase('locked');
+            } else {
+              // Grace period active -> warning
+              if (this.timers.governance) clearTimeout(this.timers.governance);
+              this.timers.governance = setTimeout(() => this._triggerPulse(), remainingMs);
+              this._setPhase('warning');
+            }
           }
         }
       }
@@ -1591,7 +1609,9 @@ export class GovernanceEngine {
     const requiredRank = this._getZoneRank(zoneId);
     if (!Number.isFinite(requiredRank)) return null;
 
+    const exemptUsers = (this.config.exemptions || []).map(u => normalizeName(u));
     const metUsers = [];
+    let nonExemptMetCount = 0;
     activeParticipants.forEach((participantId) => {
       const participantZoneId = userZoneMap[participantId];
       if (!participantZoneId) {
@@ -1604,16 +1624,17 @@ export class GovernanceEngine {
       const participantRank = this._getZoneRank(participantZoneId) ?? 0;
       if (participantRank >= requiredRank) {
         metUsers.push(participantId);
+        if (!exemptUsers.includes(normalizeName(participantId))) {
+          nonExemptMetCount++;
+        }
       }
     });
 
     const requiredCount = this._normalizeRequiredCount(rule, totalCount, activeParticipants);
-    const satisfied = metUsers.length >= requiredCount;
-    // Missing users should only list non-exempt users, unless satisfied is true (then who cares)
-    // But conceptually, an exempt user can be missing but not cause failure.
-    // However, if we fail, we only want to "blame" non-exempt users.
-    const exemptUsers = (this.config.exemptions || []).map(u => normalizeName(u));
-    const missingUsers = activeParticipants.filter((participantId) => 
+    // Only non-exempt users count toward satisfying the requirement.
+    // Exempt users get a free pass — their zone status doesn't affect governance.
+    const satisfied = nonExemptMetCount >= requiredCount;
+    const missingUsers = activeParticipants.filter((participantId) =>
       !metUsers.includes(participantId) && !exemptUsers.includes(normalizeName(participantId))
     );
     const zoneInfo = this._getZoneInfo(zoneId);
@@ -1627,7 +1648,7 @@ export class GovernanceEngine {
       rule,
       ruleLabel: this._describeRule(rule, requiredCount),
       requiredCount,
-      actualCount: metUsers.length,
+      actualCount: nonExemptMetCount,
       metUsers,
       missingUsers,
       satisfied
@@ -1909,7 +1930,9 @@ export class GovernanceEngine {
         const zoneInfo = this._getZoneInfo(zoneId);
         const requiredRank = this._getZoneRank(zoneId) ?? 0;
 
+        const exemptUsers = (this.config.exemptions || []).map(u => normalizeName(u));
         const metUsers = [];
+        let nonExemptMetCount = 0;
         activeParticipants.forEach((participantId) => {
           const pZone = userZoneMap[participantId];
           if (!pZone) {
@@ -1920,15 +1943,19 @@ export class GovernanceEngine {
             });
           }
           const pRank = this._getZoneRank(pZone) ?? 0;
-          if (pRank >= requiredRank) metUsers.push(participantId);
+          if (pRank >= requiredRank) {
+            metUsers.push(participantId);
+            if (!exemptUsers.includes(normalizeName(participantId))) {
+              nonExemptMetCount++;
+            }
+          }
         });
 
         // Recompute requiredCount from current roster (not frozen value)
         const liveRequiredCount = this._normalizeRequiredCount(challenge.rule, totalCount, activeParticipants);
-        const satisfied = metUsers.length >= liveRequiredCount;
+        // Only non-exempt users count toward satisfying challenges
+        const satisfied = nonExemptMetCount >= liveRequiredCount;
 
-        // Filter exempt users from missingUsers (same logic as _evaluateZoneRequirement)
-        const exemptUsers = (this.config.exemptions || []).map(u => normalizeName(u));
         const missingUsers = activeParticipants.filter((participantId) =>
           !metUsers.includes(participantId) && !exemptUsers.includes(normalizeName(participantId))
         );
@@ -1937,7 +1964,7 @@ export class GovernanceEngine {
             satisfied,
             metUsers,
             missingUsers,
-            actualCount: metUsers.length,
+            actualCount: nonExemptMetCount,
             requiredCount: liveRequiredCount,
             zoneLabel: zoneInfo?.name || zoneId
         };
