@@ -30,17 +30,17 @@ headline_pages:
     label: CNN
     url: http://rss.cnn.com/rss/cnn_topstories.rss
     site_url: https://www.cnn.com
-    row: 0
-    col: 1
+    row: 1
+    col: 0
   - id: abc
     label: ABC News
     url: https://abcnews.go.com/abcnews/usheadlines
-    row: 0
-    col: 2
+    row: 3
+    col: 1
   - id: cbs
     label: CBS News
     url: https://www.cbsnews.com/latest/rss/main
-    row: 0
+    row: 1
     col: 3
   - id: foxnews
     label: Fox News
@@ -52,8 +52,8 @@ headline_pages:
     label: NY Times
     url: https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml
     site_url: https://www.nytimes.com
-    row: 1
-    col: 0
+    row: 0
+    col: 1
   - id: wapo
     label: Washington Post
     url: https://feeds.washingtonpost.com/rss/homepage
@@ -69,7 +69,7 @@ headline_pages:
     label: Wall Street Journal
     url: https://news.google.com/rss/search?q=site:wsj.com&hl=en-US&gl=US&ceid=US:en
     site_url: https://www.wsj.com
-    row: 1
+    row: 0
     col: 3
   - id: nypost
     label: New York Post
@@ -108,22 +108,22 @@ headline_pages:
     url: https://www.aljazeera.com/xml/rss/all.xml
     row: 3
     col: 0
-  - id: axios
-    label: Axios
-    url: https://api.axios.com/feed/top/
-    site_url: https://www.axios.com
-    row: 3
-    col: 1
   - id: reuters
     label: Reuters
     url: https://news.google.com/rss/search?q=when:24h+allinurl:reuters.com&ceid=US:en&hl=en-US&gl=US
     site_url: https://www.reuters.com
-    row: 3
+    row: 0
     col: 2
   - id: usatoday
     label: USA Today
     url: https://news.google.com/rss/search?q=site:usatoday.com&hl=en-US&gl=US&ceid=US:en
     site_url: https://www.usatoday.com
+    row: 3
+    col: 2
+  - id: axios
+    label: Axios
+    url: https://api.axios.com/feed/top/
+    site_url: https://www.axios.com
     row: 3
     col: 3
   - id: zerohedge
@@ -284,7 +284,16 @@ headline_pages:
     site_url: https://filmmakermagazine.com
     row: 3
     col: 4
-freshrss_headline_feeds: []
+freshrss_headline_feeds:
+- id: feed/55
+  title: BYU Scholars Archive
+  posts_per_day: 7.05
+- id: feed/35
+  title: Simon Willison
+  posts_per_day: 4.41
+- id: feed/60
+  title: The Stranger
+  posts_per_day: 3.93
 headlines:
   retention_hours: 48
   harvest_interval_minutes: 60
@@ -331,94 +340,81 @@ scroll:
     max_consecutive: 1
   tiers:
     wire:
+      flex: "1 0 auto"
+      min: 20
       selection:
         sort: timestamp_desc
         filter: []
         diversity: source
       sources:
-        reddit:
-          color: '#ff6b6b'
-          max_per_batch: 11
+        feeds:
+          flex: dominant
+          max: 15
+          max_age_hours: 336
+        social:
+          flex: "1 0 auto"
+          max: 11
           min_spacing: 2
           max_age_hours: 168
           subsources:
             max_per_batch: 2
             min_spacing: 4
-        freshrss:
-          color: '#20c997'
-          max_per_batch: 11
-          max_age_hours: 336
-        youtube:
-          color: '#ff0000'
-          max_per_batch: 7
+        news:
+          flex: filler
+          max: 10
+          min: 3
+          max_age_hours: 48
+        video:
+          flex: none
+          max: 7
           min_spacing: 3
-        headlines:
-          color: '#228be6'
-          max_per_batch: 3
-          max_age_hours: 48
-        googlenews:
-          color: '#4285f4'
-          max_per_batch: 3
-          min_spacing: 2
-          max_age_hours: 48
-    library:
-      color: '#be4bdb'
-      allocation: 5
+    compass:
+      flex: "0 0 6"
+      min: 4
       selection:
-        sort: random
+        sort: priority
         filter: []
-        freshness: false
+        freshness: true
       sources:
-        komga:
-          max_per_batch: 5
-          padding: true
-          max_age_hours: null
-        abs-ebooks:
-          max_per_batch: 1
-          padding: true
-          max_age_hours: null
-        audio-content:
-          max_per_batch: 1
-          padding: true
-          max_age_hours: null
+        entropy: { flex: "0 0 auto" }
+        tasks: { flex: "0 0 auto" }
+        weather: { flex: none }
+        health: { flex: none }
+        fitness: { flex: none }
+        gratitude: { flex: none }
+        scripture: { flex: none }
     scrapbook:
-      color: '#748ffc'
-      allocation: 5
+      flex: "0 0 5"
+      min: 3
       selection:
         sort: random
         filter: []
         prefer: anniversary
       sources:
         photos:
-          max_per_batch: 4
+          flex: "1 0 auto"
           min_spacing: 3
-          padding: true
           max_age_hours: null
         journal:
-          max_per_batch: 1
+          flex: none
           min_spacing: 4
-        goodreads:
-          max_per_batch: 1
+        book-reviews:
+          flex: none
           min_spacing: 4
-    compass:
-      color: '#fab005'
-      allocation: 6
+    library:
+      flex: "0 0 5"
+      min: 2
       selection:
-        sort: priority
+        sort: random
         filter: []
-        freshness: true
+        freshness: false
       sources:
-        entropy:
-          max_per_batch: 3
-        tasks:
-          max_per_batch: 3
-        health:
-          max_per_batch: 1
-        weather:
-          max_per_batch: 1
-        fitness:
-          max_per_batch: 1
-        gratitude:
-          max_per_batch: 1
-        scripture-bom:
-          max_per_batch: 1
+        comics:
+          flex: "1 0 auto"
+          max_age_hours: null
+        ebooks:
+          flex: none
+          max_age_hours: null
+        audio:
+          flex: none
+          max_age_hours: null
