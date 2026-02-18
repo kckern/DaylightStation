@@ -35,7 +35,7 @@ describe('PlexFeedAdapter', () => {
   });
 
   describe('parentIds weighted selection', () => {
-    test('fetches from one of the weighted parentIds', async () => {
+    test('fetches from all weighted parentIds', async () => {
       const mockItems = makeItems(5);
       const mockGetList = jest.fn().mockResolvedValue(mockItems);
       const registry = { get: () => ({ getList: mockGetList }) };
@@ -44,7 +44,7 @@ describe('PlexFeedAdapter', () => {
       const query = {
         tier: 'library',
         priority: 5,
-        limit: 1,
+        limit: 3,
         params: {
           mode: 'children',
           parentIds: [
@@ -58,10 +58,13 @@ describe('PlexFeedAdapter', () => {
 
       const result = await adapter.fetchItems(query, 'testuser');
 
-      expect(mockGetList).toHaveBeenCalledTimes(1);
-      const calledWith = mockGetList.mock.calls[0][0];
-      expect(['7578', '481800', '242600']).toContain(calledWith);
-      expect(result).toHaveLength(1);
+      // Fetches from ALL parents (weight-proportional distribution)
+      expect(mockGetList).toHaveBeenCalledTimes(3);
+      const calledIds = mockGetList.mock.calls.map(c => c[0]);
+      expect(calledIds).toContain('7578');
+      expect(calledIds).toContain('481800');
+      expect(calledIds).toContain('242600');
+      expect(result).toHaveLength(3);
       expect(result[0].source).toBe('plex');
       expect(result[0].tier).toBe('library');
     });

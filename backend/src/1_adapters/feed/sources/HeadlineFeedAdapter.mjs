@@ -12,6 +12,7 @@
  */
 
 import { IFeedSourceAdapter, CONTENT_TYPES } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
+import { probeImageDimensions } from '#system/utils/probeImageDimensions.mjs';
 
 export class HeadlineFeedAdapter extends IFeedSourceAdapter {
   #headlineService;
@@ -69,6 +70,18 @@ export class HeadlineFeedAdapter extends IFeedSourceAdapter {
 
     allItems.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
     const page = allItems.slice(offset, offset + totalLimit);
+
+    // Probe dimensions for items with images but no dims from the service
+    await Promise.all(page.map(async item => {
+      if (item.image && !item.meta?.imageWidth) {
+        const dims = await probeImageDimensions(item.image);
+        if (dims) {
+          item.meta.imageWidth = dims.width;
+          item.meta.imageHeight = dims.height;
+        }
+      }
+    }));
+
     const nextOffset = offset + totalLimit;
     const hasMore = nextOffset < allItems.length;
     return { items: page, cursor: hasMore ? String(nextOffset) : null };

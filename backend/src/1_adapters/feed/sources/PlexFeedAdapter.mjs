@@ -134,15 +134,14 @@ export class PlexFeedAdapter extends IFeedSourceAdapter {
   }
 
   /**
-   * Map raw Plex items to feed items, probing dimensions for the first few.
-   * When the pool manager uses stripLimits (limit=10000), hundreds of items
-   * may be returned; probing all of them concurrently causes timeouts.
-   * Only the first MAX_PROBE items get dimensions; the rest are returned without.
+   * Map raw Plex items to feed items, probing dimensions for all items.
+   * Items are already sliced to query.limit before reaching this method,
+   * so the count is bounded (typically ≤ 50).
    */
   async #mapItemsWithDims(rawItems, query, defaultTier) {
-    const MAX_PROBE = 5;
-    const toFeedItem = (item, dims = {}) => {
+    return Promise.all(rawItems.map(async item => {
       const localId = item.localId || item.id?.replace?.('plex:', '') || item.id;
+      const dims = await this.#getThumbDimensions(item.thumbnail);
       return {
         id: `plex:${localId}`,
         tier: query.tier || defaultTier,
@@ -164,17 +163,7 @@ export class PlexFeedAdapter extends IFeedSourceAdapter {
           ...dims,
         },
       };
-    };
-
-    // Probe first MAX_PROBE items, map the rest without probing
-    const probed = await Promise.all(
-      rawItems.slice(0, MAX_PROBE).map(async item => {
-        const dims = await this.#getThumbDimensions(item.thumbnail);
-        return toFeedItem(item, dims);
-      })
-    );
-    const rest = rawItems.slice(MAX_PROBE).map(item => toFeedItem(item));
-    return [...probed, ...rest];
+    }));
   }
 
   async getDetail(localId, meta, _username) {
