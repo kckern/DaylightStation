@@ -1,14 +1,13 @@
 import { describe, it, expect, jest } from '@jest/globals';
 
+// Singleton mock logger so tests can inspect calls made by GovernanceEngine
+const _mockLogger = {
+  debug: jest.fn(), info: jest.fn(), warn: jest.fn(),
+  error: jest.fn(), sampled: jest.fn()
+};
 jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
-  default: () => ({
-    debug: jest.fn(), info: jest.fn(), warn: jest.fn(),
-    error: jest.fn(), sampled: jest.fn()
-  }),
-  getLogger: () => ({
-    debug: jest.fn(), info: jest.fn(), warn: jest.fn(),
-    error: jest.fn(), sampled: jest.fn()
-  })
+  default: () => _mockLogger,
+  getLogger: () => _mockLogger
 }));
 
 const { GovernanceEngine } = await import('#frontend/hooks/fitness/GovernanceEngine.js');
@@ -96,5 +95,91 @@ describe('GovernanceEngine — _getParticipantsBelowThreshold', () => {
     const below = engine._getParticipantsBelowThreshold();
     const names = below.map(b => b.name);
     expect(names).toContain('bob');
+  });
+});
+
+describe('stale data fix — full evaluate cycle', () => {
+  it('should populate participantsBelowThreshold during warning_started via evaluate()', () => {
+    const participants = ['alice', 'bob'];
+    const { engine, zoneRankMap, zoneInfoMap } = createEngine({ participants, grace: 30 });
+
+    // First evaluate: both above threshold -> unlocked, satisfiedOnce = true
+    engine.evaluate({
+      activeParticipants: participants,
+      userZoneMap: { alice: 'active', bob: 'active' },
+      zoneRankMap,
+      zoneInfoMap
+    });
+    expect(engine.phase).toBe('unlocked');
+
+    // Clear all logger mocks so we only see calls from the second evaluate
+    _mockLogger.info.mockClear();
+    _mockLogger.debug.mockClear();
+    _mockLogger.warn.mockClear();
+    _mockLogger.sampled.mockClear();
+
+    // Second evaluate: bob drops to cool -> warning
+    engine.evaluate({
+      activeParticipants: participants,
+      userZoneMap: { alice: 'active', bob: 'cool' },
+      zoneRankMap,
+      zoneInfoMap
+    });
+    expect(engine.phase).toBe('warning');
+
+    // Find the warning_started log call
+    const warningCall = _mockLogger.info.mock.calls.find(
+      ([event]) => event === 'governance.warning_started'
+    );
+    expect(warningCall).toBeDefined();
+
+    const payload = warningCall[1];
+    const belowNames = (payload.participantsBelowThreshold || []).map(p => p.name);
+    // THIS IS THE KEY ASSERTION: bob must appear (was [] before the fix)
+    expect(belowNames).toContain('bob');
+  });
+
+  it('should populate participantStates during lock_triggered via evaluate()', () => {
+    const participants = ['alice', 'bob'];
+    // grace=0 means immediate lock when requirements fail after satisfiedOnce
+    const { engine, zoneRankMap, zoneInfoMap } = createEngine({ participants, grace: 0 });
+
+    // First evaluate: both above threshold -> unlocked, satisfiedOnce = true
+    engine.evaluate({
+      activeParticipants: participants,
+      userZoneMap: { alice: 'active', bob: 'active' },
+      zoneRankMap,
+      zoneInfoMap
+    });
+    expect(engine.phase).toBe('unlocked');
+
+    // Clear mocks
+    _mockLogger.info.mockClear();
+    _mockLogger.debug.mockClear();
+    _mockLogger.warn.mockClear();
+    _mockLogger.sampled.mockClear();
+
+    // Second evaluate: bob drops to cool -> locked (no grace period)
+    engine.evaluate({
+      activeParticipants: participants,
+      userZoneMap: { alice: 'active', bob: 'cool' },
+      zoneRankMap,
+      zoneInfoMap
+    });
+    expect(engine.phase).toBe('locked');
+
+    // Find the lock_triggered log call
+    const lockCall = _mockLogger.info.mock.calls.find(
+      ([event]) => event === 'governance.lock_triggered'
+    );
+    expect(lockCall).toBeDefined();
+
+    const payload = lockCall[1];
+    const states = payload.participantStates || [];
+    // participantStates should contain current zone data, not stale empty data
+    expect(states.length).toBeGreaterThan(0);
+    const bobState = states.find(s => s.id === 'bob');
+    expect(bobState).toBeDefined();
+    expect(bobState.zone).toBe('cool');
   });
 });

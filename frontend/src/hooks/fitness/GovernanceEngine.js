@@ -617,7 +617,7 @@ export class GovernanceEngine {
     this.callbacks.onStateChange = onStateChange || null;
   }
 
-  _setPhase(newPhase) {
+  _setPhase(newPhase, evalContext = null) {
     if (this.phase !== newPhase) {
       const oldPhase = this.phase;
       const now = Date.now();
@@ -673,7 +673,7 @@ export class GovernanceEngine {
 
       // Enhanced production logging for specific transitions
       if (newPhase === 'warning' && oldPhase !== 'warning') {
-        const participantsBelowThreshold = this._getParticipantsBelowThreshold();
+        const participantsBelowThreshold = this._getParticipantsBelowThreshold(evalContext);
         logger.info('governance.warning_started', {
           mediaId: this.media?.id,
           deadline: this.meta?.deadline,
@@ -692,7 +692,7 @@ export class GovernanceEngine {
           mediaId: this.media?.id,
           reason: this.challengeState?.activeChallenge?.status === 'failed' ? 'challenge_failed' : 'requirements_not_met',
           timeSinceWarningMs: timeSinceWarning,
-          participantStates: this._getParticipantStates(),
+          participantStates: this._getParticipantStates(evalContext),
           challengeActive: !!this.challengeState?.activeChallenge,
           challengeId: this.challengeState?.activeChallenge?.id || null
         });
@@ -710,9 +710,9 @@ export class GovernanceEngine {
   /**
    * Get participants below threshold for warning logging
    */
-  _getParticipantsBelowThreshold() {
+  _getParticipantsBelowThreshold(evalContext = null) {
     const requirements = this.requirementSummary?.requirements || [];
-    const userZoneMap = this._latestInputs.userZoneMap || {};
+    const userZoneMap = evalContext?.userZoneMap || this._latestInputs.userZoneMap || {};
     const below = [];
     for (const req of requirements) {
       if (!Array.isArray(req.missingUsers)) continue;
@@ -736,9 +736,9 @@ export class GovernanceEngine {
   /**
    * Get participant states for lock logging
    */
-  _getParticipantStates() {
-    const userZoneMap = this._latestInputs.userZoneMap || {};
-    const zoneInfoMap = this._latestInputs.zoneInfoMap || {};
+  _getParticipantStates(evalContext = null) {
+    const userZoneMap = evalContext?.userZoneMap || this._latestInputs.userZoneMap || {};
+    const zoneInfoMap = evalContext?.zoneInfoMap || this._latestInputs.zoneInfoMap || {};
     const states = [];
     for (const [userId, zoneId] of Object.entries(userZoneMap)) {
       const rosterEntry = this.session?.roster?.find(
@@ -1303,6 +1303,9 @@ export class GovernanceEngine {
       this._latestInputs.zoneInfoMap = zoneInfoMap;
     }
 
+    // Build evalContext so _setPhase logging reads current data (not stale _latestInputs)
+    const evalContext = { userZoneMap, zoneRankMap, zoneInfoMap };
+
     // 1. Check if media is governed
     if (!this.media || !this.media.id || !hasGovernanceRules) {
       getLogger().warn('governance.evaluate.no_media_or_rules', {
@@ -1378,7 +1381,7 @@ export class GovernanceEngine {
       }
       
       this._clearTimers();
-      this._setPhase('pending');
+      this._setPhase('pending', evalContext);
       // Capture latest inputs so UI (watchers) reflects the current empty state
       this._latestInputs = {
         activeParticipants: [],
@@ -1397,7 +1400,7 @@ export class GovernanceEngine {
     const activePolicy = this._chooseActivePolicy(totalCount);
     if (!activePolicy) {
       this.reset();
-      this._setPhase('pending');
+      this._setPhase('pending', evalContext);
       return;
     }
 
@@ -1435,18 +1438,18 @@ export class GovernanceEngine {
       if (this.timers.governance) clearTimeout(this.timers.governance);
       this.meta.deadline = null;
       this.meta.gracePeriodTotal = null;
-      this._setPhase('locked');
+      this._setPhase('locked', evalContext);
     } else if (allSatisfied) {
       // Requirements met -> unlocked immediately (no hysteresis delay)
       this.meta.satisfiedOnce = true;
       this.meta.deadline = null;
       this.meta.gracePeriodTotal = null;
-      this._setPhase('unlocked');
+      this._setPhase('unlocked', evalContext);
     } else if (!this.meta.satisfiedOnce) {
       // Never been satisfied -> pending
       this.meta.deadline = null;
       this.meta.gracePeriodTotal = null;
-      this._setPhase('pending');
+      this._setPhase('pending', evalContext);
     } else {
       // Was satisfied, now failing -> warning with grace period
       // Check warning cooldown: if recently dismissed a warning, suppress re-entry
@@ -1461,7 +1464,7 @@ export class GovernanceEngine {
           if (this.timers.governance) clearTimeout(this.timers.governance);
           this.meta.deadline = null;
           this.meta.gracePeriodTotal = null;
-          this._setPhase('locked');
+          this._setPhase('locked', evalContext);
         } else {
           // Start or continue grace period countdown
           if (!Number.isFinite(this.meta.deadline) && this.phase !== 'locked') {
@@ -1472,7 +1475,7 @@ export class GovernanceEngine {
           if (!Number.isFinite(this.meta.deadline)) {
             if (this.timers.governance) clearTimeout(this.timers.governance);
             this.meta.gracePeriodTotal = null;
-            this._setPhase('locked');
+            this._setPhase('locked', evalContext);
           } else {
             const remainingMs = this.meta.deadline - now;
             if (remainingMs <= 0) {
@@ -1480,12 +1483,12 @@ export class GovernanceEngine {
               if (this.timers.governance) clearTimeout(this.timers.governance);
               this.meta.deadline = null;
               this.meta.gracePeriodTotal = null;
-              this._setPhase('locked');
+              this._setPhase('locked', evalContext);
             } else {
               // Grace period active -> warning
               if (this.timers.governance) clearTimeout(this.timers.governance);
               this.timers.governance = setTimeout(() => this._triggerPulse(), remainingMs);
-              this._setPhase('warning');
+              this._setPhase('warning', evalContext);
             }
           }
         }
@@ -1493,7 +1496,7 @@ export class GovernanceEngine {
     }
 
     // 7. Handle Challenges
-    this._evaluateChallenges(activePolicy, activeParticipants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount);
+    this._evaluateChallenges(activePolicy, activeParticipants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount, evalContext);
 
     this._captureLatestInputs({
       activeParticipants,
@@ -1714,7 +1717,7 @@ export class GovernanceEngine {
     return randomSeconds * 1000;
   }
 
-  _evaluateChallenges(activePolicy, activeParticipants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount) {
+  _evaluateChallenges(activePolicy, activeParticipants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount, evalContext = null) {
     const now = Date.now();
     const challengeConfig = Array.isArray(activePolicy.challenges) && activePolicy.challenges.length
       ? activePolicy.challenges[0]
@@ -2063,7 +2066,7 @@ export class GovernanceEngine {
             }
             this.meta.deadline = null;
             this.meta.gracePeriodTotal = null;
-            this._setPhase('locked');
+            this._setPhase('locked', evalContext);
             this._schedulePulse(500);
             return;
           } else {
