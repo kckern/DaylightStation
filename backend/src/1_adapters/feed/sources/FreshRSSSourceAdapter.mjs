@@ -5,6 +5,9 @@
  * Fetches RSS items from FreshRSS via the underlying FreshRSS API adapter
  * and normalizes them to FeedItem shape.
  *
+ * Uses a two-pass approach: unread items first (prioritized), then backfill
+ * with read items (shuffled for variety).
+ *
  * Extracted from FeedPoolManager#fetchFreshRSSPage() to follow the standard
  * IFeedSourceAdapter pattern.
  *
@@ -18,28 +21,85 @@ import { IFeedSourceAdapter } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
 
 export class FreshRSSSourceAdapter extends IFeedSourceAdapter {
   #freshRSSAdapter;
+  #configService;
   #logger;
 
-  constructor({ freshRSSAdapter, logger = console }) {
+  static #DEFAULT_UNREAD_PER_SOURCE = 20;
+  static #DEFAULT_TOTAL_LIMIT = 100;
+
+  constructor({ freshRSSAdapter, configService = null, logger = console }) {
     super();
     this.#freshRSSAdapter = freshRSSAdapter;
+    this.#configService = configService;
     this.#logger = logger;
   }
 
   get sourceType() { return 'freshrss'; }
 
+  #getReaderConfig() {
+    if (!this.#configService) {
+      return {
+        unreadPerSource: FreshRSSSourceAdapter.#DEFAULT_UNREAD_PER_SOURCE,
+        totalLimit: FreshRSSSourceAdapter.#DEFAULT_TOTAL_LIMIT,
+      };
+    }
+    const feedConfig = this.#configService.getAppConfig?.('feed') || {};
+    const reader = feedConfig.reader || {};
+    return {
+      unreadPerSource: reader.unread_per_source ?? FreshRSSSourceAdapter.#DEFAULT_UNREAD_PER_SOURCE,
+      totalLimit: reader.total_limit ?? FreshRSSSourceAdapter.#DEFAULT_TOTAL_LIMIT,
+    };
+  }
+
   async fetchPage(query, username, { cursor } = {}) {
     if (!this.#freshRSSAdapter) return { items: [], cursor: null };
-    const { items: rawItems, continuation } = await this.#freshRSSAdapter.getItems(
-      'user/-/state/com.google/reading-list',
-      username,
-      {
-        excludeRead: query.params?.excludeRead ?? true,
-        count: query.limit || 20,
+
+    const { unreadPerSource, totalLimit } = this.#getReaderConfig();
+    const streamId = 'user/-/state/com.google/reading-list';
+
+    // Pass 1: unread items (prioritized)
+    const { items: unreadRaw, continuation } = await this.#freshRSSAdapter.getItems(
+      streamId, username, {
+        excludeRead: true,
+        count: unreadPerSource,
         continuation: cursor || undefined,
       }
     );
-    const items = (rawItems || []).map(item => ({
+
+    const unreadIds = new Set(unreadRaw.map(i => i.id));
+    const unreadItems = unreadRaw.map(item => this.#normalize(item, query, false));
+
+    // If unread fills the limit, skip pass 2
+    if (unreadItems.length >= totalLimit) {
+      return { items: unreadItems.slice(0, totalLimit), cursor: continuation || null };
+    }
+
+    // Pass 2: all items (to backfill with read)
+    let readItems = [];
+    try {
+      const { items: allRaw } = await this.#freshRSSAdapter.getItems(
+        streamId, username, {
+          excludeRead: false,
+          count: totalLimit,
+        }
+      );
+      const readRaw = allRaw.filter(i => !unreadIds.has(i.id));
+      // Shuffle read items for variety
+      readItems = readRaw.map(item => this.#normalize(item, query, true));
+      for (let i = readItems.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [readItems[i], readItems[j]] = [readItems[j], readItems[i]];
+      }
+    } catch (err) {
+      this.#logger.warn?.('freshrss.backfill.error', { error: err.message });
+    }
+
+    const merged = [...unreadItems, ...readItems].slice(0, totalLimit);
+    return { items: merged, cursor: continuation || null };
+  }
+
+  #normalize(item, query, isRead) {
+    return {
       id: `freshrss:${item.id}`,
       tier: query.tier || 'wire',
       source: 'freshrss',
@@ -54,9 +114,9 @@ export class FreshRSSSourceAdapter extends IFeedSourceAdapter {
         author: item.author,
         sourceName: item.feedTitle || 'RSS',
         sourceIcon: item.link ? (() => { try { return new URL(item.link).origin; } catch { return null; } })() : null,
+        isRead,
       },
-    }));
-    return { items, cursor: continuation || null };
+    };
   }
 
   /**
