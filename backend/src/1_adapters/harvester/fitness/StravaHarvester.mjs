@@ -711,6 +711,83 @@ export class StravaHarvester extends IHarvester {
   }
 
   /**
+   * Apply enrichment from matches to both Strava and home session data
+   * @private
+   * @param {string} username
+   * @param {Array} matches - Output from #findMatches
+   */
+  async #applyEnrichment(username, matches) {
+    if (matches.length === 0) return;
+
+    // 1. Enrich Strava summary
+    const summary = await this.#lifelogStore.load(username, 'strava') || {};
+    for (const match of matches) {
+      const date = moment(match.activity.start_date).tz(this.#timezone).format('YYYY-MM-DD');
+      const entries = summary[date];
+      if (!entries) continue;
+
+      const entry = entries.find(e => e.id === match.activityId);
+      if (entry) {
+        entry.homeSessionId = match.sessionId;
+        entry.homeCoins = match.session.coins;
+        if (match.session.media) entry.homeMedia = match.session.media;
+      }
+    }
+    await this.#lifelogStore.save(username, 'strava', summary);
+
+    // 2. Enrich Strava archive files
+    for (const match of matches) {
+      const date = moment(match.activity.start_date).tz(this.#timezone).format('YYYY-MM-DD');
+      const typeRaw = match.activity.type || match.activity.sport_type || 'activity';
+      const safeType = typeRaw.replace(/\s+/g, '').replace(/[^A-Za-z0-9_-]/g, '') || 'activity';
+      const archiveName = `strava/${date}_${safeType}_${match.activityId}`;
+
+      const archive = await this.#lifelogStore.load(username, archiveName);
+      if (archive?.data) {
+        archive.data.homeSessionId = match.sessionId;
+        archive.data.homeCoins = match.session.coins;
+        if (match.session.media) archive.data.homeMedia = match.session.media;
+        await this.#lifelogStore.save(username, archiveName, archive);
+      }
+    }
+
+    // 3. Enrich home session files
+    for (const match of matches) {
+      const data = loadYamlSafe(match.session.filePath);
+      if (!data?.participants) continue;
+
+      if (data.participants[username]) {
+        data.participants[username].strava = {
+          activityId: match.activityId,
+          type: match.activity.type || match.activity.sport_type || null,
+          sufferScore: match.activity.suffer_score || null,
+          deviceName: match.activity.device_name || null,
+        };
+
+        const savePath = match.session.filePath.replace(/\.yml$/, '');
+        saveYaml(savePath, data);
+      }
+    }
+
+    this.#logger.info?.('strava.homeMatch.complete', {
+      username,
+      matchCount: matches.length,
+      sessionIds: matches.map(m => m.sessionId),
+    });
+  }
+
+  /**
+   * Public wrapper: find matches and apply enrichment
+   * @param {string} username
+   * @param {Array} activities
+   */
+  async applyHomeSessionEnrichment(username, activities) {
+    const matches = this.#findMatches(username, activities);
+    await this.#applyEnrichment(username, matches);
+    return matches;
+  }
+
+  /**
    * Delay helper for rate limiting
    * @private
    */
