@@ -84,6 +84,43 @@ export function createFeedRouter(config) {
     res.json({ ok: true });
   }));
 
+  router.get('/reader/stream', asyncHandler(async (req, res) => {
+    const { count, continuation, excludeRead, feeds } = req.query;
+    const username = getUsername();
+    const streamId = 'user/-/state/com.google/reading-list';
+    const { items, continuation: nextContinuation } = await freshRSSAdapter.getItems(streamId, username, {
+      count: count ? Number(count) : 50,
+      continuation,
+      excludeRead: excludeRead === 'true',
+    });
+
+    // Add isRead flag and plain-text preview to each item
+    const READ_TAG = 'user/-/state/com.google/read';
+    const enriched = items.map(item => {
+      const isRead = (item.categories || []).some(c => c.includes(READ_TAG));
+      // Strip HTML for preview
+      const preview = item.content
+        .replace(/<[^>]*>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 200);
+      // Extract category labels (user/-/label/Foo → Foo)
+      const tags = (item.categories || [])
+        .filter(c => c.includes('/label/'))
+        .map(c => c.split('/label/').pop());
+      return { ...item, isRead, preview, tags };
+    });
+
+    // Filter by feed IDs if specified
+    let filtered = enriched;
+    if (feeds) {
+      const feedSet = new Set(feeds.split(','));
+      filtered = enriched.filter(item => feedSet.has(item.feedId));
+    }
+
+    res.json({ items: filtered, continuation: nextContinuation });
+  }));
+
   // =========================================================================
   // Headlines (cached, multi-page config-driven)
   // =========================================================================
