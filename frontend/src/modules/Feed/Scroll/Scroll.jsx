@@ -6,6 +6,7 @@ import DetailModal from './detail/DetailModal.jsx';
 import FeedPlayerMiniBar from './FeedPlayerMiniBar.jsx';
 import PersistentPlayer from './PersistentPlayer.jsx';
 import { usePlaybackObserver } from './hooks/usePlaybackObserver.js';
+import { useMasonryLayout } from './hooks/useMasonryLayout.js';
 import FeedAssemblyOverlay from './FeedAssemblyOverlay.jsx';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { feedLog } from './feedLog.js';
@@ -23,9 +24,15 @@ function decodeItemId(slug) {
   try { return atob(s); } catch { return null; }
 }
 
-function ScrollCard({ item, colors, onDismiss, onPlay, onClick }) {
+function ScrollCard({ item, colors, onDismiss, onPlay, onClick, style, itemRef }) {
   const wrapperRef = useRef(null);
   const touchRef = useRef(null);
+
+  // Combine refs: local wrapperRef + external measureRef
+  const setRefs = useCallback((node) => {
+    wrapperRef.current = node;
+    if (itemRef) itemRef(node);
+  }, [itemRef]);
 
   const handleTouchStart = (e) => {
     const touch = e.touches[0];
@@ -77,8 +84,9 @@ function ScrollCard({ item, colors, onDismiss, onPlay, onClick }) {
 
   return (
     <div
-      ref={wrapperRef}
+      ref={setRefs}
       className="scroll-item-wrapper"
+      style={style}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
@@ -102,6 +110,7 @@ export default function Scroll() {
   const [focusSource, setFocusSource] = useState(null);
   const observerRef = useRef(null);
   const sentinelRef = useRef(null);
+  const containerRef = useRef(null);
   const itemsRef = useRef(items);
   itemsRef.current = items;
   const [detailData, setDetailData] = useState(null);
@@ -355,6 +364,8 @@ export default function Scroll() {
     });
   })();
 
+  const { containerStyle, getItemStyle, measureRef } = useMasonryLayout(containerRef, visibleItems, isDesktop);
+
   const handleCardClick = useCallback((e, item) => {
     e.preventDefault();
     savedScrollRef.current = window.scrollY;
@@ -430,7 +441,7 @@ export default function Scroll() {
   return (
     <div className="scroll-layout">
       <div className="scroll-view" style={{ display: (urlSlug && !isDesktop) ? 'none' : undefined }}>
-        <div className="scroll-items">
+        <div ref={containerRef} className="scroll-items" style={containerStyle}>
           {visibleItems.map((item, i) => (
             <ScrollCard
               key={item.id || i}
@@ -439,6 +450,8 @@ export default function Scroll() {
               onDismiss={(item.tier || 'wire') === 'wire' ? handleDismiss : undefined}
               onPlay={handlePlay}
               onClick={(e) => handleCardClick(e, item)}
+              style={getItemStyle(item.id)}
+              itemRef={measureRef(item.id)}
             />
           ))}
         </div>
