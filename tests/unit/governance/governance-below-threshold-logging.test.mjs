@@ -95,11 +95,18 @@ describe('GovernanceEngine — _getParticipantsBelowThreshold', () => {
     const below = engine._getParticipantsBelowThreshold();
     const names = below.map(b => b.name);
     expect(names).toContain('bob');
+
+    const bobEntry = below.find(b => b.name === 'bob');
+    expect(bobEntry.requiredZone).toBe('active');
+    expect(bobEntry.zone).toBe('cool');
+    expect(bobEntry.hr).toBeNull();
+    expect(bobEntry.threshold).toBeNull();
+    expect(bobEntry.delta).toBeNull();
   });
 });
 
 describe('GovernanceEngine — HR/threshold/delta enrichment', () => {
-  it('should include hr, threshold, and delta in participantsBelowThreshold', async () => {
+  it('should include hr, threshold, and delta in participantsBelowThreshold', () => {
     const participants = ['alice', 'bob'];
     const { engine, zoneRankMap, zoneInfoMap } = createEngine({ participants, grace: 30 });
 
@@ -240,6 +247,7 @@ describe('stale data fix — full evaluate cycle', () => {
     _mockLogger.info.mockClear();
     _mockLogger.debug.mockClear();
     _mockLogger.warn.mockClear();
+    _mockLogger.error.mockClear();
     _mockLogger.sampled.mockClear();
 
     // Second evaluate: bob drops to cool -> warning
@@ -281,6 +289,7 @@ describe('stale data fix — full evaluate cycle', () => {
     _mockLogger.info.mockClear();
     _mockLogger.debug.mockClear();
     _mockLogger.warn.mockClear();
+    _mockLogger.error.mockClear();
     _mockLogger.sampled.mockClear();
 
     // Second evaluate: bob drops to cool -> locked (no grace period)
