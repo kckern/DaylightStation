@@ -112,8 +112,9 @@ export class KomgaFeedAdapter extends IFeedSourceAdapter {
     // Extract TOC (cached)
     const toc = await this.#getToc(bookId, series.label, bookTitle, pageCount);
 
-    // Pick a random article from the TOC
-    const article = this.#pickArticle(toc, pageCount);
+    // Pick a random article from the TOC (redflags filter junk titles)
+    const redflags = (query.params?.redflags || []).map(p => new RegExp(p, 'i'));
+    const article = this.#pickArticle(toc, pageCount, redflags);
     if (!article) return null;
 
     const offset = toc.tocPageOffset || 0;
@@ -387,18 +388,32 @@ export class KomgaFeedAdapter extends IFeedSourceAdapter {
   }
 
   /**
-   * Pick a random article from the TOC. If the TOC has no articles,
-   * fall back to a random page from the middle 70% of the book.
+   * Pick a random article from the TOC. If the TOC has no usable articles
+   * (empty or all matching redflags), fall back to a random page from the
+   * middle 70% of the book — but prefer redflag-article page numbers over
+   * blind random pages since those indices are still meaningful.
    *
    * @param {Object} toc - TOC object with articles array and pages count
    * @param {number} pageCount - Total pages in the book
+   * @param {RegExp[]} redflags - Patterns that indicate junk bookmark titles
    * @returns {{title: string, page: number}|null}
    */
-  #pickArticle(toc, pageCount) {
+  #pickArticle(toc, pageCount, redflags = []) {
     const articles = toc?.articles || [];
 
     if (articles.length > 0) {
-      return articles[Math.floor(Math.random() * articles.length)];
+      // Separate good vs junk articles
+      const good = redflags.length > 0
+        ? articles.filter(a => !redflags.some(rx => rx.test(a.title)))
+        : articles;
+
+      if (good.length > 0) {
+        return good[Math.floor(Math.random() * good.length)];
+      }
+
+      // All articles are junk — page indices are still useful, just replace titles
+      const pick = articles[Math.floor(Math.random() * articles.length)];
+      return { title: `p. ${pick.page}`, page: pick.page };
     }
 
     // Fallback: random page from the middle 70%

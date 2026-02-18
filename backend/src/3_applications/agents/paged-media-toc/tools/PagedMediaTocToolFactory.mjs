@@ -19,7 +19,7 @@ export class PagedMediaTocToolFactory extends ToolFactory {
     // ---------------------------------------------------------------
     const scanTocCache = createTool({
       name: 'scan_toc_cache',
-      description: 'Scan the TOC cache and return a list of books that need TOC extraction. Returns books with empty articles arrays that have not been previously scanned (no tocScanned flag). Also fetches the full book list from the media server for all configured series to find books not yet cached.',
+      description: 'Scan the TOC cache and return a list of books that need TOC extraction. Returns books with empty articles arrays that have not been previously scanned (no tocScanned flag). Also returns books whose cached articles mostly match redflags patterns from the query config (junk PDF bookmarks). Fetches the full book list from the media server for all configured series to find books not yet cached.',
       parameters: {
         type: 'object',
         properties: {},
@@ -33,6 +33,7 @@ export class PagedMediaTocToolFactory extends ToolFactory {
 
         const seriesList = config.params.series;
         const recentCount = config.params.recent_issues || 6;
+        const redflags = (config.params.redflags || []).map(p => new RegExp(p, 'i'));
         const booksToProcess = [];
 
         for (const series of seriesList) {
@@ -47,7 +48,16 @@ export class PagedMediaTocToolFactory extends ToolFactory {
           for (const book of books) {
             const cached = tocCacheDatastore.readCache(book.id);
             if (cached?.tocScanned) continue;
-            if (cached?.articles?.length > 0) continue;
+
+            // If articles exist, check whether they're junk (match redflags)
+            if (cached?.articles?.length > 0) {
+              if (redflags.length === 0) continue;
+              const junkCount = cached.articles.filter(a =>
+                redflags.some(rx => rx.test(a.title))
+              ).length;
+              // Skip if less than half the articles are junk
+              if (junkCount < cached.articles.length / 2) continue;
+            }
 
             booksToProcess.push({
               bookId: book.id,

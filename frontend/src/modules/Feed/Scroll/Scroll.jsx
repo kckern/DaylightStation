@@ -221,8 +221,9 @@ export default function Scroll() {
 
     if (!fullId) return;
 
-    // Auto-dismiss: mark item as read when detail opens
-    queueDismiss(fullId);
+    // Auto-dismiss: mark item as read when detail opens (wire tier only)
+    const matchedItem = items.find(i => i.id === fullId);
+    if ((matchedItem?.tier || 'wire') === 'wire') queueDismiss(fullId);
 
     // Check if item is already in the loaded list
     const item = items.find(i => i.id === fullId);
@@ -322,23 +323,31 @@ export default function Scroll() {
     queueDismiss(item.id);
 
     if (wrapperEl) {
-      // Slide left + collapse using Web Animations API
-      const slideAnim = wrapperEl.animate(
-        [{ transform: 'translateX(0)', opacity: 1 }, { transform: 'translateX(-100%)', opacity: 0 }],
-        { duration: 250, easing: 'ease-in', fill: 'forwards' }
-      );
-      slideAnim.onfinish = () => {
+      if (isDesktop) {
+        // Desktop: fade out and leave empty space
         wrapperEl.animate(
-          [{ height: wrapperEl.offsetHeight + 'px', marginBottom: '12px' }, { height: '0px', marginBottom: '0px' }],
-          { duration: 200, easing: 'ease-out', fill: 'forwards' }
-        ).onfinish = () => {
-          setItems(prev => prev.filter(i => i.id !== item.id));
+          [{ opacity: 1 }, { opacity: 0 }],
+          { duration: 250, easing: 'ease-in', fill: 'forwards' }
+        );
+      } else {
+        // Mobile: slide left + collapse
+        const slideAnim = wrapperEl.animate(
+          [{ transform: 'translateX(0)', opacity: 1 }, { transform: 'translateX(-100%)', opacity: 0 }],
+          { duration: 250, easing: 'ease-in', fill: 'forwards' }
+        );
+        slideAnim.onfinish = () => {
+          wrapperEl.animate(
+            [{ height: wrapperEl.offsetHeight + 'px', marginBottom: '12px' }, { height: '0px', marginBottom: '0px' }],
+            { duration: 200, easing: 'ease-out', fill: 'forwards' }
+          ).onfinish = () => {
+            setItems(prev => prev.filter(i => i.id !== item.id));
+          };
         };
-      };
+      }
     } else {
       setItems(prev => prev.filter(i => i.id !== item.id));
     }
-  }, [queueDismiss]);
+  }, [queueDismiss, isDesktop]);
 
   if (loading) {
     return (
@@ -365,7 +374,7 @@ export default function Scroll() {
               key={item.id || i}
               item={item}
               colors={colors}
-              onDismiss={handleDismiss}
+              onDismiss={(item.tier || 'wire') === 'wire' ? handleDismiss : undefined}
               onPlay={handlePlay}
               onClick={(e) => handleCardClick(e, item)}
             />

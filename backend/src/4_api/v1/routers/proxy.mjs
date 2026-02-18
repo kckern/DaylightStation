@@ -202,8 +202,8 @@ export function createProxyRouter(config) {
     }
 
     // Check disk cache
-    const cacheDir = dataPath
-      ? nodePath.join(dataPath, 'household', 'shared', 'komga', 'hero')
+    const cacheDir = mediaBasePath
+      ? nodePath.join(mediaBasePath, 'img', 'komga', 'hero')
       : null;
     const cacheFile = cacheDir
       ? nodePath.join(cacheDir, `${bookId}-${pageNum}.jpg`)

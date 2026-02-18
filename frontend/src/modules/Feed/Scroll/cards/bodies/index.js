@@ -16,6 +16,7 @@ import PhotoBody from './PhotoBody.jsx';
 import MediaBody from './MediaBody.jsx';
 import ReadalongBody from './ReadalongBody.jsx';
 import GoodreadsBody from './GoodreadsBody.jsx';
+import EbookBody from './EbookBody.jsx';
 
 const BODY_MODULES = {
   reddit: RedditBody,
@@ -28,6 +29,7 @@ const BODY_MODULES = {
   plex: MediaBody,
   readalong: ReadalongBody,
   goodreads: GoodreadsBody,
+  'abs-ebooks': EbookBody,
 };
 
 export { DefaultBody };

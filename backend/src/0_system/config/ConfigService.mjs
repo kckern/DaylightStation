@@ -374,6 +374,17 @@ export class ConfigService {
   }
 
   /**
+   * Resolve browser-accessible URL for a service.
+   * Looks for a `webUrl` key in the service config; falls back to resolveServiceUrl().
+   * @param {string} serviceName - Service name (komga, plex, etc.)
+   * @returns {string|null} Browser-facing URL or null if not found
+   */
+  resolveServiceWebUrl(serviceName) {
+    const service = this.#config.services?.[serviceName];
+    return service?.webUrl || this.resolveServiceUrl(serviceName);
+  }
+
+  /**
    * Get integration config for a capability from household integrations
    * @param {string|null} householdId - Household ID, defaults to default household
    * @param {string} capability - Capability name (media, ai, home_automation)

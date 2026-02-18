@@ -2,6 +2,7 @@
   "dependencies": {
     "@mastra/core": "^1.0.4",
     "@tabler/icons-react": "^3.36.1",
+    "adm-zip": "^0.5.16",
     "ajv": "^8.18.0",
     "axios": "^1.7.2",
     "bcrypt": "^6.0.0",
@@ -11,6 +12,7 @@
     "dotenv": "^17.2.3",
     "highcharts-more": "^0.1.7",
     "html-entities": "^2.6.0",
+    "image-size": "^2.0.2",
     "is-json": "^2.0.1",
     "jimp": "^1.6.0",
     "js-yaml": "^4.1.0",

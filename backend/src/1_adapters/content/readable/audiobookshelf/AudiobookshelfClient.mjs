@@ -74,19 +74,27 @@ export class AudiobookshelfClient {
   }
 
   /**
-   * Get items in a library with pagination
+   * Get items in a library with pagination, filtering, and sorting
    * @param {string} libraryId - Library ID
    * @param {Object} [options]
    * @param {number} [options.page=0] - Page number (0-indexed)
    * @param {number} [options.limit=50] - Page size
+   * @param {string} [options.filter] - ABS filter string (e.g., 'genres.BASE64')
+   * @param {string} [options.sort] - Sort field (e.g., 'media.metadata.title')
+   * @param {boolean} [options.desc] - Sort descending when true
    * @returns {Promise<{results: Array, total: number, page: number, limit: number}>}
    */
   async getLibraryItems(libraryId, options = {}) {
     const page = options.page ?? 0;
     const limit = options.limit ?? 50;
 
+    const params = new URLSearchParams({ page, limit });
+    if (options.filter) params.set('filter', options.filter);
+    if (options.sort) params.set('sort', options.sort);
+    if (options.desc != null) params.set('desc', options.desc ? '1' : '0');
+
     const response = await this.#httpClient.get(
-      `${this.#host}/api/libraries/${libraryId}/items?page=${page}&limit=${limit}`,
+      `${this.#host}/api/libraries/${libraryId}/items?${params}`,
       { headers: this.#getHeaders() }
     );
     return response.data;

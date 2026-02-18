@@ -43,11 +43,15 @@ export class ImmichFeedAdapter extends IFeedSourceAdapter {
         const localId = item.localId || item.id?.replace?.('immich:', '') || item.id;
         const created = exif?.capturedAt || item.metadata?.capturedAt || null;
         const location = exif?.location || item.metadata?.location || null;
+        const people = exif?.people || [];
+        const title = this.#buildPhotoTitle(people, location, created);
+        const subtitle = created ? this.#formatDate(created) : null;
         return {
           id: `immich:${localId}`,
           tier: query.tier || 'scrapbook',
           source: 'photo',
-          title: created ? this.#formatDate(created) : 'Memory',
+          title,
+          subtitle,
           body: location,
           image: item.imageUrl || `/api/v1/proxy/immich/assets/${localId}/original`,
           link: this.#webUrl ? `${this.#webUrl}/photos/${localId}` : null,
@@ -61,6 +65,7 @@ export class ImmichFeedAdapter extends IFeedSourceAdapter {
             ...(exif?.imageWidth && exif?.imageHeight
               ? { imageWidth: exif.imageWidth, imageHeight: exif.imageHeight }
               : {}),
+            ...(people.length > 0 ? { people } : {}),
           },
         };
       });
@@ -171,12 +176,55 @@ export class ImmichFeedAdapter extends IFeedSourceAdapter {
             location: viewable.metadata.exif?.city || null,
             imageWidth: viewable.width || null,
             imageHeight: viewable.height || null,
+            people: viewable.metadata.people || [],
           } : null,
         };
       } catch {
         return { item, exif: null };
       }
     }));
+  }
+
+  #buildPhotoTitle(people, location, created) {
+    const names = people.filter(n => n && n.trim());
+    if (names.length > 0) {
+      const parts = [this.#formatPeopleList(names)];
+      if (location) parts.push(location);
+      return parts.join(' \u2022 ');
+    }
+    if (location && created) {
+      const period = this.#getTimeOfDayLabel(created);
+      return period ? `${period} in ${location}` : location;
+    }
+    if (location) return location;
+    return created ? this.#formatDayPeriod(created) : 'Memory';
+  }
+
+  #formatPeopleList(names) {
+    if (names.length === 1) return names[0];
+    if (names.length === 2) return `${names[0]} and ${names[1]}`;
+    return `${names.slice(0, -1).join(', ')}, and ${names[names.length - 1]}`;
+  }
+
+  #getTimeOfDayLabel(iso) {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return null;
+    const h = d.getHours();
+    if (h < 6) return 'Late Night';
+    if (h < 9) return 'Morning';
+    if (h < 11) return 'Mid-Morning';
+    if (h < 13) return 'Lunchtime';
+    if (h < 17) return 'Afternoon';
+    if (h < 21) return 'Evening';
+    return 'Night';
+  }
+
+  #formatDayPeriod(iso) {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return 'Memory';
+    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const label = this.#getTimeOfDayLabel(iso);
+    return `${days[d.getDay()]} ${label}`;
   }
 
   #formatDate(iso) {

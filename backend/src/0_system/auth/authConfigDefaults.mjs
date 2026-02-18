@@ -11,7 +11,7 @@ export function getDefaultAuthConfig() {
       admin: { apps: ['admin', 'finance', 'config', 'scheduler', 'devices', 'members'] },
       parent: { apps: ['fitness', 'finance', 'lifelog'] },
       member: { apps: ['fitness', 'lifelog'] },
-      kiosk: { apps: ['tv', 'office', 'content', 'display', 'play', 'queue', 'stream', 'canvas', 'device', 'fitness'] }
+      kiosk: { apps: ['tv', 'office', 'content', 'display', 'play', 'queue', 'stream', 'canvas', 'device', 'fitness', 'finance', 'lifelog'] }
     },
     household_roles: {
       default: ['kiosk']
