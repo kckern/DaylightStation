@@ -13,6 +13,7 @@
  *   --only=strava,github    Run only specified harvesters
  *   --skip=gmail,withings   Skip specified harvesters
  *   --since=YYYY-MM-DD      Backfill from date
+ *   --timeout=SECONDS       Override per-harvester timeout
  *   --verbose               Show detailed output
  *   --json                  Output results as JSON
  *   --dry-run               Show what would run without executing
@@ -140,6 +141,7 @@ function parseArgs(argv) {
     only: null,
     skip: [],
     since: null,
+    timeout: null,
     verbose: false,
     json: false,
     dryRun: false,
@@ -152,6 +154,8 @@ function parseArgs(argv) {
       args.skip = arg.split('=')[1].split(',').map(s => s.trim());
     } else if (arg.startsWith('--since=')) {
       args.since = arg.split('=')[1];
+    } else if (arg.startsWith('--timeout=')) {
+      args.timeout = parseInt(arg.split('=')[1], 10) * 1000;
     } else if (arg === '--verbose') {
       args.verbose = true;
     } else if (arg === '--json') {
@@ -194,7 +198,7 @@ function formatDuration(ms) {
 
 async function runHarvest(harvesterService, serviceId, username, options, args) {
   const startTime = Date.now();
-  const timeout = TIMEOUTS[serviceId] || TIMEOUTS.default;
+  const timeout = args.timeout || TIMEOUTS[serviceId] || TIMEOUTS.default;
 
   const result = {
     serviceId,

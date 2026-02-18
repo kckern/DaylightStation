@@ -17,6 +17,7 @@ const HARVEST_CLI = path.join(__dirname, '..', 'harvest.mjs');
  * @param {string} serviceId - Harvester to run
  * @param {Object} opts - Options
  * @param {string} [opts.since] - Backfill date (YYYY-MM-DD)
+ * @param {number} [opts.timeout] - Timeout in seconds (overrides per-harvester default)
  * @returns {Promise<Object>} - Result object with status, error, duration
  */
 export async function runHarvest(serviceId, opts = {}) {
@@ -27,6 +28,7 @@ export async function runHarvest(serviceId, opts = {}) {
 
   const args = ['--only=' + serviceId, '--json'];
   if (opts.since) args.push('--since=' + opts.since);
+  if (opts.timeout) args.push('--timeout=' + opts.timeout);
 
   return new Promise((resolve, reject) => {
     const child = spawn('node', [HARVEST_CLI, ...args], {
