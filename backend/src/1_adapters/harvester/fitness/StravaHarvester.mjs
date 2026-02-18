@@ -14,12 +14,14 @@
  * @module harvester/fitness/StravaHarvester
  */
 
+import path from 'path';
 import moment from 'moment-timezone';
 import crypto from 'crypto';
 import { IHarvester, HarvesterCategory } from '../ports/IHarvester.mjs';
 import { CircuitBreaker } from '../CircuitBreaker.mjs';
 import { configService } from '#system/config/index.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
+import { listYamlFiles, ensureDir, loadYamlSafe, saveYaml, deleteFile } from '#system/utils/FileIO.mjs';
 
 const md5 = (string) => crypto.createHash('md5').update(string).digest('hex');
 
@@ -36,6 +38,7 @@ export class StravaHarvester extends IHarvester {
   #timezone;
   #logger;
   #rateLimitDelayMs;
+  #fitnessHistoryDir;
 
   /**
    * @param {Object} config
@@ -45,6 +48,7 @@ export class StravaHarvester extends IHarvester {
    * @param {Object} config.configService - ConfigService for credentials
    * @param {string} [config.timezone] - Timezone for date parsing
    * @param {number} [config.rateLimitDelayMs=5000] - Delay between stream fetches
+   * @param {string|null} [config.fitnessHistoryDir=null] - Path to fitness history YAML directory
    * @param {Object} [config.logger] - Logger instance
    */
   constructor({
@@ -54,6 +58,7 @@ export class StravaHarvester extends IHarvester {
     configService,
     timezone = configService?.isReady?.() ? configService.getTimezone() : 'America/Los_Angeles',
     rateLimitDelayMs = 5000,
+    fitnessHistoryDir = null,
     logger = console,
   }) {
     super();
@@ -78,6 +83,7 @@ export class StravaHarvester extends IHarvester {
     this.#timezone = timezone;
     this.#rateLimitDelayMs = rateLimitDelayMs;
     this.#logger = logger;
+    this.#fitnessHistoryDir = fitnessHistoryDir;
 
     this.#circuitBreaker = new CircuitBreaker({
       maxFailures: 3,
@@ -158,6 +164,9 @@ export class StravaHarvester extends IHarvester {
 
       // 5. Generate and save summary
       const summary = await this.#generateAndSaveSummary(username, enrichedActivities);
+
+      // 6. Age out old files from lifelog/strava/ to media/archives/strava/
+      await this.#ageOutOldFiles(username);
 
       // Success - reset circuit breaker
       this.#circuitBreaker.recordSuccess();
@@ -345,9 +354,16 @@ export class StravaHarvester extends IHarvester {
         continue;
       }
 
-      // Check archive for existing HR data
+      // Check archive for existing HR data (try recent strava/, then media archive, then legacy)
       const archiveName = `${date}_${safeType}_${activity.id}`;
-      const archived = await this.#lifelogStore.load(username, `archives/strava/${archiveName}`);
+      let archived = await this.#lifelogStore.load(username, `strava/${archiveName}`);
+      if (!archived) {
+        const mediaPath = path.join(this.#getMediaArchiveDir(), archiveName);
+        archived = loadYamlSafe(mediaPath);
+      }
+      if (!archived) {
+        archived = await this.#lifelogStore.load(username, `archives/strava/${archiveName}`);
+      }
       if (archived?.data?.heartRateOverTime) {
         enriched.push(archived.data);
         continue;
@@ -403,7 +419,7 @@ export class StravaHarvester extends IHarvester {
       };
 
       const archiveName = `${date}_${safeType}_${activity.id}`;
-      await this.#lifelogStore.save(username, `archives/strava/${archiveName}`, archiveData);
+      await this.#lifelogStore.save(username, `strava/${archiveName}`, archiveData);
     }
   }
 
@@ -517,6 +533,68 @@ export class StravaHarvester extends IHarvester {
     });
 
     return sorted;
+  }
+
+  /**
+   * Get media archive directory for strava
+   * @private
+   */
+  #getMediaArchiveDir() {
+    const mediaDir = this.#configService?.getMediaDir?.() || './media';
+    return path.join(mediaDir, 'archives', 'strava');
+  }
+
+  /**
+   * Get user's lifelog/strava directory
+   * @private
+   */
+  #getUserStravaDir(username) {
+    const userDir = this.#configService?.getUserDir?.(username) || `./data/users/${username}`;
+    return path.join(userDir, 'lifelog', 'strava');
+  }
+
+  /**
+   * Move files older than 90 days from lifelog/strava/ to media/archives/strava/
+   * Also cleans up legacy 2-part filenames (DATE_ID.yml → old format).
+   * Uses copy+delete for cross-mount safety.
+   * @private
+   */
+  async #ageOutOldFiles(username) {
+    const stravaDir = this.#getUserStravaDir(username);
+    const mediaArchiveDir = this.#getMediaArchiveDir();
+    const cutoff = moment().subtract(90, 'days').startOf('day');
+
+    const files = listYamlFiles(stravaDir);
+    if (files.length === 0) return;
+
+    ensureDir(mediaArchiveDir);
+    let movedCount = 0;
+
+    for (const filename of files) {
+      // Parse date from filename (first 10 chars: YYYY-MM-DD)
+      const dateStr = filename.substring(0, 10);
+      const fileDate = moment(dateStr, 'YYYY-MM-DD', true);
+      if (!fileDate.isValid()) continue;
+
+      // Check for legacy 2-part filenames (DATE_ID.yml — old format without type)
+      const parts = filename.split('_');
+      const isLegacyFormat = parts.length === 2;
+
+      if (fileDate.isBefore(cutoff) || isLegacyFormat) {
+        // Copy to media archive, then delete source
+        const srcPath = path.join(stravaDir, `${filename}.yml`);
+        const data = loadYamlSafe(srcPath);
+        if (data) {
+          saveYaml(path.join(mediaArchiveDir, filename), data);
+          deleteFile(srcPath);
+          movedCount++;
+        }
+      }
+    }
+
+    if (movedCount > 0) {
+      this.#logger.info?.('strava.ageOut.complete', { username, movedCount });
+    }
   }
 
   /**
