@@ -339,5 +339,130 @@ describe('StravaHarvester', () => {
       const matches = await harvester.matchHomeSessions('kckern', [activity]);
       expect(matches).toHaveLength(0);
     });
+
+    it('should enrich Strava summary with home session data', async () => {
+      const dateDir = path.join(tmpDir, '2026-02-15');
+      fs.mkdirSync(dateDir, { recursive: true });
+
+      const sessionData = {
+        sessionId: '20260215191250',
+        session: {
+          id: '20260215191250',
+          date: '2026-02-15',
+          start: '2026-02-15 19:12:50',
+          end: '2026-02-15 19:20:50',
+          duration_seconds: 480,
+        },
+        timezone: 'America/Los_Angeles',
+        participants: {
+          kckern: { display_name: 'KC Kern', is_primary: true },
+        },
+        treasureBox: { totalCoins: 15 },
+        timeline: {
+          events: [
+            { timestamp: 123, type: 'media', data: { title: 'Mario Kart 8' } },
+          ],
+        },
+      };
+
+      const { saveYaml } = await import('#system/utils/FileIO.mjs');
+      saveYaml(path.join(dateDir, '20260215191250'), sessionData);
+
+      const activity = {
+        id: 17418186050,
+        start_date: '2026-02-16T03:10:00Z',
+        moving_time: 600,
+        type: 'WeightTraining',
+        name: 'Evening Weight Training',
+        suffer_score: 5,
+        device_name: 'Garmin Forerunner 245 Music',
+      };
+
+      const existingSummary = {
+        '2026-02-15': [
+          { id: 17418186050, title: 'Evening Weight Training', type: 'WeightTraining' },
+        ],
+      };
+      mockLifelogStore.load.mockResolvedValue(existingSummary);
+
+      harvester = new StravaHarvester({
+        stravaClient: mockStravaClient,
+        lifelogStore: mockLifelogStore,
+        configService: mockConfigService,
+        fitnessHistoryDir: tmpDir,
+        timezone: 'America/Los_Angeles',
+        logger: mockLogger,
+      });
+
+      await harvester.applyHomeSessionEnrichment('kckern', [activity]);
+
+      const saveCalls = mockLifelogStore.save.mock.calls;
+      const summarySave = saveCalls.find(c => c[1] === 'strava');
+      expect(summarySave).toBeTruthy();
+
+      const savedSummary = summarySave[2];
+      const enrichedEntry = savedSummary['2026-02-15'].find(a => a.id === 17418186050);
+      expect(enrichedEntry.homeSessionId).toBe('20260215191250');
+      expect(enrichedEntry.homeCoins).toBe(15);
+      expect(enrichedEntry.homeMedia).toBe('Mario Kart 8');
+    });
+
+    it('should enrich home session file with Strava data', async () => {
+      const dateDir = path.join(tmpDir, '2026-02-15');
+      fs.mkdirSync(dateDir, { recursive: true });
+
+      const sessionData = {
+        sessionId: '20260215191250',
+        session: {
+          id: '20260215191250',
+          date: '2026-02-15',
+          start: '2026-02-15 19:12:50',
+          end: '2026-02-15 19:20:50',
+          duration_seconds: 480,
+        },
+        timezone: 'America/Los_Angeles',
+        participants: {
+          kckern: { display_name: 'KC Kern', is_primary: true },
+        },
+        treasureBox: { totalCoins: 15 },
+        timeline: { events: [] },
+      };
+
+      const { saveYaml, loadYamlSafe } = await import('#system/utils/FileIO.mjs');
+      const sessionPath = path.join(dateDir, '20260215191250');
+      saveYaml(sessionPath, sessionData);
+
+      const activity = {
+        id: 17418186050,
+        start_date: '2026-02-16T03:10:00Z',
+        moving_time: 600,
+        type: 'WeightTraining',
+        name: 'Evening Weight Training',
+        suffer_score: 5,
+        device_name: 'Garmin Forerunner 245 Music',
+      };
+
+      mockLifelogStore.load.mockResolvedValue({
+        '2026-02-15': [{ id: 17418186050, type: 'WeightTraining' }],
+      });
+
+      harvester = new StravaHarvester({
+        stravaClient: mockStravaClient,
+        lifelogStore: mockLifelogStore,
+        configService: mockConfigService,
+        fitnessHistoryDir: tmpDir,
+        timezone: 'America/Los_Angeles',
+        logger: mockLogger,
+      });
+
+      await harvester.applyHomeSessionEnrichment('kckern', [activity]);
+
+      const updated = loadYamlSafe(sessionPath);
+      expect(updated.participants.kckern.strava).toBeDefined();
+      expect(updated.participants.kckern.strava.activityId).toBe(17418186050);
+      expect(updated.participants.kckern.strava.type).toBe('WeightTraining');
+      expect(updated.participants.kckern.strava.sufferScore).toBe(5);
+      expect(updated.participants.kckern.strava.deviceName).toBe('Garmin Forerunner 245 Music');
+    });
   });
 });
