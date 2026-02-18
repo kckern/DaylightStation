@@ -168,6 +168,25 @@ export class StravaHarvester extends IHarvester {
       // 6. Age out old files from lifelog/strava/ to media/archives/strava/
       await this.#ageOutOldFiles(username);
 
+      // 7. Match home fitness sessions (bidirectional enrichment)
+      if (this.#fitnessHistoryDir) {
+        try {
+          const homeMatches = await this.applyHomeSessionEnrichment(username, enrichedActivities);
+          if (homeMatches.length > 0) {
+            this.#logger.info?.('strava.harvest.homeMatches', {
+              username,
+              matchCount: homeMatches.length,
+            });
+          }
+        } catch (err) {
+          // Non-fatal — log and continue
+          this.#logger.warn?.('strava.harvest.homeMatchError', {
+            username,
+            error: this.#cleanErrorMessage(err),
+          });
+        }
+      }
+
       // Success - reset circuit breaker
       this.#circuitBreaker.recordSuccess();
 
