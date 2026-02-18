@@ -395,14 +395,16 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       // Resume if we were playing before the pause
       if (wasPlayingBeforeVoiceMemoRef.current && mediaElement) {
         wasPlayingBeforeVoiceMemoRef.current = false;
-        if (mediaElement.paused) {
+        // Only resume if governance isn't currently locking the video.
+        // If governance is locked, the governance unlock effect will handle resume.
+        if (!governancePaused && mediaElement.paused) {
           mediaElement.play().catch(() => {
             // Ignore play errors (e.g. user gesture requirements which should already be met)
           });
         }
       }
     }
-  }, [videoPlayerPaused, mediaElement]);
+  }, [videoPlayerPaused, mediaElement, governancePaused]);
 
   const TimeDisplay = useMemo(() => React.memo(({ ct, dur }) => (
     <>{formatTime(ct)} / {formatTime(dur)}</>
