@@ -5,7 +5,7 @@
  * Four-tier feed assembly: wire, library, scrapbook, compass.
  * Replaces the two-tier (external/grounding) interleaving model.
  *
- * Level 1 — Batch distribution: each tier gets a fixed allocation.
+ * Level 1 — Batch distribution: FlexAllocator distributes slots across tiers.
  * Level 2 — Within-tier selection: filter → sort → pick per tier strategy.
  *
  * Wire fills remaining slots after other tiers are allocated.
@@ -13,6 +13,9 @@
  *
  * @module applications/feed/services
  */
+
+import { FlexAllocator } from './FlexAllocator.mjs';
+import { FlexConfigParser } from './FlexConfigParser.mjs';
 
 /** Canonical tier identifiers */
 export const TIERS = Object.freeze({
@@ -70,15 +73,19 @@ export class TierAssemblyService {
     // Bucket items by tier
     const buckets = this.#bucketByTier(allItems);
 
+    // Level 1: use FlexAllocator to distribute slots across tiers
+    const tierSlots = this.#allocateTierSlots(decayedConfig, effectiveLimit, buckets);
+
     // Level 2: within-tier selection
     const selected = {};
     for (const tier of Object.values(TIERS)) {
       const candidates = buckets[tier] || [];
       const config = decayedConfig[tier] || TIER_DEFAULTS[tier];
-      selected[tier] = this.#selectForTier(tier, candidates, config, { focus, selectionCounts });
+      const slots = tierSlots.get(tier) ?? config.allocation;
+      selected[tier] = this.#selectForTier(tier, candidates, config, { focus, selectionCounts, tierSlots: slots });
     }
 
-    // Level 1: allocate slots and interleave
+    // Cross-tier interleave
     const interleaved = this.#interleave(selected, decayedConfig, effectiveLimit);
 
     // Deduplicate
@@ -118,19 +125,35 @@ export class TierAssemblyService {
 
   /**
    * Merge user scroll config tiers with defaults.
+   * Parses each tier through FlexConfigParser to produce flex descriptors.
+   *
    * @param {Object} scrollConfig
    * @returns {Object} Resolved tier config keyed by tier name
    */
   #resolveTierConfig(scrollConfig) {
     const userTiers = scrollConfig.tiers || {};
+    const batchSize = scrollConfig.batch_size || 50;
     const resolved = {};
 
     for (const tier of Object.values(TIERS)) {
       const defaults = TIER_DEFAULTS[tier] || {};
       const user = userTiers[tier] || {};
 
+      // Build a merged node for FlexConfigParser (user overrides defaults)
+      const mergedNode = { ...defaults, ...user };
+      const flex = FlexConfigParser.parseFlexNode(mergedNode, batchSize);
+
+      // Wire tier defaults: grow=1, basis='auto' so it fills remaining space
+      if (tier === TIERS.WIRE && user.flex === undefined && user.allocation === undefined) {
+        flex.grow = flex.grow || 1;
+        if (flex.basis !== 'auto' && defaults.allocation === undefined) {
+          flex.basis = 'auto';
+        }
+      }
+
       resolved[tier] = {
         allocation: user.allocation ?? defaults.allocation,
+        flex,
         selection: {
           ...defaults.selection,
           ...user.selection,
@@ -143,6 +166,35 @@ export class TierAssemblyService {
     }
 
     return resolved;
+  }
+
+  // ======================================================================
+  // Flex Allocation
+  // ======================================================================
+
+  /**
+   * Use FlexAllocator to determine how many slots each tier gets.
+   *
+   * @param {Object} tierConfig - Resolved tier config (with .flex descriptors)
+   * @param {number} batchSize - Target batch size
+   * @param {Object} buckets - Items bucketed by tier
+   * @returns {Map<string, number>} Tier → slot count
+   */
+  #allocateTierSlots(tierConfig, batchSize, buckets) {
+    const children = Object.values(TIERS).map(tier => {
+      const cfg = tierConfig[tier] || {};
+      const flex = cfg.flex || {};
+      return {
+        key: tier,
+        grow: flex.grow ?? (tier === TIERS.WIRE ? 1 : 0),
+        shrink: flex.shrink ?? 1,
+        basis: flex.basis ?? (tier === TIERS.WIRE ? 'auto' : 'auto'),
+        min: flex.min ?? 0,
+        max: flex.max ?? Infinity,
+        available: (buckets[tier] || []).length,
+      };
+    });
+    return FlexAllocator.distribute(batchSize, children);
   }
 
   // ======================================================================
@@ -217,9 +269,10 @@ export class TierAssemblyService {
    * @param {Object[]} candidates - All items in this tier
    * @param {Object} config - Tier config (allocation, selection, sources)
    * @param {Object} options
+   * @param {number} [options.tierSlots] - Flex-allocated slot count for this tier
    * @returns {Object[]} Selected items for this tier
    */
-  #selectForTier(tier, candidates, config, { focus, selectionCounts } = {}) {
+  #selectForTier(tier, candidates, config, { focus, selectionCounts, tierSlots } = {}) {
     if (!candidates.length) return [];
 
     let items = [...candidates];
@@ -249,9 +302,10 @@ export class TierAssemblyService {
       items = this.#applySourceCaps(items, config.sources);
     }
 
-    // Cap to allocation (non-wire always; wire only during decay)
-    if (config.allocation != null) {
-      items = items.slice(0, config.allocation);
+    // Cap to flex-allocated slot count (replaces legacy config.allocation)
+    const slotCap = tierSlots ?? config.allocation;
+    if (slotCap != null) {
+      items = items.slice(0, slotCap);
     }
 
     return items;
