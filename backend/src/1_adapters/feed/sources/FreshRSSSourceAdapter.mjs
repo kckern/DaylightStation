@@ -26,6 +26,7 @@ export class FreshRSSSourceAdapter extends IFeedSourceAdapter {
 
   static #DEFAULT_UNREAD_PER_SOURCE = 20;
   static #DEFAULT_TOTAL_LIMIT = 100;
+  static #DEFAULT_MAX_UNREAD_PER_FEED = 3;
 
   constructor({ freshRSSAdapter, configService = null, logger = console }) {
     super();
@@ -41,6 +42,7 @@ export class FreshRSSSourceAdapter extends IFeedSourceAdapter {
       return {
         unreadPerSource: FreshRSSSourceAdapter.#DEFAULT_UNREAD_PER_SOURCE,
         totalLimit: FreshRSSSourceAdapter.#DEFAULT_TOTAL_LIMIT,
+        maxUnreadPerFeed: FreshRSSSourceAdapter.#DEFAULT_MAX_UNREAD_PER_FEED,
       };
     }
     const feedConfig = this.#configService.getAppConfig?.('feed') || {};
@@ -48,26 +50,32 @@ export class FreshRSSSourceAdapter extends IFeedSourceAdapter {
     return {
       unreadPerSource: reader.unread_per_source ?? FreshRSSSourceAdapter.#DEFAULT_UNREAD_PER_SOURCE,
       totalLimit: reader.total_limit ?? FreshRSSSourceAdapter.#DEFAULT_TOTAL_LIMIT,
+      maxUnreadPerFeed: reader.max_unread_per_feed ?? FreshRSSSourceAdapter.#DEFAULT_MAX_UNREAD_PER_FEED,
     };
   }
 
   async fetchPage(query, username, { cursor } = {}) {
     if (!this.#freshRSSAdapter) return { items: [], cursor: null };
 
-    const { unreadPerSource, totalLimit } = this.#getReaderConfig();
+    const { unreadPerSource, totalLimit, maxUnreadPerFeed } = this.#getReaderConfig();
     const streamId = 'user/-/state/com.google/reading-list';
 
-    // Pass 1: unread items (prioritized)
+    // Pass 1: over-fetch unread, then cap per feed for diversity
+    const fetchCount = maxUnreadPerFeed ? totalLimit : unreadPerSource;
     const { items: unreadRaw, continuation } = await this.#freshRSSAdapter.getItems(
       streamId, username, {
         excludeRead: true,
-        count: unreadPerSource,
+        count: fetchCount,
         continuation: cursor || undefined,
       }
     );
 
-    const unreadIds = new Set(unreadRaw.map(i => i.id));
-    const unreadItems = unreadRaw.map(item => this.#normalize(item, query, false));
+    const cappedUnread = maxUnreadPerFeed
+      ? this.#capPerFeed(unreadRaw, maxUnreadPerFeed, unreadPerSource)
+      : unreadRaw.slice(0, unreadPerSource);
+
+    const unreadIds = new Set(cappedUnread.map(i => i.id));
+    const unreadItems = cappedUnread.map(item => this.#normalize(item, query, false));
 
     // If unread fills the limit, skip pass 2
     if (unreadItems.length >= totalLimit) {
@@ -96,6 +104,25 @@ export class FreshRSSSourceAdapter extends IFeedSourceAdapter {
 
     const merged = [...unreadItems, ...readItems].slice(0, totalLimit);
     return { items: merged, cursor: continuation || null };
+  }
+
+  /**
+   * Cap items per feed to prevent one prolific feed from dominating.
+   * Preserves chronological order within each feed's allocation.
+   */
+  #capPerFeed(items, maxPerFeed, totalCap) {
+    const counts = new Map();
+    const result = [];
+    for (const item of items) {
+      const feedKey = item.feedId || item.feedTitle || 'unknown';
+      const count = counts.get(feedKey) || 0;
+      if (count < maxPerFeed) {
+        result.push(item);
+        counts.set(feedKey, count + 1);
+        if (result.length >= totalCap) break;
+      }
+    }
+    return result;
   }
 
   #normalize(item, query, isRead) {
