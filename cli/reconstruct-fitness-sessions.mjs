@@ -5,8 +5,8 @@
  *
  * Creates v3 fitness session files for unmatched Strava entries that have
  * heart-rate data in their archives. Resamples per-second HR to 5s intervals,
- * derives zones, calculates coins, matches media from fitness memory, and
- * writes complete session files.
+ * derives zones, calculates coins, matches media from Tautulli + fitness memory,
+ * and writes complete session files.
  *
  * Dry-run by default. Pass --write to persist files.
  *
@@ -14,8 +14,8 @@
  *   node cli/reconstruct-fitness-sessions.mjs [--write] [daysBack]
  *
  * Examples:
- *   node cli/reconstruct-fitness-sessions.mjs            # dry-run, 365 days
- *   node cli/reconstruct-fitness-sessions.mjs --write     # write mode, 365 days
+ *   node cli/reconstruct-fitness-sessions.mjs            # dry-run, back to Jan 2024
+ *   node cli/reconstruct-fitness-sessions.mjs --write     # write mode
  *   node cli/reconstruct-fitness-sessions.mjs --write 90  # write mode, 90 days
  */
 
@@ -50,7 +50,9 @@ initConfigService(dataDir);
 const args = process.argv.slice(2);
 const writeMode = args.includes('--write');
 const numericArg = args.find(a => /^\d+$/.test(a));
-const daysBack = parseInt(numericArg || '365', 10);
+// Default: back to Jan 2024
+const defaultDays = Math.ceil(moment().diff(moment('2024-01-01'), 'days'));
+const daysBack = parseInt(numericArg || String(defaultDays), 10);
 const username = 'kckern';
 const TIMEZONE = 'America/Los_Angeles';
 
@@ -58,7 +60,7 @@ console.log(`Reconstruct fitness sessions for ${username}, ${daysBack} days back
 console.log(`Mode: ${writeMode ? 'WRITE' : 'DRY-RUN'}\n`);
 
 // ------------------------------------------------------------------
-// Zone configuration
+// Zone configuration (from fitness.yml)
 // ------------------------------------------------------------------
 const ZONES = [
   { name: 'cool',   short: 'c',    min: 0,   color: 'blue',   coins: 0 },
@@ -81,14 +83,38 @@ const mediaMemoryPath = path.join(dataDir, 'household', 'history', 'media_memory
 const fitnessHistoryDir = path.join(dataDir, 'household', 'history', 'fitness');
 
 // ------------------------------------------------------------------
+// Tautulli: fetch fitness library play history
+// ------------------------------------------------------------------
+const TAUTULLI_URL = 'https://tautulli.kckern.net/api/v2';
+const TAUTULLI_KEY = 'I6vmpzwRpmVGh4kRkHmX6r19vS-cl_P8';
+const TAUTULLI_SECTION = 14;
+
+async function fetchTautulliPlays() {
+  try {
+    const url = `${TAUTULLI_URL}?apikey=${TAUTULLI_KEY}&cmd=get_history&section_id=${TAUTULLI_SECTION}&length=10000&order_column=date&order_dir=asc`;
+    const resp = await fetch(url);
+    const json = await resp.json();
+    if (json.response?.result !== 'success') {
+      console.warn('Tautulli API error:', json.response?.message);
+      return [];
+    }
+    const plays = json.response.data.data || [];
+    console.log(`Tautulli: loaded ${plays.length} fitness plays (${plays.length > 0 ? moment.unix(plays[0].started).format('YYYY-MM-DD') : 'none'} to ${plays.length > 0 ? moment.unix(plays[plays.length - 1].started).format('YYYY-MM-DD') : 'none'})`);
+    return plays;
+  } catch (err) {
+    console.warn('Tautulli fetch failed:', err.message);
+    return [];
+  }
+}
+
+// ------------------------------------------------------------------
 // Helper: get zone for a heart rate value
 // ------------------------------------------------------------------
 function getZone(hr) {
-  // Walk the zones in reverse to find the highest matching zone
   for (let i = ZONES.length - 1; i >= 0; i--) {
     if (hr >= ZONES[i].min) return ZONES[i];
   }
-  return ZONES[0]; // cool fallback
+  return ZONES[0];
 }
 
 // ------------------------------------------------------------------
@@ -144,7 +170,6 @@ function computeZoneMinutes(zoneSeries) {
   const result = {};
   for (const [name, count] of Object.entries(tickCounts)) {
     const minutes = (count * INTERVAL_SECONDS) / 60;
-    // Round to 2 decimal places, omit if 0
     const rounded = Math.round(minutes * 100) / 100;
     if (rounded > 0) result[name] = rounded;
   }
@@ -152,12 +177,11 @@ function computeZoneMinutes(zoneSeries) {
 }
 
 // ------------------------------------------------------------------
-// Helper: compute treasure box buckets from zone shortcodes and coins
+// Helper: compute treasure box buckets from zone shortcodes
 // ------------------------------------------------------------------
 function computeBuckets(zoneSeries) {
   const bucketMap = { blue: 0, green: 0, yellow: 0, orange: 0, red: 0 };
-  for (let i = 0; i < zoneSeries.length; i++) {
-    const z = zoneSeries[i];
+  for (const z of zoneSeries) {
     if (z == null) continue;
     const zoneDef = ZONES.find(zd => zd.short === z);
     if (!zoneDef || zoneDef.coins === 0) continue;
@@ -168,16 +192,22 @@ function computeBuckets(zoneSeries) {
 
 // ------------------------------------------------------------------
 // Helper: find archive file for a strava entry
-// Returns { data, archivePath } or null
+// Searches: lifelog/strava/ (3-part DATE_TYPE_ID) then
+//           media/archives/strava/ (3-part and legacy 2-part DATE_ID)
 // ------------------------------------------------------------------
 function findArchive(date, type, id) {
-  // Try new format: DATE_TYPE_ID.yml in lifelog/strava/
+  // 1. New format in lifelog/strava/: DATE_TYPE_ID.yml
   const newName = `${date}_${type}_${id}`;
   const newPath = path.join(stravaArchiveDir, newName);
   const newData = loadYamlSafe(newPath);
   if (newData) return { archive: newData, archivePath: newPath };
 
-  // Try old format: DATE_ID.yml in media/archives/strava/
+  // 2. New format in media/archives/strava/: DATE_TYPE_ID.yml
+  const archiveNewPath = path.join(olderArchiveDir, newName);
+  const archiveNewData = loadYamlSafe(archiveNewPath);
+  if (archiveNewData) return { archive: archiveNewData, archivePath: archiveNewPath };
+
+  // 3. Legacy format in media/archives/strava/: DATE_ID.yml
   const oldName = `${date}_${id}`;
   const oldPath = path.join(olderArchiveDir, oldName);
   const oldData = loadYamlSafe(oldPath);
@@ -190,11 +220,9 @@ function findArchive(date, type, id) {
 // Helper: parse start time from archive or summary
 // ------------------------------------------------------------------
 function parseStartTime(date, startTimeStr, archive) {
-  // Use the summary's startTime field: "06:25 am" format
   const m = moment.tz(`${date} ${startTimeStr}`, 'YYYY-MM-DD hh:mm a', TIMEZONE);
   if (m.isValid()) return m;
 
-  // Fallback: use archive start_date_local (strip the misleading Z)
   if (archive?.data?.start_date_local) {
     const local = archive.data.start_date_local.replace('Z', '');
     const fallback = moment.tz(local, TIMEZONE);
@@ -205,35 +233,54 @@ function parseStartTime(date, startTimeStr, archive) {
 }
 
 // ------------------------------------------------------------------
-// Helper: match media from fitness memory to a time window
+// Media matching: Tautulli (by time overlap) + 14_fitness.yml (by lastPlayed)
+// Tautulli provides titles; 14_fitness.yml catches content not in Tautulli.
+// De-duplicates by rating_key/mediaId.
 // ------------------------------------------------------------------
-function findMediaForWindow(mediaMemory, startMs, endMs, bufferMs = 5 * 60 * 1000) {
-  if (!mediaMemory) return [];
+function findMediaForWindow(tautulliPlays, mediaMemory, startMs, endMs, bufferMs = 5 * 60 * 1000) {
+  const windowStartS = Math.floor((startMs - bufferMs) / 1000);
+  const windowEndS = Math.ceil((endMs + bufferMs) / 1000);
+  const windowStartMs = startMs - bufferMs;
+  const windowEndMs = endMs + bufferMs;
 
-  const windowStart = startMs - bufferMs;
-  const windowEnd = endMs + bufferMs;
+  const seen = new Set();
   const matches = [];
 
-  for (const [key, entry] of Object.entries(mediaMemory)) {
-    if (!entry.lastPlayed) continue;
-
-    // lastPlayed is in America/Los_Angeles timezone
-    const playedMoment = moment.tz(entry.lastPlayed, 'YYYY-MM-DD HH:mm:ss', TIMEZONE);
-    if (!playedMoment.isValid()) continue;
-
-    const playedMs = playedMoment.valueOf();
-    if (playedMs >= windowStart && playedMs <= windowEnd) {
-      // key is like "plex:11048"
-      const parts = key.split(':');
-      const source = parts[0];
-      const mediaId = parts[1];
+  // 1. Tautulli: has started/stopped unix seconds, rating_key, full_title
+  for (const play of tautulliPlays) {
+    if (play.started <= windowEndS && play.stopped >= windowStartS) {
+      const key = String(play.rating_key);
+      if (seen.has(key)) continue;
+      seen.add(key);
       matches.push({
-        source,
-        mediaId,
-        duration: entry.duration || 0,
-        lastPlayed: entry.lastPlayed,
-        lastPlayedMs: playedMs,
+        source: 'plex',
+        mediaId: key,
+        title: play.full_title || play.title || null,
+        duration: play.duration || 0,
+        startedMs: play.started * 1000,
       });
+    }
+  }
+
+  // 2. 14_fitness.yml: lastPlayed timestamp, keyed by plex:MEDIAID
+  if (mediaMemory) {
+    for (const [memKey, entry] of Object.entries(mediaMemory)) {
+      if (!entry.lastPlayed) continue;
+      const playedMoment = moment.tz(entry.lastPlayed, 'YYYY-MM-DD HH:mm:ss', TIMEZONE);
+      if (!playedMoment.isValid()) continue;
+      const playedMs = playedMoment.valueOf();
+      if (playedMs >= windowStartMs && playedMs <= windowEndMs) {
+        const mediaId = memKey.replace('plex:', '');
+        if (seen.has(mediaId)) continue;
+        seen.add(mediaId);
+        matches.push({
+          source: 'plex',
+          mediaId,
+          title: null, // 14_fitness.yml has no titles
+          duration: entry.duration || 0,
+          startedMs: playedMs,
+        });
+      }
     }
   }
 
@@ -243,6 +290,8 @@ function findMediaForWindow(mediaMemory, startMs, endMs, bufferMs = 5 * 60 * 100
 // ------------------------------------------------------------------
 // Main
 // ------------------------------------------------------------------
+const tautulliPlays = await fetchTautulliPlays();
+
 const summary = loadYamlSafe(stravaSummaryPath) || {};
 const mediaMemory = loadYamlSafe(mediaMemoryPath) || {};
 
@@ -262,7 +311,6 @@ for (const [date, dateEntries] of Object.entries(summary)) {
   }
 }
 
-// Sort by date ascending
 entries.sort((a, b) => a.date.localeCompare(b.date));
 
 let summaryModified = false;
@@ -276,7 +324,7 @@ for (const { date, entry } of entries) {
     continue;
   }
 
-  // Find archive
+  // Find archive with HR data
   const found = findArchive(date, entry.type, entry.id);
   const archive = found?.archive;
   const archivePath = found?.archivePath;
@@ -339,26 +387,28 @@ for (const { date, entry } of entries) {
   const zoneMinutes = computeZoneMinutes(zoneSeries);
   const buckets = computeBuckets(zoneSeries);
 
-  // Find matching media
+  // Find matching media (Tautulli + 14_fitness.yml)
   const startMs = sessionIdMoment.valueOf();
   const endMs = endMoment.valueOf();
-  const mediaMatches = findMediaForWindow(mediaMemory, startMs, endMs);
+  const mediaMatches = findMediaForWindow(tautulliPlays, mediaMemory, startMs, endMs);
 
   // Build timeline events for media
   const timelineEvents = mediaMatches.map(m => ({
-    timestamp: m.lastPlayedMs,
-    offsetMs: 0,
+    timestamp: m.startedMs,
+    offsetMs: Math.max(0, m.startedMs - startMs),
     type: 'media_start',
     data: {
       source: m.source,
       mediaId: m.mediaId,
-      [`${m.source}Id`]: m.mediaId,
+      plexId: m.mediaId,
+      title: m.title,
       durationSeconds: m.duration,
     },
   }));
 
-  // Build media summary items
-  const mediaSummary = mediaMatches.map(m => `${m.source}:${m.mediaId}`);
+  // Build media summary
+  const mediaTitles = mediaMatches.map(m => m.title).filter(Boolean);
+  const mediaSummary = mediaMatches.map(m => m.title || `plex:${m.mediaId}`);
 
   // Encode series to RLE JSON strings
   const hrEncoded = encodeSingleSeries(hrSamples);
@@ -432,23 +482,23 @@ for (const { date, entry } of entries) {
     },
   };
 
-  const label = `${date} ${entry.type} (${entry.title}) -> ${sessionId} | ${mediaMatches.length} media | ${totalCoins} coins`;
+  const mediaLabel = mediaMatches.length > 0
+    ? `${mediaMatches.length} media (${mediaTitles.join(', ') || 'untitled'})`
+    : 'no media';
+  const label = `${date} ${entry.type} (${entry.title}) -> ${sessionId} | ${mediaLabel} | ${totalCoins} coins`;
 
   if (writeMode) {
-    // Write session file
     saveYaml(sessionFilePath, sessionFile);
 
-    // Enrich strava summary entry
     entry.homeSessionId = sessionId;
     entry.homeCoins = totalCoins;
-    if (mediaSummary.length > 0) entry.homeMedia = mediaSummary;
+    if (mediaTitles.length > 0) entry.homeMedia = mediaTitles.join(', ');
     summaryModified = true;
 
-    // Enrich strava archive
     if (archive?.data && archivePath) {
       archive.data.homeSessionId = sessionId;
       archive.data.homeCoins = totalCoins;
-      if (mediaSummary.length > 0) archive.data.homeMedia = mediaSummary;
+      if (mediaTitles.length > 0) archive.data.homeMedia = mediaTitles.join(', ');
       saveYaml(archivePath, archive);
     }
 
