@@ -631,8 +631,9 @@ export class GovernanceEngine {
         this._warningStartTime = null;
       }
 
-      // Start warning cooldown when warning dismisses to unlocked
-      if (oldPhase === 'warning' && newPhase === 'unlocked') {
+      // Start warning cooldown when returning to unlocked from warning or locked.
+      // After a warning or lock cycle, suppress immediate re-entry to warning.
+      if ((oldPhase === 'warning' || oldPhase === 'locked') && newPhase === 'unlocked') {
         const cooldownSeconds = Number(this.config?.warning_cooldown_seconds);
         if (Number.isFinite(cooldownSeconds) && cooldownSeconds > 0) {
           this._warningCooldownUntil = now + cooldownSeconds * 1000;

@@ -774,6 +774,52 @@ describe('GovernanceEngine', () => {
       expect(engine.phase).toBe('warning');
     });
 
+    it('should apply cooldown after warning escalates to locked then unlocks', () => {
+      const mockSession = {
+        roster: [],
+        zoneProfileStore: null,
+        snapshot: {
+          zoneConfig: [
+            { id: 'cool', name: 'Cool', color: '#0000ff' },
+            { id: 'active', name: 'Active', color: '#ff0000' },
+          ]
+        }
+      };
+
+      engine = new GovernanceEngine(mockSession);
+      engine.configure({
+        governed_labels: ['exercise'],
+        grace_period_seconds: 0,  // immediate lock (no grace period)
+        warning_cooldown_seconds: 30
+      }, [{
+        id: 'default',
+        name: 'default',
+        minParticipants: 1,
+        baseRequirement: { active: 'all' },
+        challenges: []
+      }], {});
+
+      engine.setMedia({ id: 'test-media', labels: ['exercise'] });
+      engine.setCallbacks({ onPhaseChange: () => {}, onPulse: () => {}, onStateChange: () => {} });
+
+      // Get to unlocked
+      engine.evaluate({ activeParticipants: ['alice'], userZoneMap: { alice: 'active' }, zoneRankMap, zoneInfoMap });
+      expect(engine.phase).toBe('unlocked');
+
+      // Alice drops → locked immediately (grace=0)
+      engine.evaluate({ activeParticipants: ['alice'], userZoneMap: { alice: 'cool' }, zoneRankMap, zoneInfoMap });
+      expect(engine.phase).toBe('locked');
+
+      // Alice recovers → unlocked (cooldown should start here)
+      engine.evaluate({ activeParticipants: ['alice'], userZoneMap: { alice: 'active' }, zoneRankMap, zoneInfoMap });
+      expect(engine.phase).toBe('unlocked');
+
+      // Alice drops again within cooldown → should stay unlocked (suppressed)
+      engine.evaluate({ activeParticipants: ['alice'], userZoneMap: { alice: 'cool' }, zoneRankMap, zoneInfoMap });
+      // KEY ASSERTION: stays unlocked during cooldown after locked→unlocked
+      expect(engine.phase).toBe('unlocked');
+    });
+
     it('should not apply cooldown when no warning_cooldown_seconds configured', () => {
       const mockSession = {
         roster: [],
