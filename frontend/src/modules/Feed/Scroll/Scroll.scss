@@ -186,16 +186,13 @@
   padding: 0.6rem 1rem;
   background: #1a1b1e;
   border-top: 1px solid #25262b;
-  max-width: 540px;
-  margin: 0 auto;
+  width: 100vw;
   flex-wrap: wrap;
 }
 
 @media (min-width: 900px) {
   .feed-mini-bar {
-    max-width: 640px;
-    left: 50%;
-    transform: translateX(-50%);
+    width: 100vw;
   }
 }
 
@@ -251,6 +248,22 @@
   align-items: center;
 
   &:hover { color: #228be6; }
+  &:focus-visible { outline: 2px solid #228be6; outline-offset: 2px; }
+}
+
+.feed-mini-bar-speed {
+  background: none;
+  border: 1px solid #5c636a;
+  border-radius: 4px;
+  color: #868e96;
+  font-size: 0.65rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0.15rem 0.35rem;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+
+  &:hover { color: #fff; border-color: #868e96; }
   &:focus-visible { outline: 2px solid #228be6; outline-offset: 2px; }
 }
 

@@ -7,10 +7,19 @@ function formatTime(s) {
   return `${m}:${sec.toString().padStart(2, '0')}`;
 }
 
+const SPEED_STEPS = [1, 1.25, 1.5, 1.75, 2];
+
 export default function FeedPlayerMiniBar({ item, playback, onOpen, onClose }) {
   if (!item) return null;
 
-  const { playing, currentTime, duration, toggle, seek, progressElRef } = playback || {};
+  const { playing, currentTime, duration, toggle, seek, speed, setSpeed, progressElRef } = playback || {};
+
+  const cycleSpeed = () => {
+    if (!setSpeed) return;
+    const idx = SPEED_STEPS.indexOf(speed ?? 1);
+    const next = SPEED_STEPS[(idx + 1) % SPEED_STEPS.length];
+    setSpeed(next);
+  };
   // Use image directly if already an API path; otherwise proxy external URLs
   const thumb = item.image
     ? (item.image.startsWith('/api/') ? item.image : proxyImage(item.image))
@@ -54,6 +63,13 @@ export default function FeedPlayerMiniBar({ item, playback, onOpen, onClose }) {
             : <path d="M8 5v14l11-7z" />
           }
         </svg>
+      </button>
+      <button
+        className="feed-mini-bar-speed"
+        onClick={(e) => { e.stopPropagation(); cycleSpeed(); }}
+        aria-label={`Playback speed ${speed ?? 1}x`}
+      >
+        {speed ?? 1}x
       </button>
       <button
         className="feed-mini-bar-close"

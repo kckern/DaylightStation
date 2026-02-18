@@ -312,6 +312,7 @@ const Player = forwardRef(function Player(props, ref) {
       getTroubleDiagnostics: typeof access.getTroubleDiagnostics === 'function' ? access.getTroubleDiagnostics : null
     };
     setMediaAccess(newMediaAccess);
+    mediaAccessRef.current = newMediaAccess;
     // Test hook for contract tests
     if (typeof window !== 'undefined' && window.__TEST_CAPTURE_METRICS__) {
       window.__TEST_MEDIA_ACCESS__ = newMediaAccess;
@@ -430,6 +431,12 @@ const Player = forwardRef(function Player(props, ref) {
   const exposedMediaRef = useRef(null);
   const controllerRef = useRef(null);
   const fallbackResilienceRef = useRef(null);
+  // Mirror mediaAccess state as a ref so the imperative handle can read the
+  // latest getMediaEl without needing mediaAccess in its dependency array.
+  // This is the key bridge for content renderers (ReadalongScroller, etc.)
+  // that register their <audio> element via onRegisterMediaAccess but don't
+  // set controllerRef or exposedMediaRef.
+  const mediaAccessRef = useRef(null);
 
   const {
     sanitizedSinglePlayerProps,
@@ -673,14 +680,44 @@ const Player = forwardRef(function Player(props, ref) {
   }, []);
 
   const isValidImperativeRef = typeof ref === 'function' || (ref && typeof ref === 'object' && 'current' in ref);
+  // Fallback media element lookup for content renderers (ReadalongScroller, etc.)
+  // that register via onRegisterMediaAccess but don't set controllerRef.
+  // Uses only refs so the imperative handle closure stays fresh without deps.
+  const _getMediaElFallback = () =>
+    controllerRef.current?.transport?.getMediaEl?.()
+    || exposedMediaRef.current
+    || mediaAccessRef.current?.getMediaEl?.()
+    || null;
+
   useImperativeHandle(isValidImperativeRef ? ref : null, () => ({
     seek: (t) => {
       if (!Number.isFinite(t)) return;
-      withTransport((api) => api.seek?.(t));
+      withTransport(
+        (api) => api.seek?.(t),
+        () => { const el = _getMediaElFallback(); if (el) el.currentTime = t; }
+      );
     },
-    play: () => { withTransport((api) => api.play?.()); },
-    pause: () => { withTransport((api) => api.pause?.()); },
-    toggle: () => { withTransport((api) => api.toggle?.()); },
+    play: () => {
+      withTransport(
+        (api) => api.play?.(),
+        () => _getMediaElFallback()?.play?.()
+      );
+    },
+    pause: () => {
+      withTransport(
+        (api) => api.pause?.(),
+        () => _getMediaElFallback()?.pause?.()
+      );
+    },
+    toggle: () => {
+      withTransport(
+        (api) => api.toggle?.(),
+        () => {
+          const el = _getMediaElFallback();
+          if (el) el.paused ? el.play() : el.pause();
+        }
+      );
+    },
     // Fix 1 (bugbash 3A): Expose advance() for external track skip control
     advance: (count = 1) => {
       const advanceFn = isQueue ? advance : singleAdvance;
@@ -688,9 +725,19 @@ const Player = forwardRef(function Player(props, ref) {
         for (let i = 0; i < Math.max(1, count); i++) advanceFn();
       }
     },
-    getCurrentTime: () => withTransport((api) => api.getCurrentTime?.()) || 0,
-    getDuration: () => withTransport((api) => api.getDuration?.()) || 0,
-    getMediaElement: () => controllerRef.current?.transport?.getMediaEl?.() || exposedMediaRef.current,
+    getCurrentTime: () => {
+      const t = withTransport((api) => api.getCurrentTime?.());
+      if (Number.isFinite(t)) return t;
+      const el = _getMediaElFallback();
+      return (el && Number.isFinite(el.currentTime)) ? el.currentTime : 0;
+    },
+    getDuration: () => {
+      const d = withTransport((api) => api.getDuration?.());
+      if (Number.isFinite(d)) return d;
+      const el = _getMediaElFallback();
+      return (el && Number.isFinite(el.duration)) ? el.duration : 0;
+    },
+    getMediaElement: _getMediaElFallback,
     getMediaController: () => controllerRef.current,
     getMediaResilienceController: () => resilienceControllerRef.current,
     getMediaResilienceState: () => resilienceControllerRef.current?.getState?.() || null,

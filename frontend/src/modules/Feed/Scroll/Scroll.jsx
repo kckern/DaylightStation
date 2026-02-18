@@ -115,6 +115,8 @@ export default function Scroll() {
     setActiveMedia({ item, contentId: item.id });
   }, []);
 
+  const handleClearMedia = useCallback(() => setActiveMedia(null), []);
+
   // Deep-linked item (fetched from server when not in scroll batch)
   const [deepLinkedItem, setDeepLinkedItem] = useState(null);
 
@@ -162,10 +164,15 @@ export default function Scroll() {
           if (newItems.length === 0) return prev;
           return [...prev, ...newItems];
         });
+        // Detect recycled pool: when backend returns items but all are
+        // already loaded, stop infinite scroll to prevent a fetch loop.
+        const knownIds = new Set(itemsRef.current.map(i => i.id));
+        const allDupes = incoming.length > 0 && incoming.every(i => knownIds.has(i.id));
+        setHasMore(allDupes ? false : result.hasMore);
       } else {
         setItems(incoming);
+        setHasMore(result.hasMore);
       }
-      setHasMore(result.hasMore);
     } catch (err) {
       console.error('Failed to fetch scroll items:', err);
     } finally {
@@ -443,13 +450,13 @@ export default function Scroll() {
           item={activeMedia.item}
           playback={playback}
           onOpen={() => navigate(`/feed/scroll/${encodeItemId(activeMedia.item.id)}`)}
-          onClose={() => setActiveMedia(null)}
+          onClose={handleClearMedia}
         />
       )}
       <PersistentPlayer
         ref={playerRef}
         contentId={activeMedia?.contentId || null}
-        onEnd={() => setActiveMedia(null)}
+        onEnd={handleClearMedia}
       />
     </div>
   );
