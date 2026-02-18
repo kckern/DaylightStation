@@ -87,12 +87,25 @@ export function createFeedRouter(config) {
   router.get('/reader/stream', asyncHandler(async (req, res) => {
     const { days: daysParam, count, continuation, excludeRead, feeds } = req.query;
     const username = getUsername();
-    const streamId = 'user/-/state/com.google/reading-list';
-    const targetDays = daysParam ? Number(daysParam) : 3;
+    const isFiltered = !!feeds;
+    const feedIds = isFiltered ? feeds.split(',') : [];
+
+    // Filtered mode:  fetch directly from feed stream(s), count-based, full backlog
+    // Unfiltered mode: fetch from reading-list, day-based primer
+    let streamId;
+    let fetchCount;
+    if (isFiltered && feedIds.length === 1) {
+      // Single feed — fetch directly from that feed's stream
+      streamId = feedIds[0];
+      fetchCount = count ? Number(count) : 50;
+    } else {
+      streamId = 'user/-/state/com.google/reading-list';
+      fetchCount = count ? Number(count) : (isFiltered ? 200 : 200);
+    }
 
     const [{ items, continuation: freshCont }, allFeeds] = await Promise.all([
       freshRSSAdapter.getItems(streamId, username, {
-        count: count ? Number(count) : 200,
+        count: fetchCount,
         continuation,
         excludeRead: excludeRead === 'true',
       }),
@@ -133,38 +146,44 @@ export function createFeedRouter(config) {
       return { ...item, isRead, preview, tags, feedSiteUrl };
     });
 
-    // Filter by feed IDs if specified
-    let filtered = enriched;
-    if (feeds) {
-      const feedSet = new Set(feeds.split(','));
-      filtered = enriched.filter(item => feedSet.has(item.feedId));
+    // Multi-feed filter: post-filter by feedId (single-feed already fetched directly)
+    let result = enriched;
+    if (isFiltered && feedIds.length > 1) {
+      const feedSet = new Set(feedIds);
+      result = enriched.filter(item => feedSet.has(item.feedId));
     }
 
-    // Day-based trimming: keep only the first `targetDays` distinct calendar days
-    const dayKey = (d) => d ? `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}` : 'unknown';
-    const distinctDays = new Set();
-    const trimmed = [];
-    for (const item of filtered) {
-      const key = dayKey(item.published ? new Date(item.published) : null);
-      if (distinctDays.size < targetDays || distinctDays.has(key)) {
-        distinctDays.add(key);
-        trimmed.push(item);
-      } else {
-        break; // Items are sorted newest-first; hit a new day beyond target
-      }
-    }
-
-    // Continuation: if we trimmed, use oldest included item's timestamp;
-    // otherwise use FreshRSS's continuation for the next batch
     let nextContinuation = freshCont;
-    if (trimmed.length < filtered.length && trimmed.length > 0) {
-      const oldest = trimmed[trimmed.length - 1];
-      if (oldest?.published) {
-        nextContinuation = String(Math.floor(new Date(oldest.published).getTime() / 1000));
+    let exhausted = !freshCont && items.length < fetchCount;
+
+    // Day-based trimming only in unfiltered mode
+    if (!isFiltered) {
+      const targetDays = daysParam ? Number(daysParam) : 3;
+      const dayKey = (d) => d ? `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}` : 'unknown';
+      const distinctDays = new Set();
+      const trimmed = [];
+      for (const item of result) {
+        const key = dayKey(item.published ? new Date(item.published) : null);
+        if (distinctDays.size < targetDays || distinctDays.has(key)) {
+          distinctDays.add(key);
+          trimmed.push(item);
+        } else {
+          break;
+        }
       }
+      if (trimmed.length < result.length && trimmed.length > 0) {
+        const oldest = trimmed[trimmed.length - 1];
+        if (oldest?.published) {
+          // FreshRSS continuation tokens are microsecond timestamps
+          nextContinuation = String(Math.floor(new Date(oldest.published).getTime() * 1000));
+        }
+        // We trimmed — there's more data beyond this day window
+        exhausted = false;
+      }
+      result = trimmed;
     }
 
-    res.json({ items: trimmed, continuation: nextContinuation });
+    res.json({ items: result, continuation: nextContinuation, exhausted });
   }));
 
   // =========================================================================
