@@ -99,7 +99,7 @@ export function createFeedRouter(config) {
     const enriched = items.map(item => {
       const isRead = (item.categories || []).some(c => c.includes(READ_TAG));
       // Strip HTML for preview
-      const preview = item.content
+      const preview = (item.content || '')
         .replace(/<[^>]*>/g, ' ')
         .replace(/\s+/g, ' ')
         .trim()
