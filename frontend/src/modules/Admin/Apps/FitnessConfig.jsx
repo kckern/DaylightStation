@@ -427,6 +427,12 @@ function GovernanceSection({ data, update }) {
           onChange={(val) => update('governance.grace_period_seconds', val)}
         />
         <NumberInput
+          label="Warning Cooldown (seconds)"
+          description="Suppress re-warning after dismiss"
+          value={governance.warning_cooldown_seconds ?? ''}
+          onChange={(val) => update('governance.warning_cooldown_seconds', val)}
+        />
+        <NumberInput
           label="Coin Time Unit (ms)"
           description="Root-level: coin_time_unit_ms"
           value={data.coin_time_unit_ms ?? ''}
