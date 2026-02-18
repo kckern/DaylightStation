@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { feedLog } from '../feedLog.js';
 
 /**
  * Observes playback state from a Player ref.
@@ -20,17 +21,24 @@ export function usePlaybackObserver(playerRef, active) {
   // Coarse React state update (~500ms)
   useEffect(() => {
     if (!active) {
+      feedLog.player('observer inactive — resetting state');
       setState({ playing: false, currentTime: 0, duration: 0 });
       return;
     }
 
+    feedLog.player('observer active — starting 500ms poll');
+    let prevPlaying = null;
     const id = setInterval(() => {
       const p = playerRef.current;
-      if (!p) return;
+      if (!p) { feedLog.player('poll: playerRef.current is null'); return; }
       const currentTime = p.getCurrentTime?.() || 0;
       const duration = p.getDuration?.() || 0;
       const el = p.getMediaElement?.();
       const playing = el ? !el.paused : false;
+      if (playing !== prevPlaying) {
+        feedLog.player('state change', { playing, currentTime: currentTime.toFixed(1), duration: duration.toFixed(1) });
+        prevPlaying = playing;
+      }
       setState({ playing, currentTime, duration });
     }, 500);
 
@@ -62,14 +70,17 @@ export function usePlaybackObserver(playerRef, active) {
   const [speed, setSpeedState] = useState(1);
 
   const toggle = useCallback(() => {
+    feedLog.player('toggle');
     playerRef.current?.toggle?.();
   }, [playerRef]);
 
   const seek = useCallback((t) => {
+    feedLog.player('seek', { to: t });
     playerRef.current?.seek?.(t);
   }, [playerRef]);
 
   const setSpeed = useCallback((rate) => {
+    feedLog.player('setSpeed', { rate });
     const el = playerRef.current?.getMediaElement?.();
     if (el) el.playbackRate = rate;
     setSpeedState(rate);

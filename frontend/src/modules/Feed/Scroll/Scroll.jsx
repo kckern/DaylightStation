@@ -7,6 +7,7 @@ import FeedPlayerMiniBar from './FeedPlayerMiniBar.jsx';
 import PersistentPlayer from './PersistentPlayer.jsx';
 import { usePlaybackObserver } from './hooks/usePlaybackObserver.js';
 import { DaylightAPI } from '../../../lib/api.mjs';
+import { feedLog } from './feedLog.js';
 import './Scroll.scss';
 
 /** Base64url-encode an item ID for use in the URL path. */
@@ -54,6 +55,7 @@ function ScrollCard({ item, colors, onDismiss, onPlay, onClick }) {
 
     if (dx < -100 && elapsed < 600) {
       // Threshold met — dismiss
+      feedLog.dismiss('swipe dismiss', { id: item.id, dx, elapsed });
       onDismiss(item, wrapperRef.current);
     } else if (wrapperRef.current) {
       // Spring back
@@ -111,7 +113,8 @@ export default function Scroll() {
   const playback = usePlaybackObserver(playerRef, !!activeMedia);
 
   const handlePlay = useCallback((item) => {
-    if (!item) { setActiveMedia(null); return; }
+    if (!item) { feedLog.player('clear activeMedia'); setActiveMedia(null); return; }
+    feedLog.player('play', { id: item.id, title: item.title, source: item.source });
     setActiveMedia({ item, contentId: item.id });
   }, []);
 
@@ -152,29 +155,34 @@ export default function Scroll() {
       const filterParam = searchParams.get('filter');
       if (filterParam) params.set('filter', filterParam);
 
+      feedLog.scroll(append ? 'fetchMore' : 'fetchInitial', { cursor, focus: focusSource, filter: filterParam, currentCount: cur.length });
+
       const result = await DaylightAPI(`/api/v1/feed/scroll?${params}`);
 
       const incoming = result.items || [];
       if (result.colors) setColors(result.colors);
 
       if (append) {
+        const knownIds = new Set(itemsRef.current.map(i => i.id));
+        const newCount = incoming.filter(i => !knownIds.has(i.id)).length;
+        const allDupes = incoming.length > 0 && newCount === 0;
+        feedLog.scroll('appendResult', { incoming: incoming.length, new: newCount, allDupes, hasMore: allDupes ? false : result.hasMore });
+
         setItems(prev => {
           const existingIds = new Set(prev.map(i => i.id));
           const newItems = incoming.filter(i => !existingIds.has(i.id));
           if (newItems.length === 0) return prev;
           return [...prev, ...newItems];
         });
-        // Detect recycled pool: when backend returns items but all are
-        // already loaded, stop infinite scroll to prevent a fetch loop.
-        const knownIds = new Set(itemsRef.current.map(i => i.id));
-        const allDupes = incoming.length > 0 && incoming.every(i => knownIds.has(i.id));
         setHasMore(allDupes ? false : result.hasMore);
       } else {
+        feedLog.scroll('initialResult', { count: incoming.length, hasMore: result.hasMore });
         setItems(incoming);
         setHasMore(result.hasMore);
       }
     } catch (err) {
       console.error('Failed to fetch scroll items:', err);
+      feedLog.scroll('fetchError', err.message);
     } finally {
       setLoading(false);
       setLoadingMore(false);
@@ -190,6 +198,7 @@ export default function Scroll() {
     observerRef.current = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting && hasMore && !loadingMore) {
+          feedLog.scroll('sentinel intersecting — triggering fetchMore', { scrollY: window.scrollY, itemCount: itemsRef.current.length });
           fetchItems(true);
         }
       },
@@ -207,14 +216,19 @@ export default function Scroll() {
   const flushDismissQueue = useCallback(() => {
     const ids = dismissQueueRef.current.splice(0);
     if (ids.length === 0) return;
+    feedLog.dismiss('flush batch', { count: ids.length, ids });
     DaylightAPI('/api/v1/feed/scroll/dismiss', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ itemIds: ids }),
-    }).catch(err => console.error('Dismiss failed:', err));
+    }).catch(err => {
+      console.error('Dismiss failed:', err);
+      feedLog.dismiss('flush error', err.message);
+    });
   }, []);
 
   const queueDismiss = useCallback((itemId) => {
+    feedLog.dismiss('queue', { itemId, queueSize: dismissQueueRef.current.length + 1 });
     dismissQueueRef.current.push(itemId);
     clearTimeout(dismissTimerRef.current);
     dismissTimerRef.current = setTimeout(flushDismissQueue, 500);
@@ -237,6 +251,7 @@ export default function Scroll() {
 
     if (item) {
       // Item is in the scroll batch — fetch detail the normal way
+      feedLog.detail('open (in batch)', { id: fullId, source: item.source, title: item.title });
       setDetailData(null);
       setDetailLoading(true);
       if (!isDesktop) window.scrollTo(0, 0);
@@ -246,14 +261,19 @@ export default function Scroll() {
       if (item.meta) params.set('meta', JSON.stringify(item.meta));
 
       DaylightAPI(`/api/v1/feed/detail/${encodeURIComponent(item.id)}?${params}`)
-        .then(result => setDetailData(result))
+        .then(result => {
+          feedLog.detail('loaded', { id: fullId, sections: result.sections?.length || 0 });
+          setDetailData(result);
+        })
         .catch(err => {
           console.error('Detail fetch failed:', err);
+          feedLog.detail('fetchError', { id: fullId, error: err.message });
           setDetailData(null);
         })
         .finally(() => setDetailLoading(false));
     } else {
       // Cold load / deep link — fetch item + detail from server cache
+      feedLog.detail('open (deep link)', { slug: urlSlug, fullId });
       setDetailData(null);
       setDetailLoading(true);
       setDeepLinkedItem(null);
@@ -261,6 +281,7 @@ export default function Scroll() {
 
       DaylightAPI(`/api/v1/feed/scroll/item/${urlSlug}`)
         .then(result => {
+          feedLog.detail('deep link loaded', { hasItem: !!result.item, sections: result.sections?.length || 0 });
           if (result.item) setDeepLinkedItem(result.item);
           setDetailData({
             sections: result.sections || [],
@@ -270,6 +291,7 @@ export default function Scroll() {
         })
         .catch(err => {
           console.error('Deep-link fetch failed:', err);
+          feedLog.detail('deep link error — redirecting to list', { slug: urlSlug, error: err.message });
           // Item not in server cache — redirect to scroll list
           navigate('/feed/scroll', { replace: true });
         })
@@ -280,6 +302,7 @@ export default function Scroll() {
   // Restore scroll position when navigating back to list
   useEffect(() => {
     if (!urlSlug) {
+      feedLog.nav('back to list — restoring scrollY', { savedY: savedScrollRef.current, itemCount: items.length });
       setDetailData(null);
       setDetailLoading(false);
       setDeepLinkedItem(null);
@@ -305,6 +328,7 @@ export default function Scroll() {
   const handleCardClick = useCallback((e, item) => {
     e.preventDefault();
     savedScrollRef.current = window.scrollY;
+    feedLog.nav('card click — saving scrollY', { scrollY: window.scrollY, id: item.id, title: item.title });
     navigate(`/feed/scroll/${encodeItemId(item.id)}`);
   }, [navigate]);
 
@@ -327,6 +351,7 @@ export default function Scroll() {
   }, [navigate]);
 
   const handleDismiss = useCallback((item, wrapperEl) => {
+    feedLog.dismiss('handleDismiss', { id: item.id, title: item.title, hasWrapper: !!wrapperEl, isDesktop });
     queueDismiss(item.id);
 
     if (wrapperEl) {

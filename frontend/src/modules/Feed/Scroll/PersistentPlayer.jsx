@@ -1,4 +1,5 @@
 import { lazy, Suspense, forwardRef, useMemo } from 'react';
+import { feedLog } from './feedLog.js';
 
 const Player = lazy(() => import('../../Player/Player.jsx'));
 
@@ -7,7 +8,10 @@ const PersistentPlayer = forwardRef(function PersistentPlayer({ contentId, onEnd
   // Without this, every parent re-render creates a new { contentId } object,
   // which Player's WeakMap-based ensureEntryGuid treats as "new media",
   // causing a full SinglePlayer remount that destroys the audio element.
-  const play = useMemo(() => contentId ? { contentId } : null, [contentId]);
+  const play = useMemo(() => {
+    feedLog.player(contentId ? 'PersistentPlayer mount' : 'PersistentPlayer unmount', { contentId });
+    return contentId ? { contentId } : null;
+  }, [contentId]);
 
   if (!play) return null;
 
