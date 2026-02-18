@@ -844,6 +844,57 @@ describe('GovernanceEngine', () => {
     });
   });
 
+  describe('videoLocked during warning phase', () => {
+    it('should NOT set videoLocked during warning even if challengeState.videoLocked is true', () => {
+      const mockSession = {
+        roster: [],
+        zoneProfileStore: null,
+        snapshot: {
+          zoneConfig: [
+            { id: 'cool', name: 'Cool', color: '#0000ff' },
+            { id: 'active', name: 'Active', color: '#ff0000' },
+          ]
+        }
+      };
+
+      const engine = new GovernanceEngine(mockSession);
+      engine.configure({
+        governed_labels: ['exercise'],
+        grace_period_seconds: 30
+      }, [{
+        id: 'default',
+        name: 'default',
+        minParticipants: 1,
+        baseRequirement: { active: 'all' },
+        challenges: []
+      }], {});
+
+      engine.setMedia({ id: 'test-media', labels: ['exercise'] });
+      engine.setCallbacks({ onPhaseChange: () => {}, onPulse: () => {}, onStateChange: () => {} });
+
+      const zoneRankMap = { cool: 0, active: 1 };
+      const zoneInfoMap = {
+        cool: { id: 'cool', name: 'Cool' },
+        active: { id: 'active', name: 'Active' }
+      };
+
+      // Get to unlocked first
+      engine.evaluate({ activeParticipants: ['alice'], userZoneMap: { alice: 'active' }, zoneRankMap, zoneInfoMap });
+      expect(engine.phase).toBe('unlocked');
+
+      // Simulate challenge videoLocked being set (e.g., from a just-failed challenge)
+      engine.challengeState.videoLocked = true;
+
+      // Now drop to cool -> warning phase
+      engine.evaluate({ activeParticipants: ['alice'], userZoneMap: { alice: 'cool' }, zoneRankMap, zoneInfoMap });
+      expect(engine.phase).toBe('warning');
+
+      // videoLocked should be FALSE during warning, even though challengeState.videoLocked is true
+      const state = engine.state;
+      expect(state.videoLocked).toBe(false);
+    });
+  });
+
   describe('_evaluateChallenges() minParticipants guard', () => {
     let engine;
 
