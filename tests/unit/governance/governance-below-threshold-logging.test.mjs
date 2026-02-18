@@ -98,6 +98,130 @@ describe('GovernanceEngine — _getParticipantsBelowThreshold', () => {
   });
 });
 
+describe('GovernanceEngine — HR/threshold/delta enrichment', () => {
+  it('should include hr, threshold, and delta in participantsBelowThreshold', async () => {
+    const participants = ['alice', 'bob'];
+    const { engine, zoneRankMap, zoneInfoMap } = createEngine({ participants, grace: 30 });
+
+    // Mock session roster with HR data
+    engine.session.roster = [
+      { id: 'alice', name: 'Alice', heartRate: 140, isActive: true },
+      { id: 'bob', name: 'Bob', heartRate: 124, isActive: true }
+    ];
+
+    // Use a dynamic zoneProfileStore that tracks the "current" zone per user.
+    // evaluate() calls getProfile() and overrides userZoneMap with currentZoneId,
+    // so the mock must return the correct zone for each evaluation phase.
+    const profileZones = { alice: 'active', bob: 'active' };
+    engine.session.zoneProfileStore = {
+      getProfile: (id) => {
+        const zoneConfigs = [
+          { id: 'cool', min: 0 },
+          { id: 'active', min: 125 },
+          { id: 'warm', min: 150 }
+        ];
+        if (id === 'bob') return {
+          currentZoneId: profileZones.bob,
+          currentZoneThreshold: profileZones.bob === 'cool' ? 0 : 125,
+          heartRate: 124,
+          zoneConfig: zoneConfigs
+        };
+        if (id === 'alice') return {
+          currentZoneId: profileZones.alice,
+          currentZoneThreshold: 125,
+          heartRate: 140,
+          zoneConfig: zoneConfigs
+        };
+        return null;
+      }
+    };
+
+    // Get to unlocked first (both in active)
+    engine.evaluate({
+      activeParticipants: participants,
+      userZoneMap: { alice: 'active', bob: 'active' },
+      zoneRankMap,
+      zoneInfoMap
+    });
+    expect(engine.phase).toBe('unlocked');
+
+    _mockLogger.info.mockClear();
+
+    // Simulate bob dropping to cool zone
+    profileZones.bob = 'cool';
+
+    // Bob drops below active -> warning
+    engine.evaluate({
+      activeParticipants: participants,
+      userZoneMap: { alice: 'active', bob: 'cool' },
+      zoneRankMap,
+      zoneInfoMap
+    });
+    expect(engine.phase).toBe('warning');
+
+    const warningCall = _mockLogger.info.mock.calls.find(
+      ([event]) => event === 'governance.warning_started'
+    );
+    expect(warningCall).toBeDefined();
+
+    const payload = warningCall[1];
+    const bobEntry = payload.participantsBelowThreshold.find(p => p.name === 'bob');
+
+    expect(bobEntry).toBeDefined();
+    expect(bobEntry.hr).toBe(124);
+    expect(bobEntry.threshold).toBe(125);  // active zone min from bob's zoneConfig
+    expect(bobEntry.delta).toBe(-1);       // 124 - 125 = -1
+    expect(bobEntry.requiredZone).toBeDefined();
+    expect(bobEntry.requiredZone).toBe('active');
+    // zone should be the user's CURRENT zone, not the required zone
+    expect(bobEntry.zone).toBe('cool');
+  });
+
+  it('should handle missing roster/ZoneProfileStore gracefully', () => {
+    const participants = ['alice', 'bob'];
+    const { engine, zoneRankMap, zoneInfoMap } = createEngine({ participants, grace: 30 });
+
+    // No roster or zoneProfileStore set on session
+    engine.session.roster = null;
+    engine.session.zoneProfileStore = null;
+
+    // Get to unlocked first
+    engine.evaluate({
+      activeParticipants: participants,
+      userZoneMap: { alice: 'active', bob: 'active' },
+      zoneRankMap,
+      zoneInfoMap
+    });
+    expect(engine.phase).toBe('unlocked');
+
+    _mockLogger.info.mockClear();
+
+    // Bob drops -> warning
+    engine.evaluate({
+      activeParticipants: participants,
+      userZoneMap: { alice: 'active', bob: 'cool' },
+      zoneRankMap,
+      zoneInfoMap
+    });
+    expect(engine.phase).toBe('warning');
+
+    const warningCall = _mockLogger.info.mock.calls.find(
+      ([event]) => event === 'governance.warning_started'
+    );
+    expect(warningCall).toBeDefined();
+
+    const payload = warningCall[1];
+    const bobEntry = payload.participantsBelowThreshold.find(p => p.name === 'bob');
+
+    expect(bobEntry).toBeDefined();
+    // With no roster/ZoneProfileStore, these should be null (not crash)
+    expect(bobEntry.hr).toBeNull();
+    expect(bobEntry.threshold).toBeNull();
+    expect(bobEntry.delta).toBeNull();
+    expect(bobEntry.requiredZone).toBeDefined();
+  });
+});
+
 describe('stale data fix — full evaluate cycle', () => {
   it('should populate participantsBelowThreshold during warning_started via evaluate()', () => {
     const participants = ['alice', 'bob'];
