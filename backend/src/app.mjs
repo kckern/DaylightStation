@@ -794,14 +794,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     const { ScrollConfigLoader } = await import('./3_applications/feed/services/ScrollConfigLoader.mjs');
     const { SpacingEnforcer } = await import('./3_applications/feed/services/SpacingEnforcer.mjs');
     const { TierAssemblyService } = await import('./3_applications/feed/services/TierAssemblyService.mjs');
+    const { SourceResolver } = await import('./3_applications/feed/services/SourceResolver.mjs');
     const { FeedCacheService } = await import('./3_applications/feed/services/FeedCacheService.mjs');
 
     const scrollConfigLoader = new ScrollConfigLoader({ dataService });
     const spacingEnforcer = new SpacingEnforcer();
-    const tierAssemblyService = new TierAssemblyService({
-      spacingEnforcer,
-      logger: rootLogger.child({ module: 'tier-assembly' }),
-    });
     const feedCacheService = new FeedCacheService({
       dataService,
       cachePath: 'current/feed/_cache',
@@ -841,6 +838,14 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
     const feedSourceAdapters = [redditAdapter, weatherAdapter, healthAdapter, gratitudeAdapter, stravaAdapter, todoistAdapter, immichAdapter, plexAdapter, journalAdapter, youtubeAdapter, googleNewsAdapter, komgaFeedAdapter, readalongFeedAdapter, goodreadsFeedAdapter, freshRSSFeedAdapter, headlineFeedAdapter, entropyFeedAdapter, absEbookFeedAdapter].filter(Boolean);
 
+    const sourceResolver = new SourceResolver(feedSourceAdapters);
+
+    const tierAssemblyService = new TierAssemblyService({
+      spacingEnforcer,
+      sourceResolver,
+      logger: rootLogger.child({ module: 'tier-assembly' }),
+    });
+
     const feedPoolManager = new FeedPoolManager({
       sourceAdapters: feedSourceAdapters,
       feedCacheService,
@@ -860,6 +865,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     const feedAssemblyService = new FeedAssemblyService({
       feedPoolManager,
       sourceAdapters: feedSourceAdapters,
+      sourceResolver,
       scrollConfigLoader,
       tierAssemblyService,
       feedContentService,
