@@ -76,7 +76,7 @@ export class TierAssemblyService {
     let tierSlots = this.#allocateTierSlots(tierConfig, effectiveLimit, buckets);
 
     // Apply wire decay: half-life exponential decay after flex allocation
-    tierSlots = this.#applyWireDecay(tierSlots, batchNumber, halfLife);
+    tierSlots = this.#applyWireDecay(tierSlots, batchNumber, halfLife, buckets);
 
     // Level 2: within-tier selection
     const selected = {};
@@ -86,6 +86,11 @@ export class TierAssemblyService {
       const slots = tierSlots.get(tier);
       selected[tier] = this.#selectForTier(tier, candidates, config, { focus, selectionCounts, tierSlots: slots });
     }
+
+    // Post-selection redistribution: if a tier selected fewer items than
+    // allocated (pool exhausted after dedup/filters), give the shortfall
+    // to non-wire tiers that have spare capacity, then re-select.
+    tierSlots = this.#redistributeShortfall(tierSlots, selected, buckets, tierConfig, { focus, selectionCounts });
 
     // Cross-tier interleave
     const interleaved = this.#interleave(selected, tierConfig, effectiveLimit);
@@ -219,7 +224,9 @@ export class TierAssemblyService {
 
   /**
    * Apply half-life exponential decay to wire slots after FlexAllocator.
-   * Freed wire slots are distributed proportionally to non-wire tiers.
+   * Freed wire slots are distributed proportionally to non-wire tiers,
+   * capped at each tier's available pool size. Overflow cascades to
+   * tiers that still have capacity.
    *
    * Formula: decayFactor = 0.5 ^ ((batchNumber - 1) / halfLife)
    *   Batch 1: 100% wire  |  Batch 3 (hl=2): 50%  |  Batch 5: 25%
@@ -227,9 +234,10 @@ export class TierAssemblyService {
    * @param {Map<string, number>} tierSlots - FlexAllocator output
    * @param {number} batchNumber - Current batch (1-indexed)
    * @param {number} halfLife - Batches until wire halves
+   * @param {Object} buckets - Items bucketed by tier (for available counts)
    * @returns {Map<string, number>} Adjusted tier slots
    */
-  #applyWireDecay(tierSlots, batchNumber, halfLife) {
+  #applyWireDecay(tierSlots, batchNumber, halfLife, buckets = {}) {
     if (halfLife <= 0 || batchNumber <= 1) return tierSlots;
 
     const baseWire = tierSlots.get(TIERS.WIRE) || 0;
@@ -237,33 +245,56 @@ export class TierAssemblyService {
 
     const decayFactor = Math.pow(0.5, (batchNumber - 1) / halfLife);
     const decayedWire = Math.round(baseWire * decayFactor);
-    const freed = baseWire - decayedWire;
+    let freed = baseWire - decayedWire;
 
     if (freed === 0) return tierSlots;
 
-    // Collect non-wire tiers and their current slots
+    // Collect non-wire tiers with their current slots and available pool sizes
     const nonWire = [];
     let totalNonWire = 0;
     for (const tier of Object.values(TIERS)) {
       if (tier === TIERS.WIRE) continue;
       const slots = tierSlots.get(tier) || 0;
-      nonWire.push({ tier, slots });
+      const available = (buckets[tier] || []).length;
+      nonWire.push({ tier, slots, available });
       totalNonWire += slots;
     }
 
     const result = new Map(tierSlots);
     result.set(TIERS.WIRE, decayedWire);
 
+    // Distribute freed slots, capping at pool size and cascading overflow
     if (totalNonWire > 0) {
+      // First pass: proportional share capped at available
       let distributed = 0;
+      let overflow = 0;
       for (let i = 0; i < nonWire.length; i++) {
-        const { tier, slots } = nonWire[i];
-        // Last tier gets remainder to avoid rounding drift
-        const share = i === nonWire.length - 1
+        const { tier, slots, available } = nonWire[i];
+        const rawShare = i === nonWire.length - 1
           ? freed - distributed
           : Math.round(freed * slots / totalNonWire);
-        result.set(tier, slots + share);
-        distributed += share;
+        const newSlots = slots + rawShare;
+        const capped = Math.min(newSlots, available);
+        overflow += newSlots - capped;
+        result.set(tier, capped);
+        distributed += rawShare;
+      }
+
+      // Second pass: distribute overflow to tiers with remaining capacity
+      while (overflow > 0) {
+        let absorbed = 0;
+        for (const { tier, available } of nonWire) {
+          if (overflow <= 0) break;
+          const current = result.get(tier);
+          const headroom = available - current;
+          if (headroom > 0) {
+            const take = Math.min(headroom, overflow);
+            result.set(tier, current + take);
+            overflow -= take;
+            absorbed += take;
+          }
+        }
+        if (absorbed === 0) break; // no tier can absorb more
       }
     }
 
@@ -435,6 +466,51 @@ export class TierAssemblyService {
       }
       return true;
     });
+  }
+
+  /**
+   * After initial selection, redistribute unfilled slots from exhausted tiers
+   * to non-wire tiers with spare capacity, then re-select for those tiers.
+   */
+  #redistributeShortfall(tierSlots, selected, buckets, tierConfig, selectOpts) {
+    let totalShortfall = 0;
+    const shortfalls = new Map();
+    for (const tier of Object.values(TIERS)) {
+      const allocated = tierSlots.get(tier) || 0;
+      const actual = (selected[tier] || []).length;
+      if (actual < allocated) {
+        shortfalls.set(tier, allocated - actual);
+        totalShortfall += allocated - actual;
+      }
+    }
+    if (totalShortfall === 0) return tierSlots;
+
+    const result = new Map(tierSlots);
+    // Shrink exhausted tiers to their actual selection
+    for (const [tier, gap] of shortfalls) {
+      result.set(tier, (tierSlots.get(tier) || 0) - gap);
+    }
+
+    // Distribute shortfall to non-wire tiers with spare capacity
+    let remaining = totalShortfall;
+    for (const tier of [TIERS.SCRAPBOOK, TIERS.LIBRARY, TIERS.COMPASS]) {
+      if (remaining <= 0) break;
+      if (shortfalls.has(tier)) continue; // this tier is exhausted
+      const current = result.get(tier) || 0;
+      const poolSize = (buckets[tier] || []).length;
+      const headroom = poolSize - current;
+      if (headroom > 0) {
+        const take = Math.min(headroom, remaining);
+        result.set(tier, current + take);
+        remaining -= take;
+        // Re-select with expanded allocation
+        const config = tierConfig[tier] || TIER_DEFAULTS[tier];
+        selected[tier] = this.#selectForTier(tier, buckets[tier] || [], config,
+          { ...selectOpts, tierSlots: current + take });
+      }
+    }
+
+    return result;
   }
 
   // ======================================================================
