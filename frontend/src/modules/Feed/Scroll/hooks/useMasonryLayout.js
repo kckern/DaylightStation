@@ -1,8 +1,9 @@
 import { useRef, useReducer, useLayoutEffect, useCallback, useEffect } from 'react';
-import { feedLog } from '../feedLog.js';
+import { getLogger } from '../../../../lib/logging/Logger.js';
 
 const COL_WIDTH = 320;
 const GAP = 16;
+const log = getLogger().child({ module: 'masonry' });
 
 export function useMasonryLayout(containerRef, items, isDesktop) {
   const posMapRef = useRef(new Map());      // id → { top, left, width }
@@ -12,44 +13,60 @@ export function useMasonryLayout(containerRef, items, isDesktop) {
   const prevWidthRef = useRef(0);
   const colWidthRef = useRef(COL_WIDTH);    // actual column width for measuring
   const cardObserversRef = useRef(new Map()); // id → ResizeObserver
+  const callbacksRef = useRef(new Map());   // id → stable callback ref
   const [layoutPass, bump] = useReducer(x => x + 1, 0);
+  const bumpRef = useRef(bump);
+  bumpRef.current = bump;
 
-  // Callback ref factory — observes card for size changes (image load, etc.)
-  const measureRef = useCallback((id) => (node) => {
-    if (!isDesktop) return;
+  // Stable per-ID callback ref — avoids recreating observers every render
+  const measureRef = useCallback((id) => {
+    if (!isDesktop) return () => {};
 
-    // Cleanup previous observer for this id
-    const prev = cardObserversRef.current.get(id);
-    if (prev) { prev.disconnect(); cardObserversRef.current.delete(id); }
+    let cb = callbacksRef.current.get(id);
+    if (cb) return cb;
 
-    if (!node) return;
+    cb = (node) => {
+      // Cleanup previous observer
+      const prev = cardObserversRef.current.get(id);
+      if (prev) { prev.disconnect(); cardObserversRef.current.delete(id); }
 
-    const measure = () => {
-      const h = node.offsetHeight;
-      if (h === 0) return;
-      const old = heightMapRef.current.get(id);
-      if (old === h) return;
+      if (!node) return;
 
-      feedLog.masonry('measure', { id: id.slice(0, 20), h, prev: old || 0, w: node.offsetWidth });
-      heightMapRef.current.set(id, h);
+      const measure = () => {
+        const h = node.offsetHeight;
+        if (h === 0) return;
+        const old = heightMapRef.current.get(id);
+        if (old === h) return;
 
-      // If already placed and height changed, full relayout needed
-      if (posMapRef.current.has(id)) {
-        feedLog.masonry('remeasure→relayout', { id: id.slice(0, 20), oldH: old, newH: h });
-        posMapRef.current.clear();
-        colHeightsRef.current = new Array(colHeightsRef.current.length).fill(0);
-      }
+        log.info('masonry.measure', { id: id.slice(0, 25), h, prev: old || 0, w: node.offsetWidth });
+        heightMapRef.current.set(id, h);
 
-      bump();
+        // If already placed and height changed, full relayout needed
+        if (posMapRef.current.has(id)) {
+          log.warn('masonry.remeasure', { id: id.slice(0, 25), oldH: old, newH: h });
+          posMapRef.current.clear();
+          colHeightsRef.current = new Array(colHeightsRef.current.length).fill(0);
+        }
+
+        bumpRef.current();
+      };
+
+      measure();
+
+      const ro = new ResizeObserver(measure);
+      ro.observe(node);
+      cardObserversRef.current.set(id, ro);
     };
 
-    // Initial measurement
-    measure();
+    callbacksRef.current.set(id, cb);
+    return cb;
+  }, [isDesktop]);
 
-    // Watch for size changes (image load, lazy content, etc.)
-    const ro = new ResizeObserver(measure);
-    ro.observe(node);
-    cardObserversRef.current.set(id, ro);
+  // Clear callback cache when isDesktop changes
+  useEffect(() => {
+    return () => {
+      callbacksRef.current.clear();
+    };
   }, [isDesktop]);
 
   // Cleanup all card observers on unmount
@@ -57,6 +74,7 @@ export function useMasonryLayout(containerRef, items, isDesktop) {
     return () => {
       for (const ro of cardObserversRef.current.values()) ro.disconnect();
       cardObserversRef.current.clear();
+      callbacksRef.current.clear();
     };
   }, []);
 
@@ -78,12 +96,12 @@ export function useMasonryLayout(containerRef, items, isDesktop) {
       || (currIds.length > 0 && currIds[0] !== prevIds[0]);
 
     if (isReset) {
-      feedLog.masonry('reset', { reason: cw !== prevWidthRef.current ? 'width' : 'items', numCols, cw, items: currIds.length });
+      log.info('masonry.reset', { reason: cw !== prevWidthRef.current ? 'width' : 'items', numCols, cw, items: currIds.length });
       posMapRef.current.clear();
       heightMapRef.current.clear();
       colHeightsRef.current = new Array(numCols).fill(0);
     } else if (colHeightsRef.current.length !== numCols) {
-      feedLog.masonry('reset', { reason: 'colCount', prev: colHeightsRef.current.length, numCols });
+      log.info('masonry.reset', { reason: 'colCount', prev: colHeightsRef.current.length, numCols });
       posMapRef.current.clear();
       colHeightsRef.current = new Array(numCols).fill(0);
     }
@@ -93,7 +111,6 @@ export function useMasonryLayout(containerRef, items, isDesktop) {
 
     // Track placements per column for overlap detection
     const colPlacements = Array.from({ length: numCols }, () => []);
-    // Rebuild column placements from existing positions
     for (const [id, pos] of posMapRef.current) {
       const h = heightMapRef.current.get(id) || 0;
       const col = Math.round(pos.left / (actualColW + GAP));
@@ -107,7 +124,6 @@ export function useMasonryLayout(containerRef, items, isDesktop) {
       const h = heightMapRef.current.get(item.id);
       if (!h) { skipped++; continue; }
 
-      // Find shortest column
       const minH = Math.min(...colHeightsRef.current);
       const col = colHeightsRef.current.indexOf(minH);
 
@@ -122,7 +138,7 @@ export function useMasonryLayout(containerRef, items, isDesktop) {
       placed++;
     }
 
-    // Overlap detection — check each column for overlaps
+    // Overlap detection
     let overlaps = 0;
     for (let c = 0; c < numCols; c++) {
       const cards = colPlacements[c].sort((a, b) => a.top - b.top);
@@ -130,30 +146,22 @@ export function useMasonryLayout(containerRef, items, isDesktop) {
         const prev = cards[i - 1];
         const curr = cards[i];
         const prevBottom = prev.top + prev.h;
-        if (prevBottom > curr.top + 1) { // 1px tolerance
+        if (prevBottom > curr.top + 1) {
           overlaps++;
-          feedLog.masonry('OVERLAP', {
+          log.error('masonry.overlap', {
             col: c,
-            cardA: prev.id.slice(0, 20),
-            cardA_top: prev.top,
-            cardA_h: prev.h,
-            cardA_bottom: prevBottom,
-            cardB: curr.id.slice(0, 20),
-            cardB_top: curr.top,
-            overlapPx: prevBottom - curr.top,
+            cardA: prev.id.slice(0, 25), cardA_top: prev.top, cardA_h: prev.h, cardA_bottom: prevBottom,
+            cardB: curr.id.slice(0, 25), cardB_top: curr.top,
+            overlapPx: Math.round(prevBottom - curr.top),
           });
         }
       }
     }
 
     if (placed > 0 || skipped > 0) {
-      feedLog.masonry('layout', {
-        pass: layoutPass,
-        placed,
-        skipped,
-        total: items.length,
-        positioned: posMapRef.current.size,
-        numCols,
+      log.info('masonry.layout', {
+        pass: layoutPass, placed, skipped, total: items.length,
+        positioned: posMapRef.current.size, numCols,
         colW: Math.round(actualColW),
         colHeights: colHeightsRef.current.map(Math.round),
         overlaps,
