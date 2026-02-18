@@ -24,7 +24,15 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
  * @returns {express.Router}
  */
 export function createFeedRouter(config) {
-  const { freshRSSAdapter, headlineService, feedAssemblyService, feedContentService, dismissedItemsStore, configService, logger = console } = config;
+  const { freshRSSAdapter, headlineService, feedAssemblyService, feedContentService, dismissedItemsStore, sourceAdapters = [], configService, logger = console } = config;
+
+  // Build adapter lookup map by sourceType for dismiss routing
+  const adapterMap = new Map();
+  for (const adapter of sourceAdapters) {
+    if (adapter.sourceType && typeof adapter.markRead === 'function') {
+      adapterMap.set(adapter.sourceType, adapter);
+    }
+  }
   const router = express.Router();
 
   const getUsername = () => {
@@ -179,24 +187,30 @@ export function createFeedRouter(config) {
 
     const username = getUsername();
 
-    // Partition by source: freshrss items use markRead API, others go to YAML store
-    const freshrssIds = [];
+    // Partition by source type: route to adapter.markRead() or YAML dismiss store
+    const bySource = new Map(); // sourceType → [prefixedIds]
     const otherIds = [];
 
     for (const id of itemIds) {
-      if (id.startsWith('freshrss:')) {
-        freshrssIds.push(id.slice('freshrss:'.length));
-      } else {
-        otherIds.push(id);
+      const colonIdx = id.indexOf(':');
+      if (colonIdx > 0) {
+        const sourceType = id.slice(0, colonIdx);
+        if (adapterMap.has(sourceType)) {
+          if (!bySource.has(sourceType)) bySource.set(sourceType, []);
+          bySource.get(sourceType).push(id);
+          continue;
+        }
       }
+      otherIds.push(id);
     }
 
     const promises = [];
 
-    if (freshrssIds.length > 0 && freshRSSAdapter) {
+    for (const [sourceType, ids] of bySource) {
+      const adapter = adapterMap.get(sourceType);
       promises.push(
-        freshRSSAdapter.markRead(freshrssIds, username).catch(err => {
-          logger.warn?.('feed.dismiss.freshrss.error', { error: err.message, count: freshrssIds.length });
+        adapter.markRead(ids, username).catch(err => {
+          logger.warn?.('feed.dismiss.adapter.error', { sourceType, error: err.message, count: ids.length });
         })
       );
     }
