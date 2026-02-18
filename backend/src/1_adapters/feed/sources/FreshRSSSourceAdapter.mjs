@@ -59,6 +59,17 @@ export class FreshRSSSourceAdapter extends IFeedSourceAdapter {
     return { items, cursor: continuation || null };
   }
 
+  /**
+   * Mark items as read via FreshRSS GReader API.
+   * @param {string[]} itemIds - Prefixed IDs ("freshrss:xxx") or raw IDs
+   * @param {string} username
+   */
+  async markRead(itemIds, username) {
+    if (!this.#freshRSSAdapter) return;
+    const stripped = itemIds.map(id => id.startsWith('freshrss:') ? id.slice('freshrss:'.length) : id);
+    await this.#freshRSSAdapter.markRead(stripped, username);
+  }
+
   #extractImage(html) {
     if (!html) return null;
     const match = html.match(/<img[^>]+src=["']([^"']+)["']/i);
