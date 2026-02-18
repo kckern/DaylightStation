@@ -1,10 +1,9 @@
 import { formatPhotoDate } from '../utils.js';
 
 export default function PhotoBody({ item }) {
-  const location = item.body || item.meta?.location || null;
   const photoDate = formatPhotoDate(item.meta?.originalDate);
-  const heading = location || item.title;
-  const desc = photoDate;
+  const heading = item.title || item.body || item.meta?.location || null;
+  const desc = item.subtitle || photoDate;
 
   return (
     <>
