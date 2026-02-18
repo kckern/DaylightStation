@@ -2802,6 +2802,7 @@ export function createHarvesterServices(config) {
       lifelogStore,
       authStore,
       configService,
+      fitnessHistoryDir: configService.getHouseholdPath('history/fitness'),
       logger,
     }));
   }
