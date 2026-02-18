@@ -88,16 +88,25 @@ export function createFeedRouter(config) {
     const { count, continuation, excludeRead, feeds } = req.query;
     const username = getUsername();
     const streamId = 'user/-/state/com.google/reading-list';
-    const { items, continuation: nextContinuation } = await freshRSSAdapter.getItems(streamId, username, {
-      count: count ? Number(count) : 50,
-      continuation,
-      excludeRead: excludeRead === 'true',
-    });
+    const [{ items, continuation: nextContinuation }, allFeeds] = await Promise.all([
+      freshRSSAdapter.getItems(streamId, username, {
+        count: count ? Number(count) : 50,
+        continuation,
+        excludeRead: excludeRead === 'true',
+      }),
+      freshRSSAdapter.getFeeds(username),
+    ]);
+
+    // Build feedId → iconUrl lookup
+    const feedIconMap = new Map();
+    for (const f of allFeeds) {
+      if (f.id && f.iconUrl) feedIconMap.set(f.id, f.iconUrl);
+    }
 
     // Add isRead flag and plain-text preview to each item
     const READ_TAG = 'user/-/state/com.google/read';
     const enriched = items.map(item => {
-      const isRead = (item.categories || []).some(c => c.includes(READ_TAG));
+      const isRead = (item.categories || []).some(c => c === READ_TAG);
       // Strip HTML for preview
       const preview = (item.content || '')
         .replace(/<[^>]*>/g, ' ')
@@ -108,7 +117,8 @@ export function createFeedRouter(config) {
       const tags = (item.categories || [])
         .filter(c => c.includes('/label/'))
         .map(c => c.split('/label/').pop());
-      return { ...item, isRead, preview, tags };
+      const feedIcon = feedIconMap.get(item.feedId) || null;
+      return { ...item, isRead, preview, tags, feedIcon };
     });
 
     // Filter by feed IDs if specified

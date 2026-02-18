@@ -53,8 +53,9 @@ export default function ArticleRow({ article, onMarkRead }) {
   // Strip emojis from preview text
   const cleanPreview = (article.preview || '').replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, '').replace(/\s+/g, ' ').trim();
 
-  // Favicon from Google CDN based on article link domain
-  const faviconUrl = article.link ? `https://www.google.com/s2/favicons?sz=16&domain=${new URL(article.link).hostname}` : null;
+  // Prefer FreshRSS feed icon (has YT channel icons), fall back to Google CDN
+  const faviconUrl = article.feedIcon
+    || (article.link ? `https://www.google.com/s2/favicons?sz=16&domain=${new URL(article.link).hostname}` : null);
 
   return (
     <div className={`article-row ${expanded ? 'expanded' : ''} ${article.isRead ? 'read' : 'unread'}`}>
@@ -66,6 +67,7 @@ export default function ArticleRow({ article, onMarkRead }) {
         {!expanded && (
           <span className="article-preview">{cleanPreview}</span>
         )}
+        <span className="article-time">{formatTime(article.published)}</span>
         {primaryTag && (
           <span
             className="article-tag"
@@ -74,7 +76,6 @@ export default function ArticleRow({ article, onMarkRead }) {
             {primaryTag}
           </span>
         )}
-        <span className="article-time">{formatTime(article.published)}</span>
       </button>
 
       {expanded && (
