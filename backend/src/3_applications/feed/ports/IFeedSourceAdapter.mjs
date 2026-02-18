@@ -30,6 +30,15 @@ export class IFeedSourceAdapter {
   async getDetail(localId, meta, username) {
     return null;
   }
+
+  /**
+   * Mark items as read/consumed. No-op by default.
+   * @param {string[]} itemIds - Prefixed item IDs (e.g. "freshrss:12345")
+   * @param {string} username
+   */
+  async markRead(itemIds, username) {
+    // No-op default — sources without read-state tracking ignore this
+  }
 }
 
 export function isFeedSourceAdapter(obj) {
