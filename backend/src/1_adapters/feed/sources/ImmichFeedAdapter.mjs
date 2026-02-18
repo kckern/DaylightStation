@@ -7,7 +7,7 @@
  * @module adapters/feed/sources/ImmichFeedAdapter
  */
 
-import { IFeedSourceAdapter } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
+import { IFeedSourceAdapter, CONTENT_TYPES } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
 
 export class ImmichFeedAdapter extends IFeedSourceAdapter {
   #contentQueryPort;
@@ -25,6 +25,7 @@ export class ImmichFeedAdapter extends IFeedSourceAdapter {
   }
 
   get sourceType() { return 'immich'; }
+  get provides() { return [CONTENT_TYPES.PHOTOS]; }
 
   async fetchItems(query, _username) {
     try {

@@ -11,7 +11,7 @@
  * @module adapters/feed/sources/EntropyFeedAdapter
  */
 
-import { IFeedSourceAdapter } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
+import { IFeedSourceAdapter, CONTENT_TYPES } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
 
 export class EntropyFeedAdapter extends IFeedSourceAdapter {
   #entropyService;
@@ -24,6 +24,7 @@ export class EntropyFeedAdapter extends IFeedSourceAdapter {
   }
 
   get sourceType() { return 'entropy'; }
+  get provides() { return [CONTENT_TYPES.ENTROPY]; }
 
   async fetchPage(query, username, { cursor } = {}) {
     if (!this.#entropyService) return { items: [], cursor: null };

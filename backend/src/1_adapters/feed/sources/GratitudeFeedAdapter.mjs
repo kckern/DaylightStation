@@ -7,7 +7,7 @@
  * @module adapters/feed/sources/GratitudeFeedAdapter
  */
 
-import { IFeedSourceAdapter } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
+import { IFeedSourceAdapter, CONTENT_TYPES } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
 
 export class GratitudeFeedAdapter extends IFeedSourceAdapter {
   #dataService;
@@ -23,6 +23,7 @@ export class GratitudeFeedAdapter extends IFeedSourceAdapter {
   }
 
   get sourceType() { return 'gratitude'; }
+  get provides() { return [CONTENT_TYPES.GRATITUDE]; }
 
   async fetchItems(query, _username) {
     try {

@@ -8,7 +8,7 @@
  * @module adapters/feed/sources/PlexFeedAdapter
  */
 
-import { IFeedSourceAdapter } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
+import { IFeedSourceAdapter, CONTENT_TYPES } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
 import { probeImageDimensions } from '#system/utils/probeImageDimensions.mjs';
 
 export class PlexFeedAdapter extends IFeedSourceAdapter {
@@ -31,6 +31,7 @@ export class PlexFeedAdapter extends IFeedSourceAdapter {
   }
 
   get sourceType() { return 'plex'; }
+  get provides() { return [CONTENT_TYPES.VIDEO]; }
 
   async fetchItems(query, _username) {
     const plexAdapter = this.#contentRegistry?.get('plex');

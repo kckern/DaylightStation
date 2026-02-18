@@ -7,7 +7,7 @@
  * @module adapters/feed/sources/StravaFeedAdapter
  */
 
-import { IFeedSourceAdapter } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
+import { IFeedSourceAdapter, CONTENT_TYPES } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
 
 export class StravaFeedAdapter extends IFeedSourceAdapter {
   #userDataService;
@@ -21,6 +21,7 @@ export class StravaFeedAdapter extends IFeedSourceAdapter {
   }
 
   get sourceType() { return 'strava'; }
+  get provides() { return [CONTENT_TYPES.FITNESS]; }
 
   async fetchItems(query, username) {
     try {

@@ -11,7 +11,7 @@
  * @module adapters/feed/sources/YouTubeFeedAdapter
  */
 
-import { IFeedSourceAdapter } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
+import { IFeedSourceAdapter, CONTENT_TYPES } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
 
 const API_BASE = 'https://www.googleapis.com/youtube/v3/search';
 const RSS_BASE = 'https://www.youtube.com/feeds/videos.xml';
@@ -44,6 +44,7 @@ export class YouTubeFeedAdapter extends IFeedSourceAdapter {
   }
 
   get sourceType() { return 'youtube'; }
+  get provides() { return [CONTENT_TYPES.VIDEO]; }
 
   async fetchItems(query, _username) {
     const channels = query.params?.channels || [];

@@ -17,7 +17,7 @@
  * @module adapters/feed/sources/FreshRSSSourceAdapter
  */
 
-import { IFeedSourceAdapter } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
+import { IFeedSourceAdapter, CONTENT_TYPES } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
 
 export class FreshRSSSourceAdapter extends IFeedSourceAdapter {
   #freshRSSAdapter;
@@ -36,6 +36,7 @@ export class FreshRSSSourceAdapter extends IFeedSourceAdapter {
   }
 
   get sourceType() { return 'freshrss'; }
+  get provides() { return [CONTENT_TYPES.FEEDS]; }
 
   #getReaderConfig() {
     if (!this.#configService) {

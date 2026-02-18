@@ -7,7 +7,7 @@
  * @module adapters/feed/sources/WeatherFeedAdapter
  */
 
-import { IFeedSourceAdapter } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
+import { IFeedSourceAdapter, CONTENT_TYPES } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
 
 const WMO_CODES = {
   0: 'Clear sky', 1: 'Mainly clear', 2: 'Partly cloudy', 3: 'Overcast',
@@ -31,6 +31,7 @@ export class WeatherFeedAdapter extends IFeedSourceAdapter {
   }
 
   get sourceType() { return 'weather'; }
+  get provides() { return [CONTENT_TYPES.WEATHER]; }
 
   async fetchItems(query, _username) {
     try {

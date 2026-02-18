@@ -11,7 +11,7 @@
  * @module adapters/feed/sources/KomgaFeedAdapter
  */
 
-import { IFeedSourceAdapter } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
+import { IFeedSourceAdapter, CONTENT_TYPES } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
 
 export class KomgaFeedAdapter extends IFeedSourceAdapter {
   #client;
@@ -41,6 +41,7 @@ export class KomgaFeedAdapter extends IFeedSourceAdapter {
   }
 
   get sourceType() { return 'komga'; }
+  get provides() { return [CONTENT_TYPES.COMICS]; }
 
   /**
    * Fetch feed items from Komga.
