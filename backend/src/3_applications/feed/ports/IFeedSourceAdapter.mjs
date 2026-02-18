@@ -1,7 +1,43 @@
 // backend/src/3_applications/feed/ports/IFeedSourceAdapter.mjs
+
+/**
+ * Canonical content-type tokens used by feed adapters.
+ * Each adapter declares which types it can supply via the `provides` getter.
+ * @readonly
+ * @enum {string}
+ */
+export const CONTENT_TYPES = Object.freeze({
+  FEEDS:        'feeds',
+  NEWS:         'news',
+  SOCIAL:       'social',
+  PHOTOS:       'photos',
+  COMICS:       'comics',
+  EBOOKS:       'ebooks',
+  AUDIO:        'audio',
+  VIDEO:        'video',
+  JOURNAL:      'journal',
+  BOOK_REVIEWS: 'book-reviews',
+  TASKS:        'tasks',
+  WEATHER:      'weather',
+  HEALTH:       'health',
+  FITNESS:      'fitness',
+  GRATITUDE:    'gratitude',
+  ENTROPY:      'entropy',
+  SCRIPTURE:    'scripture',
+});
+
 export class IFeedSourceAdapter {
   get sourceType() {
     throw new Error('IFeedSourceAdapter.sourceType must be implemented');
+  }
+
+  /**
+   * Content types this adapter can supply.
+   * Subclasses should override to return an array of CONTENT_TYPES values.
+   * @returns {string[]}
+   */
+  get provides() {
+    return [];
   }
 
   /**
