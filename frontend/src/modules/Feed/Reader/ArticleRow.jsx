@@ -1,0 +1,105 @@
+import { useState, useRef, useEffect } from 'react';
+import { colorFromLabel } from '../Scroll/cards/utils.js';
+
+/**
+ * Single article row with collapsed/expanded accordion states.
+ * @param {Object} props
+ * @param {Object} props.article - article object from /reader/stream
+ * @param {Function} props.onMarkRead - (articleId) => void
+ */
+export default function ArticleRow({ article, onMarkRead }) {
+  const [expanded, setExpanded] = useState(false);
+  const [fullHeight, setFullHeight] = useState(false);
+  const contentRef = useRef(null);
+  const [overflows, setOverflows] = useState(false);
+
+  useEffect(() => {
+    if (expanded && contentRef.current) {
+      setOverflows(contentRef.current.scrollHeight > 400);
+    }
+  }, [expanded]);
+
+  const handleExpand = () => {
+    if (!expanded) {
+      setExpanded(true);
+      if (!article.isRead) {
+        onMarkRead(article.id);
+      }
+    } else {
+      setExpanded(false);
+      setFullHeight(false);
+    }
+  };
+
+  const formatTime = (published) => {
+    if (!published) return '';
+    const d = new Date(published);
+    const now = new Date();
+    const diffMs = now - d;
+    const diffMins = Math.floor(diffMs / 60000);
+    if (diffMins < 60) return `${diffMins}m ago`;
+    const diffHrs = Math.floor(diffMins / 60);
+    if (diffHrs < 24) return `${diffHrs}h ago`;
+    // Same year: show month/day + time
+    const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    if (d.getFullYear() === now.getFullYear()) {
+      return d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' + time;
+    }
+    return d.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) + ' ' + time;
+  };
+
+  const primaryTag = article.tags?.[0];
+
+  return (
+    <div className={`article-row ${expanded ? 'expanded' : ''} ${article.isRead ? 'read' : 'unread'}`}>
+      <button className="article-row-header" onClick={handleExpand}>
+        {primaryTag && (
+          <span
+            className="article-tag"
+            style={{ backgroundColor: colorFromLabel(primaryTag) }}
+          >
+            {primaryTag}
+          </span>
+        )}
+        <span className="article-title">{article.title}</span>
+        {!expanded && (
+          <span className="article-preview">{article.preview}</span>
+        )}
+        <span className="article-time">{formatTime(article.published)}</span>
+      </button>
+
+      {expanded && (
+        <div className="article-expanded">
+          <div className="article-meta">
+            {article.feedTitle && <span>{article.feedTitle}</span>}
+            {article.author && <span> &middot; {article.author}</span>}
+            {article.published && (
+              <span> &middot; {new Date(article.published).toLocaleString()}</span>
+            )}
+          </div>
+          <div
+            ref={contentRef}
+            className={`article-content ${fullHeight ? 'full' : ''}`}
+            dangerouslySetInnerHTML={{ __html: article.content }}
+          />
+          {overflows && !fullHeight && (
+            <button className="article-readmore" onClick={(e) => { e.stopPropagation(); setFullHeight(true); }}>
+              Read more
+            </button>
+          )}
+          {article.link && (
+            <a
+              className="article-source-link"
+              href={article.link}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+            >
+              Open original &rarr;
+            </a>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
