@@ -1,6 +1,15 @@
 import { useState, useEffect } from 'react';
-import { formatAge, colorFromLabel, proxyIcon, proxyImage, isImageUrl } from './utils.js';
+import { formatAge, proxyIcon, proxyImage, isImageUrl } from './utils.js';
 import { getBodyModule } from './bodies/index.js';
+
+function formatDuration(seconds) {
+  if (!seconds || !Number.isFinite(seconds)) return '';
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
 
 const STATUS_COLORS = {
   red: '#ff6b6b',
@@ -64,7 +73,6 @@ export default function FeedCard({ item, colors = {}, onDismiss, onPlay }) {
   const sourceName = item.meta?.sourceName || item.meta?.feedTitle || item.source || '';
   const age = formatAge(item.timestamp);
   const iconUrl = proxyIcon(item.meta?.sourceIcon);
-  const borderColor = colors[item.source] || colors[tier] || colorFromLabel(item.source);
 
   const BodyModule = getBodyModule(item.source);
 
@@ -75,7 +83,6 @@ export default function FeedCard({ item, colors = {}, onDismiss, onPlay }) {
         display: 'block',
         background: '#25262b',
         borderRadius: '12px',
-        borderLeft: `4px solid ${borderColor}`,
         overflow: 'hidden',
         position: 'relative',
       }}
@@ -91,8 +98,26 @@ export default function FeedCard({ item, colors = {}, onDismiss, onPlay }) {
             backgroundColor: '#1a1b1e',
           }}>
           <HeroImage src={item.image} />
+          {/* Duration badge */}
+          {item.meta?.duration > 0 && (
+            <span style={{
+              position: 'absolute',
+              bottom: '8px',
+              right: '8px',
+              background: 'rgba(0,0,0,0.75)',
+              color: '#fff',
+              fontSize: '0.65rem',
+              fontWeight: 600,
+              padding: '2px 6px',
+              borderRadius: '4px',
+              fontVariantNumeric: 'tabular-nums',
+              zIndex: 1,
+            }}>
+              {formatDuration(item.meta.duration)}
+            </span>
+          )}
           {/* Play button overlay */}
-          {(item.source === 'plex' || item.meta?.youtubeId) && (
+          {item.meta?.playable && (
             <button
               onClick={(e) => { e.stopPropagation(); onPlay?.(item); }}
               style={{
