@@ -267,8 +267,8 @@ export class GovernanceEngine {
         },
         activeChallenge: this.challengeState?.activeChallenge?.id || null,
         activeChallengeZone: this.challengeState?.activeChallenge?.zone || null,
-        videoLocked: this.challengeState?.videoLocked
-          || (this._mediaIsGoverned() && this.phase !== 'unlocked' && this.phase !== 'warning'),
+        videoLocked: (this.challengeState?.videoLocked || this._mediaIsGoverned())
+          && this.phase !== 'unlocked' && this.phase !== 'warning',
         mediaId: this.media?.id || null,
         // Expose internal state for test diagnostics
         satisfiedOnce: this.meta?.satisfiedOnce || false,
@@ -1165,8 +1165,8 @@ export class GovernanceEngine {
       countdownSecondsTotal: gracePeriodTotal,
       deadline: this.meta?.deadline || null,
       gracePeriodTotal,
-      videoLocked: !!(this.challengeState && this.challengeState.videoLocked)
-        || (this._mediaIsGoverned() && this.phase !== 'unlocked' && this.phase !== 'warning'),
+      videoLocked: (this.challengeState?.videoLocked || this._mediaIsGoverned())
+        && this.phase !== 'unlocked' && this.phase !== 'warning',
       challengePaused: challengeSnapshot ? Boolean(challengeSnapshot.paused) : false,
       challenge: challengeSnapshot,
       challengeHistory: Array.isArray(this.challengeState?.challengeHistory)
