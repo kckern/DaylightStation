@@ -620,6 +620,230 @@ describe('GovernanceEngine', () => {
     });
   });
 
+  describe('warning cooldown', () => {
+    let engine;
+
+    const zoneRankMap = { cool: 0, active: 1 };
+    const zoneInfoMap = {
+      cool: { id: 'cool', name: 'Cool', color: '#0000ff' },
+      active: { id: 'active', name: 'Active', color: '#ff0000' }
+    };
+
+    afterEach(() => {
+      engine.destroy();
+    });
+
+    it('should suppress new warning within cooldown after warning dismisses', () => {
+      const mockSession = {
+        roster: [],
+        zoneProfileStore: null,
+        snapshot: {
+          zoneConfig: [
+            { id: 'cool', name: 'Cool', color: '#0000ff' },
+            { id: 'active', name: 'Active', color: '#ff0000' },
+          ]
+        }
+      };
+
+      engine = new GovernanceEngine(mockSession);
+      engine.configure({
+        governed_labels: ['exercise'],
+        grace_period_seconds: 30,
+        warning_cooldown_seconds: 30
+      }, [{
+        id: 'default',
+        name: 'default',
+        minParticipants: 1,
+        baseRequirement: { active: 'all' },
+        challenges: []
+      }], {});
+
+      engine.setMedia({ id: 'test-media', labels: ['exercise'] });
+      engine.setCallbacks({ onPhaseChange: () => {}, onPulse: () => {}, onStateChange: () => {} });
+
+      // Both in active zone -> unlocked
+      engine.evaluate({
+        activeParticipants: ['alice', 'bob'],
+        userZoneMap: { alice: 'active', bob: 'active' },
+        zoneRankMap,
+        zoneInfoMap,
+        totalCount: 2
+      });
+      expect(engine.phase).toBe('unlocked');
+
+      // Alice drops to cool -> warning (grace period starts)
+      engine.evaluate({
+        activeParticipants: ['alice', 'bob'],
+        userZoneMap: { alice: 'cool', bob: 'active' },
+        zoneRankMap,
+        zoneInfoMap,
+        totalCount: 2
+      });
+      expect(engine.phase).toBe('warning');
+
+      // Alice back to active -> unlocked (cooldown starts)
+      engine.evaluate({
+        activeParticipants: ['alice', 'bob'],
+        userZoneMap: { alice: 'active', bob: 'active' },
+        zoneRankMap,
+        zoneInfoMap,
+        totalCount: 2
+      });
+      expect(engine.phase).toBe('unlocked');
+
+      // Alice drops to cool AGAIN -> should STAY unlocked (cooldown suppresses)
+      engine.evaluate({
+        activeParticipants: ['alice', 'bob'],
+        userZoneMap: { alice: 'cool', bob: 'active' },
+        zoneRankMap,
+        zoneInfoMap,
+        totalCount: 2
+      });
+      expect(engine.phase).toBe('unlocked');
+    });
+
+    it('should allow warning after cooldown expires', () => {
+      const mockSession = {
+        roster: [],
+        zoneProfileStore: null,
+        snapshot: {
+          zoneConfig: [
+            { id: 'cool', name: 'Cool', color: '#0000ff' },
+            { id: 'active', name: 'Active', color: '#ff0000' },
+          ]
+        }
+      };
+
+      engine = new GovernanceEngine(mockSession);
+      engine.configure({
+        governed_labels: ['exercise'],
+        grace_period_seconds: 30,
+        warning_cooldown_seconds: 10
+      }, [{
+        id: 'default',
+        name: 'default',
+        minParticipants: 1,
+        baseRequirement: { active: 'all' },
+        challenges: []
+      }], {});
+
+      engine.setMedia({ id: 'test-media', labels: ['exercise'] });
+      engine.setCallbacks({ onPhaseChange: () => {}, onPulse: () => {}, onStateChange: () => {} });
+
+      // Both in active -> unlocked
+      engine.evaluate({
+        activeParticipants: ['alice', 'bob'],
+        userZoneMap: { alice: 'active', bob: 'active' },
+        zoneRankMap,
+        zoneInfoMap,
+        totalCount: 2
+      });
+      expect(engine.phase).toBe('unlocked');
+
+      // Alice drops -> warning
+      engine.evaluate({
+        activeParticipants: ['alice', 'bob'],
+        userZoneMap: { alice: 'cool', bob: 'active' },
+        zoneRankMap,
+        zoneInfoMap,
+        totalCount: 2
+      });
+      expect(engine.phase).toBe('warning');
+
+      // Alice recovers -> unlocked (cooldown starts)
+      engine.evaluate({
+        activeParticipants: ['alice', 'bob'],
+        userZoneMap: { alice: 'active', bob: 'active' },
+        zoneRankMap,
+        zoneInfoMap,
+        totalCount: 2
+      });
+      expect(engine.phase).toBe('unlocked');
+
+      // Simulate cooldown expiry
+      engine._warningCooldownUntil = Date.now() - 1;
+
+      // Alice drops again -> should enter warning (cooldown expired)
+      engine.evaluate({
+        activeParticipants: ['alice', 'bob'],
+        userZoneMap: { alice: 'cool', bob: 'active' },
+        zoneRankMap,
+        zoneInfoMap,
+        totalCount: 2
+      });
+      expect(engine.phase).toBe('warning');
+    });
+
+    it('should not apply cooldown when no warning_cooldown_seconds configured', () => {
+      const mockSession = {
+        roster: [],
+        zoneProfileStore: null,
+        snapshot: {
+          zoneConfig: [
+            { id: 'cool', name: 'Cool', color: '#0000ff' },
+            { id: 'active', name: 'Active', color: '#ff0000' },
+          ]
+        }
+      };
+
+      engine = new GovernanceEngine(mockSession);
+      engine.configure({
+        governed_labels: ['exercise'],
+        grace_period_seconds: 30
+        // No warning_cooldown_seconds
+      }, [{
+        id: 'default',
+        name: 'default',
+        minParticipants: 1,
+        baseRequirement: { active: 'all' },
+        challenges: []
+      }], {});
+
+      engine.setMedia({ id: 'test-media', labels: ['exercise'] });
+      engine.setCallbacks({ onPhaseChange: () => {}, onPulse: () => {}, onStateChange: () => {} });
+
+      // Both in active -> unlocked
+      engine.evaluate({
+        activeParticipants: ['alice', 'bob'],
+        userZoneMap: { alice: 'active', bob: 'active' },
+        zoneRankMap,
+        zoneInfoMap,
+        totalCount: 2
+      });
+      expect(engine.phase).toBe('unlocked');
+
+      // Alice drops -> warning
+      engine.evaluate({
+        activeParticipants: ['alice', 'bob'],
+        userZoneMap: { alice: 'cool', bob: 'active' },
+        zoneRankMap,
+        zoneInfoMap,
+        totalCount: 2
+      });
+      expect(engine.phase).toBe('warning');
+
+      // Alice recovers -> unlocked
+      engine.evaluate({
+        activeParticipants: ['alice', 'bob'],
+        userZoneMap: { alice: 'active', bob: 'active' },
+        zoneRankMap,
+        zoneInfoMap,
+        totalCount: 2
+      });
+      expect(engine.phase).toBe('unlocked');
+
+      // Alice drops again -> should enter warning immediately (no cooldown)
+      engine.evaluate({
+        activeParticipants: ['alice', 'bob'],
+        userZoneMap: { alice: 'cool', bob: 'active' },
+        zoneRankMap,
+        zoneInfoMap,
+        totalCount: 2
+      });
+      expect(engine.phase).toBe('warning');
+    });
+  });
+
   describe('_evaluateChallenges() minParticipants guard', () => {
     let engine;
 
