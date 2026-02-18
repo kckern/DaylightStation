@@ -67,29 +67,7 @@ export class PlexFeedAdapter extends IFeedSourceAdapter {
     }
 
     filtered.sort(() => Math.random() - 0.5);
-    return Promise.all(filtered.slice(0, query.limit || 3).map(async item => {
-      const localId = item.localId || item.id?.replace?.('plex:', '') || item.id;
-      const dims = await this.#getThumbDimensions(item.thumbnail);
-      return {
-        id: `plex:${localId}`,
-        tier: query.tier || 'compass',
-        source: 'plex',
-        title: item.title || item.label || 'Media',
-        body: item.subtitle || item.description || null,
-        image: item.thumbnail || null,
-        link: this.#plexWebLink(localId),
-        timestamp: item.metadata?.addedAt || new Date().toISOString(),
-        priority: query.priority || 5,
-        meta: {
-          playable: true,
-          type: item.type || item.metadata?.type,
-          year: item.year || item.metadata?.year,
-          sourceName: 'Plex',
-          sourceIcon: null,
-          ...dims,
-        },
-      };
-    }));
+    return this.#mapItemsWithDims(filtered.slice(0, query.limit || 3), query, 'compass');
   }
 
   async #fetchWeightedChildren(plexAdapter, query) {
@@ -114,31 +92,7 @@ export class PlexFeedAdapter extends IFeedSourceAdapter {
     }
 
     filtered.sort(() => Math.random() - 0.5);
-    return Promise.all(filtered.slice(0, query.limit || 3).map(async item => {
-      const localId = item.localId || item.id?.replace?.('plex:', '') || item.id;
-      const dims = await this.#getThumbDimensions(item.thumbnail);
-      return {
-        id: `plex:${localId}`,
-        tier: query.tier || 'library',
-        source: 'plex',
-        title: item.title || item.label || 'Media',
-        body: item.subtitle || item.metadata?.artist || item.metadata?.parentTitle || item.description || null,
-        image: item.thumbnail || null,
-        link: this.#plexWebLink(localId),
-        timestamp: item.metadata?.addedAt || new Date().toISOString(),
-        priority: query.priority || 5,
-        meta: {
-          playable: true,
-          duration: item.duration ?? null,
-          type: item.type || item.metadata?.type,
-          year: item.year || item.metadata?.year,
-          artistName: item.metadata?.artist || item.metadata?.parentTitle || null,
-          sourceName: item.metadata?.artist || item.metadata?.parentTitle || 'Audio',
-          sourceIcon: null,
-          ...dims,
-        },
-      };
-    }));
+    return this.#mapItemsWithDims(filtered.slice(0, query.limit || 3), query, 'library');
   }
 
   async #fetchSearch(query) {
@@ -152,29 +106,51 @@ export class PlexFeedAdapter extends IFeedSourceAdapter {
       take: query.limit || 3,
     });
 
-    return Promise.all((result.items || []).map(async item => {
+    return this.#mapItemsWithDims(result.items || [], query, 'compass');
+  }
+
+  /**
+   * Map raw Plex items to feed items, probing dimensions for the first few.
+   * When the pool manager uses stripLimits (limit=10000), hundreds of items
+   * may be returned; probing all of them concurrently causes timeouts.
+   * Only the first MAX_PROBE items get dimensions; the rest are returned without.
+   */
+  async #mapItemsWithDims(rawItems, query, defaultTier) {
+    const MAX_PROBE = 5;
+    const toFeedItem = (item, dims = {}) => {
       const localId = item.localId || item.id?.replace?.('plex:', '') || item.id;
-      const dims = await this.#getThumbDimensions(item.thumbnail);
       return {
         id: `plex:${localId}`,
-        tier: query.tier || 'compass',
+        tier: query.tier || defaultTier,
         source: 'plex',
         title: item.title || item.label || 'Media',
-        body: item.subtitle || item.description || null,
+        body: item.subtitle || item.metadata?.artist || item.metadata?.parentTitle || item.description || null,
         image: item.thumbnail || null,
         link: this.#plexWebLink(localId),
         timestamp: item.metadata?.addedAt || new Date().toISOString(),
         priority: query.priority || 5,
         meta: {
           playable: true,
+          duration: item.duration ?? null,
           type: item.type || item.metadata?.type,
           year: item.year || item.metadata?.year,
-          sourceName: 'Plex',
+          artistName: item.metadata?.artist || item.metadata?.parentTitle || null,
+          sourceName: item.metadata?.artist || item.metadata?.parentTitle || 'Plex',
           sourceIcon: null,
           ...dims,
         },
       };
-    }));
+    };
+
+    // Probe first MAX_PROBE items, map the rest without probing
+    const probed = await Promise.all(
+      rawItems.slice(0, MAX_PROBE).map(async item => {
+        const dims = await this.#getThumbDimensions(item.thumbnail);
+        return toFeedItem(item, dims);
+      })
+    );
+    const rest = rawItems.slice(MAX_PROBE).map(item => toFeedItem(item));
+    return [...probed, ...rest];
   }
 
   async getDetail(localId, meta, _username) {
@@ -197,7 +173,7 @@ export class PlexFeedAdapter extends IFeedSourceAdapter {
       const plexPath = thumbProxy.replace(/^\/api\/v1\/proxy\/plex/, '');
       const separator = plexPath.includes('?') ? '&' : '?';
       const url = `${this.#plexHost}${plexPath}${separator}X-Plex-Token=${this.#plexToken}`;
-      const dims = await probeImageDimensions(url);
+      const dims = await probeImageDimensions(url, 8000);
       return dims ? { imageWidth: dims.width, imageHeight: dims.height } : {};
     } catch {
       return {};
