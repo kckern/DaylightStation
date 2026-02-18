@@ -43,7 +43,7 @@ export class HeadlineFeedAdapter extends IFeedSourceAdapter {
           allItems.push({
             id: `headline:${item.id || sourceId + ':' + item.link}`,
             tier: query.tier || 'wire',
-            source: 'headline',
+            source: 'headlines',
             title: item.title,
             body: item.desc || null,
             image: item.image || null,

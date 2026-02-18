@@ -232,7 +232,22 @@ export class TierAssemblyService {
     // Apply tier selection strategy
     items = this.#applyTierFilters(items, config.selection);
     items = this.#applyTierSort(items, config.selection, selectionCounts);
-    items = this.#applySourceCaps(items, config.sources);
+
+    // Partition into primary and filler sources, select primary first
+    const fillerSources = this.#getFillerSources(config.sources);
+    if (fillerSources.size > 0) {
+      const primary = items.filter(i => !fillerSources.has(i.source));
+      const filler = items.filter(i => fillerSources.has(i.source));
+      const cappedPrimary = this.#applySourceCaps(primary, config.sources);
+      // Guarantee filler minimum before primary takes all slots
+      const fillerMin = this.#getFillerMin(config.sources, fillerSources);
+      const cappedFiller = this.#applySourceCaps(filler, config.sources);
+      const guaranteedFiller = cappedFiller.slice(0, Math.max(fillerMin, 0));
+      const remainingFiller = cappedFiller.slice(fillerMin);
+      items = [...guaranteedFiller, ...cappedPrimary, ...remainingFiller];
+    } else {
+      items = this.#applySourceCaps(items, config.sources);
+    }
 
     // Cap to allocation (non-wire always; wire only during decay)
     if (config.allocation != null) {
@@ -240,6 +255,31 @@ export class TierAssemblyService {
     }
 
     return items;
+  }
+
+  /**
+   * Identify sources marked as filler (role: 'filler').
+   * Filler sources fill remaining slots after primary sources.
+   */
+  #getFillerSources(sourcesConfig) {
+    const fillers = new Set();
+    if (!sourcesConfig) return fillers;
+    for (const [key, cfg] of Object.entries(sourcesConfig)) {
+      if (cfg?.role === 'filler') fillers.add(key);
+    }
+    return fillers;
+  }
+
+  /**
+   * Sum min_per_batch across all filler sources.
+   * Guarantees fillers always get at least this many slots.
+   */
+  #getFillerMin(sourcesConfig, fillerSources) {
+    let total = 0;
+    for (const source of fillerSources) {
+      total += sourcesConfig[source]?.min_per_batch ?? 0;
+    }
+    return total;
   }
 
   /**
