@@ -1,7 +1,7 @@
 type: plex
 tier: library
 priority: 5
-limit: 1
+
 params:
   mode: children
   parentIds:

@@ -164,6 +164,18 @@ export class FeedAssemblyService {
       }
     }
 
+    // Cycling pass: last resort — duplicate existing items to fill the batch.
+    // Only cycles when the pool is truly exhausted (not the first batch, and
+    // no more sources can provide fresh items).
+    if (batch.length < effectiveLimit && batch.length > 0 && batchNumber > 1) {
+      const originals = [...batch];
+      let dupIndex = 1;
+      while (batch.length < effectiveLimit) {
+        const source = originals[batch.length % originals.length];
+        batch.push({ ...source, id: `${source.id}:dup${dupIndex++}` });
+      }
+    }
+
     // Mark seen + cache
     const batchIds = batch.map(i => i.id);
     this.#feedPoolManager.markSeen(username, batchIds);
