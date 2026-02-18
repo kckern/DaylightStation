@@ -46,10 +46,12 @@ const TIER_DEFAULTS = Object.freeze({
 
 export class TierAssemblyService {
   #spacingEnforcer;
+  #sourceResolver;
   #logger;
 
-  constructor({ spacingEnforcer = null, logger = console } = {}) {
+  constructor({ spacingEnforcer = null, sourceResolver = null, logger = console } = {}) {
     this.#spacingEnforcer = spacingEnforcer;
+    this.#sourceResolver = sourceResolver;
     this.#logger = logger;
   }
 
@@ -65,28 +67,28 @@ export class TierAssemblyService {
    */
   assemble(allItems, scrollConfig, { effectiveLimit, focus, selectionCounts, batchNumber = 1 } = {}) {
     const tierConfig = this.#resolveTierConfig(scrollConfig);
-    const wireDecayBatches = scrollConfig.wire_decay_batches ?? 10;
-
-    // Apply wire decay: adjust allocations based on batch number
-    const decayedConfig = this.#applyWireDecay(tierConfig, effectiveLimit, batchNumber, wireDecayBatches);
+    const halfLife = scrollConfig.wire_decay_half_life ?? 2;
 
     // Bucket items by tier
     const buckets = this.#bucketByTier(allItems);
 
-    // Level 1: use FlexAllocator to distribute slots across tiers
-    const tierSlots = this.#allocateTierSlots(decayedConfig, effectiveLimit, buckets);
+    // Level 1: FlexAllocator distributes slots across tiers
+    let tierSlots = this.#allocateTierSlots(tierConfig, effectiveLimit, buckets);
+
+    // Apply wire decay: half-life exponential decay after flex allocation
+    tierSlots = this.#applyWireDecay(tierSlots, batchNumber, halfLife);
 
     // Level 2: within-tier selection
     const selected = {};
     for (const tier of Object.values(TIERS)) {
       const candidates = buckets[tier] || [];
-      const config = decayedConfig[tier] || TIER_DEFAULTS[tier];
-      const slots = tierSlots.get(tier) ?? config.allocation;
+      const config = tierConfig[tier] || TIER_DEFAULTS[tier];
+      const slots = tierSlots.get(tier);
       selected[tier] = this.#selectForTier(tier, candidates, config, { focus, selectionCounts, tierSlots: slots });
     }
 
     // Cross-tier interleave
-    const interleaved = this.#interleave(selected, decayedConfig, effectiveLimit);
+    const interleaved = this.#interleave(selected, tierConfig, effectiveLimit);
 
     // Deduplicate
     const seen = new Set();
@@ -102,20 +104,34 @@ export class TierAssemblyService {
 
     const items = spaced.slice(0, effectiveLimit);
 
-    this.#logger.info?.('tier.assembly.batch', {
-      total: allItems.length,
+    // Build feed_assembly stats for debugging/auditing
+    const decayFactor = Math.pow(0.5, (batchNumber - 1) / halfLife);
+    const feed_assembly = {
       batchNumber,
-      wireDecayFactor: Math.max(0, Math.min(1, 1 - (batchNumber - 1) / wireDecayBatches)).toFixed(2),
-      wire: selected.wire?.length || 0,
-      library: selected.library?.length || 0,
-      scrapbook: selected.scrapbook?.length || 0,
-      compass: selected.compass?.length || 0,
-      returned: items.length,
-    });
+      wireDecayFactor: parseFloat(decayFactor.toFixed(3)),
+      halfLife,
+      batchSize: effectiveLimit,
+      tiers: {},
+    };
+    for (const tier of Object.values(TIERS)) {
+      const tierItems = selected[tier] || [];
+      const sources = {};
+      for (const item of tierItems) {
+        sources[item.source] = (sources[item.source] || 0) + 1;
+      }
+      feed_assembly.tiers[tier] = {
+        allocated: tierSlots.get(tier) ?? 0,
+        selected: tierItems.length,
+        sources,
+      };
+    }
+
+    this.#logger.info?.('tier.assembly.batch', feed_assembly);
 
     return {
       items,
       hasMore: spaced.length > effectiveLimit,
+      feed_assembly,
     };
   }
 
@@ -202,60 +218,56 @@ export class TierAssemblyService {
   // ======================================================================
 
   /**
-   * Compute decayed tier allocations based on batch number.
-   * Wire allocation decays linearly from its base value to 0 over wireDecayBatches.
-   * Freed slots are distributed proportionally to non-wire tiers.
+   * Apply half-life exponential decay to wire slots after FlexAllocator.
+   * Freed wire slots are distributed proportionally to non-wire tiers.
    *
-   * @param {Object} tierConfig - Resolved tier config
-   * @param {number} batchSize - Target batch size
+   * Formula: decayFactor = 0.5 ^ ((batchNumber - 1) / halfLife)
+   *   Batch 1: 100% wire  |  Batch 3 (hl=2): 50%  |  Batch 5: 25%
+   *
+   * @param {Map<string, number>} tierSlots - FlexAllocator output
    * @param {number} batchNumber - Current batch (1-indexed)
-   * @param {number} wireDecayBatches - Batches until wire reaches 0
-   * @returns {Object} New tier config with adjusted allocations
+   * @param {number} halfLife - Batches until wire halves
+   * @returns {Map<string, number>} Adjusted tier slots
    */
-  #applyWireDecay(tierConfig, batchSize, batchNumber, wireDecayBatches) {
-    if (wireDecayBatches <= 0 || batchNumber <= 1) return tierConfig;
+  #applyWireDecay(tierSlots, batchNumber, halfLife) {
+    if (halfLife <= 0 || batchNumber <= 1) return tierSlots;
 
-    // Compute base wire slots (batch_size minus all non-wire allocations)
-    const compassAlloc = tierConfig.compass?.allocation ?? TIER_DEFAULTS.compass.allocation;
-    const libraryAlloc = tierConfig.library?.allocation ?? TIER_DEFAULTS.library.allocation;
-    const scrapbookAlloc = tierConfig.scrapbook?.allocation ?? TIER_DEFAULTS.scrapbook.allocation;
-    const totalNonWire = compassAlloc + libraryAlloc + scrapbookAlloc;
-    const baseWire = Math.max(0, batchSize - totalNonWire);
+    const baseWire = tierSlots.get(TIERS.WIRE) || 0;
+    if (baseWire === 0) return tierSlots;
 
-    if (baseWire === 0) return tierConfig;
-
-    // Linear decay: batch 1 = full wire, batch wireDecayBatches+1 = 0 wire
-    const decayFactor = Math.max(0, Math.min(1, 1 - (batchNumber - 1) / wireDecayBatches));
+    const decayFactor = Math.pow(0.5, (batchNumber - 1) / halfLife);
     const decayedWire = Math.round(baseWire * decayFactor);
     const freed = baseWire - decayedWire;
 
-    if (freed === 0) return tierConfig;
+    if (freed === 0) return tierSlots;
 
-    // Distribute freed slots proportionally to non-wire tiers
-    const compassShare = Math.round(freed * compassAlloc / totalNonWire);
-    const libraryShare = Math.round(freed * libraryAlloc / totalNonWire);
-    // Scrapbook gets the remainder to avoid rounding drift
-    const scrapbookShare = freed - compassShare - libraryShare;
+    // Collect non-wire tiers and their current slots
+    const nonWire = [];
+    let totalNonWire = 0;
+    for (const tier of Object.values(TIERS)) {
+      if (tier === TIERS.WIRE) continue;
+      const slots = tierSlots.get(tier) || 0;
+      nonWire.push({ tier, slots });
+      totalNonWire += slots;
+    }
 
-    return {
-      ...tierConfig,
-      wire: {
-        ...tierConfig.wire,
-        allocation: decayedWire,
-      },
-      compass: {
-        ...tierConfig.compass,
-        allocation: compassAlloc + compassShare,
-      },
-      library: {
-        ...tierConfig.library,
-        allocation: libraryAlloc + libraryShare,
-      },
-      scrapbook: {
-        ...tierConfig.scrapbook,
-        allocation: scrapbookAlloc + scrapbookShare,
-      },
-    };
+    const result = new Map(tierSlots);
+    result.set(TIERS.WIRE, decayedWire);
+
+    if (totalNonWire > 0) {
+      let distributed = 0;
+      for (let i = 0; i < nonWire.length; i++) {
+        const { tier, slots } = nonWire[i];
+        // Last tier gets remainder to avoid rounding drift
+        const share = i === nonWire.length - 1
+          ? freed - distributed
+          : Math.round(freed * slots / totalNonWire);
+        result.set(tier, slots + share);
+        distributed += share;
+      }
+    }
+
+    return result;
   }
 
   // ======================================================================
@@ -312,26 +324,27 @@ export class TierAssemblyService {
   }
 
   /**
-   * Identify sources marked as filler (role: 'filler').
-   * Filler sources fill remaining slots after primary sources.
+   * Identify sources marked as filler.
+   * Detects both flex format (`flex: 'filler'`) and legacy (`role: 'filler'`).
    */
   #getFillerSources(sourcesConfig) {
     const fillers = new Set();
     if (!sourcesConfig) return fillers;
     for (const [key, cfg] of Object.entries(sourcesConfig)) {
-      if (cfg?.role === 'filler') fillers.add(key);
+      if (cfg?.role === 'filler' || cfg?.flex === 'filler') fillers.add(key);
     }
     return fillers;
   }
 
   /**
-   * Sum min_per_batch across all filler sources.
-   * Guarantees fillers always get at least this many slots.
+   * Sum min across all filler sources.
+   * Reads `min` (flex format) with fallback to `min_per_batch` (legacy format).
    */
   #getFillerMin(sourcesConfig, fillerSources) {
     let total = 0;
     for (const source of fillerSources) {
-      total += sourcesConfig[source]?.min_per_batch ?? 0;
+      const cfg = sourcesConfig[source];
+      total += cfg?.min ?? cfg?.min_per_batch ?? 0;
     }
     return total;
   }
@@ -387,14 +400,16 @@ export class TierAssemblyService {
   }
 
   /**
-   * Enforce per-source max_per_batch caps within a tier.
+   * Enforce per-source caps within a tier.
+   * Reads `max` (flex format) with fallback to `max_per_batch` (legacy format).
    */
   #applySourceCaps(items, sourcesConfig) {
     if (!sourcesConfig || Object.keys(sourcesConfig).length === 0) return items;
 
     const counts = {};
     return items.filter(item => {
-      const cap = sourcesConfig[item.source]?.max_per_batch;
+      const cfg = sourcesConfig[item.source];
+      const cap = cfg?.max ?? cfg?.max_per_batch;
       if (cap == null) return true;
       counts[item.source] = (counts[item.source] || 0) + 1;
       return counts[item.source] <= cap;

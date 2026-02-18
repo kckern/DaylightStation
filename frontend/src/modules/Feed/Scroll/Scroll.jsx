@@ -6,6 +6,7 @@ import DetailModal from './detail/DetailModal.jsx';
 import FeedPlayerMiniBar from './FeedPlayerMiniBar.jsx';
 import PersistentPlayer from './PersistentPlayer.jsx';
 import { usePlaybackObserver } from './hooks/usePlaybackObserver.js';
+import FeedAssemblyOverlay from './FeedAssemblyOverlay.jsx';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { feedLog } from './feedLog.js';
 import './Scroll.scss';
@@ -108,6 +109,7 @@ export default function Scroll() {
   const [activeMedia, setActiveMedia] = useState(null);
   const playerRef = useRef(null);
   const [colors, setColors] = useState({});
+  const [assemblyBatches, setAssemblyBatches] = useState([]);
   const savedScrollRef = useRef(0);
 
   const playback = usePlaybackObserver(playerRef, !!activeMedia);
@@ -161,6 +163,16 @@ export default function Scroll() {
 
       const incoming = result.items || [];
       if (result.colors) setColors(result.colors);
+
+      // Collect feed_assembly stats per batch
+      if (result.feed_assembly) {
+        feedLog.assembly('batch', result.feed_assembly);
+        if (append) {
+          setAssemblyBatches(prev => [...prev, result.feed_assembly]);
+        } else {
+          setAssemblyBatches([result.feed_assembly]);
+        }
+      }
 
       if (append) {
         const knownIds = new Set(itemsRef.current.map(i => i.id));
@@ -483,6 +495,7 @@ export default function Scroll() {
         contentId={activeMedia?.contentId || null}
         onEnd={handleClearMedia}
       />
+      <FeedAssemblyOverlay batches={assemblyBatches} />
     </div>
   );
 }

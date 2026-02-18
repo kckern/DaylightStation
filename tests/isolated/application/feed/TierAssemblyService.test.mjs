@@ -175,4 +175,158 @@ describe('TierAssemblyService', () => {
       expect(result.items.length).toBe(4);
     });
   });
+
+  describe('wire decay (half-life)', () => {
+    const decayConfig = {
+      batch_size: 50,
+      wire_decay_half_life: 2,
+      spacing: { max_consecutive: 1 },
+      tiers: {
+        wire: { flex: '1 0 auto', selection: { sort: 'timestamp_desc' }, sources: {} },
+        compass: { flex: '0 0 6', selection: { sort: 'priority' }, sources: {} },
+        scrapbook: { flex: '0 0 5', selection: { sort: 'random' }, sources: {} },
+        library: { flex: '0 0 5', selection: { sort: 'random' }, sources: {} },
+      },
+    };
+
+    const makeMany = (tier, source, count, priority = 0) =>
+      Array.from({ length: count }, (_, i) =>
+        makeItem(`${tier[0]}${i}`, tier, source, `2026-02-17T${String(10 - i).padStart(2, '0')}:00:00Z`, priority));
+
+    test('batch 1 has no decay (full wire)', () => {
+      const items = [
+        ...makeMany('wire', 'reddit', 40),
+        ...makeMany('compass', 'entropy', 10, 5),
+        ...makeMany('scrapbook', 'photos', 10),
+        ...makeMany('library', 'comics', 10),
+      ];
+      const result = service.assemble(items, decayConfig, { effectiveLimit: 50, batchNumber: 1 });
+      const wireCount = result.items.filter(i => i.tier === 'wire').length;
+      const nonWireCount = result.items.filter(i => i.tier !== 'wire').length;
+      // Batch 1: wire should dominate (~34 of 50)
+      expect(wireCount).toBeGreaterThan(nonWireCount);
+    });
+
+    test('batch 3 halves wire (half-life = 2)', () => {
+      const items = [
+        ...makeMany('wire', 'reddit', 40),
+        ...makeMany('compass', 'entropy', 10, 5),
+        ...makeMany('scrapbook', 'photos', 10),
+        ...makeMany('library', 'comics', 10),
+      ];
+      const result = service.assemble(items, decayConfig, { effectiveLimit: 50, batchNumber: 3 });
+      const wireCount = result.items.filter(i => i.tier === 'wire').length;
+      // Batch 3 with hl=2: decayFactor = 0.5^(2/2) = 0.5 → wire ~17
+      expect(wireCount).toBeLessThanOrEqual(20);
+      expect(wireCount).toBeGreaterThan(0);
+    });
+
+    test('later batches have progressively less wire', () => {
+      const items = [
+        ...makeMany('wire', 'reddit', 40),
+        ...makeMany('compass', 'entropy', 10, 5),
+        ...makeMany('scrapbook', 'photos', 10),
+        ...makeMany('library', 'comics', 10),
+      ];
+      const batch3 = service.assemble(items, decayConfig, { effectiveLimit: 50, batchNumber: 3 });
+      const batch7 = service.assemble(items, decayConfig, { effectiveLimit: 50, batchNumber: 7 });
+      const wire3 = batch3.items.filter(i => i.tier === 'wire').length;
+      const wire7 = batch7.items.filter(i => i.tier === 'wire').length;
+      expect(wire7).toBeLessThan(wire3);
+    });
+
+    test('freed wire slots go to non-wire tiers', () => {
+      const items = [
+        ...makeMany('wire', 'reddit', 40),
+        ...makeMany('compass', 'entropy', 20, 5),
+        ...makeMany('scrapbook', 'photos', 20),
+        ...makeMany('library', 'comics', 20),
+      ];
+      const batch1 = service.assemble(items, decayConfig, { effectiveLimit: 50, batchNumber: 1 });
+      const batch5 = service.assemble(items, decayConfig, { effectiveLimit: 50, batchNumber: 5 });
+      const nonWire1 = batch1.items.filter(i => i.tier !== 'wire').length;
+      const nonWire5 = batch5.items.filter(i => i.tier !== 'wire').length;
+      // Later batches should have more non-wire content
+      expect(nonWire5).toBeGreaterThan(nonWire1);
+    });
+  });
+
+  describe('feed_assembly stats', () => {
+    test('returns feed_assembly with tier counts and per-source breakdown', () => {
+      const items = [
+        makeItem('w1', 'wire', 'reddit', '2026-02-17T10:00:00Z'),
+        makeItem('w2', 'wire', 'reddit', '2026-02-17T09:30:00Z'),
+        makeItem('w3', 'wire', 'headlines', '2026-02-17T09:00:00Z'),
+        makeItem('c1', 'compass', 'entropy', '2026-02-17T08:00:00Z', 10),
+        makeItem('c2', 'compass', 'tasks', '2026-02-17T07:00:00Z', 5),
+        makeItem('l1', 'library', 'comics', '2026-02-17T06:00:00Z'),
+      ];
+      const result = service.assemble(items, defaultConfig, { effectiveLimit: 50 });
+
+      expect(result.feed_assembly).toBeDefined();
+      expect(result.feed_assembly.batchNumber).toBe(1);
+      expect(result.feed_assembly.wireDecayFactor).toBe(1);
+      expect(result.feed_assembly.tiers.wire).toEqual(expect.objectContaining({
+        selected: 3,
+        sources: { reddit: 2, headlines: 1 },
+      }));
+      expect(result.feed_assembly.tiers.compass).toEqual(expect.objectContaining({
+        selected: 2,
+        sources: { entropy: 1, tasks: 1 },
+      }));
+      expect(result.feed_assembly.tiers.library).toEqual(expect.objectContaining({
+        selected: 1,
+        sources: { comics: 1 },
+      }));
+    });
+  });
+
+  describe('source caps and filler (flex format)', () => {
+    test('respects max key from flex config', () => {
+      const config = {
+        batch_size: 50,
+        spacing: { max_consecutive: 1 },
+        tiers: {
+          wire: {
+            flex: '1 0 auto',
+            selection: { sort: 'timestamp_desc' },
+            sources: {
+              reddit: { max: 3 },
+            },
+          },
+        },
+      };
+      const items = Array.from({ length: 10 }, (_, i) =>
+        makeItem(`w${i}`, 'wire', 'reddit', `2026-02-17T${String(10 - i).padStart(2, '0')}:00:00Z`));
+      const result = service.assemble(items, config, { effectiveLimit: 50 });
+      expect(result.items.length).toBe(3);
+    });
+
+    test('detects filler from flex: filler', () => {
+      const config = {
+        batch_size: 50,
+        spacing: { max_consecutive: 1 },
+        tiers: {
+          wire: {
+            flex: '1 0 auto',
+            selection: { sort: 'timestamp_desc' },
+            sources: {
+              reddit: { flex: 'dominant', max: 5 },
+              news: { flex: 'filler', min: 2 },
+            },
+          },
+        },
+      };
+      const items = [
+        ...Array.from({ length: 8 }, (_, i) =>
+          makeItem(`r${i}`, 'wire', 'reddit', `2026-02-17T10:${String(59 - i).padStart(2, '0')}:00Z`)),
+        ...Array.from({ length: 5 }, (_, i) =>
+          makeItem(`n${i}`, 'wire', 'news', `2026-02-17T09:${String(59 - i).padStart(2, '0')}:00Z`)),
+      ];
+      const result = service.assemble(items, config, { effectiveLimit: 50 });
+      const newsItems = result.items.filter(i => i.source === 'news');
+      // Filler min: 2 guaranteed
+      expect(newsItems.length).toBeGreaterThanOrEqual(2);
+    });
+  });
 });

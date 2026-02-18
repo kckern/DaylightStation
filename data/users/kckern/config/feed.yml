@@ -336,6 +336,7 @@ reddit:
       niche: keys+oldinternet
 scroll:
   batch_size: 50
+  wire_decay_half_life: 2
   spacing:
     max_consecutive: 1
   tiers:

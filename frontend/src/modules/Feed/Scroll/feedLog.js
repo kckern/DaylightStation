@@ -8,7 +8,7 @@
  * Categories: scroll, image, player, dismiss, detail, nav
  */
 
-const CATEGORIES = ['scroll', 'image', 'player', 'dismiss', 'detail', 'nav'];
+const CATEGORIES = ['scroll', 'image', 'player', 'dismiss', 'detail', 'nav', 'assembly'];
 
 function getFilter() {
   try {
@@ -27,10 +27,11 @@ function log(category, ...args) {
 }
 
 export const feedLog = {
-  scroll: (...args) => log('scroll', ...args),
-  image:  (...args) => log('image', ...args),
-  player: (...args) => log('player', ...args),
-  dismiss:(...args) => log('dismiss', ...args),
-  detail: (...args) => log('detail', ...args),
-  nav:    (...args) => log('nav', ...args),
+  scroll:   (...args) => log('scroll', ...args),
+  image:    (...args) => log('image', ...args),
+  player:   (...args) => log('player', ...args),
+  dismiss:  (...args) => log('dismiss', ...args),
+  detail:   (...args) => log('detail', ...args),
+  nav:      (...args) => log('nav', ...args),
+  assembly: (...args) => log('assembly', ...args),
 };
