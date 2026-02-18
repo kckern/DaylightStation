@@ -42,10 +42,10 @@ describe('FreshRSSSourceAdapter', () => {
   });
 
   describe('fetchPage — two-pass prioritization', () => {
-    const makeItem = (id, title) => ({
+    const makeItem = (id, title, feedId = 'feed/1', feedTitle = 'Test Feed') => ({
       id, title, content: '', link: `https://example.com/${id}`,
       published: new Date('2026-02-18T12:00:00Z'), author: null,
-      feedTitle: 'Test Feed', feedId: 'feed/1', categories: [],
+      feedTitle, feedId, categories: [],
     });
 
     test('returns unread items first, then read items shuffled', async () => {
@@ -71,10 +71,10 @@ describe('FreshRSSSourceAdapter', () => {
       expect(readItems.map(i => i.title).sort()).toEqual(['Read 1', 'Read 2']);
     });
 
-    test('makes only one call when unread fills the limit', async () => {
+    test('skips pass 2 when capped unread fills totalLimit', async () => {
       const mockConfigService = {
         getAppConfig: jest.fn().mockReturnValue({
-          reader: { unread_per_source: 20, total_limit: 20 },
+          reader: { unread_per_source: 6, total_limit: 6, max_unread_per_feed: 3 },
         }),
       };
       const limitedAdapter = new FreshRSSSourceAdapter({
@@ -82,15 +82,19 @@ describe('FreshRSSSourceAdapter', () => {
         configService: mockConfigService,
       });
 
-      const unreadItems = Array.from({ length: 20 }, (_, i) => makeItem(`u${i}`, `Unread ${i}`));
+      // 3 feeds × 4 items each = 12 unread, but cap at 3/feed → 9, totalLimit 6 → 6
+      const unreadItems = [
+        ...Array.from({ length: 4 }, (_, i) => makeItem(`a${i}`, `A #${i}`, 'feed/a', 'A')),
+        ...Array.from({ length: 4 }, (_, i) => makeItem(`b${i}`, `B #${i}`, 'feed/b', 'B')),
+        ...Array.from({ length: 4 }, (_, i) => makeItem(`c${i}`, `C #${i}`, 'feed/c', 'C')),
+      ];
       mockFreshRSSAdapter.getItems.mockResolvedValueOnce({ items: unreadItems, continuation: 'more' });
 
-      const query = { tier: 'wire', limit: 20 };
-      const result = await limitedAdapter.fetchPage(query, 'kckern', {});
+      const result = await limitedAdapter.fetchPage({ tier: 'wire' }, 'kckern', {});
 
-      // Only one getItems call (unread pass), no second call needed
+      // Capped: 3+3+3=9 >= totalLimit 6, so pass 2 skipped
       expect(mockFreshRSSAdapter.getItems).toHaveBeenCalledTimes(1);
-      expect(result.items).toHaveLength(20);
+      expect(result.items).toHaveLength(6);
       expect(result.items.every(i => i.meta.isRead === false)).toBe(true);
     });
 
@@ -122,10 +126,46 @@ describe('FreshRSSSourceAdapter', () => {
       );
     });
 
+    test('caps unread items per feed to prevent one feed from dominating', async () => {
+      const mockConfigService = {
+        getAppConfig: jest.fn().mockReturnValue({
+          reader: { unread_per_source: 20, total_limit: 100, max_unread_per_feed: 2 },
+        }),
+      };
+      const cappedAdapter = new FreshRSSSourceAdapter({
+        freshRSSAdapter: mockFreshRSSAdapter,
+        configService: mockConfigService,
+      });
+
+      // Feed A has 10 unread items, Feed B has 3, Feed C has 2
+      const unreadItems = [
+        ...Array.from({ length: 10 }, (_, i) => makeItem(`a${i}`, `Feed A #${i}`, 'feed/a', 'Feed A')),
+        ...Array.from({ length: 3 }, (_, i) => makeItem(`b${i}`, `Feed B #${i}`, 'feed/b', 'Feed B')),
+        ...Array.from({ length: 2 }, (_, i) => makeItem(`c${i}`, `Feed C #${i}`, 'feed/c', 'Feed C')),
+      ];
+
+      mockFreshRSSAdapter.getItems
+        .mockResolvedValueOnce({ items: unreadItems, continuation: null })  // pass 1
+        .mockResolvedValueOnce({ items: [], continuation: null });          // pass 2
+
+      const result = await cappedAdapter.fetchPage({ tier: 'wire' }, 'kckern', {});
+      const unread = result.items.filter(i => !i.meta.isRead);
+
+      // Feed A capped at 2 (not 10), Feed B capped at 2 (of 3), Feed C has 2
+      const feedACounts = unread.filter(i => i.meta.feedTitle === 'Feed A');
+      const feedBCounts = unread.filter(i => i.meta.feedTitle === 'Feed B');
+      const feedCCounts = unread.filter(i => i.meta.feedTitle === 'Feed C');
+
+      expect(feedACounts).toHaveLength(2);
+      expect(feedBCounts).toHaveLength(2);
+      expect(feedCCounts).toHaveLength(2);
+      expect(unread).toHaveLength(6);
+    });
+
     test('reads limits from configService when provided', async () => {
       const mockConfigService = {
         getAppConfig: jest.fn().mockReturnValue({
-          reader: { unread_per_source: 5, total_limit: 10 },
+          reader: { unread_per_source: 5, total_limit: 10, max_unread_per_feed: 2 },
         }),
       };
       const configuredAdapter = new FreshRSSSourceAdapter({
@@ -136,10 +176,11 @@ describe('FreshRSSSourceAdapter', () => {
       mockFreshRSSAdapter.getItems.mockResolvedValueOnce({ items: [], continuation: null });
       await configuredAdapter.fetchPage({ tier: 'wire' }, 'kckern', {});
 
+      // Over-fetches using totalLimit (10) when max_unread_per_feed is set
       expect(mockFreshRSSAdapter.getItems).toHaveBeenCalledWith(
         'user/-/state/com.google/reading-list',
         'kckern',
-        expect.objectContaining({ count: 5 }), // unread_per_source
+        expect.objectContaining({ count: 10, excludeRead: true }),
       );
     });
   });
