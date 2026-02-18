@@ -75,6 +75,7 @@ export class PlexFeedAdapter extends IFeedSourceAdapter {
         timestamp: item.metadata?.addedAt || new Date().toISOString(),
         priority: query.priority || 5,
         meta: {
+          playable: true,
           type: item.type || item.metadata?.type,
           year: item.year || item.metadata?.year,
           sourceName: 'Plex',
@@ -155,6 +156,7 @@ export class PlexFeedAdapter extends IFeedSourceAdapter {
         timestamp: item.metadata?.addedAt || new Date().toISOString(),
         priority: query.priority || 5,
         meta: {
+          playable: true,
           type: item.type || item.metadata?.type,
           year: item.year || item.metadata?.year,
           sourceName: 'Plex',

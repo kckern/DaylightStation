@@ -172,6 +172,7 @@ export class YouTubeFeedAdapter extends IFeedSourceAdapter {
         timestamp: published || new Date().toISOString(),
         priority: query.priority || 0,
         meta: {
+          playable: true,
           channelName: channelName || 'YouTube',
           channelId: chId,
           videoId,
@@ -238,6 +239,7 @@ export class YouTubeFeedAdapter extends IFeedSourceAdapter {
           timestamp: snippet.publishedAt || new Date().toISOString(),
           priority: query.priority || 0,
           meta: {
+            playable: true,
             channelName: snippet.channelTitle,
             channelId: snippet.channelId,
             videoId,

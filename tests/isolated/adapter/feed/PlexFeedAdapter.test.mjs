@@ -117,8 +117,7 @@ describe('PlexFeedAdapter', () => {
       const result = await adapter.fetchItems(query, 'testuser');
       expect(mockGetList).toHaveBeenCalledWith('99999');
       expect(result).toHaveLength(1);
-      // Old behavior: no playable flag
-      expect(result[0].meta.playable).toBeUndefined();
+      expect(result[0].meta.playable).toBe(true);
     });
 
     test('filters unwatched items when unwatched=true', async () => {
