@@ -50,9 +50,22 @@ export default function ArticleRow({ article, onMarkRead }) {
 
   const primaryTag = article.tags?.[0];
 
+  // Strip emojis from preview text
+  const cleanPreview = (article.preview || '').replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, '').replace(/\s+/g, ' ').trim();
+
+  // Favicon from Google CDN based on article link domain
+  const faviconUrl = article.link ? `https://www.google.com/s2/favicons?sz=16&domain=${new URL(article.link).hostname}` : null;
+
   return (
     <div className={`article-row ${expanded ? 'expanded' : ''} ${article.isRead ? 'read' : 'unread'}`}>
       <button className="article-row-header" onClick={handleExpand}>
+        {faviconUrl && (
+          <img className="article-favicon" src={faviconUrl} alt="" width="16" height="16" />
+        )}
+        <span className="article-title">{article.title}</span>
+        {!expanded && (
+          <span className="article-preview">{cleanPreview}</span>
+        )}
         {primaryTag && (
           <span
             className="article-tag"
@@ -60,10 +73,6 @@ export default function ArticleRow({ article, onMarkRead }) {
           >
             {primaryTag}
           </span>
-        )}
-        <span className="article-title">{article.title}</span>
-        {!expanded && (
-          <span className="article-preview">{article.preview}</span>
         )}
         <span className="article-time">{formatTime(article.published)}</span>
       </button>
@@ -79,7 +88,7 @@ export default function ArticleRow({ article, onMarkRead }) {
           </div>
           <div
             ref={contentRef}
-            className={`article-content ${fullHeight ? 'full' : ''}`}
+            className={`article-content ${fullHeight ? 'full' : ''} ${overflows && !fullHeight ? 'capped' : ''}`}
             dangerouslySetInnerHTML={{ __html: article.content }}
           />
           {overflows && !fullHeight && (
