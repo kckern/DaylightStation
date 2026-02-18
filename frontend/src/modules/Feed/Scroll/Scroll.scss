@@ -232,6 +232,14 @@
   text-overflow: ellipsis;
 }
 
+.feed-mini-bar-time {
+  font-size: 0.6rem;
+  color: #5c636a;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .feed-mini-bar-toggle {
   background: none;
   border: none;
@@ -267,6 +275,7 @@
   order: 99;
   flex-basis: 100%;
   margin-top: 0.25rem;
+  cursor: pointer;
 }
 
 .feed-mini-bar-progress-fill {
