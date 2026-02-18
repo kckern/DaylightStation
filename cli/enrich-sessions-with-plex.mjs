@@ -113,16 +113,62 @@ function getAllSessions() {
 }
 
 // ------------------------------------------------------------------
+// Build strava archive index: activityId -> { startMs, durationSeconds }
+// Session files may have wrong timestamps (timezone bug in reconstruct),
+// so we use the archive's UTC start_date as ground truth.
+// ------------------------------------------------------------------
+const stravaLifelogDir = path.join(dataDir, 'users', 'kckern', 'lifelog', 'strava');
+const olderArchiveDir = path.join(baseDir, 'media', 'archives', 'strava');
+
+function buildStravaIndex() {
+  const index = new Map(); // activityId -> { startMs, durationSeconds }
+
+  for (const dir of [stravaLifelogDir, olderArchiveDir]) {
+    if (!existsSync(dir)) continue;
+    for (const file of readdirSync(dir).filter(f => f.endsWith('.yml'))) {
+      const archive = loadYamlSafe(path.join(dir, file));
+      if (!archive?.data) continue;
+
+      const activityId = String(archive.data.id || archive.id);
+      if (index.has(activityId)) continue;
+
+      const startDate = archive.data.start_date; // UTC ISO string
+      if (!startDate) continue;
+
+      const startMs = moment.utc(startDate).valueOf();
+      const duration = archive.data.moving_time || archive.data.elapsed_time || 1800;
+      index.set(activityId, { startMs, durationSeconds: duration });
+    }
+  }
+
+  console.log(`Strava archive index: ${index.size} activities\n`);
+  return index;
+}
+
+// ------------------------------------------------------------------
 // Match plays to a session window
 // ------------------------------------------------------------------
-function findPlaysForSession(session, plexPlays) {
-  const startStr = session.session?.start;
-  const endStr = session.session?.end;
-  if (!startStr || !endStr) return [];
+function findPlaysForSession(session, plexPlays, stravaIndex) {
+  // Get real UTC start time from strava archive via activityId
+  const activityId = String(
+    session.participants?.kckern?.strava?.activityId || ''
+  );
+  const archiveInfo = stravaIndex.get(activityId);
 
-  const tz = session.timezone || TIMEZONE;
-  const startMs = moment.tz(startStr, 'YYYY-MM-DD HH:mm:ss.SSS', tz).valueOf();
-  const endMs = moment.tz(endStr, 'YYYY-MM-DD HH:mm:ss.SSS', tz).valueOf();
+  let startMs, endMs;
+  if (archiveInfo) {
+    // Use strava archive's UTC start_date (ground truth)
+    startMs = archiveInfo.startMs;
+    endMs = startMs + archiveInfo.durationSeconds * 1000;
+  } else {
+    // Fallback: session file timestamps (may be wrong for non-PST activities)
+    const startStr = session.session?.start;
+    const endStr = session.session?.end;
+    if (!startStr || !endStr) return [];
+    const tz = session.timezone || TIMEZONE;
+    startMs = moment.tz(startStr, 'YYYY-MM-DD HH:mm:ss.SSS', tz).valueOf();
+    endMs = moment.tz(endStr, 'YYYY-MM-DD HH:mm:ss.SSS', tz).valueOf();
+  }
 
   // Window: 5 min before session start to 5 min after session end
   const windowStart = startMs - 5 * 60 * 1000;
@@ -144,7 +190,6 @@ function findPlaysForSession(session, plexPlays) {
     if (group.length <= 5) {
       realPlays.push(...group);
     }
-    // else: batch operation, discard entire cluster
   }
 
   return realPlays;
@@ -154,6 +199,7 @@ function findPlaysForSession(session, plexPlays) {
 // Main
 // ------------------------------------------------------------------
 const plexPlays = await fetchPlexHistory();
+const stravaIndex = buildStravaIndex();
 const sessionEntries = getAllSessions();
 
 console.log(`Sessions on disk: ${sessionEntries.length}\n`);
@@ -175,7 +221,7 @@ for (const entry of sessionEntries) {
   }
 
   // Find matching Plex plays
-  const matchedPlays = findPlaysForSession(session, plexPlays);
+  const matchedPlays = findPlaysForSession(session, plexPlays, stravaIndex);
   if (matchedPlays.length === 0) {
     skippedNoMatch++;
     continue;
