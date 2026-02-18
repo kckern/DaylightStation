@@ -109,8 +109,19 @@ export class HeadlineService {
         // Strip generic placeholder images from RSS harvest
         this.#stripGenericImages(result.items);
 
-        // Enrich new imageless items with og:image
+        // Guard: never overwrite a populated cache with an empty harvest
         const cached = await this.#headlineStore.loadSource(source.id, username);
+        if ((!result.items || result.items.length === 0) && cached?.items?.length > 0) {
+          this.#logger.warn?.('headline.service.harvest.empty_guard', {
+            source: source.id,
+            cachedItems: cached.items.length,
+            msg: 'Harvest returned empty — keeping existing cache',
+          });
+          errors++;
+          continue;
+        }
+
+        // Enrich new imageless items with og:image
         const existingIds = new Set((cached?.items || []).map(i => i.id));
         await this.#enrichImages(result.items, existingIds);
 
@@ -323,8 +334,18 @@ export class HeadlineService {
     // Strip generic placeholder images from RSS harvest
     this.#stripGenericImages(result.items);
 
-    // Enrich new imageless items with og:image
+    // Guard: never overwrite a populated cache with an empty harvest
     const cached = await this.#headlineStore.loadSource(source.id, username);
+    if ((!result.items || result.items.length === 0) && cached?.items?.length > 0) {
+      this.#logger.warn?.('headline.service.harvest.empty_guard', {
+        source: sourceId,
+        cachedItems: cached.items.length,
+        msg: 'Harvest returned empty — keeping existing cache',
+      });
+      return { items: 0, error: true };
+    }
+
+    // Enrich new imageless items with og:image
     const existingIds = new Set((cached?.items || []).map(i => i.id));
     await this.#enrichImages(result.items, existingIds);
 

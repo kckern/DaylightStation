@@ -21,6 +21,12 @@
     color: #fab005;
     border-color: #fab005;
   }
+
+  &--filtering {
+    opacity: 0.85;
+    color: #fab005;
+    border-color: #fab005;
+  }
 }
 
 .assembly-overlay {
@@ -123,8 +129,11 @@
 
 .assembly-tier {
   margin-bottom: 6px;
+  transition: opacity 0.15s;
 
   &:last-child { margin-bottom: 0; }
+
+  &--dimmed { opacity: 0.35; }
 }
 
 .assembly-tier-header {
@@ -138,6 +147,22 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.03em;
+
+  &--clickable {
+    cursor: pointer;
+    border-radius: 3px;
+    padding: 0 4px;
+    margin: -0 -4px;
+    transition: background 0.1s;
+
+    &:hover { background: rgba(255, 255, 255, 0.08); }
+  }
+
+  &--active {
+    background: rgba(255, 255, 255, 0.12);
+    outline: 1px solid currentColor;
+    outline-offset: 1px;
+  }
 }
 
 .assembly-tier-count {
@@ -172,9 +197,35 @@
   background: #1a1b1e;
   border-radius: 4px;
   padding: 1px 6px;
+  transition: opacity 0.15s, outline-color 0.1s;
 
   strong {
     color: #c1c2c5;
     margin-left: 2px;
   }
+
+  &--clickable {
+    cursor: pointer;
+
+    &:hover { background: #2c2e33; }
+  }
+
+  &--active {
+    outline: 1px solid #c1c2c5;
+    background: #2c2e33;
+  }
+
+  &--dimmed { opacity: 0.35; }
+}
+
+.assembly-clear-btn {
+  background: none;
+  border: 1px solid #e03131;
+  border-radius: 6px;
+  color: #e03131;
+  font-size: 0.65rem;
+  padding: 3px 8px;
+  cursor: pointer;
+
+  &:hover { background: rgba(224, 49, 49, 0.12); }
 }
