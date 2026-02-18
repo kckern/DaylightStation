@@ -52,16 +52,7 @@
     border: none;
   }
 
-  .scroll-items {
-    display: block;
-    column-width: 320px;
-    column-gap: 16px;
-  }
-
   .scroll-item-wrapper {
-    break-inside: avoid;
-    margin-bottom: 16px;
-
     .feed-card {
       border-radius: 12px !important;
     }
@@ -84,14 +75,14 @@
   }
 
   .scroll-skeleton {
-    display: block;
-    column-width: 320px;
-    column-gap: 16px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
   }
 
   .scroll-skeleton-card {
-    break-inside: avoid;
-    margin-bottom: 16px;
+    width: 320px;
+    flex-shrink: 0;
 
     &:nth-child(odd) { height: 200px; }
     &:nth-child(even) { height: 160px; }

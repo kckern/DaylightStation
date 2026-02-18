@@ -8,7 +8,7 @@
  * Categories: scroll, image, player, dismiss, detail, nav
  */
 
-const CATEGORIES = ['scroll', 'image', 'player', 'dismiss', 'detail', 'nav', 'assembly'];
+const CATEGORIES = ['scroll', 'image', 'player', 'dismiss', 'detail', 'nav', 'assembly', 'masonry'];
 
 function getFilter() {
   try {
@@ -34,4 +34,5 @@ export const feedLog = {
   detail:   (...args) => log('detail', ...args),
   nav:      (...args) => log('nav', ...args),
   assembly: (...args) => log('assembly', ...args),
+  masonry:  (...args) => log('masonry', ...args),
 };
