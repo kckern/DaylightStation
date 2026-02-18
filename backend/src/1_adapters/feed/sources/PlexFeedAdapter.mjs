@@ -74,26 +74,49 @@ export class PlexFeedAdapter extends IFeedSourceAdapter {
   async #fetchWeightedChildren(plexAdapter, query) {
     const entries = query.params.parentIds;
     if (!entries.length) return [];
+
+    const limit = query.limit || 3;
     const totalWeight = entries.reduce((sum, e) => sum + (e.weight || 1), 0);
-    let roll = Math.random() * totalWeight;
-    let selectedId = entries[0].id;
-    for (const entry of entries) {
-      roll -= (entry.weight || 1);
-      if (roll <= 0) { selectedId = entry.id; break; }
+
+    // Fetch from ALL parents, distributing limit proportionally by weight
+    const results = await Promise.allSettled(
+      entries.map(async entry => {
+        const share = Math.max(1, Math.round(limit * (entry.weight || 1) / totalWeight));
+        const items = await plexAdapter.getList(String(entry.id));
+        let filtered = items || [];
+
+        if (query.params?.unwatched) {
+          filtered = filtered.filter(item => {
+            const vc = item.metadata?.viewCount ?? item.viewCount ?? 0;
+            return vc === 0;
+          });
+        }
+
+        // Shuffle within this parent's items
+        for (let i = filtered.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [filtered[i], filtered[j]] = [filtered[j], filtered[i]];
+        }
+
+        return filtered.slice(0, share);
+      })
+    );
+
+    // Collect all items, interleave across parents
+    const allItems = [];
+    for (const result of results) {
+      if (result.status === 'fulfilled') {
+        allItems.push(...result.value);
+      }
     }
 
-    const items = await plexAdapter.getList(String(selectedId));
-    let filtered = items || [];
-
-    if (query.params?.unwatched) {
-      filtered = filtered.filter(item => {
-        const vc = item.metadata?.viewCount ?? item.viewCount ?? 0;
-        return vc === 0;
-      });
+    // Shuffle across parents and cap
+    for (let i = allItems.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [allItems[i], allItems[j]] = [allItems[j], allItems[i]];
     }
 
-    filtered.sort(() => Math.random() - 0.5);
-    return this.#mapItemsWithDims(filtered.slice(0, query.limit || 3), query, 'library');
+    return this.#mapItemsWithDims(allItems.slice(0, limit), query, 'library');
   }
 
   async #fetchSearch(query) {

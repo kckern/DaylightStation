@@ -60,17 +60,19 @@ export class KomgaFeedAdapter extends IFeedSourceAdapter {
     const seriesList = query.params?.series;
     if (!Array.isArray(seriesList) || seriesList.length === 0) return [];
 
+    const limit = query.limit || 1;
     const recentCount = query.params?.recent_issues || 6;
-    const items = [];
+    const perSeries = Math.ceil(limit / seriesList.length);
 
-    // Fetch 1 random article per series (in parallel)
+    // Fetch multiple articles per series (in parallel)
     const results = await Promise.allSettled(
-      seriesList.map(series => this.#fetchOneSeries(series, recentCount, query))
+      seriesList.map(series => this.#fetchFromSeries(series, recentCount, perSeries, query))
     );
 
+    const items = [];
     for (let i = 0; i < results.length; i++) {
-      if (results[i].status === 'fulfilled' && results[i].value) {
-        items.push(results[i].value);
+      if (results[i].status === 'fulfilled') {
+        items.push(...results[i].value);
       } else if (results[i].status === 'rejected') {
         this.#logger.warn?.('komga.adapter.series.error', {
           seriesId: seriesList[i].id,
@@ -79,17 +81,23 @@ export class KomgaFeedAdapter extends IFeedSourceAdapter {
       }
     }
 
-    return items;
+    // Shuffle across series and cap
+    for (let i = items.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [items[i], items[j]] = [items[j], items[i]];
+    }
+    return items.slice(0, limit);
   }
 
   /**
-   * Fetch a single random article from one series.
+   * Fetch multiple articles from one series across its recent issues.
    * @param {Object} series - { id, label }
    * @param {number} recentCount - How many recent issues to consider
+   * @param {number} count - Target number of articles
    * @param {Object} query - Query config for tier/priority
-   * @returns {Promise<Object|null>} A single FeedItem or null
+   * @returns {Promise<Object[]>} FeedItem array
    */
-  async #fetchOneSeries(series, recentCount, query) {
+  async #fetchFromSeries(series, recentCount, count, query) {
     let booksData;
     try {
       booksData = await this.#client.getBooks(series.id, {
@@ -98,54 +106,70 @@ export class KomgaFeedAdapter extends IFeedSourceAdapter {
       });
     } catch (err) {
       this.#logger.warn?.('komga.adapter.books.error', { seriesId: series.id, error: err.message });
-      return null;
+      return [];
     }
 
     const books = booksData?.content || [];
-    if (books.length === 0) return null;
+    if (books.length === 0) return [];
 
-    // Pick a random issue from the recent batch
-    const book = books[Math.floor(Math.random() * books.length)];
-    const bookId = book.id;
-    const bookTitle = book.metadata?.title || book.name || 'Issue';
-    const pageCount = book.media?.pagesCount || 0;
-
-    // Extract TOC (cached)
-    const toc = await this.#getToc(bookId, series.label, bookTitle, pageCount);
-
-    // Pick a random article from the TOC (redflags filter junk titles)
     const redflags = (query.params?.redflags || []).map(p => new RegExp(p, 'i'));
-    const article = this.#pickArticle(toc, pageCount, redflags);
-    if (!article) return null;
+    const items = [];
 
-    const offset = toc.tocPageOffset || 0;
-    const pageNum = article.page + offset;
-    const imageUrl = `/api/v1/proxy/komga/composite/${bookId}/${pageNum}`;
-    const readerLink = this.#webUrl ? `${this.#webUrl}/book/${bookId}/read?page=${pageNum}` : null;
+    // Shuffle issues to randomize selection across the recent batch
+    const shuffledBooks = [...books];
+    for (let i = shuffledBooks.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffledBooks[i], shuffledBooks[j]] = [shuffledBooks[j], shuffledBooks[i]];
+    }
 
-    return {
-      id: `komga:${bookId}:${pageNum}`,
-      tier: query.tier || 'library',
-      source: 'komga',
-      title: article.title,
-      body: `${series.label} — ${bookTitle}`,
-      image: imageUrl,
-      link: readerLink,
-      timestamp: book.metadata?.releaseDate || book.created || new Date().toISOString(),
-      priority: query.priority || 5,
-      meta: {
-        bookId,
-        page: pageNum,
-        seriesId: series.id,
-        seriesLabel: series.label,
-        issueTitle: bookTitle,
-        pageCount,
-        imageWidth: 1280,
-        imageHeight: 720,
-        sourceName: 'Komga',
-        sourceIcon: null,
-      },
-    };
+    // Walk issues, collecting articles until we have enough
+    for (const book of shuffledBooks) {
+      if (items.length >= count) break;
+
+      const bookId = book.id;
+      const bookTitle = book.metadata?.title || book.name || 'Issue';
+      const pageCount = book.media?.pagesCount || 0;
+
+      const toc = await this.#getToc(bookId, series.label, bookTitle, pageCount);
+      const goodArticles = this.#getGoodArticles(toc, pageCount, redflags);
+
+      // Shuffle articles within issue
+      for (let i = goodArticles.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [goodArticles[i], goodArticles[j]] = [goodArticles[j], goodArticles[i]];
+      }
+
+      for (const article of goodArticles) {
+        if (items.length >= count) break;
+        const offset = toc.tocPageOffset || 0;
+        const pageNum = article.page + offset;
+        items.push({
+          id: `komga:${bookId}:${pageNum}`,
+          tier: query.tier || 'library',
+          source: 'komga',
+          title: article.title,
+          body: `${series.label} — ${bookTitle}`,
+          image: `/api/v1/proxy/komga/composite/${bookId}/${pageNum}`,
+          link: this.#webUrl ? `${this.#webUrl}/book/${bookId}/read?page=${pageNum}` : null,
+          timestamp: book.metadata?.releaseDate || book.created || new Date().toISOString(),
+          priority: query.priority || 5,
+          meta: {
+            bookId,
+            page: pageNum,
+            seriesId: series.id,
+            seriesLabel: series.label,
+            issueTitle: bookTitle,
+            pageCount,
+            imageWidth: 1280,
+            imageHeight: 720,
+            sourceName: 'Komga',
+            sourceIcon: null,
+          },
+        });
+      }
+    }
+
+    return items;
   }
 
   /**
@@ -386,6 +410,37 @@ export class KomgaFeedAdapter extends IFeedSourceAdapter {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Get all good (non-redflag) articles from a TOC, with fallback to
+   * redflag page indices or random pages.
+   *
+   * @param {Object} toc - TOC object with articles array
+   * @param {number} pageCount - Total pages in the book
+   * @param {RegExp[]} redflags - Patterns that indicate junk bookmark titles
+   * @returns {Array<{title: string, page: number}>}
+   */
+  #getGoodArticles(toc, pageCount, redflags = []) {
+    const articles = toc?.articles || [];
+    if (articles.length > 0) {
+      const good = redflags.length > 0
+        ? articles.filter(a => !redflags.some(rx => rx.test(a.title)))
+        : articles;
+      if (good.length > 0) return good;
+      // All articles are junk — page indices are still useful
+      return articles.map(a => ({ title: `p. ${a.page}`, page: a.page }));
+    }
+    // No TOC — generate a handful of random pages from the middle 70%
+    if (pageCount <= 0) return [];
+    const start = Math.floor(pageCount * 0.15) + 1;
+    const end = Math.floor(pageCount * 0.85);
+    if (start >= end) return [{ title: 'Page', page: 1 }];
+    const pages = [];
+    for (let p = start; p < end; p += Math.max(1, Math.floor((end - start) / 5))) {
+      pages.push({ title: `p. ${p}`, page: p });
+    }
+    return pages;
   }
 
   /**

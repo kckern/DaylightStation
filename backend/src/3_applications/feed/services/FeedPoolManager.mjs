@@ -54,6 +54,7 @@ export class FeedPoolManager {
 
   static #REFILL_THRESHOLD_MULTIPLIER = 2;
   static #MAX_SEEN_ITEMS = 500;
+  static #SOURCE_TIMEOUT_MS = 20_000;
 
   /**
    * @param {Object} deps
@@ -214,11 +215,15 @@ export class FeedPoolManager {
 
   async #initializePool(username, scrollConfig, { stripLimits = false } = {}) {
     let queries = this.#filterQueries(scrollConfig, username);
-    if (stripLimits) {
-      queries = queries.map(q => ({ ...q, limit: 10000 }));
-    }
+    // Drive pool depth from batch_size — don't rely on hardcoded YAML limits.
+    // Each query gets batch_size as its limit so the pool can fill any allocation.
+    const poolLimit = stripLimits ? 10000 : (scrollConfig.batch_size || 50);
+    queries = queries.map(q => ({ ...q, limit: q.limit || poolLimit }));
     const results = await Promise.allSettled(
-      queries.map(query => this.#fetchSourcePage(query, username, scrollConfig, undefined, { noCache: stripLimits }))
+      queries.map(query => FeedPoolManager.#withTimeout(
+        this.#fetchSourcePage(query, username, scrollConfig, undefined, { noCache: stripLimits }),
+        FeedPoolManager.#SOURCE_TIMEOUT_MS,
+      ))
     );
 
     const allItems = [];
@@ -439,6 +444,13 @@ export class FeedPoolManager {
       const key = query._filename?.replace('.yml', '');
       return key && enabledSources.has(key);
     });
+  }
+
+  static #withTimeout(promise, ms) {
+    return Promise.race([
+      promise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error(`Source fetch timed out after ${ms}ms`)), ms)),
+    ]);
   }
 
 }
