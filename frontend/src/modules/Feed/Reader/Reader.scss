@@ -5,7 +5,8 @@
 .reader-view {
   display: grid;
   grid-template-columns: 220px 1fr;
-  height: calc(100vh - 42px);
+  height: 100%;
+  overflow: hidden;
 }
 
 // ---- Sidebar ----
@@ -26,28 +27,53 @@
   letter-spacing: 0.05em;
 }
 
+.reader-view-all {
+  display: block;
+  width: calc(100% - 1rem);
+  margin: 0.25rem 0.5rem;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid #d0ebff;
+  border-radius: 4px;
+  background: #e7f5ff;
+  color: #1971c2;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: center;
+
+  &:hover { background: #d0ebff; }
+}
+
 .reader-category-header {
   display: flex;
   align-items: center;
   gap: 0.25rem;
   width: 100%;
   padding: 0.3rem 1rem;
-  border: none;
-  background: none;
-  text-align: left;
   font-size: 0.8rem;
   font-weight: 600;
   color: #555;
-  cursor: pointer;
 
-  &:hover { background: #e9ecef; }
+  &.active {
+    background: #d0ebff;
+    color: #1971c2;
+  }
 }
 
 .reader-category-arrow {
   display: inline-block;
   font-size: 0.6rem;
+  cursor: pointer;
+  padding: 0.2rem;
   transition: transform 0.15s;
   &.collapsed { transform: rotate(-90deg); }
+  &:hover { color: #228be6; }
+}
+
+.reader-category-label {
+  cursor: pointer;
+  flex: 1;
+  &:hover { color: #228be6; }
 }
 
 .reader-feed-item {
@@ -89,6 +115,9 @@
   position: sticky;
   top: 0;
   z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
   padding: 0.35rem 1rem;
   font-size: 0.7rem;
   font-weight: 600;
@@ -97,6 +126,47 @@
   color: #888;
   background: #f1f3f5;
   border-bottom: 1px solid #e9ecef;
+}
+
+.reader-group-arrow {
+  display: inline-block;
+  font-size: 0.55rem;
+  cursor: pointer;
+  transition: transform 0.15s;
+  &.collapsed { transform: rotate(-90deg); }
+  &:hover { color: #228be6; }
+}
+
+.reader-group-label {
+  flex: 1;
+  cursor: pointer;
+  &:hover { color: #228be6; }
+}
+
+.reader-group-count {
+  margin-left: 0.35rem;
+  font-weight: 400;
+  color: #aaa;
+  font-size: 0.65rem;
+}
+
+.reader-mark-group-read {
+  margin-left: auto;
+  padding: 0.1rem 0.4rem;
+  border: none;
+  border-radius: 3px;
+  background: none;
+  color: #aaa;
+  font-size: 0.6rem;
+  font-weight: 500;
+  cursor: pointer;
+  text-transform: none;
+  letter-spacing: 0;
+
+  &:hover {
+    background: #e9ecef;
+    color: #228be6;
+  }
 }
 
 // ---- Article rows ----
@@ -296,4 +366,45 @@
   text-align: center;
   color: #aaa;
   font-size: 0.8rem;
+}
+
+.reader-end {
+  padding: 1.5rem;
+  text-align: center;
+  color: #bbb;
+  font-size: 0.78rem;
+  font-style: italic;
+  border-top: 1px solid #f0f0f0;
+}
+
+// ---- Mobile responsive ----
+
+@media (max-width: 768px) {
+  .reader-view {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+  }
+
+  .reader-sidebar {
+    border-right: none;
+    border-bottom: 1px solid #e0e0e0;
+    max-height: 40vh;
+    overflow-y: auto;
+  }
+
+  .article-title {
+    max-width: 70%;
+  }
+
+  .article-feed-name {
+    display: none;
+  }
+
+  .article-preview {
+    display: none;
+  }
+
+  .article-expanded {
+    padding: 0.75rem 1rem;
+  }
 }

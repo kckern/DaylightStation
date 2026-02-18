@@ -6,8 +6,10 @@ import { useState, useMemo, useEffect } from 'react';
  * @param {Array} props.feeds - [{id, title, categories: [{id, label}]}]
  * @param {Set} props.activeFeeds - set of selected feed IDs (empty = show all)
  * @param {Function} props.onToggleFeed - (feedId, multiSelect) => void
+ * @param {Function} props.onToggleCategory - (feedIds, multiSelect) => void
+ * @param {Function} props.onClearFilters - () => void
  */
-export default function ReaderSidebar({ feeds, activeFeeds, onToggleFeed }) {
+export default function ReaderSidebar({ feeds, activeFeeds, onToggleFeed, onToggleCategory, onClearFilters }) {
   const [collapsed, setCollapsed] = useState({});
   const [initialized, setInitialized] = useState(false);
 
@@ -40,26 +42,48 @@ export default function ReaderSidebar({ feeds, activeFeeds, onToggleFeed }) {
     });
   }, [feeds]);
 
-  const toggleCollapse = (cat) => {
+  const toggleCollapse = (cat, catFeeds) => {
+    const wasCollapsed = collapsed[cat];
     setCollapsed(prev => ({ ...prev, [cat]: !prev[cat] }));
+    // Expanding a filtered category → auto-remove that category's filter
+    if (wasCollapsed && isCategoryActive(catFeeds)) {
+      const feedIds = catFeeds.map(f => f.id);
+      onToggleCategory(feedIds, false);
+    }
   };
 
   const handleFeedClick = (feedId, e) => {
     onToggleFeed(feedId, e.ctrlKey || e.metaKey);
   };
 
+  const handleCategoryClick = (catFeeds, e) => {
+    const feedIds = catFeeds.map(f => f.id);
+    onToggleCategory(feedIds, e.ctrlKey || e.metaKey);
+  };
+
+  // Check if all feeds in a category are active
+  const isCategoryActive = (catFeeds) => {
+    return catFeeds.length > 0 && catFeeds.every(f => activeFeeds.has(f.id));
+  };
+
   return (
     <div className="reader-sidebar">
       <h4 className="reader-sidebar-title">Feeds</h4>
+      {activeFeeds.size > 0 && (
+        <button className="reader-view-all" onClick={onClearFilters}>View All</button>
+      )}
       {grouped.map(([category, catFeeds]) => (
         <div key={category} className="reader-category">
-          <button
-            className="reader-category-header"
-            onClick={() => toggleCollapse(category)}
-          >
-            <span className={`reader-category-arrow ${collapsed[category] ? 'collapsed' : ''}`}>&#9662;</span>
-            {category}
-          </button>
+          <div className={`reader-category-header ${isCategoryActive(catFeeds) ? 'active' : ''}`}>
+            <span
+              className={`reader-category-arrow ${collapsed[category] ? 'collapsed' : ''}`}
+              onClick={() => toggleCollapse(category, catFeeds)}
+            >&#9662;</span>
+            <span
+              className="reader-category-label"
+              onClick={(e) => handleCategoryClick(catFeeds, e)}
+            >{category}</span>
+          </div>
           {!collapsed[category] && catFeeds.map(feed => (
             <button
               key={feed.id}
