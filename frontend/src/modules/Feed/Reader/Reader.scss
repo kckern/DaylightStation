@@ -31,7 +31,7 @@
   align-items: center;
   gap: 0.25rem;
   width: 100%;
-  padding: 0.4rem 1rem;
+  padding: 0.3rem 1rem;
   border: none;
   background: none;
   text-align: left;
@@ -53,7 +53,7 @@
 .reader-feed-item {
   display: block;
   width: 100%;
-  padding: 0.3rem 1rem 0.3rem 1.75rem;
+  padding: 0.15rem 1rem 0.15rem 1.75rem;
   border: none;
   background: none;
   text-align: left;
@@ -157,6 +157,15 @@
   text-overflow: ellipsis;
   color: #1a1b1e;
   font-weight: 700;
+}
+
+.article-feed-name {
+  flex-shrink: 0;
+  white-space: nowrap;
+  font-size: 0.75rem;
+  font-style: italic;
+  font-weight: 400;
+  color: #aaa;
 }
 
 .article-preview {

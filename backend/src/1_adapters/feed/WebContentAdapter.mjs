@@ -76,6 +76,7 @@ export class WebContentAdapter {
   /**
    * Determine the icon URL for a source.
    * Reddit subreddits: fetch community_icon from about.json
+   * YouTube channels: fetch channel avatar from og:image
    * Everything else: Google favicon API
    */
   async #resolveIconUrl(url) {
@@ -94,6 +95,24 @@ export class WebContentAdapter {
         } catch {
           // fall through to Google favicon
         }
+      }
+    }
+
+    // YouTube channel: fetch og:image (channel avatar) from channel page
+    const ytMatch = url.match(/youtube\.com\/channel\/(UC[a-zA-Z0-9_-]+)/);
+    if (ytMatch) {
+      try {
+        const pageRes = await fetch(`https://www.youtube.com/channel/${ytMatch[1]}`, {
+          headers: { 'User-Agent': USER_AGENT },
+          signal: AbortSignal.timeout(5000),
+        });
+        if (pageRes.ok) {
+          const html = await pageRes.text();
+          const ogImage = html.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i)?.[1];
+          if (ogImage) return ogImage;
+        }
+      } catch {
+        // fall through to Google favicon
       }
     }
 

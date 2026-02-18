@@ -53,9 +53,12 @@ export default function ArticleRow({ article, onMarkRead }) {
   // Strip emojis from preview text
   const cleanPreview = (article.preview || '').replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, '').replace(/\s+/g, ' ').trim();
 
-  // Prefer FreshRSS feed icon (has YT channel icons), fall back to Google CDN
-  const faviconUrl = article.feedIcon
-    || (article.link ? `https://www.google.com/s2/favicons?sz=16&domain=${new URL(article.link).hostname}` : null);
+  // YouTube channels: proxy through our icon endpoint for channel avatars
+  // Everything else: Google CDN favicon
+  const isYouTube = article.feedSiteUrl?.includes('youtube.com/channel/');
+  const faviconUrl = isYouTube
+    ? `/api/v1/feed/icon?url=${encodeURIComponent(article.feedSiteUrl)}`
+    : (article.link ? `https://www.google.com/s2/favicons?sz=16&domain=${new URL(article.link).hostname}` : null);
 
   return (
     <div className={`article-row ${expanded ? 'expanded' : ''} ${article.isRead ? 'read' : 'unread'}`}>
@@ -64,6 +67,9 @@ export default function ArticleRow({ article, onMarkRead }) {
           <img className="article-favicon" src={faviconUrl} alt="" width="16" height="16" />
         )}
         <span className="article-title">{article.title}</span>
+        {!expanded && article.feedTitle && (
+          <span className="article-feed-name">&middot; {article.feedTitle} &middot;</span>
+        )}
         {!expanded && (
           <span className="article-preview">{cleanPreview}</span>
         )}

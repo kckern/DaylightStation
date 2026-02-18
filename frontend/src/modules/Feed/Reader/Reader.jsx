@@ -59,7 +59,7 @@ export default function Reader() {
     if (!append) setLoading(true);
     else setLoadingMore(true);
     try {
-      const params = new URLSearchParams({ count: '50' });
+      const params = new URLSearchParams({ days: '3' });
       if (cont) params.set('continuation', cont);
       if (activeFeeds.size > 0) params.set('feeds', [...activeFeeds].join(','));
       const data = await DaylightAPI(`/api/v1/feed/reader/stream?${params}`);
