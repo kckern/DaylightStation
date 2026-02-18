@@ -827,6 +827,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
     const freshRSSFeedAdapter = new FreshRSSSourceAdapter({
       freshRSSAdapter: feedServices.freshRSSAdapter,
+      configService,
       logger: rootLogger.child({ module: 'freshrss-feed' }),
     });
     const headlineFeedAdapter = new HeadlineFeedAdapter({
@@ -873,6 +874,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       feedAssemblyService,
       feedContentService,
       dismissedItemsStore,
+      sourceAdapters: feedSourceAdapters,
       configService,
       logger: rootLogger.child({ module: 'feed' }),
     });
