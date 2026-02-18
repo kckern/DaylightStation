@@ -106,17 +106,27 @@ export class FeedPoolManager {
     const pool = this.#pools.get(username) || [];
     const seen = this.#seenIds.get(username) || new Set();
     const dismissed = this.#dismissedItemsStore?.load() || new Set();
-    const remaining = pool.filter(item => !seen.has(item.id) && !dismissed.has(item.id));
 
-    // If pool is empty but sources remain, await a refill instead of
-    // returning nothing while fire-and-forget refill runs in background.
-    if (remaining.length === 0 && this.#hasRefillableSources(username)) {
-      await this.#proactiveRefill(username, scrollConfig);
-      const refreshed = this.#pools.get(username) || [];
-      return refreshed.filter(item => !seen.has(item.id) && !dismissed.has(item.id));
+    // Tag items with seen status — seen influences priority, not exclusion.
+    // This ensures non-wire tiers always have content (seen items recycle as fallback).
+    for (const item of pool) {
+      item._seen = seen.has(item.id);
     }
 
-    return remaining;
+    const available = pool.filter(item => !dismissed.has(item.id));
+    const unseenCount = available.filter(i => !i._seen).length;
+
+    // If no unseen items remain but sources can provide more, refill for fresh content.
+    if (unseenCount === 0 && this.#hasRefillableSources(username)) {
+      await this.#proactiveRefill(username, scrollConfig);
+      const refreshed = this.#pools.get(username) || [];
+      for (const item of refreshed) {
+        item._seen = seen.has(item.id);
+      }
+      return refreshed.filter(item => !dismissed.has(item.id));
+    }
+
+    return available;
   }
 
   /**
@@ -145,15 +155,15 @@ export class FeedPoolManager {
     }
     this.#seenItems.set(username, history);
 
-    const remaining = pool.filter(i => !seen.has(i.id)).length;
+    const unseenRemaining = pool.filter(i => !seen.has(i.id)).length;
     const scrollConfig = this.#scrollConfigs.get(username);
     const batchSize = scrollConfig?.batch_size ?? 15;
     const threshold = batchSize * FeedPoolManager.#REFILL_THRESHOLD_MULTIPLIER;
 
-    if (remaining < threshold) {
+    if (unseenRemaining < threshold) {
       if (this.#hasRefillableSources(username)) {
         this.#proactiveRefill(username, scrollConfig);
-      } else if (remaining === 0) {
+      } else if (unseenRemaining === 0) {
         this.#recycle(username);
       }
     }

@@ -1,6 +1,7 @@
 // tests/isolated/application/feed/FeedAssemblyService.test.mjs
 import { jest } from '@jest/globals';
 import { FeedAssemblyService } from '#apps/feed/services/FeedAssemblyService.mjs';
+import { FeedPoolManager } from '#apps/feed/services/FeedPoolManager.mjs';
 
 describe('FeedAssemblyService scroll config integration', () => {
   let mockScrollConfigLoader;
@@ -19,6 +20,7 @@ describe('FeedAssemblyService scroll config integration', () => {
     type: 'external',
     source,
     title: `${source} item`,
+    timestamp: new Date().toISOString(),
     meta: { sourceName: source },
   });
 
@@ -28,6 +30,7 @@ describe('FeedAssemblyService scroll config integration', () => {
     source,
     title: `${source} item`,
     priority,
+    timestamp: new Date().toISOString(),
     meta: { sourceName: source },
   });
 
@@ -41,7 +44,13 @@ describe('FeedAssemblyService scroll config integration', () => {
   });
 
   function createService(queryConfigs, adapters = [], overrides = {}) {
+    const feedPoolManager = new FeedPoolManager({
+      sourceAdapters: adapters,
+      queryConfigs,
+      logger: { info: () => {}, warn: () => {}, debug: () => {} },
+    });
     return new FeedAssemblyService({
+      feedPoolManager,
       freshRSSAdapter: null,
       headlineService: null,
       entropyService: null,
@@ -284,7 +293,13 @@ describe('image dimensions passthrough', () => {
   });
 
   function createService(queryConfigs, adapters = [], overrides = {}) {
+    const feedPoolManager = new FeedPoolManager({
+      sourceAdapters: adapters,
+      queryConfigs,
+      logger: { info: () => {}, warn: () => {}, debug: () => {} },
+    });
     return new FeedAssemblyService({
+      feedPoolManager,
       freshRSSAdapter: null,
       headlineService: null,
       entropyService: null,
@@ -324,31 +339,22 @@ describe('image dimensions passthrough', () => {
   });
 
   test('passes through headline imageWidth/imageHeight from item', async () => {
-    const mockHeadlineService = {
-      getPageList: jest.fn().mockReturnValue([{ id: 'page1' }]),
-      getAllHeadlines: jest.fn().mockResolvedValue({
-        sources: {
-          cnn: {
-            label: 'CNN',
-            paywall: false,
-            items: [{
-              title: 'Breaking News',
-              link: 'https://cnn.com/article',
-              image: 'https://cnn.com/thumb.jpg',
-              imageWidth: 640,
-              imageHeight: 360,
-              timestamp: new Date().toISOString(),
-            }],
-          },
-        },
-        paywallProxy: null,
-      }),
+    const headlineAdapter = {
+      sourceType: 'headlines',
+      fetchItems: jest.fn().mockResolvedValue([{
+        id: 'headline:cnn-breaking',
+        tier: 'wire',
+        source: 'headline',
+        title: 'Breaking News',
+        image: 'https://cnn.com/thumb.jpg',
+        timestamp: new Date().toISOString(),
+        meta: { imageWidth: 640, imageHeight: 360, sourceName: 'cnn' },
+      }]),
     };
 
     const service = createService(
       [{ type: 'headlines', feed_type: 'external', _filename: 'headlines.yml' }],
-      [],
-      { headlineService: mockHeadlineService },
+      [headlineAdapter],
     );
 
     // Use sources filter to bypass tier assembly (source is 'headline')
@@ -359,27 +365,22 @@ describe('image dimensions passthrough', () => {
   });
 
   test('FreshRSS items get probed image dimensions', async () => {
-    // Mock probeImageDimensions at the module level is hard with ESM,
-    // so we test the integration path: FreshRSS handler extracts image,
-    // then probes it. We mock the freshRSSAdapter to return items with images
-    // and verify the flow works end-to-end (probe will fail on fake URLs,
-    // so we just verify no crash and meta doesn't have dimensions for failed probes).
-    const mockFreshRSSAdapter = {
-      getItems: jest.fn().mockResolvedValue([{
-        id: 'item1',
+    const freshrssAdapter = {
+      sourceType: 'freshrss',
+      fetchItems: jest.fn().mockResolvedValue([{
+        id: 'freshrss:item1',
+        tier: 'wire',
+        source: 'freshrss',
         title: 'RSS Article',
-        content: '<p>No image here</p>',
-        link: 'https://example.com/article',
-        published: new Date().toISOString(),
-        feedTitle: 'Example Feed',
-        author: 'Test Author',
+        image: null,
+        timestamp: new Date().toISOString(),
+        meta: { feedTitle: 'Example Feed', author: 'Test Author' },
       }]),
     };
 
     const service = createService(
       [{ type: 'freshrss', feed_type: 'external', _filename: 'freshrss.yml' }],
-      [],
-      { freshRSSAdapter: mockFreshRSSAdapter },
+      [freshrssAdapter],
     );
 
     // Use sources filter to get freshrss items directly
@@ -414,13 +415,24 @@ describe('seenIds dedup', () => {
     mockTierAssemblyService = {
       assemble: jest.fn().mockImplementation((items, config, opts) => {
         const limit = opts?.effectiveLimit || 15;
-        return { items: items.slice(0, limit), hasMore: items.length > limit };
+        // Mirror real TierAssemblyService: prefer unseen items, seen as fallback
+        const sorted = [
+          ...items.filter(i => !i._seen),
+          ...items.filter(i => i._seen),
+        ];
+        return { items: sorted.slice(0, limit), hasMore: items.length > limit };
       }),
     };
   });
 
   function createService(queryConfigs, adapters = [], overrides = {}) {
+    const feedPoolManager = new FeedPoolManager({
+      sourceAdapters: adapters,
+      queryConfigs,
+      logger: { info: () => {}, warn: () => {}, debug: () => {} },
+    });
     return new FeedAssemblyService({
+      feedPoolManager,
       freshRSSAdapter: null,
       headlineService: null,
       entropyService: null,
@@ -452,7 +464,7 @@ describe('seenIds dedup', () => {
     expect(result.hasMore).toBe(true);
   });
 
-  test('continuation (with cursor) excludes previously sent items', async () => {
+  test('continuation (with cursor) prioritises unseen items', async () => {
     const items = Array.from({ length: 20 }, (_, i) => ({
       id: `reddit:r${i}`, tier: 'wire', source: 'reddit',
       title: `Post ${i}`, timestamp: new Date(2026, 1, 17, 10 - i).toISOString(),
@@ -470,10 +482,15 @@ describe('seenIds dedup', () => {
     const batch2 = await service.getNextBatch('testuser', { cursor: 'continue' });
 
     const batch1Ids = new Set(batch1.items.map(i => i.id));
-    const batch2Ids = new Set(batch2.items.map(i => i.id));
-    // No overlap
-    for (const id of batch2Ids) {
-      expect(batch1Ids.has(id)).toBe(false);
+    // The 5 unseen items (not in batch 1) should appear before any seen fallback
+    const unseenInBatch2 = batch2.items.filter(i => !batch1Ids.has(i.id));
+    const seenInBatch2 = batch2.items.filter(i => batch1Ids.has(i.id));
+    expect(unseenInBatch2.length).toBe(5);
+    // Unseen items come first in the batch (priority over seen)
+    if (seenInBatch2.length > 0) {
+      const lastUnseenIdx = batch2.items.findIndex(i => i.id === unseenInBatch2.at(-1).id);
+      const firstSeenIdx = batch2.items.findIndex(i => batch1Ids.has(i.id));
+      expect(lastUnseenIdx).toBeLessThan(firstSeenIdx);
     }
   });
 
@@ -512,7 +529,13 @@ describe('padding', () => {
   });
 
   function createService(queryConfigs, adapters = [], overrides = {}) {
+    const feedPoolManager = new FeedPoolManager({
+      sourceAdapters: adapters,
+      queryConfigs,
+      logger: { info: () => {}, warn: () => {}, debug: () => {} },
+    });
     return new FeedAssemblyService({
+      feedPoolManager,
       freshRSSAdapter: null,
       headlineService: null,
       entropyService: null,
@@ -612,7 +635,13 @@ describe('selection tracking integration', () => {
   });
 
   function createService(queryConfigs, adapters = [], overrides = {}) {
+    const feedPoolManager = new FeedPoolManager({
+      sourceAdapters: adapters,
+      queryConfigs,
+      logger: { info: () => {}, warn: () => {}, debug: () => {} },
+    });
     return new FeedAssemblyService({
+      feedPoolManager,
       freshRSSAdapter: null,
       headlineService: null,
       entropyService: null,

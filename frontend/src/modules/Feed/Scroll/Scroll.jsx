@@ -110,6 +110,7 @@ export default function Scroll() {
   const playerRef = useRef(null);
   const [colors, setColors] = useState({});
   const [assemblyBatches, setAssemblyBatches] = useState([]);
+  const [assemblyFilter, setAssemblyFilter] = useState({ tiers: [], sources: [] });
   const savedScrollRef = useRef(0);
 
   const playback = usePlaybackObserver(playerRef, !!activeMedia);
@@ -121,6 +122,10 @@ export default function Scroll() {
   }, []);
 
   const handleClearMedia = useCallback(() => setActiveMedia(null), []);
+
+  const handleAssemblyFilter = useCallback((filter) => {
+    setAssemblyFilter(filter);
+  }, []);
 
   // Deep-linked item (fetched from server when not in scroll batch)
   const [deepLinkedItem, setDeepLinkedItem] = useState(null);
@@ -337,6 +342,19 @@ export default function Scroll() {
     navigate('/feed/scroll');
   }, [navigate]);
 
+  // Apply assembly debug filter (tier/source toggles)
+  const visibleItems = (() => {
+    const { tiers, sources } = assemblyFilter;
+    if (tiers.length === 0 && sources.length === 0) return items;
+    const tierSet = new Set(tiers);
+    const sourceSet = new Set(sources);
+    return items.filter(item => {
+      const tierMatch = tierSet.size === 0 || tierSet.has(item.tier);
+      const sourceMatch = sourceSet.size === 0 || sourceSet.has(item.source);
+      return tierMatch && sourceMatch;
+    });
+  })();
+
   const handleCardClick = useCallback((e, item) => {
     e.preventDefault();
     savedScrollRef.current = window.scrollY;
@@ -346,12 +364,12 @@ export default function Scroll() {
 
   const handleNav = useCallback((direction) => {
     if (!selectedItem) return;
-    const idx = items.findIndex(i => i.id === selectedItem.id);
+    const idx = visibleItems.findIndex(i => i.id === selectedItem.id);
     if (idx === -1) return;
     const nextIdx = idx + direction;
-    if (nextIdx < 0 || nextIdx >= items.length) return;
-    navigate(`/feed/scroll/${encodeItemId(items[nextIdx].id)}`, { replace: true });
-  }, [selectedItem, items, navigate]);
+    if (nextIdx < 0 || nextIdx >= visibleItems.length) return;
+    navigate(`/feed/scroll/${encodeItemId(visibleItems[nextIdx].id)}`, { replace: true });
+  }, [selectedItem, visibleItems, navigate]);
 
   const handleGalleryNav = useCallback((galleryItem) => {
     // Add synthetic item to list so URL-driven detail fetch finds it
@@ -407,13 +425,13 @@ export default function Scroll() {
     );
   }
 
-  const currentIdx = selectedItem ? items.findIndex(i => i.id === selectedItem.id) : -1;
+  const currentIdx = selectedItem ? visibleItems.findIndex(i => i.id === selectedItem.id) : -1;
 
   return (
     <div className="scroll-layout">
       <div className="scroll-view" style={{ display: (urlSlug && !isDesktop) ? 'none' : undefined }}>
         <div className="scroll-items">
-          {items.map((item, i) => (
+          {visibleItems.map((item, i) => (
             <ScrollCard
               key={item.id || i}
               item={item}
@@ -458,7 +476,7 @@ export default function Scroll() {
           ogDescription={detailData?.ogDescription || null}
           loading={detailLoading}
           onBack={handleBack}
-          onNext={currentIdx < items.length - 1 ? () => handleNav(1) : null}
+          onNext={currentIdx < visibleItems.length - 1 ? () => handleNav(1) : null}
           onPrev={currentIdx > 0 ? () => handleNav(-1) : null}
           onPlay={handlePlay}
           activeMedia={activeMedia}
@@ -474,7 +492,7 @@ export default function Scroll() {
           ogDescription={detailData?.ogDescription || null}
           loading={detailLoading}
           onBack={handleBack}
-          onNext={currentIdx < items.length - 1 ? () => handleNav(1) : null}
+          onNext={currentIdx < visibleItems.length - 1 ? () => handleNav(1) : null}
           onPrev={currentIdx > 0 ? () => handleNav(-1) : null}
           onPlay={handlePlay}
           activeMedia={activeMedia}
@@ -495,7 +513,7 @@ export default function Scroll() {
         contentId={activeMedia?.contentId || null}
         onEnd={handleClearMedia}
       />
-      <FeedAssemblyOverlay batches={assemblyBatches} />
+      <FeedAssemblyOverlay batches={assemblyBatches} onFilterChange={handleAssemblyFilter} />
     </div>
   );
 }

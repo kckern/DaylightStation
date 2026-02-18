@@ -77,7 +77,12 @@ export function SourcePanel({ source, col, totalCols, paywallProxy, onRefresh, c
             const href = isPaywalled ? paywallProxy + link : link;
             const desc = item.desc && item.desc !== item.title ? item.desc : null;
             return (
-              <li key={i} className="source-headline">
+              <li key={i} className="source-headline"
+                onMouseEnter={(e) => {
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  e.currentTarget.classList.toggle('source-headline--tooltip-below', rect.top < 250);
+                }}
+              >
                 <a href={href} target="_blank" rel="noopener noreferrer">
                   {smartQuotes(item.title)}
                 </a>

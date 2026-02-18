@@ -44,7 +44,7 @@ export class RssHeadlineHarvester {
             if (!item.title?.trim() || !item.link?.trim()) continue;
             const headline = Headline.create({
               source: source.id,
-              title: item.title.trim(),
+              title: this.#stripHtml(item.title),
               desc: this.#extractDesc(item),
               link: item.link.trim(),
               timestamp: this.#parseDate(item),

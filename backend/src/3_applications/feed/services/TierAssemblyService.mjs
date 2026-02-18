@@ -314,6 +314,12 @@ export class TierAssemblyService {
       items = this.#applySourceCaps(items, config.sources);
     }
 
+    // Prefer unseen items; seen items serve as fallback to fill allocation.
+    // Preserves sort order within each group (unseen sorted first, then seen).
+    const unseen = items.filter(i => !i._seen);
+    const seen = items.filter(i => i._seen);
+    items = [...unseen, ...seen];
+
     // Cap to flex-allocated slot count (replaces legacy config.allocation)
     const slotCap = tierSlots ?? config.allocation;
     if (slotCap != null) {
