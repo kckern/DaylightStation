@@ -172,6 +172,8 @@ export class StravaHarvester extends IHarvester {
       if (this.#fitnessHistoryDir) {
         try {
           const homeMatches = await this.applyHomeSessionEnrichment(username, enrichedActivities);
+          // Also retry recent unmatched entries
+          await this.matchBacklog(username, 7);
           if (homeMatches.length > 0) {
             this.#logger.info?.('strava.harvest.homeMatches', {
               username,
@@ -804,6 +806,54 @@ export class StravaHarvester extends IHarvester {
     const matches = this.#findMatches(username, activities);
     await this.#applyEnrichment(username, matches);
     return matches;
+  }
+
+  /**
+   * Scan recent summary entries for unmatched activities and retry matching.
+   * Reconstructs minimal activity objects from summary data for time overlap check.
+   * @param {string} username
+   * @param {number} [daysBack=7]
+   */
+  async matchBacklog(username, daysBack = 7) {
+    if (!this.#fitnessHistoryDir) return;
+
+    const summary = await this.#lifelogStore.load(username, 'strava') || {};
+    const cutoff = moment().subtract(daysBack, 'days').format('YYYY-MM-DD');
+
+    // Find unmatched entries in recent dates
+    const unmatchedActivities = [];
+    for (const [date, entries] of Object.entries(summary)) {
+      if (date < cutoff) continue;
+      for (const entry of entries) {
+        if (entry.homeSessionId) continue; // Already matched
+
+        // Reconstruct minimal activity from summary data
+        const startMoment = moment.tz(`${date} ${entry.startTime}`, 'YYYY-MM-DD hh:mm a', this.#timezone);
+        if (!startMoment.isValid()) continue;
+
+        unmatchedActivities.push({
+          id: entry.id,
+          start_date: startMoment.toISOString(),
+          moving_time: (entry.minutes || 0) * 60,
+          type: entry.type,
+          suffer_score: entry.suffer_score,
+          device_name: entry.device_name,
+        });
+      }
+    }
+
+    if (unmatchedActivities.length === 0) return;
+
+    const matches = this.#findMatches(username, unmatchedActivities);
+    await this.#applyEnrichment(username, matches);
+
+    if (matches.length > 0) {
+      this.#logger.info?.('strava.backlog.matched', {
+        username,
+        matchCount: matches.length,
+        checkedCount: unmatchedActivities.length,
+      });
+    }
   }
 
   /**

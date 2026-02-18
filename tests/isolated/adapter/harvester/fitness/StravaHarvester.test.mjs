@@ -464,5 +464,63 @@ describe('StravaHarvester', () => {
       expect(updated.participants.kckern.strava.sufferScore).toBe(5);
       expect(updated.participants.kckern.strava.deviceName).toBe('Garmin Forerunner 245 Music');
     });
+
+    it('should retry matching for recent summary entries missing homeSessionId', async () => {
+      const dateDir = path.join(tmpDir, '2026-02-15');
+      fs.mkdirSync(dateDir, { recursive: true });
+
+      const sessionData = {
+        sessionId: '20260215191250',
+        session: {
+          id: '20260215191250',
+          date: '2026-02-15',
+          start: '2026-02-15 19:12:50',
+          end: '2026-02-15 19:20:50',
+          duration_seconds: 480,
+        },
+        timezone: 'America/Los_Angeles',
+        participants: {
+          kckern: { display_name: 'KC Kern', is_primary: true },
+        },
+        treasureBox: { totalCoins: 20 },
+        timeline: { events: [] },
+      };
+
+      const { saveYaml } = await import('#system/utils/FileIO.mjs');
+      saveYaml(path.join(dateDir, '20260215191250'), sessionData);
+
+      // Summary has an entry WITHOUT homeSessionId
+      const existingSummary = {
+        '2026-02-15': [
+          {
+            id: 17418186050,
+            title: 'Evening Weight Training',
+            type: 'WeightTraining',
+            startTime: '07:10 pm',
+            minutes: 10,
+          },
+        ],
+      };
+      mockLifelogStore.load.mockResolvedValue(existingSummary);
+
+      harvester = new StravaHarvester({
+        stravaClient: mockStravaClient,
+        lifelogStore: mockLifelogStore,
+        configService: mockConfigService,
+        fitnessHistoryDir: tmpDir,
+        timezone: 'America/Los_Angeles',
+        logger: mockLogger,
+      });
+
+      await harvester.matchBacklog('kckern', 7);
+
+      const saveCalls = mockLifelogStore.save.mock.calls;
+      const summarySave = saveCalls.find(c => c[1] === 'strava');
+      expect(summarySave).toBeTruthy();
+
+      const savedSummary = summarySave[2];
+      const entry = savedSummary['2026-02-15'].find(a => a.id === 17418186050);
+      expect(entry.homeSessionId).toBe('20260215191250');
+    });
   });
 });
