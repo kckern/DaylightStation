@@ -150,7 +150,8 @@ describe('PlexFeedAdapter', () => {
 
       const result = await adapter.fetchItems(query, 'testuser');
       expect(probeImageDimensions).toHaveBeenCalledWith(
-        'http://10.0.0.10:32400/library/metadata/200/thumb?X-Plex-Token=test-token'
+        'http://10.0.0.10:32400/library/metadata/200/thumb?X-Plex-Token=test-token',
+        8000
       );
       expect(result[0].meta.imageWidth).toBe(500);
       expect(result[0].meta.imageHeight).toBe(500);
