@@ -299,8 +299,8 @@ export class GovernanceEngine {
         const hrPercent = Number.isFinite(rosterEntry?.hrPercent) ? rosterEntry.hrPercent : null;
 
         logger.sampled('governance.user_zone_change', {
-          oderId: userId,
-          odeName: rosterEntry?.name || rosterEntry?.displayName || userId,
+          userId: userId,
+          userName: rosterEntry?.name || rosterEntry?.displayName || userId,
           fromZone: prevZone || 'none',
           toZone: newZone || 'none',
           fromZoneLabel: this._getZoneInfo(prevZone)?.name || prevZone,
