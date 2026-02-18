@@ -665,6 +665,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     const { KomgaClient } = await import('./1_adapters/content/readable/komga/KomgaClient.mjs');
     const { ReadalongFeedAdapter } = await import('./1_adapters/feed/sources/ReadalongFeedAdapter.mjs');
     const { GoodreadsFeedAdapter } = await import('./1_adapters/feed/sources/GoodreadsFeedAdapter.mjs');
+    const { ABSEbookFeedAdapter } = await import('./1_adapters/feed/sources/ABSEbookFeedAdapter.mjs');
 
     // Load query configs at bootstrap time (moves fs access out of application layer)
     const { readdirSync, existsSync } = await import('fs');
@@ -740,6 +741,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       contentRegistry: contentRegistry || null,
       contentQueryPort: contentServices?.contentQueryService || null,
       webUrl: plexConfig?.webUrl || plexConfig?.host || null,
+      plexHost: plexConfig?.host || null,
+      plexToken: plexConfig?.token || null,
       logger: rootLogger.child({ module: 'plex-feed' }),
     });
     const googleAuth = dataService.system.read('auth/google');
@@ -758,7 +761,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         { httpClient: axios, logger: rootLogger.child({ module: 'komga-feed-client' }) }
       ),
       apiKey: komgaAuth.token,
-      webUrl: komgaHost,
+      webUrl: configService.resolveServiceWebUrl('komga'),
       dataService,
       logger: rootLogger.child({ module: 'komga-feed' }),
     }) : null;
@@ -773,6 +776,14 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       userDataService,
       logger: rootLogger.child({ module: 'goodreads-feed' }),
     });
+
+    const { AudiobookshelfClient } = await import('./1_adapters/content/readable/audiobookshelf/AudiobookshelfClient.mjs');
+    const absEbookFeedAdapter = audiobookshelfConfig ? new ABSEbookFeedAdapter({
+      absClient: new AudiobookshelfClient(audiobookshelfConfig, { httpClient: axios }),
+      token: audiobookshelfConfig.token,
+      dataService,
+      logger: rootLogger.child({ module: 'abs-ebooks-feed' }),
+    }) : null;
 
     const { ScrollConfigLoader } = await import('./3_applications/feed/services/ScrollConfigLoader.mjs');
     const { SpacingEnforcer } = await import('./3_applications/feed/services/SpacingEnforcer.mjs');
@@ -821,7 +832,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       logger: rootLogger.child({ module: 'entropy-feed' }),
     });
 
-    const feedSourceAdapters = [redditAdapter, weatherAdapter, healthAdapter, gratitudeAdapter, stravaAdapter, todoistAdapter, immichAdapter, plexAdapter, journalAdapter, youtubeAdapter, googleNewsAdapter, komgaFeedAdapter, readalongFeedAdapter, goodreadsFeedAdapter, freshRSSFeedAdapter, headlineFeedAdapter, entropyFeedAdapter].filter(Boolean);
+    const feedSourceAdapters = [redditAdapter, weatherAdapter, healthAdapter, gratitudeAdapter, stravaAdapter, todoistAdapter, immichAdapter, plexAdapter, journalAdapter, youtubeAdapter, googleNewsAdapter, komgaFeedAdapter, readalongFeedAdapter, goodreadsFeedAdapter, freshRSSFeedAdapter, headlineFeedAdapter, entropyFeedAdapter, absEbookFeedAdapter].filter(Boolean);
 
     const feedPoolManager = new FeedPoolManager({
       sourceAdapters: feedSourceAdapters,
