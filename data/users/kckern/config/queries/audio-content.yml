@@ -1,0 +1,14 @@
+type: plex
+tier: library
+priority: 5
+limit: 1
+params:
+  mode: children
+  parentIds:
+    - id: 7578
+      weight: 3
+    - id: 481800
+      weight: 2
+    - id: 242600
+      weight: 1
+  unwatched: true

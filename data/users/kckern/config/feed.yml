@@ -1,0 +1,424 @@
+headline_pages:
+- id: mainstream
+  label: Headlines
+  grid:
+    rows:
+    - Mainstream
+    - Established
+    - Known
+    - Niche
+    cols:
+    - Left
+    - Center-Left
+    - Center
+    - Center-Right
+    - Right
+  col_colors:
+  - hsl(215, 50%, 40%)
+  - hsl(210, 30%, 35%)
+  - hsl(220, 8%, 38%)
+  - hsl(0, 25%, 35%)
+  - hsl(0, 45%, 38%)
+  sources:
+  - id: msnbc
+    label: MSNBC
+    url: https://feeds.nbcnews.com/nbcnews/public/news
+    site_url: https://www.msnbc.com
+    row: 0
+    col: 0
+  - id: cnn
+    label: CNN
+    url: http://rss.cnn.com/rss/cnn_topstories.rss
+    site_url: https://www.cnn.com
+    row: 0
+    col: 1
+  - id: abc
+    label: ABC News
+    url: https://abcnews.go.com/abcnews/usheadlines
+    row: 0
+    col: 2
+  - id: cbs
+    label: CBS News
+    url: https://www.cbsnews.com/latest/rss/main
+    row: 0
+    col: 3
+  - id: foxnews
+    label: Fox News
+    url: https://moxie.foxnews.com/google-publisher/latest.xml
+    site_url: https://www.foxnews.com
+    row: 0
+    col: 4
+  - id: nytimes
+    label: NY Times
+    url: https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml
+    site_url: https://www.nytimes.com
+    row: 1
+    col: 0
+  - id: wapo
+    label: Washington Post
+    url: https://feeds.washingtonpost.com/rss/homepage
+    site_url: https://www.washingtonpost.com
+    row: 1
+    col: 1
+  - id: pbs
+    label: PBS NewsHour
+    url: https://www.pbs.org/newshour/feeds/rss/headlines
+    row: 1
+    col: 2
+  - id: wsj
+    label: Wall Street Journal
+    url: https://news.google.com/rss/search?q=site:wsj.com&hl=en-US&gl=US&ceid=US:en
+    site_url: https://www.wsj.com
+    row: 1
+    col: 3
+  - id: nypost
+    label: New York Post
+    url: https://nypost.com/feed/
+    row: 1
+    col: 4
+  - id: guardian
+    label: The Guardian
+    url: https://www.theguardian.com/us-news/rss
+    row: 2
+    col: 0
+  - id: theatlantic
+    label: The Atlantic
+    url: https://www.theatlantic.com/feed/all/
+    row: 2
+    col: 1
+  - id: bbc
+    label: BBC News
+    url: https://feeds.bbci.co.uk/news/world/rss.xml
+    site_url: https://www.bbc.com
+    row: 2
+    col: 2
+  - id: economist
+    label: The Economist
+    url: https://www.economist.com/latest/rss.xml
+    row: 2
+    col: 3
+  - id: breitbart
+    label: Breitbart
+    url: https://feeds.feedburner.com/breitbart
+    site_url: https://www.breitbart.com
+    row: 2
+    col: 4
+  - id: aljazeera
+    label: Al Jazeera
+    url: https://www.aljazeera.com/xml/rss/all.xml
+    row: 3
+    col: 0
+  - id: axios
+    label: Axios
+    url: https://api.axios.com/feed/top/
+    site_url: https://www.axios.com
+    row: 3
+    col: 1
+  - id: reuters
+    label: Reuters
+    url: https://news.google.com/rss/search?q=when:24h+allinurl:reuters.com&ceid=US:en&hl=en-US&gl=US
+    site_url: https://www.reuters.com
+    row: 3
+    col: 2
+  - id: usatoday
+    label: USA Today
+    url: https://news.google.com/rss/search?q=site:usatoday.com&hl=en-US&gl=US&ceid=US:en
+    site_url: https://www.usatoday.com
+    row: 3
+    col: 3
+  - id: zerohedge
+    label: ZeroHedge
+    url: https://cms.zerohedge.com/fullrss2.xml
+    site_url: https://www.zerohedge.com
+    row: 3
+    col: 4
+- id: topics
+  label: Topics
+  grid:
+    rows:
+    - '1'
+    - '2'
+    - '3'
+    - '4'
+    cols:
+    - Tech/Academic
+    - Utah/Faith
+    - PNW
+    - Global
+    - Film
+  col_colors:
+  - hsl(200, 35%, 35%)
+  - hsl(35, 35%, 35%)
+  - hsl(150, 30%, 32%)
+  - hsl(270, 25%, 35%)
+  - hsl(340, 30%, 35%)
+  sources:
+  - id: hackernews
+    label: Hacker News
+    url: https://news.ycombinator.com/rss
+    site_url: https://news.ycombinator.com
+    row: 0
+    col: 0
+  - id: mitnews
+    label: MIT News
+    url: https://news.mit.edu/rss/feed
+    site_url: https://news.mit.edu
+    row: 1
+    col: 0
+  - id: byunews
+    label: BYU News
+    url: https://news.byu.edu/rss.xml
+    site_url: https://news.byu.edu
+    row: 2
+    col: 0
+  - id: arstechnica
+    label: Ars Technica
+    url: https://feeds.arstechnica.com/arstechnica/index
+    site_url: https://arstechnica.com
+    row: 3
+    col: 0
+  - id: sltrib
+    label: SL Tribune
+    url: https://www.sltrib.com/arc/outboundfeeds/rss/?outputType=xml
+    site_url: https://www.sltrib.com
+    row: 0
+    col: 1
+  - id: deseretnews
+    label: Deseret News
+    url: https://www.deseret.com/arc/outboundfeeds/rss/
+    site_url: https://www.deseret.com
+    row: 1
+    col: 1
+  - id: espn
+    label: ESPN
+    urls:
+    - https://www.espn.com/espn/rss/news
+    - https://www.espn.com/espn/rss/nba/news
+    - https://www.espn.com/espn/rss/nfl/news
+    - https://www.espn.com/espn/rss/mlb/news
+    - https://www.espn.com/espn/rss/ncb/news
+    - https://www.espn.com/espn/rss/ncf/news
+    - https://www.espn.com/espn/rss/soccer/news
+    - https://www.espn.com/espn/rss/nhl/news
+    site_url: https://www.espn.com
+    row: 2
+    col: 1
+  - id: mitsloan
+    label: MIT Sloan Review
+    url: https://sloanreview.mit.edu/feed/
+    site_url: https://sloanreview.mit.edu
+    row: 3
+    col: 1
+  - id: kentrenton
+    label: Kent/Renton
+    urls:
+    - https://ilovekent.net/feed/
+    - https://www.kentreporter.com/feed/
+    - https://www.rentonreporter.com/feed/
+    site_url: https://kentreporter.com
+    row: 0
+    col: 2
+  - id: seattletimes
+    label: Seattle Times
+    url: https://www.seattletimes.com/feed/
+    site_url: https://www.seattletimes.com
+    row: 1
+    col: 2
+  - id: thestranger
+    label: The Stranger
+    url: https://www.thestranger.com/seattle/Rss.xml
+    site_url: https://www.thestranger.com
+    row: 2
+    col: 2
+  - id: geekwire
+    label: GeekWire
+    url: https://www.geekwire.com/feed/
+    site_url: https://www.geekwire.com
+    row: 3
+    col: 2
+  - id: yonhap
+    label: Yonhap News
+    url: https://en.yna.co.kr/RSS/news.xml
+    site_url: https://en.yna.co.kr
+    row: 0
+    col: 3
+  - id: lalibre
+    label: La Libre Belgique
+    url: https://www.lalibre.be/arc/outboundfeeds/rss/?outputType=xml
+    site_url: https://www.lalibre.be
+    row: 1
+    col: 3
+  - id: nhkworld
+    label: NHK World
+    url: https://news.google.com/rss/search?q=site:nhk.or.jp/nhkworld&hl=en-US&gl=US&ceid=US:en
+    site_url: https://www3.nhk.or.jp/nhkworld
+    row: 2
+    col: 3
+  - id: france24
+    label: France 24
+    url: https://www.france24.com/en/rss
+    site_url: https://www.france24.com/en
+    row: 3
+    col: 3
+  - id: nofilmschool
+    label: No Film School
+    url: https://nofilmschool.com/rss.xml
+    site_url: https://nofilmschool.com
+    row: 0
+    col: 4
+  - id: indiewire
+    label: IndieWire
+    url: https://www.indiewire.com/feed/
+    site_url: https://www.indiewire.com
+    row: 1
+    col: 4
+  - id: deadline
+    label: Deadline
+    url: https://deadline.com/feed/
+    site_url: https://deadline.com
+    row: 2
+    col: 4
+  - id: filmmakermag
+    label: Filmmaker Mag
+    url: https://filmmakermagazine.com/feed/
+    site_url: https://filmmakermagazine.com
+    row: 3
+    col: 4
+freshrss_headline_feeds: []
+headlines:
+  retention_hours: 48
+  harvest_interval_minutes: 60
+  max_per_source: 12
+  dedupe_word_count: 8
+  exclude_patterns:
+  - '^WATCH:'
+  - '^VIDEO:'
+  - '^LISTEN:'
+paywall_proxy:
+  url_prefix: https://archive.ph/
+  sources:
+  - economist
+  - wsj
+  - nytimes
+  - theatlantic
+  - wapo
+reddit:
+  subreddits:
+    daily:
+      news: worldnews+science+technology+dataisbeautiful+MapPorn
+      social: AskReddit+AskAnAmerican+Millennials+pics
+      ufo: ufo+UFOB+aliens+Paranormal
+      dev: programming+webdev+machinelearning+ClaudeCode+vibecoding
+      film: movies+moviecritic+Cinema+soundtracks
+    regular:
+      sports: Basketball+NBATalk+UtahJazz+michaeljordan
+      retro: nostalgia+90s+oldinternet+retrogaming
+      faith: latterdaysaints+mormon+TrueChristian
+      career: ExperiencedDevs+ProductManagement+SideProject+MBAsWhoCode+learnprogramming
+      curiosity: whatisit+megalophobia+legaladvice+lost
+      fitness: beginnerfitness+workouts
+      crypto: Bitcoin+DataHoarder+eink
+      culture: korea+boston+Music
+    occasional:
+      local: KentWA
+      adventure: indianajones+BacktotheFuture+squidgame+DragonBallZ+Megaman
+      media: SunoAI+GameMusicComposition+documentaryfilmmaking+publicdomain
+      space: universe
+      niche: keys+oldinternet
+scroll:
+  batch_size: 50
+  spacing:
+    max_consecutive: 1
+  tiers:
+    wire:
+      selection:
+        sort: timestamp_desc
+        filter: []
+        diversity: source
+      sources:
+        reddit:
+          color: '#ff6b6b'
+          max_per_batch: 11
+          min_spacing: 2
+          max_age_hours: 168
+          subsources:
+            max_per_batch: 2
+            min_spacing: 4
+        freshrss:
+          color: '#20c997'
+          max_per_batch: 11
+          max_age_hours: 336
+        youtube:
+          color: '#ff0000'
+          max_per_batch: 7
+          min_spacing: 3
+        headlines:
+          color: '#228be6'
+          max_per_batch: 3
+          max_age_hours: 48
+        googlenews:
+          color: '#4285f4'
+          max_per_batch: 3
+          min_spacing: 2
+          max_age_hours: 48
+    library:
+      color: '#be4bdb'
+      allocation: 5
+      selection:
+        sort: random
+        filter: []
+        freshness: false
+      sources:
+        komga:
+          max_per_batch: 5
+          padding: true
+          max_age_hours: null
+        abs-ebooks:
+          max_per_batch: 1
+          padding: true
+          max_age_hours: null
+        audio-content:
+          max_per_batch: 1
+          padding: true
+          max_age_hours: null
+    scrapbook:
+      color: '#748ffc'
+      allocation: 5
+      selection:
+        sort: random
+        filter: []
+        prefer: anniversary
+      sources:
+        photos:
+          max_per_batch: 4
+          min_spacing: 3
+          padding: true
+          max_age_hours: null
+        journal:
+          max_per_batch: 1
+          min_spacing: 4
+        goodreads:
+          max_per_batch: 1
+          min_spacing: 4
+    compass:
+      color: '#fab005'
+      allocation: 6
+      selection:
+        sort: priority
+        filter: []
+        freshness: true
+      sources:
+        entropy:
+          max_per_batch: 3
+        tasks:
+          max_per_batch: 3
+        health:
+          max_per_batch: 1
+        weather:
+          max_per_batch: 1
+        fitness:
+          max_per_batch: 1
+        gratitude:
+          max_per_batch: 1
+        scripture-bom:
+          max_per_batch: 1
