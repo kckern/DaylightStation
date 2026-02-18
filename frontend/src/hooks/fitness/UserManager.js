@@ -83,7 +83,8 @@ export class User {
 
   #updateHeartRateData(heartRate) {
     if (!heartRate || heartRate <= 0) {
-      this.#updateCurrentData(deriveZoneProgressSnapshot({ zoneConfig: this.zoneConfig, heartRate: 0 }));
+      // Device disconnect (HR=0): preserve last known zone snapshot.
+      // Don't recompute with HR=0, which would drop user to "cool" zone.
       return;
     }
 
