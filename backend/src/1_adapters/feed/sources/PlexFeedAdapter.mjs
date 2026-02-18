@@ -34,8 +34,13 @@ export class PlexFeedAdapter extends IFeedSourceAdapter {
     try {
       const mode = query.params?.mode || 'search';
 
-      if (mode === 'children' && plexAdapter && query.params?.parentId) {
-        return this.#fetchChildren(plexAdapter, query);
+      if (mode === 'children' && plexAdapter) {
+        if (Array.isArray(query.params?.parentIds)) {
+          return this.#fetchWeightedChildren(plexAdapter, query);
+        }
+        if (query.params?.parentId) {
+          return this.#fetchChildren(plexAdapter, query);
+        }
       }
 
       return this.#fetchSearch(query);
@@ -73,6 +78,53 @@ export class PlexFeedAdapter extends IFeedSourceAdapter {
           type: item.type || item.metadata?.type,
           year: item.year || item.metadata?.year,
           sourceName: 'Plex',
+          sourceIcon: null,
+        },
+      };
+    });
+  }
+
+  async #fetchWeightedChildren(plexAdapter, query) {
+    const entries = query.params.parentIds;
+    if (!entries.length) return [];
+    const totalWeight = entries.reduce((sum, e) => sum + (e.weight || 1), 0);
+    let roll = Math.random() * totalWeight;
+    let selectedId = entries[0].id;
+    for (const entry of entries) {
+      roll -= (entry.weight || 1);
+      if (roll <= 0) { selectedId = entry.id; break; }
+    }
+
+    const items = await plexAdapter.getList(String(selectedId));
+    let filtered = items || [];
+
+    if (query.params?.unwatched) {
+      filtered = filtered.filter(item => {
+        const vc = item.metadata?.viewCount ?? item.viewCount ?? 0;
+        return vc === 0;
+      });
+    }
+
+    filtered.sort(() => Math.random() - 0.5);
+    return filtered.slice(0, query.limit || 3).map(item => {
+      const localId = item.localId || item.id?.replace?.('plex:', '') || item.id;
+      return {
+        id: `plex:${localId}`,
+        tier: query.tier || 'library',
+        source: 'plex',
+        title: item.title || item.label || 'Media',
+        body: item.subtitle || item.metadata?.artist || item.metadata?.parentTitle || item.description || null,
+        image: item.thumbnail || null,
+        link: this.#plexWebLink(localId),
+        timestamp: item.metadata?.addedAt || new Date().toISOString(),
+        priority: query.priority || 5,
+        meta: {
+          playable: true,
+          duration: item.duration ?? null,
+          type: item.type || item.metadata?.type,
+          year: item.year || item.metadata?.year,
+          artistName: item.metadata?.artist || item.metadata?.parentTitle || null,
+          sourceName: item.metadata?.artist || item.metadata?.parentTitle || 'Audio',
           sourceIcon: null,
         },
       };
