@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { formatAge, proxyIcon, proxyImage, isImageUrl } from './utils.js';
 import { getBodyModule } from './bodies/index.js';
+import { feedLog } from '../feedLog.js';
 
 function formatDuration(seconds) {
   if (!seconds || !Number.isFinite(seconds)) return '';
@@ -29,9 +30,11 @@ function HeroImage({ src }) {
 
   const handleError = () => {
     if (phase === 'original' && proxied) {
+      feedLog.image('card hero fallback to proxy', { original: src, proxy: proxied });
       setPhase('proxy');
       setImgSrc(proxied);
     } else {
+      feedLog.image('card hero hidden — all sources failed', { src });
       setPhase('hidden');
     }
   };
@@ -195,7 +198,7 @@ export default function FeedCard({ item, colors = {}, onDismiss, onPlay }) {
                 borderRadius: '50%',
                 flexShrink: 0,
               }}
-              onError={(e) => { e.target.style.display = 'none'; }}
+              onError={(e) => { feedLog.image('source icon failed', { url: iconUrl }); e.target.style.display = 'none'; }}
             />
           )}
           <span style={{

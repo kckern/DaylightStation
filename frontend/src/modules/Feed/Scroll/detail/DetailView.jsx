@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { formatAge, proxyIcon, proxyImage, colorFromLabel } from '../cards/utils.js';
 import { renderSection } from './sections/index.jsx';
+import { feedLog } from '../feedLog.js';
 import './DetailView.scss';
 
 export default function DetailView({ item, sections, ogImage, ogDescription, loading, onBack, onNext, onPrev, onPlay, activeMedia, playback, onNavigateToItem }) {
@@ -24,6 +25,7 @@ export default function DetailView({ item, sections, ogImage, ogDescription, loa
 
   // Reset image state when hero image changes
   useEffect(() => {
+    feedLog.image('detail hero reset', { heroImage, itemId: item.id });
     setImageLoaded(false);
     setImagePhase('original');
   }, [heroImage]);
@@ -135,8 +137,8 @@ export default function DetailView({ item, sections, ogImage, ogDescription, loa
 
     if (Math.abs(dx) < 60 || Math.abs(dy) > Math.abs(dx) * 0.7 || dt > 400) return;
 
-    if (dx < 0 && onNext) navigateWithAnimation(1, onNext);
-    if (dx > 0 && onPrev) navigateWithAnimation(-1, onPrev);
+    if (dx < 0 && onNext) { feedLog.nav('detail swipe next', { dx }); navigateWithAnimation(1, onNext); }
+    if (dx > 0 && onPrev) { feedLog.nav('detail swipe prev', { dx }); navigateWithAnimation(-1, onPrev); }
   }, [onNext, onPrev, navigateWithAnimation]);
 
   return (
@@ -176,11 +178,13 @@ export default function DetailView({ item, sections, ogImage, ogDescription, loa
               <img
                 src={imgSrc}
                 alt=""
-                onLoad={() => setImageLoaded(true)}
+                onLoad={() => { feedLog.image('detail hero loaded', { src: imgSrc, phase: imagePhase }); setImageLoaded(true); }}
                 onError={() => {
                   if (imagePhase === 'original' && proxyImage(heroImage)) {
+                    feedLog.image('detail hero fallback to proxy', { original: heroImage, proxy: proxyImage(heroImage) });
                     setImagePhase('proxy');
                   } else {
+                    feedLog.image('detail hero hidden — all sources failed', { heroImage, phase: imagePhase });
                     setImagePhase('hidden');
                   }
                 }}

@@ -1,4 +1,5 @@
 import { proxyImage } from './cards/utils.js';
+import { feedLog } from './feedLog.js';
 
 function formatTime(s) {
   if (!s || !Number.isFinite(s)) return '0:00';
@@ -29,7 +30,9 @@ export default function FeedPlayerMiniBar({ item, playback, onOpen, onClose }) {
     if (!duration || !seek) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const pct = (e.clientX - rect.left) / rect.width;
-    seek(Math.max(0, Math.min(duration, pct * duration)));
+    const seekTo = Math.max(0, Math.min(duration, pct * duration));
+    feedLog.player('minibar seek', { pct: (pct * 100).toFixed(1) + '%', seekTo: seekTo.toFixed(1), duration: duration.toFixed(1) });
+    seek(seekTo);
   };
 
   return (
@@ -40,7 +43,7 @@ export default function FeedPlayerMiniBar({ item, playback, onOpen, onClose }) {
           alt=""
           className="feed-mini-bar-thumb"
           onClick={onOpen}
-          onError={(e) => { e.target.style.display = 'none'; }}
+          onError={(e) => { feedLog.image('minibar thumb failed', { src: thumb }); e.target.style.display = 'none'; }}
         />
       )}
       <div className="feed-mini-bar-info" onClick={onOpen}>
