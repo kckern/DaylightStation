@@ -11,7 +11,10 @@ export default function FeedPlayerMiniBar({ item, playback, onOpen, onClose }) {
   if (!item) return null;
 
   const { playing, currentTime, duration, toggle, seek, progressElRef } = playback || {};
-  const thumb = item.image ? proxyImage(item.image) : null;
+  // Use image directly if already an API path; otherwise proxy external URLs
+  const thumb = item.image
+    ? (item.image.startsWith('/api/') ? item.image : proxyImage(item.image))
+    : null;
 
   const handleProgressClick = (e) => {
     if (!duration || !seek) return;
