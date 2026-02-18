@@ -18,6 +18,7 @@
  */
 
 import { IFeedSourceAdapter, CONTENT_TYPES } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
+import { probeImageDimensions } from '#system/utils/probeImageDimensions.mjs';
 
 export class FreshRSSSourceAdapter extends IFeedSourceAdapter {
   #freshRSSAdapter;
@@ -80,7 +81,9 @@ export class FreshRSSSourceAdapter extends IFeedSourceAdapter {
 
     // If unread fills the limit, skip pass 2
     if (unreadItems.length >= totalLimit) {
-      return { items: unreadItems.slice(0, totalLimit), cursor: continuation || null };
+      const page = unreadItems.slice(0, totalLimit);
+      await this.#probeDimensions(page);
+      return { items: page, cursor: continuation || null };
     }
 
     // Pass 2: all items (to backfill with read)
@@ -104,6 +107,7 @@ export class FreshRSSSourceAdapter extends IFeedSourceAdapter {
     }
 
     const merged = [...unreadItems, ...readItems].slice(0, totalLimit);
+    await this.#probeDimensions(merged);
     return { items: merged, cursor: continuation || null };
   }
 
@@ -127,13 +131,14 @@ export class FreshRSSSourceAdapter extends IFeedSourceAdapter {
   }
 
   #normalize(item, query, isRead) {
+    const image = this.#extractImage(item.content);
     return {
       id: `freshrss:${item.id}`,
       tier: query.tier || 'wire',
       source: 'freshrss',
       title: item.title,
       body: item.content ? item.content.replace(/<[^>]*>/g, '').slice(0, 200) : null,
-      image: this.#extractImage(item.content),
+      image,
       link: item.link,
       timestamp: item.published?.toISOString?.() || item.published || new Date().toISOString(),
       priority: query.priority || 0,
@@ -145,6 +150,20 @@ export class FreshRSSSourceAdapter extends IFeedSourceAdapter {
         isRead,
       },
     };
+  }
+
+  /**
+   * Probe dimensions for items that have images but no dims.
+   */
+  async #probeDimensions(items) {
+    await Promise.all(items.map(async item => {
+      if (!item.image || item.meta?.imageWidth) return;
+      const dims = await probeImageDimensions(item.image);
+      if (dims) {
+        item.meta.imageWidth = dims.width;
+        item.meta.imageHeight = dims.height;
+      }
+    }));
   }
 
   /**

@@ -10,6 +10,7 @@
  */
 
 import { IFeedSourceAdapter, CONTENT_TYPES } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
+import { probeImageDimensions } from '#system/utils/probeImageDimensions.mjs';
 
 export class ReadalongFeedAdapter extends IFeedSourceAdapter {
   #readalongAdapter;
@@ -64,13 +65,20 @@ export class ReadalongFeedAdapter extends IFeedSourceAdapter {
       const firstText = blocks.find(b => b.text)?.text || '';
       const firstSentence = firstText.split(/[.!?]/)[0]?.trim() || null;
 
+      const thumbnail = item.thumbnail || null;
+      let dimsMeta = {};
+      if (thumbnail) {
+        const dims = await probeImageDimensions(thumbnail);
+        if (dims) dimsMeta = { imageWidth: dims.width, imageHeight: dims.height };
+      }
+
       return [{
         id: item.id,
         tier: query.tier || 'compass',
         source: 'readalong',
         title: item.title || localId,
         body: heading,
-        image: item.thumbnail || null,
+        image: thumbnail,
         link: null,
         timestamp: new Date().toISOString(),
         priority: query.priority || 5,
@@ -84,6 +92,7 @@ export class ReadalongFeedAdapter extends IFeedSourceAdapter {
           firstLine: firstSentence,
           sourceName: collection.charAt(0).toUpperCase() + collection.slice(1),
           sourceIcon: item.thumbnail || null,
+          ...dimsMeta,
         },
       }];
     } catch (err) {

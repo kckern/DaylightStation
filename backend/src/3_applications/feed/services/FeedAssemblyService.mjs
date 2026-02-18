@@ -13,6 +13,7 @@
 
 import { ScrollConfigLoader } from './ScrollConfigLoader.mjs';
 import { FeedFilterResolver } from './FeedFilterResolver.mjs';
+import { probeImageDimensions } from '#system/utils/probeImageDimensions.mjs';
 
 export class FeedAssemblyService {
   #feedPoolManager;
@@ -176,6 +177,9 @@ export class FeedAssemblyService {
       }
     }
 
+    // Guardrail: probe dimensions for any items with images but no dims
+    await FeedAssemblyService.#probeMissingDimensions(batch);
+
     // Mark seen + cache
     const batchIds = batch.map(i => i.id);
     this.#feedPoolManager.markSeen(username, batchIds);
@@ -298,6 +302,23 @@ export class FeedAssemblyService {
       hasMore: this.#feedPoolManager.hasMore(username),
       colors: ScrollConfigLoader.extractColors(scrollConfig),
     };
+  }
+
+  /**
+   * Guardrail: probe image dimensions for batch items that have an image URL
+   * but are missing meta.imageWidth / meta.imageHeight.
+   * Runs concurrently with a 3s timeout per probe (default in probeImageDimensions).
+   */
+  static async #probeMissingDimensions(items) {
+    await Promise.all(items.map(async item => {
+      if (!item.image || (item.meta?.imageWidth && item.meta?.imageHeight)) return;
+      const dims = await probeImageDimensions(item.image);
+      if (dims) {
+        if (!item.meta) item.meta = {};
+        item.meta.imageWidth = dims.width;
+        item.meta.imageHeight = dims.height;
+      }
+    }));
   }
 
   #cacheItem(item) {
