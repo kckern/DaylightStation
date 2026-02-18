@@ -598,6 +598,119 @@ export class StravaHarvester extends IHarvester {
   }
 
   /**
+   * Load home fitness sessions for a date range
+   * @private
+   * @param {string[]} dates - Array of YYYY-MM-DD date strings
+   * @returns {Array<Object>} Session objects with parsed start/end times
+   */
+  #loadHomeSessions(dates) {
+    if (!this.#fitnessHistoryDir) return [];
+
+    const sessions = [];
+
+    for (const date of dates) {
+      const dateDir = path.join(this.#fitnessHistoryDir, date);
+      const files = listYamlFiles(dateDir);
+
+      for (const filename of files) {
+        const filePath = path.join(dateDir, `${filename}.yml`);
+        const data = loadYamlSafe(filePath);
+        if (!data?.session?.start || !data?.participants) continue;
+
+        sessions.push({
+          sessionId: data.sessionId || data.session?.id,
+          start: moment.tz(data.session.start, data.timezone || this.#timezone),
+          end: data.session.end
+            ? moment.tz(data.session.end, data.timezone || this.#timezone)
+            : moment.tz(data.session.start, data.timezone || this.#timezone)
+                .add(data.session.duration_seconds || 0, 'seconds'),
+          participants: Object.keys(data.participants || {}),
+          coins: data.treasureBox?.totalCoins ?? 0,
+          media: (data.timeline?.events || [])
+            .filter(e => e.type === 'media')
+            .map(e => e.data?.title)
+            .filter(Boolean)
+            .join(', ') || null,
+          filePath,
+        });
+      }
+    }
+
+    return sessions;
+  }
+
+  /**
+   * Match Strava activities to home fitness sessions by time overlap
+   * @private
+   * @param {string} username - DaylightStation username
+   * @param {Array} activities - Strava activity objects
+   * @returns {Array<{ activityId, sessionId, session, activity }>} Matched pairs
+   */
+  #findMatches(username, activities) {
+    const BUFFER_MS = 5 * 60 * 1000; // 5 minutes
+
+    // Collect unique dates from activities
+    const dates = [...new Set(activities.map(a =>
+      moment(a.start_date).tz(this.#timezone).format('YYYY-MM-DD')
+    ))];
+
+    const homeSessions = this.#loadHomeSessions(dates);
+    if (homeSessions.length === 0) return [];
+
+    const matches = [];
+
+    for (const activity of activities) {
+      if (!activity?.id || !activity?.start_date) continue;
+
+      const actStart = moment(activity.start_date).tz(this.#timezone);
+      const actEnd = actStart.clone().add(activity.moving_time || 0, 'seconds');
+
+      // Expand window by buffer
+      const actStartBuffered = actStart.clone().subtract(BUFFER_MS, 'ms');
+      const actEndBuffered = actEnd.clone().add(BUFFER_MS, 'ms');
+
+      let bestMatch = null;
+      let bestOverlap = 0;
+
+      for (const session of homeSessions) {
+        // Check participant
+        if (!session.participants.includes(username)) continue;
+
+        // Check time overlap with buffer
+        const overlapStart = moment.max(actStartBuffered, session.start);
+        const overlapEnd = moment.min(actEndBuffered, session.end);
+        const overlapMs = overlapEnd.diff(overlapStart);
+
+        if (overlapMs > 0 && overlapMs > bestOverlap) {
+          bestOverlap = overlapMs;
+          bestMatch = session;
+        }
+      }
+
+      if (bestMatch) {
+        matches.push({
+          activityId: activity.id,
+          sessionId: bestMatch.sessionId,
+          session: bestMatch,
+          activity,
+        });
+      }
+    }
+
+    return matches;
+  }
+
+  /**
+   * Public wrapper for matching (used by tests and potential CLI)
+   * @param {string} username
+   * @param {Array} activities
+   * @returns {Promise<Array>}
+   */
+  async matchHomeSessions(username, activities) {
+    return this.#findMatches(username, activities);
+  }
+
+  /**
    * Delay helper for rate limiting
    * @private
    */

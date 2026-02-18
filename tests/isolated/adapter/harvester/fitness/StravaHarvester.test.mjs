@@ -1,5 +1,8 @@
 // tests/unit/adapters/harvester/fitness/StravaHarvester.test.mjs
-import { describe, it, expect, beforeEach, jest } from '@jest/globals';
+import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
+import path from 'path';
+import os from 'os';
+import fs from 'fs';
 
 describe('StravaHarvester', () => {
   let harvester;
@@ -178,6 +181,163 @@ describe('StravaHarvester', () => {
 
       expect(status).toHaveProperty('state');
       expect(status.state).toBe('closed');
+    });
+  });
+
+  describe('home session matching', () => {
+    let StravaHarvester;
+    let tmpDir;
+
+    beforeEach(async () => {
+      ({ StravaHarvester } = await import('#adapters/harvester/fitness/StravaHarvester.mjs'));
+      tmpDir = path.join(os.tmpdir(), `strava-test-${Date.now()}`);
+      fs.mkdirSync(tmpDir, { recursive: true });
+    });
+
+    afterEach(() => {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    it('should match Strava activity to overlapping home session', async () => {
+      const dateDir = path.join(tmpDir, '2026-02-15');
+      fs.mkdirSync(dateDir, { recursive: true });
+
+      const sessionData = {
+        sessionId: '20260215191250',
+        session: {
+          id: '20260215191250',
+          date: '2026-02-15',
+          start: '2026-02-15 19:12:50',
+          end: '2026-02-15 19:20:50',
+          duration_seconds: 480,
+        },
+        timezone: 'America/Los_Angeles',
+        participants: {
+          kckern: {
+            display_name: 'KC Kern',
+            hr_device: '40475',
+            is_primary: true,
+          },
+        },
+        treasureBox: { totalCoins: 15 },
+        timeline: { events: [] },
+      };
+
+      const { saveYaml } = await import('#system/utils/FileIO.mjs');
+      saveYaml(path.join(dateDir, '20260215191250'), sessionData);
+
+      const activity = {
+        id: 17418186050,
+        start_date: '2026-02-16T03:10:00Z',
+        moving_time: 600,
+        type: 'WeightTraining',
+        name: 'Evening Weight Training',
+        suffer_score: 5,
+        device_name: 'Garmin Forerunner 245 Music',
+      };
+
+      harvester = new StravaHarvester({
+        stravaClient: mockStravaClient,
+        lifelogStore: mockLifelogStore,
+        configService: mockConfigService,
+        fitnessHistoryDir: tmpDir,
+        timezone: 'America/Los_Angeles',
+        logger: mockLogger,
+      });
+
+      const matches = await harvester.matchHomeSessions('kckern', [activity]);
+
+      expect(matches).toHaveLength(1);
+      expect(matches[0].activityId).toBe(17418186050);
+      expect(matches[0].sessionId).toBe('20260215191250');
+    });
+
+    it('should NOT match when user is not a participant', async () => {
+      const dateDir = path.join(tmpDir, '2026-02-15');
+      fs.mkdirSync(dateDir, { recursive: true });
+
+      const sessionData = {
+        sessionId: '20260215191250',
+        session: {
+          id: '20260215191250',
+          date: '2026-02-15',
+          start: '2026-02-15 19:12:50',
+          end: '2026-02-15 19:20:50',
+          duration_seconds: 480,
+        },
+        timezone: 'America/Los_Angeles',
+        participants: {
+          milo: { display_name: 'Milo', is_primary: true },
+        },
+        treasureBox: { totalCoins: 10 },
+        timeline: { events: [] },
+      };
+
+      const { saveYaml } = await import('#system/utils/FileIO.mjs');
+      saveYaml(path.join(dateDir, '20260215191250'), sessionData);
+
+      const activity = {
+        id: 17418186050,
+        start_date: '2026-02-16T03:10:00Z',
+        moving_time: 600,
+        type: 'WeightTraining',
+      };
+
+      harvester = new StravaHarvester({
+        stravaClient: mockStravaClient,
+        lifelogStore: mockLifelogStore,
+        configService: mockConfigService,
+        fitnessHistoryDir: tmpDir,
+        timezone: 'America/Los_Angeles',
+        logger: mockLogger,
+      });
+
+      const matches = await harvester.matchHomeSessions('kckern', [activity]);
+      expect(matches).toHaveLength(0);
+    });
+
+    it('should NOT match when times do not overlap within 5 min buffer', async () => {
+      const dateDir = path.join(tmpDir, '2026-02-15');
+      fs.mkdirSync(dateDir, { recursive: true });
+
+      const sessionData = {
+        sessionId: '20260215150000',
+        session: {
+          id: '20260215150000',
+          date: '2026-02-15',
+          start: '2026-02-15 15:00:00',
+          end: '2026-02-15 15:10:00',
+          duration_seconds: 600,
+        },
+        timezone: 'America/Los_Angeles',
+        participants: {
+          kckern: { display_name: 'KC Kern', is_primary: true },
+        },
+        treasureBox: { totalCoins: 5 },
+        timeline: { events: [] },
+      };
+
+      const { saveYaml } = await import('#system/utils/FileIO.mjs');
+      saveYaml(path.join(dateDir, '20260215150000'), sessionData);
+
+      const activity = {
+        id: 17418186050,
+        start_date: '2026-02-16T03:10:00Z',
+        moving_time: 600,
+        type: 'WeightTraining',
+      };
+
+      harvester = new StravaHarvester({
+        stravaClient: mockStravaClient,
+        lifelogStore: mockLifelogStore,
+        configService: mockConfigService,
+        fitnessHistoryDir: tmpDir,
+        timezone: 'America/Los_Angeles',
+        logger: mockLogger,
+      });
+
+      const matches = await harvester.matchHomeSessions('kckern', [activity]);
+      expect(matches).toHaveLength(0);
     });
   });
 });
