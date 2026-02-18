@@ -85,40 +85,52 @@ export function createFeedRouter(config) {
   }));
 
   router.get('/reader/stream', asyncHandler(async (req, res) => {
-    const { count, continuation, excludeRead, feeds } = req.query;
+    const { days: daysParam, count, continuation, excludeRead, feeds } = req.query;
     const username = getUsername();
     const streamId = 'user/-/state/com.google/reading-list';
-    const [{ items, continuation: nextContinuation }, allFeeds] = await Promise.all([
+    const targetDays = daysParam ? Number(daysParam) : 3;
+
+    const [{ items, continuation: freshCont }, allFeeds] = await Promise.all([
       freshRSSAdapter.getItems(streamId, username, {
-        count: count ? Number(count) : 50,
+        count: count ? Number(count) : 200,
         continuation,
         excludeRead: excludeRead === 'true',
       }),
       freshRSSAdapter.getFeeds(username),
     ]);
 
-    // Build feedId → iconUrl lookup
-    const feedIconMap = new Map();
+    // Build feedId → feed URL lookup (for site URL / icon resolution)
+    const feedUrlMap = new Map();
     for (const f of allFeeds) {
-      if (f.id && f.iconUrl) feedIconMap.set(f.id, f.iconUrl);
+      if (f.id && f.url) feedUrlMap.set(f.id, f.url);
     }
 
-    // Add isRead flag and plain-text preview to each item
+    // Enrich items
     const READ_TAG = 'user/-/state/com.google/read';
     const enriched = items.map(item => {
       const isRead = (item.categories || []).some(c => c === READ_TAG);
-      // Strip HTML for preview
       const preview = (item.content || '')
         .replace(/<[^>]*>/g, ' ')
         .replace(/\s+/g, ' ')
         .trim()
         .slice(0, 200);
-      // Extract category labels (user/-/label/Foo → Foo)
       const tags = (item.categories || [])
         .filter(c => c.includes('/label/'))
         .map(c => c.split('/label/').pop());
-      const feedIcon = feedIconMap.get(item.feedId) || null;
-      return { ...item, isRead, preview, tags, feedIcon };
+
+      // Derive site URL for icon resolution (YouTube channel URL or feed origin)
+      const feedUrl = feedUrlMap.get(item.feedId) || null;
+      let feedSiteUrl = null;
+      if (feedUrl) {
+        const ytMatch = feedUrl.match(/youtube\.com\/feeds\/videos\.xml\?channel_id=(UC[a-zA-Z0-9_-]+)/);
+        if (ytMatch) {
+          feedSiteUrl = `https://www.youtube.com/channel/${ytMatch[1]}`;
+        } else {
+          try { feedSiteUrl = new URL(feedUrl).origin; } catch { /* ignore */ }
+        }
+      }
+
+      return { ...item, isRead, preview, tags, feedSiteUrl };
     });
 
     // Filter by feed IDs if specified
@@ -128,7 +140,31 @@ export function createFeedRouter(config) {
       filtered = enriched.filter(item => feedSet.has(item.feedId));
     }
 
-    res.json({ items: filtered, continuation: nextContinuation });
+    // Day-based trimming: keep only the first `targetDays` distinct calendar days
+    const dayKey = (d) => d ? `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}` : 'unknown';
+    const distinctDays = new Set();
+    const trimmed = [];
+    for (const item of filtered) {
+      const key = dayKey(item.published ? new Date(item.published) : null);
+      if (distinctDays.size < targetDays || distinctDays.has(key)) {
+        distinctDays.add(key);
+        trimmed.push(item);
+      } else {
+        break; // Items are sorted newest-first; hit a new day beyond target
+      }
+    }
+
+    // Continuation: if we trimmed, use oldest included item's timestamp;
+    // otherwise use FreshRSS's continuation for the next batch
+    let nextContinuation = freshCont;
+    if (trimmed.length < filtered.length && trimmed.length > 0) {
+      const oldest = trimmed[trimmed.length - 1];
+      if (oldest?.published) {
+        nextContinuation = String(Math.floor(new Date(oldest.published).getTime() / 1000));
+      }
+    }
+
+    res.json({ items: trimmed, continuation: nextContinuation });
   }));
 
   // =========================================================================

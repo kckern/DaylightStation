@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 
 /**
  * Sidebar with collapsible categories and feed filter toggles.
@@ -9,6 +9,20 @@ import { useState, useMemo } from 'react';
  */
 export default function ReaderSidebar({ feeds, activeFeeds, onToggleFeed }) {
   const [collapsed, setCollapsed] = useState({});
+  const [initialized, setInitialized] = useState(false);
+
+  // Collapse all categories once feeds load
+  useEffect(() => {
+    if (feeds.length > 0 && !initialized) {
+      const init = {};
+      for (const feed of feeds) {
+        const cat = feed.categories?.[0]?.label || 'Uncategorized';
+        init[cat] = true;
+      }
+      setCollapsed(init);
+      setInitialized(true);
+    }
+  }, [feeds, initialized]);
 
   // Group feeds by category label
   const grouped = useMemo(() => {
