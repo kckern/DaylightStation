@@ -98,12 +98,16 @@ The feed system aggregates content from external services (RSS, Reddit, YouTube,
 | **Adapter** | `backend/src/1_adapters/feed/WebContentAdapter.mjs` | Fetches web pages, extracts readable content + og:image + og:description |
 | **Adapter** | `backend/src/1_adapters/feed/sources/*.mjs` | 12 source adapters (see Source Adapters section) |
 | **Application** | `backend/src/3_applications/feed/ports/IFeedSourceAdapter.mjs` | Base class defining `fetchItems()` and optional `getDetail()` |
-| **Application** | `backend/src/3_applications/feed/services/FeedAssemblyService.mjs` | Scroll orchestration — pool → tier assembly → padding → caching, detail delegation, filter bypass |
+| **Application** | `backend/src/3_applications/feed/services/FeedAssemblyService.mjs` | Scroll orchestration — pool → tier assembly → padding → cycling → caching, detail delegation, filter bypass |
 | **Application** | `backend/src/3_applications/feed/services/FeedFilterResolver.mjs` | 4-layer resolution chain for `?filter=` param — tier → source type → query name → alias |
 | **Application** | `backend/src/3_applications/feed/services/FeedPoolManager.mjs` | Item pool management — paginated source fetching, age filtering, proactive refill, silent recycling |
+| **Application** | `backend/src/3_applications/feed/services/TierAssemblyService.mjs` | Four-tier bucketing, flex allocation, within-tier selection, cross-tier interleaving |
+| **Application** | `backend/src/3_applications/feed/services/FlexAllocator.mjs` | CSS flexbox-inspired slot distribution — iterative grow/shrink/basis with min/max clamping |
+| **Application** | `backend/src/3_applications/feed/services/FlexConfigParser.mjs` | YAML flex config normalization — parses shorthand, aliases, and legacy keys into flex descriptors |
+| **Application** | `backend/src/3_applications/feed/services/SpacingEnforcer.mjs` | Prevents consecutive items from same source/subsource, enforces min spacing |
+| **Application** | `backend/src/3_applications/feed/services/FeedCacheService.mjs` | Stale-while-revalidate cache with per-source TTLs, disk persistence |
 | **Application** | `backend/src/3_applications/feed/services/HeadlineService.mjs` | Multi-page headline management — harvesting, caching, pruning |
-| **Application** | `backend/src/3_applications/feed/services/ScrollConfigLoader.mjs` | Loads scroll config from `config/feed` user data |
-| **Application** | `backend/src/3_applications/feed/services/SpacingEnforcer.mjs` | Prevents consecutive items from same source/subsource |
+| **Application** | `backend/src/3_applications/feed/services/ScrollConfigLoader.mjs` | Loads scroll config from `config/feed` user data, merges with tier defaults |
 | **API** | `backend/src/4_api/v1/routers/feed.mjs` | Express router — scroll, headlines, detail, icon proxy endpoints |
 
 ---
@@ -172,14 +176,17 @@ Every source adapter returns items normalized to this shape:
 **Summary:**
 
 1. **Reset pool** — on fresh load (no cursor), `FeedPoolManager.reset()` clears per-user state
-2. **Get pool** — `FeedPoolManager.getPool()` returns all unseen items (initializes on first call by fetching page 1 from all sources in parallel, with age filtering)
-3. **Source filter mode** — if `?source=reddit,youtube`, bypass tier assembly and return filtered items sorted by timestamp
-3b. **Filter mode** — if `?filter=reddit` or `?filter=compass`, resolve via `FeedFilterResolver` and bypass assembly (see `docs/reference/feed/feed-assembly-process.md`)
-4. **Wire decay** — `TierAssemblyService` adjusts tier allocations based on batch number: wire slots decay linearly to 0 over `wire_decay_batches` (default: 10), freed slots redistribute proportionally to compass/library/scrapbook
-5. **Tier assembly** — `TierAssemblyService.assemble()` buckets items by tier, applies within-tier selection/sort, interleaves non-wire into wire backbone, deduplicates, enforces spacing
-6. **Padding** — fill short batches from sources marked `padding: true`
-7. **Mark seen** — `FeedPoolManager.markSeen()` triggers proactive refill (when pool thins) or silent recycling (when all sources exhausted)
-8. **Cache** — stores returned items in an LRU cache (max 500) for deep-link resolution
+2. **Get pool** — `FeedPoolManager.getPool()` returns all unseen items (initializes on first call by fetching page 1 from all sources in parallel, with age filtering). Recycled items tagged `_seen` for deprioritization
+3. **Filter/source bypass** — if `?filter=` or `?source=`, resolve via `FeedFilterResolver` and bypass tier assembly (see `docs/reference/feed/feed-assembly-process.md`)
+4. **Flex slot allocation** — `FlexAllocator` distributes batch slots across tiers using CSS flexbox-inspired grow/shrink/basis/min/max descriptors (two-level: batch→tiers, then tier→sources)
+5. **Wire decay** — exponential decay: `factor = 0.5^((batch-1)/halfLife)`, default halfLife=2. Freed wire slots cascade to non-wire tiers proportionally, with overflow redistribution
+6. **Tier assembly** — `TierAssemblyService.assemble()` runs within-tier selection (sort → cap → filler sources), shortfall redistribution across exhausted tiers, then cross-tier interleaving
+7. **Spacing** — `SpacingEnforcer` enforces max_consecutive (default: 1), max_consecutive_subsource (default: 2), source/subsource min_spacing
+8. **Padding** — fill short batches from sources marked `padding: true`
+9. **Cycling** — last-resort duplication of batch items if still short after padding
+10. **Image probe** — parallel dimension probing for items with images (enables masonry pre-calculation)
+11. **Mark seen** — `FeedPoolManager.markSeen()` triggers proactive refill (when pool thins) or silent recycling (when all sources exhausted)
+12. **Cache** — stores returned items in an LRU cache (max 500) for deep-link resolution
 
 ### Pagination and Pool Management
 
@@ -317,7 +324,8 @@ Headlines from sources marked with `paywall: true` in config are proxied through
 | `frontend/src/modules/Feed/Headlines/SourcePanel.jsx` | Single source column — favicon, headline list, tooltips with images |
 | `frontend/src/modules/Feed/Headlines/Headlines.scss` | Headline styles — grid layout, tooltips, dark theme |
 | `frontend/src/modules/Feed/Scroll/Scroll.jsx` | Scroll feed — infinite scroll, route-driven detail, swipe navigation, persistent player owner |
-| `frontend/src/modules/Feed/Scroll/Scroll.scss` | Scroll styles — 3-column layout on wide screens, mini player bar |
+| `frontend/src/modules/Feed/Scroll/Scroll.scss` | Scroll styles — masonry layout on desktop (>900px), mini player bar |
+| `frontend/src/modules/Feed/Scroll/hooks/useMasonryLayout.js` | JS-driven absolute-positioned masonry layout — greedy shortest-column placement, ResizeObserver measurement |
 | `frontend/src/modules/Feed/Scroll/PersistentPlayer.jsx` | Persistent Player wrapper — keeps `<Player>` alive at Scroll level across navigation |
 | `frontend/src/modules/Feed/Scroll/FeedPlayerMiniBar.jsx` | Mini player bar — thumbnail, play/pause, progress bar, source/title |
 | `frontend/src/modules/Feed/Scroll/hooks/usePlaybackObserver.js` | Polls playerRef for playback state (playing, currentTime, duration), drives progress bar via rAF |
@@ -346,7 +354,7 @@ Headlines from sources marked with `paywall: true` in config are proxied through
 - **Back button** → returns to scroll list, restores scroll position
 - **Swipe left/right** → navigates to next/previous item in the loaded list
 - **Tabs** are hidden when viewing the scroll (immersive mode)
-- **3-column layout** on wide screens (>900px) with sidebars flanking the 540px feed column
+- **Masonry layout** on desktop (>900px) via `useMasonryLayout` hook — absolute-positioned cards with greedy shortest-column placement, ResizeObserver-based measurement, stable positions on append
 
 ### Persistent Media Player
 
@@ -405,13 +413,40 @@ headlines:
 
 # Scroll settings
 scroll:
-  batch_size: 15
-  wire_decay_batches: 10  # wire tier decays to 0 over this many batches (default: 10)
-
-# Reddit config (moved from config/reddit.yml)
-reddit:
-  subreddits: [science, technology, worldnews]
+  batch_size: 50
+  wire_decay_half_life: 2   # wire halves every N batches (exponential decay, default: 2)
+  spacing:
+    max_consecutive: 1           # max same-source in a row (default: 1)
+    max_consecutive_subsource: 2 # max same-subsource in a row (default: 2)
+  tiers:
+    wire:
+      flex: "1 0 auto"          # grow=1, fills remaining space
+      min: 20
+      selection:
+        sort: timestamp_desc
+      sources:
+        feeds:
+          flex: dominant         # grow=2, 2x share
+          max: 15
+        social:
+          flex: "1 0 auto"
+          max: 11
+        news:
+          flex: filler           # fills remaining wire space
+          max: 10
+          min: 3
+    compass:
+      flex: "0 0 6"             # fixed 6 slots
+      min: 4
+    scrapbook:
+      flex: "0 0 5"
+      min: 3
+    library:
+      flex: "0 0 5"
+      min: 2
 ```
+
+Flex shorthand supports named aliases (`filler`, `dominant`, `fixed`, `none`, `padding`, `auto`), string format (`"grow shrink basis"`), number format (`flex: 2`), or explicit keys (`grow:`, `shrink:`, `basis:`, `min:`, `max:`). Legacy keys (`allocation`, `max_per_batch`, `role`) are still supported. See `docs/reference/feed/feed-assembly-process.md` for the full FlexAllocator algorithm.
 
 ### Query Configs (Two-Tier)
 
@@ -443,13 +478,17 @@ params:
 ## Key Design Decisions
 
 1. **Pool-based pagination** — `FeedPoolManager` accumulates items across paginated source fetches, enabling infinite scroll beyond initial source limits. Proactive refill fetches next pages when pool runs thin; silent recycling reshuffles seen items when all sources exhaust
-10. **Filter mode** — `?filter=` param resolves through a 4-layer chain (tier → source type → query name → alias) via `FeedFilterResolver`, bypassing tier assembly and returning items sorted by timestamp for single-source or single-tier browsing
 2. **Age-filtered pagination** — Per-source `max_age_hours` thresholds prevent pagination from reaching arbitrarily old content. Entire stale pages mark the source as exhausted
 3. **LRU item cache** — 500-item Map-based cache enables deep-link resolution without a database; items expire naturally as new items push old ones out
 4. **Base64url encoding** — Item IDs (which contain colons) are base64url-encoded for URL-safe routing
-5. **Four-tier assembly** — Items are bucketed into wire/library/scrapbook/compass tiers with configurable allocations, sort strategies, and source caps. Non-wire items are interleaved into the wire backbone at even intervals
-6. **SpacingEnforcer subsource** — Only uses `meta.subreddit` for subsource spacing (not sourceId or feedTitle), preventing Reddit domination without over-constraining other sources
-7. **Config consolidation** — User feed config moved from separate `config/scroll.yml` and `config/reddit.yml` into unified `config/feed.yml`
-8. **ContentDrawer replaced by DetailView** — The old inline drawer was replaced with a full-page route-driven detail view supporting typed sections, swipe navigation, and deep-linking
-9. **Two-tier query configs** — Queries are split between household (shared infrastructure like weather, headlines) and user scope (personal subscriptions like Reddit, YouTube, Komga). User queries override household by filename, loaded on demand and cached per-user in `FeedPoolManager`
-11. **Wire decay** — Wire tier allocation decays linearly to 0 over `wire_decay_batches` (default: 10). Freed slots redistribute proportionally to non-wire tiers based on base allocations, creating a "news first, personal later" scroll experience
+5. **FlexAllocator (CSS flexbox-inspired)** — Slot distribution uses an iterative grow/shrink/basis algorithm with min/max clamping, operating at two levels (batch→tiers and tier→sources). Supports named aliases (`filler`, `dominant`) and legacy config migration
+6. **Four-tier assembly** — Items are bucketed into wire/library/scrapbook/compass tiers with flex-based allocations, sort strategies, and source caps. Non-wire items are interleaved into the wire backbone at even intervals
+7. **Wire decay (exponential)** — Wire allocation decays as `0.5^((batch-1)/halfLife)` (default halfLife=2). Freed slots cascade to non-wire tiers with overflow redistribution, creating a "news first, personal later" scroll experience
+8. **Shortfall redistribution** — When tiers can't fill their allocation, surplus slots redistribute to scrapbook → library → compass, re-selecting items with expanded allocations
+9. **Filler sources** — Sources marked `flex: filler` or `role: filler` get guaranteed minimums and absorb remaining tier capacity after primary sources are capped
+10. **SpacingEnforcer** — Six-rule enforcement pipeline with source and subsource granularity. Subsource key derived from `meta.subreddit || meta.sourceId || meta.outlet || meta.feedTitle`
+11. **Filter mode** — `?filter=` param resolves through a 4-layer chain (tier → source type → query name → alias) via `FeedFilterResolver`, bypassing tier assembly for single-source or single-tier browsing
+12. **Config consolidation** — User feed config in unified `config/feed.yml`
+13. **ContentDrawer replaced by DetailView** — Full-page route-driven detail view supporting typed sections, swipe navigation, and deep-linking
+14. **Two-tier query configs** — Queries split between household (shared infrastructure) and user scope (personal subscriptions). User queries override household by filename, loaded on demand and cached per-user
+15. **Stale-while-revalidate caching** — `FeedCacheService` caches first-page fetches with per-source TTLs (5–30 min), serving stale data immediately while refreshing in the background
