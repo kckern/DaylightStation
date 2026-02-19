@@ -1,18 +1,20 @@
 # Feed Assembly Process
 
-How scroll batches are assembled from raw source data to rendered cards — covering the full pipeline from API request through pool management, tier assembly, spacing enforcement, and response.
+How scroll batches are assembled from raw source data to rendered cards — covering the full pipeline from API request through pool management, flex allocation, tier assembly, spacing enforcement, and response.
 
 ---
 
 ## Overview
 
-When a user scrolls the feed, a `GET /api/v1/feed/scroll` request triggers a multi-stage pipeline that produces a batch of mixed-content items. The pipeline is split across four services, each with a single responsibility:
+When a user scrolls the feed, a `GET /api/v1/feed/scroll` request triggers a multi-stage pipeline that produces a batch of mixed-content items. The pipeline is split across six services, each with a single responsibility:
 
 | Service | Responsibility |
 |---------|---------------|
 | `FeedAssemblyService` | Orchestrator — coordinates the pipeline, owns the LRU item cache |
 | `FeedPoolManager` | Item pool — fetches from sources with pagination, age filtering, recycling |
-| `TierAssemblyService` | Batch composition — four-tier bucketing, selection, interleaving |
+| `TierAssemblyService` | Batch composition — flex allocation, within-tier selection, interleaving |
+| `FlexAllocator` | Slot distribution — CSS flexbox-inspired algorithm for dividing batch slots |
+| `FlexConfigParser` | Config normalization — parses YAML flex shorthand into allocator descriptors |
 | `SpacingEnforcer` | Distribution rules — prevents clustering of same-source items |
 
 ### Request-to-Response Flow
@@ -45,7 +47,7 @@ GET /api/v1/feed/scroll?cursor=...&limit=...&focus=...&filter=...
         │
         ├─ Pool empty + sources remain: await #proactiveRefill()
         │
-        └─ Return unseen items
+        └─ Return unseen items (tagged with _seen flag)
                 │
                 ▼
         ┌───────┴──────────────┐
@@ -56,8 +58,11 @@ GET /api/v1/feed/scroll?cursor=...&limit=...&focus=...&filter=...
                 ▼
      TierAssemblyService.assemble()
         │
-        ├─ Bucket by tier (wire/library/scrapbook/compass)
-        ├─ Within-tier: filter → sort → cap
+        ├─ Level 1: FlexAllocator distributes slots across tiers
+        ├─ Wire decay: exponential reduction of wire slots
+        ├─ Overflow cascade: freed wire slots → non-wire tiers
+        ├─ Level 2: Within-tier selection (sort → cap → filler)
+        ├─ Shortfall redistribution: exhausted tiers → others
         ├─ Cross-tier: interleave non-wire into wire backbone
         ├─ Deduplicate
         └─ SpacingEnforcer.enforce()
@@ -66,13 +71,19 @@ GET /api/v1/feed/scroll?cursor=...&limit=...&focus=...&filter=...
      Padding pass (fill short batches from padding sources)
                 │
                 ▼
+     Cycling pass (duplicate items as last resort)
+                │
+                ▼
+     Image dimension probe (parallel HEAD requests)
+                │
+                ▼
      FeedPoolManager.markSeen() → triggers proactive refill or recycle
                 │
                 ▼
      Cache items in LRU (for deep-link resolution)
                 │
                 ▼
-     Return { items, hasMore, colors }
+     Return { items, hasMore, colors, feed_assembly }
 ```
 
 ---
@@ -90,15 +101,26 @@ GET /api/v1/feed/scroll?cursor=...&limit=...&focus=...&filter=...
 | `#seenItems` | `Map<username, Object[]>` | Full item objects for recycling (capped at 500) |
 | `#cursors` | `Map<username, Map<sourceKey, { cursor, exhausted, lastFetch }>>` | Per-source pagination state |
 | `#refilling` | `Map<username, boolean>` | Prevents concurrent refills |
+| `#batchCounts` | `Map<username, number>` | 1-indexed batch counter (reset on fresh load) |
+| `#scrollConfigs` | `Map<username, Object>` | Cached scroll config per user |
+| `#firstPageCursors` | `Map<sourceKey, cursor>` | Cached first-page cursors for cache-hit pagination |
 
 All state is session-scoped — it resets when the user does a fresh page load (no cursor in the request).
+
+### Constants
+
+```
+REFILL_THRESHOLD_MULTIPLIER = 2   // refill when unseen < batchSize × 2
+MAX_SEEN_ITEMS = 500              // cap history to prevent unbounded growth
+SOURCE_TIMEOUT_MS = 20_000        // per-source fetch timeout
+```
 
 ### Pool Initialization
 
 On first request, all query configs are dispatched in parallel via `Promise.allSettled`:
 
 ```
-Query configs (YAML files)
+Query configs (household + user merged)
     │
     ├── reddit.yml    → RedditFeedAdapter.fetchPage()     → { items, cursor: "t3_abc" }
     ├── news.yml      → FreshRSS built-in handler          → { items, cursor: "cont123" }
@@ -108,7 +130,17 @@ Query configs (YAML files)
     └── ...
 ```
 
-Each result is age-filtered and its cursor is recorded. Sources returning `cursor: null` are marked as exhausted.
+Each result is age-filtered and its cursor is recorded. Sources returning `cursor: null` are marked as exhausted. Each source fetch has a 20-second timeout.
+
+### getPool Flow
+
+1. Cache scroll config for later reference
+2. Initialize pool on first call
+3. Increment batch counter (1-indexed)
+4. Tag items with `_seen: true` if ID is in seen set
+5. Filter dismissed items (from dismissedItemsStore)
+6. If unseen count is 0 AND sources are refillable → await `#proactiveRefill()`
+7. Return available items
 
 ### Pagination (fetchPage)
 
@@ -152,94 +184,179 @@ If `getPool()` is called when the pool is empty but sources remain, it **awaits*
 
 When all sources are exhausted and the pool is empty, seen items are shuffled (Fisher-Yates) back into the pool and the seen-ID set is cleared. This creates an infinite scroll experience — `hasMore` never returns `false` as long as items have been seen.
 
-The seen-items history is capped at 500 items to prevent unbounded memory growth.
+The seen-items history is capped at 500 items to prevent unbounded memory growth. Recycled items are tagged with `_seen: true` so the tier assembly can deprioritize them.
 
 ---
 
-## Stage 2: Tier Assembly (TierAssemblyService)
+## Stage 2: Flex Slot Allocation (FlexAllocator)
+
+Before tier assembly selects items, `FlexAllocator` distributes the batch's total slot count across tiers (and within each tier, across sources). This is a CSS flexbox-inspired algorithm that respects grow/shrink/basis/min/max constraints.
+
+### Two-Level Allocation
+
+```
+Level 1 (Batch → Tiers):
+  FlexAllocator.distribute(batchSize, [wire, compass, scrapbook, library])
+    → wire: 34, compass: 6, scrapbook: 5, library: 5
+
+Level 2 (Tier → Sources):
+  FlexAllocator.distribute(wireSlots, [feeds, social, news, video])
+    → feeds: 17, social: 8, news: 6, video: 3
+```
+
+### Flex Descriptor
+
+Each tier or source is described by a flex descriptor:
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `grow` | number (0+) | Growth coefficient — share of surplus space |
+| `shrink` | number (0+) | Shrink coefficient — share of deficit reduction |
+| `basis` | number or `'auto'` | Initial allocation before flex adjustments |
+| `min` | number | Minimum slots (absolute floor) |
+| `max` | number or `Infinity` | Maximum slots (absolute cap) |
+| `available` | number | Pool size — items available for this tier/source |
+
+### Algorithm (Iterative, Max 10 Passes)
+
+**Step 1 — Basis Resolution:**
+
+| Input | Resolution |
+|-------|-----------|
+| `'auto'` | `min(available, containerSize)` |
+| `0.0–1.0` (proportion) | `basis × containerSize` |
+| `> 1` (absolute) | Used directly |
+
+**Step 2 — Iterate Until Convergence:**
+
+For each pass:
+
+1. Identify unfrozen items (available > 0, not clamped yet)
+2. Calculate free space: `delta = containerSize - frozenSum - basisSum`
+3. If `delta > 0` (surplus): distribute proportionally by `grow`
+4. If `delta < 0` (deficit): reduce proportionally by `shrink × basis`
+5. Clamp each item to `[min, min(max, available)]`
+6. Freeze any item that hit a bound
+7. If nothing froze → converged; otherwise → next iteration
+
+**Step 3 — Implicit Floor:**
+
+Any item with `available > 0` but allocated < 1 slot is bumped to 1. This guarantees every tier/source with content gets at least one slot.
+
+**Step 4 — Integer Rounding:**
+
+Convert floats to integers. Remainder slots go to highest-grow items first.
+
+### Example: Tier Allocation (batch_size=50)
+
+```yaml
+tiers:
+  wire:      { flex: "1 0 auto", min: 20 }     # grow=1, no shrink, basis=auto
+  compass:   { flex: "0 0 6", min: 4 }          # fixed 6 slots
+  scrapbook: { flex: "0 0 5", min: 3 }          # fixed 5 slots
+  library:   { flex: "0 0 5", min: 2 }          # fixed 5 slots
+```
+
+1. Fixed tiers resolve: compass=6, scrapbook=5, library=5 → sum=16
+2. Wire (grow=1) absorbs remaining: 50 - 16 = **34 slots**
+3. Wire clamped to min 20 → stays at 34 (above minimum)
+
+### FlexConfigParser
+
+Converts YAML config into normalized flex descriptors. Supports multiple formats:
+
+**Named aliases:**
+
+| Alias | grow | shrink | basis |
+|-------|------|--------|-------|
+| `filler` | 1 | 1 | 0 |
+| `fixed` / `none` | 0 | 0 | auto |
+| `dominant` | 2 | 0 | auto |
+| `padding` | 1 | 0 | 0 |
+| `auto` | 1 | 1 | auto |
+
+**String shorthand:** `"grow shrink basis"` — e.g., `"1 0 auto"`, `"2 0 6"`
+
+**Number shorthand:** `flex: 2` → `{ grow: 2, shrink: 1, basis: 0 }`
+
+**Explicit keys:** Individual `grow:`, `shrink:`, `basis:`, `min:`, `max:` fields
+
+**Legacy migration:** Old keys are still supported:
+
+| Legacy Key | Maps To |
+|-----------|---------|
+| `allocation: 10` | `basis: 10/batchSize` (proportion) |
+| `max_per_batch: 5` | `max: 5` |
+| `min_per_batch: 1` | `min: 1` |
+| `role: filler` | alias `filler` |
+| `padding: true` | alias `padding` |
+
+Explicit flex keys take precedence over legacy keys.
+
+---
+
+## Stage 3: Tier Assembly (TierAssemblyService)
 
 Items from the pool are assembled into a batch using a four-tier system. Each query config declares a `tier` that determines how its items are distributed.
 
 ### Tier Definitions
 
-| Tier | Purpose | Default Allocation | Sort Strategy | Example Sources |
-|------|---------|--------------------|---------------|-----------------|
-| **wire** | External content streams | Fills remaining slots | `timestamp_desc` | headlines, reddit, youtube, googlenews, freshrss |
-| **library** | Long-form reading | 2 per batch | `random` | komga |
-| **scrapbook** | Personal memories | 2 per batch | `random` | photos, journal |
-| **compass** | Life dashboard | 6 per batch | `priority` | weather, health, fitness, plex, tasks, gratitude, entropy |
+| Tier | Purpose | Default Flex | Sort Strategy | Example Sources |
+|------|---------|-------------|---------------|-----------------|
+| **wire** | External content streams | `grow: 1, basis: auto` (fills remaining) | `timestamp_desc` | headlines, reddit, youtube, googlenews, freshrss |
+| **library** | Long-form reading | `basis: 2` (fixed) | `random` | komga |
+| **scrapbook** | Personal memories | `basis: 2` (fixed) | `random` | photos, journal |
+| **compass** | Life dashboard | `basis: 6` (fixed) | `priority` | weather, health, fitness, plex, tasks, gratitude, entropy |
 
 ### Assembly Algorithm
 
-**Level 1 — Bucketing:** Partition all pool items by their `tier` field.
+#### Step 1 — Tier Config Resolution
 
-**Level 2 — Within-tier selection** (per tier):
+`#resolveTierConfig()` merges user-provided tier config with hardcoded defaults. Each tier is parsed through `FlexConfigParser` to generate flex descriptors. Wire tier defaults to `grow=1, basis='auto'` (fills remaining space after non-wire tiers).
 
-1. **Focus filter** (wire only) — if `?focus=reddit:science`, filter wire to that source/subsource
-2. **Tier filters** — apply configured filter strategies (read_status, staleness, etc.)
-3. **Tier sort** — apply the tier's sort strategy:
-   - `timestamp_desc`: newest first, with selection-count tiebreaking within the same hour
-   - `priority`: highest `priority` value first
-   - `random`: Fisher-Yates shuffle
-4. **Source caps** — enforce per-source `max_per_batch` limits
-5. **Allocation cap** — non-wire tiers are capped to their allocation count
+#### Step 2 — Bucketing
 
-**Level 3 — Interleaving:**
+`#bucketByTier()` partitions all pool items by their `tier` field. Items without a tier default to wire.
 
-Non-wire items (compass, scrapbook, library) are distributed into the wire backbone at even intervals:
+#### Step 3 — Flex Slot Allocation
 
-```
-Wire:     [W1] [W2] [W3] [W4] [W5] [W6] [W7] [W8]
-Non-wire: [C1] [C2] [C3] [L1] [S1]
+`FlexAllocator.distribute(effectiveLimit, tierDescriptors)` divides the total batch size across the four tiers. Each tier's descriptor includes its `available` count (items in its bucket), ensuring allocation never exceeds supply.
 
-Result:   [W1] [W2] [C1] [W3] [W4] [C2] [W5] [W6] [C3] [W7] [L1] [W8] [S1]
-```
+#### Step 4 — Wire Decay
 
-The interval is `floor(wireCount / (nonWireCount + 1))`.
-
-**Level 4 — Post-processing:**
-
-1. **Deduplication** — remove items with duplicate IDs
-2. **Spacing enforcement** — `SpacingEnforcer` (see Stage 3)
-3. **Slice to limit** — cap to `effectiveLimit`
-
-### Default Batch Composition (batch_size=15, batch 1)
-
-| Tier | Slots | Sources |
-|------|-------|---------|
-| compass | 6 | weather, health, fitness, plex, tasks, gratitude |
-| library | 2 | komga |
-| scrapbook | 2 | photos, journal |
-| wire | 5 (remaining) | reddit, headlines, youtube, etc. |
-
-### Wire Decay
-
-Wire tier allocation decays linearly to 0 over a configurable number of batches (`wire_decay_batches`, default: 10). As wire slots are freed, they are redistributed **proportionally** to non-wire tiers based on their base allocations.
-
-**Formula:**
+**Formula (exponential):**
 
 ```
-decayFactor = clamp(1 - (batchNumber - 1) / wire_decay_batches, 0, 1)
-decayedWire = round(baseWire × decayFactor)
-freed = baseWire - decayedWire
-
-compassBonus  = round(freed × compassAlloc / totalNonWire)
-libraryBonus  = round(freed × libraryAlloc / totalNonWire)
-scrapbookBonus = freed - compassBonus - libraryBonus   // remainder avoids rounding drift
+decayFactor = 0.5 ^ ((batchNumber - 1) / halfLife)
 ```
 
-**Example progression** (batch_size=15, wire_decay_batches=5):
+Config key: `wire_decay_half_life` (default: 2 batches)
 
-| Batch | Decay Factor | Wire | Compass | Library | Scrapbook |
-|-------|-------------|------|---------|---------|-----------|
-| 1 | 1.00 | 5 | 6 | 2 | 2 |
-| 2 | 0.80 | 4 | 7 | 2 | 2 |
-| 3 | 0.60 | 3 | 7 | 2 | 3 |
-| 4 | 0.40 | 2 | 8 | 2 | 3 |
-| 5 | 0.20 | 1 | 8 | 3 | 3 |
-| 6+ | 0.00 | 0 | 9 | 3 | 3 |
+| Batch | halfLife=2 | halfLife=5 |
+|-------|-----------|-----------|
+| 1 | 100% | 100% |
+| 2 | 71% | 87% |
+| 3 | 50% | 76% |
+| 4 | 35% | 66% |
+| 5 | 25% | 57% |
+| 6 | 18% | 50% |
+| 10 | 3% | 28% |
 
 This creates a "news first, personal later" experience: early batches show breaking headlines and external content, while extended scrolling transitions to photos, journal entries, health data, and reading material.
+
+**Slot redistribution after decay:**
+
+```
+decayedWire = round(baseWire × decayFactor)
+freed = baseWire - decayedWire
+```
+
+Freed slots redistribute to non-wire tiers in two passes:
+
+1. **Proportional share** — each non-wire tier gets `freed × tierSlots / totalNonWire`, capped at pool availability
+2. **Overflow cascade** — if a tier can't absorb its share (pool exhausted), overflow redistributes to tiers with headroom. Iterates until all freed slots are absorbed or no capacity remains.
+
+This guarantees no freed wire slots are wasted — they cascade to whichever tiers can use them.
 
 **Batch tracking** lives in `FeedPoolManager.#batchCounts` (per-user Map, 1-indexed, reset on fresh page load). `FeedAssemblyService` reads the batch number and passes it to `TierAssemblyService.assemble()`.
 
@@ -247,44 +364,240 @@ This creates a "news first, personal later" experience: early batches show break
 
 ```yaml
 scroll:
-  wire_decay_batches: 10   # wire reaches 0 after 10 batches (default)
+  wire_decay_half_life: 2   # wire halves every 2 batches (default)
 ```
 
-Set to `0` to disable decay (wire allocation stays constant).
+Set to `0` or omit to disable decay (wire allocation stays constant).
+
+#### Step 5 — Within-Tier Selection
+
+For each tier, items are selected through this pipeline:
+
+**5a. Focus Filter** (wire only)
+
+If `?focus=reddit:science`, filter wire items to that source/subsource. Subsource matching checks `item.meta.subreddit || item.meta.sourceId || item.meta.feedTitle`.
+
+**5b. Tier Filters**
+
+`#applyTierFilters()` — currently a shell for future filter strategies (read_status, staleness, recently_shown).
+
+**5c. Tier Sort** (`#applyTierSort`)
+
+| Strategy | Algorithm |
+|----------|-----------|
+| `timestamp_desc` | Sort by `item.timestamp` descending. Within the same hour, prefer items with lower selection count (reduces headline repetition). |
+| `priority` | Sort by `item.priority` descending (highest first). |
+| `random` | Fisher-Yates shuffle. |
+
+**5d. Source Partitioning & Capping**
+
+If the tier has **filler sources** (marked with `role: 'filler'` or `flex: 'filler'`):
+
+1. Identify filler vs primary sources
+2. Select primary items first, capped by per-source max
+3. Guaranteed filler minimum: `sum of filler.min (or min_per_batch)`
+4. Fill remaining filler slots up to their caps
+5. Final order: `[guaranteedFiller, cappedPrimary, remainingFiller]`
+
+If no filler sources: simply apply per-source caps to all items.
+
+Source cap fields: `max` (flex format) or `max_per_batch` (legacy).
+
+**5e. Unseen Preference**
+
+Items tagged with `_seen: true` (from recycled pool) are deprioritized but retained as fallback:
+
+```
+[unseen items (sorted), seen items (sorted)]
+```
+
+**5f. Slot Capping**
+
+Slice to the tier's allocated slot count from FlexAllocator.
+
+#### Step 6 — Shortfall Redistribution
+
+If any tier selected fewer items than allocated (pool exhausted after filters/dedup):
+
+1. Calculate total shortfall across all tiers
+2. Shrink exhausted tier allocations to actual selection count
+3. Distribute shortfall to non-exhausted, non-wire tiers in order: **scrapbook → library → compass**
+4. For each eligible tier:
+   - Calculate headroom: `poolSize - currentSlots`
+   - Take `min(headroom, remainingShortfall)`
+   - **Re-select** items for that tier with expanded allocation
+5. Stop when all shortfall is distributed or no tiers have capacity
+
+This ensures batch size stays close to `effectiveLimit` even when some sources are thin.
+
+#### Step 7 — Cross-Tier Interleaving
+
+Non-wire items (compass, scrapbook, library) are distributed into the wire backbone at even intervals:
+
+```
+Wire:     [W1] [W2] [W3] [W4] [W5] [W6] [W7] [W8]
+Non-wire: [C1] [C2] [C3] [L1] [S1]
+
+Interval: floor(8 / (5 + 1)) = 1
+
+Result:   [W1] [C1] [W2] [C2] [W3] [C3] [W4] [L1] [W5] [S1] [W6] [W7] [W8]
+```
+
+The interval is `max(1, floor(wireCount / (nonWireCount + 1)))`. Non-wire items are ordered: compass first, then scrapbook, then library.
+
+#### Step 8 — Post-processing
+
+1. **Deduplication** — remove items with duplicate IDs (keeps first occurrence)
+2. **Spacing enforcement** — `SpacingEnforcer` (see Stage 4)
+3. **Slice to limit** — cap to `effectiveLimit`
+
+### Assembly Diagnostics
+
+`TierAssemblyService` emits a `tier.assembly.batch` log event with:
+
+```javascript
+{
+  batchNumber,
+  wireDecayFactor,
+  halfLife,
+  batchSize,
+  tiers: {
+    wire:      { allocated: N, selected: N, sources: { reddit: N, headlines: N } },
+    compass:   { allocated: N, selected: N, sources: { weather: N, health: N } },
+    scrapbook: { allocated: N, selected: N, sources: { photos: N, journal: N } },
+    library:   { allocated: N, selected: N, sources: { komga: N } },
+  }
+}
+```
 
 ---
 
-## Stage 3: Spacing Enforcement (SpacingEnforcer)
+## Stage 4: Spacing Enforcement (SpacingEnforcer)
 
-After interleaving, `SpacingEnforcer.enforce()` applies five rules in order:
+After interleaving, `SpacingEnforcer.enforce()` applies six rules in order:
 
-| Step | Rule | Effect |
-|------|------|--------|
-| 1 | Source `max_per_batch` | Drop excess items from over-represented sources |
-| 2 | Subsource `max_per_batch` | Drop excess items per subsource (e.g., per subreddit) |
-| 3 | `max_consecutive` | No N+ consecutive items from the same source (default: 1) |
-| 4 | Source `min_spacing` | Reposition items that are too close to same-source neighbors |
-| 5 | Subsource `min_spacing` | Reposition items from the same subsource that are too close |
+| Step | Rule | Default | Effect |
+|------|------|---------|--------|
+| 1 | Source `max_per_batch` | — | Drop excess items from over-represented sources |
+| 2 | Subsource `max_per_batch` | — | Drop excess items per subsource (e.g., per subreddit) |
+| 3 | `max_consecutive` | 1 | No N+ consecutive items from the same source |
+| 4 | `max_consecutive_subsource` | 2 | No N+ consecutive items from the same subsource (global) |
+| 5 | Source `min_spacing` | — | Reposition items that are too close to same-source neighbors |
+| 6 | Subsource `min_spacing` | — | Reposition items from the same subsource that are too close |
 
-Items that violate spacing rules are deferred and re-inserted at the nearest valid position. If no valid position exists, they are appended to the end.
+### Subsource Detection
 
-Subsource detection currently uses `item.meta.subreddit` — only Reddit items have subsource-level spacing.
+Subsource key is derived from: `item.meta.subreddit || item.meta.sourceId || item.meta.outlet || item.meta.feedTitle`. This enables per-subreddit, per-feed, or per-outlet spacing.
+
+### Rule Details
+
+**Max Per Batch (source & subsource):** Simple counting filter — keeps only the first N items from each source/subsource, drops the rest.
+
+**Max Consecutive:** Linear pass through the batch. If an item would create N+ consecutive same-source items, it's deferred. Deferred items are re-inserted at the nearest valid position using `#canInsertAt()`, which checks consecutive counts both before and after the insertion point. If no valid position exists, the item is appended to the end.
+
+**Max Consecutive Subsource:** Same algorithm as max_consecutive but operates on subsource keys globally (across all sources).
+
+**Min Spacing:** For each item, checks the gap to the last occurrence of the same source. If the gap is less than `min_spacing`, the item is deferred. Deferred items are re-inserted at the first position where no same-source items exist within `[pos - minSpacing, pos + minSpacing - 1]`.
+
+**Subsource Min Spacing:** Same as min_spacing but checks both source AND subsource match.
 
 ---
 
-## Stage 4: Padding and Finalization (FeedAssemblyService)
+## Stage 5: Padding, Cycling, and Finalization (FeedAssemblyService)
 
-After tier assembly and spacing, `FeedAssemblyService` runs a padding pass:
+After tier assembly and spacing, `FeedAssemblyService` runs three fill passes:
+
+### Padding Pass
 
 1. If the batch is shorter than `effectiveLimit`, check for sources marked `padding: true` in the scroll config
-2. Collect unused pool items from padding sources, shuffle them
-3. Append padding items to fill remaining slots
+2. Collect unused pool items from padding sources
+3. Fisher-Yates shuffle the padding items
+4. Append to fill remaining slots
 
-Finally:
+### Cycling Pass (last resort)
 
-1. **Mark seen** — `FeedPoolManager.markSeen()` records consumed items and triggers proactive refill or recycling
+If the batch is still short after padding (batch > 0, batchNumber > 1):
+
+1. Duplicate existing batch items with ID suffix `:dup{n}`
+2. Fill remaining slots with duplicates
+3. Ensures the batch never falls below `effectiveLimit` items
+
+This is a graceful degradation for sessions where sources are exhausted and padding can't fill the gap.
+
+### Image Dimension Probe
+
+For items with an `image` URL but missing `meta.imageWidth` / `meta.imageHeight`:
+
+1. Parallel `probeImageDimensions()` calls with 3-second timeout per image
+2. On success, stores dimensions in `item.meta.imageWidth` and `item.meta.imageHeight`
+3. Enables frontend layout (masonry) to pre-calculate card heights without waiting for image load
+
+### Mark Seen & Cache
+
+1. **Mark seen** — `FeedPoolManager.markSeen()` records consumed item IDs and triggers proactive refill or recycling
 2. **Cache** — each item is stored in an LRU cache (max 500) for deep-link resolution via `GET /api/v1/feed/scroll/item/:slug`
-3. **Selection tracking** — headline items get their selection count incremented for sort-bias in future batches
+3. **Selection tracking** — headline items (ID starts with `headline:`) get their selection count incremented for sort-bias in future batches
+
+### Response Shape
+
+```javascript
+{
+  items,           // final batch array
+  hasMore,         // feedPoolManager.hasMore()
+  colors,          // extracted from scroll config tier/source colors
+  feed_assembly,   // diagnostic object from tier assembly
+}
+```
+
+---
+
+## Feed Cache Service (FeedCacheService)
+
+`FeedCacheService` implements stale-while-revalidate caching for first-page source fetches. It prevents redundant API calls while keeping data fresh.
+
+### Per-Source TTLs
+
+| Source | TTL | Rationale |
+|--------|-----|-----------|
+| `headlines` | 15 min | RSS harvest cadence |
+| `freshrss` | 10 min | External RSS sync interval |
+| `reddit` | 5 min | Frequent content updates |
+| `youtube` | 15 min | API quota conservation |
+| `googlenews` | 10 min | Topic aggregation refresh |
+| `komga` | 30 min | Infrequent new issues |
+| `photos` / `journal` | 30 min | Stable personal content |
+| `entropy` / `tasks` / `health` / `weather` / `fitness` / `gratitude` | 5 min | Real-time dashboard data |
+| `plex` / `plex-music` | 30 min | Media library scan interval |
+| Default fallback | 10 min | — |
+
+### Cache Flow
+
+```
+getItems(sourceKey, fetchFn, username)
+    │
+    ├─ Not hydrated? → Read from disk (YAML), validate entries
+    │
+    ├─ No cache entry? → await fetchAndCache() → return
+    │
+    ├─ Fresh hit (age < TTL)? → return cached items
+    │
+    └─ Stale hit (age ≥ TTL)?
+         ├─ Return cached items immediately
+         └─ Fire background refresh (no await)
+```
+
+### Background Refresh
+
+- One in-flight refresh per source (tracked by `#refreshing` Set)
+- If a refresh is already running for a source, the stale response serves
+- On fetch error: logs warning, serves stale cache, falls back to empty array
+
+### Disk Persistence
+
+Cache is persisted to `current/feed/_cache` user data path:
+- Disk flush is debounced at 30 seconds
+- Full cache is serialized as YAML on flush
+- Hydrated from disk on first access (one-time)
 
 ---
 
@@ -301,7 +614,7 @@ The expression is parsed as `prefix:rest` (split on first `:`). `rest` is comma-
 | 1. Tier | `prefix` is `wire`, `library`, `scrapbook`, or `compass` | Filter pool by `item.tier` | `?filter=compass` |
 | 2. Source type | `prefix` matches a registered adapter's `sourceType` or a built-in type | Filter pool by `item.source`, optionally by subsource | `?filter=reddit:worldnews,science` |
 | 3. Query name | `prefix` matches a query config filename (sans `.yml`) | Filter pool by `item.meta.queryName` | `?filter=scripture-bom` |
-| 4. Alias | `prefix` is in the alias map | Re-resolve the alias target through layers 2–3 | `?filter=photos` → `immich` |
+| 4. Alias | `prefix` is in the alias map | Re-resolve the alias target through layers 2-3 | `?filter=photos` → `immich` |
 
 If no layer matches, the filter is ignored and the normal assembly pipeline runs.
 
@@ -358,29 +671,30 @@ When the request includes `?focus=reddit:science`, the wire tier is filtered to 
 │  1. Fresh page load (no cursor)                                   │
 │     → reset() clears all per-user state + batch counter           │
 │     → initializePool() fetches page 1 from all sources            │
-│     → Pool: ~80-100 items across 15+ sources                     │
-│     → Batch 1 (wire decay factor=1.0): 5 wire + 10 non-wire     │
+│     → Pool: ~80-200 items across 15+ sources                     │
+│     → Batch 1 (decay factor=1.0): full wire + non-wire tiers     │
 └────────────────────────────────┬─────────────────────────────────┘
                                  │
 ┌────────────────────────────────▼─────────────────────────────────┐
 │  2. Scroll to sentinel (IntersectionObserver fires)              │
 │     → getNextBatch() with cursor                                 │
 │     → batchNumber increments → wire decay reduces wire slots     │
-│     → Freed slots go proportionally to compass/library/scrapbook │
+│     → Freed slots cascade to compass/library/scrapbook           │
 │     → markSeen() → remaining < 2×batch_size → proactive refill   │
 └────────────────────────────────┬─────────────────────────────────┘
                                  │
 ┌────────────────────────────────▼─────────────────────────────────┐
-│  3. Continued scrolling (wire decays toward 0)                   │
+│  3. Continued scrolling (wire decays exponentially)              │
 │     → Each batch has fewer wire items, more personal content     │
-│     → After wire_decay_batches, wire=0 and feed is all personal  │
-│     → Pool grows to 150-200+ items across multiple pages         │
+│     → At halfLife batches, wire is at 50%                        │
+│     → Pool grows to 150-300+ items across multiple pages         │
 └────────────────────────────────┬─────────────────────────────────┘
                                  │
 ┌────────────────────────────────▼─────────────────────────────────┐
 │  4. All sources exhausted                                        │
 │     → Pool drains to 0 unseen items                              │
 │     → recycle() shuffles 500 seen items back into pool           │
+│     → Recycled items tagged _seen, deprioritized in selection    │
 │     → Scroll continues with reshuffled content (still decayed)   │
 │     → hasMore stays true — infinite scroll                       │
 └──────────────────────────────────────────────────────────────────┘
@@ -392,12 +706,14 @@ When the request includes `?focus=reddit:science`, the wire tier is filtered to 
 
 | File | Purpose |
 |------|---------|
-| `backend/src/3_applications/feed/services/FeedAssemblyService.mjs` | Orchestrator: pool → filter/tier assembly → padding → cache |
+| `backend/src/3_applications/feed/services/FeedAssemblyService.mjs` | Orchestrator: pool → filter/tier assembly → padding → cycling → cache |
 | `backend/src/3_applications/feed/services/FeedFilterResolver.mjs` | 4-layer resolution chain for `?filter=` param |
 | `backend/src/3_applications/feed/services/FeedPoolManager.mjs` | Pool management: pagination, age filtering, refill, recycling |
-| `backend/src/3_applications/feed/services/TierAssemblyService.mjs` | Four-tier bucketing, within-tier selection, cross-tier interleaving |
+| `backend/src/3_applications/feed/services/TierAssemblyService.mjs` | Four-tier bucketing, flex allocation, within-tier selection, interleaving |
+| `backend/src/3_applications/feed/services/FlexAllocator.mjs` | CSS flexbox-inspired slot distribution algorithm |
+| `backend/src/3_applications/feed/services/FlexConfigParser.mjs` | YAML flex config normalization and legacy migration |
 | `backend/src/3_applications/feed/services/SpacingEnforcer.mjs` | Distribution rules: max_per_batch, max_consecutive, min_spacing |
 | `backend/src/3_applications/feed/services/ScrollConfigLoader.mjs` | User config loading, tier defaults, age threshold resolution |
-| `backend/src/3_applications/feed/services/FeedCacheService.mjs` | Stale-while-revalidate cache for first-page fetches |
+| `backend/src/3_applications/feed/services/FeedCacheService.mjs` | Stale-while-revalidate cache with per-source TTLs |
 | `backend/src/3_applications/feed/ports/IFeedSourceAdapter.mjs` | Port interface: `fetchPage()`, `fetchItems()`, `getDetail()` |
 | `backend/src/4_api/v1/routers/feed.mjs` | Express router: `/scroll`, `/detail`, `/scroll/item/:slug` |

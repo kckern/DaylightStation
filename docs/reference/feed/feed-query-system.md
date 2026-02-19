@@ -437,21 +437,23 @@ Each query declares a `tier` that determines how its items are distributed in th
 
 ### Tier Definitions
 
-| Tier | Purpose | Default Allocation | Sort Strategy | Examples |
-|------|---------|--------------------|---------------|----------|
-| **wire** | External content streams | Fills remaining slots | `timestamp_desc` | headlines, reddit, youtube, googlenews, freshrss |
-| **library** | Long-form reading | 2 per batch | `random` | komga |
-| **scrapbook** | Personal memories | 2 per batch | `random` | photos, journal |
-| **compass** | Life dashboard | 6 per batch | `priority` | weather, health, fitness, plex, tasks, gratitude, entropy |
+| Tier | Purpose | Default Flex | Sort Strategy | Examples |
+|------|---------|-------------|---------------|----------|
+| **wire** | External content streams | `grow: 1, basis: auto` (fills remaining) | `timestamp_desc` | headlines, reddit, youtube, googlenews, freshrss |
+| **library** | Long-form reading | `basis: 2` (fixed) | `random` | komga |
+| **scrapbook** | Personal memories | `basis: 2` (fixed) | `random` | photos, journal |
+| **compass** | Life dashboard | `basis: 6` (fixed) | `priority` | weather, health, fitness, plex, tasks, gratitude, entropy |
 
 ### Assembly Algorithm (TierAssemblyService)
 
-1. **Wire decay** — adjust allocations based on batch number (wire decays to 0 over `wire_decay_batches`, freed slots go proportionally to non-wire tiers)
-2. **Bucket** — partition all fetched items by `item.tier`
-3. **Within-tier select** — apply sort strategy and source caps per tier config
-4. **Interleave** — non-wire items are distributed evenly into the wire backbone at regular intervals
-5. **Deduplicate** — remove items with duplicate IDs
-6. **Spacing** — `SpacingEnforcer` prevents consecutive items from the same source
+1. **Flex allocation** — `FlexAllocator` distributes batch slots across tiers using CSS flexbox-inspired grow/shrink/basis/min/max (two levels: batch→tiers, then tier→sources)
+2. **Wire decay** — exponential: `factor = 0.5^((batch-1)/halfLife)`, default halfLife=2. Freed slots cascade to non-wire tiers
+3. **Bucket** — partition all fetched items by `item.tier`
+4. **Within-tier select** — sort → source caps → filler source guarantees → unseen preference → slot cap
+5. **Shortfall redistribution** — exhausted tiers' surplus slots go to scrapbook → library → compass
+6. **Interleave** — non-wire items distributed into wire backbone at even intervals (compass → scrapbook → library order)
+7. **Deduplicate** — remove items with duplicate IDs
+8. **Spacing** — `SpacingEnforcer` enforces 6 rules: source/subsource max_per_batch, max_consecutive (1), max_consecutive_subsource (2), source/subsource min_spacing
 
 ### Interleaving Example (Batch 1)
 
@@ -461,7 +463,7 @@ With default allocations (batch_size=15, first batch):
 - scrapbook: 2 items (photos, journal)
 - wire: remaining 5 slots (reddit, headlines, youtube, etc.)
 
-Non-wire items are inserted at even intervals into the wire list, producing a mixed feed. As the user scrolls deeper, wire decay shifts the balance: by batch N+1 (where N = `wire_decay_batches`), wire has 0 slots and all 15 items are personal content.
+Non-wire items are inserted at even intervals into the wire list, producing a mixed feed. As the user scrolls deeper, wire decay shifts the balance exponentially — at `halfLife` batches wire is at 50%, converging toward 0.
 
 ---
 
@@ -471,22 +473,47 @@ Per-user overrides in `data/users/{username}/config/feed.yml` under the `scroll:
 
 ```yaml
 scroll:
-  batch_size: 15
-  wire_decay_batches: 10  # wire decays to 0 over N batches (default: 10, set 0 to disable)
+  batch_size: 50
+  wire_decay_half_life: 2     # wire halves every N batches (exponential, default: 2)
   spacing:
-    max_consecutive: 1
+    max_consecutive: 1         # max same-source in a row (default: 1)
+    max_consecutive_subsource: 2  # max same-subsource in a row (default: 2)
   tiers:
+    wire:
+      flex: "1 0 auto"        # grow=1, fills remaining batch space
+      min: 20                  # at least 20 wire items
+      selection:
+        sort: timestamp_desc
+      sources:
+        feeds:
+          flex: dominant       # grow=2, gets 2x share of wire space
+          max: 15
+        social:
+          flex: "1 0 auto"
+          max: 11
+        news:
+          flex: filler         # fills remaining wire space, guaranteed min
+          max: 10
+          min: 3
+          subsources:
+            min_spacing: 3     # at least 3 items between same outlet
+        video:
+          flex: none           # fixed size, no flex
+          max: 7
     compass:
-      allocation: 6
+      flex: "0 0 6"           # fixed 6 slots
+      min: 4
       selection:
         sort: priority
       sources:
         weather:
           max_per_batch: 1
-    wire:
-      sources:
-        reddit:
-          max_per_batch: 3
+    scrapbook:
+      flex: "0 0 5"
+      min: 3
+    library:
+      flex: "0 0 5"
+      min: 2
 ```
 
 `ScrollConfigLoader` deep-merges user config with `TIER_DEFAULTS`:
@@ -494,13 +521,46 @@ scroll:
 | Default Key | Value |
 |------------|-------|
 | `batch_size` | 15 |
-| `wire_decay_batches` | 10 |
+| `wire_decay_half_life` | 2 |
 | `spacing.max_consecutive` | 1 |
+| `spacing.max_consecutive_subsource` | 2 |
 | `wire.selection.sort` | `timestamp_desc` |
-| `library.allocation` | 2 |
-| `scrapbook.allocation` | 2 |
-| `compass.allocation` | 6 |
+| `wire.flex` | `grow: 1, basis: auto` (fills remaining) |
+| `library.flex` | `basis: 2` (fixed) |
+| `scrapbook.flex` | `basis: 2` (fixed) |
+| `compass.flex` | `basis: 6` (fixed) |
 | `compass.selection.sort` | `priority` |
+
+### Flex Config Formats
+
+Source and tier flex can be specified in multiple ways:
+
+| Format | Example | Result |
+|--------|---------|--------|
+| Named alias | `flex: filler` | `{ grow: 1, shrink: 1, basis: 0 }` |
+| Named alias | `flex: dominant` | `{ grow: 2, shrink: 0, basis: auto }` |
+| Named alias | `flex: fixed` or `flex: none` | `{ grow: 0, shrink: 0, basis: auto }` |
+| String shorthand | `flex: "1 0 auto"` | `{ grow: 1, shrink: 0, basis: auto }` |
+| Number | `flex: 2` | `{ grow: 2, shrink: 1, basis: 0 }` |
+| Explicit | `grow: 1`, `shrink: 0`, `basis: 6`, `min: 3`, `max: 20` | Individual fields |
+| Legacy | `allocation: 6`, `max_per_batch: 3` | Migrated to `basis`/`max` |
+
+### Source-Level Config
+
+```yaml
+sources:
+  reddit:
+    flex: "1 0 auto"          # flex allocation within tier
+    max: 5                     # max items per batch (or max_per_batch)
+    min: 1                     # min items per batch (or min_per_batch)
+    max_age_hours: 168         # 1 week
+    min_spacing: 3             # min gap between same-source items
+    color: "#ff4500"           # card accent color
+    padding: true              # eligible for padding pass
+    subsources:
+      max_per_batch: 2         # max items per subreddit/outlet
+      min_spacing: 4           # min gap between same-subsource items
+```
 
 ### Source Filtering
 
@@ -597,12 +657,15 @@ Files like `dailynews.yml` (`type: freshvideo`) are consumed by the content syst
 |------|---------|
 | `backend/src/app.mjs` | Bootstrap: loads YAML, creates adapters, wires FeedPoolManager + FeedAssemblyService |
 | `backend/src/3_applications/feed/services/FeedPoolManager.mjs` | Pool management: paginated fetching, age filtering, refill, recycling |
-| `backend/src/3_applications/feed/services/FeedAssemblyService.mjs` | Orchestrator: pool → filter/tier assembly → padding → caching, detail delegation |
-| `backend/src/3_applications/feed/services/FeedFilterResolver.mjs` | 4-layer resolution chain for `?filter=` param (tier → source → query → alias) |
-| `backend/src/3_applications/feed/services/TierAssemblyService.mjs` | Four-tier interleaving: bucket → select → interleave → dedupe → space |
+| `backend/src/3_applications/feed/services/FeedAssemblyService.mjs` | Orchestrator: pool → filter/tier assembly → padding → cycling → caching |
+| `backend/src/3_applications/feed/services/TierAssemblyService.mjs` | Four-tier assembly: flex allocation, selection, shortfall redistribution, interleaving |
+| `backend/src/3_applications/feed/services/FlexAllocator.mjs` | CSS flexbox-inspired slot distribution algorithm |
+| `backend/src/3_applications/feed/services/FlexConfigParser.mjs` | YAML flex config normalization and legacy migration |
+| `backend/src/3_applications/feed/services/SpacingEnforcer.mjs` | 6-rule spacing enforcement: source/subsource caps, consecutive, spacing |
+| `backend/src/3_applications/feed/services/FeedCacheService.mjs` | Stale-while-revalidate cache with per-source TTLs |
+| `backend/src/3_applications/feed/services/FeedFilterResolver.mjs` | 4-layer resolution chain for `?filter=` param |
 | `backend/src/3_applications/feed/services/ScrollConfigLoader.mjs` | Per-user scroll config loading, merging with defaults, age threshold resolution |
-| `backend/src/3_applications/feed/services/SpacingEnforcer.mjs` | Prevents consecutive same-source items |
 | `backend/src/3_applications/feed/ports/IFeedSourceAdapter.mjs` | Port interface: `sourceType`, `fetchPage()`, `getDetail()` |
 | `backend/src/1_adapters/feed/sources/*.mjs` | 14 source adapter implementations |
 | `backend/src/4_api/v1/routers/feed.mjs` | Express router: `/scroll`, `/detail`, `/scroll/item/:slug` |
-| `frontend/src/modules/Feed/Scroll/Scroll.jsx` | React scroll component: infinite scroll, detail navigation |
+| `frontend/src/modules/Feed/Scroll/Scroll.jsx` | React scroll component: infinite scroll, masonry, detail navigation |
