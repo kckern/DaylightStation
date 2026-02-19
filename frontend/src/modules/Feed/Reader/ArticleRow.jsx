@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { colorFromLabel } from '../Scroll/cards/utils.js';
-import { RemuxPlayer } from '../../Player/renderers/RemuxPlayer.jsx';
+import FeedPlayer from '../Scroll/detail/FeedPlayer.jsx';
 import { DaylightAPI } from '../../../lib/api.mjs';
 
 /**
@@ -141,6 +141,7 @@ export default function ArticleRow({ article, onMarkRead }) {
 
 function ReaderYouTubePlayer({ article }) {
   const [playerData, setPlayerData] = useState(null);
+  const [fetchDone, setFetchDone] = useState(false);
   const [useEmbed, setUseEmbed] = useState(false);
 
   // Fetch detail from API to get Piped stream URL
@@ -152,8 +153,9 @@ function ReaderYouTubePlayer({ article }) {
       .then(result => {
         const section = result?.sections?.find(s => s.type === 'player' && s.data?.provider === 'youtube');
         if (section) setPlayerData(section.data);
+        setFetchDone(true);
       })
-      .catch(() => {}); // silently fall back to embed
+      .catch(() => setFetchDone(true)); // fall back to embed
   }, [article.meta]);
 
   const handleStreamError = useCallback(() => {
@@ -165,37 +167,29 @@ function ReaderYouTubePlayer({ article }) {
     maxWidth: '360px',
   } : undefined;
 
+  // Loading — don't show iframe yet
+  if (!fetchDone) {
+    return (
+      <div className="youtube-embed-wrapper" style={wrapperStyle}>
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#000' }}>
+          <div className="scroll-loading-dots"><span /><span /><span /></div>
+        </div>
+      </div>
+    );
+  }
+
   // Native playback via Piped
-  if (playerData && !useEmbed) {
-    // Split streams → RemuxPlayer
-    if (playerData.videoUrl && playerData.audioUrl) {
-      return (
-        <div className="youtube-embed-wrapper" style={wrapperStyle}>
-          <RemuxPlayer
-            videoUrl={playerData.videoUrl}
-            audioUrl={playerData.audioUrl}
-            onError={handleStreamError}
-            style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}
-          />
-        </div>
-      );
-    }
-    // Combined stream
-    if (playerData.url) {
-      return (
-        <div className="youtube-embed-wrapper" style={wrapperStyle}>
-          <video
-            src={playerData.url}
-            autoPlay
-            playsInline
-            controls
-            onError={handleStreamError}
-            className="youtube-embed"
-            style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'contain' }}
-          />
-        </div>
-      );
-    }
+  if (playerData && !useEmbed && (playerData.videoUrl || playerData.url)) {
+    const ar = (article.meta?.imageWidth && article.meta?.imageHeight)
+      ? `${article.meta.imageWidth} / ${article.meta.imageHeight}`
+      : '16 / 9';
+    return (
+      <FeedPlayer
+        playerData={playerData}
+        onError={handleStreamError}
+        aspectRatio={ar}
+      />
+    );
   }
 
   // Embed fallback
