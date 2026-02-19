@@ -220,7 +220,7 @@ export class FeedAssemblyService {
    * @param {string} username
    * @returns {Promise<{ sections: Array } | null>}
    */
-  async getDetail(itemId, itemMeta, username) {
+  async getDetail(itemId, itemMeta, username, opts = {}) {
     const colonIdx = itemId.indexOf(':');
     if (colonIdx === -1) return null;
 
@@ -230,7 +230,7 @@ export class FeedAssemblyService {
     // Check registered source adapters first
     const adapter = this.#sourceAdapters.get(source);
     if (adapter && typeof adapter.getDetail === 'function') {
-      const result = await adapter.getDetail(localId, itemMeta || {}, username);
+      const result = await adapter.getDetail(localId, itemMeta || {}, username, opts);
       if (result) return result;
     }
 
