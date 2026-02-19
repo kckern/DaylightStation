@@ -48,6 +48,30 @@
 .matrix-row {
   display: flex;
   gap: 4px;
+
+  @media (max-width: 1024px) {
+    flex-wrap: wrap;
+
+    .source-cell {
+      flex: 1 1 calc(33.333% - 4px);
+    }
+  }
+
+  @media (max-width: 768px) {
+    flex-wrap: wrap;
+
+    .source-cell {
+      flex: 1 1 calc(50% - 4px);
+    }
+  }
+
+  @media (max-width: 480px) {
+    flex-wrap: wrap;
+
+    .source-cell {
+      flex: 1 1 100%;
+    }
+  }
 }
 
 // ============================================================
