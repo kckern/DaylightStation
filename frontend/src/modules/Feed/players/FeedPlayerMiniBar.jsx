@@ -1,5 +1,6 @@
-import { proxyImage } from './cards/utils.js';
-import { feedLog } from './feedLog.js';
+import { proxyImage } from '../Scroll/cards/utils.js';
+import { feedLog } from '../Scroll/feedLog.js';
+import { useFeedPlayer } from './FeedPlayerContext.jsx';
 
 function formatTime(s) {
   if (!s || !Number.isFinite(s)) return '0:00';
@@ -8,19 +9,13 @@ function formatTime(s) {
   return `${m}:${sec.toString().padStart(2, '0')}`;
 }
 
-const SPEED_STEPS = [1, 1.25, 1.5, 1.75, 2];
-
 export default function FeedPlayerMiniBar({ item, playback, onOpen, onClose }) {
+  const { volume, muted, speed, cycleSpeed, setVolume, toggleMute, pausedMedia, resumePaused } = useFeedPlayer();
+
   if (!item) return null;
 
-  const { playing, currentTime, duration, toggle, seek, speed, setSpeed, progressElRef } = playback || {};
+  const { playing, currentTime, duration, toggle, seek, progressElRef } = playback || {};
 
-  const cycleSpeed = () => {
-    if (!setSpeed) return;
-    const idx = SPEED_STEPS.indexOf(speed ?? 1);
-    const next = SPEED_STEPS[(idx + 1) % SPEED_STEPS.length];
-    setSpeed(next);
-  };
   // Use image directly if already an API path; otherwise proxy external URLs
   const thumb = item.image
     ? (item.image.startsWith('/api/') ? item.image : proxyImage(item.image))
@@ -81,6 +76,17 @@ export default function FeedPlayerMiniBar({ item, playback, onOpen, onClose }) {
       >
         &times;
       </button>
+      {pausedMedia && (
+        <button
+          className="feed-mini-bar-resume-paused"
+          onClick={(e) => { e.stopPropagation(); resumePaused(); }}
+          aria-label="Resume previous"
+          title={`Resume: ${pausedMedia.item?.title || 'previous'}`}
+          style={{ background: 'none', border: '1px solid rgba(255,255,255,0.3)', color: '#fff', cursor: 'pointer', padding: '1px 6px', borderRadius: '3px', fontSize: '10px', whiteSpace: 'nowrap' }}
+        >
+          ↩ Prev
+        </button>
+      )}
       <div className="feed-mini-bar-progress" onClick={handleProgressClick}>
         <div className="feed-mini-bar-progress-fill" ref={progressElRef} />
       </div>
