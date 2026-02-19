@@ -67,7 +67,7 @@ export class TierAssemblyService {
    */
   assemble(allItems, scrollConfig, { effectiveLimit, focus, selectionCounts, batchNumber = 1 } = {}) {
     const tierConfig = this.#resolveTierConfig(scrollConfig);
-    const halfLife = scrollConfig.wire_decay_half_life ?? 2;
+    const halfLife = scrollConfig.wire_decay_half_life ?? 4;
 
     // Bucket items by tier
     const buckets = this.#bucketByTier(allItems);

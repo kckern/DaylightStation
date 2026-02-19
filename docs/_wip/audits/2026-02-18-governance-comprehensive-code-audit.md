@@ -6,14 +6,14 @@
 
 ## Executive Summary
 
-The governance system has stabilized significantly since the ghost oscillation crisis (Era 9, Feb 14-17). Core mechanisms — evalContext pattern, exemption handling, videoLocked formula, challenge pausing, warning cooldown, ghost filtering order — are correctly implemented. However, several risks remain, some carried forward from prior audits and some newly identified.
+The governance system has stabilized significantly since the ghost oscillation crisis (Era 9, Feb 14-17). Core mechanisms — evalContext pattern, exemption handling, videoLocked formula, challenge pausing, warning cooldown, ghost filtering order — are correctly implemented.
 
-| Severity | New Findings | Carried Forward | Total |
-|----------|-------------|-----------------|-------|
-| P0 (Critical) | 0 | 2 | 2 |
-| P1 (High) | 1 | 2 | 3 |
-| P2 (Medium) | 1 | 4 | 5 |
-| P3+ (Low) | 4 | 5 | 9 |
+| Severity | Open | Fixed/Already Fixed | Total |
+|----------|------|---------------------|-------|
+| P0 (Critical) | 0 | 2 (CF1, CF2 already fixed) | 2 |
+| P1 (High) | 0 | 2 (N1 fixed, CF3 already fixed) | 2 |
+| P2 (Medium) | 3 (CF4, CF5, CF6) | 2 (N2, CF7 fixed) | 5 |
+| P3+ (Low) | 6 (N3, N5, N6, CF8, CF9, CF10) | 1 (N4 fixed) | 7 |
 
 ---
 
@@ -25,24 +25,7 @@ The governance system has stabilized significantly since the ghost oscillation c
 - `frontend/src/hooks/fitness/FitnessSession.js:1559-1565` (Path B)
 - `frontend/src/hooks/fitness/GovernanceEngine.js:1234-1248` (Path A)
 
-**The bug:** Path B (`updateSnapshot`) sets `userZoneMap[userId] = entry.zoneId || null`, allowing `null` values. The ghost filter at GovernanceEngine.js:1313 checks `id in userZoneMap` — since `null` is a valid value, participants with `null` zones pass the filter and are counted as active.
-
-Path A (`_triggerPulse`) guards with `if (userId && zoneId)` (line 1244), only writing entries with actual zones.
-
-**Impact:** A roster entry with no `zoneId` (e.g., a user who joined but hasn't generated HR data yet) will:
-- Pass the ghost filter (has a key in userZoneMap)
-- Have `null` zone in requirement evaluation
-- Potentially fail zone rank lookups silently
-
-**Fix:** Add a guard in Path B to match Path A:
-```javascript
-// FitnessSession.js:1562-1564
-if (userId && (entry.zoneId || null)) {
-    userZoneMap[userId] = entry.zoneId;
-}
-```
-
-Or more simply, only write non-null zones to match Path A behavior.
+**Status:** FIXED — Path B now guards with `if (userId && zoneId)` and lowercases zones, matching Path A exactly.
 
 ---
 
@@ -70,9 +53,7 @@ UserManager uses `\\s+` (double-escaped — matches literal backslash-s, not whi
 
 **File:** `frontend/src/hooks/fitness/GovernanceEngine.js:669, 683`
 
-During `evaluate()`, `_setPhase()` logs `this._latestInputs.activeParticipants.length`. Since `_captureLatestInputs()` runs at line 1527 (after all phase transitions), this reads the *previous* evaluation's participant count. The `evalContext` parameter is passed but only used for `userZoneMap`, not for participant count.
-
-**Impact:** Phase change logs may show off-by-one participant count. Diagnostic inaccuracy only, no logic impact.
+**Status:** FIXED — `activeParticipants` added to `evalContext` at line 1333; `_setPhase` logging now prefers `evalContext?.activeParticipants?.length` with fallback.
 
 ---
 
@@ -100,18 +81,18 @@ When transitioning to `locked` from failed-challenge or grace-period paths, only
 
 **Source:** 2026-02-17-governance-warning-observability-audit.md
 **File:** `GovernanceEngine.js:713-734`
-**Status:** OPEN — `evalContext` fix was applied to `_setPhase()` but the logging helpers still read `this._latestInputs.userZoneMap` which is stale. The `evalContext` was added to `_setPhase()` callers but `_getParticipantsBelowThreshold()` doesn't use it for zone lookups.
+**Status:** ALREADY FIXED — Code review confirms `_getParticipantsBelowThreshold()` uses `evalContext?.userZoneMap` (line 716) and is called with `evalContext` from `_setPhase()` (line 677). The `requirementSummary` is populated (line 1450) before `_setPhase` calls, so `missingUsers` arrays are available.
 
 ### CF2. `_getParticipantStates()` reads stale data [P0]
 
 **Source:** 2026-02-17-governance-warning-observability-audit.md
 **File:** `GovernanceEngine.js:739-749`
-**Status:** OPEN — Same stale-data bug. `lock_triggered` event shows previous-evaluation participant states.
+**Status:** ALREADY FIXED — `_getParticipantStates()` uses `evalContext?.userZoneMap` (line 766) and `evalContext?.zoneInfoMap` (line 767). Called with `evalContext` from `_setPhase()` (line 696).
 
 ### CF3. Missing per-user thresholds/deltas in warning logs [P1]
 
 **Source:** 2026-02-17-governance-warning-observability-audit.md
-**Status:** OPEN — Warning events log zone name and user list but not individual HR, threshold, or delta. Without these, threshold calibration problems (e.g., Alan's 125 BPM threshold with HR floor at 121) look like code bugs.
+**Status:** ALREADY FIXED — `_getParticipantsBelowThreshold()` already includes `hr` (line 731), `threshold` (line 734-742), and `delta` (line 745) in its output. Per-user zone thresholds are read from ZoneProfileStore.
 
 ### CF4. Challenge failure bypasses warning grace period [P2]
 
@@ -133,7 +114,7 @@ When transitioning to `locked` from failed-challenge or grace-period paths, only
 ### CF7. Zone boundary warning spam (threshold calibration) [P2]
 
 **Source:** 2026-02-17-governance-feb17-session-audit.md
-**Status:** OPEN — 19 warnings in 33 min from Alan's HR oscillating 121-127 around 125 BPM threshold. Root cause is threshold calibration (config), not code. Fix: lower Alan's `active` threshold to ~118, Milo's to ~112.
+**Status:** FIXED — Alan's `active` threshold lowered from 125→118, Milo's from 120→112 in their profile.yml files.
 
 ### CF8. Premature warning-phase video pause [P3]
 

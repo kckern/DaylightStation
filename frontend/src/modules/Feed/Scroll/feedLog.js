@@ -1,32 +1,38 @@
 /**
  * Feed scroll diagnostic logger.
  *
- * Enable in browser console:  localStorage.setItem('feedDebug', '1')
- * Disable:                    localStorage.removeItem('feedDebug')
- * Filter specific categories: localStorage.setItem('feedDebug', 'scroll,image')
+ * Uses the DaylightStation logging framework with a child logger
+ * scoped to the feed-scroll component. Events are emitted at debug
+ * level with structured data and routed through all configured
+ * transports (console, WebSocket).
+ *
+ * Enable debug output:  window.DAYLIGHT_LOG_LEVEL = 'debug'
+ *                    or configure({ level: 'debug' })
  *
  * Categories: scroll, image, player, dismiss, detail, nav
  */
 
+<<<<<<< Updated upstream
 const CATEGORIES = ['scroll', 'image', 'player', 'dismiss', 'detail', 'nav', 'assembly', 'masonry'];
+=======
+import getLogger from '../../../lib/logging/Logger.js';
+>>>>>>> Stashed changes
 
-function getFilter() {
-  try {
-    const v = localStorage.getItem('feedDebug');
-    if (!v) return null; // disabled
-    if (v === '1' || v === 'true' || v === '*') return CATEGORIES;
-    return v.split(',').map(s => s.trim()).filter(Boolean);
-  } catch { return null; }
+let _logger;
+function logger() {
+  if (!_logger) _logger = getLogger().child({ component: 'feed-scroll' });
+  return _logger;
 }
 
-function log(category, ...args) {
-  const filter = getFilter();
-  if (!filter || !filter.includes(category)) return;
-  const ts = new Date().toISOString().slice(11, 23);
-  console.debug(`%c[Feed:${category}]%c ${ts}`, 'color:#fab005;font-weight:bold', 'color:#868e96', ...args);
+function emit(category, detail, data) {
+  const payload = typeof data === 'object' && data !== null ? { ...data } : {};
+  if (typeof data === 'string') payload.info = data;
+  payload.detail = detail;
+  logger().debug(`feed-${category}`, payload);
 }
 
 export const feedLog = {
+<<<<<<< Updated upstream
   scroll:   (...args) => log('scroll', ...args),
   image:    (...args) => log('image', ...args),
   player:   (...args) => log('player', ...args),
@@ -35,4 +41,12 @@ export const feedLog = {
   nav:      (...args) => log('nav', ...args),
   assembly: (...args) => log('assembly', ...args),
   masonry:  (...args) => log('masonry', ...args),
+=======
+  scroll:  (detail, data) => emit('scroll', detail, data),
+  image:   (detail, data) => emit('image', detail, data),
+  player:  (detail, data) => emit('player', detail, data),
+  dismiss: (detail, data) => emit('dismiss', detail, data),
+  detail:  (detail, data) => emit('detail', detail, data),
+  nav:     (detail, data) => emit('nav', detail, data),
+>>>>>>> Stashed changes
 };

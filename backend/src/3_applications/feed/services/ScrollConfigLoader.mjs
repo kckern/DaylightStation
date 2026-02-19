@@ -38,6 +38,7 @@ const TIER_DEFAULTS = Object.freeze({
 const DEFAULTS = Object.freeze({
   batch_size: 15,
   wire_decay_batches: 10,
+  wire_decay_half_life: 2,
   spacing: Object.freeze({
     max_consecutive: 1,
     max_consecutive_subsource: 2,
@@ -174,6 +175,7 @@ export class ScrollConfigLoader {
     return {
       batch_size: user.batch_size ?? DEFAULTS.batch_size,
       wire_decay_batches: user.wire_decay_batches ?? DEFAULTS.wire_decay_batches,
+      wire_decay_half_life: user.wire_decay_half_life ?? DEFAULTS.wire_decay_half_life,
       spacing: {
         ...DEFAULTS.spacing,
         ...user.spacing,
