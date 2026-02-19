@@ -34,11 +34,10 @@ export default function Headlines({ pageId }) {
 
   useEffect(() => {
     setLoading(true);
-    setData(null);
     fetchHeadlines();
   }, [pageId]);
 
-  if (loading) return <div className="feed-placeholder">Loading headlines...</div>;
+  if (loading && !data) return <div className="feed-placeholder">Loading headlines...</div>;
 
   const grid = data?.grid;
   const colColors = data?.col_colors || null;
