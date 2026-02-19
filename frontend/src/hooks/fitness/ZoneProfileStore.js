@@ -41,6 +41,8 @@ const now = () => Date.now();
 const HYSTERESIS_COOLDOWN_MS = 5000;
 // During rapid toggling, the new zone must be stable for this long before committing
 const HYSTERESIS_STABILITY_MS = 3000;
+// Schmitt trigger: to LEAVE a zone, HR must drop this many BPM below the zone's min threshold
+const EXIT_MARGIN_BPM = 5;
 
 export class ZoneProfileStore {
   constructor() {
@@ -175,7 +177,7 @@ export class ZoneProfileStore {
 
     // Apply zone hysteresis: instant first transition, debounce rapid toggling
     const rawZoneId = normalizedSnapshot?.currentZoneId ?? null;
-    const stabilized = this.#applyHysteresis(userId, rawZoneId, normalizedZoneConfig);
+    const stabilized = this.#applyHysteresis(userId, rawZoneId, normalizedZoneConfig, heartRate);
 
     return {
       id: userId,
@@ -215,7 +217,7 @@ export class ZoneProfileStore {
    * @param {Array} zoneConfig - normalized zone config for name/color lookup
    * @returns {{ zoneId: string|null, zoneName: string|null, zoneColor: string|null }}
    */
-  #applyHysteresis(userId, rawZoneId, zoneConfig) {
+  #applyHysteresis(userId, rawZoneId, zoneConfig, heartRate) {
     const ts = now();
     const lookupZone = (id) => {
       if (!id) return { zoneId: null, zoneName: null, zoneColor: null };
@@ -225,6 +227,15 @@ export class ZoneProfileStore {
         zoneName: zone?.name ?? id,
         zoneColor: zone?.color ?? null
       };
+    };
+
+    const sortedZones = (zoneConfig || []).slice().sort((a, b) => (a?.min ?? 0) - (b?.min ?? 0));
+    const zoneRanks = {};
+    sortedZones.forEach((z, idx) => { if (z?.id) zoneRanks[z.id] = idx; });
+    const getZoneRank = (id) => id && Number.isFinite(zoneRanks[id]) ? zoneRanks[id] : -1;
+    const getZoneMinThreshold = (id) => {
+      const z = id && sortedZones.find(s => s.id === id);
+      return z && Number.isFinite(z.min) ? z.min : null;
     };
 
     let state = this._hysteresis.get(userId);
@@ -249,6 +260,25 @@ export class ZoneProfileStore {
     // Raw zone matches committed — no change needed
     if (rawZoneId === state.committedZoneId) {
       return lookupZone(state.committedZoneId);
+    }
+
+    // Schmitt trigger: suppress downgrade if HR within exit margin
+    const committedRank = getZoneRank(state.committedZoneId);
+    const rawRank = getZoneRank(rawZoneId);
+    if (committedRank >= 0 && rawRank >= 0 && rawRank < committedRank && Number.isFinite(heartRate)) {
+      const committedMin = getZoneMinThreshold(state.committedZoneId);
+      if (committedMin !== null) {
+        const exitThreshold = Math.max(0, committedMin - EXIT_MARGIN_BPM);
+        if (heartRate >= exitThreshold) {
+          getLogger()?.sampled?.('zoneprofilestore.exit_margin_suppressed', {
+            userId, heartRate, committedZoneId: state.committedZoneId, rawZoneId,
+            committedMin, exitThreshold, exitMarginBpm: EXIT_MARGIN_BPM
+          }, { maxPerMinute: 10 });
+          state.rawZoneId = state.committedZoneId;
+          state.rawZoneStableSince = ts;
+          return lookupZone(state.committedZoneId);
+        }
+      }
     }
 
     // Raw zone differs from committed — decide whether to commit

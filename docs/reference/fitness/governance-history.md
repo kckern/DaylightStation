@@ -21,6 +21,7 @@ For event-driven architecture and SSoT boundaries, see `governance-system-archit
   - [Era 8: Video Lock Correctness (Feb 13-14)](#era-8-video-lock-correctness-feb-13-14)
   - [Era 9: Ghost Oscillation Saga (Feb 14-17)](#era-9-ghost-oscillation-saga-feb-14-17)
   - [Era 10: Warning Cooldown & Observability (Feb 17-18)](#era-10-warning-cooldown--observability-feb-17-18)
+  - [Era 11: Zone Boundary Exit Margin (Feb 18)](#era-11-zone-boundary-exit-margin-feb-18)
 - [Recurring Bug Patterns](#recurring-bug-patterns)
 - [Optimal Patterns vs Antipatterns](#optimal-patterns-vs-antipatterns)
 - [Mechanisms Added Then Removed](#mechanisms-added-then-removed)
@@ -44,6 +45,7 @@ For event-driven architecture and SSoT boundaries, see `governance-system-archit
 | 8 | Feb 13-14 | Video lock correctness | `videoLocked` extended to pending/locked phases |
 | 9 | Feb 14-17 | Ghost oscillation | Dual-path data race caused 31 phase flips in 85s |
 | 10 | Feb 17-18 | Warning observability | Stale logging fixed; HR/threshold/delta enrichment |
+| 11 | Feb 18 | Zone boundary exit margin | Schmitt trigger in ZoneProfileStore; 19 warnings/33min → near-zero |
 
 ---
 
@@ -306,6 +308,39 @@ BLE devices send `heartRate: 0` on disconnect. `UserManager.#updateHeartRateData
 
 ---
 
+### Era 11: Zone Boundary Exit Margin (Feb 18)
+
+**The problem:** 19 governance warnings in 33 minutes from Alan's HR oscillating 121-127 BPM around the 125 BPM `active` zone threshold. Era 10's `warning_cooldown_seconds` suppressed re-entry to warning phase after recovery, but didn't prevent the zone itself from toggling. ZoneProfileStore had time-based hysteresis (5s cooldown, 3s stability) but no amplitude-based dead zone -- once HR stabilized below the boundary for 3s, the zone committed and triggered a governance warning.
+
+**Root cause:** The zone boundary was a sharp edge. HR at 124 (1 BPM below threshold) was treated identically to HR at 80 (45 BPM below). Natural HR fluctuation of +/-3 BPM around any threshold guaranteed oscillation.
+
+**Fix:** Added Schmitt trigger exit margin to `ZoneProfileStore.#applyHysteresis()`. To LEAVE a zone, HR must drop `EXIT_MARGIN_BPM` (5) below the zone's min threshold, not just below it. Upgrades remain instant.
+
+```javascript
+const EXIT_MARGIN_BPM = 5;
+
+// In #applyHysteresis: suppress downgrade if HR within exit margin
+const exitThreshold = Math.max(0, committedMin - EXIT_MARGIN_BPM);
+if (heartRate >= exitThreshold) {
+  // Stay in committed zone — HR hasn't dropped far enough
+  return lookupZone(state.committedZoneId);
+}
+```
+
+**Example:** Alan committed to `active` (min: 100). Exit threshold = 95. HR at 97 stays in `active`. HR at 94 downgrades to `cool`. His personal threshold of 125 for `warm` zone would have exit threshold 120, so oscillation between 121-127 stays in `warm`.
+
+**Key design decisions:**
+- Only applies to downgrades. Upgrades are instant (crossing into a higher zone should feel responsive).
+- Uses zone rank ordering (sorted by min) to detect downgrade vs upgrade.
+- Exit threshold clamps to 0 via `Math.max(0, ...)` for zones with very low min values.
+- Resets `rawZoneStableSince` when exit margin suppresses, preventing time-based hysteresis from committing a downgrade the exit margin would block.
+
+**Complementary to Era 10 fixes:** `warning_cooldown_seconds` suppresses governance re-warnings after recovery. Exit margin prevents the zone change that triggers governance evaluation in the first place. Together they form two layers: exit margin prevents most boundary oscillation; cooldown catches any that slip through.
+
+**Lesson established:** **Amplitude-based and time-based hysteresis solve different problems.** Time-based hysteresis (3s stability) prevents rapid toggling from noisy signals. Amplitude-based hysteresis (5 BPM exit margin) prevents oscillation around a boundary from gradual HR drift. Both are needed; neither is redundant with the other.
+
+---
+
 ## Recurring Bug Patterns
 
 These patterns have caused repeated failures across multiple eras. Understanding them prevents regression.
@@ -394,6 +429,7 @@ Hard-won lessons distilled into concrete do/don't pairs. Each antipattern caused
 | `warning_cooldown_seconds` config to suppress re-entry after recovery | Per-evaluation threshold checks with no cooldown | HR oscillating 1-2 BPM around a zone boundary triggers warning on every dip. Cooldown suppresses noise without hiding real drops (Era 10). |
 | Preserve last known zone on HR=0 (device disconnect) | Recompute zone snapshot with HR=0, dropping user to "cool" | BLE devices send HR=0 on disconnect. Treating it as real drops the user's zone, triggering false warnings. Ghost filter handles truly gone users (Era 10). |
 | Immediate unlock when requirements met; immediate warning when they fail | Add debounce delays (`_relockGraceMs`, `_hysteresisMs`) between state changes | Both mechanisms were added and removed within 48 hours. The warning grace period already covers the "brief dip" scenario with visible UI feedback (Era 9). |
+| Schmitt trigger exit margin for zone downgrades (`EXIT_MARGIN_BPM`) | Sharp zone boundaries where 1 BPM difference triggers zone change | Natural HR fluctuation of +/-3 BPM guarantees oscillation at sharp boundaries. Exit margin requires HR to drop 5 BPM below threshold to leave a zone, absorbing noise (Era 11). |
 
 ### Rendering & CSS
 
@@ -520,6 +556,7 @@ satisfiedOnce && graceActive -> warning
 - `satisfiedOnce`: set true on first satisfaction, used for pending vs warning distinction
 - `_warningCooldownUntil`: timestamp suppressing re-entry to warning after recovery
 - `deadline`: grace period expiry timestamp (passed to UI for countdown display)
+- `EXIT_MARGIN_BPM`: (ZoneProfileStore) Schmitt trigger margin; zone downgrades require HR to drop 5 BPM below zone min
 
 **Evaluation paths:**
 - **Snapshot path:** React re-render -> `updateSnapshot()` -> `evaluate()` with roster data

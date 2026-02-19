@@ -165,4 +165,96 @@ describe('ZoneProfileStore hysteresis', () => {
     expect(zoneState.zoneId).toBe(profile.currentZoneId);
     expect(zoneState.zoneId).toBe('active'); // Stabilized, not raw warm
   });
+
+  // --- Schmitt trigger exit margin tests ---
+
+  test('exit margin suppresses downgrade when HR within margin', () => {
+    // Commit to active zone (min: 100) at HR 110
+    store.syncFromUsers([makeUser('user-1', 110)]);
+    expect(store.getProfile('user-1').currentZoneId).toBe('active');
+
+    // Advance past cooldown so next change would normally be instant
+    mockTime += 6000;
+
+    // HR drops to 97 — below active threshold (100) but above exit threshold (100 - 5 = 95)
+    // Raw zone = cool, but exit margin should suppress the downgrade
+    store.syncFromUsers([makeUser('user-1', 97)]);
+    expect(store.getProfile('user-1').currentZoneId).toBe('active');
+  });
+
+  test('exit margin allows downgrade when HR below exit threshold', () => {
+    // Commit to active zone at HR 110
+    store.syncFromUsers([makeUser('user-1', 110)]);
+    expect(store.getProfile('user-1').currentZoneId).toBe('active');
+
+    // Advance past cooldown
+    mockTime += 6000;
+
+    // HR drops to 94 — below exit threshold (100 - 5 = 95)
+    store.syncFromUsers([makeUser('user-1', 94)]);
+    expect(store.getProfile('user-1').currentZoneId).toBe('cool');
+  });
+
+  test('exit margin does not apply to upgrades', () => {
+    // Commit to cool zone at HR 50
+    store.syncFromUsers([makeUser('user-1', 50)]);
+    expect(store.getProfile('user-1').currentZoneId).toBe('cool');
+
+    // Advance past cooldown
+    mockTime += 6000;
+
+    // HR rises to 101 — just above active threshold (100)
+    // Upgrades should be instant, no exit margin applied
+    store.syncFromUsers([makeUser('user-1', 101)]);
+    expect(store.getProfile('user-1').currentZoneId).toBe('active');
+  });
+
+  test('exit margin and time-based hysteresis work together', () => {
+    // Commit to warm zone (min: 130) at HR 140
+    store.syncFromUsers([makeUser('user-1', 140)]);
+    expect(store.getProfile('user-1').currentZoneId).toBe('warm');
+
+    // 100ms later (within cooldown): HR drops to 127 — below warm (130) but above exit threshold (125)
+    // Both exit margin AND time-based hysteresis should suppress
+    mockTime += 100;
+    store.syncFromUsers([makeUser('user-1', 127)]);
+    expect(store.getProfile('user-1').currentZoneId).toBe('warm');
+
+    // Advance past cooldown: exit margin still suppresses even without time-based protection
+    mockTime += 6000;
+    store.syncFromUsers([makeUser('user-1', 127)]);
+    expect(store.getProfile('user-1').currentZoneId).toBe('warm');
+
+    // HR drops to 124 — below exit threshold (130 - 5 = 125) → downgrade commits
+    mockTime += 6000;
+    store.syncFromUsers([makeUser('user-1', 124)]);
+    expect(store.getProfile('user-1').currentZoneId).toBe('active');
+  });
+
+  test('exit margin clamps to zero (does not push below raw zone threshold)', () => {
+    // Use a zone config where active min is 2 (below EXIT_MARGIN_BPM of 5)
+    // Exit threshold = max(0, 2 - 5) = 0 (clamped, would be -3 without clamp)
+    const tightConfig = [
+      { id: 'cool', name: 'Cool', min: 0, color: 'gray', coins: 0 },
+      { id: 'active', name: 'Active', min: 2, color: 'green', coins: 1 }
+    ];
+    store.setBaseZoneConfig(tightConfig);
+
+    // Commit to active zone at HR 65 (above MIN_COOL_BASELINE=60 and active min=2)
+    store.syncFromUsers([makeUser('user-1', 65)]);
+    expect(store.getProfile('user-1').currentZoneId).toBe('active');
+
+    // Advance past cooldown
+    mockTime += 6000;
+
+    // HR drops to 1 — raw zone is cool, but exit threshold is clamped to 0
+    // HR 1 >= 0 → exit margin suppresses downgrade
+    store.syncFromUsers([makeUser('user-1', 1)]);
+    expect(store.getProfile('user-1').currentZoneId).toBe('active');
+
+    // HR drops to 0 — still >= clamped exit threshold (0) → stays in active
+    mockTime += 6000;
+    store.syncFromUsers([makeUser('user-1', 0)]);
+    expect(store.getProfile('user-1').currentZoneId).toBe('active');
+  });
 });

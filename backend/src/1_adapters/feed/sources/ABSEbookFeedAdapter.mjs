@@ -394,11 +394,12 @@ export class ABSEbookFeedAdapter extends IFeedSourceAdapter {
    * @returns {Array<{id: number, title: string}>}
    */
   #filterContentChapters(chapters) {
-    const excluded = /^(cover|title\s*page|copyright|dedication|table\s*of\s*contents|contents|about\s*the\s*author|acknowledg[e]?ments?|also\s*by|epigraph|half\s*title|index|bibliography|notes|endnotes|appendix|glossary|colophon|foreword|preface|prologue|introduction)$/i;
+    const excluded = /^(cover|title\s*page|dedication|table\s*of\s*contents|contents|about\s*the\s*author|acknowledg[e]?ments?|also\s*by|epigraph|half\s*title|index|bibliography|notes|endnotes|glossary|colophon|foreword|preface|prologue|introduction)$/i;
+    const excludedContains = /copyright|appendix/i;
 
     return chapters.filter(ch => {
       const title = ch.title.trim();
-      return title.length > 0 && !excluded.test(title);
+      return title.length > 0 && !excluded.test(title) && !excludedContains.test(title);
     });
   }
 
