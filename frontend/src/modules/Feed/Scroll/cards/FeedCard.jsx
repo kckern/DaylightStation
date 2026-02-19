@@ -1,8 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { formatAge, proxyIcon, proxyImage, isImageUrl } from './utils.js';
 import { getBodyModule } from './bodies/index.js';
 import { getContentPlugin } from '../../contentPlugins/index.js';
 import { feedLog } from '../feedLog.js';
+import FeedPlayer from '../detail/FeedPlayer.jsx';
+import { DaylightAPI } from '../../../../lib/api.mjs';
 
 function formatDuration(seconds) {
   if (!seconds || !Number.isFinite(seconds)) return '';
@@ -115,20 +117,7 @@ export default function FeedCard({ item, colors = {}, onDismiss, onPlay }) {
             backgroundColor: '#1a1b1e',
           }}>
           {playingInline ? (
-            <iframe
-              src={`https://www.youtube.com/embed/${item.meta.videoId}?autoplay=1&rel=0`}
-              title={item.title}
-              allow="autoplay; encrypted-media"
-              allowFullScreen
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                width: '100%',
-                height: '100%',
-                border: 'none',
-              }}
-            />
+            <CardYouTubePlayer item={item} />
           ) : (
             <>
               <HeroImage src={item.image} />
@@ -306,5 +295,54 @@ export default function FeedCard({ item, colors = {}, onDismiss, onPlay }) {
         )}
       </div>
     </div>
+  );
+}
+
+function CardYouTubePlayer({ item }) {
+  const [playerData, setPlayerData] = useState(null);
+  const [fetchDone, setFetchDone] = useState(false);
+  const [useEmbed, setUseEmbed] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams();
+    params.set('quality', '720p');
+    if (item.meta) params.set('meta', JSON.stringify(item.meta));
+    DaylightAPI(`/api/v1/feed/detail/${encodeURIComponent(item.id)}?${params}`)
+      .then(result => {
+        const section = result?.sections?.find(s => s.type === 'player' && s.data?.provider === 'youtube');
+        if (section) setPlayerData(section.data);
+        setFetchDone(true);
+      })
+      .catch(() => setFetchDone(true));
+  }, [item.id, item.meta]);
+
+  const handleStreamError = useCallback(() => setUseEmbed(true), []);
+
+  const ar = (item.meta?.imageWidth && item.meta?.imageHeight)
+    ? `${item.meta.imageWidth} / ${item.meta.imageHeight}`
+    : '16 / 9';
+
+  if (!fetchDone) {
+    return (
+      <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#000' }}>
+        <div className="scroll-loading-dots"><span /><span /><span /></div>
+      </div>
+    );
+  }
+
+  if (playerData && !useEmbed && (playerData.videoUrl || playerData.url)) {
+    return (
+      <FeedPlayer playerData={playerData} onError={handleStreamError} aspectRatio={ar} />
+    );
+  }
+
+  return (
+    <iframe
+      src={`https://www.youtube.com/embed/${item.meta.videoId}?autoplay=1&rel=0`}
+      title={item.title}
+      allow="autoplay; encrypted-media"
+      allowFullScreen
+      style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none' }}
+    />
   );
 }

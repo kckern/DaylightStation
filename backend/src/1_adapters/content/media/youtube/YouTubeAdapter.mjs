@@ -125,6 +125,7 @@ export class YouTubeAdapter {
       duration,
       title: data.title || null,
       uploader: data.uploader || null,
+      uploaderAvatar: data.uploaderAvatar || null,
       thumbnailUrl: data.thumbnailUrl || null,
     };
 
