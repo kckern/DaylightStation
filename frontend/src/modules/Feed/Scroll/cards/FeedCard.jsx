@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { formatAge, proxyIcon, proxyImage, isImageUrl } from './utils.js';
 import { getBodyModule } from './bodies/index.js';
+import { getContentPlugin } from '../../contentPlugins/index.js';
 import { feedLog } from '../feedLog.js';
 
 function formatDuration(seconds) {
@@ -77,7 +78,8 @@ export default function FeedCard({ item, colors = {}, onDismiss, onPlay }) {
   const age = formatAge(item.timestamp);
   const iconUrl = proxyIcon(item.meta?.sourceIcon);
 
-  const BodyModule = getBodyModule(item.source);
+  const contentPlugin = getContentPlugin(item);
+  const BodyModule = contentPlugin?.ScrollBody || getBodyModule(item.source);
 
   return (
     <div
