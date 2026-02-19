@@ -143,6 +143,7 @@ export default function Reader() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState(null);
   const [collapsedGroups, setCollapsedGroups] = useState(new Set());
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const sentinelRef = useRef(null);
 
   // Load feeds for sidebar
@@ -274,16 +275,41 @@ export default function Reader() {
   const isFiltered = activeFeeds.size > 0;
   const dayGroups = smartGroup(articles, isFiltered);
 
+  // Close drawer when a filter is applied on mobile
+  const handleMobileToggleFeed = (feedId, multi) => {
+    handleToggleFeed(feedId, multi);
+    setDrawerOpen(false);
+  };
+  const handleMobileToggleCategory = (feedIds, multi) => {
+    handleToggleCategory(feedIds, multi);
+    setDrawerOpen(false);
+  };
+  const handleMobileClearFilters = () => {
+    setActiveFeeds(new Set());
+    setDrawerOpen(false);
+  };
+
   return (
     <div className="reader-view">
-      <ReaderSidebar
-        feeds={feeds}
-        activeFeeds={activeFeeds}
-        onToggleFeed={handleToggleFeed}
-        onToggleCategory={handleToggleCategory}
-        onClearFilters={() => setActiveFeeds(new Set())}
-      />
+      {drawerOpen && <div className="reader-drawer-backdrop" onClick={() => setDrawerOpen(false)} />}
+      <div className={`reader-sidebar-wrapper ${drawerOpen ? 'open' : ''}`}>
+        <ReaderSidebar
+          feeds={feeds}
+          activeFeeds={activeFeeds}
+          onToggleFeed={handleMobileToggleFeed}
+          onToggleCategory={handleMobileToggleCategory}
+          onClearFilters={handleMobileClearFilters}
+        />
+      </div>
       <div className="reader-inbox">
+        <div className="reader-mobile-toolbar">
+          <button className="reader-hamburger" onClick={() => setDrawerOpen(true)}>
+            <span /><span /><span />
+          </button>
+          <span className="reader-mobile-title">
+            {isFiltered ? `${activeFeeds.size} feed${activeFeeds.size > 1 ? 's' : ''} selected` : 'All Articles'}
+          </span>
+        </div>
         {loading ? (
           <div className="reader-loading">Loading...</div>
         ) : (
