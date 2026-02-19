@@ -1,6 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
 import { colorFromLabel } from '../Scroll/cards/utils.js';
-import { getContentPlugin } from '../contentPlugins/index.js';
 
 /**
  * Single article row with collapsed/expanded accordion states.
@@ -9,15 +8,6 @@ import { getContentPlugin } from '../contentPlugins/index.js';
  * @param {Function} props.onMarkRead - (articleId) => void
  */
 export default function ArticleRow({ article, onMarkRead }) {
-  const contentPlugin = getContentPlugin(article);
-  if (contentPlugin?.ReaderRow) {
-    const PluginRow = contentPlugin.ReaderRow;
-    return <PluginRow article={article} onMarkRead={onMarkRead} />;
-  }
-  return <DefaultArticleRow article={article} onMarkRead={onMarkRead} />;
-}
-
-function DefaultArticleRow({ article, onMarkRead }) {
   const [expanded, setExpanded] = useState(false);
   const [fullHeight, setFullHeight] = useState(false);
   const contentRef = useRef(null);
@@ -103,26 +93,56 @@ function DefaultArticleRow({ article, onMarkRead }) {
               <span> &middot; {new Date(article.published).toLocaleString()}</span>
             )}
           </div>
-          <div
-            ref={contentRef}
-            className={`article-content ${fullHeight ? 'full' : ''} ${overflows && !fullHeight ? 'capped' : ''}`}
-            dangerouslySetInnerHTML={{ __html: article.content }}
-          />
-          {overflows && !fullHeight && (
-            <button className="article-readmore" onClick={(e) => { e.stopPropagation(); setFullHeight(true); }}>
-              Read more
-            </button>
-          )}
-          {article.link && (
-            <a
-              className="article-source-link"
-              href={article.link}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={(e) => e.stopPropagation()}
-            >
-              Open original &rarr;
-            </a>
+          {article.contentType === 'youtube' && article.meta?.videoId ? (
+            <>
+              <div className="youtube-embed-wrapper">
+                <iframe
+                  src={`https://www.youtube.com/embed/${article.meta.videoId}`}
+                  title={article.title}
+                  allow="autoplay; encrypted-media; picture-in-picture"
+                  allowFullScreen
+                  className="youtube-embed"
+                />
+              </div>
+              {article.preview && (
+                <p className="article-content">{article.preview}</p>
+              )}
+              {article.link && (
+                <a
+                  className="article-source-link"
+                  href={article.link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  Open on YouTube &rarr;
+                </a>
+              )}
+            </>
+          ) : (
+            <>
+              <div
+                ref={contentRef}
+                className={`article-content ${fullHeight ? 'full' : ''} ${overflows && !fullHeight ? 'capped' : ''}`}
+                dangerouslySetInnerHTML={{ __html: article.content }}
+              />
+              {overflows && !fullHeight && (
+                <button className="article-readmore" onClick={(e) => { e.stopPropagation(); setFullHeight(true); }}>
+                  Read more
+                </button>
+              )}
+              {article.link && (
+                <a
+                  className="article-source-link"
+                  href={article.link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  Open original &rarr;
+                </a>
+              )}
+            </>
           )}
         </div>
       )}
