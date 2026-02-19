@@ -115,22 +115,30 @@ function groupByYear(articles) {
   return groups;
 }
 
+/** Sort articles within each group by published date descending */
+function sortWithinGroups(groups) {
+  for (const group of groups) {
+    group.articles.sort((a, b) => new Date(b.published) - new Date(a.published));
+  }
+  return groups;
+}
+
 /**
  * Adaptive grouping: picks the coarsest level where avg items per group >= 3.
  * day → week → month → season → year
  * Unfiltered always uses day grouping.
  */
 function smartGroup(articles, isFiltered) {
-  if (!isFiltered || articles.length === 0) return groupByDay(articles);
+  if (!isFiltered || articles.length === 0) return sortWithinGroups(groupByDay(articles));
 
   const groupers = [groupByDay, groupByWeek, groupByMonth, groupBySeason, groupByYear];
   for (const fn of groupers) {
     const groups = fn(articles);
     const avg = articles.length / groups.length;
-    if (avg >= 3) return groups;
+    if (avg >= 3) return sortWithinGroups(groups);
   }
   // Fallback: year (coarsest)
-  return groupByYear(articles);
+  return sortWithinGroups(groupByYear(articles));
 }
 
 export default function Reader() {

@@ -81,7 +81,7 @@ export class WebContentAdapter {
    */
   async #resolveIconUrl(url) {
     if (url.includes('reddit.com/r/')) {
-      const sub = url.match(/\/r\/([^/]+)/)?.[1];
+      const sub = url.match(/\/r\/(\w+)/)?.[1];
       if (sub) {
         try {
           const aboutRes = await fetch(`https://www.reddit.com/r/${sub}/about.json`, {
@@ -117,6 +117,39 @@ export class WebContentAdapter {
     }
 
     return `https://t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=${encodeURIComponent(url)}&size=32`;
+  }
+
+  /**
+   * Return the client-facing icon URL for a feed, without fetching anything.
+   * Vendor-specific feeds (YouTube, Reddit) route through the icon proxy;
+   * everything else uses the Google favicon CDN directly.
+   *
+   * @param {string} feedUrl - The RSS feed URL
+   * @param {string} [articleUrl] - A representative article URL (fallback for hostname)
+   * @returns {string|null}
+   */
+  resolveIconPath(feedUrl, articleUrl) {
+    if (!feedUrl) return null;
+
+    // YouTube: channel feed → proxy for channel avatar
+    const ytMatch = feedUrl.match(/youtube\.com\/feeds\/videos\.xml\?channel_id=(UC[a-zA-Z0-9_-]+)/);
+    if (ytMatch) {
+      const channelUrl = `https://www.youtube.com/channel/${ytMatch[1]}`;
+      return `/api/v1/feed/icon?url=${encodeURIComponent(channelUrl)}`;
+    }
+
+    // Reddit: subreddit feed → proxy for community icon
+    if (feedUrl.includes('reddit.com/r/')) {
+      return `/api/v1/feed/icon?url=${encodeURIComponent(feedUrl)}`;
+    }
+
+    // Generic: Google favicon from article hostname (or feed origin)
+    try {
+      const hostname = new URL(articleUrl || feedUrl).hostname;
+      return `https://www.google.com/s2/favicons?sz=16&domain=${hostname}`;
+    } catch {
+      return null;
+    }
   }
 
   #evictStaleIcons() {
