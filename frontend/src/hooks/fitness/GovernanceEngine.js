@@ -666,7 +666,7 @@ export class GovernanceEngine {
             satisfied: firstReq.satisfied
           } : null,
           lockRowCount: cachedState?.lockRows?.length ?? -1,
-          activeParticipantCount: this._latestInputs?.activeParticipants?.length ?? -1,
+          activeParticipantCount: evalContext?.activeParticipants?.length ?? this._latestInputs?.activeParticipants?.length ?? -1,
           videoLocked: cachedState?.videoLocked ?? null,
           evaluatePath: this._lastEvaluatePath || null
         }, { maxPerMinute: 30 });
@@ -680,7 +680,7 @@ export class GovernanceEngine {
           deadline: this.meta?.deadline,
           gracePeriodTotal: this.meta?.gracePeriodTotal,
           participantsBelowThreshold,
-          participantCount: this._latestInputs.activeParticipants?.length || 0,
+          participantCount: evalContext?.activeParticipants?.length ?? this._latestInputs.activeParticipants?.length ?? 0,
           requirements: this.requirementSummary?.requirements?.slice(0, 5) // Limit for log size
         });
       }
@@ -1330,7 +1330,7 @@ export class GovernanceEngine {
     }
 
     // Build evalContext so _setPhase logging reads current data (not stale _latestInputs)
-    const evalContext = { userZoneMap, zoneRankMap, zoneInfoMap };
+    const evalContext = { userZoneMap, zoneRankMap, zoneInfoMap, activeParticipants };
 
     // 1. Check if media is governed
     if (!this.media || !this.media.id || !hasGovernanceRules) {

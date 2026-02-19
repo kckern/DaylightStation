@@ -1559,8 +1559,9 @@ export class FitnessSession {
     const userZoneMap = {};
     effectiveRoster.forEach(entry => {
         const userId = entry.id || entry.profileId;
-        if (userId) {
-            userZoneMap[userId] = entry.zoneId || null;
+        const zoneId = entry.zoneId;
+        if (userId && zoneId) {
+            userZoneMap[userId] = typeof zoneId === 'string' ? zoneId.toLowerCase() : String(zoneId).toLowerCase();
         }
     });
     
