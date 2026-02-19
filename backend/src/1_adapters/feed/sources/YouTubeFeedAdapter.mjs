@@ -199,7 +199,7 @@ export class YouTubeFeedAdapter extends IFeedSourceAdapter {
           channelId: chId,
           videoId,
           sourceName: channelName || 'YouTube',
-          sourceIcon: chId ? `https://www.youtube.com/channel/${chId}` : 'https://www.youtube.com',
+          sourceIcon: null, // stamped by #getChannelIcon after fetch
           ...this.#thumbDimensions(image),
         },
       };
@@ -277,7 +277,7 @@ export class YouTubeFeedAdapter extends IFeedSourceAdapter {
             channelId: snippet.channelId,
             videoId,
             sourceName: snippet.channelTitle || 'YouTube',
-            sourceIcon: snippet.channelId ? `https://www.youtube.com/channel/${snippet.channelId}` : 'https://www.youtube.com',
+            sourceIcon: null, // stamped by #getChannelIcon after fetch
             ...this.#apiThumbDimensions(snippet, image),
           },
         };

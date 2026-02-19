@@ -147,7 +147,7 @@ function ReaderYouTubePlayer({ article }) {
   // Fetch detail from API to get Piped stream URL
   useEffect(() => {
     const params = new URLSearchParams();
-    params.set('quality', '480p');
+    params.set('quality', '720p');
     if (article.meta) params.set('meta', JSON.stringify(article.meta));
     DaylightAPI(`/api/v1/feed/detail/${encodeURIComponent(`youtube:${article.meta.videoId}`)}?${params}`)
       .then(result => {
