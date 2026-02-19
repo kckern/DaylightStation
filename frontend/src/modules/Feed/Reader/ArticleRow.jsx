@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { colorFromLabel } from '../Scroll/cards/utils.js';
-import FeedPlayer from '../Scroll/detail/FeedPlayer.jsx';
+import FeedPlayer from '../players/FeedPlayer.jsx';
+import { useFeedPlayer } from '../players/FeedPlayerContext.jsx';
 import { DaylightAPI } from '../../../lib/api.mjs';
 
 /**
@@ -140,9 +141,17 @@ export default function ArticleRow({ article, onMarkRead }) {
 }
 
 function ReaderYouTubePlayer({ article }) {
+  const { play } = useFeedPlayer();
   const [playerData, setPlayerData] = useState(null);
   const [fetchDone, setFetchDone] = useState(false);
   const [useEmbed, setUseEmbed] = useState(false);
+
+  // Notify FeedPlayerContext when native playback resolves (preemption system)
+  useEffect(() => {
+    if (playerData) {
+      play({ ...article, id: `youtube:${article.meta.videoId}` });
+    }
+  }, [playerData]);  // Only when playerData changes from null to resolved
 
   // Fetch detail from API to get Piped stream URL
   useEffect(() => {
