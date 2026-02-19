@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { colorFromLabel } from '../Scroll/cards/utils.js';
-import { getContentPlugin } from '../../contentPlugins/index.js';
+import { getContentPlugin } from '../contentPlugins/index.js';
 
 /**
  * Single article row with collapsed/expanded accordion states.
