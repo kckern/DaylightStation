@@ -283,6 +283,7 @@ export default function Scroll() {
       if (!isDesktop) window.scrollTo(0, 0);
 
       const params = new URLSearchParams();
+      if (item.contentType === 'youtube') params.set('quality', '480p');
       if (item.link) params.set('link', item.link);
       if (item.meta) params.set('meta', JSON.stringify(item.meta));
 

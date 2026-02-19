@@ -660,6 +660,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     const { PlexFeedAdapter } = await import('./1_adapters/feed/sources/PlexFeedAdapter.mjs');
     const { JournalFeedAdapter } = await import('./1_adapters/feed/sources/JournalFeedAdapter.mjs');
     const { YouTubeFeedAdapter } = await import('./1_adapters/feed/sources/YouTubeFeedAdapter.mjs');
+    const { YouTubeAdapter } = await import('./1_adapters/content/media/youtube/YouTubeAdapter.mjs');
     const { GoogleNewsFeedAdapter } = await import('./1_adapters/feed/sources/GoogleNewsFeedAdapter.mjs');
     const { KomgaFeedAdapter } = await import('./1_adapters/feed/sources/KomgaFeedAdapter.mjs');
     const { KomgaClient } = await import('./1_adapters/content/readable/komga/KomgaClient.mjs');
@@ -746,8 +747,14 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       logger: rootLogger.child({ module: 'plex-feed' }),
     });
     const googleAuth = dataService.system.read('auth/google');
+    const pipedHost = configService.resolveServiceUrl('piped');
+    const youtubeContentAdapter = pipedHost ? new YouTubeAdapter({
+      host: pipedHost,
+      logger: rootLogger.child({ module: 'youtube-adapter' }),
+    }) : null;
     const youtubeAdapter = googleAuth?.api_key ? new YouTubeFeedAdapter({
       apiKey: googleAuth.api_key,
+      youtubeAdapter: youtubeContentAdapter,
       logger: rootLogger.child({ module: 'youtube-feed' }),
     }) : null;
     const googleNewsAdapter = new GoogleNewsFeedAdapter({

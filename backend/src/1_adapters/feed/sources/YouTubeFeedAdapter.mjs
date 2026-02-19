@@ -29,18 +29,21 @@ const YT_THUMB_DIMS = {
 export class YouTubeFeedAdapter extends IFeedSourceAdapter {
   #apiKey;
   #logger;
+  #youtubeAdapter;
   /** @type {Map<string, { items: Object[], ts: number }>} */
   #cache = new Map();
 
   /**
    * @param {Object} deps
    * @param {string} deps.apiKey - YouTube Data API v3 key
+   * @param {Object} [deps.youtubeAdapter] - YouTubeAdapter content adapter (Piped proxy)
    * @param {Object} [deps.logger]
    */
-  constructor({ apiKey, logger = console }) {
+  constructor({ apiKey, youtubeAdapter = null, logger = console }) {
     super();
     if (!apiKey) throw new Error('YouTubeFeedAdapter requires apiKey');
     this.#apiKey = apiKey;
+    this.#youtubeAdapter = youtubeAdapter;
     this.#logger = logger;
   }
 
@@ -83,8 +86,15 @@ export class YouTubeFeedAdapter extends IFeedSourceAdapter {
     }
   }
 
-  async getDetail(localId, meta, _username) {
+  async getDetail(localId, meta, _username, { quality } = {}) {
     const videoId = meta.videoId || localId;
+
+    // Delegate to content adapter if available
+    if (this.#youtubeAdapter) {
+      return this.#youtubeAdapter.getDetail(videoId, { quality });
+    }
+
+    // No content adapter — embed-only fallback
     return {
       sections: [{
         type: 'embed',

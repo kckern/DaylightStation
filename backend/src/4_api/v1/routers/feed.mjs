@@ -343,7 +343,8 @@ export function createFeedRouter(config) {
     }
     if (req.query.link) meta.link = req.query.link;
 
-    const result = await feedAssemblyService.getDetail(itemId, meta, username);
+    const quality = req.query.quality || undefined;
+    const result = await feedAssemblyService.getDetail(itemId, meta, username, { quality });
     if (!result) return res.status(404).json({ error: 'No detail available' });
 
     res.json(result);

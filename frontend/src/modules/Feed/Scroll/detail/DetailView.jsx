@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { formatAge, proxyIcon, proxyImage, colorFromLabel } from '../cards/utils.js';
 import { renderSection } from './sections/index.jsx';
 import { feedLog } from '../feedLog.js';
+import { RemuxPlayer } from '../../../Player/renderers/RemuxPlayer.jsx';
 import './DetailView.scss';
 
 export default function DetailView({ item, sections, ogImage, ogDescription, loading, onBack, onNext, onPrev, onPlay, activeMedia, playback, onNavigateToItem }) {
@@ -13,7 +14,6 @@ export default function DetailView({ item, sections, ogImage, ogDescription, loa
   const isYouTube = item.contentType === 'youtube' && item.meta?.videoId;
   const subtitle = isYouTube ? null : (item.body || ogDescription);
   const hasArticle = sections.length > 0 && !loading;
-  const [ytPlaying, setYtPlaying] = useState(false);
   const dateStr = item.timestamp ? new Date(item.timestamp).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }) : null;
 
   const [imageLoaded, setImageLoaded] = useState(false);
@@ -32,10 +32,9 @@ export default function DetailView({ item, sections, ogImage, ogDescription, loa
     setImagePhase('original');
   }, [heroImage]);
 
-  // Reset sticky header, YouTube player, and scroll position on item change
+  // Reset sticky header and scroll position on item change
   useEffect(() => {
     setStickyVisible(false);
-    setYtPlaying(false);
     stickyInitRef.current = true;
     const el = stickyRef.current;
     if (el) {
@@ -159,34 +158,12 @@ export default function DetailView({ item, sections, ogImage, ogDescription, loa
         </div>
 
         {isYouTube ? (
-          <div className="detail-hero" style={{ aspectRatio: (item.meta?.imageWidth && item.meta?.imageHeight) ? `${item.meta.imageWidth} / ${item.meta.imageHeight}` : '16 / 9' }}>
-            {ytPlaying ? (
-              <iframe
-                src={`https://www.youtube.com/embed/${item.meta.videoId}?autoplay=1&rel=0`}
-                title={item.title}
-                allow="autoplay; encrypted-media; picture-in-picture"
-                allowFullScreen
-                style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none' }}
-              />
-            ) : (
-              <>
-                {heroImage && <img src={heroImage} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
-                <button
-                  onClick={() => setYtPlaying(true)}
-                  style={{
-                    position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-                    width: '64px', height: '64px', borderRadius: '50%',
-                    background: 'rgba(0,0,0,0.6)', border: 'none',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    cursor: 'pointer', padding: 0,
-                  }}
-                  aria-label="Play video"
-                >
-                  <svg width="28" height="28" viewBox="0 0 24 24" fill="#fff"><path d="M8 5v14l11-7z" /></svg>
-                </button>
-              </>
-            )}
-          </div>
+          <YouTubeHero
+            item={item}
+            heroImage={heroImage}
+            sections={sections}
+            onPlay={onPlay}
+          />
         ) : heroImage && imagePhase !== 'hidden' && !sections.some(s => s.type === 'player' || s.type === 'embed') && (() => {
           const isPortrait = item.meta?.imageHeight > item.meta?.imageWidth;
           const imgSrc = imagePhase === 'proxy' ? (proxyImage(heroImage) || heroImage) : heroImage;
@@ -244,6 +221,102 @@ export default function DetailView({ item, sections, ogImage, ogDescription, loa
 
       </div>
       </div>
+    </div>
+  );
+}
+
+function YouTubeHero({ item, heroImage, sections, onPlay: _onPlay }) {
+  const [ytPlaying, setYtPlaying] = useState(false);
+  const [useEmbed, setUseEmbed] = useState(false);
+
+  // Reset on item change
+  useEffect(() => {
+    setYtPlaying(false);
+    setUseEmbed(false);
+  }, [item.id]);
+
+  // Check if backend provided a native player section
+  const playerSection = sections.find(
+    s => s.type === 'player' && s.data?.provider === 'youtube'
+  );
+  const embedFallback = playerSection?.data?.embedFallback
+    || `https://www.youtube.com/embed/${item.meta.videoId}?autoplay=1&rel=0`;
+
+  const handleStreamError = useCallback(() => {
+    setUseEmbed(true);
+  }, []);
+
+  const aspectRatio = (item.meta?.imageWidth && item.meta?.imageHeight)
+    ? `${item.meta.imageWidth} / ${item.meta.imageHeight}`
+    : '16 / 9';
+
+  // Not playing yet — show thumbnail + play button
+  if (!ytPlaying) {
+    return (
+      <div className="detail-hero" style={{ aspectRatio }}>
+        {heroImage && <img src={heroImage} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+        <button
+          onClick={() => setYtPlaying(true)}
+          style={{
+            position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+            width: '64px', height: '64px', borderRadius: '50%',
+            background: 'rgba(0,0,0,0.6)', border: 'none',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            cursor: 'pointer', padding: 0,
+          }}
+          aria-label="Play video"
+        >
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="#fff"><path d="M8 5v14l11-7z" /></svg>
+        </button>
+      </div>
+    );
+  }
+
+  // Playing: try native player, fall back to embed
+  if (playerSection && !useEmbed) {
+    const data = playerSection.data;
+
+    // Split streams (video-only + audio) → RemuxPlayer
+    if (data.videoUrl && data.audioUrl) {
+      return (
+        <div className="detail-hero" style={{ aspectRatio }}>
+          <RemuxPlayer
+            videoUrl={data.videoUrl}
+            audioUrl={data.audioUrl}
+            onError={handleStreamError}
+            style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}
+          />
+        </div>
+      );
+    }
+
+    // Combined stream → native video element
+    if (data.url) {
+      return (
+        <div className="detail-hero" style={{ aspectRatio }}>
+          <video
+            src={data.url}
+            autoPlay
+            playsInline
+            controls
+            onError={handleStreamError}
+            style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'contain' }}
+          />
+        </div>
+      );
+    }
+  }
+
+  // Embed fallback (always works)
+  return (
+    <div className="detail-hero" style={{ aspectRatio }}>
+      <iframe
+        src={embedFallback}
+        title={item.title}
+        allow="autoplay; encrypted-media; picture-in-picture"
+        allowFullScreen
+        style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none' }}
+      />
     </div>
   );
 }
