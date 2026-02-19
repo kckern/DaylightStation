@@ -82,16 +82,17 @@ export default function FeedPlayer({ playerData, onError, aspectRatio = '16 / 9'
     if (audioRef.current) audioRef.current.currentTime = t;
   }, []);
 
+  // For combined streams: set rate directly on video element.
+  // For split streams: rate flows via playbackRate={speed} prop to RemuxPlayer,
+  // which enforces it on both video and audio elements + periodic sync.
   const cycleSpeed = useCallback(() => {
     setSpeed(prev => {
       const idx = SPEED_STEPS.indexOf(prev);
       const next = SPEED_STEPS[(idx + 1) % SPEED_STEPS.length];
-      const v = videoRef.current;
-      if (v) v.playbackRate = next;
-      if (audioRef.current) audioRef.current.playbackRate = next;
+      if (!isSplit && videoRef.current) videoRef.current.playbackRate = next;
       return next;
     });
-  }, []);
+  }, [isSplit]);
 
   const handleProgressClick = useCallback((e) => {
     if (!duration) return;

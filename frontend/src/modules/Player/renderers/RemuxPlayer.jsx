@@ -34,7 +34,7 @@ export function RemuxPlayer({
     });
   }, [ready, onRegisterMediaAccess]);
 
-  // Sync audio to video on play/pause/seek
+  // Sync audio to video on play/pause/seek/rate
   const syncAudio = useCallback(() => {
     const video = videoRef.current;
     const audio = audioRef.current;
@@ -43,6 +43,11 @@ export function RemuxPlayer({
     // Match play state
     if (video.paused && !audio.paused) audio.pause();
     if (!video.paused && audio.paused) audio.play().catch(() => {});
+
+    // Match playback rate
+    if (audio.playbackRate !== video.playbackRate) {
+      audio.playbackRate = video.playbackRate;
+    }
 
     // Match seek — correct drift
     const drift = Math.abs(video.currentTime - audio.currentTime);
