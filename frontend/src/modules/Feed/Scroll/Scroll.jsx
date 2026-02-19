@@ -427,7 +427,7 @@ export default function Scroll() {
       <div className="scroll-layout">
         <div className="scroll-view">
           <div className="scroll-skeleton">
-            {[1, 2, 3, 4, 5, 6].map(i => (
+            {[...Array(18)].map((_, i) => (
               <div key={i} className="scroll-skeleton-card" />
             ))}
           </div>
