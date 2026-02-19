@@ -130,7 +130,7 @@ export class PagedMediaTocToolFactory extends ToolFactory {
           page: { type: 'integer', description: '1-indexed page number of the TOC page' },
           pageCount: { type: 'integer', description: 'Total pages in the book (for validation)' },
         },
-        required: ['bookId', 'page'],
+        required: ['bookId', 'page', 'pageCount'],
       },
       execute: async ({ bookId, page, pageCount }) => {
         if (!aiGateway?.isConfigured?.()) {
@@ -278,6 +278,31 @@ export class PagedMediaTocToolFactory extends ToolFactory {
         required: ['bookId', 'seriesLabel', 'issueTitle', 'pageCount', 'articles'],
       },
       execute: async ({ bookId, seriesLabel, issueTitle, pageCount, tocPage, tocPageOffset, articles }) => {
+        const offset = tocPageOffset || 0;
+        const validArticles = (articles || []).filter(a => {
+          const vendorPage = a.page + offset;
+          return vendorPage >= 1 && vendorPage <= pageCount;
+        });
+        const rejected = (articles || []).length - validArticles.length;
+        if (rejected > 0) {
+          logger.warn?.('paged-media-toc.cache.out_of_bounds', {
+            bookId, rejected, pageCount, offset,
+            droppedPages: (articles || []).filter(a => {
+              const vp = a.page + offset;
+              return vp < 1 || vp > pageCount;
+            }).map(a => ({ title: a.title, printedPage: a.page, vendorPage: a.page + offset })),
+          });
+        }
+
+        const warnings = [];
+        if (validArticles.length > 0 && offset === 0 && !tocPageOffset) {
+          warnings.push('offset_not_detected');
+          logger.warn?.('paged-media-toc.cache.offset_missing', {
+            bookId, articleCount: validArticles.length,
+            hint: 'Articles saved with offset 0 — printed page numbers used as vendor pages. Run detect_page_offset if not already done.',
+          });
+        }
+
         const tocData = {
           bookId,
           series: seriesLabel,
@@ -285,12 +310,13 @@ export class PagedMediaTocToolFactory extends ToolFactory {
           pages: pageCount,
           tocScanned: true,
           tocPage: tocPage || null,
-          tocPageOffset: tocPageOffset || 0,
-          articles: articles || [],
+          tocPageOffset: offset,
+          articles: validArticles,
+          ...(warnings.length > 0 ? { warnings } : {}),
         };
         tocCacheDatastore.writeCache(bookId, tocData);
-        logger.info?.('paged-media-toc.cache.written', { bookId, articleCount: (articles || []).length });
-        return { success: true, bookId, articleCount: (articles || []).length };
+        logger.info?.('paged-media-toc.cache.written', { bookId, articleCount: validArticles.length, rejected });
+        return { success: true, bookId, articleCount: validArticles.length, rejected, warnings };
       },
     });
 
