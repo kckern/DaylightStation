@@ -95,9 +95,15 @@ export default function ArticleRow({ article, onMarkRead }) {
           </div>
           {article.contentType === 'youtube' && article.meta?.videoId ? (
             <>
-              <div className="youtube-embed-wrapper">
+              <div
+                className="youtube-embed-wrapper"
+                style={(article.meta?.imageWidth && article.meta?.imageHeight && article.meta.imageHeight > article.meta.imageWidth) ? {
+                  paddingBottom: `${(article.meta.imageHeight / article.meta.imageWidth) * 100}%`,
+                  maxWidth: '360px',
+                } : undefined}
+              >
                 <iframe
-                  src={`https://www.youtube.com/embed/${article.meta.videoId}`}
+                  src={`https://www.youtube.com/embed/${article.meta.videoId}?rel=0`}
                   title={article.title}
                   allow="autoplay; encrypted-media; picture-in-picture"
                   allowFullScreen

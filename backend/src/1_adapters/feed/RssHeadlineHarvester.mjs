@@ -86,8 +86,39 @@ export class RssHeadlineHarvester {
     if (item.pubDate) {
       const d = new Date(item.pubDate);
       if (!isNaN(d.getTime())) return d.toISOString();
+      // Try non-standard format: "Wed, February 18, 2026 at 02:48 PM EST"
+      const parsed = this.#parseNonStandardDate(item.pubDate);
+      if (parsed) return parsed;
+    }
+    // Try Dublin Core date field
+    if (item['dc:date']) {
+      const d = new Date(item['dc:date']);
+      if (!isNaN(d.getTime())) return d.toISOString();
     }
     return new Date().toISOString();
+  }
+
+  static #TZ_OFFSETS = {
+    EST: -5, EDT: -4,
+    CST: -6, CDT: -5,
+    MST: -7, MDT: -6,
+    PST: -8, PDT: -7,
+  };
+
+  #parseNonStandardDate(str) {
+    // Match: "Wed, February 18, 2026 at 02:48 PM EST"
+    const m = str.match(/(\w+)\s+(\d{1,2}),\s*(\d{4})\s+at\s+(\d{1,2}):(\d{2})\s*(AM|PM)\s*(\w+)/i);
+    if (!m) return null;
+    const [, month, day, year, rawHour, minute, ampm, tz] = m;
+    const monthIndex = new Date(`${month} 1, 2000`).getMonth();
+    if (isNaN(monthIndex)) return null;
+    let hour = parseInt(rawHour, 10);
+    if (ampm.toUpperCase() === 'PM' && hour !== 12) hour += 12;
+    if (ampm.toUpperCase() === 'AM' && hour === 12) hour = 0;
+    const offset = RssHeadlineHarvester.#TZ_OFFSETS[tz.toUpperCase()] ?? 0;
+    const utcMs = Date.UTC(parseInt(year, 10), monthIndex, parseInt(day, 10), hour - offset, parseInt(minute, 10));
+    const d = new Date(utcMs);
+    return isNaN(d.getTime()) ? null : d.toISOString();
   }
 
   #extractDesc(item) {

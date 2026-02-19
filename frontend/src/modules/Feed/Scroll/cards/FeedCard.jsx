@@ -77,9 +77,21 @@ export default function FeedCard({ item, colors = {}, onDismiss, onPlay }) {
   const sourceName = item.meta?.sourceName || item.meta?.feedTitle || item.source || '';
   const age = formatAge(item.timestamp);
   const iconUrl = proxyIcon(item.meta?.sourceIcon);
+  const [playingInline, setPlayingInline] = useState(false);
 
   const contentPlugin = getContentPlugin(item);
   const BodyModule = contentPlugin?.ScrollBody || getBodyModule(item.source);
+
+  const canPlayInline = item.contentType === 'youtube' && item.meta?.videoId;
+
+  const handlePlay = (e) => {
+    e.stopPropagation();
+    if (canPlayInline) {
+      setPlayingInline(true);
+    } else {
+      onPlay?.(item);
+    }
+  };
 
   return (
     <div
@@ -92,7 +104,7 @@ export default function FeedCard({ item, colors = {}, onDismiss, onPlay }) {
         position: 'relative',
       }}
     >
-      {/* Hero image */}
+      {/* Hero image / inline player */}
       {item.image && isImageUrl(item.image) && (
         <div style={{
             overflow: 'hidden',
@@ -102,51 +114,70 @@ export default function FeedCard({ item, colors = {}, onDismiss, onPlay }) {
               : '16 / 9',
             backgroundColor: '#1a1b1e',
           }}>
-          <HeroImage src={item.image} />
-          {/* Duration badge */}
-          {item.meta?.duration > 0 && (
-            <span style={{
-              position: 'absolute',
-              bottom: '8px',
-              right: '8px',
-              background: 'rgba(0,0,0,0.75)',
-              color: '#fff',
-              fontSize: '0.65rem',
-              fontWeight: 600,
-              padding: '2px 6px',
-              borderRadius: '4px',
-              fontVariantNumeric: 'tabular-nums',
-              zIndex: 1,
-            }}>
-              {formatDuration(item.meta.duration)}
-            </span>
-          )}
-          {/* Play button overlay */}
-          {item.meta?.playable && (
-            <button
-              onClick={(e) => { e.stopPropagation(); onPlay?.(item); }}
+          {playingInline ? (
+            <iframe
+              src={`https://www.youtube.com/embed/${item.meta.videoId}?autoplay=1&rel=0`}
+              title={item.title}
+              allow="autoplay; encrypted-media"
+              allowFullScreen
               style={{
                 position: 'absolute',
-                top: '50%',
-                left: '50%',
-                transform: 'translate(-50%, -50%)',
-                width: '48px',
-                height: '48px',
-                borderRadius: '50%',
-                background: 'rgba(0,0,0,0.55)',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '100%',
                 border: 'none',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                padding: 0,
               }}
-              aria-label="Play"
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="#fff">
-                <path d="M8 5v14l11-7z" />
-              </svg>
-            </button>
+            />
+          ) : (
+            <>
+              <HeroImage src={item.image} />
+              {/* Duration badge */}
+              {item.meta?.duration > 0 && (
+                <span style={{
+                  position: 'absolute',
+                  bottom: '8px',
+                  right: '8px',
+                  background: 'rgba(0,0,0,0.75)',
+                  color: '#fff',
+                  fontSize: '0.65rem',
+                  fontWeight: 600,
+                  padding: '2px 6px',
+                  borderRadius: '4px',
+                  fontVariantNumeric: 'tabular-nums',
+                  zIndex: 1,
+                }}>
+                  {formatDuration(item.meta.duration)}
+                </span>
+              )}
+              {/* Play button overlay */}
+              {item.meta?.playable && (
+                <button
+                  onClick={handlePlay}
+                  style={{
+                    position: 'absolute',
+                    top: '50%',
+                    left: '50%',
+                    transform: 'translate(-50%, -50%)',
+                    width: '48px',
+                    height: '48px',
+                    borderRadius: '50%',
+                    background: 'rgba(0,0,0,0.55)',
+                    border: 'none',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    padding: 0,
+                  }}
+                  aria-label="Play"
+                >
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="#fff">
+                    <path d="M8 5v14l11-7z" />
+                  </svg>
+                </button>
+              )}
+            </>
           )}
           {/* Dismiss button overlay */}
           {onDismiss && (

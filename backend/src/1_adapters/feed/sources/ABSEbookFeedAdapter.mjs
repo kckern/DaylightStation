@@ -23,6 +23,7 @@ export class ABSEbookFeedAdapter extends IFeedSourceAdapter {
   #absClient;
   #token;
   #mediaDir;
+  #webUrl;
   #logger;
   #prefetching = false;
 
@@ -31,9 +32,10 @@ export class ABSEbookFeedAdapter extends IFeedSourceAdapter {
    * @param {Object} deps.absClient - AudiobookshelfClient instance
    * @param {string} deps.token - ABS API token for EPUB downloads
    * @param {string} deps.mediaDir - Base media directory for cache storage
+   * @param {string} [deps.webUrl] - Browser-accessible ABS URL for reader links
    * @param {Object} [deps.logger]
    */
-  constructor({ absClient, token, mediaDir, logger = console }) {
+  constructor({ absClient, token, mediaDir, webUrl = null, logger = console }) {
     super();
     if (!absClient) throw new Error('ABSEbookFeedAdapter requires absClient');
     if (!token) throw new Error('ABSEbookFeedAdapter requires token');
@@ -41,6 +43,7 @@ export class ABSEbookFeedAdapter extends IFeedSourceAdapter {
     this.#absClient = absClient;
     this.#token = token;
     this.#mediaDir = mediaDir;
+    this.#webUrl = webUrl ? webUrl.replace(/\/$/, '') : null;
     this.#logger = logger;
   }
 
@@ -154,7 +157,7 @@ export class ABSEbookFeedAdapter extends IFeedSourceAdapter {
           title: chapter.title,
           body: chapter.preview || `${author} — ${title}`,
           image: coverUrl,
-          link: `${this.#absClient.host}/item/${bookId}`,
+          link: this.#webUrl ? `${this.#webUrl}/item/${bookId}` : null,
           timestamp: new Date().toISOString(),
           priority: query.priority || 5,
           meta: {

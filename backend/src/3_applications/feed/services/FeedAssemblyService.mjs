@@ -24,6 +24,7 @@ export class FeedAssemblyService {
   #selectionTrackingStore;
   #feedFilterResolver;
   #spacingEnforcer;
+  #contentPluginRegistry;
   #logger;
 
   /** LRU cache of recently-served items (keyed by item.id) */
@@ -54,6 +55,7 @@ export class FeedAssemblyService {
     selectionTrackingStore = null,
     feedFilterResolver = null,
     spacingEnforcer = null,
+    contentPluginRegistry = null,
     logger = console,
     // Keep sourceAdapters for getDetail()
     sourceAdapters = null,
@@ -76,6 +78,7 @@ export class FeedAssemblyService {
     this.#selectionTrackingStore = selectionTrackingStore;
     this.#feedFilterResolver = feedFilterResolver;
     this.#spacingEnforcer = spacingEnforcer;
+    this.#contentPluginRegistry = contentPluginRegistry;
     this.#logger = logger;
 
     this.#sourceAdapters = new Map();
@@ -118,6 +121,11 @@ export class FeedAssemblyService {
 
     // Get available items from pool
     const freshPool = await this.#feedPoolManager.getPool(username, scrollConfig);
+
+    // Post-process: content-type enrichment
+    if (this.#contentPluginRegistry) {
+      this.#contentPluginRegistry.enrich(freshPool);
+    }
 
     // Source filter: bypass tier assembly
     if (sources && sources.length > 0) {

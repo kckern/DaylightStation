@@ -10,8 +10,10 @@ export default function DetailView({ item, sections, ogImage, ogDescription, loa
   const borderColor = colorFromLabel(sourceName);
   const age = formatAge(item.timestamp);
   const heroImage = item.image || ogImage;
-  const subtitle = item.body || ogDescription;
+  const isYouTube = item.contentType === 'youtube' && item.meta?.videoId;
+  const subtitle = isYouTube ? null : (item.body || ogDescription);
   const hasArticle = sections.length > 0 && !loading;
+  const [ytPlaying, setYtPlaying] = useState(false);
   const dateStr = item.timestamp ? new Date(item.timestamp).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }) : null;
 
   const [imageLoaded, setImageLoaded] = useState(false);
@@ -30,9 +32,10 @@ export default function DetailView({ item, sections, ogImage, ogDescription, loa
     setImagePhase('original');
   }, [heroImage]);
 
-  // Reset sticky header and scroll position on item change
+  // Reset sticky header, YouTube player, and scroll position on item change
   useEffect(() => {
     setStickyVisible(false);
+    setYtPlaying(false);
     stickyInitRef.current = true;
     const el = stickyRef.current;
     if (el) {
@@ -165,7 +168,36 @@ export default function DetailView({ item, sections, ogImage, ogDescription, loa
           <span className="detail-source-age">{age}</span>
         </div>
 
-        {heroImage && imagePhase !== 'hidden' && !sections.some(s => s.type === 'player' || s.type === 'embed') && (() => {
+        {isYouTube ? (
+          <div className="detail-hero" style={{ aspectRatio: (item.meta?.imageWidth && item.meta?.imageHeight) ? `${item.meta.imageWidth} / ${item.meta.imageHeight}` : '16 / 9' }}>
+            {ytPlaying ? (
+              <iframe
+                src={`https://www.youtube.com/embed/${item.meta.videoId}?autoplay=1&rel=0`}
+                title={item.title}
+                allow="autoplay; encrypted-media; picture-in-picture"
+                allowFullScreen
+                style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none' }}
+              />
+            ) : (
+              <>
+                {heroImage && <img src={heroImage} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+                <button
+                  onClick={() => setYtPlaying(true)}
+                  style={{
+                    position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+                    width: '64px', height: '64px', borderRadius: '50%',
+                    background: 'rgba(0,0,0,0.6)', border: 'none',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    cursor: 'pointer', padding: 0,
+                  }}
+                  aria-label="Play video"
+                >
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="#fff"><path d="M8 5v14l11-7z" /></svg>
+                </button>
+              </>
+            )}
+          </div>
+        ) : heroImage && imagePhase !== 'hidden' && !sections.some(s => s.type === 'player' || s.type === 'embed') && (() => {
           const isPortrait = item.meta?.imageHeight > item.meta?.imageWidth;
           const imgSrc = imagePhase === 'proxy' ? (proxyImage(heroImage) || heroImage) : heroImage;
           return (

@@ -25,6 +25,7 @@ function createAdapter(overrides = {}) {
     absClient: mockAbsClient,
     token: 'test-token',
     mediaDir: tmpDir,
+    webUrl: 'https://abs.example.com',
     logger: { warn: jest.fn(), debug: jest.fn(), error: jest.fn() },
     ...overrides,
   });

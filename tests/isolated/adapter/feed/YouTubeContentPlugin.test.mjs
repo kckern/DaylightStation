@@ -36,11 +36,13 @@ describe('YouTubeContentPlugin', () => {
   });
 
   describe('enrich()', () => {
-    test('extracts videoId from youtube.com/watch?v=', () => {
+    test('extracts videoId from youtube.com/watch?v= with 16:9 dims', () => {
       const result = plugin.enrich({ link: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', meta: {} });
       expect(result.contentType).toBe('youtube');
       expect(result.meta.videoId).toBe('dQw4w9WgXcQ');
       expect(result.meta.playable).toBe(true);
+      expect(result.meta.imageWidth).toBe(16);
+      expect(result.meta.imageHeight).toBe(9);
       expect(result.meta.embedUrl).toBe('https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1');
     });
 
@@ -54,16 +56,19 @@ describe('YouTubeContentPlugin', () => {
       expect(result.meta.videoId).toBe('abc123_defg');
     });
 
-    test('extracts videoId from /shorts/', () => {
+    test('extracts videoId from /shorts/ with 9:16 dims', () => {
       const result = plugin.enrich({ link: 'https://www.youtube.com/shorts/abc123_defg', meta: {} });
       expect(result.meta.videoId).toBe('abc123_defg');
+      expect(result.meta.imageWidth).toBe(9);
+      expect(result.meta.imageHeight).toBe(16);
     });
 
     test('sets thumbnail image when item has no image', () => {
       const result = plugin.enrich({ link: 'https://youtube.com/watch?v=abc', image: null, meta: {} });
       expect(result.image).toBe('https://img.youtube.com/vi/abc/hqdefault.jpg');
-      expect(result.meta.imageWidth).toBe(480);
-      expect(result.meta.imageHeight).toBe(360);
+      // Dimensions reflect embed ratio (16:9), not thumbnail pixel size
+      expect(result.meta.imageWidth).toBe(16);
+      expect(result.meta.imageHeight).toBe(9);
     });
 
     test('does not overwrite existing image', () => {
@@ -74,6 +79,33 @@ describe('YouTubeContentPlugin', () => {
     test('returns empty enrichment when videoId cannot be extracted', () => {
       const result = plugin.enrich({ link: 'https://youtube.com/channel/UC123', meta: {} });
       expect(result).toEqual({});
+    });
+
+    test('strips scraped YouTube footer from body', () => {
+      const result = plugin.enrich({
+        link: 'https://youtube.com/watch?v=abc',
+        meta: {},
+        body: 'AboutPressCopyrightContact usCreatorsAdvertiseDevelopersTermsPrivacyPolicy & SafetyHow YouTube worksTest new featuresNFL Sunday Ticket© 2026 Google LLC',
+      });
+      expect(result.body).toBe('');
+    });
+
+    test('strips scraped YouTube footer from content', () => {
+      const result = plugin.enrich({
+        link: 'https://youtube.com/watch?v=abc',
+        meta: {},
+        content: '<div>AboutPressCopyrightContact usCreatorsAdvertise</div>',
+      });
+      expect(result.content).toBe('');
+    });
+
+    test('preserves legitimate body text', () => {
+      const result = plugin.enrich({
+        link: 'https://youtube.com/watch?v=abc',
+        meta: {},
+        body: 'This is a real video description about cooking pasta.',
+      });
+      expect(result.body).toBeUndefined(); // no body key in enrichment
     });
   });
 });
