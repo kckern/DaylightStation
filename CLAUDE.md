@@ -105,6 +105,7 @@ ssh {env.prod_host} 'echo "content" > /path/to/file'
 - **Do NOT run deploy.sh automatically** - User must run manually
 - **Keep docs in /docs folder** - In appropriate subfolder
 - **Check dev server before starting** - Run `ss -tlnp | grep 3112` first; if running, don't start another
+- **Always use the logging framework** - Never use raw `console.log/debug/warn/error` for diagnostic logging. Use the structured logging framework in `frontend/src/lib/logging/`. See [Logging](#logging) section below
 
 ---
 
@@ -226,6 +227,70 @@ git rev-parse HEAD > docs/docs-last-updated.txt
 - Household configs: `data/household[-{hid}]/apps/{app}/config.yml`
 - Use ConfigService for reads (preferred over io.mjs)
 - Multi-dimensional process.env (use spread pattern to set)
+
+---
+
+## Logging
+
+### Framework Location
+
+`frontend/src/lib/logging/` — structured logging with console + WebSocket transports.
+
+### Rule: Always Use the Framework
+
+**Never use raw `console.log`, `console.debug`, `console.warn`, or `console.error` for diagnostic/observability logging.** The logging framework provides structured events, level filtering, WebSocket transport to the backend, and rate limiting. Raw console calls bypass all of this.
+
+Acceptable uses of raw `console.error`: inside `.catch()` blocks for unrecoverable errors that already existed before the framework. New code should use the logger.
+
+### Usage Pattern
+
+```javascript
+// In a React component — create child logger once via useMemo
+import getLogger from '../lib/logging/Logger.js';
+
+const logger = useMemo(() => getLogger().child({ component: 'my-component' }), []);
+logger.debug('event-name', { key: 'value' });
+logger.info('event-name', { key: 'value' });
+logger.warn('event-name', { key: 'value' });
+logger.error('event-name', { key: 'value' });
+
+// Rate-limited (max N per minute, aggregates skipped events)
+logger.sampled('event-name', { data }, { maxPerMinute: 20, aggregate: true });
+```
+
+### Module-Level Loggers (Hooks, Utils)
+
+For non-component code, use lazy initialization to avoid import-time timing issues:
+
+```javascript
+import getLogger from '../lib/logging/Logger.js';
+
+let _logger;
+function logger() {
+  if (!_logger) _logger = getLogger().child({ component: 'my-module' });
+  return _logger;
+}
+
+// Then use: logger().debug('event-name', { data });
+```
+
+### Category Facades
+
+For modules with many related log calls across categories (e.g., feed scroll), create a thin facade file that delegates to a child logger. See `frontend/src/modules/Feed/Scroll/feedLog.js` for the pattern.
+
+### Key APIs
+
+| Import | Use |
+|--------|-----|
+| `getLogger()` | Get the configured singleton logger |
+| `logger.child({ component })` | Create scoped child logger |
+| `logger.debug/info/warn/error(event, data)` | Emit structured event |
+| `logger.sampled(event, data, opts)` | Rate-limited emit |
+| `configure({ level: 'debug' })` | Change log level at runtime |
+
+### Enabling Debug Output
+
+In browser console: `window.DAYLIGHT_LOG_LEVEL = 'debug'` or call `configure({ level: 'debug' })`.
 
 ---
 
