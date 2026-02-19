@@ -12,11 +12,7 @@
  * Categories: scroll, image, player, dismiss, detail, nav
  */
 
-<<<<<<< Updated upstream
-const CATEGORIES = ['scroll', 'image', 'player', 'dismiss', 'detail', 'nav', 'assembly', 'masonry'];
-=======
 import getLogger from '../../../lib/logging/Logger.js';
->>>>>>> Stashed changes
 
 let _logger;
 function logger() {
@@ -32,21 +28,12 @@ function emit(category, detail, data) {
 }
 
 export const feedLog = {
-<<<<<<< Updated upstream
-  scroll:   (...args) => log('scroll', ...args),
-  image:    (...args) => log('image', ...args),
-  player:   (...args) => log('player', ...args),
-  dismiss:  (...args) => log('dismiss', ...args),
-  detail:   (...args) => log('detail', ...args),
-  nav:      (...args) => log('nav', ...args),
-  assembly: (...args) => log('assembly', ...args),
-  masonry:  (...args) => log('masonry', ...args),
-=======
-  scroll:  (detail, data) => emit('scroll', detail, data),
-  image:   (detail, data) => emit('image', detail, data),
-  player:  (detail, data) => emit('player', detail, data),
-  dismiss: (detail, data) => emit('dismiss', detail, data),
-  detail:  (detail, data) => emit('detail', detail, data),
-  nav:     (detail, data) => emit('nav', detail, data),
->>>>>>> Stashed changes
+  scroll:   (detail, data) => emit('scroll', detail, data),
+  image:    (detail, data) => emit('image', detail, data),
+  player:   (detail, data) => emit('player', detail, data),
+  dismiss:  (detail, data) => emit('dismiss', detail, data),
+  detail:   (detail, data) => emit('detail', detail, data),
+  nav:      (detail, data) => emit('nav', detail, data),
+  assembly: (detail, data) => emit('assembly', detail, data),
+  masonry:  (detail, data) => emit('masonry', detail, data),
 };
