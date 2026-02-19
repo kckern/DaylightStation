@@ -192,4 +192,50 @@ describe('Feed Router', () => {
       );
     });
   });
+
+  // Content plugin enrichment
+  describe('Content plugin enrichment on /reader/stream', () => {
+    test('enriches YouTube URLs from FreshRSS with contentType and videoId', async () => {
+      const { ContentPluginRegistry } = await import('#apps/feed/services/ContentPluginRegistry.mjs');
+      const { YouTubeContentPlugin } = await import('#adapters/feed/plugins/youtube.mjs');
+      const registry = new ContentPluginRegistry([new YouTubeContentPlugin()]);
+
+      const ytMockAdapter = {
+        ...mockFreshRSSAdapter,
+        getItems: jest.fn().mockResolvedValue({
+          items: [{
+            id: 'yt-item-1',
+            title: 'Cool Video',
+            link: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+            content: '<p>Video description</p>',
+            published: new Date('2026-02-18T12:00:00Z'),
+            author: null,
+            feedTitle: 'My YouTube Channel',
+            feedId: 'feed/yt1',
+            categories: [],
+          }],
+          continuation: null,
+        }),
+        getFeeds: jest.fn().mockResolvedValue([]),
+      };
+
+      const ytApp = express();
+      ytApp.use(express.json());
+      ytApp.use('/api/v1/feed', createFeedRouter({
+        freshRSSAdapter: ytMockAdapter,
+        headlineService: mockHeadlineService,
+        feedAssemblyService: { getNextBatch: jest.fn() },
+        feedContentService: { resolveIcon: jest.fn() },
+        contentPluginRegistry: registry,
+        configService: mockConfigService,
+      }));
+
+      const res = await request(ytApp).get('/api/v1/feed/reader/stream?days=3');
+      expect(res.status).toBe(200);
+      const item = res.body.items[0];
+      expect(item.contentType).toBe('youtube');
+      expect(item.meta.videoId).toBe('dQw4w9WgXcQ');
+      expect(item.meta.playable).toBe(true);
+    });
+  });
 });
