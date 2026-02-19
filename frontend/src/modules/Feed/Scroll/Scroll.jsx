@@ -3,8 +3,7 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { renderFeedCard } from './cards/index.jsx';
 import DetailView from './detail/DetailView.jsx';
 import DetailModal from './detail/DetailModal.jsx';
-import FeedPlayerMiniBar from './FeedPlayerMiniBar.jsx';
-import PersistentPlayer from './PersistentPlayer.jsx';
+import { useFeedPlayer } from '../players/FeedPlayerContext.jsx';
 import { usePlaybackObserver } from './hooks/usePlaybackObserver.js';
 import { useMasonryLayout } from './hooks/useMasonryLayout.js';
 import FeedAssemblyOverlay from './FeedAssemblyOverlay.jsx';
@@ -115,8 +114,7 @@ export default function Scroll() {
   itemsRef.current = items;
   const [detailData, setDetailData] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
-  const [activeMedia, setActiveMedia] = useState(null);
-  const playerRef = useRef(null);
+  const { activeMedia, play: contextPlay, stop: contextStop, playerRef } = useFeedPlayer();
   const [colors, setColors] = useState({});
   const [assemblyBatches, setAssemblyBatches] = useState([]);
   const [assemblyFilter, setAssemblyFilter] = useState({ tiers: [], sources: [] });
@@ -125,12 +123,10 @@ export default function Scroll() {
   const playback = usePlaybackObserver(playerRef, !!activeMedia);
 
   const handlePlay = useCallback((item) => {
-    if (!item) { feedLog.player('clear activeMedia'); setActiveMedia(null); return; }
+    if (!item) { feedLog.player('clear activeMedia'); contextStop(); return; }
     feedLog.player('play', { id: item.id, title: item.title, source: item.source });
-    setActiveMedia({ item, contentId: item.id });
-  }, []);
-
-  const handleClearMedia = useCallback(() => setActiveMedia(null), []);
+    contextPlay(item);
+  }, [contextPlay, contextStop]);
 
   const handleAssemblyFilter = useCallback((filter) => {
     setAssemblyFilter(filter);
@@ -514,19 +510,6 @@ export default function Scroll() {
           onNavigateToItem={handleGalleryNav}
         />
       )}
-      {activeMedia && !urlSlug && (
-        <FeedPlayerMiniBar
-          item={activeMedia.item}
-          playback={playback}
-          onOpen={() => navigate(`/feed/scroll/${encodeItemId(activeMedia.item.id)}`)}
-          onClose={handleClearMedia}
-        />
-      )}
-      <PersistentPlayer
-        ref={playerRef}
-        contentId={activeMedia?.contentId || null}
-        onEnd={handleClearMedia}
-      />
       <FeedAssemblyOverlay batches={assemblyBatches} onFilterChange={handleAssemblyFilter} />
     </div>
   );
