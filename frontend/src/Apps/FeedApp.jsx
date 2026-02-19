@@ -5,6 +5,10 @@ import '@mantine/core/styles.css';
 import Headlines from '../modules/Feed/Headlines/Headlines.jsx';
 import Scroll from '../modules/Feed/Scroll/Scroll.jsx';
 import Reader from '../modules/Feed/Reader/Reader.jsx';
+import { FeedPlayerProvider, useFeedPlayer } from '../modules/Feed/players/FeedPlayerContext.jsx';
+import FeedPlayerMiniBar from '../modules/Feed/players/FeedPlayerMiniBar.jsx';
+import PersistentPlayer from '../modules/Feed/Scroll/PersistentPlayer.jsx';
+import { usePlaybackObserver } from '../modules/Feed/Scroll/hooks/usePlaybackObserver.js';
 import { DaylightAPI } from '../lib/api.mjs';
 import './FeedApp.scss';
 
@@ -43,6 +47,10 @@ function FeedLayout() {
   const location = useLocation();
   const isScroll = location.pathname.startsWith('/feed/scroll');
 
+  const { activeMedia, playerVisible, playerRef, stop } = useFeedPlayer();
+  const playback = usePlaybackObserver(playerRef, !!activeMedia);
+  const showMiniBar = !!activeMedia && !playerVisible;
+
   useEffect(() => {
     DaylightAPI('/api/v1/feed/headlines/pages')
       .then(pages => setHeadlinePages(pages || []))
@@ -73,6 +81,19 @@ function FeedLayout() {
       <div className="feed-content">
         <Outlet />
       </div>
+      {showMiniBar && (
+        <FeedPlayerMiniBar
+          item={activeMedia.item}
+          playback={playback}
+          onOpen={() => {}}
+          onClose={stop}
+        />
+      )}
+      <PersistentPlayer
+        ref={playerRef}
+        contentId={activeMedia?.contentId || null}
+        onEnd={stop}
+      />
     </div>
   );
 }
@@ -80,16 +101,18 @@ function FeedLayout() {
 const FeedApp = () => {
   return (
     <MantineProvider>
-      <Routes>
-        <Route element={<FeedLayout />}>
-          <Route index element={<Navigate to="/feed/scroll" replace />} />
-          <Route path="reader" element={<Reader />} />
-          <Route path="headlines/:pageId" element={<HeadlinesPage />} />
-          <Route path="headlines" element={<Navigate to="/feed/headlines/mainstream" replace />} />
-          <Route path="scroll" element={<Scroll />} />
-          <Route path="scroll/:itemId" element={<Scroll />} />
-        </Route>
-      </Routes>
+      <FeedPlayerProvider>
+        <Routes>
+          <Route element={<FeedLayout />}>
+            <Route index element={<Navigate to="/feed/scroll" replace />} />
+            <Route path="reader" element={<Reader />} />
+            <Route path="headlines/:pageId" element={<HeadlinesPage />} />
+            <Route path="headlines" element={<Navigate to="/feed/headlines/mainstream" replace />} />
+            <Route path="scroll" element={<Scroll />} />
+            <Route path="scroll/:itemId" element={<Scroll />} />
+          </Route>
+        </Routes>
+      </FeedPlayerProvider>
     </MantineProvider>
   );
 };
