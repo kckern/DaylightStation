@@ -7,10 +7,10 @@
  *
  * Checked before the source-based body module registry (bodies/index.js).
  */
-import { YouTubeScrollBody, YouTubeReaderRow } from './youtube.jsx';
+import { YouTubeScrollBody } from './youtube.jsx';
 
 const CONTENT_PLUGINS = [
-  { contentType: 'youtube', ScrollBody: YouTubeScrollBody, ReaderRow: YouTubeReaderRow },
+  { contentType: 'youtube', ScrollBody: YouTubeScrollBody },
 ];
 
 const pluginMap = new Map(CONTENT_PLUGINS.map(p => [p.contentType, p]));
