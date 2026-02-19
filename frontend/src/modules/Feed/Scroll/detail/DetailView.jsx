@@ -46,16 +46,6 @@ export default function DetailView({ item, sections, ogImage, ogDescription, loa
     contentRef.current?.closest('.detail-modal-panel')?.scrollTo(0, 0);
   }, [item.id]);
 
-  // Clear ancestor overflow that captures sticky (mobile only; modal scrolls correctly)
-  useEffect(() => {
-    const inModal = stickyRef.current?.closest('.detail-modal-panel');
-    if (inModal) return;
-    const fc = stickyRef.current?.closest('.feed-content');
-    if (!fc) return;
-    const orig = fc.style.overflowY;
-    fc.style.overflowY = 'visible';
-    return () => { fc.style.overflowY = orig; };
-  }, []);
 
   // IntersectionObserver for sticky header
   useEffect(() => {
