@@ -179,11 +179,30 @@ export class YouTubeAdapter {
   }
 
   #findBestAudioStream(streams) {
-    // Prefer mp4 audio, highest bitrate
-    const mp4Audio = streams
-      .filter(s => s.mimeType?.startsWith('audio/mp4'))
+    // Prefer ORIGINAL track over DUBBED, then mp4, highest bitrate
+    const mp4Audio = streams.filter(s => s.mimeType?.startsWith('audio/mp4'));
+
+    // 1. ORIGINAL track (best bitrate)
+    const original = mp4Audio
+      .filter(s => s.audioTrackType === 'ORIGINAL')
       .sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
-    return mp4Audio[0] || streams[0] || null;
+    if (original.length > 0) return original[0];
+
+    // 2. English track (any type)
+    const english = mp4Audio
+      .filter(s => s.audioTrackLocale?.startsWith('en'))
+      .sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
+    if (english.length > 0) return english[0];
+
+    // 3. Streams without track metadata (single-language videos)
+    const untagged = mp4Audio
+      .filter(s => !s.audioTrackType)
+      .sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
+    if (untagged.length > 0) return untagged[0];
+
+    // 4. Any mp4 audio, highest bitrate
+    const sorted = mp4Audio.sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
+    return sorted[0] || streams[0] || null;
   }
 
   // ======================================================================

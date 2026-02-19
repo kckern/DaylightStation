@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { formatAge, proxyIcon, proxyImage, colorFromLabel } from '../cards/utils.js';
 import { renderSection } from './sections/index.jsx';
 import { feedLog } from '../feedLog.js';
-import { RemuxPlayer } from '../../../Player/renderers/RemuxPlayer.jsx';
+import FeedPlayer from './FeedPlayer.jsx';
 import './DetailView.scss';
 
 export default function DetailView({ item, sections, ogImage, ogDescription, loading, onBack, onNext, onPrev, onPlay, activeMedia, playback, onNavigateToItem }) {
@@ -239,7 +239,12 @@ function YouTubeHero({ item, heroImage, sections, onPlay: _onPlay }) {
   const playerSection = sections.find(
     s => s.type === 'player' && s.data?.provider === 'youtube'
   );
+  const embedSection = sections.find(
+    s => s.type === 'embed' && s.data?.provider === 'youtube'
+  );
+  const sectionsLoaded = sections.length > 0;
   const embedFallback = playerSection?.data?.embedFallback
+    || embedSection?.data?.url
     || `https://www.youtube.com/embed/${item.meta.videoId}?autoplay=1&rel=0`;
 
   const handleStreamError = useCallback(() => {
@@ -272,37 +277,28 @@ function YouTubeHero({ item, heroImage, sections, onPlay: _onPlay }) {
     );
   }
 
+  // Sections still loading — show loading state, not iframe
+  if (!sectionsLoaded) {
+    return (
+      <div className="detail-hero" style={{ aspectRatio }}>
+        {heroImage && <img src={heroImage} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: 0.4 }} />}
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div className="scroll-loading-dots"><span /><span /><span /></div>
+        </div>
+      </div>
+    );
+  }
+
   // Playing: try native player, fall back to embed
   if (playerSection && !useEmbed) {
     const data = playerSection.data;
-
-    // Split streams (video-only + audio) → RemuxPlayer
-    if (data.videoUrl && data.audioUrl) {
+    if (data.videoUrl || data.url) {
       return (
-        <div className="detail-hero" style={{ aspectRatio }}>
-          <RemuxPlayer
-            videoUrl={data.videoUrl}
-            audioUrl={data.audioUrl}
-            onError={handleStreamError}
-            style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}
-          />
-        </div>
-      );
-    }
-
-    // Combined stream → native video element
-    if (data.url) {
-      return (
-        <div className="detail-hero" style={{ aspectRatio }}>
-          <video
-            src={data.url}
-            autoPlay
-            playsInline
-            controls
-            onError={handleStreamError}
-            style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'contain' }}
-          />
-        </div>
+        <FeedPlayer
+          playerData={data}
+          onError={handleStreamError}
+          aspectRatio={aspectRatio}
+        />
       );
     }
   }
