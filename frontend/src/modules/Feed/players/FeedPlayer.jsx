@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { RemuxPlayer } from '../../Player/renderers/RemuxPlayer.jsx';
-import { useFeedPlayer, SPEED_STEPS } from './FeedPlayerContext.jsx';
+import { useFeedPlayer } from './FeedPlayerContext.jsx';
 
 function formatTime(s) {
   if (!s || !Number.isFinite(s)) return '0:00';
