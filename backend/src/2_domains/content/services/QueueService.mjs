@@ -314,6 +314,13 @@ export class QueueService {
     const watched = [];
 
     for (const item of items) {
+      // Non-resumable items (e.g. songs) skip watch classification —
+      // watch partitioning only applies to videos and longform audio
+      if (!item.resumable) {
+        unwatched.push(item);
+        continue;
+      }
+
       const progress = progressMap.get(item.id);
       const status = progress
         ? classifier.classify(progress, { duration: item.duration })

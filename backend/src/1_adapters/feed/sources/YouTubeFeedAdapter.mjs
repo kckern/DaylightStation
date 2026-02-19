@@ -14,6 +14,7 @@
 import { IFeedSourceAdapter, CONTENT_TYPES } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
 
 const API_BASE = 'https://www.googleapis.com/youtube/v3/search';
+const CHANNELS_API = 'https://www.googleapis.com/youtube/v3/channels';
 const RSS_BASE = 'https://www.youtube.com/feeds/videos.xml';
 const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
@@ -105,19 +106,28 @@ export class YouTubeFeedAdapter extends IFeedSourceAdapter {
     const cached = this.#getFromCache(cacheKey);
     if (cached) return cached.slice(0, maxResults);
 
+    // Fetch channel icon in parallel with videos
+    const iconPromise = this.#getChannelIcon(channelId);
+
     // Try RSS first (free, no quota)
+    let items;
     try {
-      const items = await this.#fetchChannelRSS(channelId, query);
-      if (items.length > 0) {
-        this.#putInCache(cacheKey, items);
-        return items.slice(0, maxResults);
-      }
+      items = await this.#fetchChannelRSS(channelId, query);
     } catch (err) {
       this.#logger.info?.('youtube.adapter.rss.failed', { channelId, error: err.message });
     }
 
     // Fallback to API (costs quota, but cached)
-    const items = await this.#fetchChannelAPI(channelId, maxResults, query);
+    if (!items || items.length === 0) {
+      items = await this.#fetchChannelAPI(channelId, maxResults, query);
+    }
+
+    // Stamp real channel icon onto all items
+    const icon = await iconPromise;
+    if (icon) {
+      for (const item of items) item.meta.sourceIcon = icon;
+    }
+
     if (items.length > 0) this.#putInCache(cacheKey, items);
     return items.slice(0, maxResults);
   }
@@ -208,6 +218,16 @@ export class YouTubeFeedAdapter extends IFeedSourceAdapter {
     });
 
     const items = await this.#fetchAPIAndNormalize(params, query);
+
+    // Resolve channel icons for each unique channel
+    const channelIds = [...new Set(items.map(i => i.meta.channelId).filter(Boolean))];
+    const icons = await Promise.all(channelIds.map(id => this.#getChannelIcon(id)));
+    const iconMap = Object.fromEntries(channelIds.map((id, i) => [id, icons[i]]));
+    for (const item of items) {
+      const icon = iconMap[item.meta.channelId];
+      if (icon) item.meta.sourceIcon = icon;
+    }
+
     this.#putInCache(cacheKey, items);
     return items;
   }
@@ -274,6 +294,34 @@ export class YouTubeFeedAdapter extends IFeedSourceAdapter {
     if (this.#cache.size > 50) {
       const oldest = this.#cache.keys().next().value;
       this.#cache.delete(oldest);
+    }
+  }
+
+  // ======================================================================
+  // Channel icon helper (cached, 1 quota unit per unique channel)
+  // ======================================================================
+
+  async #getChannelIcon(channelId) {
+    if (!channelId) return null;
+    const cacheKey = `icon:${channelId}`;
+    const cached = this.#getFromCache(cacheKey);
+    if (cached) return cached[0] || null;
+
+    try {
+      const params = new URLSearchParams({
+        part: 'snippet',
+        id: channelId,
+        fields: 'items/snippet/thumbnails/default/url',
+        key: this.#apiKey,
+      });
+      const res = await fetch(`${CHANNELS_API}?${params}`);
+      if (!res.ok) return null;
+      const data = await res.json();
+      const url = data.items?.[0]?.snippet?.thumbnails?.default?.url || null;
+      this.#putInCache(cacheKey, [url]);
+      return url;
+    } catch {
+      return null;
     }
   }
 
