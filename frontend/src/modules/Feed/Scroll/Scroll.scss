@@ -74,22 +74,9 @@
     }
   }
 
-  .scroll-skeleton {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 16px;
-  }
-
-  .scroll-skeleton-card {
-    width: 320px;
-    flex-shrink: 0;
-
-    &:nth-child(odd) { height: 200px; }
-    &:nth-child(even) { height: 160px; }
-  }
 }
 
-// Loading skeleton
+// Loading skeleton (mobile: vertical stack; desktop: masonry via media query above)
 .scroll-skeleton {
   display: flex;
   flex-direction: column;
@@ -102,6 +89,22 @@
   background: #1a1b1e;
   border-radius: 12px;
   animation: skeleton-pulse 1.5s ease-in-out infinite;
+}
+
+@media (min-width: 900px) {
+  .scroll-skeleton {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+
+  .scroll-skeleton-card {
+    width: 320px;
+    flex-shrink: 0;
+
+    &:nth-child(odd) { height: 200px; }
+    &:nth-child(even) { height: 160px; }
+  }
 }
 
 @keyframes skeleton-pulse {
