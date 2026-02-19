@@ -291,9 +291,10 @@ describe('ABSEbookFeedAdapter', () => {
 
   test('filters out front matter from EPUB TOC', async () => {
     const epubBuffer = await buildMockEpub([
-      'Cover', 'Title Page', 'Copyright', 'Dedication',
+      'Cover', 'Title Page', 'Copyright Page', 'Dedication',
       'Table of Contents', 'Introduction and Acknowledgements',
       'Week 1: Soul Connection', 'Week 2: Birth', 'Conclusion',
+      'Appendix A: Resources',
     ]);
 
     mockAbsClient.getLibraryItems.mockResolvedValueOnce({
@@ -321,8 +322,9 @@ describe('ABSEbookFeedAdapter', () => {
     const titles = cachedData.chapters.map(c => c.title);
     expect(titles).not.toContain('Cover');
     expect(titles).not.toContain('Title Page');
-    expect(titles).not.toContain('Copyright');
+    expect(titles).not.toContain('Copyright Page');
     expect(titles).not.toContain('Table of Contents');
+    expect(titles).not.toContain('Appendix A: Resources');
     expect(titles).toContain('Introduction and Acknowledgements');
     expect(titles).toContain('Week 1: Soul Connection');
     expect(titles).toContain('Conclusion');
