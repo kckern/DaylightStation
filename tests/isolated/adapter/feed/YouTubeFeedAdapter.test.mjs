@@ -42,8 +42,11 @@ describe('YouTubeFeedAdapter', () => {
       }, 'testuser');
 
       expect(items).toHaveLength(1);
+      expect(items[0].contentType).toBe('youtube');
       expect(items[0].meta.imageWidth).toBe(480);
       expect(items[0].meta.imageHeight).toBe(360);
+      // sourceIcon should use channel URL, not generic youtube.com
+      expect(items[0].meta.sourceIcon).toBe('https://www.youtube.com/channel/UC123');
     });
 
     test('includes 1280x720 dimensions for maxresdefault thumbnail', async () => {
@@ -118,6 +121,9 @@ describe('YouTubeFeedAdapter', () => {
       // Dimensions should come from the API snippet thumbnails (high matches the image)
       expect(items[0].meta.imageWidth).toBe(480);
       expect(items[0].meta.imageHeight).toBe(360);
+      expect(items[0].contentType).toBe('youtube');
+      // sourceIcon should use channel URL
+      expect(items[0].meta.sourceIcon).toBe('https://www.youtube.com/channel/UCapi');
     });
 
     test('falls back to URL-based dimensions when API thumbnails lack width/height', async () => {

@@ -24,7 +24,7 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
  * @returns {express.Router}
  */
 export function createFeedRouter(config) {
-  const { freshRSSAdapter, headlineService, feedAssemblyService, feedContentService, dismissedItemsStore, sourceAdapters = [], configService, logger = console } = config;
+  const { freshRSSAdapter, headlineService, feedAssemblyService, feedContentService, dismissedItemsStore, sourceAdapters = [], contentPluginRegistry = null, configService, logger = console } = config;
 
   // Build adapter lookup map by sourceType for dismiss routing
   const adapterMap = new Map();
@@ -181,6 +181,11 @@ export function createFeedRouter(config) {
         exhausted = false;
       }
       result = trimmed;
+    }
+
+    // Content-type enrichment (e.g., detect YouTube URLs in FreshRSS items)
+    if (contentPluginRegistry) {
+      contentPluginRegistry.enrich(result);
     }
 
     res.json({ items: result, continuation: nextContinuation, exhausted });

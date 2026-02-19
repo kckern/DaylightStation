@@ -9,6 +9,14 @@
 import { IContentPlugin } from '#apps/feed/plugins/IContentPlugin.mjs';
 
 const YT_URL_PATTERN = /(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([\w-]+)/;
+const YT_SHORTS_PATTERN = /youtube\.com\/shorts\//;
+
+// Scraped YouTube pages produce footer garbage as body text
+const YT_FOOTER_PATTERN = /AboutPressCopyright|How YouTube works|NFL Sunday Ticket/;
+
+function isScrapedGarbage(text) {
+  return text && YT_FOOTER_PATTERN.test(text);
+}
 
 export class YouTubeContentPlugin extends IContentPlugin {
   get contentType() { return 'youtube'; }
@@ -23,21 +31,27 @@ export class YouTubeContentPlugin extends IContentPlugin {
     if (!match) return {};
 
     const videoId = match[1];
+    const isShort = YT_SHORTS_PATTERN.test(item.link);
     const result = {
       contentType: 'youtube',
       meta: {
         videoId,
         playable: true,
         embedUrl: `https://www.youtube.com/embed/${videoId}?autoplay=1`,
+        // Embed dimensions: 9:16 for shorts, 16:9 for regular
+        imageWidth: isShort ? 9 : 16,
+        imageHeight: isShort ? 16 : 9,
       },
     };
 
     // Set thumbnail if item has no image
     if (!item.image) {
       result.image = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
-      result.meta.imageWidth = 480;
-      result.meta.imageHeight = 360;
     }
+
+    // Strip scraped YouTube page footer from body/content
+    if (isScrapedGarbage(item.body)) result.body = '';
+    if (isScrapedGarbage(item.content)) result.content = '';
 
     return result;
   }

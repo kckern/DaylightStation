@@ -118,6 +118,87 @@ describe('RssHeadlineHarvester', () => {
     expect(result1.items[0].id).toBe(result2.items[0].id);
   });
 
+  describe('#parseDate', () => {
+    test('parses WaPo-style non-standard format', async () => {
+      mockRssParser.parseURL.mockResolvedValue({
+        title: 'WaPo',
+        items: [{
+          title: 'WaPo headline',
+          link: 'https://wapo.com/article/1',
+          pubDate: 'Wed, February 18, 2026 at 02:48 PM EST',
+        }],
+      });
+      const result = await harvester.harvest({ id: 'wapo', label: 'WaPo', url: 'http://example.com/rss' });
+      expect(result.items).toHaveLength(1);
+      // EST = UTC-5, so 2:48 PM EST = 19:48 UTC
+      const ts = new Date(result.items[0].timestamp);
+      expect(ts.getUTCFullYear()).toBe(2026);
+      expect(ts.getUTCMonth()).toBe(1); // February
+      expect(ts.getUTCDate()).toBe(18);
+      expect(ts.getUTCHours()).toBe(19);
+      expect(ts.getUTCMinutes()).toBe(48);
+    });
+
+    test('parses standard RFC 2822 format', async () => {
+      mockRssParser.parseURL.mockResolvedValue({
+        title: 'Standard',
+        items: [{
+          title: 'Standard headline',
+          link: 'https://example.com/article/1',
+          pubDate: 'Sat, 15 Feb 2026 09:00:00 GMT',
+        }],
+      });
+      const result = await harvester.harvest({ id: 'std', label: 'Std', url: 'http://example.com/rss' });
+      const ts = new Date(result.items[0].timestamp);
+      expect(ts.getUTCHours()).toBe(9);
+      expect(ts.getUTCDate()).toBe(15);
+    });
+
+    test('falls back to now when pubDate is missing', async () => {
+      const before = Date.now();
+      mockRssParser.parseURL.mockResolvedValue({
+        title: 'No date',
+        items: [{
+          title: 'No date headline',
+          link: 'https://example.com/article/no-date',
+        }],
+      });
+      const result = await harvester.harvest({ id: 'nd', label: 'ND', url: 'http://example.com/rss' });
+      const ts = new Date(result.items[0].timestamp).getTime();
+      expect(ts).toBeGreaterThanOrEqual(before);
+      expect(ts).toBeLessThanOrEqual(Date.now());
+    });
+
+    test('uses dc:date when pubDate is absent', async () => {
+      mockRssParser.parseURL.mockResolvedValue({
+        title: 'Dublin Core',
+        items: [{
+          title: 'DC date headline',
+          link: 'https://example.com/article/dc',
+          'dc:date': '2026-02-17T12:00:00Z',
+        }],
+      });
+      const result = await harvester.harvest({ id: 'dc', label: 'DC', url: 'http://example.com/rss' });
+      expect(result.items[0].timestamp).toBe('2026-02-17T12:00:00.000Z');
+    });
+
+    test('falls back to now on invalid pubDate format', async () => {
+      const before = Date.now();
+      mockRssParser.parseURL.mockResolvedValue({
+        title: 'Invalid',
+        items: [{
+          title: 'Bad date headline',
+          link: 'https://example.com/article/bad',
+          pubDate: 'not-a-date-at-all',
+        }],
+      });
+      const result = await harvester.harvest({ id: 'bad', label: 'Bad', url: 'http://example.com/rss' });
+      const ts = new Date(result.items[0].timestamp).getTime();
+      expect(ts).toBeGreaterThanOrEqual(before);
+      expect(ts).toBeLessThanOrEqual(Date.now());
+    });
+  });
+
   test('omits imageWidth/imageHeight when media:content lacks dimensions', async () => {
     mockRssParser.parseURL.mockResolvedValue({
       title: 'Feed without image dims',

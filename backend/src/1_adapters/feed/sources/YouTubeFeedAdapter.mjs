@@ -166,6 +166,7 @@ export class YouTubeFeedAdapter extends IFeedSourceAdapter {
         id: `youtube:${videoId}`,
         tier: query.tier || 'wire',
         source: 'youtube',
+        contentType: 'youtube',
         title: this.#decodeEntities(title),
         body: body ? this.#decodeEntities(body) : null,
         image,
@@ -178,7 +179,7 @@ export class YouTubeFeedAdapter extends IFeedSourceAdapter {
           channelId: chId,
           videoId,
           sourceName: channelName || 'YouTube',
-          sourceIcon: 'https://www.youtube.com',
+          sourceIcon: chId ? `https://www.youtube.com/channel/${chId}` : 'https://www.youtube.com',
           ...this.#thumbDimensions(image),
         },
       };
@@ -233,6 +234,7 @@ export class YouTubeFeedAdapter extends IFeedSourceAdapter {
           id: `youtube:${videoId}`,
           tier: query.tier || 'wire',
           source: 'youtube',
+          contentType: 'youtube',
           title: snippet.title,
           body: snippet.description?.slice(0, 200) || null,
           image,
@@ -245,7 +247,7 @@ export class YouTubeFeedAdapter extends IFeedSourceAdapter {
             channelId: snippet.channelId,
             videoId,
             sourceName: snippet.channelTitle || 'YouTube',
-            sourceIcon: 'https://www.youtube.com',
+            sourceIcon: snippet.channelId ? `https://www.youtube.com/channel/${snippet.channelId}` : 'https://www.youtube.com',
             ...this.#apiThumbDimensions(snippet, image),
           },
         };

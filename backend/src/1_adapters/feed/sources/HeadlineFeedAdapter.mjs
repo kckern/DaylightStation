@@ -68,8 +68,44 @@ export class HeadlineFeedAdapter extends IFeedSourceAdapter {
       }
     }
 
-    allItems.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-    const page = allItems.slice(offset, offset + totalLimit);
+    // Group by sourceId for round-robin distribution
+    const bySource = new Map();
+    for (const item of allItems) {
+      const key = item.meta.sourceId;
+      if (!bySource.has(key)) bySource.set(key, []);
+      bySource.get(key).push(item);
+    }
+
+    // Sort each source's items by timestamp descending
+    for (const items of bySource.values()) {
+      items.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    }
+
+    // Shuffle source keys for fairness
+    const sourceKeys = [...bySource.keys()];
+    for (let i = sourceKeys.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [sourceKeys[i], sourceKeys[j]] = [sourceKeys[j], sourceKeys[i]];
+    }
+
+    // Round-robin: pick 1 item per source per round
+    const distributed = [];
+    const pointers = new Map(sourceKeys.map(k => [k, 0]));
+    while (distributed.length < allItems.length) {
+      let added = false;
+      for (const key of sourceKeys) {
+        const items = bySource.get(key);
+        const ptr = pointers.get(key);
+        if (ptr < items.length) {
+          distributed.push(items[ptr]);
+          pointers.set(key, ptr + 1);
+          added = true;
+        }
+      }
+      if (!added) break;
+    }
+
+    const page = distributed.slice(offset, offset + totalLimit);
 
     // Probe dimensions for items with images but no dims from the service
     await Promise.all(page.map(async item => {
@@ -83,7 +119,7 @@ export class HeadlineFeedAdapter extends IFeedSourceAdapter {
     }));
 
     const nextOffset = offset + totalLimit;
-    const hasMore = nextOffset < allItems.length;
+    const hasMore = nextOffset < distributed.length;
     return { items: page, cursor: hasMore ? String(nextOffset) : null };
   }
 }

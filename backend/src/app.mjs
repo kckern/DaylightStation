@@ -782,6 +782,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       absClient: new AudiobookshelfClient(audiobookshelfConfig, { httpClient: axios }),
       token: audiobookshelfConfig.token,
       mediaDir: mediaBasePath,
+      webUrl: configService.resolveServiceWebUrl('audiobookshelf'),
       logger: rootLogger.child({ module: 'abs-ebooks-feed' }),
     }) : null;
 
@@ -840,6 +841,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
     const sourceResolver = new SourceResolver(feedSourceAdapters);
 
+    const { ContentPluginRegistry } = await import('./3_applications/feed/services/ContentPluginRegistry.mjs');
+    const { YouTubeContentPlugin } = await import('./1_adapters/feed/plugins/youtube.mjs');
+    const contentPluginRegistry = new ContentPluginRegistry([
+      new YouTubeContentPlugin(),
+    ]);
+
     const tierAssemblyService = new TierAssemblyService({
       spacingEnforcer,
       sourceResolver,
@@ -872,6 +879,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       selectionTrackingStore,
       feedFilterResolver,
       spacingEnforcer,
+      contentPluginRegistry,
       logger: rootLogger.child({ module: 'feed-assembly' }),
     });
     v1Routers.feed = createFeedRouter({
@@ -881,6 +889,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       feedContentService,
       dismissedItemsStore,
       sourceAdapters: feedSourceAdapters,
+      contentPluginRegistry,
       configService,
       logger: rootLogger.child({ module: 'feed' }),
     });

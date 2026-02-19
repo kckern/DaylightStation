@@ -375,13 +375,27 @@ export class ConfigService {
 
   /**
    * Resolve browser-accessible URL for a service.
-   * Looks for a `webUrl` key in the service config; falls back to resolveServiceUrl().
+   *
+   * If `webUrl` is set in the service config, it's used as a reference to
+   * another environment key (e.g. `webUrl: kckern-server` resolves to that
+   * env's URL). If `webUrl` looks like a full URL it's used directly.
+   * Falls back to resolveServiceUrl() when no webUrl is configured.
+   *
    * @param {string} serviceName - Service name (komga, plex, etc.)
    * @returns {string|null} Browser-facing URL or null if not found
    */
   resolveServiceWebUrl(serviceName) {
     const service = this.#config.services?.[serviceName];
-    return service?.webUrl || this.resolveServiceUrl(serviceName);
+    if (!service) return null;
+
+    if (service.webUrl) {
+      // If webUrl is a key reference (not a URL), resolve it
+      if (service.webUrl in service) return service[service.webUrl];
+      // Otherwise treat as literal URL
+      return service.webUrl;
+    }
+
+    return this.resolveServiceUrl(serviceName);
   }
 
   /**
