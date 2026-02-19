@@ -51,6 +51,28 @@ export class ABSEbookFeedAdapter extends IFeedSourceAdapter {
     return path.join(this.#mediaDir, 'archives', 'abs', 'chapters', `${bookId}.yml`);
   }
 
+  #rotationPath() {
+    return path.join(this.#mediaDir, 'archives', 'abs', 'rotation.yml');
+  }
+
+  #readRotation() {
+    try {
+      const filePath = this.#rotationPath();
+      if (!fs.existsSync(filePath)) return { lastBookId: null, books: {} };
+      const content = fs.readFileSync(filePath, 'utf-8');
+      return yaml.load(content) || { lastBookId: null, books: {} };
+    } catch {
+      return { lastBookId: null, books: {} };
+    }
+  }
+
+  #writeRotation(state) {
+    const filePath = this.#rotationPath();
+    const dir = path.dirname(filePath);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(filePath, yaml.dump(state, { lineWidth: -1 }), 'utf-8');
+  }
+
   #readCache(bookId) {
     try {
       const filePath = this.#cachePath(bookId);
@@ -111,66 +133,18 @@ export class ABSEbookFeedAdapter extends IFeedSourceAdapter {
     if (books.length === 0) return [];
 
     const itemLimit = query.limit || 1;
+    const COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 hours
+    const now = Date.now();
 
-    // Shuffle books, then partition into cached (fast) and uncached
-    const shuffled = [...books].sort(() => Math.random() - 0.5);
-    const cached = [];
+    // Filter to ebook-capable books with cached chapter data
+    const eligible = [];
     const uncached = [];
-    for (const book of shuffled) {
+    for (const book of books) {
       if (!book.media?.ebookFormat && !book.media?.ebookFile) continue;
       if (this.#readCache(book.id)) {
-        cached.push(book);
+        eligible.push(book);
       } else {
         uncached.push(book);
-      }
-    }
-
-    const orderedBooks = [...cached, ...uncached];
-    const items = [];
-
-    for (const book of orderedBooks) {
-      if (items.length >= itemLimit) break;
-
-      const bookId = book.id;
-      const metadata = book.media?.metadata || {};
-
-      // Get chapters (cached or parsed from downloaded EPUB)
-      const chapterData = await this.#getChapters(bookId, metadata);
-      if (!chapterData || !this.#hasMeaningfulToc(chapterData.chapters)) {
-        continue;
-      }
-
-      const chapters = chapterData.chapters;
-      const coverUrl = `/api/v1/proxy/abs/items/${bookId}/cover`;
-      const author = metadata.authorName || metadata.author || '';
-      const title = metadata.title || 'Untitled';
-
-      // Shuffle chapters and take as many as needed up to the limit
-      const shuffledChapters = [...chapters].sort(() => Math.random() - 0.5);
-      for (const chapter of shuffledChapters) {
-        if (items.length >= itemLimit) break;
-
-        items.push({
-          id: `abs-ebooks:${bookId}:${chapter.id}`,
-          tier: query.tier || 'library',
-          source: 'abs-ebooks',
-          title: chapter.title,
-          body: chapter.preview || `${author} — ${title}`,
-          image: coverUrl,
-          link: this.#webUrl ? `${this.#webUrl}/item/${bookId}` : null,
-          timestamp: new Date().toISOString(),
-          priority: query.priority || 5,
-          meta: {
-            bookId,
-            chapterId: chapter.id,
-            bookTitle: title,
-            author,
-            imageWidth: chapterData.coverWidth,
-            imageHeight: chapterData.coverHeight,
-            sourceName: 'Audiobookshelf',
-            sourceIcon: null,
-          },
-        });
       }
     }
 
@@ -178,6 +152,97 @@ export class ABSEbookFeedAdapter extends IFeedSourceAdapter {
     if (uncached.length > 0) {
       this.#prefetchUncached(uncached).catch(() => {});
     }
+
+    if (eligible.length === 0) return [];
+
+    // --- Round-robin book selection ---
+    const rotation = this.#readRotation();
+    const rotBooks = rotation.books || {};
+
+    // Purge expired entries (older than 24h)
+    for (const [id, entry] of Object.entries(rotBooks)) {
+      if (now - new Date(entry.lastServed).getTime() >= COOLDOWN_MS) {
+        delete rotBooks[id];
+      }
+    }
+
+    // Score eligible books: never-served first, then oldest lastServed
+    const scored = eligible.map(book => {
+      const entry = rotBooks[book.id];
+      return {
+        book,
+        lastServed: entry ? new Date(entry.lastServed).getTime() : 0,
+        inCooldown: entry ? (now - new Date(entry.lastServed).getTime() < COOLDOWN_MS) : false,
+        isLastBook: book.id === rotation.lastBookId,
+      };
+    });
+
+    // Priority: not in cooldown > in cooldown; not last book > last book; oldest first
+    scored.sort((a, b) => {
+      if (a.inCooldown !== b.inCooldown) return a.inCooldown ? 1 : -1;
+      if (a.isLastBook !== b.isLastBook) return a.isLastBook ? 1 : -1;
+      return a.lastServed - b.lastServed;
+    });
+
+    const items = [];
+
+    for (const { book } of scored) {
+      if (items.length >= itemLimit) break;
+
+      const bookId = book.id;
+      const metadata = book.media?.metadata || {};
+
+      const chapterData = await this.#getChapters(bookId, metadata);
+      if (!chapterData || !this.#hasMeaningfulToc(chapterData.chapters)) continue;
+
+      const chapters = chapterData.chapters;
+      const coverUrl = `/api/v1/proxy/abs/items/${bookId}/cover`;
+      const author = metadata.authorName || metadata.author || '';
+      const title = metadata.title || 'Untitled';
+
+      // Exclude chapters already served during this book's cooldown window
+      const servedChapterIds = new Set(rotBooks[bookId]?.servedChapters || []);
+      let available = chapters.filter(ch => !servedChapterIds.has(ch.id));
+      // If all chapters served, allow any (full rotation complete)
+      if (available.length === 0) available = chapters;
+
+      // Pick a random chapter from available
+      const chapter = available[Math.floor(Math.random() * available.length)];
+
+      items.push({
+        id: `abs-ebooks:${bookId}:${chapter.id}`,
+        tier: query.tier || 'library',
+        source: 'abs-ebooks',
+        title: chapter.title,
+        body: chapter.preview || `${author} — ${title}`,
+        image: coverUrl,
+        link: this.#webUrl ? `${this.#webUrl}/item/${bookId}` : null,
+        timestamp: new Date().toISOString(),
+        priority: query.priority || 5,
+        meta: {
+          bookId,
+          chapterId: chapter.id,
+          bookTitle: title,
+          author,
+          imageWidth: chapterData.coverWidth,
+          imageHeight: chapterData.coverHeight,
+          sourceName: 'Audiobookshelf',
+          sourceIcon: null,
+        },
+      });
+
+      // Update rotation state
+      if (!rotBooks[bookId]) {
+        rotBooks[bookId] = { lastServed: new Date().toISOString(), servedChapters: [] };
+      } else {
+        rotBooks[bookId].lastServed = new Date().toISOString();
+      }
+      rotBooks[bookId].servedChapters.push(chapter.id);
+      rotation.lastBookId = bookId;
+    }
+
+    rotation.books = rotBooks;
+    this.#writeRotation(rotation);
 
     return items;
   }

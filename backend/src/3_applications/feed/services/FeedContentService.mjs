@@ -33,6 +33,16 @@ export class FeedContentService {
   }
 
   /**
+   * Return the client-facing icon URL for a feed (no fetching).
+   * @param {string} feedUrl - The RSS feed URL
+   * @param {string} [articleUrl] - A representative article URL (fallback for hostname)
+   * @returns {string|null}
+   */
+  resolveIconPath(feedUrl, articleUrl) {
+    return this.#webContentGateway.resolveIconPath(feedUrl, articleUrl);
+  }
+
+  /**
    * Proxy an image URL, returning an SVG placeholder on failure.
    * @param {string} url
    * @returns {Promise<{ data: Buffer, contentType: string }>}

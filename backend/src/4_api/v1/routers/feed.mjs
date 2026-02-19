@@ -131,19 +131,12 @@ export function createFeedRouter(config) {
         .filter(c => c.includes('/label/'))
         .map(c => c.split('/label/').pop());
 
-      // Derive site URL for icon resolution (YouTube channel URL or feed origin)
+      // Resolve icon URL server-side so frontend is vendor-agnostic
       const feedUrl = feedUrlMap.get(item.feedId) || null;
-      let feedSiteUrl = null;
-      if (feedUrl) {
-        const ytMatch = feedUrl.match(/youtube\.com\/feeds\/videos\.xml\?channel_id=(UC[a-zA-Z0-9_-]+)/);
-        if (ytMatch) {
-          feedSiteUrl = `https://www.youtube.com/channel/${ytMatch[1]}`;
-        } else {
-          try { feedSiteUrl = new URL(feedUrl).origin; } catch { /* ignore */ }
-        }
-      }
+      const articleUrl = item.canonical?.[0]?.href || item.alternate?.[0]?.href || null;
+      const iconUrl = feedContentService.resolveIconPath(feedUrl, articleUrl);
 
-      return { ...item, isRead, preview, tags, feedSiteUrl };
+      return { ...item, isRead, preview, tags, iconUrl };
     });
 
     // Multi-feed filter: post-filter by feedId (single-feed already fetched directly)
@@ -158,6 +151,10 @@ export function createFeedRouter(config) {
 
     // Day-based trimming only in unfiltered mode
     if (!isFiltered) {
+      // Sort by published date descending so day trimming picks the N most
+      // recent calendar days, not the first N days in FreshRSS crawl order.
+      result.sort((a, b) => new Date(b.published || 0) - new Date(a.published || 0));
+
       const targetDays = daysParam ? Number(daysParam) : 3;
       const dayKey = (d) => d ? `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}` : 'unknown';
       const distinctDays = new Set();
