@@ -294,6 +294,70 @@
   }
 }
 
+// ─── Article Section ──────────────────────────────────────
+.detail-article {
+  font-size: 0.9rem;
+  color: #c1c2c5;
+  line-height: 1;
+
+  p {
+    margin: 0 0 1.5em;
+  }
+
+  h2 {
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: #e0e0e0;
+    margin: 1.5em 0 0.75em;
+    line-height: 1.2;
+  }
+
+  h3, h4 {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #e0e0e0;
+    margin: 1.25em 0 0.5em;
+    line-height: 1.2;
+  }
+
+  strong, b {
+    font-weight: 600;
+    color: #e0e0e0;
+  }
+
+  em, i {
+    font-style: italic;
+  }
+
+  u {
+    text-decoration: underline;
+    text-underline-offset: 0.15em;
+  }
+
+  ul, ol {
+    margin: 0 0 1.5em;
+    padding-left: 1.5em;
+  }
+
+  li {
+    margin-bottom: 0.4em;
+  }
+
+  blockquote {
+    margin: 0 0 1.5em;
+    padding: 0.5em 0 0.5em 1em;
+    border-left: 2px solid #333;
+    color: #868e96;
+    font-style: italic;
+  }
+
+  hr {
+    border: none;
+    border-top: 1px solid #25262b;
+    margin: 1.5em 0;
+  }
+}
+
 // ─── Timeline Section ─────────────────────────────────────
 .detail-timeline {
   margin-top: 0.5rem;
