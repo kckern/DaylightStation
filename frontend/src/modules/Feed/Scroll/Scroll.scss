@@ -16,7 +16,11 @@
 .scroll-items {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 3px;
+
+  @media (min-width: 600px) {
+    gap: 12px;
+  }
 }
 
 .scroll-item-wrapper {
