@@ -14,7 +14,7 @@ export default function CommentsSection({ data }) {
               <span style={{ fontSize: '0.65rem', color: '#5c636a' }}>{c.score} pts</span>
             )}
           </div>
-          <p style={{ margin: 0, fontSize: '0.8rem', color: '#c1c2c5', lineHeight: 1.4, whiteSpace: 'pre-wrap' }}>
+          <p style={{ margin: 0, fontSize: '0.8rem', color: '#c1c2c5', lineHeight: 1, whiteSpace: 'pre-wrap' }}>
             {c.body}
           </p>
         </div>

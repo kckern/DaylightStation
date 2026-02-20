@@ -218,7 +218,7 @@ export class WebContentAdapter {
   }
 
   /**
-   * Parse HTML into readable content.
+   * Parse HTML into readable content, preserving minimal formatting tags.
    */
   #parseHtml(html) {
     const title = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]?.trim()
@@ -248,22 +248,91 @@ export class WebContentAdapter {
       bodyHtml = bodyHtml.replace(new RegExp(`^\\s*<h[1-3][^>]*>\\s*${escaped}\\s*</h[1-3]>`, 'i'), '');
     }
 
-    const text = bodyHtml
-      .replace(/<br\s*\/?>/gi, '\n')
-      .replace(/<\/p>/gi, '\n\n')
-      .replace(/<[^>]*>/g, '')
+    // Normalize h1 → h2 (article title already shown separately)
+    bodyHtml = bodyHtml.replace(/<(\/?)h1[\s>]/gi, '<$1h2>');
+
+    // Normalize self-closing void elements
+    bodyHtml = bodyHtml.replace(/<(br|hr)\s*\/?>/gi, '<$1>');
+
+    // Strip all attributes from remaining tags
+    bodyHtml = bodyHtml.replace(/<(\/?\w+)\s+[^>]*>/gi, '<$1>');
+
+    // Remove non-whitelisted tags (keep inner text content)
+    const ALLOWED_TAG = /^(?:p|br|h[2-4]|b|strong|em|i|u|ul|ol|li|blockquote|hr)$/i;
+    bodyHtml = bodyHtml.replace(/<(\/?)(\w+)>/gi, (full, _slash, tag) =>
+      ALLOWED_TAG.test(tag) ? full : ''
+    );
+
+    // Decode HTML entities
+    bodyHtml = bodyHtml
       .replace(/&nbsp;/g, ' ')
       .replace(/&amp;/g, '&')
       .replace(/&lt;/g, '<')
       .replace(/&gt;/g, '>')
       .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'")
-      .replace(/\n{3,}/g, '\n\n')
+      .replace(/&#39;/g, "'");
+
+    // Clean up whitespace
+    bodyHtml = bodyHtml
+      .replace(/<p>\s*<\/p>/gi, '')
+      .replace(/(<br>){3,}/gi, '<br><br>')
+      .replace(/\s*\n\s*/g, ' ')
       .trim();
 
-    const words = text.split(/\s+/);
-    const content = words.length > MAX_WORDS ? words.slice(0, MAX_WORDS).join(' ') + '...' : text;
+    // Word count from text-only version
+    const textOnly = bodyHtml.replace(/<[^>]*>/g, '').trim();
+    const wordCount = textOnly.split(/\s+/).filter(Boolean).length;
 
-    return { title, content, wordCount: words.length, ogImage, ogDescription };
+    const content = wordCount > MAX_WORDS
+      ? WebContentAdapter.#truncateHtml(bodyHtml, MAX_WORDS)
+      : bodyHtml;
+
+    return { title, content, wordCount, ogImage, ogDescription };
+  }
+
+  /**
+   * Truncate HTML to a max word count, closing any open tags.
+   */
+  static #truncateHtml(html, maxWords) {
+    let words = 0;
+    let inTag = false;
+    let inWord = false;
+    let cutPos = html.length;
+
+    for (let i = 0; i < html.length; i++) {
+      if (html[i] === '<') { inTag = true; inWord = false; continue; }
+      if (html[i] === '>') { inTag = false; continue; }
+      if (inTag) continue;
+
+      const isSpace = /\s/.test(html[i]);
+      if (!isSpace && !inWord) {
+        words++;
+        if (words > maxWords) { cutPos = i; break; }
+        inWord = true;
+      } else if (isSpace) {
+        inWord = false;
+      }
+    }
+
+    let truncated = html.slice(0, cutPos).replace(/\s+$/, '') + '\u2026';
+
+    // Close any open tags in reverse order
+    const openTags = [];
+    for (const m of truncated.matchAll(/<(\/?)([\w]+)>/g)) {
+      const [, slash, tag] = m;
+      const lower = tag.toLowerCase();
+      if (lower === 'br' || lower === 'hr') continue;
+      if (slash) {
+        const idx = openTags.lastIndexOf(lower);
+        if (idx !== -1) openTags.splice(idx, 1);
+      } else {
+        openTags.push(lower);
+      }
+    }
+    for (let i = openTags.length - 1; i >= 0; i--) {
+      truncated += `</${openTags[i]}>`;
+    }
+
+    return truncated;
   }
 }

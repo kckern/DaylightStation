@@ -38,7 +38,7 @@ function textToParagraphs(text) {
 function renderParagraph(text, key) {
   const lines = text.split('\n');
   return (
-    <p key={key} style={{ margin: '0 0 0.75em 0' }}>
+    <p key={key} style={{ margin: '0 0 1.5em 0' }}>
       {lines.map((line, i) => (
         i === 0 ? line : <span key={i}><br />{line}</span>
       ))}
@@ -50,7 +50,7 @@ export default function BodySection({ data }) {
   if (!data?.text) return null;
   const paragraphs = textToParagraphs(data.text);
   return (
-    <div style={{ fontSize: '0.9rem', color: '#c1c2c5', lineHeight: 1.6 }}>
+    <div style={{ fontSize: '0.9rem', color: '#c1c2c5', lineHeight: 1 }}>
       {paragraphs.map((p, i) => renderParagraph(p, i))}
     </div>
   );
