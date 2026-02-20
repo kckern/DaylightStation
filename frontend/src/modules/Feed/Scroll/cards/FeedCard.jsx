@@ -21,21 +21,50 @@ const STATUS_COLORS = {
   green: '#51cf66',
 };
 
-function HeroImage({ src }) {
+function HeroImage({ src, thumbnail }) {
   const proxied = proxyImage(src);
-  const [imgSrc, setImgSrc] = useState(src);
-  const [phase, setPhase] = useState('original'); // original → proxy → hidden
+  const [imgSrc, setImgSrc] = useState(thumbnail || src);
+  const [phase, setPhase] = useState(thumbnail ? 'thumbnail' : 'original');
+  // Track when full image is loaded and ready to display
+  const [fullLoaded, setFullLoaded] = useState(!thumbnail);
 
   useEffect(() => {
-    setImgSrc(src);
-    setPhase('original');
-  }, [src]);
+    setImgSrc(thumbnail || src);
+    setPhase(thumbnail ? 'thumbnail' : 'original');
+    setFullLoaded(!thumbnail);
+  }, [src, thumbnail]);
+
+  // Preload full image in background when we have a thumbnail
+  useEffect(() => {
+    if (!thumbnail || !src || thumbnail === src) return;
+    const img = new Image();
+    img.onload = () => {
+      setImgSrc(src);
+      setPhase('original');
+      // Small delay to let the browser paint the new src before fading in
+      requestAnimationFrame(() => setFullLoaded(true));
+    };
+    img.onerror = () => {
+      // Full image failed; stay on thumbnail, that's fine
+      feedLog.image('card hero full-res failed, keeping thumbnail', { src, thumbnail });
+      setFullLoaded(true);
+    };
+    img.src = src;
+    return () => { img.onload = null; img.onerror = null; };
+  }, [src, thumbnail]);
 
   const handleError = () => {
-    if (phase === 'original' && proxied) {
+    if (phase === 'thumbnail' && src && src !== thumbnail) {
+      // Thumbnail failed, try full image directly
+      feedLog.image('card hero thumbnail failed, trying full', { thumbnail, src });
+      setPhase('original');
+      setImgSrc(src);
+      setFullLoaded(true);
+    } else if ((phase === 'original' || phase === 'thumbnail') && proxied) {
       feedLog.image('card hero fallback to proxy', { original: src, proxy: proxied });
       setPhase('proxy');
       setImgSrc(proxied);
+      setFullLoaded(true);
     } else {
       feedLog.image('card hero hidden — all sources failed', { src });
       setPhase('hidden');
@@ -54,6 +83,8 @@ function HeroImage({ src }) {
         height: '100%',
         display: 'block',
         objectFit: 'cover',
+        opacity: fullLoaded ? 1 : 0.6,
+        transition: 'opacity 0.4s ease-in-out',
       }}
       onError={handleError}
     />
@@ -120,7 +151,7 @@ export default function FeedCard({ item, colors = {}, onDismiss, onPlay }) {
             <CardYouTubePlayer item={item} />
           ) : (
             <>
-              <HeroImage src={item.image} />
+              <HeroImage src={item.image} thumbnail={item.thumbnail} />
               {/* Duration badge */}
               {item.meta?.duration > 0 && (
                 <span style={{

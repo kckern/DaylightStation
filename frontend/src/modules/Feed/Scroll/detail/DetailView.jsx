@@ -169,9 +169,11 @@ export default function DetailView({ item, sections, ogImage, ogDescription, loa
           const imgSrc = imagePhase === 'proxy' ? (proxyImage(heroImage) || heroImage) : heroImage;
           return (
             <div className={`detail-hero${isPortrait ? ' detail-hero--portrait' : ''}`} style={{
-              aspectRatio: (item.meta?.imageWidth && item.meta?.imageHeight)
-                ? `${item.meta.imageWidth} / ${item.meta.imageHeight}`
-                : '16 / 9',
+              aspectRatio: imageLoaded
+                ? undefined
+                : (item.meta?.imageWidth && item.meta?.imageHeight)
+                  ? `${item.meta.imageWidth} / ${item.meta.imageHeight}`
+                  : '16 / 9',
             }}>
               {!imageLoaded && <div className="detail-hero-shimmer" />}
               <img

@@ -52,6 +52,9 @@ export class GoodreadsFeedAdapter extends IFeedSourceAdapter {
 
         const imageUrl = book.coverImage?.replace(/\.(_S[XY]\d+)+_\./, '.') || null;
         const dims = imageUrl ? await this.#getImageDimensions(imageUrl) : {};
+        const thumbnailUrl = (imageUrl && book.coverImage && book.coverImage !== imageUrl)
+          ? book.coverImage
+          : null;
 
         return {
           id: `goodreads:${book.bookId || book.title}`,
@@ -60,6 +63,7 @@ export class GoodreadsFeedAdapter extends IFeedSourceAdapter {
           title: book.title || 'Unknown Book',
           body: book.author || '',
           image: imageUrl,
+          thumbnail: thumbnailUrl,
           link: book.bookId ? `https://www.goodreads.com/book/show/${book.bookId}` : null,
           timestamp: ts,
           priority: query.priority || 5,
