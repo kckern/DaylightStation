@@ -457,12 +457,10 @@ export class NutriLog {
    */
   toNutriListItems() {
     return this.#items.map(item => ({
-      id: item.id,
-      uuid: item.uuid,
+      ...item.toJSON(),
       logId: this.#id,
-      label: item.label,
-      grams: item.grams,
-      color: item.color,
+      log_uuid: this.#id,
+      date: this.#meal?.date,
       status: this.#status,
       createdAt: this.#createdAt,
       acceptedAt: this.#acceptedAt,
