@@ -13,8 +13,8 @@ export default function WebcamApp() {
     cycleAudioDevice
   } = useMediaDevices();
 
-  const { videoRef, error: videoError } = useWebcamStream(selectedVideoDevice, selectedAudioDevice);
-  const { volume } = useVolumeMeter(selectedAudioDevice);
+  const { videoRef, stream, error: videoError } = useWebcamStream(selectedVideoDevice, selectedAudioDevice);
+  const { volume } = useVolumeMeter(stream);
 
   // Keyboard shortcuts
   useEffect(() => {

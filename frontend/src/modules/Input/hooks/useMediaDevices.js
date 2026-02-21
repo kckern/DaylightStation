@@ -26,7 +26,7 @@ export const useMediaDevices = () => {
           setSelectedVideoDevice(vidDevices[0].deviceId);
         }
         if (audDevices.length > 0 && !selectedAudioDevice) {
-          const webcamMic = audDevices.find(d => /angetube|camera/i.test(d.label));
+          const webcamMic = audDevices.find(d => /usb audio|angetube|camera/i.test(d.label));
           setSelectedAudioDevice((webcamMic || audDevices[0]).deviceId);
         }
       } catch (error) {
