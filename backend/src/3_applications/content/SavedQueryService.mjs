@@ -14,16 +14,20 @@ export class SavedQueryService {
   #writeQuery;
   #deleteQuery;
 
+  #listQueriesDetailed;
+
   /**
    * @param {Object} deps
    * @param {(name: string) => Object|null} deps.readQuery - Read a query definition by name
    * @param {() => string[]} [deps.listQueries] - List all query names
+   * @param {() => Array<{name: string, origin: string, username?: string}>} [deps.listQueriesDetailed] - List queries with origin metadata
    * @param {(name: string, data: Object) => void} [deps.writeQuery] - Write a query definition
    * @param {(name: string) => void} [deps.deleteQuery] - Delete a query definition
    */
-  constructor({ readQuery, listQueries, writeQuery, deleteQuery } = {}) {
+  constructor({ readQuery, listQueries, listQueriesDetailed, writeQuery, deleteQuery } = {}) {
     this.#readQuery = readQuery;
     this.#listQueries = listQueries || null;
+    this.#listQueriesDetailed = listQueriesDetailed || null;
     this.#writeQuery = writeQuery || null;
     this.#deleteQuery = deleteQuery || null;
   }
@@ -56,6 +60,16 @@ export class SavedQueryService {
   listQueries() {
     if (!this.#listQueries) return [];
     return this.#listQueries();
+  }
+
+  /**
+   * List all saved queries with origin metadata (household vs user).
+   * @returns {Array<{name: string, origin: string, username?: string}>}
+   */
+  listQueriesDetailed() {
+    if (this.#listQueriesDetailed) return this.#listQueriesDetailed();
+    // Fallback: wrap flat list with unknown origin
+    return this.listQueries().map(name => ({ name, origin: 'household' }));
   }
 
   /**

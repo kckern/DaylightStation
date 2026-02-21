@@ -482,7 +482,8 @@ export function createContentRegistry(config, deps = {}) {
     // Build list of user query directories from data path
     // listDataPath is the root data dir (contains household/ and users/)
     const usersBase = path.join(listDataPath, 'users');
-    const userQueryDirs = listSubdirectories(usersBase)
+    const usernames = listSubdirectories(usersBase);
+    const userQueryDirs = usernames
       .map(username => path.join(usersBase, username, 'config', 'queries'));
 
     savedQueryService = new SavedQueryService({
@@ -505,6 +506,27 @@ export function createContentRegistry(config, deps = {}) {
           }
         }
         return [...names];
+      },
+      listQueriesDetailed: () => {
+        const seen = new Set();
+        const results = [];
+        // Household queries first
+        for (const name of listYamlFiles(queriesDir)) {
+          if (!seen.has(name)) {
+            seen.add(name);
+            results.push({ name, origin: 'household' });
+          }
+        }
+        // User queries (with username)
+        for (let i = 0; i < userQueryDirs.length; i++) {
+          for (const name of listYamlFiles(userQueryDirs[i])) {
+            if (!seen.has(name)) {
+              seen.add(name);
+              results.push({ name, origin: 'user', username: usernames[i] });
+            }
+          }
+        }
+        return results;
       },
       writeQuery: (name, data) => saveYaml(path.join(queriesDir, name), data),
       deleteQuery: (name) => deleteYaml(path.join(queriesDir, name)),

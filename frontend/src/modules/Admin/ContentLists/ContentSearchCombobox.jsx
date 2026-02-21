@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Combobox, TextInput, ScrollArea, Group, Text, Avatar, Badge, Loader,
   Stack, ActionIcon, Box, useCombobox
@@ -75,6 +75,9 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
   const [loading, setLoading] = useState(false);
   const [breadcrumbs, setBreadcrumbs] = useState([]); // [{id, title, source, localId}]
   const [initialLoadDone, setInitialLoadDone] = useState(false);
+  const [pagination, setPagination] = useState(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const scrollViewportRef = useRef(null);
 
   // Log prop changes
   useEffect(() => {
@@ -189,8 +192,9 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
       if (!response.ok) throw new Error(`Browse failed: ${response.status}`);
       const data = await response.json();
       const itemCount = (data.items || []).length;
-      log.info('load_siblings.done', { source, localId, itemCount, hasParent: !!data.parent?.id, parentId: data.parent?.id });
+      log.info('load_siblings.done', { source, localId, itemCount, hasParent: !!data.parent?.id, parentId: data.parent?.id, pagination: data.pagination });
       setBrowseResults(data.items || []);
+      setPagination(data.pagination || null);
 
       if (data.parent?.id) {
         const parentLocalId = data.parent.id.split(':').slice(1).join(':');
@@ -201,6 +205,20 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
         log.debug('load_siblings.no_parent', { source, localId });
         setBreadcrumbs([]);
       }
+
+      // Scroll to reference item after render
+      if (data.referenceIndex != null && data.referenceIndex >= 0) {
+        requestAnimationFrame(() => {
+          const viewport = scrollViewportRef.current;
+          if (viewport) {
+            const options = viewport.querySelectorAll('[data-combobox-option]');
+            const refOption = options[data.referenceIndex];
+            if (refOption) {
+              refOption.scrollIntoView({ block: 'center' });
+            }
+          }
+        });
+      }
     } catch (err) {
       log.error('load_siblings.error', { inputValue, source, localId, error: err.message });
     } finally {
@@ -208,6 +226,73 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
       setInitialLoadDone(true);
     }
   }, []);
+
+  // Load more siblings for infinite scroll pagination
+  const loadMoreSiblings = useCallback(async (direction) => {
+    if (!value || !pagination || loadingMore) return;
+
+    const colonIndex = value.indexOf(':');
+    if (colonIndex === -1) return;
+
+    const source = normalizeListSource(value.substring(0, colonIndex));
+    const localId = value.substring(colonIndex + 1);
+
+    let offset, limit;
+    if (direction === 'after') {
+      if (!pagination.hasAfter) return;
+      offset = pagination.offset + pagination.window;
+      limit = 21;
+    } else {
+      if (!pagination.hasBefore) return;
+      offset = Math.max(0, pagination.offset - 21);
+      limit = Math.min(21, pagination.offset);
+      if (limit <= 0) return;
+    }
+
+    log.info('load_more_siblings', { direction, offset, limit, source, localId });
+    setLoadingMore(true);
+    try {
+      const url = `/api/v1/siblings/${source}/${encodeURIComponent(localId)}?offset=${offset}&limit=${limit}`;
+      const response = await fetch(url);
+      if (!response.ok) return;
+      const data = await response.json();
+
+      if (direction === 'after') {
+        setBrowseResults(prev => [...prev, ...(data.items || [])]);
+      } else {
+        const viewport = scrollViewportRef.current;
+        const prevScrollHeight = viewport?.scrollHeight || 0;
+
+        setBrowseResults(prev => [...(data.items || []), ...prev]);
+
+        // Maintain scroll position after prepending
+        requestAnimationFrame(() => {
+          if (viewport) {
+            const newScrollHeight = viewport.scrollHeight;
+            viewport.scrollTop += (newScrollHeight - prevScrollHeight);
+          }
+        });
+      }
+
+      // Update pagination to reflect expanded window
+      setPagination(prev => {
+        if (!prev) return data.pagination;
+        const newOffset = direction === 'before' ? offset : prev.offset;
+        const newWindow = prev.window + (data.items || []).length;
+        return {
+          ...prev,
+          offset: newOffset,
+          window: newWindow,
+          hasBefore: newOffset > 0,
+          hasAfter: newOffset + newWindow < prev.total
+        };
+      });
+    } catch (err) {
+      log.error('load_more_siblings.error', { direction, error: err.message });
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [value, pagination, loadingMore]);
 
   // Reset editing state when value changes (including after commit)
   useEffect(() => {
@@ -347,12 +432,22 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
     }
   }, []);
 
-  const options = results.map((item) => {
+  const renderOption = (item) => {
     const isContainerItem = isContainer(item);
     const source = item.source || item.id?.split(':')[0];
     const type = item.type || item.metadata?.type || item.mediaType;
     const parentTitle = item.metadata?.parentTitle;
     const hasParent = parentTitle && item.localId?.includes('/');
+    const localId = item.localId || item.id?.replace(`${source}:`, '');
+    const childCount = item.childCount ?? item.metadata?.childCount ?? null;
+    const TypeIcon = TYPE_ICONS[type] || TYPE_ICONS.default;
+
+    // Build subtitle: parentTitle if navigable, otherwise "Type: localId"
+    const subtitleText = parentTitle || (
+      type
+        ? `${type.charAt(0).toUpperCase() + type.slice(1)}: ${localId}`
+        : localId
+    );
 
     return (
       <Combobox.Option
@@ -370,8 +465,12 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
               {getIcon(item)}
             </Avatar>
             <Stack gap={0} style={{ flex: 1, minWidth: 0 }}>
-              <Text size="sm" truncate fw={500}>{item.title}</Text>
-              {parentTitle && (
+              <Group gap={4} wrap="nowrap">
+                <Text size="sm" truncate fw={500}>{item.title}</Text>
+                {childCount != null && <Badge size="xs" variant="filled" color="gray" style={{ flexShrink: 0 }}>{childCount}</Badge>}
+              </Group>
+              <Group gap={4} wrap="nowrap">
+                <TypeIcon size={12} style={{ flexShrink: 0, opacity: 0.5 }} />
                 <Text
                   size="xs"
                   c="dimmed"
@@ -384,14 +483,13 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
                   } : undefined}
                   style={hasParent ? { cursor: 'pointer', textDecoration: 'underline' } : undefined}
                 >
-                  {parentTitle}
+                  {subtitleText}
                 </Text>
-              )}
+              </Group>
             </Stack>
           </Group>
           <Group gap="xs" wrap="nowrap">
-            <Badge size="xs" variant="light" color="gray">{source}</Badge>
-            {type && <Badge size="xs" variant="outline" color="blue">{type}</Badge>}
+            <Badge size="xs" variant="light" color="gray">{source.toUpperCase()}</Badge>
             {isContainerItem && !selectContainers && (
               <IconChevronRight size={16} color="var(--mantine-color-dimmed)" />
             )}
@@ -399,7 +497,34 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
         </Group>
       </Combobox.Option>
     );
-  });
+  };
+
+  // Group items by `group` field if present, otherwise render flat
+  const options = useMemo(() => {
+    const hasGroups = results.some(item => item.group);
+    if (!hasGroups) return results.map(renderOption);
+
+    const groups = [];
+    const groupMap = new Map();
+    for (const item of results) {
+      const key = item.group || '';
+      if (!groupMap.has(key)) {
+        groupMap.set(key, []);
+        groups.push(key);
+      }
+      groupMap.get(key).push(item);
+    }
+
+    return groups.map(groupLabel =>
+      groupLabel ? (
+        <Combobox.Group label={groupLabel} key={groupLabel}>
+          {groupMap.get(groupLabel).map(renderOption)}
+        </Combobox.Group>
+      ) : (
+        groupMap.get(groupLabel).map(renderOption)
+      )
+    );
+  }, [results, selectContainers]);
 
   return (
     <Combobox
@@ -499,7 +624,29 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
         )}
 
         <Combobox.Options>
-          <ScrollArea.Autosize mah={300}>
+          <ScrollArea.Autosize
+            mah={300}
+            viewportRef={scrollViewportRef}
+            onScrollPositionChange={({ y }) => {
+              if (!pagination || loadingMore || breadcrumbs.length === 0) return;
+              const viewport = scrollViewportRef.current;
+              if (!viewport) return;
+              const { scrollHeight, clientHeight } = viewport;
+              // Near bottom — load more after
+              if (pagination.hasAfter && scrollHeight - y - clientHeight < 50) {
+                loadMoreSiblings('after');
+              }
+              // Near top — load more before
+              if (pagination.hasBefore && y < 50) {
+                loadMoreSiblings('before');
+              }
+            }}
+          >
+            {loadingMore && pagination?.hasBefore && (
+              <Group justify="center" py={4}>
+                <Loader size="xs" />
+              </Group>
+            )}
             {isLoading && results.length === 0 ? (
               <Combobox.Empty>
                 <Group justify="center" p="md">
@@ -513,6 +660,11 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
               </Combobox.Empty>
             ) : (
               options
+            )}
+            {loadingMore && pagination?.hasAfter && (
+              <Group justify="center" py={4}>
+                <Loader size="xs" />
+              </Group>
             )}
           </ScrollArea.Autosize>
         </Combobox.Options>

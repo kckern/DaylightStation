@@ -289,19 +289,179 @@ export class QueryAdapter {
   }
 
   /**
-   * Queries don't have siblings.
-   * @returns {Promise<{parent: null, items: Array}>}
+   * Build a human-readable description from a query definition.
+   * @param {Object} query - Normalized query from SavedQueryService
+   * @param {string} name - Query filename
+   * @returns {string}
    */
-  async resolveSiblings() {
-    return { parent: null, items: [] };
+  #describeQuery(query, name) {
+    if (!query) return name;
+    const parts = [];
+    const src = query.source || 'query';
+    parts.push(src.charAt(0).toUpperCase() + src.slice(1));
+
+    if (src === 'freshvideo' && query.filters?.sources?.length) {
+      parts.push(`· ${query.filters.sources.join(', ')}`);
+    } else if (src === 'immich' && query.params) {
+      const { month, day, yearFrom } = query.params;
+      if (month && day) parts.push(`· ${month}/${day}`);
+      if (yearFrom) parts.push(`since ${yearFrom}`);
+    } else if (query.filters?.sources?.length) {
+      parts.push(`· ${query.filters.sources.join(', ')}`);
+    }
+    if (query.take) parts.push(`(limit ${query.take})`);
+    return parts.join(' ');
   }
 
   /**
-   * Search is not supported for queries.
-   * @returns {Promise<Array>}
+   * Return all saved queries as siblings, grouped by origin (household vs user).
+   * @param {string} compoundId
+   * @returns {Promise<{parent: Object, items: Array}>}
    */
-  async search() {
-    return [];
+  async resolveSiblings(compoundId) {
+    const detailed = this.#savedQueryService.listQueriesDetailed();
+
+    // Build base items from YAML definitions (cheap)
+    const baseItems = detailed.map(({ name, origin, username }) => {
+      const query = this.#savedQueryService.getQuery(name);
+      const queryType = query?.source || 'query';
+      const group = origin === 'user' ? `${username}'s Queries` : 'Shared Queries';
+      const description = this.#describeQuery(query, name);
+      const queryTypeLabel = queryType.charAt(0).toUpperCase() + queryType.slice(1);
+
+      return {
+        name,
+        query,
+        item: {
+          id: `query:${name}`,
+          title: query?.title || name,
+          source: 'query',
+          type: queryType,
+          thumbnail: null,
+          group,
+          metadata: {
+            type: queryType,
+            queryType: query?.source,
+            parentTitle: description,
+            librarySectionTitle: queryTypeLabel,
+            childCount: null,
+            origin,
+            username: username || null,
+          },
+        },
+      };
+    });
+
+    // Resolve thumbnails and childCounts in parallel (best effort)
+    await Promise.all(baseItems.map(async ({ name, query, item }) => {
+      try {
+        // Try resolvePlayables first (handles freshvideo, immich)
+        const playables = await this.resolvePlayables(`query:${name}`);
+        if (playables.length > 0) {
+          item.thumbnail = playables[0].thumbnail || null;
+          item.metadata.childCount = playables.length;
+          return;
+        }
+
+        // Fallback: ask the target adapter via registry for a thumbnail
+        if (!this.#registry || !query?.source) return;
+
+        // Try registry lookup with common name variations
+        const sourceType = query.source;
+        const adapter = this.#registry.get(sourceType)
+          || this.#registry.get(sourceType.split('-')[0]);  // abs-ebooks → abs
+        if (!adapter) return;
+
+        // If query has parentIds, try each until we get a thumbnail
+        const parentIds = query.params?.parentIds;
+        if (parentIds?.length && adapter.getItem) {
+          for (const entry of parentIds) {
+            const pid = String(entry.id || entry);
+            const parentItem = await adapter.getItem(pid).catch(() => null);
+            if (parentItem?.thumbnail) {
+              item.thumbnail = parentItem.thumbnail;
+              return;
+            }
+          }
+        }
+
+        // If adapter supports search, try with query name then empty
+        if (adapter.search) {
+          const results = await adapter.search({ text: name, take: 1 }).catch(() => null);
+          const first = results?.items?.[0];
+          if (first?.thumbnail) {
+            item.thumbnail = first.thumbnail;
+            return;
+          }
+        }
+
+        // Last resort: try listing root to grab any thumbnail
+        if (adapter.getList) {
+          const listItems = await adapter.getList('').catch(() => []);
+          const withThumb = (Array.isArray(listItems) ? listItems : []).find(i => i.thumbnail);
+          if (withThumb?.thumbnail) {
+            item.thumbnail = withThumb.thumbnail;
+          }
+        }
+      } catch {
+        // Best effort — leave thumbnail/childCount as null
+      }
+    }));
+
+    const items = baseItems.map(b => b.item);
+
+    const parent = {
+      id: 'query:*',
+      title: 'Saved Queries',
+      source: 'query',
+      thumbnail: null,
+      parentId: null,
+      libraryId: null,
+    };
+
+    return { parent, items };
+  }
+
+  getSearchCapabilities() {
+    return { canonical: ['text'], specific: [] };
+  }
+
+  /**
+   * Search saved queries by name and title.
+   * @param {Object} query
+   * @param {string} [query.text] - Search text to match against name/title
+   * @param {number} [query.take=50] - Max results
+   * @returns {Promise<{items: Array, total: number}>}
+   */
+  async search(query) {
+    const { text, take = 50 } = query;
+    const searchText = (text || '').toLowerCase();
+    const allNames = this.#savedQueryService.listQueries();
+    const items = [];
+
+    for (const name of allNames) {
+      const def = this.#savedQueryService.getQuery(name);
+      if (!def) continue;
+
+      const nameMatch = name.toLowerCase().includes(searchText);
+      const titleMatch = def.title?.toLowerCase().includes(searchText);
+
+      if (nameMatch || titleMatch || !searchText) {
+        items.push({
+          id: `query:${name}`,
+          title: def.title || name,
+          source: 'query',
+          type: def.source || 'query',
+          metadata: {
+            type: def.source || 'query',
+            queryType: def.source,
+          },
+        });
+        if (items.length >= take) break;
+      }
+    }
+
+    return { items, total: items.length };
   }
 
   getCapabilities() {

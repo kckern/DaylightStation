@@ -32,9 +32,20 @@
  */
 
 /**
+ * @typedef {Object} PaginationInfo
+ * @property {number} total - Total number of sibling items
+ * @property {number} offset - Start offset of current window
+ * @property {number} window - Number of items in current window
+ * @property {boolean} hasBefore - Whether there are items before current window
+ * @property {boolean} hasAfter - Whether there are items after current window
+ */
+
+/**
  * @typedef {Object} SiblingsResult
  * @property {SiblingParent|null} parent - Parent container info
  * @property {SiblingItem[]} items - Sibling items
+ * @property {number} [referenceIndex] - Index of reference item within the window
+ * @property {PaginationInfo} [pagination] - Pagination metadata
  */
 
 /**

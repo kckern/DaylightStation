@@ -15,7 +15,7 @@ import {
   SortableContext, verticalListSortingStrategy, arrayMove
 } from '@dnd-kit/sortable';
 import { useAdminLists } from '../../../hooks/admin/useAdminLists.js';
-import ListsItemRow, { EmptyItemRow, preloadSiblings, fetchContentMetadata } from './ListsItemRow.jsx';
+import ListsItemRow, { EmptyItemRow, fetchContentMetadata } from './ListsItemRow.jsx';
 import SectionHeader from './SectionHeader.jsx';
 import ListsItemEditor from './ListsItemEditor.jsx';
 import { ListsContext } from './ListsContext.js';
@@ -75,13 +75,13 @@ function ListsFolder() {
   }, [flatItems, contentInfoMap]);
 
   // Preload content info for all items — single source of truth for children
+  // Siblings preloading is deferred to row hover (ListsItemRow.handleRowHover)
   useEffect(() => {
     flatItems.forEach(item => {
       if (item.input && !contentInfoMap.has(item.input)) {
         fetchContentMetadata(item.input).then(info => {
           if (info && !info.unresolved) {
             setContentInfo(item.input, info);
-            preloadSiblings(item.input, info);
           }
         });
       }

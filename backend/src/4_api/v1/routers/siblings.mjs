@@ -36,7 +36,14 @@ export function createSiblingsRouter(config) {
     const source = resolved?.source ?? parsedSource;
     const localId = resolved?.localId ?? parsedLocalId;
 
-    const result = await siblingsService.resolveSiblings(source, localId);
+    // Parse pagination query params
+    const offset = req.query.offset != null ? parseInt(req.query.offset, 10) : undefined;
+    const limit = req.query.limit != null ? parseInt(req.query.limit, 10) : undefined;
+    const opts = {};
+    if (Number.isFinite(offset)) opts.offset = offset;
+    if (Number.isFinite(limit)) opts.limit = limit;
+
+    const result = await siblingsService.resolveSiblings(source, localId, opts);
 
     // Handle error results
     if (result.error) {
@@ -51,7 +58,9 @@ export function createSiblingsRouter(config) {
     // Success response
     res.json({
       parent: result.parent,
-      items: result.items
+      items: result.items,
+      ...(result.referenceIndex != null && { referenceIndex: result.referenceIndex }),
+      ...(result.pagination && { pagination: result.pagination })
     });
   });
 
