@@ -135,10 +135,11 @@ export function createAdminContentRouter(config) {
   router.put('/lists/:type/:name', (req, res) => {
     const { type, name: listName } = req.params;
     const householdId = req.query.household || configService.getDefaultHouseholdId();
+    const sectionIndex = parseInt(req.query.section, 10) || 0;
     const { items } = req.body || {};
 
     try {
-      const result = listManagementService.replaceContents(type, listName, householdId, items);
+      const result = listManagementService.replaceContents(type, listName, householdId, items, sectionIndex);
       res.json(result);
     } catch (error) {
       if (error.httpStatus) throw error;
@@ -174,10 +175,11 @@ export function createAdminContentRouter(config) {
   router.post('/lists/:type/:name/items', (req, res) => {
     const { type, name: listName } = req.params;
     const householdId = req.query.household || configService.getDefaultHouseholdId();
+    const sectionIndex = parseInt(req.query.section, 10) || 0;
     const itemData = req.body || {};
 
     try {
-      const result = listManagementService.addItem(type, listName, householdId, itemData);
+      const result = listManagementService.addItem(type, listName, householdId, itemData, sectionIndex);
       res.status(201).json(result);
     } catch (error) {
       if (error.httpStatus) throw error;
@@ -205,12 +207,13 @@ export function createAdminContentRouter(config) {
   router.put('/lists/:type/:name/items/:index', (req, res) => {
     const { type, name: listName, index: indexStr } = req.params;
     const householdId = req.query.household || configService.getDefaultHouseholdId();
+    const sectionIndex = parseInt(req.query.section, 10) || 0;
     const updates = req.body || {};
 
     const index = parseInt(indexStr, 10);
 
     try {
-      const result = listManagementService.updateItem(type, listName, householdId, index, updates);
+      const result = listManagementService.updateItem(type, listName, householdId, index, updates, sectionIndex);
       res.json(result);
     } catch (error) {
       if (error.httpStatus) throw error;
@@ -225,11 +228,12 @@ export function createAdminContentRouter(config) {
   router.delete('/lists/:type/:name/items/:index', (req, res) => {
     const { type, name: listName, index: indexStr } = req.params;
     const householdId = req.query.household || configService.getDefaultHouseholdId();
+    const sectionIndex = parseInt(req.query.section, 10) || 0;
 
     const index = parseInt(indexStr, 10);
 
     try {
-      const result = listManagementService.deleteItem(type, listName, householdId, index);
+      const result = listManagementService.deleteItem(type, listName, householdId, index, sectionIndex);
       res.json(result);
     } catch (error) {
       if (error.httpStatus) throw error;

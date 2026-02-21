@@ -11,7 +11,8 @@ import {
   IconList, IconMicrophone, IconVideo, IconFolder, IconFileText, IconSearch,
   IconBroadcast, IconPresentation, IconSchool, IconUsers, IconStack3,
   IconCheck, IconArrowBarDown, IconPlayerPlayFilled, IconPlaylistAdd,
-  IconLayoutList, IconAppWindow, IconDeviceDesktop, IconBookmark
+  IconLayoutList, IconAppWindow, IconDeviceDesktop, IconBookmark,
+  IconArrowUp, IconArrowDown, IconArrowBarUp, IconSection
 } from '@tabler/icons-react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -83,6 +84,7 @@ const TYPE_ICONS = {
   // Format-based icons (preferred over collection-specific)
   singalong: IconMusic,
   readalong: IconBook,
+  chapter: IconBook,
   // Legacy collection names (backward compat)
   hymn: IconMusic,
   primary: IconMusic,
@@ -234,6 +236,7 @@ const TYPE_LABELS = {
   collection: 'Collection',
   singalong: 'Song',
   readalong: 'Reading',
+  chapter: 'Chapter',
   hymn: 'Hymn',
   primary: 'Primary',
   app: 'App'
@@ -1988,7 +1991,7 @@ function ItemDetailsDrawer({ opened, onClose, contentValue }) {
   );
 }
 
-function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, isWatchlist, onEdit, onSplit }) {
+function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, isWatchlist, onEdit, onSplit, sectionIndex, sectionCount, sections, itemCount, onMoveItem }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: item.index
   });
@@ -1999,6 +2002,7 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
 
   const [imagePickerOpen, setImagePickerOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [dragMenuOpen, setDragMenuOpen] = useState(false);
 
   // Resolve thumbnail for icon column: override image > input thumbnail (derived from context)
   const cachedInfo = contentInfoMap.get(item.input);
@@ -2099,9 +2103,59 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
         />
       </div>
 
-      <div className="col-drag drag-handle" {...attributes} {...listeners}>
-        <IconGripVertical size={14} />
-      </div>
+      <Menu opened={dragMenuOpen} onChange={setDragMenuOpen} position="bottom-start" withinPortal>
+        <Menu.Target>
+          <div
+            className="col-drag drag-handle"
+            {...attributes}
+            {...listeners}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setDragMenuOpen(true);
+            }}
+          >
+            <IconGripVertical size={14} />
+          </div>
+        </Menu.Target>
+        <Menu.Dropdown>
+          <Menu.Label>Reorder</Menu.Label>
+          <Menu.Item
+            leftSection={<IconArrowBarUp size={14} />}
+            disabled={item.index === 0}
+            onClick={() => onMoveItem('top')}
+          >
+            Move to Top
+          </Menu.Item>
+          <Menu.Item
+            leftSection={<IconArrowBarDown size={14} />}
+            disabled={item.index === itemCount - 1}
+            onClick={() => onMoveItem('bottom')}
+          >
+            Move to Bottom
+          </Menu.Item>
+          <Menu.Divider />
+          <Menu.Label>Move to Section</Menu.Label>
+          {sectionCount > 1 && sections.map((s, si) => {
+            if (si === sectionIndex) return null;
+            return (
+              <Menu.Item
+                key={si}
+                leftSection={<IconSection size={14} />}
+                onClick={() => onMoveItem('section', si)}
+              >
+                {s.title || `Section ${si + 1}`}
+              </Menu.Item>
+            );
+          })}
+          <Menu.Item
+            leftSection={<IconPlus size={14} />}
+            onClick={() => onMoveItem('new-section')}
+          >
+            New Section
+          </Menu.Item>
+        </Menu.Dropdown>
+      </Menu>
 
       <div className="col-index">
         <Text size="xs" c="dimmed">{item.index + 1}</Text>
@@ -2181,22 +2235,30 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
           onClose={() => setPreviewOpen(false)}
           title={item.label || 'Preview'}
           centered
-          size="lg"
+          size={980}
+          padding="xs"
+          styles={{ content: { marginLeft: 'var(--app-shell-navbar-width, 250px)' } }}
         >
-          {previewOpen && (
-            <Box style={{ minHeight: 200, aspectRatio: '16 / 9', position: 'relative', background: '#000' }}>
-              <Player
-                play={{
-                  contentId: item.input?.replace(/^(\w+):\s+/, '$1:').trim(),
-                  volume: item.volume,
-                  playbackRate: item.playbackRate,
-                }}
-                advance={() => setPreviewOpen(false)}
-                clear={() => setPreviewOpen(false)}
-                playerType="preview"
-              />
-            </Box>
-          )}
+          {previewOpen && (() => {
+            const contentId = item.input?.replace(/^(\w+):\s+/, '$1:').trim();
+            const mediaConfig = { contentId, volume: item.volume, playbackRate: item.playbackRate };
+            const isQueue = item.action === 'Queue';
+            const playerProps = isQueue
+              ? { queue: mediaConfig, shuffle: item.shuffle || undefined }
+              : { play: mediaConfig };
+            return (
+              <Box style={{ width: 960, height: 540, position: 'relative', background: '#000', overflow: 'hidden', borderRadius: 'var(--mantine-radius-sm)' }}>
+                <div style={{ width: 1920, height: 1080, zoom: 0.5, transformOrigin: '0 0' }}>
+                  <Player
+                    {...playerProps}
+                    advance={() => setPreviewOpen(false)}
+                    clear={() => setPreviewOpen(false)}
+                    playerType="preview"
+                  />
+                </div>
+              </Box>
+            );
+          })()}
         </Modal>
       </div>
 
