@@ -222,9 +222,10 @@ export class ListManagementService {
    * @param {string} listName
    * @param {string} householdId
    * @param {Array} items - New items array
+   * @param {number} [sectionIndex=0] - Section to replace items in
    * @returns {{ ok: boolean, type: string, list: string, count: number }}
    */
-  replaceContents(type, listName, householdId, items) {
+  replaceContents(type, listName, householdId, items, sectionIndex = 0) {
     validateType(type);
 
     if (!items || !Array.isArray(items)) {
@@ -237,18 +238,20 @@ export class ListManagementService {
     }
 
     // Remove index/section fields if present (they're computed, not stored)
-    const cleanItems = items.map(({ index, sectionIndex, itemIndex, ...item }) => item);
+    const cleanItems = items.map(({ index, sectionIndex: si, itemIndex, ...item }) => item);
 
-    // Replace items in first section (backward compat)
-    if (list.sections.length > 0) {
-      list.sections[0].items = cleanItems;
-    } else {
+    const section = list.sections[sectionIndex];
+    if (section) {
+      section.items = cleanItems;
+    } else if (sectionIndex === 0) {
       list.sections = [{ items: cleanItems }];
+    } else {
+      throw new NotFoundError('Section', sectionIndex, { type, list: listName });
     }
 
     this.listStore.saveList(type, listName, householdId, list);
 
-    this.logger.info?.('admin.lists.reordered', { type, list: listName, count: cleanItems.length, household: householdId });
+    this.logger.info?.('admin.lists.reordered', { type, list: listName, sectionIndex, count: cleanItems.length, household: householdId });
 
     return {
       ok: true,
@@ -288,9 +291,10 @@ export class ListManagementService {
    * @param {string} listName
    * @param {string} householdId
    * @param {Object} itemData - Item fields
+   * @param {number} [sectionIndex=0] - Section to add item to
    * @returns {{ ok: boolean, index: number, type: string, list: string }}
    */
-  addItem(type, listName, householdId, itemData) {
+  addItem(type, listName, householdId, itemData, sectionIndex = 0) {
     validateType(type);
 
     // Validate required fields
@@ -323,7 +327,7 @@ export class ListManagementService {
     if (itemData.priority !== undefined) newItem.priority = itemData.priority;
     if (itemData.group !== undefined) newItem.group = itemData.group;
 
-    const section = list.sections[0] || (list.sections[0] = { items: [] });
+    const section = list.sections[sectionIndex] || (list.sections[sectionIndex] = { items: [] });
     section.items.push(newItem);
     this.listStore.saveList(type, listName, householdId, list);
 
@@ -344,11 +348,12 @@ export class ListManagementService {
    * @param {string} type
    * @param {string} listName
    * @param {string} householdId
-   * @param {number} index - Item index within first section
+   * @param {number} index - Item index within the section
    * @param {Object} updates - Fields to update
+   * @param {number} [sectionIndex=0] - Section containing the item
    * @returns {{ ok: boolean, index: number, type: string, list: string }}
    */
-  updateItem(type, listName, householdId, index, updates) {
+  updateItem(type, listName, householdId, index, updates, sectionIndex = 0) {
     validateType(type);
 
     if (isNaN(index) || index < 0) {
@@ -360,7 +365,7 @@ export class ListManagementService {
       throw new NotFoundError('List', `${type}/${listName}`);
     }
 
-    const section = list.sections[0];
+    const section = list.sections[sectionIndex];
     if (!section || index >= section.items.length) {
       throw new NotFoundError('Item', index, { type, list: listName });
     }
@@ -395,10 +400,11 @@ export class ListManagementService {
    * @param {string} type
    * @param {string} listName
    * @param {string} householdId
-   * @param {number} index - Item index within first section
+   * @param {number} index - Item index within the section
+   * @param {number} [sectionIndex=0] - Section containing the item
    * @returns {{ ok: boolean, deleted: { index: number, label: string } }}
    */
-  deleteItem(type, listName, householdId, index) {
+  deleteItem(type, listName, householdId, index, sectionIndex = 0) {
     validateType(type);
 
     if (isNaN(index) || index < 0) {
@@ -410,7 +416,7 @@ export class ListManagementService {
       throw new NotFoundError('List', `${type}/${listName}`);
     }
 
-    const section = list.sections[0];
+    const section = list.sections[sectionIndex];
     if (!section || index >= section.items.length) {
       throw new NotFoundError('Item', index, { type, list: listName });
     }

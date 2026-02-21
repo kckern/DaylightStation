@@ -105,7 +105,7 @@ export function useAdminLists() {
     setLoading(true);
     setError(null);
     try {
-      const result = await DaylightAPI(`${API_BASE}/lists/${currentType}/${currentList}/items`, item, 'POST');
+      const result = await DaylightAPI(`${API_BASE}/lists/${currentType}/${currentList}/items?section=${sectionIndex}`, item, 'POST');
       logger.info('admin.lists.item.added', { type: currentType, list: currentList, sectionIndex });
       await fetchList(currentType, currentList);
       return result;
@@ -123,7 +123,7 @@ export function useAdminLists() {
     setLoading(true);
     setError(null);
     try {
-      await DaylightAPI(`${API_BASE}/lists/${currentType}/${currentList}/items/${itemIndex}`, updates, 'PUT');
+      await DaylightAPI(`${API_BASE}/lists/${currentType}/${currentList}/items/${itemIndex}?section=${sectionIndex}`, updates, 'PUT');
       logger.info('admin.lists.item.updated', { type: currentType, list: currentList, sectionIndex, itemIndex });
       await fetchList(currentType, currentList);
     } catch (err) {
@@ -140,7 +140,7 @@ export function useAdminLists() {
     setLoading(true);
     setError(null);
     try {
-      await DaylightAPI(`${API_BASE}/lists/${currentType}/${currentList}/items/${itemIndex}`, {}, 'DELETE');
+      await DaylightAPI(`${API_BASE}/lists/${currentType}/${currentList}/items/${itemIndex}?section=${sectionIndex}`, {}, 'DELETE');
       logger.info('admin.lists.item.deleted', { type: currentType, list: currentList, sectionIndex, itemIndex });
       await fetchList(currentType, currentList);
     } catch (err) {
@@ -157,7 +157,7 @@ export function useAdminLists() {
     setLoading(true);
     setError(null);
     try {
-      await DaylightAPI(`${API_BASE}/lists/${currentType}/${currentList}`, { items: newItems }, 'PUT');
+      await DaylightAPI(`${API_BASE}/lists/${currentType}/${currentList}?section=${sectionIndex}`, { items: newItems }, 'PUT');
       setSections(prev => prev.map((s, i) => i === sectionIndex ? { ...s, items: newItems } : s));
       logger.info('admin.lists.reordered', { type: currentType, list: currentList, sectionIndex, count: newItems.length });
     } catch (err) {

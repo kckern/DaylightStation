@@ -208,6 +208,34 @@ function ListsFolder() {
     await addItem(sectionIndex, newItem);
   };
 
+  const handleMoveItem = async (sectionIndex, itemIndex, action, targetSection) => {
+    const sectionItems = sections[sectionIndex]?.items || [];
+    if (action === 'top') {
+      const reordered = [...sectionItems];
+      const [item] = reordered.splice(itemIndex, 1);
+      reordered.unshift(item);
+      await reorderItems(sectionIndex, reordered);
+    } else if (action === 'bottom') {
+      const reordered = [...sectionItems];
+      const [item] = reordered.splice(itemIndex, 1);
+      reordered.push(item);
+      await reorderItems(sectionIndex, reordered);
+    } else if (action === 'section') {
+      const targetItems = sections[targetSection]?.items || [];
+      await moveItem(
+        { section: sectionIndex, index: itemIndex },
+        { section: targetSection, index: targetItems.length }
+      );
+    } else if (action === 'new-section') {
+      await addSection({ title: `Section ${sections.length + 1}` });
+      // After adding, move the item to the newly created section (last index)
+      await moveItem(
+        { section: sectionIndex, index: itemIndex },
+        { section: sections.length, index: 0 }
+      );
+    }
+  };
+
   const renderItems = (itemsToRender, sectionIndex) => (
     <Box className="items-container">
       <SortableContext
@@ -225,6 +253,11 @@ function ListsFolder() {
             isWatchlist={type === 'watchlists'}
             onEdit={() => { setEditingItem({ ...item, sectionIndex, itemIndex: idx }); setEditorOpen(true); }}
             onSplit={idx < itemsToRender.length - 1 ? () => splitSection(sectionIndex, idx) : undefined}
+            sectionIndex={sectionIndex}
+            sectionCount={sections.length}
+            sections={sections}
+            itemCount={itemsToRender.length}
+            onMoveItem={(action, targetSection) => handleMoveItem(sectionIndex, idx, action, targetSection)}
           />
         ))}
       </SortableContext>
