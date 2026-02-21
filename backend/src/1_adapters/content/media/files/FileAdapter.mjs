@@ -391,8 +391,9 @@ export class FileAdapter {
         const entries = listEntries(resolved.path);
         const baseName = path.basename(localId);
 
-        // Detect freshvideo paths (video/news/*)
-        const isFreshVideo = localId.startsWith('video/news/');
+        // Detect freshvideo paths (video/news/* or news/* resolved via video prefix)
+        const isFreshVideo = localId.startsWith('video/news/') ||
+          (resolved.prefix === 'video' && localId.startsWith('news/'));
         let title = baseName;
         let thumbnail = null;
 
@@ -423,6 +424,33 @@ export class FileAdapter {
 
         // Count only video files for childCount
         const videoCount = entries.filter(e => e.endsWith('.mp4')).length;
+
+        // For freshvideo directories, find the next-up (freshest unwatched) video
+        if (isFreshVideo && videoCount > 0) {
+          const videoFiles = entries.filter(e => e.endsWith('.mp4'));
+          const withDates = videoFiles.map(f => {
+            const dateMatch = f.replace(/\.mp4$/i, '').match(/^(\d{8})/);
+            return { filename: f, date: dateMatch ? dateMatch[1] : '00000000' };
+          }).sort((a, b) => b.date.localeCompare(a.date));
+
+          // Build the full media path for progress lookups
+          const mediaLocalId = resolved.prefix
+            ? path.join(resolved.prefix, localId)
+            : localId;
+
+          let nextUp = withDates[0]; // fallback: newest
+          for (const v of withDates) {
+            const videoKey = mediaLocalId + '/' + v.filename;
+            const progress = this._getMediaProgress(videoKey);
+            if (!progress || (progress.percent || 0) < 90) {
+              nextUp = v;
+              break;
+            }
+          }
+          if (nextUp) {
+            title = `${title}: ${nextUp.date}`;
+          }
+        }
 
         // Derive parentTitle from parent folder name
         const pathParts = localId.split('/');
@@ -605,10 +633,8 @@ export class FileAdapter {
     const playables = [];
 
     for (const listItem of list) {
-      if (listItem.itemType === 'leaf') {
-        const localId = listItem.getLocalId();
-        const playable = await this.getItem(localId);
-        if (playable) playables.push(playable);
+      if (listItem.isPlayable?.()) {
+        playables.push(listItem);
       } else if (listItem.itemType === 'container') {
         const localId = listItem.getLocalId();
         const children = await this.resolvePlayables(localId, options);

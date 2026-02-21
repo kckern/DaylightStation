@@ -298,12 +298,14 @@ function buildSubtitle(item) {
     }
   }
 
+  const usedLibraryAsType = !typeLabel && item.library;
   if (typeLabel) parts.push(typeLabel);
+  else if (item.library) parts.push(item.library);
 
   // Parent info
   if (item.parent) parts.push(item.parent);
   else if (item.grandparent) parts.push(item.grandparent);
-  else if (item.library) parts.push(item.library);
+  else if (item.library && !usedLibraryAsType) parts.push(item.library);
 
   return parts.join(' • ');
 }
