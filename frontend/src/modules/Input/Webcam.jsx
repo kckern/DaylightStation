@@ -137,10 +137,7 @@ export default function WebcamApp() {
           top: 0,
           left: 0,
           width: "100%",
-          borderRadius: "50%",
           objectFit: "cover",
-          boxShadow: "0 0 20px rgba(0, 0, 0, 0.5)",
-          filter: "saturate(2) contrast(1.2) brightness(1.2)",
           height: "100%",
           transform: "scaleX(-1)" // Mirror video
         }}
