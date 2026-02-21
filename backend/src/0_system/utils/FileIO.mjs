@@ -96,6 +96,18 @@ export function listYamlFiles(dirPath, options = {}) {
 }
 
 /**
+ * List subdirectory names in a directory
+ * @param {string} dirPath - Directory to list
+ * @returns {string[]} Array of subdirectory names
+ */
+export function listSubdirectories(dirPath) {
+  if (!fs.existsSync(dirPath)) return [];
+  return fs.readdirSync(dirPath, { withFileTypes: true })
+    .filter(d => d.isDirectory())
+    .map(d => d.name);
+}
+
+/**
  * Save content as YAML file (always uses .yml extension)
  * @param {string} basePath - Path without extension
  * @param {any} content - Content to serialize

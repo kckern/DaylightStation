@@ -70,7 +70,7 @@ function normalizeListSource(source) {
  */
 function ContentSearchCombobox({ value, onChange, placeholder = 'Search content...', selectContainers = false, searchParams = '' }) {
   const log = useMemo(() => getChildLogger({ component: 'ContentSearchCombobox' }), []);
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(null); // null = not editing (show value), string = user's input
   const [browseResults, setBrowseResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [breadcrumbs, setBreadcrumbs] = useState([]); // [{id, title, source, localId}]
@@ -151,7 +151,7 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
     onDropdownOpen: () => {
       log.debug('dropdown.open', { value, search, initialLoadDone, resultCount: results.length });
       // Initialize search with current value so user can see/edit it
-      if (value && !search) {
+      if (value && search === null) {
         log.debug('dropdown.open.init_search_from_value', { value });
         setSearch(value);
       }
@@ -209,10 +209,11 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
     }
   }, []);
 
-  // Reset initial load state when value changes
+  // Reset editing state when value changes (including after commit)
   useEffect(() => {
     log.debug('value_changed.reset_initial_load', { value, prevInitialLoadDone: initialLoadDone });
     setInitialLoadDone(false);
+    setSearch(null);
   }, [value]);
 
   // Browse into a container
@@ -296,7 +297,7 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
     } else {
       log.info('item_select', { itemId: item.id, title: item.title, prevValue: value });
       onChange(item.id, item);
-      setSearch('');
+      setSearch(null);
       setBreadcrumbs([]);
       setBrowseResults([]);
       combobox.closeDropdown();
@@ -304,9 +305,9 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
   };
 
   // Get display value for input
-  // When dropdown is open: show search term, falling back to value if search is empty
-  // When dropdown is closed: show the selected value
-  const displayValue = combobox.dropdownOpened ? (search || value || '') : (value || '');
+  // When editing (search !== null): show user's text
+  // When not editing (search === null): show committed value
+  const displayValue = search !== null ? search : (value || '');
 
   // Browse to parent folder
   const browseParent = useCallback(async (item) => {
@@ -434,6 +435,8 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
             if (search && search !== value) {
               log.info('freeform.commit_on_blur', { freeformValue: search, prevValue: value });
               onChange(search);
+              // Don't clear search here — let useEffect on [value] handle it
+              // after parent updates, to avoid display flash
             }
             combobox.closeDropdown();
           }}
@@ -446,7 +449,7 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
                 log.info('freeform.commit_on_enter', { freeformValue: search, prevValue: value });
                 e.preventDefault();
                 onChange(search);
-                setSearch('');
+                // Don't clear search — useEffect on [value] resets it after parent updates
                 combobox.closeDropdown();
               }
             }
@@ -506,7 +509,7 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
               </Combobox.Empty>
             ) : results.length === 0 ? (
               <Combobox.Empty>
-                {search.length < 2 ? 'Type to search...' : 'No results — press Enter to use as-is'}
+                {(!search || search.length < 2) ? 'Type to search...' : 'No results — press Enter to use as-is'}
               </Combobox.Empty>
             ) : (
               options

@@ -526,6 +526,36 @@ export function createLocalContentRouter(config) {
   });
 
   /**
+   * GET /api/local-content/collection-cover/:adapter/:collection/*
+   * Serves cover.jpg for a collection, walking up from subpath to collection root.
+   * Resolution: subpath/cover.jpg → parent/cover.jpg → ... → collection/cover.jpg → 404
+   */
+  const IMAGE_MIMES = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp' };
+
+  const serveCoverImage = asyncHandler(async (req, res) => {
+    const { adapter: adapterName, collection } = req.params;
+    const subPath = req.params[0] || '';
+    const adapter = registry.get(adapterName);
+
+    if (!adapter?.resolveCoverImage) {
+      return res.status(404).json({ error: 'Adapter not found or does not support cover images' });
+    }
+
+    const coverPath = adapter.resolveCoverImage(collection, subPath || undefined);
+    if (!coverPath) {
+      return res.status(404).json({ error: 'No cover image found', collection, subPath });
+    }
+
+    const ext = path.extname(coverPath).toLowerCase();
+    res.set('Content-Type', IMAGE_MIMES[ext] || 'image/jpeg');
+    res.set('Cache-Control', 'public, max-age=86400');
+    res.sendFile(coverPath);
+  });
+
+  router.get('/collection-cover/:adapter/:collection/*', serveCoverImage);
+  router.get('/collection-cover/:adapter/:collection', serveCoverImage);
+
+  /**
    * GET /api/local-content/collection-icon/:adapter/:collection
    * Serves the SVG icon for a content collection from the data mount.
    * Resolution: manifest `icon` field → convention `icon.svg` → 404

@@ -49,7 +49,7 @@
     .col-index { width: 28px; text-align: center; flex-shrink: 0; flex-grow: 0; }
     .col-icon { width: 40px; flex-shrink: 0; flex-grow: 0; }
     .col-label { width: 12vw; min-width: 100px; flex-shrink: 0; flex-grow: 0; }
-    .col-action { width: 72px; flex-shrink: 0; flex-grow: 0; text-align: center; }
+    .col-action { width: 96px; flex-shrink: 0; flex-grow: 0; text-align: center; }
     .col-preview { width: 32px; flex-shrink: 0; flex-grow: 0; text-align: center; }
     .col-input { flex: 1; min-width: 200px; }
     .col-progress { width: 70px; flex-shrink: 0; flex-grow: 0; text-align: center; }
@@ -159,7 +159,7 @@
     }
 
     .col-action {
-      width: 72px;
+      width: 96px;
       flex-shrink: 0;
       flex-grow: 0;
       display: flex;
@@ -185,6 +185,10 @@
         padding: 2px;
         border-radius: 4px;
         gap: 6px;
+        display: flex;
+        align-items: center;
+        height: 32px;
+        min-height: 32px;
 
         &:hover {
           background: var(--ds-bg-overlay);
@@ -203,11 +207,9 @@
           object-fit: cover;
         }
 
-        // Shimmer placeholder for loading thumbnails
-        .avatar-shimmer {
-          width: 28px;
-          height: 28px;
-          min-width: 28px;
+        // Shimmer placeholders for loading state
+        .avatar-shimmer,
+        .text-shimmer {
           border-radius: 4px;
           background: linear-gradient(
             90deg,
@@ -217,6 +219,16 @@
           );
           background-size: 200% 100%;
           animation: shimmer 1.5s infinite;
+        }
+
+        .avatar-shimmer {
+          width: 28px;
+          height: 28px;
+          min-width: 28px;
+        }
+
+        .text-shimmer {
+          border-radius: 2px;
         }
       }
     }

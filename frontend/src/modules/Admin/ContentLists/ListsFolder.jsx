@@ -74,10 +74,9 @@ function ListsFolder() {
     }));
   }, [flatItems, contentInfoMap]);
 
-  // Preload first 10 rows on mount
+  // Preload content info for all items — single source of truth for children
   useEffect(() => {
-    const first10 = flatItems.slice(0, 10);
-    first10.forEach(item => {
+    flatItems.forEach(item => {
       if (item.input && !contentInfoMap.has(item.input)) {
         fetchContentMetadata(item.input).then(info => {
           if (info && !info.unresolved) {
@@ -238,7 +237,7 @@ function ListsFolder() {
       <Stack gap="xs" className="lists-view">
       <Group justify="space-between" className="ds-page-header" style={{ marginBottom: 0 }}>
         <Group>
-          <ActionIcon variant="subtle" onClick={() => navigate(`/admin/content/lists/${type}`)}>
+          <ActionIcon variant="subtle" onClick={() => navigate(-1)}>
             <IconArrowLeft size={20} />
           </ActionIcon>
           <span className="ds-page-title">{listTitle}</span>

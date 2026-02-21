@@ -38,9 +38,9 @@ export class YouTubeContentPlugin extends IContentPlugin {
         videoId,
         playable: true,
         embedUrl: `https://www.youtube.com/embed/${videoId}?autoplay=1`,
-        // Embed dimensions: 4:5 for shorts, 16:9 for regular
-        imageWidth: isShort ? 4 : 16,
-        imageHeight: isShort ? 5 : 9,
+        // Embed dimensions: 9:16 for shorts, 16:9 for regular
+        imageWidth: isShort ? 9 : 16,
+        imageHeight: isShort ? 16 : 9,
       },
     };
 

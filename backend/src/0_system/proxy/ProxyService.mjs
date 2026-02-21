@@ -179,7 +179,15 @@ export class ProxyService {
         }
 
         if (!res.headersSent) {
-          res.writeHead(statusCode, proxyRes.headers);
+          const responseHeaders = { ...proxyRes.headers };
+
+          // Let adapters inject/override response headers (e.g. Cache-Control)
+          const cacheHeaders = adapter.getResponseHeaders?.(req.url, statusCode, responseHeaders);
+          if (cacheHeaders) {
+            Object.assign(responseHeaders, cacheHeaders);
+          }
+
+          res.writeHead(statusCode, responseHeaders);
         }
         proxyRes.pipe(res);
         proxyRes.on('end', resolve);

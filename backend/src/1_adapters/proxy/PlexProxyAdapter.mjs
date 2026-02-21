@@ -181,6 +181,21 @@ export class PlexProxyAdapter {
   }
 
   /**
+   * Inject caching headers for thumbnail responses.
+   * Plex thumb URLs include a timestamp that changes when the image updates,
+   * so they are safe to cache aggressively.
+   * @param {string} path - Request path
+   * @param {number} statusCode - Upstream status code
+   * @returns {Object|null} Headers to merge into the response
+   */
+  getResponseHeaders(path, statusCode) {
+    if (statusCode >= 200 && statusCode < 300 && /\/thumb\//.test(path)) {
+      return { 'cache-control': 'public, max-age=31536000, immutable' };
+    }
+    return null;
+  }
+
+  /**
    * Longer timeout for media operations
    * @returns {number}
    */

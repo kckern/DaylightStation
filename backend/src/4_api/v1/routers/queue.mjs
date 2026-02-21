@@ -84,6 +84,11 @@ export function createQueueRouter(config) {
       resolved = contentIdResolver.resolve(parsedSource);
     }
 
+    // Fallback: try as a saved query name (query:name) for bare names
+    if (!resolved?.adapter && !localId && parsedSource) {
+      resolved = contentIdResolver.resolve(`query:${parsedSource}`);
+    }
+
     let adapter = resolved?.adapter;
     let finalId = resolved ? `${resolved.source}:${resolved.localId}` : compoundId;
     const resolvedSource = resolved?.source ?? parsedSource;
@@ -116,12 +121,15 @@ export function createQueueRouter(config) {
       totalDuration
     });
 
+    const queueItems = items.map(toQueueItem);
+
     res.json({
       source: resolvedSource,
       id: compoundId,
-      count: items.length,
+      count: queueItems.length,
       totalDuration,
-      items: items.map(toQueueItem)
+      thumbnail: queueItems[0]?.thumbnail || null,
+      items: queueItems
     });
   });
 

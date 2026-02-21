@@ -778,6 +778,7 @@ const Player = forwardRef(function Player(props, ref) {
     playbackKeys,
     playerType,
     queuePosition,
+    queueLength: isQueue ? playQueue?.length ?? 0 : 0,
     ignoreKeys,
     keyboardOverrides,
     onProgress: props.onProgress,

@@ -401,31 +401,48 @@ export class FileAdapter {
         const folderMetadata = this._loadFolderMetadata(metadataPath);
         if (folderMetadata) {
           title = folderMetadata.title || folderMetadata.name || baseName;
-          // Check for show.jpg thumbnail in folder
-          const showJpgPath = path.join(resolved.path, 'show.jpg');
-          if (fileExists(showJpgPath)) {
-            thumbnail = `/api/v1/proxy/media/stream/${encodeURIComponent(localId + '/show.jpg')}`;
-          }
         } else {
           // Format folder name sensically if no metadata file
           title = baseName.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
         }
 
+        // Check for show.jpg thumbnail in folder
+        const showJpgPath = path.join(resolved.path, 'show.jpg');
+        if (fileExists(showJpgPath)) {
+          thumbnail = `/api/v1/proxy/media/stream/${encodeURIComponent(localId + '/show.jpg')}`;
+        }
+
+        // Fallback: use first video file's thumbnail
+        if (!thumbnail) {
+          const firstVideo = entries.find(e => e.endsWith('.mp4'));
+          if (firstVideo) {
+            const childRelPath = path.relative(this.mediaBasePath, path.join(resolved.path, firstVideo));
+            thumbnail = `/api/v1/local/thumbnail/${encodeURIComponent(childRelPath)}`;
+          }
+        }
+
         // Count only video files for childCount
         const videoCount = entries.filter(e => e.endsWith('.mp4')).length;
+
+        // Derive parentTitle from parent folder name
+        const pathParts = localId.split('/');
+        const parentTitle = pathParts.length > 1
+          ? pathParts[pathParts.length - 2].replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+          : null;
 
         return new ListableItem({
           id: `files:${localId}`,
           source: 'files',
           localId,
           title,
-          type: isFreshVideo ? 'channel' : 'directory',  // Freshvideo sources are channels
+          type: isFreshVideo ? 'channel' : 'directory',
           thumbnail,
           itemType: 'container',
           childCount: videoCount || entries.length,
           metadata: {
-            type: isFreshVideo ? 'channel' : 'directory',  // Match container type for display
+            type: isFreshVideo ? 'channel' : 'directory',
             childCount: videoCount || entries.length,
+            parentTitle,
             librarySectionTitle: isFreshVideo ? 'Fresh Videos' : 'Media'
           }
         });
