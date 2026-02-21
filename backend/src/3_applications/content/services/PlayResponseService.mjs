@@ -66,7 +66,7 @@ export class PlayResponseService {
     };
 
     // Add resume position if in progress (use domain entity)
-    if (watchState?.playhead > 0 && watchState?.duration > 0) {
+    if (response.resumable && watchState?.playhead > 0 && watchState?.duration > 0) {
       const progress = new MediaProgress(watchState);
       if (progress.isInProgress()) {
         response.resume_position = progress.playhead;

@@ -113,8 +113,8 @@ function ListsFolder() {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
     const sectionItems = sections[sectionIndex]?.items || [];
-    const oldIndex = parseInt(String(active.id).split('-')[1]);
-    const newIndex = parseInt(String(over.id).split('-')[1]);
+    const oldIndex = active.id;
+    const newIndex = over.id;
     const reordered = arrayMove(sectionItems, oldIndex, newIndex);
     await reorderItems(sectionIndex, reordered);
   };
@@ -211,7 +211,7 @@ function ListsFolder() {
   const renderItems = (itemsToRender, sectionIndex) => (
     <Box className="items-container">
       <SortableContext
-        items={itemsToRender.map((_, i) => `${sectionIndex}-${i}`)}
+        items={itemsToRender.map((_, i) => i)}
         strategy={verticalListSortingStrategy}
       >
         {itemsToRender.map((item, idx) => (
