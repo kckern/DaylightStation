@@ -46,13 +46,18 @@ export class SiblingsService {
    * Resolution:
    * 1. Resolve adapter from registry (exact match, then prefix fallback)
    * 2. Delegate to adapter.resolveSiblings(compoundId)
-   * 3. Normalize result to uniform DTO shape
+   * 3. Sort items alphabetically by title
+   * 4. Apply windowed pagination
+   * 5. Normalize result to uniform DTO shape
    *
    * @param {string} source - Source identifier
    * @param {string} localId - Local ID within source
+   * @param {Object} [opts] - Pagination options
+   * @param {number} [opts.offset] - Start offset for pagination
+   * @param {number} [opts.limit] - Number of items to return
    * @returns {Promise<import('../ports/ISiblingsService.mjs').SiblingsResult|import('../ports/ISiblingsService.mjs').SiblingsError>}
    */
-  async resolveSiblings(source, localId) {
+  async resolveSiblings(source, localId, opts = {}) {
     const resolution = this.#resolveAdapter(source, localId);
     if (!resolution.adapter) {
       return { error: `Unknown source: ${source}`, status: 404, source };
@@ -65,7 +70,25 @@ export class SiblingsService {
       return { parent: null, items: [] };
     }
 
-    return this.#normalizeResult(result);
+    // Sort items alphabetically by title
+    const sortedItems = [...(result.items || [])].sort((a, b) =>
+      (a.title || '').localeCompare(b.title || '')
+    );
+
+    // Apply windowed pagination
+    const windowed = this.#applyWindow(sortedItems, compoundId, opts);
+
+    // Normalize windowed items
+    const normalized = windowed.items.map(item =>
+      this.#mapSiblingItem(item, { sourceOverride: result.sourceOverride })
+    );
+
+    return {
+      parent: result.parent || null,
+      items: normalized,
+      referenceIndex: windowed.referenceIndex,
+      pagination: windowed.pagination
+    };
   }
 
   // ---------------------------------------------------------------------------
@@ -101,20 +124,96 @@ export class SiblingsService {
   }
 
   // ---------------------------------------------------------------------------
-  // Response normalization (DTO mapping)
+  // Windowed pagination
   // ---------------------------------------------------------------------------
 
   /**
-   * Normalize an adapter-provided SiblingsResult.
-   * Applies mapSiblingItem to each item for consistent API response shape.
+   * Apply windowed pagination to a sorted list of items.
+   *
+   * Initial mode (no offset/limit): Centers a window of 21 items around the reference item.
+   * Pagination mode (offset + limit): Returns a slice at the given offset.
+   *
+   * @param {Array} items - Sorted items array
+   * @param {string} referenceId - Compound ID of the reference item (e.g., "plex:12345")
+   * @param {Object} opts - { offset, limit }
+   * @returns {{ items: Array, referenceIndex: number, pagination: Object }}
    * @private
    */
-  #normalizeResult(result) {
+  #applyWindow(items, referenceId, opts) {
+    const total = items.length;
+
+    if (opts.offset != null && opts.limit != null) {
+      // Pagination mode — explicit offset + limit
+      const offset = Math.max(0, Math.min(opts.offset, total));
+      const limit = Math.max(1, opts.limit);
+      const sliced = items.slice(offset, offset + limit);
+
+      return {
+        items: sliced,
+        referenceIndex: -1,
+        pagination: {
+          total,
+          offset,
+          window: sliced.length,
+          hasBefore: offset > 0,
+          hasAfter: offset + sliced.length < total
+        }
+      };
+    }
+
+    // Initial mode — center around reference item (10 above + ref + 10 below = 21)
+    const halfWindow = 10;
+    const refIdx = items.findIndex(item => {
+      const id = item.id || `${item.source}:${item.localId}`;
+      return id === referenceId || id === referenceId.replace(/^[^:]+:/, (m) => m);
+    });
+
+    if (refIdx === -1 || total <= (halfWindow * 2 + 1)) {
+      // Reference not found or list fits in one window — return all
+      return {
+        items,
+        referenceIndex: Math.max(refIdx, 0),
+        pagination: {
+          total,
+          offset: 0,
+          window: total,
+          hasBefore: false,
+          hasAfter: false
+        }
+      };
+    }
+
+    let start = refIdx - halfWindow;
+    let end = refIdx + halfWindow + 1;
+
+    // Clamp at edges
+    if (start < 0) {
+      end = Math.min(total, end - start);
+      start = 0;
+    }
+    if (end > total) {
+      start = Math.max(0, start - (end - total));
+      end = total;
+    }
+
+    const sliced = items.slice(start, end);
+
     return {
-      parent: result.parent || null,
-      items: (result.items || []).map(item => this.#mapSiblingItem(item, { sourceOverride: result.sourceOverride }))
+      items: sliced,
+      referenceIndex: refIdx - start,
+      pagination: {
+        total,
+        offset: start,
+        window: sliced.length,
+        hasBefore: start > 0,
+        hasAfter: end < total
+      }
     };
   }
+
+  // ---------------------------------------------------------------------------
+  // Response normalization (DTO mapping)
+  // ---------------------------------------------------------------------------
 
   /**
    * Map adapter item to uniform sibling item DTO.
@@ -142,7 +241,8 @@ export class SiblingsService {
       grandparentTitle,
       libraryTitle,
       childCount,
-      isContainer
+      isContainer,
+      ...(item.group && { group: item.group })
     };
   }
 }

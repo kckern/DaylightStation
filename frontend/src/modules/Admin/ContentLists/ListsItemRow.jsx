@@ -22,7 +22,7 @@ import { getCacheEntry, setCacheEntry, hasCacheEntry } from './siblingsCache.js'
 import { useListsContext } from './ListsContext.js';
 import { DaylightMediaPath } from '../../../lib/api.mjs';
 import ImagePickerModal from './ImagePickerModal.jsx';
-import Player from '../../Player/Player.jsx';
+import AdminPreviewPlayer from '../Preview/AdminPreviewPlayer.jsx';
 
 const ACTION_OPTIONS = [
   { value: 'Play', label: 'Play' },
@@ -133,7 +133,46 @@ async function doFetchSiblings(itemId, contentInfo) {
     libraryId: data.parent.libraryId ?? null
   } : null;
 
-  return { browseItems, currentParent };
+  return {
+    browseItems,
+    currentParent,
+    pagination: data.pagination || null,
+    referenceIndex: data.referenceIndex ?? -1
+  };
+}
+
+/**
+ * Fetch a page of siblings for pagination follow-ups.
+ * @param {string} itemId - Compound ID (e.g., "plex:12345")
+ * @param {Object} contentInfo - Content metadata
+ * @param {number} offset - Start offset
+ * @param {number} limit - Number of items
+ * @returns {Promise<{items: Array, pagination: Object}|null>}
+ */
+export async function fetchSiblingsPage(itemId, contentInfo, offset, limit) {
+  const match = itemId.match(/^([^:]+):\s*(.+)$/);
+  if (!match) return null;
+
+  const source = contentInfo?.source || normalizeListSource(match[1].trim());
+  const localId = match[2].trim();
+  const response = await fetch(`/api/v1/siblings/${source}/${encodeURIComponent(localId)}?offset=${offset}&limit=${limit}`);
+  if (!response.ok) return null;
+
+  const data = await response.json();
+  const items = (data.items || []).map(item => ({
+    value: item.id,
+    title: item.title,
+    source: item.source,
+    type: item.type || item.itemType,
+    thumbnail: item.thumbnail,
+    grandparent: item.grandparentTitle,
+    parent: item.parentTitle,
+    library: item.libraryTitle,
+    itemCount: item.childCount ?? null,
+    isContainer: item.isContainer || item.itemType === 'container'
+  }));
+
+  return { items, pagination: data.pagination || null };
 }
 
 /**
@@ -620,6 +659,8 @@ export async function fetchContentMetadata(value) {
 function ContentSearchCombobox({ value, onChange }) {
   const [highlightedIdx, setHighlightedIdx] = useState(-1);
   const { contentInfoMap } = useListsContext();
+  const [pagination, setPagination] = useState(null);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   const combobox = useCombobox({
     onDropdownClose: () => {
@@ -685,6 +726,7 @@ function ContentSearchCombobox({ value, onChange }) {
     setHighlightedIdx(-1);
     setPendingApp(null);
     setParamOptions(null);
+    setPagination(null);
     freshOpenRef.current = false;
     combobox.closeDropdown();
   }, [combobox]);
@@ -1106,9 +1148,13 @@ function ContentSearchCombobox({ value, onChange }) {
       if (!data) return;
       setBrowseItems(data.browseItems);
       setCurrentParent(data.currentParent);
+      setPagination(data.pagination || null);
 
+      // Use referenceIndex from API if available, otherwise find by value
       const normalizedVal = value?.replace(/:\s+/g, ':');
-      const currentIndex = data.browseItems.findIndex(s => s.value === normalizedVal);
+      const currentIndex = data.referenceIndex >= 0
+        ? data.referenceIndex
+        : data.browseItems.findIndex(s => s.value === normalizedVal);
       setHighlightedIdx(currentIndex >= 0 ? currentIndex : 0);
       scrollOptionIntoView(`[data-value="${normalizedVal}"]`);
     } catch (err) {
@@ -1148,10 +1194,13 @@ function ContentSearchCombobox({ value, onChange }) {
       // Cache hit - use instantly
       setBrowseItems(cached.data.browseItems);
       setCurrentParent(cached.data.currentParent);
+      setPagination(cached.data.pagination || null);
       setLoadingBrowse(false);
-      // Find and highlight current item
+      // Use referenceIndex from cache if available
       const normalizedVal = value?.replace(/:\s+/g, ':');
-      const currentIndex = cached.data.browseItems.findIndex(s => s.value === normalizedVal);
+      const currentIndex = cached.data.referenceIndex >= 0
+        ? cached.data.referenceIndex
+        : cached.data.browseItems.findIndex(s => s.value === normalizedVal);
       setHighlightedIdx(currentIndex >= 0 ? currentIndex : 0);
       // Scroll to current item
       scrollOptionIntoView(`[data-value="${normalizedVal}"]`);
@@ -1162,8 +1211,11 @@ function ContentSearchCombobox({ value, onChange }) {
         if (data) {
           setBrowseItems(data.browseItems);
           setCurrentParent(data.currentParent);
+          setPagination(data.pagination || null);
           const normalizedVal = value?.replace(/:\s+/g, ':');
-          const currentIndex = data.browseItems.findIndex(s => s.value === normalizedVal);
+          const currentIndex = data.referenceIndex >= 0
+            ? data.referenceIndex
+            : data.browseItems.findIndex(s => s.value === normalizedVal);
           setHighlightedIdx(currentIndex >= 0 ? currentIndex : 0);
           scrollOptionIntoView(`[data-value="${normalizedVal}"]`);
         }
@@ -1220,6 +1272,32 @@ function ContentSearchCombobox({ value, onChange }) {
     }
 
     const items = displayItems;
+
+    // Handle Enter/Escape/Tab before the items-length guard so manual
+    // input is always accepted, even when no results match.
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const item = items[highlightedIdx];
+      if (item) {
+        handleOptionSelect(item.value);
+      } else if (searchQuery) {
+        // No matching item highlighted — save raw text as-is
+        onChange(searchQuery);
+        resetComboboxState();
+      }
+      return;
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      resetComboboxState();
+      return;
+    } else if (e.key === 'Tab') {
+      // Tab: close dropdown without selecting, let natural focus move happen
+      resetComboboxState();
+      // Don't preventDefault — allow Tab to move focus naturally
+      return;
+    }
+
+    // Arrow navigation requires items
     if (items.length === 0) return;
 
     if (e.key === 'ArrowDown') {
@@ -1243,23 +1321,6 @@ function ContentSearchCombobox({ value, onChange }) {
         await goUp();
       }
       // Otherwise, let default cursor movement happen
-    } else if (e.key === 'Enter') {
-      e.preventDefault();
-      const item = items[highlightedIdx];
-      if (item) {
-        handleOptionSelect(item.value);
-      } else if (searchQuery) {
-        // No matching item highlighted — save raw text as-is
-        onChange(searchQuery);
-        resetComboboxState();
-      }
-    } else if (e.key === 'Escape') {
-      e.preventDefault();
-      resetComboboxState();
-    } else if (e.key === 'Tab') {
-      // Tab: close dropdown without selecting, let natural focus move happen
-      resetComboboxState();
-      // Don't preventDefault — allow Tab to move focus naturally
     }
   };
 
@@ -1586,7 +1647,60 @@ function ContentSearchCombobox({ value, onChange }) {
           </Box>
         )}
 
-        <Combobox.Options mah={280} style={{ overflowY: 'auto' }} ref={optionsRef}>
+        <Combobox.Options
+          mah={280}
+          style={{ overflowY: 'auto' }}
+          ref={optionsRef}
+          onScroll={(e) => {
+            if (!pagination || loadingMore || isActiveSearch) return;
+            const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+            if (pagination.hasAfter && scrollHeight - scrollTop - clientHeight < 50) {
+              // Load more after
+              const offset = pagination.offset + pagination.window;
+              setLoadingMore(true);
+              fetchSiblingsPage(value, contentInfo, offset, 21).then(result => {
+                if (result) {
+                  setBrowseItems(prev => [...prev, ...result.items]);
+                  setPagination(prev => {
+                    if (!prev) return result.pagination;
+                    const newWindow = prev.window + result.items.length;
+                    return { ...prev, window: newWindow, hasAfter: prev.offset + newWindow < prev.total };
+                  });
+                }
+                setLoadingMore(false);
+              });
+            }
+            if (pagination.hasBefore && scrollTop < 50) {
+              // Load more before
+              const newOffset = Math.max(0, pagination.offset - 21);
+              const limit = Math.min(21, pagination.offset);
+              if (limit <= 0) return;
+              setLoadingMore(true);
+              const prevScrollHeight = e.currentTarget.scrollHeight;
+              fetchSiblingsPage(value, contentInfo, newOffset, limit).then(result => {
+                if (result) {
+                  setBrowseItems(prev => [...result.items, ...prev]);
+                  setPagination(prev => {
+                    if (!prev) return result.pagination;
+                    const newWindow = prev.window + result.items.length;
+                    return { ...prev, offset: newOffset, window: newWindow, hasBefore: newOffset > 0 };
+                  });
+                  // Maintain scroll position after prepending
+                  requestAnimationFrame(() => {
+                    if (optionsRef.current) {
+                      const newScrollHeight = optionsRef.current.scrollHeight;
+                      optionsRef.current.scrollTop += (newScrollHeight - prevScrollHeight);
+                    }
+                  });
+                }
+                setLoadingMore(false);
+              });
+            }
+          }}
+        >
+          {loadingMore && pagination?.hasBefore && (
+            <Box py={4} style={{ textAlign: 'center' }}><Loader size={12} /></Box>
+          )}
           {(searching || loadingBrowse) && displayItems.length === 0 && (
             <Combobox.Empty>{searching ? 'Searching...' : 'Loading...'}</Combobox.Empty>
           )}
@@ -1600,6 +1714,9 @@ function ContentSearchCombobox({ value, onChange }) {
             <Combobox.Empty>No items in this container</Combobox.Empty>
           )}
           {options}
+          {loadingMore && pagination?.hasAfter && (
+            <Box py={4} style={{ textAlign: 'center' }}><Loader size={12} /></Box>
+          )}
         </Combobox.Options>
       </Combobox.Dropdown>
     </Combobox>
@@ -2241,26 +2358,16 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
           padding="xs"
           styles={{ content: { marginLeft: 'var(--app-shell-navbar-width, 250px)' } }}
         >
-          {previewOpen && (() => {
-            const contentId = item.input?.replace(/^(\w+):\s+/, '$1:').trim();
-            const mediaConfig = { contentId, volume: item.volume, playbackRate: item.playbackRate };
-            const isQueue = item.action === 'Queue';
-            const playerProps = isQueue
-              ? { queue: mediaConfig, shuffle: item.shuffle || undefined }
-              : { play: mediaConfig };
-            return (
-              <Box style={{ width: 960, height: 540, position: 'relative', background: '#000', overflow: 'hidden', borderRadius: 'var(--mantine-radius-sm)' }}>
-                <div style={{ width: 1920, height: 1080, zoom: 0.5, transformOrigin: '0 0' }}>
-                  <Player
-                    {...playerProps}
-                    advance={() => setPreviewOpen(false)}
-                    clear={() => setPreviewOpen(false)}
-                    playerType="preview"
-                  />
-                </div>
-              </Box>
-            );
-          })()}
+          {previewOpen && (
+            <AdminPreviewPlayer
+              contentId={item.input?.replace(/^(\w+):\s+/, '$1:').trim()}
+              action={item.action || 'Play'}
+              volume={item.volume}
+              playbackRate={item.playbackRate}
+              shuffle={item.shuffle}
+              onClose={() => setPreviewOpen(false)}
+            />
+          )}
         </Modal>
       </div>
 

@@ -9,24 +9,25 @@ export const useMediaDevices = () => {
   useEffect(() => {
     const getDevices = async () => {
       try {
-        // Ensure permissions are granted first to get labels
-        // Note: This might trigger a permission prompt if not already granted
-        // We rely on the consumer to handle the initial getUserMedia if needed for labels,
-        // but enumerateDevices works without it (just without labels).
-        
+        // Must call getUserMedia first to grant permissions and get device labels
+        // (Android WebView returns empty list from enumerateDevices without this)
+        const tempStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        tempStream.getTracks().forEach(t => t.stop());
+
         const devicesList = await navigator.mediaDevices.enumerateDevices();
         const vidDevices = devicesList.filter(d => d.kind === "videoinput");
         const audDevices = devicesList.filter(d => d.kind === "audioinput");
 
         setVideoDevices(vidDevices);
         setAudioDevices(audDevices);
-        
-        // Set defaults if not already set
+
+        // Set defaults if not already set — prefer the webcam's mic over built-in
         if (vidDevices.length > 0 && !selectedVideoDevice) {
           setSelectedVideoDevice(vidDevices[0].deviceId);
         }
         if (audDevices.length > 0 && !selectedAudioDevice) {
-          setSelectedAudioDevice(audDevices[0].deviceId);
+          const webcamMic = audDevices.find(d => /angetube|camera/i.test(d.label));
+          setSelectedAudioDevice((webcamMic || audDevices[0]).deviceId);
         }
       } catch (error) {
         console.error("Error enumerating devices:", error);

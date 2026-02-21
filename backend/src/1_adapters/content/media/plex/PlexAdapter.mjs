@@ -2078,8 +2078,65 @@ export class PlexAdapter {
   // ---------------------------------------------------------------------------
 
   /**
+   * Find the smallest Plex collection that an item belongs to.
+   * Uses raw metadata (not getItem) to access the Collection array.
+   *
+   * @param {string} localId - Plex rating key
+   * @param {string|number} librarySectionID - Library section ID
+   * @returns {Promise<{ratingKey: string, title: string, childCount: number}|null>}
+   * @private
+   */
+  async _findSmallestCollection(localId, librarySectionID) {
+    try {
+      // Get raw metadata to access Collection tags (getItem strips this)
+      const rawMeta = await this.client.getMetadata(localId);
+      const meta = rawMeta?.MediaContainer?.Metadata?.[0];
+      if (!meta || !Array.isArray(meta.Collection) || meta.Collection.length === 0) {
+        return null;
+      }
+
+      // Extract collection tag names
+      const tagNames = meta.Collection.map(col =>
+        typeof col === 'string' ? col : col?.tag
+      ).filter(Boolean);
+
+      if (tagNames.length === 0) return null;
+
+      // Fetch all collections in this library section (single API call)
+      const collectionsData = await this.client.getContainer(
+        `/library/sections/${librarySectionID}/collections`
+      );
+      const allCollections = collectionsData?.MediaContainer?.Metadata || [];
+
+      // Match collection names (case-insensitive) and find the smallest
+      const tagNamesLower = tagNames.map(t => t.toLowerCase());
+      let smallest = null;
+
+      for (const col of allCollections) {
+        if (!col.title || !col.ratingKey) continue;
+        if (!tagNamesLower.includes(col.title.toLowerCase())) continue;
+
+        const childCount = col.childCount || col.leafCount || 0;
+        if (!smallest || childCount < smallest.childCount) {
+          smallest = {
+            ratingKey: String(col.ratingKey),
+            title: col.title,
+            childCount
+          };
+        }
+      }
+
+      return smallest;
+    } catch (err) {
+      console.error('[PlexAdapter] _findSmallestCollection error:', err.message);
+      return null;
+    }
+  }
+
+  /**
    * Resolve siblings for Plex items using Plex's own metadata hierarchy.
    * Episodes → season siblings, tracks → album siblings, seasons → show's seasons, etc.
+   * For library-level items (movies, shows), prefers the smallest collection as sibling group.
    *
    * @param {string} compoundId - e.g., "plex:12345" or "12345"
    * @returns {Promise<{parent: Object|null, items: Array}|null>}
@@ -2114,16 +2171,30 @@ export class PlexAdapter {
       } : null;
       listId = String(parentKey);
     } else if (libraryId) {
-      // Top-level items — siblings are library contents
-      listId = `library/sections/${libraryId}/all`;
-      parent = {
-        id: `library:${libraryId}`,
-        title: libraryTitle || 'Library',
-        source: 'plex',
-        thumbnail: null,
-        parentId: null,
-        libraryId
-      };
+      // Top-level items — try collection first, then fall back to library
+      const collection = await this._findSmallestCollection(localId, libraryId);
+      if (collection) {
+        parent = {
+          id: `plex:${collection.ratingKey}`,
+          title: collection.title,
+          source: 'plex',
+          thumbnail: null,
+          parentId: null,
+          libraryId
+        };
+        listId = String(collection.ratingKey);
+      } else {
+        // No collection — fall back to full library listing
+        listId = `library/sections/${libraryId}/all`;
+        parent = {
+          id: `library:${libraryId}`,
+          title: libraryTitle || 'Library',
+          source: 'plex',
+          thumbnail: null,
+          parentId: null,
+          libraryId
+        };
+      }
     }
 
     if (!listId) {
