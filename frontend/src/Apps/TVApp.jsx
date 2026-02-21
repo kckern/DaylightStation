@@ -164,6 +164,7 @@ export default function TVApp({ appParam }) {
       display:   (value) => ({ display: { id: value, ...config } }),
       read:      (value) => ({ read: { id: value, ...config } }),
       open:      (value) => ({ open: { app: value } }),
+      app:       (value) => ({ open: { app: value } }),
       list:      (value) => ({ list: { contentId: toContentId(value), ...config } }),
     };
 

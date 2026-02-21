@@ -37,7 +37,9 @@ export const useWebcamStream = (selectedVideoDevice, selectedAudioDevice) => {
         setError(null);
 
         if (videoRef.current) {
-          videoRef.current.srcObject = localStream;
+          // Give the video element only video tracks so the muted attribute
+          // doesn't kill audio data for AudioContext on Android WebView
+          videoRef.current.srcObject = new MediaStream(localStream.getVideoTracks());
         }
       } catch (err) {
         getLogger().warn('input.webcam.access_error_fallback', { error: err.message || err });
@@ -46,9 +48,9 @@ export const useWebcamStream = (selectedVideoDevice, selectedAudioDevice) => {
           localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
           setStream(localStream);
           setError(null);
-          
+
           if (videoRef.current) {
-            videoRef.current.srcObject = localStream;
+            videoRef.current.srcObject = new MediaStream(localStream.getVideoTracks());
           }
         } catch (fallbackErr) {
           console.error("Error accessing default devices:", fallbackErr);
