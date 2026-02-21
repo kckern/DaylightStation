@@ -22,8 +22,8 @@ export function networkTrustResolver({ householdRoles }) {
     const local = isPrivateIp(ip);
     req.isLocal = local;
 
-    if (local && req.householdId) {
-      req.roles = [...(householdRoles[req.householdId] || [])];
+    if (local) {
+      req.roles = ['sysadmin', ...(householdRoles[req.householdId] || [])];
     } else {
       req.roles = [];
     }

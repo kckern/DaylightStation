@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, forwardRef, useCallback } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { Text, Checkbox, ActionIcon, Menu, TextInput, Combobox, useCombobox, InputBase, Loader, Group, Avatar, Badge, Box, Drawer, Stack, ScrollArea, Divider, Progress, Modal } from '@mantine/core';
 import { useDebouncedValue } from '@mantine/hooks';
 import {
@@ -9,7 +10,8 @@ import {
   IconEye, IconEyeOff, IconPlayerPlay, IconExternalLink, IconAlertTriangle,
   IconList, IconMicrophone, IconVideo, IconFolder, IconFileText, IconSearch,
   IconBroadcast, IconPresentation, IconSchool, IconUsers, IconStack3,
-  IconCheck, IconArrowBarDown
+  IconCheck, IconArrowBarDown, IconPlayerPlayFilled, IconPlaylistAdd,
+  IconLayoutList, IconAppWindow, IconDeviceDesktop, IconBookmark
 } from '@tabler/icons-react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -447,18 +449,32 @@ function ContentOption({ item, isCurrent, isHighlighted, onDrillDown, ...others 
   );
 }
 
+// Shimmer skeleton matching resolved ContentItemDisplay layout (compact)
+function ContentDisplayShimmer({ onClick }) {
+  return (
+    <div onClick={onClick} className="content-display" style={{ cursor: 'pointer' }}>
+      <Group gap={6} wrap="nowrap" style={{ flex: 1 }}>
+        <div className="avatar-shimmer" style={{ width: 28, height: 28, minWidth: 28 }} />
+        <Box style={{ flex: 1, minWidth: 0 }}>
+          <Group gap={4} wrap="nowrap">
+            <div className="text-shimmer" style={{ height: 12, width: '45%' }} />
+            <Box style={{ flex: 1 }} />
+            <div className="text-shimmer" style={{ height: 14, width: 40 }} />
+          </Group>
+          <Group gap={4} wrap="nowrap" mt={4}>
+            <div className="text-shimmer" style={{ height: 10, width: 14 }} />
+            <div className="text-shimmer" style={{ height: 10, width: '55%' }} />
+          </Group>
+        </Box>
+      </Group>
+    </div>
+  );
+}
+
 // Compact display for current content value - reuses ContentItemDisplay
 function ContentDisplay({ item, onClick, loading }) {
   if (loading) {
-    return (
-      <Group gap={6} wrap="nowrap" onClick={onClick} className="content-display">
-        <div className="avatar-shimmer" style={{ width: 28, height: 28, minWidth: 28 }} />
-        <Box style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ height: 12, width: '60%', background: 'var(--mantine-color-dark-5)', borderRadius: 2, marginBottom: 4 }} />
-          <div style={{ height: 10, width: '40%', background: 'var(--mantine-color-dark-6)', borderRadius: 2 }} />
-        </Box>
-      </Group>
-    );
+    return <ContentDisplayShimmer onClick={onClick} />;
   }
 
   if (!item) return null;
@@ -510,6 +526,8 @@ function UnresolvedContentDisplay({ item, onClick }) {
 
 // Cache for content info to avoid re-fetching
 const contentInfoCache = new Map();
+// Deduplicate in-flight requests so concurrent callers share one fetch
+const inflightRequests = new Map();
 
 export async function fetchContentMetadata(value) {
   if (!value) return null;
@@ -519,72 +537,84 @@ export async function fetchContentMetadata(value) {
     return contentInfoCache.get(value);
   }
 
-  // Resolve app items locally from registry (no backend call needed)
-  if (value.startsWith('app:')) {
-    const { resolveAppDisplay, getApp } = await import('../../../lib/appRegistry.js');
-    const appInfo = resolveAppDisplay(value);
-    if (appInfo) {
-      const entry = getApp(appInfo.appId);
-      const info = {
-        value,
-        title: appInfo.paramValue
-          ? `${appInfo.label} / ${appInfo.paramValue}`
-          : appInfo.label,
-        source: 'app',
-        type: 'app',
-        thumbnail: entry?.icon || null,
-        unresolved: false,
-      };
-      contentInfoCache.set(value, info);
-      return info;
+  // If a fetch is already in flight for this value, reuse it
+  if (inflightRequests.has(value)) {
+    return inflightRequests.get(value);
+  }
+
+  // Wrap the actual work in a shared promise so concurrent callers deduplicate
+  const promise = (async () => {
+    // Resolve app items locally from registry (no backend call needed)
+    if (value.startsWith('app:')) {
+      const { resolveAppDisplay, getApp } = await import('../../../lib/appRegistry.js');
+      const appInfo = resolveAppDisplay(value);
+      if (appInfo) {
+        const entry = getApp(appInfo.appId);
+        const info = {
+          value,
+          title: appInfo.paramValue
+            ? `${appInfo.label} / ${appInfo.paramValue}`
+            : appInfo.label,
+          source: 'app',
+          type: 'app',
+          thumbnail: entry?.icon || null,
+          unresolved: false,
+        };
+        contentInfoCache.set(value, info);
+        return info;
+      }
+      // Unknown app — fall through to unresolved
+      return { value, title: value.slice(4), source: 'app', type: null, unresolved: true };
     }
-    // Unknown app — fall through to unresolved
-    return { value, title: value.slice(4), source: 'app', type: null, unresolved: true };
-  }
 
-  // Parse source:id format (trim whitespace from parts)
-  const match = value.match(/^([^:]+):\s*(.+)$/);
-  if (!match) {
-    // Format can't be parsed - return unresolved
-    return { value, unresolved: true };
-  }
+    // Parse source:id format (trim whitespace from parts)
+    const match = value.match(/^([^:]+):\s*(.+)$/);
+    if (!match) {
+      // Format can't be parsed - return unresolved
+      return { value, unresolved: true };
+    }
 
-  const [, source, localId] = [null, match[1].trim(), match[2].trim()];
-  const normalizedSource = normalizeListSource(source);
+    const [, source, localId] = [null, match[1].trim(), match[2].trim()];
+    const normalizedSource = normalizeListSource(source);
 
-  try {
-    const response = await fetch(`/api/v1/info/${normalizedSource}/${localId}`);
-    if (response.ok) {
-      const data = await response.json();
-      const info = {
-        value: value,
-        title: data.title || localId,
-        source: normalizedSource,
-        type: data.metadata?.type || data.type || null,
-        thumbnail: data.thumbnail,
-        grandparent: data.metadata?.grandparentTitle,
-        parent: data.metadata?.parentTitle,
-        library: data.metadata?.librarySectionTitle,
-        itemCount: data.metadata?.childCount ?? data.metadata?.leafCount ?? null,
-        unresolved: false
-      };
-      contentInfoCache.set(value, info);
-      return info;
-    } else {
-      // API returned error status - return unresolved
-      console.warn(`Content API returned ${response.status} for ${value}`);
+    try {
+      const response = await fetch(`/api/v1/info/${normalizedSource}/${localId}`);
+      if (response.ok) {
+        const data = await response.json();
+        const info = {
+          value: value,
+          title: data.title || localId,
+          source: normalizedSource,
+          type: data.metadata?.type || data.type || null,
+          thumbnail: data.thumbnail,
+          grandparent: data.metadata?.grandparentTitle,
+          parent: data.metadata?.parentTitle,
+          library: data.metadata?.librarySectionTitle,
+          itemCount: data.metadata?.childCount ?? data.metadata?.leafCount ?? null,
+          unresolved: false
+        };
+        contentInfoCache.set(value, info);
+        return info;
+      } else {
+        // API returned error status - return unresolved
+        console.warn(`Content API returned ${response.status} for ${value}`);
+        return { value, title: localId, source: normalizedSource, type: null, unresolved: true };
+      }
+    } catch (err) {
+      console.error('Failed to fetch content info:', err);
+      // Return unresolved on network/parse failure
       return { value, title: localId, source: normalizedSource, type: null, unresolved: true };
     }
-  } catch (err) {
-    console.error('Failed to fetch content info:', err);
-    // Return unresolved on network/parse failure
-    return { value, title: localId, source: normalizedSource, type: null, unresolved: true };
-  }
+  })().finally(() => inflightRequests.delete(value));
+
+  inflightRequests.set(value, promise);
+  return promise;
 }
 
 // Content search combobox component with browser navigation
 function ContentSearchCombobox({ value, onChange }) {
   const [highlightedIdx, setHighlightedIdx] = useState(-1);
+  const { contentInfoMap } = useListsContext();
 
   const combobox = useCombobox({
     onDropdownClose: () => {
@@ -598,8 +628,8 @@ function ContentSearchCombobox({ value, onChange }) {
   const [searchResults, setSearchResults] = useState([]);
   const [searching, setSearching] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-  const [contentInfo, setContentInfo] = useState(null);
-  const [loadingInfo, setLoadingInfo] = useState(true);
+  const contentInfo = contentInfoMap.get(value) || null;
+  const loadingInfo = value && !contentInfoMap.has(value);
   const [browseItems, setBrowseItems] = useState([]);
   const [loadingBrowse, setLoadingBrowse] = useState(false);
   const [navStack, setNavStack] = useState([]); // [{id, title, source, thumbnail}] breadcrumb trail
@@ -654,31 +684,7 @@ function ContentSearchCombobox({ value, onChange }) {
     combobox.closeDropdown();
   }, [combobox]);
 
-  // Fetch content info for current value
-  useEffect(() => {
-    let cancelled = false;
-
-    if (!value) {
-      setContentInfo(null);
-      setLoadingInfo(false);
-      return;
-    }
-
-    if (isEditing) {
-      return; // Don't fetch while editing
-    }
-
-    setLoadingInfo(true);
-
-    fetchContentMetadata(value).then(info => {
-      if (!cancelled) {
-        setContentInfo(info);
-        setLoadingInfo(false);
-      }
-    });
-
-    return () => { cancelled = true; };
-  }, [value, isEditing]);
+  // Content info is now derived from contentInfoMap via context (no independent fetch needed)
 
   // Search content when query changes
   useEffect(() => {
@@ -1346,14 +1352,9 @@ function ContentSearchCombobox({ value, onChange }) {
 
   // Not editing - show display mode
   if (!isEditing) {
-    // Loading state
+    // Loading state - unified shimmer skeleton
     if (loadingInfo) {
-      return (
-        <Group gap="xs" onClick={handleStartEditing} className="content-display">
-          <Loader size={16} />
-          <Text size="xs" c="dimmed">{value || 'Loading...'}</Text>
-        </Group>
-      );
+      return <ContentDisplayShimmer onClick={handleStartEditing} />;
     }
 
     // Have content info - check if unresolved
@@ -1600,13 +1601,14 @@ function ContentSearchCombobox({ value, onChange }) {
   );
 }
 
-// Action colors for chips
-const ACTION_COLORS = {
-  Play: 'blue',
-  Queue: 'green',
-  List: 'violet',
-  Display: 'cyan',
-  Read: 'orange'
+// Action colors and icons for chips
+const ACTION_META = {
+  Play:    { color: 'blue',   icon: IconPlayerPlayFilled },
+  Queue:   { color: 'green',  icon: IconPlaylistAdd },
+  List:    { color: 'violet', icon: IconLayoutList },
+  Open:    { color: 'gray',   icon: IconAppWindow },
+  Display: { color: 'cyan',   icon: IconDeviceDesktop },
+  Read:    { color: 'orange', icon: IconBookmark },
 };
 
 // Action chip select
@@ -1616,7 +1618,8 @@ function ActionChipSelect({ value, onChange }) {
   });
 
   const currentValue = value || 'Play';
-  const color = ACTION_COLORS[currentValue] || 'gray';
+  const meta = ACTION_META[currentValue] || { color: 'gray', icon: IconPlayerPlayFilled };
+  const Icon = meta.icon;
 
   return (
     <Combobox
@@ -1632,8 +1635,9 @@ function ActionChipSelect({ value, onChange }) {
         <Badge
           size="sm"
           variant="light"
-          color={color}
-          style={{ cursor: 'pointer' }}
+          color={meta.color}
+          leftSection={<Icon size={12} />}
+          style={{ cursor: 'pointer', width: 82, justifyContent: 'flex-start' }}
           onClick={() => combobox.toggleDropdown()}
         >
           {currentValue}
@@ -1642,13 +1646,23 @@ function ActionChipSelect({ value, onChange }) {
 
       <Combobox.Dropdown>
         <Combobox.Options>
-          {ACTION_OPTIONS.map((opt) => (
-            <Combobox.Option key={opt.value} value={opt.value}>
-              <Badge size="sm" variant="light" color={ACTION_COLORS[opt.value] || 'gray'}>
-                {opt.label}
-              </Badge>
-            </Combobox.Option>
-          ))}
+          {ACTION_OPTIONS.map((opt) => {
+            const optMeta = ACTION_META[opt.value] || { color: 'gray', icon: IconPlayerPlayFilled };
+            const OptIcon = optMeta.icon;
+            return (
+              <Combobox.Option key={opt.value} value={opt.value}>
+                <Badge
+                  size="sm"
+                  variant="light"
+                  color={optMeta.color}
+                  leftSection={<OptIcon size={12} />}
+                  style={{ width: 82, justifyContent: 'flex-start' }}
+                >
+                  {opt.label}
+                </Badge>
+              </Combobox.Option>
+            );
+          })}
         </Combobox.Options>
       </Combobox.Dropdown>
     </Combobox>
@@ -1979,44 +1993,21 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
     id: item.index
   });
 
+  const navigate = useNavigate();
+  const { type: currentListType } = useParams();
   const { getNearbyItems, setContentInfo, contentInfoMap, inUseImages } = useListsContext();
 
   const [imagePickerOpen, setImagePickerOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
 
-  // Resolve thumbnail for icon column: override image > input thumbnail
-  const [rowThumbnail, setRowThumbnail] = useState(null);
-  const [inheritedImage, setInheritedImage] = useState(null);
-  useEffect(() => {
-    // Resolve inherited image from content input
-    if (item.input) {
-      const cached = contentInfoMap.get(item.input);
-      if (cached?.thumbnail) { setInheritedImage(cached.thumbnail); }
-      else {
-        fetchContentMetadata(item.input).then(info => {
-          if (info?.thumbnail) setInheritedImage(info.thumbnail);
-        });
-      }
-    } else {
-      setInheritedImage(null);
-    }
-
-    // If item has an override image, use it for the row
-    if (item.image) {
-      const img = item.image.startsWith('/media/') || item.image.startsWith('media/')
+  // Resolve thumbnail for icon column: override image > input thumbnail (derived from context)
+  const cachedInfo = contentInfoMap.get(item.input);
+  const inheritedImage = cachedInfo?.thumbnail || null;
+  const rowThumbnail = item.image
+    ? (item.image.startsWith('/media/') || item.image.startsWith('media/')
         ? DaylightMediaPath(item.image)
-        : item.image;
-      setRowThumbnail(img);
-      return;
-    }
-    // Otherwise inherit from input content
-    if (!item.input) { setRowThumbnail(null); return; }
-    const cached = contentInfoMap.get(item.input);
-    if (cached?.thumbnail) { setRowThumbnail(cached.thumbnail); return; }
-    fetchContentMetadata(item.input).then(info => {
-      if (info?.thumbnail) setRowThumbnail(info.thumbnail);
-    });
-  }, [item.image, item.input, contentInfoMap]);
+        : item.image)
+    : inheritedImage;
 
   // Inline editing state
   const [editingLabel, setEditingLabel] = useState(false);
@@ -2158,7 +2149,23 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
       </div>
 
       <div className="col-preview">
-        {(item.action === 'Play' || !item.action) && item.input && (
+        {item.action === 'List' && item.input && (() => {
+          const match = item.input.match(/^([^:]+):\s*(.+)$/);
+          const listName = match ? match[2].trim() : item.input.trim();
+          if (!listName) return null;
+          return (
+            <ActionIcon
+              variant="subtle"
+              size="sm"
+              color="violet"
+              onClick={() => navigate(`/admin/content/lists/${currentListType}/${listName}`)}
+              title={`Open list: ${listName}`}
+            >
+              <IconLayoutList size={14} />
+            </ActionIcon>
+          );
+        })()}
+        {(item.action === 'Play' || item.action === 'Queue' || !item.action) && item.input && (
           <ActionIcon
             variant="subtle"
             size="sm"

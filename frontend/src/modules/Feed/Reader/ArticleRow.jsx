@@ -174,6 +174,7 @@ function ReaderYouTubePlayer({ article }) {
   const wrapperStyle = (article.meta?.imageWidth && article.meta?.imageHeight && article.meta.imageHeight > article.meta.imageWidth) ? {
     paddingBottom: `${(article.meta.imageHeight / article.meta.imageWidth) * 100}%`,
     maxWidth: '360px',
+    maxHeight: '80vh',
   } : undefined;
 
   // Loading — don't show iframe yet

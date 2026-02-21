@@ -43,6 +43,7 @@ export class SavedQueryService {
       filters: {
         sources: raw.sources || [],
       },
+      params: raw.params || {},
       ...(raw.sort != null && { sort: raw.sort }),
       ...(raw.take != null && { take: raw.take }),
     };

@@ -222,7 +222,7 @@ import {
 import RSSParser from 'rss-parser';
 
 // FileIO utilities for image saving
-import { saveImage as saveImageToFile, loadYamlSafe, listYamlFiles, saveYaml, deleteYaml, ensureDir, writeBinary } from './utils/FileIO.mjs';
+import { saveImage as saveImageToFile, loadYamlSafe, listYamlFiles, listSubdirectories, saveYaml, deleteYaml, ensureDir, writeBinary } from './utils/FileIO.mjs';
 
 // Additional adapters for harvesters
 import { StravaClientAdapter } from '#adapters/fitness/StravaClientAdapter.mjs';
@@ -474,19 +474,44 @@ export function createContentRegistry(config, deps = {}) {
   }
 
   // Register QueryAdapter for saved queries (query:dailynews, etc.)
-  // Reads query YAML files from household/config/lists/queries/
+  // Reads query YAML files from household/config/lists/queries/ and user config/queries/
   let savedQueryService = null;
   if (listDataPath) {
     const queriesDir = path.join(listDataPath, 'household', 'config', 'lists', 'queries');
+
+    // Build list of user query directories from data path
+    // listDataPath is the root data dir (contains household/ and users/)
+    const usersBase = path.join(listDataPath, 'users');
+    const userQueryDirs = listSubdirectories(usersBase)
+      .map(username => path.join(usersBase, username, 'config', 'queries'));
+
     savedQueryService = new SavedQueryService({
-      readQuery: (name) => loadYamlSafe(path.join(queriesDir, name)),
-      listQueries: () => listYamlFiles(queriesDir),
+      readQuery: (name) => {
+        // Try household dir first
+        const householdResult = loadYamlSafe(path.join(queriesDir, name));
+        if (householdResult) return householdResult;
+        // Fallback to user query dirs
+        for (const dir of userQueryDirs) {
+          const userResult = loadYamlSafe(path.join(dir, name));
+          if (userResult) return userResult;
+        }
+        return null;
+      },
+      listQueries: () => {
+        const names = new Set(listYamlFiles(queriesDir));
+        for (const dir of userQueryDirs) {
+          for (const name of listYamlFiles(dir)) {
+            names.add(name);
+          }
+        }
+        return [...names];
+      },
       writeQuery: (name, data) => saveYaml(path.join(queriesDir, name), data),
       deleteQuery: (name) => deleteYaml(path.join(queriesDir, name)),
     });
     const fileAdapter = registry.get('files');
     registry.register(
-      new QueryAdapter({ savedQueryService, fileAdapter, mediaProgressMemory }),
+      new QueryAdapter({ savedQueryService, fileAdapter, mediaProgressMemory, registry }),
       { category: queryManifest.capability, provider: queryManifest.provider }
     );
   }

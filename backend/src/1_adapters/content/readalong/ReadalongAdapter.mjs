@@ -8,6 +8,7 @@ import {
   fileExists,
   dirExists,
   listDirs,
+  listEntries,
   listYamlFiles
 } from '#system/utils/FileIO.mjs';
 import { ItemSelectionService } from '#domains/content/index.mjs';
@@ -181,12 +182,18 @@ export class ReadalongAdapter {
     const titleSource = Array.isArray(metadata) ? metadata[0] : metadata;
     const { title, subtitle } = this._extractTitles(manifest, titleSource, resolvedMeta, textPath);
 
+    // Build parent/library metadata for admin UI display
+    const volumeTitle = resolvedMeta?.volume && manifest?.volumeTitles?.[resolvedMeta.volume]
+      ? manifest.volumeTitles[resolvedMeta.volume]
+      : null;
+    const collectionTitle = collection.charAt(0).toUpperCase() + collection.slice(1);
+
     return new PlayableItem({
       id: canonicalId,
       source: 'readalong',
       title,
       subtitle,
-      thumbnail: this._collectionThumbnail(collection),
+      thumbnail: this._collectionThumbnail(collection, resolvedMeta?.volume),
       mediaUrl: `/api/v1/stream/readalong/${collection}/${audioPath}`,
       mediaType: metadata.videoFile ? 'video' : 'audio',
       videoUrl: metadata.videoFile ? `/api/v1/stream/readalong/${collection}/${textPath}/video` : null,
@@ -200,8 +207,11 @@ export class ReadalongAdapter {
       type: collection,
       metadata: {
         contentFormat: 'readalong',
+        type: 'chapter',
         collection,
         category: 'readalong',
+        parentTitle: volumeTitle,
+        librarySectionTitle: collectionTitle,
         ...(resolvedMeta && { resolved: resolvedMeta }),
         ...(Array.isArray(metadata) ? {} : metadata)
       }
@@ -314,12 +324,63 @@ export class ReadalongAdapter {
   }
 
   /**
-   * Build a thumbnail URL for a collection if an icon exists.
+   * Resolve a cover image by walking up from a subpath in the media directory.
+   * At each level, checks well-known names then falls back to any image file.
+   * Stops at the collection root.
+   *
+   * @param {string} collection - Collection name (e.g., 'scripture')
+   * @param {string} [subPath] - Subpath within collection (e.g., 'nt/kjvf')
+   * @returns {string|null} Absolute file path or null
+   */
+  resolveCoverImage(collection, subPath) {
+    const basePath = path.join(this._getMediaBasePath(collection), collection);
+    const segments = subPath ? subPath.split('/').filter(Boolean) : [];
+    const IMAGE_EXTS = new Set(['.jpg', '.jpeg', '.png', '.webp']);
+    const WELL_KNOWN = ['cover', 'poster', 'show', 'album', 'volume'];
+
+    // Walk up from deepest path to collection root
+    for (let i = segments.length; i >= 0; i--) {
+      const dir = i > 0
+        ? path.join(basePath, ...segments.slice(0, i))
+        : basePath;
+      if (!dirExists(dir)) continue;
+
+      // Check well-known names first (cover.jpg, poster.png, etc.)
+      for (const name of WELL_KNOWN) {
+        for (const ext of IMAGE_EXTS) {
+          const candidate = path.join(dir, `${name}${ext}`);
+          if (fileExists(candidate)) return candidate;
+        }
+      }
+
+      // Fallback: any image file in the directory
+      const entries = listEntries(dir);
+      const imageFile = entries.find(e => {
+        const ext = path.extname(e).toLowerCase();
+        return IMAGE_EXTS.has(ext);
+      });
+      if (imageFile) return path.join(dir, imageFile);
+    }
+    return null;
+  }
+
+  /**
+   * Build a thumbnail URL for a collection item.
+   * Prefers cover.jpg (walked up from subPath), falls back to collection icon.
+   *
    * @param {string} collection - Collection name
+   * @param {string} [subPath] - Subpath for cover.jpg walk-up (e.g., 'nt')
    * @returns {string|null}
    * @private
    */
-  _collectionThumbnail(collection) {
+  _collectionThumbnail(collection, subPath) {
+    // Prefer cover.jpg from media directory
+    const cover = this.resolveCoverImage(collection, subPath);
+    if (cover) {
+      const coverSub = subPath || '';
+      return `/api/v1/local-content/collection-cover/readalong/${collection}${coverSub ? '/' + coverSub : ''}`;
+    }
+    // Fall back to icon.svg from data directory
     const icon = this.resolveCollectionIcon(collection);
     return icon ? `/api/v1/local-content/collection-icon/readalong/${collection}` : null;
   }
@@ -421,6 +482,7 @@ export class ReadalongAdapter {
             id: `readalong:${collection}/${dir}`,
             source: 'readalong',
             title: dir,
+            thumbnail: this._collectionThumbnail(collection, dir),
             itemType: 'container'
           });
         }
@@ -817,6 +879,12 @@ export class ReadalongAdapter {
     const titleSource = Array.isArray(metadata) ? metadata[0] : metadata;
     const { title, subtitle } = this._extractTitles(manifest, titleSource, resolvedMeta, textPath);
 
+    // Build parent/library metadata for admin UI display
+    const volumeTitle = resolvedMeta?.volume && manifest?.volumeTitles?.[resolvedMeta.volume]
+      ? manifest.volumeTitles[resolvedMeta.volume]
+      : null;
+    const collectionTitle = collection.charAt(0).toUpperCase() + collection.slice(1);
+
     return {
       id: canonicalId,
       source: 'readalong',
@@ -824,7 +892,7 @@ export class ReadalongAdapter {
       collection,
       title,
       subtitle,
-      thumbnail: this._collectionThumbnail(collection),
+      thumbnail: this._collectionThumbnail(collection, resolvedMeta?.volume),
       mediaUrl: `/api/v1/stream/readalong/${collection}/${audioPath}`,
       videoUrl: metadata.videoFile ? `/api/v1/stream/readalong/${collection}/${textPath}/video` : null,
       ambientUrl,
@@ -836,8 +904,11 @@ export class ReadalongAdapter {
       style,
       metadata: {
         contentFormat: 'readalong',
+        type: 'chapter',
         collection,
         category: 'readalong',
+        parentTitle: volumeTitle,
+        librarySectionTitle: collectionTitle,
         ...(resolvedMeta && { resolved: resolvedMeta }),
         ...(Array.isArray(metadata) ? {} : metadata)
       }

@@ -402,6 +402,21 @@ export class ListAdapter {
       thumbnail = items[0].image;
     }
 
+    // Resolve thumbnail from first child's content source when no explicit image
+    if (!thumbnail && items.length > 0 && this.registry) {
+      const firstInput = extractContentId(items[0]);
+      if (firstInput) {
+        const resolved = this.registry.resolve(firstInput);
+        if (resolved?.adapter?.getItem) {
+          try {
+            const canonicalId = `${resolved.adapter.source}:${resolved.localId}`;
+            const childItem = await resolved.adapter.getItem(canonicalId);
+            if (childItem?.thumbnail) thumbnail = childItem.thumbnail;
+          } catch { /* thumbnail is decorative */ }
+        }
+      }
+    }
+
     // Build parent/library label for UI display
     const typeLabels = {
       watchlist: 'Watchlists',

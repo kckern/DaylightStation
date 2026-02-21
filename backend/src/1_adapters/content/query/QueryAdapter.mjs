@@ -20,17 +20,20 @@ export class QueryAdapter {
   #savedQueryService;
   #fileAdapter;
   #mediaProgressMemory;
+  #registry;
 
   /**
    * @param {Object} deps
    * @param {import('#apps/content/SavedQueryService.mjs').SavedQueryService} deps.savedQueryService
    * @param {Object} [deps.fileAdapter] - FileAdapter for freshvideo queries
    * @param {Object} [deps.mediaProgressMemory] - Progress memory for watch state
+   * @param {Object} [deps.registry] - ContentSourceRegistry for adapter lookup
    */
-  constructor({ savedQueryService, fileAdapter, mediaProgressMemory } = {}) {
+  constructor({ savedQueryService, fileAdapter, mediaProgressMemory, registry } = {}) {
     this.#savedQueryService = savedQueryService;
     this.#fileAdapter = fileAdapter || null;
     this.#mediaProgressMemory = mediaProgressMemory || null;
+    this.#registry = registry || null;
   }
 
   get source() { return 'query'; }
@@ -55,14 +58,27 @@ export class QueryAdapter {
     const query = this.#savedQueryService.getQuery(name);
     if (!query) return null;
 
+    // Resolve first playable to use its thumbnail for the query
+    const playables = await this.resolvePlayables(id);
+    const thumbnail = playables[0]?.thumbnail || null;
+
+    // Format query type for display (e.g., "immich" → "Immich", "freshvideo" → "Freshvideo")
+    const queryTypeLabel = query.source
+      ? query.source.charAt(0).toUpperCase() + query.source.slice(1)
+      : 'Query';
+
     return {
       id: `query:${name}`,
       title: query.title,
       source: 'query',
       itemType: 'container',
+      thumbnail,
       metadata: {
+        type: 'query',
         queryType: query.source,
         sources: query.filters?.sources || [],
+        librarySectionTitle: queryTypeLabel,
+        childCount: playables.length,
       },
     };
   }
@@ -89,6 +105,10 @@ export class QueryAdapter {
 
     if (query.source === 'freshvideo') {
       return this.#resolveFreshVideo(query);
+    }
+
+    if (query.source === 'immich') {
+      return this.#resolveImmichQuery(query);
     }
 
     console.warn(`[QueryAdapter] Unknown query type: ${query.source}`);
@@ -183,6 +203,89 @@ export class QueryAdapter {
     }
 
     return selected;
+  }
+
+  /**
+   * Resolve an immich query by searching across date ranges.
+   * Loops from yearFrom to current year, searching each year for the given month/day.
+   * @param {Object} query - Normalized query definition with params
+   * @returns {Promise<Array>}
+   */
+  async #resolveImmichQuery(query) {
+    if (!this.#registry) {
+      console.warn('[QueryAdapter] Registry not available for immich query');
+      return [];
+    }
+
+    const adapter = this.#registry.get('immich');
+    if (!adapter) {
+      console.warn('[QueryAdapter] ImmichAdapter not registered');
+      return [];
+    }
+
+    const { mediaType, month, day, yearFrom } = query.params;
+    if (!month || !day || !yearFrom) {
+      console.warn('[QueryAdapter] Immich query missing required params (month, day, yearFrom)');
+      return [];
+    }
+
+    const currentYear = new Date().getFullYear();
+    const paddedMonth = String(month).padStart(2, '0');
+    const paddedDay = String(day).padStart(2, '0');
+    const targetDate = `${paddedMonth}-${paddedDay}`;
+
+    // Search each year with a ±1 day UTC window to cover all timezones,
+    // then post-filter by the asset's local date (from filename)
+    const yearPromises = [];
+    for (let year = yearFrom; year <= currentYear; year++) {
+      const dayBefore = new Date(Date.UTC(year, month - 1, day - 1));
+      const dayAfter = new Date(Date.UTC(year, month - 1, day + 1, 23, 59, 59, 999));
+      yearPromises.push(
+        adapter.search({
+          mediaType: mediaType || undefined,
+          dateFrom: dayBefore.toISOString(),
+          dateTo: dayAfter.toISOString(),
+        }).catch(err => {
+          console.warn(`[QueryAdapter] Immich search failed for ${year}:`, err.message);
+          return { items: [] };
+        })
+      );
+    }
+
+    const results = await Promise.all(yearPromises);
+    const allItems = results.flatMap(r => r.items || []);
+
+    // Dedupe by ID
+    const seen = new Set();
+    const deduped = allItems.filter(item => {
+      if (seen.has(item.id)) return false;
+      seen.add(item.id);
+      return true;
+    });
+
+    // Post-filter by local date extracted from filename (YYYY-MM-DD format)
+    // Filenames reflect the local capture time, not UTC
+    const dateFiltered = deduped.filter(item => {
+      const match = (item.title || '').match(/(\d{4})-(\d{2})-(\d{2})/);
+      return match && `${match[2]}-${match[3]}` === targetDate;
+    });
+
+    // Filter by mediaType if specified
+    let filtered = mediaType
+      ? dateFiltered.filter(item => item.mediaType === mediaType)
+      : dateFiltered;
+
+    // Sort if specified
+    if (query.sort) {
+      const getDate = (item) => item.metadata?.capturedAt || item.title || '';
+      if (query.sort === 'date_desc') {
+        filtered.sort((a, b) => getDate(b).localeCompare(getDate(a)));
+      } else if (query.sort === 'date_asc') {
+        filtered.sort((a, b) => getDate(a).localeCompare(getDate(b)));
+      }
+    }
+
+    return filtered;
   }
 
   /**
