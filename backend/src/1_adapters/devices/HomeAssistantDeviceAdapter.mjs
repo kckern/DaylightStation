@@ -22,6 +22,7 @@ export class HomeAssistantDeviceAdapter {
   #displays;
   #logger;
   #waitOptions;
+  #powerOnWaitOptions;
   #metrics;
 
   /**
@@ -45,6 +46,10 @@ export class HomeAssistantDeviceAdapter {
     this.#waitOptions = {
       timeoutMs: config.waitOptions?.timeoutMs ?? 30000,
       pollIntervalMs: config.waitOptions?.pollIntervalMs ?? 2000
+    };
+    this.#powerOnWaitOptions = {
+      timeoutMs: config.powerOnWaitOptions?.timeoutMs ?? 8000,
+      pollIntervalMs: config.powerOnWaitOptions?.pollIntervalMs ?? 1500
     };
 
     this.#metrics = {
@@ -193,16 +198,78 @@ export class HomeAssistantDeviceAdapter {
    * @private
    */
   async #powerOnDisplay(displayId, config, startTime) {
-    this.#logger.info?.('device.ha.powerOn', { displayId, script: config.on_script });
+    const maxAttempts = config.powerOnRetries ?? 2;
+    const sensor = config.state_sensor;
 
-    const result = await this.#gateway.runScript(config.on_script);
+    this.#logger.info?.('device.ha.powerOn', { displayId, script: config.on_script, sensor, maxAttempts });
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const scriptResult = await this.#gateway.runScript(config.on_script);
+
+      if (!scriptResult.ok) {
+        return {
+          ok: false,
+          displayId,
+          action: 'on',
+          error: scriptResult.error,
+          elapsedMs: Date.now() - startTime
+        };
+      }
+
+      // If no state sensor configured, trust the script result (legacy behavior)
+      if (!sensor) {
+        this.#logger.info?.('device.ha.powerOn.noSensor', { displayId, attempt });
+        return {
+          ok: true,
+          displayId,
+          action: 'on',
+          verified: false,
+          verifySkipped: 'no_state_sensor',
+          elapsedMs: Date.now() - startTime
+        };
+      }
+
+      // Poll state sensor to verify display actually turned on
+      const waitResult = await this.#gateway.waitForState(sensor, 'on', {
+        timeoutMs: this.#powerOnWaitOptions.timeoutMs,
+        pollIntervalMs: this.#powerOnWaitOptions.pollIntervalMs
+      });
+
+      if (waitResult.reached) {
+        this.#logger.info?.('device.ha.powerOn.verified', {
+          displayId, attempt, elapsedMs: Date.now() - startTime
+        });
+        return {
+          ok: true,
+          displayId,
+          action: 'on',
+          verified: true,
+          attempt,
+          elapsedMs: Date.now() - startTime
+        };
+      }
+
+      // State not reached — log and retry (unless last attempt)
+      this.#logger.warn?.('device.ha.powerOn.verifyFailed', {
+        displayId, attempt, maxAttempts,
+        sensorState: waitResult.finalState,
+        elapsedMs: Date.now() - startTime
+      });
+    }
+
+    // All attempts exhausted — display did not turn on
+    this.#logger.error?.('device.ha.powerOn.allAttemptsFailed', {
+      displayId, maxAttempts, elapsedMs: Date.now() - startTime
+    });
 
     return {
-      ok: result.ok,
+      ok: true,
       displayId,
       action: 'on',
-      elapsedMs: Date.now() - startTime,
-      error: result.error
+      verified: false,
+      verifyFailed: true,
+      attempts: maxAttempts,
+      elapsedMs: Date.now() - startTime
     };
   }
 
