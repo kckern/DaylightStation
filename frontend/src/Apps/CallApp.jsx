@@ -126,9 +126,15 @@ export default function CallApp() {
     if (newVideoMuted !== undefined) sendMuteState(audioMuted, newVideoMuted);
   }, [toggleVideo, sendMuteState, audioMuted]);
 
+  // Keep a ref to endCall so the cleanup effect doesn't re-run
+  // when endCall's identity changes (which would fire the destructor
+  // and spuriously power off the TV mid-call).
+  const endCallRef = useRef(endCall);
+  endCallRef.current = endCall;
+
   // Clean up on tab close or component unmount (SPA navigation)
   useEffect(() => {
-    const handleBeforeUnload = () => endCall();
+    const handleBeforeUnload = () => endCallRef.current();
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
@@ -138,7 +144,8 @@ export default function CallApp() {
         DaylightAPI(`/api/v1/device/${devId}/off?force=true`).catch(() => {});
       }
     };
-  }, [endCall, isOwner]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Wake device (power on + load videocall URL) then connect signaling
   const dropIn = useCallback(async (targetDeviceId) => {
