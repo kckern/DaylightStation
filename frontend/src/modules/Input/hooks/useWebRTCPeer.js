@@ -16,6 +16,7 @@ export const useWebRTCPeer = (localStream) => {
   const [remoteStream, setRemoteStream] = useState(null);
   const [connectionState, setConnectionState] = useState('new');
   const iceCandidateCallbackRef = useRef(null);
+  const pendingCandidatesRef = useRef([]);
 
   const createPC = useCallback(() => {
     if (pcRef.current) {
@@ -71,6 +72,18 @@ export const useWebRTCPeer = (localStream) => {
   const handleOffer = useCallback(async (offer) => {
     const pc = createPC();
     await pc.setRemoteDescription(new RTCSessionDescription(offer));
+    // Flush any ICE candidates that arrived before remote description was set
+    const queued = pendingCandidatesRef.current.splice(0);
+    if (queued.length > 0) {
+      logger().debug('ice-candidates-flushed', { count: queued.length });
+    }
+    for (const c of queued) {
+      try {
+        await pc.addIceCandidate(new RTCIceCandidate(c));
+      } catch (err) {
+        logger().warn('ice-candidate-flush-failed', { error: err.message });
+      }
+    }
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
     return answer;
@@ -80,11 +93,28 @@ export const useWebRTCPeer = (localStream) => {
     const pc = pcRef.current;
     if (!pc) return;
     await pc.setRemoteDescription(new RTCSessionDescription(answer));
+    // Flush any ICE candidates that arrived before remote description was set
+    const queued = pendingCandidatesRef.current.splice(0);
+    if (queued.length > 0) {
+      logger().debug('ice-candidates-flushed', { count: queued.length });
+    }
+    for (const c of queued) {
+      try {
+        await pc.addIceCandidate(new RTCIceCandidate(c));
+      } catch (err) {
+        logger().warn('ice-candidate-flush-failed', { error: err.message });
+      }
+    }
   }, []);
 
   const addIceCandidate = useCallback(async (candidate) => {
     const pc = pcRef.current;
-    if (!pc) return;
+    if (!pc || !pc.remoteDescription) {
+      // PC not ready — queue for later flush
+      pendingCandidatesRef.current.push(candidate);
+      logger().debug('ice-candidate-queued', { queueLength: pendingCandidatesRef.current.length });
+      return;
+    }
     try {
       await pc.addIceCandidate(new RTCIceCandidate(candidate));
     } catch (err) {
@@ -101,6 +131,7 @@ export const useWebRTCPeer = (localStream) => {
       pcRef.current.close();
       pcRef.current = null;
     }
+    pendingCandidatesRef.current = [];
     setRemoteStream(null);
     setConnectionState('new');
   }, []);

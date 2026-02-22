@@ -263,7 +263,7 @@ export default function CallApp() {
                   disabled={waking || status !== 'idle' || !stream}
                   onClick={() => dropIn(device.id)}
                 >
-                  {device.id}
+                  {device.label || device.id.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
                 </button>
               ))}
             </div>

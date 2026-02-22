@@ -5,65 +5,76 @@
   background: #000;
   overflow: hidden;
 
-  &__split {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 2rem;
+  // ── Solo mode (default): local fullscreen, remote hidden ──
+
+  &__remote-panel {
+    display: none;
+  }
+
+  &__local-panel {
     width: 100%;
     height: 100%;
-    padding: 2rem;
-    box-sizing: border-box;
   }
 
-  &__panel {
+  &__local-panel &__video {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 0;
+    background: #111;
+  }
+
+  // ── Connected mode: remote dominant, local PIP top-center ──
+
+  &--connected {
     display: flex;
     align-items: center;
     justify-content: center;
-    overflow: hidden;
-
-    &--remote {
-      flex: 0 0 auto;
-      height: 90%;
-    }
-
-    &--local {
-      flex: 1;
-      height: 90%;
-    }
   }
 
-  &__video {
-    border-radius: 8px;
+  &--connected &__remote-panel {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+  }
+
+  &--connected &__remote-panel &__video {
+    max-width: 100%;
+    max-height: 100%;
     object-fit: contain;
     background: #111;
-
-    &--portrait {
-      height: 100%;
-      max-width: 100%;
-      aspect-ratio: 9/16;
-    }
-
-    &--landscape {
-      width: 100%;
-      max-height: 100%;
-      aspect-ratio: 16/9;
-    }
-
-    &--fullscreen {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-    }
   }
 
-  &__solo {
+  &--connected &__local-panel {
+    position: absolute;
+    top: 1rem;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 240px;
+    height: 135px;
+    z-index: 10;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 2px solid rgba(255, 255, 255, 0.25);
+  }
+
+  &--connected &__local-panel &__video {
+    position: absolute;
+    top: 0;
+    left: 0;
     width: 100%;
     height: 100%;
+    object-fit: cover;
+    border-radius: 6px;
+    background: #111;
   }
+
+  // ── Overlays ──
 
   &__status {
     position: absolute;
@@ -76,6 +87,12 @@
     border-radius: 4px;
     font-size: 0.9rem;
     z-index: 10;
+    transition: opacity 0.3s ease;
+  }
+
+  // When connected, move status below PIP
+  &--connected &__status {
+    top: calc(135px + 2rem);
   }
 
   &__meter {
@@ -89,6 +106,13 @@
     border-radius: 8px;
     overflow: hidden;
     z-index: 10;
+    transition: opacity 0.3s ease;
+  }
+
+  // Hide meter during call
+  &--connected &__meter {
+    opacity: 0;
+    pointer-events: none;
   }
 
   &__meter-fill {
@@ -100,13 +124,23 @@
 
   &__remote-muted {
     position: absolute;
-    top: 1rem;
-    right: 1rem;
+    bottom: 1.5rem;
+    left: 1.5rem;
     background: rgba(0, 0, 0, 0.6);
     color: #ccc;
     padding: 0.25rem 0.75rem;
     border-radius: 4px;
     font-size: 1rem;
     z-index: 10;
+  }
+
+  &__video-off {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: #888;
+    font-size: 1.2rem;
+    z-index: 5;
   }
 }

@@ -235,6 +235,7 @@ import { useMediaReporter } from '../hooks/useMediaReporter.js';
     const handleEnded = useCallback(() => {
       if (ambientRef.current) {
         const fade = setInterval(() => {
+          if (!ambientRef.current) { clearInterval(fade); onAdvance && onAdvance(); return; }
           if (ambientRef.current.volume > fadeOutStep) {
             ambientRef.current.volume -= fadeOutStep;
           } else {
@@ -256,7 +257,7 @@ import { useMediaReporter } from '../hooks/useMediaReporter.js';
       setTimeout(() => {
         if (mainRef.current) {
           mainRef.current.play().catch(() => {});
-          ambientRef.current.volume = ambientVolume;
+          if (ambientRef.current) ambientRef.current.volume = ambientVolume;
         }
       }, fadeInDelay);
     }, [fadeInDelay, ambientVolume]);

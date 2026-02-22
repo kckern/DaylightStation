@@ -1,11 +1,19 @@
 .call-app {
   width: 100vw;
+  height: 100dvh;
   height: 100vh;
+  @supports (height: 100dvh) {
+    height: 100dvh;
+  }
   background: #000;
   color: #fff;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   overflow: hidden;
   position: relative;
+  overscroll-behavior: none;
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
 
   // Preview mode (lobby + connecting): fullscreen camera with overlay
   &--preview {
@@ -13,49 +21,59 @@
     flex-direction: column;
   }
 
-  // Connected mode: remote + local PiP + controls
+  // Connected mode: remote fills screen, local PIP floats, controls at bottom
   &--connected {
     position: relative;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 1rem;
-    padding: 1rem;
-    box-sizing: border-box;
   }
 
   // Local camera — two modes
   &__local {
-    display: flex;
-    justify-content: center;
-    align-items: center;
+    overflow: hidden;
 
     &--full {
       flex: 1;
       min-height: 0;
+      width: 100%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
     }
 
     &--pip {
-      flex: 1;
-      min-height: 0;
+      position: absolute;
+      top: calc(0.75rem + env(safe-area-inset-top, 0px));
+      right: 0.75rem;
+      width: 100px;
+      height: 140px;
+      border-radius: 12px;
+      z-index: 20;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      overflow: hidden;
     }
   }
 
   &__video {
-    border-radius: 8px;
     background: #111;
-    object-fit: contain;
 
     &--wide {
       width: 100%;
-      aspect-ratio: 16/9;
+      max-height: 70dvh;
+      max-height: 70vh;
+      @supports (height: 1dvh) {
+        max-height: 70dvh;
+      }
+      object-fit: contain;
+      border-radius: 0;
     }
 
     &--tall {
+      width: 100%;
       height: 100%;
-      max-width: 100%;
-      aspect-ratio: 9/16;
+      object-fit: cover;
     }
   }
 
@@ -66,7 +84,7 @@
     left: 0;
     right: 0;
     background: linear-gradient(transparent, rgba(0, 0, 0, 0.85) 30%);
-    padding: 3rem 2rem 2.5rem;
+    padding: 3rem 2rem calc(2.5rem + env(safe-area-inset-bottom, 0px));
     text-align: center;
     z-index: 10;
   }
@@ -122,21 +140,26 @@
 
   // Remote video (connected state)
   &__remote {
-    flex: 0 0 auto;
+    flex: 1;
+    min-height: 0;
     width: 100%;
     display: flex;
+    align-items: center;
     justify-content: center;
   }
 
   // Call controls
   &__controls {
     flex: 0 0 auto;
+    width: 100%;
     display: flex;
     gap: 1rem;
     align-items: center;
     justify-content: center;
-    padding: 0.75rem 0;
-    margin-bottom: 0.5rem;
+    padding: 0.75rem 0 calc(0.75rem + env(safe-area-inset-bottom, 0px));
+    background: rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
   }
 
   &__mute-btn {
@@ -146,7 +169,7 @@
     border: 1px solid rgba(255, 255, 255, 0.3);
     background: rgba(255, 255, 255, 0.1);
     color: #fff;
-    font-size: 0.65rem;
+    font-size: 0.75rem;
     font-weight: 600;
     cursor: pointer;
     display: flex;
@@ -191,8 +214,8 @@
 
   &__cancel {
     background: transparent;
-    color: #aaa;
-    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: #ddd;
+    border: 1px solid rgba(255, 255, 255, 0.4);
     border-radius: 24px;
     padding: 0.6rem 2rem;
     font-size: 1rem;
@@ -277,5 +300,34 @@
     cursor: pointer;
     font-size: 0.8rem;
     white-space: nowrap;
+  }
+
+  // State transition: cross-fade between preview and connected
+  &--preview,
+  &--connected {
+    transition: opacity 0.2s ease;
+  }
+
+  // Landscape: PIP moves to top-left, remote video uses more height
+  @media (orientation: landscape) {
+    &--connected &__local--pip {
+      top: 0.5rem;
+      right: auto;
+      left: 0.5rem;
+      width: 120px;
+      height: 90px;
+    }
+
+    &--connected &__video--wide {
+      max-height: 80dvh;
+      max-height: 80vh;
+      @supports (height: 1dvh) {
+        max-height: 80dvh;
+      }
+    }
+
+    &__controls {
+      padding-bottom: 0.5rem;
+    }
   }
 }
