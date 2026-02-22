@@ -138,21 +138,29 @@
     }
   }
 
-  // Remote video (connected state)
+  // Remote video (always mounted, shown in connected state)
   &__remote {
+    display: none;
+  }
+
+  &--connected &__remote {
+    display: flex;
     flex: 1;
     min-height: 0;
     width: 100%;
-    display: flex;
     align-items: center;
     justify-content: center;
   }
 
-  // Call controls
+  // Call controls (always mounted, shown in connected state)
   &__controls {
+    display: none;
+  }
+
+  &--connected &__controls {
+    display: flex;
     flex: 0 0 auto;
     width: 100%;
-    display: flex;
     gap: 1rem;
     align-items: center;
     justify-content: center;

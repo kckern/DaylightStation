@@ -215,7 +215,7 @@ export default function CallApp() {
 
   return (
     <div className={`call-app ${isConnected ? 'call-app--connected' : 'call-app--preview'}`}>
-      {/* Local camera — always visible */}
+      {/* Local camera — always mounted */}
       <div className={`call-app__local ${isConnected ? 'call-app__local--pip' : 'call-app__local--full'}`}>
         <video
           ref={localVideoRef}
@@ -236,6 +236,54 @@ export default function CallApp() {
           </div>
         )}
       </div>
+
+      {/* Remote video — always mounted, hidden until connected via CSS */}
+      <div className="call-app__remote">
+        <video
+          ref={remoteVideoRef}
+          autoPlay
+          playsInline
+          className="call-app__video call-app__video--wide"
+        />
+      </div>
+
+      {/* Controls — always mounted, hidden until connected via CSS */}
+      <div className="call-app__controls">
+        <button
+          className={`call-app__mute-btn ${audioMuted ? 'call-app__mute-btn--active' : ''}`}
+          onClick={handleToggleAudio}
+          aria-label={audioMuted ? 'Unmute audio' : 'Mute audio'}
+        >
+          {audioMuted ? 'Mic Off' : 'Mic'}
+        </button>
+        <button className="call-app__hangup" onClick={endCall}>
+          Hang Up
+        </button>
+        <button
+          className={`call-app__mute-btn ${videoMuted ? 'call-app__mute-btn--active' : ''}`}
+          onClick={handleToggleVideo}
+          aria-label={videoMuted ? 'Enable video' : 'Disable video'}
+        >
+          {videoMuted ? 'Cam Off' : 'Cam'}
+        </button>
+      </div>
+
+      {/* ICE error banner — conditional is fine (no ref) */}
+      {isConnected && iceError && (
+        <div className="call-app__ice-error">
+          <span>{iceError}</span>
+          {connectionState === 'failed' && (
+            <button onClick={() => endCall()} className="call-app__ice-error-btn">
+              End Call
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Remote mute badge — conditional is fine */}
+      {isConnected && remoteMuteState.audioMuted && (
+        <div className="call-app__remote-muted">Remote audio muted</div>
+      )}
 
       {/* Lobby overlay — device selection */}
       {isIdle && (
@@ -338,55 +386,6 @@ export default function CallApp() {
             Cancel
           </button>
         </div>
-      )}
-
-      {/* Connected view — remote video + controls */}
-      {isConnected && (
-        <>
-          {iceError && (
-            <div className="call-app__ice-error">
-              <span>{iceError}</span>
-              {connectionState === 'failed' && (
-                <button onClick={() => endCall()} className="call-app__ice-error-btn">
-                  End Call
-                </button>
-              )}
-            </div>
-          )}
-
-          <div className="call-app__remote">
-            <video
-              ref={remoteVideoRef}
-              autoPlay
-              playsInline
-              className="call-app__video call-app__video--wide"
-            />
-          </div>
-
-          {remoteMuteState.audioMuted && (
-            <div className="call-app__remote-muted">Remote audio muted</div>
-          )}
-
-          <div className="call-app__controls">
-            <button
-              className={`call-app__mute-btn ${audioMuted ? 'call-app__mute-btn--active' : ''}`}
-              onClick={handleToggleAudio}
-              aria-label={audioMuted ? 'Unmute audio' : 'Mute audio'}
-            >
-              {audioMuted ? 'Mic Off' : 'Mic'}
-            </button>
-            <button className="call-app__hangup" onClick={endCall}>
-              Hang Up
-            </button>
-            <button
-              className={`call-app__mute-btn ${videoMuted ? 'call-app__mute-btn--active' : ''}`}
-              onClick={handleToggleVideo}
-              aria-label={videoMuted ? 'Enable video' : 'Disable video'}
-            >
-              {videoMuted ? 'Cam Off' : 'Cam'}
-            </button>
-          </div>
-        </>
       )}
     </div>
   );
