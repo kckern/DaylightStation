@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useMemo } from 'react';
+import React, { useRef, useEffect, useMemo, useState } from 'react';
 import { useMediaDevices } from './hooks/useMediaDevices';
 import { useWebcamStream } from './hooks/useWebcamStream';
 import { useVolumeMeter } from './hooks/useVolumeMeter';
@@ -17,7 +17,9 @@ export default function VideoCall({ deviceId, clear }) {
   const { videoRef, stream } = useWebcamStream(selectedVideoDevice, selectedAudioDevice);
   const { volume } = useVolumeMeter(stream);
   const peer = useWebRTCPeer(stream);
+  const { connectionState } = peer;
   const { peerConnected, status } = useHomeline('tv', deviceId, peer);
+  const [iceError, setIceError] = useState(null);
 
   const remoteVideoRef = useRef(null);
 
@@ -31,6 +33,18 @@ export default function VideoCall({ deviceId, clear }) {
   useEffect(() => {
     logger.debug('status-change', { status, peerConnected });
   }, [logger, status, peerConnected]);
+
+  // React to ICE connection failures — auto-clear after 10s
+  useEffect(() => {
+    if (connectionState === 'failed') {
+      logger.error('ice-connection-failed', { deviceId });
+      setIceError('Connection lost');
+      const timer = setTimeout(() => clear(), 10000);
+      return () => clearTimeout(timer);
+    } else if (connectionState === 'connected') {
+      setIceError(null);
+    }
+  }, [connectionState, clear, deviceId, logger]);
 
   // Attach remote stream to video element
   useEffect(() => {
@@ -96,9 +110,13 @@ export default function VideoCall({ deviceId, clear }) {
 
       {/* Status indicator */}
       <div className="videocall-tv__status">
-        {status === 'waiting' && 'Home Line \u2014 Waiting'}
-        {status === 'connecting' && 'Connecting...'}
-        {status === 'connected' && 'Connected'}
+        {iceError || (
+          <>
+            {status === 'waiting' && 'Home Line \u2014 Waiting'}
+            {status === 'connecting' && 'Connecting...'}
+            {status === 'connected' && 'Connected'}
+          </>
+        )}
       </div>
 
       {/* Volume meter */}
