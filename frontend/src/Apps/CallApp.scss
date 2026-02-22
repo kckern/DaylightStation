@@ -21,6 +21,14 @@
     flex-direction: column;
   }
 
+  // Connecting mode: small camera inset + centered status
+  &--connecting {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+
   // Connected mode: remote top, self middle, controls bottom
   &--connected {
     display: flex;
@@ -52,6 +60,17 @@
       width: 100%;
       border-radius: 1ex;
     }
+
+    &--inset {
+      // Connecting mode: small rounded camera preview, centered
+      width: 40vw;
+      max-width: 200px;
+      aspect-ratio: 3 / 4;
+      border-radius: 1ex;
+      overflow: hidden;
+      flex-shrink: 0;
+      margin-bottom: 2rem;
+    }
   }
 
   &__video {
@@ -59,6 +78,7 @@
 
     &--wide {
       width: 100%;
+      display: block;
       object-fit: contain;
       border-radius: 1ex;
     }
@@ -69,6 +89,15 @@
       object-fit: cover;
       border-radius: 1ex;
     }
+  }
+
+  // Connecting overlay — centered below the camera inset
+  &__connecting-overlay {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 0.75rem;
   }
 
   // Bottom overlay — sits over the camera preview
@@ -139,11 +168,9 @@
 
   &--connected &__remote {
     order: 1;
-    display: flex;
+    display: block;
     flex: 0 0 auto;
     width: 100%;
-    align-items: center;
-    justify-content: center;
     border-radius: 1ex;
     overflow: hidden;
   }

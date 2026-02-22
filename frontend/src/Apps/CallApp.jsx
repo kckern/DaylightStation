@@ -209,14 +209,14 @@ export default function CallApp() {
     }
   }, [devices, status, dropIn, stream]);
 
-  const isIdle = (status === 'idle' || status === 'occupied') && !wakeError;
+  const isIdle = (status === 'idle' || status === 'occupied') && !wakeError && !waking;
   const isConnecting = status === 'connecting' || waking;
   const isConnected = !isIdle && !isConnecting && !wakeError;
 
   return (
-    <div className={`call-app ${isConnected ? 'call-app--connected' : 'call-app--preview'}`}>
+    <div className={`call-app ${isConnected ? 'call-app--connected' : isConnecting ? 'call-app--connecting' : 'call-app--preview'}`}>
       {/* Local camera — always mounted */}
-      <div className={`call-app__local ${isConnected ? 'call-app__local--pip' : 'call-app__local--full'}`}>
+      <div className={`call-app__local ${isConnected ? 'call-app__local--pip' : isConnecting ? 'call-app__local--inset' : 'call-app__local--full'}`}>
         <video
           ref={localVideoRef}
           autoPlay
@@ -359,9 +359,9 @@ export default function CallApp() {
         </div>
       )}
 
-      {/* Connecting overlay */}
+      {/* Connecting overlay — centered status, no device buttons */}
       {isConnecting && (
-        <div className="call-app__overlay-bottom">
+        <div className="call-app__connecting-overlay">
           <p className="call-app__status-text">
             {waking ? 'Waking up TV...' : 'Establishing call...'}
           </p>

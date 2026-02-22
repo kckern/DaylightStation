@@ -28,13 +28,21 @@ export const useMediaDevices = () => {
         setVideoDevices(vidDevices);
         setAudioDevices(audDevices);
 
+        logger().info('devices-enumerated', {
+          video: vidDevices.map(d => ({ id: d.deviceId.slice(0, 8), label: d.label })),
+          audio: audDevices.map(d => ({ id: d.deviceId.slice(0, 8), label: d.label })),
+        });
+
         // Set defaults if not already set — prefer the webcam's mic over built-in
         if (vidDevices.length > 0 && !selectedVideoDevice) {
           setSelectedVideoDevice(vidDevices[0].deviceId);
+          logger().info('video-device-selected', { id: vidDevices[0].deviceId.slice(0, 8), label: vidDevices[0].label });
         }
         if (audDevices.length > 0 && !selectedAudioDevice) {
           const webcamMic = audDevices.find(d => /usb audio|angetube|camera/i.test(d.label));
-          setSelectedAudioDevice((webcamMic || audDevices[0]).deviceId);
+          const chosen = webcamMic || audDevices[0];
+          setSelectedAudioDevice(chosen.deviceId);
+          logger().info('audio-device-selected', { id: chosen.deviceId.slice(0, 8), label: chosen.label, preferredWebcamMic: !!webcamMic });
         }
       } catch (error) {
         logger().warn('media-devices.enumerate-error', { error: error.message });

@@ -58,6 +58,8 @@ export const useVolumeMeter = (stream) => {
         logger().debug('volume-meter-connected');
 
         // Poll media-source stats from sender
+        let sampleCount = 0;
+        let maxLevel = 0;
         pollTimer = setInterval(async () => {
           if (stopped) return;
           try {
@@ -69,6 +71,19 @@ export const useVolumeMeter = (stream) => {
               if (report.type === 'media-source' && report.kind === 'audio') {
                 if (report.audioLevel !== undefined) {
                   setVolume(report.audioLevel);
+                  sampleCount++;
+                  if (report.audioLevel > maxLevel) maxLevel = report.audioLevel;
+                  // Log a summary every 5 seconds (50 samples at 100ms)
+                  if (sampleCount % 50 === 0) {
+                    logger().debug('volume-meter-sample', {
+                      maxLevel: Math.round(maxLevel * 1000) / 1000,
+                      samples: sampleCount,
+                      trackLabel: sender.track?.label,
+                      trackMuted: sender.track?.muted,
+                      trackEnabled: sender.track?.enabled,
+                    });
+                    maxLevel = 0; // reset per window
+                  }
                 }
               }
             });
