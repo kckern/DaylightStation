@@ -207,6 +207,18 @@ export function createDeviceRouter(config) {
       });
     }
 
+    // Extract display verification result
+    const displayVerified = powerResult.verified === true;
+    const displayVerifyFailed = powerResult.verifyFailed === true;
+
+    if (displayVerifyFailed) {
+      logger.warn?.('device.router.load.displayNotVerified', {
+        deviceId,
+        attempts: powerResult.attempts,
+        elapsedMs: Date.now() - startTime
+      });
+    }
+
     // Prepare for content (screen wake, foreground, etc.)
     logger.debug?.('device.router.load.prepare.start', { deviceId });
     const prepResult = await device.prepareForContent();
@@ -228,6 +240,8 @@ export function createDeviceRouter(config) {
     const response = {
       ok: loadResult.ok,
       deviceId,
+      displayVerified,
+      displayVerifyFailed,
       power: powerResult,
       prepare: prepResult,
       load: loadResult,
