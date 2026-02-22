@@ -5,6 +5,7 @@ import { useWebcamStream } from '../modules/Input/hooks/useWebcamStream';
 import { useWebRTCPeer } from '../modules/Input/hooks/useWebRTCPeer';
 import { useHomeline } from '../modules/Input/hooks/useHomeline';
 import useCallOwnership from '../modules/Input/hooks/useCallOwnership.js';
+import useMediaControls from '../modules/Input/hooks/useMediaControls.js';
 import getLogger from '../lib/logging/Logger.js';
 import './CallApp.scss';
 
@@ -18,7 +19,8 @@ export default function CallApp() {
   const { videoRef: localVideoRef, stream, error } = useWebcamStream(selectedVideoDevice, selectedAudioDevice);
   const peer = useWebRTCPeer(stream);
   const { connectionState } = peer;
-  const { peerConnected, status, connect, hangUp } = useHomeline('phone', null, peer);
+  const { peerConnected, status, connect, hangUp, sendMuteState, remoteMuteState } = useHomeline('phone', null, peer);
+  const { audioMuted, videoMuted, toggleAudio, toggleVideo, reset } = useMediaControls(stream);
   const [devices, setDevices] = useState(null); // null = loading, [] = none found
   const [waking, setWaking] = useState(false);
   const [connectingTooLong, setConnectingTooLong] = useState(false);
@@ -104,6 +106,7 @@ export default function CallApp() {
 
   // Clean up call: hangup signaling + power off TV + reset state
   const endCall = useCallback(() => {
+    reset();
     const devId = connectedDeviceRef.current;
     hangUp();
     setWaking(false);
@@ -119,7 +122,18 @@ export default function CallApp() {
       connectedDeviceRef.current = null;
       setActiveDeviceId(null);
     }
-  }, [hangUp, logger, isOwner]);
+  }, [reset, hangUp, logger, isOwner]);
+
+  // Mute toggle handlers — toggle local track + notify remote
+  const handleToggleAudio = useCallback(() => {
+    const newAudioMuted = toggleAudio();
+    if (newAudioMuted !== undefined) sendMuteState(newAudioMuted, videoMuted);
+  }, [toggleAudio, sendMuteState, videoMuted]);
+
+  const handleToggleVideo = useCallback(() => {
+    const newVideoMuted = toggleVideo();
+    if (newVideoMuted !== undefined) sendMuteState(audioMuted, newVideoMuted);
+  }, [toggleVideo, sendMuteState, audioMuted]);
 
   // Clean up on tab close or component unmount (SPA navigation)
   useEffect(() => {
@@ -286,10 +300,31 @@ export default function CallApp() {
         />
       </div>
 
-      {/* Hang up button */}
-      <button className="call-app__hangup" onClick={endCall}>
-        Hang Up
-      </button>
+      {/* Remote mute indicator */}
+      {remoteMuteState.audioMuted && (
+        <div className="call-app__remote-muted">Remote audio muted</div>
+      )}
+
+      {/* Call controls */}
+      <div className="call-app__controls">
+        <button
+          className={`call-app__mute-btn ${audioMuted ? 'call-app__mute-btn--active' : ''}`}
+          onClick={handleToggleAudio}
+          aria-label={audioMuted ? 'Unmute audio' : 'Mute audio'}
+        >
+          {audioMuted ? 'Mic Off' : 'Mic'}
+        </button>
+        <button className="call-app__hangup" onClick={endCall}>
+          Hang Up
+        </button>
+        <button
+          className={`call-app__mute-btn ${videoMuted ? 'call-app__mute-btn--active' : ''}`}
+          onClick={handleToggleVideo}
+          aria-label={videoMuted ? 'Enable video' : 'Disable video'}
+        >
+          {videoMuted ? 'Cam Off' : 'Cam'}
+        </button>
+      </div>
     </div>
   );
 }

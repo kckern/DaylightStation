@@ -97,4 +97,16 @@
     border-radius: 8px;
     transition: width 0.1s;
   }
+
+  &__remote-muted {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    background: rgba(0, 0, 0, 0.6);
+    color: #ccc;
+    padding: 0.25rem 0.75rem;
+    border-radius: 4px;
+    font-size: 1rem;
+    z-index: 10;
+  }
 }

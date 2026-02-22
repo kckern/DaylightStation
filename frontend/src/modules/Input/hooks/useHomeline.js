@@ -11,6 +11,7 @@ function logger() {
 export const useHomeline = (role, deviceId, peer) => {
   const [peerConnected, setPeerConnected] = useState(false);
   const [status, setStatus] = useState(role === 'tv' ? 'waiting' : 'idle');
+  const [remoteMuteState, setRemoteMuteState] = useState({ audioMuted: false, videoMuted: false });
   const peerId = useMemo(() => `${role}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, [role]);
   const heartbeatRef = useRef(null);
   const connectedDeviceRef = useRef(null);
@@ -21,6 +22,13 @@ export const useHomeline = (role, deviceId, peer) => {
   const send = useCallback((devId, type, payload = {}) => {
     wsService.send({ topic: topic(devId), type, from: peerId, ...payload });
   }, [topic, peerId]);
+
+  const sendMuteState = useCallback((audioMuted, videoMuted) => {
+    const devId = role === 'tv' ? deviceId : connectedDeviceRef.current;
+    if (!devId) return;
+    send(devId, 'mute-state', { audioMuted, videoMuted });
+    logger().debug('mute-state-sent', { audioMuted, videoMuted, target: devId });
+  }, [role, deviceId, send]);
 
   // TV: broadcast waiting heartbeat
   useEffect(() => {
@@ -84,7 +92,11 @@ export const useHomeline = (role, deviceId, peer) => {
             logger().info('peer-hangup');
             peer.reset();
             setPeerConnected(false);
+            setRemoteMuteState({ audioMuted: false, videoMuted: false });
             setStatus('waiting');
+          } else if (message.type === 'mute-state') {
+            setRemoteMuteState({ audioMuted: !!message.audioMuted, videoMuted: !!message.videoMuted });
+            logger().debug('remote-mute-state', { audioMuted: message.audioMuted, videoMuted: message.videoMuted });
           }
         } catch (err) {
           logger().warn('signaling-error', { error: err.message });
@@ -139,8 +151,12 @@ export const useHomeline = (role, deviceId, peer) => {
             logger().info('remote-hangup', { target: targetDeviceId });
             peer.reset();
             setPeerConnected(false);
+            setRemoteMuteState({ audioMuted: false, videoMuted: false });
             setStatus('idle');
             connectedDeviceRef.current = null;
+          } else if (message.type === 'mute-state') {
+            setRemoteMuteState({ audioMuted: !!message.audioMuted, videoMuted: !!message.videoMuted });
+            logger().debug('remote-mute-state', { audioMuted: message.audioMuted, videoMuted: message.videoMuted });
           }
         } catch (err) {
           logger().warn('signaling-error', { error: err.message });
@@ -178,6 +194,7 @@ export const useHomeline = (role, deviceId, peer) => {
     if (devId) send(devId, 'hangup');
     peer.reset();
     setPeerConnected(false);
+    setRemoteMuteState({ audioMuted: false, videoMuted: false });
     setStatus(role === 'tv' ? 'waiting' : 'idle');
     connectedDeviceRef.current = null;
     if (answerUnsubRef.current) {
@@ -197,5 +214,5 @@ export const useHomeline = (role, deviceId, peer) => {
     };
   }, [role, deviceId, topic, peerId]);
 
-  return { peerConnected, status, connect, hangUp };
+  return { peerConnected, status, connect, hangUp, sendMuteState, remoteMuteState };
 };
