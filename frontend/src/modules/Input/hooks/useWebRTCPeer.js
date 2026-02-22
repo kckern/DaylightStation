@@ -46,7 +46,14 @@ export const useWebRTCPeer = (localStream) => {
       // its camera started, so the SDP has no a=msid attribute).
       remote.addTrack(event.track);
       setRemoteStream(new MediaStream(remote.getTracks()));
-      logger().debug('remote-track-added', { kind: event.track.kind, streamCount: event.streams.length });
+      logger().info('remote-track-added', {
+        kind: event.track.kind,
+        enabled: event.track.enabled,
+        muted: event.track.muted,
+        readyState: event.track.readyState,
+        totalTracks: remote.getTracks().length,
+        streamCount: event.streams.length
+      });
     };
 
     pc.onicecandidate = (event) => {

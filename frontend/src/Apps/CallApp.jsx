@@ -33,7 +33,6 @@ export default function CallApp() {
   const { isOwner } = useCallOwnership(activeDeviceId);
 
   const remoteVideoRef = useRef(null);
-  const remoteAudioRef = useRef(null);
 
   // Fetch available devices from API on mount
   useEffect(() => {
@@ -89,31 +88,43 @@ export default function CallApp() {
     }
   }, [connectingTooLong, logger]);
 
-  // Attach remote stream — split audio/video across separate elements.
-  // Android Chrome routes <video> audio to earpiece, <audio> to speaker.
+  // Attach remote stream to a single <video> element (NOT muted).
+  // Standard WebRTC pattern: full stream with audio+video on one element.
+  // Previous approach of splitting audio to <audio> was fragile and broke
+  // across multiple Android Chrome versions.
   useEffect(() => {
     if (!peer.remoteStream) return;
     const tracks = peer.remoteStream.getTracks();
-    logger.info('remote-stream-attached', { tracks: tracks.map(t => ({ kind: t.kind, enabled: t.enabled })) });
-    const videoTracks = peer.remoteStream.getVideoTracks();
-    const audioTracks = peer.remoteStream.getAudioTracks();
-    if (remoteVideoRef.current) {
-      remoteVideoRef.current.srcObject = videoTracks.length
-        ? new MediaStream(videoTracks)
-        : null;
+    const details = tracks.map(t => ({
+      kind: t.kind, enabled: t.enabled, muted: t.muted,
+      readyState: t.readyState, id: t.id.slice(0, 8)
+    }));
+    logger.info('remote-stream-attached', { trackCount: tracks.length, tracks: details });
+
+    if (!remoteVideoRef.current) {
+      logger.warn('remote-video-ref-missing');
+      return;
     }
-    if (remoteAudioRef.current) {
-      const audioStream = audioTracks.length ? new MediaStream(audioTracks) : null;
-      remoteAudioRef.current.srcObject = audioStream;
-      if (audioStream) {
-        remoteAudioRef.current.play().then(() => {
-          logger.info('remote-audio-playing', { audioTracks: audioTracks.length });
-        }).catch(err => {
-          logger.warn('remote-audio-play-failed', { error: err.message });
+
+    const el = remoteVideoRef.current;
+    el.srcObject = peer.remoteStream;
+    logger.info('remote-srcobject-set', {
+      elMuted: el.muted, elVolume: el.volume, elPaused: el.paused
+    });
+
+    // Explicitly play — catches autoplay policy blocks.
+    const playPromise = el.play();
+    if (playPromise) {
+      playPromise.then(() => {
+        logger.info('remote-video-playing', {
+          muted: el.muted, volume: el.volume, paused: el.paused,
+          audioTracks: peer.remoteStream.getAudioTracks().length,
+          videoTracks: peer.remoteStream.getVideoTracks().length
         });
-      }
+      }).catch(err => {
+        logger.error('remote-video-play-failed', { error: err.message, name: err.name });
+      });
     }
-    logger.info('remote-stream-split', { videoTracks: videoTracks.length, audioTracks: audioTracks.length });
   }, [logger, peer.remoteStream]);
 
   // Sync local stream to the self-preview video element.
@@ -261,15 +272,10 @@ export default function CallApp() {
         <video
           ref={remoteVideoRef}
           autoPlay
-          muted
           playsInline
           className="call-app__video call-app__video--wide"
         />
       </div>
-
-      {/* Hidden audio element — MUST be outside __remote div (display:none kills playback on Android) */}
-      <audio ref={remoteAudioRef} autoPlay playsInline
-        style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', opacity: 0 }} />
 
       {/* Controls — always mounted, hidden until connected via CSS */}
       <div className="call-app__controls">
