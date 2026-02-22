@@ -5,7 +5,7 @@ FROM node:${NODE_VERSION}-alpine
 WORKDIR /usr/src/app
 
 # Layer 1: System dependencies - stable, rarely changes
-RUN apk add --no-cache openssh-client git curl ffmpeg tzdata yq
+RUN apk add --no-cache openssh-client git curl ffmpeg tzdata yq android-tools
 
 # Set System Timezone
 ARG TZ=America/Los_Angeles

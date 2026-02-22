@@ -12,6 +12,8 @@ import { HomeAssistantDeviceAdapter } from '#adapters/devices/HomeAssistantDevic
 import { FullyKioskContentAdapter } from '#adapters/devices/FullyKioskContentAdapter.mjs';
 import { WebSocketContentAdapter } from '#adapters/devices/WebSocketContentAdapter.mjs';
 import { SshOsAdapter } from '#adapters/devices/SshOsAdapter.mjs';
+import { AdbAdapter } from '#adapters/devices/AdbAdapter.mjs';
+import { ResilientContentAdapter } from '#adapters/devices/ResilientContentAdapter.mjs';
 
 export class DeviceFactory {
   #haGateway;
@@ -155,7 +157,7 @@ export class DeviceFactory {
         }
       }
 
-      return new FullyKioskContentAdapter(
+      const fkbAdapter = new FullyKioskContentAdapter(
         {
           host: config.host,
           port: config.port,
@@ -164,6 +166,31 @@ export class DeviceFactory {
         },
         { httpClient: this.#httpClient, logger: this.#logger }
       );
+
+      // Wrap with ADB recovery if fallback is configured
+      if (config.fallback?.provider === 'adb') {
+        const adbAdapter = new AdbAdapter(
+          { host: config.fallback.host, port: config.fallback.port },
+          { logger: this.#logger }
+        );
+
+        this.#logger.info?.('deviceFactory.resilientContentControl', {
+          primary: 'fully-kiosk',
+          fallback: 'adb',
+          adbSerial: `${config.fallback.host}:${config.fallback.port}`
+        });
+
+        return new ResilientContentAdapter(
+          {
+            primary: fkbAdapter,
+            recovery: adbAdapter,
+            launchActivity: config.fallback.launch_activity
+          },
+          { logger: this.#logger }
+        );
+      }
+
+      return fkbAdapter;
     }
 
     if (provider === 'websocket') {
