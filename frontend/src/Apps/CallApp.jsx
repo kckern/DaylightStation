@@ -103,11 +103,17 @@ export default function CallApp() {
         : null;
     }
     if (remoteAudioRef.current) {
-      remoteAudioRef.current.srcObject = audioTracks.length
-        ? new MediaStream(audioTracks)
-        : null;
+      const audioStream = audioTracks.length ? new MediaStream(audioTracks) : null;
+      remoteAudioRef.current.srcObject = audioStream;
+      if (audioStream) {
+        remoteAudioRef.current.play().then(() => {
+          logger.info('remote-audio-playing', { audioTracks: audioTracks.length });
+        }).catch(err => {
+          logger.warn('remote-audio-play-failed', { error: err.message });
+        });
+      }
     }
-    logger.debug('remote-stream-split', { videoTracks: videoTracks.length, audioTracks: audioTracks.length });
+    logger.info('remote-stream-split', { videoTracks: videoTracks.length, audioTracks: audioTracks.length });
   }, [logger, peer.remoteStream]);
 
   // Sync local stream to the self-preview video element.
@@ -262,7 +268,8 @@ export default function CallApp() {
       </div>
 
       {/* Hidden audio element — MUST be outside __remote div (display:none kills playback on Android) */}
-      <audio ref={remoteAudioRef} autoPlay playsInline style={{ display: 'none' }} />
+      <audio ref={remoteAudioRef} autoPlay playsInline
+        style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', opacity: 0 }} />
 
       {/* Controls — always mounted, hidden until connected via CSS */}
       <div className="call-app__controls">
