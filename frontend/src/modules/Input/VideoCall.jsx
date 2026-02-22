@@ -55,6 +55,15 @@ export default function VideoCall({ deviceId, clear }) {
     }
   }, [logger, peer.remoteStream]);
 
+  // Re-sync local camera stream to video element.
+  // useWebcamStream sets srcObject on stream acquisition, but if the
+  // element wasn't ready or layout changed, this ensures it stays in sync.
+  useEffect(() => {
+    if (videoRef.current && stream) {
+      videoRef.current.srcObject = new MediaStream(stream.getVideoTracks());
+    }
+  }, [stream, videoRef]);
+
   // Escape to exit
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -69,47 +78,31 @@ export default function VideoCall({ deviceId, clear }) {
   const volumePercentage = Math.min(volume * 100, 100);
 
   return (
-    <div className="videocall-tv">
-      {peerConnected ? (
-        <div className="videocall-tv__split">
-          {/* Remote: phone portrait video */}
-          <div className="videocall-tv__panel videocall-tv__panel--remote">
-            <video
-              ref={remoteVideoRef}
-              autoPlay
-              playsInline
-              className="videocall-tv__video videocall-tv__video--portrait"
-            />
-          </div>
+    <div className={`videocall-tv ${peerConnected ? 'videocall-tv--connected' : ''}`}>
+      {/* Remote: phone portrait video — always mounted, hidden until connected via CSS */}
+      <div className="videocall-tv__remote-panel">
+        <video
+          ref={remoteVideoRef}
+          autoPlay
+          playsInline
+          className="videocall-tv__video videocall-tv__video--portrait"
+        />
+      </div>
 
-          {/* Local: TV landscape camera */}
-          <div className="videocall-tv__panel videocall-tv__panel--local">
-            <video
-              ref={videoRef}
-              autoPlay
-              muted
-              playsInline
-              className="videocall-tv__video videocall-tv__video--landscape"
-              style={{ transform: 'scaleX(-1)' }}
-            />
-          </div>
-        </div>
-      ) : (
-        /* Solo: fullscreen local preview */
-        <div className="videocall-tv__solo">
-          <video
-            ref={videoRef}
-            autoPlay
-            muted
-            playsInline
-            className="videocall-tv__video videocall-tv__video--fullscreen"
-            style={{ transform: 'scaleX(-1)' }}
-          />
-        </div>
-      )}
+      {/* Local: TV landscape camera — always mounted */}
+      <div className="videocall-tv__local-panel">
+        <video
+          ref={videoRef}
+          autoPlay
+          muted
+          playsInline
+          className="videocall-tv__video"
+          style={{ transform: 'scaleX(-1)' }}
+        />
+      </div>
 
       {/* Remote mute indicator */}
-      {remoteMuteState.audioMuted && (
+      {peerConnected && remoteMuteState.audioMuted && (
         <div className="videocall-tv__remote-muted">Phone audio muted</div>
       )}
 
