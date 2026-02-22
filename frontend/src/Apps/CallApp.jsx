@@ -19,6 +19,8 @@ export default function CallApp() {
   const { peerConnected, status, connect, hangUp } = useHomeline('phone', null, peer);
   const [devices, setDevices] = useState(null); // null = loading, [] = none found
   const [waking, setWaking] = useState(false);
+  const [connectingTooLong, setConnectingTooLong] = useState(false);
+  const [pendingRetry, setPendingRetry] = useState(null);
   const connectedDeviceRef = useRef(null);
 
   const remoteVideoRef = useRef(null);
@@ -43,6 +45,35 @@ export default function CallApp() {
   useEffect(() => {
     logger.debug('status-change', { status, peerConnected });
   }, [logger, status, peerConnected]);
+
+  // User-facing connection timeout (15s)
+  useEffect(() => {
+    if (status !== 'connecting') {
+      setConnectingTooLong(false);
+      return;
+    }
+    const timer = setTimeout(() => setConnectingTooLong(true), 15000);
+    return () => clearTimeout(timer);
+  }, [status]);
+
+  // Execute pending retry once status returns to idle
+  useEffect(() => {
+    if (pendingRetry && status === 'idle') {
+      const devId = pendingRetry;
+      setPendingRetry(null);
+      dropIn(devId);
+    }
+  }, [pendingRetry, status, dropIn]);
+
+  // Log when timeout becomes visible to user
+  useEffect(() => {
+    if (connectingTooLong) {
+      logger.warn('connect-timeout-user-visible', {
+        deviceId: connectedDeviceRef.current,
+        elapsed: '15s'
+      });
+    }
+  }, [connectingTooLong, logger]);
 
   // Attach remote stream
   useEffect(() => {
@@ -170,6 +201,23 @@ export default function CallApp() {
           <p className="call-app__message">
             {waking ? 'Waking up TV...' : 'Waiting for TV...'}
           </p>
+          {connectingTooLong && (
+            <div className="call-app__timeout-msg">
+              TV is not responding. You can retry or cancel.
+            </div>
+          )}
+          {connectingTooLong && (
+            <button
+              className="call-app__retry-btn"
+              onClick={() => {
+                const devId = connectedDeviceRef.current;
+                if (devId) setPendingRetry(devId);
+                endCall();
+              }}
+            >
+              Retry
+            </button>
+          )}
           <button className="call-app__cancel" onClick={endCall}>
             Cancel
           </button>
