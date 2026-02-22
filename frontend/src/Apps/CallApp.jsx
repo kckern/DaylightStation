@@ -288,6 +288,19 @@ export default function CallApp() {
           >
             {cooldown ? 'Wait...' : 'Try Again'}
           </button>
+          <button
+            className="call-app__device-btn"
+            onClick={() => {
+              setWakeError(null);
+              const devId = connectedDeviceRef.current;
+              if (devId) {
+                setWaking(false);
+                connect(devId);
+              }
+            }}
+          >
+            Connect anyway
+          </button>
           <button className="call-app__cancel" onClick={() => {
             setWakeError(null);
             connectedDeviceRef.current = null;
