@@ -109,6 +109,27 @@
     }
   }
 
+  &__cancel {
+    background: transparent;
+    color: #aaa;
+    border: 1px solid #444;
+    border-radius: 24px;
+    padding: 0.6rem 2rem;
+    font-size: 1rem;
+    cursor: pointer;
+    margin-top: 2rem;
+
+    &:active {
+      background: #222;
+      color: #fff;
+    }
+  }
+
+  &__device-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
   &__overlay {
     position: fixed;
     top: 0;
