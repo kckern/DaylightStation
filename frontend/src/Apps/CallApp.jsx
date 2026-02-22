@@ -229,7 +229,7 @@ export default function CallApp() {
   return (
     <div className={`call-app ${isConnected ? 'call-app--connected' : isConnecting ? 'call-app--connecting' : 'call-app--preview'}`}>
       {/* Local camera — always mounted */}
-      <div className={`call-app__local ${isConnected ? 'call-app__local--pip' : isConnecting ? 'call-app__local--inset' : 'call-app__local--full'}`}>
+      <div className={`call-app__local ${isConnected ? 'call-app__local--pip' : 'call-app__local--inset'}`}>
         <video
           ref={localVideoRef}
           autoPlay
@@ -301,9 +301,9 @@ export default function CallApp() {
         <div className="call-app__remote-muted">Remote audio muted</div>
       )}
 
-      {/* Lobby overlay — device selection */}
+      {/* Lobby content — device selection */}
       {isIdle && (
-        <div className="call-app__overlay-bottom">
+        <div className="call-app__lobby-content">
           <h1 className="call-app__title">Home Line</h1>
 
           {devices === null && (
