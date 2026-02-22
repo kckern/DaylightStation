@@ -26,6 +26,8 @@ export default function CallApp() {
   const [connectingTooLong, setConnectingTooLong] = useState(false);
   const [pendingRetry, setPendingRetry] = useState(null);
   const [iceError, setIceError] = useState(null);
+  const [wakeError, setWakeError] = useState(null);
+  const [cooldown, setCooldown] = useState(false);
   const [activeDeviceId, setActiveDeviceId] = useState(null);
   const connectedDeviceRef = useRef(null);
   const { isOwner } = useCallOwnership(activeDeviceId);
@@ -158,29 +160,38 @@ export default function CallApp() {
 
   // Wake device (power on + load videocall URL) then connect signaling
   const dropIn = useCallback(async (targetDeviceId) => {
-    if (waking || status !== 'idle') return;
+    if (waking || status !== 'idle' || cooldown) return;
     if (!stream) {
       logger.warn('drop-in-blocked-no-stream', { targetDeviceId, error: error?.message });
       return;
     }
     logger.info('drop-in-start', { targetDeviceId });
     setWaking(true);
+    setWakeError(null);
     connectedDeviceRef.current = targetDeviceId;
     setActiveDeviceId(targetDeviceId);
     try {
-      await DaylightAPI(`/api/v1/device/${targetDeviceId}/load?open=videocall/${targetDeviceId}`);
-      logger.info('wake-success', { targetDeviceId });
+      const result = await DaylightAPI(`/api/v1/device/${targetDeviceId}/load?open=videocall/${targetDeviceId}`);
+      logger.info('wake-success', { targetDeviceId, displayVerified: result.displayVerified });
+
+      if (result.displayVerifyFailed) {
+        logger.warn('wake-display-not-verified', { targetDeviceId, attempts: result.power?.attempts });
+        setWaking(false);
+        setWakeError('TV display did not respond. The screen may be off.');
+        return;
+      }
     } catch (err) {
       logger.warn('wake-failed', { targetDeviceId, error: err.message });
       setWaking(false);
-      connectedDeviceRef.current = null;
-      setActiveDeviceId(null);
+      setWakeError('Could not reach server — try again');
+      setCooldown(true);
+      setTimeout(() => setCooldown(false), 3000);
       return;
     }
     setWaking(false);
     // connect() subscribes and waits for the TV's heartbeat before sending the offer
     connect(targetDeviceId);
-  }, [logger, connect, waking, status, stream, error]);
+  }, [logger, connect, waking, status, stream, error, cooldown]);
 
   // Execute pending retry once status returns to idle
   useEffect(() => {
@@ -198,9 +209,9 @@ export default function CallApp() {
     }
   }, [devices, status, dropIn, stream]);
 
-  const isIdle = status === 'idle' || status === 'occupied';
+  const isIdle = (status === 'idle' || status === 'occupied') && !wakeError;
   const isConnecting = status === 'connecting' || waking;
-  const isConnected = !isIdle && !isConnecting;
+  const isConnected = !isIdle && !isConnecting && !wakeError;
 
   return (
     <div className={`call-app ${isConnected ? 'call-app--connected' : 'call-app--preview'}`}>
@@ -257,6 +268,33 @@ export default function CallApp() {
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Wake error overlay */}
+      {wakeError && !isConnecting && !isConnected && (
+        <div className="call-app__overlay-bottom">
+          <p className="call-app__status-text call-app__status-text--error">
+            {wakeError}
+          </p>
+          <button
+            className="call-app__retry-btn"
+            disabled={cooldown}
+            onClick={() => {
+              setWakeError(null);
+              const devId = connectedDeviceRef.current;
+              if (devId) dropIn(devId);
+            }}
+          >
+            {cooldown ? 'Wait...' : 'Try Again'}
+          </button>
+          <button className="call-app__cancel" onClick={() => {
+            setWakeError(null);
+            connectedDeviceRef.current = null;
+            setActiveDeviceId(null);
+          }}>
+            Cancel
+          </button>
         </div>
       )}
 
