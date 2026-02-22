@@ -4,6 +4,7 @@ import { useMediaDevices } from '../modules/Input/hooks/useMediaDevices';
 import { useWebcamStream } from '../modules/Input/hooks/useWebcamStream';
 import { useWebRTCPeer } from '../modules/Input/hooks/useWebRTCPeer';
 import { useHomeline } from '../modules/Input/hooks/useHomeline';
+import useCallOwnership from '../modules/Input/hooks/useCallOwnership.js';
 import getLogger from '../lib/logging/Logger.js';
 import './CallApp.scss';
 
@@ -23,7 +24,9 @@ export default function CallApp() {
   const [connectingTooLong, setConnectingTooLong] = useState(false);
   const [pendingRetry, setPendingRetry] = useState(null);
   const [iceError, setIceError] = useState(null);
+  const [activeDeviceId, setActiveDeviceId] = useState(null);
   const connectedDeviceRef = useRef(null);
+  const { isOwner } = useCallOwnership(activeDeviceId);
 
   const remoteVideoRef = useRef(null);
 
@@ -105,13 +108,18 @@ export default function CallApp() {
     hangUp();
     setWaking(false);
     if (devId) {
-      logger.info('tv-power-off', { targetDeviceId: devId });
-      DaylightAPI(`/api/v1/device/${devId}/off?force=true`).catch(err => {
-        logger.warn('tv-power-off-failed', { targetDeviceId: devId, error: err.message });
-      });
+      if (isOwner()) {
+        logger.info('tv-power-off', { targetDeviceId: devId });
+        DaylightAPI(`/api/v1/device/${devId}/off?force=true`).catch(err => {
+          logger.warn('tv-power-off-failed', { targetDeviceId: devId, error: err.message });
+        });
+      } else {
+        logger.info('tv-power-off-skipped-not-owner', { targetDeviceId: devId });
+      }
       connectedDeviceRef.current = null;
+      setActiveDeviceId(null);
     }
-  }, [hangUp, logger]);
+  }, [hangUp, logger, isOwner]);
 
   // Clean up on tab close or component unmount (SPA navigation)
   useEffect(() => {
@@ -121,11 +129,11 @@ export default function CallApp() {
       window.removeEventListener('beforeunload', handleBeforeUnload);
       // SPA navigation: power off TV if we were in a call or connecting
       const devId = connectedDeviceRef.current;
-      if (devId) {
+      if (devId && isOwner()) {
         DaylightAPI(`/api/v1/device/${devId}/off?force=true`).catch(() => {});
       }
     };
-  }, [endCall]);
+  }, [endCall, isOwner]);
 
   // Wake device (power on + load videocall URL) then connect signaling
   const dropIn = useCallback(async (targetDeviceId) => {
@@ -137,6 +145,7 @@ export default function CallApp() {
     logger.info('drop-in-start', { targetDeviceId });
     setWaking(true);
     connectedDeviceRef.current = targetDeviceId;
+    setActiveDeviceId(targetDeviceId);
     try {
       await DaylightAPI(`/api/v1/device/${targetDeviceId}/load?open=videocall/${targetDeviceId}`);
       logger.info('wake-success', { targetDeviceId });
@@ -144,6 +153,7 @@ export default function CallApp() {
       logger.warn('wake-failed', { targetDeviceId, error: err.message });
       setWaking(false);
       connectedDeviceRef.current = null;
+      setActiveDeviceId(null);
       return;
     }
     setWaking(false);
