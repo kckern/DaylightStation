@@ -21,6 +21,7 @@ export default function VideoCall({ deviceId, clear }) {
   const { peerConnected, status, remoteMuteState } = useHomeline('tv', deviceId, peer);
   const [iceError, setIceError] = useState(null);
   const [statusVisible, setStatusVisible] = useState(true);
+  const [callDuration, setCallDuration] = useState(0);
 
   const remoteVideoRef = useRef(null);
 
@@ -56,6 +57,16 @@ export default function VideoCall({ deviceId, clear }) {
     setStatusVisible(true);
   }, [peerConnected]);
 
+  // Call duration timer
+  useEffect(() => {
+    if (!peerConnected) {
+      setCallDuration(0);
+      return;
+    }
+    const interval = setInterval(() => setCallDuration(d => d + 1), 1000);
+    return () => clearInterval(interval);
+  }, [peerConnected]);
+
   // Attach remote stream to video element
   useEffect(() => {
     if (remoteVideoRef.current && peer.remoteStream) {
@@ -87,8 +98,26 @@ export default function VideoCall({ deviceId, clear }) {
 
   const volumePercentage = Math.min(volume * 100, 100);
 
+  const formatDuration = (s) => {
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    return `${m}:${sec.toString().padStart(2, '0')}`;
+  };
+
   return (
     <div className={`videocall-tv ${peerConnected ? 'videocall-tv--connected' : ''}`}>
+      {/* Local: TV landscape camera — always mounted */}
+      <div className="videocall-tv__local-panel">
+        <video
+          ref={videoRef}
+          autoPlay
+          muted
+          playsInline
+          className="videocall-tv__video"
+          style={{ transform: 'scaleX(-1)' }}
+        />
+      </div>
+
       {/* Remote: phone portrait video — always mounted, hidden until connected via CSS */}
       <div className="videocall-tv__remote-panel">
         <video
@@ -102,35 +131,26 @@ export default function VideoCall({ deviceId, clear }) {
         )}
       </div>
 
-      {/* Local: TV landscape camera — always mounted */}
-      <div className="videocall-tv__local-panel">
-        <video
-          ref={videoRef}
-          autoPlay
-          muted
-          playsInline
-          className="videocall-tv__video"
-          style={{ transform: 'scaleX(-1)' }}
-        />
-      </div>
-
-      {/* Remote mute indicator */}
-      {peerConnected && remoteMuteState.audioMuted && (
-        <div className="videocall-tv__remote-muted">Phone audio muted</div>
-      )}
-
-      {/* Status indicator — auto-hides when connected */}
-      <div className="videocall-tv__status" style={!statusVisible ? { opacity: 0 } : undefined}>
-        {iceError || (
-          <>
+      {/* Call info bar — replaces old status overlay in connected mode */}
+      <div className="videocall-tv__info-bar">
+        {iceError ? (
+          <span className="videocall-tv__info-error">{iceError}</span>
+        ) : (
+          <span className="videocall-tv__info-status">
             {status === 'waiting' && 'Home Line \u2014 Waiting'}
             {status === 'connecting' && 'Connecting...'}
             {status === 'connected' && 'Connected'}
-          </>
+          </span>
+        )}
+        {peerConnected && (
+          <span className="videocall-tv__info-duration">{formatDuration(callDuration)}</span>
+        )}
+        {peerConnected && remoteMuteState.audioMuted && (
+          <span className="videocall-tv__info-muted">Phone audio muted</span>
         )}
       </div>
 
-      {/* Volume meter */}
+      {/* Volume meter — solo mode only, hidden in connected mode */}
       <div className="videocall-tv__meter">
         <div className="videocall-tv__meter-fill" style={{ width: `${volumePercentage}%` }} />
       </div>
