@@ -123,8 +123,15 @@
   }
 
   &--connected &__meter {
-    opacity: 0;
-    pointer-events: none;
+    // Keep visible during calls for audio diagnostics.
+    // Repositioned to bottom-right in connected mode.
+    position: fixed;
+    bottom: 0.5rem;
+    right: 0.5rem;
+    left: auto;
+    transform: none;
+    width: 200px;
+    opacity: 0.8;
   }
 
   &__meter-fill {

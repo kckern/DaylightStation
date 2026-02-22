@@ -90,8 +90,14 @@ export default function CallApp() {
 
   // Attach remote stream to a single <video> element (NOT muted).
   // Standard WebRTC pattern: full stream with audio+video on one element.
-  // Previous approach of splitting audio to <audio> was fragile and broke
-  // across multiple Android Chrome versions.
+  //
+  // ALSO route audio through Web Audio API as a parallel speaker output.
+  // Android Chrome may route <video> WebRTC audio to the earpiece (phone
+  // call mode). AudioContext always outputs to the main speaker, so we
+  // pipe the audio through both paths to guarantee audibility.
+  const audioCtxRef = useRef(null);
+  const audioSourceRef = useRef(null);
+
   useEffect(() => {
     if (!peer.remoteStream) return;
     const tracks = peer.remoteStream.getTracks();
@@ -106,6 +112,7 @@ export default function CallApp() {
       return;
     }
 
+    // 1. Set the full stream on the <video> element (has video + audio).
     const el = remoteVideoRef.current;
     el.srcObject = peer.remoteStream;
     logger.info('remote-srcobject-set', {
@@ -125,6 +132,45 @@ export default function CallApp() {
         logger.error('remote-video-play-failed', { error: err.message, name: err.name });
       });
     }
+
+    // 2. Web Audio API speaker route — guarantees main speaker on Android.
+    //    AudioContext bypasses the telephony audio path that Chrome uses
+    //    for <video> elements playing WebRTC streams.
+    const audioTracks = peer.remoteStream.getAudioTracks();
+    if (audioTracks.length > 0) {
+      try {
+        // Clean up previous AudioContext if stream changed.
+        if (audioSourceRef.current) {
+          audioSourceRef.current.disconnect();
+          audioSourceRef.current = null;
+        }
+        if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
+          audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        const ctx = audioCtxRef.current;
+        // Resume AudioContext (required after user gesture on mobile).
+        if (ctx.state === 'suspended') {
+          ctx.resume().catch(() => {});
+        }
+        const source = ctx.createMediaStreamSource(new MediaStream(audioTracks));
+        source.connect(ctx.destination);
+        audioSourceRef.current = source;
+        logger.info('web-audio-speaker-route', {
+          state: ctx.state, sampleRate: ctx.sampleRate,
+          audioTrackCount: audioTracks.length
+        });
+      } catch (err) {
+        logger.warn('web-audio-speaker-failed', { error: err.message });
+      }
+    }
+
+    return () => {
+      // Cleanup: disconnect source when stream changes or component unmounts.
+      if (audioSourceRef.current) {
+        try { audioSourceRef.current.disconnect(); } catch (_) {}
+        audioSourceRef.current = null;
+      }
+    };
   }, [logger, peer.remoteStream]);
 
   // Sync local stream to the self-preview video element.
