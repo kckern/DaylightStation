@@ -72,6 +72,22 @@ export const useWebRTCPeer = (localStream) => {
   const handleOffer = useCallback(async (offer) => {
     const pc = createPC();
     await pc.setRemoteDescription(new RTCSessionDescription(offer));
+
+    // If local tracks aren't ready yet (e.g. TV webcam still starting),
+    // upgrade recvonly transceivers to sendrecv so the SDP answer
+    // advertises bidirectional media. replaceTrack() will swap in real
+    // tracks once the stream arrives — no renegotiation needed.
+    const upgraded = [];
+    pc.getTransceivers().forEach(t => {
+      if (!t.sender.track && t.direction === 'recvonly') {
+        t.direction = 'sendrecv';
+        upgraded.push(t.receiver.track?.kind ?? 'unknown');
+      }
+    });
+    if (upgraded.length > 0) {
+      logger().info('transceivers-upgraded-sendrecv', { kinds: upgraded });
+    }
+
     // Flush any ICE candidates that arrived before remote description was set
     const queued = pendingCandidatesRef.current.splice(0);
     if (queued.length > 0) {
@@ -135,6 +151,32 @@ export const useWebRTCPeer = (localStream) => {
     setRemoteStream(null);
     setConnectionState('new');
   }, []);
+
+  // Late-bind: when localStream arrives after PC was created without tracks,
+  // swap null sender tracks for real ones via replaceTrack (no renegotiation).
+  useEffect(() => {
+    const pc = pcRef.current;
+    if (!pc || !localStream || pc.connectionState === 'closed') return;
+
+    const transceivers = pc.getTransceivers();
+    const empty = transceivers.filter(t => !t.sender.track);
+    if (empty.length === 0) return;
+
+    const tracks = localStream.getTracks();
+    logger().info('late-bind-tracks', {
+      trackCount: tracks.length,
+      emptySlots: empty.length,
+    });
+
+    for (const track of tracks) {
+      const match = empty.find(t => t.receiver.track?.kind === track.kind);
+      if (match) {
+        match.sender.replaceTrack(track)
+          .then(() => logger().info('track-replaced', { kind: track.kind }))
+          .catch(err => logger().warn('track-replace-failed', { kind: track.kind, error: err.message }));
+      }
+    }
+  }, [localStream]);
 
   useEffect(() => {
     return () => {

@@ -21,18 +21,19 @@
     flex-direction: column;
   }
 
-  // Connected mode: remote fills screen, local PIP floats, controls at bottom
+  // Connected mode: remote top, self middle, controls bottom
   &--connected {
-    position: relative;
     display: flex;
     flex-direction: column;
-    align-items: center;
-    justify-content: center;
+    gap: 1ex;
+    padding: 1ex;
+    padding-bottom: 0; // controls handle bottom padding
   }
 
   // Local camera — two modes
   &__local {
     overflow: hidden;
+    position: relative; // for camera-error/loading overlays
 
     &--full {
       flex: 1;
@@ -44,15 +45,12 @@
     }
 
     &--pip {
-      position: absolute;
-      top: calc(0.75rem + env(safe-area-inset-top, 0px));
-      right: 0.75rem;
-      width: 100px;
-      height: 140px;
-      border-radius: 12px;
-      z-index: 20;
-      border: 2px solid rgba(255, 255, 255, 0.3);
-      overflow: hidden;
+      // Connected mode: flex child in the middle row (NOT absolute)
+      order: 2;
+      flex: 1;
+      min-height: 0;
+      width: 100%;
+      border-radius: 1ex;
     }
   }
 
@@ -61,19 +59,15 @@
 
     &--wide {
       width: 100%;
-      max-height: 70dvh;
-      max-height: 70vh;
-      @supports (height: 1dvh) {
-        max-height: 70dvh;
-      }
       object-fit: contain;
-      border-radius: 0;
+      border-radius: 1ex;
     }
 
     &--tall {
       width: 100%;
       height: 100%;
       object-fit: cover;
+      border-radius: 1ex;
     }
   }
 
@@ -144,12 +138,14 @@
   }
 
   &--connected &__remote {
+    order: 1;
     display: flex;
-    flex: 1;
-    min-height: 0;
+    flex: 0 0 auto;
     width: 100%;
     align-items: center;
     justify-content: center;
+    border-radius: 1ex;
+    overflow: hidden;
   }
 
   // Call controls (always mounted, shown in connected state)
@@ -158,16 +154,18 @@
   }
 
   &--connected &__controls {
+    order: 3;
     display: flex;
     flex: 0 0 auto;
     width: 100%;
-    gap: 1rem;
+    gap: 1ex;
     align-items: center;
     justify-content: center;
-    padding: 0.75rem 0 calc(0.75rem + env(safe-area-inset-bottom, 0px));
+    padding: 1ex 0 calc(1ex + env(safe-area-inset-bottom, 0px));
     background: rgba(0, 0, 0, 0.4);
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
+    border-radius: 1ex 1ex 0 0;
   }
 
   &__mute-btn {
@@ -316,24 +314,8 @@
     transition: opacity 0.2s ease;
   }
 
-  // Landscape: PIP moves to top-left, remote video uses more height
+  // Landscape: same vertical stack but controls more compact
   @media (orientation: landscape) {
-    &--connected &__local--pip {
-      top: 0.5rem;
-      right: auto;
-      left: 0.5rem;
-      width: 120px;
-      height: 90px;
-    }
-
-    &--connected &__video--wide {
-      max-height: 80dvh;
-      max-height: 80vh;
-      @supports (height: 1dvh) {
-        max-height: 80dvh;
-      }
-    }
-
     &__controls {
       padding-bottom: 0.5rem;
     }
