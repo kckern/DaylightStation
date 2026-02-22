@@ -91,6 +91,9 @@ import { createDevProxy, errorHandlerMiddleware } from './0_system/http/middlewa
 import { createEventBusRouter } from './4_api/v1/routers/admin/eventbus.mjs';
 import { createAdminRouter } from './4_api/v1/routers/admin/index.mjs';
 
+// Homeline call state tracking
+import { handleSignalingMessage } from '#apps/homeline/CallStateService.mjs';
+
 // Fitness application services (shared between fitness router and agents router)
 import { FitnessPlayableService } from '#apps/fitness/FitnessPlayableService.mjs';
 import { FitnessConfigService } from '#apps/fitness/FitnessConfigService.mjs';
@@ -346,6 +349,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
     // Homeline video call signaling - relay to all subscribers of this device's topic
     if (message.topic?.startsWith('homeline:')) {
+      handleSignalingMessage(message);
       eventBus.broadcast(message.topic, message);
       return;
     }

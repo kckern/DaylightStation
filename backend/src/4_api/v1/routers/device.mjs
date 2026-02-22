@@ -15,6 +15,7 @@
 
 import express from 'express';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
+import { hasActiveCall, forceEndCall } from '#apps/homeline/CallStateService.mjs';
 
 /**
  * Create device router
@@ -114,7 +115,7 @@ export function createDeviceRouter(config) {
    */
   router.get('/:deviceId/off', asyncHandler(async (req, res) => {
     const { deviceId } = req.params;
-    const { display } = req.query;
+    const { display, force } = req.query;
     const device = deviceService.get(deviceId);
 
     if (!device) {
@@ -123,6 +124,21 @@ export function createDeviceRouter(config) {
         error: 'Device not found',
         deviceId
       });
+    }
+
+    // Guard: block power-off during active videocall unless ?force=true
+    if (hasActiveCall(deviceId) && force !== 'true') {
+      logger.info?.('device.router.powerOff.blocked', { deviceId, reason: 'active-videocall' });
+      return res.status(409).json({
+        ok: false,
+        error: 'Active videocall in progress',
+        hint: 'Use ?force=true to override'
+      });
+    }
+
+    if (force === 'true' && hasActiveCall(deviceId)) {
+      logger.info?.('device.router.powerOff.forced', { deviceId });
+      forceEndCall(deviceId);
     }
 
     logger.info?.('device.router.powerOff', { deviceId, display });

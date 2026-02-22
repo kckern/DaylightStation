@@ -106,7 +106,7 @@ export default function CallApp() {
     setWaking(false);
     if (devId) {
       logger.info('tv-power-off', { targetDeviceId: devId });
-      DaylightAPI(`/api/v1/device/${devId}/off`).catch(err => {
+      DaylightAPI(`/api/v1/device/${devId}/off?force=true`).catch(err => {
         logger.warn('tv-power-off-failed', { targetDeviceId: devId, error: err.message });
       });
       connectedDeviceRef.current = null;
@@ -122,7 +122,7 @@ export default function CallApp() {
       // SPA navigation: power off TV if we were in a call or connecting
       const devId = connectedDeviceRef.current;
       if (devId) {
-        DaylightAPI(`/api/v1/device/${devId}/off`).catch(() => {});
+        DaylightAPI(`/api/v1/device/${devId}/off?force=true`).catch(() => {});
       }
     };
   }, [endCall]);
