@@ -16,11 +16,13 @@ export default function CallApp() {
 
   const { videoRef: localVideoRef, stream, error } = useWebcamStream(selectedVideoDevice, selectedAudioDevice);
   const peer = useWebRTCPeer(stream);
+  const { connectionState } = peer;
   const { peerConnected, status, connect, hangUp } = useHomeline('phone', null, peer);
   const [devices, setDevices] = useState(null); // null = loading, [] = none found
   const [waking, setWaking] = useState(false);
   const [connectingTooLong, setConnectingTooLong] = useState(false);
   const [pendingRetry, setPendingRetry] = useState(null);
+  const [iceError, setIceError] = useState(null);
   const connectedDeviceRef = useRef(null);
 
   const remoteVideoRef = useRef(null);
@@ -45,6 +47,19 @@ export default function CallApp() {
   useEffect(() => {
     logger.debug('status-change', { status, peerConnected });
   }, [logger, status, peerConnected]);
+
+  // React to ICE connection failures
+  useEffect(() => {
+    if (connectionState === 'failed') {
+      logger.error('ice-connection-failed', { deviceId: connectedDeviceRef.current });
+      setIceError('Connection lost — the video link failed.');
+    } else if (connectionState === 'disconnected') {
+      logger.warn('ice-connection-disconnected', { deviceId: connectedDeviceRef.current });
+      setIceError('Connection unstable...');
+    } else if (connectionState === 'connected' || connectionState === 'new') {
+      setIceError(null);
+    }
+  }, [connectionState, logger]);
 
   // User-facing connection timeout (15s)
   useEffect(() => {
@@ -228,6 +243,17 @@ export default function CallApp() {
 
   return (
     <div className="call-app call-app--connected">
+      {iceError && (
+        <div className="call-app__ice-error">
+          <span>{iceError}</span>
+          {connectionState === 'failed' && (
+            <button onClick={() => endCall()} className="call-app__ice-error-btn">
+              End Call
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Remote: TV landscape video */}
       <div className="call-app__remote">
         <video
