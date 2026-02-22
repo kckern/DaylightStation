@@ -26,13 +26,20 @@ export const useHomeline = (role, deviceId, peer) => {
   useEffect(() => {
     if (role !== 'tv' || !deviceId) return;
 
+    let count = 0;
     logger().info('heartbeat-start', { deviceId });
-    const sendWaiting = () => send(deviceId, 'waiting', { label: deviceId });
+    const sendWaiting = () => {
+      count++;
+      send(deviceId, 'waiting', { label: deviceId });
+      if (count <= 3 || count % 12 === 0) {
+        logger().debug('heartbeat-sent', { deviceId, count });
+      }
+    };
     sendWaiting();
     heartbeatRef.current = setInterval(sendWaiting, 5000);
 
     return () => {
-      logger().debug('heartbeat-stop', { deviceId });
+      logger().debug('heartbeat-stop', { deviceId, count });
       if (heartbeatRef.current) clearInterval(heartbeatRef.current);
     };
   }, [role, deviceId, send]);
@@ -55,7 +62,11 @@ export const useHomeline = (role, deviceId, peer) => {
       (data) => data.topic === topic(deviceId) && data.from !== peerId,
       async (message) => {
         try {
-          if (message.type === 'offer') {
+          if (message.type === 'ready') {
+            // Phone is listening — respond immediately so it doesn't wait for next heartbeat
+            logger().info('ready-received', { from: message.from });
+            send(deviceId, 'waiting', { label: deviceId });
+          } else if (message.type === 'offer') {
             if (peerConnected) {
               logger().info('offer-rejected-occupied', { from: message.from });
               send(deviceId, 'occupied');
@@ -138,7 +149,27 @@ export const useHomeline = (role, deviceId, peer) => {
     );
 
     answerUnsubRef.current = unsubAnswer;
+
+    // Tell the TV we're listening — it will respond immediately with "waiting"
+    // This eliminates the race where we miss the periodic heartbeat
+    send(targetDeviceId, 'ready');
+    logger().info('ready-sent', { target: targetDeviceId });
   }, [role, peer, peerId, topic, send]);
+
+  // Phone: warn if stuck waiting for TV heartbeat
+  useEffect(() => {
+    if (role !== 'phone' || status !== 'connecting') return;
+
+    const timer = setTimeout(() => {
+      logger().warn('connect-timeout', {
+        target: connectedDeviceRef.current,
+        waitedMs: 10000,
+        hint: 'No heartbeat received from TV in 10s'
+      });
+    }, 10_000);
+
+    return () => clearTimeout(timer);
+  }, [role, status]);
 
   // Hang up
   const hangUp = useCallback(() => {
