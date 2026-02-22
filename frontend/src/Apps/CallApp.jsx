@@ -53,10 +53,11 @@ export default function CallApp() {
     }
   }, [logger, peer.remoteStream]);
 
-  // Hang up signaling + power off TV
+  // Clean up call: hangup signaling + power off TV + reset state
   const endCall = useCallback(() => {
     const devId = connectedDeviceRef.current;
     hangUp();
+    setWaking(false);
     if (devId) {
       logger.info('tv-power-off', { targetDeviceId: devId });
       DaylightAPI(`/api/v1/device/${devId}/off`).catch(err => {
@@ -66,28 +67,39 @@ export default function CallApp() {
     }
   }, [hangUp, logger]);
 
-  // Send hangup + power off on tab close
+  // Clean up on tab close or component unmount (SPA navigation)
   useEffect(() => {
     const handleBeforeUnload = () => endCall();
     window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      // SPA navigation: power off TV if we were in a call or connecting
+      const devId = connectedDeviceRef.current;
+      if (devId) {
+        DaylightAPI(`/api/v1/device/${devId}/off`).catch(() => {});
+      }
+    };
   }, [endCall]);
 
   // Wake device (power on + load videocall URL) then connect signaling
   const dropIn = useCallback(async (targetDeviceId) => {
+    if (waking || status !== 'idle') return;
     logger.info('drop-in-start', { targetDeviceId });
     setWaking(true);
+    connectedDeviceRef.current = targetDeviceId;
     try {
       await DaylightAPI(`/api/v1/device/${targetDeviceId}/load?open=videocall/${targetDeviceId}`);
       logger.info('wake-success', { targetDeviceId });
     } catch (err) {
       logger.warn('wake-failed', { targetDeviceId, error: err.message });
+      setWaking(false);
+      connectedDeviceRef.current = null;
+      return;
     }
     setWaking(false);
-    connectedDeviceRef.current = targetDeviceId;
     // connect() subscribes and waits for the TV's heartbeat before sending the offer
     connect(targetDeviceId);
-  }, [logger, connect]);
+  }, [logger, connect, waking, status]);
 
   // Auto-connect if only one device
   useEffect(() => {
@@ -121,6 +133,7 @@ export default function CallApp() {
                 <button
                   key={device.id}
                   className="call-app__device-btn"
+                  disabled={waking || status !== 'idle'}
                   onClick={() => dropIn(device.id)}
                 >
                   {device.id}
@@ -134,7 +147,7 @@ export default function CallApp() {
   }
 
   // Connecting: waking TV + waiting for heartbeat
-  if (status === 'connecting') {
+  if (status === 'connecting' || waking) {
     return (
       <div className="call-app call-app--lobby">
         <div className="call-app__lobby-content">
@@ -142,6 +155,9 @@ export default function CallApp() {
           <p className="call-app__message">
             {waking ? 'Waking up TV...' : 'Waiting for TV...'}
           </p>
+          <button className="call-app__cancel" onClick={endCall}>
+            Cancel
+          </button>
         </div>
       </div>
     );
