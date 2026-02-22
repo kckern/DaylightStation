@@ -15,10 +15,12 @@
   -webkit-user-select: none;
   user-select: none;
 
-  // Preview mode (lobby + connecting): fullscreen camera with overlay
+  // Preview mode (lobby): centered inset camera with device list below
   &--preview {
     display: flex;
     flex-direction: column;
+    align-items: center;
+    justify-content: center;
   }
 
   // Connecting mode: small camera inset + centered status

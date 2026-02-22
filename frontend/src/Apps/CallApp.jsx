@@ -259,9 +259,10 @@ export default function CallApp() {
           playsInline
           className="call-app__video call-app__video--wide"
         />
-        {/* Hidden audio element — forces speaker routing on Android Chrome */}
-        <audio ref={remoteAudioRef} autoPlay playsInline style={{ display: 'none' }} />
       </div>
+
+      {/* Hidden audio element — MUST be outside __remote div (display:none kills playback on Android) */}
+      <audio ref={remoteAudioRef} autoPlay playsInline style={{ display: 'none' }} />
 
       {/* Controls — always mounted, hidden until connected via CSS */}
       <div className="call-app__controls">
