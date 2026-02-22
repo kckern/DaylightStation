@@ -14,7 +14,7 @@ export default function CallApp() {
     selectedAudioDevice,
   } = useMediaDevices();
 
-  const { videoRef: localVideoRef, stream } = useWebcamStream(selectedVideoDevice, selectedAudioDevice);
+  const { videoRef: localVideoRef, stream, error } = useWebcamStream(selectedVideoDevice, selectedAudioDevice);
   const peer = useWebRTCPeer(stream);
   const { peerConnected, status, connect, hangUp } = useHomeline('phone', null, peer);
   const [devices, setDevices] = useState(null); // null = loading, [] = none found
@@ -84,6 +84,10 @@ export default function CallApp() {
   // Wake device (power on + load videocall URL) then connect signaling
   const dropIn = useCallback(async (targetDeviceId) => {
     if (waking || status !== 'idle') return;
+    if (!stream) {
+      logger.warn('drop-in-blocked-no-stream', { targetDeviceId, error: error?.message });
+      return;
+    }
     logger.info('drop-in-start', { targetDeviceId });
     setWaking(true);
     connectedDeviceRef.current = targetDeviceId;
@@ -99,14 +103,14 @@ export default function CallApp() {
     setWaking(false);
     // connect() subscribes and waits for the TV's heartbeat before sending the offer
     connect(targetDeviceId);
-  }, [logger, connect, waking, status]);
+  }, [logger, connect, waking, status, stream, error]);
 
   // Auto-connect if only one device
   useEffect(() => {
-    if (devices && devices.length === 1 && status === 'idle') {
+    if (devices && devices.length === 1 && status === 'idle' && stream) {
       dropIn(devices[0].id);
     }
-  }, [devices, status, dropIn]);
+  }, [devices, status, dropIn, stream]);
 
   // Lobby: device list or loading state
   if (status === 'idle' || status === 'occupied') {
@@ -127,13 +131,24 @@ export default function CallApp() {
             <p className="call-app__message">Room is busy</p>
           )}
 
+          {error && (
+            <div className="call-app__camera-error">
+              Camera unavailable — check permissions
+            </div>
+          )}
+          {!error && !stream && (
+            <div className="call-app__camera-loading">
+              Starting camera...
+            </div>
+          )}
+
           {devices && devices.length > 1 && (
             <div className="call-app__device-list">
               {devices.map((device) => (
                 <button
                   key={device.id}
                   className="call-app__device-btn"
-                  disabled={waking || status !== 'idle'}
+                  disabled={waking || status !== 'idle' || !stream}
                   onClick={() => dropIn(device.id)}
                 >
                   {device.id}
