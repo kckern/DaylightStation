@@ -95,14 +95,14 @@ export default function CallApp() {
     }
   }, [logger, peer.remoteStream]);
 
-  // Attach local stream to self-preview when connected view mounts.
-  // The stream is acquired before the video element exists (lobby phase),
-  // so useWebcamStream's initial srcObject assignment misses the ref.
+  // Sync local stream to the self-preview video element.
+  // The video element is always mounted now, so we only need to
+  // react to stream changes (not status/view transitions).
   useEffect(() => {
     if (localVideoRef.current && stream) {
       localVideoRef.current.srcObject = new MediaStream(stream.getVideoTracks());
     }
-  }, [stream, status]);
+  }, [stream]);
 
   // Clean up call: hangup signaling + power off TV + reset state
   const endCall = useCallback(() => {
@@ -198,11 +198,37 @@ export default function CallApp() {
     }
   }, [devices, status, dropIn, stream]);
 
-  // Lobby: device list or loading state
-  if (status === 'idle' || status === 'occupied') {
-    return (
-      <div className="call-app call-app--lobby">
-        <div className="call-app__lobby-content">
+  const isIdle = status === 'idle' || status === 'occupied';
+  const isConnecting = status === 'connecting' || waking;
+  const isConnected = !isIdle && !isConnecting;
+
+  return (
+    <div className={`call-app ${isConnected ? 'call-app--connected' : 'call-app--preview'}`}>
+      {/* Local camera — always visible */}
+      <div className={`call-app__local ${isConnected ? 'call-app__local--pip' : 'call-app__local--full'}`}>
+        <video
+          ref={localVideoRef}
+          autoPlay
+          muted
+          playsInline
+          className="call-app__video call-app__video--tall"
+          style={{ transform: 'scaleX(-1)' }}
+        />
+        {error && (
+          <div className="call-app__camera-error">
+            Camera unavailable — check permissions
+          </div>
+        )}
+        {!error && !stream && (
+          <div className="call-app__camera-loading">
+            Starting camera...
+          </div>
+        )}
+      </div>
+
+      {/* Lobby overlay — device selection */}
+      {isIdle && (
+        <div className="call-app__overlay-bottom">
           <h1 className="call-app__title">Home Line</h1>
 
           {devices === null && (
@@ -215,17 +241,6 @@ export default function CallApp() {
 
           {status === 'occupied' && (
             <p className="call-app__message">Room is busy</p>
-          )}
-
-          {error && (
-            <div className="call-app__camera-error">
-              Camera unavailable — check permissions
-            </div>
-          )}
-          {!error && !stream && (
-            <div className="call-app__camera-loading">
-              Starting camera...
-            </div>
           )}
 
           {devices && devices.length > 1 && (
@@ -243,18 +258,13 @@ export default function CallApp() {
             </div>
           )}
         </div>
-      </div>
-    );
-  }
+      )}
 
-  // Connecting: waking TV + waiting for heartbeat
-  if (status === 'connecting' || waking) {
-    return (
-      <div className="call-app call-app--lobby">
-        <div className="call-app__lobby-content">
-          <h1 className="call-app__title">Home Line</h1>
-          <p className="call-app__message">
-            {waking ? 'Waking up TV...' : 'Waiting for TV...'}
+      {/* Connecting overlay */}
+      {isConnecting && (
+        <div className="call-app__overlay-bottom">
+          <p className="call-app__status-text">
+            {waking ? 'Waking up TV...' : 'Establishing call...'}
           </p>
           {connectingTooLong && (
             <div className="call-app__timeout-msg">
@@ -277,70 +287,56 @@ export default function CallApp() {
             Cancel
           </button>
         </div>
-      </div>
-    );
-  }
+      )}
 
-  return (
-    <div className="call-app call-app--connected">
-      {iceError && (
-        <div className="call-app__ice-error">
-          <span>{iceError}</span>
-          {connectionState === 'failed' && (
-            <button onClick={() => endCall()} className="call-app__ice-error-btn">
-              End Call
-            </button>
+      {/* Connected view — remote video + controls */}
+      {isConnected && (
+        <>
+          {iceError && (
+            <div className="call-app__ice-error">
+              <span>{iceError}</span>
+              {connectionState === 'failed' && (
+                <button onClick={() => endCall()} className="call-app__ice-error-btn">
+                  End Call
+                </button>
+              )}
+            </div>
           )}
-        </div>
+
+          <div className="call-app__remote">
+            <video
+              ref={remoteVideoRef}
+              autoPlay
+              playsInline
+              className="call-app__video call-app__video--wide"
+            />
+          </div>
+
+          {remoteMuteState.audioMuted && (
+            <div className="call-app__remote-muted">Remote audio muted</div>
+          )}
+
+          <div className="call-app__controls">
+            <button
+              className={`call-app__mute-btn ${audioMuted ? 'call-app__mute-btn--active' : ''}`}
+              onClick={handleToggleAudio}
+              aria-label={audioMuted ? 'Unmute audio' : 'Mute audio'}
+            >
+              {audioMuted ? 'Mic Off' : 'Mic'}
+            </button>
+            <button className="call-app__hangup" onClick={endCall}>
+              Hang Up
+            </button>
+            <button
+              className={`call-app__mute-btn ${videoMuted ? 'call-app__mute-btn--active' : ''}`}
+              onClick={handleToggleVideo}
+              aria-label={videoMuted ? 'Enable video' : 'Disable video'}
+            >
+              {videoMuted ? 'Cam Off' : 'Cam'}
+            </button>
+          </div>
+        </>
       )}
-
-      {/* Remote: TV landscape video */}
-      <div className="call-app__remote">
-        <video
-          ref={remoteVideoRef}
-          autoPlay
-          playsInline
-          className="call-app__video call-app__video--wide"
-        />
-      </div>
-
-      {/* Local: phone portrait self-preview */}
-      <div className="call-app__local">
-        <video
-          ref={localVideoRef}
-          autoPlay
-          muted
-          playsInline
-          className="call-app__video call-app__video--tall"
-          style={{ transform: 'scaleX(-1)' }}
-        />
-      </div>
-
-      {/* Remote mute indicator */}
-      {remoteMuteState.audioMuted && (
-        <div className="call-app__remote-muted">Remote audio muted</div>
-      )}
-
-      {/* Call controls */}
-      <div className="call-app__controls">
-        <button
-          className={`call-app__mute-btn ${audioMuted ? 'call-app__mute-btn--active' : ''}`}
-          onClick={handleToggleAudio}
-          aria-label={audioMuted ? 'Unmute audio' : 'Mute audio'}
-        >
-          {audioMuted ? 'Mic Off' : 'Mic'}
-        </button>
-        <button className="call-app__hangup" onClick={endCall}>
-          Hang Up
-        </button>
-        <button
-          className={`call-app__mute-btn ${videoMuted ? 'call-app__mute-btn--active' : ''}`}
-          onClick={handleToggleVideo}
-          aria-label={videoMuted ? 'Enable video' : 'Disable video'}
-        >
-          {videoMuted ? 'Cam Off' : 'Cam'}
-        </button>
-      </div>
     </div>
   );
 }
