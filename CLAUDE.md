@@ -242,6 +242,23 @@ git rev-parse HEAD > docs/docs-last-updated.txt
 
 Acceptable uses of raw `console.error`: inside `.catch()` blocks for unrecoverable errors that already existed before the framework. New code should use the logger.
 
+### Rule: New Features Must Ship With Logging
+
+When building new components, hooks, or features, **add structured log events at key lifecycle points from the start**. Don't treat logging as an afterthought. Good logs are how we debug and optimize in production.
+
+**What to log:**
+- **Component lifecycle:** mount/unmount with identifying context (device IDs, role, etc.)
+- **State transitions:** status changes, connection state, peer connected/disconnected
+- **External interactions:** API calls (start/success/fail), WebSocket messages sent/received, WebRTC signaling events
+- **Error paths:** failed operations with error messages, rejected requests, timeouts
+- **Performance-relevant data:** track metadata, stream attachment, resource acquisition
+
+**Log levels:**
+- `debug` — high-frequency or verbose (state changes, periodic polls, internal transitions)
+- `info` — significant lifecycle events (mounted, connected, call started, hangup)
+- `warn` — recoverable errors, unexpected-but-handled conditions
+- `error` — unrecoverable failures
+
 ### Usage Pattern
 
 ```javascript

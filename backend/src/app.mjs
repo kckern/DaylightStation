@@ -344,6 +344,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       return;
     }
 
+    // Homeline video call signaling - relay to all subscribers of this device's topic
+    if (message.topic?.startsWith('homeline:')) {
+      eventBus.broadcast(message.topic, message);
+      return;
+    }
+
     // Frontend logging messages - ingest to backend log system
     if (message.source === 'playback-logger' || message.topic === 'logging') {
       const clientMeta = eventBus.getClientMeta(clientId);

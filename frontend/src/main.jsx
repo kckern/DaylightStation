@@ -14,6 +14,7 @@ import LifelogApp from './Apps/LifelogApp.jsx';
 import FitnessApp from './Apps/FitnessApp.jsx';
 import FeedApp from './Apps/FeedApp.jsx';
 import AdminApp from './Apps/AdminApp.jsx';
+import CallApp from './Apps/CallApp.jsx';
 import Blank from './modules/Blank/Blank.jsx';
 import SetupWizard from './modules/Auth/SetupWizard.jsx';
 import InviteAccept from './modules/Auth/InviteAccept.jsx';
@@ -135,6 +136,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <Route path="/setup" element={<SetupWizard onComplete={() => window.location.href = '/'} />} />
         <Route path="/invite/:token" element={<InviteAccept />} />
         <Route path="/feed/*" element={<FeedApp />} />
+        <Route path="/call" element={<CallApp />} />
         <Route path="*" element={<Blank />} />
       </Routes>
     </SetupCheck>

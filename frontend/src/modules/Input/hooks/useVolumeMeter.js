@@ -1,9 +1,22 @@
 import { useState, useEffect, useRef } from 'react';
+import getLogger from '../../../lib/logging/Logger.js';
 
+let _logger;
+function logger() {
+  if (!_logger) _logger = getLogger().child({ component: 'useVolumeMeter' });
+  return _logger;
+}
+
+/**
+ * WebRTC volume meter.
+ *
+ * Web Audio API's createMediaStreamSource returns flat silence on Android
+ * WebView (Shield). This hook adds the audio track to an RTCPeerConnection
+ * and reads audioLevel from the sender's media-source stats, which reports
+ * mic level via the native audio pipeline — bypassing Web Audio entirely.
+ */
 export const useVolumeMeter = (stream) => {
   const [volume, setVolume] = useState(0);
-  const audioContextRef = useRef(null);
-  const animationIdRef = useRef(null);
 
   useEffect(() => {
     if (!stream) return;
@@ -11,35 +24,73 @@ export const useVolumeMeter = (stream) => {
     const audioTracks = stream.getAudioTracks();
     if (audioTracks.length === 0) return;
 
-    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-    const audioContext = new AudioContextClass();
-    const analyser = audioContext.createAnalyser();
-    analyser.fftSize = 2048;
+    let stopped = false;
+    let pollTimer = null;
+    let pc = null;
 
-    const source = audioContext.createMediaStreamSource(stream);
-    source.connect(analyser);
+    const setup = async () => {
+      try {
+        pc = new RTCPeerConnection();
 
-    audioContextRef.current = audioContext;
-    const dataArray = new Uint8Array(analyser.fftSize);
+        // Add audio track — this creates a sender whose media-source
+        // stats report the mic's audio level
+        pc.addTrack(audioTracks[0], stream);
 
-    const analyzeVolume = () => {
-      analyser.getByteTimeDomainData(dataArray);
-      let sumSquares = 0;
-      for (let i = 0; i < dataArray.length; i++) {
-        const val = (dataArray[i] - 128) / 128;
-        sumSquares += val * val;
+        // Need a minimal SDP exchange so the encoder starts and
+        // media-source stats populate. Loopback to self.
+        const pc2 = new RTCPeerConnection();
+        pc.onicecandidate = (e) => {
+          if (e.candidate && !stopped) pc2.addIceCandidate(e.candidate);
+        };
+        pc2.onicecandidate = (e) => {
+          if (e.candidate && !stopped) pc.addIceCandidate(e.candidate);
+        };
+
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        await pc2.setRemoteDescription(offer);
+        const answer = await pc2.createAnswer();
+        await pc2.setLocalDescription(answer);
+        await pc.setRemoteDescription(answer);
+
+        if (stopped) { pc2.close(); return; }
+
+        logger().debug('volume-meter-connected');
+
+        // Poll media-source stats from sender
+        pollTimer = setInterval(async () => {
+          if (stopped) return;
+          try {
+            const sender = pc.getSenders().find(s => s.track?.kind === 'audio');
+            if (!sender) return;
+
+            const stats = await sender.getStats();
+            stats.forEach((report) => {
+              if (report.type === 'media-source' && report.kind === 'audio') {
+                if (report.audioLevel !== undefined) {
+                  setVolume(report.audioLevel);
+                }
+              }
+            });
+          } catch {
+            // PC may have closed
+          }
+        }, 100);
+
+        // Store pc2 for cleanup
+        pc._loopbackPeer = pc2;
+      } catch (err) {
+        logger().warn('volume-meter-setup-failed', { error: err.message });
       }
-      const rms = Math.sqrt(sumSquares / dataArray.length);
-      setVolume(rms);
-      animationIdRef.current = requestAnimationFrame(analyzeVolume);
     };
-    analyzeVolume();
+
+    setup();
 
     return () => {
-      if (animationIdRef.current) {
-        cancelAnimationFrame(animationIdRef.current);
-      }
-      audioContext.close();
+      stopped = true;
+      if (pollTimer) clearInterval(pollTimer);
+      if (pc?._loopbackPeer) pc._loopbackPeer.close();
+      if (pc) pc.close();
     };
   }, [stream]);
 

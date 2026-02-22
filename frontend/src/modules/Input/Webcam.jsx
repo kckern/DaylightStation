@@ -46,7 +46,7 @@ export default function WebcamApp() {
   }, [cycleVideoDevice, cycleAudioDevice]);
 
   // Meter conversion
-  const volumePercentage = Math.min(volume * 1000, 100);
+  const volumePercentage = Math.min(volume * 100, 100);
 
   return (
     <div
