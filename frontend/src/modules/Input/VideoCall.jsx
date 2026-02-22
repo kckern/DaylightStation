@@ -18,7 +18,7 @@ export default function VideoCall({ deviceId, clear }) {
   const { volume } = useVolumeMeter(stream);
   const peer = useWebRTCPeer(stream);
   const { connectionState } = peer;
-  const { peerConnected, status } = useHomeline('tv', deviceId, peer);
+  const { peerConnected, status, remoteMuteState } = useHomeline('tv', deviceId, peer);
   const [iceError, setIceError] = useState(null);
 
   const remoteVideoRef = useRef(null);
@@ -106,6 +106,11 @@ export default function VideoCall({ deviceId, clear }) {
             style={{ transform: 'scaleX(-1)' }}
           />
         </div>
+      )}
+
+      {/* Remote mute indicator */}
+      {remoteMuteState.audioMuted && (
+        <div className="videocall-tv__remote-muted">Phone audio muted</div>
       )}
 
       {/* Status indicator */}

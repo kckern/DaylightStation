@@ -94,8 +94,41 @@
     }
   }
 
-  &__hangup {
+  &__controls {
     flex: 0 0 auto;
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+    justify-content: center;
+    padding: 0.75rem 0;
+    margin-bottom: 0.5rem;
+  }
+
+  &__mute-btn {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    font-size: 0.65rem;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    &--active {
+      background: rgba(255, 50, 50, 0.5);
+      border-color: rgba(255, 50, 50, 0.7);
+    }
+
+    &:active {
+      opacity: 0.7;
+    }
+  }
+
+  &__hangup {
     background: #d32f2f;
     color: #fff;
     border: none;
@@ -103,11 +136,22 @@
     padding: 0.8rem 2.5rem;
     font-size: 1.1rem;
     cursor: pointer;
-    margin-bottom: 1rem;
 
     &:active {
       background: #b71c1c;
     }
+  }
+
+  &__remote-muted {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    background: rgba(0, 0, 0, 0.6);
+    color: #ccc;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    z-index: 10;
   }
 
   &__cancel {
