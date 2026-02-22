@@ -95,6 +95,15 @@ export default function CallApp() {
     }
   }, [logger, peer.remoteStream]);
 
+  // Attach local stream to self-preview when connected view mounts.
+  // The stream is acquired before the video element exists (lobby phase),
+  // so useWebcamStream's initial srcObject assignment misses the ref.
+  useEffect(() => {
+    if (localVideoRef.current && stream) {
+      localVideoRef.current.srcObject = new MediaStream(stream.getVideoTracks());
+    }
+  }, [stream, status]);
+
   // Clean up call: hangup signaling + power off TV + reset state
   const endCall = useCallback(() => {
     reset();
