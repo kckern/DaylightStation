@@ -1,4 +1,11 @@
 import { useState, useEffect } from 'react';
+import getLogger from '../../../lib/logging/Logger.js';
+
+let _logger;
+function logger() {
+  if (!_logger) _logger = getLogger().child({ component: 'useMediaDevices' });
+  return _logger;
+}
 
 export const useMediaDevices = () => {
   const [videoDevices, setVideoDevices] = useState([]);
@@ -30,7 +37,7 @@ export const useMediaDevices = () => {
           setSelectedAudioDevice((webcamMic || audDevices[0]).deviceId);
         }
       } catch (error) {
-        console.error("Error enumerating devices:", error);
+        logger().warn('media-devices.enumerate-error', { error: error.message });
       }
     };
     
