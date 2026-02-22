@@ -1,0 +1,125 @@
+.call-app {
+  width: 100vw;
+  height: 100vh;
+  background: #000;
+  color: #fff;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  overflow: hidden;
+
+  // Lobby
+  &--lobby {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  &__lobby-content {
+    text-align: center;
+    padding: 2rem;
+  }
+
+  &__title {
+    font-size: 1.8rem;
+    font-weight: 300;
+    margin-bottom: 2rem;
+  }
+
+  &__message {
+    color: #aaa;
+    font-size: 1rem;
+  }
+
+  &__device-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    margin-top: 1.5rem;
+  }
+
+  &__device-btn {
+    background: #222;
+    color: #fff;
+    border: 1px solid #444;
+    border-radius: 8px;
+    padding: 1rem 2rem;
+    font-size: 1.1rem;
+    cursor: pointer;
+
+    &:active {
+      background: #333;
+    }
+  }
+
+  // Connected
+  &--connected {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    padding: 1rem;
+    box-sizing: border-box;
+  }
+
+  &__remote {
+    flex: 0 0 auto;
+    width: 100%;
+    display: flex;
+    justify-content: center;
+  }
+
+  &__local {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 0;
+  }
+
+  &__video {
+    border-radius: 8px;
+    background: #111;
+    object-fit: contain;
+
+    &--wide {
+      width: 100%;
+      aspect-ratio: 16/9;
+    }
+
+    &--tall {
+      height: 100%;
+      max-width: 100%;
+      aspect-ratio: 9/16;
+    }
+  }
+
+  &__hangup {
+    flex: 0 0 auto;
+    background: #d32f2f;
+    color: #fff;
+    border: none;
+    border-radius: 24px;
+    padding: 0.8rem 2.5rem;
+    font-size: 1.1rem;
+    cursor: pointer;
+    margin-bottom: 1rem;
+
+    &:active {
+      background: #b71c1c;
+    }
+  }
+
+  &__overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.7);
+    font-size: 1.2rem;
+    z-index: 100;
+  }
+}

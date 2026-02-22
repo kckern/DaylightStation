@@ -9,9 +9,11 @@ import keycodeIcon from '../assets/app-icons/keycode.svg';
 import familySelectorIcon from '../assets/app-icons/family-selector.svg';
 import glympseIcon from '../assets/app-icons/glympse.svg';
 import websocketIcon from '../assets/app-icons/websocket.svg';
+import videocallIcon from '../assets/app-icons/videocall.svg';
 
 export const APP_REGISTRY = {
   'webcam':          { label: 'Webcam',           icon: webcamIcon,         param: null, component: () => import('../modules/AppContainer/Apps/Webcam/Webcam.jsx') },
+  'videocall':       { label: 'Video Call',       icon: videocallIcon,      param: { name: 'device' }, component: () => import('../modules/AppContainer/Apps/VideoCall/VideoCall.jsx') },
   'gratitude':       { label: 'Gratitude & Hope', icon: gratitudeIcon,      param: null, component: () => import('../modules/AppContainer/Apps/Gratitude/Gratitude.jsx') },
   'wrapup':          { label: 'Wrap Up',          icon: wrapupIcon,         param: null, component: () => import('../modules/AppContainer/Apps/WrapUp/WrapUp.jsx') },
   'office_off':      { label: 'Office Off',       icon: officeOffIcon,      param: null, component: () => import('../modules/AppContainer/Apps/OfficeOff/OfficeOff.jsx') },
