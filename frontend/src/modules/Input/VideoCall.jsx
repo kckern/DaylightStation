@@ -20,6 +20,7 @@ export default function VideoCall({ deviceId, clear }) {
   const { connectionState } = peer;
   const { peerConnected, status, remoteMuteState } = useHomeline('tv', deviceId, peer);
   const [iceError, setIceError] = useState(null);
+  const [statusVisible, setStatusVisible] = useState(true);
 
   const remoteVideoRef = useRef(null);
 
@@ -45,6 +46,15 @@ export default function VideoCall({ deviceId, clear }) {
       setIceError(null);
     }
   }, [connectionState, clear, deviceId, logger]);
+
+  // Auto-hide status overlay 3s after connecting
+  useEffect(() => {
+    if (peerConnected) {
+      const timer = setTimeout(() => setStatusVisible(false), 3000);
+      return () => clearTimeout(timer);
+    }
+    setStatusVisible(true);
+  }, [peerConnected]);
 
   // Attach remote stream to video element
   useEffect(() => {
@@ -87,6 +97,9 @@ export default function VideoCall({ deviceId, clear }) {
           playsInline
           className="videocall-tv__video videocall-tv__video--portrait"
         />
+        {peerConnected && remoteMuteState.videoMuted && (
+          <div className="videocall-tv__video-off">Camera off</div>
+        )}
       </div>
 
       {/* Local: TV landscape camera — always mounted */}
@@ -106,8 +119,8 @@ export default function VideoCall({ deviceId, clear }) {
         <div className="videocall-tv__remote-muted">Phone audio muted</div>
       )}
 
-      {/* Status indicator */}
-      <div className="videocall-tv__status">
+      {/* Status indicator — auto-hides when connected */}
+      <div className="videocall-tv__status" style={!statusVisible ? { opacity: 0 } : undefined}>
         {iceError || (
           <>
             {status === 'waiting' && 'Home Line \u2014 Waiting'}
