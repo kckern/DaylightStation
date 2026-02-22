@@ -55,7 +55,7 @@ export const useVolumeMeter = (stream) => {
 
         if (stopped) { pc2.close(); return; }
 
-        logger().debug('volume-meter-connected');
+        logger().info('volume-meter-connected');
 
         // Poll media-source stats from sender
         let sampleCount = 0;
@@ -75,7 +75,7 @@ export const useVolumeMeter = (stream) => {
                   if (report.audioLevel > maxLevel) maxLevel = report.audioLevel;
                   // Log a summary every 5 seconds (50 samples at 100ms)
                   if (sampleCount % 50 === 0) {
-                    logger().debug('volume-meter-sample', {
+                    logger().info('volume-meter-sample', {
                       maxLevel: Math.round(maxLevel * 1000) / 1000,
                       samples: sampleCount,
                       trackLabel: sender.track?.label,
