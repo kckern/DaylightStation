@@ -42,6 +42,19 @@ export const useWebcamStream = (selectedVideoDevice, selectedAudioDevice) => {
         setStream(localStream);
         setError(null);
 
+        const tracks = localStream.getTracks();
+        logger().info('stream-acquired', {
+          tracks: tracks.map(t => ({
+            kind: t.kind,
+            label: t.label,
+            enabled: t.enabled,
+            muted: t.muted,
+            readyState: t.readyState,
+          })),
+          videoDevice: selectedVideoDevice?.slice(0, 8),
+          audioDevice: selectedAudioDevice?.slice(0, 8),
+        });
+
         if (videoRef.current) {
           // Give the video element only video tracks so the muted attribute
           // doesn't kill audio data for AudioContext on Android WebView
@@ -54,6 +67,17 @@ export const useWebcamStream = (selectedVideoDevice, selectedAudioDevice) => {
           localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
           setStream(localStream);
           setError(null);
+
+          const fbTracks = localStream.getTracks();
+          logger().info('stream-acquired-fallback', {
+            tracks: fbTracks.map(t => ({
+              kind: t.kind,
+              label: t.label,
+              enabled: t.enabled,
+              muted: t.muted,
+              readyState: t.readyState,
+            })),
+          });
 
           if (videoRef.current) {
             videoRef.current.srcObject = new MediaStream(localStream.getVideoTracks());

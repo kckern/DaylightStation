@@ -41,11 +41,12 @@ export const useWebRTCPeer = (localStream) => {
     setRemoteStream(remote);
 
     pc.ontrack = (event) => {
-      event.streams[0]?.getTracks().forEach(track => {
-        remote.addTrack(track);
-      });
+      // Use event.track directly — event.streams[0] can be empty when the
+      // remote sender has no track yet (e.g. TV answered sendrecv before
+      // its camera started, so the SDP has no a=msid attribute).
+      remote.addTrack(event.track);
       setRemoteStream(new MediaStream(remote.getTracks()));
-      logger().debug('remote-track-added', { kind: event.track.kind });
+      logger().debug('remote-track-added', { kind: event.track.kind, streamCount: event.streams.length });
     };
 
     pc.onicecandidate = (event) => {
@@ -152,29 +153,54 @@ export const useWebRTCPeer = (localStream) => {
     setConnectionState('new');
   }, []);
 
-  // Late-bind: when localStream arrives after PC was created without tracks,
-  // swap null sender tracks for real ones via replaceTrack (no renegotiation).
+  // Sync local tracks to the peer connection whenever localStream changes.
+  // Handles two cases:
+  //  1. Late-bind: PC created before stream was ready (senders have null tracks)
+  //  2. Device re-selection: stream identity changes after initial bind
+  // Uses replaceTrack() so no renegotiation is needed.
   useEffect(() => {
     const pc = pcRef.current;
     if (!pc || !localStream || pc.connectionState === 'closed') return;
 
-    const transceivers = pc.getTransceivers();
-    const empty = transceivers.filter(t => !t.sender.track);
-    if (empty.length === 0) return;
+    const senders = pc.getSenders();
+    if (senders.length === 0) return;
 
     const tracks = localStream.getTracks();
-    logger().info('late-bind-tracks', {
-      trackCount: tracks.length,
-      emptySlots: empty.length,
-    });
+    let replaced = 0;
 
     for (const track of tracks) {
-      const match = empty.find(t => t.receiver.track?.kind === track.kind);
-      if (match) {
-        match.sender.replaceTrack(track)
-          .then(() => logger().info('track-replaced', { kind: track.kind }))
-          .catch(err => logger().warn('track-replace-failed', { kind: track.kind, error: err.message }));
+      const sender = senders.find(s => {
+        // Match by kind: either sender has no track (late-bind)
+        // or sender's track kind matches but is a different track (re-select)
+        if (!s.track) return true; // empty slot — match by kind via transceiver
+        return s.track.kind === track.kind && s.track.id !== track.id;
+      });
+
+      if (!sender) {
+        // Also check transceivers for empty senders matched by receiver kind
+        const transceiver = pc.getTransceivers().find(
+          t => !t.sender.track && t.receiver.track?.kind === track.kind
+        );
+        if (transceiver) {
+          transceiver.sender.replaceTrack(track)
+            .then(() => { replaced++; logger().info('track-replaced', { kind: track.kind, reason: 'late-bind' }); })
+            .catch(err => logger().warn('track-replace-failed', { kind: track.kind, error: err.message }));
+        }
+        continue;
       }
+
+      const reason = sender.track ? 'device-reselect' : 'late-bind';
+      sender.replaceTrack(track)
+        .then(() => { replaced++; logger().info('track-replaced', { kind: track.kind, reason }); })
+        .catch(err => logger().warn('track-replace-failed', { kind: track.kind, error: err.message }));
+    }
+
+    if (tracks.length > 0) {
+      logger().info('sync-tracks-to-pc', {
+        trackCount: tracks.length,
+        senderCount: senders.length,
+        tracks: tracks.map(t => ({ kind: t.kind, label: t.label, id: t.id.slice(0, 8) })),
+      });
     }
   }, [localStream]);
 
