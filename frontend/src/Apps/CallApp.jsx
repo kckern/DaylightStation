@@ -33,6 +33,7 @@ export default function CallApp() {
   const { isOwner } = useCallOwnership(activeDeviceId);
 
   const remoteVideoRef = useRef(null);
+  const remoteAudioRef = useRef(null);
 
   // Fetch available devices from API on mount
   useEffect(() => {
@@ -88,13 +89,25 @@ export default function CallApp() {
     }
   }, [connectingTooLong, logger]);
 
-  // Attach remote stream
+  // Attach remote stream — split audio/video across separate elements.
+  // Android Chrome routes <video> audio to earpiece, <audio> to speaker.
   useEffect(() => {
-    if (remoteVideoRef.current && peer.remoteStream) {
-      const tracks = peer.remoteStream.getTracks();
-      logger.info('remote-stream-attached', { tracks: tracks.map(t => ({ kind: t.kind, enabled: t.enabled })) });
-      remoteVideoRef.current.srcObject = peer.remoteStream;
+    if (!peer.remoteStream) return;
+    const tracks = peer.remoteStream.getTracks();
+    logger.info('remote-stream-attached', { tracks: tracks.map(t => ({ kind: t.kind, enabled: t.enabled })) });
+    const videoTracks = peer.remoteStream.getVideoTracks();
+    const audioTracks = peer.remoteStream.getAudioTracks();
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.srcObject = videoTracks.length
+        ? new MediaStream(videoTracks)
+        : null;
     }
+    if (remoteAudioRef.current) {
+      remoteAudioRef.current.srcObject = audioTracks.length
+        ? new MediaStream(audioTracks)
+        : null;
+    }
+    logger.debug('remote-stream-split', { videoTracks: videoTracks.length, audioTracks: audioTracks.length });
   }, [logger, peer.remoteStream]);
 
   // Sync local stream to the self-preview video element.
@@ -242,9 +255,12 @@ export default function CallApp() {
         <video
           ref={remoteVideoRef}
           autoPlay
+          muted
           playsInline
           className="call-app__video call-app__video--wide"
         />
+        {/* Hidden audio element — forces speaker routing on Android Chrome */}
+        <audio ref={remoteAudioRef} autoPlay playsInline style={{ display: 'none' }} />
       </div>
 
       {/* Controls — always mounted, hidden until connected via CSS */}
