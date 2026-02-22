@@ -76,15 +76,6 @@ export default function CallApp() {
     return () => clearTimeout(timer);
   }, [status]);
 
-  // Execute pending retry once status returns to idle
-  useEffect(() => {
-    if (pendingRetry && status === 'idle') {
-      const devId = pendingRetry;
-      setPendingRetry(null);
-      dropIn(devId);
-    }
-  }, [pendingRetry, status, dropIn]);
-
   // Log when timeout becomes visible to user
   useEffect(() => {
     if (connectingTooLong) {
@@ -174,6 +165,15 @@ export default function CallApp() {
     // connect() subscribes and waits for the TV's heartbeat before sending the offer
     connect(targetDeviceId);
   }, [logger, connect, waking, status, stream, error]);
+
+  // Execute pending retry once status returns to idle
+  useEffect(() => {
+    if (pendingRetry && status === 'idle') {
+      const devId = pendingRetry;
+      setPendingRetry(null);
+      dropIn(devId);
+    }
+  }, [pendingRetry, status, dropIn]);
 
   // Auto-connect if only one device
   useEffect(() => {
