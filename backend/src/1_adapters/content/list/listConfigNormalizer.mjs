@@ -32,7 +32,7 @@ export function normalizeListItem(item) {
   if (!item) return item;
 
   // Already new format with no old-format keys — pass through
-  if (!item.input && !item.label && (item.play || item.open || item.display || item.list || item.queue)) {
+  if (!item.input && !item.label && (item.play || item.open || item.display || item.list || item.queue || item.launch)) {
     return { ...item };
   }
 
@@ -80,6 +80,9 @@ export function normalizeListItem(item) {
       case 'queue':
         result.queue = { contentId: normalized };
         break;
+      case 'launch':
+        result.launch = { contentId: normalized };
+        break;
       default: // 'play' or unrecognized
         result.play = { contentId: normalized };
         break;
@@ -113,6 +116,7 @@ export function extractContentId(item) {
     || item.list?.contentId
     || item.queue?.contentId
     || item.display?.contentId
+    || item.launch?.contentId
     || (item.open ? `app:${item.open}` : '')
     || '';
 }
@@ -131,6 +135,7 @@ export function extractActionName(item) {
   if (item.queue) return 'Queue';
   if (item.list) return 'List';
   if (item.display) return 'Display';
+  if (item.launch) return 'Launch';
   if (item.open) return 'Open';
   return 'Play';
 }
@@ -258,6 +263,7 @@ export function denormalizeItem(item) {
   delete result.display;
   delete result.list;
   delete result.queue;
+  delete result.launch;
 
   return result;
 }

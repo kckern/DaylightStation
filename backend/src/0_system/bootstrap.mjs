@@ -24,6 +24,7 @@ import { AudiobookshelfAdapter } from '#adapters/content/readable/audiobookshelf
 import { SingalongAdapter } from '#adapters/content/singalong/SingalongAdapter.mjs';
 import { ReadalongAdapter } from '#adapters/content/readalong/ReadalongAdapter.mjs';
 import { AppRegistryAdapter } from '#adapters/content/app-registry/AppRegistryAdapter.mjs';
+import { RetroArchAdapter } from '#adapters/content/retroarch/RetroArchAdapter.mjs';
 import { KomgaAdapter } from '#adapters/content/readable/komga/KomgaAdapter.mjs';
 import { QueryAdapter } from '#adapters/content/query/QueryAdapter.mjs';
 import { FreshVideoAdapter } from '#adapters/content/freshvideo/FreshVideoAdapter.mjs';
@@ -654,6 +655,18 @@ export function createContentRegistry(config, deps = {}) {
     new AppRegistryAdapter({ apps: appDefs }),
     { category: appRegistryManifest.capability, provider: appRegistryManifest.provider }
   );
+
+  // Register RetroArchAdapter if retroarch config exists
+  if (config.retroarch?.config) {
+    registry.register(
+      new RetroArchAdapter({
+        config: config.retroarch.config,
+        catalog: config.retroarch.catalog || { games: {}, overrides: {}, sync: {} },
+        logger: deps.logger
+      }),
+      { category: 'game', provider: 'retroarch' }
+    );
+  }
 
   return { registry, savedQueryService };
 }

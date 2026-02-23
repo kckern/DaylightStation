@@ -95,7 +95,9 @@ export function createApiRouter(config) {
     '/admin': 'admin',
     '/stream': 'stream',
     '/queries': 'queries',
-    '/test': 'test'  // Test infrastructure (dev/test only)
+    '/test': 'test',  // Test infrastructure (dev/test only)
+    '/launch': 'launch',
+    '/sync': 'sync'
   };
 
   // Mount each router at its path
