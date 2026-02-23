@@ -47,6 +47,9 @@ export default function CallApp() {
   const [activeDeviceId, setActiveDeviceId] = useState(null);
   const connectedDeviceRef = useRef(null);
   const { isOwner } = useCallOwnership(activeDeviceId);
+  const { progress: wakeProgress, reset: resetWakeProgress } = useWakeProgress(
+    (waking || status === 'connecting') ? activeDeviceId : null
+  );
 
   const remoteVideoRef = useRef(null);
   const remoteContainerRef = useRef(null);
@@ -265,6 +268,7 @@ export default function CallApp() {
   // Clean up call: hangup signaling + power off TV + reset state
   const endCall = useCallback(() => {
     reset();
+    resetWakeProgress();
     const devId = connectedDeviceRef.current;
     hangUp();
     setWaking(false);
@@ -280,7 +284,7 @@ export default function CallApp() {
       connectedDeviceRef.current = null;
       setActiveDeviceId(null);
     }
-  }, [reset, hangUp, logger, isOwner]);
+  }, [reset, resetWakeProgress, hangUp, logger, isOwner]);
 
   // Mute toggle handlers — toggle local track + notify remote
   const handleToggleAudio = useCallback(() => {
@@ -328,12 +332,15 @@ export default function CallApp() {
     setActiveDeviceId(targetDeviceId);
     try {
       const result = await DaylightAPI(`/api/v1/device/${targetDeviceId}/load?open=videocall/${targetDeviceId}`);
-      logger.info('wake-result', { targetDeviceId, ok: result.ok, displayVerified: result.displayVerified, displayVerifyFailed: result.displayVerifyFailed, step: result.step });
+      logger.info('wake-result', { targetDeviceId, ok: result.ok, failedStep: result.failedStep });
 
-      if (!result.ok || result.displayVerifyFailed) {
-        logger.warn('wake-display-not-verified', { targetDeviceId, ok: result.ok, step: result.step, error: result.error, attempts: result.power?.attempts });
+      if (!result.ok) {
         setWaking(false);
-        setWakeError(result.error || 'TV display did not respond. The screen may be off.');
+        if (result.allowOverride) {
+          setWakeError(result.error || 'Display did not respond');
+        } else {
+          setWakeError(result.error || 'Could not wake device');
+        }
         return;
       }
     } catch (err) {
@@ -345,7 +352,6 @@ export default function CallApp() {
       return;
     }
     setWaking(false);
-    // connect() subscribes and waits for the TV's heartbeat before sending the offer
     connect(targetDeviceId);
   }, [logger, connect, waking, status, stream, error, cooldown]);
 
@@ -537,18 +543,32 @@ export default function CallApp() {
         </div>
       )}
 
-      {/* Connecting overlay — centered status, no device buttons */}
+      {/* Connecting overlay — step tracker with real-time progress */}
       {isConnecting && (
         <div className="call-app__connecting-overlay">
-          <p className="call-app__status-text">
-            {waking ? 'Waking up TV...' : 'Establishing call...'}
-          </p>
-          {connectingTooLong && (
+          {wakeProgress ? (
+            <div className="call-app__step-tracker">
+              <StepRow label="Powering on TV" status={wakeProgress.power} />
+              <StepRow label="Verifying display" status={wakeProgress.verify} />
+              <StepRow label="Preparing kiosk" status={wakeProgress.prepare} />
+              <StepRow label="Loading video call" status={wakeProgress.load} />
+            </div>
+          ) : (
+            <p className="call-app__status-text">
+              {waking ? 'Waking up TV...' : 'Establishing call...'}
+            </p>
+          )}
+          {wakeProgress?.failReason && (
+            <div className="call-app__timeout-msg">
+              {wakeProgress.failReason}
+            </div>
+          )}
+          {connectingTooLong && !wakeProgress?.failReason && (
             <div className="call-app__timeout-msg">
               TV is not responding. You can retry or cancel.
             </div>
           )}
-          {connectingTooLong && (
+          {(connectingTooLong || wakeProgress?.failReason) && (
             <button
               className="call-app__retry-btn"
               onClick={() => {
