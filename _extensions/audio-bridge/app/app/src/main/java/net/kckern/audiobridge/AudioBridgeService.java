@@ -33,6 +33,10 @@ public class AudioBridgeService extends Service {
     // 10ms of audio at 48kHz mono 16-bit = 960 bytes
     private static final int FRAME_SIZE = SAMPLE_RATE / 100 * 2;
 
+    // Retry config for AudioRecord initialization
+    private static final int INIT_MAX_RETRIES = 3;
+    private static final int[] INIT_RETRY_DELAYS_MS = {500, 1000, 2000};
+
     private AudioBridgeServer wsServer;
 
     @Override
@@ -168,28 +172,63 @@ public class AudioBridgeService extends Service {
             int minBufSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT);
             int bufferSize = Math.max(minBufSize, FRAME_SIZE * 4);
 
-            try {
-                audioRecord = new AudioRecord(
-                        MediaRecorder.AudioSource.MIC,
-                        SAMPLE_RATE,
-                        CHANNEL_CONFIG,
-                        AUDIO_FORMAT,
-                        bufferSize
-                );
-            } catch (SecurityException e) {
-                Log.e(TAG, "RECORD_AUDIO permission not granted", e);
-                client.send("{\"error\":\"RECORD_AUDIO permission not granted\"}");
-                client.close(1011, "Permission denied");
-                activeClient = null;
-                return;
-            }
+            // Retry loop: AudioRecord init may fail if FKB services are still releasing MIC
+            for (int attempt = 0; attempt <= INIT_MAX_RETRIES; attempt++) {
+                if (attempt > 0) {
+                    int delayMs = INIT_RETRY_DELAYS_MS[Math.min(attempt - 1, INIT_RETRY_DELAYS_MS.length - 1)];
+                    Log.i(TAG, "AudioRecord init retry " + attempt + "/" + INIT_MAX_RETRIES + " after " + delayMs + "ms");
+                    try {
+                        Thread.sleep(delayMs);
+                    } catch (InterruptedException e) {
+                        Log.w(TAG, "Retry sleep interrupted");
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                    if (!client.isOpen()) {
+                        Log.i(TAG, "Client disconnected during retry wait");
+                        activeClient = null;
+                        return;
+                    }
+                }
 
-            if (audioRecord.getState() != AudioRecord.STATE_INITIALIZED) {
-                Log.e(TAG, "AudioRecord failed to initialize");
-                client.send("{\"error\":\"AudioRecord failed to initialize\"}");
-                client.close(1011, "AudioRecord init failed");
+                try {
+                    audioRecord = new AudioRecord(
+                            MediaRecorder.AudioSource.MIC,
+                            SAMPLE_RATE,
+                            CHANNEL_CONFIG,
+                            AUDIO_FORMAT,
+                            bufferSize
+                    );
+                } catch (SecurityException e) {
+                    Log.e(TAG, "RECORD_AUDIO permission not granted", e);
+                    client.send("{\"error\":\"RECORD_AUDIO permission not granted\"}");
+                    client.close(1011, "Permission denied");
+                    activeClient = null;
+                    return;
+                }
+
+                if (audioRecord.getState() == AudioRecord.STATE_INITIALIZED) {
+                    Log.i(TAG, "AudioRecord initialized on attempt " + (attempt + 1));
+                    break; // success
+                }
+
+                // Not initialized — clean up and retry
+                Log.w(TAG, "AudioRecord init failed on attempt " + (attempt + 1) + "/" + (INIT_MAX_RETRIES + 1));
                 audioRecord.release();
                 audioRecord = null;
+
+                if (attempt == INIT_MAX_RETRIES) {
+                    Log.e(TAG, "AudioRecord failed to initialize after all retries");
+                    client.send("{\"error\":\"AudioRecord failed to initialize\"}");
+                    client.close(1011, "AudioRecord init failed");
+                    activeClient = null;
+                    return;
+                }
+            }
+
+            if (audioRecord == null) {
+                Log.e(TAG, "audioRecord is null after retry loop");
+                client.close(1011, "AudioRecord init failed");
                 activeClient = null;
                 return;
             }
