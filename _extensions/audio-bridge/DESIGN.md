@@ -1,7 +1,7 @@
 # Native Audio Bridge — Design
 
 **Date:** 2026-02-22
-**Status:** Approved
+**Status:** Implemented and verified
 **Problem:** [Shield TV USB Audio WebView Audit](../../docs/_wip/audits/2026-02-22-shield-tv-usb-audio-webview-audit.md)
 
 ---
@@ -218,9 +218,109 @@ On devices without `audio_bridge` config (desktop, phone, other TVs), the hook s
 
 ---
 
-## Why This Will Work
+## Build & Deployment
 
-The AudioFlinger dump from the audit proves that `AUDIO_SOURCE_MIC` routes to `AUDIO_DEVICE_IN_USB_DEVICE` on the Shield with non-zero signal power (~-63 dBFS). The native `AudioRecord` API with the MIC source bypasses the CAMCORDER-to-BUILTIN_MIC routing that breaks WebView. The WebSocket transport adds negligible latency on localhost — PCM frames travel over the loopback interface with no network serialization overhead.
+### Build Requirements
+
+| Component | Version | Install |
+|-----------|---------|---------|
+| Java | OpenJDK 17 | `brew install openjdk@17` |
+| Android SDK | Platform 33, build-tools 33.0.2 | `sdkmanager "platforms;android-33" "build-tools;33.0.2"` |
+| Gradle | 7.5.1 (via wrapper) | Included in project |
+| AGP | 7.4.2 | Declared in `build.gradle` |
+
+### Build Command
+
+```bash
+cd _extensions/audio-bridge/app
+export JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home
+export ANDROID_HOME=/Users/kckern/Library/Android/sdk
+sh gradlew assembleDebug
+```
+
+Output: `app/build/outputs/apk/debug/app-debug.apk` (~214KB)
+
+### Deploy to Shield TV
+
+```bash
+# Install APK
+adb -s 10.0.0.11:5555 install -r app/build/outputs/apk/debug/app-debug.apk
+
+# Grant mic permission (required once after install)
+adb -s 10.0.0.11:5555 shell pm grant net.kckern.audiobridge android.permission.RECORD_AUDIO
+
+# Launch service
+adb -s 10.0.0.11:5555 shell am start -n net.kckern.audiobridge/.MainActivity
+
+# Verify service is running
+adb -s 10.0.0.11:5555 shell dumpsys activity services net.kckern.audiobridge
+```
+
+---
+
+## Verification Results (2026-02-22)
+
+### Standalone WebSocket Test
+
+Tested via `adb forward tcp:8765 tcp:8765` + Python WebSocket client:
+
+```
+Header: {"sampleRate":48000,"channels":1,"format":"pcm_s16le"}
+Frames: 100, Samples: 48000
+Non-zero samples: 39768/48000 (82.8%)
+Max sample value: 84 (-51.8 dBFS)
+RMS: 0.000537 (-65.4 dBFS)
+```
+
+AudioFlinger confirmed USB device routing:
+```
+Input device: 0x80001000 (AUDIO_DEVICE_IN_USB_DEVICE)
+Audio source: 1 (AUDIO_SOURCE_MIC)
+Signal power: -65 dBFS (consistent, non-zero)
+```
+
+### End-to-End WebRTC Call Test
+
+Deployed frontend to production. Initiated call from phone → Shield TV. Logs confirm full pipeline:
+
+1. `device-input-config` → `hasAudioBridge: true` (VideoCall.jsx fetched config)
+2. `bridge-connecting` → `bridge-ws-open` → `bridge-format` → `bridge-connected` (hook connected)
+3. `bridge-volume` → `maxLevel: 0.007–0.009` (real audio flowing through worklet)
+4. AudioBridge logs: `AudioRecord started: source=MIC rate=48000` → 5,990 frames captured (60s session)
+5. **Phone confirmed audible audio from Shield's USB microphone**
+
+---
+
+## Known Issues
+
+### Android Recording Concurrency (Intermittent Silence)
+
+Android's audio recording concurrency policy (API 29+) allows only one app to actively capture from a given audio source at a time. When multiple apps record from the same source, the system silences lower-priority apps based on:
+
+**Priority order:** Foreground UI app > Foreground service > Background app
+
+**Observed behavior:** When FKB's WebView calls `getUserMedia` (which opens `AUDIO_SOURCE_CAMCORDER`), AudioFlinger may re-evaluate active recording sessions. Our foreground service's `AUDIO_SOURCE_MIC` track gets silenced intermittently — `Sil` column shows `s` in AudioFlinger track dumps, and `bridge-volume` reports `maxLevel: 0`.
+
+**Confirmed triggers:**
+- FKB `SoundMeterService` (from `motionDetectionAcoustic`) — holds audio resources, causes `AudioRecord` init failure
+- FKB `MotionDetectorService` (from `motionDetection`) — opens Camera 0, causes persistent PiP window
+- FKB `acousticScreenOn` — holds `AUDIO_SOURCE_MIC` at 8kHz, causes silence via recording concurrency
+- WebView `getUserMedia` for camera (CAMCORDER source) — intermittent conflict during session setup
+
+**Required FKB settings (all three must be disabled):**
+
+```bash
+FULLY_PW="<rotated-fkb-password-urlencoded>"
+curl -s "http://10.0.0.11:2323/?cmd=setBooleanSetting&key=motionDetection&value=false&password=${FULLY_PW}"
+curl -s "http://10.0.0.11:2323/?cmd=setBooleanSetting&key=motionDetectionAcoustic&value=false&password=${FULLY_PW}"
+curl -s "http://10.0.0.11:2323/?cmd=setBooleanSetting&key=acousticScreenOn&value=false&password=${FULLY_PW}"
+```
+
+**Important:** The FKB REST API requires authentication. Unauthenticated requests return a login page but silently fail to change settings. Always include `&password=` in requests.
+
+**Additional mitigations:**
+1. Use `mode: always` instead of `fallback` to start bridge before WebView requests audio
+2. Future: request video-only `getUserMedia` (no audio) when bridge is active, preventing WebView from opening any audio source
 
 ---
 
