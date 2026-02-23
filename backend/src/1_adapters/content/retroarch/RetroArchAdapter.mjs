@@ -11,13 +11,17 @@ import { Item } from '#domains/content/entities/Item.mjs';
  */
 export class RetroArchAdapter {
   #config;
-  #catalog;
+  #catalogReader;
   #logger;
 
-  constructor({ config, catalog, logger }) {
+  constructor({ config, catalog, catalogReader, logger }) {
     this.#config = config;
-    this.#catalog = catalog || { games: {}, overrides: {}, sync: {} };
+    this.#catalogReader = catalogReader || (() => catalog || { games: {}, overrides: {}, sync: {} });
     this.#logger = logger || console;
+  }
+
+  get #catalog() {
+    return this.#catalogReader() || { games: {}, overrides: {}, sync: {} };
   }
 
   #stripPrefix(id) {
