@@ -11,16 +11,59 @@ import { useWakeProgress } from '../modules/Input/hooks/useWakeProgress';
 import getLogger from '../lib/logging/Logger.js';
 import './CallApp.scss';
 
-const STEP_ICONS = { done: '\u2713', running: '\u2022', failed: '\u2717' };
+/* MUI-style SVG icons (24×24 viewBox, Material Design paths) */
+const SvgIcon = ({ d, className }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="currentColor" width="22" height="22">
+    <path d={d} />
+  </svg>
+);
 
-function StepRow({ label, status }) {
-  const icon = STEP_ICONS[status] || '\u25CB';
-  const className = `call-app__step call-app__step--${status || 'pending'}`;
+const STEP_DEFS = [
+  { key: 'power',   label: 'Powering on TV',    icon: 'M13 3h-2v10h2V3zm4.83 2.17l-1.42 1.42A6.92 6.92 0 0119 12c0 3.87-3.13 7-7 7s-7-3.13-7-7c0-2.15.97-4.08 2.5-5.37L6.17 5.17A8.96 8.96 0 003 12c0 4.97 4.03 9 9 9s9-4.03 9-9a8.96 8.96 0 00-3.17-6.83z' },
+  { key: 'verify',  label: 'Verifying display',  icon: 'M23 12l-2.44-2.78.34-3.68-3.61-.82-1.89-3.18L12 3 8.6 1.54 6.71 4.72l-3.61.81.34 3.68L1 12l2.44 2.78-.34 3.69 3.61.82 1.89 3.18L12 21l3.4 1.46 1.89-3.18 3.61-.82-.34-3.68L23 12zm-12.91 4.72l-3.8-3.81 1.48-1.48 2.32 2.33 5.85-5.87 1.48 1.48-7.33 7.35z' },
+  { key: 'prepare', label: 'Preparing kiosk',    icon: 'M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 14H3V5h18v12z' },
+  { key: 'load',    label: 'Loading video call',  icon: 'M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z' },
+];
+
+function WakeStepper({ progress }) {
+  // Find the active step index (last non-null step, or 0)
+  let activeIdx = 0;
+  for (let i = STEP_DEFS.length - 1; i >= 0; i--) {
+    if (progress[STEP_DEFS[i].key]) { activeIdx = i; break; }
+  }
+  const activeStep = STEP_DEFS[activeIdx];
+  const activeStatus = progress[activeStep.key] || 'running';
+
   return (
-    <div className={className}>
-      <span className="call-app__step-icon">{icon}</span>
-      <span className="call-app__step-label">{label}</span>
-      {status === 'running' && <span className="call-app__step-spinner" />}
+    <div className="call-app__stepper">
+      <div className="call-app__stepper-track">
+        {STEP_DEFS.map((step, i) => {
+          const status = progress[step.key];
+          const isCurrent = i === activeIdx;
+          const nodeClass = `call-app__stepper-node call-app__stepper-node--${status || 'pending'}${isCurrent ? ' call-app__stepper-node--current' : ''}`;
+
+          return (
+            <React.Fragment key={step.key}>
+              {i > 0 && (
+                <div className={`call-app__stepper-seg call-app__stepper-seg--${status === 'done' || status === 'running' || status === 'failed' ? 'filled' : 'empty'}`} />
+              )}
+              <div className={nodeClass}>
+                {status === 'done' ? (
+                  <SvgIcon d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" className="call-app__stepper-check" />
+                ) : status === 'failed' ? (
+                  <SvgIcon d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" className="call-app__stepper-x" />
+                ) : (
+                  <SvgIcon d={step.icon} className="call-app__stepper-icon" />
+                )}
+              </div>
+            </React.Fragment>
+          );
+        })}
+      </div>
+      <div className={`call-app__stepper-label call-app__stepper-label--${activeStatus}`}>
+        {activeStatus === 'failed' ? progress.failReason || 'Failed' : activeStep.label}
+        {activeStatus === 'running' && <span className="call-app__stepper-dots" />}
+      </div>
     </div>
   );
 }
@@ -597,25 +640,15 @@ export default function CallApp() {
         </div>
       )}
 
-      {/* Connecting overlay — step tracker with real-time progress */}
+      {/* Connecting overlay — vertical stepper with real-time progress */}
       {isConnecting && (
         <div className="call-app__connecting-overlay">
           {wakeProgress ? (
-            <div className="call-app__step-tracker">
-              <StepRow label="Powering on TV" status={wakeProgress.power} />
-              <StepRow label="Verifying display" status={wakeProgress.verify} />
-              <StepRow label="Preparing kiosk" status={wakeProgress.prepare} />
-              <StepRow label="Loading video call" status={wakeProgress.load} />
-            </div>
+            <WakeStepper progress={wakeProgress} />
           ) : (
             <p className="call-app__status-text">
               {waking ? 'Waking up TV...' : 'Establishing call...'}
             </p>
-          )}
-          {wakeProgress?.failReason && (
-            <div className="call-app__timeout-msg">
-              {wakeProgress.failReason}
-            </div>
           )}
           {connectingTooLong && !wakeProgress?.failReason && (
             <div className="call-app__timeout-msg">
