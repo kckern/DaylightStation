@@ -222,20 +222,36 @@ On devices without `audio_bridge` config (desktop, phone, other TVs), the hook s
 
 ### Build Requirements
 
-| Component | Version | Install |
-|-----------|---------|---------|
-| Java | OpenJDK 17 | `brew install openjdk@17` |
-| Android SDK | Platform 33, build-tools 33.0.2 | `sdkmanager "platforms;android-33" "build-tools;33.0.2"` |
-| Gradle | 7.5.1 (via wrapper) | Included in project |
-| AGP | 7.4.2 | Declared in `build.gradle` |
+| Component | Version | Install | Verify |
+|-----------|---------|---------|--------|
+| Java | OpenJDK 17+ | `brew install openjdk@17` | `/opt/homebrew/opt/openjdk@17/bin/java --version` |
+| Android SDK | Platform 33 | Via Android Studio or `sdkmanager` | `ls ~/Library/Android/sdk/platforms/android-33` |
+| Gradle | 7.5.1 (via wrapper) | Included in project (`gradlew`) | Automatic on first build |
+| AGP | 7.4.2 | Declared in `build.gradle` | Automatic |
 
-### Build Command
+**Note:** Java may be installed but not on `PATH`. The Gradle wrapper finds it via `JAVA_HOME`. Homebrew installs to `/opt/homebrew/opt/openjdk@17` but does not symlink it to the system Java path. Android SDK path is configured in `local.properties` (`sdk.dir`).
+
+### Quick Build & Deploy
+
+```bash
+# From repo root — build, install, and restart in one shot:
+cd _extensions/audio-bridge/app \
+  && JAVA_HOME=/opt/homebrew/opt/openjdk@17 ./gradlew assembleDebug \
+  && adb -s 10.0.0.11:5555 install -r app/build/outputs/apk/debug/app-debug.apk \
+  && adb -s 10.0.0.11:5555 shell am force-stop net.kckern.audiobridge \
+  && adb -s 10.0.0.11:5555 shell am start -n net.kckern.audiobridge/.MainActivity
+```
+
+### Build Step-by-Step
 
 ```bash
 cd _extensions/audio-bridge/app
-export JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home
-export ANDROID_HOME=/Users/kckern/Library/Android/sdk
-sh gradlew assembleDebug
+
+# Set JAVA_HOME (macOS Homebrew — java not on PATH is fine)
+export JAVA_HOME=/opt/homebrew/opt/openjdk@17
+
+# Build debug APK
+./gradlew assembleDebug
 ```
 
 Output: `app/build/outputs/apk/debug/app-debug.apk` (~214KB)
@@ -243,17 +259,35 @@ Output: `app/build/outputs/apk/debug/app-debug.apk` (~214KB)
 ### Deploy to Shield TV
 
 ```bash
-# Install APK
+# Install APK (use -r to replace existing)
 adb -s 10.0.0.11:5555 install -r app/build/outputs/apk/debug/app-debug.apk
 
-# Grant mic permission (required once after install)
+# Grant mic permission (required once after first install)
 adb -s 10.0.0.11:5555 shell pm grant net.kckern.audiobridge android.permission.RECORD_AUDIO
 
-# Launch service
+# Launch — MainActivity starts the foreground service and finishes
 adb -s 10.0.0.11:5555 shell am start -n net.kckern.audiobridge/.MainActivity
 
 # Verify service is running
 adb -s 10.0.0.11:5555 shell dumpsys activity services net.kckern.audiobridge
+```
+
+**Note:** You cannot start the service directly via `am startservice` — Android requires foreground services to be started from a component with foreground privileges. Use `MainActivity` which starts the service and immediately finishes.
+
+### ADB from Docker Container
+
+The Docker container also has `adb` installed. Keys must be provisioned from the local machine (which has pre-authorized access to the Shield TV). The entrypoint copies keys from `data/system/adb-keys/` into the container on startup. To provision:
+
+```bash
+scp ~/.android/adbkey ~/.android/adbkey.pub homeserver.local:/tmp/
+ssh homeserver.local '
+  cp /tmp/adbkey /media/kckern/DockerDrive/Dropbox/Apps/DaylightStation/data/system/adb-keys/adbkey
+  cp /tmp/adbkey.pub /media/kckern/DockerDrive/Dropbox/Apps/DaylightStation/data/system/adb-keys/adbkey.pub
+  docker cp /tmp/adbkey daylight-station:/home/node/.android/adbkey
+  docker cp /tmp/adbkey.pub daylight-station:/home/node/.android/adbkey.pub
+  docker exec -u root daylight-station chown node:node /home/node/.android/adbkey /home/node/.android/adbkey.pub
+  docker exec -u root daylight-station chmod 600 /home/node/.android/adbkey
+'
 ```
 
 ---

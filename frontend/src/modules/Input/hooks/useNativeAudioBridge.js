@@ -22,7 +22,7 @@ const RETRY_DELAYS = [1000, 2000, 4000, 10000]; // exponential backoff, max 10s
  * @returns {{ stream: MediaStream|null, volume: number, status: string }}
  */
 export const useNativeAudioBridge = (config = {}) => {
-  const { enabled = false, url, gain = 3 } = config;
+  const { enabled = false, url, gain = 2 } = config;
 
   const [stream, setStream] = useState(null);
   const [volume, setVolume] = useState(0);
@@ -225,7 +225,7 @@ registerProcessor('bridge-processor', BridgeProcessor);`;
     // Gain boost → compressor (limiter) → destination
     // Compressor prevents clipping from the gain boost.
     const gainNode = ctx.createGain();
-    gainNode.gain.value = configRef.current.gain || 3;
+    gainNode.gain.value = configRef.current.gain || 2;
     gainNodeRef.current = gainNode;
 
     const compressor = ctx.createDynamicsCompressor();

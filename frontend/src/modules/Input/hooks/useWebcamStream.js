@@ -27,11 +27,13 @@ export const useWebcamStream = (selectedVideoDevice, selectedAudioDevice) => {
             ? {
                 deviceId: { exact: selectedVideoDevice },
                 width: { ideal: 1280 },
-                height: { ideal: 720 }
+                height: { ideal: 720 },
+                aspectRatio: { ideal: 16 / 9 },
               }
             : {
                 width: { ideal: 1280 },
-                height: { ideal: 720 }
+                height: { ideal: 720 },
+                aspectRatio: { ideal: 16 / 9 },
               },
           audio: selectedAudioDevice != null
             ? { deviceId: { exact: selectedAudioDevice } }
