@@ -72,7 +72,9 @@ export default function VideoCall({ deviceId, clear }) {
   const bridgeActive = bridge.status === 'connected';
   const effectiveAudioDevice = bridgeActive ? null : (probe.workingDeviceId || selectedAudioDevice);
 
-  const { videoRef, stream } = useWebcamStream(selectedVideoDevice, effectiveAudioDevice);
+  const { videoRef, stream } = useWebcamStream(selectedVideoDevice, effectiveAudioDevice, {
+    videoResolution: inputConfig?.video_resolution,
+  });
 
   // Merge video-only stream with bridge audio for WebRTC.
   // Apply echoCancellation + noiseSuppression constraints on the bridge
@@ -173,8 +175,6 @@ export default function VideoCall({ deviceId, clear }) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [clear]);
 
-  const volumePercentage = Math.min((bridgeActive ? bridge.volume : probe.volume) * 100, 100);
-
   const formatDuration = (s) => {
     const m = Math.floor(s / 60);
     const sec = s % 60;
@@ -227,10 +227,6 @@ export default function VideoCall({ deviceId, clear }) {
         )}
       </div>
 
-      {/* Volume meter — solo mode only, hidden in connected mode */}
-      <div className="videocall-tv__meter">
-        <div className="videocall-tv__meter-fill" style={{ width: `${volumePercentage}%` }} />
-      </div>
     </div>
   );
 }
