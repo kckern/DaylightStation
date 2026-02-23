@@ -21,6 +21,8 @@ export class FullyKioskContentAdapter {
   #logger;
   #httpClient;
   #metrics;
+  #adbAdapter;
+  #launchActivity;
 
   /**
    * @param {Object} config
@@ -28,9 +30,11 @@ export class FullyKioskContentAdapter {
    * @param {number} config.port - Fully Kiosk REST API port (usually 2323)
    * @param {string} config.password - Fully Kiosk remote admin password
    * @param {string} config.daylightHost - Base URL for content loading
+   * @param {string} [config.launchActivity] - Fully qualified activity for ADB re-launch
    * @param {Object} deps
    * @param {Object} deps.httpClient - HTTP client for API calls
    * @param {Object} [deps.logger]
+   * @param {Object} [deps.adbAdapter] - Optional AdbAdapter for force-restart
    */
   constructor(config, deps = {}) {
     if (!deps.httpClient) {
@@ -46,6 +50,8 @@ export class FullyKioskContentAdapter {
     this.#daylightHost = config.daylightHost;
     this.#logger = deps.logger || console;
     this.#httpClient = deps.httpClient;
+    this.#adbAdapter = deps.adbAdapter || null;
+    this.#launchActivity = config.launchActivity || null;
 
     this.#metrics = {
       startedAt: Date.now(),
@@ -91,6 +97,29 @@ export class FullyKioskContentAdapter {
           this.#logger.debug?.('fullykiosk.prepareForContent.disableSetting.ok', { setting });
         } else {
           this.#logger.warn?.('fullykiosk.prepareForContent.disableSetting.failed', { setting, error: setResult.error });
+        }
+      }
+
+      // Force-restart FKB via ADB to guarantee audio services release MIC.
+      // Settings are already persisted above, so FKB restarts clean.
+      // Non-blocking: log failures but don't abort prepare.
+      if (this.#adbAdapter && this.#launchActivity) {
+        try {
+          const connectResult = await this.#adbAdapter.connect();
+          if (connectResult.ok) {
+            const stopResult = await this.#adbAdapter.shell('am force-stop de.ozerov.fully');
+            this.#logger.info?.('fullykiosk.prepareForContent.adbForceStop', { ok: stopResult.ok });
+            // Brief pause for process to fully terminate
+            await new Promise(r => setTimeout(r, 500));
+            const launchResult = await this.#adbAdapter.launchActivity(this.#launchActivity);
+            this.#logger.info?.('fullykiosk.prepareForContent.adbRelaunch', { ok: launchResult.ok });
+          } else {
+            this.#logger.warn?.('fullykiosk.prepareForContent.adbRestart.failed', {
+              error: connectResult.error || 'ADB connect failed'
+            });
+          }
+        } catch (err) {
+          this.#logger.warn?.('fullykiosk.prepareForContent.adbRestart.failed', { error: err.message });
         }
       }
 
