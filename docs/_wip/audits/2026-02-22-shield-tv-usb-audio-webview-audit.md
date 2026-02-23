@@ -1,7 +1,7 @@
 # Shield TV USB Audio — WebView getUserMedia Audit
 
 **Date:** 2026-02-22
-**Status:** Root cause confirmed — CAMCORDER source misrouted to phantom BUILTIN_MIC
+**Status:** Resolved — Native AudioBridge app bypasses routing issue; end-to-end audio confirmed
 **Device:** NVIDIA Shield TV 2019, Android TV 11 (SDK 30), Fully Kiosk Browser 1.60.1-play
 
 ---
@@ -329,17 +329,60 @@ Commit `18ca0d82` (2026-02-21) introduced an RTCPeerConnection loopback stats ap
 
 ---
 
-## Remaining Options
+## Resolution: Native Audio Bridge
 
-Now that we know the root cause is **CAMCORDER → BUILTIN_MIC routing**, the options are:
+The **native audio bridge app** option was implemented and deployed. Full design: [`_extensions/audio-bridge/DESIGN.md`](../../_extensions/audio-bridge/DESIGN.md)
+
+### Solution Summary
+
+A sideloaded Android APK (`net.kckern.audiobridge`, ~214KB) runs a foreground service that:
+1. Starts a WebSocket server on `ws://localhost:8765`
+2. When a client connects, opens `AudioRecord` with `AUDIO_SOURCE_MIC` at 48kHz/16-bit/mono
+3. Streams raw PCM binary frames (~960 bytes = 10ms each) over the WebSocket
+4. Client disconnect stops recording and releases `AudioRecord`
+
+A new React hook (`useNativeAudioBridge`) in the frontend connects to this WebSocket, converts PCM to a `MediaStreamTrack` via AudioWorklet + `createMediaStreamDestination()`, and merges it with the video-only `getUserMedia` stream for WebRTC.
+
+### Verification (2026-02-22)
+
+**Standalone test** (Python WebSocket client via `adb forward`):
+- 48,000 samples received, 82.8% non-zero
+- RMS: -65.4 dBFS (matches AudioFlinger HAL signal power)
+- Peak: -51.8 dBFS
+
+**End-to-end call test** (phone → Shield TV via WebRTC):
+- Frontend logs confirm: `bridge-connected`, `bridge-volume maxLevel: 0.007–0.009`
+- AudioBridge logs: 5,990 frames captured in 60-second session
+- **User confirmed audible audio from Shield's USB microphone on phone**
+
+### Configuration
+
+Bridge activation is config-driven per-device in `devices.yml`:
+
+```yaml
+livingroom-tv:
+  input:
+    audio_bridge:
+      url: ws://localhost:8765
+      mode: fallback   # activates when useAudioProbe reports 'no-mic'
+```
+
+Devices without `audio_bridge` config are unaffected — standard `getUserMedia` audio path is used.
+
+### Known Issue: Android Recording Concurrency
+
+Android's recording concurrency policy (API 29+) silences lower-priority apps when multiple record from the same source. Two confirmed triggers:
+
+1. **FKB acoustic motion detection** — holds `AUDIO_SOURCE_MIC` as a foreground app, silencing our foreground service. **Must disable** via FKB REST API: `setBooleanSetting&key=acousticScreenOn&value=false`
+2. **WebView getUserMedia timing** — when WebView opens CAMCORDER for camera, AudioFlinger may intermittently silence the bridge's MIC track depending on session setup timing
+
+### Remaining Options (Not Pursued)
 
 | Option | Approach | Effort | Likelihood | Notes |
 |--------|----------|--------|------------|-------|
-| **Native audio bridge app** | Sideload a small Android app that opens `AudioRecord` with `AUDIO_SOURCE_MIC` → streams PCM to web app via WebSocket or local HTTP | Medium | **High** | Proven: Thread 2 shows MIC source routes to USB device. Bypasses WebView entirely. |
-| **Sideload Chrome** | Install Chrome for Android TV; Chrome may use `AUDIO_SOURCE_MIC` instead of `CAMCORDER` | Low | **Medium** | Chrome is a full browser, not just WebView — may use different audio source selection. May not support kiosk mode. |
-| **Modify audio_policy_configuration_nv.xml** | Root the device and add USB_DEVICE to primary_input's source list, or create a CAMCORDER → USB routing rule | Low | **High** | Requires root access (unlocked bootloader). Directly fixes the routing. |
-| **Bluetooth mic** | Pair a Bluetooth mic; BT audio may route differently than USB | Low | **Low** | Shield TV 2019 BT audio input support is uncertain. Same routing policy may apply. |
-| **Different USB audio adapter** | Try a dedicated USB audio adapter (not camera); may be recognized differently | Low | **Low** | Same routing policy would apply — CAMCORDER still goes to BUILTIN_MIC. |
-| **LiveKit native client** | Use LiveKit server + native Android client on Shield | High | **High** | Architectural change. Native client uses AudioRecord (MIC source) directly. |
-
-**Recommended next step:** Try sideloading Chrome first (lowest effort). If Chrome also fails, build the native audio bridge app.
+| ~~**Native audio bridge app**~~ | ~~Sideload AudioRecord MIC → WebSocket~~ | ~~Medium~~ | ~~**High**~~ | **IMPLEMENTED — this is the solution** |
+| **Sideload Chrome** | Install Chrome for Android TV; may use MIC instead of CAMCORDER | Low | Medium | Not needed now; could still test for a simpler solution |
+| **Modify audio_policy_configuration_nv.xml** | Root device, add USB to primary_input sources | Low | High | Requires root; would fix the problem at the source |
+| **Bluetooth mic** | Pair BT mic; may route differently | Low | Low | Same routing policy likely applies |
+| **Different USB audio adapter** | Dedicated USB audio adapter | Low | Low | Same routing policy applies |
+| **LiveKit native client** | Native Android WebRTC client on Shield | High | High | Architectural change; not needed now |
