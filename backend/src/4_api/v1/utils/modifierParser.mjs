@@ -17,7 +17,7 @@ export function parseModifiers(rawPath) {
   const cleanParts = [];
 
   // Known modifiers that should be extracted from path
-  const knownModifiers = ['playable', 'shuffle', 'recent_on_top'];
+  const knownModifiers = ['playable', 'launchable', 'shuffle', 'recent_on_top'];
 
   for (const part of parts) {
     if (!part) {

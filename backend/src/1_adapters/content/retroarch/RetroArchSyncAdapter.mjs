@@ -29,26 +29,27 @@ export class RetroArchSyncAdapter {
     this.#logger.info?.('retroarch.sync.start');
     const baseUrl = `http://${this.#sourceConfig.host}:${this.#sourceConfig.port}`;
 
-    // 1. Fetch playlist directory listing
+    // 1. Fetch playlist directory listing (X-plore returns { files: [{ n, size, ... }] })
     const playlistDir = `${baseUrl}${this.#sourceConfig.playlists_path}?cmd=list`;
     const dirResponse = await this.#httpClient.get(playlistDir);
-    const playlists = (dirResponse.data || []).filter(f => f.name?.endsWith('.lpl'));
+    const files = dirResponse.data?.files || [];
+    const playlists = files.filter(f => f.n?.endsWith('.lpl'));
 
     this.#logger.info?.('retroarch.sync.playlistsFetched', { count: playlists.length });
 
-    // 2. Fetch and parse each playlist
+    // 2. Fetch and parse each playlist (RetroArch .lpl format: { items: [{ path, label, core_path }] })
     const games = {};
     let totalGames = 0;
 
     for (const playlist of playlists) {
-      const playlistUrl = `${baseUrl}${this.#sourceConfig.playlists_path}/${playlist.name}`;
+      const playlistUrl = `${baseUrl}${this.#sourceConfig.playlists_path}/${encodeURIComponent(playlist.n)}?cmd=file`;
       const response = await this.#httpClient.get(playlistUrl);
       const data = response.data;
       const items = data?.items || [];
 
       const consoleId = this.#resolveConsoleId(items[0]?.core_path);
       if (!consoleId) {
-        this.#logger.warn?.('retroarch.sync.unknownCore', { playlist: playlist.name });
+        this.#logger.warn?.('retroarch.sync.unknownCore', { playlist: playlist.n, core: items[0]?.core_path });
         continue;
       }
 
@@ -94,8 +95,10 @@ export class RetroArchSyncAdapter {
 
   #resolveConsoleId(corePath) {
     if (!corePath) return null;
+    const coreFilename = corePath.split('/').pop();
     for (const [consoleId, cfg] of Object.entries(this.#consoleConfig)) {
-      if (cfg.core === corePath) return consoleId;
+      const cfgFilename = cfg.core?.split('/').pop();
+      if (cfgFilename && cfgFilename === coreFilename) return consoleId;
     }
     return null;
   }
