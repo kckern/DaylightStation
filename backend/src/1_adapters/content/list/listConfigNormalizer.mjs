@@ -96,6 +96,7 @@ export function normalizeListItem(item) {
   if (item.active != null) result.active = item.active;
   if (item.continuous != null) result.continuous = item.continuous;
   if (item.shuffle != null) result.shuffle = item.shuffle;
+  if (item.menuStyle != null) result.menuStyle = item.menuStyle;
   if (item.playbackrate != null) result.playbackrate = item.playbackrate;
   if (item.days != null) result.days = item.days;
   if (item.applySchedule != null) result.applySchedule = item.applySchedule;
