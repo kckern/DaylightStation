@@ -23,6 +23,8 @@ import { useListsContext } from './ListsContext.js';
 import { DaylightMediaPath } from '../../../lib/api.mjs';
 import ImagePickerModal from './ImagePickerModal.jsx';
 import AdminPreviewPlayer from '../Preview/AdminPreviewPlayer.jsx';
+import Displayer from '../../Displayer/Displayer.jsx';
+import AppContainer from '../../AppContainer/AppContainer.jsx';
 
 const ACTION_OPTIONS = [
   { value: 'Play', label: 'Play' },
@@ -121,6 +123,8 @@ async function doFetchSiblings(itemId, contentInfo) {
     parent: item.parentTitle,
     library: item.libraryTitle,
     itemCount: item.childCount ?? null,
+    itemIndex: item.itemIndex ?? null,
+    number: item.number ?? null,
     isContainer: item.isContainer || item.itemType === 'container'
   }));
 
@@ -169,6 +173,8 @@ export async function fetchSiblingsPage(itemId, contentInfo, offset, limit) {
     parent: item.parentTitle,
     library: item.libraryTitle,
     itemCount: item.childCount ?? null,
+    itemIndex: item.itemIndex ?? null,
+    number: item.number ?? null,
     isContainer: item.isContainer || item.itemType === 'container'
   }));
 
@@ -325,6 +331,15 @@ function buildSubtitle(item) {
   const parts = [];
   const typeLabel = TYPE_LABELS[item.type];
 
+  // For items with explicit number metadata (e.g., singalong:hymn/97 → "Hymn: 97")
+  if (item.number != null) {
+    const label = typeLabel || TYPE_LABELS[item.source] || (item.source ? item.source.charAt(0).toUpperCase() + item.source.slice(1) : null);
+    if (label) {
+      parts.push(`${label}: ${item.number}`);
+      return parts.join(' • ');
+    }
+  }
+
   // For numbered collection items (e.g., hymn:308, primary:5), show "Hymn: 308"
   // Generic: any source with a numeric localId and no parent hierarchy
   const localIdPart = item.value?.split(':')[1]?.trim();
@@ -338,7 +353,9 @@ function buildSubtitle(item) {
   }
 
   const usedLibraryAsType = !typeLabel && item.library;
-  if (typeLabel) parts.push(typeLabel);
+  const itemIndex = item.itemIndex ?? item.metadata?.itemIndex;
+  if (typeLabel && itemIndex != null) parts.push(`${typeLabel} ${itemIndex}`);
+  else if (typeLabel) parts.push(typeLabel);
   else if (item.library) parts.push(item.library);
 
   // Parent info
@@ -635,6 +652,8 @@ export async function fetchContentMetadata(value) {
           parent: data.metadata?.parentTitle,
           library: data.metadata?.librarySectionTitle,
           itemCount: data.metadata?.childCount ?? data.metadata?.leafCount ?? null,
+          itemIndex: data.metadata?.itemIndex ?? null,
+          number: data.metadata?.number ?? null,
           unresolved: false
         };
         contentInfoCache.set(value, info);
@@ -2331,16 +2350,74 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
             <IconPlayerPlay size={14} />
           </ActionIcon>
         )}
+        {item.action === 'Display' && item.input && (
+          <ActionIcon
+            variant="subtle"
+            size="sm"
+            color="cyan"
+            onClick={() => setPreviewOpen(true)}
+            title="Preview image"
+          >
+            <IconPhoto size={14} />
+          </ActionIcon>
+        )}
+        {item.action === 'Open' && item.input && (
+          <ActionIcon
+            variant="subtle"
+            size="sm"
+            color="teal"
+            onClick={() => setPreviewOpen(true)}
+            title="Preview app"
+          >
+            <IconAppWindow size={14} />
+          </ActionIcon>
+        )}
+        {item.action === 'Read' && item.input && (
+          <ActionIcon
+            variant="subtle"
+            size="sm"
+            color="orange"
+            onClick={() => setPreviewOpen(true)}
+            title="Preview reader"
+          >
+            <IconBookmark size={14} />
+          </ActionIcon>
+        )}
         <Modal
           opened={previewOpen}
           onClose={() => setPreviewOpen(false)}
           title={item.label || 'Preview'}
           centered
-          size={980}
+          size={item.action === 'Display' ? 'lg' : item.action === 'Open' ? 'xl' : 980}
           padding="xs"
           styles={{ content: { marginLeft: 'var(--app-shell-navbar-width, 250px)' } }}
         >
-          {previewOpen && (
+          {previewOpen && item.action === 'Display' && (
+            <div style={{ height: 500 }}>
+              <Displayer
+                display={{ id: item.input?.replace(/^(\w+):\s+/, '$1:').trim() }}
+                onClose={() => setPreviewOpen(false)}
+              />
+            </div>
+          )}
+          {previewOpen && item.action === 'Open' && (
+            <div style={{ height: 600 }}>
+              <AppContainer
+                open={item.input?.replace(/^app:\s*/, '')}
+                clear={() => setPreviewOpen(false)}
+              />
+            </div>
+          )}
+          {previewOpen && item.action === 'Read' && (
+            <AdminPreviewPlayer
+              contentId={item.input?.replace(/^(\w+):\s+/, '$1:').trim()}
+              action="Play"
+              volume={item.volume}
+              playbackRate={item.playbackRate}
+              onClose={() => setPreviewOpen(false)}
+            />
+          )}
+          {previewOpen && (item.action === 'Play' || item.action === 'Queue' || !item.action) && (
             <AdminPreviewPlayer
               contentId={item.input?.replace(/^(\w+):\s+/, '$1:').trim()}
               action={item.action || 'Play'}

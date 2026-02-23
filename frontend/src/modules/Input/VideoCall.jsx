@@ -150,15 +150,10 @@ export default function VideoCall({ deviceId, clear }) {
         )}
       </div>
 
-      {/* Volume meter — visible in ALL modes for audio diagnostics */}
+      {/* Volume meter — solo mode only, hidden in connected mode */}
       <div className="videocall-tv__meter">
         <div className="videocall-tv__meter-fill" style={{ width: `${volumePercentage}%` }} />
       </div>
-      {peerConnected && (
-        <div style={{ position: 'fixed', bottom: '1.5rem', right: '0.5rem', color: '#fff', fontSize: '0.7rem', opacity: 0.7, zIndex: 20 }}>
-          mic: {(volume * 100).toFixed(1)}%
-        </div>
-      )}
     </div>
   );
 }

@@ -103,6 +103,7 @@ export class AppRegistryAdapter {
    */
   async resolveSiblings() {
     const items = await this.getList();
+    items.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
     return { parent: null, items };
   }
 

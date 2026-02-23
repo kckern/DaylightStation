@@ -112,11 +112,15 @@ export class SingalongAdapter {
       style,
       type: collection,
       metadata: {
-        number: metadata.number,
         contentFormat: 'singalong',
         collection,
         category: 'singalong',
-        ...metadata
+        ...metadata,
+        // Canonical number: derive from the route's numeric itemId so the
+        // frontend has a stable field regardless of the YAML key name
+        // (hymn_num, song_number, etc.).  Placed after spread so it can't
+        // be overwritten by collection-specific YAML fields.
+        number: /^\d+$/.test(itemId) ? parseInt(itemId) : (metadata.number ?? null)
       }
     });
   }

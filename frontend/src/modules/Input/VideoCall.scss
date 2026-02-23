@@ -31,15 +31,14 @@
     background: #111;
   }
 
-  // ── Connected mode: side-by-side grid + info bar ──
+  // ── Connected mode: self left + info below, remote portrait right full-height ──
 
   &--connected {
     display: grid;
     grid-template-columns: 1fr auto;
-    grid-template-rows: 1fr auto;
+    grid-template-rows: 1fr auto auto;
     gap: 1ex;
     padding: 1ex;
-    align-items: start;
   }
 
   &--connected &__local-panel {
@@ -64,7 +63,7 @@
 
   &--connected &__remote-panel {
     grid-column: 2;
-    grid-row: 1;
+    grid-row: 1 / -1;
     display: flex;
     align-items: flex-start;
     justify-content: center;
@@ -74,7 +73,7 @@
   }
 
   &--connected &__remote-panel &__video {
-    height: calc(100vh - 4rem);
+    height: calc(100vh - 2ex);
     max-height: 100%;
     object-fit: contain;
     background: #111;
@@ -82,7 +81,7 @@
   }
 
   &--connected &__info-bar {
-    grid-column: 1 / -1;
+    grid-column: 1;
     grid-row: 2;
     display: flex;
     align-items: center;
@@ -106,7 +105,7 @@
     color: #ff9f43;
   }
 
-  // ── Solo-mode overlays (hidden in connected mode) ──
+  // ── Volume meter ──
 
   &__meter {
     position: absolute;
@@ -123,15 +122,12 @@
   }
 
   &--connected &__meter {
-    // Keep visible during calls for audio diagnostics.
-    // Repositioned to bottom-right in connected mode.
-    position: fixed;
-    bottom: 0.5rem;
-    right: 0.5rem;
-    left: auto;
+    position: static;
     transform: none;
-    width: 200px;
-    opacity: 0.8;
+    grid-column: 1;
+    grid-row: 3;
+    width: 100%;
+    z-index: auto;
   }
 
   &__meter-fill {

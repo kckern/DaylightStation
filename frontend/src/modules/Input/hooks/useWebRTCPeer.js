@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import getLogger from '../../../lib/logging/Logger.js';
 
 let _logger;
@@ -220,7 +220,7 @@ export const useWebRTCPeer = (localStream) => {
     };
   }, []);
 
-  return {
+  return useMemo(() => ({
     pcRef,
     remoteStream,
     connectionState,
@@ -230,5 +230,5 @@ export const useWebRTCPeer = (localStream) => {
     addIceCandidate,
     onIceCandidate,
     reset,
-  };
+  }), [remoteStream, connectionState, createOffer, handleOffer, handleAnswer, addIceCandidate, onIceCandidate, reset]);
 };

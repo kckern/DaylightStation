@@ -852,6 +852,7 @@ export class FileAdapter {
 
     const items = await this.getList(`files:${parentPath}`);
     const listItems = Array.isArray(items) ? items : (items?.children || []);
+    listItems.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
 
     return { parent, items: listItems };
   }

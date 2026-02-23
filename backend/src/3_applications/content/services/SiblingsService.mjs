@@ -46,9 +46,8 @@ export class SiblingsService {
    * Resolution:
    * 1. Resolve adapter from registry (exact match, then prefix fallback)
    * 2. Delegate to adapter.resolveSiblings(compoundId)
-   * 3. Sort items alphabetically by title
-   * 4. Apply windowed pagination
-   * 5. Normalize result to uniform DTO shape
+   * 3. Apply windowed pagination (adapter controls item ordering)
+   * 4. Normalize result to uniform DTO shape
    *
    * @param {string} source - Source identifier
    * @param {string} localId - Local ID within source
@@ -70,13 +69,8 @@ export class SiblingsService {
       return { parent: null, items: [] };
     }
 
-    // Sort items alphabetically by title
-    const sortedItems = [...(result.items || [])].sort((a, b) =>
-      (a.title || '').localeCompare(b.title || '')
-    );
-
-    // Apply windowed pagination
-    const windowed = this.#applyWindow(sortedItems, compoundId, opts);
+    // Apply windowed pagination (adapter controls item ordering)
+    const windowed = this.#applyWindow(result.items || [], compoundId, opts);
 
     // Normalize windowed items
     const normalized = windowed.items.map(item =>
@@ -230,6 +224,8 @@ export class SiblingsService {
     const libraryTitle = item.metadata?.librarySectionTitle ?? item.librarySectionTitle ?? null;
     const childCount = item.metadata?.childCount ?? item.metadata?.leafCount ?? item.childCount ?? null;
     const isContainer = item.itemType === 'container' || item.isContainer || item.metadata?.type === 'container';
+    const itemIndex = item.metadata?.itemIndex ?? item.itemIndex ?? item.index ?? null;
+    const number = item.metadata?.number ?? null;
 
     return {
       id: item.id,
@@ -242,6 +238,8 @@ export class SiblingsService {
       libraryTitle,
       childCount,
       isContainer,
+      ...(itemIndex != null && { itemIndex }),
+      ...(number != null && { number }),
       ...(item.group && { group: item.group })
     };
   }

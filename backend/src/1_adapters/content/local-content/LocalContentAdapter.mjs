@@ -1747,6 +1747,7 @@ export class LocalContentAdapter {
 
     // Collection root — list all items in this collection
     const items = await this.listCollection(prefix);
+    items.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
     const titleized = prefix.charAt(0).toUpperCase() + prefix.slice(1);
     const parent = {
       id: `${prefix}:`,
