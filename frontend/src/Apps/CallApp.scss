@@ -242,15 +242,13 @@
     border-radius: 1ex 1ex 0 0;
   }
 
-  &__mute-btn {
+  &__ctrl-btn {
     width: 48px;
     height: 48px;
     border-radius: 50%;
     border: 1px solid rgba(255, 255, 255, 0.3);
     background: rgba(255, 255, 255, 0.1);
     color: #fff;
-    font-size: 0.75rem;
-    font-weight: 600;
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -261,22 +259,20 @@
       border-color: rgba(255, 50, 50, 0.7);
     }
 
+    &--hangup {
+      width: auto;
+      border-radius: 24px;
+      padding: 0.8rem 2rem;
+      background: #d32f2f;
+      border: none;
+
+      &:active {
+        background: #b71c1c;
+      }
+    }
+
     &:active {
       opacity: 0.7;
-    }
-  }
-
-  &__hangup {
-    background: #d32f2f;
-    color: #fff;
-    border: none;
-    border-radius: 24px;
-    padding: 0.8rem 2.5rem;
-    font-size: 1.1rem;
-    cursor: pointer;
-
-    &:active {
-      background: #b71c1c;
     }
   }
 
