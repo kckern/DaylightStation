@@ -194,10 +194,11 @@ public class AudioBridgeService extends Service {
                 }
 
                 try {
-                    // VOICE_COMMUNICATION applies built-in AEC/NS/AGC to prevent
-                    // the caller hearing their own voice echoed back from TV speakers.
+                    // MIC source for USB mic on Shield TV (no telephony subsystem,
+                    // so VOICE_COMMUNICATION fails to initialize). AEC/NS are applied
+                    // explicitly after init via AcousticEchoCanceler/NoiseSuppressor.
                     audioRecord = new AudioRecord(
-                            MediaRecorder.AudioSource.VOICE_COMMUNICATION,
+                            MediaRecorder.AudioSource.MIC,
                             SAMPLE_RATE,
                             CHANNEL_CONFIG,
                             AUDIO_FORMAT,
@@ -213,7 +214,7 @@ public class AudioBridgeService extends Service {
 
                 if (audioRecord.getState() == AudioRecord.STATE_INITIALIZED) {
                     Log.i(TAG, "AudioRecord initialized on attempt " + (attempt + 1)
-                            + " source=VOICE_COMMUNICATION");
+                            + " source=MIC");
                     break; // success
                 }
 
@@ -262,7 +263,7 @@ public class AudioBridgeService extends Service {
 
             capturing = true;
             audioRecord.startRecording();
-            Log.i(TAG, "AudioRecord started: source=VOICE_COMMUNICATION rate=" + SAMPLE_RATE
+            Log.i(TAG, "AudioRecord started: source=MIC rate=" + SAMPLE_RATE
                     + " bufferSize=" + bufferSize + " minBufSize=" + minBufSize
                     + " sessionId=" + sessionId);
 
