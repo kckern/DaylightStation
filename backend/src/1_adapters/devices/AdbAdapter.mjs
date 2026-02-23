@@ -7,11 +7,12 @@
  * @module adapters/devices
  */
 
-import { exec } from 'child_process';
+import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 export class AdbAdapter {
   #serial;
@@ -78,6 +79,20 @@ export class AdbAdapter {
   }
 
   /**
+   * Launch an activity with array-form arguments (injection-safe).
+   * @param {string[]} args - Arguments for 'am' command, e.g. ['start', '-n', 'pkg/Activity', '--es', 'key', 'val']
+   * @returns {Promise<{ok: boolean, output?: string, error?: string}>}
+   */
+  async amStart(args) {
+    this.#logger.info?.('adb.amStart', { serial: this.#serial, args });
+    const result = await this.#execArgs(['shell', 'am', ...args]);
+    if (result.ok) {
+      this.#metrics.recoveries++;
+    }
+    return result;
+  }
+
+  /**
    * Check if a package's process is running
    * @param {string} packageName - Android package name
    * @returns {Promise<boolean>}
@@ -134,6 +149,30 @@ export class AdbAdapter {
         elapsedMs
       });
 
+      return { ok: false, error: error.message };
+    }
+  }
+
+  /**
+   * Execute ADB with array arguments (no shell interpolation)
+   * @private
+   */
+  async #execArgs(args) {
+    this.#metrics.commands++;
+    const startTime = Date.now();
+    const fullArgs = ['-s', this.#serial, ...args];
+
+    this.#logger.debug?.('adb.execArgs.start', { args: fullArgs });
+
+    try {
+      const { stdout, stderr } = await execFileAsync('adb', fullArgs, { timeout: 10_000 });
+      const elapsedMs = Date.now() - startTime;
+      this.#logger.debug?.('adb.execArgs.success', { elapsedMs, stdout: stdout?.trim() });
+      return { ok: true, output: stdout?.trim(), stderr: stderr?.trim() };
+    } catch (error) {
+      this.#metrics.errors++;
+      const elapsedMs = Date.now() - startTime;
+      this.#logger.error?.('adb.execArgs.error', { args: fullArgs, error: error.message, elapsedMs });
       return { ok: false, error: error.message };
     }
   }
