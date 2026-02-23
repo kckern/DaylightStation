@@ -268,6 +268,7 @@ export default function CallApp() {
   // Clean up call: hangup signaling + power off TV + reset state
   const endCall = useCallback(() => {
     reset();
+    exitZoom();
     resetWakeProgress();
     const devId = connectedDeviceRef.current;
     hangUp();
@@ -284,7 +285,7 @@ export default function CallApp() {
       connectedDeviceRef.current = null;
       setActiveDeviceId(null);
     }
-  }, [reset, resetWakeProgress, hangUp, logger, isOwner]);
+  }, [reset, exitZoom, resetWakeProgress, hangUp, logger, isOwner]);
 
   // Mute toggle handlers — toggle local track + notify remote
   const handleToggleAudio = useCallback(() => {
@@ -375,6 +376,14 @@ export default function CallApp() {
   const isConnecting = status === 'connecting' || waking;
   const isConnected = !isIdle && !isConnecting && !wakeError;
 
+  const handleRemoteClick = useCallback((e) => {
+    if (zoomMode || !isConnected) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width;
+    const y = (e.clientY - rect.top) / rect.height;
+    enterZoom(x, y);
+  }, [zoomMode, isConnected, enterZoom]);
+
   return (
     <div className={`call-app ${isConnected ? 'call-app--connected' : isConnecting ? 'call-app--connecting' : 'call-app--preview'}`}>
       {/* Local camera — always mounted */}
@@ -403,12 +412,7 @@ export default function CallApp() {
       <div
         ref={remoteContainerRef}
         className={`call-app__remote${zoomMode ? ' call-app__remote--zoomed' : ''}`}
-        onClick={!zoomMode && isConnected ? (e) => {
-          const rect = e.currentTarget.getBoundingClientRect();
-          const x = (e.clientX - rect.left) / rect.width;
-          const y = (e.clientY - rect.top) / rect.height;
-          enterZoom(x, y);
-        } : undefined}
+        onClick={handleRemoteClick}
       >
         <video
           ref={remoteVideoRef}
