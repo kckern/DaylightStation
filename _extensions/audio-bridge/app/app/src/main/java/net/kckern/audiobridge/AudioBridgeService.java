@@ -15,6 +15,8 @@ import org.java_websocket.WebSocket;
 import org.java_websocket.handshake.ClientHandshake;
 import org.java_websocket.server.WebSocketServer;
 
+import org.java_websocket.exceptions.WebsocketNotConnectedException;
+
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 
@@ -204,7 +206,12 @@ public class AudioBridgeService extends Service {
                 while (capturing && client.isOpen()) {
                     int bytesRead = audioRecord.read(buffer, 0, FRAME_SIZE);
                     if (bytesRead > 0) {
-                        client.send(ByteBuffer.wrap(buffer, 0, bytesRead));
+                        try {
+                            client.send(ByteBuffer.wrap(buffer, 0, bytesRead));
+                        } catch (WebsocketNotConnectedException e) {
+                            Log.i(TAG, "Client disconnected during send");
+                            break;
+                        }
                         frameCount++;
                         if (frameCount % 1000 == 0) {
                             Log.d(TAG, "Sent " + frameCount + " frames ("

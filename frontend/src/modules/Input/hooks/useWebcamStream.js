@@ -33,9 +33,9 @@ export const useWebcamStream = (selectedVideoDevice, selectedAudioDevice) => {
                 width: { ideal: 1280 },
                 height: { ideal: 720 }
               },
-          audio: selectedAudioDevice
+          audio: selectedAudioDevice != null
             ? { deviceId: { exact: selectedAudioDevice } }
-            : true,
+            : selectedAudioDevice === null ? false : true,
         };
 
         localStream = await navigator.mediaDevices.getUserMedia(constraints);
