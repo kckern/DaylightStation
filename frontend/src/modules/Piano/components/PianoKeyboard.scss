@@ -33,6 +33,12 @@
         box-shadow: 0 0 20px hsla(200, 100%, 60%, calc(0.3 + 0.5 * var(--velocity, 0)));
       }
 
+      &.wrong {
+        background: linear-gradient(to bottom, #ff6666 0%, #ff4444 100%);
+        box-shadow: 0 0 25px rgba(255, 50, 50, 0.7), inset 0 0 10px rgba(255, 50, 50, 0.3);
+        border-color: #cc3333;
+      }
+
       .note-label {
         position: absolute;
         bottom: 8px;
@@ -65,6 +71,11 @@
           hsl(280, 100%, calc(40% + 30% * var(--velocity, 0))) 100%
         );
         box-shadow: 0 0 15px hsla(280, 100%, 50%, calc(0.3 + 0.5 * var(--velocity, 0)));
+      }
+
+      &.wrong {
+        background: linear-gradient(to bottom, #8b2222 0%, #aa3333 100%);
+        box-shadow: 0 0 20px rgba(255, 50, 50, 0.6), inset 0 0 8px rgba(255, 50, 50, 0.3);
       }
     }
   }

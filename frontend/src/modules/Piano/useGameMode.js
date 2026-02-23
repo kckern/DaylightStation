@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { getChildLogger } from '../../lib/logging/singleton.js';
+import { DaylightMediaPath } from '../../lib/api.mjs';
 import {
   createInitialState,
   resetForLevel,
@@ -17,6 +18,8 @@ const TICK_INTERVAL = 16; // ~60fps
 const COUNTDOWN_STEPS = [3, 2, 1, 0]; // 0 = "GO"
 const COUNTDOWN_STEP_MS = 800;
 const BANNER_DISPLAY_MS = 3000;
+const WRONG_NOTE_GLOW_MS = 400; // How long wrong-press red glow lasts
+const ERROR_SFX_PATH = '/media/audio/sfx/error.mp3'; // Resolved via DaylightMediaPath
 
 /**
  * Game mode hook — manages state machine, note spawning, hit detection, scoring.
@@ -35,6 +38,16 @@ export function useGameMode(activeNotes, noteHistory, gameConfig) {
   const countdownRef = useRef(null);
   const bannerTimeoutRef = useRef(null);
   const activationCooldownRef = useRef(0);
+  const [wrongNotes, setWrongNotes] = useState(new Map()); // pitch → expiry timestamp
+  const errorAudioRef = useRef(null);
+
+  // Preload error buzzer via media proxy
+  useEffect(() => {
+    const audio = new Audio(DaylightMediaPath(ERROR_SFX_PATH));
+    audio.volume = 0.4;
+    audio.preload = 'auto';
+    errorAudioRef.current = audio;
+  }, []);
 
   // Keep ref in sync with state (for use in intervals/callbacks)
   useEffect(() => {
@@ -204,15 +217,33 @@ export function useGameMode(activeNotes, noteHistory, gameConfig) {
       const pitch = entry.note;
       const now = entry.startTime;
 
-      setGameState(prev => {
-        if (prev.phase !== 'PLAYING') return prev;
+      // Check if this pitch matches any falling note (using ref for sync read)
+      const prev = gameStateRef.current;
+      const levelMode = levels[prev.levelIndex]?.mode ?? 'hero';
+      const { result } = processHit(prev, pitch, now, timing, levelMode);
 
-        const levelMode = levels[prev.levelIndex]?.mode ?? 'hero';
-        const { state: newState, result } = processHit(prev, pitch, now, timing, levelMode);
+      if (!result) {
+        // Wrong press — buzzer + red glow
+        if (errorAudioRef.current) {
+          errorAudioRef.current.currentTime = 0;
+          errorAudioRef.current.play().catch(() => {});
+        }
+        setWrongNotes(wn => {
+          const next = new Map(wn);
+          next.set(pitch, Date.now() + WRONG_NOTE_GLOW_MS);
+          return next;
+        });
+      }
 
-        if (result) {
-          const newScore = applyScore(newState.score, result, scoring);
-          logger.debug('piano.game.hit', { pitch, result, combo: newScore.combo, points: newScore.points, mode: levelMode });
+      setGameState(prevState => {
+        if (prevState.phase !== 'PLAYING') return prevState;
+
+        const lm = levels[prevState.levelIndex]?.mode ?? 'hero';
+        const { state: newState, result: hitResult } = processHit(prevState, pitch, now, timing, lm);
+
+        if (hitResult) {
+          const newScore = applyScore(newState.score, hitResult, scoring);
+          logger.debug('piano.game.hit', { pitch, result: hitResult, combo: newScore.combo, points: newScore.points, mode: lm });
           return { ...newState, score: newScore };
         }
 
@@ -257,6 +288,23 @@ export function useGameMode(activeNotes, noteHistory, gameConfig) {
   // Cleanup on unmount
   useEffect(() => cleanup, [cleanup]);
 
+  // ─── Cleanup expired wrong-note glows ──────────────────────
+
+  useEffect(() => {
+    if (wrongNotes.size === 0) return;
+    const timer = setTimeout(() => {
+      const now = Date.now();
+      setWrongNotes(prev => {
+        const next = new Map();
+        for (const [pitch, expiry] of prev) {
+          if (expiry > now) next.set(pitch, expiry);
+        }
+        return next;
+      });
+    }, WRONG_NOTE_GLOW_MS);
+    return () => clearTimeout(timer);
+  }, [wrongNotes]);
+
   // ─── Derived state for rendering ────────────────────────────
 
   const currentLevel = levels[gameState.levelIndex] ?? null;
@@ -279,6 +327,7 @@ export function useGameMode(activeNotes, noteHistory, gameConfig) {
     countdown: gameState.countdown,
     levelProgress,
     fallDuration: getFallDuration(currentLevel),
+    wrongNotes,
   };
 }
 

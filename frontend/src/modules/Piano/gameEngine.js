@@ -332,7 +332,7 @@ export function processMisses(state, now, missThresholdMs) {
 
 // ─── Cleanup (remove old resolved notes) ────────────────────────
 
-const RESOLVED_DISPLAY_MS = 800;
+const RESOLVED_DISPLAY_MS = 1200;
 
 /**
  * Remove hit/missed notes that have been displayed long enough.
@@ -340,7 +340,7 @@ const RESOLVED_DISPLAY_MS = 800;
 export function cleanupResolvedNotes(state, now) {
   const filtered = state.fallingNotes.filter(fg => {
     if (fg.state === 'falling') return true;
-    const resolvedAt = fg.targetTime + (fg.state === 'missed' ? 400 : 0);
+    const resolvedAt = fg.resolvedTime ?? fg.targetTime;
     return now - resolvedAt < RESOLVED_DISPLAY_MS;
   });
 
