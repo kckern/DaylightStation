@@ -27,7 +27,7 @@ import { hasActiveCall, forceEndCall } from '#apps/homeline/CallStateService.mjs
  */
 export function createDeviceRouter(config) {
   const router = express.Router();
-  const { deviceService, configService, logger = console } = config;
+  const { deviceService, wakeAndLoadService, configService, logger = console } = config;
 
   // ===========================================================================
   // Device Config
@@ -174,82 +174,27 @@ export function createDeviceRouter(config) {
 
   /**
    * GET /device/:deviceId/load
-   * Power on + load content
-   * Query params passed to content (e.g., ?play=12345, ?queue=morning+program)
+   * Power on + verify display + load content
+   * Emits wake-progress events over WebSocket for real-time phone UI feedback.
    */
   router.get('/:deviceId/load', asyncHandler(async (req, res) => {
     const { deviceId } = req.params;
     const query = { ...req.query };
-    const device = deviceService.get(deviceId);
-    const startTime = Date.now();
 
-    logger.info?.('device.router.load.start', { deviceId, query, timestamp: new Date().toISOString() });
+    logger.info?.('device.router.load.start', { deviceId, query });
 
-    if (!device) {
-      logger.warn?.('device.router.load.notFound', { deviceId });
-      return res.status(404).json({
-        ok: false,
-        error: 'Device not found',
-        deviceId
-      });
+    if (!wakeAndLoadService) {
+      return res.status(500).json({ ok: false, error: 'WakeAndLoadService not configured' });
     }
 
-    // Power on device
-    logger.debug?.('device.router.load.powerOn.start', { deviceId });
-    const powerResult = await device.powerOn();
-    logger.debug?.('device.router.load.powerOn.done', { deviceId, result: powerResult, elapsedMs: Date.now() - startTime });
-    if (!powerResult.ok) {
-      logger.error?.('device.router.load.powerOn.failed', { deviceId, error: powerResult.error });
-      return res.json({
-        ok: false,
-        step: 'powerOn',
-        error: powerResult.error
-      });
-    }
+    const result = await wakeAndLoadService.execute(deviceId, query);
+    const status = result.error === 'Device not found' ? 404 : 200;
 
-    // Extract display verification result
-    const displayVerified = powerResult.verified === true;
-    const displayVerifyFailed = powerResult.verifyFailed === true;
+    logger.info?.('device.router.load.complete', {
+      deviceId, ok: result.ok, failedStep: result.failedStep, totalElapsedMs: result.totalElapsedMs
+    });
 
-    if (displayVerifyFailed) {
-      logger.warn?.('device.router.load.displayNotVerified', {
-        deviceId,
-        attempts: powerResult.attempts,
-        elapsedMs: Date.now() - startTime
-      });
-    }
-
-    // Prepare for content (screen wake, foreground, etc.)
-    logger.debug?.('device.router.load.prepare.start', { deviceId });
-    const prepResult = await device.prepareForContent();
-    logger.debug?.('device.router.load.prepare.done', { deviceId, result: prepResult, elapsedMs: Date.now() - startTime });
-    if (!prepResult.ok) {
-      logger.error?.('device.router.load.prepare.failed', { deviceId, error: prepResult.error });
-      return res.json({
-        ok: false,
-        step: 'prepare',
-        error: prepResult.error
-      });
-    }
-
-    // Load content
-    logger.debug?.('device.router.load.content.start', { deviceId, path: '/tv', query });
-    const loadResult = await device.loadContent('/tv', query);
-    logger.debug?.('device.router.load.content.done', { deviceId, result: loadResult, elapsedMs: Date.now() - startTime });
-
-    const response = {
-      ok: loadResult.ok,
-      deviceId,
-      displayVerified,
-      displayVerifyFailed,
-      power: powerResult,
-      prepare: prepResult,
-      load: loadResult,
-      totalElapsedMs: Date.now() - startTime
-    };
-
-    logger.info?.('device.router.load.complete', { deviceId, ok: loadResult.ok, totalElapsedMs: response.totalElapsedMs });
-    res.json(response);
+    res.status(status).json(result);
   }));
 
   // ===========================================================================

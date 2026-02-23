@@ -53,6 +53,7 @@ import {
   createHomeAutomationApiRouter,
   createDeviceServices,
   createDeviceApiRouter,
+  createWakeAndLoadService,
   createHardwareAdapters,
   createProxyService,
   createMessagingServices,
@@ -1235,8 +1236,17 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'devices' })
   });
 
+  const { wakeAndLoadService } = createWakeAndLoadService({
+    deviceService: deviceServices.deviceService,
+    haGateway: homeAutomationAdapters.haGateway,
+    devicesConfig: devicesConfig.devices || {},
+    broadcast: broadcastEvent,
+    logger: rootLogger.child({ module: 'wake-and-load' })
+  });
+
   v1Routers.device = createDeviceApiRouter({
     deviceServices,
+    wakeAndLoadService,
     configService,
     logger: rootLogger.child({ module: 'device-api' })
   });
