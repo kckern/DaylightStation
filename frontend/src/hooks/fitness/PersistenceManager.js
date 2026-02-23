@@ -282,7 +282,7 @@ const mapSeriesKeysForPersist = (series) => {
  * - media_start + media_end → single { type: 'media', start, end, pauses, ... }
  * - overlay.warning_offenders_changed / overlay.lock_rows_changed → collapsed into
  *   phase-transition events: one record per meaningful governance phase (warning, locked, unlocked)
- * - voice_memo_start dropped (voice_memo is the consolidated version)
+ * - voice_memo_start passed through unchanged (SessionSerializerV3 handles both types)
  * - All other events pass through unchanged.
  *
  * @param {Array} events - Raw event list
@@ -307,7 +307,6 @@ const _consolidateEvents = (events) => {
     if (!evt || typeof evt !== 'object') continue;
     const type = evt.type || evt.eventType || null;
     if (!type) continue;
-    if (type === 'voice_memo_start') continue;
 
     const ts = Number(evt.timestamp) || 0;
 
