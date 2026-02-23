@@ -1,49 +1,6 @@
 import { useMemo, useState, useEffect } from 'react';
+import { getNotePosition, getNoteWidth, getNoteHue } from '../noteUtils.js';
 import './NoteWaterfall.scss';
-
-// White keys in an octave (C, D, E, F, G, A, B)
-const WHITE_KEY_NOTES = [0, 2, 4, 5, 7, 9, 11];
-const isWhiteKey = (note) => WHITE_KEY_NOTES.includes(note % 12);
-
-// Calculate x position for a note (percentage)
-const getNotePosition = (note, startNote = 21, endNote = 108) => {
-  let whiteKeysBefore = 0;
-  let totalWhiteKeys = 0;
-
-  for (let n = startNote; n <= endNote; n++) {
-    if (isWhiteKey(n)) {
-      totalWhiteKeys++;
-      if (n < note) whiteKeysBefore++;
-    }
-  }
-
-  const isWhite = isWhiteKey(note);
-  const keyWidth = 100 / totalWhiteKeys;
-
-  if (isWhite) {
-    return whiteKeysBefore * keyWidth + keyWidth / 2;
-  } else {
-    return whiteKeysBefore * keyWidth + keyWidth * 0.75;
-  }
-};
-
-const getNoteWidth = (note, startNote = 21, endNote = 108) => {
-  let totalWhiteKeys = 0;
-  for (let n = startNote; n <= endNote; n++) {
-    if (isWhiteKey(n)) totalWhiteKeys++;
-  }
-  const keyWidth = 100 / totalWhiteKeys;
-  return isWhiteKey(note) ? keyWidth * 0.9 : keyWidth * 0.5;
-};
-
-// Color scale based on note pitch (rainbow from low to high)
-// Low notes (21) = red/orange, Mid notes (~60) = green/cyan, High notes (108) = blue/purple
-const getNoteHue = (note, startNote = 21, endNote = 108) => {
-  const range = endNote - startNote;
-  const position = (note - startNote) / range;
-  // Map to hue: 0 (red) -> 60 (yellow) -> 120 (green) -> 180 (cyan) -> 240 (blue) -> 280 (purple)
-  return Math.round(position * 280);
-};
 
 const DISPLAY_DURATION = 8000; // Show notes for 8 seconds as they rise
 const TICK_INTERVAL = 16; // ~60fps
@@ -58,7 +15,7 @@ const TICK_INTERVAL = 16; // ~60fps
  * @param {number} props.startNote - Lowest note on keyboard
  * @param {number} props.endNote - Highest note on keyboard
  */
-export function NoteWaterfall({ noteHistory = [], activeNotes = new Map(), startNote = 21, endNote = 108 }) {
+export function NoteWaterfall({ noteHistory = [], activeNotes = new Map(), startNote = 21, endNote = 108, gameMode = null }) {
   const [tick, setTick] = useState(0);
 
   // Continuous animation tick
@@ -132,14 +89,38 @@ export function NoteWaterfall({ noteHistory = [], activeNotes = new Map(), start
       });
   }, [noteHistory, activeNotes, startNote, endNote, tick]);
 
+  const gameNotes = useMemo(() => {
+    if (!gameMode) return [];
+    const now = Date.now();
+
+    return gameMode.fallingNotes.map(fg => {
+      // Calculate fall progress: 1.0 at spawn (top) → 0.0 at target (hit line)
+      const elapsed = now - (fg.targetTime - gameMode.fallDuration);
+      const progress = Math.min(1, elapsed / gameMode.fallDuration);
+
+      // topPercent: 0% = top of waterfall, 100% = bottom (hit line)
+      const topPercent = Math.max(-10, Math.min(110, progress * 100));
+
+      return {
+        ...fg,
+        notePositions: fg.pitches.map(pitch => ({
+          pitch,
+          x: getNotePosition(pitch, startNote, endNote),
+          width: getNoteWidth(pitch, startNote, endNote),
+          hue: getNoteHue(pitch, startNote, endNote),
+        })),
+        topPercent,
+        progress,
+      };
+    });
+  }, [gameMode, startNote, endNote, tick]);
+
   return (
-    <div className="note-waterfall">
+    <div className={`note-waterfall${gameMode ? ' note-waterfall--game' : ''}`}>
       <div className="waterfall-perspective">
+        {/* Free-play rising notes (hidden during game mode via CSS) */}
         {visibleNotes.map((note, idx) => {
-          // Height based on note duration, scaled to match the timeline
-          // Notes rise at 100% per DISPLAY_DURATION (8000ms), so height should use same scale
           const heldDuration = note.duration;
-          // Convert duration to percentage of timeline (same scale as rising animation)
           const heightPercent = Math.min(95, Math.max(1, (heldDuration / DISPLAY_DURATION) * 100));
 
           return (
@@ -159,6 +140,38 @@ export function NoteWaterfall({ noteHistory = [], activeNotes = new Map(), start
           );
         })}
       </div>
+
+      {/* Game mode: falling target notes (outside perspective for clean 2D positioning) */}
+      {gameNotes.map(gn => (
+        <div key={`game-group-${gn.id}`}>
+          {gn.notePositions.map(pos => (
+            <div
+              key={`game-${gn.id}-${pos.pitch}`}
+              className={`game-note game-note--${gn.state}${gn.hitResult ? ` game-note--${gn.hitResult}` : ''}`}
+              style={{
+                '--x': `${pos.x}%`,
+                '--width': `${pos.width}%`,
+                '--top': `${gn.topPercent}%`,
+                '--hue': pos.hue,
+              }}
+            />
+          ))}
+          {/* Hit/miss feedback text */}
+          {gn.state !== 'falling' && (
+            <div
+              className={`hit-feedback hit-feedback--${gn.hitResult || 'miss'}`}
+              style={{
+                '--x': `${gn.notePositions[0]?.x ?? 50}%`,
+                '--top': `${gn.topPercent}%`,
+              }}
+            >
+              {gn.hitResult === 'perfect' ? 'Perfect!' : gn.hitResult === 'good' ? 'Good!' : 'Miss!'}
+            </div>
+          )}
+        </div>
+      ))}
+
+      {gameMode && <div className="hit-line" />}
     </div>
   );
 }

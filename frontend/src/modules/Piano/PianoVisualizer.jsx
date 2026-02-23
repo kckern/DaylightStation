@@ -5,6 +5,8 @@ import { CurrentChordStaff } from './components/CurrentChordStaff';
 import { useMidiSubscription } from './useMidiSubscription';
 import { DaylightAPI } from '../../lib/api.mjs';
 import './PianoVisualizer.scss';
+import { useGameMode } from './useGameMode.js';
+import { GameOverlay } from './components/GameOverlay';
 
 const GRACE_PERIOD_MS = 10000; // 10 seconds before countdown starts
 const COUNTDOWN_MS = 30000;   // 30 seconds countdown
@@ -34,7 +36,10 @@ export function PianoVisualizer({ onClose, onSessionEnd }) {
   const sessionStartRef = useRef(null);
   const timerRef = useRef(null);
   const [showPlaceholder, setShowPlaceholder] = useState(false);
+  const [gameConfig, setGameConfig] = useState(null);
   const pianoConfigRef = useRef(null); // Cache piano config for cleanup
+
+  const game = useGameMode(activeNotes, noteHistory, gameConfig);
 
   // On mount: Load piano config and run HA script if configured
   useEffect(() => {
@@ -44,6 +49,15 @@ export function PianoVisualizer({ onClose, onSessionEnd }) {
         const devicesConfig = await DaylightAPI('api/v1/device/config');
         const pianoConfig = devicesConfig?.devices?.['office-tv']?.modules?.['piano-visualizer'] ?? {};
         pianoConfigRef.current = pianoConfig;
+
+        // Load game config from piano app config
+        try {
+          const pianoAppConfig = await DaylightAPI('api/v1/admin/apps/piano/config');
+          const gc = pianoAppConfig?.parsed?.game ?? null;
+          setGameConfig(gc);
+        } catch (err) {
+          // Game mode unavailable — that's fine
+        }
 
         // Run on_open HA script if configured
         if (pianoConfig?.on_open) {
@@ -100,6 +114,13 @@ export function PianoVisualizer({ onClose, onSessionEnd }) {
   // Inactivity detection - only starts after last note is released
   useEffect(() => {
     const checkInactivity = () => {
+      // Don't auto-close during game mode
+      if (game.isGameMode) {
+        setInactivityState('active');
+        setCountdownProgress(100);
+        return;
+      }
+
       // If notes are currently being played, stay active
       if (activeNotes.size > 0) {
         setInactivityState('active');
@@ -132,7 +153,7 @@ export function PianoVisualizer({ onClose, onSessionEnd }) {
 
     timerRef.current = setInterval(checkInactivity, 100);
     return () => clearInterval(timerRef.current);
-  }, [onClose, activeNotes.size]);
+  }, [onClose, activeNotes.size, game.isGameMode]);
 
   // Handle session end
   useEffect(() => {
@@ -146,31 +167,76 @@ export function PianoVisualizer({ onClose, onSessionEnd }) {
   }, [sessionInfo, onSessionEnd]);
 
   return (
-    <div className="piano-visualizer">
+    <div className={`piano-visualizer${game.isGameMode ? ' game-mode' : ''}`}>
       <div className="piano-header">
-        <div className="header-left">
-          <div className="session-timer">
-            <span className="timer-value">{formatDuration(sessionDuration)}</span>
-            <span className="note-count">{noteHistory.length} notes</span>
-          </div>
-          {sustainPedal && <span className="pedal-indicator">Sustain</span>}
-          {inactivityState === 'countdown' && (
-            <div className="inactivity-timer">
-              <div
-                className="timer-bar"
-                style={{ width: `${countdownProgress}%` }}
-              />
+        {game.isGameMode ? (
+          <>
+            <div className="header-left">
+              <div className="game-score">
+                <span className="score-value">{game.score.points}</span>
+                {game.score.combo > 1 && (
+                  <span className="combo-badge">x{game.score.combo}</span>
+                )}
+              </div>
             </div>
-          )}
-        </div>
-
-        <div className="header-center">
-          <CurrentChordStaff activeNotes={activeNotes} />
-        </div>
+            <div className="header-center">
+              {game.currentLevel && (
+                <div className="level-info">
+                  <span className="level-name">{game.currentLevel.name}</span>
+                  {game.levelProgress && (
+                    <div className="progress-bar-container">
+                      <div
+                        className="progress-bar-fill"
+                        style={{
+                          width: `${Math.min(100, (game.levelProgress.pointsEarned / game.levelProgress.pointsNeeded) * 100)}%`
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="header-right">
+              {game.levelProgress && (
+                <div className="miss-counter">
+                  <span className="miss-count">{game.levelProgress.missesUsed}</span>
+                  <span className="miss-separator">/</span>
+                  <span className="miss-max">{game.levelProgress.missesAllowed}</span>
+                  <span className="miss-label">misses</span>
+                </div>
+              )}
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="header-left">
+              <div className="session-timer">
+                <span className="timer-value">{formatDuration(sessionDuration)}</span>
+                <span className="note-count">{noteHistory.length} notes</span>
+              </div>
+              {sustainPedal && <span className="pedal-indicator">Sustain</span>}
+              {inactivityState === 'countdown' && (
+                <div className="inactivity-timer">
+                  <div
+                    className="timer-bar"
+                    style={{ width: `${countdownProgress}%` }}
+                  />
+                </div>
+              )}
+            </div>
+            <div className="header-center">
+              <CurrentChordStaff activeNotes={activeNotes} />
+            </div>
+          </>
+        )}
       </div>
 
       <div className="waterfall-container">
-        <NoteWaterfall noteHistory={noteHistory} activeNotes={activeNotes} />
+        <NoteWaterfall
+          noteHistory={noteHistory}
+          activeNotes={activeNotes}
+          gameMode={game.isGameMode ? game : null}
+        />
       </div>
 
       <div className="keyboard-container">
@@ -181,6 +247,16 @@ export function PianoVisualizer({ onClose, onSessionEnd }) {
           showLabels={true}
         />
       </div>
+
+      {game.isGameMode && (
+        <GameOverlay
+          gameState={game.gameState}
+          countdown={game.countdown}
+          score={game.score}
+          currentLevel={game.currentLevel}
+          levelProgress={game.levelProgress}
+        />
+      )}
 
       {sessionInfo?.event === 'session_end' && (
         <div className="session-summary">
