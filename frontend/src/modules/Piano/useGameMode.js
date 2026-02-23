@@ -244,17 +244,19 @@ export function useGameMode(activeNotes, noteHistory, gameConfig) {
         const { state: newState, result: hitResult } = processHit(prevState, pitch, now, timing, lm);
 
         if (hitResult) {
-          // Correct hit — score + health heal
+          // Correct hit — score + health heal + reset wrong streak
           const newScore = applyScore(newState.score, hitResult, scoring);
           const newHealth = Math.min(TOTAL_HEALTH, newState.health + 1);
           logger.debug('piano.game.hit', { pitch, result: hitResult, combo: newScore.combo, points: newScore.points, health: newHealth, mode: lm });
-          return { ...newState, score: newScore, health: newHealth };
+          return { ...newState, score: newScore, health: newHealth, wrongStreak: 0 };
         }
 
-        // Wrong press — reduce health
-        const newHealth = Math.max(0, newState.health - 5);
-        logger.debug('piano.game.wrong-press', { pitch, health: newHealth });
-        return { ...newState, health: newHealth };
+        // Wrong press — escalating penalty: 1st=1, 2nd=3, 3rd=5, 4th+=7
+        const streak = newState.wrongStreak + 1;
+        const penalty = streak === 1 ? 1 : streak === 2 ? 3 : streak === 3 ? 5 : 7;
+        const newHealth = Math.max(0, newState.health - penalty);
+        logger.debug('piano.game.wrong-press', { pitch, health: newHealth, streak, penalty });
+        return { ...newState, health: newHealth, wrongStreak: streak };
       });
     }
 
