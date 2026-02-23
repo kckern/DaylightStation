@@ -224,12 +224,39 @@ export class FilesystemCanvasAdapter {
   }
 
   /**
-   * Canvas items are standalone display art — no meaningful sibling navigation.
-   * @param {string} _compoundId
-   * @returns {Promise<null>}
+   * Resolve siblings for a canvas image.
+   * Siblings are all images in the same category folder.
+   * @param {string} compoundId - e.g., "canvas:religious/ark.jpg"
+   * @returns {Promise<{parent: Object, items: Array}|null>}
    */
-  async resolveSiblings(_compoundId) {
-    return null;
+  async resolveSiblings(compoundId) {
+    // Strip any source prefix (canvas:, canvas-filesystem:, etc.)
+    const localPath = compoundId.replace(/^[^:]+:/, '');
+    const parts = localPath.split('/');
+    if (parts.length < 2) return null;
+
+    const category = parts[0];
+    const categoryPath = `${this.#basePath}/${category}`;
+    if (!this.#fs.existsSync(categoryPath)) return null;
+
+    const files = this.#listImageFiles(categoryPath);
+    const items = [];
+    for (const file of files) {
+      const item = await this.#buildItem(category, file);
+      if (item) items.push(item);
+    }
+
+    return {
+      parent: {
+        id: `canvas:${category}`,
+        title: this.#formatName(category),
+        source: this.source,
+        thumbnail: items[0]?.thumbnail || null,
+        parentId: null,
+        libraryId: null,
+      },
+      items,
+    };
   }
 }
 

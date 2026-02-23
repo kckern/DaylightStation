@@ -674,6 +674,7 @@ export class AudiobookshelfAdapter {
     // List all items in the same library
     const items = await this.getList(`lib:${libraryId}`);
     const listItems = Array.isArray(items) ? items : (items?.children || []);
+    listItems.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
 
     const parent = {
       id: `abs:lib:${libraryId}`,

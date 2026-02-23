@@ -210,13 +210,19 @@ class WebSocketService {
       topics.add('*');
     }
 
-    if (topics.size > 0) {
+    // Deduplicate: skip if topic set hasn't changed since last sync
+    const topicArray = Array.from(topics).sort();
+    const key = topicArray.join(',');
+    if (key === this._lastSyncKey) return;
+    this._lastSyncKey = key;
+
+    if (topicArray.length > 0) {
       this.send({
         type: 'bus_command',
         action: 'subscribe',
-        topics: Array.from(topics)
+        topics: topicArray
       });
-      console.log('[WebSocketService] Synced subscriptions:', Array.from(topics));
+      console.log('[WebSocketService] Synced subscriptions:', topicArray);
     }
   }
 

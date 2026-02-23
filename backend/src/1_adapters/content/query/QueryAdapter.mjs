@@ -409,6 +409,7 @@ export class QueryAdapter {
     }));
 
     const items = baseItems.map(b => b.item);
+    items.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
 
     const parent = {
       id: 'query:*',

@@ -833,6 +833,7 @@ export class ImmichAdapter {
     if (localId.startsWith('album:') || localId.startsWith('person:') || localId.startsWith('tag:')) {
       const items = await this.getList(localId);
       const listItems = Array.isArray(items) ? items : (items?.children || []);
+      listItems.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
       const containerItem = await this.getItem(localId);
 
       const parent = containerItem ? {

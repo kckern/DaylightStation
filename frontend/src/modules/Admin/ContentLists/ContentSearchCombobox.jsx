@@ -436,18 +436,20 @@ function ContentSearchCombobox({ value, onChange, placeholder = 'Search content.
     const isContainerItem = isContainer(item);
     const source = item.source || item.id?.split(':')[0];
     const type = item.type || item.metadata?.type || item.mediaType;
-    const parentTitle = item.metadata?.parentTitle;
+    const parentTitle = item.parentTitle || item.metadata?.parentTitle;
     const hasParent = parentTitle && item.localId?.includes('/');
     const localId = item.localId || item.id?.replace(`${source}:`, '');
     const childCount = item.childCount ?? item.metadata?.childCount ?? null;
+    const itemIndex = item.itemIndex ?? item.metadata?.itemIndex;
     const TypeIcon = TYPE_ICONS[type] || TYPE_ICONS.default;
 
-    // Build subtitle: parentTitle if navigable, otherwise "Type: localId"
-    const subtitleText = parentTitle || (
-      type
-        ? `${type.charAt(0).toUpperCase() + type.slice(1)}: ${localId}`
-        : localId
-    );
+    // Build subtitle: type label with optional index, then parent
+    const typeLabel = type ? type.charAt(0).toUpperCase() + type.slice(1) : null;
+    const indexedLabel = typeLabel && itemIndex != null
+      ? `${typeLabel} ${itemIndex}`
+      : typeLabel;
+    const parts = [indexedLabel, parentTitle].filter(Boolean);
+    const subtitleText = parts.length > 0 ? parts.join(' \u2022 ') : localId;
 
     return (
       <Combobox.Option
