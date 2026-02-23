@@ -42,6 +42,8 @@ function TVAppContent({ rootMenu, autoplay, appParam, logger }) {
         push({ type: 'display', props: autoplay });
       } else if (autoplay.read) {
         push({ type: 'reader', props: autoplay });
+      } else if (autoplay.launch) {
+        push({ type: 'launch', props: autoplay });
       } else if (autoplay.list?.contentId) {
         // Content list with compound ID — backend resolves source/type
         push({ type: 'plex-menu', props: autoplay });
@@ -169,6 +171,7 @@ export default function TVApp({ appParam }) {
       read:      (value) => ({ read: { id: value, ...config } }),
       open:      (value) => ({ open: { app: value } }),
       app:       (value) => ({ open: { app: value } }),
+      launch:    (value) => ({ launch: { contentId: toContentId(value) } }),
       list:      (value) => ({ list: { contentId: toContentId(value), ...config } }),
     };
 

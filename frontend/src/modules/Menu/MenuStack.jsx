@@ -9,6 +9,7 @@ import { getLogger } from '../../lib/logging/Logger.js';
 const Player = lazy(() => import('../Player/Player').then(m => ({ default: m.default || m.Player })));
 const AppContainer = lazy(() => import('../AppContainer/AppContainer').then(m => ({ default: m.default || m.AppContainer })));
 const Displayer = lazy(() => import('../Displayer/Displayer').then(m => ({ default: m.default })));
+const LaunchCard = lazy(() => import('./LaunchCard.jsx'));
 
 /**
  * Loading fallback for lazy-loaded components
@@ -88,6 +89,8 @@ export function MenuStack({ rootMenu }) {
       push({ type: 'display', props: { ...selection, display } });
     } else if (selection.open) {
       push({ type: 'app', props: selection });
+    } else if (selection.launch) {
+      push({ type: 'launch', props: selection });
     }
     // If none of the above, it might be a leaf action - let parent handle
   }, [push]);
@@ -203,6 +206,19 @@ export function MenuStack({ rootMenu }) {
         <div className="menu-stack-placeholder">
           Reader not yet implemented. ID: {props.read?.id}
         </div>
+      );
+
+    case 'launch':
+      return (
+        <Suspense fallback={<LoadingFallback />}>
+          <LaunchCard
+            launch={props.launch}
+            title={props.title}
+            thumbnail={props.thumbnail || props.image}
+            metadata={props.metadata}
+            onClose={clear}
+          />
+        </Suspense>
       );
 
     default:
