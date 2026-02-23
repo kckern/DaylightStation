@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useMemo, useState } from 'react';
 import { useMediaDevices } from './hooks/useMediaDevices';
 import { useWebcamStream } from './hooks/useWebcamStream';
-import { useVolumeMeter } from './hooks/useVolumeMeter';
+import { useAudioProbe } from './hooks/useAudioProbe';
 import { useWebRTCPeer } from './hooks/useWebRTCPeer';
 import { useHomeline } from './hooks/useHomeline';
 import getLogger from '../../lib/logging/Logger.js';
@@ -10,12 +10,17 @@ import './VideoCall.scss';
 export default function VideoCall({ deviceId, clear }) {
   const logger = useMemo(() => getLogger().child({ component: 'VideoCall', deviceId }), [deviceId]);
   const {
+    audioDevices,
     selectedVideoDevice,
     selectedAudioDevice,
   } = useMediaDevices();
 
-  const { videoRef, stream } = useWebcamStream(selectedVideoDevice, selectedAudioDevice);
-  const { volume } = useVolumeMeter(stream);
+  const probe = useAudioProbe(audioDevices, {
+    preferredDeviceId: selectedAudioDevice,
+  });
+  const effectiveAudioDevice = probe.workingDeviceId || selectedAudioDevice;
+
+  const { videoRef, stream } = useWebcamStream(selectedVideoDevice, effectiveAudioDevice);
   const peer = useWebRTCPeer(stream);
   const { connectionState } = peer;
   const { peerConnected, status, remoteMuteState } = useHomeline('tv', deviceId, peer);
@@ -96,7 +101,7 @@ export default function VideoCall({ deviceId, clear }) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [clear]);
 
-  const volumePercentage = Math.min(volume * 100, 100);
+  const volumePercentage = Math.min(probe.volume * 100, 100);
 
   const formatDuration = (s) => {
     const m = Math.floor(s / 60);

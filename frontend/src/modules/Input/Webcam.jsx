@@ -1,7 +1,7 @@
-import React, { useEffect, useRef, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useMediaDevices } from "./hooks/useMediaDevices";
 import { useWebcamStream } from "./hooks/useWebcamStream";
-import { useVolumeMeter } from "./hooks/useVolumeMeter";
+import { useAudioProbe } from "./hooks/useAudioProbe";
 import { DaylightAPI } from "../../lib/api.mjs";
 import getLogger from "../../lib/logging/Logger.js";
 
@@ -35,66 +35,17 @@ export default function WebcamApp() {
     preferredMicPattern: inputPrefs.preferred_mic,
   });
 
-  const { videoRef, stream, error: videoError } = useWebcamStream(selectedVideoDevice, selectedAudioDevice);
-  const { volume } = useVolumeMeter(stream);
+  // useAudioProbe replaces useVolumeMeter + auto-cycle logic
+  const probe = useAudioProbe(audioDevices, {
+    preferredDeviceId: selectedAudioDevice,
+  });
+
+  // Use probe's verified device if available, fall back to useMediaDevices selection
+  const effectiveAudioDevice = probe.workingDeviceId || selectedAudioDevice;
+
+  const { videoRef, stream, error: videoError } = useWebcamStream(selectedVideoDevice, effectiveAudioDevice);
 
   const logger = useMemo(() => getLogger().child({ component: 'WebcamApp' }), []);
-
-  // --- Auto-cycle audio device on sustained silence ---
-  const volumeRef = useRef(0);
-  volumeRef.current = volume;
-  const silenceStartRef = useRef(null);
-  const triedDevicesRef = useRef(new Set());
-  const confirmedRef = useRef(false);
-
-  // Reset when device list changes (plug/unplug)
-  useEffect(() => {
-    confirmedRef.current = false;
-    triedDevicesRef.current = new Set();
-    silenceStartRef.current = null;
-  }, [audioDevices.length]);
-
-  // Poll volume and cycle to next audio device after 5s of silence
-  useEffect(() => {
-    if (audioDevices.length <= 1 || !selectedAudioDevice) return;
-
-    // Fresh silence window for newly selected device
-    silenceStartRef.current = null;
-
-    const SILENCE_THRESHOLD_MS = 5000;
-
-    const interval = setInterval(() => {
-      if (confirmedRef.current) return;
-      if (triedDevicesRef.current.size >= audioDevices.length) return;
-
-      if (volumeRef.current > 0) {
-        confirmedRef.current = true;
-        silenceStartRef.current = null;
-        logger.info('audio-device-confirmed', {
-          device: selectedAudioDevice?.slice(0, 8),
-        });
-        return;
-      }
-
-      if (!silenceStartRef.current) {
-        silenceStartRef.current = Date.now();
-        return;
-      }
-
-      if (Date.now() - silenceStartRef.current >= SILENCE_THRESHOLD_MS) {
-        triedDevicesRef.current.add(selectedAudioDevice);
-        silenceStartRef.current = null;
-        logger.info('auto-cycle-audio-silence', {
-          silentDevice: selectedAudioDevice?.slice(0, 8),
-          tried: triedDevicesRef.current.size,
-          total: audioDevices.length,
-        });
-        cycleAudioDevice('next');
-      }
-    }, 500);
-
-    return () => clearInterval(interval);
-  }, [audioDevices, selectedAudioDevice, cycleAudioDevice, logger]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -125,8 +76,26 @@ export default function WebcamApp() {
     };
   }, [cycleVideoDevice, cycleAudioDevice]);
 
-  // Meter conversion
-  const volumePercentage = Math.min(volume * 100, 100);
+  // Volume from probe instead of useVolumeMeter
+  const volumePercentage = Math.min(probe.volume * 100, 100);
+
+  // Mic status display
+  const micLabel = (() => {
+    if (probe.status === 'probing') {
+      return `Checking "${probe.probingDeviceLabel}"...`;
+    }
+    if (probe.status === 'no-mic') {
+      return 'No working microphone found';
+    }
+    const device = audioDevices.find(d => d.deviceId === effectiveAudioDevice);
+    return device?.label || 'Unknown';
+  })();
+
+  const micStyle = probe.status === 'no-mic'
+    ? { color: '#ff6b6b' }
+    : probe.status === 'probing'
+      ? { color: '#ffd43b' }
+      : {};
 
   return (
     <div
@@ -162,12 +131,8 @@ export default function WebcamApp() {
               ?.label || "No camera"
           }
         </div>
-        <div>
-          Mic:{" "}
-          {
-            audioDevices.find(d => d.deviceId === selectedAudioDevice)
-              ?.label || "No microphone"
-          }
+        <div style={micStyle}>
+          Mic: {micLabel}
         </div>
       </div>
 
@@ -200,7 +165,7 @@ export default function WebcamApp() {
               width: `${volumePercentage}%`,
               height: "100%",
               borderRadius: "5px",
-              backgroundColor: "green",
+              backgroundColor: probe.status === 'ready' ? "green" : "#999",
               transition: "width 0.1s"
             }}
           />

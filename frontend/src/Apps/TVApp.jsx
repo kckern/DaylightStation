@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useRef } from "react";
 import "./TVApp.scss";
 import { DaylightAPI } from "../lib/api.mjs";
 import { MenuNavigationProvider, useMenuNavigationContext } from "../context/MenuNavigationContext";
@@ -6,11 +6,15 @@ import { MenuStack } from "../modules/Menu/MenuStack";
 import { PlayerOverlayLoading } from "../modules/Player/Player";
 import { MenuSkeleton } from "../modules/Menu/MenuSkeleton";
 import { getChildLogger } from "../lib/logging/singleton.js";
+import { useViewportProbe } from "../hooks/useViewportProbe.js";
 
 export function TVAppWrapper({ children }) {
+  const tvAppRef = useRef(null);
+  useViewportProbe(tvAppRef);
+
   return (
     <div className="tv-app-container">
-      <div className="tv-app">
+      <div className="tv-app" ref={tvAppRef}>
         <div className="tv-app__content">
           {children}
         </div>
