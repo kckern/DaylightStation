@@ -78,3 +78,6 @@ tests/runtime/*.log
 tests/output/
 /docs/marketing/jop
 /docs/ideas
+/_extensions/audio-bridge/app/app/build
+/_extensions/audio-bridge/app/.gradle
+/_extensions/audio-bridge/app/local.properties

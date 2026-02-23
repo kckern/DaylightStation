@@ -196,15 +196,9 @@ export default function CallApp() {
   }, [getVideoMetrics]);
 
   const enterZoom = useCallback(() => {
-    const m = getVideoMetrics();
-    const ratio = m ? m.coverRatio : 1;
-    coverRatioRef.current = ratio;
-    setZoomScale(ratio);
-    zoomScaleRef.current = ratio;
-    setPanOffset({ x: 0, y: 0 }); // centered
     setZoomMode(true);
-    logger.info('zoom-enter', { coverRatio: ratio });
-  }, [getVideoMetrics, logger]);
+    logger.info('zoom-enter');
+  }, [logger]);
 
   const exitZoom = useCallback(() => {
     setZoomMode(false);
@@ -213,6 +207,28 @@ export default function CallApp() {
     setPanOffset({ x: 0, y: 0 });
     logger.info('zoom-exit');
   }, [logger]);
+
+  // After zoom layout renders, calculate cover ratio from the now-fullscreen container
+  // and set the initial scale to fill the viewport.
+  useEffect(() => {
+    if (!zoomMode) return;
+
+    // Use rAF to ensure the browser has applied the fullscreen layout
+    const raf = requestAnimationFrame(() => {
+      const m = getVideoMetrics();
+      if (m) {
+        coverRatioRef.current = m.coverRatio;
+        setZoomScale(m.coverRatio);
+        zoomScaleRef.current = m.coverRatio;
+        setPanOffset({ x: 0, y: 0 });
+        logger.info('zoom-cover-applied', { coverRatio: m.coverRatio, cW: m.cW, cH: m.cH });
+      } else {
+        logger.warn('zoom-cover-no-metrics');
+      }
+    });
+
+    return () => cancelAnimationFrame(raf);
+  }, [zoomMode, getVideoMetrics, logger]);
 
   // Tap to recenter: compute translate so the tapped point becomes viewport center.
   // Tap coords (x, y) are fractions of the element's visual bounds (getBoundingClientRect).
@@ -343,6 +359,20 @@ export default function CallApp() {
     }));
     logger.info('remote-stream-attached', { trackCount: tracks.length, tracks: details });
 
+    // Don't attach an empty stream — wait for tracks to arrive.
+    // Setting srcObject with 0 tracks then re-setting with 2 tracks
+    // causes play() AbortError (interrupted by new load request).
+    if (tracks.length === 0) return;
+
+    // Log received track settings to trace aspect ratio through the pipeline
+    const videoTrack = peer.remoteStream.getVideoTracks()[0];
+    if (videoTrack) {
+      const s = videoTrack.getSettings?.() || {};
+      logger.info('remote-video-track-settings', {
+        w: s.width, h: s.height, aspectRatio: s.aspectRatio, frameRate: s.frameRate,
+      });
+    }
+
     if (!remoteVideoRef.current) {
       logger.warn('remote-video-ref-missing');
       return;
@@ -356,6 +386,7 @@ export default function CallApp() {
     });
 
     // Explicitly play — catches autoplay policy blocks.
+    // AbortError is benign (stream changed mid-play); retry once after short delay.
     const playPromise = el.play();
     if (playPromise) {
       playPromise.then(() => {
@@ -365,9 +396,30 @@ export default function CallApp() {
           videoTracks: peer.remoteStream.getVideoTracks().length
         });
       }).catch(err => {
-        logger.error('remote-video-play-failed', { error: err.message, name: err.name });
+        if (err.name === 'AbortError') {
+          logger.debug('remote-video-play-abort-retry');
+          setTimeout(() => {
+            if (el.paused && el.srcObject) el.play().catch(() => {});
+          }, 100);
+        } else {
+          logger.error('remote-video-play-failed', { error: err.message, name: err.name });
+        }
       });
     }
+
+    // Log video dimensions once intrinsic size is known
+    const onResize = () => {
+      if (el.videoWidth && el.videoHeight) {
+        logger.info('remote-video-dimensions', {
+          intrinsic: { w: el.videoWidth, h: el.videoHeight },
+          element: { w: el.clientWidth, h: el.clientHeight },
+          aspectRatio: (el.videoWidth / el.videoHeight).toFixed(3),
+        });
+      }
+    };
+    el.addEventListener('resize', onResize);
+    // Also check immediately in case dimensions are already set
+    onResize();
 
     // 2. Web Audio API speaker route — guarantees main speaker on Android.
     //    AudioContext bypasses the telephony audio path that Chrome uses
@@ -401,6 +453,7 @@ export default function CallApp() {
     }
 
     return () => {
+      el.removeEventListener('resize', onResize);
       // Cleanup: disconnect source when stream changes or component unmounts.
       if (audioSourceRef.current) {
         try { audioSourceRef.current.disconnect(); } catch (_) {}
