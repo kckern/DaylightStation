@@ -82,6 +82,18 @@ export class FullyKioskContentAdapter {
         return { ok: false, step: 'screenOn', error: screenResult.error };
       }
 
+      // Disable FKB background services that hold AUDIO_SOURCE_MIC and Camera 0.
+      // These cause AudioRecord init failures and PiP windows.
+      // Non-blocking: log failures but don't abort prepare.
+      for (const setting of ['motionDetection', 'motionDetectionAcoustic', 'acousticScreenOn']) {
+        const setResult = await this.#sendCommand('setBooleanSetting', { key: setting, value: 'false' });
+        if (setResult.ok) {
+          this.#logger.debug?.('fullykiosk.prepareForContent.disableSetting.ok', { setting });
+        } else {
+          this.#logger.warn?.('fullykiosk.prepareForContent.disableSetting.failed', { setting, error: setResult.error });
+        }
+      }
+
       // Bring to foreground with verification loop
       for (let attempt = 1; attempt <= MAX_FOREGROUND_ATTEMPTS; attempt++) {
         await this.#sendCommand('toForeground');
