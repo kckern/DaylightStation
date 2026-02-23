@@ -177,6 +177,51 @@
     overflow: hidden;
   }
 
+  // Zoomed remote video — fullscreen takeover
+  &__remote--zoomed {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    border-radius: 0;
+    background: #000;
+    overflow: hidden;
+    touch-action: none;
+
+    .call-app__video--wide {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      border-radius: 0;
+      transition: transform-origin 0.15s ease-out;
+      will-change: transform, transform-origin;
+    }
+  }
+
+  // Back button overlay in zoom mode
+  &__zoom-back {
+    position: absolute;
+    top: calc(0.5rem + env(safe-area-inset-top, 0px));
+    left: 0.5rem;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(0, 0, 0, 0.5);
+    color: #fff;
+    font-size: 1.2rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 101;
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+
+    &:active {
+      background: rgba(0, 0, 0, 0.7);
+    }
+  }
+
   // Call controls (always mounted, shown in connected state)
   &__controls {
     display: none;
