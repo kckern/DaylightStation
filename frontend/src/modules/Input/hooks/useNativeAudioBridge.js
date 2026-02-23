@@ -22,7 +22,7 @@ const RETRY_DELAYS = [1000, 2000, 4000, 10000]; // exponential backoff, max 10s
  * @returns {{ stream: MediaStream|null, volume: number, status: string }}
  */
 export const useNativeAudioBridge = (config = {}) => {
-  const { enabled = false, url } = config;
+  const { enabled = false, url, gain = 3 } = config;
 
   const [stream, setStream] = useState(null);
   const [volume, setVolume] = useState(0);
@@ -33,6 +33,7 @@ export const useNativeAudioBridge = (config = {}) => {
   const cleanupRef = useRef(null);
   const retryRef = useRef(0);
   const retryTimerRef = useRef(null);
+  const gainNodeRef = useRef(null);
   const configRef = useRef(config);
   configRef.current = config;
 
@@ -220,8 +221,24 @@ registerProcessor('bridge-processor', BridgeProcessor);`;
     }
 
     const workletNode = new AudioWorkletNode(ctx, 'bridge-processor');
+
+    // Gain boost → compressor (limiter) → destination
+    // Compressor prevents clipping from the gain boost.
+    const gainNode = ctx.createGain();
+    gainNode.gain.value = configRef.current.gain || 3;
+    gainNodeRef.current = gainNode;
+
+    const compressor = ctx.createDynamicsCompressor();
+    compressor.threshold.value = -6;  // start compressing 6dB below clipping
+    compressor.knee.value = 6;        // soft knee for natural sound
+    compressor.ratio.value = 20;      // heavy limiting near 0dB
+    compressor.attack.value = 0.003;  // fast attack to catch transients
+    compressor.release.value = 0.1;   // quick release
+
     const destination = ctx.createMediaStreamDestination();
-    workletNode.connect(destination);
+    workletNode.connect(gainNode);
+    gainNode.connect(compressor);
+    compressor.connect(destination);
 
     // Volume metering from worklet
     let sampleCount = 0;
@@ -244,16 +261,26 @@ registerProcessor('bridge-processor', BridgeProcessor);`;
 
     setStream(destination.stream);
     setStatus('connected');
-    logger().info('bridge-connected', { sampleRate, channels: format.channels });
+    logger().info('bridge-connected', { sampleRate, channels: format.channels, gain: gainNode.gain.value });
 
     // Store cleanup + worklet ref for PCM forwarding
     const cleanupFn = () => {
       workletNode.disconnect();
+      gainNode.disconnect();
+      compressor.disconnect();
       destination.disconnect();
+      gainNodeRef.current = null;
     };
     cleanupFn._workletNode = workletNode;
     cleanupRef.current = cleanupFn;
   }, []);
+
+  // Update gain in real-time when config changes
+  useEffect(() => {
+    if (gainNodeRef.current) {
+      gainNodeRef.current.gain.value = gain;
+    }
+  }, [gain]);
 
   // Main effect: connect/disconnect based on enabled + url
   useEffect(() => {
