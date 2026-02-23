@@ -90,6 +90,13 @@ describe('RetroArchAdapter', () => {
         launch: { contentId: 'retroarch:n64/star-fox-64' }
       });
     });
+
+    it('returns console items with list action for drill-down', async () => {
+      const list = await adapter.getList('retroarch:');
+      expect(list[0].actions).toEqual({
+        list: { contentId: 'retroarch:n64' }
+      });
+    });
   });
 
   describe('getItem', () => {
