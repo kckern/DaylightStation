@@ -458,7 +458,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     musicOverlayPlaylist,
     singalong: singalongConfig,  // Sing-along content (hymns, primary songs)
     readalong: readalongConfig,  // Follow-along readalong content (scripture, talks, poetry)
-    retroarch: { config: configService.getHouseholdAppConfig(null, 'retroarch') },  // RetroArch game launcher
+    retroarch: {  // RetroArch game launcher
+      config: configService.getHouseholdAppConfig(null, 'retroarch'),
+      catalog: dataService.household.read('shared/retroarch/catalog') || { games: {}, overrides: {}, sync: {} }
+    },
     storagePaths                 // Collection → media_memory filename mapping
   }, { httpClient: axios, mediaProgressMemory, app, configService });
 
@@ -1634,6 +1637,23 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const syncService = new SyncService({
     logger: rootLogger.child({ module: 'sync-service' })
   });
+
+  // Register RetroArch sync source if config exists
+  const retroarchConfig = configService.getHouseholdAppConfig(null, 'retroarch');
+  if (retroarchConfig?.source) {
+    const { RetroArchSyncAdapter } = await import('#adapters/content/retroarch/RetroArchSyncAdapter.mjs');
+    const retroarchSyncAdapter = new RetroArchSyncAdapter({
+      sourceConfig: retroarchConfig.source,
+      consoleConfig: retroarchConfig.consoles || {},
+      thumbnailBasePath: configService.getHouseholdPath('shared/retroarch/thumbnails'),
+      httpClient: axios,
+      readCatalog: () => dataService.household.read('shared/retroarch/catalog'),
+      writeCatalog: (data) => dataService.household.write('shared/retroarch/catalog', data),
+      downloadThumbnail: async () => {},
+      logger: rootLogger.child({ module: 'retroarch-sync' })
+    });
+    syncService.registerSyncSource('retroarch', retroarchSyncAdapter);
+  }
 
   v1Routers.sync = createSyncRouter({
     syncService,

@@ -68,6 +68,14 @@ export class RetroArchAdapter {
 
   async resolvePlayables() { return []; }
 
+  async resolveLaunchables() {
+    const allGames = [];
+    for (const consoleId of Object.keys(this.#config.consoles || {})) {
+      allGames.push(...this.#listGames(consoleId));
+    }
+    return allGames;
+  }
+
   async resolveSiblings(compoundId) {
     const localId = this.#stripPrefix(compoundId);
     const { consoleId } = this.#parseLocalId(localId);
