@@ -8,6 +8,8 @@ import android.content.Intent;
 import android.media.AudioFormat;
 import android.media.AudioRecord;
 import android.media.MediaRecorder;
+import android.media.audiofx.AcousticEchoCanceler;
+import android.media.audiofx.NoiseSuppressor;
 import android.os.IBinder;
 import android.util.Log;
 
@@ -192,8 +194,10 @@ public class AudioBridgeService extends Service {
                 }
 
                 try {
+                    // VOICE_COMMUNICATION applies built-in AEC/NS/AGC to prevent
+                    // the caller hearing their own voice echoed back from TV speakers.
                     audioRecord = new AudioRecord(
-                            MediaRecorder.AudioSource.MIC,
+                            MediaRecorder.AudioSource.VOICE_COMMUNICATION,
                             SAMPLE_RATE,
                             CHANNEL_CONFIG,
                             AUDIO_FORMAT,
@@ -208,7 +212,8 @@ public class AudioBridgeService extends Service {
                 }
 
                 if (audioRecord.getState() == AudioRecord.STATE_INITIALIZED) {
-                    Log.i(TAG, "AudioRecord initialized on attempt " + (attempt + 1));
+                    Log.i(TAG, "AudioRecord initialized on attempt " + (attempt + 1)
+                            + " source=VOICE_COMMUNICATION");
                     break; // success
                 }
 
@@ -233,10 +238,33 @@ public class AudioBridgeService extends Service {
                 return;
             }
 
+            // Enable echo cancellation and noise suppression if hardware supports it.
+            // Belt-and-suspenders with VOICE_COMMUNICATION source which also applies AEC.
+            int sessionId = audioRecord.getAudioSessionId();
+            if (AcousticEchoCanceler.isAvailable()) {
+                AcousticEchoCanceler aec = AcousticEchoCanceler.create(sessionId);
+                if (aec != null) {
+                    aec.setEnabled(true);
+                    Log.i(TAG, "AcousticEchoCanceler enabled");
+                }
+            } else {
+                Log.i(TAG, "AcousticEchoCanceler not available on this device");
+            }
+            if (NoiseSuppressor.isAvailable()) {
+                NoiseSuppressor ns = NoiseSuppressor.create(sessionId);
+                if (ns != null) {
+                    ns.setEnabled(true);
+                    Log.i(TAG, "NoiseSuppressor enabled");
+                }
+            } else {
+                Log.i(TAG, "NoiseSuppressor not available on this device");
+            }
+
             capturing = true;
             audioRecord.startRecording();
-            Log.i(TAG, "AudioRecord started: source=MIC rate=" + SAMPLE_RATE
-                    + " bufferSize=" + bufferSize + " minBufSize=" + minBufSize);
+            Log.i(TAG, "AudioRecord started: source=VOICE_COMMUNICATION rate=" + SAMPLE_RATE
+                    + " bufferSize=" + bufferSize + " minBufSize=" + minBufSize
+                    + " sessionId=" + sessionId);
 
             captureThread = new Thread(() -> {
                 byte[] buffer = new byte[FRAME_SIZE];
