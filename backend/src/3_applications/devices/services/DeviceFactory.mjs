@@ -181,7 +181,8 @@ export class DeviceFactory {
           port: config.port,
           password: password || '',
           daylightHost: this.#daylightHost,
-          launchActivity
+          launchActivity,
+          companionApps: config.companion_apps || []
         },
         { httpClient: this.#httpClient, logger: this.#logger, adbAdapter }
       );

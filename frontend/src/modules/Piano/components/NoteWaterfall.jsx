@@ -22,7 +22,7 @@ const PARTICLE_ANGLES = Array.from({ length: PARTICLE_COUNT }, (_, i) => {
  * @param {number} props.startNote - Lowest note on keyboard
  * @param {number} props.endNote - Highest note on keyboard
  */
-export function NoteWaterfall({ noteHistory = [], activeNotes = new Map(), startNote = 21, endNote = 108, gameMode = null }) {
+export function NoteWaterfall({ noteHistory = [], activeNotes = new Map(), startNote = 21, endNote = 108, gameMode = null, wrongColumns = null }) {
   const [tick, setTick] = useState(0);
 
   // Continuous animation tick
@@ -150,6 +150,18 @@ export function NoteWaterfall({ noteHistory = [], activeNotes = new Map(), start
             '--x': `${lane.x}%`,
             '--width': `${lane.width}%`,
             '--hue': lane.hue,
+          }}
+        />
+      ))}
+
+      {/* Wrong-press column flash */}
+      {wrongColumns && Array.from(wrongColumns.keys()).map(pitch => (
+        <div
+          key={`wrong-col-${pitch}`}
+          className="game-lane game-lane--wrong"
+          style={{
+            '--x': `${getNotePosition(pitch, startNote, endNote)}%`,
+            '--width': `${getNoteWidth(pitch, startNote, endNote)}%`,
           }}
         />
       ))}

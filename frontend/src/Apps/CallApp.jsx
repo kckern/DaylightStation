@@ -238,12 +238,10 @@ export default function CallApp() {
     if (!container) return;
     const cW = container.clientWidth;
     const cH = container.clientHeight;
-    // Screen coords of tap: the visual element extends from its transformed bounds.
-    // With translate(TX,TY) scale(S) from center, the tap at fraction (x,y) of visual bounds
-    // maps to: newTX = cW*S*(0.5 - x), newTY = cH*S*(0.5 - y)
-    const newTx = cW * S * (0.5 - x);
-    const newTy = cH * S * (0.5 - y);
-    setPanOffset(clampPan(newTx, newTy, S));
+    // Map screen tap to video content coordinates accounting for current pan,
+    // then compute the pan offset that centers that video point on screen.
+    // newTX = currentTX + (0.5 - x) * cW
+    setPanOffset(prev => clampPan(prev.x + (0.5 - x) * cW, prev.y + (0.5 - y) * cH, S));
     logger.debug('zoom-recenter', { x, y });
   }, [clampPan, logger]);
 

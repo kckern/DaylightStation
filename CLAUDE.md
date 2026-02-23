@@ -230,6 +230,32 @@ git rev-parse HEAD > docs/docs-last-updated.txt
 
 ---
 
+## Shield TV / FKB Operations
+
+### Debugging Checklist
+
+When debugging Shield TV issues (audio bridge, video calls, content loading), **always check these first**:
+
+1. **Is FKB running?** — FKB crashes or fails to start after reboots. If it's not running, nothing works (no WebView, no REST API, no content). Start it: `adb shell am start -n de.ozerov.fully/.TvActivity`
+2. **Is FKB REST API reachable?** — `curl http://{shield-ip}:2323/?cmd=deviceInfo&password=...`. ECONNREFUSED = FKB not running. HTML login page = wrong password. JSON = working.
+3. **Are FKB background services disabled?** — `motionDetection`, `motionDetectionAcoustic`, `acousticScreenOn` all hold audio/camera resources and MUST be disabled for the audio bridge to work. Disable via `setBooleanSetting` REST API.
+4. **Is the AudioBridge service running?** — `adb shell dumpsys activity services net.kckern.audiobridge`
+5. **Is anything else holding the MIC?** — `adb shell logcat -d | grep getInputForAttr` shows who's being denied. `adb shell ps -A | grep fully` to check FKB PID against AudioRecord logs.
+
+### FKB Password
+
+Stored in `data/household/auth/fullykiosk.yml`. Used by `FullyKioskContentAdapter` via `auth_ref` in `devices.yml`. The password contains special characters — when using in URLs, it must be URL-encoded. The adapter uses `URLSearchParams` which handles this automatically.
+
+### Android 11 Foreground Service Mic Restriction
+
+On Shield TV (API 30), **foreground services started from a background context cannot access the microphone**. FKB's kiosk mode kills any activity we launch (~28ms), so `startForeground()` always runs from background. **Fix: AudioBridge runs as a regular started service** (no `startForeground()`), which is NOT subject to this restriction. Uses `NotificationManager.notify()` for a persistent notification instead. Shield TV is always plugged in, so the service won't be killed for battery.
+
+### AudioBridge Design Doc
+
+Full architecture and known issues: `_extensions/audio-bridge/DESIGN.md`
+
+---
+
 ## Logging
 
 ### Framework Location

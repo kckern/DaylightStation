@@ -23,6 +23,7 @@ export class FullyKioskContentAdapter {
   #metrics;
   #adbAdapter;
   #launchActivity;
+  #companionApps;
 
   /**
    * @param {Object} config
@@ -31,6 +32,7 @@ export class FullyKioskContentAdapter {
    * @param {string} config.password - Fully Kiosk remote admin password
    * @param {string} config.daylightHost - Base URL for content loading
    * @param {string} [config.launchActivity] - Fully qualified activity for ADB re-launch
+   * @param {string[]} [config.companionApps] - Android packages to launch via FKB after prepare
    * @param {Object} deps
    * @param {Object} deps.httpClient - HTTP client for API calls
    * @param {Object} [deps.logger]
@@ -52,6 +54,7 @@ export class FullyKioskContentAdapter {
     this.#httpClient = deps.httpClient;
     this.#adbAdapter = deps.adbAdapter || null;
     this.#launchActivity = config.launchActivity || null;
+    this.#companionApps = config.companionApps || [];
 
     this.#metrics = {
       startedAt: Date.now(),
@@ -136,6 +139,27 @@ export class FullyKioskContentAdapter {
           this.#logger.info?.('fullykiosk.prepareForContent.foregroundConfirmed', {
             attempt, elapsedMs: Date.now() - startTime
           });
+
+          // Launch companion apps from FKB's foreground context.
+          // On Android 11+, apps started by the foreground app inherit
+          // foreground privileges (createdFromFg=true), enabling microphone
+          // access that background-started services are denied.
+          for (const pkg of this.#companionApps) {
+            // Force-stop first so the app's Activity recreates the service
+            // with fresh foreground context (restarting over a BootReceiver
+            // instance that has createdFromFg=false).
+            if (this.#adbAdapter) {
+              try {
+                await this.#adbAdapter.shell(`am force-stop ${pkg}`);
+                await new Promise(r => setTimeout(r, 300));
+              } catch (err) {
+                this.#logger.debug?.('fullykiosk.prepareForContent.companionForceStop.failed', { pkg, error: err.message });
+              }
+            }
+            const appResult = await this.#sendCommand('startApplication', { package: pkg });
+            this.#logger.info?.('fullykiosk.prepareForContent.companionApp', { pkg, ok: appResult.ok });
+          }
+
           return { ok: true, elapsedMs: Date.now() - startTime };
         }
 

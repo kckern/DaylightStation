@@ -12,6 +12,7 @@ import {
   cleanupResolvedNotes,
   evaluateLevel,
   getFallDuration,
+  TOTAL_HEALTH,
 } from './gameEngine.js';
 
 const TICK_INTERVAL = 16; // ~60fps
@@ -172,12 +173,13 @@ export function useGameMode(activeNotes, noteHistory, gameConfig) {
         next = cleanupResolvedNotes(next, now);
 
         // 4. Check level outcome
-        const outcome = evaluateLevel(next.score, level);
+        const outcome = evaluateLevel(next.score, level, next.health);
         if (outcome === 'fail') {
           logger.info('piano.game.level-failed', {
             level: next.levelIndex,
             score: next.score.points,
             misses: next.score.misses,
+            health: next.health,
           });
           return { ...next, phase: 'LEVEL_FAILED' };
         }
@@ -223,7 +225,7 @@ export function useGameMode(activeNotes, noteHistory, gameConfig) {
       const { result } = processHit(prev, pitch, now, timing, levelMode);
 
       if (!result) {
-        // Wrong press — buzzer + red glow
+        // Wrong press — buzzer + red glow + health damage
         if (errorAudioRef.current) {
           errorAudioRef.current.currentTime = 0;
           errorAudioRef.current.play().catch(() => {});
@@ -242,12 +244,17 @@ export function useGameMode(activeNotes, noteHistory, gameConfig) {
         const { state: newState, result: hitResult } = processHit(prevState, pitch, now, timing, lm);
 
         if (hitResult) {
+          // Correct hit — score + health heal
           const newScore = applyScore(newState.score, hitResult, scoring);
-          logger.debug('piano.game.hit', { pitch, result: hitResult, combo: newScore.combo, points: newScore.points, mode: lm });
-          return { ...newState, score: newScore };
+          const newHealth = Math.min(TOTAL_HEALTH, newState.health + 1);
+          logger.debug('piano.game.hit', { pitch, result: hitResult, combo: newScore.combo, points: newScore.points, health: newHealth, mode: lm });
+          return { ...newState, score: newScore, health: newHealth };
         }
 
-        return newState;
+        // Wrong press — reduce health
+        const newHealth = Math.max(0, newState.health - 5);
+        logger.debug('piano.game.wrong-press', { pitch, health: newHealth });
+        return { ...newState, health: newHealth };
       });
     }
 
@@ -324,6 +331,7 @@ export function useGameMode(activeNotes, noteHistory, gameConfig) {
     levelMode: currentLevel?.mode ?? 'hero',
     fallingNotes: gameState.fallingNotes,
     score: gameState.score,
+    health: gameState.health,
     countdown: gameState.countdown,
     levelProgress,
     fallDuration: getFallDuration(currentLevel),

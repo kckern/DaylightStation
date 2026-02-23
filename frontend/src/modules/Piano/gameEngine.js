@@ -14,6 +14,7 @@
  */
 
 const DEFAULT_FALL_DURATION_MS = 2500; // Default; overridable per level via fall_duration_ms
+export const TOTAL_HEALTH = 28; // Mega Man life meter notch count
 
 // ─── State Factory ──────────────────────────────────────────────
 
@@ -23,6 +24,7 @@ export function createInitialState() {
     levelIndex: 0,
     fallingNotes: [],
     score: { points: 0, combo: 0, maxCombo: 0, perfects: 0, goods: 0, misses: 0 },
+    health: TOTAL_HEALTH,
     countdown: null,
     nextNoteId: 1,
     lastSpawnTime: 0,
@@ -36,6 +38,7 @@ export function resetForLevel(state, levelIndex) {
     levelIndex,
     fallingNotes: [],
     score: { points: 0, combo: 0, maxCombo: 0, perfects: 0, goods: 0, misses: 0 },
+    health: TOTAL_HEALTH,
     countdown: null,
     nextNoteId: 1,
     lastSpawnTime: Date.now(),
@@ -352,9 +355,13 @@ export function cleanupResolvedNotes(state, now) {
 
 /**
  * Check if level is complete or failed.
+ * @param {Object} score - Current score state
+ * @param {Object} levelConfig - Level configuration
+ * @param {number} health - Current health (0 = dead)
  * @returns 'advance' | 'fail' | null
  */
-export function evaluateLevel(score, levelConfig) {
+export function evaluateLevel(score, levelConfig, health) {
+  if (health <= 0) return 'fail';
   if (score.misses >= levelConfig.max_misses) return 'fail';
   if (score.points >= levelConfig.points_to_advance) return 'advance';
   return null;

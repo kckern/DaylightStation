@@ -74,12 +74,22 @@ export default function VideoCall({ deviceId, clear }) {
 
   const { videoRef, stream } = useWebcamStream(selectedVideoDevice, effectiveAudioDevice);
 
-  // Merge video-only stream with bridge audio for WebRTC
+  // Merge video-only stream with bridge audio for WebRTC.
+  // Apply echoCancellation + noiseSuppression constraints on the bridge
+  // audio track — Chrome's WebRTC encoder may honor these even for
+  // non-getUserMedia tracks, using the speaker output as AEC reference.
   const mergedStream = useMemo(() => {
     if (!stream) return null;
     if (!bridgeActive || !bridge.stream) return stream;
     const ms = new MediaStream(stream.getVideoTracks());
-    bridge.stream.getAudioTracks().forEach(t => ms.addTrack(t));
+    bridge.stream.getAudioTracks().forEach(t => {
+      t.applyConstraints({
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      }).catch(() => {});
+      ms.addTrack(t);
+    });
     return ms;
   }, [stream, bridgeActive, bridge.stream]);
 
