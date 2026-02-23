@@ -5,4 +5,5 @@
  * Provider-agnostic home automation abstractions.
  */
 
-// Domain is currently empty - all port interfaces are in 3_applications/home-automation/ports/
+export { isDisplayPowerCheck, createNoOpDisplayPowerCheck } from './IDisplayPowerCheck.mjs';
+export { DisplayReadinessPolicy } from './DisplayReadinessPolicy.mjs';
