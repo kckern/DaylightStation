@@ -32,13 +32,17 @@ export const getNotePosition = (note, startNote = 21, endNote = 108) => {
 /**
  * Calculate width (%) for a note bar
  * White keys: 90% of key width, black keys: 50%
+ * In compact mode (game): narrower so black/white columns don't overlap
  */
-export const getNoteWidth = (note, startNote = 21, endNote = 108) => {
+export const getNoteWidth = (note, startNote = 21, endNote = 108, compact = false) => {
   let totalWhiteKeys = 0;
   for (let n = startNote; n <= endNote; n++) {
     if (isWhiteKey(n)) totalWhiteKeys++;
   }
   const keyWidth = 100 / totalWhiteKeys;
+  if (compact) {
+    return isWhiteKey(note) ? keyWidth * 0.6 : keyWidth * 0.35;
+  }
   return isWhiteKey(note) ? keyWidth * 0.9 : keyWidth * 0.5;
 };
 
