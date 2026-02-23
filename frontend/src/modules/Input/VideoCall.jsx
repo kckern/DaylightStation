@@ -13,7 +13,7 @@ export default function VideoCall({ deviceId, clear }) {
   const logger = useMemo(() => getLogger().child({ component: 'VideoCall', deviceId }), [deviceId]);
 
   // Fetch device-specific input config (preferred camera/mic, audio bridge)
-  const [inputConfig, setInputConfig] = useState(null);
+  const [inputConfig, setInputConfig] = useState(undefined);
   useEffect(() => {
     DaylightAPI('api/v1/device/config')
       .then(config => {
@@ -22,9 +22,15 @@ export default function VideoCall({ deviceId, clear }) {
         if (dev?.input) {
           setInputConfig(dev.input);
           logger.info('device-input-config', { deviceId, hasAudioBridge: !!dev.input.audio_bridge });
+        } else {
+          setInputConfig(null);
+          logger.info('device-input-config', { deviceId, hasAudioBridge: false });
         }
       })
-      .catch(err => logger.warn('device-config-fetch-failed', { error: err.message }));
+      .catch(err => {
+        setInputConfig(null);
+        logger.warn('device-config-fetch-failed', { error: err.message });
+      });
   }, [deviceId, logger]);
 
   const audioBridgeConfig = inputConfig?.audio_bridge || null;
@@ -38,21 +44,26 @@ export default function VideoCall({ deviceId, clear }) {
     preferredMicPattern: inputConfig?.preferred_mic,
   });
 
-  const probe = useAudioProbe(audioDevices, {
-    preferredDeviceId: selectedAudioDevice,
+  // ── Audio source strategy: bridge-first when configured ──
+  const configLoaded = inputConfig !== undefined;
+  const hasBridge = !!audioBridgeConfig;
+
+  // Enable bridge immediately when configured (don't wait for probe)
+  const bridge = useNativeAudioBridge({
+    enabled: configLoaded && hasBridge,
+    url: audioBridgeConfig?.url,
   });
 
-  // Bridge activates based on device config:
-  //   mode 'always'   → enable immediately
-  //   mode 'fallback' → enable only when probe fails to find working mic
-  //   not configured  → never enable
-  const bridgeEnabled = audioBridgeConfig
-    ? audioBridgeConfig.mode === 'always' || (audioBridgeConfig.mode === 'fallback' && probe.status === 'no-mic')
-    : false;
+  // Suppress probe while bridge is being attempted:
+  //   - Config not loaded → suppress (don't probe before we know if bridge exists)
+  //   - Bridge configured and not terminal → suppress (avoid getUserMedia locking MIC)
+  //   - Bridge 'unavailable' (code 1011) → unsuppress (fallback to probe)
+  //   - No bridge configured → unsuppress (probe as normal)
+  const bridgeTerminal = bridge.status === 'unavailable';
+  const suppressProbe = !configLoaded || (hasBridge && !bridgeTerminal);
 
-  const bridge = useNativeAudioBridge({
-    enabled: bridgeEnabled,
-    url: audioBridgeConfig?.url,
+  const probe = useAudioProbe(suppressProbe ? [] : audioDevices, {
+    preferredDeviceId: selectedAudioDevice,
   });
 
   // When probe finds a working device, use it. When bridge is active, disable
