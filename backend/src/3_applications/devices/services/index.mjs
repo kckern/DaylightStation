@@ -5,3 +5,4 @@
 
 export { Device } from './Device.mjs';
 export { DeviceService } from './DeviceService.mjs';
+export { WakeAndLoadService } from './WakeAndLoadService.mjs';
