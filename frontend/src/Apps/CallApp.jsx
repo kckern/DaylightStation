@@ -43,6 +43,7 @@ export default function CallApp() {
   const [pendingRetry, setPendingRetry] = useState(null);
   const [iceError, setIceError] = useState(null);
   const [wakeError, setWakeError] = useState(null);
+  const [wakeAllowOverride, setWakeAllowOverride] = useState(false);
   const [cooldown, setCooldown] = useState(false);
   const [activeDeviceId, setActiveDeviceId] = useState(null);
   const connectedDeviceRef = useRef(null);
@@ -337,11 +338,8 @@ export default function CallApp() {
 
       if (!result.ok) {
         setWaking(false);
-        if (result.allowOverride) {
-          setWakeError(result.error || 'Display did not respond');
-        } else {
-          setWakeError(result.error || 'Could not wake device');
-        }
+        setWakeAllowOverride(!!result.allowOverride);
+        setWakeError(result.error || 'Could not wake device');
         return;
       }
     } catch (err) {
@@ -518,27 +516,32 @@ export default function CallApp() {
             disabled={cooldown}
             onClick={() => {
               setWakeError(null);
+              setWakeAllowOverride(false);
               const devId = connectedDeviceRef.current;
               if (devId) dropIn(devId);
             }}
           >
             {cooldown ? 'Wait...' : 'Try Again'}
           </button>
-          <button
-            className="call-app__device-btn"
-            onClick={() => {
-              setWakeError(null);
-              const devId = connectedDeviceRef.current;
-              if (devId) {
-                setWaking(false);
-                connect(devId);
-              }
-            }}
-          >
-            Connect anyway
-          </button>
+          {wakeAllowOverride && (
+            <button
+              className="call-app__device-btn"
+              onClick={() => {
+                setWakeError(null);
+                setWakeAllowOverride(false);
+                const devId = connectedDeviceRef.current;
+                if (devId) {
+                  setWaking(false);
+                  connect(devId);
+                }
+              }}
+            >
+              Connect anyway
+            </button>
+          )}
           <button className="call-app__cancel" onClick={() => {
             setWakeError(null);
+            setWakeAllowOverride(false);
             connectedDeviceRef.current = null;
             setActiveDeviceId(null);
           }}>

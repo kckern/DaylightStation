@@ -77,26 +77,37 @@ export class WakeAndLoadService {
     });
 
     // --- Step 2: Verify Display ---
-    this.#emitProgress(topic, 'verify', 'running');
-    this.#logger.info?.('wake-and-load.verify.start', { deviceId });
+    // Skip redundant check if powerOn already confirmed the display is on,
+    // or if the device has no sensor (verifySkipped). Only invoke the
+    // readiness policy when power-on couldn't verify on its own.
+    const alreadyVerified = powerResult.verified === true;
+    const noSensor = powerResult.verifySkipped === 'no_state_sensor';
 
-    const readiness = await this.#readinessPolicy.isReady(deviceId);
-    result.steps.verify = readiness;
+    if (alreadyVerified || noSensor) {
+      const skipReason = alreadyVerified ? 'power_on_verified' : 'no_sensor';
+      this.#emitProgress(topic, 'verify', 'done', { skipped: skipReason });
+      this.#logger.info?.('wake-and-load.verify.skipped', { deviceId, reason: skipReason });
+      result.steps.verify = { ready: true, skipped: skipReason };
+    } else {
+      this.#emitProgress(topic, 'verify', 'running');
+      this.#logger.info?.('wake-and-load.verify.start', { deviceId });
 
-    if (!readiness.ready) {
-      this.#emitProgress(topic, 'verify', 'failed', { reason: readiness.reason });
-      this.#logger.warn?.('wake-and-load.verify.failed', { deviceId, reason: readiness.reason });
-      result.failedStep = 'verify';
-      result.error = readiness.reason === 'no_sensor'
-        ? 'No display sensor configured — cannot verify'
-        : 'Display did not turn on';
-      result.allowOverride = true; // Phone can choose "Connect anyway"
-      result.totalElapsedMs = Date.now() - startTime;
-      return result;
+      const readiness = await this.#readinessPolicy.isReady(deviceId);
+      result.steps.verify = readiness;
+
+      if (!readiness.ready) {
+        this.#emitProgress(topic, 'verify', 'failed', { reason: readiness.reason });
+        this.#logger.warn?.('wake-and-load.verify.failed', { deviceId, reason: readiness.reason });
+        result.failedStep = 'verify';
+        result.error = 'Display did not turn on';
+        result.allowOverride = true; // Phone can choose "Connect anyway"
+        result.totalElapsedMs = Date.now() - startTime;
+        return result;
+      }
+
+      this.#emitProgress(topic, 'verify', 'done');
+      this.#logger.info?.('wake-and-load.verify.done', { deviceId });
     }
-
-    this.#emitProgress(topic, 'verify', 'done');
-    this.#logger.info?.('wake-and-load.verify.done', { deviceId });
 
     // --- Step 3: Prepare Content ---
     this.#emitProgress(topic, 'prepare', 'running');
