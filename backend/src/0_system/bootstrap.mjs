@@ -77,6 +77,9 @@ import { KioskAdapter } from '#adapters/home-automation/kiosk/KioskAdapter.mjs';
 import { TaskerAdapter } from '#adapters/home-automation/tasker/TaskerAdapter.mjs';
 import { RemoteExecAdapter } from '#adapters/home-automation/remote-exec/RemoteExecAdapter.mjs';
 import { createHomeAutomationRouter } from '#api/v1/routers/homeAutomation.mjs';
+import { HaSensorDisplayPowerCheck } from '#adapters/home-automation/HaSensorDisplayPowerCheck.mjs';
+import { DisplayReadinessPolicy, createNoOpDisplayPowerCheck } from '#domains/home-automation/index.mjs';
+import { WakeAndLoadService } from '#apps/devices/services/WakeAndLoadService.mjs';
 
 // Device registry imports
 import { DeviceService } from '#apps/devices/services/DeviceService.mjs';
@@ -1526,15 +1529,66 @@ export async function createDeviceServices(config) {
 export function createDeviceApiRouter(config) {
   const {
     deviceServices,
+    wakeAndLoadService,
     configService,
     logger = console
   } = config;
 
   return createDeviceRouter({
     deviceService: deviceServices.deviceService,
+    wakeAndLoadService,
     configService,
     logger
   });
+}
+
+/**
+ * Create WakeAndLoadService with its domain dependencies
+ * @param {Object} config
+ * @param {import('#apps/devices/services/DeviceService.mjs').DeviceService} config.deviceService
+ * @param {Object} [config.haGateway] - Home Assistant gateway
+ * @param {Object} [config.devicesConfig] - Raw devices config (keyed by deviceId)
+ * @param {Function} [config.broadcast] - WebSocket broadcast function
+ * @param {Object} [config.logger] - Logger instance
+ * @returns {{ wakeAndLoadService: WakeAndLoadService }}
+ */
+export function createWakeAndLoadService(config) {
+  const { deviceService, haGateway, devicesConfig, broadcast, logger = console } = config;
+
+  // Build sensor map from device config: deviceId -> state_sensor entity
+  const sensorMap = {};
+  for (const [deviceId, deviceConfig] of Object.entries(devicesConfig || {})) {
+    const displays = deviceConfig.device_control?.displays;
+    if (displays) {
+      for (const [, displayConfig] of Object.entries(displays)) {
+        if (displayConfig.state_sensor) {
+          sensorMap[deviceId] = displayConfig.state_sensor;
+          break; // Use first display's sensor for the device
+        }
+      }
+    }
+  }
+
+  // Adapter: HA sensor check (or no-op if no gateway)
+  let powerCheck;
+  if (haGateway && Object.keys(sensorMap).length > 0) {
+    powerCheck = new HaSensorDisplayPowerCheck({ sensorMap }, { gateway: haGateway, logger });
+  } else {
+    powerCheck = createNoOpDisplayPowerCheck();
+  }
+
+  // Domain policy
+  const readinessPolicy = new DisplayReadinessPolicy({ powerCheck, logger });
+
+  // Application service
+  const wakeAndLoadService = new WakeAndLoadService({
+    deviceService,
+    readinessPolicy,
+    broadcast,
+    logger
+  });
+
+  return { wakeAndLoadService };
 }
 
 // =============================================================================
