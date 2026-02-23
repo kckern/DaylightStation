@@ -100,9 +100,17 @@ export function toListItem(item) {
     list: item.actions?.list ?? computedList
   };
 
-  // Action properties from Item (check item.actions for open, display)
+  // Action properties from Item (check item.actions for open, display, launch)
   if (item.actions?.open) base.open = item.actions.open;
   if (item.actions?.display) base.display = item.actions.display;
+
+  // Launch action from Item (check item.actions for launch)
+  if (item.actions?.launch) base.launch = item.actions.launch;
+
+  // Compute launch action for LaunchableItem entities (have launchIntent but no explicit actions)
+  if (!base.launch && item.launchIntent) {
+    base.launch = { contentId: item.id };
+  }
 
   // Note: plex and assetId are NOT copied to top-level.
   // These identifiers belong in action objects (play.plex, queue.plex, list.plex).
