@@ -1,0 +1,70 @@
+import { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Button, Card, Group, Text, Badge, Stack, Loader } from '@mantine/core';
+import getLogger from '../../../lib/logging/Logger.js';
+
+const GamesIndex = () => {
+  const logger = useMemo(() => getLogger().child({ component: 'GamesIndex' }), []);
+  const navigate = useNavigate();
+  const [consoles, setConsoles] = useState([]);
+  const [syncStatus, setSyncStatus] = useState(null);
+  const [syncing, setSyncing] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    logger.info('gamesIndex.mounted');
+    Promise.all([
+      fetch('/api/v1/list/retroarch').then(r => r.json()),
+      fetch('/api/v1/sync/retroarch/status').then(r => r.json()).catch(() => null)
+    ]).then(([list, status]) => {
+      setConsoles(list?.items || list || []);
+      setSyncStatus(status);
+      setLoading(false);
+    });
+  }, []);
+
+  const handleSync = async () => {
+    setSyncing(true);
+    logger.info('admin.sync.triggered', { source: 'retroarch' });
+    try {
+      await fetch('/api/v1/sync/retroarch', { method: 'POST' });
+      const status = await fetch('/api/v1/sync/retroarch/status').then(r => r.json());
+      setSyncStatus(status);
+      const list = await fetch('/api/v1/list/retroarch').then(r => r.json());
+      setConsoles(list?.items || list || []);
+      logger.info('admin.sync.complete');
+    } catch (err) {
+      logger.error('admin.sync.failed', { error: err.message });
+    }
+    setSyncing(false);
+  };
+
+  if (loading) return <Loader />;
+
+  return (
+    <Stack p="md">
+      <Group justify="space-between">
+        <Text size="xl" fw={700}>Games</Text>
+        <Group>
+          {syncStatus && (
+            <Text size="sm" c="dimmed">
+              {syncStatus.itemCount} games · Last synced {syncStatus.lastSynced ? new Date(syncStatus.lastSynced).toLocaleString() : 'never'}
+            </Text>
+          )}
+          <Button onClick={handleSync} loading={syncing}>Sync from Device</Button>
+        </Group>
+      </Group>
+
+      {consoles.map(c => (
+        <Card key={c.id} padding="sm" withBorder onClick={() => navigate(`/admin/content/games/${c.localId || c.id?.split(':')[1]}`)} style={{ cursor: 'pointer' }}>
+          <Group justify="space-between">
+            <Text fw={500}>{c.title}</Text>
+            <Badge>{c.metadata?.gameCount || 0} games</Badge>
+          </Group>
+        </Card>
+      ))}
+    </Stack>
+  );
+};
+
+export default GamesIndex;

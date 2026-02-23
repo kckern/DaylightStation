@@ -12,7 +12,8 @@ import {
   IconBroadcast, IconPresentation, IconSchool, IconUsers, IconStack3,
   IconCheck, IconArrowBarDown, IconPlayerPlayFilled, IconPlaylistAdd,
   IconLayoutList, IconAppWindow, IconDeviceDesktop, IconBookmark,
-  IconArrowUp, IconArrowDown, IconArrowBarUp, IconSection
+  IconArrowUp, IconArrowDown, IconArrowBarUp, IconSection,
+  IconDeviceGamepad2
 } from '@tabler/icons-react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -33,12 +34,13 @@ const ACTION_OPTIONS = [
   { value: 'Open', label: 'Open' },
   { value: 'Display', label: 'Display' },
   { value: 'Read', label: 'Read' },
+  { value: 'Launch', label: 'Launch' },
 ];
 
 // Types that represent containers (can be drilled into)
 const CONTAINER_TYPES = [
   'show', 'season', 'artist', 'album', 'collection', 'playlist', 'watchlist', 'container',
-  'series', 'channel', 'conference', 'watchlist', 'query', 'menu', 'program'
+  'series', 'channel', 'conference', 'watchlist', 'query', 'menu', 'program', 'console'
 ];
 
 /**
@@ -87,6 +89,7 @@ const TYPE_ICONS = {
   singalong: IconMusic,
   readalong: IconBook,
   chapter: IconBook,
+  game: IconDeviceGamepad2,
   // Legacy collection names (backward compat)
   hymn: IconMusic,
   primary: IconMusic,

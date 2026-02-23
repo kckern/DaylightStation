@@ -19,6 +19,8 @@ import IntegrationsIndex from '../modules/Admin/System/IntegrationsIndex.jsx';
 import IntegrationDetail from '../modules/Admin/System/IntegrationDetail.jsx';
 import AgentsIndex from '../modules/Admin/Agents/AgentsIndex.jsx';
 import AgentDetail from '../modules/Admin/Agents/AgentDetail.jsx';
+import GamesIndex from '../modules/Admin/Games/GamesIndex.jsx';
+import ConsoleDetail from '../modules/Admin/Games/ConsoleDetail.jsx';
 import ComboboxTestPage from '../modules/Admin/TestHarness/ComboboxTestPage.jsx';
 import { Notifications } from '@mantine/notifications';
 import AuthGate from '../modules/Auth/AuthGate.jsx';
@@ -136,6 +138,8 @@ function AdminApp() {
               <Route index element={<Navigate to="content/lists/menus" replace />} />
               <Route path="content/lists/:type" element={<ListsIndex />} />
               <Route path="content/lists/:type/:name" element={<ListsFolder />} />
+              <Route path="content/games" element={<GamesIndex />} />
+              <Route path="content/games/:consoleId" element={<ConsoleDetail />} />
               {/* Apps */}
               <Route path="apps/:appId" element={<AppConfigEditor />} />
 
