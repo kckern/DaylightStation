@@ -25,7 +25,11 @@ ResilientContentAdapter.load()
             4. Retry FullyKiosk REST
 ```
 
-ADB never runs on its own — it's only triggered by `ResilientContentAdapter` when the primary adapter fails with a connection error. Application-level errors (bad URL, auth failure) do **not** trigger ADB recovery.
+ADB is used in two ways:
+
+1. **Pre-emptive MIC release** — During `prepareForContent()`, the FK adapter force-stops and relaunches FKB via ADB to guarantee audio services release the microphone before the audio bridge APK connects. This happens on every content load when ADB is configured.
+
+2. **Connection-error recovery** — `ResilientContentAdapter` triggers ADB recovery when the primary FK REST API is unreachable (ECONNREFUSED, ETIMEDOUT, EHOSTUNREACH). Application-level errors (bad URL, auth failure) do **not** trigger recovery.
 
 ---
 
@@ -71,9 +75,10 @@ Without a `fallback` block, the device uses the raw FullyKiosk adapter with no r
 
 `DeviceFactory.mjs` reads the config and decides at startup:
 
-1. Creates `FullyKioskContentAdapter` as the primary
-2. If `fallback.provider === 'adb'`: creates `AdbAdapter`, wraps primary in `ResilientContentAdapter`
-3. If no fallback: uses the raw primary
+1. If `fallback.provider === 'adb'`: creates `AdbAdapter` first
+2. Creates `FullyKioskContentAdapter` with the ADB adapter injected (for pre-emptive MIC release)
+3. Wraps in `ResilientContentAdapter` with the same ADB adapter (for connection-error recovery)
+4. If no fallback: creates raw `FullyKioskContentAdapter` (no ADB)
 
 ---
 
@@ -168,7 +173,45 @@ adb -s 10.0.0.11:5555 shell echo ok    # Should print "ok"
 
 If `adb devices` shows `unauthorized`, accept the RSA key prompt on the Android device's screen.
 
-### 4. Persistence
+### 4. Docker container authentication
+
+The Docker container runs as user `node`. ADB keys live at `/home/node/.android/adbkey[.pub]`. Since the container is rebuilt on deploy, keys must be provisioned from an already-authorized machine.
+
+**One-time setup** (from a machine with authorized ADB access):
+
+```bash
+# Copy keys from your local machine to the prod host
+scp ~/.android/adbkey ~/.android/adbkey.pub {env.prod_host}:/tmp/
+
+# Copy into the running container and fix ownership
+ssh {env.prod_host} '
+  docker cp /tmp/adbkey {env.docker_container}:/home/node/.android/adbkey
+  docker cp /tmp/adbkey.pub {env.docker_container}:/home/node/.android/adbkey.pub
+  docker exec -u root {env.docker_container} chown node:node /home/node/.android/adbkey /home/node/.android/adbkey.pub
+'
+
+# Restart ADB server and verify
+ssh {env.prod_host} '
+  docker exec {env.docker_container} adb kill-server
+  docker exec {env.docker_container} adb start-server
+  docker exec {env.docker_container} adb connect 10.0.0.11:5555
+  docker exec {env.docker_container} adb -s 10.0.0.11:5555 shell echo ok
+'
+```
+
+**Persisting across rebuilds:** Mount the key directory as a Docker volume so keys survive container recreation:
+
+```yaml
+# docker-compose.yml
+volumes:
+  - ./data/adb-keys:/home/node/.android
+```
+
+Or copy keys into the image at build time (less flexible but fully self-contained).
+
+**Common issue:** If keys are copied via `docker cp`, they'll be owned by `root`. The `chown node:node` step is required — ADB silently fails to read keys it can't access.
+
+### 5. Persistence
 
 ADB network connections **do not survive device reboots** on most devices. After a reboot, you may need to re-enable network debugging or re-run `adb tcpip 5555`.
 
@@ -225,6 +268,14 @@ Recovery events are logged with the `resilient.*` prefix:
 | `resilient.recovery.complete` | info | Recovery finished, retrying primary |
 | `resilient.load.recoverySuccess` | info | Content loaded after recovery |
 | `resilient.load.recoveryFailed` | error | Content still failed after recovery |
+
+Pre-emptive MIC release events use the `fullykiosk.prepareForContent.adb*` prefix:
+
+| Event | Level | Meaning |
+|-------|-------|---------|
+| `fullykiosk.prepareForContent.adbForceStop` | info | FKB force-stopped via ADB (ok: true/false) |
+| `fullykiosk.prepareForContent.adbRelaunch` | info | FKB relaunched via ADB (ok: true/false) |
+| `fullykiosk.prepareForContent.adbRestart.failed` | warn | ADB connect failed, skipping force-restart |
 
 ADB-level events use the `adb.*` prefix:
 

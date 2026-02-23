@@ -43,6 +43,8 @@ export const useWebcamStream = (selectedVideoDevice, selectedAudioDevice) => {
         setError(null);
 
         const tracks = localStream.getTracks();
+        const videoTrack = localStream.getVideoTracks()[0];
+        const vSettings = videoTrack?.getSettings?.() || {};
         logger().info('stream-acquired', {
           tracks: tracks.map(t => ({
             kind: t.kind,
@@ -51,6 +53,7 @@ export const useWebcamStream = (selectedVideoDevice, selectedAudioDevice) => {
             muted: t.muted,
             readyState: t.readyState,
           })),
+          videoSettings: { w: vSettings.width, h: vSettings.height, aspectRatio: vSettings.aspectRatio, frameRate: vSettings.frameRate },
           videoDevice: selectedVideoDevice?.slice(0, 8),
           audioDevice: selectedAudioDevice?.slice(0, 8),
         });

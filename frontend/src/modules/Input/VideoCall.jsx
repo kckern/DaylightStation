@@ -52,6 +52,7 @@ export default function VideoCall({ deviceId, clear }) {
   const bridge = useNativeAudioBridge({
     enabled: configLoaded && hasBridge,
     url: audioBridgeConfig?.url,
+    gain: audioBridgeConfig?.gain,
   });
 
   // Suppress probe while bridge is being attempted:
