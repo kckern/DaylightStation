@@ -1,5 +1,22 @@
 import { useEffect, useRef, useCallback } from 'react';
+import getLogger from '../../../lib/logging/Logger.js';
 
+let _logger;
+function logger() {
+  if (!_logger) _logger = getLogger().child({ component: 'useZoomGestures' });
+  return _logger;
+}
+
+/**
+ * useZoomGestures — pointer-event-based gesture handler for zoom/pan.
+ *
+ * @param {React.RefObject} ref - element to attach listeners to
+ * @param {object} opts
+ * @param {boolean} opts.enabled - only listen when true
+ * @param {(x: number, y: number) => void} opts.onTap - single tap at (x%, y%)
+ * @param {(dx: number, dy: number) => void} opts.onPan - drag delta in % of element
+ * @param {(scaleDelta: number, cx: number, cy: number) => void} opts.onPinch - scale multiplier + center
+ */
 export default function useZoomGestures(ref, { enabled, onTap, onPan, onPinch }) {
   const pointersRef = useRef(new Map());
   const dragStartRef = useRef(null);
@@ -46,6 +63,7 @@ export default function useZoomGestures(ref, { enabled, onTap, onPan, onPinch })
         const dy = (e.clientY - dragStartRef.current.y) / rect.height;
         if (Math.abs(dx) > 0.01 || Math.abs(dy) > 0.01) {
           movedRef.current = true;
+          logger().sampled('gesture-pan', { dx, dy }, { maxPerMinute: 30, aggregate: true });
           onPan(-dx, -dy);
           dragStartRef.current = { x: e.clientX, y: e.clientY };
         }
@@ -58,6 +76,7 @@ export default function useZoomGestures(ref, { enabled, onTap, onPan, onPinch })
         const cx = ((pts[0].x + pts[1].x) / 2 - rect.left) / rect.width;
         const cy = ((pts[0].y + pts[1].y) / 2 - rect.top) / rect.height;
         movedRef.current = true;
+        logger().sampled('gesture-pinch', { scaleDelta, cx, cy }, { maxPerMinute: 30, aggregate: true });
         onPinch(scaleDelta, cx, cy);
         pinchStartDistRef.current = dist;
       }
@@ -69,6 +88,7 @@ export default function useZoomGestures(ref, { enabled, onTap, onPan, onPinch })
       if (pointers.size === 0) {
         if (!movedRef.current) {
           const { x, y } = getRelative(e);
+          logger().debug('gesture-tap', { x, y });
           onTap(x, y);
         }
         dragStartRef.current = null;
@@ -94,6 +114,7 @@ export default function useZoomGestures(ref, { enabled, onTap, onPan, onPinch })
     el.addEventListener('pointermove', onPointerMove);
     el.addEventListener('pointerup', onPointerUp);
     el.addEventListener('pointercancel', onPointerCancel);
+    logger().info('gestures-attached');
 
     return () => {
       el.removeEventListener('pointerdown', onPointerDown);
@@ -101,6 +122,7 @@ export default function useZoomGestures(ref, { enabled, onTap, onPan, onPinch })
       el.removeEventListener('pointerup', onPointerUp);
       el.removeEventListener('pointercancel', onPointerCancel);
       pointers.clear();
+      logger().info('gestures-detached');
     };
   }, [ref, enabled, onTap, onPan, onPinch, getRelative]);
 }
