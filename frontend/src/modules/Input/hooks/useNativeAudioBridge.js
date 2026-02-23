@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import getLogger from '../../../lib/logging/Logger.js';
+import speexWasmSource from '../../../lib/audio/speex_aec.js?raw';
 
 let _logger;
 function logger() {
@@ -13,16 +14,20 @@ const RETRY_DELAYS = [1000, 2000, 4000, 10000]; // exponential backoff, max 10s
  * Connects to a native audio bridge app via local WebSocket,
  * receives raw PCM audio, and produces a MediaStream + volume meter.
  *
+ * AEC (echo cancellation) runs on the main thread using Speex WASM.
+ * Chrome WebView 120's AudioWorklet scope cannot compile WASM, so
+ * the worklet is a simple PCM output device and all DSP happens here.
+ *
  * Config-driven: only activates when a bridge config is provided and
  * the enabled flag is true.
  *
  * @param {Object} config
  * @param {boolean} config.enabled - Whether to activate the bridge
  * @param {string}  config.url     - WebSocket URL (e.g. 'ws://localhost:8765')
- * @returns {{ stream: MediaStream|null, volume: number, status: string }}
+ * @returns {{ stream: MediaStream|null, volume: number, status: string, feedReference: function }}
  */
 export const useNativeAudioBridge = (config = {}) => {
-  const { enabled = false, url, gain = 2 } = config;
+  const { enabled = false, url, gain = 2, aec = {} } = config;
 
   const [stream, setStream] = useState(null);
   const [volume, setVolume] = useState(0);
@@ -37,6 +42,9 @@ export const useNativeAudioBridge = (config = {}) => {
   const configRef = useRef(config);
   configRef.current = config;
 
+  // Main-thread AEC state
+  const aecRef = useRef(null);
+
   const cleanup = useCallback(() => {
     if (retryTimerRef.current) {
       clearTimeout(retryTimerRef.current);
@@ -49,6 +57,10 @@ export const useNativeAudioBridge = (config = {}) => {
     if (cleanupRef.current) {
       cleanupRef.current();
       cleanupRef.current = null;
+    }
+    if (aecRef.current) {
+      aecRef.current.destroy();
+      aecRef.current = null;
     }
     if (ctxRef.current) {
       ctxRef.current.close().catch(() => {});
@@ -98,12 +110,36 @@ export const useNativeAudioBridge = (config = {}) => {
         return;
       }
 
-      // Binary messages are PCM data — forward to worklet
+      // Binary messages are PCM data — process with AEC or forward raw
       if (event.data instanceof ArrayBuffer && cleanupRef.current) {
         const workletNode = cleanupRef.current._workletNode;
-        if (workletNode) {
-          workletNode.port.postMessage({ pcm: event.data }, [event.data]);
+        if (!workletNode) return;
+
+        const aecState = aecRef.current;
+        if (aecState && aecState.hasRef) {
+          // AEC mode: feed mic into ring buffer, process aligned frames.
+          // Once ref has been received, ALL mic data goes through AEC —
+          // never fall back to passthrough (would cause double audio).
+          aecState.feedMic(new Int16Array(event.data));
+          const cleanFrames = aecState.process();
+          if (cleanFrames.length > 0) {
+            const totalLen = cleanFrames.reduce((s, f) => s + f.length, 0);
+            const clean = new Float32Array(totalLen);
+            let offset = 0;
+            for (const f of cleanFrames) {
+              clean.set(f, offset);
+              offset += f.length;
+            }
+            workletNode.port.postMessage({ cleanPcm: clean.buffer }, [clean.buffer]);
+          }
+          // If no clean frames yet (accumulating), worklet plays from its
+          // existing buffer or outputs silence — no data loss, AEC will
+          // catch up on the next mic chunk.
+          return;
         }
+
+        // Passthrough: no AEC or ref signal not received yet — send raw PCM
+        workletNode.port.postMessage({ pcm: event.data }, [event.data]);
       }
     };
 
@@ -148,6 +184,9 @@ export const useNativeAudioBridge = (config = {}) => {
    * Sets up AudioContext → AudioWorklet → MediaStreamDestination pipeline.
    * The worklet receives PCM chunks via MessagePort and writes them
    * into the audio graph, producing a real MediaStreamTrack.
+   *
+   * AEC is initialized on the main thread (WASM doesn't compile in
+   * Chrome WebView 120's AudioWorklet scope).
    */
   const setupAudioPipeline = useCallback(async (format) => {
     const sampleRate = format.sampleRate || 48000;
@@ -159,24 +198,43 @@ export const useNativeAudioBridge = (config = {}) => {
       await ctx.resume();
     }
 
+    // ── Simplified worklet: PCM output + RMS metering only ──
+    // No WASM, no AEC — just receives audio and plays it.
     const processorSource = `
 class BridgeProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
-    this._buffer = new Float32Array(0);
+    // Pre-allocated ring buffer (1s at 48kHz)
+    this._ring = new Float32Array(48000);
+    this._writePos = 0;
+    this._readPos = 0;
+    this._count = 0;
+    this._frameCount = 0;
+
     this.port.onmessage = (e) => {
       if (e.data.pcm) {
-        // Convert Int16 PCM to Float32
+        // Raw Int16 from mic (passthrough — no AEC)
         const int16 = new Int16Array(e.data.pcm);
-        const float32 = new Float32Array(int16.length);
-        for (let i = 0; i < int16.length; i++) {
-          float32[i] = int16[i] / 32768;
+        const len = int16.length;
+        const ring = this._ring;
+        const cap = ring.length;
+        for (let i = 0; i < len; i++) {
+          ring[this._writePos] = int16[i] / 32768;
+          this._writePos = (this._writePos + 1) % cap;
         }
-        // Append to buffer
-        const newBuf = new Float32Array(this._buffer.length + float32.length);
-        newBuf.set(this._buffer);
-        newBuf.set(float32, this._buffer.length);
-        this._buffer = newBuf;
+        this._count = Math.min(this._count + len, cap);
+      }
+      if (e.data.cleanPcm) {
+        // Float32 from main-thread AEC
+        const float32 = new Float32Array(e.data.cleanPcm);
+        const len = float32.length;
+        const ring = this._ring;
+        const cap = ring.length;
+        for (let i = 0; i < len; i++) {
+          ring[this._writePos] = float32[i];
+          this._writePos = (this._writePos + 1) % cap;
+        }
+        this._count = Math.min(this._count + len, cap);
       }
     };
   }
@@ -184,27 +242,39 @@ class BridgeProcessor extends AudioWorkletProcessor {
   process(inputs, outputs) {
     const output = outputs[0];
     if (output.length === 0) return true;
-
     const channel = output[0];
     const needed = channel.length;
 
-    if (this._buffer.length >= needed) {
-      channel.set(this._buffer.subarray(0, needed));
-      this._buffer = this._buffer.subarray(needed);
-    } else if (this._buffer.length > 0) {
-      channel.set(this._buffer);
-      // Rest stays zero (silence)
-      this._buffer = new Float32Array(0);
+    const ring = this._ring;
+    const cap = ring.length;
+    if (this._count >= needed) {
+      for (let i = 0; i < needed; i++) {
+        channel[i] = ring[this._readPos];
+        this._readPos = (this._readPos + 1) % cap;
+      }
+      this._count -= needed;
+    } else if (this._count > 0) {
+      const avail = this._count;
+      for (let i = 0; i < avail; i++) {
+        channel[i] = ring[this._readPos];
+        this._readPos = (this._readPos + 1) % cap;
+      }
+      this._count = 0;
     }
-    // else: output stays zero-filled (silence)
 
-    // Compute RMS and report volume
+    // RMS volume metering
     let sum = 0;
     for (let i = 0; i < channel.length; i++) {
       sum += channel[i] * channel[i];
     }
     const rms = Math.sqrt(sum / channel.length);
-    this.port.postMessage({ rms });
+
+    this._frameCount++;
+    if (this._frameCount % 500 === 0) {
+      this.port.postMessage({ rms, debug: { buffered: this._count } });
+    } else {
+      this.port.postMessage({ rms });
+    }
 
     return true;
   }
@@ -221,6 +291,133 @@ registerProcessor('bridge-processor', BridgeProcessor);`;
     }
 
     const workletNode = new AudioWorkletNode(ctx, 'bridge-processor');
+
+    // ── Initialize Speex AEC on the main thread ──
+    const aecConfig = configRef.current.aec || {};
+    const aecEnabled = aecConfig.enabled !== false;
+
+    if (aecEnabled) {
+      try {
+        // Evaluate Speex WASM on the main thread where self.location,
+        // WebAssembly.compile, fetch, etc. all work correctly.
+        // Chrome WebView 120's AudioWorklet scope can't compile WASM
+        // (SpeexModule() hangs forever), so all DSP runs here instead.
+        //
+        // Try dynamic import from blob URL first (clean, no eval).
+        // Fall back to new Function() for environments where blob
+        // dynamic import isn't supported.
+        let SpeexModuleFactory;
+        try {
+          const esBlob = new Blob(
+            [speexWasmSource + '\nexport default SpeexModule;'],
+            { type: 'text/javascript' }
+          );
+          const esUrl = URL.createObjectURL(esBlob);
+          try {
+            const mod = await import(/* @vite-ignore */ esUrl);
+            SpeexModuleFactory = mod.default;
+          } finally {
+            URL.revokeObjectURL(esUrl);
+          }
+        } catch {
+          // Fallback: new Function (works everywhere, needs unsafe-eval CSP)
+          SpeexModuleFactory = new Function(speexWasmSource + ';\nreturn SpeexModule;')();
+        }
+
+        const speexMod = await SpeexModuleFactory();
+        const frameSize = aecConfig.frame_size || 480;
+        const filterLength = aecConfig.filter_length || 4800;
+
+        // Init Speex echo state
+        const state = speexMod._speex_echo_state_init(frameSize, filterLength);
+        const srPtr = speexMod._malloc(4);
+        speexMod.setValue(srPtr, 48000, 'i32');
+        speexMod._speex_echo_ctl(state, 24, srPtr);
+        speexMod._free(srPtr);
+
+        // Pre-allocate WASM heap buffers (int16: 2 bytes per sample)
+        const micPtr = speexMod._malloc(frameSize * 2);
+        const refPtr = speexMod._malloc(frameSize * 2);
+        const outPtr = speexMod._malloc(frameSize * 2);
+
+        // Ring buffers for mic and ref on main thread
+        const micRing = new Float32Array(48000);
+        let micWP = 0, micRP = 0, micCount = 0;
+        const refRing = new Float32Array(48000);
+        let refWP = 0, refRP = 0, refCount = 0;
+        let hasRef = false;
+
+        const aecState = {
+          get hasRef() { return hasRef; },
+
+          feedMic(int16Array) {
+            const len = int16Array.length;
+            for (let i = 0; i < len; i++) {
+              micRing[micWP] = int16Array[i] / 32768;
+              micWP = (micWP + 1) % 48000;
+            }
+            micCount = Math.min(micCount + len, 48000);
+          },
+
+          feedRef(float32Array) {
+            const len = float32Array.length;
+            for (let i = 0; i < len; i++) {
+              refRing[refWP] = float32Array[i];
+              refWP = (refWP + 1) % 48000;
+            }
+            refCount = Math.min(refCount + len, 48000);
+            hasRef = true;
+          },
+
+          process() {
+            const results = [];
+            while (micCount >= frameSize && refCount >= frameSize) {
+              // Read mic frame → WASM heap (Float32 → Int16)
+              for (let i = 0; i < frameSize; i++) {
+                speexMod.HEAP16[(micPtr >> 1) + i] =
+                  Math.max(-32768, Math.min(32767, micRing[micRP] * 32768));
+                micRP = (micRP + 1) % 48000;
+              }
+              micCount -= frameSize;
+
+              // Read ref frame → WASM heap (Float32 → Int16)
+              for (let i = 0; i < frameSize; i++) {
+                speexMod.HEAP16[(refPtr >> 1) + i] =
+                  Math.max(-32768, Math.min(32767, refRing[refRP] * 32768));
+                refRP = (refRP + 1) % 48000;
+              }
+              refCount -= frameSize;
+
+              // Run Speex echo cancellation
+              speexMod._speex_echo_cancellation(state, micPtr, refPtr, outPtr);
+
+              // Int16 → Float32 output
+              const output = new Float32Array(frameSize);
+              for (let i = 0; i < frameSize; i++) {
+                output[i] = speexMod.HEAP16[(outPtr >> 1) + i] / 32768;
+              }
+              results.push(output);
+            }
+            return results;
+          },
+
+          destroy() {
+            speexMod._speex_echo_state_destroy(state);
+            speexMod._free(micPtr);
+            speexMod._free(refPtr);
+            speexMod._free(outPtr);
+          },
+        };
+
+        aecRef.current = aecState;
+        logger().info('bridge-aec-status', { status: 'ready', frameSize, filterLength });
+      } catch (err) {
+        logger().warn('bridge-aec-status', { status: 'failed', error: err.message });
+        aecRef.current = null;
+      }
+    } else {
+      logger().info('bridge-aec-status', { status: 'disabled' });
+    }
 
     // Gain boost → compressor (limiter) → destination
     // Compressor prevents clipping from the gain boost.
@@ -257,11 +454,19 @@ registerProcessor('bridge-processor', BridgeProcessor);`;
           maxLevel = 0;
         }
       }
+      if (e.data.debug) {
+        logger().sampled('bridge-buffer-levels', e.data.debug, { maxPerMinute: 6 });
+      }
     };
 
     setStream(destination.stream);
     setStatus('connected');
-    logger().info('bridge-connected', { sampleRate, channels: format.channels, gain: gainNode.gain.value });
+    logger().info('bridge-connected', {
+      sampleRate,
+      channels: format.channels,
+      gain: gainNode.gain.value,
+      aec: aecRef.current ? 'ready' : 'off',
+    });
 
     // Store cleanup + worklet ref for PCM forwarding
     const cleanupFn = () => {
@@ -296,5 +501,13 @@ registerProcessor('bridge-processor', BridgeProcessor);`;
     };
   }, [enabled, url, connect, cleanup]);
 
-  return { stream, volume, status };
+  // Feed reference signal from VideoCall's remote audio tap.
+  // Called by VideoCall.jsx instead of posting to workletPort.
+  const feedReference = useCallback((float32Array) => {
+    if (aecRef.current) {
+      aecRef.current.feedRef(float32Array);
+    }
+  }, []);
+
+  return { stream, volume, status, feedReference };
 };

@@ -362,6 +362,83 @@ curl -s "http://10.0.0.11:2323/?cmd=setBooleanSetting&key=acousticScreenOn&value
 
 | File | Change | Purpose |
 |------|--------|---------|
+---
+
+## Echo Cancellation (AEC)
+
+**Added:** 2026-02-23
+**Roadmap:** `docs/roadmap/2026-02-23-software-aec-audio-bridge.md`
+
+### Problem
+
+Video calls to the Shield TV produce echo: TV speakers play the remote caller's voice, the USB mic picks it up, and the bridge streams it back. The Shield has no hardware AEC for USB audio.
+
+### Solution
+
+Two-layer mitigation:
+
+1. **Volume ducking** — TV volume reduced to 12% during calls, restored to 50% on disconnect. Eliminates ~90% of echo. Implemented in `VideoCall.jsx` via the existing `/api/v1/device/:id/volume/:level` endpoint.
+
+2. **Software AEC** — Speex DSP echo cancellation compiled to WebAssembly, running inside the BridgeProcessor AudioWorklet. The remote caller's audio is tapped as a reference signal, and the adaptive filter subtracts the estimated echo from the mic signal.
+
+### Signal Flow
+
+```
+Remote caller audio → WebRTC → peer.remoteStream
+                                    │
+                     ┌──────────────┤
+                     │              ▼
+                     │        <video> element (TV speakers)
+                     ▼
+              ScriptProcessor (tap)
+                     │
+                     ▼ { ref: Float32Array }
+USB Mic → AudioBridge APK → WebSocket → BridgeProcessor (Worklet)
+                                              │
+                                        ┌─────┴─────┐
+                                        │ Speex AEC  │
+                                        │ (WASM)     │
+                                        │            │
+                                        │ mic ring ──┤
+                                        │ ref ring ──┤
+                                        │ out ring ──┤
+                                        └─────┬─────┘
+                                              ▼
+                                        GainNode → Compressor → MediaStreamDest → WebRTC
+```
+
+### Configuration
+
+In `devices.yml` under `input.audio_bridge`:
+
+```yaml
+audio_bridge:
+  url: ws://localhost:8765
+  mode: fallback
+  gain: 1
+  aec:
+    enabled: true
+    filter_length: 4800  # 100ms at 48kHz
+    frame_size: 480      # 10ms frames
+```
+
+Set `aec.enabled: false` to disable AEC and rely on volume ducking only.
+
+### Runtime Behavior
+
+- AEC initializes asynchronously when the bridge connects (WASM load takes ~50ms)
+- Until AEC is ready, or when no reference signal is available, audio passes through unchanged
+- If processing exceeds 8ms per frame consistently (>10 overruns in 100 frames), AEC auto-disables and falls back to passthrough. Logged as `bridge-aec-status: degraded`
+- Speex adaptive filter converges in 1-3 seconds — first seconds of a call may have some echo
+
+### Files
+
+| File | Status | Description |
+|------|--------|-------------|
+| `frontend/src/lib/audio/speex_aec.js` | New | Speex AEC compiled to WASM (base64-embedded, ~60KB) |
+| `frontend/src/lib/audio/SpeexAEC.js` | New | JS wrapper class for the WASM module |
+| `frontend/src/lib/audio/build-speex-aec.sh` | New | Emscripten build script (requires ~/emsdk) |
+
 | `_extensions/audio-bridge/app/` | New | Android Studio project for the bridge APK |
 | `data/household/config/devices.yml` | Modified | Added `audio_bridge` config under `livingroom-tv.input` |
 | `frontend/src/modules/Input/hooks/useNativeAudioBridge.js` | New | Hook: config-driven WebSocket client, PCM-to-MediaStream conversion |

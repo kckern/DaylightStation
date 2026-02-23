@@ -3,7 +3,7 @@
 > Echo cancellation via WebAssembly AEC in the existing AudioWorklet pipeline
 
 **Last Updated:** 2026-02-23
-**Status:** Design / Research
+**Status:** Implemented
 **Depends On:** Native Audio Bridge (implemented), WebRTC calling (implemented)
 
 ---

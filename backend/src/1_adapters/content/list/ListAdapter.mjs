@@ -816,6 +816,12 @@ export class ListAdapter {
         Object.assign(playAction, baseAction);
       }
 
+      // Merge display hints into the resolved action object
+      if (item.menuStyle) {
+        const target = listAction || queueAction || playAction;
+        if (target) target.menuStyle = item.menuStyle;
+      }
+
       // Watch-state enrichment for watchlist items
       let percent = 0;
       let playhead = 0;

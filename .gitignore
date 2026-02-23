@@ -81,3 +81,6 @@ tests/output/
 /_extensions/audio-bridge/app/app/build
 /_extensions/audio-bridge/app/.gradle
 /_extensions/audio-bridge/app/local.properties
+# Speex AEC WASM build
+frontend/src/lib/audio/vendor/
+!frontend/src/lib/audio/build-speex-aec.sh
