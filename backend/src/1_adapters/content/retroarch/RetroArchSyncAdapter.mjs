@@ -73,7 +73,7 @@ export class RetroArchSyncAdapter {
         id: this.#slugify(item.label),
         title: item.label,
         rom: item.path,
-        thumbnail: `${encodeURIComponent(playlistName)}/${thumbSubdir}/${encodeURIComponent(item.label)}.png`,
+        thumbnail: `${encodeURIComponent(playlistName)}/${thumbSubdir}/${encodeURIComponent(this.#sanitizeThumbnailName(item.label))}.png`,
         crc32: item.crc32
       }));
 
@@ -124,6 +124,11 @@ export class RetroArchSyncAdapter {
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-|-$/g, '');
+  }
+
+  /** RetroArch replaces &:/ with _ in thumbnail filenames */
+  #sanitizeThumbnailName(label) {
+    return label.replace(/[&:/]/g, '_');
   }
 }
 

@@ -53,6 +53,7 @@ export default function VideoCall({ deviceId, clear }) {
     enabled: configLoaded && hasBridge,
     url: audioBridgeConfig?.url,
     gain: audioBridgeConfig?.gain,
+    aec: audioBridgeConfig?.aec,
   });
 
   // Suppress probe while bridge is being attempted:
@@ -145,6 +146,71 @@ export default function VideoCall({ deviceId, clear }) {
     const interval = setInterval(() => setCallDuration(d => d + 1), 1000);
     return () => clearInterval(interval);
   }, [peerConnected]);
+
+  // Volume ducking — lower TV volume when call connects, restore on disconnect
+  useEffect(() => {
+    if (!peerConnected) return;
+    logger.info('volume-duck', { deviceId, level: 12 });
+    DaylightAPI(`api/v1/device/${deviceId}/volume/12`).catch(err =>
+      logger.warn('volume-duck-failed', { deviceId, error: err.message })
+    );
+    return () => {
+      logger.info('volume-restore', { deviceId, level: 50 });
+      DaylightAPI(`api/v1/device/${deviceId}/volume/50`).catch(err =>
+        logger.warn('volume-restore-failed', { deviceId, error: err.message })
+      );
+    };
+  }, [peerConnected, deviceId, logger]);
+
+  // AEC reference signal — tap remote audio and feed to main-thread AEC
+  const refTapRef = useRef(null);
+
+  useEffect(() => {
+    const remoteStream = peer.remoteStream;
+    if (!remoteStream || !bridgeActive) return;
+
+    const audioTracks = remoteStream.getAudioTracks();
+    if (audioTracks.length === 0) return;
+
+    // Create a separate AudioContext for the reference tap.
+    // ScriptProcessorNode extracts PCM frames from the remote audio stream
+    // and feeds them to the main-thread AEC via bridge.feedReference().
+    const ctx = new AudioContext({ sampleRate: 48000 });
+    const source = ctx.createMediaStreamSource(new MediaStream(audioTracks));
+
+    // ScriptProcessor to extract frames. Deprecated but universally supported
+    // and simpler than a second AudioWorklet module for this use case.
+    const processor = ctx.createScriptProcessor(512, 1, 1);
+
+    // Mute the tap output — we only need the reference data, not audible output.
+    // ScriptProcessor requires being connected to destination to fire callbacks.
+    const muteGain = ctx.createGain();
+    muteGain.gain.value = 0;
+
+    source.connect(processor);
+    processor.connect(muteGain);
+    muteGain.connect(ctx.destination);
+
+    processor.onaudioprocess = (e) => {
+      const input = e.inputBuffer.getChannelData(0);
+      const copy = new Float32Array(input.length);
+      copy.set(input);
+      bridge.feedReference(copy);
+    };
+
+    logger.info('aec-ref-tap-started', { audioTracks: audioTracks.length });
+    refTapRef.current = { ctx, source, processor, muteGain };
+
+    return () => {
+      processor.onaudioprocess = null;
+      source.disconnect();
+      processor.disconnect();
+      muteGain.disconnect();
+      ctx.close().catch(() => {});
+      refTapRef.current = null;
+      logger.info('aec-ref-tap-stopped');
+    };
+  }, [peer.remoteStream, bridgeActive, bridge.feedReference, logger]);
 
   // Attach remote stream to video element
   useEffect(() => {

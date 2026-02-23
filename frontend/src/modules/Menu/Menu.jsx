@@ -9,6 +9,7 @@ import { DaylightAPI, DaylightMediaPath, ContentDisplayUrl } from "../../lib/api
 import "./Menu.scss";
 import MenuNavigationContext from "../../context/MenuNavigationContext";
 import { MenuSkeleton } from "./MenuSkeleton";
+import { ArcadeSelector } from "./ArcadeSelector";
 
 /**
  * Logs a menu selection to the server.
@@ -127,10 +128,26 @@ export function TVMenu({
     return <MenuSkeleton />;
   }
 
+  if (menuMeta.menuStyle === 'arcade') {
+    return (
+      <ArcadeSelector
+        items={menuItems}
+        depth={depth}
+        selectedKey={selectedKeyProp}
+        selectedIndex={selectedIndexProp}
+        onSelectedIndexChange={onSelectedIndexChange}
+        onSelect={handleSelect}
+        onClose={onEscape}
+      />
+    );
+  }
+
+  const styleClass = menuMeta.menuStyle ? `menu-items-container--${menuMeta.menuStyle}` : '';
+
   return (
-    <div className="menu-items-container" ref={containerRef}>
-      <MenuHeader 
-        title={menuMeta.title || menuMeta.label} 
+    <div className={`menu-items-container ${styleClass}`} ref={containerRef}>
+      <MenuHeader
+        title={menuMeta.title || menuMeta.label}
         itemCount={menuItems.length}
         image={menuMeta.image}
       />
@@ -183,10 +200,12 @@ export function KeypadMenu({
     );
   }
 
+  const styleClass = menuMeta.menuStyle ? `menu-items-container--${menuMeta.menuStyle}` : '';
+
   return (
-    <div className="menu-items-container" ref={containerRef}>
-      <MenuHeader 
-        title={menuMeta.title || menuMeta.label || "Menu"} 
+    <div className={`menu-items-container ${styleClass}`} ref={containerRef}>
+      <MenuHeader
+        title={menuMeta.title || menuMeta.label || "Menu"}
         itemCount={menuItems.length}
         image={menuMeta.image}
       />
@@ -343,7 +362,7 @@ function useFetchMenuData(listInput, refreshToken = 0) {
 
       // (C) If the input is an object with "menu", "list", "plex", "watchlist", or "contentId"
       if (typeof input === "object") {
-        const { menu, list, plex, watchlist, contentId, shuffle, playable } = input;
+        const { menu, list, plex, watchlist, contentId, shuffle, playable, menuStyle } = input;
         const config = [];
         if (shuffle) config.push("shuffle");
         if (playable) config.push("playable");
@@ -361,6 +380,7 @@ function useFetchMenuData(listInput, refreshToken = 0) {
               title: data.title,
               image: data.image,
               kind: data.kind,
+              menuStyle,
             });
           }
         } else {

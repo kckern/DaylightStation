@@ -50,7 +50,7 @@ export class RetroArchAdapter {
     const overrides = this.#catalog.overrides?.[`${consoleId}/${gameId}`] || {};
     if (overrides.hidden) return null;
 
-    const title = overrides.title || game.title;
+    const title = overrides.title || this.#sanitizeTitle(game.title);
     const launchTarget = `${this.#config.launch.package}/${this.#config.launch.activity}`;
 
     return new LaunchableItem({
@@ -118,7 +118,7 @@ export class RetroArchAdapter {
       for (const game of games) {
         const overrides = this.#catalog.overrides?.[`${consoleId}/${game.id}`] || {};
         if (overrides.hidden) continue;
-        const title = overrides.title || game.title;
+        const title = overrides.title || this.#sanitizeTitle(game.title);
         const matchesSearch = !searchText
           || title.toLowerCase().includes(searchText)
           || game.title.toLowerCase().includes(searchText);
@@ -142,6 +142,11 @@ export class RetroArchAdapter {
     }
 
     return { items, total: items.length };
+  }
+
+  /** Strip region/revision tags like (USA), (Europe) (Rev 1) from display titles */
+  #sanitizeTitle(title) {
+    return title.replace(/\s*\(.*$/, '').trim();
   }
 
   // ── Private ──────────────────────────────────────────
@@ -180,7 +185,7 @@ export class RetroArchAdapter {
           id: compoundId,
           source: 'retroarch',
           localId: `${consoleId}/${game.id}`,
-          title: overrides.title || game.title,
+          title: overrides.title || this.#sanitizeTitle(game.title),
           type: 'game',
           thumbnail: game.thumbnail ? `/api/v1/proxy/retroarch/thumbnail/${game.thumbnail}` : null,
           metadata: { type: 'game', console: consoleId, parentTitle: consoleConfig.label },
