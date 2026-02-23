@@ -1334,19 +1334,19 @@ export class GovernanceEngine {
 
     // 1. Check if media is governed
     if (!this.media || !this.media.id || !hasGovernanceRules) {
-      getLogger().warn('governance.evaluate.no_media_or_rules', {
+      getLogger().sampled('governance.evaluate.no_media_or_rules', {
         hasMedia: !!(this.media && this.media.id),
         hasGovernanceRules
-      });
+      }, { maxPerMinute: 2, aggregate: true });
       this._resetToIdle();
       return;
     }
 
     const hasGovernedMedia = this._mediaIsGoverned();
     if (!hasGovernedMedia) {
-      getLogger().warn('governance.evaluate.media_not_governed', {
+      getLogger().sampled('governance.evaluate.media_not_governed', {
         mediaId: this.media?.id
-      });
+      }, { maxPerMinute: 2, aggregate: true });
       this._resetToIdle();
       return;
     }
@@ -1357,7 +1357,7 @@ export class GovernanceEngine {
       if (this.phase === 'pending' && this._latestInputs?.activeParticipants?.length === 0) {
         return;
       }
-      getLogger().warn('governance.evaluate.no_participants');
+      getLogger().sampled('governance.evaluate.no_participants', {}, { maxPerMinute: 2, aggregate: true });
 
       // DIAGNOSTIC: Log if zone maps are empty when pre-populating
       const zoneInfoMapSize = Object.keys(zoneInfoMap || {}).length;
