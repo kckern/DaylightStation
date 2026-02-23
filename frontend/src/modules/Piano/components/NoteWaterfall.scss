@@ -179,6 +179,14 @@
     border-right-color: hsla(var(--hue), 70%, 60%, 0.35);
     box-shadow: inset 0 0 20px hsla(var(--hue), 70%, 50%, 0.1);
   }
+
+  &--wrong {
+    background: rgba(255, 40, 40, 0.25);
+    border-left: 2px solid rgba(255, 50, 50, 0.6);
+    border-right: 2px solid rgba(255, 50, 50, 0.6);
+    box-shadow: inset 0 0 30px rgba(255, 40, 40, 0.2);
+    z-index: 5;
+  }
 }
 
 // Game notes fall from top to bottom (flat 2D, outside perspective container)

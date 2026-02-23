@@ -7,6 +7,7 @@ import { DaylightAPI } from '../../lib/api.mjs';
 import { isWhiteKey } from './noteUtils.js';
 import './PianoVisualizer.scss';
 import { useGameMode } from './useGameMode.js';
+import { TOTAL_HEALTH } from './gameEngine.js';
 import { GameOverlay } from './components/GameOverlay';
 
 const GRACE_PERIOD_MS = 10000; // 10 seconds before countdown starts
@@ -41,6 +42,7 @@ export function PianoVisualizer({ onClose, onSessionEnd }) {
   const pianoConfigRef = useRef(null); // Cache piano config for cleanup
 
   const game = useGameMode(activeNotes, noteHistory, gameConfig);
+  const [screenFlash, setScreenFlash] = useState(false);
 
   // Dynamic range for game mode — expand to at least 2 octaves, center with 1/3 octave padding
   const gameRange = game.isGameMode && game.currentLevel?.range;
@@ -82,6 +84,16 @@ export function PianoVisualizer({ onClose, onSessionEnd }) {
   }, [game.isGameMode, game.fallingNotes]);
 
   const keyboardHeight = game.isGameMode ? '40%' : '25%';
+
+  // Full-screen red flash on wrong press (200ms) — always reset timer on new wrong press
+  useEffect(() => {
+    if (game.wrongNotes.size > 0) {
+      setScreenFlash(true);
+      const timer = setTimeout(() => setScreenFlash(false), 200);
+      return () => clearTimeout(timer);
+    }
+    setScreenFlash(false);
+  }, [game.wrongNotes]);
 
   // On mount: Load piano config and run HA script if configured
   useEffect(() => {
@@ -280,7 +292,23 @@ export function PianoVisualizer({ onClose, onSessionEnd }) {
           startNote={startNote}
           endNote={endNote}
           gameMode={game.isGameMode ? game : null}
+          wrongColumns={game.isGameMode ? game.wrongNotes : null}
         />
+
+        {game.isGameMode && game.gameState === 'PLAYING' && (
+          <div className="life-meter" aria-hidden="true">
+            <div className="life-meter__frame">
+              {Array.from({ length: TOTAL_HEALTH }, (_, i) => (
+                <div
+                  key={i}
+                  className={`life-meter__notch${i < Math.ceil(game.health) ? ' life-meter__notch--active' : ''}${
+                    i < Math.ceil(game.health) && game.health <= TOTAL_HEALTH * 0.25 ? ' life-meter__notch--danger' : ''
+                  }`}
+                />
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="keyboard-container" style={{ height: keyboardHeight }}>
@@ -310,6 +338,8 @@ export function PianoVisualizer({ onClose, onSessionEnd }) {
           <p>{sessionInfo.noteCount} notes in {Math.round(sessionInfo.duration)}s</p>
         </div>
       )}
+
+      {screenFlash && <div className="wrong-flash" />}
     </div>
   );
 }
