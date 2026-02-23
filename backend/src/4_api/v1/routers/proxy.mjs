@@ -18,7 +18,7 @@ import { compositeHeroImage } from '#system/canvas/compositeHero.mjs';
  */
 export function createProxyRouter(config) {
   const router = express.Router();
-  const { registry, proxyService, mediaBasePath, dataPath, logger = console } = config;
+  const { registry, proxyService, mediaBasePath, dataPath, retroarchProxy, logger = console } = config;
 
   /**
    * GET /proxy/media/stream/*
@@ -313,6 +313,51 @@ export function createProxyRouter(config) {
       }
     }
   });
+
+  /**
+   * GET /proxy/retroarch/thumbnail/*
+   * Proxy RetroArch game thumbnails from X-plore WiFi File Manager.
+   * Path: /proxy/retroarch/thumbnail/{consoleId}/{slug}.png
+   * Fetches from X-plore: {baseUrl}{thumbnailsPath}/{path}?cmd=file
+   */
+  router.get('/retroarch/thumbnail/*', asyncHandler(async (req, res) => {
+    if (!retroarchProxy) {
+      return res.status(503).json({ error: 'RetroArch thumbnail proxy not configured' });
+    }
+
+    const thumbPath = decodeURIComponent(req.params[0] || '');
+    if (!thumbPath) {
+      return res.status(400).json({ error: 'No thumbnail path specified' });
+    }
+
+    // Security: reject path traversal
+    if (thumbPath.includes('..')) {
+      return res.status(403).json({ error: 'Path traversal not allowed' });
+    }
+
+    const { baseUrl, thumbnailsPath } = retroarchProxy;
+    const xploreUrl = `${baseUrl}${thumbnailsPath}/${thumbPath}`;
+
+    try {
+      const response = await fetch(xploreUrl + '?cmd=file', {
+        signal: AbortSignal.timeout(10000),
+      });
+
+      if (!response.ok) {
+        return sendPlaceholderSvg(res);
+      }
+
+      res.set({
+        'Content-Type': response.headers.get('content-type') || 'image/png',
+        'Cache-Control': 'public, max-age=86400',
+      });
+      const buffer = Buffer.from(await response.arrayBuffer());
+      res.send(buffer);
+    } catch (err) {
+      logger.warn?.('proxy.retroarch.thumbnail.error', { path: thumbPath, error: err.message });
+      sendPlaceholderSvg(res);
+    }
+  }));
 
   /**
    * GET /proxy/media/*

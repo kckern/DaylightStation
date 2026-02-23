@@ -5,6 +5,7 @@
  * Implements ISyncSource.
  */
 export class RetroArchSyncAdapter {
+  #xploreBaseUrl;
   #sourceConfig;
   #consoleConfig;
   #thumbnailBasePath;
@@ -15,6 +16,7 @@ export class RetroArchSyncAdapter {
   #logger;
 
   constructor(options) {
+    this.#xploreBaseUrl = options.xploreBaseUrl;
     this.#sourceConfig = options.sourceConfig;
     this.#consoleConfig = options.consoleConfig;
     this.#thumbnailBasePath = options.thumbnailBasePath;
@@ -27,7 +29,7 @@ export class RetroArchSyncAdapter {
 
   async sync() {
     this.#logger.info?.('retroarch.sync.start');
-    const baseUrl = `http://${this.#sourceConfig.host}:${this.#sourceConfig.port}`;
+    const baseUrl = this.#xploreBaseUrl;
 
     // 1. Fetch playlist directory listing (X-plore returns { files: [{ n, size, ... }] })
     const playlistDir = `${baseUrl}${this.#sourceConfig.playlists_path}?cmd=list`;
@@ -43,8 +45,18 @@ export class RetroArchSyncAdapter {
 
     for (const playlist of playlists) {
       const playlistUrl = `${baseUrl}${this.#sourceConfig.playlists_path}/${encodeURIComponent(playlist.n)}`;
-      const response = await this.#httpClient.get(playlistUrl, { params: { cmd: 'file' }, timeout: 15000 });
-      const data = response.data;
+      let data;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          const response = await this.#httpClient.get(playlistUrl, { params: { cmd: 'file' }, timeout: 15000 });
+          data = response.data;
+          break;
+        } catch (err) {
+          this.#logger.warn?.('retroarch.sync.retrying', { playlist: playlist.n, attempt: attempt + 1, error: err.message });
+          if (attempt === 2) throw err;
+          await new Promise(r => setTimeout(r, 500));
+        }
+      }
       const items = data?.items || [];
 
       const consoleId = this.#resolveConsoleId(items[0]?.core_path);
@@ -53,11 +65,15 @@ export class RetroArchSyncAdapter {
         continue;
       }
 
+      // Playlist name (minus .lpl) is the RetroArch thumbnail directory name
+      const playlistName = playlist.n.replace(/\.lpl$/, '');
+      const thumbSubdir = this.#sourceConfig.thumbnail_subdir || 'Named_Boxarts';
+
       games[consoleId] = items.map(item => ({
         id: this.#slugify(item.label),
         title: item.label,
         rom: item.path,
-        thumbnail: `${consoleId}/${this.#slugify(item.label)}.png`,
+        thumbnail: `${encodeURIComponent(playlistName)}/${thumbSubdir}/${encodeURIComponent(item.label)}.png`,
         crc32: item.crc32
       }));
 

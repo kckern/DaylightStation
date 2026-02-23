@@ -460,7 +460,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     readalong: readalongConfig,  // Follow-along readalong content (scripture, talks, poetry)
     retroarch: {  // RetroArch game launcher
       config: configService.getHouseholdAppConfig(null, 'retroarch'),
-      catalog: dataService.household.read('shared/retroarch/catalog') || { games: {}, overrides: {}, sync: {} }
+      catalogReader: () => dataService.household.read('shared/retroarch/catalog')
     },
     storagePaths                 // Collection → media_memory filename mapping
   }, { httpClient: axios, mediaProgressMemory, app, configService });
@@ -490,6 +490,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   const progressSyncSources = progressSyncService ? new Set(['abs']) : null;
 
+  // Build RetroArch thumbnail proxy config from device file_server + retroarch source config
+  const retroarchAppConfig = configService.getHouseholdAppConfig(null, 'retroarch');
+  const raFileServer = Object.values(configService.getHouseholdDevices()?.devices || {}).find(d => d.file_server)?.file_server;
+  const retroarchProxy = (raFileServer && retroarchAppConfig?.source?.thumbnails_path)
+    ? { baseUrl: `http://${raFileServer.host}:${raFileServer.port}`, thumbnailsPath: retroarchAppConfig.source.thumbnails_path }
+    : null;
+
   const { routers: contentRouters, services: contentServices } = createApiRouters({
     registry: contentRegistry,
     mediaProgressMemory,
@@ -501,6 +508,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     dataPath: dataBasePath,
     mediaBasePath,
     proxyService: contentProxyService,
+    retroarchProxy,
     composePresentationUseCase,
     configService,
     prefixAliases,
@@ -1640,11 +1648,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Register RetroArch sync source if config exists
   const retroarchConfig = configService.getHouseholdAppConfig(null, 'retroarch');
-  if (retroarchConfig?.source) {
+  const deviceConfigs = configService.getHouseholdDevices()?.devices || {};
+  const fileServer = Object.values(deviceConfigs).find(d => d.file_server)?.file_server;
+  const xploreBaseUrl = fileServer ? `http://${fileServer.host}:${fileServer.port}` : null;
+  if (retroarchConfig?.consoles && xploreBaseUrl) {
     const { RetroArchSyncAdapter } = await import('#adapters/content/retroarch/RetroArchSyncAdapter.mjs');
     const retroarchSyncAdapter = new RetroArchSyncAdapter({
-      sourceConfig: retroarchConfig.source,
-      consoleConfig: retroarchConfig.consoles || {},
+      xploreBaseUrl,
+      sourceConfig: retroarchConfig.source || {},
+      consoleConfig: retroarchConfig.consoles,
       thumbnailBasePath: configService.getHouseholdPath('shared/retroarch/thumbnails'),
       httpClient: axios,
       readCatalog: () => dataService.household.read('shared/retroarch/catalog'),
