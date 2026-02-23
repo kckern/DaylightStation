@@ -89,6 +89,51 @@
     background: #2a2a2a;
   }
 
+  // ─── Mega Man Life Meter ────────────────────────────────────────
+  .life-meter {
+    position: absolute;
+    left: clamp(12px, 2vw, 32px);
+    top: 50%;
+    transform: translateY(-50%);
+    height: 80%;
+    width: clamp(32px, 3.5vw, 56px);
+    z-index: 30;
+    pointer-events: none;
+
+    &__frame {
+      height: 100%;
+      width: 100%;
+      display: flex;
+      flex-direction: column-reverse; // Fill from bottom
+      gap: clamp(1px, 0.15vh, 3px);
+      padding: clamp(4px, 0.5vw, 8px);
+      background: #0a0a12;
+      border: clamp(2px, 0.3vw, 5px) solid #1a1a2e;
+      border-radius: clamp(6px, 0.8vw, 14px);
+      box-shadow: inset 0 0 0 clamp(1px, 0.1vw, 2px) rgba(255, 255, 255, 0.08);
+      box-sizing: border-box;
+    }
+
+    &__notch {
+      flex: 1;
+      width: 100%;
+      border-radius: clamp(1px, 0.1vw, 2px);
+      background: transparent;
+
+      &--active {
+        background: #e8b830;
+        box-shadow: inset 0 clamp(-1px, -0.1vh, -2px) 0 rgba(0, 0, 0, 0.35);
+        border-top: clamp(1px, 0.08vh, 2px) solid rgba(255, 235, 150, 0.6);
+      }
+
+      &--danger {
+        background: #e83030;
+        box-shadow: inset 0 clamp(-1px, -0.1vh, -2px) 0 rgba(0, 0, 0, 0.35);
+        border-top-color: rgba(255, 150, 150, 0.6);
+      }
+    }
+  }
+
   .keyboard-container {
     height: 25%; // Default; overridden by inline style in game mode for limited ranges
     flex-shrink: 0;
@@ -215,6 +260,18 @@
       color: #666;
       margin-left: 0.3rem;
     }
+  }
+
+  // ─── Wrong-Press Screen Flash ─────────────────────────────────
+  .wrong-flash {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(255, 0, 0, 0.6);
+    z-index: 60;
+    pointer-events: none;
   }
 }
 

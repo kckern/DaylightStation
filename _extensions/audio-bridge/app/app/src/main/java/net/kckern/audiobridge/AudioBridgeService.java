@@ -5,6 +5,7 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.Service;
 import android.content.Intent;
+import android.content.pm.ServiceInfo;
 import android.media.AudioFormat;
 import android.media.AudioRecord;
 import android.media.MediaRecorder;
@@ -52,13 +53,21 @@ public class AudioBridgeService extends Service {
     public int onStartCommand(Intent intent, int flags, int startId) {
         Log.i(TAG, "Service starting");
 
+        // Promote to foreground service with MICROPHONE type. This requires
+        // the Activity to have been in the foreground when startForegroundService()
+        // was called (createdFromFg=true). On Android 11 (Shield TV API 30),
+        // foreground services started from background are denied while-in-use
+        // permissions (microphone). The Activity uses Theme.Translucent and
+        // delays finish() to ensure it reaches onResume() before starting us.
         Notification notification = new Notification.Builder(this, CHANNEL_ID)
                 .setContentTitle("Audio Bridge")
                 .setContentText("Streaming microphone audio")
                 .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+                .setOngoing(true)
                 .build();
 
-        startForeground(NOTIFICATION_ID, notification);
+        startForeground(NOTIFICATION_ID, notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE);
 
         if (wsServer == null) {
             wsServer = new AudioBridgeServer(new InetSocketAddress(WS_PORT));
@@ -66,7 +75,7 @@ public class AudioBridgeService extends Service {
             Log.i(TAG, "WebSocket server started on port " + WS_PORT);
         }
 
-        return START_STICKY;
+        return START_NOT_STICKY;
     }
 
     @Override
