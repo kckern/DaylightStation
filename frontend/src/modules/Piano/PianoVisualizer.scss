@@ -117,6 +117,104 @@
       color: #888;
     }
   }
+
+  // ─── Game Mode Header ──────────────────────────────────────────
+
+  &.game-mode .piano-header {
+    background: rgba(20, 20, 30, 0.95);
+    color: #fff;
+    height: 12%;
+  }
+
+  .header-right {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    z-index: 10;
+  }
+
+  .game-score {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+
+    .score-value {
+      font-size: 2rem;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      color: #00ffc8;
+      text-shadow: 0 0 10px rgba(0, 255, 200, 0.4);
+    }
+
+    .combo-badge {
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: #ffd700;
+      text-shadow: 0 0 8px rgba(255, 215, 0, 0.5);
+    }
+  }
+
+  .level-info {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    width: 300px;
+
+    .level-name {
+      font-size: 1rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #ccc;
+    }
+
+    .progress-bar-container {
+      width: 100%;
+      height: 8px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 4px;
+      overflow: hidden;
+
+      .progress-bar-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #00ffc8, #00ddaa);
+        border-radius: 4px;
+        transition: width 0.15s ease-out;
+      }
+    }
+  }
+
+  .miss-counter {
+    display: flex;
+    align-items: baseline;
+    gap: 0.2rem;
+    font-variant-numeric: tabular-nums;
+
+    .miss-count {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #ff6666;
+    }
+
+    .miss-separator {
+      font-size: 1rem;
+      color: #666;
+    }
+
+    .miss-max {
+      font-size: 1rem;
+      color: #666;
+    }
+
+    .miss-label {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #666;
+      margin-left: 0.3rem;
+    }
+  }
 }
 
 @keyframes pulse {
