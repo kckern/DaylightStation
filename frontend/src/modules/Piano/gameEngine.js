@@ -13,7 +13,7 @@
  * }
  */
 
-const FALL_DURATION_MS = 2500; // Notes visible for 2.5s before reaching hit line
+const DEFAULT_FALL_DURATION_MS = 2500; // Default; overridable per level via fall_duration_ms
 
 // ─── State Factory ──────────────────────────────────────────────
 
@@ -38,7 +38,7 @@ export function resetForLevel(state, levelIndex) {
     score: { points: 0, combo: 0, maxCombo: 0, perfects: 0, goods: 0, misses: 0 },
     countdown: null,
     nextNoteId: 1,
-    lastSpawnTime: 0,
+    lastSpawnTime: Date.now(),
   };
 }
 
@@ -72,9 +72,23 @@ export function isActivationComboHeld(activeNotes, comboNotes, windowMs) {
  * Avoids repeating the same root as the previous spawn when possible.
  */
 export function generatePitches(level, lastPitches) {
-  const { notes: pool, simultaneous = 1, chord_mode = false } = level;
+  const { notes: pool, simultaneous = 1, chord_mode = false, sequential = false } = level;
 
   if (simultaneous <= 1) {
+    // Sequential mode — next note must be adjacent in the pool
+    if (sequential && lastPitches?.length === 1) {
+      const lastPitch = lastPitches[0];
+      const lastIndex = pool.indexOf(lastPitch);
+      if (lastIndex !== -1) {
+        const candidates = [];
+        if (lastIndex > 0) candidates.push(pool[lastIndex - 1]);
+        if (lastIndex < pool.length - 1) candidates.push(pool[lastIndex + 1]);
+        if (candidates.length > 0) {
+          return [candidates[Math.floor(Math.random() * candidates.length)]];
+        }
+      }
+    }
+
     // Single note — avoid immediate repeat
     let pick;
     let attempts = 0;
@@ -127,14 +141,29 @@ function generateChord(pool) {
 }
 
 /**
- * Possibly spawn a new falling note group based on BPM timing.
+ * Get the fall duration for a level (ms).
+ */
+export function getFallDuration(level) {
+  return level?.fall_duration_ms ?? DEFAULT_FALL_DURATION_MS;
+}
+
+/**
+ * Possibly spawn a new falling note group based on timing config.
+ * Respects spawn_delay_ms (or BPM fallback) and max_visible.
  * Returns updated state (with new note added) or same state if not time yet.
  */
 export function maybeSpawnNote(state, level, now) {
-  const spawnInterval = (60000 / level.bpm) / (level.notes_per_beat || 1);
+  const spawnInterval = level.spawn_delay_ms
+    ?? (60000 / level.bpm) / (level.notes_per_beat || 1);
 
   if (now - state.lastSpawnTime < spawnInterval) {
     return state;
+  }
+
+  // Respect max_visible — don't spawn if too many notes are still falling
+  if (level.max_visible != null) {
+    const activeFalling = state.fallingNotes.filter(n => n.state === 'falling').length;
+    if (activeFalling >= level.max_visible) return state;
   }
 
   const lastPitches = state.fallingNotes.length > 0
@@ -142,7 +171,8 @@ export function maybeSpawnNote(state, level, now) {
     : null;
 
   const pitches = generatePitches(level, lastPitches);
-  const targetTime = now + FALL_DURATION_MS;
+  const fallDuration = getFallDuration(level);
+  const targetTime = now + fallDuration;
 
   const newNote = {
     id: state.nextNoteId,
@@ -167,9 +197,16 @@ export function maybeSpawnNote(state, level, now) {
  * Process a note_on event. Find the best matching falling note group
  * and evaluate timing.
  *
+ * In "invaders" mode, any falling note matching the pitch is blasted
+ * instantly — timing doesn't matter, just hit the right key while
+ * the note is on screen. Every hit counts as "perfect".
+ *
+ * In "hero" mode (default), timing windows apply.
+ *
+ * @param {string} mode - 'invaders' | 'hero' (default 'hero')
  * @returns {{ state, result }} where result is 'perfect'|'good'|null
  */
-export function processHit(state, pitch, now, timingConfig) {
+export function processHit(state, pitch, now, timingConfig, mode = 'hero') {
   const { perfect_ms, good_ms } = timingConfig;
 
   let bestIdx = -1;
@@ -181,10 +218,20 @@ export function processHit(state, pitch, now, timingConfig) {
     if (!fg.pitches.includes(pitch)) continue;
     if (fg.hitPitches.has(pitch)) continue;
 
-    const delta = Math.abs(now - fg.targetTime);
-    if (delta <= good_ms && delta < bestDelta) {
-      bestIdx = i;
-      bestDelta = delta;
+    if (mode === 'invaders') {
+      // Invaders mode: any visible falling note is hittable — pick the closest to bottom
+      const delta = Math.abs(now - fg.targetTime);
+      if (delta < bestDelta) {
+        bestIdx = i;
+        bestDelta = delta;
+      }
+    } else {
+      // Hero mode: must be within timing window
+      const delta = Math.abs(now - fg.targetTime);
+      if (delta <= good_ms && delta < bestDelta) {
+        bestIdx = i;
+        bestDelta = delta;
+      }
     }
   }
 
@@ -194,7 +241,11 @@ export function processHit(state, pitch, now, timingConfig) {
 
   const fg = state.fallingNotes[bestIdx];
   const delta = Math.abs(now - fg.targetTime);
-  const hitQuality = delta <= perfect_ms ? 'perfect' : 'good';
+
+  // Invaders: always perfect. Hero: timing-based quality.
+  const hitQuality = mode === 'invaders'
+    ? 'perfect'
+    : delta <= perfect_ms ? 'perfect' : 'good';
 
   const updatedHitPitches = new Set(fg.hitPitches);
   updatedHitPitches.add(pitch);
@@ -206,6 +257,7 @@ export function processHit(state, pitch, now, timingConfig) {
     hitPitches: updatedHitPitches,
     state: allHit ? 'hit' : 'falling',
     hitResult: allHit ? hitQuality : fg.hitResult,
+    resolvedTime: allHit ? now : fg.resolvedTime,
   };
 
   const updatedNotes = [...state.fallingNotes];
@@ -260,7 +312,7 @@ export function processMisses(state, now, missThresholdMs) {
     if (now > fg.targetTime + missThresholdMs) {
       missOccurred = true;
       missCount++;
-      return { ...fg, state: 'missed', hitResult: null };
+      return { ...fg, state: 'missed', hitResult: null, resolvedTime: now };
     }
     return fg;
   });
@@ -310,4 +362,4 @@ export function evaluateLevel(score, levelConfig) {
 
 // ─── Constants ──────────────────────────────────────────────────
 
-export { FALL_DURATION_MS };
+export { DEFAULT_FALL_DURATION_MS };

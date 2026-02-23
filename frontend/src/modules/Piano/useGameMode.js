@@ -10,7 +10,7 @@ import {
   processMisses,
   cleanupResolvedNotes,
   evaluateLevel,
-  FALL_DURATION_MS,
+  getFallDuration,
 } from './gameEngine.js';
 
 const TICK_INTERVAL = 16; // ~60fps
@@ -207,11 +207,12 @@ export function useGameMode(activeNotes, noteHistory, gameConfig) {
       setGameState(prev => {
         if (prev.phase !== 'PLAYING') return prev;
 
-        const { state: newState, result } = processHit(prev, pitch, now, timing);
+        const levelMode = levels[prev.levelIndex]?.mode ?? 'hero';
+        const { state: newState, result } = processHit(prev, pitch, now, timing, levelMode);
 
         if (result) {
           const newScore = applyScore(newState.score, result, scoring);
-          logger.debug('piano.game.hit', { pitch, result, combo: newScore.combo, points: newScore.points });
+          logger.debug('piano.game.hit', { pitch, result, combo: newScore.combo, points: newScore.points, mode: levelMode });
           return { ...newState, score: newScore };
         }
 
@@ -220,7 +221,7 @@ export function useGameMode(activeNotes, noteHistory, gameConfig) {
     }
 
     lastNoteHistoryLen.current = noteHistory.length;
-  }, [noteHistory.length, gameState.phase, timing, scoring, logger]);
+  }, [noteHistory.length, gameState.phase, timing, scoring, levels, logger]);
 
   // ─── Banner Auto-Advance (LEVEL_COMPLETE / LEVEL_FAILED / VICTORY) ─
 
@@ -272,11 +273,12 @@ export function useGameMode(activeNotes, noteHistory, gameConfig) {
     isGameMode: gameState.phase !== 'IDLE',
     gameState: gameState.phase,
     currentLevel,
+    levelMode: currentLevel?.mode ?? 'hero',
     fallingNotes: gameState.fallingNotes,
     score: gameState.score,
     countdown: gameState.countdown,
     levelProgress,
-    fallDuration: FALL_DURATION_MS,
+    fallDuration: getFallDuration(currentLevel),
   };
 }
 

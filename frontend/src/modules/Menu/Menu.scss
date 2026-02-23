@@ -560,6 +560,24 @@ $item-radius: 0.75rem;
 
 }
 
+// Arcade grid variant — large boxart tiles for game browsing
+.menu-items-container.menu-items-container--arcade {
+  .menu-items {
+    justify-content: center;
+    gap: 1rem;
+  }
+
+  .menu-item {
+    width: calc(16.66% - 1rem);
+    aspect-ratio: 3 / 4;
+
+    h3 {
+      font-size: 0.75rem;
+      padding: 0.35rem 0.5rem;
+    }
+  }
+}
+
 @keyframes menu-fade-in {
   from { opacity: 0.7; }
   to { opacity: 1; }

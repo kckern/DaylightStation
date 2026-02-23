@@ -18,6 +18,12 @@
       border-radius: 0 0 4px 4px;
       z-index: 1;
 
+      &.target {
+        background: linear-gradient(to bottom, #b8e8ff 0%, #d0f0ff 100%);
+        box-shadow: 0 0 15px rgba(0, 180, 255, 0.4), inset 0 0 10px rgba(0, 180, 255, 0.15);
+        border-color: rgba(0, 180, 255, 0.5);
+      }
+
       &.active {
         background: linear-gradient(
           to bottom,
@@ -46,6 +52,11 @@
       margin-left: calc(-100% / var(--white-key-count, 52) * 0.3);
       margin-right: calc(-100% / var(--white-key-count, 52) * 0.3);
       z-index: 2;
+
+      &.target {
+        background: linear-gradient(to bottom, #1a4a6a 0%, #2a5a7a 100%);
+        box-shadow: 0 0 12px rgba(0, 180, 255, 0.5), inset 0 0 8px rgba(0, 180, 255, 0.2);
+      }
 
       &.active {
         background: linear-gradient(

@@ -131,9 +131,54 @@
 
 // ─── Game Mode ──────────────────────────────────────────────────
 
+// Flatten waterfall in game mode — no 3D perspective, clean 2D lanes
+.note-waterfall--game {
+  perspective: none;
+
+  .waterfall-perspective {
+    transform: none;
+    height: 100%;
+  }
+
+  // Flatten the grid background
+  &::before {
+    transform: none;
+    height: 100%;
+    // Dim the grid in game mode — lanes provide the visual structure
+    opacity: 0.3;
+  }
+
+  // Remove distance fade (not needed in flat mode)
+  &::after {
+    display: none;
+  }
+}
+
 // When in game mode, hide free-play rising notes
 .note-waterfall--game .waterfall-note {
   display: none;
+}
+
+// Lane highlights — vertical columns for each possible pitch in the level
+.game-lane {
+  position: absolute;
+  left: var(--x);
+  width: var(--width);
+  top: 0;
+  bottom: 0;
+  transform: translateX(-50%);
+  background: hsla(var(--hue), 40%, 50%, 0.06);
+  border-left: 1px solid hsla(var(--hue), 40%, 50%, 0.12);
+  border-right: 1px solid hsla(var(--hue), 40%, 50%, 0.12);
+  pointer-events: none;
+  z-index: 1;
+
+  &--active {
+    background: hsla(var(--hue), 70%, 50%, 0.15);
+    border-left-color: hsla(var(--hue), 70%, 60%, 0.35);
+    border-right-color: hsla(var(--hue), 70%, 60%, 0.35);
+    box-shadow: inset 0 0 20px hsla(var(--hue), 70%, 50%, 0.1);
+  }
 }
 
 // Game notes fall from top to bottom (flat 2D, outside perspective container)
@@ -141,10 +186,10 @@
   position: absolute;
   left: var(--x);
   width: var(--width);
-  height: 20px;
+  height: 48px;
   top: var(--top);
   transform: translateX(-50%);
-  border-radius: 4px;
+  border-radius: 6px;
   pointer-events: none;
   z-index: 15;
 
@@ -157,6 +202,21 @@
   box-shadow:
     0 0 12px hsla(var(--hue), 100%, 60%, 0.6),
     0 0 24px hsla(var(--hue), 100%, 50%, 0.3);
+
+  // Note name label — large centered letter
+  .game-note-label {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 1.2rem;
+    font-weight: 800;
+    color: rgba(0, 0, 0, 0.75);
+    white-space: nowrap;
+    pointer-events: none;
+    user-select: none;
+    letter-spacing: 0.02em;
+  }
 
   // Hit feedback states
   &.game-note--hit {
@@ -180,6 +240,18 @@
     box-shadow: 0 0 20px hsla(0, 80%, 50%, 0.6);
     opacity: 0.5;
   }
+}
+
+// Explosion particles (invaders mode hit)
+.explosion-particle {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 16;
+  background: hsla(var(--hue), 100%, 70%, 1);
+  box-shadow:
+    0 0 8px hsla(var(--hue), 100%, 60%, 0.8),
+    0 0 16px hsla(var(--hue), 100%, 50%, 0.4);
 }
 
 // Hit line — glowing horizontal bar at bottom of waterfall

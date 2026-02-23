@@ -50,3 +50,14 @@ export const getNoteHue = (note, startNote = 21, endNote = 108) => {
   const position = (note - startNote) / range;
   return Math.round(position * 280);
 };
+
+const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+
+/**
+ * Get the note name (e.g. "C4", "F#5") for a MIDI note number
+ */
+export const getNoteName = (note) => {
+  const name = NOTE_NAMES[note % 12];
+  const octave = Math.floor(note / 12) - 1;
+  return `${name}${octave}`;
+};
