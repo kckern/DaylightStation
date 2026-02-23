@@ -20,3 +20,10 @@ export {
   assertContentControl,
   createNoOpContentControl
 } from './IContentControl.mjs';
+
+export {
+  IDeviceLauncher,
+  isDeviceLauncher,
+  assertDeviceLauncher,
+  createNoOpDeviceLauncher
+} from './IDeviceLauncher.mjs';
