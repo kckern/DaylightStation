@@ -157,34 +157,42 @@ export class DeviceFactory {
         }
       }
 
-      const fkbAdapter = new FullyKioskContentAdapter(
-        {
-          host: config.host,
-          port: config.port,
-          password: password || '',
-          daylightHost: this.#daylightHost
-        },
-        { httpClient: this.#httpClient, logger: this.#logger }
-      );
-
-      // Wrap with ADB recovery if fallback is configured
+      // Create ADB adapter if fallback is configured (used for both
+      // pre-emptive MIC release inside FK adapter and connection-error recovery)
+      let adbAdapter = null;
+      let launchActivity = null;
       if (config.fallback?.provider === 'adb') {
-        const adbAdapter = new AdbAdapter(
+        adbAdapter = new AdbAdapter(
           { host: config.fallback.host, port: config.fallback.port },
           { logger: this.#logger }
         );
+        launchActivity = config.fallback.launch_activity;
 
         this.#logger.info?.('deviceFactory.resilientContentControl', {
           primary: 'fully-kiosk',
           fallback: 'adb',
           adbSerial: `${config.fallback.host}:${config.fallback.port}`
         });
+      }
 
+      const fkbAdapter = new FullyKioskContentAdapter(
+        {
+          host: config.host,
+          port: config.port,
+          password: password || '',
+          daylightHost: this.#daylightHost,
+          launchActivity
+        },
+        { httpClient: this.#httpClient, logger: this.#logger, adbAdapter }
+      );
+
+      // Wrap with ADB recovery if fallback is configured
+      if (adbAdapter) {
         return new ResilientContentAdapter(
           {
             primary: fkbAdapter,
             recovery: adbAdapter,
-            launchActivity: config.fallback.launch_activity
+            launchActivity
           },
           { logger: this.#logger }
         );
