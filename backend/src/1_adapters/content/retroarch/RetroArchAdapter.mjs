@@ -24,11 +24,13 @@ export class RetroArchAdapter {
   get prefixes() { return [{ prefix: 'retroarch' }]; }
 
   async getList(id) {
-    if (!id) return this.#listConsoles();
-    return this.#listGames(id);
+    const localId = id?.replace(/^retroarch:/, '') || '';
+    if (!localId) return this.#listConsoles();
+    return this.#listGames(localId);
   }
 
-  async getItem(localId) {
+  async getItem(id) {
+    const localId = id?.replace(/^retroarch:/, '') || '';
     const { consoleId, gameId } = this.#parseLocalId(localId);
     if (!consoleId || !gameId) return null;
 
@@ -153,14 +155,16 @@ export class RetroArchAdapter {
       })
       .map(game => {
         const overrides = this.#catalog.overrides?.[`${consoleId}/${game.id}`] || {};
+        const compoundId = `retroarch:${consoleId}/${game.id}`;
         return new Item({
-          id: `retroarch:${consoleId}/${game.id}`,
+          id: compoundId,
           source: 'retroarch',
           localId: `${consoleId}/${game.id}`,
           title: overrides.title || game.title,
           type: 'game',
           thumbnail: game.thumbnail ? `/api/v1/proxy/retroarch/thumbnail/${game.thumbnail}` : null,
-          metadata: { type: 'game', console: consoleId, parentTitle: consoleConfig.label }
+          metadata: { type: 'game', console: consoleId, parentTitle: consoleConfig.label },
+          actions: { launch: { contentId: compoundId } }
         });
       });
   }
