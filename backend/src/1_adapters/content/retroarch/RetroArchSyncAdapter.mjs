@@ -42,8 +42,8 @@ export class RetroArchSyncAdapter {
     let totalGames = 0;
 
     for (const playlist of playlists) {
-      const playlistUrl = `${baseUrl}${this.#sourceConfig.playlists_path}/${encodeURIComponent(playlist.n)}?cmd=file`;
-      const response = await this.#httpClient.get(playlistUrl);
+      const playlistUrl = `${baseUrl}${this.#sourceConfig.playlists_path}/${encodeURIComponent(playlist.n)}`;
+      const response = await this.#httpClient.get(playlistUrl, { params: { cmd: 'file' }, timeout: 15000 });
       const data = response.data;
       const items = data?.items || [];
 
