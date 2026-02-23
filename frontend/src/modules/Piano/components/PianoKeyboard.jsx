@@ -26,7 +26,8 @@ export function PianoKeyboard({
   activeNotes = new Map(),
   startNote = 21,
   endNote = 108,
-  showLabels = false
+  showLabels = false,
+  targetNotes = null
 }) {
   const keys = useMemo(() => {
     const result = [];
@@ -36,11 +37,12 @@ export function PianoKeyboard({
       const noteData = activeNotes.get(note);
       const velocity = noteData?.velocity || 0;
       const isWhite = isWhiteKey(note);
+      const isTarget = targetNotes?.has(note) ?? false;
 
       result.push(
         <div
           key={note}
-          className={`piano-key ${isWhite ? 'white' : 'black'} ${isActive ? 'active' : ''}`}
+          className={`piano-key ${isWhite ? 'white' : 'black'} ${isActive ? 'active' : ''}${isTarget ? ' target' : ''}`}
           style={{ '--velocity': velocity / 127 }}
           data-note={note}
           data-label={getNoteLabel(note)}
@@ -53,7 +55,7 @@ export function PianoKeyboard({
     }
 
     return result;
-  }, [activeNotes, startNote, endNote, showLabels]);
+  }, [activeNotes, startNote, endNote, showLabels, targetNotes]);
 
   // Count white keys for sizing
   const whiteKeyCount = useMemo(() => {

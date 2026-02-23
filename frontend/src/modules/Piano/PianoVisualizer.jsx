@@ -1,9 +1,10 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { PianoKeyboard } from './components/PianoKeyboard';
 import { NoteWaterfall } from './components/NoteWaterfall';
 import { CurrentChordStaff } from './components/CurrentChordStaff';
 import { useMidiSubscription } from './useMidiSubscription';
 import { DaylightAPI } from '../../lib/api.mjs';
+import { isWhiteKey } from './noteUtils.js';
 import './PianoVisualizer.scss';
 import { useGameMode } from './useGameMode.js';
 import { GameOverlay } from './components/GameOverlay';
@@ -40,6 +41,47 @@ export function PianoVisualizer({ onClose, onSessionEnd }) {
   const pianoConfigRef = useRef(null); // Cache piano config for cleanup
 
   const game = useGameMode(activeNotes, noteHistory, gameConfig);
+
+  // Dynamic range for game mode — expand to at least 2 octaves, center with 1/3 octave padding
+  const gameRange = game.isGameMode && game.currentLevel?.range;
+  const { startNote, endNote } = useMemo(() => {
+    if (!gameRange) return { startNote: 21, endNote: 108 };
+
+    const gameStart = gameRange[0];
+    const gameEnd = gameRange[1];
+    const gameSpan = gameEnd - gameStart;
+    const padding = Math.round(gameSpan / 3); // 1/3 octave padding each side
+    const minSpan = 24; // Minimum 2 octaves
+
+    let displayStart = gameStart - padding;
+    let displayEnd = gameEnd + padding;
+    const displaySpan = displayEnd - displayStart;
+
+    if (displaySpan < minSpan) {
+      const extra = minSpan - displaySpan;
+      displayStart -= Math.floor(extra / 2);
+      displayEnd += Math.ceil(extra / 2);
+    }
+
+    return {
+      startNote: Math.max(21, displayStart),
+      endNote: Math.min(108, displayEnd),
+    };
+  }, [gameRange]);
+
+  // Target notes for keyboard highlighting (pitches currently falling)
+  const targetNotes = useMemo(() => {
+    if (!game.isGameMode) return null;
+    const pitches = new Set();
+    for (const fn of game.fallingNotes) {
+      if (fn.state === 'falling') {
+        for (const p of fn.pitches) pitches.add(p);
+      }
+    }
+    return pitches;
+  }, [game.isGameMode, game.fallingNotes]);
+
+  const keyboardHeight = game.isGameMode ? '40%' : '25%';
 
   // On mount: Load piano config and run HA script if configured
   useEffect(() => {
@@ -235,16 +277,19 @@ export function PianoVisualizer({ onClose, onSessionEnd }) {
         <NoteWaterfall
           noteHistory={noteHistory}
           activeNotes={activeNotes}
+          startNote={startNote}
+          endNote={endNote}
           gameMode={game.isGameMode ? game : null}
         />
       </div>
 
-      <div className="keyboard-container">
+      <div className="keyboard-container" style={{ height: keyboardHeight }}>
         <PianoKeyboard
           activeNotes={activeNotes}
-          startNote={21}
-          endNote={108}
+          startNote={startNote}
+          endNote={endNote}
           showLabels={true}
+          targetNotes={targetNotes}
         />
       </div>
 
