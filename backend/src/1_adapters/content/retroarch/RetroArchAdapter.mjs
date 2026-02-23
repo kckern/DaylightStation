@@ -20,17 +20,21 @@ export class RetroArchAdapter {
     this.#logger = logger || console;
   }
 
+  #stripPrefix(id) {
+    return id?.replace(/^retroarch:/, '') || '';
+  }
+
   get source() { return 'retroarch'; }
   get prefixes() { return [{ prefix: 'retroarch' }]; }
 
   async getList(id) {
-    const localId = id?.replace(/^retroarch:/, '') || '';
+    const localId = this.#stripPrefix(id);
     if (!localId) return this.#listConsoles();
     return this.#listGames(localId);
   }
 
   async getItem(id) {
-    const localId = id?.replace(/^retroarch:/, '') || '';
+    const localId = this.#stripPrefix(id);
     const { consoleId, gameId } = this.#parseLocalId(localId);
     if (!consoleId || !gameId) return null;
 
@@ -65,7 +69,7 @@ export class RetroArchAdapter {
   async resolvePlayables() { return []; }
 
   async resolveSiblings(compoundId) {
-    const localId = compoundId.replace(/^retroarch:/, '');
+    const localId = this.#stripPrefix(compoundId);
     const { consoleId } = this.#parseLocalId(localId);
     if (!consoleId) return null;
 
