@@ -114,7 +114,7 @@ export function NoteWaterfall({ noteHistory = [], activeNotes = new Map(), start
           pitch,
           name: getNoteName(pitch),
           x: getNotePosition(pitch, startNote, endNote),
-          width: getNoteWidth(pitch, startNote, endNote),
+          width: getNoteWidth(pitch, startNote, endNote, true),
           hue: getNoteHue(pitch, startNote, endNote),
         })),
         topPercent,
@@ -133,7 +133,7 @@ export function NoteWaterfall({ noteHistory = [], activeNotes = new Map(), start
     return gameMode.currentLevel.notes.map(pitch => ({
       pitch,
       x: getNotePosition(pitch, startNote, endNote),
-      width: getNoteWidth(pitch, startNote, endNote),
+      width: getNoteWidth(pitch, startNote, endNote, true),
       hue: getNoteHue(pitch, startNote, endNote),
       active: fallingPitches.has(pitch),
     }));
@@ -161,7 +161,7 @@ export function NoteWaterfall({ noteHistory = [], activeNotes = new Map(), start
           className="game-lane game-lane--wrong"
           style={{
             '--x': `${getNotePosition(pitch, startNote, endNote)}%`,
-            '--width': `${getNoteWidth(pitch, startNote, endNote)}%`,
+            '--width': `${getNoteWidth(pitch, startNote, endNote, true)}%`,
           }}
         />
       ))}
