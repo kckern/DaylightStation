@@ -110,7 +110,7 @@ export function createPlayRouter(config) {
         playhead: normalizedSeconds,
         duration: estimatedDuration,
         percent: statePercent,
-        playCount: (existingState?.playCount ?? 0) + 1,
+        playCount: (existingState?.playCount ?? 0) + (!existingState || normalizedSeconds < (existingState.playhead || 0) ? 1 : 0),
         lastPlayed: nowTs24(),
         watchTime: newWatchTime > 0 ? Number(newWatchTime.toFixed(3)) : 0
       });
