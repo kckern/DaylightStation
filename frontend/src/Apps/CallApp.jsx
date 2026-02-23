@@ -55,61 +55,112 @@ export default function CallApp() {
   const remoteVideoRef = useRef(null);
   const remoteContainerRef = useRef(null);
   const [zoomMode, setZoomMode] = useState(false);
-  const [zoomOrigin, setZoomOrigin] = useState({ x: 0.5, y: 0.5 });
+  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
   const [zoomScale, setZoomScale] = useState(1);
+  const zoomScaleRef = useRef(1);
   const coverRatioRef = useRef(1);
 
-  // Compute the scale needed to go from contain → cover for the remote video.
-  const computeCoverRatio = useCallback(() => {
+  // Keep scale ref in sync for use inside gesture callbacks (avoids stale closures).
+  useEffect(() => { zoomScaleRef.current = zoomScale; }, [zoomScale]);
+
+  // Get the rendered video dimensions inside the contain-fitted element.
+  const getVideoMetrics = useCallback(() => {
     const video = remoteVideoRef.current;
     const container = remoteContainerRef.current;
-    if (!video || !container || !video.videoWidth || !video.videoHeight) return 1;
+    if (!video || !container || !video.videoWidth || !video.videoHeight) {
+      return null;
+    }
     const cW = container.clientWidth;
     const cH = container.clientHeight;
     const vW = video.videoWidth;
     const vH = video.videoHeight;
-    // contain scale
     const containScale = Math.min(cW / vW, cH / vH);
-    // cover scale
-    const coverScale = Math.max(cW / vW, cH / vH);
-    return coverScale / containScale;
+    const rvW = vW * containScale; // rendered video width at contain
+    const rvH = vH * containScale; // rendered video height at contain
+    const coverRatio = Math.max(cW / vW, cH / vH) / containScale;
+    return { cW, cH, rvW, rvH, coverRatio };
   }, []);
 
-  const enterZoom = useCallback((tapX, tapY) => {
-    const ratio = computeCoverRatio();
+  // Clamp pan offset so the scaled video always covers the viewport.
+  // |tx| <= (rvW * scale - cW) / 2, |ty| <= (rvH * scale - cH) / 2
+  const clampPan = useCallback((tx, ty, scale) => {
+    const m = getVideoMetrics();
+    if (!m) return { x: 0, y: 0 };
+    const maxTx = Math.max(0, (m.rvW * scale - m.cW) / 2);
+    const maxTy = Math.max(0, (m.rvH * scale - m.cH) / 2);
+    return {
+      x: Math.max(-maxTx, Math.min(maxTx, tx)),
+      y: Math.max(-maxTy, Math.min(maxTy, ty)),
+    };
+  }, [getVideoMetrics]);
+
+  const enterZoom = useCallback(() => {
+    const m = getVideoMetrics();
+    const ratio = m ? m.coverRatio : 1;
     coverRatioRef.current = ratio;
     setZoomScale(ratio);
-    setZoomOrigin({ x: tapX, y: tapY });
+    zoomScaleRef.current = ratio;
+    setPanOffset({ x: 0, y: 0 }); // centered
     setZoomMode(true);
-    logger.info('zoom-enter', { tapX, tapY, coverRatio: ratio });
-  }, [computeCoverRatio, logger]);
+    logger.info('zoom-enter', { coverRatio: ratio });
+  }, [getVideoMetrics, logger]);
 
   const exitZoom = useCallback(() => {
     setZoomMode(false);
     setZoomScale(1);
-    setZoomOrigin({ x: 0.5, y: 0.5 });
+    zoomScaleRef.current = 1;
+    setPanOffset({ x: 0, y: 0 });
     logger.info('zoom-exit');
   }, [logger]);
 
+  // Tap to recenter: compute translate so the tapped point becomes viewport center.
+  // Tap coords (x, y) are fractions of the element's visual bounds (getBoundingClientRect).
   const handleZoomTap = useCallback((x, y) => {
-    setZoomOrigin({ x, y });
+    const S = zoomScaleRef.current;
+    const container = remoteContainerRef.current;
+    if (!container) return;
+    const cW = container.clientWidth;
+    const cH = container.clientHeight;
+    // Screen coords of tap: the visual element extends from its transformed bounds.
+    // With translate(TX,TY) scale(S) from center, the tap at fraction (x,y) of visual bounds
+    // maps to: newTX = cW*S*(0.5 - x), newTY = cH*S*(0.5 - y)
+    const newTx = cW * S * (0.5 - x);
+    const newTy = cH * S * (0.5 - y);
+    setPanOffset(clampPan(newTx, newTy, S));
     logger.debug('zoom-recenter', { x, y });
-  }, [logger]);
+  }, [clampPan, logger]);
 
+  // Drag to pan: convert fractional deltas to pixel deltas for 1:1 finger tracking.
+  // Hook sends (-pointerDelta / visualWidth), so pixel delta = -dx * cW * S.
   const handleZoomPan = useCallback((dx, dy) => {
-    setZoomOrigin(prev => ({
-      x: Math.max(0, Math.min(1, prev.x + dx)),
-      y: Math.max(0, Math.min(1, prev.y + dy)),
-    }));
-  }, []);
+    const S = zoomScaleRef.current;
+    const container = remoteContainerRef.current;
+    if (!container) return;
+    const cW = container.clientWidth;
+    const cH = container.clientHeight;
+    setPanOffset(prev => clampPan(prev.x - dx * cW * S, prev.y - dy * cH * S, S));
+  }, [clampPan]);
 
-  const handleZoomPinch = useCallback((scaleDelta) => {
-    setZoomScale(prev => {
-      const minScale = coverRatioRef.current;
-      const maxScale = coverRatioRef.current * 4;
-      return Math.max(minScale, Math.min(maxScale, prev * scaleDelta));
+  // Pinch to zoom: adjust scale and translate so the pinch center stays fixed on screen.
+  const handleZoomPinch = useCallback((scaleDelta, cx, cy) => {
+    const container = remoteContainerRef.current;
+    if (!container) return;
+    const cW = container.clientWidth;
+    const cH = container.clientHeight;
+    const S = zoomScaleRef.current;
+    const minScale = coverRatioRef.current;
+    const maxScale = coverRatioRef.current * 4;
+    const newScale = Math.max(minScale, Math.min(maxScale, S * scaleDelta));
+    const actualDelta = newScale / S;
+    // Adjust pan so pinch center stays fixed: TX' = TX + cW*S*(cx-0.5)*(1-actualDelta)
+    setPanOffset(prev => {
+      const newTx = prev.x + cW * S * (cx - 0.5) * (1 - actualDelta);
+      const newTy = prev.y + cH * S * (cy - 0.5) * (1 - actualDelta);
+      return clampPan(newTx, newTy, newScale);
     });
-  }, []);
+    setZoomScale(newScale);
+    zoomScaleRef.current = newScale;
+  }, [clampPan]);
 
   useZoomGestures(remoteContainerRef, {
     enabled: zoomMode,
@@ -374,12 +425,9 @@ export default function CallApp() {
   const isConnecting = status === 'connecting' || waking;
   const isConnected = !isIdle && !isConnecting && !wakeError;
 
-  const handleRemoteClick = useCallback((e) => {
+  const handleRemoteClick = useCallback(() => {
     if (zoomMode || !isConnected) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / rect.width;
-    const y = (e.clientY - rect.top) / rect.height;
-    enterZoom(x, y);
+    enterZoom();
   }, [zoomMode, isConnected, enterZoom]);
 
   return (
@@ -418,8 +466,7 @@ export default function CallApp() {
           playsInline
           className="call-app__video call-app__video--wide"
           style={zoomMode ? {
-            transform: `scale(${zoomScale})`,
-            transformOrigin: `${zoomOrigin.x * 100}% ${zoomOrigin.y * 100}%`,
+            transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoomScale})`,
           } : undefined}
         />
         {zoomMode && (
