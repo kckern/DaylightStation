@@ -458,6 +458,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     musicOverlayPlaylist,
     singalong: singalongConfig,  // Sing-along content (hymns, primary songs)
     readalong: readalongConfig,  // Follow-along readalong content (scripture, talks, poetry)
+    retroarch: { config: configService.getHouseholdAppConfig(null, 'retroarch') },  // RetroArch game launcher
     storagePaths                 // Collection → media_memory filename mapping
   }, { httpClient: axios, mediaProgressMemory, app, configService });
 
