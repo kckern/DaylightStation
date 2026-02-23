@@ -6,8 +6,24 @@ import { useWebRTCPeer } from '../modules/Input/hooks/useWebRTCPeer';
 import { useHomeline } from '../modules/Input/hooks/useHomeline';
 import useCallOwnership from '../modules/Input/hooks/useCallOwnership.js';
 import useMediaControls from '../modules/Input/hooks/useMediaControls.js';
+import useZoomGestures from '../modules/Input/hooks/useZoomGestures.js';
+import { useWakeProgress } from '../modules/Input/hooks/useWakeProgress';
 import getLogger from '../lib/logging/Logger.js';
 import './CallApp.scss';
+
+const STEP_ICONS = { done: '\u2713', running: '\u2022', failed: '\u2717' };
+
+function StepRow({ label, status }) {
+  const icon = STEP_ICONS[status] || '\u25CB';
+  const className = `call-app__step call-app__step--${status || 'pending'}`;
+  return (
+    <div className={className}>
+      <span className="call-app__step-icon">{icon}</span>
+      <span className="call-app__step-label">{label}</span>
+      {status === 'running' && <span className="call-app__step-spinner" />}
+    </div>
+  );
+}
 
 export default function CallApp() {
   const logger = useMemo(() => getLogger().child({ component: 'CallApp' }), []);
@@ -33,6 +49,70 @@ export default function CallApp() {
   const { isOwner } = useCallOwnership(activeDeviceId);
 
   const remoteVideoRef = useRef(null);
+  const remoteContainerRef = useRef(null);
+  const [zoomMode, setZoomMode] = useState(false);
+  const [zoomOrigin, setZoomOrigin] = useState({ x: 0.5, y: 0.5 });
+  const [zoomScale, setZoomScale] = useState(1);
+  const coverRatioRef = useRef(1);
+
+  // Compute the scale needed to go from contain → cover for the remote video.
+  const computeCoverRatio = useCallback(() => {
+    const video = remoteVideoRef.current;
+    const container = remoteContainerRef.current;
+    if (!video || !container || !video.videoWidth || !video.videoHeight) return 1;
+    const cW = container.clientWidth;
+    const cH = container.clientHeight;
+    const vW = video.videoWidth;
+    const vH = video.videoHeight;
+    // contain scale
+    const containScale = Math.min(cW / vW, cH / vH);
+    // cover scale
+    const coverScale = Math.max(cW / vW, cH / vH);
+    return coverScale / containScale;
+  }, []);
+
+  const enterZoom = useCallback((tapX, tapY) => {
+    const ratio = computeCoverRatio();
+    coverRatioRef.current = ratio;
+    setZoomScale(ratio);
+    setZoomOrigin({ x: tapX, y: tapY });
+    setZoomMode(true);
+    logger.info('zoom-enter', { tapX, tapY, coverRatio: ratio });
+  }, [computeCoverRatio, logger]);
+
+  const exitZoom = useCallback(() => {
+    setZoomMode(false);
+    setZoomScale(1);
+    setZoomOrigin({ x: 0.5, y: 0.5 });
+    logger.info('zoom-exit');
+  }, [logger]);
+
+  const handleZoomTap = useCallback((x, y) => {
+    setZoomOrigin({ x, y });
+    logger.debug('zoom-recenter', { x, y });
+  }, [logger]);
+
+  const handleZoomPan = useCallback((dx, dy) => {
+    setZoomOrigin(prev => ({
+      x: Math.max(0, Math.min(1, prev.x + dx)),
+      y: Math.max(0, Math.min(1, prev.y + dy)),
+    }));
+  }, []);
+
+  const handleZoomPinch = useCallback((scaleDelta) => {
+    setZoomScale(prev => {
+      const minScale = coverRatioRef.current;
+      const maxScale = coverRatioRef.current * 4;
+      return Math.max(minScale, Math.min(maxScale, prev * scaleDelta));
+    });
+  }, []);
+
+  useZoomGestures(remoteContainerRef, {
+    enabled: zoomMode,
+    onTap: handleZoomTap,
+    onPan: handleZoomPan,
+    onPinch: handleZoomPinch,
+  });
 
   // Fetch available devices from API on mount
   useEffect(() => {
@@ -248,12 +328,12 @@ export default function CallApp() {
     setActiveDeviceId(targetDeviceId);
     try {
       const result = await DaylightAPI(`/api/v1/device/${targetDeviceId}/load?open=videocall/${targetDeviceId}`);
-      logger.info('wake-success', { targetDeviceId, displayVerified: result.displayVerified });
+      logger.info('wake-result', { targetDeviceId, ok: result.ok, displayVerified: result.displayVerified, displayVerifyFailed: result.displayVerifyFailed, step: result.step });
 
-      if (result.displayVerifyFailed) {
-        logger.warn('wake-display-not-verified', { targetDeviceId, attempts: result.power?.attempts });
+      if (!result.ok || result.displayVerifyFailed) {
+        logger.warn('wake-display-not-verified', { targetDeviceId, ok: result.ok, step: result.step, error: result.error, attempts: result.power?.attempts });
         setWaking(false);
-        setWakeError('TV display did not respond. The screen may be off.');
+        setWakeError(result.error || 'TV display did not respond. The screen may be off.');
         return;
       }
     } catch (err) {
@@ -314,13 +394,35 @@ export default function CallApp() {
       </div>
 
       {/* Remote video — always mounted, hidden until connected via CSS */}
-      <div className="call-app__remote">
+      <div
+        ref={remoteContainerRef}
+        className={`call-app__remote${zoomMode ? ' call-app__remote--zoomed' : ''}`}
+        onClick={!zoomMode && isConnected ? (e) => {
+          const rect = e.currentTarget.getBoundingClientRect();
+          const x = (e.clientX - rect.left) / rect.width;
+          const y = (e.clientY - rect.top) / rect.height;
+          enterZoom(x, y);
+        } : undefined}
+      >
         <video
           ref={remoteVideoRef}
           autoPlay
           playsInline
           className="call-app__video call-app__video--wide"
+          style={zoomMode ? {
+            transform: `scale(${zoomScale})`,
+            transformOrigin: `${zoomOrigin.x * 100}% ${zoomOrigin.y * 100}%`,
+          } : undefined}
         />
+        {zoomMode && (
+          <button
+            className="call-app__zoom-back"
+            onClick={(e) => { e.stopPropagation(); exitZoom(); }}
+            aria-label="Exit zoom"
+          >
+            &#x2190;
+          </button>
+        )}
       </div>
 
       {/* Controls — always mounted, hidden until connected via CSS */}
