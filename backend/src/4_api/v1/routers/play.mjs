@@ -93,7 +93,9 @@ export function createPlayRouter(config) {
         : (itemMetadata?.duration ? Math.round(itemMetadata.duration / 1000) : 0);
 
       // Calculate watch time accumulation
-      const sessionWatchTime = Number.isFinite(watched_duration) ? parseFloat(watched_duration) : 0;
+      const sessionWatchTime = Number.isFinite(watched_duration)
+        ? parseFloat(watched_duration)
+        : Math.max(0, normalizedSeconds - (existingState?.playhead || 0));
       const existingWatchTime = existingState?.watchTime ?? 0;
       const newWatchTime = existingWatchTime + sessionWatchTime;
 
