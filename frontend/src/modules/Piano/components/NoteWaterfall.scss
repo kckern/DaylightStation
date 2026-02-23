@@ -128,3 +128,109 @@
   z-index: 0;
   pointer-events: none;
 }
+
+// ─── Game Mode ──────────────────────────────────────────────────
+
+// When in game mode, hide free-play rising notes
+.note-waterfall--game .waterfall-note {
+  display: none;
+}
+
+// Game notes fall from top to bottom (flat 2D, outside perspective container)
+.game-note {
+  position: absolute;
+  left: var(--x);
+  width: var(--width);
+  height: 20px;
+  top: var(--top);
+  transform: translateX(-50%);
+  border-radius: 4px;
+  pointer-events: none;
+  z-index: 15;
+
+  background: linear-gradient(
+    to bottom,
+    hsla(var(--hue), 100%, 70%, 1) 0%,
+    hsla(var(--hue), 90%, 55%, 0.9) 100%
+  );
+
+  box-shadow:
+    0 0 12px hsla(var(--hue), 100%, 60%, 0.6),
+    0 0 24px hsla(var(--hue), 100%, 50%, 0.3);
+
+  // Hit feedback states
+  &.game-note--hit {
+    opacity: 0;
+  }
+
+  &.game-note--hit.game-note--perfect {
+    background: hsl(130, 100%, 60%);
+    box-shadow: 0 0 30px hsla(130, 100%, 60%, 0.8);
+    opacity: 1;
+  }
+
+  &.game-note--hit.game-note--good {
+    background: hsl(50, 100%, 60%);
+    box-shadow: 0 0 30px hsla(50, 100%, 60%, 0.8);
+    opacity: 1;
+  }
+
+  &.game-note--missed {
+    background: hsl(0, 80%, 50%);
+    box-shadow: 0 0 20px hsla(0, 80%, 50%, 0.6);
+    opacity: 0.5;
+  }
+}
+
+// Hit line — glowing horizontal bar at bottom of waterfall
+.hit-line {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(0, 255, 200, 0.8) 10%,
+    rgba(0, 255, 200, 1) 50%,
+    rgba(0, 255, 200, 0.8) 90%,
+    transparent 100%
+  );
+  box-shadow:
+    0 0 10px rgba(0, 255, 200, 0.6),
+    0 0 20px rgba(0, 255, 200, 0.3),
+    0 0 40px rgba(0, 255, 200, 0.1);
+  z-index: 20;
+  pointer-events: none;
+}
+
+// Hit/miss feedback text
+.hit-feedback {
+  position: absolute;
+  left: var(--x);
+  top: var(--top);
+  transform: translate(-50%, -150%);
+  font-size: 1rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  pointer-events: none;
+  z-index: 16;
+  white-space: nowrap;
+
+  &--perfect {
+    color: #00ff88;
+    text-shadow: 0 0 10px rgba(0, 255, 136, 0.8);
+  }
+
+  &--good {
+    color: #ffdd00;
+    text-shadow: 0 0 10px rgba(255, 221, 0, 0.8);
+  }
+
+  &--miss {
+    color: #ff4444;
+    text-shadow: 0 0 10px rgba(255, 68, 68, 0.8);
+  }
+}

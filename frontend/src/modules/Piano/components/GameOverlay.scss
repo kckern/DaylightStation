@@ -1,0 +1,154 @@
+.game-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 50;
+  pointer-events: none;
+}
+
+// ─── Countdown ──────────────────────────────────────────────────
+
+.countdown {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+
+  .countdown-number {
+    font-size: 8rem;
+    font-weight: 900;
+    color: #fff;
+    text-shadow:
+      0 0 40px rgba(0, 255, 200, 0.8),
+      0 0 80px rgba(0, 255, 200, 0.4);
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+// ─── Banners (Level Complete / Level Failed) ────────────────────
+
+.banner {
+  background: rgba(0, 0, 0, 0.85);
+  padding: 2rem 4rem;
+  border-radius: 12px;
+  text-align: center;
+  color: #fff;
+
+  h2 {
+    font-size: 2.5rem;
+    font-weight: 700;
+    margin: 0 0 1.5rem 0;
+  }
+
+  &--success h2 {
+    color: #00ffc8;
+    text-shadow: 0 0 20px rgba(0, 255, 200, 0.5);
+  }
+
+  &--fail h2 {
+    color: #ff4444;
+    text-shadow: 0 0 20px rgba(255, 68, 68, 0.5);
+  }
+
+  .banner-stats {
+    display: flex;
+    gap: 3rem;
+    justify-content: center;
+  }
+}
+
+// ─── Victory Screen ─────────────────────────────────────────────
+
+.victory {
+  background: rgba(0, 0, 0, 0.9);
+  padding: 3rem 5rem;
+  border-radius: 16px;
+  text-align: center;
+  color: #fff;
+
+  h1 {
+    font-size: 4rem;
+    font-weight: 900;
+    color: #ffd700;
+    text-shadow:
+      0 0 30px rgba(255, 215, 0, 0.6),
+      0 0 60px rgba(255, 215, 0, 0.3);
+    margin: 0 0 2rem 0;
+  }
+
+  .victory-stats {
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+  }
+
+  .stat-row {
+    display: flex;
+    gap: 3rem;
+    justify-content: center;
+  }
+}
+
+// ─── Shared Stat Display ────────────────────────────────────────
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+
+  .stat-value {
+    font-size: 1.8rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .stat-label {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #888;
+  }
+
+  &--large .stat-value {
+    font-size: 3rem;
+    color: #ffd700;
+  }
+}
+
+// ─── Combo Badge (during play) ──────────────────────────────────
+
+.game-overlay--playing {
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 30%;
+}
+
+.combo-display {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+
+  .combo-number {
+    font-size: 3rem;
+    font-weight: 900;
+    color: #ffd700;
+    text-shadow:
+      0 0 20px rgba(255, 215, 0, 0.6),
+      0 0 40px rgba(255, 215, 0, 0.3);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .combo-label {
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    color: rgba(255, 215, 0, 0.7);
+  }
+}
