@@ -7,101 +7,217 @@ function logger() {
   return _logger;
 }
 
-export const useWebcamStream = (selectedVideoDevice, selectedAudioDevice) => {
+// 16:9 resolution tiers, highest first. When a configured resolution fails
+// (OverconstrainedError) or framerate drops below threshold, we step down.
+const RESOLUTION_TIERS = [
+  { w: 3840, h: 2160, label: '4K' },
+  { w: 1920, h: 1080, label: '1080p' },
+  { w: 1280, h: 720,  label: '720p' },
+];
+
+const LOW_FPS_THRESHOLD = 10;
+const FPS_CHECK_INTERVAL_MS = 5000;
+const FPS_CHECK_INITIAL_DELAY_MS = 8000;
+
+function buildVideoConstraint(deviceId, tier) {
+  const c = {};
+  if (deviceId) c.deviceId = { exact: deviceId };
+  c.width = { min: tier.w };
+  c.height = { min: tier.h };
+  c.aspectRatio = { exact: 16 / 9 };
+  return c;
+}
+
+function buildAudioConstraint(selectedAudioDevice) {
+  if (selectedAudioDevice != null) return { deviceId: { exact: selectedAudioDevice } };
+  if (selectedAudioDevice === null) return false;
+  return true;
+}
+
+export const useWebcamStream = (selectedVideoDevice, selectedAudioDevice, options = {}) => {
   const videoRef = useRef(null);
   const [stream, setStream] = useState(null);
   const [error, setError] = useState(null);
+  const { videoResolution } = options;
+
+  // Track current tier index so FPS monitor can step down
+  const tierIdxRef = useRef(0);
+  const streamRef = useRef(null);
 
   useEffect(() => {
     let localStream = null;
+    let fpsTimer = null;
+    let cancelled = false;
 
-    const startStream = async () => {
-      try {
-        // Stop existing tracks
-        if (stream) {
-          stream.getTracks().forEach(track => track.stop());
-        }
+    // Find the starting tier that matches the configured resolution (or default 720p)
+    const startTierIdx = videoResolution?.width
+      ? RESOLUTION_TIERS.findIndex(t => t.w <= videoResolution.width)
+      : RESOLUTION_TIERS.length - 1; // 720p
+    tierIdxRef.current = Math.max(0, startTierIdx);
 
-        const constraints = {
-          video: selectedVideoDevice
-            ? {
-                deviceId: { exact: selectedVideoDevice },
-                width: { ideal: 1280 },
-                height: { ideal: 720 },
-                aspectRatio: { ideal: 16 / 9 },
-              }
-            : {
-                width: { ideal: 1280 },
-                height: { ideal: 720 },
-                aspectRatio: { ideal: 16 / 9 },
-              },
-          audio: selectedAudioDevice != null
-            ? { deviceId: { exact: selectedAudioDevice } }
-            : selectedAudioDevice === null ? false : true,
-        };
+    const acquireStream = async (tierIdx) => {
+      if (cancelled) return null;
 
-        localStream = await navigator.mediaDevices.getUserMedia(constraints);
-        setStream(localStream);
-        setError(null);
+      // Stop existing tracks
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(t => t.stop());
+        streamRef.current = null;
+      }
 
-        const tracks = localStream.getTracks();
-        const videoTrack = localStream.getVideoTracks()[0];
-        const vSettings = videoTrack?.getSettings?.() || {};
-        logger().info('stream-acquired', {
-          tracks: tracks.map(t => ({
-            kind: t.kind,
-            label: t.label,
-            enabled: t.enabled,
-            muted: t.muted,
-            readyState: t.readyState,
-          })),
-          videoSettings: { w: vSettings.width, h: vSettings.height, aspectRatio: vSettings.aspectRatio, frameRate: vSettings.frameRate },
-          videoDevice: selectedVideoDevice?.slice(0, 8),
-          audioDevice: selectedAudioDevice?.slice(0, 8),
-        });
+      const audio = buildAudioConstraint(selectedAudioDevice);
 
-        if (videoRef.current) {
-          // Give the video element only video tracks so the muted attribute
-          // doesn't kill audio data for AudioContext on Android WebView
-          videoRef.current.srcObject = new MediaStream(localStream.getVideoTracks());
-        }
-      } catch (err) {
-        logger().warn('input.webcam.access_error_fallback', { error: err.message || err });
+      // Try each tier from tierIdx downward
+      for (let i = tierIdx; i < RESOLUTION_TIERS.length; i++) {
+        if (cancelled) return null;
+        const tier = RESOLUTION_TIERS[i];
         try {
-          // Fallback to any available device
-          localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-          setStream(localStream);
-          setError(null);
+          const constraints = { video: buildVideoConstraint(selectedVideoDevice, tier), audio };
+          logger().info('stream-attempt', { tier: tier.label, w: tier.w, h: tier.h });
 
-          const fbTracks = localStream.getTracks();
-          logger().info('stream-acquired-fallback', {
-            tracks: fbTracks.map(t => ({
-              kind: t.kind,
-              label: t.label,
-              enabled: t.enabled,
-              muted: t.muted,
-              readyState: t.readyState,
+          const s = await navigator.mediaDevices.getUserMedia(constraints);
+          tierIdxRef.current = i;
+
+          const videoTrack = s.getVideoTracks()[0];
+          const vSettings = videoTrack?.getSettings?.() || {};
+          logger().info('stream-acquired', {
+            tier: tier.label,
+            tracks: s.getTracks().map(t => ({
+              kind: t.kind, label: t.label, enabled: t.enabled,
+              muted: t.muted, readyState: t.readyState,
             })),
+            videoSettings: {
+              w: vSettings.width, h: vSettings.height,
+              aspectRatio: vSettings.aspectRatio, frameRate: vSettings.frameRate,
+            },
+            videoDevice: selectedVideoDevice?.slice(0, 8),
+            audioDevice: selectedAudioDevice?.slice(0, 8),
           });
 
-          if (videoRef.current) {
-            videoRef.current.srcObject = new MediaStream(localStream.getVideoTracks());
-          }
-        } catch (fallbackErr) {
-          logger().error('webcam.access-error-final', { error: fallbackErr.message });
-          setError(fallbackErr);
+          return s;
+        } catch (err) {
+          logger().warn('stream-tier-failed', { tier: tier.label, error: err.message });
         }
+      }
+
+      // All tiers exhausted — bare minimum fallback (no resolution constraint)
+      logger().warn('stream-fallback-bare');
+      try {
+        const s = await navigator.mediaDevices.getUserMedia({
+          video: selectedVideoDevice ? { deviceId: { exact: selectedVideoDevice } } : true,
+          audio,
+        });
+        const fbTracks = s.getTracks();
+        logger().info('stream-acquired-fallback', {
+          tracks: fbTracks.map(t => ({ kind: t.kind, label: t.label, enabled: t.enabled,
+            muted: t.muted, readyState: t.readyState })),
+        });
+        tierIdxRef.current = RESOLUTION_TIERS.length; // past all tiers
+        return s;
+      } catch (fallbackErr) {
+        logger().error('webcam.access-error-final', { error: fallbackErr.message });
+        return null;
       }
     };
 
-    startStream();
+    // FPS monitor — checks actual framerate and steps down if consistently low
+    const startFpsMonitor = (s) => {
+      const videoTrack = s.getVideoTracks()[0];
+      if (!videoTrack) return;
+      let lastFrameCount = null;
+      let lastCheckTime = null;
+
+      fpsTimer = setInterval(() => {
+        if (cancelled || videoTrack.readyState !== 'live') {
+          clearInterval(fpsTimer);
+          return;
+        }
+        // ImageCapture-based frame counting isn't available everywhere;
+        // use getSettings().frameRate as a live indicator when available,
+        // otherwise use track stats from the video element.
+        const settings = videoTrack.getSettings?.() || {};
+        const reportedFps = settings.frameRate;
+
+        // Also check via video element frame count (more reliable)
+        const videoEl = videoRef.current;
+        const now = performance.now();
+        let measuredFps = null;
+        if (videoEl && typeof videoEl.getVideoPlaybackQuality === 'function') {
+          const q = videoEl.getVideoPlaybackQuality();
+          if (lastFrameCount !== null && lastCheckTime !== null) {
+            const elapsed = (now - lastCheckTime) / 1000;
+            if (elapsed > 0) measuredFps = (q.totalVideoFrames - lastFrameCount) / elapsed;
+          }
+          lastFrameCount = q.totalVideoFrames;
+          lastCheckTime = now;
+        }
+
+        const fps = measuredFps ?? reportedFps;
+        if (fps == null) return;
+
+        logger().debug('stream-fps-check', {
+          fps: Math.round(fps),
+          tier: RESOLUTION_TIERS[tierIdxRef.current]?.label || 'bare',
+          measuredFps: measuredFps != null ? Math.round(measuredFps) : null,
+          reportedFps,
+        });
+
+        if (fps < LOW_FPS_THRESHOLD && tierIdxRef.current < RESOLUTION_TIERS.length - 1) {
+          const nextIdx = tierIdxRef.current + 1;
+          const nextTier = RESOLUTION_TIERS[nextIdx];
+          logger().warn('stream-fps-downgrade', {
+            fps: Math.round(fps),
+            from: RESOLUTION_TIERS[tierIdxRef.current]?.label,
+            to: nextTier.label,
+          });
+          clearInterval(fpsTimer);
+          // Re-acquire at lower tier
+          acquireStream(nextIdx).then(newStream => {
+            if (cancelled || !newStream) return;
+            localStream = newStream;
+            streamRef.current = newStream;
+            setStream(newStream);
+            if (videoRef.current) {
+              videoRef.current.srcObject = new MediaStream(newStream.getVideoTracks());
+            }
+            startFpsMonitor(newStream);
+          });
+        }
+      }, FPS_CHECK_INTERVAL_MS);
+    };
+
+    const init = async () => {
+      localStream = await acquireStream(tierIdxRef.current);
+      if (cancelled || !localStream) {
+        if (!cancelled) setError(new Error('No camera available'));
+        return;
+      }
+
+      streamRef.current = localStream;
+      setStream(localStream);
+      setError(null);
+
+      if (videoRef.current) {
+        videoRef.current.srcObject = new MediaStream(localStream.getVideoTracks());
+      }
+
+      // Delay FPS monitoring to let the encoder settle
+      if (videoResolution?.width) {
+        setTimeout(() => {
+          if (!cancelled && streamRef.current) startFpsMonitor(streamRef.current);
+        }, FPS_CHECK_INITIAL_DELAY_MS);
+      }
+    };
+
+    init();
 
     return () => {
+      cancelled = true;
+      if (fpsTimer) clearInterval(fpsTimer);
       if (localStream) {
         localStream.getTracks().forEach(track => track.stop());
       }
     };
-  }, [selectedVideoDevice, selectedAudioDevice]);
+  }, [selectedVideoDevice, selectedAudioDevice, videoResolution?.width, videoResolution?.height]);
 
   return { videoRef, stream, error };
 };
