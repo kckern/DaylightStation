@@ -86,11 +86,16 @@ export class HomeAssistantDeviceAdapter {
     );
 
     const allOk = results.every(r => r.ok);
+    const anyVerified = results.some(r => r.verified === true);
+    const anyVerifyFailed = results.some(r => r.verifyFailed === true);
     this.#metrics.operations.on++;
 
     return {
       ok: allOk,
       displays: results,
+      verified: anyVerified,
+      verifyFailed: anyVerifyFailed,
+      attempts: Math.max(...results.map(r => r.attempts || 0)),
       elapsedMs: Date.now() - startTime
     };
   }
@@ -263,13 +268,14 @@ export class HomeAssistantDeviceAdapter {
     });
 
     return {
-      ok: true,
+      ok: false,
       displayId,
       action: 'on',
       verified: false,
       verifyFailed: true,
       attempts: maxAttempts,
-      elapsedMs: Date.now() - startTime
+      elapsedMs: Date.now() - startTime,
+      error: 'Display did not respond after power-on verification'
     };
   }
 
