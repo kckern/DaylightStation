@@ -6,7 +6,7 @@ import {
   IconRun, IconCoin, IconHeart, IconShoppingCart,
   IconUsers, IconDevices,
   IconPlugConnected, IconClock, IconFileCode,
-  IconRobot
+  IconRobot, IconDeviceGamepad2
 } from '@tabler/icons-react';
 
 const navSections = [
@@ -16,6 +16,7 @@ const navSections = [
       { label: 'Menus', icon: IconMenu2, to: '/admin/content/lists/menus' },
       { label: 'Watchlists', icon: IconPlayerRecord, to: '/admin/content/lists/watchlists' },
       { label: 'Programs', icon: IconCalendarEvent, to: '/admin/content/lists/programs' },
+      { label: 'Games', icon: IconDeviceGamepad2, to: '/admin/content/games' },
     ]
   },
   {
