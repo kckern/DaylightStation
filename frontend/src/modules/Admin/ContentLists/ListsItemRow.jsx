@@ -2124,14 +2124,16 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
   const [previewOpen, setPreviewOpen] = useState(false);
   const [dragMenuOpen, setDragMenuOpen] = useState(false);
 
-  // Resolve thumbnail for icon column: override image > input thumbnail (derived from context)
+  // Resolve thumbnail for icon column: override image > UID image > input thumbnail
   const cachedInfo = contentInfoMap.get(item.input);
   const inheritedImage = cachedInfo?.thumbnail || null;
-  const rowThumbnail = item.image
+  const uidImage = item.uid ? DaylightMediaPath(`/media/img/lists/${item.uid}.jpg`) : null;
+  const explicitImage = item.image
     ? (item.image.startsWith('/media/') || item.image.startsWith('media/')
         ? DaylightMediaPath(item.image)
         : item.image)
-    : inheritedImage;
+    : null;
+  const rowThumbnail = explicitImage || uidImage || inheritedImage;
 
   // Inline editing state
   const [editingLabel, setEditingLabel] = useState(false);
