@@ -19,9 +19,10 @@ const SvgIcon = ({ d, className }) => (
 );
 
 const STEP_DEFS = [
-  { key: 'power',   label: 'Powering on TV',    icon: 'M13 3h-2v10h2V3zm4.83 2.17l-1.42 1.42A6.92 6.92 0 0119 12c0 3.87-3.13 7-7 7s-7-3.13-7-7c0-2.15.97-4.08 2.5-5.37L6.17 5.17A8.96 8.96 0 003 12c0 4.97 4.03 9 9 9s9-4.03 9-9a8.96 8.96 0 00-3.17-6.83z' },
-  { key: 'prepare', label: 'Preparing kiosk',    icon: 'M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 14H3V5h18v12z' },
-  { key: 'load',    label: 'Loading video call',  icon: 'M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z' },
+  { key: 'power',   label: 'Powering on TV',      icon: 'M13 3h-2v10h2V3zm4.83 2.17l-1.42 1.42A6.92 6.92 0 0119 12c0 3.87-3.13 7-7 7s-7-3.13-7-7c0-2.15.97-4.08 2.5-5.37L6.17 5.17A8.96 8.96 0 003 12c0 4.97 4.03 9 9 9s9-4.03 9-9a8.96 8.96 0 00-3.17-6.83z' },
+  { key: 'prepare', label: 'Preparing kiosk',      icon: 'M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 14H3V5h18v12z' },
+  { key: 'load',    label: 'Loading video call',    icon: 'M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z' },
+  { key: 'media',   label: 'Verifying connection',  icon: 'M1 9l2 2c4.97-4.97 13.03-4.97 18 0l2-2C16.93 2.93 7.08 2.93 1 9zm8 8l3 3 3-3c-1.65-1.66-4.34-1.66-6 0zm-4-4l2 2c2.76-2.76 7.24-2.76 10 0l2-2C15.14 9.14 8.87 9.14 5 13z' },
 ];
 
 function WakeStepper({ progress }) {
@@ -99,6 +100,60 @@ export default function CallApp() {
   );
 
   const remoteVideoRef = useRef(null);
+  const [remoteVerified, setRemoteVerified] = useState(false);
+
+  // Verify remote stream has live video + audio tracks before transitioning to dual view.
+  // Gates the "connected" state so we don't show an empty remote panel.
+  useEffect(() => {
+    if (!peerConnected || !peer.remoteStream) {
+      setRemoteVerified(false);
+      return;
+    }
+
+    const check = () => {
+      const stream = peer.remoteStream;
+      const hasVideo = stream.getVideoTracks().some(t => t.readyState === 'live');
+      const hasAudio = stream.getAudioTracks().some(t => t.readyState === 'live');
+      if (hasVideo && hasAudio) {
+        logger.info('remote-media-verified', {
+          videoTracks: stream.getVideoTracks().length,
+          audioTracks: stream.getAudioTracks().length
+        });
+        setRemoteVerified(true);
+      }
+      return hasVideo && hasAudio;
+    };
+
+    // Check immediately (tracks may already be present)
+    if (check()) return;
+
+    // Poll every 200ms until tracks arrive
+    const interval = setInterval(() => {
+      if (check()) clearInterval(interval);
+    }, 200);
+
+    // Timeout: proceed anyway after 8s — don't block forever
+    const timeout = setTimeout(() => {
+      clearInterval(interval);
+      logger.warn('remote-media-timeout', { elapsed: '8s' });
+      setRemoteVerified(true);
+    }, 8000);
+
+    return () => {
+      clearInterval(interval);
+      clearTimeout(timeout);
+    };
+  }, [peerConnected, peer.remoteStream, logger]);
+
+  // Merge backend wake progress with frontend media verification step
+  const displayProgress = useMemo(() => {
+    if (!wakeProgress) return null;
+    const mediaStatus = !peerConnected ? null
+      : remoteVerified ? 'done'
+      : 'running';
+    return { ...wakeProgress, media: mediaStatus };
+  }, [wakeProgress, peerConnected, remoteVerified]);
+
   const remoteContainerRef = useRef(null);
   const [zoomMode, setZoomMode] = useState(false);
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
@@ -368,6 +423,7 @@ export default function CallApp() {
     reset();
     exitZoom();
     resetWakeProgress();
+    setRemoteVerified(false);
     const devId = connectedDeviceRef.current;
     hangUp();
     setWaking(false);
@@ -468,8 +524,8 @@ export default function CallApp() {
   }, [devices, status, dropIn, stream]);
 
   const isIdle = (status === 'idle' || status === 'occupied') && !wakeError && !waking;
-  const isConnecting = status === 'connecting' || waking;
-  const isConnected = !isIdle && !isConnecting && !wakeError;
+  const isConnecting = status === 'connecting' || waking || (peerConnected && !remoteVerified);
+  const isConnected = !isIdle && !isConnecting && !wakeError && remoteVerified;
 
   const handleRemoteClick = useCallback(() => {
     if (zoomMode || !isConnected) return;
@@ -646,8 +702,8 @@ export default function CallApp() {
       {/* Connecting overlay — vertical stepper with real-time progress */}
       {isConnecting && (
         <div className="call-app__connecting-overlay">
-          {wakeProgress ? (
-            <WakeStepper progress={wakeProgress} />
+          {displayProgress ? (
+            <WakeStepper progress={displayProgress} />
           ) : (
             <p className="call-app__status-text">
               {waking ? 'Waking up TV...' : 'Establishing call...'}
