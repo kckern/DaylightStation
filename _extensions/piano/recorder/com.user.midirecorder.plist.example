@@ -8,8 +8,7 @@
     <key>ProgramArguments</key>
     <array>
         <!-- Update this path to your installation directory -->
-        <string>/path/to/recorder/.venv/bin/python3</string>
-        <string>/path/to/recorder/auto_midi_recorder.py</string>
+        <string>/path/to/recorder/run.sh</string>
     </array>
 
     <key>WorkingDirectory</key>
@@ -23,15 +22,15 @@
     <true/>
 
     <key>StandardOutPath</key>
-    <string>/path/to/recorder/midi_recorder_stdout.log</string>
+    <string>/tmp/midi_recorder_stdout.log</string>
 
     <key>StandardErrorPath</key>
-    <string>/path/to/recorder/midi_recorder_stderr.log</string>
+    <string>/tmp/midi_recorder_stderr.log</string>
 
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
-        <string>/usr/local/bin:/usr/bin:/bin</string>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
     </dict>
 </dict>
 </plist>
