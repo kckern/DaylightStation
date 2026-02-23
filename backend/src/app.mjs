@@ -1607,6 +1607,38 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'test-api' })
   });
 
+  // Launch & Sync routers
+  const { createLaunchRouter } = await import('./4_api/v1/routers/launch.mjs');
+  const { createSyncRouter } = await import('./4_api/v1/routers/sync.mjs');
+  const { LaunchService } = await import('#apps/content/services/LaunchService.mjs');
+  const { SyncService } = await import('#apps/content/services/SyncService.mjs');
+  const { AdbLauncher } = await import('#adapters/devices/AdbLauncher.mjs');
+
+  const adbLauncher = new AdbLauncher({
+    deviceService: deviceServices.deviceService,
+    logger: rootLogger.child({ module: 'adb-launcher' })
+  });
+
+  const launchService = new LaunchService({
+    contentRegistry: contentRegistry,
+    deviceLauncher: adbLauncher,
+    logger: rootLogger.child({ module: 'launch-service' })
+  });
+
+  v1Routers.launch = createLaunchRouter({
+    launchService,
+    logger: rootLogger.child({ module: 'launch-api' })
+  });
+
+  const syncService = new SyncService({
+    logger: rootLogger.child({ module: 'sync-service' })
+  });
+
+  v1Routers.sync = createSyncRouter({
+    syncService,
+    logger: rootLogger.child({ module: 'sync-api' })
+  });
+
   // ==========================================================================
   // Mount API v1 Router
   // ==========================================================================
