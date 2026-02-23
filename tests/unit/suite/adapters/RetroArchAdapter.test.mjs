@@ -134,6 +134,20 @@ describe('RetroArchAdapter', () => {
     });
   });
 
+  describe('resolveLaunchables', () => {
+    it('returns all games flattened across consoles', async () => {
+      const result = await adapter.resolveLaunchables();
+      // 2 n64 games + 1 snes game = 3 total
+      expect(result).toHaveLength(3);
+      expect(result[0].actions).toEqual({
+        launch: { contentId: 'retroarch:n64/mario-kart-64' }
+      });
+      expect(result[2].actions).toEqual({
+        launch: { contentId: 'retroarch:snes/zelda-alttp' }
+      });
+    });
+  });
+
   describe('resolveSiblings', () => {
     it('returns parent console and sibling games', async () => {
       const result = await adapter.resolveSiblings('retroarch:n64/mario-kart-64');

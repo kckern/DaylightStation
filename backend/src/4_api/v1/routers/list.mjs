@@ -326,7 +326,13 @@ export function createListRouter(config) {
       // ListAdapter which accepts watchlist:X compound IDs.
       const compoundId = resolvedViaPrefix ? resolvedLocalId : `${source}:${resolvedLocalId}`;
 
-      if (modifiers.playable) {
+      if (modifiers.launchable) {
+        // Resolve to launchable items only (flattened across containers)
+        if (!adapter.resolveLaunchables) {
+          return res.status(400).json({ error: 'Source does not support launchable resolution' });
+        }
+        items = await adapter.resolveLaunchables(compoundId);
+      } else if (modifiers.playable) {
         // Resolve to playable items only
         if (!adapter.resolvePlayables) {
           return res.status(400).json({ error: 'Source does not support playable resolution' });
