@@ -290,6 +290,7 @@ export function PianoVisualizer({ onClose, onSessionEnd }) {
           endNote={endNote}
           showLabels={true}
           targetNotes={targetNotes}
+          wrongNotes={game.wrongNotes}
         />
       </div>
 
