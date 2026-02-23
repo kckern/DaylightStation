@@ -1,9 +1,28 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useRef, useMemo, useState } from "react";
 import { useMediaDevices } from "./hooks/useMediaDevices";
 import { useWebcamStream } from "./hooks/useWebcamStream";
 import { useVolumeMeter } from "./hooks/useVolumeMeter";
+import { DaylightAPI } from "../../lib/api.mjs";
+import getLogger from "../../lib/logging/Logger.js";
 
 export default function WebcamApp() {
+  // Fetch input preferences from device config
+  const [inputPrefs, setInputPrefs] = useState({});
+  useEffect(() => {
+    DaylightAPI('api/v1/device/config')
+      .then(config => {
+        // Collect input preferences from all devices
+        const devices = config?.devices || config || {};
+        for (const dev of Object.values(devices)) {
+          if (dev.input) {
+            setInputPrefs(dev.input);
+            break;
+          }
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   const {
     videoDevices,
     audioDevices,
@@ -11,10 +30,71 @@ export default function WebcamApp() {
     selectedAudioDevice,
     cycleVideoDevice,
     cycleAudioDevice
-  } = useMediaDevices();
+  } = useMediaDevices({
+    preferredCameraPattern: inputPrefs.preferred_camera,
+    preferredMicPattern: inputPrefs.preferred_mic,
+  });
 
   const { videoRef, stream, error: videoError } = useWebcamStream(selectedVideoDevice, selectedAudioDevice);
   const { volume } = useVolumeMeter(stream);
+
+  const logger = useMemo(() => getLogger().child({ component: 'WebcamApp' }), []);
+
+  // --- Auto-cycle audio device on sustained silence ---
+  const volumeRef = useRef(0);
+  volumeRef.current = volume;
+  const silenceStartRef = useRef(null);
+  const triedDevicesRef = useRef(new Set());
+  const confirmedRef = useRef(false);
+
+  // Reset when device list changes (plug/unplug)
+  useEffect(() => {
+    confirmedRef.current = false;
+    triedDevicesRef.current = new Set();
+    silenceStartRef.current = null;
+  }, [audioDevices.length]);
+
+  // Poll volume and cycle to next audio device after 5s of silence
+  useEffect(() => {
+    if (audioDevices.length <= 1 || !selectedAudioDevice) return;
+
+    // Fresh silence window for newly selected device
+    silenceStartRef.current = null;
+
+    const SILENCE_THRESHOLD_MS = 5000;
+
+    const interval = setInterval(() => {
+      if (confirmedRef.current) return;
+      if (triedDevicesRef.current.size >= audioDevices.length) return;
+
+      if (volumeRef.current > 0) {
+        confirmedRef.current = true;
+        silenceStartRef.current = null;
+        logger.info('audio-device-confirmed', {
+          device: selectedAudioDevice?.slice(0, 8),
+        });
+        return;
+      }
+
+      if (!silenceStartRef.current) {
+        silenceStartRef.current = Date.now();
+        return;
+      }
+
+      if (Date.now() - silenceStartRef.current >= SILENCE_THRESHOLD_MS) {
+        triedDevicesRef.current.add(selectedAudioDevice);
+        silenceStartRef.current = null;
+        logger.info('auto-cycle-audio-silence', {
+          silentDevice: selectedAudioDevice?.slice(0, 8),
+          tried: triedDevicesRef.current.size,
+          total: audioDevices.length,
+        });
+        cycleAudioDevice('next');
+      }
+    }, 500);
+
+    return () => clearInterval(interval);
+  }, [audioDevices, selectedAudioDevice, cycleAudioDevice, logger]);
 
   // Keyboard shortcuts
   useEffect(() => {
