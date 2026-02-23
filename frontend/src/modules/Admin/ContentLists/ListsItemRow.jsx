@@ -711,7 +711,6 @@ function ContentSearchCombobox({ value, onChange }) {
   }, []);
 
   const inputRef = useRef(null);
-  const freshOpenRef = useRef(false); // true until first non-navigation keypress after open
   const [pendingApp, setPendingApp] = useState(null); // {appId, param} — waiting for param input
   const [paramOptions, setParamOptions] = useState(null); // [{value, label}] or null
   const [paramInput, setParamInput] = useState('');
@@ -727,7 +726,6 @@ function ContentSearchCombobox({ value, onChange }) {
     setPendingApp(null);
     setParamOptions(null);
     setPagination(null);
-    freshOpenRef.current = false;
     combobox.closeDropdown();
   }, [combobox]);
 
@@ -1172,10 +1170,8 @@ function ContentSearchCombobox({ value, onChange }) {
 
     // Auto-select the part after the colon so typing replaces just the
     // local ID (e.g. "147" in "hymn: 147") while keeping the source prefix.
-    // Backspace on a fully-selected suffix clears everything for a fresh start.
     const colonIdx = q.indexOf(':');
     if (colonIdx >= 0) {
-      freshOpenRef.current = true;
       requestAnimationFrame(() => {
         const el = inputRef.current;
         if (el) {
@@ -1257,20 +1253,6 @@ function ContentSearchCombobox({ value, onChange }) {
 
   // Keyboard handler for navigation
   const handleKeyDown = async (e) => {
-    // On fresh open, Backspace clears the entire input (prefix + selected suffix)
-    // so the user can start with a completely different content type.
-    if (e.key === 'Backspace' && freshOpenRef.current) {
-      e.preventDefault();
-      freshOpenRef.current = false;
-      setSearchQuery('');
-      setHighlightedIdx(0);
-      return;
-    }
-    // Any non-navigation key clears the fresh-open state
-    if (freshOpenRef.current && !['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
-      freshOpenRef.current = false;
-    }
-
     const items = displayItems;
 
     // Handle Enter/Escape/Tab before the items-length guard so manual
