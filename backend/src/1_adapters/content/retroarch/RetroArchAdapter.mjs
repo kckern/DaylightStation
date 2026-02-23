@@ -108,14 +108,16 @@ export class RetroArchAdapter {
           || game.title.toLowerCase().includes(searchText);
         if (!matchesSearch) continue;
 
+        const compoundId = `retroarch:${consoleId}/${game.id}`;
         items.push(new Item({
-          id: `retroarch:${consoleId}/${game.id}`,
+          id: compoundId,
           source: 'retroarch',
           localId: `${consoleId}/${game.id}`,
           title,
           type: 'game',
           thumbnail: game.thumbnail ? `/api/v1/proxy/retroarch/thumbnail/${game.thumbnail}` : null,
-          metadata: { type: 'game', console: consoleId }
+          metadata: { type: 'game', console: consoleId },
+          actions: { launch: { contentId: compoundId } }
         }));
 
         if (items.length >= take) break;
@@ -132,13 +134,15 @@ export class RetroArchAdapter {
     const consoles = this.#config.consoles || {};
     return Object.entries(consoles).map(([id, cfg]) => {
       const gameCount = (this.#catalog.games?.[id] || []).length;
+      const compoundId = `retroarch:${id}`;
       return new Item({
-        id: `retroarch:${id}`,
+        id: compoundId,
         source: 'retroarch',
         localId: id,
         title: cfg.label,
         type: 'console',
-        metadata: { type: 'console', gameCount, menuStyle: cfg.menuStyle }
+        metadata: { type: 'console', gameCount, menuStyle: cfg.menuStyle },
+        actions: { list: { contentId: compoundId } }
       });
     });
   }
