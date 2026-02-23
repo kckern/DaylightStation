@@ -49,7 +49,7 @@ describe('RetroArchAdapter', () => {
   });
 
   describe('getList', () => {
-    it('returns consoles at root level', async () => {
+    it('returns consoles at root level (no arg)', async () => {
       const list = await adapter.getList();
       expect(list).toHaveLength(2);
       expect(list[0]).toEqual(expect.objectContaining({
@@ -59,7 +59,12 @@ describe('RetroArchAdapter', () => {
       }));
     });
 
-    it('returns games for a console', async () => {
+    it('returns consoles at root level (compound ID with empty localId)', async () => {
+      const list = await adapter.getList('retroarch:');
+      expect(list).toHaveLength(2);
+    });
+
+    it('returns games for a console (bare localId)', async () => {
       const list = await adapter.getList('n64');
       expect(list).toHaveLength(2);
       expect(list[0]).toEqual(expect.objectContaining({
@@ -68,10 +73,27 @@ describe('RetroArchAdapter', () => {
         type: 'game'
       }));
     });
+
+    it('returns games for a console (compound ID)', async () => {
+      const list = await adapter.getList('retroarch:n64');
+      expect(list).toHaveLength(2);
+    });
+
+    it('returns game items with launch action', async () => {
+      const list = await adapter.getList('retroarch:n64');
+      expect(list).toHaveLength(2);
+      // Each game item should have actions.launch with its compound contentId
+      expect(list[0].actions).toEqual({
+        launch: { contentId: 'retroarch:n64/mario-kart-64' }
+      });
+      expect(list[1].actions).toEqual({
+        launch: { contentId: 'retroarch:n64/star-fox-64' }
+      });
+    });
   });
 
   describe('getItem', () => {
-    it('returns LaunchableItem with launchIntent', async () => {
+    it('returns LaunchableItem with launchIntent (bare localId)', async () => {
       const item = await adapter.getItem('n64/mario-kart-64');
       expect(item).not.toBeNull();
       expect(item.title).toBe('MK64 Custom'); // override
@@ -84,6 +106,12 @@ describe('RetroArchAdapter', () => {
       });
       expect(item.deviceConstraint).toBe('android');
       expect(item.console).toBe('n64');
+    });
+
+    it('returns LaunchableItem with compound ID', async () => {
+      const item = await adapter.getItem('retroarch:n64/mario-kart-64');
+      expect(item).not.toBeNull();
+      expect(item.title).toBe('MK64 Custom');
     });
 
     it('returns null for unknown game', async () => {
