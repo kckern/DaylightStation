@@ -1,0 +1,8 @@
+net.kckern.audiobridge.app-pngs-0 /Users/kckern/Documents/GitHub/DaylightStation/_extensions/audio-bridge/app/app/build/generated/res/pngs/debug
+net.kckern.audiobridge.app-resValues-1 /Users/kckern/Documents/GitHub/DaylightStation/_extensions/audio-bridge/app/app/build/generated/res/resValues/debug
+net.kckern.audiobridge.app-rs-2 /Users/kckern/Documents/GitHub/DaylightStation/_extensions/audio-bridge/app/app/build/generated/res/rs/debug
+net.kckern.audiobridge.app-mergeDebugResources-3 /Users/kckern/Documents/GitHub/DaylightStation/_extensions/audio-bridge/app/app/build/intermediates/incremental/debug/mergeDebugResources/merged.dir
+net.kckern.audiobridge.app-mergeDebugResources-4 /Users/kckern/Documents/GitHub/DaylightStation/_extensions/audio-bridge/app/app/build/intermediates/incremental/debug/mergeDebugResources/stripped.dir
+net.kckern.audiobridge.app-merged_res-5 /Users/kckern/Documents/GitHub/DaylightStation/_extensions/audio-bridge/app/app/build/intermediates/merged_res/debug
+net.kckern.audiobridge.app-debug-6 /Users/kckern/Documents/GitHub/DaylightStation/_extensions/audio-bridge/app/app/src/debug/res
+net.kckern.audiobridge.app-main-7 /Users/kckern/Documents/GitHub/DaylightStation/_extensions/audio-bridge/app/app/src/main/res

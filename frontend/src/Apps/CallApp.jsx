@@ -20,7 +20,6 @@ const SvgIcon = ({ d, className }) => (
 
 const STEP_DEFS = [
   { key: 'power',   label: 'Powering on TV',    icon: 'M13 3h-2v10h2V3zm4.83 2.17l-1.42 1.42A6.92 6.92 0 0119 12c0 3.87-3.13 7-7 7s-7-3.13-7-7c0-2.15.97-4.08 2.5-5.37L6.17 5.17A8.96 8.96 0 003 12c0 4.97 4.03 9 9 9s9-4.03 9-9a8.96 8.96 0 00-3.17-6.83z' },
-  { key: 'verify',  label: 'Verifying display',  icon: 'M23 12l-2.44-2.78.34-3.68-3.61-.82-1.89-3.18L12 3 8.6 1.54 6.71 4.72l-3.61.81.34 3.68L1 12l2.44 2.78-.34 3.69 3.61.82 1.89 3.18L12 21l3.4 1.46 1.89-3.18 3.61-.82-.34-3.68L23 12zm-12.91 4.72l-3.8-3.81 1.48-1.48 2.32 2.33 5.85-5.87 1.48 1.48-7.33 7.35z' },
   { key: 'prepare', label: 'Preparing kiosk',    icon: 'M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 14H3V5h18v12z' },
   { key: 'load',    label: 'Loading video call',  icon: 'M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z' },
 ];
@@ -62,7 +61,11 @@ function WakeStepper({ progress }) {
       </div>
       <div className={`call-app__stepper-label call-app__stepper-label--${activeStatus}`}>
         {activeStatus === 'failed' ? progress.failReason || 'Failed' : activeStep.label}
-        {activeStatus === 'running' && <span className="call-app__stepper-dots" />}
+        {activeStatus === 'running' && (
+          <svg className="call-app__stepper-spinner" viewBox="0 0 18 18" width="14" height="14">
+            <circle cx="9" cy="9" r="7" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeDasharray="32" strokeDashoffset="8" />
+          </svg>
+        )}
       </div>
     </div>
   );

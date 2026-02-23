@@ -1,7 +1,9 @@
 import React, { useRef, useEffect, useMemo, useState } from 'react';
+import { DaylightAPI } from '../../lib/api.mjs';
 import { useMediaDevices } from './hooks/useMediaDevices';
 import { useWebcamStream } from './hooks/useWebcamStream';
 import { useAudioProbe } from './hooks/useAudioProbe';
+import { useNativeAudioBridge } from './hooks/useNativeAudioBridge';
 import { useWebRTCPeer } from './hooks/useWebRTCPeer';
 import { useHomeline } from './hooks/useHomeline';
 import getLogger from '../../lib/logging/Logger.js';
@@ -9,19 +11,67 @@ import './VideoCall.scss';
 
 export default function VideoCall({ deviceId, clear }) {
   const logger = useMemo(() => getLogger().child({ component: 'VideoCall', deviceId }), [deviceId]);
+
+  // Fetch device-specific input config (preferred camera/mic, audio bridge)
+  const [inputConfig, setInputConfig] = useState(null);
+  useEffect(() => {
+    DaylightAPI('api/v1/device/config')
+      .then(config => {
+        const devices = config?.devices || config || {};
+        const dev = devices[deviceId];
+        if (dev?.input) {
+          setInputConfig(dev.input);
+          logger.info('device-input-config', { deviceId, hasAudioBridge: !!dev.input.audio_bridge });
+        }
+      })
+      .catch(err => logger.warn('device-config-fetch-failed', { error: err.message }));
+  }, [deviceId, logger]);
+
+  const audioBridgeConfig = inputConfig?.audio_bridge || null;
+
   const {
     audioDevices,
     selectedVideoDevice,
     selectedAudioDevice,
-  } = useMediaDevices();
+  } = useMediaDevices({
+    preferredCameraPattern: inputConfig?.preferred_camera,
+    preferredMicPattern: inputConfig?.preferred_mic,
+  });
 
   const probe = useAudioProbe(audioDevices, {
     preferredDeviceId: selectedAudioDevice,
   });
-  const effectiveAudioDevice = probe.workingDeviceId || selectedAudioDevice;
+
+  // Bridge activates based on device config:
+  //   mode 'always'   → enable immediately
+  //   mode 'fallback' → enable only when probe fails to find working mic
+  //   not configured  → never enable
+  const bridgeEnabled = audioBridgeConfig
+    ? audioBridgeConfig.mode === 'always' || (audioBridgeConfig.mode === 'fallback' && probe.status === 'no-mic')
+    : false;
+
+  const bridge = useNativeAudioBridge({
+    enabled: bridgeEnabled,
+    url: audioBridgeConfig?.url,
+  });
+
+  // When probe finds a working device, use it. When bridge is active, disable
+  // getUserMedia audio (video-only) and merge bridge audio separately.
+  const bridgeActive = bridge.status === 'connected';
+  const effectiveAudioDevice = bridgeActive ? null : (probe.workingDeviceId || selectedAudioDevice);
 
   const { videoRef, stream } = useWebcamStream(selectedVideoDevice, effectiveAudioDevice);
-  const peer = useWebRTCPeer(stream);
+
+  // Merge video-only stream with bridge audio for WebRTC
+  const mergedStream = useMemo(() => {
+    if (!stream) return null;
+    if (!bridgeActive || !bridge.stream) return stream;
+    const ms = new MediaStream(stream.getVideoTracks());
+    bridge.stream.getAudioTracks().forEach(t => ms.addTrack(t));
+    return ms;
+  }, [stream, bridgeActive, bridge.stream]);
+
+  const peer = useWebRTCPeer(mergedStream);
   const { connectionState } = peer;
   const { peerConnected, status, remoteMuteState } = useHomeline('tv', deviceId, peer);
   const [iceError, setIceError] = useState(null);
@@ -38,8 +88,8 @@ export default function VideoCall({ deviceId, clear }) {
 
   // Log status transitions
   useEffect(() => {
-    logger.debug('status-change', { status, peerConnected });
-  }, [logger, status, peerConnected]);
+    logger.debug('status-change', { status, peerConnected, bridgeStatus: bridge.status });
+  }, [logger, status, peerConnected, bridge.status]);
 
   // React to ICE connection failures — auto-clear after 10s
   useEffect(() => {
@@ -101,7 +151,7 @@ export default function VideoCall({ deviceId, clear }) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [clear]);
 
-  const volumePercentage = Math.min(probe.volume * 100, 100);
+  const volumePercentage = Math.min((bridgeActive ? bridge.volume : probe.volume) * 100, 100);
 
   const formatDuration = (s) => {
     const m = Math.floor(s / 60);
