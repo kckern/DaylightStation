@@ -382,58 +382,111 @@
     white-space: nowrap;
   }
 
-  // Step tracker — connecting overlay progress
-  &__step-tracker {
+  // Vertical stepper — segmented line with icon nodes
+  &__stepper {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
-    width: 80%;
-    max-width: 280px;
-    margin-bottom: 1rem;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
   }
 
-  &__step {
+  &__stepper-track {
     display: flex;
     align-items: center;
-    gap: 0.6rem;
-    font-size: 0.95rem;
-    color: #666;
-    transition: color 0.2s;
+    gap: 0;
+  }
 
-    &--running {
-      color: #fff;
+  // Segment between nodes
+  &__stepper-seg {
+    width: 28px;
+    height: 2px;
+
+    &--filled {
+      background: rgba(255, 255, 255, 0.6);
     }
 
+    &--empty {
+      background: rgba(255, 255, 255, 0.15);
+    }
+  }
+
+  // Circle node
+  &__stepper-node {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: background 0.25s, border-color 0.25s, transform 0.25s;
+    border: 2px solid rgba(255, 255, 255, 0.15);
+    background: rgba(255, 255, 255, 0.05);
+    color: rgba(255, 255, 255, 0.3);
+
     &--done {
+      border-color: #4caf50;
+      background: rgba(76, 175, 80, 0.15);
       color: #4caf50;
     }
 
+    &--running {
+      border-color: #fff;
+      background: rgba(255, 255, 255, 0.12);
+      color: #fff;
+    }
+
+    &--current {
+      transform: scale(1.15);
+    }
+
+    &--running#{&}--current {
+      animation: call-pulse 1.8s ease-in-out infinite;
+    }
+
     &--failed {
+      border-color: #ff5252;
+      background: rgba(255, 82, 82, 0.15);
       color: #ff5252;
     }
   }
 
-  &__step-icon {
-    width: 1.2em;
+  &__stepper-icon,
+  &__stepper-check,
+  &__stepper-x {
+    width: 18px;
+    height: 18px;
+  }
+
+  // Status label beneath the track
+  &__stepper-label {
+    font-size: 0.95rem;
     text-align: center;
-    font-weight: bold;
+    color: #ccc;
+    min-height: 1.4em;
+
+    &--done { color: #4caf50; }
+    &--running { color: #fff; }
+    &--failed { color: #ff5252; }
   }
 
-  &__step-label {
-    flex: 1;
+  // Animated ellipsis for "running" label
+  &__stepper-dots::after {
+    content: '';
+    animation: call-dots 1.4s steps(4, end) infinite;
   }
 
-  &__step-spinner {
-    width: 14px;
-    height: 14px;
-    border: 2px solid rgba(255, 255, 255, 0.3);
-    border-top-color: #fff;
-    border-radius: 50%;
-    animation: call-spin 0.8s linear infinite;
+  @keyframes call-dots {
+    0%  { content: ''; }
+    25% { content: '.'; }
+    50% { content: '..'; }
+    75% { content: '...'; }
   }
 
-  @keyframes call-spin {
-    to { transform: rotate(360deg); }
+  @keyframes call-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.3); }
+    50%      { box-shadow: 0 0 0 6px rgba(255, 255, 255, 0); }
   }
 
   // State transition: cross-fade between preview and connected
