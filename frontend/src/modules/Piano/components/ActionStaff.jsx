@@ -1,5 +1,5 @@
 import { useMemo, useRef, useEffect, useState, useCallback } from 'react';
-import { getNoteName } from '../../noteUtils.js';
+import { getNoteName } from '../noteUtils.js';
 import {
   IconCaretLeftFilled,
   IconCaretRightFilled,
@@ -141,12 +141,14 @@ export function ActionStaff({ action, targetPitches = [], matched = false, fired
 
   return (
     <div className={cls}>
-      <div className="action-staff__icon">
-        {ACTION_ICONS[action]}
-        {action === 'hold' && heldPiece && (
-          <span className="action-staff__held-type">{heldPiece}</span>
-        )}
-      </div>
+      {action && (
+        <div className="action-staff__icon">
+          {ACTION_ICONS[action]}
+          {action === 'hold' && heldPiece && (
+            <span className="action-staff__held-type">{heldPiece}</span>
+          )}
+        </div>
+      )}
 
       <div className="action-staff__staff-area">
         {/* Staff lines — separate SVG with preserveAspectRatio="none" so lines stretch to full width */}
@@ -171,7 +173,7 @@ export function ActionStaff({ action, targetPitches = [], matched = false, fired
         </text>
 
         {/* Single note with stem (quarter note) — centered */}
-        {notePositions.slice(0, 1).map((np) => {
+        {notePositions.map((np) => {
           // Y position: bottom line (pos=0) = bottomLineY, each step = -lineSpacing/2
           const stepSize = lineSpacing / 2;
           const noteY = bottomLineY - np.position * stepSize;
