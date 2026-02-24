@@ -113,4 +113,97 @@ describe('PersistenceManager — validation', () => {
     const result = pm.validateSessionPayload(payload);
     expect(result.ok).toBe(true);
   });
+
+  describe('_consolidateEvents — voice memo consolidation', () => {
+    it('should merge voice_memo_start and voice_memo into a single event', () => {
+      const pm = new PersistenceManager();
+      const now = Date.now();
+      const sessionData = {
+        startTime: now - 120000,
+        endTime: now,
+        roster: [{ id: 'alice', name: 'Alice' }],
+        deviceAssignments: [{ deviceId: '28688', userId: 'alice' }],
+        timeline: {
+          timebase: { tickCount: 6 },
+          series: { 'user:alice:heart_rate': [80, 85, 90, 88, 92, 95] },
+          events: [
+            {
+              timestamp: now - 60000,
+              type: 'voice_memo_start',
+              data: {
+                memoId: 'memo_123',
+                elapsedSeconds: 60,
+                videoTimeSeconds: 45,
+                durationSeconds: 25,
+                author: 'alice',
+                transcriptPreview: 'Great workout today'
+              }
+            },
+            {
+              timestamp: now - 59967,
+              type: 'voice_memo',
+              data: {
+                memoId: 'memo_123',
+                duration_seconds: 25,
+                transcript: 'Great workout today'
+              }
+            }
+          ]
+        }
+      };
+
+      pm.validateSessionPayload(sessionData);
+      const events = sessionData.timeline.events;
+
+      // Should have exactly one voice memo event, not two
+      const voiceEvents = events.filter(e =>
+        e.type === 'voice_memo' || e.type === 'voice_memo_start'
+      );
+      expect(voiceEvents.length).toBe(1);
+
+      // Merged event should have fields from both
+      const merged = voiceEvents[0];
+      expect(merged.type).toBe('voice_memo');
+      expect(merged.data.memoId).toBe('memo_123');
+      expect(merged.data.transcript).toBe('Great workout today');
+      expect(merged.data.duration_seconds).toBe(25);
+      expect(merged.data.elapsedSeconds).toBe(60);
+      expect(merged.data.videoTimeSeconds).toBe(45);
+      expect(merged.data.author).toBe('alice');
+    });
+
+    it('should handle orphan voice_memo without voice_memo_start', () => {
+      const pm = new PersistenceManager();
+      const now = Date.now();
+      const sessionData = {
+        startTime: now - 120000,
+        endTime: now,
+        roster: [{ id: 'alice', name: 'Alice' }],
+        deviceAssignments: [{ deviceId: '28688', userId: 'alice' }],
+        timeline: {
+          timebase: { tickCount: 6 },
+          series: { 'user:alice:heart_rate': [80, 85, 90, 88, 92, 95] },
+          events: [
+            {
+              timestamp: now - 30000,
+              type: 'voice_memo',
+              data: {
+                memoId: 'memo_orphan',
+                duration_seconds: 10,
+                transcript: 'Orphan memo'
+              }
+            }
+          ]
+        }
+      };
+
+      pm.validateSessionPayload(sessionData);
+      const events = sessionData.timeline.events;
+
+      const voiceEvents = events.filter(e => e.type === 'voice_memo');
+      expect(voiceEvents.length).toBe(1);
+      expect(voiceEvents[0].data.transcript).toBe('Orphan memo');
+      expect(voiceEvents[0].data.elapsedSeconds).toBeNull();
+    });
+  });
 });
