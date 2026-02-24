@@ -150,8 +150,8 @@ export default function VideoCall({ deviceId, clear }) {
   // Volume ducking — lower TV volume when call connects, restore on disconnect
   useEffect(() => {
     if (!peerConnected) return;
-    logger.info('volume-duck', { deviceId, level: 12 });
-    DaylightAPI(`api/v1/device/${deviceId}/volume/12`).catch(err =>
+    logger.info('volume-duck', { deviceId, level: 5 });
+    DaylightAPI(`api/v1/device/${deviceId}/volume/5`).catch(err =>
       logger.warn('volume-duck-failed', { deviceId, error: err.message })
     );
     return () => {
