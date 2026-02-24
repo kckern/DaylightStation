@@ -114,11 +114,13 @@ export function PianoTetris({ activeNotes, tetrisConfig, onDeactivate }) {
             action="moveLeft"
             targetPitches={game.targets?.moveLeft ?? []}
             matched={game.matchedActions?.has('moveLeft') ?? false}
+            activeNotes={activeNotes}
           />
           <ActionStaff
             action="rotateCCW"
             targetPitches={game.targets?.rotateCCW ?? []}
             matched={game.matchedActions?.has('rotateCCW') ?? false}
+            activeNotes={activeNotes}
           />
           <ActionStaff
             action="hold"
@@ -126,6 +128,7 @@ export function PianoTetris({ activeNotes, tetrisConfig, onDeactivate }) {
             matched={game.matchedActions?.has('hold') ?? false}
             disabled={game.holdUsed}
             heldPiece={game.heldPiece}
+            activeNotes={activeNotes}
           />
         </div>
 
@@ -148,16 +151,19 @@ export function PianoTetris({ activeNotes, tetrisConfig, onDeactivate }) {
             action="moveRight"
             targetPitches={game.targets?.moveRight ?? []}
             matched={game.matchedActions?.has('moveRight') ?? false}
+            activeNotes={activeNotes}
           />
           <ActionStaff
             action="rotateCW"
             targetPitches={game.targets?.rotateCW ?? []}
             matched={game.matchedActions?.has('rotateCW') ?? false}
+            activeNotes={activeNotes}
           />
           <ActionStaff
             action="hardDrop"
             targetPitches={game.targets?.hardDrop ?? []}
             matched={game.matchedActions?.has('hardDrop') ?? false}
+            activeNotes={activeNotes}
           />
         </div>
       </div>

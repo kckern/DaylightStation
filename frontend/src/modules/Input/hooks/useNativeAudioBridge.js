@@ -370,9 +370,9 @@ registerProcessor('bridge-processor', BridgeProcessor);`;
         let refEnergy = 0;
         let gateGain = 1.0;
         const GATE_ATTACK = 0.15;   // fast attack (suppress quickly)
-        const GATE_RELEASE = 0.005; // slow release (wait for echo to die)
-        const GATE_THRESHOLD = 0.001; // ref energy threshold to trigger
-        const GATE_FLOOR = 0.05;    // -26dB suppression when gate active
+        const GATE_RELEASE = 0.02;  // faster release (let mic recover quickly)
+        const GATE_THRESHOLD = 0.01; // ref energy threshold to trigger (less sensitive)
+        const GATE_FLOOR = 0.2;     // -14dB suppression when gate active
 
         const aecState = {
           get hasRef() { return hasRef; },

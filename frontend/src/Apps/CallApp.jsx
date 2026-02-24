@@ -86,6 +86,14 @@ export default function CallApp() {
   const { connectionState } = peer;
   const { peerConnected, status, connect, hangUp, sendMuteState, remoteMuteState } = useHomeline('phone', null, peer);
   const { audioMuted, videoMuted, toggleAudio, toggleVideo, reset } = useMediaControls(stream);
+
+  // Mirror only front-facing cameras. facingMode is "user" (front), "environment" (back),
+  // or undefined (desktop/USB — treat as front).
+  const isFrontCamera = useMemo(() => {
+    const facingMode = stream?.getVideoTracks()[0]?.getSettings()?.facingMode;
+    return facingMode !== 'environment';
+  }, [stream, selectedVideoDevice]);
+
   const [devices, setDevices] = useState(null); // null = loading, [] = none found
   const [waking, setWaking] = useState(false);
   const [connectingTooLong, setConnectingTooLong] = useState(false);
@@ -103,6 +111,7 @@ export default function CallApp() {
 
   const remoteVideoRef = useRef(null);
   const [remoteVerified, setRemoteVerified] = useState(false);
+  const [transitionReady, setTransitionReady] = useState(false);
 
   // Verify remote stream has live video + audio tracks before transitioning to dual view.
   // Gates the "connected" state so we don't show an empty remote panel.
@@ -150,11 +159,23 @@ export default function CallApp() {
   // Merge backend wake progress with frontend media verification step
   const displayProgress = useMemo(() => {
     if (!wakeProgress) return null;
-    const mediaStatus = !peerConnected ? null
-      : remoteVerified ? 'done'
-      : 'running';
+    const loadDone = wakeProgress?.load === 'done';
+    const mediaStatus = remoteVerified ? 'done'
+      : (loadDone || peerConnected) ? 'running'
+      : null;
     return { ...wakeProgress, media: mediaStatus };
   }, [wakeProgress, peerConnected, remoteVerified]);
+
+  // Brief delay after all steps complete before transitioning to the call UI,
+  // so the user sees the final checkmark before the stepper disappears.
+  useEffect(() => {
+    if (!remoteVerified) {
+      setTransitionReady(false);
+      return;
+    }
+    const timer = setTimeout(() => setTransitionReady(true), 1200);
+    return () => clearTimeout(timer);
+  }, [remoteVerified]);
 
   const remoteContainerRef = useRef(null);
   const [zoomMode, setZoomMode] = useState(false);
@@ -477,6 +498,7 @@ export default function CallApp() {
     exitZoom();
     resetWakeProgress();
     setRemoteVerified(false);
+    setTransitionReady(false);
     const devId = connectedDeviceRef.current;
     hangUp();
     setWaking(false);
@@ -577,8 +599,8 @@ export default function CallApp() {
   }, [devices, status, dropIn, stream]);
 
   const isIdle = (status === 'idle' || status === 'occupied') && !wakeError && !waking;
-  const isConnecting = status === 'connecting' || waking || (peerConnected && !remoteVerified);
-  const isConnected = !isIdle && !isConnecting && !wakeError && remoteVerified;
+  const isConnecting = status === 'connecting' || waking || (peerConnected && !transitionReady);
+  const isConnected = !isIdle && !isConnecting && !wakeError && transitionReady;
 
   const handleRemoteClick = useCallback(() => {
     if (zoomMode || !isConnected) return;
@@ -595,7 +617,7 @@ export default function CallApp() {
           muted
           playsInline
           className="call-app__video call-app__video--tall"
-          style={{ transform: 'scaleX(-1)' }}
+          style={isFrontCamera ? { transform: 'scaleX(-1)' } : undefined}
         />
         {error && (
           <div className="call-app__camera-error">

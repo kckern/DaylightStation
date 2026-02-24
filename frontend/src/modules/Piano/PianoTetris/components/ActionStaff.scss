@@ -83,8 +83,8 @@
   }
 
   &__note {
-    fill: rgba(0, 0, 0, 0.8);
-    stroke: rgba(0, 0, 0, 0.3);
+    fill: rgba(0, 0, 0, 1);
+    stroke: rgba(0, 0, 0, 1);
     stroke-width: 0.5;
 
     &--matched {
@@ -94,7 +94,7 @@
   }
 
   &__stem {
-    stroke: rgba(0, 0, 0, 0.8);
+    stroke: rgba(0, 0, 0, 1);
     stroke-width: 1.5;
 
     &--matched {
