@@ -347,10 +347,9 @@ registerProcessor('bridge-processor', BridgeProcessor);`;
         // The adaptive filter alone leaves residual echo; the preprocessor
         // applies spectral subtraction using the echo state to suppress it.
         const ppState = speexMod._speex_preprocess_state_init(frameSize, 48000);
-        const echoPtr = speexMod._malloc(4);
-        speexMod.setValue(echoPtr, state, 'i32');
-        speexMod._speex_preprocess_ctl(ppState, 24, echoPtr); // SPEEX_PREPROCESS_SET_ECHO_STATE
-        speexMod._free(echoPtr);
+        // SPEEX_PREPROCESS_SET_ECHO_STATE (24): ptr IS the echo state
+        // (unlike SET_SAMPLING_RATE which dereferences ptr to read an int).
+        speexMod._speex_preprocess_ctl(ppState, 24, state);
 
         // Pre-allocate WASM heap buffers (int16: 2 bytes per sample)
         const micPtr = speexMod._malloc(frameSize * 2);
