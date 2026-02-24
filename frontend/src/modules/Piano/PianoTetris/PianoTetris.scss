@@ -1,0 +1,109 @@
+.piano-tetris {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  background: #1a1a2e;
+  color: #fff;
+  position: relative;
+  overflow: hidden;
+
+  // ─── HUD Bar ──────────────────────────────────────────────────
+  &__hud {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 24px;
+    background: rgba(0, 0, 0, 0.5);
+    border-bottom: 1px solid rgba(0, 200, 255, 0.2);
+    flex-shrink: 0;
+    height: 8%;
+    min-height: 40px;
+  }
+
+  &__hud-left,
+  &__hud-right {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    min-width: 80px;
+  }
+
+  &__hud-center {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  &__score {
+    font-size: 1.8rem;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    color: #00ffc8;
+    text-shadow: 0 0 10px rgba(0, 255, 200, 0.4);
+  }
+
+  &__score-label,
+  &__lines-label {
+    font-size: 0.6rem;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.4);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+  }
+
+  &__level {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: rgba(0, 200, 255, 0.9);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  &__lines {
+    font-size: 1.8rem;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    color: #ffd700;
+    text-shadow: 0 0 10px rgba(255, 215, 0, 0.4);
+  }
+
+  // ─── Play Area ────────────────────────────────────────────────
+  &__play-area {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    padding: 8px;
+    gap: 8px;
+    align-items: stretch;
+  }
+
+  &__staves-left,
+  &__staves-right {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-around;
+    gap: 12px;
+    flex: 0 0 18%;
+    max-width: 180px;
+    min-width: 100px;
+  }
+
+  &__board-area {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-width: 0;
+  }
+
+  // ─── Keyboard ─────────────────────────────────────────────────
+  &__keyboard {
+    height: 25%;
+    flex-shrink: 0;
+    display: flex;
+    align-items: flex-start;
+    border-top: 1px solid rgba(0, 200, 255, 0.2);
+  }
+}
