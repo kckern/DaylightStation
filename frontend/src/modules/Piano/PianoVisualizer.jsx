@@ -11,6 +11,8 @@ import { useGameActivation } from './useGameActivation.js';
 import { TOTAL_HEALTH } from './gameEngine.js';
 import { GameOverlay } from './components/GameOverlay';
 import { PianoTetris } from './PianoTetris/PianoTetris.jsx';
+import { PianoFlashcards } from './PianoFlashcards/PianoFlashcards.jsx';
+import { getGameEntry } from './gameRegistry.js';
 
 const GRACE_PERIOD_MS = 10000; // 10 seconds before countdown starts
 const COUNTDOWN_MS = 30000;   // 30 seconds countdown
@@ -49,8 +51,9 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
   const [screenFlash, setScreenFlash] = useState(false);
 
   // Determine active game type
-  const isTetrisGame = activation.activeGameId === 'tetris';
-  const isAnyGame = game.isGameMode || isTetrisGame;
+  const activeGameEntry = activation.activeGameId ? getGameEntry(activation.activeGameId) : null;
+  const isFullscreenGame = activeGameEntry?.layout === 'replace';
+  const isAnyGame = game.isGameMode || isFullscreenGame;
 
   // Dynamic range for game mode — expand to at least 2 octaves, center with 1/3 octave padding
   const gameRange = game.isGameMode && game.currentLevel?.range;
@@ -231,7 +234,7 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
   }, [sessionInfo, onSessionEnd]);
 
   return (
-    <div className={`piano-visualizer${game.isGameMode ? ' game-mode' : ''}${isTetrisGame ? ' tetris-mode' : ''}`}>
+    <div className={`piano-visualizer${game.isGameMode ? ' game-mode' : ''}${isFullscreenGame ? ' tetris-mode' : ''}`}>
       <div className="piano-header">
         {game.isGameMode ? (
           <>
@@ -351,13 +354,22 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
 
       {screenFlash && <div className="wrong-flash" />}
 
-      {isTetrisGame && (
+      {isFullscreenGame && (
         <div className="tetris-fullscreen">
-          <PianoTetris
-            activeNotes={activeNotes}
-            tetrisConfig={gamesConfig?.tetris}
-            onDeactivate={activation.deactivate}
-          />
+          {activation.activeGameId === 'tetris' && (
+            <PianoTetris
+              activeNotes={activeNotes}
+              tetrisConfig={gamesConfig?.tetris}
+              onDeactivate={activation.deactivate}
+            />
+          )}
+          {activation.activeGameId === 'flashcards' && (
+            <PianoFlashcards
+              activeNotes={activeNotes}
+              flashcardsConfig={gamesConfig?.flashcards}
+              onDeactivate={activation.deactivate}
+            />
+          )}
         </div>
       )}
     </div>
