@@ -32,6 +32,7 @@ export function ArcadeSelector({
   const navmapRef = useRef(null);
   const rootRef = useRef(null);
   const prevSelectedRef = useRef(selectedIndexProp);
+  const didRandomInit = useRef(false);
   const [columns, setColumns] = useState([]); // variable-width column layout
 
   // --- Triple-mode selection state (copied from MenuItems) ---
@@ -204,6 +205,16 @@ export function ArcadeSelector({
   // --- Selection restoration on items change ---
   useEffect(() => {
     if (!items.length) return;
+
+    // Random initial selection on first mount
+    if (!didRandomInit.current) {
+      didRandomInit.current = true;
+      const randIdx = Math.floor(Math.random() * items.length);
+      const key = findKeyForItem(items[randIdx]);
+      logger.info("random-init", { index: randIdx, total: items.length, title: items[randIdx]?.label });
+      setSelectedIndex(randIdx, key);
+      return;
+    }
 
     const matchIndex = currentKey
       ? items.findIndex((item) => findKeyForItem(item) === currentKey)
