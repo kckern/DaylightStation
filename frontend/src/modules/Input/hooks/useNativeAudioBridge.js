@@ -330,24 +330,38 @@ registerProcessor('bridge-processor', BridgeProcessor);`;
 
         const speexMod = await SpeexModuleFactory();
         const frameSize = aecConfig.frame_size || 480;
-        const filterLength = aecConfig.filter_length || 4800;
+        // Filter length must cover the full echo path on Android TV:
+        // Chrome audio rendering → Android AudioTrack buffering →
+        // DAC → speaker → room → mic → AudioBridge APK → WebSocket.
+        // Shield TV measured at 400-500ms. Default 24000 = 500ms at 48kHz.
+        const filterLength = aecConfig.filter_length || 24000;
 
         // Init Speex echo state
         const state = speexMod._speex_echo_state_init(frameSize, filterLength);
         const srPtr = speexMod._malloc(4);
         speexMod.setValue(srPtr, 48000, 'i32');
-        speexMod._speex_echo_ctl(state, 24, srPtr);
+        speexMod._speex_echo_ctl(state, 24, srPtr); // SPEEX_ECHO_SET_SAMPLING_RATE
         speexMod._free(srPtr);
+
+        // Init Speex preprocessor for residual echo suppression.
+        // The adaptive filter alone leaves residual echo; the preprocessor
+        // applies spectral subtraction using the echo state to suppress it.
+        const ppState = speexMod._speex_preprocess_state_init(frameSize, 48000);
+        const echoPtr = speexMod._malloc(4);
+        speexMod.setValue(echoPtr, state, 'i32');
+        speexMod._speex_preprocess_ctl(ppState, 24, echoPtr); // SPEEX_PREPROCESS_SET_ECHO_STATE
+        speexMod._free(echoPtr);
 
         // Pre-allocate WASM heap buffers (int16: 2 bytes per sample)
         const micPtr = speexMod._malloc(frameSize * 2);
         const refPtr = speexMod._malloc(frameSize * 2);
         const outPtr = speexMod._malloc(frameSize * 2);
 
-        // Ring buffers for mic and ref on main thread
-        const micRing = new Float32Array(48000);
+        // Ring buffers for mic and ref on main thread (2s each)
+        const RING_SIZE = 96000;
+        const micRing = new Float32Array(RING_SIZE);
         let micWP = 0, micRP = 0, micCount = 0;
-        const refRing = new Float32Array(48000);
+        const refRing = new Float32Array(RING_SIZE);
         let refWP = 0, refRP = 0, refCount = 0;
         let hasRef = false;
 
@@ -358,18 +372,18 @@ registerProcessor('bridge-processor', BridgeProcessor);`;
             const len = int16Array.length;
             for (let i = 0; i < len; i++) {
               micRing[micWP] = int16Array[i] / 32768;
-              micWP = (micWP + 1) % 48000;
+              micWP = (micWP + 1) % RING_SIZE;
             }
-            micCount = Math.min(micCount + len, 48000);
+            micCount = Math.min(micCount + len, RING_SIZE);
           },
 
           feedRef(float32Array) {
             const len = float32Array.length;
             for (let i = 0; i < len; i++) {
               refRing[refWP] = float32Array[i];
-              refWP = (refWP + 1) % 48000;
+              refWP = (refWP + 1) % RING_SIZE;
             }
-            refCount = Math.min(refCount + len, 48000);
+            refCount = Math.min(refCount + len, RING_SIZE);
             hasRef = true;
           },
 
@@ -380,7 +394,7 @@ registerProcessor('bridge-processor', BridgeProcessor);`;
               for (let i = 0; i < frameSize; i++) {
                 speexMod.HEAP16[(micPtr >> 1) + i] =
                   Math.max(-32768, Math.min(32767, micRing[micRP] * 32768));
-                micRP = (micRP + 1) % 48000;
+                micRP = (micRP + 1) % RING_SIZE;
               }
               micCount -= frameSize;
 
@@ -388,12 +402,16 @@ registerProcessor('bridge-processor', BridgeProcessor);`;
               for (let i = 0; i < frameSize; i++) {
                 speexMod.HEAP16[(refPtr >> 1) + i] =
                   Math.max(-32768, Math.min(32767, refRing[refRP] * 32768));
-                refRP = (refRP + 1) % 48000;
+                refRP = (refRP + 1) % RING_SIZE;
               }
               refCount -= frameSize;
 
-              // Run Speex echo cancellation
+              // Run Speex echo cancellation (adaptive filter)
               speexMod._speex_echo_cancellation(state, micPtr, refPtr, outPtr);
+
+              // Run preprocessor for residual echo suppression
+              // (spectral subtraction using echo state estimate)
+              speexMod._speex_preprocess_run(ppState, outPtr);
 
               // Int16 → Float32 output
               const output = new Float32Array(frameSize);
@@ -406,6 +424,7 @@ registerProcessor('bridge-processor', BridgeProcessor);`;
           },
 
           destroy() {
+            speexMod._speex_preprocess_state_destroy(ppState);
             speexMod._speex_echo_state_destroy(state);
             speexMod._free(micPtr);
             speexMod._free(refPtr);
