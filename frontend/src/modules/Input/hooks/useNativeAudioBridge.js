@@ -120,6 +120,10 @@ export const useNativeAudioBridge = (config = {}) => {
           // AEC mode: feed mic into ring buffer, process aligned frames.
           // Once ref has been received, ALL mic data goes through AEC —
           // never fall back to passthrough (would cause double audio).
+          if (!aecState._loggedFirstRef) {
+            aecState._loggedFirstRef = true;
+            logger().info('bridge-aec-active', { mode: 'aec' });
+          }
           aecState.feedMic(new Int16Array(event.data));
           const cleanFrames = aecState.process();
           if (cleanFrames.length > 0) {

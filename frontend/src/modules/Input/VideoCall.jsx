@@ -176,6 +176,9 @@ export default function VideoCall({ deviceId, clear }) {
     // ScriptProcessorNode extracts PCM frames from the remote audio stream
     // and feeds them to the main-thread AEC via bridge.feedReference().
     const ctx = new AudioContext({ sampleRate: 48000 });
+    // Android WebView starts AudioContext suspended — resume or
+    // onaudioprocess never fires and AEC never gets reference data.
+    ctx.resume().catch(() => {});
     const source = ctx.createMediaStreamSource(new MediaStream(audioTracks));
 
     // ScriptProcessor to extract frames. Deprecated but universally supported
