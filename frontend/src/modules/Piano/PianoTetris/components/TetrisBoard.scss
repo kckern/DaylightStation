@@ -1,19 +1,15 @@
 .tetris-board-wrapper {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
+  width: 100%;
   height: 100%;
 }
 
 .tetris-board {
   display: grid;
-  grid-template-columns: repeat(10, 1fr);
+  grid-template-columns: repeat(20, 1fr);
   grid-template-rows: repeat(20, 1fr);
   gap: 1px;
   width: 100%;
-  max-width: 300px;
-  aspect-ratio: 1 / 2;
+  height: 100%;
   background: rgba(0, 0, 0, 0.6);
   border: 2px solid rgba(0, 200, 255, 0.4);
   border-radius: 4px;
@@ -39,36 +35,5 @@
   &--ghost {
     background: hsla(var(--hue), 50%, 50%, 0.2);
     border: 1px dashed hsla(var(--hue), 70%, 60%, 0.4);
-  }
-
-  &--preview {
-    background: hsla(var(--hue), 80%, 55%, 0.8);
-    box-shadow: inset 0 0 3px hsla(var(--hue), 100%, 70%, 0.4);
-  }
-}
-
-.tetris-next {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-
-  &__label {
-    font-size: 0.7rem;
-    font-weight: 700;
-    color: rgba(0, 200, 255, 0.7);
-    letter-spacing: 0.15em;
-    text-transform: uppercase;
-  }
-
-  &__grid {
-    display: grid;
-    grid-template-columns: repeat(4, 20px);
-    grid-template-rows: repeat(4, 20px);
-    gap: 1px;
-    background: rgba(0, 0, 0, 0.4);
-    border: 1px solid rgba(0, 200, 255, 0.2);
-    border-radius: 3px;
-    padding: 2px;
   }
 }
