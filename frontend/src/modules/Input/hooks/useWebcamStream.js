@@ -38,13 +38,15 @@ export const useWebcamStream = (selectedVideoDevice, selectedAudioDevice, option
   const videoRef = useRef(null);
   const [stream, setStream] = useState(null);
   const [error, setError] = useState(null);
-  const { videoResolution } = options;
+  const { videoResolution, ready = true } = options;
 
   // Track current tier index so FPS monitor can step down
   const tierIdxRef = useRef(0);
   const streamRef = useRef(null);
 
   useEffect(() => {
+    if (!ready) return; // Wait for config before acquiring camera
+
     let localStream = null;
     let fpsTimer = null;
     let cancelled = false;
@@ -79,6 +81,7 @@ export const useWebcamStream = (selectedVideoDevice, selectedAudioDevice, option
 
           const videoTrack = s.getVideoTracks()[0];
           const vSettings = videoTrack?.getSettings?.() || {};
+          const actualW = vSettings.width || 0;
           logger().info('stream-acquired', {
             tier: tier.label,
             tracks: s.getTracks().map(t => ({
@@ -92,6 +95,16 @@ export const useWebcamStream = (selectedVideoDevice, selectedAudioDevice, option
             videoDevice: selectedVideoDevice?.slice(0, 8),
             audioDevice: selectedAudioDevice?.slice(0, 8),
           });
+
+          // If actual resolution is far below requested, skip to next tier.
+          // Chrome WebView may accept ideal constraints but give 640x480 anyway.
+          if (actualW > 0 && actualW < tier.w * 0.5) {
+            logger().warn('stream-resolution-mismatch', {
+              tier: tier.label, requested: tier.w, actual: actualW,
+            });
+            s.getTracks().forEach(t => t.stop());
+            continue;
+          }
 
           return s;
         } catch (err) {
@@ -217,7 +230,7 @@ export const useWebcamStream = (selectedVideoDevice, selectedAudioDevice, option
         localStream.getTracks().forEach(track => track.stop());
       }
     };
-  }, [selectedVideoDevice, selectedAudioDevice, videoResolution?.width, videoResolution?.height]);
+  }, [ready, selectedVideoDevice, selectedAudioDevice, videoResolution?.width, videoResolution?.height]);
 
   return { videoRef, stream, error };
 };
