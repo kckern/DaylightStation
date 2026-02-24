@@ -4,6 +4,7 @@ import { PianoKeyboard } from '../components/PianoKeyboard';
 import { ActionStaff } from '../components/ActionStaff.jsx';
 import { useFlashcardGame } from './useFlashcardGame.js';
 import { AttemptHistory } from './components/AttemptHistory.jsx';
+import { computeKeyboardRange } from '../noteUtils.js';
 import './PianoFlashcards.scss';
 
 /**
@@ -38,22 +39,10 @@ export function PianoFlashcards({ activeNotes, flashcardsConfig, onDeactivate })
   }, [game.phase, onDeactivate, logger]);
 
   // Keyboard range from current level config
-  const { startNote, endNote } = useMemo(() => {
-    const range = game.levelConfig?.note_range;
-    if (!range) return { startNote: 48, endNote: 84 };
-    const span = range[1] - range[0];
-    const pad = Math.max(Math.round(span / 3), 6);
-    const rawStart = range[0] - pad;
-    const rawEnd = range[1] + pad;
-    // Ensure at least 2 octaves
-    const minSpan = 24;
-    const actualSpan = rawEnd - rawStart;
-    if (actualSpan < minSpan) {
-      const extra = Math.ceil((minSpan - actualSpan) / 2);
-      return { startNote: Math.max(21, rawStart - extra), endNote: Math.min(108, rawEnd + extra) };
-    }
-    return { startNote: Math.max(21, rawStart), endNote: Math.min(108, rawEnd) };
-  }, [game.levelConfig]);
+  const { startNote, endNote } = useMemo(
+    () => computeKeyboardRange(game.levelConfig?.note_range ?? null),
+    [game.levelConfig]
+  );
 
   // Target pitches for keyboard highlighting
   const targetNotes = useMemo(() => {

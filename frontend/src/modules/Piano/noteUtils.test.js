@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { shuffle, buildNotePool, isWhiteKey, getNoteName } from './noteUtils.js';
+import { shuffle, buildNotePool, isWhiteKey, getNoteName, computeKeyboardRange } from './noteUtils.js';
 
 // ─── shuffle ────────────────────────────────────────────────────
 
@@ -63,5 +63,42 @@ describe('getNoteName', () => {
 
   it('returns correct name for sharps', () => {
     expect(getNoteName(61)).toBe('C#4');
+  });
+});
+
+// ─── computeKeyboardRange ───────────────────────────────────────
+
+describe('computeKeyboardRange', () => {
+  it('pads range by ~1/3 of span on each side', () => {
+    // Range [60, 72] = span 12, padding = max(4, round(12/3)) = 4
+    // displayStart=56, displayEnd=76, displaySpan=20 < 24, extra=4, adjust -2/+2
+    const { startNote, endNote } = computeKeyboardRange([60, 72]);
+    expect(startNote).toBe(54); // 60 - 4 - 2 (min-span adjustment)
+    expect(endNote).toBe(78);   // 72 + 4 + 2 (min-span adjustment)
+  });
+
+  it('enforces minimum 2-octave (24 semitone) display span', () => {
+    // Range [60, 64] = span 4, padding = max(4, round(4/3)) = 4
+    // displayStart=56, displayEnd=68, span=12 < 24, extra=12, adjust ±6
+    const { startNote, endNote } = computeKeyboardRange([60, 64]);
+    const span = endNote - startNote;
+    expect(span).toBeGreaterThanOrEqual(24);
+  });
+
+  it('clamps to piano range [21, 108]', () => {
+    const { startNote, endNote } = computeKeyboardRange([22, 30]);
+    expect(startNote).toBeGreaterThanOrEqual(21);
+    expect(endNote).toBeLessThanOrEqual(108);
+  });
+
+  it('clamps high end to 108', () => {
+    const { startNote, endNote } = computeKeyboardRange([96, 108]);
+    expect(endNote).toBe(108);
+  });
+
+  it('returns full piano range when noteRange is null', () => {
+    const { startNote, endNote } = computeKeyboardRange(null);
+    expect(startNote).toBe(21);
+    expect(endNote).toBe(108);
   });
 });
