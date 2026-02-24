@@ -1,12 +1,16 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { getChildLogger } from '../../../lib/logging/singleton.js';
+import { isWhiteKey } from '../noteUtils.js';
 
 // ─── Constants ──────────────────────────────────────────────────
 
-export const ACTIONS = ['moveLeft', 'moveRight', 'rotateCCW', 'rotateCW'];
+export const ACTIONS = ['moveLeft', 'moveRight', 'rotateCCW', 'rotateCW', 'hardDrop', 'hold'];
 
 export const INITIAL_REPEAT_DELAY = 200; // ms before hold-to-repeat kicks in
 export const REPEAT_INTERVAL = 100;      // ms between repeated actions
+
+// Actions that should NOT repeat on hold (one-shot per key press)
+const NO_REPEAT_ACTIONS = new Set(['hardDrop', 'hold']);
 
 // ─── Pure Functions ─────────────────────────────────────────────
 
@@ -26,9 +30,10 @@ function shuffle(arr) {
  *
  * @param {[number, number]} noteRange - [low, high] MIDI note range (inclusive)
  * @param {'single'|'dyad'|'triad'} complexity - how many notes per action
+ * @param {boolean} whiteKeysOnly - if true, only use white keys (no sharps/flats)
  * @returns {Object<string, number[]>} mapping of action name to array of target MIDI pitches
  */
-export function generateTargets(noteRange, complexity = 'single') {
+export function generateTargets(noteRange, complexity = 'single', whiteKeysOnly = false) {
   const notesPerAction = { single: 1, dyad: 2, triad: 3 };
   let count = notesPerAction[complexity] || 1;
 
@@ -36,6 +41,7 @@ export function generateTargets(noteRange, complexity = 'single') {
   const [low, high] = noteRange;
   const available = [];
   for (let n = low; n <= high; n++) {
+    if (whiteKeysOnly && !isWhiteKey(n)) continue;
     available.push(n);
   }
   shuffle(available);
@@ -129,17 +135,22 @@ export function useStaffMatching(activeNotes, targets, onAction, enabled = true)
           logger.debug('staff.action-fired', { action, pitches });
           onActionRef.current(action);
 
-          const delayId = setTimeout(() => {
-            const intervalId = setInterval(() => {
-              onActionRef.current(action);
-            }, REPEAT_INTERVAL);
+          // Hard drop and hold should not repeat on hold
+          if (NO_REPEAT_ACTIONS.has(action)) {
+            timersRef.current[action] = { delay: null, interval: null };
+          } else {
+            const delayId = setTimeout(() => {
+              const intervalId = setInterval(() => {
+                onActionRef.current(action);
+              }, REPEAT_INTERVAL);
 
-            if (timersRef.current[action]) {
-              timersRef.current[action].interval = intervalId;
-            }
-          }, INITIAL_REPEAT_DELAY);
+              if (timersRef.current[action]) {
+                timersRef.current[action].interval = intervalId;
+              }
+            }, INITIAL_REPEAT_DELAY);
 
-          timersRef.current[action] = { delay: delayId, interval: null };
+            timersRef.current[action] = { delay: delayId, interval: null };
+          }
         }
       } else if (timersRef.current[action]) {
         // Action no longer matched — stop repeat

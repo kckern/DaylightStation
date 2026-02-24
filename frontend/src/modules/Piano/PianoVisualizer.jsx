@@ -31,7 +31,7 @@ const formatDuration = (seconds) => {
  * @param {function} props.onClose - Called when visualizer should close
  * @param {function} props.onSessionEnd - Called when a piano session ends
  */
-export function PianoVisualizer({ onClose, onSessionEnd }) {
+export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
   const { activeNotes, sustainPedal, sessionInfo, noteHistory } = useMidiSubscription();
   const [inactivityState, setInactivityState] = useState('active'); // 'active' | 'grace' | 'countdown'
   const [countdownProgress, setCountdownProgress] = useState(100);
@@ -45,7 +45,7 @@ export function PianoVisualizer({ onClose, onSessionEnd }) {
   const pianoConfigRef = useRef(null); // Cache piano config for cleanup
 
   const game = useGameMode(activeNotes, noteHistory, gameConfig);
-  const activation = useGameActivation(activeNotes, gamesConfig);
+  const activation = useGameActivation(activeNotes, gamesConfig, initialGame);
   const [screenFlash, setScreenFlash] = useState(false);
 
   // Determine active game type

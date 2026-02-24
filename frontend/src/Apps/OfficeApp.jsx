@@ -25,10 +25,10 @@ import { useKeyboardHandler } from '../lib/OfficeApp/keyboardHandler.js'
 import { createMenuSelectionHandler } from '../lib/OfficeApp/menuHandler.js'
 import { getChildLogger } from '../lib/logging/singleton.js'
 
-function OfficeApp() {
+function OfficeApp({ initialGame = null }) {
   const logger = useMemo(() => getChildLogger({ app: 'office' }), []);
   logger.debug('office.render');
-  
+
   const [queue, setQueue] = useState([])
   const [menu, setMenu] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -38,7 +38,7 @@ function OfficeApp() {
   const [lastPayloadMessage, setLastPayloadMessage] = useState(null)
   const [weatherData, setWeatherData] = useState(null)
   const [shaderOpacity, setShaderOpacity] = useState(0)
-  const [showPiano, setShowPiano] = useState(false)
+  const [showPiano, setShowPiano] = useState(!!initialGame)
 
   // Keep playbackKeys separate so we can be sure to check it is never undefined
   const [playbackKeys, setPlaybackKeys] = useState(null)
@@ -240,6 +240,7 @@ function OfficeApp() {
         <PianoVisualizer
           onClose={closePiano}
           onSessionEnd={handlePianoSessionEnd}
+          initialGame={initialGame}
         />
       );
     }
