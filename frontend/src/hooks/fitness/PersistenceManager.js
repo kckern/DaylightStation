@@ -774,6 +774,7 @@ export class PersistenceManager {
       : null;
 
     const sanitizedRoster = sanitizeRosterForPersist(sessionData.roster);
+    this._augmentRosterFromSeries(sanitizedRoster, sessionData.timeline?.series, sessionData.deviceAssignments);
     const participants = buildParticipantsForPersist(sanitizedRoster, sessionData.deviceAssignments);
 
     const persistSessionData = {
@@ -948,6 +949,40 @@ export class PersistenceManager {
   }
 
   // -------------------- Private Helpers --------------------
+
+  /**
+   * Augment roster with participants discovered in series data.
+   * The live roster only contains currently connected devices — participants
+   * who disconnected before persist time would be missing.
+   * @param {Array} roster - Sanitized roster array (mutated in place)
+   * @param {Object} seriesData - Timeline series keyed by e.g. 'user:felix:heart_rate'
+   * @param {Array} deviceAssignments - Device assignment entries
+   * @returns {Array} The augmented roster
+   */
+  _augmentRosterFromSeries(roster, seriesData, deviceAssignments) {
+    const rosterIds = new Set(roster.map(e => e.profileId || e.hrDeviceId).filter(Boolean));
+    const assignmentMap = new Map();
+    if (Array.isArray(deviceAssignments)) {
+      deviceAssignments.forEach(a => {
+        const key = a?.occupantId || a?.occupantSlug;
+        if (key) assignmentMap.set(String(key), a);
+      });
+    }
+    for (const key of Object.keys(seriesData || {})) {
+      const match = key.match(/^user:([^:]+):/);
+      if (!match) continue;
+      const userId = match[1];
+      if (rosterIds.has(userId)) continue;
+      const assignment = assignmentMap.get(userId);
+      roster.push({
+        profileId: userId,
+        name: userId,
+        ...(assignment?.deviceId ? { hrDeviceId: String(assignment.deviceId) } : {})
+      });
+      rosterIds.add(userId);
+    }
+    return roster;
+  }
 
   _log(eventName, data) {
     if (this._onLog) {
