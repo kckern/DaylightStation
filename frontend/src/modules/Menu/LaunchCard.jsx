@@ -15,24 +15,40 @@ const LaunchCard = ({ launch, title, thumbnail, metadata, onClose }) => {
 
     logger.info('launch.initiated', { contentId: launch.contentId });
 
-    const deviceId = launch.targetDeviceId || window.__DAYLIGHT_DEVICE_ID || undefined;
+    const source = launch.contentId.split(':')[0] || 'retroarch';
 
-    fetch('/api/v1/launch', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contentId: launch.contentId,
-        ...(deviceId && { targetDeviceId: deviceId })
-      })
-    })
-      .then(res => {
-        if (!res.ok) return res.json().then(d => Promise.reject(d));
-        return res.json();
-      })
-      .then(data => {
-        logger.info('launch.success', { contentId: launch.contentId, title: data.title });
-        setStatus('success');
-        setTimeout(() => onClose?.(), 1500);
+    // Pre-check schedule before attempting launch
+    fetch(`/api/v1/content/schedule/${source}`)
+      .then(res => res.ok ? res.json() : null)
+      .then(scheduleData => {
+        if (scheduleData && !scheduleData.available) {
+          logger.info('launch.blocked.schedule', { contentId: launch.contentId, nextWindow: scheduleData.nextWindow });
+          setStatus('blocked');
+          setNextWindow(scheduleData.nextWindow || null);
+          return; // Don't attempt launch
+        }
+
+        // Schedule OK — proceed with launch
+        const deviceId = launch.targetDeviceId || window.__DAYLIGHT_DEVICE_ID || undefined;
+
+        return fetch('/api/v1/launch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contentId: launch.contentId,
+            ...(deviceId && { targetDeviceId: deviceId })
+          })
+        })
+          .then(res => {
+            if (!res.ok) return res.json().then(d => Promise.reject(d));
+            return res.json();
+          })
+          .then(data => {
+            if (!data) return;
+            logger.info('launch.success', { contentId: launch.contentId, title: data.title });
+            setStatus('success');
+            setTimeout(() => onClose?.(), 1500);
+          });
       })
       .catch(errData => {
         const message = errData?.error || errData?.message || 'Launch failed';
@@ -53,11 +69,16 @@ const LaunchCard = ({ launch, title, thumbnail, metadata, onClose }) => {
       if (e.key === 'Escape') {
         e.preventDefault();
         onClose?.();
+        return;
+      }
+      if (status === 'blocked' && (e.key === ' ' || e.key === 'Enter' || e.code === 'MediaPlayPause')) {
+        e.preventDefault();
+        onClose?.();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
+  }, [onClose, status]);
 
   const sonicGif = DaylightMediaPath('media/img/ui/sonic-nonono.gif');
 
@@ -80,13 +101,8 @@ const LaunchCard = ({ launch, title, thumbnail, metadata, onClose }) => {
         <>
           <img className="launch-card__art" src={sonicGif} alt="Not right now!" />
           <div className="launch-card__info">
-            <h2 className="launch-card__title">Not right now!</h2>
-            {nextWindow && (
-              <p className="launch-card__console">Games open at {formatNextWindow(nextWindow)}</p>
-            )}
-          </div>
-          <div className="launch-card__status">
-            <button className="launch-card__ok-btn" onClick={() => onClose?.()}>OK</button>
+            <h2 className="launch-card__title">No, no, no!<br/><small style={{color:"grey"}}>Too many games!</small></h2>
+
           </div>
         </>
       ) : (
