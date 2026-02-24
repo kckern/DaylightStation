@@ -1,4 +1,11 @@
 // frontend/src/screen-framework/input/adapters/GamepadAdapter.js
+import getLogger from '../../../lib/logging/Logger.js';
+
+let _logger;
+function logger() {
+  if (!_logger) _logger = getLogger().child({ component: 'GamepadAdapter' });
+  return _logger;
+}
 
 const BUTTON_MAP = {
   0:  { key: 'Enter',      action: 'select',   payload: {},                        repeats: false }, // A
@@ -39,16 +46,30 @@ export class GamepadAdapter {
   }
 
   attach() {
-    this._onConnected = () => this._startPolling();
-    this._onDisconnected = (e) => this._handleDisconnect(e);
+    this._onConnected = (e) => {
+      const gp = e.gamepad;
+      logger().info('gamepad.connected', {
+        index: gp.index, id: gp.id, buttons: gp.buttons.length, axes: gp.axes.length, mapping: gp.mapping,
+      });
+      this._startPolling();
+    };
+    this._onDisconnected = (e) => {
+      logger().info('gamepad.disconnected', { index: e.gamepad.index, id: e.gamepad.id });
+      this._handleDisconnect(e);
+    };
 
     window.addEventListener('gamepadconnected', this._onConnected);
     window.addEventListener('gamepaddisconnected', this._onDisconnected);
 
     // If a gamepad is already connected, start polling immediately
-    if (this._findGamepad()) {
+    const existing = this._findGamepad();
+    if (existing) {
+      logger().info('gamepad.already-connected', {
+        index: existing.index, id: existing.id, buttons: existing.buttons.length, axes: existing.axes.length, mapping: existing.mapping,
+      });
       this._startPolling();
     }
+    logger().debug('gamepad.attach', { preferredIndex: this.preferredIndex });
   }
 
   destroy() {
@@ -108,14 +129,14 @@ export class GamepadAdapter {
     const gp = this._findGamepad();
     if (!gp) return;
 
-    // --- Buttons ---
+    // --- Mapped buttons ---
     for (const [indexStr, mapping] of Object.entries(BUTTON_MAP)) {
       const idx = Number(indexStr);
       const pressed = gp.buttons[idx] && gp.buttons[idx].pressed;
       const wasPressed = !!this._prevButtons[idx];
 
       if (pressed && !wasPressed) {
-        this._emit(mapping);
+        this._emit(mapping, idx);
         if (mapping.repeats) {
           this._startRepeat(idx, mapping);
         }
@@ -124,6 +145,17 @@ export class GamepadAdapter {
       }
 
       this._prevButtons[idx] = pressed;
+    }
+
+    // --- Unmapped buttons (log for diagnostics) ---
+    for (let idx = 0; idx < gp.buttons.length; idx++) {
+      if (BUTTON_MAP[idx]) continue; // already handled
+      const pressed = gp.buttons[idx] && gp.buttons[idx].pressed;
+      const wasPressed = !!this._prevButtons[`unmapped_${idx}`];
+      if (pressed && !wasPressed) {
+        logger().warn('gamepad.unmapped-button', { buttonIndex: idx, gamepadId: gp.id });
+      }
+      this._prevButtons[`unmapped_${idx}`] = pressed;
     }
 
     // --- Left analog stick ---
@@ -144,7 +176,9 @@ export class GamepadAdapter {
     }
   }
 
-  _emit(mapping) {
+  _emit(mapping, buttonIndex) {
+    logger().debug('gamepad.emit', { key: mapping.key, action: mapping.action, buttonIndex: buttonIndex ?? null });
+
     // Emit to ActionBus for useScreenAction consumers
     this.actionBus.emit(mapping.action, mapping.payload);
 
