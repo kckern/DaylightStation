@@ -1,35 +1,44 @@
 // backend/src/1_adapters/devices/AdbLauncher.mjs
 import { IDeviceLauncher } from '#apps/devices/ports/IDeviceLauncher.mjs';
 import { ValidationError } from '#domains/core/errors/index.mjs';
+import { AdbAdapter } from './AdbAdapter.mjs';
 
-/**
- * IDeviceLauncher implementation using ADB.
- * Translates abstract launch intents into Android activity manager commands.
- */
 export class AdbLauncher extends IDeviceLauncher {
-  #deviceService;
+  #configService;
   #logger;
 
-  /**
-   * @param {Object} config
-   * @param {Object} config.deviceService - DeviceService for looking up device configs and ADB adapters
-   * @param {Object} [config.logger]
-   */
   constructor(config) {
     super();
-    this.#deviceService = config.deviceService;
+    this.#configService = config.configService;
     this.#logger = config.logger || console;
   }
 
-  /** @inheritdoc */
-  async canLaunch(deviceId) {
-    const deviceConfig = this.#deviceService.getDeviceConfig(deviceId);
-    return !!deviceConfig?.adb;
+  #getAdbConfig(deviceId) {
+    const deviceConfig = this.#configService.getDeviceConfig(deviceId);
+    if (!deviceConfig) return null;
+    const fallback = deviceConfig.content_control?.fallback;
+    if (fallback?.provider === 'adb' && fallback.host) return fallback;
+    return null;
   }
 
-  /** @inheritdoc */
+  async canLaunch(deviceId) {
+    return !!this.#getAdbConfig(deviceId);
+  }
+
   async launch(deviceId, launchIntent) {
-    const adb = this.#deviceService.getAdbAdapter(deviceId);
+    const adbConfig = this.#getAdbConfig(deviceId);
+    if (!adbConfig) {
+      throw new ValidationError('Device does not have ADB configured', {
+        code: 'NO_ADB_CONFIG',
+        field: 'deviceId',
+        value: deviceId
+      });
+    }
+
+    const adb = new AdbAdapter(
+      { host: adbConfig.host, port: adbConfig.port },
+      { logger: this.#logger }
+    );
     await adb.connect();
 
     const args = ['start', '-n', launchIntent.target];
@@ -51,12 +60,6 @@ export class AdbLauncher extends IDeviceLauncher {
     return result;
   }
 
-  /**
-   * Defense-in-depth: reject values with shell metacharacters.
-   * Array-form execution doesn't interpret them, but we reject as a safety net.
-   * Single quotes and spaces are allowed (common in ROM filenames).
-   * @private
-   */
   #validateIntentParam(key, val) {
     const shellMeta = /[;|&`${}[\]<>!\\]/;
     if (shellMeta.test(key)) {

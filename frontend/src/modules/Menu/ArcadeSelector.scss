@@ -66,6 +66,16 @@
     -webkit-box-orient: vertical;
     overflow: hidden;
     text-overflow: ellipsis;
+
+    &-sep {
+      display: none; // hidden when <br> breaks the line
+    }
+  }
+
+  &__subtitle {
+    font-size: 0.85em;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.5);
   }
 
   &__console {
