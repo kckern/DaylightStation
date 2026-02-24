@@ -96,3 +96,35 @@ export function buildNotePool(noteRange, whiteKeysOnly = false) {
   }
   return pool;
 }
+
+/**
+ * Compute display range for a piano keyboard given a game's note range.
+ * Pads by ~1/3 of the span on each side, ensures minimum 2-octave display,
+ * and clamps to the full piano range [21, 108].
+ *
+ * @param {[number, number]|null} noteRange - [low, high] or null for full range
+ * @returns {{ startNote: number, endNote: number }}
+ */
+export function computeKeyboardRange(noteRange) {
+  if (!noteRange) return { startNote: 21, endNote: 108 };
+
+  const [low, high] = noteRange;
+  const span = high - low;
+  const padding = Math.max(4, Math.round(span / 3));
+  const minSpan = 24;
+
+  let displayStart = low - padding;
+  let displayEnd = high + padding;
+  const displaySpan = displayEnd - displayStart;
+
+  if (displaySpan < minSpan) {
+    const extra = minSpan - displaySpan;
+    displayStart -= Math.floor(extra / 2);
+    displayEnd += Math.ceil(extra / 2);
+  }
+
+  return {
+    startNote: Math.max(21, displayStart),
+    endNote: Math.min(108, displayEnd),
+  };
+}

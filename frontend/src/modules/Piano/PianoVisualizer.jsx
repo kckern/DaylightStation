@@ -4,7 +4,7 @@ import { NoteWaterfall } from './components/NoteWaterfall';
 import { CurrentChordStaff } from './components/CurrentChordStaff';
 import { useMidiSubscription } from './useMidiSubscription';
 import { DaylightAPI } from '../../lib/api.mjs';
-import { isWhiteKey } from './noteUtils.js';
+import { isWhiteKey, computeKeyboardRange } from './noteUtils.js';
 import './PianoVisualizer.scss';
 import { useGameMode } from './useGameMode.js';
 import { useGameActivation } from './useGameActivation.js';
@@ -59,30 +59,10 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
 
   // Dynamic range for game mode — expand to at least 2 octaves, center with 1/3 octave padding
   const gameRange = game.isGameMode && game.currentLevel?.range;
-  const { startNote, endNote } = useMemo(() => {
-    if (!gameRange) return { startNote: 21, endNote: 108 };
-
-    const gameStart = gameRange[0];
-    const gameEnd = gameRange[1];
-    const gameSpan = gameEnd - gameStart;
-    const padding = Math.round(gameSpan / 3); // 1/3 octave padding each side
-    const minSpan = 24; // Minimum 2 octaves
-
-    let displayStart = gameStart - padding;
-    let displayEnd = gameEnd + padding;
-    const displaySpan = displayEnd - displayStart;
-
-    if (displaySpan < minSpan) {
-      const extra = minSpan - displaySpan;
-      displayStart -= Math.floor(extra / 2);
-      displayEnd += Math.ceil(extra / 2);
-    }
-
-    return {
-      startNote: Math.max(21, displayStart),
-      endNote: Math.min(108, displayEnd),
-    };
-  }, [gameRange]);
+  const { startNote, endNote } = useMemo(
+    () => computeKeyboardRange(gameRange || null),
+    [gameRange]
+  );
 
   // Target notes for keyboard highlighting (pitches currently falling)
   const targetNotes = useMemo(() => {
