@@ -616,60 +616,33 @@ function MenuItems({
     (e) => {
       if (!items.length) return;
 
-      switch (e.key) {
-        case "Enter":
-          e.preventDefault();
-          onSelect?.(items[selectedIndex]);
-          break;
+      const key = e.key;
+      const isBack = key === "Escape" || key === "GamepadSelect";
+      const isModifier = key === "Shift" || key === "Control" || key === "Alt" || key === "Meta" || key === "Tab";
 
-        case "ArrowUp":
-          e.preventDefault();
-          {
-            const next = (selectedIndex - columns + items.length) % items.length;
-            setSelectedIndex(next, findKeyForItem(items[next]));
-          }
-          break;
-
-        case "ArrowDown":
-          e.preventDefault();
-          {
-            const next = (selectedIndex + columns) % items.length;
-            setSelectedIndex(next, findKeyForItem(items[next]));
-          }
-          break;
-
-        case "ArrowLeft":
-          e.preventDefault();
-          {
-            const next = (selectedIndex - 1 + items.length) % items.length;
-            setSelectedIndex(next, findKeyForItem(items[next]));
-          }
-          break;
-
-        case "ArrowRight":
-          e.preventDefault();
-          {
-            const next = (selectedIndex + 1) % items.length;
-            setSelectedIndex(next, findKeyForItem(items[next]));
-          }
-          break;
-
-        case "Escape":
-          e.preventDefault();
-          handleClose();
-          break;
-
-        default:
-          // Move to the next item if it's an alphanumeric key
-          if (!e.metaKey && !e.altKey && !e.ctrlKey && !e.shiftKey) {
-            const key = e.key.toLowerCase();
-            if (/[a-z0-9]/.test(key)) {
-              e.preventDefault();
-              const next = (selectedIndex + 1) % items.length;
-              setSelectedIndex(next, findKeyForItem(items[next]));
-            }
-          }
-          break;
+      if (key === "ArrowUp") {
+        e.preventDefault();
+        const next = (selectedIndex - columns + items.length) % items.length;
+        setSelectedIndex(next, findKeyForItem(items[next]));
+      } else if (key === "ArrowDown") {
+        e.preventDefault();
+        const next = (selectedIndex + columns) % items.length;
+        setSelectedIndex(next, findKeyForItem(items[next]));
+      } else if (key === "ArrowLeft") {
+        e.preventDefault();
+        const next = (selectedIndex - 1 + items.length) % items.length;
+        setSelectedIndex(next, findKeyForItem(items[next]));
+      } else if (key === "ArrowRight") {
+        e.preventDefault();
+        const next = (selectedIndex + 1) % items.length;
+        setSelectedIndex(next, findKeyForItem(items[next]));
+      } else if (isBack) {
+        e.preventDefault();
+        handleClose();
+      } else if (!isModifier) {
+        // Any non-navigation, non-back, non-modifier key is select
+        e.preventDefault();
+        onSelect?.(items[selectedIndex]);
       }
     },
     [items, selectedIndex, onSelect, handleClose, columns, setSelectedIndex, findKeyForItem]

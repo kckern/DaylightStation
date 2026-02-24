@@ -52,6 +52,12 @@ export class RetroArchAdapter {
 
     const title = overrides.title || this.#sanitizeTitle(game.title);
     const launchTarget = `${this.#config.launch.package}/${this.#config.launch.activity}`;
+    const coresPath = this.#config.launch.cores_path || '/data/data/com.retroarch.aarch64/cores';
+    const corePath = `${coresPath}/${consoleConfig.core}`;
+    const params = { ROM: game.rom, LIBRETRO: corePath };
+    if (this.#config.launch.configfile) {
+      params.CONFIGFILE = this.#config.launch.configfile;
+    }
 
     return new LaunchableItem({
       id: `retroarch:${consoleId}/${gameId}`,
@@ -67,7 +73,7 @@ export class RetroArchAdapter {
       },
       launchIntent: {
         target: launchTarget,
-        params: { ROM: game.rom, LIBRETRO: consoleConfig.core }
+        params,
       },
       deviceConstraint: this.#config.launch.device_constraint || null,
       console: consoleId

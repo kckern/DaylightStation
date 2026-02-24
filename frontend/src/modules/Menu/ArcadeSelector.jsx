@@ -172,28 +172,30 @@ export function ArcadeSelector({
         if (next >= 0) setSelectedIndex(next, findKeyForItem(items[next]));
       };
 
-      switch (e.key) {
-        case "ArrowUp":
+      const key = e.key;
+      const isBack = key === "Escape" || key === "GamepadSelect";
+      const isArrow = key.startsWith("Arrow");
+      const isModifier = key === "Shift" || key === "Control" || key === "Alt" || key === "Meta" || key === "Tab";
+
+      if (key === "ArrowUp") {
           e.preventDefault();
           navigate(findNearest(selectedIndex, 'up'));
-          break;
-
-        case "ArrowDown":
+      } else if (key === "ArrowDown") {
           e.preventDefault();
           navigate(findNearest(selectedIndex, 'down'));
-          break;
-
-        case "ArrowLeft":
+      } else if (key === "ArrowLeft") {
           e.preventDefault();
           navigate(findNearest(selectedIndex, 'left'));
-          break;
-
-        case "ArrowRight":
+      } else if (key === "ArrowRight") {
           e.preventDefault();
           navigate(findNearest(selectedIndex, 'right'));
-          break;
-
-        case "Enter": {
+      } else if (isBack) {
+          e.preventDefault();
+          handleClose();
+      } else if (!isModifier) {
+          // Any non-navigation, non-back, non-modifier key is select
+          // (covers Enter, Space, and all gamepad face/shoulder buttons
+          //  regardless of what key name the WebView reports)
           e.preventDefault();
           const selected = items[selectedIndex];
           onSelect?.(selected);
@@ -207,17 +209,6 @@ export function ArcadeSelector({
               launchTarget: launchObj.targetDeviceId,
             }),
           });
-          break;
-        }
-          break;
-
-        case "Escape":
-          e.preventDefault();
-          handleClose();
-          break;
-
-        default:
-          break;
       }
     },
     [items, selectedIndex, layout, tilePos, findNearest, onSelect, handleClose, setSelectedIndex, findKeyForItem, logger]

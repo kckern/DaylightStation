@@ -10,11 +10,11 @@
   color: #f8fafc;
 
   &__art {
-    width: 240px;
-    height: 240px;
+    width: 80%;
+    height: 65%;
     border-radius: 12px;
-    object-fit: cover;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+    object-fit: contain;
+    box-shadow: none;
   }
 
   &__info {
@@ -31,6 +31,21 @@
     margin: 0.35rem 0 0;
     font-size: 0.95rem;
     opacity: 0.55;
+  }
+
+  &__progress-track {
+    width: 40%;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.12);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  &__progress-fill {
+    height: 100%;
+    width: 0%;
+    background: #4caf50;
+    border-radius: 2px;
   }
 
   &__status {
