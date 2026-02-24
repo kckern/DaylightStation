@@ -17,6 +17,11 @@ const GAME_REGISTRY = {
     hook: () => import('./PianoTetris/useTetrisGame'),
     layout: 'replace',
   },
+  flashcards: {
+    component: () => import('./PianoFlashcards/PianoFlashcards'),
+    hook: () => import('./PianoFlashcards/useFlashcardGame'),
+    layout: 'replace',
+  },
 };
 
 export function getGameEntry(gameId) {
