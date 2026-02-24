@@ -625,6 +625,7 @@ export class GovernanceEngine {
       this._invalidateStateCache(); // Invalidate cache on phase change
 
       // Track warning/lock timing for production correlation
+      const savedWarningStartTime = this._warningStartTime;
       if (newPhase === 'warning' && oldPhase !== 'warning') {
         this._warningStartTime = now;
       } else if (newPhase !== 'warning') {
@@ -686,8 +687,8 @@ export class GovernanceEngine {
       }
 
       if (newPhase === 'locked') {
-        const timeSinceWarning = oldPhase === 'warning' && this._warningStartTime
-          ? now - this._warningStartTime
+        const timeSinceWarning = oldPhase === 'warning' && savedWarningStartTime
+          ? now - savedWarningStartTime
           : null;
         logger.info('governance.lock_triggered', {
           mediaId: this.media?.id,
