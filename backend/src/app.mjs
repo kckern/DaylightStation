@@ -1627,13 +1627,14 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const { AdbLauncher } = await import('#adapters/devices/AdbLauncher.mjs');
 
   const adbLauncher = new AdbLauncher({
-    deviceService: deviceServices.deviceService,
+    configService,
     logger: rootLogger.child({ module: 'adb-launcher' })
   });
 
   const launchService = new LaunchService({
     contentRegistry: contentRegistry,
     deviceLauncher: adbLauncher,
+    configService,
     logger: rootLogger.child({ module: 'launch-service' })
   });
 

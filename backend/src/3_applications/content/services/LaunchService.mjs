@@ -7,17 +7,20 @@ import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index
 export class LaunchService {
   #contentRegistry;
   #deviceLauncher;
+  #configService;
   #logger;
 
   /**
    * @param {Object} config
    * @param {Object} config.contentRegistry
    * @param {Object} config.deviceLauncher
+   * @param {Object} [config.configService]
    * @param {Object} [config.logger]
    */
   constructor(config) {
     this.#contentRegistry = config.contentRegistry;
     this.#deviceLauncher = config.deviceLauncher;
+    this.#configService = config.configService;
     this.#logger = config.logger || console;
   }
 
@@ -52,22 +55,54 @@ export class LaunchService {
 
     this.#logger.debug?.('launch.service.contentResolved', { contentId, title: item.title });
 
-    // 2. Validate device
-    const canLaunch = await this.#deviceLauncher.canLaunch(targetDeviceId);
+    // 2. Resolve target device
+    let resolvedDeviceId = targetDeviceId;
+    if (!resolvedDeviceId && item.deviceConstraint) {
+      resolvedDeviceId = this.#findDeviceByConstraint(item.deviceConstraint);
+      if (!resolvedDeviceId) {
+        throw new ValidationError('No device matches constraint', {
+          code: 'NO_MATCHING_DEVICE',
+          field: 'deviceConstraint',
+          value: item.deviceConstraint
+        });
+      }
+      this.#logger.info?.('launch.service.deviceAutoResolved', { constraint: item.deviceConstraint, deviceId: resolvedDeviceId });
+    }
+
+    if (!resolvedDeviceId) {
+      throw new ValidationError('No target device specified and content has no device constraint', {
+        code: 'NO_TARGET_DEVICE'
+      });
+    }
+
+    // 3. Validate device
+    const canLaunch = await this.#deviceLauncher.canLaunch(resolvedDeviceId);
     if (!canLaunch) {
       throw new ValidationError('Target device does not support launch', {
         code: 'DEVICE_NOT_CAPABLE',
         field: 'targetDeviceId',
-        value: targetDeviceId
+        value: resolvedDeviceId
       });
     }
 
-    // 3. Execute
-    await this.#deviceLauncher.launch(targetDeviceId, item.launchIntent);
+    // 4. Execute
+    await this.#deviceLauncher.launch(resolvedDeviceId, item.launchIntent);
 
-    this.#logger.info?.('launch.service.success', { contentId, targetDeviceId, title: item.title });
+    this.#logger.info?.('launch.service.success', { contentId, targetDeviceId: resolvedDeviceId, title: item.title });
 
-    return { success: true, contentId, targetDeviceId, title: item.title };
+    return { success: true, contentId, targetDeviceId: resolvedDeviceId, title: item.title };
+  }
+
+  #findDeviceByConstraint(constraint) {
+    if (!this.#configService) return null;
+    const devices = this.#configService.getHouseholdDevices();
+    if (!devices?.devices) return null;
+    for (const [id, config] of Object.entries(devices.devices)) {
+      const fallback = config.content_control?.fallback;
+      if (constraint === 'android' && fallback?.provider === 'adb') return id;
+      if (config.type?.includes(constraint)) return id;
+    }
+    return null;
   }
 }
 
