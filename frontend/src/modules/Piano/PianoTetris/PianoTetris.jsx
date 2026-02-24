@@ -6,6 +6,7 @@ import { TetrisBoard } from './components/TetrisBoard.jsx';
 import { ActionStaff } from '../components/ActionStaff.jsx';
 import { TetrisOverlay } from './components/TetrisOverlay.jsx';
 import { ACTIONS } from './useStaffMatching.js';
+import { computeKeyboardRange } from '../noteUtils.js';
 import './PianoTetris.scss';
 
 /**
@@ -45,26 +46,7 @@ export function PianoTetris({ activeNotes, tetrisConfig, onDeactivate }) {
   const currentLevelConfig = levels[game.level] ?? levels[0];
   const { startNote, endNote } = useMemo(() => {
     const noteRange = currentLevelConfig?.note_range ?? [60, 72];
-    const rangeStart = noteRange[0];
-    const rangeEnd = noteRange[1];
-    const span = rangeEnd - rangeStart;
-    const padding = Math.max(4, Math.round(span / 3));
-    const minSpan = 24; // At least 2 octaves
-
-    let displayStart = rangeStart - padding;
-    let displayEnd = rangeEnd + padding;
-    const displaySpan = displayEnd - displayStart;
-
-    if (displaySpan < minSpan) {
-      const extra = minSpan - displaySpan;
-      displayStart -= Math.floor(extra / 2);
-      displayEnd += Math.ceil(extra / 2);
-    }
-
-    return {
-      startNote: Math.max(21, displayStart),
-      endNote: Math.min(108, displayEnd),
-    };
+    return computeKeyboardRange(noteRange);
   }, [currentLevelConfig]);
 
   // Expose game state for automated testing (localhost only)
