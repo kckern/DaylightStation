@@ -598,14 +598,9 @@ export class PersistenceManager {
         return;
       }
 
-      // Empty-series filtering: do not persist all-null/empty series
-      if (!arr.length || arr.every((v) => v == null)) {
-        return;
-      }
-
-      // All-zero series filtering: do not persist series where every value is 0
-      // (e.g., device:40475:rotations = [[0, 163]] when no rotations recorded)
-      if (arr.every((v) => v === 0)) {
+      // Empty-series filtering: do not persist series where every value is
+      // zero, null, or undefined (covers pure-null, pure-zero, and mixed)
+      if (!arr.length || arr.every((v) => v == null || v === 0)) {
         return;
       }
 
