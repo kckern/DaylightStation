@@ -118,6 +118,12 @@ export function useTetrisGame(activeNotes, tetrisConfig) {
     setGameState(prev => {
       if (prev.phase !== 'PLAYING' || !prev.currentPiece) return prev;
 
+      // Guard: if rotation changed the piece shape and it can still fall, don't lock — apply gravity instead
+      const canFall = movePiece(prev.board, prev.currentPiece, 0, 1);
+      if (canFall) {
+        return { ...prev, currentPiece: canFall };
+      }
+
       // 1. Lock piece onto board
       const boardAfterLock = lockPiece(prev.board, prev.currentPiece);
 
@@ -352,6 +358,10 @@ export function useTetrisGame(activeNotes, tetrisConfig) {
       }
 
       if (!result) return prev; // blocked — no change
+
+      // Cancel pending lock delay — rotation/movement may have changed resting state.
+      // Gravity tick will re-evaluate and start a new lock delay if still resting.
+      if (lockDelayRef.current) { clearTimeout(lockDelayRef.current); lockDelayRef.current = null; }
 
       // On successful action with 'match' rotation, regenerate targets
       const levelConfig = levels[prev.level] ?? levels[0];

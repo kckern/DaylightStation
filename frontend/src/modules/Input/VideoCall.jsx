@@ -75,6 +75,7 @@ export default function VideoCall({ deviceId, clear }) {
 
   const { videoRef, stream } = useWebcamStream(selectedVideoDevice, effectiveAudioDevice, {
     videoResolution: inputConfig?.video_resolution,
+    ready: configLoaded,
   });
 
   // Merge video-only stream with bridge audio for WebRTC.

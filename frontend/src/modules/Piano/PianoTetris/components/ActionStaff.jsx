@@ -63,7 +63,7 @@ const ACTION_ICONS = {
  * @param {boolean} matched - Whether the player is currently matching this staff
  * @param {boolean} fired - Brief pulse when action fires
  */
-export function ActionStaff({ action, targetPitches = [], matched = false, fired = false, disabled = false, heldPiece = null }) {
+export function ActionStaff({ action, targetPitches = [], matched = false, fired = false, disabled = false, heldPiece = null, activeNotes = null }) {
   // Guard: filter out any undefined/null pitches
   const validPitches = targetPitches.filter(p => p != null);
 
@@ -78,6 +78,22 @@ export function ActionStaff({ action, targetPitches = [], matched = false, fired
 
   // Determine clef from first note (all notes in a staff should share clef)
   const clef = notePositions[0]?.clef ?? 'treble';
+
+  // Ghost notes: currently pressed notes shown at 50% opacity for orientation
+  // Exclude notes that match a target pitch (don't show duplicates)
+  const targetSet = useMemo(() => new Set(validPitches), [validPitches.join(',')]);
+  const ghostNotes = useMemo(() => {
+    if (!activeNotes || activeNotes.size === 0) return [];
+    const ghosts = [];
+    for (const [pitch] of activeNotes) {
+      if (targetSet.has(pitch)) continue; // skip — already shown as target note
+      const pos = getNoteStaffPosition(pitch);
+      // Only show if within visible staff bounds (position -3 to 11)
+      if (pos.position < -3 || pos.position > 11) continue;
+      ghosts.push({ pitch, ...pos });
+    }
+    return ghosts;
+  }, [activeNotes, targetSet]);
 
   // Staff line Y positions — viewBox height tightened so staff fills most of the space
   // 2 spaces padding above top line, 2 spaces below bottom line
@@ -136,7 +152,7 @@ export function ActionStaff({ action, targetPitches = [], matched = false, fired
         {/* Staff lines — separate SVG with preserveAspectRatio="none" so lines stretch to full width */}
         <svg className="action-staff__lines-svg" viewBox={`0 0 100 ${viewBoxH}`} preserveAspectRatio="none">
           {staffLineYs.map((y, i) => (
-            <line key={i} x1="0" y1={y} x2="100" y2={y} stroke="rgba(0,0,0,0.25)" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+            <line key={i} x1="0" y1={y} x2="100" y2={y} stroke="rgba(0,0,0,1)" strokeWidth="1" vectorEffect="non-scaling-stroke" />
           ))}
         </svg>
 
@@ -146,7 +162,7 @@ export function ActionStaff({ action, targetPitches = [], matched = false, fired
         <text
           ref={measureClef}
           fontSize="200"
-          fill="rgba(0,0,0,0.4)"
+          fill="rgba(0,0,0,0.5)"
           fontFamily="serif"
           transform={clefTransform}
           opacity={clefReady ? 1 : 0}
@@ -186,7 +202,7 @@ export function ActionStaff({ action, targetPitches = [], matched = false, fired
               {/* Ledger lines */}
               {ledgerLines.map((ly, li) => (
                 <line key={`ledger-${li}`} x1={noteX - 14} y1={ly} x2={noteX + 14} y2={ly}
-                  stroke="rgba(0,0,0,0.25)" strokeWidth="1" />
+                  stroke="rgba(0,0,0,1)" strokeWidth="1" />
               ))}
               {/* Stem */}
               <line x1={stemX} y1={stemY1} x2={stemX} y2={stemY2}
@@ -199,9 +215,23 @@ export function ActionStaff({ action, targetPitches = [], matched = false, fired
               />
               {/* Sharp sign — positioned well left of notehead */}
               {np.isSharp && (
-                <text x={noteX - 22} y={noteY + 7} fontSize="22" fill="rgba(0,0,0,0.5)" fontFamily="serif">{'\u266F'}</text>
+                <text x={noteX - 22} y={noteY + 7} fontSize="22" fill="rgba(0,0,0,1)" fontFamily="serif">{'\u266F'}</text>
               )}
             </g>
+          );
+        })}
+
+        {/* Ghost notes — currently pressed notes at 50% opacity for reference */}
+        {ghostNotes.map((gn) => {
+          const stepSize = lineSpacing / 2;
+          const noteY = bottomLineY - gn.position * stepSize;
+          const noteX = 65;
+          return (
+            <ellipse key={`ghost-${gn.pitch}`} cx={noteX} cy={noteY} rx="9" ry="6.5"
+              fill="rgba(0,0,0,0.15)" stroke="rgba(0,0,0,0.1)" strokeWidth="0.5"
+              transform={`rotate(-12, ${noteX}, ${noteY})`}
+              opacity="0.5"
+            />
           );
         })}
       </svg>

@@ -175,13 +175,15 @@ export function useGameMode(activeNotes, noteHistory, gameConfig) {
         // 4. Check level outcome
         const outcome = evaluateLevel(next.score, level, next.health);
         if (outcome === 'fail') {
+          const failReason = next.health <= 0 ? 'health' : 'misses';
           logger.info('piano.game.level-failed', {
             level: next.levelIndex,
             score: next.score.points,
             misses: next.score.misses,
             health: next.health,
+            failReason,
           });
-          return { ...next, phase: 'LEVEL_FAILED' };
+          return { ...next, phase: 'LEVEL_FAILED', failReason };
         }
         if (outcome === 'advance') {
           logger.info('piano.game.level-complete', {
@@ -278,8 +280,16 @@ export function useGameMode(activeNotes, noteHistory, gameConfig) {
 
     if (gameState.phase === 'LEVEL_FAILED') {
       bannerTimeoutRef.current = setTimeout(() => {
-        logger.info('piano.game.retry-level', { level: gameState.levelIndex });
-        startCountdown();
+        if (gameState.failReason === 'health') {
+          // Health depleted — exit game mode entirely, back to regular visualizer
+          logger.info('piano.game.health-exit', { level: gameState.levelIndex, score: gameState.score.points });
+          cleanup();
+          setGameState(createInitialState());
+        } else {
+          // Miss limit exceeded — retry same level
+          logger.info('piano.game.retry-level', { level: gameState.levelIndex });
+          startCountdown();
+        }
       }, BANNER_DISPLAY_MS);
       return () => clearTimeout(bannerTimeoutRef.current);
     }

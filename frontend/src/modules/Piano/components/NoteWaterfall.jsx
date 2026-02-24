@@ -237,17 +237,21 @@ export function NoteWaterfall({ noteHistory = [], activeNotes = new Map(), start
                 </div>
               )
             ))}
-            {/* Hit/miss feedback text */}
+            {/* Hit/miss feedback text — frozen at the position where the note was resolved */}
             {gn.state !== 'falling' && gn.resolvedTime && (() => {
               const feedbackAge = Date.now() - gn.resolvedTime;
               const feedbackOpacity = Math.max(0, 1 - feedbackAge / 1000);
               if (feedbackOpacity <= 0) return null;
+              // Freeze position at where the note was when hit/missed (don't let it drift)
+              const resolvedElapsed = gn.resolvedTime - (gn.targetTime - gameMode.fallDuration);
+              const resolvedProgress = Math.min(1, resolvedElapsed / gameMode.fallDuration);
+              const resolvedTop = Math.max(0, Math.min(100, resolvedProgress * 100));
               return (
                 <div
                   className={`hit-feedback hit-feedback--${gn.hitResult || 'miss'}`}
                   style={{
                     '--x': `${gn.notePositions[0]?.x ?? 50}%`,
-                    '--top': `${gn.topPercent}%`,
+                    '--top': `${resolvedTop}%`,
                     opacity: feedbackOpacity,
                   }}
                 >
