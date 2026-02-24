@@ -1,14 +1,14 @@
 import { describe, it, expect, jest } from '@jest/globals';
 
+// Shared mock logger so tests can inspect calls
+const mockLogger = {
+  debug: jest.fn(), info: jest.fn(), warn: jest.fn(),
+  error: jest.fn(), sampled: jest.fn()
+};
+
 jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
-  default: () => ({
-    debug: jest.fn(), info: jest.fn(), warn: jest.fn(),
-    error: jest.fn(), sampled: jest.fn()
-  }),
-  getLogger: () => ({
-    debug: jest.fn(), info: jest.fn(), warn: jest.fn(),
-    error: jest.fn(), sampled: jest.fn()
-  })
+  default: () => mockLogger,
+  getLogger: () => mockLogger
 }));
 
 const { GovernanceEngine } = await import('#frontend/hooks/fitness/GovernanceEngine.js');
@@ -136,5 +136,46 @@ describe('GovernanceEngine — challenge failure lock (absolute)', () => {
       engine.evaluate({ activeParticipants: participants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount: 3 });
       expect(engine.phase).toBe('locked');
     }
+  });
+});
+
+describe('GovernanceEngine — timeSinceWarningMs logging', () => {
+  it('should compute non-null timeSinceWarningMs when transitioning warning → locked', () => {
+    const participants = ['alice'];
+    const { engine, zoneRankMap, zoneInfoMap } = createEngine({ participants, grace: 0 });
+
+    // Clear any prior mock calls
+    mockLogger.info.mockClear();
+
+    // Unlock first
+    engine.evaluate({ activeParticipants: participants, userZoneMap: { alice: 'active' }, zoneRankMap, zoneInfoMap, totalCount: 1 });
+    expect(engine.phase).toBe('unlocked');
+
+    // Manually set warning phase (simulates grace period starting)
+    engine._setPhase('warning');
+    expect(engine.phase).toBe('warning');
+
+    // _warningStartTime should be set
+    expect(engine._warningStartTime).not.toBeNull();
+
+    // Clear logger so we only capture the lock_triggered call
+    mockLogger.info.mockClear();
+
+    // Transition to locked
+    engine._setPhase('locked');
+    expect(engine.phase).toBe('locked');
+
+    // After transition, _warningStartTime should be cleared
+    expect(engine._warningStartTime).toBeNull();
+
+    // Verify the logger was called with a non-null timeSinceWarningMs
+    const lockTriggeredCall = mockLogger.info.mock.calls.find(
+      call => call[0] === 'governance.lock_triggered'
+    );
+    expect(lockTriggeredCall).toBeDefined();
+    const logData = lockTriggeredCall[1];
+    expect(logData.timeSinceWarningMs).not.toBeNull();
+    expect(typeof logData.timeSinceWarningMs).toBe('number');
+    expect(logData.timeSinceWarningMs).toBeGreaterThanOrEqual(0);
   });
 });
