@@ -1025,7 +1025,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef }) => {
       durationSeconds,
       resumeSeconds: Number.isFinite(media.seconds) ? Math.round(media.seconds) : null,
       autoplay: autoplayEnabled,
-      governed: Boolean(governanceState?.videoLocked),
+      governed: governanceState?.isGoverned ?? Boolean(governanceState?.videoLocked),
       labels: Array.isArray(media.labels) ? media.labels : [],
       type: media.type || media.mediaType || 'video',
       queueSize

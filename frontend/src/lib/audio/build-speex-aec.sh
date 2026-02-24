@@ -53,9 +53,9 @@ fi
 emcc -O2 \
   -s WASM=1 \
   -s SINGLE_FILE=1 \
-  -s EXPORTED_FUNCTIONS="['_speex_echo_state_init','_speex_echo_cancellation','_speex_echo_state_destroy','_speex_echo_ctl','_malloc','_free']" \
+  -s EXPORTED_FUNCTIONS="['_speex_echo_state_init','_speex_echo_cancellation','_speex_echo_state_destroy','_speex_echo_ctl','_speex_preprocess_state_init','_speex_preprocess_run','_speex_preprocess_ctl','_speex_preprocess_state_destroy','_malloc','_free']" \
   -s EXPORTED_RUNTIME_METHODS="['ccall','cwrap','getValue','setValue','HEAPF32','HEAP16']" \
-  -s INITIAL_MEMORY=1048576 \
+  -s INITIAL_MEMORY=4194304 \
   -s ALLOW_MEMORY_GROWTH=0 \
   -s ENVIRONMENT='worker' \
   -s MODULARIZE=1 \
