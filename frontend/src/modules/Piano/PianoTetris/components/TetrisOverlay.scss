@@ -1,0 +1,64 @@
+.tetris-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  pointer-events: none;
+
+  &__countdown {
+    font-size: 8rem;
+    font-weight: 900;
+    color: white;
+    text-shadow:
+      0 0 30px rgba(0, 200, 255, 0.8),
+      0 0 60px rgba(0, 200, 255, 0.4);
+  }
+
+  &__gameover {
+    text-align: center;
+    background: rgba(0, 0, 0, 0.8);
+    padding: 40px 60px;
+    border-radius: 16px;
+    border: 2px solid rgba(255, 50, 50, 0.5);
+  }
+
+  &__title {
+    font-size: 3rem;
+    font-weight: 900;
+    color: #ff4444;
+    margin: 0 0 24px;
+    text-shadow: 0 0 20px rgba(255, 68, 68, 0.6);
+  }
+
+  &__stats {
+    display: flex;
+    gap: 32px;
+    justify-content: center;
+  }
+
+  &__stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+  }
+
+  &__stat-value {
+    font-size: 2rem;
+    font-weight: 800;
+    color: white;
+  }
+
+  &__stat-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.5);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+}
