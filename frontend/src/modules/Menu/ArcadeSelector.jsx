@@ -33,7 +33,7 @@ export function ArcadeSelector({
   const rootRef = useRef(null);
   const prevSelectedRef = useRef(selectedIndexProp);
   const didRandomInit = useRef(false);
-  const [columns, setColumns] = useState([]); // variable-width column layout
+  const [layout, setLayout] = useState([]); // tetris-style placements [{idx, x, y, w, h}]
 
   // --- Triple-mode selection state (copied from MenuItems) ---
   const navContext = useContext(MenuNavigationContext);
@@ -106,74 +106,72 @@ export function ArcadeSelector({
     return image;
   }, []);
 
-  // --- Build grid position lookup from columns layout ---
-  const gridPos = useMemo(() => {
-    if (!columns.length) return null;
+  // --- Build spatial position lookup from layout ---
+  const tilePos = useMemo(() => {
+    if (!layout.length) return null;
     const map = {};
-    columns.forEach((col, colIdx) => {
-      col.items.forEach((itemIdx, row) => {
-        map[itemIdx] = { col: colIdx, row };
-      });
+    layout.forEach(p => {
+      map[p.idx] = { cx: p.x + p.w / 2, cy: p.y + p.h / 2 };
     });
     return map;
-  }, [columns]);
+  }, [layout]);
 
-  // --- Keyboard navigation (spatial grid) ---
+  // --- Spatial nearest-neighbor for directional navigation ---
+  const findNearest = useCallback((fromIdx, dir) => {
+    if (!tilePos || !tilePos[fromIdx]) return -1;
+    const from = tilePos[fromIdx];
+    let best = -1, bestScore = Infinity;
+    for (const p of layout) {
+      if (p.idx === fromIdx) continue;
+      const to = tilePos[p.idx];
+      const dx = to.cx - from.cx;
+      const dy = to.cy - from.cy;
+      let valid, primary, secondary;
+      switch (dir) {
+        case 'right': valid = dx > 10; primary = dx; secondary = Math.abs(dy); break;
+        case 'left':  valid = dx < -10; primary = -dx; secondary = Math.abs(dy); break;
+        case 'down':  valid = dy > 10; primary = dy; secondary = Math.abs(dx); break;
+        case 'up':    valid = dy < -10; primary = -dy; secondary = Math.abs(dx); break;
+        default: return -1;
+      }
+      if (!valid) continue;
+      const score = primary + secondary * 2.5;
+      if (score < bestScore) { bestScore = score; best = p.idx; }
+    }
+    return best;
+  }, [layout, tilePos]);
+
+  // --- Keyboard navigation (spatial nearest-neighbor) ---
   const handleKeyDown = useCallback(
     (e) => {
       if (!items.length) return;
 
       const navigate = (next) => {
-        setSelectedIndex(next, findKeyForItem(items[next]));
+        if (next >= 0) setSelectedIndex(next, findKeyForItem(items[next]));
       };
 
       switch (e.key) {
         case "ArrowUp":
           e.preventDefault();
-          if (gridPos && gridPos[selectedIndex]) {
-            const { col, row } = gridPos[selectedIndex];
-            const colItems = columns[col].items;
-            const nextRow = (row - 1 + colItems.length) % colItems.length;
-            navigate(colItems[nextRow]);
-          } else {
-            navigate((selectedIndex - 1 + items.length) % items.length);
-          }
+          navigate(findNearest(selectedIndex, 'up'));
           break;
 
         case "ArrowDown":
           e.preventDefault();
-          if (gridPos && gridPos[selectedIndex]) {
-            const { col, row } = gridPos[selectedIndex];
-            const colItems = columns[col].items;
-            const nextRow = (row + 1) % colItems.length;
-            navigate(colItems[nextRow]);
-          } else {
-            navigate((selectedIndex + 1) % items.length);
-          }
+          navigate(findNearest(selectedIndex, 'down'));
           break;
 
-        case "ArrowLeft":
+        case "ArrowLeft": {
           e.preventDefault();
-          if (gridPos && gridPos[selectedIndex]) {
-            const { col, row } = gridPos[selectedIndex];
-            const prevColIdx = (col - 1 + columns.length) % columns.length;
-            const prevCol = columns[prevColIdx].items;
-            const targetRow = Math.min(row, prevCol.length - 1);
-            navigate(prevCol[targetRow]);
-          } else {
-            handleClose();
-          }
+          const next = findNearest(selectedIndex, 'left');
+          if (next >= 0) navigate(next);
+          else handleClose();
           break;
+        }
 
         case "ArrowRight":
           e.preventDefault();
-          if (gridPos && gridPos[selectedIndex]) {
-            const { col, row } = gridPos[selectedIndex];
-            const nextColIdx = (col + 1) % columns.length;
-            const nextCol = columns[nextColIdx].items;
-            const targetRow = Math.min(row, nextCol.length - 1);
-            navigate(nextCol[targetRow]);
-          }
+          navigate(findNearest(selectedIndex, 'right'));
           break;
 
         case "Enter":
@@ -194,7 +192,7 @@ export function ArcadeSelector({
           break;
       }
     },
-    [items, selectedIndex, columns, gridPos, onSelect, handleClose, setSelectedIndex, findKeyForItem, logger]
+    [items, selectedIndex, layout, tilePos, findNearest, onSelect, handleClose, setSelectedIndex, findKeyForItem, logger]
   );
 
   useEffect(() => {
@@ -268,10 +266,11 @@ export function ArcadeSelector({
     return () => logger.debug("unmounted");
   }, [logger, items.length]);
 
-  // --- Navmap layout: greedy balanced partition ---
-  // Assigns items to columns to equalize ratio sums (and thus widths).
-  // Sorts items largest-ratio-first, deals each to the column with
-  // the smallest current ratio sum.
+  // --- Navmap layout: justified rows with area-conscious packing ---
+  // Tiles are packed into rows where each row fills the container width exactly.
+  // Different row counts are tried to find the best vertical fill.
+  // Sorting by ratio (with jitter) groups similar-sized tiles together,
+  // which minimizes area variance within rows.
   const itemRatios = useMemo(() =>
     items.map(item => item.thumbRatio || item.metadata?.thumbRatio || 0.75),
     [items]
@@ -283,64 +282,112 @@ export function ArcadeSelector({
     const H = nav.clientHeight;
     const W = nav.clientWidth;
     const N = items.length;
-    const BORDER = 4;
-    const MIN_PER_COL = 2;
+    const GAP = 3;
 
-    // Sort item indices by ratio descending (largest first for greedy)
+    // Shuffle item indices for variety (Fisher-Yates)
+    // With justified rows, order doesn't affect layout correctness —
+    // mixing ratios across rows actually makes row heights more uniform.
     const sorted = items.map((_, i) => i);
-    sorted.sort((a, b) => itemRatios[b] - itemRatios[a]);
+    for (let i = sorted.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [sorted[i], sorted[j]] = [sorted[j], sorted[i]];
+    }
 
-    // Try each column count, pick the one with best fill
-    let bestLayout = null;
-    let bestScore = -1;
-    const maxK = Math.min(Math.floor(N / MIN_PER_COL), Math.floor(W / 40));
+    // Try different reference heights to find the best vertical fill
+    let bestPlacements = null;
+    let bestScore = -Infinity;
+    const maxRows = Math.min(Math.ceil(N / 2), Math.floor(H / 30));
 
-    for (let k = 1; k <= maxK; k++) {
-      // Greedy balanced partition: assign each item to column with smallest ratio sum
-      const colSums = new Array(k).fill(0);
-      const colItems = Array.from({ length: k }, () => []);
+    for (let targetRows = 2; targetRows <= maxRows; targetRows++) {
+      const refH = (H - (targetRows - 1) * GAP) / targetRows;
 
+      // Pack into rows greedily at reference height
+      const rows = [];
+      let row = [];
+      let rowW = 0;
       for (const idx of sorted) {
-        // Find column with smallest ratio sum
-        let minCol = 0;
-        for (let c = 1; c < k; c++) {
-          if (colSums[c] < colSums[minCol]) minCol = c;
+        const tw = refH / itemRatios[idx];
+        if (row.length > 0 && rowW + GAP + tw > W) {
+          rows.push(row);
+          row = [idx];
+          rowW = tw;
+        } else {
+          rowW += (row.length > 0 ? GAP : 0) + tw;
+          row.push(idx);
         }
-        colItems[minCol].push(idx);
-        colSums[minCol] += itemRatios[idx];
+      }
+      if (row.length) rows.push(row);
+
+      // Merge short last row into previous to prevent runaway sizes
+      const MIN_PER_ROW = 3;
+      while (rows.length > 1 && rows[rows.length - 1].length < MIN_PER_ROW) {
+        const lastRow = rows.pop();
+        rows[rows.length - 1].push(...lastRow);
       }
 
-      // Skip if any column has fewer than MIN_PER_COL items
-      if (colItems.some(c => c.length < MIN_PER_COL)) continue;
-
-      // Compute per-column widths
-      const widths = colSums.map((sum, ci) => {
-        const count = colItems[ci].length;
-        return sum > 0 ? (H - BORDER * count) / sum : 0;
+      // Compute justified row heights (each row fills W exactly)
+      const rowData = rows.map(indices => {
+        const gaps = (indices.length - 1) * GAP;
+        const invRatioSum = indices.reduce((s, idx) => s + 1 / itemRatios[idx], 0);
+        const rowH = (W - gaps) / invRatioSum;
+        return { indices, rowH };
       });
-      if (widths.some(w => w < 20)) continue;
 
-      const totalW = widths.reduce((s, w) => s + w, 0);
-      const scale = Math.min(1, W / totalW);
-      const fill = scale < 1 ? scale : totalW / W;
-
-      // Width uniformity
-      const avgW = totalW / k;
-      const variance = widths.reduce((s, w) => s + (w - avgW) ** 2, 0) / k;
-      const uniformity = 1 / (1 + variance / (avgW * avgW));
-      const score = fill * uniformity;
+      const totalH = rowData.reduce((s, r) => s + r.rowH, 0);
+      const fillRatio = totalH / H;
+      const score = fillRatio <= 1 ? fillRatio : 1 / fillRatio;
 
       if (score > bestScore) {
         bestScore = score;
-        bestLayout = { colItems, widths, scale };
+        const placements = [];
+
+        if (totalH > H) {
+          // Overflow: scale uniformly, center rows horizontally
+          const s = H / totalH;
+          let y = 0;
+          for (const { indices, rowH } of rowData) {
+            const sh = rowH * s;
+            const rowTotalW = indices.reduce((sum, idx) => sum + sh / itemRatios[idx], 0)
+              + (indices.length - 1) * GAP;
+            let x = (W - rowTotalW) / 2;
+            for (const idx of indices) {
+              const w = sh / itemRatios[idx];
+              placements.push({ idx, x, y, w, h: sh });
+              x += w + GAP;
+            }
+            y += sh;
+          }
+        } else {
+          // Fits: extra space goes to top/bottom padding only
+          const pad = (H - totalH) / 2;
+          let y = pad;
+          for (const { indices, rowH } of rowData) {
+            let x = 0;
+            for (const idx of indices) {
+              const w = rowH / itemRatios[idx];
+              placements.push({ idx, x, y, w, h: rowH });
+              x += w + GAP;
+            }
+            y += rowH;
+          }
+        }
+        bestPlacements = placements;
       }
     }
 
-    if (bestLayout) {
-      setColumns(bestLayout.colItems.map((itemIndices, ci) => ({
-        width: Math.floor(bestLayout.widths[ci] * bestLayout.scale),
-        items: itemIndices
-      })));
+    if (bestPlacements) {
+      // Random mirror/flip for variety
+      const mirrorH = Math.random() < 0.5;
+      const mirrorV = Math.random() < 0.5;
+      if (mirrorH || mirrorV) {
+        const extentW = bestPlacements.reduce((m, p) => Math.max(m, p.x + p.w), 0);
+        const extentH = bestPlacements.reduce((m, p) => Math.max(m, p.y + p.h), 0);
+        bestPlacements.forEach(p => {
+          if (mirrorH) p.x = extentW - p.x - p.w;
+          if (mirrorV) p.y = extentH - p.y - p.h;
+        });
+      }
+      setLayout(bestPlacements);
     }
   }, [items.length, itemRatios]);
 
@@ -382,46 +429,37 @@ export function ArcadeSelector({
         </div>
       </div>
 
-      {/* RIGHT: Navmap tiles — variable-width columns */}
+      {/* RIGHT: Navmap tiles — tetris-style packing */}
       <div
         className="arcade-selector__navmap"
         ref={navmapRef}
-        style={{ visibility: columns.length ? 'visible' : 'hidden' }}
+        style={{ visibility: layout.length ? 'visible' : 'hidden' }}
       >
-        {columns.map((col, colIdx) => (
-          <div
-            key={colIdx}
-            className="arcade-selector__navmap-col"
-            style={{ width: `${col.width}px` }}
-          >
-            {col.items.map(index => {
-              const ratio = itemRatios[index];
-              // Deterministic random hue from item index for placeholder color
-              const hue = (index * 137.508) % 360;
-              return (
-                <div
-                  key={index}
-                  className={`arcade-selector__navmap-item ${index === selectedIndex ? "active" : ""}`}
-                  style={{
-                    aspectRatio: `1 / ${ratio}`,
-                    backgroundColor: `hsl(${hue}, 40%, 20%)`,
-                  }}
-                >
-                  {resolveImage(items[index]) ? (
-                    <img
-                      src={resolveImage(items[index])}
-                      alt={items[index].label}
-                      width={col.width}
-                      height={Math.round(col.width * ratio)}
-                    />
-                  ) : (
-                    <span className="arcade-selector__navmap-placeholder" />
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        ))}
+        {layout.map(tile => {
+          const hue = (tile.idx * 137.508) % 360;
+          return (
+            <div
+              key={tile.idx}
+              className={`arcade-selector__navmap-item ${tile.idx === selectedIndex ? "active" : ""}`}
+              style={{
+                left: `${tile.x}px`,
+                top: `${tile.y}px`,
+                width: `${tile.w}px`,
+                height: `${tile.h}px`,
+                backgroundColor: `hsl(${hue}, 40%, 20%)`,
+              }}
+            >
+              {resolveImage(items[tile.idx]) ? (
+                <img
+                  src={resolveImage(items[tile.idx])}
+                  alt={items[tile.idx].label}
+                />
+              ) : (
+                <span className="arcade-selector__navmap-placeholder" />
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

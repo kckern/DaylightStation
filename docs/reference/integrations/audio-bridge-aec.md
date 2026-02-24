@@ -63,14 +63,14 @@ devices:
         gain: 1
         aec:
           enabled: true
-          filter_length: 4800  # 100ms at 48kHz — covers typical room echo
+          filter_length: 24000  # 500ms at 48kHz — covers Shield TV audio pipeline delay
           frame_size: 480      # 10ms frames
 ```
 
 | Field | Default | Description |
 |-------|---------|-------------|
 | `enabled` | `true` | Enable/disable AEC. When `false`, mic audio passes through unprocessed. |
-| `filter_length` | `4800` | Adaptive filter length in samples. 4800 = 100ms at 48kHz. Longer filters cover more echo but cost more CPU. |
+| `filter_length` | `24000` | Adaptive filter length in samples. 24000 = 500ms at 48kHz. Must cover the full echo path: Chrome audio rendering → Android AudioTrack buffering → DAC → speaker → room → mic → AudioBridge. Shield TV measured at 400-500ms total. |
 | `frame_size` | `480` | Processing frame size in samples. 480 = 10ms at 48kHz. Must match the APK's frame size. |
 
 ### Volume ducking levels
@@ -115,7 +115,7 @@ The tap is muted (gain 0) and connected to `ctx.destination` only because `Scrip
 
 ### Main-thread AEC processing (useNativeAudioBridge)
 
-The hook maintains two ring buffers on the main thread (48,000 samples each ≈ 1 second at 48kHz):
+The hook maintains two ring buffers on the main thread (96,000 samples each ≈ 2 seconds at 48kHz):
 
 | Buffer | Source | Purpose |
 |--------|--------|---------|
@@ -124,8 +124,12 @@ The hook maintains two ring buffers on the main thread (48,000 samples each ≈ 
 
 When binary mic data arrives from the WebSocket:
 
-1. If AEC is ready AND ref has been received: feed mic to ring buffer → process aligned 480-sample frames through `speex_echo_cancellation()` → send clean Float32 PCM to worklet via `postMessage({ cleanPcm })`
+1. If AEC is ready AND ref has been received: feed mic to ring buffer → process aligned 480-sample frames through `speex_echo_cancellation()` → run `speex_preprocess_run()` for residual echo suppression → send clean Float32 PCM to worklet via `postMessage({ cleanPcm })`
 2. If no AEC or no ref yet: send raw Int16 PCM to worklet via `postMessage({ pcm })` (passthrough)
+
+### Residual echo suppression (preprocessor)
+
+The Speex adaptive filter alone leaves residual echo — the filter can't perfectly model the echo path, especially during convergence. The Speex preprocessor (`speex_preprocess_run`) applies spectral subtraction using the echo state to suppress residual echo that the adaptive filter misses. This is standard practice in Speex-based VoIP systems. The preprocessor is linked to the echo state via `SPEEX_PREPROCESS_SET_ECHO_STATE` and runs on every output frame after echo cancellation.
 
 ### Worklet (BridgeProcessor)
 
@@ -153,17 +157,18 @@ Int16 → Float32:  sample / 32768
 
 ## Performance
 
-AEC runs on the main thread (not the AudioWorklet). Speex processing is fast (~0.3-0.8ms per 480-sample frame on Cortex-A57), well under the 10ms frame interval. The main thread on Shield TV is lightly loaded during video calls (just displaying video), so AEC processing doesn't cause jank.
+AEC + preprocessor runs on the main thread (not the AudioWorklet). Speex echo cancellation is fast (~1-3ms per 480-sample frame on Cortex-A57 with 500ms filter), and the preprocessor adds ~0.5ms. Well under the 10ms frame interval. The main thread on Shield TV is lightly loaded during video calls (just displaying video), so AEC processing doesn't cause jank.
 
 ### Memory
 
 | Component | Size |
 |-----------|------|
-| Speex AEC state | ~200 KB |
-| WASM module | ~60 KB |
-| Ring buffers (2 x 48000 x 4 bytes, main thread) | ~384 KB |
+| Speex AEC state (filter_length=24000) | ~500 KB |
+| Speex preprocessor state | ~50 KB |
+| WASM module | ~90 KB |
+| Ring buffers (2 x 96000 x 4 bytes, main thread) | ~768 KB |
 | Worklet ring buffer (48000 x 4 bytes) | ~192 KB |
-| **Total** | **~840 KB** |
+| **Total** | **~1.6 MB** |
 
 ---
 
