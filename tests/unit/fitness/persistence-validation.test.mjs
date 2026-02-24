@@ -77,6 +77,22 @@ describe('PersistenceManager — validation', () => {
     expect(result.reason).toBe('no-meaningful-data');
   });
 
+  it('should drop series where every value is zero or null (mixed)', () => {
+    const pm = new PersistenceManager();
+    const series = {
+      'alice:hr': [80, 85, 90, 88, 92, 95],           // real data — keep
+      'bike:7153:rotations': [0, 0, 0, null, null],    // all zero/null — drop
+      'bike:28812:rotations': [0, null, 0, null, 0],   // all zero/null — drop
+      'bike:49904:rotations': [0, 0, 5, 10, 15, 20],   // has real data — keep
+    };
+    const { encodedSeries } = pm.encodeSeries(series);
+
+    expect(encodedSeries).toHaveProperty('alice:hr');
+    expect(encodedSeries).toHaveProperty('bike:49904:rotations');
+    expect(encodedSeries).not.toHaveProperty('bike:7153:rotations');
+    expect(encodedSeries).not.toHaveProperty('bike:28812:rotations');
+  });
+
   it('should accept sessions with real HR data', () => {
     const pm = new PersistenceManager();
     const payload = {
