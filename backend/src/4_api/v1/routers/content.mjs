@@ -583,7 +583,7 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
    * Returns availability status, next window, and full schedule.
    */
   router.get('/schedule/:source', (req, res) => {
-    const config = configService?.getHouseholdAppConfig(null, 'games');
+    const config = configService?.reloadHouseholdAppConfig(null, 'games');
     const { available, nextWindow } = checkSchedule(config?.schedule);
     res.json({ available, nextWindow, schedule: config?.schedule || null });
   });
