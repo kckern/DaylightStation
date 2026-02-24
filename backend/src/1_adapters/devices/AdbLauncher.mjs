@@ -44,7 +44,8 @@ export class AdbLauncher extends IDeviceLauncher {
     const args = ['start', '-n', launchIntent.target];
     for (const [key, val] of Object.entries(launchIntent.params)) {
       this.#validateIntentParam(key, val);
-      args.push('--es', key, val);
+      // Quote values for the Android shell (adb shell am splits on spaces)
+      args.push('--es', key, `'${val}'`);
     }
 
     this.#logger.info?.('launch.adb.executing', { deviceId, target: launchIntent.target, paramCount: Object.keys(launchIntent.params).length });

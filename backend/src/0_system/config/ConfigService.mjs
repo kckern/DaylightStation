@@ -3,7 +3,12 @@
  *
  * Receives pre-loaded, validated config via constructor.
  * All methods are simple property lookups - no I/O, no fallbacks.
+ *
+ * Exception: reloadHouseholdAppConfig() reads fresh from disk for configs
+ * that can be changed at runtime (e.g. via admin UI).
  */
+
+import { loadYaml } from '#system/utils/FileIO.mjs';
 
 export class ConfigService {
   #config;
@@ -150,6 +155,22 @@ export class ConfigService {
   getHouseholdAppConfig(householdId, appName) {
     const hid = householdId ?? this.getDefaultHouseholdId();
     return this.#config.households?.[hid]?.apps?.[appName] ?? null;
+  }
+
+  /**
+   * Re-read a household app config fresh from disk.
+   * Use for configs that can be changed at runtime (e.g. via admin UI).
+   * @param {string|null} householdId - Household ID, defaults to default household
+   * @param {string} appName - App name (e.g., 'games')
+   * @returns {object|null}
+   */
+  reloadHouseholdAppConfig(householdId, appName) {
+    const hid = householdId ?? this.getDefaultHouseholdId();
+    const household = this.#config.households?.[hid];
+    if (!household) return null;
+    const folderName = household._folderName || hid;
+    const dataDir = this.getDataDir();
+    return loadYaml(`${dataDir}/${folderName}/config/${appName}`) ?? null;
   }
 
   /**
