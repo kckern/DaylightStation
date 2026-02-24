@@ -5,11 +5,12 @@ import { RemoteAdapter } from './adapters/RemoteAdapter.js';
 import { GamepadAdapter } from './adapters/GamepadAdapter.js';
 
 export function createInputManager(actionBus, inputConfig) {
-  if (!inputConfig || !inputConfig.type || !actionBus) {
+  if (!actionBus) {
     return { adapter: null, ready: Promise.resolve(), destroy() {} };
   }
 
-  const { type, keyboard_id } = inputConfig;
+  const type = inputConfig?.type;
+  const keyboard_id = inputConfig?.keyboard_id;
   let adapter;
 
   switch (type) {
@@ -31,9 +32,21 @@ export function createInputManager(actionBus, inputConfig) {
   const attachResult = adapter.attach();
   const ready = attachResult instanceof Promise ? attachResult : Promise.resolve();
 
+  // Always attach a GamepadAdapter alongside the primary adapter.
+  // It only polls when a gamepad is connected, so there's no overhead.
+  // This ensures face/shoulder buttons work even without explicit gamepad config.
+  let gamepadAdapter = null;
+  if (type !== 'gamepad') {
+    gamepadAdapter = new GamepadAdapter(actionBus, { gamepadIndex: inputConfig?.gamepad_index ?? null });
+    gamepadAdapter.attach();
+  }
+
   return {
     adapter,
     ready,
-    destroy() { adapter.destroy(); },
+    destroy() {
+      adapter.destroy();
+      gamepadAdapter?.destroy();
+    },
   };
 }
