@@ -282,7 +282,7 @@ const mapSeriesKeysForPersist = (series) => {
  * - media_start + media_end → single { type: 'media', start, end, pauses, ... }
  * - overlay.warning_offenders_changed / overlay.lock_rows_changed → collapsed into
  *   phase-transition events: one record per meaningful governance phase (warning, locked, unlocked)
- * - voice_memo_start passed through unchanged (SessionSerializerV3 handles both types)
+ * - voice_memo_start + voice_memo → single { type: 'voice_memo', transcript, timing, ... }
  * - All other events pass through unchanged.
  *
  * @param {Array} events - Raw event list
@@ -300,6 +300,8 @@ const _consolidateEvents = (events) => {
   let govPhaseStart = null; // timestamp when phase began
   let govPhaseUsers = []; // users in current phase
   const govEvents = []; // collapsed governance events
+  // ── Voice memos: pair start+content by memoId ──
+  const voiceMemoMap = new Map(); // memoId → { startEvt, contentEvt }
   // ── Pass-through events ──
   const otherEvents = [];
 
@@ -387,6 +389,20 @@ const _consolidateEvents = (events) => {
       continue;
     }
 
+    // ── Voice memo grouping ──
+    if (type === 'voice_memo_start') {
+      const id = evt.data?.memoId || `unknown_memo_${ts}`;
+      if (!voiceMemoMap.has(id)) voiceMemoMap.set(id, { startEvt: evt, contentEvt: null });
+      else voiceMemoMap.get(id).startEvt = evt;
+      continue;
+    }
+    if (type === 'voice_memo') {
+      const id = evt.data?.memoId || `unknown_memo_${ts}`;
+      if (!voiceMemoMap.has(id)) voiceMemoMap.set(id, { startEvt: null, contentEvt: evt });
+      else voiceMemoMap.get(id).contentEvt = evt;
+      continue;
+    }
+
     // ── Everything else passes through ──
     otherEvents.push(evt);
   }
@@ -463,8 +479,27 @@ const _consolidateEvents = (events) => {
     }
   }));
 
+  // ── Build consolidated voice memo events ──
+  const voiceMemoEvents = [];
+  for (const [id, { startEvt, contentEvt }] of voiceMemoMap) {
+    const s = startEvt?.data || {};
+    const c = contentEvt?.data || {};
+    voiceMemoEvents.push({
+      timestamp: Number(startEvt?.timestamp || contentEvt?.timestamp) || 0,
+      type: 'voice_memo',
+      data: {
+        memoId: id,
+        transcript: c.transcript || s.transcriptPreview || null,
+        duration_seconds: c.duration_seconds ?? s.durationSeconds ?? null,
+        elapsedSeconds: s.elapsedSeconds ?? null,
+        videoTimeSeconds: s.videoTimeSeconds ?? null,
+        author: s.author ?? null
+      }
+    });
+  }
+
   // Merge and sort by timestamp
-  const all = [...challengeEvents, ...mediaEvents, ...consolidatedGov, ...otherEvents];
+  const all = [...challengeEvents, ...mediaEvents, ...consolidatedGov, ...voiceMemoEvents, ...otherEvents];
   all.sort((a, b) => (Number(a.timestamp) || 0) - (Number(b.timestamp) || 0));
   return all;
 };
