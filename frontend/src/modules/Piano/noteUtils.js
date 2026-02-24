@@ -65,3 +65,34 @@ export const getNoteName = (note) => {
   const octave = Math.floor(note / 12) - 1;
   return `${name}${octave}`;
 };
+
+/**
+ * Fisher-Yates shuffle (in-place). Returns the array.
+ * @param {any[]} arr
+ * @returns {any[]}
+ */
+export function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+/**
+ * Build an array of MIDI notes within [low, high] inclusive,
+ * optionally filtered to white keys only.
+ *
+ * @param {[number, number]} noteRange - [low, high] inclusive
+ * @param {boolean} whiteKeysOnly
+ * @returns {number[]}
+ */
+export function buildNotePool(noteRange, whiteKeysOnly = false) {
+  const [low, high] = noteRange;
+  const pool = [];
+  for (let n = low; n <= high; n++) {
+    if (whiteKeysOnly && !isWhiteKey(n)) continue;
+    pool.push(n);
+  }
+  return pool;
+}

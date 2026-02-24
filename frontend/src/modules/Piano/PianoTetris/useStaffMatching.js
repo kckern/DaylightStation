@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { getChildLogger } from '../../../lib/logging/singleton.js';
-import { isWhiteKey } from '../noteUtils.js';
+import { shuffle, buildNotePool } from '../noteUtils.js';
 
 // ─── Constants ──────────────────────────────────────────────────
 
@@ -15,17 +15,6 @@ const NO_REPEAT_ACTIONS = new Set(['hardDrop', 'hold']);
 // ─── Pure Functions ─────────────────────────────────────────────
 
 /**
- * Fisher-Yates shuffle (in-place). Returns the array.
- */
-function shuffle(arr) {
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-  }
-  return arr;
-}
-
-/**
  * Generate target pitch assignments for each action.
  *
  * @param {[number, number]} noteRange - [low, high] MIDI note range (inclusive)
@@ -37,18 +26,10 @@ export function generateTargets(noteRange, complexity = 'single', whiteKeysOnly 
   const notesPerAction = { single: 1, dyad: 2, triad: 3 };
   let count = notesPerAction[complexity] || 1;
 
-  // Build array of available MIDI notes within range
-  const [low, high] = noteRange;
-  const available = [];
-  for (let n = low; n <= high; n++) {
-    if (whiteKeysOnly && !isWhiteKey(n)) continue;
-    available.push(n);
-  }
-  shuffle(available);
+  const available = shuffle([...buildNotePool(noteRange, whiteKeysOnly)]);
 
   const totalNeeded = count * ACTIONS.length;
 
-  // Fall back to single note if not enough notes for requested complexity
   if (available.length < totalNeeded) {
     count = 1;
   }

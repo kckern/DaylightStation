@@ -1,15 +1,4 @@
-import { isWhiteKey } from '../noteUtils.js';
-
-/**
- * Fisher-Yates shuffle (in-place).
- */
-function shuffle(arr) {
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-  }
-  return arr;
-}
+import { shuffle, buildNotePool } from '../noteUtils.js';
 
 /**
  * Generate random pitches for a flashcard.
@@ -23,15 +12,8 @@ export function generateCardPitches(noteRange, complexity = 'single', whiteKeysO
   const counts = { single: 1, dyad: 2, triad: 3 };
   let count = counts[complexity] || 1;
 
-  const [low, high] = noteRange;
-  const available = [];
-  for (let n = low; n <= high; n++) {
-    if (whiteKeysOnly && !isWhiteKey(n)) continue;
-    available.push(n);
-  }
-  shuffle(available);
+  const available = shuffle([...buildNotePool(noteRange, whiteKeysOnly)]);
 
-  // Clamp count to available notes
   count = Math.min(count, available.length);
 
   return available.slice(0, count);
