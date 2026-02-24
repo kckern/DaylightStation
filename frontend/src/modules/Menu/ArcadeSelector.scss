@@ -5,9 +5,10 @@
   background: #0a0a0a;
   overflow: hidden;
 
-  // --- LEFT: Hero panel (fixed width, no grow/shrink) ---
+  // --- RIGHT: Hero panel (40%) ---
   &__hero {
-    flex: 0 0 33.33%;
+    flex: 0 0 40%;
+    order: 2;
     min-width: 0; // prevent blowout
     display: flex;
     flex-direction: column;
@@ -18,6 +19,7 @@
   }
 
   &__hero-art {
+    position: relative;
     width: 100%;
     max-width: 420px;
     aspect-ratio: 3 / 4;
@@ -28,12 +30,23 @@
     display: flex;
     align-items: center;
     justify-content: center;
+  }
 
-    img {
-      width: 100%;
-      height: 100%;
-      object-fit: contain;
-    }
+  &__hero-bg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    filter: blur(20px) brightness(0.4);
+    transform: scale(1.15); // prevent blur edge bleed
+  }
+
+  &__hero-img {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
   }
 
   &__hero-info {
@@ -62,113 +75,40 @@
     margin: 0.4rem 0 0;
   }
 
-  // --- CENTER: Game list (fixed width) ---
-  &__list {
-    flex: 0 0 33.33%;
+  // --- LEFT: Navmap tiles (60%) ---
+  &__navmap {
+    flex: 0 0 60%;
+    order: 1;
     min-width: 0;
     display: flex;
-    flex-direction: column;
-    align-items: stretch;
+    flex-direction: row;
+    gap: 0;
+    padding: 0;
+    height: 100%;
+    overflow: hidden;
     justify-content: center;
-    padding: 1rem 2rem 1rem 0;
-    gap: 0.5rem;
   }
 
-  &__list-item {
+  &__navmap-col {
     display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.5rem 0.75rem;
-    border-radius: 8px;
-    opacity: 0.4;
+    flex-direction: column;
+    flex-shrink: 0;
+    height: 100%;
+    justify-content: center;
+  }
+
+  &__navmap-item {
+    width: 100%;
+    flex: 0 0 auto;
+    border-radius: 0;
+    overflow: hidden;
+    opacity: 0.5;
     border: 2px solid transparent;
 
     &.active {
       opacity: 1;
-      background: rgba(60, 120, 255, 0.1);
-      border-color: rgba(60, 120, 255, 0.4);
-      box-shadow: 0 0 16px rgba(60, 120, 255, 0.12);
-    }
-
-    &[data-distance="1"] {
-      opacity: 0.6;
-    }
-
-    &[data-distance="2"] {
-      opacity: 0.35;
-    }
-
-    &[data-distance="3"] {
-      opacity: 0.2;
-    }
-  }
-
-  &__list-thumb {
-    width: 56px;
-    height: 56px;
-    flex-shrink: 0;
-    border-radius: 6px;
-    overflow: hidden;
-    background: #1a1a1a;
-
-    img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-    }
-  }
-
-  &__list-text {
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    gap: 0.15rem;
-  }
-
-  &__list-label {
-    font-size: 1rem;
-    color: #fff;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  &__list-system {
-    font-size: 0.75rem;
-    color: rgba(255, 255, 255, 0.4);
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  // --- FAR RIGHT: Navmap (fixed 20% width, flex-wrap columns) ---
-  &__navmap {
-    flex: 0 0 33.33%;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    flex-wrap: wrap;
-    align-content: center;
-    gap: 2px;
-    padding: 4px;
-    height: 100%;
-    overflow: hidden;
-  }
-
-  &__navmap-item {
-    width: var(--thumb-w, 50px);
-    flex: 0 0 auto;
-    border-radius: 3px;
-    overflow: hidden;
-    opacity: 0.25;
-    border: 1.5px solid transparent;
-
-    &.active {
-      opacity: 1;
-      border-color: rgba(60, 120, 255, 0.6);
-      box-shadow: 0 0 6px rgba(60, 120, 255, 0.2);
+      border-color: rgba(60, 120, 255, 0.8);
+      box-shadow: 0 0 8px rgba(60, 120, 255, 0.3);
     }
 
     img {

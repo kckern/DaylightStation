@@ -671,7 +671,7 @@ export class PersistenceManager {
 
     // Require at least one series with meaningful (non-zero, non-null) HR data
     const hasNonEmptyHrSeries = Object.entries(series).some(([key, values]) => {
-      if (!key.endsWith(':hr') || !Array.isArray(values)) return false;
+      if (!(key.endsWith(':hr') || key.endsWith(':heart_rate')) || !Array.isArray(values)) return false;
       return values.some(v => v != null && v > 0);
     });
     if (!hasNonEmptyHrSeries) {

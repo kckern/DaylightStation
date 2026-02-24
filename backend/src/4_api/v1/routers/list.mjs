@@ -155,7 +155,10 @@ export function toListItem(item) {
       // Watchlist grouping and legacy fields
       program, src, shuffle, continuous, playable, uid,
       // Watchlist display fields
-      folder
+      folder,
+      // RetroArch thumbnail aspect ratio (height/width) and play stats
+      thumbRatio,
+      lastPlayed
     } = item.metadata;
 
     // Note: plex is NOT copied to top-level from metadata.
@@ -210,6 +213,9 @@ export function toListItem(item) {
     if (uid !== undefined) base.uid = uid;
     // Watchlist display fields
     if (folder !== undefined) base.folder = folder;
+    // RetroArch thumbnail aspect ratio
+    if (thumbRatio !== undefined) base.thumbRatio = thumbRatio;
+    if (lastPlayed !== undefined) base.lastPlayed = lastPlayed;
 
     // Duration from PlayableItem
     if (item.duration !== undefined) base.duration = item.duration;
