@@ -64,10 +64,18 @@ export class LogFoodFromVoice {
     // Create status indicator for transcription phase
     let status = null;
     if (messaging.createStatusIndicator) {
-      status = await messaging.createStatusIndicator(
-        '🎤 Transcribing',
-        { frames: ['.', '..', '...'], interval: 1500 }
-      );
+      try {
+        status = await messaging.createStatusIndicator(
+          '🎤 Transcribing',
+          { frames: ['.', '..', '...'], interval: 1500 }
+        );
+      } catch (statusError) {
+        // Non-fatal: continue without status indicator if Telegram send fails
+        this.#logger.warn?.('logVoice.statusIndicator.failed', {
+          conversationId,
+          error: statusError.message,
+        });
+      }
     }
 
     try {

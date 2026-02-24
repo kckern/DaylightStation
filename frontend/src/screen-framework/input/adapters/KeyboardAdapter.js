@@ -15,6 +15,7 @@ export class KeyboardAdapter {
 
   attach() {
     this.handler = (event) => {
+      if (event.__gamepadSynthetic) return;
       const mapped = KEY_MAP[event.key];
       if (mapped) {
         this.actionBus.emit(mapped.action, mapped.payload);
