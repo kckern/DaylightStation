@@ -44,7 +44,11 @@ export function createLaunchRouter(config) {
         : error.name === 'EntityNotFoundError' ? 404
         : 500;
       logger.error?.('launch.api.error', { contentId, targetDeviceId, error: error.message });
-      res.status(status).json({ error: error.message });
+      res.status(status).json({
+        error: error.message,
+        ...(error.code && { code: error.code }),
+        ...(error.details && { details: error.details })
+      });
     }
   });
 
