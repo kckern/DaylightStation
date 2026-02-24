@@ -116,7 +116,7 @@ export function ArcadeSelector({
     return map;
   }, [layout]);
 
-  // --- Spatial nearest-neighbor for directional navigation ---
+  // --- Spatial nearest-neighbor for directional navigation (pac-man wrap) ---
   const findNearest = useCallback((fromIdx, dir) => {
     if (!tilePos || !tilePos[fromIdx]) return -1;
     const from = tilePos[fromIdx];
@@ -138,6 +138,28 @@ export function ArcadeSelector({
       const score = primary + secondary * 2.5;
       if (score < bestScore) { bestScore = score; best = p.idx; }
     }
+
+    // Pac-man wrap: if no neighbor found, wrap to opposite edge
+    if (best === -1 && layout.length > 1) {
+      let wrapBest = -1, wrapScore = Infinity;
+      for (const p of layout) {
+        if (p.idx === fromIdx) continue;
+        const to = tilePos[p.idx];
+        let primary, secondary;
+        switch (dir) {
+          case 'right': primary = Math.abs(to.cy - from.cy); secondary = -to.cx; break; // leftmost, closest row
+          case 'left':  primary = Math.abs(to.cy - from.cy); secondary = to.cx; break;  // rightmost, closest row (note: negated below via -secondary)
+          case 'down':  primary = Math.abs(to.cx - from.cx); secondary = -to.cy; break; // topmost, closest col
+          case 'up':    primary = Math.abs(to.cx - from.cx); secondary = to.cy; break;  // bottommost, closest col
+          default: break;
+        }
+        // Favor same-row/col alignment (primary), break ties by furthest in opposite direction
+        const score = primary * 10 - secondary;
+        if (score < wrapScore) { wrapScore = score; wrapBest = p.idx; }
+      }
+      best = wrapBest;
+    }
+
     return best;
   }, [layout, tilePos]);
 
@@ -161,13 +183,10 @@ export function ArcadeSelector({
           navigate(findNearest(selectedIndex, 'down'));
           break;
 
-        case "ArrowLeft": {
+        case "ArrowLeft":
           e.preventDefault();
-          const next = findNearest(selectedIndex, 'left');
-          if (next >= 0) navigate(next);
-          else handleClose();
+          navigate(findNearest(selectedIndex, 'left'));
           break;
-        }
 
         case "ArrowRight":
           e.preventDefault();

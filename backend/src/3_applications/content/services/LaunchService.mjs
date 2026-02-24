@@ -100,7 +100,7 @@ export class LaunchService {
   #checkContentSchedule(contentId) {
     if (!this.#configService) return;
 
-    const config = this.#configService.getHouseholdAppConfig(null, 'games');
+    const config = this.#configService.reloadHouseholdAppConfig(null, 'games');
     const { available, nextWindow } = checkSchedule(config?.schedule);
 
     if (!available) {
