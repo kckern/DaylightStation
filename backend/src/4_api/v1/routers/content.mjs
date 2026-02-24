@@ -4,6 +4,7 @@ import { nowTs24 } from '#system/utils/index.mjs';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { isMediaSearchable, validateSearchQuery } from '#domains/media/IMediaSearchable.mjs';
 import { parseContentQuery, validateContentQuery } from '../parsers/contentQueryParser.mjs';
+import { checkSchedule } from '#apps/content/services/scheduleCheck.mjs';
 
 /**
  * Create content API router
@@ -30,7 +31,7 @@ import { parseContentQuery, validateContentQuery } from '../parsers/contentQuery
  * @returns {express.Router}
  */
 export function createContentRouter(registry, mediaProgressMemory = null, options = {}) {
-  const { composePresentationUseCase, contentQueryService, aliasResolver, logger = console } = options;
+  const { composePresentationUseCase, contentQueryService, aliasResolver, configService, logger = console } = options;
   const router = express.Router();
 
   /**
@@ -571,6 +572,22 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
       throw err;
     }
   }));
+
+  // ==========================================================================
+  // Schedule Endpoint
+  // ==========================================================================
+
+  /**
+   * GET /api/content/schedule/:source/*
+   * Check if content from a source is currently within its allowed schedule.
+   * Returns availability status, next window, and full schedule.
+   */
+  router.get('/schedule/:source/*?', (req, res) => {
+    const { source } = req.params;
+    const config = configService?.getHouseholdAppConfig(null, source);
+    const { available, nextWindow } = checkSchedule(source, config?.schedule);
+    res.json({ available, nextWindow, schedule: config?.schedule || null });
+  });
 
   // ==========================================================================
   // Deprecation Redirects (301 to new action-based routes)
