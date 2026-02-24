@@ -2,35 +2,56 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
-  padding: 8px;
-  border-radius: 8px;
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  justify-content: center;
+  gap: 2px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: #f5f0e8; // cream/off-white
+  border: 1px solid rgba(0, 0, 0, 0.15);
   transition: none; // TV app kills CSS transitions; use class toggles
+  overflow: hidden;
 
   &--matched {
-    background: rgba(0, 200, 100, 0.15);
-    border-color: rgba(0, 255, 130, 0.4);
+    background: #d4f5e0;
+    border-color: rgba(0, 180, 80, 0.5);
   }
 
   &--fired {
-    background: rgba(0, 255, 130, 0.25);
-    border-color: rgba(0, 255, 130, 0.7);
+    background: #b0f0c8;
+    border-color: rgba(0, 200, 100, 0.7);
+  }
+
+  &--disabled {
+    opacity: 0.35;
   }
 
   &__icon {
-    width: 32px;
-    height: 32px;
-    color: rgba(255, 255, 255, 0.5);
+    width: 40px;
+    height: 40px;
+    color: rgba(0, 0, 0, 0.6);
+    position: relative;
+    flex-shrink: 0;
 
     .action-staff--matched & {
-      color: rgba(0, 255, 130, 0.9);
+      color: rgba(0, 160, 80, 0.9);
     }
 
     .action-staff--fired & {
-      color: rgba(0, 255, 200, 1);
+      color: rgba(0, 200, 100, 1);
     }
+  }
+
+  &__held-type {
+    position: absolute;
+    bottom: -2px;
+    right: -4px;
+    font-size: 0.5rem;
+    font-weight: 800;
+    color: rgba(180, 120, 0, 0.9);
+    background: rgba(255, 255, 255, 0.8);
+    padding: 0 2px;
+    border-radius: 2px;
+    line-height: 1;
   }
 
   .action-icon {
@@ -40,25 +61,35 @@
 
   &__svg {
     width: 100%;
-    max-width: 140px;
-    height: auto;
+    flex: 1;
+    min-height: 0;
   }
 
   &__note {
-    fill: rgba(255, 255, 255, 0.8);
-    stroke: rgba(255, 255, 255, 0.3);
+    fill: rgba(0, 0, 0, 0.8);
+    stroke: rgba(0, 0, 0, 0.3);
     stroke-width: 0.5;
 
     &--matched {
-      fill: rgba(0, 255, 130, 0.9);
-      stroke: rgba(0, 255, 130, 0.5);
+      fill: rgba(0, 180, 80, 0.9);
+      stroke: rgba(0, 160, 60, 0.5);
+    }
+  }
+
+  &__stem {
+    stroke: rgba(0, 0, 0, 0.8);
+    stroke-width: 1.5;
+
+    &--matched {
+      stroke: rgba(0, 180, 80, 0.9);
     }
   }
 
   &__label {
-    font-size: 0.65rem;
-    color: rgba(255, 255, 255, 0.4);
+    font-size: 0.6rem;
+    color: rgba(0, 0, 0, 0.4);
     letter-spacing: 0.05em;
     font-weight: 600;
+    flex-shrink: 0;
   }
 }

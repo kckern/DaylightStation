@@ -1,5 +1,13 @@
 import { useMemo } from 'react';
 import { getNoteName } from '../../noteUtils.js';
+import {
+  IconCaretLeftFilled,
+  IconCaretRightFilled,
+  IconRotate,
+  IconRotateClockwise,
+  IconArrowBigDownLine,
+  IconReplace,
+} from '@tabler/icons-react';
 import './ActionStaff.scss';
 
 // Staff line positions (from bottom): E4=0, G4=1, B4=2, D5=3, F5=4 (treble)
@@ -37,30 +45,14 @@ function getNoteStaffPosition(midiNote) {
   return { position, clef, isSharp };
 }
 
-// SVG action icons
+// Tabler action icons
 const ACTION_ICONS = {
-  moveLeft: (
-    <svg viewBox="0 0 40 40" className="action-icon">
-      <path d="M28 8 L12 20 L28 32" stroke="currentColor" strokeWidth="3" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
-    </svg>
-  ),
-  moveRight: (
-    <svg viewBox="0 0 40 40" className="action-icon">
-      <path d="M12 8 L28 20 L12 32" stroke="currentColor" strokeWidth="3" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
-    </svg>
-  ),
-  rotateCCW: (
-    <svg viewBox="0 0 40 40" className="action-icon">
-      <path d="M12 14 A12 12 0 1 0 20 8" stroke="currentColor" strokeWidth="3" fill="none" strokeLinecap="round"/>
-      <path d="M16 6 L12 14 L20 14" stroke="currentColor" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
-    </svg>
-  ),
-  rotateCW: (
-    <svg viewBox="0 0 40 40" className="action-icon">
-      <path d="M28 14 A12 12 0 1 1 20 8" stroke="currentColor" strokeWidth="3" fill="none" strokeLinecap="round"/>
-      <path d="M24 6 L28 14 L20 14" stroke="currentColor" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
-    </svg>
-  ),
+  moveLeft: <IconCaretLeftFilled className="action-icon" />,
+  moveRight: <IconCaretRightFilled className="action-icon" />,
+  rotateCCW: <IconRotate className="action-icon" />,
+  rotateCW: <IconRotateClockwise className="action-icon" />,
+  hardDrop: <IconArrowBigDownLine className="action-icon" />,
+  hold: <IconReplace className="action-icon" />,
 };
 
 /**
@@ -71,56 +63,79 @@ const ACTION_ICONS = {
  * @param {boolean} matched - Whether the player is currently matching this staff
  * @param {boolean} fired - Brief pulse when action fires
  */
-export function ActionStaff({ action, targetPitches = [], matched = false, fired = false }) {
+export function ActionStaff({ action, targetPitches = [], matched = false, fired = false, disabled = false, heldPiece = null }) {
+  // Guard: filter out any undefined/null pitches
+  const validPitches = targetPitches.filter(p => p != null);
+
   const notePositions = useMemo(() =>
-    targetPitches.map(pitch => ({
+    validPitches.map(pitch => ({
       pitch,
       name: getNoteName(pitch),
       ...getNoteStaffPosition(pitch),
     })),
-    [targetPitches]
+    [validPitches.join(',')]
   );
 
   // Determine clef from first note (all notes in a staff should share clef)
   const clef = notePositions[0]?.clef ?? 'treble';
 
-  // Staff line Y positions (SVG coords, 5 lines spaced 8px apart)
-  // Bottom line at y=48, top line at y=16
-  const staffLineYs = [48, 40, 32, 24, 16];
+  // Staff line Y positions — portrait viewBox (100x140), lines spaced 14px apart
+  // Centered vertically: lines from y=42 to y=98
+  const lineSpacing = 14;
+  const bottomLineY = 98;
+  const staffLineYs = [0, 1, 2, 3, 4].map(i => bottomLineY - i * lineSpacing);
+
+  const cls = [
+    'action-staff',
+    matched && 'action-staff--matched',
+    fired && 'action-staff--fired',
+    disabled && 'action-staff--disabled',
+  ].filter(Boolean).join(' ');
 
   return (
-    <div className={`action-staff${matched ? ' action-staff--matched' : ''}${fired ? ' action-staff--fired' : ''}`}>
+    <div className={cls}>
       <div className="action-staff__icon">
         {ACTION_ICONS[action]}
+        {action === 'hold' && heldPiece && (
+          <span className="action-staff__held-type">{heldPiece}</span>
+        )}
       </div>
 
-      <svg className="action-staff__svg" viewBox="0 0 120 64" preserveAspectRatio="xMidYMid meet">
+      <svg className="action-staff__svg" viewBox="0 0 100 140" preserveAspectRatio="xMidYMid meet">
         {/* Staff lines */}
         {staffLineYs.map((y, i) => (
-          <line key={i} x1="10" y1={y} x2="110" y2={y} stroke="rgba(255,255,255,0.4)" strokeWidth="1" />
+          <line key={i} x1="5" y1={y} x2="95" y2={y} stroke="rgba(0,0,0,0.25)" strokeWidth="1" />
         ))}
 
-        {/* Clef symbol (simplified text) */}
-        <text x="14" y={clef === 'treble' ? 42 : 36} fontSize="28" fill="rgba(255,255,255,0.6)" fontFamily="serif">
+        {/* Clef symbol */}
+        <text x="-4" y={clef === 'treble' ? bottomLineY + 11 : bottomLineY - 11} fontSize={clef === 'treble' ? '120' : '85'} fill="rgba(0,0,0,0.4)" fontFamily="serif">
           {clef === 'treble' ? '\u{1D11E}' : '\u{1D122}'}
         </text>
 
-        {/* Note heads */}
-        {notePositions.map((np, i) => {
-          // Y position: bottom line (pos=0) = y48, each diatonic step = -4px
-          const noteY = 48 - np.position * 4;
-          const noteX = 70 + i * 20; // Space multiple notes
+        {/* Single note with stem (quarter note) — centered */}
+        {notePositions.slice(0, 1).map((np) => {
+          // Y position: bottom line (pos=0) = bottomLineY, each step = -lineSpacing/2
+          const stepSize = lineSpacing / 2;
+          const noteY = bottomLineY - np.position * stepSize;
+          const noteX = 65; // Right of center (55%), clear of clef
+
+          // Stem direction: notes on/below middle line (pos <= 4) stem up, above stem down
+          const stemUp = np.position <= 4;
+          const stemX = stemUp ? noteX + 8 : noteX - 8;
+          const stemY1 = noteY;
+          const stemLen = lineSpacing * 3.5;
+          const stemY2 = stemUp ? noteY - stemLen : noteY + stemLen;
 
           // Ledger lines for notes above/below staff
           const ledgerLines = [];
           if (np.position < 0) {
             for (let p = -2; p >= np.position; p -= 2) {
-              ledgerLines.push(48 - p * 4);
+              ledgerLines.push(bottomLineY - p * stepSize);
             }
           }
           if (np.position > 8) {
             for (let p = 10; p <= np.position; p += 2) {
-              ledgerLines.push(48 - p * 4);
+              ledgerLines.push(bottomLineY - p * stepSize);
             }
           }
 
@@ -128,17 +143,21 @@ export function ActionStaff({ action, targetPitches = [], matched = false, fired
             <g key={np.pitch}>
               {/* Ledger lines */}
               {ledgerLines.map((ly, li) => (
-                <line key={`ledger-${li}`} x1={noteX - 10} y1={ly} x2={noteX + 10} y2={ly}
-                  stroke="rgba(255,255,255,0.4)" strokeWidth="1" />
+                <line key={`ledger-${li}`} x1={noteX - 14} y1={ly} x2={noteX + 14} y2={ly}
+                  stroke="rgba(0,0,0,0.25)" strokeWidth="1" />
               ))}
-              {/* Note head — filled ellipse */}
-              <ellipse cx={noteX} cy={noteY} rx="6" ry="4.5"
-                className={`action-staff__note${matched ? ' action-staff__note--matched' : ''}`}
-                transform={`rotate(-10, ${noteX}, ${noteY})`}
+              {/* Stem */}
+              <line x1={stemX} y1={stemY1} x2={stemX} y2={stemY2}
+                className={`action-staff__stem${matched ? ' action-staff__stem--matched' : ''}`}
               />
-              {/* Sharp sign */}
+              {/* Note head — filled ellipse */}
+              <ellipse cx={noteX} cy={noteY} rx="9" ry="6.5"
+                className={`action-staff__note${matched ? ' action-staff__note--matched' : ''}`}
+                transform={`rotate(-12, ${noteX}, ${noteY})`}
+              />
+              {/* Sharp sign — positioned well left of notehead */}
               {np.isSharp && (
-                <text x={noteX - 14} y={noteY + 4} fontSize="14" fill="rgba(255,255,255,0.7)" fontFamily="serif">{'\u266F'}</text>
+                <text x={noteX - 22} y={noteY + 7} fontSize="22" fill="rgba(0,0,0,0.5)" fontFamily="serif">{'\u266F'}</text>
               )}
             </g>
           );
@@ -146,7 +165,7 @@ export function ActionStaff({ action, targetPitches = [], matched = false, fired
       </svg>
 
       <div className="action-staff__label">
-        {targetPitches.map(p => getNoteName(p)).join(' ')}
+        {validPitches.length > 0 ? getNoteName(validPitches[0]) : ''}
       </div>
     </div>
   );

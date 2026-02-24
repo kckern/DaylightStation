@@ -9,19 +9,8 @@ import { ACTIONS } from './useStaffMatching.js';
 import './PianoTetris.scss';
 
 /**
- * PianoTetris main layout — assembles 4 ActionStaffs flanking the TetrisBoard,
- * with PianoKeyboard at bottom and HUD at top.
- *
- * Layout:
- * +----------------------------------------------+
- * |  [Move Left]              [Move Right]       |
- * |  [staff]     +----------+ [staff]            |
- * |              |  TETRIS  |                    |
- * |  [Rot CCW]   |  BOARD   |  [Rot CW]         |
- * |  [staff]     +----------+  [staff]           |
- * +----------------------------------------------+
- * |           PIANO KEYBOARD                     |
- * +----------------------------------------------+
+ * PianoTetris main layout — 6 ActionStaffs flanking the TetrisBoard,
+ * with PianoKeyboard at bottom. Score/Lines in left/right margins.
  *
  * @param {Object} props
  * @param {Map<number, {velocity: number, timestamp: number}>} props.activeNotes
@@ -78,7 +67,27 @@ export function PianoTetris({ activeNotes, tetrisConfig, onDeactivate }) {
     };
   }, [currentLevelConfig]);
 
-  // Build keyboardTargets set from all pitches across all 4 staves
+  // Expose game state for automated testing (localhost only)
+  useEffect(() => {
+    if (typeof window === 'undefined' || window.location.hostname !== 'localhost') return;
+    window.__TETRIS_DEBUG__ = {
+      phase: game.phase,
+      targets: game.targets,
+      board: game.board,
+      currentPiece: game.currentPiece,
+      ghostPiece: game.ghostPiece,
+      nextPiece: game.nextPiece,
+      heldPiece: game.heldPiece,
+      score: game.score,
+      linesCleared: game.linesCleared,
+      level: game.level,
+      countdown: game.countdown,
+      spawnCount: game.spawnCount,
+    };
+    return () => { delete window.__TETRIS_DEBUG__; };
+  });
+
+  // Build keyboardTargets set from all pitches across all 6 staves
   const keyboardTargets = useMemo(() => {
     if (!game.targets) return null;
     const pitches = new Set();
@@ -93,36 +102,30 @@ export function PianoTetris({ activeNotes, tetrisConfig, onDeactivate }) {
 
   return (
     <div className="piano-tetris">
-      {/* HUD bar */}
-      <div className="piano-tetris__hud">
-        <div className="piano-tetris__hud-left">
-          <span className="piano-tetris__score">{game.score.toLocaleString()}</span>
-          <span className="piano-tetris__score-label">SCORE</span>
-        </div>
-        <div className="piano-tetris__hud-center">
-          <span className="piano-tetris__level">LVL {game.level}</span>
-        </div>
-        <div className="piano-tetris__hud-right">
-          <span className="piano-tetris__lines">{game.linesCleared}</span>
-          <span className="piano-tetris__lines-label">LINES</span>
-        </div>
-      </div>
-
       {/* Play area */}
       <div className="piano-tetris__play-area">
-        {/* Left staves */}
+        {/* Left staves + score */}
         <div className="piano-tetris__staves-left">
+          <div className="piano-tetris__stat piano-tetris__stat--score">
+            <span className="piano-tetris__stat-value">{game.score.toLocaleString()}</span>
+            <span className="piano-tetris__stat-label">SCORE</span>
+          </div>
           <ActionStaff
             action="moveLeft"
             targetPitches={game.targets?.moveLeft ?? []}
             matched={game.matchedActions?.has('moveLeft') ?? false}
-            fired={false}
           />
           <ActionStaff
             action="rotateCCW"
             targetPitches={game.targets?.rotateCCW ?? []}
             matched={game.matchedActions?.has('rotateCCW') ?? false}
-            fired={false}
+          />
+          <ActionStaff
+            action="hold"
+            targetPitches={game.targets?.hold ?? []}
+            matched={game.matchedActions?.has('hold') ?? false}
+            disabled={game.holdUsed}
+            heldPiece={game.heldPiece}
           />
         </div>
 
@@ -132,23 +135,29 @@ export function PianoTetris({ activeNotes, tetrisConfig, onDeactivate }) {
             board={game.board}
             currentPiece={game.currentPiece}
             ghostPiece={game.ghostPiece}
-            nextPiece={game.nextPiece}
           />
         </div>
 
-        {/* Right staves */}
+        {/* Right staves + lines */}
         <div className="piano-tetris__staves-right">
+          <div className="piano-tetris__stat piano-tetris__stat--lines">
+            <span className="piano-tetris__stat-value">{game.linesCleared}</span>
+            <span className="piano-tetris__stat-label">LINES</span>
+          </div>
           <ActionStaff
             action="moveRight"
             targetPitches={game.targets?.moveRight ?? []}
             matched={game.matchedActions?.has('moveRight') ?? false}
-            fired={false}
           />
           <ActionStaff
             action="rotateCW"
             targetPitches={game.targets?.rotateCW ?? []}
             matched={game.matchedActions?.has('rotateCW') ?? false}
-            fired={false}
+          />
+          <ActionStaff
+            action="hardDrop"
+            targetPitches={game.targets?.hardDrop ?? []}
+            matched={game.matchedActions?.has('hardDrop') ?? false}
           />
         </div>
       </div>

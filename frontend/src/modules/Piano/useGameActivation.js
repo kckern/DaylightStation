@@ -13,13 +13,15 @@ const ACTIVATION_COOLDOWN_MS = 2000;
  *
  * @param {Map<number, {velocity: number, timestamp: number}>} activeNotes
  * @param {Object|null} gamesConfig - parsed `games` section from piano.yml
+ * @param {string|null} initialGame - game ID to auto-activate on mount (e.g. from URL)
  * @returns {{ activeGameId: string|null, gameConfig: Object|null, deactivate: () => void }}
  */
-export function useGameActivation(activeNotes, gamesConfig) {
+export function useGameActivation(activeNotes, gamesConfig, initialGame = null) {
   const logger = useMemo(() => getChildLogger({ component: 'game-activation' }), []);
 
   const [activeGameId, setActiveGameId] = useState(null);
   const cooldownRef = useRef(0);
+  const initialGameApplied = useRef(false);
 
   const deactivate = useCallback(() => {
     if (activeGameId) {
@@ -28,6 +30,17 @@ export function useGameActivation(activeNotes, gamesConfig) {
     setActiveGameId(null);
     cooldownRef.current = Date.now() + ACTIVATION_COOLDOWN_MS;
   }, [activeGameId, logger]);
+
+  // ─── Auto-activate from URL (initialGame) ────────────────────
+
+  useEffect(() => {
+    if (!initialGame || !gamesConfig || initialGameApplied.current) return;
+    if (gamesConfig[initialGame]) {
+      logger.info('game.url-activated', { gameId: initialGame });
+      setActiveGameId(initialGame);
+      initialGameApplied.current = true;
+    }
+  }, [initialGame, gamesConfig, logger]);
 
   // ─── Combo Detection ──────────────────────────────────────────
 

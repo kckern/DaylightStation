@@ -9,6 +9,7 @@ import {
   lockPiece,
   clearLines,
   getGhostPosition,
+  hardDrop as engineHardDrop,
   calculateScore,
   getGravityMs,
   generateBag,
@@ -30,6 +31,8 @@ function createInitialGameState() {
     board: createBoard(),
     currentPiece: null,
     nextPiece: null,
+    heldPiece: null,   // type string or null
+    holdUsed: false,    // reset each new piece — can only hold once per piece
     bag: [],
     nextBag: [],
     score: 0,
@@ -89,7 +92,8 @@ export function useTetrisGame(activeNotes, tetrisConfig) {
     if (!levelConfig) return;
     const noteRange = levelConfig.note_range || [60, 72];
     const complexity = levelConfig.complexity || 'single';
-    const newTargets = generateTargets(noteRange, complexity);
+    const whiteKeysOnly = levelConfig.white_keys_only ?? false;
+    const newTargets = generateTargets(noteRange, complexity, whiteKeysOnly);
     setTargets(newTargets);
   }, []);
 
@@ -145,6 +149,7 @@ export function useTetrisGame(activeNotes, tetrisConfig) {
         score: totalScore,
         linesCleared: totalLines,
         level: newLevel,
+        holdUsed: false,
       };
       const advanced = advanceToNextPiece(stateForAdvance);
 
@@ -245,6 +250,85 @@ export function useTetrisGame(activeNotes, tetrisConfig) {
   // ─── Staff Matching: Action Handler ─────────────────────────
 
   const handleAction = useCallback((actionName) => {
+    // Hard drop needs special handling — lock immediately after drop
+    if (actionName === 'hardDrop') {
+      // Cancel any pending lock delay
+      if (lockDelayRef.current) { clearTimeout(lockDelayRef.current); lockDelayRef.current = null; }
+
+      setGameState(prev => {
+        if (prev.phase !== 'PLAYING' || !prev.currentPiece) return prev;
+        const { piece: dropped, distance } = engineHardDrop(prev.board, prev.currentPiece);
+        if (distance === 0) return prev; // already at bottom, let normal lock handle it
+
+        // Lock immediately after hard drop
+        const boardAfterLock = lockPiece(prev.board, dropped);
+        const { board: boardAfterClear, linesCleared: newLines } = clearLines(boardAfterLock);
+        const lineScore = calculateScore(newLines, prev.level) + distance * 2; // bonus for hard drop distance
+        const totalScore = prev.score + lineScore;
+        const totalLines = prev.linesCleared + newLines;
+        const newLevel = Math.floor(totalLines / 10);
+
+        if (newLines > 0) {
+          logger.info('tetris.lines-cleared', { lines: newLines, score: lineScore, totalLines, totalScore });
+        }
+        logger.debug('tetris.hard-drop', { type: prev.currentPiece.type, distance });
+
+        const stateForAdvance = {
+          ...prev,
+          board: boardAfterClear,
+          score: totalScore,
+          linesCleared: totalLines,
+          level: newLevel,
+          holdUsed: false,
+        };
+        const advanced = advanceToNextPiece(stateForAdvance);
+
+        if (advanced.phase === 'GAME_OVER') {
+          logger.info('tetris.game-over', { score: totalScore, lines: totalLines, level: newLevel });
+          return advanced;
+        }
+
+        return { ...advanced, _spawnCount: prev._spawnCount + 1 };
+      });
+      return;
+    }
+
+    // Hold piece
+    if (actionName === 'hold') {
+      setGameState(prev => {
+        if (prev.phase !== 'PLAYING' || !prev.currentPiece) return prev;
+        if (prev.holdUsed) return prev; // can only hold once per piece
+
+        const currentType = prev.currentPiece.type;
+
+        if (prev.heldPiece) {
+          // Swap: spawn the held piece, store the current one
+          const spawned = spawnPiece(prev.board, prev.heldPiece);
+          if (!spawned) return prev; // blocked — shouldn't happen but be safe
+          logger.debug('tetris.hold-swap', { stored: currentType, retrieved: prev.heldPiece });
+          return {
+            ...prev,
+            currentPiece: spawned,
+            heldPiece: currentType,
+            holdUsed: true,
+            _spawnCount: prev._spawnCount + 1,
+          };
+        } else {
+          // No held piece yet — store current, advance to next
+          logger.debug('tetris.hold-store', { stored: currentType });
+          const advanced = advanceToNextPiece(prev);
+          if (advanced.phase === 'GAME_OVER') return advanced;
+          return {
+            ...advanced,
+            heldPiece: currentType,
+            holdUsed: true,
+            _spawnCount: prev._spawnCount + 1,
+          };
+        }
+      });
+      return;
+    }
+
     setGameState(prev => {
       if (prev.phase !== 'PLAYING' || !prev.currentPiece) return prev;
 
@@ -278,7 +362,7 @@ export function useTetrisGame(activeNotes, tetrisConfig) {
 
       return { ...prev, currentPiece: result };
     });
-  }, [levels, regenerateTargets]);
+  }, [levels, regenerateTargets, advanceToNextPiece, logger]);
 
   // ─── useStaffMatching integration ───────────────────────────
 
@@ -311,7 +395,7 @@ export function useTetrisGame(activeNotes, tetrisConfig) {
       phase: 'STARTING',
       board,
       currentPiece: null,
-      nextPiece: { type: nextType, rotation: 0, x: 3, y: 0 },
+      nextPiece: { type: nextType, rotation: 0, x: 8, y: 0 },
       bag,
       nextBag,
       score: 0,
@@ -408,10 +492,13 @@ export function useTetrisGame(activeNotes, tetrisConfig) {
     currentPiece: gameState.currentPiece,
     ghostPiece,
     nextPiece: gameState.nextPiece,
+    heldPiece: gameState.heldPiece,
+    holdUsed: gameState.holdUsed,
     score: gameState.score,
     linesCleared: gameState.linesCleared,
     level: gameState.level,
     countdown: gameState.countdown,
+    spawnCount: gameState._spawnCount,
     targets,
     matchedActions,
     startGame,

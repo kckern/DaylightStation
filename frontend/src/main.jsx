@@ -77,7 +77,17 @@ const OfficeAppWithWebSocket = () => (
   <WebSocketProvider>
     <OfficeApp />
   </WebSocketProvider>
-); 
+);
+
+// OfficeApp with piano game pre-selected via URL
+const OfficeAppWithPianoGame = () => {
+  const { gameId } = useParams();
+  return (
+    <WebSocketProvider>
+      <OfficeApp initialGame={gameId || null} />
+    </WebSocketProvider>
+  );
+};
 
 // Wrapper component for TVApp with app parameter
 const TVAppWithParams = () => {
@@ -124,6 +134,8 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <Route path="/" element={<AdminApp />} />
         <Route path="/home" element={<HomeApp />} />
         <Route path="/office" element={<OfficeAppWithWebSocket />} />
+        <Route path="/office/piano/:gameId" element={<OfficeAppWithPianoGame />} />
+        <Route path="/office/piano" element={<OfficeAppWithPianoGame />} />
         <Route path="/budget" element={<FinanceApp />} />
         <Route path="/finances" element={<FinanceApp />} />
         <Route path="/tv/app/:app" element={<TVAppWithParams />} />

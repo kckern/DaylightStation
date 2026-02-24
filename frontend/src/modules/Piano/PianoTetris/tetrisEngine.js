@@ -15,13 +15,13 @@
  *   countdown: null,
  * }
  *
- * Piece shape: { type: 'T', rotation: 0, x: 3, y: 0 }
+ * Piece shape: { type: 'T', rotation: 0, x: Math.floor((BOARD_COLS - 4) / 2), y: 0 }
  */
 
 // ─── Constants ──────────────────────────────────────────────────
 
 export const BOARD_ROWS = 20;
-export const BOARD_COLS = 10;
+export const BOARD_COLS = 20;
 
 export const LINE_SCORES = { 1: 100, 2: 300, 3: 500, 4: 800 };
 
@@ -204,7 +204,7 @@ export function generateBag() {
  * Returns piece at x=3, y=0, rotation=0; or null if blocked (game over).
  */
 export function spawnPiece(board, type) {
-  const piece = { type, rotation: 0, x: 3, y: 0 };
+  const piece = { type, rotation: 0, x: Math.floor((BOARD_COLS - 4) / 2), y: 0 };
   return isValidPosition(board, piece) ? piece : null;
 }
 
@@ -243,7 +243,7 @@ export function createTetrisState() {
   const nextType = bag.pop();
 
   const currentPiece = spawnPiece(board, currentType);
-  const nextPiece = { type: nextType, rotation: 0, x: 3, y: 0 };
+  const nextPiece = { type: nextType, rotation: 0, x: Math.floor((BOARD_COLS - 4) / 2), y: 0 };
 
   return {
     phase: 'IDLE',
@@ -281,7 +281,7 @@ export function nextPieceFromBag(state) {
     return {
       ...state,
       currentPiece: spawned,
-      nextPiece: { type: refilled.pop(), rotation: 0, x: 3, y: 0 },
+      nextPiece: { type: refilled.pop(), rotation: 0, x: Math.floor((BOARD_COLS - 4) / 2), y: 0 },
       bag: refilled,
       nextBag,
     };
@@ -291,7 +291,7 @@ export function nextPieceFromBag(state) {
   return {
     ...state,
     currentPiece: spawned,
-    nextPiece: { type: nextType, rotation: 0, x: 3, y: 0 },
+    nextPiece: { type: nextType, rotation: 0, x: Math.floor((BOARD_COLS - 4) / 2), y: 0 },
     bag,
     nextBag,
   };
