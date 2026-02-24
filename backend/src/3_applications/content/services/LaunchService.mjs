@@ -1,4 +1,5 @@
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
+import { checkSchedule } from './scheduleCheck.mjs';
 
 /**
  * Orchestrates content launch on target devices.
@@ -55,6 +56,9 @@ export class LaunchService {
 
     this.#logger.debug?.('launch.service.contentResolved', { contentId, title: item.title });
 
+    // 1.5. Check content schedule
+    this.#checkContentSchedule(contentId);
+
     // 2. Resolve target device
     let resolvedDeviceId = targetDeviceId;
     if (!resolvedDeviceId && item.deviceConstraint) {
@@ -91,6 +95,21 @@ export class LaunchService {
     this.#logger.info?.('launch.service.success', { contentId, targetDeviceId: resolvedDeviceId, title: item.title });
 
     return { success: true, contentId, targetDeviceId: resolvedDeviceId, title: item.title };
+  }
+
+  #checkContentSchedule(contentId) {
+    const source = contentId.split(':')[0];
+    if (!this.#configService) return;
+
+    const config = this.#configService.getHouseholdAppConfig(null, source);
+    const { available, nextWindow } = checkSchedule(source, config?.schedule);
+
+    if (!available) {
+      throw new ValidationError('Games are not available right now', {
+        code: 'OUTSIDE_SCHEDULE',
+        details: { nextWindow }
+      });
+    }
   }
 
   #findDeviceByConstraint(constraint) {
