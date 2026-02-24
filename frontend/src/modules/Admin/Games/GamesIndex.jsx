@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button, Card, Group, Text, Badge, Stack, Loader } from '@mantine/core';
 import getLogger from '../../../lib/logging/Logger.js';
+import GameScheduleEditor from './GameScheduleEditor.jsx';
 
 const GamesIndex = () => {
   const logger = useMemo(() => getLogger().child({ component: 'GamesIndex' }), []);
@@ -10,15 +11,18 @@ const GamesIndex = () => {
   const [syncStatus, setSyncStatus] = useState(null);
   const [syncing, setSyncing] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [schedule, setSchedule] = useState(null);
 
   useEffect(() => {
     logger.info('gamesIndex.mounted');
     Promise.all([
       fetch('/api/v1/list/retroarch').then(r => r.json()),
-      fetch('/api/v1/sync/retroarch/status').then(r => r.json()).catch(() => null)
-    ]).then(([list, status]) => {
+      fetch('/api/v1/sync/retroarch/status').then(r => r.json()).catch(() => null),
+      fetch('/api/v1/content/schedule/retroarch').then(r => r.json()).catch(() => null)
+    ]).then(([list, status, scheduleData]) => {
       setConsoles(list?.items || list || []);
       setSyncStatus(status);
+      setSchedule(scheduleData?.schedule || null);
       setLoading(false);
     });
   }, []);
@@ -39,6 +43,20 @@ const GamesIndex = () => {
     setSyncing(false);
   };
 
+  const handleScheduleSave = async (newSchedule) => {
+    const configRes = await fetch('/api/v1/admin/config/files/household/config/retroarch.yml');
+    const configData = await configRes.json();
+    const parsed = configData.parsed || {};
+    parsed.schedule = newSchedule;
+    await fetch('/api/v1/admin/config/files/household/config/retroarch.yml', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ parsed })
+    });
+    setSchedule(newSchedule);
+    logger.info('schedule.saved', { schedule: newSchedule });
+  };
+
   if (loading) return <Loader />;
 
   return (
@@ -54,6 +72,8 @@ const GamesIndex = () => {
           <Button onClick={handleSync} loading={syncing}>Sync from Device</Button>
         </Group>
       </Group>
+
+      <GameScheduleEditor schedule={schedule} onSave={handleScheduleSave} />
 
       {consoles.map(c => (
         <Card key={c.id} padding="sm" withBorder onClick={() => navigate(`/admin/content/games/${c.localId || c.id?.split(':')[1]}`)} style={{ cursor: 'pointer' }}>
