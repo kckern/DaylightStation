@@ -1,4 +1,4 @@
-import { useMemo, useEffect } from 'react';
+import { useMemo, useEffect, useRef } from 'react';
 import { getChildLogger } from '../../../lib/logging/singleton.js';
 import { PianoKeyboard } from '../components/PianoKeyboard';
 import { ActionStaff } from '../components/ActionStaff.jsx';
@@ -28,13 +28,13 @@ export function PianoFlashcards({ activeNotes, flashcardsConfig, onDeactivate })
   }, []); // eslint-disable-line react-hooks/exhaustive-deps — intentional mount-only
 
   // Auto-deactivate when game returns to IDLE after COMPLETE
-  const phaseRef = useMemo(() => ({ prev: game.phase }), []);
+  const phaseRef = useRef(game.phase);
   useEffect(() => {
-    if (phaseRef.prev === 'COMPLETE' && game.phase === 'IDLE') {
+    if (phaseRef.current === 'COMPLETE' && game.phase === 'IDLE') {
       logger.info('flashcards.auto-deactivate', {});
       onDeactivate?.();
     }
-    phaseRef.prev = game.phase;
+    phaseRef.current = game.phase;
   }, [game.phase, onDeactivate, logger]);
 
   // Keyboard range from current level config

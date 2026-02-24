@@ -1,4 +1,4 @@
-import { useMemo, useEffect } from 'react';
+import { useMemo, useEffect, useRef } from 'react';
 import { getChildLogger } from '../../../lib/logging/singleton.js';
 import { PianoKeyboard } from '../components/PianoKeyboard';
 import { useTetrisGame } from './useTetrisGame.js';
@@ -31,7 +31,7 @@ export function PianoTetris({ activeNotes, tetrisConfig, onDeactivate }) {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps — intentional mount-only
 
   // When game finishes (goes back to IDLE after GAME_OVER), deactivate
-  const prevPhase = useMemo(() => ({ current: game.phase }), []);
+  const prevPhase = useRef(game.phase);
   useEffect(() => {
     if (prevPhase.current !== 'IDLE' && game.phase === 'IDLE') {
       logger.info('tetris.auto-deactivate', {});
