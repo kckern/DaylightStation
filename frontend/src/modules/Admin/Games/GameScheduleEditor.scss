@@ -1,0 +1,67 @@
+.schedule-grid {
+  user-select: none;
+
+  &__header {
+    display: flex;
+    align-items: flex-end;
+    padding-bottom: 2px;
+    padding-left: 36px;
+  }
+
+  &__hour-label {
+    font-size: 10px;
+    color: var(--ds-text-secondary, #999);
+    font-family: 'JetBrains Mono', monospace;
+    text-align: left;
+    flex: 4;
+  }
+
+  &__row {
+    display: flex;
+    align-items: center;
+  }
+
+  &__day-label {
+    width: 36px;
+    flex-shrink: 0;
+    font-size: 11px;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--ds-text-secondary, #999);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  &__cells {
+    display: flex;
+    flex: 1;
+  }
+
+  &__cell {
+    flex: 1;
+    height: 24px;
+    border: 1px solid var(--ds-border, rgba(255, 255, 255, 0.08));
+    border-right: none;
+    cursor: pointer;
+    background: var(--ds-bg-base, rgba(255, 255, 255, 0.03));
+
+    &:last-child {
+      border-right: 1px solid var(--ds-border, rgba(255, 255, 255, 0.08));
+    }
+
+    &--hour-start {
+      border-left-color: rgba(255, 255, 255, 0.15);
+    }
+
+    &--active {
+      background: rgba(74, 123, 247, 0.5);
+    }
+
+    &:hover {
+      background: rgba(74, 123, 247, 0.3);
+    }
+
+    &--active:hover {
+      background: rgba(74, 123, 247, 0.7);
+    }
+  }
+}
