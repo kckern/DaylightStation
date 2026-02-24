@@ -22,9 +22,9 @@ const FPS_CHECK_INITIAL_DELAY_MS = 8000;
 function buildVideoConstraint(deviceId, tier) {
   const c = {};
   if (deviceId) c.deviceId = { exact: deviceId };
-  c.width = { min: tier.w };
-  c.height = { min: tier.h };
-  c.aspectRatio = { exact: 16 / 9 };
+  c.width = { ideal: tier.w };
+  c.height = { ideal: tier.h };
+  c.aspectRatio = { ideal: 16 / 9 };
   return c;
 }
 
