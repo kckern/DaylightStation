@@ -90,6 +90,15 @@ export function MenuStack({ rootMenu }) {
     } else if (selection.open) {
       push({ type: 'app', props: selection });
     } else if (selection.launch) {
+      const logger = getLogger();
+      logger.info('launch.intent', {
+        contentId: selection.launch.contentId,
+        targetDeviceId: selection.launch.targetDeviceId,
+        title: selection.label || selection.title,
+        parentTitle: selection.parentTitle,
+        source: 'menu-selection',
+        intentTs: Date.now()
+      });
       push({ type: 'launch', props: selection });
     }
     // If none of the above, it might be a leaf action - let parent handle

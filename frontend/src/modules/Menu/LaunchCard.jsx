@@ -13,9 +13,16 @@ const LaunchCard = ({ launch, title, thumbnail, metadata, onClose }) => {
   useEffect(() => {
     if (!launch?.contentId) return;
 
-    logger.info('launch.initiated', { contentId: launch.contentId });
-
     const source = launch.contentId.split(':')[0] || 'retroarch';
+    const deviceId = launch.targetDeviceId || window.__DAYLIGHT_DEVICE_ID || undefined;
+
+    logger.info('launch.initiated', {
+      contentId: launch.contentId,
+      source,
+      targetDeviceId: deviceId || null,
+      title,
+      retryCount,
+    });
 
     // Pre-check schedule before attempting launch
     fetch(`/api/v1/content/schedule/${source}`)
@@ -28,16 +35,19 @@ const LaunchCard = ({ launch, title, thumbnail, metadata, onClose }) => {
           return; // Don't attempt launch
         }
 
+        logger.debug('launch.schedule.ok', { contentId: launch.contentId, source });
+
         // Schedule OK — proceed with launch
-        const deviceId = launch.targetDeviceId || window.__DAYLIGHT_DEVICE_ID || undefined;
+        const payload = {
+          contentId: launch.contentId,
+          ...(deviceId && { targetDeviceId: deviceId })
+        };
+        logger.info('launch.api.request', payload);
 
         return fetch('/api/v1/launch', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contentId: launch.contentId,
-            ...(deviceId && { targetDeviceId: deviceId })
-          })
+          body: JSON.stringify(payload)
         })
           .then(res => {
             if (!res.ok) return res.json().then(d => Promise.reject(d));
@@ -45,7 +55,11 @@ const LaunchCard = ({ launch, title, thumbnail, metadata, onClose }) => {
           })
           .then(data => {
             if (!data) return;
-            logger.info('launch.success', { contentId: launch.contentId, title: data.title });
+            logger.info('launch.success', {
+              contentId: launch.contentId,
+              title: data.title,
+              targetDeviceId: data.targetDeviceId || deviceId,
+            });
             setStatus('success');
             setTimeout(() => onClose?.(), 1500);
           });
@@ -57,7 +71,13 @@ const LaunchCard = ({ launch, title, thumbnail, metadata, onClose }) => {
           setStatus('blocked');
           setNextWindow(errData.details?.nextWindow || null);
         } else {
-          logger.error('launch.failed', { contentId: launch.contentId, error: message });
+          logger.error('launch.failed', {
+            contentId: launch.contentId,
+            targetDeviceId: deviceId || null,
+            error: message,
+            code: errData?.code,
+            details: errData?.details,
+          });
           setStatus('error');
           setErrorMsg(message);
         }
@@ -118,7 +138,7 @@ const LaunchCard = ({ launch, title, thumbnail, metadata, onClose }) => {
             {status === 'error' && (
               <div className="launch-card__error">
                 <span>{errorMsg}</span>
-                <button onClick={() => { setStatus('launching'); setErrorMsg(null); setRetryCount(c => c + 1); }}>Retry</button>
+                <button onClick={() => { logger.info('launch.retry', { contentId: launch?.contentId, retryCount: retryCount + 1 }); setStatus('launching'); setErrorMsg(null); setRetryCount(c => c + 1); }}>Retry</button>
               </div>
             )}
           </div>

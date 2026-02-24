@@ -15,7 +15,7 @@ import { ArcadeSelector } from "./ArcadeSelector";
  * Logs a menu selection to the server.
  */
 const logMenuSelection = async (item) => {
-  const mediaKey = item?.play || item?.queue || item?.list || item?.open;
+  const mediaKey = item?.play || item?.queue || item?.list || item?.open || item?.launch;
   if (!mediaKey) return;
 
   const selectedKey = Array.isArray(mediaKey)
