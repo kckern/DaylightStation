@@ -65,7 +65,7 @@ function advanceToUnlocked(engine, participants, userZoneMap, zoneRankMap, zoneI
 }
 
 describe('GovernanceEngine — challenge failure lock priority', () => {
-  it('should NOT lock when challenge fails but base requirements ARE satisfied', () => {
+  it('should lock when challenge fails even if base requirements ARE satisfied', () => {
     const participants = ['alice', 'bob', 'charlie'];
     const userZoneMap = { alice: 'warm', bob: 'warm', charlie: 'active' };
     const { engine, zoneRankMap, zoneInfoMap } = createEngine({ participants, grace: 30 });
@@ -90,8 +90,8 @@ describe('GovernanceEngine — challenge failure lock priority', () => {
     // All participants are in Active zone or above — base requirement satisfied
     engine.evaluate({ activeParticipants: participants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount: 3 });
 
-    // Should NOT be locked — base requirements are met
-    expect(engine.phase).not.toBe('locked');
+    // Should be locked — challenge failure locks regardless of base requirements
+    expect(engine.phase).toBe('locked');
   });
 
   it('should lock when challenge fails AND base requirements are NOT satisfied', () => {
