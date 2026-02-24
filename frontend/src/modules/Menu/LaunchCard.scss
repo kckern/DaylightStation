@@ -64,4 +64,23 @@
       font-size: 0.9rem;
     }
   }
+
+  &--blocked {
+    background: rgba(0, 0, 0, 0.95);
+  }
+
+  &__ok-btn {
+    padding: 0.5rem 2rem;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 8px;
+    background: transparent;
+    color: #f8fafc;
+    cursor: pointer;
+    font-size: 1rem;
+    margin-top: 0.5rem;
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.1);
+    }
+  }
 }
