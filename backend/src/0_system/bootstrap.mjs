@@ -759,7 +759,7 @@ export function createApiRouters(config) {
 
   return {
     routers: {
-      content: createContentRouter(registry, mediaProgressMemory, { loadFile, saveFile, cacheBasePath, composePresentationUseCase, contentQueryService, logger, aliasResolver }),
+      content: createContentRouter(registry, mediaProgressMemory, { loadFile, saveFile, cacheBasePath, composePresentationUseCase, contentQueryService, configService, logger, aliasResolver }),
       proxy: createProxyRouter({ registry, proxyService, mediaBasePath, dataPath, retroarchProxy, logger }),
       localContent: createLocalContentRouter({ registry, dataPath, mediaBasePath, mediaProgressMemory }),
       play: createPlayRouter({ registry, mediaProgressMemory, playResponseService, contentQueryService, contentIdResolver, progressSyncService, progressSyncSources, logger }),
