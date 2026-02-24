@@ -13,6 +13,7 @@ import { GameOverlay } from './components/GameOverlay';
 import { PianoTetris } from './PianoTetris/PianoTetris.jsx';
 import { PianoFlashcards } from './PianoFlashcards/PianoFlashcards.jsx';
 import { getGameEntry } from './gameRegistry.js';
+import { getChildLogger } from '../../lib/logging/singleton.js';
 
 const GRACE_PERIOD_MS = 10000; // 10 seconds before countdown starts
 const COUNTDOWN_MS = 30000;   // 30 seconds countdown
@@ -34,6 +35,7 @@ const formatDuration = (seconds) => {
  * @param {function} props.onSessionEnd - Called when a piano session ends
  */
 export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
+  const logger = useMemo(() => getChildLogger({ component: 'piano-visualizer' }), []);
   const { activeNotes, sustainPedal, sessionInfo, noteHistory } = useMidiSubscription();
   const [inactivityState, setInactivityState] = useState('active'); // 'active' | 'grace' | 'countdown'
   const [countdownProgress, setCountdownProgress] = useState(100);
@@ -129,11 +131,11 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
         // Run on_open HA script if configured
         if (pianoConfig?.on_open) {
           DaylightAPI(`/api/v1/home/ha/script/${pianoConfig.on_open}`, {}, 'POST')
-            .then(() => console.debug('[Piano] HA on_open script executed'))
-            .catch(err => console.warn('[Piano] HA on_open script failed:', err.message));
+            .then(() => logger.debug('ha.on-open-executed', {}))
+            .catch(err => logger.warn('ha.on-open-failed', { error: err.message }));
         }
       } catch (err) {
-        console.warn('[Piano] Config load failed — HDMI auto-switch disabled:', err.message);
+        logger.warn('config-load-failed', { error: err.message });
       }
     };
     initPiano();
