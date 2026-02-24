@@ -206,9 +206,10 @@ The GovernanceEngine is a four-phase state machine:
 |------|----|-----------|
 | pending → unlocked | All requirements met for 500ms continuously |
 | unlocked → warning | Requirements break AND `satisfiedOnce = true` |
+| unlocked → locked | Challenge failure (absolute — base requirements irrelevant) |
 | warning → unlocked | Requirements re-satisfied |
 | warning → locked | Grace period expires OR challenge fails |
-| locked → unlocked | Requirements met for 500ms |
+| locked → unlocked | Requirements met for 500ms AND no active failed challenge |
 | any → pending | No media, no participants, or engine reset |
 
 ---
@@ -357,7 +358,9 @@ Prevents rapid phase cycling between unlocked/warning when requirements hover at
 
 ```
 For each evaluate():
-  If allSatisfied:
+  If challengeForcesRed (active challenge with status 'failed'):
+    phase = 'locked'   (recovery only via challenge satisfaction check)
+  Else if allSatisfied:
     If satisfiedSince is null → set satisfiedSince = now
     If (now - satisfiedSince) >= 500ms:
       satisfiedOnce = true
