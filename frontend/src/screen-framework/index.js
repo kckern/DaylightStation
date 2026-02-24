@@ -19,6 +19,7 @@ export { translateAction, translateSecondary, ACTION_MAP } from './input/actionM
 export { KeyboardAdapter } from './input/adapters/KeyboardAdapter.js';
 export { NumpadAdapter } from './input/adapters/NumpadAdapter.js';
 export { RemoteAdapter } from './input/adapters/RemoteAdapter.js';
+export { GamepadAdapter } from './input/adapters/GamepadAdapter.js';
 
 // Data layer
 export { DataManager, getDataManager, resetDataManager } from './data/DataManager.js';
