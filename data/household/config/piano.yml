@@ -1,0 +1,225 @@
+# Piano app configuration
+game:
+  activation:
+    notes: [30, 102]        # F#1 + F#7 — first and last F# keys on keyboard
+    window_ms: 300          # Max time between the two presses
+
+  timing:
+    perfect_ms: 80          # +/-80ms from target = Perfect
+    good_ms: 200            # +/-200ms from target = Good
+    miss_threshold_ms: 400  # Beyond this = Miss
+
+  scoring:
+    perfect_points: 100
+    good_points: 50
+    miss_penalty: 0
+    combo_multiplier: 0.1   # Each consecutive hit adds 10% bonus
+
+  levels:
+    # ── Invaders: Learn the keys ──────────────────────────
+
+    - name: "Three Keys"
+      notes: [60, 62, 64]          # C D E
+      range: [60, 72]
+      fall_duration_ms: 15000
+      spawn_delay_ms: 1500
+      max_visible: 1
+      simultaneous: 1
+      sequential: true
+      mode: invaders
+      points_to_advance: 22000     # ~200 hits
+      max_misses: 30
+
+    - name: "Five Keys"
+      notes: [60, 62, 64, 65, 67]  # C D E F G
+      range: [60, 72]
+      fall_duration_ms: 12000
+      spawn_delay_ms: 1200
+      max_visible: 1
+      simultaneous: 1
+      sequential: true
+      mode: invaders
+      points_to_advance: 22000     # ~200 hits
+      max_misses: 25
+
+    - name: "Full Octave"
+      notes: [60, 62, 64, 65, 67, 69, 71]  # C D E F G A B
+      range: [60, 72]
+      fall_duration_ms: 10000
+      spawn_delay_ms: 1000
+      max_visible: 1
+      simultaneous: 1
+      sequential: true
+      mode: invaders
+      points_to_advance: 22000     # ~200 hits
+      max_misses: 20
+
+    - name: "Mix It Up"
+      notes: [60, 62, 64, 65, 67, 69, 71]  # Same keys, random order
+      range: [60, 72]
+      fall_duration_ms: 9000
+      spawn_delay_ms: 800
+      max_visible: 2
+      simultaneous: 1
+      mode: invaders                # no sequential — any note can appear
+      points_to_advance: 11000     # ~100 hits
+      max_misses: 10
+
+    - name: "Sharp Notes"
+      notes: [60, 62, 64, 65, 66, 67, 69, 70, 71]  # Add F# and Bb
+      range: [60, 72]
+      fall_duration_ms: 9000
+      spawn_delay_ms: 800
+      max_visible: 2
+      simultaneous: 1
+      mode: invaders
+      points_to_advance: 11000     # ~100 hits
+      max_misses: 10
+
+    - name: "Two Octaves"
+      notes: [48, 50, 52, 53, 55, 57, 59, 60, 62, 64, 65, 67]  # C3-G4 white keys
+      range: [48, 72]
+      fall_duration_ms: 8000
+      spawn_delay_ms: 700
+      max_visible: 2
+      simultaneous: 1
+      mode: invaders
+      points_to_advance: 11000     # ~100 hits
+      max_misses: 8
+
+    # ── Hero: Timing matters ──────────────────────────────
+
+    - name: "Rhythm Time"
+      notes: [60, 62, 64, 65, 67]  # Back to easy 5 keys
+      range: [60, 72]
+      fall_duration_ms: 6000
+      spawn_delay_ms: 1000
+      max_visible: 2
+      simultaneous: 1
+      mode: hero
+      points_to_advance: 11000     # ~100 hits
+      max_misses: 8
+
+    - name: "Duets"
+      notes: [60, 62, 64, 65, 67, 69, 71]  # Full octave
+      range: [60, 72]
+      fall_duration_ms: 5000
+      spawn_delay_ms: 1200
+      max_visible: 2
+      simultaneous: 2
+      mode: hero
+      points_to_advance: 11000     # ~100 hits
+      max_misses: 6
+
+# ── Multi-game registry ──────────────────────────────────────────
+games:
+  rhythm:
+    activation:
+      notes: [30, 102]      # F#1 + F#7
+      window_ms: 300
+
+  tetris:
+    activation:
+      notes: [31, 103]      # G1 + G7
+      window_ms: 300
+    levels:
+      # --- Singles: learn the basics ---
+      - gravity_ms: 1200          # Lvl 0: Tutorial — 1 octave, white keys, very slow
+        complexity: single
+        note_range: [60, 72]      # C4–C5
+        white_keys_only: true
+        target_rotation: piece
+      - gravity_ms: 1000          # Lvl 1: Wider range, still white keys
+        complexity: single
+        note_range: [55, 76]      # G3–E5
+        white_keys_only: true
+        target_rotation: piece
+      - gravity_ms: 800           # Lvl 2: Introduce sharps/flats at comfortable speed
+        complexity: single
+        note_range: [48, 84]      # C3–C6
+        target_rotation: piece
+      # --- Dyads: two-note chords ---
+      - gravity_ms: 700           # Lvl 3: Introduce dyads — small range, white keys
+        complexity: dyad
+        note_range: [60, 72]      # C4–C5
+        white_keys_only: true
+        target_rotation: piece
+      - gravity_ms: 600           # Lvl 4: Dyads with full chromatic
+        complexity: dyad
+        note_range: [55, 76]      # G3–E5
+        target_rotation: piece
+      - gravity_ms: 500           # Lvl 5: Dyads + timer rotation, generous interval
+        complexity: dyad
+        note_range: [48, 84]      # C3–C6
+        target_rotation: timer
+        target_change_ms: 10000
+      # --- Triads: three-note chords ---
+      - gravity_ms: 500           # Lvl 6: Introduce triads — same speed, small white-key range
+        complexity: triad
+        note_range: [60, 72]      # C4–C5
+        white_keys_only: true
+        target_rotation: piece
+      - gravity_ms: 450           # Lvl 7: Triads with chromatic, slight speed bump
+        complexity: triad
+        note_range: [55, 76]      # G3–E5
+        target_rotation: piece
+      - gravity_ms: 400           # Lvl 8: Full range triads + timer rotation
+        complexity: triad
+        note_range: [48, 84]      # C3–C6
+        target_rotation: timer
+        target_change_ms: 8000
+      - gravity_ms: 350           # Lvl 9: Max difficulty — fast + triads + quick rotation
+        complexity: triad
+        note_range: [48, 84]      # C3–C6
+        target_rotation: timer
+        target_change_ms: 5000
+
+  flashcards:
+    activation:
+      notes: [33, 105]      # A1 + A7
+      window_ms: 300
+    chord_window_ms: 300
+    score_per_card: 10
+    levels:
+      # --- Singles: learn to read notes ---
+      - name: "White Keys"
+        complexity: single
+        note_range: [60, 72]      # C4–C5
+        white_keys_only: true
+        score_to_advance: 100
+      - name: "All Keys"
+        complexity: single
+        note_range: [60, 72]      # C4–C5
+        score_to_advance: 120
+      - name: "Wide Range"
+        complexity: single
+        note_range: [48, 84]      # C3–C6
+        score_to_advance: 140
+      # --- Dyads: two-note chords ---
+      - name: "White Dyads"
+        complexity: dyad
+        note_range: [60, 72]      # C4–C5
+        white_keys_only: true
+        score_to_advance: 160
+      - name: "All Dyads"
+        complexity: dyad
+        note_range: [60, 72]      # C4–C5
+        score_to_advance: 180
+      - name: "Wide Dyads"
+        complexity: dyad
+        note_range: [48, 84]      # C3–C6
+        score_to_advance: 200
+      # --- Triads: three-note chords ---
+      - name: "White Triads"
+        complexity: triad
+        note_range: [60, 72]      # C4–C5
+        white_keys_only: true
+        score_to_advance: 220
+      - name: "All Triads"
+        complexity: triad
+        note_range: [60, 72]      # C4–C5
+        score_to_advance: 240
+      - name: "Wide Triads"
+        complexity: triad
+        note_range: [48, 84]      # C3–C6
+        score_to_advance: 260
