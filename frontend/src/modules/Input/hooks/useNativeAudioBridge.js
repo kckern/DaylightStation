@@ -364,6 +364,16 @@ registerProcessor('bridge-processor', BridgeProcessor);`;
         let refWP = 0, refRP = 0, refCount = 0;
         let hasRef = false;
 
+        // Echo suppression gate: attenuate mic when ref is active.
+        // Works immediately (no convergence) — catches what AEC misses.
+        // refEnergy tracks recent reference signal level with slow decay.
+        let refEnergy = 0;
+        let gateGain = 1.0;
+        const GATE_ATTACK = 0.15;   // fast attack (suppress quickly)
+        const GATE_RELEASE = 0.005; // slow release (wait for echo to die)
+        const GATE_THRESHOLD = 0.001; // ref energy threshold to trigger
+        const GATE_FLOOR = 0.05;    // -26dB suppression when gate active
+
         const aecState = {
           get hasRef() { return hasRef; },
 
@@ -398,12 +408,24 @@ registerProcessor('bridge-processor', BridgeProcessor);`;
               micCount -= frameSize;
 
               // Read ref frame → WASM heap (Float32 → Int16)
+              // Also compute ref frame energy for the suppression gate.
+              let frameRefEnergy = 0;
               for (let i = 0; i < frameSize; i++) {
+                const sample = refRing[refRP];
+                frameRefEnergy += sample * sample;
                 speexMod.HEAP16[(refPtr >> 1) + i] =
-                  Math.max(-32768, Math.min(32767, refRing[refRP] * 32768));
+                  Math.max(-32768, Math.min(32767, sample * 32768));
                 refRP = (refRP + 1) % RING_SIZE;
               }
               refCount -= frameSize;
+              frameRefEnergy /= frameSize;
+
+              // Update ref energy tracker (fast attack, slow release)
+              if (frameRefEnergy > refEnergy) {
+                refEnergy += GATE_ATTACK * (frameRefEnergy - refEnergy);
+              } else {
+                refEnergy += GATE_RELEASE * (frameRefEnergy - refEnergy);
+              }
 
               // Run Speex echo cancellation (adaptive filter)
               speexMod._speex_echo_cancellation(state, micPtr, refPtr, outPtr);
@@ -412,10 +434,15 @@ registerProcessor('bridge-processor', BridgeProcessor);`;
               // (spectral subtraction using echo state estimate)
               speexMod._speex_preprocess_run(ppState, outPtr);
 
-              // Int16 → Float32 output
+              // Compute target gate gain based on ref energy
+              const targetGain = refEnergy > GATE_THRESHOLD ? GATE_FLOOR : 1.0;
+              // Smooth gain transitions to avoid clicking
+              gateGain += 0.1 * (targetGain - gateGain);
+
+              // Int16 → Float32 output, apply gate
               const output = new Float32Array(frameSize);
               for (let i = 0; i < frameSize; i++) {
-                output[i] = speexMod.HEAP16[(outPtr >> 1) + i] / 32768;
+                output[i] = (speexMod.HEAP16[(outPtr >> 1) + i] / 32768) * gateGain;
               }
               results.push(output);
             }
