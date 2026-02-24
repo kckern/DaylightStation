@@ -1,8 +1,14 @@
 // frontend/src/screen-framework/input/adapters/GamepadAdapter.js
 
 const BUTTON_MAP = {
-  0:  { key: 'Enter',      action: 'select',   payload: {},                        repeats: false },
-  1:  { key: 'Escape',     action: 'escape',   payload: {},                        repeats: false },
+  0:  { key: 'Enter',      action: 'select',   payload: {},                        repeats: false }, // A
+  1:  { key: 'Enter',      action: 'select',   payload: {},                        repeats: false }, // B
+  2:  { key: 'Enter',      action: 'select',   payload: {},                        repeats: false }, // X
+  3:  { key: 'Enter',      action: 'select',   payload: {},                        repeats: false }, // Y
+  4:  { key: 'Enter',      action: 'select',   payload: {},                        repeats: false }, // LB
+  5:  { key: 'Enter',      action: 'select',   payload: {},                        repeats: false }, // RB
+  8:  { key: 'Escape',     action: 'escape',   payload: {},                        repeats: false }, // Select
+  9:  { key: 'Enter',      action: 'select',   payload: {},                        repeats: false }, // Start
   12: { key: 'ArrowUp',    action: 'navigate',  payload: { direction: 'up' },      repeats: true },
   13: { key: 'ArrowDown',  action: 'navigate',  payload: { direction: 'down' },    repeats: true },
   14: { key: 'ArrowLeft',  action: 'navigate',  payload: { direction: 'left' },    repeats: true },

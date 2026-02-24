@@ -1,16 +1,35 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import getLogger from '../../lib/logging/Logger.js';
 import { DaylightMediaPath } from '../../lib/api.mjs';
 import './LaunchCard.scss';
 
+const LOAD_MS = 3000;
+
 const LaunchCard = ({ launch, title, thumbnail, metadata, onClose }) => {
   const logger = useMemo(() => getLogger().child({ component: 'LaunchCard' }), []);
-  const [status, setStatus] = useState('launching');
+  const [status, setStatus] = useState('loading');
   const [errorMsg, setErrorMsg] = useState(null);
   const [retryCount, setRetryCount] = useState(0);
   const [nextWindow, setNextWindow] = useState(null);
+  const progressRef = useRef(null);
 
+  // Animated progress bar via Web Animations API (immune to TVApp CSS animation kill)
   useEffect(() => {
+    if (status !== 'loading') return;
+    const el = progressRef.current;
+    if (!el) return;
+
+    const anim = el.animate(
+      [{ width: '0%' }, { width: '100%' }],
+      { duration: LOAD_MS, fill: 'forwards', easing: 'ease-out' }
+    );
+    anim.onfinish = () => setStatus('launching');
+    return () => anim.cancel();
+  }, [status, retryCount]);
+
+  // Fire launch when progress completes
+  useEffect(() => {
+    if (status !== 'launching') return;
     if (!launch?.contentId) return;
 
     const source = launch.contentId.split(':')[0] || 'retroarch';
@@ -24,7 +43,6 @@ const LaunchCard = ({ launch, title, thumbnail, metadata, onClose }) => {
       retryCount,
     });
 
-    // Pre-check schedule before attempting launch
     fetch(`/api/v1/content/schedule/${source}`)
       .then(res => res.ok ? res.json() : null)
       .then(scheduleData => {
@@ -32,12 +50,11 @@ const LaunchCard = ({ launch, title, thumbnail, metadata, onClose }) => {
           logger.info('launch.blocked.schedule', { contentId: launch.contentId, nextWindow: scheduleData.nextWindow });
           setStatus('blocked');
           setNextWindow(scheduleData.nextWindow || null);
-          return; // Don't attempt launch
+          return;
         }
 
         logger.debug('launch.schedule.ok', { contentId: launch.contentId, source });
 
-        // Schedule OK — proceed with launch
         const payload = {
           contentId: launch.contentId,
           ...(deviceId && { targetDeviceId: deviceId })
@@ -82,16 +99,24 @@ const LaunchCard = ({ launch, title, thumbnail, metadata, onClose }) => {
           setErrorMsg(message);
         }
       });
-  }, [launch?.contentId, retryCount]);
+  }, [status, launch?.contentId, retryCount]);
 
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (e.key === 'Escape') {
+      const key = e.key;
+      const isBack = key === 'Escape' || key === 'GamepadSelect';
+      const isSelect = key === 'Enter' || key === ' '
+        || key === 'GamepadA' || key === 'GamepadB'
+        || key === 'GamepadX' || key === 'GamepadY'
+        || key === 'GamepadL1' || key === 'GamepadR1'
+        || key === 'GamepadStart';
+
+      if (isBack) {
         e.preventDefault();
         onClose?.();
         return;
       }
-      if (status === 'blocked' && (e.key === ' ' || e.key === 'Enter' || e.code === 'MediaPlayPause')) {
+      if (status === 'blocked' && (isSelect || e.code === 'MediaPlayPause')) {
         e.preventDefault();
         onClose?.();
       }
@@ -122,7 +147,6 @@ const LaunchCard = ({ launch, title, thumbnail, metadata, onClose }) => {
           <img className="launch-card__art" src={sonicGif} alt="Not right now!" />
           <div className="launch-card__info">
             <h2 className="launch-card__title">No, no, no!<br/><small style={{color:"grey"}}>Too many games!</small></h2>
-
           </div>
         </>
       ) : (
@@ -132,13 +156,17 @@ const LaunchCard = ({ launch, title, thumbnail, metadata, onClose }) => {
             <h2 className="launch-card__title">{title}</h2>
             {metadata?.parentTitle && <p className="launch-card__console">{metadata.parentTitle}</p>}
           </div>
+          <div className="launch-card__progress-track">
+            <div className="launch-card__progress-fill" ref={progressRef} />
+          </div>
           <div className="launch-card__status">
+            {status === 'loading' && <span className="launch-card__spinner">Loading...</span>}
             {status === 'launching' && <span className="launch-card__spinner">Launching...</span>}
             {status === 'success' && <span className="launch-card__success">Launched</span>}
             {status === 'error' && (
               <div className="launch-card__error">
                 <span>{errorMsg}</span>
-                <button onClick={() => { logger.info('launch.retry', { contentId: launch?.contentId, retryCount: retryCount + 1 }); setStatus('launching'); setErrorMsg(null); setRetryCount(c => c + 1); }}>Retry</button>
+                <button onClick={() => { logger.info('launch.retry', { contentId: launch?.contentId, retryCount: retryCount + 1 }); setStatus('loading'); setErrorMsg(null); setRetryCount(c => c + 1); }}>Retry</button>
               </div>
             )}
           </div>
