@@ -3,7 +3,7 @@ import { getChildLogger } from '../../../lib/logging/singleton.js';
 import { PianoKeyboard } from '../components/PianoKeyboard';
 import { useTetrisGame } from './useTetrisGame.js';
 import { TetrisBoard } from './components/TetrisBoard.jsx';
-import { ActionStaff } from './components/ActionStaff.jsx';
+import { ActionStaff } from '../components/ActionStaff.jsx';
 import { TetrisOverlay } from './components/TetrisOverlay.jsx';
 import { ACTIONS } from './useStaffMatching.js';
 import './PianoTetris.scss';
