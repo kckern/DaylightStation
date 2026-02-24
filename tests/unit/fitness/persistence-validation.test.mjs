@@ -206,4 +206,78 @@ describe('PersistenceManager — validation', () => {
       expect(voiceEvents[0].data.elapsedSeconds).toBeNull();
     });
   });
+
+  describe('_augmentRosterFromSeries — roster augmentation from series', () => {
+    it('should include participants from series data missing from roster', () => {
+      const pm = new PersistenceManager();
+      const roster = [
+        { profileId: 'kckern', name: 'KC Kern', isPrimary: true, hrDeviceId: '40475' }
+      ];
+      const seriesData = {
+        'user:kckern:heart_rate': [100, 110, 120],
+        'user:felix:heart_rate': [120, 130, 140],
+        'user:milo:heart_rate': [130, 140, 150],
+        'user:alan:heart_rate': [110, 120, 130],
+        'user:soren:heart_rate': [90, 95, 100],
+        'bike:40475:rotations': [0, 0, 0],  // device series — should be ignored
+      };
+      const deviceAssignments = [
+        { deviceId: '40475', occupantId: 'kckern' },
+        { deviceId: '28688', occupantId: 'felix' },
+        { deviceId: '28812', occupantId: 'milo' },
+      ];
+
+      pm._augmentRosterFromSeries(roster, seriesData, deviceAssignments);
+
+      // Should have 5 entries: kckern (original) + felix, milo, alan, soren (from series)
+      expect(roster).toHaveLength(5);
+      const ids = roster.map(e => e.profileId);
+      expect(ids).toContain('kckern');
+      expect(ids).toContain('felix');
+      expect(ids).toContain('milo');
+      expect(ids).toContain('alan');
+      expect(ids).toContain('soren');
+
+      // felix should have hrDeviceId from deviceAssignments
+      const felix = roster.find(e => e.profileId === 'felix');
+      expect(felix.hrDeviceId).toBe('28688');
+
+      // alan should NOT have hrDeviceId (no assignment)
+      const alan = roster.find(e => e.profileId === 'alan');
+      expect(alan.hrDeviceId).toBeUndefined();
+    });
+
+    it('should not duplicate participants already in roster', () => {
+      const pm = new PersistenceManager();
+      const roster = [
+        { profileId: 'alice', name: 'Alice', hrDeviceId: '123' }
+      ];
+      const seriesData = {
+        'user:alice:heart_rate': [80, 90],
+        'user:alice:zone_id': ['active', 'warm'],
+      };
+
+      pm._augmentRosterFromSeries(roster, seriesData, []);
+
+      expect(roster).toHaveLength(1); // no duplicates
+      expect(roster[0].profileId).toBe('alice');
+      expect(roster[0].name).toBe('Alice'); // original entry preserved
+    });
+
+    it('should handle empty series data gracefully', () => {
+      const pm = new PersistenceManager();
+      const roster = [
+        { profileId: 'alice', name: 'Alice' }
+      ];
+
+      pm._augmentRosterFromSeries(roster, {}, []);
+      expect(roster).toHaveLength(1);
+
+      pm._augmentRosterFromSeries(roster, null, null);
+      expect(roster).toHaveLength(1);
+
+      pm._augmentRosterFromSeries(roster, undefined, undefined);
+      expect(roster).toHaveLength(1);
+    });
+  });
 });
