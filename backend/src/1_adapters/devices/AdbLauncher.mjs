@@ -61,7 +61,7 @@ export class AdbLauncher extends IDeviceLauncher {
   }
 
   #validateIntentParam(key, val) {
-    const shellMeta = /[;|&`${}[\]<>!\\]/;
+    const shellMeta = /[;|&`${}<>\\]/;
     if (shellMeta.test(key)) {
       throw new ValidationError('Intent param key contains disallowed characters', { field: key });
     }
