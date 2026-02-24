@@ -351,7 +351,20 @@ export function ArcadeSelector({
           )}
         </div>
         <div className="arcade-selector__hero-info">
-          <h1 className="arcade-selector__title">{currentItem.label}</h1>
+          <h1 className="arcade-selector__title">
+            {(() => {
+              let label = currentItem.label || '';
+              // Move trailing ", The" to front (e.g. "Legend of Zelda, The" → "The Legend of Zelda")
+              label = label.replace(/^(.+),\s*(The|A|An)\b/i, '$2 $1');
+              const match = label.match(/^(.+?)\s-\s(.+)$/) || label.match(/^(.+?:\s?)(.+)$/);
+              if (!match) return label;
+              const keepSep = !label.includes(' - '); // colon stays, dash hidden
+              return <>
+                {match[1]}{!keepSep && <span className="arcade-selector__title-sep"> - </span>}<br />
+                <span className="arcade-selector__subtitle">{match[2]}</span>
+              </>;
+            })()}
+          </h1>
           {currentItem.parentTitle && (
             <p className="arcade-selector__console">{currentItem.parentTitle}</p>
           )}

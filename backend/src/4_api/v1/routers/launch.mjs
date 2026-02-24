@@ -30,9 +30,9 @@ export function createLaunchRouter(config) {
   router.post('/', async (req, res) => {
     const { contentId, targetDeviceId } = req.body;
 
-    if (!contentId || !targetDeviceId) {
+    if (!contentId) {
       return res.status(400).json({
-        error: 'Missing required fields: contentId, targetDeviceId'
+        error: 'Missing required field: contentId'
       });
     }
 
