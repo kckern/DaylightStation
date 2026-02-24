@@ -656,13 +656,13 @@ export function createContentRegistry(config, deps = {}) {
     { category: appRegistryManifest.capability, provider: appRegistryManifest.provider }
   );
 
-  // Register RetroArchAdapter if retroarch config exists
-  if (config.retroarch?.config) {
+  // Register RetroArchAdapter if games config exists
+  if (config.games?.config) {
     registry.register(
       new RetroArchAdapter({
-        config: config.retroarch.config,
-        catalogReader: config.retroarch.catalogReader,
-        catalog: config.retroarch.catalog,
+        config: config.games.config,
+        catalogReader: config.games.catalogReader,
+        catalog: config.games.catalog,
         logger: deps.logger
       }),
       { category: 'game', provider: 'retroarch' }

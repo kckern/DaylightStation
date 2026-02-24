@@ -98,11 +98,10 @@ export class LaunchService {
   }
 
   #checkContentSchedule(contentId) {
-    const source = contentId.split(':')[0];
     if (!this.#configService) return;
 
-    const config = this.#configService.getHouseholdAppConfig(null, source);
-    const { available, nextWindow } = checkSchedule(source, config?.schedule);
+    const config = this.#configService.getHouseholdAppConfig(null, 'games');
+    const { available, nextWindow } = checkSchedule(config?.schedule);
 
     if (!available) {
       throw new ValidationError('Games are not available right now', {
