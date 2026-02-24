@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, jest } from '@jest/globals';
+import { describe, it, expect, jest } from '@jest/globals';
 
 jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
   default: () => ({
@@ -13,7 +13,7 @@ jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
 
 const { GovernanceEngine } = await import('#frontend/hooks/fitness/GovernanceEngine.js');
 
-function createEngine({ participants = [], userZoneMap = {}, grace = 30 } = {}) {
+function createEngine({ participants = [], grace = 30, challenges = [] } = {}) {
   const zoneConfig = [
     { id: 'cool', name: 'Cool', color: '#3399ff' },
     { id: 'active', name: 'Active', color: '#00cc00' },
@@ -27,7 +27,6 @@ function createEngine({ participants = [], userZoneMap = {}, grace = 30 } = {}) 
   };
   const engine = new GovernanceEngine(mockSession);
 
-  // Pass pre-normalized policies as second argument (bypasses _normalizePolicies)
   const policies = [{
     id: 'default',
     name: 'Default',
@@ -36,7 +35,7 @@ function createEngine({ participants = [], userZoneMap = {}, grace = 30 } = {}) 
       active: 'all',
       grace_period_seconds: grace
     },
-    challenges: []
+    challenges
   }];
 
   engine.configure({
@@ -56,70 +55,86 @@ function createEngine({ participants = [], userZoneMap = {}, grace = 30 } = {}) 
   return { engine, zoneRankMap, zoneInfoMap };
 }
 
-/**
- * Helper to advance engine to 'unlocked' phase by satisfying base requirements
- * and bypassing hysteresis.
- */
 function advanceToUnlocked(engine, participants, userZoneMap, zoneRankMap, zoneInfoMap) {
   engine.evaluate({ activeParticipants: participants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount: participants.length });
 }
 
-describe('GovernanceEngine — challenge failure lock priority', () => {
-  it('should lock when challenge fails even if base requirements ARE satisfied', () => {
+describe('GovernanceEngine — challenge failure lock (absolute)', () => {
+  it('should stay locked on challenge failure even when base requirements are met', () => {
     const participants = ['alice', 'bob', 'charlie'];
-    const userZoneMap = { alice: 'warm', bob: 'warm', charlie: 'active' };
+    // All participants at 'active' or above — base requirement (active: all) is satisfied
+    const userZoneMap = { alice: 'active', bob: 'active', charlie: 'active' };
     const { engine, zoneRankMap, zoneInfoMap } = createEngine({ participants, grace: 30 });
 
     // Advance to unlocked state
     advanceToUnlocked(engine, participants, userZoneMap, zoneRankMap, zoneInfoMap);
     expect(engine.phase).toBe('unlocked');
 
-    // Simulate a failed challenge (e.g. "all warm" but charlie is only "active")
+    // Inject a failed challenge — challenge required 'hot' zone but nobody reached it
     engine.challengeState.activeChallenge = {
       id: 'test-challenge',
       status: 'failed',
-      zone: 'warm',
+      zone: 'hot',
       requiredCount: 3,
       startedAt: Date.now() - 60000,
       expiresAt: Date.now() - 1000,
       timeLimitSeconds: 60,
-      selectionLabel: 'all warm',
-      summary: { satisfied: false, missingUsers: ['charlie'], metUsers: ['alice', 'bob'], actualCount: 2 }
+      selectionLabel: 'all hot',
+      summary: { satisfied: false, missingUsers: ['alice', 'bob', 'charlie'], metUsers: [], actualCount: 0 }
     };
 
-    // All participants are in Active zone or above — base requirement satisfied
+    // Evaluate — base requirements are still met (all active), but challenge failed
     engine.evaluate({ activeParticipants: participants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount: 3 });
 
-    // Should be locked — challenge failure locks regardless of base requirements
+    // Challenge failure must lock regardless of base requirement satisfaction
     expect(engine.phase).toBe('locked');
   });
 
-  it('should lock when challenge fails AND base requirements are NOT satisfied', () => {
+  it('should remain locked through multiple evaluations until challenge recovery', () => {
     const participants = ['alice', 'bob', 'charlie'];
-    const userZoneMap = { alice: 'warm', bob: 'active', charlie: 'cool' };
-    const { engine, zoneRankMap, zoneInfoMap } = createEngine({ participants, grace: 30 });
+    // All participants at 'active' — base requirement satisfied
+    const userZoneMap = { alice: 'active', bob: 'active', charlie: 'active' };
 
-    // Get to unlocked first with all meeting requirements
-    const allActive = { alice: 'warm', bob: 'active', charlie: 'active' };
-    advanceToUnlocked(engine, participants, allActive, zoneRankMap, zoneInfoMap);
+    // Include a challenge config so _evaluateChallenges doesn't clear activeChallenge
+    const challengeConfig = [{
+      id: 'test-challenge-config',
+      intervalRangeSeconds: [30, 60],
+      minParticipants: 1,
+      selectionType: 'cyclic',
+      selections: [
+        { id: 'sel-hot', zone: 'hot', rule: 'all', timeAllowedSeconds: 60, label: 'all hot' }
+      ]
+    }];
+
+    const { engine, zoneRankMap, zoneInfoMap } = createEngine({
+      participants,
+      grace: 30,
+      challenges: challengeConfig
+    });
+
+    // Advance to unlocked state
+    advanceToUnlocked(engine, participants, userZoneMap, zoneRankMap, zoneInfoMap);
     expect(engine.phase).toBe('unlocked');
 
-    // Now charlie drops to cool AND challenge fails
+    // Inject a failed challenge
     engine.challengeState.activeChallenge = {
       id: 'test-challenge',
       status: 'failed',
-      zone: 'warm',
+      zone: 'hot',
+      rule: 'all',
       requiredCount: 3,
       startedAt: Date.now() - 60000,
       expiresAt: Date.now() - 1000,
       timeLimitSeconds: 60,
-      selectionLabel: 'all warm',
-      summary: { satisfied: false, missingUsers: ['charlie'], metUsers: ['alice', 'bob'], actualCount: 2 }
+      selectionLabel: 'all hot',
+      historyRecorded: false,
+      summary: { satisfied: false, missingUsers: ['alice', 'bob', 'charlie'], metUsers: [], actualCount: 0 }
     };
 
-    engine.evaluate({ activeParticipants: participants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount: 3 });
-
-    // SHOULD be locked — base requirements are not met AND challenge failed
-    expect(engine.phase).toBe('locked');
+    // Evaluate 5 times — lock must persist through all evaluations
+    for (let i = 0; i < 5; i++) {
+      engine.evaluate({ activeParticipants: participants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount: 3 });
+      expect(engine.phase).toBe('locked');
+    }
   });
 });
