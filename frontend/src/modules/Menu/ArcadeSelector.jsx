@@ -11,15 +11,13 @@ import MenuNavigationContext from "../../context/MenuNavigationContext";
 import getLogger from "../../lib/logging/Logger.js";
 import "./ArcadeSelector.scss";
 
-const VISIBLE_COUNT = 7;
-const HALF = Math.floor(VISIBLE_COUNT / 2);
-
 /**
  * ArcadeSelector: Hero-style game selector with large boxart on the left
- * and a vertically scrolling game list on the right.
+ * and a tile navmap on the right.
  *
  * Rendered by TVMenu when menuMeta.menuStyle === 'arcade'.
  */
+
 export function ArcadeSelector({
   items = [],
   depth,
@@ -31,11 +29,10 @@ export function ArcadeSelector({
 }) {
   const logger = useMemo(() => getLogger().child({ component: "arcade-selector" }), []);
   const heroArtRef = useRef(null);
-  const listRef = useRef(null);
   const navmapRef = useRef(null);
   const rootRef = useRef(null);
   const prevSelectedRef = useRef(selectedIndexProp);
-  const [thumbW, setThumbW] = useState(0); // 0 = hidden until computed
+  const [columns, setColumns] = useState([]); // variable-width column layout
 
   // --- Triple-mode selection state (copied from MenuItems) ---
   const navContext = useContext(MenuNavigationContext);
@@ -108,35 +105,74 @@ export function ArcadeSelector({
     return image;
   }, []);
 
-  // --- Keyboard navigation ---
+  // --- Build grid position lookup from columns layout ---
+  const gridPos = useMemo(() => {
+    if (!columns.length) return null;
+    const map = {};
+    columns.forEach((col, colIdx) => {
+      col.items.forEach((itemIdx, row) => {
+        map[itemIdx] = { col: colIdx, row };
+      });
+    });
+    return map;
+  }, [columns]);
+
+  // --- Keyboard navigation (spatial grid) ---
   const handleKeyDown = useCallback(
     (e) => {
       if (!items.length) return;
 
+      const navigate = (next) => {
+        setSelectedIndex(next, findKeyForItem(items[next]));
+      };
+
       switch (e.key) {
         case "ArrowUp":
           e.preventDefault();
-          {
-            const next = (selectedIndex - 1 + items.length) % items.length;
-            setSelectedIndex(next, findKeyForItem(items[next]));
+          if (gridPos && gridPos[selectedIndex]) {
+            const { col, row } = gridPos[selectedIndex];
+            const colItems = columns[col].items;
+            const nextRow = (row - 1 + colItems.length) % colItems.length;
+            navigate(colItems[nextRow]);
+          } else {
+            navigate((selectedIndex - 1 + items.length) % items.length);
           }
           break;
 
         case "ArrowDown":
           e.preventDefault();
-          {
-            const next = (selectedIndex + 1) % items.length;
-            setSelectedIndex(next, findKeyForItem(items[next]));
+          if (gridPos && gridPos[selectedIndex]) {
+            const { col, row } = gridPos[selectedIndex];
+            const colItems = columns[col].items;
+            const nextRow = (row + 1) % colItems.length;
+            navigate(colItems[nextRow]);
+          } else {
+            navigate((selectedIndex + 1) % items.length);
           }
           break;
 
         case "ArrowLeft":
           e.preventDefault();
-          handleClose();
+          if (gridPos && gridPos[selectedIndex]) {
+            const { col, row } = gridPos[selectedIndex];
+            const prevColIdx = (col - 1 + columns.length) % columns.length;
+            const prevCol = columns[prevColIdx].items;
+            const targetRow = Math.min(row, prevCol.length - 1);
+            navigate(prevCol[targetRow]);
+          } else {
+            handleClose();
+          }
           break;
 
         case "ArrowRight":
-          // no-op
+          e.preventDefault();
+          if (gridPos && gridPos[selectedIndex]) {
+            const { col, row } = gridPos[selectedIndex];
+            const nextColIdx = (col + 1) % columns.length;
+            const nextCol = columns[nextColIdx].items;
+            const targetRow = Math.min(row, nextCol.length - 1);
+            navigate(nextCol[targetRow]);
+          }
           break;
 
         case "Enter":
@@ -157,7 +193,7 @@ export function ArcadeSelector({
           break;
       }
     },
-    [items, selectedIndex, onSelect, handleClose, setSelectedIndex, findKeyForItem, logger]
+    [items, selectedIndex, columns, gridPos, onSelect, handleClose, setSelectedIndex, findKeyForItem, logger]
   );
 
   useEffect(() => {
@@ -211,26 +247,6 @@ export function ArcadeSelector({
         { duration: 150, easing: "ease-out" }
       );
 
-      // Slot-machine roller on the list
-      const prev = prevSelectedRef.current;
-      const delta = selectedIndex - prev;
-      // Determine direction: handle wrapping (jumping from last→first = down, first→last = up)
-      let direction;
-      if (Math.abs(delta) > items.length / 2) {
-        direction = delta < 0 ? 1 : -1; // wrapped
-      } else {
-        direction = delta > 0 ? 1 : -1;
-      }
-      const rollPx = direction * 72; // roughly one row height
-
-      listRef.current?.animate(
-        [
-          { transform: `translateY(${rollPx}px)` },
-          { transform: "translateY(0)" },
-        ],
-        { duration: 180, easing: "cubic-bezier(0.22, 1, 0.36, 1)" }
-      );
-
       prevSelectedRef.current = selectedIndex;
     }
   }, [selectedIndex, items, logger]);
@@ -241,63 +257,84 @@ export function ArcadeSelector({
     return () => logger.debug("unmounted");
   }, [logger, items.length]);
 
-  // --- Navmap layout: right-size thumbs to fill the entire panel ---
-  // For each possible column count, compute the exact width and height
-  // that fills the space. Pick the layout with the largest thumb area.
+  // --- Navmap layout: greedy balanced partition ---
+  // Assigns items to columns to equalize ratio sums (and thus widths).
+  // Sorts items largest-ratio-first, deals each to the column with
+  // the smallest current ratio sum.
+  const itemRatios = useMemo(() =>
+    items.map(item => item.thumbRatio || item.metadata?.thumbRatio || 0.75),
+    [items]
+  );
+
   useEffect(() => {
     const nav = navmapRef.current;
     if (!nav || !items.length) return;
-    const containerH = nav.clientHeight - 8;
-    const navW = nav.clientWidth - 8;
-    const GAP = 2;
-    const n = items.length;
+    const H = nav.clientHeight;
+    const W = nav.clientWidth;
+    const N = items.length;
+    const BORDER = 4;
+    const MIN_PER_COL = 2;
 
-    // Try every valid column count. Pick the one that maximizes
-    // total thumb area while still fitting vertically.
-    const ASPECT = 1.35;
-    let bestW = 20;
-    let bestFill = 0;
-    for (let cols = 1; cols <= n; cols++) {
-      const perCol = Math.ceil(n / cols);
-      const colW = Math.floor((navW - (cols - 1) * GAP) / cols);
-      if (colW < 20) break;
-      const itemH = colW * ASPECT;
-      const totalH = perCol * (itemH + GAP);
-      if (totalH > containerH) continue;
-      const fill = n * colW * itemH;
-      if (fill > bestFill) {
-        bestFill = fill;
-        bestW = colW;
+    // Sort item indices by ratio descending (largest first for greedy)
+    const sorted = items.map((_, i) => i);
+    sorted.sort((a, b) => itemRatios[b] - itemRatios[a]);
+
+    // Try each column count, pick the one with best fill
+    let bestLayout = null;
+    let bestScore = -1;
+    const maxK = Math.min(Math.floor(N / MIN_PER_COL), Math.floor(W / 40));
+
+    for (let k = 1; k <= maxK; k++) {
+      // Greedy balanced partition: assign each item to column with smallest ratio sum
+      const colSums = new Array(k).fill(0);
+      const colItems = Array.from({ length: k }, () => []);
+
+      for (const idx of sorted) {
+        // Find column with smallest ratio sum
+        let minCol = 0;
+        for (let c = 1; c < k; c++) {
+          if (colSums[c] < colSums[minCol]) minCol = c;
+        }
+        colItems[minCol].push(idx);
+        colSums[minCol] += itemRatios[idx];
+      }
+
+      // Skip if any column has fewer than MIN_PER_COL items
+      if (colItems.some(c => c.length < MIN_PER_COL)) continue;
+
+      // Compute per-column widths
+      const widths = colSums.map((sum, ci) => {
+        const count = colItems[ci].length;
+        return sum > 0 ? (H - BORDER * count) / sum : 0;
+      });
+      if (widths.some(w => w < 20)) continue;
+
+      const totalW = widths.reduce((s, w) => s + w, 0);
+      const scale = Math.min(1, W / totalW);
+      const fill = scale < 1 ? scale : totalW / W;
+
+      // Width uniformity
+      const avgW = totalW / k;
+      const variance = widths.reduce((s, w) => s + (w - avgW) ** 2, 0) / k;
+      const uniformity = 1 / (1 + variance / (avgW * avgW));
+      const score = fill * uniformity;
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestLayout = { colItems, widths, scale };
       }
     }
-    setThumbW(bestW);
-  }, [items.length]);
 
-  // Post-render: if actual images overflow, shrink until they fit
-  useEffect(() => {
-    const nav = navmapRef.current;
-    if (!nav || !thumbW) return;
-    const raf = requestAnimationFrame(() => {
-      if (nav.scrollHeight > nav.clientHeight + 4) {
-        setThumbW((prev) => Math.max(20, prev - 4));
-      }
-    });
-    return () => cancelAnimationFrame(raf);
-  }, [thumbW]);
+    if (bestLayout) {
+      setColumns(bestLayout.colItems.map((itemIndices, ci) => ({
+        width: Math.floor(bestLayout.widths[ci] * bestLayout.scale),
+        items: itemIndices
+      })));
+    }
+  }, [items.length, itemRatios]);
 
-  // --- Compute visible items (7-item window centered on selection) ---
   const currentItem = items[selectedIndex] || {};
   const heroImage = resolveImage(currentItem);
-
-  const visibleItems = useMemo(() => {
-    if (!items.length) return [];
-    const result = [];
-    for (let offset = -HALF; offset <= HALF; offset++) {
-      const idx = ((selectedIndex + offset) % items.length + items.length) % items.length;
-      result.push({ item: items[idx], index: idx, offset });
-    }
-    return result;
-  }, [items, selectedIndex]);
 
   if (!items.length) return null;
 
@@ -306,7 +343,12 @@ export function ArcadeSelector({
       {/* LEFT: Hero panel */}
       <div className="arcade-selector__hero">
         <div className="arcade-selector__hero-art" ref={heroArtRef}>
-          {heroImage && <img src={heroImage} alt={currentItem.label} />}
+          {heroImage && (
+            <>
+              <img className="arcade-selector__hero-bg" src={heroImage} alt="" aria-hidden="true" />
+              <img className="arcade-selector__hero-img" src={heroImage} alt={currentItem.label} />
+            </>
+          )}
         </div>
         <div className="arcade-selector__hero-info">
           <h1 className="arcade-selector__title">{currentItem.label}</h1>
@@ -316,45 +358,44 @@ export function ArcadeSelector({
         </div>
       </div>
 
-      {/* RIGHT: Scrollable game list */}
-      <div className="arcade-selector__list" ref={listRef}>
-        {visibleItems.map(({ item, index, offset }) => (
-          <div
-            key={index}
-            className={`arcade-selector__list-item ${offset === 0 ? "active" : ""}`}
-            data-distance={Math.abs(offset)}
-          >
-            <div className="arcade-selector__list-thumb">
-              {resolveImage(item) && (
-                <img src={resolveImage(item)} alt={item.label} />
-              )}
-            </div>
-            <div className="arcade-selector__list-text">
-              <span className="arcade-selector__list-label">{item.label}</span>
-              {item.parentTitle && (
-                <span className="arcade-selector__list-system">{item.parentTitle}</span>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* FAR RIGHT: Navmap — flex-wrap column, auto columns */}
+      {/* RIGHT: Navmap tiles — variable-width columns */}
       <div
         className="arcade-selector__navmap"
         ref={navmapRef}
-        style={{ '--thumb-w': `${thumbW}px`, visibility: thumbW ? 'visible' : 'hidden' }}
+        style={{ visibility: columns.length ? 'visible' : 'hidden' }}
       >
-        {items.map((item, index) => (
+        {columns.map((col, colIdx) => (
           <div
-            key={index}
-            className={`arcade-selector__navmap-item ${index === selectedIndex ? "active" : ""}`}
+            key={colIdx}
+            className="arcade-selector__navmap-col"
+            style={{ width: `${col.width}px` }}
           >
-            {resolveImage(item) ? (
-              <img src={resolveImage(item)} alt={item.label} />
-            ) : (
-              <span className="arcade-selector__navmap-placeholder" />
-            )}
+            {col.items.map(index => {
+              const ratio = itemRatios[index];
+              // Deterministic random hue from item index for placeholder color
+              const hue = (index * 137.508) % 360;
+              return (
+                <div
+                  key={index}
+                  className={`arcade-selector__navmap-item ${index === selectedIndex ? "active" : ""}`}
+                  style={{
+                    aspectRatio: `1 / ${ratio}`,
+                    backgroundColor: `hsl(${hue}, 40%, 20%)`,
+                  }}
+                >
+                  {resolveImage(items[index]) ? (
+                    <img
+                      src={resolveImage(items[index])}
+                      alt={items[index].label}
+                      width={col.width}
+                      height={Math.round(col.width * ratio)}
+                    />
+                  ) : (
+                    <span className="arcade-selector__navmap-placeholder" />
+                  )}
+                </div>
+              );
+            })}
           </div>
         ))}
       </div>

@@ -60,7 +60,11 @@ export class RetroArchAdapter {
       title,
       type: 'game',
       thumbnail: game.thumbnail ? `/api/v1/proxy/retroarch/thumbnail/${game.thumbnail}` : null,
-      metadata: { type: 'game', console: consoleId, parentTitle: consoleConfig.label, menuStyle: consoleConfig.menuStyle },
+      metadata: {
+        type: 'game', console: consoleId, parentTitle: consoleConfig.label, menuStyle: consoleConfig.menuStyle,
+        ...(game.thumbRatio != null && { thumbRatio: game.thumbRatio }),
+        ...(game.lastPlayed != null && { lastPlayed: game.lastPlayed })
+      },
       launchIntent: {
         target: launchTarget,
         params: { ROM: game.rom, LIBRETRO: consoleConfig.core }
@@ -188,7 +192,11 @@ export class RetroArchAdapter {
           title: overrides.title || this.#sanitizeTitle(game.title),
           type: 'game',
           thumbnail: game.thumbnail ? `/api/v1/proxy/retroarch/thumbnail/${game.thumbnail}` : null,
-          metadata: { type: 'game', console: consoleId, parentTitle: consoleConfig.label },
+          metadata: {
+            type: 'game', console: consoleId, parentTitle: consoleConfig.label,
+            ...(game.thumbRatio != null && { thumbRatio: game.thumbRatio }),
+            ...(game.lastPlayed != null && { lastPlayed: game.lastPlayed })
+          },
           actions: { launch: { contentId: compoundId } }
         });
       });
