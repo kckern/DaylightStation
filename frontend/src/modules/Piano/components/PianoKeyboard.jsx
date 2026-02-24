@@ -1,17 +1,6 @@
 import React, { useMemo } from 'react';
+import { isWhiteKey, getNoteName } from '../noteUtils.js';
 import './PianoKeyboard.scss';
-
-// White keys in an octave (C, D, E, F, G, A, B)
-const WHITE_KEY_NOTES = [0, 2, 4, 5, 7, 9, 11];
-const isWhiteKey = (note) => WHITE_KEY_NOTES.includes(note % 12);
-
-// Note names for display
-const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-const getNoteLabel = (note) => {
-  const octave = Math.floor(note / 12) - 1;
-  const name = NOTE_NAMES[note % 12];
-  return `${name}${octave}`;
-};
 
 /**
  * Visual piano keyboard component
@@ -47,10 +36,10 @@ export function PianoKeyboard({
           className={`piano-key ${isWhite ? 'white' : 'black'} ${isActive ? 'active' : ''}${isTarget ? ' target' : ''}${isWrong ? ' wrong' : ''}`}
           style={{ '--velocity': velocity / 127 }}
           data-note={note}
-          data-label={getNoteLabel(note)}
+          data-label={getNoteName(note)}
         >
           {showLabels && isWhite && note % 12 === 0 && (
-            <span className="note-label">{getNoteLabel(note)}</span>
+            <span className="note-label">{getNoteName(note)}</span>
           )}
         </div>
       );
