@@ -4,8 +4,10 @@ import React, {
   useRef,
   useCallback,
   useContext,
+  useMemo,
 } from "react";
 import { DaylightAPI, DaylightMediaPath, ContentDisplayUrl } from "../../lib/api.mjs";
+import getLogger from "../../lib/logging/Logger.js";
 import "./Menu.scss";
 import MenuNavigationContext from "../../context/MenuNavigationContext";
 import { MenuSkeleton } from "./MenuSkeleton";
@@ -541,6 +543,7 @@ function MenuItems({
   MENU_TIMEOUT = 0,
   containerRef,
 }) {
+  const logger = useMemo(() => getLogger().child({ component: 'MenuItems' }), []);
   // Try to get context (may be null if not within provider)
   const navContext = useContext(MenuNavigationContext);
   const useContextMode = depth !== undefined && navContext !== null;
@@ -617,8 +620,11 @@ function MenuItems({
       if (!items.length) return;
 
       const key = e.key;
+      const synthetic = !!e.__gamepadSynthetic;
       const isBack = key === "Escape" || key === "GamepadSelect";
       const isModifier = key === "Shift" || key === "Control" || key === "Alt" || key === "Meta" || key === "Tab";
+
+      logger.debug("keydown", { key, code: e.code, synthetic, isBack, isModifier });
 
       if (key === "ArrowUp") {
         e.preventDefault();

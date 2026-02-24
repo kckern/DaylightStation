@@ -173,9 +173,12 @@ export function ArcadeSelector({
       };
 
       const key = e.key;
+      const synthetic = !!e.__gamepadSynthetic;
       const isBack = key === "Escape" || key === "GamepadSelect";
       const isArrow = key.startsWith("Arrow");
       const isModifier = key === "Shift" || key === "Control" || key === "Alt" || key === "Meta" || key === "Tab";
+
+      logger.debug("keydown", { key, code: e.code, synthetic, isArrow, isBack, isModifier });
 
       if (key === "ArrowUp") {
           e.preventDefault();
