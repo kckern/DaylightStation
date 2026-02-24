@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useRef, useEffect, useState, useCallback } from 'react';
 import { getNoteName } from '../../noteUtils.js';
 import {
   IconCaretLeftFilled,
@@ -79,11 +79,42 @@ export function ActionStaff({ action, targetPitches = [], matched = false, fired
   // Determine clef from first note (all notes in a staff should share clef)
   const clef = notePositions[0]?.clef ?? 'treble';
 
-  // Staff line Y positions — portrait viewBox (100x140), lines spaced 14px apart
-  // Centered vertically: lines from y=42 to y=98
+  // Staff line Y positions — viewBox height tightened so staff fills most of the space
+  // 2 spaces padding above top line, 2 spaces below bottom line
   const lineSpacing = 14;
-  const bottomLineY = 98;
+  const topPad = lineSpacing * 2;
+  const bottomLineY = topPad + lineSpacing * 4; // top line at topPad, bottom line 4 spaces down
+  const viewBoxH = bottomLineY + lineSpacing * 2; // 2 spaces below bottom line
   const staffLineYs = [0, 1, 2, 3, 4].map(i => bottomLineY - i * lineSpacing);
+
+  // Dynamically scale clef glyph to fit staff area via getBBox()
+  const clefRef = useRef(null);
+  const [clefTransform, setClefTransform] = useState('');
+  const [clefReady, setClefReady] = useState(false);
+
+  const targetW = lineSpacing * 3;
+  const targetH = lineSpacing * 6;
+  const targetX = 2;
+  const targetY = bottomLineY - lineSpacing * 5;
+
+  const measureClef = useCallback((node) => {
+    if (!node) return;
+    clefRef.current = node;
+    try {
+      const bbox = node.getBBox();
+      if (bbox.width === 0 || bbox.height === 0) return;
+      const scale = Math.min(targetW / bbox.width, targetH / bbox.height);
+      const tx = targetX - bbox.x * scale;
+      const ty = targetY - bbox.y * scale;
+      setClefTransform(`translate(${tx}, ${ty}) scale(${scale})`);
+      setClefReady(true);
+    } catch (e) { /* getBBox can throw if not rendered */ }
+  }, [targetW, targetH, targetX, targetY]);
+
+  // Re-measure if clef type changes
+  useEffect(() => {
+    if (clefRef.current) measureClef(clefRef.current);
+  }, [clef, measureClef]);
 
   const cls = [
     'action-staff',
@@ -101,14 +132,25 @@ export function ActionStaff({ action, targetPitches = [], matched = false, fired
         )}
       </div>
 
-      <svg className="action-staff__svg" viewBox="0 0 100 140" preserveAspectRatio="xMidYMid meet">
-        {/* Staff lines */}
-        {staffLineYs.map((y, i) => (
-          <line key={i} x1="5" y1={y} x2="95" y2={y} stroke="rgba(0,0,0,0.25)" strokeWidth="1" />
-        ))}
+      <div className="action-staff__staff-area">
+        {/* Staff lines — separate SVG with preserveAspectRatio="none" so lines stretch to full width */}
+        <svg className="action-staff__lines-svg" viewBox={`0 0 100 ${viewBoxH}`} preserveAspectRatio="none">
+          {staffLineYs.map((y, i) => (
+            <line key={i} x1="0" y1={y} x2="100" y2={y} stroke="rgba(0,0,0,0.25)" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+          ))}
+        </svg>
 
-        {/* Clef symbol */}
-        <text x="-4" y={clef === 'treble' ? bottomLineY + 11 : bottomLineY - 11} fontSize={clef === 'treble' ? '120' : '85'} fill="rgba(0,0,0,0.4)" fontFamily="serif">
+        {/* Notation (clef + note) — proportional scaling */}
+        <svg className="action-staff__notation-svg" viewBox={`0 0 100 ${viewBoxH}`} preserveAspectRatio="xMidYMid meet">
+        {/* Clef — rendered large, then JS-scaled via getBBox() to fit staff */}
+        <text
+          ref={measureClef}
+          fontSize="200"
+          fill="rgba(0,0,0,0.4)"
+          fontFamily="serif"
+          transform={clefTransform}
+          opacity={clefReady ? 1 : 0}
+        >
           {clef === 'treble' ? '\u{1D11E}' : '\u{1D122}'}
         </text>
 
@@ -163,10 +205,8 @@ export function ActionStaff({ action, targetPitches = [], matched = false, fired
           );
         })}
       </svg>
-
-      <div className="action-staff__label">
-        {validPitches.length > 0 ? getNoteName(validPitches[0]) : ''}
       </div>
+
     </div>
   );
 }
