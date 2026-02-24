@@ -7,8 +7,10 @@ import { DaylightAPI } from '../../lib/api.mjs';
 import { isWhiteKey } from './noteUtils.js';
 import './PianoVisualizer.scss';
 import { useGameMode } from './useGameMode.js';
+import { useGameActivation } from './useGameActivation.js';
 import { TOTAL_HEALTH } from './gameEngine.js';
 import { GameOverlay } from './components/GameOverlay';
+import { PianoTetris } from './PianoTetris/PianoTetris.jsx';
 
 const GRACE_PERIOD_MS = 10000; // 10 seconds before countdown starts
 const COUNTDOWN_MS = 30000;   // 30 seconds countdown
@@ -39,10 +41,16 @@ export function PianoVisualizer({ onClose, onSessionEnd }) {
   const timerRef = useRef(null);
   const [showPlaceholder, setShowPlaceholder] = useState(false);
   const [gameConfig, setGameConfig] = useState(null);
+  const [gamesConfig, setGamesConfig] = useState(null);
   const pianoConfigRef = useRef(null); // Cache piano config for cleanup
 
   const game = useGameMode(activeNotes, noteHistory, gameConfig);
+  const activation = useGameActivation(activeNotes, gamesConfig);
   const [screenFlash, setScreenFlash] = useState(false);
+
+  // Determine active game type
+  const isTetrisGame = activation.activeGameId === 'tetris';
+  const isAnyGame = game.isGameMode || isTetrisGame;
 
   // Dynamic range for game mode — expand to at least 2 octaves, center with 1/3 octave padding
   const gameRange = game.isGameMode && game.currentLevel?.range;
@@ -109,6 +117,8 @@ export function PianoVisualizer({ onClose, onSessionEnd }) {
           const pianoAppConfig = await DaylightAPI('api/v1/admin/apps/piano/config');
           const gc = pianoAppConfig?.parsed?.game ?? null;
           setGameConfig(gc);
+          const gamesC = pianoAppConfig?.parsed?.games ?? null;
+          setGamesConfig(gamesC);
         } catch (err) {
           // Game mode unavailable — that's fine
         }
@@ -168,8 +178,8 @@ export function PianoVisualizer({ onClose, onSessionEnd }) {
   // Inactivity detection - only starts after last note is released
   useEffect(() => {
     const checkInactivity = () => {
-      // Don't auto-close during game mode
-      if (game.isGameMode) {
+      // Don't auto-close during any game mode
+      if (isAnyGame) {
         setInactivityState('active');
         setCountdownProgress(100);
         return;
@@ -207,7 +217,7 @@ export function PianoVisualizer({ onClose, onSessionEnd }) {
 
     timerRef.current = setInterval(checkInactivity, 100);
     return () => clearInterval(timerRef.current);
-  }, [onClose, activeNotes.size, game.isGameMode]);
+  }, [onClose, activeNotes.size, isAnyGame]);
 
   // Handle session end
   useEffect(() => {
@@ -221,7 +231,7 @@ export function PianoVisualizer({ onClose, onSessionEnd }) {
   }, [sessionInfo, onSessionEnd]);
 
   return (
-    <div className={`piano-visualizer${game.isGameMode ? ' game-mode' : ''}`}>
+    <div className={`piano-visualizer${game.isGameMode ? ' game-mode' : ''}${isTetrisGame ? ' tetris-mode' : ''}`}>
       <div className="piano-header">
         {game.isGameMode ? (
           <>
@@ -340,6 +350,16 @@ export function PianoVisualizer({ onClose, onSessionEnd }) {
       )}
 
       {screenFlash && <div className="wrong-flash" />}
+
+      {isTetrisGame && (
+        <div className="tetris-fullscreen">
+          <PianoTetris
+            activeNotes={activeNotes}
+            tetrisConfig={gamesConfig?.tetris}
+            onDeactivate={activation.deactivate}
+          />
+        </div>
+      )}
     </div>
   );
 }
