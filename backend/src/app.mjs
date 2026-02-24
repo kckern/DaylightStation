@@ -458,8 +458,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     musicOverlayPlaylist,
     singalong: singalongConfig,  // Sing-along content (hymns, primary songs)
     readalong: readalongConfig,  // Follow-along readalong content (scripture, talks, poetry)
-    retroarch: {  // RetroArch game launcher
-      config: configService.getHouseholdAppConfig(null, 'retroarch'),
+    games: {  // Game launcher (RetroArch adapter)
+      config: configService.getHouseholdAppConfig(null, 'games'),
       catalogReader: () => dataService.household.read('shared/retroarch/catalog')
     },
     storagePaths                 // Collection → media_memory filename mapping
@@ -490,8 +490,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   const progressSyncSources = progressSyncService ? new Set(['abs']) : null;
 
-  // Build RetroArch thumbnail proxy config from device file_server + retroarch source config
-  const retroarchAppConfig = configService.getHouseholdAppConfig(null, 'retroarch');
+  // Build RetroArch thumbnail proxy config from device file_server + games source config
+  const retroarchAppConfig = configService.getHouseholdAppConfig(null, 'games');
   const raFileServer = Object.values(configService.getHouseholdDevices()?.devices || {}).find(d => d.file_server)?.file_server;
   const retroarchProxy = (raFileServer && retroarchAppConfig?.source?.thumbnails_path)
     ? { baseUrl: `http://${raFileServer.host}:${raFileServer.port}`, thumbnailsPath: retroarchAppConfig.source.thumbnails_path }
@@ -1648,7 +1648,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // Register RetroArch sync source if config exists
-  const retroarchConfig = configService.getHouseholdAppConfig(null, 'retroarch');
+  const retroarchConfig = configService.getHouseholdAppConfig(null, 'games');
   const deviceConfigs = configService.getHouseholdDevices()?.devices || {};
   const fileServer = Object.values(deviceConfigs).find(d => d.file_server)?.file_server;
   const xploreBaseUrl = fileServer ? `http://${fileServer.host}:${fileServer.port}` : null;

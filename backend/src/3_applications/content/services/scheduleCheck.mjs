@@ -1,11 +1,10 @@
 /**
  * Check if content is currently within its allowed schedule.
- * @param {string} source - Content source (e.g. 'retroarch')
  * @param {Object} schedule - The schedule config object (per-day time windows)
  * @returns {{ available: boolean, nextWindow: { day: string, start: string } | null }}
  */
-export function checkSchedule(source, schedule) {
-  if (source !== 'retroarch' || !schedule) {
+export function checkSchedule(schedule) {
+  if (!schedule) {
     return { available: true, nextWindow: null };
   }
 

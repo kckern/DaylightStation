@@ -15,10 +15,14 @@ const GamesIndex = () => {
 
   useEffect(() => {
     logger.info('gamesIndex.mounted');
+    const withTimeout = (promise, ms = 5000) => {
+      const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms));
+      return Promise.race([promise, timeout]);
+    };
     Promise.all([
-      fetch('/api/v1/list/retroarch').then(r => r.json()),
-      fetch('/api/v1/sync/retroarch/status').then(r => r.json()).catch(() => null),
-      fetch('/api/v1/content/schedule/retroarch').then(r => r.json()).catch(() => null)
+      withTimeout(fetch('/api/v1/list/retroarch').then(r => r.json())).catch(() => []),
+      withTimeout(fetch('/api/v1/sync/retroarch/status').then(r => r.json())).catch(() => null),
+      withTimeout(fetch('/api/v1/content/schedule/retroarch').then(r => r.json())).catch(() => null)
     ]).then(([list, status, scheduleData]) => {
       setConsoles(list?.items || list || []);
       setSyncStatus(status);
@@ -44,11 +48,11 @@ const GamesIndex = () => {
   };
 
   const handleScheduleSave = async (newSchedule) => {
-    const configRes = await fetch('/api/v1/admin/config/files/household/config/retroarch.yml');
+    const configRes = await fetch('/api/v1/admin/config/files/household/config/games.yml');
     const configData = await configRes.json();
     const parsed = configData.parsed || {};
     parsed.schedule = newSchedule;
-    await fetch('/api/v1/admin/config/files/household/config/retroarch.yml', {
+    await fetch('/api/v1/admin/config/files/household/config/games.yml', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ parsed })

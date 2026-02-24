@@ -578,14 +578,13 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
   // ==========================================================================
 
   /**
-   * GET /api/content/schedule/:source/*
+   * GET /api/content/schedule/:source
    * Check if content from a source is currently within its allowed schedule.
    * Returns availability status, next window, and full schedule.
    */
-  router.get('/schedule/:source/*?', (req, res) => {
-    const { source } = req.params;
-    const config = configService?.getHouseholdAppConfig(null, source);
-    const { available, nextWindow } = checkSchedule(source, config?.schedule);
+  router.get('/schedule/:source', (req, res) => {
+    const config = configService?.getHouseholdAppConfig(null, 'games');
+    const { available, nextWindow } = checkSchedule(config?.schedule);
     res.json({ available, nextWindow, schedule: config?.schedule || null });
   });
 
