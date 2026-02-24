@@ -891,4 +891,201 @@ test.describe('Fitness Happy Path', () => {
     await sim.stopAll();
   });
 
+  // ═══════════════════════════════════════════════════════════════
+  // TEST 12: Persistence validation accepts heart_rate series keys
+  // Regression: PersistenceManager checked for `:hr` suffix but
+  //   actual series keys use `:heart_rate`, silently rejecting
+  //   every session since Feb 15 2026 with "no-meaningful-data".
+  // ═══════════════════════════════════════════════════════════════
+  test('persistence validation accepts heart_rate series keys', async () => {
+    // Ensure we're on the fitness app so PersistenceManager is loaded
+    if (!sharedPage.url().includes('/fitness')) {
+      await sharedPage.goto(`${BASE_URL}/fitness`, { waitUntil: 'domcontentloaded', timeout: 15000 });
+      await sharedPage.waitForTimeout(2000);
+    }
+
+    // Run validation directly in the browser with both key formats
+    const results = await sharedPage.evaluate(() => {
+      const session = window.__fitnessSession;
+      if (!session) return { error: 'no __fitnessSession on window' };
+      const pm = session._persistenceManager;
+      if (!pm) return { error: 'no _persistenceManager' };
+
+      const now = Date.now();
+      const basePayload = {
+        sessionId: 'test-' + now,
+        startTime: now - 120000,
+        endTime: now,
+        durationMs: 120000,
+        roster: [{ userId: 'testuser', displayName: 'Test User' }],
+        deviceAssignments: [{ deviceId: '12345', userId: 'testuser' }],
+        timeline: {
+          timebase: { intervalMs: 5000, tickCount: 24 },
+          events: [],
+          series: {}
+        }
+      };
+
+      // Test 1: heart_rate key (actual production format) — MUST pass
+      const hrPayload = JSON.parse(JSON.stringify(basePayload));
+      hrPayload.timeline.series['user:testuser:heart_rate'] = Array(24).fill(120);
+      hrPayload.timeline.series['user:testuser:zone_id'] = Array(24).fill(2);
+      hrPayload.timeline.series['user:testuser:coins_total'] = Array(24).fill(100);
+      const heartRateResult = pm.validateSessionPayload(hrPayload);
+
+      // Test 2: hr key (legacy format) — MUST also pass
+      const legacyPayload = JSON.parse(JSON.stringify(basePayload));
+      legacyPayload.sessionId = 'test-legacy-' + now;
+      legacyPayload.timeline.series['user:testuser:hr'] = Array(24).fill(110);
+      legacyPayload.timeline.series['user:testuser:zone_id'] = Array(24).fill(2);
+      legacyPayload.timeline.series['user:testuser:coins_total'] = Array(24).fill(50);
+      const legacyResult = pm.validateSessionPayload(legacyPayload);
+
+      // Test 3: no HR data — MUST fail with no-meaningful-data
+      const noHrPayload = JSON.parse(JSON.stringify(basePayload));
+      noHrPayload.sessionId = 'test-nohr-' + now;
+      noHrPayload.timeline.series['user:testuser:zone_id'] = Array(24).fill(0);
+      const noHrResult = pm.validateSessionPayload(noHrPayload);
+
+      // Test 4: all-zero HR — MUST fail with no-meaningful-data
+      const zeroHrPayload = JSON.parse(JSON.stringify(basePayload));
+      zeroHrPayload.sessionId = 'test-zerohr-' + now;
+      zeroHrPayload.timeline.series['user:testuser:heart_rate'] = Array(24).fill(0);
+      const zeroHrResult = pm.validateSessionPayload(zeroHrPayload);
+
+      return { heartRateResult, legacyResult, noHrResult, zeroHrResult };
+    });
+
+    if (results.error) {
+      throw new Error(`Cannot test validation: ${results.error}`);
+    }
+
+    // heart_rate key MUST be accepted
+    console.log('heart_rate result:', JSON.stringify(results.heartRateResult));
+    expect(results.heartRateResult.ok, `heart_rate series must be accepted, got: ${results.heartRateResult.reason}`).toBe(true);
+
+    // Legacy :hr key MUST also be accepted
+    console.log('legacy :hr result:', JSON.stringify(results.legacyResult));
+    expect(results.legacyResult.ok, `legacy :hr series must be accepted, got: ${results.legacyResult.reason}`).toBe(true);
+
+    // No HR series MUST be rejected
+    console.log('no HR result:', JSON.stringify(results.noHrResult));
+    expect(results.noHrResult.ok, 'No HR series should be rejected').toBe(false);
+    expect(results.noHrResult.reason).toBe('no-meaningful-data');
+
+    // All-zero HR MUST be rejected
+    console.log('zero HR result:', JSON.stringify(results.zeroHrResult));
+    expect(results.zeroHrResult.ok, 'All-zero HR should be rejected').toBe(false);
+    expect(results.zeroHrResult.reason).toBe('no-meaningful-data');
+
+    console.log('Validation regression test PASSED — heart_rate keys accepted');
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  // TEST 13: save_session API persists data to disk
+  // Proves the backend endpoint accepts a valid session payload
+  //   and the session file actually appears in the sessions list.
+  // ═══════════════════════════════════════════════════════════════
+  test('save_session API persists session to disk', async ({ request }) => {
+    const now = Date.now();
+    // Session IDs are numeric timestamps (YYYYMMDDHHmmss) — no text prefix
+    const sessionId = new Date(now).toISOString().replace(/[-T:.Z]/g, '').slice(0, 14);
+    const sessionDate = new Date(now).toISOString().slice(0, 10);
+    const startISO = new Date(now - 120000).toISOString().replace('T', ' ').slice(0, 23);
+    const endISO = new Date(now).toISOString().replace('T', ' ').slice(0, 23);
+
+    const sessionPayload = {
+      sessionData: {
+        version: 3,
+        sessionId,
+        session: {
+          id: sessionId,
+          date: sessionDate,
+          start: startISO,
+          end: endISO,
+          duration_seconds: 120
+        },
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        participants: {
+          testuser: {
+            display_name: 'Test User',
+            hr_device: '99999',
+            is_primary: true
+          }
+        },
+        timeline: {
+          series: {
+            'user:testuser:heart_rate': [100, 105, 110, 115, 120, 125, 130, 128, 125, 120, 115, 110, 105, 100, 98, 95, 92, 90, 88, 85, 82, 80, 78, 75],
+            'user:testuser:zone_id': [0, 0, 1, 1, 2, 2, 3, 3, 2, 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            'user:testuser:coins_total': [0, 1, 3, 5, 8, 12, 17, 22, 26, 30, 33, 36, 38, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50],
+            'global:coins': [0, 1, 3, 5, 8, 12, 17, 22, 26, 30, 33, 36, 38, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50]
+          },
+          events: [],
+          interval_seconds: 5,
+          tick_count: 24,
+          encoding: 'rle'
+        },
+        treasureBox: {
+          coinTimeUnitMs: 5000,
+          totalCoins: 50,
+          buckets: { blue: 0, green: 20, yellow: 20, orange: 10, red: 0 }
+        },
+        summary: {
+          participants: {
+            testuser: {
+              coins: 50,
+              hr_avg: 104,
+              hr_max: 130,
+              hr_min: 75,
+              zone_minutes: { cool: 1.0, active: 0.5, warm: 0.33, hot: 0.17 }
+            }
+          },
+          media: [],
+          coins: {
+            total: 50,
+            buckets: { blue: 0, green: 20, yellow: 20, orange: 10, red: 0 }
+          },
+          challenges: { total: 0, succeeded: 0, failed: 0 },
+          voiceMemos: []
+        }
+      }
+    };
+
+    // POST to save_session
+    console.log(`Posting test session ${sessionId} for date ${sessionDate}...`);
+    const saveResponse = await request.post(`${API_URL}/api/v1/fitness/save_session`, {
+      data: sessionPayload
+    });
+
+    expect(saveResponse.ok(), `save_session should return 200, got ${saveResponse.status()}`).toBe(true);
+
+    const saveResult = await saveResponse.json();
+    console.log('save_session response:', JSON.stringify({
+      message: saveResult.message,
+      filename: saveResult.filename,
+      sessionId: saveResult.sessionData?.sessionId || saveResult.sessionData?.session?.id
+    }));
+
+    expect(saveResult.message, 'Response should confirm save').toContain('saved');
+    expect(saveResult.filename, 'Response should include filename').toBeTruthy();
+
+    // Verify the session appears in the sessions list for that date
+    const listResponse = await request.get(`${API_URL}/api/v1/fitness/sessions?date=${sessionDate}`);
+    expect(listResponse.ok(), 'Sessions list should return 200').toBe(true);
+
+    const listData = await listResponse.json();
+    const sessions = listData.sessions || [];
+    console.log(`Sessions for ${sessionDate}: ${sessions.length} found`);
+    console.log('Session IDs:', sessions.map(s => s.sessionId || s.id).join(', '));
+
+    const found = sessions.some(s => {
+      const id = s.sessionId || s.id || '';
+      return id === sessionId || id.includes(sessionId);
+    });
+    expect(found, `Session ${sessionId} must appear in sessions list for ${sessionDate}`).toBe(true);
+    console.log(`Session ${sessionId} confirmed persisted to disk`);
+
+    console.log('Backend persistence test PASSED');
+  });
+
 });
