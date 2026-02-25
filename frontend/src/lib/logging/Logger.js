@@ -127,9 +127,14 @@ const accumulateData = (aggregated, data) => {
 
 /**
  * Emit a sampled log event with rate limiting
+ * @param {string} eventName
+ * @param {object} data
+ * @param {object} options - { maxPerMinute, aggregate }
+ * @param {object} [emitContext] - merged context to forward to emit() (used by child loggers)
  */
-const emitSampled = (eventName, data = {}, options = {}) => {
+const emitSampled = (eventName, data = {}, options = {}, emitContext) => {
   const { maxPerMinute = 20, aggregate = true } = options;
+  const emitOpts = emitContext ? { context: emitContext } : {};
   const now = Date.now();
 
   let state = samplingState.get(eventName);
@@ -143,7 +148,7 @@ const emitSampled = (eventName, data = {}, options = {}) => {
         skippedCount: state.skipped,
         window: '60s',
         aggregated: state.aggregated
-      });
+      }, emitOpts);
     }
     state = { count: 0, skipped: 0, aggregated: {}, windowStart: now };
     samplingState.set(eventName, state);
@@ -152,7 +157,7 @@ const emitSampled = (eventName, data = {}, options = {}) => {
   // Within budget: log normally
   if (state.count < maxPerMinute) {
     state.count++;
-    emit('info', eventName, data);
+    emit('info', eventName, data, emitOpts);
     return;
   }
 
@@ -174,7 +179,7 @@ const child = (childContext = {}) => {
     info: (eventName, data, opts) => emit('info', eventName, data, { ...opts, context: { ...parentContext, ...childContext, ...(opts?.context || {}) } }),
     warn: (eventName, data, opts) => emit('warn', eventName, data, { ...opts, context: { ...parentContext, ...childContext, ...(opts?.context || {}) } }),
     error: (eventName, data, opts) => emit('error', eventName, data, { ...opts, context: { ...parentContext, ...childContext, ...(opts?.context || {}) } }),
-    sampled: emitSampled,
+    sampled: (eventName, data, opts) => emitSampled(eventName, data, opts, { ...parentContext, ...childContext }),
     child: (ctx) => child({ ...parentContext, ...childContext, ...ctx })
   };
 
