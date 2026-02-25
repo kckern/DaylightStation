@@ -1,8 +1,9 @@
-import { useMemo, useEffect, useRef } from 'react';
+import { useMemo } from 'react';
 import { getChildLogger } from '../../../lib/logging/singleton.js';
 import { PianoKeyboard } from '../components/PianoKeyboard';
 import { ActionStaff } from '../components/ActionStaff.jsx';
 import { useFlashcardGame } from './useFlashcardGame.js';
+import { useAutoGameLifecycle } from '../useAutoGameLifecycle.js';
 import { AttemptHistory } from './components/AttemptHistory.jsx';
 import { computeKeyboardRange } from '../noteUtils.js';
 import './PianoFlashcards.scss';
@@ -19,24 +20,7 @@ export function PianoFlashcards({ activeNotes, flashcardsConfig, onDeactivate })
   const logger = useMemo(() => getChildLogger({ component: 'piano-flashcards' }), []);
 
   const game = useFlashcardGame(activeNotes, flashcardsConfig);
-
-  // Auto-start on mount
-  useEffect(() => {
-    if (game.phase === 'IDLE') {
-      logger.info('flashcards.auto-start', {});
-      game.startGame();
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps — intentional mount-only
-
-  // Auto-deactivate when game returns to IDLE after COMPLETE
-  const phaseRef = useRef(game.phase);
-  useEffect(() => {
-    if (phaseRef.current === 'COMPLETE' && game.phase === 'IDLE') {
-      logger.info('flashcards.auto-deactivate', {});
-      onDeactivate?.();
-    }
-    phaseRef.current = game.phase;
-  }, [game.phase, onDeactivate, logger]);
+  useAutoGameLifecycle(game.phase, game.startGame, onDeactivate, logger, 'flashcards');
 
   // Keyboard range from current level config
   const { startNote, endNote } = useMemo(
@@ -44,11 +28,11 @@ export function PianoFlashcards({ activeNotes, flashcardsConfig, onDeactivate })
     [game.levelConfig]
   );
 
-  // Target pitches for keyboard highlighting
+  // Target pitches for keyboard highlighting (only show after correct answer)
   const targetNotes = useMemo(() => {
-    if (!game.currentCard?.pitches) return null;
+    if (!game.currentCard?.pitches || game.cardStatus !== 'hit') return null;
     return new Set(game.currentCard.pitches);
-  }, [game.currentCard]);
+  }, [game.currentCard, game.cardStatus]);
 
   // Wrong notes for keyboard flash
   const wrongNotes = useMemo(() => {

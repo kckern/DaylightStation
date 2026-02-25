@@ -1,7 +1,8 @@
-import { useMemo, useEffect, useRef } from 'react';
+import { useMemo, useEffect } from 'react';
 import { getChildLogger } from '../../../lib/logging/singleton.js';
 import { PianoKeyboard } from '../components/PianoKeyboard';
 import { useTetrisGame } from './useTetrisGame.js';
+import { useAutoGameLifecycle } from '../useAutoGameLifecycle.js';
 import { TetrisBoard } from './components/TetrisBoard.jsx';
 import { ActionStaff } from '../components/ActionStaff.jsx';
 import { TetrisOverlay } from './components/TetrisOverlay.jsx';
@@ -22,24 +23,7 @@ export function PianoTetris({ activeNotes, tetrisConfig, onDeactivate }) {
   const logger = useMemo(() => getChildLogger({ component: 'piano-tetris-layout' }), []);
 
   const game = useTetrisGame(activeNotes, tetrisConfig);
-
-  // Auto-start when component mounts and game is IDLE
-  useEffect(() => {
-    if (game.phase === 'IDLE') {
-      logger.info('tetris.auto-start', {});
-      game.startGame();
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps — intentional mount-only
-
-  // When game finishes (goes back to IDLE after GAME_OVER), deactivate
-  const prevPhase = useRef(game.phase);
-  useEffect(() => {
-    if (prevPhase.current !== 'IDLE' && game.phase === 'IDLE') {
-      logger.info('tetris.auto-deactivate', {});
-      if (onDeactivate) onDeactivate();
-    }
-    prevPhase.current = game.phase;
-  }, [game.phase, onDeactivate, logger]);
+  useAutoGameLifecycle(game.phase, game.startGame, onDeactivate, logger, 'tetris');
 
   // Calculate keyboard range from current level's note_range with padding
   const levels = tetrisConfig?.levels ?? [];
