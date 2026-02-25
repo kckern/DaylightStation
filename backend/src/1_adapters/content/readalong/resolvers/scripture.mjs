@@ -1,6 +1,6 @@
 // backend/src/1_adapters/content/readalong/resolvers/scripture.mjs
 import { lookupReference, generateReference } from 'scripture-guide';
-import { listDirs } from '#system/utils/FileIO.mjs';
+import { listDirs, dirExists } from '#system/utils/FileIO.mjs';
 import path from 'path';
 
 /**
@@ -87,12 +87,73 @@ function tryResolveReference(segment, options = {}) {
 }
 
 /**
+ * Resolve an audio alias, supporting both flat strings and per-volume objects
+ * @param {Object} audioDefaults - Map of edition → audio slug or { volume: slug }
+ * @param {string} key - The audio key to resolve
+ * @param {string} volume - The volume context (ot, nt, bom, dc, pgp)
+ * @returns {string} Resolved audio slug
+ */
+function resolveAudioAlias(audioDefaults, key, volume) {
+  const alias = audioDefaults[key];
+  if (!alias) return key;
+  if (typeof alias === 'string') return alias;
+  // Per-volume object: { nt: 'niv-maxmclean' }
+  // If volume not listed, return key unchanged (e.g., ot/niv stays as 'niv')
+  return alias[volume] || key;
+}
+
+/**
+ * Check if a slug is a text edition directory for a given volume
+ * @param {string} dataPath - Base data path (e.g., .../scripture)
+ * @param {string} volume - Volume name (ot, nt, bom, dc, pgp)
+ * @param {string} slug - Directory slug to check
+ * @returns {boolean}
+ */
+function isTextDir(dataPath, volume, slug) {
+  return dirExists(path.join(dataPath, volume, slug));
+}
+
+/**
+ * Check if a slug is an audio recording directory for a given volume
+ * @param {string} mediaPath - Base media path (e.g., .../scripture)
+ * @param {string} volume - Volume name (ot, nt, bom, dc, pgp)
+ * @param {string} slug - Directory slug to check
+ * @returns {boolean}
+ */
+function isAudioDir(mediaPath, volume, slug) {
+  if (!mediaPath) return false;
+  return dirExists(path.join(mediaPath, volume, slug));
+}
+
+/**
+ * Derive a text edition slug from an audio recording slug.
+ * Convention: strip common audio suffixes (-music, -dramatized) and check
+ * if the base slug has a matching text directory.
+ * @param {string} audioSlug - Audio recording slug (e.g., 'esv-music')
+ * @param {string} dataPath - Base data path
+ * @param {string} volume - Volume name (ot, nt, etc.)
+ * @returns {string|null} Matching text slug, or null if no match found
+ */
+function deriveTextFromAudio(audioSlug, dataPath, volume) {
+  const base = audioSlug.replace(/-(music|dramatized)$/, '');
+  if (base !== audioSlug && isTextDir(dataPath, volume, base)) {
+    return base;
+  }
+  return null;
+}
+
+/**
  * ScriptureResolver - Resolves scripture references to normalized paths
  *
- * Supports format: {textVersion?}/{audioRecording?}/{reference}
- * - scripture/john-1 → uses manifest defaults
- * - scripture/kjvf/john-1 → explicit text, default audio
- * - scripture/kjvf/nirv/john-1 → explicit text and audio
+ * Flexible segment interpretation:
+ * - scripture/john-1 → 1 segment: all defaults from manifest
+ * - scripture/niv/john-1 → 2 segments: smart detection (audio-only? text? both?)
+ * - scripture/kjvf/kjv-maxmclean/john-1 → 3 segments: explicit version/audio/reference
+ *
+ * 2-segment smart detection:
+ * - If slug is audio-only dir (not a text dir): audio override, text from defaults
+ * - If slug is text dir (not audio-only): version override, audio from audioDefaults
+ * - If slug is both: treat as version (text), audio from audioDefaults
  *
  * Resolution cascade:
  * 1. Explicit in path
@@ -102,16 +163,17 @@ function tryResolveReference(segment, options = {}) {
 export const ScriptureResolver = {
   /**
    * Resolve scripture input to normalized paths for text and audio
-   * @param {string} input - Scripture path (e.g., "john-1", "kjvf/john-1", "kjvf/nirv/john-1", "nt")
+   * @param {string} input - Scripture path (e.g., "john-1", "niv/john-1", "kjvf/kjv-maxmclean/john-1", "nt")
    * @param {string} dataPath - Base path to scripture data
    * @param {Object} [options] - Resolution options
    * @param {string} [options.mediaPath] - Base path to scripture audio
    * @param {Object} [options.defaults] - Per-volume defaults { nt: { text: 'kjvf', audio: 'nirv' } }
+   * @param {Object} [options.audioDefaults] - Map text editions to audio directories { kjvf: 'kjv' }
    * @param {boolean} [options.allowVolumeAsContainer] - If true, volume-only input returns container indicator
    * @returns {{ textPath: string, audioPath: string, volume: string, verseId: string, isContainer?: boolean }|null}
    */
   resolve(input, dataPath, options = {}) {
-    const { mediaPath, defaults = {}, allowVolumeAsContainer = false } = options;
+    const { mediaPath, defaults = {}, audioDefaults = {}, allowVolumeAsContainer = false } = options;
 
     // Full path passthrough (volume/version/verseId format)
     // Only triggers when first segment is a known volume AND last is numeric
@@ -120,12 +182,13 @@ export const ScriptureResolver = {
       const isVolumeFirst = !!VOLUME_RANGES[first];
       const isNumericLast = /^\d+$/.test(last);
       if (isVolumeFirst && isNumericLast) {
+        const resolvedAudio = resolveAudioAlias(audioDefaults, version, first);
         return {
           textPath: input,
-          audioPath: input, // Same path for audio
+          audioPath: `${first}/${resolvedAudio}/${last}`,
           volume: first,
           textVersion: version,
-          audioRecording: version,
+          audioRecording: resolvedAudio,
           verseId: last
         };
       }
@@ -152,11 +215,12 @@ export const ScriptureResolver = {
     // If this is a container (volume-only), return early with container indicator
     if (isContainer) {
       const volumeDefaults = defaults[volume] || {};
+      const rawAudio = volumeDefaults.audio || (mediaPath ? getFirstDir(path.join(mediaPath, volume)) : null);
       return {
         volume,
         isContainer: true,
         textVersion: volumeDefaults.text || getFirstDir(path.join(dataPath, volume)) || 'default',
-        audioRecording: volumeDefaults.audio || (mediaPath ? getFirstDir(path.join(mediaPath, volume)) : null)
+        audioRecording: resolveAudioAlias(audioDefaults, rawAudio, volume)
       };
     }
 
@@ -165,34 +229,44 @@ export const ScriptureResolver = {
     // Get defaults for this volume
     const volumeDefaults = defaults[volume] || {};
 
-    // Determine text version
     let textVersion;
-    if (prefixSegments.length >= 1) {
+    let audioRecording;
+
+    if (prefixSegments.length >= 2) {
+      // 3+ segments: explicit version/audio/reference
       textVersion = prefixSegments[0];
-    } else if (volumeDefaults.text) {
-      textVersion = volumeDefaults.text;
+      audioRecording = prefixSegments[1];
+    } else if (prefixSegments.length === 1) {
+      // 2 segments: smart detection — is the prefix a text dir, audio dir, or both?
+      const slug = prefixSegments[0];
+      const slugIsText = isTextDir(dataPath, volume, slug);
+      const slugIsAudio = isAudioDir(mediaPath, volume, slug);
+
+      if (slugIsAudio && !slugIsText) {
+        // Audio-only dir (e.g., "kjv-maxmclean/john-1") → audio override, derive text or fall back to defaults
+        const derivedText = deriveTextFromAudio(slug, dataPath, volume);
+        textVersion = derivedText || volumeDefaults.text || getFirstDir(path.join(dataPath, volume)) || 'default';
+        audioRecording = slug;
+      } else {
+        // Text dir (or both text+audio, or unknown) → version override, audio from audioDefaults
+        textVersion = slug;
+        audioRecording = slug;
+      }
     } else {
-      textVersion = getFirstDir(path.join(dataPath, volume)) || 'default';
+      // 1 segment: just a reference → all defaults
+      textVersion = volumeDefaults.text || getFirstDir(path.join(dataPath, volume)) || 'default';
+      audioRecording = volumeDefaults.audio || (mediaPath ? getFirstDir(path.join(mediaPath, volume)) : textVersion);
     }
 
-    // Determine audio recording
-    let audioRecording;
-    if (prefixSegments.length >= 2) {
-      audioRecording = prefixSegments[1];
-    } else if (volumeDefaults.audio) {
-      audioRecording = volumeDefaults.audio;
-    } else if (mediaPath) {
-      audioRecording = getFirstDir(path.join(mediaPath, volume)) || textVersion;
-    } else {
-      audioRecording = textVersion;
-    }
+    // Apply audio alias (e.g., kjvf → kjv-maxmclean, lds → per-volume mapping)
+    const resolvedAudio = resolveAudioAlias(audioDefaults, audioRecording, volume);
 
     return {
       textPath: `${volume}/${textVersion}/${verseId}`,
-      audioPath: `${volume}/${audioRecording}/${verseId}`,
+      audioPath: `${volume}/${resolvedAudio}/${verseId}`,
       volume,
       textVersion,
-      audioRecording,
+      audioRecording: resolvedAudio,
       verseId
     };
   },
