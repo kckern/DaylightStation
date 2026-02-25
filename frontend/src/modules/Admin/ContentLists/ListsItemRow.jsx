@@ -27,6 +27,7 @@ import AdminPreviewPlayer from '../Preview/AdminPreviewPlayer.jsx';
 import Displayer from '../../Displayer/Displayer.jsx';
 import AppContainer from '../../AppContainer/AppContainer.jsx';
 import { getChildLogger } from '../../../lib/logging/singleton.js';
+import { ACTION_OPTIONS } from './listConstants.js';
 
 // Lazy admin logger with session logging enabled
 let _adminLog;
@@ -34,16 +35,6 @@ function adminLog(component) {
   if (!_adminLog) _adminLog = getChildLogger({ app: 'admin', sessionLog: true });
   return component ? _adminLog.child({ component }) : _adminLog;
 }
-
-const ACTION_OPTIONS = [
-  { value: 'Play', label: 'Play' },
-  { value: 'Queue', label: 'Queue' },
-  { value: 'List', label: 'List' },
-  { value: 'Open', label: 'Open' },
-  { value: 'Display', label: 'Display' },
-  { value: 'Read', label: 'Read' },
-  { value: 'Launch', label: 'Launch' },
-];
 
 // Types that represent containers (can be drilled into)
 const CONTAINER_TYPES = [
