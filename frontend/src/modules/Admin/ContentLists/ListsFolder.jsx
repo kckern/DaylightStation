@@ -233,11 +233,12 @@ function ListsFolder() {
         { section: targetSection, index: targetItems.length }
       );
     } else if (action === 'new-section') {
-      await addSection({ title: `Section ${sections.length + 1}` });
+      const newSectionIndex = sections.length;
+      await addSection({ title: `Section ${newSectionIndex + 1}` });
       // After adding, move the item to the newly created section (last index)
       await moveItem(
         { section: sectionIndex, index: itemIndex },
-        { section: sections.length, index: 0 }
+        { section: newSectionIndex, index: 0 }
       );
     }
   };
