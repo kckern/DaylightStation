@@ -5,6 +5,7 @@
  */
 
 import { getDispatcher, isLoggingInitialized } from './dispatcher.mjs';
+import { getSessionFileTransport } from './transports/sessionFile.mjs';
 
 /**
  * Process incoming log events from frontend
@@ -26,6 +27,13 @@ export function ingestFrontendLogs(payload, clientMeta = {}) {
     const normalized = normalizeEvent(event, clientMeta);
     if (normalized) {
       dispatcher.dispatch(normalized);
+
+      // Write to session file if sessionLog flag is set
+      const sft = getSessionFileTransport();
+      if (sft && normalized.context?.sessionLog) {
+        sft.write(normalized);
+      }
+
       processed++;
     }
   }
