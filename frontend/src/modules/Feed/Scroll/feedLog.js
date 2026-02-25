@@ -9,7 +9,8 @@
  * Enable debug output:  window.DAYLIGHT_LOG_LEVEL = 'debug'
  *                    or configure({ level: 'debug' })
  *
- * Categories: scroll, image, player, dismiss, detail, nav
+ * Categories: scroll, image, player, dismiss, detail, nav, assembly,
+ *             masonry, viewport, timing, interaction, session, resolution
  */
 
 import getLogger from '../../../lib/logging/Logger.js';
@@ -36,4 +37,9 @@ export const feedLog = {
   nav:      (detail, data) => emit('nav', detail, data),
   assembly: (detail, data) => emit('assembly', detail, data),
   masonry:  (detail, data) => emit('masonry', detail, data),
+  viewport:    (detail, data) => emit('viewport', detail, data),
+  timing:      (detail, data) => emit('timing', detail, data),
+  interaction: (detail, data) => emit('interaction', detail, data),
+  session:     (detail, data) => emit('session', detail, data),
+  resolution:  (detail, data) => emit('resolution', detail, data),
 };
