@@ -160,4 +160,43 @@ describe('SessionFileTransport', () => {
     expect(statusAfter.sessions.fitness).toBeDefined();
     expect(statusAfter.sessions.fitness.writable).toBe(true);
   });
+
+  describe('retention pruning', () => {
+    test('deletes files older than maxAgeDays on init', () => {
+      // Create app dir with an old file
+      const appDir = path.join(tmpDir, 'fitness');
+      fs.mkdirSync(appDir, { recursive: true });
+      const oldFile = path.join(appDir, '2026-02-20T10-00-00.jsonl');
+      fs.writeFileSync(oldFile, '{"event":"old"}\n');
+
+      // Backdate the file to 5 days ago
+      const fiveDaysAgo = Date.now() - 5 * 24 * 60 * 60 * 1000;
+      fs.utimesSync(oldFile, new Date(fiveDaysAgo), new Date(fiveDaysAgo));
+
+      // Create a recent file
+      const newFile = path.join(appDir, '2026-02-24T10-00-00.jsonl');
+      fs.writeFileSync(newFile, '{"event":"new"}\n');
+
+      // Init triggers pruning with 3-day max
+      initSessionFileTransport({ baseDir: tmpDir, maxAgeDays: 3 });
+
+      expect(fs.existsSync(oldFile)).toBe(false);
+      expect(fs.existsSync(newFile)).toBe(true);
+    });
+
+    test('ignores non-jsonl files during pruning', () => {
+      const appDir = path.join(tmpDir, 'fitness');
+      fs.mkdirSync(appDir, { recursive: true });
+      const readmeFile = path.join(appDir, 'README.md');
+      fs.writeFileSync(readmeFile, 'keep me');
+
+      // Backdate it
+      const oldDate = Date.now() - 10 * 24 * 60 * 60 * 1000;
+      fs.utimesSync(readmeFile, new Date(oldDate), new Date(oldDate));
+
+      initSessionFileTransport({ baseDir: tmpDir, maxAgeDays: 3 });
+
+      expect(fs.existsSync(readmeFile)).toBe(true);
+    });
+  });
 });
