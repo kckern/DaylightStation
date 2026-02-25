@@ -2496,6 +2496,20 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
     setEditingLabel(false);
   };
 
+  const handleLabelBlur = () => {
+    if (!labelValue?.trim()) {
+      log.debug('label.blur.revert', { index: item.index, label: item.label });
+      setLabelValue(item.label || '');
+      setEditingLabel(false);
+      return;
+    }
+    if (labelValue.trim() && labelValue !== item.label) {
+      log.info('label.save', { index: item.index, oldLabel: item.label, newLabel: labelValue.trim() });
+      onUpdate({ label: labelValue.trim() });
+    }
+    setEditingLabel(false);
+  };
+
   const handleLabelKeyDown = (e) => {
     if (e.key === 'Enter') {
       log.debug('label.key.enter', { index: item.index });
@@ -2615,7 +2629,7 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
               value={labelValue}
               onChange={(e) => setLabelValue(e.target.value)}
               onKeyDown={handleLabelKeyDown}
-              onBlur={handleLabelSave}
+              onBlur={handleLabelBlur}
               styles={{ input: { minHeight: 22, height: 22 } }}
             />
           </div>
