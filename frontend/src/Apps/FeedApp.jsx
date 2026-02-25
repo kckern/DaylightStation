@@ -48,7 +48,7 @@ function FeedLayout() {
   useFeedPWA();
 
   useEffect(() => {
-    configureLogger({ context: { app: 'feed', sessionLog: true } });
+    configureLogger({ level: 'debug', context: { app: 'feed', sessionLog: true } });
     log.info('feed-session.start', {
       userAgent: navigator.userAgent,
       viewport: { width: window.innerWidth, height: window.innerHeight },
@@ -56,7 +56,7 @@ function FeedLayout() {
     });
     return () => {
       log.info('feed-session.end');
-      configureLogger({ context: { sessionLog: false } });
+      configureLogger({ level: 'info', context: { sessionLog: false } });
     };
   }, []);
 
