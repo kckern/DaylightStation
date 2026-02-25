@@ -1,12 +1,12 @@
 import { useMemo } from 'react';
 import { getChildLogger } from '../../../lib/logging/singleton.js';
-import './GameOverlay.scss';
+import './RhythmOverlay.scss';
 
 /**
  * Game mode overlay — countdown, banners, victory screen.
  * Score HUD is in the PianoVisualizer header, not here.
  */
-export function GameOverlay({ gameState, countdown, score, currentLevel, levelProgress }) {
+export function RhythmOverlay({ gameState, countdown, score, currentLevel, levelProgress }) {
   const logger = useMemo(() => getChildLogger({ component: 'piano-game-overlay' }), []);
 
   // Countdown: 3, 2, 1, GO
@@ -123,4 +123,4 @@ export function GameOverlay({ gameState, countdown, score, currentLevel, levelPr
   return null;
 }
 
-export default GameOverlay;
+export default RhythmOverlay;
