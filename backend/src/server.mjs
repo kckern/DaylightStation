@@ -15,7 +15,7 @@ import { hydrateProcessEnvFromConfigs } from './0_system/logging/config.mjs';
 
 // Logging imports (use the new src/ logging)
 import { initializeLogging } from './0_system/logging/dispatcher.mjs';
-import { createConsoleTransport, createFileTransport, createLogglyTransport } from './0_system/logging/transports/index.mjs';
+import { createConsoleTransport, createFileTransport, createLogglyTransport, initSessionFileTransport } from './0_system/logging/transports/index.mjs';
 import { createLogger } from './0_system/logging/logger.mjs';
 import { loadLoggingConfig, resolveLoggerLevel, getLoggingTags } from './0_system/logging/config.mjs';
 
@@ -114,6 +114,13 @@ async function main() {
       tags: getLoggingTags(loggingConfig) || ['daylight', 'backend']
     }));
   }
+
+  // Session file transport - writes per-app session logs to media/logs/
+  const mediaDir = configService.getMediaDir();
+  initSessionFileTransport({
+    baseDir: join(mediaDir, 'logs'),
+    maxAgeDays: 3
+  });
 
   const logger = createLogger({
     source: 'backend',
