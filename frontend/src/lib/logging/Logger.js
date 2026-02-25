@@ -168,7 +168,7 @@ const emitSampled = (eventName, data = {}, options = {}) => {
  */
 const child = (childContext = {}) => {
   const parentContext = { ...config.context };
-  return {
+  const childLogger = {
     log: (level, eventName, data, opts) => emit(level, eventName, data, { ...opts, context: { ...parentContext, ...childContext, ...(opts?.context || {}) } }),
     debug: (eventName, data, opts) => emit('debug', eventName, data, { ...opts, context: { ...parentContext, ...childContext, ...(opts?.context || {}) } }),
     info: (eventName, data, opts) => emit('info', eventName, data, { ...opts, context: { ...parentContext, ...childContext, ...(opts?.context || {}) } }),
@@ -177,6 +177,13 @@ const child = (childContext = {}) => {
     sampled: emitSampled,
     child: (ctx) => child({ ...parentContext, ...childContext, ...ctx })
   };
+
+  // Auto-emit session start signal for session-logged apps
+  if (childContext.sessionLog) {
+    childLogger.info('session-log.start', { app: childContext.app || parentContext.app });
+  }
+
+  return childLogger;
 };
 
 /**
