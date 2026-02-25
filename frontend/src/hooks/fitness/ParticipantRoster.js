@@ -62,6 +62,7 @@ export class ParticipantRoster {
    * @param {Object} [config.treasureBox]
    * @param {Object} [config.activityMonitor]
    * @param {Object} [config.timeline]
+   * @param {Object} [config.zoneProfileStore]
    */
   configure(config = {}) {
     if (config.deviceManager) this._deviceManager = config.deviceManager;
@@ -112,7 +113,7 @@ export class ParticipantRoster {
     const roster = [];
     const heartRateDevices = this._deviceManager.getAllDevices().filter(d => d.type === 'heart_rate');
 
-    // Build zone lookup from TreasureBox
+    // Build zone lookup (TreasureBox baseline + ZoneProfileStore committed zones)
     const zoneLookup = this._buildZoneLookup();
 
     // Determine if we should prefer group labels (2+ PRESENT participants)
