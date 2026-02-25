@@ -668,7 +668,14 @@ export async function fetchContentMetadata(value) {
     const normalizedSource = normalizeListSource(source);
 
     try {
-      const response = await fetch(`/api/v1/info/${normalizedSource}/${localId}`);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      let response;
+      try {
+        response = await fetch(`/api/v1/info/${normalizedSource}/${localId}`, { signal: controller.signal });
+      } finally {
+        clearTimeout(timeoutId);
+      }
       if (response.ok) {
         const data = await response.json();
         const info = {
