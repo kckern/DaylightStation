@@ -51,6 +51,7 @@ export class ParticipantRoster {
     this._treasureBox = null;
     this._activityMonitor = null;
     this._timeline = null;
+    this._zoneProfileStore = null;
   }
 
   /**
@@ -68,6 +69,7 @@ export class ParticipantRoster {
     if (config.treasureBox !== undefined) this._treasureBox = config.treasureBox;
     if (config.activityMonitor !== undefined) this._activityMonitor = config.activityMonitor;
     if (config.timeline !== undefined) this._timeline = config.timeline;
+    if (config.zoneProfileStore !== undefined) this._zoneProfileStore = config.zoneProfileStore;
     this._invalidateCache();
   }
 
@@ -85,6 +87,7 @@ export class ParticipantRoster {
     this._treasureBox = null;
     this._activityMonitor = null;
     this._timeline = null;
+    this._zoneProfileStore = null;
   }
 
   /**
@@ -279,23 +282,32 @@ export class ParticipantRoster {
   _buildZoneLookup() {
     const zoneLookup = new Map();
 
-    if (!this._treasureBox) return zoneLookup;
-
-    const zoneSnapshot = typeof this._treasureBox.getUserZoneSnapshot === 'function'
-      ? this._treasureBox.getUserZoneSnapshot()
-      : [];
-
-    zoneSnapshot.forEach((entry) => {
-      if (!entry) return;
-      // Phase 4: Use trackingId (entityId with userId fallback) as primary key
-      const trackingId = entry.trackingId || entry.userId || entry.entityId;
-      if (!trackingId) return;
-
-      zoneLookup.set(trackingId, {
-        zoneId: entry.zoneId ? String(entry.zoneId).toLowerCase() : null,
-        color: entry.color || null
+    // Start with TreasureBox as baseline (raw zone data)
+    if (this._treasureBox && typeof this._treasureBox.getUserZoneSnapshot === 'function') {
+      const zoneSnapshot = this._treasureBox.getUserZoneSnapshot();
+      (zoneSnapshot || []).forEach((entry) => {
+        if (!entry) return;
+        const trackingId = entry.trackingId || entry.userId || entry.entityId;
+        if (!trackingId) return;
+        zoneLookup.set(trackingId, {
+          zoneId: entry.zoneId ? String(entry.zoneId).toLowerCase() : null,
+          color: entry.color || null
+        });
       });
-    });
+    }
+
+    // Override with ZoneProfileStore committed zones (hysteresis-aware)
+    if (this._zoneProfileStore && typeof this._zoneProfileStore.getZoneState === 'function') {
+      for (const [trackingId] of zoneLookup) {
+        const committed = this._zoneProfileStore.getZoneState(trackingId);
+        if (committed?.zoneId) {
+          zoneLookup.set(trackingId, {
+            zoneId: String(committed.zoneId).toLowerCase(),
+            color: committed.zoneColor || zoneLookup.get(trackingId)?.color || null
+          });
+        }
+      }
+    }
 
     return zoneLookup;
   }

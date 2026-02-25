@@ -1322,7 +1322,8 @@ export class FitnessSession {
       userManager: this.userManager,
       treasureBox: this.treasureBox,
       activityMonitor: this.activityMonitor,
-      timeline: this.timeline
+      timeline: this.timeline,
+      zoneProfileStore: this.zoneProfileStore
     });
     
     // Reset snapshot structures
@@ -1363,7 +1364,7 @@ export class FitnessSession {
     }
     
     // Update ParticipantRoster with treasureBox reference after creation
-    this._participantRoster.configure({ treasureBox: this.treasureBox });
+    this._participantRoster.configure({ treasureBox: this.treasureBox, zoneProfileStore: this.zoneProfileStore });
     
     // Update TimelineRecorder with treasureBox reference after creation
     this._timelineRecorder.setTreasureBox(this.treasureBox);
