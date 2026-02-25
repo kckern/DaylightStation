@@ -56,7 +56,7 @@ import { useMediaReporter } from '../hooks/useMediaReporter.js';
     onAdvance,
     onClear,
     shaders,
-    namespace,
+    listId,
     yStartTime = 15,
     playbackKeys = {},
     ignoreKeys = false,
@@ -149,7 +149,7 @@ import { useMediaReporter } from '../hooks/useMediaReporter.js';
       if (timeSinceLastLog > 10000 && parseFloat(percent) > 0) {
       lastLoggedTimeRef.current = now;
       const seconds = Math.round((duration * percent) / 100);
-      await DaylightAPI(`api/v1/play/log`, { title, type, assetId, seconds, percent: Math.round(percent), namespace });
+      await DaylightAPI(`api/v1/play/log`, { title, type, assetId, seconds, percent: Math.round(percent), listId });
       }
     };
 

@@ -30,7 +30,7 @@ export function ReadalongScroller({
   seekToIntentSeconds,
   onSeekRequestConsumed,
   remountDiagnostics,
-  namespace
+  listId
 }) {
   const [data, setData] = useState(initialData || null);
   const renderer = getReadalongRenderer();
@@ -176,7 +176,7 @@ export function ReadalongScroller({
         seekToIntentSeconds={seekToIntentSeconds}
         onSeekRequestConsumed={onSeekRequestConsumed}
         remountDiagnostics={remountDiagnostics}
-        namespace={namespace}
+        listId={listId}
       />
     </div>
   );
