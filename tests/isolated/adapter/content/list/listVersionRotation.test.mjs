@@ -1,33 +1,34 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 
 describe('version rotation helpers', () => {
-  let helpers;
+  let ScriptureResolver;
 
   beforeAll(async () => {
-    helpers = await import('#adapters/content/list/listVersionHelpers.mjs');
+    const mod = await import('#adapters/content/readalong/resolvers/scripture.mjs');
+    ScriptureResolver = mod.ScriptureResolver;
   });
 
   describe('getVolumeFromVerseId', () => {
     it('maps Genesis 1 (verse 1) to ot', () => {
-      expect(helpers.getVolumeFromVerseId(1)).toBe('ot');
+      expect(ScriptureResolver.getVolumeFromVerseId(1)).toBe('ot');
     });
 
     it('maps Malachi (verse 23091) to ot', () => {
-      expect(helpers.getVolumeFromVerseId(23091)).toBe('ot');
+      expect(ScriptureResolver.getVolumeFromVerseId(23091)).toBe('ot');
     });
 
     it('maps Moses 1 (verse 41995) to pgp', () => {
-      expect(helpers.getVolumeFromVerseId(41995)).toBe('pgp');
+      expect(ScriptureResolver.getVolumeFromVerseId(41995)).toBe('pgp');
     });
 
     it('returns null for out-of-range IDs', () => {
-      expect(helpers.getVolumeFromVerseId(99999)).toBeNull();
+      expect(ScriptureResolver.getVolumeFromVerseId(99999)).toBeNull();
     });
   });
 
   describe('selectVersion', () => {
     it('picks first version when nothing watched', () => {
-      const result = helpers.selectVersion(
+      const result = ScriptureResolver.selectVersion(
         ['esv-music', 'kjv-maxmclean'],
         []
       );
@@ -36,7 +37,7 @@ describe('version rotation helpers', () => {
     });
 
     it('picks second version when first is watched', () => {
-      const result = helpers.selectVersion(
+      const result = ScriptureResolver.selectVersion(
         ['esv-music', 'kjv-maxmclean'],
         ['esv-music']
       );
@@ -45,7 +46,7 @@ describe('version rotation helpers', () => {
     });
 
     it('returns complete when all versions watched', () => {
-      const result = helpers.selectVersion(
+      const result = ScriptureResolver.selectVersion(
         ['esv-music', 'kjv-maxmclean'],
         ['esv-music', 'kjv-maxmclean']
       );
@@ -54,7 +55,7 @@ describe('version rotation helpers', () => {
     });
 
     it('returns unwatched with null version when no prefs', () => {
-      const result = helpers.selectVersion([], []);
+      const result = ScriptureResolver.selectVersion([], []);
       expect(result.version).toBeNull();
       expect(result.watchState).toBe('unwatched');
     });
@@ -62,12 +63,12 @@ describe('version rotation helpers', () => {
 
   describe('buildVersionedStorageKey', () => {
     it('constructs readalong:scripture/{vol}/{version}/{id} key', () => {
-      const key = helpers.buildVersionedStorageKey('1', 'ot', 'esv-music');
+      const key = ScriptureResolver.buildVersionedStorageKey('1', 'ot', 'esv-music');
       expect(key).toBe('readalong:scripture/ot/esv-music/1');
     });
 
     it('constructs pgp key', () => {
-      const key = helpers.buildVersionedStorageKey('41361', 'pgp', 'rex');
+      const key = ScriptureResolver.buildVersionedStorageKey('41361', 'pgp', 'rex');
       expect(key).toBe('readalong:scripture/pgp/rex/41361');
     });
   });
