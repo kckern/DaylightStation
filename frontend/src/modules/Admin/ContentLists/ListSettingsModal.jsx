@@ -103,20 +103,18 @@ function ListSettingsModal({
 
   // Reset form when modal opens
   useEffect(() => {
-    if (opened) {
-      setFormData({
-        title: metadata?.title || '',
-        description: metadata?.description || '',
-        group: metadata?.group || '',
-        icon: metadata?.icon || '',
-        sorting: metadata?.sorting || LIST_DEFAULTS.sorting,
-        days: metadata?.days || null,
-        active: metadata?.active !== false,
-        defaultAction: metadata?.defaultAction || LIST_DEFAULTS.defaultAction,
-        defaultVolume: metadata?.defaultVolume ?? null,
-        defaultPlaybackRate: metadata?.defaultPlaybackRate ?? null
-      });
-    }
+    setFormData({
+      title: metadata?.title || '',
+      description: metadata?.description || '',
+      group: metadata?.group || '',
+      icon: metadata?.icon || '',
+      sorting: metadata?.sorting || LIST_DEFAULTS.sorting,
+      days: metadata?.days || null,
+      active: metadata?.active !== false,
+      defaultAction: metadata?.defaultAction || LIST_DEFAULTS.defaultAction,
+      defaultVolume: metadata?.defaultVolume ?? null,
+      defaultPlaybackRate: metadata?.defaultPlaybackRate ?? null
+    });
   }, [opened, metadata]);
 
   // Reset local group options when modal opens
