@@ -1346,6 +1346,36 @@ function ContentSearchCombobox({ value, onChange }) {
       })
     : isActiveSearch ? searchResults : browseItems;
 
+  // Commit freeform text + fire auto-resolve search
+  const commitFreeformText = (trigger) => {
+    log.info(`key.${trigger}.freeform`, { searchQuery, availableResults: displayItems.length, prevValue: value });
+    log.info('value.save', { newValue: searchQuery, prevValue: value, source: 'freeform', trigger });
+    onChange(searchQuery);
+    // Auto-resolve: if freeform text isn't a content ID, search for it
+    if (!searchQuery.match(/^[^:]+:\s*.+$/)) {
+      const controller = new AbortController();
+      autoResolveRef.current = { query: searchQuery, controller };
+      log.info('search.auto_resolve.start', { query: searchQuery, trigger });
+      fetch(`/api/v1/content/query/search?text=${encodeURIComponent(searchQuery)}&take=1`,
+            { signal: controller.signal })
+        .then(res => res.ok ? res.json() : null)
+        .then(data => {
+          if (!autoResolveRef.current || autoResolveRef.current.query !== searchQuery) return;
+          const items = data?.items || [];
+          if (items.length > 0) {
+            const resolved = items[0].id || `${items[0].source}:${items[0].localId}`;
+            log.info('search.auto_resolve.success', { query: searchQuery, resolvedTo: resolved, title: items[0].title });
+            onChange(resolved);
+          } else {
+            log.info('search.auto_resolve.no_results', { query: searchQuery });
+          }
+          autoResolveRef.current = null;
+        })
+        .catch(() => { autoResolveRef.current = null; });
+    }
+    resetComboboxState();
+  };
+
   // Keyboard handler for navigation
   const handleKeyDown = async (e) => {
     const items = displayItems;
@@ -1359,33 +1389,7 @@ function ContentSearchCombobox({ value, onChange }) {
         log.info('key.enter.select', { value: item.value, title: item.title });
         handleOptionSelect(item.value);
       } else if (searchQuery) {
-        // No matching item highlighted — save raw text as-is
-        log.info('key.enter.freeform', { searchQuery, availableResults: displayItems.length, prevValue: value });
-        log.info('value.save', { newValue: searchQuery, prevValue: value, source: 'freeform' });
-        onChange(searchQuery);
-        // Auto-resolve: if freeform text isn't a content ID, search for it
-        if (!searchQuery.match(/^[^:]+:\s*.+$/)) {
-          const controller = new AbortController();
-          autoResolveRef.current = { query: searchQuery, controller };
-          log.info('search.auto_resolve.start', { query: searchQuery });
-          fetch(`/api/v1/content/query/search?text=${encodeURIComponent(searchQuery)}&take=1`,
-                { signal: controller.signal })
-            .then(res => res.ok ? res.json() : null)
-            .then(data => {
-              if (!autoResolveRef.current || autoResolveRef.current.query !== searchQuery) return;
-              const items = data?.items || [];
-              if (items.length > 0) {
-                const resolved = items[0].id || `${items[0].source}:${items[0].localId}`;
-                log.info('search.auto_resolve.success', { query: searchQuery, resolvedTo: resolved, title: items[0].title });
-                onChange(resolved);
-              } else {
-                log.info('search.auto_resolve.no_results', { query: searchQuery });
-              }
-              autoResolveRef.current = null;
-            })
-            .catch(() => { autoResolveRef.current = null; });
-        }
-        resetComboboxState();
+        commitFreeformText('enter');
       }
       return;
     } else if (e.key === 'Escape') {
@@ -1394,8 +1398,16 @@ function ContentSearchCombobox({ value, onChange }) {
       resetComboboxState();
       return;
     } else if (e.key === 'Tab') {
-      // Tab: close dropdown without selecting, let natural focus move happen
-      resetComboboxState();
+      const item = items[highlightedIdx];
+      if (item) {
+        log.info('key.tab.select', { value: item.value, title: item.title });
+        handleOptionSelect(item.value);
+      } else if (searchQuery) {
+        commitFreeformText('tab');
+      } else {
+        log.debug('key.tab.empty');
+        resetComboboxState();
+      }
       // Don't preventDefault — allow Tab to move focus naturally
       return;
     }
@@ -1527,9 +1539,21 @@ function ContentSearchCombobox({ value, onChange }) {
 
   // Not editing - show display mode
   if (!isEditing) {
-    // Loading state - unified shimmer skeleton
+    // Loading state - show user's input text with a spinner so intent is visible
     if (loadingInfo) {
-      return <ContentDisplayShimmer onClick={handleStartEditing} />;
+      return (
+        <div onClick={handleStartEditing} className="content-display" style={{ cursor: 'pointer' }}>
+          <Group gap={6} wrap="nowrap" style={{ flex: 1 }}>
+            <Avatar size={28} radius="sm" color="dark">
+              <Loader size={14} color="dimmed" />
+            </Avatar>
+            <Box style={{ flex: 1, minWidth: 0 }}>
+              <Text size="xs" truncate fw={500} c="dimmed">{value}</Text>
+              <Text size="xs" c="dimmed" fs="italic">Resolving...</Text>
+            </Box>
+          </Group>
+        </div>
+      );
     }
 
     // Have content info - check if unresolved

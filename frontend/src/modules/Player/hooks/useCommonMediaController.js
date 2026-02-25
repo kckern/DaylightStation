@@ -762,7 +762,7 @@ export function useCommonMediaController({
         const secs = mediaEl.currentTime || 0;
         if (secs > 10) {
           const title = meta.title + (meta.grandparentTitle ? ` (${meta.grandparentTitle} - ${meta.parentTitle})` : '');
-          await DaylightAPI(`api/v1/play/log`, { title, type, assetId, seconds: secs, percent: pct });
+          await DaylightAPI(`api/v1/play/log`, { title, type, assetId, seconds: secs, percent: pct, namespace: meta?.namespace || null });
         }
       }
     };

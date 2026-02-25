@@ -29,7 +29,8 @@ export function SingalongScroller({
   onRegisterMediaAccess,
   seekToIntentSeconds,
   onSeekRequestConsumed,
-  remountDiagnostics
+  remountDiagnostics,
+  namespace
 }) {
   const [data, setData] = useState(initialData || null);
   const textRef = useRef(null);
@@ -125,6 +126,7 @@ export function SingalongScroller({
         seekToIntentSeconds={seekToIntentSeconds}
         onSeekRequestConsumed={onSeekRequestConsumed}
         remountDiagnostics={remountDiagnostics}
+        namespace={namespace}
       />
     </div>
   );

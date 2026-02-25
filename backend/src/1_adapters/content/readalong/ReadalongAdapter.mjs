@@ -325,7 +325,7 @@ export class ReadalongAdapter {
    * @param {Object} context.versions - Per-volume version preference map (e.g., { ot: ['esv-music', 'kjv-maxmclean'] })
    * @returns {Promise<{ versionState: string, selectedVersion: string, contentIdOverride: string, percent: number }|null>}
    */
-  async resolveVersionContext(localId, { versions } = {}) {
+  async resolveVersionContext(localId, { versions, namespace } = {}) {
     if (!versions || !this.mediaProgressMemory) return null;
 
     const resolver = await this._loadResolver('scripture');
@@ -345,7 +345,7 @@ export class ReadalongAdapter {
 
     for (const version of versionPrefs) {
       const key = resolver.buildVersionedStorageKey(bareVerseId, volume, version);
-      const state = await this.mediaProgressMemory.get(key, 'scriptures');
+      const state = await this.mediaProgressMemory.get(key, namespace || 'scriptures');
       if (state && (state.percent || 0) >= resolver.WATCHED_THRESHOLD) {
         watchedVersions.push(version);
       }
