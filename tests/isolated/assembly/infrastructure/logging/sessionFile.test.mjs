@@ -16,9 +16,9 @@ describe('SessionFileTransport', () => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'session-log-test-'));
   });
 
-  afterEach(async () => {
+  afterEach(() => {
     const sft = getSessionFileTransport();
-    if (sft) await sft.flush();
+    if (sft) sft.flush();
     resetSessionFileTransport();
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
@@ -75,7 +75,7 @@ describe('SessionFileTransport', () => {
     expect(files).toHaveLength(1);
   });
 
-  test('new session-log.start closes previous session and opens new file', async () => {
+  test('new session-log.start closes previous session and opens new file', () => {
     initSessionFileTransport({ baseDir: tmpDir, maxAgeDays: 3 });
     const sft = getSessionFileTransport();
 
@@ -86,8 +86,6 @@ describe('SessionFileTransport', () => {
       data: {},
       context: { app: 'fitness', sessionLog: true }
     });
-
-    await new Promise(r => setTimeout(r, 50));
 
     sft.write({
       ts: '2026-02-24T16:05:00.000',
@@ -140,5 +138,26 @@ describe('SessionFileTransport', () => {
 
     const entries = fs.readdirSync(tmpDir);
     expect(entries).toHaveLength(0);
+  });
+
+  test('getStatus returns active session info', () => {
+    initSessionFileTransport({ baseDir: tmpDir, maxAgeDays: 3 });
+    const sft = getSessionFileTransport();
+
+    const statusBefore = sft.getStatus();
+    expect(statusBefore.name).toBe('session-file');
+    expect(statusBefore.sessions).toEqual({});
+
+    sft.write({
+      ts: '2026-02-24T16:00:00.000',
+      level: 'info',
+      event: 'session-log.start',
+      data: {},
+      context: { app: 'fitness', sessionLog: true }
+    });
+
+    const statusAfter = sft.getStatus();
+    expect(statusAfter.sessions.fitness).toBeDefined();
+    expect(statusAfter.sessions.fitness.writable).toBe(true);
   });
 });
