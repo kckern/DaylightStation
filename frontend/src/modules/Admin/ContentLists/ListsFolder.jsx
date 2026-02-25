@@ -80,7 +80,7 @@ function ListsFolder() {
     flatItems.forEach(item => {
       if (item.input && !contentInfoMap.has(item.input)) {
         fetchContentMetadata(item.input).then(info => {
-          if (info && !info.unresolved) {
+          if (info) {
             setContentInfo(item.input, info);
           }
         });

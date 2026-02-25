@@ -17,8 +17,8 @@ describe('version rotation helpers', () => {
       expect(ScriptureResolver.getVolumeFromVerseId(23091)).toBe('ot');
     });
 
-    it('maps Moses 1 (verse 41995) to pgp', () => {
-      expect(ScriptureResolver.getVolumeFromVerseId(41995)).toBe('pgp');
+    it('maps Moses 1 (verse 41361) to pgp', () => {
+      expect(ScriptureResolver.getVolumeFromVerseId(41361)).toBe('pgp');
     });
 
     it('returns null for out-of-range IDs', () => {

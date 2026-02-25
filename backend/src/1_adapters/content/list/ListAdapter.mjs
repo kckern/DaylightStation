@@ -36,11 +36,15 @@ const JS_DAY_TO_ABBREV = ['Sunday', 'M', 'T', 'W', 'Th', 'F', 'Saturday'];
  * Compute cascade priority for version-rotation queue ordering.
  * Lower number = higher priority.
  *
- * 0 = unwatched, current week (within skip_after)
- * 1 = unwatched, past weeks (skip_after passed)
+ * 0 = unwatched, current week (within skip_after window)
+ * 1 = unwatched, past weeks (skip_after passed — catchup)
  * 2 = partial (version-recycled), current week
  * 3 = partial (version-recycled), past weeks
  * 4 = complete (all versions done)
+ *
+ * Within priority 0: source order (ASC — first chapter first)
+ * Within priority 1: reverse date order (DESC — most recent past week first)
+ * Within priority 2-3: same as 0-1
  */
 function _getCascadePriority(meta, now) {
   const isCurrentWeek = !meta.skipAfter || new Date(meta.skipAfter) >= now;
@@ -598,8 +602,8 @@ export class ListAdapter {
       return 'in_progress';
     }
 
-    if (item.skipAfter) {
-      const skipDate = new Date(item.skipAfter);
+    if (item.skip_after) {
+      const skipDate = new Date(item.skip_after);
       const eightDaysFromNow = new Date();
       eightDaysFromNow.setDate(eightDaysFromNow.getDate() + 8);
       if (skipDate <= eightDaysFromNow) {
@@ -645,9 +649,15 @@ export class ListAdapter {
 
     if (meta.waitUntil) {
       const waitDate = new Date(meta.waitUntil);
-      const twoDaysFromNow = new Date();
-      twoDaysFromNow.setDate(twoDaysFromNow.getDate() + 2);
-      if (waitDate > twoDaysFromNow) return true;
+      if (meta.versionState) {
+        // Version-rotation lists: strict wait_until enforcement
+        if (waitDate > new Date()) return true;
+      } else {
+        // Non-version lists: 2-day grace period (existing behavior)
+        const twoDaysFromNow = new Date();
+        twoDaysFromNow.setDate(twoDaysFromNow.getDate() + 2);
+        if (waitDate > twoDaysFromNow) return true;
+      }
     }
 
     return false;
@@ -946,8 +956,8 @@ export class ListAdapter {
         // Scheduling fields
         hold: item.hold || false,
         watched: item.watched || false,
-        skipAfter: item.skipAfter || null,
-        waitUntil: item.waitUntil || null,
+        skipAfter: item.skip_after || null,
+        waitUntil: item.wait_until || null,
         // Grouping
         program: item.program || listName,
         // Legacy fields
@@ -1072,10 +1082,19 @@ export class ListAdapter {
       if (list?.children?.some(c => c.metadata?.versionState)) {
         const now = new Date();
         list.children.sort((a, b) => {
-          const cascadeA = _getCascadePriority(a.metadata || {}, now);
-          const cascadeB = _getCascadePriority(b.metadata || {}, now);
+          const ma = a.metadata || {};
+          const mb = b.metadata || {};
+          const cascadeA = _getCascadePriority(ma, now);
+          const cascadeB = _getCascadePriority(mb, now);
           if (cascadeA !== cascadeB) return cascadeA - cascadeB;
-          return 0; // preserve source order within same cascade level
+          // Within same cascade: current week (0, 2) = source order ASC
+          // Past weeks (1, 3) = reverse date order (most recent skipAfter first)
+          if (cascadeA === 1 || cascadeA === 3) {
+            const dateA = ma.skipAfter ? new Date(ma.skipAfter) : new Date(0);
+            const dateB = mb.skipAfter ? new Date(mb.skipAfter) : new Date(0);
+            return dateB - dateA; // DESC — most recent past week first
+          }
+          return 0; // preserve source order (ASC)
         });
       }
 

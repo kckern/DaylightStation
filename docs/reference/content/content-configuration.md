@@ -307,18 +307,35 @@ style:
   fontFamily: serif
   fontSize: 1.3rem
   textAlign: left
-defaults:                        # per-section version defaults (text + audio)
-  ot: { text: kjvf, audio: kjvf }
-  bom: { text: sebom, audio: sebom }
-  dc: { text: rex, audio: rex }
+defaults:                        # per-volume text edition + audio recording defaults
+  ot: { text: kjvf, audio: kjv-maxmclean }
+  nt: { text: kjvf, audio: kjv-maxmclean }
+  bom: { text: sebom, audio: rex }
+  dc: { text: readers, audio: rex }
+  pgp: { text: lds, audio: rex }
+audioDefaults:                   # text edition → audio recording mapping
+  kjvf: kjv-maxmclean            # flat: same audio for all volumes
+  sebom: rex
+  lds:                           # per-volume: different audio per volume
+    bom: lds-male
+    dc: lds-legacy
+    pgp: lds-legacy
+  niv:
+    nt: niv-maxmclean
+musicRecordings:                 # recordings with built-in music (skip ambient overlay)
+  - esv-music
+  - kjv-dramatized
 volumeTitles:
   ot: Old Testament
+  nt: New Testament
   bom: Book of Mormon
+  dc: Doctrine and Covenants
+  pgp: Pearl of Great Price
 ```
 
 The `contentType` field determines how the frontend parses content by default: `verses` produces numbered verse arrays, `paragraphs` produces prose blocks. A collection with a custom `renderer` can override this entirely.
 
-The `resolver` and `renderer` fields are generic plugin interfaces. Scripture is the first implementation, but any readalong collection with complex ID resolution or specialized formatting can declare its own (e.g., a Shakespeare collection with act/scene reference parsing and dialogue formatting).
+The `resolver` and `renderer` fields are generic plugin interfaces. Scripture is the first implementation, but any readalong collection with complex ID resolution or specialized formatting can declare its own (e.g., a Shakespeare collection with act/scene reference parsing and dialogue formatting). See `features/scripture-resolver.md` for the full scripture resolver documentation including flexible content ID format, audio aliasing, and available editions/recordings.
 
 ### File Extension Support
 
