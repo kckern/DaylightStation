@@ -16,17 +16,17 @@ import './PianoTetris.scss';
  *
  * @param {Object} props
  * @param {Map<number, {velocity: number, timestamp: number}>} props.activeNotes
- * @param {Object|null} props.tetrisConfig - from piano.yml { levels: [...], activation: {...} }
+ * @param {Object|null} props.gameConfig - from piano.yml { levels: [...], activation: {...} }
  * @param {function} props.onDeactivate - Called when game should exit
  */
-export function PianoTetris({ activeNotes, tetrisConfig, onDeactivate }) {
+export function PianoTetris({ activeNotes, gameConfig, onDeactivate }) {
   const logger = useMemo(() => getChildLogger({ component: 'piano-tetris-layout' }), []);
 
-  const game = useTetrisGame(activeNotes, tetrisConfig);
+  const game = useTetrisGame(activeNotes, gameConfig);
   useAutoGameLifecycle(game.phase, game.startGame, onDeactivate, logger, 'tetris');
 
   // Calculate keyboard range from current level's note_range with padding
-  const levels = tetrisConfig?.levels ?? [];
+  const levels = gameConfig?.levels ?? [];
   const currentLevelConfig = levels[game.level] ?? levels[0];
   const { startNote, endNote } = useMemo(() => {
     const noteRange = currentLevelConfig?.note_range ?? [60, 72];

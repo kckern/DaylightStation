@@ -13,13 +13,13 @@ import './PianoFlashcards.scss';
  *
  * @param {Object} props
  * @param {Map} props.activeNotes - live MIDI note state
- * @param {Object} props.flashcardsConfig - games.flashcards from piano.yml
+ * @param {Object} props.gameConfig - games.flashcards from piano.yml
  * @param {function} props.onDeactivate - called to exit the game
  */
-export function PianoFlashcards({ activeNotes, flashcardsConfig, onDeactivate }) {
+export function PianoFlashcards({ activeNotes, gameConfig, onDeactivate }) {
   const logger = useMemo(() => getChildLogger({ component: 'piano-flashcards' }), []);
 
-  const game = useFlashcardGame(activeNotes, flashcardsConfig);
+  const game = useFlashcardGame(activeNotes, gameConfig);
   useAutoGameLifecycle(game.phase, game.startGame, onDeactivate, logger, 'flashcards');
 
   // Keyboard range from current level config
