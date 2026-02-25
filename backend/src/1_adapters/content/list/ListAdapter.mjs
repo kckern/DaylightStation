@@ -33,6 +33,29 @@ const DAY_PRESETS = {
 const JS_DAY_TO_ABBREV = ['Sunday', 'M', 'T', 'W', 'Th', 'F', 'Saturday'];
 
 /**
+ * Compute cascade priority for version-rotation queue ordering.
+ * Lower number = higher priority.
+ *
+ * 0 = unwatched, current week (within skip_after)
+ * 1 = unwatched, past weeks (skip_after passed)
+ * 2 = partial (version-recycled), current week
+ * 3 = partial (version-recycled), past weeks
+ * 4 = complete (all versions done)
+ */
+function _getCascadePriority(meta, now) {
+  const isCurrentWeek = !meta.skipAfter || new Date(meta.skipAfter) >= now;
+  const vs = meta.versionState;
+
+  if (!vs || vs === 'unwatched') {
+    return isCurrentWeek ? 0 : 1;
+  }
+  if (vs === 'partial') {
+    return isCurrentWeek ? 2 : 3;
+  }
+  return 4; // complete
+}
+
+/**
  * Format a kebab-case or camelCase name to human-readable title
  * @param {string} name - Raw name like "comefollowme2025" or "morning-program"
  * @returns {string} Formatted title
@@ -503,7 +526,7 @@ export class ListAdapter {
 
     const items = listData.sections.flatMap(s => s.items);
     const menuFixedOrder = listData.metadata?.fixed_order;
-    const children = await this._buildListItems(items, parsed.prefix, parsed.name);
+    const children = await this._buildListItems(items, parsed.prefix, parsed.name, listData.metadata);
 
     // Propagate menu-level fixed_order to all children
     if (menuFixedOrder) {
@@ -597,12 +620,27 @@ export class ListAdapter {
     const meta = child.metadata || {};
 
     if (meta.hold) return true;
-    if (meta.percent >= WATCHED_THRESHOLD) return true;
-    if (meta.watched) return true;
 
+    // Version-rotation-aware watched check
+    if (meta.versionState) {
+      // Only skip if ALL versions are complete
+      if (meta.versionState === 'complete') return true;
+      // 'unwatched' and 'partial' items should play
+    } else {
+      // Standard watched check (no version rotation)
+      if (meta.percent >= WATCHED_THRESHOLD) return true;
+      if (meta.watched) return true;
+    }
+
+    // Don't filter out past skipAfter items — they're deprioritized by cascade sort
+    // But DO skip items whose waitUntil is still in the future
     if (meta.skipAfter) {
-      const skipDate = new Date(meta.skipAfter);
-      if (skipDate < new Date()) return true;
+      // Keep skipAfter items in the queue (for catchup) — cascade sort deprioritizes them
+      // Only skip if there's no versionState (existing behavior for non-version lists)
+      if (!meta.versionState) {
+        const skipDate = new Date(meta.skipAfter);
+        if (skipDate < new Date()) return true;
+      }
     }
 
     if (meta.waitUntil) {
@@ -731,7 +769,7 @@ export class ListAdapter {
    * @param {string} listPrefix - 'menu', 'program', 'watchlist'
    * @returns {Promise<Item[]>}
    */
-  async _buildListItems(items, listPrefix, listName) {
+  async _buildListItems(items, listPrefix, listName, listMetadata = {}) {
     const isWatchlist = listPrefix === 'watchlist';
 
     // Map source names to watch state categories (for watchlist enrichment)
@@ -839,6 +877,24 @@ export class ListAdapter {
         }
       }
 
+      // Version-aware enrichment — delegates to adapter if it supports version context
+      let versionState = null;
+      let contentIdOverride = null;
+      if (isWatchlist && listMetadata?.versions && this.registry) {
+        const resolvedAdapter = this.registry.resolve(contentId);
+        if (resolvedAdapter?.adapter?.resolveVersionContext) {
+          const vCtx = await resolvedAdapter.adapter.resolveVersionContext(
+            resolvedAdapter.localId,
+            { versions: listMetadata.versions }
+          );
+          if (vCtx) {
+            percent = vCtx.percent;
+            versionState = vCtx.versionState;
+            contentIdOverride = vCtx.contentIdOverride;
+          }
+        }
+      }
+
       // Nomusic overlay for watchlist plex items
       let finalPlayAction = playAction;
       let finalQueueAction = queueAction;
@@ -870,8 +926,13 @@ export class ListAdapter {
         display: Object.keys(displayAction).length > 0 ? displayAction : undefined
       };
 
-      // Build compound ID
-      const compoundId = `${source}:${localId}`;
+      // Override play action contentId when version enrichment provides a rewrite
+      if (contentIdOverride && actions.play) {
+        actions.play = { ...actions.play, contentId: contentIdOverride };
+      }
+
+      // Build compound ID (version enrichment may override)
+      const compoundId = contentIdOverride || `${source}:${localId}`;
 
       // Build metadata - enriched for watchlists, minimal for other list types
       const metadata = isWatchlist ? {
@@ -897,6 +958,7 @@ export class ListAdapter {
         // Original source for reference
         src: normalizedSrc,
         assetId: assetId,
+        versionState: versionState || null,
         // Display fields
         folder: listName,
         fixedOrder: item.fixed_order || false
@@ -1005,6 +1067,17 @@ export class ListAdapter {
     if (isWatchlist && this.registry) {
       const list = await this.getList(id);
       if (!list) return [];
+
+      // Cascade sort for version-rotation watchlists
+      if (list?.children?.some(c => c.metadata?.versionState)) {
+        const now = new Date();
+        list.children.sort((a, b) => {
+          const cascadeA = _getCascadePriority(a.metadata || {}, now);
+          const cascadeB = _getCascadePriority(b.metadata || {}, now);
+          if (cascadeA !== cascadeB) return cascadeA - cascadeB;
+          return 0; // preserve source order within same cascade level
+        });
+      }
 
       // Build resolution tasks (preserving order) then run in parallel batches
       const tasks = [];

@@ -101,6 +101,7 @@ export class ReadalongAdapter {
         const resolved = resolver.resolve(itemPath, collectionPath, {
           mediaPath: mediaCollectionPath,
           defaults: manifest?.defaults || {},
+          audioDefaults: manifest?.audioDefaults || {},
           allowVolumeAsContainer: true
         });
 
@@ -116,7 +117,8 @@ export class ReadalongAdapter {
         // Re-resolve without container mode for normal item resolution
         const itemResolved = resolver.resolve(itemPath, collectionPath, {
           mediaPath: mediaCollectionPath,
-          defaults: manifest?.defaults || {}
+          defaults: manifest?.defaults || {},
+          audioDefaults: manifest?.audioDefaults || {}
         });
 
         if (itemResolved) {
@@ -140,7 +142,16 @@ export class ReadalongAdapter {
     }
 
     // Load item metadata using text path
-    const metadata = loadContainedYaml(collectionPath, textPath);
+    // For scripture (resolver provides verseId), use prefix-based lookup so files
+    // like "1-genesis-1.yml" are found by prefix "1". For all other readalong
+    // content (poetry, talks), use exact path matching.
+    let metadata;
+    if (resolvedMeta?.verseId) {
+      const parentDir = path.join(collectionPath, path.dirname(textPath));
+      metadata = loadYamlByPrefix(parentDir, resolvedMeta.verseId);
+    } else {
+      metadata = loadContainedYaml(collectionPath, textPath);
+    }
     if (!metadata) return null;
 
     // Determine content type
@@ -169,8 +180,9 @@ export class ReadalongAdapter {
       }
     }
 
-    // Resolve ambient if enabled
-    const ambientUrl = manifest?.ambient ? this._resolveAmbientUrl() : null;
+    // Resolve ambient if enabled (skip for recordings that already contain music)
+    const hasMusic = manifest?.musicRecordings?.includes(resolvedMeta?.audioRecording);
+    const ambientUrl = (manifest?.ambient && !hasMusic) ? this._resolveAmbientUrl() : null;
 
     // Build style
     const style = { ...this._getDefaultStyle(), ...manifest?.style };
@@ -303,6 +315,52 @@ export class ReadalongAdapter {
     );
     const trackNum = String(selected.id).padStart(3, '0');
     return `/api/v1/stream/ambient/${trackNum}`;
+  }
+
+  /**
+   * Resolve version rotation context for a scripture item.
+   * Used by ListAdapter for version-aware watch state enrichment.
+   * @param {string} localId - Adapter-local ID (e.g., 'scripture/41361')
+   * @param {Object} context
+   * @param {Object} context.versions - Per-volume version preference map (e.g., { ot: ['esv-music', 'kjv-maxmclean'] })
+   * @returns {Promise<{ versionState: string, selectedVersion: string, contentIdOverride: string, percent: number }|null>}
+   */
+  async resolveVersionContext(localId, { versions } = {}) {
+    if (!versions || !this.mediaProgressMemory) return null;
+
+    const resolver = await this._loadResolver('scripture');
+    if (!resolver) return null;
+
+    // Parse localId: 'scripture/41361' → collection='scripture', itemPath='41361'
+    const parts = localId.split('/');
+    const collection = parts[0];
+    if (collection !== 'scripture') return null;
+    const bareVerseId = parts[parts.length - 1]; // handles both 'scripture/41361' and 'scripture/ot/esv/41361'
+
+    const volume = resolver.getVolumeFromVerseId(bareVerseId);
+    if (!volume || !versions[volume]) return null;
+
+    const versionPrefs = versions[volume];
+    const watchedVersions = [];
+
+    for (const version of versionPrefs) {
+      const key = resolver.buildVersionedStorageKey(bareVerseId, volume, version);
+      const state = await this.mediaProgressMemory.get(key, 'scriptures');
+      if (state && (state.percent || 0) >= resolver.WATCHED_THRESHOLD) {
+        watchedVersions.push(version);
+      }
+    }
+
+    const selection = resolver.selectVersion(versionPrefs, watchedVersions);
+
+    return {
+      versionState: selection.watchState,
+      selectedVersion: selection.version,
+      contentIdOverride: selection.version
+        ? `readalong:scripture/${selection.version}/${bareVerseId}`
+        : null,
+      percent: selection.watchState === 'complete' ? 100 : 0
+    };
   }
 
   /**
@@ -563,6 +621,7 @@ export class ReadalongAdapter {
           const resolved = resolver.resolve(itemPath, collectionPath, {
             mediaPath: mediaCollectionPath,
             defaults: manifest?.defaults || {},
+            audioDefaults: manifest?.audioDefaults || {},
             allowVolumeAsContainer: true
           });
 
@@ -845,7 +904,8 @@ export class ReadalongAdapter {
       if (resolver) {
         const resolved = resolver.resolve(itemPath, collectionPath, {
           mediaPath: mediaCollectionPath,
-          defaults: manifest?.defaults || {}
+          defaults: manifest?.defaults || {},
+          audioDefaults: manifest?.audioDefaults || {}
         });
         if (resolved && typeof resolved !== 'string') {
           textPath = resolved.textPath;
@@ -863,8 +923,14 @@ export class ReadalongAdapter {
       }
     }
 
-    // Load item metadata
-    const metadata = loadContainedYaml(collectionPath, textPath);
+    // Load item metadata (prefix-based for scripture, exact for others)
+    let metadata;
+    if (resolvedMeta?.verseId) {
+      const parentDir = path.join(collectionPath, path.dirname(textPath));
+      metadata = loadYamlByPrefix(parentDir, resolvedMeta.verseId);
+    } else {
+      metadata = loadContainedYaml(collectionPath, textPath);
+    }
     if (!metadata) return null;
 
     const contentType = manifest?.contentType || 'paragraphs';
@@ -872,7 +938,8 @@ export class ReadalongAdapter {
       ? metadata
       : (metadata.verses || metadata.content || metadata.paragraphs || []);
 
-    const ambientUrl = manifest?.ambient ? this._resolveAmbientUrl() : null;
+    const hasMusic = manifest?.musicRecordings?.includes(resolvedMeta?.audioRecording);
+    const ambientUrl = (manifest?.ambient && !hasMusic) ? this._resolveAmbientUrl() : null;
     const style = { ...this._getDefaultStyle(), ...manifest?.style };
     const canonicalId = `readalong:${collection}/${textPath}`;
 
