@@ -119,7 +119,13 @@ function ListsFolder() {
     await reorderItems(sectionIndex, reordered);
   };
 
-  const handleAddItem = () => {
+  const handleAddItem = async (itemData, sectionIndex = 0) => {
+    if (itemData && itemData.input) {
+      // Inline add from EmptyItemRow — directly add to list
+      await addItem(sectionIndex, itemData);
+      return;
+    }
+    // No data — open editor modal
     setEditingItem(null);
     setEditorOpen(true);
   };
@@ -261,7 +267,7 @@ function ListsFolder() {
           />
         ))}
       </SortableContext>
-      <EmptyItemRow onAdd={handleAddItem} nextIndex={itemsToRender.length} isWatchlist={type === 'watchlists'} />
+      <EmptyItemRow onAdd={(data) => handleAddItem(data, sectionIndex)} nextIndex={itemsToRender.length} isWatchlist={type === 'watchlists'} />
     </Box>
   );
 
