@@ -113,8 +113,8 @@ function ListsFolder() {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
     const sectionItems = sections[sectionIndex]?.items || [];
-    const oldIndex = active.id;
-    const newIndex = over.id;
+    const oldIndex = Number(active.id);
+    const newIndex = Number(over.id);
     const reordered = arrayMove(sectionItems, oldIndex, newIndex);
     await reorderItems(sectionIndex, reordered);
   };
