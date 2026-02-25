@@ -13,7 +13,7 @@ import {
   IconCheck, IconArrowBarDown, IconPlayerPlayFilled, IconPlaylistAdd,
   IconLayoutList, IconAppWindow, IconDeviceDesktop, IconBookmark,
   IconArrowUp, IconArrowDown, IconArrowBarUp, IconSection,
-  IconDeviceGamepad2
+  IconDeviceGamepad2, IconArrowsShuffle, IconRocket
 } from '@tabler/icons-react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -2012,6 +2012,8 @@ const ACTION_META = {
   Open:    { color: 'gray',   icon: IconAppWindow },
   Display: { color: 'cyan',   icon: IconDeviceDesktop },
   Read:    { color: 'orange', icon: IconBookmark },
+  Launch:  { color: 'teal',   icon: IconRocket },
+  Shuffle: { color: 'grape',  icon: IconArrowsShuffle },
 };
 
 // Action chip select
