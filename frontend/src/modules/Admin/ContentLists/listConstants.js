@@ -9,7 +9,9 @@ export const ACTION_OPTIONS = [
   { value: 'List', label: 'List' },
   { value: 'Open', label: 'Open' },
   { value: 'Display', label: 'Display' },
-  { value: 'Shuffle', label: 'Shuffle' }
+  { value: 'Read', label: 'Read' },
+  { value: 'Launch', label: 'Launch' },
+  { value: 'Shuffle', label: 'Shuffle' },
 ];
 
 // Sorting options for lists
