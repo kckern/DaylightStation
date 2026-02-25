@@ -877,7 +877,7 @@ export class ListAdapter {
       let priority = item.priority || 'medium';
 
       if (isWatchlist && this.mediaProgressMemory) {
-        const watchCategory = watchCategoryMap[source] ?? source;
+        const watchCategory = listMetadata?.namespace || watchCategoryMap[source] || source;
         if (watchCategory) {
           const watchState = await this.mediaProgressMemory.get(assetId, watchCategory);
           percent = watchState?.percent ?? 0;
@@ -895,7 +895,7 @@ export class ListAdapter {
         if (resolvedAdapter?.adapter?.resolveVersionContext) {
           const vCtx = await resolvedAdapter.adapter.resolveVersionContext(
             resolvedAdapter.localId,
-            { versions: listMetadata.versions }
+            { versions: listMetadata.versions, namespace: listMetadata.namespace }
           );
           if (vCtx) {
             percent = vCtx.percent;
@@ -969,6 +969,7 @@ export class ListAdapter {
         src: normalizedSrc,
         assetId: assetId,
         versionState: versionState || null,
+        namespace: listMetadata?.namespace || null,
         // Display fields
         folder: listName,
         fixedOrder: item.fixed_order || false
@@ -1079,23 +1080,24 @@ export class ListAdapter {
       if (!list) return [];
 
       // Cascade sort for version-rotation watchlists
+      // Current week: source order ASC (count up)
+      // Past items: reverse source order DESC (countdown from where current week starts)
       if (list?.children?.some(c => c.metadata?.versionState)) {
         const now = new Date();
+        // Tag with source index for reverse ordering
+        list.children.forEach((c, i) => { c._srcIdx = i; });
         list.children.sort((a, b) => {
           const ma = a.metadata || {};
           const mb = b.metadata || {};
           const cascadeA = _getCascadePriority(ma, now);
           const cascadeB = _getCascadePriority(mb, now);
           if (cascadeA !== cascadeB) return cascadeA - cascadeB;
-          // Within same cascade: current week (0, 2) = source order ASC
-          // Past weeks (1, 3) = reverse date order (most recent skipAfter first)
-          if (cascadeA === 1 || cascadeA === 3) {
-            const dateA = ma.skipAfter ? new Date(ma.skipAfter) : new Date(0);
-            const dateB = mb.skipAfter ? new Date(mb.skipAfter) : new Date(0);
-            return dateB - dateA; // DESC — most recent past week first
-          }
-          return 0; // preserve source order (ASC)
+          // Current week (0, 2): preserve source order ASC
+          if (cascadeA === 0 || cascadeA === 2) return 0;
+          // Past items (1, 3, 4): reverse source order (countdown)
+          return b._srcIdx - a._srcIdx;
         });
+        list.children.forEach(c => { delete c._srcIdx; });
       }
 
       // Build resolution tasks (preserving order) then run in parallel batches

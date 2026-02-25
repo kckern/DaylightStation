@@ -212,12 +212,13 @@ export function SinglePlayer(props = {}) {
   const fetchVideoInfoCallback = useCallback(async () => {
     setIsReady(false);
 
-    // Direct-play bypass: if the play prop already contains mediaUrl and format,
+    // Direct-play bypass: if the play prop already contains mediaUrl and a media format,
     // skip the /play API call entirely. This happens when queue items come from
     // the /queue endpoint with pre-resolved media URLs.
+    // Content formats (readalong, singalong, etc.) need the /play API for full content data.
     const directFormat = play?.format;
     const directMediaUrl = play?.mediaUrl;
-    if (directMediaUrl && directFormat) {
+    if (directMediaUrl && directFormat && !getRenderer(directFormat)) {
       const directInfo = {
         ...play,
         id: play.id || play.contentId || effectiveContentId,

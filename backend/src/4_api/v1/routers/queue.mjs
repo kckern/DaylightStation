@@ -27,7 +27,7 @@ export function toQueueItem(item) {
     // Playback
     mediaUrl: item.mediaUrl,
     mediaType: item.mediaType,
-    format: item.metadata?.format || item.mediaType,
+    format: item.metadata?.contentFormat || item.metadata?.format || item.mediaType,
     duration: item.duration,
 
     // Display
@@ -56,6 +56,9 @@ export function toQueueItem(item) {
     artist: item.metadata?.artist || item.metadata?.grandparentTitle,
     albumArtist: item.metadata?.albumArtist,
     album: item.metadata?.album || item.metadata?.parentTitle,
+
+    // Namespace for isolated progress tracking
+    namespace: item.metadata?.namespace || null,
   };
 }
 
